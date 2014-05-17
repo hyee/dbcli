@@ -50,7 +50,7 @@ It also support command line options with "<command>=<args>" format, all availab
      TESTER              1 Invoke unit test on existing modules
      VARIABLE  VAR       2 Define output variables for db execution. Usage: "var <name> <data type>", or "var <
 
-For example: dbcli.bat "connect=tigger/scott@orcl"<br><br>
+For example: dbcli.bat "connect=tiger/scott@orcl"<br><br>
 
 Besides the above commands, all database statements are also supported(i.e select/update/delete)<br><br>
 
