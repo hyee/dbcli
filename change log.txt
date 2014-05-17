@@ -1,0 +1,9 @@
+
+2014-05-10: add "password" module, as well as the "SaveLogin" option and "Login" command
+2014-05-10: Fix of "table.dump" function
+2014-05-09: "ora" command: when current db version doesn't match the version requirement, just return error message iso execution script
+2014-05-09: 'alias -e' option to encrypt alias text
+2014-05-09: encrypt password for oracle "reconnect" command
+2014-05-09: Add encrypt module "enc"
+2014-05-08: Bugfix for "set" and "ora" module
+2014-05-07: Enhanced the "oracle" module related to inherit

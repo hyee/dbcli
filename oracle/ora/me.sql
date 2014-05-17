@@ -1,0 +1,2 @@
+/*[[Show my session]]*/
+select sid,SERIAL#,audsid,logon_time,SCHEMANAME,MACHINE,SERVICE_NAME,FAILOVER_METHOD,(select value from v$diag_info where name='Default Trace File') trace_file from v$session where audsid=userenv('sessionid')

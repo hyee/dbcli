@@ -1,0 +1,1 @@
+select * from(select $1,a.* from $2 a $*) where rownum<=30

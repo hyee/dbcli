@@ -1,0 +1,1330 @@
+{
+	"auto_complete":
+	{
+		"selected_items":
+		[
+			[
+				"s",
+				"snap"
+			],
+			[
+				"end",
+				"end_time"
+			],
+			[
+				"M",
+				"MTL_PROMPT"
+			],
+			[
+				"Fu",
+				"function"
+			],
+			[
+				"pr",
+				"profile"
+			],
+			[
+				"p",
+				"profiler"
+			],
+			[
+				"hoo",
+				"hooker"
+			],
+			[
+				"hook",
+				"hookfunc"
+			],
+			[
+				"get",
+				"getTime"
+			],
+			[
+				"sap",
+				"Snap"
+			],
+			[
+				"m",
+				"module"
+			],
+			[
+				"agg",
+				"agg_idx"
+			],
+			[
+				"res",
+				"result"
+			],
+			[
+				"pa",
+				"parse"
+			],
+			[
+				"re",
+				"resultset"
+			],
+			[
+				"pack",
+				"packer"
+			],
+			[
+				"conn",
+				"conn_desc"
+			],
+			[
+				"con",
+				"conn_desc"
+			],
+			[
+				"fmt",
+				"fmtfun"
+			],
+			[
+				"en",
+				"encrypt_str"
+			],
+			[
+				"str",
+				"string"
+			],
+			[
+				"fun",
+				"function	function"
+			],
+			[
+				"Data",
+				"datatype"
+			],
+			[
+				"ty",
+				"typeName"
+			],
+			[
+				"connect",
+				"connect"
+			],
+			[
+				"un",
+				"unload"
+			],
+			[
+				"set",
+				"setNull"
+			],
+			[
+				"SP",
+				"SPOOL"
+			],
+			[
+				"template",
+				"templates"
+			],
+			[
+				"is",
+				"isrehash"
+			],
+			[
+				"help",
+				"help_ind"
+			],
+			[
+				"sh",
+				"short_desc"
+			],
+			[
+				"ke",
+				"keylist"
+			],
+			[
+				"k",
+				"keylist"
+			],
+			[
+				"co",
+				"comment"
+			],
+			[
+				"file",
+				"file_ext"
+			],
+			[
+				"in",
+				"inputs"
+			],
+			[
+				"curr",
+				"CURRENT_CMD"
+			],
+			[
+				"max",
+				"maxsiz"
+			],
+			[
+				"d",
+				"default"
+			],
+			[
+				"to",
+				"tonumber"
+			],
+			[
+				"db",
+				"db_version"
+			],
+			[
+				"ar",
+				"args"
+			],
+			[
+				"eva",
+				"eval_line"
+			],
+			[
+				"a",
+				"args"
+			],
+			[
+				"com",
+				"command"
+			],
+			[
+				"sti",
+				"string"
+			],
+			[
+				"pi",
+				"pairs"
+			],
+			[
+				"varia",
+				"variables"
+			],
+			[
+				"temp",
+				"templates"
+			],
+			[
+				"t",
+				"templates"
+			],
+			[
+				"NCHAR",
+				"NVARCHAR2"
+			],
+			[
+				"SUB",
+				"SUBOBJECT_NAME"
+			],
+			[
+				"order",
+				"ORDER"
+			],
+			[
+				"load",
+				"loadstring"
+			],
+			[
+				"the",
+				"then"
+			],
+			[
+				"form",
+				"format"
+			],
+			[
+				"row",
+				"row_dels"
+			],
+			[
+				"col",
+				"col_del"
+			],
+			[
+				"g",
+				"_G"
+			],
+			[
+				"la",
+				"loader"
+			],
+			[
+				"va",
+				"valign"
+			],
+			[
+				"v",
+				"valign"
+			],
+			[
+				"_",
+				"_CMDS"
+			],
+			[
+				"__",
+				"___ABBR___"
+			],
+			[
+				"l",
+				"local	local x = 1"
+			],
+			[
+				"lines",
+				"linesize"
+			],
+			[
+				"ini",
+				"initial"
+			],
+			[
+				"ma",
+				"maxdep"
+			],
+			[
+				"c",
+				"ctor"
+			],
+			[
+				"se",
+				"self"
+			],
+			[
+				"class",
+				"class_type"
+			],
+			[
+				"sor",
+				"short_src"
+			],
+			[
+				"short",
+				"short_src"
+			],
+			[
+				"r",
+				"reader"
+			],
+			[
+				"data",
+				"datatype"
+			],
+			[
+				"dat",
+				"datatype"
+			],
+			[
+				"connet",
+				"connection"
+			],
+			[
+				"Abbr",
+				"ABBR"
+			],
+			[
+				"ABB",
+				"abbr"
+			],
+			[
+				"pri",
+				"priority"
+			],
+			[
+				"comma",
+				"command_dir"
+			],
+			[
+				"format",
+				"format_title"
+			],
+			[
+				"ge",
+				"get_cfg"
+			],
+			[
+				"run",
+				"run_sql"
+			],
+			[
+				"out",
+				"outs"
+			],
+			[
+				"cf",
+				"get_cfg"
+			],
+			[
+				"lo",
+				"locale"
+			],
+			[
+				"test",
+				"tester"
+			],
+			[
+				"db_",
+				"db_core"
+			],
+			[
+				"ali",
+				"alias"
+			],
+			[
+				"scr",
+				"script_dir"
+			],
+			[
+				"IS",
+				"is_query"
+			],
+			[
+				"f",
+				"function"
+			],
+			[
+				"dbms",
+				"dbms_output"
+			],
+			[
+				"env",
+				"event"
+			],
+			[
+				"print",
+				"printrows"
+			],
+			[
+				"for",
+				"format"
+			],
+			[
+				"ti",
+				"this"
+			],
+			[
+				"cmd",
+				"cmdlist"
+			],
+			[
+				"sql",
+				"sqlplus"
+			],
+			[
+				"exec",
+				"exec_command"
+			],
+			[
+				"resul",
+				"resultset"
+			],
+			[
+				"result",
+				"ResultSet"
+			],
+			[
+				"colu",
+				"column_name"
+			],
+			[
+				"do",
+				"dofile"
+			],
+			[
+				"path",
+				"path_del"
+			],
+			[
+				"mt",
+				"MTL_POMPT"
+			],
+			[
+				"fuc",
+				"function	function"
+			],
+			[
+				"i",
+				"ind"
+			],
+			[
+				"lin",
+				"lines"
+			],
+			[
+				"li",
+				"lines"
+			],
+			[
+				"line",
+				"linesize"
+			],
+			[
+				"cols",
+				"colsize"
+			]
+		]
+	},
+	"buffers":
+	[
+		{
+			"file": "lua/password.lua",
+			"settings":
+			{
+				"buffer_size": 2099,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"file": "lua/enc.lua",
+			"settings":
+			{
+				"buffer_size": 1076,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"file": "oracle/snap.lua",
+			"settings":
+			{
+				"buffer_size": 5469,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"file": "oracle/sqlplus.lua",
+			"settings":
+			{
+				"buffer_size": 1918,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"file": "lua/init.lua",
+			"settings":
+			{
+				"buffer_size": 2339,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"file": "lua/trace.lua",
+			"settings":
+			{
+				"buffer_size": 2489,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"file": "lua/grid.lua",
+			"settings":
+			{
+				"buffer_size": 10690,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"file": "oracle/ora.lua",
+			"settings":
+			{
+				"buffer_size": 8298,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"file": "lua/db_core.lua",
+			"settings":
+			{
+				"buffer_size": 12494,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"file": "lua/env.lua",
+			"settings":
+			{
+				"buffer_size": 12385,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"file": "lua/host.lua",
+			"settings":
+			{
+				"buffer_size": 186,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"file": "lua/input.lua",
+			"settings":
+			{
+				"buffer_size": 588,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"contents": "-----------------------------------------------------------------------------\n-- LTN12 - Filters, sources, sinks and pumps.\n-- LuaSocket toolkit.\n-- Author: Diego Nehab\n-----------------------------------------------------------------------------\n\n-----------------------------------------------------------------------------\n-- Declare module\n-----------------------------------------------------------------------------\nlocal string = require(\"string\")\nlocal table = require(\"table\")\nlocal base = _G\nlocal _M = {}\nif module then -- heuristic for exporting a global package table\n    ltn12 = _M\nend\nlocal filter,source,sink,pump = {},{},{},{}\n\n_M.filter = filter\n_M.source = source\n_M.sink = sink\n_M.pump = pump\n\n-- 2048 seems to be better in windows...\n_M.BLOCKSIZE = 2048\n_M._VERSION = \"LTN12 1.0.3\"\n\n-----------------------------------------------------------------------------\n-- Filter stuff\n-----------------------------------------------------------------------------\n-- returns a high level filter that cycles a low-level filter\nfunction filter.cycle(low, ctx, extra)\n    base.assert(low)\n    return function(chunk)\n        local ret\n        ret, ctx = low(ctx, chunk, extra)\n        return ret\n    end\nend\n\n-- chains a bunch of filters together\n-- (thanks to Wim Couwenberg)\n-- return 1)nil:pop top func and goto next func,\n--        2)\"\" :end or pri\n--        3)   :goto next func\nfunction filter.chain(...)\n    local arg = {...}\n    local n = select('#',...)\n    local top, index = 1, 1\n    local retry = \"\"\n    return function(chunk)\n        retry = chunk and retry\n        while true do\n            if index == top then\n                chunk = arg[index](chunk)\n                if chunk == \"\" or top == n then return chunk\n                elseif chunk then index = index + 1\n                else\n                    top = top+1\n                    index = top\n                end\n            else\n                chunk = arg[index](chunk or \"\")\n                if chunk == \"\" then\n                    index = index - 1\n                    chunk = retry\n                elseif chunk then\n                    if index == n then return chunk\n                    else index = index + 1 end\n                else base.error(\"filter returned inappropriate nil\") end\n            end\n        end\n    end\nend\n\n-----------------------------------------------------------------------------\n-- Source stuff\n-----------------------------------------------------------------------------\n-- create an empty source\nlocal function empty()\n    return nil\nend\n\nfunction source.empty()\n    return empty\nend\n\n-- returns a source that just outputs an error\nfunction source.error(err)\n    return function()\n        return nil, err\n    end\nend\n\n-- creates a file source\nfunction source.file(handle, io_err)\n    if handle then\n        return function()\n            local chunk = handle:read(_M.BLOCKSIZE)\n            if not chunk then handle:close() end\n            return chunk\n        end\n    else return source.error(io_err or \"unable to open file\") end\nend\n\n-- turns a fancy source into a simple source\nfunction source.simplify(src)\n    base.assert(src)\n    return function()\n        local chunk, err_or_new = src()\n        src = err_or_new or src\n        if not chunk then return nil, err_or_new\n        else return chunk end\n    end\nend\n\n-- creates string source\nfunction source.string(s)\n    if s then\n        local i = 1\n        return function()\n            local chunk = string.sub(s, i, i+_M.BLOCKSIZE-1)\n            i = i + _M.BLOCKSIZE\n            if chunk ~= \"\" then return chunk\n            else return nil end\n        end\n    else return source.empty() end\nend\n\n-- creates rewindable source\nfunction source.rewind(src)\n    base.assert(src)\n    local t = {}\n    return function(chunk)\n        if not chunk then\n            chunk = table.remove(t)\n            if not chunk then return src()\n            else return chunk end\n        else\n            table.insert(t, chunk)\n        end\n    end\nend\n\n-- chains a source with one or several filter(s)\nfunction source.chain(src, f, ...)\n    if ... then f=filter.chain(f, ...) end\n    base.assert(src and f)\n    local last_in, last_out = \"\", \"\"\n    local state = \"feeding\"\n    local err\n    return function()\n        if not last_out then\n            base.error('source is empty!', 2)\n        end\n        while true do\n            if state == \"feeding\" then\n                last_in, err = src()\n                if err then return nil, err end\n                last_out = f(last_in)\n                if not last_out then\n                    if last_in then\n                        base.error('filter returned inappropriate nil')\n                    else\n                        return nil\n                    end\n                elseif last_out ~= \"\" then\n                    state = \"eating\"\n                    if last_in then last_in = \"\" end\n                    return last_out\n                end\n            else\n                last_out = f(last_in)\n                if last_out == \"\" then\n                    if last_in == \"\" then\n                        state = \"feeding\"\n                    else\n                        base.error('filter returned \"\"')\n                    end\n                elseif not last_out then\n                    if last_in then\n                        base.error('filter returned inappropriate nil')\n                    else\n                        return nil\n                    end\n                else\n                    return last_out\n                end\n            end\n        end\n    end\nend\n\n-- creates a source that produces contents of several sources, one after the\n-- other, as if they were concatenated\n-- (thanks to Wim Couwenberg)\nfunction source.cat(...)\n    local arg = {...}\n    local src = table.remove(arg, 1)\n    return function()\n        while src do\n            local chunk, err = src()\n            if chunk then return chunk end\n            if err then return nil, err end\n            src = table.remove(arg, 1)\n        end\n    end\nend\n\n-----------------------------------------------------------------------------\n-- Sink stuff\n-----------------------------------------------------------------------------\n-- creates a sink that stores into a table\nfunction sink.table(t)\n    t = t or {}\n    local f = function(chunk, err)\n        if chunk then table.insert(t, chunk) end\n        return 1\n    end\n    return f, t\nend\n\n-- turns a fancy sink into a simple sink\nfunction sink.simplify(snk)\n    base.assert(snk)\n    return function(chunk, err)\n        local ret, err_or_new = snk(chunk, err)\n        if not ret then return nil, err_or_new end\n        snk = err_or_new or snk\n        return 1\n    end\nend\n\n-- creates a file sink\nfunction sink.file(handle, io_err)\n    if handle then\n        return function(chunk, err)\n            if not chunk then\n                handle:close()\n                return 1\n            else return handle:write(chunk) end\n        end\n    else return sink.error(io_err or \"unable to open file\") end\nend\n\n-- creates a sink that discards data\nlocal function null()\n    return 1\nend\n\nfunction sink.null()\n    return null\nend\n\n-- creates a sink that just returns an error\nfunction sink.error(err)\n    return function()\n        return nil, err\n    end\nend\n\n-- chains a sink with one or several filter(s)\nfunction sink.chain(f, snk, ...)\n    if ... then\n        local args = { f, snk, ... }\n        snk = table.remove(args, #args)\n        f = filter.chain(unpack(args))\n    end\n    base.assert(f and snk)\n    return function(chunk, err)\n        if chunk ~= \"\" then\n            local filtered = f(chunk)\n            local done = chunk and \"\"\n            while true do\n                local ret, snkerr = snk(filtered, err)\n                if not ret then return nil, snkerr end\n                if filtered == done then return 1 end\n                filtered = f(done)\n            end\n        else return 1 end\n    end\nend\n\n-----------------------------------------------------------------------------\n-- Pump stuff\n-----------------------------------------------------------------------------\n-- pumps one chunk from the source to the sink\nfunction pump.step(src, snk)\n    local chunk, src_err = src()\n    local ret, snk_err = snk(chunk, src_err)\n    if chunk and ret then return 1\n    else return nil, src_err or snk_err end\nend\n\n-- pumps all data from a source to a sink, using a step function\nfunction pump.all(src, snk, step)\n    base.assert(src and snk)\n    step = step or pump.step\n    while true do\n        local ret, err = step(src, snk)\n        if not ret then\n            if err then return nil, err\n            else return 1 end\n        end\n    end\nend\n\nreturn _M",
+			"file": "lib/ltn12.lua",
+			"file_size": 8588,
+			"file_write_time": 130446081334708129,
+			"settings":
+			{
+				"buffer_size": 8695,
+				"line_ending": "Unix"
+			}
+		}
+	],
+	"build_system": "",
+	"command_palette":
+	{
+		"height": 0.0,
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"console":
+	{
+		"height": 208.0,
+		"history":
+		[
+			"safd",
+			"asfddsa",
+			"safds",
+			"1+2",
+			"help",
+			"ls"
+		]
+	},
+	"distraction_free":
+	{
+		"menu_visible": true,
+		"show_minimap": false,
+		"show_open_files": false,
+		"show_tabs": false,
+		"side_bar_visible": false,
+		"status_bar_visible": false
+	},
+	"file_history":
+	[
+		"/D/Green/PLSQL Developer/Tools/tsql/lib/ProFi.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/jre/lib/zi/America/Resolute",
+		"/D/Green/PLSQL Developer/Tools/tsql/jre/lib/zi/America/Recife",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/grid.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/oracle/dbmsoutput.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/oracle/snap.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/password.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/oracle/oracle.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/input.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/env.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/init.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/trace.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/db_core.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/set.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/host.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/ProFi.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/sleep.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/misc.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/alias.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/history.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/oracle/sqlplus.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/oracle/ora.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/enc.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/println.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/jre/lib/zi/America/Puerto_Rico",
+		"/D/Green/PLSQL Developer/Tools/tsql/oracle/password.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/oracle/desc.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/oracle/var.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/helper.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/matrix.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/oracle/plan.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/src/checkshow.lua",
+		"/D/Green/Sublime Text/Data/Packages/User/Lua Dev.sublime-settings",
+		"/D/Green/Sublime Text/Data/Packages/User/Preferences.sublime-settings",
+		"/D/Green/PLSQL Developer/Tools/tsql/oracle/ora/space.sql",
+		"/D/Green/PLSQL Developer/Tools/tsql/libs/misc.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/init.cfg",
+		"/D/Green/PLSQL Developer/Tools/tsql/libs/helper.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/libs/db_core.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/libs/class.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/libs/matrix.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/pro.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/libs/event.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/src/parseClasses.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/src/copyclasses.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/src/getclasses.bat",
+		"/D/Green/PLSQL Developer/Tools/tsql/src/tee.bat",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/interval.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/tester.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/core_plugins.ini",
+		"/D/Green/PLSQL Developer/Tools/tsql/oracle/VAR.sql",
+		"/D/Green/PLSQL Developer/Tools/tsql/libs/println.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/libs/strings.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/oracle/ora_connect.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/oracle/ora_init.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/libs/locale.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/testdb.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/Oracle/ora_connect.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/ilua52.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/modules/ora_connect.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/lua/jnlua-0.9.6-bin.zip",
+		"/D/Green/PLSQL Developer/Tools/tsql/bin/input.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/bin/cli.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/luasql.sublime-project",
+		"/D/Green/PLSQL Developer/Tools/tsql/bin/iLua.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/bin/ilua52.lua",
+		"/D/Green/PLSQL Developer/Tools/tsql/bin/dbconnect.lua",
+		"/D/Green/Sublime Text/Data/Packages/Default/Preferences.sublime-settings",
+		"/D/Green/Sublime Text/Data/Packages/User/Distraction Free.sublime-settings",
+		"/D/Green/Sublime Text/Data/Packages/User/Lua.sublime-settings",
+		"/D/Green/Sublime Text/Data/Packages/Lua Dev/Lua Dev.sublime-settings",
+		"/D/Green/PLSQL Developer/Tools/tsql/cli.lua",
+		"/D/Green/Sublime Text/Data/Packages/User/lua.sublime-build"
+	],
+	"find":
+	{
+		"height": 34.0
+	},
+	"find_in_files":
+	{
+		"height": 0.0,
+		"where_history":
+		[
+		]
+	},
+	"find_state":
+	{
+		"case_sensitive": true,
+		"find_history":
+		[
+			"grid",
+			"comment",
+			"base.err",
+			"source.chain",
+			"[C]",
+			"currentlevel",
+			"tab[",
+			".new",
+			"CURRENT_PR",
+			"MTL",
+			"CURRENT_PROMPT",
+			"getFuncReport",
+			"ProFi:",
+			"shouldInspect",
+			"inspections",
+			"levels",
+			"setInspect",
+			"string",
+			"debug.",
+			"count",
+			"onFunctionCall",
+			"reset(",
+			"shouldInspect",
+			"levels",
+			"onDebugHook",
+			"getTitleFromFuncInfo",
+			"getFuncReport",
+			"CURRENT_CMD",
+			"FUNC",
+			"call_func",
+			"internal_exec",
+			"PrintSize",
+			"printsize",
+			"print",
+			"sort",
+			"__clock",
+			"print",
+			"tab",
+			"event",
+			"MAX_CA",
+			"super",
+			"cfg",
+			"			\n",
+			"var.",
+			"var[",
+			"CURRENT_PROMPT",
+			"prompt",
+			"AUTOCOMMIT",
+			"COLSIZE",
+			"self.stmts",
+			"super",
+			"env._CMDS",
+			"write",
+			"title_style",
+			"initcap",
+			"cap",
+			"initcap",
+			"1",
+			"n",
+			"conn",
+			"fmt",
+			"rep",
+			"string.format",
+			")\n",
+			"format_title",
+			"cfg",
+			"callee",
+			"Field_del",
+			"set_command",
+			"cfg",
+			"row_del",
+			"end",
+			"class_type",
+			"init",
+			"read",
+			"read()",
+			"set_prompt",
+			"plan",
+			"err",
+			"dir",
+			"value",
+			"space",
+			"space..",
+			"space",
+			"keys",
+			"getHeads",
+			"PRINTROW",
+			"title_format",
+			"callee",
+			"oracle_core",
+			"aliase",
+			"collen",
+			"self.prep",
+			"maxfieldlen",
+			"exec_command",
+			"exec_c",
+			"CLIB",
+			"pretty_print_limit",
+			"unpack",
+			"this",
+			":len",
+			"print",
+			"checkconnect",
+			"#size",
+			"fetch",
+			"col_info",
+			"_rs_type_lib",
+			"gettitles",
+			"type_lib",
+			"end",
+			"\")",
+			"eval_lua",
+			"eval_line",
+			"--\n",
+			"eval_lua",
+			"read()",
+			"_G",
+			"_pretty_print",
+			"val2str",
+			"global_handler_fn",
+			"import()",
+			"read()",
+			"line_handler_fn",
+			"load_file",
+			"_pretty_print",
+			"headind",
+			"()"
+		],
+		"highlight": true,
+		"in_selection": false,
+		"preserve_case": false,
+		"regex": false,
+		"replace_history":
+		[
+			"self.__stmts",
+			"title_style",
+			"col_del",
+			"this_class",
+			"",
+			"title_style",
+			"oracle",
+			"alias",
+			"prep",
+			"collen",
+			"table.unpack",
+			"_db_size",
+			"_db_col_info",
+			"_db_type_lib",
+			"db_get_titles",
+			"_rs_type_lib"
+		],
+		"reverse": false,
+		"show_context": true,
+		"use_buffer2": true,
+		"whole_word": false,
+		"wrap": true
+	},
+	"groups":
+	[
+		{
+			"selected": 6,
+			"sheets":
+			[
+				{
+					"buffer": 0,
+					"file": "lua/password.lua",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 2099,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								81,
+								81
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Lua/Lua.tmLanguage",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 8,
+					"type": "text"
+				},
+				{
+					"buffer": 1,
+					"file": "lua/enc.lua",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 1076,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								487,
+								487
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Lua/Lua.tmLanguage",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": -0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 9,
+					"type": "text"
+				},
+				{
+					"buffer": 2,
+					"file": "oracle/snap.lua",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 5469,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								5274,
+								5274
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Lua/Lua.tmLanguage",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 2449.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 1,
+					"type": "text"
+				},
+				{
+					"buffer": 3,
+					"file": "oracle/sqlplus.lua",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 1918,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								1059,
+								1105
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Lua/Lua.tmLanguage",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 7,
+					"type": "text"
+				},
+				{
+					"buffer": 4,
+					"file": "lua/init.lua",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 2339,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								292,
+								292
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Lua/Lua.tmLanguage",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 2,
+					"type": "text"
+				},
+				{
+					"buffer": 5,
+					"file": "lua/trace.lua",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 2489,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								1367,
+								1367
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Lua/Lua.tmLanguage",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": -0.0,
+						"translation.y": 90.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 3,
+					"type": "text"
+				},
+				{
+					"buffer": 6,
+					"file": "lua/grid.lua",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 10690,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								8272,
+								8272
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Lua/Lua.tmLanguage",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 34.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 0,
+					"type": "text"
+				},
+				{
+					"buffer": 7,
+					"file": "oracle/ora.lua",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 8298,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								1050,
+								1050
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Lua/Lua.tmLanguage",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": -0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 6,
+					"type": "text"
+				},
+				{
+					"buffer": 8,
+					"file": "lua/db_core.lua",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 12494,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								11362,
+								11362
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Lua/Lua.tmLanguage",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 5981.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 10,
+					"type": "text"
+				},
+				{
+					"buffer": 9,
+					"file": "lua/env.lua",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 12385,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								4920,
+								4920
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Lua/Lua.tmLanguage",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 1609.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 5,
+					"type": "text"
+				},
+				{
+					"buffer": 10,
+					"file": "lua/host.lua",
+					"semi_transient": true,
+					"settings":
+					{
+						"buffer_size": 186,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								0,
+								0
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Lua/Lua.tmLanguage"
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 4,
+					"type": "text"
+				},
+				{
+					"buffer": 11,
+					"file": "lua/input.lua",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 588,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								364,
+								364
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Lua/Lua.tmLanguage"
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 12,
+					"type": "text"
+				},
+				{
+					"buffer": 12,
+					"file": "lib/ltn12.lua",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 8695,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								1391,
+								1391
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Lua/Lua.tmLanguage",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 371.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 11,
+					"type": "text"
+				}
+			]
+		}
+	],
+	"incremental_find":
+	{
+		"height": 23.0
+	},
+	"input":
+	{
+		"height": 31.0
+	},
+	"layout":
+	{
+		"cells":
+		[
+			[
+				0,
+				0,
+				1,
+				1
+			]
+		],
+		"cols":
+		[
+			0.0,
+			1.0
+		],
+		"rows":
+		[
+			0.0,
+			1.0
+		]
+	},
+	"menu_visible": true,
+	"output.exec":
+	{
+		"height": 405.0
+	},
+	"output.find_results":
+	{
+		"height": 0.0
+	},
+	"project": "luasql.sublime-project",
+	"replace":
+	{
+		"height": 62.0
+	},
+	"save_all_on_build": true,
+	"select_file":
+	{
+		"height": 0.0,
+		"selected_items":
+		[
+			[
+				"reset",
+				"jre\\lib\\zi\\America\\Resolute"
+			],
+			[
+				"print",
+				"lua\\println.lua"
+			]
+		],
+		"width": 0.0
+	},
+	"select_project":
+	{
+		"height": 0.0,
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"select_symbol":
+	{
+		"height": 0.0,
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"settings":
+	{
+	},
+	"show_minimap": true,
+	"show_open_files": false,
+	"show_tabs": true,
+	"side_bar_visible": true,
+	"side_bar_width": 241.0,
+	"status_bar_visible": true,
+	"template_settings":
+	{
+	}
+}
