@@ -10,7 +10,7 @@ It is designed to be cross-platforms and support multiple databases, it includes
 Currently only public and Oracle functions are developed, and only support windows platform.<br><br>
 
 For Oracle db, it does not aim to support all functions of SQL*Plus, but to provide the features other than SQL*Plus:<br>
-1) Pretty print of the select statement and the flexibility controll of the grid layouts(see set command)<br>
+1) Pretty print of the select statement and the flexible controll of the grid layouts(see set command)<br>
 2) The 'alias' command to reduce the frequent inputs<br>
 3) The powerful "snap" and "ora" commands as the replacement of the SQL*Plus script, so that DBA is able to quick define and execute the SQL templates with the smallest input<br>
 4) Functions are easy to extend or deploy, because they are all developed with lua language<br>
