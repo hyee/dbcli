@@ -462,7 +462,7 @@ local function set_param(name,value)
 end
 
 cfg.init("PRINTSIZE",300,set_param,"db.query","Max rows to be printed for a select statement",'1-3000')
-cfg.init("COLSIZE",32767,set_param,"db.query","Max column size of a result set",'10-1073741824')
+cfg.init("COLSIZE",32767,set_param,"db.query","Max column size of a result set",'5-1073741824')
 cfg.init("SQLTIMEOUT",600,set_param,"db.core","The max wait time(in second) for a single db execution",'10-86400')
 cfg.init("FEED",'on',set_param,"db.core","Detemine if need to print the feedback after db execution",'on,off')
 cfg.init("AUTOCOMMIT",'off',set_param,"db.core","Detemine if auto-commit every db execution",'on,off')

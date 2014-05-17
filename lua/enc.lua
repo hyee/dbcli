@@ -1,3 +1,5 @@
+--The encryption function is someway useless, however you may feel better by comparing to plain text :)
+
 local string=string
 local enc={}
 

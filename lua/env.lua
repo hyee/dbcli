@@ -334,7 +334,7 @@ function env.onload(...)
     env.set_command(nil,"LUAJIT","#Switch to luajit interpreter",function() os.execute(('"%sbin%sluajit"'):format(env.WORK_DIR,env.PATH_DEL)) end,false,1)
     env.set_command(nil,"-P","#Test parameters. Usage: -p <command> [<args>]",env.testcmd,false,99)
     env.init.load(init.module_list,env)
-    env.set.init("Prompt","SQL",function(name,value) return env.set_prompt(value) end,"core","Define interpreter's command prompt")
+    env.set.init("Prompt","SQL",function(name,value) return env.set_prompt(value) end,"core","Define interpreter's command prompt, a special value is 'timing' to record the time cost for each command. ")
     if env.event then env.event.callback("ON_ENV_LOADED") end
     --load initial settings
     local ini_file=env.WORK_DIR.."data"..env.PATH_DEL.."init.cfg"

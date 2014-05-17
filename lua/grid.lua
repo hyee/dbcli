@@ -7,6 +7,7 @@ local params={
 	HEADDEL={name="title_del",default='-',desc="The delimiter to devide header and body when printing a grid"},
 	COLDEL={name="col_del",   default=' ',desc="The delimiter to split the fields when printing a grid"},
 	COLWRAP={name="col_wrap", default=0,desc="If the column size is larger than COLDEL, then wrap the text",range="0 - 32767"},
+	COLAUTOSIZE={name="col_auto_size", default='auto',desc="Define the base of calculating column width",range="head,body,auto"},
 	ROWDEL={name="row_del",   default=''  ,desc="The delimiter to split the rows when printing a grid"},
 	ROWNUM={name="row_num",   default="off",desc="To indicate if need to show the row numbers",range="on,off"},
 	HEADSTYLE={name="title_style",default="none",desc="Display style of the grid title",range="upper,lower,initcap,none"},
@@ -39,11 +40,23 @@ function grid.format_title(v)
 	return v[grid.title_style](v)
 end
 
-function grid.cut(v)
-	if #v>grid.linesize then
-		return v:sub(1,grid.linesize-5).." ..."
+function grid:cut(row,format_func,format_str)
+	
+	if type(row)=="table" then
+		local colbase=self.col_auto_size
+		local cs=self.colsize
+		if colbase~='auto' then 		
+			for i,var in ipairs(cs) do
+				row[i]=tostring(row[i]):sub(1,cs[i][1])
+			end
+		end
+		row=format_func(format_str,table.unpack(row))
 	end
-	return v
+
+	if #row>self.linesize then
+		return row:sub(1,self.linesize-2)..' .'
+	end
+	return row
 end
 
 function grid.fmt(format,...)
@@ -209,6 +222,7 @@ end
 function grid:add(rs)
 	local result,headind,colsize=self.data,self.headind,self.colsize
 	local title_style=grid.title_style
+	local colbase=grid.col_auto_size
 	local rownum=grid.row_num
 	if rownum == "on" then
 		table.insert(rs,1,headind==0 and "#" or headind)
@@ -218,6 +232,7 @@ function grid:add(rs)
 	local cnt=0
 	--run statement
 	for k,v in ipairs(rs) do
+
 		if k>grid.maxcol then break end
 		local csize =0
 		if not colsize[k] then colsize[k] = {0,1} end
@@ -253,13 +268,18 @@ function grid:add(rs)
 			end
 			if #grp > 1 then v=grp end
 			if lines < #grp then lines = #grp end
-			if headind>0 then colsize[k][2] = -1 end
+			if headind>0 then 
+				colsize[k][2] = -1 			
+			end
 		end
 		if headind==0 and title_style~="none" then
 			v=grid.format_title(v)
 		end
 		rs[k]=v
-		if colsize[k][1] < csize  then colsize[k][1] = csize end			
+
+		if grid.pivot==0 and headind==1 and colbase=="body" and self.printhead then colsize[k][1]=1 end
+		if (grid.pivot~=0 or colbase~="head" or not self.printhead or headind==0)  
+			and colsize[k][1] < csize then colsize[k][1] = csize end
 	end
 
 	if lines == 1 then result[#result+1]=rs
@@ -276,7 +296,8 @@ function grid:add(rs)
 	return result
 end
 
-function grid:add_calc_ratio(column)
+function grid:add_calc_ratio(column,adjust)
+	adjust=tonumber(adjust) or 1
 	if not self.ratio_cols then self.ratio_cols={} end
 	if type(column)=="string" then
 		if not self.printhead then return end
@@ -284,13 +305,12 @@ function grid:add_calc_ratio(column)
 		if not head then return end
 		for k,v in pairs(head) do
 			if tostring(v):upper()==column:upper() then
-				table.insert(self.ratio_cols,k)
+				self.ratio_cols[k]=adjust
 			end
 		end
 	elseif type(column)=="number" then
-		table.insert(self.ratio_cols,column)
+		self.ratio_cols[column]=adjust
 	end
-
 end
 
 function grid:wellform(col_del,row_del)	
@@ -309,11 +329,15 @@ function grid:wellform(col_del,row_del)
 	local format_func=grid.fmt
 
 	if type(self.ratio_cols)=="table" and grid.pivot==0 then
-		table.sort(self.ratio_cols)
+		local keys={}
+		for k,v in pairs(self.ratio_cols) do
+			keys[#keys+1]=k
+		end
+		table.sort(keys)
 		local rows=self.data
 
-		for c=#self.ratio_cols,1,-1 do
-			local sum,idx=0,self.ratio_cols[c]
+		for c=#keys,1,-1 do
+			local sum,idx=0,keys[c]
 			for _,row in ipairs(rows) do
 				sum=sum+(tonumber(row[idx]) or 0)
 			end
@@ -324,7 +348,7 @@ function grid:wellform(col_del,row_del)
 				elseif sum>0 then
 					n=tonumber(row[idx])
 					if n then 
-						n=string.format("%5.2f%%",100*n/sum) 
+						n=string.format("%5.2f%%",100*n/sum*self.ratio_cols[idx]) 
 					else
 						n=" "	
 					end
@@ -335,7 +359,10 @@ function grid:wellform(col_del,row_del)
 
 			table.insert(colsize,idx+1,{7,1})
 		end
+		self.ratio_cols=nil
 	end
+
+
 
 	for k,v in ipairs(colsize) do
 		--local siz=v[1] > 99 and 99 or v[1]
@@ -351,20 +378,21 @@ function grid:wellform(col_del,row_del)
 		end
 	end
 
-	local cut=grid.cut
+	local cut=self.cut
 	if row_del~="" then
 		row_dels=row_dels:gsub("%s",row_del)
 		table.insert(rows,cut(row_dels:gsub("[^%"..row_del.."]",row_del)))
 	end
+
     
 	for k,v in ipairs(result) do						
 		while #v<#colsize do table.insert(v,"") end
-		table.insert(rows,cut(format_func(fmt,table.unpack(v))))
+		table.insert(rows,cut(self,v,format_func,fmt))
 		if not result[k+1] or result[k+1][0]~=v[0] then
 			if #row_del==1 then
-				table.insert(rows,cut(row_dels))
+				table.insert(rows,cut(self,row_dels))
 			elseif v[0]==0 then
-				table.insert(rows,cut(format_func(fmt,table.unpack(title_dels))))
+				table.insert(rows,cut(self,title_dels,format_func,fmt))
 			end
 		end
 	end

@@ -54,7 +54,7 @@ function password.login(db,id,filter)
 	end
 	local login
 	
-	local filter,counter=id=="-s" and filter and filter:lower() or id,0
+	local filter,counter=id:sub(1,1)=='-' and filter and filter:lower() or id,0
 	local hdl=grid.new()
 	grid.add(hdl,{"Name","User","Url","LastLogin"})
 	for k,v in pairs(list) do

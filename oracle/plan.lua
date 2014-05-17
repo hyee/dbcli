@@ -10,5 +10,5 @@ local function explain(sql)
 	db:rollback()
 	cfg.set("feed",feed,true)
 end
-env.set_command(nil,"PLAN","Explain SQL excution plan. Usage: plan <DML statement>",explain,true,2)
+env.set_command(nil,"PLAN","Explain SQL execution plan. Usage: plan <DML statement>",explain,true,2)
 return explain

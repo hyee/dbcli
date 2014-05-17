@@ -43,7 +43,7 @@ function tracer.format_profile()
     end
     files=nil
     f:add{"--Total--",0,"Total",sum[1]*d,sum[2]*d,sum[3]*d,sum[4]*d,sum[5]*d,sum[6]*d," "}
-    f:add_calc_ratio("Count")
+    f:add_calc_ratio("Count",2)
     f:sort(-9,true)
     f:print(nil,nil,nil,100)
 end

@@ -197,7 +197,7 @@ end
 
 local help_ind=0
 function snap.helper(_,cmd,search_key)	
-	local help='Run SQL script under the "snap" directory. Usage: snap <interval> <name1[,name2...]] [args] | -r | -s \nAvailable commands:\n=================\n'
+	local help='Calculate a period of db/session performance/waits. Usage: snap <interval> <name1[,name2...]] [args] | -r | -s \nAvailable commands:\n=================\n'
 	help_ind=help_ind+1
 	if help_ind==2 and not snap.cmdlist then
 		snap.exec('-r')
