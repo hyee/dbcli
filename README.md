@@ -24,32 +24,31 @@ Open dbcli.bat with text editor, then modify the JRE_HOME and ORACLE_HOME as you
 It also support command line options with "<command>=<args>" format, all available options can be found in "help" command:<br>
 
 
-        Command   Abbr.  Args Decription
-        --------- ------ ---- --------------------------------------------------------------------
-        ALIAS               2 Set an shortcut of other existing commands. Usage: alias [-r | <name
-        CONNECT   CONN      1 Connect to Oracle database.
-        DEFINE    DEF       1 Define input variables, Usage: def <name>=<value>, or def <name> to
-        DESCRIBE  DESC      2 Describe datbase object. Usage desc [<owner>.]<object>[.<partition>]
-        HELP                8 Type 'help' to see the available comand list. Usage: help [<command>
-        HISTORY   HIS       1 Show/run historical commands. Usage: his [index]
-        HOST                1 Run OS command. Usage: HOST <command>
-        INTERVAL  ITV       1 Run a command with specific interval. Usage: ITV <seconds> <times> <
-        LOGIN               2 Login with saved accounts. Usage: login [<account_name>]
-        ORA                19 Run SQL script under the "ora" directory. Usage: ora [<script_name>|
-        PLAN                1 Explain SQL excution plan. Usage: plan <DML statement>
-        PROMPT    PRO       1 Prompt messages. Usage: PRO[MPT] <message>
-        R         /         1 Rerun the previous command.
-        RECONNECT RECONN    1 Re-connect current database
-        RELOAD              0 Reload environment, including variables, modules, etc
-        SET                98 Set environment parameters. Usage: set <name1> [<value1|DEFAULT|BACK
-        SLEEP               1 Usage: sleep <seconds>
-        SNAP                8 Run SQL script under the "snap" directory. Usage: snap <interval> <n
-        SPOOL     SPO       2 Stores query results in a file. Usage: SPO[OL] [file_name[.ext]] [CR
-        SQL                 8 Run SQL script under the "sqlplus" directory with SQL*Plus. Usage: s
-        SQLPLUS             8 Switch to sqlplus with same login, the working folder is 'oracle/sql
-        TESTER              1 Invoke unit test on existing modules
-        VARIABLE  VAR       2 Define output variables for db execution. Usage: "var <name> <data t
-
+     Command   Abbr.  Args Decription
+     --------- ------ ---- ------------------------------------------------------------------------------------
+     ALIAS               2 Set an shortcut of other existing commands. Usage: alias [-r | <name> [parameters] |
+     CONNECT   CONN      1 Connect to Oracle database.
+     DEFINE    DEF       1 Define input variables, Usage: def <name>=<value>, or def <name> to remove definitio
+     DESCRIBE  DESC      2 Describe datbase object. Usage desc [<owner>.]<object>[.<partition>]
+     HELP                8 Type 'help' to see the available comand list. Usage: help [<command>[,<sub_command1>
+     HISTORY   HIS       1 Show/run historical commands. Usage: his [index]
+     HOST                1 Run OS command. Usage: HOST <command>
+     INTERVAL  ITV       1 Run a command with specific interval. Usage: ITV <seconds> <times> <command>;
+     LOGIN               2 Login with saved accounts. Usage: login [<account_name>]
+     ORA                19 Run SQL script under the "ora" directory. Usage: ora [<script_name>|-r|-p|-h|-s] [pa
+     PLAN                1 Explain SQL excution plan. Usage: plan <DML statement>
+     PROMPT    PRO       1 Prompt messages. Usage: PRO[MPT] <message>
+     R         /         1 Rerun the previous command.
+     RECONNECT RECONN    1 Re-connect current database
+     RELOAD              0 Reload environment, including variables, modules, etc
+     SET                98 Set environment parameters. Usage: set <name1> [<value1|DEFAULT|BACK> [name2 ...]]
+     SLEEP               1 Usage: sleep <seconds>
+     SNAP                8 Run SQL script under the "snap" directory. Usage: snap <interval> <name1[,name2...]]
+     SPOOL     SPO       2 Stores query results in a file. Usage: SPO[OL] [file_name[.ext]] [CRE[ATE]] | APP[EN
+     SQL                 8 Run SQL script under the "sqlplus" directory with SQL*Plus. Usage: sql <script_name>
+     SQLPLUS             8 Switch to sqlplus with same login, the working folder is 'oracle/sqlplus'. Usage: sq
+     TESTER              1 Invoke unit test on existing modules
+     VARIABLE  VAR       2 Define output variables for db execution. Usage: "var <name> <data type>", or "var <
 
 For example: dbcli.bat "connect=tigger/scott@orcl"<br><br>
 
