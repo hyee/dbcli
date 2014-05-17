@@ -1,4 +1,8 @@
 
+2014-05-15: switch to luajit v2.1
+2014-05-15: move init.cfg to folder "data"
+2014-05-14: add oracle "snap" moddule, see command "snap"
+2014-05-13: performance trace for dev purpose, see "set trace" and "set profiler"
 2014-05-10: add "password" module, as well as the "SaveLogin" option and "Login" command
 2014-05-10: Fix of "table.dump" function
 2014-05-09: "ora" command: when current db version doesn't match the version requirement, just return error message iso execution script
@@ -7,3 +11,4 @@
 2014-05-09: Add encrypt module "enc"
 2014-05-08: Bugfix for "set" and "ora" module
 2014-05-07: Enhanced the "oracle" module related to inherit
+2014-05-06: Renamed module "matrix" to "grid"
