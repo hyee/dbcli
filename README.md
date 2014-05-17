@@ -6,13 +6,13 @@ Description
 =============
 
 dbcli is a database command line utility that developed with lua language, and bridge JDBC in order to operate database.<br> 
-It is designed to be cross-platforms and support multiple databases, and contains 2 type of modules, one is the public functions, and another is the database-specific functions.<br>
+It is designed to be cross-platforms and support multiple databases, it includes 2 type of modules, one is the public functions, and another one is the database-specific functions.<br>
 Currently only public and Oracle functions are developed, and only support windows platform.<br><br>
 
-For Oracle db, it does not aim to support all functions for SQL*Plus, but to provide the features other than SQL*Plus:<br>
-1) Pretty print of the select statement and the flexibility of controlling the grid layout(see set command)<br>
-2) The 'alias' command to reduce your frequent inputs<br>
-3) The powerful "snap" and "ora" command as the replacement of the complex SQL*Plus script, so that DBA is able to quick define and execute the SQL templates with the smallest input<br>
+For Oracle db, it does not aim to support all functions of SQL*Plus, but to provide the features other than SQL*Plus:<br>
+1) Pretty print of the select statement and the flexibility controll of the grid layouts(see set command)<br>
+2) The 'alias' command to reduce the frequent inputs<br>
+3) The powerful "snap" and "ora" commands as the replacement of the SQL*Plus script, so that DBA is able to quick define and execute the SQL templates with the smallest input<br>
 4) Functions are easy to extend or deploy, because they are all developed with lua language<br>
 
 
@@ -21,7 +21,7 @@ Installation
 ============
 Before running dbcli, make sure that you have installed JRE 1.6+ in your local PC.<br>
 Open dbcli.bat with text editor, then modify the JRE_HOME and ORACLE_HOME as your PC's situation, then run it directly.<br>
-It also support command line options with "<command>=<args>" format, all available options can be found in "help" command:<br>
+It also support command line options with "<command>=<args>" format, all available options can be found by typing "help":<br>
 
 
      Command   Abbr.  Args Decription
@@ -57,11 +57,11 @@ Besides the above commands, all database statements are also supported(i.e selec
 
 References
 ============
-The project depends on some open-source projects without modifications, below list some of them:<br>
-luajit v2.1 : http://luajit.org/<br>
-jnlua       : https://code.google.com/p/jnlua/<br>
-lpeg        : http://www.inf.puc-rio.br/~roberto/lpeg/<br>
-MessagePack : https://github.com/fperrad/lua-MessagePack(pure lua)<br>
+    The project depends on some open-source projects without modifications, below list some of them:<br>
+    luajit v2.1 : http://luajit.org/<br>
+    jnlua       : https://code.google.com/p/jnlua/<br>
+    lpeg        : http://www.inf.puc-rio.br/~roberto/lpeg/<br>
+    MessagePack : https://github.com/fperrad/lua-MessagePack(pure lua)<br>
 
 
 
