@@ -24,32 +24,31 @@ Open dbcli.bat with text editor, then modify the JRE_HOME and ORACLE_HOME as you
 It also support command line options with "<command>=<args>" format, all available options can be found in "help" command:<br>
 
 
-        Name         Value   Default Class    Available Values         Description
-        ------------ ------- ------- -------- ------------------------ -----------------------------------------
-        HISSIZE      50      50      core     0 - 999                  Max size of historical commands
-        PROFILER     "off"   "off"   core     on,off                   Enable jit profiler to monitor the perfor
-        PROMPT       "PODPM" "SQL"   core     *                        Define interpreter's command prompt, a sp
-        TRACE        "off"   "off"   core     on,off                   Enable trace to monitor the performance.
-        AUTOCOMMIT   "off"   "off"   db.core  on,off                   Detemine if auto-commit every db executio
-        FEED         "on"    "on"    db.core  on,off                   Detemine if need to print the feedback af
-        SAVELOGIN    "on"    "off"   db.core  on,off                   Determine if autosave logins.
-        SQLTIMEOUT   600     600     db.core  10-86400                 The max wait time(in second) for a single
-        COLSIZE      32767   32767   db.query 5-1073741824             Max column size of a result set
-        PRINTSIZE    300     300     db.query 1-3000                   Max rows to be printed for a select state
-        COLAUTOSIZE  "auto"  "auto"  grid     head,body,auto           Define the base of calculating column wid
-        COLDEL       " "     " "     grid     *                        The delimiter to split the fields when pr
-        COLWRAP      0       0       grid     0 - 32767                If the column size is larger than COLDEL,
-        DIGITS       21      21      grid     0 - 21                   Define the digits for a number
-        HEADDEL      "-"     "-"     grid     *                        The delimiter to devide header and body w
-        HEADSTYLE    "none"  "none"  grid     upper,lower,initcap,none Display style of the grid title
-        LINESIZE     990     32767   grid     10-32767                 Define the max chars in one line, other o
-        MAXCOLS      1024    1024    grid     4-1024                   Define the max columns to be displayed in
-        PIVOT        0       0       grid     -30 - +30                Pivot a grid when next print, afterward t
-        PIVOTSORT    "on"    "on"    grid     on,off                   To indicate if to sort the titles when pi
-        ROWDEL       ""      ""      grid     *                        The delimiter to split the rows when prin
-        ROWNUM       "off"   "off"   grid     on,off                   To indicate if need to show the row numbe
-        SERVEROUTPUT "on"    "on"    oracle   on,off                   Print Oracle dbms_output after each execu
-        SNAPROWS     "50"    "50"    oracle    10 - 3000               Number of max records for the 'snap' comm
+        Command   Abbr.  Args Decription
+        --------- ------ ---- --------------------------------------------------------------------
+        ALIAS               2 Set an shortcut of other existing commands. Usage: alias [-r | <name
+        CONNECT   CONN      1 Connect to Oracle database.
+        DEFINE    DEF       1 Define input variables, Usage: def <name>=<value>, or def <name> to
+        DESCRIBE  DESC      2 Describe datbase object. Usage desc [<owner>.]<object>[.<partition>]
+        HELP                8 Type 'help' to see the available comand list. Usage: help [<command>
+        HISTORY   HIS       1 Show/run historical commands. Usage: his [index]
+        HOST                1 Run OS command. Usage: HOST <command>
+        INTERVAL  ITV       1 Run a command with specific interval. Usage: ITV <seconds> <times> <
+        LOGIN               2 Login with saved accounts. Usage: login [<account_name>]
+        ORA                19 Run SQL script under the "ora" directory. Usage: ora [<script_name>|
+        PLAN                1 Explain SQL excution plan. Usage: plan <DML statement>
+        PROMPT    PRO       1 Prompt messages. Usage: PRO[MPT] <message>
+        R         /         1 Rerun the previous command.
+        RECONNECT RECONN    1 Re-connect current database
+        RELOAD              0 Reload environment, including variables, modules, etc
+        SET                98 Set environment parameters. Usage: set <name1> [<value1|DEFAULT|BACK
+        SLEEP               1 Usage: sleep <seconds>
+        SNAP                8 Run SQL script under the "snap" directory. Usage: snap <interval> <n
+        SPOOL     SPO       2 Stores query results in a file. Usage: SPO[OL] [file_name[.ext]] [CR
+        SQL                 8 Run SQL script under the "sqlplus" directory with SQL*Plus. Usage: s
+        SQLPLUS             8 Switch to sqlplus with same login, the working folder is 'oracle/sql
+        TESTER              1 Invoke unit test on existing modules
+        VARIABLE  VAR       2 Define output variables for db execution. Usage: "var <name> <data t
 
 
 For example: dbcli.bat "connect=tigger/scott@orcl"<br><br>
