@@ -57,11 +57,11 @@ Besides the above commands, all database statements are also supported(i.e selec
 
 References
 ============
-    The project depends on some open-source projects without modifications, below list some of them:<br>
-    luajit v2.1 : http://luajit.org/<br>
-    jnlua       : https://code.google.com/p/jnlua/<br>
-    lpeg        : http://www.inf.puc-rio.br/~roberto/lpeg/<br>
-    MessagePack : https://github.com/fperrad/lua-MessagePack(pure lua)<br>
+The project depends on some open-source projects without modifications, below list some of them:<br>
+    luajit v2.1 : http://luajit.org/
+    jnlua       : https://code.google.com/p/jnlua/
+    lpeg        : http://www.inf.puc-rio.br/~roberto/lpeg/
+    MessagePack : https://github.com/fperrad/lua-MessagePack(pure lua)
 
 
 
