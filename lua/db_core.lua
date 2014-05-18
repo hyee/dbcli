@@ -185,6 +185,7 @@ function ResultSet:fetch(rs,conn)
 end
 
 function ResultSet:close(rs)
+	
 	if rs then
 		if not rs:isClosed() then rs:close() end
 		if self[rs] then self[rs]=nil end
@@ -263,7 +264,7 @@ function db_core:ctor()
 	self.resultset  = ResultSet.new()
 	self.db_types:load_sql_types('java.sql.Types')
 	self.__stmts = {}
-	self.MAX_CACHE_SIZE=30
+	self.MAX_CACHE_SIZE=20
 end
 
 --[[
@@ -411,6 +412,15 @@ function db_core:connect(url,attrs)
 	if event then event("AFTER_DB_CONNECT",self,url,attrs) end
 	self.__stmts = {}
 	return self.conn
+end
+
+function db_core:clearStatements()
+	while #self.__stmts>0 do
+		if not self.__stmts[1]:isClosed() then
+			pcall(self.__stmts[1].close,self.__stmts[1])
+		end
+		table.remove(self.__stmts,1)
+	end
 end
 
 --

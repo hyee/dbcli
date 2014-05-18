@@ -46,6 +46,7 @@ function oracle:ctor()
 		set_command(self,"rollback",nil,self.rollback,false,1)
 		--set_command(self,"ora",'Run customized SQL script',self.asql_single_line,false,1)
 	end
+	env.event.snoop('BEFORE_COMMAND',self.clearStatements,self)
 	self.C,self.props={},{}
 end
 
@@ -156,7 +157,7 @@ function oracle:parse(sql,params)
 		end)
 	
 	if counter<0 then return self.super.parse(self,sql,params) end
-	local prep=java.cast(self.conn:prepareCall(sql),"oracle.jdbc.OracleCallableStatement")
+	local prep=java.cast(self.conn:prepareCall(sql,1005,1007),"oracle.jdbc.OracleCallableStatement")
 
 	for k,v in pairs(p1) do
 		if v[2]=="" then v[1]="setNull" end
