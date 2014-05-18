@@ -23,18 +23,19 @@ Before running dbcli, make sure that you have installed JRE 1.6+ in your local P
 Open dbcli.bat with text editor, modify the JRE_HOME and ORACLE_HOME configurations as your PC's situation, then click the bat to run.<br>
 It also support command line options with "<command>=<args>" format, all available options can be found by typing "help":<br>
 
+
     Command   Abbr.  Args Decription
-    --------- ------ ---- -----------------------------------------------------------------------------------
-    ALIAS               2 Set an shortcut of other existing commands. Usage: alias [-r | <name> [parameters]
+    --------- ------ ---- ----------------------------------------------------------------------------------------------------------------------
+    ALIAS               2 Set an shortcut of other existing commands. Usage: alias [-r | <name> [parameters] | -e <alias name>]
     CONNECT   CONN      1 Connect to Oracle database.
-    DEFINE    DEF       1 Define input variables, Usage: def <name>=<value>, or def <name> to remove definiti
+    DEFINE    DEF       1 Define input variables, Usage: def <name>=<value>, or def <name> to remove definition
     DESCRIBE  DESC      2 Describe datbase object. Usage desc [<owner>.]<object>[.<partition>]
-    HELP                8 Type 'help' to see the available comand list. Usage: help [<command>[,<sub_command1
+    HELP                8 Type 'help' to see the available comand list. Usage: help [<command>[,<sub_command1>...]|-a|-j|-e [<obj>]|help ]
     HISTORY   HIS       1 Show/run historical commands. Usage: his [index]
     HOST                1 Run OS command. Usage: HOST <command>
     INTERVAL  ITV       1 Run a command with specific interval. Usage: ITV <seconds> <times> <command>;
     LOGIN               2 Login with saved accounts. Usage: login [<account_name>]
-    ORA                19 Run SQL script under the "ora" directory. Usage: ora [<script_name>|-r|-p|-h|-s] [p
+    ORA                19 Run SQL script under the "ora" directory. Usage: ora [<script_name>|-r|-p|-h|-s] [parameters]
     PLAN                1 Explain SQL execution plan. Usage: plan <DML statement>
     PROMPT    PRO       1 Prompt messages. Usage: PRO[MPT] <message>
     R         /         1 Rerun the previous command.
@@ -42,12 +43,12 @@ It also support command line options with "<command>=<args>" format, all availab
     RELOAD              0 Reload environment, including variables, modules, etc
     SET                98 Set environment parameters. Usage: set <name1> [<value1|DEFAULT|BACK> [name2 ...]]
     SLEEP               1 Usage: sleep <seconds>
-    SNAP                8 Calculate a period of db/session performance/waits. Usage: snap <interval> <name1[,
-    SPOOL     SPO       2 Stores query results in a file. Usage: SPO[OL] [file_name[.ext]] [CRE[ATE]] | APP[E
-    SQL                 8 Run SQL script under the "sqlplus" directory with SQL*Plus. Usage: sql <script_name
-    SQLPLUS             8 Switch to sqlplus with same login, the working folder is 'oracle/sqlplus'. Usage: s
+    SNAP                8 Calculate a period of db/session performance/waits. Usage: snap <interval> <name1[,name2...]] [args] | -r | -s
+    SPOOL     SPO       2 Stores query results in a file. Usage: SPO[OL] [file_name[.ext]] [CRE[ATE]] | APP[END]] | OFF]
+    SQL                 8 Run SQL script under the "sqlplus" directory with SQL*Plus. Usage: sql <script_name> [parameters]. Not yet applicable.
+    SQLPLUS             8 Switch to sqlplus with same login, the working folder is 'oracle/sqlplus'. Usage: sqlplus [other args]
     TESTER              1 Invoke unit test on existing modules
-    VARIABLE  VAR       2 Define output variables for db execution. Usage: "var <name> <data type>", or "var
+    VARIABLE  VAR       2 Define output variables for db execution. Usage: "var <name> <data type>", or "var <name>" to remove
 
 For example: dbcli.bat "connect=tiger/scott@orcl"<br><br>
 
