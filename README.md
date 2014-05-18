@@ -56,7 +56,8 @@ Besides the above commands, all database statements are also supported(i.e selec
 
 References
 ============
-The project depends on some open-source projects without modifications, below list some of them:<br>
+The project depends on some open-source projects without modifications, they have been built and copied into this project.
+Below is the list:<br>
 
     luajit v2.1 : http://luajit.org/
     jnlua       : https://code.google.com/p/jnlua/
