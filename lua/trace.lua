@@ -79,7 +79,7 @@ end
 
 
 function tracer.onload()
-    cfg=env.set
+    local cfg=env.set
     cfg.init("trace",tracer.status,tracer.enable,"core","Enable trace to monitor the performance.",'on,off')
     if prof then
         cfg.init("profiler",tracer.profiler,tracer.enable,"core","Enable jit profiler to monitor the performance.",'on,off')

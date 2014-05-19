@@ -1,7 +1,8 @@
 /*[[Show session memory usage: ora smem <sid|spid>
-Template:
-    
-Uses v$process_memory which is available from Oracle 10g onwards
+    --[[
+       Templates:
+           @11g : 11.1={, pm.sql_id}
+    ]]--    
 ]]*/
 
 set feed off
@@ -35,8 +36,8 @@ SELECT   /*+no_expand*/
   , s.sid,p.spid
   , qcinst_id
   , qcsid
-  , pm.sql_id
-  , pm.operation_type wrka_operation_type
+  &11g
+  , pm.operation_type
   , pm.operation_id plan_line
   , pm.policy
   , ROUND(pm.active_time/1000000,1) active_sec

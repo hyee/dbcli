@@ -415,7 +415,7 @@ function db_core:connect(url,attrs)
 end
 
 function db_core:clearStatements()
-	while #self.__stmts>0 do
+	while #self.__stmts>5 do
 		if not self.__stmts[1]:isClosed() then
 			pcall(self.__stmts[1].close,self.__stmts[1])
 		end

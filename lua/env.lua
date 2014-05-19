@@ -124,8 +124,9 @@ function env.callee()
 end
 
 function env.exec_command(cmd,params)
+    
     local clock,result=os.clock()
-    name=cmd:upper()
+    local name=cmd:upper()
     cmd=_CMDS[cmd]
     if not cmd then
         return print("No such comand["..name.." "..table.unpack(params).."]!")
@@ -139,7 +140,7 @@ function env.exec_command(cmd,params)
     --env.trace.enable(true)
     local funs=type(cmd.FUNC)=="table" and cmd.FUNC or {cmd.FUNC}
     for _,func in ipairs(funs) do
-        res = {pcall(func,table.unpack(args))}
+        local res = {pcall(func,table.unpack(args))}
 
         if not res[1] then
             result=res
@@ -167,8 +168,6 @@ function env.exec_command(cmd,params)
     end
     return table.unpack(result)
 end
-
-
 
 local is_in_multi_state=false
 local curr_stmt=""

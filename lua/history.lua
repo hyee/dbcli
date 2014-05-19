@@ -29,6 +29,7 @@ function history:show(index)
 end
 
 function history:capture(cmd,args) 
+
 	if (cmd=="HIS" or cmd=="/" or cmd=="R" or cmd=="HISTORY") then return end
 	local maxsiz=cfg.get("HISSIZE")	
 	local key=table.concat(args," "):gsub("[%s\t\n\r]+"," "):sub(1,300)

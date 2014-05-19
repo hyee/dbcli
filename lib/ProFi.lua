@@ -141,6 +141,7 @@ function ProFi:reset()
 	self.inspect = nil
 	self.currentLevel = 0
 	self.sequence = 0
+	self.previousCall=nil
 end
 
 --[[
@@ -266,13 +267,16 @@ function ProFi:writeProfilingReportsToFile( reports, file )
 	local totalTime = self.stopTime - self.startTime
 	local totalTimeOutput =  string.format(FORMAT_TOTALTIME_LINE, totalTime)
 	file:write( totalTimeOutput )
-	local header = string.format( FORMAT_HEADER_LINE, "FILE", "FUNCTION", "LINE", "TIME", "RELATIVE", "CALLED","RETURN" )
+	local header = string.format( FORMAT_HEADER_LINE, "FILE", "FUNCTION", "LINE", "TIME", "RELATIVE", "CALLS","RETURNS" )
 	file:write( header )
+	local ratio=(totalTime-(self.hookfunc.timer or 0))/totalTime
  	for i, funcReport in ipairs( reports ) do
-		local timer         = string.format(FORMAT_TIME, funcReport.timer)
+ 		local cost          = funcReport.timer
+ 		if funcReport ~= self.hookfunc then  cost=cost*ratio end
+		local timer         = string.format(FORMAT_TIME, cost)
 		local count         = string.format(FORMAT_COUNT, funcReport.count)
 		local backs         = string.format(FORMAT_COUNT, funcReport.backs)
-		local relTime 		= string.format(FORMAT_RELATIVE, (funcReport.timer / totalTime) * 100 )
+		local relTime 		= string.format(FORMAT_RELATIVE, (cost / totalTime) * 100 )
 		local outputLine    = string.format(FORMAT_OUTPUT_LINE, funcReport.title, timer, relTime, count ,backs)
 		file:write( outputLine )
 		if funcReport.inspections then
@@ -394,6 +398,7 @@ function ProFi:doInspection( inspect, funcReport )
 	end
 end
 
+
 function ProFi:onFunctionCall( funcInfo ,tim)
 	local funcReport = self:getFuncReport( funcInfo )
 	if not funcReport.title:find("[C]",1,true) then
@@ -404,9 +409,14 @@ function ProFi:onFunctionCall( funcInfo ,tim)
 			end]]
 	funcReport.callTime,funcReport.count,funcReport.sequence,funcReport.level = 
 		tim,funcReport.count+1,self.sequence,self.currentLevel
+	if self.previousCall then
+		self.previousCall.timer=self.previousCall.timer + (tim - self.previousCall.callTime)
+	end
+	self.previousCall=funcReport
 	if self:shouldInspect( funcInfo ) then
 		self:doInspection( self.inspect, funcReport )
 	end
+
 end
 
 function ProFi:onFunctionReturn( funcInfo ,tim)

@@ -61,9 +61,7 @@ function string.fmt(base,...)
     return str:format(base,table.unpack(args))
 end
 
-function table.unpack(tab)
-	return unpack(tab)
-end
+if not table.unpack then table.unpack=function(tab) return unpack(tab) end end
 
 function string.from(v)
 	local path=_G.WORK_DIR
