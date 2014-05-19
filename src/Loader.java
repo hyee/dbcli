@@ -45,9 +45,10 @@ public class Loader {
 	public static void main(String args[]) throws Exception {
 		System.loadLibrary("lua5.1");
 		new Loader();
+		String separator=System.getProperty("file.separator");
 		File f = new File(Loader.class.getProtectionDomain().getCodeSource()
 				.getLocation().toURI());
-		String input = f.getParent() + "\\lua\\input.lua";
+		String input = f.getParent() + separator+"lua"+separator+"input.lua";
 		FileInputStream inputStream = new FileInputStream(input);
 		// System.out.println(input);
 		lua.load(inputStream, input);
