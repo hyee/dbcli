@@ -134,7 +134,7 @@ function table.dump(tbl,indent,maxdep,tabs)
 
   	table.sort(keys,compare)
   	local rs=""
-  	for _, k in ipairs(keys) do
+  	for v, k in ipairs(keys) do
   		v,k=tbl[k[1]],k[2]
       local fmt =(ind==0 and "{ " or pad)  .. fmtfun('%-'..maxlen..'s%s' ,tostring(k),'= ')
       local margin=(ind==0 and indent or '')..fmt

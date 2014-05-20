@@ -20,7 +20,6 @@ function oracle:ctor()
 	self.db_types:load_sql_types('oracle.jdbc.OracleTypes')
 	if type(set_command)=="function" then
 		set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
-		set_command(self,"login",  self.helper,self.login,false,3)
 		set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
 		set_command(self,{"select","with"},   nil,        self.query     ,true,1,true)
 		set_command(self,"explain",  nil,        self.exec     ,true,1,true)
@@ -39,12 +38,7 @@ function oracle:ctor()
 		set_command(self,"/*"    ,   nil,        nil   ,self.check_completion,2)
 		set_command(self,"--"    ,   nil,        nil   ,false,2)
 		set_command(self,{"execute","exec","call"}  ,   nil,      self.run_proc  ,false,2)
-
-		--set_command(self,{"describe","desc"},'Describe datbase object',self.asql_single_line,false,1)
-		--set_command(self,"show",'Describe datbase object',self.asql_single_line,false,1)
-		set_command(self,"commit",nil,self.commit,false,1)
-		set_command(self,"rollback",nil,self.rollback,false,1)
-		--set_command(self,"ora",'Run customized SQL script',self.asql_single_line,false,1)
+		
 	end
 	env.event.snoop('BEFORE_COMMAND',self.clearStatements,self)
 	self.C,self.props={},{}
@@ -60,8 +54,7 @@ function oracle:helper(cmd)
 		]],
 		CONN=[[Refer to command 'connect']],
 		RECONNECT=[[Re-connect the last connection, normally used when previous connection was disconnected for unknown reason.]],
-		RECONN=[[Refer to command 'reconnect']],
-		LOGIN=[[Login with saved accounts. Usage: login [<account_name>] ]]
+		RECONN=[[Refer to command 'reconnect']],		
 	})[cmd]
 end
 
@@ -92,10 +85,11 @@ function oracle:connect(conn_str)
 	            useFetchSizeWithLongColumn='true',
 	            ["v$session.program"]="dbcli.exe"}
 	local url, isdba=conn_desc:match('^(.*) as (%w+)$')
-	args.url,args.internal_logon=url,isdba
+	args.url,args.internal_logon="jdbc:oracle:thin:@"..(url or conn_desc),isdba
 	if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
-	self.props.connection="jdbc:oracle:thin:@"..(url or conn_desc)
-	self.super.connect(self,self.props.connection,args)	
+
+	self.super.connect(self,args)	
+	
 	self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
 	self.conn:setStatementCacheSize(self.MAX_CACHE_SIZE)
 	self.conn:setImplicitCachingEnabled(true)
@@ -113,8 +107,7 @@ function oracle:connect(conn_str)
 		    :1:=dbms_utility.get_parameter_value('db_name',:2,:3);
 		end;]],args)
 	self.conn_str=enc.encrypt_str(conn_str)
-	--[[self.asql=java.require("com.asql.core.DBConnection")
-			self.asql:setConnection(self.conn)]]
+	
 	self.props.service_name=args[3]
 	local prompt=url or conn_desc
 	if prompt:match("^[%w_]+$") then
@@ -126,9 +119,6 @@ function oracle:connect(conn_str)
 	print("Database connected.")
 end
 
-function oracle:login(...)
-	env.password.login(self,...)
-end
 
 function oracle:parse(sql,params)
 	local p1,counter={},0

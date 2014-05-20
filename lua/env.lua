@@ -1,5 +1,11 @@
 --init a global function to store CLI variables
 local _G = _ENV or _G
+
+local getinfo, error, rawset, rawget = debug.getinfo, error, rawset, rawget
+
+
+
+
 local env=setmetatable({},{
     __call =function(self, key, value)            
             rawset(self,key,value) 
@@ -9,6 +15,24 @@ local env=setmetatable({},{
     __newindex=function(self,key,value) self(key,value) end
 })
 _G['env']=env
+
+local mt = getmetatable(_G)
+
+if mt == nil then
+    mt = {}
+    setmetatable(_G, mt)
+end
+
+mt.__declared = {}
+
+mt.__newindex = function (t, n, v)
+    if not mt.__declared[n] and env.WORK_DIR then    
+        mt.__declared[n] = env.callee()
+    end
+    rawset(t, n, v)
+end
+
+env.globals=mt.__declared
 
 --Build command list
 env._CMDS=setmetatable({___ABBR___={}},{
@@ -119,7 +143,7 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
 end
 
 function env.callee()
-    local info=debug.getinfo(3)    
+    local info=getinfo(3)    
     return info.short_src:sub(#env.WORK_DIR+1):gsub("%.%w+$","#"..info.currentline)
 end
 
@@ -164,7 +188,7 @@ function env.exec_command(cmd,params)
     env.COMMAND_COST=os.clock()-clock
     if env.PRI_PROMPT=="TIMING> " then
         env.CURRENT_PROMPT=string.format('%06.2f',env.COMMAND_COST)..'> '
-        env.MTL_PROMPT=#env.CURRENT_PROMPT
+        env.MTL_PROMPT=string.rep(' ',#env.CURRENT_PROMPT)
     end
     return table.unpack(result)
 end
@@ -326,7 +350,7 @@ function env.onload(...)
             end
         end 
     end
-
+    
     os.setlocale('',"all")
     env.set_prompt("SQL")  
     env.set_command(nil,"RELOAD","Reload environment, including variables, modules, etc",env.reload,false,1)

@@ -4,27 +4,46 @@ function class(super)
 	local this_class={}
 	this_class.new=function(...) 
 		local obj={}
+		local attrs
+
 		obj.__class=this_class
-		obj.super=this_class.__super and this_class.__super.new(...) or {}
-		obj=setmetatable(obj,{
-			__index=function(self,k) return self.__class[k] or self.super[k] end,
+
+		if this_class.__super then
+			obj.super,attrs = this_class.__super.new(...)			
+		else
+			obj.super,attrs={},{}
+		end
+
+		attrs.__instance=obj
+
+		for k,v in pairs(this_class) do
+			if type(v)=="function" then
+				rawset(obj,k,v)
+			end
+			rawset(attrs,k,v)
+		end
+
+		setmetatable(obj,{
+			__index=attrs,
 			__newindex=function(self,k,v)
-				if self.super[k] and type(self.super[k])~='function' and type(v)~='function' then
-					self.super[k]=v
-				else
-					rawset(self,k,v)
-				end
+			 	if type(v)=="function" then
+			 		rawset(self,k,v)
+			 	end
+
+			 	if type(v)~="function" or rawget(attrs,k)==nil then
+			 		rawset(attrs,k,v)
+			 	end				
 			end
 		})
 		local create=rawget(this_class,'ctor')
-		if create then create(obj,...) end
+		if type(create)=="function" then create(obj,...) end
 
-		return obj
+		return obj,attrs
 	end
 
 	if type(super)=="table" and type(super.new)=="function" then	
 		this_class.__super=super
-		this_class=setmetatable(this_class,{__index=super})
+		--this_class=setmetatable(this_class,{__index=super})
 	end
 	
 	return this_class

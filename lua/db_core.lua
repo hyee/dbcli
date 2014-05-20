@@ -100,8 +100,7 @@ function db_Types:load_sql_types(className)
 		CLOB     = m2[4],
 		NCLOB    = m2[4],
 		BLOB     = m2[5],
-		CURSOR   = m2[6],
-		--LONGVARCHAR =m2[7] 
+		CURSOR   = m2[6] 
 	}
 	for k,v in java.fields(typ) do
 		if type(k) == "string" and k:upper()==k then
@@ -112,13 +111,7 @@ function db_Types:load_sql_types(className)
 	end
 end
 
---db_Types:load_sql_types()
 local ResultSet=env.class()
---[[local ResultSet=setmetatable(env.class(),{__gc=function(this)
-	for k,v in pairs(this) do
-		this:close(k)
-	end
-end})]]--
 
 function ResultSet:getHeads(rs)
 	if self[rs] then return self[rs] end
@@ -136,7 +129,6 @@ function ResultSet:getHeads(rs)
 			data_precision=meta:getPrecision(i),
 			data_scale=meta:getScale(i)
 		})
-		--print(colinfo[i].column_name,colinfo[i].data_type)
 		colinfo[cname:upper()]=i
 	end
 	self[rs]=colinfo
@@ -145,7 +137,7 @@ end
 
 function ResultSet:get(column_id,data_type,rs,conn)
 	if type(column_id) == "string" then
-		local cols=rawget(self,rs) or self:getHeads(rs)
+		local cols=self[rs] or self:getHeads(rs)
 		column_id=cols[column_id:upper()]
 		assert(column_id,"Unable to detect column '"..column_id.."' in db metadata!")
 		data_type=cols[column_id].data_type
@@ -156,7 +148,7 @@ end
 --return one row for a result set, if encounter EOF, then return nil
 --The first rows is the title
 function ResultSet:fetch(rs,conn)
-	local cols=rawget(self,rs)
+	local cols=self[rs] 
 	if not cols then
 		cols = self:getHeads(rs)
 		assert(cols,"ORA-20001: No query result found!")
@@ -248,23 +240,37 @@ end
 local db_core=env.class()
 db_core.db_types   = db_Types
 db_core.feed_list={
-	UPDATE="%d rows updated",
-	INSERT="%d rows inserted",
-	DELETE="%d rows deleted",
-	MERGE="%d rows merge",
-	DROP="Object dropped",
-	CREATE="Object created",
-	COMMIT="Committed",
+	UPDATE  ="%d rows updated",
+	INSERT  ="%d rows inserted",
+	DELETE  ="%d rows deleted",
+	MERGE   ="%d rows merge",
+	DROP    ="Object dropped",
+	CREATE  ="Object created",
+	COMMIT  ="Committed",
 	ROLLBACK="Rollbacked",
-	GRANT="Granted",
-	REVOKE="Revoked",
+	GRANT   ="Granted",
+	REVOKE  ="Revoked",
 }
 
 function db_core:ctor()
 	self.resultset  = ResultSet.new()
 	self.db_types:load_sql_types('java.sql.Types')
 	self.__stmts = {}
-	self.MAX_CACHE_SIZE=20
+	self.MAX_CACHE_SIZE=30
+	local help=[[
+		Login with saved accounts. Usage: login [ -s | -d |<account_name>] 
+		    login          : list all saved a/c
+		    login -s <key> : search a/c
+		    login -d <key> : delete matched a/c
+		    login <key>    : login a/c]]
+	env.set_command(self,"login", help,self.login,false,3)
+	set_command(self,"commit",nil,self.commit,false,1)
+	set_command(self,"rollback",nil,self.rollback,false,1)
+end
+
+function db_core:login(...)
+	--print(self.connect,self.__instance.connect)
+	env.password.login(self.__instance,...)
 end
 
 --[[
@@ -343,7 +349,7 @@ function db_core:exec(sql,args)
 		self.autocommit=autocommit
 	end
 
-	prep,sql,params=self:parse(sql,params)
+	prep,sql,params=self:parse(sql,params)	
 
 	if event then event("BEFORE_DB_EXEC",self,sql,args) end
 	self.__stmts[#self.__stmts+1]=prep
@@ -388,11 +394,21 @@ function db_core:exec(sql,args)
 	return result
 end
 
+function db_core:is_connect()
+	if type(self.conn)~='userdata' or not self.conn.isClosed or self.conn:isClosed() then
+		return false
+	end
+	return true
+end
+
 --the connection is a table that contain the connection properties
-function db_core:connect(url,attrs)
+function db_core:connect(attrs)
 	if not self.driver then
 		self.driver= java.require("java.sql.DriverManager")
 	end
+	local url=attrs.url
+	assert(url,"ERR-00001: 'url' property is not defined !")
+
 	local conn=self.conn
 	if conn and conn.isClosed and not conn:isClosed() then
 		pcall(conn.close,conn)
@@ -405,7 +421,7 @@ function db_core:connect(url,attrs)
 	if event then event("BEFORE_DB_CONNECT",self,url,attrs) end
 
 	self.conn=self.driver:getConnection(url,props)
-	assert(self.conn,"Unable to connect to db!")
+	assert(self.conn,"ERR-00001: Unable to connect to db!")
 	local autocommit=cfg.get("AUTOCOMMIT")
 	self.autocommit=autocommit
 	self.conn:setAutoCommit(autocommit=="on" and true or false)
@@ -446,7 +462,6 @@ function db_core:get_value(sql,args)
 	end
 	return #rtn==1 and rtn[1] or rtn
 end
-
 
 function db_core:set_feed(value)
 	self.feed=value

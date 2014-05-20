@@ -66,6 +66,7 @@ function snap.after_exec()
 end
 
 function snap.exec(interval,typ,...)
+
 	if not snap.cmdlist or interval=="-r" or interval=="-R" then
 		snap.rehash(snap.script_dir)		
 	end
@@ -88,6 +89,10 @@ function snap.exec(interval,typ,...)
 		return print("please set the interval and snap names.")
 	end
 
+	if not db:is_connect() then
+		error("ERR-0002: database is not connected !")
+	end
+
 	local args={...}
 	for i=1,9 do
 		args["V"..i]=args[i] or ""
@@ -103,7 +108,7 @@ function snap.exec(interval,typ,...)
 		local cmd=snap.parse(v)
 		if not cmd then return end
 		cmds[v]=cmd
-	end		
+	end	
 
 	cfg.backup()	
 	cfg.set("AUTOCOMMIT","off")

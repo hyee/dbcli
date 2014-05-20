@@ -62,7 +62,15 @@ function password.login(db,id,filter)
 			counter=counter+1
 			if counter==1 then login=k end
 			grid.add(hdl,{k,v.user,v.url,v.lastlogin})
+			if id=="-d" then
+				list[k]=nil
+			end
 		end
+	end
+
+	if id=="-d" then
+		password.save()
+		return
 	end
 
 	if counter > 1 or not id or id=="-s" then

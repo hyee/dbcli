@@ -218,6 +218,9 @@ function ora.parse_args(sql,args,print_args)
 end
 
 function ora.run_sql(sql,args,print_args)
+	if not db:is_connect() then
+		error("ERR-0002: database is not connected !")
+	end
 	args=ora.parse_args(sql,args,print_args)
 	if print_args or not args then return end
 	--remove comment
