@@ -14,7 +14,7 @@ function password.load()
 	end
 	local txt=f:read("*a")	
 	f:close()
-	if not txt then return end
+	if not txt or txt:gsub("[\n\t%s\r]+","")=="" then return end
 	password.list=packer.unpack(txt)
 end
 

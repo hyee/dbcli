@@ -40,8 +40,8 @@ function grid.format_title(v)
     return v[grid.title_style](v)
 end
 
-function grid:cut(row,format_func,format_str)
-    
+function grid:cut(row,format_func,format_str)    
+    print(row)
     if type(row)=="table" then
         local colbase=self.col_auto_size
         local cs=self.colsize
@@ -143,6 +143,12 @@ function grid.sort(rows,cols,bypass_head)
         for ind,item in ipairs(sorts) do
             local col,l=item()
             local a1,b1= a[col],b[col]
+            if a1==nil then
+                return false
+            elseif b1==nil then
+                return true
+            end
+            
             if a1~=b1 then
                 if l<0 then return a1>b1 end
                 return a1<b1
@@ -381,7 +387,7 @@ function grid:wellform(col_del,row_del)
     local cut=self.cut
     if row_del~="" then
         row_dels=row_dels:gsub("%s",row_del)
-        table.insert(rows,cut(row_dels:gsub("[^%"..row_del.."]",row_del)))
+        table.insert(rows,cut(self,row_dels:gsub("[^%"..row_del.."]",row_del)))
     end
 
     
