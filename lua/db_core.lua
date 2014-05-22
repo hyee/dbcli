@@ -139,7 +139,7 @@ function ResultSet:get(column_id,data_type,rs,conn)
 	if type(column_id) == "string" then
 		local cols=self[rs] or self:getHeads(rs)
 		column_id=cols[column_id:upper()]
-		assert(column_id,"Unable to detect column '"..column_id.."' in db metadata!")
+		env.checkerr(column_id,"Unable to detect column '"..column_id.."' in db metadata!")
 		data_type=cols[column_id].data_type
 	end
 	return db_Types:get(column_id,data_type,rs,conn)
@@ -151,7 +151,7 @@ function ResultSet:fetch(rs,conn)
 	local cols=self[rs] 
 	if not cols then
 		cols = self:getHeads(rs)
-		assert(cols,"ORA-20001: No query result found!")
+		env.checkerr(cols,"No query result found!")
         local titles={}
         for k,v in ipairs(cols) do
             table.insert(titles,v.column_name)
@@ -219,7 +219,7 @@ function ResultSet:print(res,conn,feed)
 		local rs = self:fetch(res,conn)
         if type(rs) ~= "table" then
             if not rs then break end
-            error(tostring(rs))
+            env.raise(tostring(rs))
         end
         if rows>maxrows or hdl==nil and rows>math.abs(pivot) then
         	self:close(res)
@@ -302,7 +302,7 @@ function db_core:parse(sql,params)
 				local typ=v:upper():sub(2)
 				params[s:upper()]={'#',counter,typ}
 				if not db_Types[typ] then
-					error("ERR-00001: Cannot find '"..typ.."' in java.sql.Types!")
+					env.raise("Cannot find '"..typ.."' in java.sql.Types!")
 				end
 				table.insert(p1,{'registerOutParameter',db_Types[typ].id})
 			else
@@ -329,7 +329,7 @@ function db_core:exec(sql,args)
 	
 	local prep;
 
-	assert(args==nil or type(args) == "table", "Expected parameter as a table for SQL: "..sql)
+	env.checkerr(args==nil or type(args) == "table", "Expected parameter as a table for SQL: "..sql)
 	for k,v in pairs(args or {}) do
 		if type(k)=="string" then
 			params[k:upper()]=v
@@ -340,7 +340,7 @@ function db_core:exec(sql,args)
 
 	if not self.conn or self.conn:isClosed() then
 		self.__stmts={}
-		error("DBS-20001: Database is not connected!")
+		env.raise("Database is not connected!")
 	end
 
 	local autocommit=cfg.get("AUTOCOMMIT")
@@ -407,7 +407,7 @@ function db_core:connect(attrs)
 		self.driver= java.require("java.sql.DriverManager")
 	end
 	local url=attrs.url
-	assert(url,"ERR-00001: 'url' property is not defined !")
+	env.checkerr(url,"'url' property is not defined !")
 
 	local conn=self.conn
 	if conn and conn.isClosed and not conn:isClosed() then
@@ -421,7 +421,7 @@ function db_core:connect(attrs)
 	if event then event("BEFORE_DB_CONNECT",self,url,attrs) end
 
 	self.conn=self.driver:getConnection(url,props)
-	assert(self.conn,"ERR-00001: Unable to connect to db!")
+	env.checkerr(self.conn,"Unable to connect to db!")
 	local autocommit=cfg.get("AUTOCOMMIT")
 	self.autocommit=autocommit
 	self.conn:setAutoCommit(autocommit=="on" and true or false)

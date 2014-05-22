@@ -219,7 +219,7 @@ end
 
 function ora.run_sql(sql,args,print_args)
 	if not db:is_connect() then
-		error("ERR-0002: database is not connected !")
+		env.raise("database is not connected !")
 	end
 	args=ora.parse_args(sql,args,print_args)
 	if print_args or not args then return end
@@ -247,6 +247,11 @@ end
 function ora.run_script(cmd,...)
 	if not ora.cmdlist or cmd=="-r" or cmd=="-R" then
 		ora.cmdlist=ora.rehash(ora.script_dir)
+		local keys={}
+		for k,_ in pairs(ora.cmdlist) do
+			keys[#keys+1]=k
+		end 
+		env.jline.addCompleter("ORA",keys)
 	end
 
 	if not cmd then
@@ -266,14 +271,9 @@ function ora.run_script(cmd,...)
 		return env.helper.helper("ORA","-S",...)
 	end
 
-	if not ora.cmdlist[cmd] then
-		return print("Cannot find this script!")
-	end
-	
+	env.checkerr(ora.cmdlist[cmd],"Cannot find this script!")	
 	local f=io.open(ora.cmdlist[cmd].path)
-	if not f then
-		return print("Script file is missing during runtime!")
-	end
+	env.checkerr(f,"Script file is missing during runtime!")
 	local sql=f:read('*a')
 	f:close()
 	ora.run_sql(sql,args,print_args)

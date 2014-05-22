@@ -2,10 +2,12 @@ Folders:
 ================
 alises : store alias configurations(see 'alias' command)
 cache  : store output files(spool,dump,etc)
+data   : store configuration files
 lib    : *.dll,*.so,*.jar
 lua    : program loader and cli command modules
 oracle,db2,mysql,mssql: database-specific modules
 oracle/ora    : sql scripts that used by "ora" command
+oracle/SNAP   : sql scripts that used by "ora" command
 oracle/sqlplus: sql scripts that used by sqlplus, it is also the sqlplus's workding folder
 
 

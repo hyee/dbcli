@@ -1,4 +1,5 @@
-
+2014-05-22: "dbcli_with_jline.bat" to support jline console
+2014-05-20: fix error for "set rowdel"
 2014-05-15: switch to luajit v2.1
 2014-05-15: move init.cfg to folder "data"
 2014-05-14: add oracle "snap" moddule, see command "snap"

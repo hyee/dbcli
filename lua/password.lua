@@ -8,7 +8,7 @@ function password.load()
 	local f=io.open(file)
 	if not f then
 		f=io.open(file,'w')
-		if not f then error("Error: Unable to open "..file) end
+		if not f then env.raise("Unable to open "..file) end
 		f:close()
 		return
 	end
@@ -23,7 +23,7 @@ function password.save()
 	local txt=packer.pack(password.list)
 	local f=io.open(file,'w')
 	if not f then
-		error("Error: Unable to open "..file)
+		env.raise("Unable to open "..file)
 	end
 	f:write(txt)
 	f:close()

@@ -15,32 +15,33 @@ local module_list={
 
 local oracle=env.class(env.db_core)
 
-function oracle:ctor()
-	java.loader:addPath(env.WORK_DIR..'oracle'..env.PATH_DEL.."ojdbc6.jar")
-	self.db_types:load_sql_types('oracle.jdbc.OracleTypes')
-	if type(set_command)=="function" then
-		set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
-		set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
-		set_command(self,{"select","with"},   nil,        self.query     ,true,1,true)
-		set_command(self,"explain",  nil,        self.exec     ,true,1,true)
-		set_command(self,"update",   nil,        self.exec      ,true,1,true)
-		set_command(self,"delete",   nil,        self.exec      ,true,1,true)
-		set_command(self,"insert",   nil,        self.exec      ,true,1,true)
-		set_command(self,"merge" ,   nil,        self.exec      ,true,1,true)
-		set_command(self,"drop"  ,   nil,        self.exec      ,false,1,true)
-		set_command(self,"lock"  ,   nil,        self.exec      ,false,1,true)
-		set_command(self,"analyze"  ,   nil,     self.exec      ,false,1,true)
-		set_command(self,"grant"  ,   nil,       self.exec      ,false,1,true)
-		set_command(self,"revoke"  ,   nil,      self.exec      ,false,1,true)
-		set_command(self,{"declare","begin"},  nil,  self.exec  ,self.check_completion,1,true)
-		set_command(self,"create",   nil,        self.exec      ,self.check_completion,1,true)
-		set_command(self,"alter" ,   nil,        self.exec      ,self.check_completion,1,true)
-		set_command(self,"/*"    ,   nil,        nil   ,self.check_completion,2)
-		set_command(self,"--"    ,   nil,        nil   ,false,2)
-		set_command(self,{"execute","exec","call"}  ,   nil,      self.run_proc  ,false,2)
-		
+function oracle:ctor(isdefault)
+	if isdefault~=false then
+		java.loader:addPath(env.WORK_DIR..'oracle'..env.PATH_DEL.."ojdbc6.jar")
+		self.db_types:load_sql_types('oracle.jdbc.OracleTypes')
+		if type(set_command)=="function" then
+			set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
+			set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
+			set_command(self,{"select","with"},   nil,        self.query     ,true,1,true)
+			set_command(self,"explain",  nil,        self.exec     ,true,1,true)
+			set_command(self,"update",   nil,        self.exec      ,true,1,true)
+			set_command(self,"delete",   nil,        self.exec      ,true,1,true)
+			set_command(self,"insert",   nil,        self.exec      ,true,1,true)
+			set_command(self,"merge" ,   nil,        self.exec      ,true,1,true)
+			set_command(self,"drop"  ,   nil,        self.exec      ,false,1,true)
+			set_command(self,"lock"  ,   nil,        self.exec      ,false,1,true)
+			set_command(self,"analyze"  ,   nil,     self.exec      ,false,1,true)
+			set_command(self,"grant"  ,   nil,       self.exec      ,false,1,true)
+			set_command(self,"revoke"  ,   nil,      self.exec      ,false,1,true)
+			set_command(self,{"declare","begin"},  nil,  self.exec  ,self.check_completion,1,true)
+			set_command(self,"create",   nil,        self.exec      ,self.check_completion,1,true)
+			set_command(self,"alter" ,   nil,        self.exec      ,self.check_completion,1,true)
+			set_command(self,"/*"    ,   nil,        nil   ,self.check_completion,2)
+			set_command(self,"--"    ,   nil,        nil   ,false,2)
+			set_command(self,{"execute","exec","call"}  ,   nil,      self.run_proc  ,false,2)		
+		end
+		env.event.snoop('BEFORE_COMMAND',self.clearStatements,self)		
 	end
-	env.event.snoop('BEFORE_COMMAND',self.clearStatements,self)
 	self.C,self.props={},{}
 end
 

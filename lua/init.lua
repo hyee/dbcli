@@ -7,6 +7,7 @@ local init={module_list={
    	"lua/enc",
     "lua/trace",
     "lua/println",  
+    "lib/jline",
 	"lua/misc",
 	"lua/class",
 	"lua/event",
@@ -43,7 +44,6 @@ function init.init_path()
 	end
 	env("PATH_DEL",path_del)
 	env("OS",path_del=='/' and 'linux' or 'windows')
-	env("CLIB",string.format("%sclibs%s",env.WORK_DIR,env.PATH_DEL))
 	local package=package
 	package.cpath=""
 	package.path=""
@@ -69,7 +69,7 @@ function init.load(list,tab)
 		if not func then return end
 		local res,rtn=pcall(func,...)
 		if not res then
-		 	return print('Error on loading module['..n..']: '..rtn:gsub(env.WORK_DIR,""))
+		 	return print('Error on loading module['..n..']: '..tostring(rtn):gsub(env.WORK_DIR,""))
 		end
 		return rtn
 	end

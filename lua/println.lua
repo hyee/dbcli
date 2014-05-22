@@ -1,12 +1,14 @@
 local env=env
-local out=java.system.out
+local out=writer
 local pro={rawprint=print}
 local io=io
+if not out then out=java.system.out end
 function pro.print(...)	
 	local output=""
 	table.foreach({...},function(k,v) output=output..tostring(v)..' ' end)
 	output=env.space..output:gsub("(\r?\n\r?)","%1"..env.space)
 	out:println(output)
+	out:flush()
 	if pro.hdl then
 		pcall(pro.hdl.write,pro.hdl,output.."\n")
 	end
@@ -51,6 +53,7 @@ function pro.spool(file,option)
 end
 
 _G.print=pro.print
+_G.rawprint=pro.rawprint
 env.set_command(nil,{"Prompt","pro"}, "Prompt messages. Usage: PRO[MPT] <message>",pro.print,false,2)
 env.set_command(nil,{"SPOOL","SPO"}, "Stores query results in a file. Usage: SPO[OL] [file_name[.ext]] [CRE[ATE]] | APP[END]] | OFF]",pro.spool,false,3)
 return pro

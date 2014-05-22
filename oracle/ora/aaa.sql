@@ -1,8 +1,20 @@
 /*[[
-   This is a sample test 
-   Script description should be enclosed like this sample
-        test indent, the indent is based on the spaces of the 1st none-empty line
-        test indent 2
+Show all database instances
+--[[
+    @blocked: {
+    11.2={decode(userenv('instance')+0,inst_id,'*',' ')||inst_id inst_id, instance_name,version,
+       host_name,user,
+       status,archiver,blocked,
+       to_char(startup_time,'YYYY-MM-DD-HH24:MI') startup#,
+       to_char(sysdate,'YYYY-MM-DD-HH24:MI:SS') current# 
+        from gv$instance a},
+    10.2={decode(userenv('instance')+0,inst_id,'*',' ')||inst_id inst_id, instance_name,version,
+       host_name,user,
+       status,archiver,SHUTDOWN_PENDING,
+       to_char(startup_time,'YYYY-MM-DD-HH24:MI') startup#,
+       to_char(sysdate,'YYYY-MM-DD-HH24:MI:SS') current# 
+    from gv$instance a},  9.0={}
+}
+--]]
 ]]*/
-
-select sysdate,dbms_random.value,'welcome,呵呵' from dual connect by rownum<10;
+SELECT &blocked

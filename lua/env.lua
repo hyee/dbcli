@@ -1,10 +1,8 @@
 --init a global function to store CLI variables
 local _G = _ENV or _G
+local reader=reader
 
 local getinfo, error, rawset, rawget = debug.getinfo, error, rawset, rawget
-
-
-
 
 local env=setmetatable({},{
     __call =function(self, key, value)            
@@ -78,10 +76,12 @@ function env.list_dir(file_dir,file_ext,text_macher)
     return keylist
 end
 
+local cmd_keys={}
+
 function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbcmd)
     local abbr={}
     if not paramCount then
-        error("Incompleted command["..cmd.."], number of parameters is not defined!")
+        env.raise("Incompleted command["..cmd.."], number of parameters is not defined!")
     end
 
     if type(cmd)=="table" then
@@ -89,9 +89,11 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
         for i=2,#cmd,1 do 
             if _CMDS[tmp] then break end
             cmd[i]=cmd[i]:upper()
+
             if _CMDS.___ABBR___[cmd[i]] then
-                error("Command '"..cmd[i].."' is already defined in ".._CMDS[_CMDS.___ABBR___[cmd[i]]]["FILE"])
+                env.raise("Command '"..cmd[i].."' is already defined in ".._CMDS[_CMDS.___ABBR___[cmd[i]]]["FILE"])
             end
+            cmd_keys[#cmd_keys+1]=cmd[i]
             table.insert(abbr,cmd[i])
             _CMDS.___ABBR___[cmd[i]]=tmp          
         end
@@ -101,8 +103,10 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
     end
     
     if _CMDS[cmd] then
-        error("Command '"..cmd.."' is already defined in ".._CMDS[cmd]["FILE"])
+        env.raise("Command '"..cmd.."' is already defined in ".._CMDS[cmd]["FILE"])
     end
+
+    cmd_keys[#cmd_keys+1]=cmd
 
     local src=env.callee()
     local desc=help_func
@@ -142,9 +146,42 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
     }
 end
 
-function env.callee()
-    local info=getinfo(3)    
-    return info.short_src:sub(#env.WORK_DIR+1):gsub("%.%w+$","#"..info.currentline)
+function env.callee(idx)
+    if type(idx)~="number" then idx=3 end
+    local info=getinfo(idx)    
+    return info.short_src:gsub(env.WORK_DIR,"",1):gsub("%.%w+$","#"..info.currentline)
+end
+
+function env.format_error(src,errmsg,...)    
+    local name,line=src:match("([^\\/]+)%#(%d+)$")
+    if name then
+        name=name:upper():gsub("_",""):sub(1,3)
+        errmsg=name.."-"..string.format("%05i",tonumber(line))..": "..errmsg    
+    end
+    return env.jline.mask('HIR',errmsg:format(...))
+end
+
+function env.warn(...)
+    local str=env.format_error(env.callee(),...)   
+    print(str)
+end
+
+function env.raise(...)
+    if reader then
+        print(env.format_error(env.callee(),...))
+        return error('000-00000:')
+    end
+    error(env.format_error(env.callee(),...))
+end
+
+function env.checkerr(result,msg,...)
+    if not result then
+        if reader then
+            print(env.format_error(env.callee(),msg,...))
+            return error('000-00000:')
+        end
+        error(env.format_error(env.callee(),...))
+    end
 end
 
 function env.exec_command(cmd,params)
@@ -165,25 +202,25 @@ function env.exec_command(cmd,params)
     local funs=type(cmd.FUNC)=="table" and cmd.FUNC or {cmd.FUNC}
     for _,func in ipairs(funs) do
         local res = {pcall(func,table.unpack(args))}
-
         if not res[1] then
             result=res
             local msg={} 
-            for v in tostring(res[2]):gmatch("(%u%u%u+%-[^\n\r]*)") do
-                table.insert(msg,v)
-            end
-            if #msg > 0 then
-                print(table.concat(msg,'\n'))
-            else
-                local trace=tostring(res[2]) --..'\n'..env.trace.enable(false)
-                io.stderr:write(trace.."\n")
+            if not tostring(res[2]):find('000-00000:',1,true) then
+                for v in tostring(res[2]):gmatch("(%u%u%u+%-[^\n\r]*)") do
+                    table.insert(msg,v)
+                end
+                if #msg > 0 then
+                    print(env.jline.mask("HIR",table.concat(msg,'\n')))
+                else
+                    local trace=tostring(res[2]) --..'\n'..env.trace.enable(false)
+                    print(env.jline.mask("HIR",trace.."\n"))
+                end
             end
         elseif not result then
             result=res       
         end
 
     end
-
     if result[1] and event then event("AFTER_COMMAND",name,params) end
     env.COMMAND_COST=os.clock()-clock
     if env.PRI_PROMPT=="TIMING> " then
@@ -356,8 +393,19 @@ function env.onload(...)
     env.set_command(nil,"RELOAD","Reload environment, including variables, modules, etc",env.reload,false,1)
     env.set_command(nil,"LUAJIT","#Switch to luajit interpreter",function() os.execute(('"%sbin%sluajit"'):format(env.WORK_DIR,env.PATH_DEL)) end,false,1)
     env.set_command(nil,"-P","#Test parameters. Usage: -p <command> [<args>]",env.testcmd,false,99)
+    
     env.init.load(init.module_list,env)
     env.set.init("Prompt","SQL",function(name,value) return env.set_prompt(value) end,"core","Define interpreter's command prompt, a special value is 'timing' to record the time cost for each command. ")
+
+    if reader then
+        env.set_command(nil,"<tab>","Type tab(\\t) for auto completion",nil,false,99)
+        for i=#cmd_keys,1,-1 do
+            if not cmd_keys[i]:find("^%w") then table.remove(cmd_keys,i) end
+        end
+
+        env.jline.addCompleter(cmd_keys)
+    end
+    cmd_keys={}
     if env.event then env.event.callback("ON_ENV_LOADED") end
     --load initial settings
     local ini_file=env.WORK_DIR.."data"..env.PATH_DEL.."init.cfg"
@@ -388,6 +436,7 @@ end
 
 function env.unload()
     if env.event then env.event.callback("ON_ENV_UNLOADED") end
+
     env.init.unload(init.module_list,env)
     env.init=nil
     package.loaded['init']=nil
@@ -403,5 +452,7 @@ function env.reload()
     env.unload()
     env.onload(table.unpack(env.args))
 end
+
+
 
 return env

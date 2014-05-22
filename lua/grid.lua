@@ -41,7 +41,6 @@ function grid.format_title(v)
 end
 
 function grid:cut(row,format_func,format_str)    
-    print(row)
     if type(row)=="table" then
         local colbase=self.col_auto_size
         local cs=self.colsize

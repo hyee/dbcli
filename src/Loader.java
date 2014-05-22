@@ -1,34 +1,53 @@
-import java.net.MalformedURLException;
+
 import java.net.URLClassLoader;
 import java.net.URL;
-import java.security.CodeSource;
-import java.security.ProtectionDomain;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Set;
-import java.util.Vector;
+
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.lang.reflect.Field;
+import java.io.Writer;
+
+import java.io.PrintWriter;
+
 import java.lang.reflect.Method;
 import com.naef.jnlua.*;
 import java.io.IOException;
 
 
+
 public class Loader {
+	
+	
 	public static LuaState lua; 
+	public static PrintWriter printer;
+	
+	class KbdListener implements ActionListener {
+	    public KbdListener() {
+	    }
+
+	    public void actionPerformed(ActionEvent e) {
+	    	printer.println("Event " + e);
+	    }
+	}
 
 	public Loader() {
 		lua = new LuaState();
 		lua.openLibs();
 		lua.pushJavaObject(this);
 		lua.setGlobal("loader");
+		try {
+			Object reader=Class.forName("jline.console.ConsoleReader").newInstance();
+			Class clz=reader.getClass();
+			printer = new PrintWriter((Writer) clz.getMethod("getOutput").invoke(reader));
+			clz.getMethod("addTriggeredAction",new Class[] {char.class,ActionListener.class}).invoke(reader,'q',new KbdListener());			
+			lua.pushJavaObject(reader);
+			lua.setGlobal("reader");
+			lua.pushJavaObject(printer);
+			lua.setGlobal("writer");
+		} catch(Exception e) {
+			//e.printStackTrace();
+		}
 	}	
 
 	public void addPath(String file) throws Exception {

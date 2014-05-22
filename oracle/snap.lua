@@ -90,7 +90,7 @@ function snap.exec(interval,typ,...)
 	end
 
 	if not db:is_connect() then
-		error("ERR-0002: database is not connected !")
+		env.raise("database is not connected !")
 	end
 
 	local args={...}
