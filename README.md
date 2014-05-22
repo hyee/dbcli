@@ -26,7 +26,7 @@ To avoid the word wrap in the terminal window which affects the print layout, fo
 
 ###Configure enviroment
 Before running dbcli, make sure that you have installed JRE 1.6+ in your local PC.<br>
-Open dbcli.bat with text editor, modify the JRE_HOME and ORACLE_HOME configurations as your PC's situation, then click the bat to run.<br>
+Open dbcli.bat with text editor, modify the "JRE_HOME" and "ORACLE_HOME" variables as your PC's situation, then click the bat to run.<br>
 It also support command line options with "<command>=<args>" format, all available options can be found by typing "help":<br>
 
 
