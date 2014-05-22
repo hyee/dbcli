@@ -21,7 +21,7 @@ Configuration
 ============
 ###Configure terminal window
 To avoid the word wrap in the terminal window which affects the print layout, following settings are recommended in Windows command window:<br>
-1. In the "Layout" tab, set buffer width and buffer hight as 500+<br>
+1. In the "Layout" tab, set buffer width and buffer height as 500+<br>
 2. In the "Font" tab, use Roster font with the size is 6 X 12<br>
 
 ###Configure enviroment
