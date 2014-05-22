@@ -62,6 +62,7 @@ Below is the list:<br>
 
     luajit v2.1 : http://luajit.org/
     jnlua       : https://code.google.com/p/jnlua/
+    jline2      : https://github.com/jline/jline2
     lpeg        : http://www.inf.puc-rio.br/~roberto/lpeg/
     MessagePack : https://github.com/fperrad/lua-MessagePack(pure lua)
 
