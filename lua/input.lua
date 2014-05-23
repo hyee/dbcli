@@ -1,4 +1,4 @@
-local string=string
+local string,io=string,io
 local dir=debug.getinfo(1).short_src:gsub('%w+%.lua','?.lua')
 package.path=dir
 

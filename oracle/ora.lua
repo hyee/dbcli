@@ -137,7 +137,7 @@ function ora.parse_args(sql,args,print_args)
 
 		if v:sub(1,1)=="-"  then--support "-<template id>" syntax in random places
 			local idx,rest=v:sub(2):match("^([%w_-]+)(.*)$")
-			idx=idx:upper()
+			idx=(idx or ""):upper()
 			if ids[idx] then
 				local k1,i1,tmp=ids[idx][2]:match("^(V(%d+))")
 				i1=tonumber(i1)
@@ -288,7 +288,6 @@ function ora.helper(_,cmd,search_key)
 	end
 	return env.helper.get_sub_help(cmd,ora.cmdlist,help,search_key)	
 end
-
 
 env.set_command(nil,"ora", ora.helper,ora.run_script,false,ARGS_COUNT)
 

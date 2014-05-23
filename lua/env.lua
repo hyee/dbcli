@@ -398,7 +398,7 @@ function env.onload(...)
     env.set.init("Prompt","SQL",function(name,value) return env.set_prompt(value) end,"core","Define interpreter's command prompt, a special value is 'timing' to record the time cost for each command. ")
 
     if reader then
-        env.set_command(nil,"<tab>","Type tab(\\t) for auto completion",nil,false,99)
+        
         for i=#cmd_keys,1,-1 do
             if not cmd_keys[i]:find("^%w") then table.remove(cmd_keys,i) end
         end
@@ -453,6 +453,29 @@ function env.reload()
     env.onload(table.unpack(env.args))
 end
 
+function env.load_data(file)
+    file=env.WORK_DIR.."data"..env.PATH_DEL..file
+    local f=io.open(file)
+	if not f then
+		return {}
+	end
+	local txt=f:read("*a")	
+    f:close()
+    if not txt or txt:gsub("[\n\t%s\r]+","")=="" then return {} end
+    env.MessagePack.set_array("always_as_map")
+    return env.MessagePack.unpack(txt)
+end
 
+function env.save_data(file,txt)
+    file=env.WORK_DIR.."data"..env.PATH_DEL..file
+    local f=io.open(file,'w')
+	if not f then
+		env.raise("Unable to save "..file)
+	end
+    env.MessagePack.set_array("always_as_map")
+    txt=env.MessagePack.pack(txt)
+    f:write(txt)
+    f:close()
+end
 
 return env

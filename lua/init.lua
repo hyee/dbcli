@@ -4,12 +4,13 @@ local init={module_list={
    --Libraries ->
     "lib/MessagePack",
     "lib/ProFi",
+    "lib/misc",
+	"lib/class",
+
    	"lua/enc",
     "lua/trace",
     "lua/println",  
-    "lib/jline",
-	"lua/misc",
-	"lua/class",
+    "lua/jline",	
 	"lua/event",
 	"lua/grid",	
 	"lua/helper",

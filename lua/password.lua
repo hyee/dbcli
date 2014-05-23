@@ -1,32 +1,14 @@
 local env=env
 local enc,grid,cfg=env.enc,env.grid,env.set
 local password={list={}}
-local file=env.WORK_DIR.."data"..env.PATH_DEL.."password.dat"
+local file="password.dat"
 local packer=env.MessagePack
-function password.load()
-	packer.set_array("always_as_map")	
-	local f=io.open(file)
-	if not f then
-		f=io.open(file,'w')
-		if not f then env.raise("Unable to open "..file) end
-		f:close()
-		return
-	end
-	local txt=f:read("*a")	
-	f:close()
-	if not txt or txt:gsub("[\n\t%s\r]+","")=="" then return end
-	password.list=packer.unpack(txt)
+function password.load()			
+	password.list=env.load_data(file)
 end
 
 function password.save()
-	packer.set_array("always_as_map")
-	local txt=packer.pack(password.list)
-	local f=io.open(file,'w')
-	if not f then
-		env.raise("Unable to open "..file)
-	end
-	f:write(txt)
-	f:close()
+    env.save_data(file,password.list)	
 end
 
 function password.capture(db,url,props)

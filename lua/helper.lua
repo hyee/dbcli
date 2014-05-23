@@ -113,7 +113,7 @@ function helper.helper(cmd,...)
     end
 
     local flag=(cmd=="-a" or cmd=="-A") and 1 or 0
-   	table.insert(rows,{"Command","Abbr.","Args"})
+   	table.insert(rows,{"Command","Abbr.","Max Args"})
    	if flag==1 then
    		table.append(rows[#rows],"Multi-lines?","Source")   		
    	end
