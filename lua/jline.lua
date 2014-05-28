@@ -1,4 +1,4 @@
-local rawget=rawget
+local rawget,env=rawget,env
 local jline={}
 local color=setmetatable({
 	BLK = "\27[30m", -- Black 
@@ -64,14 +64,7 @@ local color=setmetatable({
 	end
 })
 
-local reader,str_completer,arg_completer,add=reader
-do
-	if reader then
-		jline.loaded=true
-		str_completer=java.require("jline.console.completer.StringsCompleter",true)
-		arg_completer=java.require("jline.console.completer.ArgumentCompleter",true)		
-	end
-end
+local reader,writer,str_completer,arg_completer,add=reader
 
 function jline.mask(codes,msg)	
 	if not reader then
@@ -109,6 +102,27 @@ function jline.addCompleter(name,args)
 	end
 end
 
+function jline.clear_sceen()
+	print(color.CLR)
+	print(color.HOME)
+	reader:flush()
+end
+
+function jline.onload()
+	if reader then
+		writer=reader:getOutput()
+		--print(reader:getTerminal().ANSI)
+		jline.loaded=true
+		str_completer=java.require("jline.console.completer.StringsCompleter",true)
+		arg_completer=java.require("jline.console.completer.ArgumentCompleter",true)
+		env.set_command(nil,"<tab>","Type tab(\\t) for auto completion",nil,false,99)
+		env.set_command(nil,{"clear","cls"},"Clear screen ",jline.clear_sceen,false,1)		
+	end
+end
+
+function jline.strip_ansi(str)
+	return str:gsub("[\27\93]+%[[[%d%s;]m","")
+end
 
 
 return jline
