@@ -10,7 +10,7 @@ local color=setmetatable({
 	CYN = "\27[36m", -- Cyan 
 	WHT = "\27[37m", -- White 
 
-	HIR = "\27[1;31m", -- Light Red 
+	HIR = "\27[31m", -- Light Red 
 	HIG = "\27[1;32m", -- Light Green
 	HIY = "\27[1;33m", -- Light Yellow 
 	HIB = "\27[1;34m", -- Light Blue 
@@ -80,7 +80,7 @@ function jline.mask(codes,msg)
 			end
 		end
 	end
-	return str..msg..color.NOR
+	return str and (str..msg..color.NOR) or msg
 end
 
 function jline.addCompleter(name,args)
@@ -124,5 +124,8 @@ function jline.strip_ansi(str)
 	return str:gsub("[\27\93]+%[[[%d%s;]m","")
 end
 
+function jline.strip_len(str)
+	return #jline.strip_ansi(str)
+end
 
 return jline

@@ -12,7 +12,7 @@ local line,eval,prompt = "",env.eval_line
 
 --If jline compnent is exists
 if reader then
-	local prompt_color="\27[33m%s\27[0m"
+	local prompt_color="\27[33m%s\27[m"
 	reader:setExpandEvents(false)
 	write=function(str)
 		if prompt~=str then
@@ -30,7 +30,7 @@ else
 end
 
 while true do
-    write(env.CURRENT_PROMPT)     
+    write(env.CURRENT_PROMPT)
     line = reader:readLine()  
     if not line or line:lower() == 'quit' or line:lower() == 'exit' then
     	env.unload()

@@ -5,7 +5,8 @@
       &V7: sql={sql_id,event}, p={event,current_obj#,p3text}
 	    &V9: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
 	    &V8: {
-            sql_id={(:V1 is null or :V1 in(sql_id,''||session_id)) and sample_time+0 between nvl(to_date(:V2,'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(:V3,'YYMMDDHH24MISS'),sysdate)},
+            sql_id={(trim(:V1) is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id)) and 
+                     sample_time+0 between nvl(to_date(:V2,'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(:V3,'YYMMDDHH24MISS'),sysdate)},
             snap={sample_time+0>=sysdate-nvl(0+:V1,10)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id))}
             f={},
         }   
@@ -13,7 +14,7 @@
   Examples:
       ora ashtop -sql               =  ora ashtop "sql_id,session_state,event"
       ora ashtop -p,qc_session_id   =  ora ashtop "session_state,event,current_obj#,p3text,qc_session_id"
-	  ora ashtop -dash              =  Query of dictionary ash view instead of dynamic ash view	 
+	  ora ashtop -dash              =  Query dictionary ash view instead of dynamic ash view	 
 	  
 	  --if addtional columns contains space, then enclosed them with quote 
 	  ora ashtop -p", qc_session_id, qc_session_serial#"  = ora ashtop "-p, qc_session_id, qc_session_serial#"

@@ -152,12 +152,13 @@ function env.callee(idx)
     return info.short_src:gsub(env.WORK_DIR,"",1):gsub("%.%w+$","#"..info.currentline)
 end
 
-function env.format_error(src,errmsg,...)    
+function env.format_error(src,errmsg,...)  
+    errmsg=errmsg or ""  
     local name,line=src:match("([^\\/]+)%#(%d+)$")
     if name then
         name=name:upper():gsub("_",""):sub(1,3)
-        errmsg=name.."-"..string.format("%05i",tonumber(line))..": "..errmsg    
-    end
+        errmsg=name.."-"..string.format("%05i",tonumber(line))..": "..errmsg
+    end    
     return env.jline.mask('HIR',errmsg:format(...))
 end
 
@@ -167,20 +168,22 @@ function env.warn(...)
 end
 
 function env.raise(...)
+    local str=env.format_error(env.callee(),...)
     if reader then
-        print(env.format_error(env.callee(),...))
+        print(str)
         return error('000-00000:')
     end
-    error(env.format_error(env.callee(),...))
+    error(str)
 end
 
 function env.checkerr(result,msg,...)
     if not result then
+        local str=env.format_error(env.callee(),...)
         if reader then
-            print(env.format_error(env.callee(),msg,...))
+            print(str)
             return error('000-00000:')
         end
-        error(env.format_error(env.callee(),...))
+        error(str)
     end
 end
 

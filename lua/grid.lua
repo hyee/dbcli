@@ -268,8 +268,8 @@ function grid:add(rs)
                 grp[#grp+1]=p
                 --deal with unicode chars
                 local _, count = p:gsub("[%z\1-\127\194-\244][\128-\193]", "")
-                if csize < #p-count then csize=#p-count end            
-                --if csize < #p then csize=#p end    
+                local len=env.jline.strip_len(p)-count
+                if csize < len then csize=len end    
             end
             if #grp > 1 then v=grp end
             if lines < #grp then lines = #grp end
