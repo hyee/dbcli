@@ -30,6 +30,7 @@ Open dbcli.bat with text editor, modify the "JRE_HOME" and "ORACLE_HOME" variabl
 It also support command line options with "<command>=<args>" format, all available options can be found by typing "help":<br>
 
 [drag]:https://raw.githubusercontent.com/hyee/dbcli/master/help.png
+![][drag]
 
 For example: dbcli.bat "connect=tiger/scott@orcl"<br><br>
 
