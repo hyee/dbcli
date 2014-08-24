@@ -3,8 +3,8 @@
       group_columns: combination of columns concated by comma. Available columns: see v$active_session_history and dba_users
   Templates:
       &V7: sql={sql_id,event}, p={event,current_obj#,p3text}
-	    &V9: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
-	    &V8: {
+	  &V9: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
+	  &V8: {
             sql_id={(trim(:V1) is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id)) and 
                      sample_time+0 between nvl(to_date(:V2,'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(:V3,'YYMMDDHH24MISS'),sysdate)},
             snap={sample_time+0>=sysdate-nvl(0+:V1,10)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id))}

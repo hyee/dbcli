@@ -1,5 +1,8 @@
 local rawget,env=rawget,env
+local reader=reader
+local file='jline.dat'
 local jline={}
+local cfg
 local color=setmetatable({
 	BLK = "\27[30m", -- Black 
 	RED = "\27[31m", -- Red 
@@ -8,7 +11,12 @@ local color=setmetatable({
 	BLU = "\27[34m", -- Blue 
 	MAG = "\27[35m", -- Magenta
 	CYN = "\27[36m", -- Cyan 
-	WHT = "\27[37m", -- White 
+	WHT = "\27[37m", -- White
+
+	GRAY=  "\27[1;30;40m", --BG Light gray
+	DCY=  "\27[0;36m", --Dark Cyan
+
+
 
 	HIR = "\27[31m", -- Light Red 
 	HIG = "\27[1;32m", -- Light Green
@@ -27,6 +35,8 @@ local color=setmetatable({
 	HBMAG = "\27[45;1m", -- BG Light Magenta 
 	HBCYN = "\27[46;1m", -- BG Light Cyan 
 	HBWHT = "\27[47;1m", -- BG Light White
+	HBBLK = "\27[40;1m", -- BG Light Black
+	HBGRY=  "\27[0;37;47m", --BG Light gray
 
 	BBLK = "\27[40m", -- BG Black
 	BRED = "\27[41m", -- BG Red
@@ -66,13 +76,22 @@ local color=setmetatable({
 
 local reader,writer,str_completer,arg_completer,add=reader
 
-function jline.mask(codes,msg)	
+function jline.cfg(name,value)
+	if not cfg then cfg={} end
+	if not name then return cfg end
+	if not value then return cfg[name] end
+	cfg[name]=value
+end
+
+function jline.mask(codes,msg,continue)	
 	if not reader then
 		return msg 
 	end
 	local str
 	for v in codes:gmatch("([^;%s\t,]+)") do
-		if color[v] then 
+		v=v:upper()
+		if not color[v] then v=jline.cfg(v) or "" end
+		if color[v] then
 			if not str then
 				str=color[v] 
 			else
@@ -80,7 +99,7 @@ function jline.mask(codes,msg)
 			end
 		end
 	end
-	return str and (str..msg..color.NOR) or msg
+	return str and (str..msg..(continue and "" or color.NOR)) or msg
 end
 
 function jline.addCompleter(name,args)
@@ -108,16 +127,45 @@ function jline.clear_sceen()
 	reader:flush()
 end
 
-function jline.onload()
-	if reader then
-		writer=reader:getOutput()
-		--print(reader:getTerminal().ANSI)
-		jline.loaded=true
-		str_completer=java.require("jline.console.completer.StringsCompleter",true)
-		arg_completer=java.require("jline.console.completer.ArgumentCompleter",true)
-		env.set_command(nil,"<tab>","Type tab(\\t) for auto completion",nil,false,99)
-		env.set_command(nil,{"clear","cls"},"Clear screen ",jline.clear_sceen,false,1)		
+function jline.define_color(name,value,module,description)
+	if not value or not reader then return end
+	name,value=name:upper(),value:upper()	
+	env.checkerr(not color[name],"Cannot define color ["..name.."] as a name!")
+	if jline.mask(value,"")=="" then
+		env.raise("Undefined color code ["..value.."]!")
 	end
+
+	if not jline.cfg(name) or not description then
+		jline.cfg(name,value)
+	end
+
+	if description then
+		env.set.init(name,value,jline.define_color,module,description)
+		if value ~= jline.cfg(name) then
+			env.set.doset(name,jline.cfg(name))
+		end
+	else
+		jline.cfg(name,value)
+		return value
+	end
+end
+
+function jline.get_color(name)
+	if not name or not reader then return "" end
+	name=name:upper()
+	if color[name] then return color[name] end
+	return jline.cfg(name) and jline.mask(jline.cfg(name),"",true) or ""	
+end	
+
+function jline.onload()
+	if not reader then return end
+	writer=reader:getOutput()
+	--print(reader:getTerminal().ANSI)
+	jline.loaded=true
+	str_completer=java.require("jline.console.completer.StringsCompleter",true)
+	arg_completer=java.require("jline.console.completer.ArgumentCompleter",true)
+	env.set_command(nil,"<tab>","Type tab(\\t) for auto completion",nil,false,99)
+	env.set_command(nil,{"clear","cls"},"Clear screen ",jline.clear_sceen,false,1)		
 end
 
 function jline.strip_ansi(str)
@@ -127,5 +175,6 @@ end
 function jline.strip_len(str)
 	return #jline.strip_ansi(str)
 end
+
 
 return jline

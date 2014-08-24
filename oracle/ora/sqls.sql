@@ -13,7 +13,7 @@ FROM   (SELECT /*+no_expand*/
         AND    a.sql_id=b.sql_id
         AND    not regexp_like(a.process_name,'^p\d+$')
         AND    b.SQL_TEXT not like 'DECLARE job BINARY_INTEGER%'
-        AND    a.sql_id||lower(b.sql_text) like '%'||:V2||'%'
+        AND    a.sql_id||lower(b.sql_text) like '%'||lower(:V2)||'%'
         ORDER  BY tim DESC)
 WHERE  ROWNUM <= 50
 AND    ela>=nvl(0+:V1,0)

@@ -1,7 +1,7 @@
 /*[[
 Show execution plan. Usage: plan <sql_id> [<plan_hash_value>]]]
 --[[
-    @STAT: 10.1={ALLSTATS}
+    @STAT: 10.1={ALLSTATS outline}
 --]]
 ]]*/
 WITH qry AS

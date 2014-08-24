@@ -13,13 +13,13 @@ function output.getOutput(db,sql)
 	if cfg.get("ServerOutput") == "off" then return end
 	local stmt=[[	
 	DECLARE/*INTERNAL_DBCLI_CMD*/
-	    l_line   VARCHAR2(255);
+	    l_line   VARCHAR2(32767);
 	    l_done   PLS_INTEGER;
-	    l_buffer VARCHAR2(32767);
+	    l_buffer VARCHAR2(32767);	    
 	BEGIN
 	    LOOP	        
 	        dbms_output.get_line(l_line, l_done);
-	        EXIT WHEN length(l_buffer) + 255 > 32500 OR l_done = 1;
+	        EXIT WHEN length(l_buffer) + 255 > 32000 OR l_done = 1;
 	        l_buffer := l_buffer || l_line || chr(10);
 	    END LOOP;
 	    :1 := l_buffer;

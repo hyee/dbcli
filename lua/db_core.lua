@@ -55,7 +55,7 @@ function db_Types:load_sql_types(className)
 		[4]={getter='getClob',setter='setString',
 		     handler=function(result,action,conn)
 				if action=="get" then
-					local str=result:getSubString(1,maxsiz)
+					local str=result:getSubString(1,result:length())
 					result:free()
 					return str
 				end
@@ -65,7 +65,7 @@ function db_Types:load_sql_types(className)
 		[5]={getter='getBlob',setter='setBytes',
 		     handler=function(result,action,conn)
 				if action=="get" then
-					local str=result:getBytes(1,maxsiz)
+					local str=result:getBytes(1,result:length())
 					str=java.require("java.lang.String").new(str)
 					result:free()
 					return str
@@ -294,13 +294,17 @@ function db_core:parse(sql,params)
 			local v= params[s:upper()]
 			if not v then return ':'..s end
 			counter=counter+1;
-			if type(v)=="number" then
+			if type(v) =="table" then
+				table.insert(v[2],counter)
+				table.insert(p1,{'registerOutParameter',db_Types[v[3]].id})
+				return "?"
+			elseif type(v)=="number" then
 				table.insert(p1,{db_Types:set('NUMBER',v)})
 			elseif type(v)=="boolean" then
 				table.insert(p1,{db_Types:set('BOOLEAN',v)})
 			elseif v:sub(1,1)=="#" then
 				local typ=v:upper():sub(2)
-				params[s:upper()]={'#',counter,typ}
+				params[s:upper()]={'#',{counter},typ}
 				if not db_Types[typ] then
 					env.raise("Cannot find '"..typ.."' in java.sql.Types!")
 				end
@@ -363,7 +367,18 @@ function db_core:exec(sql,args)
 	--is_query=prep:execute()
 	for k,v in pairs(params) do
 		if type(v) == "table" and v[1] == "#" then
-			params[k]=db_Types:get(v[2],v[3],prep,self.conn)
+			if type(v[2]) == "table" then
+				local res
+				for _,key in ipairs(v[2]) do
+					local res1=db_Types:get(key,v[3],prep,self.conn)
+					if res1  then
+						res=res1
+					end
+				end
+				params[k]=res
+			else 
+				params[k]=db_Types:get(v[2],v[3],prep,self.conn)
+			end
 		end
 	end
 

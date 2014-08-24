@@ -2,10 +2,17 @@ local env=env
 local cfg,grid={},env.grid
 local keys={}
 local maxvalsize=20
+local file='setting.dat'
 cfg._backup=nil
+
+cfg._P=env.load_data(file)
 
 function cfg.show_cfg(name)
 	local rows={{'Name','Value','Default','Class','Available Values','Description'}}
+	print([[Usage: set <name>                                     : Get specific parmeter value
+	   set    <name1> <value1> [<name2> <value2> ...] : Change settings in current window
+	   set -p <name1> <value1> [<name2> <value2> ...] : Change settings permanently
+	]])
 	if name then
 		local v=cfg[name]
 		table.insert(rows,{name,string.from(v.value),string.from(v.default),v.range or '*',v.class,v.desc})
@@ -37,6 +44,9 @@ function cfg.init(name,defaultvalue,validate,class,desc,range)
 	}
 	if maxvalsize<tostring(defaultvalue):len() then
 		maxvalsize=tostring(defaultvalue):len() 
+	end
+	if cfg._P[name] and cfg._P[name]~=defaultvalue then
+		cfg.doset(name,cfg._P[name])
 	end
 end
 
@@ -99,16 +109,21 @@ function cfg.set(name,value,backup)
 	if maxvalsize<tostring(value):len() then
 		maxvalsize=tostring(value):len() 
 	end
-	
+	return value
 end
 
 function cfg.doset(...) 
-	local args={...}
+	local args,idx={...},1
 	if #args==0 then
-		cfg.show_cfg()
+		return cfg.show_cfg()
 	end
-	for i=1,#args,2 do
-		cfg.set(args[i],args[i+1],true)
+	if args[1]:lower()=="-p" then idx=2 end
+	for i=idx,#args,2 do
+		local value=cfg.set(args[i],args[i+1],true)
+		if value and idx==2 then
+			cfg._P[args[i]:upper()]=value
+			env.save_data(file,cfg._P)
+		end
 	end
 end
 
@@ -146,6 +161,6 @@ function cfg.backup()
 	end
 end
 
-env.set_command(nil,'SET',"Set environment parameters. Usage: set <name1> [<value1|DEFAULT|BACK> [name2 ...]]",cfg.doset,false,99)
+env.set_command(nil,'SET',"Set environment parameters. Usage: set [-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]",cfg.doset,false,99)
 
 return cfg

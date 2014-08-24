@@ -178,7 +178,7 @@ end
 
 function env.checkerr(result,msg,...)
     if not result then
-        local str=env.format_error(env.callee(),...)
+        local str=env.format_error(env.callee(),msg,...)
         if reader then
             print(str)
             return error('000-00000:')
@@ -192,6 +192,8 @@ function env.exec_command(cmd,params)
     local clock,result=os.clock()
     local name=cmd:upper()
     cmd=_CMDS[cmd]
+   
+
     if not cmd then
         return print("No such comand["..name.." "..table.unpack(params).."]!")
     end
@@ -400,14 +402,15 @@ function env.onload(...)
     env.init.load(init.module_list,env)
     env.set.init("Prompt","SQL",function(name,value) return env.set_prompt(value) end,"core","Define interpreter's command prompt, a special value is 'timing' to record the time cost for each command. ")
 
-    if reader then
-        
+    if reader then        
         for i=#cmd_keys,1,-1 do
             if not cmd_keys[i]:find("^%w") then table.remove(cmd_keys,i) end
         end
-
         env.jline.addCompleter(cmd_keys)
+        env.jline.define_color("Prompt_color","HIY","core","Define prompt's color")
+        env.jline.define_color("command_color","HIC","core","Define command line's color")
     end
+
     cmd_keys={}
     if env.event then env.event.callback("ON_ENV_LOADED") end
     --load initial settings
@@ -479,6 +482,18 @@ function env.save_data(file,txt)
     txt=env.MessagePack.pack(txt)
     f:write(txt)
     f:close()
+end
+
+function env.write_cache(file,txt)
+    local dest=env.WORK_DIR.."cache"..env.PATH_DEL..file
+    file=dest
+    local f=io.open(file,'w')
+    if not f then
+        env.raise("Unable to save "..file)
+    end   
+    f:write(txt)
+    f:close()
+    return dest
 end
 
 return env

@@ -9,7 +9,9 @@ local module_list={
 	"oracle/sqlplus",
 	"oracle/plan",
 	"oracle/desc",
-	"oracle/snap"
+	"oracle/snap",
+	"oracle/sqlprof",
+	"oracle/awrdump"
 }
 
 
@@ -134,7 +136,9 @@ function oracle:parse(sql,params)
 			local v= params[k]
 			if not v then return ':'..s end
 			counter=counter+1
-			if type(v)=="number" then
+			if type(v) =="table" then
+				return ':'..s
+			elseif type(v)=="number" then
 				p1[k]={self.db_types:set('NUMBER',v)}
 			elseif type(v)=="boolean" then
 				p1[k]={self.db_types:set('BOOLEAN',v)}
@@ -200,6 +204,69 @@ end
 function oracle:asql_single_line(...)
 	self.asql:exec(...)
 end
+
+function oracle:check_obj(obj_name)
+	local args={target=obj_name,owner='#VARCHAR',object_type='#VARCHAR',object_name='#VARCHAR',object_subname='#VARCHAR',object_id='#INTEGER'}
+	self:internal_call([[
+	DECLARE
+        SCHEM         VARCHAR2(30);
+        part1         VARCHAR2(30);
+        part2         VARCHAR2(30);
+        dblink        VARCHAR2(30);
+        part1_type    PLS_INTEGER;
+        object_number PLS_INTEGER;
+        obj_type      VARCHAR2(30);
+        TYPE t IS TABLE OF VARCHAR2(30);
+        t1 t := t('TABLE','PL/SQL','SEQUNCE','TRIGGER','JAVA_SOURCE','JAVA_RESOURCE','JAVA_CLASS','TYPE','JAVA_SHARED_DATA','INDEX');
+    BEGIN
+        FOR i IN 0 .. 9 LOOP
+            BEGIN
+                sys.dbms_utility.name_resolve(NAME          => :target,
+                                              CONTEXT       => i,
+                                              SCHEMA        => SCHEM,
+                                              part1         => part1,
+                                              part2         => part2,
+                                              dblink        => dblink,
+                                              part1_type    => part1_type,
+                                              object_number => object_number);
+                obj_type := CASE part1_type WHEN 5 THEN 'SYNONYM' WHEN 7 THEN 'PROCEDURE' WHEN 8 THEN 'FUNCTION' WHEN 9 THEN 'PAKCAGE' END;
+            
+                IF obj_type IS NULL THEN
+                    obj_type := t1(i + 1);
+                END IF;
+                EXIT;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+        END LOOP;
+        :owner          := SCHEM;
+        :object_type    := obj_type;
+        :object_name    := part1;
+        :object_subname := part2;
+        :object_id      := object_number;
+    END;]],args)
+
+	if not args.owner or args.owner=="" then
+		return nil
+	end	
+
+	return args
+end
+
+function oracle:check_date(string,fmt)
+	fmt=fmt or "YYMMDDHH24MI"	
+	local args={string and string~="" and string or " ",fmt,'#INTEGER'}
+	self:internal_call([[
+		DECLARE
+		   d DATE;
+		BEGIN
+		    d:=to_date(:1,:2);
+		    :3 := 1;
+		EXCEPTION WHEN OTHERS THEN
+		    :3 := 0;    
+		END;]],args)
+	env.checkerr(args[3]==1,('Invalid date format("%s"), expected as "%s"!'):format(string,fmt))	
+end
+
 
 function oracle.check_completion(cmd,other_parts)
 	local p1='\n[%s\t]*/[%s\t]*$'

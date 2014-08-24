@@ -11,7 +11,7 @@ FROM   (SELECT TABLESPACE_NAME,
                round(SUM(greatest(maxbytes, bytes)) / power(1024, 3), 2) siz,
                ROUND(SUM(BYTES) / (1024 * 1024 * 1024), 2) SPACE,
                MAX(autoextensible) ext,
-               wm_concat(DISTINCT regexp_substr(file_name, '\w+')) g
+               listagg(DISTINCT regexp_substr(file_name, '\w+')) g
         FROM   DBA_DATA_FILES
         GROUP  BY TABLESPACE_NAME) D,
        (SELECT TABLESPACE_NAME, ROUND(SUM(BYTES) / (1024 * 1024 * 1024), 2) FREE_SPACE

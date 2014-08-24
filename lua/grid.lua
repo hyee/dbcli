@@ -52,8 +52,11 @@ function grid:cut(row,format_func,format_str)
         row=format_func(format_str,table.unpack(row))
     end
 
-    if #row>self.linesize then
-        return row:sub(1,self.linesize-2)..' .'
+    local len=#row
+    if len>self.linesize then
+        local siz=len-#(row:gsub('\27+%[[%d; ]*m',""))
+        siz=siz*(self.linesize)/(len-siz)
+        return row:sub(1,self.linesize-2+siz)..' .'
     end
     return row
 end
@@ -180,9 +183,11 @@ function grid.show_pivot(rows,col_del)
     end
 
     local r={}
+    local color=env.jline.get_color
+    local nor,hor=color("NOR"),color("HEADCOLOR")
     if grid.pivotsort=="on" then table.sort(title) end
     for k,v in ipairs(title) do
-        table.insert(r,{("%-"..maxlen.."s %s "):format(grid.format_title(v),del)})
+        table.insert(r,{("%s%-"..maxlen.."s %s%s "):format(hor,grid.format_title(v),nor,del)})
         for i=2,pivot,1 do            
             table.insert(r[k],rows[i][keys[v]])
         end
@@ -284,7 +289,10 @@ function grid:add(rs)
 
         if grid.pivot==0 and headind==1 and colbase=="body" and self.printhead then colsize[k][1]=1 end
         if (grid.pivot~=0 or colbase~="head" or not self.printhead or headind==0)  
-            and colsize[k][1] < csize then colsize[k][1] = csize end
+            and colsize[k][1] < csize 
+        then 
+            colsize[k][1] = csize 
+        end
     end
 
     if lines == 1 then result[#result+1]=rs
@@ -367,8 +375,10 @@ function grid:wellform(col_del,row_del)
         self.ratio_cols=nil
     end
 
-
-
+    --Generate row formatter
+    local color=env.jline.get_color
+    local nor,hor=color("NOR"),color("HEADCOLOR")
+    local head_fmt=fmt
     for k,v in ipairs(colsize) do
         --local siz=v[1] > 99 and 99 or v[1]
         local siz=v[1]
@@ -377,6 +387,7 @@ function grid:wellform(col_del,row_del)
         if pivot==0 or k~=1+indx and (pivot~=1 or k~=3+indx) then del=col_del end
         if k==#colsize then del=del:gsub("%s+$","") end
         fmt=fmt.."%"..(siz*v[2]).."s"..del
+        head_fmt=head_fmt..hor.."%"..(siz*v[2]).."s"..nor..del
         table.insert(title_dels, string.rep(result[1][k]~="" and grid.title_del or " ",siz))
         if row_del~="" then
             row_dels=row_dels..row_del:rep(siz)..del
@@ -387,12 +398,15 @@ function grid:wellform(col_del,row_del)
     if row_del~="" then
         row_dels=row_dels:gsub("%s",row_del)
         table.insert(rows,cut(self,row_dels:gsub("[^%"..row_del.."]",row_del)))
-    end
+    end    
 
-    
     for k,v in ipairs(result) do                        
         while #v<#colsize do table.insert(v,"") end
-        table.insert(rows,cut(self,v,format_func,fmt))
+        local row=cut(self,v,format_func,v[0]==0 and head_fmt or fmt)
+        if v[0]==0 then
+            row=row..nor
+        end 
+        table.insert(rows,row)
         if not result[k+1] or result[k+1][0]~=v[0] then
             if #row_del==1 then
                 table.insert(rows,cut(self,row_dels))
@@ -414,19 +428,15 @@ function grid.print(rows,printhead,col_del,row_del,psize)
     print(grid.tostring(rows,printhead,col_del,row_del,psize))
 end
 
-function grid.init()
+function grid.onload()
     local set=env.set.init
     for k,v in pairs(params) do
         grid[v.name]=v.default
         set(k,grid[v.name],grid.set_param,"grid",v.desc,v.range)
     end
+    env.jline.define_color("HEADCOLOR","HBRED;HIW","grid","Define grid title's color")    
 end
 
 for k,v in pairs(params) do grid[v.name]=v.default end
-
-if env.event then
-    env.event.snoop("ON_ENV_LOADED",grid.init)    
-end
-
 
 return grid

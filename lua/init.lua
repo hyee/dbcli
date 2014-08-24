@@ -1,32 +1,32 @@
 local env=env
 local dirs={"lib","cache","data"}
-local init={module_list={
-   --Libraries ->
-    "lib/MessagePack",
-    "lib/ProFi",
-    "lib/misc",
-	"lib/class",
-
-   	"lua/enc",
-    "lua/trace",
-    "lua/println",  
-    "lua/jline",	
-	"lua/event",
-	"lua/grid",	
-	"lua/helper",
-	--"locale",
-	--CLI commands ->	
-	"lua/sleep",
-	"lua/set",
-	"lua/host",
-	"lua/history",
-	"lua/alias",
-	"lua/interval",
-	"lua/db_core",
-	"lua/password",
-	"lua/tester",
-	--Externals ->
-	"oracle/oracle",}
+local init={
+	module_list={
+	   --Libraries ->
+	    "lib/MessagePack",
+	    "lib/ProFi",
+	    "lib/misc",
+		"lib/class",
+	   	"lua/enc",
+	    "lua/trace",
+	    "lua/printer",  
+	    "lua/jline",	
+		"lua/event",
+		"lua/grid",	
+		"lua/helper",
+		--"locale",
+		--CLI commands ->	
+		"lua/sleep",
+		"lua/set",
+		"lua/host",
+		"lua/history",
+		"lua/alias",
+		"lua/interval",
+		"lua/db_core",
+		"lua/password",
+		"lua/tester",
+		--Externals ->
+		"oracle/oracle",}
 }
 
 function init.init_path()

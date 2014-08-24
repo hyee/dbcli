@@ -1,4 +1,9 @@
-2014-05-22: "dbcli_with_jline.bat" to support jline console
+2014-08-21: add command "addmdump","awrdump","ashdump" to extract ADDM/AWR/ASH report into "cache" folder
+2014-08-20: add "sqlprof" command to extract SQL profile from AWR/memory/SQL Set/SPM/profile
+2014-08-19: add "-p" option for "set" command to permanently save the configurations
+2014-08-18: settings "prompt_color","command_color","headcolor" for jline console 
+2014-07-20: small fixes
+2014-05-22: "color_dbcli.bat" to support jline console
 2014-05-20: fix error for "set rowdel"
 2014-05-15: switch to luajit v2.1
 2014-05-15: move init.cfg to folder "data"

@@ -300,9 +300,17 @@ desc_sql.FUNCTION=desc_sql.PROCEDURE
 
 function desc.desc(name,option)
 	if not name then return end
-	name='%.'..name:upper()..'.%'
-	local rs=db:get_value(search_sql,{name})
+	local rs
+	local obj=db:check_obj(name)
+	if obj then
+		rs={obj.owner,obj.object_name,obj.object_subname or "",
+		   obj.object_subname and obj.object_type=="PACKAGE" and "PROCEDURE"
+		   or obj.object_type,1}
+	else
+		rs=db:get_value(search_sql,{'%.'..name:upper()..'.%'})
+	end
 	if not rs then return print("Cannot find this object!") end
+
 	local sqls=desc_sql[rs[4]]
 	if not sqls then return print("Cannot describe "..rs[4]..'!') end
 	if type(sqls)~="table" then sqls={sqls} end
