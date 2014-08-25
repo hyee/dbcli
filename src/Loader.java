@@ -20,16 +20,7 @@ public class Loader {
 	
 	
 	public static LuaState lua; 
-	public static PrintWriter printer;
-	
-	class KbdListener implements ActionListener {
-	    public KbdListener() {
-	    }
-
-	    public void actionPerformed(ActionEvent e) {
-	    	printer.println("Event " + e);
-	    }
-	}
+	public static PrintWriter printer;	
 
 	public Loader() {
 		lua = new LuaState();
@@ -39,8 +30,7 @@ public class Loader {
 		try {
 			Object reader=Class.forName("jline.console.ConsoleReader").newInstance();
 			Class clz=reader.getClass();
-			printer = new PrintWriter((Writer) clz.getMethod("getOutput").invoke(reader));
-			clz.getMethod("addTriggeredAction",new Class[] {char.class,ActionListener.class}).invoke(reader,'q',new KbdListener());			
+			printer = new PrintWriter((Writer) clz.getMethod("getOutput").invoke(reader));			
 			lua.pushJavaObject(reader);
 			lua.setGlobal("reader");
 			lua.pushJavaObject(printer);
