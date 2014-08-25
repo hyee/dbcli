@@ -29,39 +29,8 @@ Before running dbcli, make sure that you have installed JRE 1.6+ in your local P
 Open dbcli.bat with text editor, modify the "JRE_HOME" and "ORACLE_HOME" variables as your PC's situation, then click the bat to run.<br>
 It also support command line options with "<command>=<args>" format, all available options can be found by typing "help":<br>
 
-	Available comands:
-	===============
-	Command   Abbr.  Max Args Decription
-	--------- ------ -------- ---------------------------------------------------------------------------------------------------------------------------------
-	<TAB>                  98 Type tab(\t) for auto completion
-	ADDMDUMP                3 Extract ADDM report. Usage: addmdump <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]
-	ALIAS                   2 Set an shortcut of other existing commands. Usage: alias [-r | <name> [parameters] | -e <alias name>]
-	ASHDUMP                 3 Extract ASH report. Usage: ashdump <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]
-	AWRDUMP                 3 Extract AWR report. Usage: awrdump <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]
-	CLEAR     CLS           0 Clear screen
-	CONNECT   CONN          1 Connect to Oracle database.
-	DEFINE    DEF           1 Define input variables, Usage: def <name>=<value>, or def <name> to remove definition
-	DESCRIBE  DESC          2 Describe datbase object. Usage desc [<owner>.]<object>[.<partition>]
-	HELP                    8 Type 'help' to see the available comand list. Usage: help [<command>[,<sub_command1>...]|-a|-j|-e [<obj>]|help ]
-	HISTORY   HIS           1 Show/run historical commands. Usage: his [index]
-	HOST                    1 Run OS command. Usage: HOST <command>
-	INTERVAL  ITV           1 Run a command with specific interval. Usage: ITV <seconds> <times> <command>;
-	LOGIN                   2 Login with saved accounts. Usage: login [ -s | -d |<account_name>]
-	ORA                    19 Run SQL script under the "ora" directory. Usage: ora [<script_name>|-r|-p|-h|-s] [parameters]
-	PLAN                    1 Explain SQL execution plan. Usage: plan <DML statement>
-	PROMPT    PRO           1 Prompt messages. Usage: PRO[MPT] <message>
-	R         /             1 Rerun the previous command.
-	RECONNECT RECONN        1 Re-connect current database
-	RELOAD                  0 Reload environment, including variables, modules, etc
-	SET                    98 Set environment parameters. Usage: set [-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]
-	SLEEP                   1 Usage: sleep <seconds>
-	SNAP                    8 Calculate a period of db/session performance/waits. Usage: snap <interval> <name1[,name2...]] [args] | -r | -s
-	SPOOL     SPO           2 Stores query results in a file. Usage: SPO[OL] [file_name[.ext]] [CRE[ATE]] | APP[END]] | OFF]
-	SQL                     8 Run SQL script under the "sqlplus" directory with SQL*Plus. Usage: sql <script_name> [parameters]. Not yet applicable.
-	SQLPLUS                 8 Switch to sqlplus with same login, the working folder is 'oracle/sqlplus'. Usage: sqlplus [other args]
-	SQLPROF                 2 Extract sql profile. Usage: sqlprof <sql_id|sql_prof_name|spm_plan_name> [plan_hash_value|new_sql_id|sql_prof_name|spm_plan_name]
-	TESTER                  1 Invoke unit test on existing modules
-	VARIABLE  VAR           2 Define output variables for db execution. Usage: "var <name> <data type>", or "var <name>" to remove
+[drag]:https://raw.githubusercontent.com/hyee/dbcli/master/help.png
+![][drag]
 
 For example: dbcli.bat "connect=tiger/scott@orcl"<br><br>
 
