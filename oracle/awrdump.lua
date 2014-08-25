@@ -9,9 +9,7 @@ function awr.dump_report(stmt,starttime,endtime,instances)
     db:check_date(starttime)
     db:check_date(endtime)
 
-    if not db:check_obj('dbms_workload_repository.awr_report_html') then
-        env.raise('Sorry, you dont have the "execute" privilege on pacakge "dbms_workload_repository"!')
-    end
+    env.checkerr(db:check_obj('dbms_workload_repository.awr_report_html'),'Sorry, you dont have the "execute" privilege on pacakge "dbms_workload_repository"!')    
     
     local args={starttime,endtime,instances or "",'#VARCHAR','#CLOB','#CURSOR'}
     db:internal_call(stmt,args)
@@ -49,18 +47,19 @@ function awr.extract_awr(starttime,endtime,instances)
             stim := to_date(p_start, 'YYMMDDHH24MI');
             etim := to_date(p_end, 'YYMMDDHH24MI');
         
-            SELECT *
+            SELECT max(dbid),max(st),max(ed)
             INTO   dbid, st, ed
-            FROM   (SELECT dbid, MAX(decode(sign(begin_interval_time+0-stim),1,null,snap_id)), min(decode(sign(end_interval_time+0-etim),-1,null,snap_id))
+            FROM   (SELECT dbid, MAX(decode(sign(begin_interval_time+0-stim),1,null,snap_id)) st, min(decode(sign(end_interval_time+0-etim),-1,null,snap_id)) ed
                     FROM   Dba_Hist_Snapshot
                     WHERE  begin_interval_time+0 BETWEEN stim-0.5 AND etim+0.5
                     AND    (inst IS NULL OR instr(',' || inst || ',', instance_number) > 0)
                     GROUP  BY DBID
                     ORDER  BY 2 DESC)
             WHERE  ROWNUM < 2;
-            IF ed IS NULL THEN
+
+            IF ed IS NULL THEN                
                 RETURN;
-            END IF;
+            END IF; 
 
             $IF DBMS_DB_VERSION.VERSION>10 $THEN
                  dbms_workload_repository.awr_set_report_thresholds(top_n_sql => 30);
@@ -214,20 +213,20 @@ function awr.extract_addm(starttime,endtime,instances)
             stim := to_date(p_start, 'YYMMDDHH24MI');
             etim := to_date(p_end, 'YYMMDDHH24MI');
         
-            SELECT *
+            SELECT max(dbid),max(st),max(ed)
             INTO   dbid, st, ed
-            FROM   (SELECT dbid,
-                           MAX(decode(sign(begin_interval_time + 0 - stim), 1, NULL, snap_id)),
-                           MIN(decode(sign(end_interval_time + 0 - etim), -1, NULL, snap_id))
+            FROM   (SELECT dbid, MAX(decode(sign(begin_interval_time+0-stim),1,null,snap_id)) st, min(decode(sign(end_interval_time+0-etim),-1,null,snap_id)) ed
                     FROM   Dba_Hist_Snapshot
-                    WHERE  begin_interval_time + 0 BETWEEN stim - 0.5 AND etim + 0.5
+                    WHERE  begin_interval_time+0 BETWEEN stim-0.5 AND etim+0.5
                     AND    (inst IS NULL OR instr(',' || inst || ',', instance_number) > 0)
                     GROUP  BY DBID
                     ORDER  BY 2 DESC)
             WHERE  ROWNUM < 2;
+
             IF ed IS NULL THEN
                 RETURN;
             END IF;
+
             BEGIN
                 dbms_advisor.delete_task(taskname);
             EXCEPTION
@@ -255,73 +254,76 @@ function awr.extract_addm(starttime,endtime,instances)
                 rs := dbms_advisor.get_task_report(taskname, 'TEXT', 'ALL');
             $END
             OPEN cur FOR
-                SELECT  "Secs", "%", "Target", "Target ID","Message"
-                FROM   (SELECT DISTINCT a.r r1,
+                SELECT r1 "#", "Impact(%)","Target ID","Message"
+                FROM   (With A as(SELECT /*+materialize*/
+                                   dense_rank() OVER(ORDER BY impact DESC, a.message || a.more_info ASC) r,
+                                   a.finding_id,
+                                   b.rec_id,
+                                   a.task_id,
+                                   c.action_id,
+                                   SUM(DISTINCT a.impact) OVER(PARTITION BY a.finding_id) impact,
+                                   REPLACE(a.message || a.more_info, chr(10), chr(10) || lpad(' ', 12)) findmsg,
+                                   'Advise #' || b.rank || ': ' || b.type remgroup,
+                                   b.benefit rembenefit,
+                                   (SELECT MAX(decode(f.message#, 388, f.p2 * f.p3 * 1e6))
+                                    FROM   sys.wri$_adv_rationale e, sys.wri$_adv_message_groups f
+                                    WHERE  f.task_id = E.task_id
+                                    AND    e.task_id = b.task_id
+                                    AND    e.rec_id = b.rec_id
+                                    AND    f.id = e.msg_id) remimpact,
+                                   (SELECT RTRIM(NVL2(MAX(E.task_id), 'Rationale: ', '') ||
+                                                 to_char(REPLACE(wmsys.wm_concat(e.message || CHR(10)),
+                                                                 CHR(10) || ',',
+                                                                 chr(10) || LPAD(' ', 19))),
+                                                 chr(0) || chr(10))
+                                    FROM   DBA_ADVISOR_RATIONALE e
+                                    WHERE  B.task_id = E.task_id
+                                    AND    B.rec_id = E.rec_id) remreason,
+                                   c.command remcommand,
+                                   c.command_id remcommandid,
+                                   nvl2(c.message, 'Action: ', '') || c.message remmessage,
+                                   d.object_id,
+                                   d.type target,
+                                   d.attr1 target_id,
+                                   d.attr2 sql_plan_id,
+                                   d.attr4 sql_text
+                            FROM   DBA_ADVISOR_FINDINGS        a,
+                                   DBA_ADVISOR_RECOMMENDATIONS b,
+                                   DBA_ADVISOR_ACTIONS         C,
+                                   DBA_ADVISOR_OBJECTS         D
+                            WHERE  A.task_id = B.task_id(+)
+                            AND    A.finding_id = B.finding_id(+)
+                            AND    B.task_id = C.task_id(+)
+                            AND    B.rec_id = C.rec_id(+)
+                            AND    C.task_id = D.task_id(+)
+                            AND    C.object_id = D.object_id(+)
+                            AND    A.task_name = taskname)
+                        SELECT DISTINCT a.r r1,
                                         DECODE(SIGN(b.r - 1), 1, rec_id, -9) R2,
                                         DECODE(SIGN(b.r - 2), 1, NVL2(remreason, -1, remcommandid), -9) r3,
                                         DECODE(SIGN(b.r - 3), 1, remcommandid, -9) r4,
                                         rpad(' ', LEAST(b.r - 1, 2) * 4) ||
                                         DECODE(b.r,
                                                1,
-                                               FINDMSG,
+                                               'Finding #'||a.r||': '||FINDMSG,
                                                2,
                                                remgroup,
                                                3,
                                                nvl(remreason, remmessage),
                                                4,
                                                remmessage) "Message",
-                                        round(DECODE(b.r, 1, IMPACT, 2, rembenefit, 3, remimpact) * 1e-6,
-                                              2) "Secs",
+                                        round(DECODE(b.r, 1, IMPACT, 2, rembenefit, 3, remimpact) * 1e-6/60,
+                                              2) "Minutes",
                                         round(DECODE(b.r, 1, IMPACT, 2, rembenefit, 3, remimpact) * 100 /
                                               (SELECT parameter_value
                                                FROM   Dba_Advisor_Parameters f
                                                WHERE  parameter_name = 'DB_ELAPSED_TIME'
                                                AND    f.task_id = a.task_id),
-                                              2) "%",
-                                        DECODE(b.r, 4, target) "Target",
+                                              2) "Impact(%)",
+                                        DECODE(b.r, 4, target) "Target Obj",
                                         DECODE(b.r, 4, target_id) "Target ID",
                                         DECODE(b.r, 4, sql_plan_id) "Plan Hash"
-                        FROM   (SELECT dense_rank() OVER(ORDER BY impact DESC, a.finding_id ASC) r,
-                                       a.finding_id,
-                                       b.rec_id,
-                                       a.task_id,
-                                       c.action_id,
-                                       SUM(DISTINCT a.impact) OVER(PARTITION BY a.finding_id) impact,
-                                       a.message || a.more_info findmsg,
-                                       b.type remgroup,
-                                       b.benefit rembenefit,
-                                       (SELECT MAX(decode(f.message#, 388, f.p2 * f.p3 * 1e6))
-                                        FROM   sys.wri$_adv_rationale e, sys.wri$_adv_message_groups f
-                                        WHERE  f.task_id = E.task_id
-                                        AND    e.task_id = b.task_id
-                                        AND    e.rec_id = b.rec_id
-                                        AND    f.id = e.msg_id) remimpact,
-                                       (SELECT RTRIM(NVL2(MAX(E.task_id), 'Rationale:', '') ||
-                                                     to_char(REPLACE(wmsys.wm_concat(e.message || CHR(10)),
-                                                                     CHR(10) || ',')),
-                                                     chr(0) || chr(10))
-                                        FROM   DBA_ADVISOR_RATIONALE e
-                                        WHERE  B.task_id = E.task_id
-                                        AND    B.rec_id = E.rec_id) remreason,
-                                       c.command remcommand,
-                                       c.command_id remcommandid,
-                                       nvl2(c.message, 'Action:', '') || c.message remmessage,
-                                       d.object_id,
-                                       d.type target,
-                                       d.attr1 target_id,
-                                       d.attr2 sql_plan_id,
-                                       d.attr4 sql_text
-                                FROM   DBA_ADVISOR_FINDINGS        a, --组
-                                       DBA_ADVISOR_RECOMMENDATIONS b, --建议组
-                                       DBA_ADVISOR_ACTIONS         C, --建议
-                                       DBA_ADVISOR_OBJECTS         D --相关SQL
-                                WHERE  A.task_id = B.task_id(+)
-                                AND    A.finding_id = B.finding_id(+)
-                                AND    B.task_id = C.task_id(+)
-                                AND    B.rec_id = C.rec_id(+)
-                                AND    C.task_id = D.task_id(+)
-                                AND    C.object_id = D.object_id(+)
-                                AND    A.task_name = taskname) a,
+                        FROM    a,
                                (SELECT ROWNUM r FROM dual CONNECT BY ROWNUM <= 4) b
                         WHERE  b.r - 2 <=
                                NVL2(a.remreason, 1, 0) + NVL2(a.remmessage, 1, 0) - NVL2(a.rec_id, 0, 1)
@@ -334,6 +336,7 @@ function awr.extract_addm(starttime,endtime,instances)
         :5 := rs;
         :6 := cur;
     END;]]
+    env.checkerr(db:check_obj('dbms_advisor.create_task'),'Sorry, you dont have the "Advisor" privilege!')
     awr.dump_report(stmt,starttime,endtime,instances)
 end
 
