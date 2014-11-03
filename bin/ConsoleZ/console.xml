@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <settings>
-	<console change_refresh="10" refresh="100" rows="25" columns="80" buffer_rows="500" buffer_columns="0" shell="" init_dir="" start_hidden="0" save_size="0" background_text_opacity="255">
+	<console change_refresh="10" refresh="100" rows="25" columns="80" buffer_rows="500" buffer_columns="1000" shell="" init_dir="" start_hidden="0" save_size="0" background_text_opacity="255">
 		<colors background_text_opacity="255">
 			<color id="0" r="0" g="0" b="0"/>
 			<color id="1" r="0" g="0" b="128"/>
@@ -27,25 +27,25 @@
 		</background>
 	</console>
 	<appearance>
-		<font name="Courier New" size="10" bold="0" italic="0" smoothing="0" bold_intensified="0" italic_intensified="0" extra_width="0">
-			<color use="0" r="0" g="0" b="0"/>
+		<font name="Consolas" size="9" bold="0" italic="0" smoothing="2" bold_intensified="0" italic_intensified="0" extra_width="0">
+			<color use="0" r="0" g="255" b="0"/>
 		</font>
-		<window title="ConsoleZ" icon="" use_tab_icon="1" use_console_title="0" show_cmd="1" show_cmd_tabs="1" use_tab_title="1" trim_tab_titles="20" trim_tab_titles_right="0" main_title_format="?U([%u] )?N({%u} )%m?s( - %s)" tab_title_format="%n. ?U([%u] )?N({%u} )%t?s( - %s)"/>
-		<controls show_menu="1" show_toolbar="1" show_statusbar="1" show_tabs="1" hide_single_tab="1" show_scrollbars="1" flat_scrollbars="0" tabs_on_bottom="0" hide_tab_icons="0" show_searchbar="1"/>
-		<styles caption="1" resizable="1" taskbar_button="1" border="1" inside_border="2" tray_icon="1" quake_like="0" jumplist="0" integrated_ime="0" quake_animation_time="300">
+		<window title="ConsoleZ" icon="" use_tab_icon="1" use_console_title="0" show_cmd="1" show_cmd_tabs="1" use_tab_title="1" trim_tab_titles="20" trim_tab_titles_right="0" main_title_format="?U([%u] )?N({%u} )%m?s( - %s)" tab_title_format="?s( %s)"/>
+		<controls show_menu="1" show_toolbar="0" show_statusbar="0" show_tabs="1" hide_single_tab="0" show_scrollbars="1" flat_scrollbars="1" tabs_on_bottom="0" hide_tab_icons="0" show_searchbar="1"/>
+		<styles caption="1" resizable="1" taskbar_button="1" border="1" inside_border="2" tray_icon="1" quake_like="0" jumplist="1" integrated_ime="1" quake_animation_time="300">
 			<selection_color r="255" g="255" b="255"/>
 		</styles>
 		<position x="-1" y="-1" dock="-1" snap="-1" z_order="0" save_position="0" w="-1" h="-1" save_size="0"/>
-		<transparency type="0" active_alpha="255" inactive_alpha="255" r="0" g="0" b="0"/>
+		<transparency type="0" active_alpha="206" inactive_alpha="255" r="0" g="0" b="0"/>
 		<fullscreen start_in_fullscreen="0" fullscreen_monitor="0"/>
 	</appearance>
 	<behavior>
-		<copy_paste copy_on_select="1" clear_on_copy="1" no_wrap="1" trim_spaces="1" copy_newline_char="0" sensitive_copy="1" include_left_delimiter="0" include_right_delimiter="0" left_delimiters=" ([" right_delimiters=" )]" eol_spaces="1" rtf="1"/>
+		<copy_paste copy_on_select="1" clear_on_copy="0" no_wrap="1" trim_spaces="1" copy_newline_char="0" sensitive_copy="1" include_left_delimiter="0" include_right_delimiter="0" left_delimiters=" ([" right_delimiters=" )]" eol_spaces="1" rtf="1"/>
 		<scroll page_scroll_rows="0"/>
 		<tab_highlight flashes="3" stay_highligted="1"/>
 		<close allow_closing_last_view="0" confirm_closing_multiple_views="1"/>
 		<focus follow_mouse="0"/>
-		<instance allow_multi="1"/>
+		<instance allow_multi="0"/>
 		<clone use_current_dir="1"/>
 		<search match_case="0" match_whole_word="0"/>
 		<runas use_credprov="1"/>
@@ -139,10 +139,10 @@
 	</hotkeys>
 	<mouse>
 		<actions>
-			<action ctrl="0" shift="0" alt="0" button="1" name="copy"/>
-			<action ctrl="0" shift="1" alt="0" button="1" name="select"/>
-			<action ctrl="0" shift="0" alt="0" button="0" name="select_column"/>
-			<action ctrl="0" shift="0" alt="0" button="3" name="paste"/>
+			<action ctrl="0" shift="0" alt="0" button="2" name="copy"/>
+			<action ctrl="0" shift="0" alt="0" button="1" name="select"/>
+			<action ctrl="0" shift="1" alt="0" button="1" name="select_column"/>
+			<action ctrl="0" shift="0" alt="0" button="2" name="paste"/>
 			<action ctrl="1" shift="0" alt="0" button="1" name="drag"/>
 			<action ctrl="0" shift="0" alt="0" button="4" name="link"/>
 			<action ctrl="0" shift="0" alt="0" button="2" name="menu"/>
@@ -153,10 +153,27 @@
 	<tabs>
 		<tab title="dbcli" icon="..\..\sql.ico" use_default_icon="0">
 			<console shell="..\..\dbcli.bat" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
+			<cursor style="12" r="255" g="255" b="255"/>
+			<colors background_text_opacity="255">
+				<color id="0" r="0" g="0" b="0"/>
+				<color id="1" r="0" g="0" b="128"/>
+				<color id="2" r="0" g="128" b="0"/>
+				<color id="3" r="0" g="128" b="128"/>
+				<color id="4" r="128" g="0" b="0"/>
+				<color id="5" r="128" g="0" b="128"/>
+				<color id="6" r="128" g="128" b="0"/>
+				<color id="7" r="192" g="192" b="192"/>
+				<color id="8" r="128" g="128" b="128"/>
+				<color id="9" r="0" g="0" b="255"/>
+				<color id="10" r="0" g="255" b="0"/>
+				<color id="11" r="0" g="255" b="255"/>
+				<color id="12" r="255" g="0" b="0"/>
+				<color id="13" r="255" g="0" b="255"/>
+				<color id="14" r="255" g="255" b="0"/>
+				<color id="15" r="255" g="255" b="255"/>
+			</colors>
 		</tab>
 	</tabs>
 	<external_commands>
-
-
 </external_commands>
 </settings>
