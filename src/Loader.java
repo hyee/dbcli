@@ -6,10 +6,14 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.Writer;
 
 import java.io.PrintWriter;
 
+import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Method;
 import com.naef.jnlua.*;
 import java.io.IOException;
@@ -50,7 +54,7 @@ public class Loader {
 		method.setAccessible(true);
 		method.invoke(classLoader, new Object[] { url });
 	}
-
+		
 	public static void main(String args[]) throws Exception {
 		System.loadLibrary("lua5.1");
 		new Loader();
