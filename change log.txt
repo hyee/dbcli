@@ -1,3 +1,4 @@
+2014-10-29: add command "grep"
 2014-08-21: add command "addmdump","awrdump","ashdump" to extract ADDM/AWR/ASH report into "cache" folder
 2014-08-20: add "sqlprof" command to extract SQL profile from AWR/memory/SQL Set/SPM/profile
 2014-08-19: add "-p" option for "set" command to permanently save the configurations

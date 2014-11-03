@@ -333,7 +333,7 @@ local map_opcgroup = {
   pshiftq = { nil, nil, "psrlq", nil, nil, nil, "psllq" },
   pshiftdq = { nil, nil, "psrlq", "psrldq", nil, nil, "psllq", "pslldq" },
   fxsave = { "$fxsave", "$fxrstor", "$ldmxcsr", "$stmxcsr",
-	     nil, "lfenceDp$", "mfenceDp$", "sfenceDp$clflush" },
+	     nil, "lfpackereDp$", "mfpackereDp$", "sfpackereDp$clflush" },
   prefetch = { "prefetch", "prefetchw" },
   prefetcht = { "prefetchnta", "prefetcht0", "prefetcht1", "prefetcht2" },
 }
