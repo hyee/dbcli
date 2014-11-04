@@ -105,7 +105,7 @@ end
 
 function alias.helper()
 	local help=[[
-	Set an shortcut of other existing commands. Usage: alias [-r | <name> [parameters] | -e <alias name>]
+	Set a shortcut of other existing commands. Usage: alias [-r | <name> [parameters] | -e <alias name>]
 	1) Set/modify alias: alias <name> <command>. Available wildchars: $1 - $9, or $*
 	2) Remove alias    : alias <name>
 	3) Reload alias    : alias -r

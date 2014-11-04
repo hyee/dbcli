@@ -24,7 +24,8 @@ public class Loader {
 	
 	
 	public static LuaState lua; 
-	public static PrintWriter printer;	
+	public static PrintWriter printer;
+	public static Boolean ReloadNextTime=true;
 
 	public Loader() {
 		lua = new LuaState();
@@ -54,10 +55,8 @@ public class Loader {
 		method.setAccessible(true);
 		method.invoke(classLoader, new Object[] { url });
 	}
-		
-	public static void main(String args[]) throws Exception {
-		System.loadLibrary("lua5.1");
-		new Loader();
+	
+	public static void loadLua(String args[]) throws Exception {		
 		String separator=System.getProperty("file.separator");
 		File f = new File(Loader.class.getProtectionDomain().getCodeSource()
 				.getLocation().toURI());
@@ -67,6 +66,16 @@ public class Loader {
 		lua.load(inputStream, input);
 		for (int i = 0; i < args.length; i++)
 			lua.pushString(args[i]);
+		ReloadNextTime=false;
 		lua.call(args.length, 0);
+		inputStream.close();
+		inputStream=null;
+		System.gc();
+	}
+		
+	public static void main(String args[]) throws Exception {
+		System.loadLibrary("lua5.1");
+		new Loader();		
+		while(ReloadNextTime) loadLua(args);  
 	}
 }

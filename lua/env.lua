@@ -196,6 +196,7 @@ function env.checkerr(result,msg,...)
     end
 end
 
+local writer=writer
 function env.exec_command(cmd,params)    
     local clock,result=os.clock()
     local name=cmd:upper()
@@ -213,6 +214,10 @@ function env.exec_command(cmd,params)
     --env.trace.enable(true)
     local funs=type(cmd.FUNC)=="table" and cmd.FUNC or {cmd.FUNC}
     for _,func in ipairs(funs) do
+        if writer then
+            writer:print(env.ansi.mask("NOR","")) 
+            writer:flush()
+        end
         local res = {pcall(func,table.unpack(args))}
         if not res[1] then
             result=res
@@ -231,7 +236,6 @@ function env.exec_command(cmd,params)
         elseif not result then
             result=res       
         end
-
     end
     if result[1] and event then event("AFTER_COMMAND",name,params) end
     env.COMMAND_COST=os.clock()-clock
@@ -487,7 +491,8 @@ end
 function env.reload() 
     print("Reloading environemnt ...")
     env.unload()
-    env.onload(table.unpack(env.args))
+    java.loader.ReloadNextTime=true
+    env.CURRENT_PROMPT="_____EXIT_____"
 end
 
 function env.load_data(file)

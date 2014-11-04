@@ -27,6 +27,7 @@ end
 
 
 while true do
+    if env.CURRENT_PROMPT=="_____EXIT_____" then break end
     write(env.CURRENT_PROMPT)
     line = reader:readLine()  
     if not line or line:lower() == 'quit' or line:lower() == 'exit' then
