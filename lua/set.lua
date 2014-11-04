@@ -134,7 +134,7 @@ function cfg.doset(...)
 		if value and idx==2 then
 			cfg._P[args[i]:upper()]=value
 			if args[i+1] and args[i+1]:upper()=="DEFAULT" then
-				table.remove(cfg._P,args[i]:upper())
+				cfg._P[args[i]:upper()]=nil
 			end
 			env.save_data(file,cfg._P)
 		end

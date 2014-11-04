@@ -32,7 +32,7 @@
 		</font>
 		<window title="ConsoleZ" icon="" use_tab_icon="1" use_console_title="0" show_cmd="1" show_cmd_tabs="1" use_tab_title="1" trim_tab_titles="20" trim_tab_titles_right="0" main_title_format="?U([%u] )?N({%u} )%m?s( - %s)" tab_title_format="?s( %s)"/>
 		<controls show_menu="1" show_toolbar="0" show_statusbar="0" show_tabs="1" hide_single_tab="0" show_scrollbars="1" flat_scrollbars="1" tabs_on_bottom="0" hide_tab_icons="0" show_searchbar="1"/>
-		<styles caption="1" resizable="1" taskbar_button="1" border="1" inside_border="2" tray_icon="1" quake_like="0" jumplist="1" integrated_ime="1" quake_animation_time="300">
+		<styles caption="1" resizable="1" taskbar_button="1" border="0" inside_border="2" tray_icon="1" quake_like="0" jumplist="1" integrated_ime="1" quake_animation_time="300">
 			<selection_color r="255" g="255" b="255"/>
 		</styles>
 		<position x="-1" y="-1" dock="-1" snap="-1" z_order="0" save_position="0" w="-1" h="-1" save_size="0"/>
