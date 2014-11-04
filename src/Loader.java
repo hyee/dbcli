@@ -25,24 +25,18 @@ public class Loader {
 	
 	public static LuaState lua; 
 	public static PrintWriter printer;
+	public static Object reader;
 	public static Boolean ReloadNextTime=true;
 
 	public Loader() {
-		lua = new LuaState();
-		lua.openLibs();
-		lua.pushJavaObject(this);
-		lua.setGlobal("loader");
 		try {
-			Object reader=Class.forName("jline.console.ConsoleReader").newInstance();
+			reader=Class.forName("jline.console.ConsoleReader").newInstance();
 			Class clz=reader.getClass();
-			printer = new PrintWriter((Writer) clz.getMethod("getOutput").invoke(reader));			
-			lua.pushJavaObject(reader);
-			lua.setGlobal("reader");
-			lua.pushJavaObject(printer);
-			lua.setGlobal("writer");
+			printer = new PrintWriter((Writer) clz.getMethod("getOutput").invoke(reader));
 		} catch(Exception e) {
 			//e.printStackTrace();
 		}
+		
 	}	
 
 	public void addPath(String file) throws Exception {
@@ -56,7 +50,17 @@ public class Loader {
 		method.invoke(classLoader, new Object[] { url });
 	}
 	
-	public static void loadLua(String args[]) throws Exception {		
+	public static void loadLua(Loader l,String args[]) throws Exception {
+		lua= new LuaState();
+		lua.openLibs();
+		lua.pushJavaObject(l);
+		lua.setGlobal("loader");
+		if(printer!=null) { 						
+			lua.pushJavaObject(reader);
+			lua.setGlobal("reader");
+			lua.pushJavaObject(printer);
+			lua.setGlobal("writer");
+		} 
 		String separator=System.getProperty("file.separator");
 		File f = new File(Loader.class.getProtectionDomain().getCodeSource()
 				.getLocation().toURI());
@@ -69,13 +73,15 @@ public class Loader {
 		ReloadNextTime=false;
 		lua.call(args.length, 0);
 		inputStream.close();
+		lua.close();
+		lua=null;
 		inputStream=null;
 		System.gc();
 	}
 		
 	public static void main(String args[]) throws Exception {
 		System.loadLibrary("lua5.1");
-		new Loader();		
-		while(ReloadNextTime) loadLua(args);  
+		Loader l = new Loader();		
+		while(ReloadNextTime) loadLua(l,args);  
 	}
 }

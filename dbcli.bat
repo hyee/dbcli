@@ -14,7 +14,7 @@ IF not exist "%JRE_HOME%\java.exe" (set JRE_HOME=.\jre\bin)
 
 SET PATH=%JRE_HOME%;%PATH%
 
-java -Xmx32M -cp .\lib\.;.\lib\jline.jar;.\lib\jnlua-0.9.6.jar%OTHER_LIB% ^
+java -Xmx64M -cp .\lib\.;.\lib\jline.jar;.\lib\jnlua-0.9.6.jar%OTHER_LIB% ^
                -Djava.library.path=.\lib\ ^
                -Doracle.net.tns_admin="%TNS_ADM%" ^
                Loader ^
