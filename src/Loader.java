@@ -32,11 +32,10 @@ public class Loader {
 		try {
 			reader=Class.forName("jline.console.ConsoleReader").newInstance();
 			Class clz=reader.getClass();
-			printer = new PrintWriter((Writer) clz.getMethod("getOutput").invoke(reader));
+			printer = new PrintWriter((Writer) clz.getMethod("getOutput").invoke(reader));			
 		} catch(Exception e) {
 			//e.printStackTrace();
-		}
-		
+		}		
 	}	
 
 	public void addPath(String file) throws Exception {

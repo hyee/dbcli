@@ -15,14 +15,14 @@ function output.getOutput(db,sql)
 	local stmt=[[	
 			DECLARE/*INTERNAL_DBCLI_CMD*/
 			    l_line   VARCHAR2(32767);
-			    l_done   PLS_INTEGER;
+			    l_done   PLS_INTEGER:=32767;
 			    l_buffer VARCHAR2(32767);	 
 			    l_arr    dbms_output.chararr;   
 			BEGIN
 			    dbms_output.get_lines(l_arr,l_done);
 			    for i in 1..l_done loop
 			    	l_buffer := l_buffer || l_arr(i) || chr(10);
-			    	exit when length(l_buffer) + 255 > 32400;
+			    	exit when lengthb(l_buffer) + 255 > 32400;
 			    end loop;	   
 			    :1 := l_buffer;
 			    :2 := dbms_transaction.local_transaction_id;

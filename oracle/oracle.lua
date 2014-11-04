@@ -194,6 +194,7 @@ function oracle:is_internal_call(sql)
 	return sql and sql:find("/%*INTERNAL_DBCLI_CMD%*/",1,true) and true or false 
 end
 
+
 function oracle:reconnnect()
 	if self.conn_str then
 		self:connect(packer.unpack_str(self.conn_str))
