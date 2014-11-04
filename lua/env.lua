@@ -173,7 +173,7 @@ function env.format_error(src,errmsg,...)
     if name then
         name=name:upper():gsub("_",""):sub(1,3)
         errmsg=name.."-"..string.format("%05i",tonumber(line))..": "..errmsg
-    end    
+    end   
     return env.ansi.mask('HIR',errmsg:format(...))
 end
 

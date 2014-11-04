@@ -332,8 +332,7 @@ function db_core:exec(sql,args)
 	local params={}
 	
 	local prep;
-
-	env.checkerr(args==nil or type(args) == "table", "Expected parameter as a table for SQL: "..sql)
+	env.checkerr(args==nil or type(args) == "table", "Expected parameter as a table for SQL: \n"..sql)
 	for k,v in pairs(args or {}) do
 		if type(k)=="string" then
 			params[k:upper()]=v
