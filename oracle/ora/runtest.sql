@@ -2,7 +2,7 @@
    This is a sample test 
    Script description should be enclosed like this sample
 ]]*/
-PRO Start testing(呵呵)
+PRO Start testing
 /
 PRO ====================
 
@@ -21,7 +21,6 @@ BEGIN
 	:C:=dbms_random.value();
 END;
 /
-/
 /*
 Test remove comment
 */
@@ -37,4 +36,4 @@ alias sf1 select * from v$session where rownum<10
 sf1
 --remove alias
 alias sf1
-select sysdate,dbms_random.value,'welcome,呵呵' from dual connect by rownum<10;
+select sysdate,dbms_random.value,'welcome' from dual connect by rownum<10;

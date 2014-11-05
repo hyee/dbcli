@@ -233,11 +233,12 @@ function oracle:check_obj(obj_name)
                                               dblink        => dblink,
                                               part1_type    => part1_type,
                                               object_number => object_number);
-                obj_type := CASE part1_type WHEN 5 THEN 'SYNONYM' WHEN 7 THEN 'PROCEDURE' WHEN 8 THEN 'FUNCTION' WHEN 9 THEN 'PACKAGE' END;
-            
-                IF obj_type IS NULL THEN
-                    obj_type := t1(i + 1);
-                END IF;
+                SELECT /*+no_expand*/ MIN(OBJECT_TYPE),MIN(OWNER),MIN(OBJECT_NAME) 
+                INTO   obj_type,SCHEM,part1
+                FROM   ALL_OBJECTS
+                WHERE  OWNER=SCHEM
+                AND    OBJECT_NAME=part1
+                AND    (part2 IS NULL OR SUBOBJECT_NAME=part2);            
                 EXIT;
             EXCEPTION WHEN OTHERS THEN NULL;
             END;

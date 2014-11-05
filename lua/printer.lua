@@ -5,15 +5,16 @@ local out=writer
 local printer={rawprint=print}
 local io=io
 if not out then out=java.system.out end
+local strip_ansi=env.ansi and env.ansi.strip_ansi or function(x) return x end 
+local space=env.space
 function printer.print(...)	
 	local output=""
 	table.foreach({...},function(k,v) output=output..tostring(v)..' ' end)
-	output=env.space..output:gsub("(\r?\n\r?)","%1"..env.space)
-	
-	out:println(env.ansi.get_color("NOR")..output)
+	output=space..output:gsub("(\r?\n\r?)","%1"..space)	
+	out:println(output)
 	out:flush()
 	if printer.hdl then
-		pcall(printer.hdl.write,printer.hdl,env.ansi.strip_ansi(output).."\n")
+		pcall(printer.hdl.write,printer.hdl,strip_ansi(output).."\n")
 	end
 end
 
@@ -31,7 +32,7 @@ function printer.spool(file,option)
 	option=option and option:upper() or "CREATE"
 	if not file then
 		if printer.hdl then 
-			printer.rawprint(env.space..'Output is writing to "'..printer.file..'".') 
+			printer.rawprint(space..'Output is writing to "'..printer.file..'".') 
 		else
 			print("SPOOL is OFF.")
 		end

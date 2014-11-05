@@ -1,6 +1,7 @@
-/*[[Show ash cost for a specific SQL. usage: ashplan [-dash] <sql_id> [[plan_hash_value|a] [YYMMDDHH24MI] [YYMMDDHH24MI]]
+/*[[Show ash cost for a specific SQL. usage: ashplan [-dash] <sql_id> [[plan_hash_value|sid|a] [YYMMDDHH24MI] [YYMMDDHH24MI]]
 --[[
   Templates:
+        @Required_Ver : 11.1={Oracle 11.1+ Only}
         &V9: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
 --]]     
 ]]*/
@@ -20,7 +21,7 @@ WITH sql_plan_data AS
                          inst_id
                   FROM   gv$sql_plan_statistics_all a
                   WHERE  a.sql_id = :V1
-                  AND    a.plan_hash_value = nvl(nullif(lower(:V2),'a'),plan_hash_value)
+                  AND    a.plan_hash_value = case when nvl(lengthb(:V2),0) >6 then :V2+0 else plan_hash_value end
                   UNION ALL
                   SELECT id,
                          parent_id,
@@ -33,7 +34,7 @@ WITH sql_plan_data AS
                          dbid
                   FROM   dba_hist_sql_plan a
                   WHERE  a.sql_id = :V1
-                  AND    a.plan_hash_value = nvl(nullif(lower(:V2),'a'),plan_hash_value)
+                  AND    a.plan_hash_value = case when nvl(lengthb(:V2),0) >6 then :V2+0 else plan_hash_value end
                   ) a)
   WHERE  seq = 1),
 hierarchy_data AS
@@ -69,14 +70,16 @@ ash_base AS(
            ROUND(COUNT(DECODE(wait_class, 'Concurrency', 1)) * 100 / COUNT(1), 1) "CC",   
            ROUND(COUNT(CASE WHEN NVL(wait_class,'1') NOT IN ('1','User I/O','Cluster','Concurrency') THEN 1 END) * 100 / COUNT(1), 1) oth,
            ''||MAX(current_obj#) KEEP(dense_rank LAST ORDER BY tobj) top_obj,
-           MAX(event) KEEP(dense_rank LAST ORDER BY tobj) top_event
+           MAX(nvl2(event,event||'('||tenv||')',null)) KEEP(dense_rank LAST ORDER BY tenv) top_event
     FROM (SELECT b.*,
                  COUNT(sample_id) OVER(PARTITION BY SQL_PLAN_LINE_ID,current_obj#) tobj,
-                 COUNT(decode(event,null,null,sample_id)) OVER(PARTITION BY SQL_PLAN_LINE_ID,event) tenv
+                 COUNT(distinct nvl2(event,sample_id,null)) OVER(PARTITION BY SQL_PLAN_LINE_ID,event) tenv
           FROM   qry a
           JOIN   &V9 b
           ON     ( b.sql_id=:V1 AND a.phv = b.sql_plan_hash_value AND sample_time+0 BETWEEN 
-                  NVL(to_date(:V3,'YYMMDDHH24MI'),SYSDATE-90) AND NVL(to_date(:V4,'YYMMDDHH24MI'),SYSDATE)))       
+                  NVL(to_date(:V3,'YYMMDDHH24MI'),SYSDATE-90) AND NVL(to_date(:V4,'YYMMDDHH24MI'),SYSDATE))
+                  AND  (nvl(lengthb(:V2),0) >6 or regexp_like(:V2,'^\d+$') and :V2+0 in(QC_SESSION_ID,SESSION_ID)) 
+                 )       
     GROUP  BY nvl(SQL_PLAN_LINE_ID,0)
 ),
 ash_data AS(
@@ -149,12 +152,12 @@ rules sequential order (
                          when id[cv(),cv()+2] = 0
                          then '|'  || lpad('Ord |', csize[cv(),cv()])--
                              ||LPAD('Calls',sexe[cv(),cv()])
-                             ||LPAD('PX_Hit',spx_hit[cv(),cv()])
-                             ||LPAD('Hits',shit[cv(),cv()])
+                             ||LPAD('Count',spx_hit[cv(),cv()])
+                             ||LPAD('Secs',shit[cv(),cv()])
                              ||LPAD('Mins|',smin[cv(),cv()])
                              ||' CPU%  IO%  CL%  CC% OTH%|'
                             -- ||LPAD('Top_Obj',sobj[cv(),cv()])
-                             ||RPAD(' Top_Event',sevent[cv(),cv()]-1)||'|'
+                             ||RPAD(' Top Event',sevent[cv(),cv()]-1)||'|'
                          when id[cv(),cv()] is not null
                          then '|' || lpad(oid[cv(),cv()] || ' |', csize[cv(),cv()]) 
                              ||LPAD(exes[cv(),cv()], sexe[cv(),cv()])

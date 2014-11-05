@@ -1,3 +1,6 @@
+2014-11-05: performance tuning on "ora actives"
+2014-11-05: new ora script "ashplan", and add "Ord" field into "xplan" and "ora plan"
+2014-11-04: fix invalid low and high value for date field in "desc" command
 2014-10-29: add command "grep"
 2014-08-21: add command "addmdump","awrdump","ashdump" to extract ADDM/AWR/ASH report into "cache" folder
 2014-08-20: add "sqlprof" command to extract SQL profile from AWR/memory/SQL Set/SPM/profile

@@ -173,8 +173,9 @@ function env.format_error(src,errmsg,...)
     if name then
         name=name:upper():gsub("_",""):sub(1,3)
         errmsg=name.."-"..string.format("%05i",tonumber(line))..": "..errmsg
-    end   
-    return env.ansi.mask('HIR',errmsg:format(...))
+    end
+    if select('#',...)>0 then errmsg=errmsg:format(...) end   
+    return env.ansi.mask('HIR',errmsg)
 end
 
 function env.warn(...)
@@ -198,7 +199,7 @@ end
 
 local writer=writer
 function env.exec_command(cmd,params)    
-    local clock,result=os.clock()
+    local result
     local name=cmd:upper()
     cmd=_CMDS[cmd]   
 
@@ -238,11 +239,8 @@ function env.exec_command(cmd,params)
         end
     end
     if result[1] and event then event("AFTER_COMMAND",name,params) end
-    env.COMMAND_COST=os.clock()-clock
-    if env.PRI_PROMPT=="TIMING> " then
-        env.CURRENT_PROMPT=string.format('%06.2f',env.COMMAND_COST)..'> '
-        env.MTL_PROMPT=string.rep(' ',#env.CURRENT_PROMPT)
-    end
+    
+    
     return table.unpack(result)
 end
 

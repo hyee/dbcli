@@ -26,8 +26,9 @@ local write=function(str)
 end
 
 
-while true do
-    if env.CURRENT_PROMPT=="_____EXIT_____" then break end
+local clock
+while true do  
+    if env.CURRENT_PROMPT=="_____EXIT_____" then break end    
     write(env.CURRENT_PROMPT)
     line = reader:readLine()  
     if not line or line:lower() == 'quit' or line:lower() == 'exit' then
@@ -35,5 +36,11 @@ while true do
     	env.unload()    	
     	os.exit(1) 
     end
-    eval(line) 
+
+    clock=os.clock()
+    eval(line)     
+    if env.PRI_PROMPT=="TIMING> " and env.CURRENT_PROMPT~=env.MTL_PROMPT then
+        env.CURRENT_PROMPT=string.format('%06.2f',os.clock()-clock)..'> '
+        env.MTL_PROMPT=string.rep(' ',#env.CURRENT_PROMPT)    
+    end
 end

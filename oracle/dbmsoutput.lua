@@ -12,31 +12,47 @@ function output.setOutput(db)
 end
 
 function output.getOutput(db,sql)
+	local isOutput=cfg.get("ServerOutput")
 	local stmt=[[	
-			DECLARE/*INTERNAL_DBCLI_CMD*/
+			DECLARE
+			    /*INTERNAL_DBCLI_CMD*/
 			    l_line   VARCHAR2(32767);
-			    l_done   PLS_INTEGER:=32767;
-			    l_buffer VARCHAR2(32767);	 
-			    l_arr    dbms_output.chararr;   
+			    l_done   PLS_INTEGER := 32767;
+			    l_buffer VARCHAR2(32767);
+			    l_arr    dbms_output.chararr;
+			    l_lob    CLOB;
+			    l_enable PLS_INTEGER := :1;
+			    l_size   PLS_INTEGER;
 			BEGIN
-			    dbms_output.get_lines(l_arr,l_done);
-			    for i in 1..l_done loop
-			    	l_buffer := l_buffer || l_arr(i) || chr(10);
-			    	exit when lengthb(l_buffer) + 255 > 32400;
-			    end loop;	   
-			    :1 := l_buffer;
-			    :2 := dbms_transaction.local_transaction_id;
+			    dbms_output.get_lines(l_arr, l_done);
+			    IF l_enable = 1 THEN
+			        FOR i IN 1 .. l_done LOOP
+			            l_buffer := l_buffer || l_arr(i) || chr(10);
+			            l_size   := lengthb(l_buffer);
+			            IF l_size + 255 > 32400 OR (l_lob IS NOT NULL AND l_buffer IS NOT NULL AND i = l_done) THEN
+			                IF l_lob IS NULL THEN
+			                    dbms_lob.createtemporary(l_lob, TRUE);
+			                END IF;
+			                dbms_lob.writeappend(l_lob, l_size, l_buffer) ;
+			                l_buffer := NULL;
+			            END IF;
+			        END LOOP;
+			    END IF;
+			    :2 := l_buffer;
+			    :3 := dbms_transaction.local_transaction_id;
+			    :4 := l_lob;
 			END;]]
 	if not db:is_internal_call(sql) then
-		local args={"#VARCHAR","#VARCHAR"}
-		db:internal_call(stmt,args)		
-		if args[1] and args[1]:match("[^\n%s]+") and cfg.get("ServerOutput") == "on" then
-			local result=args[1]:gsub("[\n\r]","\n")
+		local args={isOutput=="on" and 1 or 0,"#VARCHAR","#VARCHAR","#CLOB"}
+		db:internal_call(stmt,args)	
+		local result=args[4] or args[2]	
+		if isOutput == "on" and result and result:match("[^\n%s]+") then
+			result=result:gsub("[\n\r]","\n")
 			print(result)
 		end
 
-		if prev_transaction~=args[2] then
-			prev_transaction = args[2]
+		if prev_transaction~=args[3] then
+			prev_transaction = args[3]
 			local addtional_title=prev_transaction and ("    TXN_ID: "..prev_transaction) or ""
 			env.set_title(db.session_title..addtional_title)
 		end

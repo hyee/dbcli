@@ -12,7 +12,6 @@ function trace.get_trace(filename)
 	    flag       PLS_INTEGER;	 
 	    idx        PLS_INTEGER;	   
 	BEGIN
-
 	    SELECT MAX(directory_name)
 	    INTO   dir
 	    FROM   Dba_Directories
@@ -46,10 +45,13 @@ function trace.get_trace(filename)
 	            IF idx=1 THEN	            
 	                EXECUTE IMMEDIATE 'drop directory ' || dir;
 	            END IF;
+	        WHEN OTHERS THEN
+	            utl_file.fclose(trace_file);
+	            RAISE;
 	    END;
 	    :2 := f;
 	    :3 := text;
-	EXCEPTION WHEN OTHERS THEN
+	EXCEPTION WHEN OTHERS THEN	    
 	    IF flag = 1 THEN
 	    	buff:='You don''t have the priv to create directory, pls exec following commands with DBA account:'||chr(10)||'    '||buff;
 	    	buff:=buff||';'||chr(10)||'    grant read on directory DBCLI_DUMP_DIR to '||user||';';

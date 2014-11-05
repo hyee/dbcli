@@ -9,7 +9,7 @@ function ora.rehash(script_dir,ext_name)
 	local cmdlist={}
 	for k,v in ipairs(keylist) do
 		local desc=v[3] and v[3]:gsub("^[\n\r%s\t]*[\n\r]+","") or ""
-		desc=desc:gsub("%--%[%[(.*)%]%]%--","")
+		desc=desc:gsub("%-%-%[%[(.*)%]%]%-%-","")
 		cmdlist[v[1]:upper()]={path=v[2],desc=desc,short_desc=desc:match("([^\n\r]+)") or ""}
 	end
 
