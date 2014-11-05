@@ -1,4 +1,4 @@
-/*[[Show ash cost for a specific SQL. usage: ashplan <sql_id> [[plan_hash_value|a] [YYMMDDHH24MI] [YYMMDDHH24MI]]
+/*[[Show ash cost for a specific SQL. usage: ashplan [-dash] <sql_id> [[plan_hash_value|a] [YYMMDDHH24MI] [YYMMDDHH24MI]]
 --[[
   Templates:
         &V9: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}

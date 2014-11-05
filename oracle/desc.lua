@@ -249,28 +249,30 @@ local desc_sql={
                   ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(b.low_value))
                   ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(b.low_value))
                   ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(b.low_value))
-                  ,'DATE',to_char(1780+to_number(substr(b.low_value,1,2),'XX')
-                         +to_number(substr(b.low_value,3,2),'XX'))||'-'
-                       ||to_number(substr(b.low_value,5,2),'XX')||'-'
-                       ||to_number(substr(b.low_value,7,2),'XX')||' '
-                       ||(to_number(substr(b.low_value,9,2),'XX')-1)||':'
-                       ||(to_number(substr(b.low_value,11,2),'XX')-1)||':'
-                       ||(to_number(substr(b.low_value,13,2),'XX')-1)
-                  ,  b.low_value) low_v,
+                  ,'DATE',RTRIM(LTRIM(TO_CHAR(100 * (TO_NUMBER(SUBSTR(low_value, 1, 2), 'XX') - 100) +
+					                     (TO_NUMBER(SUBSTR(low_value, 3, 2), 'XX') - 100),
+					                     '0000')) || '-' ||
+					       LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(low_value, 5, 2), 'XX'), '00')) || '-' ||
+					       LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(low_value, 7, 2), 'XX'), '00')) || ' ' ||
+					       LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(low_value, 9, 2), 'XX') - 1, '00')) || ':' ||
+					       LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(low_value, 11, 2), 'XX') - 1, '00')) || ':' ||
+					       LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(low_value, 13, 2), 'XX') - 1, '00')))
+				  ,  low_value) low_v,
                 decode(data_type
-                      ,'NUMBER'       ,to_char(utl_raw.cast_to_number(b.high_value))
-                      ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(b.high_value))
-                      ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(b.high_value))
-                      ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(b.high_value))
-                      ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(b.high_value))
-                      ,'DATE',to_char(1780+to_number(substr(b.high_value,1,2),'XX')
-                             +to_number(substr(b.high_value,3,2),'XX'))||'-'
-                           ||to_number(substr(b.high_value,5,2),'XX')||'-'
-                           ||to_number(substr(b.high_value,7,2),'XX')||' '
-                           ||(to_number(substr(b.high_value,9,2),'XX')-1)||':'
-                           ||(to_number(substr(b.high_value,11,2),'XX')-1)||':'
-                           ||(to_number(substr(b.high_value,13,2),'XX')-1)
-                      ,  b.high_value) hi_v
+					  ,'NUMBER'       ,to_char(utl_raw.cast_to_number(high_value))
+					  ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(high_value))
+					  ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(high_value))
+					  ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(high_value))
+					  ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(high_value))
+					  ,'DATE', RTRIM(LTRIM(TO_CHAR(100 * (TO_NUMBER(SUBSTR(high_value, 1, 2), 'XX') - 100) +
+					                     (TO_NUMBER(SUBSTR(high_value, 3, 2), 'XX') - 100),
+					                     '0000')) || '-' ||
+					       LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 5, 2), 'XX'), '00')) || '-' ||
+					       LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 7, 2), 'XX'), '00')) || ' ' ||
+					       LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 9, 2), 'XX') - 1, '00')) || ':' ||
+					       LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 11, 2), 'XX') - 1, '00')) || ':' ||
+					       LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 13, 2), 'XX') - 1, '00')))
+					  ,  high_value) hi_v
         FROM   all_tab_cols JOIN All_Part_Col_Statistics b USING(owner,table_name,COLUMN_NAME)
         WHERE  upper(owner)=:1 and table_name=:2 AND partition_name=:3
         ORDER BY NO#]],
