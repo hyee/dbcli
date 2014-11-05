@@ -133,5 +133,5 @@ end
 
 alias.rehash()
 env.event.snoop('ON_ENV_LOADED',alias.rehash,nil,1)
-env.set_command(nil,"alias", alias.helper,alias.set,function(cmd,rest) return env.smart_check_endless(cmd,rest,3) end,3)
+env.set_command(nil,"alias", alias.helper,alias.set,'__SMART_PARSE__',3)
 return alias

@@ -88,6 +88,8 @@ function env.check_cmd_endless(cmd,other_parts)
         return true,other_parts and other_parts:gsub(p1,"")
     elseif type(_CMDS[cmd].MULTI)=="function" then
         return _CMDS[cmd].MULTI(cmd,other_parts)
+    elseif _CMDS[cmd].MULTI=='__SMART_PARSE__' then
+        return env.smart_check_endless(cmd,other_parts,_CMDS[cmd].ARGS)
     end
     
     local p2='\r*\n[%s\r\t\n]*/[%s\t]*$'
