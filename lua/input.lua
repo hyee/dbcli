@@ -25,7 +25,6 @@ local write=function(str)
 	end
 end
 
-
 local clock
 while true do  
     if env.CURRENT_PROMPT=="_____EXIT_____" then break end    

@@ -306,11 +306,12 @@ function env.parse_args(cmd,rest)
         env.checkerr(_CMDS[cmd],'Unknown command "'..cmd..'"!')
         arg_count=_CMDS[cmd].ARGS
     end
+    
     local args ,args1={}    
     if arg_count == 1 then
-        table.insert(args,cmd.." "..rest)
+        args[#args+1]=cmd.." "..rest
     elseif arg_count == 2 then
-        table.insert(args,rest)
+        args[#args+1]=rest
     elseif rest then 
         local piece=""
         local quote='"'
@@ -322,7 +323,7 @@ function env.parse_args(cmd,rest)
                     piece = piece .. char
                 elseif (rest:sub(i+1,i+1) or " "):match("^%s*$") then
                     --end of a quote string if next char is a space
-                    table.insert(args,piece:sub(2))
+                    args[#args+1]=piece:sub(2)
                     piece=''
                     is_quote_string=false
                 else
@@ -333,10 +334,10 @@ function env.parse_args(cmd,rest)
                     --begin a quote string, if its previous char is not a space, then bypass
                     is_quote_string = true
                     piece=quote                   
-                elseif not char:match("%s") then
+                elseif not char:match("[%s\t\r\n]") then
                     piece = piece ..char
                 elseif piece ~= '' then
-                    table.insert(args,piece)    
+                    args[#args+1]=piece
                     piece=''
                 end
             end
@@ -345,7 +346,7 @@ function env.parse_args(cmd,rest)
                 if piece:sub(1,1)==quote and piece:sub(-1)==quote then
                     piece=piece:sub(2,-2)
                 end
-                table.insert(args,piece) 
+                args[#args+1]=piece
                 piece=""
                 break
             end
@@ -353,10 +354,10 @@ function env.parse_args(cmd,rest)
         --If the quote is not in couple, then treat it as a normal string
         if piece:sub(1,1)==quote then
             for s in piece:gmatch('([^%s]+)') do
-                table.insert(args,s)
+                args[#args+1]=s
             end
         elseif piece~='' then
-            table.insert(args,piece)
+            args[#args+1]=piece
         end   
     end
     return args,cmd
@@ -364,7 +365,7 @@ end
 
 function env.eval_line(line,exec)
     if not line then return end
-    local b=line:byte()
+    local b=line:byte()    
     --remove bom header
     if not b or b>=128 then return end
     local done
@@ -388,9 +389,7 @@ function env.eval_line(line,exec)
         curr_stmt = curr_stmt .."\n"
         return multi_cmd
     end
-
     
-
     if multi_cmd then return check_multi_cmd(line) end
     
     local cmd,rest=env.parse_args(2,line)
@@ -484,21 +483,6 @@ function env.onload(...)
     env.safe_call(env.event and env.event.callback,"ON_ENV_LOADED") 
     
     --load initial settings
-    local ini_file=env.WORK_DIR.."data"..env.PATH_DEL.."init.cfg"
-    local f=io.open(ini_file,"r")
-    if f then
-        for line in f:lines() do
-            if not line:match('[%s\t]^#') then
-                env.eval_line(line..';')
-            end
-        end
-    else
-        f=io.open(ini_file,'w')
-        f:write("#Input initial setting in this file, which is loaded when the CLI starts\n")
-    end
-
-    f:close()
-
     for _,v in ipairs(env.args) do
         if v:sub(1,2) == "-D" then
             local key=v:sub(3):match("^([^=]+)")
