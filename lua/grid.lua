@@ -443,8 +443,8 @@ function grid.grep(keyword,stmt)
     if keyword:len()>1 and keyword:sub(1,1)=="-" then
         keyword,grid.grep_dir=keyword:sub(2),true
     end
-    grid.grep_text=keyword:case_insensitive_pattern()
-    pcall(env.eval_line,stmt)
+    grid.grep_text=keyword:case_insensitive_pattern()    
+    pcall(env.internal_eval,stmt)    
     grid.grep_text,grid.grep_dir=nil,nil
 end
 

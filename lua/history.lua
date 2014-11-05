@@ -2,6 +2,7 @@ local env,os=env,os
 local event,cfg,grid=env.event,env.set,env.grid
 local history={}
 local keys={}
+history.keys=keys
 local lastcommand
 
 function history:show(index)	

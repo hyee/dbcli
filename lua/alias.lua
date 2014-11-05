@@ -42,7 +42,8 @@ function alias.run_command(...)
 		if type(alias.cmdlist[name].text) == "string" then
 			print(target)
 		end		
-		env.eval_line(target)
+		local maxsiz=env.set.get("HISSIZE")
+		env.internal_eval(target)		
 	end
 end
 

@@ -257,7 +257,7 @@ function env.exec_command(cmd,params)
             result=res       
         end
     end
-    if result[1] and event then event("AFTER_COMMAND",name,params) end
+    if result[1] and event and not env.IS_INTERNAL_EVAL then event("AFTER_COMMAND",name,params) end
     
     
     return table.unpack(result)
@@ -363,6 +363,7 @@ function env.parse_args(cmd,rest)
 end
 
 function env.eval_line(line,exec)
+    if not line then return end
     local b=line:byte()
     --remove bom header
     if not b or b>=128 then return end
@@ -388,7 +389,7 @@ function env.eval_line(line,exec)
         return multi_cmd
     end
 
-    if not line then return end
+    
 
     if multi_cmd then return check_multi_cmd(line) end
     
@@ -415,6 +416,12 @@ function env.eval_line(line,exec)
     else
         return cmd,args
     end
+end
+
+function env.internal_eval(line,exec)
+    env.IS_INTERNAL_EVAL=true
+    env.eval_line(line,exec)
+    env.IS_INTERNAL_EVAL=false
 end
 
 function env.testcmd(...)
