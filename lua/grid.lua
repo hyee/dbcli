@@ -436,6 +436,7 @@ function grid.print(rows,printhead,col_del,row_del,psize)
     print(grid.tostring(rows,printhead,col_del,row_del,psize))
 end
 
+
 function grid.grep(keyword,stmt)
     grid.grep_text,grid.grep_dir=nil,nil
     env.checkerr(stmt,"Usage: grep <keyword> <select statement>")
@@ -443,7 +444,7 @@ function grid.grep(keyword,stmt)
         keyword,grid.grep_dir=keyword:sub(2),true
     end
     grid.grep_text=keyword:case_insensitive_pattern()
-    pcall(env.eval_line,stmt..';')
+    pcall(env.eval_line,stmt)
     grid.grep_text,grid.grep_dir=nil,nil
 end
 
@@ -455,7 +456,7 @@ function grid.onload()
     end
     env.ansi.define_color("HEADCOLOR","HBRED;HIW","grid","Define grid title's color")
     env.ansi.define_color("GREPCOLOR","BBLU;HIW","grid","Define highlight color for the grep command")
-    env.set_command(nil,"grep","Filter matched text from the output. Usage: grep <keyword|-keyword> <select statement>, -keyword means exclusive",grid.grep,true,3)
+    env.set_command(nil,"grep","Filter matched text from the output. Usage: grep <keyword|-keyword> <other command>, -keyword means exclusive",grid.grep,function(cmd,rest) return env.smart_check_endless(cmd,rest,3) end,3)
 end
 
 for k,v in pairs(params) do grid[v.name]=v.default end

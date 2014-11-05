@@ -4,6 +4,7 @@ del /s "%target%\*.lua"
 del /s "%target%\*.jar"
 del /s "%target%\*.sql"
 del /s "%target%\*.chm"
+del /s "%target%\*.bat"
 xcopy  . "%target%" /S /Y  /exclude:excludes.txt
 
 COPY /Y "C:\Software\eclipse\workspace\dbcli\src\Loader.java" .\src\

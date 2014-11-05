@@ -1,3 +1,4 @@
+2014-11-05: smartly determine if "alias" /"grep" is cross-line command
 2014-11-05: performance tuning on "ora actives"
 2014-11-05: new ora script "ashplan", and add "Ord" field into "xplan" and "ora plan"
 2014-11-04: fix invalid low and high value for date field in "desc" command

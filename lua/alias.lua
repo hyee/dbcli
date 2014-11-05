@@ -37,10 +37,12 @@ function alias.run_command(...)
 			alias.rest[i]=v
 		end
 		target=target:gsub("$([%d%*]+)",alias.parser)
+		target=target:gsub("[%s\n\r\b\t]+$","")
+		if target:sub(-1) ~='/' and target:sub(-1) ~=';' then target=target..';' end
 		if type(alias.cmdlist[name].text) == "string" then
-			print("Statement: "..target.."\n")
-		end
-		env.eval_line(target..';')
+			print(target)
+		end		
+		env.eval_line(target)
 	end
 end
 
@@ -86,7 +88,7 @@ function alias.set(name,cmd,write)
 
 		local desc
 		if cmd:sub(1,5)~="FUNC:" then
-			desc=cmd:gsub("[\n\r]+[%s\t]*",""):sub(1,300)
+			desc=cmd:gsub("[\n\r]+[%s\t]*"," "):sub(1,300)
 		else
 			cmd=packer.unpack(cmd)
 			desc=cmd
@@ -125,11 +127,10 @@ function alias.helper()
 	for _,k in ipairs(grid.format(rows)) do
 		help=help..'\n'..k
 	end
-
 	return help
 end
 
 alias.rehash()
 env.event.snoop('ON_ENV_LOADED',alias.rehash,nil,1)
-env.set_command(nil,"alias", alias.helper,alias.set,false,3)
+env.set_command(nil,"alias", alias.helper,alias.set,function(cmd,rest) return env.smart_check_endless(cmd,rest,3) end,3)
 return alias

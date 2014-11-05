@@ -71,12 +71,44 @@ function env.list_dir(file_dir,file_ext,text_macher)
             end
         end
         keylist[#keylist+1]={name,n,comment}
-    end
-    
+    end    
     return keylist
 end
 
 local cmd_keys={}
+
+function env.check_cmd_endless(cmd,other_parts)
+    
+    if not _CMDS[cmd] then
+        return true,other_parts
+    end
+    local p1=';+[%s\t\n]*$'
+
+    if not _CMDS[cmd].MULTI then        
+        return true,other_parts and other_parts:gsub(p1,"")
+    elseif type(_CMDS[cmd].MULTI)=="function" then
+        return _CMDS[cmd].MULTI(cmd,other_parts)
+    end
+    
+    local p2='\r*\n[%s\r\t\n]*/[%s\t]*$'
+    local match = (other_parts:match(p1) and 1) or (other_parts:match(p2) and 2) or false
+    --print(match,other_parts)
+    if not match then
+        return false,other_parts
+    end
+
+    return true,other_parts:gsub(match==1 and p1 or p2,"")
+end
+
+function env.smart_check_endless(cmd,rest,from_pos)
+    local args=env.parse_args(from_pos,rest)
+    if not args[from_pos-1] then return true,rest:gsub('[;%s\t]+$',"") end
+    if env.check_cmd_endless(args[from_pos-1]:upper(),args[from_pos] or "") then
+        return true,rest:gsub('[%s\n\r\t]+$',"")
+    else
+        return false,rest 
+    end
+end
 
 function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbcmd)
     local abbr={}
@@ -120,19 +152,6 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
         desc = desc:match("([^\n\r]+)") 
     end
 
-    if is_multiline==true then
-        is_multiline=function(cmd,other_parts)
-            local p1=';+[%s\t\n]*$'
-            local p2='\n[%s\t\n]*/[%s\t]*$'
-            local match = (other_parts:match(p1) and 1) or (other_parts:match(p2) and 2) or false
-            --print(match,other_parts)
-            if not match then
-                return false,other_parts
-            end
-            return true,other_parts:gsub(match==1 and p1 or p2,"")
-        end
-    end
-    
     _CMDS[cmd]={
         OBJ    = obj,          --object, if the connected function is not a static function, then this field is used.
         FILE   = src,          --the file name that defines & executes the command
@@ -276,7 +295,17 @@ end
 
 function env.parse_args(cmd,rest)    
     --deal with the single-line commands
-    local arg_count=_CMDS[cmd].ARGS
+    local args_count
+    if type(cmd)=="number" then
+        arg_count=cmd+1
+    else
+        if not cmd then 
+            cmd,rest=rest:match('([^%s\n\r\t;]+)[%s\n\r\t]*(.*)') 
+            cmd = cmd and cmd:upper() or "_unknown_"
+        end
+        env.checkerr(_CMDS[cmd],'Unknown command "'..cmd..'"!')
+        arg_count=_CMDS[cmd].ARGS
+    end
     local args ,args1={}    
     if arg_count == 1 then
         table.insert(args,cmd.." "..rest)
@@ -330,8 +359,8 @@ function env.parse_args(cmd,rest)
             table.insert(args,piece)
         end   
     end
-    return args
-end    
+    return args,cmd
+end
 
 function env.eval_line(line,exec)
     local b=line:byte()
@@ -340,7 +369,7 @@ function env.eval_line(line,exec)
     local done
     local function check_multi_cmd(lineval)
         curr_stmt = curr_stmt ..lineval
-        done,curr_stmt=_CMDS[multi_cmd].MULTI(multi_cmd,curr_stmt)
+        done,curr_stmt=env.check_cmd_endless(multi_cmd,curr_stmt)
         if done then  
             if curr_stmt then
                 local stmt={multi_cmd,env.parse_args(multi_cmd,curr_stmt)}                                
@@ -363,8 +392,9 @@ function env.eval_line(line,exec)
 
     if multi_cmd then return check_multi_cmd(line) end
     
-    local cmd,rest=line:match('([^%s\n\r\t;]+)[%s\n\r\t]*(.*)')
-
+    local cmd,rest=env.parse_args(2,line)
+    cmd,rest=cmd[1],cmd[2] or ""
+    cmd=cmd:gsub(';+$','')
     if not cmd or cmd=="" or cmd:sub(1,2)=="--" then return end
     if cmd:sub(1,2)=="/*" then cmd=cmd:sub(1,2) end
     cmd=cmd:upper()

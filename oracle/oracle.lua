@@ -290,8 +290,8 @@ function oracle.check_completion(cmd,other_parts)
 	}
 	if cmd=="/*" then 
 		p1=".*%*/[%s\t\n]*$" 
-	else
-		local obj=other_parts:match("([%w_%$;]+)")
+	else		
+		local obj=env.parse_args(2,other_parts)[1]
 		if obj and not objs[obj] and not objs[cmd] then
 			p2=";+[%s\t\n]*$"
 		end
