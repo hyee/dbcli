@@ -71,14 +71,14 @@ ash_base AS(
            ROUND(COUNT(CASE WHEN NVL(wait_class,'1') NOT IN ('1','User I/O','Cluster','Concurrency') THEN 1 END) * 100 / COUNT(1), 1) oth,
            ''||MAX(current_obj#) KEEP(dense_rank LAST ORDER BY tobj) top_obj,
            MAX(nvl2(event,event||'('||tenv||')',null)) KEEP(dense_rank LAST ORDER BY tenv) top_event
-    FROM (SELECT b.*,
+    FROM (SELECT /*+no_expand*/ b.*,
                  COUNT(sample_id) OVER(PARTITION BY SQL_PLAN_LINE_ID,current_obj#) tobj,
                  COUNT(distinct nvl2(event,sample_id,null)) OVER(PARTITION BY SQL_PLAN_LINE_ID,event) tenv
           FROM   qry a
           JOIN   &V9 b
           ON     ( b.sql_id=:V1 AND a.phv = b.sql_plan_hash_value AND sample_time+0 BETWEEN 
                   NVL(to_date(:V3,'YYMMDDHH24MI'),SYSDATE-90) AND NVL(to_date(:V4,'YYMMDDHH24MI'),SYSDATE))
-                  AND  (nvl(lengthb(:V2),0) >6 or regexp_like(:V2,'^\d+$') and :V2+0 in(QC_SESSION_ID,SESSION_ID)) 
+                  AND  (:V2 is null or nvl(lengthb(:V2),0) >6 or not regexp_like(:V2,'^\d+$') or :V2+0 in(QC_SESSION_ID,SESSION_ID)) 
                  )       
     GROUP  BY nvl(SQL_PLAN_LINE_ID,0)
 ),
