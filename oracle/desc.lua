@@ -197,17 +197,51 @@ local desc_sql={
 		SELECT /*INTERNAL_DBCLI_CMD*/ /*+ RULE */
 			 DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
 			 DECODE(C.COLUMN_POSITION, 1, DECODE(I.UNIQUENESS,'UNIQUE','YES','NO'), '') "UNIQUE",
+			 DECODE(C.COLUMN_POSITION, 1, NVL2(AC.INDEX_NAME,'YES','NO'), '') "IS_PK",
 			 DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
-			 DECODE(C.COLUMN_POSITION, 1, I.STATUS, '') STATUS,
+			 DECODE(C.COLUMN_POSITION, 1, decode(I.STATUS,'N/A',(SELECT MIN(STATUS) FROM All_Ind_Partitions p WHERE p.INDEX_OWNER = I.OWNER AND p.INDEX_NAME = I.INDEX_NAME),I.STATUS), '') STATUS,
 			 C.COLUMN_POSITION NO#,
 			 C.COLUMN_NAME,
 			 C.DESCEND
-		FROM   ALL_IND_COLUMNS C, ALL_INDEXES I
+		FROM   ALL_IND_COLUMNS C, ALL_INDEXES I,ALL_Constraints AC
 		WHERE  C.INDEX_OWNER = I.OWNER
 		AND    C.INDEX_NAME = I.INDEX_NAME
+		AND    AC.INDEX_OWNER(+) = I.OWNER
+		AND    AC.INDEX_NAME(+) = I.INDEX_NAME
 		AND    I.TABLE_OWNER = :1
 		AND    I.TABLE_NAME = :2		
 		ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION]],
+	[[
+		SELECT DECODE(R, 1, CONSTRAINT_NAME) CONSTRAINT_NAME,
+		       DECODE(R, 1, CONSTRAINT_TYPE) CTYPE,
+		       DECODE(R, 1, R_TABLE) R_TABLE,
+		       DECODE(R, 1, R_CONSTRAINT) R_CONSTRAINT,
+		       SEARCH_CONDITION C_CONDITION,
+		       DECODE(R, 1, status) status,
+		       --DECODE(R, 1, DEFERRABLE) DEFERRABLE,
+		       DECODE(R, 1, DEFERRED) DEFERRED,
+		       DECODE(R, 1, VALIDATED) VALIDATED,
+		       COLUMN_NAME
+		FROM   (SELECT A.CONSTRAINT_NAME,
+		               A.CONSTRAINT_TYPE,
+		               R.TABLE_NAME R_TABLE,
+		               A.R_CONSTRAINT_NAME R_CONSTRAINT,
+		               a.status,
+		               a.DEFERRABLE,
+		               a.DEFERRED,
+		               a.VALIDATED,
+		               A.SEARCH_CONDITION,
+		               c.COLUMN_NAME,
+		               ROW_NUMBER() OVER(PARTITION BY A.CONSTRAINT_NAME ORDER BY C.COLUMN_NAME) R
+		        FROM   all_constraints a, all_constraints R, ALL_CONS_COLUMNS C
+		        WHERE  A.owner = :1
+		        AND    A.TABLE_NAME = :2
+		        AND    A.R_OWNER = R.OWNER(+)
+		        AND    A.R_CONSTRAINT_NAME = R.CONSTRAINT_NAME(+)
+		        AND    A.OWNER = C.OWNER(+)
+		        AND    A.CONSTRAINT_NAME = C.CONSTRAINT_NAME(+)
+		        AND    (A.constraint_type != 'C' OR A.constraint_name NOT LIKE 'SYS\_%' ESCAPE '\'))
+	]],
 	[[
 		SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/*
 		FROM   all_TABLES T
@@ -322,7 +356,7 @@ function desc.desc(name,option)
 		rs[2],rs[3]=rs[3],rs[2]
 	end
 	
-	local dels=string.rep("=",60)
+	local dels=string.rep("=",100)
 	local feed=cfg.get("feed")
 	cfg.set("feed","off",true)
 	print(("%s : %s%s%s\n"..dels):format(rs[4],rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3]))
@@ -342,5 +376,5 @@ function desc.desc(name,option)
 	cfg.temp("feed",feed,true)
 end
 
-env.set_command(nil,{"describe","desc"},'Describe datbase object. Usage desc [<owner>.]<object>[.<partition>]',desc.desc,false,3)
+env.set_command(nil,{"describe","desc"},'Describe datbase object. Usage: desc [owner.]<object>[.partition] | [owner.]<pkg|typ>[.<function|procedure>]',desc.desc,false,3)
 return desc

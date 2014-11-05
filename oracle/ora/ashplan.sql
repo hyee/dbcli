@@ -65,10 +65,11 @@ ash_base AS(
            COUNT(DISTINCT sql_exec_id) exes,
            COUNT(DISTINCT TRUNC(sample_time + 0, 'MI')) mins,
            ROUND(COUNT(DECODE(wait_class, NULL, 1)) * NVL2(max(sample_id),100,0) / COUNT(1), 1) "CPU",
-           ROUND(COUNT(DECODE(wait_class, 'User I/O', 1)) * 100 / COUNT(1), 1) "IO",
+           ROUND(COUNT(CASE WHEN wait_class IN ('User I/O','System I/O') THEN 1 END) * 100 / COUNT(1), 1) "IO",
            ROUND(COUNT(DECODE(wait_class, 'Cluster', 1)) * 100 / COUNT(1), 1) "CL",           
            ROUND(COUNT(DECODE(wait_class, 'Concurrency', 1)) * 100 / COUNT(1), 1) "CC",   
-           ROUND(COUNT(CASE WHEN NVL(wait_class,'1') NOT IN ('1','User I/O','Cluster','Concurrency') THEN 1 END) * 100 / COUNT(1), 1) oth,
+           ROUND(COUNT(DECODE(wait_class, 'Application', 1)) * 100 / COUNT(1), 1) "APP",   
+           ROUND(COUNT(CASE WHEN NVL(wait_class,'1') NOT IN ('1','User I/O','System I/O','Cluster','Concurrency','Application') THEN 1 END) * 100 / COUNT(1), 1) oth,
            ''||MAX(current_obj#) KEEP(dense_rank LAST ORDER BY tobj) top_obj,
            MAX(nvl2(event,event||'('||tenv||')',null)) KEEP(dense_rank LAST ORDER BY tenv) top_event
     FROM (SELECT /*+no_expand*/ b.*,
@@ -109,6 +110,7 @@ xplan_data AS
    regexp_replace(nvl(io,0),'^0$',' ') io,
    regexp_replace(nvl(cc,0),'^0$',' ') cc,
    regexp_replace(nvl(cl,0),'^0$',' ') cl,
+   regexp_replace(nvl(app,0),'^0$',' ') app,
    regexp_replace(nvl(oth,0),'^0$',' ') oth,
    regexp_replace(nvl(px_hits,0),'^0$',' ') px_hits,
    decode(nvl(hits,0),0,' ',hits||'('||round(hits*100/sum(hits) over())||'%)') hits,   
@@ -141,21 +143,21 @@ measures (plan_table_output,
          greatest(max(LENGTHB(top_obj)) over () + 1, 8) as sobj,
          greatest(max(LENGTHB(top_event)) over () + 2, 11) as sevent,
          cast(null as varchar2(128)) as inject,
-         cpu,io,cc,cl,oth,exes,hits,mins,px_hits,top_obj,top_event,
+         cpu,io,cc,cl,app,oth,exes,hits,mins,px_hits,top_obj,top_event,
          rc)
 rules sequential order (
       inject[phv,r] = case
                          when id[cv(),cv()+1] = 0
                          or   id[cv(),cv()+3] = 0
                          or   id[cv(),cv()-1] = maxid[cv(),cv()-1]
-                         then rpad('-', sevent[cv(),cv()]+csize[cv(),cv()]+spx_hit[cv(),cv()]++shit[cv(),cv()]+sexe[cv(),cv()]+smin[cv(),cv()]+26, '-')
+                         then rpad('-', sevent[cv(),cv()]+csize[cv(),cv()]+spx_hit[cv(),cv()]++shit[cv(),cv()]+sexe[cv(),cv()]+smin[cv(),cv()]+31, '-')
                          when id[cv(),cv()+2] = 0
                          then '|'  || lpad('Ord |', csize[cv(),cv()])--
                              ||LPAD('Calls',sexe[cv(),cv()])
                              ||LPAD('Count',spx_hit[cv(),cv()])
                              ||LPAD('Secs',shit[cv(),cv()])
                              ||LPAD('Mins|',smin[cv(),cv()])
-                             ||' CPU%  IO%  CL%  CC% OTH%|'
+                             ||' CPU%  IO%  CL%  CC% APP% OTH%|'
                             -- ||LPAD('Top_Obj',sobj[cv(),cv()])
                              ||RPAD(' Top Event',sevent[cv(),cv()]-1)||'|'
                          when id[cv(),cv()] is not null
@@ -164,8 +166,7 @@ rules sequential order (
                              ||LPAD(px_hits[cv(),cv()],spx_hit[cv(),cv()])
                              ||LPAD(hits[cv(),cv()], shit[cv(),cv()])
                              ||LPAD(mins[cv(),cv()]||'|', smin[cv(),cv()])
-                             ||LPAD(CPU[cv(),cv()],5)||LPAD(IO[cv(),cv()],5)||LPAD(CL[cv(),cv()],5)||LPAD(cc[cv(),cv()],5)||LPAD(oth[cv(),cv()],5)||'|'
-                            -- ||LPAD(top_obj[cv(),cv()],sobj[cv(),cv()])
+                             ||LPAD(CPU[cv(),cv()],5)||LPAD(IO[cv(),cv()],5)||LPAD(CL[cv(),cv()],5)||LPAD(cc[cv(),cv()],5)||LPAD(app[cv(),cv()],5)||LPAD(oth[cv(),cv()],5)||'|'
                             ||RPAD(' '||top_event[cv(),cv()],sevent[cv(),cv()]-1)||'|'                            
                       end, 
       plan_table_output[phv,r] = case

@@ -32,5 +32,5 @@ function tester.do_test(target)
 	end
 end
 
-env.set_command(nil,"tester","Invoke unit test on existing modules",tester.do_test,false,2)
+env.set_command(nil,"tester","#Invoke unit test on existing modules",tester.do_test,false,2)
 return tester
