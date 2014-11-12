@@ -61,7 +61,7 @@ BEGIN
                          regexp_substr(sq.object_value, '[^:]+', 1, 4) program_line#,
                          regexp_replace(sq.object_value,'^([^:]+:){2,4}') sql_text
                   FROM   s3, TABLE(sqls) sq
-                  WHERE  regexp_like(sq.object_value(+), '^' ||  s3.inst_id||'-'||s3.sql_id || ':')) s3
+                  WHERE  sq.object_value(+) like s3.inst_id||'-'||s3.sql_id || ':%') s3
           START  WITH qcsid IS NULL
           CONNECT BY qcsid = PRIOR SID
               AND    qcinst_id = PRIOR inst_id
