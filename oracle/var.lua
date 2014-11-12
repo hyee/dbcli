@@ -1,7 +1,7 @@
 local env=env
 local grid,snoop,cfg=env.grid,env.event.snoop,env.set
 local db=env.oracle
-local var={inputs={},outputs={},output_result={}}
+local var={inputs={},outputs={},desc={}}
 
 var.types={
     REFCURSOR =  'CURSOR',
@@ -17,8 +17,8 @@ var.types={
 }
 function var.helper()
     local help=[[
-        Define output variables for db execution. Usage: "var <name> <data type>", or "var <name>" to remove
-            Define variable: var <name> <data_type>
+        Define output variables for db execution. Usage: "var <name> <data type> [description]", or "var <name>" to remove
+            Define variable: var <name> <data_type> [description]
             Remove variable: var <name>
         Available Data types:
         ====================
@@ -27,7 +27,7 @@ function var.helper()
 end
 
 
-function var.setOutput(name,datatype)
+function var.setOutput(name,datatype,desc)
     if not name then 
         return env.helper.helper("VAR")
     end
@@ -43,9 +43,10 @@ function var.setOutput(name,datatype)
     --env.checkerr(not if var.inputs[name],"The name["..name.."] has been defined as input parameter!")
     if var.inputs[name] then var.inputs[name]=nil end
     var.outputs[name]='#'..var.types[datatype]
+    var.desc[name]=desc
 end
 
-function var.setInput(name)
+function var.setInput(name,desc)
     if not name or name=="" then
         print("Current defined variables:\n====================")
         for k,v in pairs(var.inputs) do
@@ -68,7 +69,8 @@ function var.setInput(name)
     env.checkerr(name:match("^[%w%$_]+$"),'Unexpected variable name['..name..']!')    
     --if var.outputs[name] then  return print("The name["..name.."] has ben defined as  output parameter!") end
     if var.outputs[name] then var.outputs[name]=nil end
-    var.setInputs(name,value)    
+    var.setInputs(name,value)
+    var.desc[name]=desc
 end
 
 function var.setInputs(name,args)
@@ -124,7 +126,7 @@ function var.print(name)
             print(obj)
         end
     else 
-        local list=type(name)=="table"  and name or var.inputs
+        local list=type(name)=="table" and name or var.inputs
         local keys={}
         for k,v in pairs(list) do  keys[#keys+1]={type(v),k,v} end 
         if #keys==0 then return end
@@ -138,10 +140,11 @@ function var.print(name)
         list={{'Variable','Value'}}
         for _,obj in ipairs(keys) do
             local item=obj[3]
-            if obj[1]=='userdata' and tostring(item):find('ResultSet') then 
+            if obj[1]=='userdata' and tostring(item):find('ResultSet') then
+                if var.desc[obj[2]] then print(var.desc[obj[2]]..':\n'..string.rep('=',var.desc[obj[2]]:len()+1)) end
                 db.resultset:print(item,db.conn)
             else
-                list[#list+1]={obj[2],item}
+                list[#list+1]={var.desc[obj[2]] or obj[2],item}
             end
         end
         if #list>1 then grid.print(list) end
@@ -152,8 +155,8 @@ function var.onload()
     snoop('BEFORE_ORACLE_EXEC',var.before_db_exec)
     snoop('AFTER_ORACLE_EXEC' ,var.after_db_exec)
     cfg.init("PrintVar",'on',nil,"oracle","Max size of historical commands",'on,off')
-    env.set_command(nil,{"variable","VAR"},var.helper,var.setOutput,false,3)
+    env.set_command(nil,{"variable","VAR"},var.helper,var.setOutput,false,4)
     env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables(refer to command "VAR" and "DEF").Usage: print <variable|-a>',var.print,false,3)
-    env.set_command(nil,{"Define","DEF"},"Define input variables, Usage: def <name>=<value>, or def <name> to remove definition",var.setInput,false,2)
+    env.set_command(nil,{"Define","DEF"},"Define input variables, Usage: def <name>=<value> [description], or def <name> to remove definition",var.setInput,false,3)
 end    
 return var

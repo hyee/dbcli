@@ -6,9 +6,9 @@ PRO Start testing
 /
 PRO ====================
 
-VAR OBJS CURSOR
-VAR TABLES CURSOR
-VAR A VARCHAR
+VAR OBJS CURSOR "All objects"
+VAR TABLES CURSOR  "All Tables"
+VAR A VARCHAR "A1"
 VAR B VARCHAR
 VAR C VARCHAR
 

@@ -334,7 +334,7 @@ function env.parse_args(cmd,rest)
         arg_count=_CMDS[cmd].ARGS
     end
     
-    local args ,args1={}    
+    local args={}    
     if arg_count == 1 then
         args[#args+1]=cmd.." "..rest
     elseif arg_count == 2 then
@@ -345,36 +345,28 @@ function env.parse_args(cmd,rest)
         local is_quote_string = false
         for i=1,#rest,1 do
             local char=rest:sub(i,i)
-            if is_quote_string then                
+            if is_quote_string then--if the parameter starts with quote                
                 if char ~= quote then
                     piece = piece .. char
                 elseif (rest:sub(i+1,i+1) or " "):match("^%s*$") then
                     --end of a quote string if next char is a space
-                    args[#args+1]=piece:sub(2)
-                    piece=''
-                    is_quote_string=false
+                    args[#args+1],piece,is_quote_string=piece:sub(2),'',false
                 else
                     piece=piece..char
                 end
             else
                 if char==quote and piece == '' then
                     --begin a quote string, if its previous char is not a space, then bypass
-                    is_quote_string = true
-                    piece=quote                   
-                elseif not char:match("[%s\t\r\n]") then
+                    is_quote_string,piece = true,quote               
+                elseif not char:match("([%s\t\r\n])") then
                     piece = piece ..char
                 elseif piece ~= '' then
-                    args[#args+1]=piece
-                    piece=''
+                    args[#args+1],piece=piece,''
                 end
             end
-            if #args>=arg_count-2 then
-                piece=rest:sub(i+1)
-                if piece:sub(1,1)==quote and piece:sub(-1)==quote then
-                    piece=piece:sub(2,-2)
-                end
-                args[#args+1]=piece
-                piece=""
+            if #args>=arg_count-2 then--the last parameter
+                piece=rest:sub(i+1):gsub("^([%s\t\r\n]+)",""):gsub('^"(.*)"$','%1')                
+                args[#args+1],piece=piece,''
                 break
             end
         end
