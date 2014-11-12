@@ -99,33 +99,52 @@ end
 
 function var.after_db_exec(db,sql,args)
     if db:is_internal_call(sql) then return end
-    local result,isPrint={{'Argument','Value'}},cfg.get("PrintVar")
+    local result,isPrint={},cfg.get("PrintVar")
     for k,v in pairs(var.outputs) do
         if v and k:upper()==k and args[k] and args[k]~=v then
-            if v=="#CURSOR"  and isPrint=="on" then
-                db.resultset:print(args[k],db.conn)
-            else
-                var.inputs[k],var.outputs[k]=args[k],nil
-                result[#result+1]={k,args[k]}
-            end
-            --args[k]=v
+            var.inputs[k],var.outputs[k]=args[k],nil
+            result[k]=args[k]            
         end
     end
-
-    if #result>1 and isPrint=="on" then
-        grid.print(result)
+    
+    if isPrint=="on" then
+        var.print(result)
     end
 end
 
 function var.print(name)
-    if not name then return end
-    name=name:upper()
-    local obj=var.inputs[name]
-    env.checkerr(obj,'Target variable does not exist!')   
-    if type(obj)=='userdata' and tostring(obj):find('ResultSet') then 
-        db.resultset:print(obj,db.conn)
+    if not name then return end    
+    if type(name)=="string" and name:lower()~='-a' then
+        name=name:upper()
+        local obj=var.inputs[name]
+        env.checkerr(obj,'Target variable does not exist!')   
+        if type(obj)=='userdata' and tostring(obj):find('ResultSet') then 
+            db.resultset:print(obj,db.conn)
+        else 
+            print(obj)
+        end
     else 
-        print(obj)
+        local list=type(name)=="table"  and name or var.inputs
+        local keys={}
+        for k,v in pairs(list) do  keys[#keys+1]={type(v),k,v} end 
+        if #keys==0 then return end
+        table.sort(keys,function(a,b)
+            if a[1]==b[1] then return a[2]<b[2] end
+            if a[1]=="userdata" then return false end
+            if b[1]=="userdata" then return true end
+            return a[1]<b[1]
+        end)
+        
+        list={{'Variable','Value'}}
+        for _,obj in ipairs(keys) do
+            local item=obj[3]
+            if obj[1]=='userdata' and tostring(item):find('ResultSet') then 
+                db.resultset:print(item,db.conn)
+            else
+                list[#list+1]={obj[2],item}
+            end
+        end
+        if #list>1 then grid.print(list) end
     end
 end
 
@@ -134,7 +153,7 @@ function var.onload()
     snoop('AFTER_ORACLE_EXEC' ,var.after_db_exec)
     cfg.init("PrintVar",'on',nil,"oracle","Max size of historical commands",'on,off')
     env.set_command(nil,{"variable","VAR"},var.helper,var.setOutput,false,3)
-    env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables(refer to command "VAR" and "DEF").Usage: print <variable>',var.print,false,3)
+    env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables(refer to command "VAR" and "DEF").Usage: print <variable|-a>',var.print,false,3)
     env.set_command(nil,{"Define","DEF"},"Define input variables, Usage: def <name>=<value>, or def <name> to remove definition",var.setInput,false,2)
 end    
 return var
