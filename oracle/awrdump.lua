@@ -20,7 +20,7 @@ function awr.dump_report(stmt,starttime,endtime,instances)
 end
 
 function awr.extract_awr(starttime,endtime,instances)
-	local stmt=[[
+    local stmt=[[
     DECLARE
         rs       CLOB;
         filename VARCHAR2(100);

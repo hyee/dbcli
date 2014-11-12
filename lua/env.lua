@@ -548,10 +548,10 @@ end
 function env.load_data(file)
     file=env.WORK_DIR.."data"..env.PATH_DEL..file
     local f=io.open(file)
-	if not f then
-		return {}
-	end
-	local txt=f:read("*a")	
+    if not f then
+        return {}
+    end
+    local txt=f:read("*a")    
     f:close()
     if not txt or txt:gsub("[\n\t%s\r]+","")=="" then return {} end
     env.MessagePack.set_array("always_as_map")
@@ -561,9 +561,9 @@ end
 function env.save_data(file,txt)
     file=env.WORK_DIR.."data"..env.PATH_DEL..file
     local f=io.open(file,'w')
-	if not f then
-		env.raise("Unable to save "..file)
-	end
+    if not f then
+        env.raise("Unable to save "..file)
+    end
     env.MessagePack.set_array("always_as_map")
     txt=env.MessagePack.pack(txt)
     f:write(txt)

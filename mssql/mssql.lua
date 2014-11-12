@@ -8,17 +8,17 @@ local module_list={}
 local mssql=env.class(env.db_core)
 
 function mssql:ctor(isdefault)
-	self.type="mssql"
+    self.type="mssql"
     if isdefault~=false then
         --load command list here
         local md=1
     end
-	self.C,self.props={},{}
+    self.C,self.props={},{}
 end
 
 function mssql:onload()
-	self.C={}
-	init.load_modules(module_list,self.C)
+    self.C={}
+    init.load_modules(module_list,self.C)
 end
 
 return mssql.new()

@@ -1,7 +1,7 @@
 local db,cfg=env.oracle,env.set
 local sqlprof={}
 function sqlprof.extract_profile(sql_id,sql_plan)
-	local stmt=[[
+    local stmt=[[
     DECLARE
         PROCEDURE extract_profile(p_buffer     OUT CLOB,
                                   p_sqlid      VARCHAR2,

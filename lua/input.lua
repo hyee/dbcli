@@ -13,16 +13,16 @@ env.onload(...)
 local line,eval,prompt = "",env.eval_line
 local reader=reader
 local ansi=env.ansi
-local color=ansi.get_color	
+local color=ansi.get_color    
 reader:setExpandEvents(false)
 local prompt_color="%s%s"..color("NOR").."%s"
 local write=function(str)
-	--print(ansi.cfg("PROMPTCOLOR"))
-	str=prompt_color:format(color("PROMPTCOLOR"),str,color("COMMANDCOLOR"))
-	if prompt~=str then
-		prompt=str
-		reader:setPrompt(str)
-	end
+    --print(ansi.cfg("PROMPTCOLOR"))
+    str=prompt_color:format(color("PROMPTCOLOR"),str,color("COMMANDCOLOR"))
+    if prompt~=str then
+        prompt=str
+        reader:setPrompt(str)
+    end
 end
 
 local os,clock=os
@@ -31,9 +31,9 @@ while true do
     write(env.CURRENT_PROMPT)
     line = reader:readLine()  
     if not line or line:lower() == 'quit' or line:lower() == 'exit' then
-    	print("Exited.")
-    	env.unload()    	
-    	os.exit(1) 
+        print("Exited.")
+        env.unload()        
+        os.exit(1) 
     end
 
     clock=os.clock()

@@ -30,9 +30,9 @@ local map_loadc = {
       shift = 23, mask = 3,
       [0] = "vmovFmDN", "vstmFNdr",
       _ = {
-	shift = 21, mask = 1,
-	[0] = "vstrFdl",
-	{ shift = 16, mask = 15, [13] = "vpushFdr", _ = "vstmdbFNdr", }
+    shift = 21, mask = 1,
+    [0] = "vstrFdl",
+    { shift = 16, mask = 15, [13] = "vpushFdr", _ = "vstmdbFNdr", }
       },
     },
     {
@@ -40,8 +40,8 @@ local map_loadc = {
       [0] = "vmovFDNm",
       { shift = 16, mask = 15, [13] = "vpopFdr", _ = "vldmFNdr", },
       _ = {
-	shift = 21, mask = 1,
-	[0] = "vldrFdl", "vldmdbFNdr",
+    shift = 21, mask = 1,
+    [0] = "vldrFdl", "vldmdbFNdr",
       },
     },
   },
@@ -51,9 +51,9 @@ local map_loadc = {
       shift = 23, mask = 3,
       [0] = "vmovGmDN", "vstmGNdr",
       _ = {
-	shift = 21, mask = 1,
-	[0] = "vstrGdl",
-	{ shift = 16, mask = 15, [13] = "vpushGdr", _ = "vstmdbGNdr", }
+    shift = 21, mask = 1,
+    [0] = "vstrGdl",
+    { shift = 16, mask = 15, [13] = "vpushGdr", _ = "vstmdbGNdr", }
       },
     },
     {
@@ -61,8 +61,8 @@ local map_loadc = {
       [0] = "vmovGDNm",
       { shift = 16, mask = 15, [13] = "vpopGdr", _ = "vldmGNdr", },
       _ = {
-	shift = 21, mask = 1,
-	[0] = "vldrGdl", "vldmdbGNdr",
+    shift = 21, mask = 1,
+    [0] = "vldrGdl", "vldmdbGNdr",
       },
     },
   },
@@ -130,10 +130,10 @@ local map_datac = {
     {
       shift = 8, mask = 15,
       [10] = {
-	shift = 20, mask = 15,
-	[0] = "vmovFnD", "vmovFDn",
-	[14] = "vmsrD",
-	[15] = { shift = 12, mask = 15, [15] = "vmrs", _ = "vmrsD", },
+    shift = 20, mask = 15,
+    [0] = "vmovFnD", "vmovFDn",
+    [14] = "vmsrD",
+    [15] = { shift = 12, mask = 15, [15] = "vmrs", _ = "vmrsD", },
       },
     },
   },
@@ -433,10 +433,10 @@ local function putop(ctx, text, operands)
   end
   if ctx.hexdump > 0 then
     ctx.out(format("%08x  %s  %-5s %s%s\n",
-	    ctx.addr+pos, tohex(ctx.op), text, concat(operands, ", "), extra))
+        ctx.addr+pos, tohex(ctx.op), text, concat(operands, ", "), extra))
   else
     ctx.out(format("%08x  %-5s %s%s\n",
-	    ctx.addr+pos, text, concat(operands, ", "), extra))
+        ctx.addr+pos, text, concat(operands, ", "), extra))
   end
   ctx.pos = pos + 4
 end
@@ -554,24 +554,24 @@ local function disass_ins(ctx)
       x = fmtvr(op, vr, 0, 5)
     elseif p == "P" then
       if band(op, 0x02000000) ~= 0 then
-	x = ror(band(op, 255), 2*band(rshift(op, 8), 15))
+    x = ror(band(op, 255), 2*band(rshift(op, 8), 15))
       else
-	x = map_gpr[band(op, 15)]
-	if band(op, 0xff0) ~= 0 then
-	  operands[#operands+1] = x
-	  local s = map_shift[band(rshift(op, 5), 3)]
-	  local r = nil
-	  if band(op, 0xf90) == 0 then
-	    if s == "ror" then s = "rrx" else r = "#32" end
-	  elseif band(op, 0x10) == 0 then
-	    r = "#"..band(rshift(op, 7), 31)
-	  else
-	    r = map_gpr[band(rshift(op, 8), 15)]
-	  end
-	  if name == "mov" then name = s; x = r
-	  elseif r then x = format("%s %s", s, r)
-	  else x = s end
-	end
+    x = map_gpr[band(op, 15)]
+    if band(op, 0xff0) ~= 0 then
+      operands[#operands+1] = x
+      local s = map_shift[band(rshift(op, 5), 3)]
+      local r = nil
+      if band(op, 0xf90) == 0 then
+        if s == "ror" then s = "rrx" else r = "#32" end
+      elseif band(op, 0x10) == 0 then
+        r = "#"..band(rshift(op, 7), 31)
+      else
+        r = map_gpr[band(rshift(op, 8), 15)]
+      end
+      if name == "mov" then name = s; x = r
+      elseif r then x = format("%s %s", s, r)
+      else x = s end
+    end
       end
     elseif p == "L" then
       x = fmtload(ctx, op, pos)
@@ -590,16 +590,16 @@ local function disass_ins(ctx)
       suffix = suffix..(vr == "s" and ".f32" or ".f64")
     elseif p == "R" then
       if band(op, 0x00200000) ~= 0 and #operands == 1 then
-	operands[1] = operands[1].."!"
+    operands[1] = operands[1].."!"
       end
       local t = {}
       for i=0,15 do
-	if band(rshift(op, i), 1) == 1 then t[#t+1] = map_gpr[i] end
+    if band(rshift(op, i), 1) == 1 then t[#t+1] = map_gpr[i] end
       end
       x = "{"..concat(t, ", ").."}"
     elseif p == "r" then
       if band(op, 0x00200000) ~= 0 and #operands == 2 then
-	operands[1] = operands[1].."!"
+    operands[1] = operands[1].."!"
       end
       local s = tonumber(sub(last, 2))
       local n = band(op, 255)
@@ -615,9 +615,9 @@ local function disass_ins(ctx)
     elseif p == "u" then
       x = band(rshift(op, 7), 31)
       if band(op, 0x40) == 0 then
-	if x == 0 then x = nil else x = "lsl #"..x end
+    if x == 0 then x = nil else x = "lsl #"..x end
       else
-	if x == 0 then x = "asr #32" else x = "asr #"..x end
+    if x == 0 then x = "asr #32" else x = "asr #"..x end
       end
     elseif p == "v" then
       x = band(rshift(op, 7), 31)
