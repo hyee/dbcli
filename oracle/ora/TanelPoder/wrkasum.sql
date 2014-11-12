@@ -21,7 +21,7 @@ PROMPT ==========================================
      actual_pga_mb DESC NULLS LAST
 /
 
-VAR WRKSQL CURSOR "Top SQL_ID by TEMP usage"
+VAR WRKSQL CURSOR "Top SQL_ID by TEMP Usage"
 DECLARE
     sqls sys.dbms_debug_vc2coll := sys.dbms_debug_vc2coll();
 BEGIN
@@ -30,7 +30,7 @@ BEGIN
         IF sqls.count = 0 OR sqls(sqls.count) IS NOT NULL THEN
             sqls.extend;
         END IF;
-        SELECT MAX(sql_id || ':'||substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'[' || chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200))
+        SELECT MAX(sql_id || ':'||substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'[' || chr(10) || chr(13) || chr(9) || ' ]+',' '),1,150))
         INTO   sqls(sqls.count)
         FROM   gv$sqlarea
         WHERE  sql_id = r.sql_id
