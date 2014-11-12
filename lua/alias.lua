@@ -98,7 +98,7 @@ function alias.set(name,cmd,write)
 		alias.cmdlist[name].text=cmd
 		alias.cmdlist[name].active=false
 		if not globalcmds[name]	then
-			env.set_command(nil,name, "#Alias command",alias.run_command,false,99)
+			env.set_command(nil,name, "#Alias command",alias.run_command,false,99,false,true)
 			alias.cmdlist[name].active=true
 		elseif globalcmds[name].FUNC==alias.run_command then
 			alias.cmdlist[name].active=true
@@ -121,8 +121,15 @@ function alias.helper()
 	Current aliases:
 	================]]
 	local grid,rows=env.grid,{{"Name","Active?","Command"}}
+	local active
 	for k,v in pairs(alias.cmdlist) do
-		table.insert(rows,{k,alias.cmdlist[k].active,tostring(alias.cmdlist[k].desc)})
+		if not env._CMDS[k]['FILE']:match("alias") then 
+			active='No'
+		else
+			active='Yes'
+		end
+		alias.cmdlist[k].active=active
+		table.insert(rows,{k,active,tostring(alias.cmdlist[k].desc)})
 	end
 	grid.sort(rows,1,true)
 	for _,k in ipairs(grid.format(rows)) do

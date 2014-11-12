@@ -9,7 +9,7 @@ function ora.rehash(script_dir,ext_name)
 	local cmdlist={}
 	for k,v in ipairs(keylist) do
 		local desc=v[3] and v[3]:gsub("^[\n\r%s\t]*[\n\r]+","") or ""
-		desc=desc:gsub("%-%-%[%[(.*)%]%]%-%-","")
+		desc=desc:gsub("%-%-%[%[(.*)%]%]%-%-",""):gsub("%-%-%[%[(.*)%-%-%]%]","")
 		cmdlist[v[1]:upper()]={path=v[2],desc=desc,short_desc=desc:match("([^\n\r]+)") or ""}
 	end
 
@@ -34,139 +34,154 @@ Available parameters:
    Out   bindings:  :<alphanumeric>, the data type of output parameters should be defined in th comment scope
 --]]-- 
 function ora.parse_args(sql,args,print_args)
-	local desc=sql:match(ora.comment)
+	
 	local outputlist={}
 	local outputcount=0
-	local arg1={}
-	args=args or {}
-	for i=1,ARGS_COUNT do
-		arg1["V"..i]=args["V"..i] or args[i]  or ""
-		--print(i,args[i])
-	end
-	args,arg1=arg1,{}
-	local function setvalue(name,value,source)
-		if not arg1[name] then arg1[name]={args[name]} end
-		arg1[name][2],args[name]=source and (name..'.'..source),value
-	end
+	
+	
 	--parse template
-	local patterns,templates,ids={"(%b{})","([^\n\r]-)%s*[\n\r]"},{},{}
-	if desc then		
-		sql=sql:gsub(ora.comment,"")		
+	local patterns,options={"(%b{})","([^\n\r]-)%s*[\n\r]"},{}
+	
+	local desc
+	sql=sql:gsub(ora.comment,function(item) 
+		desc=item:match("%-%-%[%[(.+)%]%]%-%-")
+		if not desc then desc=item:match("%-%-%[%[(.*)%-%-%]%]") end	
+		return "" 
+	end,1)
+
+	local function format_version(version)
+		return version:gsub("(%d+)",function(s) return s:len()<3 and string.rep('0',3-s:len())..s or s end)
+	end
+		
+	args=args or {}
+	local orgs,templates={},{}
+	
+	local sub_pattern=('w_.$#/'):gsub('(.)',function(s) return '%'..s end)
+	sub_pattern='(['..sub_pattern..']+)%s*=%s*(%b{})'
+
+	local function setvalue(param,value,mapping)
+		if not orgs[param] then orgs[param]={args[param] or ""} end
+		args[param],orgs[param][2]=value,mapping and (param..'['..mapping..']') or ""
+	end
+
+	if desc then	
 		--Parse the  &<V1-V30> and :<V1-V30> grammar, refer to ashtop.sql
 		for _,p in ipairs(patterns) do
-			for k,v in desc:gmatch('[&:](V[%d+])%s*:%s*'..p) do
-				if not templates[k] then
-					local forms={}
-					local default
-					if v:sub(-1)=="}" then						
-						for id,template in v:gmatch("([%w_-]+)%s*=%s*(%b{})") do
-							id,template=id:upper(),template:sub(2,-2)							
-							forms[id],ids[id]=template,{template,k.."."..id}
-							default=default and default or id
-						end
-					else
-						default,forms[1]=1,v
-					end					
-					forms.__df=default or 0
-					templates[k]=forms
-				end
-			end
-		end
-
-		--Parse the @paramters that related to database version
-		local db_version=(db.props.db_version or "8.0.0.0"):split("%.")
-
-		for _,p in ipairs(patterns) do
-			for k,v in desc:gmatch('@([%w_]+)%s*:%s*'..p) do
-				k=k:upper()
-				if not args[k] then
-					local forms={}
-					local default
-					if v:sub(-1)=="}" then						
-						for id,template in v:gmatch("([%d%.]+)%s*=%s*(%b{})") do
-							id,template=id,template:sub(2,-2)											
-							forms[id],ids[id]=template,{template,k.."."..id}
-							local vers=id:split("%.")
-							if not default then
-							    default=nil						
-								for k,v in ipairs(vers) do
-									local i1,i2=tonumber(db_version[k]) or 0,tonumber(v)
-									if i1>i2 then
-										break
-									elseif i1<i2 then
-										default=false
+			for prefix,k,v in desc:gmatch('([&:@])([%w%_]+)%s*:%s*'..p) do
+				k=k:upper()				
+				if not templates[k] then--same variable should not define twice
+					templates[k]={}
+					local check_flag,default,expect,expect_name=0
+					for option,text in v:gmatch(sub_pattern) do
+						option,text=option:upper(),text:sub(2,-2)
+						default=default and default or option
+						if prefix=="@" then							
+							--check database version
+							if k=="CHECK_USER" then--check user
+								check_flag=3
+								expect_name="user"
+								if db.props.db_user ~= option and option~="DEFAULT" then default=nil end
+								expect=option
+							elseif k=="CHECK_ACCESS" then--objects are sep with the / symbol
+								check_flag=2
+								expect_name="access"
+								for obj in option:gmatch("([^/%s]+)") do
+									if not db:check_obj(obj) then
+										default=nil
+										expect='the accesses to: '.. option
 										break
 									end
 								end
-								if default~=false then default=id end
+							else--check version								
+								local check_ver=option:match('^([%d%.]+)$')
+								if check_ver then
+									check_flag=1
+									expect_name="database version"
+									local db_version=format_version(db.props.db_version or "8.0.0.0.0")
+									if db_version<format_version(check_ver) then default=nil end
+									expect=option
+								end
 							end
+						else
+							if not options[option] then options[option]={} end
+							options[option][k]=text
 						end
-						if not default then 
-							return print("This command doesn't support current db version["..db.props.db_version.."]!")
-						end
-					else
-						default,forms[1]=1,v
+						templates[k][option]=text
+					end
+
+					if not default and check_flag>0 then 
+						env.raise("This command doesn't support current %s %s, expected as %s!",
+							expect_name,
+							check_flag==1 and db.props.db_version 
+							    or check_flag==2 and "rights"
+								or check_flag==3 and db.props.db_user,
+							expect)							
+					end
+
+					templates[k]['@default']=default
+
+					if not k:match("^(V%d+)$") then
+						setvalue(k,templates[k][templates[k]['@default']],default)
+						templates[k]['@choose']=default
 					end					
-					forms.__df=default or 0
-					forms.__sel=default or 0
-					templates[k]=forms
-					args[k]=""
-					setvalue(k,forms[forms.__df] or "",default)					
 				end
 			end
 		end
 	end
-	
-	
 
 	--Start to assign template value to args
-	local i=1
-	while true do
-		if i>ARGS_COUNT then break end		
-		local k,v="V"..i,args["V"..i]
-		if templates[k] then --Replace value with template values
-			local forms=templates[k]
-			if v=="" then --in case of org value is null, replaced with template default value
-				setvalue(k,forms[forms.__df] or "",forms.__df)
-				forms.__sel=forms.__df
-			elseif forms[v:upper()] then
-				setvalue(k,forms[v:upper()],v:upper())
-				forms.__sel=v:upper()
-			end
-		end
-
-		if v:sub(1,1)=="-"  then--support "-<template id>" syntax in random places
-			local idx,rest=v:sub(2):match("^([%w_-]+)(.*)$")
-			idx=(idx or ""):upper()
-			if ids[idx] then
-				local k1,i1,tmp=ids[idx][2]:match("^(V(%d+))")
-				i1=tonumber(i1)
-				if i1>=i then
-					setvalue(k,"",nil)
-					if rest:sub(1,1)=='"' and rest:sub(-1)=='"' then rest=rest:sub(2,-2) end
-					setvalue(k1,ids[idx][1]..rest,idx)	
-					templates[k1].__sel=idx
-					if i1 > i then
-						local pre_idx='V'..i
-						for j=i+1,ARGS_COUNT do
-							local new_idx='V'..j
-							if not arg1[new_idx] then
-								args[pre_idx],args[new_idx]=args[new_idx],""
-								pre_idx=new_idx
-							end
-						end
-					end
-					i=i-1
-				end
-			end
-		end
-		i=i+1
+	for i=1,ARGS_COUNT do 
+		args[i],args[tostring(i)],args["V"..i]=nil,nil,args["V"..i] or args[i] or args[tostring(i)] or ""
 	end
 
+	local arg1,ary={},{}
+	for i=1,ARGS_COUNT do	
+		local k,v="V"..i,args["V"..i]
+		ary[i]=v		
+		if v:sub(1,1)=="-"  then
+			local idx,rest=v:sub(2):match("^([%w_-]+)(.*)$")
+			if rest:sub(1,1)=='"' and rest:sub(-1)=='"' then rest=rest:sub(2,-2) end
+			idx=(idx or ""):upper()
+			for param,text in pairs(options[idx] or {}) do
+				ary[i]=nil				
+				if args[param] then
+					ary[tonumber(param:match("(%d+)"))]=nil					
+					arg1[param]=text..rest
+				else
+					setvalue(param,text..rest,idx)
+				end
+
+				if templates[param] then
+					templates[param]['@choose']=idx
+				end
+			end		
+		end	
+	end
+
+	for i=ARGS_COUNT,1,-1 do
+		if not ary[i] then table.remove(ary,i) end
+	end
+
+	for i=1,ARGS_COUNT do
+		local param="V"..i
+		if arg1[param] then 
+			table.insert(ary,i,arg1[param])
+		end
+		setvalue(param,ary[i] or "")
+		local option=args[param]:upper()
+		local template=templates[param]
+		if args[param]=="" and template and not arg1[param] then
+			setvalue(param,template[template['@default']] or "",template['@default'])
+			template['@choose']=template['@default']
+		elseif options[option] and options[option][param] then
+			setvalue(param,options[option][param],option)			
+			template['@choose']=option
+		end
+	end
 
 	if print_args then
-		local rows={{"Variable","Id","Default?","Selected?","Value"}}
-		local rows1={{"Variable","Mapping","Origin","Final"}}
+		local rows={{"Variable","Option","Default?","Choosen?","Value"}}
+		local rows1={{"Variable","Origin","Mapping","Final"}}
 		local keys={}
 		for k,v in pairs(args) do
 			keys[#keys+1]=k
@@ -181,29 +196,36 @@ function ora.parse_args(sql,args,print_args)
 			return tostring(a)<tostring(b)
 		end)
 
+		local function strip(text)
+			len=146
+			text= (text:gsub("[\t%s\n\r]+"," ")):sub(1,len)
+			if text:len()==len then text=text..' ...' end
+			return text
+		end
+
 		for _,k in ipairs(keys) do
 			local ind=0
-			local v1,v,src=args[k],templates[k],arg1[k] or {}
-			if type(v)=="table" then
-				local default,select=v.__df,v.__sel
-				for id,template in pairs(v) do					
-					if id~="__df" and id~="__sel" then
+			local new,template,org=args[k],templates[k],orgs[k] or {}
+			if type(template)=="table" then
+				local default,select=template['@default'],template['@choose']
+				for option,text in pairs(template) do					
+					if option~="@default" and option~="@choose" then
 						ind=ind+1
 						rows[#rows+1]={ind==1 and k or "",
-						               id,
-						               default==id and "Y" or "N",
-						               select==id and "Y" or "N",
-						               (template:gsub("[\t%s]+"," "))}
+						               option,
+						               default==option and "Y" or "N",
+						               select==option and "Y" or "N",
+						               strip(text)}
 					end				
 				end
 				if #rows>1 then rows[#rows+1]={""} end
 			end
-			rows1[#rows1+1]={k,src[2] or "",((src[1] or v1):gsub("[\t%s]+"," ")),(v1:gsub("[\t%s]+"," "))}
+			rows1[#rows1+1]={k,strip(org[1] or ""),(org[2] or ''),strip(new)}
 		end
 
 		for k,v in pairs(db.C.var.inputs) do
 			if type(k)=="string" and k:upper()==k and type(v)=="string" then
-				rows1[#rows1+1]={k,"cmd 'def'",v,v}
+				rows1[#rows1+1]={k,v,"cmd 'def'",v}
 			end
 		end
 
@@ -230,7 +252,7 @@ function ora.run_sql(sql,args,print_args)
 	local sq="",cmd,params,pre_cmd,pre_params
 	local cmds=env._CMDS
 	
-	cfg.backup()
+	local backup=cfg.backup()
 	cfg.set("HISSIZE",0)
 	db.C.var.setInputs("oracle.ora",args)
 	local eval=env.eval_line
@@ -240,7 +262,8 @@ function ora.run_sql(sql,args,print_args)
 	if env.pending_command() then
 		eval("/")
 	end
-	cfg.restore()
+
+	cfg.restore(backup)	
 	db.C.var.setInputs("oracle.ora")
 end
 

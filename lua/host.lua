@@ -1,7 +1,8 @@
 local env,os=env,os
-function run_command(...)
+function run_command(cmd)
+	if not cmd then return end
 	io.flush()
-	os.execute(...)
+	os.execute(cmd)
 end
 
 env.set_command(nil,'HOST',"Run OS command. Usage: HOST <command>",run_command,false,2)

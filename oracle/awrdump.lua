@@ -49,7 +49,7 @@ function awr.extract_awr(starttime,endtime,instances)
         
             SELECT max(dbid),max(st),max(ed)
             INTO   dbid, st, ed
-            FROM   (SELECT dbid, MAX(decode(sign(begin_interval_time+0-stim),1,null,snap_id)) st, min(decode(sign(end_interval_time+0-etim),-1,null,snap_id)) ed
+            FROM   (SELECT dbid, MAX(decode(sign(end_interval_time+0-stim),1,null,snap_id)) st, min(decode(sign(end_interval_time+0-etim),-1,null,snap_id)) ed
                     FROM   Dba_Hist_Snapshot
                     WHERE  begin_interval_time+0 BETWEEN stim-0.5 AND etim+0.5
                     AND    (inst IS NULL OR instr(',' || inst || ',', instance_number) > 0)

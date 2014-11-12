@@ -1,6 +1,9 @@
 /*[[
 Show object's space. Usage: ora space [-L] <[owner.]<object_name>[.PARTITION_NAME]>[,...]] [1-7]
+--[[
    &V9: P={1},l={2}
+]]--
+   
 ]]*/
 
 VAR CUR REFCURSOR;
@@ -607,56 +610,6 @@ DECLARE
             AND    B.OBJECT_ID(+) = a.object_id
             ORDER  BY id;
     
-    END;
-
-    PROCEDURE show_tablespaces(p_cursor IN OUT SYS_REFCURSOR) IS
-    BEGIN
-        --static sql does'nt support "wm_concat(DISTINCT)", use dynamic sql instead.
-        OPEN p_cursor FOR --
-         q'{SELECT a.tablespace_name,
-                   round(a.bytes_alloc / power(1024, 3), 2) "Total(GB)",
-                   round(nvl(b.bytes_free, 0) / power(1024, 3), 2) "Free(GB)",
-                   round((a.bytes_alloc - nvl(b.bytes_free, 0)) / power(1024, 3), 2) "Used(GB)",
-                   round((nvl(b.bytes_free, 0) / a.bytes_alloc) * 100, 2) "Free(%)",
-                   round(maxbytes / power(1024, 3), 2) "File Size(GB)",
-                   Round(FSFI, 2) "FSFI(%)",
-                   disks "Disks"
-            FROM   (SELECT f.tablespace_name,
-                           SUM(f.bytes) bytes_alloc,
-                           SUM(decode(f.autoextensible, 'YES', f.maxbytes, 'NO', f.bytes)) maxbytes,
-                           wmsys.wm_concat(regexp_substr(f.file_name,'\w+')) disks
-                    FROM   dba_data_files f
-                    GROUP  BY tablespace_name) a,
-                   (SELECT f.tablespace_name,
-                           SUM(f.bytes) bytes_free,
-                           sqrt(MAX(blocks) / SUM(blocks)) *
-                           (100 / sqrt(sqrt(COUNT(blocks)))) FSFI
-                    FROM   dba_free_space f
-                    GROUP  BY tablespace_name) b
-            WHERE  a.tablespace_name = b.tablespace_name(+)
-            UNION ALL
-            SELECT h.tablespace_name,
-                   round(SUM(h.bytes_free + h.bytes_used) / power(1024, 3), 2) megs_alloc,
-                   round(SUM((h.bytes_free + h.bytes_used) - nvl(p.bytes_used, 0)) /
-                         power(1024, 3),
-                         2) megs_free,
-                   round(SUM(nvl(p.bytes_used, 0)) / power(1024, 3), 2) megs_used,
-                   round((SUM((h.bytes_free + h.bytes_used) - nvl(p.bytes_used, 0)) /
-                         SUM(h.bytes_used + h.bytes_free)) * 100,
-                         2) Pct_Free,
-                   round(SUM(decode(f.autoextensible, 'YES', f.maxbytes, 'NO', f.bytes)) /
-                         power(1024, 3),
-                         2),
-                   NULL,
-                   wmsys.wm_concat(distinct regexp_substr(f.file_name,'\w+'))
-            FROM   sys.v_$TEMP_SPACE_HEADER h,
-                   sys.v_$Temp_extent_pool  p,
-                   dba_temp_files           f
-            WHERE  p.file_id(+) = h.file_id
-            AND    p.tablespace_name(+) = h.tablespace_name
-            AND    f.file_id = h.file_id
-            AND    f.tablespace_name = h.tablespace_name
-            GROUP  BY h.tablespace_name}';
     END;
 BEGIN
     IF &V9=1 THEN

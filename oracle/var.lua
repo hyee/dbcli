@@ -1,6 +1,6 @@
 local env=env
 local grid,snoop=env.grid,env.event.snoop
-local var={inputs={},outputs={}}
+local var={inputs={},outputs={},output_result={}}
 
 var.types={
 	REFCURSOR =  'CURSOR',
@@ -37,9 +37,10 @@ function var.setOutput(name,datatype)
 	end
 
 	datatype=datatype:upper():match("(%w+)")	
-	assert(var.types[datatype],'ORA-20011: Expected data type['..datatype..']!')
-	assert(name:match("^[%w%$_]+$"),'ORA-20011: Expected variable name['..name..']!')
-	if var.inputs[name] then  return print("The name["..name.."] has ben defined as input parameter!") end
+	env.checkerr(var.types[datatype],'Unexpected data type['..datatype..']!')
+	env.checkerr(name:match("^[%w%$_]+$"),'Unexpected variable name['..name..']!')
+	--env.checkerr(not if var.inputs[name],"The name["..name.."] has been defined as input parameter!")
+	if var.inputs[name] then var.inputs[name]=nil end
 	var.outputs[name]='#'..var.types[datatype]
 end
 
@@ -53,6 +54,7 @@ function var.setInput(name)
 		end
 		return
 	end
+
 	if name:find('=') then 
 		name,value=name:match("^([^=%s]+)%s*=%s*(.*)")
 		if not value then return end
@@ -60,9 +62,11 @@ function var.setInput(name)
 		name,value=name:match("^([^=%s]+)%s+(.*)")
 		if not value then return end
 	end
+
 	name=name:upper()
-	if not name:match("^([%w_$]+)$") then return print("The name["..name.."] is not a valid syntax!") end
-	if var.outputs[name] then  return print("The name["..name.."] has ben defined as  output parameter!") end
+	env.checkerr(name:match("^[%w%$_]+$"),'Unexpected variable name['..name..']!')	
+	--if var.outputs[name] then  return print("The name["..name.."] has ben defined as  output parameter!") end
+	if var.outputs[name] then var.outputs[name]=nil end
 	var.setInputs(name,value)	
 end
 
@@ -100,6 +104,7 @@ function var.after_db_exec(db,sql,args)
 			if v=="#CURSOR" then
 				db.resultset:print(args[k],db.conn)
 			else
+				var.inputs[k],var.outputs[k]=args[k],nil
 				result[#result+1]={k,args[k]}
 			end
 			args[k]=v
@@ -113,7 +118,6 @@ end
 
 snoop('BEFORE_ORACLE_EXEC',var.before_db_exec)
 snoop('AFTER_ORACLE_EXEC' ,var.after_db_exec)
-
 env.set_command(nil,{"variable","VAR"},var.helper,var.setOutput,false,3)
 env.set_command(nil,{"Define","DEF"},"Define input variables, Usage: def <name>=<value>, or def <name> to remove definition",var.setInput,false,2)
 return var

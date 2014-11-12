@@ -19,30 +19,31 @@ local module_list={
 local oracle=env.class(env.db_core)
 
 function oracle:ctor(isdefault)
-	if isdefault~=false then
-		java.loader:addPath(env.WORK_DIR..'oracle'..env.PATH_DEL.."ojdbc6.jar")
-		self.type="oracle"
-		self.db_types:load_sql_types('oracle.jdbc.OracleTypes')
+	self.type="oracle"
+	java.loader:addPath(env.WORK_DIR..'oracle'..env.PATH_DEL.."ojdbc7.jar")	
+	self.db_types:load_sql_types('oracle.jdbc.OracleTypes')
+	local default_desc='#Oracle database SQL statement'
+	if isdefault~=false then			
 		if type(set_command)=="function" then
 			set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
 			set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
-			set_command(self,{"select","with"},   nil,        self.query     ,true,1,true)
-			set_command(self,"explain",  nil,        self.exec     ,true,1,true)
-			set_command(self,"update",   nil,        self.exec      ,true,1,true)
-			set_command(self,"delete",   nil,        self.exec      ,true,1,true)
-			set_command(self,"insert",   nil,        self.exec      ,true,1,true)
-			set_command(self,"merge" ,   nil,        self.exec      ,true,1,true)
-			set_command(self,"drop"  ,   nil,        self.exec      ,false,1,true)
-			set_command(self,"lock"  ,   nil,        self.exec      ,false,1,true)
-			set_command(self,"analyze"  ,   nil,     self.exec      ,false,1,true)
-			set_command(self,"grant"  ,   nil,       self.exec      ,false,1,true)
-			set_command(self,"revoke"  ,   nil,      self.exec      ,false,1,true)
-			set_command(self,{"declare","begin"},  nil,  self.exec  ,self.check_completion,1,true)
-			set_command(self,"create",   nil,        self.exec      ,self.check_completion,1,true)
-			set_command(self,"alter" ,   nil,        self.exec      ,self.check_completion,1,true)
-			set_command(self,"/*"    ,   nil,        nil   ,self.check_completion,2)
-			set_command(self,"--"    ,   nil,        nil   ,false,2)
-			set_command(self,{"execute","exec","call"}  ,   nil,      self.run_proc  ,false,2)		
+			set_command(self,{"select","with"},   default_desc,        self.query     ,true,1,true)
+			set_command(self,"explain",  default_desc,     self.exec     ,true,1,true)
+			set_command(self,"update",   default_desc,     self.exec      ,true,1,true)
+			set_command(self,"delete",   default_desc,     self.exec      ,true,1,true)
+			set_command(self,"insert",   default_desc,     self.exec      ,true,1,true)
+			set_command(self,"merge" ,   default_desc,     self.exec      ,true,1,true)
+			set_command(self,"drop"  ,   default_desc,     self.exec      ,false,1,true)
+			set_command(self,"lock"  ,   default_desc,     self.exec      ,false,1,true)
+			set_command(self,"analyze",  default_desc,     self.exec      ,false,1,true)
+			set_command(self,"grant"  ,  default_desc,     self.exec      ,false,1,true)
+			set_command(self,"revoke"  , default_desc,     self.exec      ,false,1,true)
+			set_command(self,{"declare","begin"},  default_desc,  self.exec  ,self.check_completion,1,true)
+			set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)
+			set_command(self,"alter" ,   default_desc,        self.exec      ,self.check_completion,1,true)
+			set_command(self,"/*"    ,   '#Comment',        nil   ,self.check_completion,2)
+			set_command(self,"--"    ,   '#Comment',        nil   ,false,2)
+			set_command(self,{"execute","exec","call"}  ,   default_desc,      self.run_proc  ,false,2)		
 		end
 		env.event.snoop('BEFORE_COMMAND',self.clearStatements,self)		
 	end
@@ -128,41 +129,59 @@ end
 
 function oracle:parse(sql,params)
 	local p1,counter={},0
-	sql=(sql..' '):gsub('&([%w_%$]+)',function(s)
-			local v= params[s:upper()]
-			if not v then return '&'..s end
-			return v
-		end)
 
-	sql=sql:gsub(':([%w_%$]+)',function(s)
-			local k=s:upper()
-			local v= params[k]
-			if not v then return ':'..s end
-			counter=counter+1
+	sql=sql:gsub('%f[%w_%$&]&([%w%_%$]+)',function(s) return params[s:upper()] or '&'..s end)
+	return self.super.parse(self,sql,params,':')
+--[[
+	sql=sql:gsub('%f[%w_%$:]:([%w_%$]+)',function(s)
+			local k,s=s:upper(),':'..s 
+			local v=params[k]
+			if not v then return s end
+			if p1[k] then return s end
+
+			local args={}
 			if type(v) =="table" then
-				return ':'..s
+				return s
 			elseif type(v)=="number" then
-				p1[k]={self.db_types:set('NUMBER',v)}
+				args={self.db_types:set('NUMBER',v)}
 			elseif type(v)=="boolean" then
-				p1[k]={self.db_types:set('BOOLEAN',v)}
-			elseif v:sub(1,1)=="#" then
-				counter=-999
+				args={self.db_types:set('BOOLEAN',v)}
+			elseif v:sub(1,1)=="#" then		
+				local typ=v:upper():sub(2)
+				if not self.db_types[typ] then
+					env.raise("Cannot find '"..typ.."' in java.sql.Types!")
+				end								
+				args={'#',self.db_types[typ].id}
 			else
-				p1[k]={self.db_types:set('VARCHAR',v)}
+				args={self.db_types:set('VARCHAR',v)}
 			end
-			return ':'..s
-			--return '?'
+			
+			if args[1]=='#' then 
+				if counter<2 then counter=counter+2 end
+			else
+				if counter~=1 and counter~=3 then counter=counter+1 end
+			end
+
+			p1[k]=args
+
+			return s
 		end)
 	
-	if counter<0 then return self.super.parse(self,sql,params) end
+	if counter<0 or counter==3 then return self.super.parse(self,sql,params,':') end
 	local prep=java.cast(self.conn:prepareCall(sql,1005,1007),"oracle.jdbc.OracleCallableStatement")
-
+	--self:check_params(sql,prep,p1,params)
 	for k,v in pairs(p1) do
 		if v[2]=="" then v[1]="setNull" end
-		pcall(prep[v[1].."AtName"],prep,k,v[2])
+		if v[1]=='#' then
+			prep['registerOutParameter'](prep,k,v[2])
+			params[k]={'#',k,self.db_types[v[2] ].name}
+		else
+			prep[v[1].."AtName"](prep,k,v[2])
+		end		
 	end
 
 	return prep,sql,params
+--]]	
 end
 
 function oracle:exec(sql,...)
@@ -233,12 +252,13 @@ function oracle:check_obj(obj_name)
                                               dblink        => dblink,
                                               part1_type    => part1_type,
                                               object_number => object_number);
-                SELECT /*+no_expand*/ MIN(OBJECT_TYPE),MIN(OWNER),MIN(OBJECT_NAME) 
+                SELECT /*+no_expand*/ MIN(OBJECT_TYPE),MIN(OWNER),MIN(OBJECT_NAME)
                 INTO   obj_type,SCHEM,part1
                 FROM   ALL_OBJECTS
-                WHERE  OWNER=SCHEM
-                AND    OBJECT_NAME=part1
-                AND    (part2 IS NULL OR SUBOBJECT_NAME=part2);            
+                WHERE  OBJECT_ID=object_number;   
+                IF obj_type IS NULL THEN 
+                    part2 := NULL;
+                END IF;         
                 EXIT;
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
@@ -306,7 +326,7 @@ end
 
 function oracle:onload()
 	self.C={}
-	init.load(module_list,self.C)
+	init.load_modules(module_list,self.C)
 end
 
 function oracle:onunload()

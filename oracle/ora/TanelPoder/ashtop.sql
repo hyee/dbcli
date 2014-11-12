@@ -10,7 +10,7 @@
                      sample_time+0 between nvl(to_date(:V2,'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(:V3,'YYMMDDHH24MISS'),sysdate)},
             snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id))},
             f={},
-        }   
+        }
       @counter: 11.2={1},10.1={1}
       ]]--
   Examples:

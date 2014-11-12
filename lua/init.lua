@@ -23,11 +23,12 @@ local init={
 		"lua/alias",
 		"lua/interval",
 		"lua/db_core",
-		"lua/password",
-		"lua/tester",
-		--Externals ->
-		"oracle/oracle",}
+		"lua/login",
+		"lua/tester"}
 }
+
+init.databases={oracle="oracle/oracle",mssql="mssql/mssql"}
+local default_database='oracle'
 
 function init.init_path()
 	local java=java
@@ -61,18 +62,56 @@ function init.init_path()
 	end	 
 end
 
-function init.load(list,tab)
+local function exec(func,...)
+    if type(func)~='function' then return end
+    local res,rtn=pcall(func,...)
+    if not res then
+        return print('Error on loading module: '..tostring(rtn):gsub(env.WORK_DIR,""))
+    end
+    return rtn
+end
+
+function init.db_list()
+    local keys={}
+    for k,_ in pairs(init.databases) do
+        keys[#keys+1]=k
+    end
+    table.sort(keys)
+    return keys
+end
+
+function init.set_database(_,db)
+    if not db then return nil end
+    db=db:lower()
+    if db==env.CURRENT_DB then return db end
+    env.checkerr(init.databases[db],'Invalid database type!')
+    if env.CURRENT_DB then
+        print("Switching database ...")
+        env.CURRENT_DB=db
+        env.unload()
+        env.onload(table.unpack(env.args))
+    end
+    env.CURRENT_DB=db
+    return db 
+end
+
+function init.load_database()
+    local res
+    if not env.CURRENT_DB then
+        if env.set and env.set._p then env.CURRENT_DB=env.set._p['database'] end
+        env.CURRENT_DB=env.CURRENT_DB or default_database 
+    end    
+    local file=init.databases[env.CURRENT_DB]
+    if not file then return end
+    local name=file:match("([^\\/]+)$")
+    env[name]=exec(dofile,env.WORK_DIR..file:gsub("[\\/]+",env.PATH_DEL)..'.lua')    
+    exec(type(env[name])=="table" and env[name].onload,env[name],name)
+end
+
+function init.load_modules(list,tab)
 	local n
 	local modules={}
 	local root,del,dofile=env.WORK_DIR,env.PATH_DEL,dofile
-	local function exec(func,...)
-		if not func then return end
-		local res,rtn=pcall(func,...)
-		if not res then
-		 	return print('Error on loading module['..n..']: '..tostring(rtn):gsub(env.WORK_DIR,""))
-		end
-		return rtn
-	end
 
 	for _,v in ipairs(list) do
 		n=v:match("([^\\/]+)$")
@@ -81,10 +120,16 @@ function init.load(list,tab)
 	end
 	
 	for k,v in pairs(modules) do
-		if type(v)=="table" and type(v.onload)=="function" then			
-			exec(v.onload,v,k)
-		end
-	end
+        exec(type(v)=="table" and v.onload,v,k)
+	end    
+end
+
+function init.onload()
+    init.load_modules(init.module_list,env)
+    if env.set then
+        init.load_database()
+        env.safe_call(env.set.init,"database",env.CURRENT_DB,init.set_database,'core','Define current database type',table.concat(init.db_list(),','))        
+    end
 end
 
 function init.unload(list,tab)
@@ -96,13 +141,5 @@ function init.unload(list,tab)
 		tab[m]=nil		
 	end
 end
-
---[[local jvm = require("javavm")
-jvm.create("-Djava.class.path="..CLIB.."jnlua-0.9.6.jar",
-	      -- "-Dfile.packeroding=UTF-8",
-		   "-Djava.library.path="..CLIB,
-	       "-Xmx32M")
-local loader=java.require("loader")]]--
-
 
 return init

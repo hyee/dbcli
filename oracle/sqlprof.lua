@@ -4,9 +4,9 @@ function sqlprof.extract_profile(sql_id,sql_plan)
 	local stmt=[[
     DECLARE
         PROCEDURE extract_profile(p_buffer     OUT CLOB,
-                                                    p_sqlid      VARCHAR2,
-                                                    p_plan       VARCHAR2 := NULL,
-                                                    p_forcematch BOOLEAN := FALSE) IS
+                                  p_sqlid      VARCHAR2,
+                                  p_plan       VARCHAR2 := NULL,
+                                  p_forcematch BOOLEAN := FALSE) IS
             /*
             To generate the script to fix the execution plan with SQL profile
             Parameters:
@@ -63,10 +63,7 @@ function sqlprof.extract_profile(sql_id,sql_plan)
                                   
                         
                         )
-                WHERE  rownum < 2;
-            EXCEPTION
-                WHEN no_data_found THEN
-                    raise_application_error(-20001, 'Cannot find sql text!');
+                WHERE  rownum < 2;            
             END;
 
             PROCEDURE get_plan IS
@@ -126,7 +123,12 @@ function sqlprof.extract_profile(sql_id,sql_plan)
             END;
         BEGIN
             dbms_output.enable(NULL);
-            get_sql(p_sqlid);
+            BEGIN
+                get_sql(p_sqlid);
+            EXCEPTION WHEN NO_DATA_FOUND THEN 
+                p_buffer:='#Cannot find SQL text for '||p_sqlid||'!';
+                return;
+            END;
             get_plan;
             dbms_lob.createtemporary(v_text, TRUE);
             --pr('Set define off sqlbl on');
@@ -155,7 +157,12 @@ function sqlprof.extract_profile(sql_id,sql_plan)
             IF p_plan IS NOT NULL AND NOT regexp_like(p_plan, '^\d+$') THEN
                 v_sql       := regexp_replace(v_sql, '/\*.*?\*/');
                 v_signatrue := dbms_sqltune.SQLTEXT_TO_SIGNATURE(v_sql, TRUE);
-                get_sql(p_plan);
+                BEGIN
+                    get_sql(p_plan);
+                EXCEPTION WHEN NO_DATA_FOUND THEN 
+                    p_buffer:='#Cannot find SQL text for '||p_plan||'!';
+                    return;
+                END;
                 v_sql := regexp_replace(v_sql, '/\*.*?\*/');
                 IF v_signatrue != dbms_sqltune.SQLTEXT_TO_SIGNATURE(v_sql, TRUE) THEN
                     pr('    --! Warning: Signatures for the 2 SQLs are not matched!');
@@ -202,7 +209,10 @@ function sqlprof.extract_profile(sql_id,sql_plan)
     env.checkerr(sql_id,"Please specify the SQL ID!")    
     args={'#CLOB',sql_id,sql_plan or ""}
     db:internal_call(stmt,args)
-    print(args[1])
+    if args[1] and args[1]:sub(1,1)=="#" then
+        env.raise(args[1]:sub(2))
+    end
+    --print(args[1])
     print("Result written to file "..env.write_cache(sql_id..".sql",args[1]))    
 end
 

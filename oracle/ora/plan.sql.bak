@@ -7,7 +7,7 @@ Show execution plan. Usage: plan <sql_id> [<plan_hash_value>]]]
 WITH sql_plan_data AS
  (SELECT /*+materialize*/*
   FROM   (SELECT a.*,
-                 dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id) seq
+                 dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC) seq
           FROM   (SELECT id,
                          parent_id,
                          child_number    ha,

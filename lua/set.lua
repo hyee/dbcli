@@ -4,7 +4,7 @@ local maxvalsize=20
 local file='setting.dat'
 cfg._backup=nil
 
-cfg._P=env.load_data(file)
+cfg._p=env.load_data(file)
 
 function cfg.show_cfg(name)
 	local rows={{'Name','Value','Default','Class','Available Values','Description'}}
@@ -45,8 +45,8 @@ function cfg.init(name,defaultvalue,validate,class,desc,range)
 	if maxvalsize<tostring(defaultvalue):len() then
 		maxvalsize=tostring(defaultvalue):len() 
 	end
-	if cfg._P[name] and cfg._P[name]~=defaultvalue then
-		cfg.doset(name,cfg._P[name])
+	if cfg._p[name] and cfg._p[name]~=defaultvalue then
+		cfg.doset(name,cfg._p[name])
 	end
 end
 
@@ -132,25 +132,25 @@ function cfg.doset(...)
 	for i=idx,#args,2 do
 		local value=cfg.set(args[i],args[i+1],true)
 		if value and idx==2 then
-			cfg._P[args[i]:upper()]=value
+			cfg._p[args[i]:upper()]=value
 			if args[i+1] and args[i+1]:upper()=="DEFAULT" then
-				cfg._P[args[i]:upper()]=nil
+				cfg._p[args[i]:upper()]=nil
 			end
-			env.save_data(file,cfg._P)
+			env.save_data(file,cfg._p)
 		end
 	end
 end
 
 function cfg.restore(name)
-	if not name then
-		if not cfg._backup then return end
-		for k,v in pairs(cfg._backup) do
+	if not name then		
+		return
+	elseif type(name)=="table" then
+		for k,v in pairs(name) do
 			if v.value~=cfg[k].value then
-				cfg.set(k,v.value)
+				cfg.doset(k,v.value)
 				cfg[k]=v
 			end
-		end
-		cfg._backup=nil
+		end	
 		return
 	end
 	name=name:upper()
@@ -163,16 +163,16 @@ function cfg.tester()
 end
 
 function cfg.backup()
-	if cfg._backup then return end
-	cfg._backup={}
+	local backup={}
 	for k,v in pairs(cfg) do
 		if k==k:upper() and type(v)=="table" then
-			cfg._backup[k]={}
+			backup[k]={}
 			for item,value in pairs(v) do
-				cfg._backup[k][item]=value
+				backup[k][item]=value
 			end
 		end
 	end
+	return backup
 end
 
 env.set_command(nil,'SET',"Set environment parameters. Usage: set [-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]",cfg.doset,false,99)

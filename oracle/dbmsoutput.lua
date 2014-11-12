@@ -14,45 +14,45 @@ end
 function output.getOutput(db,sql)
 	local isOutput=cfg.get("ServerOutput")
 	local stmt=[[	
-			DECLARE
-			    /*INTERNAL_DBCLI_CMD*/
-			    l_line   VARCHAR2(32767);
-			    l_done   PLS_INTEGER := 32767;
-			    l_buffer VARCHAR2(32767);
-			    l_arr    dbms_output.chararr;
-			    l_lob    CLOB;
-			    l_enable PLS_INTEGER := :1;
-			    l_size   PLS_INTEGER;
-			BEGIN
-			    dbms_output.get_lines(l_arr, l_done);
-			    IF l_enable = 1 THEN
-			        FOR i IN 1 .. l_done LOOP
-			            l_buffer := l_buffer || l_arr(i) || chr(10);
-			            l_size   := lengthb(l_buffer);
-			            IF l_size + 255 > 32400 OR (l_lob IS NOT NULL AND l_buffer IS NOT NULL AND i = l_done) THEN
-			                IF l_lob IS NULL THEN
-			                    dbms_lob.createtemporary(l_lob, TRUE);
-			                END IF;
-			                dbms_lob.writeappend(l_lob, l_size, l_buffer) ;
-			                l_buffer := NULL;
-			            END IF;
-			        END LOOP;
-			    END IF;
-			    :2 := l_buffer;
-			    :3 := dbms_transaction.local_transaction_id;
-			    :4 := l_lob;
-			END;]]
+		DECLARE
+		    /*INTERNAL_DBCLI_CMD*/
+		    l_line   VARCHAR2(32767);
+		    l_done   PLS_INTEGER := 32767;
+		    l_buffer VARCHAR2(32767);
+		    l_arr    dbms_output.chararr;
+		    l_lob    CLOB;
+		    l_enable VARCHAR2(3) := :enable;
+		    l_size   PLS_INTEGER;
+		BEGIN
+		    dbms_output.get_lines(l_arr, l_done);
+		    IF l_enable = 'on' THEN
+		        FOR i IN 1 .. l_done LOOP
+		            l_buffer := l_buffer || l_arr(i) || chr(10);
+		            l_size   := lengthb(l_buffer);
+		            IF l_size + 255 > 32400 OR (l_lob IS NOT NULL AND l_buffer IS NOT NULL AND i = l_done) THEN
+		                IF l_lob IS NULL THEN
+		                    dbms_lob.createtemporary(l_lob, TRUE);
+		                END IF;
+		                dbms_lob.writeappend(l_lob, l_size, l_buffer) ;
+		                l_buffer := NULL;
+		            END IF;
+		        END LOOP;
+		    END IF;
+		    :buff := l_buffer;
+		    :txn := dbms_transaction.local_transaction_id;
+		    :lob := l_lob;
+		END;]]
 	if not db:is_internal_call(sql) then
-		local args={isOutput=="on" and 1 or 0,"#VARCHAR","#VARCHAR","#CLOB"}
+		local args={enable=isOutput,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB"}
 		db:internal_call(stmt,args)	
-		local result=args[4] or args[2]	
+		local result=args.lob or args.buff
 		if isOutput == "on" and result and result:match("[^\n%s]+") then
 			result=result:gsub("[\n\r]","\n")
 			print(result)
 		end
 
-		if prev_transaction~=args[3] then
-			prev_transaction = args[3]
+		if prev_transaction~=args.txn then
+			prev_transaction = args.txn
 			local addtional_title=prev_transaction and ("    TXN_ID: "..prev_transaction) or ""
 			env.set_title(db.session_title..addtional_title)
 		end

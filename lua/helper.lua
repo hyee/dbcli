@@ -127,9 +127,9 @@ function helper.helper(cmd,...)
 	        		v.ABBR,
 	        		v.ARGS-1})         	
         	if flag==1 then
-        		table.append(rows[#rows],v.MULTI and true or false,v.FILE)
+        		table.append(rows[#rows],(type(v.MULTI)=="function" or type(v.MULTI)=="string") and "Auto" or v.MULTI and 'Yes' or 'No',v.FILE)
         	end
-        	table.insert(rows[#rows],v.DESC and v.DESC:gsub("^[\r\n\t%s]+","") or " ")
+        	table.insert(rows[#rows],v.DESC and v.DESC:gsub("^[\r\n\t%s#]+","") or " ")
         end
     end
     print("Available comands:\n===============")

@@ -5,9 +5,11 @@ del /s "%target%\*.jar"
 del /s "%target%\*.sql"
 del /s "%target%\*.chm"
 del /s "%target%\*.bat"
+del /s "%target%\*.txt"
 xcopy  . "%target%" /S /Y  /exclude:excludes.txt
 
 COPY /Y "C:\Software\eclipse\workspace\dbcli\src\Loader.java" .\src\
 COPY /Y .\src\Loader.java "%target%\src"
 COPY /Y .\copy_to_git.bat "%target%\src"
+COPY /Y .\excludes.txt "%target%\src"
 pause

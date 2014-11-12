@@ -1,39 +1,42 @@
 local env=env
 local grid,cfg=env.grid,env.set
-local password={list={}}
+local login={list={}}
 local file="password.dat"
 local packer=env.MessagePack
-function password.load()	
-	password.list=env.load_data(file)
+function login.load()	
+	login.list=env.load_data(file)
 end
 
-function password.save()
-    env.save_data(file,password.list)	
+function login.save()
+    env.save_data(file,login.list)	
 end
 
-function password.capture(db,url,props)
-	local type=db.type or "default"
+function login.capture(db,url,props)
+	local typ,url1=db.type or "default",url
 	if cfg.get("SaveLogin")=="off" then return end
 	props.password,props.url,props.lastlogin=env.packer.pack_str(props.password),url,os.date()
-	url=props.user..url:match("(@.+)$")
-	if not password.list[type] then password.list[type]={} end
-	password.list[type][url:lower()]=props	
-	password.save()
+    url=url1:match("(%/%/[^&]+)")
+    if not url then url=url1:match("(@.+)$") end
+    url=url:gsub('[%.%:]([%w%-%_]+)','')
+	url=props.user..url    
+	if not login.list[typ] then login.list[typ]={} end
+	login.list[typ][url:lower()]=props	
+	login.save()
 end
 
 
-function password.login(db,id,filter)
+function login.login(db,id,filter)
 	if cfg.get("SaveLogin")=="off" then 
 		return print("Cannot login because the 'SaveLogin' option is 'off'!")
 	end
 	local typ=db.type or "default"
-	local list=password.list[typ]
+	local list=login.list[typ]
 
 	id=(id or ""):lower()
 	if id=="" then id= nil end
 
 	if id=="-r" then
-		return password.load()
+		return login.load()
 	end
 
 	if not list then
@@ -46,23 +49,23 @@ function password.login(db,id,filter)
 	end
 	table.sort(keys,function(a,b) return a:upper()<b:upper() end)
 
-	local login,counter,hdl=nil,0,grid.new()
+	local account,counter,hdl=nil,0,grid.new()
 	filter=id and id:sub(1,1)=='-'  and filter and filter:lower() or id
 	
 	grid.add(hdl,{"#","Name","User","Url","LastLogin"})
 
 	if keys[filter and tonumber(filter) or -1] then
 		counter = 1
-		login=keys[tonumber(filter)]
+		account=keys[tonumber(filter)]
 	elseif list[filter or ""] then
 		counter = 1
-		login=filter		
+		account=filter		
 	else
 		for ind,k in pairs(keys) do
 			local v=list[k]
 			if not filter or k:find(filter,1,true) then
 				counter=counter+1
-				if counter==1 then login=k end
+				if counter==1 then account=k end
 				grid.add(hdl,{ind,k,v.user,v.url,v.lastlogin})
 				if id=="-d" then
 					list[k]=nil
@@ -72,8 +75,8 @@ function password.login(db,id,filter)
 	end
 
 	if id=="-d" then
-		if login then list[login]=nil end
-		password.save()
+		if account then list[account]=nil end
+		login.save()
 		return
 	end
 
@@ -83,13 +86,13 @@ function password.login(db,id,filter)
 		return
 	end
 	
-	if  login then
-		db:connect(list[login])
+	if  account then
+		db:connect(list[account])
 	end
 end	
 
 
-env.event.snoop("AFTER_DB_CONNECT",password.capture)
+env.event.snoop("AFTER_DB_CONNECT",login.capture)
 cfg.init("SaveLogin","on",nil,"db.core","Determine if autosave logins.",'on,off')
-password.load()
-return password
+login.load()
+return login

@@ -94,7 +94,11 @@ end
 
 function grid.tostring(rows,printhead,col_del,row_del,rows_limit)
     if grid.pivot ~= 0 and printhead~=false then
-        if math.abs(grid.pivot)==1 then printhead=false end
+        if math.abs(grid.pivot)==1 then 
+            printhead=false 
+        else
+            rows_limit=rows_limit and rows_limit+2
+        end
         rows=grid.show_pivot(rows)        
     end
     rows=grid.format(rows,printhead,col_del,row_del)

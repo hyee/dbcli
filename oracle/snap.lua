@@ -2,6 +2,7 @@ local env=env
 local snap={script_dir=env.WORK_DIR.."oracle"..env.PATH_DEL.."snap"}
 local db,sleep,math,cfg=env.oracle,env.sleep,env.math,env.set
 local script_dir=env.WORK_DIR..'oracle'..env.PATH_DEL..'snap'..env.PATH_DEL
+local cfg_backup
 
 function snap.rehash()
 	snap.cmdlist=db.C.ora.rehash(snap.script_dir,'snap')
@@ -59,7 +60,7 @@ function snap.parse(name)
 end
 
 function snap.after_exec()
-	cfg.restore()
+	cfg.restore(cfg_backup)
 	db.internal_exec=false
 	db:commit()
 	db:internal_call("ALTER SESSION SET ISOLATION_LEVEL=READ COMMITTED")		
@@ -110,7 +111,7 @@ function snap.exec(interval,typ,...)
 		cmds[v]=cmd
 	end	
 
-	cfg.backup()	
+	cfg_backup=cfg.backup()	
 	cfg.set("AUTOCOMMIT","off")
 	cfg.set("digits",2)
 	local clock=os.clock()

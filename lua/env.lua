@@ -34,7 +34,40 @@ env.globals=mt.__declared
 
 --Build command list
 env._CMDS=setmetatable({___ABBR___={}},{
-    __index=function(self,key) return self.___ABBR___[key] and self[self.___ABBR___[key]]  or nil end
+    __index=function(self,key) 
+        if not key then return nil end
+        local abbr=rawget(self,'___ABBR___')
+        local value=rawget(abbr,key)
+        return value and rawget(abbr,value) or value
+    end,
+
+    __newindex=function(self,key,value)
+        local abbr=rawget(self,'___ABBR___')
+        if not key then return end
+        if rawget(abbr,key) then
+            if type(value)=="table" then
+                rawset(abbr,key,value)
+            else                
+                local cmd=rawget(abbr,key)
+                rawset(abbr,key,value)
+                if type(cmd)=="string" then
+                    for k,v in pairs(abbr) do
+                        if v==cmd then rawset(abbr,k,value) end              
+                    end
+                end
+            end
+        else
+            rawset(self,key,value)
+        end
+    end,
+
+    __pairs=function(self)
+        local p,abbr={},rawget(self,'___ABBR___')
+        for k,v in pairs(abbr) do
+            if not abbr[v] then p[k]=v end
+        end
+        return pairs(p)
+    end
 })
 
 --
@@ -75,7 +108,6 @@ function env.list_dir(file_dir,file_ext,text_macher)
     return keylist
 end
 
-local cmd_keys={}
 
 function env.check_cmd_endless(cmd,other_parts)
     
@@ -112,35 +144,31 @@ function env.smart_check_endless(cmd,rest,from_pos)
     end
 end
 
-function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbcmd)
+function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbcmd,allow_overriden)
     local abbr={}
+
     if not paramCount then
         env.raise("Incompleted command["..cmd.."], number of parameters is not defined!")
     end
 
-    if type(cmd)=="table" then
-        local tmp=cmd[1]:upper()
-        for i=2,#cmd,1 do 
-            if _CMDS[tmp] then break end
-            cmd[i]=cmd[i]:upper()
+    if type(cmd)~="table" then cmd={cmd} end
+    local tmp=cmd[1]:upper()
 
-            if _CMDS.___ABBR___[cmd[i]] then
-                env.raise("Command '"..cmd[i].."' is already defined in ".._CMDS[_CMDS.___ABBR___[cmd[i]]]["FILE"])
+    for i=1,#cmd do 
+        cmd[i]=cmd[i]:upper()
+        if _CMDS[cmd[i]] then
+            if _CMDS[cmd[i]].ISOVERRIDE~=true then
+                env.raise("Command '"..cmd[i].."' is already defined in ".._CMDS[cmd[i]]["FILE"])
+            else
+                _CMDS[cmd[i]]=nil
             end
-            cmd_keys[#cmd_keys+1]=cmd[i]
-            table.insert(abbr,cmd[i])
-            _CMDS.___ABBR___[cmd[i]]=tmp          
         end
-        cmd=tmp
-    else
-        cmd=cmd:upper()
-    end
-    
-    if _CMDS[cmd] then
-        env.raise("Command '"..cmd.."' is already defined in ".._CMDS[cmd]["FILE"])
+        if i>1 then table.insert(abbr,cmd[i]) end                
     end
 
-    cmd_keys[#cmd_keys+1]=cmd
+    for i=1,#cmd do _CMDS.___ABBR___[cmd[i]]=tmp  end
+
+    cmd=tmp 
 
     local src=env.callee()
     local desc=help_func
@@ -155,15 +183,16 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
     end
 
     _CMDS[cmd]={
-        OBJ    = obj,          --object, if the connected function is not a static function, then this field is used.
-        FILE   = src,          --the file name that defines & executes the command
-        DESC   = desc,         --command short help without \n
-        HELPER = help_func,    --command detail help, it is a function
-        FUNC   = call_func,    --command function        
-        MULTI  = is_multiline,
-        ABBR   = table.concat(abbr,','),
-        ARGS   = paramCount,
-        DBCMD  = dbcmd
+        OBJ       = obj,          --object, if the connected function is not a static function, then this field is used.
+        FILE      = src,          --the file name that defines & executes the command
+        DESC      = desc,         --command short help without \n
+        HELPER    = help_func,    --command detail help, it is a function
+        FUNC      = call_func,    --command function        
+        MULTI     = is_multiline,
+        ABBR      = table.concat(abbr,','),
+        ARGS      = paramCount,
+        DBCMD     = dbcmd,
+        ISOVERRIDE= allow_overriden
     }
 end
 
@@ -174,12 +203,8 @@ function env.remove_command(cmd)
     if src:gsub("#%d+","")~=_CMDS[cmd].FILE:gsub("#%d+","") then
         env.raise("Cannot remove command '%s' from %s, it was defined in file %s!",cmd,src,_CMDS[cmd].FILE)
     end
-    for k,v in pairs(_CMDS.___ABBR___) do
-        if v==cmd then
-            _CMDS.___ABBR___[k]=nil
-        end
-    end
-    _CMDS[cmd]=nil
+
+    _CMDS[cmd]=nil    
 end    
 
 function env.callee(idx)
@@ -297,7 +322,7 @@ end
 
 function env.parse_args(cmd,rest)    
     --deal with the single-line commands
-    local args_count
+    local arg_count
     if type(cmd)=="number" then
         arg_count=cmd+1
     else
@@ -361,6 +386,10 @@ function env.parse_args(cmd,rest)
         elseif piece~='' then
             args[#args+1]=piece
         end   
+    end
+    for i=#args,1,-1 do 
+        if args[i]=="" then table.remove(args,i) end
+        break
     end
     return args,cmd
 end
@@ -475,7 +504,7 @@ function env.onload(...)
     env.set_command(nil,"LUAJIT","#Switch to luajit interpreter, press Ctrl+Z to exit.",function() os.execute(('"%sbin%sluajit"'):format(env.WORK_DIR,env.PATH_DEL)) end,false,1)
     env.set_command(nil,"-P","#Test parameters. Usage: -p <command> [<args>]",env.testcmd,false,99)
     
-    env.init.load(init.module_list,env)
+    env.init.onload()
 
     env.set_prompt(nil,"SQL")  
     env.safe_call(env.set and env.set.init,"Prompt","SQL",env.set_prompt,
@@ -491,20 +520,20 @@ function env.onload(...)
             local value=v:sub(4+#key)
             java.system:setProperty(key,value)
         else
-            env.eval_line(v:gsub("="," ",1)..';')
+            v=v:gsub("="," ",1)
+            local args=env.parse_args(2,v)
+            if args[1] and _CMDS[args[1]:upper()] then
+                env.eval_line(v..';')
+            end
         end
     end 
 end
 
 function env.unload()
     if env.event then env.event.callback("ON_ENV_UNLOADED") end
-
     env.init.unload(init.module_list,env)
     env.init=nil
     package.loaded['init']=nil
-    for k,v in pairs(_CMDS) do
-        _CMDS[k]=nil
-    end
     _CMDS.___ABBR___={}
     if jit and jit.flush then pcall(jit.flush) end
 end

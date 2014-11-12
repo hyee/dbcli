@@ -1,5 +1,5 @@
 /*[[flush a sql from out of shared pool, you can also rebuild index to archive this purpose. Usage: flush_sql <sql_id> 
-@version: 10.2.0.4={} 
+--[[@version: 10.2.0.4={} ]]--
 ]]*/
 DECLARE
     NAME    VARCHAR2(50);

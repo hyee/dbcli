@@ -1,4 +1,4 @@
-2014-11-11: change the user-defined alias commands as the lowest priority
+2014-11-11: remake luajit with newest V2.1 code and enable lua5.2 compatibility(option DLUAJIT_ENABLE_LUA52COMPAT)
 2014-11-11: remake luajit with newest V2.1 code and enable lua5.2 compatibility(option DLUAJIT_ENABLE_LUA52COMPAT)
 2014-11-11: "set database" option to support multilple database types(i.e.  mssql)
 2014-11-10: enhancement on the "ora" command for more flexible template

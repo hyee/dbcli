@@ -13,8 +13,8 @@ local color=setmetatable({
 	WHT = "\27[37m", -- White
 
 	GRAY=  "\27[1;30;40m", --BG Light gray
+	XXX=  "\27[48;5;15m", --BG Light gray
 	DCY=  "\27[0;36m", --Dark Cyan
-	DYEL=  "\27[0;33m", --Dark Cyan
 
 
 

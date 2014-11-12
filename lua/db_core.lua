@@ -52,7 +52,7 @@ function db_Types:load_sql_types(className)
 				end
 			end},
 
-		[4]={getter='getClob',setter='setString',
+		[4]={getter='getClob',setter='setStringForClob',--setString
 		     handler=function(result,action,conn)
 				if action=="get" then
 					local str=result:getSubString(1,result:length())
@@ -62,7 +62,7 @@ function db_Types:load_sql_types(className)
 				return result
 			end},
 
-		[5]={getter='getBlob',setter='setBytes',
+		[5]={getter='getBlob',setter='setBytesForBlob', --setBytes
 		     handler=function(result,action,conn)
 				if action=="get" then
 					local str=result:getBytes(1,result:length())
@@ -270,7 +270,7 @@ end
 
 function db_core:login(...)
 	--print(self.connect,self.__instance.connect)
-	env.password.login(self.__instance,...)
+	env.login.login(self.__instance,...)
 end
 
 --[[
@@ -288,42 +288,97 @@ end
    returns: for the sql is a query stmt, then return the result set, otherwise return the affected rows(>=-1)	
 ]]
 
-function db_core:parse(sql,params)
+function db_core:check_params(sql,prep,p1,params)
+	local meta=prep:getParameterMetaData() 
+    local param_count=meta:getParameterCount()
+	if param_count~=#p1 then
+    	local errmsg="Parameters are unexpected, below are the detail:\nSQL:"..string.rep('-',80).."\n"..sql
+    	local hdl=env.grid.new()
+    	hdl:add({"Param Sequence","Param Name","Param Type","Param Value","Description"})
+    	for i=1,math.max(param_count,#p1) do
+    		local v=p1[i] or {}
+    		local res,typ=pcall(meta.getParameterTypeName,meta,1) 
+    		typ=res and typ or v[4]
+    		local param_value=v[3] and params[v[3]]
+    		hdl:add{i,v[3],typ,type(param_value)=="table" and "OUT" or param_value,
+    		 (#p1<i and "Miss Binding") or (param_count<i and "Extra Binding") or "Matched"}
+
+    	end
+    	errmsg=errmsg..'\n'..hdl:tostring()
+    	env.checkerr(not errmsg,errmsg)
+    end
+end    
+
+function db_core:parse(sql,params,prefix,prep)
 	local p1,counter={},0	
-	sql=sql:gsub(':([%w_%$]+)',function(s)
-			local v= params[s:upper()]
-			if not v then return ':'..s end
+	prefix=(prefix or ':')
+	sql=sql:gsub('%f[%w_%$'..prefix..']'..prefix..'([%w_%$]+)',function(s)			
+			local k,s = s:upper(),prefix..s
+			local v= params[k]
+			if not v then return s end
 			counter=counter+1;
+			local args,typ={}
 			if type(v) =="table" then
 				table.insert(v[2],counter)
-				table.insert(p1,{'registerOutParameter',db_Types[v[3]].id})
-				return "?"
+				typ=v[3]
+				args={'registerOutParameter',db_Types[v[3]].id}
 			elseif type(v)=="number" then
-				table.insert(p1,{db_Types:set('NUMBER',v)})
+				typ='NUMBER'
+				args={db_Types:set(typ,v)}
 			elseif type(v)=="boolean" then
-				table.insert(p1,{db_Types:set('BOOLEAN',v)})
+				typ='BOOLEAN'
+				args={db_Types:set(typ,v)}
 			elseif v:sub(1,1)=="#" then
-				local typ=v:upper():sub(2)
-				params[s:upper()]={'#',{counter},typ}
+				typ=v:upper():sub(2)
+				params[k]={'#',{counter},typ,v}
 				if not db_Types[typ] then
 					env.raise("Cannot find '"..typ.."' in java.sql.Types!")
 				end
-				table.insert(p1,{'registerOutParameter',db_Types[typ].id})
+				args={'registerOutParameter',db_Types[typ].id}
 			else
-				table.insert(p1,{db_Types:set('VARCHAR',v)})
+				typ='VARCHAR'
+				args={db_Types:set(typ,v)}
 			end
-			--return ':'..s
+			args[#args+1],args[#args+2]=k,typ			
+			p1[#p1+1]=args
 			return '?'
 		end)
 	
-	local prep=self.conn:prepareCall(sql)
-	
-	for k,v in ipairs(p1) do
-		prep[v[1]](prep,k,v[2])
+	if not prep then prep=self.conn:prepareCall(sql) end
+	db_core:check_params(sql,prep,p1,params)
+
+	local meta=prep:getParameterMetaData() 
+    local param_count=meta:getParameterCount()  
+    if param_count==0 then return prep,sql,params end
+    local checkerr=pcall(meta.getParameterMode,meta,1)     
+
+    if not checkerr then
+		for k,v in ipairs(p1) do
+			prep[v[1]](prep,k,v[2])		
+		end
+	else
+		for i=1,param_count do
+			local mode,v,param_value=meta:getParameterMode(counter),p1[i],params[v[3]]
+			--input parameter
+            if mode<=2 then
+            	prep[db_Types[v[4]].setter](prep,i,type(param_value)=="table" and param_value[4] or param_value)            	
+            end
+
+            --output parameter
+            if mode>=2 then
+                if type(param_value)~='table' then
+                    params[v[3]]={'#',{counter},typename,param_value}
+                else
+                    table.insert(params[v[3]][2],counter)
+                end                               
+                prep['registerOutParameter'](prep,i,db_Types[typename].id)               
+            end
+		end
 	end
 
 	return prep,sql,params
 end
+
 
 function db_core:exec(sql,args)
 	collectgarbage("collect")
@@ -363,9 +418,9 @@ function db_core:exec(sql,args)
 		error(is_query)
 	end
 
-	--is_query=prep:execute()
+	--is_query=prep:execute()	
 	for k,v in pairs(params) do
-		if type(v) == "table" and v[1] == "#" then
+		if type(v) == "table" and v[1] == "#"  then
 			if type(v[2]) == "table" then
 				local res
 				for _,key in ipairs(v[2]) do

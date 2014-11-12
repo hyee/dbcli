@@ -11,10 +11,12 @@ Templates:
              ROW_WAIT_BLOCK# WAIT_BLOCK#}
           }
     &V1 : sid={''||sid},wt={waits desc},ev={event},sql={sql_text}   
-Cross-versions:
+Executable:
     @COST : 11.0={nvl(1440*(sysdate-SQL_EXEC_START),wait_secs/60)},10.0={wait_secs/60},9.0={null}
 ]]--      
 ]]*/
+
+set feed off
 
 VAR OBJECTS CURSOR
 
@@ -68,8 +70,8 @@ BEGIN
               AND    qcinst_id = PRIOR inst_id
               AND    LEVEL < 3
           order SIBLINGS BY &V1)
-        SELECT a.NEW_SID || ',' || a.serial# || ',@' || a.inst_id session#,
-               logon_time,
+        SELECT r "#",
+               a.NEW_SID || ',' || a.serial# || ',@' || a.inst_id session#,
                (SELECT spid
                 FROM   gv$process d
                 WHERE  d.inst_id = a.inst_id

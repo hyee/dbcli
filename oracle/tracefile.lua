@@ -62,14 +62,24 @@ function trace.get_trace(filename)
 	    END IF;
 	    :4 := buff;
 	END;]]
-
 	env.checkerr(filename,"Please specify the trace file location !")
+	db:internal_call("alter session set sql_trace=false")
+	if filename:lower()=="default" then
+		filename=db:get_value[[ SELECT u_dump.value || '/' || SYS_CONTEXT('userenv','instance_name') || '_ora_' || v$process.spid ||
+								       nvl2(v$process.traceid, '_' || v$process.traceid, NULL) || '.trc' "Trace File"
+								FROM   v$parameter u_dump
+								CROSS  JOIN v$process
+								JOIN   v$session
+								ON     v$process.addr = v$session.paddr
+								WHERE  u_dump.name = 'user_dump_dest'
+								AND    v$session.audsid = sys_context('userenv', 'sessionid')]]
+	end
 	local args={filename,"#VARCHAR","#CLOB","#VARCHAR"}
 	db:internal_call(sql,args)
 	env.checkerr(args[2],args[4])
 	print("Result written to file "..env.write_cache(args[2],args[3]))
 end
 
-env.set_command(nil,"loadtrace","Download Oracle trace file into local directory. Usage: loadtrace <trace_file>",trace.get_trace,false,2)
+env.set_command(nil,"loadtrace","Download Oracle trace file into local directory. Usage: loadtrace <trace_file|default>",trace.get_trace,false,2)
 
 return trace
