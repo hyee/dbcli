@@ -194,9 +194,8 @@ function snap.exec(interval,typ,...)
 			cmd.grid:add_calc_ratio(i)		
 		end
 		cmd.grid:sort(idx,true)		
-		cfg.set("PrintSize",cfg.get("snaprows"))
 		print(title:format(name))
-		cmd.grid:print()		
+		cmd.grid:print(nil,nil,nil,cfg.get("snaprows"))		
 	end
 	
 end

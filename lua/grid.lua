@@ -432,10 +432,10 @@ function grid:wellform(col_del,row_del)
 end
 
 function grid.print(rows,printhead,col_del,row_del,psize)
-    psize=psize or env.set.get("PrintSize")
+    psize=psize or 10000
     if rows.__class then
         rows=rows:wellform(col_del,row_del)
-        return print(table.concat(rows,"\n",1,math.min(#rows,psize)))
+        return print(table.concat(rows,"\n",1,math.min(#rows,psize+2)))
     end
     print(grid.tostring(rows,printhead,col_del,row_del,psize))
 end

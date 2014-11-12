@@ -14,7 +14,7 @@ function cfg.show_cfg(name)
 	]])
 	if name then
 		local v=cfg[name]
-		table.insert(rows,{name,string.from(v.value),string.from(v.default),v.range or '*',v.class,v.desc})
+		table.insert(rows,{name,string.from(v.value),string.from(v.default),v.class,v.range or '*',v.desc})
 	else
 		for k,v in pairs(cfg) do
 			if type(v)=="table" and k==k:upper() and v.src then
