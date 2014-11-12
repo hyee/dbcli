@@ -45,7 +45,7 @@ function oracle:ctor(isdefault)
             set_command(self,"--"    ,   '#Comment',        nil   ,false,2)
             set_command(self,{"execute","exec","call"}  ,   default_desc,      self.run_proc  ,false,2)        
         end
-        env.event.snoop('BEFORE_COMMAND',self.clearStatements,self)        
+        --env.event.snoop('BEFORE_COMMAND',self.clearStatements,self)        
     end
     self.C,self.props={},{}
 end
@@ -96,7 +96,7 @@ function oracle:connect(conn_str)
     self.super.connect(self,args)    
     
     self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
-    self.conn:setStatementCacheSize(self.MAX_CACHE_SIZE)
+    self.conn:setStatementCacheSize(cfg.get('SQLCACHESIZE'))
     self.conn:setImplicitCachingEnabled(true)
     local params=self:get_value([[
        select /*INTERNAL_DBCLI_CMD*/ user,
@@ -131,8 +131,6 @@ function oracle:parse(sql,params)
     local p1,counter={},0
 
     sql=sql:gsub('%f[%w_%$&]&([%w%_%$]+)',function(s) return params[s:upper()] or '&'..s end)
-    return self.super.parse(self,sql,params,':')
---[[
     sql=sql:gsub('%f[%w_%$:]:([%w_%$]+)',function(s)
             local k,s=s:upper(),':'..s 
             local v=params[k]
@@ -180,8 +178,7 @@ function oracle:parse(sql,params)
         end        
     end
 
-    return prep,sql,params
---]]    
+    return prep,sql,params 
 end
 
 function oracle:exec(sql,...)

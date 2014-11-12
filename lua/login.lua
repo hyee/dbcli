@@ -52,7 +52,7 @@ function login.login(db,id,filter)
     local account,counter,hdl=nil,0,grid.new()
     filter=id and id:sub(1,1)=='-'  and filter and filter:lower() or id
     
-    grid.add(hdl,{"#","Name","User","Url","LastLogin"})
+    grid.add(hdl,{"#","Name","User","Url","Last Login"})
 
     if keys[filter and tonumber(filter) or -1] then
         counter = 1

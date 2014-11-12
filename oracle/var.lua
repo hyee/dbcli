@@ -1,5 +1,6 @@
 local env=env
-local grid,snoop=env.grid,env.event.snoop
+local grid,snoop,cfg=env.grid,env.event.snoop,env.set
+local db=env.oracle
 local var={inputs={},outputs={},output_result={}}
 
 var.types={
@@ -98,26 +99,42 @@ end
 
 function var.after_db_exec(db,sql,args)
     if db:is_internal_call(sql) then return end
-    local result={{'Argument','Value'}}
+    local result,isPrint={{'Argument','Value'}},cfg.get("PrintVar")
     for k,v in pairs(var.outputs) do
         if v and k:upper()==k and args[k] and args[k]~=v then
-            if v=="#CURSOR" then
+            if v=="#CURSOR"  and isPrint=="on" then
                 db.resultset:print(args[k],db.conn)
             else
                 var.inputs[k],var.outputs[k]=args[k],nil
                 result[#result+1]={k,args[k]}
             end
-            args[k]=v
+            --args[k]=v
         end
     end
 
-    if #result>1 then
+    if #result>1 and isPrint=="on" then
         grid.print(result)
     end
 end
 
-snoop('BEFORE_ORACLE_EXEC',var.before_db_exec)
-snoop('AFTER_ORACLE_EXEC' ,var.after_db_exec)
-env.set_command(nil,{"variable","VAR"},var.helper,var.setOutput,false,3)
-env.set_command(nil,{"Define","DEF"},"Define input variables, Usage: def <name>=<value>, or def <name> to remove definition",var.setInput,false,2)
+function var.print(name)
+    if not name then return end
+    name=name:upper()
+    local obj=var.inputs[name]
+    env.checkerr(obj,'Target variable does not exist!')   
+    if type(obj)=='userdata' and tostring(obj):find('ResultSet') then 
+        db.resultset:print(obj,db.conn)
+    else 
+        print(obj)
+    end
+end
+
+function var.onload()
+    snoop('BEFORE_ORACLE_EXEC',var.before_db_exec)
+    snoop('AFTER_ORACLE_EXEC' ,var.after_db_exec)
+    cfg.init("PrintVar",'on',nil,"oracle","Max size of historical commands",'on,off')
+    env.set_command(nil,{"variable","VAR"},var.helper,var.setOutput,false,3)
+    env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables(refer to command "VAR" and "DEF").Usage: print <variable>',var.print,false,3)
+    env.set_command(nil,{"Define","DEF"},"Define input variables, Usage: def <name>=<value>, or def <name> to remove definition",var.setInput,false,2)
+end    
 return var
