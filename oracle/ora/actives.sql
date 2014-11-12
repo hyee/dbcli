@@ -46,10 +46,7 @@ BEGIN
           AND    status = 'ACTIVE'
           AND    (NVL(wait_class, 'x') != 'Idle' OR sql_id IS NOT NULL)),
         s2 AS
-         (SELECT /*+no_merge*/
-           *
-          FROM   gv$px_session
-          WHERE  NOT (SID = qcsid AND inst_id = qcinst_id)),
+         (SELECT /*+no_merge*/* FROM gv$px_session WHERE  NOT (SID = qcsid AND inst_id = qcinst_id)),
         s3 AS
          (SELECT /*+no_merge*/ * FROM s1 LEFT JOIN s2 USING (inst_id, SID, serial#)),
         s4 AS

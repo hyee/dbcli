@@ -387,7 +387,7 @@ function env.parse_args(cmd,rest)
 end
 
 function env.eval_line(line,exec)
-    if not line then return end
+    if type(line)~='string' or line:gsub('[%s\n\r\t]+','')=='' then return end
     local b=line:byte()    
     --remove bom header
     if not b or b>=128 then return end
