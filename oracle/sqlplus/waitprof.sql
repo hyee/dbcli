@@ -79,11 +79,11 @@ WITH
         COUNT(DISTINCT seq#) dist_events,
         TRUNC(COUNT(*)/COUNT(DISTINCT seq#)) average_samples
     FROM
-        (	SELECT /*+ NO_MERGE */ TO_NUMBER(&_swp_sid) sid FROM 
-        		(SELECT rownum r FROM dual CONNECT BY ROWNUM <= 1000) a,
-        		(SELECT rownum r FROM dual CONNECT BY ROWNUM <= 1000) b,
-        		(SELECT rownum r FROM dual CONNECT BY ROWNUM <= 1000) c
-	        WHERE ROWNUM <= &_swp_samples
+        (    SELECT /*+ NO_MERGE */ TO_NUMBER(&_swp_sid) sid FROM 
+                (SELECT rownum r FROM dual CONNECT BY ROWNUM <= 1000) a,
+                (SELECT rownum r FROM dual CONNECT BY ROWNUM <= 1000) b,
+                (SELECT rownum r FROM dual CONNECT BY ROWNUM <= 1000) c
+            WHERE ROWNUM <= &_swp_samples
         ) s,
         v$session_wait sw
     WHERE

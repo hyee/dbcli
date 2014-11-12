@@ -62,31 +62,31 @@ union ALL
 select '=========',null,'=========','=========',null,null,null,null from dual
 UNION ALL
 SELECT histogram, num_buckets, decode(data_type
-				  ,'NUMBER'       ,to_char(utl_raw.cast_to_number(low_value))
-				  ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(low_value))
-				  ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(low_value))
-				  ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(low_value))
-				  ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(low_value))
-				  ,'DATE',to_char(1780+to_number(substr(low_value,1,2),'XX')
-				         +to_number(substr(low_value,3,2),'XX'))||'-'
-				       ||to_number(substr(low_value,5,2),'XX')||'-'
-				       ||to_number(substr(low_value,7,2),'XX')||' '
-				       ||(to_number(substr(low_value,9,2),'XX')-1)||':'
-				       ||(to_number(substr(low_value,11,2),'XX')-1)||':'
-				       ||(to_number(substr(low_value,13,2),'XX')-1)
-				  ,  low_value) low_v,
+                  ,'NUMBER'       ,to_char(utl_raw.cast_to_number(low_value))
+                  ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(low_value))
+                  ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(low_value))
+                  ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(low_value))
+                  ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(low_value))
+                  ,'DATE',to_char(1780+to_number(substr(low_value,1,2),'XX')
+                         +to_number(substr(low_value,3,2),'XX'))||'-'
+                       ||to_number(substr(low_value,5,2),'XX')||'-'
+                       ||to_number(substr(low_value,7,2),'XX')||' '
+                       ||(to_number(substr(low_value,9,2),'XX')-1)||':'
+                       ||(to_number(substr(low_value,11,2),'XX')-1)||':'
+                       ||(to_number(substr(low_value,13,2),'XX')-1)
+                  ,  low_value) low_v,
                 decode(data_type
-					  ,'NUMBER'       ,to_char(utl_raw.cast_to_number(high_value))
-					  ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(high_value))
-					  ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(high_value))
-					  ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(high_value))
-					  ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(high_value))
-					  ,'DATE',to_char(1780+to_number(substr(high_value,1,2),'XX')
-					         +to_number(substr(high_value,3,2),'XX'))||'-'
-					       ||to_number(substr(high_value,5,2),'XX')||'-'
-					       ||to_number(substr(high_value,7,2),'XX')||' '
-					       ||(to_number(substr(high_value,9,2),'XX')-1)||':'
-					       ||(to_number(substr(high_value,11,2),'XX')-1)||':'
-					       ||(to_number(substr(high_value,13,2),'XX')-1)
-					  ,  high_value) hi_v, density, num_nulls, num_distinct,sample_size
+                      ,'NUMBER'       ,to_char(utl_raw.cast_to_number(high_value))
+                      ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(high_value))
+                      ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(high_value))
+                      ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(high_value))
+                      ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(high_value))
+                      ,'DATE',to_char(1780+to_number(substr(high_value,1,2),'XX')
+                             +to_number(substr(high_value,3,2),'XX'))||'-'
+                           ||to_number(substr(high_value,5,2),'XX')||'-'
+                           ||to_number(substr(high_value,7,2),'XX')||' '
+                           ||(to_number(substr(high_value,9,2),'XX')-1)||':'
+                           ||(to_number(substr(high_value,11,2),'XX')-1)||':'
+                           ||(to_number(substr(high_value,13,2),'XX')-1)
+                      ,  high_value) hi_v, density, num_nulls, num_distinct,sample_size
 FROM r1 WHERE ROWNUM<2

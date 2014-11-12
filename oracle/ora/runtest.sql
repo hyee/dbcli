@@ -14,11 +14,11 @@ VAR C VARCHAR
 
 set printsize 10
 BEGIN
-	open :OBJS for select * from all_objects;
-	open :TABLES for select * from all_tables;
-	:A:='XIXI';
-	:B:=SYSDATE;
-	:C:=dbms_random.value();
+    open :OBJS for select * from all_objects;
+    open :TABLES for select * from all_tables;
+    :A:='XIXI';
+    :B:=SYSDATE;
+    :C:=dbms_random.value();
 END;
 /
 /*

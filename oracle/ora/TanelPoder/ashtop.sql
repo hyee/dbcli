@@ -4,8 +4,8 @@
       --[[
   Templates:
       &V7: sql={sql_id,event}, p={event,current_obj#,p3text}, plan={plan_hash,event,current_obj#,SQL_PLAN_LINE_ID}
-	  &V9: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
-	  &V8: {
+      &V9: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
+      &V8: {
             sql_id={(trim(:V1) is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id)) and 
                      sample_time+0 between nvl(to_date(:V2,'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(:V3,'YYMMDDHH24MISS'),sysdate)},
             snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id))},
@@ -16,9 +16,9 @@
   Examples:
       ora ashtop -sql               =  ora ashtop "sql_id,session_state,event"
       ora ashtop -p,qc_session_id   =  ora ashtop "session_state,event,current_obj#,p3text,qc_session_id"
-	  ora ashtop -dash              =  Query dictionary ash view instead of dynamic ash view	 
- 	  ora ashtop -plan              =  ora ashtop "plan_hash,event,current_obj#,SQL_PLAN_LINE_ID"
-	  ora ashtop -p", qc_session_id, qc_session_serial#"  = ora ashtop "-p, qc_session_id, qc_session_serial#"
+      ora ashtop -dash              =  Query dictionary ash view instead of dynamic ash view     
+       ora ashtop -plan              =  ora ashtop "plan_hash,event,current_obj#,SQL_PLAN_LINE_ID"
+      ora ashtop -p", qc_session_id, qc_session_serial#"  = ora ashtop "-p, qc_session_id, qc_session_serial#"
 ]]*/
 
 SELECT * FROM (
@@ -56,7 +56,7 @@ SELECT * FROM (
         FROM &V9 a) a
       , all_users u
     WHERE a.user_id = u.user_id (+)
-	AND   &V8
+    AND   &V8
     GROUP BY nvl2(qc_session_id,'PARALLEL','SERIAL'),nvl(a.program#,u.username),&V7
     ORDER BY Secs DESC nulls last, &V7
 )

@@ -11,7 +11,7 @@ WITH
 bclass AS (SELECT class, ROWNUM r from v$waitstat),
 ash AS (SELECT /*+ QB_NAME(ash) LEADING(a) USE_HASH(u) SWAP_JOIN_INPUTS(u) */
             coalesce(sql_id,p3text,p2text,p1text) sql_id,current_obj#,sample_id,
-		    SESSION_ID||','||SESSION_serial# SID,     
+            SESSION_ID||','||SESSION_serial# SID,     
             nullif(blocking_session||','||BLOCKING_SESSION_SERIAL#,',') b_sid
           , u.username
           , CASE WHEN a.session_type = 'BACKGROUND' OR REGEXP_LIKE(a.program, '.*\([PJ]\d+\)') THEN
@@ -37,9 +37,9 @@ ash_data AS (SELECT /*+ MATERIALIZE */ * FROM ash),
 chains AS (
     SELECT /*+NO_EXPAND*/
         level lvl
-	  --, sql_id
+      --, sql_id
       , sid
-	  , REPLACE(SYS_CONNECT_BY_PATH(sql_id, '->'), '->', ' -> ') sql_ids
+      , REPLACE(SYS_CONNECT_BY_PATH(sql_id, '->'), '->', ' -> ') sql_ids
       , REPLACE(SYS_CONNECT_BY_PATH(program2||event2, '->'), '->', ' -> ') path -- there's a reason why I'm doing this (ORA-30004 :)
      -- , CASE WHEN CONNECT_BY_ISLEAF = 1 THEN d.session_id ELSE NULL END sids
       , CONNECT_BY_ISLEAF isleaf
@@ -64,7 +64,7 @@ SELECT * FROM (
       --, COUNT(DISTINCT sql_exec_id) execs
       , (SELECT nvl(max(object_name),''||current_obj#) FROM all_objects WHERE object_id=current_obj#) obj#
     --  , ROUND(COUNT(*) / ((MAX(sample_time+0)-MIN(sample_time+0)) * 86400), 1) AAS
-	  , sql_ids
+      , sql_ids
       , path wait_chain
     FROM
         chains
