@@ -1,3 +1,4 @@
+2014-11-12: changes on var/def command, allow setting the description of the variables
 2014-11-12: add 'SQLCACHESIZE' parameter for database
 2014-11-12: add 'print' command and 'PrintVar' parameter for the variables(command var/def)
 2014-11-11: change the user-defined alias commands as the lowest priority
