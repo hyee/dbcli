@@ -94,6 +94,7 @@ function alias.set(name,cmd,write)
             cmd=packer.unpack(cmd)
             desc=cmd
         end
+        desc=desc:gsub(';+$','')
         alias.cmdlist[name].desc=desc
         alias.cmdlist[name].text=cmd
         alias.cmdlist[name].active=false

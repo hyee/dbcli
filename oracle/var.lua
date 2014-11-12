@@ -60,9 +60,8 @@ function var.setInput(name,desc)
     if name:find('=') then 
         name,value=name:match("^([^=%s]+)%s*=%s*(.*)")
         if not value then return end
-    elseif name:find(' ') then     
-        name,value=name:match("^([^=%s]+)%s+(.*)")
-        if not value then return end
+    else 
+        env.raise('Usage: def name=<value> [description]')
     end
 
     name=name:upper()
