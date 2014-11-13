@@ -96,7 +96,8 @@ function oracle:connect(conn_str)
     self.super.connect(self,args)    
     
     self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
-    self.conn:setStatementCacheSize(cfg.get('SQLCACHESIZE'))
+    self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
+    self.conn:setStatementCacheSize(self.MAX_CACHE_SIZE)
     self.conn:setImplicitCachingEnabled(true)
     local params=self:get_value([[
        select /*INTERNAL_DBCLI_CMD*/ user,
@@ -130,6 +131,11 @@ end
 function oracle:parse(sql,params)
     local p1,counter={},0
 
+    if cfg.get('SQLCACHESIZE') ~= self.MAX_CACHE_SIZE then
+        self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
+        self.conn:setStatementCacheSize(self.MAX_CACHE_SIZE)
+    end
+
     sql=sql:gsub('%f[%w_%$&]&([%w%_%$]+)',function(s) return params[s:upper()] or '&'..s end)
     sql=sql:gsub('%f[%w_%$:]:([%w_%$]+)',function(s)
             local k,s=s:upper(),':'..s 
@@ -162,7 +168,7 @@ function oracle:parse(sql,params)
 
             p1[k]=args
 
-            return s
+            return s:upper()
         end)
     
     if counter<0 or counter==3 then return self.super.parse(self,sql,params,':') end

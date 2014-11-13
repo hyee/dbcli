@@ -57,12 +57,8 @@ function var.setInput(name,desc)
         return
     end
 
-    if name:find('=') then 
-        name,value=name:match("^([^=%s]+)%s*=%s*(.*)")
-        if not value then return end
-    else 
-        env.raise('Usage: def name=<value> [description]')
-    end
+    if name:find('=') then name,value=name:match("^%s*([^=]+)%s*=%s*(.+)") end
+    if not name then env.raise('Usage: def name=<value> [description]') end
 
     name=name:upper()
     env.checkerr(name:match("^[%w%$_]+$"),'Unexpected variable name['..name..']!')    
@@ -119,7 +115,8 @@ function var.print(name)
         name=name:upper()
         local obj=var.inputs[name]
         env.checkerr(obj,'Target variable does not exist!')   
-        if type(obj)=='userdata' and tostring(obj):find('ResultSet') then 
+        if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
+            if var.desc[name] then print(var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)) end
             db.resultset:print(obj,db.conn)
         else 
             print(obj)
@@ -138,12 +135,13 @@ function var.print(name)
         
         list={{'Variable','Value'}}
         for _,obj in ipairs(keys) do
-            local item=obj[3]
-            if obj[1]=='userdata' and tostring(item):find('ResultSet') then
-                if var.desc[obj[2]] then print(var.desc[obj[2]]..':\n'..string.rep('=',var.desc[obj[2]]:len()+1)) end
-                db.resultset:print(item,db.conn)
+            local name,value=obj[2],obj[3]
+            if obj[1]=='userdata' and tostring(value):find('ResultSet') then
+                if var.desc[name] then print(var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)) end
+                db.resultset:print(value,db.conn)
+                var.inputs[name]=nil
             else
-                list[#list+1]={var.desc[obj[2]] or obj[2],item}
+                list[#list+1]={var.desc[name] or name,value}
             end
         end
         if #list>1 then grid.print(list) end
@@ -155,7 +153,8 @@ function var.onload()
     snoop('AFTER_ORACLE_EXEC' ,var.after_db_exec)
     cfg.init("PrintVar",'on',nil,"oracle","Max size of historical commands",'on,off')
     env.set_command(nil,{"variable","VAR"},var.helper,var.setOutput,false,4)
+    env.set_command(nil,{"Define","DEF"},"Define input variables, Usage: def <name>=<value> [description], or def <name> to remove definition",var.setInput,false,4)
     env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables(refer to command "VAR" and "DEF").Usage: print <variable|-a>',var.print,false,3)
-    env.set_command(nil,{"Define","DEF"},"Define input variables, Usage: def <name>=<value> [description], or def <name> to remove definition",var.setInput,false,3)
+    
 end    
 return var

@@ -415,10 +415,10 @@ function env.eval_line(line,exec)
     
     if multi_cmd then return check_multi_cmd(line) end
     
-    local cmd,rest=env.parse_args(2,line)
-    cmd,rest=cmd[1],cmd[2] or ""
-    cmd=cmd:gsub(';+$','')
+    local cmd,rest=line:match('^%s*([^%s\t]+)[%s\t]*(.*)')
+    
     if not cmd or cmd=="" or cmd:sub(1,2)=="--" then return end
+    cmd=cmd:gsub(';+$','')
     if cmd:sub(1,2)=="/*" then cmd=cmd:sub(1,2) end
     cmd=cmd:upper()
     if not (_CMDS[cmd]) then

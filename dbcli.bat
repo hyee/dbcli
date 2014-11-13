@@ -6,8 +6,8 @@ color 0A
 rem color F0
 
 
-SET JRE_HOME=C:\Program Files\Java\jre7\bin
-SET TNS_ADM=d:\Oracle\product\11.2.0\client\network\admin
+SET JRE_HOME=C:\Program Files (x86)\Java\jre7\bin
+SET TNS_ADM=d:\Oracle\product\11.2.0\db\network\admin
 
 If not exist "%TNSADM%\tnsnames.ora" if Defined ORACLE_HOME (set TNS_ADM=%ORACLE_HOME%\network\admin) 
 IF not exist "%JRE_HOME%\java.exe" (set JRE_HOME=.\jre\bin)
