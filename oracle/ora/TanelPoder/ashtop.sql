@@ -27,7 +27,7 @@ SELECT * FROM (
       , ROUND(SUM(c) / (1+(max(sample_time+0) - min(sample_time+0)) * 86400), 1) AAS
       , LPAD(ROUND(RATIO_TO_REPORT(sum(c)) OVER () * 100)||'%',5,' ')||' |' "%This"
       , nvl2(qc_session_id,'PARALLEL','SERIAL') "Parallel?"
-      , nvl(a.program#,u.username) program#
+      --, nvl(a.program#,u.username) program#
       , &V7
       , round(SUM(CASE WHEN wait_class IS NULL           THEN c ELSE 0 END)) "CPU"
       , round(SUM(CASE WHEN wait_class ='User I/O'       THEN c ELSE 0 END)) "User I/O"
