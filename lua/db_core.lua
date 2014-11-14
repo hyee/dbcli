@@ -405,10 +405,9 @@ function db_core:exec(sql,args)
         self.conn:setAutoCommit(autocommit=="on" and true or false)
         self.autocommit=autocommit
     end
-
-    prep,sql,params=self:parse(sql,params)    
-
-    if event then event("BEFORE_DB_EXEC",self,sql,args) end
+    sql=event("BEFORE_DB_EXEC",{self,sql,args}) [2]
+    sql=event("BEFORE_DB_STMT_PARSE",{self,sql,params}) [2]    
+    prep,sql,params=self:parse(sql,params)        
     self.__stmts[#self.__stmts+1]=prep
     prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
     local success,is_query=pcall(prep.execute,prep)

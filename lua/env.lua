@@ -475,7 +475,7 @@ function safe_call(func,...)
 end
 
 function env.onload(...)
-    env.args={...} 
+    env.__ARGS__={...} 
     env.init=require("init")     
     env.init.init_path()
     for k,v in ipairs({'jit','ffi','bit'}) do
@@ -506,7 +506,7 @@ function env.onload(...)
     env.safe_call(env.event and env.event.callback,"ON_ENV_LOADED") 
     
     --load initial settings
-    for _,v in ipairs(env.args) do
+    for _,v in ipairs(env.__ARGS__) do
         if v:sub(1,2) == "-D" then
             local key=v:sub(3):match("^([^=]+)")
             local value=v:sub(4+#key)

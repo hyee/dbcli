@@ -20,6 +20,11 @@ function printer.print(...)
     end
 end
 
+function printer.write(output)
+    out:write(space..output)
+    out:flush()
+end
+
 function printer.onunload()
     printer.print=printer.rawprint
     _G.print=printer.print

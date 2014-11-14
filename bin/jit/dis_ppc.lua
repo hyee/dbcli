@@ -354,22 +354,22 @@ local map_spe = {
 }
 
 local map_pri = {
-  [0] = false,    false,        "tdiARI",    "twiARI",
-  map_spe,    false,        false,        "mulliRRI",
-  "subficRRI",    false,        "cmpl_iYLRU",    "cmp_iYLRI",
-  "addicRRI",    "addic.RRI",    "addi|liRR0I",    "addis|lisRR0I",
-  "b_KBJ",    "sc",         "bKJ",        map_crops,
-  "rlwimiRR~AAA.", map_rlwinm,    false,        "rlwnmRR~RAA.",
-  "oriNRR~U",    "orisRR~U",    "xoriRR~U",    "xorisRR~U",
-  "andi.RR~U",    "andis.RR~U",    map_rld,    map_ext,
-  "lwzRRD",    "lwzuRRD",    "lbzRRD",    "lbzuRRD",
-  "stwRRD",    "stwuRRD",    "stbRRD",    "stbuRRD",
-  "lhzRRD",    "lhzuRRD",    "lhaRRD",    "lhauRRD",
-  "sthRRD",    "sthuRRD",    "lmwRRD",    "stmwRRD",
-  "lfsFRD",    "lfsuFRD",    "lfdFRD",    "lfduFRD",
-  "stfsFRD",    "stfsuFRD",    "stfdFRD",    "stfduFRD",
-  false,    false,        map_ld,        map_fps,
-  false,    false,        map_std,    map_fpd,
+  [0] = false,	false,		"tdiARI",	"twiARI",
+  map_spe,	false,		false,		"mulliRRI",
+  "subficRRI",	false,		"cmpl_iYLRU",	"cmp_iYLRI",
+  "addicRRI",	"addic.RRI",	"addi|liRR0I",	"addis|lisRR0I",
+  "b_KBJ",	"sc",		 "bKJ",		map_crops,
+  "rlwimiRR~AAA.", map_rlwinm,	false,		"rlwnmRR~RAA.",
+  "oriNRR~U",	"orisRR~U",	"xoriRR~U",	"xorisRR~U",
+  "andi.RR~U",	"andis.RR~U",	map_rld,	map_ext,
+  "lwzRRD",	"lwzuRRD",	"lbzRRD",	"lbzuRRD",
+  "stwRRD",	"stwuRRD",	"stbRRD",	"stbuRRD",
+  "lhzRRD",	"lhzuRRD",	"lhaRRD",	"lhauRRD",
+  "sthRRD",	"sthuRRD",	"lmwRRD",	"stmwRRD",
+  "lfsFRD",	"lfsuFRD",	"lfdFRD",	"lfduFRD",
+  "stfsFRD",	"stfsuFRD",	"stfdFRD",	"stfduFRD",
+  false,	false,		map_ld,		map_fps,
+  false,	false,		map_std,	map_fpd,
 }
 
 ------------------------------------------------------------------------------
@@ -404,10 +404,10 @@ local function putop(ctx, text, operands)
   end
   if ctx.hexdump > 0 then
     ctx.out(format("%08x  %s  %-7s %s%s\n",
-        ctx.addr+pos, tohex(ctx.op), text, concat(operands, ", "), extra))
+	    ctx.addr+pos, tohex(ctx.op), text, concat(operands, ", "), extra))
   else
     ctx.out(format("%08x  %-7s %s%s\n",
-        ctx.addr+pos, text, concat(operands, ", "), extra))
+	    ctx.addr+pos, text, concat(operands, ", "), extra))
   end
   ctx.pos = pos + 4
 end
@@ -478,16 +478,16 @@ local function disass_ins(ctx)
       local cn = ""
       rs = rs - 10
       if band(bo, 4) == 0 then
-    cn = band(bo, 2) == 0 and "dnz" or "dz"
-    if band(bo, 0x10) == 0 then
-      cn = cn..(band(bo, 8) == 0 and "f" or "t")
-    end
-    if band(bo, 0x10) == 0 then x = condfmt(cond) end
-    name = name..(band(bo, 1) == band(rshift(op, 15), 1) and "-" or "+")
+	cn = band(bo, 2) == 0 and "dnz" or "dz"
+	if band(bo, 0x10) == 0 then
+	  cn = cn..(band(bo, 8) == 0 and "f" or "t")
+	end
+	if band(bo, 0x10) == 0 then x = condfmt(cond) end
+	name = name..(band(bo, 1) == band(rshift(op, 15), 1) and "-" or "+")
       elseif band(bo, 0x10) == 0 then
-    cn = map_cond[band(cond, 3) + (band(bo, 8) == 0 and 4 or 0)]
-    if cond > 3 then x = "cr"..rshift(cond, 2) end
-    name = name..(band(bo, 1) == band(rshift(op, 15), 1) and "-" or "+")
+	cn = map_cond[band(cond, 3) + (band(bo, 8) == 0 and 4 or 0)]
+	if cond > 3 then x = "cr"..rshift(cond, 2) end
+	name = name..(band(bo, 1) == band(rshift(op, 15), 1) and "-" or "+")
       end
       name = gsub(name, "_", cn)
     elseif p == "J" then
@@ -511,8 +511,8 @@ local function disass_ins(ctx)
       operands[#operands] = rshift(operands[#operands], 1)
     elseif p == "0" then
       if last == "r0" then
-    operands[#operands] = nil
-    if altname then name = altname end
+	operands[#operands] = nil
+	if altname then name = altname end
       end
     elseif p == "L" then
       name = gsub(name, "_", band(op, 0x00200000) ~= 0 and "d" or "w")
@@ -526,15 +526,15 @@ local function disass_ins(ctx)
     elseif p == "=" then
       local n = #operands
       if last == operands[n-1] then
-    operands[n] = nil
-    name = altname
+	operands[n] = nil
+	name = altname
       end
     elseif p == "%" then
       local n = #operands
       if last == operands[n-1] and last == operands[n-2] then
-    operands[n] = nil
-    operands[n-1] = nil
-    name = altname
+	operands[n] = nil
+	operands[n-1] = nil
+	name = altname
       end
     elseif p == "-" then
       rs = rs - 5

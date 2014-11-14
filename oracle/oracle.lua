@@ -135,8 +135,7 @@ function oracle:parse(sql,params)
         self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
         self.conn:setStatementCacheSize(self.MAX_CACHE_SIZE)
     end
-
-    sql=sql:gsub('%f[%w_%$&]&([%w%_%$]+)',function(s) return params[s:upper()] or '&'..s end)
+    
     sql=sql:gsub('%f[%w_%$:]:([%w_%$]+)',function(s)
             local k,s=s:upper(),':'..s 
             local v=params[k]
@@ -190,7 +189,7 @@ end
 function oracle:exec(sql,...)
     local bypass=self:is_internal_call(sql) 
     local args=type(select(1,...)=="table") and ... or {...}
-    if not bypass then event("BEFORE_ORACLE_EXEC",self,sql,args) end
+    sql=event("BEFORE_ORACLE_EXEC",{self,sql,args}) [2]
     local result=self.super.exec(self,sql,args)
     if not bypass then event("AFTER_ORACLE_EXEC",self,sql,args,result) end
     if type(result)=="number" and cfg.get("feed")=="on" then

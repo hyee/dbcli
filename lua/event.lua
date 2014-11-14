@@ -7,16 +7,16 @@ function event.callback(name,...)
     event[name].src=env.callee()
 
     local v=event[name]
-
-    for k,v in ipairs(v) do
-        local result,err
+    local flag,result
+    for k,v in ipairs(v) do        
         if v.obj then
-            result,err=pcall(v.func,v.obj,...)    
+            flag,result=pcall(v.func,v.obj,...)    
         else
-            result,err=pcall(v.func,...)
+            flag,result=pcall(v.func,...)
         end
-        if not result then print(err) end
+        if not flag then print(result) end
     end
+    return ...
 end
 
 function event.snoop(name,func,obj,priority)

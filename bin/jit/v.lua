@@ -104,30 +104,30 @@ local function dump_trace(what, tr, func, pc, otr, oex)
     if what == "abort" then
       local loc = fmtfunc(func, pc)
       if loc ~= startloc then
-    out:write(format("[TRACE --- %s%s -- %s at %s]\n",
-      startex, startloc, fmterr(otr, oex), loc))
+	out:write(format("[TRACE --- %s%s -- %s at %s]\n",
+	  startex, startloc, fmterr(otr, oex), loc))
       else
-    out:write(format("[TRACE --- %s%s -- %s]\n",
-      startex, startloc, fmterr(otr, oex)))
+	out:write(format("[TRACE --- %s%s -- %s]\n",
+	  startex, startloc, fmterr(otr, oex)))
       end
     elseif what == "stop" then
       local info = traceinfo(tr)
       local link, ltype = info.link, info.linktype
       if ltype == "interpreter" then
-    out:write(format("[TRACE %3s %s%s -- fallback to interpreter]\n",
-      tr, startex, startloc))
+	out:write(format("[TRACE %3s %s%s -- fallback to interpreter]\n",
+	  tr, startex, startloc))
       elseif ltype == "stitch" then
-    out:write(format("[TRACE %3s %s%s %s %s]\n",
-      tr, startex, startloc, ltype, fmtfunc(func, pc)))
+	out:write(format("[TRACE %3s %s%s %s %s]\n",
+	  tr, startex, startloc, ltype, fmtfunc(func, pc)))
       elseif link == tr or link == 0 then
-    out:write(format("[TRACE %3s %s%s %s]\n",
-      tr, startex, startloc, ltype))
+	out:write(format("[TRACE %3s %s%s %s]\n",
+	  tr, startex, startloc, ltype))
       elseif ltype == "root" then
-    out:write(format("[TRACE %3s %s%s -> %d]\n",
-      tr, startex, startloc, link))
+	out:write(format("[TRACE %3s %s%s -> %d]\n",
+	  tr, startex, startloc, link))
       else
-    out:write(format("[TRACE %3s %s%s -> %d %s]\n",
-      tr, startex, startloc, link, ltype))
+	out:write(format("[TRACE %3s %s%s -> %d %s]\n",
+	  tr, startex, startloc, link, ltype))
       end
     else
       out:write(format("[TRACE %s]\n", what))

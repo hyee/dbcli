@@ -340,8 +340,10 @@ function awr.extract_addm(starttime,endtime,instances)
     awr.dump_report(stmt,starttime,endtime,instances)
 end
 
-env.set_command(nil,"awrdump","Extract AWR report. Usage: awrdump <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]",awr.extract_awr,false,4)
-env.set_command(nil,"ashdump","Extract ASH report. Usage: ashdump <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]",awr.extract_ash,false,4)
-env.set_command(nil,"addmdump","Extract ADDM report. Usage: addmdump <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]",awr.extract_addm,false,4)
+function awr.onload()
+    env.set_command(nil,"awrdump","Extract AWR report. Usage: awrdump <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]",awr.extract_awr,false,4)
+    env.set_command(nil,"ashdump","Extract ASH report. Usage: ashdump <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]",awr.extract_ash,false,4)
+    env.set_command(nil,"addmdump","Extract ADDM report. Usage: addmdump <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]",awr.extract_addm,false,4)
+end
 
-return sqlprof
+return awr

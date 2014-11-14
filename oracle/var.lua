@@ -68,6 +68,22 @@ function var.setInput(name,desc)
     var.desc[name]=desc
 end
 
+function var.accept_input(name,desc)
+    if not name then return end
+    local uname=name:upper()
+    if not var.inputs[uname] then return end
+    if not desc then
+        desc=var.desc[uname] or name
+    else
+        if desc:sub(1,7):lower()=="prompt " then
+            desc=desc:sub(8)
+        end
+    end
+    desc=desc:match("^[%s']*(.-)[%s':]*$")..': '
+    env.printer.write(desc)
+    var.inputs[uname]=io.read()
+end
+
 function var.setInputs(name,args)
     if not args then
         if var.inputs[name] then var.inputs[name]=nil end
@@ -76,7 +92,13 @@ function var.setInputs(name,args)
     var.inputs[name]=args
 end
 
-function var.before_db_exec(db,sql,args)
+function var.before_db_parse(item)
+    if cfg.get("define")~='on' then return end
+    item[2]=item[2]:gsub('%f[%w_%$&]&([%w%_%$]+)',function(s) return item[3][s:upper()] or '&'..s end)
+end
+
+function var.before_db_exec(item)
+    local db,sql,args=table.unpack(item)
     for k,v in pairs(var.outputs) do
         if not args[k] then
             args[k]=v
@@ -91,7 +113,7 @@ function var.before_db_exec(db,sql,args)
         elseif not args[name] then
             args[name]=v
         end
-    end
+    end    
 end
 
 function var.after_db_exec(db,sql,args)
@@ -149,9 +171,12 @@ function var.print(name)
 end
 
 function var.onload()
+    snoop('BEFORE_DB_STMT_PARSE',var.before_db_parse)
     snoop('BEFORE_ORACLE_EXEC',var.before_db_exec)
     snoop('AFTER_ORACLE_EXEC' ,var.after_db_exec)
     cfg.init("PrintVar",'on',nil,"oracle","Max size of historical commands",'on,off')
+    cfg.init("Define",'on',nil,"oracle","Defines the substitution character(&) and turns substitution on and off.",'on,off')
+    env.set_command(nil,{"Accept","Acc"},'Assign user-input value into a existing variable. Usage: accept <var> [prompt] [<prompt_text>]',var.accept_input,false,3)
     env.set_command(nil,{"variable","VAR"},var.helper,var.setOutput,false,4)
     env.set_command(nil,{"Define","DEF"},"Define input variables, Usage: def <name>=<value> [description], or def <name> to remove definition",var.setInput,false,4)
     env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables(refer to command "VAR" and "DEF").Usage: print <variable|-a>',var.print,false,3)

@@ -89,7 +89,7 @@ function init.set_database(_,db)
         print("Switching database ...")
         env.CURRENT_DB=db
         env.unload()
-        env.onload(table.unpack(env.args))
+        env.onload(table.unpack(env.__ARGS__))
     end
     env.CURRENT_DB=db
     return db 

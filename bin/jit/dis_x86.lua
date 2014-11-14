@@ -321,19 +321,19 @@ local map_opcgroup = {
   testv = { "testVmi", "testVmi", "not", "neg", "mul", "imul", "div", "idiv" },
   incb = { "inc", "dec" },
   incd = { "inc", "dec", "callUmp", "$call farDmp",
-       "jmpUmp", "$jmp farDmp", "pushUm" },
+	   "jmpUmp", "$jmp farDmp", "pushUm" },
   sldt = { "sldt", "str", "lldt", "ltr", "verr", "verw" },
   sgdt = { "vm*$sgdt", "vm*$sidt", "$lgdt", "vm*$lidt",
-       "smsw", nil, "lmsw", "vm*$invlpg" },
+	   "smsw", nil, "lmsw", "vm*$invlpg" },
   bt = { nil, nil, nil, nil, "bt", "bts", "btr", "btc" },
   cmpxchg = { nil, "sz*,cmpxchg8bQmp,cmpxchg16bXmp", nil, nil,
-          nil, nil, "vmptrld|vmxon|vmclear", "vmptrst" },
+	      nil, nil, "vmptrld|vmxon|vmclear", "vmptrst" },
   pshiftw = { nil, nil, "psrlw", nil, "psraw", nil, "psllw" },
   pshiftd = { nil, nil, "psrld", nil, "psrad", nil, "pslld" },
   pshiftq = { nil, nil, "psrlq", nil, nil, nil, "psllq" },
   pshiftdq = { nil, nil, "psrlq", "psrldq", nil, nil, "psllq", "pslldq" },
   fxsave = { "$fxsave", "$fxrstor", "$ldmxcsr", "$stmxcsr",
-         nil, "lfpackereDp$", "mfpackereDp$", "sfpackereDp$clflush" },
+	     nil, "lfenceDp$", "mfenceDp$", "sfenceDp$clflush" },
   prefetch = { "prefetch", "prefetchw" },
   prefetcht = { "prefetchnta", "prefetcht0", "prefetcht1", "prefetcht2" },
 }
@@ -343,19 +343,19 @@ local map_opcgroup = {
 -- Maps for register names.
 local map_regs = {
   B = { "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh",
-    "r8b", "r9b", "r10b", "r11b", "r12b", "r13b", "r14b", "r15b" },
+	"r8b", "r9b", "r10b", "r11b", "r12b", "r13b", "r14b", "r15b" },
   B64 = { "al", "cl", "dl", "bl", "spl", "bpl", "sil", "dil",
-      "r8b", "r9b", "r10b", "r11b", "r12b", "r13b", "r14b", "r15b" },
+	  "r8b", "r9b", "r10b", "r11b", "r12b", "r13b", "r14b", "r15b" },
   W = { "ax", "cx", "dx", "bx", "sp", "bp", "si", "di",
-    "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w" },
+	"r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w" },
   D = { "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi",
-    "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d" },
+	"r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d" },
   Q = { "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi",
-    "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15" },
+	"r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15" },
   M = { "mm0", "mm1", "mm2", "mm3", "mm4", "mm5", "mm6", "mm7",
-    "mm0", "mm1", "mm2", "mm3", "mm4", "mm5", "mm6", "mm7" }, -- No x64 ext!
+	"mm0", "mm1", "mm2", "mm3", "mm4", "mm5", "mm6", "mm7" }, -- No x64 ext!
   X = { "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7",
-    "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15" },
+	"xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15" },
 }
 local map_segregs = { "es", "cs", "ss", "ds", "fs", "gs", "segr6", "segr7" }
 
@@ -389,7 +389,7 @@ local function putop(ctx, text, operands)
   if ctx.rep then text = ctx.rep.." "..text; ctx.rep = false end
   if ctx.rex then
     local t = (ctx.rexw and "w" or "")..(ctx.rexr and "r" or "")..
-          (ctx.rexx and "x" or "")..(ctx.rexb and "b" or "")
+	      (ctx.rexx and "x" or "")..(ctx.rexb and "b" or "")
     if t ~= "" then text = "rex."..t.." "..text end
     ctx.rexw = false; ctx.rexr = false; ctx.rexx = false; ctx.rexb = false
     ctx.rex = false
@@ -480,7 +480,7 @@ local function putpat(ctx, name, pat)
     elseif p == "s" then
       local imm = getimm(ctx, pos, 1); if not imm then return end
       x = imm <= 127 and format("+0x%02x", imm)
-             or format("-0x%02x", 256-imm)
+		     or format("-0x%02x", 256-imm)
       pos = pos+1
     elseif p == "u" then
       local imm = getimm(ctx, pos, 1); if not imm then return end
@@ -492,30 +492,30 @@ local function putpat(ctx, name, pat)
       pos = pos+2
     elseif p == "o" then -- [offset]
       if ctx.x64 then
-    local imm1 = getimm(ctx, pos, 4); if not imm1 then return end
-    local imm2 = getimm(ctx, pos+4, 4); if not imm2 then return end
-    x = format("[0x%08x%08x]", imm2, imm1)
-    pos = pos+8
+	local imm1 = getimm(ctx, pos, 4); if not imm1 then return end
+	local imm2 = getimm(ctx, pos+4, 4); if not imm2 then return end
+	x = format("[0x%08x%08x]", imm2, imm1)
+	pos = pos+8
       else
-    local imm = getimm(ctx, pos, 4); if not imm then return end
-    x = format("[0x%08x]", imm)
-    pos = pos+4
+	local imm = getimm(ctx, pos, 4); if not imm then return end
+	x = format("[0x%08x]", imm)
+	pos = pos+4
       end
     elseif p == "i" or p == "I" then
       local n = map_sz2n[sz]
       if n == 8 and ctx.x64 and p == "I" then
-    local imm1 = getimm(ctx, pos, 4); if not imm1 then return end
-    local imm2 = getimm(ctx, pos+4, 4); if not imm2 then return end
-    x = format("0x%08x%08x", imm2, imm1)
+	local imm1 = getimm(ctx, pos, 4); if not imm1 then return end
+	local imm2 = getimm(ctx, pos+4, 4); if not imm2 then return end
+	x = format("0x%08x%08x", imm2, imm1)
       else
-    if n == 8 then n = 4 end
-    local imm = getimm(ctx, pos, n); if not imm then return end
-    if sz == "Q" and (imm < 0 or imm > 0x7fffffff) then
-      imm = (0xffffffff+1)-imm
-      x = format(imm > 65535 and "-0x%08x" or "-0x%x", imm)
-    else
-      x = format(imm > 65535 and "0x%08x" or "0x%x", imm)
-    end
+	if n == 8 then n = 4 end
+	local imm = getimm(ctx, pos, n); if not imm then return end
+	if sz == "Q" and (imm < 0 or imm > 0x7fffffff) then
+	  imm = (0xffffffff+1)-imm
+	  x = format(imm > 65535 and "-0x%08x" or "-0x%x", imm)
+	else
+	  x = format(imm > 65535 and "0x%08x" or "0x%x", imm)
+	end
       end
       pos = pos+n
     elseif p == "j" then
@@ -529,12 +529,12 @@ local function putpat(ctx, name, pat)
       if imm > 4294967295 and not ctx.x64 then imm = imm-4294967296 end
       ctx.imm = imm
       if sz == "W" then
-    x = format("word 0x%04x", imm%65536)
+	x = format("word 0x%04x", imm%65536)
       elseif ctx.x64 then
-    local lo = imm % 0x1000000
-    x = format("0x%02x%06x", (imm-lo) / 0x1000000, lo)
+	local lo = imm % 0x1000000
+	x = format("0x%02x%06x", (imm-lo) / 0x1000000, lo)
       else
-    x = "0x"..tohex(imm)
+	x = "0x"..tohex(imm)
       end
     elseif p == "R" then
       local r = byte(code, pos-1, pos-1)%8
@@ -546,83 +546,83 @@ local function putpat(ctx, name, pat)
     elseif p == "1" then x = "1"
     else
       if not mode then
-    mode = ctx.mrm
-    if not mode then
-      if pos > stop then return incomplete(ctx) end
-      mode = byte(code, pos, pos)
-      pos = pos+1
-    end
-    rm = mode%8; mode = (mode-rm)/8
-    sp = mode%8; mode = (mode-sp)/8
-    sdisp = ""
-    if mode < 3 then
-      if rm == 4 then
-        if pos > stop then return incomplete(ctx) end
-        sc = byte(code, pos, pos)
-        pos = pos+1
-        rm = sc%8; sc = (sc-rm)/8
-        rx = sc%8; sc = (sc-rx)/8
-        if ctx.rexx then rx = rx + 8; ctx.rexx = false end
-        if rx == 4 then rx = nil end
-      end
-      if mode > 0 or rm == 5 then
-        local dsz = mode
-        if dsz ~= 1 then dsz = 4 end
-        local disp = getimm(ctx, pos, dsz); if not disp then return end
-        if mode == 0 then rm = nil end
-        if rm or rx or (not sc and ctx.x64 and not ctx.a32) then
-          if dsz == 1 and disp > 127 then
-        sdisp = format("-0x%x", 256-disp)
-          elseif disp >= 0 and disp <= 0x7fffffff then
-        sdisp = format("+0x%x", disp)
-          else
-        sdisp = format("-0x%x", (0xffffffff+1)-disp)
-          end
-        else
-          sdisp = format(ctx.x64 and not ctx.a32 and
-        not (disp >= 0 and disp <= 0x7fffffff)
-        and "0xffffffff%08x" or "0x%08x", disp)
-        end
-        pos = pos+dsz
-      end
-    end
-    if rm and ctx.rexb then rm = rm + 8; ctx.rexb = false end
-    if ctx.rexr then sp = sp + 8; ctx.rexr = false end
+	mode = ctx.mrm
+	if not mode then
+	  if pos > stop then return incomplete(ctx) end
+	  mode = byte(code, pos, pos)
+	  pos = pos+1
+	end
+	rm = mode%8; mode = (mode-rm)/8
+	sp = mode%8; mode = (mode-sp)/8
+	sdisp = ""
+	if mode < 3 then
+	  if rm == 4 then
+	    if pos > stop then return incomplete(ctx) end
+	    sc = byte(code, pos, pos)
+	    pos = pos+1
+	    rm = sc%8; sc = (sc-rm)/8
+	    rx = sc%8; sc = (sc-rx)/8
+	    if ctx.rexx then rx = rx + 8; ctx.rexx = false end
+	    if rx == 4 then rx = nil end
+	  end
+	  if mode > 0 or rm == 5 then
+	    local dsz = mode
+	    if dsz ~= 1 then dsz = 4 end
+	    local disp = getimm(ctx, pos, dsz); if not disp then return end
+	    if mode == 0 then rm = nil end
+	    if rm or rx or (not sc and ctx.x64 and not ctx.a32) then
+	      if dsz == 1 and disp > 127 then
+		sdisp = format("-0x%x", 256-disp)
+	      elseif disp >= 0 and disp <= 0x7fffffff then
+		sdisp = format("+0x%x", disp)
+	      else
+		sdisp = format("-0x%x", (0xffffffff+1)-disp)
+	      end
+	    else
+	      sdisp = format(ctx.x64 and not ctx.a32 and
+		not (disp >= 0 and disp <= 0x7fffffff)
+		and "0xffffffff%08x" or "0x%08x", disp)
+	    end
+	    pos = pos+dsz
+	  end
+	end
+	if rm and ctx.rexb then rm = rm + 8; ctx.rexb = false end
+	if ctx.rexr then sp = sp + 8; ctx.rexr = false end
       end
       if p == "m" then
-    if mode == 3 then x = regs[rm+1]
-    else
-      local aregs = ctx.a32 and map_regs.D or ctx.aregs
-      local srm, srx = "", ""
-      if rm then srm = aregs[rm+1]
-      elseif not sc and ctx.x64 and not ctx.a32 then srm = "rip" end
-      ctx.a32 = false
-      if rx then
-        if rm then srm = srm.."+" end
-        srx = aregs[rx+1]
-        if sc > 0 then srx = srx.."*"..(2^sc) end
-      end
-      x = format("[%s%s%s]", srm, srx, sdisp)
-    end
-    if mode < 3 and
-       (not match(pat, "[aRrgp]") or match(pat, "t")) then -- Yuck.
-      x = map_sz2prefix[sz].." "..x
-    end
+	if mode == 3 then x = regs[rm+1]
+	else
+	  local aregs = ctx.a32 and map_regs.D or ctx.aregs
+	  local srm, srx = "", ""
+	  if rm then srm = aregs[rm+1]
+	  elseif not sc and ctx.x64 and not ctx.a32 then srm = "rip" end
+	  ctx.a32 = false
+	  if rx then
+	    if rm then srm = srm.."+" end
+	    srx = aregs[rx+1]
+	    if sc > 0 then srx = srx.."*"..(2^sc) end
+	  end
+	  x = format("[%s%s%s]", srm, srx, sdisp)
+	end
+	if mode < 3 and
+	   (not match(pat, "[aRrgp]") or match(pat, "t")) then -- Yuck.
+	  x = map_sz2prefix[sz].." "..x
+	end
       elseif p == "r" then x = regs[sp+1]
       elseif p == "g" then x = map_segregs[sp+1]
       elseif p == "p" then -- Suppress prefix.
       elseif p == "f" then x = "st"..rm
       elseif p == "x" then
-    if sp == 0 and ctx.lock and not ctx.x64 then
-      x = "CR8"; ctx.lock = false
-    else
-      x = "CR"..sp
-    end
+	if sp == 0 and ctx.lock and not ctx.x64 then
+	  x = "CR8"; ctx.lock = false
+	else
+	  x = "CR"..sp
+	end
       elseif p == "y" then x = "DR"..sp
       elseif p == "z" then x = "TR"..sp
       elseif p == "t" then
       else
-    error("bad pattern `"..pat.."'")
+	error("bad pattern `"..pat.."'")
       end
     end
     if x then operands = operands and operands..", "..x or x end
@@ -719,8 +719,8 @@ map_act = {
     else
       pat = match(pat, ",(.*)")
       if ctx.rexw then
-    local p = match(pat, ",(.*)")
-    if p then pat = p; ctx.rexw = false end
+	local p = match(pat, ",(.*)")
+	if p then pat = p; ctx.rexw = false end
       end
     end
     pat = match(pat, "^[^,]*")

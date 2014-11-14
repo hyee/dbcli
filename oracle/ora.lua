@@ -18,6 +18,7 @@ function ora.rehash(script_dir,ext_name)
         {'-P','Verify the paramters/templates of the target script, instead of running it. Usage:  -p <cmd> [<args>]'},
         {'-H','Show the help detail of the target command. Usage:  -h <command>'},
         {'-S','Search available command with inputed keyword. Usage:  -s <keyword>'},
+        {'@','Run scripts that not belongs to the "ora" directory. Usage:  -s <keyword>'},
     }
 
     for k,v in ipairs(additions) do
@@ -292,6 +293,16 @@ function ora.run_script(cmd,...)
         table.remove(args,1)
     elseif cmd=="-S" then
         return env.helper.helper("ORA","-S",...)
+    elseif cmd=="@" then
+        local file=args[1] 
+        if not file then return end
+        table.remove(args,1)
+        if not file:match('(%.%w+)$') then file=file..'.sql' end
+        local f=io.open(file)
+        env.checkerr(f,"Cannot find this script!")
+        local sql=f:read('*a')
+        f:close()
+        return ora.run_sql(sql,args,print_args)
     end
 
     env.checkerr(ora.cmdlist[cmd],"Cannot find this script!")    
@@ -312,6 +323,8 @@ function ora.helper(_,cmd,search_key)
     return env.helper.get_sub_help(cmd,ora.cmdlist,help,search_key)    
 end
 
-env.set_command(nil,"ora", ora.helper,ora.run_script,false,ARGS_COUNT)
+function ora.onload()
+    env.set_command(nil,"ora", ora.helper,ora.run_script,false,ARGS_COUNT+1)
+end
 
 return ora

@@ -140,8 +140,8 @@ local function prof_top(count1, count2, samples, indent)
     if count2 then
       local r = count2[k]
       if r then
-    prof_top(r, nil, v, (prof_split == 3 or prof_split == 1) and "  -- " or
-                (prof_depth < 0 and "  -> " or "  <- "))
+	prof_top(r, nil, v, (prof_split == 3 or prof_split == 1) and "  -- " or
+			    (prof_depth < 0 and "  -> " or "  <- "))
       end
     end
   end
@@ -186,30 +186,30 @@ local function prof_annotate(count1, samples)
     local n, show = 1, false
     if ann ~= 0 then
       for i=1,ann do
-    if fl[i] then show = true; out:write("@@ 1 @@\n"); break end
+	if fl[i] then show = true; out:write("@@ 1 @@\n"); break end
       end
     end
     for line in fp:lines() do
       if line:byte() == 27 then
-    out:write("[Cannot annotate bytecode file]\n")
-    break
+	out:write("[Cannot annotate bytecode file]\n")
+	break
       end
       local v = fl[n]
       if ann ~= 0 then
-    local v2 = fl[n+ann]
-    if show then
-      if v2 then show = n+ann elseif v then show = n
-      elseif show+ann < n then show = false end
-    elseif v2 then
-      show = n+ann
-      out:write(format("@@ %d @@\n", n))
-    end
-    if not show then goto next end
+	local v2 = fl[n+ann]
+	if show then
+	  if v2 then show = n+ann elseif v then show = n
+	  elseif show+ann < n then show = false end
+	elseif v2 then
+	  show = n+ann
+	  out:write(format("@@ %d @@\n", n))
+	end
+	if not show then goto next end
       end
       if v then
-    out:write(format(fmtv, v, line))
+	out:write(format(fmtv, v, line))
       else
-    out:write(format(fmtn, line))
+	out:write(format(fmtn, line))
       end
     ::next::
       n = n + 1
