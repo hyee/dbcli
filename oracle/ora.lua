@@ -293,13 +293,18 @@ function ora.run_script(cmd,...)
         table.remove(args,1)
     elseif cmd=="-S" then
         return env.helper.helper("ORA","-S",...)
-    elseif cmd=="@" then
-        local file=args[1] 
-        if not file then return end
-        table.remove(args,1)
+    elseif cmd:sub(1,1)=="@" then
+        local file
+        if cmd:len()>1 then
+            file=cmd:sub(2):gsub('^"(.*)"$','%1')
+        else
+            file=args[1] 
+            table.remove(args,1)
+        end
+        if not file then return end        
         if not file:match('(%.%w+)$') then file=file..'.sql' end
         local f=io.open(file)
-        env.checkerr(f,"Cannot find this script!")
+        env.checkerr(f,"Cannot find this script '"..file.."'!")
         local sql=f:read('*a')
         f:close()
         return ora.run_sql(sql,args,print_args)

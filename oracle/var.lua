@@ -59,7 +59,7 @@ function var.setInput(name,desc)
 
     if name:find('=') then name,value=name:match("^%s*([^=]+)%s*=%s*(.+)") end
     if not name then env.raise('Usage: def name=<value> [description]') end
-
+    value=value:gsub('^"(.*)"$','%1')
     name=name:upper()
     env.checkerr(name:match("^[%w%$_]+$"),'Unexpected variable name['..name..']!')    
     --if var.outputs[name] then  return print("The name["..name.."] has ben defined as  output parameter!") end
@@ -136,7 +136,7 @@ function var.print(name)
     if type(name)=="string" and name:lower()~='-a' then
         name=name:upper()
         local obj=var.inputs[name]
-        env.checkerr(obj,'Target variable does not exist!')   
+        env.checkerr(obj,'Target variable[%s] does not exist!',name)   
         if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
             if var.desc[name] then print(var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)) end
             db.resultset:print(obj,db.conn)

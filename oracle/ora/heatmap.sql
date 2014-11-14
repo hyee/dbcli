@@ -7,20 +7,14 @@
 -- More info: see README
 --
 
-set lines 2000
-set pages 100
-set feedback off
-set verify off
-set heading off
-set long 100000
-set longchunksize 100000
+set feed off
 var var_screen clob
-
+set printvar off
 define sleep_interval=3
-define wait_event='db file sequential read'
+define wait_event="db file scattered read"
 define num_bins=11
 define num_rows=90
-define instance_filter_clause=''
+define instance_filter_clause=""
 
 
 --
@@ -80,9 +74,10 @@ declare
       -- an additional filter is a parameter to limit data collection to one instance for example
 
       cursor c1_histogram_data is
-          select wait_time_milli, wait_count, wait_count*wait_time_milli*.75 estimated_wait_time
+          select wait_time_milli, sum(wait_count) wait_count, sum(wait_count*wait_time_milli*.75) estimated_wait_time
           from gv$event_histogram                 
           where event='&wait_event' &instance_filter_clause
+          group by  wait_time_milli
           ;   
         
       v_bin pls_integer;
@@ -121,8 +116,7 @@ declare
       if (var_number_iterations = 0) then   -- special case, this is the first iteration
          g_delta_time := 0;                  -- g_delta_time needs to be populated as it is used to compute the sleep time
          return;                             -- nothing else to do
-      end if;
-
+      end if;      
       dbms_lock.sleep (&sleep_interval);     -- sleep before collecting new data, we assume this code runs under a wrapper                  
       if g_previous_time_sec <= g_latest_time_sec then
          v_delta_time := g_latest_time_sec - g_previous_time_sec;
@@ -254,7 +248,7 @@ declare
      v_line  varchar2(1000);
   begin
      g_screen :='';                                               -- inizialize the lob with the screen content
-     v_line := chr(27)||'[0m'||chr(27)||'[2J'||chr(27)||'[H';     -- clear screen and move cursor to top line
+     v_line := '';
      v_line := v_line||'OraLatencyMap v1.2 - Luca.Canali@cern.ch';   
      print_to_screen(v_line);
      print_to_screen('');       --empty line
@@ -441,7 +435,7 @@ declare
 -- main body starts here below
 -------------------------------------------------------
 begin
-    var_number_iterations :=0;
+    var_number_iterations :=1;
     var_dump_wait_count :='';
     var_dump_time_waited :='';
     -- read the status of system as stored in sqlplus variables

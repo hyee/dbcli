@@ -334,7 +334,7 @@ function env.parse_args(cmd,rest)
         arg_count=_CMDS[cmd].ARGS
     end
     
-    local args={}    
+    local args={}  
     if arg_count == 1 then
         args[#args+1]=cmd.." "..rest
     elseif arg_count == 2 then
@@ -348,16 +348,17 @@ function env.parse_args(cmd,rest)
             if is_quote_string then--if the parameter starts with quote                
                 if char ~= quote then
                     piece = piece .. char
-                elseif (rest:sub(i+1,i+1) or " "):match("^%s*$") then
+                elseif (rest:sub(i+1,i+1) or " "):match("^[%s\n\t\r]*$") then
                     --end of a quote string if next char is a space
-                    args[#args+1],piece,is_quote_string=piece:sub(2),'',false
+                    args[#args+1]=(piece..char):gsub('^"(.*)"$','%1')
+                    piece,is_quote_string='',false
                 else
                     piece=piece..char
                 end
             else
-                if char==quote and piece == '' then
+                if char==quote then
                     --begin a quote string, if its previous char is not a space, then bypass
-                    is_quote_string,piece = true,quote               
+                    is_quote_string,piece = true,piece..quote               
                 elseif not char:match("([%s\t\r\n])") then
                     piece = piece ..char
                 elseif piece ~= '' then
