@@ -101,8 +101,9 @@ function helper.helper(cmd,...)
         else
             helps  = _CMDS[cmd].HELPER or ""
         end
-        local spaces=_CMDS[cmd].DESC:match("^([%s\t]*)") or ""
-        helps=('\n'..helps):gsub("[\n\r]"..spaces,"\n")
+        local spaces=helps:match("([%s\t]*)[^%s\t\n\r]") or ""
+        helps=('\n'..helps):gsub("[\n\r]"..spaces,"\n"):gsub("[%s\t\n\r]+$","")
+        if helps:sub(1,1)=="\n" then helps=helps:sub(2) end
         return print(helps)
     elseif cmd=="-e" or cmd=="-E" then
         return helper.env(...)
@@ -164,9 +165,11 @@ function helper.get_sub_help(cmd,cmdlist,main_help,search_key)
         local rows={{},{}}
         for k,v in pairs(cmdlist) do
             if not search_key or k:find(search_key:upper(),1,true) then
-                table.insert(rows[1],k)
-                local desc=v.short_desc:gsub("^[%s\t]+","")
-                table.insert(rows[2],desc)
+                if search_key or not (v.path or ""):find('[\\/]test[\\/]') then                
+                    table.insert(rows[1],k)
+                    local desc=v.short_desc:gsub("^[%s\t]+","")
+                    table.insert(rows[2],desc)
+                end
             end
         end
         --grid.sort(rows,1)

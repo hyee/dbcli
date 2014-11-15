@@ -197,7 +197,7 @@ function oracle:exec(sql,...)
         if self.feed_list[key] then
             print(self.feed_list[key]:format(result)..".")
         else
-            print("Statement completed .")
+            print("Statement completed.\n")
         end
     end
     return result

@@ -74,7 +74,6 @@ local color=setmetatable({
     end
 })
 
-
 local reader,writer,str_completer,arg_completer,add=reader
 
 function ansi.cfg(name,value,module,description)
