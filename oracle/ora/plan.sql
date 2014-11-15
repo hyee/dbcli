@@ -2,6 +2,7 @@
 Show execution plan. Usage: plan <sql_id> [<plan_hash_value>]]]
 --[[
     @STAT: 10.1={ALLSTATS LAST outline}
+    &SRC: default={0}, d={1}
 ]]--
 ]]*/
 
@@ -10,8 +11,7 @@ set feed off
 PRO Binding Variables:
 PRO ==================
 WITH qry AS
- (SELECT /*+materialize*/
-   *
+ (SELECT /*+materialize*/*
   FROM   (SELECT a.*,
                  dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id) seq
           FROM   (SELECT id,
@@ -39,9 +39,9 @@ WITH qry AS
                   FROM   dba_hist_sql_plan a
                   WHERE  a.sql_id = :V1
                   AND    a.plan_hash_value = nvl(:V2,plan_hash_value)
-                  ) a)
-  WHERE  seq = 1
-  AND    ROWNUM < 2)
+                  ) a
+         WHERE flag> &src)
+  WHERE  seq = 1 AND ROWNUM < 2)
 SELECT position "#", NAME, datatype_string, nvl(substr(regexp_replace(to_char(SUBSTR(value_string, 1, 500)),'[' || chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200), '<null>') VALUE,inst_id,last_captured
 FROM   gv$sql_bind_capture a JOIN qry b USING(sql_id,child_number,inst_id)
 WHERE  flag=1
@@ -49,7 +49,7 @@ UNION ALL
 SELECT position, NAME, datatype_string, nvl(substr(regexp_replace(to_char(SUBSTR(value_string, 1, 500)),'[' || chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200), '<null>') ,instance_number,last_captured
 FROM   (SELECT a.*, MAX(snap_id || ':' || instance_number) OVER() r
         FROM   dba_hist_sqlbind a JOIN qry b 
-        ON  a.sql_id = b.sql_id
+        ON     a.sql_id = :V1
         AND    a.dbid = b.inst_id
         WHERE flag=2)        
 WHERE  snap_id || ':' || instance_number = r;
@@ -83,8 +83,9 @@ WITH sql_plan_data AS
                          dbid
                   FROM   dba_hist_sql_plan a
                   WHERE  a.sql_id = :V1
-                  AND    a.plan_hash_value = nvl(:V2,plan_hash_value)
-                  ) a)
+                  AND    a.plan_hash_value = nvl(:V2,plan_hash_value) 
+                  ) a
+         WHERE flag>&src)
   WHERE  seq = 1),
 hierarchy_data AS
  (SELECT id, parent_id, plan_hash_value

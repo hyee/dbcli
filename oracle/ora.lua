@@ -38,8 +38,7 @@ function ora.parse_args(sql,args,print_args)
     
     local outputlist={}
     local outputcount=0
-    
-    
+        
     --parse template
     local patterns,options={"(%b{})","([^\n\r]-)%s*[\n\r]"},{}
     
@@ -144,9 +143,10 @@ function ora.parse_args(sql,args,print_args)
             if rest:sub(1,1)=='"' and rest:sub(-1)=='"' then rest=rest:sub(2,-2) end
             idx=(idx or ""):upper()
             for param,text in pairs(options[idx] or {}) do
-                ary[i]=nil                
-                if args[param] then
-                    ary[tonumber(param:match("(%d+)"))]=nil                    
+                ary[i]=nil
+                local ary_idx=tonumber(param:match("(%d+)"))
+                if args[param] and ary_idx then                    
+                    ary[ary_idx]=nil                    
                     arg1[param]=text..rest
                 else
                     setvalue(param,text..rest,idx)
