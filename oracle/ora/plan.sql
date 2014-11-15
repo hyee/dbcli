@@ -1,5 +1,5 @@
 /*[[
-Show execution plan. Usage: plan <sql_id> [<plan_hash_value>]]]
+Show execution plan. Usage: plan [-d] <sql_id> [<plan_hash_value>]]]
 --[[
     @STAT: 10.1={ALLSTATS LAST outline}
     &SRC: default={0}, d={1}
@@ -10,50 +10,35 @@ set feed off
 
 PRO Binding Variables:
 PRO ==================
-WITH qry AS
- (SELECT /*+materialize*/*
-  FROM   (SELECT a.*,
-                 dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id) seq
-          FROM   (SELECT id,
-                         parent_id,
-                         child_number    ha,
-                         1               flag,
-                         TIMESTAMP       tm,
-                         child_number,
-                         sql_id,
-                         plan_hash_value,
-                         inst_id
-                  FROM   gv$sql_plan_statistics_all a
-                  WHERE  a.sql_id = :V1
-                  AND    a.plan_hash_value = nvl(:V2,plan_hash_value)
-                  UNION ALL
-                  SELECT id,
-                         parent_id,
-                         plan_hash_value,
-                         2,
-                         TIMESTAMP,
-                         NULL child_number,
-                         sql_id,
-                         plan_hash_value,
-                         dbid
-                  FROM   dba_hist_sql_plan a
-                  WHERE  a.sql_id = :V1
-                  AND    a.plan_hash_value = nvl(:V2,plan_hash_value)
-                  ) a
-         WHERE flag> &src)
-  WHERE  seq = 1 AND ROWNUM < 2)
-SELECT position "#", NAME, datatype_string, nvl(substr(regexp_replace(to_char(SUBSTR(value_string, 1, 500)),'[' || chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200), '<null>') VALUE,inst_id,last_captured
-FROM   gv$sql_bind_capture a JOIN qry b USING(sql_id,child_number,inst_id)
-WHERE  flag=1
-UNION ALL
-SELECT position, NAME, datatype_string, nvl(substr(regexp_replace(to_char(SUBSTR(value_string, 1, 500)),'[' || chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200), '<null>') ,instance_number,last_captured
-FROM   (SELECT a.*, MAX(snap_id || ':' || instance_number) OVER() r
-        FROM   dba_hist_sqlbind a JOIN qry b 
-        ON     a.sql_id = :V1
-        AND    a.dbid = b.inst_id
-        WHERE flag=2)        
-WHERE  snap_id || ':' || instance_number = r;
 
+WITH b1 AS
+ (SELECT *
+  FROM   (SELECT child_number || ':' || INST_ID r,last_captured l
+          FROM   gv$sql_bind_capture a
+          WHERE  sql_id = :V1
+          UNION ALL
+          SELECT snap_id || ':' || instance_number r,last_captured l
+          FROM   dba_hist_sqlbind a
+          WHERE  sql_id = :V1
+          ORDER  BY l DESC NULLS LAST)
+  WHERE  ROWNUM < 2),
+qry AS
+ (SELECT NVL2(MAX(last_captured) OVER(),1,3) flag, position, NAME, datatype_string, value_string, inst_id, last_captured
+  FROM   gv$sql_bind_capture a, b1
+  WHERE  sql_id = :V1
+  AND    child_number || ':' || INST_ID = r
+  UNION ALL
+  SELECT NVL2(MAX(last_captured) OVER(),2,4) flag, position, NAME, datatype_string, value_string, instance_number, last_captured
+  FROM   dba_hist_sqlbind, b1
+  WHERE  sql_id = :V1
+  AND    snap_id || ':' || instance_number = r)
+SELECT position,
+       NAME,
+       datatype_string data_type,       
+       nvl2(last_captured,value_string,'<no capture>') VALUE,
+       inst_id,
+       last_captured
+FROM   qry;
 
 WITH sql_plan_data AS
  (SELECT /*+materialize*/*
