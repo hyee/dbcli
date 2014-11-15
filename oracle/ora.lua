@@ -67,7 +67,7 @@ function ora.parse_args(sql,args,print_args)
     if desc then    
         --Parse the  &<V1-V30> and :<V1-V30> grammar, refer to ashtop.sql
         for _,p in ipairs(patterns) do
-            for prefix,k,v in desc:gmatch('([&:@])([%w%_]+)%s*:%s*'..p) do
+            for prefix,k,v in desc:gmatch('([&:@])([%w_]+)%s*:%s*'..p) do
                 k=k:upper()                
                 if not templates[k] then--same variable should not define twice
                     templates[k]={}
@@ -139,23 +139,24 @@ function ora.parse_args(sql,args,print_args)
         local k,v="V"..i,args["V"..i]
         ary[i]=v        
         if v:sub(1,1)=="-"  then
-            local idx,rest=v:sub(2):match("^([%w_-]+)(.*)$")
-            if rest:sub(1,1)=='"' and rest:sub(-1)=='"' then rest=rest:sub(2,-2) end
-            idx=(idx or ""):upper()
-            for param,text in pairs(options[idx] or {}) do
-                ary[i]=nil
-                local ary_idx=tonumber(param:match("(%d+)"))
-                if args[param] and ary_idx then                    
-                    ary[ary_idx]=nil                    
-                    arg1[param]=text..rest
-                else
-                    setvalue(param,text..rest,idx)
-                end
+            local idx,rest=v:sub(2):match("^([%w_]+)(.*)$")
+            if idx then
+                idx,rest=idx:upper(),rest:gsub('^"(.*)"$','%1')
+                for param,text in pairs(options[idx] or {}) do
+                    ary[i]=nil
+                    local ary_idx=tonumber(param:match("(%d+)"))
+                    if args[param] and ary_idx then                    
+                        ary[ary_idx]=nil                    
+                        arg1[param]=text..rest
+                    else
+                        setvalue(param,text..rest,idx)
+                    end
 
-                if templates[param] then
-                    templates[param]['@choose']=idx
+                    if templates[param] then
+                        templates[param]['@choose']=idx
+                    end
                 end
-            end        
+            end      
         end    
     end
 
@@ -174,9 +175,15 @@ function ora.parse_args(sql,args,print_args)
         if args[param]=="" and template and not arg1[param] then
             setvalue(param,template[template['@default']] or "",template['@default'])
             template['@choose']=template['@default']
-        elseif options[option] and options[option][param] then
-            setvalue(param,options[option][param],option)            
-            template['@choose']=option
+        else
+            local idx,rest=option:match("^([%w_]+)(.*)$")
+            if idx then
+                idx,rest=idx:upper(),rest:gsub('^"(.*)"$','%1')               
+                if options[idx] and options[idx][param] then
+                    setvalue(param,options[idx][param]..rest,idx)            
+                    template['@choose']=idx
+                end
+            end
         end
     end
 
@@ -246,6 +253,7 @@ function ora.run_sql(sql,args,print_args)
     end
     args=ora.parse_args(sql,args,print_args)
     if print_args or not args then return end
+
     --remove comment
     sql=sql:gsub(ora.comment,"",1)
     sql=('\n'..sql):gsub("\n[\t%s]*%-%-[^\n]*","")
@@ -255,7 +263,7 @@ function ora.run_sql(sql,args,print_args)
     
     local backup=cfg.backup()
     cfg.set("HISSIZE",0)
-    db.C.var.setInputs("oracle.ora",args)
+    db.C.var.import_context(args)
     local eval=env.eval_line
     for line in sql:gsplit("[\n\r]+") do
         eval(line)
@@ -264,8 +272,7 @@ function ora.run_sql(sql,args,print_args)
         eval("/")
     end
 
-    cfg.restore(backup)    
-    db.C.var.setInputs("oracle.ora")
+    cfg.restore(backup)
 end
 
 function ora.run_script(cmd,...)

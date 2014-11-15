@@ -1,7 +1,7 @@
 local env=env
 local grid,snoop,cfg=env.grid,env.event.snoop,env.set
 local db=env.oracle
-local var={inputs={},outputs={},desc={}}
+local var={inputs={},outputs={},desc={},global_context={}}
 
 var.types={
     REFCURSOR =  'CURSOR',
@@ -26,6 +26,9 @@ function var.helper()
     return help
 end
 
+function var.import_context(ary)
+    for k,v in pairs(ary) do var.global_context[k]=v end
+end
 
 function var.setOutput(name,datatype,desc)
     if not name then 
@@ -40,10 +43,7 @@ function var.setOutput(name,datatype,desc)
     datatype=datatype:upper():match("(%w+)")    
     env.checkerr(var.types[datatype],'Unexpected data type['..datatype..']!')
     env.checkerr(name:match("^[%w%$_]+$"),'Unexpected variable name['..name..']!')
-    --env.checkerr(not if var.inputs[name],"The name["..name.."] has been defined as input parameter!")
-    if var.inputs[name] then var.inputs[name]=nil end
-    var.outputs[name]='#'..var.types[datatype]
-    var.desc[name]=desc
+    var.inputs[name],var.outputs[name],var.desc[name]=nil,'#'..var.types[datatype],desc
 end
 
 function var.setInput(name,desc)
@@ -56,16 +56,12 @@ function var.setInput(name,desc)
         end
         return
     end
-
     if name:find('=') then name,value=name:match("^%s*([^=]+)%s*=%s*(.+)") end
     if not name then env.raise('Usage: def name=<value> [description]') end
     value=value:gsub('^"(.*)"$','%1')
     name=name:upper()
     env.checkerr(name:match("^[%w%$_]+$"),'Unexpected variable name['..name..']!')    
-    --if var.outputs[name] then  return print("The name["..name.."] has ben defined as  output parameter!") end
-    if var.outputs[name] then var.outputs[name]=nil end
-    var.setInputs(name,value)
-    var.desc[name]=desc
+    var.inputs[name],var.outputs[name],var.desc[name]=value,nil,desc
 end
 
 function var.accept_input(name,desc)
@@ -85,16 +81,26 @@ function var.accept_input(name,desc)
 end
 
 function var.setInputs(name,args)
-    if not args then
-        if var.inputs[name] then var.inputs[name]=nil end
-        return
-    end
     var.inputs[name]=args
 end
 
-function var.before_db_parse(item)
+local function update_text(item,pos,params)
     if cfg.get("define")~='on' then return end
-    item[2]=item[2]:gsub('%f[%w_%$&]&([%w%_%$]+)',function(s) return item[3][s:upper()] or '&'..s end)
+    item[pos]=item[pos]:gsub('%f[%w_%$&]&([%w%_%$]+)',function(s) 
+        local v=s:upper()
+        return params[v] or 
+               var.inputs[v] or
+               var.global_context[v] or 
+               '&'..s 
+    end)
+end
+
+function var.before_db_parse(item)
+    update_text(item,2,item[3])
+end
+
+function var.before_print(item)
+    update_text(item,1,{})
 end
 
 function var.before_db_exec(item)
@@ -106,14 +112,12 @@ function var.before_db_exec(item)
     end
 
     for name,v in pairs(var.inputs) do
-        if type(v)=="table" then
-            for i,j in pairs(v) do
-                if not args[i] then args[i]=j end
-            end
-        elseif not args[name] then
-            args[name]=v
-        end
-    end    
+        if not args[name] then args[name]=v end
+    end
+
+    for name,v in pairs(var.global_context) do
+        if not args[name] then args[name]=v end
+    end     
 end
 
 function var.after_db_exec(db,sql,args)
@@ -173,13 +177,13 @@ end
 function var.onload()
     snoop('BEFORE_DB_STMT_PARSE',var.before_db_parse)
     snoop('BEFORE_ORACLE_EXEC',var.before_db_exec)
-    snoop('AFTER_ORACLE_EXEC' ,var.after_db_exec)
+    snoop('AFTER_ORACLE_EXEC',var.after_db_exec)
+    snoop('BEFORE_PRINT_TEXT' ,var.before_print)
     cfg.init("PrintVar",'on',nil,"oracle","Max size of historical commands",'on,off')
     cfg.init("Define",'on',nil,"oracle","Defines the substitution character(&) and turns substitution on and off.",'on,off')
     env.set_command(nil,{"Accept","Acc"},'Assign user-input value into a existing variable. Usage: accept <var> [prompt] [<prompt_text>]',var.accept_input,false,3)
     env.set_command(nil,{"variable","VAR"},var.helper,var.setOutput,false,4)
     env.set_command(nil,{"Define","DEF"},"Define input variables, Usage: def <name>=<value> [description], or def <name> to remove definition",var.setInput,false,4)
-    env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables(refer to command "VAR" and "DEF").Usage: print <variable|-a>',var.print,false,3)
-    
+    env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables(refer to command "VAR" and "DEF").Usage: print <variable|-a>',var.print,false,3)    
 end    
 return var

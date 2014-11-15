@@ -1,7 +1,7 @@
 /*[[
 Show all database instances
 --[[
-    @blocked: 11.2={blocked,},10.2={SHUTDOWN_PENDING,},  9.0={}
+    @blocked: 11.2={blocked,},10.2={SHUTDOWN_PENDING,}
 --]]
 ]]*/
 SELECT decode(userenv('instance')+0,inst_id,'*',' ')||inst_id inst_id, instance_name,version,

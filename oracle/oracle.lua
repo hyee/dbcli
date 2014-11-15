@@ -15,7 +15,6 @@ local module_list={
     "oracle/awrdump"
 }
 
-
 local oracle=env.class(env.db_core)
 
 function oracle:ctor(isdefault)
