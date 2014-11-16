@@ -1,4 +1,4 @@
-2014-11-15: show binding paramters in "ora plan"
+2014-11-15: show binding variables in "ora plan"
 2014-11-14: 'ora @<file> [parameters]' syntax to allow run scripts that not belongs to the 'ora' folder
 2014-11-14: add command 'accept' and parameter 'define' 
 2014-11-12: changes on var/def command, allow setting the description of the variables
@@ -6,7 +6,7 @@
 2014-11-12: add 'print' command and 'PrintVar' parameter for the variables(command var/def)
 2014-11-11: change the user-defined alias commands as the lowest priority
 2014-11-11: remake luajit with newest V2.1 code and enable lua5.2 compatibility(option DLUAJIT_ENABLE_LUA52COMPAT)
-2014-11-11: "set database" option to support multilple database types(i.e.  mssql)
+2014-11-11: "set database" option to support multiple database types(i.e.  mssql)
 2014-11-10: enhancement on the "ora" command for more flexible template
 2014-11-10: new "ora 10053dump" script to dump the 10053 trace file for the specific sql id
 2014-11-10: update on "itv" command

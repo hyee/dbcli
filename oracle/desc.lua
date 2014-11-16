@@ -36,7 +36,7 @@ local search_sql=[[
 local desc_sql={
     PROCEDURE=[[
         SELECT /*INTERNAL_DBCLI_CMD*/ NVL2(overload, overload || '.', '') || position NO#,
-               nvl(Nvl(ARGUMENT_NAME, DATA_TYPE), '<Return>') Argument,
+               decode(position,0,'(RESULT)',Nvl(ARGUMENT_NAME, DATA_TYPE)) Argument,
                (CASE
                    WHEN pls_type IS NOT NULL THEN
                     pls_type
@@ -47,6 +47,7 @@ local desc_sql={
                END) DATA_TYPE,in_out,defaulted,default_value,character_set_name charset
         FROM   ALL_ARGUMENTS
         WHERE  owner=:1 and nvl(package_name,' ')=nvl(:2,' ') and object_name=:3
+        AND    data_level=0
         ORDER  BY overload, POSITION]],
     
     PACKAGE=[[
