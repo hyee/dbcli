@@ -1,5 +1,5 @@
 /*[[
-Show execution plan. Usage: plan [-d] <sql_id> [<plan_hash_value>]]]
+Show execution plan. Usage: plan [-d] <sql_id> [<plan_hash_value>|<child_number>]
 --[[
     @STAT: 10.1={ALLSTATS LAST outline}
     &SRC: default={0}, d={1}
@@ -16,6 +16,7 @@ WITH b1 AS
   FROM   (SELECT child_number || ':' || INST_ID r,last_captured l
           FROM   gv$sql_bind_capture a
           WHERE  sql_id = :V1
+          AND    1>&SRC
           UNION ALL
           SELECT snap_id || ':' || instance_number r,last_captured l
           FROM   dba_hist_sqlbind a
@@ -55,7 +56,7 @@ WITH sql_plan_data AS
                          inst_id
                   FROM   gv$sql_plan_statistics_all a
                   WHERE  a.sql_id = :V1
-                  AND    a.plan_hash_value = nvl(:V2,plan_hash_value)
+                  AND    (:V2 is null or :V2 in(plan_hash_value,child_number))
                   UNION ALL
                   SELECT id,
                          parent_id,

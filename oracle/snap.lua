@@ -116,9 +116,9 @@ function snap.exec(interval,typ,...)
     cfg.set("digits",2)
     local clock=os.clock()
     db.internal_exec=true
-    local get_time="select to_char(sysdate,'yyyy-mm-dd hh24:mi:ss') from dual "
+    local get_time="select /*INTERNAL_DBCLI_CMD*/ to_char(sysdate,'yyyy-mm-dd hh24:mi:ss') from dual "
     local start_time=db:get_value(get_time)
-    db:internal_call("ALTER SESSION SET ISOLATION_LEVEL=SERIALIZABLE")
+    db:internal_call("ALTER /*INTERNAL_DBCLI_CMD*/ SESSION SET ISOLATION_LEVEL=SERIALIZABLE")
     for _,cmd in pairs(cmds) do
         cmd.rs2=db:internal_call(cmd.sql,args)
     end
@@ -131,7 +131,7 @@ function snap.exec(interval,typ,...)
         cmd.rs1=db:internal_call(cmd.sql,args)
     end
     db:commit()    
-    db:internal_call("ALTER SESSION SET ISOLATION_LEVEL=READ COMMITTED")
+    db:internal_call("ALTER /*INTERNAL_DBCLI_CMD*/ SESSION SET ISOLATION_LEVEL=READ COMMITTED")
     local title="\nSnapping %s from "..start_time.." to "..end_time.." :\n"..string.rep("=",80)
     local result={}
     local cos={}

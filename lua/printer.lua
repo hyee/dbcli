@@ -25,7 +25,6 @@ function printer.print(...)
 end
 
 function printer.write(output)
-    output=event.callback("BEFORE_PRINT_TEXT",{output or ""})[1]
     out:write(space..output)
     out:flush()
 end
@@ -77,5 +76,5 @@ end
 _G.print=printer.print
 _G.rawprint=printer.rawprint
 env.set_command(nil,{"Prompt","pro"}, "Prompt messages. Usage: PRO[MPT] <message>",printer.load_text,false,2)
-env.set_command(nil,{"SPOOL","SPO"}, "Stores query results in a file. Usage: SPO[OL] [file_name[.ext]] [CREATE] | APP[END]] | OFF]",printer.spool,false,3)
+env.set_command(nil,{"SPOOL","SPO"}, "Write the screen output into a file. Usage: SPO[OL] [file_name[.ext]] [CREATE] | APP[END]] | OFF]",printer.spool,false,3)
 return printer
