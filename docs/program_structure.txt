@@ -13,7 +13,9 @@ oracle/sqlplus: sql scripts that used by sqlplus, it is also the sqlplus's workd
 
 Process logic:
 ================
-input.lua-> env.lua-> |-Initialize CLI environment
+Loader.class(JVM to load LUA lib)
+    |
+  input.lua->env.lua->|-Initialize CLI environment
                       |-Load helper/command parser                                        |-list aliases
                       |-Parse parameters                                         |->alias-|-set alias
                       |-Load intepreter                                          |->event-|-trigger event
