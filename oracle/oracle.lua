@@ -22,27 +22,24 @@ function oracle:ctor(isdefault)
     java.loader:addPath(env.WORK_DIR..'oracle'..env.PATH_DEL.."ojdbc7.jar")    
     self.db_types:load_sql_types('oracle.jdbc.OracleTypes')
     local default_desc='#Oracle database SQL statement'
+    local function add_default_sql_stmt(...)
+        for i=1,select('#',...) do
+            set_command(self,select(i,...), default_desc,self.exec,true,1,true)
+        end
+    end
     if isdefault~=false then            
         if type(set_command)=="function" then
             set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
             set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
             set_command(self,{"select","with"},   default_desc,        self.query     ,true,1,true)
-            set_command(self,"explain",  default_desc,     self.exec     ,true,1,true)
-            set_command(self,"update",   default_desc,     self.exec      ,true,1,true)
-            set_command(self,"delete",   default_desc,     self.exec      ,true,1,true)
-            set_command(self,"insert",   default_desc,     self.exec      ,true,1,true)
-            set_command(self,"merge" ,   default_desc,     self.exec      ,true,1,true)
-            set_command(self,"drop"  ,   default_desc,     self.exec      ,false,1,true)
-            set_command(self,"lock"  ,   default_desc,     self.exec      ,false,1,true)
-            set_command(self,"analyze",  default_desc,     self.exec      ,false,1,true)
-            set_command(self,"grant"  ,  default_desc,     self.exec      ,false,1,true)
-            set_command(self,"revoke"  , default_desc,     self.exec      ,false,1,true)
+            add_default_sql_stmt('update','delete','insert','merge','truncate','drop')
+            add_default_sql_stmt('explain','lock','analyze','grant','revoke')
+            set_command(self,{"execute","exec","call"},default_desc,self.run_proc,false,2)
             set_command(self,{"declare","begin"},  default_desc,  self.exec  ,self.check_completion,1,true)
             set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)
             set_command(self,"alter" ,   default_desc,        self.exec      ,self.check_completion,1,true)
             set_command(self,"/*"    ,   '#Comment',        nil   ,self.check_completion,2)
             set_command(self,"--"    ,   '#Comment',        nil   ,false,2)
-            set_command(self,{"execute","exec","call"}  ,   default_desc,      self.run_proc  ,false,2)        
         end
         --env.event.snoop('BEFORE_COMMAND',self.clearStatements,self)        
     end

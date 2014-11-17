@@ -86,13 +86,18 @@ end
 
 local function update_text(item,pos,params)
     if cfg.get("define")~='on' then return end
-    item[pos]=item[pos]:gsub('%f[%w_%$&]&([%w%_%$]+)',function(s) 
+    local count=1    
+    local function repl(s) 
         local v=s:upper()
-        return params[v] or 
-               var.inputs[v] or
-               var.global_context[v] or 
-               '&'..s 
-    end)
+        v=params[v] or var.inputs[v] or var.global_context[v] or '&'..s
+        if v~='&'..s then count=count+1 end
+        return v
+    end
+
+    while count>0 do
+        count=0
+        item[pos]=item[pos]:gsub('%f[%w_%$&]&([%w%_%$]+)',repl)
+    end
 end
 
 function var.before_db_parse(item)
