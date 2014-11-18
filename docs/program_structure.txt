@@ -28,7 +28,7 @@ Loader.class(JVM to load LUA lib)
                       |                               |                                         |-resultset handler
                       |                               |
                       |                    Load external modules
-                      |                       (core_plugins.ini) ->|-> other external modules
+                      |                    (db-specific modules) ->|-> other external modules
                       |                                            |-> oracle.lua ->|-Load Oracle jdbc driver
                       |                                            |      |         |-Load "ora" module -> scan command list("ora" folder)                                           
                       |                                            |      |         |-Load other internal oracle module(dbmsoutput,etc) 

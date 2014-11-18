@@ -10,7 +10,8 @@ select /*+no_expand*/ to_char(b.end_interval_time,'YYYYMMDD HH24:MI') tim,
        ROUND(a.ccwait_total*1e-6/60,2) ccwait,
        ROUND(a.clwait_total*1e-6/60,2) clwait,
        a.px_servers_execs_total px_count,
-       round((a.buffer_gets_total+a.disk_reads_total)*8/1024,2) "Reads(MB)",
+       round(buffer_gets_total*8/1024,2) "Buffer gets(MB)",
+       round((a.disk_reads_total)*8/1024,2) "IO Reads(MB)",
        round((a.direct_writes_total)*8/1024,2) "Writes(MB)",
        a.rows_processed_total rows#
  from dba_hist_sqlstat a,dba_hist_snapshot b
