@@ -42,9 +42,10 @@ function trace.get_trace(filename)
         EXCEPTION
             WHEN no_data_found THEN
                 utl_file.fclose(trace_file);
-                IF idx=1 THEN                
+                BEGIN                
                     EXECUTE IMMEDIATE 'drop directory ' || dir;
-                END IF;
+                EXCEPTION WHEN OTHERS THEN NULL;
+                END;
             WHEN OTHERS THEN
                 utl_file.fclose(trace_file);
                 RAISE;
