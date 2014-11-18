@@ -14,6 +14,7 @@ excludes.txt
 copy_to_git.bat
 .alias
 .so
+.mnk
 agent.bat
 dbcli_F0.bat
 agent.jar
