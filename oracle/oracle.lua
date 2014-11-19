@@ -233,6 +233,7 @@ function oracle:check_obj(obj_name)
         SCHEM         VARCHAR2(30);
         part1         VARCHAR2(30);
         part2         VARCHAR2(30);
+        part2_temp    VARCHAR2(30);
         dblink        VARCHAR2(30);
         part1_type    PLS_INTEGER;
         object_number PLS_INTEGER;
@@ -250,12 +251,20 @@ function oracle:check_obj(obj_name)
                                               dblink        => dblink,
                                               part1_type    => part1_type,
                                               object_number => object_number);
-                SELECT /*+no_expand*/ MIN(OBJECT_TYPE),MIN(OWNER),MIN(OBJECT_NAME)
-                INTO   obj_type,SCHEM,part1
-                FROM   ALL_OBJECTS
-                WHERE  OBJECT_ID=object_number;   
-                IF obj_type IS NULL THEN 
-                    part2 := NULL;
+                SELECT /*+no_expand*/ 
+                       MIN(OBJECT_TYPE)    keep(dense_rank first order by s_flag),
+                       MIN(OWNER)          keep(dense_rank first order by s_flag),
+                       MIN(OBJECT_NAME)    keep(dense_rank first order by s_flag),
+                       MIN(SUBOBJECT_NAME) keep(dense_rank first order by s_flag)
+                INTO  obj_type,SCHEM,part1,part2_temp
+                FROM (
+                    SELECT a.*,case when upper(:target) like upper('%'||OBJECT_NAME||NVL2(SUBOBJECT_NAME,'.'||SUBOBJECT_NAME||'%','')) then 0 else 1 end s_flag
+                    FROM   ALL_OBJECTS a
+                    WHERE  OWNER=SCHEM
+                    AND    OBJECT_NAME=part1);
+
+                IF part2 is null THEN 
+                    part2 := part2_temp;
                 END IF;         
                 EXIT;
             EXCEPTION WHEN OTHERS THEN NULL;

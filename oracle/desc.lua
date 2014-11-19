@@ -155,13 +155,18 @@ local desc_sql={
                    ELSE
                     NULL
                END) "Default",
-               HIDDEN_COLUMN "Hidden?",
+               HIDDEN_COLUMN "Hidden?",               
                AVG_COL_LEN AVG_LEN,
-               NUM_DISTINCT num_vals,
-               num_nulls,
-               SAMPLE_SIZE,   
-               HISTOGRAM,
-               decode(data_type
+               round(num_nulls*100/nullif(num_rows,0),2) "Nulls(%)",
+               round(num_rows * density, 2) CARDINALITY,
+               (SELECT round(STDDEV_POP(a.num_buckets+1+endpoint_number- ROWNUM)*100/AVG(a.num_buckets+1+endpoint_number - ROWNUM),2)
+                FROM   all_Tab_Histograms
+                WHERE  table_name = a.table_name
+                AND    column_name = a.column_name
+                AND    owner=a.owner) "CoVar(%)",
+               HISTOGRAM
+               /*
+               ,decode(data_type
                   ,'NUMBER'       ,to_char(utl_raw.cast_to_number(low_value))
                   ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(low_value))
                   ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(low_value))
@@ -190,9 +195,11 @@ local desc_sql={
                            LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 9, 2), 'XX') - 1, '00')) || ':' ||
                            LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 11, 2), 'XX') - 1, '00')) || ':' ||
                            LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 13, 2), 'XX') - 1, '00')))
-                      ,  high_value) hi_v
-        FROM   all_tab_cols
-        WHERE  upper(owner)=:1  and table_name=:2
+                      ,  high_value) hi_v*/
+        FROM   all_tab_cols a,all_tables b
+        WHERE  a.table_name=b.table_name(+)
+        AND    a.owner=b.owner(+)
+        AND    upper(a.owner)=:1  and a.table_name=:2
         ORDER BY NO#]],
     [[
         SELECT /*INTERNAL_DBCLI_CMD*/ /*+ RULE */
@@ -246,84 +253,47 @@ local desc_sql={
         FROM   all_TABLES T
         WHERE  T.OWNER = :1 AND T.TABLE_NAME = :2]]},
     ['TABLE PARTITION']={[[
-        SELECT /*INTERNAL_DBCLI_CMD*/ COLUMN_ID NO#,
-               COLUMN_NAME NAME,
-               DATA_TYPE_OWNER || NVL2(DATA_TYPE_OWNER, '.', '') ||
-               CASE WHEN DATA_TYPE IN('CHAR',
-                                      'VARCHAR',
-                                      'VARCHAR2',
-                                      'NCHAR',
-                                      'NVARCHAR',
-                                      'NVARCHAR2',
-                                      'RAW') --
-               THEN DATA_TYPE||'(' || DATA_LENGTH || DECODE(CHAR_USED, 'C', ' CHAR') || ')' --
-               WHEN DATA_TYPE = 'NUMBER' --
-               THEN (CASE WHEN nvl(DATA_scale, DATA_PRECISION) IS NULL THEN DATA_TYPE 
-                          WHEN DATA_scale > 0 THEN DATA_TYPE||'(' || NVL(''||DATA_PRECISION, '38') || ',' || DATA_SCALE || ')' 
-                          WHEN DATA_PRECISION IS NULL AND DATA_scale=0 THEN 'INTEGER'
-                          ELSE DATA_TYPE||'(' || DATA_PRECISION ||')' END) ELSE DATA_TYPE END 
-               data_type,
-               DECODE(NULLABLE, 'N', 'NOT NULL', '') NULLABLE,
-               (CASE
-                   WHEN default_length > 0 THEN
-                    DATA_DEFAULT
-                   ELSE
-                    NULL
-               END) "Default",
-               HIDDEN_COLUMN "Hidden?",
-               b.AVG_COL_LEN AVG_LEN,
-               b.NUM_DISTINCT num_vals,
-               b.num_nulls,
-               b.SAMPLE_SIZE,   
-               b.HISTOGRAM,
-               decode(data_type
-                  ,'NUMBER'       ,to_char(utl_raw.cast_to_number(b.low_value))
-                  ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(b.low_value))
-                  ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(b.low_value))
-                  ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(b.low_value))
-                  ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(b.low_value))
-                  ,'DATE',RTRIM(LTRIM(TO_CHAR(100 * (TO_NUMBER(SUBSTR(low_value, 1, 2), 'XX') - 100) +
-                                         (TO_NUMBER(SUBSTR(low_value, 3, 2), 'XX') - 100),
-                                         '0000')) || '-' ||
-                           LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(low_value, 5, 2), 'XX'), '00')) || '-' ||
-                           LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(low_value, 7, 2), 'XX'), '00')) || ' ' ||
-                           LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(low_value, 9, 2), 'XX') - 1, '00')) || ':' ||
-                           LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(low_value, 11, 2), 'XX') - 1, '00')) || ':' ||
-                           LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(low_value, 13, 2), 'XX') - 1, '00')))
-                  ,  low_value) low_v,
-                decode(data_type
-                      ,'NUMBER'       ,to_char(utl_raw.cast_to_number(high_value))
-                      ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(high_value))
-                      ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(high_value))
-                      ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(high_value))
-                      ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(high_value))
-                      ,'DATE', RTRIM(LTRIM(TO_CHAR(100 * (TO_NUMBER(SUBSTR(high_value, 1, 2), 'XX') - 100) +
-                                         (TO_NUMBER(SUBSTR(high_value, 3, 2), 'XX') - 100),
-                                         '0000')) || '-' ||
-                           LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 5, 2), 'XX'), '00')) || '-' ||
-                           LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 7, 2), 'XX'), '00')) || ' ' ||
-                           LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 9, 2), 'XX') - 1, '00')) || ':' ||
-                           LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 11, 2), 'XX') - 1, '00')) || ':' ||
-                           LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 13, 2), 'XX') - 1, '00')))
-                      ,  high_value) hi_v
-        FROM   all_tab_cols JOIN All_Part_Col_Statistics b USING(owner,table_name,COLUMN_NAME)
-        WHERE  upper(owner)=:1 and table_name=:2 AND partition_name=:3
-        ORDER BY NO#]],
-    [[
-        SELECT /*INTERNAL_DBCLI_CMD*/ /*+ RULE */
-             DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') TYPE,
-             DECODE(C.COLUMN_POSITION, 1, DECODE(C.UNIQUENESS,'UNIQUE','YES','NO'), '') UNIQUE,
-             DECODE(C.COLUMN_POSITION, 1, C.INDEX_NAME, '') INDEX_NAME,
-             DECODE(C.COLUMN_POSITION, 1, C.STATUS, '') STATUS,
-             C.COLUMN_POSITION NO#,
-             C.COLUMN_NAME,
-             C.DESCEND
-        FROM   ALL_IND_COLUMNS C, ALL_INDEXES I
-        WHERE  C.INDEX_OWNER = I.OWNER
-        AND    C.INDEX_NAME = I.INDEX_NAME
-        AND    I.TABLE_OWNER = :1
-        AND    I.TABLE_NAME = :2        
-        ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION]],
+         SELECT /*INTERNAL_DBCLI_CMD*/ COLUMN_ID NO#,
+                a.COLUMN_NAME NAME,
+                DATA_TYPE_OWNER || NVL2(DATA_TYPE_OWNER, '.', '') ||
+                CASE WHEN DATA_TYPE IN('CHAR',
+                                       'VARCHAR',
+                                       'VARCHAR2',
+                                       'NCHAR',
+                                       'NVARCHAR',
+                                       'NVARCHAR2',
+                                       'RAW') --
+                THEN DATA_TYPE||'(' || DATA_LENGTH || DECODE(CHAR_USED, 'C', ' CHAR') || ')' --
+                WHEN DATA_TYPE = 'NUMBER' --
+                THEN (CASE WHEN nvl(DATA_scale, DATA_PRECISION) IS NULL THEN DATA_TYPE
+                           WHEN DATA_scale > 0 THEN DATA_TYPE||'(' || NVL(''||DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
+                           WHEN DATA_PRECISION IS NULL AND DATA_scale=0 THEN 'INTEGER'
+                           ELSE DATA_TYPE||'(' || DATA_PRECISION ||')' END) ELSE DATA_TYPE END
+                data_type,
+                DECODE(NULLABLE, 'N', 'NOT NULL', '') NULLABLE,
+                (CASE
+                    WHEN default_length > 0 THEN
+                     DATA_DEFAULT
+                    ELSE
+                     NULL
+                END) "Default",
+                HIDDEN_COLUMN "Hidden?",
+                c.AVG_COL_LEN AVG_LEN,
+                round(a.num_nulls*100/nullif(num_rows,0),2) "Nulls(%)",
+                round(num_rows * a.density, 2) CARDINALITY,
+                (SELECT round(STDDEV_POP(a.num_buckets+1+BUCKET_NUMBER- ROWNUM)*100/AVG(a.num_buckets+1+BUCKET_NUMBER - ROWNUM),2)
+                 FROM   all_Part_Histograms
+                 WHERE  table_name = a.table_name
+                 AND    column_name = a.column_name
+                 and    partition_name=a.partition_name
+                 AND    owner=a.owner) "CoVar(%)",
+                a.HISTOGRAM
+         FROM   all_tab_cols c,  All_Part_Col_Statistics a ,all_tab_partitions  b
+         WHERE  a.owner=c.owner and a.table_name=c.table_name
+         AND    a.column_name=c.column_name
+         AND    a.owner=B.table_owner and a.table_name=B.table_name and a.partition_name=b.partition_name
+         AND    upper(a.owner)=:1 and a.table_name=:2 AND a.partition_name=:3
+         ORDER BY NO#]],
     [[
         SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/*
         FROM   all_tab_partitions T
