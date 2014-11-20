@@ -15,4 +15,5 @@ COPY /Y .\src\Loader.java "%target%\src"
 COPY /Y .\copy_to_git.bat "%target%\src"
 COPY /Y .\excludes.txt "%target%\src"
 COPY /Y .\docs\*.mnk "%target%\src"
+COPY /Y .\agent.* "%target%\src"
 pause

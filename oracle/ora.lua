@@ -169,6 +169,7 @@ function ora.parse_args(sql,args,print_args)
         if arg1[param] then 
             table.insert(ary,i,arg1[param])
         end
+        if ary[i]=="." then ary[i]="" end
         setvalue(param,ary[i] or "")
         local option=args[param]:upper()
         local template=templates[param]

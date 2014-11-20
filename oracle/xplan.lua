@@ -1,20 +1,33 @@
 local db,cfg=env.oracle,env.set
 local function explain(fmt,sql)
-    --sql=sql:gsub("(%w+)","%1 /*+gather_plan_statistics*/",1)
     local ora=db.C.ora
+    local default_fmt,e10053="ALLSTATS ALL -PROJECTION OUTLINE"
     if not fmt then return end
-    if fmt:sub(1,1)=='-' then
-        fmt=fmt:sub(2)
+    if fmt:sub(1,1)=='-' then        
         if not sql then return end
+        fmt=fmt:sub(2)
+        if fmt=='10053' then
+           e10053=true           
+           fmt=default_fmt
+        end
     else
-        sql=fmt.." "..(sql or "")
-        fmt="ALLSTATS ALL -PROJECTION OUTLINE"
+        sql=fmt..(not sql and "" or " "..sql)
+        fmt=default_fmt
+    end
+
+    if not sql:gsub("[\n\r]",""):match('(%s)') then
+        sql=sql:gsub("[\n\r]","")
+        sql=db:get_value([[SELECT * FROM(SELECT sql_text from dba_hist_sqltext WHERE sql_id=:1 AND ROWNUM<2
+                      UNION ALL
+                      SELECT sql_fulltext from gv$sqlarea WHERE sql_id=:1 AND ROWNUM<2) WHERE ROWNUM<2]],{sql})
+        if not sql or sql=="" then return end
     end
     sql=sql:gsub("(:[%w_$]+)",":V1")
     local feed=cfg.get("feed")
     cfg.set("feed","off",true)
-    db:internal_call("alter session set statistics_level=all")
-    db:exec("Explain PLAN /*INTERNAL_DBCLI_CMD*/ FOR "..sql,{V1=""})
+    --db:internal_call("alter session set statistics_level=all")
+    if e10053 then db:internal_call("ALTER SESSION SET EVENTS='10053 trace name context forever, level 1'") end
+    db:internal_call("Explain PLAN /*INTERNAL_DBCLI_CMD*/ FOR "..sql,{V1=""})
     sql=[[
         WITH sql_plan_data AS
          (SELECT /*INTERNAL_DBCLI_CMD*/*
@@ -88,6 +101,10 @@ local function explain(fmt,sql)
     db:query(sql)
     db:rollback()
     cfg.set("feed",feed,true)
+    if e10053==true then
+        db:internal_call("ALTER SESSION SET EVENTS '10053 trace name context off'")
+        oracle.C.tracefile.get_trace('default')
+    end
 end
-env.set_command(nil,"XPLAN","Explain SQL execution plan. Usage: xplan [-format] <DML statement>",explain,true,3)
+env.set_command(nil,"XPLAN","Explain SQL execution plan. Usage: xplan [-format|-10053] <DML statement|SQL ID>",explain,true,3)
 return explain

@@ -333,10 +333,10 @@ function env.parse_args(cmd,rest)
         env.checkerr(_CMDS[cmd],'Unknown command "'..cmd..'"!')
         arg_count=_CMDS[cmd].ARGS
     end
-    
+   
     local args={}  
     if arg_count == 1 then
-        args[#args+1]=cmd.." "..rest
+        args[#args+1]=cmd..(rest:len()> 0 and (" "..rest) or "")
     elseif arg_count == 2 then
         args[#args+1]=rest
     elseif rest then 
@@ -380,6 +380,7 @@ function env.parse_args(cmd,rest)
             args[#args+1]=piece
         end   
     end
+
     for i=#args,1,-1 do 
         if args[i]=="" then table.remove(args,i) end
         break
@@ -401,7 +402,7 @@ function env.eval_line(line,exec)
                 local stmt={multi_cmd,env.parse_args(multi_cmd,curr_stmt)}                                
                 multi_cmd,curr_stmt=nil,nil
                 env.CURRENT_PROMPT=env.PRI_PROMPT
-                if exec~=false then 
+                if exec~=false then
                     env.exec_command(stmt[1],stmt[2])
                 else
                     return stmt[1],stmt[2]

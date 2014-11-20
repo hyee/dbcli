@@ -1,3 +1,8 @@
+2014-11-20: update on 'xplan' command to allow dumping the 10053 event('-10053' option), and extract the execution plan for a specific SQL ID
+2014-11-20: '.' parameter as special meaning for 'ora' command, means default value. used to skip the input of corresponding parameter
+2014-11-20: new 'ora ddl' command
+2014-11-20: new '-b' option on 'ora plan'
+2014-11-20: fix on binding variables when it is referenced more than once
 2014-11-15: show binding variables in "ora plan"
 2014-11-14: 'ora @<file> [parameters]' syntax to allow run scripts that not belongs to the 'ora' folder
 2014-11-14: add command 'accept' and parameter 'define' 

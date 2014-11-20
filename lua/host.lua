@@ -5,5 +5,5 @@ function run_command(cmd)
     os.execute(cmd)
 end
 
-env.set_command(nil,'HOST',"Run OS command. Usage: HOST <command>",run_command,false,2)
+env.set_command(nil,{'HOST','HOS'},"Run OS command. Usage: HOST <command>",run_command,false,2)
 return run_command

@@ -7,18 +7,18 @@
       &V9: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
       &V8: {
             sql_id={(trim(:V1) is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id)) and 
-                     sample_time+0 between nvl(to_date(:V2,'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(:V3,'YYMMDDHH24MISS'),sysdate)
+                     sample_time+0 between nvl(to_date(nullif(:V2,'a'),'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(nullif(:V3,'a'),'YYMMDDHH24MISS'),sysdate)
                     &V4},
             snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id))},
             f={},
         }
-      @counter: 11.2={1},10.1={1}
+      @counter: 11.2={, count(distinct sql_exec_id) "Execs"},10.1={}
       ]]--
   Examples:
       ora ashtop -sql               =  ora ashtop "sql_id,session_state,event"
       ora ashtop -p,qc_session_id   =  ora ashtop "session_state,event,current_obj#,p3text,qc_session_id"
       ora ashtop -dash              =  Query dictionary ash view instead of dynamic ash view     
-       ora ashtop -plan              =  ora ashtop "plan_hash,event,current_obj#,SQL_PLAN_LINE_ID"
+      ora ashtop -plan              =  ora ashtop "plan_hash,event,current_obj#,SQL_PLAN_LINE_ID"
       ora ashtop -p", qc_session_id, qc_session_serial#"  = ora ashtop "-p, qc_session_id, qc_session_serial#"
 ]]*/
 
@@ -27,6 +27,7 @@ SELECT * FROM (
         round(SUM(c))                                                     Secs
       , ROUND(SUM(c) / (1+(max(sample_time+0) - min(sample_time+0)) * 86400), 1) AAS
       , LPAD(ROUND(RATIO_TO_REPORT(sum(c)) OVER () * 100)||'%',5,' ')||' |' "%This"
+      &counter
       , nvl2(qc_session_id,'PARALLEL','SERIAL') "Parallel?"
       , nvl(a.program#,u.username) program#
       , &V7
@@ -50,7 +51,7 @@ SELECT * FROM (
         (SELECT a.*,sql_plan_hash_value plan_hash,
             CASE WHEN a.session_type = 'BACKGROUND' OR REGEXP_LIKE(a.program, '.*\([PJ]\d+\)') THEN
               REGEXP_REPLACE(SUBSTR(a.program,INSTR(a.program,'(')), '\d', 'n')
-            END program#,&counter c
+            END program#,1 c
            , TO_CHAR(CASE WHEN session_state = 'WAITING' THEN p1 ELSE null END, '0XXXXXXXXXXXXXXX') p1hex
            , TO_CHAR(CASE WHEN session_state = 'WAITING' THEN p2 ELSE null END, '0XXXXXXXXXXXXXXX') p2hex
            , TO_CHAR(CASE WHEN session_state = 'WAITING' THEN p3 ELSE null END, '0XXXXXXXXXXXXXXX') p3hex

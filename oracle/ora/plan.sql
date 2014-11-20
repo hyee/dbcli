@@ -1,46 +1,50 @@
 /*[[
-Show execution plan. Usage: plan [-d] <sql_id> [<plan_hash_value>|<child_number>]
+Show execution plan. Usage: plan [-d -b] <sql_id> [<plan_hash_value>|<child_number>]
 --[[
     @STAT: 10.1={ALLSTATS LAST outline}
     &SRC: default={0}, d={1}
+    &SHOWPLAN: default={0}, b={1}
 ]]--
 ]]*/
 
 set feed off
 
-PRO Binding Variables:
-PRO ==================
-
-WITH b1 AS
- (SELECT *
-  FROM   (SELECT child_number || ':' || INST_ID r,last_captured l
-          FROM   gv$sql_bind_capture a
+VAR C CURSOR Binding Variables
+BEGIN
+    IF &SHOWPLAN=1 THEN
+        open :c for 
+        WITH b1 AS
+         (SELECT *
+          FROM   (SELECT child_number || ':' || INST_ID r,last_captured l
+                  FROM   gv$sql_bind_capture a
+                  WHERE  sql_id = :V1
+                  AND    1>&SRC
+                  UNION ALL
+                  SELECT snap_id || ':' || instance_number r,last_captured l
+                  FROM   dba_hist_sqlbind a
+                  WHERE  sql_id = :V1
+                  ORDER  BY l DESC NULLS LAST)
+          WHERE  ROWNUM < 2),
+        qry AS
+         (SELECT NVL2(MAX(last_captured) OVER(),1,3) flag, position, NAME, datatype_string, value_string, inst_id, last_captured
+          FROM   gv$sql_bind_capture a, b1
           WHERE  sql_id = :V1
-          AND    1>&SRC
+          AND    child_number || ':' || INST_ID = r
           UNION ALL
-          SELECT snap_id || ':' || instance_number r,last_captured l
-          FROM   dba_hist_sqlbind a
+          SELECT NVL2(MAX(last_captured) OVER(),2,4) flag, position, NAME, datatype_string, value_string, instance_number, last_captured
+          FROM   dba_hist_sqlbind, b1
           WHERE  sql_id = :V1
-          ORDER  BY l DESC NULLS LAST)
-  WHERE  ROWNUM < 2),
-qry AS
- (SELECT NVL2(MAX(last_captured) OVER(),1,3) flag, position, NAME, datatype_string, value_string, inst_id, last_captured
-  FROM   gv$sql_bind_capture a, b1
-  WHERE  sql_id = :V1
-  AND    child_number || ':' || INST_ID = r
-  UNION ALL
-  SELECT NVL2(MAX(last_captured) OVER(),2,4) flag, position, NAME, datatype_string, value_string, instance_number, last_captured
-  FROM   dba_hist_sqlbind, b1
-  WHERE  sql_id = :V1
-  AND    snap_id || ':' || instance_number = r)
-SELECT position,
-       NAME,
-       datatype_string data_type,       
-       nvl2(last_captured,value_string,'<no capture>') VALUE,
-       inst_id,
-       last_captured
-FROM   qry;
-
+          AND    snap_id || ':' || instance_number = r)
+        SELECT position,
+               NAME,
+               datatype_string data_type,       
+               nvl2(last_captured,value_string,'<no capture>') VALUE,
+               inst_id,
+               last_captured
+        FROM   qry;
+    END IF;
+END;
+/
 WITH sql_plan_data AS
  (SELECT /*+materialize*/*
   FROM   (SELECT a.*,

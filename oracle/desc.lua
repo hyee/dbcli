@@ -157,14 +157,10 @@ local desc_sql={
                END) "Default",
                HIDDEN_COLUMN "Hidden?",               
                AVG_COL_LEN AVG_LEN,
+               num_distinct "NDV",
                round(num_nulls*100/nullif(num_rows,0),2) "Nulls(%)",
-               round(num_rows * density, 2) CARDINALITY,
-               (SELECT round(STDDEV_POP(a.num_buckets+1+endpoint_number- ROWNUM)*100/AVG(a.num_buckets+1+endpoint_number - ROWNUM),2)
-                FROM   all_Tab_Histograms
-                WHERE  table_name = a.table_name
-                AND    column_name = a.column_name
-                AND    owner=a.owner) "CoVar(%)",
-               HISTOGRAM
+               round((num_rows-num_nulls)/nullif(num_distinct,0),2) CARDINALITY,               
+               nullif(HISTOGRAM,'NONE') HISTOGRAM
                /*
                ,decode(data_type
                   ,'NUMBER'       ,to_char(utl_raw.cast_to_number(low_value))
@@ -278,16 +274,11 @@ local desc_sql={
                      NULL
                 END) "Default",
                 HIDDEN_COLUMN "Hidden?",
-                c.AVG_COL_LEN AVG_LEN,
-                round(a.num_nulls*100/nullif(num_rows,0),2) "Nulls(%)",
-                round(num_rows * a.density, 2) CARDINALITY,
-                (SELECT round(STDDEV_POP(a.num_buckets+1+BUCKET_NUMBER- ROWNUM)*100/AVG(a.num_buckets+1+BUCKET_NUMBER - ROWNUM),2)
-                 FROM   all_Part_Histograms
-                 WHERE  table_name = a.table_name
-                 AND    column_name = a.column_name
-                 and    partition_name=a.partition_name
-                 AND    owner=a.owner) "CoVar(%)",
-                a.HISTOGRAM
+                a.AVG_COL_LEN AVG_LEN,
+                a.num_distinct "NDV",
+                round(a.num_nulls*100/nullif(b.num_rows,0),2) "Nulls(%)",
+                round((num_rows-a.num_nulls)/nullif(a.num_distinct,0),2) CARDINALITY,               
+                nullif(a.HISTOGRAM,'NONE') HISTOGRAM
          FROM   all_tab_cols c,  All_Part_Col_Statistics a ,all_tab_partitions  b
          WHERE  a.owner=c.owner and a.table_name=c.table_name
          AND    a.column_name=c.column_name

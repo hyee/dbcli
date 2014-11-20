@@ -136,7 +136,7 @@ function oracle:parse(sql,params)
             local k,s=s:upper(),':'..s 
             local v=params[k]
             if not v then return s end
-            if p1[k] then return s end
+            if p1[k] then return s:upper() end
 
             local args={}
             if type(v) =="table" then
