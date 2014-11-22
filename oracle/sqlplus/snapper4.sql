@@ -556,7 +556,7 @@ declare
     g_ash_columns1    varchar2(1000) := 'inst_id + event + p1 + wait_class';
     g_ash_columns2    varchar2(1000) := 'inst_id + sid + user + machine + program';
     g_ash_columns3    varchar2(1000) := 'inst_id + plsql_object_id + plsql_subprogram_id + sql_id';
-        
+		
     -- output column configuration
     output_header     number := 0; -- 1=true 0=false
     output_username   number := 1; -- v$session.username

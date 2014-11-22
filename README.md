@@ -1,6 +1,6 @@
-License
+Licence
 ============
-MIT license
+MIT licence
 
 Description
 =============

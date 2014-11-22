@@ -146,6 +146,7 @@ function grid.sort(rows,cols,bypass_head)
         head=rows[1]
         table.remove(rows,1)
     end
+    
     table.sort(rows,function(a,b)
         for ind,item in ipairs(sorts) do
             local col,l=item()

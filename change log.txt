@@ -1,3 +1,4 @@
+2014-11-20: update on 'snap" command to support 'snap begin/end'
 2014-11-20: update on 'xplan' command to allow dumping the 10053 event('-10053' option), and extract the execution plan for a specific SQL ID
 2014-11-20: '.' parameter as special meaning for 'ora' command, means default value. used to skip the input of corresponding parameter
 2014-11-20: new 'ora ddl' command

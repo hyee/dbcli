@@ -1,7 +1,7 @@
 /*[[
 Show execution plan. Usage: plan [-d -b] <sql_id> [<plan_hash_value>|<child_number>]
 --[[
-    @STAT: 10.1={ALLSTATS LAST outline}
+    @STAT: 10.1={ALLSTATS ALL OUTLINE -PROJECTION LAST}
     &SRC: default={0}, d={1}
     &SHOWPLAN: default={0}, b={1}
 ]]--
@@ -94,7 +94,7 @@ ordered_hierarchy_data AS
 qry AS
  (SELECT DISTINCT sql_id sq,
                   flag flag,
-                  '&STAT ALL -PROJECTION' format,
+                  '&STAT' format,
                   NVL(child_number, plan_hash_value) plan_hash,
                   inst_id
   FROM   sql_plan_data),
