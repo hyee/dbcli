@@ -72,8 +72,8 @@ WITH sql_plan_data AS
                          plan_hash_value,
                          dbid
                   FROM   dba_hist_sql_plan a
-                  WHERE  a.sql_id = :V1
-                  AND    a.plan_hash_value = nvl(:V2,plan_hash_value) 
+                  WHERE  a.sql_id = :V1 
+                  AND    a.plan_hash_value = nvl(:V2,(select max(plan_hash_value) keep(dense_rank last order by snap_id) from dba_hist_sqlstat where sql_id=:V1)) 
                   ) a
          WHERE flag>&src)
   WHERE  seq = 1),

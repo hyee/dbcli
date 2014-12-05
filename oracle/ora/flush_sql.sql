@@ -14,7 +14,7 @@ BEGIN
             EXECUTE IMMEDIATE q'[alter session set events '5614566 trace name context forever']'; -- bug fix for 10.2.0.4 backport
         END IF;
         SYS.DBMS_SHARED_POOL.UNKEEP(NAME, flag => 'C');
-        sys.dbms_shared_pool.purge(NAME, 'C', 1);
+        sys.dbms_shared_pool.purge(NAME, 'C', 65);
         IF version + 0 = 10 THEN
             EXECUTE IMMEDIATE q'[alter session set events '5614566 trace name context off']';
         END IF;

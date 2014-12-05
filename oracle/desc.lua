@@ -44,7 +44,7 @@ local desc_sql={
                     type_name || '.' || type_subname
                    ELSE
                     data_type
-               END) DATA_TYPE,in_out,defaulted,default_value,character_set_name charset
+               END) DATA_TYPE,in_out,/*defaulted,*/default_value,character_set_name charset
         FROM   ALL_ARGUMENTS
         WHERE  owner=:1 and nvl(package_name,' ')=nvl(:2,' ') and object_name=:3
         AND    data_level=0

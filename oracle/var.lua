@@ -56,7 +56,8 @@ function var.setInput(name,desc)
         end
         return
     end
-    if name:find('=') then name,value=name:match("^%s*([^=]+)%s*=%s*(.+)") end
+    local value
+    name,value=name:match("^%s*([^=]+)%s*=%s*(.+)")
     if not name then env.raise('Usage: def name=<value> [description]') end
     value=value:gsub('^"(.*)"$','%1')
     name=name:upper()
@@ -73,6 +74,14 @@ function var.accept_input(name,desc)
     else
         if desc:sub(1,7):lower()=="prompt " then
             desc=desc:sub(8)
+        elseif desc:sub(1,1)=='@' then
+            desc=desc:sub(2)
+            if not desc:match('(%.%w+)$') then desc=desc..'.sql' end
+            local f=io.open(desc)
+            env.checkerr(f,"Cannot find file '"..desc.."'!")
+            var.inputs[uname]=f:read('*a')
+            f:close()            
+            return
         end
     end
     desc=desc:match("^[%s']*(.-)[%s':]*$")..': '
@@ -186,7 +195,7 @@ function var.onload()
     snoop('BEFORE_PRINT_TEXT' ,var.before_print)
     cfg.init("PrintVar",'on',nil,"oracle","Max size of historical commands",'on,off')
     cfg.init("Define",'on',nil,"oracle","Defines the substitution character(&) and turns substitution on and off.",'on,off')
-    env.set_command(nil,{"Accept","Acc"},'Assign user-input value into a existing variable. Usage: accept <var> [prompt] [<prompt_text>]',var.accept_input,false,3)
+    env.set_command(nil,{"Accept","Acc"},'Assign user-input value into a existing variable. Usage: accept <var> [[prompt] <prompt_text>|@<file>]',var.accept_input,false,3)
     env.set_command(nil,{"variable","VAR"},var.helper,var.setOutput,false,4)
     env.set_command(nil,{"Define","DEF"},"Define input variables, Usage: def <name>=<value> [description], or def <name> to remove definition",var.setInput,false,4)
     env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables(refer to command "VAR" and "DEF").Usage: print <variable|-a>',var.print,false,3)    

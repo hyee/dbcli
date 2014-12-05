@@ -9,7 +9,7 @@ function awr.dump_report(stmt,starttime,endtime,instances)
     db:check_date(starttime)
     db:check_date(endtime)
 
-    env.checkerr(db:check_obj('dbms_workload_repository.awr_report_html'),'Sorry, you dont have the "execute" privilege on pacakge "dbms_workload_repository"!')    
+    env.checkerr(db:check_obj('dbms_workload_repository.awr_report_html'),'Sorry, you dont have the "execute" privilege on package "dbms_workload_repository"!')    
     
     local args={starttime,endtime,instances or "",'#VARCHAR','#CLOB','#CURSOR'}
     db:internal_call(stmt,args)
@@ -49,9 +49,9 @@ function awr.extract_awr(starttime,endtime,instances)
         
             SELECT max(dbid),max(st),max(ed)
             INTO   dbid, st, ed
-            FROM   (SELECT dbid, MAX(decode(sign(end_interval_time+0-stim),1,null,snap_id)) st, min(decode(sign(end_interval_time+0-etim),-1,null,snap_id)) ed
+            FROM   (SELECT dbid, MAX(decode(sign(begin_interval_time+0-stim),1,null,snap_id)) st, min(decode(sign(end_interval_time+0-etim),-1,null,snap_id)) ed
                     FROM   Dba_Hist_Snapshot
-                    WHERE  begin_interval_time+0 BETWEEN stim-0.5 AND etim+0.5
+                    WHERE  begin_interval_time+0 <= etim+0.5 and end_interval_time>=stim-0.5
                     AND    (inst IS NULL OR instr(',' || inst || ',', instance_number) > 0)
                     GROUP  BY DBID
                     ORDER  BY 2 DESC)
@@ -131,7 +131,7 @@ function awr.extract_ash(starttime,endtime,instances)
             SELECT MAX(dbid) KEEP(dense_rank LAST ORDER BY begin_interval_time)
             INTO   dbid
             FROM   Dba_Hist_Snapshot
-            WHERE  begin_interval_time+0 BETWEEN stim-0.5 AND etim+0.5
+            WHERE  begin_interval_time+0 <= etim+0.5 and end_interval_time>=stim-0.5
             AND    (inst IS NULL OR instr(',' || inst || ',', instance_number) > 0)
             GROUP  BY DBID;
         
