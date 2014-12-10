@@ -47,21 +47,20 @@ function sqlprof.extract_profile(sql_id,sql_plan)
                         SELECT SQL_FULLTEXT, 'PROF_' || p_sqlid
                         FROM   gv$sql a
                         WHERE  sql_id = p_sqlid
+                    $IF DBMS_DB_VERSION.VERSION>10  $THEN
                         UNION ALL
-                        $IF DBMS_DB_VERSION.VERSION>10  $THEN
                         SELECT SQL_TEXT,
                                 decode(b.obj_type, 1, p_sqlid, 2, 'PROF_' || substr(p_sqlid, -26)) src
                         FROM   sys.sqlobj$ b, sys.sql$text a
                         WHERE  b.name = p_sqlid
                         AND    b.signature = a.signature
-                        $ELSE
-                            SELECT SQL_TEXT, p_sqlid src
-                                  FROM   sys.sqlprof$ b, sys.sql$text a
-                                  WHERE  b.sp_name = p_sqlid
-                                  AND    b.signature = a.signature
-                                  $END
-                                  
-                        
+                    $ELSE
+                        UNION ALL
+                        SELECT SQL_TEXT, p_sqlid src
+                        FROM   sys.sqlprof$ b, sys.sql$text a
+                        WHERE  b.sp_name = p_sqlid
+                        AND    b.signature = a.signature
+                    $END
                         )
                 WHERE  rownum < 2;            
             END;
@@ -72,6 +71,8 @@ function sqlprof.extract_profile(sql_id,sql_plan)
                 v_plan := CASE
                               WHEN p_plan IS NULL THEN
                                '%'
+                              WHEN upper(p_plan) IN('PLAN','PLAN_TABLE') then 
+                                '-1'
                               ELSE
                                nvl(regexp_substr(p_plan, '^\d+$'), 'z') || '%'
                           END;
@@ -86,24 +87,29 @@ function sqlprof.extract_profile(sql_id,sql_plan)
                                 FROM   dba_sqlset_plans a
                                 UNION ALL
                                 SELECT other_xml, 'memory', sql_id, plan_hash_value
-                                FROM   gv$sql_plan a)
+                                FROM   gv$sql_plan a
+                                UNION ALL
+                                SELECT other_xml, 'plan table', p_sqlid sql_id, -1
+                                FROM   PLAN_TABLE a
+                                )
                         WHERE  rownum < 2
                         AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR sql_id = p_plan)
                         AND    other_xml IS NOT NULL
+                    $IF DBMS_DB_VERSION.VERSION>10 $THEN
                         UNION ALL
-                        $IF DBMS_DB_VERSION.VERSION>10 $THEN
                         SELECT comp_data, decode(b.obj_type, 1, 'profile', 'spm') src
                         FROM   sys.sqlobj$ b, sys.sqlobj$data a
                         WHERE  b.name = nvl(p_plan, p_sqlid)
                         AND    b.signature = a.signature
-                        $ELSE
-                            SELECT Xmlelement("outline_data", xmlagg(Xmlelement("hint", attr_val) ORDER BY attr#))
-                                   .getclobval() comp_data,
-                                   'profile' src
-                                  FROM   sys.sqlprof$ b, sys.sqlprof$attr a
-                                  WHERE  b.sp_name = nvl(p_plan, p_sqlid)
-                                  AND    b.signature = a.signature
-                                  $END
+                    $ELSE
+                        UNION ALL
+                        SELECT Xmlelement("outline_data", xmlagg(Xmlelement("hint", attr_val) ORDER BY attr#))
+                               .getclobval() comp_data,
+                               'profile' src
+                        FROM   sys.sqlprof$ b, sys.sqlprof$attr a
+                        WHERE  b.sp_name = nvl(p_plan, p_sqlid)
+                        AND    b.signature = a.signature
+                    $END
                                   
                         
                         )
@@ -158,7 +164,7 @@ function sqlprof.extract_profile(sql_id,sql_plan)
                 v_sql       := regexp_replace(v_sql, '/\*.*?\*/');
                 v_signatrue := dbms_sqltune.SQLTEXT_TO_SIGNATURE(v_sql, TRUE);
                 BEGIN
-                    get_sql(p_plan);
+                    get_sql(case when upper(p_plan) IN('PLAN','PLAN_TABLE') then p_sqlid else p_plan end );
                 EXCEPTION WHEN NO_DATA_FOUND THEN 
                     p_buffer:='#Cannot find SQL text for '||p_plan||'!';
                     return;
@@ -206,7 +212,11 @@ function sqlprof.extract_profile(sql_id,sql_plan)
     BEGIN
         extract_profile(:1,:2,:3, TRUE);
     END;]]
-    env.checkerr(sql_id,"Please specify the SQL ID!")    
+    env.checkerr(sql_id,"Please specify the SQL ID!")  
+    if not db:check_obj('sys.sql$text') then
+        print(1)
+        stmt=stmt:gsub("%$IF.-%$END","")
+    end  
     args={'#CLOB',sql_id,sql_plan or ""}
     db:internal_call(stmt,args)
     if args[1] and args[1]:sub(1,1)=="#" then
@@ -216,5 +226,5 @@ function sqlprof.extract_profile(sql_id,sql_plan)
     print("Result written to file "..env.write_cache(sql_id..".sql",args[1]))    
 end
 
-env.set_command(nil,"sqlprof","Extract sql profile. Usage: sqlprof <sql_id|sql_prof_name|spm_plan_name> [plan_hash_value|new_sql_id|sql_prof_name|spm_plan_name]",sqlprof.extract_profile,false,3)
+env.set_command(nil,"sqlprof","Extract sql profile. Usage: sqlprof <sql_id|sql_prof_name|spm_plan_name> [<plan_hash_value|new_sql_id|sql_prof_name|spm_plan_name>|plan]",sqlprof.extract_profile,false,3)
 return sqlprof
