@@ -67,6 +67,6 @@ function sqlplus.helper(_,cmd)
 end
 
 set_command(nil,"sqlplus",  "Switch to sqlplus with same login, the working folder is 'oracle/sqlplus'. Usage: sqlplus [other args]",sqlplus.load,false,9)
-env.set_command(nil,"sql", sqlplus.helper,sqlplus.run_script,false,9)
+--env.set_command(nil,"sql", sqlplus.helper,sqlplus.run_script,false,9)
 
 return sqlplus

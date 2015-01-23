@@ -22,12 +22,14 @@ local function explain(fmt,sql)
                       SELECT sql_fulltext from gv$sqlarea WHERE sql_id=:1 AND ROWNUM<2) WHERE ROWNUM<2]],{sql})
         if not sql or sql=="" then return end
     end
-    sql=sql:gsub("(:[%w_$]+)",":V1")
+    local args={}
+    sql=sql:gsub("(:[%w_$]+)",function(s) args[s:sub(2)]=""; return s end)
     local feed=cfg.get("feed")
     cfg.set("feed","off",true)
+    cfg.set("printsize",9999,true)
     --db:internal_call("alter session set statistics_level=all")
     if e10053 then db:internal_call("ALTER SESSION SET EVENTS='10053 trace name context forever, level 1'") end
-    db:internal_call("Explain PLAN /*INTERNAL_DBCLI_CMD*/ FOR "..sql,{V1=""})
+    db:internal_call("Explain PLAN /*INTERNAL_DBCLI_CMD*/ FOR "..sql,args)
     sql=[[
         WITH sql_plan_data AS
          (SELECT /*INTERNAL_DBCLI_CMD*/*

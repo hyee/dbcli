@@ -5,7 +5,7 @@ Templates:
     &V9 : {s={coalesce(NULLIF(c.owner  ||'.' || c.object_name,'.'),
                   nullif(''||PROGRAM_ID,'0'),'['||nvl(a.module,a.program)||'('||osuser||')]') pkg_name,
               PROGRAM_LINE# pkg_line},
-           p={p1,p2,p2text,p3},
+           p={blocking_session,p1,p2,p2text,p3},
            b={NULLIF(BLOCKING_SESSION||',@'||BLOCKING_INSTANCE,',@') BLOCKING_SID,
              NVL((SELECT OBJECT_NAME FROM ALL_OBJECTS WHERE OBJECT_ID=ROW_WAIT_OBJ# AND ROWNUM<2),''||ROW_WAIT_OBJ#) WAIT_OBJ,
              ROW_WAIT_BLOCK# WAIT_BLOCK#}

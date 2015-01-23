@@ -3,6 +3,7 @@
 
 SET FEED OFF PRINTVAR OFF
 VAR TEXT CLOB;
+VAR DEST VARCHAR2
 
 DECLARE
     v_default     NUMBER := DBMS_METADATA.SESSION_TRANSFORM;
@@ -14,6 +15,7 @@ DECLARE
     part1_type    PLS_INTEGER;
     object_number PLS_INTEGER;
     obj_type      VARCHAR2(30);
+    txt           CLOB;
     TYPE t IS TABLE OF VARCHAR2(30);
     t1 t := t('TABLE',
               'PL/SQL',
@@ -60,10 +62,25 @@ BEGIN
         DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'SPECIFICATION', TRUE);
         DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'BODY', TRUE);
         DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'CONSTRAINTS', TRUE);
-        DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'CONSTRAINTS_AS_ALTER', TRUE);
-        :text := dbms_metadata.get_ddl(REPLACE(obj_type, ' ', '_'), part1, SCHEM);
+        DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'CONSTRAINTS_AS_ALTER', FALSE);
+        --DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'PARTITIONING', FALSE);
+        txt := dbms_metadata.get_ddl(REPLACE(obj_type, ' ', '_'), part1, SCHEM);
+        IF obj_type='TABLE' THEN
+            BEGIN
+                dbms_lob.append(txt,dbms_metadata.GET_DEPENDENT_DDL('INDEX', part1, SCHEM));
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+        END IF;
+        DBMS_METADATA.SET_TRANSFORM_PARAM(v_default,'DEFAULT');
+        txt := regexp_replace(txt,'\('||chr(9),'('||chr(10)||chr(9),1,1);
+        IF obj_type in ('TABLE','INDEX') THEN
+            txt := regexp_replace(txt,'"([A-Z0-9$#\_]+)"','\1');
+        END IF;
+        :text := txt;
+        :dest := part1||'.sql';
     end if;
 END;
 /
 
 print text
+save text dest

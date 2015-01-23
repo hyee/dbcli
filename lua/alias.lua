@@ -36,13 +36,14 @@ function alias.run_command(...)
             alias.args[i]=v
             alias.rest[i]=v
         end
-        target=target:gsub("$([%d%*]+)",alias.parser)
+        target=target:gsub("%$([%d%*]+)",alias.parser)
+        target=target:gsub("'%$[1-9]'",'')
+        target=target:gsub("%$[1-9]",'')
         target=target:gsub("[%s\n\r\b\t]+$","")
         if target:sub(-1) ~='/' and target:sub(-1) ~=';' then target=target..';' end
         if type(alias.cmdlist[name].text) == "string" then
-            print(target)
-        end        
-        local maxsiz=env.set.get("HISSIZE")
+            print('Statement: '..target)
+        end
         env.internal_eval(target)        
     end
 end

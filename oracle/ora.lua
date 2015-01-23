@@ -144,7 +144,7 @@ function ora.parse_args(sql,args,print_args)
                 idx,rest=idx:upper(),rest:gsub('^"(.*)"$','%1')
                 for param,text in pairs(options[idx] or {}) do
                     ary[i]=nil
-                    local ary_idx=tonumber(param:match("(%d+)"))
+                    local ary_idx=tonumber(param:match("^V(%d+)$"))
                     if args[param] and ary_idx then                    
                         ary[ary_idx]=nil                    
                         arg1[param]=text..rest

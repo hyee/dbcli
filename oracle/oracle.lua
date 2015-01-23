@@ -61,6 +61,7 @@ function oracle:helper(cmd)
 end
 
 function oracle:connect(conn_str)
+    --print(conn_str)
     local props={}
     local usr,pwd,conn_desc 
     if type(conn_str)=="table" then
@@ -83,8 +84,7 @@ function oracle:connect(conn_str)
                 password=pwd,
                 defaultRowPrefetch="100",
                 defaultLobPrefetchSize="32767",
-                useFetchSizeWithLongColumn='true',
-                ["v$session.program"]="dbcli.exe"}
+                useFetchSizeWithLongColumn='true'}
     local url, isdba=conn_desc:match('^(.*) as (%w+)$')
     args.url,args.internal_logon="jdbc:oracle:thin:@"..(url or conn_desc),isdba
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end

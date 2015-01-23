@@ -188,6 +188,23 @@ function var.print(name)
     end
 end
 
+function var.save(name,file)
+    env.checkerr(type(name)=="string",'Usage: save <variable> <file name>')
+    if type(file)~="string" or var.outputs[file:upper()] then return end
+    if var.inputs[file:upper()] then
+        file=var.inputs[file:upper()] 
+        if file=='' then return end
+    end
+    name=name:upper()
+    local obj=var.inputs[name]
+    env.checkerr(obj,'Target variable[%s] does not exist!',name)   
+    if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
+        return print("Unsupported variable '%s'!", name);
+    end
+    file=env.write_cache(file,obj);
+    print("Data saved to "..file);
+end
+
 function var.onload()
     snoop('BEFORE_DB_STMT_PARSE',var.before_db_parse)
     snoop('BEFORE_ORACLE_EXEC',var.before_db_exec)
@@ -198,6 +215,7 @@ function var.onload()
     env.set_command(nil,{"Accept","Acc"},'Assign user-input value into a existing variable. Usage: accept <var> [[prompt] <prompt_text>|@<file>]',var.accept_input,false,3)
     env.set_command(nil,{"variable","VAR"},var.helper,var.setOutput,false,4)
     env.set_command(nil,{"Define","DEF"},"Define input variables, Usage: def <name>=<value> [description], or def <name> to remove definition",var.setInput,false,4)
-    env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables(refer to command "VAR" and "DEF").Usage: print <variable|-a>',var.print,false,3)    
+    env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables(refer to command "VAR" and "DEF").Usage: print <variable|-a>',var.print,false,3)
+    env.set_command(nil,"Save","Save variable value into a specific file under folder 'cache'. Usage: save <variable> <file name>",var.save,false,3);
 end    
 return var

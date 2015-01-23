@@ -9,7 +9,7 @@
             sql_id={(trim(:V1) is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id)) and 
                      sample_time+0 between nvl(to_date(nullif(:V2,'a'),'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(nullif(:V3,'a'),'YYMMDDHH24MISS'),sysdate)
                     &V4},
-            snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id))},
+            snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id)) &V3},
             f={},
         }
       @counter: 11.2={, count(distinct sql_exec_id) "Execs"},10.1={}

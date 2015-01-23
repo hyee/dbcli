@@ -35,19 +35,24 @@ local search_sql=[[
 
 local desc_sql={
     PROCEDURE=[[
-        SELECT /*INTERNAL_DBCLI_CMD*/ NVL2(overload, overload || '.', '') || position NO#,
+        SELECT /*INTERNAL_DBCLI_CMD*/ --+use_nl(a b)
+               NVL2(overload, overload || '.', '') || position NO#,
                decode(position,0,'(RESULT)',Nvl(ARGUMENT_NAME, DATA_TYPE)) Argument,
                (CASE
-                   WHEN pls_type IS NOT NULL THEN
-                    pls_type
-                   WHEN type_subname IS NOT NULL THEN
-                    type_name || '.' || type_subname
+                   WHEN a.pls_type IS NOT NULL THEN
+                    a.pls_type
+                   WHEN a.type_subname IS NOT NULL THEN
+                    a.type_name || '.' || a.type_subname
                    ELSE
                     data_type
-               END) DATA_TYPE,in_out,/*defaulted,*/default_value,character_set_name charset
-        FROM   ALL_ARGUMENTS
-        WHERE  owner=:1 and nvl(package_name,' ')=nvl(:2,' ') and object_name=:3
-        AND    data_level=0
+               END) DATA_TYPE,a.in_out,decode(b.default#,1,'Y','N') "Default?",character_set_name charset
+        FROM   ALL_ARGUMENTS a, sys.argument$ b
+        WHERE a.object_id=b.obj#
+        AND   a.subprogram_id=b.procedure#
+        AND   NVL(a.overload,0)=b.overload#
+        AND   a.sequence=b.sequence#
+        AND   owner=:1 and nvl(package_name,' ')=nvl(:2,' ') and object_name=:3
+        AND   data_level=0
         ORDER  BY overload, POSITION]],
     
     PACKAGE=[[
