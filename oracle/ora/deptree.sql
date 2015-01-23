@@ -1,22 +1,24 @@
-/*[[Show object dependency, usage: ora deptree [-p|-c] [owner.]name 
+/*[[Show object dependency, usage: ora deptree [-c] [-f] [owner.]name 
     --[[
-       &F2: P={d_obj#},C={p_obj#}
-       &F1: P={p_obj#},C={d_obj#}
+       &F2  : P={d_obj#},C={p_obj#}
+       &F1  : P={p_obj#},C={d_obj#}
+       &CC  : T={1},F={0}
+       &SRT : T={'9'},F={1}
+       &DST : T={},f={DISTINCT}
     --]]
 ]]*/
 SET FEED OFF
 WITH obj AS
- (SELECT --+materialize
-         MAX(obj#) KEEP(DENSE_RANK FIRST ORDER BY DECODE(us.name,'PUBLIC','ZZZZ',us.name)) o,
-         max(us.name) KEEP(DENSE_RANK FIRST ORDER BY DECODE(us.name,'PUBLIC','ZZZZ',us.name)) name
-  FROM   sys.obj$ obj,sys.user$ us
-  WHERE  us.name in (decode(instr(:V1,'.'),0,USER,upper(regexp_substr(:V1,'^[^\.]+'))),decode(instr(:V1,'.'),0,'PUBLIC','#'))
-  AND    obj.name = upper(decode(instr(:V1,'.'),0,:V1,regexp_substr(:V1,'[^\.]+$')))
-  AND    obj.owner#=us.user#
-  AND    subname IS NULL),
+ (SELECT --+materialize no_expand
+         MAX(object_id) KEEP(DENSE_RANK FIRST ORDER BY DECODE(owner,'PUBLIC','ZZZZ',owner)) o,
+         max(owner) KEEP(DENSE_RANK FIRST ORDER BY DECODE(owner,'PUBLIC','ZZZZ',owner)) owner
+  FROM   ALL_OBJECTS us
+  WHERE  owner in (decode(instr(:V1,'.'),0,USER,upper(regexp_substr(:V1,'^[^\.]+'))),decode(instr(:V1,'.'),0,'PUBLIC','#'))
+  AND    object_name = upper(decode(instr(:V1,'.'),0,:V1,regexp_substr(:V1,'[^\.]+$')))
+  AND    subobject_name IS NULL),
 res AS(
-SELECT /*+ordered use_nl(dep op us) no_merge(dep) no_expand*/ 
-       LPAD(' ',(lv-1)*4) ||us.name||'.'||op.name OBJECT_NAME,
+SELECT --+ordered use_nl(dep op us) no_merge(dep) no_expand
+       LPAD(' ',(lv-1)*4*&CC) ||us.name||'.'||op.name OBJECT_NAME,
           decode(op.type#,
               0,'NEXT OBJECT',
               1,'INDEX',
@@ -81,11 +83,11 @@ SELECT /*+ordered use_nl(dep op us) no_merge(dep) no_expand*/
               decode(op.status, 0, 'N/A', 1, 'VALID', 'INVALID') STATUS,
               op.ctime,
               op.mtime
-FROM   (select dep.*,obj.*,level lv 
+FROM   (select dep.*,obj.*,level lv
         from obj,sys.dependency$ dep 
         CONNECT BY nocycle dep.&F2 = PRIOR dep.&F1 START WITH dep.&F2 =obj.o
         order siblings by dep.&F1) dep, sys.obj$ op,sys.user$ us
 WHERE  dep.&F1 = op.obj#
 AND    op.owner#=us.user#
-AND    (us.name!='SYS' or dep.name in('SYS','PUBLIC')))
-select * from res WHERE object_type NOT IN('UNDEFINED','SYNONYM')
+AND    (us.name!='SYS' and op.type#!=5 or dep.owner in('SYS','PUBLIC')))
+select &DST * from res WHERE object_type NOT IN('UNDEFINED') ORDER BY &SRT;
