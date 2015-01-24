@@ -1,10 +1,10 @@
 /*[[
-    Show object dependency, usage: ora deptree [-c|-p] [-t|-f] [owner.]name 
+    Show object dependency, usage: ora deptree [-c|-p] [-t|-l] [owner.]name 
     Options: 
        p: Show target object's depending objects(default)
        c: Show the objects that depend on target object
        t: Show dependence tree(Default)
-       f: Show object list, instead of tree view
+       l: Show object list, instead of tree view
        
     --[[
        
@@ -12,9 +12,9 @@
        &F2  : P={d_obj#},C={p_obj#}
        &F3  : P={rcon#},C={con#}
        &F4  : P={con#},C={rcon#}
-       &CC  : T={1},F={0}
-       &SRT : T={'9'},F={1}
-       &DST : T={},f={DISTINCT}
+       &CC  : T={1},L={0}
+       &SRT : T={'9'},L={1}
+       &DST : T={},L={DISTINCT}
     --]]
 ]]*/
 SET FEED OFF
