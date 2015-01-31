@@ -17,10 +17,18 @@ function login.capture(db,url,props)
     props.password,props.url,props.lastlogin=env.packer.pack_str(props.password),url,os.date()
     url=url1:match("(%/%/[^&]+)")
     if not url then url=url1:match("(@.+)$") end
-    url=url:gsub('[%.%:]([%w%-%_]+)','')
-    url=props.user..url    
+    url=url:gsub('([%.%:])([%w%-%_]+)',function(a,b)
+        if a=='.' and b:match('^(%d+)$') then
+            return a..b
+        else
+            return ''
+        end
+    end)
+    url=(props.user..url):lower()    
     if not login.list[typ] then login.list[typ]={} end
-    login.list[typ][url:lower()]=props    
+    local list=login.list[typ]
+    if list[url] then props.alias=list[url].alias end
+    list[url]=props    
     login.save()
 end
 
@@ -31,6 +39,7 @@ function login.login(db,id,filter)
     end
     local typ=db.type or "default"
     local list=login.list[typ]
+    local alias,alist=nil,{}
 
     id=(id or ""):lower()
     if id=="" then id= nil end
@@ -44,29 +53,49 @@ function login.login(db,id,filter)
     end
 
     local keys={}
-    for k,_ in pairs(list) do
-        keys[#keys+1]=k        
+    for k,v in pairs(list) do
+        keys[#keys+1]=k
+        alist[v.alias or ""]=k      
     end
+    alist[""]=nil
+
     table.sort(keys,function(a,b) return a:upper()<b:upper() end)
 
     local account,counter,hdl=nil,0,grid.new()
     filter=id and id:sub(1,1)=='-'  and filter and filter:lower() or id
     
-    grid.add(hdl,{"#","Name","User","Url","Last Login"})
+    grid.add(hdl,{"#","Alias","Name","User","Url","Last Login"})
 
-    if keys[filter and tonumber(filter) or -1] then
+    
+    if id=="-a" then
+        local a=env.parse_args(2,filter)
+        alias,filter=a[1],a[2]
+        if not filter then
+            return print('Usage: login -a <alias> <id|name>')
+        end
+        if list[alias] then
+           return print('Usage: Cannot specify an alias that has been used by a name.') 
+        end
+        if not alias:match('^[a-z][%w_%$]+$') then
+            return print('Unexpected alias name "'..alias..'".')
+        end
+    end
+
+    local nfilter=filter and tonumber(filter) or -1
+
+    if keys[nfilter] then
         counter = 1
-        account=keys[tonumber(filter)]
-    elseif list[filter or ""] then
+        account=keys[nfilter]
+    elseif list[filter or ""]  or alist[filter or ""] then
         counter = 1
-        account=filter        
+        account=alist[filter] or filter       
     else
         for ind,k in pairs(keys) do
             local v=list[k]
             if not filter or k:find(filter,1,true) then
                 counter=counter+1
                 if counter==1 then account=k end
-                grid.add(hdl,{ind,k,v.user,v.url,v.lastlogin})
+                grid.add(hdl,{ind,v.alias or "",k,v.user,v.url,v.lastlogin})
                 if id=="-d" then
                     list[k]=nil
                 end
@@ -76,6 +105,13 @@ function login.login(db,id,filter)
 
     if id=="-d" then
         if account then list[account]=nil end
+        login.save()
+        return
+    elseif alias and counter==1 then
+        if alist[alias] then
+            list[alist[alias]].alias=nil
+        end    
+        list[account].alias=alias
         login.save()
         return
     end

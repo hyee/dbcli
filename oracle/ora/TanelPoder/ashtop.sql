@@ -1,19 +1,22 @@
-/*[[Get ASH top event. Usage: ashtop [-sql|-p|-ash|-dash|-snap] [group_columns] [sql_id] [from_time] [to_time(YYMMDDHH24MI)]
+/*[[
+  Get ASH top event. Usage: ashtop [-sql|-p|-none|-pr|-o|-plan|-ash|-dash|-snap|-f] [fields] [filters]
   Parameters:
-      group_columns: combination of columns concated by comma. Available columns: see v$active_session_history and dba_users
-      --[[
-  Templates:
-      &V7: sql={sql_id,event}, p={event,current_obj#,p3text}, plan={plan_hash,event,current_obj#,SQL_PLAN_LINE_ID}
-      &V9: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
-      &V8: {
-            sql_id={(trim(:V1) is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id)) and 
+      fields : combination of columns concated by comma. Available columns: see v$active_session_history and dba_users
+               available options: -sql,-p,-pr,-o,-plan,-none
+      filters: available options: -id, -snap, -f
+      Source : -ash: gv$active_Session_history    -dash: Dba_Hist_Active_Sess_History 
+    --[[
+      &fields: sql={,sql_id}, p={,p1,p2,p3,p3text},pr={,p1raw,p2raw,p3raw}, o={,obj},plan={,plan_hash,current_obj#,SQL_PLAN_LINE_ID} none={}
+      &View: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
+      &filter: {
+            id={(trim(:V1) is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id)) and 
                      sample_time+0 between nvl(to_date(nullif(:V2,'a'),'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(nullif(:V3,'a'),'YYMMDDHH24MISS'),sysdate)
                     &V4},
-            snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id)) &V3},
-            f={},
+            snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id)) &V3}
         }
+      &more_filter: default={1=1},f={}
       @counter: 11.2={, count(distinct sql_exec_id) "Execs"},10.1={}
-      ]]--
+    ]]--
   Examples:
       ora ashtop -sql               =  ora ashtop "sql_id,session_state,event"
       ora ashtop -p,qc_session_id   =  ora ashtop "session_state,event,current_obj#,p3text,qc_session_id"
@@ -29,8 +32,7 @@ SELECT * FROM (
       , LPAD(ROUND(RATIO_TO_REPORT(sum(c)) OVER () * 100)||'%',5,' ')||' |' "%This"
       &counter
       , nvl2(qc_session_id,'PARALLEL','SERIAL') "Parallel?"
-      , nvl(a.program#,u.username) program#
-      , &V7
+      , nvl(a.program#,u.username) program#,event &fields
       , round(SUM(CASE WHEN wait_class IS NULL           THEN c ELSE 0 END)) "CPU"
       , round(SUM(CASE WHEN wait_class ='User I/O'       THEN c ELSE 0 END)) "User I/O"
       , round(SUM(CASE WHEN wait_class ='Application'    THEN c ELSE 0 END)) "Application"
@@ -48,18 +50,18 @@ SELECT * FROM (
       , TO_CHAR(MIN(sample_time), 'YYYY-MM-DD HH24:MI:SS') first_seen
       , TO_CHAR(MAX(sample_time), 'YYYY-MM-DD HH24:MI:SS') last_seen
     FROM
-        (SELECT a.*,sql_plan_hash_value plan_hash,
+        (SELECT a.*,sql_plan_hash_value plan_hash,current_obj# obj,nvl2(CURRENT_FILE#,CURRENT_FILE#||','||current_block#,'') block,
             CASE WHEN a.session_type = 'BACKGROUND' OR REGEXP_LIKE(a.program, '.*\([PJ]\d+\)') THEN
               REGEXP_REPLACE(SUBSTR(a.program,INSTR(a.program,'(')), '\d', 'n')
             END program#,1 c
-           , TO_CHAR(CASE WHEN session_state = 'WAITING' THEN p1 ELSE null END, '0XXXXXXXXXXXXXXX') p1hex
-           , TO_CHAR(CASE WHEN session_state = 'WAITING' THEN p2 ELSE null END, '0XXXXXXXXXXXXXXX') p2hex
-           , TO_CHAR(CASE WHEN session_state = 'WAITING' THEN p3 ELSE null END, '0XXXXXXXXXXXXXXX') p3hex
-        FROM &V9 a) a
+           , TO_CHAR(CASE WHEN session_state = 'WAITING' THEN p1 ELSE null END, '0XXXXXXXXXXXXXXX') p1raw
+           , TO_CHAR(CASE WHEN session_state = 'WAITING' THEN p2 ELSE null END, '0XXXXXXXXXXXXXXX') p2raw
+           , TO_CHAR(CASE WHEN session_state = 'WAITING' THEN p3 ELSE null END, '0XXXXXXXXXXXXXXX') p3raw
+        FROM &View a) a
       , all_users u
     WHERE a.user_id = u.user_id (+)
-    AND   &V8 
-    GROUP BY nvl2(qc_session_id,'PARALLEL','SERIAL'),nvl(a.program#,u.username),&V7
-    ORDER BY Secs DESC nulls last, &V7
+    AND   &filter and (&more_filter) 
+    GROUP BY nvl2(qc_session_id,'PARALLEL','SERIAL'),nvl(a.program#,u.username),event &fields
+    ORDER BY Secs DESC nulls last &fields
 )
 WHERE ROWNUM <= 50;

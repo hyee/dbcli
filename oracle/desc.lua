@@ -96,7 +96,8 @@ local desc_sql={
             ORDER BY NO#]],
             [[SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/* FROM ALL_INDEXES WHERE owner=:1 and index_name=:2]]},
     TYPE=[[
-        SELECT /*INTERNAL_DBCLI_CMD*/ attr_no NO#,
+        SELECT /*INTERNAL_DBCLI_CMD*/ 
+               attr_no NO#,
                attr_name,
                attr_type_owner||NVL2(attr_type_owner,'.','')||
                attr_TYPE_OWNER || NVL2(attr_TYPE_OWNER, '.', '') ||
@@ -136,7 +137,8 @@ local desc_sql={
         WHERE  owner=:1  and type_name=:2
         ORDER BY NO#]],
     TABLE={[[
-        SELECT /*INTERNAL_DBCLI_CMD*/ COLUMN_ID NO#,
+        SELECT /*INTERNAL_DBCLI_CMD*/ --+no_merge(b) no_merge(a)
+               COLUMN_ID NO#,
                COLUMN_NAME NAME,
                DATA_TYPE_OWNER || NVL2(DATA_TYPE_OWNER, '.', '') ||
                CASE WHEN DATA_TYPE IN('CHAR',
@@ -197,10 +199,10 @@ local desc_sql={
                            LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 11, 2), 'XX') - 1, '00')) || ':' ||
                            LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 13, 2), 'XX') - 1, '00')))
                       ,  high_value) hi_v*/
-        FROM   all_tab_cols a,all_tables b
+        FROM   (select * from all_tab_cols a where a.owner=:1  and a.table_name=:2) a,
+               (select * from all_tables a where a.owner=:1  and a.table_name=:2) b
         WHERE  a.table_name=b.table_name(+)
         AND    a.owner=b.owner(+)
-        AND    upper(a.owner)=:1  and a.table_name=:2
         ORDER BY NO#]],
     [[
         SELECT /*INTERNAL_DBCLI_CMD*/ /*+ RULE */
@@ -229,7 +231,8 @@ local desc_sql={
                DECODE(R, 1, DEFERRED) DEFERRED,
                DECODE(R, 1, VALIDATED) VALIDATED,
                COLUMN_NAME
-        FROM   (SELECT A.CONSTRAINT_NAME,
+        FROM   (SELECT --+no_merge(a) ordered use_nl(a r c)
+                       A.CONSTRAINT_NAME,
                        A.CONSTRAINT_TYPE,
                        R.TABLE_NAME R_TABLE,
                        A.R_CONSTRAINT_NAME R_CONSTRAINT,
@@ -240,10 +243,9 @@ local desc_sql={
                        A.SEARCH_CONDITION,
                        c.COLUMN_NAME,
                        ROW_NUMBER() OVER(PARTITION BY A.CONSTRAINT_NAME ORDER BY C.COLUMN_NAME) R
-                FROM   all_constraints a, all_constraints R, ALL_CONS_COLUMNS C
-                WHERE  A.owner = :1
-                AND    A.TABLE_NAME = :2
-                AND    A.R_OWNER = R.OWNER(+)
+                FROM   (select * from all_constraints where owner=:1 and table_name=:2) a, 
+                       all_constraints R, ALL_CONS_COLUMNS C
+                WHERE  A.R_OWNER = R.OWNER(+)
                 AND    A.R_CONSTRAINT_NAME = R.CONSTRAINT_NAME(+)
                 AND    A.OWNER = C.OWNER(+)
                 AND    A.CONSTRAINT_NAME = C.CONSTRAINT_NAME(+)

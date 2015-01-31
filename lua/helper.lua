@@ -111,8 +111,24 @@ function helper.helper(cmd,...)
         return helper.jvm(...)
     elseif cmd=="-m" or cmd=="-M" then
         return helper.makejar(...)
-    elseif cmd=="-agent" then
-        return java.loader:showLoadedClasses()
+    elseif cmd=="-dump" then
+        local cmd=java.loader:dumpClass("dump")
+        print("Command: "..cmd);
+        return os.execute(cmd)
+    elseif cmd=="-verbose" then
+        local dest=select(1,...)
+        if not dest then
+            dest=env.WORK_DIR.."cache"..env.PATH_DEL.."verbose.log"
+            local f=io.open(dest)
+            local txt=f:read("*a")
+            f:close()
+            for v in txt:gmatch("Loaded%s+([^%s]+)[^\n\r]+%.jar") do
+                java.loader:copyClass(v)
+            end
+        else
+            java.loader:copyClass(dest)
+        end
+        return
     end
 
     local flag=(cmd=="-a" or cmd=="-A") and 1 or 0

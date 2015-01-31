@@ -107,6 +107,7 @@ function ansi.mask(codes,msg,continue)
 end
 
 function ansi.addCompleter(name,args)
+--[[
     if not reader then return end
     if type(name)~='table' then
         name={tostring(name)}        
@@ -123,6 +124,7 @@ function ansi.addCompleter(name,args)
             reader:addCompleter(c)
         end
     end
+--]]
 end
 
 function ansi.clear_sceen()

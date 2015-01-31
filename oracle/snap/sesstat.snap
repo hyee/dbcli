@@ -1,4 +1,4 @@
-/*[[Source: gv$sesstat. parameters: <sid>]]*/
+/*[[Source: gv$sesstat. parameters: <sid> <key>]]*/
 {
     sql=[[
     SELECT A.*,VALUE DELTA FROM(
@@ -29,7 +29,8 @@
         FROM   gv$sesstat
         JOIN   gv$statname
         USING  (inst_id, statistic#)
-        WHERE  VALUE > 0
+        WHERE  (VALUE > 0 OR :V2 IS NOT NULL)
+        AND    (:V2 IS NULL OR lower(name) like lower(:V2))
         AND    (:V1 IS NULL OR '' || sid = :V1)) A
     ]],
     agg_cols="Delta",

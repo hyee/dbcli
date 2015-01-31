@@ -25,6 +25,7 @@ function db_Types:get(position,typeName,res,conn)
         print('Column:'..position,"Datatype:"..self[typeName].name,value)
         return nil
     end
+    --print(typeName,self[typeName].handler)
     if value == nil then return value end
     if not self[typeName].handler then return value end
     return self[typeName].handler(value,'get',conn)
@@ -80,12 +81,21 @@ function db_Types:load_sql_types(className)
                     return java.cast(result,'java.sql.ResultSet')
                 end
             end},
+            
         [7]={getter='getCharacterStream',setter='setBytes',
              handler=function(result,action,conn)
                 if action=="get" then
                     return ""
                 end
             end},
+        --Oracle date    
+        [8]={getter='getString',setter='setString',
+             handler=function(result,action,conn)
+                if action=="get" then
+                    result= result:gsub('.0+$',''):gsub('%s0+:0+:0+$','')
+                    return result
+                end
+            end}
     }
     local m1={
         BOOLEAN  = m2[1],
@@ -100,7 +110,9 @@ function db_Types:load_sql_types(className)
         CLOB     = m2[4],
         NCLOB    = m2[4],
         BLOB     = m2[5],
-        CURSOR   = m2[6] 
+        CURSOR   = m2[6],
+        DATE     = m2[8],
+        TIMESTAMP= m2[8]
     }
     for k,v in java.fields(typ) do
         if type(k) == "string" and k:upper()==k then
@@ -257,11 +269,12 @@ function db_core:ctor()
     self.db_types:load_sql_types('java.sql.Types')
     self.__stmts = {}
     local help=[[
-        Login with saved accounts. Usage: login [ -d | -r |<number|account_name>] 
-            login              : list all saved a/c
-            login -r           : reload a/c info
-            login -d <num|key> : delete matched a/c
-            login <num|key>    : login a/c]]
+        Login with saved accounts. Usage: login [ -d | -r | -a |<number|account_name>] 
+            login                     : list all saved a/c
+            login -r                  : reload a/c info
+            login -d <num|name|alias> : delete matched a/c
+            login <num|name|alias>    : login a/c
+            login -a <alias> <id|name>: set alias to an existing account]]
     env.set_command(self,"login", help,self.login,false,3)
     set_command(self,"commit",nil,self.commit,false,1)
     set_command(self,"rollback",nil,self.rollback,false,1)
@@ -378,6 +391,15 @@ function db_core:parse(sql,params,prefix,prep)
     return prep,sql,params
 end
 
+local current_stmt
+
+function db_core:abort_statement()
+    print('abort_stmt')
+    if self.current_stmt then
+        self.current_stmt:cancel()
+        self.current_stmt=nil
+    end
+end
 
 function db_core:exec(sql,args)
     collectgarbage("collect")
@@ -410,7 +432,9 @@ function db_core:exec(sql,args)
     prep,sql,params=self:parse(sql,params)        
     self.__stmts[#self.__stmts+1]=prep
     prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
+    self.current_stmt=prep
     local success,is_query=pcall(prep.execute,prep)
+    self.current_stmt=nil
     if success==false then
         print('SQL: '..sql:gsub("\n","\n     "))
         error(is_query)
@@ -558,6 +582,7 @@ function db_core:onload()
     cfg.init("FEED",'on',set_param,"db.core","Detemine if need to print the feedback after db execution",'on,off')
     cfg.init("AUTOCOMMIT",'off',set_param,"db.core","Detemine if auto-commit every db execution",'on,off')
     cfg.init("SQLCACHESIZE",50,set_param,"db.core","Number of cached statements in JDBC",'5-500')
+    env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
 end 
 
 return db_core

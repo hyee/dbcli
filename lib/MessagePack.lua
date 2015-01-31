@@ -1,5 +1,5 @@
 --
--- lua-MessagePack : <http://fperrad.github.com/lua-MessagePack/>
+-- lua-MessagePack : <http://fperrad.github.io/lua-MessagePack/>
 --
 
 local r, jit = pcall(require, 'jit')
@@ -1111,9 +1111,9 @@ else
 end
 set_array'without_hole'
 
-m._VERSION = "0.3.1"
+m._VERSION = "0.3.2"
 m._DESCRIPTION = "lua-MessagePack : a pure Lua implementation"
-m._COPYRIGHT = "Copyright (c) 2012-2014 Francois Perrad"
+m._COPYRIGHT = "Copyright (c) 2012-2015 Francois Perrad"
 return m
 --
 -- This library is licensed under the terms of the MIT/X11 license,

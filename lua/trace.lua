@@ -49,7 +49,7 @@ function tracer.format_profile()
 end
 
 function tracer.enable(name,flag)
-    if name=="TRACE" then
+    if name=="ENVTRACE" then
         if tracer.status~=flag then        
             tracer.status=flag
             if flag=="on" then        

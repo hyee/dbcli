@@ -1,9 +1,14 @@
 /*[[
-Show execution plan. Usage: plan [-d -b] <sql_id> [<plan_hash_value>|<child_number>]
+Show execution plan. Usage: plan [-d|-b|-ol|-basic-adv] <sql_id> [<plan_hash_value>|<child_number>] [format1..n]
 --[[
-    @STAT: 10.1={ALLSTATS ALL OUTLINE -PROJECTION LAST}
-    &SRC: default={0}, d={1}
-    &SHOWPLAN: default={0}, b={1}
+    @STAT: 10.1={&DF &V3 &V4 &V5 &V6 &V7 &V8 &V9}
+    &V3: none={} ol={outline alias}
+    &DF: default={ALLSTATS ALL -PROJECTION LAST -ALIAS}, basic={BASIC}, adv={advanced}
+    &SRC: {
+            default={0}, # Both
+            d={1}        # Dictionary only
+          }
+    &binds: default={0}, b={1}
 ]]--
 ]]*/
 set PRINTSIZE 9999
@@ -11,7 +16,7 @@ set feed off
 
 VAR C CURSOR Binding Variables
 BEGIN
-    IF &SHOWPLAN=1 THEN
+    IF &binds=1 THEN
         open :c for 
         WITH b1 AS
          (SELECT *
@@ -47,7 +52,7 @@ END;
 /
 WITH sql_plan_data AS
  (SELECT /*+materialize*/*
-  FROM   (SELECT a.*,
+  FROM   (SELECT /*+no_merge(a)*/ a.*,
                  dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id) seq
           FROM   (SELECT id,
                          min(id) over() minid,
@@ -77,7 +82,7 @@ WITH sql_plan_data AS
                   WHERE  a.sql_id = :V1
                   AND    (:V2 is null or :V2 in(plan_hash_value,child_number))
                   UNION ALL
-                  SELECT id,
+                  SELECT /*+no_expand*/ id,
                          min(id) over() minid,
                          parent_id,
                          plan_hash_value,
@@ -89,7 +94,10 @@ WITH sql_plan_data AS
                          dbid
                   FROM   dba_hist_sql_plan a
                   WHERE  a.sql_id = :V1 
-                  AND    a.plan_hash_value = nvl(:V2,(select max(plan_hash_value) keep(dense_rank last order by snap_id) from dba_hist_sqlstat where sql_id=:V1)) 
+                  AND    a.plan_hash_value = nvl(:V2,(
+                     select --+index(c.sql(WRH$_SQLSTAT.SQL_ID)) index(c.sn)
+                            max(plan_hash_value) keep(dense_rank last order by snap_id) 
+                     from dba_hist_sqlstat c where sql_id=a.sql_id)) 
                   ) a
          WHERE flag>&src)
   WHERE  seq = 1),
@@ -117,7 +125,7 @@ qry AS
   WHERE  rownum<2),
 xplan AS
  (SELECT a.*
-  FROM   qry, TABLE(dbms_xplan.display_awr(sq, plan_hash, NULL, format)) a
+  FROM   qry, TABLE(dbms_xplan.display_awr(sq, plan_hash, inst_id, format)) a
   WHERE  flag = 2
   UNION ALL
   SELECT a.*
@@ -149,21 +157,18 @@ measures (plan_table_output,id,maxid,pid,oid,minid,
          rc)
 rules sequential order (
       inject[r] = case
-                         when id[cv()+1] = minid[cv()]
-                         or   id[cv()+3] = minid[cv()]
-                         or   id[cv()-1] = maxid[cv()]
-                         then rpad('-', csize[cv()]*2, '-')
-                         when id[cv()+2] = minid[cv()]
-                         then '|' || lpad('Pid |', csize[cv()]) || lpad('Ord |', csize[cv()])
-                         when id[cv()] is not null
-                         then '|' || lpad(pid[cv()] || ' |', csize[cv()]) || lpad(oid[cv()] || ' |', csize[cv()]) 
-                      end, 
+                      when plan_table_output[cv()] like '------%' then rpad('-', csize[cv()]*2, '-')
+                      when id[cv()+2] = minid[cv()]
+                      then '|' || lpad('Pid |', csize[cv()]) || lpad('Ord |', csize[cv()])
+                      when id[cv()] is not null
+                      then '|' || lpad(pid[cv()] || ' |', csize[cv()]) || lpad(oid[cv()] || ' |', csize[cv()]) 
+                  end, 
       plan_table_output[r] = case
-                                    when inject[cv()] like '---%'
-                                    then inject[cv()] || plan_table_output[cv()]
-                                    when inject[cv()] is not null
-                                    then regexp_replace(plan_table_output[cv()], '\|', inject[cv()], 1, 2)
-                                    else plan_table_output[cv()]
-                                 END
+                                 when inject[cv()] like '---%'
+                                 then inject[cv()] || plan_table_output[cv()]
+                                 when inject[cv()] is not null
+                                 then regexp_replace(plan_table_output[cv()], '\|', inject[cv()], 1, 2)
+                                 else plan_table_output[cv()]
+                             END
      )
 order  by r; 

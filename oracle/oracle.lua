@@ -84,7 +84,8 @@ function oracle:connect(conn_str)
                 password=pwd,
                 defaultRowPrefetch="100",
                 defaultLobPrefetchSize="32767",
-                useFetchSizeWithLongColumn='true'}
+                useFetchSizeWithLongColumn='true',
+                ['v$session.program']='SQL Developer'}
     local url, isdba=conn_desc:match('^(.*) as (%w+)$')
     args.url,args.internal_logon="jdbc:oracle:thin:@"..(url or conn_desc),isdba
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
@@ -107,6 +108,7 @@ function oracle:connect(conn_str)
     self:internal_call([[/*INTERNAL_DBCLI_CMD*/
         begin 
             execute immediate 'alter session set nls_date_format=''yyyy-mm-dd hh24:mi:ss''';
+            execute immediate 'alter session set statistics_level=all';
             :1:=dbms_utility.get_parameter_value('db_name',:2,:3);
         end;]],args)
     self.conn_str=packer.pack_str(conn_str)
@@ -133,38 +135,38 @@ function oracle:parse(sql,params)
     end
     
     sql=sql:gsub('%f[%w_%$:]:([%w_%$]+)',function(s)
-            local k,s=s:upper(),':'..s 
-            local v=params[k]
-            if not v then return s end
-            if p1[k] then return s:upper() end
+        local k,s=s:upper(),':'..s 
+        local v=params[k]
+        if not v then return s end
+        if p1[k] then return s:upper() end
 
-            local args={}
-            if type(v) =="table" then
-                return s
-            elseif type(v)=="number" then
-                args={self.db_types:set('NUMBER',v)}
-            elseif type(v)=="boolean" then
-                args={self.db_types:set('BOOLEAN',v)}
-            elseif v:sub(1,1)=="#" then        
-                local typ=v:upper():sub(2)
-                if not self.db_types[typ] then
-                    env.raise("Cannot find '"..typ.."' in java.sql.Types!")
-                end                                
-                args={'#',self.db_types[typ].id}
-            else
-                args={self.db_types:set('VARCHAR',v)}
-            end
-            
-            if args[1]=='#' then 
-                if counter<2 then counter=counter+2 end
-            else
-                if counter~=1 and counter~=3 then counter=counter+1 end
-            end
+        local args={}
+        if type(v) =="table" then
+            return s
+        elseif type(v)=="number" then
+            args={self.db_types:set('NUMBER',v)}
+        elseif type(v)=="boolean" then
+            args={self.db_types:set('BOOLEAN',v)}
+        elseif v:sub(1,1)=="#" then        
+            local typ=v:upper():sub(2)
+            if not self.db_types[typ] then
+                env.raise("Cannot find '"..typ.."' in java.sql.Types!")
+            end                                
+            args={'#',self.db_types[typ].id}
+        else
+            args={self.db_types:set('VARCHAR',v)}
+        end
+        
+        if args[1]=='#' then 
+            if counter<2 then counter=counter+2 end
+        else
+            if counter~=1 and counter~=3 then counter=counter+1 end
+        end
 
-            p1[k]=args
+        p1[k]=args
 
-            return s:upper()
-        end)
+        return s:upper()
+    end)
     
     if counter<0 or counter==3 then return self.super.parse(self,sql,params,':') end
     local prep=java.cast(self.conn:prepareCall(sql,1005,1007),"oracle.jdbc.OracleCallableStatement")

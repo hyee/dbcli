@@ -108,5 +108,5 @@ local function explain(fmt,sql)
         oracle.C.tracefile.get_trace('default')
     end
 end
-env.set_command(nil,"XPLAN","Explain SQL execution plan. Usage: xplan [-format|-10053] <DML statement|SQL ID>",explain,true,3)
+env.set_command(nil,{"XPLAIN","XPLAN"},"Explain SQL execution plan. Usage: xplan [-format|-10053] <DML statement|SQL ID>",explain,true,3)
 return explain

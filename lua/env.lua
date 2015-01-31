@@ -14,6 +14,24 @@ local env=setmetatable({},{
 })
 _G['env']=env
 
+
+local function abort_thread()
+    if coroutine.running () then
+        debug.sethook()
+        print(env.CURRENT_THREAD)
+        --print(debug.traceback())
+    end
+end
+
+_G['TRIGGER_ABORT']=function()
+    env.safe_call(env.event and env.event.callback,"ON_COMMAND_ABORT")
+    if env.CURRENT_THREAD then
+        --print(table.dump(env.CURRENT_THREAD))
+        debug.sethook(abort_thread,"rl")
+        env.CURRENT_THREAD=nil
+    end
+end
+
 local mt = getmetatable(_G)
 
 if mt == nil then
@@ -265,7 +283,12 @@ function env.exec_command(cmd,params)
             writer:print(env.ansi.mask("NOR","")) 
             writer:flush()
         end
-        local res = {pcall(func,table.unpack(args))}
+        
+        env.CURRENT_THREAD=coroutine.create(func)
+        local res={coroutine.resume(env.CURRENT_THREAD,table.unpack(args))}
+        env.CURRENT_THREAD=nil
+
+        --local res = {pcall(func,table.unpack(args))}
         if not res[1] then
             result=res
             local msg={} 
@@ -488,6 +511,7 @@ function env.onload(...)
                 table.new=require("table.new")
                 table.clear=require("table.clear")
                 jit.profile=require("jit.profile")
+                jit.util=require("jit.util")
             end
         end 
     end
@@ -548,7 +572,7 @@ function env.load_data(file)
     local txt=f:read("*a")    
     f:close()
     if not txt or txt:gsub("[\n\t%s\r]+","")=="" then return {} end
-    env.MessagePack.set_array("always_as_map")
+    --env.MessagePack.set_array("always_as_map")
     return env.MessagePack.unpack(txt)
 end
 

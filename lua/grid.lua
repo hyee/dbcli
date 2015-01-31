@@ -94,12 +94,12 @@ end
 
 function grid.tostring(rows,printhead,col_del,row_del,rows_limit)
     if grid.pivot ~= 0 and printhead~=false then
+        rows=grid.show_pivot(rows)
         if math.abs(grid.pivot)==1 then 
             printhead=false 
         else
             rows_limit=rows_limit and rows_limit+2
         end
-        rows=grid.show_pivot(rows)        
     end
     rows=grid.format(rows,printhead,col_del,row_del)
     rows_limit=rows_limit and math.min(rows_limit,#rows) or #rows
@@ -198,7 +198,7 @@ function grid.show_pivot(rows,col_del)
             table.insert(r[k],rows[i][keys[v]])
         end
     end
-
+    
     if pivot==2 and grid.pivot>0 then
         for i=1,#r,2 do
             if r[i+1] then

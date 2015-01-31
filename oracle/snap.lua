@@ -176,8 +176,10 @@ function snap.next_exec()
         local succ,rtn,pos,key,value
         for k=#cos,1,-1 do
             succ,name,pos,key,row=coroutine.resume(cos[k])
+
             local agg_idx=name and cmds[name].agg_idx
             if not row then
+                --print(succ,name,pos,key,row,cmds.rs1,cmds.rs2)
                 table.remove(cos,k)                                
             else
                 if not result[name][key] then result[name][key]={} end

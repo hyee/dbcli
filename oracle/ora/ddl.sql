@@ -46,41 +46,58 @@ BEGIN
             IF part2 IS NULL THEN
                 part2 := part2_temp;
             END IF;
+        
             EXIT;
         EXCEPTION
             WHEN OTHERS THEN
                 NULL;
         END;
     END LOOP;
-    if obj_type is null then
+
+    BEGIN
+        EXECUTE IMMEDIATE q'[SELECT VIEW_DEFINITION FROM V$FIXED_VIEW_DEFINITION WHERE VIEW_NAME=regexp_replace(:1,'^G?V\_','GV') AND 'SYS'=:2 AND 'VIEW'=:3]'
+            INTO txt USING part1, SCHEM, obj_type;
+        txt:=regexp_replace(txt,' from ',chr(10)||'from ',1,1);
+        txt:=regexp_replace(txt,',[ ]+',',');        
+    EXCEPTION
+        WHEN OTHERS THEN NULL;
+    END;
+
+    IF obj_type IS NULL THEN
         :text := 'Cannot identify the target object!';
-    else
-        DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'SQLTERMINATOR', TRUE);
-        DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'SEGMENT_ATTRIBUTES', FALSE);
-        DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'STORAGE', FALSE);
-        DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'TABLESPACE', TRUE);
-        DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'SPECIFICATION', TRUE);
-        DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'BODY', TRUE);
-        DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'CONSTRAINTS', TRUE);
-        DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'CONSTRAINTS_AS_ALTER', FALSE);
-        --DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'PARTITIONING', FALSE);
-        txt := dbms_metadata.get_ddl(REPLACE(obj_type, ' ', '_'), part1, SCHEM);
-        IF obj_type='TABLE' THEN
-            BEGIN
-                dbms_lob.append(txt,dbms_metadata.GET_DEPENDENT_DDL('INDEX', part1, SCHEM));
-            EXCEPTION WHEN OTHERS THEN NULL;
-            END;
-        END IF;
-        DBMS_METADATA.SET_TRANSFORM_PARAM(v_default,'DEFAULT');
-        txt := regexp_replace(txt,'\('||chr(9),'('||chr(10)||chr(9),1,1);
-        IF obj_type in ('TABLE','INDEX') THEN
-            txt := regexp_replace(txt,'"([A-Z0-9$#\_]+)"','\1');
+    ELSE
+        IF txt IS NULL THEN
+            DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'SQLTERMINATOR', TRUE);
+            DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'SEGMENT_ATTRIBUTES', FALSE);
+            DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'STORAGE', FALSE);
+            DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'TABLESPACE', TRUE);
+            DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'SPECIFICATION', TRUE);
+            DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'BODY', TRUE);
+            DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'CONSTRAINTS', TRUE);
+            DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'CONSTRAINTS_AS_ALTER', FALSE);
+            --DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'PARTITIONING', FALSE);
+            txt := dbms_metadata.get_ddl(REPLACE(obj_type, ' ', '_'), part1, SCHEM);
+            IF obj_type = 'TABLE' THEN
+                BEGIN
+                    --dbms_lob.append(txt,dbms_metadata.GET_DEPENDENT_DDL('INDEX', part1, SCHEM));
+                    NULL;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        NULL;
+                END;
+            END IF;
+            DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'DEFAULT');
+            txt := regexp_replace(txt, '\(' || chr(9), '(' || chr(10) || chr(9), 1, 1);
+            IF obj_type IN ('TABLE', 'INDEX') THEN
+                txt := regexp_replace(txt, '"([A-Z0-9$#\_]+)"', '\1');
+            END IF;
         END IF;
         :text := txt;
-        :dest := part1||'.sql';
-    end if;
+        :dest := part1 || '.sql';
+    END IF;
 END;
 /
 
 print text
+PRO 
 save text dest

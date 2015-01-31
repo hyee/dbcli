@@ -98,25 +98,25 @@ xplan AS
   WHERE  flag = 1),
 xplan_data AS
  (SELECT /*+ ordered use_nl(o) */
-   rownum AS r,
-   x.plan_table_output AS plan_table_output,
-   o.id,
-   o.pid,
-   o.oid,
-   o.maxid,
-   regexp_replace(nvl(cpu,0),'^0$',' ') CPU,
-   regexp_replace(nvl(io,0),'^0$',' ') io,
-   regexp_replace(nvl(cc,0),'^0$',' ') cc,
-   regexp_replace(nvl(cl,0),'^0$',' ') cl,
-   regexp_replace(nvl(app,0),'^0$',' ') app,
-   regexp_replace(nvl(oth,0),'^0$',' ') oth,
-   regexp_replace(nvl(px_hits,0),'^0$',' ') px_hits,
-   decode(nvl(hits,0),0,' ',hits||'('||round(100*ratio_to_report(hits) over())||'%)') hits,   
-   regexp_replace(nvl(exes,0),'^0$',' ') exes,
-   regexp_replace(nvl(mins,0),'^0$',' ') mins,   
-   nvl(top_event,' ') top_event,
-   p.phv,
-   COUNT(*) over() AS rc
+       rownum AS r,
+       x.plan_table_output AS plan_table_output,
+       o.id,
+       o.pid,
+       o.oid,
+       o.maxid,
+       regexp_replace(nvl(cpu,0),'^0$',' ') CPU,
+       regexp_replace(nvl(io,0),'^0$',' ') io,
+       regexp_replace(nvl(cc,0),'^0$',' ') cc,
+       regexp_replace(nvl(cl,0),'^0$',' ') cl,
+       regexp_replace(nvl(app,0),'^0$',' ') app,
+       regexp_replace(nvl(oth,0),'^0$',' ') oth,
+       regexp_replace(nvl(px_hits,0),'^0$',' ') px_hits,
+       decode(nvl(hits,0),0,' ',hits||'('||round(100*ratio_to_report(hits) over())||'%)') hits,   
+       regexp_replace(nvl(exes,0),'^0$',' ') exes,
+       regexp_replace(nvl(mins,0),'^0$',' ') mins,   
+       nvl(top_event,' ') top_event,
+       p.phv,
+      COUNT(*) over() AS rc
   FROM   (SELECT DISTINCT phv FROM ordered_hierarchy_data) p
   CROSS  JOIN xplan x
   LEFT JOIN ash_data o
@@ -143,9 +143,7 @@ measures (plan_table_output,
          rc)
 rules sequential order (
       inject[phv,r] = case
-                         when id[cv(),cv()+1] = 0
-                         or   id[cv(),cv()+3] = 0
-                         or   id[cv(),cv()-1] = maxid[cv(),cv()-1]
+                         when plan_table_output[cv()] like '------%' then rpad('-', csize[cv()]*2, '-')
                          then rpad('-', sevent[cv(),cv()]+csize[cv(),cv()]+spx_hit[cv(),cv()]++shit[cv(),cv()]+sexe[cv(),cv()]+smin[cv(),cv()]+31, '-')
                          when id[cv(),cv()+2] = 0
                          then '|'  || lpad('Ord |', csize[cv(),cv()])--
