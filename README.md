@@ -1,6 +1,6 @@
 Licence
 ============
-MIT licence
+MIT license
 
 Description
 =============
@@ -25,7 +25,7 @@ To avoid the word wrap in the terminal window which affects the print layout, fo
 2. In the "Font" tab, use Roster font with the size is 6 X 12<br>
 
 ###Configure enviroment
-Before running dbcli, make sure that you have installed JRE 1.7+(32bit) in your local PC.<br>
+Before running dbcli, make sure that you have installed JRE 1.7+ in your local PC.<br>
 Open dbcli.bat with text editor, modify the "JRE_HOME" and "TNS_ADM" variables as your PC's situation, then click the bat to run.<br>
 It also support command line options with "<command>=<args>" format, all available options can be found by typing "help":<br>
 
