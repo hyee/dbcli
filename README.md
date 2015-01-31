@@ -1,11 +1,11 @@
-Licence
+License
 ============
 MIT license
 
 Description
 =============
 
-dbcli is a database command line utility that developed with lua language, and bridge JDBC in order to operate database.<br> 
+DBCLI is a database command line utility that developed with lua language, and bridge JDBC in order to operate database.<br> 
 It is designed to support multiple databases, and includes 2 type of modules, one is the public functions, and another one is the database-specific functions.<br>
 Currently only public and Oracle functions are developed, and only support windows platform.<br><br>
 
@@ -46,6 +46,7 @@ Below is the list:<br>
     jnlua       : https://code.google.com/p/jnlua/
     jline2      : https://github.com/jline/jline2
     lpeg        : http://www.inf.puc-rio.br/~roberto/lpeg/
+    ConsoleZ    : https://github.com/cbucher/console
     MessagePack : https://github.com/fperrad/lua-MessagePack(pure lua)
 
 

@@ -21,10 +21,17 @@ del /s "%target%\*.so"
 del /s "%target%\*.ddl"
 del /s "%target%\*.bat"
 del /s "%target%\*.exe"
-del /s "%target%\*.mnk"
+rmdir /s /q "%target%\src"
+rmdir /s /q "%target%\lua"
+rmdir /s /q "%target%\lib"
+rmdir /s /q "%target%\oracle"
+rmdir /s /q "%target%\bin"
+rmdir /s /q "%target%\jre"
+rmdir /s /q "%target%\docs"
 
 xcopy  . "%target%" /S /Y  /exclude:.\src\excludes.txt
-XCOPY /S /Y .\src "%target%\src"
+
+if %copyflag%==1 XCOPY /S /Y .\src "%target%\src"
 
 if %copyflag%==2 goto :end
 set copyflag=2
@@ -35,9 +42,8 @@ goto start
 :end
 xcopy /S /Y .\jre %target%\jre
 cd /d %target%
-cd ..
-mkdir dbcli.wiki
-del dbcli.wiki\*.zip
-zip -r -9 -q dbcli.wiki\dbcli_compat.zip .\dbcli_compat\*
+del ..\dbcl*.zip
+rmdir /S /Q src 
+zip -r -9 -q ..\dbcli.zip *
 
 pause
