@@ -1,4 +1,4 @@
-
+2015-01-31: + DBCLI now supports both 32 & 64 bit JVM.
 2015-01-31: * move Loader.class into dbcli.jar, and dbcli.bat is changed accordingly
 2015-01-31: * small fixes on 'ora','db_core' and 'grid' modules
 2015-01-31: + new command "ora latchprof"(Tanel Poder)

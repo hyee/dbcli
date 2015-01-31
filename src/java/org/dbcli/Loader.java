@@ -6,6 +6,7 @@ import jline.console.ConsoleReader;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -29,6 +30,8 @@ public class Loader {
 
     public Loader() {
         try {
+            File f = new File(Loader.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            root= f.getParentFile().getParent();
             reader = new ConsoleReader();
             Class clz = reader.getClass();
             printer = new PrintWriter((Writer) reader.getOutput());
@@ -53,7 +56,7 @@ public class Loader {
         method.setAccessible(true);
         method.invoke(classLoader, new Object[]{url});
         System.setProperty("java.class.path",System.getProperty("java.class.path")
-                +(System.getProperty("sun.desktop").equals("windows")?";":":")+file.replace(root,"."));
+                +File.pathSeparator+file.replace(root,"."));
     }
 
     public void copyClass(String className) throws Exception{
@@ -86,8 +89,6 @@ public class Loader {
         }
         String separator = File.separator;
 
-        File f = new File(Loader.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-        root= f.getParentFile().getParent();
         String input = root + separator + "lua" + separator + "input.lua";
         StringBuilder sb = new StringBuilder();
         String readline = "";
@@ -107,9 +108,51 @@ public class Loader {
         System.gc();
     }
 
+    public static void setLibrary(String path) throws Exception {
+        System.setProperty("java.library.path", path);
+        Field fieldSysPath = ClassLoader.class.getDeclaredField( "sys_paths" );
+        fieldSysPath.setAccessible( true );
+        fieldSysPath.set( null, null);
+
+    }
+
+    public static void addLibrary(String s,Boolean isReplace) throws IOException {
+        try {
+            Field field = ClassLoader.class.getDeclaredField("usr_paths");
+            field.setAccessible(true);
+            if(!isReplace) {
+                String path="";
+                String[] paths = (String[]) field.get(null);
+                for (int i = 0; i < paths.length; i++) {
+                    if (s.equals(paths[i])) return;
+                    path=path+paths[i]+File.pathSeparator;
+                }
+                String[] tmp = new String[paths.length + 1];
+                System.arraycopy(paths, 0, tmp, 0, paths.length);
+                tmp[paths.length] = s;
+                field.set(null, tmp);
+                path=path+s;
+                System.setProperty("java.library.path", path);
+            } else {
+                field.set(null, new String[]{s});
+                System.setProperty("java.library.path", s);
+            }
+        } catch (IllegalAccessException e) {
+            throw new IOException("Failed to get permissions to set library path");
+        } catch (NoSuchFieldException e) {
+            throw new IOException("Failed to get field handle to set library path");
+        }
+    }
+
+
     public static void main(String args[]) throws Exception {
-        System.loadLibrary("lua5.1");
         Loader l = new Loader();
+        String path=root+File.separator+"lib";
+        if(System.getProperty("sun.arch.data.model").equals("64"))
+            setLibrary(path + File.separator + "x64");
+        else
+            setLibrary(path);
+        System.loadLibrary("lua5.1");
         while (ReloadNextTime) loadLua(l, args);
     }
 }
