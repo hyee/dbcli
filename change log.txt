@@ -1,3 +1,10 @@
+
+2015-01-31: * move Loader.class into dbcli.jar, and dbcli.bat is changed accordingly
+2015-01-31: * small fixes on 'ora','db_core' and 'grid' modules
+2015-01-31: + new command "ora latchprof"(Tanel Poder)
+2015-01-31: + new command "ora block2rowid" and "ora io"
+2015-01-24: * performance tuning on 'ora actives' command
+2015-01-24: + Additional '-a' option on 'login' command, to set alias name to an existing account 
 2015-01-23: Command 'ora deptree' to show dependence tree
 2015-01-23: performance tuning on 'desc' command
 2015-01-13: Updates on some ora scripts; add "Save" command
