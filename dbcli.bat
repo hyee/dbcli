@@ -5,8 +5,8 @@ rem set font and background color
 color 0A
 rem color F0
 
-rem SET JRE_HOME=D:\Java\jre\bin
-SET JRE_HOME=D:\JDKx64\jre\bin
+SET JRE_HOME=D:\Java\jre\bin
+rem SET JRE_HOME=D:\JDKx64\jre\bin
 SET TNS_ADM=d:\Oracle\product\network\admin
 
 If not exist "%TNSADM%\tnsnames.ora" if Defined ORACLE_HOME (set TNS_ADM=%ORACLE_HOME%\network\admin) 

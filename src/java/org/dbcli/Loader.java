@@ -108,34 +108,28 @@ public class Loader {
         System.gc();
     }
 
-    public static void setLibrary(String path) throws Exception {
-        System.setProperty("java.library.path", path);
-        Field fieldSysPath = ClassLoader.class.getDeclaredField( "sys_paths" );
-        fieldSysPath.setAccessible( true );
-        fieldSysPath.set( null, null);
-
-    }
-
     public static void addLibrary(String s,Boolean isReplace) throws IOException {
         try {
             Field field = ClassLoader.class.getDeclaredField("usr_paths");
             field.setAccessible(true);
             if(!isReplace) {
-                String path="";
+                String path="s";
                 String[] paths = (String[]) field.get(null);
                 for (int i = 0; i < paths.length; i++) {
                     if (s.equals(paths[i])) return;
-                    path=path+paths[i]+File.pathSeparator;
+                    path=path+File.pathSeparator+paths[i];
                 }
                 String[] tmp = new String[paths.length + 1];
                 System.arraycopy(paths, 0, tmp, 0, paths.length);
                 tmp[paths.length] = s;
                 field.set(null, tmp);
-                path=path+s;
                 System.setProperty("java.library.path", path);
             } else {
-                field.set(null, new String[]{s});
                 System.setProperty("java.library.path", s);
+                //set sys_paths to null so that java.library.path will be reevalueted next time it is needed
+                final Field sysPathsField = ClassLoader.class.getDeclaredField("sys_paths");
+                sysPathsField.setAccessible(true);
+                sysPathsField.set(null, null);
             }
         } catch (IllegalAccessException e) {
             throw new IOException("Failed to get permissions to set library path");
@@ -149,9 +143,9 @@ public class Loader {
         Loader l = new Loader();
         String path=root+File.separator+"lib";
         if(System.getProperty("sun.arch.data.model").equals("64"))
-            setLibrary(path + File.separator + "x64");
+            addLibrary(path + File.separator + "x64",false);
         else
-            setLibrary(path);
+            addLibrary(path,false);
         System.loadLibrary("lua5.1");
         while (ReloadNextTime) loadLua(l, args);
     }

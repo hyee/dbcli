@@ -21,13 +21,6 @@ del /s "%target%\*.so"
 del /s "%target%\*.ddl"
 del /s "%target%\*.bat"
 del /s "%target%\*.exe"
-rmdir /s /q "%target%\src"
-rmdir /s /q "%target%\lua"
-rmdir /s /q "%target%\lib"
-rmdir /s /q "%target%\oracle"
-rmdir /s /q "%target%\bin"
-rmdir /s /q "%target%\jre"
-rmdir /s /q "%target%\docs"
 
 xcopy  . "%target%" /S /Y  /exclude:.\src\excludes.txt
 
