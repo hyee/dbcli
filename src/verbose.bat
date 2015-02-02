@@ -1,2 +1,2 @@
-SET OTHER_LIB=; -verbose:class
-"%~dp0\..\dbcli.bat" 2>..\cache\verbose.log
+SET OTHER_LIB=; -verbose:class -XX:-TraceClassUnloading
+"%~dp0\..\dbcli.bat" >..\cache\verbose.log
