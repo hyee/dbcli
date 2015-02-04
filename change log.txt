@@ -1,11 +1,19 @@
-2015-01-31: + DBCLI now supports both 32 & 64 bit JVM.
+2015-02-01: "ctrl + d" to abort inputting command 
+2015-02-01: + supports "loadtrace alert" to extract alert log in local instance, supports extracting a specific MB data from the trace file
+2015-02-01: ! fixes on awrdump/addmdump/ashdump commands
+2015-02-01: * move 32 bit dlls into "x86" directory
+2015-02-01: ! fixes on "login" command when operate in multiple dbcli instances, the login infomation does not sync before the update.
+2015-02-01: - remove "login -r" option, the login information will automatically sync instead
+2015-02-01: ! fixes on "ora deptree"
+2015-02-01: + "-m" option for "ora actives" to show the resource usages of the active SQLs
+2015-01-31: + dbcli now supports both 32 & 64 bit JVM.
 2015-01-31: * move Loader.class into dbcli.jar, and dbcli.bat is changed accordingly
 2015-01-31: * small fixes on 'ora','db_core' and 'grid' modules
 2015-01-31: + new command "ora latchprof"(Tanel Poder)
 2015-01-31: + new command "ora block2rowid" and "ora io"
 2015-01-24: * performance tuning on 'ora actives' command
-2015-01-24: + Additional '-a' option on 'login' command, to set alias name to an existing account 
-2015-01-23: Command 'ora deptree' to show dependence tree
+2015-01-24: + Additional '-a' option on 'login' command, to set alias name of an existing account 
+2015-01-23: command 'ora deptree' to show dependence tree
 2015-01-23: performance tuning on 'desc' command
 2015-01-13: Updates on some ora scripts; add "Save" command
 2014-11-22: update on 'snap" command to support 'snap begin/end'

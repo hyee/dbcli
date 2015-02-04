@@ -228,7 +228,8 @@ function snap.next_exec()
                     break
                 end
             end
-            if counter==0 then table.remove(data,i) end
+            --if dalta value is 0, then remove the data
+            --if counter==0 then table.remove(data,i) end
         end
 
         

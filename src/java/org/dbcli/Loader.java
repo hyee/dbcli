@@ -10,14 +10,19 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.sql.CallableStatement;
+import java.util.concurrent.*;
 
 
 public class Loader {
-    public static LuaState lua;
-    public static PrintWriter printer;
-    public static ConsoleReader reader;
     public static Boolean ReloadNextTime = true;
-    public static String root="";
+    static LuaState lua;
+    static PrintWriter printer;
+    static ConsoleReader reader;
+    static String root="";
+    Future<?> task;
+    ExecutorService executor = Executors.newFixedThreadPool(1);
+
     private class KeyListner implements ActionListener {
         @Override
         public void actionPerformed(ActionEvent e) {
@@ -25,14 +30,13 @@ public class Loader {
             lua.call(0, 0);
             //System.exit(0);
         }
-
     }
 
     public Loader() {
         try {
             File f = new File(Loader.class.getProtectionDomain().getCodeSource().getLocation().toURI());
             root= f.getParentFile().getParent();
-            reader = new ConsoleReader();
+            reader = new ConsoleReader(System.in,System.out);
             Class clz = reader.getClass();
             printer = new PrintWriter((Writer) reader.getOutput());
             // reader.setCompletionHandler(null);
@@ -100,6 +104,7 @@ public class Loader {
         br.close();
         //System.out.println(sb.toString());
         lua.load(sb.toString(), input);
+        //lua.getTop();
         for (int i = 0; i < args.length; i++) lua.pushString(args[i]);
         ReloadNextTime = false;
         lua.call(args.length, 0);
@@ -138,14 +143,33 @@ public class Loader {
         }
     }
 
+    public void dbCall(CallableStatement p) throws InterruptedException {
+        System.out.println("Calling ...");
+        if(task ==null) return;
+
+        task = executor.submit(new DbExecutor(p, new DbCallback() {
+            @Override
+            public void  complete(String result) {
+                System.out.println("Callback ..."+task.isDone()+" "+result);
+                System.out.println("Callback1 ...");
+                lua.getGlobal("ON_STATEMENT_COMPLETE");
+                lua.pushString(result);
+                System.out.println("Callback2 ...");
+                lua.call(1,0);
+                System.out.println("Callback3 ...");
+                task=null;
+            }
+        }));
+
+    }
 
     public static void main(String args[]) throws Exception {
         Loader l = new Loader();
-        String path=root+File.separator+"lib";
+        String path=root+File.separator+"lib" + File.separator;
         if(System.getProperty("sun.arch.data.model").equals("64"))
-            addLibrary(path + File.separator + "x64",false);
+            addLibrary(path + "x64",true);
         else
-            addLibrary(path,false);
+            addLibrary(path + "x86",true);
         System.loadLibrary("lua5.1");
         while (ReloadNextTime) loadLua(l, args);
     }

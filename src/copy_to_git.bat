@@ -10,17 +10,17 @@ set target=D:\green\github\dbcli
 cd "%~dp0"
 cd ..
 mkdir "%target%"
-del /s "%target%\*.lua"
-del /s "%target%\*.jar"
-del /s "%target%\*.sql"
-del /s "%target%\*.chm"
-del /s "%target%\*.bat"
-del /s "%target%\*.txt"
-del /s "%target%\*.bak"
-del /s "%target%\*.so"
-del /s "%target%\*.ddl"
-del /s "%target%\*.bat"
-del /s "%target%\*.exe"
+del /s /f "%target%\*.lua"
+del /s /f "%target%\*.jar"
+del /s /f "%target%\*.sql"
+del /s /f "%target%\*.chm"
+del /s /f "%target%\*.bat"
+del /s /f "%target%\*.txt"
+del /s /f "%target%\*.bak"
+del /s /f "%target%\*.so"
+del /s /f "%target%\*.dll"
+del /s /f "%target%\*.bat"
+del /s /f "%target%\*.exe"
 
 xcopy  . "%target%" /S /Y  /exclude:.\src\excludes.txt
 
@@ -35,7 +35,7 @@ goto start
 :end
 xcopy /S /Y .\jre %target%\jre
 cd /d %target%
-del ..\dbcl*.zip
+del ..\dbcli.zip
 rmdir /S /Q src 
 zip -r -9 -q ..\dbcli.zip *
 

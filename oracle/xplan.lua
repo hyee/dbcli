@@ -1,7 +1,7 @@
 local db,cfg=env.oracle,env.set
 local function explain(fmt,sql)
     local ora=db.C.ora
-    local default_fmt,e10053="ALLSTATS ALL -PROJECTION OUTLINE"
+    local default_fmt,e10053="ALLSTATS ALL -PROJECTION OUTLINE REMOTE"
     if not fmt then return end
     if fmt:sub(1,1)=='-' then        
         if not sql then return end

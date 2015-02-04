@@ -24,6 +24,7 @@ function login.capture(db,url,props)
             return ''
         end
     end)
+    login.load()
     url=(props.user..url):lower()    
     if not login.list[typ] then login.list[typ]={} end
     local list=login.list[typ]
@@ -37,16 +38,14 @@ function login.login(db,id,filter)
     if cfg.get("SaveLogin")=="off" then 
         return print("Cannot login because the 'SaveLogin' option is 'off'!")
     end
+    
+    login.load()
     local typ=db.type or "default"
     local list=login.list[typ]
     local alias,alist=nil,{}
 
     id=(id or ""):lower()
     if id=="" then id= nil end
-
-    if id=="-r" then
-        return login.load()
-    end
 
     if not list then
         return print("No available logins for '"..(id or "").."' in group '"..typ.."'.")

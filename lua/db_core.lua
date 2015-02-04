@@ -269,9 +269,8 @@ function db_core:ctor()
     self.db_types:load_sql_types('java.sql.Types')
     self.__stmts = {}
     local help=[[
-        Login with saved accounts. Usage: login [ -d | -r | -a |<number|account_name>] 
+        Login with saved accounts. Usage: login [ -d | -a |<number|account_name>] 
             login                     : list all saved a/c
-            login -r                  : reload a/c info
             login -d <num|name|alias> : delete matched a/c
             login <num|name|alias>    : login a/c
             login -a <alias> <id|name>: set alias to an existing account]]
@@ -394,7 +393,7 @@ end
 local current_stmt
 
 function db_core:abort_statement()
-    print('abort_stmt')
+    --print('abort_stmt')
     if self.current_stmt then
         self.current_stmt:cancel()
         self.current_stmt=nil
@@ -437,6 +436,8 @@ function db_core:exec(sql,args)
     self.current_stmt=nil
     if success==false then
         print('SQL: '..sql:gsub("\n","\n     "))
+        pcall(prep,close,prep)
+        table.remove(self.__stmts)
         error(is_query)
     end
 

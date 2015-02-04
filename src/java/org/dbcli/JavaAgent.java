@@ -24,8 +24,7 @@ public class JavaAgent implements ClassFileTransformer {
             re = Pattern.compile("/([^/]+?)\\.(jar|zip)");
             File f = new File(JavaAgent.class.getProtectionDomain().getCodeSource().getLocation().toURI());
             destFolder = f.getParentFile().getParent() + separator + "dump" + separator;
-        } catch (URISyntaxException localURISyntaxException) {
-        }
+        } catch (URISyntaxException localURISyntaxException) {}
     }
 
     public static void premain(String agentArgs, Instrumentation inst) throws Exception {

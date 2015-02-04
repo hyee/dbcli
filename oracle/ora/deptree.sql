@@ -46,20 +46,18 @@ DECLARE
             dbms_lob.writeappend(v_result, LENGTHB(v_stack), v_stack);
         END IF;
         v_counter := v_counter + 1;
-        IF NOT v_founds.exists(obj) /*OR '&F1'!='p_obj#'*/ THEN
+        IF NOT v_founds.exists(obj) THEN
             v_founds(obj) := 1;
-            IF '&F1'='p_obj#' THEN
-                SELECT /*+ordered index(dep1) use_nl(dep1 o o1)*/
-                       MAX(o.obj#) INTO v_bdy
-                FROM   sys.dependency$ dep1, sys.obj$ o, sys.obj$ o1
-                WHERE  dep1.d_obj# = o.obj#
-                AND    dep1.p_obj# = o1.obj#
-                AND    o.name = o1.name
-                AND    o.owner# = o1.owner#
-                AND    o1.type# IN (9, 13)
-                AND    o.type# IN (11, 14)
-                AND    dep1.p_obj# = obj;
-            END IF;
+            SELECT /*+ordered index(dep1) use_nl(dep1 o2 o1)*/
+                   MAX(&F2) INTO v_bdy
+            FROM   sys.dependency$ dep1, sys.obj$ o2, sys.obj$ o1
+            WHERE  dep1.d_obj# = o2.obj#
+            AND    dep1.p_obj# = o1.obj#
+            AND    o2.name  = o1.name
+            AND    o2.owner# = o1.owner#
+            AND    o1.type# IN (9, 13)
+            AND    o2.type# IN (11, 14)
+            AND    dep1.&F1 = obj;
                  
             SELECT /*+index(dep)*/ &F1,1, to_number(null) con
             BULK   COLLECT INTO  v_list,v_lv,v_con
@@ -87,13 +85,13 @@ BEGIN
     INTO   v_objid, v_owner
     FROM   (SELECT --+no_expand
                    object_id o, owner
-            FROM   ALL_OBJECTS
+            FROM   DBA_OBJECTS
             WHERE  owner IN
                    (decode(instr(v_object, '.'), 0, USER, regexp_substr(v_object, '^[^\.]+')),
                     decode(instr(v_object, '.'), 0, 'PUBLIC', '#'))
             AND    object_name =decode(instr(v_object, '.'), 0, v_object, regexp_substr(v_object, '[^\.]+$'))
             AND    subobject_name IS NULL
-            ORDER  BY DECODE(OWNER, 'PUBLIC', 'ZZZZZZ', OWNER), OBJECT_ID DESC)
+            ORDER  BY DECODE(OWNER, 'PUBLIC', 'ZZZZZZ', OWNER), OBJECT_ID)
     WHERE  ROWNUM < 2;
 
     dbms_lob.createtemporary(v_result, TRUE);

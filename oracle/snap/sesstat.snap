@@ -1,10 +1,9 @@
-/*[[Source: gv$sesstat. parameters: <sid> <key>]]*/
+/*[[Source: gv$sesstat. parameters: <sid> [<key>]]]*/
 {
     sql=[[
     SELECT A.*,VALUE DELTA FROM(
         SELECT /*+no_expand*/
          inst_id,
-         sid,
          NAME,
          VALUE / CASE
              WHEN NAME LIKE '%bytes%' THEN
@@ -12,7 +11,7 @@
              WHEN NAME LIKE '%memory%' THEN
               1024 * 1024
              WHEN NAME LIKE '%time%' THEN
-              1e6
+              1
              ELSE
               1
          END VALUE,
@@ -22,7 +21,7 @@
              WHEN NAME LIKE '%memory%' THEN
               'MB'
              WHEN NAME LIKE '%time%' THEN
-              'SEC'
+              'COUNT'
              ELSE
               'COUNT'
          END unit
@@ -30,9 +29,9 @@
         JOIN   gv$statname
         USING  (inst_id, statistic#)
         WHERE  (VALUE > 0 OR :V2 IS NOT NULL)
-        AND    (:V2 IS NULL OR lower(name) like lower(:V2))
-        AND    (:V1 IS NULL OR '' || sid = :V1)) A
-    ]],
+        AND    (:V2 IS NULL OR lower(name) like lower('%&V2%'))
+        AND    sid=:V1) A
+    ORDER BY NAME]],
     agg_cols="Delta",
     grp_cols="inst_id,sid,NAME"
 }

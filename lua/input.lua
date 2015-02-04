@@ -13,9 +13,10 @@ env.onload(...)
 local line,eval,prompt = "",env.eval_line
 local reader=reader
 local ansi=env.ansi
-local color=ansi.get_color    
+local color=ansi.get_color
 reader:setExpandEvents(false)
 local prompt_color="%s%s"..color("NOR").."%s"
+
 local write=function(str)
     --print(ansi.cfg("PROMPTCOLOR"))
     str=prompt_color:format(color("PROMPTCOLOR"),str,color("COMMANDCOLOR"))

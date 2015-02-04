@@ -3,11 +3,13 @@ local dirs={"lib","cache","data"}
 local init={
     module_list={
        --Libraries ->
+        "lib/socket",
+        "lib/lanes",
         "lib/MessagePack",
         "lib/ProFi",
         "lib/misc",
         "lib/class",
-           "lua/packer",
+        "lua/packer",
         "lua/trace",
         "lua/printer",  
         "lua/ansi",    
@@ -56,9 +58,9 @@ function init.init_path()
 
     for _,v in ipairs({"lua","lib","oracle","bin"}) do
         local path=string.format("%s%s%s",env.WORK_DIR,v,path_del)
-        local p1,p2=path.."?.lua",path.."?."..(env.OS=="windows" and "dll" or "so")
-        package.path  = package.path .. ';' ..p1
-        package.cpath = package.cpath .. ';' ..p2        
+        local p1,p2=path.."?.lua",path..(java.system:getProperty('os.arch')=='x86' and 'x86' or "x64")..path_del.."?."..(env.OS=="windows" and "dll" or "so")
+        package.path  = package.path .. (path_del=='/' and ':' or ';') ..p1
+        package.cpath = package.cpath ..(path_del=='/' and ':' or ';') ..p2        
     end     
 end
 

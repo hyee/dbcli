@@ -18,12 +18,14 @@ _G['env']=env
 local function abort_thread()
     if coroutine.running () then
         debug.sethook()
-        print(env.CURRENT_THREAD)
+        --print(env.CURRENT_THREAD)
         --print(debug.traceback())
     end
 end
 
 _G['TRIGGER_ABORT']=function()
+local thread=java.require("java.lang.Thread",true)
+--thread:currentThread():interrupt()
     env.safe_call(env.event and env.event.callback,"ON_COMMAND_ABORT")
     if env.CURRENT_THREAD then
         --print(table.dump(env.CURRENT_THREAD))
@@ -336,11 +338,24 @@ function env.set_prompt(name,default,isdefault)
     return default
 end
 
-
 function env.pending_command()
     if curr_stmt and curr_stmt~="" then 
         return true
     end
+end
+
+function env.clear_command()    
+    if env.pending_command() then
+        multi_cmd,curr_stmt=nil,nil
+        env.CURRENT_PROMPT=env.PRI_PROMPT
+    end
+    local prompt=env.PRI_PROMPT
+    
+    if env.ansi then
+        local prompt_color="%s%s"..env.ansi.get_color("NOR").."%s"
+        prompt=prompt_color:format(env.ansi.get_color("PROMPTCOLOR"),prompt,env.ansi.get_color("COMMANDCOLOR"))
+    end
+    env.reader:resetPromptLine(prompt,"",0)
 end
 
 function env.parse_args(cmd,rest)    
@@ -529,6 +544,7 @@ function env.onload(...)
                   "core","Define command's prompt, if value is 'timing' then will record the time cost(in second) for each execution.")
     env.safe_call(env.ansi and env.ansi.define_color,"Promptcolor","HIY","core","Define prompt's color")
     env.safe_call(env.ansi and env.ansi.define_color,"commandcolor","HIC","core","Define command line's color")
+    env.safe_call(env.event and env.event.snoop,"ON_COMMAND_ABORT",env.clear_command)
     env.safe_call(env.event and env.event.callback,"ON_ENV_LOADED") 
     
     --load initial settings

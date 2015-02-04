@@ -1,9 +1,9 @@
-/*[[Show top allocation for PGA and temp space]]*/
+/*[[Show top allocation for PGA and temp space. Usage wrkasum [sql_id|sid] ]]*/
 set feed off
 PROMPT Top allocation reason by PGA memory usage:
 PROMPT ==========================================
 
- SELECT
+ SELECT /*+no_expand*/
      operation_type
    , policy
    , ROUND(SUM(actual_mem_used)/1048576) actual_pga_mb
@@ -14,6 +14,7 @@ PROMPT ==========================================
    , COUNT(DISTINCT inst_id||','||sid)   num_sessions
  FROM
      gv$sql_workarea_active
+ WHERE (:V1 IS NULL OR :V1 in(''||qcsid,''||sid,sql_id))
  GROUP BY 
      operation_type
    , policy
@@ -36,8 +37,9 @@ BEGIN
         WHERE  sql_id = r.sql_id
         AND    ROWNUM < 2;
     END LOOP;
+    
     OPEN :WRKSQL FOR
-        SELECT
+        SELECT /*+no_expand*/
              sql_id
            , policy
            , ROUND(SUM(actual_mem_used)/1048576) actual_pga_mb
@@ -46,14 +48,15 @@ BEGIN
            , MAX(number_passes)                  num_passes
            , COUNT(DISTINCT qcinst_id||','||qcsid)   num_qc
            , COUNT(DISTINCT inst_id||','||sid)   num_sessions
-           , regexp_replace(b.object_value,'^[^:]+:') sql_text
+           , regexp_replace(b.column_value,'^[^:]+:') sql_text
          FROM
              gv$sql_workarea_active a,TABLE(sqls) b
-         WHERE b.object_value(+) like a.sql_id||':%'
+         WHERE b.column_value(+) like a.sql_id||':%'
+         AND   (:V1 IS NULL OR :V1 in(''||qcsid,''||sid,a.sql_id))
          GROUP BY 
              sql_id
            , policy
-           , b.object_value
+           , b.column_value
          ORDER BY 
              temp_mb DESC NULLS LAST;
 END;
