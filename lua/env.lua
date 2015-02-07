@@ -98,35 +98,48 @@ function env.list_dir(file_dir,file_ext,text_macher)
     local keylist={}
 
     local filter=file_ext and "*."..file_ext or "*"
-    file_dir=(file_dir..env.PATH_DEL):gsub("[\\/]+",env.PATH_DEL)
+    file_dir=file_dir:gsub("[\\/]+",env.PATH_DEL)
     if env.OS=="windows" then
-        dir=io.popen('dir "'..file_dir..'\\'..filter..'" /b /s')
+        dir=io.popen('dir /B/S/A:-D "'..file_dir..'" 2>nul & dir /B/S/A:-D "'..file_dir..'.'..file_ext..'" 2>nul')
     else
         dir=io.popen('find "'..file_dir..'" -iname '..filter..' -print')
     end
 
-    for n in dir:lines() do 
-        local name=n:match("([^\\/]+)$")
+    for n in dir:lines() do
+        local name,ext=n:match("([^\\/]+)$")
         if file_ext then
-            name=name:match("(.+)%.%w+$")
-        end 
-        local comment
-        if  text_macher then  
-            local f=io.open(n)
-            if f then
-                local txt=f:read("*a")
-                f:close()
-                if type(text_macher)=="string" then
-                    comment=txt:match(text_macher) or ""
-                elseif type(text_macher)=="function" then
-                    comment=text_macher(txt) or ""      
+            name,ext=name:match("(.+)%.(%w+)$")
+            if ext:upper()~=file_ext:upper() then name=nil end
+        end
+        if name and name~="" then
+            local comment
+            if  text_macher then  
+                local f=io.open(n)
+                if f then
+                    local txt=f:read("*a")
+                    f:close()
+                    if type(text_macher)=="string" then
+                        comment=txt:match(text_macher) or ""
+                    elseif type(text_macher)=="function" then
+                        comment=text_macher(txt) or ""      
+                    end
                 end
             end
+            keylist[#keylist+1]={name,n,comment}
         end
-        keylist[#keylist+1]={name,n,comment}
     end    
     return keylist
 end
+
+function env.file_type(file_name)
+    local result=os.execute('dir /B "'..file_name..'" 1>nul 2>nul')
+    --file not exists
+    if result ~= true then return nil end
+    --is file
+    result=os.execute('dir /B /A:D "'..file_name..'" 1>nul 2>nul')
+    if result then return 'folder' end
+    return 'file'
+end    
 
 
 function env.check_cmd_endless(cmd,other_parts)
@@ -235,10 +248,12 @@ end
 
 function env.format_error(src,errmsg,...)  
     errmsg=errmsg or ""  
-    local name,line=src:match("([^\\/]+)%#(%d+)$")
-    if name then
-        name=name:upper():gsub("_",""):sub(1,3)
-        errmsg=name.."-"..string.format("%05i",tonumber(line))..": "..errmsg
+    if src then
+        local name,line=src:match("([^\\/]+)%#(%d+)$")
+        if name then
+            name=name:upper():gsub("_",""):sub(1,3)
+            errmsg=name.."-"..string.format("%05i",tonumber(line))..": "..errmsg
+        end
     end
     if select('#',...)>0 then errmsg=errmsg:format(...) end   
     return env.ansi.mask('HIR',errmsg)
@@ -251,6 +266,12 @@ end
 
 function env.raise(...)
     local str=env.format_error(env.callee(),...)
+    print(str)
+    return error('000-00000:')
+end
+
+function env.raise_error(...)
+    local str=env.format_error(nil,...)
     print(str)
     return error('000-00000:')
 end
@@ -293,15 +314,16 @@ function env.exec_command(cmd,params)
         --local res = {pcall(func,table.unpack(args))}
         if not res[1] then
             result=res
-            local msg={} 
-            if not tostring(res[2]):find('000-00000:',1,true) then
-                for v in tostring(res[2]):gmatch("(%u%u%u+%-[^\n\r]*)") do
+            local msg={}
+            res[2]=tostring(res[2]):gsub('^.*java%..*Exception%:%s*','')
+            if not res[2]:find('000-00000:',1,true) then
+                for v in res[2]:gmatch("(%u%u%u+%-[^\n\r]*)") do
                     table.insert(msg,v)
                 end
                 if #msg > 0 then
                     print(env.ansi.mask("HIR",table.concat(msg,'\n')))
                 else
-                    local trace=tostring(res[2]) --..'\n'..env.trace.enable(false)
+                    local trace=res[2] --..'\n'..env.trace.enable(false)
                     print(env.ansi.mask("HIR",trace.."\n"))
                 end
             end
@@ -310,8 +332,7 @@ function env.exec_command(cmd,params)
         end
     end
     if result[1] and event and not env.IS_INTERNAL_EVAL then event("AFTER_COMMAND",name,params) end
-    
-    
+        
     return table.unpack(result)
 end
 

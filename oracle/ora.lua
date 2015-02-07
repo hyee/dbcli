@@ -1,20 +1,24 @@
 local env=env
 local db,grid=env.oracle,env.grid
 local cfg=env.set
-local ora={script_dir=env.WORK_DIR.."oracle"..env.PATH_DEL.."ora"}
+local ora={script_dir=env.WORK_DIR.."oracle"..env.PATH_DEL.."ora",extend_dirs={}}
 ora.comment="/%*[\t\n\r%s]*%[%[(.*)%]%][\t\n\r%s]*%*/"
 local ARGS_COUNT=20
+
 function ora.rehash(script_dir,ext_name)
     local keylist=env.list_dir(script_dir,ext_name or "sql",ora.comment)
-    local cmdlist={}
+    local cmdlist,pathlist={},{}
+    local counter=0
     for k,v in ipairs(keylist) do
         local desc=v[3] and v[3]:gsub("^[\n\r%s\t]*[\n\r]+","") or ""
         desc=desc:gsub("%-%-%[%[(.*)%]%]%-%-",""):gsub("%-%-%[%[(.*)%-%-%]%]","")
         cmdlist[v[1]:upper()]={path=v[2],desc=desc,short_desc=desc:match("([^\n\r]+)") or ""}
+        pathlist[v[2]:lower()]=v[1]:upper()
+        counter=counter+1
     end
 
     local additions={
-        {'-R','Reflash the help file and available commands'},
+        {'-R','Rebuild the help file and available commands'},
         {'-P','Verify the paramters/templates of the target script, instead of running it. Usage:  -p <cmd> [<args>]'},
         {'-H','Show the help detail of the target command. Usage:  -h <command>'},
         {'-S','Search available command with inputed keyword. Usage:  -s <keyword>'},
@@ -23,7 +27,9 @@ function ora.rehash(script_dir,ext_name)
 
     for k,v in ipairs(additions) do
         cmdlist[v[1]]={desc=v[2],short_desc=v[2]}
-    end    
+    end
+
+    cmdlist['./PATH'],cmdlist['./COUNT']=pathlist,counter 
 
     return cmdlist
 end
@@ -278,12 +284,12 @@ end
 
 function ora.run_script(cmd,...)
     if not ora.cmdlist or cmd=="-r" or cmd=="-R" then
-        ora.cmdlist=ora.rehash(ora.script_dir)
+        ora.cmdlist,ora.extend_dirs=ora.rehash(ora.script_dir),{}
         local keys={}
         for k,_ in pairs(ora.cmdlist) do
             keys[#keys+1]=k
         end 
-        env.ansi.addCompleter("ORA",keys)
+        --env.ansi.addCompleter("ORA",keys)
     end
 
     if not cmd then
@@ -292,6 +298,15 @@ function ora.run_script(cmd,...)
 
     cmd=cmd:upper()    
     local args,print_args={...},false
+
+    if cmd:sub(1,1)=='-' and args[1]=='@' and args[2] then
+        args[2]='@'..args[2]
+        table.remove(args,1)
+    elseif cmd=='@' and args[1] then 
+        cmd=cmd..args[1]
+        table.remove(args,1)
+    end
+
     if cmd=="-R" then
         return
     elseif cmd=="-H" then
@@ -301,39 +316,74 @@ function ora.run_script(cmd,...)
         table.remove(args,1)
     elseif cmd=="-S" then
         return env.helper.helper("ORA","-S",...)
-    elseif cmd:sub(1,1)=="@" then
-        local file
-        if cmd:len()>1 then
-            file=cmd:sub(2):gsub('^"(.*)"$','%1')
-        else
-            file=args[1] 
-            table.remove(args,1)
-        end
-        if not file then return end        
-        if not file:match('(%.%w+)$') then file=file..'.sql' end
-        local f=io.open(file)
-        env.checkerr(f,"Cannot find this script '"..file.."'!")
-        local sql=f:read('*a')
-        f:close()
-        return ora.run_sql(sql,args,print_args)
     end
 
-    env.checkerr(ora.cmdlist[cmd],"Cannot find this script!")    
-    local f=io.open(ora.cmdlist[cmd].path)
-    env.checkerr(f,"Script file is missing during runtime!")
+    local file,f,target_dir
+    if cmd:sub(1,1)=="@" then        
+        target_dir,file=ora.check_ext_file(cmd)
+        env.checkerr(target_dir['./COUNT']>0,"Cannot find this script!")
+        if not file then return env.helper.helper("ORA",cmd) end
+        file=target_dir[file].path
+    elseif ora.cmdlist[cmd] then
+        file=ora.cmdlist[cmd].path
+    end
+    env.checkerr(file,"Cannot find this script!")
+    
+    local f=io.open(file)
+    env.checkerr(f,"Cannot find this script!")
     local sql=f:read('*a')
     f:close()
     ora.run_sql(sql,args,print_args)
 end
 
 local help_ind=0
-function ora.helper(_,cmd,search_key)    
-    local help='Run SQL script under the "ora" directory. Usage: ora [<script_name>|-r|-p|-h|-s] [parameters]\nAvailable commands:\n=================\n'
+function ora.check_ext_file(cmd)
+    local target_dir
+    cmd=cmd:lower():gsub('^@["%s]*(.-)["%s]*$','%1')
+    target_dir=ora.extend_dirs[cmd]
+    
+    if not target_dir then
+        for k,v in pairs(ora.extend_dirs) do
+            if cmd:find(k,1,true) then
+                target_dir=ora.extend_dirs[k]
+                break
+            end
+        end
+
+        if not target_dir then 
+            ora.extend_dirs[cmd]=ora.rehash(cmd,'sql')
+            target_dir=ora.extend_dirs[cmd]
+        end
+    end
+
+    if env.file_type(cmd)=='folder' then
+        --Remove the settings that only contains one file
+        for k,v in pairs(ora.extend_dirs) do
+            if k:find(cmd,1,true) and v['./COUNT']==1 then
+                ora.extend_dirs[k]=nil
+            end
+        end
+        return target_dir,nil 
+    end
+    for k,v in pairs(target_dir['./PATH']) do cmd=v end
+    return target_dir,cmd
+end
+
+function ora.helper(_,cmd,search_key)
+    local help,target_dir=""
+    help='Run SQL script under the "ora" directory. Usage: ora [<script_name>|-r|-p|-h|-s] [parameters]\nAvailable commands:\n=================\n'
     help_ind=help_ind+1
     if help_ind==2 and not ora.cmdlist then
         ora.run_script('-r')
     end
-    return env.helper.get_sub_help(cmd,ora.cmdlist,help,search_key)    
+    target_dir=ora.cmdlist
+
+    if cmd and cmd:sub(1,1)=='@' then
+        help=""
+        target_dir,cmd=ora.check_ext_file(cmd)
+    end
+
+    return env.helper.get_sub_help(cmd,target_dir,help,search_key)    
 end
 
 function ora.onload()

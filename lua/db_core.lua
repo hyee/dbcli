@@ -22,7 +22,7 @@ function db_Types:get(position,typeName,res,conn)
     end
     local res,value=pcall(res[getter],res,position)
     if not res then
-        print('Column:'..position,"Datatype:"..self[typeName].name,value)
+        print('Column:',position,"    Datatype:",self[typeName].name,"    ",value)
         return nil
     end
     --print(typeName,self[typeName].handler)
@@ -435,10 +435,15 @@ function db_core:exec(sql,args)
     local success,is_query=pcall(prep.execute,prep)
     self.current_stmt=nil
     if success==false then
-        print('SQL: '..sql:gsub("\n","\n     "))
         pcall(prep,close,prep)
         table.remove(self.__stmts)
-        error(is_query)
+        local info={db=self,sql=sql,error=tostring(is_query)}
+        event("ON_SQL_ERROR",info)    
+        if info and info.error then
+            if info.sql then print('SQL: '..info.sql:gsub("\n","\n     ")) end
+            error(info.error) 
+        end
+        return
     end
 
     --is_query=prep:execute()    

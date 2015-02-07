@@ -32,7 +32,7 @@ function alias.run_command(...)
         alias.rest={}
         for i,v in ipairs(alias.args) do
             v=v or ""
-            if v:find("[%s\n\r\b\t]") then v='"'..v..'"' end
+            if v:find("[%s\n\r\b\t]") and not v:find('"') then v='"'..v..'"' end
             alias.args[i]=v
             alias.rest[i]=v
         end

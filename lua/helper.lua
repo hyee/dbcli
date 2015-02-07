@@ -180,7 +180,7 @@ function helper.get_sub_help(cmd,cmdlist,main_help,search_key)
         if not cmdlist then return help end
         local rows={{},{}}
         for k,v in pairs(cmdlist) do
-            if not search_key or k:find(search_key:upper(),1,true) then
+            if (not search_key or k:find(search_key:upper(),1,true)) and k:sub(1,2)~='./' then
                 if search_key or not (v.path or ""):find('[\\/]test[\\/]') then                
                     table.insert(rows[1],k)
                     local desc=v.short_desc:gsub("^[%s\t]+","")

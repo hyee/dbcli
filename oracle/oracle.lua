@@ -336,6 +336,33 @@ end
 function oracle:onload()
     self.C={}
     init.load_modules(module_list,self.C)
+    env.event.snoop('ON_SQL_ERROR',self.handle_error,nil,1)
+end
+
+local ignore_errors={
+    ['ORA-00028']='default',
+    ['Connection reset']='default',
+    ['ORA-00031']='Connection is lost, please login again.',
+    ['No more data to read from socket']='Connection is lost, please login again.'
+}
+
+function oracle.handle_error(info)
+    local msg,ora_code=info.error:match('(ORA%-(%d+)[^\n\r]+)')
+    if ora_code and tonumber(ora_code)>=20001 and tonumber(ora_code)<20999 then
+        info.sql=nil
+        info.error=msg
+        return info
+    end
+    
+    for k,v in pairs(ignore_errors) do
+        if info.error:lower():find(k:lower(),1,true) then
+            info.sql=nil
+            info.error=v=='default' and info.error or v
+            return info
+        end
+    end
+    
+    return info
 end
 
 function oracle:onunload()

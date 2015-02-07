@@ -20,7 +20,6 @@ public class Loader {
     static PrintWriter printer;
     static ConsoleReader reader;
     static String root="";
-    Future<?> task;
     ExecutorService executor = Executors.newFixedThreadPool(1);
 
     private class KeyListner implements ActionListener {
@@ -143,24 +142,19 @@ public class Loader {
         }
     }
 
-    public void dbCall(CallableStatement p) throws InterruptedException {
-        System.out.println("Calling ...");
-        if(task ==null) return;
-
-        task = executor.submit(new DbExecutor(p, new DbCallback() {
+    public void dbCall(final CallableStatement p) throws InterruptedException {
+        executor.execute(new DbExecutor(p, new DbCallback() {
             @Override
             public void  complete(String result) {
-                System.out.println("Callback ..."+task.isDone()+" "+result);
-                System.out.println("Callback1 ...");
-                lua.getGlobal("ON_STATEMENT_COMPLETE");
+                System.out.println("Callback1 ..."+" "+result);
+                lua.getGlobal("ON_ASYNC_STATEMENT_COMPLETE");
                 lua.pushString(result);
+                lua.pushJavaObject(p);
                 System.out.println("Callback2 ...");
-                lua.call(1,0);
+                lua.call(2,0);
                 System.out.println("Callback3 ...");
-                task=null;
             }
         }));
-
     }
 
     public static void main(String args[]) throws Exception {

@@ -1,4 +1,10 @@
-2015-02-01: "ctrl + d" to abort inputting command 
+2015-02-01: * fixes on 'ora space'(partial)
+2015-02-01: * error message improvement
+2015-02-07: ! 'ora' command fully supports accessing the dirs that not belong to the 'ora' directory, i.e. 'ora -h @','ora -p @','ora @'
+2015-02-07: ! fixes on error of 'ora actives' when active sql texts contain char '\0'
+2015-02-07: ! fixes on unexpected layouts when the dbcli instance doesn't support ansi color for unknown reason
+2015-02-07: ! fixes on 'ora space'
+2015-02-01: + "ctrl + d" to abort inputting command 
 2015-02-01: + supports "loadtrace alert" to extract alert log in local instance, supports extracting a specific MB data from the trace file
 2015-02-01: ! fixes on awrdump/addmdump/ashdump commands
 2015-02-01: * move 32 bit dlls into "x86" directory

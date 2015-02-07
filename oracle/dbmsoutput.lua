@@ -11,6 +11,7 @@ function output.setOutput(db)
     pcall(function() (db or default_db):internal_call(stmt) end)
 end
 
+
 function output.getOutput(db,sql)
     local isOutput=cfg.get("ServerOutput")
     local stmt=[[    
@@ -59,6 +60,13 @@ function output.getOutput(db,sql)
     end    
 end
 
+
+function output.get_error_output(info)
+    output.getOutput(info.db,info.sql)
+    return info
+end
+
+snoop("ON_SQL_ERROR",output.get_error_output,nil,99)
 snoop("AFTER_ORACLE_CONNECT",output.setOutput)
 snoop("AFTER_ORACLE_EXEC",output.getOutput,nil,1)
 

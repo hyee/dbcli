@@ -9,6 +9,7 @@ Show active sessions. Usage: ora actives [-s|-p|-b] [waits|sid|sql|pkg|other fie
                  ROW_WAIT_BLOCK# WAIT_BLOCK#}
               }
         &V1 : sid={''||sid},wt={waits desc},ev={event},sql={sql_text}
+        &Filter: default={wait_class!='Idle' or sql_text is not null}, f={}
         &tmodel : default={0}, m={1}
         @COST : 11.0={nvl(1440*(sysdate-SQL_EXEC_START),wait_secs/60)},10.0={(select TIME_WAITED/6000 from gv$session_event b where b.inst_id=a.inst_id and b.sid=a.sid and b.event=a.event)},9.0={null}
     ]]--      
@@ -26,7 +27,7 @@ BEGIN
           WHERE  sid != USERENV('SID')
           AND    audsid != userenv('sessionid')
           --And    (event not like 'Streams%' and event not in('rdbms ipc message'))
-          AND    (NVL(wait_class, 'x') != 'Idle' OR sql_id IS NOT NULL)),
+          ),
         s2 AS
          (SELECT /*+no_merge*/* FROM gv$px_session WHERE  NOT (SID = qcsid AND inst_id = qcinst_id)),
         s3 AS
@@ -41,7 +42,8 @@ BEGIN
                TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'[
                    SELECT (select c.owner  ||'.' || c.object_name from all_objects c where c.object_id=PROGRAM_ID and rownum<2) A1,
                           PROGRAM_LINE# A2,
-                          substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'[' || chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200) A3,
+                          substr(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200) A3,
+                          --null A3,
                           plan_hash_value A4
                    FROM  gv$sql
                    WHERE ROWNUM<2 AND sql_id=']'||a.sql_id||''' AND inst_id='||a.inst_id||' and child_number='||a.child)
@@ -80,7 +82,7 @@ BEGIN
                ROUND(&COST,1) waits,
                sql_text
         FROM   s4 a
-        WHERE  wait_class!='Idle' or sql_text is not null
+        WHERE  &filter
         ORDER  BY r;
         
     IF &tmodel = 1 THEN

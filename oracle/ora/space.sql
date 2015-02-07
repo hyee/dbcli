@@ -1,50 +1,37 @@
 /*[[
-Show object's space. Usage: ora space [-L] <[owner.]<object_name>[.PARTITION_NAME]>[,...]] [1-7]
+Show object's space. Usage: ora space <[owner.]<object_name>[.PARTITION_NAME]>] 
 --[[
    &V9: P={1},l={2}
 ]]--
    
 ]]*/
 
+set feed off SQLTIMEOUT 1800
 VAR CUR REFCURSOR;
 
 DECLARE
     TYPE l_ary IS TABLE OF VARCHAR2(100) INDEX BY VARCHAR2(100);
     TYPE l_grp IS TABLE OF l_ary INDEX BY VARCHAR2(100);
     --when p_top =1, then only display top object(ignore partition)
-    CURSOR l_CursorSegs(p_owner      VARCHAR2,
-                        p_segname    VARCHAR2,
-                        p_partition  VARCHAR2,
-                        p_includedps PLS_INTEGER,
-                        p_Top        PLS_INTEGER := NULL) IS
-        SELECT DISTINCT segment_owner owner,
-               segment_name seg,
-               decode(p_Top || p_partition, '1', '', partition_name) pname,
-               decode(p_Top || p_partition,
-                      '1',
-                      REPLACE(segment_type, ' PARTITION'),
-                      segment_type) typ,
-               nvl2(p_Top,
-                    NULL,
-                    (SELECT segment_space_management
-                     FROM   dba_tablespaces ts
-                     WHERE  seg.tablespace_name = ts.tablespace_name)) mgnt,
-               nvl2(p_Top,
-                    NULL,
-                    (SELECT block_size
-                     FROM   dba_tablespaces ts
-                     WHERE  seg.tablespace_name = ts.tablespace_name)) block_size,
-               nvl2(p_Top,
-                    NULL,
-                    (SELECT MAX(extents)
-                     FROM   dba_segments
-                     WHERE  owner = seg.segment_owner
-                     AND    segment_name = seg.segment_name
-                     AND    NVL(partition_name, ' ') = NVL(seg.partition_name, ' '))) exts
+    CURSOR l_CursorSegs(p_owner     VARCHAR2,
+                        p_segname   VARCHAR2,
+                        p_partition VARCHAR2,
+                        p_Top       PLS_INTEGER := NULL) IS
+        SELECT /*+leading(x seg y) use_nl(seg) use_hash(y) no_merge(y)*/
+         distinct x.owner || '.' || x.object_name || nvl2(x.subobject_name, '.' || object_name, '') object_name,
+         x.object_type,
+         seg.*,         
+         (SELECT segment_space_management
+          FROM   dba_tablespaces ts
+          WHERE  seg.tablespace_name = ts.tablespace_name) mgnt,
+         (SELECT block_size
+          FROM   dba_tablespaces ts
+          WHERE  seg.tablespace_name = ts.tablespace_name) block_size,
+         decode(x.object_name, seg.segment_name, 1, 2) lv
         FROM   dba_objects x,
                TABLE(DBMS_SPACE.OBJECT_DEPENDENT_SEGMENTS(x.owner,
                                                           x.OBJECT_name,
-                                                          '',
+                                                          x.subobject_name,
                                                           CASE x.object_type
                                                               WHEN 'TABLE' THEN
                                                                1
@@ -66,11 +53,16 @@ DECLARE
                                                                13
                                                               WHEN 'MATERIALIZED VIEW LOG' THEN
                                                                14
+                                                              WHEN 'LOB' THEN
+                                                               21
+                                                              WHEN 'LOB PARTITION' THEN
+                                                               40
+                                                              WHEN 'LOB SUBPARTITION' THEN
+                                                               41
                                                           END)) seg
-        WHERE  owner = p_owner
-        AND    OBJECT_name = p_segname
-        AND    nvl(subobject_name, ' ') = nvl(p_partition, ' ')
-        AND    (bitand(p_includedps, 2) > 0 OR seg.segment_name = p_segname);
+        WHERE  x.owner = p_owner
+        AND    x.OBJECT_name = p_segname
+        AND    nvl(subobject_name, ' ') = nvl(p_partition, ' ');
 
     TYPE l_CursorSet IS TABLE OF l_CursorSegs%ROWTYPE;
 
@@ -87,8 +79,7 @@ DECLARE
     FUNCTION show_space(p_segname    IN VARCHAR2,
                         p_owner      IN VARCHAR2 DEFAULT USER,
                         p_partition  IN VARCHAR2 DEFAULT NULL,
-                        p_ignoreCase IN BOOLEAN := TRUE,
-                        p_includedps IN PLS_INTEGER := 1) RETURN l_grp AS
+                        p_ignoreCase IN BOOLEAN := TRUE) RETURN l_grp AS
         v_free_blks          INT;
         v_total_blocks       INT;
         v_total_bytes        INT;
@@ -114,40 +105,35 @@ DECLARE
         v_segname            VARCHAR2(200) := p_segname;
         v_owner              VARCHAR2(30) := p_owner;
         v_partition          VARCHAR2(30) := p_partition;
+        v_Level              NUMBER(1);
         v_result             l_grp;
         v_group              l_CursorSet;
+        v_tag                VARCHAR2(100);
     
-        PROCEDURE st(p_label IN VARCHAR2, p_val VARCHAR2, p_tag VARCHAR2 := '@all') IS
+        PROCEDURE st(p_label IN VARCHAR2, p_val VARCHAR2, p_tag VARCHAR2 := NULL) IS
             v_tmp l_ary;
         BEGIN
-            IF p_tag = '@all' OR bitand(p_includedps, 7) = 7 THEN
-                IF NOT v_result.exists(p_tag) THEN
-                    v_tmp('@target') := p_tag;
-                    v_result(p_tag) := v_tmp;
-                END IF;
-                v_result(p_tag)(p_label) := p_val;
-            END IF;
+            v_result(nvl(p_tag, v_tag))(p_label) := p_val;
         END;
     
-        FUNCTION rd(p_label IN VARCHAR2, p_tag VARCHAR2 := '@all') RETURN VARCHAR2 IS
+        FUNCTION rd(p_label IN VARCHAR2, p_tag VARCHAR2 := NULL) RETURN VARCHAR2 IS
+            v_tar VARCHAR2(100) := nvl(p_tag, v_tag);
         BEGIN
-            IF NOT v_result.exists(p_tag) OR NOT v_result(p_tag).exists(p_label) THEN
-                st(p_label, '', p_tag);
+            IF NOT v_result.exists(v_tar) OR NOT v_result(v_tar).exists(p_label) THEN
+                st(p_label, '', v_tar);
                 RETURN '';
             END IF;
-            RETURN v_result(p_tag)(p_label);
+            RETURN v_result(v_tar)(p_label);
         END;
     
-        PROCEDURE calc(p_label IN VARCHAR2, p_num IN NUMBER, p_tag VARCHAR2 := '@all') IS
+        PROCEDURE calc(p_label IN VARCHAR2, p_num IN NUMBER, p_tag VARCHAR2 := NULL) IS
+            tag VARCHAR2(100) := nvl(p_tag, v_tag);
         BEGIN
-            st(p_label, nvl(rd(p_label, p_tag), 0) + NVL(p_num, 0), p_tag);
-            IF p_tag = '@all' AND bitand(p_includedps, 7) = 7 THEN
-                calc(p_label, p_num, v_segname);
-                IF v_segname != v_parentseg THEN
-                    calc(p_label, p_num, v_parentseg);
-                END IF;
+            st(p_label, nvl(rd(p_label, tag), 0) + NVL(p_num, 0), tag);
+            IF tag NOT LIKE '@%' THEN
+                calc(p_label, p_num, '@all');
+                calc(p_label, p_num, '@level' || rd('@level', tag));
             END IF;
-        
         END;
     BEGIN
         --upper-case when ignoring case
@@ -157,43 +143,32 @@ DECLARE
             v_partition := TRIM(upper(v_partition));
         END IF;
         --define root object
-        st('@target', parseName(v_owner, v_segname, v_partition));
-        st('@level', 0);
+        st('@target', parseName(v_owner, v_segname, v_partition), '@all');
+        st('@type', 'UNKOWN', '@all');
+        st('@level', 0, '@all');
         --read segment list
-        OPEN l_CursorSegs(p_owner, p_segname, p_partition, p_includedps);
+        OPEN l_CursorSegs(p_owner, p_segname, p_partition);
         FETCH l_CursorSegs BULK COLLECT
             INTO v_group;
         CLOSE l_CursorSegs;
         --handle the situation that no matched records found
         IF v_group.count = 0 THEN
-            IF p_includedps = 2 THEN
-                st('@msg', 'Target object doesn''t have depended objects.');
-            ELSE
-                st('@msg', 'Object [' || rd('@target') || '] doesn''t exist!');
-            END IF;
+            st('@msg', 'Object [' || rd('@target', '@all') || '] doesn''t exist!', '@all');
             RETURN v_result;
         END IF;
     
         --start fetching space statistics for each segments
         FOR i IN 1 .. v_group.count LOOP
-            v_parentseg := parseName(v_group(i).owner, v_group(i).seg, '');
-            v_segname   := parseName(v_group(i).owner, v_group(i).seg, v_group(i).pname);
-            st('@type', v_group(i).typ, v_segname);
-            st('@level', 1, v_segname);
-            IF v_parentseg != v_segname THEN
-                st('@type', REPLACE(v_group(i).typ, ' PARTITION'), v_parentseg);
-                st('@level', 1, v_parentseg);
-                st('@level', 2, v_segname);
-            END IF;
-            IF v_segname || '.' LIKE rd('@target') || '.%' THEN
-                st('@type', REPLACE(v_group(i).typ, ' PARTITION', '(Partitioned)'));
-            END IF;
-            calc('Total Extents', v_group(i).exts);
+            v_tag := v_group(i).segment_name;
+            st('@level', v_group(i).lv);
+            st('@type', v_group(i).segment_type);
+            st('@type', v_group(i).object_type,'@all');
+            --calc('Total Extents', v_group(i).exts);
             IF v_group(i).mgnt = 'AUTO' THEN
-                dbms_space.space_usage(segment_owner      => v_group(i).owner,
-                                       segment_name       => v_group(i).seg,
-                                       segment_type       => v_group(i).typ,
-                                       partition_name     => v_group(i).pname,
+                dbms_space.space_usage(segment_owner      => v_group(i).segment_owner,
+                                       segment_name       => v_group(i).segment_name,
+                                       segment_type       => v_group(i).segment_type,
+                                       partition_name     => v_group(i).partition_name,
                                        unformatted_blocks => v_unformatted_blocks,
                                        unformatted_bytes  => v_unformatted_bytes,
                                        fs1_blocks         => v_fs1_blocks,
@@ -208,29 +183,30 @@ DECLARE
                                        full_bytes         => v_full_bytes);
                 v_free_blks := v_fs1_blocks + v_fs2_blocks + v_fs3_blocks + v_fs4_blocks;
                 -- This is only a estimated value, not a exactly value
-                v_free_bytes := v_fs1_bytes * 1 / 8 + v_fs2_bytes * 3 / 8 +
-                                v_fs3_bytes * 5 / 8 + v_fs4_bytes * 7 / 8;
+                v_free_bytes := v_fs1_bytes * 1 / 8 + v_fs2_bytes * 3 / 8 + v_fs3_bytes * 5 / 8 +
+                                v_fs4_bytes * 7 / 8;
             ELSE
-                dbms_space.free_blocks(segment_owner     => v_group(i).owner,
-                                       segment_name      => v_group(i).seg,
-                                       partition_name    => v_group(i).pname,
-                                       segment_type      => v_group(i).typ,
+                dbms_space.free_blocks(segment_owner     => v_group(i).segment_owner,
+                                       segment_name      => v_group(i).segment_name,
+                                       segment_type      => v_group(i).segment_type,
+                                       partition_name    => v_group(i).partition_name,
                                        freelist_group_id => 0,
                                        free_blks         => v_free_blks);
                 v_free_bytes := v_free_blks * v_group(i).block_size;
             END IF;
-            calc('Unformatted Blocks', v_unformatted_blocks);
-            calc('FS1 Blocks(00-25)', v_fs1_blocks);
-            calc('FS2 Blocks(25-50)', v_fs2_blocks);
-            calc('FS3 Blocks(50-75)', v_fs3_blocks);
-            calc('FS4 Blocks(75-100)', v_fs4_blocks);
-            calc('Full Blocks', v_full_blocks);
-            calc('Free Blocks', v_free_blks);
-            calc('Total MBytes(Free)', round(v_free_bytes / 1024 / 1024));
-            dbms_space.unused_space(segment_owner             => v_group(i).owner,
-                                    segment_name              => v_group(i).seg,
-                                    segment_type              => v_group(i).typ,
-                                    partition_name            => v_group(i).pname,
+            
+            calc('HWM: FS1 Blocks(00-25)', v_fs1_blocks);
+            calc('HWM: FS2 Blocks(25-50)', v_fs2_blocks);
+            calc('HWM: FS3 Blocks(50-75)', v_fs3_blocks);
+            calc('HWM: FS4 Blocks(75-100)', v_fs4_blocks);
+            calc('HWM: Full Blocks', v_full_blocks);
+            calc('HWM: Free Blocks(Est)', v_free_blks);
+            calc('HWM: Free MBytes(Est)', round(v_free_bytes / 1024 / 1024,2));
+            calc('HWM: Total Blocks', v_total_blocks - v_unused_blocks);
+            dbms_space.unused_space(segment_owner             => v_group(i).segment_owner,
+                                    segment_name              => v_group(i).segment_name,
+                                    segment_type              => v_group(i).segment_type,
+                                    partition_name            => v_group(i).partition_name,
                                     total_blocks              => v_total_blocks,
                                     total_bytes               => v_total_bytes,
                                     unused_blocks             => v_unused_blocks,
@@ -238,55 +214,59 @@ DECLARE
                                     LAST_USED_EXTENT_FILE_ID  => v_LastUsedExtFileId,
                                     LAST_USED_EXTENT_BLOCK_ID => v_LastUsedExtBlockId,
                                     LAST_USED_BLOCK           => v_last_used_block);
-            calc('Total Blocks', v_total_blocks);
-            calc('Total KBytes', v_total_bytes / 1024);
-            calc('Total MBytes', TRUNC(v_total_bytes / 1024 / 1024));
-            calc('Unused Blocks', v_unused_blocks);
-            calc('Unused KBytes', v_unused_bytes / 1024);
-            calc('Last Ext FileID', v_LastUsedExtFileId);
-            calc('Last Ext BlockID', v_LastUsedExtBlockId);
-            calc('Last Block', v_last_used_block);
+            calc('HWM: Unformatted Blocks', v_unformatted_blocks);                        
+            calc('ABOVE HWM: Unused Blocks', v_unused_blocks);
+            calc('ABOVE HWM: Unused MBytes', Round(v_unused_bytes / 1024/1024,2));
+            
+            --calc('Last Ext FileID', v_LastUsedExtFileId);
+            --calc('Last Ext BlockID', v_LastUsedExtBlockId);
+            calc('Total: Sements', 1);
+            calc('Total: Blocks', v_total_blocks);
+            calc('Total: KBytes', v_total_bytes / 1024);
+            calc('Total: MBytes', Round(v_total_bytes / 1024 / 1024,2));
         END LOOP;
         --this setting indicates that the fetching has completed
         v_result('@all')('@msg') := 'done';
+        v_result('@all')('@title') := 'Total';
+        v_result('@level1')('@title') := 'THIS-OBJ';
+        IF v_result.exists('@level2') THEN
+            v_result('@level2')('@title') := 'DEP-OBJS';
+        END IF;
         RETURN v_result;
     END;
 
     --split input string into 3 fields: owner, segment_name and partition name
     FUNCTION analyze_target(p_target VARCHAR2, p_ignoreCase BOOLEAN) RETURN l_ary IS
+        v_ary         l_ary;
         v_uncl_array dbms_utility.uncl_array;
         v_count      PLS_INTEGER;
-        v_ary        l_ary;
-        v_target     VARCHAR2(100) := REPLACE(p_target, '.', ',');
+        v_target     VARCHAR2(100) :=replace(replace(p_target,'.',','),' ');
     BEGIN
-        IF NVL(p_ignoreCase, TRUE) THEN
-            v_target := upper(TRIM(v_target));
-        END IF;
-        v_target := REPLACE(REPLACE(v_target, '"'), '''');
-        v_ary('owner') := USER;
-        v_ary('segment') := NULL;
-        v_ary('partition') := NULL;
-        dbms_utility.comma_to_table(v_target, v_count, v_uncl_array);
-        IF v_count <= 1 THEN
-            v_ary('segment') := v_target;
-        ELSIF v_count >= 3 THEN
-            v_ary('owner') := v_uncl_array(1);
-            v_ary('segment') := v_uncl_array(2);
-            v_ary('partition') := v_uncl_array(3);
-        ELSE
-            SELECT COUNT(1)
-            INTO   v_count
-            FROM   dba_segments
-            WHERE  owner = v_uncl_array(1)
-            AND    segment_name = v_uncl_array(2);
-            IF v_count > 0 THEN
-                v_ary('owner') := v_uncl_array(1);
-                v_ary('segment') := v_uncl_array(2);
-            ELSE
-                v_ary('segment') := v_uncl_array(1);
-                v_ary('partition') := v_uncl_array(2);
-            END IF;
-        END IF;
+        if p_ignorecase then
+            v_target := upper(v_target);
+        end if;
+        dbms_utility.comma_to_table(regexp_replace(v_target, '[''"]'), v_count, v_uncl_array);
+        for i in 1..3 loop
+            if not v_uncl_array.exists(i) then 
+                v_uncl_array(i) := ' ';
+            end if;
+            --dbms_output.put_line(i||'"'||v_uncl_array(i)||'"');
+        end loop;
+        --v_uncl_array.extend(3);
+        select max(owner),max(object_name),max(subobject_name),max(object_id) 
+        into v_ary('owner'),v_ary('segment'),v_ary('partition'),v_ary('object_id')
+        from (
+            select /*+no_expand*/ * from dba_objects 
+            where owner in(user,v_uncl_array(1))
+            and   object_type!='SYNONYM'
+            and   object_name in(v_uncl_array(1),v_uncl_array(2))
+            and   nvl(subobject_name,' ') in(v_uncl_array(2),v_uncl_array(3))
+            order by decode(owner,user,1,2),nvl2(subobject_name,1,2)
+        ) where rownum<2;
+        
+        IF v_ary('object_id') is null then
+            raise_application_error(-20001,'Cannot find target objects!');
+        end if;
         RETURN v_ary;
     END;
 
@@ -302,8 +282,7 @@ DECLARE
         FOR i IN 1 .. v_count LOOP
             IF TRIM(v_uncl_array(i)) IS NOT NULL THEN
                 v_ary := analyze_target(TRIM(v_uncl_array(i)), p_ignoreCase);
-                v_obj := v_ary('segment') || '.' || v_ary('owner') || '.' ||
-                         v_ary('partition');
+                v_obj := v_ary('segment') || '.' || v_ary('owner') || '.' || v_ary('partition');
                 IF NOT v_uniq.exists(v_obj) THEN
                     v_uniq(v_obj) := 1;
                     v_group(v_group.count + 1) := v_ary;
@@ -333,8 +312,7 @@ DECLARE
             v_list := show_space(p_segname    => v_print(i) ('segment'),
                                  p_owner      => v_print(i) ('owner'),
                                  p_partition  => v_print(i) ('partition'),
-                                 p_ignoreCase => p_ignoreCase,
-                                 p_includedps => p_includedps);
+                                 p_ignoreCase => p_ignoreCase);
             v_ary  := v_list('@all');
             --remove those objects that fetching isn't completed
             IF v_ary('@msg') = 'done' THEN
@@ -344,8 +322,8 @@ DECLARE
                     IF NOT v_titles.exists(v_obj) AND v_obj NOT LIKE '@%' THEN
                         v_titles(v_obj) := 'attr' || v_titles.count;
                         v_sql := v_sql || chr(10) || lpad(' ', 7) ||
-                                 'Extractvalue(COLUMN_VALUE,''/ROW[1]/@' ||
-                                 v_titles(v_obj) || ''')+0 "' || v_obj || '",';
+                                 'Extractvalue(COLUMN_VALUE,''/ROW[1]/@' || v_titles(v_obj) ||
+                                 ''')+0 "' || v_obj || '",';
                     END IF;
                     v_obj := v_ary.next(v_obj);
                 END LOOP;
@@ -363,8 +341,7 @@ DECLARE
                     LOOP
                         EXIT WHEN v_obj IS NULL;
                         IF v_ary.exists(v_obj) THEN
-                            v_line := v_line || ' ' || v_titles(v_obj) || '="' ||
-                                      v_ary(v_obj) || '"';
+                            v_line := v_line || ' ' || v_titles(v_obj) || '="' || v_ary(v_obj) || '"';
                             v_obj  := v_titles.next(v_obj);
                         END IF;
                     END LOOP;
@@ -374,83 +351,95 @@ DECLARE
                 END LOOP;
             END IF;
         END LOOP;
-    
+        
         v_sql := TRIM(',' FROM v_sql) || chr(10) ||
-                 'FROM TABLE(XMLSEQUENCE(EXTRACT(xmltype(:1), ''/ROWSET[1]/*'')))' ||
-                 chr(10) || 'ORDER BY Extractvalue(COLUMN_VALUE, ''/ROW[1]/@seq'')+0';
+                 'FROM TABLE(XMLSEQUENCE(EXTRACT(xmltype(:1), ''/ROWSET[1]/*'')))' || chr(10) ||
+                 'ORDER BY Extractvalue(COLUMN_VALUE, ''/ROW[1]/@seq'')+0';
         OPEN p_cur FOR v_sql
-            USING v_xml.getclobval;
+            USING v_xml;
     END;
 
     PROCEDURE print(p_target     VARCHAR2,
                     p_ignoreCase IN BOOLEAN := TRUE,
                     p_includedps IN PLS_INTEGER := 1) IS
         v_target l_ary := analyze_target(p_target, p_ignoreCase);
-        v_ary    l_ary;
-        v_iry    l_ary;
+        v_ary    l_grp;
+        v_titles l_ary;
+        v_rows   l_ary;
+        v_all    l_ary;
         v_idx    VARCHAR2(100);
         v_fmt    VARCHAR2(20) := 'fm999,999,999,990';
         v_fix    PLS_INTEGER := 40;
         v_size   PLS_INTEGER := length(v_fmt);
         v_title  VARCHAR2(300) := rpad('ITEM', v_fix);
+        v_xml    CLOB := '<ROWSET>';
+        v_sql    VARCHAR2(32767);
     BEGIN
         dbms_output.enable(NULL);
-        -- when p_includedps=7, then will display 3 fields: object,dependencies and total
-        IF p_includedps = 7 THEN
-            v_ary   := show_space(v_target('segment'),
-                                  v_target('owner'),
-                                  v_target('partition'),
-                                  p_ignoreCase,
-                                  1) ('@all');
-            v_iry   := show_space(v_target('segment'),
-                                  v_target('owner'),
-                                  v_target('partition'),
-                                  p_ignoreCase,
-                                  2) ('@all');
-            v_title := v_title || lpad('OBJECT', v_size) || lpad('DEPENDENCIES', v_size) ||
-                       lpad('TOTAL', v_size);
-            --if the fetching doesn't complete(i.e. no related dependencies), then initialize its values as zero
-            IF v_iry('@msg') != 'done' THEN
-                v_iry := v_ary;
-                v_idx := v_iry.first;
-                LOOP
-                    EXIT WHEN v_idx IS NULL;
-                    v_iry(v_idx) := 0;
-                    v_idx := v_iry.next(v_idx);
-                END LOOP;
-            END IF;
-        ELSE
-            -- otherwise only display one field
-            v_title := v_title || lpad('TOTAL', v_size);
-            v_ary   := show_space(p_segname    => v_target('segment'),
-                                  p_owner      => v_target('owner'),
-                                  p_partition  => v_target('partition'),
-                                  p_ignoreCase => p_ignoreCase,
-                                  p_includedps => p_includedps) ('@all');
-        
-            IF v_ary('@msg') != 'done' THEN
-                pr(v_ary('@msg'));
-                RETURN;
-            END IF;
+        IF v_target('segment') is null then
+            pr('Cannot find target object!');
+            return;
+        end if;
+        v_ary := show_space(p_segname    => v_target('segment'),
+                            p_owner      => v_target('owner'),
+                            p_partition  => v_target('partition'),
+                            p_ignoreCase => p_ignoreCase);
+    
+        IF v_ary('@all') ('@msg') != 'done' THEN
+            pr(v_ary('@all') ('@msg'));
+            RETURN;
         END IF;
-        pr('Object  Name        : ' || v_ary('@target'));
-        pr('Object  Type        : ' || v_ary('@type'));
-        pr(rpad('=', v_fix + v_size, '='));
-        pr(v_title);
-        pr(rpad('-', length(v_title), '-'));
+    
+	    v_sql :='SELECT extractvalue(column_value,''/ROW/C0'') Item,';
+        v_all:=v_ary('@all');
+        
+        if not v_ary.exists('@level2') then
+            v_ary.delete('@all');
+        end if;
+        
         v_idx := v_ary.first;
-        --start organizating output
         LOOP
-            EXIT WHEN v_idx IS NULL;
-            IF v_idx NOT LIKE '@%' AND v_ary(v_idx) >= 0 THEN
-                pr(rpad(v_idx, v_fix, '.') ||
-                   lpad(TO_CHAR(v_ary(v_idx) + 0, v_fmt), v_size) || --
-                   CASE p_includedps WHEN 7 THEN
-                   lpad(TO_CHAR(v_iry(v_idx) + 0, v_fmt), v_size) ||
-                   lpad(TO_CHAR(v_iry(v_idx) + v_ary(v_idx), v_fmt), v_size) END);
+            IF v_ary(v_idx).exists('@level') and v_ary(v_idx)('@level')=1 THEN
+                v_ary.delete(v_idx);
+            ELSE
+                v_titles(v_titles.count + 1) := v_idx;
+                v_Sql:=v_sql||'0+extractvalue(column_value,''/ROW/C'||v_titles.count||''') ';
+                IF v_ary(v_idx).exists('@title') THEN
+                    v_sql:=v_sql||'"'||v_ary(v_idx)('@title')||'"';
+                ELSE
+                    v_sql:=v_sql||'"'||v_idx||'"';
+                END IF;
+                v_sql:=v_sql||',';
             END IF;
             v_idx := v_ary.next(v_idx);
+            EXIT WHEN v_idx IS NULL;
         END LOOP;
+        v_sql:=trim(',' from v_sql);
+		
+    
+        v_idx := v_all.first;
+        LOOP
+            IF v_idx NOT LIKE '@%' THEN
+                v_rows(v_rows.count + 1) := v_idx;
+            END IF;
+            v_idx := v_all.next(v_idx);
+            EXIT WHEN v_idx IS NULL;
+        END LOOP;
+    
+        FOR i IN 1 .. v_rows.count LOOP
+            v_xml := v_xml || '<ROW><C0>'||v_rows(i)||'</C0>';
+            FOR j IN 1 .. v_titles.count LOOP
+                IF v_ary(v_titles(j)).exists(v_rows(i)) THEN
+                    v_xml := v_xml || '<C' || j || '>' || v_ary(v_titles(j))(v_rows(i)) || '</C' || j || '>';
+                END IF;
+            END LOOP;
+            v_xml := v_xml || '</ROW>' || chr(10);
+        END LOOP;
+        v_xml := v_xml || '</ROWSET>';
+        v_sql := v_sql||' from table(xmlsequence(extract(xmltype(:1),''/ROWSET[1]/ROW'')))';
+        --dbms_output.put_line(v_sql);
+        dbms_output.put_line('OBJECT: '||v_all('@target')||'    TYPE: '||v_all('@type'));
+		OPEN :cur for v_sql using v_xml;    
     END;
 
     PROCEDURE seg_advise(p_cur        OUT SYS_REFCURSOR,
@@ -492,12 +481,12 @@ DECLARE
         IF v_list.count = 0 THEN
             RETURN;
         END IF;
-        
+    
         SELECT COUNT(1) INTO v_objid FROM dba_advisor_tasks WHERE task_name = v_task;
         IF v_objid > 0 THEN
             DBMS_ADVISOR.delete_task(task_name => v_task);
         END IF;
-        
+    
         DBMS_ADVISOR.create_task(advisor_name => 'Segment Advisor', task_name => v_task);
         DBMS_ADVISOR.set_task_parameter(task_name => v_task,
                                         parameter => 'RECOMMEND_ALL',
@@ -506,7 +495,6 @@ DECLARE
             OPEN l_CursorSegs(v_list(i) ('owner'),
                               v_list(i) ('segment'),
                               v_list(i) ('partition'),
-                              p_includedps,
                               1);
             FETCH l_CursorSegs BULK COLLECT
                 INTO v_segs;
@@ -523,16 +511,18 @@ DECLARE
                     '--total--');
             v_seek := 0;
             FOR j IN 1 .. v_segs.count LOOP
-                
+            
                 DBMS_ADVISOR.create_object(task_name   => v_task,
-                                           object_type => v_segs(j).typ,
-                                           attr1       => v_segs(j).owner,
-                                           attr2       => v_segs(j).seg,
-                                           attr3       => v_segs(j).pname,
+                                           object_type => v_segs(j).segment_type,
+                                           attr1       => v_segs(j).segment_owner,
+                                           attr2       => v_segs(j).segment_name,
+                                           attr3       => v_segs(j).partition_name,
                                            attr4       => 'null',
                                            attr5       => NULL,
                                            object_id   => v_objid);
-                v_node := parseName(v_segs(j).owner, v_segs(j).seg, v_segs(j).pname);
+                v_node := parseName(v_segs(j).segment_owner,
+                                    v_segs(j).segment_name,
+                                    v_segs(j).partition_name);
                 v_id   := lpad(i, 4, 0) || lpad(j + 1, 4, 0);
                 IF 'Object: ' || v_node || '.' LIKE v_top || '.%' AND v_seek = 0 THEN
                     v_id   := lpad(i, 4, 0) || lpad(1, 4, 0);
@@ -540,10 +530,10 @@ DECLARE
                 END IF;
                 NewNode(v_id,
                         v_node,
-                        v_segs(j).owner,
-                        v_segs(j).seg,
-                        v_segs(j).pname,
-                        v_segs(j).typ);
+                        v_segs(j).segment_owner,
+                        v_segs(j).segment_name,
+                        v_segs(j).partition_name,
+                        v_segs(j).segment_type);
             END LOOP;
         END LOOP;
         DBMS_ADVISOR.execute_task(task_name => v_task);
@@ -554,8 +544,7 @@ DECLARE
                   AND    a.object_id = b.object_id(+)) LOOP
             v_node := parseName(r.attr1, r.attr2, r.attr3);
             IF NOT v_items.exists(v_node) THEN
-                NewNode(v_items(r.attr1 || '.' || r.attr2)
-                        ('id') || lpad(r.object_id, 4, 0),
+                NewNode(v_items(r.attr1 || '.' || r.attr2) ('id') || lpad(r.object_id, 4, 0),
                         v_node,
                         r.attr1,
                         r.attr2,
@@ -565,8 +554,7 @@ DECLARE
             IF r.more_info IS NOT NULL THEN
                 dbms_space.parse_space_adv_info(r.more_info, v_used, v_alloc, v_free);
                 IF v_alloc IS NOT NULL THEN
-                    v_xml := v_xml.appendChildXML('/ROOT[1]/NODE[@name="' || v_node ||
-                                                  '"]',
+                    v_xml := v_xml.appendChildXML('/ROOT[1]/NODE[@name="' || v_node || '"]',
                                                   xmltype('<ATTR><OBJECT_ID>' || R.OBJECT_ID || '</OBJECT_ID><ALLOC>' || v_alloc || '</ALLOC><USED>' || v_used || '</USED><FREE>' || v_free || '</FREE></ATTR>')
                                                   .extract('/ATTR[1]/*'));
                 END IF;
@@ -579,18 +567,16 @@ DECLARE
                    a.owner,
                    a.segment_name,
                    a.partition_name,
-                   Round(SUM(allocated_space)
-                         OVER(ORDER BY rpad(ID, 12, 9) + 0
+                   Round(SUM(allocated_space) OVER(ORDER BY rpad(ID, 12, 9) + 0
                               RANGE BETWEEN rpad(ID, 12, 9) - rpad(ID, 12, 0)
                               PRECEDING AND 0 FOLLOWING) / 1024) allocated_kbytes,
-                   Round(SUM(used_space)
-                         OVER(ORDER BY rpad(ID, 12, 9) + 0
+                   Round(SUM(used_space) OVER(ORDER BY rpad(ID, 12, 9) + 0
                               RANGE BETWEEN rpad(ID, 12, 9) - rpad(ID, 12, 0)
                               PRECEDING AND 0 FOLLOWING) / 1024) used_kbytes,
                    Round(SUM(reclaimable_space)
                          OVER(ORDER BY rpad(ID, 12, 9) + 0
-                              RANGE BETWEEN rpad(ID, 12, 9) - rpad(ID, 12, 0)
-                              PRECEDING AND 0 FOLLOWING) / 1024) reclaimable_kbytes,
+                              RANGE BETWEEN rpad(ID, 12, 9) - rpad(ID, 12, 0) PRECEDING AND 0
+                              FOLLOWING) / 1024) reclaimable_kbytes,
                    b.command,
                    b.attr1,
                    b.attr2
@@ -615,9 +601,10 @@ BEGIN
     IF &V9=1 THEN
         print(:V1,true,nvl(:V2,1));
     ELSE
-       show_list(p_cur => :CUR,
-                p_list => :V1,
-                p_ignorecase => true,
-                p_includedps => nvl(:V2,1));
+        show_list(p_cur => :CUR,
+                  p_list => :V1,
+                  p_ignorecase => true,
+                  p_includedps => nvl(:V2,1));
     END IF;
 END;
+/

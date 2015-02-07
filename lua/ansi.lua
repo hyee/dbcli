@@ -1,7 +1,9 @@
 local rawget,env=rawget,env
 local ansi={}
 local cfg
-local enabled=true
+local reader,writer,str_completer,arg_completer,add=reader
+local isAnsiSupported=reader:getTerminal():isAnsiSupported()
+local enabled=isAnsiSupported
 local color=setmetatable({
     BLK = "\27[30m", -- Black 
     RED = "\27[31m", -- Red 
@@ -74,7 +76,7 @@ local color=setmetatable({
     end
 })
 
-local reader,writer,str_completer,arg_completer,add=reader
+
 
 function ansi.cfg(name,value,module,description)
     if not cfg then cfg={} end
@@ -159,7 +161,8 @@ function ansi.get_color(name)
     return ansi.cfg(name) and ansi.mask(ansi.cfg(name),"",true) or ""    
 end
 
-function ansi.enable_color(name,value)    
+function ansi.enable_color(name,value)
+    if not isAnsiSupported then return 'off' end
     if value=="off" then
         if not enabled then return end
         --env.remove_command("clear")
@@ -186,8 +189,11 @@ function ansi.onload()
     writer=reader:getOutput()
     ansi.loaded=true
     str_completer=java.require("jline.console.completer.StringsCompleter",true)
-    arg_completer=java.require("jline.console.completer.ArgumentCompleter",true)    
-    env.set.init("ansicolor",'on',ansi.enable_color,"core","Enable color masking inside the intepreter.",'on,off')
+    arg_completer=java.require("jline.console.completer.ArgumentCompleter",true)
+    if not isAnsiSupported then
+        for k,v in pairs(color) do color[k]='' end
+    end
+    env.set.init("ansicolor",isAnsiSupported and 'on' or 'off',ansi.enable_color,"core","Enable color masking inside the intepreter.",'on,off')
     ansi.color,ansi.map=color,cfg
 end
 
