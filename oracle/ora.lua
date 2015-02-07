@@ -22,7 +22,7 @@ function ora.rehash(script_dir,ext_name)
         {'-P','Verify the paramters/templates of the target script, instead of running it. Usage:  -p <cmd> [<args>]'},
         {'-H','Show the help detail of the target command. Usage:  -h <command>'},
         {'-S','Search available command with inputed keyword. Usage:  -s <keyword>'},
-        {'@','Run scripts that not belongs to the "ora" directory. Usage:  -s <keyword>'},
+        {'@','Run scripts that not belongs to the "ora" directory.'},
     }
 
     for k,v in ipairs(additions) do
@@ -365,7 +365,7 @@ function ora.check_ext_file(cmd)
         end
         return target_dir,nil 
     end
-    for k,v in pairs(target_dir['./PATH']) do cmd=v end
+    cmd=cmd:match('([^\\/]+)$'):match('[^%.%s]+'):upper()
     return target_dir,cmd
 end
 
