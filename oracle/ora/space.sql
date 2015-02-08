@@ -185,6 +185,7 @@ DECLARE
                         calc('HWM: Free Blocks(Est)', v_free_blks);                    
                         calc('HWM: Unformatted Blocks', v_unformatted_blocks);
                     EXCEPTION WHEN OTHERS THEN
+                    $IF DBMS_DB_VERSION.VERSION>10  $THEN
                         dbms_space.space_usage(segment_owner      => v_group(i).segment_owner,
                                                segment_name       => v_group(i).segment_name,
                                                segment_type       => v_group(i).segment_type,
@@ -203,6 +204,9 @@ DECLARE
                         calc('LOB: Unexpired MBytes', round(v_unexpired_bytes/1024/1024,2));
                         calc('LOB: Used Blocks', v_unused_blocks);
                         calc('LOB: Used MBytes', round(v_unused_bytes/1024/1024,2));
+                    $ELSE
+                        NULL;
+                    $END
                     END;
                 ELSE
                     dbms_space.free_blocks(segment_owner     => v_group(i).segment_owner,
