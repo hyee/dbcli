@@ -542,8 +542,10 @@ function env.onload(...)
             if v=="jit" then
                 table.new=require("table.new")
                 table.clear=require("table.clear")
-                jit.profile=require("jit.profile")
-                jit.util=require("jit.util")
+                env.jit.profile=require("jit.profile")
+                env.jit.util=require("jit.util")
+            elseif v=='ffi' then
+                env.ffi=require("ffi")
             end
         end 
     end

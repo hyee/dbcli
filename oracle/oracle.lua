@@ -12,7 +12,8 @@ local module_list={
     "oracle/snap",
     "oracle/sqlprof",
     "oracle/tracefile",
-    "oracle/awrdump"
+    "oracle/awrdump",
+    "oracle/unwrap"
 }
 
 local oracle=env.class(env.db_core)
