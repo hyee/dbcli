@@ -266,21 +266,18 @@ end
 
 function env.raise(...)
     local str=env.format_error(env.callee(),...)
-    print(str)
-    return error('000-00000:')
+    return error('000-00000:'..str)
 end
 
 function env.raise_error(...)
     local str=env.format_error(nil,...)
-    print(str)
-    return error('000-00000:')
+    return error('000-00000:'..str)
 end
 
 function env.checkerr(result,msg,...)
     if not result then
         local str=env.format_error(env.callee(),msg,...)
-        print(str)
-        return error('000-00000:')
+        return error('000-00000:'..str)
     end
 end
 
@@ -307,26 +304,25 @@ function env.exec_command(cmd,params)
             writer:flush()
         end
         
-        env.CURRENT_THREAD=coroutine.create(func)
-        local res={coroutine.resume(env.CURRENT_THREAD,table.unpack(args))}
-        env.CURRENT_THREAD=nil
+        local co=coroutine.create(func)
+        local res={coroutine.resume(co,table.unpack(args))}
 
         --local res = {pcall(func,table.unpack(args))}
         if not res[1] then
             result=res
             local msg={}
-            res[2]=tostring(res[2]):gsub('^.*java%..*Exception%:%s*','')
-            if not res[2]:find('000-00000:',1,true) then
-                for v in res[2]:gmatch("(%u%u%u+%-[^\n\r]*)") do
-                    table.insert(msg,v)
-                end
-                if #msg > 0 then
-                    print(env.ansi.mask("HIR",table.concat(msg,'\n')))
-                else
-                    local trace=res[2] --..'\n'..env.trace.enable(false)
-                    print(env.ansi.mask("HIR",trace.."\n"))
-                end
+            res[2]=tostring(res[2]):gsub('^.*java%..*Exception%:%s*',''):gsub("^.*000%-00000:","")
+            for v in res[2]:gmatch("(%u%u%u+%-[^\n\r]*)") do
+                table.insert(msg,v)
             end
+            if #msg > 0 then
+                print(env.ansi.mask("HIR",table.concat(msg,'\n')))
+            else
+                local trace=res[2] --..'\n'..env.trace.enable(false)
+                print(env.ansi.mask("HIR",trace.."\n"))
+            end
+
+            if coroutine.running() then pcall(coroutine.yield) end
         elseif not result then
             result=res       
         end

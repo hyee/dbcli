@@ -340,10 +340,10 @@ function oracle:onload()
 end
 
 local ignore_errors={
-    ['ORA-00028']='default',
-    ['Connection reset']='default',
-    ['ORA-00031']='Connection is lost, please login again.',
-    ['No more data to read from socket']='Connection is lost, please login again.'
+    ['ORA-00028']='Connection is lost, please login again.',
+    --['ORA-00031']='Connection is lost, please login again.',
+    ['socket']='Connection is lost, please login again.',
+    ['SQLRecoverableException']='Connection is lost, please login again.'
 }
 
 function oracle.handle_error(info)

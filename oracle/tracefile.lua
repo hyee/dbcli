@@ -91,21 +91,30 @@ function trace.get_trace(filename,mb,from_mb)
     END;]]
     
     env.checkerr(filename,"Please specify the trace file location !")
+    if not db.props.db_version then env.raise_error('Database is not connected!') end;
     db:internal_call("alter session set sql_trace=false")
     filename=filename:lower()
     if filename=="default" then
-        filename=db:get_value[[ SELECT u_dump.value || '/' || SYS_CONTEXT('userenv','instance_name') || '_ora_' || v$process.spid ||
-                                       nvl2(v$process.traceid, '_' || v$process.traceid, NULL) || '.trc' "Trace File"
-                                FROM   v$parameter u_dump
-                                CROSS  JOIN v$process
-                                JOIN   v$session
-                                ON     v$process.addr = v$session.paddr
-                                WHERE  u_dump.name = 'user_dump_dest'
-                                AND    v$session.audsid = sys_context('userenv', 'sessionid')]]
+        if db.props.db_version>'11' then
+            filename=db:get_value[[select value from v$diag_info where name='Default Trace File']]
+        else
+            filename=db:get_value[[ SELECT u_dump.value || '/' || SYS_CONTEXT('userenv','instance_name') || '_ora_' || v$process.spid ||
+                                           nvl2(v$process.traceid, '_' || v$process.traceid, NULL) || '.trc' "Trace File"
+                                    FROM   v$parameter u_dump
+                                    CROSS  JOIN v$process
+                                    JOIN   v$session
+                                    ON     v$process.addr = v$session.paddr
+                                    WHERE  u_dump.name = 'user_dump_dest'
+                                    AND    v$session.audsid = sys_context('userenv', 'sessionid')]]
+            end
     elseif filename=="alert" then
-        filename=db:get_value[[SELECT u_dump.value || '/alert_' || SYS_CONTEXT('userenv', 'instance_name') || '.log' "Trace File"
-                               FROM   v$parameter u_dump
-                               WHERE  u_dump.name = 'background_dump_dest']]    
+        if db.props.db_version<='11' then
+            filename=db:get_value[[SELECT u_dump.value || '/alert_' || SYS_CONTEXT('userenv', 'instance_name') || '.log' "Trace File"
+                                   FROM   v$parameter u_dump
+                                   WHERE  u_dump.name = 'background_dump_dest']] 
+        else
+            filename=db:get_value[[select value|| '/alert_' || SYS_CONTEXT('userenv', 'instance_name') || '.log' from v$diag_info where name='Diag Trace']]
+        end   
     end
     local args={filename,"#VARCHAR","#CLOB","#VARCHAR",mb=mb or 4,from_mb=from_mb or '',res='#VARCHAR'}
     db:internal_call(sql,args)

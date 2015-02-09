@@ -1,4 +1,5 @@
-2015-02-01: * fixes on 'ora space'(partial)
+2015-02-08: ! fix 'loadtrace alert' for Oracle 12c 
+2015-02-01: ! fixes on 'ora space'(partial)
 2015-02-01: * error message improvement
 2015-02-07: ! 'ora' command fully supports accessing the dirs that not belong to the 'ora' directory, i.e. 'ora -h @','ora -p @','ora @'
 2015-02-07: ! fixes on error of 'ora actives' when active sql texts contain char '\0'

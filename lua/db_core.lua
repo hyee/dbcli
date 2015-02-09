@@ -441,7 +441,7 @@ function db_core:exec(sql,args)
         event("ON_SQL_ERROR",info)    
         if info and info.error then
             if info.sql then print('SQL: '..info.sql:gsub("\n","\n     ")) end
-            error(info.error) 
+            env.raise_error(info.error) 
         end
         return
     end
@@ -481,6 +481,9 @@ function db_core:exec(sql,args)
         result=prep:getResultSet()
     else
         result=prep:getUpdateCount()
+        while prep:getMoreResults() do
+            self.resultset:print(prep:getResultSet(),self.conn)
+        end
     end
     if event then event("AFTER_DB_EXEC",self,sql,args,result) end
     return result

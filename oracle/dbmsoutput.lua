@@ -45,7 +45,7 @@ function output.getOutput(db,sql)
         END;]]
     if not db:is_internal_call(sql) then
         local args={enable=isOutput,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB"}
-        db:internal_call(stmt,args)    
+        if not pcall(db.internal_call,db,stmt,args) then return end  
         local result=args.lob or args.buff
         if isOutput == "on" and result and result:match("[^\n%s]+") then
             result=result:gsub("[\n\r]","\n")
