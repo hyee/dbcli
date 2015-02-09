@@ -35,7 +35,6 @@ ffi.cdef[[
 ]]
 local crypt = ffi.load(ffi.os == "Windows" and "crypt32")
 
-
 function unwrap.fromBase64(txt)
   local buflen = ffi.new("int[1]")
   crypt.CryptStringToBinaryA(txt, #txt, 1, nil, buflen, nil, nil)
@@ -109,7 +108,7 @@ function unwrap.unwrap(obj)
         if piece[3]==piece[4] then
             if piece[2]==1 then
                 local cnt,lines=txt:match('[\n\r][0-9a-f]+ ([0-9a-f]+)[\n\r](.*)')
-                if not lines then return print('Cannot find matched text') end
+                env.checkerr(lines,'Cannot find matched text!')
                 lines=lines:gsub('[\n\r]+','')
                 txt=decode_base64_package(lines)
             end
