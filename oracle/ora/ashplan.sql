@@ -4,6 +4,7 @@
     &V9: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
 --]]     
 ]]*/
+set feed off printsize 3000
 
 WITH sql_plan_data AS
  (SELECT *
@@ -126,7 +127,7 @@ xplan_data AS
          END))
 SELECT plan_table_output
 FROM   xplan_data --
-model  dimension by (phv, rownum as r)
+model  dimension by (rownum as r)
 measures (plan_table_output,
          id,
          maxid,
@@ -142,35 +143,35 @@ measures (plan_table_output,
          cpu,io,cc,cl,app,oth,exes,hits,mins,px_hits,top_event,
          rc)
 rules sequential order (
-      inject[phv,r] = case
-                         when plan_table_output[cv()] like '------%' then rpad('-', csize[cv()]*2, '-')
-                         then rpad('-', sevent[cv(),cv()]+csize[cv(),cv()]+spx_hit[cv(),cv()]++shit[cv(),cv()]+sexe[cv(),cv()]+smin[cv(),cv()]+31, '-')
-                         when id[cv(),cv()+2] = 0
-                         then '|'  || lpad('Ord |', csize[cv(),cv()])--
-                             ||LPAD('Calls',sexe[cv(),cv()])
-                             ||LPAD('Count',spx_hit[cv(),cv()])
-                             ||LPAD('Secs',shit[cv(),cv()])
-                             ||LPAD('Mins|',smin[cv(),cv()])
-                             ||' CPU%  IO%  CL%  CC% APP% OTH%|'
-                            -- ||LPAD('Top_Obj',sobj[cv(),cv()])
-                             ||RPAD(' Top Event',sevent[cv(),cv()]-1)||'|'
-                         when id[cv(),cv()] is not null
-                         then '|' || lpad(oid[cv(),cv()] || ' |', csize[cv(),cv()]) 
-                             ||LPAD(exes[cv(),cv()], sexe[cv(),cv()])
-                             ||LPAD(px_hits[cv(),cv()],spx_hit[cv(),cv()])
-                             ||LPAD(hits[cv(),cv()], shit[cv(),cv()])
-                             ||LPAD(mins[cv(),cv()]||'|', smin[cv(),cv()])
-                             ||LPAD(CPU[cv(),cv()],5)||LPAD(IO[cv(),cv()],5)||LPAD(CL[cv(),cv()],5)||LPAD(cc[cv(),cv()],5)||LPAD(app[cv(),cv()],5)||LPAD(oth[cv(),cv()],5)||'|'
-                            ||RPAD(' '||top_event[cv(),cv()],sevent[cv(),cv()]-1)||'|'                            
-                      end, 
-      plan_table_output[phv,r] = case
-                                    when inject[cv(),cv()] like '---%'
-                                    then inject[cv(),cv()] || plan_table_output[cv(),cv()]
-                                    when plan_table_output[cv(),cv()] like 'Plan hash value%' 
-                                    then plan_table_output[cv(),cv()]||'   Source: &V9 from '||nvl(:V3,to_char(sysdate-90,'YYMMDDHH24MI'))||' to '||nvl(:V4,to_char(sysdate,'YYMMDDHH24MI'))
-                                    when inject[cv(),cv()] is not null
-                                    then regexp_replace(plan_table_output[cv(),cv()], '\|', inject[cv(),cv()], 1, 2)
-                                    else plan_table_output[cv(),cv()]
-                                 END
+    inject[r] = case
+         when plan_table_output[cv()] like '------%' 
+         then rpad('-', sevent[cv()]+csize[cv()]+spx_hit[cv()]++shit[cv()]+sexe[cv()]+smin[cv()]+31, '-')
+         when id[cv()+2] = 0
+         then '|'  || lpad('Ord |', csize[cv()])--
+             ||LPAD('Calls',sexe[cv()])
+             ||LPAD('Count',spx_hit[cv()])
+             ||LPAD('Secs',shit[cv()])
+             ||LPAD('Mins|',smin[cv()])
+             ||' CPU%  IO%  CL%  CC% APP% OTH%|'
+            -- ||LPAD('Top_Obj',sobj[cv()])
+             ||RPAD(' Top Event',sevent[cv()]-1)||'|'
+         when id[cv()] is not null
+         then '|' || lpad(oid[cv()] || ' |', csize[cv()]) 
+             ||LPAD(exes[cv()], sexe[cv()])
+             ||LPAD(px_hits[cv()],spx_hit[cv()])
+             ||LPAD(hits[cv()], shit[cv()])
+             ||LPAD(mins[cv()]||'|', smin[cv()])
+             ||LPAD(CPU[cv()],5)||LPAD(IO[cv()],5)||LPAD(CL[cv()],5)||LPAD(cc[cv()],5)||LPAD(app[cv()],5)||LPAD(oth[cv()],5)||'|'
+            ||RPAD(' '||top_event[cv()],sevent[cv()]-1)||'|'                            
+        end, 
+    plan_table_output[r] = case
+            when inject[cv()] like '---%'
+            then inject[cv()] || plan_table_output[cv()]
+            when plan_table_output[cv()] like 'Plan hash value%' 
+            then plan_table_output[cv()]||'   Source: &V9 from '||nvl(:V3,to_char(sysdate-90,'YYMMDDHH24MI'))||' to '||nvl(:V4,to_char(sysdate,'YYMMDDHH24MI'))
+            when inject[cv()] is not null
+            then regexp_replace(plan_table_output[cv()], '\|', inject[cv()], 1, 2)
+            else plan_table_output[cv()]
+         END
      )
 order  by r; 

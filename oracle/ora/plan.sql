@@ -156,19 +156,18 @@ measures (plan_table_output,id,maxid,pid,oid,minid,
          cast(null as varchar2(128)) as inject,
          rc)
 rules sequential order (
-      inject[r] = case
-                      when plan_table_output[cv()] like '------%' then rpad('-', csize[cv()]*2, '-')
-                      when id[cv()+2] = minid[cv()]
-                      then '|' || lpad('Pid |', csize[cv()]) || lpad('Ord |', csize[cv()])
-                      when id[cv()] is not null
-                      then '|' || lpad(pid[cv()] || ' |', csize[cv()]) || lpad(oid[cv()] || ' |', csize[cv()]) 
-                  end, 
-      plan_table_output[r] = case
-                                 when inject[cv()] like '---%'
-                                 then inject[cv()] || plan_table_output[cv()]
-                                 when inject[cv()] is not null
-                                 then regexp_replace(plan_table_output[cv()], '\|', inject[cv()], 1, 2)
-                                 else plan_table_output[cv()]
-                             END
-     )
+    inject[r] = case
+          when plan_table_output[cv()] like '------%' then rpad('-', csize[cv()]*2, '-')
+          when id[cv()+2] = minid[cv()]
+          then '|' || lpad('Pid |', csize[cv()]) || lpad('Ord |', csize[cv()])
+          when id[cv()] is not null
+          then '|' || lpad(pid[cv()] || ' |', csize[cv()]) || lpad(oid[cv()] || ' |', csize[cv()]) 
+      end, 
+    plan_table_output[r] = case
+         when inject[cv()] like '---%'
+         then inject[cv()] || plan_table_output[cv()]
+         when inject[cv()] is not null
+         then regexp_replace(plan_table_output[cv()], '\|', inject[cv()], 1, 2)
+         else plan_table_output[cv()]
+     END)
 order  by r; 
