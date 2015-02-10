@@ -1,5 +1,5 @@
 /*[[Get SQL text. Usage: sql <sql_id>]]*/
-set linesize 32767 colwrap 300
+set linesize 32767 colwrap 150
 SELECT * FROM(
   select sql_text from dba_hist_sqltext where sql_id=:V1
   union all
