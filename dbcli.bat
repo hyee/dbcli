@@ -5,7 +5,7 @@ rem set font and background color
 color 0A
 rem color F0
 
-SET JRE_HOME=D:\JDKx64\jre\bin
+SET JRE_HOME=D:\java\jre\bin
 rem SET JRE_HOME=D:\Java\jre\bin
 SET TNS_ADM=d:\Oracle\product\network\admin
 

@@ -13,7 +13,7 @@ ffi.cdef[[
     int uncompress(uint8_t *dest, unsigned long *destLen,
                const uint8_t *source, unsigned long sourceLen);
 ]]
-local zlib = ffi.load(ffi.os == "Windows" and "lib\\x64\\zlib1" or "z")
+local zlib = ffi.load(ffi.os == "Windows" and "lib\\"..jit.arch.."\\zlib1" or "z")
 
 ffi.cdef[[
     int __stdcall  CryptBinaryToStringA(
