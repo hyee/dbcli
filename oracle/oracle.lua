@@ -342,13 +342,12 @@ end
 
 local ignore_errors={
     ['ORA-00028']='Connection is lost, please login again.',
-    --['ORA-00031']='Connection is lost, please login again.',
     ['socket']='Connection is lost, please login again.',
     ['SQLRecoverableException']='Connection is lost, please login again.'
 }
 
 function oracle.handle_error(info)
-    local msg,ora_code=info.error:match('(ORA%-(%d+)[^\n\r]+)')
+    local ora_code,msg=info.error:match('ORA%-(%d+):%s*([^\n\r]+)')
     if ora_code and tonumber(ora_code)>=20001 and tonumber(ora_code)<20999 then
         info.sql=nil
         info.error=msg

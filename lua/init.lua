@@ -3,6 +3,7 @@ local dirs={"lib","cache","data"}
 local init={
     module_list={
        --Libraries ->
+        "lib/zlib",
         "lib/socket",
         "lib/lanes",
         "lib/MessagePack",

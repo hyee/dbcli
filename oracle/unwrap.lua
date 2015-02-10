@@ -3,17 +3,8 @@
 --    http://blog.csdn.net/akinosun/article/details/8041199
 
 local table,string=table,string
-local env,db,ffi=env,env.oracle,env.ffi
+local env,db,ffi,zlib=env,env.oracle,env.ffi,env.zlib
 local unwrap={}
-
-ffi.cdef[[
-    unsigned long compressBound(unsigned long sourceLen);
-    int compress2(uint8_t *dest, unsigned long *destLen,
-              const uint8_t *source, unsigned long sourceLen, int level);
-    int uncompress(uint8_t *dest, unsigned long *destLen,
-               const uint8_t *source, unsigned long sourceLen);
-]]
-local zlib = ffi.load(ffi.os == "Windows" and "lib\\"..jit.arch.."\\zlib1" or "z")
 
 ffi.cdef[[
     int __stdcall  CryptBinaryToStringA(
@@ -40,14 +31,6 @@ function unwrap.fromBase64(txt)
   crypt.CryptStringToBinaryA(txt, #txt, 1, nil, buflen, nil, nil)
   local buf = ffi.new("char[?]", buflen[0])
   crypt.CryptStringToBinaryA(txt, #txt, 1, buf, buflen, nil, nil)
-  return ffi.string(buf, buflen[0])
-end
-
-function unwrap.uncompress(comp, n)
-  local buf = ffi.new("uint8_t[?]", n)
-  local buflen = ffi.new("unsigned long[1]", n)
-  local res = zlib.uncompress(buf, buflen, comp, #comp)
-  assert(res == 0)
   return ffi.string(buf, buflen[0])
 end
 
@@ -85,10 +68,11 @@ local function decode_base64_package(base64str)
         --print(base64dec:sub(i,i):byte(),base64dec:sub(i,i))
         decoded[i] = string.char(charmap[base64dec:sub(i,i):byte()+1])
     end
-    return unwrap.uncompress(table.concat(decoded,''),3276700)
+    return zlib.uncompress(table.concat(decoded,''))
 end
 
 function unwrap.unwrap(obj)
+    env.checkerr(obj and obj~='','Usage: unwrap <owner>.<object_name>')
     local rs=db:exec([[
         SELECT TEXT,
                MAX(CASE WHEN LINE = 1 AND TEXT LIKE '% wrapped%' || CHR(10) || '%' THEN 1 ELSE 0 END) OVER(PARTITION BY TYPE) FLAG,

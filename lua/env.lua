@@ -317,9 +317,8 @@ function env.exec_command(cmd,params)
             end
             if #msg > 0 then
                 print(env.ansi.mask("HIR",table.concat(msg,'\n')))
-            else
-                local trace=res[2] --..'\n'..env.trace.enable(false)
-                print(env.ansi.mask("HIR",trace.."\n"))
+            elseif #res[2]>0 then
+                print(env.ansi.mask("HIR",res[2].."\n"))
             end
 
             if coroutine.running() then pcall(coroutine.yield) end
