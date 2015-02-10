@@ -5,7 +5,6 @@ function awr.dump_report(stmt,starttime,endtime,instances)
     if not endtime then 
         return print('Parameters: <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]')
     end
-
     db:check_date(starttime)
     db:check_date(endtime)
 
@@ -87,7 +86,7 @@ function awr.extract_awr(starttime,endtime,instances)
                 FOR r IN (SELECT *
                           FROM   TABLE(dbms_workload_repository.awr_report_html(dbid, inst, st, ed))) LOOP
                     IF r.output IS NOT NULL THEN
-                        dbms_lob.writeappend(rs, LENGTHB(r.output), r.output);
+                        dbms_lob.writeappend(rs, LENGTH(r.output), r.output);
                     END IF;
                 END LOOP;
                 $IF DBMS_DB_VERSION.VERSION>10 $THEN
@@ -95,7 +94,7 @@ function awr.extract_awr(starttime,endtime,instances)
                 FOR r IN (SELECT *
                           FROM   TABLE(dbms_workload_repository.awr_global_report_html(dbid,inst,st,ed))) LOOP
                     IF r.output IS NOT NULL THEN
-                        dbms_lob.writeappend(rs, LENGTHB(r.output), r.output);
+                        dbms_lob.writeappend(rs, LENGTH(r.output), r.output);
                     END IF;
                 END LOOP;
                 $END
@@ -135,6 +134,19 @@ function awr.extract_ash(starttime,endtime,instances)
         
             stim := to_date(p_start, 'YYMMDDHH24MI');
             etim := to_date(p_end, 'YYMMDDHH24MI');
+            SELECT max(dbid),
+                   max((select nvl(max(end_interval_time+0),stim) from Dba_Hist_Snapshot WHERE snap_id=st AND dbid=a.dbid)),
+                   max((select nvl(max(end_interval_time+0),etim) from Dba_Hist_Snapshot WHERE snap_id=ed AND dbid=a.dbid))
+            INTO   dbid, stim,etim
+            FROM   (SELECT dbid, 
+                           nvl(MAX(decode(sign(end_interval_time+0-stim),1,null,snap_id)),min(snap_id)) st, 
+                           nvl(min(decode(sign(end_interval_time+0-etim),-1,null,snap_id)),max(snap_id)) ed
+                    FROM   Dba_Hist_Snapshot
+                    WHERE  begin_interval_time+0 <= etim+0.5 and end_interval_time>=stim-0.5
+                    AND    (inst IS NULL OR instr(',' || inst || ',', instance_number) > 0)
+                    GROUP  BY DBID
+                    ORDER  BY 2 DESC) a
+            WHERE  ROWNUM < 2;
             SELECT MAX(dbid) KEEP(dense_rank LAST ORDER BY begin_interval_time)
             INTO   dbid
             FROM   Dba_Hist_Snapshot
@@ -161,7 +173,7 @@ function awr.extract_ash(starttime,endtime,instances)
                                                                                 stim ,
                                                                                 etim ,0,600))) LOOP
                     IF r.output IS NOT NULL THEN
-                        dbms_lob.writeappend(rs, LENGTHB(r.output), r.output);
+                        dbms_lob.writeappend(rs, LENGTH(r.output), r.output);
                     END IF;
                 END LOOP;
                 $IF DBMS_DB_VERSION.VERSION>10 $THEN
@@ -172,7 +184,7 @@ function awr.extract_ash(starttime,endtime,instances)
                                                                                        stim ,
                                                                                        etim ,0,600))) LOOP
                     IF r.output IS NOT NULL THEN
-                        dbms_lob.writeappend(rs, LENGTHB(r.output), r.output);
+                        dbms_lob.writeappend(rs, LENGTH(r.output), r.output);
                     END IF;
                 END LOOP;
                 $END
@@ -282,10 +294,13 @@ function awr.extract_addm(starttime,endtime,instances)
                                     AND    e.rec_id = b.rec_id
                                     AND    f.id = e.msg_id) remimpact,
                                    (SELECT RTRIM(NVL2(MAX(E.task_id), 'Rationale: ', '') ||
-                                                 to_char(REPLACE(wmsys.wm_concat(e.message || CHR(10)),
-                                                                 CHR(10) || ',',
-                                                                 chr(10) || LPAD(' ', 19))),
-                                                 chr(0) || chr(10))
+                                        $if DBMS_DB_VERSION.ver_le_11_1 
+                                        $then
+                                            to_char(REPLACE(wmsys.wm_concat(e.message || CHR(10)),CHR(10) || ',',chr(10) || LPAD(' ', 19))),
+                                        $else
+                                            listagg(e.message,chr(10)) WITHIN GROUP(order by 1),                                        
+                                        $end
+                                            chr(0) || chr(10))
                                     FROM   DBA_ADVISOR_RATIONALE e
                                     WHERE  B.task_id = E.task_id
                                     AND    B.rec_id = E.rec_id) remreason,

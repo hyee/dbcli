@@ -43,7 +43,7 @@ DECLARE
     BEGIN
         IF &CC =1 OR NOT v_founds.exists(obj) THEN
             v_stack := '<ROW><OBJ>' || obj||  '</OBJ><CON>' || con ||'</CON><LV>' || lv || '</LV></ROW>';
-            dbms_lob.writeappend(v_result, LENGTHB(v_stack), v_stack);
+            dbms_lob.writeappend(v_result, LENGTH(v_stack), v_stack);
         END IF;
         v_counter := v_counter + 1;
         IF NOT v_founds.exists(obj) THEN

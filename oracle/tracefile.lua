@@ -60,7 +60,7 @@ function trace.get_trace(filename,mb,from_mb)
             LOOP
                 utl_file.get_line(trace_file, buff, 32767);
                 counter := counter+nvl(lengthb(buff)+1,1);
-                dbms_lob.writeappend(text, nvl(lengthb(buff)+1,1), buff||chr(10));   
+                dbms_lob.writeappend(text, nvl(length(buff)+1,1), buff||chr(10));   
                 EXIT WHEN counter>MBs;               
             END LOOP;
         EXCEPTION
