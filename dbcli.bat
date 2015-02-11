@@ -14,7 +14,7 @@ IF not exist "%JRE_HOME%\java.exe" (set JRE_HOME=.\jre\bin)
 
 SET PATH=%JRE_HOME%;%PATH%
 
-java -Xmx128M -cp .\lib\*%OTHER_LIB% ^
+java -noverify -Xmx128M -cp .\lib\*%OTHER_LIB% ^
      -XX:-UseAdaptiveSizePolicy -XX:+UseParallelGC ^
      -Dfile.encoding=UTF-8 -Doracle.net.tns_admin="%TNS_ADM%" ^
      org.dbcli.Loader %*

@@ -1,0 +1,23 @@
+/*[[
+   Source: gv$segstat,gv$sql_plan. parameters: <sql_id>
+   --[[
+      &V1: df={1}
+   --]]
+]]*/
+{
+    sql=[[
+        SELECT /*+ordered use_nl(a)*/
+         NAME, STATISTIC_NAME, SUM(VALUE) VALUE, COUNT(DISTINCT a.dataobj#) segs
+        FROM   sys.obj$ b, gv$segstat a
+        WHERE  a.dataobj# = b.dataobj#
+        AND    (NAME, owner#) IN
+               (SELECT object_name, (SELECT user_id FROM dba_users WHERE username = object_owner)
+                 FROM   gv$sql_plan
+                 WHERE  sql_id = :V1)
+        AND    VALUE > 0
+        GROUP BY NAME, STATISTIC_NAME
+    ]],
+    agg_cols="VALUE,segs",
+    set_ratio='off',
+    grp_cols="NAME, STATISTIC_NAME"
+}

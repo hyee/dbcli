@@ -1,4 +1,4 @@
-/*[[Get DDL statement. Usage: ddl [owner.]<object_name>]]*/
+/*[[Get DDL statement. Usage: ddl [owner.]<object_name> [<file_ext>] ]]*/
 
 
 SET FEED OFF PRINTVAR OFF
@@ -93,7 +93,7 @@ BEGIN
             END IF;
         END IF;
         :text := txt;
-        :dest := part1 || '.sql';
+        :dest := part1 || '.'||nvl(:V2,'sql');
     END IF;
 END;
 /
