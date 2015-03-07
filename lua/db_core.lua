@@ -274,7 +274,6 @@ function db_core:ctor()
             login -d <num|name|alias> : delete matched a/c
             login <num|name|alias>    : login a/c
             login -a <alias> <id|name>: set alias to an existing account]]
-    env.set_command(self,"login", help,self.login,false,3)
     set_command(self,"commit",nil,self.commit,false,1)
     set_command(self,"rollback",nil,self.rollback,false,1)
 end
@@ -595,6 +594,7 @@ function db_core:__onload()
     cfg.init("AUTOCOMMIT",'off',set_param,"db.core","Detemine if auto-commit every db execution",'on,off')
     cfg.init("SQLCACHESIZE",50,set_param,"db.core","Number of cached statements in JDBC",'5-500')
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
+    env.set_command(self,"login", help,self.login,false,3)
 end
 
 function db_core:__onunload()

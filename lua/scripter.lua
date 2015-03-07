@@ -247,9 +247,8 @@ function scripter:run_sql(sql,args,print_args)
     if not self.db:is_connect() then
         env.raise("database is not connected !")
     end
-    args=self:parse_args(sql,args,print_args)
+    
     if print_args or not args then return end
-
     --remove comment
     sql=sql:gsub(self.comment,"",1)
     sql=('\n'..sql):gsub("\n[\t%s]*%-%-[^\n]*","")
@@ -271,7 +270,7 @@ function scripter:run_sql(sql,args,print_args)
     cfg.restore(backup)
 end
 
-function scripter:run_script(cmd,...)
+function scripter:get_script(cmd,args,print_args)
     if not self.cmdlist or cmd=="-r" or cmd=="-R" then
         self.cmdlist,self.extend_dirs=self:rehash(self.script_dir,self.ext_name),{}
         local keys={}
@@ -284,8 +283,7 @@ function scripter:run_script(cmd,...)
         return env.helper.helper(self.command)
     end
 
-    cmd=cmd:upper()    
-    local args,print_args={...},false
+    cmd=cmd:upper()
 
     if cmd:sub(1,1)=='-' and args[1]=='@' and args[2] then
         args[2]='@'..args[2]
@@ -303,7 +301,7 @@ function scripter:run_script(cmd,...)
         cmd,print_args=args[1] and args[1]:upper() or "/",true
         table.remove(args,1)
     elseif cmd=="-S" then
-        return env.helper.helper(self.command,"-S",...)
+        return env.helper.helper(self.command,"-S",table.unpack(args))
     end
 
     local file,f,target_dir
@@ -321,6 +319,14 @@ function scripter:run_script(cmd,...)
     env.checkerr(f,"Cannot find this script!")
     local sql=f:read('*a')
     f:close()
+    args=self:parse_args(sql,args,print_args)
+    return sql,args,print_args
+end
+
+function scripter:run_script(cmd,...)
+    local args,print_args,sql={...},false
+    sql,args,print_args=self:get_script(cmd,args,print_args)
+    if not args then return end
     self:run_sql(sql,args,print_args)
 end
 

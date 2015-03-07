@@ -31,4 +31,3 @@ FROM   (SELECT OWNER,
         WHERE  a.object_id = b.object_id
         AND    upper(a.procedure_name || CHR(1) || a.subprogram_id) LIKE '%' || NVL(UPPER(:V1), 'x') || '%'
         ORDER  BY 1, 2)
-WHERE  ROWNUM < 100

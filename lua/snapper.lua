@@ -28,14 +28,11 @@ function snapper:fetch(cmd,pos)
     end
 end
 
-function snapper:parse(name) 
-    local file=self.cmdlist[name].path
-    local f=io.open(file)
-    if not f then
-        return print("Cannot find open file "..file)
-    end
+function snapper:parse(name,args) 
 
-    local txt=loadstring(('return '..f:read("*a")):gsub(self.comment,"",1))
+    local txt
+    txt,args=self:get_script(name,args)
+    txt=loadstring(('return '..txt):gsub(self.comment,"",1))
 
     if not txt then
        return print("Invalid syntax in "..file)
@@ -56,7 +53,7 @@ function snapper:parse(name)
     cmd.agg_cols=','..cmd.agg_cols:upper()..','    
     cmd.name=name
 
-    return cmd
+    return cmd,args
 end
 
 function snapper:after_exec()
@@ -72,11 +69,11 @@ end
 function snapper:exec(interval,typ,...)
     local db,print_args=self.db
     cfg_backup=cfg.backup()  
-    cfg.set("feed","off")  
+    cfg.set("feed","off")
     cfg.set("autocommit","off")
     cfg.set("digits",2)
 
-    if not self.cmdlist or interval=="-r" or interval=="-R" then
+    if not self.cmdlist then
         self.cmdlist=self:rehash(self.script_dir,'snap')        
     end
 
@@ -85,18 +82,9 @@ function snapper:exec(interval,typ,...)
     end    
 
     interval=interval:upper()
-    if interval:sub(1,1)=='-' then
-        if interval=="-R" then
-            return
-        elseif interval=="-H" then
-            return  env.helper.helper(self.command,typ)
-        elseif interval=="-P" then
-            interval,print_args=args[1] and typ:upper() or "/",true
-            table.remove(args,1)
-        elseif interval=="-S" then
-            return env.helper.helper(self.command,"-S",...)
-        end
-        return
+
+    if interval:sub(1,1)=="-" then
+        return self:get_script(interval,{typ,...})
     end
 
     local begin_flag
@@ -120,14 +108,14 @@ function snapper:exec(interval,typ,...)
         args["V"..i]=args[i] or ""
     end
     
-    local cmds={}
+    local cmds,cmd={}
 
     for v in typ:gmatch("([^\n\t%s,]+)") do
         v=v:upper()
         if not self.cmdlist[v] then
             return print("Error: Cannot find command :" .. v)
         end
-        local cmd=self:parse(v)
+        cmd,args=self:parse(v,args)
         if not cmd then return end
         cmds[v]=cmd
     end    
@@ -136,7 +124,7 @@ function snapper:exec(interval,typ,...)
     local start_time=self:get_time()
     self:trigger('before_exec_action')
     local clock=os.clock()
-    for _,cmd in pairs(cmds) do cmd.rs2=db:internal_call(cmd.sql,args) end
+    for _,cmd in pairs(cmds) do cmd.rs2=db:exec(cmd.sql,args) end
     db:commit()
     self.cmds,self.start_time,self.args=cmds,start_time,args
     
@@ -152,7 +140,7 @@ function snapper:next_exec()
 
     local end_time=self:get_time()
     for _,cmd in pairs(cmds) do
-        cmd.rs1=db:internal_call(cmd.sql,args)
+        cmd.rs1=db:exec(cmd.sql,args)
     end
     db:commit()    
     self:trigger('after_exec_action')
@@ -242,7 +230,7 @@ function snapper:next_exec()
             if cmd.set_ratio~='off' then cmd.grid:add_calc_ratio(i) end    
         end
         cmd.grid:sort(idx,true)    
-        local title=("\nFrom "..start_time.." to "..end_time..":\n"):format(name)
+        local title=("\n"..name..": From "..start_time.." to "..end_time..":\n"):format(name)
         print(title..string.rep("=",title:len()-2))
         cmd.grid:print(nil,nil,nil,cmd.max_rows or cfg.get(self.command.."rows"))        
     end    
