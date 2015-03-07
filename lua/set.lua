@@ -61,7 +61,12 @@ end
 
 function cfg.get(name)
     name=name:upper()
-    if not cfg[name] then return print("["..name.."] setting does not exist!")    end    
+    if not cfg[name] then
+        print(table.dump(debug.getinfo(1)))
+        print(table.dump(debug.getinfo(2)))
+        print(table.dump(debug.getinfo(3)))
+        return print("["..name.."] setting does not exist!")    
+    end    
     return cfg[name].value
 end
 

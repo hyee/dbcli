@@ -27,6 +27,9 @@ local init={
         "lua/interval",
         "lua/db_core",
         "lua/login",
+        "lua/var",
+        "lua/scripter",
+        "lua/snapper",
         "lua/tester"}
 }
 
@@ -109,6 +112,7 @@ function init.load_database()
     local name=file:match("([^\\/]+)$")
     env[name]=exec(dofile,env.WORK_DIR..file:gsub("[\\/]+",env.PATH_DEL)..'.lua')    
     exec(type(env[name])=="table" and env[name].onload,env[name],name)
+    init.module_list[#init.module_list+1]=file
 end
 
 function init.load_modules(list,tab)

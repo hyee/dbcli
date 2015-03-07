@@ -1,7 +1,7 @@
 local env=env
 local grid,snoop,cfg=env.grid,env.event.snoop,env.set
-local db=env.oracle
-local var={inputs={},outputs={},desc={},global_context={}}
+local var=env.class()
+var.inputs,var.outputs,var.desc,var.global_context={},{},{},{}
 
 var.types={
     REFCURSOR =  'CURSOR',
@@ -109,32 +109,23 @@ local function update_text(item,pos,params)
     end
 end
 
-function var.before_db_parse(item)
-    update_text(item,2,item[3])
-end
-
 function var.before_print(item)
     update_text(item,1,{})
 end
 
 function var.before_db_exec(item)
-    local db,sql,args=table.unpack(item)
-    for k,v in pairs(var.outputs) do
-        if not args[k] then
-            args[k]=v
+    local db,sql,args,params=table.unpack(item)
+    for i=1,3 do
+        for name,v in pairs(i==1 and var.outputs or i==2 and var.inputs or var.global_context) do
+            if i==1 and not args[name] then args[name]=v end
+            if not params[name] then params[name]=v end
         end
     end
-
-    for name,v in pairs(var.inputs) do
-        if not args[name] then args[name]=v end
-    end
-
-    for name,v in pairs(var.global_context) do
-        if not args[name] then args[name]=v end
-    end     
+    update_text(item,2,params)    
 end
 
-function var.after_db_exec(db,sql,args)
+function var.after_db_exec(item)
+    local db,sql,args=table.unpack(item)
     if db:is_internal_call(sql) then return end
     local result,isPrint={},cfg.get("PrintVar")
     for k,v in pairs(var.outputs) do
@@ -143,6 +134,8 @@ function var.after_db_exec(db,sql,args)
             result[k]=args[k]            
         end
     end
+
+    var.current_db=db
     
     if isPrint=="on" then
         var.print(result)
@@ -150,6 +143,7 @@ function var.after_db_exec(db,sql,args)
 end
 
 function var.print(name)
+    local db=var.current_db
     if not name then return end    
     if type(name)=="string" and name:lower()~='-a' then
         name=name:upper()
@@ -206,16 +200,16 @@ function var.save(name,file)
 end
 
 function var.onload()
-    snoop('BEFORE_DB_STMT_PARSE',var.before_db_parse)
-    snoop('BEFORE_ORACLE_EXEC',var.before_db_exec)
-    snoop('AFTER_ORACLE_EXEC',var.after_db_exec)
+    snoop('BEFORE_DB_EXEC',var.before_db_exec)
+    snoop('AFTER_DB_EXEC',var.after_db_exec)
     snoop('BEFORE_PRINT_TEXT' ,var.before_print)
-    cfg.init("PrintVar",'on',nil,"oracle","Max size of historical commands",'on,off')
-    cfg.init("Define",'on',nil,"oracle","Defines the substitution character(&) and turns substitution on and off.",'on,off')
+    cfg.init("PrintVar",'on',nil,"db.core","Max size of historical commands",'on,off')
+    cfg.init("Define",'on',nil,"db.core","Defines the substitution character(&) and turns substitution on and off.",'on,off')
     env.set_command(nil,{"Accept","Acc"},'Assign user-input value into a existing variable. Usage: accept <var> [[prompt] <prompt_text>|@<file>]',var.accept_input,false,3)
     env.set_command(nil,{"variable","VAR"},var.helper,var.setOutput,false,4)
     env.set_command(nil,{"Define","DEF"},"Define input variables, Usage: def <name>=<value> [description], or def <name> to remove definition",var.setInput,false,4)
-    env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables(refer to command "VAR" and "DEF").Usage: print <variable|-a>',var.print,false,3)
+    env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables.Usage: print <variable|-a>',var.print,false,3)
     env.set_command(nil,"Save","Save variable value into a specific file under folder 'cache'. Usage: save <variable> <file name>",var.save,false,3);
-end    
+end
+
 return var

@@ -33,7 +33,7 @@ end
 
 --
 function db_Types:load_sql_types(className)
-    local maxsiz=cfg.get("COLSIZE")
+    
     local typ=java.require(className)
     local m2={
         [1]={getter="getBoolean",setter="setBoolean"},
@@ -356,7 +356,8 @@ function db_core:parse(sql,params,prefix,prep)
         end)
     
     if not prep then prep=self.conn:prepareCall(sql) end
-    db_core:check_params(sql,prep,p1,params)
+
+    self:check_params(sql,prep,p1,params)
 
     local meta=prep:getParameterMetaData() 
     local param_count=meta:getParameterCount()  
@@ -405,9 +406,9 @@ function db_core:exec(sql,args)
     java.system:gc()
 
     local params={}
-    
+    args=args or {}
     local prep;
-    env.checkerr(args==nil or type(args) == "table", "Expected parameter as a table for SQL: \n"..sql)
+    env.checkerr(type(args) == "table", "Expected parameter as a table for SQL: \n"..sql)
     for k,v in pairs(args or {}) do
         if type(k)=="string" then
             params[k:upper()]=v
@@ -426,8 +427,8 @@ function db_core:exec(sql,args)
         self.conn:setAutoCommit(autocommit=="on" and true or false)
         self.autocommit=autocommit
     end
-    sql=event("BEFORE_DB_EXEC",{self,sql,args}) [2]
-    sql=event("BEFORE_DB_STMT_PARSE",{self,sql,params}) [2]    
+    
+    sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
     prep,sql,params=self:parse(sql,params)        
     self.__stmts[#self.__stmts+1]=prep
     prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
@@ -485,7 +486,7 @@ function db_core:exec(sql,args)
             self.resultset:print(prep:getResultSet(),self.conn)
         end
     end
-    if event then event("AFTER_DB_EXEC",self,sql,args,result) end
+    if event then event("AFTER_DB_EXEC",{self,sql,args,result}) end
     return result
 end
 
@@ -568,12 +569,14 @@ end
 function db_core:commit()
     if self.conn then
         pcall(self.conn.commit,self.conn)
+        if cfg.get('feed')=='on' then print('Committed.') end
     end
 end
 
 function db_core:rollback()
     if self.conn then
         pcall(self.conn.rollback,self.conn)
+        if cfg.get('feed')=='on' then print('Rollbacked.') end
     end
 end
 
@@ -584,7 +587,7 @@ local function set_param(name,value)
     return tonumber(value)
 end
 
-function db_core:onload()
+function db_core:__onload()
     cfg.init("PRINTSIZE",1000,set_param,"db.query","Max rows to be printed for a select statement",'1-10000')
     cfg.init("COLSIZE",32767,set_param,"db.query","Max column size of a result set",'5-1073741824')
     cfg.init("SQLTIMEOUT",600,set_param,"db.core","The max wait time(in second) for a single db execution",'10-86400')
@@ -592,7 +595,14 @@ function db_core:onload()
     cfg.init("AUTOCOMMIT",'off',set_param,"db.core","Detemine if auto-commit every db execution",'on,off')
     cfg.init("SQLCACHESIZE",50,set_param,"db.core","Number of cached statements in JDBC",'5-500')
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
-end 
+end
+
+function db_core:__onunload()
+    if self:is_connect() then 
+        pcall(self.conn.close,self.conn)
+        print("Database disconnected.") 
+    end
+end
 
 return db_core
 

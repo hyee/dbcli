@@ -1,6 +1,6 @@
 --init a global function to store CLI variables
 local _G = _ENV or _G
-local reader=reader
+local reader,coroutine=reader,coroutine
 
 local getinfo, error, rawset, rawget = debug.getinfo, error, rawset, rawget
 
@@ -233,9 +233,9 @@ function env.remove_command(cmd)
     cmd=cmd:upper()
     if not _CMDS[cmd] then return end
     local src=env.callee()
-    if src:gsub("#%d+","")~=_CMDS[cmd].FILE:gsub("#%d+","") then
-        env.raise("Cannot remove command '%s' from %s, it was defined in file %s!",cmd,src,_CMDS[cmd].FILE)
-    end
+    --if src:gsub("#%d+","")~=_CMDS[cmd].FILE:gsub("#%d+","") then
+    --    env.raise("Cannot remove command '%s' from %s, it was defined in file %s!",cmd,src,_CMDS[cmd].FILE)
+    --end
 
     _CMDS[cmd]=nil    
 end    
@@ -590,7 +590,7 @@ function env.unload()
     if jit and jit.flush then pcall(jit.flush) end
 end
 
-function env.reload() 
+function env.reload()
     print("Reloading environemnt ...")
     env.unload()
     java.loader.ReloadNextTime=true

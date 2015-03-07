@@ -17,6 +17,7 @@
 lib.zip
 jre.zip
 dbcli.zip
+db2java.zip
 dbcli_F0.bat
 dbcli_nojre.bat
 

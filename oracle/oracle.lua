@@ -3,7 +3,7 @@ local event,packer,cfg,init=env.event.callback,env.packer,env.set,env.init
 local set_command,exec_command=env.set_command,env.exec_command
 
 local module_list={
-    "oracle/var",
+--  "oracle/var",
     "oracle/ora",
     "oracle/dbmsoutput",
     "oracle/sqlplus",
@@ -179,7 +179,7 @@ function oracle:parse(sql,params)
             params[k]={'#',k,self.db_types[v[2] ].name}
         else
             prep[v[1].."AtName"](prep,k,v[2])
-        end        
+        end
     end
 
     return prep,sql,params 
@@ -368,10 +368,6 @@ end
 function oracle:onunload()
     init.unload(module_list,self.C)
     self.C=nil
-    if self.conn then 
-        pcall(self.conn.close,self.conn) 
-        print("Database disconnected.")
-    end    
 end
 
 return oracle.new()
