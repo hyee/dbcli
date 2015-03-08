@@ -69,7 +69,7 @@ BEGIN
               AND    LEVEL < 3
           ORDER SIBLINGS BY &V1)
         SELECT /*+cardinality(a 1)*/ 
-               r "#",
+               rownum "#",
                a.NEW_SID || ',' || a.serial# || ',@' || a.inst_id session#,
                (SELECT spid
                 FROM   gv$process d

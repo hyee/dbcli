@@ -90,7 +90,7 @@ function oracle:connect(conn_str)
     local url, isdba=conn_desc:match('^(.*) as (%w+)$')
     args.url,args.internal_logon="jdbc:oracle:thin:@"..(url or conn_desc),isdba
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
-
+    env.set_title("")
     self.super.connect(self,args)    
     
     self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
@@ -120,7 +120,7 @@ function oracle:connect(conn_str)
         prompt=self.props.service_name:match("^([^,]+)")    
     end    
     env.set_prompt(nil,prompt)
-    self.session_title=('%s - Instance: %s    User: %s    SID: %s    Version: Oracle(%s)'):format(prompt:upper(),params[5],params[1],params[4],params[2])
+    self.session_title=('%s - Instance: %s  User: %s  SID: %s  Version: Oracle(%s)'):format(prompt:upper(),params[5],params[1],params[4],params[2])
     env.set_title(self.session_title)
     if event then event("AFTER_ORACLE_CONNECT",self,sql,args,result) end
     print("Database connected.")
@@ -360,12 +360,14 @@ function oracle.handle_error(info)
             info.error=v=='default' and info.error or v
             return info
         end
+        env.set_title("")
     end
     
     return info
 end
 
 function oracle:onunload()
+    env.set_title("")
     init.unload(module_list,self.C)
     self.C=nil
 end

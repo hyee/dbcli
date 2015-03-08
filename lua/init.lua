@@ -33,7 +33,7 @@ local init={
         "lua/tester"}
 }
 
-init.databases={oracle="oracle/oracle",mssql="mssql/mssql"}
+init.databases={oracle="oracle/oracle",mssql="mssql/mssql",db2="db2/db2",mysql="mysql/mysql"}
 local default_database='oracle'
 
 function init.init_path()

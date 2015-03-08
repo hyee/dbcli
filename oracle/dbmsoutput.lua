@@ -54,8 +54,7 @@ function output.getOutput(db,sql)
 
         if prev_transaction~=args.txn then
             prev_transaction = args.txn
-            local addtional_title=prev_transaction and ("    TXN_ID: "..prev_transaction) or ""
-            env.set_title(db.session_title..addtional_title)
+            env.set_title(prev_transaction and "TXN_ID: "..prev_transaction or "")
         end
     end    
 end

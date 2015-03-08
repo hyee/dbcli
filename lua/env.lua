@@ -1,5 +1,6 @@
 --init a global function to store CLI variables
 local _G = _ENV or _G
+
 local reader,coroutine=reader,coroutine
 
 local getinfo, error, rawset, rawget = debug.getinfo, error, rawset, rawget
@@ -517,10 +518,6 @@ function env.testcmd(...)
     end
 end
 
-function env.set_title(title)
-    os.execute("title "..title)
-end
-
 function safe_call(func,...)
     if not func then return end
     local res,rtn=pcall(func,...)
@@ -632,6 +629,28 @@ function env.write_cache(file,txt)
     f:write(txt)
     f:close()
     return dest
+end
+
+local title_list,title_keys={},{}
+function env.set_title(title)
+    local callee=env.callee():gsub("#%d+$","")
+    if not title_list[callee] then
+        title_keys[#title_keys+1]=callee
+    end
+    title_list[callee]=title or ""
+    title=""
+    for _,k in ipairs(title_keys) do
+        if (title_list[k] or "")~="" then
+            if title~="" then title=title.."    " end
+            title=title..title_list[k]
+        end
+    end
+    os.execute("title "..title)
+end
+
+function env.reset_title()
+    for k,v in pairs(title_list) do title_list[k]="" end
+    os.execute("title dbcli")
 end
 
 return env
