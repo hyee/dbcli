@@ -8,7 +8,7 @@ ffi.cdef[[
 local zlib = ffi.load(ffi.os == "Windows" and "lib\\"..jit.arch.."\\zlib1" or "z")
 
 function z.uncompress(comp, n)
-    if not n then n=10*#comp end
+    if not n then n=30*#comp end
     local buf = ffi.new("uint8_t[?]", n)
     local buflen = ffi.new("unsigned long[1]", n)
     local res = zlib.uncompress(buf, buflen, comp, #comp)

@@ -3,7 +3,6 @@ local event,packer,cfg,init=env.event.callback,env.packer,env.set,env.init
 local set_command,exec_command=env.set_command,env.exec_command
 
 local module_list={
---  "oracle/var",
     "oracle/ora",
     "oracle/dbmsoutput",
     "oracle/sqlplus",
@@ -22,28 +21,8 @@ function oracle:ctor(isdefault)
     self.type="oracle"
     java.loader:addPath(env.WORK_DIR..'oracle'..env.PATH_DEL.."ojdbc7.jar")    
     self.db_types:load_sql_types('oracle.jdbc.OracleTypes')
+    java.system:setProperty('jdbc.drivers','oracle.jdbc.driver.OracleDriver')
     local default_desc='#Oracle database SQL statement'
-    local function add_default_sql_stmt(...)
-        for i=1,select('#',...) do
-            set_command(self,select(i,...), default_desc,self.exec,true,1,true)
-        end
-    end
-    if isdefault~=false then            
-        if type(set_command)=="function" then
-            set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
-            set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
-            set_command(self,{"select","with"},   default_desc,        self.query     ,true,1,true)
-            add_default_sql_stmt('update','delete','insert','merge','truncate','drop')
-            add_default_sql_stmt('explain','lock','analyze','grant','revoke')
-            set_command(self,{"execute","exec","call"},default_desc,self.run_proc,false,2)
-            set_command(self,{"declare","begin"},  default_desc,  self.exec  ,self.check_completion,1,true)
-            set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)
-            set_command(self,"alter" ,   default_desc,        self.exec      ,self.check_completion,1,true)
-            set_command(self,"/*"    ,   '#Comment',        nil   ,self.check_completion,2)
-            set_command(self,"--"    ,   '#Comment',        nil   ,false,2)
-        end
-        --env.event.snoop('BEFORE_COMMAND',self.clearStatements,self)        
-    end
     self.C,self.props={},{}
 end
 
@@ -52,8 +31,8 @@ function oracle:helper(cmd)
         CONNECT=[[
         Connect to Oracle database.
         Usage  : connect <user>/<password>@<tns_name>  or 
-                 connect <user>/<password>@[//]<ip_address|host_name>:<port>/<service_name> or
-                 connect <user>/<password>@[//]<ip_address|host_name>:<port>:<sid>
+                 connect <user>/<password>@[//]<ip_address|host_name>[:<port>]/<service_name> or
+                 connect <user>/<password>@[//]<ip_address|host_name>[:<port>]:<sid>
         ]],
         CONN=[[Refer to command 'connect']],
         RECONNECT=[[Re-connect the last connection, normally used when previous connection was disconnected for unknown reason.]],
@@ -87,6 +66,8 @@ function oracle:connect(conn_str)
                 defaultLobPrefetchSize="32767",
                 useFetchSizeWithLongColumn='true',
                 ['v$session.program']='SQL Developer'}
+    local server,port,database=conn_desc:match('^([^:/]+)([:%d]*)([:/].+)$')
+    if port=="" then conn_desc=server..':1521'..database end      
     local url, isdba=conn_desc:match('^(.*) as (%w+)$')
     args.url,args.internal_logon="jdbc:oracle:thin:@"..(url or conn_desc),isdba
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
@@ -120,7 +101,7 @@ function oracle:connect(conn_str)
         prompt=self.props.service_name:match("^([^,]+)")    
     end    
     env.set_prompt(nil,prompt)
-    self.session_title=('%s - Instance: %s  User: %s  SID: %s  Version: Oracle(%s)'):format(prompt:upper(),params[5],params[1],params[4],params[2])
+    self.session_title=('%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)'):format(prompt:upper(),params[5],params[1],params[4],params[2])
     env.set_title(self.session_title)
     if event then event("AFTER_ORACLE_CONNECT",self,sql,args,result) end
     print("Database connected.")
@@ -214,12 +195,6 @@ function oracle:is_internal_call(sql)
     return sql and sql:find("/%*INTERNAL_DBCLI_CMD%*/",1,true) and true or false 
 end
 
-
-function oracle:reconnnect()
-    if self.conn_str then
-        self:connect(packer.unpack_str(self.conn_str))
-    end
-end
 
 function oracle:run_proc(sql) 
     return self:exec('BEGIN '..sql..';END;')
@@ -334,19 +309,13 @@ function oracle.check_completion(cmd,other_parts)
     return true,other_parts:gsub(match==1 and p1 or p2,"")
 end
 
-function oracle:onload()
-    self.C={}
-    init.load_modules(module_list,self.C)
-    env.event.snoop('ON_SQL_ERROR',self.handle_error,nil,1)
-end
-
 local ignore_errors={
     ['ORA-00028']='Connection is lost, please login again.',
     ['socket']='Connection is lost, please login again.',
     ['SQLRecoverableException']='Connection is lost, please login again.'
 }
 
-function oracle.handle_error(info)
+function oracle:handle_error(info)
     local ora_code,msg=info.error:match('ORA%-(%d+):%s*([^\n\r]+)')
     if ora_code and tonumber(ora_code)>=20001 and tonumber(ora_code)<20999 then
         info.sql=nil
@@ -358,12 +327,36 @@ function oracle.handle_error(info)
         if info.error:lower():find(k:lower(),1,true) then
             info.sql=nil
             info.error=v=='default' and info.error or v
+            env.set_title("")
             return info
         end
-        env.set_title("")
     end
     
     return info
+end
+
+function oracle:onload()
+    local function add_default_sql_stmt(...)
+        for i=1,select('#',...) do
+            set_command(self,select(i,...), default_desc,self.exec,true,1,true)
+        end
+    end
+
+    add_default_sql_stmt('update','delete','insert','merge','truncate','drop')
+    add_default_sql_stmt('explain','lock','analyze','grant','revoke')   
+    set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
+    set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
+    set_command(self,{"select","with"},   default_desc,        self.query     ,true,1,true)
+    set_command(self,{"execute","exec","call"},default_desc,self.run_proc,false,2)
+    set_command(self,{"declare","begin"},  default_desc,  self.exec  ,self.check_completion,1,true)
+    set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)
+    set_command(self,"alter" ,   default_desc,        self.exec      ,self.check_completion,1,true)
+    set_command(self,"/*"    ,   '#Comment',        nil   ,self.check_completion,2)
+    set_command(self,"--"    ,   '#Comment',        nil   ,false,2)
+
+    self.C={}
+    init.load_modules(module_list,self.C)
+    env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)  
 end
 
 function oracle:onunload()

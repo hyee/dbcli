@@ -105,6 +105,12 @@ function init.load_database()
     local res
     if not env.CURRENT_DB then
         if env.set and env.set._p then env.CURRENT_DB=env.set._p['database'] end
+        if not env.CURRENT_DB then
+            for _,k in ipairs(env.__ARGS__) do
+                env.CURRENT_DB=k:lower():match('database%s*(%w+)')
+                if env.CURRENT_DB then break end
+            end
+        end
         env.CURRENT_DB=env.CURRENT_DB or default_database 
     end    
     local file=init.databases[env.CURRENT_DB]

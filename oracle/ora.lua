@@ -10,10 +10,6 @@ function ora:ctor()
     self.script_dir,self.extend_dirs=env.WORK_DIR.."oracle"..env.PATH_DEL.."ora",{}
 end
 
-local function format_version(version)
-    return version:gsub("(%d+)",function(s) return s:len()<3 and string.rep('0',3-s:len())..s or s end)
-end
-
 function ora:validate_accessable(name,options,values)
     local check_flag,expect_name,default,option,expect
     local db=self.db
@@ -41,8 +37,8 @@ function ora:validate_accessable(name,options,values)
             if check_ver then
                 check_flag=1
                 expect_name="database version"
-                local db_version=format_version(db.props.db_version or "8.0.0.0.0")
-                if db_version<format_version(check_ver) then default=nil end
+                local db_version=self:format_version(db.props.db_version or "8.0.0.0.0")
+                if db_version<self:format_version(check_ver) then default=nil end
                 expect=option
             end
         end

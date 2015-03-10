@@ -6,16 +6,12 @@ local function newindex(self,k,v)
             local super=self.super or self.__super
             local k1='__'..k:match("(%w+)$")
             if  type(super)=="table" and type(super[k1])=="function" then
-                rawset(self,k,function(...) super[k1](...);v(...) end)
-            else
-                rawset(self,k,v)
+                local v1=v
+                v=function(...) super[k1](...);v1(...) end
             end
-        else
-            rawset(self,k,v)
         end
-    else
-        rawset(self,k,v)
     end
+    rawset(self,k,v)
 end
 
 function class(super)

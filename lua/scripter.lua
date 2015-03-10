@@ -20,6 +20,10 @@ function scripter:trigger(func,...)
     end
 end
 
+function scripter:format_version(version)
+    return version:gsub("(%d+)",function(s) return s:len()<3 and string.rep('0',3-s:len())..s or s end)
+end
+
 function scripter:rehash(script_dir,ext_name)
     local keylist=env.list_dir(script_dir,ext_name or self.ext_name or "sql",self.comment)
     local cmdlist,pathlist={},{}

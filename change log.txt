@@ -1,3 +1,8 @@
+2015-03-08: oracle: fix issue for 'unwrap' command
+2015-03-08: db2:    support db2 database
+------------------------------------------------------------
+2015-03-07: "connect" command supports default 1521 port when not specify the port
+2015-03-07: minor fixes
 2015-03-07: new command 'ora logmnr'
 2015-03-07: ! move snap,ora,var,def,print,save,print,accept commands into public commands, use inherit instead
 2015-02-08: * -noverify -XX:-UseAdaptiveSizePolicy -XX:+UseParallelGC options in 'dbcli.bat'

@@ -92,7 +92,7 @@ function db_Types:load_sql_types(className)
         [8]={getter='getString',setter='setString',
              handler=function(result,action,conn)
                 if action=="get" then
-                    result= result:gsub('.0+$',''):gsub('%s0+:0+:0+$','')
+                    result= result:gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
                     return result
                 end
             end}
@@ -298,8 +298,22 @@ end
    returns: for the sql is a query stmt, then return the result set, otherwise return the affected rows(>=-1)    
 ]]
 
+function db_core:check_sql_method(event_name,sql,method,...)
+    local res,obj=pcall(method,...)
+    if res==false then
+        local info={db=self,sql=sql,error=tostring(obj)}
+        event(event_name,info)    
+        if info and info.error then
+            if info.sql then print('SQL: '..info.sql:gsub("\n","\n     ")) end
+            env.raise_error(info.error) 
+        end
+        env.raise("000-00000: ")
+    end 
+    return obj 
+end
+
 function db_core:check_params(sql,prep,p1,params)
-    local meta=prep:getParameterMetaData() 
+    local meta=self:check_sql_method('ON_SQL_PARSE_ERROR',sql,prep.getParameterMetaData,prep)
     local param_count=meta:getParameterCount()
     if param_count~=#p1 then
         local errmsg="Parameters are unexpected, below are the detail:\nSQL:"..string.rep('-',80).."\n"..sql
@@ -307,7 +321,7 @@ function db_core:check_params(sql,prep,p1,params)
         hdl:add({"Param Sequence","Param Name","Param Type","Param Value","Description"})
         for i=1,math.max(param_count,#p1) do
             local v=p1[i] or {}
-            local res,typ=pcall(meta.getParameterTypeName,meta,1) 
+            local res,typ=pcall(meta.getParameterTypeName,meta) 
             typ=res and typ or v[4]
             local param_value=v[3] and params[v[3]]
             hdl:add{i,v[3],typ,type(param_value)=="table" and "OUT" or param_value,
@@ -353,12 +367,13 @@ function db_core:parse(sql,params,prefix,prep)
             p1[#p1+1]=args
             return '?'
         end)
-    
-    if not prep then prep=self.conn:prepareCall(sql) end
+    local res
+    if not prep then prep=self:check_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql) end
 
     self:check_params(sql,prep,p1,params)
 
     local meta=prep:getParameterMetaData() 
+
     local param_count=meta:getParameterCount()  
     if param_count==0 then return prep,sql,params end
     local checkerr=pcall(meta.getParameterMode,meta,1)     
@@ -369,24 +384,24 @@ function db_core:parse(sql,params,prefix,prep)
         end
     else
         for i=1,param_count do
-            local mode,v,param_value=meta:getParameterMode(counter),p1[i],params[v[3]]
-            --input parameter
+            local mode=meta:getParameterMode(counter)
+            local v,param_value=p1[i],params[p1[i][3]]
+            print(i,mode,param_value)
             if mode<=2 then
-                prep[db_Types[v[4]].setter](prep,i,type(param_value)=="table" and param_value[4] or param_value)                
+                prep[db_Types[p1[i][4]].setter](prep,i,type(param_value)=="table" and param_value[4] or param_value)                
             end
 
             --output parameter
             if mode>=2 then
                 if type(param_value)~='table' then
-                    params[v[3]]={'#',{counter},typename,param_value}
+                    params[p1[i][3]]={'#',{counter},typename,param_value}
                 else
-                    table.insert(params[v[3]][2],counter)
+                    table.insert(params[p1[i][3]][2],counter)
                 end                               
                 prep['registerOutParameter'](prep,i,db_Types[typename].id)               
             end
         end
     end
-
     return prep,sql,params
 end
 
@@ -426,15 +441,16 @@ function db_core:exec(sql,args)
         self.conn:setAutoCommit(autocommit=="on" and true or false)
         self.autocommit=autocommit
     end
-    
     sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
     prep,sql,params=self:parse(sql,params)        
     self.__stmts[#self.__stmts+1]=prep
     prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
     self.current_stmt=prep
-    local success,is_query=pcall(prep.execute,prep)
+
+    local is_query=self:check_sql_method('ON_SQL_ERROR',sql,prep.execute,prep)
+    --local success,is_query=pcall(prep.execute,prep)
     self.current_stmt=nil
-    if success==false then
+    --[[if success==false then
         pcall(prep,close,prep)
         table.remove(self.__stmts)
         local info={db=self,sql=sql,error=tostring(is_query)}
@@ -444,8 +460,7 @@ function db_core:exec(sql,args)
             env.raise_error(info.error) 
         end
         return
-    end
-
+    end--]]
     --is_query=prep:execute()    
     for k,v in pairs(params) do
         if type(v) == "table" and v[1] == "#"  then
@@ -516,7 +531,7 @@ function db_core:connect(attrs)
     if event then event("BEFORE_DB_CONNECT",self,url,attrs) end
     local err,res=pcall(self.driver.getConnection,self.driver,url,props)
     if not err then        
-        env.raise(tostring(res):gsub(".*Exception: ",""))
+        env.raise(tostring(res):gsub(".*Exception.%s*",""))
     end
     self.conn=res
     env.checkerr(self.conn,"Unable to connect to db!")
@@ -526,6 +541,12 @@ function db_core:connect(attrs)
     if event then event("AFTER_DB_CONNECT",self,url,attrs) end
     self.__stmts = {}
     return self.conn
+end
+
+function db_core:reconnnect()
+    if self.conn_str then
+        self:connect(packer.unpack_str(self.conn_str))
+    end
 end
 
 function db_core:clearStatements()

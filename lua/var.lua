@@ -126,7 +126,6 @@ end
 
 function var.after_db_exec(item)
     local db,sql,args=table.unpack(item)
-    if db:is_internal_call(sql) then return end
     local result,isPrint={},cfg.get("PrintVar")
     for k,v in pairs(var.outputs) do
         if v and k:upper()==k and args[k] and args[k]~=v then
