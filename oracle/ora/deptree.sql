@@ -88,7 +88,7 @@ BEGIN
                    object_id o, owner
             FROM   DBA_OBJECTS
             WHERE  owner IN
-                   (decode(instr(v_object, '.'), 0, USER, regexp_substr(v_object, '^[^\.]+')),
+                   (decode(instr(v_object, '.'), 0, sys_context('USERENV','CURRENT_SCHEMA'), regexp_substr(v_object, '^[^\.]+')),
                     decode(instr(v_object, '.'), 0, 'PUBLIC', '#'))
             AND    object_name =decode(instr(v_object, '.'), 0, v_object, regexp_substr(v_object, '[^\.]+$'))
             AND    subobject_name IS NULL

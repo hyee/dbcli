@@ -1,11 +1,23 @@
 local env,globalcmds=env,env._CMDS
 local alias={command_dir=env.WORK_DIR.."aliases"..env.PATH_DEL}
+alias.db_dir=alias.command_dir
+local comment="(.-)[\n\r\b\t%s]*$"
 
 function alias.rehash()
     alias.cmdlist={}
-    for k,v in ipairs(env.list_dir(alias.command_dir,"alias","(.-)[\n\r\b\t%s]*$")) do
-        alias.set(v[1],v[3],false)
-    end    
+    for k,v in ipairs(env.list_dir(alias.command_dir,"alias",comment)) do
+        if(v[2]:lower()==(alias.command_dir..v[1]..'.alias'):lower()) then
+            alias.set(v[1],v[3],false)
+        end
+    end
+
+    if alias.db_dir~=alias.command_dir then
+        for k,v in ipairs(env.list_dir(alias.db_dir,"alias",comment)) do
+            if(v[2]:lower()==(alias.db_dir..v[1]..'.alias'):lower()) then
+                alias.set(v[1],v[3],false)
+            end
+        end
+    end
 end
 
 function alias.parser(s)
@@ -40,7 +52,7 @@ function alias.run_command(...)
         target=target:gsub("'%$[1-9]'",'')
         target=target:gsub("%$[1-9]",'')
         target=target:gsub("[%s\n\r\b\t]+$","")
-        if target:sub(-1) ~='/' and target:sub(-1) ~=';' then target=target..';' end
+        if target:sub(-1) ~=env.END_MARKS[2] and target:sub(-1) ~=env.END_MARKS[1] then target=target..env.END_MARKS[1] end
         if type(alias.cmdlist[name].text) == "string" then
             print('Statement: '..target)
         end
@@ -72,14 +84,25 @@ function alias.set(name,cmd,write)
         if alias.cmdlist[name].active then globalcmds[name]=nil end    
         alias.cmdlist[name]=nil        
         os.remove(alias.command_dir..name:lower()..".alias")
+        os.remove(alias.db_dir..name:lower()..".alias")
         print('Alias "'..name..'" is removed.')
     else
         if not name:match("^[%w_]+$") then
             return print("Alias '"..name.."' is invalid. ")
         end
 
+        local target_dir=alias.command_dir
+        local sub_cmd=env.parse_args(2,cmd)[1]
+        if env._CMDS[sub_cmd:upper()] then
+            local file=env._CMDS[sub_cmd:upper()].FILE or ""
+            file=file:match('[\\/]([^#]+)')
+            if file==env.CURRENT_DB then target_dir=alias.db_dir end
+        end
+
         if write ~= false then
-            local f=io.open(alias.command_dir..name:lower()..".alias","w")
+            os.remove(alias.command_dir..name:lower()..".alias")
+            os.remove(alias.db_dir..name:lower()..".alias")
+            local f=io.open(target_dir..name:lower()..".alias","w")
             f:write(cmd)
             f:close()
         end
@@ -95,7 +118,7 @@ function alias.set(name,cmd,write)
             cmd=packer.unpack(cmd)
             desc=cmd
         end
-        if type(desc)=="string" then desc=desc:gsub(';+$','')  end
+        if type(desc)=="string" then desc=desc:gsub(env.END_MARKS[1]..'+$','')  end
         alias.cmdlist[name].desc=desc
         alias.cmdlist[name].text=cmd
         alias.cmdlist[name].active=false
@@ -140,7 +163,17 @@ function alias.helper()
     return help
 end
 
-alias.rehash()
-env.event.snoop('ON_ENV_LOADED',alias.rehash,nil,1)
-env.set_command(nil,"alias", alias.helper,alias.set,'__SMART_PARSE__',3)
+function alias.load_db_aliases(db_name)
+    alias.db_dir=alias.command_dir..db_name..env.PATH_DEL
+    env.host.mkdir(alias.db_dir)
+    alias.rehash()
+end
+
+function alias.onload()
+    alias.rehash()
+    --env.event.snoop('ON_ENV_LOADED',alias.rehash,nil,1)
+    env.event.snoop('ON_DATABASE_ENV_LOADED',alias.load_db_aliases,nil,1)
+    env.set_command(nil,"alias", alias.helper,alias.set,'__SMART_PARSE__',3)
+end
+
 return alias

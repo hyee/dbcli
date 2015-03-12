@@ -93,6 +93,7 @@ function init.set_database(_,db)
     env.checkerr(init.databases[db],'Invalid database type!')
     if env.CURRENT_DB then
         print("Switching database ...")
+        env.safe_call(env.event and env.event.callback,'ON_DATABASE_ENV_UNLOADED',env.CURRENT_DB)
         env.CURRENT_DB=db
         env.unload()
         env.onload(table.unpack(env.__ARGS__))
@@ -119,6 +120,7 @@ function init.load_database()
     env[name]=exec(dofile,env.WORK_DIR..file:gsub("[\\/]+",env.PATH_DEL)..'.lua')    
     exec(type(env[name])=="table" and env[name].onload,env[name],name)
     init.module_list[#init.module_list+1]=file
+    env.safe_call(env.event and env.event.callback,'ON_DATABASE_ENV_LOADED',env.CURRENT_DB)
 end
 
 function init.load_modules(list,tab)
@@ -139,10 +141,8 @@ end
 
 function init.onload()
     init.load_modules(init.module_list,env)
-    if env.set then
-        init.load_database()
-        env.safe_call(env.set.init,"database",env.CURRENT_DB,init.set_database,'core','Define current database type',table.concat(init.db_list(),','))        
-    end
+    init.load_database()
+    env.safe_call(env.set and env.set.init,"database",env.CURRENT_DB,init.set_database,'core','Define current database type',table.concat(init.db_list(),','))        
 end
 
 function init.unload(list,tab)

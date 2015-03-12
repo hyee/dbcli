@@ -279,7 +279,7 @@ end
 
 
 function oracle.check_completion(cmd,other_parts)
-    local p1='\n[%s\t]*/[%s\t]*$'
+    local p1=env.END_MARKS[2]..'[%s\t]*$'
     local p2
     local objs={
         OR=1,
@@ -293,13 +293,10 @@ function oracle.check_completion(cmd,other_parts)
         BEGIN=1,
         JAVA=1
     }
-    if cmd=="/*" then 
-        p1=".*%*/[%s\t\n]*$" 
-    else        
-        local obj=env.parse_args(2,other_parts)[1]
-        if obj and not objs[obj] and not objs[cmd] then
-            p2=";+[%s\t\n]*$"
-        end
+     
+    local obj=env.parse_args(2,other_parts)[1]
+    if obj and not objs[obj] and not objs[cmd] then
+        p2=env.END_MARKS[1].."+[%s\t\n]*$"
     end
     local match = (other_parts:match(p1) and 1) or (p2 and other_parts:match(p2) and 2) or false
     --print(match,other_parts)
@@ -351,9 +348,6 @@ function oracle:onload()
     set_command(self,{"declare","begin"},  default_desc,  self.exec  ,self.check_completion,1,true)
     set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)
     set_command(self,"alter" ,   default_desc,        self.exec      ,self.check_completion,1,true)
-    set_command(self,"/*"    ,   '#Comment',        nil   ,self.check_completion,2)
-    set_command(self,"--"    ,   '#Comment',        nil   ,false,2)
-
     self.C={}
     init.load_modules(module_list,self.C)
     env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)  

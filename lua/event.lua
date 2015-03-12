@@ -5,7 +5,6 @@ function event.callback(name,...)
     name=name:upper()
     if not event[name] then event[name]={} end
     event[name].src=env.callee()
-
     local v=event[name]
     local flag,result
     for k,v in ipairs(v) do        
@@ -21,9 +20,7 @@ end
 
 function event.snoop(name,func,obj,priority)
     name=name:upper()
-    if not event[name] then
-        event[name]={}
-    end
+    if not event[name] then event[name]={} end
     local e=event[name]
     for k,v in ipairs(e) do
         if v.func==func then return end

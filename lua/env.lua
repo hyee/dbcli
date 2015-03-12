@@ -3,7 +3,7 @@ local _G = _ENV or _G
 
 local reader,coroutine=reader,coroutine
 
-local getinfo, error, rawset, rawget = debug.getinfo, error, rawset, rawget
+local getinfo, error, rawset, rawget,math = debug.getinfo, error, rawset, rawget,math
 
 local env=setmetatable({},{
     __call =function(self, key, value)            
@@ -144,11 +144,9 @@ end
 
 
 function env.check_cmd_endless(cmd,other_parts)
-    
     if not _CMDS[cmd] then
         return true,other_parts
     end
-    local p1=';+[%s\t\n]*$'
 
     if not _CMDS[cmd].MULTI then        
         return true,other_parts and other_parts:gsub(p1,"")
@@ -158,19 +156,19 @@ function env.check_cmd_endless(cmd,other_parts)
         return env.smart_check_endless(cmd,other_parts,_CMDS[cmd].ARGS)
     end
     
-    local p2='\r*\n[%s\r\t\n]*/[%s\t]*$'
+    local p1=env.END_MARKS[1]..'[%s\t\n]*$'
+    local p2=env.END_MARKS[2]..'[%s\t\n]*$'
     local match = (other_parts:match(p1) and 1) or (other_parts:match(p2) and 2) or false
     --print(match,other_parts)
     if not match then
         return false,other_parts
     end
-
     return true,other_parts:gsub(match==1 and p1 or p2,"")
 end
 
 function env.smart_check_endless(cmd,rest,from_pos)
     local args=env.parse_args(from_pos,rest)
-    if not args[from_pos-1] then return true,rest:gsub('[;%s\t]+$',"") end
+    if not args[from_pos-1] then return true,rest:gsub('['..env.END_MARKS[1]..'%s\t]+$',"") end
     if env.check_cmd_endless(args[from_pos-1]:upper(),args[from_pos] or "") then
         return true,rest:gsub('[%s\n\r\t]+$',"")
     else
@@ -383,7 +381,7 @@ function env.parse_args(cmd,rest)
         arg_count=cmd+1
     else
         if not cmd then 
-            cmd,rest=rest:match('([^%s\n\r\t;]+)[%s\n\r\t]*(.*)') 
+            cmd,rest=rest:match('([^%s\n\r\t'..env.END_MARKS[1]..']+)[%s\n\r\t]*(.*)') 
             cmd = cmd and cmd:upper() or "_unknown_"
         end
         env.checkerr(_CMDS[cmd],'Unknown command "'..cmd..'"!')
@@ -446,9 +444,25 @@ end
 
 function env.eval_line(line,exec)
     if type(line)~='string' or line:gsub('[%s\n\r\t]+','')=='' then return end
-    local b=line:byte()    
-    --remove bom header
-    if not b or b>=128 then return end
+
+    --Remove bom
+
+    if not env.pending_command() then
+        line=line:gsub('^[%z\128-\255%s\t]+','')
+        if line:match('^([^%w])') then
+            local cmd=""
+            for i=math.min(#line,5),1,-1 do
+                cmd=line:sub(1,i)
+                if _CMDS[cmd] then
+                    if #line>i and not line:sub(i+1,i+1):find('[%s\t\r]') then 
+                        line=cmd..' '..line:sub(i+1)
+                    end
+                    break
+                end
+            end
+        end
+    end
+
     local done
     local function check_multi_cmd(lineval)
         curr_stmt = curr_stmt ..lineval
@@ -475,10 +489,7 @@ function env.eval_line(line,exec)
     
     local cmd,rest=line:match('^%s*([^%s\t]+)[%s\t]*(.*)')
     
-    if not cmd or cmd=="" or cmd:sub(1,2)=="--" then return end
-    cmd=cmd:gsub(';+$','')
-    if cmd:sub(1,2)=="/*" then cmd=cmd:sub(1,2) end
-    cmd=cmd:upper()
+    cmd=cmd:gsub(env.END_MARKS[1]..'+$',''):upper()
     if not (_CMDS[cmd]) then
         return print("No such command["..cmd.."], please type 'help' for more information.")        
     elseif _CMDS[cmd].MULTI then --deal with the commands that cross-lines
@@ -489,7 +500,7 @@ function env.eval_line(line,exec)
     end
     
     --print('Command:',cmd,table.concat (args,','))
-    rest=rest:gsub("[;%s]+$","")
+    rest=rest:gsub("["..env.END_MARKS[1].."%s]+$","")
     local args=env.parse_args(cmd,rest)
     if exec~=false then
         env.exec_command(cmd,args)        
@@ -511,7 +522,7 @@ function env.testcmd(...)
             args[k]='"'..v..'"'
         end
     end
-    cmd,args=env.eval_line(table.concat(args,' ')..';',false)
+    cmd,args=env.eval_line(table.concat(args,' ')..env.END_MARKS[1],false)
     if not cmd then return end
     print("Command    : "..cmd.."\nParameters : "..#args..' - '..(_CMDS[cmd].ARGS-1).."\n============================")
     for k,v in ipairs(args) do
@@ -519,13 +530,36 @@ function env.testcmd(...)
     end
 end
 
-function safe_call(func,...)
+function env.safe_call(func,...)
     if not func then return end
     local res,rtn=pcall(func,...)
     if not res then
         return env.warn(tostring(rtn):gsub(env.WORK_DIR,""))
     end
     return rtn
+end
+
+function env.set_endmark(name,value)
+    if value:gsub('\\[nrt]',''):match('[%w]') then return print('Cannot be alphanumeric characters. ') end;
+    value=value:gsub("\\+",'\\')
+    local p1=value:sub(1,1)
+    local p2=value:sub(2):gsub('\\(%w)',function(s) 
+        return s=='n' and '\n[%s\t]*' or s=='r' and '\r[%s\t]*' or s=='t' and '\t[%s\t]*' or '\\'..s  
+    end) or p1
+
+    env.END_MARKS={p1,p2}
+    return value
+end
+
+local end_marks=(";\\n/"):gsub("\\+",'\\')
+env.set_endmark(nil,end_marks)
+
+function env.check_comment(cmd,other_parts)
+    print(cmd,other_parts)
+    if not other_parts:find("*/",1,true) then
+        return false,other_parts
+    end
+    return true,other_parts
 end
 
 function env.onload(...)
@@ -555,14 +589,17 @@ function env.onload(...)
     
     env.init.onload()
 
-    env.set_prompt(nil,"SQL")  
+    env.set_prompt(nil,"SQL")
     env.safe_call(env.set and env.set.init,"Prompt","SQL",env.set_prompt,
                   "core","Define command's prompt, if value is 'timing' then will record the time cost(in second) for each execution.")
+    env.safe_call(env.set and env.set.init,"COMMAND_ENDMARKS",end_marks,env.set_endmark,
+                  "core","Define the symbols to indicate the end input the cross-lines command. Cannot be alphanumeric characters.")
     env.safe_call(env.ansi and env.ansi.define_color,"Promptcolor","HIY","core","Define prompt's color")
     env.safe_call(env.ansi and env.ansi.define_color,"commandcolor","HIC","core","Define command line's color")
     env.safe_call(env.event and env.event.snoop,"ON_COMMAND_ABORT",env.clear_command)
     env.safe_call(env.event and env.event.callback,"ON_ENV_LOADED") 
-    
+    set_command(nil,"/*"    ,   '#Comment',        nil   ,env.check_comment,2)
+    set_command(nil,"--"    ,   '#Comment',        nil   ,false,2)
     --load initial settings
     for _,v in ipairs(env.__ARGS__) do
         if v:sub(1,2) == "-D" then
@@ -573,7 +610,7 @@ function env.onload(...)
             v=v:gsub("="," ",1)
             local args=env.parse_args(2,v)
             if args[1] and _CMDS[args[1]:upper()] then
-                env.eval_line(v..';')
+                env.eval_line(v..env.END_MARKS[1])
             end
         end
     end 

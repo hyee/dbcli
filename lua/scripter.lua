@@ -1,7 +1,7 @@
 local env=env
-local grid=env.grid
-local cfg=env.set
+local grid,cfg=env.grid,env.set
 local ARGS_COUNT=20
+local cfg_backup
 
 local scripter=env.class()
 
@@ -110,6 +110,7 @@ function scripter:parse_args(sql,args,print_args)
                     end
 
                     if prefix=="@" then
+                        env.checkerr(self.db:is_connect(),'Database is not connected!')
                         default=self:trigger('validate_accessable',k,keys,templates[k])
                     end
 
@@ -248,9 +249,7 @@ function scripter:run_sql(sql,args,print_args)
         env.raise("Database connection is not defined!")
     end
 
-    if not self.db:is_connect() then
-        env.raise("database is not connected !")
-    end
+    env.checkerr(self.db:is_connect(),"Database is not connected!")
     
     if print_args or not args then return end
     --remove comment
@@ -260,18 +259,17 @@ function scripter:run_sql(sql,args,print_args)
     local sq="",cmd,params,pre_cmd,pre_params
     local cmds=env._CMDS
     
-    local backup=cfg.backup()
+    cfg_backup=cfg.backup()
     cfg.set("HISSIZE",0)
     env.var.import_context(args)
     local eval=env.eval_line
     for line in sql:gsplit("[\n\r]+") do
         eval(line)
     end
-    if env.pending_command() then
-        eval("/")
-    end
 
-    cfg.restore(backup)
+    if env.pending_command() then
+        eval(env.END_MARKS[2])
+    end    
 end
 
 function scripter:get_script(cmd,args,print_args)
@@ -334,6 +332,13 @@ function scripter:run_script(cmd,...)
     self:run_sql(sql,args,print_args)
 end
 
+function scripter:after_script()
+    if cfg_backup then
+        cfg.restore(cfg_backup)
+        cfg_backup=nil
+    end
+end
+
 function scripter:check_ext_file(cmd)
     local target_dir
     cmd=cmd:lower():gsub('^@["%s]*(.-)["%s]*$','%1')
@@ -388,7 +393,7 @@ function scripter:__onload()
     env.checkerr(self.script_dir,"Cannot find the script dir for the '"..self.command.."' command!")
     self.db=self.db or env.db_core.__instance
     self.short_dir=self.script_dir:match('([^\\/]+)$')
-    env.set_command(self,self.command, self.helper,self.run_script,false,ARGS_COUNT+1)
+    env.set_command(self,self.command, self.helper,{self.run_script,self.after_script},false,ARGS_COUNT+1)
 end
 
 return scripter
