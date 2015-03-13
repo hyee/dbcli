@@ -17,7 +17,7 @@ SET PATH=%JRE_HOME%;%PATH%
 
 for /r %%i in (*.pack.gz) do (
   set "var=%%i" &set "str=!var:@=!"
-  "d:\java\jre\bin\unpack200" -q -r "%%i" "!str:~0,-8!"
+  unpack200 -q -r "%%i" "!str:~0,-8!"
 )
 
 java -noverify -Xmx128M -cp .\lib\*%OTHER_LIB% ^
