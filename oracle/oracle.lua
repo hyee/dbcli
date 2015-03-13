@@ -72,9 +72,11 @@ function oracle:connect(conn_str)
     args.url,args.internal_logon="jdbc:oracle:thin:@"..(url or conn_desc),isdba
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
     env.set_title("")
+    
     self.super.connect(self,args)    
     
     self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
+
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     self.conn:setStatementCacheSize(self.MAX_CACHE_SIZE)
     self.conn:setImplicitCachingEnabled(true)
@@ -85,6 +87,7 @@ function oracle:connect(conn_str)
            (SELECT VALUE FROM Nls_Database_Parameters WHERE parameter='NLS_TERRITORY')||'.'||VALUE nls,
            userenv('sid'),sys_context('userenv','INSTANCE_NAME')
        from Nls_Database_Parameters WHERE parameter='NLS_CHARACTERSET']])
+
     self.props.db_user,self.props.db_version,self.props.db_nls_lang=params[1],params[2],params[3]
     local args={"#VARCHAR","#VARCHAR","#VARCHAR"}
     self:internal_call([[/*INTERNAL_DBCLI_CMD*/

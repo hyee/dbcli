@@ -2,13 +2,14 @@ local env,stategroup,statecode=env
 local db=env.db2
 local sqlstate={}
 function sqlstate.parse_error(info)
-    info.error=info.error:gsub('java[%.%w:]+','')
+    local sqlcode=info.error:match('SQLCODE=%D?(%d+)')
+    if sqlcode then info.error='SQL-'..sqlcode..': '..info.error:gsub('%s*SQLCODE.*','') end
     return info
 end
 
 function sqlstate.onload()
-    --env.event.snoop('ON_SQL_ERROR',sqlstate.parse_error,nil,1)
-    --env.event.snoop('ON_SQL_PARSE_ERROR',sqlstate.parse_error,nil,1)  
+    env.event.snoop('ON_SQL_ERROR',sqlstate.parse_error,nil,1)
+    env.event.snoop('ON_SQL_PARSE_ERROR',sqlstate.parse_error,nil,1)  
 end
 
 return sqlstate

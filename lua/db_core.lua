@@ -302,6 +302,7 @@ function db_core:check_sql_method(event_name,sql,method,...)
     local res,obj=pcall(method,...)
     if res==false then
         local info={db=self,sql=sql,error=tostring(obj)}
+        info.error=info.error:gsub('.*Exception:?%s*','')
         event(event_name,info)    
         if info and info.error then
             if info.sql then print('SQL: '..info.sql:gsub("\n","\n     ")) end
@@ -478,8 +479,10 @@ function db_core:exec(sql,args)
 
     params=nil
     local result={is_query and prep:getResultSet() or prep:getUpdateCount()}
-    while prep:getMoreResults(2) do
-        self.resultset:print(prep:getResultSet(),self.conn)
+    while true do
+        params,is_query=pcall(prep.getMoreResults,prep,2) 
+        if not params or not is_query then break end
+        result[#result+1]=prep:getResultSet()
     end
     if event then event("AFTER_DB_EXEC",{self,sql,args,result}) end
     return #result==1 and result[1] or result

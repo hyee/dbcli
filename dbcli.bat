@@ -1,4 +1,5 @@
 @echo off
+Setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 
 rem set font and background color
@@ -13,6 +14,11 @@ If not exist "%TNSADM%\tnsnames.ora" if Defined ORACLE_HOME (set TNS_ADM=%ORACLE
 IF not exist "%JRE_HOME%\java.exe" (set JRE_HOME=.\jre\bin)
 
 SET PATH=%JRE_HOME%;%PATH%
+
+for /r %%i in (*.pack.gz) do (
+  set "var=%%i" &set "str=!var:@=!"
+  "d:\java\jre\bin\unpack200" -q -r "%%i" "!str:~0,-8!"
+)
 
 java -noverify -Xmx128M -cp .\lib\*%OTHER_LIB% ^
      -XX:-UseAdaptiveSizePolicy -XX:+UseParallelGC ^
