@@ -268,7 +268,7 @@ function scripter:run_sql(sql,args,print_args)
     end
 
     if env.pending_command() then
-        eval(env.END_MARKS[2])
+        env.force_end_input()
     end    
 end
 

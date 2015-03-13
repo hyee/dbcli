@@ -386,7 +386,6 @@ function db_core:parse(sql,params,prefix,prep)
         for i=1,param_count do
             local mode=meta:getParameterMode(counter)
             local v,param_value=p1[i],params[p1[i][3]]
-            print(i,mode,param_value)
             if mode<=2 then
                 prep[db_Types[p1[i][4]].setter](prep,i,type(param_value)=="table" and param_value[4] or param_value)                
             end
@@ -446,21 +445,8 @@ function db_core:exec(sql,args)
     self.__stmts[#self.__stmts+1]=prep
     prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
     self.current_stmt=prep
-
     local is_query=self:check_sql_method('ON_SQL_ERROR',sql,prep.execute,prep)
-    --local success,is_query=pcall(prep.execute,prep)
     self.current_stmt=nil
-    --[[if success==false then
-        pcall(prep,close,prep)
-        table.remove(self.__stmts)
-        local info={db=self,sql=sql,error=tostring(is_query)}
-        event("ON_SQL_ERROR",info)    
-        if info and info.error then
-            if info.sql then print('SQL: '..info.sql:gsub("\n","\n     ")) end
-            env.raise_error(info.error) 
-        end
-        return
-    end--]]
     --is_query=prep:execute()    
     for k,v in pairs(params) do
         if type(v) == "table" and v[1] == "#"  then
@@ -491,17 +477,12 @@ function db_core:exec(sql,args)
     self:clearStatements()
 
     params=nil
-    local result
-    if is_query then
-        result=prep:getResultSet()
-    else
-        result=prep:getUpdateCount()
-        while prep:getMoreResults() do
-            self.resultset:print(prep:getResultSet(),self.conn)
-        end
+    local result={is_query and prep:getResultSet() or prep:getUpdateCount()}
+    while prep:getMoreResults(2) do
+        self.resultset:print(prep:getResultSet(),self.conn)
     end
     if event then event("AFTER_DB_EXEC",{self,sql,args,result}) end
-    return result
+    return #result==1 and result[1] or result
 end
 
 function db_core:is_connect()
@@ -509,6 +490,29 @@ function db_core:is_connect()
         return false
     end
     return true
+end
+
+function db_core:is_internal_call(sql)
+    if self.internal_exec then return true end
+    return sql and sql:find("/%*INTERNAL_DBCLI_CMD%*/",1,true) and true or false 
+end
+
+function db_core:print_result(rs)
+    if type(rs)=='userdata' then
+        self.resultset:print(rs,self.conn)
+    elseif type(rs)=='table' then
+        for k,v in ipairs(rs) do
+            if type(v)=='userdata' then
+                self.resultset:print(v,self.conn)
+            else
+                print(v)
+            end
+        end
+    elseif v==-1 and cfg.get("feed")=="on" then
+        print('Statement Completed.')
+    elseif type(v)=="number" and cfg.get("feed")=="on" then
+        print(v..' Rows Impacted.')
+    end
 end
 
 --the connection is a table that contain the connection properties

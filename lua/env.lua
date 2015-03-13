@@ -442,6 +442,21 @@ function env.parse_args(cmd,rest)
     return args,cmd
 end
 
+function env.force_end_input()
+    if curr_stmt then
+        local stmt={multi_cmd,env.parse_args(multi_cmd,curr_stmt)}                                
+        multi_cmd,curr_stmt=nil,nil
+        env.CURRENT_PROMPT=env.PRI_PROMPT
+        if exec~=false then
+            env.exec_command(stmt[1],stmt[2])
+        else
+            return stmt[1],stmt[2]
+        end
+    end
+    multi_cmd,curr_stmt=nil,nil
+    return
+end
+
 function env.eval_line(line,exec)
     if type(line)~='string' or line:gsub('[%s\n\r\t]+','')=='' then return end
 
@@ -467,19 +482,8 @@ function env.eval_line(line,exec)
     local function check_multi_cmd(lineval)
         curr_stmt = curr_stmt ..lineval
         done,curr_stmt=env.check_cmd_endless(multi_cmd,curr_stmt)
-        if done then  
-            if curr_stmt then
-                local stmt={multi_cmd,env.parse_args(multi_cmd,curr_stmt)}                                
-                multi_cmd,curr_stmt=nil,nil
-                env.CURRENT_PROMPT=env.PRI_PROMPT
-                if exec~=false then
-                    env.exec_command(stmt[1],stmt[2])
-                else
-                    return stmt[1],stmt[2]
-                end
-            end
-            multi_cmd,curr_stmt=nil,nil
-            return
+        if done then
+            return env.force_end_input()
         end
         curr_stmt = curr_stmt .."\n"
         return multi_cmd

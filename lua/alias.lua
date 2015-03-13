@@ -1,9 +1,13 @@
 local env,globalcmds=env,env._CMDS
-local alias={command_dir=env.WORK_DIR.."aliases"..env.PATH_DEL}
+local alias={command_dir=env.WORK_DIR.."aliases"..env.PATH_DEL,cmdlist={}}
 alias.db_dir=alias.command_dir
 local comment="(.-)[\n\r\b\t%s]*$"
 
 function alias.rehash()
+    for k,v in pairs(alias.cmdlist) do
+        if v.active then globalcmds[k]=nil end
+    end
+    
     alias.cmdlist={}
     for k,v in ipairs(env.list_dir(alias.command_dir,"alias",comment)) do
         if(v[2]:lower()==(alias.command_dir..v[1]..'.alias'):lower()) then
@@ -52,7 +56,7 @@ function alias.run_command(...)
         target=target:gsub("'%$[1-9]'",'')
         target=target:gsub("%$[1-9]",'')
         target=target:gsub("[%s\n\r\b\t]+$","")
-        if target:sub(-1) ~=env.END_MARKS[2] and target:sub(-1) ~=env.END_MARKS[1] then target=target..env.END_MARKS[1] end
+        if not target:find(env.END_MARKS[2]..'$') and target:match(env.END_MARKS[1]..'$') then target=target..env.END_MARKS[1] end
         if type(alias.cmdlist[name].text) == "string" then
             print('Statement: '..target)
         end
@@ -122,7 +126,7 @@ function alias.set(name,cmd,write)
         alias.cmdlist[name].desc=desc
         alias.cmdlist[name].text=cmd
         alias.cmdlist[name].active=false
-        if not globalcmds[name]    then
+        if not globalcmds[name]  then
             env.set_command(nil,name, "#Alias command",alias.run_command,false,99,false,true)
             alias.cmdlist[name].active=true
         elseif globalcmds[name].FUNC==alias.run_command then

@@ -99,22 +99,57 @@ function db2.check_completion(cmd,other_parts)
     return true,other_parts:gsub(match==1 and p1 or p2,"")
 end
 
+function db2:exec(sql,...)
+    local bypass=self:is_internal_call(sql) 
+    local args=type(select(1,...)=="table") and ... or {...}
+    sql=event("BEFORE_DB2_EXEC",{self,sql,args}) [2]
+    local result=self.super.exec(self,sql,args)
+    if not bypass then event("AFTER_DB2_EXEC",self,sql,args,result) end
+    if type(result)=="number" and cfg.get("feed")=="on" then
+        local key=sql:match("(%w+)")
+        if self.feed_list[key] then
+            print(self.feed_list[key]:format(result)..".")
+        else
+            print("Statement completed.\n")
+        end
+    end
+    return result
+end
+
+function db2:command_call(sql,...)
+    local bypass=self:is_internal_call(sql) 
+    local args=type(select(1,...)=="table") and ... or {...}
+    sql=event("BEFORE_DB2_EXEC",{self,sql,args}) [2]
+    local result=self.super.exec(self,sql,args)
+    if not bypass then event("AFTER_DB2_EXEC",self,sql,args,result) end
+    self:print_result(result)
+end
+
+function db2:admin_cmd(cmd)
+    self:command_call('call sysproc.admin_cmd(:1)',cmd)
+end
+
 function db2:onload()
     local function add_default_sql_stmt(...)
         for i=1,select('#',...) do
-            set_command(self,select(i,...), default_desc,self.exec,true,1,true)
+            set_command(self,select(i,...), default_desc,self.command_call,true,1,true)
         end
     end
 
-    add_default_sql_stmt('describe','update','delete','insert','merge','truncate','drop')
-    add_default_sql_stmt('explain','lock','analyze','grant','revoke')   
+    add_default_sql_stmt('update','delete','insert','merge','truncate','drop')
+    add_default_sql_stmt('explain','lock','analyze','grant','revoke','call') 
+
+
     set_command(self,{"connect",'conn'},  'Connect to db2 database. Usage: conn <user>/<password>@[//]<address|host>[:<port>]/<database>',self.connect,false,2)
     set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
-    set_command(self,{"select","with"},   default_desc,        self.query     ,true,1,true)
-    set_command(self,{"execute","exec","call"},default_desc,self.exec,false,2)
-    set_command(self,{"declare","begin"},  default_desc,  self.exec  ,self.check_completion,1,true)
-    set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)
-    set_command(self,"alter" ,   default_desc,        self.exec      ,self.check_completion,1,true)
+    set_command(self,{"select","with"},  default_desc, self.command_call     ,true,1,true)
+    set_command(self,{"declare","begin"}, default_desc,  self.command_call  ,self.check_completion,1,true)
+    set_command(self,"create",   default_desc,  self.command_call      ,self.check_completion,1,true)
+    set_command(self,"alter" ,   default_desc,  self.command_call      ,self.check_completion,1,true)
+    for _,k in ipairs{'describe','add','AUTOCONFIGURE','BACKUP','LOAD','IMPORT','EXPORT','FORCE','QUIESCE','PRUNE',
+                      'REDISTRIBUTE','RUNSTATS','UNQUIESCE','REWIND','RESET'} do
+        set_command(self,k, default_desc,self.admin_cmd,true,1,true)
+    end
     self.C={}
     init.load_modules(module_list,self.C)
     --env.event.snoop('ON_SQL_ERROR',self.handle_error,nil,1)  

@@ -190,12 +190,6 @@ function oracle:internal_call(sql,args)
     return result
 end
 
-function oracle:is_internal_call(sql)
-    if self.internal_exec then return true end
-    return sql and sql:find("/%*INTERNAL_DBCLI_CMD%*/",1,true) and true or false 
-end
-
-
 function oracle:run_proc(sql) 
     return self:exec('BEGIN '..sql..';END;')
 end
