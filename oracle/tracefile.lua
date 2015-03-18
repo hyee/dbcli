@@ -64,8 +64,8 @@ function trace.get_trace(filename,mb,from_mb)
         :2   := f;
         :3   := text;
         :res := 'File Size: ' || round(fsize / 1024 / 1024, 2) || ' MB        Extract Size: ' 
-                ||round(lengthb(text) / 1024 / 1024, 2) || ' MB        Start Extract Position: ' 
-                ||round((from_MB-lengthb(text)) / 1024 / 1024, 2) || ' MB';
+                ||round(length(text) / 1024 / 1024, 2) || ' MB        Start Extract Position: ' 
+                ||round((from_MB-length(text)) / 1024 / 1024, 2) || ' MB';
 
     EXCEPTION
         WHEN OTHERS THEN
