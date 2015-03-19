@@ -126,8 +126,10 @@ function login.login(db,id,filter)
     end
 end    
 
+function login.onload()
+    env.event.snoop("AFTER_DB_CONNECT",login.capture)
+    cfg.init("SaveLogin","on",nil,"db.core","Determine if autosave logins.",'on,off')
+    login.load()
+end
 
-env.event.snoop("AFTER_DB_CONNECT",login.capture)
-cfg.init("SaveLogin","on",nil,"db.core","Determine if autosave logins.",'on,off')
-login.load()
 return login

@@ -1,6 +1,8 @@
 package org.dbcli;
 
 import com.naef.jnlua.LuaState;
+import com.opencsv.CSVWriter;
+import com.opencsv.SQLWriter;
 import jline.console.ConsoleReader;
 
 import java.awt.event.ActionEvent;
@@ -11,6 +13,7 @@ import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.sql.CallableStatement;
+import java.sql.ResultSet;
 import java.util.concurrent.*;
 
 
@@ -155,6 +158,27 @@ public class Loader {
                 System.out.println("Callback3 ...");
             }
         }));
+    }
+
+    public void ResultSet2CSV(ResultSet rs,String fileName) throws Exception {
+        CSVWriter writer=new CSVWriter(fileName);
+        writer.writeAll(rs,true);
+        rs.close();
+        writer.close();
+    }
+
+    public void ResultSet2SQL(ResultSet rs,String fileName,String header) throws Exception {
+        SQLWriter writer=new SQLWriter(fileName);
+        writer.setFileHead(header);
+        writer.writeAll2SQL(rs,"",1500);
+        rs.close();
+    }
+
+    public void CSV2SQL(String CSVfileName,String SQLFileName,String header) throws Exception {
+        SQLWriter writer=new SQLWriter(SQLFileName);
+        writer.setFileHead(header);
+        writer.setMaxLineWidth(1500);
+        writer.writeAll2SQL(CSVfileName);
     }
 
     public static void main(String args[]) throws Exception {

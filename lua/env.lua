@@ -678,6 +678,20 @@ function env.write_cache(file,txt)
     return dest
 end
 
+function env.resolve_file(filename,ext)
+    if not filename:find('[\\/]') then 
+        filename= env.WORK_DIR.."cache"..env.PATH_DEL..filename 
+    else 
+        filename=filename:gsub('[\\/]',env.PATH_DEL)
+    end
+
+    if ext and not filename:lower():match(ext:lower()..'$') then
+        filename=filename..'.'..ext
+    end
+
+    return filename
+end
+
 local title_list,title_keys={},{}
 function env.set_title(title)
     local callee=env.callee():gsub("#%d+$","")

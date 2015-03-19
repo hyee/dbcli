@@ -1,6 +1,7 @@
-local java,env,table,math=java,env,table,math
+local java,env,table,math,loader=java,env,table,math,loader
 local cfg,grid=env.set,env.grid
 local event=env.event and env.event.callback or nil
+
 
 local db_Types={}
 function db_Types:set(typeName,value,conn)
@@ -270,12 +271,6 @@ function db_core:ctor()
     self.resultset  = ResultSet.new()
     self.db_types:load_sql_types('java.sql.Types')
     self.__stmts = {}
-    local help=[[
-        Login with saved accounts. Usage: login [ -d | -a |<number|account_name>] 
-            login                     : list all saved a/c
-            login -d <num|name|alias> : delete matched a/c
-            login <num|name|alias>    : login a/c
-            login -a <alias> <id|name>: set alias to an existing account]]
     set_command(self,"commit",nil,self.commit,false,1)
     set_command(self,"rollback",nil,self.rollback,false,1)
 end
@@ -616,7 +611,49 @@ local function set_param(name,value)
     return tonumber(value)
 end
 
+function db_core:sql2file(filename,sql,method)
+    sql=sql:gsub(env.END_MARKS[1]..'$',''):gsub(env.END_MARKS[2]..'$','')
+    local header = "set feed off sqlbl on define off;\n";
+    header=header.."ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';"
+    local result=self:exec(sql)
+    if type(result)=="userdata" then
+        loader[method](loader,result,filename,header)
+        print('Result writtern to file '..filename)
+    elseif type(result)=="table" then
+        for idx,rs in pairs(rs) do
+            if type(rs)=="userdata" then
+                loader[method](loader,rs,filename..tostring(idx),header)
+                print('Result writtern to file '..filename..tostring(idx))
+            end
+        end
+    end
+end
+
+function db_core:sql2sql(filename,sql)
+    env.checkerr(sql,'Usage: sql2file <file_name> <SQL>')
+    self:sql2file(env.resolve_file(filename,'sql'),sql,'ResultSet2SQL')
+end
+
+function db_core:sql2csv(filename,sql)
+    env.checkerr(sql,'Usage: sql2csv <file_name> <SQL>')
+    self:sql2file(env.resolve_file(filename,'csv'),sql,'ResultSet2CSV')
+end
+
+function db_core:csv2sql(target,src)
+    env.checkerr(src,'Usage: csv2sql <sql_file> <csv_file>')
+    target=env.resolve_file(target,'sql')
+    src=env.resolve_file(src)
+    loader:CSV2SQL(src,target)
+    print('Result writtern to file '..target)
+end
+
 function db_core:__onload()
+    local help_login=[[
+        Login with saved accounts. Usage: login [ -d | -a |<number|account_name>] 
+            login                     : list all saved a/c
+            login -d <num|name|alias> : delete matched a/c
+            login <num|name|alias>    : login a/c
+            login -a <alias> <id|name>: set alias to an existing account]]
     cfg.init("PRINTSIZE",1000,set_param,"db.query","Max rows to be printed for a select statement",'1-10000')
     cfg.init("COLSIZE",32767,set_param,"db.query","Max column size of a result set",'5-1073741824')
     cfg.init("SQLTIMEOUT",600,set_param,"db.core","The max wait time(in second) for a single db execution",'10-86400')
@@ -624,7 +661,10 @@ function db_core:__onload()
     cfg.init("AUTOCOMMIT",'off',set_param,"db.core","Detemine if auto-commit every db execution",'on,off')
     cfg.init("SQLCACHESIZE",50,set_param,"db.core","Number of cached statements in JDBC",'5-500')
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
-    env.set_command(self,"login", help,self.login,false,3)
+    env.set_command(self,"login",help_login,self.login,false,3)
+    env.set_command(self,"sql2file","Export Query Result into SQL file. Usage: sql2file <file_name> <SQL>" ,self.sql2sql,'__SMART_PARSE__',3)
+    env.set_command(self,"sql2csv","Export Query Result into CSV file. Usage: sql2csv <file_name> <SQL>" ,self.sql2csv,'__SMART_PARSE__',3)
+    env.set_command(self,"csv2sql","Convert CSV file into SQL file. Usage: csv2sql <sql_file> <csv_file>" ,self.csv2sql,false,3)
 end
 
 function db_core:__onunload()
