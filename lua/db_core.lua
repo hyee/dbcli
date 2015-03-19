@@ -100,6 +100,8 @@ function db_Types:load_sql_types(className)
     local m1={
         BOOLEAN  = m2[1],
         BIGINT   = m2[2],
+        TINYINT  = m2[2],
+        SMALLINT = m2[2],
         DECIMAL  = m2[2],
         DOUBLE   = m2[2],
         FLOAT    = m2[2],

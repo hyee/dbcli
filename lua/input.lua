@@ -1,4 +1,4 @@
-local string,io=string,io
+local string,io,table=string,io,table
 local dir=debug.getinfo(1).short_src:gsub('%w+%.lua','?.lua')
 package.path=dir
 io.stdout:write("    ------------------------------------------------------------------------------------------------------------------------\n")
@@ -12,13 +12,13 @@ env.onload(...)
 
 local line,eval,prompt = "",env.eval_line
 local reader=reader
+local history=reader:getHistory()
 local ansi=env.ansi
-local color=ansi.get_color
+local color=ansi and ansi.get_color or function() return "";end
 reader:setExpandEvents(false)
 local prompt_color="%s%s"..color("NOR").."%s"
 
 local write=function(str)
-    --print(ansi.cfg("PROMPTCOLOR"))
     str=prompt_color:format(color("PROMPTCOLOR"),str,color("COMMANDCOLOR"))
     if prompt~=str then
         prompt=str
@@ -27,6 +27,7 @@ local write=function(str)
 end
 
 local os,clock=os
+local stack=nil
 while true do  
     if env.CURRENT_PROMPT=="_____EXIT_____" then break end    
     write(env.CURRENT_PROMPT)
@@ -38,7 +39,21 @@ while true do
     end
 
     clock=os.clock()
-    eval(line)     
+    eval(line)
+    if env.CURRENT_PROMPT==env.MTL_PROMPT and not stack then
+        stack={line}
+        history:removeLast()
+        reader:setHistoryEnabled(false)
+    elseif stack and env.CURRENT_PROMPT==env.PRI_PROMPT then
+        stack[#stack+1]=line
+        --history:add(java.cast(table.concat(stack,'\n'..env.MTL_PROMPT),'java.lang.String',true))
+        --history:moveToEnd()
+        reader:setHistoryEnabled(true)
+        stack=nil
+    elseif stack then
+        stack[#stack+1]=line
+    end
+    
     if env.PRI_PROMPT=="TIMING> " and env.CURRENT_PROMPT~=env.MTL_PROMPT then
         env.CURRENT_PROMPT=string.format('%06.2f',os.clock()-clock)..'> '
         env.MTL_PROMPT=string.rep(' ',#env.CURRENT_PROMPT)    

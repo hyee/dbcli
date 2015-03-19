@@ -54,9 +54,23 @@ function grid:cut(row,format_func,format_str)
 
     local len=#row
     if len>self.linesize then
-        local siz=len-env.ansi.strip_len(row)
-        siz=siz*(self.linesize)/(len-siz)
-        return row:sub(1,self.linesize-2+siz)..' .'
+        _,len=row:find('^[^\27]+')
+        len=(len or 0)-self.linesize
+        if len>=0 then return row:sub(1,self.linesize) end
+
+        local stack,count=row:gsub("(\27%[[%d%s;]-m)([^\27]+)",function(ansi,s)
+            if len < 0 then
+                len = len+#s
+                if len>0 then
+                    return ansi..s:sub(1,len)
+                end
+                return ansi..s
+            end
+            return ""
+        end)
+
+        if count > 0 then stack=stack..env.ansi.get_color('NOR') end
+        return stack
     end
     return row
 end

@@ -26,8 +26,7 @@ end
 
 _G['TRIGGER_ABORT']=function()
 local thread=java.require("java.lang.Thread",true)
---thread:currentThread():interrupt()
-    env.safe_call(env.event and env.event.callback,"ON_COMMAND_ABORT")
+    env.safe_call(env.event and env.event.callback,4,"ON_COMMAND_ABORT")
     if env.CURRENT_THREAD then
         --print(table.dump(env.CURRENT_THREAD))
         debug.sethook(abort_thread,"rl")
@@ -147,7 +146,7 @@ function env.check_cmd_endless(cmd,other_parts)
     if not _CMDS[cmd] then
         return true,other_parts
     end
-
+    local p1=env.END_MARKS[1]..'[%s\t\n]*$'
     if not _CMDS[cmd].MULTI then        
         return true,other_parts and other_parts:gsub(p1,"")
     elseif type(_CMDS[cmd].MULTI)=="function" then
@@ -156,7 +155,7 @@ function env.check_cmd_endless(cmd,other_parts)
         return env.smart_check_endless(cmd,other_parts,_CMDS[cmd].ARGS)
     end
     
-    local p1=env.END_MARKS[1]..'[%s\t\n]*$'
+    
     local p2=env.END_MARKS[2]..'[%s\t\n]*$'
     local match = (other_parts:match(p1) and 1) or (other_parts:match(p2) and 2) or false
     --print(match,other_parts)
@@ -492,7 +491,6 @@ function env.eval_line(line,exec)
     if multi_cmd then return check_multi_cmd(line) end
     
     local cmd,rest=line:match('^%s*([^%s\t]+)[%s\t]*(.*)')
-    
     cmd=cmd:gsub(env.END_MARKS[1]..'+$',''):upper()
     if not (_CMDS[cmd]) then
         return print("No such command["..cmd.."], please type 'help' for more information.")        
@@ -594,14 +592,21 @@ function env.onload(...)
     env.init.onload()
 
     env.set_prompt(nil,"SQL")
-    env.safe_call(env.set and env.set.init,"Prompt","SQL",env.set_prompt,
+    if env.set and env.set.init then 
+        env.set.init("Prompt","SQL",env.set_prompt,
                   "core","Define command's prompt, if value is 'timing' then will record the time cost(in second) for each execution.")
-    env.safe_call(env.set and env.set.init,"COMMAND_ENDMARKS",end_marks,env.set_endmark,
+        env.set.init("COMMAND_ENDMARKS",end_marks,env.set_endmark,
                   "core","Define the symbols to indicate the end input the cross-lines command. Cannot be alphanumeric characters.")
-    env.safe_call(env.ansi and env.ansi.define_color,"Promptcolor","HIY","core","Define prompt's color")
-    env.safe_call(env.ansi and env.ansi.define_color,"commandcolor","HIC","core","Define command line's color")
-    env.safe_call(env.event and env.event.snoop,"ON_COMMAND_ABORT",env.clear_command)
-    env.safe_call(env.event and env.event.callback,"ON_ENV_LOADED") 
+    end
+    if  env.ansi and env.ansi.define_color then
+        env.ansi.define_color("Promptcolor","HIY","core","Define prompt's color")
+        env.ansi.define_color("commandcolor","HIC","core","Define command line's color")
+    end
+    if env.event then
+        env.event.snoop("ON_COMMAND_ABORT",env.clear_command)
+        env.event.callback("ON_ENV_LOADED") 
+    end
+
     set_command(nil,"/*"    ,   '#Comment',        nil   ,env.check_comment,2)
     set_command(nil,"--"    ,   '#Comment',        nil   ,false,2)
     --load initial settings

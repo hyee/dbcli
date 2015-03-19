@@ -1,9 +1,9 @@
 2015-03-15: ! oracle: fix error "ORA-22998" for 'loadtrace' command
-2015-03-15: ! public: for 'alias' command, if its connected command is databse command, then create it in alias\<db_name> directory which is visible only when target db is loaded.
+2015-03-15: * public: for 'alias' command, if its connected command is database command, then create it in alias\<db_name> directory which is visible only when target db is loaded.
 2015-03-08: + public: new setting "COMMAND_ENDMARKS" to define the character to indicate the input completion of the cross-line command
 2015-03-08: * public: new abbr '!' for existing command 'host'
 2015-03-08: ! oracle: fix issue for 'unwrap' command
-2015-03-08: + db2:    support db2 database
+2015-03-08: + db2   : support db2 database
 ------------------------------------------------------------
 2015-03-07: "connect" command supports default 1521 port when not specify the port
 2015-03-07: minor fixes

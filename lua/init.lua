@@ -120,7 +120,7 @@ function init.load_database()
     env[name]=exec(dofile,env.WORK_DIR..file:gsub("[\\/]+",env.PATH_DEL)..'.lua')    
     exec(type(env[name])=="table" and env[name].onload,env[name],name)
     init.module_list[#init.module_list+1]=file
-    env.safe_call(env.event and env.event.callback,'ON_DATABASE_ENV_LOADED',env.CURRENT_DB)
+    if env.event then env.event.callback('ON_DATABASE_ENV_LOADED',env.CURRENT_DB) end
 end
 
 function init.load_modules(list,tab)
@@ -142,7 +142,7 @@ end
 function init.onload()
     init.load_modules(init.module_list,env)
     init.load_database()
-    env.safe_call(env.set and env.set.init,"database",env.CURRENT_DB,init.set_database,'core','Define current database type',table.concat(init.db_list(),','))        
+    if env.set then env.set.init("database",env.CURRENT_DB,init.set_database,'core','Define current database type',table.concat(init.db_list(),',')) end 
 end
 
 function init.unload(list,tab)

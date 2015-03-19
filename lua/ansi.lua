@@ -2,8 +2,10 @@ local rawget,env=rawget,env
 local ansi={}
 local cfg
 local reader,writer,str_completer,arg_completer,add=reader
-local isAnsiSupported=reader:getTerminal():isAnsiSupported()
+local terminal=reader:getTerminal()
+local isAnsiSupported=terminal:isAnsiSupported()
 local enabled=isAnsiSupported
+
 local color=setmetatable({
     BLK = "\27[30m", -- Black 
     RED = "\27[31m", -- Red 

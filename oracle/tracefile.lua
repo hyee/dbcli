@@ -42,9 +42,8 @@ function trace.get_trace(filename,mb,from_mb)
         f          := regexp_substr(f, '[^\\/]+$');
         trace_file := bfilename(dir, f);
         dbms_lob.fileopen(trace_file);
-        fsize := dbms_lob.getlength(trace_file);
-
-        flag := 3;
+        fsize      := dbms_lob.getlength(trace_file);
+        flag       := 3;
 
         IF from_MB IS NULL THEN
             from_MB := fsize - MBs+1;
@@ -56,7 +55,7 @@ function trace.get_trace(filename,mb,from_mb)
             from_MB := fsize;
         END IF;
         
-        MBs:= LEAST(MBs,fsize-from_MB+1);
+        MBs:= least(MBs,fsize-from_MB+1);
         dbms_lob.createtemporary(text,true);
         dbms_lob.loadclobfromfile(text,trace_file,MBs,startpos,from_MB,csid,lang_ctx,warn);
         dbms_lob.fileclose(trace_file);
@@ -81,9 +80,7 @@ function trace.get_trace(filename,mb,from_mb)
             ELSIF flag = 2 THEN
                 buff := 'Unable to open ' || f || ' under directory(' || dir || chr(10) || SQLERRM || ')';
             ELSE
-                raise_application_error(-20001,
-                                        dbms_utility.format_error_stack ||
-                                        dbms_utility.format_error_backtrace);
+                raise_application_error(-20001,dbms_utility.format_error_stack||dbms_utility.format_error_backtrace);
             END IF;
             :4 := buff;
     END;]]
@@ -121,15 +118,15 @@ function trace.get_trace(filename,mb,from_mb)
     print("Result written to file "..env.write_cache(args[2],args[3]))
 end
 
-env.set_command(nil,"loadtrace",[[
+env.set_command(nil,{"loadtrace","dumptrace"},[[
     Download Oracle trace file into local directory. Usage: loadtrace <trace_file|default|alert> [MB [begin_MB] ] 
     This command requires the "create directory" privilige.
     Parameters:
         trace_file: 1) The absolute path of the target trace file, or
                     2) "default" to extract current session's trace, or 
                     3) "alert" to extract local instance's alert log.
-        MB        : MegaBytes to extract, default to 4 MB.
-        begin_MB  : The start file position(in MB) which is excluded into extract list, default as "total_MB - <MB>"
+        MB        : MegaBytes to extract, default as 4 MB.
+        begin_MB  : The start file position(in MB) to extract, default as "total_MB - <MB>"
     ]],trace.get_trace,false,4)
 
 return trace
