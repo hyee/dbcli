@@ -1,6 +1,7 @@
 cd "%~dp0"
 cd ..
 setlocal enabledelayedexpansion
+del /F/S/Q "D:\JavaProjects\dbcli\src\*"
 XCOPY /S /Y "D:\JavaProjects\dbcli\src\*" .\src\java
 
 set copyflag=1

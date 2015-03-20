@@ -613,17 +613,16 @@ end
 
 function db_core:sql2file(filename,sql,method)
     sql=sql:gsub(env.END_MARKS[1]..'$',''):gsub(env.END_MARKS[2]..'$','')
-    local header = "set feed off sqlbl on define off;\n";
-    header=header.."ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';"
+    
     local result=self:exec(sql)
     if type(result)=="userdata" then
-        loader[method](loader,result,filename,header)
+        loader[method](loader,result,filename,self.sql_export_header)
         print('Result writtern to file '..filename)
     elseif type(result)=="table" then
         for idx,rs in pairs(rs) do
             if type(rs)=="userdata" then
                 loader[method](loader,rs,filename..tostring(idx),header)
-                print('Result writtern to file '..filename..tostring(idx))
+                print('Result written to file '..filename..tostring(idx))
             end
         end
     end
@@ -642,9 +641,12 @@ end
 function db_core:csv2sql(target,src)
     env.checkerr(src,'Usage: csv2sql <sql_file> <csv_file>')
     target=env.resolve_file(target,'sql')
+    local table_name=target:match('([^\\/]+)%.%w+$')
+    local _,rs=pcall(self.exec,self,'select * from '..table_name..' where 1=2')
+    if type(rs)~='userdata' then rs=nil end
     src=env.resolve_file(src)
-    loader:CSV2SQL(src,target)
-    print('Result writtern to file '..target)
+    loader:CSV2SQL(src,target,self.sql_export_header,rs)
+    print('Result written to file '..target)
 end
 
 function db_core:__onload()

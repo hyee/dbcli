@@ -23,6 +23,8 @@ function oracle:ctor(isdefault)
     self.db_types:load_sql_types('oracle.jdbc.OracleTypes')
     java.system:setProperty('jdbc.drivers','oracle.jdbc.driver.OracleDriver')
     local default_desc='#Oracle database SQL statement'
+    local header = "set feed off sqlbl on define off;\n";
+    self.sql_export_header=header.."ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';"
     self.C,self.props={},{}
 end
 
