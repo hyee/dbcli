@@ -121,6 +121,13 @@ function var.before_db_exec(item)
             if not params[name] then params[name]=v end
         end
     end
+
+    sql=var.inputs[sql:upper()] or var.global_context[sql:upper()] or sql
+    if sql ~= item[2] then
+        item[2]=sql
+        return
+    end
+    
     update_text(item,2,params)    
 end
 

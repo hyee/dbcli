@@ -1,9 +1,9 @@
 cd "%~dp0"
 cd ..
 setlocal enabledelayedexpansion
-del /F/S/Q "D:\JavaProjects\dbcli\src\*"
+del /F/S/Q ".\src\java"
 XCOPY /S /Y "D:\JavaProjects\dbcli\src\*" .\src\java
-
+XCOPY /S /Y "D:\JavaProjects\dbcli\opencsv\src\*" "d:\green\github\opencsv\src"
 set copyflag=1
 
 set target=D:\green\github\dbcli
@@ -22,6 +22,8 @@ del /s /f "%target%\*.so"
 del /s /f "%target%\*.dll"
 del /s /f "%target%\*.bat"
 del /s /f "%target%\*.exe"
+del /s /f "%target%\*.java"
+del /s /f "%target%\*.class"
 
 xcopy  . "%target%" /S /Y  /exclude:.\src\excludes.txt
 

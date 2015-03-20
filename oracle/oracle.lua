@@ -24,7 +24,10 @@ function oracle:ctor(isdefault)
     java.system:setProperty('jdbc.drivers','oracle.jdbc.driver.OracleDriver')
     local default_desc='#Oracle database SQL statement'
     local header = "set feed off sqlbl on define off;\n";
-    self.sql_export_header=header.."ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';"
+    header = header.."ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';\n"
+    header = header.."ALTER SESSION SET NLS_TIMESTAMP_FORMAT='YYYY-MM-DD HH24:MI:SSXFF';\n"
+    header = header.."ALTER SESSION SET NLS_TIMESTAMP_TZ_FORMAT='YYYY-MM-DD HH24:MI:SSXFF TZH';\n"
+    self.sql_export_header=header
     self.C,self.props={},{}
 end
 

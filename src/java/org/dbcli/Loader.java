@@ -4,6 +4,7 @@ import com.naef.jnlua.LuaState;
 import com.opencsv.CSVWriter;
 import com.opencsv.SQLWriter;
 import jline.console.ConsoleReader;
+import jline.console.completer.Completer;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -14,6 +15,7 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.sql.CallableStatement;
 import java.sql.ResultSet;
+import java.util.Iterator;
 import java.util.concurrent.*;
 
 
@@ -39,8 +41,10 @@ public class Loader {
             File f = new File(Loader.class.getProtectionDomain().getCodeSource().getLocation().toURI());
             root= f.getParentFile().getParent();
             reader = new ConsoleReader(System.in,System.out);
-            Class clz = reader.getClass();
             printer = new PrintWriter((Writer) reader.getOutput());
+            Iterator<Completer> iterator=reader.getCompleters().iterator();
+            while (iterator.hasNext())
+                reader.removeCompleter(iterator.next());
             // reader.setCompletionHandler(null);
             reader.setHandleUserInterrupt(false);
             ActionListener al = new KeyListner();
@@ -160,25 +164,28 @@ public class Loader {
         }));
     }
 
-    public void ResultSet2CSV(ResultSet rs,String fileName) throws Exception {
+    public int ResultSet2CSV(ResultSet rs,String fileName,String header) throws Exception {
         CSVWriter writer=new CSVWriter(fileName);
-        writer.writeAll(rs,true);
+        int result=writer.writeAll(rs,true);
         rs.close();
         writer.close();
+        return  result;
     }
 
-    public void ResultSet2SQL(ResultSet rs,String fileName,String header) throws Exception {
+    public int ResultSet2SQL(ResultSet rs,String fileName,String header) throws Exception {
         SQLWriter writer=new SQLWriter(fileName);
         writer.setFileHead(header);
-        writer.writeAll2SQL(rs,"",1500);
+        int result=writer.writeAll2SQL(rs,"",1500);
         rs.close();
+        return result;
     }
 
-    public void CSV2SQL(String CSVfileName,String SQLFileName,String header) throws Exception {
+    public int CSV2SQL(String CSVfileName,String SQLFileName,String header,ResultSet rs) throws Exception {
         SQLWriter writer=new SQLWriter(SQLFileName);
         writer.setFileHead(header);
+        if(rs!=null) writer.setCSVDataTypes(rs);
         writer.setMaxLineWidth(1500);
-        writer.writeAll2SQL(CSVfileName);
+        return writer.writeAll2SQL(CSVfileName);
     }
 
     public static void main(String args[]) throws Exception {

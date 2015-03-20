@@ -685,8 +685,21 @@ function env.resolve_file(filename,ext)
         filename=filename:gsub('[\\/]',env.PATH_DEL)
     end
 
-    if ext and not filename:lower():match(ext:lower()..'$') then
-        filename=filename..'.'..ext
+    if ext then
+        local exist_ext=filename:lower():match('%.([^\\/]+)$')
+        local found=false
+        if type(ext)=="table" then
+            for _,v in ipairs(ext) do
+                if v:lower()==exist_ext then
+                    found=true
+                    break
+                end
+            end
+        else
+            found=exist_ext==ext:lower()
+        end
+
+        if not found then filename=filename..'.'..(type(ext)=="table" and ext[1] or exit) end
     end
 
     return filename

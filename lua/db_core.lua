@@ -16,7 +16,7 @@ end
 --return column value according to the specific resulset and column index
 function db_Types:get(position,typeName,res,conn)
     --local value=res:getObject(position)
-    --if value==nil then return nil end    
+    --if value==nil then return nil end   
     local getter=self[typeName].getter
     if getter=="getDouble" and not res:getObject(position) then
         return nil
@@ -415,7 +415,6 @@ end
 function db_core:exec(sql,args)
     collectgarbage("collect")
     java.system:gc()
-
     local params={}
     args=args or {}
     local prep;
@@ -438,7 +437,13 @@ function db_core:exec(sql,args)
         self.conn:setAutoCommit(autocommit=="on" and true or false)
         self.autocommit=autocommit
     end
+
     sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
+
+    if type(sql)~="string" then
+        return sql
+    end
+    
     prep,sql,params=self:parse(sql,params)        
     self.__stmts[#self.__stmts+1]=prep
     prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
@@ -611,18 +616,30 @@ local function set_param(name,value)
     return tonumber(value)
 end
 
+local function print_export_result(filename,start_clock,counter)
+    if start_clock then
+        counter = (counter and (counter..' rows') or 'Data')..' exported'
+        print(counter..' in '..math.round(os.clock()-start_clock,3)..' seconds.')
+    end
+    print('Result written to file '..filename)
+end
+
 function db_core:sql2file(filename,sql,method)
     sql=sql:gsub(env.END_MARKS[1]..'$',''):gsub(env.END_MARKS[2]..'$','')
-    
-    local result=self:exec(sql)
+    local clock,counter,result
+    if type(sql)~='string' then 
+        result=sql
+    else  
+        result=self:exec(sql)
+    end
     if type(result)=="userdata" then
-        loader[method](loader,result,filename,self.sql_export_header)
-        print('Result writtern to file '..filename)
+        clock,counter=os.clock(),loader[method](loader,result,filename,self.sql_export_header)
+        print_export_result(filename,clock,counter)
     elseif type(result)=="table" then
         for idx,rs in pairs(rs) do
             if type(rs)=="userdata" then
-                loader[method](loader,rs,filename..tostring(idx),header)
-                print('Result written to file '..filename..tostring(idx))
+                clock,counter=os.clock(),loader[method](loader,rs,filename..tostring(idx),header)
+                print_export_result(filename..tostring(idx),clock,counter)
             end
         end
     end
@@ -630,23 +647,23 @@ end
 
 function db_core:sql2sql(filename,sql)
     env.checkerr(sql,'Usage: sql2file <file_name> <SQL>')
-    self:sql2file(env.resolve_file(filename,'sql'),sql,'ResultSet2SQL')
+    self:sql2file(env.resolve_file(filename,{'sql','zip','gz'}),sql,'ResultSet2SQL')
 end
 
 function db_core:sql2csv(filename,sql)
     env.checkerr(sql,'Usage: sql2csv <file_name> <SQL>')
-    self:sql2file(env.resolve_file(filename,'csv'),sql,'ResultSet2CSV')
+    self:sql2file(env.resolve_file(filename,{'csv','zip','gz'}),sql,'ResultSet2CSV')
 end
 
 function db_core:csv2sql(target,src)
     env.checkerr(src,'Usage: csv2sql <sql_file> <csv_file>')
-    target=env.resolve_file(target,'sql')
+    target=env.resolve_file(target,{'sql','zip','gz'})
     local table_name=target:match('([^\\/]+)%.%w+$')
     local _,rs=pcall(self.exec,self,'select * from '..table_name..' where 1=2')
     if type(rs)~='userdata' then rs=nil end
     src=env.resolve_file(src)
-    loader:CSV2SQL(src,target,self.sql_export_header,rs)
-    print('Result written to file '..target)
+    local clock,counter=os.clock(),loader:CSV2SQL(src,target,self.sql_export_header,rs)
+    print_export_result(target,clock,counter)
 end
 
 function db_core:__onload()
@@ -664,9 +681,9 @@ function db_core:__onload()
     cfg.init("SQLCACHESIZE",50,set_param,"db.core","Number of cached statements in JDBC",'5-500')
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
     env.set_command(self,"login",help_login,self.login,false,3)
-    env.set_command(self,"sql2file","Export Query Result into SQL file. Usage: sql2file <file_name> <SQL>" ,self.sql2sql,'__SMART_PARSE__',3)
-    env.set_command(self,"sql2csv","Export Query Result into CSV file. Usage: sql2csv <file_name> <SQL>" ,self.sql2csv,'__SMART_PARSE__',3)
-    env.set_command(self,"csv2sql","Convert CSV file into SQL file. Usage: csv2sql <sql_file> <csv_file>" ,self.csv2sql,false,3)
+    env.set_command(self,"sql2file","Export Query Result into SQL file. Usage: sql2file <file_name>[.sql|gz|zip] <sql|cursor>" ,self.sql2sql,'__SMART_PARSE__',3)
+    env.set_command(self,"sql2csv","Export Query Result into CSV file. Usage: sql2csv <file_name>[.csv|gz|zip] <sql|cursor>" ,self.sql2csv,'__SMART_PARSE__',3)
+    env.set_command(self,"csv2sql","Convert CSV file into SQL file. Usage: csv2sql <sql_file>[.sql|gz|zip] <csv_file>" ,self.csv2sql,false,3)
 end
 
 function db_core:__onunload()

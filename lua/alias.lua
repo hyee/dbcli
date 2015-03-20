@@ -57,7 +57,7 @@ function alias.run_command(...)
         target=target:gsub("%$[1-9]",'')
         target=target:gsub("[%s\n\r\b\t]+$","")
         if not target:find(env.END_MARKS[2]..'$') and not target:find(env.END_MARKS[1]..'$') then target=target..env.END_MARKS[1] end
-        if type(alias.cmdlist[name].text) == "string" then
+        if type(alias.cmdlist[name].text) == "string" and not target:find('[\n\r]') then
             print('Statement: '..target)
         end
         env.internal_eval(target)        
