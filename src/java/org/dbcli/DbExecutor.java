@@ -1,7 +1,6 @@
 package org.dbcli;
 
 import java.sql.CallableStatement;
-import java.sql.SQLException;
 import java.util.concurrent.Callable;
 
 /**
@@ -13,15 +12,15 @@ public class DbExecutor implements Runnable {
     private final DbCallback callback;
 
     public DbExecutor(CallableStatement p, DbCallback c) {
-        this.callback=c;
-        this.task=new Caller(p);
+        this.callback = c;
+        this.task = new Caller(p);
     }
 
     @Override
     public void run() {
         String result = null;
         try {
-            result = (String)this.task.call();
+            result = (String) this.task.call();
         } catch (Exception e) {
             result = e.getMessage();
         }

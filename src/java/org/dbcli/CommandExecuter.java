@@ -1,11 +1,6 @@
 package org.dbcli;
 
-import javax.swing.plaf.TableHeaderUI;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
+import java.io.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -44,16 +39,6 @@ class CommandExecutor {
 
     private boolean isDone;
 
-    protected synchronized void stopThread()
-    {
-        isRunning=false;
-    }
-
-    protected synchronized boolean isRun()
-    {
-        return isRunning;
-    }
-
     private CommandExecutor(Process process, int timeout) {
         // Init
         this.mTimeout = timeout;
@@ -85,6 +70,39 @@ class CommandExecutor {
             processThread.setDaemon(true);
             processThread.start();
         }
+    }
+
+    protected static void sleepIgnoreInterrupt(long time) {
+        try {
+            Thread.sleep(time);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    protected static CommandExecutor create(int timeout, String param) {
+        String[] params = param.split(" ");
+        CommandExecutor processModel = null;
+        try {
+            LOCK.lock();
+            Process process = PRC.command(params).redirectErrorStream(true).start();
+            processModel = new CommandExecutor(process, timeout);
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            // Sleep 10 to create next
+            sleepIgnoreInterrupt(10);
+            LOCK.unlock();
+        }
+        return processModel;
+    }
+
+    protected synchronized void stopThread() {
+        isRunning = false;
+    }
+
+    protected synchronized boolean isRun() {
+        return isRunning;
     }
 
     private void read() {
@@ -177,31 +195,6 @@ class CommandExecutor {
             }
             mInStreamBuffer = null;
         }
-    }
-
-    protected static void sleepIgnoreInterrupt(long time) {
-        try {
-            Thread.sleep(time);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-    }
-
-    protected static CommandExecutor create(int timeout, String param) {
-        String[] params = param.split(" ");
-        CommandExecutor processModel = null;
-        try {
-            LOCK.lock();
-            Process process = PRC.command(params).redirectErrorStream(true).start();
-            processModel = new CommandExecutor(process, timeout);
-        } catch (IOException e) {
-            e.printStackTrace();
-        } finally {
-            // Sleep 10 to create next
-            sleepIgnoreInterrupt(10);
-            LOCK.unlock();
-        }
-        return processModel;
     }
 
     protected boolean isTimeOut() {

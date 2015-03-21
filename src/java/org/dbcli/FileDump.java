@@ -8,17 +8,41 @@ import sun.jvm.hotspot.runtime.VM;
 import sun.jvm.hotspot.tools.jcore.ClassDump;
 import sun.jvm.hotspot.tools.jcore.ClassFilter;
 import sun.jvm.hotspot.tools.jcore.ClassWriter;
+import sun.jvm.hotspot.tools.Tool;
 
 import java.io.*;
-import java.net.URL;
-import java.security.CodeSource;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.lang.reflect.Method;
 
 public class FileDump extends ClassDump {
-    private ClassFilter classFilter;
     private String outputDirectory;
     private SystemDictionary ioe;
+
+    public static void main(String[] args) {
+        ClassFilter classFilter = null;
+        System.out.print("Starting to dump...");
+        String outputDirectory = System.getProperty("sun.jvm.hotspot.tools.jcore.outputDir");
+        if (outputDirectory == null) {
+            outputDirectory = ".";
+        }
+        FileDump cd = new FileDump();
+        cd.setClassFilter(classFilter);
+        cd.setOutputDirectory(outputDirectory);
+
+        try {
+            Method method;
+            try {
+                method = Tool.class.getDeclaredMethod("execute", new Class[]{String[].class});
+            } catch (Exception e1) {
+                method = Tool.class.getDeclaredMethod("start", new Class[]{String[].class});
+            }
+            method.invoke((Tool)cd, new Object[]{args});
+        } catch (Exception e) {
+            e.printStackTrace();
+            return;
+        }
+        //cd.start(args);
+        cd.stop();
+    }
 
     @Override
     public void setOutputDirectory(String od) {
@@ -27,15 +51,14 @@ public class FileDump extends ClassDump {
     }
 
     @Override
-    public void run()
-    {
+    public void run() {
         try {
             ioe = VM.getVM().getSystemDictionary();
             ioe.classesDo(new SystemDictionary.ClassVisitor() {
                 public void visit(Klass k) {
-                    if(k instanceof InstanceKlass) {
+                    if (k instanceof InstanceKlass) {
                         try {
-                            FileDump.this.dumpKlass((InstanceKlass)k);
+                            FileDump.this.dumpKlass((InstanceKlass) k);
                         } catch (Exception var3) {
                             System.out.println(k.getName().asString());
                             var3.printStackTrace();
@@ -51,10 +74,10 @@ public class FileDump extends ClassDump {
 
     }
 
-    private void dumpKlass(InstanceKlass kls) throws Exception{
+    private void dumpKlass(InstanceKlass kls) throws Exception {
         String klassName = kls.getName().asString();
-        String jar=JavaAgent.resolveDest(null,klassName);
-        if(jar==null) return;
+        String jar = JavaAgent.resolveDest(null, klassName);
+        if (jar == null) return;
         klassName = klassName.replace('/', File.separatorChar);
         try {
             OutputStream os = null;
@@ -62,9 +85,9 @@ public class FileDump extends ClassDump {
             File dir = null;
             if (index != -1) {
                 String dirName = klassName.substring(0, index);
-                dir = new File(this.outputDirectory+File.separator+jar, dirName);
+                dir = new File(this.outputDirectory + File.separator + jar, dirName);
             } else {
-                dir = new File(this.outputDirectory+File.separator+jar);
+                dir = new File(this.outputDirectory + File.separator + jar);
             }
             dir.mkdirs();
             File f = new File(dir, klassName.substring(index + 1) + ".class");
@@ -80,19 +103,6 @@ public class FileDump extends ClassDump {
         } catch (IOException exp) {
             exp.printStackTrace();
         }
-    }
-
-    public static void main(String[] args) {
-        ClassFilter classFilter = null;
-        String outputDirectory = System.getProperty("sun.jvm.hotspot.tools.jcore.outputDir");
-        if (outputDirectory == null) {
-            outputDirectory = ".";
-        }
-        FileDump cd = new FileDump();
-        cd.setClassFilter(classFilter);
-        cd.setOutputDirectory(outputDirectory);
-        cd.start(args);
-        cd.stop();
     }
 
 }

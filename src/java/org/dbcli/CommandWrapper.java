@@ -2,16 +2,10 @@ package org.dbcli;
 
 import com.naef.jnlua.LuaState;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
+import java.io.*;
 import java.util.Scanner;
 
-import static java.lang.System.*;
+import static java.lang.System.out;
 
 /**
  * Program to demostrate use of communicating with a child process using three threads and ProcessBuilder.
@@ -24,12 +18,11 @@ final public class CommandWrapper {
     private final LuaState lua;
 
     public CommandWrapper(LuaState lua) {
-        this.lua=lua;
+        this.lua = lua;
     }
 
 
-
-    public void create(String cmd) throws Exception{
+    public void create(String cmd) throws Exception {
         // Boomerang exchoes input to output.
         final ProcessBuilder pb = new ProcessBuilder(cmd).redirectErrorStream(true);
         final Process p = pb.start();
@@ -40,7 +33,7 @@ final public class CommandWrapper {
 
 
         new Thread(new Sender(os)).start();
-        new Thread(new Receiver(lua,p.getInputStream())).start();
+        new Thread(new Receiver(lua, p.getInputStream())).start();
         out.println("Child done");
         // at this point the child is complete.  All of its output may or may not have been processed however.
         // The Receiver thread will continue until it has finished processing it.
@@ -94,15 +87,17 @@ final class Receiver implements Runnable {
     private final Scanner in;
     private final LuaState lua;
 
-    Receiver(LuaState lua,InputStream in){
-        this.lua=lua;
-        this.in= new Scanner(in);
-    };
+    Receiver(LuaState lua, InputStream in) {
+        this.lua = lua;
+        this.in = new Scanner(in);
+    }
+
+    ;
 
     private void print(String message) {
         lua.getGlobal("print");
         lua.pushString(message);
-        lua.call(1,0);
+        lua.call(1, 0);
     }
 
     public void run() {

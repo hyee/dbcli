@@ -16,7 +16,8 @@ import java.net.URLClassLoader;
 import java.sql.CallableStatement;
 import java.sql.ResultSet;
 import java.util.Iterator;
-import java.util.concurrent.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 
 public class Loader {
@@ -24,27 +25,17 @@ public class Loader {
     static LuaState lua;
     static PrintWriter printer;
     static ConsoleReader reader;
-    static String root="";
+    static String root = "";
     ExecutorService executor = Executors.newFixedThreadPool(1);
-
-    private class KeyListner implements ActionListener {
-        @Override
-        public void actionPerformed(ActionEvent e) {
-            lua.getGlobal("TRIGGER_ABORT");
-            lua.call(0, 0);
-            //System.exit(0);
-        }
-    }
 
     public Loader() {
         try {
             File f = new File(Loader.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-            root= f.getParentFile().getParent();
-            reader = new ConsoleReader(System.in,System.out);
+            root = f.getParentFile().getParent();
+            reader = new ConsoleReader(System.in, System.out);
             printer = new PrintWriter((Writer) reader.getOutput());
-            Iterator<Completer> iterator=reader.getCompleters().iterator();
-            while (iterator.hasNext())
-                reader.removeCompleter(iterator.next());
+            Iterator<Completer> iterator = reader.getCompleters().iterator();
+            while (iterator.hasNext()) reader.removeCompleter(iterator.next());
             // reader.setCompletionHandler(null);
             reader.setHandleUserInterrupt(false);
             ActionListener al = new KeyListner();
@@ -55,35 +46,6 @@ public class Loader {
         } catch (Exception e) {
             e.printStackTrace();
         }
-    }
-
-    public void addPath(String file) throws Exception {
-        URLClassLoader classLoader = (URLClassLoader) lua.getClassLoader();
-        Class<URLClassLoader> clazz = URLClassLoader.class;
-        URL url = new URL("file:" + file);
-        // Use reflection
-        Method method = clazz.getDeclaredMethod("addURL", new Class[]{URL.class});
-        method.setAccessible(true);
-        method.invoke(classLoader, new Object[]{url});
-        System.setProperty("java.class.path",System.getProperty("java.class.path")
-                +File.pathSeparator+file.replace(root,"."));
-    }
-
-    public void copyClass(String className) throws Exception{
-        JavaAgent.copyFile(null, className.replace("\\.","/"));
-    }
-
-
-    public String dumpClass(String folder) throws Exception{
-        String cp=System.getProperty("java.class.path");
-        String stack = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
-        String packageName = Loader.class.getPackage().getName()+".FileDump";
-        String sep=File.separator;
-        stack= stack.split("@")[0];
-        stack=String.format("java -cp \"%s%slib%ssa-jdi.jar;%s\" -Dsun.jvm.hotspot.tools.jcore.outputDir=%s %s %s",
-                System.getProperty("java.home"),sep,sep,cp,folder,packageName,stack);
-        //System.out.println("Command: "+stack);
-        return stack;
     }
 
     public static void loadLua(Loader l, String args[]) throws Exception {
@@ -119,16 +81,16 @@ public class Loader {
         System.gc();
     }
 
-    public static void addLibrary(String s,Boolean isReplace) throws IOException {
+    public static void addLibrary(String s, Boolean isReplace) throws IOException {
         try {
             Field field = ClassLoader.class.getDeclaredField("usr_paths");
             field.setAccessible(true);
-            if(!isReplace) {
-                String path="s";
+            if (!isReplace) {
+                String path = "s";
                 String[] paths = (String[]) field.get(null);
                 for (int i = 0; i < paths.length; i++) {
                     if (s.equals(paths[i])) return;
-                    path=path+File.pathSeparator+paths[i];
+                    path = path + File.pathSeparator + paths[i];
                 }
                 String[] tmp = new String[paths.length + 1];
                 System.arraycopy(paths, 0, tmp, 0, paths.length);
@@ -149,53 +111,86 @@ public class Loader {
         }
     }
 
+    public static void main(String args[]) throws Exception {
+        Loader l = new Loader();
+        String path = root + File.separator + "lib" + File.separator;
+        if (System.getProperty("sun.arch.data.model").equals("64")) addLibrary(path + "x64", true);
+        else addLibrary(path + "x86", true);
+        System.loadLibrary("lua5.1");
+        while (ReloadNextTime) loadLua(l, args);
+    }
+
+    public void addPath(String file) throws Exception {
+        URLClassLoader classLoader = (URLClassLoader) lua.getClassLoader();
+        Class<URLClassLoader> clazz = URLClassLoader.class;
+        URL url = new URL("file:" + file);
+        // Use reflection
+        Method method = clazz.getDeclaredMethod("addURL", new Class[]{URL.class});
+        method.setAccessible(true);
+        method.invoke(classLoader, new Object[]{url});
+        System.setProperty("java.class.path", System.getProperty("java.class.path") + File.pathSeparator + file.replace(root, "."));
+    }
+
+    public void copyClass(String className) throws Exception {
+        JavaAgent.copyFile(null, className.replace("\\.", "/"));
+    }
+
+    public String dumpClass(String folder) throws Exception {
+        String cp = System.getProperty("java.class.path");
+        String stack = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
+        String packageName = Loader.class.getPackage().getName() + ".FileDump";
+        String sep = File.separator;
+        stack = stack.split("@")[0];
+        stack = String.format("java -cp \"%s%slib%ssa-jdi.jar;%s\" -Dsun.jvm.hotspot.tools.jcore.outputDir=%s %s %s", System.getProperty("java.home"), sep, sep, cp, folder, packageName, stack);
+        //System.out.println("Command: "+stack);
+        return stack;
+    }
+
     public void dbCall(final CallableStatement p) throws InterruptedException {
         executor.execute(new DbExecutor(p, new DbCallback() {
             @Override
-            public void  complete(String result) {
-                System.out.println("Callback1 ..."+" "+result);
+            public void complete(String result) {
+                System.out.println("Callback1 ..." + " " + result);
                 lua.getGlobal("ON_ASYNC_STATEMENT_COMPLETE");
                 lua.pushString(result);
                 lua.pushJavaObject(p);
                 System.out.println("Callback2 ...");
-                lua.call(2,0);
+                lua.call(2, 0);
                 System.out.println("Callback3 ...");
             }
         }));
     }
 
-    public int ResultSet2CSV(ResultSet rs,String fileName,String header) throws Exception {
-        CSVWriter writer=new CSVWriter(fileName);
-        int result=writer.writeAll(rs,true);
+    public int ResultSet2CSV(ResultSet rs, String fileName, String header) throws Exception {
+        CSVWriter writer = new CSVWriter(fileName);
+        int result = writer.writeAll(rs, true);
         rs.close();
         writer.close();
-        return  result;
+        return result;
     }
 
-    public int ResultSet2SQL(ResultSet rs,String fileName,String header) throws Exception {
-        SQLWriter writer=new SQLWriter(fileName);
+    public int ResultSet2SQL(ResultSet rs, String fileName, String header) throws Exception {
+        SQLWriter writer = new SQLWriter(fileName);
         writer.setFileHead(header);
-        int result=writer.writeAll2SQL(rs,"",1500);
+        int result = writer.writeAll2SQL(rs, "", 1500);
         rs.close();
         return result;
     }
 
-    public int CSV2SQL(String CSVfileName,String SQLFileName,String header,ResultSet rs) throws Exception {
-        SQLWriter writer=new SQLWriter(SQLFileName);
+    public int CSV2SQL(String CSVfileName, String SQLFileName, String header, ResultSet rs) throws Exception {
+        SQLWriter writer = new SQLWriter(SQLFileName);
         writer.setFileHead(header);
-        if(rs!=null) writer.setCSVDataTypes(rs);
+        if (rs != null) writer.setCSVDataTypes(rs);
         writer.setMaxLineWidth(1500);
         return writer.writeAll2SQL(CSVfileName);
     }
 
-    public static void main(String args[]) throws Exception {
-        Loader l = new Loader();
-        String path=root+File.separator+"lib" + File.separator;
-        if(System.getProperty("sun.arch.data.model").equals("64"))
-            addLibrary(path + "x64",true);
-        else
-            addLibrary(path + "x86",true);
-        System.loadLibrary("lua5.1");
-        while (ReloadNextTime) loadLua(l, args);
+    private class KeyListner implements ActionListener {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            lua.getGlobal("TRIGGER_ABORT");
+            lua.call(0, 0);
+            //System.exit(0);
+        }
     }
 }

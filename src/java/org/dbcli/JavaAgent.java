@@ -8,8 +8,6 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.security.CodeSource;
 import java.security.ProtectionDomain;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -24,26 +22,22 @@ public class JavaAgent implements ClassFileTransformer {
             re = Pattern.compile("/([^/]+?)\\.(jar|zip)");
             File f = new File(JavaAgent.class.getProtectionDomain().getCodeSource().getLocation().toURI());
             destFolder = f.getParentFile().getParent() + separator + "dump" + separator;
-        } catch (URISyntaxException localURISyntaxException) {}
+        } catch (URISyntaxException localURISyntaxException) {
+        }
     }
 
-    public static void premain(String agentArgs, Instrumentation inst) throws Exception {
-        in = inst;
-        inst.addTransformer(new JavaAgent());
-        dumpAllClasses();
-    }
-
-    public static void agentmain(String agentArgs, Instrumentation inst) throws Exception {
-        premain(agentArgs, inst);
-    }
-
-    public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined, ProtectionDomain domain, byte[] classFileBuffer) {
+    public static void premain(String agentArgs, Instrumentation inst) {
         try {
-            copyFile(domain, className);
+            in = inst;
+            inst.addTransformer(new JavaAgent());
+            dumpAllClasses();
         } catch (Exception e) {
             e.printStackTrace();
         }
-        return classFileBuffer;
+    }
+
+    public static void agentmain(String agentArgs, Instrumentation inst) {
+        premain(agentArgs, inst);
     }
 
     private static String isCandidate(String className) {
@@ -89,17 +83,25 @@ public class JavaAgent implements ClassFileTransformer {
         return result;
     }
 
-    public static URL getClassURL(String className,ProtectionDomain domain) throws  Exception{
-        String source="/" + className.replace(".","/") + ".class";
-        URL location = JavaAgent.class.getResource(source);
+    public static URL getClassURL(String className, ProtectionDomain domain) throws Exception {
+        String source=className;
+        URL location;
+        try{
+            source = "/" + className.replace(".", "/") + ".class";
+            location = JavaAgent.class.getResource(source);}
+        catch (Exception e1) {
+            location=null;
+            System.out.println("Error on loading Source: "+source);
+            //e1.printStackTrace();
+        }
         Exception e=new Exception();
         if (location == null) {
             CodeSource c;
             try {
                 c = (domain == null ? Class.forName(className.replace("/", ".")).getProtectionDomain() : domain).getCodeSource();
-                if(c==null) throw  e;
+                if (c == null) throw e;
             } catch (Exception e1) {
-                if (!className.startsWith("sun/reflect")) System.out.println("Cannot find class " + className);
+                if (className!=null && !className.startsWith("sun/reflect")) System.out.println("Cannot find class " + className);
                 return null;
             }
             location = c.getLocation();
@@ -112,11 +114,11 @@ public class JavaAgent implements ClassFileTransformer {
         return location;
     }
 
-    public static String resolveDest(ProtectionDomain domain, String className) throws  Exception{
-        String jar=null;
+    public static String resolveDest(ProtectionDomain domain, String className) throws Exception {
+        String jar = null;
         String source;
         Matcher mt;
-        URL location =getClassURL(className,domain);
+        URL location = getClassURL(className, domain);
         if (location == null) return null;
         source = location.toString();
         mt = re.matcher(source);
@@ -126,19 +128,19 @@ public class JavaAgent implements ClassFileTransformer {
 
     public static void copyFile(ProtectionDomain domain, String className) throws Exception {
         String jar = resolveDest(domain, className);
-        if(jar==null) return;
+        if (jar == null) return;
         File destFile = new File(destFolder + jar + separator + className.replace(".", separator).replace("/", separator) + ".class");
         if (destFile.exists()) return;
-        System.out.println("Folder: "+jar+"     Class: "+ className);
+        System.out.println("Folder: " + jar + "     Class: " + className);
         destFile.getParentFile().mkdirs();
-        byte[] classFileBuffer=getClassBuffer(className,domain);
+        byte[] classFileBuffer = getClassBuffer(className, domain);
         FileOutputStream destStream = new FileOutputStream(destFile);
         destStream.write(classFileBuffer, 0, classFileBuffer.length);
         destStream.close();
     }
 
-    public static byte[] getClassBuffer(String className,ProtectionDomain domain) throws Exception {
-        URL classLocation = getClassURL(className,domain);
+    public static byte[] getClassBuffer(String className, ProtectionDomain domain) throws Exception {
+        URL classLocation = getClassURL(className, domain);
         InputStream srcStream = classLocation.openStream();
         ByteArrayOutputStream outStream = new ByteArrayOutputStream();
         int count = -1;
@@ -150,18 +152,24 @@ public class JavaAgent implements ClassFileTransformer {
 
     public static void dumpAllClasses() throws Exception {
         Class[] classes = in.getAllLoadedClasses();
-        List<Class> candidates = new ArrayList();
         Class[] arrayOfClass1 = classes;
         int j = classes.length;
-        OutputStream destStream = null;
         for (int i = 0; i < j; i++) {
             Class c = arrayOfClass1[i];
             String className = isCandidate(c.getName());
             if (className != null) {
-                URL classLocation = getClassLocation(c);
                 copyFile(c.getProtectionDomain(), className);
             } //else System.out.println("Cannot dump " + c.getName());
         }
+    }
+
+    public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined, ProtectionDomain domain, byte[] classFileBuffer) {
+        try {
+            copyFile(domain, className);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return classFileBuffer;
     }
 
 /*
