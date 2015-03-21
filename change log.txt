@@ -1,3 +1,4 @@
+2015-03-21: ! public: recompile jnlua5.1.dll to support windows xp.
 2015-03-21: + public: support defining default '$1-$9' values for 'alias' command. i.e.: "alias sf select * from $1[dual];"
 2015-03-15: + public: support automatically compression if target file extension is "zip" or "gz" for commands "csv2sql","sql2csv","sql2file"
 2015-03-15: + public: new command "csv2sql","sql2csv","sql2file"
