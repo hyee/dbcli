@@ -13,6 +13,7 @@ cd ..
 mkdir "%target%"
 del /s /f "%target%\*.lua"
 del /s /f "%target%\*.jar"
+del /s /f "%target%\*.gz"
 del /s /f "%target%\*.sql"
 del /s /f "%target%\*.chm"
 del /s /f "%target%\*.bat"
@@ -36,7 +37,7 @@ goto start
 
 
 :end
-rem xcopy /S /Y .\jre %target%\jre
+xcopy /S /Y .\jre %target%\jre
 cd /d %target%
 for /f %%i in ('dir /b/s/a:-H .\*.jar') do ("d:\java\jre\bin\pack200" -O -S-1 -G "%%i.pack.gz" "%%i" && del "%%i")
 
