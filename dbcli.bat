@@ -15,6 +15,7 @@ IF not exist "%JRE_HOME%\java.exe" (set JRE_HOME=.\jre\bin)
 
 SET PATH=%JRE_HOME%;%PATH%
 
+rem unpack jar files in the first use
 for /r %%i in (*.pack.gz) do (
   set "var=%%i" &set "str=!var:@=!"
   unpack200 -q -r "%%i" "!str:~0,-8!"
