@@ -1,6 +1,6 @@
-
-2015-03-15: + support automatically compression if target file extension is "zip" or "gz" for commands "csv2sql","sql2csv","sql2file"
-2015-03-15: + new command "csv2sql","sql2csv","sql2file"
+2015-03-21: + public: support defining default '$1-$9' values for 'alias' command. i.e.: "alias sf select * from $1[dual];"
+2015-03-15: + public: support automatically compression if target file extension is "zip" or "gz" for commands "csv2sql","sql2csv","sql2file"
+2015-03-15: + public: new command "csv2sql","sql2csv","sql2file"
 2015-03-15: ! oracle: fix error "ORA-22998" for 'loadtrace' command
 2015-03-15: * public: for 'alias' command, if its connected command is database command, then create it in alias\<db_name> directory which is visible only when target db is loaded.
 2015-03-08: + public: new setting "COMMAND_ENDMARKS" to define the character to indicate the input completion of the cross-line command
