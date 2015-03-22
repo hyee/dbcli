@@ -478,15 +478,17 @@ function db_core:exec(sql,args)
     end
 
     --close statments
-    self:clearStatements()
-
+    
     params=nil
     local result={is_query and prep:getResultSet() or prep:getUpdateCount()}
+
     while true do
         params,is_query=pcall(prep.getMoreResults,prep,2) 
         if not params or not is_query then break end
         result[#result+1]=prep:getResultSet()
     end
+
+    self:clearStatements()
     if event then event("AFTER_DB_EXEC",{self,sql,args,result}) end
     return #result==1 and result[1] or result
 end

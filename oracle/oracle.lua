@@ -71,7 +71,7 @@ function oracle:connect(conn_str)
                 defaultLobPrefetchSize="32767",
                 useFetchSizeWithLongColumn='true',
                 ['v$session.program']='SQL Developer'}
-    local server,port,database=conn_desc:match('^([^:/]+)([:%d]*)([:/].+)$')
+    local server,port,database=conn_desc:match('^([^:/]+)(:?%d*)[:/](.+)$')
     if port=="" then conn_desc=server..':1521'..database end      
     local url, isdba=conn_desc:match('^(.*) as (%w+)$')
     args.url,args.internal_logon="jdbc:oracle:thin:@"..(url or conn_desc),isdba

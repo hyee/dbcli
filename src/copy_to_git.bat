@@ -8,9 +8,11 @@ set copyflag=1
 
 set target=D:\green\github\dbcli
 :start
-cd "%~dp0"
+cd /d "%~dp0"
 cd ..
 mkdir "%target%"
+cd /d "%target%"
+git pull --depth=1
 del /s /f "%target%\*.lua"
 del /s /f "%target%\*.jar"
 del /s /f "%target%\*.zip"
@@ -26,6 +28,8 @@ del /s /f "%target%\*.bat"
 del /s /f "%target%\*.exe"
 del /s /f "%target%\*.java"
 del /s /f "%target%\*.class"
+cd /d "%~dp0"
+cd ..
 
 xcopy  . "%target%" /S /Y  /exclude:.\src\excludes.txt
 

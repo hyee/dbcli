@@ -40,8 +40,10 @@ function db2:connect(conn_str)
     end
 
     conn_desc=conn_desc:gsub('^(/+)','')
-    local server,port,database=conn_desc:match('^([^:/]+)([:%d]*)([:/].+)$')
-    if port=="" then port='50000';conn_desc=server..':'..port..database end
+    local server,port,alt,database=conn_desc:match('^([^:/%^]+)(:?%d*)(%^?[^/]*)/(.+)$')
+    if port=="" then port=':50000' end
+    conn_desc=server..port..'/'..database
+    local alt_addr,alt_port=alt:gsub('[%s%^]+',''):match('([^:]+)(:*.*)')
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE') 
     local args={driverClassName="com.ibm.db2.jcc.DB2Driver",
                 user=usr,
@@ -49,7 +51,11 @@ function db2:connect(conn_str)
                 driverType='4',
                 retrieveMessagesFromServerOnGetMessage='true',
                 clientProgramName='SQL Developer',
-                useCachedCursor=self.MAX_CACHE_SIZE
+                useCachedCursor=self.MAX_CACHE_SIZE,
+                enableSysplexWLB='true',
+                enableSeamlessFailover='1',
+                clientRerouteAlternateServerName=alt_addr,
+                clientRerouteAlternatePortNumber=alt_addr and (alt_port or port):sub(2)
             }
 
     local url, isdba=conn_desc:match('^(.*) as (%w+)$')
@@ -64,7 +70,7 @@ function db2:connect(conn_str)
     self.props.db_version=version:gsub('DB2',''):match('([%d%.]+)')
     self.props.db_user=usr:upper()
     self.conn_str=packer.pack_str(conn_str)
-    database=database:upper():sub(2)
+    database=database:upper()
     env.set_prompt(nil,database)
     env.set_title(('%s - User: %s   Server: %s   Version: DB2(%s)'):format(database,self.props.db_user,server,self.props.db_version))
     if event then event("AFTER_DB2_CONNECT",self,sql,args,result) end
@@ -140,7 +146,7 @@ function db2:onload()
     add_default_sql_stmt('explain','lock','analyze','grant','revoke','call') 
 
 
-    set_command(self,{"connect",'conn'},  'Connect to db2 database. Usage: conn <user>/<password>@[//]<address|host>[:<port>]/<database>',self.connect,false,2)
+    set_command(self,{"connect",'conn'},  'Connect to db2 database. Usage: conn <user>/<password>@[//]<host>[:<port>][^<alt_purescale_hosts>[:<alt_purescale_ports>]]/<database>',self.connect,false,2)
     set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
     set_command(self,{"select","with"},  default_desc, self.command_call     ,true,1,true)
     set_command(self,{"declare","begin"}, default_desc,  self.command_call  ,self.check_completion,1,true)
