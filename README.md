@@ -7,7 +7,7 @@ Description
 
 DBCLI is a database command line utility that developed with lua language, and bridge JDBC in order to operate database.<br> 
 It is designed to support multiple databases, and includes 2 type of modules, one is the public functions, and another one is the database-specific functions.<br>
-Currently only public and Oracle functions are developed, and only support windows platform.<br><br>
+Currently it can be used for Oracle and DB2 database, and only supports windows platform.<br><br>
 
 For Oracle db, it does not aim to support all functions of SQL*Plus, but to provide the features other than SQL*Plus:<br>
 1) Pretty print of the select statement and the flexible controll of the grid layouts(see set command)<br>
@@ -15,7 +15,9 @@ For Oracle db, it does not aim to support all functions of SQL*Plus, but to prov
 3) The powerful "snap" and "ora" commands as the replacement of the SQL*Plus script, so that DBA is able to quick define and execute the SQL templates with the smallest input<br>
 4) Functions are easy to extend or deploy, because they are all developed with lua language<br>
 
-
+Download the binary release
+============
+Directly click the "Download Zip" button on your right hand without any compiler.
 
 Configuration
 ============
