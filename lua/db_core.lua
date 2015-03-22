@@ -415,6 +415,7 @@ end
 function db_core:exec(sql,args)
     collectgarbage("collect")
     java.system:gc()
+    java.system:runFinalization ();
     local params={}
     args=type(args)=="table" and args or {args}
     local prep;
