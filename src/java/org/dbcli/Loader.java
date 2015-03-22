@@ -162,27 +162,42 @@ public class Loader {
     }
 
     public int ResultSet2CSV(ResultSet rs, String fileName, String header) throws Exception {
-        CSVWriter writer = new CSVWriter(fileName);
-        int result = writer.writeAll(rs, true);
-        rs.close();
-        writer.close();
-        return result;
+        try {
+            CSVWriter writer = new CSVWriter(fileName);
+            int result = writer.writeAll(rs, true);
+            rs.close();
+            writer.close();
+            return result;
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw e;
+        }
     }
 
     public int ResultSet2SQL(ResultSet rs, String fileName, String header) throws Exception {
-        SQLWriter writer = new SQLWriter(fileName);
-        writer.setFileHead(header);
-        int result = writer.writeAll2SQL(rs, "", 1500);
-        rs.close();
-        return result;
+        try {
+            SQLWriter writer = new SQLWriter(fileName);
+            writer.setFileHead(header);
+            int result = writer.writeAll2SQL(rs, "", 1500);
+            rs.close();
+            return result;
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw e;
+        }
     }
 
     public int CSV2SQL(String CSVfileName, String SQLFileName, String header, ResultSet rs) throws Exception {
-        SQLWriter writer = new SQLWriter(SQLFileName);
-        writer.setFileHead(header);
-        if (rs != null) writer.setCSVDataTypes(rs);
-        writer.setMaxLineWidth(1500);
-        return writer.writeAll2SQL(CSVfileName);
+        try {
+            SQLWriter writer = new SQLWriter(SQLFileName);
+            writer.setFileHead(header);
+            if (rs != null) writer.setCSVDataTypes(rs);
+            writer.setMaxLineWidth(1500);
+            return writer.writeAll2SQL(CSVfileName);
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw e;
+        }
     }
 
     private class KeyListner implements ActionListener {
