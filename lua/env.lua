@@ -235,7 +235,10 @@ function env.remove_command(cmd)
     --    env.raise("Cannot remove command '%s' from %s, it was defined in file %s!",cmd,src,_CMDS[cmd].FILE)
     --end
 
-    _CMDS[cmd]=nil    
+    _CMDS[cmd]=nil
+    for k,v in pairs(_CMDS.___ABBR___) do
+        if(v==cmd) then _CMDS.___ABBR___[k]=nil end
+    end 
 end    
 
 function env.callee(idx)

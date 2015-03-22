@@ -120,7 +120,7 @@ function db2:command_call(sql,...)
     local bypass=self:is_internal_call(sql) 
     local args=type(select(1,...)=="table") and ... or {...}
     sql=event("BEFORE_DB2_EXEC",{self,sql,args}) [2]
-    local result=self.super.exec(self,sql,args)
+    local result=self.super.exec(self,sql,{args})
     if not bypass then event("AFTER_DB2_EXEC",self,sql,args,result) end
     self:print_result(result)
 end
@@ -150,6 +150,7 @@ function db2:onload()
                       'REDISTRIBUTE','RUNSTATS','UNQUIESCE','REWIND','RESET'} do
         set_command(self,k, default_desc,self.admin_cmd,true,1,true)
     end
+    set_command(self,'adm', 'Run procedure ADMIN_CMD. Usage: adm <statement>',self.admin_cmd,true,2,true)
     self.C={}
     init.load_modules(module_list,self.C)
     --env.event.snoop('ON_SQL_ERROR',self.handle_error,nil,1)  

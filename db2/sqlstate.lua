@@ -3,7 +3,7 @@ local db=env.db2
 local sqlstate={}
 function sqlstate.parse_error(info)
     local sqlcode=info.error:match('SQLCODE=%D?(%d+)')
-    if sqlcode then info.error='SQL-'..sqlcode..': '..info.error:gsub('%s*SQLCODE.*','') end
+    if sqlcode then info.error='SQL-'..sqlcode..': '..info.error:gsub('%s*SQLCODE.*',''):gsub('%.+%s*','.') end
     return info
 end
 

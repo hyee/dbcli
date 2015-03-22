@@ -416,7 +416,7 @@ function db_core:exec(sql,args)
     collectgarbage("collect")
     java.system:gc()
     local params={}
-    args=args or {}
+    args=type(args)=="table" and args or {args}
     local prep;
     env.checkerr(type(args) == "table", "Expected parameter as a table for SQL: \n"..sql)
     for k,v in pairs(args or {}) do

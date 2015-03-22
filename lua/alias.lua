@@ -5,7 +5,10 @@ local comment="(.-)[\n\r\b\t%s]*$"
 
 function alias.rehash()
     for k,v in pairs(alias.cmdlist) do
-        if v.active then globalcmds[k]=nil end
+        if v.active then 
+            globalcmds[k]=nil
+            env.remove_command(k)
+        end
     end
     
     alias.cmdlist={}
@@ -84,7 +87,10 @@ function alias.set(name,cmd,write)
         alias.set(cmd,packer.unpack_str(text.text))        
     elseif not cmd then
         if not alias.cmdlist[name] then return end
-        if alias.cmdlist[name].active then globalcmds[name]=nil end    
+        if alias.cmdlist[name].active then 
+            globalcmds[name]=nil
+            env.remove_command(name)
+        end    
         alias.cmdlist[name]=nil        
         os.remove(alias.command_dir..name:lower()..".alias")
         os.remove(alias.db_dir..name:lower()..".alias")
@@ -173,8 +179,8 @@ function alias.load_db_aliases(db_name)
 end
 
 function alias.onload()
-    alias.rehash()
-    --env.event.snoop('ON_ENV_LOADED',alias.rehash,nil,1)
+    --alias.rehash()
+    env.event.snoop('ON_ENV_LOADED',alias.rehash,nil,1)
     env.event.snoop('ON_DATABASE_ENV_LOADED',alias.load_db_aliases,nil,1)
     env.set_command(nil,"alias", alias.helper,alias.set,'__SMART_PARSE__',3)
 end

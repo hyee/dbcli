@@ -1,0 +1,1 @@
+select * from $1 fetch first 50 rows only;

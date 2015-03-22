@@ -122,9 +122,10 @@ function helper.helper(cmd,...)
             local f=io.open(dest)
             local txt=f:read("*a")
             f:close()
-            for v in txt:gmatch("Loaded%s+([^%s]+)[^\n\r]+%.jar]") do
+            for v in txt:gmatch("%[Loaded%s+([^%s]+).-%]") do
                 java.loader:copyClass(v)
             end
+            
             for v in txt:gmatch("([^%s]+)%.class%W") do
                 java.loader:copyClass(v)
             end

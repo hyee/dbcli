@@ -13,6 +13,7 @@ cd ..
 mkdir "%target%"
 del /s /f "%target%\*.lua"
 del /s /f "%target%\*.jar"
+del /s /f "%target%\*.zip"
 del /s /f "%target%\*.gz"
 del /s /f "%target%\*.sql"
 del /s /f "%target%\*.chm"
