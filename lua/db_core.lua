@@ -632,6 +632,7 @@ function db_core:sql2file(filename,sql,method)
     else  
         result=self:exec(sql)
     end
+
     if type(result)=="userdata" then
         clock,counter=os.clock(),loader[method](loader,result,filename,self.sql_export_header)
         print_export_result(filename,clock,counter)
