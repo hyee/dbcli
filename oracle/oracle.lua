@@ -159,7 +159,7 @@ function oracle:parse(sql,params)
     end)
     
     if counter<0 or counter==3 then return self.super.parse(self,sql,params,':') end
-    local prep=java.cast(self.conn:prepareCall(sql,1005,1007),"oracle.jdbc.OracleCallableStatement")
+    local prep=java.cast(self.conn:prepareCall(sql,1003,1007),"oracle.jdbc.OracleCallableStatement")
     --self:check_params(sql,prep,p1,params)
     for k,v in pairs(p1) do
         if v[2]=="" then v[1]="setNull" end

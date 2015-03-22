@@ -366,7 +366,7 @@ function db_core:parse(sql,params,prefix,prep)
             return '?'
         end)
     local res
-    if not prep then prep=self:check_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql) end
+    if not prep then prep=self:check_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007) end
 
     self:check_params(sql,prep,p1,params)
 
