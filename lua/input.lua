@@ -44,14 +44,16 @@ while true do
         stack={line}
         history:removeLast()
         reader:setHistoryEnabled(false)
-    elseif stack and env.CURRENT_PROMPT==env.PRI_PROMPT then
-        stack[#stack+1]=line
-        --history:add(java.cast(table.concat(stack,'\n'..env.MTL_PROMPT),'java.lang.String',true))
-        --history:moveToEnd()
-        reader:setHistoryEnabled(true)
-        stack=nil
     elseif stack then
-        stack[#stack+1]=line
+        if not line:find('^[%s\t]*$') then stack[#stack+1]=line end
+        if env.CURRENT_PROMPT==env.PRI_PROMPT then
+            if #stack==2 and line:find('^'..env.END_MARKS[1]..'[%s\t]*$') then
+                history:add(java.cast(stack[1]..line,'java.lang.String',true))
+                history:moveToEnd()
+            end
+            reader:setHistoryEnabled(true)
+            stack=nil
+        end
     end
     
     if env.PRI_PROMPT=="TIMING> " and env.CURRENT_PROMPT~=env.MTL_PROMPT then

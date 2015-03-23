@@ -121,12 +121,10 @@
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="find"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="findnext"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="findprev"/>
-		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="switchtransparency"/>
 		<hotkey ctrl="1" shift="1" alt="0" extended="0" code="112" command="dumpbuffer"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="cmdMenu1"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="cmdMenu2"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="cmdMenu3"/>
-		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="ctrlC"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="externalcmd1"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="externalcmd2"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="externalcmd3"/>
@@ -199,5 +197,6 @@
 		</tab>
 	</tabs>
 	<external_commands>
+
 </external_commands>
 </settings>
