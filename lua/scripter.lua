@@ -374,7 +374,7 @@ end
 
 function scripter:helper(_,cmd,search_key)
     local help,target_dir=""
-    help=self.help_title ..' [<script_name>|-r|-p|-h|-s] [parameters]\nAvailable commands:\n=================\n'
+    help=self.help_title ..'Usage: '..self.command..' [<script_name>|-r|-p|-h|-s] [parameters]\nAvailable commands:\n=================\n'
     self.help_ind=self.help_ind+1
     if self.help_ind==2 and not self.cmdlist then
         self:run_script('-r')

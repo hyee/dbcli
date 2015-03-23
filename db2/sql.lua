@@ -6,7 +6,7 @@ local sql=env.class(env.scripter)
 function sql:ctor()
     self.db=env.db2
     self.command="sql"
-    self.help_title='Run SQL script under the "sql" directory. Usage: sql [<script_name>|-r|-p|-h|-s] [parameters]'
+    self.help_title='Run SQL script under the "sql" directory. '
     self.script_dir,self.extend_dirs=env.WORK_DIR.."db2"..env.PATH_DEL.."sql",{}
 end
 

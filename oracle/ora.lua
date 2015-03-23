@@ -6,7 +6,7 @@ local ora=env.class(env.scripter)
 function ora:ctor()
     self.db=env.oracle
     self.command="ora"
-    self.help_title='Run SQL script under the "ora" directory. Usage: ora [<script_name>|-r|-p|-h|-s] [parameters]'
+    self.help_title='Run SQL script under the "ora" directory. '
     self.script_dir,self.extend_dirs=env.WORK_DIR.."oracle"..env.PATH_DEL.."ora",{}
 end
 

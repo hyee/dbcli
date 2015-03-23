@@ -6,7 +6,7 @@ local snap=env.class(env.snapper)
 function snap:ctor()
     self.db=env.db2
     self.command="snap"
-    self.help_title='Calculate a period of db/session performance/waits. Usage: '..self.command..' <interval> <name1[,name2...]] [args] | -r | -s'
+    self.help_title='Calculate a period of db/session performance/waits. '
     self.script_dir=env.WORK_DIR.."db2"..env.PATH_DEL.."snap"
 end
 
