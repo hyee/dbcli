@@ -62,7 +62,7 @@ function init.init_path()
 
     for _,v in ipairs({"lua","lib","oracle","bin"}) do
         local path=string.format("%s%s%s",env.WORK_DIR,v,path_del)
-        local p1,p2=path.."?.lua",path..(java.system:getProperty('os.arch')=='x86' and 'x86' or "x64")..path_del.."?."..(env.OS=="windows" and "dll" or "so")
+        local p1,p2=path.."?.lua",java.system:getProperty('java.library.path')..path_del.."?."..(env.OS=="windows" and "dll" or "so")
         package.path  = package.path .. (path_del=='/' and ':' or ';') ..p1
         package.cpath = package.cpath ..(path_del=='/' and ':' or ';') ..p2        
     end     

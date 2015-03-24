@@ -9,6 +9,7 @@
 \SC\
 \dump\
 \classdump\
+\ConsoleTest\
 .sublime-project
 .sublime-workspace
 .alias
@@ -21,4 +22,4 @@ db2java.zip
 dbcli_F0.bat
 dbcli_nojre.bat
 dbcli_agent.bat
-
+dbcli_x64.bat

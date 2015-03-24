@@ -42,7 +42,7 @@ while true do
     eval(line)
     if env.CURRENT_PROMPT==env.MTL_PROMPT and not stack then
         stack={line}
-        history:removeLast()
+        pcall(history.removeLast,history)
         reader:setHistoryEnabled(false)
     elseif stack then
         if not line:find('^[%s\t]*$') then stack[#stack+1]=line end

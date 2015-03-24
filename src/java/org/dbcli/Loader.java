@@ -5,6 +5,7 @@ import com.opencsv.CSVWriter;
 import com.opencsv.SQLWriter;
 import jline.console.ConsoleReader;
 import jline.console.completer.Completer;
+import org.fusesource.jansi.internal.Kernel32;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -26,12 +27,20 @@ public class Loader {
     static PrintWriter printer;
     static ConsoleReader reader;
     static String root = "";
+    static String libPath;
     ExecutorService executor = Executors.newFixedThreadPool(1);
 
     public Loader() {
         try {
             File f = new File(Loader.class.getProtectionDomain().getCodeSource().getLocation().toURI());
             root = f.getParentFile().getParent();
+            libPath = root + File.separator + "lib" + File.separator;
+            String bit= System.getProperty("sun.arch.data.model");
+            if(bit==null) bit=System.getProperty("com.ibm.vm.bitmode");
+            libPath+=(bit.equals("64")?"x64":"x86");
+            addLibrary(libPath,true);
+            System.setProperty("library.jansi.path",libPath );
+
             reader = new ConsoleReader(System.in, System.out);
             printer = new PrintWriter((Writer) reader.getOutput());
             Iterator<Completer> iterator = reader.getCompleters().iterator();
@@ -113,9 +122,6 @@ public class Loader {
 
     public static void main(String args[]) throws Exception {
         Loader l = new Loader();
-        String path = root + File.separator + "lib" + File.separator;
-        if (System.getProperty("sun.arch.data.model").equals("64")) addLibrary(path + "x64", true);
-        else addLibrary(path + "x86", true);
         System.loadLibrary("lua5.1");
         while (ReloadNextTime) loadLua(l, args);
     }
