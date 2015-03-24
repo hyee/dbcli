@@ -684,9 +684,10 @@ end
 function env.resolve_file(filename,ext)
     if not filename:find('[\\/]') then 
         filename= env.WORK_DIR.."cache"..env.PATH_DEL..filename 
-    else 
-        filename=filename:gsub('[\\/]',env.PATH_DEL)
+    elseif not filename:find('^%a:') then
+        filename= env.WORK_DIR..env.PATH_DEL..filename 
     end
+    filename=filename:gsub('[\\/]+',env.PATH_DEL)
 
     if ext then
         local exist_ext=filename:lower():match('%.([^\\/]+)$')

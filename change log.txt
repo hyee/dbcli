@@ -1,4 +1,4 @@
-2015-03-22: + public: fix the jansi cannot be loaded issue in some machines
+2015-03-22: ! public: fix the jansi cannot be loaded issue in some machines
 2015-03-21: + db2   : support PureScale connection
 2015-03-21: ! public: recompile jnlua5.1.dll to support windows xp.
 2015-03-21: + public: support defining default '$1-$9' values for 'alias' command. i.e.: "alias sf select * from $1[dual];"
