@@ -542,9 +542,7 @@ function db_core:connect(attrs)
     end
     if event then event("BEFORE_DB_CONNECT",self,url,attrs) end
     local err,res=pcall(self.driver.getConnection,self.driver,url,props)
-    if not err then        
-        env.raise(tostring(res):gsub(".*Exception.%s*",""))
-    end
+    env.checkerr(err,tostring(res):gsub(".*Exception.%s*",""))
     self.conn=res
     env.checkerr(self.conn,"Unable to connect to db!")
     local autocommit=cfg.get("AUTOCOMMIT")

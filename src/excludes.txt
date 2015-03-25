@@ -23,3 +23,4 @@ dbcli_F0.bat
 dbcli_nojre.bat
 dbcli_agent.bat
 dbcli_x64.bat
+dbcli_ibm.bat

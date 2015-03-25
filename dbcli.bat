@@ -1,5 +1,5 @@
 @echo off
-Setlocal EnableDelayedExpansion
+Setlocal EnableDelayedExpansion EnableExtensions
 cd /d "%~dp0"
 SET TERM=
 
@@ -11,7 +11,7 @@ rem read config file
 If exist "data\init.cfg" (for /f "eol=# delims=" %%i in (data\init.cfg) do (%%i)) 
 
 If not exist "%TNSADM%\tnsnames.ora" if Defined ORACLE_HOME (set TNS_ADM=%ORACLE_HOME%\network\admin) 
-IF not exist "%JRE_HOME%\java.exe" (set JRE_HOME=.\jre\bin)
+IF not exist "%JRE_HOME%\java.exe" if exist "%JRE_HOME%\bin\java.exe" (set JRE_HOME=%JRE_HOME%\bin) else (set JRE_HOME=.\jre\bin)
 SET PATH=%JRE_HOME%;C:\Soft\InstanceClient;%PATH%
 
 rem unpack jar files for the first use
@@ -26,3 +26,5 @@ java -noverify -Xmx256M -cp .\lib\*%OTHER_LIB% ^
      -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Dclient.encoding.override=UTF-8 ^
      -Duser.language=en -Duser.region=US -Duser.country=US -Dinput.encoding=UTF-8 ^
      -Doracle.net.tns_admin="%TNS_ADM%" org.dbcli.Loader %DBCLI_PARAMS% %*
+
+ENDLOCAL

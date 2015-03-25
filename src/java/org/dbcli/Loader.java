@@ -90,7 +90,7 @@ public class Loader {
         System.gc();
     }
 
-    public static void addLibrary(String s, Boolean isReplace) throws IOException {
+    public static void addLibrary(String s, Boolean isReplace) throws Exception {
         try {
             Field field = ClassLoader.class.getDeclaredField("usr_paths");
             field.setAccessible(true);
@@ -116,7 +116,8 @@ public class Loader {
         } catch (IllegalAccessException e) {
             throw new IOException("Failed to get permissions to set library path");
         } catch (NoSuchFieldException e) {
-            throw new IOException("Failed to get field handle to set library path");
+            System.setProperty("java.library.path", s);
+            //throw new IOException("Failed to get field handle to set library path");
         }
     }
 
