@@ -1,3 +1,4 @@
+2015-03-22: + public: support config file(data\init.cfg) which is fully managed by end user,refer to init_sample.cfg
 2015-03-22: ! public: fix the jansi cannot be loaded issue in some machines
 2015-03-21: + db2   : support PureScale connection
 2015-03-21: ! public: recompile jnlua5.1.dll to support windows xp.

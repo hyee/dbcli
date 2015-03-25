@@ -30,7 +30,7 @@ del /s /f "%target%\*.java"
 del /s /f "%target%\*.class"
 cd /d "%~dp0"
 cd ..
-
+copy data\init_sample.cfg  "%target%\data"
 xcopy  . "%target%" /S /Y  /exclude:.\src\excludes.txt
 
 if %copyflag%==1 XCOPY /S /Y .\src "%target%\src"

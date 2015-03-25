@@ -42,7 +42,7 @@ public class Loader {
             System.setProperty("library.jansi.path",libPath );
 
             reader = new ConsoleReader(System.in, System.out);
-            printer = new PrintWriter((Writer) reader.getOutput());
+            printer = new PrintWriter(reader.getOutput());
             Iterator<Completer> iterator = reader.getCompleters().iterator();
             while (iterator.hasNext()) reader.removeCompleter(iterator.next());
             // reader.setCompletionHandler(null);
