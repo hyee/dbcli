@@ -1,0 +1,28 @@
+@echo off
+Setlocal EnableDelayedExpansion
+cd /d "%~dp0"
+SET TERM=
+
+color 0A
+SET JRE_HOME=c:\soft\java\bin
+SET TNS_ADM=C:\Soft\InstanceClient\network\admin
+
+rem read config file
+If exist "data\init.cfg" (for /f "eol=# delims=" %%i in (data\init.cfg) do (%%i)) 
+
+If not exist "%TNSADM%\tnsnames.ora" if Defined ORACLE_HOME (set TNS_ADM=%ORACLE_HOME%\network\admin) 
+IF not exist "%JRE_HOME%\java.exe" (set JRE_HOME=.\jre\bin)
+SET PATH=%JRE_HOME%;C:\Soft\InstanceClient;%PATH%
+
+rem unpack jar files for the first use
+for /r %%i in (*.pack.gz) do (
+  set "var=%%i" &set "str=!var:@=!"
+  unpack200 -q -r "%%i" "!str:~0,-8!"
+)
+
+rem set other_lib=; -Djline.internal.Log.debug=true
+java -noverify -Xmx256M -cp .\lib\*%OTHER_LIB% ^
+     -XX:-UseAdaptiveSizePolicy -XX:+UseParallelGC ^
+     -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Dclient.encoding.override=UTF-8 ^
+     -Duser.language=en -Duser.region=US -Duser.country=US -Dinput.encoding=UTF-8 ^
+     -Doracle.net.tns_admin="%TNS_ADM%" org.dbcli.Loader %DBCLI_PARAMS% %*

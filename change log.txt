@@ -1,0 +1,95 @@
+2015-03-22: + public: support config file(data\init.cfg) which is fully managed by end user,refer to init_sample.cfg
+2015-03-22: ! public: fix the jansi cannot be loaded issue in some machines
+2015-03-21: + db2   : support PureScale connection
+2015-03-21: ! public: recompile jnlua5.1.dll to support windows xp.
+2015-03-21: + public: support defining default '$1-$9' values for 'alias' command. i.e.: "alias sf select * from $1[dual];"
+2015-03-15: + public: support automatically compression if target file extension is "zip" or "gz" for commands "csv2sql","sql2csv","sql2file"
+2015-03-15: + public: new command "csv2sql","sql2csv","sql2file"
+2015-03-15: ! oracle: fix error "ORA-22998" for 'loadtrace' command
+2015-03-15: * public: for 'alias' command, if its connected command is database command, then create it in alias\<db_name> directory which is visible only when target db is loaded.
+2015-03-08: + public: new setting "COMMAND_ENDMARKS" to define the character to indicate the input completion of the cross-line command
+2015-03-08: * public: new abbr '!' for existing command 'host'
+2015-03-08: ! oracle: fix issue for 'unwrap' command
+2015-03-08: + db2   : support db2 database
+------------------------------------------------------------
+2015-03-07: "connect" command supports default 1521 port when not specify the port
+2015-03-07: minor fixes
+2015-03-07: new command 'ora logmnr'
+2015-03-07: ! move snap,ora,var,def,print,save,print,accept commands into public commands, use inherit instead
+2015-02-08: * -noverify -XX:-UseAdaptiveSizePolicy -XX:+UseParallelGC options in 'dbcli.bat'
+2015-02-08: + new command 'snap segstat' 
+2015-02-08: * update on 'ora ddl' to allow specifying the file extension name 
+2015-02-08: ! minor fixes according to 12c
+2015-02-08: * update command 'loadtrace' to remove the reference to 'utl_file'
+2015-02-08: + new 'unwrap' command to unwrap oracle procedures/function/etc
+2015-02-08: ! fix 'loadtrace alert' for Oracle 12c 
+2015-02-01: ! fixes on 'ora space'(partial)
+2015-02-01: * error message improvement
+2015-02-07: ! 'ora' command fully supports accessing the dirs that not belong to the 'ora' directory, i.e. 'ora -h @','ora -p @','ora @'
+2015-02-07: ! fixes on error of 'ora actives' when active sql texts contain char '\0'
+2015-02-07: ! fixes on unexpected layouts when the dbcli instance doesn't support ansi color for unknown reason
+2015-02-07: ! fixes on 'ora space'
+2015-02-01: + "ctrl + d" to abort inputting command 
+2015-02-01: + supports "loadtrace alert" to extract alert log in local instance, supports extracting a specific MB data from the trace file
+2015-02-01: ! fixes on awrdump/addmdump/ashdump commands
+2015-02-01: * move 32 bit dlls into "x86" directory
+2015-02-01: ! fixes on "login" command when operate in multiple dbcli instances, the login infomation does not sync before the update.
+2015-02-01: - remove "login -r" option, the login information will automatically sync instead
+2015-02-01: ! fixes on "ora deptree"
+2015-02-01: + "-m" option for "ora actives" to show the resource usages of the active SQLs
+2015-01-31: + dbcli now supports both 32 & 64 bit JVM.
+2015-01-31: * move Loader.class into dbcli.jar, and dbcli.bat is changed accordingly
+2015-01-31: * small fixes on 'ora','db_core' and 'grid' modules
+2015-01-31: + new command "ora latchprof"(Tanel Poder)
+2015-01-31: + new command "ora block2rowid" and "ora io"
+2015-01-24: * performance tuning on 'ora actives' command
+2015-01-24: + Additional '-a' option on 'login' command, to set alias name of an existing account 
+2015-01-23: command 'ora deptree' to show dependence tree
+2015-01-23: performance tuning on 'desc' command
+2015-01-13: Updates on some ora scripts; add "Save" command
+2014-11-22: update on 'snap" command to support 'snap begin/end'
+2014-11-22: update on 'xplan' command to allow dumping the 10053 event('-10053' option), and extract the execution plan for a specific SQL ID
+2014-11-20: '.' parameter as special meaning for 'ora' command, means default value. used to skip the input of corresponding parameter
+2014-11-20: new 'ora ddl' command
+2014-11-20: new '-b' option on 'ora plan'
+2014-11-20: fix on binding variables when it is referenced more than once
+2014-11-15: show binding variables in "ora plan"
+2014-11-14: 'ora @<file> [parameters]' syntax to allow run scripts that not belongs to the 'ora' folder
+2014-11-14: add command 'accept' and parameter 'define' 
+2014-11-12: changes on var/def command, allow setting the description of the variables
+2014-11-12: add 'SQLCACHESIZE' parameter for database
+2014-11-12: add 'print' command and 'PrintVar' parameter for the variables(command var/def)
+2014-11-11: change the user-defined alias commands as the lowest priority
+2014-11-11: remake luajit with newest V2.1 code and enable lua5.2 compatibility(option DLUAJIT_ENABLE_LUA52COMPAT)
+2014-11-11: "set database" option to support multiple database types(i.e.  mssql)
+2014-11-10: enhancement on the "ora" command for more flexible template
+2014-11-10: new "ora 10053dump" script to dump the 10053 trace file for the specific sql id
+2014-11-10: update on "itv" command
+2014-11-09: "loadtrace" add the "default" option to dump the trace file for current session
+2014-11-08: rename password.lua as login.lua and update the format of the account name
+2014-11-07: switch from ojdbc6 to ojdbc7(12.1.0.2) 
+2014-11-05: smartly determine if "alias" /"grep" is cross-line command
+2014-11-05: performance tuning on "ora actives"
+2014-11-05: new ora script "ashplan", and add "Ord" field into "xplan" and "ora plan"
+2014-11-04: fix invalid low and high value for date field in "desc" command
+2014-10-29: add command "grep"
+2014-08-21: add command "addmdump","awrdump","ashdump" to extract ADDM/AWR/ASH report into "cache" folder
+2014-08-20: add "sqlprof" command to extract SQL profile from AWR/memory/SQL Set/SPM/profile
+2014-08-19: add "-p" option for "set" command to permanently save the configurations
+2014-08-18: settings "prompt_color","command_color","headcolor" for jline console 
+2014-07-20: small fixes
+2014-05-22: "color_dbcli.bat" to support jline console
+2014-05-20: fix error for "set rowdel"
+2014-05-15: switch to luajit v2.1
+2014-05-15: move init.cfg to folder "data"
+2014-05-14: add oracle "snap" moddule, see command "snap"
+2014-05-13: performance trace for dev purpose, see "set trace" and "set profiler"
+2014-05-10: add "password" module, as well as the "SaveLogin" option and "Login" command
+2014-05-10: Fix of "table.dump" function
+2014-05-09: "ora" command: when current db version doesn't match the version requirement, just return error message iso execution script
+2014-05-09: 'alias -e' option to encrypt alias text
+2014-05-09: encrypt password for oracle "reconnect" command
+2014-05-09: Add encrypt module "enc"
+2014-05-08: Bugfix for "set" and "ora" module
+2014-05-07: Enhanced the "oracle" module related to inherit
+2014-05-06: Renamed module "matrix" to "grid"
