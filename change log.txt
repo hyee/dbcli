@@ -1,4 +1,5 @@
-2015-03-22: + public: support IBM JDK 1.7+
+2015-03-22: + public: support custimize & predefine a connection, something like Oracle tnsnames, refer to "data\jdbc_url_sample.cfg" 
+2015-03-22: + public: support IBM JRE 1.7+
 2015-03-22: + public: support config file(data\init.cfg) which is fully managed by end user,refer to init_sample.cfg
 2015-03-22: ! public: fix the jansi cannot be loaded issue in some machines
 2015-03-21: + db2   : support PureScale connection
