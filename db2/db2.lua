@@ -23,43 +23,51 @@ end
 
 function db2:connect(conn_str)
     java.loader:addPath(env.WORK_DIR..'db2'..env.PATH_DEL.."db2jcc.jar")
-    --print(conn_str)
+    local args
     local usr,pwd,conn_desc 
     if type(conn_str)=="table" then
+        args=conn_str
         usr,pwd,conn_desc=conn_str.user,
             packer.unpack_str(conn_str.password),
             conn_str.url:match("//(.*)$")--..(conn_str.internal_logon and " as "..conn_str.internal_logon or "")
+        args.password=pwd
         conn_str=string.format("%s/%s@%s",usr,pwd,conn_desc)        
     else
-        usr,pwd,conn_desc = string.match(conn_str or "","(.+)/(.+)@(.+)")
+        usr,pwd,conn_desc = string.match(conn_str or "","(.*)/(.*)@(.+)")
     end
 
-    if conn_desc == nil then
-        exec_command("HELP",{"CONNECT"})
-        return
-    end
+    if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
+   
 
     conn_desc=conn_desc:gsub('^(/+)','')
     local server,port,alt,database=conn_desc:match('^([^:/%^]+)(:?%d*)(%^?[^/]*)/(.+)$')
-    if port=="" then port=':50000' end
-    conn_desc=server..port..'/'..database
-    local alt_addr,alt_port=alt:gsub('[%s%^]+',''):match('([^:]+)(:*.*)')
+    if database then
+        if port=="" then port=':50000' end
+        conn_desc=server..port..'/'..database
+        local alt_addr,alt_port=alt:gsub('[%s%^]+',''):match('([^:]+)(:*.*)')
+    else
+        database=conn_desc
+    end
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE') 
-    local args={driverClassName="com.ibm.db2.jcc.DB2Driver",
-                user=usr,
-                password=pwd,
-                driverType='4',
-                retrieveMessagesFromServerOnGetMessage='true',
-                clientProgramName='SQL Developer',
-                useCachedCursor=self.MAX_CACHE_SIZE,
-                enableSysplexWLB='true',
-                enableSeamlessFailover='1',
-                clientRerouteAlternateServerName=alt_addr,
-                clientRerouteAlternatePortNumber=alt_addr and (alt_port or port):sub(2)
-            }
-
+    
     local url, isdba=conn_desc:match('^(.*) as (%w+)$')
-    args.url,args.internal_logon="jdbc:db2://"..(url or conn_desc),isdba
+    url = url or conn_desc
+
+    args=args or {user=usr,password=pwd,url="jdbc:db2://"..url,
+                  internal_logon=isdba,
+                  enableSysplexWLB='true',
+                  enableSeamlessFailover='1',
+                  clientRerouteAlternateServerName=alt_addr,
+                  clientRerouteAlternatePortNumber=alt_addr and (alt_port or port):sub(2)}
+    
+    self:merge_props(
+        {driverClassName="com.ibm.db2.jcc.DB2Driver",
+         retrieveMessagesFromServerOnGetMessage='true',
+         clientProgramName='SQL Developer',
+         useCachedCursor=self.MAX_CACHE_SIZE
+        },args)
+    self:load_config(url,args)
+    
     if event then event("BEFORE_DB2_CONNECT",self,sql,args,result) end
     env.set_title("")
     self.super.connect(self,args)    
@@ -68,10 +76,12 @@ function db2:connect(conn_str)
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     local version=self:get_value("select SERVICE_LEVEL FROM TABLE(sysproc.env_get_inst_info())")
     self.props.db_version=version:gsub('DB2',''):match('([%d%.]+)')
-    self.props.db_user=usr:upper()
+    self.props.db_user=args.user:upper()
     self.conn_str=packer.pack_str(conn_str)
+    
     database=database:upper()
     env.set_prompt(nil,database)
+    
     env.set_title(('%s - User: %s   Server: %s   Version: DB2(%s)'):format(database,self.props.db_user,server,self.props.db_version))
     if event then event("AFTER_DB2_CONNECT",self,sql,args,result) end
     print("Database connected.")

@@ -21,7 +21,6 @@ function oracle:ctor(isdefault)
     self.type="oracle"
     java.loader:addPath(env.WORK_DIR..'oracle'..env.PATH_DEL.."ojdbc7.jar")    
     self.db_types:load_sql_types('oracle.jdbc.OracleTypes')
-    java.system:setProperty('jdbc.drivers','oracle.jdbc.driver.OracleDriver')
     local default_desc='#Oracle database SQL statement'
     local header = "set feed off sqlbl on define off;\n";
     header = header.."ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';\n"
@@ -47,34 +46,38 @@ end
 
 function oracle:connect(conn_str)
     --print(conn_str)
-    local props={}
+    local props,args={}
     local usr,pwd,conn_desc 
     if type(conn_str)=="table" then
+        args=conn_str
         usr,pwd,conn_desc=conn_str.user,
             packer.unpack_str(conn_str.password),
             conn_str.url:match("@(.*)$")..
             (conn_str.internal_logon and " as "..conn_str.internal_logon or "")
-        conn_str=string.format("%s/%s@%s",usr,pwd,conn_desc)        
+        args.password=pwd
+        conn_str=string.format("%s/%s@%s",usr,pwd,conn_desc)  
     else
-        usr,pwd,conn_desc = string.match(conn_str or "","(.+)/(.+)@(.+)")
+        usr,pwd,conn_desc = string.match(conn_str or "","(.*)/(.*)@(.+)")
     end
 
-    if conn_desc == nil then
-        exec_command("HELP",{"CONNECT"})
-        return
-    end
+    if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
     
-    local args={driverClassName="oracle.jdbc.driver.OracleDriver",
-                user=usr,
-                password=pwd,
-                defaultRowPrefetch="100",
-                defaultLobPrefetchSize="32767",
-                useFetchSizeWithLongColumn='true',
-                ['v$session.program']='SQL Developer'}
     local server,port,database=conn_desc:match('^([^:/]+)(:?%d*)[:/](.+)$')
     if port=="" then conn_desc=server..':1521'..database end      
     local url, isdba=conn_desc:match('^(.*) as (%w+)$')
-    args.url,args.internal_logon="jdbc:oracle:thin:@"..(url or conn_desc),isdba
+    url=url or conn_desc
+    args=args or {user=usr,password=pwd,url="jdbc:oracle:thin:@"..url,internal_logon=isdba}
+    
+    self:merge_props(
+        {driverClassName="oracle.jdbc.driver.OracleDriver",
+         defaultRowPrefetch="100",
+         defaultLobPrefetchSize="32767",
+         useFetchSizeWithLongColumn='true',
+         ['v$session.program']='SQL Developer'
+        },args)
+    
+    self:load_config(url,args)
+    
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
     env.set_title("")
     
@@ -311,7 +314,8 @@ end
 local ignore_errors={
     ['ORA-00028']='Connection is lost, please login again.',
     ['socket']='Connection is lost, please login again.',
-    ['SQLRecoverableException']='Connection is lost, please login again.'
+    ['SQLRecoverableException']='Connection is lost, please login again.',
+    ['ORA-01013']='default'
 }
 
 function oracle:handle_error(info)
@@ -325,8 +329,10 @@ function oracle:handle_error(info)
     for k,v in pairs(ignore_errors) do
         if info.error:lower():find(k:lower(),1,true) then
             info.sql=nil
-            info.error=v=='default' and info.error or v
-            env.set_title("")
+            if v~='default' then
+                info.error=v
+                env.set_title("")
+            end
             return info
         end
     end

@@ -12,11 +12,12 @@ cd /d "%~dp0"
 cd ..
 mkdir "%target%"
 cd /d "%target%"
-git pull --depth=1
+git pull
 del /s /f "%target%\*.lua"
 del /s /f "%target%\*.jar"
 del /s /f "%target%\*.zip"
 del /s /f "%target%\*.gz"
+del /s /f "%target%\*.cfg"
 del /s /f "%target%\*.sql"
 del /s /f "%target%\*.chm"
 del /s /f "%target%\*.bat"
@@ -30,7 +31,7 @@ del /s /f "%target%\*.java"
 del /s /f "%target%\*.class"
 cd /d "%~dp0"
 cd ..
-copy data\init_sample.cfg  "%target%\data"
+copy data\*_sample.cfg  "%target%\data"
 xcopy  . "%target%" /S /Y  /exclude:.\src\excludes.txt
 
 if %copyflag%==1 XCOPY /S /Y .\src "%target%\src"

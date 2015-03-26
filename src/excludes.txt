@@ -14,7 +14,7 @@
 .sublime-workspace
 .alias
 .so
-.mnk
+.bak
 lib.zip
 jre.zip
 dbcli.zip

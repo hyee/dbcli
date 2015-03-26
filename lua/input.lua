@@ -35,7 +35,7 @@ while true do
     if not line or line:lower() == 'quit' or line:lower() == 'exit' then
         print("Exited.")
         env.unload()        
-        os.exit(1) 
+        os.exit(0,true) 
     end
 
     clock=os.clock()
@@ -48,9 +48,12 @@ while true do
         if not line:find('^[%s\t]*$') then stack[#stack+1]=line end
         if env.CURRENT_PROMPT==env.PRI_PROMPT then
             if #stack==2 and line:find('^'..env.END_MARKS[1]..'[%s\t]*$') then
+                --stack[#stack]=stack[#stack]..line
                 history:add(java.cast(stack[1]..line,'java.lang.String',true))
                 history:moveToEnd()
             end
+            --history:add(java.cast(table.concat(stack,'\n'..env.MTL_PROMPT),'java.lang.String',true))
+            --history:moveToEnd()
             reader:setHistoryEnabled(true)
             stack=nil
         end

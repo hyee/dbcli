@@ -271,6 +271,7 @@ function db_core:ctor()
     self.resultset  = ResultSet.new()
     self.db_types:load_sql_types('java.sql.Types')
     self.__stmts = {}
+    self.type="unknown"
     set_command(self,"commit",nil,self.commit,false,1)
     set_command(self,"rollback",nil,self.rollback,false,1)
 end
@@ -540,7 +541,7 @@ function db_core:connect(attrs)
     for k,v in pairs(attrs) do
         props:put(k,v)
     end
-    if event then event("BEFORE_DB_CONNECT",self,url,attrs) end
+    if event then event("BEFORE_DB_CONNECT",self,attrs.jdbc_alias or url,attrs) end
     local err,res=pcall(self.driver.getConnection,self.driver,url,props)
     env.checkerr(err,tostring(res):gsub(".*Exception.%s*",""))
     self.conn=res
@@ -548,7 +549,7 @@ function db_core:connect(attrs)
     local autocommit=cfg.get("AUTOCOMMIT")
     self.autocommit=autocommit
     self.conn:setAutoCommit(autocommit=="on" and true or false)
-    if event then event("AFTER_DB_CONNECT",self,url,attrs) end
+    if event then event("AFTER_DB_CONNECT",self,attrs.jdbc_alias or url,attrs) end
     self.__stmts = {}
     return self.conn
 end
@@ -666,6 +667,37 @@ function db_core:csv2sql(target,src)
     src=env.resolve_file(src)
     local clock,counter=os.clock(),loader:CSV2SQL(src,target,self.sql_export_header,rs)
     print_export_result(target,clock,counter)
+end
+
+function db_core:load_config(db_alias,props)
+    local file=env.WORK_DIR..'data'..env.PATH_DEL..'jdbc_url.cfg'
+    local f=io.open(file,"a")
+    if f then f:close() end
+    local config,err=env.loadfile(file)
+    env.checkerr(config,err)
+    config=config()
+    config=config and config[self.type]
+    if not config then return end
+    props=props or {}
+    for alias,url in pairs(config) do
+        if alias:upper()==(props.jdbc_alias or db_alias:upper())  then
+            props=self:merge_props(url,props)
+            if props.driverClassName then java.system:setProperty('jdbc.drivers',props.driverClassName) end
+            props.jdbc_alias=alias:upper()
+            return props
+        end
+    end
+    if props.driverClassName then java.system:setProperty('jdbc.drivers',props.driverClassName) end
+    return nil
+end
+
+function db_core:merge_props(src,target)
+    if type(src)~='table' then return target end
+    for k,v in pairs(src) do
+        if type(v)=="string" and (v:lower()=="nil" or v:lower()=="null") then v=nil end
+        target[k]=v 
+    end
+    return target
 end
 
 function db_core:__onload()

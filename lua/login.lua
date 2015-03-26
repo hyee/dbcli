@@ -14,9 +14,9 @@ end
 function login.capture(db,url,props)
     local typ,url1=db.type or "default",url
     if cfg.get("SaveLogin")=="off" then return end
-    props.password,props.url,props.lastlogin=env.packer.pack_str(props.password),url,os.date()
-    url=url1:match("(%/%/[^&]+)")
-    if not url then url=url1:match("(@.+)$") end
+    props.password,props.lastlogin=env.packer.pack_str(props.password),os.date()
+    url=url1:match("//([^&]+)")
+    if not url then url=('@'..url1):match("@/?([^@]+)$") end
     url=url:gsub('([%.%:])([%w%-%_]+)',function(a,b)
         if a=='.' and b:match('^(%d+)$') then
             return a..b
@@ -25,7 +25,7 @@ function login.capture(db,url,props)
         end
     end)
     login.load()
-    url=(props.user..url):lower()    
+    url=(props.user..'@'..url):lower()    
     if not login.list[typ] then login.list[typ]={} end
     local list=login.list[typ]
     if list[url] then props.alias=list[url].alias end
