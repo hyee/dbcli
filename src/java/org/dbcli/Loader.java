@@ -3,9 +3,6 @@ package org.dbcli;
 import com.naef.jnlua.LuaState;
 import com.opencsv.CSVWriter;
 import com.opencsv.SQLWriter;
-import jline.console.ConsoleReader;
-import jline.console.completer.Completer;
-import org.fusesource.jansi.internal.Kernel32;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -16,7 +13,6 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.sql.CallableStatement;
 import java.sql.ResultSet;
-import java.util.Iterator;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -25,9 +21,10 @@ public class Loader {
     public static Boolean ReloadNextTime = true;
     static LuaState lua;
     static PrintWriter printer;
-    static ConsoleReader reader;
+    static Console reader;
     static String root = "";
     static String libPath;
+    private CallableStatement stmt=null;
     ExecutorService executor = Executors.newFixedThreadPool(1);
 
     public Loader() {
@@ -41,12 +38,8 @@ public class Loader {
             addLibrary(libPath,true);
             System.setProperty("library.jansi.path",libPath );
 
-            reader = new ConsoleReader(System.in, System.out);
+            reader = new Console();
             printer = new PrintWriter(reader.getOutput());
-            Iterator<Completer> iterator = reader.getCompleters().iterator();
-            while (iterator.hasNext()) reader.removeCompleter(iterator.next());
-            // reader.setCompletionHandler(null);
-            reader.setHandleUserInterrupt(false);
             ActionListener al = new KeyListner();
             //Ctrl+D
             reader.getKeys().bind("\004", al);
@@ -207,12 +200,24 @@ public class Loader {
         }
     }
 
+    public void setStatement(CallableStatement p) {
+        this.stmt=p;
+        reader.setRunning(p==null?false:true);
+    }
+
     private class KeyListner implements ActionListener {
         @Override
         public void actionPerformed(ActionEvent e) {
-            lua.getGlobal("TRIGGER_ABORT");
-            lua.call(0, 0);
-            //System.exit(0);
+            try {
+                if(!reader.isRun()) {
+                    lua.getGlobal("TRIGGER_ABORT");
+                    lua.call(0, 0);
+                } else {
+                    stmt.cancel();
+                }
+            } catch (Exception err) {
+                //err.printStackTrace();
+            }
         }
     }
 }

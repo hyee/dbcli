@@ -1,5 +1,6 @@
 local java,env,table,math,loader=java,env,table,math,loader
 local cfg,grid=env.set,env.grid
+local read=reader
 local event=env.event and env.event.callback or nil
 
 
@@ -298,11 +299,13 @@ end
 
 function db_core:check_sql_method(event_name,sql,method,...)
     local res,obj=pcall(method,...)
+    loader:setStatement(nil)
     if res==false then
-        local info={db=self,sql=sql,error=tostring(obj)}
+        local info={db=self,sql=sql,error=tostring(obj):gsub('[%s\t\n\r]+$','')}
         info.error=info.error:gsub('.*Exception:?%s*','')
         event(event_name,info)    
-        if info and info.error then
+        if info and info.error and info.error~="" then
+            --print(type(info.error),info.error)
             if info.sql then print('SQL: '..info.sql:gsub("\n","\n     ")) end
             env.raise_error(info.error) 
         end
@@ -450,6 +453,8 @@ function db_core:exec(sql,args)
     self.__stmts[#self.__stmts+1]=prep
     prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
     self.current_stmt=prep
+    --reader:setRunning(true)
+    loader:setStatement(prep)
     local is_query=self:check_sql_method('ON_SQL_ERROR',sql,prep.execute,prep)
     self.current_stmt=nil
     --is_query=prep:execute()    

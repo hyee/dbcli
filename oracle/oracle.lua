@@ -173,7 +173,6 @@ function oracle:parse(sql,params)
             prep[v[1].."AtName"](prep,k,v[2])
         end
     end
-
     return prep,sql,params 
 end
 

@@ -15,7 +15,6 @@ local reader=reader
 local history=reader:getHistory()
 local ansi=env.ansi
 local color=ansi and ansi.get_color or function() return "";end
-reader:setExpandEvents(false)
 local prompt_color="%s%s"..color("NOR").."%s"
 
 local write=function(str)
@@ -42,19 +41,15 @@ while true do
     eval(line)
     if env.CURRENT_PROMPT==env.MTL_PROMPT and not stack then
         stack={line}
-        pcall(history.removeLast,history)
-        reader:setHistoryEnabled(false)
+        reader:setMultiplePrompt(nil)
     elseif stack then
         if not line:find('^[%s\t]*$') then stack[#stack+1]=line end
         if env.CURRENT_PROMPT==env.PRI_PROMPT then
-            if #stack==2 and line:find('^'..env.END_MARKS[1]..'[%s\t]*$') then
-                --stack[#stack]=stack[#stack]..line
-                history:add(java.cast(stack[1]..line,'java.lang.String',true))
-                history:moveToEnd()
+            if line:find('^'..env.END_MARKS[1]..'[%s\t]*$') then
+                stack[#stack-1]=stack[#stack-1]..line
+                stack[#stack]=nil
             end
-            --history:add(java.cast(table.concat(stack,'\n'..env.MTL_PROMPT),'java.lang.String',true))
-            --history:moveToEnd()
-            reader:setHistoryEnabled(true)
+            reader:setMultiplePrompt(table.concat(stack,'\n'..env.MTL_PROMPT))
             stack=nil
         end
     end

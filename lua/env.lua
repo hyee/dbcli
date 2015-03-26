@@ -25,13 +25,7 @@ local function abort_thread()
 end
 
 _G['TRIGGER_ABORT']=function()
-local thread=java.require("java.lang.Thread",true)
-    env.safe_call(env.event and env.event.callback,4,"ON_COMMAND_ABORT")
-    if env.CURRENT_THREAD then
-        --print(table.dump(env.CURRENT_THREAD))
-        debug.sethook(abort_thread,"rl")
-        env.CURRENT_THREAD=nil
-    end
+    env.safe_call(env.event and env.event.callback,5,"ON_COMMAND_ABORT")
 end
 
 local mt = getmetatable(_G)
