@@ -25,6 +25,7 @@ public class Console extends ConsoleReader {
         setExpandEvents(false);
         waiter = new EventReader();
         waiter.setDaemon(true);
+        waiter.setName("UserInterruptMonitoringThread");
         waiter.start();
         waiter.setPriority(Thread.MAX_PRIORITY);
         setHandleUserInterrupt(true);
@@ -34,10 +35,9 @@ public class Console extends ConsoleReader {
     }
 
     protected boolean isRun() {
-        if (clock > 0L && System.currentTimeMillis() - clock > 300) clock = 0L;
-        return isPending && clock == 0L && keys != null && event != null;
+        if (this.clock > 0L && System.currentTimeMillis() - this.clock > 300) this.clock = 0L;
+        return this.isPending && this.clock == 0L && this.keys != null && this.event != null;
     }
-
 
     public String readLine() throws IOException {
         if (isPending) setEvents(null, null);
@@ -46,7 +46,6 @@ public class Console extends ConsoleReader {
             return line;
         }
     }
-
 
     public synchronized void setEvents(ActionListener event, char[] keys) {
         clock = event != null ? System.currentTimeMillis() : 0L;
@@ -73,8 +72,9 @@ public class Console extends ConsoleReader {
         public void run() {
             while (true) {
                 try {
-                    if (isRun()) synchronized (in) {
-                        int ch = in.read(100);
+                    if (isRun()) {
+                        Thread.currentThread().sleep(200);
+                        int ch = in.read(1);
                         if (ch <= 0) continue;
                         for (int i = 0; i < keys.length; i++) {
                             if (ch != keys[i]) continue;

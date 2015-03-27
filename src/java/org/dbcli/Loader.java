@@ -204,7 +204,6 @@ public class Loader {
         } catch (Exception e) {
             throw new IOException("Statement is aborted.");
         } finally {
-
             sleeper = null;
             reader.setEvents(null,null);
         }
@@ -223,7 +222,7 @@ public class Loader {
                 } else if (stmt != null) {
                     stmt.cancel();
                 }
-                if (sleeper != null) {
+                if (sleeper != null) synchronized(sleeper){
                     sleeper.cancel(true);
                 }
             } catch (Exception err) {
