@@ -82,7 +82,7 @@ public class Console extends ConsoleReader {
                             break;
                         }
                     }
-                    else Thread.currentThread().sleep(300);
+                    else Thread.currentThread().sleep(500);
                 } catch (Exception e) {
                     //e.printStackTrace();
                 }
