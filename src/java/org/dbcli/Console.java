@@ -9,49 +9,52 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.IOException;
 import java.util.Iterator;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 public class Console extends ConsoleReader {
-    protected History his;
-    protected boolean isPending = false;
-    protected EventReader waiter;
-    protected Long clock;
-    NonBlockingInputStream in;
-    ActionListener event;
-    char[] keys;
+    private History his;
+    private ScheduledFuture task;
+    private EventReader monitor = new EventReader();
+    private ScheduledExecutorService executor = Executors.newScheduledThreadPool(1);
+    private NonBlockingInputStream in;
+    private ActionListener event;
+    private char[] keys;
 
     public Console() throws IOException {
         super(System.in, System.out);
         his = getHistory();
         setExpandEvents(false);
-        waiter = new EventReader();
-        waiter.setDaemon(true);
-        waiter.setName("UserInterruptMonitoringThread");
-        waiter.start();
-        waiter.setPriority(Thread.MAX_PRIORITY);
         setHandleUserInterrupt(true);
+        setBellEnabled(false);
         in = (NonBlockingInputStream) this.getInput();
         Iterator<Completer> iterator = getCompleters().iterator();
         while (iterator.hasNext()) removeCompleter(iterator.next());
     }
 
-    protected boolean isRun() {
-        if (this.clock > 0L && System.currentTimeMillis() - this.clock > 300) this.clock = 0L;
-        return this.isPending && this.clock == 0L && this.keys != null && this.event != null;
-    }
-
     public String readLine() throws IOException {
-        if (isPending) setEvents(null, null);
+        if (isRunning()) setEvents(null, null);
         synchronized (in) {
             String line = super.readLine();
             return line;
         }
     }
 
+    public Boolean isRunning() {return this.task!=null;}
+
     public synchronized void setEvents(ActionListener event, char[] keys) {
-        clock = event != null ? System.currentTimeMillis() : 0L;
-        isPending = event != null ? true : false;
         this.event = event;
         this.keys = keys;
+        if (this.task != null) {
+            this.task.cancel(true);
+            this.task = null;
+        }
+        if (this.event != null && this.keys!=null) {
+            this.monitor.counter=0;
+            this.task = this.executor.scheduleWithFixedDelay(this.monitor, 1000, 200, TimeUnit.MILLISECONDS);
+        }
     }
 
     public void setMultiplePrompt(String Content) {
@@ -68,24 +71,19 @@ public class Console extends ConsoleReader {
         }
     }
 
-    class EventReader extends Thread {
+    class EventReader implements Runnable {
+        public int counter=0;
         public void run() {
-            while (true) {
-                try {
-                    if (isRun()) {
-                        Thread.currentThread().sleep(200L);
-                        int ch = in.read(1L);
-                        if (ch <= 0) continue;
-                        for (int i = 0; i < keys.length; i++) {
-                            if (ch != keys[i]) continue;
-                            event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, String.valueOf(ch)));
-                            break;
-                        }
-                    }
-                    else Thread.currentThread().sleep(1000L);
-                } catch (Exception e) {
-                    //e.printStackTrace();
+            try {
+                int ch = in.read(1L);
+                if (ch <= 0) return;
+                for (int i = 0; i < keys.length; i++) {
+                    if (ch != keys[i]) continue;
+                    event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, String.valueOf(ch)));
+                    break;
                 }
+            } catch (Exception e) {
+                //e.printStackTrace();
             }
         }
     }

@@ -193,7 +193,6 @@ public class Loader {
     public void setStatement(CallableStatement p) {
         this.stmt = p;
         reader.setEvents(p == null ? null : q, new char[]{'q', KeyMap.CTRL_D});
-        //keyMap.bind(String.valueOf('q'), p == null ? null : q);
     }
 
     public void sleep(int millSeconds) throws Exception {
@@ -216,7 +215,7 @@ public class Loader {
         public void actionPerformed(ActionEvent e) {
             try {
                 if(e!=null) key=e.getActionCommand().charAt(0);
-                if (!reader.isRun()&&key!='q') {
+                if (!reader.isRunning()&&key!='q') {
                     lua.getGlobal("TRIGGER_ABORT");
                     lua.call(0, 0);
                 } else if (stmt != null) {
@@ -233,11 +232,9 @@ public class Loader {
 
     private class Sleeper implements Runnable {
         private int timer = 0;
-
         public Sleeper(int t) {
             timer = t;
         }
-
         public void run() {
             try {
                 synchronized (this) {
