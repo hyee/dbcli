@@ -29,7 +29,7 @@ function db2:connect(conn_str)
         args=conn_str
         usr,pwd,conn_desc=conn_str.user,
             packer.unpack_str(conn_str.password),
-            conn_str.url:match("//(.*)$")--..(conn_str.internal_logon and " as "..conn_str.internal_logon or "")
+            (conn_str.jdbc_alias or conn_str.url:match("//(.*)$"))--..(conn_str.internal_logon and " as "..conn_str.internal_logon or "")
         args.password=pwd
         conn_str=string.format("%s/%s@%s",usr,pwd,conn_desc)        
     else
@@ -74,7 +74,8 @@ function db2:connect(conn_str)
     
     self.conn=java.cast(self.conn,"com.ibm.db2.jcc.DB2Connection")
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    local version=self:get_value("select SERVICE_LEVEL FROM TABLE(sysproc.env_get_inst_info())")
+    local db_info=self:get_value("select service_level,inst_name,host_name FROM TABLE(sysproc.env_get_inst_info()),TABLE(ENV_GET_SYS_INFO())")
+    local version,instance,host_name=table.unpack(db_info)
     self.props.db_version=version:gsub('DB2',''):match('([%d%.]+)')
     self.props.db_user=args.user:upper()
     self.conn_str=packer.pack_str(conn_str)
@@ -82,7 +83,7 @@ function db2:connect(conn_str)
     database=database:upper()
     env.set_prompt(nil,database)
     
-    env.set_title(('%s - User: %s   Server: %s   Version: DB2(%s)'):format(database,self.props.db_user,server,self.props.db_version))
+    env.set_title(('%s - User: %s   Instance: %s   Server: %s   Version: DB2(%s)'):format(database,self.props.db_user,instance,host_name,self.props.db_version))
     if event then event("AFTER_DB2_CONNECT",self,sql,args,result) end
     print("Database connected.")
 end
