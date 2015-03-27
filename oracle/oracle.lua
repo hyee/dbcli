@@ -52,8 +52,8 @@ function oracle:connect(conn_str)
         args=conn_str
         usr,pwd,conn_desc=conn_str.user,
             packer.unpack_str(conn_str.password),
-            conn_str.url:match("@(.*)$")..
-            (conn_str.internal_logon and " as "..conn_str.internal_logon or "")
+            conn_str.jdbc_alias or 
+                (conn_str.url:match("@(.*)$")..(conn_str.internal_logon and " as "..conn_str.internal_logon or ""))
         args.password=pwd
         conn_str=string.format("%s/%s@%s",usr,pwd,conn_desc)  
     else
@@ -63,7 +63,7 @@ function oracle:connect(conn_str)
     if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
     
     local server,port,database=conn_desc:match('^([^:/]+)(:?%d*)[:/](.+)$')
-    if port=="" then conn_desc=server..':1521'..database end      
+    if port=="" then conn_desc=server..':1521/'..database end
     local url, isdba=conn_desc:match('^(.*) as (%w+)$')
     url=url or conn_desc
     args=args or {user=usr,password=pwd,url="jdbc:oracle:thin:@"..url,internal_logon=isdba}
@@ -331,6 +331,8 @@ function oracle:handle_error(info)
             if v~='default' then
                 info.error=v
                 env.set_title("")
+            else
+                info.error=info.error:match('^([^\n\r]+)')
             end
             return info
         end
@@ -346,8 +348,8 @@ function oracle:onload()
         end
     end
 
-    add_default_sql_stmt('update','delete','insert','merge','truncate','drop')
-    add_default_sql_stmt('explain','lock','analyze','grant','revoke')   
+    add_default_sql_stmt('update','delete','insert','merge','truncate','drop','flashback')
+    add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge')   
     set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
     set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
     set_command(self,{"select","with"},   default_desc,        self.query     ,true,1,true)

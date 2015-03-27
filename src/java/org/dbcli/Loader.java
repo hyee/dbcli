@@ -3,7 +3,7 @@ package org.dbcli;
 import com.naef.jnlua.LuaState;
 import com.opencsv.CSVWriter;
 import com.opencsv.SQLWriter;
-
+import jline.console.KeyMap;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
@@ -15,6 +15,7 @@ import java.sql.CallableStatement;
 import java.sql.ResultSet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 
 public class Loader {
@@ -24,7 +25,10 @@ public class Loader {
     static Console reader;
     static String root = "";
     static String libPath;
-    private CallableStatement stmt=null;
+    KeyMap keyMap;
+    KeyListner q;
+    private CallableStatement stmt = null;
+    private Future sleeper;
     ExecutorService executor = Executors.newFixedThreadPool(1);
 
     public Loader() {
@@ -32,19 +36,19 @@ public class Loader {
             File f = new File(Loader.class.getProtectionDomain().getCodeSource().getLocation().toURI());
             root = f.getParentFile().getParent();
             libPath = root + File.separator + "lib" + File.separator;
-            String bit= System.getProperty("sun.arch.data.model");
-            if(bit==null) bit=System.getProperty("com.ibm.vm.bitmode");
-            libPath+=(bit.equals("64")?"x64":"x86");
-            addLibrary(libPath,true);
-            System.setProperty("library.jansi.path",libPath );
+            String bit = System.getProperty("sun.arch.data.model");
+            if (bit == null) bit = System.getProperty("com.ibm.vm.bitmode");
+            libPath += (bit.equals("64") ? "x64" : "x86");
+            addLibrary(libPath, true);
+            System.setProperty("library.jansi.path", libPath);
 
             reader = new Console();
             printer = new PrintWriter(reader.getOutput());
-            ActionListener al = new KeyListner();
             //Ctrl+D
-            reader.getKeys().bind("\004", al);
-            //Ctrl+Z
-            reader.getKeys().bind("\026", al);
+            keyMap =reader.getKeys();
+            keyMap.bind(String.valueOf(KeyMap.CTRL_D), new KeyListner(KeyMap.CTRL_D));
+            q=new KeyListner('q');
+
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -146,20 +150,6 @@ public class Loader {
         return stack;
     }
 
-    public void dbCall(final CallableStatement p) throws InterruptedException {
-        executor.execute(new DbExecutor(p, new DbCallback() {
-            @Override
-            public void complete(String result) {
-                System.out.println("Callback1 ..." + " " + result);
-                lua.getGlobal("ON_ASYNC_STATEMENT_COMPLETE");
-                lua.pushString(result);
-                lua.pushJavaObject(p);
-                System.out.println("Callback2 ...");
-                lua.call(2, 0);
-                System.out.println("Callback3 ...");
-            }
-        }));
-    }
 
     public int ResultSet2CSV(ResultSet rs, String fileName, String header) throws Exception {
         try {
@@ -201,22 +191,61 @@ public class Loader {
     }
 
     public void setStatement(CallableStatement p) {
-        this.stmt=p;
-        reader.setRunning(p==null?false:true);
+        this.stmt = p;
+        reader.setEvents(p == null ? null : q, new char[]{'q', KeyMap.CTRL_D});
+        //keyMap.bind(String.valueOf('q'), p == null ? null : q);
+    }
+
+    public void sleep(int millSeconds) throws Exception {
+        try {
+            sleeper = executor.submit(new Sleeper(millSeconds));
+            reader.setEvents(q,new char[]{'q',KeyMap.CTRL_D});
+            sleeper.get();
+        } catch (Exception e) {
+            throw new IOException("Statement is aborted.");
+        } finally {
+
+            sleeper = null;
+            reader.setEvents(null,null);
+        }
     }
 
     private class KeyListner implements ActionListener {
+        int key;
+        public KeyListner(int k) {this.key=k;}
         @Override
         public void actionPerformed(ActionEvent e) {
             try {
-                if(!reader.isRun()) {
+                if(e!=null) key=e.getActionCommand().charAt(0);
+                if (!reader.isRun()&&key!='q') {
                     lua.getGlobal("TRIGGER_ABORT");
                     lua.call(0, 0);
-                } else {
+                } else if (stmt != null) {
                     stmt.cancel();
+                }
+                if (sleeper != null) {
+                    sleeper.cancel(true);
                 }
             } catch (Exception err) {
                 //err.printStackTrace();
+            }
+        }
+    }
+
+    private class Sleeper implements Runnable {
+        private int timer = 0;
+
+        public Sleeper(int t) {
+            timer = t;
+        }
+
+        public void run() {
+            try {
+                synchronized (this) {
+                    Thread.sleep(timer);
+                }
+            } catch (InterruptedException e) {
+
             }
         }
     }

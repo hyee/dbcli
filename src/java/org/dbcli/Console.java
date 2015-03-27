@@ -5,6 +5,7 @@ import jline.console.completer.Completer;
 import jline.console.history.History;
 import jline.internal.NonBlockingInputStream;
 
+import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.IOException;
 import java.util.Iterator;
@@ -14,6 +15,9 @@ public class Console extends ConsoleReader {
     protected boolean isPending = false;
     protected EventReader waiter;
     protected Long clock;
+    NonBlockingInputStream in;
+    ActionListener event;
+    char[] keys;
 
     public Console() throws IOException {
         super(System.in, System.out);
@@ -24,29 +28,31 @@ public class Console extends ConsoleReader {
         waiter.start();
         waiter.setPriority(Thread.MAX_PRIORITY);
         setHandleUserInterrupt(true);
-
+        in = (NonBlockingInputStream) this.getInput();
         Iterator<Completer> iterator = getCompleters().iterator();
         while (iterator.hasNext()) removeCompleter(iterator.next());
     }
 
-    protected synchronized boolean isRun() {
+    protected boolean isRun() {
         if (clock > 0L && System.currentTimeMillis() - clock > 300) clock = 0L;
-        return isPending && clock == 0L;
+        return isPending && clock == 0L && keys != null && event != null;
     }
 
-    protected synchronized NonBlockingInputStream getReader() {
-        return (NonBlockingInputStream) this.getInput();
-    }
 
     public String readLine() throws IOException {
-        setRunning(false);
-        String line = super.readLine();
-        return line;
+        if (isPending) setEvents(null, null);
+        synchronized (in) {
+            String line = super.readLine();
+            return line;
+        }
     }
 
-    public synchronized void setRunning(Boolean status) {
-        clock = status ? System.currentTimeMillis() : 0L;
-        isPending = status;
+
+    public synchronized void setEvents(ActionListener event, char[] keys) {
+        clock = event != null ? System.currentTimeMillis() : 0L;
+        isPending = event != null ? true : false;
+        this.event = event;
+        this.keys = keys;
     }
 
     public void setMultiplePrompt(String Content) {
@@ -65,21 +71,18 @@ public class Console extends ConsoleReader {
 
     class EventReader extends Thread {
         public void run() {
-            StringBuilder sb = new StringBuilder();
             while (true) {
                 try {
-                    if (isRun()) {
-                        int ch = getReader().read(100);
-                        if(ch>=0) {
-                            //System.out.println(ch);
-                            sb.appendCodePoint(ch);
-                            Object o = getKeys().getBound(sb);
-                            if(o!=null) sb.setLength(0);
-                            if (o instanceof ActionListener) {
-                                ((ActionListener) o).actionPerformed(null);
-                            }
+                    if (isRun()) synchronized (in) {
+                        int ch = in.read(100);
+                        if (ch <= 0) continue;
+                        for (int i = 0; i < keys.length; i++) {
+                            if (ch != keys[i]) continue;
+                            event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, String.valueOf(ch)));
+                            break;
                         }
-                    } else Thread.currentThread().sleep(300);
+                    }
+                    else Thread.currentThread().sleep(300);
                 } catch (Exception e) {
                     //e.printStackTrace();
                 }

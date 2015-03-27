@@ -314,7 +314,7 @@ function env.exec_command(cmd,params)
             if #msg > 0 then
                 print(env.ansi.mask("HIR",table.concat(msg,'\n')))
             elseif #res[2]>0 then
-                print(env.ansi.mask("HIR",res[2].."\n"))
+                print(env.ansi.mask("HIR",res[2]))
             end
 
             if coroutine.running() then pcall(coroutine.yield) end
@@ -456,8 +456,7 @@ end
 function env.eval_line(line,exec)
     if type(line)~='string' or line:gsub('[%s\n\r\t]+','')=='' then return end
 
-    --Remove bom
-
+    --Remove BOM header
     if not env.pending_command() then
         line=line:gsub('^[%z\128-\255%s\t]+','')
         if line:match('^([^%w])') then
@@ -489,6 +488,7 @@ function env.eval_line(line,exec)
     
     local cmd,rest=line:match('^%s*([^%s\t]+)[%s\t]*(.*)')
     cmd=cmd:gsub(env.END_MARKS[1]..'+$',''):upper()
+    env.CURRENT_CMD=cmd
     if not (_CMDS[cmd]) then
         return print("No such command["..cmd.."], please type 'help' for more information.")        
     elseif _CMDS[cmd].MULTI then --deal with the commands that cross-lines

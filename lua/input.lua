@@ -1,9 +1,9 @@
 local string,io,table=string,io,table
 local dir=debug.getinfo(1).short_src:gsub('%w+%.lua','?.lua')
 package.path=dir
-io.stdout:write("    ------------------------------------------------------------------------------------------------------------------------\n")
-io.stdout:write("    | RDBMS utility(DBCLI), type 'help' for more information. (c)2014-2015 hyee, MIT license(https://github.com/hyee/dbcli)|\n")
-io.stdout:write("    ========================================================================================================================\n\n")
+io.stdout:write("    ------------------------------------------------------------------------------------------------------------------------------\n")
+io.stdout:write("    | DBCLI, type 'conn' to connect, or help' for more information. (c)2014-2015 hyee, MIT license(https://github.com/hyee/dbcli)|\n")
+io.stdout:write("    ==============================================================================================================================\n\n")
 
 local env=require("env")
 env.onload(...)  
@@ -13,7 +13,7 @@ env.onload(...)
 local line,eval,prompt = "",env.eval_line
 local reader=reader
 local history=reader:getHistory()
-local ansi=env.ansi
+local ansi,event=env.ansi,env.event
 local color=ansi and ansi.get_color or function() return "";end
 local prompt_color="%s%s"..color("NOR").."%s"
 
@@ -37,21 +37,26 @@ while true do
         os.exit(0,true) 
     end
 
-    clock=os.clock()
-    eval(line)
+    clock=os.clock(),eval(line)
+    
     if env.CURRENT_PROMPT==env.MTL_PROMPT and not stack then
         stack={line}
         reader:setMultiplePrompt(nil)
     elseif stack then
         if not line:find('^[%s\t]*$') then stack[#stack+1]=line end
         if env.CURRENT_PROMPT==env.PRI_PROMPT then
-            if line:find('^'..env.END_MARKS[1]..'[%s\t]*$') then
+            if line:find('^[%s\t]*'..env.END_MARKS[1]..'[%s\t]*$') then
                 stack[#stack-1]=stack[#stack-1]..line
                 stack[#stack]=nil
             end
-            reader:setMultiplePrompt(table.concat(stack,'\n'..env.MTL_PROMPT))
+            line=table.concat(stack,'\n'..env.MTL_PROMPT)
+            if #stack <=20 then reader:setMultiplePrompt(line) end
             stack=nil
         end
+    end
+    
+    if stack==nil and event then
+        event.callback("ON_ROOT_COMMAND_COMPLETED",line)
     end
     
     if env.PRI_PROMPT=="TIMING> " and env.CURRENT_PROMPT~=env.MTL_PROMPT then
