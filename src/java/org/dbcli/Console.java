@@ -73,8 +73,8 @@ public class Console extends ConsoleReader {
             while (true) {
                 try {
                     if (isRun()) {
-                        Thread.currentThread().sleep(200);
-                        int ch = in.read(1);
+                        Thread.currentThread().sleep(200L);
+                        int ch = in.read(1L);
                         if (ch <= 0) continue;
                         for (int i = 0; i < keys.length; i++) {
                             if (ch != keys[i]) continue;
@@ -82,7 +82,7 @@ public class Console extends ConsoleReader {
                             break;
                         }
                     }
-                    else Thread.currentThread().sleep(500);
+                    else Thread.currentThread().sleep(1000L);
                 } catch (Exception e) {
                     //e.printStackTrace();
                 }
