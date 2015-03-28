@@ -1,13 +1,13 @@
 License
 ============
-MIT license
+MIT license, meaning that you are completely free to redistribute, modify, or sell it with almost no restrictions.
 
 Description
 =============
 
-DBCLI is a database command line utility that developed with lua language, and bridge JDBC in order to operate database.<br> 
+DBCLI is a database command line utility that developed with LUA language, and bridges to JDBC in order to operate database.<br> 
 It is designed to support multiple databases, and includes 2 type of modules, one is the public functions, and another one is the database-specific functions.<br>
-Currently only public and Oracle functions are developed, and only support windows platform.<br><br>
+Currently only public and Oracle and DB2 functions are developed, and only support windows platform.<br><br>
 
 For Oracle db, it does not aim to support all functions of SQL*Plus, but to provide the features other than SQL*Plus:<br>
 1) Pretty print of the select statement and the flexible controll of the grid layouts(see set command)<br>
@@ -17,8 +17,9 @@ For Oracle db, it does not aim to support all functions of SQL*Plus, but to prov
 
 
 
-Configuration
+Build and Configuration
 ============
+DBCLI does not require compile before its use, directly click "Download ZIP" and extract the file. Branch "Compat" contains the shrinked JRE bundle, you may switch to that branch to download.<br>
 ###Configure terminal window
 To avoid the word wrap in the terminal window which affects the print layout, following settings are recommended in Windows command window:<br>
 1. In the "Layout" tab, set buffer width and buffer height as 500+<br>
@@ -47,6 +48,7 @@ Below is the list:<br>
     jline2      : https://github.com/jline/jline2
     lpeg        : http://www.inf.puc-rio.br/~roberto/lpeg/
     ConsoleZ    : https://github.com/cbucher/console
+    EDB360      : https://github.com/carlos-sierra/edb360
     MessagePack : https://github.com/fperrad/lua-MessagePack(pure lua)
 
 
