@@ -1,5 +1,8 @@
-2015-03-22: + public: support CTRL +D or 'q' to abort the running command
-2015-03-22: + public: support custimize & predefine a connection, something like Oracle tnsnames, refer to "data\jdbc_url_sample.cfg" 
+2015-03-28: + oracle: sqlplus commands: sqlhc/sqldx/sqlhcxec. Refer to MOS#1366133.1
+2015-03-28: + oracle: 'sp' command to run SqlPlus scripts under folder "sqlplus" 
+2015-03-28: ! public: minor fixes on cancel statement and def/connect/sqlplus commands
+2015-03-27: + public: support CTRL +D or 'q' to abort the running command
+2015-03-27: + public: support custimize & predefine a connection, something like Oracle tnsnames, refer to "data\jdbc_url_sample.cfg" 
 2015-03-22: + public: support IBM JRE 1.7+
 2015-03-22: + public: support config file(data\init.cfg) which is fully managed by end user,refer to init_sample.cfg
 2015-03-22: ! public: fix the jansi cannot be loaded issue in some machines
