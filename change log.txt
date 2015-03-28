@@ -1,3 +1,4 @@
+2015-03-28: + oracle: ora command 'sqlslope' to show the summary of performance changed sqls during a specific period
 2015-03-28: + oracle: sqlplus commands: sqlhc/sqldx/sqlhcxec. Refer to MOS#1366133.1
 2015-03-28: + oracle: 'sp' command to run SqlPlus scripts under folder "sqlplus" 
 2015-03-28: ! public: minor fixes on cancel statement and def/connect/sqlplus commands

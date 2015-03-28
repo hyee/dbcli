@@ -56,12 +56,15 @@ end
 
 function sqlplus:before_exec(cmd,arg)
     
-    local content=[[set feed off serveroutput on size 1000000 trimspool on long 5000 linesize 800 pagesize 9999
+    local content=[[SET FEED OFF SERVEROUTPUT ON SIZE 1000000 TRIMSPOOL ON LONG 5000 LINESIZE 900 PAGESIZE 9999
                     ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';
-                    set feed on
+                    SET FEED ON ECHO OFF
+                    DEF _WORK_DIR_="%s"
+                    DEF _FILE_DIR_="%s"
+                    DEF _SQLPLUS_DIR_="%s"
                     %s
                     @"%s" %s
-                    exit;]]
+                    EXIT;]]
     local args=env.parse_args('ORA',arg)
     local print_args,sql=false
     sql,args,print_args,file=self:get_script(cmd,args,print_args)
@@ -71,11 +74,17 @@ function sqlplus:before_exec(cmd,arg)
     for k,v in pairs(args) do 
         if v~="" then context=context..'DEF '..k..'='..v..'\n' end
     end
-    content=content:format(context,file,arg or "")
+    
     self.work_path=env.WORK_DIR.."cache"
-    local tmpfile='sqlplus_temp.sql'
-    env.write_cache(tmpfile,content:gsub('[\n\r]+%s+','\n')..'\n')
-    self:start('-s','@'..tmpfile)
+    local file_dir=file:gsub('[\\/][^\\/]+$',"")
+    local tmpfile='sqlplus.tmp'
+    tmpfile=self.work_path..env.PATH_DEL..tmpfile
+    local f,err=io.open(tmpfile,'w')
+    env.checkerr(f,"Unable to write file "..tmpfile)
+    content=content:format(self.work_path,file_dir,self.script_dir,context,file,arg or ""):gsub('[\n\r]+%s+','\n')..'\n'
+    f:write(content)
+    f:close()
+    self:start('-s','@"'..tmpfile..'"')
 end
 
 function sqlplus:after_exec()

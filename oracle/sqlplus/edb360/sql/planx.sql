@@ -1,8 +1,6 @@
-----------------------------------------------------------------------------------------
---
+/*[[
+   Reports Execution Plans for one SQL_ID from RAC and AWR(opt). Usage: planx <sql_id>
 -- File name:   planx.sql
---
--- Purpose:     Reports Execution Plans for one SQL_ID from RAC and AWR(opt)
 --
 -- Author:      Carlos Sierra
 --
@@ -20,16 +18,16 @@
 -- Notes:       Developed and tested on 11.2.0.3 and 12.0.1.0
 --              For a more robust tool use SQLHC or SQLTXPLAIN(SQLT) from MOS
 --             
----------------------------------------------------------------------------------------
---
+]]*/
+
 CL COL;
 SET FEED OFF VER OFF HEA ON LIN 2000 PAGES 50 TIMI OFF LONG 40000 LONGC 200 TRIMS ON AUTOT OFF;
 PRO
 PRO 1. Enter Oracle Diagnostics Pack License Flag [ Y | N ] (required)
-DEF input_license = '&1';
+DEF input_license = 'Y';
 PRO
 PRO 2. Enter SQL_ID (required)
-DEF sql_id = '&2';
+DEF sql_id = '&1';
 -- set license
 VAR license CHAR(1);
 BEGIN

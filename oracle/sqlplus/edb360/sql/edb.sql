@@ -4,10 +4,13 @@
     D: Licensed for the Diagnostics Pack
     N: Licensed for None
     
+    You'd better make sure tkprof.exe is included in your path
     Refer to https://github.com/carlos-sierra/edb360 for more detail
     --[[
         &V1: default={T}
     --]]
 ]]*/
 
-@@sql\edb360.sql &V1
+HOS mkdir js 
+HOS xcopy /S /Y "&&_FILE_DIR_\..\js\*" js
+@@edb360.sql &V1

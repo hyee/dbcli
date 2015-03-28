@@ -1,5 +1,5 @@
 /*[[
-   Lists SQL Statements with Elapsed Time per Execution changing over time. Usage: sqlslop <history_days>
+   Lists SQL Statements with Elapsed Time per Execution changing over time. Usage: sqlslope <history_days>
    Author:      Carlos Sierra
    Version:     2014/10/31
    Usage:       Lists statements that have changed their elapsed time per execution over
