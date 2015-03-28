@@ -1,0 +1,68 @@
+SPO &&sqld360_main_report..html APP;
+@@sqld360_0e_html_footer.sql
+SPO OFF;
+
+PRO ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+-- turing trace off
+ALTER SESSION SET SQL_TRACE = FALSE;
+
+-- tkprof for trace from execution of tool in case someone reports slow performance in tool
+HOS tkprof &&sqld360_udump_path.*ora_&&sqld360_spid._&&sqld360_tracefile_identifier..trc &&sqld360_tkprof._sort.txt sort=prsela exeela fchela
+
+PRO ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+-- readme
+SPO 00000_readme_first.txt
+PRO 1. Unzip &&sqld360_main_filename._&&sqld360_file_time..zip into a directory
+PRO 2. Review &&sqld360_main_report..html
+SPO OFF;
+
+-- cleanup
+SET HEA ON; 
+SET LIN 80; 
+SET NEWP 1; 
+SET PAGES 14; 
+SET LONG 80; 
+SET LONGC 80; 
+SET WRA ON; 
+SET TRIMS OFF; 
+SET TRIM OFF; 
+SET TI OFF; 
+SET TIMI OFF; 
+SET ARRAY 15; 
+SET NUM 10; 
+SET NUMF ""; 
+SET SQLBL OFF; 
+SET BLO ON; 
+SET RECSEP WR;
+UNDEF 1 2 3 4 5 6
+
+-- alert log (3 methods)
+COL db_name_upper NEW_V db_name_upper;
+COL db_name_lower NEW_V db_name_lower;
+COL background_dump_dest NEW_V background_dump_dest;
+SELECT UPPER(SYS_CONTEXT('USERENV', 'DB_NAME')) db_name_upper FROM DUAL;
+SELECT LOWER(SYS_CONTEXT('USERENV', 'DB_NAME')) db_name_lower FROM DUAL;
+SELECT value background_dump_dest FROM v$parameter WHERE name = 'background_dump_dest';
+HOS cp &&background_dump_dest./alert_&&db_name_upper.*.log .
+HOS cp &&background_dump_dest./alert_&&db_name_lower.*.log .
+HOS cp &&background_dump_dest./alert_&&_connect_identifier..log .
+HOS rename alert_ 00005_&&common_sqld360_prefix._alert_ alert_*.log
+
+-- zip 
+HOS zip -mq &&sqld360_main_filename._&&sqld360_file_time. 99999_sqld360_&&sqld360_sqlid._drivers*
+HOS zip -mq &&sqld360_main_filename._&&sqld360_file_time. &&common_sqld360_prefix._query.sql
+HOS zip -dq &&sqld360_main_filename._&&sqld360_file_time. &&common_sqld360_prefix._query.sql
+HOS zip -mq &&sqld360_main_filename._&&sqld360_file_time. 00005_&&common_sqld360_prefix._alert_*.log
+HOS zip -mq &&sqld360_main_filename._&&sqld360_file_time. &&sqld360_log2..txt
+HOS zip -mq &&sqld360_main_filename._&&sqld360_file_time. &&sqld360_tkprof._sort.txt
+HOS zip -mq &&sqld360_main_filename._&&sqld360_file_time. &&sqld360_log..txt
+HOS zip -mq &&sqld360_main_filename._&&sqld360_file_time. &&sqld360_main_report..html
+HOS zip -mq &&sqld360_main_filename._&&sqld360_file_time. 00000_readme_first.txt 
+HOS unzip -l &&sqld360_main_filename._&&sqld360_file_time.
+
+--update plan table
+UPDATE plan_table SET remarks = '&&sqld360_main_filename._&&sqld360_file_time..zip'  WHERE statement_id = 'SQLD360_SQLID' and operation = '&&sqld360_sqlid.';
+
+SET TERM ON;

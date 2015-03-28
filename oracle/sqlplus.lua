@@ -48,15 +48,20 @@ function sqlplus:start(...)
         end
     end
 
-    local del=(env.OS=="windows" and " && " or " ; ")
+    local del=(env.OS=="windows" and " & " or " ; ")
     local cmd=table.concat(props,del)..' '..table.concat(args,' ')
+
     os.execute(cmd)
 end
 
 function sqlplus:before_exec(cmd,arg)
-    local tmpfile='sqlplus_temp.sql'
-    local content='set serveroutput on sqlbl on verify off linesize 1000 long 3000\n%s\n@"%s" %s\nexit;\n'
-    content="set feed off\nALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';\nset feed on\n"..content
+    
+    local content=[[set feed off serveroutput on size 1000000 trimspool on long 5000 linesize 800 pagesize 9999
+                    ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';
+                    set feed on
+                    %s
+                    @"%s" %s
+                    exit;]]
     local args=env.parse_args('ORA',arg)
     local print_args,sql=false
     sql,args,print_args,file=self:get_script(cmd,args,print_args)
@@ -67,8 +72,9 @@ function sqlplus:before_exec(cmd,arg)
         if v~="" then context=context..'DEF '..k..'='..v..'\n' end
     end
     content=content:format(context,file,arg or "")
-    env.write_cache(tmpfile,content)
     self.work_path=env.WORK_DIR.."cache"
+    local tmpfile='sqlplus_temp.sql'
+    env.write_cache(tmpfile,content:gsub('[\n\r]+%s+','\n')..'\n')
     self:start('-s','@'..tmpfile)
 end
 

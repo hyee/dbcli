@@ -193,9 +193,17 @@ function helper.get_sub_help(cmd,cmdlist,main_help,search_key)
                         table.insert(rows[1],k)
                         table.insert(rows[2],desc) 
                     else
-                        undoc_index=undoc_index+1
-                        undocs=(undocs or '')..k..', '
-                        if math.fmod(undoc_index,10)==0 then undocs=undocs..'\n' end
+                        local flag=1
+                        if v.path and v.path:lower():find(env.WORK_DIR:lower(),1,true) then
+                            local _,degree=v.path:sub(env.WORK_DIR:len()+1):gsub('[\\/]+','')
+                            if degree>2 then flag=0 end
+                        end
+
+                        if flag==1 then
+                            undoc_index=undoc_index+1
+                            undocs=(undocs or '')..k..', '
+                            if math.fmod(undoc_index,10)==0 then undocs=undocs..'\n' end
+                        end
                     end
                 end
             end
