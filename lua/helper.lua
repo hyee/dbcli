@@ -183,16 +183,28 @@ function helper.get_sub_help(cmd,cmdlist,main_help,search_key)
         local help=main_help
         if not cmdlist then return help end
         local rows={{},{}}
+        local undocs=nil
+        local undoc_index=0
         for k,v in pairs(cmdlist) do
             if (not search_key or k:find(search_key:upper(),1,true)) and k:sub(1,2)~='./' then
                 if search_key or not (v.path or ""):find('[\\/]test[\\/]') then                
-                    table.insert(rows[1],k)
                     local desc=v.short_desc:gsub("^[%s\t]+","")
-                    table.insert(rows[2],desc)
+                    if desc and desc~="" then
+                        table.insert(rows[1],k)
+                        table.insert(rows[2],desc) 
+                    else
+                        undoc_index=undoc_index+1
+                        undocs=(undocs or '')..k..', '
+                        if math.fmod(undoc_index,10)==0 then undocs=undocs..'\n' end
+                    end
                 end
             end
         end
-        --grid.sort(rows,1)
+        if(undocs) then 
+            undocs=undocs:gsub("[\n%s,]+$",'')
+            table.insert(rows[1],'_Undocumented_') 
+            table.insert(rows[2],undocs) 
+        end
         env.set.set("PIVOT",-1)
         env.set.set("HEADDEL",":")
         help=help..grid.tostring(rows)

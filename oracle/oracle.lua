@@ -47,25 +47,21 @@ end
 function oracle:connect(conn_str)
     --print(conn_str)
     local props,args={}
-    local usr,pwd,conn_desc 
-    if type(conn_str)=="table" then
+    local usr,pwd,conn_desc,url,isdba
+    local sqlplustr
+    if type(conn_str)=="table" then --from 'login' command
         args=conn_str
-        usr,pwd,conn_desc=conn_str.user,
-            packer.unpack_str(conn_str.password),
-            conn_str.jdbc_alias or 
-                (conn_str.url:match("@(.*)$")..(conn_str.internal_logon and " as "..conn_str.internal_logon or ""))
+        usr,pwd,url,isdba=conn_str.user,packer.unpack_str(conn_str.password),conn_str.url,conn_str.internal_logon
         args.password=pwd
-        conn_str=string.format("%s/%s@%s",usr,pwd,conn_desc)  
     else
         usr,pwd,conn_desc = string.match(conn_str or "","(.*)/(.*)@(.+)")
+        if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
+        url, isdba=conn_desc:match('^(.*) as (%w+)$')
+        sqlplustr,url=conn_str,url or conn_desc
+        local server,port,database=url:match('^([^:/]+)(:?%d*)[:/](.+)$')
+        if port=="" then url=server..':1521/'..database end
     end
 
-    if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
-    
-    local server,port,database=conn_desc:match('^([^:/]+)(:?%d*)[:/](.+)$')
-    if port=="" then conn_desc=server..':1521/'..database end
-    local url, isdba=conn_desc:match('^(.*) as (%w+)$')
-    url=url or conn_desc
     args=args or {user=usr,password=pwd,url="jdbc:oracle:thin:@"..url,internal_logon=isdba}
     
     self:merge_props(
@@ -77,12 +73,16 @@ function oracle:connect(conn_str)
         },args)
     
     self:load_config(url,args)
+    if args.jdbc_alias or not sqlplustr then
+        sqlplustr=string.format("%s/%s@%s%s",args.user,args.password,args.url:match("@(.*)$"),
+                                            args.internal_logon and " as "..args.internal_logon or "")
+    end
+    self.conn_str=packer.pack_str(sqlplustr)
     
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
     env.set_title("")
     
-    self.super.connect(self,args)    
-    
+    self.super.connect(self,args)
     self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
@@ -104,10 +104,9 @@ function oracle:connect(conn_str)
             execute immediate 'alter session set statistics_level=all';
             :1:=dbms_utility.get_parameter_value('db_name',:2,:3);
         end;]],args)
-    self.conn_str=packer.pack_str(conn_str)
     
     self.props.service_name=args[3]
-    local prompt=url or conn_desc
+    local prompt=args.jdbc_alias or url
     if not prompt:match("^[%w_]+$") then
         prompt=self.props.service_name:match("^([^,]+)")    
     end    

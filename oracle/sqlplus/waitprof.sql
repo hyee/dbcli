@@ -1,9 +1,6 @@
---------------------------------------------------------------------------------
---
+/*[[
+   Sample V$SESSION_WAIT at high frequency and show resulting session wait event. Usage: waitprof <print|noprint> <sid> <e[123s]> <#samples>
 -- File name:   waitprof.sql ( Session Wait Profiler )
--- Purpose:     Sample V$SESSION_WAIT at high frequency and show resulting 
---              session wait event and parameter profile by session
---
 -- Author:      Tanel Poder
 -- Copyright:   (c) http://www.tanelpoder.com
 --
@@ -40,8 +37,7 @@
 --              If sampling always reports a single distinct event even though 
 --              many different events (or parameter values) are expected then 
 --              the execution plan used is not right.
---
---------------------------------------------------------------------------------
+]]*/
 
 DEF _swp_print=&1
 DEF _swp_sid=&2

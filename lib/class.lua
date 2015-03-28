@@ -14,8 +14,8 @@ local function newindex(self,k,v)
     rawset(self,k,v)
 end
 
-function class(super)
-    local this_class=setmetatable({},{__newindex=newindex})
+function class(super,init)
+    local this_class=setmetatable(init or {},{__newindex=newindex})
     super=super and rawget(super,'__class') or super
     this_class.new=function(...) 
         local obj={}

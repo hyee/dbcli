@@ -1,8 +1,6 @@
-------------------------------------------------------------------------------------------------------------------------
---
+/*[[
+   Report SQL-monitoring-style drill-down into where in an execution plan the execution time is spent. Usage: asqlmon <sqlid> <child#>
 -- File name:   asqlmon.sql (v1.0)
---
--- Purpose:     Report SQL-monitoring-style drill-down into where in an execution plan the execution time is spent
 --
 -- Author:      Tanel Poder
 --
@@ -17,7 +15,8 @@
 --              Diagnostics and Tuning pack licenses for using it as it queries
 --              some separately licensed views.
 --
-------------------------------------------------------------------------------------------------------------------------
+]]*/
+
 SET LINESIZE 999 PAGESIZE 5000 TRIMOUT ON TRIMSPOOL ON 
 
 COL asqlmon_operation  HEAD Plan_Operation FOR a100

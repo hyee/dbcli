@@ -1,4 +1,5 @@
---------------------------------------------------------------------------------
+/*[[
+   Needs SYS priv. Perform high-frequency sampling on V$LATCHHOLDER and present a profile of latches held by sessions. "sp -h latchprofx" for more info.
 --
 -- File name:   latchprofx.sql ( Latch Holder Profiler eXtended )
 -- Purpose:     Perform high-frequency sampling on V$LATCHHOLDER
@@ -72,8 +73,7 @@
 --
 --              Then you can use la.sql (V$LATCH_PARENT/V$LATCH_CHILDREN) to
 --              map the latch address back to latch child#
---
---------------------------------------------------------------------------------
+]]*/
 
 -- what includes what columns to display & aggregate and also options like latch name filtering
 DEF _lhp_what="&1"

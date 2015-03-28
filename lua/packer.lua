@@ -21,7 +21,7 @@ function packer.pack(func)
 end
 
 function packer.unpack(str)
-    if str:sub(1,5)~= "FUNC:" then
+    if not str or str:sub(1,5)~= "FUNC:" then
         return
     end
     str=str:sub(6)
@@ -45,7 +45,7 @@ function packer.pack_str(str)
 end
 
 function packer.unpack_str(str)
-    return packer.unpack(str)()
+    return str and packer.unpack(str)()
 end
 
 return packer

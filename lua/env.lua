@@ -606,6 +606,7 @@ function env.onload(...)
 
     set_command(nil,"/*"    ,   '#Comment',        nil   ,env.check_comment,2)
     set_command(nil,"--"    ,   '#Comment',        nil   ,false,2)
+    set_command(nil,"REM"   ,   '#Comment',        nil   ,false,2)
     --load initial settings
     for _,v in ipairs(env.__ARGS__) do
         if v:sub(1,2) == "-D" then

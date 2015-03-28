@@ -1,6 +1,5 @@
-SPO coe_xfr_sql_profile.log;
-SET DEF ON TERM OFF ECHO ON FEED OFF VER OFF HEA ON LIN 2000 PAGES 100 LONG 8000000 LONGC 800000 TRIMS ON TI OFF TIMI OFF SERVEROUT ON SIZE 1000000 NUMF "" SQLP SQL>;
-REM
+/*[[MOS#215187.1: Generate SQL Profile based on target SQL. Usage: coe [SQL_ID] [PLAN_HASH_VALUE]
+    
 REM $Header: 215187.1 coe_xfr_sql_profile.sql 11.4.1.4 2010/07/12 csierra $
 REM
 REM Copyright (c) 2000-2010, Oracle Corporation. All rights reserved.
@@ -47,7 +46,11 @@ REM   2. If SQLT is installed in SOURCE, you can use instead:
 REM      sqlt/utl/sqltprofile.sql
 REM   3. Be aware that using DBMS_SQLTUNE requires a license for
 REM      Oracle Tuning Pack.
-REM
+]]*/
+
+SPO coe_xfr_sql_profile.log;
+SET DEF ON TERM OFF ECHO ON FEED OFF VER OFF HEA ON LIN 2000 PAGES 100 LONG 8000000 LONGC 800000 TRIMS ON TI OFF TIMI OFF SERVEROUT ON SIZE 1000000 NUMF "" SQLP SQL>;
+
 SET TERM ON ECHO OFF;
 PRO
 PRO Parameter 1:

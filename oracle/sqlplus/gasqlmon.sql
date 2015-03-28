@@ -1,3 +1,4 @@
+/*[[Same to asqlmon except basing on gv$active_session_history dynamic views]]*/
 COL asqlmon_operation FOR a80
 COL asqlmon_predicates FOR a100 word_wrap
 COL options   FOR a30

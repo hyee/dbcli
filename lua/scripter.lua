@@ -31,6 +31,9 @@ function scripter:rehash(script_dir,ext_name)
     for k,v in ipairs(keylist) do
         local desc=v[3] and v[3]:gsub("^[\n\r%s\t]*[\n\r]+","") or ""
         desc=desc:gsub("%-%-%[%[(.*)%]%]%-%-",""):gsub("%-%-%[%[(.*)%-%-%]%]","")
+        desc=desc:gsub("([\n\r]+%s*)%-%-","%1  ")
+        desc=desc:gsub("([\n\r]+%s*)REM","%1   ")
+        desc=desc:gsub("([\n\r]+%s*)rem","%1   ")
         local cmd=v[1]:upper()
         if cmdlist[cmd] then 
             pathlist[cmdlist[cmd].path:lower()]=nil
@@ -322,7 +325,7 @@ function scripter:get_script(cmd,args,print_args)
     local sql=f:read('*a')
     f:close()
     args=self:parse_args(sql,args,print_args)
-    return sql,args,print_args
+    return sql,args,print_args,file
 end
 
 function scripter:run_script(cmd,...)
@@ -380,7 +383,6 @@ function scripter:helper(_,cmd,search_key)
         self:run_script('-r')
     end
     target_dir=self.cmdlist
-
     if cmd and cmd:sub(1,1)=='@' then
         help=""
         target_dir,cmd=self:check_ext_file(cmd)

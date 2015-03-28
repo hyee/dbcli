@@ -57,6 +57,9 @@ function var.setInput(name,desc)
         return
     end
     local value
+    if not name:find('=') and desc then
+        name,desc=name..(desc:sub(1,1)=="=" and '' or '=') ..desc,nil
+    end
     name,value=name:match("^%s*([^=]+)%s*=%s*(.+)")
     if not name then env.raise('Usage: def name=<value> [description]') end
     value=value:gsub('^"(.*)"$','%1')
@@ -96,16 +99,16 @@ end
 local function update_text(item,pos,params)
     if cfg.get("define")~='on' then return end
     local count=1    
-    local function repl(s) 
-        local v=s:upper()
-        v=params[v] or var.inputs[v] or var.global_context[v] or '&'..s
-        if v~='&'..s then count=count+1 end
+    local function repl(s,s2,s3)
+        local v,s=s2:upper(),s..s2..s3
+        v=params[v] or var.inputs[v] or var.global_context[v] or s
+        if v~=s then count=count+1 end
         return v
     end
 
     while count>0 do
         count=0
-        item[pos]=item[pos]:gsub('%f[%w_%$&]&([%w%_%$]+)',repl)
+        item[pos]=item[pos]:gsub('%f[%w_%$&](&+)([%w%_%$]+)(%.?)',repl)
     end
 end
 
@@ -213,7 +216,7 @@ function var.onload()
     cfg.init("Define",'on',nil,"db.core","Defines the substitution character(&) and turns substitution on and off.",'on,off')
     env.set_command(nil,{"Accept","Acc"},'Assign user-input value into a existing variable. Usage: accept <var> [[prompt] <prompt_text>|@<file>]',var.accept_input,false,3)
     env.set_command(nil,{"variable","VAR"},var.helper,var.setOutput,false,4)
-    env.set_command(nil,{"Define","DEF"},"Define input variables, Usage: def <name>=<value> [description], or def <name> to remove definition",var.setInput,false,4)
+    env.set_command(nil,{"Define","DEF"},"Define input variables, Usage: def <name>=<value> [description], or def <name> to remove definition",var.setInput,false,3)
     env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables.Usage: print <variable|-a>',var.print,false,3)
     env.set_command(nil,"Save","Save variable value into a specific file under folder 'cache'. Usage: save <variable> <file name>",var.save,false,3);
 end

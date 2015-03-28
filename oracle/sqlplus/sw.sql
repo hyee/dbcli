@@ -1,4 +1,5 @@
---------------------------------------------------------------------------------
+
+/*[[Display current Session Wait info. Usage: sw < sid1[,sid2...] | "<SQL>" >
 --
 -- File name:   sw.sql
 -- Purpose:     Display current Session Wait info
@@ -11,7 +12,7 @@
 --              @sw "select sid from v$session where username = 'XYZ'"
 --              @sw &mysid
 --
---------------------------------------------------------------------------------
+]]*/
 
 col sw_event    head EVENT for a40 truncate
 col sw_p1transl head P1TRANSL for a42

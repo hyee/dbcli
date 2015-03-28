@@ -29,7 +29,6 @@ function snapper:fetch(cmd,pos)
 end
 
 function snapper:parse(name,args) 
-
     local txt
     txt,args=self:get_script(name,args)
     txt=loadstring(('return '..txt):gsub(self.comment,"",1))

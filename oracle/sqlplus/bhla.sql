@@ -1,9 +1,5 @@
---------------------------------------------------------------------------------
---
--- File name:   bhla.sql (Buffer Headers by Latch Address)
--- Purpose:     Report which blocks are in buffer cache, protected by a cache
---              buffers chains child latch
---
+
+/*[[Report which blocks are in buffer cache, protected by a cache buffers chains child latch. Usage: bhla <child latch address>
 -- Author:      Tanel Poder
 -- Copyright:   (c) http://www.tanelpoder.com
 --              
@@ -15,7 +11,7 @@
 --              chains child latch, their corresponding segment names and
 --              touch counts (TCH).
 --
---------------------------------------------------------------------------------
+]]*/
 
 col bhla_object head object for a40 truncate
 col bhla_DBA head DBA for a20
