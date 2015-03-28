@@ -20,8 +20,6 @@ for /r %%i in (*.pack.gz) do (
   unpack200 -q -r "%%i" "!str:~0,-8!"
 )
 
-rem set other_lib=; -Djline.internal.Log.debug=true
-
 start /b /wait java -noverify -Xmx256M -cp .\lib\*%OTHER_LIB% ^
      -XX:-UseAdaptiveSizePolicy -XX:+UseParallelGC ^
      -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Dclient.encoding.override=UTF-8 ^
