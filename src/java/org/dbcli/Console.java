@@ -18,7 +18,7 @@ public class Console extends ConsoleReader {
     private History his;
     private ScheduledFuture task;
     private EventReader monitor = new EventReader();
-    private ScheduledExecutorService executor = Executors.newScheduledThreadPool(1);
+    protected ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(3);
     private NonBlockingInputStream in;
     private ActionListener event;
     private char[] keys;
@@ -53,7 +53,7 @@ public class Console extends ConsoleReader {
         }
         if (this.event != null && this.keys!=null) {
             this.monitor.counter=0;
-            this.task = this.executor.scheduleWithFixedDelay(this.monitor, 1000, 200, TimeUnit.MILLISECONDS);
+            this.task = this.threadPool.scheduleWithFixedDelay(this.monitor, 1000, 200, TimeUnit.MILLISECONDS);
         }
     }
 

@@ -13,8 +13,6 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.sql.CallableStatement;
 import java.sql.ResultSet;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 
@@ -22,14 +20,14 @@ public class Loader {
     public static Boolean ReloadNextTime = true;
     static LuaState lua;
     static PrintWriter printer;
-    static Console reader;
+    static Console console;
     static String root = "";
     static String libPath;
     KeyMap keyMap;
     KeyListner q;
     private CallableStatement stmt = null;
     private Future sleeper;
-    ExecutorService executor = Executors.newFixedThreadPool(1);
+    private Sleeper runner=new Sleeper();
 
     public Loader() {
         try {
@@ -41,11 +39,10 @@ public class Loader {
             libPath += (bit.equals("64") ? "x64" : "x86");
             addLibrary(libPath, true);
             System.setProperty("library.jansi.path", libPath);
-
-            reader = new Console();
-            printer = new PrintWriter(reader.getOutput());
+            console = new Console();
+            printer = new PrintWriter(console.getOutput());
             //Ctrl+D
-            keyMap =reader.getKeys();
+            keyMap =console.getKeys();
             keyMap.bind(String.valueOf(KeyMap.CTRL_D), new KeyListner(KeyMap.CTRL_D));
             q=new KeyListner('q');
 
@@ -60,7 +57,7 @@ public class Loader {
         lua.pushJavaObject(l);
         lua.setGlobal("loader");
         if (printer != null) {
-            lua.pushJavaObject(reader);
+            lua.pushJavaObject(console);
             lua.setGlobal("reader");
             lua.pushJavaObject(printer);
             lua.setGlobal("writer");
@@ -192,19 +189,20 @@ public class Loader {
 
     public void setStatement(CallableStatement p) {
         this.stmt = p;
-        reader.setEvents(p == null ? null : q, new char[]{'q', KeyMap.CTRL_D});
+        console.setEvents(p == null ? null : q, new char[]{'q', KeyMap.CTRL_D});
     }
 
     public void sleep(int millSeconds) throws Exception {
         try {
-            sleeper = executor.submit(new Sleeper(millSeconds));
-            reader.setEvents(q,new char[]{'q',KeyMap.CTRL_D});
+            runner.setSleep(millSeconds);
+            sleeper = console.threadPool.submit(runner);
+            console.setEvents(q, new char[]{'q', KeyMap.CTRL_D});
             sleeper.get();
         } catch (Exception e) {
             throw new IOException("Statement is aborted.");
         } finally {
             sleeper = null;
-            reader.setEvents(null,null);
+            console.setEvents(null, null);
         }
     }
 
@@ -215,7 +213,7 @@ public class Loader {
         public void actionPerformed(ActionEvent e) {
             try {
                 if(e!=null) key=e.getActionCommand().charAt(0);
-                if (!reader.isRunning()&&key!='q') {
+                if (!console.isRunning()&&key!='q') {
                     lua.getGlobal("TRIGGER_ABORT");
                     lua.call(0, 0);
                 } else if (stmt != null) {
@@ -232,7 +230,7 @@ public class Loader {
 
     private class Sleeper implements Runnable {
         private int timer = 0;
-        public Sleeper(int t) {
+        public void setSleep(int t) {
             timer = t;
         }
         public void run() {
