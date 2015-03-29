@@ -196,7 +196,7 @@ function helper.get_sub_help(cmd,cmdlist,main_help,search_key)
                         local flag=1
                         if v.path and v.path:lower():find(env.WORK_DIR:lower(),1,true) then
                             local _,degree=v.path:sub(env.WORK_DIR:len()+1):gsub('[\\/]+','')
-                            if degree>2 then flag=0 end
+                            if degree>3 then flag=0 end
                         end
 
                         if flag==1 then

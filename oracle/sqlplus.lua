@@ -6,7 +6,7 @@ local sqlplus=env.class(env.scripter)
 function sqlplus:ctor()
     self.db=env.oracle
     self.command="sp"
-    self.help_title='Run SQL script under the "sql" directory. '
+    self.help_title='Run SQL*Plus script under the "sqlplus" directory. '
     self.script_dir,self.extend_dirs=env.WORK_DIR.."oracle"..env.PATH_DEL.."sqlplus",{}
 end
 
