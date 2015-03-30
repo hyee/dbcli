@@ -316,8 +316,8 @@ function env.exec_command(cmd,params)
             elseif #res[2]>0 then
                 print(env.ansi.mask("HIR",res[2]))
             end
-
-            if coroutine.running() then pcall(coroutine.yield) end
+            local thread,isMain=coroutine.running()    
+            if thread and not isMain then pcall(coroutine.yield) end
         elseif not result then
             result=res       
         end

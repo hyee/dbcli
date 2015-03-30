@@ -12,7 +12,7 @@ cd /d "%~dp0"
 cd ..
 mkdir "%target%"
 cd /d "%target%"
-git pull
+REM git pull
 del /s /f "%target%\*.lua"
 del /s /f "%target%\*.jar"
 del /s /f "%target%\*.zip"

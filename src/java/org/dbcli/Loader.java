@@ -191,7 +191,7 @@ public class Loader {
     public synchronized boolean setStatement(CallableStatement p) throws Exception {
         try {
             this.stmt = p;
-            console.setEvents(p == null ? null : q, new char[]{'q', KeyMap.CTRL_D});
+            console.setEvents(p == null ? null : q, new char[]{'q','Q', KeyMap.CTRL_D});
             return this.stmt == null ? false : this.stmt.execute();
         } catch (Exception e) {
             throw e;
@@ -217,7 +217,6 @@ public class Loader {
 
     private class KeyListner implements ActionListener {
         int key;
-
         public KeyListner(int k) {
             this.key = k;
         }
@@ -226,7 +225,7 @@ public class Loader {
         public void actionPerformed(ActionEvent e) {
             try {
                 if (e != null) key = e.getActionCommand().charAt(0);
-                if (!console.isRunning() && key != 'q') {
+                if (!console.isRunning() && key != 'q' && key != 'Q') {
                     lua.getGlobal("TRIGGER_ABORT");
                     lua.call(0, 0);
                 } else if (stmt != null) {
