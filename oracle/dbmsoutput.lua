@@ -11,12 +11,8 @@ function output.setOutput(db)
     pcall(function() (db or default_db):internal_call(stmt) end)
 end
 
-
-function output.getOutput(db,sql)
-    local isOutput=cfg.get("ServerOutput")
-    local stmt=[[    
-        DECLARE
-            /*INTERNAL_DBCLI_CMD*/
+output.stmt=[[    
+        DECLARE/*INTERNAL_DBCLI_CMD*/
             l_line   VARCHAR2(32767);
             l_done   PLS_INTEGER := 32767;
             l_buffer VARCHAR2(32767);
@@ -43,9 +39,12 @@ function output.getOutput(db,sql)
             :txn := dbms_transaction.local_transaction_id;
             :lob := l_lob;
         END;]]
-    if not db:is_internal_call(sql) then
+
+function output.getOutput(db,sql)
+    local isOutput=cfg.get("ServerOutput")
+    if sql~=output.stmt and not db:is_internal_call(sql) then
         local args={enable=isOutput,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB"}
-        if not pcall(db.internal_call,db,stmt,args) then return end  
+        if not pcall(db.internal_call,db,output.stmt,args) then return end  
         local result=args.lob or args.buff
         if isOutput == "on" and result and result:match("[^\n%s]+") then
             result=result:gsub("[\n\r]","\n")
@@ -61,11 +60,15 @@ end
 
 
 function output.get_error_output(info)
-    output.getOutput(info.db,info.sql)
+    if info.sql==output.stmt then
+        info.sql=nil
+    elseif info.db:is_connect() then
+        output.getOutput(info.db,info.sql)
+    end
     return info
 end
 
-snoop("ON_SQL_ERROR",output.get_error_output,nil,99)
+snoop("ON_SQL_ERROR",output.get_error_output,nil,40)
 snoop("AFTER_ORACLE_CONNECT",output.setOutput)
 snoop("AFTER_ORACLE_EXEC",output.getOutput,nil,1)
 

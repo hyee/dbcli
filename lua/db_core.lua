@@ -299,7 +299,6 @@ end
 
 function db_core:check_sql_method(event_name,sql,method,...)
     local res,obj=pcall(method,...)
-    loader:setStatement(nil)
     if res==false then
         local info={db=self,sql=sql,error=tostring(obj):gsub('[%s\t\n\r]+$','')}
         info.error=info.error:gsub('.*Exception:?%s*','')
@@ -454,8 +453,8 @@ function db_core:exec(sql,args)
     prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
     self.current_stmt=prep
     --reader:setRunning(true)
-    loader:setStatement(prep)
-    local is_query=self:check_sql_method('ON_SQL_ERROR',sql,prep.execute,prep)
+    --loader:setStatement(prep)
+    local is_query=self:check_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
     self.current_stmt=nil
     --is_query=prep:execute()    
     for k,v in pairs(params) do
@@ -508,7 +507,7 @@ end
 
 function db_core:is_internal_call(sql)
     if self.internal_exec then return true end
-    return sql and sql:find("/%*INTERNAL_DBCLI_CMD%*/",1,true) and true or false 
+    return sql and sql:find("INTERNAL_DBCLI_CMD",1,true) and true or false 
 end
 
 function db_core:print_result(rs)

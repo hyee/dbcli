@@ -42,7 +42,9 @@ public class Console extends ConsoleReader {
         }
     }
 
-    public Boolean isRunning() {return this.task!=null;}
+    public Boolean isRunning() {
+        return this.task != null;
+    }
 
     public synchronized void setEvents(ActionListener event, char[] keys) {
         this.event = event;
@@ -51,8 +53,8 @@ public class Console extends ConsoleReader {
             this.task.cancel(true);
             this.task = null;
         }
-        if (this.event != null && this.keys!=null) {
-            this.monitor.counter=0;
+        if (this.event != null && this.keys != null) {
+            this.monitor.counter = 0;
             this.task = this.threadPool.scheduleWithFixedDelay(this.monitor, 1000, 200, TimeUnit.MILLISECONDS);
         }
     }
@@ -72,7 +74,8 @@ public class Console extends ConsoleReader {
     }
 
     class EventReader implements Runnable {
-        public int counter=0;
+        public int counter = 0;
+
         public void run() {
             try {
                 int ch = in.read(1L);

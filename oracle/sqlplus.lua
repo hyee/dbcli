@@ -58,7 +58,7 @@ function sqlplus:before_exec(cmd,arg)
     
     local content=[[SET FEED OFF SERVEROUTPUT ON SIZE 1000000 TRIMSPOOL ON LONG 5000 LINESIZE 900 PAGESIZE 9999
                     ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';
-                    SET FEED ON ECHO OFF
+                    SET FEED ON ECHO OFF VERIFY OFF
                     DEF _WORK_DIR_="%s"
                     DEF _FILE_DIR_="%s"
                     DEF _SQLPLUS_DIR_="%s"

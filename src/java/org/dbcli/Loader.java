@@ -4,6 +4,7 @@ import com.naef.jnlua.LuaState;
 import com.opencsv.CSVWriter;
 import com.opencsv.SQLWriter;
 import jline.console.KeyMap;
+
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
@@ -27,7 +28,7 @@ public class Loader {
     KeyListner q;
     private CallableStatement stmt = null;
     private Future sleeper;
-    private Sleeper runner=new Sleeper();
+    private Sleeper runner = new Sleeper();
 
     public Loader() {
         try {
@@ -42,9 +43,9 @@ public class Loader {
             console = new Console();
             printer = new PrintWriter(console.getOutput());
             //Ctrl+D
-            keyMap =console.getKeys();
+            keyMap = console.getKeys();
             keyMap.bind(String.valueOf(KeyMap.CTRL_D), new KeyListner(KeyMap.CTRL_D));
-            q=new KeyListner('q');
+            q = new KeyListner('q');
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -187,12 +188,20 @@ public class Loader {
         }
     }
 
-    public void setStatement(CallableStatement p) {
-        this.stmt = p;
-        console.setEvents(p == null ? null : q, new char[]{'q', KeyMap.CTRL_D});
+    public synchronized boolean setStatement(CallableStatement p) throws Exception {
+        try {
+            this.stmt = p;
+            console.setEvents(p == null ? null : q, new char[]{'q', KeyMap.CTRL_D});
+            return this.stmt == null ? false : this.stmt.execute();
+        } catch (Exception e) {
+            throw e;
+        } finally {
+            this.stmt = null;
+            console.setEvents(null, null);
+        }
     }
 
-    public void sleep(int millSeconds) throws Exception {
+    public synchronized void sleep(int millSeconds) throws Exception {
         try {
             runner.setSleep(millSeconds);
             sleeper = console.threadPool.submit(runner);
@@ -208,18 +217,22 @@ public class Loader {
 
     private class KeyListner implements ActionListener {
         int key;
-        public KeyListner(int k) {this.key=k;}
+
+        public KeyListner(int k) {
+            this.key = k;
+        }
+
         @Override
         public void actionPerformed(ActionEvent e) {
             try {
-                if(e!=null) key=e.getActionCommand().charAt(0);
-                if (!console.isRunning()&&key!='q') {
+                if (e != null) key = e.getActionCommand().charAt(0);
+                if (!console.isRunning() && key != 'q') {
                     lua.getGlobal("TRIGGER_ABORT");
                     lua.call(0, 0);
                 } else if (stmt != null) {
-                    stmt.cancel();
+                    if (stmt != null && !stmt.isClosed()) stmt.cancel();
                 }
-                if (sleeper != null) synchronized(sleeper){
+                if (sleeper != null) synchronized (sleeper) {
                     sleeper.cancel(true);
                 }
             } catch (Exception err) {
@@ -230,9 +243,11 @@ public class Loader {
 
     private class Sleeper implements Runnable {
         private int timer = 0;
+
         public void setSleep(int t) {
             timer = t;
         }
+
         public void run() {
             try {
                 synchronized (this) {
