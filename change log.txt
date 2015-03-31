@@ -1,4 +1,5 @@
-2015-03-28: * oracle: partial fix on 'sp sqld'
+2015-03-28: * oracle: sp scripts: parameters _WORK_DIR_/_FILE_DIR_/_SQLPLUS_DIR_/FILE_OUTPUT_DIR
+2015-03-28: ! oracle: sync edb360, and partial fix on 'sp sqld'
 2015-03-28: ! public: minor fixes on public modules
 2015-03-28: * oracle: update on 'ora sqlslope' 
 2015-03-28: + oracle: include edb360,sqld360 and sqlhc
