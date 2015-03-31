@@ -89,6 +89,7 @@ SPO OFF;
 @@&&skip_diagnostics.&&skip_10g.&&edb360_4g.io_waits_top.sql
 @@&&edb360_4h.parallel_execution.sql
 @@&&skip_diagnostics.&&edb360_4i.sysmetric_history.sql
+@@&&skip_diagnostics.&&edb360_4j.sysmetric_summary.sql
 
 PRO ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -103,6 +104,7 @@ SPO OFF;
 @@&&skip_diagnostics.&&edb360_5a.ash.sql
 @@&&skip_diagnostics.&&edb360_5b.ash_wait.sql
 @@&&skip_diagnostics.&&edb360_5c.ash_top.sql
+@@&&skip_diagnostics.&&edb360_5d.sysstat.sql
 
 PRO ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

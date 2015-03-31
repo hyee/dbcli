@@ -6,8 +6,8 @@ SET ECHO OFF;
 SET TIM OFF;
 SET TIMI OFF;
 CL COL;
-DEF edb360_vYYNN = 'v1509';
-DEF edb360_vrsn = '&&edb360_vYYNN. (2015-03-25)';
+DEF edb360_vYYNN = 'v1510';
+DEF edb360_vrsn = '&&edb360_vYYNN. (2015-03-30)';
 
 -- parameters
 PRO
@@ -123,9 +123,11 @@ COL edb360_4f NEW_V edb360_4f;
 COL edb360_4g NEW_V edb360_4g;
 COL edb360_4h NEW_V edb360_4h;
 COL edb360_4i NEW_V edb360_4i;
+COL edb360_4j NEW_V edb360_4j;
 COL edb360_5a NEW_V edb360_5a;
 COL edb360_5b NEW_V edb360_5b;
 COL edb360_5c NEW_V edb360_5c;
+COL edb360_5d NEW_V edb360_5d;
 COL edb360_6a NEW_V edb360_6a;
 COL edb360_6b NEW_V edb360_6b;
 COL edb360_6c NEW_V edb360_6c;
@@ -164,9 +166,11 @@ SELECT CASE WHEN '4f' BETWEEN :edb360_sec_from AND :edb360_sec_to THEN 'edb360_4
 SELECT CASE WHEN '4g' BETWEEN :edb360_sec_from AND :edb360_sec_to THEN 'edb360_4g_' ELSE '--' END edb360_4g FROM DUAL;
 SELECT CASE WHEN '4h' BETWEEN :edb360_sec_from AND :edb360_sec_to THEN 'edb360_4h_' ELSE '--' END edb360_4h FROM DUAL;
 SELECT CASE WHEN '4i' BETWEEN :edb360_sec_from AND :edb360_sec_to THEN 'edb360_4i_' ELSE '--' END edb360_4i FROM DUAL;
+SELECT CASE WHEN '4j' BETWEEN :edb360_sec_from AND :edb360_sec_to THEN 'edb360_4j_' ELSE '--' END edb360_4j FROM DUAL;
 SELECT CASE WHEN '5a' BETWEEN :edb360_sec_from AND :edb360_sec_to THEN 'edb360_5a_' ELSE '--' END edb360_5a FROM DUAL;
 SELECT CASE WHEN '5b' BETWEEN :edb360_sec_from AND :edb360_sec_to THEN 'edb360_5b_' ELSE '--' END edb360_5b FROM DUAL;
 SELECT CASE WHEN '5c' BETWEEN :edb360_sec_from AND :edb360_sec_to THEN 'edb360_5c_' ELSE '--' END edb360_5c FROM DUAL;
+SELECT CASE WHEN '5d' BETWEEN :edb360_sec_from AND :edb360_sec_to THEN 'edb360_5d_' ELSE '--' END edb360_5d FROM DUAL;
 SELECT CASE WHEN '6a' BETWEEN :edb360_sec_from AND :edb360_sec_to THEN 'edb360_6a_' ELSE '--' END edb360_6a FROM DUAL;
 SELECT CASE WHEN '6b' BETWEEN :edb360_sec_from AND :edb360_sec_to THEN 'edb360_6b_' ELSE '--' END edb360_6b FROM DUAL;
 SELECT CASE WHEN '6c' BETWEEN :edb360_sec_from AND :edb360_sec_to THEN 'edb360_6c_' ELSE '--' END edb360_6c FROM DUAL;
@@ -456,6 +460,8 @@ ALTER SESSION SET NLS_TIMESTAMP_TZ_FORMAT = 'YYYY-MM-DD/HH24:MI:SS.FF TZH:TZM';
 -- adding to prevent slow access to ASH with non default NLS settings
 ALTER SESSION SET NLS_SORT = 'BINARY';
 ALTER SESSION SET NLS_COMP = 'BINARY';
+-- to work around bug 12672969
+ALTER SESSION SET "_optimizer_order_by_elimination_enabled"=false; 
 -- workaround Siebel
 ALTER SESSION SET optimizer_index_cost_adj = 100;
 ALTER SESSION SET optimizer_dynamic_sampling = 2;

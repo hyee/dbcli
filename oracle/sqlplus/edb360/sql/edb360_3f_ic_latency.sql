@@ -51,7 +51,7 @@ SELECT /*+ &&sq_fact_hints. */
        ROUND(SUM(wait_500b) / SUM(cnt_500b) / 1000, 2) Avg_Latency_500B_msg,
        ROUND(SUM(wait_8k) / SUM(cnt_8k) / 1000, 2) Avg_Latency_8K_msg
   FROM interconnect_pings
- WHERE startup_time_interval = TO_DSINTERVAL(''+00 00:00:00.000000'') -- include only contiguous snaps
+ WHERE startup_time_interval = TO_DSINTERVAL(''+00 00:00:00.000000'') -- include only snaps from same startup
    AND cnt_500b > 0
    AND cnt_8k > 0 
    AND wait_500b > 0
@@ -247,7 +247,8 @@ SELECT /*+ &&sq_fact_hints. */
        end_time,
        target_instance
 )
-SELECT snap_id,
+SELECT /*+ &&top_level_hints. */
+       snap_id,
        TO_CHAR(end_time - (1/24), ''YYYY-MM-DD HH24:MI'') begin_time,
        TO_CHAR(end_time, ''YYYY-MM-DD HH24:MI'') end_time,
        c_Avg_Latency_@msg@_msg cluster_avg,

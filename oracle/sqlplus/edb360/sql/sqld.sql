@@ -16,8 +16,9 @@
         space. 
     Refer to https://github.com/mauropagano/sqld360 for more detail
     --[[
-        &V2 : default={T}
-        &V3 : default={31}
+        &V2              : default={T}
+        &V3              : default={31}
+        &FILE_OUTPUT_DIR : default={sqld360}
     --]]
 ]]*/
 HOS mkdir js 

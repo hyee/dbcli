@@ -41,7 +41,7 @@ SELECT /*+ &&sq_fact_hints. */
        ROUND(SUM(bytes_received) / POWER(2,20) / 3600, 2) mbps_received,
        ROUND(SUM(bytes_sent) / POWER(2,20) / 3600, 2) mbps_sent
   FROM ic_client_stats
-  WHERE startup_time_interval = TO_DSINTERVAL(''+00 00:00:00.000000'') -- include only contiguous snaps
+  WHERE startup_time_interval = TO_DSINTERVAL(''+00 00:00:00.000000'') -- include only snaps from same startup
     AND bytes_received >= 0
     AND bytes_sent >= 0
  GROUP BY
@@ -49,7 +49,8 @@ SELECT /*+ &&sq_fact_hints. */
        instance_number,
        TRUNC(end_interval_time, ''HH'')
 )
-SELECT snap_id,
+SELECT /*+ &&top_level_hints. */
+       snap_id,
        TO_CHAR(end_time - (1/24), ''YYYY-MM-DD HH24:MI'') begin_time,
        TO_CHAR(end_time, ''YYYY-MM-DD HH24:MI'') end_time,
        SUM(mbps_sent) + SUM(mbps_received) mbps_total,
@@ -212,7 +213,7 @@ SELECT /*+ &&sq_fact_hints. */
        SUM(send_buf_or) send_buf_or,
        SUM(send_carrier_lost) send_carrier_lost
   FROM ic_device_stats
-  WHERE startup_time_interval = TO_DSINTERVAL(''+00 00:00:00.000000'') -- include only contiguous snaps
+  WHERE startup_time_interval = TO_DSINTERVAL(''+00 00:00:00.000000'') -- include only snaps from same startup
     AND bytes_received >= 0
     AND packets_received >= 0
     AND receive_errors >= 0
@@ -252,7 +253,8 @@ SELECT /*+ &&sq_fact_hints. */
        snap_id,
        end_time
 )
-SELECT snap_id
+SELECT /*+ &&top_level_hints. */
+       snap_id
        ,TO_CHAR(end_time - (1/24), ''YYYY-MM-DD HH24:MI'') begin_time
        ,TO_CHAR(end_time, ''YYYY-MM-DD HH24:MI'') end_time
        #column01#

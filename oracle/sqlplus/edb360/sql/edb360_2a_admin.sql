@@ -6,6 +6,50 @@ SPO &&edb360_main_report..html APP;
 PRO <h2>&&section_name.</h2>
 SPO OFF;
 
+DEF title = 'Sessions Aggregate';
+DEF main_table = 'GV$SESSION';
+DEF foot = 'Content of &&main_table. is very dynamic. This report just tells state at the time when edb360 was executed.';
+BEGIN
+  :sql_text := '
+SELECT COUNT(*),
+       inst_id,
+       server,
+       status,
+       state,
+       failover_type,
+       failover_method,
+       blocking_session_status
+  FROM gv$session
+ GROUP BY
+       inst_id,
+       server,
+       status,
+       state,
+       failover_type,
+       failover_method,
+       blocking_session_status
+ ORDER BY
+       1 DESC, 2, 3, 4, 5, 6, 7, 8
+';
+END;
+/
+@@edb360_9a_pre_one.sql
+
+DEF title = 'Sessions List';
+DEF main_table = 'GV$SESSION';
+DEF foot = 'Content of &&main_table. is very dynamic. This report just tells state at the time when edb360 was executed.';
+BEGIN
+  :sql_text := '
+SELECT *
+  FROM gv$session
+ ORDER BY
+       inst_id,
+       sid
+';
+END;
+/
+@@edb360_9a_pre_one.sql
+
 DEF title = 'Latches';
 DEF main_table = 'GV$LATCH';
 BEGIN

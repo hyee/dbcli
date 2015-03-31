@@ -39,7 +39,8 @@
        default "working hours" between 7:30AM and 7:30PM; or suppress an output format such as
        text or csv; modify then file edb360_00_config.sql (back it up first).
     --[[
-        &V1: default={T}
+        &V1              : default={T}
+        &FILE_OUTPUT_DIR : default={edb360}
     --]]
 ]]*/
 

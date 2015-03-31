@@ -74,8 +74,13 @@ function sqlplus:before_exec(cmd,arg)
     for k,v in pairs(args) do 
         if v~="" then context=context..'DEF '..k..'='..v..'\n' end
     end
-    
+
     self.work_path=env.WORK_DIR.."cache"
+    local subdir=args.FILE_OUTPUT_DIR
+    if subdir then
+        self.work_path=self.work_path..env.PATH_DEL..subdir or ""
+        os.execute('mkdir "'..self.work_path..'" >nul')
+    end
     local file_dir=file:gsub('[\\/][^\\/]+$',"")
     local tmpfile='sqlplus.tmp'
     tmpfile=self.work_path..env.PATH_DEL..tmpfile

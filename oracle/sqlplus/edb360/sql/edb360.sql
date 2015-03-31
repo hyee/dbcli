@@ -17,7 +17,6 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 *****************************************************************************************/
-
 @@edb360_0a_main.sql
 -- esp_requirements is already on main zip. commands below are just to cleanup (remove from file system) the esp files when edb360 is executed on just one database
 HOS zip -qmT esp_requirements_&&esp_host_name_short..zip res_requirements_&&rr_host_name_short..txt esp_requirements_&&esp_host_name_short..csv cpuinfo_model_name.txt 
