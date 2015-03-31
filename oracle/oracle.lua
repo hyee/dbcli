@@ -108,7 +108,7 @@ function oracle:connect(conn_str)
     
     self.props.service_name=args[3]
 
-    prompt=(prompt or self.props.service_name):match("^([^,%.]+)") 
+    prompt=(prompt or self.props.service_name):match("^([^,%.&]+)") 
     env.set_prompt(nil,prompt)
     self.session_title=('%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)'):format(prompt:upper(),params[5],params[1],params[4],params[2])
     env.set_title(self.session_title)

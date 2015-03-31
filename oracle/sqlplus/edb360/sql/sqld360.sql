@@ -90,5 +90,9 @@ END;
 /
 SPO OFF 
 SET DEF ON TERM ON
-@sqld360_driver.sql
+--@sqld360_driver.sql
 HOS rm sqld360_driver.sql
+DEF skip_tcb=''
+DEF from_edb360=''
+@@sqld360_0a_main.sql
+HOS unzip -l &&sqld360_main_filename._&&sqld360_file_time.
