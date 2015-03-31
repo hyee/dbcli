@@ -263,7 +263,6 @@ function scripter:run_sql(sql,args,print_args)
     local cmds=env._CMDS
     
     cfg_backup=cfg.backup()
-    cfg.set("HISSIZE",0)
     env.var.import_context(args)
     local eval=env.eval_line
     for line in sql:gsplit("[\n\r]+") do

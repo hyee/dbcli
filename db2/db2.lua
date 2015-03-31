@@ -29,7 +29,7 @@ function db2:connect(conn_str)
         args=conn_str
         usr,pwd,conn_desc=conn_str.user,
             packer.unpack_str(conn_str.password),
-            (conn_str.jdbc_alias or conn_str.url:match("//(.*)$"))--..(conn_str.internal_logon and " as "..conn_str.internal_logon or "")
+            conn_str.url:match("//(.*)$")--..(conn_str.internal_logon and " as "..conn_str.internal_logon or "")
         args.password=pwd
         conn_str=string.format("%s/%s@%s",usr,pwd,conn_desc)        
     else
@@ -74,8 +74,7 @@ function db2:connect(conn_str)
     
     self.conn=java.cast(self.conn,"com.ibm.db2.jcc.DB2Connection")
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    local db_info=self:get_value("select service_level,inst_name,host_name FROM TABLE(sysproc.env_get_inst_info()),TABLE(ENV_GET_SYS_INFO())")
-    local version,instance,host_name=table.unpack(db_info)
+    local version=self:get_value("select SERVICE_LEVEL FROM TABLE(sysproc.env_get_inst_info())")
     self.props.db_version=version:gsub('DB2',''):match('([%d%.]+)')
     self.props.db_user=args.user:upper()
     self.conn_str=packer.pack_str(conn_str)
@@ -83,7 +82,7 @@ function db2:connect(conn_str)
     database=database:upper()
     env.set_prompt(nil,database)
     
-    env.set_title(('%s - User: %s   Instance: %s   Server: %s   Version: DB2(%s)'):format(database,self.props.db_user,instance,host_name,self.props.db_version))
+    env.set_title(('%s - User: %s   Server: %s   Version: DB2(%s)'):format(database,self.props.db_user,server,self.props.db_version))
     if event then event("AFTER_DB2_CONNECT",self,sql,args,result) end
     print("Database connected.")
 end
@@ -154,16 +153,15 @@ function db2:onload()
     end
 
     add_default_sql_stmt('update','delete','insert','merge','truncate','drop')
-    add_default_sql_stmt('explain','lock','analyze','grant','revoke','call') 
+    add_default_sql_stmt('explain','lock','analyze','grant','revoke','call','select','with') 
 
 
     set_command(self,{"connect",'conn'},  'Connect to db2 database. Usage: conn <user>/<password>@[//]<host>[:<port>][^<alt_purescale_hosts>[:<alt_purescale_ports>]]/<database>',self.connect,false,2)
     set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
-    set_command(self,{"select","with"},  default_desc, self.command_call     ,true,1,true)
     set_command(self,{"declare","begin"}, default_desc,  self.command_call  ,self.check_completion,1,true)
     set_command(self,"create",   default_desc,  self.command_call      ,self.check_completion,1,true)
     set_command(self,"alter" ,   default_desc,  self.command_call      ,self.check_completion,1,true)
-    for _,k in ipairs{'describe','add','AUTOCONFIGURE','BACKUP','LOAD','IMPORT','EXPORT','FORCE','QUIESCE','PRUNE',
+    for _,k in ipairs{'DESCRIBE','add','AUTOCONFIGURE','BACKUP','LOAD','IMPORT','EXPORT','FORCE','QUIESCE','PRUNE',
                       'REDISTRIBUTE','RUNSTATS','UNQUIESCE','REWIND','RESET'} do
         set_command(self,k, default_desc,self.admin_cmd,true,1,true)
     end

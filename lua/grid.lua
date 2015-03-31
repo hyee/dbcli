@@ -262,7 +262,6 @@ function grid:add(rs)
     local cnt=0
     --run statement
     for k,v in ipairs(rs) do
-
         if k>grid.maxcol then break end
         local csize =0
         if not colsize[k] then colsize[k] = {0,1} end
@@ -276,7 +275,14 @@ function grid:add(rs)
             csize = #v
         else
             if headind==0 then
-                v=v:gsub("([^|])|([^|])","%1\n%2")
+                v=v:gsub("([^|]+)|([^|]+)",function(a,b)
+                    a,b=a:trim(' '),b:trim(' ')
+                    local len1,len2=a:len(),b:len()
+                    local max_len=math.max(len1,len2)
+                    return ('%s%s\n%s%s'):format(
+                        string.rep(' ',math.ceil((max_len-len1)/2)),a,
+                        string.rep(' ',math.ceil((max_len-len2)/2)),b)
+                end)
             end
             if grid.col_wrap>0 and not v:find("\n") and #v>grid.col_wrap then
                 local v1={}
@@ -319,6 +325,7 @@ function grid:add(rs)
     else
         for i=1,lines,1 do
             local r=table.new(#rs,2)
+            r[0]=rs[0]
             for k,v in ipairs(rs) do
                 r[k]= (type(v) == "table" and (v[i] or "")) or (i==1 and v or "")
             end

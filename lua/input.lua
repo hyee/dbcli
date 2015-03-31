@@ -1,9 +1,9 @@
 local string,io,table=string,io,table
 local dir=debug.getinfo(1).short_src:gsub('%w+%.lua','?.lua')
 package.path=dir
-io.stdout:write("    ------------------------------------------------------------------------------------------------------------------------------------\n")
-io.stdout:write("    | DBCLI, type 'conn' to connect to db, or help' for more information. (c)2014-2015 hyee, MIT license(https://github.com/hyee/dbcli)|\n")
-io.stdout:write("    ====================================================================================================================================\n\n")
+io.stdout:write("    --------------------------------------------------------------------------------------------------------------------------------------\n")
+io.stdout:write("    | DBCLI, type 'conn' to connect to db, or 'help' for more information. (c)2014-2015 hyee, MIT license (https://github.com/hyee/dbcli)|\n")
+io.stdout:write("    ======================================================================================================================================\n\n")
 
 local env=require("env")
 env.onload(...)  
@@ -50,15 +50,11 @@ while true do
                 stack[#stack]=nil
             end
             line=table.concat(stack,'\n'..env.MTL_PROMPT)
-            if #stack <=20 then reader:setMultiplePrompt(line) end
+            if #stack <=2 and stack[2]==nil then reader:setMultiplePrompt(line) end
             stack=nil
         end
     end
-    
-    if stack==nil and event then
-        event.callback("ON_ROOT_COMMAND_COMPLETED",line)
-    end
-    
+  
     if env.PRI_PROMPT=="TIMING> " and env.CURRENT_PROMPT~=env.MTL_PROMPT then
         env.CURRENT_PROMPT=string.format('%06.2f',os.clock()-clock)..'> '
         env.MTL_PROMPT=string.rep(' ',#env.CURRENT_PROMPT)    

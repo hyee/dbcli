@@ -53,7 +53,7 @@ end
 
 function history.onload()
     cfg.init("HISSIZE",50,nil,"core","Max size of historical commands",'0 - 999')
-    event.snoop("AFTER_COMMAND",history.capture,history)
+    event.snoop("AFTER_ROOT_COMMAND",history.capture,history)
     env.set_command(history,{'history','his'},"Show/run historical commands. Usage: his [index]",history.show,false,2)
     env.set_command(history,{'r','/'},"Rerun the previous command.",history.rerun,false,2)
 end

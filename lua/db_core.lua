@@ -304,8 +304,9 @@ function db_core:check_sql_method(event_name,sql,method,...)
         info.error=info.error:gsub('.*Exception:?%s*','')
         event(event_name,info)    
         if info and info.error and info.error~="" then
-            --print(type(info.error),info.error)
-            if info.sql then print('SQL: '..info.sql:gsub("\n","\n     ")) end
+            if info.sql and info.sql:find(env.CURRENT_ROOT_CMD,1,true)~=1 then
+                print('SQL: '..info.sql:gsub("\n","\n     ")) 
+            end
             env.raise_error(info.error) 
         end
         env.raise("000-00000: ")

@@ -2,6 +2,7 @@ local env=env
 local cfg,grid={},env.grid
 local maxvalsize=20
 local file='setting.dat'
+local root_cmd
 cfg._backup=nil
 
 cfg._p=env.load_data(file)
@@ -177,6 +178,23 @@ function cfg.backup()
     return backup
 end
 
-env.set_command(nil,'SET',"Set environment parameters. Usage: set [-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]",cfg.doset,false,99)
+function cfg.capture_before_cmd(cmd,args)
+    if cmd~="SET" then
+        cfg._backup=cfg.backup()
+    else
+        cfg._backup=nil
+    end
+end
+
+function cfg.capture_after_cmd(cmd,args)
+    if cfg._backup then cfg.restore(cfg._backup) end
+    cfg._backup=nil
+end
+
+function cfg.onload()
+    event.snoop("AFTER_ROOT_COMMAND",cfg.capture_before_cmd)
+    event.snoop("BEFORE_ROOT_COMMAND",cfg.capture_after_cmd)
+    env.set_command(nil,'SET',"Set environment parameters. Usage: set [-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]",cfg.doset,false,99)
+end    
 
 return cfg

@@ -289,9 +289,17 @@ function env.exec_command(cmd,params)
 
     if not cmd.FUNC then return end
     env.CURRENT_CMD=name
+    local _,isMain=coroutine.running() 
+
     local args= cmd.OBJ and {cmd.OBJ,table.unpack(params)} or {table.unpack(params)}
     local event=env.event and env.event.callback
-    if event then event("BEFORE_COMMAND",name,params) end
+    if event then 
+        event("BEFORE_COMMAND",name,params)
+        if isMain then 
+            event("BEFORE_ROOT_COMMAND",name,params)
+            env.CURRENT_ROOT_CMD=name
+        end
+    end
     --env.trace.enable(true)
     local funs=type(cmd.FUNC)=="table" and cmd.FUNC or {cmd.FUNC}
     for _,func in ipairs(funs) do
@@ -316,14 +324,17 @@ function env.exec_command(cmd,params)
             elseif #res[2]>0 then
                 print(env.ansi.mask("HIR",res[2]))
             end
-            local thread,isMain=coroutine.running()    
-            if thread and not isMain then pcall(coroutine.yield) end
         elseif not result then
             result=res       
         end
     end
-    if result[1] and event and not env.IS_INTERNAL_EVAL then event("AFTER_COMMAND",name,params) end
-        
+    
+    if event then 
+        if not env.IS_INTERNAL_EVAL then event("AFTER_SUCCESS_COMMAND",name,params,result[1]) end
+        if isMain then event("AFTER_ROOT_COMMAND",name,params,result[1]) end
+    end
+    env.IS_INTERNAL_EVAL=false
+    if not isMain and not result[1] then error('000-00000:') end
     return table.unpack(result)
 end
 

@@ -77,6 +77,7 @@ function oracle:connect(conn_str)
         sqlplustr=string.format("%s/%s@%s%s",args.user,args.password,args.url:match("@(.*)$"),
                                             args.internal_logon and " as "..args.internal_logon or "")
     end
+    local prompt=(args.jdbc_alias or url):match('([^:/@]+)$')
     self.conn_str=packer.pack_str(sqlplustr)
     
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
@@ -106,8 +107,8 @@ function oracle:connect(conn_str)
         end;]],args)
     
     self.props.service_name=args[3]
-    local prompt=args.jdbc_alias or url
-    prompt=prompt:match("([%w_]+)$") or self.props.service_name:match("^([^,]+)") 
+
+    prompt=(prompt or self.props.service_name):match("^([^,%.]+)") 
     env.set_prompt(nil,prompt)
     self.session_title=('%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)'):format(prompt:upper(),params[5],params[1],params[4],params[2])
     env.set_title(self.session_title)

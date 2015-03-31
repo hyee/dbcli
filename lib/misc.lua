@@ -54,15 +54,7 @@ end
 
 
 function string.trim(s,sep)
-    if sep==' ' then sep=' \t\n\v\f\r' end
-    local p=p2[sep]
-    if not p then
-        local space = lpeg.S(sep)
-         local nospace = 1 - space
-         p = space^0 * lpeg.C((space^0 * nospace^1)^0)
-         p2[sep]=p
-    end
-    return p:match(s)
+    return s:match('^[ \t\n\v\f\r]*(.-)[ \t\n\v\f\r]*$')
 end
 
 local str=java.require("java.lang.String")

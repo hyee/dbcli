@@ -1,7 +1,7 @@
 /*[[
-   Lists SQL Statements with Elapsed Time per Execution changing over time. Usage: sqlslope <history_days>
+   Lists SQL Statements with Elapsed Time per Execution changing over time. Usage: sqlslope [YYMMDDHH24MI] [YYMMDDHH24MI]
    Author:      Carlos Sierra
-   Version:     2014/10/31
+   Version:     Modified version based on V2014/10/31
    Usage:       Lists statements that have changed their elapsed time per execution over
                 some history.
                 Uses the ration between "elapsed time per execution" and the median of 
@@ -17,19 +17,14 @@
                 To further investigate poorly performing SQL use sqltxplain.sql or sqlhc 
                 (or planx.sql or sqlmon.sql or sqlash.sql).
                
-   
-    --[[
-        &V1: default={31}
-    --]]
 ]]*/
 
 
-DEF days_of_history_accessed = '&V1';
 DEF captured_at_least_x_times = '10';
 DEF captured_at_least_x_days_apart='5';
 DEF med_elap_microsecs_threshold='1e4';
 DEF min_slope_threshold='0.1';
-DEF max_num_rows='20';
+DEF max_num_rows='50';
 
 PRO SQL Statements with "Elapsed Time per Execution" changing over time
 
@@ -38,6 +33,10 @@ per_time AS (
 SELECT h.dbid,
        h.sql_id,
        SYSDATE - CAST(s.end_interval_time AS DATE) days_ago,
+       to_char(wm_concat(distinct plan_hash_value)) plans,
+       min(s.begin_interval_time) min_seen,
+       max(s.end_interval_time) max_seen,
+       sum(h.executions_delta) execs,
        SUM(h.elapsed_time_total) / SUM(h.executions_total) time_per_exec
   FROM dba_hist_sqlstat h, 
        dba_hist_snapshot s
@@ -45,7 +44,7 @@ SELECT h.dbid,
    AND s.snap_id = h.snap_id
    AND s.dbid = h.dbid
    AND s.instance_number = h.instance_number
-   AND CAST(s.end_interval_time AS DATE) > SYSDATE - &&days_of_history_accessed.
+   AND CAST(s.end_interval_time AS DATE) BETWEEN NVL(TO_DATE(:V1,'YYMMDDHH24MI'),SYSDATE-31) AND NVL(TO_DATE(:V2,'YYMMDDHH24MI'),SYSDATE)
  GROUP BY
        h.dbid,
        h.sql_id,
@@ -54,6 +53,10 @@ SELECT h.dbid,
 avg_time AS (
 SELECT dbid,
        sql_id, 
+       sum(execs) execs,
+       min(min_seen) min_seen,
+       max(max_seen) max_seen,
+       max(length(plans)+1-length(replace(plans,','))) plans,
        MEDIAN(time_per_exec) med_time_per_exec,
        STDDEV(time_per_exec) std_time_per_exec,
        AVG(time_per_exec)    avg_time_per_exec,
@@ -76,7 +79,8 @@ SELECT h.dbid,
        a.std_time_per_exec,
        a.avg_time_per_exec,
        a.min_time_per_exec,
-       a.max_time_per_exec
+       a.max_time_per_exec,
+       a.execs,a.plans,a.min_seen,a.max_seen
   FROM per_time h, avg_time a
  WHERE a.sql_id = h.sql_id
 ),
@@ -90,7 +94,11 @@ SELECT RANK () OVER (ORDER BY ABS(REGR_SLOPE(t.time_per_exec_over_med, t.days_ag
        ROUND(AVG(t.std_time_per_exec)/1e6, 3) std_secs_per_exec,
        ROUND(AVG(t.avg_time_per_exec)/1e6, 3) avg_secs_per_exec,
        ROUND(MIN(t.min_time_per_exec)/1e6, 3) min_secs_per_exec,
-       ROUND(MAX(t.max_time_per_exec)/1e6, 3) max_secs_per_exec
+       ROUND(MAX(t.max_time_per_exec)/1e6, 3) max_secs_per_exec,
+       max(execs) execs,
+       max(plans) plans,
+       TO_CHAR(min(min_seen) ,'MM-DD HH24:MI') min_seen,
+       TO_CHAR(max(max_seen) ,'MM-DD HH24:MI') max_seen
   FROM time_over_median t
  GROUP BY
        t.dbid,
@@ -100,13 +108,14 @@ HAVING ABS(REGR_SLOPE(t.time_per_exec_over_med, t.days_ago)) > &&min_slope_thres
 SELECT r.sql_id,
        r.change,
        TO_CHAR(r.slope, '990.000MI') slope,
-       TO_CHAR(r.med_secs_per_exec, '999,990.000') med_secs_per_exec,
-       TO_CHAR(r.std_secs_per_exec, '999,990.000') std_secs_per_exec,
-       TO_CHAR(r.avg_secs_per_exec, '999,990.000') avg_secs_per_exec,
-       TO_CHAR(r.min_secs_per_exec, '999,990.000') min_secs_per_exec,
-       TO_CHAR(r.max_secs_per_exec, '999,990.000') max_secs_per_exec,
-       (SELECT COUNT(DISTINCT p.plan_hash_value) FROM dba_hist_sql_plan p WHERE p.dbid = r.dbid AND p.sql_id = r.sql_id) plans,
-       REPLACE((SELECT substr(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200) FROM dba_hist_sqltext s WHERE s.dbid = r.dbid AND s.sql_id = r.sql_id), CHR(10)) sql_text
+       execs,plans,
+       TO_CHAR(r.med_secs_per_exec, '999,990.0') "Median Secs|Per Exec",
+       TO_CHAR(r.std_secs_per_exec, '999,990.0') "Std Dev Secs|Per Exec",
+       TO_CHAR(r.avg_secs_per_exec, '999,990.0') "Avg Secs|Per Exec",
+       TO_CHAR(r.min_secs_per_exec, '999,990.0') "Min Secs|Per Exec",
+       TO_CHAR(r.max_secs_per_exec, '999,990.0') "Max Secs|Per Exec",
+       min_seen,max_seen,
+       REPLACE((SELECT substr(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' '),1,150) FROM dba_hist_sqltext s WHERE s.dbid = r.dbid AND s.sql_id = r.sql_id), CHR(10)) sql_text
   FROM ranked r
  WHERE r.rank_num <= &&max_num_rows
  ORDER BY

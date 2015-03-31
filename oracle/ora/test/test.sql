@@ -8,5 +8,7 @@
    --]]
 ]]*/
 
+select y from dual;
+
 PRO Matched target is '&CHECK_ACCESS'
 SELECT * FROM &CHECK_USER WHERE ROWNUM<10;

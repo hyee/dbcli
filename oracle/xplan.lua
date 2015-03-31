@@ -99,9 +99,10 @@ local function explain(fmt,sql)
                                          END
                  )
         order  by r]]
-    sql=sql:gsub('@fmt@',fmt)    
+    sql=sql:gsub('@fmt@',fmt)
+    db:rollback() 
     db:query(sql)
-    db:rollback()
+    --db:rollback()
     cfg.set("feed",feed,true)
     if e10053==true then
         db:internal_call("ALTER SESSION SET EVENTS '10053 trace name context off'")
