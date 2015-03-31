@@ -66,8 +66,9 @@ function db2:connect(conn_str)
          clientProgramName='SQL Developer',
          useCachedCursor=self.MAX_CACHE_SIZE
         },args)
+
     self:load_config(url,args)
-    
+    local prompt=(args.jdbc_alias or url):match('([^:/@]+)$')
     if event then event("BEFORE_DB2_CONNECT",self,sql,args,result) end
     env.set_title("")
     self.super.connect(self,args)    
@@ -79,8 +80,8 @@ function db2:connect(conn_str)
     self.props.db_user=args.user:upper()
     self.conn_str=packer.pack_str(conn_str)
     
-    database=database:upper()
-    env.set_prompt(nil,database)
+    prompt=(prompt or database:upper()):match("^([^,%.&]+)") 
+    env.set_prompt(nil,prompt)
     
     env.set_title(('%s - User: %s   Server: %s   Version: DB2(%s)'):format(database,self.props.db_user,server,self.props.db_version))
     if event then event("AFTER_DB2_CONNECT",self,sql,args,result) end
