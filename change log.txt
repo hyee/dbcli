@@ -1,3 +1,5 @@
+2015-03-28: ! public: fix the historical commands issue
+2015-03-28: * all   : update the help messages for some existing commands
 2015-03-28: * oracle: sp scripts: parameters _WORK_DIR_/_FILE_DIR_/_SQLPLUS_DIR_/FILE_OUTPUT_DIR
 2015-03-28: ! oracle: sync edb360, and partial fix on 'sp sqld'
 2015-03-28: ! public: minor fixes on public modules

@@ -156,8 +156,14 @@ function db2:onload()
     add_default_sql_stmt('update','delete','insert','merge','truncate','drop')
     add_default_sql_stmt('explain','lock','analyze','grant','revoke','call','select','with') 
 
-
-    set_command(self,{"connect",'conn'},  'Connect to db2 database. Usage: conn <user>/<password>@[//]<host>[:<port>][^<alt_purescale_hosts>[:<alt_purescale_ports>]]/<database>',self.connect,false,2)
+    local  conn_help = [[
+        Connect to db2 database. Usage: conn <user>/<password>@[//]<host>[:<port>][^<alt_purescale_hosts>[:<alt_purescale_ports>] ]/<database>
+        Example: 1) Connect to local  db port 50000 : conn db2admin/db2pwd@localhost/sample
+                 2) Connect to remote db port 60000 : conn db2admin/db2pwd@remote_host:60000/sample
+                 3) Connect to remote PureScale db#1: conn db2admin/db2pwd@192.168.6.1:60000^192.168.6.2,192.168.6.3/sample
+                 4) Connect to remote PureScale db#2: conn db2admin/db2pwd@192.168.6.1:60001^192.168.6.2:60002/sample
+    ]]
+    set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
     set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
     set_command(self,{"declare","begin"}, default_desc,  self.command_call  ,self.check_completion,1,true)
     set_command(self,"create",   default_desc,  self.command_call      ,self.check_completion,1,true)
