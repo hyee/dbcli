@@ -28,6 +28,7 @@ local function explain(fmt,sql)
     cfg.set("feed","off",true)
     cfg.set("printsize",9999,true)
     --db:internal_call("alter session set statistics_level=all")
+    db:rollback()
     if e10053 then db:internal_call("ALTER SESSION SET EVENTS='10053 trace name context forever, level 1'") end
     db:internal_call("Explain PLAN /*INTERNAL_DBCLI_CMD*/ FOR "..sql,args)
     sql=[[
@@ -99,8 +100,7 @@ local function explain(fmt,sql)
                                          END
                  )
         order  by r]]
-    sql=sql:gsub('@fmt@',fmt)
-    db:rollback() 
+    sql=sql:gsub('@fmt@',fmt) 
     db:query(sql)
     --db:rollback()
     cfg.set("feed",feed,true)

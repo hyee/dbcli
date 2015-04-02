@@ -1,12 +1,17 @@
-/*[[Show AWR Top SQLs for a specific period. Usage: awrtop2 [0|<inst>] [a|<sql_id>] [total|avg] [yymmddhhmi] [yymmddhhmi] [exec|ela|cpu|io|cc|fetch|rows|load|parse|read|write|mem] ]]*/
+/*[[
+    Show AWR Top SQLs for a specific period. Usage: awrtop2 [-m] [0|<inst>] [a|<sql_id>] [total|avg] [yymmddhhmi] [yymmddhhmi] [exec|ela|cpu|io|cc|fetch|rows|load|parse|read|write|mem] 
+    --[[
+        &grp: s={sql_id}, m={signature}
+    --]]
+]]*/
 WITH qry as (SELECT nvl(upper(:V1),'A') inst,
-                    nullif(lower(:V2),'a')||'%' sqid,
+                    nullif(lower(:V2),'a') sqid,
                     nvl(lower(:V3),'total') calctype,
                     to_timestamp(nvl(:V4,to_char(sysdate-7,'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
                     to_timestamp(coalesce(:V5,''||(:V4+1),to_char(sysdate,'YYMMDDHH24MI')),'YYMMDDHH24MI') ed,
                     lower(nvl(:V6,'ela')) sorttype
              FROM Dual) 
-SELECT sql_id,
+SELECT &grp,
        plan_hash,
        last_call,
        lpad(replace(to_char(exe,decode(sign(exe - 1e5),-1,'fm99990','fm0.00EEEE')),'+0'),7) execs,
@@ -25,7 +30,7 @@ SELECT sql_id,
        lpad(replace(to_char(FETCH,decode(sign(FETCH - 1e5),-1,'fm99990.09','fm0.00EEEE')),'+0'),7) FETCHS,
        lpad(replace(to_char(RWS,decode(sign(RWS - 1e5),-1,'fm99990.09','fm0.00EEEE')),'+0'),7) "ROWS",
        lpad(replace(to_char(PX,decode(sign(PX - 1e5),-1,'fm99990.09','fm0.00EEEE')),'+0'),7) PX_SVRS
-FROM   (SELECT sql_id,
+FROM   (SELECT &grp,
                plan_hash,
                to_char(lastest,'YYYYMMDDHH24') last_call,
                exe,
@@ -48,7 +53,8 @@ FROM   (SELECT sql_id,
                                                'mem', mem, 'ela', ela, 'cpu', cpu, 'io', iowait, 'plsql', plsql, 
                                                'java', java, 'read', read, 'write', write, 'fetch', fetch, 
                                                'rows', rws, 'px', px,'cc',ccwait) desc nulls last) r
-        FROM   (SELECT sql_id,
+        FROM   (SELECT --+no_expand
+                       &grp,
                        plan_hash_value plan_hash,
                        qry.sorttype,
                        MAX(begin_interval_time) lastest,
@@ -73,12 +79,13 @@ FROM   (SELECT sql_id,
                               SUM(NVL(NULLIF(executions_delta, 0),
                                       NULLIF(PARSE_CALLS_DELTA, 0))),
                               1) exe1
-                FROM   qry,dba_hist_snapshot s, Dba_Hist_Sqlstat hs
+                FROM   qry,dba_hist_snapshot s, 
+                       (select h.*, decode(force_matching_signature,0,sql_id,to_char(force_matching_signature)) signature from dba_hist_sqlstat h) hs
                 WHERE  s.snap_id = hs.snap_id
                 AND    s.instance_number = hs.instance_number
                 AND    s.dbid = hs.dbid
-                AND    hs.sql_id like qry.sqid
+                AND    (qry.sqid = &grp or qry.sqid is null)
                 AND    s.begin_interval_time between qry.st and ed
                 AND    (qry.inst in('A','0') or qry.inst= ''||s.instance_number)
-                GROUP  BY sql_id, plan_hash_value,qry.sorttype))
+                GROUP  BY &grp, plan_hash_value,qry.sorttype))
 WHERE  r <= 50

@@ -1,5 +1,5 @@
 /*[[
-   Lists SQL Statements with Elapsed Time per Execution changing over time. Usage: sqlslope [YYMMDDHH24MI] [YYMMDDHH24MI]
+   Lists SQL Statements with Elapsed Time per Execution changing over time. Usage: sqlslope [-m] [YYMMDDHH24MI] [YYMMDDHH24MI]
    Author:      Carlos Sierra
    Version:     Modified version based on V2014/10/31
    Usage:       Lists statements that have changed their elapsed time per execution over
@@ -16,6 +16,10 @@
   
                 To further investigate poorly performing SQL use sqltxplain.sql or sqlhc 
                 (or planx.sql or sqlmon.sql or sqlash.sql).
+    --[[
+        &BASE: s={sql_id}, m={signature},
+        &SIG : s={},m={signature,}
+    --]]    
                
 ]]*/
 
@@ -28,30 +32,28 @@ PRO SQL Statements with "Elapsed Time per Execution" changing over time
 WITH
 per_time AS (
 select /*+materialize*/ * from(
-    SELECT h.dbid,
-           h.sql_id,
+    SELECT max(sql_id) keep(dense_rank last order by h.snap_id) sql_id,&SIG
            grouping_id(plan_hash_value) grp,
            SYSDATE - max(s.end_interval_time+0) days_ago,
-           count(distinct nullif(plan_hash_value,0)) over(partition by sql_id) plans,
+           count(distinct nullif(plan_hash_value,0)) over(partition by &BASE) plans,
            min(s.begin_interval_time) min_seen,
            max(s.end_interval_time) max_seen,
            sum(h.executions_delta) execs,
            count(distinct trunc(end_interval_time)) over() total_days,
            count(distinct h.snap_id) over() total_slots,
-           SUM(h.elapsed_time_total) / SUM(h.executions_total) time_per_exec
-      FROM dba_hist_sqlstat h, 
+           SUM(h.elapsed_time_total) / nullif(SUM(h.executions_total),0) time_per_exec
+      FROM (select h.*, decode(force_matching_signature,0,sql_id,to_char(force_matching_signature)) signature from dba_hist_sqlstat h) h, 
            dba_hist_snapshot s
-     WHERE h.executions_total > 0 
+     WHERE greatest(h.elapsed_time_delta,executions_total) > 0 
        AND s.snap_id = h.snap_id
        AND s.dbid = h.dbid
        AND s.instance_number = h.instance_number
        AND CAST(s.end_interval_time AS DATE) BETWEEN NVL(TO_DATE(:V1,'YYMMDDHH24MI'),SYSDATE-31) AND NVL(TO_DATE(:V2,'YYMMDDHH24MI'),SYSDATE)
-     GROUP BY grouping sets((h.dbid,h.sql_id,h.snap_id),(h.dbid,h.sql_id,h.snap_id,plan_hash_value,end_interval_time))
+     GROUP BY grouping sets((&BASE,h.snap_id),(&BASE,h.snap_id,plan_hash_value,end_interval_time))
     ) where grp=1
 ),
 avg_time AS (
-SELECT dbid,
-       sql_id, 
+SELECT sql_id,&SIG
        sum(execs) execs,
        min(min_seen) min_seen,
        max(max_seen) max_seen,
@@ -63,7 +65,7 @@ SELECT dbid,
        MIN(time_per_exec)    min_time_per_exec,
        MAX(time_per_exec)    max_time_per_exec       
   FROM per_time
- GROUP BY dbid,sql_id,total_days
+ GROUP BY sql_id,&SIG total_days
 HAVING COUNT(*) >= greatest(2,total_days)
    AND MAX(days_ago) - MIN(days_ago) >= total_days/4
    AND MEDIAN(time_per_exec) > &&med_elap_microsecs_threshold
@@ -77,8 +79,7 @@ SELECT h.days_ago,
 ),
 ranked AS (
 SELECT RANK () OVER (ORDER BY ABS(REGR_SLOPE(t.time_per_exec_over_med, t.days_ago)) DESC) rank_num,
-       t.dbid,
-       t.sql_id,
+       t.sql_id,&SIG
        CASE WHEN REGR_SLOPE(t.time_per_exec_over_med, t.days_ago) > 0 THEN 'IMPROVING' ELSE 'REGRESSING' END change,
        ROUND(REGR_SLOPE(t.time_per_exec_over_med, t.days_ago), 3) slope,
        ROUND(AVG(t.med_time_per_exec)/1e6, 3) med_secs_per_exec,
@@ -92,21 +93,21 @@ SELECT RANK () OVER (ORDER BY ABS(REGR_SLOPE(t.time_per_exec_over_med, t.days_ag
        TO_CHAR(min(min_seen) ,'MM-DD HH24:MI') min_seen,
        TO_CHAR(max(max_seen) ,'MM-DD HH24:MI') max_seen
   FROM time_over_median t
- GROUP BY t.dbid,t.sql_id
+ GROUP BY &SIG t.sql_id
  HAVING ABS(REGR_SLOPE(t.time_per_exec_over_med, t.days_ago)) > &&min_slope_threshold
 )
-SELECT r.sql_id,
+SELECT r.sql_id,&SIG
        r.change,
        TO_CHAR(r.slope, '990.000MI') slope,
        execs, round(ratio,2) "Slots|(%)",
        plans,
-       TO_CHAR(r.med_secs_per_exec, '999,990.0') "Median Secs|Per Exec",
-       TO_CHAR(r.std_secs_per_exec, '999,990.0') "Std Dev Secs|Per Exec",
-       TO_CHAR(r.avg_secs_per_exec, '999,990.0') "Avg Secs|Per Exec",
-       TO_CHAR(r.min_secs_per_exec, '999,990.0') "Min Secs|Per Exec",
-       TO_CHAR(r.max_secs_per_exec, '999,990.0') "Max Secs|Per Exec",
+       TO_CHAR(r.med_secs_per_exec, '999,990.00') "Median Secs|Per Exec",
+       TO_CHAR(r.std_secs_per_exec, '999,990.00') "Std Dev Secs|Per Exec",
+       TO_CHAR(r.avg_secs_per_exec, '999,990.00') "Avg Secs|Per Exec",
+       TO_CHAR(r.min_secs_per_exec, '999,990.00') "Min Secs|Per Exec",
+       TO_CHAR(r.max_secs_per_exec, '999,990.00') "Max Secs|Per Exec",
        min_seen "First_Seen",max_seen "Last_Seen",
-       REPLACE((SELECT substr(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' '),1,150) FROM dba_hist_sqltext s WHERE s.dbid = r.dbid AND s.sql_id = r.sql_id), CHR(10)) sql_text
+       REPLACE((SELECT substr(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' '),1,150) FROM dba_hist_sqltext s WHERE s.sql_id = r.sql_id and rownum<2), CHR(10)) sql_text
   FROM ranked r
  WHERE r.rank_num <= &&max_num_rows
  ORDER BY r.rank_num;
