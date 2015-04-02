@@ -47,10 +47,10 @@ while true do
         if env.CURRENT_PROMPT==env.PRI_PROMPT then
             if line:find('^[%s\t]*'..env.END_MARKS[1]..'[%s\t]*$') then
                 stack[#stack-1]=stack[#stack-1]..line
-                stack[#stack]=nil
+                table.remove(stack)
             end
             line=table.concat(stack,'\n'..env.MTL_PROMPT)
-            if #stack <=2 and stack[2]==nil then reader:setMultiplePrompt(line) end
+            reader:setMultiplePrompt(#stack==1 and line or "")
             stack=nil
         end
     end

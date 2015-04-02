@@ -10,5 +10,5 @@ function host.mkdir(path)
     os.execute('mkdir "'..path..'" 2> '..(env.OS=="windows" and 'NUL' or "/dev/null"))
 end
 
-env.set_command(nil,{'HOST','!'},"Run OS command. Usage: HOST <command>",host.run_command,false,2)
+env.set_command(nil,{'HOST','HOS','!'},"Run OS command. Usage: HOST <command>",host.run_command,false,2)
 return host

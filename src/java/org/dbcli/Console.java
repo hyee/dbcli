@@ -68,7 +68,7 @@ public class Console extends ConsoleReader {
             }
         } else {
             setHistoryEnabled(true);
-            this.his.add(Content);
+            if(!Content.equals("")) this.his.add(Content);
             this.his.moveToEnd();
         }
     }

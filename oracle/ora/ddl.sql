@@ -95,6 +95,8 @@ BEGIN
         :text := txt;
         :dest := part1 || '.'||nvl(:V2,'sql');
     END IF;
+EXCEPTION WHEN OTHERS THEN
+    raise_application_error(-20001,sqlerrm);    
 END;
 /
 

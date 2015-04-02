@@ -1,3 +1,4 @@
+/*[[Search for the SQLs in AWR snapshots that reference the specific object. Usage: awrobj  <[owner.]object_name> ]] [ela|exe|id|text|op] [yymmddhhmi] [yymmddhhmi] ]]*/
 WITH qry AS
  (SELECT /*+materialize*/*
   FROM   (SELECT OBJECT_ID,
@@ -22,8 +23,7 @@ SELECT a.sql_id,
        COUNT(DISTINCT plan_hash) Childs,
        to_char(wmsys.wm_concat(DISTINCT decode(sign(r - 3), -1, plan_hash))) plan_hash,
        substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),
-                             '[' || chr(10) || chr(13) || chr(9) || ' ]+',
-                             ' '),
+                             '[' || chr(10) || chr(13) || chr(9) || ' ]+',' '),
               1,
               120) text
 FROM   (SELECT sql_id,

@@ -1,3 +1,4 @@
+/*[[Show AWR Top SQLs for a specific period. Usage: awrtop [0|<inst>] [ela|exec|cpu|io|cc|fetch|sort|px|row|load|parse|read|write|mem] [yymmddhhmi] [yymmddhhmi]]]*/
 WITH qry as (SELECT nvl(upper(:V1),'A') inst,
                     lower(nvl(:V2,'ela')) typ,
                     to_timestamp(nvl(:V3,to_char(sysdate-7,'YYMMDDHH24MI')),'YYMMDDHH24MI') st,

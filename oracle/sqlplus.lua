@@ -50,7 +50,6 @@ function sqlplus:start(...)
 
     local del=(env.OS=="windows" and " & " or " ; ")
     local cmd=table.concat(props,del)..' '..table.concat(args,' ')
-
     os.execute(cmd)
 end
 

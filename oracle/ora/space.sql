@@ -555,5 +555,7 @@ BEGIN
         seg_advise(v_cur,:V1);
     end if;
     :cur := v_cur;
+EXCEPTION
+    WHEN OTHERS THEN raise_application_error(-20001,sqlerrm);    
 END;
 /

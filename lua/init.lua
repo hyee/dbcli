@@ -10,6 +10,7 @@ local init={
         "lib/ProFi",
         "lib/misc",
         "lib/class",
+        "lib/subprocess",
         "lua/packer",
         "lua/trace",
         "lua/printer",  
@@ -30,6 +31,7 @@ local init={
         "lua/var",
         "lua/scripter",
         "lua/snapper",
+        "lua/ssh",
         "lua/tester"}
 }
 
