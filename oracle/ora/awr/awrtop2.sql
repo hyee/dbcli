@@ -4,6 +4,9 @@
         &grp: s={sql_id}, m={signature}
     --]]
 ]]*/
+
+ORA _sqlstat
+
 WITH qry as (SELECT nvl(upper(:V1),'A') inst,
                     nullif(lower(:V2),'a') sqid,
                     nvl(lower(:V3),'total') calctype,
@@ -32,7 +35,7 @@ SELECT &grp,
        lpad(replace(to_char(PX,decode(sign(PX - 1e5),-1,'fm99990.09','fm0.00EEEE')),'+0'),7) PX_SVRS
 FROM   (SELECT &grp,
                plan_hash,
-               to_char(lastest,'YYYYMMDDHH24') last_call,
+               to_char(lastest,'MM-DD"|"HH24:MI') last_call,
                exe,
                LOAD,
                parse,
@@ -58,32 +61,31 @@ FROM   (SELECT &grp,
                        plan_hash_value plan_hash,
                        qry.sorttype,
                        MAX(begin_interval_time) lastest,
-                       SUM(executions_delta) exe,
-                       SUM(LOADS_DELTA) LOAD,
-                       SUM(PARSE_CALLS_DELTA) parse,
+                       SUM(executions) exe,
+                       SUM(LOADS) LOAD,
+                       SUM(PARSE_CALLS) parse,
                        AVG(sharable_mem/1024/ 1024) mem,
-                       SUM(elapsed_time_delta * 1.67e-8) ela,
-                       SUM(cpu_time_delta * 1.67e-8) CPU,
-                       SUM(iowait_delta * 1.67e-8) iowait,
-                       SUM(CCWAIT_DELTA * 1.67e-8) ccwait,
-                       SUM(CLWAIT_DELTA * 1.67e-8) clwait,
-                       SUM(PLSEXEC_TIME_DELTA * 1.67e-8) PLSQL,
-                       SUM(JAVEXEC_TIME_DELTA * 1.67e-8) JAVA,
-                       SUM(disk_reads_delta + hs.buffer_gets_delta)* 8 / 1024 READ,
-                       SUM(direct_writes_delta)* 8 / 1024 WRITE,
-                       SUM(END_OF_FETCH_COUNT_DELTA) FETCH,
-                       SUM(ROWS_PROCESSED_DELTA) RWS,
-                       SUM(PX_SERVERS_EXECS_DELTA) PX,
+                       SUM(elapsed_time /60) ela,
+                       SUM(cpu_time /60) CPU,
+                       SUM(iowait /60) iowait,
+                       SUM(CCWAIT /60) ccwait,
+                       SUM(CLWAIT /60) clwait,
+                       SUM(PLSEXEC_TIME /60) PLSQL,
+                       SUM(JAVEXEC_TIME /60) JAVA,
+                       SUM(disk_reads + s.buffer_gets) READ,
+                       SUM(direct_writes) WRITE,
+                       SUM(END_OF_FETCH_COUNT) FETCH,
+                       SUM(ROWS_PROCESSED) RWS,
+                       SUM(PX_SERVERS_EXECS) PX,
                        decode(max(qry.calctype),
                               'avg',
-                              SUM(NVL(NULLIF(executions_delta, 0),
-                                      NULLIF(PARSE_CALLS_DELTA, 0))),
+                              SUM(NVL(NULLIF(executions, 0),
+                                      NULLIF(PARSE_CALLS, 0))),
                               1) exe1
-                FROM   qry,dba_hist_snapshot s, 
-                       (select h.*, decode(force_matching_signature,0,sql_id,to_char(force_matching_signature)) signature from dba_hist_sqlstat h) hs
-                WHERE  s.snap_id = hs.snap_id
-                AND    s.instance_number = hs.instance_number
-                AND    s.dbid = hs.dbid
+                FROM   qry,&&awr$sqlstat s
+                WHERE  s.snap_id = s.snap_id
+                AND    s.instance_number = s.instance_number
+                AND    s.dbid = s.dbid
                 AND    (qry.sqid = &grp or qry.sqid is null)
                 AND    s.begin_interval_time between qry.st and ed
                 AND    (qry.inst in('A','0') or qry.inst= ''||s.instance_number)

@@ -30,6 +30,12 @@ function var.import_context(ary)
     for k,v in pairs(ary) do var.global_context[k]=v end
 end
 
+function var.backup_context()
+    local ary={}
+    for k,v in pairs(var.global_context) do ary[k]=v end
+    return ary
+end
+
 function var.setOutput(name,datatype,desc)
     if not name then 
         return env.helper.helper("VAR")

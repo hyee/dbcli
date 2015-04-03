@@ -18,7 +18,7 @@ public class Console extends ConsoleReader {
     private History his;
     private ScheduledFuture task;
     private EventReader monitor = new EventReader();
-    protected ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(3);
+    protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(3);
     private NonBlockingInputStream in;
     private ActionListener event;
     private char[] keys;
@@ -83,7 +83,8 @@ public class Console extends ConsoleReader {
                 //System.out.println(ch);
                 for (int i = 0; i < keys.length; i++) {
                     if (ch != keys[i]) continue;
-                    event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, String.valueOf(ch)));
+
+                    event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, Character.toChars(ch).toString()));
                     break;
                 }
             } catch (Exception e) {

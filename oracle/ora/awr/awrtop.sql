@@ -1,4 +1,7 @@
 /*[[Show AWR Top SQLs for a specific period. Usage: awrtop [0|<inst>] [ela|exec|cpu|io|cc|fetch|sort|px|row|load|parse|read|write|mem] [yymmddhhmi] [yymmddhhmi]]]*/
+
+ORA _sqlstat
+
 WITH qry as (SELECT nvl(upper(:V1),'A') inst,
                     lower(nvl(:V2,'ela')) typ,
                     to_timestamp(nvl(:V3,to_char(sysdate-7,'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
@@ -16,30 +19,27 @@ FROM (SELECT rownum r,a.* from(
           SELECT /*+ordered use_nl(s hs)*/
                    sql_id,
                    qry.typ,
-                   ''||MAX(hs.plan_hash_value) KEEP(dense_rank LAST ORDER BY elapsed_time_total) plan_hash,
-                   decode(typ,'mem',MAX(hs.sharable_mem)/1024/1024,
+                   ''||MAX(s.plan_hash_value) KEEP(dense_rank LAST ORDER BY elapsed_time_total) plan_hash,
+                   decode(typ,'mem',MAX(s.sharable_mem)/1024/1024,
                       SUM(decode(nvl(qry.typ,'ela'),
-                                    'exec',hs.elapsed_time_delta * 1.67e-8,
-                                    'parse',hs.elapsed_time_delta * 1.67e-8,
-                                    'cpu',hs.cpu_time_delta * 1.67e-8,
-                                    'read',(hs.disk_reads_delta + hs.buffer_gets_delta)* 8 / 1024,
-                                    'write',hs.direct_writes_delta* 8 / 1024,
-                                    'io',hs.iowait_delta * 1.67e-8,
-                                    'cc',hs.ccwait_delta * 1.67e-8,
-                                    'load',LOADS_DELTA,
-                                    'sort',SORTS_DELTA,
-                                    'fetch',END_OF_FETCH_COUNT_DELTA,
-                                    'row',ROWS_PROCESSED_DELTA,
-                                    'px',PX_SERVERS_EXECS_DELTA,
-                                    hs.elapsed_time_delta * 1.67e-8)))val,      
-                   nullif(SUM(hs.executions_delta),0) execs,
-                   sum(hs.PARSE_CALLS_DELTA) parse
-            FROM   qry,dba_hist_snapshot s, Dba_Hist_Sqlstat hs
-            WHERE  s.snap_id = hs.snap_id
-            AND    s.instance_number = hs.instance_number
-            AND    s.dbid = hs.dbid
-            AND    (qry.inst in('A','0') or qry.inst= ''||s.instance_number)
-            AND    s.begin_interval_time BETWEEN qry.st and qry.ed
+                                    'exec',s.elapsed_time/60,
+                                    'parse',s.elapsed_time/60,
+                                    'cpu',s.cpu_time/60,
+                                    'read',(s.disk_reads + s.buffer_gets),
+                                    'write',s.direct_writes,
+                                    'io',s.iowait/60,
+                                    'cc',s.ccwait/60,
+                                    'load',LOADS,
+                                    'sort',SORTS,
+                                    'fetch',END_OF_FETCH_COUNT,
+                                    'row',ROWS_PROCESSED,
+                                    'px',PX_SERVERS_EXECS,
+                                    s.elapsed_time/60)))val,      
+                   nullif(SUM(s.executions),0) execs,
+                   sum(s.PARSE_CALLS) parse
+            FROM   qry,&&awr$sqlstat s
+            WHERE  (qry.inst in('A','0') or qry.inst= ''||s.instance_number)
+            AND    s.end_time BETWEEN qry.st and qry.ed
             GROUP  BY sql_id,qry.typ
             ORDER  BY decode(qry.typ,'exec',execs,'parse',parse,val) desc nulls last)a) a,
            Dba_Hist_Sqltext b

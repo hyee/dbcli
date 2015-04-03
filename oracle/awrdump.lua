@@ -11,7 +11,8 @@ function awr.dump_report(stmt,starttime,endtime,instances)
     env.checkerr(db:check_obj('dbms_workload_repository.awr_report_html'),'Sorry, you dont have the "execute" privilege on package "dbms_workload_repository"!')    
     
     local args={starttime,endtime,instances or "",'#VARCHAR','#CLOB','#CURSOR'}
-    db:internal_call(stmt,args)
+    cfg.set("feed","off")
+    db:exec(stmt,args)
     if args[5] and args[5]~="#CLOB" then
         print("Result written to file "..env.write_cache(args[4],args[5]))
         db.resultset:print(args[6],db.conn)
@@ -294,8 +295,7 @@ function awr.extract_addm(starttime,endtime,instances)
                                     AND    e.rec_id = b.rec_id
                                     AND    f.id = e.msg_id) remimpact,
                                    (SELECT RTRIM(NVL2(MAX(E.task_id), 'Rationale: ', '') ||
-                                        $if DBMS_DB_VERSION.ver_le_11_1 
-                                        $then
+                                        $if DBMS_DB_VERSION.version < 11 $then
                                             to_char(REPLACE(wmsys.wm_concat(e.message || CHR(10)),CHR(10) || ',',chr(10) || LPAD(' ', 19))),
                                         $else
                                             listagg(e.message,chr(10)) WITHIN GROUP(order by 1),                                        

@@ -224,7 +224,7 @@ public class Loader {
         @Override
         public void actionPerformed(ActionEvent e) {
             try {
-                if (e != null) key = e.getActionCommand().charAt(0);
+                if (e != null) key =  Character.codePointAt(e.getActionCommand(), 0);
                 if (!console.isRunning() && key != 'q' && key != 'Q') {
                     lua.getGlobal("TRIGGER_ABORT");
                     lua.call(0, 0);

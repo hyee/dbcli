@@ -1,7 +1,6 @@
 local env=env
 local grid,cfg=env.grid,env.set
 local ARGS_COUNT=20
-local cfg_backup
 
 local scripter=env.class()
 
@@ -262,7 +261,7 @@ function scripter:run_sql(sql,args,print_args)
     local sq="",cmd,params,pre_cmd,pre_params
     local cmds=env._CMDS
     
-    cfg_backup=cfg.backup()
+    local ary=env.var.backup_context()
     env.var.import_context(args)
     local eval=env.eval_line
     for line in sql:gsplit("[\n\r]+") do
@@ -271,7 +270,8 @@ function scripter:run_sql(sql,args,print_args)
 
     if env.pending_command() then
         env.force_end_input()
-    end    
+    end
+    env.var.import_context(ary)
 end
 
 function scripter:get_script(cmd,args,print_args)
@@ -335,10 +335,7 @@ function scripter:run_script(cmd,...)
 end
 
 function scripter:after_script()
-    if cfg_backup then
-        cfg.restore(cfg_backup)
-        cfg_backup=nil
-    end
+    
 end
 
 function scripter:check_ext_file(cmd)

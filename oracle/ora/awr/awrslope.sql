@@ -1,5 +1,5 @@
 /*[[
-   Lists SQL Statements with Elapsed Time per Execution changing over time. Usage: sqlslope [-m] [YYMMDDHH24MI] [YYMMDDHH24MI]
+   Lists SQL Statements with Elapsed Time per Execution changing over time. Usage: awrslope [-m] [YYMMDDHH24MI] [YYMMDDHH24MI]
    Author:      Carlos Sierra
    Version:     Modified version based on V2014/10/31
    Usage:       Lists statements that have changed their elapsed time per execution over
@@ -23,33 +23,29 @@
                
 ]]*/
 
-DEF med_elap_microsecs_threshold='1e4';
 DEF min_slope_threshold='0.1';
 DEF max_num_rows='50';
 
 PRO SQL Statements with "Elapsed Time per Execution" changing over time
-
-WITH
-per_time AS (
+ORA _sqlstat
+WITH per_time AS (
 select /*+materialize*/ * from(
-    SELECT max(sql_id) keep(dense_rank last order by h.snap_id) sql_id,&SIG
+    SELECT max(sql_id) keep(dense_rank last order by snap) sql_id,&SIG
            grouping_id(plan_hash_value) grp,
-           SYSDATE - max(s.end_interval_time+0) days_ago,
+           SYSDATE - max(end_time) days_ago,
            count(distinct nullif(plan_hash_value,0)) over(partition by &BASE) plans,
-           min(s.begin_interval_time) min_seen,
-           max(s.end_interval_time) max_seen,
-           sum(h.executions_delta) execs,
-           count(distinct trunc(end_interval_time)) over() total_days,
-           count(distinct h.snap_id) over() total_slots,
-           SUM(h.elapsed_time_total) / nullif(SUM(h.executions_total),0) time_per_exec
-      FROM (select h.*, decode(force_matching_signature,0,sql_id,to_char(force_matching_signature)) signature from dba_hist_sqlstat h) h, 
-           dba_hist_snapshot s
-     WHERE greatest(h.elapsed_time_delta,executions_total) > 0 
-       AND s.snap_id = h.snap_id
-       AND s.dbid = h.dbid
-       AND s.instance_number = h.instance_number
-       AND CAST(s.end_interval_time AS DATE) BETWEEN NVL(TO_DATE(:V1,'YYMMDDHH24MI'),SYSDATE-31) AND NVL(TO_DATE(:V2,'YYMMDDHH24MI'),SYSDATE)
-     GROUP BY grouping sets((&BASE,h.snap_id),(&BASE,h.snap_id,plan_hash_value,end_interval_time))
+           min(begin_time) min_seen,
+           max(end_time) max_seen,
+           SUM(executions) execs,
+           count(distinct trunc(end_time)) over() total_days,
+           count(distinct snap_id) over() total_slots,
+           SUM(elapsed_time)/ greatest(SUM(decode(executions,0,parse_calls,executions)),1) time_per_exec
+    FROM (SELECT s.*,
+                 nvl(MIN(decode(executions,0,null,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN 0 FOLLOWING AND UNBOUNDED FOLLOWING),
+                 MAX(decode(parse_calls,0,null,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN UNBOUNDED PRECEDING AND 0 PRECEDING)) snap
+          FROM  &awr$sqlstat s
+          WHERE end_time BETWEEN NVL(TO_DATE(:V1,'YYMMDDHH24MI'),SYSDATE-31) AND NVL(TO_DATE(:V2,'YYMMDDHH24MI'),SYSDATE))
+    GROUP BY grouping sets((&BASE,snap),(&BASE,snap,plan_hash_value,snap_id,trunc(end_time)))
     ) where grp=1
 ),
 avg_time AS (
@@ -68,7 +64,7 @@ SELECT sql_id,&SIG
  GROUP BY sql_id,&SIG total_days
 HAVING COUNT(*) >= greatest(2,total_days)
    AND MAX(days_ago) - MIN(days_ago) >= total_days/4
-   AND MEDIAN(time_per_exec) > &&med_elap_microsecs_threshold
+   AND MEDIAN(time_per_exec) > 0.01
 ),
 time_over_median AS (
 SELECT h.days_ago,
@@ -82,16 +78,16 @@ SELECT RANK () OVER (ORDER BY ABS(REGR_SLOPE(t.time_per_exec_over_med, t.days_ag
        t.sql_id,&SIG
        CASE WHEN REGR_SLOPE(t.time_per_exec_over_med, t.days_ago) > 0 THEN 'IMPROVING' ELSE 'REGRESSING' END change,
        ROUND(REGR_SLOPE(t.time_per_exec_over_med, t.days_ago), 3) slope,
-       ROUND(AVG(t.med_time_per_exec)/1e6, 3) med_secs_per_exec,
-       ROUND(AVG(t.std_time_per_exec)/1e6, 3) std_secs_per_exec,
-       ROUND(AVG(t.avg_time_per_exec)/1e6, 3) avg_secs_per_exec,
-       ROUND(MIN(t.min_time_per_exec)/1e6, 3) min_secs_per_exec,
-       ROUND(MAX(t.max_time_per_exec)/1e6, 3) max_secs_per_exec,
+       ROUND(AVG(t.med_time_per_exec), 3) med_secs_per_exec,
+       ROUND(AVG(t.std_time_per_exec), 3) std_secs_per_exec,
+       ROUND(AVG(t.avg_time_per_exec), 3) avg_secs_per_exec,
+       ROUND(MIN(t.min_time_per_exec), 3) min_secs_per_exec,
+       ROUND(MAX(t.max_time_per_exec), 3) max_secs_per_exec,
        max(execs) execs,
        max(plans) plans,
        max(ratio) ratio,
-       TO_CHAR(min(min_seen) ,'MM-DD HH24:MI') min_seen,
-       TO_CHAR(max(max_seen) ,'MM-DD HH24:MI') max_seen
+       TO_CHAR(min(min_seen) ,'MM-DD"|"HH24:MI') min_seen,
+       TO_CHAR(max(max_seen) ,'MM-DD"|"HH24:MI') max_seen
   FROM time_over_median t
  GROUP BY &SIG t.sql_id
  HAVING ABS(REGR_SLOPE(t.time_per_exec_over_med, t.days_ago)) > &&min_slope_threshold

@@ -1,3 +1,6 @@
+2015-03-28: ! public: fix issue when run another script from one script
+2015-04-03: * oracle: rename 'sqlslope' as 'awrslope'
+2015-04-03: ! oracle: fix the logics of AWR-related commands 
 2015-03-28: ! public: fix the historical commands issue
 2015-03-28: * all   : update the help messages for some existing commands
 2015-03-28: * oracle: sp scripts: parameters _WORK_DIR_/_FILE_DIR_/_SQLPLUS_DIR_/FILE_OUTPUT_DIR

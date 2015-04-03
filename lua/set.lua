@@ -192,8 +192,8 @@ function cfg.capture_after_cmd(cmd,args)
 end
 
 function cfg.onload()
-    event.snoop("AFTER_ROOT_COMMAND",cfg.capture_before_cmd)
-    event.snoop("BEFORE_ROOT_COMMAND",cfg.capture_after_cmd)
+    event.snoop("BEFORE_ROOT_COMMAND",cfg.capture_before_cmd)
+    event.snoop("AFTER_ROOT_COMMAND",cfg.capture_after_cmd)
     env.set_command(nil,'SET',"Set environment parameters. Usage: set [-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]",cfg.doset,false,99)
 end    
 

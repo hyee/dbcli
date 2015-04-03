@@ -70,7 +70,7 @@ end
 
 snoop("ON_SQL_ERROR",output.get_error_output,nil,40)
 snoop("AFTER_ORACLE_CONNECT",output.setOutput)
-snoop("AFTER_ORACLE_EXEC",output.getOutput,nil,1)
+snoop("AFTER_ORACLE_EXEC",output.getOutput,nil,50)
 
 cfg.init("ServerOutput",
     "on",
