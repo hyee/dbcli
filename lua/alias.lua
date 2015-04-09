@@ -62,7 +62,8 @@ function alias.run_command(...)
         if type(alias.cmdlist[name].text) == "string" and not target:find('[\n\r]') then
             print('$ '..target)
         end
-        env.internal_eval(target)        
+
+        env.internal_eval(target)     
     end
 end
 
@@ -101,9 +102,9 @@ function alias.set(name,cmd,write)
         end
 
         local target_dir=alias.command_dir
-        local sub_cmd=env.parse_args(2,cmd)[1]
-        if env._CMDS[sub_cmd:upper()] then
-            local file=env._CMDS[sub_cmd:upper()].FILE or ""
+        local sub_cmd=env.parse_args(2,cmd)[1]:upper()
+        if env._CMDS[sub_cmd] then
+            local file=env._CMDS[sub_cmd].FILE or ""
             file=file:match('[\\/]([^#]+)')
             if file==env.CURRENT_DB then target_dir=alias.db_dir end
         end
@@ -132,7 +133,7 @@ function alias.set(name,cmd,write)
         alias.cmdlist[name].text=cmd
         alias.cmdlist[name].active=false
         if not globalcmds[name]  then
-            env.set_command(nil,name, "#Alias command",alias.run_command,false,99,false,true)
+            env.set_command(nil,name, "#Alias command("..sub_cmd..")",alias.run_command,false,99,false,true)
             alias.cmdlist[name].active=true
         elseif globalcmds[name].FUNC==alias.run_command then
             alias.cmdlist[name].active=true

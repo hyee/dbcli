@@ -36,7 +36,7 @@ final public class CommandWrapper {
         pb.directory();
     }
 
-    public void execute() {
+    public void execute(String cmd) {
 
     }
 

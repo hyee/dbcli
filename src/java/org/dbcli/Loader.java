@@ -214,7 +214,11 @@ public class Loader {
             console.setEvents(null, null);
         }
     }
-
+/*
+    public Commander newExtProcess(String cmd) {
+        return new Commander(printer,cmd,console);
+    }
+*/
     private class KeyListner implements ActionListener {
         int key;
         public KeyListner(int k) {

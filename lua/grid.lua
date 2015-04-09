@@ -14,7 +14,7 @@ local params={
     PIVOT={name="pivot",default=0,desc="Pivot a grid when next print, afterward the value would be reset",range="-30 - +30"},    
     PIVOTSORT={name="pivotsort",default="on",desc="To indicate if to sort the titles when pivot option is on",range="on,off"},    
     MAXCOLS={name="maxcol",default=1024,desc="Define the max columns to be displayed in the grid",range="4-1024"},
-    DIGITS={name="digits",default=21,desc="Define the digits for a number",range="0 - 21"},
+    DIGITS={name="digits",default=38,desc="Define the digits for a number",range="0 - 38"},
     LINESIZE={name="linesize",default=800,desc="Define the max chars in one line, other overflow parts would be cutted.",range='10-32767'}
 }
 
@@ -117,7 +117,7 @@ function grid.tostring(rows,printhead,col_del,row_del,rows_limit)
     end
     rows=grid.format(rows,printhead,col_del,row_del)
     rows_limit=rows_limit and math.min(rows_limit,#rows) or #rows
-    env.set.set("pivot",0)
+    env.set.force_set("pivot",0)
 
     return table.concat(rows,"\n",1,rows_limit)
 end
@@ -266,9 +266,10 @@ function grid:add(rs)
         local csize =0
         if not colsize[k] then colsize[k] = {0,1} end
         if type(v) == "number" then
-            if grid.digits<21 then
+            if grid.digits<38 then
                 v=math.round(v,grid.digits)
             end
+            if tostring(v):find('e',1,true) then v=string.format('%99.38f',v):gsub(' ',''):gsub('%.?0+$','') end
             csize = #tostring(v)
         elseif type(v) ~= "string" or v=="" then 
             v = tostring(v)  or ""

@@ -147,7 +147,7 @@ function ansi.define_color(name,value,module,description)
         ansi.cfg(name,ansi.cfg(name) or value,module,description)
         env.set.init(name,value,ansi.define_color,module,description)
         if value ~= ansi.cfg(name) then
-            env.set.doset(name,ansi.cfg(name))
+            env.set.force_set(name,ansi.cfg(name))
         end        
     else        
         ansi.cfg(name,value)

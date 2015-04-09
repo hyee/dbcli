@@ -144,6 +144,11 @@ function cfg.doset(...)
     end
 end
 
+function cfg.force_set(item,value)
+    cfg.doset(item,value)
+    if cfg._backup and cfg._backup[item:upper()] then cfg._backup[item:upper()]=cfg[item:upper()] end
+end
+
 function cfg.restore(name)
     if not name then        
         return
@@ -179,7 +184,7 @@ function cfg.backup()
 end
 
 function cfg.capture_before_cmd(cmd,args)
-    if cmd~="SET" then
+    if cmd~="SET" and not (env._CMDS[cmd] and tostring(env._CMDS[cmd].DESC) or ""):find('(SET)',1,true) then
         cfg._backup=cfg.backup()
     else
         cfg._backup=nil

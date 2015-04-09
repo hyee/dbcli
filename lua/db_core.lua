@@ -19,16 +19,14 @@ function db_Types:get(position,typeName,res,conn)
     --local value=res:getObject(position)
     --if value==nil then return nil end   
     local getter=self[typeName].getter
-    if getter=="getDouble" and not res:getObject(position) then
-        return nil
-    end
-    local res,value=pcall(res[getter],res,position)
-    if not res then
+    
+    local rtn,value=pcall(res[getter],res,position)
+    if not rtn then
         print('Column:',position,"    Datatype:",self[typeName].name,"    ",value)
         return nil
     end
     --print(typeName,self[typeName].handler)
-    if value == nil then return value end
+    if value == nil or res:wasNull() then return nil end
     if not self[typeName].handler then return value end
     return self[typeName].handler(value,'get',conn)
 end
