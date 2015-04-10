@@ -81,7 +81,7 @@ function unwrap.unwrap(obj,ext)
                LINE,
                MAX(line) OVER(PARTITION BY TYPE) max_line
          FROM  DBA_SOURCE
-         WHERE OWNER = nvl(trim(upper(regexp_substr(:1,'[^\\.]+'))),user)
+         WHERE OWNER = nvl(trim(upper(regexp_substr(:1,'[^\\.]+'))),sys_context('USERENV','CURRENT_SCHEMA'))
          AND   NAME  = upper(regexp_substr(:1,'[^\\.]+',1,2))
          ORDER BY TYPE, LINE]],{obj,obj})
     db.resultset:fetch(rs,db.conn)

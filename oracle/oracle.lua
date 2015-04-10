@@ -212,22 +212,25 @@ function oracle:check_obj(obj_name)
     local args={target=obj_name,owner='#VARCHAR',object_type='#VARCHAR',object_name='#VARCHAR',object_subname='#VARCHAR',object_id='#INTEGER'}
     self:internal_call([[
     DECLARE
-        SCHEM         VARCHAR2(30);
+        schem         VARCHAR2(30);
         part1         VARCHAR2(30);
         part2         VARCHAR2(30);
         part2_temp    VARCHAR2(30);
         dblink        VARCHAR2(30);
         part1_type    PLS_INTEGER;
         object_number PLS_INTEGER;
+        flag          BOOLEAN:=TRUE;
         obj_type      VARCHAR2(30);
+        target        VARCHAR2(100):=:target;
         TYPE t IS TABLE OF VARCHAR2(30);
         t1 t := t('TABLE','PL/SQL','SEQUENCE','TRIGGER','JAVA_SOURCE','JAVA_RESOURCE','JAVA_CLASS','TYPE','JAVA_SHARED_DATA','INDEX');
     BEGIN
+        <<CHECKER>>
         FOR i IN 0 .. 9 LOOP
             BEGIN
-                sys.dbms_utility.name_resolve(NAME          => :target,
+                sys.dbms_utility.name_resolve(NAME          => target,
                                               CONTEXT       => i,
-                                              SCHEMA        => SCHEM,
+                                              SCHEMA        => schem,
                                               part1         => part1,
                                               part2         => part2,
                                               dblink        => dblink,
@@ -252,7 +255,14 @@ function oracle:check_obj(obj_name)
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
         END LOOP;
-        :owner          := SCHEM;
+        
+        IF schem IS NULL AND flag and user!=sys_context('USERENV','CURRENT_SCHEMA') THEN
+            flag  := FALSE;
+            target:= sys_context('USERENV','CURRENT_SCHEMA')||'.'||target;
+            GOTO CHECKER;
+        END IF;
+
+        :owner          := schem;
         :object_type    := obj_type;
         :object_name    := part1;
         :object_subname := part2;
