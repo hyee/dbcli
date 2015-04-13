@@ -27,10 +27,11 @@ function alias.rehash()
     end
 end
 
-function alias.parser(s)
+function alias.parser(s,default)
     if s~="*" then
         local v=tonumber(s)
-        if not v or not alias.args[v] then return "$"..s end
+        if not alias.args[v] and default then alias.args[v]=default end
+        if v<1 or v>9 or not alias.args[v] then return "$"..s..(default and '['..default..']' or '') end
         alias.rest[v]=""
         return alias.args[v]
     else
@@ -55,6 +56,7 @@ function alias.run_command(...)
             alias.args[i]=v
             alias.rest[i]=v
         end
+        target=target:gsub("%$([%d%*]+)%[(.-)%]",alias.parser)
         target=target:gsub("%$([%d%*]+)",alias.parser)
         target=target:gsub("%$%d%[(.-)%]",'%1')
         target=target:gsub("'%$[1-9]'",''):gsub("%$[1-9]",''):gsub("[%s\n\r\b\t]+$","")
