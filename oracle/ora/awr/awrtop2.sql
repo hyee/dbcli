@@ -2,6 +2,7 @@
     Show AWR Top SQLs for a specific period. Usage: awrtop2 [-m] [0|<inst>] [a|<sql_id>] [total|avg] [yymmddhhmi] [yymmddhhmi] [exec|ela|cpu|io|cc|fetch|rows|load|parse|read|write|mem] 
     --[[
         &grp: s={sql_id}, m={signature}
+        &filter: default={1=1}, f={}
     --]]
 ]]*/
 
@@ -55,7 +56,7 @@ FROM   (SELECT &grp,
                row_number() over(order by decode(sorttype, 'exec', exe, 'load', load, 'parse', parse, 
                                                'mem', mem, 'ela', ela, 'cpu', cpu, 'io', iowait, 'plsql', plsql, 
                                                'java', java, 'read', read, 'write', write, 'fetch', fetch, 
-                                               'rows', rws, 'px', px,'cc',ccwait) desc nulls last) r
+                                               'rows', rws, 'px', px,'cc',ccwait)/exe1 desc nulls last) r
         FROM   (SELECT --+no_expand
                        &grp,
                        plan_hash_value plan_hash,
@@ -87,6 +88,7 @@ FROM   (SELECT &grp,
                 AND    s.instance_number = s.instance_number
                 AND    s.dbid = s.dbid
                 AND    (qry.sqid = &grp or qry.sqid is null)
+                AND    (&filter)
                 AND    s.begin_interval_time between qry.st and ed
                 AND    (qry.inst in('A','0') or qry.inst= ''||s.instance_number)
                 GROUP  BY &grp, plan_hash_value,qry.sorttype))

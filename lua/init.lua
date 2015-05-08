@@ -43,13 +43,13 @@ function init.init_path()
     java.system=java.require("java.lang.System")
     java.loader=loader
     env('java',java)
-    local path=debug.getinfo(1).short_src    
+    local path=package.path
     local path_del
     if path:sub(1,1)=="." then
-        path_del=src:match("([^.])")
+        path_del=path:match("([\\/])")
         env("WORK_DIR",'..'..path_del)
     else
-        env("WORK_DIR",path:gsub('%w+[\\/]%w+.lua$',""))
+        env("WORK_DIR",path:gsub('%w+[\\/]%?.lua$',""))
         path_del=env.WORK_DIR:sub(-1)
     end
     env("PATH_DEL",path_del)
@@ -67,7 +67,7 @@ function init.init_path()
         local p1,p2=path.."?.lua",java.system:getProperty('java.library.path')..path_del.."?."..(env.OS=="windows" and "dll" or "so")
         package.path  = package.path .. (path_del=='/' and ':' or ';') ..p1
         package.cpath = package.cpath ..(path_del=='/' and ':' or ';') ..p2        
-    end     
+    end
 end
 
 local function exec(func,...)

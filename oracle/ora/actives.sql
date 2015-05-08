@@ -40,10 +40,9 @@ BEGIN
                extractvalue(b.column_value,'/ROW/A4')     plan_hash_value
          FROM (select distinct inst_id,sql_id,nvl(sql_child_number,0) child from s1 where sql_id is not null) A,
                TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'[
-                   SELECT (select c.owner  ||'.' || c.object_name from all_objects c where c.object_id=PROGRAM_ID and rownum<2) A1,
+                   SELECT (select c.owner  ||'.' || c.object_name from all_objects c where c.object_id=program_id and rownum<2) A1,
                           PROGRAM_LINE# A2,
                           substr(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200) A3,
-                          --null A3,
                           plan_hash_value A4
                    FROM  gv$sql
                    WHERE ROWNUM<2 AND sql_id=']'||a.sql_id||''' AND inst_id='||a.inst_id||' and child_number='||a.child)

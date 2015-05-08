@@ -27,11 +27,11 @@ function alias.rehash()
     end
 end
 
-function alias.parser(s,default)
+function alias.parser(s,default_value)
     if s~="*" then
         local v=tonumber(s)
-        if not alias.args[v] and default then alias.args[v]=default end
-        if v<1 or v>9 or not alias.args[v] then return "$"..s..(default and '['..default..']' or '') end
+        if not alias.args[v] and default_value then alias.args[v]=default_value end
+        if v<1 or v>9 or not alias.args[v] then return ("$"..s)..(default_value and '['..default_value..']' or '') end
         alias.rest[v]=""
         return alias.args[v]
     else
@@ -56,9 +56,8 @@ function alias.run_command(...)
             alias.args[i]=v
             alias.rest[i]=v
         end
-        target=target:gsub("%$([%d%*]+)%[(.-)%]",alias.parser)
+        target=target:gsub("%$(%d+)%[(.-)%]",alias.parser)
         target=target:gsub("%$([%d%*]+)",alias.parser)
-        target=target:gsub("%$%d%[(.-)%]",'%1')
         target=target:gsub("'%$[1-9]'",''):gsub("%$[1-9]",''):gsub("[%s\n\r\b\t]+$","")
         if not target:find(env.END_MARKS[2]..'$') and not target:find(env.END_MARKS[1]..'$') then target=target..env.END_MARKS[1] end
         if type(alias.cmdlist[name].text) == "string" and not target:find('[\n\r]') then

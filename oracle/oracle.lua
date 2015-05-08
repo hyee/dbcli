@@ -221,6 +221,7 @@ function oracle:check_obj(obj_name)
         object_number PLS_INTEGER;
         flag          BOOLEAN:=TRUE;
         obj_type      VARCHAR2(30);
+        objs          varchar2(30):='dba_objects';
         target        VARCHAR2(100):=:target;
         TYPE t IS TABLE OF VARCHAR2(30);
         t1 t := t('TABLE','PL/SQL','SEQUENCE','TRIGGER','JAVA_SOURCE','JAVA_RESOURCE','JAVA_CLASS','TYPE','JAVA_SHARED_DATA','INDEX');
@@ -236,21 +237,6 @@ function oracle:check_obj(obj_name)
                                               dblink        => dblink,
                                               part1_type    => part1_type,
                                               object_number => object_number);
-                SELECT /*+no_expand*/ 
-                       MIN(OBJECT_TYPE)    keep(dense_rank first order by s_flag),
-                       MIN(OWNER)          keep(dense_rank first order by s_flag),
-                       MIN(OBJECT_NAME)    keep(dense_rank first order by s_flag),
-                       MIN(SUBOBJECT_NAME) keep(dense_rank first order by s_flag)
-                INTO  obj_type,SCHEM,part1,part2_temp
-                FROM (
-                    SELECT a.*,case when upper(:target) like upper('%'||OBJECT_NAME||NVL2(SUBOBJECT_NAME,'.'||SUBOBJECT_NAME||'%','')) then 0 else 1 end s_flag
-                    FROM   ALL_OBJECTS a
-                    WHERE  OWNER=SCHEM
-                    AND    OBJECT_NAME=part1);
-
-                IF part2 is null THEN 
-                    part2 := part2_temp;
-                END IF;         
                 EXIT;
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
@@ -261,6 +247,29 @@ function oracle:check_obj(obj_name)
             target:= sys_context('USERENV','CURRENT_SCHEMA')||'.'||target;
             GOTO CHECKER;
         END IF;
+        
+        begin
+            execute immediate 'select 1 from dba_objects where rownum<2';
+        exception when others then
+            objs:='all_objects';
+        end;
+
+        execute immediate '
+        SELECT /*+no_expand*/ 
+               MIN(OBJECT_TYPE)    keep(dense_rank first order by s_flag),
+               MIN(OWNER)          keep(dense_rank first order by s_flag),
+               MIN(OBJECT_NAME)    keep(dense_rank first order by s_flag),
+               MIN(SUBOBJECT_NAME) keep(dense_rank first order by s_flag)
+        FROM (
+            SELECT a.*,case when upper('''||target||q'[') like upper('%'||OBJECT_NAME||NVL2(SUBOBJECT_NAME,'.'||SUBOBJECT_NAME||'%','')) then 0 else 1 end s_flag
+            FROM   ]'||objs||' a
+            WHERE  OWNER='''||schem||'''
+            AND    OBJECT_NAME='''||part1||''')'
+        INTO  obj_type,schem,part1,part2_temp;
+
+        IF part2 is null THEN 
+            part2 := part2_temp;
+        END IF;         
 
         :owner          := schem;
         :object_type    := obj_type;
@@ -309,7 +318,7 @@ function oracle.check_completion(cmd,other_parts)
     }
      
     local obj=env.parse_args(2,other_parts)[1]
-    if obj and not objs[obj] and not objs[cmd] then
+    if obj and not objs[obj:upper()] and not objs[cmd] then
         p2=env.END_MARKS[1].."+[%s\t\n]*$"
     end
     local match = (other_parts:match(p1) and 1) or (p2 and other_parts:match(p2) and 2) or false

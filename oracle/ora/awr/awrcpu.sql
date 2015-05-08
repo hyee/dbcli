@@ -44,8 +44,8 @@ FROM   (SELECT inst_id,
                 AND    s.dbid = hs1.dbid
                 AND    s.dbid = hs2.dbid
                 AND    (qry.inst in('A','0') or qry.inst= ''||s.instance_number)
-                AND    hs1.stat_name = 'AVG_BUSY_TIME'
-                AND    hs2.stat_name = 'AVG_IDLE_TIME')
+                AND    hs1.stat_name = 'BUSY_TIME'
+                AND    hs2.stat_name = 'IDLE_TIME')
         WHERE busydelta is not null
         GROUP  BY inst_id, d,h,snap_time)
 GROUP  BY snap_time,d, inst_id

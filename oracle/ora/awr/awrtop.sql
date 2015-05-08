@@ -1,4 +1,8 @@
-/*[[Show AWR Top SQLs for a specific period. Usage: awrtop [0|<inst>] [ela|exec|cpu|io|cc|fetch|sort|px|row|load|parse|read|write|mem] [yymmddhhmi] [yymmddhhmi]]]*/
+/*[[Show AWR Top SQLs for a specific period. Usage: awrtop [0|<inst>] [ela|exec|cpu|io|cc|fetch|sort|px|row|load|parse|read|write|mem] [yymmddhhmi] [yymmddhhmi]
+    --[[
+        &filter: default={1=1}, f={}
+    --]]
+]]*/
 
 ORA _sqlstat
 
@@ -14,7 +18,7 @@ SELECT /*+ordered use_nl(a b)*/
      parse,
      lpad(to_char(val, decode(sign(val - 1e6), -1, 'fm999990.0', 'fm0.00EEEE')),8) value,
      lpad(to_char(decode(typ,'mem',null,val/nvl(execs,nullif(parse,0))),decode(sign(val/nvl(execs,nullif(parse,0)) - 1e6), -1, 'fm999990.0', 'fm0.00EEEE')),8) "AVG",
-     substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'['||chr(10)||chr(13)||chr(9)||' ]+',' '),1,120) text
+     substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'['||chr(10)||chr(13)||chr(9)||' ]+',' '),1,150) text
 FROM (SELECT rownum r,a.* from(
           SELECT /*+ordered use_nl(s hs)*/
                    sql_id,
@@ -40,6 +44,7 @@ FROM (SELECT rownum r,a.* from(
             FROM   qry,&&awr$sqlstat s
             WHERE  (qry.inst in('A','0') or qry.inst= ''||s.instance_number)
             AND    s.end_time BETWEEN qry.st and qry.ed
+            AND    (&filter)
             GROUP  BY sql_id,qry.typ
             ORDER  BY decode(qry.typ,'exec',execs,'parse',parse,val) desc nulls last)a) a,
            Dba_Hist_Sqltext b

@@ -329,7 +329,10 @@ function db_core:check_params(sql,prep,p1,params)
 
         end
         errmsg=errmsg..'\n'..hdl:tostring()
-        env.checkerr(not errmsg,errmsg)
+        if errmsg then
+            print(errmsg)
+            env.raise("000-00000: ")
+        end
     end
 end    
 
