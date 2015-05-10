@@ -39,16 +39,16 @@ Besides the above commands, all database statements are also supported(i.e selec
 
 Fast Use
 ============
-After the above configurations, you are able to successfully start the dbcli shell by executing dbcli.bat or bin\ConsoleZ\Console.exe.
-Below are some common use of the utility:
-1. "conn" or "connect" to connect to the database with or without installing Oracle client, and "reconn"  to re-connect.
-2. "login" command to connect to the db without password via the account that has been connected before. 
-3. Execute SQL statements which should match the database syntax, similar to SQL*Plus.
-4. "ora" command to execute pre-defined scripts under the "ora" sub-directory. i.e., ora ashtop, ora actives
-5. "alias" command which is similar to the Linux command
-6. "set" command to config the shell enviroment
-7. 'q' or CTRL + D to abort running SQL
-8. "help" or "help -a" to see other available commands.
+After the above configurations, you are able to successfully start the dbcli shell by executing dbcli.bat or bin\ConsoleZ\Console.exe.<br>
+Below are some common use of the utility:<br>
+    1. "conn" or "connect" to connect to the database with or without installing Oracle client, and "reconn"  to re-connect.
+    2. "login" command to connect to the db without password via the account that has been connected before. 
+    3. Execute SQL statements which should match the database syntax, similar to SQL*Plus.
+    4. "ora" command to execute pre-defined scripts under the "ora" sub-directory. i.e., ora ashtop, ora actives
+    5. "alias" command which is similar to the Linux command
+    6. "set" command to config the shell enviroment
+    7. 'q' or CTRL + D to abort running SQL
+    8. "help" or "help -a" to see other available commands.
 
 References
 ============
