@@ -1,14 +1,19 @@
 /*[[Show AWR Top events for a specific period. Usage: awrevent [0|a|<inst_id>] [yymmddhh24mi] [yymmddhh24mi]
-    
+    --[[
+    @FIELD :{
+                11.0={,SUM(total_Waits_fg * flag) fg_counts, SUM(total_timeouts_fg * flag) fg_timeouts,
+                  round(SUM(time_waited_micro * 1e-6 / 60 * flag), 2) fg_waited_mins},
+                10.0={} 
+            }
+    --]]
 ]]*/
 
 SELECT *
 FROM   (SELECT  inst,event_name, wait_class, SUM(total_Waits * flag) counts,
                 SUM(total_timeouts * flag) timeouts,
                 round(SUM(time_waited_micro * 1e-6 / 60 * flag), 2) waited_mins,
-                round(SUM(time_waited_micro * flag) / nullif(SUM(total_Waits * flag), 0) * 1e-3, 2) avg_milli,
-                SUM(total_Waits_fg * flag) fg_counts, SUM(total_timeouts_fg * flag) fg_timeouts,
-                round(SUM(time_waited_micro * 1e-6 / 60 * flag), 2) fg_waited_mins
+                round(SUM(time_waited_micro * flag) / nullif(SUM(total_Waits * flag), 0) * 1e-3, 2) avg_milli
+                &FIELD
          FROM   (SELECT DECODE(snap_id, min_id, -1, 1) flag, a.*
                   FROM   (SELECT  hs1.*, MIN(s.snap_id) OVER(PARTITION BY s.dbid) min_id,
                                   MAX(s.snap_id) OVER(PARTITION BY s.dbid) max_id,
