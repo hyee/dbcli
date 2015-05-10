@@ -23,7 +23,7 @@ DBCLI does not require compile before its use, directly click "Download ZIP" and
 ###Configure terminal window
 To avoid the word wrap in the terminal window which affects the print layout, following settings are recommended in Windows command window:<br>
 1. In the "Layout" tab, set buffer width and buffer height as 500+<br>
-2. In the "Font" tab, use Roster font with the size is 6 X 12<br>
+2. In the "Font" tab, use Roster font with the size is 6 * 12<br>
 
 ###Configure enviroment
 Before running dbcli, make sure that you have installed JRE 1.7+ in your local PC.<br>
@@ -37,6 +37,19 @@ For example: dbcli.bat "connect=tiger/scott@orcl"<br><br>
 
 Besides the above commands, all database statements are also supported(i.e select/update/delete)<br><br>
 
+Fast Use
+============
+After the above configurations, you are able to successfully start the dbcli shell by executing dbcli.bat or bin\ConsoleZ\Console.exe.<br>
+Below are some common use of the utility:<br>
+
+    1. "conn" or "connect" to connect to the database with or without installing Oracle client, and "reconn"  to re-connect.
+    2. "login" command to connect to the db without password via the account that has been connected before. 
+    3. Execute SQL statements which should match the database syntax, similar to SQL*Plus.
+    4. "ora" command to execute pre-defined scripts under the "ora" sub-directory. i.e., ora ashtop, ora actives
+    5. "alias" command which is similar to the Linux command
+    6. "set" command to config the shell enviroment
+    7. 'q' or CTRL + D to abort running SQL
+    8. "help" or "help -a" to see other available commands.
 
 References
 ============
@@ -50,6 +63,7 @@ Below is the list:<br>
     ConsoleZ    : https://github.com/cbucher/console
     EDB360      : https://github.com/carlos-sierra/edb360
     MessagePack : https://github.com/fperrad/lua-MessagePack(pure lua)
+    OpenCSV     : https://github.com/hyee/OpenCSV
 
 
 Besides, some SQL scripts are from internet.
