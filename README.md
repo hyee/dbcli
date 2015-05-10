@@ -41,6 +41,7 @@ Fast Use
 ============
 After the above configurations, you are able to successfully start the dbcli shell by executing dbcli.bat or bin\ConsoleZ\Console.exe.<br>
 Below are some common use of the utility:<br>
+
     1. "conn" or "connect" to connect to the database with or without installing Oracle client, and "reconn"  to re-connect.
     2. "login" command to connect to the db without password via the account that has been connected before. 
     3. Execute SQL statements which should match the database syntax, similar to SQL*Plus.
