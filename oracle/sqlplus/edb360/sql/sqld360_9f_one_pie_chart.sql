@@ -12,7 +12,7 @@ SET TERM OFF;
 
 -- update main report
 SPO &&sqld360_main_report..html APP;
-PRO <a href="&&one_spool_filename._pie_chart.html">chart</a>
+PRO <a href="&&one_spool_filename._pie_chart.html">pie</a>
 SPO OFF;
 
 -- get time t0

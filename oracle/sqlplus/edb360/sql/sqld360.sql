@@ -44,13 +44,15 @@ BEGIN
   SELECT count(*)
     INTO num_sqlids
     FROM plan_table
-   WHERE statement_id = 'SQLD360_SQLID';
+   WHERE statement_id = 'SQLD360_SQLID'
+     AND remarks IS NULL;
 
   IF num_sqlids = 0 THEN
     -- this is a standalone execution, just proceed without values
     -- for standalone execution we want to collect TCB
     put('DEF skip_tcb=''''');
 	put('DEF from_edb360=''''');
+    put('DEF sqld360_fromedb360_days=''''');
     put('@@sql/sqld360_0a_main.sql');
 	put('HOS unzip -l &&sqld360_main_filename._&&sqld360_file_time.');
   ELSE
@@ -78,8 +80,9 @@ BEGIN
 	   END IF;
 
        num_days := TO_NUMBER(TRIM(SUBSTR(i.options,4,3)));
+       put('DEF sqld360_fromedb360_days='''||num_days||'''');
 
-       put('@@sql/sqld360_0a_main.sql '||i.operation||' '||license||' '||num_days);
+       put('@@sql/sqld360_0a_main.sql '||i.operation||' '||license);
   	   put('HOS unzip -l &&sqld360_main_filename._&&sqld360_file_time.');
 
 	END LOOP;	
@@ -90,9 +93,5 @@ END;
 /
 SPO OFF 
 SET DEF ON TERM ON
---@sqld360_driver.sql
+@@sqld360_driver.sql
 HOS rm sqld360_driver.sql
-DEF skip_tcb=''
-DEF from_edb360=''
-@@sqld360_0a_main.sql
-HOS unzip -l &&sqld360_main_filename._&&sqld360_file_time.

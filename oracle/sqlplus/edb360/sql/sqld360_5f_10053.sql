@@ -16,7 +16,13 @@ BEGIN
 END;
 /
 
+-- one of the next two command will fail depending on the version
 HOS cp &&sqld360_udump_path.*_ora_&&sqld360_spid._sqld360_10053_&&sqld360_sqlid..trc &&one_spool_filename..trc
+HOS cp &&sqld360_diagtrace_path.*_ora_&&sqld360_spid._sqld360_10053_&&sqld360_sqlid..trc &&one_spool_filename..trc
+
+SET TERM OFF
+-- if remote exec then both previous command failed
+@@&&sqld360_remote_exec.sqld360_5g_remote_10053.sql
 
 SET TERM ON
 -- get current time

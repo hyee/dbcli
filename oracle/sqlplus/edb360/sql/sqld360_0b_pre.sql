@@ -7,6 +7,12 @@ SET TIM OFF;
 SET TIMI OFF;
 CL COL;
 COL row_num FOR 9999999 HEA '#' PRI;
+
+-- version
+DEF sqld360_vYYNN = 'v1511';
+DEF sqld360_vrsn = '&&sqld360_vYYNN. (2015-04-26)';
+DEF sqld360_prefix = 'sqld360';
+
 -- get dbid
 COL sqld360_dbid NEW_V sqld360_dbid;
 SELECT TRIM(TO_CHAR(dbid)) sqld360_dbid FROM v$database;
@@ -24,17 +30,9 @@ BEGIN
   :sqld360_sqlid := '&&sqld360_sqlid.';
 END;
 /
--- check if SQLD360 is getting called by EDB360
-COL from_edb360 NEW_V from_edb360;
-SELECT CASE WHEN count(*) > 0 THEN '--' END from_edb360
-  FROM plan_table
- WHERE statement_id = 'SQLD360_SQLID' -- SQL IDs list flag
-   AND operation = '&&sqld360_sqlid.'
-   AND rownum = 1;
+
 
 BEGIN  
-  -- the check from_edb360 was here before
-  
   -- if standalone execution then need to insert metadata   
   IF '&&from_edb360.' = '' THEN
     -- no need to clean, it's a GTT
@@ -42,7 +40,6 @@ BEGIN
     INSERT INTO plan_table (statement_id, timestamp, operation, options) VALUES ('SQLD360_SQLID',sysdate,'&&sqld360_sqlid.','1');
     INSERT INTO plan_table (statement_id, timestamp, operation) VALUES ('SQLD360_ASH_LOAD',sysdate, NULL);
   END IF;
-
 END;
 /  
   
@@ -80,13 +77,10 @@ BEGIN
   END IF;
 END;
 /
-PRO
-PRO Parameter 3: Days of History? (default 31)
-PRO Use default value of 31 unless you have been instructed otherwise.
-PRO
+
 COL history_days NEW_V history_days;
 -- range: takes at least 31 days and at most as many as actual history, with a default of 31. parameter restricts within that range. 
-SELECT TO_CHAR(LEAST(CEIL(SYSDATE - CAST(MIN(begin_interval_time) AS DATE)), GREATEST(31, TO_NUMBER(NVL(TRIM('&3.'), '31'))))) history_days FROM dba_hist_snapshot WHERE '&&diagnostics_pack.' = 'Y' AND dbid = &&sqld360_dbid.;
+SELECT TO_CHAR(LEAST(CEIL(SYSDATE - CAST(MIN(begin_interval_time) AS DATE)),  TO_NUMBER(NVL('&&sqld360_fromedb360_days.', '&&sqld360_conf_days.')))) history_days FROM dba_hist_snapshot WHERE '&&diagnostics_pack.' = 'Y' AND dbid = &&sqld360_dbid.;
 SELECT '0' history_days FROM DUAL WHERE NVL(TRIM('&&diagnostics_pack.'), 'N') = 'N';
 
 DEF skip_script = 'sql/sqld360_0f_skip_script.sql ';
@@ -94,6 +88,10 @@ DEF skip_script = 'sql/sqld360_0f_skip_script.sql ';
 -- get instance number
 COL connect_instance_number NEW_V connect_instance_number;
 SELECT TO_CHAR(instance_number) connect_instance_number FROM v$instance;
+
+-- get instance name 
+COL connect_instance_name NEW_V connect_instance_name;
+SELECT TO_CHAR(instance_name) connect_instance_name FROM v$instance;
 
 -- get database name (up to 10, stop before first '.', no special characters)
 COL database_name_short NEW_V database_name_short FOR A10;
@@ -120,6 +118,9 @@ SELECT '--' skip_10g FROM v$instance WHERE version LIKE '10%';
 DEF skip_11r1 = '';
 COL skip_11r1 NEW_V skip_11r1;
 SELECT '--' skip_11r1 FROM v$instance WHERE version LIKE '11.1%';
+DEF skip_11r201 = '';
+COL skip_11r201 NEW_V skip_11r201;
+SELECT '--' skip_11r201 FROM v$instance WHERE version LIKE '11.2.0.1%';
 
 -- get average number of CPUs
 COL avg_cpu_count NEW_V avg_cpu_count FOR A3;
@@ -173,10 +174,21 @@ COL psft_tools_rel NEW_V psft_tools_rel;
 SELECT owner psft_schema FROM sys.dba_tab_columns WHERE table_name = 'PSSTATUS' AND column_name = 'TOOLSREL' AND data_type = 'VARCHAR2' AND ROWNUM = 1;
 SELECT toolsrel psft_tools_rel FROM &&psft_schema..psstatus WHERE ROWNUM = 1;
 
+-- local or remote exec (local will be --) 
+COL sqld360_remote_exec NEW_V sqld360_remote_exec FOR A20;
+SELECT '--' sqld360_remote_exec FROM dual;
+-- this SQL errors out in 11.1.0.6 and < 10.2.0.5, this is expected, the value is used only >= 11.2
+SELECT CASE WHEN a.port <> 0 AND a.machine <> b.host_name THEN NULL ELSE '--' END sqld360_remote_exec FROM v$session a, v$instance b WHERE sid = USERENV('SID');
+
+
 -- udump mnd pid, oved here from 0c_post
 -- get udump directory path
 COL sqld360_udump_path NEW_V sqld360_udump_path FOR A500;
 SELECT value||DECODE(INSTR(value, '/'), 0, '\', '/') sqld360_udump_path FROM v$parameter2 WHERE name = 'user_dump_dest';
+
+-- get diag_trace path
+COL sqld360_diagtrace_path NEW_V sqld360_diagtrace_path FOR A500;
+SELECT value||DECODE(INSTR(value, '/'), 0, '\', '/') sqld360_diagtrace_path FROM v$diag_info WHERE name = 'Diag Trace';
 
 -- get pid
 COL sqld360_spid NEW_V sqld360_spid FOR A5;
@@ -227,12 +239,42 @@ SELECT DBMS_SQLTUNE.SQLTEXT_TO_SIGNATURE(:sqld360_fullsql,0) exact_matching_sign
   FROM dual
 /
 
+COL skip_force_match NEW_V skip_force_match
+SELECT CASE WHEN '&&exact_matching_signature.' = '&&force_matching_signature.' THEN '--' END skip_force_match 
+  FROM DUAL
+/
+
+-- inclusion config determine skip flags
+COL sqld360_skip_html NEW_V sqld360_skip_html;
+COL sqld360_skip_text NEW_V sqld360_skip_text;
+COL sqld360_skip_csv  NEW_V sqld360_skip_csv;
+COL sqld360_skip_line NEW_V sqld360_skip_line;
+COL sqld360_skip_pie  NEW_V sqld360_skip_pie;
+COL sqld360_skip_bar  NEW_V sqld360_skip_bar;
+COL sqld360_skip_tree NEW_V sqld360_skip_tree;
+
+SELECT CASE '&&sqld360_conf_incl_html.' WHEN 'N' THEN '--' END sqld360_skip_html FROM DUAL;
+SELECT CASE '&&sqld360_conf_incl_text.' WHEN 'N' THEN '--' END sqld360_skip_text FROM DUAL;
+SELECT CASE '&&sqld360_conf_incl_csv.'  WHEN 'N' THEN '--' END sqld360_skip_csv  FROM DUAL;
+SELECT CASE '&&sqld360_conf_incl_line.' WHEN 'N' THEN '--' END sqld360_skip_line FROM DUAL;
+SELECT CASE '&&sqld360_conf_incl_pie.'  WHEN 'N' THEN '--' END sqld360_skip_pie  FROM DUAL;
+SELECT CASE '&&sqld360_conf_incl_bar.'  WHEN 'N' THEN '--' END sqld360_skip_bar  FROM DUAL;
+SELECT CASE '&&sqld360_conf_incl_tree.' WHEN 'N' THEN '--' END sqld360_skip_tree FROM DUAL;
+
+COL sqld360_skip_ashrpt NEW_V sqld360_skip_ashrpt;
+SELECT CASE '&&sqld360_conf_incl_ashrpt.' WHEN 'N' THEN '--' END sqld360_skip_ashrpt FROM DUAL;
+
+COL sqld360_skip_sqlmon NEW_V sqld360_skip_sqlmon;
+SELECT CASE '&&sqld360_conf_incl_sqlmon.' WHEN 'N' THEN '--' END sqld360_skip_sqlmon FROM DUAL;
+
+COL sqld360_skip_eadam NEW_V sqld360_skip_eadam;
+SELECT CASE '&&sqld360_conf_incl_eadam.' WHEN 'N' THEN '--' END sqld360_skip_eadam FROM DUAL;
+
+COL sqld360_skip_rawash NEW_V sqld360_skip_rawash;
+SELECT CASE '&&sqld360_conf_incl_rawash.' WHEN 'N' THEN '--' END sqld360_skip_rawash FROM DUAL;
 
 -- setup
-DEF sqld360_vYYNN = 'v1507';
-DEF sqld360_vrsn = '&&sqld360_vYYNN. (2015-03-24)';
-DEF sqld360_prefix = 'sqld360';
-DEF sql_trace_level = '8';
+DEF sql_trace_level = '1';
 DEF main_table = '';
 DEF title = '';
 DEF title_no_spaces = '';
@@ -252,7 +294,8 @@ DEF sq_fact_hints = 'MATERIALIZE NO_MERGE';
 DEF ds_hint = 'DYNAMIC_SAMPLING(4)';
 DEF def_max_rows = '10000';
 DEF max_rows = '1e4';
-DEF translate_lowhigh = 'Y';
+DEF num_parts = '100';
+--DEF translate_lowhigh = 'Y';
 DEF default_dir = 'SQLD360_DIR'
 DEF sqlmon_date_mask = 'YYYYMMDDHH24MISS';
 DEF sqlmon_text = 'Y';
@@ -272,7 +315,7 @@ DEF skip_csv = '';
 DEF skip_lch = 'Y';
 DEF skip_pch = 'Y';
 DEF skip_bch = 'Y';
-DEF skip_och = 'Y';
+DEF skip_tch = 'Y';
 DEF skip_all = '';
 DEF abstract = '';
 DEF abstract2 = '';
@@ -352,9 +395,14 @@ ALTER SESSION SET NLS_SORT = 'BINARY';
 ALTER SESSION SET NLS_COMP = 'BINARY';
 -- to work around bug 12672969
 ALTER SESSION SET "_optimizer_order_by_elimination_enabled"=false; 
+-- to work around bug 19567916
+ALTER SESSION SET "_optimizer_aggr_groupby_elim"=false; 
 -- to work around Siebel
---ALTER SESSION SET optimizer_index_cost_adj = 100;
---ALTER SESSION SET optimizer_dynamic_sampling = 2;
+ALTER SESSION SET optimizer_index_cost_adj = 100;
+ALTER SESSION SET optimizer_dynamic_sampling = 2;
+ALTER SESSION SET "_always_semi_join" = CHOOSE;
+ALTER SESSION SET "_and_pruning_enabled" = TRUE;
+ALTER SESSION SET "_subquery_pruning_enabled" = TRUE;
 -- tracing script in case it takes long to execute so we can diagnose it
 ALTER SESSION SET MAX_DUMP_FILE_SIZE = '1G';
 ALTER SESSION SET TRACEFILE_IDENTIFIER = "&&sqld360_tracefile_identifier.";
@@ -372,7 +420,7 @@ SET TRIMS ON;
 SET TRIM ON; 
 SET TI OFF; 
 SET TIMI OFF; 
-SET ARRAY 100; 
+SET ARRAY 1000; 
 SET NUM 20; 
 SET SQLBL ON; 
 SET BLO .; 

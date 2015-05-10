@@ -15,21 +15,14 @@ VAR tc_user VARCHAR2(30)
 
 BEGIN
 
-  SELECT sql_fulltext, parsing_schema_name
-    INTO :sql_text, :tc_user
+  SELECT parsing_schema_name
+    INTO :tc_user
     FROM gv$sql
    WHERE sql_id = '&&sqld360_sqlid.'
      AND rownum = 1
 	 AND sql_fulltext IS NOT NULL;
 
 EXCEPTION WHEN NO_DATA_FOUND THEN
-
-  SELECT sql_text
-    INTO :sql_text
-    FROM dba_hist_sqltext
-   WHERE sql_id = '&&sqld360_sqlid.'
-     AND rownum = 1
-	 AND sql_text IS NOT NULL;
 
   -- pick up one user that executed the SQL
   -- might give strange results for SQLs that run in
@@ -48,7 +41,7 @@ SET SERVEROUT ON;
 BEGIN
   DBMS_SQLDIAG.EXPORT_SQL_TESTCASE(
       directory     => :tcb_dir,
-	  sql_text      => :sql_text,
+	  sql_text      => :sqld360_fullsql,
 	  user_name     => :tc_user,
 	  testcase_name => 'sqld360_&&sqld360_sqlid.',
 	  testcase      => :tc

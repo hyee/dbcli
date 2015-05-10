@@ -1,4 +1,4 @@
-EDB360 v1509 (2015-03-25) by Carlos Sierra
+EDB360 v1515 (2015-05-06) by Carlos Sierra
 
 EDB360 is a "free to use" tool to perform an initial assessment of a remote system. 
 It gives a glance of a database state. It also helps to document any findings.
@@ -49,6 +49,48 @@ Notes
 3. If you need to generate edb360 for a range of dates other than last 31 days; or change
    default "working hours" between 7:30AM and 7:30PM; or suppress an output format such as
    text or csv; modify then file edb360_00_config.sql (back it up first).
+
+****************************************************************************************
+
+Troubleshooting
+~~~~~~~~~~~~~~~
+edb360 takes a few hours to execute on a large database. On smaller ones or on Exadata it
+takes less than 1hr. In rare cases it may take 12 hours or even more. 
+If you think edb360 takes too long on your database, the first suspect is usually the 
+state of the CBO stats on Tables behind AWR. 
+Troubleshooting steps below are for improving performance of edb360 based on known issues.
+
+Steps:
+
+1. Review files 00002_edb360_dbname_log.txt, 00003_edb360_dbname_log2.txt, 
+   00004_edb360_dbname_log3.txt and 00005_edb360_dbname_tkprof_sort.txt. 
+   First log shows the state of the statistics for AWR Tables. If stats are old then 
+   gather them fresh with script edb360/sql/gather_stats_wr_sys.sql
+   
+2. If number of rows on WRH$_ACTIVE_SESSION_HISTORY as per 00002_edb360_dbname_log.txt is
+   several millions, then you may not be purging data periodically. 
+   There are some known bugs and some blog posts on this regard. 
+   Execute query below to validate ASH age:
+
+       SELECT TRUNC(sample_time, 'MM'), COUNT(*)
+         FROM dba_hist_active_sess_history
+        GROUP BY TRUNC(sample_time, 'MM')
+        ORDER BY TRUNC(sample_time, 'MM')
+       /
+
+3. If edb360 version (first line on this readme) is older than 1 month, download and use
+   latest version: https://github.com/carlos-sierra/edb360/archive/master.zip
+
+4. Consider suppressing text and or csv reports. Each for an estimated gain of about 20%.
+   Keep in mind that when suppressing reports, you start loosing some functionality. 
+   To suppress lets say text and csv reports, place the following two commands at the end 
+   of script edb360/sql/edb360_00_config.sql
+
+       DEF edb360_conf_incl_text = 'N';
+       DEF edb360_conf_incl_csv = 'N';
+
+5. If after going through steps 1-4 above, edb360 still takes longer than a few hours, 
+   feel free to email author carlos.sierra.usa@gmail.com and provide 4 files from step 1.
 
 ****************************************************************************************
    

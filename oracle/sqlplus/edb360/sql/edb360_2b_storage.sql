@@ -381,11 +381,15 @@ SELECT v.rank,
        v.owner,
        v.segment_name,
        v.tablespace_name,
-       CASE 
+       CASE
        WHEN v.segment_type LIKE ''INDEX%'' THEN
          (SELECT i.table_name
             FROM dba_indexes i
-           WHERE i.owner = v.owner AND i.index_name = v.segment_name)
+           WHERE i.owner = v.owner AND i.index_name = v.segment_name)       
+       WHEN v.segment_type LIKE ''LOB%'' THEN
+         (SELECT l.table_name
+            FROM dba_lobs l
+           WHERE l.owner = v.owner AND l.segment_name = v.segment_name)
        END table_name,
        v.segments,
        v.extents,
@@ -759,34 +763,38 @@ PRO
 DECLARE
   sql_text CLOB;
 BEGIN
-  FOR i IN (SELECT idx.owner, idx.index_name
-              FROM dba_indexes idx,
-                   dba_tables tbl
-             WHERE idx.owner NOT IN &&exclusion_list_single_quote. -- exclude non-application schemas
-               AND idx.owner NOT IN &&exclusion_list2_single_quote. -- exclude more non-application schemas
-               AND idx.index_type IN ('NORMAL', 'FUNCTION-BASED NORMAL', 'BITMAP', 'NORMAL/REV') -- exclude domain and lob
-               AND idx.status != 'UNUSABLE' -- only valid indexes
-               AND idx.temporary = 'N'
-               AND tbl.owner = idx.table_owner
-               AND tbl.table_name = idx.table_name
-               AND tbl.last_analyzed IS NOT NULL -- only tables with statistics
-               AND tbl.num_rows > 0 -- only tables with rows as per statistics
-               AND tbl.blocks > 128 -- skip small tables
-               AND tbl.temporary = 'N')
-  LOOP
-    BEGIN
-      sql_text := 'EXPLAIN PLAN SET STATEMENT_ID = '''||:random1||''' FOR '||REPLACE(DBMS_METADATA.get_ddl('INDEX', i.index_name, i.owner), CHR(10), ' ');
-      -- cbo estimates index size based on explain plan for create index ddl
-      EXECUTE IMMEDIATE sql_text;
-      -- index owner and name do not fit on statement_id, thus using object_owner and object_name, using statement_id as processing state
-      DELETE plan_table WHERE statement_id = :random1 AND (other_xml IS NULL OR NVL(DBMS_LOB.instr(other_xml, 'index_size'), 0) = 0);
-      UPDATE plan_table SET object_owner = i.owner, object_name = i.index_name, statement_id = :random2 WHERE statement_id = :random1;
-    EXCEPTION
-      WHEN OTHERS THEN
-        DBMS_OUTPUT.PUT_LINE(i.owner||'.'||i.index_name||': '||SQLERRM);
-        DBMS_OUTPUT.PUT_LINE(DBMS_LOB.substr(sql_text));
-    END;
-  END LOOP;
+  IF '&&db_version.' < '11.2.0.3' AND '&&db_version.' >= '11.2.0.4' THEN -- avoids DBMS_METADATA.GET_DDL: Query Against SYS.KU$_INDEX_VIEW Is Slow In 11.2.0.3 as per 1459841.1
+    FOR i IN (SELECT idx.owner, idx.index_name
+                FROM dba_indexes idx,
+                     dba_tables tbl
+               WHERE idx.owner NOT IN &&exclusion_list_single_quote. -- exclude non-application schemas
+                 AND idx.owner NOT IN &&exclusion_list2_single_quote. -- exclude more non-application schemas
+                 AND idx.index_type IN ('NORMAL', 'FUNCTION-BASED NORMAL', 'BITMAP', 'NORMAL/REV') -- exclude domain and lob
+                 AND idx.status != 'UNUSABLE' -- only valid indexes
+                 AND idx.temporary = 'N'
+                 AND tbl.owner = idx.table_owner
+                 AND tbl.table_name = idx.table_name
+                 AND tbl.last_analyzed IS NOT NULL -- only tables with statistics
+                 AND tbl.num_rows > 0 -- only tables with rows as per statistics
+                 AND tbl.blocks > 128 -- skip small tables
+                 AND tbl.temporary = 'N')
+    LOOP
+      BEGIN
+        sql_text := 'EXPLAIN PLAN SET STATEMENT_ID = '''||:random1||''' FOR '||REPLACE(DBMS_METADATA.get_ddl('INDEX', i.index_name, i.owner), CHR(10), ' ');
+        -- cbo estimates index size based on explain plan for create index ddl
+        EXECUTE IMMEDIATE sql_text;
+        -- index owner and name do not fit on statement_id, thus using object_owner and object_name, using statement_id as processing state
+        DELETE plan_table WHERE statement_id = :random1 AND (other_xml IS NULL OR NVL(DBMS_LOB.instr(other_xml, 'index_size'), 0) = 0);
+        UPDATE plan_table SET object_owner = i.owner, object_name = i.index_name, statement_id = :random2 WHERE statement_id = :random1;
+      EXCEPTION
+        WHEN OTHERS THEN
+          DBMS_OUTPUT.PUT_LINE(i.owner||'.'||i.index_name||': '||SQLERRM);
+          DBMS_OUTPUT.PUT_LINE(DBMS_LOB.substr(sql_text));
+      END;
+    END LOOP;
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('*** skip on &&db_version. as per MOS 1459841.1');
+  END IF;
 END;
 /
 PRO

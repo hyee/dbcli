@@ -61,13 +61,13 @@ SPO OFF;
 HOS zip -q &&sqld360_main_filename._&&sqld360_file_time. &&sqld360_main_report..html
 
 -- execute one sql
-@@&&skip_html.sqld360_9b_one_html.sql
-@@&&skip_text.sqld360_9c_one_text.sql
-@@&&skip_csv.sqld360_9d_one_csv.sql
-@@&&skip_lch.sqld360_9e_one_line_chart.sql
-@@&&skip_pch.sqld360_9f_one_pie_chart.sql
-@@&&skip_bch.sqld360_9g_one_bar_chart.sql
-@@&&skip_och.sqld360_9h_one_org_chart.sql
+@@&&skip_html.&&sqld360_skip_html.sqld360_9b_one_html.sql
+@@&&skip_text.&&sqld360_skip_text.sqld360_9c_one_text.sql
+@@&&skip_csv.&&sqld360_skip_csv.sqld360_9d_one_csv.sql
+@@&&skip_lch.&&sqld360_skip_line.sqld360_9e_one_line_chart.sql
+@@&&skip_pch.&&sqld360_skip_pie.sqld360_9f_one_pie_chart.sql
+@@&&skip_bch.&&sqld360_skip_bar.sqld360_9g_one_bar_chart.sql
+@@&&skip_tch.&&sqld360_skip_tree.sqld360_9h_one_org_chart.sql
 HOS zip -q &&sqld360_main_filename._&&sqld360_file_time. &&sqld360_log2..txt
 EXEC :sql_text := NULL;
 COL row_num FOR 9999999 HEA '#' PRI;
@@ -81,7 +81,7 @@ DEF skip_csv = '';
 DEF skip_lch = 'Y';
 DEF skip_pch = 'Y';
 DEF skip_bch = 'Y';
-DEF skip_och = 'Y';
+DEF skip_tch = 'Y';
 DEF title_suffix = '';
 DEF haxis = '&&db_version. dbname:&&database_name_short. host:&&host_name_short. (avg cpu_count: &&avg_cpu_count.)';
 

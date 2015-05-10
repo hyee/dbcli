@@ -29,15 +29,16 @@ BEGIN
                    SELECT owner object_owner, index_name object_name, 'INDEX' object_type
                      FROM dba_indexes
                     WHERE (table_owner, table_name) IN &&tables_list_s.
-                   UNION 
-                   SELECT owner object_owner, name object_name, type object_type
-                     FROM gv$db_object_cache  
-                    WHERE type IN ('INDEX', 'TABLE', 'CLUSTER', 'VIEW', 'SYNONYM', 'SEQUENCE', 'PROCEDURE', 'FUNCTION', 'PACKAGE', 'PACKAGE BODY' ) 
-                      AND (inst_id, hash_value) IN (SELECT inst_id, to_hash
-                                                      FROM gv$object_dependency
-                                                     WHERE (inst_id, from_hash) IN (SELECT inst_id, hash_value
-                                                                                      FROM gv$sql
-                                                                                     WHERE sql_id = '&&sqld360_sqlid.')))
+&&skip_10g.&&skip_11r1.   UNION 
+&&skip_10g.&&skip_11r1.   SELECT SUBSTR(owner,1,30) object_owner, SUBSTR(name,1,30) object_name, SUBSTR(type,1,30) object_type
+&&skip_10g.&&skip_11r1.     FROM v$db_object_cache -- it's intentional here to use V$ instead of GV$ to keep the plan easy 
+&&skip_10g.&&skip_11r1.    WHERE type IN ('INDEX', 'TABLE', 'CLUSTER', 'VIEW', 'SYNONYM', 'SEQUENCE', 'PROCEDURE', 'FUNCTION', 'PACKAGE', 'PACKAGE BODY' ) 
+&&skip_10g.&&skip_11r1.      AND hash_value IN (SELECT to_hash
+&&skip_10g.&&skip_11r1.                           FROM v$object_dependency
+&&skip_10g.&&skip_11r1.                          WHERE from_hash IN (SELECT hash_value
+&&skip_10g.&&skip_11r1.                                                FROM v$sql
+&&skip_10g.&&skip_11r1.                                               WHERE sql_id = '&&sqld360_sqlid.'))
+				  )
             WHERE object_owner NOT IN ('ANONYMOUS','APEX_030200','APEX_040000','APEX_SSO','APPQOSSYS','CTXSYS','DBSNMP','DIP','EXFSYS','FLOWS_FILES',
 		                               'MDSYS','OLAPSYS','ORACLE_OCM','ORDDATA','ORDPLUGINS','ORDSYS','OUTLN','OWBSYS', 'PUBLIC',
 								       'SI_INFORMTN_SCHEMA','SQLTXADMIN','SQLTXPLAIN','SYS','SYSMAN','SYSTEM','TRCANLZR','WMSYS','XDB','XS$NULL')

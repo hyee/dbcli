@@ -76,7 +76,7 @@ BEGIN
   FOR i IN (SELECT owner, table_name, column_name, data_type, low_value, high_value
               FROM dba_tab_cols
              WHERE (owner, table_name) IN &&tables_list_s.
-		       AND '&&translate_lowhigh.' = 'Y')
+               AND '&&sqld360_conf_translate_lowhigh.' = 'Y')
   LOOP
     l_low := compute_low_high(i.data_type, i.low_value);
     l_high := compute_low_high(i.data_type, i.high_value);
@@ -113,7 +113,7 @@ SELECT TRIM(TO_CHAR(COUNT(DISTINCT owner||'.'||table_name))) num_histograms
  WHERE (owner, table_name) in &&tables_list_s.
    AND histogram <> 'NONE';
 DEF title= 'Histograms'
-DEF main_table = 'DBA_TAB_HISTOGRAMS'	
+DEF main_table = 'DBA_TAB_HISTOGRAMS'
 
 --this one initiated a new file name, need it in the next anchor
 @@sqld360_0s_pre_nondef
@@ -187,7 +187,7 @@ SELECT TRIM(TO_CHAR(COUNT(*))) cols_from_part_tables,
  WHERE (owner, table_name) in &&tables_list_s.;
 
 DEF title= 'Partitions Columns'
-DEF main_table = 'DBA_TAB_PARTITIONS'	
+DEF main_table = 'DBA_TAB_PARTITIONS'
 
 --this one initiated a new file name, need it in the next anchor
 @@sqld360_0s_pre_nondef
@@ -223,14 +223,14 @@ BEGIN
 SELECT /*+ &&top_level_hints. */
        *
   FROM (SELECT *
-	      FROM dba_segments
+          FROM dba_segments
          WHERE (owner, segment_name) in &&tables_list.
         UNION ALL
-		SELECT a.*
-		  FROM dba_segments a,
-		       dba_indexes b
-		 WHERE (b.table_owner, b.table_name) in &&tables_list.
-		   AND a.owner = b.owner
+        SELECT a.*
+          FROM dba_segments a,
+               dba_indexes b
+         WHERE (b.table_owner, b.table_name) in &&tables_list.
+           AND a.owner = b.owner
            AND a.segment_name = b.index_name)
  ORDER BY owner, segment_name, segment_type desc
 ';
@@ -245,14 +245,14 @@ BEGIN
 SELECT /*+ &&top_level_hints. */
        *
   FROM (SELECT *
-	      FROM dba_objects
+          FROM dba_objects
          WHERE (owner, object_name) in &&tables_list.
         UNION ALL
-		SELECT a.*
-		  FROM dba_objects a,
-		       dba_indexes b
-		 WHERE (b.table_owner, b.table_name) in &&tables_list.
-		   AND a.owner = b.owner
+        SELECT a.*
+          FROM dba_objects a,
+               dba_indexes b
+         WHERE (b.table_owner, b.table_name) in &&tables_list.
+           AND a.owner = b.owner
            AND a.object_name = b.index_name)
  ORDER BY owner, object_name, object_type desc
 ';

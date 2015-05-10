@@ -358,22 +358,6 @@ END;
 /
 @@&&skip_diagnostics.edb360_9a_pre_one.sql
 
--- removing since it may disconnect from Oracle when executed with user other than SYS
-DEF title = 'Alert Log';
-DEF main_table = 'X$DBGALERTEXT';
-BEGIN
-  :sql_text := '
-SELECT /*+ &&top_level_hints. */ 
-       originating_timestamp,
-       message_text
-FROM sys.x$dbgalertext
-WHERE originating_timestamp BETWEEN TO_DATE('&&edb360_date_from.', 'YYYY-MM-DD') AND TO_DATE('&&edb360_date_to.', 'YYYY-MM-DD') 
-ORDER BY originating_timestamp DESC
-';
-END;
-/
---@@&&skip_10g.edb360_9a_pre_one.sql
-
 DEF title = 'SQLTXPLAIN Version';
 DEF main_table = 'SQLTXPLAIN.SQLI$_PARAMETER';
 BEGIN

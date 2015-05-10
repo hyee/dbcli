@@ -238,8 +238,7 @@ SELECT /*+ &&sq_fact_hints. */
        blocks,
        block_size
   FROM v$archived_log
- WHERE name IS NOT NULL
-   AND first_time IS NOT NULL
+ WHERE first_time IS NOT NULL
 ),
 log_denorm AS (
 SELECT /*+ &&sq_fact_hints. */
@@ -321,8 +320,7 @@ SELECT /*+ &&sq_fact_hints. */
        blocks,
        block_size
   FROM v$archived_log
- WHERE name IS NOT NULL
-   AND first_time IS NOT NULL
+ WHERE first_time IS NOT NULL
 ),
 log_denorm AS (
 SELECT /*+ &&sq_fact_hints. */

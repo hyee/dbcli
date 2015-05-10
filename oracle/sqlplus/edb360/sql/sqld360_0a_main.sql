@@ -1,3 +1,4 @@
+@@sqld360_00_config.sql
 @@sqld360_0b_pre.sql
 @@&&skip_diagnostics.sqld360_0x_xtract_ash.sql
 @@sqld360_0t_xtract_tables.sql
@@ -27,10 +28,11 @@ PRO ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 DEF column_number = '1';
 
-@@&&from_edb360.sqld360_1a_configuration.sql
+@@sqld360_1a_configuration.sql
 @@sqld360_1b_identification.sql
 @@&&skip_10g.&&skip_11r1.sqld360_1c_xpand.sql
 @@sqld360_1d_standalone.sql
+@@sqld360_1e_nls.sql
 
 PRO ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -45,6 +47,8 @@ SPO OFF;
 @@sqld360_2a_plans.sql
 @@sqld360_2e_plan_control.sql
 @@sqld360_2b_performance.sql
+@@&&skip_force_match.sqld360_2g_performance_fm.sql
+@@&&skip_tuning.&&skip_10g.sqld360_2h_sql_monitor.sql
 @@sqld360_2c_binds.sql
 @@sqld360_2d_cursor_sharing.sql
 
@@ -86,11 +90,11 @@ PRO
 SPO OFF;
 
 @@&&skip_10g.&&skip_11r1.sqld360_5f_10053.sql
-@@&&skip_tuning.&&skip_10g.sqld360_5b_sqlmon.sql
--- @@&&skip_diagnostics.sqld360_5c_ash.sql
+@@&&skip_tuning.&&skip_10g.&&sqld360_skip_sqlmon.sqld360_5b_sqlmon.sql
+@@&&skip_diagnostics.&&sqld360_skip_ashrpt.sqld360_5c_ash.sql
 @@&&skip_tcb.&&skip_10g.sqld360_5a_tcb.sql
-@@&&skip_diagnostics.sqld360_5r_rawash.sql
-@@&&from_edb360.&&skip_diagnostics.sqld360_5e_eadam_ash.sql
+@@&&from_edb360.&&skip_diagnostics.&&sqld360_skip_rawash.sqld360_5r_rawash.sql
+@@&&from_edb360.&&skip_diagnostics.&&sqld360_skip_eadam.sqld360_5e_eadam_ash.sql
 
 PRO ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

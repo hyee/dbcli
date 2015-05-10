@@ -22,7 +22,7 @@ SELECT TO_CHAR(SYSDATE, 'YYYYMMDDHH24MISS') eadam_current_time FROM DUAL;
 
 /* ------------------------------------------------------------------------- */
 
-SET TERM OFF ECHO OFF DEF ON FEED OFF FLU OFF HEA OFF NUM 30 LIN 32767 LONG 4000000 LONGC 4000 NEWP NONE PAGES 0 SHOW OFF SQLC MIX TAB OFF TRIMS ON VER OFF TIM OFF TIMI OFF ARRAY 100 SQLP SQL> BLO . RECSEP OFF COLSEP '&&fields_delimiter.';
+SET TERM OFF ECHO OFF DEF ON FEED OFF FLU OFF HEA OFF NUM 30 LIN 32767 LONG 4000000 LONGC 4000 NEWP NONE PAGES 0 SHOW OFF SQLC MIX TAB OFF TRIMS ON VER OFF TIM OFF TIMI OFF ARRAY 1000 SQLP SQL> BLO . RECSEP OFF COLSEP '&&fields_delimiter.';
 
 SPO dba_hist_xtr_control.txt;
 SELECT d.dbid, d.name dbname, d.db_unique_name, d.platform_name,
@@ -71,4 +71,4 @@ HOS rm dba_hist_active_sess_history.txt.gz
 
 SET TERM ON COLSEP '';
 
-HOS zip -mq &&edb360_main_filename._&&edb360_file_time. &&edb360_tar_filename..tar
+HOS zip -m &&edb360_main_filename._&&edb360_file_time. &&edb360_tar_filename..tar >> &&edb360_log3..txt

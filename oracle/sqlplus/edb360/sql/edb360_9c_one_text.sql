@@ -6,7 +6,7 @@ SELECT LPAD(:file_seq, 5, '0')||'_&&spool_filename.' one_spool_filename FROM DUA
 SELECT TO_CHAR(SYSDATE, 'HH24:MI:SS') hh_mm_ss FROM DUAL;
 SET TERM ON;
 SPO &&edb360_log..txt APP;
-PRO &&hh_mm_ss. col:&&column_number.of&&max_col_number. "&&one_spool_filename..txt"
+PRO &&hh_mm_ss. &&section_id. "&&one_spool_filename..txt"
 SPO OFF;
 SET TERM OFF;
 
@@ -34,6 +34,8 @@ PRO
 
 -- get sql_id
 --SPO &&edb360_log..txt APP;
+COL edb360_prev_sql_id NEW_V edb360_prev_sql_id NOPRI;
+COL edb360_prev_child_number NEW_V edb360_prev_child_number NOPRI;
 SELECT prev_sql_id edb360_prev_sql_id, TO_CHAR(prev_child_number) edb360_prev_child_number FROM v$session WHERE sid = SYS_CONTEXT('USERENV', 'SID')
 /
 --SPO &&one_spool_filename..txt;
@@ -67,4 +69,4 @@ SPO OFF;
 SET HEA ON;
 
 -- zip
-HOS zip -mq &&edb360_main_filename._&&edb360_file_time. &&one_spool_filename..txt
+HOS zip -m &&edb360_main_filename._&&edb360_file_time. &&one_spool_filename..txt >> &&edb360_log3..txt

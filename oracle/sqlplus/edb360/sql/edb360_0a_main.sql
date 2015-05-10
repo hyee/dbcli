@@ -105,6 +105,9 @@ SPO OFF;
 @@&&skip_diagnostics.&&edb360_5b.ash_wait.sql
 @@&&skip_diagnostics.&&edb360_5c.ash_top.sql
 @@&&skip_diagnostics.&&edb360_5d.sysstat.sql
+@@&&skip_diagnostics.&&edb360_5e.sysstat_exa.sql
+@@&&skip_diagnostics.&&edb360_5f.sysstat_current.sql
+@@&&skip_diagnostics.&&edb360_5g.exadata.sql
 
 PRO ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -119,10 +122,12 @@ SPO OFF;
 @@&&skip_diagnostics.&&edb360_6a.ash_class.sql
 @@&&skip_diagnostics.&&edb360_6b.ash_event.sql
 @@&&skip_diagnostics.&&edb360_6c.ash_sql.sql
-@@&&skip_diagnostics.&&edb360_6d.ash_programs.sql
-@@&&skip_diagnostics.&&edb360_6e.ash_modules.sql
-@@&&skip_diagnostics.&&edb360_6f.ash_users.sql
-@@&&skip_diagnostics.&&edb360_6g.ash_plsql.sql
+@@&&skip_diagnostics.&&edb360_6d.ash_sql_ts.sql
+@@&&skip_diagnostics.&&edb360_6e.ash_programs.sql
+@@&&skip_diagnostics.&&edb360_6f.ash_modules.sql
+@@&&skip_diagnostics.&&edb360_6g.ash_users.sql
+@@&&skip_diagnostics.&&edb360_6h.ash_plsql.sql
+@@&&skip_diagnostics.&&edb360_6i.ash_objects.sql
 
 PRO ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -147,6 +152,8 @@ PRO
 DEF;
 SHOW PARAMETERS;
 PRO
+SELECT (DBMS_UTILITY.GET_TIME - :edb360_time0) / 100 elapsed_seconds FROM DUAL;
+PRO
 PRO end log
 SPO OFF;
 
@@ -159,4 +166,4 @@ SPO OFF;
 EXEC DBMS_APPLICATION_INFO.SET_MODULE(NULL,NULL);
 
 -- list of generated files
-HOS unzip -l &&edb360_main_filename._&&edb360_file_time.
+--HOS unzip -l &&edb360_main_filename._&&edb360_file_time. >> &&edb360_log3..txt

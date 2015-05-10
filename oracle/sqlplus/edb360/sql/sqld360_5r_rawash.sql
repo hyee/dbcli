@@ -16,9 +16,13 @@
 -- cpu_cost         session_id
 -- io_cost          session_serial#
 -- parent_id        sample_id
--- partition_start  seq#,p1text,p1,p2text,p2,p3text,p3,current_file#,current_block#, --current_row#
+-- partition_start  seq#,p1text,p1,p2text,p2,p3text,p3,current_file#,current_block#, --current_row#, --tm_delta_time, 
+--                  --tm_delta_cpu_time, --tm_delta_db_time
 -- partition_stop   --in_parse, --in_hard_parse, --in_sql_execution, qc_instance_id, qc_session_id, --qc_session_serial#, 
---                  blocking_session_status, blocking_session, blocking_session_serial#, --blocking_inst_id
+--                  -- blocking_session_status, blocking_session, blocking_session_serial#, --blocking_inst_id (11gR1 also), 
+-- 					--px_flags (11gR201 also), --pga_allocated (11gR1 also), --temp_space_allocated (11gR1 also)
+--                  --delta_time (11gR1 also), --delta_read_io_requests (11gR1 also), --delta_write_io_requests (11gR1 also), 
+--                  --delta_read_io_bytesi (11gR1 also), --delta_write_io_bytes (11gR1 also), --delta_interconnect_io_bytes (11gR1 also) 
 
 SET PAGES 50000
 
@@ -59,7 +63,7 @@ SELECT /*+ &&top_level_hints. */
        object_instance  current_obj#,
        TO_NUMBER(SUBSTR(partition_start,INSTR(partition_start,'','',1,7)+1,INSTR(partition_start,'','',1,8)-INSTR(partition_start,'','',1,7)-1)) current_file#,
        TO_NUMBER(SUBSTR(partition_start,INSTR(partition_start,'','',1,8)+1,INSTR(partition_start,'','',1,9)-INSTR(partition_start,'','',1,8)-1)) current_block#,
-       TO_NUMBER(SUBSTR(partition_start,INSTR(partition_start,'','',1,9)+1)) current_row#,
+       TO_NUMBER(SUBSTR(partition_start,INSTR(partition_start,'','',1,9)+1,INSTR(partition_start,'','',1,10)-INSTR(partition_start,'','',1,9)-1)) current_row#,
        SUBSTR(partition_stop,1,INSTR(partition_stop,'','',1,1)-1) in_parse,
        SUBSTR(partition_stop,INSTR(partition_stop,'','',1,1)+1,INSTR(partition_stop,'','',1,2)-INSTR(partition_stop,'','',1,1)-1) in_hard_parse,
        SUBSTR(partition_stop,INSTR(partition_stop,'','',1,2)+1,INSTR(partition_stop,'','',1,3)-INSTR(partition_stop,'','',1,2)-1) in_sql_execution,
@@ -69,7 +73,19 @@ SELECT /*+ &&top_level_hints. */
        SUBSTR(partition_stop,INSTR(partition_stop,'','',1,6)+1,INSTR(partition_stop,'','',1,7)-INSTR(partition_stop,'','',1,6)-1) blocking_session_status,
        TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,7)+1,INSTR(partition_stop,'','',1,8)-INSTR(partition_stop,'','',1,7)-1)) blocking_session,
        TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,8)+1,INSTR(partition_stop,'','',1,9)-INSTR(partition_stop,'','',1,8)-1)) blocking_session_serial#,
-       TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,9)+1)) blocking_inst_id
+       TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,9)+1,INSTR(partition_stop,'','',1,10)-INSTR(partition_stop,'','',1,9)-1)) blocking_inst_id,
+       TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,10)+1,INSTR(partition_stop,'','',1,11)-INSTR(partition_stop,'','',1,10)-1)) px_flags,
+       TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,11)+1,INSTR(partition_stop,'','',1,12)-INSTR(partition_stop,'','',1,11)-1)) pga_allocated,
+       TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,12)+1,INSTR(partition_stop,'','',1,13)-INSTR(partition_stop,'','',1,12)-1)) temp_space_allocated,
+       TO_NUMBER(SUBSTR(partition_start,INSTR(partition_start,'','',1,10)+1,INSTR(partition_start,'','',1,11)-INSTR(partition_start,'','',1,10)-1)) tm_delta_time,
+       TO_NUMBER(SUBSTR(partition_start,INSTR(partition_start,'','',1,11)+1,INSTR(partition_start,'','',1,12)-INSTR(partition_start,'','',1,11)-1)) tm_delta_cpu_time,
+       TO_NUMBER(SUBSTR(partition_start,INSTR(partition_start,'','',1,12)+1)) tm_delta_db_time,
+       TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,13)+1,INSTR(partition_stop,'','',1,14)-INSTR(partition_stop,'','',1,13)-1)) delta_time,
+       TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,14)+1,INSTR(partition_stop,'','',1,15)-INSTR(partition_stop,'','',1,14)-1)) delta_read_io_requests,
+       TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,15)+1,INSTR(partition_stop,'','',1,16)-INSTR(partition_stop,'','',1,15)-1)) delta_write_io_requests,
+       TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,16)+1,INSTR(partition_stop,'','',1,17)-INSTR(partition_stop,'','',1,16)-1)) delta_read_io_bytes,
+       TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,17)+1,INSTR(partition_stop,'','',1,18)-INSTR(partition_stop,'','',1,17)-1)) delta_write_io_bytes,
+       TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,18)+1)) delta_interconnect_io_bytes 
   FROM plan_table
  WHERE remarks = ''&&sqld360_sqlid.''
    AND statement_id LIKE ''SQLD360_ASH_DATA%''

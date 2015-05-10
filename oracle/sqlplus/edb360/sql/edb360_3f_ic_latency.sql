@@ -295,7 +295,7 @@ END;
 SPO OFF;
 SET SERVEROUT OFF;
 @99800_&&common_edb360_prefix._chart_setup_driver2.sql;
-HOS zip -mq &&edb360_main_filename._&&edb360_file_time. 99800_&&common_edb360_prefix._chart_setup_driver2.sql
+HOS zip -m &&edb360_main_filename._&&edb360_file_time. 99800_&&common_edb360_prefix._chart_setup_driver2.sql >> &&edb360_log3..txt
 
 DEF tit_01 = 'Cluster Avg';
 DEF tit_02 = '';

@@ -77,7 +77,7 @@ END;
 SPO OFF;
 SET SERVEROUT OFF;
 @99870_&&common_edb360_prefix._chart_setup_driver4.sql;
-HOS zip -mq &&edb360_main_filename._&&edb360_file_time. 99870_&&common_edb360_prefix._chart_setup_driver4.sql
+HOS zip -m &&edb360_main_filename._&&edb360_file_time. 99870_&&common_edb360_prefix._chart_setup_driver4.sql >> &&edb360_log3..txt
 
 DEF title = 'User plus System I/O Waits Counts per Instance';
 DEF main_table = 'DBA_HIST_EVENT_HISTOGRAM';
@@ -189,6 +189,7 @@ COL less_2048_perc FOR 999990.0;
 COL less_4096_perc FOR 999990.0;
 COL less_8192_perc FOR 999990.0;
 COL more_8192_perc FOR 999990.0;
+
 DEF tit_01 = '% < 1ms';
 DEF tit_02 = '% < 2ms';
 DEF tit_03 = '% < 4ms';
@@ -204,11 +205,12 @@ DEF tit_12 = '% < 2.048s';
 DEF tit_13 = '% < 4.096s';
 DEF tit_14 = '% < 8.192s';
 DEF tit_15 = '% > 8.192s';
+
 BEGIN
   :sql_text_backup := '
 WITH 
 event_histogram_denorm_1 AS ( 
-SELECT /*+ &&sq_fact_hints. */
+SELECT /*+ &&sq_fact_hints. &&ds_hint. */
        snap_id,
        dbid,
        instance_number,
@@ -232,18 +234,6 @@ SELECT /*+ &&sq_fact_hints. */
        SUM(CASE wait_time_milli WHEN POWER(2,12)   THEN wait_count ELSE 0 END) less_4096_ms,
        SUM(CASE wait_time_milli WHEN POWER(2,13)   THEN wait_count ELSE 0 END) less_8192_ms,
        SUM(CASE WHEN wait_time_milli > POWER(2,13) THEN wait_count ELSE 0 END) more_8192_ms
-       /*
-       SUM(CASE wait_time_milli WHEN POWER(2,14)   THEN wait_count ELSE 0 END) less_16384_ms,
-       SUM(CASE wait_time_milli WHEN POWER(2,15)   THEN wait_count ELSE 0 END) less_32768_ms,
-       SUM(CASE wait_time_milli WHEN POWER(2,16)   THEN wait_count ELSE 0 END) less_65536_ms,
-       SUM(CASE wait_time_milli WHEN POWER(2,17)   THEN wait_count ELSE 0 END) less_131072_ms,
-       SUM(CASE wait_time_milli WHEN POWER(2,18)   THEN wait_count ELSE 0 END) less_262144_ms,
-       SUM(CASE wait_time_milli WHEN POWER(2,19)   THEN wait_count ELSE 0 END) less_524288_ms,
-       SUM(CASE wait_time_milli WHEN POWER(2,20)   THEN wait_count ELSE 0 END) less_1048576_ms,
-       SUM(CASE wait_time_milli WHEN POWER(2,21)   THEN wait_count ELSE 0 END) less_2097152_ms,
-       SUM(CASE wait_time_milli WHEN POWER(2,22)   THEN wait_count ELSE 0 END) less_4194304_ms,
-       SUM(CASE WHEN wait_time_milli > POWER(2,22) THEN wait_count ELSE 0 END) more_4194304_ms
-       */
   FROM dba_hist_event_histogram
  WHERE wait_count > 0
    AND wait_class IN (''User I/O'', ''System I/O'')
@@ -280,18 +270,6 @@ SELECT /*+ &&sq_fact_hints. */
        GREATEST((h1.less_4096_ms - h0.less_4096_ms), 0) less_4096_ms,
        GREATEST((h1.less_8192_ms - h0.less_8192_ms), 0) less_8192_ms,
        GREATEST((h1.more_8192_ms - h0.more_8192_ms), 0) more_8192_ms
-       /*
-       GREATEST((h1.less_16384_ms - h0.less_16384_ms), 0) less_16384_ms,
-       GREATEST((h1.less_32768_ms - h0.less_32768_ms), 0) less_32768_ms,
-       GREATEST((h1.less_65536_ms - h0.less_65536_ms), 0) less_65536_ms,
-       GREATEST((h1.less_131072_ms - h0.less_131072_ms), 0) less_131072_ms,
-       GREATEST((h1.less_262144_ms - h0.less_262144_ms), 0) less_262144_ms,
-       GREATEST((h1.less_524288_ms - h0.less_524288_ms), 0) less_524288_ms,
-       GREATEST((h1.less_1048576_ms - h0.less_1048576_ms), 0) less_1048576_ms,
-       GREATEST((h1.less_2097152_ms - h0.less_2097152_ms), 0) less_2097152_ms,
-       GREATEST((h1.less_4194304_ms - h0.less_4194304_ms), 0) less_4194304_ms,
-       GREATEST((h1.more_4194304_ms - h0.more_4194304_ms), 0) more_4194304_ms
-       */
   FROM event_histogram_denorm_1 h0,
        event_histogram_denorm_1 h1,
        dba_hist_snapshot s0,
@@ -337,18 +315,6 @@ SELECT /*+ &&sq_fact_hints. */
        SUM(less_4096_ms)     less_4096_ms,
        SUM(less_8192_ms)     less_8192_ms,
        SUM(more_8192_ms)     more_8192_ms
-       /*
-       SUM(less_16384_ms)    less_16384_ms,
-       SUM(less_32768_ms)    less_32768_ms,
-       SUM(less_65536_ms)    less_65536_ms,
-       SUM(less_131072_ms)   less_131072_ms,
-       SUM(less_262144_ms)   less_262144_ms,
-       SUM(less_524288_ms)   less_524288_ms,
-       SUM(less_1048576_ms)  less_1048576_ms,
-       SUM(less_2097152_ms)  less_2097152_ms,
-       SUM(less_4194304_ms)  less_4194304_ms,
-       SUM(more_4194304_ms)  more_4194304_ms
-       */
   FROM event_histogram_denorm_2
  GROUP BY
        snap_id
@@ -356,34 +322,6 @@ SELECT /*+ &&sq_fact_hints. */
 SELECT snap_id,
        begin_time,
        end_time,
-       /*
-       total,
-       less_1_ms,
-       less_2_ms,
-       less_4_ms,
-       less_8_ms,
-       less_16_ms,
-       less_32_ms,
-       less_64_ms,
-       less_128_ms,
-       less_256_ms,
-       less_512_ms,
-       less_1024_ms,
-       less_2048_ms,
-       less_4096_ms,
-       less_8192_ms,
-       more_8192_ms,
-       less_16384_ms,
-       less_32768_ms,
-       less_65536_ms,
-       less_131072_ms,
-       less_262144_ms,
-       less_524288_ms,
-       less_1048576_ms,
-       less_2097152_ms,
-       less_4194304_ms,
-       more_4194304_ms,
-       */
        ROUND(100 * less_1_ms / total, 1) less_1_perc,
        ROUND(100 * less_2_ms / total, 1) less_2_perc,
        ROUND(100 * less_4_ms / total, 1) less_4_perc,
@@ -399,18 +337,6 @@ SELECT snap_id,
        ROUND(100 * less_4096_ms / total, 1) less_4096_perc,
        ROUND(100 * less_8192_ms / total, 1) less_8192_perc,
        ROUND(100 * more_8192_ms / total, 1) more_8192_perc
-       /*
-       ROUND(100 * less_16384_ms / total, 1) less_16384_perc,
-       ROUND(100 * less_32768_ms / total, 1) less_32768_perc,
-       ROUND(100 * less_65536_ms / total, 1) less_65536_perc,
-       ROUND(100 * less_131072_ms / total, 1) less_131072_perc,
-       ROUND(100 * less_262144_ms / total, 1) less_262144_perc,
-       ROUND(100 * less_524288_ms / total, 1) less_524288_perc,
-       ROUND(100 * less_1048576_ms / total, 1) less_1048576_perc,
-       ROUND(100 * less_2097152_ms / total, 1) less_2097152_perc,
-       ROUND(100 * less_4194304_ms / total, 1) less_4194304_perc,
-       ROUND(100 * more_4194304_ms / total, 1) more_4194304_perc
-       */
   FROM event_histogram_denorm_3
  ORDER BY
        snap_id

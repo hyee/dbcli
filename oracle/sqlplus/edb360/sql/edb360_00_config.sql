@@ -8,12 +8,17 @@ DEF edb360_conf_days = '31';
 -- range of dates below superceed history days when values are other than YYYY-MM-DD
 DEF edb360_conf_date_from = 'YYYY-MM-DD';
 DEF edb360_conf_date_to = 'YYYY-MM-DD';
---DEF edb360_conf_date_from = '2015-03-01';
---DEF edb360_conf_date_to = '2015-03-10';
 
 -- working hours are defined between these two HH24MM values (i.e. 7:30AM and 7:30PM)
-DEF edb360_conf_work_hours_from = '0730';
-DEF edb360_conf_work_hours_to = '1930';
+DEF edb360_conf_work_time_from = '0730';
+DEF edb360_conf_work_time_to = '1930';
+
+-- working days are defined between 1 (Sunday) and 7 (Saturday)
+DEF edb360_conf_work_day_from = '2';
+DEF edb360_conf_work_day_to = '6';
+
+-- maximum time in hours to allow edb360 to execute
+DEF edb360_conf_max_hours = '8';
 
 /**************************** not recommended to modify *********************************/
 
@@ -31,9 +36,18 @@ DEF edb360_conf_incl_ash_rpt = 'Y';
 DEF edb360_conf_incl_tkprof = 'Y';
 
 -- top sql to execute further diagnostics (range 0-128)
-DEF edb360_conf_top_sql = '32';
-DEF edb360_conf_planx_top = '32';
-DEF edb360_conf_sqlmon_top = '24';
+DEF edb360_conf_top_sql = '48';
+DEF edb360_conf_planx_top = '48';
+DEF edb360_conf_sqlmon_top = '0';
 DEF edb360_conf_sqlash_top = '0';
 DEF edb360_conf_sqlhc_top = '0';
-DEF edb360_conf_sqld360_top = '8';
+DEF edb360_conf_sqld360_top = '16';
+
+/**************************** enter your modifications here *****************************/
+
+--DEF edb360_conf_date_from = '2015-03-01';
+--DEF edb360_conf_date_to = '2015-03-10';
+
+--DEF edb360_conf_incl_text = 'N';
+--DEF edb360_conf_incl_csv = 'N';
+

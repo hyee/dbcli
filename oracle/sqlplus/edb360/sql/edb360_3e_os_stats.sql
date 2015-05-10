@@ -403,7 +403,7 @@ END;
 SPO OFF;
 SET SERVEROUT OFF;
 @99810_&&common_edb360_prefix._chart_setup_driver1.sql;
-HOS zip -mq &&edb360_main_filename._&&edb360_file_time. 99810_&&common_edb360_prefix._chart_setup_driver1.sql
+HOS zip -m &&edb360_main_filename._&&edb360_file_time. 99810_&&common_edb360_prefix._chart_setup_driver1.sql >> &&edb360_log3..txt
 
 DEF main_table = 'DBA_HIST_OSSTAT';
 DEF vaxis = 'Time as a Percent of Number of CPUs';

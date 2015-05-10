@@ -125,4 +125,34 @@ END;
 /
 @@&&skip_10g.edb360_9a_pre_one.sql       
 
+DEF title = 'SQL Plan Baselines State by SQL';
+DEF main_table = 'DBA_SQL_PLAN_BASELINES';
+BEGIN
+  :sql_text := '
+SELECT q.signature,
+       q.sql_handle,
+       MIN(q.created) created,
+       MAX(q.last_modified) last_modified,
+       MAX(q.last_executed) last_executed,
+       MAX(q.last_verified) last_verified,
+       COUNT(*) plans_in_history,
+       SUM(CASE q.enabled WHEN ''YES'' THEN 1 ELSE 0 END) enabled,
+       SUM(CASE q.enabled||q.accepted WHEN ''YESYES'' THEN 1 ELSE 0 END) enabled_and_accepted,
+       SUM(CASE q.enabled||q.accepted||q.reproduced WHEN ''YESYESYES'' THEN 1 ELSE 0 END) enabled_accepted_reproduced,
+       SUM(CASE q.enabled||q.accepted||q.reproduced||q.fixed WHEN ''YESYESYESYES'' THEN 1 ELSE 0 END) enabled_accept_reprod_fixed,
+       SUM(CASE q.enabled||q.accepted WHEN ''YESNO'' THEN 1 ELSE 0 END) pending,
+       SUM(CASE q.enabled WHEN ''NO'' THEN 1 ELSE 0 END) disabled,
+       (SELECT s.sql_text FROM dba_sql_plan_baselines s WHERE s.signature = q.signature AND s.sql_handle = q.sql_handle AND ROWNUM = 1) sql_text
+  FROM dba_sql_plan_baselines q
+ GROUP BY
+       q.signature,
+       q.sql_handle
+ ORDER BY
+       q.signature,
+       q.sql_handle
+';
+END;
+/
+@@&&skip_10g.edb360_9a_pre_one.sql       
+
 

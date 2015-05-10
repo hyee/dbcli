@@ -486,6 +486,33 @@ END;
 /
 @@&&skip_tuning.&&skip_10g.edb360_9a_pre_one.sql
 
+DEF title = 'SQL Monitor (QUEUED)';
+DEF main_table = 'GV$SQL_MONITOR';
+BEGIN
+  :sql_text := '
+SELECT /*+ &&top_level_hints. */
+       sql_id,
+       username,
+       service_name,
+       module,
+       px_is_cross_instance,
+       px_maxdop,
+       px_maxdop_instances,
+       px_servers_requested,
+       px_servers_allocated,
+       elapsed_time,
+       queuing_time,
+       sql_text
+  FROM gv$sql_monitor
+ WHERE status = ''QUEUED''
+ ORDER BY
+       sql_id,
+       queuing_time
+';
+END;
+/
+@@&&skip_tuning.&&skip_10g.edb360_9a_pre_one.sql
+
 DEF title = 'SQL with changing Elapsed Time per Execution (list)';
 DEF abstract = 'SQL Statements with "Elapsed Time per Execution" changing over time.';
 DEF main_table = 'DBA_HIST_SQLSTAT';

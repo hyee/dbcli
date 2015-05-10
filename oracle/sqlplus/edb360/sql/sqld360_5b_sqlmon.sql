@@ -1,4 +1,4 @@
-DEF section_name = 'SQL Monitor';
+DEF section_name = 'SQL Monitor Reports';
 SPO &&sqld360_main_report..html APP;
 PRO <h2>&&section_name.</h2>
 SPO OFF

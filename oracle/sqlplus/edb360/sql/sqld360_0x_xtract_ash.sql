@@ -42,9 +42,13 @@ BEGIN
                             &&skip_10g.distribution,                       -- sql_exec_start
                             cpu_cost, io_cost,                             -- session_id, session_serial#
                             parent_id,                                     -- sample_id
-                            partition_start,                               -- seq#,p1text,p1,p2text,p2,p3text,p3,current_file#,current_block#, --current_row#
+                            partition_start,                               -- seq#,p1text,p1,p2text,p2,p3text,p3,current_file#,current_block#, --current_row#, --tm_delta_time, 
+                                                                           -- --tm_delta_cpu_time, --tm_delta_db_time
                             partition_stop                                 -- --in_parse, --in_hard_parse, --in_sql_execution, qc_instance_id, qc_session_id, --qc_session_serial#, 
-                                                                           -- blocking_session_status, blocking_session, blocking_session_serial#, --blocking_inst_id (11gR1 also)
+                                                                           -- blocking_session_status, blocking_session, blocking_session_serial#, --blocking_inst_id (11gR1 also), 
+                                                                           -- --px_flags (11gR201 also), --pga_allocated (11gR1 also), --temp_space_allocated (11gR1 also)
+                                                                           -- --delta_time (11gR1 also), --delta_read_io_requests (11gR1 also), --delta_write_io_requests (11gR1 also), 
+                                                                           -- --delta_read_io_bytesi (11gR1 also), --delta_write_io_bytes (11gR1 also), --delta_interconnect_io_bytes (11gR1 also)     
                            )
      SELECT 'SQLD360_ASH_DATA_HIST', sample_time, sql_id, 
             snap_id, dbid,
@@ -57,8 +61,11 @@ BEGIN
             &&skip_10g.TO_CHAR(sql_exec_start,'YYYYMMDDHH24MISS'),
             session_id, session_serial#,
             sample_id,
-            seq#||','||p1text||','||p1||','||p2text||','||p2||','||p3text||','||p3||','||current_file#||','||current_block#||','
-            &&skip_10g.||current_row#
+            seq#||','||p1text||','||p1||','||p2text||','||p2||','||p3text||','||p3||','||current_file#||','||current_block#||
+            ','||&&skip_10g.current_row#||
+            ','||&&skip_10g.&&skip_11r1.tm_delta_time||
+            ','||&&skip_10g.&&skip_11r1.tm_delta_cpu_time||
+            ','&&skip_10g.&&skip_11r1.||tm_delta_db_time
             ,
             &&skip_10g.in_parse||
             ','||
@@ -67,8 +74,17 @@ BEGIN
             &&skip_10g.in_sql_execution||
             ','||qc_instance_id||','||qc_session_id||','||
             &&skip_10g.qc_session_serial#||
-            ','||blocking_session_status||','||blocking_session||','||blocking_session_serial#||','
-            &&skip_10g.&&skip_11r1.||blocking_inst_id
+            ','||blocking_session_status||','||blocking_session||','||blocking_session_serial#||','||
+            &&skip_10g.&&skip_11r1.blocking_inst_id||
+            ','||&&skip_10g.&&skip_11r1.&&skip_11r201.px_flags||
+            ','||&&skip_10g.&&skip_11r1.pga_allocated||
+            ','||&&skip_10g.&&skip_11r1.temp_space_allocated||
+            ','||&&skip_10g.&&skip_11r1.delta_time||
+            ','||&&skip_10g.&&skip_11r1.delta_read_io_requests||
+            ','||&&skip_10g.&&skip_11r1.delta_write_io_requests||
+            ','||&&skip_10g.&&skip_11r1.delta_read_io_bytes||
+            ','||&&skip_10g.&&skip_11r1.delta_write_io_bytes||
+            ','&&skip_10g.&&skip_11r1.||delta_interconnect_io_bytes
        FROM dba_hist_active_sess_history a,
             plan_table b
       WHERE a.sql_id = b.operation -- plan table has the SQL ID to load
@@ -87,8 +103,11 @@ BEGIN
             &&skip_10g.TO_CHAR(sql_exec_start,'YYYYMMDDHH24MISS'),
             session_id, session_serial#,
             sample_id,
-            seq#||','||p1text||','||p1||','||p2text||','||p2||','||p3text||','||p3||','||current_file#||','||current_block#||','
-            &&skip_10g.||current_row#
+            seq#||','||p1text||','||p1||','||p2text||','||p2||','||p3text||','||p3||','||current_file#||','||current_block#||
+            ','||&&skip_10g.current_row#||
+            ','||&&skip_10g.&&skip_11r1.tm_delta_time||
+            ','||&&skip_10g.&&skip_11r1.tm_delta_cpu_time||
+            ','&&skip_10g.&&skip_11r1.||tm_delta_db_time
             ,
             &&skip_10g.in_parse||
             ','||
@@ -97,8 +116,17 @@ BEGIN
             &&skip_10g.in_sql_execution||
             ','||qc_instance_id||','||qc_session_id||','||
             &&skip_10g.qc_session_serial#||
-            ','||blocking_session_status||','||blocking_session||','||blocking_session_serial#||','
-            &&skip_10g.&&skip_11r1.||blocking_inst_id
+            ','||blocking_session_status||','||blocking_session||','||blocking_session_serial#||','||
+            &&skip_10g.&&skip_11r1.blocking_inst_id||
+            ','||&&skip_10g.&&skip_11r1.&&skip_11r201.px_flags||
+            ','||&&skip_10g.&&skip_11r1.pga_allocated||
+            ','||&&skip_10g.&&skip_11r1.temp_space_allocated||
+            ','||&&skip_10g.&&skip_11r1.delta_time||
+            ','||&&skip_10g.&&skip_11r1.delta_read_io_requests||
+            ','||&&skip_10g.&&skip_11r1.delta_write_io_requests||
+            ','||&&skip_10g.&&skip_11r1.delta_read_io_bytes||
+            ','||&&skip_10g.&&skip_11r1.delta_write_io_bytes||
+            ','&&skip_10g.&&skip_11r1.||delta_interconnect_io_bytes
        FROM gv$active_session_history a,
             plan_table b
       WHERE a.sql_id = b.operation -- plan table has the SQL ID to load

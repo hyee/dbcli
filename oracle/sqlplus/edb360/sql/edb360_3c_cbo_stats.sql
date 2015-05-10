@@ -458,7 +458,7 @@ select /*+ &&top_level_hints. */
 table_name, blocks, num_rows, sample_size, last_analyzed
 from dba_tables 
 where owner = ''SYS''
-and table_name like ''WR_$\_%'' escape ''\''
+and table_name like ''WR_$%''
 order by table_name
 ';
 END;
@@ -473,9 +473,26 @@ select /*+ &&top_level_hints. */
 table_name, index_name, blevel, leaf_blocks, distinct_keys, num_rows, sample_size, last_analyzed
 from dba_indexes 
 where owner = ''SYS''
-and table_name like ''WR_$\_%'' escape ''\''
+and table_name like ''WR_$%''
 order by table_name, index_name
 ';
 END;
 /
 @@edb360_9a_pre_one.sql
+
+DEF title = 'Table Modifications for WRH$, WRI$, WRM$ and WRR$';
+DEF main_table = 'DBA_TAB_MODIFICATIONS';
+BEGIN
+  :sql_text := '
+SELECT /*+ &&top_level_hints. */
+       table_name, partition_name, inserts, updates, deletes, timestamp, truncated
+  FROM dba_tab_modifications
+ WHERE table_owner = ''SYS''
+   AND table_name LIKE ''WR_$%''
+ ORDER BY
+       table_name, partition_name
+';
+END;
+/
+@@edb360_9a_pre_one.sql
+

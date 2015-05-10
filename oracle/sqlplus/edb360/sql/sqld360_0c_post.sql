@@ -7,8 +7,9 @@ PRO ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 -- turing trace off
 ALTER SESSION SET SQL_TRACE = FALSE;
 
--- tkprof for trace from execution of tool in case someone reports slow performance in tool
+-- tkprof for trace from execution of tool in case someone reports slow performance in tool, one of the two execs will fail
 HOS tkprof &&sqld360_udump_path.*ora_&&sqld360_spid._&&sqld360_tracefile_identifier..trc &&sqld360_tkprof._sort.txt sort=prsela exeela fchela
+HOS tkprof &&sqld360_diagtrace_path.*ora_&&sqld360_spid._&&sqld360_tracefile_identifier..trc &&sqld360_tkprof._sort.txt sort=prsela exeela fchela
 
 PRO ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -62,7 +63,7 @@ HOS zip -mq &&sqld360_main_filename._&&sqld360_file_time. &&sqld360_main_report.
 HOS zip -mq &&sqld360_main_filename._&&sqld360_file_time. 00000_readme_first.txt 
 HOS unzip -l &&sqld360_main_filename._&&sqld360_file_time.
 
---update plan table
+--update plan table with zip file for eDB360 to pull
 UPDATE plan_table SET remarks = '&&sqld360_main_filename._&&sqld360_file_time..zip'  WHERE statement_id = 'SQLD360_SQLID' and operation = '&&sqld360_sqlid.';
 
 SET TERM ON;
