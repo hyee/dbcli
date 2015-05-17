@@ -8,7 +8,12 @@ function login.load()
 end
 
 function login.save()
-    env.save_data(file,login.list)    
+    local list=env.load_data(file)
+    local res,err=pcall(env.save_data,file,login.list)
+    if not res then
+        env.save_data(file,list)
+        error(err)
+    end
 end
 
 function login.capture(db,url,props)

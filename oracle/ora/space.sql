@@ -62,7 +62,7 @@ DECLARE
     END;
 
     FUNCTION show_space(p_segname    IN VARCHAR2,
-                        p_owner      IN VARCHAR2 DEFAULT USER,
+                        p_owner      IN VARCHAR2 DEFAULT sys_context('USERENV','CURRENT_SCHEMA'),
                         p_partition  IN VARCHAR2 DEFAULT NULL,
                         p_ignoreCase IN BOOLEAN := TRUE) RETURN l_grp AS
         v_free_blks          INT;
@@ -271,11 +271,11 @@ DECLARE
         into v_ary('owner'),v_ary('segment'),v_ary('partition'),v_ary('object_id')
         from (
             select /*+no_expand*/ * from dba_objects 
-            where owner in(user,v_uncl_array(1))
+            where owner in(sys_context('USERENV','CURRENT_SCHEMA'),v_uncl_array(1))
             and   object_type!='SYNONYM'
             and   object_name in(v_uncl_array(1),v_uncl_array(2))
             and   nvl(subobject_name,' ') in(v_uncl_array(2),v_uncl_array(3))
-            order by decode(owner,user,1,2),nvl2(subobject_name,1,2)
+            order by decode(owner,sys_context('USERENV','CURRENT_SCHEMA'),1,2),nvl2(subobject_name,1,2)
         ) where rownum<2;
         
         IF v_ary('object_id') is null then

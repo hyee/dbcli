@@ -26,7 +26,7 @@ function ora:validate_accessable(name,options,values)
             check_flag=2
             expect_name="access"
             for obj in option:gmatch("([^/%s]+)") do
-                if not db:check_obj(obj) then
+                if not db:check_obj(obj) and obj:upper()~="DEFAULT" then
                     default=nil
                     expect='the accesses to: '.. option
                     break

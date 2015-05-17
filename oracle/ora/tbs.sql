@@ -1,4 +1,8 @@
-/*[[Show tablspace usage]]*/
+/*[[Show tablspace usage
+    --[[
+        @CHECK_ACCESS: wmsys.wm_concat={wmsys.wm_concat(DISTINCT regexp_substr(f.file_name, '\w+'))}, default={null}
+    --]]
+]]*/
 SELECT /*+no_merge(d) no_merge(f)*/ D.TABLESPACE_NAME,
        siz "MAX_SIZE(G)",
        SPACE "FILE_SIZE(G)",
@@ -12,7 +16,7 @@ FROM   (SELECT TABLESPACE_NAME,
                round(SUM(greatest(maxbytes, bytes)) / power(1024, 3), 2) siz,
                ROUND(SUM(BYTES) / (1024 * 1024 * 1024), 2) SPACE,
                MAX(autoextensible) ext,
-               wmsys.wm_concat(DISTINCT regexp_substr(file_name, '\w+')) g
+               &CHECK_ACCESS g
         FROM   DBA_DATA_FILES
         GROUP  BY TABLESPACE_NAME) D,
        (SELECT TABLESPACE_NAME, ROUND(SUM(BYTES) / (1024 * 1024 * 1024), 2) FREE_SPACE,
@@ -28,7 +32,7 @@ SELECT h.tablespace_name,
        round(SUM(nvl(p.bytes_used, 0)) / SUM(h.bytes_free + h.bytes_used), 2) space_pct,
        round(SUM((h.bytes_free + h.bytes_used) - nvl(p.bytes_used, 0)) / power(1024, 3),2) space_free,
        NULL,NULL,
-       wmsys.wm_concat(DISTINCT regexp_substr(f.file_name, '\w+'))
+       &CHECK_ACCESS
 FROM   sys.v_$TEMP_SPACE_HEADER h, sys.v_$Temp_extent_pool p, dba_temp_files f
 WHERE  p.file_id(+) = h.file_id
 AND    p.tablespace_name(+) = h.tablespace_name

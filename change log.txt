@@ -1,3 +1,6 @@
+2015-05-17: ! oracle: merge 'ora sqls' into 'ora sqlm'
+2015-05-17: + oracle: new command "ora indexfrag"
+2015-05-17: ! oracle: update 'ora rman'
 2015-04-03: ! public: fix issue when run another script from one script
 2015-04-03: * oracle: rename 'sqlslope' as 'awrslope'
 2015-04-03: ! oracle: fix the logics of AWR-related commands 

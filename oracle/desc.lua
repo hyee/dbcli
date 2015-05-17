@@ -4,12 +4,12 @@ local desc={}
 local search_sql=[[
    WITH A AS (SELECT /*+materialize*/ * FROM(
            SELECT owner, object_name, SUBOBJECT_NAME, object_type,decode(object_type,'SYNONYM',3,1) seq
-                FROM   All_objects A
+                FROM   all_objects A
                 WHERE  object_type NOT LIKE '% BODY'
                 AND    upper('.' || A.owner || '.' || A.object_name || '.' || A.SUBOBJECT_NAME || '.') LIKE upper(:1)
                 UNION ALL
                 SELECT owner, object_name, procedure_name, 'PROCEDURE',2
-                FROM   All_procedures A
+                FROM   all_procedures A
                 WHERE  upper('.' || A.owner || '.' || A.object_name || '.' || A.procedure_name || '.') LIKE upper(:1)
                 ORDER  BY SEQ,SUBOBJECT_NAME NULLS FIRST
        ) WHERE ROWNUM<2)
@@ -28,7 +28,7 @@ local search_sql=[[
              END object_type,
              a.seq
         FROM   A,
-               ALL_SYNONYMS B
+               all_SYNONYMS B
         WHERE  A.OWNER = B.owner(+)
         AND    A.OBJECT_NAME = B.SYNONYM_NAME(+)
     ]]
@@ -46,7 +46,7 @@ local desc_sql={
                    ELSE
                     data_type
                END) DATA_TYPE,a.in_out,decode(b.default#,1,'Y','N') "Default?",character_set_name charset
-        FROM   ALL_ARGUMENTS a, sys.argument$ b
+        FROM   all_ARGUMENTS a, sys.argument$ b
         WHERE a.object_id=b.obj#
         AND   a.subprogram_id=b.procedure#
         AND   NVL(a.overload,0)=b.overload#
@@ -69,13 +69,13 @@ local desc_sql={
                            ELSE
                             data_type
                        END)
-                FROM   All_Arguments b
+                FROM   all_Arguments b
                 WHERE  a.SUBPROGRAM_ID = b.SUBPROGRAM_ID
                 AND    NVL(a.OVERLOAD, -1) = NVL(b.OVERLOAD, -1)
                 AND    position = 0
                 AND    a.object_id = b.object_id) RETURNS,
                (SELECT COUNT(1)
-                FROM   All_Arguments b
+                FROM   all_Arguments b
                 WHERE  a.SUBPROGRAM_ID = b.SUBPROGRAM_ID
                 AND    NVL(a.OVERLOAD, -1) = NVL(b.OVERLOAD, -1)
                 AND    position > 0
@@ -209,6 +209,7 @@ local desc_sql={
              DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
              DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
              DECODE(C.COLUMN_POSITION, 1, DECODE(I.UNIQUENESS,'UNIQUE','YES','NO'), '') "UNIQUE",
+             DECODE(C.COLUMN_POSITION, 1, PARTITIONED, '') "PARTITIONED",
              DECODE(C.COLUMN_POSITION, 1, (SELECT NVL(MAX('YES'),'NO') FROM ALL_Constraints AC WHERE AC.INDEX_OWNER = I.OWNER AND AC.INDEX_NAME = I.INDEX_NAME), '') "IS_PK",             
              DECODE(C.COLUMN_POSITION, 1, decode(I.STATUS,'N/A',(SELECT MIN(STATUS) FROM All_Ind_Partitions p WHERE p.INDEX_OWNER = I.OWNER AND p.INDEX_NAME = I.INDEX_NAME),I.STATUS), '') STATUS,
              C.COLUMN_POSITION NO#,
@@ -286,7 +287,7 @@ local desc_sql={
                 round(a.num_nulls*100/nullif(b.num_rows,0),2) "Nulls(%)",
                 round((num_rows-a.num_nulls)/nullif(a.num_distinct,0),2) CARDINALITY,               
                 nullif(a.HISTOGRAM,'NONE') HISTOGRAM
-         FROM   all_tab_cols c,  All_Part_Col_Statistics a ,all_tab_partitions  b
+         FROM   all_tab_cols c,  all_Part_Col_Statistics a ,all_tab_partitions  b
          WHERE  a.owner=c.owner and a.table_name=c.table_name
          AND    a.column_name=c.column_name
          AND    a.owner=B.table_owner and a.table_name=B.table_name and a.partition_name=b.partition_name
@@ -305,13 +306,14 @@ desc_sql.FUNCTION=desc_sql.PROCEDURE
 
 function desc.desc(name,option)
     if not name then return end
-    local rs
+    local rs,success
     local obj=db:check_obj(name)
     if obj then
         rs={obj.owner,obj.object_name,obj.object_subname or "",
            obj.object_subname and obj.object_type=="PACKAGE" and "PROCEDURE"
            or obj.object_type,2}
     else
+        local sql=search_sql:gsub('([Aa][Ll][Ll]%_)','dba_')
         rs=db:get_value(search_sql,{'%.'..name:upper()..'.%'})
     end
     if not rs then return print("Cannot find this object!") end
@@ -329,7 +331,9 @@ function desc.desc(name,option)
     print(("%s : %s%s%s\n"..dels):format(rs[4],rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3]))
     for i,sql in ipairs(sqls) do
         if sql:find("/*PIVOT*/",1,true) then cfg.set("PIVOT",1) end
-        db:query(sql,rs)
+        local sql1,count=sql:gsub('([Aa][Ll][Ll]%_)','dba_')
+        success=pcall(sql1,rs) 
+        if not success then db:query(sql,rs) end
         if i<#sqls then print(dels) end
     end
     

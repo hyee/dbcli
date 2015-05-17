@@ -12,6 +12,7 @@ Show active sessions. Usage: ora actives [-s|-p|-b] [waits|sid|sql|pkg|other fie
         &Filter: default={wait_class!='Idle' or sql_text is not null}, f={}
         &tmodel : default={0}, m={1}
         @COST : 11.0={nvl(1440*(sysdate-SQL_EXEC_START),wait_secs/60)},10.0={(select TIME_WAITED/6000 from gv$session_event b where b.inst_id=a.inst_id and b.sid=a.sid and b.event=a.event)},9.0={null}
+        @CHECK_ACCESS: dba_objects={dba_objects},all_objects={all_objects}
     ]]--      
 ]]*/
 
@@ -40,7 +41,7 @@ BEGIN
                extractvalue(b.column_value,'/ROW/A4')     plan_hash_value
          FROM (select distinct inst_id,sql_id,nvl(sql_child_number,0) child from s1 where sql_id is not null) A,
                TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'[
-                   SELECT (select c.owner  ||'.' || c.object_name from all_objects c where c.object_id=program_id and rownum<2) A1,
+                   SELECT (select c.owner  ||'.' || c.object_name from &CHECK_ACCESS c where c.object_id=program_id and rownum<2) A1,
                           PROGRAM_LINE# A2,
                           substr(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200) A3,
                           plan_hash_value A4
