@@ -1,5 +1,7 @@
 /*[[Get resource usage from SQL monitor. Usage: sqlm <sql_id> [A|A1|B [,<sid>]]  
-    @CHECK_VERSION: 11.0={1}
+   --[[ 
+      @CHECK_VERSION: 11.0={1} 
+   --]]
 ]]*/
 
 set feed off
