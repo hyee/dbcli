@@ -37,7 +37,7 @@ For example: dbcli.bat "connect=tiger/scott@orcl"<br><br>
 
 Besides the above commands, all database statements are also supported(i.e select/update/delete)<br><br>
 
-Fast Use
+Quick Start
 ============
 After the above configurations, you are able to successfully start the dbcli shell by executing dbcli.bat or bin\ConsoleZ\Console.exe.<br>
 Below are some common use of the utility:<br>
