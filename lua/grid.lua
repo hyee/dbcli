@@ -257,6 +257,11 @@ function grid:add(rs)
     if rownum == "on" then
         table.insert(rs,1,headind==0 and "#" or headind)
     end
+    
+    if headind==0 then
+        self.colinfo=rs.colinfo
+    end
+    
     local lines = 1                
     rs[0]=headind
     local cnt=0
@@ -265,7 +270,7 @@ function grid:add(rs)
         if k>grid.maxcol then break end
         local csize =0
         if not colsize[k] then colsize[k] = {0,1} end
-        if type(v) == "number" then
+        if headind>0 and (type(v) == "number" or  self.printhead and self.colinfo and self.colinfo[k].is_number) then
             if grid.digits<38 then
                 v=math.round(v,grid.digits)
             end

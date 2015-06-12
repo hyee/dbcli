@@ -205,12 +205,12 @@ local desc_sql={
         AND    a.owner=b.owner(+)
         ORDER BY NO#]],
     [[
-        SELECT /*INTERNAL_DBCLI_CMD*/ /*+ RULE */
+        SELECT /*INTERNAL_DBCLI_CMD*/
              DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
              DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
              DECODE(C.COLUMN_POSITION, 1, DECODE(I.UNIQUENESS,'UNIQUE','YES','NO'), '') "UNIQUE",
              DECODE(C.COLUMN_POSITION, 1, PARTITIONED, '') "PARTITIONED",
-             DECODE(C.COLUMN_POSITION, 1, (SELECT NVL(MAX('YES'),'NO') FROM ALL_Constraints AC WHERE AC.INDEX_OWNER = I.OWNER AND AC.INDEX_NAME = I.INDEX_NAME), '') "IS_PK",             
+           --DECODE(C.COLUMN_POSITION, 1, (SELECT NVL(MAX('YES'),'NO') FROM ALL_Constraints AC WHERE AC.INDEX_OWNER = I.OWNER AND AC.INDEX_NAME = I.INDEX_NAME), '') "IS_PK",             
              DECODE(C.COLUMN_POSITION, 1, decode(I.STATUS,'N/A',(SELECT MIN(STATUS) FROM All_Ind_Partitions p WHERE p.INDEX_OWNER = I.OWNER AND p.INDEX_NAME = I.INDEX_NAME),I.STATUS), '') STATUS,
              C.COLUMN_POSITION NO#,
              C.COLUMN_NAME,
@@ -304,9 +304,10 @@ desc_sql['MATERIALIZED VIEW']=desc_sql.TABLE[1]
 desc_sql['INDEX PARTITION']=desc_sql.INDEX
 desc_sql.FUNCTION=desc_sql.PROCEDURE
 
+local is_executing=false
 function desc.desc(name,option)
     if not name then return end
-    local rs,success
+    local rs,success,err
     local obj=db:check_obj(name)
     if obj then
         rs={obj.owner,obj.object_name,obj.object_subname or "",
@@ -332,8 +333,12 @@ function desc.desc(name,option)
     for i,sql in ipairs(sqls) do
         if sql:find("/*PIVOT*/",1,true) then cfg.set("PIVOT",1) end
         local sql1,count=sql:gsub('([Aa][Ll][Ll]%_)','dba_')
-        success=pcall(sql1,rs) 
-        if not success then db:query(sql,rs) end
+        is_executing=true
+        success,err=pcall(db.query,db,sql1,rs) 
+        is_executing=false
+        if not success then
+            db:query(sql,rs) 
+        end
         if i<#sqls then print(dels) end
     end
     
@@ -346,6 +351,12 @@ function desc.desc(name,option)
 
     cfg.temp("feed",feed,true)
 end
+
+function desc.handle_error(info)
+    if is_executing then info.sql=nil end
+end
+
+env.event.snoop('ON_SQL_ERROR',desc.handle_error,nil,99)  
 
 env.set_command(nil,{"describe","desc"},'Describe datbase object. Usage: desc [owner.]<object>[.partition] | [owner.]<pkg|typ>[.<function|procedure>]',desc.desc,false,3)
 return desc

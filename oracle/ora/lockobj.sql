@@ -1,4 +1,8 @@
-/*[[Find locked objects in gv$locked_object]]*/
+/*[[Find locked objects in gv$locked_object
+   --[[
+    @CHECK_ACCESS: dba_objects={dba_objects},all_objects={all_objects}
+   --]]
+]]*/
 
 set feed off
 WITH a as(SELECT /*+materialize*/ * from gv$locked_object),
@@ -15,7 +19,8 @@ SELECT /*+ordered*/ c.inst_id,
                 5, 'S/Row-X(SSX)',  /* C */
                 6, 'Exclusive',      /* X */
                 'Invalid')||']' lmode,
-       decode(d.REQUEST,0,'Request','Hold') ltype,         
+       decode(d.REQUEST,0,'Request','Hold') ltype,  
+       NULLIF(BLOCKING_SESSION||',@'||BLOCKING_INSTANCE,',@') BLOCK_BY,
        a.object_id,
        b.owner,
        b.object_name table_name,
@@ -29,7 +34,7 @@ SELECT /*+ordered*/ c.inst_id,
        c.machine       
 FROM   a, b d, gv$session c,
        XMLTABLE('/ROWSET/ROW'
-            passing(dbms_xmlgen.getxmltype('select owner,object_name,subobject_name from all_objects where object_id='||a.object_id))
+            passing(dbms_xmlgen.getxmltype('select owner,object_name,subobject_name from &CHECK_ACCESS where object_id='||a.object_id))
             columns 
                 owner             varchar2(30)
                ,object_name       varchar2(30)

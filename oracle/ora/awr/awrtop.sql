@@ -1,6 +1,7 @@
-/*[[Show AWR Top SQLs for a specific period. Usage: awrtop [0|<inst>] [ela|exec|cpu|io|cc|fetch|sort|px|row|load|parse|read|write|mem] [yymmddhhmi] [yymmddhhmi]
+/*[[Show AWR Top SQLs for a specific period. Usage: awrtop [0|<inst>] [-m] [-f"<filter>"] [ela|exec|cpu|io|cc|fetch|sort|px|row|load|parse|read|write|mem] [yymmddhhmi] [yymmddhhmi]
     --[[
-        &filter: default={1=1}, f={}
+        &filter: s={1=1},u={PARSING_SCHEMA_NAME=sys_context('userenv','current_schema')},f={}
+        &BASE : s={sql_id}, m={signature}
     --]]
 ]]*/
 
@@ -21,7 +22,8 @@ SELECT /*+ordered use_nl(a b)*/
      substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'['||chr(10)||chr(13)||chr(9)||' ]+',' '),1,150) text
 FROM (SELECT rownum r,a.* from(
           SELECT /*+ordered use_nl(s hs)*/
-                   sql_id,
+                   max(sql_id)  KEEP(dense_rank LAST ORDER BY elapsed_time_total)||case when '&base'!='sql_id' and regexp_like(&base,'^\d+$') then '|'||&base end sql_id,
+                   max(sql_id) sqlid,
                    qry.typ,
                    ''||MAX(s.plan_hash_value) KEEP(dense_rank LAST ORDER BY elapsed_time_total) plan_hash,
                    decode(typ,'mem',MAX(s.sharable_mem)/1024/1024,
@@ -45,13 +47,13 @@ FROM (SELECT rownum r,a.* from(
             WHERE  (qry.inst in('A','0') or qry.inst= ''||s.instance_number)
             AND    s.end_time BETWEEN qry.st and qry.ed
             AND    (&filter)
-            GROUP  BY sql_id,qry.typ
+            GROUP  BY &base,qry.typ
             ORDER  BY decode(qry.typ,'exec',execs,'parse',parse,val) desc nulls last)a) a,
            Dba_Hist_Sqltext b
-WHERE  a.sql_id = b.sql_id
+WHERE  a.sqlid = b.sql_id
 AND    r<=50
 union all
-SELECT 51,lpad('-',13,'-'),lpad('-',10,'-'),null,null,null,lpad('-',8,'-'),lpad('-',120,'-') from dual
+SELECT null,lpad('-',13,'-'),lpad('-',10,'-'),null,null,null,lpad('-',8,'-'),lpad('-',120,'-') from dual
 union all
 SELECT null,'FILTER:',null,null,null,
       lpad(typ,8),lpad('inst:'||inst,8),

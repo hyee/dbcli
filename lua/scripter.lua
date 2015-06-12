@@ -75,7 +75,7 @@ function scripter:parse_args(sql,args,print_args)
     
     local desc
     sql=sql:gsub(self.comment,function(item) 
-        desc=item:match("%-%-%[%[(.+)%]%]%-%-")
+        desc=item:match("%-%-%[%[(.*)%]%]%-%-")
         if not desc then desc=item:match("%-%-%[%[(.*)%-%-%]%]") end    
         return "" 
     end,1)

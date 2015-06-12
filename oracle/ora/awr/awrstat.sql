@@ -1,4 +1,8 @@
-/*[[Show the AWR performance trend for a specific SQL. Usage: awrstat <sql_id>]]*/
+/*[[Show the AWR performance trend for a specific SQL. Usage: awrstat <sql_id>
+    --[[
+        &BASE : s={sql_id}, m={signature}
+    --]]
+]]*/
 
 ORA _sqlstat
 select max(tim) tim,sql_id,plan_hash,
@@ -36,5 +40,5 @@ from(
            round(a.direct_writes,2) wr,
            a.rows_processed rows#
      from &awr$sqlstat  a
-    WHERE a.sql_id=:V1)
+    WHERE a.&BASE=:V1)
 group by snap_id,sql_id,plan_hash order by 1 desc

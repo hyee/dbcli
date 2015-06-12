@@ -1,5 +1,5 @@
 /*[[
-Show active sessions. Usage: ora actives [-s|-p|-b] [waits|sid|sql|pkg|other field]
+Show active sessions. Usage: ora actives [-s|-p|-b] [-f"<filter>"|-u] [waits|sid|sql|pkg|other field]
     --[[
         &fields : {
                s={coalesce(nullif(program_name,'0'),'['||regexp_replace(nvl(a.module,a.program),' *\(.*\)$')||'('||osuser||')]') PROGRAM,PROGRAM_LINE# line#},
@@ -9,7 +9,7 @@ Show active sessions. Usage: ora actives [-s|-p|-b] [waits|sid|sql|pkg|other fie
                  ROW_WAIT_BLOCK# WAIT_BLOCK#}
               }
         &V1 : sid={''||sid},wt={waits desc},ev={event},sql={sql_text}
-        &Filter: default={wait_class!='Idle' or sql_text is not null}, f={}
+        &Filter: default={wait_class!='Idle' or sql_text is not null}, f={},u={wait_class!='Idle' or sql_text is not null and schemaname=sys_context('userenv','current_schema')}
         &tmodel : default={0}, m={1}
         @COST : 11.0={nvl(1440*(sysdate-SQL_EXEC_START),wait_secs/60)},10.0={(select TIME_WAITED/6000 from gv$session_event b where b.inst_id=a.inst_id and b.sid=a.sid and b.event=a.event)},9.0={null}
         @CHECK_ACCESS: dba_objects={dba_objects},all_objects={all_objects}
@@ -27,7 +27,7 @@ BEGIN
           FROM   gv$session
           WHERE  sid != USERENV('SID')
           AND    audsid != userenv('sessionid')
-          --And    (event not like 'Streams%' and event not in('rdbms ipc message'))
+          And    (event not like 'Streams%')
           ),
         s2 AS
          (SELECT /*+no_merge*/* FROM gv$px_session WHERE  NOT (SID = qcsid AND inst_id = qcinst_id)),

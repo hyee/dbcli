@@ -1,6 +1,6 @@
 /*[[Show RMAN backup infomation.]]*/
 WITH a AS
- (SELECT /*+materialize*/ * FROM v$rman_backup_job_details),
+ (SELECT /*+rule materialize*/ * FROM v$rman_backup_job_details a),
 b AS
  (SELECT /*+materialize*/ b.*,nvl(b.end_time-1e-5,lead(b.start_time-1e-5,1,sysdate) over(order by session_recid)) next_time  FROM v$rman_status b where ROW_LEVEL=1),
 c AS
@@ -8,7 +8,7 @@ c AS
 d AS
  (SELECT /*+materialize*/* FROM v$backup_piece),
 x AS
- (SELECT /*+materialize use_hash(b c d)*/
+ (SELECT /*+opt_param('_optimizer_cartesian_enabled','false') materialize use_hash(b c d)*/
        b.session_recid,
        count(distinct d.tag) tags,
        --to_char(wm_concat(DISTINCT DECODE(c.incremental_level, NULL, 'L', to_char(c.incremental_level)))) INCR_LEVEL,
@@ -24,7 +24,7 @@ x AS
   WHERE  (b.recid = d.rman_status_recid or d.rman_status_recid=0 and d.start_time between b.start_time and b.next_time)
   AND    c.recid = d.recid
   GROUP  BY b.session_recid)
-SELECT a.*
+SELECT /*+opt_param('_optimizer_cartesian_enabled','false') */ a.*
 FROM   (SELECT /*+no_merge no_expand*/ *
         FROM   (SELECT /*+use_hash(a x)*/
                      session_recid ss_recid,x.tags, REPLACE(status, 'COMPLETED', 'SUCCES') STATUS,

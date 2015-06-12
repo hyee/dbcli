@@ -30,12 +30,12 @@ end
 function alias.parser(s,default_value)
     if s~="*" then
         local v=tonumber(s)
-        if not alias.args[v] and default_value then alias.args[v]=default_value end
-        if v<1 or v>9 or not alias.args[v] then return ("$"..s)..(default_value and '['..default_value..']' or '') end
+        if v<1 or v>9 then return ("$"..s)..(default_value and '['..default_value..']' or '') end
+        if (not alias.args[v] or alias.args[v] =="") and default_value then alias.args[v]=default_value end
         alias.rest[v]=""
         return alias.args[v]
     else
-        local res= table.concat(alias.rest," ")
+        local res= table.concat(alias.rest," "):gsub(' +$','')
         alias.rest={}
         return res
     end
@@ -50,20 +50,19 @@ function alias.run_command(...)
         target=target.." $*"
         alias.args={...}
         alias.rest={}
-        for i,v in ipairs(alias.args) do
-            v=v or ""
+        for i=1,9 do
+            v=alias.args[i] or ""
             if v:find("[%s\n\r\b\t]") and not v:find('"') then v='"'..v..'"' end
             alias.args[i]=v
             alias.rest[i]=v
         end
         target=target:gsub("%$(%d+)%[(.-)%]",alias.parser)
         target=target:gsub("%$([%d%*]+)",alias.parser)
-        target=target:gsub("'%$[1-9]'",''):gsub("%$[1-9]",''):gsub("[%s\n\r\b\t]+$","")
+        target=target:gsub("[%s\n\r\b\t]+$","")
         if not target:find(env.END_MARKS[2]..'$') and not target:find(env.END_MARKS[1]..'$') then target=target..env.END_MARKS[1] end
         if type(alias.cmdlist[name].text) == "string" and not target:find('[\n\r]') then
             print('$ '..target)
         end
-
         env.internal_eval(target)     
     end
 end

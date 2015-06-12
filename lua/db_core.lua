@@ -31,13 +31,24 @@ function db_Types:get(position,typeName,res,conn)
     return self[typeName].handler(value,'get',conn)
 end
 
+local number_types={
+        BIGINT   = 1,
+        TINYINT  = 1,
+        SMALLINT = 1,
+        DECIMAL  = 1,
+        DOUBLE   = 1,
+        FLOAT    = 1,
+        INTEGER  = 1,
+        NUMERIC  = 1,
+        NUMBER   = 1
+    }
 --
 function db_Types:load_sql_types(className)
     
     local typ=java.require(className)
     local m2={
         [1]={getter="getBoolean",setter="setBoolean"},
-        [2]={getter="getDouble",setter="setDouble"},
+        [2]={getter="getString",setter="setString"},
         [3]={getter="getArray",setter='setArray',
              handler=function(result,action,conn)
                 if action=="get" then
@@ -99,15 +110,6 @@ function db_Types:load_sql_types(className)
     }
     local m1={
         BOOLEAN  = m2[1],
-        BIGINT   = m2[2],
-        TINYINT  = m2[2],
-        SMALLINT = m2[2],
-        DECIMAL  = m2[2],
-        DOUBLE   = m2[2],
-        FLOAT    = m2[2],
-        INTEGER  = m2[2],
-        NUMERIC  = m2[2],
-        NUMBER   = m2[2],
         ARRAY    = m2[3],
         CLOB     = m2[4],
         NCLOB    = m2[4],
@@ -118,7 +120,7 @@ function db_Types:load_sql_types(className)
     }
     for k,v in java.fields(typ) do
         if type(k) == "string" and k:upper()==k then
-            local m=m1[k] or {getter="getString",setter="setString"}
+            local m=m1[k] or (number_types and m2[2]) or {getter="getString",setter="setString"}
             self[k]={id=v,name=k,getter=m.getter,setter=m.setter,handler=m.handler}
             self[v]=self[k]
         end
@@ -141,7 +143,8 @@ function ResultSet:getHeads(rs)
             data_type=meta:getColumnType(i),
             data_size=meta:getColumnDisplaySize(i),
             data_precision=meta:getPrecision(i),
-            data_scale=meta:getScale(i)
+            data_scale=meta:getScale(i),
+            is_number=number_types[meta:getColumnTypeName(i)]
         })
         colinfo[cname:upper()]=i
     end
@@ -170,6 +173,7 @@ function ResultSet:fetch(rs,conn)
         for k,v in ipairs(cols) do
             table.insert(titles,v.column_name)
         end
+        titles.colinfo=cols
         return titles
     end
 
