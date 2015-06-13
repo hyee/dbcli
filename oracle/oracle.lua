@@ -75,7 +75,7 @@ function oracle:connect(conn_str)
     self:load_config(url,args)
     if args.jdbc_alias or not sqlplustr then
         local pwd=args.password
-        if not pwd:find('^[%w_%$#]$') then pwd='"'..pwd..'"' end
+        if not pwd:find('^[%w_%$#]+$') and not pwd:find('^".*"$') then pwd='"'..pwd..'"' end
         sqlplustr=string.format("%s/%s@%s%s",args.user,pwd,args.url:match("@(.*)$"),
                                             args.internal_logon and " as "..args.internal_logon or "")
     end
