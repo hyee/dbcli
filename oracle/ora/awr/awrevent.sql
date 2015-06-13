@@ -14,7 +14,7 @@ FROM   (SELECT  inst,event_name, wait_class, SUM(total_Waits * flag) counts,
                 round(SUM(time_waited_micro * 1e-6 / 60 * flag), 2) waited_mins,
                 round(SUM(time_waited_micro * flag) / nullif(SUM(total_Waits * flag), 0) * 1e-3, 2) avg_milli
                 &FIELD
-         FROM   (SELECT DECODE(snap_id, min_id, -1, 1) flag, a.*
+         FROM   (SELECT DECODE(snap_id, max_id, 1, -1) flag, a.*
                   FROM   (SELECT  hs1.*, MIN(s.snap_id) OVER(PARTITION BY s.dbid) min_id,
                                   MAX(s.snap_id) OVER(PARTITION BY s.dbid) max_id,
                                   decode(nvl(LOWER(:V1),'a'),'a','A',to_char(s.instance_number)) inst
