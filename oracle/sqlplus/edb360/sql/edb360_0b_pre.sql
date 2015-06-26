@@ -6,8 +6,8 @@ SET FEED OFF;
 SET ECHO OFF;
 SET TIM OFF;
 SET TIMI OFF;
-DEF edb360_vYYNN = 'v1515';
-DEF edb360_vrsn = '&&edb360_vYYNN. (2015-05-06)';
+DEF edb360_vYYNN = 'v1519';
+DEF edb360_vrsn = '&&edb360_vYYNN. (2015-06-08)';
 
 -- parameters
 PRO
@@ -281,6 +281,16 @@ ALTER SESSION SET "_and_pruning_enabled" = TRUE;
 ALTER SESSION SET "_subquery_pruning_enabled" = TRUE;
 -- workaround 19567916
 ALTER SESSION SET "_optimizer_aggr_groupby_elim" = FALSE;
+-- workaround nigeria
+ALTER SESSION SET "_gby_hash_aggregation_enabled" = TRUE;
+ALTER SESSION SET "_hash_join_enabled" = TRUE;
+ALTER SESSION SET "_optim_peek_user_binds" = TRUE;
+ALTER SESSION SET "_optimizer_skip_scan_enabled" = TRUE;
+ALTER SESSION SET "_optimizer_sortmerge_join_enabled" = TRUE;
+ALTER SESSION SET cursor_sharing = EXACT;
+ALTER SESSION SET db_file_multiblock_read_count = 128;
+ALTER SESSION SET optimizer_index_caching = 0;
+ALTER SESSION SET optimizer_index_cost_adj = 100;
 
 -- tracing script in case it takes long to execute so we can diagnose it
 ALTER SESSION SET MAX_DUMP_FILE_SIZE = '1G';
@@ -291,18 +301,20 @@ ALTER SESSION SET EVENTS '10046 TRACE NAME CONTEXT FOREVER, LEVEL &&sql_trace_le
 -- esp collection
 HOS cat /proc/cpuinfo | grep -i name | sort | uniq >> cpuinfo_model_name.txt
 SET TERM ON;
-PRO Getting resources_requirements
+PRO Getting esp_collect_requirements and resources_requirements
 PRO Please wait ...
-@@&&skip_diagnostics.resources_requirements_awr.sql
-@@resources_requirements_statspack.sql
-PRO Getting esp_collect_requirements
-PRO Please wait ...
-@@&&skip_diagnostics.esp_collect_requirements_awr.sql
-@@esp_collect_requirements_statspack.sql
+@sql/esp_master.sql
 SET TERM OFF; 
+
 -- zip esp files but preserve original files on file system until edb360 completes (one database or multiple)
 HOS zip esp_requirements_&&esp_host_name_short..zip res_requirements_&&rr_host_name_short..txt esp_requirements_&&esp_host_name_short..csv cpuinfo_model_name.txt
 HOS zip esp_requirements_&&esp_host_name_short..zip res_requirements_stp_&&rr_host_name_short._&&ecr_collection_key..txt esp_requirements_stp_&&esp_host_name_short._&&ecr_collection_key..csv 
+
+-- nls (2nd time as esp may change them)
+ALTER SESSION SET NLS_NUMERIC_CHARACTERS = ".,";
+ALTER SESSION SET NLS_DATE_FORMAT = 'YYYY-MM-DD/HH24:MI:SS';
+ALTER SESSION SET NLS_TIMESTAMP_FORMAT = 'YYYY-MM-DD/HH24:MI:SS.FF';
+ALTER SESSION SET NLS_TIMESTAMP_TZ_FORMAT = 'YYYY-MM-DD/HH24:MI:SS.FF TZH:TZM';
 
 -- initialization
 COL row_num FOR 9999999 HEA '#' PRI;
@@ -389,7 +401,7 @@ DEF ds_hint = 'DYNAMIC_SAMPLING(4)';
 DEF def_max_rows = '10000';
 DEF max_rows = '1e4';
 DEF exclusion_list = "(''ANONYMOUS'',''APEX_030200'',''APEX_040000'',''APEX_SSO'',''APPQOSSYS'',''CTXSYS'',''DBSNMP'',''DIP'',''EXFSYS'',''FLOWS_FILES'',''MDSYS'',''OLAPSYS'',''ORACLE_OCM'',''ORDDATA'',''ORDPLUGINS'',''ORDSYS'',''OUTLN'',''OWBSYS'')";
-DEF exclusion_list2 = "(''SI_INFORMTN_SCHEMA'',''SQLTXADMIN'',''SQLTXPLAIN'',''SYS'',''SYSMAN'',''SYSTEM'',''TRCANLZR'',''WMSYS'',''XDB'',''XS$NULL'')";
+DEF exclusion_list2 = "(''SI_INFORMTN_SCHEMA'',''SQLTXADMIN'',''SQLTXPLAIN'',''SYS'',''SYSMAN'',''SYSTEM'',''TRCANLZR'',''WMSYS'',''XDB'',''XS$NULL'',''PERFSTAT'',''STDBYPERF'')";
 COL exclusion_list_single_quote NEW_V exclusion_list_single_quote;
 COL exclusion_list2_single_quote NEW_V exclusion_list2_single_quote;
 SELECT REPLACE('&&exclusion_list.', '''''', '''') exclusion_list_single_quote FROM DUAL;
@@ -548,6 +560,23 @@ PRO begin log
 PRO
 DEF;
 PRO Parameters
+COL sid FOR A40;
+COL name FOR A40;
+COL value FOR A50;
+COL display_value FOR A50;
+COL update_comment NOPRI;
+SELECT *
+  FROM v$spparameter
+ WHERE isspecified = 'TRUE'
+ ORDER BY
+       name,
+       sid,
+       ordinal;
+COL sid FOR A80;
+COL name FOR A80;
+COL value FOR A255;
+COL display_value FOR A255;
+COL update_comment PRI;
 SHOW PARAMETERS;
 SET TI ON;
 SET TIMI ON;

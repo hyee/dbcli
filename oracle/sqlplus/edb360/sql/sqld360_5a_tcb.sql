@@ -20,7 +20,7 @@ BEGIN
     FROM gv$sql
    WHERE sql_id = '&&sqld360_sqlid.'
      AND rownum = 1
-	 AND sql_fulltext IS NOT NULL;
+     AND sql_fulltext IS NOT NULL;
 
 EXCEPTION WHEN NO_DATA_FOUND THEN
 
@@ -29,7 +29,7 @@ EXCEPTION WHEN NO_DATA_FOUND THEN
   -- different schemas where underlying objects are different
   SELECT parsing_schema_name
     INTO :tc_user
-	FROM dba_hist_sqlstat
+    FROM dba_hist_sqlstat
    WHERE sql_id =  '&&sqld360_sqlid.'
      AND ROWNUM = 1;
 
@@ -41,10 +41,10 @@ SET SERVEROUT ON;
 BEGIN
   DBMS_SQLDIAG.EXPORT_SQL_TESTCASE(
       directory     => :tcb_dir,
-	  sql_text      => :sqld360_fullsql,
-	  user_name     => :tc_user,
-	  testcase_name => 'sqld360_&&sqld360_sqlid.',
-	  testcase      => :tc
+      sql_text      => :sqld360_fullsql,
+      user_name     => :tc_user,
+      testcase_name => 'sqld360_&&sqld360_sqlid.',
+      testcase      => :tc
   );
 END;
 /

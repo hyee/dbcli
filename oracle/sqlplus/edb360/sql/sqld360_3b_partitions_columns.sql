@@ -17,7 +17,7 @@ BEGIN
   FOR i IN (SELECT table_name, owner 
               FROM dba_tables 
              WHERE (owner, table_name) in &&tables_list_s. 
-			   AND partitioned = 'YES'
+               AND partitioned = 'YES'
              ORDER BY 1,2) 
   LOOP
     DBMS_OUTPUT.PUT_LINE('<td class="c">'||i.owner||'.'||i.table_name||'</td>');
@@ -71,7 +71,7 @@ BEGIN
   put('              FROM dba_part_col_statistics a,');
   put('                   dba_tab_cols b');
   put('             WHERE (a.owner, a.table_name) IN &&tables_list.');
-  put('		          AND ''&&sqld360_conf_translate_lowhigh.'' = ''Y''');
+  put('               AND ''&&sqld360_conf_translate_lowhigh.'' = ''Y''');
   put('               AND a.owner = b.owner');
   put('               AND a.table_name = b.table_name');
   put('               AND a.column_name = b.column_name)');
@@ -82,25 +82,25 @@ BEGIN
   put('    VALUES (''SQLD360_LOW_HIGH'', i.owner, i.table_name, i.partition_name, i.column_name, l_low, l_high);');
   put('  END LOOP;');
   put('END;');
-  put('/');	
+  put('/');
 
   FOR i IN (SELECT table_name, owner 
               FROM dba_tables 
              WHERE (owner, table_name) in &&tables_list_s. 
-			   AND partitioned = 'YES'
+               AND partitioned = 'YES'
              ORDER BY 1,2) 
-  LOOP	
+  LOOP
     put('SET PAGES 50000');
-    put('SPO &&sqld360_main_report..html APP;');	
+    put('SPO &&sqld360_main_report..html APP;');
     put('PRO <td>');
     put('SPO OFF');
     FOR j IN (SELECT table_owner, table_name, partition_name, partition_position
-		        FROM (SELECT table_owner, table_name, partition_name, partition_position,
-	                         ROW_NUMBER() OVER (ORDER BY partition_position) rn, COUNT(*) OVER () num_part	
-      		            FROM dba_tab_partitions 
+                FROM (SELECT table_owner, table_name, partition_name, partition_position,
+                             ROW_NUMBER() OVER (ORDER BY partition_position) rn, COUNT(*) OVER () num_part
+                        FROM dba_tab_partitions 
                        WHERE table_owner = i.owner
                          AND table_name = i.table_name)
-               WHERE (rn <= &&sqld360_conf_first_part OR rn >= num_part-&&sqld360_conf_last_part)			
+               WHERE (rn <= &&sqld360_conf_first_part OR rn >= num_part-&&sqld360_conf_last_part)
                ORDER BY partition_position DESC) 
     LOOP
 
@@ -113,8 +113,8 @@ BEGIN
       put('  FROM dba_part_col_statistics a,');
       put('       plan_table b');
       put(' WHERE a.owner = '''''||j.table_owner||''''''); 
-	  put('   AND a.table_name = '''''||j.table_name||'''''');
-	  put('   AND a.partition_name = '''''||j.partition_name||'''''');
+      put('   AND a.table_name = '''''||j.table_name||'''''');
+      put('   AND a.partition_name = '''''||j.partition_name||'''''');
       put('   AND a.owner = b.object_owner(+)');
       put('   AND a.table_name = b.object_name(+)');
       put('   AND a.partition_name = b.object_node(+)');

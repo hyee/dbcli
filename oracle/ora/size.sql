@@ -1,24 +1,67 @@
-/*[[
-Show object size. Usage: ora size object_name [owner]
-]]*/
-
+/*[[ Show object size. Usage: ora size [ [owner.]object_name[.PARTITION_NAME] ]  ]]*/
+set feed off
+VAR cur CURSOR
+BEGIN
+    IF :V1 IS NOT NULL THEN
+        OPEN :cur FOR
+        WITH r AS
+         (SELECT DISTINCT owner, object_name, object_type,null partition_name
+          FROM   dba_objects
+          WHERE  owner = nvl(upper(TRIM(SUBSTR(:V1, 1, INSTR(:V1, '.') - 1))),SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'))
+          AND    object_name = UPPER(DECODE(INSTR(:V1, '.'), 0, :V1, regexp_substr(:V1, '[^ \.]+', 1, 2)))
+          AND    subobject_name IS NULL
+          AND    SUBSTR(object_type, 1, 3) IN ('TAB', 'IND', 'LOB')
+          AND    :V1 IS NOT NULL
+          UNION ALL
+          SELECT DISTINCT owner, object_name, object_type,subobject_name
+          FROM   dba_objects
+          WHERE  owner = UPPER(DECODE(LENGTH(:V1)-LENGTH(REPLACE(:V1,'.')),2,regexp_substr(:V1, '[^ \.]+'),SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')))
+          AND    object_name = UPPER(regexp_substr(:V1, '[^ \.]+',1,LENGTH(:V1)-LENGTH(REPLACE(:V1,'.'))))
+          AND    subobject_name=UPPER(regexp_substr(:V1, '[^ \.]+',1,LENGTH(:V1)-LENGTH(REPLACE(:V1,'.'))+1))
+          AND    SUBSTR(object_type, 1, 3) IN ('TAB', 'IND', 'LOB')
+          AND    INSTR(:V1,'.')>0),
+        R2 AS
+         (SELECT /*+materialize*/a.*,max(p) over()||'%' PARTITION_NAME
+          FROM   (SELECT 1 flag, owner, index_name object_name, 'INDEX' object_type,null p
+                   FROM   Dba_Indexes
+                   WHERE  (table_owner, table_name) IN (SELECT owner, object_name FROM r)
+                   UNION
+                   SELECT 2 flag, owner, segment_name, 'LOB' object_type,null
+                   FROM   Dba_lobs
+                   WHERE  (owner, table_name) IN (SELECT owner, object_name FROM r)
+                   UNION
+                   SELECT 0 flag, owner, object_name, object_type,partition_name
+                   FROM   r) a)
+        SELECT owner, object_name, object_type,
+               0+REGEXP_SUBSTR(INFO,'[^/]+',1,1) "SIZE(MB)",
+               0+REGEXP_SUBSTR(INFO,'[^/]+',1,2) SEGMENTS,
+               0+REGEXP_SUBSTR(INFO,'[^/]+',1,3) EXTENTS,
+               0+REGEXP_SUBSTR(INFO,'[^/]+',1,4) AVG_INIT_KB,
+                 REGEXP_SUBSTR(INFO,'[^/]+',1,5) TABLESPACE_NAME
+        FROM(
+            SELECT R2.*,
+                   (SELECT round(SUM(bytes) / 1024 / 1024, 2)||'/'||count(1)||'/'||SUM(EXTENTS)||'/'||ROUND(AVG(INITIAL_EXTENT)/1024)||'/'||MAX(TABLESPACE_NAME) KEEP(DENSE_RANK LAST ORDER BY BYTES)
+                     FROM   dba_segments s
+                     WHERE  r2.owner = s.owner
+                     AND    r2.object_name = s.segment_name
+                     AND    NVL(s.PARTITION_NAME,' ') LIKE R2.PARTITION_NAME) INFO
+            FROM   R2)
+        ORDER  BY flag, owner,object_name;
+    ELSE
+        OPEN :CUR FOR
+        SELECT * FROM (
+            SELECT OWNER,SEGMENT_NAME,round(SUM(bytes) / 1024 / 1024, 2) "SIZE(MB)" , count(1) SEGMENTS, SUM(EXTENTS) EXTENTS, ROUND(AVG(INITIAL_EXTENT)/1024) AVG_INIT_KB,
+                    MAX(TABLESPACE_NAME) KEEP(DENSE_RANK LAST ORDER BY BYTES) TABLESPACE_NAME
+            FROM   dba_segments s
+            WHERE  OWNER=SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
+            GROUP BY OWNER,SEGMENT_NAME
+            ORDER BY 3 DESC
+        ) WHERE ROWNUM<=100;
+    END IF;
+END;
+/
+/*,
 --estimation of object size: refer to https://docs.oracle.com/cd/A58617_01/server.804/a58397/apa.htm
-WITH s as(select /*+materialize*/ * from dba_segments), 
-r AS
- (SELECT DISTINCT owner, segment_name
-  FROM   s
-  WHERE  upper(owner || '.' || segment_name) LIKE upper('%' || :V2 || '.' || :V1)),
-R2 AS
- (SELECT owner, index_name segment_name, table_owner, table_name
-  FROM   Dba_Indexes
-  WHERE  (table_owner, table_name) IN (SELECT * FROM r)
-  UNION
-  SELECT owner, segment_name, owner, table_name
-  FROM   Dba_lobs
-  WHERE  (owner, table_name) IN (SELECT * FROM r)
-  UNION
-  SELECT r.*, r.*
-  FROM   r)/*,
 HDR AS
  (SELECT --+materialize  
           MAX(a.VALUE) - SUM(CASE
@@ -70,16 +113,3 @@ HDR AS
   AND    a.owner = r2.owner
   AND    a.table_owner = z.owner
   AND    a.table_name = z.table_name))*/
-SELECT /*+no_merge(r2) leading(r2 s r3)*/ owner,
-       NVL(segment_name, '--TOTAL--') segment_name,
-       MAX(segment_type) segment_type,
-       round(SUM(bytes / 1024 / 1024), 2) "Size(MB)",
-       --round(SUM(DISTINCT block_size*est_block / 1024 / 1024), 2) "Est Size(MB)",
-       trunc(AVG(INITIAL_EXTENT)) INIEXT,
-       MAX(max_extents) MAXEXT
-FROM   S
-JOIN   r2
-USING  (owner, segment_name)
---LEFT JOIN   r3 USING  (owner, segment_name, table_owner, table_name)
---CROSS  JOIN hdr
-GROUP  BY GROUPING SETS((owner, segment_name, table_owner, table_name),(table_owner, table_name))

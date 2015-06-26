@@ -43,6 +43,8 @@ local desc_sql={
                     a.pls_type
                    WHEN a.type_subname IS NOT NULL THEN
                     a.type_name || '.' || a.type_subname
+                   WHEN a.type_name IS NOT NULL THEN
+                    a.type_name||'('||DATA_TYPE||')'
                    ELSE
                     data_type
                END) DATA_TYPE,a.in_out,decode(b.default#,1,'Y','N') "Default?",character_set_name charset
@@ -66,6 +68,8 @@ local desc_sql={
                             pls_type
                            WHEN type_subname IS NOT NULL THEN
                             type_name || '.' || type_subname
+                           WHEN type_name IS NOT NULL THEN
+                            type_name||'('||DATA_TYPE||')' 
                            ELSE
                             data_type
                        END)

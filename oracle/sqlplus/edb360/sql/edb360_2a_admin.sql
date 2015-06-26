@@ -1079,6 +1079,7 @@ SELECT /*+ &&top_level_hints. */
    AND (s.cache_size < 1000 OR s.order_flag = ''Y'')
    AND s.min_value != s.last_number
    AND s.max_value != s.last_number
+   AND (s.last_number - CASE WHEN s.increment_by > 0 THEN s.min_value ELSE s.max_value END) / s.increment_by > 10000
  ORDER BY 1 DESC
 ';
 END;

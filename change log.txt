@@ -1,3 +1,8 @@
+2015-06-26: + oracle: new command "awrdiff" to extract AWR diff report
+2015-06-26: + oracle: new command "sys" which is similar to "ora" command except only support SYSDBA a/c
+2015-06-26: + oracle: new command "ora addm" and "ora sysslope"
+2015-06-26: ! oracle: fixes,enhancement and performance tuning on some existing modules
+2015-06-13: ! public: minor bug fixes
 2015-06-13: + oracle: new command "ora pins" and "ora waiters"
 2015-06-13: ! public: update to latest luajit and consolez
 2015-06-13: ! public: minor fixes
@@ -105,7 +110,7 @@
 2014-05-20: fix error for "set rowdel"
 2014-05-15: switch to luajit v2.1
 2014-05-15: move init.cfg to folder "data"
-2014-05-14: add oracle "snap" moddule, see command "snap"
+2014-05-14: add oracle "snap" module, see command "snap"
 2014-05-13: performance trace for dev purpose, see "set trace" and "set profiler"
 2014-05-10: add "password" module, as well as the "SaveLogin" option and "Login" command
 2014-05-10: Fix of "table.dump" function

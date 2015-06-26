@@ -1545,8 +1545,8 @@ SELECT /*+ &&sq_fact_hints. */
        sn.end_interval_time
 )
 SELECT MAX(snap_id) snap_id,
-       (end_time - (1/24)) begin_time,
-       end_time,
+       TO_CHAR(end_time - (1/24), ''YYYY-MM-DD HH24:MI'') begin_time,
+       TO_CHAR(end_time, ''YYYY-MM-DD HH24:MI'') end_time,
        ROUND(MAX(all_tablespaces_bytes) / POWER(2, 30), 3),
        ROUND(MAX(perm_tablespaces_bytes) / POWER(2, 30), 3),
        ROUND(MAX(undo_tablespaces_bytes) / POWER(2, 30), 3),
@@ -1918,8 +1918,8 @@ io_per_inst_and_hr AS (
 SELECT /*+ &&sq_fact_hints. */
        MIN(snap_id) snap_id,
        instance_number,
-       begin_time,
-       begin_time + (1/24) end_time,
+       TO_CHAR(begin_time, ''YYYY-MM-DD HH24:MI'') begin_time,
+       TO_CHAR(begin_time + (1/24), ''YYYY-MM-DD HH24:MI'') end_time,
        ROUND(MAX((r_reqs + w_reqs) / elapsed_sec)) rw_iops,
        ROUND(MAX(r_reqs / elapsed_sec)) r_iops,
        ROUND(MAX(w_reqs / elapsed_sec)) w_iops,
@@ -2311,8 +2311,8 @@ io_per_inst_and_hr AS (
 SELECT /*+ &&sq_fact_hints. */
        MIN(snap_id) snap_id,
        instance_number,
-       begin_time,
-       begin_time + (1/24) end_time,
+       TO_CHAR(begin_time, ''YYYY-MM-DD HH24:MI'') begin_time,
+       TO_CHAR(begin_time + (1/24), ''YYYY-MM-DD HH24:MI'') end_time,
        ROUND(MAX(reads / elapsed_sec)) reads_ps,
        ROUND(MAX(writes / elapsed_sec)) writes_ps,
        ROUND(MAX(r_flash_cache_hits / elapsed_sec)) r_flash_cache_hits_ps,

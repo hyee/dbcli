@@ -26,14 +26,24 @@ function var.helper()
     return help
 end
 
-function var.import_context(ary)
+function var.import_context(ary,ary1)
     for k,v in pairs(ary) do var.global_context[k]=v end
+    for k,v in pairs(ary1 or {}) do var.inputs[k]=v end
+    if ary1 then
+        for k,v in pairs(var.global_context) do 
+            if not ary[k] then var.global_context[k]=nil end
+        end
+        for k,v in pairs(var.inputs) do 
+            if not ary1[k] then var.inputs[k]=nil end
+        end
+    end
 end
 
 function var.backup_context()
-    local ary={}
+    local ary,ary1={},{}
     for k,v in pairs(var.global_context) do ary[k]=v end
-    return ary
+    for k,v in pairs(var.inputs) do ary1[k]=v end
+    return ary,ary1
 end
 
 function var.setOutput(name,datatype,desc)
@@ -214,10 +224,28 @@ function var.save(name,file)
     print("Data saved to "..file);
 end
 
+function var.capture_before_cmd(cmd,args)
+    if cmd~="DEF" and cmd~="DEFINE"  and not (env._CMDS[cmd] and tostring(env._CMDS[cmd].DESC) or ""):find('(DEF',1,true) then
+        var._backup,var._inputs_backup=var.backup_context()
+    else
+        var._backup,var._inputs_backup=nil,nil
+    end
+end
+
+function var.capture_after_cmd(cmd,args)
+    if var._backup then
+        var.import_context(var._backup,var._inputs_backup)
+        var._backup,var._inputs_backup=nil,nil
+    end
+end
+
 function var.onload()
     snoop('BEFORE_DB_EXEC',var.before_db_exec)
     snoop('AFTER_DB_EXEC',var.after_db_exec)
     snoop('BEFORE_PRINT_TEXT' ,var.before_print)
+    snoop("BEFORE_ROOT_COMMAND",var.capture_before_cmd)
+    snoop("AFTER_ROOT_COMMAND",var.capture_after_cmd)
+
     cfg.init("PrintVar",'on',nil,"db.core","Max size of historical commands",'on,off')
     cfg.init("Define",'on',nil,"db.core","Defines the substitution character(&) and turns substitution on and off.",'on,off')
     env.set_command(nil,{"Accept","Acc"},'Assign user-input value into a existing variable. Usage: accept <var> [[prompt] <prompt_text>|@<file>]',var.accept_input,false,3)

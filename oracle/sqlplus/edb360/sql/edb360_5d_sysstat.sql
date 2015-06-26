@@ -225,15 +225,15 @@ EXEC :sql_text := REPLACE(:sql_text, '@stat_name_08@', '&&tit_08.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_09@', '&&tit_09.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_10@', '&&tit_10.');
 EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',18,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',18,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_04', '"'||SUBSTR('&&tit_04.',18,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_05', '"'||SUBSTR('&&tit_05.',18,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_06', '"'||SUBSTR('&&tit_06.',18,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',24,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',24,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_04', '"'||SUBSTR('&&tit_04.',24,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_05', '"'||SUBSTR('&&tit_05.',24,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_06', '"'||SUBSTR('&&tit_06.',24,30)||'"');
 EXEC :sql_text := REPLACE(:sql_text, 'dummy_07', '"'||SUBSTR('&&tit_07.',18,30)||'"');
 EXEC :sql_text := REPLACE(:sql_text, 'dummy_08', '"'||SUBSTR('&&tit_08.',18,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_09', '"'||SUBSTR('&&tit_09.',34,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_10', '"'||SUBSTR('&&tit_10.',34,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_09', '"'||SUBSTR('&&tit_09.',28,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_10', '"'||SUBSTR('&&tit_10.',28,30)||'"');
 @@edb360_9a_pre_one.sql
 
 DEF skip_lch = '';
@@ -292,20 +292,20 @@ EXEC :sql_text := REPLACE(:sql_text, '@stat_name_11@', '&&tit_11.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_12@', '&&tit_12.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_13@', '&&tit_13.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_14@', '&&tit_14.');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_04', '"'||SUBSTR('&&tit_04.',16,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_05', '"'||SUBSTR('&&tit_05.',16,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_06', '"'||SUBSTR('&&tit_06.',16,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_07', '"'||SUBSTR('&&tit_07.',16,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_08', '"'||SUBSTR('&&tit_08.',16,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_09', '"'||SUBSTR('&&tit_09.',16,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_10', '"'||SUBSTR('&&tit_10.',12,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_11', '"'||SUBSTR('&&tit_11.',12,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_12', '"'||SUBSTR('&&tit_12.',12,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_13', '"'||SUBSTR('&&tit_13.',12,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_14', '"'||SUBSTR('&&tit_14.',12,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_04', '"'||SUBSTR('&&tit_04.',37,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_05', '"'||SUBSTR('&&tit_05.',37,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_06', '"'||SUBSTR('&&tit_06.',37,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_07', '"'||SUBSTR('&&tit_07.',34,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_08', '"'||SUBSTR('&&tit_08.',34,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_09', '"'||SUBSTR('&&tit_09.',34,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_10', '"'||SUBSTR('&&tit_10.',23,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_11', '"'||SUBSTR('&&tit_11.',23,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_12', '"'||SUBSTR('&&tit_12.',23,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_13', '"'||SUBSTR('&&tit_13.',23,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_14', '"'||SUBSTR('&&tit_14.',23,30)||'"');
 @@edb360_9a_pre_one.sql
 
 DEF skip_lch = '';
@@ -430,8 +430,8 @@ EXEC :sql_text := REPLACE(:sql_text, 'dummy_09', '"'||SUBSTR('&&tit_09.',1,30)||
 EXEC :sql_text := REPLACE(:sql_text, 'dummy_10', '"'||SUBSTR('&&tit_10.',1,30)||'"');
 EXEC :sql_text := REPLACE(:sql_text, 'dummy_11', '"'||SUBSTR('&&tit_11.',1,30)||'"');
 EXEC :sql_text := REPLACE(:sql_text, 'dummy_12', '"'||SUBSTR('&&tit_12.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_13', '"'||SUBSTR('&&tit_13.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_14', '"'||SUBSTR('&&tit_14.',1,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_13', '"'||SUBSTR('&&tit_13.',14,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_14', '"'||SUBSTR('&&tit_14.',14,30)||'"');
 @@edb360_9a_pre_one.sql
 
 DEF skip_lch = '';
@@ -517,21 +517,21 @@ EXEC :sql_text := REPLACE(:sql_text, '@stat_name_12@', '&&tit_12.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_13@', '&&tit_13.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_14@', '&&tit_14.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_15@', '&&tit_15.');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_04', '"'||SUBSTR('&&tit_04.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_05', '"'||SUBSTR('&&tit_05.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_06', '"'||SUBSTR('&&tit_06.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_07', '"'||SUBSTR('&&tit_07.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_08', '"'||SUBSTR('&&tit_08.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_09', '"'||SUBSTR('&&tit_09.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_10', '"'||SUBSTR('&&tit_10.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_11', '"'||SUBSTR('&&tit_11.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_12', '"'||SUBSTR('&&tit_12.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_13', '"'||SUBSTR('&&tit_13.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_14', '"'||SUBSTR('&&tit_14.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_15', '"'||SUBSTR('&&tit_15.',1,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',6,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',6,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',6,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_04', '"'||SUBSTR('&&tit_04.',6,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_05', '"'||SUBSTR('&&tit_05.',6,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_06', '"'||SUBSTR('&&tit_06.',6,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_07', '"'||SUBSTR('&&tit_07.',6,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_08', '"'||SUBSTR('&&tit_08.',6,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_09', '"'||SUBSTR('&&tit_09.',6,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_10', '"'||SUBSTR('&&tit_10.',6,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_11', '"'||SUBSTR('&&tit_11.',6,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_12', '"'||SUBSTR('&&tit_12.',6,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_13', '"'||SUBSTR('&&tit_13.',6,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_14', '"'||SUBSTR('&&tit_14.',6,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_15', '"'||SUBSTR('&&tit_15.',6,30)||'"');
 @@edb360_9a_pre_one.sql
 
 DEF skip_lch = '';
@@ -803,15 +803,15 @@ EXEC :sql_text := REPLACE(:sql_text, '@stat_name_06@', '&&tit_06.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_07@', '&&tit_07.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_08@', '&&tit_08.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_09@', '&&tit_09.');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_04', '"'||SUBSTR('&&tit_04.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_05', '"'||SUBSTR('&&tit_05.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_06', '"'||SUBSTR('&&tit_06.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_07', '"'||SUBSTR('&&tit_07.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_08', '"'||SUBSTR('&&tit_08.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_09', '"'||SUBSTR('&&tit_09.',1,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_04', '"'||SUBSTR('&&tit_04.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_05', '"'||SUBSTR('&&tit_05.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_06', '"'||SUBSTR('&&tit_06.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_07', '"'||SUBSTR('&&tit_07.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_08', '"'||SUBSTR('&&tit_08.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_09', '"'||SUBSTR('&&tit_09.',10,30)||'"');
 @@edb360_9a_pre_one.sql
 
 DEF skip_lch = '';
@@ -835,9 +835,9 @@ DEF tit_15 = '';
 EXEC :sql_text := REPLACE(:sql_text_backup, '@stat_name_01@', '&&tit_01.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_02@', '&&tit_02.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_03@', '&&tit_03.');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',1,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',10,30)||'"');
 @@edb360_9a_pre_one.sql
 
 DEF skip_lch = '';
@@ -862,10 +862,10 @@ EXEC :sql_text := REPLACE(:sql_text_backup, '@stat_name_01@', '&&tit_01.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_02@', '&&tit_02.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_03@', '&&tit_03.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_04@', '&&tit_04.');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_04', '"'||SUBSTR('&&tit_04.',1,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_04', '"'||SUBSTR('&&tit_04.',10,30)||'"');
 @@edb360_9a_pre_one.sql
 
 DEF skip_lch = '';
@@ -892,12 +892,12 @@ EXEC :sql_text := REPLACE(:sql_text, '@stat_name_03@', '&&tit_03.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_04@', '&&tit_04.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_05@', '&&tit_05.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_06@', '&&tit_06.');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_04', '"'||SUBSTR('&&tit_04.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_05', '"'||SUBSTR('&&tit_05.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_06', '"'||SUBSTR('&&tit_06.',1,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_04', '"'||SUBSTR('&&tit_04.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_05', '"'||SUBSTR('&&tit_05.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_06', '"'||SUBSTR('&&tit_06.',10,30)||'"');
 @@edb360_9a_pre_one.sql
 
 DEF skip_lch = '';
@@ -921,8 +921,8 @@ DEF tit_15 = '';
 EXEC :sql_text := REPLACE(:sql_text_backup, '@stat_name_01@', '&&tit_01.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_02@', '&&tit_02.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_03@', '&&tit_03.');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',1,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',10,30)||'"');
 EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',1,30)||'"');
 @@edb360_9a_pre_one.sql
 
@@ -948,9 +948,9 @@ EXEC :sql_text := REPLACE(:sql_text_backup, '@stat_name_01@', '&&tit_01.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_02@', '&&tit_02.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_03@', '&&tit_03.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_04@', '&&tit_04.');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',1,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',10,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',10,30)||'"');
 EXEC :sql_text := REPLACE(:sql_text, 'dummy_04', '"'||SUBSTR('&&tit_04.',1,30)||'"');
 @@edb360_9a_pre_one.sql
 
@@ -977,10 +977,10 @@ EXEC :sql_text := REPLACE(:sql_text, '@stat_name_02@', '&&tit_02.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_03@', '&&tit_03.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_04@', '&&tit_04.');
 EXEC :sql_text := REPLACE(:sql_text, '`', '''''');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_04', '"'||SUBSTR('&&tit_04.',1,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',4,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',4,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',4,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_04', '"'||SUBSTR('&&tit_04.',4,30)||'"');
 @@edb360_9a_pre_one.sql
 
 DEF skip_lch = '';
@@ -1117,8 +1117,8 @@ DEF tit_14 = '';
 DEF tit_15 = '';
 EXEC :sql_text := REPLACE(:sql_text_backup, '@stat_name_01@', '&&tit_01.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_02@', '&&tit_02.');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',1,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',20,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',20,30)||'"');
 @@edb360_9a_pre_one.sql
 
 DEF skip_lch = '';
@@ -1212,9 +1212,9 @@ DEF tit_15 = '';
 EXEC :sql_text := REPLACE(:sql_text_backup, '@stat_name_01@', '&&tit_01.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_02@', '&&tit_02.');
 EXEC :sql_text := REPLACE(:sql_text, '@stat_name_03@', '&&tit_03.');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',1,30)||'"');
-EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',1,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_01', '"'||SUBSTR('&&tit_01.',23,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_02', '"'||SUBSTR('&&tit_02.',23,30)||'"');
+EXEC :sql_text := REPLACE(:sql_text, 'dummy_03', '"'||SUBSTR('&&tit_03.',23,30)||'"');
 @@edb360_9a_pre_one.sql
 
 DEF tit_01 = '';

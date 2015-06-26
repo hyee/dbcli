@@ -12,7 +12,7 @@ function output.setOutput(db)
 end
 
 output.stmt=[[    
-        DECLARE/*INTERNAL_DBCLI_CMD*/
+        DECLARE/*INTERNAL_DBCLI_CMD*//*GetDBMSOutput*/
             l_line   VARCHAR2(32767);
             l_done   PLS_INTEGER := 32767;
             l_buffer VARCHAR2(32767);
@@ -38,6 +38,7 @@ output.stmt=[[
             :buff := l_buffer;
             :txn := dbms_transaction.local_transaction_id;
             :lob := l_lob;
+        EXCEPTION WHEN OTHERS THEN NULL;
         END;]]
 
 function output.getOutput(db,sql)
@@ -60,7 +61,7 @@ end
 
 
 function output.get_error_output(info)
-    if info.sql==output.stmt then
+    if info.sql and info.sql:find("/*GetDBMSOutput*/",1,true) then
         info.sql=nil
     elseif info.db:is_connect() then
         output.getOutput(info.db,info.sql)

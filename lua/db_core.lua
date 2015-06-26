@@ -29,7 +29,7 @@ function db_Types:get(position,typeName,res,conn)
     if value == nil or res:wasNull() then return nil end
     if not self[typeName].handler then return value end
     return self[typeName].handler(value,'get',conn)
-end
+ end
 
 local number_types={
         BIGINT   = 1,
@@ -48,7 +48,16 @@ function db_Types:load_sql_types(className)
     local typ=java.require(className)
     local m2={
         [1]={getter="getBoolean",setter="setBoolean"},
-        [2]={getter="getString",setter="setString"},
+        [2]={getter="getString",setter="setDouble",
+            handler=function(result,action,conn)
+                if action=='get' then
+                    local num=tonumber(result)
+                    if num and not tostring(num):find("[eE]") then
+                        return num
+                    end
+                end
+                return result
+            end},
         [3]={getter="getArray",setter='setArray',
              handler=function(result,action,conn)
                 if action=="get" then
@@ -120,7 +129,7 @@ function db_Types:load_sql_types(className)
     }
     for k,v in java.fields(typ) do
         if type(k) == "string" and k:upper()==k then
-            local m=m1[k] or (number_types and m2[2]) or {getter="getString",setter="setString"}
+            local m=m1[k] or (number_types[k] and m2[2]) or {getter="getString",setter="setString"}
             self[k]={id=v,name=k,getter=m.getter,setter=m.setter,handler=m.handler}
             self[v]=self[k]
         end
@@ -167,6 +176,7 @@ end
 function ResultSet:fetch(rs,conn)
     local cols=self[rs] 
     if not cols then
+        loader:setCurrentResultSet(rs)
         cols = self:getHeads(rs)
         env.checkerr(cols,"No query result found!")
         local titles={}
@@ -646,13 +656,16 @@ function db_core:sql2file(filename,sql,method)
     end
 
     if type(result)=="userdata" then
+        print("Start to extract result into "..filename)
         clock,counter=os.clock(),loader[method](loader,result,filename,self.sql_export_header)
         print_export_result(filename,clock,counter)
     elseif type(result)=="table" then
         for idx,rs in pairs(rs) do
             if type(rs)=="userdata" then
-                clock,counter=os.clock(),loader[method](loader,rs,filename..tostring(idx),header)
-                print_export_result(filename..tostring(idx),clock,counter)
+                local file=filename..tostring(idx)
+                print("Start to extract result into "..file)
+                clock,counter=os.clock(),loader[method](loader,rs,file,header)
+                print_export_result(file,clock,counter)
             end
         end
     end
@@ -665,7 +678,11 @@ end
 
 function db_core:sql2csv(filename,sql)
     env.checkerr(sql,'Usage: sql2csv <file_name> <SQL>')
-    self:sql2file(env.resolve_file(filename,{'csv','zip','gz'}),sql,'ResultSet2CSV')
+    filename=env.resolve_file(filename,{'csv','zip','gz'})
+    if filename:lower():match("%.gz$") and not filename:lower():match("%.csv%.gz$") then
+        filename=filename:gsub("[gG][zZ]$","csv.gz")
+    end
+    self:sql2file(filename,sql,'ResultSet2CSV')
 end
 
 function db_core:csv2sql(target,src)

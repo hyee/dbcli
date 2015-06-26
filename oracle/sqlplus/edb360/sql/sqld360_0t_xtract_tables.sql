@@ -33,42 +33,42 @@ BEGIN
   DBMS_LOB.CREATETEMPORARY(:tables_list, TRUE, DBMS_LOB.SESSION);
   DBMS_LOB.CREATETEMPORARY(:tables_list_s, TRUE, DBMS_LOB.SESSION);
   FOR i IN (WITH object AS (
-  	    SELECT /*+ MATERIALIZE */
-  	           object_owner owner, object_name name
-  	      FROM gv$sql_plan
-  	     WHERE inst_id IN (SELECT inst_id FROM gv$instance)
-  	       AND sql_id = '&&sqld360_sqlid.'
-  	       AND object_owner IS NOT NULL
-  	       AND object_name IS NOT NULL
-  	     UNION
-  	    SELECT object_owner owner, object_name name
-  	      FROM dba_hist_sql_plan
-  	     WHERE '&&diagnostics_pack.' = 'Y'
-  	       AND &&sqld360_dbid. = dbid
-  	       AND sql_id = '&&sqld360_sqlid.'
-  	       AND object_owner IS NOT NULL
-  	       AND object_name IS NOT NULL
-  	     UNION
-  	    SELECT o.owner, o.object_name name
-  	      FROM plan_table pt,
-  	           dba_objects o
-  	     WHERE '&&diagnostics_pack.' = 'Y'
-  	       AND pt.statement_id = 'SQLD360_ASH_DATA'
-  	       AND pt.remarks = '&&sqld360_sqlid.'
-  	       AND pt.object_instance > 0
-  	       AND o.object_id = pt.object_instance
-  	    )
-  	    SELECT 'TABLE', t.owner, t.table_name
-  	      FROM dba_tab_statistics t, -- include fixed objects
-  	           object o
-  	     WHERE t.owner = o.owner
-  	       AND t.table_name = o.name
-  	     UNION
-  	    SELECT 'TABLE', i.table_owner, i.table_name
-  	      FROM dba_indexes i,
-  	           object o
-  	     WHERE i.owner = o.owner
-  	       AND i.index_name = o.name)
+        SELECT /*+ MATERIALIZE */
+               object_owner owner, object_name name
+          FROM gv$sql_plan
+         WHERE inst_id IN (SELECT inst_id FROM gv$instance)
+           AND sql_id = '&&sqld360_sqlid.'
+           AND object_owner IS NOT NULL
+           AND object_name IS NOT NULL
+         UNION
+        SELECT object_owner owner, object_name name
+          FROM dba_hist_sql_plan
+         WHERE '&&diagnostics_pack.' = 'Y'
+           AND &&sqld360_dbid. = dbid
+           AND sql_id = '&&sqld360_sqlid.'
+           AND object_owner IS NOT NULL
+           AND object_name IS NOT NULL
+         UNION
+        SELECT o.owner, o.object_name name
+          FROM plan_table pt,
+               dba_objects o
+         WHERE '&&diagnostics_pack.' = 'Y'
+           AND pt.statement_id = 'SQLD360_ASH_DATA'
+           AND pt.remarks = '&&sqld360_sqlid.'
+           AND pt.object_instance > 0
+           AND o.object_id = pt.object_instance
+        )
+        SELECT 'TABLE', t.owner, t.table_name
+          FROM dba_tab_statistics t, -- include fixed objects
+               object o
+         WHERE t.owner = o.owner
+           AND t.table_name = o.name
+         UNION
+        SELECT 'TABLE', i.table_owner, i.table_name
+          FROM dba_indexes i,
+               object o
+         WHERE i.owner = o.owner
+           AND i.index_name = o.name)
   LOOP
     IF l_pair IS NULL THEN
       DBMS_LOB.WRITEAPPEND(:tables_list, 1, '(');
@@ -87,7 +87,7 @@ BEGIN
     l_pair := '((''''DUMMY'''',''''DUMMY''''))';
     DBMS_LOB.WRITEAPPEND(:tables_list, LENGTH(l_pair), l_pair);
     l_pair := '((''DUMMY'',''DUMMY''))';
-	DBMS_LOB.WRITEAPPEND(:tables_list_s, LENGTH(l_pair), l_pair);
+    DBMS_LOB.WRITEAPPEND(:tables_list_s, LENGTH(l_pair), l_pair);
   ELSE
     DBMS_LOB.WRITEAPPEND(:tables_list, 1, ')');
     DBMS_LOB.WRITEAPPEND(:tables_list_s, 1, ')');

@@ -579,7 +579,7 @@ DEF skip_lch = 'Y';
 DEF main_table = 'V$ACTIVE_SESSION_HISTORY';
 DEF abstract = 'Average and Median elapsed time per execution for recent executions, in seconds. ';
 DEF foot = 'Data rounded to the 1 second'
-DEF vaxis = 'Elapsed Time for the SQL'
+DEF vaxis = 'Average Elapsed Time in secs'
 
 BEGIN
   :sql_text_backup := '
@@ -590,8 +590,8 @@ SELECT 0 snap_id,
        med_et,
        avg_cpu_time,
        med_cpu_time,
-       0 dummy_05,
-       0 dummy_06,
+       avg_db_time,
+       med_db_time,
        0 dummy_07,
        0 dummy_08,
        0 dummy_09,
@@ -605,14 +605,17 @@ SELECT 0 snap_id,
                AVG(et) avg_et,
                MEDIAN(et) med_et,
                AVG(cpu_time) avg_cpu_time,
-               MEDIAN(cpu_time) med_cpu_time
+               MEDIAN(cpu_time) med_cpu_time,
+               AVG(db_time) avg_db_time,
+               MEDIAN(db_time) med_db_time
           FROM (SELECT TO_DATE(SUBSTR(distribution,1,12),''YYYYMMDDHH24MI'') start_time,
                        NVL(TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,3)+1,INSTR(partition_stop,'','',1,4)-INSTR(partition_stop,'','',1,3)-1)),position)||''-''|| 
                         NVL(TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,4)+1,INSTR(partition_stop,'','',1,5)-INSTR(partition_stop,'','',1,4)-1)),cpu_cost)||''-''|| 
                         NVL(TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,5)+1,INSTR(partition_stop,'','',1,6)-INSTR(partition_stop,'','',1,5)-1)),io_cost)||''-''||
                         NVL(partition_id,0)||''-''||NVL(distribution,''x'') uniq_exec, 
-                       86400*(MAX(timestamp)-MIN(timestamp)) et, 
-                       SUM(CASE WHEN object_node = ''ON CPU'' THEN 1 ELSE 0 END) cpu_time 
+                       1+86400*(MAX(timestamp)-MIN(timestamp)) et, 
+                       SUM(CASE WHEN object_node = ''ON CPU'' THEN 1 ELSE 0 END) cpu_time,
+                       COUNT(*) db_time
                   FROM plan_table
                  WHERE statement_id = ''SQLD360_ASH_DATA_MEM''
                    AND position =  @instance_number@
@@ -637,8 +640,8 @@ DEF tit_01 = 'Average Elapsed Time';
 DEF tit_02 = 'Median Elapsed Time';
 DEF tit_03 = 'Average Time on CPU';
 DEF tit_04 = 'Median Time on CPU';
-DEF tit_05 = '';
-DEF tit_06 = '';
+DEF tit_05 = 'Average DB Time';
+DEF tit_06 = 'Median DB Time';
 DEF tit_07 = '';
 DEF tit_08 = '';
 DEF tit_09 = '';
@@ -729,8 +732,8 @@ SELECT b.snap_id snap_id,
        NVL(med_et,0) med_et,
        NVL(avg_cpu_time,0) avg_cpu_time,
        NVL(med_cpu_time,0) med_cpu_time,
-       0 dummy_05,
-       0 dummy_06,
+       NVL(avg_db_time,0) avg_db_time,
+       NVL(med_db_time,0) med_db_time,
        0 dummy_07,
        0 dummy_08,
        0 dummy_09,
@@ -744,21 +747,26 @@ SELECT b.snap_id snap_id,
                MAX(avg_et) avg_et,
                MAX(med_et) med_et,
                MAX(avg_cpu_time) avg_cpu_time,
-               MAX(med_cpu_time) med_cpu_time
+               MAX(med_cpu_time) med_cpu_time,
+               MAX(avg_db_time) avg_db_time,
+               MAX(med_db_time) med_db_time
           FROM (SELECT start_time,
                        MIN(start_snap_id) snap_id,
                        AVG(et) avg_et,
                        MEDIAN(et) med_et,
                        AVG(cpu_time) avg_cpu_time,
-                       MEDIAN(cpu_time) med_cpu_time
+                       MEDIAN(cpu_time) med_cpu_time,
+                       AVG(db_time) avg_db_time,
+                       MEDIAN(db_time) med_db_time
                   FROM (SELECT TO_DATE(SUBSTR(distribution,1,12),''YYYYMMDDHH24MI'') start_time,
                                NVL(TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,3)+1,INSTR(partition_stop,'','',1,4)-INSTR(partition_stop,'','',1,3)-1)),position)||''-''|| 
                                 NVL(TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,4)+1,INSTR(partition_stop,'','',1,5)-INSTR(partition_stop,'','',1,4)-1)),cpu_cost)||''-''|| 
                                 NVL(TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,5)+1,INSTR(partition_stop,'','',1,6)-INSTR(partition_stop,'','',1,5)-1)),io_cost)||''-''||
                                 NVL(partition_id,0)||''-''||NVL(distribution,''x'') uniq_exec, 
                                MIN(cardinality) start_snap_id,
-                               86400*(MAX(timestamp)-MIN(timestamp)) et, 
-                               SUM(CASE WHEN object_node = ''ON CPU'' THEN 10 ELSE 0 END) cpu_time 
+                               10+86400*(MAX(timestamp)-MIN(timestamp)) et, 
+                               SUM(CASE WHEN object_node = ''ON CPU'' THEN 10 ELSE 0 END) cpu_time,
+                               SUM(10) db_time
                           FROM plan_table
                          WHERE statement_id = ''SQLD360_ASH_DATA_HIST''
                            AND partition_id IS NOT NULL
@@ -787,8 +795,8 @@ DEF tit_01 = 'Average Elapsed Time';
 DEF tit_02 = 'Median Elapsed Time';
 DEF tit_03 = 'Average Time on CPU';
 DEF tit_04 = 'Median Time on CPU';
-DEF tit_05 = '';
-DEF tit_06 = '';
+DEF tit_05 = 'Average DB Time';
+DEF tit_06 = 'Median DB Time';
 DEF tit_07 = '';
 DEF tit_08 = '';
 DEF tit_09 = '';
@@ -942,7 +950,7 @@ SELECT MAX(CASE WHEN ranking = 1  THEN TO_CHAR(phv) ELSE '' END) tit_01,
          WHERE (ranking BETWEEN 1 AND 5 -- top 5 best performing plans
              OR ranking BETWEEN num_plans-10 AND num_plans)) ash, -- top 10 worse plans
        (SELECT 1 fake FROM dual) b -- this is in case there is no row in ASH
- WHERE ash.fake(+) = b.fake	
+ WHERE ash.fake(+) = b.fake
 /
 
 COL phv1_ NOPRI
@@ -1002,7 +1010,7 @@ SELECT 0 snap_id,
                        AVG(et) avg_et_per_exec
                   FROM (SELECT SUBSTR(distribution,1,12) start_time,
                                cost phv, 
-                               86400*(MAX(timestamp)-MIN(timestamp)) et,
+                               1+86400*(MAX(timestamp)-MIN(timestamp)) et,
                                NVL(TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,3)+1,INSTR(partition_stop,'','',1,4)-INSTR(partition_stop,'','',1,3)-1)),position)||''-''|| 
                                 NVL(TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,4)+1,INSTR(partition_stop,'','',1,5)-INSTR(partition_stop,'','',1,4)-1)),cpu_cost)||''-''|| 
                                 NVL(TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,5)+1,INSTR(partition_stop,'','',1,6)-INSTR(partition_stop,'','',1,5)-1)),io_cost)||''-''||
@@ -1253,7 +1261,7 @@ SELECT b.snap_id snap_id,
                   FROM (SELECT SUBSTR(distribution,1,10) start_time,
                                cost phv, 
                                MIN(cardinality) starting_snap_id,
-                               86400*(MAX(timestamp)-MIN(timestamp)) et,
+                               10+86400*(MAX(timestamp)-MIN(timestamp)) et,
                                NVL(TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,3)+1,INSTR(partition_stop,'','',1,4)-INSTR(partition_stop,'','',1,3)-1)),position)||''-''|| 
                                 NVL(TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,4)+1,INSTR(partition_stop,'','',1,5)-INSTR(partition_stop,'','',1,4)-1)),cpu_cost)||''-''|| 
                                 NVL(TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,5)+1,INSTR(partition_stop,'','',1,6)-INSTR(partition_stop,'','',1,5)-1)),io_cost)||''-''||
@@ -1382,10 +1390,10 @@ SELECT NVL(TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,3)+1,INS
        TO_CHAR(MIN(timestamp), ''YYYY-MM-DD HH24:MI:SS'')  start_time,
        TO_CHAR(MAX(timestamp), ''YYYY-MM-DD HH24:MI:SS'')  end_time,
        MIN(cost) plan_hash_value,
-       COUNT(DISTINCT position||''-''||cpu_cost||''-''||io_cost) num_px_processes,
+       COUNT(DISTINCT position||''-''||cpu_cost||''-''||io_cost) num_processes,
        MAX(TRUNC(TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,10)+1,INSTR(partition_stop,'','',1,11)-INSTR(partition_stop,'','',1,10)-1)) / 2097152)) max_px_degree,
-       86400*(MAX(timestamp)-MIN(timestamp)) elapsed_time,
-       SUM(CASE WHEN TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,4)+1,INSTR(partition_stop,'','',1,5)-INSTR(partition_stop,'','',1,4)-1)) IS NULL AND object_node = ''ON CPU'' THEN 1 ELSE 0 END) cpu_time,
+       1+86400*(MAX(timestamp)-MIN(timestamp)) elapsed_time,
+       SUM(CASE WHEN object_node = ''ON CPU'' THEN 1 ELSE 0 END) cpu_time,
        COUNT(*) db_time
   FROM plan_table
  WHERE statement_id = ''SQLD360_ASH_DATA_MEM''
@@ -1473,10 +1481,10 @@ SELECT NVL(TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,3)+1,INS
        TO_CHAR(MIN(timestamp), ''YYYY-MM-DD HH24:MI:SS'')  start_time,
        TO_CHAR(MAX(timestamp), ''YYYY-MM-DD HH24:MI:SS'')  end_time,
        MIN(cost) plan_hash_value,
-       COUNT(DISTINCT position||''-''||cpu_cost||''-''||io_cost) num_px_processes,
+       COUNT(DISTINCT position||''-''||cpu_cost||''-''||io_cost) num_processes,
        MAX(TRUNC(TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,10)+1,INSTR(partition_stop,'','',1,11)-INSTR(partition_stop,'','',1,10)-1)) / 2097152)) max_px_degree,
-       86400*(MAX(timestamp)-MIN(timestamp)) elapsed_time, 
-       SUM(CASE WHEN TO_NUMBER(SUBSTR(partition_stop,INSTR(partition_stop,'','',1,4)+1,INSTR(partition_stop,'','',1,5)-INSTR(partition_stop,'','',1,4)-1)) IS NULL AND object_node = ''ON CPU'' THEN 10 ELSE 0 END) cpu_time,
+       10+86400*(MAX(timestamp)-MIN(timestamp)) elapsed_time, 
+       SUM(CASE WHEN object_node = ''ON CPU'' THEN 10 ELSE 0 END) cpu_time,
        SUM(10) db_time
   FROM plan_table
  WHERE statement_id = ''SQLD360_ASH_DATA_HIST''

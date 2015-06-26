@@ -56,6 +56,7 @@ DECLARE
   l_line VARCHAR2(1000);
   l_sql_text VARCHAR2(32767);
 BEGIN
+  EXECUTE IMMEDIATE 'ALTER SESSION SET NLS_DATE_FORMAT = ''YYYY-MM-DD/HH24:MI:SS''';
   l_line := '[''Date''';
   IF '&&tit_01.' IS NOT NULL THEN
     l_line := l_line||', ''&&tit_01.'''; 
@@ -113,7 +114,11 @@ BEGIN
     l_col_06, l_col_07, l_col_08, l_col_09, l_col_10,
     l_col_11, l_col_12, l_col_13, l_col_14, l_col_15;
     EXIT WHEN cur%NOTFOUND;
-    l_line := ', [new Date('||SUBSTR(l_end_time,1,4)||','||(TO_NUMBER(SUBSTR(l_end_time,6,2)) - 1)||','||SUBSTR(l_end_time,9,2)||','||SUBSTR(l_end_time,12,2)||','||SUBSTR(l_end_time,15,2)||',0)';
+    l_line := ', [new Date('||SUBSTR(l_end_time,1,4)||','||
+    (TO_NUMBER(SUBSTR(l_end_time,6,2)) - 1)||','||
+    SUBSTR(l_end_time,9,2)||','||
+    SUBSTR(l_end_time,12,2)||','||
+    SUBSTR(l_end_time,15,2)||',0)';
     IF '&&tit_01.' IS NOT NULL THEN
       l_line := l_line||', '||l_col_01; 
     END IF;

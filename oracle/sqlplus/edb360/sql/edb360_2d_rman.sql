@@ -107,6 +107,18 @@ END;
 /
 @@edb360_9a_pre_one.sql
 
+DEF title = 'Block Change Tracking';
+DEF main_table = 'V$BLOCK_CHANGE_TRACKING';
+BEGIN
+  :sql_text := '
+SELECT /*+ &&top_level_hints. */
+       *
+  FROM v$block_change_tracking
+';
+END;
+/
+@@edb360_9a_pre_one.sql
+
 DEF title = 'REDO LOG';
 DEF main_table = 'V$LOG';
 BEGIN

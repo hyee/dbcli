@@ -141,111 +141,111 @@ BEGIN
 
    SELECT '&&default_dir.'
      INTO l_temporary_dir
-	 FROM DUAL;
+     FROM DUAL;
    
    -- testing option #1
    l_working_dir := test_dir(l_temporary_dir);
    IF l_working_dir = 'Y' THEN
      :tcb_dir := l_temporary_dir;
-	 SELECT directory_path
-	   INTO :tcb_path
-	   FROM dba_directories
+     SELECT directory_path
+       INTO :tcb_path
+       FROM dba_directories
       WHERE UPPER(directory_name) = UPPER(:tcb_dir);
-   ELSE	
+   ELSE
 
-	 -- option #2, looking for a SQLT dir, doesn't matter which one
+     -- option #2, looking for a SQLT dir, doesn't matter which one
      BEGIN
-	   SELECT directory_name
-	     INTO l_temporary_dir
-	     FROM dba_directories
-	    WHERE directory_name like 'SQLT$%'
-	      AND rownum = 1;
-	 EXCEPTION WHEN NO_DATA_FOUND THEN
-	   -- it will fail for sure like it did before, just a safety net
+       SELECT directory_name
+         INTO l_temporary_dir
+         FROM dba_directories
+        WHERE directory_name like 'SQLT$%'
+          AND rownum = 1;
+     EXCEPTION WHEN NO_DATA_FOUND THEN
+     -- it will fail for sure like it did before, just a safety net
        l_temporary_dir := '&&default_dir.';
-	 END;
+     END;
 
-	 -- testing option #2
+     -- testing option #2
      l_working_dir := test_dir(l_temporary_dir);
      IF l_working_dir = 'Y' THEN
-		:tcb_dir := l_temporary_dir;
-		SELECT directory_path
-	      INTO :tcb_path
-	      FROM dba_directories
-         WHERE UPPER(directory_name) = UPPER(:tcb_dir);
-	 ELSE
+       :tcb_dir := l_temporary_dir;
+       SELECT directory_path
+         INTO :tcb_path
+         FROM dba_directories
+        WHERE UPPER(directory_name) = UPPER(:tcb_dir);
+     ELSE
        -- select the content of utl_file_dir
        -- if not null then go for option #3 else #4
        BEGIN
          SELECT value
-	       INTO l_utlfiledir_v
-	       FROM gv$parameter
-	  	  WHERE UPPER(name) = 'UTL_FILE_DIR'
-	  	    AND value IS NOT NULL
-	  	    AND rownum = 1;
+           INTO l_utlfiledir_v
+           FROM gv$parameter
+          WHERE UPPER(name) = 'UTL_FILE_DIR'
+            AND value IS NOT NULL
+            AND rownum = 1;
 
-		 l_utlfiledir_set := 'Y';
+         l_utlfiledir_set := 'Y';
 
        EXCEPTION WHEN NO_DATA_FOUND THEN
-	     l_utlfiledir_set := 'N';
-	   END;
+         l_utlfiledir_set := 'N';
+       END;
 
-	   IF l_utlfiledir_set = 'Y' THEN
+      IF l_utlfiledir_set = 'Y' THEN
          --option #3, loop over the first 3 dirs in utl_file_dir
-	     FOR i IN 1..3 LOOP
+         FOR i IN 1..3 LOOP
 
-		   -- the first dir is from the first char to the first comma
+         -- the first dir is from the first char to the first comma
            IF i = 1 THEN
              l_cutfrom := 1;
-			 l_cutto := instr(l_utlfiledir_v,',',1,i)-1;
-		   ELSE
-			 l_cutfrom := instr(l_utlfiledir_v,',',1,i-1)+1;
-			 l_cutto := instr(l_utlfiledir_v,',',1,i)-instr(l_utlfiledir_v,',',1,i-1)-1;
-		   END IF;
-
-		   -- the last dir goes all the way to the end of the string
-		   IF instr(l_utlfiledir_v,',',1,i) = 0 THEN
-             l_cutto := length(l_utlfiledir_v)+1;
-		   END IF;
-          
-	       -- identify the Ith directory	
-           l_temporary_path := substr(l_utlfiledir_v,l_cutfrom,l_cutto);
-
-		   BEGIN
-             SELECT directory_name
-			   INTO l_temporary_dir
-			   FROM dba_directories
-			  WHERE UPPER(directory_path) = UPPER(l_temporary_path);
-		   EXCEPTION WHEN NO_DATA_FOUND THEN
-             l_temporary_dir := '&&default_dir.';
-		   END;
-
-		   l_working_dir := test_dir(l_temporary_dir);
-           IF l_working_dir = 'Y' THEN
-	          :tcb_dir := l_temporary_dir;
-			  SELECT directory_path
-	            INTO :tcb_path
-	            FROM dba_directories
-               WHERE UPPER(directory_name) = UPPER(:tcb_dir);
-			  EXIT;
+             l_cutto := instr(l_utlfiledir_v,',',1,i)-1;
+           ELSE
+             l_cutfrom := instr(l_utlfiledir_v,',',1,i-1)+1;
+             l_cutto := instr(l_utlfiledir_v,',',1,i)-instr(l_utlfiledir_v,',',1,i-1)-1;
            END IF;
 
-	     END LOOP;
-       ELSE
-	     -- option #4, test DATA_PUMP_DIR
+           -- the last dir goes all the way to the end of the string
+           IF instr(l_utlfiledir_v,',',1,i) = 0 THEN
+             l_cutto := length(l_utlfiledir_v)+1;
+           END IF;
+          
+           -- identify the Ith directory
+           l_temporary_path := substr(l_utlfiledir_v,l_cutfrom,l_cutto);
+
+           BEGIN
+             SELECT directory_name
+               INTO l_temporary_dir
+               FROM dba_directories
+              WHERE UPPER(directory_path) = UPPER(l_temporary_path);
+           EXCEPTION WHEN NO_DATA_FOUND THEN
+             l_temporary_dir := '&&default_dir.';
+           END;
+
+           l_working_dir := test_dir(l_temporary_dir);
+           IF l_working_dir = 'Y' THEN
+             :tcb_dir := l_temporary_dir;
+             SELECT directory_path
+               INTO :tcb_path
+               FROM dba_directories
+              WHERE UPPER(directory_name) = UPPER(:tcb_dir);
+             EXIT;
+           END IF;
+
+         END LOOP;
+      ELSE
+       -- option #4, test DATA_PUMP_DIR
          l_temporary_dir := '&&fallback_dir.';
          l_working_dir := test_dir(l_temporary_dir);
-	     IF l_working_dir = 'Y' THEN
-	       :tcb_dir := l_temporary_dir; 
-		   SELECT directory_path
-	         INTO :tcb_path
-	         FROM dba_directories
+         IF l_working_dir = 'Y' THEN
+           :tcb_dir := l_temporary_dir; 
+           SELECT directory_path
+             INTO :tcb_path
+             FROM dba_directories
             WHERE UPPER(directory_name) = UPPER(:tcb_dir);
-	     END IF;
+         END IF;
 
-	   END IF; -- option #3/#4
-	 END IF;  -- option #2	 
-   END IF; -- option #1	
+      END IF; -- option #3/#4
+     END IF;  -- option #2 
+   END IF; -- option #1
    
 
 END;

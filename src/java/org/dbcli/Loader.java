@@ -14,6 +14,8 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.sql.CallableStatement;
 import java.sql.ResultSet;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.Future;
 
 
@@ -29,6 +31,7 @@ public class Loader {
     private CallableStatement stmt = null;
     private Future sleeper;
     private Sleeper runner = new Sleeper();
+    private ResultSet rs;
 
     public Loader() {
         try {
@@ -148,36 +151,41 @@ public class Loader {
         return stack;
     }
 
-
-    public int ResultSet2CSV(ResultSet rs, String fileName, String header) throws Exception {
-        try {
-            CSVWriter writer = new CSVWriter(fileName);
-            int result = writer.writeAll(rs, true);
-            rs.close();
-            writer.close();
-            return result;
-        } catch (Exception e) {
-            e.printStackTrace();
-            throw e;
-        }
+    public void setCurrentResultSet(ResultSet res) {
+        this.rs = res;
     }
 
-    public int ResultSet2SQL(ResultSet rs, String fileName, String header) throws Exception {
-        try {
-            SQLWriter writer = new SQLWriter(fileName);
-            writer.setFileHead(header);
-            int result = writer.writeAll2SQL(rs, "", 1500);
-            rs.close();
-            return result;
-        } catch (Exception e) {
-            e.printStackTrace();
-            throw e;
-        }
+    public int ResultSet2CSV(final ResultSet rs, final String fileName, final String header) throws Exception {
+        setCurrentResultSet(rs);
+        return asyncCall(new Callable<Integer>() {
+            @Override
+            public Integer call() throws Exception {
+                CSVWriter writer = new CSVWriter(fileName);
+                int result = writer.writeAll(rs, true);
+                rs.close();
+                writer.close();
+                return result;
+            }
+        });
     }
 
-    public int CSV2SQL(String CSVfileName, String SQLFileName, String header, ResultSet rs) throws Exception {
+    public int ResultSet2SQL(final ResultSet rs, final String fileName, final String header) throws Exception {
+        setCurrentResultSet(rs);
+        return asyncCall(new Callable<Integer>() {
+            @Override
+            public Integer call() throws Exception {
+                final SQLWriter writer = new SQLWriter(fileName);
+                writer.setFileHead(header);
+                int count = writer.writeAll2SQL(rs, "", 1500);
+                rs.close();
+                return count;
+            }
+        });
+    }
+
+    public int CSV2SQL(final String CSVfileName, String SQLFileName, String header, ResultSet rs) throws Exception {
         try {
-            SQLWriter writer = new SQLWriter(SQLFileName);
+            final SQLWriter writer = new SQLWriter(SQLFileName);
             writer.setFileHead(header);
             if (rs != null) writer.setCSVDataTypes(rs);
             writer.setMaxLineWidth(1500);
@@ -191,12 +199,30 @@ public class Loader {
     public synchronized boolean setStatement(CallableStatement p) throws Exception {
         try {
             this.stmt = p;
-            console.setEvents(p == null ? null : q, new char[]{'q','Q', KeyMap.CTRL_D});
+            console.setEvents(p == null ? null : q, new char[]{'q', 'Q', KeyMap.CTRL_D});
             return this.stmt == null ? false : this.stmt.execute();
         } catch (Exception e) {
             throw e;
         } finally {
             this.stmt = null;
+            console.setEvents(null, null);
+        }
+    }
+
+
+    public synchronized int asyncCall(Callable<Integer> c) throws Exception {
+        try {
+            sleeper = console.threadPool.submit(c);
+            console.setEvents(q, new char[]{'q', KeyMap.CTRL_D});
+            return (Integer) sleeper.get();
+        } catch (CancellationException e) {
+            throw new IOException("Statement is aborted.");
+        } catch (InterruptedException e) {
+            throw new IOException("Statement is aborted.");
+        } catch (Exception e) {
+            throw e;
+        } finally {
+            sleeper = null;
             console.setEvents(null, null);
         }
     }
@@ -214,13 +240,15 @@ public class Loader {
             console.setEvents(null, null);
         }
     }
-/*
-    public Commander newExtProcess(String cmd) {
-        return new Commander(printer,cmd,console);
-    }
-*/
+
+    /*
+        public Commander newExtProcess(String cmd) {
+            return new Commander(printer,cmd,console);
+        }
+    */
     private class KeyListner implements ActionListener {
         int key;
+
         public KeyListner(int k) {
             this.key = k;
         }
@@ -228,12 +256,13 @@ public class Loader {
         @Override
         public void actionPerformed(ActionEvent e) {
             try {
-                if (e != null) key =  Character.codePointAt(e.getActionCommand(), 0);
+                if (e != null) key = Character.codePointAt(e.getActionCommand(), 0);
                 if (!console.isRunning() && key != 'q' && key != 'Q') {
                     lua.getGlobal("TRIGGER_ABORT");
                     lua.call(0, 0);
-                } else if (stmt != null) {
+                } else {
                     if (stmt != null && !stmt.isClosed()) stmt.cancel();
+                    //if (rs  != null && !rs.isClosed()) rs.close();
                 }
                 if (sleeper != null) synchronized (sleeper) {
                     sleeper.cancel(true);

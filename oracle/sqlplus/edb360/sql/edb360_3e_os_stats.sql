@@ -79,8 +79,8 @@ SELECT /*+ &&sq_fact_hints. */
        TRUNC(CAST(s.end_interval_time AS DATE), ''HH'')
 )
 SELECT MIN(snap_id) snap_id,
-       begin_time,
-       begin_time + (1/24) end_time,
+       TO_CHAR(begin_time, ''YYYY-MM-DD HH24:MI'') begin_time,
+       TO_CHAR(begin_time + (1/24), ''YYYY-MM-DD HH24:MI'') end_time,
        ROUND(SUM(load), 2) load,
        SUM(num_cpus) num_cpus,
        SUM(num_cpu_cores) num_cpu_cores,

@@ -178,17 +178,14 @@ public class JavaAgent implements ClassFileTransformer {
         File tempFile = File.createTempFile(zipFile.getName(), null);
         // delete it, otherwise you cannot rename your existing zip to it.
         tempFile.delete();
-
         boolean renameOk=zipFile.renameTo(tempFile);
         if (!renameOk)
         {
             throw new RuntimeException("could not rename the file "+zipFile.getAbsolutePath()+" to "+tempFile.getAbsolutePath());
         }
         byte[] buf = new byte[1024];
-
         JarInputStream zin = new JarInputStream(new FileInputStream(tempFile));
         JarOutputStream out = new JarOutputStream(new FileOutputStream(zipFile));
-
         JarEntry entry = zin.getNextJarEntry();
         while (entry != null) {
             String name = entry.getName();

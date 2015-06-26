@@ -38,11 +38,11 @@ BEGIN
 &&skip_10g.&&skip_11r1.                          WHERE from_hash IN (SELECT hash_value
 &&skip_10g.&&skip_11r1.                                                FROM v$sql
 &&skip_10g.&&skip_11r1.                                               WHERE sql_id = '&&sqld360_sqlid.'))
-				  )
+                  )
             WHERE object_owner NOT IN ('ANONYMOUS','APEX_030200','APEX_040000','APEX_SSO','APPQOSSYS','CTXSYS','DBSNMP','DIP','EXFSYS','FLOWS_FILES',
-		                               'MDSYS','OLAPSYS','ORACLE_OCM','ORDDATA','ORDPLUGINS','ORDSYS','OUTLN','OWBSYS', 'PUBLIC',
-								       'SI_INFORMTN_SCHEMA','SQLTXADMIN','SQLTXPLAIN','SYS','SYSMAN','SYSTEM','TRCANLZR','WMSYS','XDB','XS$NULL')
-		    ORDER BY 1,2,3 DESC) 
+                                       'MDSYS','OLAPSYS','ORACLE_OCM','ORDDATA','ORDPLUGINS','ORDSYS','OUTLN','OWBSYS', 'PUBLIC',
+                                       'SI_INFORMTN_SCHEMA','SQLTXADMIN','SQLTXPLAIN','SYS','SYSMAN','SYSTEM','TRCANLZR','WMSYS','XDB','XS$NULL')
+            ORDER BY 1,2,3 DESC) 
    LOOP
     put('BEGIN');
     put(':mymetadata :=');

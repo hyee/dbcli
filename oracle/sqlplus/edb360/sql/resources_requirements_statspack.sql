@@ -42,7 +42,6 @@ SELECT 'get_collection_key', SUBSTR(name||(dbid||name||instance_name||host_name|
 ALTER SESSION SET NLS_NUMERIC_CHARACTERS = ".,";
 ALTER SESSION SET NLS_SORT = 'BINARY';
 ALTER SESSION SET NLS_COMP = 'BINARY';
-ALTER SESSION SET NLS_DATE_FORMAT='MM/DD/YYYY HH24:MI:SS';
 
 -- spool correction for 9i client
 DEF useappend = 'APP';

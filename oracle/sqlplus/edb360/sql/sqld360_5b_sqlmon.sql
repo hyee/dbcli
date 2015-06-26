@@ -51,6 +51,9 @@ BEGIN
     put('END;');
     put('/');
     put('PRINT :myreport;');
+    put('SPO sqld360_sqlmon_&&sqld360_sqlid._'||i.sql_exec_id||'_'||LPAD(TO_CHAR(i.sql_exec_start, 'HH24MISS'), 6, '0')||'.txt;');
+    put('PRINT :myreport;');
+    put('SPO OFF;');
   END LOOP;
 END;
 /
@@ -124,6 +127,50 @@ SELECT DBMS_SQLTUNE.report_sql_detail(sql_id => '&&sqld360_sqlid.', report_level
  WHERE '&&tuning_pack.' = 'Y' 
    AND '&&sqlmon_active.' = 'Y';
 SPO OFF;
+
+
+-- historical, based on elapsed, worst &&sqlmon_max_reports.
+-- it errors out in < 12c but the error is not reported to screen/main files
+SET SERVEROUT ON;
+SPO sqld360_sqlmon_&&sqld360_sqlid._driver_hist.sql
+DECLARE
+  PROCEDURE put (p_line IN VARCHAR2)
+  IS
+  BEGIN
+    DBMS_OUTPUT.PUT_LINE(p_line);
+  END put;
+BEGIN
+  FOR i IN (SELECT * 
+              FROM (SELECT report_id,
+                           TO_NUMBER(EXTRACTVALUE(XMLType(report_summary),'/report_repository_summary/sql/stats/stat[@name="elapsed_time"]')) elapsed,
+                           EXTRACTVALUE(XMLType(report_summary),'/report_repository_summary/sql/@sql_exec_id') sql_exec_id,
+                           EXTRACTVALUE(XMLType(report_summary),'/report_repository_summary/sql/@sql_exec_start') sql_exec_start
+                      FROM dba_hist_reports
+                     WHERE component_name = 'sqlmonitor'
+                       AND EXTRACTVALUE(XMLType(report_summary),'/report_repository_summary/sql/@sql_id') = '&&sqld360_sqlid.' 
+                       AND '&&tuning_pack.' = 'Y' 
+                       AND '&&sqlmon_hist.' = 'Y'
+                     ORDER BY 2 DESC)
+             WHERE ROWNUM <= &&sqlmon_max_reports.)
+  LOOP
+    put('BEGIN');
+    put(':myreport :=');
+    put('DBMS_AUTO_REPORT.REPORT_REPOSITORY_DETAIL');
+    put('( rid => '||i.report_id);
+    put(', type => ''ACTIVE'' );');
+    put('END;');
+    put('/');
+    put('SPO sqld360_sqlmon_&&sqld360_sqlid._'||i.sql_exec_id||'_'||REPLACE(SUBSTR(i.sql_exec_start, 12, 8), ':','')||'_hist.html;');
+    put('PRINT :myreport;');
+    put('SPO OFF;');
+  END LOOP;
+END;
+/
+SPO OFF;
+SET SERVEROUT OFF;
+@sqld360_sqlmon_&&sqld360_sqlid._driver_hist.sql
+
+
 
 SET TERM ON
 -- get current time

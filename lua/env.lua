@@ -583,13 +583,14 @@ function env.onload(...)
             if v=="jit" then
                 table.new=require("table.new")
                 table.clear=require("table.clear")
+                env.jit.on()
                 env.jit.profile=require("jit.profile")
                 env.jit.util=require("jit.util")
                 env.jit.opt.start(3)
             elseif v=='ffi' then
                 env.ffi=require("ffi")
             end
-        end 
+        end
     end
     
     os.setlocale('',"all")
@@ -641,7 +642,7 @@ function env.unload()
     env.init=nil
     package.loaded['init']=nil
     _CMDS.___ABBR___={}
-    if jit and jit.flush then pcall(jit.flush) end
+    if env.jit and env.jit.flush then pcall(env.jit.flush) end
 end
 
 function env.reload()
@@ -697,7 +698,7 @@ function env.resolve_file(filename,ext)
     filename=filename:gsub('[\\/]+',env.PATH_DEL)
 
     if ext then
-        local exist_ext=filename:lower():match('%.([^\\/]+)$')
+        local exist_ext=filename:lower():match('%.([^%.\\/]+)$')
         local found=false
         if type(ext)=="table" then
             for _,v in ipairs(ext) do
@@ -707,9 +708,8 @@ function env.resolve_file(filename,ext)
                 end
             end
         else
-            found=exist_ext==ext:lower()
+            found=(exist_ext==ext:lower())
         end
-
         if not found then filename=filename..'.'..(type(ext)=="table" and ext[1] or exit) end
     end
 

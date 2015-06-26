@@ -25,7 +25,6 @@
 -- the third "bit" is for TCB
 -- the next 3 chars are used for number of days
 -- so ie. if customer has no license, wants TCB and 31 days then it would be 001031
-
 SET SERVEROUT ON FEED OFF DEF OFF TERM OFF TIMI OFF
 SPO sqld360_driver.sql
 DECLARE 
@@ -49,43 +48,45 @@ BEGIN
 
   IF num_sqlids = 0 THEN
     -- this is a standalone execution, just proceed without values
-    -- for standalone execution we want to collect TCB
+    -- for standalone execution leave the variable for TCB alone
     put('DEF skip_tcb=''''');
-	put('DEF from_edb360=''''');
+    put('DEF from_edb360=''''');
     put('DEF sqld360_fromedb360_days=''''');
-    put('@@sql/sqld360_0a_main.sql');
-	put('HOS unzip -l &&sqld360_main_filename._&&sqld360_file_time.');
+    put('@@sqld360_0a_main.sql');
+    put('HOS unzip -l &&sqld360_main_filename._&&sqld360_file_time.');
   ELSE
-	put('DEF from_edb360=''--''');
-    -- this execution is from edb360, call SQLd360 several times passing the appropriare flag	
+    -- disable "non desired" report sections when called from eDB360
+    put('DEF from_edb360=''--''');
+
+    -- this execution is from edb360, call SQLd360 several times passing the appropriare flag
     FOR i IN (SELECT operation, options FROM plan_table WHERE statement_id = 'SQLD360_SQLID') LOOP
 
        -- check if need to run TCB 
-	   IF SUBSTR(i.options,3,1) = 0 THEN
+       IF SUBSTR(i.options,3,1) = 0 THEN
          put('DEF skip_tcb=''--''');
-	   ELSE
+       ELSE
          put('DEF skip_tcb=''''');
-	   END IF;	
+       END IF;
 
-	   -- check the license to use
-	   IF SUBSTR(i.options,2,1) = 1 THEN
-		  -- if T is enabled then D is enabled too
-		  license := 'T';
-	   ELSIF SUBSTR (i.options,1,1) = 1 THEN
-		  -- no tuning but diagnostics
+       -- check the license to use
+       IF SUBSTR(i.options,2,1) = 1 THEN
+          -- if T is enabled then D is enabled too
+          license := 'T';
+       ELSIF SUBSTR (i.options,1,1) = 1 THEN
+           -- no tuning but diagnostics
           license := 'D';
-	   ELSE
-		  -- no license
-		  license := 'N';
-	   END IF;
+       ELSE
+           -- no license
+           license := 'N';
+       END IF;
 
        num_days := TO_NUMBER(TRIM(SUBSTR(i.options,4,3)));
        put('DEF sqld360_fromedb360_days='''||num_days||'''');
 
-       put('@@sql/sqld360_0a_main.sql '||i.operation||' '||license);
-  	   put('HOS unzip -l &&sqld360_main_filename._&&sqld360_file_time.');
+       put('@@sqld360_0a_main.sql '||i.operation||' '||license);
+       put('HOS unzip -l &&sqld360_main_filename._&&sqld360_file_time.');
 
-	END LOOP;	
+    END LOOP;
       
   END IF;
 
@@ -93,5 +94,5 @@ END;
 /
 SPO OFF 
 SET DEF ON TERM ON
+HOS copy /Y sqld360_driver.sql "&&_FILE_DIR_"
 @@sqld360_driver.sql
-HOS rm sqld360_driver.sql

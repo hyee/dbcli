@@ -9,8 +9,8 @@ CL COL;
 COL row_num FOR 9999999 HEA '#' PRI;
 
 -- version
-DEF sqld360_vYYNN = 'v1511';
-DEF sqld360_vrsn = '&&sqld360_vYYNN. (2015-04-26)';
+DEF sqld360_vYYNN = 'v1516';
+DEF sqld360_vrsn = '&&sqld360_vYYNN. (2015-06-08)';
 DEF sqld360_prefix = 'sqld360';
 
 -- get dbid
@@ -38,7 +38,8 @@ BEGIN
     -- no need to clean, it's a GTT
     -- column options set to 1 is safe here, if no diagnostics then ASH is not extracted at all anyway
     INSERT INTO plan_table (statement_id, timestamp, operation, options) VALUES ('SQLD360_SQLID',sysdate,'&&sqld360_sqlid.','1');
-    INSERT INTO plan_table (statement_id, timestamp, operation) VALUES ('SQLD360_ASH_LOAD',sysdate, NULL);
+    --INSERT INTO plan_table (statement_id, timestamp, operation) VALUES ('SQLD360_ASH_LOAD',sysdate, NULL);
+    INSERT INTO plan_table (statement_id, timestamp, operation, options) VALUES ('SQLD360_ASH_LOAD',sysdate, NULL, '&&sqld360_sqlid.');
   END IF;
 END;
 /  
@@ -115,12 +116,17 @@ SELECT version db_version FROM v$instance;
 DEF skip_10g = '';
 COL skip_10g NEW_V skip_10g;
 SELECT '--' skip_10g FROM v$instance WHERE version LIKE '10%';
+COL skip_11g NEW_V skip_11g;
+SELECT '--' skip_11g FROM v$instance WHERE version LIKE '11%';
 DEF skip_11r1 = '';
 COL skip_11r1 NEW_V skip_11r1;
 SELECT '--' skip_11r1 FROM v$instance WHERE version LIKE '11.1%';
 DEF skip_11r201 = '';
 COL skip_11r201 NEW_V skip_11r201;
 SELECT '--' skip_11r201 FROM v$instance WHERE version LIKE '11.2.0.1%';
+DEF skip_12r101 = '';
+COL skip_12r101 NEW_V skip_12r101;
+SELECT '--' skip_12r101 FROM v$instance WHERE version LIKE '12.1.0.1%';
 
 -- get average number of CPUs
 COL avg_cpu_count NEW_V avg_cpu_count FOR A3;
@@ -218,8 +224,8 @@ BEGIN
      INTO :sqld360_fullsql
      FROM gv$sql
     WHERE sql_id = '&&sqld360_sqlid.'
-	  AND sql_fulltext IS NOT NULL
-	  AND ROWNUM = 1;
+      AND sql_fulltext IS NOT NULL
+      AND ROWNUM = 1;
   END IF;
 
 END;
@@ -273,6 +279,12 @@ SELECT CASE '&&sqld360_conf_incl_eadam.' WHEN 'N' THEN '--' END sqld360_skip_ead
 COL sqld360_skip_rawash NEW_V sqld360_skip_rawash;
 SELECT CASE '&&sqld360_conf_incl_rawash.' WHEN 'N' THEN '--' END sqld360_skip_rawash FROM DUAL;
 
+COL sqld360_skip_stats_h NEW_V sqld360_skip_stats_h;
+SELECT CASE '&&sqld360_conf_incl_stats_h.' WHEN 'N' THEN '--' END sqld360_skip_stats_h FROM DUAL;
+
+COL sqld360_skip_tcb NEW_V sqld360_skip_tcb;
+SELECT CASE '&&sqld360_conf_incl_tcb.' WHEN 'N' THEN '--' END sqld360_skip_tcb FROM DUAL;
+
 -- setup
 DEF sql_trace_level = '1';
 DEF main_table = '';
@@ -300,6 +312,7 @@ DEF default_dir = 'SQLD360_DIR'
 DEF sqlmon_date_mask = 'YYYYMMDDHH24MISS';
 DEF sqlmon_text = 'Y';
 DEF sqlmon_active = 'Y';
+DEF sqlmon_hist = 'Y';
 DEF sqlmon_max_reports = '12';
 DEF ash_date_mask = 'YYYYMMDDHH24MISS';
 DEF ash_text = 'Y';
@@ -397,6 +410,15 @@ ALTER SESSION SET NLS_COMP = 'BINARY';
 ALTER SESSION SET "_optimizer_order_by_elimination_enabled"=false; 
 -- to work around bug 19567916
 ALTER SESSION SET "_optimizer_aggr_groupby_elim"=false; 
+-- workaround nigeria
+ALTER SESSION SET "_gby_hash_aggregation_enabled" = TRUE;
+ALTER SESSION SET "_hash_join_enabled" = TRUE;
+ALTER SESSION SET "_optim_peek_user_binds" = TRUE;
+ALTER SESSION SET "_optimizer_skip_scan_enabled" = TRUE;
+ALTER SESSION SET "_optimizer_sortmerge_join_enabled" = TRUE;
+ALTER SESSION SET cursor_sharing = EXACT;
+ALTER SESSION SET db_file_multiblock_read_count = 128;
+ALTER SESSION SET optimizer_index_caching = 0;
 -- to work around Siebel
 ALTER SESSION SET optimizer_index_cost_adj = 100;
 ALTER SESSION SET optimizer_dynamic_sampling = 2;

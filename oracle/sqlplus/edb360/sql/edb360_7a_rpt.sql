@@ -393,7 +393,7 @@ BEGIN
           l_one_spool_filename := LPAD(:file_seq, 5, '0')||'_'||l_spool_filename;
           update_log(l_one_spool_filename||'.txt');
           put_line('SPO '||l_one_spool_filename||'.txt;');
-          put_line('SELECT DBMS_ADVISOR.get_task_report(:l_task_name) WHERE '''||CHR(38)||CHR(38)||'edb360_bypass.'' IS NULL FROM DUAL;');
+          put_line('SELECT DBMS_ADVISOR.get_task_report(:l_task_name) FROM DUAL WHERE '''||CHR(38)||CHR(38)||'edb360_bypass.'' IS NULL FROM DUAL;');
           put_line('SELECT ''*** time limit exceeded ***'' FROM DUAL WHERE '''||CHR(38)||CHR(38)||'edb360_bypass.'' IS NOT NULL;');
           put_line('SPO OFF;');
           put_line('-- update main report');

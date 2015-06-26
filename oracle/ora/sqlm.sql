@@ -4,21 +4,27 @@
    --]]
 ]]*/
 
-set feed off
-var c cursor
+set feed off printvar off
+set linesize 3000
+var c cursor;
+var rs CLOB;
+var filename varchar2;
 BEGIN
     IF :V1 IS NOT NULL THEN
+        execute immediate 'alter session set "_sqlmon_max_planlines"=3000';
         OPEN :c FOR
             SELECT DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => decode(upper(:V2),
                                                                            'A1',
                                                                            'ALL',
                                                                            'A',
                                                                            'ALL-SESSIONS',
-                                                                           'BASIC+PLAN'),
+                                                                           'BASIC+PLAN')||'-SQL_FULLTEXT-SQL_TEXT',
                                                     TYPE         => 'TEXT',
                                                     sql_id       => :V1,
                                                     session_id   => :V3) AS report
             FROM   dual;
+        :rs:=DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => 'ALL',TYPE=> 'ACTIVE',sql_id=> :V1,session_id=> :V3) ;
+        :filename:='sqlm_'||:V1||'.html';
     ELSE
         OPEN :c FOR
             SELECT *
@@ -44,3 +50,5 @@ BEGIN
     END IF;
 END;
 /
+print c;
+save rs filename

@@ -1,4 +1,4 @@
-/*[[This script needs SYS access to find out who are pinning the target object. Usage: ora objcache <object_name>]]*/
+/*[[This script needs SYS access to find out who are pinning the target object. Usage: ora libcache <PIN|KEPT|object_name>]]*/
 SELECT *
 FROM   (SELECT kglnaown owner,
                kglnaobj object_name,

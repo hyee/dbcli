@@ -150,6 +150,24 @@ PRO
 PRO ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 PRO
 DEF;
+PRO Parameters
+COL sid FOR A40;
+COL name FOR A40;
+COL value FOR A50;
+COL display_value FOR A50;
+COL update_comment NOPRI;
+SELECT *
+  FROM v$spparameter
+ WHERE isspecified = 'TRUE'
+ ORDER BY
+       name,
+       sid,
+       ordinal;
+COL sid FOR A80;
+COL name FOR A80;
+COL value FOR A255;
+COL display_value FOR A255;
+COL update_comment PRI;
 SHOW PARAMETERS;
 PRO
 SELECT (DBMS_UTILITY.GET_TIME - :edb360_time0) / 100 elapsed_seconds FROM DUAL;

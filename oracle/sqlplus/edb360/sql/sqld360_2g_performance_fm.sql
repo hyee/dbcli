@@ -38,8 +38,8 @@ COL bind_data PRI
 --       *
 --  FROM gv$sqlstats
 -- WHERE sql_id IN (SELECT sql_id 
---	                FROM gv$sql 
---				   WHERE force_matching_signature = ''&&force_matching_signature.''
+--                    FROM gv$sql 
+--                   WHERE force_matching_signature = ''&&force_matching_signature.''
 --                     AND sql_id <> ''&&sqld360_sqlid.'')
 -- ORDER BY inst_id, sql_id
 --';
@@ -58,8 +58,8 @@ SELECT /*+ &&top_level_hints. */
        *
   FROM gv$sql_plan_statistics_all
  WHERE sql_id IN (SELECT sql_id 
-	                  FROM gv$sql 
-				     WHERE force_matching_signature = TRIM(''&&force_matching_signature.'')
+                    FROM gv$sql 
+                   WHERE force_matching_signature = TRIM(''&&force_matching_signature.'')
                      AND sql_id <> ''&&sqld360_sqlid.'')
  ORDER BY inst_id, sql_id, plan_hash_value, child_number, id
 ';
@@ -78,8 +78,8 @@ END;
 --       *
 --  FROM gv$sqlstats_plan_hash
 -- WHERE sql_id IN (SELECT sql_id 
---	                FROM gv$sql 
---				   WHERE force_matching_signature = ''&&force_matching_signature.''
+--                    FROM gv$sql 
+--                   WHERE force_matching_signature = ''&&force_matching_signature.''
 --                     AND sql_id <> ''&&sqld360_sqlid.'')
 -- ORDER BY inst_id, sql_id, plan_hash_value
 --';
@@ -121,8 +121,8 @@ SELECT /*+ &&top_level_hints. */
        *
   FROM dba_hist_sql_plan
  WHERE sql_id IN (SELECT sql_id 
-	                FROM dba_hist_sqlstat 
-				   WHERE force_matching_signature = TRIM(''&&force_matching_signature.'')
+                    FROM dba_hist_sqlstat 
+                   WHERE force_matching_signature = TRIM(''&&force_matching_signature.'')
                      AND sql_id <> ''&&sqld360_sqlid.'')
    AND ''&&diagnostics_pack.'' = ''Y''
  ORDER BY plan_hash_value, id

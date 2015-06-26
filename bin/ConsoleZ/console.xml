@@ -150,7 +150,7 @@
 			<action ctrl="0" shift="0" alt="0" button="2" name="paste"/>
 			<action ctrl="1" shift="0" alt="0" button="1" name="drag"/>
 			<action ctrl="0" shift="0" alt="0" button="4" name="link"/>
-			<action ctrl="0" shift="0" alt="0" button="2" name="menu"/>
+			<action ctrl="0" shift="0" alt="0" button="0" name="menu"/>
 			<action ctrl="0" shift="0" alt="0" button="0" name="menu2"/>
 			<action ctrl="0" shift="0" alt="0" button="0" name="menu3"/>
 		</actions>
@@ -178,7 +178,7 @@
 				<color id="15" r="255" g="255" b="255"/>
 			</colors>
 		</tab>
-		<tab title="dbcli_db2" icon="..\..\sql.ico" use_default_icon="0">
+		<tab title="dbcli_db2" use_default_icon="0">
 			<console shell="..\..\dbcli.bat &quot;set database db2&quot;" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
 			<cursor style="12" r="255" g="255" b="255"/>
 			<colors background_text_opacity="255">
@@ -202,5 +202,7 @@
 		</tab>
 	</tabs>
 	<external_commands>
+
+
 </external_commands>
 </settings>

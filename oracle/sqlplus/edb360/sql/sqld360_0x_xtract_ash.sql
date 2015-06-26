@@ -23,6 +23,7 @@ BEGIN
     INTO data_already_loaded
     FROM plan_table
    WHERE statement_id = 'SQLD360_ASH_LOAD'
+     &&from_edb360.AND EXISTS (SELECT 1 FROM plan_table WHERE statement_id = 'SQLD360_ASH_LOAD' AND operation = 'Loaded' AND options = '&&sqld360_sqlid.') 
      AND operation = 'Loaded';
      
   -- it means this is the first execution and so the first SQL loads data for everybody
@@ -91,6 +92,8 @@ BEGIN
         AND b.statement_id = 'SQLD360_SQLID' -- flag to identify the rows that stores SQL ID info
         AND a.sample_time > systimestamp-&&history_days.  -- extract only data of interest
         AND SUBSTR(b.options,1,1) = '1'  -- load data only for those SQL IDs that have diagnostics enabled
+        &&from_edb360.AND b.operation = '&&sqld360_sqlid.'
+        AND '&&sqld360_conf_incl_ash_hist.' = 'Y'
      UNION ALL
      SELECT 'SQLD360_ASH_DATA_MEM', sample_time, sql_id, 
             NULL, NULL,
@@ -133,9 +136,16 @@ BEGIN
         AND b.statement_id = 'SQLD360_SQLID' -- flag to identify the rows that stores SQL ID info
         AND a.sample_time > systimestamp - &&history_days.  -- extract only data of interest
         AND SUBSTR(b.options,1,1) = '1'  -- load data only for those SQL IDs that have diagnostics enabled
+        &&from_edb360.AND b.operation = '&&sqld360_sqlid.'
      ;   
      
-     INSERT INTO plan_table (statement_id, timestamp, operation) VALUES ('SQLD360_ASH_LOAD',sysdate, 'Loaded');
+     --INSERT INTO plan_table (statement_id, timestamp, operation) VALUES ('SQLD360_ASH_LOAD',sysdate, 'Loaded');
+       INSERT INTO plan_table (statement_id, timestamp, operation
+                         &&from_edb360.,options
+                         ) 
+            VALUES ('SQLD360_ASH_LOAD',sysdate, 'Loaded'
+                         &&from_edb360.,'&&sqld360_sqlid.'
+                         );
 
   END IF;
   

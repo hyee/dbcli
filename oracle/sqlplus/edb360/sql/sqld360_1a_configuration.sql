@@ -249,7 +249,7 @@ SELECT /*+ &&top_level_hints. */
 ';
 END;
 /
-@@sqld360_9a_pre_one.sql
+@@&&skip_10g.&&skip_11g.sqld360_9a_pre_one.sql
 
 COL addr PRI
 

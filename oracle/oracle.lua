@@ -12,7 +12,8 @@ local module_list={
     "oracle/sqlprof",
     "oracle/tracefile",
     "oracle/awrdump",
-    "oracle/unwrap"
+    "oracle/unwrap",
+    "oracle/sys"
 }
 
 local oracle=env.class(env.db_core)
@@ -45,9 +46,7 @@ function oracle:helper(cmd)
 end
 
 function oracle:connect(conn_str)
-    --print(conn_str)
-    local props,args={}
-    local usr,pwd,conn_desc,url,isdba
+    local args,usr,pwd,conn_desc,url,isdba
     local sqlplustr
     if type(conn_str)=="table" then --from 'login' command
         args=conn_str
@@ -93,23 +92,22 @@ function oracle:connect(conn_str)
     self.conn:setImplicitCachingEnabled(true)
     local params=self:get_value([[
        select /*INTERNAL_DBCLI_CMD*/ user,
-           (SELECT VALUE FROM Nls_Database_Parameters WHERE parameter='NLS_RDBMS_VERSION') version,
-           (SELECT VALUE FROM Nls_Database_Parameters WHERE parameter='NLS_LANGUAGE')||'_'||
-           (SELECT VALUE FROM Nls_Database_Parameters WHERE parameter='NLS_TERRITORY')||'.'||VALUE nls,
-           userenv('sid'),sys_context('userenv','INSTANCE_NAME')
-       from Nls_Database_Parameters WHERE parameter='NLS_CHARACTERSET']])
+               (SELECT VALUE FROM Nls_Database_Parameters WHERE parameter='NLS_RDBMS_VERSION') version,
+                sys_context('userenv','language'),
+                userenv('sid'),
+                sys_context('userenv','instance_name'),
+                sys_context('userenv','isdba'),
+                sys_context('userenv','db_name')||nullif('.'||sys_context('userenv','db_domain'),'.')
+       from dual]])
 
-    self.props.db_user,self.props.db_version,self.props.db_nls_lang=params[1],params[2],params[3]
-    local args={"#VARCHAR","#VARCHAR","#VARCHAR"}
+    self.props={db_user=params[1],db_version=params[2],db_nls_lang=params[3],service_name=params[7],isdba=params[6]=='TRUE' and true or false}
+
     self:internal_call([[/*INTERNAL_DBCLI_CMD*/
         begin 
             execute immediate 'alter session set nls_date_format=''yyyy-mm-dd hh24:mi:ss''';
             execute immediate 'alter session set statistics_level=all';
-            :1:=dbms_utility.get_parameter_value('db_name',:2,:3);
-        end;]],args)
-    
-    self.props.service_name=args[3]
-
+        end;]],{})
+        
     prompt=(prompt or self.props.service_name):match("^([^,%.&]+)") 
     env.set_prompt(nil,prompt)
     self.session_title=('%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)'):format(prompt:upper(),params[5],params[1],params[4],params[2])

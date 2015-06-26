@@ -172,27 +172,88 @@ HOS zip -q &&sqld360_main_filename._&&sqld360_file_time. &&sqld360_main_report..
 --------------------------------------
 --------------------------------------
 
+DEF title = 'Plans from SQL Tuning Sets';
+DEF main_table = 'DBA_SQLSET_STATEMENTS';
+
+@@sqld360_0s_pre_nondef
+
+
+SPO &&one_spool_filename..txt;
+PRO &&title.&&title_suffix. (&&main_table.) 
+PRO &&abstract.
+PRO &&abstract2.
+
+COL inst_child FOR A21;
+BREAK ON inst_child SKIP 2;
+SET PAGES 0;
+
+WITH v AS (
+SELECT /*+ MATERIALIZE */ 
+       DISTINCT sqlset_name, sqlset_owner, sql_id, plan_hash_value
+  FROM dba_sqlset_statements 
+ WHERE sql_id = '&&sqld360_sqlid.')
+SELECT /*+ ORDERED USE_NL(t) */ t.plan_table_output
+  FROM v, TABLE(DBMS_XPLAN.DISPLAY_SQLSET(sqlset_name => v.sqlset_name, sql_id => v.sql_id, plan_hash_value => v.plan_hash_value, format => 'ADVANCED',sqlset_owner => v.sqlset_owner)) t;
+
+
+SET TERM ON
+-- get current time
+SPO &&sqld360_log..txt APP;
+COL current_time NEW_V current_time FOR A15;
+SELECT 'Completed: ' x, TO_CHAR(SYSDATE, 'HH24:MI:SS') current_time FROM DUAL;
+SET TERM OFF
+
+HOS zip -q &&sqld360_main_filename._&&sqld360_file_time. &&sqld360_log..txt
+SET PAGES 50000
+
+-- update main report
+SPO &&sqld360_main_report..html APP;
+PRO <li title="&&main_table.">&&title.
+PRO <a href="&&one_spool_filename..txt">text</a>
+SPO OFF;
+HOS zip -mq &&sqld360_main_filename._&&sqld360_file_time. &&one_spool_filename..txt
+HOS zip -q &&sqld360_main_filename._&&sqld360_file_time. &&sqld360_main_report..html
+
+--HOS zip -q &&sqld360_main_filename._&&sqld360_file_time. &&sqld360_log2..txt
+
+-- update main report
+SPO &&sqld360_main_report..html APP;
+PRO </li>
+SPO OFF;
+HOS zip -q &&sqld360_main_filename._&&sqld360_file_time. &&sqld360_main_report..html
+
+
+
+--------------------------------------
+--------------------------------------
+
 COL num_plans NEW_V num_plans
 SELECT TRIM(TO_CHAR(COUNT(plan_hash_value))) num_plans
   FROM (SELECT plan_hash_value
-	      FROM gv$sql
+          FROM gv$sql
          WHERE sql_id = '&&sqld360_sqlid.'
-		UNION
-		SELECT plan_hash_value
-		  FROM dba_hist_sqlstat
-		 WHERE sql_id = '&&sqld360_sqlid.'
-           AND '&&diagnostics_pack.' = 'Y')
-/	
+        UNION
+        SELECT plan_hash_value
+          FROM dba_hist_sqlstat
+         WHERE sql_id = '&&sqld360_sqlid.'
+           AND '&&diagnostics_pack.' = 'Y'
+        UNION
+        SELECT cost plan_hash_value
+          FROM plan_table
+         WHERE statement_id LIKE 'SQLD360_ASH_DATA%'
+           AND '&&diagnostics_pack.' = 'Y'
+           AND remarks = '&&sqld360_sqlid.')
+/
 
-DEF title= 'Plan Analysis'
-DEF main_table = 'GV$SQL_PLAN'	
+DEF title= 'Plan Details'
+DEF main_table = 'GV$SQL_PLAN'
 
 --this one initiated a new file name, need it in the next anchor
 @@sqld360_0s_pre_nondef
 SET TERM OFF ECHO OFF 
 -- need to fix the file name for the partitions
 SPO &&sqld360_main_report..html APP;
-PRO <li>Plans Analysis <small><em>(&&num_plans.)</em></small> 
+PRO <li>Plans Details <small><em>(&&num_plans.)</em></small> 
 PRO <a href="&&one_spool_filename..html">page</a>
 PRO </li>
 SPO OFF;
