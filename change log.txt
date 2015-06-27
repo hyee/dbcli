@@ -1,4 +1,5 @@
-2015-06-36: ! public: update to latest consolez, which removes the "Administrator:" prefix from tab titles
+2015-06-27: * oracle: enhancement and performance tuning on 'ora size'
+2015-06-26: ! public: update to latest consolez, which removes the "Administrator:" prefix from tab titles
 2015-06-26: + oracle: new command "awrdiff" to extract AWR diff report
 2015-06-26: + oracle: new command "sys" which is similar to "ora" command except only support SYSDBA a/c
 2015-06-26: + oracle: new command "ora addm" and "ora sysslope"
