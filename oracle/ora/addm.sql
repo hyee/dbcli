@@ -4,7 +4,7 @@
     --]]
 ]]*/
 SET FEED OFF printvar off
-var cur cursor;
+var cur refcursor;
 var res CLOB;
 VAR DEST VARCHAR2;
 DECLARE

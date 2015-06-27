@@ -6,7 +6,7 @@
         &FILTER: default={1=1} f={}
     --]]
 ]]*/
-VAR O CURSOR Many blocks for small values of 'rows/block' means fragmentation, and rebuild/coalesce is recommended;
+VAR O REFCURSOR Many blocks for small values of 'rows/block' means fragmentation, and rebuild/coalesce is recommended;
 
 DECLARE
     v_obj INT;

@@ -14,7 +14,7 @@ Show execution plan. Usage: plan [-d|-b|-ol|-basic-adv] <sql_id> [<plan_hash_val
 set PRINTSIZE 9999
 set feed off
 
-VAR C CURSOR Binding Variables
+VAR C REFCURSOR Binding Variables
 BEGIN
     IF &binds=1 THEN
         open :c for 

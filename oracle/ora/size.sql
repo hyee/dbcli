@@ -1,6 +1,14 @@
-/*[[ Show object size. Usage: ora size [ [owner.]object_name[.PARTITION_NAME] ]  ]]*/
+/*[[
+    Show object size. Usage: ora size [-d] [ [owner.]object_name[.PARTITION_NAME] ]  
+    If not specify the parameter, then list the top 100 segments within current schema. and option '-d' used to detail in segment level, otherwise in name level
+    --[[
+        @CHECK_ACCESS: sys.seg$={}
+        &OPT:  default={1}, d={2}
+        &OPT2: default={}, d={subobject_name,object_id,data_object_id,}
+    --]]
+]]*/
 set feed off
-VAR cur CURSOR
+VAR cur REFCURSOR
 BEGIN
     IF :V1 IS NOT NULL THEN
         OPEN :cur FOR
@@ -32,31 +40,43 @@ BEGIN
                    UNION
                    SELECT 0 flag, owner, object_name, object_type,partition_name
                    FROM   r) a)
-        SELECT owner, object_name, object_type,
-               0+REGEXP_SUBSTR(INFO,'[^/]+',1,1) "SIZE(MB)",
-               0+REGEXP_SUBSTR(INFO,'[^/]+',1,2) SEGMENTS,
-               0+REGEXP_SUBSTR(INFO,'[^/]+',1,3) EXTENTS,
-               0+REGEXP_SUBSTR(INFO,'[^/]+',1,4) AVG_INIT_KB,
-                 REGEXP_SUBSTR(INFO,'[^/]+',1,5) TABLESPACE_NAME
-        FROM(
-            SELECT R2.*,
-                   (SELECT round(SUM(bytes) / 1024 / 1024, 2)||'/'||count(1)||'/'||SUM(EXTENTS)||'/'||ROUND(AVG(INITIAL_EXTENT)/1024)||'/'||MAX(TABLESPACE_NAME) KEEP(DENSE_RANK LAST ORDER BY BYTES)
-                     FROM   dba_segments s
-                     WHERE  r2.owner = s.owner
-                     AND    r2.object_name = s.segment_name
-                     AND    NVL(s.PARTITION_NAME,' ') LIKE R2.PARTITION_NAME) INFO
-            FROM   R2)
+        SELECT /*+ordered use_nl(r2 u o) use_hash(s ts) swap_join_inputs(ts)*/
+                 r2.owner,r2.object_name,r2.object_type,
+                 round(sum(s.blocks * ts.blocksize)/1024/1024,2) size_mb,
+                 round(sum(s.blocks * ts.blocksize)/1024/1024/1024,3) size_gb,
+                 COUNT(1) segments,
+                 SUM(s.extents) extents,
+                 ROUND(AVG(s.blocks * ts.blocksize)/1024) init_ext_kb,
+                 ROUND(AVG(s.extsize * ts.blocksize)/1024) next_extent_kb,
+                 MAX(ts.name) KEEP(dense_rank LAST ORDER BY s.blocks) tablespace_name
+        FROM    R2, sys.user$ u, sys.obj$ o, sys.seg$ s, sys.ts$ ts
+        WHERE  s.hwmincr=o.dataobj#
+        AND    s.ts# = ts.ts#
+        AND    o.owner# = u.user#
+        AND    u.name = R2.owner
+        AND    o.name = r2.object_name
+        AND    NVL(o.subname,' ') LIKE r2.partition_name
+        GROUP BY flag, r2.owner,r2.object_name,r2.object_type
         ORDER  BY flag, owner,object_name;
     ELSE
         OPEN :CUR FOR
-        SELECT * FROM (
-            SELECT OWNER,SEGMENT_NAME,round(SUM(bytes) / 1024 / 1024, 2) "SIZE(MB)" , count(1) SEGMENTS, SUM(EXTENTS) EXTENTS, ROUND(AVG(INITIAL_EXTENT)/1024) AVG_INIT_KB,
-                    MAX(TABLESPACE_NAME) KEEP(DENSE_RANK LAST ORDER BY BYTES) TABLESPACE_NAME
-            FROM   dba_segments s
-            WHERE  OWNER=SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
-            GROUP BY OWNER,SEGMENT_NAME
-            ORDER BY 3 DESC
-        ) WHERE ROWNUM<=100;
+        SELECT rownum "#",a.*
+        FROM   (SELECT /*+ordered use_hash(o s ts) swap_join_inputs(ts)*/
+                  o.object_name,&OPT2  decode(&opt,1,regexp_substr(object_type, '\S+'),object_type) object_type,
+                  round(SUM(s.blocks * ts.blocksize) / 1024 / 1024, 2) size_mb, 
+                  round(SUM(s.blocks * ts.blocksize) / 1024 / 1024/1024, 3) size_gb, 
+                  COUNT(1) segments,
+                  SUM(s.extents) extents, ROUND(AVG(s.blocks * ts.blocksize) / 1024) init_ext_kb,
+                  ROUND(AVG(s.extsize * ts.blocksize) / 1024) next_extent_kb,
+                  MAX(ts.name) KEEP(dense_rank LAST ORDER BY s.blocks) tablespace_name
+                 FROM   dba_objects o, sys.seg$ s, sys.ts$ ts
+                 WHERE  s.hwmincr = o.data_object_id
+                 AND    s.ts# = ts.ts#
+                 AND    o.owner = SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
+                 AND    o.data_object_id IS NOT NULL
+                 GROUP  BY o.object_name,&OPT2  decode(&opt,1,regexp_substr(object_type, '\S+'),object_type)
+                 ORDER  BY size_mb DESC) a
+        WHERE  ROWNUM <= 100;
     END IF;
 END;
 /

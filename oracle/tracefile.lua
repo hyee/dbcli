@@ -65,7 +65,6 @@ function trace.get_trace(filename,mb,from_mb)
         :res := 'File Size: ' || round(fsize / 1024 / 1024, 2) || ' MB        Extract Size: ' 
                 ||round(length(text) / 1024 / 1024, 2) || ' MB        Start Extract Position: ' 
                 ||round((from_MB-length(text)) / 1024 / 1024, 2) || ' MB';
-
     EXCEPTION
         WHEN OTHERS THEN
             IF trace_file IS NOT NULL AND DBMS_LOB.FILEISOPEN(trace_file)=1 THEN 
@@ -87,21 +86,37 @@ function trace.get_trace(filename,mb,from_mb)
     
     env.checkerr(filename,"Please specify the trace file location !")
     if not db.props.db_version then env.raise_error('Database is not connected!') end;
-    db:internal_call("alter session set sql_trace=false")
+    db:internal_call("alter session set events '10046 trace name context off'")
+    db:internal_call("alter session set tracefile_identifier=CLEANUP")
+    db:internal_call("alter session set tracefile_identifier=''")
     filename=filename:lower()
-    if filename=="default" then
+    local lv=nil
+    if filename:find("^%d+$") then lv=tonumber(filename) end
+    if filename=="default" or lv then
+        if lv then
+            db:internal_call("alter session set tracefile_identifier='dbcli_"..math.random(1e6).."'");
+        end
         if db.props.db_version>'11' then
             filename=db:get_value[[select value from v$diag_info where name='Default Trace File']]
         else
-            filename=db:get_value[[ SELECT u_dump.value || '/' || SYS_CONTEXT('userenv','instance_name') || '_ora_' || v$process.spid ||
-                                           nvl2(v$process.traceid, '_' || v$process.traceid, NULL) || '.trc' "Trace File"
+            filename=db:get_value[[SELECT u_dump.value || '/' || SYS_CONTEXT('userenv','instance_name') || '_ora_' || p.spid ||
+                                           nvl2(p.traceid, '_' || p.traceid, NULL) || '.trc' "Trace File"
                                     FROM   v$parameter u_dump
-                                    CROSS  JOIN v$process
-                                    JOIN   v$session
-                                    ON     v$process.addr = v$session.paddr
+                                    CROSS  JOIN v$process p
+                                    JOIN   v$session s
+                                    ON     p.addr = s.paddr
                                     WHERE  u_dump.name = 'user_dump_dest'
-                                    AND    v$session.audsid = sys_context('userenv', 'sessionid')]]
+                                    AND    s.audsid = sys_context('userenv', 'sessionid')]]
+        end
+        if lv then
+            if lv > 0 then
+                print("Trace on: "..filename)
+                db:internal_call("alter session set events '10046 trace name context forever, level "..lv.."'")
+            else
+                print("Trace off: "..filename)
             end
+            return
+        end
     elseif filename=="alert" then
         if db.props.db_version<='11' then
             filename=db:get_value[[SELECT u_dump.value || '/alert_' || SYS_CONTEXT('userenv', 'instance_name') || '.log' "Trace File"
@@ -109,9 +124,9 @@ function trace.get_trace(filename,mb,from_mb)
                                    WHERE  u_dump.name = 'background_dump_dest']] 
         else
             filename=db:get_value[[select value|| '/alert_' || SYS_CONTEXT('userenv', 'instance_name') || '.log' from v$diag_info where name='Diag Trace']]
-        end   
+        end
     end
-    local args={filename,"#VARCHAR","#CLOB","#VARCHAR",mb=mb or 4,from_mb=from_mb or '',res='#VARCHAR'}
+    local args={filename,"#VARCHAR","#CLOB","#VARCHAR",mb=mb or 2,from_mb=from_mb or '',res='#VARCHAR'}
     db:internal_call(sql,args)
     env.checkerr(args[2],args[4])
     print(args.res);
@@ -119,13 +134,14 @@ function trace.get_trace(filename,mb,from_mb)
 end
 
 env.set_command(nil,{"loadtrace","dumptrace"},[[
-    Download Oracle trace file into local directory. Usage: loadtrace <trace_file|default|alert> [MB [begin_MB] ] 
+    Download Oracle trace file into local directory. Usage: loadtrace <trace_file|default|alert|0/1/4/8/12> [MB [begin_MB] ] 
     This command requires the "create directory" privilige.
     Parameters:
         trace_file: 1) The absolute path of the target trace file, or
                     2) "default" to extract current session's trace, or 
+                    4) 0/1/4/8/12 to enable 10046 trace with specific level
                     3) "alert" to extract local instance's alert log.
-        MB        : MegaBytes to extract, default as 4 MB.
+        MB        : MegaBytes to extract, default as 2 MB.
         begin_MB  : The start file position(in MB) to extract, default as "total_MB - <MB>"
     ]],trace.get_trace,false,4)
 

@@ -1,4 +1,6 @@
-/*[[Library cache lock holders/waiters]]*/
+/*[[Library cache lock holders/waiters.
+Refer to: https://github.com/xtender/xt_scripts
+]]*/
 SELECT DISTINCT to_char(ses.ksusenum) sid, ses.ksuseser serial, ses.ksuudlna username,
                 KSUSEMNM module, ob.kglnaown obj_owner, ob.kglnaobj obj_name, lk.kgllkcnt lck_cnt,
                 lk.kgllkmod lock_mode, lk.kgllkreq lock_req, w.state, w.event, w.wait_Time wtime,

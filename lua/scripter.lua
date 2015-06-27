@@ -331,7 +331,7 @@ function scripter:run_script(cmd,...)
     local args,print_args,sql={...},false
     sql,args,print_args=self:get_script(cmd,args,print_args)
     if not args then return end
-    self._backup_context=env.var.backup_context()
+    --self._backup_context=env.var.backup_context()
     self:run_sql(sql,args,print_args)
 end
 

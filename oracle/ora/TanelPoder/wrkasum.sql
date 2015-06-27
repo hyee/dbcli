@@ -22,7 +22,7 @@ PROMPT ==========================================
      actual_pga_mb DESC NULLS LAST
 /
 
-VAR WRKSQL CURSOR "Top SQL_ID by TEMP Usage"
+VAR WRKSQL REFCURSOR "Top SQL_ID by TEMP Usage"
 DECLARE
     sqls sys.dbms_debug_vc2coll := sys.dbms_debug_vc2coll();
 BEGIN

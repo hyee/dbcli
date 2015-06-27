@@ -1,6 +1,6 @@
 /*[[Show change slope based on GV$SYSMETRIC_HISTORY. Usage: sysslope [metric_id] [inst_id] ]]*/
 set feed off
-var cur cursor
+var cur refcursor
 BEGIN
     IF :V1 IS NULL THEN
         OPEN :cur FOR

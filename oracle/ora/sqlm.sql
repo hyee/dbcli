@@ -6,7 +6,7 @@
 
 set feed off printvar off
 set linesize 3000
-var c cursor;
+var c refcursor;
 var rs CLOB;
 var filename varchar2;
 BEGIN

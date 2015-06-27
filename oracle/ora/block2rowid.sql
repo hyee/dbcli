@@ -1,7 +1,7 @@
 /*[[Convert block number into ROWID, usage: ora block2rowid <object_id> <file#,block#|file# block#>]]*/
 SET FEED OFF
-VAR CUR1 CURSOR
-VAR CUR2 CURSOR
+VAR CUR1 REFCURSOR
+VAR CUR2 REFCURSOR
 
 DECLARE
     SRID ROWID;

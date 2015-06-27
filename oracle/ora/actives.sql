@@ -18,8 +18,8 @@ Show active sessions. Usage: ora actives [-s|-p|-b] [-f"<filter>"|-u] [waits|sid
 
 set feed off
 
-VAR actives CURSOR "Active Sessions"
-VAR time_model cursor "Top Session Time Model"
+VAR actives refcursor "Active Sessions"
+VAR time_model refcursor "Top Session Time Model"
 BEGIN
     OPEN :actives FOR
         WITH s1 AS
