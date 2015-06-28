@@ -4,7 +4,7 @@
 2015-06-26: + oracle: new command "sys" which is similar to "ora" command except only support SYSDBA a/c
 2015-06-26: + oracle: new command "ora addm" and "ora sysslope"
 2015-06-26: ! oracle: fixes,enhancement and performance tuning on some existing modules
-2015-06-36: ! public: minor bug fixes
+2015-06-26: ! public: minor bug fixes
 2015-06-13: + oracle: new command "ora pins" and "ora waiters"
 2015-06-13: ! public: update to latest luajit and consolez
 2015-06-13: ! public: minor fixes
