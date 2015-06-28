@@ -6,8 +6,7 @@ SELECT DISTINCT to_char(ses.ksusenum) sid, ses.ksuseser serial, ses.ksuudlna use
                 lk.kgllkmod lock_mode, lk.kgllkreq lock_req, w.state, w.event, w.wait_Time wtime,
                 w.seconds_in_Wait secs
 FROM   x$kgllk lk, x$kglob ob, x$ksuse ses, v$session_wait w
-WHERE  lk.kgllkhdl IN (SELECT /*+ precompute_subquery */
-                        kgllkhdl
+WHERE  lk.kgllkhdl IN (SELECT /*+ precompute_subquery */kgllkhdl
                        FROM   x$kgllk
                        WHERE  kgllkreq > 0)
 AND    ob.kglhdadr = lk.kgllkhdl

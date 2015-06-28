@@ -50,7 +50,7 @@ function alias.run_command(...)
         target=target.." $*"
         alias.args={...}
         alias.rest={}
-        for i=1,9 do
+        for i=1,99 do
             v=alias.args[i] or ""
             if v:find("[%s\n\r\b\t]") and not v:find('"') then v='"'..v..'"' end
             alias.args[i]=v
@@ -133,7 +133,7 @@ function alias.set(name,cmd,write)
         alias.cmdlist[name].text=cmd
         alias.cmdlist[name].active=false
         if not globalcmds[name]  then
-            env.set_command(nil,name, "#Alias command("..sub_cmd..")",alias.run_command,false,9,false,true)
+            env.set_command(nil,name, "#Alias command("..sub_cmd..")",alias.run_command,false,99,false,true)
             alias.cmdlist[name].active=true
         elseif globalcmds[name].FUNC==alias.run_command then
             alias.cmdlist[name].active=true

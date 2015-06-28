@@ -331,7 +331,8 @@ local ignore_errors={
     ['ORA-00028']='Connection is lost, please login again.',
     ['socket']='Connection is lost, please login again.',
     ['SQLRecoverableException']='Connection is lost, please login again.',
-    ['ORA-01013']='default'
+    ['ORA-01013']='default',
+    ['connection abort']='default'
 }
 
 function oracle:handle_error(info)
