@@ -27,10 +27,23 @@ end
 
 local os,clock=os
 local stack=nil
+function env.reset_input(line)
+    if not stack or not line then return nil end
+    if not line:find('^[%s\t]*$') then stack[#stack+1]=line end
+    if env.CURRENT_PROMPT==env.PRI_PROMPT then
+        if line:find('^[%s\t]*'..env.END_MARKS[1]..'[%s\t]*$') then
+            stack[#stack-1]=stack[#stack-1]..line
+            table.remove(stack)
+        end
+        line=table.concat(stack,'\n'..env.MTL_PROMPT)
+        reader:setMultiplePrompt(#stack==1 and line or "")
+        stack=nil
+    end
+end
+
 while true do  
     if env.CURRENT_PROMPT=="_____EXIT_____" then break end    
-    write(env.CURRENT_PROMPT)
-    line = reader:readLine()  
+    line = reader:readLine(prompt_color:format(color("PROMPTCOLOR"),env.CURRENT_PROMPT,color("COMMANDCOLOR")))  
     if not line or line:lower() == 'quit' or line:lower() == 'exit' then
         print("Exited.")
         env.unload()        
@@ -43,16 +56,7 @@ while true do
         stack={line}
         reader:setMultiplePrompt(nil)
     elseif stack then
-        if not line:find('^[%s\t]*$') then stack[#stack+1]=line end
-        if env.CURRENT_PROMPT==env.PRI_PROMPT then
-            if line:find('^[%s\t]*'..env.END_MARKS[1]..'[%s\t]*$') then
-                stack[#stack-1]=stack[#stack-1]..line
-                table.remove(stack)
-            end
-            line=table.concat(stack,'\n'..env.MTL_PROMPT)
-            reader:setMultiplePrompt(#stack==1 and line or "")
-            stack=nil
-        end
+        env.reset_input(line)
     end
   
     if env.PRI_PROMPT=="TIMING> " and env.CURRENT_PROMPT~=env.MTL_PROMPT then

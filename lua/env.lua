@@ -362,9 +362,7 @@ function env.set_prompt(name,default,isdefault)
 end
 
 function env.pending_command()
-    if curr_stmt and curr_stmt~="" then 
-        return true
-    end
+    return curr_stmt and curr_stmt~=""
 end
 
 function env.clear_command()    
@@ -379,6 +377,7 @@ function env.clear_command()
         prompt=prompt_color:format(env.ansi.get_color("PROMPTCOLOR"),prompt,env.ansi.get_color("COMMANDCOLOR"))
     end
     env.reader:resetPromptLine(prompt,"",0)
+    env.reset_input("")
 end
 
 function env.parse_args(cmd,rest)    
