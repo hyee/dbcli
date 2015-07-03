@@ -213,8 +213,7 @@ function sqlprof.extract_profile(sql_id,sql_plan)
         extract_profile(:1,:2,:3, TRUE);
     END;]]
     env.checkerr(sql_id,"Please specify the SQL ID!")  
-    if not db:check_obj('sys.sql$text') then
-        print(1)
+    if not db:check_access('sys.sql$text') then
         stmt=stmt:gsub("%$IF.-%$END","")
     end  
     args={'#CLOB',sql_id,sql_plan or ""}

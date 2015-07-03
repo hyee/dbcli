@@ -34,6 +34,14 @@ public class Console extends ConsoleReader {
         while (iterator.hasNext()) removeCompleter(iterator.next());
     }
 
+    public String readLine(String prompt) throws IOException {
+        if (isRunning()) setEvents(null, null);
+        synchronized (in) {
+            String line = super.readLine(prompt);
+            return line;
+        }
+    }
+
     public String readLine() throws IOException {
         if (isRunning()) setEvents(null, null);
         synchronized (in) {
@@ -41,6 +49,7 @@ public class Console extends ConsoleReader {
             return line;
         }
     }
+
 
     public Boolean isRunning() {
         return this.task != null;

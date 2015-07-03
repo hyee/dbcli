@@ -1,5 +1,8 @@
 /*[[
 Show or advise object's space, it could be time-consuming for the object who owns many partitions. Usage: space <[owner.]object_name[.partition_name]> [stats|advise]
+    --[[
+        @CHECK_ACCESS: dbms_space/dba_objects/dba_tablespaces={}
+    --]]
 ]]*/
 
 set feed off SQLTIMEOUT 1800
@@ -15,8 +18,8 @@ DECLARE
                         p_partition VARCHAR2,
                         p_Top       PLS_INTEGER := NULL) IS
         SELECT /*+leading(x seg y) use_nl(seg) use_hash(y) no_merge(y)*/
-         distinct x.owner || '.' || x.object_name || nvl2(x.subobject_name, '.' || object_name, '') object_name,
-         x.object_type,
+         distinct segment_owner || '.' || segment_name || nvl2(partition_name, '.' || segment_name, '') object_name,
+         segment_type object_type,
          seg.*,         
          (SELECT segment_space_management
           FROM   dba_tablespaces ts
@@ -24,13 +27,12 @@ DECLARE
          (SELECT block_size
           FROM   dba_tablespaces ts
           WHERE  seg.tablespace_name = ts.tablespace_name) block_size,
-         decode(x.object_name, seg.segment_name, 1, 2) lv
-        FROM   dba_objects x,
-               TABLE(DBMS_SPACE.OBJECT_DEPENDENT_SEGMENTS(
-                      x.owner,
-                      x.OBJECT_name,
-                      x.subobject_name,
-                      CASE x.object_type
+         decode(p_segname, seg.segment_name, 1, 2) lv
+        FROM TABLE(DBMS_SPACE.OBJECT_DEPENDENT_SEGMENTS(
+                      p_owner,--objowner
+                      p_segname,--objname
+                      null,--partname
+                      CASE (select regexp_substr(max(x.object_type),'[^ ]+') from dba_objects x WHERE x.owner = p_owner AND x.OBJECT_name = p_segname and subobject_name is null)
                           WHEN 'TABLE' THEN 1
                           WHEN 'TABLE PARTITION' THEN 7
                           WHEN 'TABLE SUBPARTITION' THEN 9
@@ -44,10 +46,8 @@ DECLARE
                           WHEN 'LOB' THEN 21
                           WHEN 'LOB PARTITION' THEN 40
                           WHEN 'LOB SUBPARTITION' THEN 41
-                      END)) seg
-        WHERE  x.owner = p_owner
-        AND    x.OBJECT_name = p_segname
-        AND    nvl(subobject_name, ' ') = nvl(p_partition, ' ');
+                      END)) seg--objtype
+        WHERE  nvl(seg.partition_name, ' ') LIKE p_partition||'%';
 
     TYPE l_CursorSet IS TABLE OF l_CursorSegs%ROWTYPE;
 
@@ -219,6 +219,7 @@ DECLARE
                 END IF;
                 
                 calc('HWM: Free MBytes(Est)', round(v_free_bytes / 1024 / 1024,2));
+                
                 dbms_space.unused_space(segment_owner             => v_group(i).segment_owner,
                                         segment_name              => v_group(i).segment_name,
                                         segment_type              => v_group(i).segment_type,
@@ -234,7 +235,12 @@ DECLARE
                 calc('ABOVE HWM: Unused MBytes', Round(v_unused_bytes / 1024/1024,2));
                 calc('HWM: Total Blocks', v_total_blocks - v_unused_blocks);
                 calc('HWM: Total MBytes', Round((v_total_blocks - v_unused_blocks)*v_group(i).block_size/1024/1024,2));
-            EXCEPTION WHEN OTHERS THEN NULL;END;
+                
+            EXCEPTION WHEN OTHERS THEN 
+                IF SQLCODE=-1031 THEN
+                    RAISE;
+                END IF;
+            END;
             calc('Total: Segments', 1);
             calc('Total: Blocks', v_total_blocks);
             calc('Total: KBytes', v_total_bytes / 1024);

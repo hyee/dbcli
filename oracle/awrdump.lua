@@ -8,7 +8,7 @@ function awr.dump_report(stmt,starttime,endtime,instances)
     db:check_date(starttime)
     db:check_date(endtime)
 
-    env.checkerr(db:check_obj('dbms_workload_repository.awr_report_html'),'Sorry, you dont have the "execute" privilege on package "dbms_workload_repository"!')    
+    env.checkerr(db:check_access('dbms_workload_repository.awr_report_html'),'Sorry, you dont have the "execute" privilege on package "dbms_workload_repository"!')    
     
     local args={starttime,endtime,instances or "",'#VARCHAR','#CLOB','#CURSOR'}
     cfg.set("feed","off")
@@ -329,7 +329,7 @@ function awr.extract_addm(starttime,endtime,instances)
     BEGIN
         extract_addm(:1, :2, :3,:4);
     END;]]
-    env.checkerr(db:check_obj('dbms_advisor.create_task'),'Sorry, you dont have the "Advisor" privilege!')
+    env.checkerr(db:check_access('dbms_advisor.create_task'),'Sorry, you dont have the "Advisor" privilege!')
     if not endtime then 
         return print('Parameters: <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]')
     end

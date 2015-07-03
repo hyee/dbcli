@@ -59,6 +59,7 @@ BEGIN
         v_sql := replace(v_sql,'@tab',v_owner||'.'||v_tab||CASE WHEN v_part IS NOT NULL THEN ' '||v_typ||'('||v_part||')' END);
         v_sql := replace(v_sql,'@indx',v_ind);
         v_sql := replace(v_sql,'@ind_id',v_obj);
-        OPEN :O FOR v_sql using :V3;
+        OPEN :O FOR v_sql using :V3,:V3;
     END IF;
 END;
+/

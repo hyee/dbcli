@@ -15,7 +15,7 @@
 SELECT distinct a.INST_ID,
        SID,&V10
        SQL_ID,
-       SQL_TEXT,
+       trim(SQL_TEXT) SQL_TEXT,
        (SELECT (last_active_time)
         FROM   gv$sqlarea
         WHERE  sql_id = a.sql_id

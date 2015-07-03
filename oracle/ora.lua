@@ -17,16 +17,16 @@ function ora:validate_accessable(name,options,values)
     for i=1,#options do
         option=options[i]
         default=option
-        if name=="CHECK_USER" then--check user
+        if name:find("CHECK_USER",1,true)==1 then--check user
             check_flag=3
             expect_name="user"
             if db.props.db_user ~= option and option~="DEFAULT" then default=nil end
             expect=option
-        elseif name=="CHECK_ACCESS" then--objects are sep with the / symbol
+        elseif name:find("CHECK_ACCESS",1,true)==1 then--objects are sep with the / symbol
             check_flag=2
             expect_name="access"
             for obj in option:gmatch("([^/%s]+)") do
-                if not db:check_obj(obj) and obj:upper()~="DEFAULT" then
+                if not db:check_access(obj) and obj:upper()~="DEFAULT" then
                     default=nil
                     expect='the accesses to: '.. option
                     break

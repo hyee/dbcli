@@ -83,12 +83,9 @@ function db_Types:load_sql_types(className)
                 return result
             end},
 
-        [5]={getter='getBlob',setter='setBytesForBlob', --setBytes
+        [5]={getter='getBytes',setter='setBytesForBlob', --setBytes
              handler=function(result,action,conn)
                 if action=="get" then
-                    local str=result:getBytes(1,result:length())
-                    str=java.require("java.lang.String").new(str)
-                    result:free()
                     return str
                 else
                     return java.cast(result,'java.lang.String'):getBytes()

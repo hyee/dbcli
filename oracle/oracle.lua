@@ -209,78 +209,136 @@ end
 function oracle:check_obj(obj_name)
     local args={target=obj_name,owner='#VARCHAR',object_type='#VARCHAR',object_name='#VARCHAR',object_subname='#VARCHAR',object_id='#INTEGER'}
     self:internal_call([[
-    DECLARE
-        schem         VARCHAR2(30);
-        part1         VARCHAR2(30);
-        part2         VARCHAR2(30);
-        part2_temp    VARCHAR2(30);
-        dblink        VARCHAR2(30);
-        part1_type    PLS_INTEGER;
-        object_number PLS_INTEGER;
-        flag          BOOLEAN:=TRUE;
-        obj_type      VARCHAR2(30);
-        objs          varchar2(30):='dba_objects';
-        target        VARCHAR2(100):=:target;
-        TYPE t IS TABLE OF VARCHAR2(30);
-        t1 t := t('TABLE','PL/SQL','SEQUENCE','TRIGGER','JAVA_SOURCE','JAVA_RESOURCE','JAVA_CLASS','TYPE','JAVA_SHARED_DATA','INDEX');
-    BEGIN
-        <<CHECKER>>
-        FOR i IN 0 .. 9 LOOP
+        DECLARE
+            schem         VARCHAR2(30);
+            part1         VARCHAR2(30);
+            part2         VARCHAR2(30);
+            part2_temp    VARCHAR2(30);
+            dblink        VARCHAR2(30);
+            part1_type    PLS_INTEGER;
+            object_number PLS_INTEGER;
+            flag          BOOLEAN := TRUE;
+            obj_type      VARCHAR2(30);
+            objs          VARCHAR2(2000) := 'dba_objects';
+            target        VARCHAR2(100) := :target;
+        BEGIN
+            <<CHECKER>>
+            FOR i IN 0 .. 9 LOOP
+                BEGIN
+                    sys.dbms_utility.name_resolve(NAME          => target,
+                                                  CONTEXT       => i,
+                                                  SCHEMA        => schem,
+                                                  part1         => part1,
+                                                  part2         => part2,
+                                                  dblink        => dblink,
+                                                  part1_type    => part1_type,
+                                                  object_number => object_number);
+                    EXIT;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        NULL;
+                END;
+            END LOOP;
+
+            IF schem IS NULL AND flag AND USER != sys_context('USERENV', 'CURRENT_SCHEMA') THEN
+                flag   := FALSE;
+                target := sys_context('USERENV', 'CURRENT_SCHEMA') || '.' || target;
+                GOTO CHECKER;
+            END IF;
+
             BEGIN
-                sys.dbms_utility.name_resolve(NAME          => target,
-                                              CONTEXT       => i,
-                                              SCHEMA        => schem,
-                                              part1         => part1,
-                                              part2         => part2,
-                                              dblink        => dblink,
-                                              part1_type    => part1_type,
-                                              object_number => object_number);
-                EXIT;
-            EXCEPTION WHEN OTHERS THEN NULL;
+                EXECUTE IMMEDIATE 'select 1 from dba_objects where rownum<1';
+            EXCEPTION
+                WHEN OTHERS THEN
+                    objs := 'all_objects';
             END;
-        END LOOP;
-        
-        IF schem IS NULL AND flag and user!=sys_context('USERENV','CURRENT_SCHEMA') THEN
-            flag  := FALSE;
-            target:= sys_context('USERENV','CURRENT_SCHEMA')||'.'||target;
-            GOTO CHECKER;
-        END IF;
-        
-        begin
-            execute immediate 'select 1 from dba_objects where rownum<2';
-        exception when others then
-            objs:='all_objects';
-        end;
 
-        execute immediate '
-        SELECT /*+no_expand*/ 
-               MIN(OBJECT_TYPE)    keep(dense_rank first order by s_flag),
-               MIN(OWNER)          keep(dense_rank first order by s_flag),
-               MIN(OBJECT_NAME)    keep(dense_rank first order by s_flag),
-               MIN(SUBOBJECT_NAME) keep(dense_rank first order by s_flag)
-        FROM (
-            SELECT a.*,case when upper('''||target||q'[') like upper('%'||OBJECT_NAME||NVL2(SUBOBJECT_NAME,'.'||SUBOBJECT_NAME||'%','')) then 0 else 1 end s_flag
-            FROM   ]'||objs||' a
-            WHERE  OWNER='''||schem||'''
-            AND    OBJECT_NAME='''||part1||''')'
-        INTO  obj_type,schem,part1,part2_temp;
+            target := REPLACE(upper(target),' ');
 
-        IF part2 is null THEN 
-            part2 := part2_temp;
-        END IF;         
+            IF schem IS NULL AND objs != 'all_objects' THEN
+                flag  := FALSE;
+                schem := regexp_substr(target, '[^\.]+', 1, 1);
+                part1 := regexp_substr(target, '[^\.]+', 1, 2);
+                objs  := 'dba_objects a WHERE owner IN(''PUBLIC'',sys_context(''USERENV'', ''CURRENT_SCHEMA''),''' ||schem || ''') AND object_name IN(''' || schem || ''',''' || part1 || '''))';
+            ELSE
+                flag  := TRUE;
+                objs  := objs || ' a WHERE OWNER in(''PUBLIC'',''' || schem || ''') AND OBJECT_NAME=''' || part1 || ''')';
+            END IF;
 
-        :owner          := schem;
-        :object_type    := obj_type;
-        :object_name    := part1;
-        :object_subname := part2;
-        :object_id      := object_number;
-    END;]],args)
+            objs:='SELECT /*+no_expand*/ 
+                   MIN(OBJECT_TYPE)    keep(dense_rank first order by s_flag),
+                   MIN(OWNER)          keep(dense_rank first order by s_flag),
+                   MIN(OBJECT_NAME)    keep(dense_rank first order by s_flag),
+                   MIN(SUBOBJECT_NAME) keep(dense_rank first order by s_flag),
+                   MIN(OBJECT_ID)      keep(dense_rank first order by s_flag)
+            FROM (
+                SELECT a.*,
+                       case when owner=''' || schem || ''' then 0 else 100 end +
+                       case when ''' || target || q'[' like upper('%'||OBJECT_NAME||nullif('.'||SUBOBJECT_NAME||'%','.%')) then 0 else 10 end +
+                       case substr(object_type,1,3) when 'TAB' then 1 when 'CLU' then 2 else 3 end s_flag
+                FROM   ]' || objs;       
+
+            --dbms_output.put_line(objs);
+            EXECUTE IMMEDIATE objs
+                INTO obj_type, schem, part1, part2_temp,object_number;
+
+            IF part2 IS NULL THEN
+                IF part2_temp IS NULL AND NOT flag THEN
+                    part2_temp := regexp_substr(target, '[^\.]+', 1, CASE WHEN part1=regexp_substr(target, '[^\.]+', 1, 1) THEN 2 ELSE 3 END);
+                END IF;
+                part2 := part2_temp;
+            END IF;
+
+            :owner          := schem;
+            :object_type    := obj_type;
+            :object_name    := part1;
+            :object_subname := part2;
+            :object_id      := object_number;
+        END;]],args)
 
     if not args.owner or args.owner=="" then
         return nil
     end    
 
     return args
+end
+
+function oracle:check_access(obj_name)
+    local obj=self:check_obj(obj_name)
+    if not obj then return false end
+    obj.count='#NUMBER'
+    self:internal_call([[
+        DECLARE
+            x   PLS_INTEGER := 0;
+            e   VARCHAR2(500);
+            obj VARCHAR2(30) := :owner||'.'||:object_name;
+        BEGIN
+            IF instr(obj,'PUBLIC.')=1 THEN 
+                obj := :object_name;
+            END IF;
+            BEGIN
+                EXECUTE IMMEDIATE 'select count(1) from ' || obj || ' where rownum<1';
+                x := 1;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+
+            IF x = 0 THEN
+                BEGIN
+                    EXECUTE IMMEDIATE 'begin ' || obj || '."_test_access"; end;';
+                    x := 1;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        e := SQLERRM;
+                        IF INSTR(e,'PLS-00225')>0 OR INSTR(e,'PLS-00302')>0 THEN
+                            x := 1;
+                        END IF;
+                END;
+            END IF;
+            :count := x;
+        END;
+    ]],obj)
+
+    return obj.count==1 and true or false;
 end
 
 function oracle:check_date(string,fmt)

@@ -1,37 +1,6 @@
 local env=env
 local db,cfg=env.oracle,env.set
 local desc={}
-local search_sql=[[
-   WITH A AS (SELECT /*+materialize*/ * FROM(
-           SELECT owner, object_name, SUBOBJECT_NAME, object_type,decode(object_type,'SYNONYM',3,1) seq
-                FROM   all_objects A
-                WHERE  object_type NOT LIKE '% BODY'
-                AND    upper('.' || A.owner || '.' || A.object_name || '.' || A.SUBOBJECT_NAME || '.') LIKE upper(:1)
-                UNION ALL
-                SELECT owner, object_name, procedure_name, 'PROCEDURE',2
-                FROM   all_procedures A
-                WHERE  upper('.' || A.owner || '.' || A.object_name || '.' || A.procedure_name || '.') LIKE upper(:1)
-                ORDER  BY SEQ,SUBOBJECT_NAME NULLS FIRST
-       ) WHERE ROWNUM<2)
-       SELECT /*+ordered */ /*INTERNAL_DBCLI_CMD*/
-             NVL(B.TABLE_OWNER, A.OWNER) OWNER,
-             NVL(B.TABLE_NAME, A.OBJECT_NAME) OBJECT_NAME,
-             A.SUBOBJECT_NAME,
-             CASE
-                 WHEN object_type = 'SYNONYM' THEN
-                  (SELECT MAX(object_type)
-                   FROM   all_objects c
-                   WHERE  b.TABLE_OWNER = c.owner
-                   AND    c.object_name = b.table_name)        
-                 ELSE
-                  object_type
-             END object_type,
-             a.seq
-        FROM   A,
-               all_SYNONYMS B
-        WHERE  A.OWNER = B.owner(+)
-        AND    A.OBJECT_NAME = B.SYNONYM_NAME(+)
-    ]]
 
 local desc_sql={
     PROCEDURE=[[
@@ -48,7 +17,7 @@ local desc_sql={
                    ELSE
                     data_type
                END) DATA_TYPE,a.in_out,decode(b.default#,1,'Y','N') "Default?",character_set_name charset
-        FROM   all_ARGUMENTS a, sys.argument$ b
+        FROM   all_arguments a, sys.argument$ b
         WHERE a.object_id=b.obj#
         AND   a.subprogram_id=b.procedure#
         AND   NVL(a.overload,0)=b.overload#
@@ -307,21 +276,52 @@ desc_sql.VIEW=desc_sql.TABLE[1]
 desc_sql['MATERIALIZED VIEW']=desc_sql.TABLE[1]
 desc_sql['INDEX PARTITION']=desc_sql.INDEX
 desc_sql.FUNCTION=desc_sql.PROCEDURE
+desc_sql.TYPE={desc_sql.TYPE,desc_sql.PACKAGE}
 
 local is_executing=false
+function desc.parse(cmd,sql,args)
+    local sql1,count=sql:gsub('([Aa][Ll][Ll]%_)','dba_')
+    is_executing=true
+    local success,err=pcall(cmd,db,sql1,args) 
+    is_executing=false
+    if not success then cmd(db,sql,args) end
+    return err,args
+end
+
 function desc.desc(name,option)
     if not name then return end
     local rs,success,err
     local obj=db:check_obj(name)
-    if obj then
-        rs={obj.owner,obj.object_name,obj.object_subname or "",
-           obj.object_subname and obj.object_type=="PACKAGE" and "PROCEDURE"
-           or obj.object_type,2}
-    else
-        local sql=search_sql:gsub('([Aa][Ll][Ll]%_)','dba_')
-        rs=db:get_value(search_sql,{'%.'..name:upper()..'.%'})
+    env.checkerr(obj,'Cannot find target object!')
+    if obj.object_type=='SYNONYM' then
+        local new_obj=desc.parse(db.get_value,[[WITH r AS
+         (SELECT /*+materialize cardinality(p 1)*/REFERENCED_OBJECT_ID OBJ, rownum lv
+          FROM   PUBLIC_DEPENDENCY p
+          START  WITH OBJECT_ID = :1
+          CONNECT BY NOCYCLE PRIOR REFERENCED_OBJECT_ID = OBJECT_ID AND LEVEL<4)
+        SELECT *
+        FROM   (SELECT regexp_substr(obj,'[^/]+', 1, 1) + 0 object_id,
+                       regexp_substr(obj,'[^/]+', 1, 2) owner,
+                       regexp_substr(obj,'[^/]+', 1, 3) object_name, 
+                       regexp_substr(obj,'[^/]+', 1, 4) object_type
+                 FROM   (SELECT (SELECT o.object_id || '/' || o.owner || '/' || o.object_name || '/' ||
+                                           o.object_type
+                                   FROM   ALL_OBJECTS o
+                                   WHERE  OBJECT_ID = obj) OBJ, lv
+                          FROM   r)
+                 ORDER  BY lv)
+        WHERE  object_type != 'SYNONYM'
+        AND    object_type NOT LIKE '% BODY'
+        AND    owner IS NOT NULL
+        AND    rownum<2]],{obj.object_id})
+        if type(new_obj)=="table" and new_obj[1] then
+            obj.object_id,obj.owner,obj.object_name,obj.object_type=table.unpack(new_obj)
+        end 
     end
-    if not rs then return print("Cannot find this object!") end
+
+    rs={obj.owner,obj.object_name,obj.object_subname or "",
+       obj.object_subname and (obj.object_type=="PACKAGE" or obj.object_type=="TYPE") and "PROCEDURE"
+       or obj.object_type,2}
 
     local sqls=desc_sql[rs[4]]
     if not sqls then return print("Cannot describe "..rs[4]..'!') end
@@ -336,13 +336,7 @@ function desc.desc(name,option)
     print(("%s : %s%s%s\n"..dels):format(rs[4],rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3]))
     for i,sql in ipairs(sqls) do
         if sql:find("/*PIVOT*/",1,true) then cfg.set("PIVOT",1) end
-        local sql1,count=sql:gsub('([Aa][Ll][Ll]%_)','dba_')
-        is_executing=true
-        success,err=pcall(db.query,db,sql1,rs) 
-        is_executing=false
-        if not success then
-            db:query(sql,rs) 
-        end
+        desc.parse(db.query,sql,rs)
         if i<#sqls then print(dels) end
     end
     

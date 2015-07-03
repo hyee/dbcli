@@ -9,11 +9,12 @@ Show active sessions. Usage: ora actives [-s|-p|-b] [-f"<filter>"|-u] [waits|sid
                  ROW_WAIT_BLOCK# WAIT_BLOCK#}
               }
         &V1 : sid={''||sid},wt={waits desc},ev={event},sql={sql_text}
-        &Filter: default={wait_class!='Idle' or sql_text is not null}, f={},u={wait_class!='Idle' or sql_text is not null and schemaname=sys_context('userenv','current_schema')}
+        &Filter: default={ROOT_SID =1 OR wait_class!='Idle' or sql_text is not null}, f={},u={(ROOT_SID =1 OR wait_class!='Idle' or sql_text is not null) and schemaname=sys_context('userenv','current_schema')}
         &tmodel : default={0}, m={1}
         @COST : 11.0={nvl(1440*(sysdate-SQL_EXEC_START),wait_secs/60)},10.0={(select TIME_WAITED/6000 from gv$session_event b where b.inst_id=a.inst_id and b.sid=a.sid and b.event=a.event)},9.0={null}
-        @CHECK_ACCESS: dba_objects={dba_objects},all_objects={all_objects}
-    ]]--      
+        @CHECK_ACCESS1: dba_objects={dba_objects},all_objects={all_objects}
+        @CHECK_ACCESS2: gv$px_session/gv$sql/gv$process={}
+    --]]
 ]]*/
 
 set feed off
@@ -27,12 +28,9 @@ BEGIN
           FROM   gv$session
           WHERE  sid != USERENV('SID')
           AND    audsid != userenv('sessionid')
-          And    (event not like 'Streams%')
-          ),
-        s2 AS
-         (SELECT /*+no_merge*/* FROM gv$px_session WHERE  NOT (SID = qcsid AND inst_id = qcinst_id)),
+          And    (event not like 'Streams%')),
         s3 AS
-         (SELECT /*+no_merge*/ * FROM s1 LEFT JOIN s2 USING (inst_id, SID, serial#)),
+         (SELECT /*+no_merge no_merge(s2)*/ * FROM s1 LEFT JOIN  gv$px_session s2 USING (inst_id, SID, serial#,saddr)),
         sq1 as(
          SELECT /*+materialize ordered use_nl(a b)*/ a.*,
                extractvalue(b.column_value,'/ROW/A1')     program_name,
@@ -41,7 +39,7 @@ BEGIN
                extractvalue(b.column_value,'/ROW/A4')     plan_hash_value
          FROM (select distinct inst_id,sql_id,nvl(sql_child_number,0) child from s1 where sql_id is not null) A,
                TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'[
-                   SELECT (select c.owner  ||'.' || c.object_name from &CHECK_ACCESS c where c.object_id=program_id and rownum<2) A1,
+                   SELECT (select c.owner  ||'.' || c.object_name from &CHECK_ACCESS1 c where c.object_id=program_id and rownum<2) A1,
                           PROGRAM_LINE# A2,
                           substr(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200) A3,
                           plan_hash_value A4
@@ -57,15 +55,17 @@ BEGIN
                s3.*
           FROM   (SELECT s3.*,
                          CASE WHEN seconds_in_wait > 1300000000 THEN 0 ELSE seconds_in_wait END wait_secs,
+                         CASE WHEN S3.SID = S3.qcsid AND S3.inst_id = NVL(s3.qcinst_id,s3.inst_id) THEN 1 ELSE 0 END ROOT_SID,
                          plan_hash_value,          
                          program_name,
                          program_line#,
                          sql_text
                   FROM   s3, sq1
                   WHERE  s3.inst_id=sq1.inst_id(+) and s3.sql_id=sq1.sql_id(+) and nvl(s3.sql_child_number,0)=sq1.child(+)) s3
-          START  WITH qcsid IS NULL
+          START  WITH (qcsid IS NULL OR ROOT_SID=1)
           CONNECT BY qcsid = PRIOR SID
               AND    qcinst_id = PRIOR inst_id
+              AND    ROOT_SID=0
               AND    LEVEL < 3
           ORDER SIBLINGS BY &V1)
         SELECT /*+cardinality(a 1)*/ 
@@ -82,7 +82,7 @@ BEGIN
                ROUND(&COST,1) waits,
                sql_text
         FROM   s4 a
-        WHERE  &filter
+        WHERE  (&filter)
         ORDER  BY r;
         
     IF &tmodel = 1 THEN

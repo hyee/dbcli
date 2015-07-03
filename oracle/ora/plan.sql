@@ -1,5 +1,5 @@
 /*[[
-Show execution plan. Usage: plan [-d|-b|-ol|-basic-adv] <sql_id> [<plan_hash_value>|<child_number>] [format1..n]
+Show execution plan. Usage: plan [-d|-b|-ol|-basic|-adv] <sql_id> [<plan_hash_value>|<child_number>] [format1..n]
 --[[
     @STAT: 10.1={&DF &V3 &V4 &V5 &V6 &V7 &V8 &V9}
     &V3: none={} ol={outline alias}

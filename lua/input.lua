@@ -17,14 +17,6 @@ local ansi,event=env.ansi,env.event
 local color=ansi and ansi.get_color or function() return "";end
 local prompt_color="%s%s"..color("NOR").."%s"
 
-local write=function(str)
-    str=prompt_color:format(color("PROMPTCOLOR"),str,color("COMMANDCOLOR"))
-    if prompt~=str then
-        prompt=str
-        reader:setPrompt(str)
-    end
-end
-
 local os,clock=os
 local stack=nil
 function env.reset_input(line)
