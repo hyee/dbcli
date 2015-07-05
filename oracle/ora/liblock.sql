@@ -11,7 +11,7 @@ WITH r AS
   WHERE  d.to_owner = o.owner
   AND    d.to_name = o.name
   AND    d.inst_id = o.inst_id
-  AND    (regexp_like(:V1,'^\d+$') or o.name=UPPER(:V1))
+  AND    (:V1 IS NULL OR regexp_like(:V1,'^\d+$') or o.name=UPPER(:V1))
   AND    nvl(o.name, 'SYS') != 'SYS'
   AND    (o.locks > 0 OR o.pins > 0))
 SELECT /*+ordered use_hash(r1 h w) no_merge(w)*/
@@ -28,4 +28,4 @@ WHERE  r1.inst_id = h.inst_id
 AND    r1.from_address = h.address
 AND    r1.to_address=w.p1raw(+)
 AND    r1.inst_id=w.inst_id(+)
-AND   (:V1 IN(h.sid,w.sid) and regexp_like(:V1,'^\d+$') or w.sid is not null)
+AND   (upper(:V1) IN(''||h.sid,''||w.sid,r1.to_name) or w.sid is not null)
