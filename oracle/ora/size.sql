@@ -43,18 +43,21 @@ BEGIN
             extractvalue(b.column_value, '/ROW/C6') tablespace_name
         FROM lobs t,sys.obj$ o,sys.user$ u,
             TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(
-               'SELECT * FROM (
-                    SELECT /*+opt_param(''optimizer_index_cost_adj'',1) ordered use_nl(a b)*/
-                           decode(''&OPT3'',''null'',a.object_type,b.segment_type) T, &OPT3 P, 
+               q'[SELECT * FROM (
+                    SELECT /*+opt_param('optimizer_index_cost_adj',1) ordered use_nl(a b) push_subq(b)*/
+                           decode('&OPT3','null',a.object_type,b.segment_type) T, &OPT3 P, 
                            SUM(bytes) C1, SUM(EXTENTS) C2,
                            COUNT(1) C3, AVG(initial_extent) C4, AVG(nvl(next_extent, 0)) C5,
                            MAX(tablespace_name) KEEP(dense_rank LAST ORDER BY blocks) C6
                     FROM   dba_objects a, dba_segments b
-                    WHERE  b.owner = ''' || u.name || '''
+                    WHERE  b.segment_type not in('ROLLBACK','TYPE2 UNDO','DEFERRED ROLLBACK','TEMPORARY','CACHE','SPACE HEADER','UNDEFINED')
+                    AND    b.owner = ']' || u.name || '''
                     AND    b.segment_name = ''' || o.name || '''
                     AND    b.segment_type LIKE a.object_type || ''%''
                     AND    nvl(b.partition_name, '' '') LIKE ''' || t.subname || '''
                     AND    a.object_id = ' || t.obj# || '
+                    AND    a.owner = ''' || u.name || '''
+                    AND    a.object_name = ''' || o.name || '''
                     GROUP  BY a.object_type, &OPT3,b.segment_type 
                     ORDER  BY C1 DESC)
                 WHERE  ROWNUM <= 1000'),'/ROWSET/ROW'))) B
