@@ -6,6 +6,8 @@ local snapper=env.class(env.scripter)
 function snapper:ctor()
     self.command="snap"
     self.ext_name='snap'
+    self.help_title='Calculate a period of db/session performance/waits. '
+    self.usage='[<interval>|begin|end> <name1[,name2...]] [args]'
 end
 
 function snapper:fetch(cmd,pos)
@@ -29,8 +31,8 @@ function snapper:fetch(cmd,pos)
 end
 
 function snapper:parse(name,args) 
-    local txt
-    txt,args=self:get_script(name,args)
+    local txt,print_args,file
+    txt,args,print_args,file=self:get_script(name,args)
     txt=loadstring(('return '..txt):gsub(self.comment,"",1))
 
     if not txt then
@@ -234,6 +236,7 @@ function snapper:next_exec()
         cmd.grid:print(nil,nil,nil,cmd.max_rows or cfg.get(self.command.."rows"))        
     end    
 end
+
 
 function snapper:__onload()
     cfg.init(self.command.."rows","50",nil,"db.core","Number of max records for the '"..self.command.."' command result"," 5 - 3000")

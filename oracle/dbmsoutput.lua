@@ -11,8 +11,9 @@ function output.setOutput(db)
     pcall(function() (db or default_db):internal_call(stmt) end)
 end
 
-output.stmt=[[    
-        DECLARE/*INTERNAL_DBCLI_CMD*//*GetDBMSOutput*/
+local marker='/*GetDBMSOutput*/'
+output.stmt=marker..[[/*INTERNAL_DBCLI_CMD*/  
+        DECLARE
             l_line   VARCHAR2(32767);
             l_done   PLS_INTEGER := 32767;
             l_buffer VARCHAR2(32767);
@@ -43,7 +44,7 @@ output.stmt=[[
 
 function output.getOutput(db,sql)
     local isOutput=cfg.get("ServerOutput")
-    if sql~=output.stmt and not db:is_internal_call(sql) then
+    if not ((output.prev_sql or ""):find(marker,1,true)) and not sql:find(marker,1,true) and not db:is_internal_call(sql) then
         local args={enable=isOutput,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB"}
         if not pcall(db.internal_call,db,output.stmt,args) then return end  
         local result=args.lob or args.buff
@@ -56,12 +57,13 @@ function output.getOutput(db,sql)
             prev_transaction = args.txn
             env.set_title(prev_transaction and "TXN_ID: "..prev_transaction or "")
         end
-    end    
+    end
+    output.prev_sql=sql   
 end
 
 
 function output.get_error_output(info)
-    if info.sql and info.sql:find("/*GetDBMSOutput*/",1,true) then
+    if info.sql and info.sql:find(marker,1,true) then
         info.sql=nil
     elseif info.db:is_connect() then
         output.getOutput(info.db,info.sql)

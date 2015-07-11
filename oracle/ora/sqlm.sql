@@ -29,7 +29,7 @@ BEGIN
         OPEN :c FOR
             SELECT *
             FROM   (SELECT /*+no_expand*/
-                      a.sql_id, a.inst_id, a.SID, to_char(a.last_refresh_time, 'MMDD-HH24:MI:SS') tim,
+                      a.status,a.sql_id, a.inst_id, a.SID, to_char(a.last_refresh_time, 'MMDD-HH24:MI:SS') tim,
                       -- NVL(floor(a.elapsed_time/(a.last_refresh_time-a.sql_exec_start)/(86400*1e6)),0) PX,
                       ROUND((a.last_refresh_time - a.sql_exec_start) * 1440, 2) ela,
                       substr(regexp_replace(regexp_replace(b.sql_text,

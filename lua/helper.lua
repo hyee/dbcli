@@ -173,55 +173,5 @@ function helper.desc()
      ]]
 end
 
---[[
-format of cmdlist:  {cmd1={short_desc=<brief help>,desc=<help detail>},
-                     cmd2={short_desc=<brief help>,desc=<help detail>},
-                     ...}
-]]
-function helper.get_sub_help(cmd,cmdlist,main_help,search_key)
-    if not cmd or cmd=="-S" then
-        local help=main_help
-        if not cmdlist then return help end
-        local rows={{},{}}
-        local undocs=nil
-        local undoc_index=0
-        for k,v in pairs(cmdlist) do
-            if (not search_key or k:find(search_key:upper(),1,true)) and k:sub(1,2)~='./' then
-                if search_key or not (v.path or ""):find('[\\/]test[\\/]') then                
-                    local desc=v.short_desc:gsub("^[%s\t]+","")
-                    if desc and desc~="" then
-                        table.insert(rows[1],k)
-                        table.insert(rows[2],desc) 
-                    else
-                        local flag=1
-                        if v.path and v.path:lower():find(env.WORK_DIR:lower(),1,true) then
-                            local _,degree=v.path:sub(env.WORK_DIR:len()+1):gsub('[\\/]+','')
-                            if degree>3 then flag=0 end
-                        end
-
-                        if flag==1 then
-                            undoc_index=undoc_index+1
-                            undocs=(undocs or '')..k..', '
-                            if math.fmod(undoc_index,10)==0 then undocs=undocs..'\n' end
-                        end
-                    end
-                end
-            end
-        end
-        if(undocs) then 
-            undocs=undocs:gsub("[\n%s,]+$",'')
-            table.insert(rows[1],'_Undocumented_') 
-            table.insert(rows[2],undocs) 
-        end
-        env.set.set("PIVOT",-1)
-        env.set.set("HEADDEL",":")
-        help=help..grid.tostring(rows)
-        env.set.restore("HEADDEL")    
-        return help
-    end
-    cmd = cmd:upper()
-    return cmdlist[cmd] and cmdlist[cmd].desc or "No such command["..cmd.."] !"    
-end
-
 env.set_command(nil,'help',helper.desc,helper.helper,false,9)
 return helper

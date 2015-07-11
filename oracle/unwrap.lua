@@ -74,16 +74,17 @@ end
 function unwrap.unwrap(obj,ext)
     env.checkerr(obj and obj~='','Usage: unwrap <owner>.<object_name>');
     local filename=obj
-    if not obj:find('.',1,true) then obj=' .'..obj end
-    local rs=db:exec([[
+    obj=db:check_obj(obj)
+
+    local rs=db:dba_query(db.exec,[[
         SELECT TEXT,
                MAX(CASE WHEN LINE = 1 AND TEXT LIKE '% wrapped%' || CHR(10) || '%' THEN 1 ELSE 0 END) OVER(PARTITION BY TYPE) FLAG,
                LINE,
                MAX(line) OVER(PARTITION BY TYPE) max_line
-         FROM  DBA_SOURCE
-         WHERE OWNER = nvl(trim(upper(regexp_substr(:1,'[^\\.]+'))),sys_context('USERENV','CURRENT_SCHEMA'))
-         AND   NAME  = upper(regexp_substr(:1,'[^\\.]+',1,2))
-         ORDER BY TYPE, LINE]],{obj,obj})
+         FROM  ALL_SOURCE
+         WHERE OWNER = :1
+         AND   NAME  = :2
+         ORDER BY TYPE, LINE]],{obj.owner,obj.object_name})
     db.resultset:fetch(rs,db.conn)
     local cache={}
     local result=""

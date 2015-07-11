@@ -291,7 +291,7 @@ function env.exec_command(cmd,params)
     env.CURRENT_CMD=name
     local _,isMain=coroutine.running() 
 
-    local args= cmd.OBJ and {cmd.OBJ,table.unpack(params)} or {table.unpack(params)}
+    
     local event=env.event and env.event.callback
     if event then 
         event("BEFORE_COMMAND",name,params)
@@ -300,6 +300,7 @@ function env.exec_command(cmd,params)
             env.CURRENT_ROOT_CMD=name
         end
     end
+    local args= cmd.OBJ and {cmd.OBJ,table.unpack(params)} or {table.unpack(params)}
     --env.trace.enable(true)
     local funs=type(cmd.FUNC)=="table" and cmd.FUNC or {cmd.FUNC}
     for _,func in ipairs(funs) do
@@ -651,8 +652,8 @@ function env.reload()
     env.CURRENT_PROMPT="_____EXIT_____"
 end
 
-function env.load_data(file)
-    file=env.WORK_DIR.."data"..env.PATH_DEL..file
+function env.load_data(file,isUnpack)
+    if not file:find(env.PATH_DEL) then file=env.WORK_DIR.."data"..env.PATH_DEL..file end
     local f=io.open(file)
     if not f then
         return {}
@@ -660,8 +661,7 @@ function env.load_data(file)
     local txt=f:read("*a")    
     f:close()
     if not txt or txt:gsub("[\n\t%s\r]+","")=="" then return {} end
-    --env.MessagePack.set_array("always_as_map")
-    return env.MessagePack.unpack(txt)
+    return isUnpack==false and txt or env.MessagePack.unpack(txt)
 end
 
 function env.save_data(file,txt)

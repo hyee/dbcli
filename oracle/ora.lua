@@ -57,4 +57,49 @@ function ora:validate_accessable(name,options,values)
     return default
 end
 
+function db:check_obj(obj_name)
+    db.C.ora:run_script('_find_object',obj_name)
+    local v=env.var.inputs
+    local args={target=obj_name,owner=v.OBJECT_OWNER,object_type=v.OBJECT_TYPE,object_name=v.OBJECT_NAME,object_subname=v.OBJECT_SUBNAME,object_id=v.OBJECT_ID}
+    return args
+end
+
+function db:check_access(obj_name)
+    local obj=self:check_obj(obj_name)
+    if not obj then return false end
+    obj.count='#NUMBER'
+    self:internal_call([[
+        DECLARE
+            x   PLS_INTEGER := 0;
+            e   VARCHAR2(500);
+            obj VARCHAR2(30) := :owner||'.'||:object_name;
+        BEGIN
+            IF instr(obj,'PUBLIC.')=1 THEN 
+                obj := :object_name;
+            END IF;
+            BEGIN
+                EXECUTE IMMEDIATE 'select count(1) from ' || obj || ' where rownum<1';
+                x := 1;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+
+            IF x = 0 THEN
+                BEGIN
+                    EXECUTE IMMEDIATE 'begin ' || obj || '."_test_access"; end;';
+                    x := 1;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        e := SQLERRM;
+                        IF INSTR(e,'PLS-00225')>0 OR INSTR(e,'PLS-00302')>0 THEN
+                            x := 1;
+                        END IF;
+                END;
+            END IF;
+            :count := x;
+        END;
+    ]],obj)
+
+    return obj.count==1 and true or false;
+end
+
 return ora.new()

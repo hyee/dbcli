@@ -14,7 +14,7 @@ WITH r AS
   AND    (:V1 IS NULL OR regexp_like(:V1,'^\d+$') or o.name=UPPER(:V1))
   AND    nvl(o.name, 'SYS') != 'SYS'
   AND    (o.locks > 0 OR o.pins > 0))
-SELECT /*+ordered use_hash(r1 h w) no_merge(w)*/
+SELECT /*+ordered use_hash(r1 h w) no_merge(w) no_expand*/
        DISTINCT r1.to_owner || '.' || r1.to_name object_name, 
                 h.sid || ',@' || h.inst_id holder,
                 h.sql_id holder_sql_id,
@@ -28,4 +28,4 @@ WHERE  r1.inst_id = h.inst_id
 AND    r1.from_address = h.address
 AND    r1.to_address=w.p1raw(+)
 AND    r1.inst_id=w.inst_id(+)
-AND   (upper(:V1) IN(''||h.sid,''||w.sid,r1.to_name) or w.sid is not null)
+AND   (UPPER(:V1) IN(''||h.sid,''||w.sid,r1.to_name) or w.sid is not null)

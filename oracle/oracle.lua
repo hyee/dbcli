@@ -13,7 +13,8 @@ local module_list={
     "oracle/tracefile",
     "oracle/awrdump",
     "oracle/unwrap",
-    "oracle/sys"
+    "oracle/sys",
+    "oracle/chart"
 }
 
 local oracle=env.class(env.db_core)
@@ -158,7 +159,7 @@ function oracle:parse(sql,params)
 
         return s:upper()
     end)
-    
+   
     if counter<0 or counter==3 then return self.super.parse(self,sql,params,':') end
     local prep=java.cast(self.conn:prepareCall(sql,1003,1007),"oracle.jdbc.OracleCallableStatement")
     --self:check_params(sql,prep,p1,params)
@@ -166,7 +167,7 @@ function oracle:parse(sql,params)
         if v[2]=="" then v[1]="setNull" end
         if v[1]=='#' then
             prep['registerOutParameter'](prep,k,v[2])
-            params[k]={'#',k,self.db_types[v[2] ].name}
+            params[k]={'#',k,self.db_types[v[2]].name}
         else
             prep[v[1].."AtName"](prep,k,v[2])
         end
@@ -206,140 +207,6 @@ function oracle:asql_single_line(...)
     self.asql:exec(...)
 end
 
-function oracle:check_obj(obj_name)
-    local args={target=obj_name,owner='#VARCHAR',object_type='#VARCHAR',object_name='#VARCHAR',object_subname='#VARCHAR',object_id='#INTEGER'}
-    self:internal_call([[
-        DECLARE
-            schem         VARCHAR2(30);
-            part1         VARCHAR2(30);
-            part2         VARCHAR2(30);
-            part2_temp    VARCHAR2(30);
-            dblink        VARCHAR2(30);
-            part1_type    PLS_INTEGER;
-            object_number PLS_INTEGER;
-            flag          BOOLEAN := TRUE;
-            obj_type      VARCHAR2(30);
-            objs          VARCHAR2(2000) := 'dba_objects';
-            target        VARCHAR2(100) := :target;
-        BEGIN
-            <<CHECKER>>
-            FOR i IN 0 .. 9 LOOP
-                BEGIN
-                    sys.dbms_utility.name_resolve(NAME          => target,
-                                                  CONTEXT       => i,
-                                                  SCHEMA        => schem,
-                                                  part1         => part1,
-                                                  part2         => part2,
-                                                  dblink        => dblink,
-                                                  part1_type    => part1_type,
-                                                  object_number => object_number);
-                    EXIT;
-                EXCEPTION
-                    WHEN OTHERS THEN
-                        NULL;
-                END;
-            END LOOP;
-
-            IF schem IS NULL AND flag AND USER != sys_context('USERENV', 'CURRENT_SCHEMA') THEN
-                flag   := FALSE;
-                target := sys_context('USERENV', 'CURRENT_SCHEMA') || '.' || target;
-                GOTO CHECKER;
-            END IF;
-
-            BEGIN
-                EXECUTE IMMEDIATE 'select 1 from dba_objects where rownum<1';
-            EXCEPTION
-                WHEN OTHERS THEN
-                    objs := 'all_objects';
-            END;
-
-            target := REPLACE(upper(target),' ');
-
-            IF schem IS NULL AND objs != 'all_objects' THEN
-                flag  := FALSE;
-                schem := regexp_substr(target, '[^\.]+', 1, 1);
-                part1 := regexp_substr(target, '[^\.]+', 1, 2);
-                objs  := 'dba_objects a WHERE owner IN(''PUBLIC'',sys_context(''USERENV'', ''CURRENT_SCHEMA''),''' ||schem || ''') AND object_name IN(''' || schem || ''',''' || part1 || '''))';
-            ELSE
-                flag  := TRUE;
-                objs  := objs || ' a WHERE OWNER in(''PUBLIC'',''' || schem || ''') AND OBJECT_NAME=''' || part1 || ''')';
-            END IF;
-
-            objs:='SELECT /*+no_expand*/ 
-                   MIN(OBJECT_TYPE)    keep(dense_rank first order by s_flag),
-                   MIN(OWNER)          keep(dense_rank first order by s_flag),
-                   MIN(OBJECT_NAME)    keep(dense_rank first order by s_flag),
-                   MIN(SUBOBJECT_NAME) keep(dense_rank first order by s_flag),
-                   MIN(OBJECT_ID)      keep(dense_rank first order by s_flag)
-            FROM (
-                SELECT a.*,
-                       case when owner=''' || schem || ''' then 0 else 100 end +
-                       case when ''' || target || q'[' like upper('%'||OBJECT_NAME||nullif('.'||SUBOBJECT_NAME||'%','.%')) then 0 else 10 end +
-                       case substr(object_type,1,3) when 'TAB' then 1 when 'CLU' then 2 else 3 end s_flag
-                FROM   ]' || objs;       
-
-            --dbms_output.put_line(objs);
-            EXECUTE IMMEDIATE objs
-                INTO obj_type, schem, part1, part2_temp,object_number;
-
-            IF part2 IS NULL THEN
-                IF part2_temp IS NULL AND NOT flag THEN
-                    part2_temp := regexp_substr(target, '[^\.]+', 1, CASE WHEN part1=regexp_substr(target, '[^\.]+', 1, 1) THEN 2 ELSE 3 END);
-                END IF;
-                part2 := part2_temp;
-            END IF;
-
-            :owner          := schem;
-            :object_type    := obj_type;
-            :object_name    := part1;
-            :object_subname := part2;
-            :object_id      := object_number;
-        END;]],args)
-
-    if not args.owner or args.owner=="" then
-        return nil
-    end    
-
-    return args
-end
-
-function oracle:check_access(obj_name)
-    local obj=self:check_obj(obj_name)
-    if not obj then return false end
-    obj.count='#NUMBER'
-    self:internal_call([[
-        DECLARE
-            x   PLS_INTEGER := 0;
-            e   VARCHAR2(500);
-            obj VARCHAR2(30) := :owner||'.'||:object_name;
-        BEGIN
-            IF instr(obj,'PUBLIC.')=1 THEN 
-                obj := :object_name;
-            END IF;
-            BEGIN
-                EXECUTE IMMEDIATE 'select count(1) from ' || obj || ' where rownum<1';
-                x := 1;
-            EXCEPTION WHEN OTHERS THEN NULL;
-            END;
-
-            IF x = 0 THEN
-                BEGIN
-                    EXECUTE IMMEDIATE 'begin ' || obj || '."_test_access"; end;';
-                    x := 1;
-                EXCEPTION
-                    WHEN OTHERS THEN
-                        e := SQLERRM;
-                        IF INSTR(e,'PLS-00225')>0 OR INSTR(e,'PLS-00302')>0 THEN
-                            x := 1;
-                        END IF;
-                END;
-            END IF;
-            :count := x;
-        END;
-    ]],obj)
-
-    return obj.count==1 and true or false;
-end
 
 function oracle:check_date(string,fmt)
     fmt=fmt or "YYMMDDHH24MI"    
@@ -356,6 +223,17 @@ function oracle:check_date(string,fmt)
     env.checkerr(args[3]==1,'Invalid date format("%s"), expected as "%s"!',string,fmt)    
 end
 
+local is_executing=false
+function oracle:dba_query(cmd,sql,args)
+    local sql1,count,success,res=sql:gsub('([Aa][Ll][Ll]%_)','dba_')
+    if count>0 then
+        is_executing=true
+        success,res=pcall(cmd,self,sql1,args) 
+        is_executing=false
+    end
+    if not success then res=cmd(self,sql,args) end
+    return res,args
+end
 
 function oracle.check_completion(cmd,other_parts)
     local p1=env.END_MARKS[2]..'[%s\t]*$'
@@ -394,6 +272,10 @@ local ignore_errors={
 }
 
 function oracle:handle_error(info)
+    if is_executing then 
+        info.sql=nil 
+        return
+    end
     local ora_code,msg=info.error:match('ORA%-(%d+):%s*([^\n\r]+)')
     if ora_code and tonumber(ora_code)>=20001 and tonumber(ora_code)<20999 then
         info.sql=nil

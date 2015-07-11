@@ -1,0 +1,40 @@
+/*[[
+    Generate the graph chart based on wait event of dba_hist_system_event. Usage: systemevent [<event_id>|<event_abbr>|"<event_name>"|"<wait_class>"]|-f"<filter>"  [inst_id]
+    inst_id: Default as current instance, other options are:
+                0         - Separate all instances
+                a         - Group all instances
+                <inst_id> - Only the specific instance
+    -f     : For example, -f"wait_class in('User I/O','System I/O')"
+    --[[
+        &f0: default={0},f={}
+        &f1: default={LOWER(:V1) IN (lower(wait_class),event_name,event_abbr,LOWER(event_id))}, f={1=1 OR }
+        &V1: default={User I/O},f={}
+    --]]
+]]*/
+
+{
+    _attrs=[[
+        SELECT 'System Wait Event ('||decode(q'[&F0]','0',FIELD_NAME || ' = "' || FIELD_VALUE || '"',q'[&F0]')||')' title, 
+               decode(q'[&F0]','0',FIELD_NAME || ' = ''' || FIELD_VALUE||'''',q'[&F0]') filter
+        FROM   (SELECT CASE WHEN lower(wait_class) = LOWER(:V1) THEN 'Wait_Class' ELSE 'Event_Name' END FIELD_NAME,
+                       CASE WHEN lower(wait_class) = LOWER(:V1) THEN wait_class ELSE NAME END FIELD_VALUE
+                 FROM  (select a.*,lower(name) event_name,lower(LOWER(regexp_replace(NAME || ' ', '(\w)[^ ]* ', '\1'))) event_abbr from v$event_name a)
+                 WHERE  ROWNUM < 2 and (&F1))]],
+    _sql=[[
+        SELECT time,event,sum(secs) secs FROM(
+            SELECT /*+no_expand*/ 
+                   to_char(end_interval_time, 'YYYY-MM-DD HH24:MI') TIME, 
+                   event_name||decode(nvl(lower(:V2),'a'),'a',null,' #'||instance_number) event,
+                   greatest(round((LEAD(TIME_WAITED_MICRO) OVER(PARTITION BY dbid,instance_number,event_name ORDER BY snap_id)-TIME_WAITED_MICRO) * 1e-6/60,2),0) secs
+            FROM   DBA_HIST_SYSTEM_EVENT NATURAL
+            JOIN   dba_hist_snapshot
+            WHERE  (&filter)
+            AND    (:V2 is null and instance_number=userenv('instance') or lower(nvl(:V2,'0')) in('0','a') or instance_number=:V2))
+        GROUP BY time,event
+        HAVING sum(secs)>0
+        ORDER BY 1
+    ]],
+    _pivot=true,
+    ylabel='Minutes',
+    labelsDiv='divLabel@GRAPH_INDEX'
+}

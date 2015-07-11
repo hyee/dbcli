@@ -8,6 +8,7 @@ ORA _sqlstat
 select max(tim) tim,sql_id,plan_hash,
        sum(exec)   exec,
        sum(parse)  parse,
+       count(1)    "SEENS",
        sum(ela)    "ELA(Mins)",
        round(sum(ela)/nullif(sum(exec),0),2) "ELA(Avg)",
        sum(iowait) iowait,

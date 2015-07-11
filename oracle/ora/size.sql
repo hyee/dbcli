@@ -8,6 +8,7 @@
         &OPT3: default={null}, d={partition_name}
     --]]
 ]]*/
+ora _find_object &V1
 set feed off
 VAR cur REFCURSOR
 BEGIN
@@ -16,16 +17,12 @@ BEGIN
         WITH clu AS(
             SELECT /*+ordered use_nl(u o)*/ 0 lv,
                    MIN(o.obj#) obj#,
-                   MIN(o.subname) KEEP(dense_rank FIRST
-                   ORDER BY CASE WHEN o.subname IN (upper(TRIM(regexp_substr(:V1, '[^ \.]+', 1, 2))),
-                              upper(TRIM(regexp_substr(:V1, '[^ \.]+', 1, 3)))) THEN 1 ELSE 2 END,o.obj#)||'%' subname    
+                   :object_subname||'%' subname    
             FROM   sys.user$ u, sys.obj$ o
             WHERE  o.owner# = u.user#
             AND    o.type#!=10
-            AND    u.name IN
-                   (upper(TRIM(regexp_substr(:V1, '[^ \.]+', 1, 1))), SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'))
-            AND    o.name IN (upper(TRIM(regexp_substr(:V1, '[^ \.]+', 1, 1))),
-                              upper(TRIM(regexp_substr(:V1, '[^ \.]+', 1, 2))))
+            AND    u.name = :object_owner
+            AND    o.name = :object_name
             GROUP BY o.owner#,o.name),
         tab  AS(SELECT * FROM clu UNION ALL SELECT /*+ordered use_nl(c t)*/lv+1, t.obj#, c.subname FROM clu c, sys.tab$ t WHERE  t.bobj# = c.obj#),
         ind  AS(SELECT * FROM tab UNION ALL SELECT /*+ordered use_nl(c t o)*/ lv+1, t.obj#, c.subname FROM tab c, sys.ind$ t WHERE t.bo# = c.obj#),

@@ -8,9 +8,14 @@ function scripter:ctor()
     self.script_dir,self.extend_dirs=nil,{}
     self.comment="/%*[\t\n\r%s]*%[%[(.*)%]%][\t\n\r%s]*%*/"
     self.command='sql'
+    self.usage="[<script_name>|-r|-p|-h|-s] [parameters]"
     self.ext_name='sql'
     self.help_title=""
     self.help_ind=0
+end
+
+function scripter:get_command()
+    return type(self.command)=="table" and self.command[1] or self.command
 end
 
 function scripter:trigger(func,...)
@@ -284,7 +289,7 @@ function scripter:get_script(cmd,args,print_args)
     end
 
     if not cmd then
-        return env.helper.helper(self.command)
+        return env.helper.helper(self:get_command())
     end
 
     cmd=cmd:upper()
@@ -300,19 +305,19 @@ function scripter:get_script(cmd,args,print_args)
     if cmd=="-R" then
         return
     elseif cmd=="-H" then
-        return  env.helper.helper(self.command,args[1])
+        return  env.helper.helper(self:get_command(),args[1])
     elseif cmd=="-P" then
         cmd,print_args=args[1] and args[1]:upper() or "/",true
         table.remove(args,1)
     elseif cmd=="-S" then
-        return env.helper.helper(self.command,"-S",table.unpack(args))
+        return env.helper.helper(self:get_command(),"-S",table.unpack(args))
     end
 
     local file,f,target_dir
     if cmd:sub(1,1)=="@" then   
         target_dir,file=self:check_ext_file(cmd)
         env.checkerr(target_dir['./COUNT']>0,"Cannot find this script!")
-        if not file then return env.helper.helper(self.command,cmd) end
+        if not file then return env.helper.helper(self:get_command(),cmd) end
         file=target_dir[file].path
     elseif self.cmdlist[cmd] then
         file=self.cmdlist[cmd].path
@@ -376,23 +381,67 @@ function scripter:check_ext_file(cmd)
 end
 
 function scripter:helper(_,cmd,search_key)
-    local help,target_dir=""
-    help=self.help_title ..'Usage: '..self.command..' [<script_name>|-r|-p|-h|-s] [parameters]\nAvailable commands:\n=================\n'
+    local help,cmdlist=""
+    help=('%sUsage: %s %s \nAvailable commands:\n=================\n'):format(self.help_title,self:get_command(),self.usage)
     self.help_ind=self.help_ind+1
     if self.help_ind==2 and not self.cmdlist then
         self:run_script('-r')
     end
-    target_dir=self.cmdlist
+    cmdlist=self.cmdlist
     if cmd and cmd:sub(1,1)=='@' then
         help=""
-        target_dir,cmd=self:check_ext_file(cmd)
+        cmdlist,cmd=self:check_ext_file(cmd)
     end
+    --[[
+    format of cmdlist:  {cmd1={short_desc=<brief help>,desc=<help detail>},
+                         cmd2={short_desc=<brief help>,desc=<help detail>},
+                         ...}
+    ]]
+    if not cmd or cmd=="-S" then
+        if not cmdlist then return help end
+        local rows={{},{}}
+        local undocs=nil
+        local undoc_index=0
+        for k,v in pairs(cmdlist) do
+            if (not search_key or k:find(search_key:upper(),1,true)) and k:sub(1,2)~='./' and k:sub(1,1)~='_' then
+                if search_key or not (v.path or ""):find('[\\/]test[\\/]') then                
+                    local desc=v.short_desc:gsub("^[%s\t]+","")
+                    if desc and desc~="" then
+                        table.insert(rows[1],k)
+                        table.insert(rows[2],desc) 
+                    else
+                        local flag=1
+                        if v.path and v.path:lower():find(env.WORK_DIR:lower(),1,true) then
+                            local _,degree=v.path:sub(env.WORK_DIR:len()+1):gsub('[\\/]+','')
+                            if degree>3 then flag=0 end
+                        end
 
-    return env.helper.get_sub_help(cmd,target_dir,help,search_key)    
+                        if flag==1  then
+                            undoc_index=undoc_index+1
+                            undocs=(undocs or '')..k..', '
+                            if math.fmod(undoc_index,10)==0 then undocs=undocs..'\n' end
+                        end
+                    end
+                end
+            end
+        end
+        if(undocs) then 
+            undocs=undocs:gsub("[\n%s,]+$",'')
+            table.insert(rows[1],'_Undocumented_') 
+            table.insert(rows[2],undocs) 
+        end
+        env.set.set("PIVOT",-1)
+        env.set.set("HEADDEL",":")
+        help=help..grid.tostring(rows)
+        env.set.restore("HEADDEL")    
+        return help
+    end
+    cmd = cmd:upper()
+    return cmdlist[cmd] and cmdlist[cmd].desc or "No such command["..cmd.."] !"        
 end
 
 function scripter:__onload()
-    env.checkerr(self.script_dir,"Cannot find the script dir for the '"..self.command.."' command!")
+    env.checkerr(self.script_dir,"Cannot find the script dir for the '"..self:get_command().."' command!")
     self.db=self.db or env.db_core.__instance
     self.short_dir=self.script_dir:match('([^\\/]+)$')
     env.set_command(self,self.command, self.helper,{self.run_script,self.after_script},false,ARGS_COUNT+1)

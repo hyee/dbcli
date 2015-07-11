@@ -56,9 +56,9 @@ SELECT * FROM (
             CASE WHEN a.session_type = 'BACKGROUND' OR REGEXP_LIKE(a.program, '.*\([PJ]\d+\)') THEN
               REGEXP_REPLACE(SUBSTR(a.program,INSTR(a.program,'(')), '\d', 'n')
             END program#,&BASE c
-           , TO_CHAR(CASE WHEN session_state = 'WAITING' THEN p1 ELSE null END, '0XXXXXXXXXXXXXXX') p1raw
-           , TO_CHAR(CASE WHEN session_state = 'WAITING' THEN p2 ELSE null END, '0XXXXXXXXXXXXXXX') p2raw
-           , TO_CHAR(CASE WHEN session_state = 'WAITING' THEN p3 ELSE null END, '0XXXXXXXXXXXXXXX') p3raw
+           , TO_CHAR(p1, '0XXXXXXXXXXXXXXX') p1raw
+           , TO_CHAR(p2, '0XXXXXXXXXXXXXXX') p2raw
+           , TO_CHAR(p3, '0XXXXXXXXXXXXXXX') p3raw
            , nvl(event,'['||p1text||nullif('|'||p2text,'|')||nullif('|'||p3text,'|')||']') event_name
         FROM &View a) a
       , all_users u

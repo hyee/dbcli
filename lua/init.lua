@@ -4,6 +4,7 @@ local init={
     module_list={
        --Libraries ->
         "lib/zlib",
+        "lib/json",
         "lib/socket",
         "lib/lanes",
         "lib/MessagePack",
@@ -32,7 +33,8 @@ local init={
         "lua/scripter",
         "lua/snapper",
         "lua/ssh",
-        "lua/tester"}
+        "lua/tester",
+        "lua/graph"}
 }
 
 init.databases={oracle="oracle/oracle",mssql="mssql/mssql",db2="db2/db2",mysql="mysql/mysql"}

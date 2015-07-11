@@ -54,6 +54,7 @@ function var.setOutput(name,datatype,desc)
     name=name:upper()
     if not datatype then
         if var.outputs[name] then var.outputs[name]=nil end
+        return
     end
 
     datatype=datatype:upper():match("(%w+)")    
@@ -128,8 +129,11 @@ local function update_text(item,pos,params)
     end
 end
 
-function var.before_print(item)
-    update_text(item,1,{})
+function var.before_command(name,args)
+    args=type(args)=='string' and {args} or args
+    if type(args)~='table' then return end
+    for i=1,#args do update_text(args,i,{}) end
+    return args
 end
 
 function var.before_db_exec(item)
@@ -147,21 +151,19 @@ function var.before_db_exec(item)
         return
     end
     
-    update_text(item,2,params)    
+    update_text(item,2,params)  
 end
 
 function var.after_db_exec(item)
     local db,sql,args=table.unpack(item)
     local result,isPrint={},cfg.get("PrintVar")
     for k,v in pairs(var.outputs) do
-        if v and k:upper()==k and args[k] and args[k]~=v then
+        if v and k:upper()==k and args[k] and args[k]~="" and args[k]~=v then
             var.inputs[k],var.outputs[k]=args[k],nil
             result[k]=args[k]            
         end
     end
-
     var.current_db=db
-    
     if isPrint=="on" then
         var.print(result)
     end
@@ -242,7 +244,7 @@ end
 function var.onload()
     snoop('BEFORE_DB_EXEC',var.before_db_exec)
     snoop('AFTER_DB_EXEC',var.after_db_exec)
-    snoop('BEFORE_PRINT_TEXT' ,var.before_print)
+    snoop('BEFORE_COMMAND',var.before_command)
     snoop("BEFORE_ROOT_COMMAND",var.capture_before_cmd)
     snoop("AFTER_ROOT_COMMAND",var.capture_after_cmd)
 

@@ -278,23 +278,13 @@ desc_sql['INDEX PARTITION']=desc_sql.INDEX
 desc_sql.FUNCTION=desc_sql.PROCEDURE
 desc_sql.TYPE={desc_sql.TYPE,desc_sql.PACKAGE}
 
-local is_executing=false
-function desc.parse(cmd,sql,args)
-    local sql1,count=sql:gsub('([Aa][Ll][Ll]%_)','dba_')
-    is_executing=true
-    local success,err=pcall(cmd,db,sql1,args) 
-    is_executing=false
-    if not success then cmd(db,sql,args) end
-    return err,args
-end
-
 function desc.desc(name,option)
     if not name then return end
     local rs,success,err
     local obj=db:check_obj(name)
     env.checkerr(obj,'Cannot find target object!')
     if obj.object_type=='SYNONYM' then
-        local new_obj=desc.parse(db.get_value,[[WITH r AS
+        local new_obj=db:dba_query(db.get_value,[[WITH r AS
          (SELECT /*+materialize cardinality(p 1)*/REFERENCED_OBJECT_ID OBJ, rownum lv
           FROM   PUBLIC_DEPENDENCY p
           START  WITH OBJECT_ID = :1
@@ -336,7 +326,7 @@ function desc.desc(name,option)
     print(("%s : %s%s%s\n"..dels):format(rs[4],rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3]))
     for i,sql in ipairs(sqls) do
         if sql:find("/*PIVOT*/",1,true) then cfg.set("PIVOT",1) end
-        desc.parse(db.query,sql,rs)
+        db:dba_query(db.query,sql,rs)
         if i<#sqls then print(dels) end
     end
     
@@ -349,12 +339,6 @@ function desc.desc(name,option)
 
     cfg.temp("feed",feed,true)
 end
-
-function desc.handle_error(info)
-    if is_executing then info.sql=nil end
-end
-
-env.event.snoop('ON_SQL_ERROR',desc.handle_error,nil,99)  
 
 env.set_command(nil,{"describe","desc"},'Describe datbase object. Usage: desc [owner.]<object>[.partition] | [owner.]<pkg|typ>[.<function|procedure>]',desc.desc,false,3)
 return desc

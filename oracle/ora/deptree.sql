@@ -16,9 +16,12 @@
        &CC  : T={1},L={0}
        &SRT : T={'9'},L={1}
        &DST : T={},L={DISTINCT}
-       @CHECK_ACCESS: sys.obj$={1}
+       @CHECK_ACCESS: sys.obj$/sys.dependency$={1}
     --]]
 ]]*/
+
+ora _find_object &V1
+
 SET FEED OFF
 SET PRINTSIZE 10000
 VAR CUR REFCURSOR
@@ -84,19 +87,9 @@ DECLARE
         END IF;
     END;
 BEGIN
-    SELECT *
-    INTO   v_objid, v_owner
-    FROM   (SELECT --+no_expand
-                   object_id o, owner
-            FROM   DBA_OBJECTS
-            WHERE  owner IN
-                   (decode(instr(v_object, '.'), 0, sys_context('USERENV','CURRENT_SCHEMA'), regexp_substr(v_object, '^[^\.]+')),
-                    decode(instr(v_object, '.'), 0, 'PUBLIC', '#'))
-            AND    object_name =decode(instr(v_object, '.'), 0, v_object, regexp_substr(v_object, '[^\.]+$'))
-            AND    subobject_name IS NULL
-            ORDER  BY DECODE(OWNER, 'PUBLIC', 'ZZZZZZ', OWNER), OBJECT_ID)
-    WHERE  ROWNUM < 2;
-
+    v_objid := :object_id;
+    v_owner := :object_owner;
+   
     dbms_lob.createtemporary(v_result, TRUE);
     dbms_output.enable(NULL);
     dbms_lob.writeappend(v_result, 8, '<ROWSET>');

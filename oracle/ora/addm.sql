@@ -76,23 +76,23 @@ BEGIN
                                3,nvl(remreason, remmessage),
                                4,remmessage) "Message",
                        round(DECODE(b.r, 1, IMPACT, 2, rembenefit, 3, remimpact) * 1e-6 / 60, 2) "Minutes",
-                       round(DECODE(b.r, 1, IMPACT, 2, rembenefit, 3, remimpact) * 100 /
+                       nullif(to_char(DECODE(b.r, 1, IMPACT, 2, rembenefit, 3, remimpact) * 100 /
                               (SELECT parameter_value
                                FROM   Dba_Advisor_Parameters f
                                WHERE  parameter_name = 'DB_ELAPSED_TIME'
                                AND    f.task_id = a.task_id),
-                              2) "Impact(%)", DECODE(b.r, 4, target) "Target Obj",
+                              '90.00')||'%','%') "Impact", DECODE(b.r, 4, target) "Target Obj",
                        DECODE(b.r, 4, target_id) "Target ID", DECODE(b.r, 4, sql_plan_id) "Plan Hash",
                        decode(b.r,1,a.r) is_top
               FROM   a, (SELECT ROWNUM r FROM dual CONNECT BY ROWNUM <= 4) b
               WHERE  b.r - 2 <= NVL2(a.remreason, 1, 0) + NVL2(a.remmessage, 1, 0) - NVL2(a.rec_id, 0, 1)
               ORDER  BY 1, 2, 3, 4)
-            SELECT is_top "#", "Impact(%)", "Target ID", "Message"
+            SELECT is_top "#", "Impact", "Target ID", "Message"
             FROM   b
             UNION ALL
-            SELECT NULL,NULL,'--SQL-ID-----',RPAD('--SQL-TEXT--',200,'-') from dual
+            SELECT NULL,'-------','--SQL-ID-----',RPAD('--SQL-TEXT--',200,'-') from dual
             UNION ALL
-            SELECT  ROWNUM, NULL, sql_id,
+            SELECT  ROWNUM, null, sql_id,
                     trim(to_char(substr(regexp_replace(REPLACE(sql_text, chr(0)),'[' || chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200)))
             FROM   dba_hist_sqltext
             WHERE  sql_id IN (SELECT DISTINCT regexp_replace("Message", '.*SQL_ID "([^"]+)".*', '\1') FROM b);
