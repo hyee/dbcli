@@ -1,6 +1,6 @@
 2015-07-12: ! oracle: minor fixes
 2015-07-12: + public: new command "chart" to generate graph charts
-2015-07-12: + oracle: new command "ora deptree2"
+2015-07-12: + oracle: new command "ora deptree2" and "ora prof"
 2015-07-05: + oracle: new command "ora liblock" and "sys liblock" 
 2015-07-03: ! oracle: fixes on 'desc' and 'ora' commands
 2015-06-27: * oracle: enhancement and performance tuning on 'ora size'
