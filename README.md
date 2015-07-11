@@ -64,6 +64,8 @@ Below is the list:<br>
     EDB360      : https://github.com/carlos-sierra/edb360
     MessagePack : https://github.com/fperrad/lua-MessagePack(pure lua)
     OpenCSV     : https://github.com/hyee/OpenCSV
+    dygraphs    : https://github.com/danvk/dygraphs
+    json4lua    : https://github.com/craigmj/json4lua
 
 
 Besides, some SQL scripts are from internet.
