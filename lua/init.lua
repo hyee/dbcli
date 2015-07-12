@@ -150,7 +150,7 @@ function init.onload()
 end
 
 function init.unload(list,tab)
-    if type(tab)~='table' then return end
+    --if type(tab)~='table' then return end
     for i=#list,1,-1 do
         local m=list[i]:match("([^\\/]+)$")    
         if type(tab[m])=="table" and type(tab[m].onunload)=="function" then

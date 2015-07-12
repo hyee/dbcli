@@ -1,5 +1,5 @@
 local java,env,table,math,loader=java,env,table,math,loader
-local cfg,grid=env.set,env.grid
+local cfg,grid,bit,string=env.set,env.grid,env.bit,env.string
 local read=reader
 local event=env.event and env.event.callback or nil
 
@@ -83,10 +83,13 @@ function db_Types:load_sql_types(className)
                 return result
             end},
 
-        [5]={getter='getBytes',setter='setBytesForBlob', --setBytes
+        [5]={getter='getBlob',setter='setBytesForBlob', --setBytes
              handler=function(result,action,conn)
                 if action=="get" then
-                    return str
+                    local str=result:getBytes(1,result:length())
+                    result:free()
+                    local str1=string.rep('%2X',#str):format(str:byte(1,#str)):gsub(' ','0')
+                    return str1
                 else
                     return java.cast(result,'java.lang.String'):getBytes()
                 end
@@ -463,6 +466,7 @@ function db_core:exec(sql,args)
     
     prep,sql,params=self:parse(sql,params)        
     self.__stmts[#self.__stmts+1]=prep
+    prep:setFetchSize(cfg.get('FETCHSIZE'))
     prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
     self.current_stmt=prep
     --reader:setRunning(true)
@@ -636,11 +640,12 @@ local function set_param(name,value)
 end
 
 local function print_export_result(filename,start_clock,counter)
+    local str=""
     if start_clock then
         counter = (counter and (counter..' rows') or 'Data')..' exported'
-        print(counter..' in '..math.round(os.clock()-start_clock,3)..' seconds.')
+        str=counter..' in '..math.round(os.clock()-start_clock,3)..' seconds. '
     end
-    print('Result written to file '..filename)
+    print(str..'Result written to file '..filename)
 end
 
 function db_core:sql2file(filename,sql,method)
@@ -732,6 +737,7 @@ function db_core:__onload()
             login <num|name|alias>    : login a/c
             login -a <alias> <id|name>: set alias to an existing account]]
     cfg.init("PRINTSIZE",1000,set_param,"db.query","Max rows to be printed for a select statement",'1-10000')
+    cfg.init("FETCHSIZE",3000,set_param,"db.query","Rows to be prefetched from the resultset, 0 means auto.",'0-32767')
     cfg.init("COLSIZE",32767,set_param,"db.query","Max column size of a result set",'5-1073741824')
     cfg.init("SQLTIMEOUT",600,set_param,"db.core","The max wait time(in second) for a single db execution",'10-86400')
     cfg.init("FEED",'on',set_param,"db.core","Detemine if need to print the feedback after db execution",'on,off')

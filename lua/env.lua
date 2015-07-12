@@ -642,7 +642,10 @@ function env.unload()
     env.init=nil
     package.loaded['init']=nil
     _CMDS.___ABBR___={}
-    if env.jit and env.jit.flush then pcall(env.jit.flush) end
+    if env.jit and env.jit.flush then 
+        local e,msg=pcall(env.jit.flush)
+        if not e then print(msg) end 
+    end
 end
 
 function env.reload()

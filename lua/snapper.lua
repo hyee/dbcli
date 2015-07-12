@@ -239,7 +239,7 @@ end
 
 
 function snapper:__onload()
-    cfg.init(self.command.."rows","50",nil,"db.core","Number of max records for the '"..self.command.."' command result"," 5 - 3000")
+    cfg.init(self.command.."rows","50",nil,"db.core","Number of max records for the '"..self.command.."' command result","5 - 3000")
     env.remove_command(self.command)
     env.set_command(self,self.command,self.helper,{self.exec,self.after_exec},false,21)
 end
