@@ -6,6 +6,7 @@ local module_list={
     "db2/sqlstate",
     "db2/snap",
     "db2/sql",
+    "db2/chart",
 }
 
 local db2=env.class(env.db_core)
