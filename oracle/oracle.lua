@@ -67,7 +67,7 @@ function oracle:connect(conn_str)
     self:merge_props(
         {driverClassName="oracle.jdbc.driver.OracleDriver",
          defaultRowPrefetch="3000",
-         defaultLobPrefetchSize="327670",
+         defaultLobPrefetchSize="2097152",
          useFetchSizeWithLongColumn='true',
          ['v$session.program']='SQL Developer'
         },args)

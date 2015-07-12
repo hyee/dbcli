@@ -10,8 +10,10 @@
               1024 * 1024
              WHEN NAME LIKE '%memory%' THEN
               1024 * 1024
+             WHEN NAME LIKE '%size' THEN
+              1 
              WHEN NAME LIKE '%time%' THEN
-              1
+              1E3
              ELSE
               1
          END VALUE,
@@ -20,8 +22,10 @@
               'MB'
              WHEN NAME LIKE '%memory%' THEN
               'MB'
-             WHEN NAME LIKE '%time%' THEN
+             WHEN NAME LIKE '%size' THEN
               'COUNT'
+             WHEN NAME LIKE '%time%' THEN
+              'MS'
              ELSE
               'COUNT'
          END unit
