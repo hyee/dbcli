@@ -97,13 +97,9 @@ function init.set_database(_,db)
     env.checkerr(init.databases[db],'Invalid database type!')
     if env.CURRENT_DB then
         print("Switching database ...")
-        env.safe_call(env.event and env.event.callback,'ON_DATABASE_ENV_UNLOADED',env.CURRENT_DB)
         env.CURRENT_DB=db
-        env.unload()
-        env.onload(table.unpack(env.__ARGS__))
+        env.reload()
     end
-    env.CURRENT_DB=db
-    return db 
 end
 
 function init.load_database()

@@ -1,6 +1,6 @@
 local string,io,table=string,io,table
-local dir=debug.getinfo(1).short_src:gsub('[%w%.]+$','?.lua')
-package.path=dir
+package.path=debug.getinfo(1).short_src:gsub('[%w%.]+$','?.lua')
+
 io.stdout:write("    --------------------------------------------------------------------------------------------------------------------------------------\n")
 io.stdout:write("    | DBCLI, type 'conn' to connect to db, or 'help' for more information. (c)2014-2015 hyee, MIT license (https://github.com/hyee/dbcli)|\n")
 io.stdout:write("    ======================================================================================================================================\n\n")

@@ -4,7 +4,6 @@ local _G = _ENV or _G
 local reader,coroutine=reader,coroutine
 
 local getinfo, error, rawset, rawget,math = debug.getinfo, error, rawset, rawget,math
-
 local env=setmetatable({},{
     __call =function(self, key, value)            
             rawset(self,key,value) 
@@ -651,7 +650,7 @@ end
 function env.reload()
     print("Reloading environemnt ...")
     env.unload()
-    java.loader.ReloadNextTime=true
+    java.loader.ReloadNextTime=env.CURRENT_DB
     env.CURRENT_PROMPT="_____EXIT_____"
 end
 

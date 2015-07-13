@@ -20,7 +20,7 @@ import java.util.concurrent.Future;
 
 
 public class Loader {
-    public static Boolean ReloadNextTime = true;
+    public static String ReloadNextTime="_init_";
     static LuaState lua;
     static PrintWriter printer;
     static Console console;
@@ -79,10 +79,20 @@ public class Loader {
         br.close();
         //System.out.println(sb.toString());
         lua.load(sb.toString(), input);
+        if(ReloadNextTime!=null&&ReloadNextTime.equals("_init_")) ReloadNextTime=null;
         //lua.getTop();
-        for (int i = 0; i < args.length; i++) lua.pushString(args[i]);
-        ReloadNextTime = false;
-        lua.call(args.length, 0);
+        for (int i = 0; i < args.length; i++) {
+            if(args[i].toLowerCase().contains(" database")&&ReloadNextTime!=null) {
+                args[i]="set database "+ReloadNextTime;
+                ReloadNextTime = null;
+            }
+            lua.pushString(args[i]);
+        }
+        if(ReloadNextTime!=null) {
+            lua.pushString("set database "+ReloadNextTime);
+            ReloadNextTime = null;
+            lua.call(args.length+1, 0);
+        } else lua.call(args.length, 0);
         lua.close();
         lua = null;
         System.gc();
@@ -122,7 +132,7 @@ public class Loader {
     public static void main(String args[]) throws Exception {
         Loader l = new Loader();
         System.loadLibrary("lua5.1");
-        while (ReloadNextTime) loadLua(l, args);
+        while (ReloadNextTime!=null) loadLua(l, args);
     }
 
     public void addPath(String file) throws Exception {
