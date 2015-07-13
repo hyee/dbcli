@@ -693,7 +693,8 @@ function db_core:csv2sql(target,src)
     local table_name=target:match('([^\\/]+)%.%w+$')
     local _,rs=pcall(self.exec,self,'select * from '..table_name..' where 1=2')
     if type(rs)~='userdata' then rs=nil end
-    src=env.resolve_file(src)
+    src=env.resolve_file(src,'csv')
+    env.checkerr(env.file_exists(src),'File '..src..' does not exist!')
     local clock,counter=os.clock(),loader:CSV2SQL(src,target,self.sql_export_header,rs)
     print_export_result(target,clock,counter)
 end

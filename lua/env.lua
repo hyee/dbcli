@@ -86,6 +86,12 @@ env._CMDS=setmetatable({___ABBR___={}},{
 --
 env.space="    "
 local _CMDS=env._CMDS
+
+function env.file_exists(file_name)
+    local dir=env.list_dir(file_name)
+    return (type(dir)=="table" and dir[1][2]:lower()==file_name:lower() or false)
+end
+
 function env.list_dir(file_dir,file_ext,text_macher)
     local dir
     local keylist={}
@@ -93,7 +99,7 @@ function env.list_dir(file_dir,file_ext,text_macher)
     local filter=file_ext and "*."..file_ext or "*"
     file_dir=file_dir:gsub("[\\/]+",env.PATH_DEL)
     if env.OS=="windows" then
-        dir=io.popen('dir /B/S/A:-D "'..file_dir..'" 2>nul & dir /B/S/A:-D "'..file_dir..'.'..file_ext..'" 2>nul')
+        dir=io.popen('dir /B/S/A:-D "'..file_dir..'" 2>nul & dir /B/S/A:-D "'..file_dir..filter..'" 2>nul')
     else
         dir=io.popen('find "'..file_dir..'" -iname '..filter..' -print')
     end
