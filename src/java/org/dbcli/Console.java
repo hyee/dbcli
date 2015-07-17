@@ -18,7 +18,7 @@ public class Console extends ConsoleReader {
     private History his;
     private ScheduledFuture task;
     private EventReader monitor = new EventReader();
-    protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(3);
+    protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(5);
     private NonBlockingInputStream in;
     private ActionListener event;
     private char[] keys;

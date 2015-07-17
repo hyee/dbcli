@@ -20,7 +20,7 @@ import java.util.concurrent.Future;
 
 
 public class Loader {
-    public static String ReloadNextTime="_init_";
+    public static String ReloadNextTime = "_init_";
     static LuaState lua;
     static PrintWriter printer;
     static Console console;
@@ -79,19 +79,19 @@ public class Loader {
         br.close();
         //System.out.println(sb.toString());
         lua.load(sb.toString(), input);
-        if(ReloadNextTime!=null&&ReloadNextTime.equals("_init_")) ReloadNextTime=null;
+        if (ReloadNextTime != null && ReloadNextTime.equals("_init_")) ReloadNextTime = null;
         //lua.getTop();
         for (int i = 0; i < args.length; i++) {
-            if(args[i].toLowerCase().contains(" database")&&ReloadNextTime!=null) {
-                args[i]="set database "+ReloadNextTime;
+            if (args[i].toLowerCase().contains("database ") && ReloadNextTime != null) {
+                args[i] = "set database " + ReloadNextTime;
                 ReloadNextTime = null;
             }
             lua.pushString(args[i]);
         }
-        if(ReloadNextTime!=null) {
-            lua.pushString("set database "+ReloadNextTime);
+        if (ReloadNextTime != null) {
+            lua.pushString("set database " + ReloadNextTime);
             ReloadNextTime = null;
-            lua.call(args.length+1, 0);
+            lua.call(args.length + 1, 0);
         } else lua.call(args.length, 0);
         lua.close();
         lua = null;
@@ -132,7 +132,7 @@ public class Loader {
     public static void main(String args[]) throws Exception {
         Loader l = new Loader();
         System.loadLibrary("lua5.1");
-        while (ReloadNextTime!=null) loadLua(l, args);
+        while (ReloadNextTime != null) loadLua(l, args);
     }
 
     public void addPath(String file) throws Exception {
@@ -172,8 +172,6 @@ public class Loader {
             public Integer call() throws Exception {
                 CSVWriter writer = new CSVWriter(fileName);
                 int result = writer.writeAll(rs, true);
-                rs.close();
-                writer.close();
                 return result;
             }
         });
@@ -187,7 +185,6 @@ public class Loader {
                 final SQLWriter writer = new SQLWriter(fileName);
                 writer.setFileHead(header);
                 int count = writer.writeAll2SQL(rs, "", 1500);
-                rs.close();
                 return count;
             }
         });
@@ -232,7 +229,9 @@ public class Loader {
         } catch (Exception e) {
             throw e;
         } finally {
+            if(rs!=null && !rs.isClosed()) rs.close();
             sleeper = null;
+            rs=null;
             console.setEvents(null, null);
         }
     }
@@ -282,7 +281,6 @@ public class Loader {
             }
         }
     }
-
     private class Sleeper implements Runnable {
         private int timer = 0;
 
