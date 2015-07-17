@@ -581,8 +581,8 @@ function db_core:reconnnect()
     end
 end
 
-function db_core:clearStatements()
-    while #self.__stmts>cfg.get('SQLCACHESIZE') do
+function db_core:clearStatements(is_force)
+    while #self.__stmts>(is_force==true and 0 or cfg.get('SQLCACHESIZE')) do
         if not self.__stmts[1]:isClosed() then
             pcall(self.__stmts[1].close,self.__stmts[1])
         end
@@ -671,6 +671,7 @@ function db_core:sql2file(filename,sql,method)
             end
         end
     end
+    self:clearStatements(true)
 end
 
 function db_core:sql2sql(filename,sql)
@@ -693,8 +694,7 @@ function db_core:csv2sql(target,src)
     local table_name=target:match('([^\\/]+)%.%w+$')
     local _,rs=pcall(self.exec,self,'select * from '..table_name..' where 1=2')
     if type(rs)~='userdata' then rs=nil end
-    src=env.resolve_file(src,'csv')
-    env.checkerr(env.file_exists(src),'File '..src..' does not exist!')
+    src=env.resolve_file(src)
     local clock,counter=os.clock(),loader:CSV2SQL(src,target,self.sql_export_header,rs)
     print_export_result(target,clock,counter)
 end

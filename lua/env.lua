@@ -4,6 +4,7 @@ local _G = _ENV or _G
 local reader,coroutine=reader,coroutine
 
 local getinfo, error, rawset, rawget,math = debug.getinfo, error, rawset, rawget,math
+
 local env=setmetatable({},{
     __call =function(self, key, value)            
             rawset(self,key,value) 
@@ -86,12 +87,6 @@ env._CMDS=setmetatable({___ABBR___={}},{
 --
 env.space="    "
 local _CMDS=env._CMDS
-
-function env.file_exists(file_name)
-    local dir=env.list_dir(file_name)
-    return (type(dir)=="table" and dir[1][2]:lower()==file_name:lower() or false)
-end
-
 function env.list_dir(file_dir,file_ext,text_macher)
     local dir
     local keylist={}
@@ -99,7 +94,7 @@ function env.list_dir(file_dir,file_ext,text_macher)
     local filter=file_ext and "*."..file_ext or "*"
     file_dir=file_dir:gsub("[\\/]+",env.PATH_DEL)
     if env.OS=="windows" then
-        dir=io.popen('dir /B/S/A:-D "'..file_dir..'" 2>nul & dir /B/S/A:-D "'..file_dir..filter..'" 2>nul')
+        dir=io.popen('dir /B/S/A:-D "'..file_dir..'" 2>nul & dir /B/S/A:-D "'..file_dir..'.'..file_ext..'" 2>nul')
     else
         dir=io.popen('find "'..file_dir..'" -iname '..filter..' -print')
     end
@@ -242,7 +237,8 @@ end
 
 function env.callee(idx)
     if type(idx)~="number" then idx=3 end
-    local info=getinfo(idx)    
+    local info=getinfo(idx)
+    if not info then return nil end
     return info.short_src:gsub(env.WORK_DIR,"",1):gsub("%.%w+$","#"..info.currentline)
 end
 
@@ -730,13 +726,13 @@ function env.set_title(title)
         title_keys[#title_keys+1]=callee
     end
     title_list[callee]=title or ""
-    title=""
     for _,k in ipairs(title_keys) do
         if (title_list[k] or "")~="" then
             if title~="" then title=title.."    " end
             title=title..title_list[k]
         end
     end
+    if not title or title=="" then title="DBCLI - Disconnected" end
     os.execute("title "..title)
 end
 

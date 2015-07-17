@@ -8,21 +8,28 @@ function string.initcap(v)
 end
 
 --Continus sep would return empty element
-function string.split (s, sep, plain)
+function string.split (s, sep, plain,occurrence)
     local r={}
-    for v in s:gsplit(sep,plain) do
+    for v in s:gsplit(sep,plain,occurrence) do
         r[#r+1]=v
     end
     return r
 end
 
-function string.gsplit(s, sep, plain)
+function string.replace(s,sep,txt,plain,occurrence)
+  local r=s:split(sep,plain,occurrence)
+  return table.concat(r,txt)
+end
+
+function string.gsplit(s, sep, plain,occurrence)
     local start = 1
+    local counter=0
     local done = false
     local function pass(i, j, ...)
-        if i then
+        if i and (not occurrence or counter<occurrence) then
             local seg = s:sub(start, i - 1)
             start = j + 1
+            counter=counter+1
             return seg, ...
         else
             done = true
@@ -105,7 +112,8 @@ local function compare(a,b)
     return tostring(a[1])<tostring(b[1])
 end
 
-function math.round(num,digits)  
+function math.round(num,digits)
+  digits=digits or 0
   return math.floor(10^digits*num+0.5)/(10^digits)
 end
 

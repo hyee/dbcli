@@ -97,6 +97,7 @@ function init.set_database(_,db)
     env.checkerr(init.databases[db],'Invalid database type!')
     if env.CURRENT_DB then
         print("Switching database ...")
+        env.safe_call(env.event and env.event.callback,'ON_DATABASE_ENV_UNLOADED',env.CURRENT_DB)
         env.CURRENT_DB=db
         env.reload()
     end
@@ -147,6 +148,10 @@ end
 
 function init.unload(list,tab)
     --if type(tab)~='table' then return end
+    print(3,env.callee(3))
+    print(4,env.callee(4))
+    print(5,env.callee(5))
+    print(6,env.callee(6))
     for i=#list,1,-1 do
         local m=list[i]:match("([^\\/]+)$")    
         if type(tab[m])=="table" and type(tab[m].onunload)=="function" then

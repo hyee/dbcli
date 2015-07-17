@@ -69,13 +69,21 @@ function oracle:connect(conn_str)
          defaultRowPrefetch="3000",
          defaultLobPrefetchSize="2097152",
          useFetchSizeWithLongColumn='true',
+         useThreadLocalBufferCache="true",
+         maxCachedBufferSize="20971520",
+         freeMemoryOnEnterImplicitCache="true",
+         implicitStatementCacheSize=5,
          ['v$session.program']='SQL Developer'
         },args)
     
     self:load_config(url,args)
     if args.jdbc_alias or not sqlplustr then
         local pwd=args.password
-        if not pwd:find('^[%w_%$#]+$') and not pwd:find('^".*"$') then pwd='"'..pwd..'"' end
+        if not pwd:find('^[%w_%$#]+$') and not pwd:find('^".*"$') then 
+            pwd='"'..pwd..'"' 
+        else
+            pwd=pwd:match('^"*(.-)"*$')
+        end
         sqlplustr=string.format("%s/%s@%s%s",args.user,pwd,args.url:match("@(.*)$"),
                                             args.internal_logon and " as "..args.internal_logon or "")
     end
@@ -89,14 +97,12 @@ function oracle:connect(conn_str)
     self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    self.conn:setStatementCacheSize(self.MAX_CACHE_SIZE)
-    self.conn:setImplicitCachingEnabled(true)
     local params=self:get_value([[
        select /*INTERNAL_DBCLI_CMD*/ user,
                (SELECT VALUE FROM Nls_Database_Parameters WHERE parameter='NLS_RDBMS_VERSION') version,
                 sys_context('userenv','language'),
-                userenv('sid'),
-                sys_context('userenv','instance_name'),
+                (select sid from v$mystat where rownum<2),
+                (select instance_number from v$instance where rownum<2),
                 sys_context('userenv','isdba'),
                 sys_context('userenv','db_name')||nullif('.'||sys_context('userenv','db_domain'),'.')
        from dual]])
@@ -123,7 +129,6 @@ function oracle:parse(sql,params)
 
     if cfg.get('SQLCACHESIZE') ~= self.MAX_CACHE_SIZE then
         self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-        self.conn:setStatementCacheSize(self.MAX_CACHE_SIZE)
     end
     
     sql=sql:gsub('%f[%w_%$:]:([%w_%$]+)',function(s)

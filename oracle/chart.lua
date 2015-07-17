@@ -8,6 +8,8 @@ function chart:ctor()
     self.script_dir=env.WORK_DIR.."oracle"..env.PATH_DEL.."chart"
 end
 
+function chart:onload()
+end
 
 
 return chart.new()

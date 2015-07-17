@@ -12,7 +12,7 @@ function awr.dump_report(stmt,starttime,endtime,instances)
     
     local args={starttime,endtime,instances or "",'#VARCHAR','#CLOB','#CURSOR'}
     cfg.set("feed","off")
-    db:exec(stmt,args)
+    db:exec(stmt:replace('@get_range@',awr.extract_period()),args)
     if args[5] and args[5]~="#CLOB" then
         print("Result written to file "..env.write_cache(args[4],args[5]))
         db.resultset:print(args[6],db.conn)
@@ -21,12 +21,54 @@ function awr.dump_report(stmt,starttime,endtime,instances)
     end
 end
 
+function awr.extract_period()
+    return [[PROCEDURE get_range(p_start VARCHAR2,p_end VARCHAR2,p_inst VARCHAR2,dbid OUT INT, st OUT INT, ed OUT INT, stim OUT DATE, etim OUT DATE) IS
+            s DATE;
+            e DATE;
+        BEGIN
+            BEGIN
+                s := to_date(p_start,'YYMMDDHH24MISS');
+                e := to_date(p_end,'YYMMDDHH24MISS');
+            EXCEPTION WHEN OTHERS THEN
+                BEGIN
+                    s := to_date(p_start);
+                    e := to_date(p_end);
+                EXCEPTION WHEN OTHERS THEN
+                    RAISE_APPLICATION_ERROR(-20001,'Not a valid date format: "'||p_start||'" or "'||p_end||'"!');
+                END;
+            END;
+            SELECT max(dbid),
+                   max(st),max(ed),
+                   max((select nvl(max(end_interval_time+0),s) from Dba_Hist_Snapshot WHERE snap_id=st AND dbid=a.dbid)),
+                   max((select nvl(max(end_interval_time+0),e) from Dba_Hist_Snapshot WHERE snap_id=ed AND dbid=a.dbid))
+            INTO dbid,st,ed,stim,etim
+            FROM   (SELECT dbid, 
+                           nvl(MAX(decode(sign(end_interval_time-0.004-s),1,null,snap_id)),min(snap_id)) st, 
+                           nvl(min(decode(sign(end_interval_time+0.004-e),-1,null,snap_id)),max(snap_id)) ed
+                    FROM   Dba_Hist_Snapshot
+                    WHERE  begin_interval_time-0.04 <= e and end_interval_time+0.004>=s
+                    AND    (p_inst IS NULL OR instr(',' || p_inst || ',', instance_number) > 0)
+                    GROUP  BY DBID
+                    ORDER  BY 2 DESC) a
+            WHERE  ROWNUM < 2;
+
+            IF ed IS NULL THEN
+                RAISE_APPLICATION_ERROR(-20001,'Cannot find the matched AWR snapshots between '''||s||''' and '''||e||'''!' );
+            END IF;
+
+            IF dbid IS NULL THEN
+                SELECT dbid INTO dbid FROM v$database;
+            END IF;
+        END;]]
+end
+
 function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
     local stmt=[[
     DECLARE
         rs       CLOB;
         filename VARCHAR2(200);
         cur      SYS_REFCURSOR;
+        @get_range@
         PROCEDURE extract_awr(p_start VARCHAR2, p_end VARCHAR2, p_inst VARCHAR2,p_start2 VARCHAR2:=NULL, p_end2 VARCHAR2:=NULL) IS
             stim  date;
             etim  date;
@@ -47,20 +89,8 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
                     etim := to_date(p_end, 'YYMMDDHH24MI');
                 END IF;
                 stim := to_date(p_start, 'YYMMDDHH24MI');
-            
-                SELECT max(dbid),max(st),max(ed),
-                       max((select nvl(max(end_interval_time+0),stim) from Dba_Hist_Snapshot WHERE snap_id=st AND dbid=a.dbid)),
-                       max((select nvl(max(end_interval_time+0),etim) from Dba_Hist_Snapshot WHERE snap_id=ed AND dbid=a.dbid))
-                INTO   dbid, st, ed,stim,etim
-                FROM   (SELECT dbid, 
-                               nvl(MAX(decode(sign(end_interval_time+0-stim),1,null,snap_id)),min(snap_id)) st, 
-                               nvl(min(decode(sign(end_interval_time+0-etim),-1,null,snap_id)),max(snap_id)) ed
-                        FROM   Dba_Hist_Snapshot
-                        WHERE  begin_interval_time+0 <= etim+0.5 and end_interval_time>=stim-0.5
-                        AND    (inst IS NULL OR instr(',' || inst || ',', instance_number) > 0)
-                        GROUP  BY DBID
-                        ORDER  BY 2 DESC) a
-                WHERE  ROWNUM < 2;
+                
+                get_range(stim,etim,inst,dbid,st,ed,stim,etim);
             END;
         BEGIN
             IF DBMS_DB_VERSION.VERSION < 11 THEN
@@ -75,23 +105,14 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
 
             gen_ranges(p_start,p_end,dbid,st,ed);
     
-            IF ed IS NULL THEN
-                filename := 'Cannot find the matched AWR snapshots between '''||stim||''' and '''||etim||''' !' ;            
-                RETURN;
-            END IF;
-            
             IF p_start2 IS NOT NULL THEN 
                 gen_ranges(p_start2,p_end2,dbid2,st2,ed2);
-                IF ed2 IS NULL THEN
-                    filename := 'Cannot find the matched AWR snapshots between '''||stim||''' and '''||etim||''' !' ;            
-                    RETURN;
-                END IF;
                 filename := 'awr_diff_' || least(st,st2) || '_' || greatest(ed,ed2) || '_' || nvl(inst, 'all') || '.html';
                 OPEN cur for 
                 select 'AWR' report_type,
                         nvl(inst,'ALL') INSTANCES,
                         st begin_snap1,
-                        ed begin_snap2,
+                        ed end_snap1,
                         '*' "*",
                         to_char(stim,'YYYY-MM-DD HH24:MI') begin_time2,
                         st2 begin_snap2,
@@ -130,7 +151,6 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
             $END
             END IF;
             
-           
             dbms_lob.createtemporary(rs, TRUE);
             LOOP
                 BEGIN
@@ -172,10 +192,13 @@ function awr.extract_ash(starttime,endtime,instances)
         rs       CLOB;
         filename VARCHAR2(200);
         cur      SYS_REFCURSOR;
+        @get_range@
         PROCEDURE extract_ash(p_start VARCHAR2, p_end VARCHAR2, p_inst VARCHAR2) IS
             dbid INT;
             stim date;
-            etim date;        
+            etim date;
+            st   INT;
+            ed   INT;     
             inst VARCHAR2(30) := NULLIF(upper(p_inst), 'A');
         BEGIN
         
@@ -188,32 +211,8 @@ function awr.extract_ash(starttime,endtime,instances)
                     RETURN;
                 END IF;
             END IF;
-        
-            stim := to_date(p_start, 'YYMMDDHH24MI');
-            etim := to_date(p_end, 'YYMMDDHH24MI');
-            SELECT max(dbid),
-                   max((select nvl(max(end_interval_time+0),stim) from Dba_Hist_Snapshot WHERE snap_id=st AND dbid=a.dbid)),
-                   max((select nvl(max(end_interval_time+0),etim) from Dba_Hist_Snapshot WHERE snap_id=ed AND dbid=a.dbid))
-            INTO   dbid, stim,etim
-            FROM   (SELECT dbid, 
-                           nvl(MAX(decode(sign(end_interval_time+0-stim),1,null,snap_id)),min(snap_id)) st, 
-                           nvl(min(decode(sign(end_interval_time+0-etim),-1,null,snap_id)),max(snap_id)) ed
-                    FROM   Dba_Hist_Snapshot
-                    WHERE  begin_interval_time+0 <= etim+0.5 and end_interval_time>=stim-0.5
-                    AND    (inst IS NULL OR instr(',' || inst || ',', instance_number) > 0)
-                    GROUP  BY DBID
-                    ORDER  BY 2 DESC) a
-            WHERE  ROWNUM < 2;
-            SELECT MAX(dbid) KEEP(dense_rank LAST ORDER BY begin_interval_time)
-            INTO   dbid
-            FROM   Dba_Hist_Snapshot
-            WHERE  begin_interval_time+0 <= etim+0.5 and end_interval_time>=stim-0.5
-            AND    (inst IS NULL OR instr(',' || inst || ',', instance_number) > 0)
-            GROUP  BY DBID;
-        
-            IF dbid IS NULL THEN
-                SELECT dbid INTO dbid FROM v$database;
-            END IF;    
+            
+            get_range(p_start,p_end,inst,dbid,st,ed,stim,etim);
         
             filename := 'ash_' || p_start || '_' || p_end || '_' || nvl(inst, 'a') || '.html';
             OPEN cur for 
@@ -260,6 +259,7 @@ end
 function awr.extract_addm(starttime,endtime,instances)
     local stmt=[[
     DECLARE
+        @get_range@
         PROCEDURE extract_addm(p_start VARCHAR2, p_end VARCHAR2, p_inst VARCHAR2,taskid OUT INT) IS
             dbid     INT;
             stim     DATE;
@@ -280,27 +280,7 @@ function awr.extract_addm(starttime,endtime,instances)
                 END IF;
             END IF;
         
-            stim := to_date(p_start, 'YYMMDDHH24MI');
-            etim := to_date(p_end, 'YYMMDDHH24MI');
-        
-            SELECT max(dbid),max(st),max(ed),
-                   max((select nvl(max(end_interval_time+0),stim) from Dba_Hist_Snapshot WHERE snap_id=st AND dbid=a.dbid)),
-                   max((select nvl(max(end_interval_time+0),etim) from Dba_Hist_Snapshot WHERE snap_id=ed AND dbid=a.dbid))
-            INTO   dbid, st, ed,stim,etim
-            FROM   (SELECT dbid, 
-                           nvl(MAX(decode(sign(end_interval_time+0-stim),1,null,snap_id)),min(snap_id)) st, 
-                           nvl(min(decode(sign(end_interval_time+0-etim),-1,null,snap_id)),max(snap_id)) ed
-                    FROM   Dba_Hist_Snapshot
-                    WHERE  begin_interval_time+0 BETWEEN stim-0.5 AND etim+0.5
-                    AND    (inst IS NULL OR instr(',' || inst || ',', instance_number) > 0)
-                    GROUP  BY DBID
-                    ORDER  BY 2 DESC) a
-            WHERE  ROWNUM < 2;
-
-            IF ed IS NULL THEN
-                dbms_output.put_line('Cannot find the matched AWR snapshots between '''||stim||''' and '''||etim||''' !' ); 
-                RETURN;
-            END IF;
+            get_range(p_start,p_end,inst,dbid,st,ed,stim,etim);
 
             BEGIN
                 dbms_advisor.delete_task(taskname);
@@ -308,8 +288,7 @@ function awr.extract_addm(starttime,endtime,instances)
                 WHEN OTHERS THEN
                     NULL;
             END;
-            dbms_output.put_line('Extracting addm report from ' || st || ' to ' || ed ||
-                                 ' with instance ' || nvl(inst, 'a') || '...');
+            dbms_output.put_line('Extracting addm report from ' || st || ' to ' || ed || ' with instance ' || nvl(inst, 'a') || '...');
             $IF DBMS_DB_VERSION.VERSION>10 $THEN
                 IF inst IS NULL THEN
                     DBMS_ADDM.ANALYZE_DB(taskname, st, ed, dbid);
@@ -337,7 +316,7 @@ function awr.extract_addm(starttime,endtime,instances)
     db:check_date(endtime)
     local args={starttime,endtime,instances or "",'#VARCHAR'}
     cfg.set("feed","off")
-    db:exec(stmt,args)
+    db:exec(stmt:replace('@get_range@',awr.extract_period()),args)
     if args[4] ~='#VARCHAR' then
         db.C.ora:run_script('addm',args[4])
     end

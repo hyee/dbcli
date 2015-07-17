@@ -41,7 +41,7 @@ BEGIN
         FROM lobs t,sys.obj$ o,sys.user$ u,
             TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(
                q'[SELECT * FROM (
-                    SELECT /*+opt_param('optimizer_index_cost_adj',1) ordered use_nl(a b) push_subq(b)*/
+                    SELECT /*+opt_param('optimizer_index_cost_adj',1) ordered use_nl(a b) no_merge(b) push_pred(b)*/
                            decode('&OPT3','null',a.object_type,b.segment_type) T, &OPT3 P, 
                            SUM(bytes) C1, SUM(EXTENTS) C2,
                            COUNT(1) C3, AVG(initial_extent) C4, AVG(nvl(next_extent, 0)) C5,

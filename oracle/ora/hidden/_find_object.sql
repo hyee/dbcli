@@ -86,7 +86,7 @@ BEGIN
         part2 := part2_temp;
     END IF;
     
-    IF object_number IS NULL THEN
+    IF object_number IS NULL AND target IS NOT NULL THEN
         raise_application_error(-20001,'Cannot find target object "&V1"!');
     END IF;
 

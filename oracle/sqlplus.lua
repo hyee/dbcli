@@ -18,11 +18,20 @@ function sqlplus:start(...)
         props[2]=export..'"TNS_ADMIN='..tnsadm..'"'
     end
 
-    props[1]='cd '..(env.OS=="windows" and "/d " or "")..'"'..(self.work_path or self.script_dir)..'"'
+    local args,work_path={...},(self.work_path or self.script_dir)
+
+    for i=#args,1,-1 do
+        if args[i]:lower():find("^%-d") then
+            work_path=args[i]:sub(3):gsub('"','')
+            table.remove(args,i)
+        end
+    end
+
+    props[1]='cd '..(env.OS=="windows" and "/d " or "")..'"'..work_path..'"'
     if db.props.db_nls_lang then
         props[3]=export..'"NLS_LANG='..db.props.db_nls_lang..'"'
     end
-    local args={...}
+    
 
     local conn_str='sqlplus '
     if #args>0 then
@@ -97,7 +106,7 @@ function sqlplus:after_exec()
 end
 
 function sqlplus:onload()
-    set_command(self,"sqlplus",  "Switch to sqlplus with same login, the working folder is 'oracle/sqlplus'. Usage: sqlplus [other args]",self.start,false,9)
+    set_command(self,"sqlplus",  "Switch to sqlplus with same login, the default working folder is 'oracle/sqlplus'. Usage: sqlplus [-d<work_path>] [other args]",self.start,false,9)
     env.remove_command(self.command)
     env.set_command(self,self.command,self.helper,{self.before_exec,self.after_exec},false,3)
 end    
