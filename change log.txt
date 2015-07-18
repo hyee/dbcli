@@ -1,3 +1,4 @@
+2015-07-19: * public: enable G1 garbage collector in dbcli.bat
 2015-07-17: ! public: fix performance and memory issue for sql2csv,sql2file 
 2015-07-12: ! public: fix command "set database"
 2015-07-12: * public: improve the performance of fetching result from SQL queries(parameter "set fetchSize")
