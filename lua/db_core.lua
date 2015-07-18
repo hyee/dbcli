@@ -434,7 +434,7 @@ end
 function db_core:exec(sql,args)
     collectgarbage("collect")
     java.system:gc()
-    java.system:runFinalization ();
+    java.system:runFinalization();
     local params={}
     args=type(args)=="table" and args or {args}
     local prep;
@@ -648,13 +648,17 @@ local function print_export_result(filename,start_clock,counter)
     print(str..'Result written to file '..filename)
 end
 
-function db_core:sql2file(filename,sql,method)
+function db_core:sql2file(filename,sql,method,ext)
     sql=sql:gsub(env.END_MARKS[1]..'$',''):gsub(env.END_MARKS[2]..'$','')
     local clock,counter,result
     if type(sql)~='string' then 
         result=sql
     else  
         result=self:exec(sql)
+    end
+
+    if ext and filename:lower():match("%.gz$") and not filename:lower():match("%."..ext.."%.gz$") then
+        filename=filename:gsub("[gG][zZ]$",ext..".gz")
     end
 
     if type(result)=="userdata" then
@@ -676,16 +680,13 @@ end
 
 function db_core:sql2sql(filename,sql)
     env.checkerr(sql,'Usage: sql2file <file_name> <SQL>')
-    self:sql2file(env.resolve_file(filename,{'sql','zip','gz'}),sql,'ResultSet2SQL')
+    self:sql2file(env.resolve_file(filename,{'sql','zip','gz'}),sql,'ResultSet2SQL','sql')
 end
 
 function db_core:sql2csv(filename,sql)
     env.checkerr(sql,'Usage: sql2csv <file_name> <SQL>')
     filename=env.resolve_file(filename,{'csv','zip','gz'})
-    if filename:lower():match("%.gz$") and not filename:lower():match("%.csv%.gz$") then
-        filename=filename:gsub("[gG][zZ]$","csv.gz")
-    end
-    self:sql2file(filename,sql,'ResultSet2CSV')
+    self:sql2file(filename,sql,'ResultSet2CSV','csv')
 end
 
 function db_core:csv2sql(target,src)

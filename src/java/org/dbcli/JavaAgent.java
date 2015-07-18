@@ -1,6 +1,9 @@
 package org.dbcli;
 
-import java.io.*;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
 import java.net.MalformedURLException;
@@ -84,24 +87,25 @@ public class JavaAgent implements ClassFileTransformer {
     }
 
     public static URL getClassURL(String className, ProtectionDomain domain) throws Exception {
-        String source=className;
+        String source = className;
         URL location;
-        try{
+        try {
             source = "/" + className.replace(".", "/") + ".class";
-            location = JavaAgent.class.getResource(source);}
-        catch (Exception e1) {
-            location=null;
-            System.out.println("Error on loading Source: "+source);
+            location = JavaAgent.class.getResource(source);
+        } catch (Exception e1) {
+            location = null;
+            System.out.println("Error on loading Source: " + source);
             //e1.printStackTrace();
         }
-        Exception e=new Exception();
+        Exception e = new Exception();
         if (location == null) {
             CodeSource c;
             try {
                 c = (domain == null ? Class.forName(className.replace("/", ".")).getProtectionDomain() : domain).getCodeSource();
                 if (c == null) throw e;
             } catch (Exception e1) {
-                if (className!=null && !className.startsWith("sun/reflect")) System.out.println("Cannot find class " + className);
+                if (className != null && !className.startsWith("sun/reflect"))
+                    System.out.println("Cannot find class " + className);
                 return null;
             }
             location = c.getLocation();

@@ -15,10 +15,10 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 public class Console extends ConsoleReader {
+    protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(5);
     private History his;
     private ScheduledFuture task;
     private EventReader monitor = new EventReader();
-    protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(5);
     private NonBlockingInputStream in;
     private ActionListener event;
     private char[] keys;
@@ -77,7 +77,7 @@ public class Console extends ConsoleReader {
             }
         } else {
             setHistoryEnabled(true);
-            if(!Content.equals("")) this.his.add(Content);
+            if (!Content.equals("")) this.his.add(Content);
             this.his.moveToEnd();
         }
     }
@@ -91,7 +91,7 @@ public class Console extends ConsoleReader {
                 if (ch <= 0) return;
                 //System.out.println(ch);
                 for (int i = 0; i < keys.length; i++) {
-                    if (ch != keys[i] && keys[i]!='*') continue;
+                    if (ch != keys[i] && keys[i] != '*') continue;
                     event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, Character.toChars(ch).toString()));
                     break;
                 }

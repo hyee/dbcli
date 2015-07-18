@@ -148,10 +148,10 @@ end
 
 function init.unload(list,tab)
     --if type(tab)~='table' then return end
-    print(3,env.callee(3))
-    print(4,env.callee(4))
-    print(5,env.callee(5))
-    print(6,env.callee(6))
+    --print(3,env.callee(3))
+    --print(4,env.callee(4))
+    --print(5,env.callee(5))
+    --print(6,env.callee(6))
     for i=#list,1,-1 do
         local m=list[i]:match("([^\\/]+)$")    
         if type(tab[m])=="table" and type(tab[m].onunload)=="function" then

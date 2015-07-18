@@ -2,7 +2,10 @@ package org.dbcli;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.io.*;
+import java.io.BufferedWriter;
+import java.io.InputStream;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
 import java.util.Scanner;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -10,12 +13,12 @@ import java.util.concurrent.TimeUnit;
 final public class CommandWrapper {
     BufferedWriter stdin;
     InputStream stdout;
+    ProcessBuilder pb;
+    StringBuilder buffer;
     private Future stdinThread;
     private Future stdoutThread;
     private PrintWriter writer;
     private StringBuilder input;
-    ProcessBuilder pb;
-    StringBuilder buffer;
 
     public CommandWrapper(PrintWriter writer) {
         this.writer = writer;
@@ -25,7 +28,7 @@ final public class CommandWrapper {
         pb = new ProcessBuilder(cmd).redirectErrorStream(true);
         final Process p = pb.start();
         stdout = p.getInputStream();
-        stdin = new BufferedWriter(new OutputStreamWriter(p.getOutputStream()),1024);
+        stdin = new BufferedWriter(new OutputStreamWriter(p.getOutputStream()), 1024);
         buffer = new StringBuilder(1024);
         input = new StringBuilder(1024);
         stdinThread = Console.threadPool.scheduleWithFixedDelay(new Sender(), 300L, 200L, TimeUnit.MILLISECONDS);
@@ -44,12 +47,13 @@ final public class CommandWrapper {
         @Override
         public void actionPerformed(ActionEvent e) {
             try {
-                int ch=Character.codePointAt(e.getActionCommand(),0);
+                int ch = Character.codePointAt(e.getActionCommand(), 0);
                 //Ctrl+E to abort
-                if(ch==5) {
+                if (ch == 5) {
                 } else synchronized (input) {
                     input.appendCodePoint(ch);
-                };
+                }
+                ;
             } catch (Exception err) {
                 //err.printStackTrace();
             }
@@ -59,7 +63,7 @@ final public class CommandWrapper {
     class Sender implements Runnable {
         public void run() {
             try {
-                if(input.length()>0) {
+                if (input.length() > 0) {
                     synchronized (input) {
                         for (int i = 0; i < input.length(); i++) {
                             stdin.write(input.codePointAt(i));

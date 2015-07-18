@@ -5,10 +5,10 @@ import sun.jvm.hotspot.memory.SystemDictionary;
 import sun.jvm.hotspot.oops.InstanceKlass;
 import sun.jvm.hotspot.oops.Klass;
 import sun.jvm.hotspot.runtime.VM;
+import sun.jvm.hotspot.tools.Tool;
 import sun.jvm.hotspot.tools.jcore.ClassDump;
 import sun.jvm.hotspot.tools.jcore.ClassFilter;
 import sun.jvm.hotspot.tools.jcore.ClassWriter;
-import sun.jvm.hotspot.tools.Tool;
 
 import java.io.*;
 import java.lang.reflect.Method;
@@ -35,7 +35,7 @@ public class FileDump extends ClassDump {
             } catch (Exception e1) {
                 method = Tool.class.getDeclaredMethod("start", new Class[]{String[].class});
             }
-            method.invoke((Tool)cd, new Object[]{args});
+            method.invoke((Tool) cd, new Object[]{args});
         } catch (Exception e) {
             e.printStackTrace();
             return;

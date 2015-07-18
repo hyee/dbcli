@@ -133,6 +133,7 @@ public class Loader {
         Loader l = new Loader();
         System.loadLibrary("lua5.1");
         while (ReloadNextTime != null) loadLua(l, args);
+        //console.threadPool.shutdown();
     }
 
     public void addPath(String file) throws Exception {
@@ -190,17 +191,17 @@ public class Loader {
         });
     }
 
-    public int CSV2SQL(final String CSVfileName, String SQLFileName, String header, ResultSet rs) throws Exception {
-        try {
-            final SQLWriter writer = new SQLWriter(SQLFileName);
-            writer.setFileHead(header);
-            if (rs != null) writer.setCSVDataTypes(rs);
-            writer.setMaxLineWidth(1500);
-            return writer.writeAll2SQL(CSVfileName);
-        } catch (Exception e) {
-            e.printStackTrace();
-            throw e;
-        }
+    public int CSV2SQL(final String CSVfileName, final String SQLFileName, final String header, final ResultSet rs) throws Exception {
+        setCurrentResultSet(rs);
+        return asyncCall(new Callable<Integer>() {
+            @Override
+            public Integer call() throws Exception {
+                final SQLWriter writer = new SQLWriter(SQLFileName);
+                writer.setFileHead(header);
+                writer.setMaxLineWidth(1500);
+                return writer.writeAll2SQL(CSVfileName,rs);
+            }
+        });
     }
 
     public synchronized boolean setStatement(CallableStatement p) throws Exception {
@@ -227,11 +228,12 @@ public class Loader {
         } catch (InterruptedException e) {
             throw new IOException("Statement is aborted.");
         } catch (Exception e) {
+            e.printStackTrace();
             throw e;
         } finally {
-            if(rs!=null && !rs.isClosed()) rs.close();
+            if (rs != null && !rs.isClosed()) rs.close();
             sleeper = null;
-            rs=null;
+            rs = null;
             console.setEvents(null, null);
         }
     }
@@ -281,6 +283,7 @@ public class Loader {
             }
         }
     }
+
     private class Sleeper implements Runnable {
         private int timer = 0;
 
