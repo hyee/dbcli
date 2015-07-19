@@ -191,7 +191,7 @@ public class Loader {
         });
     }
 
-    public int CSV2SQL(final String CSVfileName, final String SQLFileName, final String header, final ResultSet rs) throws Exception {
+    public int CSV2SQL(final ResultSet rs,final String SQLFileName,final String CSVfileName,  final String header) throws Exception {
         setCurrentResultSet(rs);
         return asyncCall(new Callable<Integer>() {
             @Override

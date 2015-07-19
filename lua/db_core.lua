@@ -648,56 +648,62 @@ local function print_export_result(filename,start_clock,counter)
     print(str..'Result written to file '..filename)
 end
 
-function db_core:sql2file(filename,sql,method,ext)
-    sql=sql:gsub(env.END_MARKS[1]..'$',''):gsub(env.END_MARKS[2]..'$','')
+function db_core:sql2file(filename,sql,method,ext,...)
     local clock,counter,result
-    if type(sql)~='string' then 
-        result=sql
-    else  
-        result=self:exec(sql)
+    if sql then
+        sql=type(sql)=="string" and env.var.inputs[sql:upper()] or sql 
+        if type(sql)~='string' then
+            env.checkerr(not sql:isClosed(),"Target ResultSet is closed!")
+            result=sql
+        else
+            sql=sql:gsub(env.END_MARKS[1]..'$',''):gsub(env.END_MARKS[2]..'$','')
+            result=self:exec(sql)
+        end
+
+        if ext and filename:lower():match("%.gz$") and not filename:lower():match("%."..ext.."%.gz$") then
+            filename=filename:gsub("[gG][zZ]$",ext..".gz")
+        end
     end
 
-    if ext and filename:lower():match("%.gz$") and not filename:lower():match("%."..ext.."%.gz$") then
-        filename=filename:gsub("[gG][zZ]$",ext..".gz")
-    end
-
-    if type(result)=="userdata" then
-        print("Start to extract result into "..filename)
-        clock,counter=os.clock(),loader[method](loader,result,filename,self.sql_export_header)
-        print_export_result(filename,clock,counter)
-    elseif type(result)=="table" then
+    local file=io.open(filename,"w")
+    env.checkerr(file,"File "..filename.." cannot be accessed because it is being used by another process!")
+    file:close()  
+    if type(result)=="table" then
         for idx,rs in pairs(rs) do
             if type(rs)=="userdata" then
                 local file=filename..tostring(idx)
                 print("Start to extract result into "..file)
-                clock,counter=os.clock(),loader[method](loader,rs,file,header)
+                clock,counter=os.clock(),loader[method](loader,rs,file,...)
                 print_export_result(file,clock,counter)
             end
         end
+    else
+        print("Start to extract result into "..filename)
+        clock,counter=os.clock(),loader[method](loader,result,filename,...)
+        print_export_result(filename,clock,counter)
     end
     self:clearStatements(true)
 end
 
 function db_core:sql2sql(filename,sql)
     env.checkerr(sql,'Usage: sql2file <file_name> <SQL>')
-    self:sql2file(env.resolve_file(filename,{'sql','zip','gz'}),sql,'ResultSet2SQL','sql')
+    self:sql2file(env.resolve_file(filename,{'sql','zip','gz'}),sql,'ResultSet2SQL','sql',self.sql_export_header)
 end
 
 function db_core:sql2csv(filename,sql)
     env.checkerr(sql,'Usage: sql2csv <file_name> <SQL>')
     filename=env.resolve_file(filename,{'csv','zip','gz'})
-    self:sql2file(filename,sql,'ResultSet2CSV','csv')
+    self:sql2file(filename,sql,'ResultSet2CSV','csv',self.sql_export_header)
 end
 
-function db_core:csv2sql(target,src)
+function db_core:csv2sql(filename,src)
     env.checkerr(src,'Usage: csv2sql <sql_file> <csv_file>')
-    target=env.resolve_file(target,{'sql','zip','gz'})
-    local table_name=target:match('([^\\/]+)%.%w+$')
+    filename=env.resolve_file(filename,{'sql','zip','gz'})
+    local table_name=filename:match('([^\\/]+)%.%w+$')
     local _,rs=pcall(self.exec,self,'select * from '..table_name..' where 1=2')
     if type(rs)~='userdata' then rs=nil end
     src=env.resolve_file(src)
-    local clock,counter=os.clock(),loader:CSV2SQL(src,target,self.sql_export_header,rs)
-    print_export_result(target,clock,counter)
+    self:sql2file(filename,rs,'CSV2SQL','sql',src,self.sql_export_header)
 end
 
 function db_core:load_config(db_alias,props)
