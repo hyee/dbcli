@@ -8,7 +8,7 @@
         &OPT3: default={null}, d={partition_name}
     --]]
 ]]*/
-ora _find_object &V1
+ora _find_object &V1 1
 set feed off
 VAR cur REFCURSOR
 BEGIN

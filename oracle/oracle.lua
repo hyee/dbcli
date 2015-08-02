@@ -67,13 +67,16 @@ function oracle:connect(conn_str)
     self:merge_props(
         {driverClassName="oracle.jdbc.driver.OracleDriver",
          defaultRowPrefetch="3000",
-         defaultLobPrefetchSize="2097152",
          useFetchSizeWithLongColumn='true',
          useThreadLocalBufferCache="true",
-         maxCachedBufferSize="20971520",
          freeMemoryOnEnterImplicitCache="true",
-         implicitStatementCacheSize=5,
-         ['v$session.program']='SQL Developer'
+         bigStringTryClob="true",
+         clientEncoding="UTF-8",
+         ['v$session.program']='SQL Developer',
+         ['oracle.jdbc.defaultLobPrefetchSize']="2097152",
+         --['oracle.jdbc.mapDateToTimestamp']="false",
+         ['oracle.jdbc.maxCachedBufferSize']="104857600",
+         ['oracle.jdbc.useNio']='true'
         },args)
     
     self:load_config(url,args)

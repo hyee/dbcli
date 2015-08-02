@@ -1,6 +1,6 @@
 /*[[Show tablspace usage
     --[[
-        @CHECK_ACCESS: wmsys.wm_concat={wmsys.wm_concat(DISTINCT regexp_substr(f.file_name, '\w+'))}, default={null}
+        @CHECK_ACCESS: wmsys.wm_concat={wmsys.wm_concat(DISTINCT regexp_substr(file_name, '\w+'))}, default={null}
     --]]
 ]]*/
 SELECT /*+no_merge(d) no_merge(f)*/ D.TABLESPACE_NAME,

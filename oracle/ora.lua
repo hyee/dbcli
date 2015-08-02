@@ -26,7 +26,7 @@ function ora:validate_accessable(name,options,values)
             check_flag=2
             expect_name="access"
             for obj in option:gmatch("([^/%s]+)") do
-                if not db:check_access(obj) and obj:upper()~="DEFAULT" then
+                if obj:upper()~="DEFAULT" and not db:check_access(obj) then
                     default=nil
                     expect='the accesses to: '.. option
                     break
@@ -58,10 +58,10 @@ function ora:validate_accessable(name,options,values)
 end
 
 function db:check_obj(obj_name)
-    db.C.ora:run_script('_find_object',obj_name)
+    db.C.ora:run_script('_find_object',obj_name,1)
     local v=env.var.inputs
     local args={target=obj_name,owner=v.OBJECT_OWNER,object_type=v.OBJECT_TYPE,object_name=v.OBJECT_NAME,object_subname=v.OBJECT_SUBNAME,object_id=v.OBJECT_ID}
-    return args
+    return args and args.object_id and args
 end
 
 function db:check_access(obj_name)

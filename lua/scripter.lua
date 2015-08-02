@@ -139,7 +139,7 @@ function scripter:parse_args(sql,args,print_args)
 
     local arg1,ary={},{}
     for i=1,ARGS_COUNT do    
-        local k,v="V"..i,args["V"..i]
+        local k,v="V"..i,tostring(args["V"..i])
         ary[i]=v        
         if v:sub(1,1)=="-"  then
             local idx,rest=v:sub(2):match("^([%w_]+)(.*)$")

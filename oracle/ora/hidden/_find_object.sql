@@ -7,15 +7,15 @@ VAR object_subname VARCHAR2;
 VAR object_id      NUMBER;
     
 DECLARE /*INTERNAL_DBCLI_CMD*/
-    schem         VARCHAR2(30);
-    part1         VARCHAR2(30);
-    part2         VARCHAR2(30);
-    part2_temp    VARCHAR2(30);
-    dblink        VARCHAR2(30);
+    schem         VARCHAR2(100);
+    part1         VARCHAR2(100);
+    part2         VARCHAR2(100);
+    part2_temp    VARCHAR2(100);
+    dblink        VARCHAR2(100);
     part1_type    PLS_INTEGER;
     object_number PLS_INTEGER;
     flag          BOOLEAN := TRUE;
-    obj_type      VARCHAR2(30);
+    obj_type      VARCHAR2(100);
     objs          VARCHAR2(2000) := 'dba_objects';
     target        VARCHAR2(100) := :V1;
 BEGIN
@@ -30,6 +30,10 @@ BEGIN
                                           dblink        => dblink,
                                           part1_type    => part1_type,
                                           object_number => object_number);
+            IF part2 IS NOT NULL AND part1 IS NULL THEN
+                part1:=part2;
+                part2:=null;
+            END IF;
             EXIT;
         EXCEPTION
             WHEN OTHERS THEN
@@ -86,7 +90,7 @@ BEGIN
         part2 := part2_temp;
     END IF;
     
-    IF object_number IS NULL AND target IS NOT NULL THEN
+    IF object_number IS NULL AND target IS NOT NULL AND :V2 IS NULL THEN
         raise_application_error(-20001,'Cannot find target object "&V1"!');
     END IF;
 

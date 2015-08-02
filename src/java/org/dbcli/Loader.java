@@ -171,9 +171,10 @@ public class Loader {
         return asyncCall(new Callable<Integer>() {
             @Override
             public Integer call() throws Exception {
-                CSVWriter writer = new CSVWriter(fileName);
-                int result = writer.writeAll(rs, true);
-                return result;
+                try (CSVWriter writer = new CSVWriter(fileName)) {
+                    int result = writer.writeAll(rs, true);
+                    return result-1;
+                }
             }
         });
     }
@@ -183,23 +184,25 @@ public class Loader {
         return asyncCall(new Callable<Integer>() {
             @Override
             public Integer call() throws Exception {
-                final SQLWriter writer = new SQLWriter(fileName);
-                writer.setFileHead(header);
-                int count = writer.writeAll2SQL(rs, "", 1500);
-                return count;
+                try (SQLWriter writer = new SQLWriter(fileName)) {
+                    writer.setFileHead(header);
+                    int count = writer.writeAll2SQL(rs, "", 1500);
+                    return count;
+                }
             }
         });
     }
 
-    public int CSV2SQL(final ResultSet rs,final String SQLFileName,final String CSVfileName,  final String header) throws Exception {
+    public int CSV2SQL(final ResultSet rs, final String SQLFileName, final String CSVfileName, final String header) throws Exception {
         setCurrentResultSet(rs);
         return asyncCall(new Callable<Integer>() {
             @Override
             public Integer call() throws Exception {
-                final SQLWriter writer = new SQLWriter(SQLFileName);
-                writer.setFileHead(header);
-                writer.setMaxLineWidth(1500);
-                return writer.writeAll2SQL(CSVfileName,rs);
+                try (SQLWriter writer = new SQLWriter(SQLFileName)) {
+                    writer.setFileHead(header);
+                    writer.setMaxLineWidth(1500);
+                    return writer.writeAll2SQL(CSVfileName, rs);
+                }
             }
         });
     }
@@ -223,9 +226,7 @@ public class Loader {
             sleeper = console.threadPool.submit(c);
             console.setEvents(q, new char[]{'q', KeyMap.CTRL_D});
             return (Integer) sleeper.get();
-        } catch (CancellationException e) {
-            throw new IOException("Statement is aborted.");
-        } catch (InterruptedException e) {
+        } catch (CancellationException | InterruptedException e) {
             throw new IOException("Statement is aborted.");
         } catch (Exception e) {
             e.printStackTrace();
@@ -272,8 +273,10 @@ public class Loader {
                     lua.getGlobal("TRIGGER_ABORT");
                     lua.call(0, 0);
                 } else {
-                    if (stmt != null && !stmt.isClosed()) stmt.cancel();
-                    //if (rs  != null && !rs.isClosed()) rs.close();
+                    if (stmt != null && !stmt.isClosed()) {
+                        stmt.cancel();
+                    }
+                    if (rs  != null && !rs.isClosed()) rs.close();
                 }
                 if (sleeper != null) synchronized (sleeper) {
                     sleeper.cancel(true);

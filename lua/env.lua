@@ -726,14 +726,15 @@ function env.set_title(title)
         title_keys[#title_keys+1]=callee
     end
     title_list[callee]=title or ""
+    local titles=""
     for _,k in ipairs(title_keys) do
         if (title_list[k] or "")~="" then
-            if title~="" then title=title.."    " end
-            title=title..title_list[k]
+            if titles~="" then titles=titles.."    " end
+            titles=titles..title_list[k]
         end
     end
-    if not title or title=="" then title="DBCLI - Disconnected" end
-    os.execute("title "..title)
+    if not titles or titles=="" then titles="DBCLI - Disconnected" end
+    os.execute("title "..titles)
 end
 
 function env.reset_title()

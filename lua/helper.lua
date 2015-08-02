@@ -113,7 +113,7 @@ function helper.helper(cmd,...)
         return helper.makejar(...)
     elseif cmd=="-dump" then
         local cmd=java.loader:dumpClass("dump")
-        print("Command: "..cmd);
+        io.write("Command: "..cmd.."\n");
         return os.execute(cmd)
     elseif cmd=="-verbose" then
         local dest=select(1,...)

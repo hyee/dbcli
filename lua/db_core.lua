@@ -572,6 +572,15 @@ function db_core:connect(attrs)
     self.conn:setAutoCommit(autocommit=="on" and true or false)
     if event then event("AFTER_DB_CONNECT",self,attrs.jdbc_alias or url,attrs) end
     self.__stmts = {}
+    self.properties={}
+    for k in java.methods(self.conn) do
+        if k=='getProperties' then
+            for k,v in java.pairs(self.conn:getProperties()) do 
+                --print(k)
+                self.properties[k]=v
+            end
+        end
+    end
     return self.conn
 end
 
@@ -632,9 +641,12 @@ function db_core:rollback()
     end
 end
 
+local exp=java.require("com.opencsv.ResultSetHelperService")
 local function set_param(name,value)
     if name=="FEED" or name=="AUTOCOMMIT" then
         return value:lower()
+    elseif name=="EXPPREFETCH" then
+        exp.RESULT_FETCH_SIZE=tonumber(value)
     end
     return tonumber(value)
 end
@@ -751,6 +763,7 @@ function db_core:__onload()
     cfg.init("FEED",'on',set_param,"db.core","Detemine if need to print the feedback after db execution",'on,off')
     cfg.init("AUTOCOMMIT",'off',set_param,"db.core","Detemine if auto-commit every db execution",'on,off')
     cfg.init("SQLCACHESIZE",30,set_param,"db.core","Number of cached statements in JDBC",'5-500')
+    cfg.init("EXPPREFETCH",exp.RESULT_FETCH_SIZE,set_param,"db.core","Number of rows to be prefetched for SQL2CSV and SQL2FILE commands",'10-1000000')
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
     env.set_command(self,"login",help_login,self.login,false,3)
     env.set_command(self,"sql2file","Export Query Result into SQL file. Usage: sql2file <file_name>[.sql|gz|zip] <sql|cursor>" ,self.sql2sql,'__SMART_PARSE__',3)
