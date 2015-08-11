@@ -276,7 +276,7 @@ public class Loader {
                     if (stmt != null && !stmt.isClosed()) {
                         stmt.cancel();
                     }
-                    if (rs  != null && !rs.isClosed()) rs.close();
+                    //if (rs  != null && !rs.isClosed()) rs.close();
                 }
                 if (sleeper != null) synchronized (sleeper) {
                     sleeper.cancel(true);

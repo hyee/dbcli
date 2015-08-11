@@ -10,7 +10,7 @@ SET TNS_ADM=d:\Soft\InstanceClient\network\admin
 rem read config file
 If exist "data\init.cfg" (for /f "eol=# delims=" %%i in (data\init.cfg) do (%%i)) 
 
-If not exist "%TNSADM%\tnsnames.ora" if defined ORACLE_HOME (set TNS_ADM=%ORACLE_HOME%\network\admin) 
+If not exist "%TNS_ADM%\tnsnames.ora" if defined ORACLE_HOME (set TNS_ADM=%ORACLE_HOME%\network\admin) 
 IF not exist "%JRE_HOME%\java.exe" if exist "%JRE_HOME%\bin\java.exe" (set JRE_HOME=%JRE_HOME%\bin) else (set JRE_HOME=.\jre\bin)
 SET PATH=%JRE_HOME%;%EXT_PATH%;%PATH%
 
