@@ -84,15 +84,16 @@ function sqlplus:before_exec(cmd,arg)
         if v~="" then context=context..'DEF '..k..'='..v..'\n' end
     end
 
-    self.work_path=env.WORK_DIR.."cache"
+    self.work_path=env._CACHE_PATH
     local subdir=args.FILE_OUTPUT_DIR
     if subdir then
-        self.work_path=self.work_path..env.PATH_DEL..subdir or ""
+        self.work_path=self.work_path..subdir
         os.execute('mkdir "'..self.work_path..'" >nul')
     end
+    self.work_path=self.work_path:gsub(env.PATH_DEL..'+$','')
     local file_dir=file:gsub('[\\/][^\\/]+$',"")
     local tmpfile='sqlplus.tmp'
-    tmpfile=self.work_path..env.PATH_DEL..tmpfile
+    tmpfile=self.work_path..tmpfile
     local f,err=io.open(tmpfile,'w')
     env.checkerr(f,"Unable to write file "..tmpfile)
     content=content:format(self.work_path,file_dir,self.script_dir,context,file,arg or ""):gsub('[\n\r]+%s+','\n')..'\n'

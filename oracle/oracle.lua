@@ -111,7 +111,8 @@ function oracle:connect(conn_str)
        from dual]])
 
     self.props={db_user=params[1],db_version=params[2],db_nls_lang=params[3],service_name=params[7],isdba=params[6]=='TRUE' and true or false}
-
+    env._CACHE_PATH=env._CACHE_BASE..self.props.service_name..env.PATH_DEL
+    os.execute('mkdir "'..env._CACHE_PATH..'" 2> '..(env.OS=="windows" and 'NUL' or "/dev/null"))
     self:internal_call([[/*INTERNAL_DBCLI_CMD*/
         begin 
             execute immediate 'alter session set nls_date_format=''yyyy-mm-dd hh24:mi:ss''';

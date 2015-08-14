@@ -681,7 +681,7 @@ function env.save_data(file,txt)
 end
 
 function env.write_cache(file,txt)
-    local dest=env.WORK_DIR.."cache"..env.PATH_DEL..file
+    local dest=env._CACHE_PATH..file
     file=dest
     local f=io.open(file,'w')
     if not f then
@@ -694,7 +694,7 @@ end
 
 function env.resolve_file(filename,ext)
     if not filename:find('[\\/]') then 
-        filename= env.WORK_DIR.."cache"..env.PATH_DEL..filename 
+        filename= env._CACHE_PATH..filename 
     elseif not filename:find('^%a:') then
         filename= env.WORK_DIR..env.PATH_DEL..filename 
     end

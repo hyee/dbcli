@@ -63,7 +63,7 @@ function printer.spool(file,option)
     end
     local err
     if not file:find("[\\/]") then
-        file=env.WORK_DIR..'cache'..env.PATH_DEL..file
+        file=env._CACHE_PATH..file
     end
     printer.hdl,err=io.open(file,(option=="APPEND" or option=="APP" ) and "a+" or "w")
     if not printer.hdl then

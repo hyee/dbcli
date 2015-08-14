@@ -21,7 +21,7 @@ for /r %%i in (*.pack.gz) do (
 )
 
 start /b /wait java -noverify -Xmx384M -cp .\lib\*;.\lib\ext\*%OTHER_LIB% ^
-     -XX:+UseG1GC -XX:MaxDirectMemorySize=128M -XX:G1ReservePercent=30 -XX:ParallelGCThreads=4 -XX:ConcGCThreads=4 ^
+     -XX:+UseG1GC -XX:G1ReservePercent=30 ^
      -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Dclient.encoding.override=UTF-8 ^
      -Duser.language=en -Duser.region=US -Duser.country=US -Dinput.encoding=UTF-8 ^
      -Doracle.net.tns_admin="%TNS_ADM%" org.dbcli.Loader %DBCLI_PARAMS% %*

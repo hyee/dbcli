@@ -57,7 +57,7 @@ function tracer.enable(name,flag)
                 hook:start()
             else
                 hook:stop()
-                local loc=env.WORK_DIR..'cache'..env.PATH_DEL..'ProfilingReport.txt' 
+                local loc=env._CACHE_PATH..'ProfilingReport.txt' 
                 hook:writeReport(loc)
                 --print("Profiler file report written to "..loc)
             end

@@ -56,6 +56,8 @@ function init.init_path()
     end
     env("PATH_DEL",path_del)
     env("OS",path_del=='/' and 'linux' or 'windows')
+    env("_CACHE_BASE",env.WORK_DIR.."cache"..path_del)
+    env("_CACHE_PATH",env._CACHE_BASE)
     local package=package
     package.cpath=""
     package.path=""

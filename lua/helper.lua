@@ -118,7 +118,7 @@ function helper.helper(cmd,...)
     elseif cmd=="-verbose" then
         local dest=select(1,...)
         if not dest then
-            dest=env.WORK_DIR.."cache"..env.PATH_DEL.."verbose.log"
+            dest=env._CACHE_PATH.."verbose.log"
             local f=io.open(dest)
             local txt=f:read("*a")
             f:close()
