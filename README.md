@@ -30,7 +30,7 @@ Before running dbcli, make sure that you have installed JRE 1.7+ in your local P
 Open dbcli.bat with text editor, modify the "JRE_HOME" and "TNS_ADM" variables as your PC's situation, then click the bat to run.<br>
 It also support command line options with "<command>=<args>" format, all available options can be found by typing "help":<br>
 
-[drag]:https://raw.githubusercontent.com/hyee/dbcli/master/help.png
+[drag]:https://raw.githubusercontent.com/hyee/dbcli/master/help.gif
 ![][drag]
 
 For example: dbcli.bat "connect=tiger/scott@orcl"<br><br>
@@ -61,7 +61,6 @@ Below is the list:<br>
     jline2      : https://github.com/jline/jline2
     lpeg        : http://www.inf.puc-rio.br/~roberto/lpeg/
     ConsoleZ    : https://github.com/cbucher/console
-    EDB360      : https://github.com/carlos-sierra/edb360
     MessagePack : https://github.com/fperrad/lua-MessagePack(pure lua)
     OpenCSV     : https://github.com/hyee/OpenCSV
     dygraphs    : https://github.com/danvk/dygraphs
