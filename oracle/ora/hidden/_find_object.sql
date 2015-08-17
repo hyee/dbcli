@@ -41,7 +41,7 @@ BEGIN
         END;
     END LOOP;
 
-    IF schem IS NULL AND flag AND USER != sys_context('USERENV', 'CURRENT_SCHEMA') THEN
+    IF schem IS NULL AND flag AND USER != sys_context('USERENV', 'CURRENT_SCHEMA') AND instr(target,'.')=0 THEN
         flag   := FALSE;
         target := sys_context('USERENV', 'CURRENT_SCHEMA') || '.' || target;
         GOTO CHECKER;
