@@ -107,7 +107,8 @@ function oracle:connect(conn_str)
                 (select sid from v$mystat where rownum<2),
                 (select instance_number from v$instance where rownum<2),
                 sys_context('userenv','isdba'),
-                sys_context('userenv','db_name')||nullif('.'||sys_context('userenv','db_domain'),'.')
+                sys_context('userenv','db_name')||nullif('.'||sys_context('userenv','db_domain'),'.'),
+                decode(sys_context('userenv','database_role'),'PRIMARY','','PHYSICAL STANDBY','(Standby)')
        from dual]])
 
     self.props={db_user=params[1],db_version=params[2],db_nls_lang=params[3],service_name=params[7],isdba=params[6]=='TRUE' and true or false}
@@ -120,8 +121,9 @@ function oracle:connect(conn_str)
         end;]],{})
 
     prompt=(prompt or self.props.service_name):match("^([^,%.&]+)")
+    prompt=('%s %s'):format(prompt:upper(),params[8])
     env.set_prompt(nil,prompt)
-    self.session_title=('%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)'):format(prompt:upper(),params[5],params[1],params[4],params[2])
+    self.session_title=('%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)'):format(prompt:upper(), params[5],params[1],params[4],params[2])
     env.set_title(self.session_title)
     if event then event("AFTER_ORACLE_CONNECT",self,sql,args,result) end
     print("Database connected.")
