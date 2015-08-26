@@ -2,6 +2,7 @@
 Show gv$session [-a|-i|-k]
   --[[
       &filter:  {
+        default ={1=1},
         a={status='ACTIVE'},
         i={status='INACTIVE'},
         k={status='KILLED'}
@@ -20,7 +21,7 @@ prompt -- ----------------------------------------------------------------------
 prompt
 
 
-select 
+select
        s.sid ||','|| s.serial#||',@'||s.inst_id "SID"
      , p.spid
      , substr(s.username,1,8) username
@@ -37,7 +38,7 @@ select
                        ,19,'Create syn.'           ,20,'Drop syn.'
                        ,21,'Create view'           ,22,'Drop view'
                        ,23,'Validate index'        ,24,'create proced.'
-                       ,25,'Alter procedure'       ,26,'Lock table'   
+                       ,25,'Alter procedure'       ,26,'Lock table'
                        ,42,'Alter session'         ,44,'Commit'
                        ,45,'Rollback'              ,46,'Savepoint'
                        ,47,'PL/SQL Exec'           ,48,'Set Transaction'
@@ -53,12 +54,12 @@ select
          floor(mod(s.last_call_et,3600)/60)||':'||
          mod(mod(s.last_call_et,3600),60)  			last_call_et
        , s.lockwait
-	 , Substr(s.program,1,20) program, sw.event , s.sql_id 
-  from 
+	 , Substr(s.program,1,20) program, sw.event , s.sql_id
+  from
        gv$session s
      , gv$process p
-     , gv$session_wait sw 
- where  
+     , gv$session_wait sw
+ where
        s.paddr  =  p.addr
 and    sw.sid  = s.sid
 and s.inst_id = p.inst_id
@@ -66,7 +67,7 @@ and s.sid = sw.sid
 and s.inst_id = sw.inst_id
 and	s.username is not null
 and &filter
- order 
+ order
      by s.status desc
       , s.last_call_et desc
 	, P.spid
@@ -84,12 +85,12 @@ prompt --   Active / Inactive Sessions                                          
 prompt -- ----------------------------------------------------------------------- ---
 
 
-Select 
+Select
        '--  Time : '||Time||' - Process : '||Proc||' - Session '||Sess			Status
  From
        ( Select To_Char(Sysdate, 'HH24:MI') 	Time
          From Dual
-       ) 
+       )
      , ( Select Count(*)				Proc
          From GV$Process
        )
@@ -103,12 +104,12 @@ Select
 Prompt
 
 
-Select 
+Select
 	 Initcap(S.Status)	status
      , Count(*)			nb_sess
   From
        GV$Session S
- Group 
+ Group
     By Initcap(S.Status)
 ;
 
@@ -127,12 +128,12 @@ prompt -- ----------------------------------------------------------------------
 
 
 
-Select 
+Select
        sn.sid
      , substr(sn.username,1,8) 		username
      , Trunc(sl.sofar/sl.totalwork * 100) pct
      , sn.machine					machine
-     , sn.program 				program			
+     , sn.program 				program
      , sn.module					modu
 	 , sl.message
      , to_char(start_time,'DD-MON-YY HH:MI:SS') 	Sta_Time
@@ -144,9 +145,9 @@ Select
  where
        sl.inst_id = sn.inst_id
        and sn.status = 'ACTIVE'
-   and 
+   and
        sl.sid = sn.sid
-   and 
+   and
        sl.sofar       != sl.totalwork
 ;
 
@@ -155,4 +156,3 @@ Select
 Prompt
 
 Prompt
-

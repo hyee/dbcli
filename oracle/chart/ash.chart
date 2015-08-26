@@ -1,9 +1,9 @@
 /*[[
-    Generate the graph chart based on wait class of gv$active_session_history. Usage: ash [0|a|inst_id] [minutes] "filter"
+    Generate the graph chart based on wait class of gv$active_session_history. Usage: ash 0|a|inst_id [-t minutes] [-f]"<filter>"
     --[[
     @BASE:11.2 = {}
-    &V2:default = {60}
-    &V3: default = {1=1}, f={}
+    &Time_Filter:default={sample_time > SYSDATE - INTERVAL '60' MINUTE},t={sample_time > SYSDATE - INTERVAL '&V2' MINUTE}
+    &Filter:default={1=1},f={}
     ]]--
 ]]*/
 
@@ -24,9 +24,9 @@ FROM (SELECT
                 AS wait_class
         FROM gv$active_session_history
        WHERE
-       sample_time > SYSDATE - INTERVAL '&V2' MINUTE
-       AND  (&V3)
+       &Time_Filter
        AND  (:V1 is null and inst_id=userenv('instance') or lower(nvl(:V1,'0')) in('0','a') or inst_id=:V1)
+       AND &Filter
        ) PIVOT (COUNT (*)
                                                            FOR wait_class
                                                            IN  ('ON CPU' AS cpu,
