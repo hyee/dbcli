@@ -76,7 +76,8 @@ function oracle:connect(conn_str)
          ['oracle.jdbc.defaultLobPrefetchSize']="2097152",
          --['oracle.jdbc.mapDateToTimestamp']="false",
          ['oracle.jdbc.maxCachedBufferSize']="104857600",
-         ['oracle.jdbc.useNio']='true'
+         ['oracle.jdbc.useNio']='true',
+         ['oracle.jdbc.TcpNoDelay']='true'
         },args)
     
     self:load_config(url,args)
@@ -96,7 +97,9 @@ function oracle:connect(conn_str)
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
     env.set_title("")
     
-    self.super.connect(self,args)
+    local data_source=java.new('oracle.jdbc.pool.OracleDataSource')
+
+    self.super.connect(self,args,data_source)
     self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
@@ -281,6 +284,7 @@ local ignore_errors={
 }
 
 function oracle:handle_error(info)
+    if not self.conn:isValid(3) then env.set_title("") end
     if is_executing then 
         info.sql=nil 
         return
@@ -297,14 +301,12 @@ function oracle:handle_error(info)
             info.sql=nil
             if v~='default' then
                 info.error=v
-                env.set_title("")
             else
                 info.error=info.error:match('^([^\n\r]+)')
             end
             return info
         end
     end
-    
     return info
 end
 
