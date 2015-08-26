@@ -1,0 +1,53 @@
+/*[[
+    Generate the graph chart based on wait class of gv$active_session_history. Usage: ash [0|a|inst_id] [minutes] "filter"
+    --[[
+    @BASE:11.2 = {}
+    &V2:default = {60}
+    &V3: default = {1=1}, f={}
+    ]]--
+]]*/
+
+{
+    title='ASH Chart (Group By Wait Class)',
+    _sql=[[
+    SELECT
+     *
+FROM (SELECT
+             TO_CHAR (sample_time, 'YYYY-MM-DD HH24:MI:SS')
+                sample_time,
+             DECODE (
+                session_state,
+                'ON CPU', DECODE (session_type,
+                                  'BACKGROUND', 'BCPU',
+                                  'ON CPU'),
+                wait_class)
+                AS wait_class
+        FROM gv$active_session_history
+       WHERE
+       sample_time > SYSDATE - INTERVAL '&V2' MINUTE
+       AND  (&V3)
+       AND  (:V1 is null and inst_id=userenv('instance') or lower(nvl(:V1,'0')) in('0','a') or inst_id=:V1)
+       ) PIVOT (COUNT (*)
+                                                           FOR wait_class
+                                                           IN  ('ON CPU' AS cpu,
+                                                               'BCPU' AS "BACKGROUND CPU",
+                                                               'Scheduler' AS SCHEDULER,
+                                                               'User I/O' AS "USER I/O",
+                                                               'System I/O' AS "SYSTEM I/O",
+                                                               'Concurrency' AS CONCURRENCY,
+                                                               'Application' AS APPLICATION,
+                                                               'Commit' AS "COMMIT",
+                                                               'Configuration' AS CONFIGURATION,
+                                                               'Administrative' AS ADMINISTRATIVE,
+                                                               'Network' AS NETWORK,
+                                                               'Queueing' AS QUEUEING,
+                                                               'Cluster' AS "CLUSTER",
+                                                               'Other' AS OTHER))
+ORDER BY  sample_time
+    ]],
+    _pivot=false,
+    ylabel='Avg Active Sessions',
+    fillGraph=true,
+    stackedGraph=true,
+    labelsSeparateLines=true,
+}

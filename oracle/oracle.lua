@@ -21,7 +21,7 @@ local oracle=env.class(env.db_core)
 
 function oracle:ctor(isdefault)
     self.type="oracle"
-    java.loader:addPath(env.WORK_DIR..'oracle'..env.PATH_DEL.."ojdbc7.jar")    
+    java.loader:addPath(env.WORK_DIR..'oracle'..env.PATH_DEL.."ojdbc7.jar")
     self.db_types:load_sql_types('oracle.jdbc.OracleTypes')
     local default_desc='#Oracle database SQL statement'
     local header = "set feed off sqlbl on define off;\n";
@@ -32,17 +32,17 @@ function oracle:ctor(isdefault)
     self.C,self.props={},{}
 end
 
-function oracle:helper(cmd) 
+function oracle:helper(cmd)
     return ({
         CONNECT=[[
         Connect to Oracle database.
-        Usage  : connect <user>/<password>@<tns_name>  or 
+        Usage  : connect <user>/<password>@<tns_name>  or
                  connect <user>/<password>@[//]<ip_address|host_name>[:<port>]/<service_name> or
                  connect <user>/<password>@[//]<ip_address|host_name>[:<port>]:<sid>
         ]],
         CONN=[[Refer to command 'connect']],
         RECONNECT=[[Re-connect the last connection, normally used when previous connection was disconnected for unknown reason.]],
-        RECONN=[[Refer to command 'reconnect']],        
+        RECONN=[[Refer to command 'reconnect']],
     })[cmd]
 end
 
@@ -63,7 +63,7 @@ function oracle:connect(conn_str)
     end
 
     args=args or {user=usr,password=pwd,url="jdbc:oracle:thin:@"..url,internal_logon=isdba}
-    
+
     self:merge_props(
         {driverClassName="oracle.jdbc.driver.OracleDriver",
          defaultRowPrefetch="3000",
@@ -72,18 +72,18 @@ function oracle:connect(conn_str)
          freeMemoryOnEnterImplicitCache="true",
          bigStringTryClob="true",
          clientEncoding="UTF-8",
-         ['v$session.program']='SQL Developer',
+         ['v$session.program']='DBA Cockpit',
          ['oracle.jdbc.defaultLobPrefetchSize']="2097152",
          --['oracle.jdbc.mapDateToTimestamp']="false",
          ['oracle.jdbc.maxCachedBufferSize']="104857600",
          ['oracle.jdbc.useNio']='true'
         },args)
-    
+
     self:load_config(url,args)
     if args.jdbc_alias or not sqlplustr then
         local pwd=args.password
-        if not pwd:find('^[%w_%$#]+$') and not pwd:find('^".*"$') then 
-            pwd='"'..pwd..'"' 
+        if not pwd:find('^[%w_%$#]+$') and not pwd:find('^".*"$') then
+            pwd='"'..pwd..'"'
         else
             pwd=pwd:match('^"*(.-)"*$')
         end
@@ -92,10 +92,10 @@ function oracle:connect(conn_str)
     end
     local prompt=(args.jdbc_alias or url):match('([^:/@]+)$')
     self.conn_str=packer.pack_str(sqlplustr)
-    
+
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
     env.set_title("")
-    
+
     self.super.connect(self,args)
     self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
 
@@ -114,12 +114,12 @@ function oracle:connect(conn_str)
     env._CACHE_PATH=env._CACHE_BASE..self.props.service_name..env.PATH_DEL
     os.execute('mkdir "'..env._CACHE_PATH..'" 2> '..(env.OS=="windows" and 'NUL' or "/dev/null"))
     self:internal_call([[/*INTERNAL_DBCLI_CMD*/
-        begin 
+        begin
             execute immediate 'alter session set nls_date_format=''yyyy-mm-dd hh24:mi:ss''';
             execute immediate 'alter session set statistics_level=all';
         end;]],{})
-        
-    prompt=(prompt or self.props.service_name):match("^([^,%.&]+)") 
+
+    prompt=(prompt or self.props.service_name):match("^([^,%.&]+)")
     env.set_prompt(nil,prompt)
     self.session_title=('%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)'):format(prompt:upper(),params[5],params[1],params[4],params[2])
     env.set_title(self.session_title)
@@ -134,9 +134,9 @@ function oracle:parse(sql,params)
     if cfg.get('SQLCACHESIZE') ~= self.MAX_CACHE_SIZE then
         self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     end
-    
+
     sql=sql:gsub('%f[%w_%$:]:([%w_%$]+)',function(s)
-        local k,s=s:upper(),':'..s 
+        local k,s=s:upper(),':'..s
         local v=params[k]
         if not v then return s end
         if p1[k] then return s:upper() end
@@ -148,17 +148,17 @@ function oracle:parse(sql,params)
             args={self.db_types:set('NUMBER',v)}
         elseif type(v)=="boolean" then
             args={self.db_types:set('BOOLEAN',v)}
-        elseif v:sub(1,1)=="#" then        
+        elseif v:sub(1,1)=="#" then
             local typ=v:upper():sub(2)
             if not self.db_types[typ] then
                 env.raise("Cannot find '"..typ.."' in java.sql.Types!")
-            end                                
+            end
             args={'#',self.db_types[typ].id}
         else
             args={self.db_types:set('VARCHAR',v)}
         end
-        
-        if args[1]=='#' then 
+
+        if args[1]=='#' then
             if counter<2 then counter=counter+2 end
         else
             if counter~=1 and counter~=3 then counter=counter+1 end
@@ -168,7 +168,7 @@ function oracle:parse(sql,params)
 
         return s:upper()
     end)
-   
+
     if counter<0 or counter==3 then return self.super.parse(self,sql,params,':') end
     local prep=java.cast(self.conn:prepareCall(sql,1003,1007),"oracle.jdbc.OracleCallableStatement")
     --self:check_params(sql,prep,p1,params)
@@ -181,11 +181,11 @@ function oracle:parse(sql,params)
             prep[v[1].."AtName"](prep,k,v[2])
         end
     end
-    return prep,sql,params 
+    return prep,sql,params
 end
 
 function oracle:exec(sql,...)
-    local bypass=self:is_internal_call(sql) 
+    local bypass=self:is_internal_call(sql)
     local args=type(select(1,...)=="table") and ... or {...}
     sql=event("BEFORE_ORACLE_EXEC",{self,sql,args}) [2]
     local result=self.super.exec(self,sql,args)
@@ -204,11 +204,11 @@ end
 function oracle:internal_call(sql,args)
     self.internal_exec=true
     local result=self.super.exec(self,sql,args)
-    self.internal_exec=false    
+    self.internal_exec=false
     return result
 end
 
-function oracle:run_proc(sql) 
+function oracle:run_proc(sql)
     return self:exec('BEGIN '..sql..';END;')
 end
 
@@ -218,7 +218,7 @@ end
 
 
 function oracle:check_date(string,fmt)
-    fmt=fmt or "YYMMDDHH24MI"    
+    fmt=fmt or "YYMMDDHH24MI"
     local args={string and string~="" and string or " ",fmt,'#INTEGER'}
     self:internal_call([[
         DECLARE
@@ -227,9 +227,9 @@ function oracle:check_date(string,fmt)
             d:=to_date(:1,:2);
             :3 := 1;
         EXCEPTION WHEN OTHERS THEN
-            :3 := 0;    
+            :3 := 0;
         END;]],args)
-    env.checkerr(args[3]==1,'Invalid date format("%s"), expected as "%s"!',string,fmt)    
+    env.checkerr(args[3]==1,'Invalid date format("%s"), expected as "%s"!',string,fmt)
 end
 
 local is_executing=false
@@ -237,7 +237,7 @@ function oracle:dba_query(cmd,sql,args)
     local sql1,count,success,res=sql:gsub('([Aa][Ll][Ll]%_)','dba_')
     if count>0 then
         is_executing=true
-        success,res=pcall(cmd,self,sql1,args) 
+        success,res=pcall(cmd,self,sql1,args)
         is_executing=false
     end
     if not success then res=cmd(self,sql,args) end
@@ -259,7 +259,7 @@ function oracle.check_completion(cmd,other_parts)
         BEGIN=1,
         JAVA=1
     }
-     
+
     local obj=env.parse_args(2,other_parts)[1]
     if obj and not objs[obj:upper()] and not objs[cmd] then
         p2=env.END_MARKS[1].."+[%s\t\n]*$"
@@ -281,8 +281,8 @@ local ignore_errors={
 }
 
 function oracle:handle_error(info)
-    if is_executing then 
-        info.sql=nil 
+    if is_executing then
+        info.sql=nil
         return
     end
     local ora_code,msg=info.error:match('ORA%-(%d+):%s*([^\n\r]+)')
@@ -291,7 +291,7 @@ function oracle:handle_error(info)
         info.error=msg
         return info
     end
-    
+
     for k,v in pairs(ignore_errors) do
         if info.error:lower():find(k:lower(),1,true) then
             info.sql=nil
@@ -304,7 +304,7 @@ function oracle:handle_error(info)
             return info
         end
     end
-    
+
     return info
 end
 
@@ -316,7 +316,7 @@ function oracle:onload()
     end
 
     add_default_sql_stmt('update','delete','insert','merge','truncate','drop','flashback')
-    add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge')   
+    add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge')
     set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
     set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
     set_command(self,{"select","with"},   default_desc,        self.query     ,true,1,true)
@@ -326,7 +326,7 @@ function oracle:onload()
     set_command(self,"alter" ,   default_desc,        self.exec      ,self.check_completion,1,true)
     self.C={}
     init.load_modules(module_list,self.C)
-    env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)  
+    env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)
 end
 
 function oracle:onunload()
