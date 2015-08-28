@@ -13,7 +13,6 @@ end
 function ora:validate_accessable(name,options,values)
     local check_flag,expect_name,default,option,expect
     local db=self.db
-    
     for i=1,#options do
         option=options[i]
         default=option

@@ -739,16 +739,23 @@ function db_core:load_config(db_alias,props)
     config=config and config[self.type]
     if not config then return end
     props=props or {}
+    local url_props
     for alias,url in pairs(config) do
-        if alias:upper()==(props.jdbc_alias or db_alias:upper())  then
-            props=self:merge_props(url,props)
-            if props.driverClassName then java.system:setProperty('jdbc.drivers',props.driverClassName) end
-            props.jdbc_alias=alias:upper()
-            return props
+        if type(url)~="table" then--For global user-defined JDBC attribute
+            props[alias]=url
+        elseif alias:upper()==(props.jdbc_alias or db_alias:upper())  then
+            url_props=url --User-defined connection alias
         end
     end
+
+    --In case of <db_alias> is defined in jdbc_url.cfg
+    if url_props then
+        props=self:merge_props(url,props)
+        props.jdbc_alias=alias:upper()
+    end
+
     if props.driverClassName then java.system:setProperty('jdbc.drivers',props.driverClassName) end
-    return nil
+    return props
 end
 
 function db_core:merge_props(src,target)
