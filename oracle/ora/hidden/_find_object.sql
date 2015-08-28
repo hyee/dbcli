@@ -60,10 +60,10 @@ BEGIN
         flag  := FALSE;
         schem := regexp_substr(target, '[^\.]+', 1, 1);
         part1 := regexp_substr(target, '[^\.]+', 1, 2);
-        objs  := 'dba_objects a WHERE owner IN(''PUBLIC'',sys_context(''USERENV'', ''CURRENT_SCHEMA''),''' ||schem || ''') AND object_name IN(''' || schem || ''',''' || part1 || '''))';
+        objs  := objs||' a WHERE owner IN(''PUBLIC'',sys_context(''USERENV'', ''CURRENT_SCHEMA''),''' ||schem || ''') AND object_name IN(''' || schem || ''',''' || part1 || '''))';
     ELSE
         flag  := TRUE;
-        objs  := objs || ' a WHERE OWNER in(''PUBLIC'',''' || schem || ''') AND OBJECT_NAME=''' || part1 || ''')';
+        objs  := objs|| ' a WHERE OWNER in(''PUBLIC'',''' || schem || ''') AND OBJECT_NAME=''' || part1 || ''')';
     END IF;
 
     objs:='SELECT /*+no_expand*/ 
@@ -90,7 +90,7 @@ BEGIN
         part2 := part2_temp;
     END IF;
     
-    IF object_number IS NULL AND target IS NOT NULL AND :V2 IS NULL THEN
+    IF part1 IS NULL AND target IS NOT NULL AND :V2 IS NULL THEN
         raise_application_error(-20001,'Cannot find target object "&V1"!');
     END IF;
 

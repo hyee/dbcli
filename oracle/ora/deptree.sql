@@ -49,7 +49,7 @@ DECLARE
             dbms_lob.writeappend(v_result, LENGTH(v_stack), v_stack);
         END IF;
         v_counter := v_counter + 1;
-        IF NOT v_founds.exists(obj) THEN
+        IF NOT v_founds.exists(obj) AND obj IS NOT NULL THEN
             v_founds(obj) := 1;
             --IF '&F2' !='p_obj#' THEN
                 SELECT /*+ordered index(dep1) use_nl(dep1 o2 o1)*/

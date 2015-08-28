@@ -546,7 +546,7 @@ function db_core:print_result(rs)
 end
 
 --the connection is a table that contain the connection properties
-function db_core:connect(attrs)
+function db_core:connect(attrs,data_source)
     if not self.driver then
         self.driver= java.require("java.sql.DriverManager")
     end
@@ -563,7 +563,18 @@ function db_core:connect(attrs)
         props:put(k,v)
     end
     if event then event("BEFORE_DB_CONNECT",self,attrs.jdbc_alias or url,attrs) end
-    local err,res=pcall(self.driver.getConnection,self.driver,url,props)
+    local err,res
+    if data_source then
+        for k,v in pairs{setURL=url,
+                         setUser=attrs.user,
+                         setPassword=attrs.password,
+                         setConnectionProperties=props} do
+            if data_source[k] then data_source[k](data_source,v) end
+        end
+        err,res=pcall(data_source.getConnection,data_source)
+    else 
+        err,res=pcall(self.driver.getConnection,self.driver,url,props)
+    end
     env.checkerr(err,tostring(res):gsub(".*Exception.%s*",""))
     self.conn=res
     env.checkerr(self.conn,"Unable to connect to db!")

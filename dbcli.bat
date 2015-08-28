@@ -22,8 +22,9 @@ for /r %%i in (*.pack.gz) do (
 )
 
 start /b /wait java -noverify -Xmx384M -cp .\lib\*;.\lib\ext\*%OTHER_LIB% ^
-     -XX:-UseAdaptiveSizePolicy -XX:+UseParallelGC ^
-     -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Dclient.encoding.override=UTF-8 ^
-     -Duser.language=en -Duser.region=US -Duser.country=US -Dinput.encoding=UTF-8 ^
-     -Doracle.net.tns_admin="%TNS_ADM%" org.dbcli.Loader %DBCLI_PARAMS% %*
+    -XX:NewRatio=50 -XX:+UseG1GC -XX:+UnlockExperimentalVMOptions ^
+    -XX:+AggressiveOpts -XX:MaxGCPauseMillis=400 -XX:GCPauseIntervalMillis=8000 ^
+    -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Dclient.encoding.override=UTF-8 ^
+    -Duser.language=en -Duser.region=US -Duser.country=US -Dinput.encoding=UTF-8 ^
+    -Doracle.net.tns_admin="%TNS_ADM%" org.dbcli.Loader %DBCLI_PARAMS% %*
 EndLocal
