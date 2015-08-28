@@ -100,7 +100,7 @@ function scripter:parse_args(sql,args,print_args)
         --Parse the  &<V1-V30> and :<V1-V30> grammar, refer to ashtop.sql
         for _,p in ipairs(patterns) do
             for prefix,k,v in desc:gmatch('([&:@])([%w_]+)%s*:%s*'..p) do
-                k=k:upper()                
+                k=k:upper()
                 if not templates[k] then--same variable should not define twice
                     templates[k]={}
                     local keys,default={}

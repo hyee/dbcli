@@ -9,6 +9,7 @@ function chart:ctor()
 end
 
 function chart:onload()
+    self.validate_accessable=self.db.C.ora.validate_accessable
 end
 
 

@@ -102,6 +102,8 @@ function oracle:connect(conn_str)
     self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
+    self.props={}
+
     local params=self:get_value([[
        select /*INTERNAL_DBCLI_CMD*/ user,
                (SELECT VALUE FROM Nls_Database_Parameters WHERE parameter='NLS_RDBMS_VERSION') version,
@@ -110,7 +112,7 @@ function oracle:connect(conn_str)
                 (select instance_number from v$instance where rownum<2),
                 sys_context('userenv','isdba'),
                 sys_context('userenv','db_name')||nullif('.'||sys_context('userenv','db_domain'),'.'),
-                decode(sys_context('userenv','database_role'),'PRIMARY','','PHYSICAL STANDBY','(Standby)')
+                (select decode(DATABASE_ROLE,'PRIMARY','','PHYSICAL STANDBY','(Standby)') from v$database)
        from dual]])
 
     self.props={db_user=params[1],db_version=params[2],db_nls_lang=params[3],service_name=params[7],isdba=params[6]=='TRUE' and true or false}
@@ -125,7 +127,7 @@ function oracle:connect(conn_str)
     prompt=(prompt or self.props.service_name):match("^([^,%.&]+)")
     prompt=('%s %s'):format(prompt:upper(),params[8])
     env.set_prompt(nil,prompt)
-    self.session_title=('%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)'):format(prompt:upper(), params[5],params[1],params[4],params[2])
+    self.session_title=('%s%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)'):format(prompt:upper(),params[8], params[5],params[1],params[4],params[2])
     env.set_title(self.session_title)
     if event then event("AFTER_ORACLE_CONNECT",self,sql,args,result) end
     print("Database connected.")
