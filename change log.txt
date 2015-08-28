@@ -1,4 +1,7 @@
-2015-08-26: ! oracle: user OracleDataSource instead of DriverManager
+2015-08-28: + public: support customized public jdbc properties, refer to jdbc_url_sample.cfg
+2015-08-28: ! public: minor fixes
+2015-08-27: + oracle: merge from https://github.com/anjuls/dbcli.git
+2015-08-26: ! oracle: use OracleDataSource instead of DriverManager
 2015-08-14: ! oracle: minor bug fix
 2015-08-14: * oracle: auto create corresponding <service name> sub-folder under the cache directory 
 2015-07-19: ! public: minor bug fixes
