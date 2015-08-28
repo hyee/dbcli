@@ -31,6 +31,8 @@ del /s /f "%target%\*.bat"
 del /s /f "%target%\*.exe"
 del /s /f "%target%\*.java"
 del /s /f "%target%\*.class"
+del /s /f "%target%\*.chart"
+del /s /f "%target%\*.snap"
 cd /d "%~dp0"
 cd ..
 copy data\*_sample.cfg  "%target%\data"
