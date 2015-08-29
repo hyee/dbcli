@@ -17,6 +17,7 @@ import java.sql.ResultSet;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.Future;
+import java.util.zip.InflaterInputStream;
 
 
 public class Loader {
@@ -173,7 +174,7 @@ public class Loader {
             public Integer call() throws Exception {
                 try (CSVWriter writer = new CSVWriter(fileName)) {
                     int result = writer.writeAll(rs, true);
-                    return result-1;
+                    return result - 1;
                 }
             }
         });
@@ -206,6 +207,20 @@ public class Loader {
             }
         });
     }
+
+    public String inflate(byte[] data) throws Exception {
+        try  {
+            ByteArrayInputStream bis = new ByteArrayInputStream(data);
+            InflaterInputStream iis = new InflaterInputStream(bis);
+            StringBuffer sb = new StringBuffer();
+            int i=0;
+            for (int c = iis.read(); c != -1; c = iis.read()) {
+                sb.append((char) c);
+            }
+            return sb.toString();
+        } catch (Exception e) {e.printStackTrace();throw  e;}
+    }
+
 
     public synchronized boolean setStatement(CallableStatement p) throws Exception {
         try {

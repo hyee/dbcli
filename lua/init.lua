@@ -3,7 +3,6 @@ local dirs={"lib","cache","data"}
 local init={
     module_list={
        --Libraries ->
-        "lib/zlib",
         "lib/json",
         "lib/socket",
         "lib/lanes",
@@ -32,7 +31,6 @@ local init={
         "lua/var",
         "lua/scripter",
         "lua/snapper",
-        "lua/ssh",
         "lua/tester",
         "lua/graph"}
 }
@@ -126,20 +124,48 @@ function init.load_database()
     if env.event then env.event.callback('ON_DATABASE_ENV_LOADED',env.CURRENT_DB) end
 end
 
-function init.load_modules(list,tab)
+function init.load_modules(list,tab,module_name)
     local n
     local modules={}
     local root,del,dofile=env.WORK_DIR,env.PATH_DEL,dofile
+    if not module_name then module_name=env.callee():match("([^\\/]+)") end
 
-    for _,v in ipairs(list) do
+    --load plugin infomation
+    local file=env.WORK_DIR..'data'..env.PATH_DEL..'plugin.cfg'
+    local f=io.open(file,"a")
+    if f then f:close() end
+    local config,err=env.loadfile(file)
+    if not config then 
+        io.write('Error on reading data/plugin.cfg: '..err..'\n') 
+    else
+        err,config=pcall(config)
+        if not err then io.write('Error on reading data/plugin.cfg: '..config..'\n') end
+    end
+    config=type(config)=="table" and config[module_name] or {}
+
+    for i=#list,1,-1 do
+        table.insert(config,1,list[i])
+    end
+
+    for _,v in ipairs(config) do
+        v=v:gsub("[\\/]+",del)
         n=v:match("([^\\/]+)$")
-        tab[n]=exec(dofile,root..v:gsub("[\\/]+",del)..'.lua')
-        modules[n]=tab[n]        
+        if not v:lower():match('%.lua') then v=v..'.lua' end
+        local file=io.open(v,'r')
+        if not file then 
+            file=root..v
+        else 
+            file:close();
+            file=v 
+        end
+        tab[n]=exec(dofile,file)
+        modules[n]=tab[n]
     end
     
     for k,v in pairs(modules) do
         exec(type(v)=="table" and v.onload,v,k)
-    end    
+    end
+
 end
 
 function init.onload()

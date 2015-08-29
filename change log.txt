@@ -1,3 +1,6 @@
+2015-08-29: + public: support plugin, refer to "data\plugin_sample.cfg"
+2015-08-29: - public: remove other useless files
+2015-08-29: - public: remove zlib modules, use java features instead
 2015-08-28: + public: support customized public jdbc properties, refer to jdbc_url_sample.cfg
 2015-08-28: ! public: minor fixes
 2015-08-27: + oracle: merge from https://github.com/anjuls/dbcli.git

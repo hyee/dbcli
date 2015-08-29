@@ -66,9 +66,12 @@ local function decode_base64_package(base64str)
     local decoded = {}
     for i=1,#base64dec do
         --print(base64dec:sub(i,i):byte(),base64dec:sub(i,i))
-        decoded[i] = string.char(charmap[base64dec:sub(i,i):byte()+1])
+        --decoded[i] = string.char(charmap[base64dec:sub(i,i):byte()+1])
+        decoded[i] = charmap[base64dec:sub(i,i):byte()+1]
     end
-    return zlib.uncompress(table.concat(decoded,''))
+    --print(table.concat(decoded,''))
+    return loader:inflate(decoded)
+    --return zlib.uncompress(table.concat(decoded,''))
 end
 
 function unwrap.unwrap(obj,ext)
