@@ -741,16 +741,16 @@ function db_core:load_config(db_alias,props)
     props=props or {}
     local url_props
     for alias,url in pairs(config) do
-        if type(url)~="table" then--For global user-defined JDBC attribute
-            props[alias]=url
-        elseif alias:upper()==(props.jdbc_alias or db_alias:upper())  then
-            url_props=url --User-defined connection alias
+        if type(url)=="table" then
+            if alias:upper()==(props.jdbc_alias or db_alias:upper())  then url_props=url end
+            config[alias]=nil
         end
     end
+    self:merge_props(config,props)
 
     --In case of <db_alias> is defined in jdbc_url.cfg
     if url_props then
-        props=self:merge_props(url,props)
+        props=self:merge_props(url_props,props)
         props.jdbc_alias=alias:upper()
     end
 
