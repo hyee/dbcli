@@ -209,16 +209,15 @@ public class Loader {
     }
 
     public String inflate(byte[] data) throws Exception {
-        try  {
-            ByteArrayInputStream bis = new ByteArrayInputStream(data);
-            InflaterInputStream iis = new InflaterInputStream(bis);
+        try(ByteArrayInputStream bis = new ByteArrayInputStream(data); InflaterInputStream iis = new InflaterInputStream(bis);)  {
+
             StringBuffer sb = new StringBuffer();
             int i=0;
             for (int c = iis.read(); c != -1; c = iis.read()) {
                 sb.append((char) c);
             }
             return sb.toString();
-        } catch (Exception e) {e.printStackTrace();throw  e;}
+        }
     }
 
 
