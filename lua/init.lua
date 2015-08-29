@@ -152,7 +152,7 @@ function init.load_modules(list,tab,module_name)
         n=v:match("([^\\/]+)$")
         if not v:lower():match('%.lua') then v=v..'.lua' end
         local file=io.open(v,'r')
-        if not file then 
+        if not file then
             file=root..v
         else 
             file:close();
