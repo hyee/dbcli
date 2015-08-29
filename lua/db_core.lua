@@ -742,17 +742,17 @@ function db_core:load_config(db_alias,props)
     local url_props
     for alias,url in pairs(config) do
         if type(url)=="table" then
-            if alias:upper()==(props.jdbc_alias or db_alias:upper())  then url_props=url end
+            if alias:upper()==(props.jdbc_alias or db_alias:upper())  then 
+                url_props=url
+                props.jdbc_alias=alias:upper()
+            end
             config[alias]=nil
         end
     end
     self:merge_props(config,props)
 
     --In case of <db_alias> is defined in jdbc_url.cfg
-    if url_props then
-        props=self:merge_props(url_props,props)
-        props.jdbc_alias=alias:upper()
-    end
+    if url_props then props=self:merge_props(url_props,props) end
 
     if props.driverClassName then java.system:setProperty('jdbc.drivers',props.driverClassName) end
     return props
