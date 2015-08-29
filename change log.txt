@@ -1,3 +1,4 @@
+2015-08-29: + public: for "ora"-like commands, "." means default parameter. i.e.: "ora ashtop . . 150828" skips the first 2 parameters
 2015-08-29: + public: support plugin, refer to "data\plugin_sample.cfg"
 2015-08-29: - public: remove other useless files
 2015-08-29: - public: remove zlib modules, use java features instead
