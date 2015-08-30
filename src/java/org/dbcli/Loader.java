@@ -167,13 +167,13 @@ public class Loader {
         this.rs = res;
     }
 
-    public int ResultSet2CSV(final ResultSet rs, final String fileName, final String header) throws Exception {
+    public int ResultSet2CSV(final ResultSet rs, final String fileName, final String header,final boolean aync) throws Exception {
         setCurrentResultSet(rs);
         return asyncCall(new Callable<Integer>() {
             @Override
             public Integer call() throws Exception {
                 try (CSVWriter writer = new CSVWriter(fileName)) {
-                    writer.setAsyncMode(true);
+                    writer.setAsyncMode(aync);
                     int result = writer.writeAll(rs, true);
                     return result - 1;
                 }
@@ -181,13 +181,13 @@ public class Loader {
         });
     }
 
-    public int ResultSet2SQL(final ResultSet rs, final String fileName, final String header) throws Exception {
+    public int ResultSet2SQL(final ResultSet rs, final String fileName, final String header,final boolean aync) throws Exception {
         setCurrentResultSet(rs);
         return asyncCall(new Callable<Integer>() {
             @Override
             public Integer call() throws Exception {
                 try (SQLWriter writer = new SQLWriter(fileName)) {
-                    writer.setAsyncMode(true);
+                    writer.setAsyncMode(aync);
                     writer.setFileHead(header);
                     int count = writer.writeAll2SQL(rs, "", 1500);
                     return count;

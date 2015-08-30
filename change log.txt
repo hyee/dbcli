@@ -1,4 +1,6 @@
-2015-08-29: * public: Multi-threads processing on sql2csv/sql2file to speed up extraction performance
+2015-08-30: + public: support RAW for export(SQL2CSV/SQL2FILE)
+2015-08-30: + public: new configs "set ASYNCEXP/EXPPREFETCH" for export(SQL2CSV/SQL2FILE)
+2015-08-30: * public: Multi-threads processing on sql2csv/sql2file to speed up extraction performance
 2015-08-29: + public: for "ora"-like commands, "." means default value. i.e.: "ora awrtop . . 150828" skips the first 2 parameters
 2015-08-29: + public: support plugin, refer to "data\plugin_sample.cfg"
 2015-08-29: - public: remove other useless files
