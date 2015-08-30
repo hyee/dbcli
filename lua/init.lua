@@ -150,7 +150,11 @@ function init.load_modules(list,tab,module_name)
     for _,v in ipairs(config) do
         v=v:gsub("[\\/]+",del)
         n=v:match("([^\\/]+)$")
-        if not v:lower():match('%.lua') then v=v..'.lua' end
+        if not v:lower():match('%.lua') then 
+            v=v..'.lua'
+        else
+            n=n:sub(1,#n-4)
+        end
         local file=io.open(v,'r')
         if not file then
             file=root..v
