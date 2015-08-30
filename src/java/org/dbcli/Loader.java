@@ -173,6 +173,7 @@ public class Loader {
             @Override
             public Integer call() throws Exception {
                 try (CSVWriter writer = new CSVWriter(fileName)) {
+                    writer.setAsyncMode(true);
                     int result = writer.writeAll(rs, true);
                     return result - 1;
                 }
@@ -186,6 +187,7 @@ public class Loader {
             @Override
             public Integer call() throws Exception {
                 try (SQLWriter writer = new SQLWriter(fileName)) {
+                    writer.setAsyncMode(true);
                     writer.setFileHead(header);
                     int count = writer.writeAll2SQL(rs, "", 1500);
                     return count;
