@@ -5,7 +5,7 @@ setlocal enabledelayedexpansion
 del /F/S/Q ".\src\java"
 XCOPY /S /Y "D:\JavaProjects\dbcli\src\*" .\src\java
 XCOPY /S /Y "D:\JavaProjects\dbcli\opencsv\src\*" "%GIT_HOME%\opencsv\src"
-XOPY  /S /Y "lib\opencsv.jar" "%GIT_HOME%\opencsv\release"
+XCOPY  /S /Y ".\lib\opencsv.jar" "%GIT_HOME%\opencsv\release"
 set copyflag=1
 
 set target=%GIT_HOME%\dbcli
