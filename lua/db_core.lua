@@ -653,11 +653,21 @@ function db_core:rollback()
 end
 
 local exp=java.require("com.opencsv.ResultSetHelperService")
+local csv=java.require("com.opencsv.CSVWriter")
+local sqlw=java.require("com.opencsv.SQLWriter")
 local function set_param(name,value)
     if name=="FEED" or name=="AUTOCOMMIT" then
         return value:lower()
     elseif name=="EXPPREFETCH" then
         exp.RESULT_FETCH_SIZE=tonumber(value)
+    elseif name=="CSVSEP" then
+        env.checkerr(#value==1,"The seperator must be a character!")
+        env.checkerr(value~='"',"The seperator cannot be a quote character!")
+        csv.DEFAULT_SEPARATOR=string.byte(value)
+        java.require("com.opencsv.CSVParser").DEFAULT_SEPARATOR=csv.DEFAULT_SEPARATOR
+        return value
+    elseif name=="SQLLINEWIDTH" then
+       sqlw.maxLineWidth=tonumber(value)  
     elseif name=="ASYNCEXP" then
         return value and value:lower()=="true" and true or false
     end
@@ -786,6 +796,8 @@ function db_core:__onload()
     cfg.init("SQLCACHESIZE",30,set_param,"db.core","Number of cached statements in JDBC",'5-500')
     cfg.init("EXPPREFETCH",exp.RESULT_FETCH_SIZE,set_param,"db.export","Number of rows to be prefetched for the export(SQL2CSV and SQL2FILE)",'10-1000000')
     cfg.init("ASYNCEXP",true,set_param,"db.export","Detemine if use parallel process for the export(SQL2CSV and SQL2FILE)",'true,false')
+    cfg.init("CSVSEP",string.char(csv.DEFAULT_SEPARATOR),set_param,"db.export","Define the seperator for CSV data for export(SQL2CSV and CSV2SQL)",'*')
+    cfg.init("SQLLINEWIDTH",sqlw.maxLineWidth,set_param,"db.export","Define the max line width(in chars) of exporting SQL file(SQL2FILE and CSV2SQL)",'*')
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
     env.set_command(self,"login",help_login,self.login,false,3)
     env.set_command(self,"sql2file","Export Query Result into SQL file. Usage: sql2file <file_name>[.sql|gz|zip] <sql|cursor>" ,self.sql2sql,'__SMART_PARSE__',3)

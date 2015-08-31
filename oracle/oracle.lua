@@ -316,19 +316,30 @@ end
 function oracle:onload()
     local function add_default_sql_stmt(...)
         for i=1,select('#',...) do
+            env.remove_command(select(i,...))
             set_command(self,select(i,...), default_desc,self.exec,true,1,true)
         end
     end
 
+    local function add_single_line_stmt(...)
+        for i=1,select('#',...) do
+            env.remove_command(select(i,...))
+            set_command(self,select(i,...), default_desc,self.exec,false,1,true)
+        end
+    end
+
+    add_single_line_stmt('commit','rollback','savepoint')
     add_default_sql_stmt('update','delete','insert','merge','truncate','drop','flashback')
     add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge')
     set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
     set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
     set_command(self,{"select","with"},   default_desc,        self.query     ,true,1,true)
-    set_command(self,{"execute","exec","call"},default_desc,self.run_proc,false,2)
+    set_command(self,{"execute","exec","call"},default_desc,self.run_proc,false,2,true)
     set_command(self,{"declare","begin"},  default_desc,  self.exec  ,self.check_completion,1,true)
     set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)
     set_command(self,"alter" ,   default_desc,        self.exec      ,self.check_completion,1,true)
+
+
     self.C={}
     init.load_modules(module_list,self.C)
     env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)

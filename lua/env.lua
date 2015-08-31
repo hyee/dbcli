@@ -639,12 +639,13 @@ end
 
 function env.unload()
     if env.event then env.event.callback("ON_ENV_UNLOADED") end
-    env.init.unload(init.module_list,env)
+    local e,msg=pcall(env.init.unload,init.module_list,env)
+    if not e then print(msg) end 
     env.init=nil
     package.loaded['init']=nil
     _CMDS.___ABBR___={}
     if env.jit and env.jit.flush then 
-        local e,msg=pcall(env.jit.flush)
+        e,msg=pcall(env.jit.flush)
         if not e then print(msg) end 
     end
 end

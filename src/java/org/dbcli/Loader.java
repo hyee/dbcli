@@ -203,7 +203,6 @@ public class Loader {
             public Integer call() throws Exception {
                 try (SQLWriter writer = new SQLWriter(SQLFileName)) {
                     writer.setFileHead(header);
-                    writer.setMaxLineWidth(1500);
                     return writer.writeAll2SQL(CSVfileName, rs);
                 }
             }
