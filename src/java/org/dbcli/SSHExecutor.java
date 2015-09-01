@@ -7,6 +7,7 @@ import com.jcraft.jsch.Session;
 
 import java.io.InputStream;
 import java.util.HashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Created by Will on 2015/9/1.
@@ -43,8 +44,10 @@ public class SSHExecutor {
             session.setConfig("StrictHostKeyChecking", "no");
             session.setConfig("compression.s2c", "zlib@openssh.com,zlib,none");
             session.setConfig("compression.c2s", "zlib@openssh.com,zlib,none");
+            session.setConfig("PreferredAuthentications", "password,publickey,keyboard-interactive");
             session.setConfig("compression_level", "9");
-            session.setServerAliveInterval(60);
+            session.setServerAliveInterval((int)TimeUnit.SECONDS.toMillis(10));
+            session.setServerAliveCountMax(30);
             session.connect();
             this.host = host;
             this.port = port;
@@ -56,7 +59,7 @@ public class SSHExecutor {
             setLinePrefix(linePrefix);
 
         } catch (Exception e) {
-            e.printStackTrace();
+            //e.printStackTrace();
             throw e;
         }
     }
