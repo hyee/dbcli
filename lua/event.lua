@@ -20,7 +20,7 @@ function event.callback(name,...)
         end
         if not flag then print(result) end
     end
-    return table.unpack(args)
+    return table.unpack(args),result
 end
 
 function event.snoop(idx,name,func,obj,priority)

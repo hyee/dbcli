@@ -167,7 +167,7 @@ public class Loader {
         this.rs = res;
     }
 
-    public int ResultSet2CSV(final ResultSet rs, final String fileName, final String header,final boolean aync) throws Exception {
+    public int ResultSet2CSV(final ResultSet rs, final String fileName, final String header, final boolean aync) throws Exception {
         setCurrentResultSet(rs);
         return asyncCall(new Callable<Integer>() {
             @Override
@@ -181,7 +181,7 @@ public class Loader {
         });
     }
 
-    public int ResultSet2SQL(final ResultSet rs, final String fileName, final String header,final boolean aync) throws Exception {
+    public int ResultSet2SQL(final ResultSet rs, final String fileName, final String header, final boolean aync) throws Exception {
         setCurrentResultSet(rs);
         return asyncCall(new Callable<Integer>() {
             @Override
@@ -210,10 +210,10 @@ public class Loader {
     }
 
     public String inflate(byte[] data) throws Exception {
-        try(ByteArrayInputStream bis = new ByteArrayInputStream(data); InflaterInputStream iis = new InflaterInputStream(bis);)  {
+        try (ByteArrayInputStream bis = new ByteArrayInputStream(data); InflaterInputStream iis = new InflaterInputStream(bis);) {
 
             StringBuffer sb = new StringBuffer();
-            int i=0;
+            int i = 0;
             for (int c = iis.read(); c != -1; c = iis.read()) {
                 sb.append((char) c);
             }

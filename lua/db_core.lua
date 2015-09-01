@@ -581,7 +581,10 @@ function db_core:connect(attrs,data_source)
     local autocommit=cfg.get("AUTOCOMMIT")
     self.autocommit=autocommit
     self.conn:setAutoCommit(autocommit=="on" and true or false)
-    if event then event("AFTER_DB_CONNECT",self,attrs.jdbc_alias or url,attrs) end
+    if event then
+        event("TRIGGER_CONNECT",self,attrs.jdbc_alias or url,attrs)
+        event("AFTER_DB_CONNECT",self,attrs.jdbc_alias or url,attrs)
+    end
     self.__stmts = {}
     self.properties={}
     for k in java.methods(self.conn) do

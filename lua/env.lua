@@ -202,9 +202,12 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
         desc=help_func(table.unpack(args))
     end
 
-    if desc then
+    if type(desc)=="string" then
         desc = desc:gsub("^[\n\r%s\t]*[\n\r]+","")
         desc = desc:match("([^\n\r]+)") 
+    elseif desc then
+        print(cmd..': Unexpected command definition, the description should be a function or string, but got '..type(desc))
+        desc=nil
     end
 
     _CMDS[cmd]={

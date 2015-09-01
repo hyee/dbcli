@@ -8,6 +8,7 @@ function login.load()
 end
 
 function login.save()
+    if cfg.get("SaveLogin")=="off" then return end
     local list=env.load_data(file)
     local res,err=pcall(env.save_data,file,login.list)
     if not res then
@@ -16,10 +17,8 @@ function login.save()
     end
 end
 
-function login.capture(db,url,props)
-    local typ,url1=db.type or "default",url
-    if cfg.get("SaveLogin")=="off" then return end
-    props.password,props.lastlogin=env.packer.pack_str(props.password),os.date()
+function login.generate_name(url,props)
+    local url1=url
     url=url1:match("//([^&]+)")
     if not url then url=('@'..url1):match("@/?([^@]+)$") end
     url=url:gsub('([%.%:])([%w%-%_]+)',function(a,b)
@@ -29,23 +28,37 @@ function login.capture(db,url,props)
             return ''
         end
     end)
-    login.load()
-    url=(props.user..'@'..url):lower()    
-    if not login.list[typ] then login.list[typ]={} end
-    local list=login.list[typ]
-    if list[url] then props.alias=list[url].alias end
-    list[url]=props    
-    login.save()
+    
+    return (props.user..'@'..url):lower()    
 end
 
+function login.capture(db,url,props)
+    local typ=env.set.get("database")
+    
+    login.load()
 
-function login.login(db,id,filter)
+    url=login.generate_name(url,props)
+    props.password,props.lastlogin=env.packer.pack_str(props.password),os.date()
+    if not login.list[typ] then login.list[typ]={} end
+    local list=login.list[typ]
+    if list[url] then 
+        props.alias=list[url].alias 
+        props.ssh_link=list[url].ssh_link
+        props.forwards=list[url].forwards
+    end
+    if type(db)=="string" then props.connect_object=db end
+    list[url]=props
+    login.save()
+    return url
+end
+
+function login.search(id,filter)
     if cfg.get("SaveLogin")=="off" then 
         return print("Cannot login because the 'SaveLogin' option is 'off'!")
     end
     
     login.load()
-    local typ=db.type or "default"
+    local typ=env.set.get("database")
     local list=login.list[typ]
     local alias,alist=nil,{}
 
@@ -68,7 +81,7 @@ function login.login(db,id,filter)
     local account,counter,hdl=nil,0,grid.new()
     filter=id and id:sub(1,1)=='-'  and filter and filter:lower() or id
     
-    grid.add(hdl,{"#","Alias","Name","User","Url","Last Login"})
+    grid.add(hdl,{"#","Alias","Name","User","SSH Link","Url","Last Login"})
 
     
     if id=="-a" then
@@ -99,7 +112,7 @@ function login.login(db,id,filter)
             if not filter or k:find(filter,1,true) then
                 counter=counter+1
                 if counter==1 then account=k end
-                grid.add(hdl,{ind,v.alias or "",k,v.user,v.url,v.lastlogin})
+                grid.add(hdl,{ind,v.alias or "",k,v.user,v.ssh_link or "",v.url,v.lastlogin})
                 if id=="-d" then
                     list[k]=nil
                 end
@@ -126,14 +139,22 @@ function login.login(db,id,filter)
         return
     end
     
-    if  account then
-        db:connect(list[account])
+    if account then return list[account],account end
+end
+
+function login.login(db,id,filter)
+    local conn=login.search(id,filter)
+    if not conn then return end;
+    if conn.connect_object then
+        db=loadstring("return "..conn.connect_object)()
     end
-end    
+    db:connect(conn)
+    return true
+end
 
 function login.onload()
-    env.event.snoop("AFTER_DB_CONNECT",login.capture)
-    cfg.init("SaveLogin","on",nil,"db.core","Determine if autosave logins.",'on,off')
+    env.event.snoop("TRIGGER_CONNECT",login.capture)
+    cfg.init("SaveLogin","on",nil,"core","Determine if autosave logins.",'on,off')
     login.load()
 end
 
