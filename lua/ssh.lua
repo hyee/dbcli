@@ -2,24 +2,8 @@ local env=env
 local ssh=env.class()
 
 function ssh:ctor()
-    local helper=env.grid.new()
-    helper:add{"Command",'*',"Description"}
-    helper:add{"ssh conn",'',"Connect to SSH server. Usage: ssh conn <user>/<passowrd>@host[:port]"}
-    helper:add{"ssh close",'',"Disconnect current SSH connection."}
-    helper:add{"ssh forward",'',"Forward/un-forward a remote port. Usage: ssh forward <local_port> [<remote_port>] [remote_host]"}
-    helper:add{"ssh link",'',"Link/un-link current SSH connection to an existing database connection(see 'login' command). Usage: ssh link <login_id|login_alias>"}
-    helper:add{"ssh <cmd>",'',"Run command in remote SSH server."}
-    --helper:add{"ssh @<script>",'',"Run local shell script in remote SSH server. Usage: ssh @<script> [parameters]"}
-    --helper:add{"ssh -i",'',"Enter interactive mode."}
-    helper:sort(1,true)
-    self.help=helper
     self.forwards={}
-    self.cmds={
-        conn=self.connect,
-        close=self.disconnect,
-        link=self.link,
-        forward=self.do_forward
-    }
+    self.name="SSH"
 end
 
 function ssh:connect(conn_str)
@@ -28,6 +12,7 @@ function ssh:connect(conn_str)
         args=conn_str
         usr,pwd,url=conn_str.user,packer.unpack_str(conn_str.password),conn_str.url
         host,port=url:match("^SSH@(.+):(%d+)$")
+        env.checkerr(port,"Unsupported URL: "..url)
         port=port+0;
         conn_str.password=pwd
     else
@@ -46,9 +31,10 @@ function ssh:connect(conn_str)
     self.ssh_host=host
     self.ssh_port=port
     self.conn=java.new("org.dbcli.SSHExecutor")
-    self.conn:connect(host,port,usr,pwd,env.space)
+    self.conn:connect(host,port,usr,pwd,"")
     env.event.callback("TRIGGER_CONNECT","env.ssh",url,conn_str)
     self.login_alias=env.login.generate_name(url,conn_str)
+    env.set_title("SSH: "..usr..'@'..host)
     print("SSH connected.")
     self.forwards=env.login.list[env.set.get("database")][self.login_alias].port_forwards or {}
     for k,v in pairs(self.forwards) do
@@ -56,20 +42,36 @@ function ssh:connect(conn_str)
     end
 end
 
+function ssh:reconnect()
+    env.checkerr(self.login_alias,"There is no previous connection!")
+    self:connect(env.login.list[env.set.get("database")][self.login_alias])
+end
+
 function ssh:is_connect()
     return self.conn and self.conn:isConnect() or false
 end
 
 function ssh:disconnect()
-    if self.conn and self.conn.close then pcall(self.conn.close,self.conn) end
+    if self.conn and self.conn.close then 
+        pcall(self.conn.close,self.conn)
+        print("SSH disconnected.")
+    end
+    env.set_title("")
     self.conn=nil
     self.login_alias=nil
-    print("SSH disconnected.")
+end
+
+function ssh:getresult(command)
+    env.checkerr(self.conn,"SSH connection has not been created, use 'ssh conn' firstly.")
+    local line=self.conn:getLastLine(command.."\n")
+    self.prompt=self.conn.prompt;
+    return line;
 end
 
 function ssh:run_command(command)
     env.checkerr(self.conn,"SSH connection has not been created, use 'ssh conn' firstly.")
-    self.conn:exec(command)
+    self.conn:exec(command.."\n")
+    self.prompt=self.conn.prompt;
 end
 
 function ssh:helper(_,cmd)
@@ -96,19 +98,35 @@ function ssh:link(ac)
     end
 end
 
+function ssh:sync_prompt()
+    if env._SUBSYSTEM ~= self.name then return end
+    local prompt=self.conn and self.conn.prompt or "SSH> "
+    env.PRI_PROMPT,env.CURRENT_PROMPT=prompt,prompt
+end
+
+function ssh:enter_i()
+    self.help:print(true)
+    print(env.ansi.mask("RED","Entering interactive mode, execute 'exit' to exit. Command in upper-case would be treated as DBCLI command."))
+    
+    env.set_subsystem(self.name)
+end
+
+function ssh:exit_i()
+    env.set_subsystem(nil)
+end
+
 function ssh:exec(cmd,args)
-    if not cmd or cmd=="" then
+    if not cmd or cmd=="" or cmd:lower()=="help" then
         self.help:print(true)
         return
     end
-
     cmd=cmd:lower()
-   
     if not self.cmds[cmd] then
-        return self:run_command(cmd..(args and ' '..args or ""))
+        self:run_command(cmd..(args and ' '..args or ""))
+    else
+        self.cmds[cmd](self,args)
     end
-
-    self.cmds[cmd](self,args)
+    self:sync_prompt()
 end
 
 function ssh:do_forward(port_info)
@@ -120,6 +138,7 @@ function ssh:do_forward(port_info)
     local_port,remote_port,remote_host=tonumber(args[1]),tonumber(args[2]),args[3]
     env.checkerr(local_port,"Local port should be a number!")
     env.checkerr(remote_port or not args[2],"Remote port should be a number!")
+    env.checkerr(local_port>0 and (not remote_port or remote_port>0),"Port number must be larger than 0!")
     local assign_port=self.conn:setForward(local_port,remote_port,remote_host)
     if assign_port==-1 then
         self.forwards[local_port]=nil
@@ -134,15 +153,38 @@ end
 function ssh:trigger_login(db,url,props)
     local url=env.login.generate_name(url,props)
     local list=env.login.list[env.set.get("database")]
-    if list[url] and list[url].ssh_link then
-        if list[list[url].ssh_link] then
-            self:connect(list[list[url].ssh_link])
+    if list[url] then
+        local ssh_link=list[url].ssh_link
+        if ssh_link and list[ssh_link] and (self.login_alias~=ssh_link or not self:is_connect()) then
+            self:connect(list[ssh_link])
         end
     end 
 end
 
 function ssh:onload()
-    env.set_command(self,"ssh",self.helper,self.exec,false,3)
+    local helper=env.grid.new()
+    helper:add{"Command",'*',"Description"}
+    helper:add{"ssh conn",'',"Connect to SSH server. Usage: ssh conn <user>/<passowrd>@host[:port]"}
+    helper:add{"ssh reconn",'',"Re-connect to last connection"}
+    helper:add{"ssh close",'',"Disconnect current SSH connection."}
+    helper:add{"ssh forward",'',"Forward/un-forward a remote port. Usage: ssh forward <local_port> [<remote_port>] [remote_host]"}
+    helper:add{"ssh link",'',"Link/un-link current SSH connection to an existing database connection(see 'login' command). Usage: ssh link <login_id|login_alias>"}
+    helper:add{"ssh <cmd>",'',"Run command in remote SSH server. DOES NOT SUPPORT the edit-mode commands(vi,base,top,etc)."}
+    --helper:add{"ssh @<script>",'',"Run local shell script in remote SSH server. Usage: ssh @<script> [parameters]"}
+    helper:add{"ssh -i",'',"Enter into SSH interactive mode to omit the 'ssh ' prefix."}
+    helper:sort(1,true)
+    self.help=helper
+    self.cmds={
+        conn=self.connect,
+        reconn=self.reconnect,
+        close=self.disconnect,
+        link=self.link,
+        forward=self.do_forward,
+        exit=self.exit_i,
+        login=env.login.login,
+        ['-i']=self.enter_i
+    }
+    env.set_command(self,self.name,self.helper,self.exec,false,3)
     env.event.snoop("BEFORE_DB_CONNECT",self.trigger_login,self)
 end
 

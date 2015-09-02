@@ -84,6 +84,7 @@ function cfg.set(name,value,backup,isdefault)
     name=name:upper()
     if not cfg[name] then return print("Cannot set ["..name.."], the parameter does not exist!") end
     if not value then return cfg.show_cfg(name) end
+
     if tostring(value):upper()=="DEFAULT" then
         return cfg.set(name,cfg[name].default,nil,true)
     elseif tostring(value):upper()=="BACK" then
@@ -115,8 +116,8 @@ function cfg.set(name,value,backup,isdefault)
     local final=value
 
     if cfg[name].func then
-       final=cfg[name].func(name,value,isdefault) 
-       if final==nil then return end
+        final=cfg[name].func(name,value,isdefault)
+        if final==nil then return end
     end
 
     cfg.temp(name,final,backup)
@@ -126,11 +127,9 @@ function cfg.set(name,value,backup,isdefault)
     return final
 end
 
-function cfg.doset(...) 
-    local args,idx={...},1
-    if #args==0 then
-        return cfg.show_cfg()
-    end
+function cfg.doset(...)
+    local args,idx={...},1    
+    if #args==0 then return cfg.show_cfg() end
     if args[1]:lower()=="-p" then idx=2 end
     for i=idx,#args,2 do
         local value=cfg.set(args[i],args[i+1],true)
@@ -173,7 +172,7 @@ end
 function cfg.backup()
     local backup={}
     for k,v in pairs(cfg) do
-        if k==k:upper() and type(v)=="table" then
+        if k==k:upper() and type(v)=="table" and k~="PROMPT" then
             backup[k]={}
             for item,value in pairs(v) do
                 backup[k][item]=value

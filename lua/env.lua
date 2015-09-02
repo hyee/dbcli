@@ -135,6 +135,17 @@ function env.file_type(file_name)
     return 'file'
 end    
 
+local previous_prompt
+function env.set_subsystem(cmd)
+    if cmd~=nil then
+        previous_prompt=env.PRI_PROMPT:sub(1,#env.PRI_PROMPT-2)
+        env.set.doset("prompt",cmd)
+        env._SUBSYSTEM=cmd
+    else
+        env._SUBSYSTEM,_G._SUBSYSTEM=nil,nil
+        env.set.doset("prompt",previous_prompt)
+    end
+end
 
 function env.check_cmd_endless(cmd,other_parts)
     if not _CMDS[cmd] then
@@ -286,7 +297,9 @@ function env.exec_command(cmd,params)
     local result
     local name=cmd:upper()
     cmd=_CMDS[cmd]   
-
+    if env.ansi then
+        writer:write(env.ansi.get_color("NOR"))
+    end
     if not cmd then
         return print("No such comand["..name.." "..table.unpack(params).."]!")
     end
@@ -320,7 +333,7 @@ function env.exec_command(cmd,params)
         if not res[1] then
             result=res
             local msg={}
-            res[2]=tostring(res[2]):gsub('^.*java%..*Exception%:%s*',''):gsub("^.*000%-00000%:%s*","")
+            res[2]=tostring(res[2]):gsub('^.*(java%..*Exception%:%s*)','%1'):gsub(".*IOException:%s*",""):gsub("^.*000%-00000%:%s*","")
             for v in res[2]:gmatch("(%u%u%u+%-[^\n\r]*)") do
                 table.insert(msg,v)
             end
@@ -350,6 +363,9 @@ local multi_cmd
 local cache_prompt,fix_prompt
 
 function env.set_prompt(name,default,isdefault)
+    if env._SUBSYSTEM~=nil then
+        return nil;
+    end
     default=default:upper()    
     if not name then
         cache_prompt=default
@@ -473,7 +489,18 @@ function env.eval_line(line,exec)
 
     --Remove BOM header
     if not env.pending_command() then
-        line=line:gsub('^[%z\128-\255%s\t]+','')
+        local prefix=env._SUBSYSTEM and (env._SUBSYSTEM.." ") or ""
+        if #prefix>0 then
+            if line:lower():find(prefix:lower(),1,true)== 1 then 
+                prefix=""
+            else
+                local cmd=env.parse_args(2,line)[1]
+                if cmd==cmd:upper() and _CMDS[cmd:upper()] then
+                    prefix=""
+                end
+            end 
+        end
+        line=(prefix..line):gsub('^[%z\128-\255%s\t]+','')
         if line:match('^([^%w])') then
             local cmd=""
             for i=math.min(#line,5),1,-1 do
