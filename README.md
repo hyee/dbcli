@@ -53,17 +53,17 @@ Below are some common use of the utility:<br>
 
 References
 ============
-The project depends on some open-source projects without modifications, they have been built and copied into this project.
+The project depends on some open-source projects without modifications, the binaries have been included into this project.
 Below is the list:<br>
 
-    luajit v2.1 : http://luajit.org/
-    jnlua       : https://code.google.com/p/jnlua/
-    jline2      : https://github.com/jline/jline2
-    lpeg        : http://www.inf.puc-rio.br/~roberto/lpeg/
-    ConsoleZ    : https://github.com/cbucher/console
-    MessagePack : https://github.com/fperrad/lua-MessagePack(pure lua)
-    OpenCSV     : https://github.com/hyee/OpenCSV
-    dygraphs    : https://github.com/danvk/dygraphs
+    luajit v2.1 : (MIT) http://luajit.org/
+    jnlua       : (MIT) https://code.google.com/p/jnlua/
+    jline2      : (BSD) https://github.com/jline/jline2
+    ConsoleZ    : (GNU) https://github.com/cbucher/console
+    MessagePack : (MIT) https://github.com/fperrad/lua-MessagePack (pure lua)
+    OpenCSV     : (MIT) https://github.com/hyee/OpenCSV
+    dygraphs    : (MIT) https://github.com/danvk/dygraphs
+    JSch        : (BSD) http://www.jcraft.com/jsch/
     json4lua    : https://github.com/craigmj/json4lua
 
 
