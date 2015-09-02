@@ -154,8 +154,10 @@ public class SSHExecutor {
     public void waitCompletion() throws Exception {
         while (!isEnd) {
             int ch = Console.in.read(100L);
-            if (ch <= 0) continue;
-            shellWriter.write(ch);
+            while(ch>0) {
+                shellWriter.write(ch);
+                ch=Console.in.read(5L);
+            }
         }
         prompt=pr.getPrompt();
     }
@@ -167,9 +169,9 @@ public class SSHExecutor {
         return lastLine;
     }
 
-    public void exec(String[] commands) throws Exception {
+    public void exec(String command) throws Exception {
         pr.reset(false);
-        for(String command:commands) shellWriter.write(command.getBytes());
+        shellWriter.write(command.getBytes());
         waitCompletion();
     }
 
