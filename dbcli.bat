@@ -4,8 +4,9 @@ cd /d "%~dp0"
 SET TERM=
 
 color 0A
-SET JRE_HOME=d:\soft\java
-SET TNS_ADM=d:\Soft\InstanceClient\network\admin
+SET JRE_HOME=C:\Program Files\Java\jre1.8.0_40
+
+SET TNS_ADM=C:\app\anjul.sahu\product\11.2.0\client_1\network\admin
 
 rem read config file
 If exist "data\init.cfg" (for /f "eol=# delims=" %%i in (data\init.cfg) do (%%i)) 

@@ -1,4 +1,4 @@
-/*[[Show change slope based on GV$SYSMETRIC_HISTORY. Usage: sysslope [metric_id] [inst_id] ]]*/
+/*[[Show change slope based on GV$SYSMETRIC_HISTORY. Usage: sysslope [metric_name] [inst_id] ]]*/
 set feed off
 var cur refcursor
 BEGIN
@@ -35,7 +35,7 @@ BEGIN
             SELECT /*+merge no_expand*/A.*
                FROM   GV$SYSMETRIC_HISTORY A
                WHERE  (:V2 IS NULL OR INST_ID=:V2)
-               AND    Metric_ID=:V1
+               AND    ( upper(METRIC_NAME) like UPPER('%&V1%')) /* changed from metric_id to metric_name as name is more intuitive*/
                ORDER  BY END_TIME,INST_ID;
     END IF;
 END;
