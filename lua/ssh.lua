@@ -110,7 +110,7 @@ end
 
 function ssh:enter_i()
     self.help:print(true)
-    print(env.ansi.mask(env.set.get("PROMPTCOLOR"),"Entering interactive mode, execute 'quit' to exit. Command in upper-case would be treated as DBCLI command."))
+    print(env.ansi.mask(env.set.get("PROMPTCOLOR"),"Entering interactive mode, execute 'exit' to exit. Command in upper-case would be treated as DBCLI command."))
     env.set_subsystem(self.name)
 end
 
@@ -155,7 +155,7 @@ end
 
 function ssh:trigger_login(db,url,props)
     local url=env.login.generate_name(url,props)
-    local list=env.login.list[env.set.get("database")]
+    local list=env.login.list[env.set.get("database")] or {}
     if list[url] then
         local ssh_link=list[url].ssh_link
         if ssh_link and list[ssh_link] and (self.login_alias~=ssh_link or not self:is_connect()) then
@@ -207,7 +207,7 @@ function ssh:onload()
         close=self.disconnect,
         link=self.link,
         forward=self.do_forward,
-        quit=self.exit_i,
+        exit=self.exit_i,
         login=env.login.login,
         ['-i']=self.enter_i
     }

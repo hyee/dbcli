@@ -27,6 +27,7 @@ public class SSHExecutor {
     boolean isLogin = false;
     String lastLine;
     boolean isEnd;
+    static PrintWriter printer = new PrintWriter(Console.writer);
 
 
     public SSHExecutor() {
@@ -84,7 +85,7 @@ public class SSHExecutor {
             //FileOutputStream fileOut = new FileOutputStream( outputFileName );
             shell.setInputStream(pipeIn);
             shell.setOutputStream(pr);
-            shell.setEnv("TERM","xterm-old");
+            shell.setEnv("TERM","ansi");
             shell.setPty(true);
             shell.setPtyType("ansi", 800, 60, 1400, 900);
             shell.connect();
@@ -252,7 +253,6 @@ public class SSHExecutor {
 
     class Printer extends OutputStream {
         StringBuilder sb;
-        PrintWriter printer = new PrintWriter(Console.writer);
         char lastChar;
         boolean isStart;
 
