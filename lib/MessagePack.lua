@@ -593,7 +593,13 @@ local function unpack_map (c, n)
     local decode = unpackers['any']
     for i = 1, n do
         local k = decode(c)
-        t[k] = decode(c)
+        local val = decode(c)
+        if k == nil then
+            k = m.sentinel
+        end
+        if k ~= nil then
+            t[k] = val
+        end
     end
     return t
 end
@@ -1097,7 +1103,7 @@ function m.unpacker (src)
 end
 
 set_string'string_compat'
-set_integer'signed'
+set_integer'unsigned'
 if NUMBER_INTEGRAL then
     packers['double'] = packers['integer']
     packers['float'] = packers['integer']
@@ -1111,7 +1117,7 @@ else
 end
 set_array'without_hole'
 
-m._VERSION = "0.3.2"
+m._VERSION = '0.3.3'
 m._DESCRIPTION = "lua-MessagePack : a pure Lua implementation"
 m._COPYRIGHT = "Copyright (c) 2012-2015 Francois Perrad"
 return m

@@ -86,10 +86,9 @@ public class SSHExecutor {
             shell.setOutputStream(pr);
             shell.setEnv("TERM","xterm-old");
             shell.setPty(true);
-            shell.setPtyType("vt100", 800, 60, 1400, 900);
+            shell.setPtyType("ansi", 800, 60, 1400, 900);
             shell.connect();
             waitCompletion();
-
         } catch (Exception e) {
             //e.printStackTrace();
             throw e;
@@ -164,12 +163,12 @@ public class SSHExecutor {
         prompt = pr.getPrompt();
     }
 
-    public String getLastLine(String[] commands, boolean isWait) throws Exception {
+    public String getLastLine(String command, boolean isWait) throws Exception {
         pr.reset(true);
         lastLine=null;
-        for (String command : commands) shellWriter.write(command.getBytes());
+        shellWriter.write(command.getBytes());
         if (isWait) waitCompletion();
-        else pr.flush();
+        //else pr.flush();
         return lastLine;
     }
 
@@ -271,7 +270,7 @@ public class SSHExecutor {
                 if (c == '\r' && (lastChar == '\n' || lastChar == '\r')) return;
                 if (c == '\n') {
                     lastLine = p.matcher(sb.toString()).replaceAll("");
-                    if (!isStart && !ignoreMessage) {//skip the first line
+                    if (!isStart&&!ignoreMessage) {//skip the first line
                         printer.println(lastLine);
                         printer.flush();
                     }
@@ -301,7 +300,7 @@ public class SSHExecutor {
 
         @Override
         public synchronized void flush() {
-            if(isStart || isEnd || sb==null) return;
+            if(isStart|| isEnd || sb.length()==0) return;
             lastLine =p.matcher(sb.toString()).replaceAll("");
             printer.print(lastLine);
             printer.flush();

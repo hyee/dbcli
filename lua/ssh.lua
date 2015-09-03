@@ -62,14 +62,14 @@ function ssh:disconnect()
 end
 
 function ssh:getresult(command)
-    env.checkerr(self.conn,"SSH connection has not been created, use 'ssh conn' firstly.")
+    self:check_connection()
     local line=self.conn:getLastLine(command.."\n",true)
     self.prompt=self.conn.prompt;
     return line;
 end
 
 function ssh:run_command(command)
-    env.checkerr(self.conn,"SSH connection has not been created, use 'ssh conn' firstly.")
+    self:check_connection()
     self.conn:exec(command.."\n")
     self.prompt=self.conn.prompt;
 end
@@ -78,8 +78,12 @@ function ssh:helper(_,cmd)
     if cmd==nil or cmd=="" then return "Operations over SSH server, type 'ssh' for more detail" end
 end
 
-function ssh:link(ac)
+function ssh:check_connection()
     env.checkerr(self:is_connect(),"Please connect to an SSH server fistly!")
+end
+
+function ssh:link(ac)
+    self:check_connection()
     local str="Link/Unlink to an existing database a/c so that the SSH connection is triggered together to create.\n"
     str=str.."Usage: ssh link <login_id>/<login_alias>, refer to command 'login' to get the related information.\n"
     if not ac then return print(str) end
@@ -132,7 +136,7 @@ function ssh:do_forward(port_info)
     if not port_info or port_info=="" then
         return print("Usage: ssh forward <local_port> [<remote_port>] [remote_host]")
     end
-    env.checkerr(self:is_connect(),"Please connect to an SSH server fistly!")
+    self:check_connection()
     local args=env.parse_args(3,port_info)
     local_port,remote_port,remote_host=tonumber(args[1]),tonumber(args[2]),args[3]
     env.checkerr(local_port,"Local port should be a number!")
@@ -160,6 +164,30 @@ function ssh:trigger_login(db,url,props)
     end 
 end
 
+function ssh:run_local_script(filename,...)
+    if not filename or filename=="" then
+        return print("Run local script over remote SSH sever. Usage: shell <filename> [parameters].")
+    end
+    self:check_connection()
+    local file=io.open(filename,'r')
+    env.checkerr(file,'Cannot open file '..filename)
+    local txt=file:read('*a')
+    file:close()
+    txt=txt:gsub("\r",""):gsub("^[\n%s\t\v]+","")
+    local intepreter=txt:match("^#!([^\n])+")
+    if not intepreter then intepreter="/bin/bash" end
+    self:getresult('cat >/tmp/dbcli_shell<<"EOF"\n'..txt..'\nEOF\n')
+    local commands={intepreter,'/tmp/dbcli_shell'}
+    local args={...}
+    for k,v in ipairs(args) do
+        if v:find("[ \t]") then v='"'..v..'"' end
+        commands[#commands+1]=v;
+    end
+    commands[#commands+1]=";rm -f /tmp/dbcli_shell"
+    local command=table.concat(commands,' ')
+    self:run_command(command)
+end
+
 function ssh:onload()
     local helper=env.grid.new()
     helper:add{"Command",'*',"Description"}
@@ -169,7 +197,7 @@ function ssh:onload()
     helper:add{"ssh forward",'',"Forward/un-forward a remote port. Usage: ssh forward <local_port> [<remote_port>] [remote_host]"}
     helper:add{"ssh link",'',"Link/un-link current SSH connection to an existing database connection(see 'login' command). Usage: ssh link <login_id|login_alias>"}
     helper:add{"ssh <cmd>",'',"Run command in remote SSH server. DOES NOT SUPPORT the edit-mode commands(vi,base,top,etc)."}
-    --helper:add{"ssh @<script>",'',"Run local shell script in remote SSH server. Usage: ssh @<script> [parameters]"}
+    --helper:add{"ssh shell <script>",'',"Run local shell script in remote SSH server. Usage: ssh shell <script> [parameters]"}
     helper:add{"ssh -i",'',"Enter into SSH interactive mode to omit the 'ssh ' prefix."}
     helper:sort(1,true)
     self.help=helper
@@ -184,6 +212,7 @@ function ssh:onload()
         ['-i']=self.enter_i
     }
     env.set_command(self,self.name,self.helper,self.exec,false,3)
+    env.set_command(self,{'shell','sh'},"Run local shell script in remote SSH server. Usage: shell <script> [parameters]",self.run_local_script,false,20)
     env.event.snoop("BEFORE_DB_CONNECT",self.trigger_login,self)
 end
 
