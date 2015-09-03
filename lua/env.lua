@@ -258,7 +258,7 @@ end
 
 function env.format_error(src,errmsg,...)  
     errmsg=errmsg or ""
-    errmsg=errmsg:gsub('.*Exception%:%s*','')
+    --errmsg=errmsg:gsub('.*Exception%:%s*','')
     if src then
         local name,line=src:match("([^\\/]+)%#(%d+)$")
         if name then
@@ -333,7 +333,7 @@ function env.exec_command(cmd,params)
         if not res[1] then
             result=res
             local msg={}
-            res[2]=tostring(res[2]):gsub('^.*(java%..*Exception%:%s*)','%1'):gsub(".*IOException:%s*",""):gsub("^.*000%-00000%:%s*","")
+            res[2]=tostring(res[2]):gsub('^.*([^%:]+Exception%:%s*)','%1'):gsub(".*IOException:%s*",""):gsub("^.*000%-00000%:%s*","")
             for v in res[2]:gmatch("(%u%u%u+%-[^\n\r]*)") do
                 table.insert(msg,v)
             end
@@ -347,7 +347,7 @@ function env.exec_command(cmd,params)
         end
     end
     
-    if event then 
+    if event then
         if not env.IS_INTERNAL_EVAL then event("AFTER_SUCCESS_COMMAND",name,params,result[1]) end
         if isMain then event("AFTER_ROOT_COMMAND",name,params,result[1]) end
     end

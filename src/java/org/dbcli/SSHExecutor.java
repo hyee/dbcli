@@ -1,7 +1,6 @@
 package org.dbcli;
 
 import com.jcraft.jsch.*;
-import sun.misc.Regexp;
 
 import java.io.*;
 import java.util.HashMap;
@@ -61,6 +60,7 @@ public class SSHExecutor {
             session.setConfig("compression.s2c", "zlib@openssh.com,zlib,none");
             session.setConfig("compression.c2s", "zlib@openssh.com,zlib,none");
             session.setConfig("compression_level", "9");
+            session.setDaemonThread(true);
             session.setServerAliveInterval((int) TimeUnit.SECONDS.toMillis(10));
             session.setServerAliveCountMax(10);
             session.setTimeout(0);
@@ -79,13 +79,14 @@ public class SSHExecutor {
             shell = (ChannelShell) session.openChannel("shell");
             PipedInputStream pipeIn = new PipedInputStream();
             shellWriter = new PipedOutputStream(pipeIn);
-            pr=new Printer();
+            pr = new Printer();
             pr.reset(true);
             //FileOutputStream fileOut = new FileOutputStream( outputFileName );
             shell.setInputStream(pipeIn);
             shell.setOutputStream(pr);
+            shell.setEnv("TERM","xterm-old");
             shell.setPty(true);
-            shell.setPtyType("vt102", 800, 60, 1400, 900);
+            shell.setPtyType("vt100", 800, 60, 1400, 900);
             shell.connect();
             waitCompletion();
 
@@ -101,8 +102,8 @@ public class SSHExecutor {
 
     private void closeShell() {
         try {
-            prompt=null;
-            lastLine=null;
+            prompt = null;
+            lastLine = null;
             pr.close();
             shellWriter.close();
             shell.getInputStream().close();
@@ -154,18 +155,21 @@ public class SSHExecutor {
     public void waitCompletion() throws Exception {
         while (!isEnd) {
             int ch = Console.in.read(100L);
-            while(ch>0) {
+            while (ch > 0) {
                 shellWriter.write(ch);
-                ch=Console.in.read(5L);
+                pr.flush();
+                ch = Console.in.read(5L);
             }
         }
-        prompt=pr.getPrompt();
+        prompt = pr.getPrompt();
     }
 
-    public String getLastLine(String[] commands)throws Exception {
+    public String getLastLine(String[] commands, boolean isWait) throws Exception {
         pr.reset(true);
-        for(String command:commands) shellWriter.write(command.getBytes());
-        waitCompletion();
+        lastLine=null;
+        for (String command : commands) shellWriter.write(command.getBytes());
+        if (isWait) waitCompletion();
+        else pr.flush();
         return lastLine;
     }
 
@@ -175,9 +179,9 @@ public class SSHExecutor {
         waitCompletion();
     }
 
-    public void sendKey(char c) throws Exception{
-        if(isEnd) return;
-        shellWriter.write((byte)c);
+    public void sendKey(char c) throws Exception {
+        if (isEnd) return;
+        shellWriter.write((byte) c);
         shellWriter.flush();
     }
 
@@ -254,40 +258,60 @@ public class SSHExecutor {
         boolean isStart;
 
         boolean ignoreMessage;
-        Pattern p=Pattern.compile("\0x1b\\[[;\\dm]+");
+        Pattern p = Pattern.compile("\33\\[[\\d;]+[mK]");
+
+        public Printer() {
+            reset(false);
+        }
 
         @Override
         public void write(int i) throws IOException {
-            if (sb == null) sb = new StringBuilder(linePrefix);
             char c = (char) i;
             try {
-                if (c == '\r' && (lastChar =='\n' || lastChar=='\r')) return;
+                if (c == '\r' && (lastChar == '\n' || lastChar == '\r')) return;
                 if (c == '\n') {
-                    lastLine=p.matcher(sb.toString()).replaceAll("");
-                    if(!isStart&&!ignoreMessage) {//skip the first line
+                    lastLine = p.matcher(sb.toString()).replaceAll("");
+                    if (!isStart && !ignoreMessage) {//skip the first line
                         printer.println(lastLine);
                         printer.flush();
                     }
-                    isStart=false;
-                    sb = null;
+                    isStart = false;
+                    sb.setLength(0);
                     return;
                 }
-                isEnd = (lastChar == '$' || lastChar == '>' || lastChar == '#') && c==' ';
+                isEnd = (lastChar == '$' || lastChar == '>' || lastChar == '#') && c == ' ';
                 sb.append(c);
             } finally {
                 lastChar = c;
             }
         }
 
-        public String getPrompt() {return sb==null?null:sb.toString();}
+        public String getPrompt() {
+            return sb.toString()==""?null:sb.toString();
+        }
 
         public void reset(boolean ignoreMessage) {
-            sb = null;
+            sb = new StringBuilder(linePrefix);
             lastChar = '\0';
-            isEnd=false;
-            isStart=true;
-            this.ignoreMessage=ignoreMessage;
-            lastLine=null;
+            isEnd = false;
+            isStart = true;
+            this.ignoreMessage = ignoreMessage;
+            lastLine = null;
+        }
+
+        @Override
+        public synchronized void flush() {
+            if(isStart || isEnd || sb==null) return;
+            lastLine =p.matcher(sb.toString()).replaceAll("");
+            printer.print(lastLine);
+            printer.flush();
+            isStart = false;
+            sb.setLength(0);
+        }
+
+        @Override
+        public void close() {
+            //printer.close();
         }
     }
 }

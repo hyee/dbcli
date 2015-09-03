@@ -63,7 +63,7 @@ end
 
 function ssh:getresult(command)
     env.checkerr(self.conn,"SSH connection has not been created, use 'ssh conn' firstly.")
-    local line=self.conn:getLastLine(command.."\n")
+    local line=self.conn:getLastLine(command.."\n",true)
     self.prompt=self.conn.prompt;
     return line;
 end
@@ -106,8 +106,7 @@ end
 
 function ssh:enter_i()
     self.help:print(true)
-    print(env.ansi.mask("RED","Entering interactive mode, execute 'exit' to exit. Command in upper-case would be treated as DBCLI command."))
-    
+    print(env.ansi.mask(env.set.get("PROMPTCOLOR"),"Entering interactive mode, execute 'quit' to exit. Command in upper-case would be treated as DBCLI command."))
     env.set_subsystem(self.name)
 end
 
@@ -180,7 +179,7 @@ function ssh:onload()
         close=self.disconnect,
         link=self.link,
         forward=self.do_forward,
-        exit=self.exit_i,
+        quit=self.exit_i,
         login=env.login.login,
         ['-i']=self.enter_i
     }

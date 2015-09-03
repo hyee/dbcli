@@ -33,7 +33,7 @@ function env.reset_input(line)
 end
 
 while true do  
-    if env.CURRENT_PROMPT=="_____EXIT_____" then break end    
+    if env.CURRENT_PROMPT=="_____EXIT_____" then break end
     line = reader:readLine(prompt_color:format(color("PROMPTCOLOR"),env.CURRENT_PROMPT,color("COMMANDCOLOR")))  
     if not line or (line:lower() == 'quit' or line:lower() == 'exit') and not env._SUBSYSTEM then
         print("Exited.")

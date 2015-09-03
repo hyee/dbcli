@@ -8,7 +8,6 @@ import jline.internal.NonBlockingInputStream;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.io.Writer;
 import java.util.Iterator;
 import java.util.concurrent.Executors;
@@ -17,12 +16,12 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 public class Console extends ConsoleReader {
-    protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(5);
     public static Writer writer;
+    public static NonBlockingInputStream in;
+    protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(5);
     private History his;
     private ScheduledFuture task;
     private EventReader monitor = new EventReader();
-    public static  NonBlockingInputStream in;
     private ActionListener event;
     private char[] keys;
 
@@ -33,7 +32,7 @@ public class Console extends ConsoleReader {
         setHandleUserInterrupt(true);
         setBellEnabled(false);
         in = (NonBlockingInputStream) this.getInput();
-        writer=this.getOutput();
+        writer = this.getOutput();
         Iterator<Completer> iterator = getCompleters().iterator();
         while (iterator.hasNext()) removeCompleter(iterator.next());
     }
