@@ -1,3 +1,4 @@
+2015-08-30: + public: use ansicon as the default color parser(original is jline)
 2015-08-30: + public: new command "ssh -i" to enter SSH interactive mode 
 2015-08-30: + public: new command "ssh forward" so that db is able to connect via SSH(see also "ssh link")
 2015-08-30: + public: new command "ssh conn/close/link/<command>" 

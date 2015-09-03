@@ -6,12 +6,19 @@ local terminal=reader:getTerminal()
 local isAnsiSupported=terminal:isAnsiSupported()
 local enabled=isAnsiSupported
 
+ansi.ansi_mode=os.getenv("ANSICON_CMD")
+if not ansi.ansi_mode or ansi.ansi_mode:gsub("[ \t]","")=="" then 
+    ansi.ansi_mode="jline"
+else
+    ansi.ansi_mode="ansicon"
+end
+
 local color=setmetatable({
     BLK = "\27[30m", -- Black 
     RED = "\27[31m", -- Red 
     GRN = "\27[32m", -- Green 
     YEL = "\27[33m", -- Yellow 
-    BLU = "\27[34m", -- Blue 
+    BLU = "\27[34m", -- Blue
     MAG = "\27[35m", -- Magenta
     CYN = "\27[36m", -- Cyan 
     WHT = "\27[37m", -- White

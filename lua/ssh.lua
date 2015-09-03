@@ -31,7 +31,8 @@ function ssh:connect(conn_str)
     self.ssh_host=host
     self.ssh_port=port
     self.conn=java.new("org.dbcli.SSHExecutor")
-    self.conn:connect(host,port,usr,pwd,"")
+    local ansi_mode=env.ansi and env.ansi.ansi_mode=="ansicon" and "vt100" or "ansi"
+    self.conn:connect(host,port,usr,pwd,"",ansi_mode)
     env.event.callback("TRIGGER_CONNECT","env.ssh",url,conn_str)
     self.login_alias=env.login.generate_name(url,conn_str)
     env.set_title("SSH: "..usr..'@'..host)
@@ -79,7 +80,7 @@ function ssh:helper(_,cmd)
 end
 
 function ssh:check_connection()
-    env.checkerr(self:is_connect(),"Please connect to an SSH server fistly!")
+    env.checkerr(self:is_connect(),"SSH server is not connected!")
 end
 
 function ssh:link(ac)
@@ -110,7 +111,7 @@ end
 
 function ssh:enter_i()
     self.help:print(true)
-    print(env.ansi.mask(env.set.get("PROMPTCOLOR"),"Entering interactive mode, execute 'exit' to exit. Command in upper-case would be treated as DBCLI command."))
+    print(env.ansi.mask(env.set.get("PROMPTCOLOR"),"Entering interactive mode, execute 'quit' to exit. Command in upper-case would be treated as DBCLI command."))
     env.set_subsystem(self.name)
 end
 
@@ -207,7 +208,7 @@ function ssh:onload()
         close=self.disconnect,
         link=self.link,
         forward=self.do_forward,
-        exit=self.exit_i,
+        quit=self.exit_i,
         login=env.login.login,
         ['-i']=self.enter_i
     }

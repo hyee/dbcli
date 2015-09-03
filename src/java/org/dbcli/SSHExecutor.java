@@ -11,8 +11,10 @@ import java.util.regex.Pattern;
  * Created by Will on 2015/9/1.
  */
 public class SSHExecutor {
+    static PrintWriter printer = new PrintWriter(Console.writer);
     public Session session;
     public String linePrefix = "";
+    public String termType;
     public String host;
     public String user;
     public int port;
@@ -27,14 +29,13 @@ public class SSHExecutor {
     boolean isLogin = false;
     String lastLine;
     boolean isEnd;
-    static PrintWriter printer = new PrintWriter(Console.writer);
 
 
     public SSHExecutor() {
     }
 
-    public SSHExecutor(String host, int port, String user, String password, String linePrefix) throws Exception {
-        connect(host, port, user, password, linePrefix);
+    public SSHExecutor(String host, int port, String user, String password, String linePrefix, String termType) throws Exception {
+        connect(host, port, user, password, linePrefix,termType);
     }
 
     public void output(String message, boolean newLine) {
@@ -51,7 +52,7 @@ public class SSHExecutor {
         System.out.flush();
     }
 
-    public void connect(String host, int port, String user, final String password, String linePrefix) throws Exception {
+    public void connect(String host, int port, String user, final String password, String linePrefix, String termType) throws Exception {
         try {
             ssh = new JSch();
             session = ssh.getSession(user, host, port);
@@ -73,6 +74,7 @@ public class SSHExecutor {
             this.port = port;
             this.user = user;
             this.password = password;
+            this.termType = termType.intern();
             forwards = new HashMap<>();
             channels = new HashMap<>();
             isLogin = true;
@@ -85,9 +87,9 @@ public class SSHExecutor {
             //FileOutputStream fileOut = new FileOutputStream( outputFileName );
             shell.setInputStream(pipeIn);
             shell.setOutputStream(pr);
-            shell.setEnv("TERM","ansi");
+            shell.setEnv("TERM",termType);
             shell.setPty(true);
-            shell.setPtyType("ansi", 800, 60, 1400, 900);
+            shell.setPtyType(termType, 800, 60, 1400, 900);
             shell.connect();
             waitCompletion();
         } catch (Exception e) {
@@ -118,7 +120,7 @@ public class SSHExecutor {
             output("Connection is lost, try to re-connect ...", true);
             closeShell();
         }
-        connect(this.host, this.port, this.user, this.password, this.linePrefix);
+        connect(this.host, this.port, this.user, this.password, this.linePrefix,termType);
     }
 
     public void close() throws Exception {
@@ -153,7 +155,7 @@ public class SSHExecutor {
     }
 
     public void waitCompletion() throws Exception {
-        while (!isEnd) {
+        while (!isEnd && !shell.isClosed()) {
             int ch = Console.in.read(100L);
             while (ch > 0) {
                 shellWriter.write(ch);
@@ -161,15 +163,17 @@ public class SSHExecutor {
                 ch = Console.in.read(5L);
             }
         }
-        prompt = pr.getPrompt();
+        if(shell.isClosed()) {
+            this.close();
+        }
+        else prompt = pr.getPrompt();
     }
 
     public String getLastLine(String command, boolean isWait) throws Exception {
         pr.reset(true);
-        lastLine=null;
+        lastLine = null;
         shellWriter.write(command.getBytes());
         if (isWait) waitCompletion();
-        //else pr.flush();
         return lastLine;
     }
 
@@ -267,12 +271,17 @@ public class SSHExecutor {
         public void write(int i) throws IOException {
             char c = (char) i;
             try {
-                if (c == '\r' && (lastChar == '\n' || lastChar == '\r')) return;
+                if(i==0) return;
                 if (c == '\n') {
-                    lastLine = p.matcher(sb.toString()).replaceAll("");
-                    if (!isStart&&!ignoreMessage) {//skip the first line
-                        printer.println(lastLine);
-                        printer.flush();
+                    lastLine = sb.toString();
+                    if (!isStart && !ignoreMessage) {//skip the first line
+                        if(termType=="ansi")  {
+                            printer.println( p.matcher(lastLine).replaceAll(""));
+                            printer.flush();
+                        } else {
+                            System.out.println(lastLine);
+                            System.out.flush();
+                        }
                     }
                     isStart = false;
                     sb.setLength(0);
@@ -286,7 +295,7 @@ public class SSHExecutor {
         }
 
         public String getPrompt() {
-            return sb.toString()==""?null:sb.toString();
+            return sb.toString() == "" ? null : sb.toString();
         }
 
         public void reset(boolean ignoreMessage) {
@@ -300,16 +309,23 @@ public class SSHExecutor {
 
         @Override
         public synchronized void flush() {
-            if(isStart|| isEnd || sb.length()==0) return;
-            lastLine =p.matcher(sb.toString()).replaceAll("");
-            printer.print(lastLine);
-            printer.flush();
+            if (isStart || isEnd || sb.length() == 0) return;
+            lastLine = sb.toString();
+            if(termType=="ansi")  {
+                printer.print(p.matcher(lastLine).replaceAll(""));
+                printer.flush();
+            } else {
+                System.out.print(lastLine);
+                System.out.flush();
+            }
+            //System.out.flush();
             isStart = false;
             sb.setLength(0);
         }
 
         @Override
         public void close() {
+            sb = null;
             //printer.close();
         }
     }
