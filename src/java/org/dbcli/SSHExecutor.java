@@ -12,16 +12,18 @@ import java.util.regex.Pattern;
  */
 public class SSHExecutor {
     static PrintWriter printer = new PrintWriter(Console.writer);
+    public static  String TERMTYPE;
+    public static int COLS=800;
+    public static int ROWS=60;
     public Session session;
     public String linePrefix = "";
-    public String termType;
     public String host;
     public String user;
     public int port;
     public String password;
     public String prompt;
     JSch ssh;
-    ChannelShell shell;
+    public ChannelShell shell;
     PipedOutputStream shellWriter;
     Printer pr;
     HashMap<Integer, Object[]> forwards;
@@ -34,8 +36,8 @@ public class SSHExecutor {
     public SSHExecutor() {
     }
 
-    public SSHExecutor(String host, int port, String user, String password, String linePrefix, String termType) throws Exception {
-        connect(host, port, user, password, linePrefix, termType);
+    public SSHExecutor(String host, int port, String user, String password, String linePrefix) throws Exception {
+        connect(host, port, user, password, linePrefix);
     }
 
     public void output(String message, boolean newLine) {
@@ -52,7 +54,7 @@ public class SSHExecutor {
         System.out.flush();
     }
 
-    public void connect(String host, int port, String user, final String password, String linePrefix, String termType) throws Exception {
+    public void connect(String host, int port, String user, final String password, String linePrefix) throws Exception {
         try {
             ssh = new JSch();
             session = ssh.getSession(user, host, port);
@@ -74,7 +76,6 @@ public class SSHExecutor {
             this.port = port;
             this.user = user;
             this.password = password;
-            this.termType = termType.intern();
             forwards = new HashMap<>();
             channels = new HashMap<>();
             isLogin = true;
@@ -87,19 +88,24 @@ public class SSHExecutor {
             //FileOutputStream fileOut = new FileOutputStream( outputFileName );
             shell.setInputStream(pipeIn);
             shell.setOutputStream(pr);
-            shell.setEnv("TERM", termType);
+            shell.setEnv("TERM", TERMTYPE=TERMTYPE=="none"?"ansi":TERMTYPE);
             shell.setPty(true);
-            shell.setPtyType(termType, 800, 60, 1400, 900);
+            shell.setPtyType(TERMTYPE=TERMTYPE=="none"?"ansi":TERMTYPE, COLS, ROWS, 1400, 900);
             shell.connect();
             waitCompletion();
         } catch (Exception e) {
-            //e.printStackTrace();
             throw e;
         }
     }
 
+    public void setTermType(String termType,int cols,int rows) {
+        TERMTYPE=termType;
+        COLS=cols;
+        ROWS=rows;
+    }
+
     public boolean isConnect() {
-        return session.isConnected();
+        return shell==null?false:session.isConnected();
     }
 
     private void closeShell() {
@@ -120,7 +126,7 @@ public class SSHExecutor {
             output("Connection is lost, try to re-connect ...", true);
             closeShell();
         }
-        connect(this.host, this.port, this.user, this.password, this.linePrefix, termType);
+        connect(this.host, this.port, this.user, this.password, this.linePrefix);
     }
 
     public void close() throws Exception {
@@ -155,12 +161,13 @@ public class SSHExecutor {
     }
 
     public void waitCompletion() throws Exception {
+        long wait=100;
         while (!isEnd && !shell.isClosed()) {
-            int ch = Console.in.read(100L);
+            int ch = Console.in.read(wait);
             while (ch > 0) {
                 shellWriter.write(ch);
                 pr.flush();
-                ch = Console.in.read(5L);
+                ch = Console.in.read(1L);
             }
         }
         if (shell.isClosed()) {
@@ -172,6 +179,7 @@ public class SSHExecutor {
         pr.reset(true);
         lastLine = null;
         shellWriter.write(command.getBytes());
+        shellWriter.flush();
         if (isWait) waitCompletion();
         return lastLine;
     }
@@ -179,45 +187,8 @@ public class SSHExecutor {
     public void exec(String command) throws Exception {
         pr.reset(false);
         shellWriter.write(command.getBytes());
-        waitCompletion();
-    }
-
-    public void sendKey(char c) throws Exception {
-        if (isEnd) return;
-        shellWriter.write((byte) c);
         shellWriter.flush();
-    }
-
-    public void exec_single_command(String command) throws Exception {
-        ChannelExec channel = (ChannelExec) getChannel("exec");
-        channel.setCommand(command);
-        channel.setInputStream(null);
-        channel.setErrStream(null);
-        channel.setPty(true);
-        channel.setPtyType("vt102", 800, 60, 1400, 900);
-        InputStream in = channel.getInputStream();
-        channel.connect();
-
-        byte[] tmp = new byte[1024];
-        boolean flag = false;
-        while (true) {
-            while (in.available() > 0) {
-                int i = in.read(tmp, 0, 1024);
-                if (i < 0) break;
-                output((flag == false ? this.linePrefix : "") + new String(tmp, 0, i), false);
-                flag = true;
-            }
-            if (channel.isClosed()) {
-                if (in.available() > 0) continue;
-                break;
-            }
-            try {
-                Thread.sleep(300);
-            } catch (Exception ee) {
-            }
-        }
-        output("", true);
-        System.err.flush();
+        waitCompletion();
     }
 
     class SSHUserInfo implements UserInfo {
@@ -298,7 +269,7 @@ public class SSHExecutor {
 
             if (isStart || isEnd || sb.length() == 0 || ignoreMessage) return;
             lastLine = sb.toString();
-            if (termType == "ansi") {
+            if (TERMTYPE == "none") {
                 printer.print(p.matcher(lastLine).replaceAll(""));
                 printer.flush();
             } else {

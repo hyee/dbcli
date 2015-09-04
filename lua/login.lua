@@ -21,6 +21,7 @@ function login.generate_name(url,props)
     local url1=url
     url=url1:match("//([^&]+)")
     if not url then url=('@'..url1):match("@/?([^@]+)$") end
+    
     url=url:gsub('([%.%:])([%w%-%_]+)',function(a,b)
         if a=='.' and b:match('^(%d+)$') then
             return a..b
@@ -28,7 +29,6 @@ function login.generate_name(url,props)
             return ''
         end
     end)
-    
     return (props.user..'@'..url):lower()    
 end
 
@@ -36,7 +36,6 @@ function login.capture(db,url,props)
     local typ=env.set.get("database")
     
     login.load()
-
     url=login.generate_name(url,props)
     props.password,props.lastlogin=env.packer.pack_str(props.password),os.date()
     if not login.list[typ] then login.list[typ]={} end
@@ -52,7 +51,7 @@ function login.capture(db,url,props)
     return url
 end
 
-function login.search(id,filter)
+function login.search(id,filter,url_filter)
     if cfg.get("SaveLogin")=="off" then 
         return print("Cannot login because the 'SaveLogin' option is 'off'!")
     end
@@ -109,7 +108,7 @@ function login.search(id,filter)
     else
         for ind,k in pairs(keys) do
             local v=list[k]
-            if not filter or k:find(filter,1,true) then
+            if (not filter and not url_filter) or (k:find(filter or "",1,true)  and v.url:find(url_filter or "",1,true)) then
                 counter=counter+1
                 if counter==1 then account=k end
                 grid.add(hdl,{ind,v.alias or "",k,v.user,v.ssh_link or "",v.url,v.lastlogin})
@@ -142,19 +141,23 @@ function login.search(id,filter)
     if account then return list[account],account end
 end
 
-function login.login(db,id,filter)
-    local conn=login.search(id,filter)
-    if not conn then return end;
-    if conn.connect_object then
-        db=loadstring("return "..conn.connect_object)()
-    end
-    db:connect(conn)
-    return true
+
+function login.trigger_login(...)
+    local list,account=login.search(...)
+    if not account then return end
+    env.event.callback("TRIGGER_LOGIN",account,list)
 end
 
 function login.onload()
     env.event.snoop("TRIGGER_CONNECT",login.capture)
     cfg.init("SaveLogin","on",nil,"core","Determine if autosave logins.",'on,off')
+    local help_login=[[
+        Login with saved accounts. Usage: login [ -d | -a |<number|account_name>] 
+            login                     : list all saved a/c
+            login -d <num|name|alias> : delete matched a/c
+            login <num|name|alias>    : login a/c
+            login -a <alias> <id|name>: set alias to an existing account]]
+    env.set_command(nil,"login",help_login,login.trigger_login,false,3)        
     login.load()
 end
 

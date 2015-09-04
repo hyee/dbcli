@@ -317,6 +317,7 @@ function env.exec_command(cmd,params)
             env.CURRENT_ROOT_CMD=name
         end
     end
+
     local args= cmd.OBJ and {cmd.OBJ,table.unpack(params)} or {table.unpack(params)}
     --env.trace.enable(true)
     local funs=type(cmd.FUNC)=="table" and cmd.FUNC or {cmd.FUNC}
@@ -486,21 +487,21 @@ end
 
 function env.eval_line(line,exec)
     if type(line)~='string' or line:gsub('[%s\n\r\t]+','')=='' then return end
-
+    local subsystem_prefix=""
     --Remove BOM header
     if not env.pending_command() then
-        local prefix=env._SUBSYSTEM and (env._SUBSYSTEM.." ") or ""
-        if #prefix>0 then
-            if line:lower():find(prefix:lower(),1,true)== 1 then 
-                prefix=""
+        subsystem_prefix=env._SUBSYSTEM and (env._SUBSYSTEM.." ") or ""
+        if #subsystem_prefix>0 then
+            if line:lower():find(subsystem_prefix:lower(),1,true)== 1 then 
+                subsystem_prefix=""
             else
                 local cmd=env.parse_args(2,line)[1]
-                if cmd==cmd:upper() and _CMDS[cmd:upper()] then
-                    prefix=""
+                if cmd:len()>1 and cmd:sub(1,1)=='.' and _CMDS[cmd:upper():sub(2)] then
+                    subsystem_prefix=""
                 end
             end 
         end
-        line=(prefix..line):gsub('^[%z\128-\255%s\t]+','')
+        line=(subsystem_prefix..line:gsub("^%.","",1)):gsub('^[%z\128-\255%s\t]+','')
         if line:match('^([^%w])') then
             local cmd=""
             for i=math.min(#line,5),1,-1 do
@@ -529,7 +530,7 @@ function env.eval_line(line,exec)
     if multi_cmd then return check_multi_cmd(line) end
     
     local cmd,rest=line:match('^%s*([^%s\t]+)[%s\t]*(.*)')
-    cmd=cmd:gsub(env.END_MARKS[1]..'+$',''):upper()
+    cmd=subsystem_prefix=="" and cmd:gsub(env.END_MARKS[1]..'+$',''):upper() or cmd
     env.CURRENT_CMD=cmd
     if not (_CMDS[cmd]) then
         return print("No such command["..cmd.."], please type 'help' for more information.")        
@@ -541,7 +542,7 @@ function env.eval_line(line,exec)
     end
     
     --print('Command:',cmd,table.concat (args,','))
-    rest=rest:gsub("["..env.END_MARKS[1].."%s]+$","")
+    rest=subsystem_prefix=="" and rest:gsub("["..env.END_MARKS[1].."%s]+$","") or rest
     local args=env.parse_args(cmd,rest)
     if exec~=false then
         env.exec_command(cmd,args)        
@@ -641,6 +642,7 @@ function env.onload(...)
     end
     if  env.ansi and env.ansi.define_color then
         env.ansi.define_color("Promptcolor","HIY","core","Define prompt's color")
+        env.ansi.define_color("PromptSubcolor","MAG","core","Define the prompt color for subsystem.")
         env.ansi.define_color("commandcolor","HIC","core","Define command line's color")
     end
     if env.event then

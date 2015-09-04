@@ -289,9 +289,10 @@ function db_core:ctor()
     set_command(self,"rollback",nil,self.rollback,false,1)
 end
 
-function db_core:login(...)
-    --print(self.connect,self.__instance.connect)
-    env.login.login(self.__instance,...)
+function db_core:login(account,list)
+    if list.account_type and list.account_type~='database' then return end
+    if not list.account_type and not list.url:lower():match("^jdbc") then return end
+    self.__instance:connect(list)
 end
 
 --[[
@@ -550,6 +551,7 @@ function db_core:connect(attrs,data_source)
     if not self.driver then
         self.driver= java.require("java.sql.DriverManager")
     end
+    attrs.account_type="database"
     local url=attrs.url
     env.checkerr(url,"'url' property is not defined !")
 
@@ -562,8 +564,10 @@ function db_core:connect(attrs,data_source)
     for k,v in pairs(attrs) do
         props:put(k,v)
     end
+    self.login_alias=env.login.generate_name(attrs.jdbc_alias or url,attrs)
     if event then event("BEFORE_DB_CONNECT",self,attrs.jdbc_alias or url,attrs) end
     local err,res
+
     if data_source then
         for k,v in pairs{setURL=url,
                          setUser=attrs.user,
@@ -572,10 +576,12 @@ function db_core:connect(attrs,data_source)
             if data_source[k] then data_source[k](data_source,v) end
         end
         err,res=pcall(data_source.getConnection,data_source)
-    else 
+    else
         err,res=pcall(self.driver.getConnection,self.driver,url,props)
     end
+
     env.checkerr(err,tostring(res):gsub(".*Exception.%s*",""))
+
     self.conn=res
     env.checkerr(self.conn,"Unable to connect to db!")
     local autocommit=cfg.get("AUTOCOMMIT")
@@ -784,12 +790,6 @@ function db_core:merge_props(src,target)
 end
 
 function db_core:__onload()
-    local help_login=[[
-        Login with saved accounts. Usage: login [ -d | -a |<number|account_name>] 
-            login                     : list all saved a/c
-            login -d <num|name|alias> : delete matched a/c
-            login <num|name|alias>    : login a/c
-            login -a <alias> <id|name>: set alias to an existing account]]
     cfg.init("PRINTSIZE",1000,set_param,"db.query","Max rows to be printed for a select statement",'1-10000')
     cfg.init("FETCHSIZE",3000,set_param,"db.query","Rows to be prefetched from the resultset, 0 means auto.",'0-32767')
     cfg.init("COLSIZE",32767,set_param,"db.query","Max column size of a result set",'5-1073741824')
@@ -802,7 +802,7 @@ function db_core:__onload()
     cfg.init("CSVSEP",string.char(csv.DEFAULT_SEPARATOR),set_param,"db.export","Define the seperator for CSV data for export(SQL2CSV and CSV2SQL)",'*')
     cfg.init("SQLLINEWIDTH",sqlw.maxLineWidth,set_param,"db.export","Define the max line width(in chars) of exporting SQL file(SQL2FILE and CSV2SQL)",'*')
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
-    env.set_command(self,"login",help_login,self.login,false,3)
+    env.event.snoop('TRIGGER_LOGIN',self.login,self)
     env.set_command(self,"sql2file","Export Query Result into SQL file. Usage: sql2file <file_name>[.sql|gz|zip] <sql|cursor>" ,self.sql2sql,'__SMART_PARSE__',3)
     env.set_command(self,"sql2csv","Export Query Result into CSV file. Usage: sql2csv <file_name>[.csv|gz|zip] <sql|cursor>" ,self.sql2csv,'__SMART_PARSE__',3)
     env.set_command(self,"csv2sql","Convert CSV file into SQL file. Usage: csv2sql <sql_file>[.sql|gz|zip] <csv_file>" ,self.csv2sql,false,3)

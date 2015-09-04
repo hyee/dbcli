@@ -7,6 +7,7 @@ local module_list={
     "db2/snap",
     "db2/sql",
     "db2/chart",
+    "db2/ssh",
 }
 
 local db2=env.class(env.db_core)
@@ -14,16 +15,14 @@ local db2=env.class(env.db_core)
 function db2:ctor(isdefault)
     self.type="db2"
     self.C,self.props={},{}
-    java.loader:addPath(env.WORK_DIR..'db2'..env.PATH_DEL.."db2jcc4.jar")   
-    java.loader:addPath(env.WORK_DIR..'db2'..env.PATH_DEL.."db2jcc_license_cu.jar") 
-    java.system:setProperty('jdbc.drivers','com.ibm.db2.jcc.DB2Driver')
-    --self.db_types:load_sql_types('oracle.jdbc.OracleTypes')
     local default_desc='#DB2 database SQL statement'
     self.C,self.props={},{}
 end
 
 function db2:connect(conn_str)
-    java.loader:addPath(env.WORK_DIR..'db2'..env.PATH_DEL.."db2jcc.jar")
+    java.loader:addPath(env.WORK_DIR..'db2'..env.PATH_DEL.."db2jcc4.jar")
+    java.loader:addPath(env.WORK_DIR..'db2'..env.PATH_DEL.."db2jcc_license_cu.jar") 
+    java.system:setProperty('jdbc.drivers','com.ibm.db2.jcc.DB2Driver')
     local args
     local usr,pwd,conn_desc 
     if type(conn_str)=="table" then
@@ -38,7 +37,6 @@ function db2:connect(conn_str)
     end
 
     if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
-   
 
     conn_desc=conn_desc:gsub('^(/+)','')
     local server,port,alt,database=conn_desc:match('^([^:/%^]+)(:?%d*)(%^?[^/]*)/(.+)$')
@@ -56,6 +54,8 @@ function db2:connect(conn_str)
 
     args=args or {user=usr,password=pwd,url="jdbc:db2://"..url,
                   internal_logon=isdba,
+                  server=server,
+                  database=database,
                   enableSysplexWLB='true',
                   enableSeamlessFailover='1',
                   clientRerouteAlternateServerName=alt_addr,
@@ -79,6 +79,7 @@ function db2:connect(conn_str)
     local version=self:get_value("select SERVICE_LEVEL FROM TABLE(sysproc.env_get_inst_info())")
     self.props.db_version=version:gsub('DB2',''):match('([%d%.]+)')
     self.props.db_user=args.user:upper()
+    self.props.database=database
     self.conn_str=packer.pack_str(conn_str)
     
     prompt=(prompt or database:upper()):match("^([^,%.&]+)") 

@@ -14,13 +14,16 @@ function event.callback(name,...)
     local flag,result
     for k,v in ipairs(v) do        
         if v.obj then
-            flag,result=pcall(v.func,v.obj,table.unpack(args))    
+            flag,result=pcall(v.func,v.obj,...)    
         else
-            flag,result=pcall(v.func,table.unpack(args))
+            flag,result=pcall(v.func,...)
         end
-        if not flag then print(result) end
+        if not flag then
+            result=tostring(result):gsub(".*000%-00000%:","")
+            print(result) 
+        end
     end
-    return table.unpack(args),result
+    return ...,result
 end
 
 function event.snoop(idx,name,func,obj,priority)

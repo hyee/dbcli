@@ -1,10 +1,14 @@
 local env=env
 local ssh=env.class()
+local cfg=env.set
+local instance
+local _term=env.ansi and env.ansi.ansi_mode=="ansicon" and "xterm" or "none"
 
 function ssh:ctor()
     self.forwards={}
     self.name="SSH"
     self.type="ssh"
+    self.script_dir,self.extend_dirs=env.WORK_DIR.."oracle"..env.PATH_DEL.."ora",{}
 end
 
 function ssh:load_config(ssh_alias)
@@ -30,6 +34,7 @@ function ssh:load_config(ssh_alias)
 end
 
 function ssh:connect(conn_str)
+    self.script_stack={}
     local usr,pwd,host,port,url
     if type(conn_str)=="table" then --from 'login' command
         args=conn_str
@@ -59,22 +64,25 @@ function ssh:connect(conn_str)
     end
 
     url='SSH:'..usr..'@'..host..':'..port
-    conn_str.user,conn_str.password,conn_str.url=usr,pwd,url
+    conn_str.user,conn_str.password,conn_str.url,conn_str.account_type=usr,pwd,url,"ssh"
 
     if self.conn then self:disconnect() end
     self.ssh_host=host
     self.ssh_port=port
     self.conn=java.new("org.dbcli.SSHExecutor")
-    local ansi_mode=env.ansi and env.ansi.ansi_mode=="ansicon" and "vt100" or "ansi"
-    self.conn:connect(host,port,usr,pwd,"",ansi_mode)
-    env.event.callback("TRIGGER_CONNECT","env.ssh",url,conn_str)
+    instance=self
+    self.set_config("term",env.set.get("term"))
+    local done,err=pcall(self.conn.connect,self.conn,host,port,usr,pwd,"")
+    env.checkerr(done,tostring(err))
     self.login_alias=env.login.generate_name(url,conn_str)
+    env.event.callback("TRIGGER_CONNECT","env.ssh",url,conn_str)
     env.set_title("SSH: "..usr..'@'..host)
     print("SSH connected.")
     self.forwards=env.login.list[env.set.get("database")][self.login_alias].port_forwards or {}
     for k,v in pairs(self.forwards) do
         self:do_forward(k..' '..v[2]..' '..(v[3] or ""))
     end
+    env.event.callback("AFTER_SSH_CONNECT","env.ssh",url,conn_str)
 end
 
 function ssh:reconnect()
@@ -93,12 +101,13 @@ function ssh:disconnect()
     end
     env.set_title("")
     self.conn=nil
+    self.script_stack={}
     self.login_alias=nil
 end
 
-function ssh:getresult(command)
+function ssh:getresult(command,isWait)
     self:check_connection()
-    local line=self.conn:getLastLine(command.."\n",true)
+    local line=self.conn:getLastLine(command.."\n",isWait==nill and true or isWait)
     self.prompt=self.conn.prompt;
     return line;
 end
@@ -141,11 +150,15 @@ function ssh:sync_prompt()
     if env._SUBSYSTEM ~= self.name then return end
     local prompt=self.conn and self.conn.prompt or "SSH> "
     env.PRI_PROMPT,env.CURRENT_PROMPT=prompt,prompt
+    if not self.conn or not self.conn.prompt then env.set_title("") end
 end
 
 function ssh:enter_i()
     self.help:print(true)
-    print(env.ansi.mask(env.set.get("PROMPTCOLOR"),"Entering interactive mode, execute 'quit' to exit. Command in upper-case would be treated as DBCLI command."))
+    print(env.ansi.mask(env.set.get("PROMPTCOLOR"),"Entering interactive mode, execute 'bye' to exit.\n"..
+        "Command in '.<command>' format would be treated as DBCLI command.\n"..
+        "Command in '$<command>' format to force execute in remote SSH server.\n"..
+        "Command without any prefix would be automatically determined."))
     env.set_subsystem(self.name)
 end
 
@@ -160,7 +173,7 @@ function ssh:exec(cmd,args)
     end
     cmd=cmd:lower()
     if not self.cmds[cmd] then
-        self:run_command(cmd..(args and ' '..args or ""))
+        self:run_command(cmd:gsub("^%$","",1)..(args and ' '..args or ""))
     else
         self.cmds[cmd](self,args)
     end
@@ -188,18 +201,28 @@ function ssh:do_forward(port_info)
     print(("Port-forwarding =>   localhost:%d -- %s:%d "):format(assign_port,remote_host or self.ssh_host,remote_port))
 end
 
-function ssh:trigger_login(db,url,props)
-    local url=env.login.generate_name(url,props)
+function ssh:get_ssh_link(db)
+    if type(db)~="table" then return end
+    local alias=db.login_alias or "__unknown__"
     local list=env.login.list[env.set.get("database")] or {}
-    if list[url] then
-        local ssh_link=list[url].ssh_link
-        if ssh_link and list[ssh_link] and (self.login_alias~=ssh_link or not self:is_connect()) then
-            self:connect(list[ssh_link])
-        end
-    end 
+    if list[alias] and list[alias].ssh_link then
+        return  list[alias].ssh_link,list[list[alias].ssh_link]
+    end
 end
 
-function ssh:run_local_script(filename,...)
+function ssh:is_link(db)
+    local link=ssh:get_ssh_link(db)
+    return link and self.login_alias==ssh_link or false
+end
+
+function ssh:trigger_login(db,url,props)
+    local ssh_link,ssh_account=ssh:get_ssh_link(db)
+    if ssh_link and (self.login_alias~=ssh_link or not self:is_connect()) then
+        self:connect(ssh_account)
+    end
+end
+
+function ssh:load_script(alias,filename,...)
     if not filename or filename=="" then
         return print("Run local script over remote SSH sever. Usage: shell <filename> [parameters].")
     end
@@ -211,19 +234,79 @@ function ssh:run_local_script(filename,...)
     txt=txt:gsub("\r",""):gsub("^[\n%s\t\v]+","")
     local intepreter=txt:match("^#!([^\n])+")
     if not intepreter then intepreter="/bin/bash" end
-    self:getresult('cat >/tmp/dbcli_shell<<"EOF"\n'..txt..'\nEOF\n')
-    local commands={intepreter,'/tmp/dbcli_shell'}
-    local args={...}
-    for k,v in ipairs(args) do
-        if v:find("[ \t]") then v='"'..v..'"' end
-        commands[#commands+1]=v;
-    end
-    commands[#commands+1]=";rm -f /tmp/dbcli_shell"
-    local command=table.concat(commands,' ')
-    self:run_command(command)
+    self:getresult(alias.."='"..txt.."'\n")
+    self.script_stack[alias]={intepreter,'-c' ,'$'..alias}
+    return self.script_stack[alias]
 end
 
-function ssh:onload()
+function ssh:execute_script(filename,...)
+    local alias=filename:match("([^\\/]+)$")
+    env.checkerr(alias,'Invalid file '..filename)
+    if alias:find('.',1,true) then alias=alias:match("^(.*)%.[^%.]+$") end
+    local stack=self:load_script(alias,filename)
+    for i=1,#select(...) do
+        local param=select(i,...)
+        if param then
+            if param:match("[\t ]") then param='"'..param..'"' end
+            stack[#stack+1]=param
+        end
+    end
+    self:run_command(table.concat(stack," "))
+end
+
+function ssh:upload_script(alias,filename,...)
+    if not filename or filename=="" then
+        return print("Run local script over remote SSH sever. Usage: shell <filename> [parameters].")
+    end
+    self:check_connection()
+    local file=io.open(filename,'r')
+    env.checkerr(file,'Cannot open file '..filename)
+    local txt=file:read('*a')
+    file:close()
+    txt=txt:gsub("\r",""):gsub("^[\n%s\t\v]+","")
+    local intepreter=txt:match("^#!([^\n])+")
+    if not intepreter then intepreter="/bin/bash" end
+    filename='/tmp/'..alias
+    self:getresult('cat >'..filename..'<<"DBCLI"\n'..txt..'\nDBCLI\n')
+    self:getresult('chmod +x '..filename)
+    if env.set.get("feed")=="on" then
+        print("File uploaded into "..filename)
+    end
+end
+
+function ssh:login(account,list)
+    if type(list)=="table" then
+        if list.account_type and list.account_type~='ssh' then return end
+        if not list.account_type and not list.url:lower():match("^ssh") then return end
+        self.__instance:connect(list)
+    else
+        return env.login.trigger_login(account,list,"SSH:")
+    end
+end
+
+function ssh.set_config(name,value)
+    value = value:lower()
+    local term,cols,rows=value:match("(.*),(%d+),(%d+)")
+    if not term then
+        term=value:match('^[^, ]+')
+        _term,cols,rows=cfg.get("term"):match("(.*),(%d+),(%d+)")
+    end
+    term=_term=="none" and _term or term
+    _term=term
+    local termtype = term..','..cols..','..rows
+    if instance then
+        instance.conn:setTermType(term,tonumber(cols),tonumber(rows))
+        if instance:is_connect() and termtype~=cfg.get("term") then
+            print(("Term Type: %s    Columns: %d    Rows: %d"):format(term,tonumber(cols),tonumber(rows)))
+            cfg.temp(termtype)
+            instance:reconnect()
+        end
+    end
+    return termtype
+end
+
+function ssh:__onload()
+    instance=self
     local helper=env.grid.new()
     helper:add{"Command",'*',"Description"}
     helper:add{"ssh conn",'',"Connect to SSH server. Usage: ssh conn <user>/<passowrd>@host[:port]"}
@@ -232,8 +315,10 @@ function ssh:onload()
     helper:add{"ssh forward",'',"Forward/un-forward a remote port. Usage: ssh forward <local_port> [<remote_port>] [remote_host]"}
     helper:add{"ssh link",'',"Link/un-link current SSH connection to an existing database connection(see 'login' command). Usage: ssh link <login_id|login_alias>"}
     helper:add{"ssh <cmd>",'',"Run command in remote SSH server. DOES NOT SUPPORT the edit-mode commands(vi,base,top,etc)."}
-    --helper:add{"ssh shell <script>",'',"Run local shell script in remote SSH server. Usage: ssh shell <script> [parameters]"}
+    helper:add{"ssh login",'',"Login to a saved SSH account."}
     helper:add{"ssh -i",'',"Enter into SSH interactive mode to omit the 'ssh ' prefix."}
+    helper:add{"ssh load_shell",'',"Load local script into remote variable."}
+    helper:add{"ssh push_shell",'',"Upload local script into remote /tmp directory."}
     helper:sort(1,true)
     self.help=helper
     self.cmds={
@@ -242,17 +327,21 @@ function ssh:onload()
         close=self.disconnect,
         link=self.link,
         forward=self.do_forward,
-        quit=self.exit_i,
-        login=env.login.login,
-        ['-i']=self.enter_i
+        bye=self.exit_i,
+        login=self.login,
+        ['-i']=self.enter_i,
+        --load_shell=self.load_script,
+        --push_shell=self.upload_script,
     }
     env.set_command(self,self.name,self.helper,self.exec,false,3)
     env.set_command(self,{'shell','sh'},"Run local shell script in remote SSH server. Usage: shell <script> [parameters]",self.run_local_script,false,20)
     env.event.snoop("BEFORE_DB_CONNECT",self.trigger_login,self)
+    env.event.snoop("TRIGGER_LOGIN",self.login,self)
+    cfg.init("term",_term..","..cfg.get("linesize")..",60",self.set_config,"ssh","Define term type in remote SSH server, the supported type depends on remote server",'*')
 end
 
-function ssh:onunload()
+function ssh:__onunload()
     self:disconnect()
 end
 
-return ssh.new()
+return ssh

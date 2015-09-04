@@ -14,7 +14,8 @@ local module_list={
     "oracle/awrdump",
     "oracle/unwrap",
     "oracle/sys",
-    "oracle/chart"
+    "oracle/chart",
+    "oracle/ssh"
 }
 
 local oracle=env.class(env.db_core)

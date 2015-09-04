@@ -1,3 +1,5 @@
+2015-09-03: + public: new "set term" to set the remote term type of SSH.
+2015-09-03: + public: new "set promptsubcolor" to set the prompt color for subsystem(SSH e.g.)
 2015-09-03: + public: support SSH login via config file data\jdbc_url.cfg
 2015-09-03: ! public: fix the occasionally "missing bytes" issue 
 2015-09-03: + public: use ANSICON as the default ANSI color parser(original is jline)

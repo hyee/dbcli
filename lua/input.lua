@@ -34,7 +34,7 @@ end
 
 while true do  
     if env.CURRENT_PROMPT=="_____EXIT_____" then break end
-    line = reader:readLine(prompt_color:format(color("PROMPTCOLOR"),env.CURRENT_PROMPT,color("COMMANDCOLOR")))  
+    line = reader:readLine(prompt_color:format(env._SUBSYSTEM and color("PROMPTSUBCOLOR") or color("PROMPTCOLOR"),env.CURRENT_PROMPT,color("COMMANDCOLOR")))  
     if not line or (line:lower() == 'quit' or line:lower() == 'exit') and not env._SUBSYSTEM then
         print("Exited.")
         env.unload()        
