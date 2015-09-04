@@ -201,9 +201,13 @@
 			</colors>
 		</tab>
 		<tab title="plink" use_default_icon="0">
-			<console shell="D:\Green\Putty\PLINK.EXE -pw oracle oracle@192.168.176.11" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
+			<console shell="D:\Green\msys\mingw32_shell.bat" init_dir="D:\Green\msys" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
 		</tab>
 	</tabs>
 	<external_commands>
+
+
+
+
 </external_commands>
 </settings>

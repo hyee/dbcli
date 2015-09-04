@@ -45,7 +45,7 @@ function packer.pack_str(str)
 end
 
 function packer.unpack_str(str)
-    return str and packer.unpack(str)()
+    return str and packer.unpack(str) and packer.unpack(str)() or str
 end
 
 return packer

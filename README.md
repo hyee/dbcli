@@ -58,7 +58,7 @@ Below is the list:<br>
 
     luajit v2.1 : (MIT)  http://luajit.org/
     jnlua       : (MIT)  https://code.google.com/p/jnlua/
-    jline2      : (BSD)  https://github.com/jline/jline2
+    JLine2      : (BSD)  https://github.com/jline/jline2
     ConsoleZ    : (GNU)  https://github.com/cbucher/console
     MessagePack : (MIT)  https://github.com/fperrad/lua-MessagePack (pure lua)
     OpenCSV     : (MIT)  https://github.com/hyee/OpenCSV
@@ -72,5 +72,5 @@ Besides, some SQL scripts are from internet.
 
 About ANSICON
 ============
-ANSICON provides more ANSI escape sequences features than JLine, especially when running bash commands(i.e.: top).<br/>
+ANSICON provides more ANSI escape features than JLine, especially when running bash commands(i.e.: top) via SSH.<br/>
 If you have concern on ANSICON, please remove it from bin, and edit data\init.cfg to add line "set ANSICON_CMD="

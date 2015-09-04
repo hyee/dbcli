@@ -1,5 +1,6 @@
-2015-08-30: ! public: fix the occasionally "missing bytes" issue 
-2015-08-30: + public: use ANSICON as the default ANSI color parser(original is jline)
+2015-09-03: + public: support SSH login via config file data\jdbc_url.cfg
+2015-09-03: ! public: fix the occasionally "missing bytes" issue 
+2015-09-03: + public: use ANSICON as the default ANSI color parser(original is jline)
 2015-08-30: + public: new command "ssh -i" to enter SSH interactive mode 
 2015-08-30: + public: new command "ssh forward" so that db is able to connect via SSH(see also "ssh link")
 2015-08-30: + public: new command "ssh conn/close/link/<command>" 

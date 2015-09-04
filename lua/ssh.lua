@@ -4,29 +4,63 @@ local ssh=env.class()
 function ssh:ctor()
     self.forwards={}
     self.name="SSH"
+    self.type="ssh"
+end
+
+function ssh:load_config(ssh_alias)
+    local file=env.WORK_DIR..'data'..env.PATH_DEL..'jdbc_url.cfg'
+    local f=io.open(file,"a")
+    if f then f:close() end
+    local config,err=env.loadfile(file)
+    env.checkerr(config,err)
+    config=config()
+    config=config and config[self.type]
+    if not config then return end
+    local props={}
+    for alias,url in pairs(config) do
+        if type(url)=="table" then
+            if alias:upper()==(props.jdbc_alias or ssh_alias:upper())  then 
+                props=url
+                props.jdbc_alias=alias:upper()
+            end
+        end
+    end
+    
+    return props.jdbc_alias and props
 end
 
 function ssh:connect(conn_str)
     local usr,pwd,host,port,url
     if type(conn_str)=="table" then --from 'login' command
         args=conn_str
-        usr,pwd,url=conn_str.user,packer.unpack_str(conn_str.password),conn_str.url
-        host,port=url:match("^SSH@(.+):(%d+)$")
-        env.checkerr(port,"Unsupported URL: "..url)
-        port=port+0;
+        usr,pwd,url,host,port=conn_str.user,packer.unpack_str(conn_str.password),conn_str.url,conn_str.host,conn_str.port
+        if not host then
+            usr,host,port=url:match("^SSH:(.+)@(.+):(%d+)$")
+            env.checkerr(port,"Unsupported URL: "..url)
+            port=port+0;
+        elseif not port then
+            port=22
+        end
         conn_str.password=pwd
     else
         usr,pwd,conn_desc = string.match(conn_str or "","(.*)/(.*)@(.+)")
-        if conn_desc == nil then return print("Usage: ssh conn <user>/<passowrd>@host[:port]") end
+        if conn_desc == nil then
+            local props=self:load_config(conn_str)
+            if props then return self:connect(props) end
+            return print("Usage: ssh conn <user>/<passowrd>@host[:port]") 
+        end
         host,port=conn_desc:match('^([^:/]+)(:?%d*)$')
         if port=="" then 
             port=22 
         else
             port=tonumber(port:sub(2))
         end
-        url='SSH@'..host..':'..port
-        conn_str={user=usr,password=pwd,url=url}
+        conn_str={}
     end
+
+    url='SSH:'..usr..'@'..host..':'..port
+    conn_str.user,conn_str.password,conn_str.url=usr,pwd,url
+
     if self.conn then self:disconnect() end
     self.ssh_host=host
     self.ssh_port=port
