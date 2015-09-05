@@ -53,7 +53,7 @@ Below are some common use of the utility:<br>
 
 References
 ============
-The project depends on some open-source projects without modifications, the binaries have been included into this project.
+The project depends on some binary files of open-source projects without modifications, the binaries have been included into this project.
 Below is the list:<br>
 
     luajit v2.1 : (MIT)  http://luajit.org/
@@ -65,6 +65,7 @@ Below is the list:<br>
     dygraphs    : (MIT)  https://github.com/danvk/dygraphs
     JSch        : (BSD)  http://www.jcraft.com/jsch/
     ANSICON     : (ZLIB) https://github.com/adoxa/ansicon
+    PSCP        : http://www.putty.org/
     json4lua    : https://github.com/craigmj/json4lua
     
 

@@ -28,6 +28,7 @@ function ssh:rehash(script_dir,ext_name)
 end
 
 function ssh:load_config(ssh_alias)
+    if not ssh_alias then return end
     local file=env.WORK_DIR..'data'..env.PATH_DEL..'jdbc_url.cfg'
     local f=io.open(file,"a")
     if f then f:close() end
@@ -64,6 +65,9 @@ function ssh:connect(conn_str)
         end
         conn_str.password=pwd
     else
+        if not conn_str then
+            return print("Usage: ssh conn user/password@host[:port]")
+        end
         usr,pwd,conn_desc = string.match(conn_str or "","(.*)/(.*)@(.+)")
         if conn_desc == nil then
             local props=self:load_config(conn_str)
@@ -170,28 +174,38 @@ function ssh:sync_prompt()
 end
 
 function ssh:enter_i()
-    self.help:print(true)
-    print(env.ansi.mask(env.set.get("PROMPTCOLOR"),"Entering interactive mode, execute 'bye' to exit.\n"..
-        "Command in '.<command>' format would be treated as DBCLI command.\n"..
-        "Command in '$<command>' format to force execute in remote SSH server.\n"..
-        "Command without any prefix would be automatically determined."))
+    local shell_env=""
+    if self:is_connect() then shell_env="("..self:getresult("echo $SHELL")..")" end
+    print(env.ansi.mask(env.set.get("PROMPTCOLOR"),"Entering interactive shell enviroment"..shell_env..", execute 'bye' to exit. Below are the embedded commands:"))
+    
+    self.inner_help:print(true)
     env.set_subsystem(self.name)
+    --if self:is_connect() then self.conn:enterShell(true) end
 end
 
 function ssh:exit_i()
     env.set_subsystem(nil)
+    --if self:is_connect() then self.conn:enterShell(false) end
 end
 
 function ssh:exec(cmd,args)
+    if cmd and cmd:lower():match("^ssh ") then cmd=cmd:sub(5) end
     if not cmd or cmd=="" or cmd:lower()=="help" then
-        self.help:print(true)
-        return
+        if env._SUBSYSTEM~=self.name then 
+            self.help:print(true)
+        else
+            self.inner_help:print(true)
+        end
+        return    
     end
     cmd=cmd:lower()
-    if not self.cmds[cmd] then
-        self:run_command(cmd:gsub("^%$","",1)..(args and ' '..args or ""))
+    local alias=env.alias.cmdlist[cmd:upper()]
+    if self.cmds[cmd] then
+        self.cmds[cmd](self,args) 
+    elseif alias and tostring(alias.desc):lower():match("^ssh ") then
+        return env.alias.force_command(cmd,env.parse_args(99,args or ""))
     else
-        self.cmds[cmd](self,args)
+        self:run_command(cmd:gsub("^%$","",1)..(args and ' '..args or ""))
     end
     self:sync_prompt()
 end
@@ -343,7 +357,8 @@ local pscp_options='\n'..[[Options:
   -sftp     force use of SFTP protocol
   -scp      force use of SCP protocol]]
 
-local pscp=env.WORK_DIR.."bin"..env.PATH_DEL.."pscp.exe"
+local pscp='"'..env.WORK_DIR.."bin"..env.PATH_DEL..'pscp.exe"'
+if env.OS~="windows" then pscp="pscp" end
 local pscp_download_usage="Download file(s) from SSH server, support wildcards. Usage: ssh download [remote_path]<filename> [.|<local_path>] [options]"
 local pscp_upload_usage="Upload file(s) into SSH server, support wildcards. Usage: ssh uploaded  [local_path]<filename> [.|<remote_path>] [options]"
 local pscp_local_dir
@@ -369,7 +384,7 @@ function ssh:download_file(info)
     if not local_dir then local_dir=(pscp_local_dir or env._CACHE_PATH) end
     if not local_dir:match("%:") then local_dir=(pscp_local_dir or env._CACHE_PATH)..local_dir end
     rawprint(table.concat({"Downloading:   ",remote_file,"==>",local_dir}," "))
-    local_dir='"'..local_dir:gsub("[\\/]+","\\\\")..'"'
+    if env.OS=="windows" then local_dir='"'..local_dir:gsub("[\\/]+","\\\\")..'"' end
     local command=table.concat({pscp,options or "","-pw",self.conn.password,remote_file,local_dir}," ")
     os.execute(command)
 end
@@ -385,14 +400,17 @@ function ssh:upload_file(info)
     remote_file=self.conn.user.."@"..self.conn.host..":"..remote_file
     if not local_dir:match("%:") then local_dir=(pscp_local_dir or env._CACHE_PATH)..local_dir end
     rawprint(table.concat({"Uploading:   ",local_dir,"==>",remote_file}," "))
-    local_dir='"'..local_dir:gsub("[\\/]+","\\\\")..'"'
+    if env.OS=="windows" then local_dir='"'..local_dir:gsub("[\\/]+","\\\\")..'"' end
     local command=table.concat({pscp,options or "","-pw",self.conn.password,local_dir,remote_file}," ")
     os.execute(command)
 end
 
 function ssh:__onload()
     instance=self
-    self.short_dir=self.script_dir:match('([^\\/]+[\\/][^\\/]+)$')..'" and "lua\\ssh'
+    self.short_dir=self.script_dir:match('([^\\/]+[\\/][^\\/]+)$')
+    if self.public_dir then
+        self.short_dir=self.short_dir..'" and "lua\\ssh'
+    end
     self.help_title='Run script under the "'..self.short_dir..'" directory in remote SSH server. '
     local helper=env.grid.new()
     helper:add{"Command",'*',"Description"}
@@ -401,16 +419,26 @@ function ssh:__onload()
     helper:add{"ssh close",'',"Disconnect current SSH connection."}
     helper:add{"ssh forward",'',"Forward/un-forward a remote port. Usage: ssh forward <local_port> [<remote_port>] [remote_host]"}
     helper:add{"ssh link",'',"Link/un-link current SSH connection to an existing database connection(see 'login' command). Usage: ssh link <login_id|login_alias>"}
-    helper:add{"ssh <cmd>",'',"Run command in remote SSH server. "}
+    helper:add{"ssh  $<command>",'',"Run command in remote SSH server. "}
+    helper:add{"ssh   <command>",'',"Run embedded command if existing(i.e.: ssh conn), or run command in remote server."}
     helper:add{"ssh login",'',"Login to a saved SSH account."}
     helper:add{"ssh -i",'',"Enter into SSH interactive mode to omit the 'ssh ' prefix."}
     helper:add{"ssh push_shell",'',"Upload local script into remote directory and grant the execute access. Usage: ssh push_shell <file> [/tmp|.|<remote_dir>]"}
     helper:add{"ssh download",'',pscp_download_usage}
     helper:add{"ssh upload",'',pscp_upload_usage}
     helper:add{"ssh llcd",'',"View/change default downlod/upload FTP directory in local PC. Usage ssh llcd [.|<local_path>]"}
-
+    local cmds=env.grid.new()
+    for _,line in ipairs(helper.data) do
+        local c={}
+        for k,v in ipairs(line) do c[k]=v end
+        c[1]=c[1]:lower():gsub("^ssh ","")
+        cmds:add(c)
+    end
+    cmds:add{" .<command>",'',"Run DBCLI command out of this SSH sub-system. For alias command that related to ssh, the '.' prefix can be ignored."}
+    cmds:add{"bye","","Exit SSH sub-system."}
+    cmds:sort(1,true)
     helper:sort(1,true)
-    self.help=helper
+    self.help,self.inner_help=helper,cmds
     self.cmds={
         conn=self.connect,
         reconn=self.reconnect,

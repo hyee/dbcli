@@ -67,6 +67,13 @@ function alias.run_command(...)
     end
 end
 
+function alias.force_command(name,args)
+    if name and alias.cmdlist[name:upper()] then
+        env.CURRENT_CMD=name
+        return alias.run_command(table.unpack(args))
+    end
+end
+
 function alias.set(name,cmd,write)
     if not name and write~=false then
         return exec_command("HELP",{"ALIAS"})

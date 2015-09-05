@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 
 public class Console extends ConsoleReader {
     public static Writer writer;
+    public static ConsoleReader reader;
     public static NonBlockingInputStream in;
     protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(5);
     private History his;
@@ -35,24 +36,19 @@ public class Console extends ConsoleReader {
         writer = this.getOutput();
         Iterator<Completer> iterator = getCompleters().iterator();
         while (iterator.hasNext()) removeCompleter(iterator.next());
+        reader = this;
     }
 
     public String readLine(String prompt) throws IOException {
         if (isRunning()) setEvents(null, null);
         synchronized (in) {
-            String line = super.readLine(prompt);
-            return line;
+            return super.readLine(prompt);
         }
     }
 
     public String readLine() throws IOException {
-        if (isRunning()) setEvents(null, null);
-        synchronized (in) {
-            String line = super.readLine();
-            return line;
-        }
+        return readLine((String) null);
     }
-
 
     public Boolean isRunning() {
         return this.task != null;

@@ -27,8 +27,6 @@ local color=setmetatable({
     XXX=  "\27[48;5;15m", --BG Light gray
     DCY=  "\27[0;36m", --Dark Cyan
 
-
-
     HIR = "\27[31m", -- Light Red 
     HIG = "\27[1;32m", -- Light Green
     HIY = "\27[1;33m", -- Light Yellow 

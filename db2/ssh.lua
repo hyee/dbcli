@@ -20,7 +20,7 @@ end
 function ssh:onload()
     env.event.snoop("AFTER_DB2_CONNECT",self.open_ssh,self)
     env.event.snoop("AFTER_SSH_CONNECT",self.set_ssh,self)
-    env.set.init("AUTOSSH","on",nil,"ssh","Enable/disable automatical SSH connection after db2 is connected",'on,off')
+    env.set.init("AUTOSSH","on",nil,"db2","Enable/disable automatical SSH connection after db2 is connected",'on,off')
 end
 
 function ssh:onunload()

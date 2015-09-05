@@ -1,9 +1,11 @@
 package org.dbcli;
 
 import com.jcraft.jsch.*;
+import jline.console.completer.Completer;
 
 import java.io.*;
 import java.util.HashMap;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
@@ -31,7 +33,22 @@ public class SSHExecutor {
     HashMap<String, Channel> channels;
     boolean isLogin = false;
     String lastLine;
-    boolean isEnd;
+    boolean isStart = false;
+    boolean isEnd = true;
+    Completer completer = new Completer() {
+        @Override
+        public int complete(String s, int i, List<CharSequence> list) {
+            System.out.println(s);
+            if (!isEnd) {
+                try {
+                    shellWriter.write(new byte[]{9});
+                    shellWriter.flush();
+                } catch (Exception e) {
+                }
+            }
+            return -1;
+        }
+    };
 
 
     public SSHExecutor() {
@@ -111,13 +128,13 @@ public class SSHExecutor {
 
     private void closeShell() {
         try {
-            prompt = null;
-            lastLine = null;
             pr.close();
+            Console.reader.removeCompleter(completer);
             shellWriter.close();
             shell.getInputStream().close();
             shell.disconnect();
         } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
@@ -161,8 +178,14 @@ public class SSHExecutor {
         return channel;
     }
 
+    public void enterShell(boolean isEnter) {
+        Console.reader.removeCompleter(completer);
+        if (isEnter) Console.reader.addCompleter(completer);
+    }
+
     public void waitCompletion() throws Exception {
-        long wait = 100;
+        long wait = 50;
+
         //shell.setInputStream(System.in);
         while (!isEnd && !shell.isClosed()) {
             int ch = Console.in.read(wait);
@@ -175,6 +198,7 @@ public class SSHExecutor {
         if (shell.isClosed()) {
             this.close();
         } else prompt = pr.getPrompt();
+
         //shell.setInputStream(pipeIn);
     }
 
@@ -183,7 +207,7 @@ public class SSHExecutor {
         shellWriter.write(command.getBytes());
         shellWriter.flush();
         if (isWait) waitCompletion();
-        return lastLine==null?null:lastLine.replaceAll("[\r\n]+$","");
+        return lastLine == null ? null : lastLine.replaceAll("[\r\n]+$", "");
     }
 
     public void exec(String command) throws Exception {
@@ -230,7 +254,6 @@ public class SSHExecutor {
     class Printer extends OutputStream {
         StringBuilder sb;
         char lastChar;
-        boolean isStart;
 
         boolean ignoreMessage;
         Pattern p = Pattern.compile("\33\\[[\\d;]+[mK]");
@@ -269,7 +292,7 @@ public class SSHExecutor {
         public synchronized void flush() {
             if (isStart || isEnd || sb.length() == 0) return;
             lastLine = sb.toString();
-            if(!ignoreMessage) {
+            if (!ignoreMessage) {
                 if (TERMTYPE == "none") {
                     printer.print(p.matcher(lastLine).replaceAll(""));
                     printer.flush();
@@ -284,6 +307,7 @@ public class SSHExecutor {
 
         @Override
         public void close() {
+            reset(false);
             sb = null;
             //printer.close();
         }
