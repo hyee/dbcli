@@ -262,7 +262,7 @@ end
 
 function ssh:upload_script(filename,dir)
     if not filename or filename=="" then
-        return print("Run local script over remote SSH sever. Usage: shell <filename> [parameters].")
+        return print("Usage: ssh push_shell <file> [/tmp|.|<remote_dir>")
     end
     if filename:match("[\\/]") then filename='@'..filename end
     local txt,args,_,file,cmd=self:get_script(filename,{},false)
@@ -272,6 +272,7 @@ function ssh:upload_script(filename,dir)
     local intepreter=txt:match("^#!([^\n])+")
     if not intepreter then intepreter="/bin/bash" end
     cmd=filename:match("[^\\/]+$")
+    if dir=='.' then dir=self:get_pwd() end
     filename=(dir and dir:gsub("[\\/]$").."/" or ('/tmp/'))..cmd
     self:getresult('cat >'..filename..'<<"DBCLI"\n'..txt..'\nDBCLI\n')
     self:getresult('chmod +x '..filename)
@@ -365,9 +366,11 @@ function ssh:download_file(info)
     local remote_file,local_dir,options=args[1],args[2],args[3]
     if not remote_file:match("^/") then remote_file=pwd.."/"..remote_file end
     remote_file=self.conn.user.."@"..self.conn.host..":"..remote_file
-    if not local_file:match("%:") then local_file=(pscp_local_dir or env._CACHE_PATH)..local_file end
-    rawprint(table.concat({"Downloading ",remote_file,"==>",local_file}," "))
-    local command=table.concat({pscp,options or "","-pw",self.conn.password,remote_file,local_file}," ")
+    if not local_dir then local_dir=(pscp_local_dir or env._CACHE_PATH) end
+    if not local_dir:match("%:") then local_dir=(pscp_local_dir or env._CACHE_PATH)..local_dir end
+    rawprint(table.concat({"Downloading:   ",remote_file,"==>",local_dir}," "))
+    local_dir='"'..local_dir:gsub("[\\/]+","\\\\")..'"'
+    local command=table.concat({pscp,options or "","-pw",self.conn.password,remote_file,local_dir}," ")
     os.execute(command)
 end
 
@@ -381,7 +384,8 @@ function ssh:upload_file(info)
     if not remote_file or not remote_file:match("^/") then remote_file=pwd.."/"..(remote_file or "") end
     remote_file=self.conn.user.."@"..self.conn.host..":"..remote_file
     if not local_dir:match("%:") then local_dir=(pscp_local_dir or env._CACHE_PATH)..local_dir end
-    rawprint(table.concat({"Uploading ",local_dir,"==>",remote_file}," "))
+    rawprint(table.concat({"Uploading:   ",local_dir,"==>",remote_file}," "))
+    local_dir='"'..local_dir:gsub("[\\/]+","\\\\")..'"'
     local command=table.concat({pscp,options or "","-pw",self.conn.password,local_dir,remote_file}," ")
     os.execute(command)
 end
@@ -400,10 +404,10 @@ function ssh:__onload()
     helper:add{"ssh <cmd>",'',"Run command in remote SSH server. "}
     helper:add{"ssh login",'',"Login to a saved SSH account."}
     helper:add{"ssh -i",'',"Enter into SSH interactive mode to omit the 'ssh ' prefix."}
-    helper:add{"ssh push_shell",'',"Upload local script into remote directory and grant the execute access. Usage: ssh push_shell <file> [/tmp|<remote_dir>]"}
+    helper:add{"ssh push_shell",'',"Upload local script into remote directory and grant the execute access. Usage: ssh push_shell <file> [/tmp|.|<remote_dir>]"}
     helper:add{"ssh download",'',pscp_download_usage}
     helper:add{"ssh upload",'',pscp_upload_usage}
-    helper:add{"ssh llcd",'',"View/change default downlod/upload in local PC. Usage ssh llcd [.|<local_path>]"}
+    helper:add{"ssh llcd",'',"View/change default downlod/upload FTP directory in local PC. Usage ssh llcd [.|<local_path>]"}
 
     helper:sort(1,true)
     self.help=helper
