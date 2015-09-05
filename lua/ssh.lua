@@ -252,7 +252,7 @@ function ssh:load_script(alias,filename,...)
     else
         txt=filename:sub(2)
     end
-    txt=txt:gsub("\r\n","\n"):gsub("^[\n%s\t\v]+",""):gsub(self.comment,"",1)
+    txt=txt:gsub("\r\n","\n"):gsub("^[\n%s\t\v]+",""):gsub(self.comment,"\n",1)
     local intepreter=txt:match("^#!([^\n])+")
     if not intepreter then intepreter="/bin/bash" end
     self:getresult(alias.."='"..txt.."'\n")
@@ -397,7 +397,7 @@ function ssh:__onload()
     helper:add{"ssh close",'',"Disconnect current SSH connection."}
     helper:add{"ssh forward",'',"Forward/un-forward a remote port. Usage: ssh forward <local_port> [<remote_port>] [remote_host]"}
     helper:add{"ssh link",'',"Link/un-link current SSH connection to an existing database connection(see 'login' command). Usage: ssh link <login_id|login_alias>"}
-    helper:add{"ssh <cmd>",'',"Run command in remote SSH server. DOES NOT SUPPORT the edit-mode commands(vi,base,top,etc)."}
+    helper:add{"ssh <cmd>",'',"Run command in remote SSH server. "}
     helper:add{"ssh login",'',"Login to a saved SSH account."}
     helper:add{"ssh -i",'',"Enter into SSH interactive mode to omit the 'ssh ' prefix."}
     helper:add{"ssh push_shell",'',"Upload local script into remote directory and grant the execute access. Usage: ssh push_shell <file> [/tmp|<remote_dir>]"}
