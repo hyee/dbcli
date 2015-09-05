@@ -2,6 +2,7 @@ local env=env
 local db=env.db2
 local ssh=env.class(env.ssh)
 function ssh:ctor()
+    self.script_dir=env.WORK_DIR.."db2"..env.PATH_DEL.."shell"
 end
 
 function ssh:open_ssh(db,sql,args,result)

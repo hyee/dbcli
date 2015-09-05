@@ -26,12 +26,12 @@ local init={
         "lua/history",
         "lua/alias",
         "lua/interval",
-        "lua/ssh",
         "lua/db_core",
         "lua/login",
         "lua/var",
         "lua/scripter",
         "lua/snapper",
+        "lua/ssh",
         "lua/tester",
         "lua/graph"}
 }

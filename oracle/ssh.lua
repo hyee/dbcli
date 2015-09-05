@@ -1,7 +1,7 @@
 local env=env
 local ssh=env.class(env.ssh)
 function ssh:ctor()
-    self.script_dir,self.extend_dirs=env.WORK_DIR.."oracle"..env.PATH_DEL.."ora",{}
+    self.script_dir=env.WORK_DIR.."oracle"..env.PATH_DEL.."shell"
 end
 
 function ssh:onload()

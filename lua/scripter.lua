@@ -33,6 +33,7 @@ function scripter:rehash(script_dir,ext_name)
     local cmdlist,pathlist={},{}
     local counter=0
     for k,v in ipairs(keylist) do
+        if script_dir:match("ssh") then print(table.dump(v)) end
         local desc=v[3] and v[3]:gsub("^[\n\r%s\t]*[\n\r]+","") or ""
         desc=desc:gsub("%-%-%[%[(.*)%]%]%-%-",""):gsub("%-%-%[%[(.*)%-%-%]%]","")
         desc=desc:gsub("([\n\r]+%s*)%-%-","%1  ")
@@ -316,20 +317,21 @@ function scripter:get_script(cmd,args,print_args)
     local file,f,target_dir
     if cmd:sub(1,1)=="@" then   
         target_dir,file=self:check_ext_file(cmd)
-        env.checkerr(target_dir['./COUNT']>0,"Cannot find this script!")
+        env.checkerr(target_dir['./COUNT']>0,"Cannot find script "..cmd:sub(2))
         if not file then return env.helper.helper(self:get_command(),cmd) end
-        file=target_dir[file].path
+        cmd,file=file,target_dir[file].path
+
     elseif self.cmdlist[cmd] then
         file=self.cmdlist[cmd].path
     end
-    env.checkerr(file,"Cannot find this script!")
+    env.checkerr(file,'Cannot find this script under "'..self.short_dir..'"')
     
     local f=io.open(file)
     env.checkerr(f,"Cannot find this script!")
     local sql=f:read('*a')
     f:close()
     args=self:parse_args(sql,args,print_args)
-    return sql,args,print_args,file
+    return sql,args,print_args,file,cmd
 end
 
 function scripter:run_script(cmd,...)
@@ -361,7 +363,7 @@ function scripter:check_ext_file(cmd)
         end
 
         if not target_dir then
-            if not cmd:match('[\\/]([^\\/]+)[\\/]') then env.raise('The target script cannot under root folder!') end
+            if not cmd:match('[\\/]([^\\/]+)[\\/]') then env.raise('The target location cannot be under the drive root!') end
             self.extend_dirs[cmd]=self:rehash(cmd,self.ext_name)
             target_dir=self.extend_dirs[cmd]
         end

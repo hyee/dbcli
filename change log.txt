@@ -1,3 +1,6 @@
+2015-09-05: + public: new command "ssh upload/download/llcd" to invoke "pscp.exe" to support FTP function
+2015-09-05: + public: new command "ssh push_shell" to update local file into remote SSH(default dir is /tmp).
+2015-09-05: + public: new command "shell" to allow executing shell scripts in local PC in remote SSH server
 2015-09-03: + public: new "set term" to set the remote term type of SSH.
 2015-09-03: + public: new "set promptsubcolor" to set the prompt color for subsystem(SSH e.g.)
 2015-09-03: + public: support SSH login via config file data\jdbc_url.cfg

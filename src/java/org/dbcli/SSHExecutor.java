@@ -11,10 +11,10 @@ import java.util.regex.Pattern;
  * Created by Will on 2015/9/1.
  */
 public class SSHExecutor {
+    public static String TERMTYPE;
+    public static int COLS = 800;
+    public static int ROWS = 60;
     static PrintWriter printer = new PrintWriter(Console.writer);
-    public static  String TERMTYPE;
-    public static int COLS=800;
-    public static int ROWS=60;
     public Session session;
     public String linePrefix = "";
     public String host;
@@ -22,9 +22,10 @@ public class SSHExecutor {
     public int port;
     public String password;
     public String prompt;
-    JSch ssh;
     public ChannelShell shell;
+    JSch ssh;
     PipedOutputStream shellWriter;
+    PipedInputStream pipeIn;
     Printer pr;
     HashMap<Integer, Object[]> forwards;
     HashMap<String, Channel> channels;
@@ -81,16 +82,16 @@ public class SSHExecutor {
             isLogin = true;
             setLinePrefix(linePrefix);
             shell = (ChannelShell) session.openChannel("shell");
-            PipedInputStream pipeIn = new PipedInputStream();
+            pipeIn = new PipedInputStream();
             shellWriter = new PipedOutputStream(pipeIn);
             pr = new Printer();
             pr.reset(true);
             //FileOutputStream fileOut = new FileOutputStream( outputFileName );
             shell.setInputStream(pipeIn);
             shell.setOutputStream(pr);
-            shell.setEnv("TERM", TERMTYPE=TERMTYPE=="none"?"ansi":TERMTYPE);
+            shell.setEnv("TERM", TERMTYPE = TERMTYPE == "none" ? "ansi" : TERMTYPE);
             shell.setPty(true);
-            shell.setPtyType(TERMTYPE=TERMTYPE=="none"?"ansi":TERMTYPE, COLS, ROWS, 1400, 900);
+            shell.setPtyType(TERMTYPE = TERMTYPE == "none" ? "ansi" : TERMTYPE, COLS, ROWS, 1400, 900);
             shell.connect();
             waitCompletion();
         } catch (Exception e) {
@@ -98,14 +99,14 @@ public class SSHExecutor {
         }
     }
 
-    public void setTermType(String termType,int cols,int rows) {
-        TERMTYPE=termType;
-        COLS=cols;
-        ROWS=rows;
+    public void setTermType(String termType, int cols, int rows) {
+        TERMTYPE = termType;
+        COLS = cols;
+        ROWS = rows;
     }
 
     public boolean isConnect() {
-        return shell==null?false:session.isConnected();
+        return shell == null ? false : session.isConnected();
     }
 
     private void closeShell() {
@@ -161,7 +162,8 @@ public class SSHExecutor {
     }
 
     public void waitCompletion() throws Exception {
-        long wait=100;
+        long wait = 100;
+        //shell.setInputStream(System.in);
         while (!isEnd && !shell.isClosed()) {
             int ch = Console.in.read(wait);
             while (ch > 0) {
@@ -173,15 +175,15 @@ public class SSHExecutor {
         if (shell.isClosed()) {
             this.close();
         } else prompt = pr.getPrompt();
+        //shell.setInputStream(pipeIn);
     }
 
     public String getLastLine(String command, boolean isWait) throws Exception {
         pr.reset(true);
-        lastLine = null;
         shellWriter.write(command.getBytes());
         shellWriter.flush();
         if (isWait) waitCompletion();
-        return lastLine;
+        return lastLine==null?null:lastLine.replaceAll("[\r\n]+$","");
     }
 
     public void exec(String command) throws Exception {
@@ -248,7 +250,6 @@ public class SSHExecutor {
                 sb.setLength(0);
             } else isEnd = (lastChar == '$' || lastChar == '>' || lastChar == '#') && c == ' ';
             lastChar = c;
-
         }
 
         public String getPrompt() {
@@ -266,17 +267,17 @@ public class SSHExecutor {
 
         @Override
         public synchronized void flush() {
-
-            if (isStart || isEnd || sb.length() == 0 || ignoreMessage) return;
+            if (isStart || isEnd || sb.length() == 0) return;
             lastLine = sb.toString();
-            if (TERMTYPE == "none") {
-                printer.print(p.matcher(lastLine).replaceAll(""));
-                printer.flush();
-            } else {
-                System.out.print(lastLine);
-                System.out.flush();
+            if(!ignoreMessage) {
+                if (TERMTYPE == "none") {
+                    printer.print(p.matcher(lastLine).replaceAll(""));
+                    printer.flush();
+                } else {
+                    System.out.print(lastLine);
+                    System.out.flush();
+                }
             }
-            //System.out.flush();
             isStart = false;
             sb.setLength(0);
         }

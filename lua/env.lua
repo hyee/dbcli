@@ -103,7 +103,7 @@ function env.list_dir(file_dir,file_ext,text_macher)
         local name,ext=n:match("([^\\/]+)$")
         if file_ext then
             name,ext=name:match("(.+)%.(%w+)$")
-            if ext:upper()~=file_ext:upper() then name=nil end
+            if ext:upper()~=file_ext:upper() and file_ext~="*" then name=nil end
         end
         if name and name~="" then
             local comment

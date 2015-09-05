@@ -1,14 +1,30 @@
 local env=env
-local ssh=env.class()
+local ssh=env.class(env.scripter)
 local cfg=env.set
 local instance
 local _term=env.ansi and env.ansi.ansi_mode=="ansicon" and "xterm" or "none"
 
 function ssh:ctor()
     self.forwards={}
+    self.comment="\n%s*%:%<%<\"?DESC\"?%s*\n(.*)\nDESC%s*\n"
     self.name="SSH"
     self.type="ssh"
-    self.script_dir,self.extend_dirs=env.WORK_DIR.."oracle"..env.PATH_DEL.."ora",{}
+    self.command='shell'
+    self.ext_name='*'
+    self.script_dir,self.extend_dirs,self.public_dir=nil,{},env.WORK_DIR.."lua"..env.PATH_DEL.."shell"
+
+end
+
+function ssh:rehash(script_dir,ext_name)
+    local cmds={}
+    if(self==self.__instance) and script_dir==self.script_dir and self.public_dir then
+        cmds=self.super:rehash(self.public_dir,ext_name)
+    end
+    local cmds1=self.super:rehash(script_dir,ext_name)
+    for k,v in pairs(cmds1) do
+        cmds[k]=v
+    end
+    return cmds
 end
 
 function ssh:load_config(ssh_alias)
@@ -118,7 +134,7 @@ function ssh:run_command(command)
     self.prompt=self.conn.prompt;
 end
 
-function ssh:helper(_,cmd)
+function ssh:ssh_help(_,cmd)
     if cmd==nil or cmd=="" then return "Operations over SSH server, type 'ssh' for more detail" end
 end
 
@@ -227,46 +243,36 @@ function ssh:load_script(alias,filename,...)
         return print("Run local script over remote SSH sever. Usage: shell <filename> [parameters].")
     end
     self:check_connection()
-    local file=io.open(filename,'r')
-    env.checkerr(file,'Cannot open file '..filename)
-    local txt=file:read('*a')
-    file:close()
-    txt=txt:gsub("\r",""):gsub("^[\n%s\t\v]+","")
+    local txt
+    if filename:sub(1,1)~="@" then
+        local file=io.open(filename,'r')
+        env.checkerr(file,'Cannot open file '..filename)
+        txt=file:read('*a')
+        file:close()
+    else
+        txt=filename:sub(2)
+    end
+    txt=txt:gsub("\r\n","\n"):gsub("^[\n%s\t\v]+",""):gsub(self.comment,"",1)
     local intepreter=txt:match("^#!([^\n])+")
     if not intepreter then intepreter="/bin/bash" end
     self:getresult(alias.."='"..txt.."'\n")
-    self.script_stack[alias]={intepreter,'-c' ,'$'..alias}
+    self.script_stack[alias]={intepreter,'-c' ,'"$'..alias..'"',alias}
     return self.script_stack[alias]
 end
 
-function ssh:execute_script(filename,...)
-    local alias=filename:match("([^\\/]+)$")
-    env.checkerr(alias,'Invalid file '..filename)
-    if alias:find('.',1,true) then alias=alias:match("^(.*)%.[^%.]+$") end
-    local stack=self:load_script(alias,filename)
-    for i=1,#select(...) do
-        local param=select(i,...)
-        if param then
-            if param:match("[\t ]") then param='"'..param..'"' end
-            stack[#stack+1]=param
-        end
-    end
-    self:run_command(table.concat(stack," "))
-end
-
-function ssh:upload_script(alias,filename,...)
+function ssh:upload_script(filename,dir)
     if not filename or filename=="" then
         return print("Run local script over remote SSH sever. Usage: shell <filename> [parameters].")
     end
+    if filename:match("[\\/]") then filename='@'..filename end
+    local txt,args,_,file,cmd=self:get_script(filename,{},false)
+    if not file then return end
     self:check_connection()
-    local file=io.open(filename,'r')
-    env.checkerr(file,'Cannot open file '..filename)
-    local txt=file:read('*a')
-    file:close()
-    txt=txt:gsub("\r",""):gsub("^[\n%s\t\v]+","")
+    txt=txt:gsub("\r\n","\n"):gsub("^[\n%s\t\v]+","")
     local intepreter=txt:match("^#!([^\n])+")
     if not intepreter then intepreter="/bin/bash" end
-    filename='/tmp/'..alias
+    cmd=filename:match("[^\\/]+$")
+    filename=(dir and dir:gsub("[\\/]$").."/" or ('/tmp/'))..cmd
     self:getresult('cat >'..filename..'<<"DBCLI"\n'..txt..'\nDBCLI\n')
     self:getresult('chmod +x '..filename)
     if env.set.get("feed")=="on" then
@@ -305,8 +311,85 @@ function ssh.set_config(name,value)
     return termtype
 end
 
+function ssh:run_shell(cmd,...)
+    local text,args,_,file,cmd=self:get_script(cmd,{...},false)
+    if not file then return end
+    local stack=self:load_script(cmd,'@'..text)
+    for i=1,20 do
+        local v=args["V"..i]
+        if v=="" then break end
+        if v:match("[%s\t]") then v='"'..v..'"' end
+        stack[#stack+1]=v
+    end
+    self:run_command(table.concat(stack," "))
+end
+
+function ssh:get_pwd()
+    self:check_connection()
+    return self:getresult("pwd")
+end
+
+local pscp_options='\n'..[[Options:
+  -p        preserve file attributes
+  -q        quiet, don't show statistics
+  -r        copy directories recursively
+  -1 -2     force use of particular SSH protocol version
+  -4 -6     force use of IPv4 or IPv6
+  -C        enable compression
+  -i key    private key file for user authentication
+  -batch    disable all interactive prompts
+  -unsafe   allow server-side wildcards (DANGEROUS)
+  -sftp     force use of SFTP protocol
+  -scp      force use of SCP protocol]]
+
+local pscp=env.WORK_DIR.."bin"..env.PATH_DEL.."pscp.exe"
+local pscp_download_usage="Download file(s) from SSH server, support wildcards. Usage: ssh download [remote_path]<filename> [.|<local_path>] [options]"
+local pscp_upload_usage="Upload file(s) into SSH server, support wildcards. Usage: ssh uploaded  [local_path]<filename> [.|<remote_path>] [options]"
+local pscp_local_dir
+function ssh:set_ftp_local_path(path)
+    local current_path=(pscp_local_dir or env._CACHE_PATH)
+    path=path=="." and env._CACHE_PATH or path
+    if not path or current_path==path then return print("Current FTP local path is "..current_path..", to switch back to the default path, use 'ssh llcd .'") end
+    --path=self:check_ext_file(path)
+    --env.checkerr(path,"Cannot find target path "..path)
+    pscp_local_dir=path:gsub("[\\/]",env.PATH_DEL):gsub('[\\/]$','')..env.PATH_DEL
+    print(table.concat({"Local FTP path changed:",current_path,'==>',pscp_local_dir},' '))
+end
+
+function ssh:download_file(info)
+    if not info then
+        return print(pscp_download_usage..pscp_options)
+    end
+    local pwd=self:get_pwd()
+    local args=env.parse_args(3,info)
+    local remote_file,local_dir,options=args[1],args[2],args[3]
+    if not remote_file:match("^/") then remote_file=pwd.."/"..remote_file end
+    remote_file=self.conn.user.."@"..self.conn.host..":"..remote_file
+    if not local_file:match("%:") then local_file=(pscp_local_dir or env._CACHE_PATH)..local_file end
+    rawprint(table.concat({"Downloading ",remote_file,"==>",local_file}," "))
+    local command=table.concat({pscp,options or "","-pw",self.conn.password,remote_file,local_file}," ")
+    os.execute(command)
+end
+
+function ssh:upload_file(info)
+    if not info then
+        return print(pscp_upload_usage..pscp_options)
+    end
+    local pwd=self:get_pwd()
+    local args=env.parse_args(3,info)
+    local local_dir,remote_file,options=args[1],args[2],args[3]
+    if not remote_file or not remote_file:match("^/") then remote_file=pwd.."/"..(remote_file or "") end
+    remote_file=self.conn.user.."@"..self.conn.host..":"..remote_file
+    if not local_dir:match("%:") then local_dir=(pscp_local_dir or env._CACHE_PATH)..local_dir end
+    rawprint(table.concat({"Uploading ",local_dir,"==>",remote_file}," "))
+    local command=table.concat({pscp,options or "","-pw",self.conn.password,local_dir,remote_file}," ")
+    os.execute(command)
+end
+
 function ssh:__onload()
     instance=self
+    self.short_dir=self.script_dir:match('([^\\/]+[\\/][^\\/]+)$')..'" and "lua\\ssh'
+    self.help_title='Run script under the "'..self.short_dir..'" directory in remote SSH server. '
     local helper=env.grid.new()
     helper:add{"Command",'*',"Description"}
     helper:add{"ssh conn",'',"Connect to SSH server. Usage: ssh conn <user>/<passowrd>@host[:port]"}
@@ -317,8 +400,11 @@ function ssh:__onload()
     helper:add{"ssh <cmd>",'',"Run command in remote SSH server. DOES NOT SUPPORT the edit-mode commands(vi,base,top,etc)."}
     helper:add{"ssh login",'',"Login to a saved SSH account."}
     helper:add{"ssh -i",'',"Enter into SSH interactive mode to omit the 'ssh ' prefix."}
-    helper:add{"ssh load_shell",'',"Load local script into remote variable."}
-    helper:add{"ssh push_shell",'',"Upload local script into remote /tmp directory."}
+    helper:add{"ssh push_shell",'',"Upload local script into remote directory and grant the execute access. Usage: ssh push_shell <file> [/tmp|<remote_dir>]"}
+    helper:add{"ssh download",'',pscp_download_usage}
+    helper:add{"ssh upload",'',pscp_upload_usage}
+    helper:add{"ssh llcd",'',"View/change default downlod/upload in local PC. Usage ssh llcd [.|<local_path>]"}
+
     helper:sort(1,true)
     self.help=helper
     self.cmds={
@@ -330,11 +416,14 @@ function ssh:__onload()
         bye=self.exit_i,
         login=self.login,
         ['-i']=self.enter_i,
-        --load_shell=self.load_script,
-        --push_shell=self.upload_script,
+        download=self.download_file,
+        upload=self.upload_file,
+        llcd=self.set_ftp_local_path,
+        push_shell=self.upload_script,
     }
-    env.set_command(self,self.name,self.helper,self.exec,false,3)
-    env.set_command(self,{'shell','sh'},"Run local shell script in remote SSH server. Usage: shell <script> [parameters]",self.run_local_script,false,20)
+    env.remove_command(self.command)
+    env.set_command(self,self.name,self.ssh_help,self.exec,false,3)
+    env.set_command(self,{'shell','sh'},self.helper,self.run_shell,false,20)
     env.event.snoop("BEFORE_DB_CONNECT",self.trigger_login,self)
     env.event.snoop("TRIGGER_LOGIN",self.login,self)
     cfg.init("term",_term..","..cfg.get("linesize")..",60",self.set_config,"ssh","Define term type in remote SSH server, the supported type depends on remote server",'*')

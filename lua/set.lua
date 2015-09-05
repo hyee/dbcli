@@ -153,7 +153,7 @@ function cfg.restore(name)
         return
     elseif type(name)=="table" then
         for k,v in pairs(name) do
-            if v.value~=cfg[k].value then
+            if v.value~=cfg[k].value and k~="PROMPT" then
                 cfg.doset(k,v.value)
                 cfg[k]=v
             end
