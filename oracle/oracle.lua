@@ -72,7 +72,7 @@ function oracle:connect(conn_str)
          useThreadLocalBufferCache="true",
          freeMemoryOnEnterImplicitCache="true",
          bigStringTryClob="true",
-         clientEncoding="UTF-8",
+         clientEncoding=java.system:getProperty("input.encoding"),
          ['v$session.program']='SQL Developer',
          ['oracle.jdbc.defaultLobPrefetchSize']="2097152",
          --['oracle.jdbc.mapDateToTimestamp']="false",

@@ -1,6 +1,6 @@
 local env=env
 local event
-local writer=writer
+local writer,reader=writer,reader
 local out=writer
 local printer={rawprint=print}
 local io=io
@@ -12,11 +12,32 @@ function printer.load_text(text)
     printer.print(event.callback("BEFORE_PRINT_TEXT",{text or ""})[1])
 end
 
+function printer.set_more(stmt)
+    env.checkerr(stmt,"Usage: more <select statement>")
+    printer.is_more=true
+    local res,err=pcall(env.internal_eval,stmt)    
+    printer.is_more=false
+    if not res then
+        result=tostring(result):gsub(".*000%-00000%:","")
+        if result~="" then print(result) end
+    end
+end
+
+function printer.more(output)
+    local list = java.new("java.util.ArrayList")
+    for v in output:gsplit('\n') do
+        list:add(v)
+    end
+    reader:setPaginationEnabled(true)
+    reader:printColumns(list)
+end
+
 function printer.print(...)    
     local output=""
     table.foreach({...},function(k,v) output=output..tostring(v)..' ' end)
-    output=space..output:gsub("(\r?\n\r?)","%1"..space)    
-    out:println(NOR..output)
+    output=NOR..space..output:gsub("(\r?\n\r?)","%1"..space)
+    if printer.is_more then return printer.more(output) end
+    out:println(output)
     out:flush()
     if printer.hdl then
         pcall(printer.hdl.write,printer.hdl,strip_ansi(output).."\n")
@@ -75,6 +96,7 @@ end
 
 _G.print=printer.print
 _G.rawprint=printer.rawprint
+env.set_command(nil,"more","Similar to Linux 'more' command. Usage: more <other command>",printer.set_more,'__SMART_PARSE__',2)
 env.set_command(nil,{"Prompt","pro"}, "Prompt messages. Usage: PRO[MPT] <message>",printer.load_text,false,2)
 env.set_command(nil,{"SPOOL","SPO"}, "Write the screen output into a file. Usage: SPO[OL] [file_name[.ext]] [CREATE] | APP[END]] | OFF]",printer.spool,false,3)
 return printer

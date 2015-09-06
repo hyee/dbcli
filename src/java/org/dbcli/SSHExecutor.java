@@ -1,9 +1,12 @@
 package org.dbcli;
 
+
 import com.jcraft.jsch.*;
 import jline.console.completer.Completer;
+import jline.internal.Ansi;
 
 import java.io.*;
+import java.nio.channels.CompletionHandler;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -16,7 +19,6 @@ public class SSHExecutor {
     public static String TERMTYPE;
     public static int COLS = 800;
     public static int ROWS = 60;
-    static PrintWriter printer = new PrintWriter(Console.writer);
     public Session session;
     public String linePrefix = "";
     public String host;
@@ -35,18 +37,15 @@ public class SSHExecutor {
     String lastLine;
     boolean isStart = false;
     boolean isEnd = true;
-    Completer completer = new Completer() {
+    CompletionHandler completer = new CompletionHandler() {
         @Override
-        public int complete(String s, int i, List<CharSequence> list) {
-            System.out.println(s);
-            if (!isEnd) {
-                try {
-                    shellWriter.write(new byte[]{9});
-                    shellWriter.flush();
-                } catch (Exception e) {
-                }
-            }
-            return -1;
+        public void completed(Object o, Object o2) {
+
+        }
+
+        @Override
+        public void failed(Throwable throwable, Object o) {
+
         }
     };
 
@@ -89,7 +88,7 @@ public class SSHExecutor {
             session.setInputStream(System.in);
             session.setOutputStream(System.out);
             session.connect();
-            session.setUserInfo(new SSHUserInfo("jsch"));
+            session.setUserInfo((UserInfo) new SSHUserInfo("jsch"));
             this.host = host;
             this.port = port;
             this.user = user;
@@ -117,7 +116,7 @@ public class SSHExecutor {
     }
 
     public void setTermType(String termType, int cols, int rows) {
-        TERMTYPE = termType;
+        TERMTYPE = termType.intern();
         COLS = cols;
         ROWS = rows;
     }
@@ -128,8 +127,8 @@ public class SSHExecutor {
 
     private void closeShell() {
         try {
+            prompt=null;
             pr.close();
-            Console.reader.removeCompleter(completer);
             shellWriter.close();
             shell.getInputStream().close();
             shell.disconnect();
@@ -152,7 +151,6 @@ public class SSHExecutor {
         session.disconnect();
         isLogin = false;
     }
-
 
     public void setLinePrefix(String linePrefix) {
         this.linePrefix = linePrefix == null ? "" : linePrefix;
@@ -179,20 +177,22 @@ public class SSHExecutor {
     }
 
     public void enterShell(boolean isEnter) {
-        Console.reader.removeCompleter(completer);
-        if (isEnter) Console.reader.addCompleter(completer);
+
     }
 
     public void waitCompletion() throws Exception {
-        long wait = 50;
-
+        long wait = 50L;
         //shell.setInputStream(System.in);
         while (!isEnd && !shell.isClosed()) {
             int ch = Console.in.read(wait);
-            while (ch > 0) {
+            while (ch >= 0) {
                 shellWriter.write(ch);
-                pr.flush();
+                --wait;
                 ch = Console.in.read(1L);
+            }
+            if(wait<50L) {
+                shellWriter.flush();
+                wait=50L;
             }
         }
         if (shell.isClosed()) {
@@ -254,9 +254,9 @@ public class SSHExecutor {
     class Printer extends OutputStream {
         StringBuilder sb;
         char lastChar;
+        Pattern p = Pattern.compile("[\27\33]\\[[\\d;]+[mK]");
 
         boolean ignoreMessage;
-        Pattern p = Pattern.compile("\33\\[[\\d;]+[mK]");
 
         public Printer() {
             reset(false);
@@ -289,13 +289,13 @@ public class SSHExecutor {
         }
 
         @Override
-        public synchronized void flush() {
+        public synchronized void flush() throws IOException{
             if (isStart || isEnd || sb.length() == 0) return;
             lastLine = sb.toString();
             if (!ignoreMessage) {
                 if (TERMTYPE == "none") {
-                    printer.print(p.matcher(lastLine).replaceAll(""));
-                    printer.flush();
+                    Console.writer.write(Ansi.stripAnsi(lastLine));
+                    Console.writer.flush();
                 } else {
                     System.out.print(lastLine);
                     System.out.flush();

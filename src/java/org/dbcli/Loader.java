@@ -3,7 +3,9 @@ package org.dbcli;
 import com.naef.jnlua.LuaState;
 import com.opencsv.CSVWriter;
 import com.opencsv.SQLWriter;
+import jline.AnsiWindowsTerminal;
 import jline.console.KeyMap;
+import org.fusesource.jansi.internal.WindowsSupport;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -19,12 +21,15 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.Future;
 import java.util.zip.InflaterInputStream;
 
+import static jline.WindowsTerminal.ConsoleMode.ENABLE_ECHO_INPUT;
+
 
 public class Loader {
     public static String ReloadNextTime = "_init_";
     static LuaState lua;
     static PrintWriter printer;
     static Console console;
+    static AnsiWindowsTerminal terminal;
     static String root = "";
     static String libPath;
     KeyMap keyMap;
@@ -44,7 +49,9 @@ public class Loader {
             libPath += (bit.equals("64") ? "x64" : "x86");
             addLibrary(libPath, true);
             System.setProperty("library.jansi.path", libPath);
-            console = new Console();
+            terminal = new AnsiWindowsTerminal();
+            terminal.init();
+            console = new Console(terminal);
             printer = new PrintWriter(console.getOutput());
             //Ctrl+D
             keyMap = console.getKeys();
@@ -66,6 +73,8 @@ public class Loader {
             lua.setGlobal("reader");
             lua.pushJavaObject(printer);
             lua.setGlobal("writer");
+            lua.pushJavaObject(terminal);
+            lua.setGlobal("terminal");
         }
         String separator = File.separator;
 

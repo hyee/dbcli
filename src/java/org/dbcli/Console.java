@@ -1,14 +1,21 @@
 package org.dbcli;
 
+import jline.AnsiWindowsTerminal;
+import jline.Terminal;
+import jline.TerminalFactory;
+import jline.WindowsTerminal;
 import jline.console.ConsoleReader;
 import jline.console.completer.Completer;
 import jline.console.history.History;
+import jline.internal.Configuration;
 import jline.internal.NonBlockingInputStream;
+import org.fusesource.jansi.WindowsAnsiOutputStream;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.IOException;
 import java.io.Writer;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -19,6 +26,7 @@ public class Console extends ConsoleReader {
     public static Writer writer;
     public static ConsoleReader reader;
     public static NonBlockingInputStream in;
+    public static Terminal terminal;
     protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(5);
     private History his;
     private ScheduledFuture task;
@@ -26,8 +34,9 @@ public class Console extends ConsoleReader {
     private ActionListener event;
     private char[] keys;
 
-    public Console() throws IOException {
-        super(System.in, System.out);
+
+    public Console(Terminal t) throws IOException {
+        super(null,System.in, System.out,t);
         his = getHistory();
         setExpandEvents(false);
         setHandleUserInterrupt(true);
