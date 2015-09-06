@@ -15,20 +15,20 @@ end
 function printer.set_more(stmt)
     env.checkerr(stmt,"Usage: more <select statement>")
     printer.is_more=true
+    reader:setPaginationEnabled(true)
     local res,err=pcall(env.internal_eval,stmt)    
     printer.is_more=false
-    if not res then
-        result=tostring(result):gsub(".*000%-00000%:","")
-        if result~="" then print(result) end
-    end
+    reader:setPaginationEnabled(false)
+    
 end
 
 function printer.more(output)
+    local width=(terminal:getWidth()/2+5)
     local list = java.new("java.util.ArrayList")
     for v in output:gsplit('\n') do
+        if v:len()<width then v=v..string.rep(" ",width-v:len()) end
         list:add(v)
     end
-    reader:setPaginationEnabled(true)
     reader:printColumns(list)
 end
 

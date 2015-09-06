@@ -384,7 +384,7 @@ function ssh:download_file(info)
     if not local_dir:match("%:") then local_dir=(pscp_local_dir or env._CACHE_PATH)..local_dir end
     rawprint(table.concat({"Downloading:   ",remote_file,"==>",local_dir}," "))
     if env.OS=="windows" then local_dir='"'..local_dir:gsub("[\\/]+","\\\\")..'"' end
-    local command=table.concat({pscp,options or "","-pw",self.conn.password,remote_file,local_dir}," ")
+    local command='"'..table.concat({pscp,options or "","-pw",self.conn.password,remote_file,local_dir}," ")..'"'
     os.execute(command)
 end
 
@@ -400,7 +400,7 @@ function ssh:upload_file(info)
     if not local_dir:match("%:") then local_dir=(pscp_local_dir or env._CACHE_PATH)..local_dir end
     rawprint(table.concat({"Uploading:   ",local_dir,"==>",remote_file}," "))
     if env.OS=="windows" then local_dir='"'..local_dir:gsub("[\\/]+","\\\\")..'"' end
-    local command=table.concat({pscp,options or "","-pw",self.conn.password,local_dir,remote_file}," ")
+    local command='"'..table.concat({pscp,options or "","-pw",self.conn.password,local_dir,remote_file}," ")..'"'
     os.execute(command)
 end
 

@@ -37,6 +37,7 @@ public class SSHExecutor {
     String lastLine;
     boolean isStart = false;
     boolean isEnd = true;
+
     CompletionHandler completer = new CompletionHandler() {
         @Override
         public void completed(Object o, Object o2) {
@@ -102,12 +103,12 @@ public class SSHExecutor {
             shellWriter = new PipedOutputStream(pipeIn);
             pr = new Printer();
             pr.reset(true);
-            //FileOutputStream fileOut = new FileOutputStream( outputFileName );
+
             shell.setInputStream(pipeIn);
             shell.setOutputStream(pr);
-            shell.setEnv("TERM", TERMTYPE = TERMTYPE == "none" ? "ansi" : TERMTYPE);
+            shell.setEnv("TERM", TERMTYPE == "none" ? "ansi" : TERMTYPE);
             shell.setPty(true);
-            shell.setPtyType(TERMTYPE = TERMTYPE == "none" ? "ansi" : TERMTYPE, COLS, ROWS, 1400, 900);
+            shell.setPtyType(TERMTYPE == "none" ? "ansi" : TERMTYPE, COLS, ROWS, 1400, 900);
             shell.connect();
             waitCompletion();
         } catch (Exception e) {
@@ -254,7 +255,7 @@ public class SSHExecutor {
     class Printer extends OutputStream {
         StringBuilder sb;
         char lastChar;
-        Pattern p = Pattern.compile("[\27\33]\\[[\\d;]+[mK]");
+        Pattern p = Pattern.compile("\33\\[[\\d\\;]+[mK]");
 
         boolean ignoreMessage;
 
@@ -294,12 +295,13 @@ public class SSHExecutor {
             lastLine = sb.toString();
             if (!ignoreMessage) {
                 if (TERMTYPE == "none") {
-                    Console.writer.write(Ansi.stripAnsi(lastLine));
+                    Console.writer.write(p.matcher(lastLine).replaceAll(""));
                     Console.writer.flush();
                 } else {
                     System.out.print(lastLine);
                     System.out.flush();
                 }
+
             }
             isStart = false;
             sb.setLength(0);

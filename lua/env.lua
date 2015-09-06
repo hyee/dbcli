@@ -334,7 +334,6 @@ function env.exec_command(cmd,params)
         if not res[1] then
             result=res
             local msg={}
-            rawprint(tostring(res[2]))
             res[2]=tostring(res[2]):gsub('^.*%s([^%: ]+Exception%:%s*)','%1'):gsub(".*IOException:%s*",""):gsub("^.*000%-00000%:%s*","")
             for v in res[2]:gmatch("(%u%u%u+%-[^\n\r]*)") do
                 table.insert(msg,v)

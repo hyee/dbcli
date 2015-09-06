@@ -6,7 +6,7 @@ color 0A
 SET JRE_HOME=d:\soft\java
 SET TNS_ADM=d:\Soft\InstanceClient\network\admin
 SET ANSICON_EXC=nvd3d9wrap.dll;nvd3d9wrapx.dll
-SET ANSICON_CMD=.\bin\ansicon.exe -m0A
+SET ANSICON_CMD=
 SET DBCLI_ENCODING=UTF-8
 
 rem read config file
