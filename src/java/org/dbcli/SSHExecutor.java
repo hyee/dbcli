@@ -256,6 +256,7 @@ public class SSHExecutor {
 
     class Printer extends OutputStream {
         StringBuilder sb;
+        StringBuilder sb1;
         char lastChar;
         Pattern p = Pattern.compile("\33\\[[\\d\\;]+[mK]");
 
@@ -270,7 +271,10 @@ public class SSHExecutor {
             char c = (char) i;
             //if (i == 0 || c=='\r') c=' ';
             sb.append(c);
+            sb1.append(c);
             if (c == '\n') {
+                lastLine=sb1.toString();
+                sb1.setLength(0);
                 flush();
                 isStart = false;
                 sb.setLength(0);
@@ -283,7 +287,8 @@ public class SSHExecutor {
         }
 
         public void reset(boolean ignoreMessage) {
-            sb = new StringBuilder(128);
+            sb  = new StringBuilder(128);
+            sb1 = new StringBuilder(128);
             lastChar = '\0';
             isEnd = false;
             isStart = true;
@@ -294,16 +299,15 @@ public class SSHExecutor {
         @Override
         public synchronized void flush() throws IOException{
             if (isStart || isEnd || sb.length() == 0) return;
-            lastLine = sb.toString();
+            String line=sb.toString();
             if (!ignoreMessage) {
                 if (TERMTYPE == "none") {
-                    Console.writer.write(p.matcher(lastLine).replaceAll(""));
+                    Console.writer.write(p.matcher(line).replaceAll(""));
                     Console.writer.flush();
                 } else {
-                    System.out.print(lastLine);
+                    System.out.print(line);
                     System.out.flush();
                 }
-
             }
             isStart = false;
             sb.setLength(0);
@@ -313,6 +317,7 @@ public class SSHExecutor {
         public void close() {
             reset(false);
             sb = null;
+            sb1=null;
             //printer.close();
         }
     }
