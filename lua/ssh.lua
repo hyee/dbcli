@@ -314,7 +314,7 @@ function ssh.set_config(name,value)
     term=_term=="none" and _term or term
     _term=term
     local termtype = term..','..cols..','..rows
-    if instance then
+    if instance and instance.conn then
         instance.conn:setTermType(term,tonumber(cols),tonumber(rows))
         if instance:is_connect() and termtype~=cfg.get("term") then
             print(("Term Type: %s    Columns: %d    Rows: %d"):format(term,tonumber(cols),tonumber(rows)))

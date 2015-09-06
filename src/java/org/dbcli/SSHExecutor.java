@@ -129,12 +129,14 @@ public class SSHExecutor {
     private void closeShell() {
         try {
             prompt=null;
-            pr.close();
-            shellWriter.close();
-            shell.getInputStream().close();
-            shell.disconnect();
+            if(pr!=null) pr.close();
+            if(shellWriter!=null) shellWriter.close();
+            if(shell!=null) {
+                shell.getInputStream().close();
+                shell.disconnect();
+            }
         } catch (Exception e) {
-            e.printStackTrace();
+            //e.printStackTrace();
         }
     }
 
