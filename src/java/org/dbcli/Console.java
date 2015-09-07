@@ -27,6 +27,7 @@ public class Console extends ConsoleReader {
     public static ConsoleReader reader;
     public static NonBlockingInputStream in;
     public static Terminal terminal;
+    public static String   charset;
     protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(5);
     private History his;
     private ScheduledFuture task;
@@ -36,7 +37,7 @@ public class Console extends ConsoleReader {
 
 
     public Console(Terminal t) throws IOException {
-        super(null,System.in, System.out,t);
+        super(null,System.in, System.out,t,"UTF-8");
         his = getHistory();
         setExpandEvents(false);
         setHandleUserInterrupt(true);
@@ -46,6 +47,7 @@ public class Console extends ConsoleReader {
         Iterator<Completer> iterator = getCompleters().iterator();
         while (iterator.hasNext()) removeCompleter(iterator.next());
         reader = this;
+        charset=t.getOutputEncoding()==null?Configuration.getEncoding():t.getOutputEncoding();
     }
 
     public String readLine(String prompt) throws IOException {

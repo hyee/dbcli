@@ -19,7 +19,6 @@ function printer.set_more(stmt)
     local res,err=pcall(env.internal_eval,stmt)    
     printer.is_more=false
     reader:setPaginationEnabled(false)
-    
 end
 
 function printer.more(output)

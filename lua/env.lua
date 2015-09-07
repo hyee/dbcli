@@ -1,7 +1,7 @@
 --init a global function to store CLI variables
 local _G = _ENV or _G
 
-local reader,coroutine=reader,coroutine
+local reader,coroutine,os,string,table,math,io=reader,coroutine,os,string,table,math,io
 
 local getinfo, error, rawset, rawget,math = debug.getinfo, error, rawset, rawget,math
 
@@ -45,6 +45,45 @@ mt.__newindex = function (t, n, v)
 end
 
 env.globals=mt.__declared
+
+local dbcli_stack,dbcli_cmd_history={level=0,id=0},{}
+local dbcli_current_item,dbcli_last_id=dbcli_stack,dbcli_stack.id
+env.__DBCLI__STACK,env.__DBCLI__CMD_HIS=dbcli_stack,dbcli_cmd_history
+local function push_stack(cmd)
+    local item,callee
+    if type(cmd)~="boolean" then --stack end
+        item,callee={},env.callee(4)
+        for k,v in pairs(dbcli_current_item) do
+            if type(k) ~="number" then item[k]=v end
+        end
+        item.closed,item.last=nil
+        dbcli_last_id=dbcli_last_id+1
+        item.clock,item.command,item.callee,item.parent,item.level,item.id=os.clock(),cmd,callee,dbcli_current_item,dbcli_current_item.level+1,dbcli_last_id
+        item.parent[item.id],dbcli_current_item=item,item
+        dbcli_stack.last=item
+    else
+        item,callee=dbcli_current_item,env.callee()
+        dbcli_current_item=item.parent or dbcli_stack
+        item.closer,item.parent,item.clock=callee,nil,os.clock()-item.clock
+        dbcli_current_item[item.id],dbcli_stack.closed=nil,item
+    end
+end
+
+local function push_history(cmd)
+    cmd=cmd:gsub("[\n\r%s\t]+"," "):gsub("^%+",""):sub(1,200)
+    dbcli_cmd_history[#dbcli_cmd_history+1]=("%d: %s%s"):format(dbcli_current_item.level, string.rep("   ",dbcli_current_item.level-1),cmd)
+    while #dbcli_cmd_history>1000 do
+        table.remove(dbcli_cmd_history,1)
+    end
+end
+
+function env.print_stack()
+    local stack=table.concat({"CURRENT_ID:",dbcli_current_item.id,"   CURRENT_LEVEL:",dbcli_current_item.level,"   CURRENT_COMMAND:",dbcli_current_item.command}," ")
+    stack=stack..'\n'..table.dump(dbcli_stack)
+    stack=stack..'\n'.."Historical Commands:\n===================="
+    stack=stack..'\n'..table.concat(dbcli_cmd_history,'\n')
+    print(stack)
+end
 
 --Build command list
 env._CMDS=setmetatable({___ABBR___={}},{
@@ -136,10 +175,14 @@ function env.file_type(file_name)
 end    
 
 local previous_prompt
-function env.set_subsystem(cmd)
+function env.set_subsystem(cmd,prompt)
     if cmd~=nil then
-        previous_prompt=env.PRI_PROMPT:sub(1,#env.PRI_PROMPT-2)
-        env.set.doset("prompt",cmd)
+        if not prompt then
+            previous_prompt=env.PRI_PROMPT:sub(1,#env.PRI_PROMPT-2)
+            env.set.doset("prompt",cmd)
+        else
+            env.PRI_PROMPT,env.CURRENT_PROMPT=prompt,prompt
+        end
         env._SUBSYSTEM=cmd
     else
         env._SUBSYSTEM,_G._SUBSYSTEM=nil,nil
@@ -253,7 +296,11 @@ function env.callee(idx)
     if type(idx)~="number" then idx=3 end
     local info=getinfo(idx)
     if not info then return nil end
-    return info.short_src:gsub(env.WORK_DIR,"",1):gsub("%.%w+$","#"..info.currentline)
+    local src=info.short_src
+    if src:lower():find(env.WORK_DIR,1,true)==1 then
+        src=src:sub(#env.WORK_DIR)
+    end
+    return src:gsub("%.%w+$","#"..info.currentline)
 end
 
 function env.format_error(src,errmsg,...)  
@@ -296,21 +343,20 @@ local writer=writer
 function env.exec_command(cmd,params)    
     local result
     local name=cmd:upper()
-    cmd=_CMDS[cmd]   
-    if env.ansi then
-        writer:write(env.ansi.get_color("NOR"))
-    end
+    cmd=_CMDS[cmd]
+    local stack=table.concat(params," ")
     if not cmd then
-        return print("No such comand["..name.." "..table.unpack(params).."]!")
+        return print("No such comand["..name.." "..stack.."]!")
     end
-
+    stack=(cmd.ARGS==1 and stack or name.." "..stack)
+    push_history(stack)
     if not cmd.FUNC then return end
     env.CURRENT_CMD=name
     local _,isMain=coroutine.running() 
 
     
     local event=env.event and env.event.callback
-    if event then 
+    if event then
         event("BEFORE_COMMAND",name,params)
         if isMain then 
             event("BEFORE_ROOT_COMMAND",name,params)
@@ -319,7 +365,7 @@ function env.exec_command(cmd,params)
     end
 
     local args= cmd.OBJ and {cmd.OBJ,table.unpack(params)} or {table.unpack(params)}
-    --env.trace.enable(true)
+    
     local funs=type(cmd.FUNC)=="table" and cmd.FUNC or {cmd.FUNC}
     for _,func in ipairs(funs) do
         if writer then
@@ -365,6 +411,7 @@ local cache_prompt,fix_prompt
 
 function env.set_prompt(name,default,isdefault)
     if env._SUBSYSTEM~=nil then
+        previous_prompt=default
         return nil;
     end
     default=default:upper()    
@@ -471,6 +518,7 @@ function env.parse_args(cmd,rest)
 end
 
 function env.force_end_input()
+    if not env.pending_command() then return end
     if curr_stmt then
         local stmt={multi_cmd,env.parse_args(multi_cmd,curr_stmt)}                                
         multi_cmd,curr_stmt=nil,nil
@@ -478,9 +526,11 @@ function env.force_end_input()
         if exec~=false then
             env.exec_command(stmt[1],stmt[2])
         else
+            push_stack(false)
             return stmt[1],stmt[2]
         end
     end
+    push_stack(false)
     multi_cmd,curr_stmt=nil,nil
     return
 end
@@ -490,14 +540,18 @@ function env.eval_line(line,exec)
     local subsystem_prefix=""
     --Remove BOM header
     if not env.pending_command() then
+        push_stack(line)
         subsystem_prefix=env._SUBSYSTEM and (env._SUBSYSTEM.." ") or ""
-        if #subsystem_prefix>0 then
+        if dbcli_current_item.skip_subsystem then
+            subsystem_prefix=""
+        elseif #subsystem_prefix>0 then
             if line:lower():find(subsystem_prefix:lower(),1,true)== 1 then 
                 subsystem_prefix=""
             else
                 local cmd=env.parse_args(2,line)[1]
                 if cmd:len()>1 and cmd:sub(1,1)=='.' and _CMDS[cmd:upper():sub(2)] then
                     subsystem_prefix=""
+                    dbcli_current_item.skip_subsystem=true
                 end
             end 
         end
@@ -530,9 +584,11 @@ function env.eval_line(line,exec)
     if multi_cmd then return check_multi_cmd(line) end
     
     local cmd,rest=line:match('^%s*([^%s\t]+)[%s\t]*(.*)')
+    if not cmd then return end
     cmd=subsystem_prefix=="" and cmd:gsub(env.END_MARKS[1]..'+$',''):upper() or cmd
     env.CURRENT_CMD=cmd
     if not (_CMDS[cmd]) then
+        push_stack(false)
         return print("No such command["..cmd.."], please type 'help' for more information.")        
     elseif _CMDS[cmd].MULTI then --deal with the commands that cross-lines
         multi_cmd=cmd
@@ -544,9 +600,12 @@ function env.eval_line(line,exec)
     --print('Command:',cmd,table.concat (args,','))
     rest=subsystem_prefix=="" and rest:gsub("["..env.END_MARKS[1].."%s]+$","") or rest
     local args=env.parse_args(cmd,rest)
+    
     if exec~=false then
-        env.exec_command(cmd,args)        
+        env.exec_command(cmd,args,local_stack)
+        push_stack(false)
     else
+        push_stack(false)
         return cmd,args
     end
 end

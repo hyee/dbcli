@@ -115,6 +115,8 @@ function helper.helper(cmd,...)
         local cmd=java.loader:dumpClass("dump")
         io.write("Command: "..cmd.."\n");
         return os.execute(cmd)
+    elseif cmd=="-stack" then
+        return env.print_stack()
     elseif cmd=="-verbose" then
         local dest=select(1,...)
         if not dest then

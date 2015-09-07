@@ -23,7 +23,7 @@ for /r %%i in (*.pack.gz) do (
   unpack200 -q -r "%%i" "!str:~0,-8!"
 )
 
-start /b /wait %ANSICON_CMD% java -noverify -Xmx384M -cp .\lib\*;.\lib\ext\*%OTHER_LIB% ^
+start /b /wait %ANSICON_CMD% %JRE_HOME%\java -noverify -Xmx384M -cp .\lib\*;.\lib\ext\*%OTHER_LIB% ^
     -XX:NewRatio=50 -XX:+UseG1GC -XX:+UnlockExperimentalVMOptions ^
     -XX:+AggressiveOpts -XX:MaxGCPauseMillis=400 -XX:GCPauseIntervalMillis=8000 ^
     -Dfile.encoding=%DBCLI_ENCODING% -Dsun.jnu.encoding=%DBCLI_ENCODING% -Dclient.encoding.override=%DBCLI_ENCODING% ^

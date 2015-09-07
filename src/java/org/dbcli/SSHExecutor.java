@@ -7,6 +7,7 @@ import jline.internal.Ansi;
 
 import java.io.*;
 import java.nio.channels.CompletionHandler;
+import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -30,6 +31,7 @@ public class SSHExecutor {
     JSch ssh;
     PipedOutputStream shellWriter;
     PipedInputStream pipeIn;
+    Writer writer=Console.writer;
     Printer pr;
     HashMap<Integer, Object[]> forwards;
     HashMap<String, Channel> channels;
@@ -103,7 +105,7 @@ public class SSHExecutor {
             shellWriter = new PipedOutputStream(pipeIn);
             pr = new Printer();
             pr.reset(true);
-
+            if(TERMTYPE!="none") writer=new OutputStreamWriter(System.out,Console.charset);
             shell.setInputStream(pipeIn);
             shell.setOutputStream(pr);
             shell.setEnv("TERM", TERMTYPE == "none" ? "ansi" : TERMTYPE);
@@ -123,7 +125,7 @@ public class SSHExecutor {
     }
 
     public boolean isConnect() {
-        return shell == null ? false : session.isConnected();
+        return shell == null ? false : shell.isConnected();
     }
 
     private void closeShell() {
@@ -305,8 +307,8 @@ public class SSHExecutor {
                     Console.writer.write(p.matcher(line).replaceAll(""));
                     Console.writer.flush();
                 } else {
-                    System.out.print(line);
-                    System.out.flush();
+                    writer.write(line);
+                    writer.flush();
                 }
             }
             isStart = false;

@@ -169,14 +169,14 @@ end
 function ssh:sync_prompt()
     if env._SUBSYSTEM ~= self.name then return end
     local prompt=self.conn and self.conn.prompt or "SSH> "
-    env.PRI_PROMPT,env.CURRENT_PROMPT=prompt,prompt
+    env.set_subsystem(self.name,prompt)
     if not self.conn or not self.conn.prompt then env.set_title("") end
 end
 
 function ssh:enter_i()
     local shell_env=""
     if self:is_connect() then shell_env="("..self:getresult("echo $SHELL")..")" end
-    print(env.ansi.mask(env.set.get("PROMPTCOLOR"),"Entering interactive shell enviroment"..shell_env..", execute 'bye' to exit. Below are the embedded commands:"))
+    print(env.ansi.mask(env.set.get("PROMPTCOLOR"),"Entering SSH interactive shell enviroment"..shell_env..", execute 'bye' to exit. Below are the embedded commands:"))
     self.inner_help:print(true)
     env.set_subsystem(self.name)
     --if self:is_connect() then self.conn:enterShell(true) end
@@ -408,7 +408,7 @@ function ssh:__onload()
     instance=self
     self.short_dir=self.script_dir:match('([^\\/]+[\\/][^\\/]+)$')
     if self.public_dir then
-        self.short_dir=self.short_dir..'" and "lua\\ssh'
+        self.short_dir=self.short_dir..'" and "lua\\shell'
     end
     self.help_title='Run script under the "'..self.short_dir..'" directory in remote SSH server. '
     local helper=env.grid.new()
@@ -434,7 +434,7 @@ function ssh:__onload()
         cmds:add(c)
     end
     cmds:add{" .<command>",'',"Run DBCLI command out of this SSH sub-system. For alias command that related to ssh, the '.' prefix can be ignored."}
-    cmds:add{"bye","","Exit SSH sub-system."}
+    cmds:add{"bye","","Exit SSH interactive shell enviroment."}
     cmds:sort(1,true)
     helper:sort(1,true)
     self.help,self.inner_help=helper,cmds
