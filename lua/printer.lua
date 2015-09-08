@@ -60,7 +60,6 @@ end
 
 function printer.onload()    
     NOR=env.ansi and env.ansi.color['NOR'] or ''
-    if env.ansi and env.ansi.ansi_mode=="ansicon" then out=java.system.out end
     event=env.event
     strip_ansi=env.ansi and env.ansi.strip_ansi or function(x) return x end 
 end    

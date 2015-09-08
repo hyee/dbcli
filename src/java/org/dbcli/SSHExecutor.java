@@ -6,6 +6,8 @@ import jline.console.completer.Completer;
 import jline.internal.Ansi;
 
 import java.io.*;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.CompletionHandler;
 import java.nio.charset.Charset;
 import java.util.HashMap;
@@ -31,7 +33,7 @@ public class SSHExecutor {
     JSch ssh;
     PipedOutputStream shellWriter;
     PipedInputStream pipeIn;
-    Writer writer=Console.writer;
+    PrintWriter writer;
     Printer pr;
     HashMap<Integer, Object[]> forwards;
     HashMap<String, Channel> channels;
@@ -58,20 +60,6 @@ public class SSHExecutor {
 
     public SSHExecutor(String host, int port, String user, String password, String linePrefix) throws Exception {
         connect(host, port, user, password, linePrefix);
-    }
-
-    public void output(String message, boolean newLine) {
-        StringBuilder sb = new StringBuilder((linePrefix + message).length());
-        if (newLine) sb.append(linePrefix);
-        for (int i = 0; i < message.length(); i++) {
-            char c = message.charAt(i);
-            if (c == '\r') continue;
-            sb.append(c);
-            if (c == '\n') sb.append(linePrefix);
-        }
-        if (!newLine) System.out.print(sb.toString());
-        else System.out.println(sb.toString());
-        System.out.flush();
     }
 
     public void connect(String host, int port, String user, final String password, String linePrefix) throws Exception {
@@ -105,7 +93,7 @@ public class SSHExecutor {
             shellWriter = new PipedOutputStream(pipeIn);
             pr = new Printer();
             pr.reset(true);
-            if(TERMTYPE!="none") writer=new OutputStreamWriter(System.out,Console.charset);
+            writer=new PrintWriter((TERMTYPE!="none")?new OutputStreamWriter(System.out,Console.charset):Console.writer);
             shell.setInputStream(pipeIn);
             shell.setOutputStream(pr);
             shell.setEnv("TERM", TERMTYPE == "none" ? "ansi" : TERMTYPE);
@@ -149,14 +137,6 @@ public class SSHExecutor {
         }
     }
 
-    public void testConnect() throws Exception {
-        if (isConnect() || !isLogin) return;
-        {
-            output("Connection is lost, try to re-connect ...", true);
-            closeShell();
-        }
-        connect(this.host, this.port, this.user, this.password, this.linePrefix);
-    }
 
     public void close() {
         closeShell();
@@ -169,7 +149,7 @@ public class SSHExecutor {
     }
 
     public int setForward(int localPort, Integer remotePort, String remoteHost) throws Exception {
-        testConnect();
+        if(!isConnect()) return -1;
         if (forwards.containsKey(localPort)) {
             session.delPortForwardingL(localPort);
             forwards.remove(localPort);
@@ -259,34 +239,35 @@ public class SSHExecutor {
         }
 
         public void showMessage(String m) {
-            output(m, true);
+            System.out.println("Message from UserInfo: "+m);
         }
     }
 
     class Printer extends OutputStream {
-        StringBuilder sb;
-        StringBuilder sb1;
+        ByteBuffer buf=ByteBuffer.allocateDirect(1000000);
+        StringBuilder sb1= new StringBuilder(128);
         char lastChar;
         Pattern p = Pattern.compile("\33\\[[\\d\\;]+[mK]");
 
         boolean ignoreMessage;
 
         public Printer() {
+            buf.order(ByteOrder.nativeOrder());
             reset(false);
         }
 
         @Override
         public void write(int i) throws IOException {
             char c = (char) i;
+            buf.put((byte)i);
             //if (i == 0 || c=='\r') c=' ';
-            sb.append(c);
             sb1.append(c);
             if (c == '\n') {
                 lastLine=sb1.toString();
-                sb1.setLength(0);
                 flush();
                 isStart = false;
-                sb.setLength(0);
+                buf.clear();
+                sb1.setLength(0);
             } else isEnd = (lastChar == '$' || lastChar == '>' || lastChar == '#') && c == ' ';
             lastChar = c;
         }
@@ -296,8 +277,8 @@ public class SSHExecutor {
         }
 
         public void reset(boolean ignoreMessage) {
-            sb  = new StringBuilder(128);
-            sb1 = new StringBuilder(128);
+            buf.clear();
+            sb1.setLength(0);
             lastChar = '\0';
             isEnd = false;
             isStart = true;
@@ -306,28 +287,26 @@ public class SSHExecutor {
         }
 
         @Override
-        public synchronized void flush() throws IOException{
-            if (isStart || isEnd || sb.length() == 0) return;
-            String line=sb.toString();
-            if (!ignoreMessage) {
-                if (TERMTYPE == "none") {
-                    Console.writer.write(p.matcher(line).replaceAll(""));
-                    Console.writer.flush();
-                } else {
-                    writer.write(line);
+        public synchronized void flush()  {
+                if (isStart || isEnd || buf.position() == 0) return;
+                int pos=buf.position();
+                buf.flip();
+                byte[] b=new byte[pos];
+                buf.get(b);
+                String line = new String(b);
+                isStart = false;
+                buf.clear();
+                //writer.write(pos+"   ");
+                if (!ignoreMessage) {
+                    if (TERMTYPE == "none") line=p.matcher(line).replaceAll("");
+                    writer.print(line);
                     writer.flush();
                 }
-            }
-            isStart = false;
-            sb.setLength(0);
         }
 
         @Override
         public void close() {
             reset(false);
-            sb = null;
-            sb1=null;
-            //printer.close();
         }
     }
 }

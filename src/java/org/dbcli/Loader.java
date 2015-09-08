@@ -52,7 +52,7 @@ public class Loader {
             terminal = new AnsiWindowsTerminal();
             terminal.init();
             console = new Console(terminal);
-            printer = new PrintWriter(console.getOutput());
+            printer=new PrintWriter(System.getenv("ANSICON_CMD")!=null?new OutputStreamWriter(System.out,Console.charset):Console.writer);
             //Ctrl+D
             keyMap = console.getKeys();
             keyMap.bind(String.valueOf(KeyMap.CTRL_D), new KeyListner(KeyMap.CTRL_D));
