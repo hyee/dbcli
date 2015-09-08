@@ -1,0 +1,39 @@
+/*[[Show chart for GV$SYSMETRIC_HISTORY. Usage: sysmetric metric_name [inst_id]
+--[[
+  @BASE:10.2
+]]
+]]*/
+
+   {
+       title='Sysmetric History (1 hr)',
+       _sql=[[
+       SELECT sample_time,
+              REPLACE (REPLACE (METRIC_NAME, ' Bytes', ' MB'), ' Per ', ' / ')
+                 metric_name,
+                VALUE
+              / CASE
+                   WHEN LOWER (' ' || metric_unit || ' ') LIKE '% bytes %'
+                   THEN
+                      1024 * 1024
+                   ELSE
+                      1
+                END
+                 metric_value
+         FROM (  SELECT /*+merge no_expand*/
+                       A.end_time sample_time,
+                        A.METRIC_NAME,
+                        A.metric_unit,
+                        SUM (VALUE) VALUE
+                   FROM GV$SYSMETRIC_HISTORY A
+                  WHERE     ( :V2 IS NULL OR INST_ID = :V2)
+                        AND (UPPER (METRIC_NAME) LIKE UPPER ('%&V1%')) /* changed from metric_id to metric_name as name is more intuitive*/
+               GROUP BY a.end_time, A.METRIC_NAME, a.metric_unit)
+       ]],
+       _pivot=true,
+       rollPeriod=1,
+       labelsKMB=true,
+       ylabel='Value',
+       fillGraph=true,
+       stackedGraph=false,
+       labelsSeparateLines=true,
+   }
