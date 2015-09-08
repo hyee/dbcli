@@ -143,7 +143,10 @@ function ssh:ssh_help(_,cmd)
 end
 
 function ssh:check_connection()
-    env.checkerr(self:is_connect(),"SSH server is not connected!")
+    if not self:is_connect() then
+        self:sync_prompt()
+        env.raise("SSH server is not connected!")
+    end
 end
 
 function ssh:link(ac)

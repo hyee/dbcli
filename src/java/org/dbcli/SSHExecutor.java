@@ -113,6 +113,7 @@ public class SSHExecutor {
             shell.setPtyType(TERMTYPE == "none" ? "ansi" : TERMTYPE, COLS, ROWS, 1400, 900);
             shell.connect();
             waitCompletion();
+            session.sendKeepAliveMsg();
         } catch (Exception e) {
             throw e;
         }
@@ -125,7 +126,12 @@ public class SSHExecutor {
     }
 
     public boolean isConnect() {
-        return shell == null ? false : shell.isConnected();
+        if(shell==null) return false;
+        if(!shell.isConnected()) {
+            close();
+            return false;
+        }
+        return true;
     }
 
     private void closeShell() {
@@ -136,6 +142,7 @@ public class SSHExecutor {
             if(shell!=null) {
                 shell.getInputStream().close();
                 shell.disconnect();
+                shell=null;
             }
         } catch (Exception e) {
             //e.printStackTrace();
@@ -151,7 +158,7 @@ public class SSHExecutor {
         connect(this.host, this.port, this.user, this.password, this.linePrefix);
     }
 
-    public void close() throws Exception {
+    public void close() {
         closeShell();
         session.disconnect();
         isLogin = false;
@@ -285,7 +292,7 @@ public class SSHExecutor {
         }
 
         public String getPrompt() {
-            return sb.toString() == "" ? null : sb.toString();
+            return sb1.length() == 0 ? null : p.matcher(sb1.toString()).replaceAll("");
         }
 
         public void reset(boolean ignoreMessage) {
