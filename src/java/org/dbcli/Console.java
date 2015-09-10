@@ -37,7 +37,7 @@ public class Console extends ConsoleReader {
 
 
     public Console(Terminal t) throws IOException {
-        super(null,System.in, System.out,t,"UTF-8");
+        super(null,System.in, System.out,t);
         his = getHistory();
         setExpandEvents(false);
         setHandleUserInterrupt(true);

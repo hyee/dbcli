@@ -1,6 +1,6 @@
 local env=env
 local ssh=env.class(env.scripter)
-local cfg=env.set
+local cfg,terminal=env.set,env.terminal
 local instance
 local _term=env.ansi and env.ansi.ansi_mode=="ansicon" and "xterm" or "none"
 
@@ -171,7 +171,7 @@ end
 
 function ssh:sync_prompt()
     if env._SUBSYSTEM ~= self.name then return end
-    local prompt=self.conn and self.conn.prompt or "SSH> "
+    local prompt=(self.conn and self.conn.prompt or "SSH> ")
     env.set_subsystem(self.name,prompt)
     if not self.conn or not self.conn.prompt then env.set_title("") end
 end
@@ -309,20 +309,24 @@ end
 
 function ssh.set_config(name,value)
     value = value:lower()
-    local term,cols,rows=value:match("(.*),(%d+),(%d+)")
+    local term,cols,rows=value:match("(.*),(%w+),(%w+)")
     if not term then
         term=value:match('^[^, ]+')
-        _term,cols,rows=cfg.get("term"):match("(.*),(%d+),(%d+)")
+        _term,cols,rows=cfg.get("term"):match("(.*),(%w+),(%w+)")
     end
     term=_term=="none" and _term or term
     _term=term
     local termtype = term..','..cols..','..rows
     if instance and instance.conn then
+        if cols=="auto" then cols=terminal:getWidth() end
+        if rows=="auto" then rows=terminal:getHeight() end 
         instance.conn:setTermType(term,tonumber(cols),tonumber(rows))
         if instance:is_connect() and termtype~=cfg.get("term") then
             print(("Term Type: %s    Columns: %d    Rows: %d"):format(term,tonumber(cols),tonumber(rows)))
-            cfg.temp(termtype)
+            cfg.temp("term",termtype)
+            local pwd=instance:get_pwd()
             instance:reconnect()
+            instance:getresult("cd "..pwd)
         end
     end
     return termtype
@@ -350,10 +354,8 @@ local pscp_options='\n'..[[Options:
   -p        preserve file attributes
   -q        quiet, don't show statistics
   -r        copy directories recursively
-  -1 -2     force use of particular SSH protocol version
-  -4 -6     force use of IPv4 or IPv6
-  -C        enable compression
-  -i key    private key file for user authentication
+  -C        enable compression(default)
+  -c        disable compression
   -batch    disable all interactive prompts
   -unsafe   allow server-side wildcards (DANGEROUS)
   -sftp     force use of SFTP protocol
@@ -374,37 +376,49 @@ function ssh:set_ftp_local_path(path)
     print(table.concat({"Local FTP path changed:",current_path,'==>',pscp_local_dir},' '))
 end
 
-function ssh:download_file(info)
+function ssh:ftp_file(op,info)
     if not info then
-        return print(pscp_download_usage..pscp_options)
+        return print((op=='download' and pscp_download_usage or pscp_upload_usage)..pscp_options)
     end
     local pwd=self:get_pwd()
     local args=env.parse_args(3,info)
     local remote_file,local_dir,options=args[1],args[2],args[3]
-    if not remote_file:match("^/") then remote_file=pwd.."/"..remote_file end
+    if op~='download' then remote_file,local_dir=local_dir,remote_file end
+    if not remote_file then 
+        remote_file=pwd
+    elseif not remote_file:match("^/") then 
+        remote_file=pwd.."/"..remote_file 
+    end
     remote_file=self.conn.user.."@"..self.conn.host..":"..remote_file
-    if not local_dir then local_dir=(pscp_local_dir or env._CACHE_PATH) end
-    if not local_dir:match("%:") then local_dir=(pscp_local_dir or env._CACHE_PATH)..local_dir end
-    rawprint(table.concat({"Downloading:   ",remote_file,"==>",local_dir}," "))
+    if not local_dir then 
+        local_dir=(pscp_local_dir or env._CACHE_PATH)
+    elseif not local_dir:match("%:") then 
+        local_dir=(pscp_local_dir or env._CACHE_PATH)..local_dir 
+    end
+    local local_display,remote_display=local_dir,remote_file
     if env.OS=="windows" then local_dir='"'..local_dir:gsub("[\\/]+","\\\\")..'"' end
+    if op~='download' then 
+        remote_file,local_dir=local_dir,remote_file
+        remote_display,local_display=local_display,remote_display 
+    end
+    if not options then 
+        options="-C"
+    elseif not options:lower():find('-c',1,true) then 
+        options=options..' -C'
+    elseif options:find('-c',1,true) then
+        options=options:gsub("%s*-c","")
+    end
+    rawprint(table.concat({op:initcap().."ing:    ",remote_display,"==>",local_display,"   Options:",options}," "))
     local command='"'..table.concat({pscp,options or "","-pw",self.conn.password,remote_file,local_dir}," ")..'"'
     os.execute(command)
 end
 
+function ssh:download_file(info)
+    return self:ftp_file("download",info)
+end
+
 function ssh:upload_file(info)
-    if not info then
-        return print(pscp_upload_usage..pscp_options)
-    end
-    local pwd=self:get_pwd()
-    local args=env.parse_args(3,info)
-    local local_dir,remote_file,options=args[1],args[2],args[3]
-    if not remote_file or not remote_file:match("^/") then remote_file=pwd.."/"..(remote_file or "") end
-    remote_file=self.conn.user.."@"..self.conn.host..":"..remote_file
-    if not local_dir:match("%:") then local_dir=(pscp_local_dir or env._CACHE_PATH)..local_dir end
-    rawprint(table.concat({"Uploading:   ",local_dir,"==>",remote_file}," "))
-    if env.OS=="windows" then local_dir='"'..local_dir:gsub("[\\/]+","\\\\")..'"' end
-    local command='"'..table.concat({pscp,options or "","-pw",self.conn.password,local_dir,remote_file}," ")..'"'
-    os.execute(command)
+    return self:ftp_file("upload",info)
 end
 
 function ssh:__onload()
@@ -460,7 +474,7 @@ function ssh:__onload()
     env.set_command(self,{'shell','sh'},self.helper,self.run_shell,false,20)
     env.event.snoop("BEFORE_DB_CONNECT",self.trigger_login,self)
     env.event.snoop("TRIGGER_LOGIN",self.login,self)
-    cfg.init("term",_term..","..cfg.get("linesize")..",60",self.set_config,"ssh","Define term type in remote SSH server, the supported type depends on remote server",'*')
+    cfg.init("term",_term..","..(cfg.get("linesize")/2)..",auto",self.set_config,"ssh","Define termType/columns/rows in remote SSH server, the supported type depends on remote server",'*')
 end
 
 function ssh:__onunload()

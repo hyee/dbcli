@@ -1,3 +1,4 @@
+local ffi = require("ffi")
 local string,table=string,table
 
 local java=java
@@ -5,6 +6,18 @@ local java=java
 
 function string.initcap(v)
     return (' '..v):lower():gsub("([^%w])(%w)",function(a,b) return a..b:upper() end):sub(2)
+end
+
+local shell=ffi.load("shell32")
+ffi.cdef([[
+typedef int           INT;
+typedef const char *  LPCTSTR;
+typedef int        HWND;
+typedef void *        HINSTANCE;
+void ShellExecuteA(HWND hwnd,LPCTSTR lpOperation,LPCTSTR lpFile,LPCTSTR lpParameters,LPCTSTR lpDirectory,INT nShowCmd);
+]])
+function os.shell(cmd,args)
+  shell.ShellExecuteA(0,nil,cmd,nil,nil,1)
 end
 
 --Continus sep would return empty element
@@ -185,5 +198,3 @@ function table.dump(tbl,indent,maxdep,tabs)
       if ind<2 then return rs:sub(1,-2)..' }' end
       return rs..indent..'}'
 end
-
-return {}

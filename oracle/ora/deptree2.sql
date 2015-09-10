@@ -1,4 +1,4 @@
-/* Shows the accessible dependencies on the given object. Usage: deptree [owner.]object_name*/
+/*[[Shows the accessible dependencies on the given object. Usage: deptree [owner.]object_name]]*/
 
 ora _find_object &V1
 set feed off

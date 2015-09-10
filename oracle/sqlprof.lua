@@ -24,6 +24,8 @@ function sqlprof.extract_profile(sql_id,sql_plan)
                   exec extract_profile('SQL_PLAN_004szdq6gtbrtc3254462');
                4) Extract profile from SPM of another optimized SQL to target sql:
                   exec extract_profile('dc5n1gqgfq09h','SQL_PLAN_004szdq6gtbrtc3254462');
+               4) Extract profile from plan_table, make sure there is only one statement in the plan table:
+                  exec extract_profile('dc5n1gqgfq09h',plan);
             */
             v_sql         CLOB;
             v_signatrue   INT;

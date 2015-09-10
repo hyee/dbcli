@@ -206,7 +206,7 @@ end
 
 function ansi.strip_ansi(str)
     if not enabled then return str end
-    return str:gsub("\27%[[%d%s;]*m","")
+    return str:gsub("\27%[[%d;]*[mK]","")
 end
 
 function ansi.strip_len(str)

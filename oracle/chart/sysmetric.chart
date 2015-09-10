@@ -1,7 +1,7 @@
 /*[[Show chart for GV$SYSMETRIC_HISTORY. Usage: sysmetric metric_name [inst_id]
 --[[
-  @BASE:10.2
-]]
+  @BASE:10.2={}
+]]--
 ]]*/
 
    {

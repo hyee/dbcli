@@ -12,13 +12,15 @@ function printer.load_text(text)
     printer.print(event.callback("BEFORE_PRINT_TEXT",{text or ""})[1])
 end
 
+local more_text
 function printer.set_more(stmt)
     env.checkerr(stmt,"Usage: more <select statement>")
     printer.is_more=true
-    reader:setPaginationEnabled(true)
+    more_text={}
     local res,err=pcall(env.internal_eval,stmt)    
     printer.is_more=false
-    reader:setPaginationEnabled(false)
+    printer.more(table.concat(more_text,'\n'))
+    more_text={}
 end
 
 function printer.more(output)
@@ -28,14 +30,16 @@ function printer.more(output)
         if v:len()<width then v=v..string.rep(" ",width-v:len()) end
         list:add(v)
     end
+    reader:setPaginationEnabled(true)
     reader:printColumns(list)
+    reader:setPaginationEnabled(false)
 end
 
 function printer.print(...)    
     local output=""
     table.foreach({...},function(k,v) output=output..tostring(v)..' ' end)
     output=NOR..space..output:gsub("(\r?\n\r?)","%1"..space)
-    if printer.is_more then return printer.more(output) end
+    if printer.is_more then more_text[#more_text+1]=output;return end
     out:println(output)
     out:flush()
     if printer.hdl then

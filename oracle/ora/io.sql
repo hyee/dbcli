@@ -1,7 +1,7 @@
 /*[[Show database IO info]]*/
 set feed off
 SELECT inst_id,event, total_Waits,round(1e-3*time_Waited_micro/total_Waits,2) avg_milli_secs 
-from gv$system_event WHERE  event LIKE 'db file%' or event LIKE '%direct path%';
+from gv$system_event WHERE  event LIKE 'db file%' or  event LIKE 'log file%' or event LIKE '%direct path%';
 
 SELECT a.inst_id,
        round(MAX(a.VALUE) * 1e6 / max(time_Waited_micro) / 1024 / 1024,2) "Write Speed(MB/s)",

@@ -76,8 +76,6 @@ public class SSHExecutor {
             session.setServerAliveInterval((int) TimeUnit.SECONDS.toMillis(10));
             session.setServerAliveCountMax(10);
             session.setTimeout(0);
-            session.setInputStream(System.in);
-            session.setOutputStream(System.out);
             session.connect();
             session.setUserInfo((UserInfo) new SSHUserInfo("jsch"));
             this.host = host;
@@ -174,7 +172,6 @@ public class SSHExecutor {
 
     public void waitCompletion() throws Exception {
         long wait = 50L;
-        //shell.setInputStream(System.in);
         while (!isEnd && !shell.isClosed()) {
             int ch = Console.in.read(wait);
             while (ch >= 0) {
@@ -190,8 +187,6 @@ public class SSHExecutor {
         if (shell.isClosed()) {
             this.close();
         } else prompt = pr.getPrompt();
-
-        //shell.setInputStream(pipeIn);
     }
 
     public String getLastLine(String command, boolean isWait) throws Exception {
@@ -260,7 +255,6 @@ public class SSHExecutor {
         public void write(int i) throws IOException {
             char c = (char) i;
             buf.put((byte)i);
-            //if (i == 0 || c=='\r') c=' ';
             sb1.append(c);
             if (c == '\n') {
                 lastLine=sb1.toString();
@@ -268,7 +262,7 @@ public class SSHExecutor {
                 isStart = false;
                 buf.clear();
                 sb1.setLength(0);
-            } else isEnd = (lastChar == '$' || lastChar == '>' || lastChar == '#') && c == ' ';
+            } isEnd = (lastChar == '$' || lastChar == '>' || lastChar == '#') && c == ' ';
             lastChar = c;
         }
 
@@ -296,7 +290,6 @@ public class SSHExecutor {
                 String line = new String(b);
                 isStart = false;
                 buf.clear();
-                //writer.write(pos+"   ");
                 if (!ignoreMessage) {
                     if (TERMTYPE == "none") line=p.matcher(line).replaceAll("");
                     writer.print(line);

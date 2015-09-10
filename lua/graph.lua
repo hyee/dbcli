@@ -201,7 +201,7 @@ function graph:run_script(cmd,...)
     content=content.."</body></html>"
     local file=env.write_cache(cmd.."_"..os.date('%Y%m%d%H%M%S')..".html",content)
     print("Result written to "..file)
-    os.execute(file)
+    os.shell(file)
 end
 
 local function set_param(name,value)

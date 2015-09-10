@@ -28,6 +28,10 @@ function cfg.show_cfg(name)
 end
 
 function cfg.init(name,defaultvalue,validate,class,desc,range)
+    local abbr
+    if type(name)=="table" then
+        name,abbr=name[1],name[2]
+    end
     name=name:upper()
     if cfg[name] then 
         return print("Error : Environment parameter["..name.."] has been defined in "..cfg[name].src.."!")
@@ -35,6 +39,7 @@ function cfg.init(name,defaultvalue,validate,class,desc,range)
     if not cfg[name] then cfg[name]={} end
     cfg[name]={
         value=defaultvalue,
+        abbr=abbr,
         default=defaultvalue,
         func=validate,
         class=class,
