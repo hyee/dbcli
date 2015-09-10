@@ -53,18 +53,19 @@ Below are some common use of the utility:<br>
 
 References
 ============
-The project depends on some open-source projects without modifications, the binaries have been included into this project.
+The project depends on some binary files of open-source projects without modifications, the binaries have been included into this project.
 Below is the list:<br>
 
     luajit v2.1 : (MIT)  http://luajit.org/
     jnlua       : (MIT)  https://code.google.com/p/jnlua/
-    jline2      : (BSD)  https://github.com/jline/jline2
+    JLine2      : (BSD)  https://github.com/jline/jline2
     ConsoleZ    : (GNU)  https://github.com/cbucher/console
     MessagePack : (MIT)  https://github.com/fperrad/lua-MessagePack (pure lua)
     OpenCSV     : (MIT)  https://github.com/hyee/OpenCSV
     dygraphs    : (MIT)  https://github.com/danvk/dygraphs
     JSch        : (BSD)  http://www.jcraft.com/jsch/
     ANSICON     : (ZLIB) https://github.com/adoxa/ansicon
+    PSCP        : http://www.putty.org/
     json4lua    : https://github.com/craigmj/json4lua
     
 
@@ -72,5 +73,5 @@ Besides, some SQL scripts are from internet.
 
 About ANSICON
 ============
-ANSICON provides more ANSI escape sequences features than JLine, especially when running bash commands(i.e.: top).<br/>
+ANSICON provides more ANSI escape features than JLine, especially when running bash commands(i.e.: top) via SSH.<br/>
 If you have concern on ANSICON, please remove it from bin, and edit data\init.cfg to add line "set ANSICON_CMD="
