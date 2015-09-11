@@ -25,11 +25,11 @@ local desc_sql={
         AND   owner=:1 and nvl(package_name,' ')=nvl(:2,' ') and object_name=:3
         AND   data_level=0
         ORDER  BY overload, POSITION]],
-    
+
     PACKAGE=[[
     SELECT NO#,ELEMENT,NVL2(RETURNS,'FUNCTION','PROCEDURE') Type,ARGUMENTS,RETURNS,
            AGGREGATE,PIPELINED,PARALLEL,INTERFACE,DETERMINISTIC,AUTHID
-    FROM (    
+    FROM (
         SELECT /*INTERNAL_DBCLI_CMD*/ SUBPROGRAM_ID NO#,
                PROCEDURE_NAME||NVL2(OVERLOAD,' (#'||OVERLOAD||')','') ELEMENT,
                (SELECT (CASE
@@ -38,7 +38,7 @@ local desc_sql={
                            WHEN type_subname IS NOT NULL THEN
                             type_name || '.' || type_subname
                            WHEN type_name IS NOT NULL THEN
-                            type_name||'('||DATA_TYPE||')' 
+                            type_name||'('||DATA_TYPE||')'
                            ELSE
                             data_type
                        END)
@@ -52,7 +52,7 @@ local desc_sql={
                 WHERE  a.SUBPROGRAM_ID = b.SUBPROGRAM_ID
                 AND    NVL(a.OVERLOAD, -1) = NVL(b.OVERLOAD, -1)
                 AND    position > 0
-                AND    a.object_id = b.object_id) ARGUMENTS, 
+                AND    a.object_id = b.object_id) ARGUMENTS,
                AGGREGATE,
                PIPELINED,
                PARALLEL,
@@ -69,7 +69,7 @@ local desc_sql={
             ORDER BY NO#]],
             [[SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/* FROM ALL_INDEXES WHERE owner=:1 and index_name=:2]]},
     TYPE=[[
-        SELECT /*INTERNAL_DBCLI_CMD*/ 
+        SELECT /*INTERNAL_DBCLI_CMD*/
                attr_no NO#,
                attr_name,
                attr_type_owner||NVL2(attr_type_owner,'.','')||
@@ -123,10 +123,10 @@ local desc_sql={
                                       'RAW') --
                THEN DATA_TYPE||'(' || DATA_LENGTH || DECODE(CHAR_USED, 'C', ' CHAR') || ')' --
                WHEN DATA_TYPE = 'NUMBER' --
-               THEN (CASE WHEN nvl(DATA_scale, DATA_PRECISION) IS NULL THEN DATA_TYPE 
-                          WHEN DATA_scale > 0 THEN DATA_TYPE||'(' || NVL(''||DATA_PRECISION, '38') || ',' || DATA_SCALE || ')' 
+               THEN (CASE WHEN nvl(DATA_scale, DATA_PRECISION) IS NULL THEN DATA_TYPE
+                          WHEN DATA_scale > 0 THEN DATA_TYPE||'(' || NVL(''||DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
                           WHEN DATA_PRECISION IS NULL AND DATA_scale=0 THEN 'INTEGER'
-                          ELSE DATA_TYPE||'(' || DATA_PRECISION ||')' END) ELSE DATA_TYPE END 
+                          ELSE DATA_TYPE||'(' || DATA_PRECISION ||')' END) ELSE DATA_TYPE END
                data_type,
                DECODE(NULLABLE, 'N', 'NOT NULL', '') NULLABLE,
                (CASE
@@ -135,11 +135,11 @@ local desc_sql={
                    ELSE
                     NULL
                END) "Default",
-               HIDDEN_COLUMN "Hidden?",               
+               HIDDEN_COLUMN "Hidden?",
                AVG_COL_LEN AVG_LEN,
                num_distinct "NDV",
                round(num_nulls*100/nullif(num_rows,0),2) "Nulls(%)",
-               round((num_rows-num_nulls)/nullif(num_distinct,0),2) CARDINALITY,               
+               round((num_rows-num_nulls)/nullif(num_distinct,0),2) CARDINALITY,
                nullif(HISTOGRAM,'NONE') HISTOGRAM
                /*
                ,decode(data_type
@@ -183,7 +183,7 @@ local desc_sql={
              DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
              DECODE(C.COLUMN_POSITION, 1, DECODE(I.UNIQUENESS,'UNIQUE','YES','NO'), '') "UNIQUE",
              DECODE(C.COLUMN_POSITION, 1, PARTITIONED, '') "PARTITIONED",
-           --DECODE(C.COLUMN_POSITION, 1, (SELECT NVL(MAX('YES'),'NO') FROM ALL_Constraints AC WHERE AC.INDEX_OWNER = I.OWNER AND AC.INDEX_NAME = I.INDEX_NAME), '') "IS_PK",             
+           --DECODE(C.COLUMN_POSITION, 1, (SELECT NVL(MAX('YES'),'NO') FROM ALL_Constraints AC WHERE AC.INDEX_OWNER = I.OWNER AND AC.INDEX_NAME = I.INDEX_NAME), '') "IS_PK",
              DECODE(C.COLUMN_POSITION, 1, decode(I.STATUS,'N/A',(SELECT MIN(STATUS) FROM All_Ind_Partitions p WHERE p.INDEX_OWNER = I.OWNER AND p.INDEX_NAME = I.INDEX_NAME),I.STATUS), '') STATUS,
              C.COLUMN_POSITION NO#,
              C.COLUMN_NAME,
@@ -192,7 +192,7 @@ local desc_sql={
         WHERE  C.INDEX_OWNER = I.OWNER
         AND    C.INDEX_NAME = I.INDEX_NAME
         AND    I.TABLE_OWNER = :1
-        AND    I.TABLE_NAME = :2        
+        AND    I.TABLE_NAME = :2
         ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION]],
     [[
         SELECT DECODE(R, 1, CONSTRAINT_NAME) CONSTRAINT_NAME,
@@ -217,7 +217,7 @@ local desc_sql={
                        A.SEARCH_CONDITION,
                        c.COLUMN_NAME,
                        ROW_NUMBER() OVER(PARTITION BY A.CONSTRAINT_NAME ORDER BY C.COLUMN_NAME) R
-                FROM   (select * from all_constraints where owner=:1 and table_name=:2) a, 
+                FROM   (select * from all_constraints where owner=:1 and table_name=:2) a,
                        all_constraints R, ALL_CONS_COLUMNS C
                 WHERE  A.R_OWNER = R.OWNER(+)
                 AND    A.R_CONSTRAINT_NAME = R.CONSTRAINT_NAME(+)
@@ -258,7 +258,7 @@ local desc_sql={
                 a.AVG_COL_LEN AVG_LEN,
                 a.num_distinct "NDV",
                 round(a.num_nulls*100/nullif(b.num_rows,0),2) "Nulls(%)",
-                round((num_rows-a.num_nulls)/nullif(a.num_distinct,0),2) CARDINALITY,               
+                round((num_rows-a.num_nulls)/nullif(a.num_distinct,0),2) CARDINALITY,
                 nullif(a.HISTOGRAM,'NONE') HISTOGRAM
          FROM   all_tab_cols c,  all_Part_Col_Statistics a ,all_tab_partitions  b
          WHERE  a.owner=c.owner and a.table_name=c.table_name
@@ -269,7 +269,7 @@ local desc_sql={
     [[
         SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/*
         FROM   all_tab_partitions T
-        WHERE  T.TABLE_OWNER = :1 AND T.TABLE_NAME = :2 AND partition_name=:3]]}           
+        WHERE  T.TABLE_OWNER = :1 AND T.TABLE_NAME = :2 AND partition_name=:3]]}
 }
 
 desc_sql.VIEW=desc_sql.TABLE[1]
@@ -292,7 +292,7 @@ function desc.desc(name,option)
         SELECT *
         FROM   (SELECT regexp_substr(obj,'[^/]+', 1, 1) + 0 object_id,
                        regexp_substr(obj,'[^/]+', 1, 2) owner,
-                       regexp_substr(obj,'[^/]+', 1, 3) object_name, 
+                       regexp_substr(obj,'[^/]+', 1, 3) object_name,
                        regexp_substr(obj,'[^/]+', 1, 4) object_type
                  FROM   (SELECT (SELECT o.object_id || '/' || o.owner || '/' || o.object_name || '/' ||
                                            o.object_type
@@ -306,7 +306,7 @@ function desc.desc(name,option)
         AND    rownum<2]],{obj.object_id})
         if type(new_obj)=="table" and new_obj[1] then
             obj.object_id,obj.owner,obj.object_name,obj.object_type=table.unpack(new_obj)
-        end 
+        end
     end
 
     rs={obj.owner,obj.object_name,obj.object_subname or "",
@@ -319,7 +319,7 @@ function desc.desc(name,option)
     if (rs[4]=="PROCEDURE" or rs[4]=="FUNCTION") and rs[5]~=2 then
         rs[2],rs[3]=rs[3],rs[2]
     end
-    
+
     local dels=string.rep("=",100)
     local feed=cfg.get("feed")
     cfg.set("feed","off",true)
@@ -329,11 +329,11 @@ function desc.desc(name,option)
         db:dba_query(db.query,sql,rs)
         if i<#sqls then print(dels) end
     end
-    
+
     if option and option:upper()=='ALL' then
         if rs[2]==""  then rs[2],rs[3]=rs[3],rs[2] end
         print(dels)
-        cfg.set("PIVOT",1)        
+        cfg.set("PIVOT",1)
         db:query([[SELECT * FROM ALL_OBJECTS WHERE OWNER=:1 AND OBJECT_NAME=:2 AND nvl(SUBOBJECT_NAME,' ')=nvl(:3,' ')]],rs)
     end
 

@@ -2,14 +2,14 @@ local db,cfg=env.oracle,env.set
 local awr={}
 
 function awr.dump_report(stmt,starttime,endtime,instances)
-    if not endtime then 
+    if not endtime then
         return print('Parameters: <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]')
     end
     db:check_date(starttime)
     db:check_date(endtime)
 
-    env.checkerr(db:check_access('dbms_workload_repository.awr_report_html',1),'Sorry, you dont have the "execute" privilege on package "dbms_workload_repository"!')    
-    
+    env.checkerr(db:check_access('dbms_workload_repository.awr_report_html',1),'Sorry, you dont have the "execute" privilege on package "dbms_workload_repository"!')
+
     local args={starttime,endtime,instances or "",'#VARCHAR','#CLOB','#CURSOR'}
     cfg.set("feed","off")
     db:exec(stmt:replace('@get_range@',awr.extract_period()),args)
@@ -42,8 +42,8 @@ function awr.extract_period()
                    max((select nvl(max(end_interval_time+0),s) from Dba_Hist_Snapshot WHERE snap_id=st AND dbid=a.dbid)),
                    max((select nvl(max(end_interval_time+0),e) from Dba_Hist_Snapshot WHERE snap_id=ed AND dbid=a.dbid))
             INTO dbid,st,ed,stim,etim
-            FROM   (SELECT dbid, 
-                           nvl(MAX(decode(sign(end_interval_time-0.004-s),1,null,snap_id)),min(snap_id)) st, 
+            FROM   (SELECT dbid,
+                           nvl(MAX(decode(sign(end_interval_time-0.004-s),1,null,snap_id)),min(snap_id)) st,
                            nvl(min(decode(sign(end_interval_time+0.004-e),-1,null,snap_id)),max(snap_id)) ed
                     FROM   Dba_Hist_Snapshot
                     WHERE  begin_interval_time-0.04 <= e and end_interval_time+0.004>=s
@@ -89,7 +89,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
                     etim := to_date(p_end, 'YYMMDDHH24MI');
                 END IF;
                 stim := to_date(p_start, 'YYMMDDHH24MI');
-                
+
                 get_range(stim,etim,inst,dbid,st,ed,stim,etim);
             END;
         BEGIN
@@ -97,18 +97,18 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
                 IF inst IS NULL THEN
                     inst := USERENV('instance');
                 END IF;
-            
+
                 IF INSTR(inst, ',') > 0 THEN
                     RETURN;
                 END IF;
             END IF;
 
             gen_ranges(p_start,p_end,dbid,st,ed);
-    
-            IF p_start2 IS NOT NULL THEN 
+
+            IF p_start2 IS NOT NULL THEN
                 gen_ranges(p_start2,p_end2,dbid2,st2,ed2);
                 filename := 'awr_diff_' || least(st,st2) || '_' || greatest(ed,ed2) || '_' || nvl(inst, 'all') || '.html';
-                OPEN cur for 
+                OPEN cur for
                 select 'AWR' report_type,
                         nvl(inst,'ALL') INSTANCES,
                         st begin_snap1,
@@ -121,7 +121,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
                 from    dual;
             ELSE
                 filename := 'awr_' || st || '_' || ed || '_' || nvl(inst, 'all') || '.html';
-                OPEN cur for 
+                OPEN cur for
                 select 'AWR' report_type,
                         nvl(inst,'ALL') INSTANCES,
                         to_char(stim,'YYYY-MM-DD HH24:MI') begin_time,
@@ -130,11 +130,11 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
                         ed end_snap
                 from    dual;
             END IF;
-            
+
             $IF DBMS_DB_VERSION.VERSION>10 $THEN
                 dbms_workload_repository.awr_set_report_thresholds(top_n_sql => 50);
             $END
-            
+
             IF NOT (inst IS NULL OR INSTR(inst, ',') > 0) THEN
                 IF ed2 IS NULL THEN
                     OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_report_html(dbid, inst, st, ed));
@@ -150,7 +150,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
                 END IF;
             $END
             END IF;
-            
+
             dbms_lob.createtemporary(rs, TRUE);
             LOOP
                 BEGIN
@@ -162,7 +162,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
                 EXCEPTION WHEN OTHERS THEN NULL;
                 END;
             END LOOP;
-            
+
             CLOSE rc;
         END;
     BEGIN
@@ -198,24 +198,24 @@ function awr.extract_ash(starttime,endtime,instances)
             stim date;
             etim date;
             st   INT;
-            ed   INT;     
+            ed   INT;
             inst VARCHAR2(30) := NULLIF(upper(p_inst), 'A');
         BEGIN
-        
+
             IF DBMS_DB_VERSION.VERSION < 11 THEN
                 IF inst IS NULL THEN
                     inst := USERENV('instance');
                 END IF;
-            
+
                 IF INSTR(inst, ',') > 0 THEN
                     RETURN;
                 END IF;
             END IF;
-            
+
             get_range(p_start,p_end,inst,dbid,st,ed,stim,etim);
-        
+
             filename := 'ash_' || p_start || '_' || p_end || '_' || nvl(inst, 'a') || '.html';
-            OPEN cur for 
+            OPEN cur for
                 select 'ASH' report_type,
                         nvl(inst,'ALL') INSTANCES,
                         to_char(stim,'YYYY-MM-DD HH24:MI') start_time,
@@ -269,17 +269,17 @@ function awr.extract_addm(starttime,endtime,instances)
             taskname VARCHAR2(30) := 'ADDM_DBCLI_REPORT';
             inst     VARCHAR2(30) := NULLIF(p_inst, 'A');
         BEGIN
-        
+
             IF DBMS_DB_VERSION.VERSION < 11 THEN
                 IF inst IS NULL THEN
                     inst := USERENV('instance');
                 END IF;
-            
+
                 IF INSTR(inst, ',') > 0 THEN
                     RETURN;
                 END IF;
             END IF;
-        
+
             get_range(p_start,p_end,inst,dbid,st,ed,stim,etim);
 
             BEGIN
@@ -309,7 +309,7 @@ function awr.extract_addm(starttime,endtime,instances)
         extract_addm(:1, :2, :3,:4);
     END;]]
     env.checkerr(db:check_access('dbms_advisor.create_task',1),'Sorry, you dont have the "Advisor" privilege!')
-    if not endtime then 
+    if not endtime then
         return print('Parameters: <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]')
     end
     db:check_date(starttime)

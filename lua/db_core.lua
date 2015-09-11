@@ -17,9 +17,9 @@ end
 --return column value according to the specific resulset and column index
 function db_Types:get(position,typeName,res,conn)
     --local value=res:getObject(position)
-    --if value==nil then return nil end   
+    --if value==nil then return nil end
     local getter=self[typeName].getter
-    
+
     local rtn,value=pcall(res[getter],res,position)
     if not rtn then
         print('Column:',position,"    Datatype:",self[typeName].name,"    ",value)
@@ -44,7 +44,7 @@ local number_types={
     }
 --
 function db_Types:load_sql_types(className)
-    
+
     local typ=java.require(className)
     local m2={
         [1]={getter="getBoolean",setter="setBoolean"},
@@ -101,14 +101,14 @@ function db_Types:load_sql_types(className)
                     return java.cast(result,'java.sql.ResultSet')
                 end
             end},
-            
+
         [7]={getter='getCharacterStream',setter='setBytes',
              handler=function(result,action,conn)
                 if action=="get" then
                     return ""
                 end
             end},
-        --Oracle date    
+        --Oracle date
         [8]={getter='getString',setter='setString',
              handler=function(result,action,conn)
                 if action=="get" then
@@ -140,7 +140,7 @@ local ResultSet=env.class()
 
 function ResultSet:getHeads(rs)
     if self[rs] then return self[rs] end
-    local maxsiz=cfg.get("COLSIZE")    
+    local maxsiz=cfg.get("COLSIZE")
     local meta=rs:getMetaData()
     local len=meta:getColumnCount()
     local colinfo={}
@@ -174,7 +174,7 @@ end
 --return one row for a result set, if packerounter EOF, then return nil
 --The first rows is the title
 function ResultSet:fetch(rs,conn)
-    local cols=self[rs] 
+    local cols=self[rs]
     if not cols then
         loader:setCurrentResultSet(rs)
         cols = self:getHeads(rs)
@@ -205,7 +205,7 @@ function ResultSet:fetch(rs,conn)
 end
 
 function ResultSet:close(rs)
-    
+
     if rs then
         if not rs:isClosed() then rs:close() end
         if self[rs] then self[rs]=nil end
@@ -254,7 +254,7 @@ function ResultSet:print(res,conn,feed)
             break
         end
         rows=rows+1
-        if hdl then 
+        if hdl then
             hdl:add(rs)
         else
             table.insert(result,rs)
@@ -296,8 +296,8 @@ function db_core:login(account,list)
 end
 
 --[[
-   execute sql statement. args is a map table, 
-   For input parameter, 
+   execute sql statement. args is a map table,
+   For input parameter,
         1) Its key - value structure is {parameter_name1 = value1, k2=v2...}
         2) The function would parse the sql to idendify the parameters with following rules:
             a) the text whose format is "&<key>", if args have matching items, then replace the text with keys's value
@@ -307,7 +307,7 @@ end
 
    Both input or output parameter names are all case-insensitive
 
-   returns: for the sql is a query stmt, then return the result set, otherwise return the affected rows(>=-1)    
+   returns: for the sql is a query stmt, then return the result set, otherwise return the affected rows(>=-1)
 ]]
 
 function db_core:check_sql_method(event_name,sql,method,...)
@@ -315,16 +315,16 @@ function db_core:check_sql_method(event_name,sql,method,...)
     if res==false then
         local info={db=self,sql=sql,error=tostring(obj):gsub('[%s\t\n\r]+$','')}
         info.error=info.error:gsub('.*Exception:?%s*','')
-        event(event_name,info)    
+        event(event_name,info)
         if info and info.error and info.error~="" then
             if info.sql and info.sql:find(env.CURRENT_ROOT_CMD,1,true)~=1 then
-                print('SQL: '..info.sql:gsub("\n","\n     ")) 
+                print('SQL: '..info.sql:gsub("\n","\n     "))
             end
-            env.raise_error(info.error) 
+            env.raise_error(info.error)
         end
         env.raise("000-00000: ")
-    end 
-    return obj 
+    end
+    return obj
 end
 
 function db_core:check_params(sql,prep,p1,params)
@@ -336,7 +336,7 @@ function db_core:check_params(sql,prep,p1,params)
         hdl:add({"Param Sequence","Param Name","Param Type","Param Value","Description"})
         for i=1,math.max(param_count,#p1) do
             local v=p1[i] or {}
-            local res,typ=pcall(meta.getParameterTypeName,meta) 
+            local res,typ=pcall(meta.getParameterTypeName,meta)
             typ=res and typ or v[4]
             local param_value=v[3] and params[v[3]]
             hdl:add{i,v[3],typ,type(param_value)=="table" and "OUT" or param_value,
@@ -349,12 +349,12 @@ function db_core:check_params(sql,prep,p1,params)
             env.raise("000-00000: ")
         end
     end
-end    
+end
 
 function db_core:parse(sql,params,prefix,prep)
-    local p1,counter={},0    
+    local p1,counter={},0
     prefix=(prefix or ':')
-    sql=sql:gsub('%f[%w_%$'..prefix..']'..prefix..'([%w_%$]+)',function(s)            
+    sql=sql:gsub('%f[%w_%$'..prefix..']'..prefix..'([%w_%$]+)',function(s)
             local k,s = s:upper(),prefix..s
             local v= params[k]
             if not v then return s end
@@ -381,7 +381,7 @@ function db_core:parse(sql,params,prefix,prep)
                 typ='VARCHAR'
                 args={db_Types:set(typ,v)}
             end
-            args[#args+1],args[#args+2]=k,typ            
+            args[#args+1],args[#args+2]=k,typ
             p1[#p1+1]=args
             return '?'
         end)
@@ -390,22 +390,22 @@ function db_core:parse(sql,params,prefix,prep)
 
     self:check_params(sql,prep,p1,params)
 
-    local meta=prep:getParameterMetaData() 
+    local meta=prep:getParameterMetaData()
 
-    local param_count=meta:getParameterCount()  
+    local param_count=meta:getParameterCount()
     if param_count==0 then return prep,sql,params end
-    local checkerr=pcall(meta.getParameterMode,meta,1)     
+    local checkerr=pcall(meta.getParameterMode,meta,1)
 
     if not checkerr then
         for k,v in ipairs(p1) do
-            prep[v[1]](prep,k,v[2])        
+            prep[v[1]](prep,k,v[2])
         end
     else
         for i=1,param_count do
             local mode=meta:getParameterMode(counter)
             local v,param_value=p1[i],params[p1[i][3]]
             if mode<=2 then
-                prep[db_Types[p1[i][4]].setter](prep,i,type(param_value)=="table" and param_value[4] or param_value)                
+                prep[db_Types[p1[i][4]].setter](prep,i,type(param_value)=="table" and param_value[4] or param_value)
             end
 
             --output parameter
@@ -414,8 +414,8 @@ function db_core:parse(sql,params,prefix,prep)
                     params[p1[i][3]]={'#',{counter},typename,param_value}
                 else
                     table.insert(params[p1[i][3]][2],counter)
-                end                               
-                prep['registerOutParameter'](prep,i,db_Types[typename].id)               
+                end
+                prep['registerOutParameter'](prep,i,db_Types[typename].id)
             end
         end
     end
@@ -464,8 +464,8 @@ function db_core:exec(sql,args)
     if type(sql)~="string" then
         return sql
     end
-    
-    prep,sql,params=self:parse(sql,params)        
+
+    prep,sql,params=self:parse(sql,params)
     self.__stmts[#self.__stmts+1]=prep
     prep:setFetchSize(cfg.get('FETCHSIZE'))
     prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
@@ -474,7 +474,7 @@ function db_core:exec(sql,args)
     --loader:setStatement(prep)
     local is_query=self:check_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
     self.current_stmt=nil
-    --is_query=prep:execute()    
+    --is_query=prep:execute()
     for k,v in pairs(params) do
         if type(v) == "table" and v[1] == "#"  then
             if type(v[2]) == "table" then
@@ -486,7 +486,7 @@ function db_core:exec(sql,args)
                     end
                 end
                 params[k]=res
-            else 
+            else
                 params[k]=db_Types:get(v[2],v[3],prep,self.conn)
             end
         end
@@ -501,12 +501,12 @@ function db_core:exec(sql,args)
     end
 
     --close statments
-    
+
     params=nil
     local result={is_query and prep:getResultSet() or prep:getUpdateCount()}
 
     while true do
-        params,is_query=pcall(prep.getMoreResults,prep,2) 
+        params,is_query=pcall(prep.getMoreResults,prep,2)
         if not params or not is_query then break end
         result[#result+1]=prep:getResultSet()
     end
@@ -525,7 +525,7 @@ end
 
 function db_core:is_internal_call(sql)
     if self.internal_exec then return true end
-    return sql and sql:find("INTERNAL_DBCLI_CMD",1,true) and true or false 
+    return sql and sql:find("INTERNAL_DBCLI_CMD",1,true) and true or false
 end
 
 function db_core:print_result(rs)
@@ -595,7 +595,7 @@ function db_core:connect(attrs,data_source)
     self.properties={}
     for k in java.methods(self.conn) do
         if k=='getProperties' then
-            for k,v in java.pairs(self.conn:getProperties()) do 
+            for k,v in java.pairs(self.conn:getProperties()) do
                 --print(k)
                 self.properties[k]=v
             end
@@ -676,7 +676,7 @@ local function set_param(name,value)
         java.require("com.opencsv.CSVParser").DEFAULT_SEPARATOR=csv.DEFAULT_SEPARATOR
         return value
     elseif name=="SQLLINEWIDTH" then
-       sqlw.maxLineWidth=tonumber(value)  
+       sqlw.maxLineWidth=tonumber(value)
     elseif name=="ASYNCEXP" then
         return value and value:lower()=="true" and true or false
     end
@@ -696,7 +696,7 @@ end
 function db_core:sql2file(filename,sql,method,ext,...)
     local clock,counter,result
     if sql then
-        sql=type(sql)=="string" and env.var.inputs[sql:upper()] or sql 
+        sql=type(sql)=="string" and env.var.inputs[sql:upper()] or sql
         if type(sql)~='string' then
             env.checkerr(not sql:isClosed(),"Target ResultSet is closed!")
             result=sql
@@ -712,7 +712,7 @@ function db_core:sql2file(filename,sql,method,ext,...)
 
     local file=io.open(filename,"w")
     env.checkerr(file,"File "..filename.." cannot be accessed because it is being used by another process!")
-    file:close()  
+    file:close()
     if type(result)=="table" then
         for idx,rs in pairs(rs) do
             if type(rs)=="userdata" then
@@ -764,7 +764,7 @@ function db_core:load_config(db_alias,props)
     local url_props
     for alias,url in pairs(config) do
         if type(url)=="table" then
-            if alias:upper()==(props.jdbc_alias or db_alias:upper())  then 
+            if alias:upper()==(props.jdbc_alias or db_alias:upper())  then
                 url_props=url
                 props.jdbc_alias=alias:upper()
             end
@@ -784,7 +784,7 @@ function db_core:merge_props(src,target)
     if type(src)~='table' then return target end
     for k,v in pairs(src) do
         if type(v)=="string" and (v:lower()=="nil" or v:lower()=="null") then v=nil end
-        target[k]=v 
+        target[k]=v
     end
     return target
 end
@@ -809,9 +809,9 @@ function db_core:__onload()
 end
 
 function db_core:__onunload()
-    if self:is_connect() then 
+    if self:is_connect() then
         pcall(self.conn.close,self.conn)
-        print("Database disconnected.") 
+        print("Database disconnected.")
     end
 end
 

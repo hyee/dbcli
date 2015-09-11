@@ -21,7 +21,7 @@ BEGIN
                  object_type,
                  0+regexp_substr(info, '[^/]+', 1, 1) OBJECT_ID,
                  nullif(0+regexp_substr(info, '[^/]+', 1, 2),0) DATA_OBJECT_ID,
-                 regexp_substr(info, '[^/]+', 1, 6) STATUS, 
+                 regexp_substr(info, '[^/]+', 1, 6) STATUS,
                  TO_DATE(regexp_substr(info, '[^/]+', 1, 3)) CREATED,
                  TO_DATE(regexp_substr(info, '[^/]+', 1, 4)) LAST_DDL_TIME,
                  TO_DATE(regexp_substr(info, '[^/]+', 1, 5)) TIMESTAMP,

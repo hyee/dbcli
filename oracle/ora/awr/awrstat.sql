@@ -16,12 +16,12 @@ select max(tim) tim,sql_id,plan_hash,
        sum(ccwait) ccwait,
        sum(clwait) clwait,
        sum(apwait) apwait,
-       max(px_count) px_count, 
+       max(px_count) px_count,
        sum(bgs) "Buffer gets(MB)",
        sum(ior) "IO Reads(MB)",
        sum(wr)  "Writes(MB)",
        sum(rows#) rows#
-from(       
+from(
     select to_char(a.end_interval_time,'YYYYMMDD HH24:MI') tim,
            a.sql_id,
            a.plan_hash_value plan_hash,

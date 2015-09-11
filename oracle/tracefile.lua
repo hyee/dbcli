@@ -37,7 +37,7 @@ function trace.get_trace(filename,mb,from_mb)
             flag := 0;
             EXECUTE IMMEDIATE buff;
         END IF;
-        
+
         flag := 2;
         f          := regexp_substr(f, '[^\\/]+$');
         trace_file := bfilename(dir, f);
@@ -54,7 +54,7 @@ function trace.get_trace(filename,mb,from_mb)
         ELSIF from_MB > fsize THEN
             from_MB := fsize;
         END IF;
-        
+
         MBs:= least(MBs,fsize-from_MB+1);
         dbms_lob.createtemporary(text,true);
         dbms_lob.loadclobfromfile(text,trace_file,MBs,startpos,from_MB,csid,lang_ctx,warn);
@@ -62,12 +62,12 @@ function trace.get_trace(filename,mb,from_mb)
         drop_dir;
         :2   := f;
         :3   := text;
-        :res := 'File Size: ' || round(fsize / 1024 / 1024, 2) || ' MB        Extract Size: ' 
-                ||round(length(text) / 1024 / 1024, 2) || ' MB        Start Extract Position: ' 
+        :res := 'File Size: ' || round(fsize / 1024 / 1024, 2) || ' MB        Extract Size: '
+                ||round(length(text) / 1024 / 1024, 2) || ' MB        Start Extract Position: '
                 ||round((from_MB-length(text)) / 1024 / 1024, 2) || ' MB';
     EXCEPTION
         WHEN OTHERS THEN
-            IF trace_file IS NOT NULL AND DBMS_LOB.FILEISOPEN(trace_file)=1 THEN 
+            IF trace_file IS NOT NULL AND DBMS_LOB.FILEISOPEN(trace_file)=1 THEN
                 dbms_lob.fileclose(trace_file);
             END IF;
             drop_dir;
@@ -83,7 +83,7 @@ function trace.get_trace(filename,mb,from_mb)
             END IF;
             :4 := buff;
     END;]]
-    
+
     env.checkerr(filename,"Please specify the trace file location !")
     if not db.props.db_version then env.raise_error('Database is not connected!') end;
     db:internal_call("alter session set events '10046 trace name context off'")
@@ -121,7 +121,7 @@ function trace.get_trace(filename,mb,from_mb)
         if db.props.db_version<='11' then
             filename=db:get_value[[SELECT u_dump.value || '/alert_' || SYS_CONTEXT('userenv', 'instance_name') || '.log' "Trace File"
                                    FROM   v$parameter u_dump
-                                   WHERE  u_dump.name = 'background_dump_dest']] 
+                                   WHERE  u_dump.name = 'background_dump_dest']]
         else
             filename=db:get_value[[select value|| '/alert_' || SYS_CONTEXT('userenv', 'instance_name') || '.log' from v$diag_info where name='Diag Trace']]
         end
@@ -134,11 +134,11 @@ function trace.get_trace(filename,mb,from_mb)
 end
 
 env.set_command(nil,{"loadtrace","dumptrace"},[[
-    Download Oracle trace file into local directory. Usage: loadtrace <trace_file|default|alert|0/1/4/8/12> [MB [begin_MB] ] 
+    Download Oracle trace file into local directory. Usage: loadtrace <trace_file|default|alert|0/1/4/8/12> [MB [begin_MB] ]
     This command requires the "create directory" privilige.
     Parameters:
         trace_file: 1) The absolute path of the target trace file, or
-                    2) "default" to extract current session's trace, or 
+                    2) "default" to extract current session's trace, or
                     4) 0/1/4/8/12 to enable 10046 trace with specific level
                     3) "alert" to extract local instance's alert log.
         MB        : MegaBytes to extract, default as 2 MB.

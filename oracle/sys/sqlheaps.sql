@@ -6,7 +6,7 @@
 --
 -- Author:      Tanel Poder
 -- Copyright:   (c) http://www.tanelpoder.com
---              
+--
 -- Usage:       @curheaps <hash_value> <child#>
 --
 --              @curheaps 942515969 %   -- shows a summary of cursor heaps
@@ -35,7 +35,7 @@ col KGLOBHD6 new_value v_curheaps_kglobhd6 print
 col KGLOBHD7 new_value v_curheaps_kglobhd7 noprint
 
 
-select 
+select
 	KGLNAHSH,
 	KGLHDPAR,
 	kglobt09 CHILD#,
@@ -50,7 +50,7 @@ select
 	KGLOBHD7, KGLOBHS7 curheaps_size7,
 --	KGLOBT00 CTXSTAT,
 	KGLOBSTA STATUS
-from 
+from
 	X$KGLOB
 --	X$KGLCURSOR_CHILD
 where
@@ -61,15 +61,15 @@ order by
 /
 
 -- Cursor data block summary
-select 
+select
    'HEAP0'        heap
   , ksmchcls      class
   , ksmchcom      alloc_comment
   , sum(ksmchsiz) bytes
   , count(*)      chunks
-from 
+from
     x$ksmhp
-where 
+where
     KSMCHDS = hextoraw('&v_curheaps_kglobhd0')
 group by
    'HEAP0'
@@ -79,15 +79,15 @@ order by
     sum(ksmchsiz) desc
 /
 
-select 
+select
    'HEAP4'        heap
   , ksmchcls      class
   , ksmchcom      alloc_comment
   , sum(ksmchsiz) bytes
   , count(*)      chunks
-from 
+from
     x$ksmhp
-where 
+where
     KSMCHDS = hextoraw('&v_curheaps_kglobhd4')
 group by
    'HEAP4'
@@ -99,15 +99,15 @@ order by
 
 
 
-select 
+select
    'HEAP6'        heap
   , ksmchcls      class
   , ksmchcom      alloc_comment
   , sum(ksmchsiz) bytes
   , count(*)      chunks
-from 
+from
     x$ksmhp
-where 
+where
     KSMCHDS = hextoraw('&v_curheaps_kglobhd6')
 group by
    'HEAP6'

@@ -13,7 +13,7 @@ end
 function sqlplus:start(...)
     local tnsadm=tostring(java.system:getProperty("oracle.net.tns_admin"))
     local export=env.OS=="windows" and "set " or "export "
-    local props={} 
+    local props={}
     if tnsadm and tnsadm~="" then
         props[2]=export..'"TNS_ADMIN='..tnsadm..'"'
     end
@@ -31,7 +31,7 @@ function sqlplus:start(...)
     if db.props.db_nls_lang then
         props[3]=export..'"NLS_LANG='..db.props.db_nls_lang..'"'
     end
-    
+
 
     local conn_str='sqlplus '
     if #args>0 then
@@ -49,8 +49,8 @@ function sqlplus:start(...)
 
     end
     props[#props+1]=conn_str
-    
-    
+
+
     for k,v in ipairs(args) do
         if type(v)=="string" and v:match(" ") then
             args[k]='"'..v..'"'
@@ -64,7 +64,7 @@ function sqlplus:start(...)
 end
 
 function sqlplus:before_exec(cmd,arg)
-    
+
     local content=[[SET FEED OFF SERVEROUTPUT ON SIZE 1000000 TRIMSPOOL ON LONG 5000 LINESIZE 900 PAGESIZE 9999
                     ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';
                     SET FEED ON ECHO OFF VERIFY OFF
@@ -80,7 +80,7 @@ function sqlplus:before_exec(cmd,arg)
     if not file then return end
     env.checkerr(db:is_connect(),"Database is not connected.")
     local context=""
-    for k,v in pairs(args) do 
+    for k,v in pairs(args) do
         if v~="" then context=context..'DEF '..k..'='..v..'\n' end
     end
 
@@ -110,6 +110,6 @@ function sqlplus:onload()
     set_command(self,"sqlplus",  "Switch to sqlplus with same login, the default working folder is 'oracle/sqlplus'. Usage: sqlplus [-d<work_path>] [other args]",self.start,false,9)
     env.remove_command(self.command)
     env.set_command(self,self.command,self.helper,{self.before_exec,self.after_exec},false,3)
-end    
+end
 
 return sqlplus.new()

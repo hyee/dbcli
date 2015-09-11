@@ -1,7 +1,7 @@
 local env=env
 local exec,sleep=env.eval_line,env.sleep
 local interval={}
-function interval.itv(sec,count,target)    
+function interval.itv(sec,count,target)
     sec,count=tonumber(sec),tonumber(count)
     --print(sec,count,target)
     if not sec or not count or not target or sec<=0 or count<=0 then

@@ -1,5 +1,5 @@
 /*[[
-    Show AWR Top SQLs for a specific period. Usage: awrtop2 [-m] [0|<inst>] [a|<sql_id>] [total|avg] [yymmddhhmi] [yymmddhhmi] [exec|ela|cpu|io|cc|fetch|rows|load|parse|read|write|mem] 
+    Show AWR Top SQLs for a specific period. Usage: awrtop2 [-m] [0|<inst>] [a|<sql_id>] [total|avg] [yymmddhhmi] [yymmddhhmi] [exec|ela|cpu|io|cc|fetch|rows|load|parse|read|write|mem]
     --[[
         &grp: s={sql_id}, m={signature}
         &filter: s={1=1},u={PARSING_SCHEMA_NAME||''=sys_context('userenv','current_schema')},f={}
@@ -14,7 +14,7 @@ WITH qry as (SELECT nvl(upper(:V1),'A') inst,
                     to_timestamp(nvl(:V4,to_char(sysdate-7,'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
                     to_timestamp(coalesce(:V5,''||(:V4+1),to_char(sysdate,'YYMMDDHH24MI')),'YYMMDDHH24MI') ed,
                     lower(nvl(:V6,'ela')) sorttype
-             FROM Dual) 
+             FROM Dual)
 SELECT &grp,
        plan_hash,
        last_call,
@@ -56,9 +56,9 @@ FROM   (SELECT &grp,sq_id,
                FETCH / exe1 FETCH,
                RWS / exe1 rws,
                PX / exe1 PX,
-               row_number() over(order by decode(sorttype, 'exec', exe, 'load', load, 'parse', parse, 
-                                               'mem', mem, 'ela', ela, 'cpu', cpu, 'io', iowait, 'plsql', plsql, 
-                                               'java', java, 'read', read, 'write', write, 'fetch', fetch, 
+               row_number() over(order by decode(sorttype, 'exec', exe, 'load', load, 'parse', parse,
+                                               'mem', mem, 'ela', ela, 'cpu', cpu, 'io', iowait, 'plsql', plsql,
+                                               'java', java, 'read', read, 'write', write, 'fetch', fetch,
                                                'rows', rws, 'px', px,'cc',ccwait)/exe1 desc nulls last) r
         FROM   (SELECT --+no_expand
                        &grp,

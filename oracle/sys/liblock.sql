@@ -2,7 +2,7 @@
 with sess as(select /*+materialize*/ * from gv$session)
 SELECT /*+no_expand*/
      distinct hl.*, ho.kglnaown||'.'||ho.kglnaobj object_name, h.sid || ',' || h.serial# || ',@' || h.inst_id holder,
-     h.sql_id holder_sql_id, h.event holder_event, 
+     h.sql_id holder_sql_id, h.event holder_event,
      nvl2(w.sid,w.sid || ',' || w.serial# || ',@' || w.inst_id,null) waiter,
      w.sql_id waiter_sql_id, w.event waiter_event
 FROM   Dba_Kgllock hl, x$kglob ho, x$kglob wo, sess h, sess w

@@ -29,8 +29,8 @@ FROM   (SELECT /*+no_merge no_expand*/ *
         FROM   (SELECT /*+use_hash(a x)*/
                      session_recid ss_recid,x.tags, REPLACE(status, 'COMPLETED', 'SUCCES') STATUS,
                      to_char(start_time, 'YYYY-MM-DD HH24:MI  ') start_time,
-                     to_char(nvl(end_time,x.tim), 'YYYY-MM-DD HH24:MI  ') end_time, 
-                     round(24*(nvl(end_time,x.tim)-start_time),2) hours, 
+                     to_char(nvl(end_time,x.tim), 'YYYY-MM-DD HH24:MI  ') end_time,
+                     round(24*(nvl(end_time,x.tim)-start_time),2) hours,
                      output_device_type device,
                      REPLACE(input_bytes_display || '(' || input_bytes_per_sec_display || '/S)', ' ') input_Size,
                      REPLACE(decode(trim(output_bytes_display),'0.00K',x.outb,output_bytes_display) || '(' || output_bytes_per_sec_display || '/S)', ' ') output_Size,

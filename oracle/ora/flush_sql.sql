@@ -1,4 +1,4 @@
-/*[[flush a sql from out of shared pool, you can also rebuild related index to accomplish the same purpose. Usage: flush_sql <sql_id> 
+/*[[flush a sql from out of shared pool, you can also rebuild related index to accomplish the same purpose. Usage: flush_sql <sql_id>
 --[[@version: 10.2.0.4={} ]]--
 ]]*/
 DECLARE

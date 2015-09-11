@@ -1,6 +1,6 @@
 /*[[
    Show index fragmentation(with sys_op_lbid). Usage: indexfrag <index_name> [<table_partition>] [<sample_rows>] [-f"<filter>"]
-   Refer to https://jonathanlewis.wordpress.com/index-sizing/ 
+   Refer to https://jonathanlewis.wordpress.com/index-sizing/
     --[[
         &V3: default={1000000}
         &FILTER: default={1=1} f={}
@@ -46,13 +46,13 @@ BEGIN
     WHERE OWNER=SYS_CONTEXT('USERENV','CURRENT_SCHEMA')
     AND   OBJECT_NAME=UPPER(:V1)
     AND   SUBOBJECT_NAME IS NULL;
-    
+
     SELECT MAX(OWNER),MAX(OBJECT_NAME),MAX(REGEXP_SUBSTR(OBJECT_TYPE,'[^ ]+$'))
     INTO v_owner,v_tab,v_typ
     FROM  ALL_OBJECTS
     WHERE (OWNER,OBJECT_NAME) IN(SELECT TABLE_OWNER,TABLE_NAME FROM ALL_INDEXES WHERE OWNER=v_owner AND INDEX_NAME=v_ind)
     AND   NVL(SUBOBJECT_NAME,' ')=NVL(v_part,' ');
-    
+
     IF v_tab IS NULL THEN
         OPEN :O FOR SELECT 'Cannot find target index!' message from dual;
     ELSE

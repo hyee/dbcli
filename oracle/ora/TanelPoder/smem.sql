@@ -2,7 +2,7 @@
     --[[
        Templates:
            @11g : 11.1={, pm.sql_id},10.0={}
-    ]]--    
+    ]]--
 ]]*/
 
 set feed off
@@ -11,7 +11,7 @@ SELECT /*+no_expand*/
     round(allocated/1024/1024,2) allocated_mb,
     round(used/1024/1024,2) used_mb,
     round(max_allocated/1024/1024,2) max_allocated_mb
-FROM 
+FROM
     gv$session s
   , gv$process p
   , gv$process_memory pm
@@ -24,7 +24,7 @@ ORDER BY
     s.sid,
     category
 /
-select /*+no_expand*/ inst_id,SID,NAME,ROUND(VALUE/1024/1024,2) MB 
+select /*+no_expand*/ inst_id,SID,NAME,ROUND(VALUE/1024/1024,2) MB
 from  gv$sesstat JOIN v$statname USING(statistic#)
 WHERE (:V1 is not null and :V1 =SID or :V1 is null and (sid,inst_id) in (select sid,inst_id from gv$sql_workarea_active))
  AND NAME LIKE '%memory%'
@@ -47,7 +47,7 @@ SELECT   /*+no_expand*/
   , pm.number_passes
   , pm.tempseg_size
   , pm.tablespace
-FROM 
+FROM
     gv$session s
   , gv$process p
   , gv$sql_workarea_active pm

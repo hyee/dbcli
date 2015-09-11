@@ -3,7 +3,7 @@ local locale={}
 
 function locale.init()
     locale.locale=java.require("java.util.Locale")
-    for k,v in java.fields(locale.locale) do        
+    for k,v in java.fields(locale.locale) do
         if type(k) == "string" and k:upper()==k then
             locale[v]=locale[k]
         end

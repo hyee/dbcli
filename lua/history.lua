@@ -5,8 +5,8 @@ local keys={}
 history.keys=keys
 local lastcommand
 
-function history:show(index)    
-    index=tonumber(index)    
+function history:show(index)
+    index=tonumber(index)
     if not index then
         local hdl,counter=grid.new(),0
         grid.add(hdl,{"#","Command"})
@@ -23,9 +23,9 @@ function history:show(index)
     end
 end
 
-function history:capture(cmd,args) 
+function history:capture(cmd,args)
     if (cmd=="HIS" or cmd=="/" or cmd=="R" or cmd=="HISTORY") then return end
-    local maxsiz=cfg.get("HISSIZE")    
+    local maxsiz=cfg.get("HISSIZE")
     local key=table.concat(args," "):gsub("[%s\t\n\r]+"," "):sub(1,300)
     if key:upper():find(cmd.." ")~=1 then
         key=cmd.." "..key

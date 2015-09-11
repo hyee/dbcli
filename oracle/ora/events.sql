@@ -6,7 +6,7 @@ BEGIN
     IF v_filter IS NULL THEN
         v_filter:='%';
     ELSE
-        v_filter:='%'||v_filter||'%'; 
+        v_filter:='%'||v_filter||'%';
     END IF;
     dbms_output.enable(1000000);
     FOR err_num IN 10000 .. 10999 LOOP

@@ -33,7 +33,7 @@ function cfg.init(name,defaultvalue,validate,class,desc,range)
         name,abbr=name[1],name[2]
     end
     name=name:upper()
-    if cfg[name] then 
+    if cfg[name] then
         return print("Error : Environment parameter["..name.."] has been defined in "..cfg[name].src.."!")
     end
     if not cfg[name] then cfg[name]={} end
@@ -49,7 +49,7 @@ function cfg.init(name,defaultvalue,validate,class,desc,range)
         src=env.callee()
     }
     if maxvalsize<tostring(defaultvalue):len() then
-        maxvalsize=tostring(defaultvalue):len() 
+        maxvalsize=tostring(defaultvalue):len()
     end
     if cfg._p[name] and cfg._p[name]~=defaultvalue then
         cfg.doset(name,cfg._p[name])
@@ -68,14 +68,14 @@ end
 function cfg.get(name)
     name=name:upper()
     if not cfg[name] then
-        return print("["..name.."] setting does not exist!")    
-    end    
+        return print("["..name.."] setting does not exist!")
+    end
     return cfg[name].value
 end
 
 function cfg.temp(name,value,backup)
     name=name:upper()
-    if not cfg[name] then return end    
+    if not cfg[name] then return end
     if backup or cfg[name].prebackup then
         cfg[name].org=cfg[name].value
     end
@@ -127,13 +127,13 @@ function cfg.set(name,value,backup,isdefault)
 
     cfg.temp(name,final,backup)
     if maxvalsize<tostring(final):len() then
-        maxvalsize=tostring(final):len() 
+        maxvalsize=tostring(final):len()
     end
     return final
 end
 
 function cfg.doset(...)
-    local args,idx={...},1    
+    local args,idx={...},1
     if #args==0 then return cfg.show_cfg() end
     if args[1]:lower()=="-p" then idx=2 end
     for i=idx,#args,2 do
@@ -154,7 +154,7 @@ function cfg.force_set(item,value)
 end
 
 function cfg.restore(name)
-    if not name then        
+    if not name then
         return
     elseif type(name)=="table" then
         for k,v in pairs(name) do
@@ -162,7 +162,7 @@ function cfg.restore(name)
                 cfg.doset(k,v.value)
                 cfg[k]=v
             end
-        end    
+        end
         return
     end
     name=name:upper()
@@ -171,7 +171,7 @@ function cfg.restore(name)
 end
 
 function cfg.tester()
-    
+
 end
 
 function cfg.backup()
@@ -204,6 +204,6 @@ function cfg.onload()
     event.snoop("BEFORE_ROOT_COMMAND",cfg.capture_before_cmd)
     event.snoop("AFTER_ROOT_COMMAND",cfg.capture_after_cmd)
     env.set_command(nil,'SET',"Set environment parameters. Usage: set [-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]",cfg.doset,false,99)
-end    
+end
 
 return cfg

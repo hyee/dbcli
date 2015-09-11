@@ -5,12 +5,12 @@ local comment="(.-)[\n\r\b\t%s]*$"
 
 function alias.rehash()
     for k,v in pairs(alias.cmdlist) do
-        if v.active then 
+        if v.active then
             globalcmds[k]=nil
             env.remove_command(k)
         end
     end
-    
+
     alias.cmdlist={}
     for k,v in ipairs(env.list_dir(alias.command_dir,"alias",comment)) do
         if(v[2]:lower()==(alias.command_dir..v[1]..'.alias'):lower()) then
@@ -43,7 +43,7 @@ end
 
 function alias.run_command(...)
     local name=env.CURRENT_CMD
-    name=name:upper()    
+    name=name:upper()
     if alias.cmdlist[name] then
         local target=alias.cmdlist[name].text
         if type(target)=="function" then target=target(alias) end
@@ -63,7 +63,7 @@ function alias.run_command(...)
         if type(alias.cmdlist[name].text) == "string" and not target:find('[\n\r]') then
             print('$ '..target)
         end
-        env.internal_eval(target)     
+        env.internal_eval(target)
     end
 end
 
@@ -81,8 +81,8 @@ function alias.set(name,cmd,write)
 
     name=name:upper()
 
-    if name=="-R" then 
-        return alias.rehash() 
+    if name=="-R" then
+        return alias.rehash()
     elseif name=="-E" and cmd then
         local text=alias.cmdlist[cmd:upper()]
         if not text then
@@ -92,14 +92,14 @@ function alias.set(name,cmd,write)
             return print("Error: Command has been encrypted: "..cmd)
         end
         local  du = 1
-        alias.set(cmd,packer.unpack_str(text.text))        
+        alias.set(cmd,packer.unpack_str(text.text))
     elseif not cmd then
         if not alias.cmdlist[name] then return end
-        if alias.cmdlist[name].active then 
+        if alias.cmdlist[name].active then
             globalcmds[name]=nil
             env.remove_command(name)
-        end    
-        alias.cmdlist[name]=nil        
+        end
+        alias.cmdlist[name]=nil
         os.remove(alias.command_dir..name:lower()..".alias")
         os.remove(alias.db_dir..name:lower()..".alias")
         print('Alias "'..name..'" is removed.')
@@ -123,8 +123,8 @@ function alias.set(name,cmd,write)
             f:write(cmd)
             f:close()
         end
-        
-        if not alias.cmdlist[name] then             
+
+        if not alias.cmdlist[name] then
             alias.cmdlist[name]={}
         end
 
@@ -165,7 +165,7 @@ function alias.helper()
     local grid,rows=env.grid,{{"Name","Active?","Command"}}
     local active
     for k,v in pairs(alias.cmdlist) do
-        if not env._CMDS[k]['FILE']:match("alias") then 
+        if not env._CMDS[k]['FILE']:match("alias") then
             active='No'
         else
             active='Yes'

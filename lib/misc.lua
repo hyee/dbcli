@@ -58,7 +58,7 @@ end
 
 function string.case_insensitive_pattern(pattern)
   -- find an optional '%' (group 1) followed by any character (group 2)
-    local p = pattern:gsub("(%%?)(.)", 
+    local p = pattern:gsub("(%%?)(.)",
       function(percent, letter)
           if percent ~= "" or not letter:match("%a") then
           -- if the '%' matched, or `letter` is not a letter, return "as is"
@@ -130,7 +130,7 @@ function math.round(num,digits)
   return math.floor(10^digits*num+0.5)/(10^digits)
 end
 
-function table.dump(tbl,indent,maxdep,tabs)      
+function table.dump(tbl,indent,maxdep,tabs)
       maxdep=tonumber(maxdep) or 9
       if maxdep<=1 then
           return tostring(tbl)
@@ -141,9 +141,9 @@ function table.dump(tbl,indent,maxdep,tabs)
       end
 
       if not indent then indent = '' end
-      
+
       indent=string.rep(' ',type(indent)=="number" and indent or #indent)
-      
+
       local ind = 0
       local pad=indent..'  '
       local maxlen=0
@@ -155,7 +155,7 @@ function table.dump(tbl,indent,maxdep,tabs)
       if type(k)=="string" and not k:match("^[%w_]+$") then k1=string.format("[%q]",k) end
           keys[#keys+1]={k,k1}
           if maxlen<#tostring(k1) then maxlen=#tostring(k1) end
-          if maxlen>99 then 
+          if maxlen>99 then
                fmtfun=string.fmt
           end
       end
@@ -168,7 +168,7 @@ function table.dump(tbl,indent,maxdep,tabs)
       local margin=(ind==0 and indent or '')..fmt
         rs=rs..fmt
         if type(v) == "table" then
-            if tabs then 
+            if tabs then
                 if not tabs[v] then
                     local c=tabs.__current_key or ''
                     local c1=c..(c=='' and '' or '.')..tostring(k)
@@ -188,7 +188,7 @@ function table.dump(tbl,indent,maxdep,tabs)
           elseif type(v) == "string" then
               rs=rs..string.format("%q",v:gsub("\n","\n"..string.rep(" ",#margin)))
         else
-              rs=rs..tostring(v)  
+              rs=rs..tostring(v)
         end
         rs=rs..',\n'
         ind=ind+1

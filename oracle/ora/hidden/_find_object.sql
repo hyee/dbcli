@@ -5,7 +5,7 @@ VAR object_type    VARCHAR2;
 VAR object_name    VARCHAR2;
 VAR object_subname VARCHAR2;
 VAR object_id      NUMBER;
-    
+
 DECLARE /*INTERNAL_DBCLI_CMD*/
     schem         VARCHAR2(100);
     part1         VARCHAR2(100);
@@ -66,7 +66,7 @@ BEGIN
         objs  := objs|| ' a WHERE OWNER in(''PUBLIC'',''' || schem || ''') AND OBJECT_NAME=''' || part1 || ''')';
     END IF;
 
-    objs:='SELECT /*+no_expand*/ 
+    objs:='SELECT /*+no_expand*/
            MIN(OBJECT_TYPE)    keep(dense_rank first order by s_flag),
            MIN(OWNER)          keep(dense_rank first order by s_flag),
            MIN(OBJECT_NAME)    keep(dense_rank first order by s_flag),
@@ -77,7 +77,7 @@ BEGIN
                case when owner=''' || schem || ''' then 0 else 100 end +
                case when ''' || target || q'[' like upper('%'||OBJECT_NAME||nullif('.'||SUBOBJECT_NAME||'%','.%')) then 0 else 10 end +
                case substr(object_type,1,3) when 'TAB' then 1 when 'CLU' then 2 else 3 end s_flag
-        FROM   ]' || objs;       
+        FROM   ]' || objs;
 
     --dbms_output.put_line(objs);
     EXECUTE IMMEDIATE objs
@@ -89,7 +89,7 @@ BEGIN
         END IF;
         part2 := part2_temp;
     END IF;
-    
+
     IF part1 IS NULL AND target IS NOT NULL AND :V2 IS NULL THEN
         raise_application_error(-20001,'Cannot find target object "&V1"!');
     END IF;

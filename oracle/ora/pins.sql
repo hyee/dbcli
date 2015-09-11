@@ -23,7 +23,7 @@ WITH r AS
 SELECT *
 FROM   r
 WHERE  (owner, NAME) IN (SELECT
-                         --+no_merge 
+                         --+no_merge
                           owner, NAME
                          FROM   gv$db_object_cache
                          WHERE  pins > 0

@@ -9,7 +9,7 @@
 --
 -- Author:      Tanel Poder
 -- Copyright:   (c) http://www.tanelpoder.com
---              
+--
 -- Usage:       @latchprofx <what> <sid> <latch name> <#samples>
 --              @latchprofx name 350 % 100000                   - monitor all latches SID 350 is holding
 --              @latchprofx sid,name % library 1000000          - monitor which SIDs hold latches with "library" in their name
@@ -39,10 +39,10 @@
 --              need to have relevant X$ proxy views created
 --
 --              The sampling relies on NESTED LOOP join method and having
---              X$KSUPRLAT as the inner (probed) table. 
+--              X$KSUPRLAT as the inner (probed) table.
 --
---              If sampling always reports a single latch event even though 
---              many different events (or parameter values) are expected then 
+--              If sampling always reports a single latch event even though
+--              many different events (or parameter values) are expected then
 --              the execution plan used is not right.
 --
 --              The join in exec plan step 9 MUST be a NESTED LOOPS join, this is how
@@ -105,12 +105,12 @@ PROMPT -- LatchProfX 2.02 by Tanel Poder ( http://www.tanelpoder.com )
 COL latchprof_oraversion NEW_VALUE _IF_ORA_10_OR_HIGHER
 
 SET TERMOUT OFF
-SELECT 
-    DECODE(SUBSTR(BANNER, INSTR(BANNER, 'Release ')+8,1), 1, '', '--') latchprof_oraversion 
+SELECT
+    DECODE(SUBSTR(BANNER, INSTR(BANNER, 'Release ')+8,1), 1, '', '--') latchprof_oraversion
 FROM v$version WHERE ROWNUM=1;
 SET TERMOUT ON
 
-WITH 
+WITH
     t1 AS (SELECT hsecs FROM v$timer),
     samples AS (
         SELECT /*+ ORDERED USE_NL(l.x$ksuprlat) USE_NL(s.x$ksuse) NO_TRANSFORM_DISTINCT_AGG */
@@ -118,9 +118,9 @@ WITH
             &_IF_ORA_10_OR_HIGHER , COUNT(DISTINCT gets)        dist_samples
           , COUNT(*)                    total_samples
           , COUNT(*) / &_lhp_samples    total_samples_pct
-        FROM 
+        FROM
             (SELECT /*+ NO_MERGE */ 1 FROM DUAL CONNECT BY LEVEL <= &_lhp_samples) s,
-            (SELECT ksuprpid PID, ksuprsid SID, ksuprlnm NAME, ksuprlat LADDR, ksulawhr, 
+            (SELECT ksuprpid PID, ksuprsid SID, ksuprlnm NAME, ksuprlat LADDR, ksulawhr,
                     TO_CHAR(ksulawhy,'XXXXXXXXXXXXXXXX') object
                     &_IF_ORA_10_OR_HIGHER , ksulagts GETS
                     &_IF_ORA_10_OR_HIGHER , lower(ksuprlmd) HMODE
@@ -128,14 +128,14 @@ WITH
             (SELECT
                     indx
                   , ksusesqh     sqlhash
-                  , ksusesql     sqladdr 
+                  , ksusesql     sqladdr
                   &_IF_ORA_10_OR_HIGHER , ksusesph planhash
                   &_IF_ORA_10_OR_HIGHER , ksusesch sqlchild
                   &_IF_ORA_10_OR_HIGHER , ksusesqi sqlid
              FROM x$ksuse) s,
-            (SELECT indx, 
+            (SELECT indx,
                     ksllwnam func, ksllwnam,
-                    ksllwlbl objtype, ksllwlbl 
+                    ksllwlbl objtype, ksllwlbl
              FROM x$ksllw) w
         WHERE
             l.sid LIKE '&_lhp_sid'

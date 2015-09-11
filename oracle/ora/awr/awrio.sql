@@ -34,9 +34,9 @@ FROM   (SELECT inst_id,
                        trunc(s.begin_interval_time) snap_time,
                        qry.rw,
                        0 + to_char(s.begin_interval_time, 'HH24') h,
-                       (small_read_megabytes+large_read_megabytes) - lag(small_read_megabytes+large_read_megabytes) 
+                       (small_read_megabytes+large_read_megabytes) - lag(small_read_megabytes+large_read_megabytes)
                            over(PARTITION BY s.dbid, s.instance_number,hs.FileType_name ORDER BY s.snap_id) r,
-                       (small_write_megabytes+large_write_megabytes) - lag(small_write_megabytes+large_write_megabytes) 
+                       (small_write_megabytes+large_write_megabytes) - lag(small_write_megabytes+large_write_megabytes)
                            over(PARTITION BY s.dbid, s.instance_number,hs.FileType_name ORDER BY s.snap_id)  w,
                        decode(qry.inst,'A','A',''||s.instance_number) inst_id
                 FROM   qry,dba_hist_snapshot s, Dba_Hist_Iostat_Filetype hs

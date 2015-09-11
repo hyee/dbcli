@@ -25,12 +25,12 @@ BEGIN
             WHERE  TYPE = 'ONLINE')
     WHERE  first_time <=end_time AND last_time>=begin_time
     GROUP  BY GROUP#;
-	
+
 	BEGIN
 		sys.dbms_logmnr.end_logmnr;
     EXCEPTION WHEN OTHERS THEN NULL;
 	END;
-	
+
     FOR i IN 1 .. t1.COUNT LOOP
         sys.dbms_logmnr.add_logfile(t1(i),
                                     CASE

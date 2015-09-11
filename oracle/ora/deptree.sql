@@ -1,11 +1,11 @@
 /*[[
-    Show object dependency, usage: ora deptree [-c|-p] [-t|-l] [owner.]name 
-    Options: 
+    Show object dependency, usage: ora deptree [-c|-p] [-t|-l] [owner.]name
+    Options:
        p: Show target object's depending objects(default)
        c: Show the objects that depend on target object
        t: Show dependence tree(Default)
        l: Show object list, instead of tree view
-       
+
     --[[
        &F1  : P={p_obj#},C={d_obj#}
        &F2  : P={d_obj#},C={p_obj#}
@@ -63,7 +63,7 @@ DECLARE
                 AND    to_char(o2.type#) IN ('11', '14')
                 AND    dep1.&F1 = obj;
             --END IF;
-                 
+
             SELECT /*+index(dep)*/ &F1,1, to_number(null) con
             BULK   COLLECT INTO  v_list,v_lv,v_con
             FROM   sys.dependency$ dep
@@ -80,7 +80,7 @@ DECLARE
             SELECT DECODE('&F1','p_obj#',BO#,obj#),1 lv, null
             FROM   sys.ind$ a
             WHERE  a.&F5=obj;
-            
+
             FOR i IN 1 .. v_list.count LOOP
                 n(v_list(i), lv + v_lv(i),v_con(i));
             END LOOP;
@@ -89,16 +89,16 @@ DECLARE
 BEGIN
     v_objid := :object_id;
     v_owner := :object_owner;
-   
+
     dbms_lob.createtemporary(v_result, TRUE);
     dbms_output.enable(NULL);
     dbms_lob.writeappend(v_result, 8, '<ROWSET>');
     n(v_objid, 0);
     dbms_lob.writeappend(v_result, 9, '</ROWSET>');
-	
+
 	OPEN :cur FOR --
 	WITH dep AS(
-	   SELECT /*+materialize*/ 
+	   SELECT /*+materialize*/
 	          EXTRACTVALUE(COLUMN_VALUE,'/ROW/OBJ')+0 obj,
 	          EXTRACTVALUE(COLUMN_VALUE,'/ROW/CON')+0 con,
 			  EXTRACTVALUE(COLUMN_VALUE,'/ROW/LV')+0  lv
@@ -176,7 +176,7 @@ BEGIN
 		FROM   dep,sys.obj$ op,dba_users us
 		WHERE  dep.obj = op.obj#
 		AND    op.owner#=us.user_id
-		AND   (us.username NOT IN('SYS','SYSTEM','PUBLIC') or v_owner in('SYS','SYSTEM','PUBLIC')) 
+		AND   (us.username NOT IN('SYS','SYSTEM','PUBLIC') or v_owner in('SYS','SYSTEM','PUBLIC'))
         AND   (op.type#!=5 or us.username in('SYS','SYSTEM','PUBLIC')))
     select lpad(rownum,5)||' | ' "#", a.* FROM (select &DST * from res WHERE object_type NOT IN('UNDEFINED') ORDER BY &SRT) A;
 

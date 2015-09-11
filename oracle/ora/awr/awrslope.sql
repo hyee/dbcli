@@ -4,24 +4,24 @@
    Version:     Modified version based on V2014/10/31
    Usage:       Lists statements that have changed their elapsed time per execution over
                 some history.
-                Uses the ration between "elapsed time per execution" and the median of 
+                Uses the ration between "elapsed time per execution" and the median of
                 this metric for SQL statements within the sampled history, and using
                 linear regression identifies those that have changed the most. In other
                 words where the slope of the linear regression is larger. Positive slopes
                 are considered "improving" while negative are "regressing".
-  
+
    Notes:       Developed and tested on 11.2.0.3.
-  
+
                 Requires an Oracle Diagnostics Pack License since AWR data is accessed.
-  
-                To further investigate poorly performing SQL use sqltxplain.sql or sqlhc 
+
+                To further investigate poorly performing SQL use sqltxplain.sql or sqlhc
                 (or planx.sql or sqlmon.sql or sqlash.sql).
     --[[
         &BASE : s={sql_id}, m={signature},
         &SIG  : s={},m={signature,}
         &FILTER: s={1=1},u={PARSING_SCHEMA_NAME=sys_context('userenv','current_schema')},f={}
-    --]]    
-               
+    --]]
+
 ]]*/
 
 DEF min_slope_threshold='0.1';
@@ -61,7 +61,7 @@ SELECT sql_id,&SIG
        STDDEV(time_per_exec) std_time_per_exec,
        AVG(time_per_exec)    avg_time_per_exec,
        MIN(time_per_exec)    min_time_per_exec,
-       MAX(time_per_exec)    max_time_per_exec       
+       MAX(time_per_exec)    max_time_per_exec
   FROM per_time
  GROUP BY sql_id,&SIG total_days
 HAVING COUNT(*) >= greatest(2,total_days)

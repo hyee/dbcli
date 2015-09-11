@@ -25,12 +25,12 @@ function snapper:fetch(cmd,pos)
         for k,_ in pairs(grp_idx) do
             counter=counter+1
             idx[counter]=row[k] or ""
-        end        
+        end
         coroutine.yield(cmd.name,pos,table.concat(idx,'\1'),row)
     end
 end
 
-function snapper:parse(name,args) 
+function snapper:parse(name,args)
     local txt,print_args,file
     txt,args,print_args,file=self:get_script(name,args)
     txt=loadstring(('return '..txt):gsub(self.comment,"",1))
@@ -43,7 +43,7 @@ function snapper:parse(name,args)
     for k,v in pairs(txt()) do
         cmd[tostring(k):lower()]=v
     end
-    
+
     for _,k in ipairs({"sql","agg_cols"}) do
         if not cmd[k] then
             return print("Cannot find key '"..k.."'' in "..file)
@@ -51,7 +51,7 @@ function snapper:parse(name,args)
     end
 
     cmd.grp_cols=cmd.grp_cols and (','..cmd.grp_cols:upper()..',') or nil
-    cmd.agg_cols=','..cmd.agg_cols:upper()..','    
+    cmd.agg_cols=','..cmd.agg_cols:upper()..','
     cmd.name=name
 
     return cmd,args
@@ -69,18 +69,18 @@ end
 
 function snapper:exec(interval,typ,...)
     local db,print_args=self.db
-    cfg_backup=cfg.backup()  
+    cfg_backup=cfg.backup()
     cfg.set("feed","off")
     cfg.set("autocommit","off")
     cfg.set("digits",2)
 
     if not self.cmdlist then
-        self.cmdlist=self:rehash(self.script_dir,'snap')        
+        self.cmdlist=self:rehash(self.script_dir,'snap')
     end
 
     if not interval then
         return env.helper.helper(self.command)
-    end    
+    end
 
     interval=interval:upper()
 
@@ -108,7 +108,7 @@ function snapper:exec(interval,typ,...)
     for i=1,9 do
         args["V"..i]=args[i] or ""
     end
-    
+
     local cmds,cmd={}
 
     for v in typ:gmatch("([^\n\t%s,]+)") do
@@ -119,17 +119,17 @@ function snapper:exec(interval,typ,...)
         cmd,args=self:parse(v,args)
         if not cmd then return end
         cmds[v]=cmd
-    end    
+    end
 
-    
+
     local start_time=self:get_time()
     self:trigger('before_exec_action')
     local clock=os.clock()
     for _,cmd in pairs(cmds) do cmd.rs2=db:exec(cmd.sql,args) end
     db:commit()
     self.cmds,self.start_time,self.args=cmds,start_time,args
-    
-    if not begin_flag then 
+
+    if not begin_flag then
         sleep(interval+clock-os.clock()-0.1)
         self:next_exec()
     end
@@ -143,11 +143,11 @@ function snapper:next_exec()
     for _,cmd in pairs(cmds) do
         cmd.rs1=db:exec(cmd.sql,args)
     end
-    db:commit()    
+    db:commit()
     self:trigger('after_exec_action')
     local result={}
     local cos={}
-    for name,cmd in pairs(cmds) do        
+    for name,cmd in pairs(cmds) do
         cmd.agg_idx,cmd.grp_idx={},{}
         cmd.title=db.resultset:fetch(cmd.rs1),db.resultset:fetch(cmd.rs2)
         for i,k in ipairs(cmd.title) do
@@ -164,7 +164,7 @@ function snapper:next_exec()
         table.insert(cos,coroutine.create(function() self:fetch(cmd,1) end))
         table.insert(cos,coroutine.create(function() self:fetch(cmd,2) end))
     end
-    
+
     while #cos>0 do
         local succ,rtn,pos,key,value
         for k=#cos,1,-1 do
@@ -173,7 +173,7 @@ function snapper:next_exec()
             local agg_idx=name and cmds[name].agg_idx
             if not row then
                 --print(succ,name,pos,key,row,cmds.rs1,cmds.rs2)
-                table.remove(cos,k)                                
+                table.remove(cos,k)
             else
                 if not result[name][key] then result[name][key]={} end
                 value=result[name][key]
@@ -193,7 +193,7 @@ function snapper:next_exec()
                 if value[1] and value[2] then
                     local counter=0
                     for k,_ in pairs(agg_idx) do
-                        if tonumber(value[1][k]) and value[2][k] then                            
+                        if tonumber(value[1][k]) and value[2][k] then
                             value[1][k]=math.round(value[1][k]-value[2][k],2)
                             if value[1][k]>0 then counter=1 end
                         end
@@ -209,11 +209,11 @@ function snapper:next_exec()
 
     for name,cmd in pairs(cmds) do
         local idx=""
-        
+
         local counter
         local data=cmd.grid.data
 
-        for i=#data,2,-1 do 
+        for i=#data,2,-1 do
             counter=0
             for j,_ in pairs(cmd.agg_idx) do
                 if data[i][j]>0 then
@@ -225,16 +225,16 @@ function snapper:next_exec()
             --if counter==0 then table.remove(data,i) end
         end
 
-        
+
         for i,_ in pairs(cmd.agg_idx) do
             idx=idx..(-i)..','
-            if cmd.set_ratio~='off' then cmd.grid:add_calc_ratio(i) end    
+            if cmd.set_ratio~='off' then cmd.grid:add_calc_ratio(i) end
         end
-        cmd.grid:sort(idx,true)    
+        cmd.grid:sort(idx,true)
         local title=("\n"..name..": From "..start_time.." to "..end_time..":\n"):format(name)
         print(title..string.rep("=",title:len()-2))
-        cmd.grid:print(nil,nil,nil,cmd.max_rows or cfg.get(self.command.."rows"))        
-    end    
+        cmd.grid:print(nil,nil,nil,cmd.max_rows or cfg.get(self.command.."rows"))
+    end
 end
 
 

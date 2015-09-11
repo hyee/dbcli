@@ -35,7 +35,7 @@
 		<styles caption="1" resizable="1" taskbar_button="1" border="0" inside_border="2" tray_icon="1" quake_like="0" jumplist="1" integrated_ime="1" quake_animation_time="300" hide_when_inactive="0">
 			<selection_color r="128" g="128" b="128"/>
 		</styles>
-		<position x="-8" y="-8" dock="0" snap="-1" z_order="0" save_position="1" w="1518" h="916" save_size="1"/>
+		<position x="0" y="0" dock="0" snap="-1" z_order="0" save_position="1" w="1518" h="916" save_size="1"/>
 		<transparency type="0" active_alpha="206" inactive_alpha="255" r="0" g="0" b="0"/>
 		<fullscreen start_in_fullscreen="0" fullscreen_monitor="0"/>
 	</appearance>

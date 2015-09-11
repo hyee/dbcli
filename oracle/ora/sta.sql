@@ -1,4 +1,4 @@
-/*[[Run SQL Tuning Advisor on target SQL. Usage: sta <sql_id> [run-as user] [time limit] 
+/*[[Run SQL Tuning Advisor on target SQL. Usage: sta <sql_id> [run-as user] [time limit]
 --[[
      &exe_mode: async={0}, sync={1}
 --]]
@@ -47,8 +47,8 @@ BEGIN
         l_sql := dbms_sqltune.report_tuning_task (l_task);
     END IF;
     :RES := l_sql;
-EXCEPTION WHEN NO_DATA_FOUND THEN 
-    :RES := 'Target sql text does not exist!';  
+EXCEPTION WHEN NO_DATA_FOUND THEN
+    :RES := 'Target sql text does not exist!';
 END;
 /
 print RES

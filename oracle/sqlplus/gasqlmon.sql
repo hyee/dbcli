@@ -12,7 +12,7 @@ BREAK ON asqlmon_plan_hash_value SKIP 1 ON asqlmon_sql_id SKIP 1 ON asqlmon_sql_
 
 WITH  sample_times AS (
     select * from dual
-), 
+),
 sq AS (
 SELECT /*+ MATERIALIZE */
   --  to_char(ash.sample_time, 'YYYY-MM-DD HH24') sample_time
@@ -52,7 +52,7 @@ SELECT
   , LPAD(TO_CHAR(TO_NUMBER(ROUND(RATIO_TO_REPORT(sq.samples) OVER (PARTITION BY sq.sql_id, sq.sql_plan_hash_value) * 100, 1), 999.9))||' %',8) pct_child
   , '|'||RPAD( NVL( LPAD('#', ROUND(RATIO_TO_REPORT(sq.samples) OVER (PARTITION BY sq.sql_id, sq.sql_plan_hash_value) * 10), '#'), ' '), 10,' ')||'|' pct_child_vis
   --, sq.sample_time         asqlmon_sample_time
-  , plan.id 
+  , plan.id
   , LPAD(' ', depth) || plan.operation ||' '|| plan.options || NVL2(plan.object_name, ' ['||plan.object_name ||']', null) asqlmon_operation
   , plan.access_predicates ||' ' || plan.filter_predicates asqlmon_predicates
 FROM

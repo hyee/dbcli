@@ -15,11 +15,11 @@ WITH r AS
   AND    nvl(o.name, 'SYS') != 'SYS'
   AND    (o.locks > 0 OR o.pins > 0))
 SELECT /*+ordered use_hash(r1 h w) no_merge(w) no_expand*/
-       DISTINCT r1.to_owner || '.' || r1.to_name object_name, 
+       DISTINCT r1.to_owner || '.' || r1.to_name object_name,
                 h.sid || ',@' || h.inst_id holder,
                 h.sql_id holder_sql_id,
-                NVL2(w.sid, w.sid || ',@' || w.inst_id, NULL) waiter, 
-                w.sql_id waiter_sql_id, 
+                NVL2(w.sid, w.sid || ',@' || w.inst_id, NULL) waiter,
+                w.sql_id waiter_sql_id,
                 w.event waiter_event,
                 w.wait_Time wtime,
                 w.seconds_in_Wait secs

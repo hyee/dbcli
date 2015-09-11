@@ -96,7 +96,7 @@ function oracle:connect(conn_str)
     self.conn_str=packer.pack_str(sqlplustr)
 
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
-    env.set_title("")    
+    env.set_title("")
     local data_source=java.new('oracle.jdbc.pool.OracleDataSource')
 
     self.super.connect(self,args,data_source)
@@ -176,7 +176,27 @@ function oracle:parse(sql,params)
         return s:upper()
     end)
 
-    if counter<0 or counter==3 then return self.super.parse(self,sql,params,':') end
+    if sql:lower():match("^[%s\n\r\t]*explain") then
+        params={V1=sql}
+        p1={V1={self.db_types:set('CLOB',sql)}}
+        sql=[[DECLARE /*INTERNAL_DBCLI_CMD*/ /*DBCLI_XPLAN*/
+                v_cursor NUMBER := dbms_sql.open_cursor;
+                v_offset INT := -1;
+                v_finish INT;
+                v_sql    CLOB := :V1;
+            BEGIN
+                BEGIN
+                    dbms_sql.parse(v_cursor, v_sql, dbms_sql.native);
+                    v_finish := dbms_sql.execute(v_cursor);
+                    dbms_sql.close_cursor(v_cursor);
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        v_offset := dbms_sql.last_error_position;
+                        dbms_sql.close_cursor(v_cursor);
+                        RAISE;
+                END;
+            END;]]
+    elseif counter<0 or counter==3 then return self.super.parse(self,sql,params,':') end
     local prep=java.cast(self.conn:prepareCall(sql,1003,1007),"oracle.jdbc.OracleCallableStatement")
     --self:check_params(sql,prep,p1,params)
     for k,v in pairs(p1) do
@@ -289,8 +309,8 @@ local ignore_errors={
 
 function oracle:handle_error(info)
     if not self.conn:isValid(3) then env.set_title("") end
-    if is_executing then 
-        info.sql=nil 
+    if is_executing then
+        info.sql=nil
         return
     end
     local ora_code,msg=info.error:match('ORA%-(%d+):%s*([^\n\r]+)')
@@ -310,6 +330,11 @@ function oracle:handle_error(info)
             end
             return info
         end
+    end
+
+    if info and info.sql and
+        info.sql:find("/*DBCLI_XPLAN*/",1,true) then info.sql=nil
+        if ora_code then info.error="ORA-"..ora_code..": ".. msg end
     end
     return info
 end

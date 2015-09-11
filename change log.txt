@@ -1,5 +1,7 @@
+2015-09-11: ! oracle: fix issue for the "explain plan" statement
+2015-09-11: ! public: remove tailing spaces from codes; replace tab as 4 spaces
 2015-09-10: ! public: minor fixes
-2015-09-10: * public: enable html file in async mode for 'chart' command to avoid blocking dbcli
+2015-09-10: * public: open html file in async mode for 'chart' command to avoid blocking dbcli
 2015-09-05: * public: ssh download/upload: enable compression by default
 2015-09-08: + oracle: merge request#3 from https://github.com/anjuls/dbcli.git
 2015-09-05: + public: "help -stack" to see internal call stack for development/investigation purpose

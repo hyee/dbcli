@@ -49,7 +49,7 @@ function helper.env(target,depth)
         end
         local siz=#rows[1]+1
         rows[1][siz],rows[2][siz]=name,value
-    end    
+    end
     add("Memory.LUA(KB)",math.floor(collectgarbage("count")))
     add("Memory.JVM(KB)",math.floor((runtime:totalMemory()-runtime:freeMemory())/1024))
     if rows[2][1] and rows[2][2] then
@@ -74,7 +74,7 @@ function helper.env(target,depth)
         elseif t=="string" then
             v='"'..v..'"'
         end
-        add('env.'..k,v) 
+        add('env.'..k,v)
     end
     if math.fmod(#rows[1],2)==1 then
         add("","")
@@ -89,11 +89,11 @@ function helper.helper(cmd,...)
     local grid,_CMDS=env.grid,env._CMDS
     local rows={}
     if cmd and cmd:sub(1,1)~="-" then
-        cmd = cmd:upper()        
+        cmd = cmd:upper()
         if not _CMDS[cmd] or not _CMDS[cmd].DESC then
             return
         end
-        
+
         local helps
         if type(_CMDS[cmd].HELPER) =="function" then
             local args= _CMDS[cmd].OBJ and {_CMDS[cmd].OBJ,cmd,...} or {cmd,...}
@@ -127,7 +127,7 @@ function helper.helper(cmd,...)
             for v in txt:gmatch("%[Loaded%s+([^%s]+).-%]") do
                 java.loader:copyClass(v)
             end
-            
+
             for v in txt:gmatch("([^%s]+)%.class%W") do
                 java.loader:copyClass(v)
             end
@@ -140,15 +140,15 @@ function helper.helper(cmd,...)
     local flag=(cmd=="-a" or cmd=="-A") and 1 or 0
        table.insert(rows,{"Command","Abbr.","Max Args"})
        if flag==1 then
-           table.append(rows[#rows],"Multi-lines?","Source")           
+           table.append(rows[#rows],"Multi-lines?","Source")
        end
        table.insert(rows[#rows],"Decription")
     for k,v in pairs(_CMDS) do
-        if k~="___ABBR___" and (v.DESC and not v.DESC:find("[%s\t]*#") or flag==1) then        
+        if k~="___ABBR___" and (v.DESC and not v.DESC:find("[%s\t]*#") or flag==1) then
             table.insert(rows,{
                     k,
                     v.ABBR,
-                    v.ARGS-1})             
+                    v.ARGS-1})
             if flag==1 then
                 table.append(rows[#rows],(type(v.MULTI)=="function" or type(v.MULTI)=="string") and "Auto" or v.MULTI and 'Yes' or 'No',v.FILE)
             end
@@ -169,7 +169,7 @@ function helper.desc()
            -j  To show current JVM information
            -e  To show current environment infomation. Usage: help -e [<lua_table>[.<sub_table>] ]
         Other commands:
-            help                             To brief the available commands(excluding hiddens) 
+            help                             To brief the available commands(excluding hiddens)
             help <command>                   To show the help detail of a specific command
             help <command> [<sub_command>]   i.e. help ora actives
      ]]

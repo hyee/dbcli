@@ -17,7 +17,7 @@ function printer.set_more(stmt)
     env.checkerr(stmt,"Usage: more <select statement>")
     printer.is_more=true
     more_text={}
-    local res,err=pcall(env.internal_eval,stmt)    
+    local res,err=pcall(env.internal_eval,stmt)
     printer.is_more=false
     printer.more(table.concat(more_text,'\n'))
     more_text={}
@@ -35,7 +35,7 @@ function printer.more(output)
     reader:setPaginationEnabled(false)
 end
 
-function printer.print(...)    
+function printer.print(...)
     local output=""
     table.foreach({...},function(k,v) output=output..tostring(v)..' ' end)
     output=NOR..space..output:gsub("(\r?\n\r?)","%1"..space)
@@ -62,17 +62,17 @@ function printer.onunload()
     end
 end
 
-function printer.onload()    
+function printer.onload()
     NOR=env.ansi and env.ansi.color['NOR'] or ''
     event=env.event
-    strip_ansi=env.ansi and env.ansi.strip_ansi or function(x) return x end 
-end    
+    strip_ansi=env.ansi and env.ansi.strip_ansi or function(x) return x end
+end
 
 function printer.spool(file,option)
     option=option and option:upper() or "CREATE"
     if not file then
-        if printer.hdl then 
-            printer.rawprint(space..'Output is writing to "'..printer.file..'".') 
+        if printer.hdl then
+            printer.rawprint(space..'Output is writing to "'..printer.file..'".')
         else
             print("SPOOL is OFF.")
         end

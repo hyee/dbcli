@@ -1,17 +1,17 @@
 /*[[
-Show ash wait chains. Usage: ashchain [<sql_id>] [YYMMDDHH24MI [YYMMDDHH24MI]] 
+Show ash wait chains. Usage: ashchain [<sql_id>] [YYMMDDHH24MI [YYMMDDHH24MI]]
 --[[
 Templates:
-      &V8: ash={gv$active_session_history},dash={Dba_Hist_Active_Sess_History}    
+      &V8: ash={gv$active_session_history},dash={Dba_Hist_Active_Sess_History}
 --]]
-      
+
 ]]*/
 
-WITH 
+WITH
 bclass AS (SELECT class, ROWNUM r from v$waitstat),
 ash AS (SELECT /*+ QB_NAME(ash) LEADING(a) USE_HASH(u) SWAP_JOIN_INPUTS(u) */
             coalesce(sql_id,p3text,p2text,p1text) sql_id,current_obj#,sample_id,
-            SESSION_ID||','||SESSION_serial# SID,     
+            SESSION_ID||','||SESSION_serial# SID,
             nullif(blocking_session||','||BLOCKING_SESSION_SERIAL#,',') b_sid
           , u.username
           , CASE WHEN a.session_type = 'BACKGROUND' OR REGEXP_LIKE(a.program, '.*\([PJ]\d+\)') THEN
@@ -20,18 +20,18 @@ ash AS (SELECT /*+ QB_NAME(ash) LEADING(a) USE_HASH(u) SWAP_JOIN_INPUTS(u) */
                 '('||REGEXP_REPLACE(REGEXP_REPLACE(a.program, '(.*)@(.*)(\(.*\))', '\1'), '\d', 'n')||')'
             END || ' ' program2
           , NVL(a.event||CASE WHEN p3text='class#'
-                              THEN ' ['||(SELECT class FROM bclass WHERE r = a.p3)||']' ELSE null END,'ON CPU') 
+                              THEN ' ['||(SELECT class FROM bclass WHERE r = a.p3)||']' ELSE null END,'ON CPU')
                        || ' ' event2
           , TO_CHAR(CASE WHEN session_state = 'WAITING' THEN p1 ELSE null END, '0XXXXXXXXXXXXXXX') p1hex
           , TO_CHAR(CASE WHEN session_state = 'WAITING' THEN p2 ELSE null END, '0XXXXXXXXXXXXXXX') p2hex
           , TO_CHAR(CASE WHEN session_state = 'WAITING' THEN p3 ELSE null END, '0XXXXXXXXXXXXXXX') p3hex
-        FROM 
+        FROM
             &V8 a
           , dba_users u
         WHERE
             a.user_id = u.user_id (+)
         AND sample_time+0 BETWEEN NVL(TO_DATE(:V2,'YYMMDDHH24MI'),SYSDATE-1) AND NVL(TO_DATE(:V3,'YYMMDDHH24MI'),SYSDATE)
-    ), 
+    ),
 ash_samples AS (SELECT DISTINCT sample_id FROM ash),
 ash_data AS (SELECT /*+ MATERIALIZE */ * FROM ash),
 chains AS (
@@ -49,7 +49,7 @@ chains AS (
         ash_samples s
       , ash_data d
     WHERE
-        s.sample_id = d.sample_id 
+        s.sample_id = d.sample_id
     CONNECT BY NOCYCLE
         (    PRIOR d.b_sid = d.sid
         -- AND PRIOR d.blocking_inst_id = d.inst_id
@@ -73,7 +73,7 @@ SELECT * FROM (
     GROUP BY
         current_obj#
       , path,sql_ids
-    ORDER BY 
+    ORDER BY
         COUNT(*) DESC
     )
 WHERE

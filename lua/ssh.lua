@@ -40,13 +40,13 @@ function ssh:load_config(ssh_alias)
     local props={}
     for alias,url in pairs(config) do
         if type(url)=="table" then
-            if alias:upper()==(props.jdbc_alias or ssh_alias:upper())  then 
+            if alias:upper()==(props.jdbc_alias or ssh_alias:upper())  then
                 props=url
                 props.jdbc_alias=alias:upper()
             end
         end
     end
-    
+
     return props.jdbc_alias and props
 end
 
@@ -72,11 +72,11 @@ function ssh:connect(conn_str)
         if conn_desc == nil then
             local props=self:load_config(conn_str)
             if props then return self:connect(props) end
-            return print("Usage: ssh conn <user>/<passowrd>@host[:port]") 
+            return print("Usage: ssh conn <user>/<passowrd>@host[:port]")
         end
         host,port=conn_desc:match('^([^:/]+)(:?%d*)$')
-        if port=="" then 
-            port=22 
+        if port=="" then
+            port=22
         else
             port=tonumber(port:sub(2))
         end
@@ -115,7 +115,7 @@ function ssh:is_connect()
 end
 
 function ssh:disconnect()
-    if self.conn and self.conn.close then 
+    if self.conn and self.conn.close then
         pcall(self.conn.close,self.conn)
         print("SSH disconnected.")
     end
@@ -193,17 +193,17 @@ end
 function ssh:exec(cmd,args)
     if cmd and cmd:lower():match("^ssh ") then cmd=cmd:sub(5) end
     if not cmd or cmd=="" or cmd:lower()=="help" then
-        if env._SUBSYSTEM~=self.name then 
+        if env._SUBSYSTEM~=self.name then
             self.help:print(true)
         else
             self.inner_help:print(true)
         end
-        return    
+        return
     end
     cmd=cmd:lower()
     local alias=env.alias.cmdlist[cmd:upper()]
     if self.cmds[cmd] then
-        self.cmds[cmd](self,args) 
+        self.cmds[cmd](self,args)
     elseif alias and tostring(alias.desc):lower():match("^ssh ") then
         return env.alias.force_command(cmd,env.parse_args(99,args or ""))
     else
@@ -319,14 +319,10 @@ function ssh.set_config(name,value)
     local termtype = term..','..cols..','..rows
     if instance and instance.conn then
         if cols=="auto" then cols=terminal:getWidth() end
-        if rows=="auto" then rows=terminal:getHeight() end 
+        if rows=="auto" then rows=terminal:getHeight() end
         instance.conn:setTermType(term,tonumber(cols),tonumber(rows))
         if instance:is_connect() and termtype~=cfg.get("term") then
             print(("Term Type: %s    Columns: %d    Rows: %d"):format(term,tonumber(cols),tonumber(rows)))
-            cfg.temp("term",termtype)
-            local pwd=instance:get_pwd()
-            instance:reconnect()
-            instance:getresult("cd "..pwd)
         end
     end
     return termtype
@@ -384,26 +380,26 @@ function ssh:ftp_file(op,info)
     local args=env.parse_args(3,info)
     local remote_file,local_dir,options=args[1],args[2],args[3]
     if op~='download' then remote_file,local_dir=local_dir,remote_file end
-    if not remote_file then 
+    if not remote_file then
         remote_file=pwd
-    elseif not remote_file:match("^/") then 
-        remote_file=pwd.."/"..remote_file 
+    elseif not remote_file:match("^/") then
+        remote_file=pwd.."/"..remote_file
     end
     remote_file=self.conn.user.."@"..self.conn.host..":"..remote_file
-    if not local_dir then 
+    if not local_dir then
         local_dir=(pscp_local_dir or env._CACHE_PATH)
-    elseif not local_dir:match("%:") then 
-        local_dir=(pscp_local_dir or env._CACHE_PATH)..local_dir 
+    elseif not local_dir:match("%:") then
+        local_dir=(pscp_local_dir or env._CACHE_PATH)..local_dir
     end
     local local_display,remote_display=local_dir,remote_file
     if env.OS=="windows" then local_dir='"'..local_dir:gsub("[\\/]+","\\\\")..'"' end
-    if op~='download' then 
+    if op~='download' then
         remote_file,local_dir=local_dir,remote_file
-        remote_display,local_display=local_display,remote_display 
+        remote_display,local_display=local_display,remote_display
     end
-    if not options then 
+    if not options then
         options="-C"
-    elseif not options:lower():find('-c',1,true) then 
+    elseif not options:lower():find('-c',1,true) then
         options=options..' -C'
     elseif options:find('-c',1,true) then
         options=options:gsub("%s*-c","")

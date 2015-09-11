@@ -11,8 +11,8 @@ local params={
     ROWDEL={name="row_del",   default=''  ,desc="The delimiter to split the rows when printing a grid"},
     ROWNUM={name="row_num",   default="off",desc="To indicate if need to show the row numbers",range="on,off"},
     HEADSTYLE={name="title_style",default="none",desc="Display style of the grid title",range="upper,lower,initcap,none"},
-    PIVOT={name="pivot",default=0,desc="Pivot a grid when next print, afterward the value would be reset",range="-30 - +30"},    
-    PIVOTSORT={name="pivotsort",default="on",desc="To indicate if to sort the titles when pivot option is on",range="on,off"},    
+    PIVOT={name="pivot",default=0,desc="Pivot a grid when next print, afterward the value would be reset",range="-30 - +30"},
+    PIVOTSORT={name="pivotsort",default="on",desc="To indicate if to sort the titles when pivot option is on",range="on,off"},
     MAXCOLS={name="maxcol",default=1024,desc="Define the max columns to be displayed in the grid",range="4-1024"},
     DIGITS={name="digits",default=38,desc="Define the digits for a number",range="0 - 38"},
     LINESIZE={name="linesize",default=800,desc="Define the max chars in one line, other overflow parts would be cutted.",range='10-32767'}
@@ -33,18 +33,18 @@ function grid.format_title(v)
         return v
     end
     if not v[grid.title_style] then
-        string.initcap=function(v) 
-            return (' '..v):lower():gsub("([^%w])(%w)",function(a,b) return a..b:upper() end):sub(2) 
+        string.initcap=function(v)
+            return (' '..v):lower():gsub("([^%w])(%w)",function(a,b) return a..b:upper() end):sub(2)
         end
     end
     return v[grid.title_style](v)
 end
 
-function grid:cut(row,format_func,format_str)    
+function grid:cut(row,format_func,format_str)
     if type(row)=="table" then
         local colbase=self.col_auto_size
         local cs=self.colsize
-        if colbase~='auto' then         
+        if colbase~='auto' then
             for i,var in ipairs(cs) do
                 row[i]=tostring(row[i]):sub(1,cs[i][1])
             end
@@ -80,7 +80,7 @@ function grid.fmt(format,...)
     local args={...}
     local fmt= format:gsub("(%%(-?)(%d*)s)",
         function(g,flag,siz)
-            idx=idx+1        
+            idx=idx+1
             if siz=="" then return g end
             v=args[idx]
             if not v or  type(v)~="string" then return g end
@@ -94,8 +94,8 @@ end
 
 function grid.format(rows,printhead,col_del,row_del)
     local this
-    if rows.__class then 
-        this=rows 
+    if rows.__class then
+        this=rows
     else
         this=grid.new(printhead)
         for i,rs in ipairs(rows) do
@@ -109,8 +109,8 @@ end
 function grid.tostring(rows,printhead,col_del,row_del,rows_limit)
     if grid.pivot ~= 0 and printhead~=false then
         rows=grid.show_pivot(rows)
-        if math.abs(grid.pivot)==1 then 
-            printhead=false 
+        if math.abs(grid.pivot)==1 then
+            printhead=false
         else
             rows_limit=rows_limit and rows_limit+2
         end
@@ -126,7 +126,7 @@ end
 function grid.sort(rows,cols,bypass_head)
     local head
     local sorts={}
-    if rows.__class then rows=rows.data end    
+    if rows.__class then rows=rows.data end
     for ind in tostring(cols):gsub('^,*(.-),*$','%1'):gmatch("([^,]+)") do
         local col,l
         if tonumber(ind) then
@@ -154,13 +154,13 @@ function grid.sort(rows,cols,bypass_head)
             return rows
         end
         sorts[#sorts+1]=function() return col,l end
-    end    
+    end
 
     if bypass_head==true then
         head=rows[1]
         table.remove(rows,1)
     end
-    
+
     table.sort(rows,function(a,b)
         for ind,item in ipairs(sorts) do
             local col,l=item()
@@ -170,7 +170,7 @@ function grid.sort(rows,cols,bypass_head)
             elseif b1==nil then
                 return true
             end
-            
+
             if a1~=b1 then
                 if l<0 then return a1>b1 end
                 return a1<b1
@@ -183,17 +183,17 @@ function grid.sort(rows,cols,bypass_head)
     return rows
 end
 
-function grid.show_pivot(rows,col_del)    
+function grid.show_pivot(rows,col_del)
     local title=rows[1]
     local keys={}
-    
+
     local pivot=math.abs(grid.pivot)+1
     local del=grid.title_del
     del=(del=="-" and "=") or (del=="=" and "||") or (del=="." and ":") or del
     del=' '..del..' '
     --if not grid.col_del:match("^[%s\t]+$") then del="" end
     if pivot>#rows then pivot=#rows end
-    
+
     local maxlen=0
     for k,v in ipairs(title) do
         keys[v]=k
@@ -208,11 +208,11 @@ function grid.show_pivot(rows,col_del)
     if grid.pivotsort=="on" then table.sort(title) end
     for k,v in ipairs(title) do
         table.insert(r,{("%s%-"..maxlen.."s %s%s "):format(hor,grid.format_title(v),nor,del)})
-        for i=2,pivot,1 do            
+        for i=2,pivot,1 do
             table.insert(r[k],rows[i][keys[v]])
         end
     end
-    
+
     if pivot==2 and grid.pivot>0 then
         for i=1,#r,2 do
             if r[i+1] then
@@ -246,7 +246,7 @@ function grid:ctor(printhead)
     self.headind=printhead==false and 1 or 0
     self.printhead=self.headind == 0 and true or false
     self.colsize={}
-    self.data={}    
+    self.data={}
 end
 
 function grid:add(rs)
@@ -257,12 +257,12 @@ function grid:add(rs)
     if rownum == "on" then
         table.insert(rs,1,headind==0 and "#" or headind)
     end
-    
+
     if headind==0 then
         self.colinfo=rs.colinfo
     end
-    
-    local lines = 1                
+
+    local lines = 1
     rs[0]=headind
     local cnt=0
     --run statement
@@ -276,7 +276,7 @@ function grid:add(rs)
             end
             if tostring(v):find('e',1,true) then v=string.format('%99.38f',v):gsub(' ',''):gsub('%.?0+$','') end
             csize = #tostring(v)
-        elseif type(v) ~= "string" or v=="" then 
+        elseif type(v) ~= "string" or v=="" then
             v = tostring(v)  or ""
             csize = #v
         else
@@ -300,18 +300,18 @@ function grid:add(rs)
             end
             local grp={}
             if headind>0 then v=v:gsub("[\n\r\t%s]+$",""):gsub("[%s\t]+[\n\r]","\n"):gsub("\t",'    ') end
-            --if the column value has multiple lines, then split lines into table                
+            --if the column value has multiple lines, then split lines into table
             for p in v:gmatch('([^\n\r]+)') do
                 grp[#grp+1]=p
                 --deal with unicode chars
                 local _, count = p:gsub("[%z\1-\127\194-\244][\128-\193]", "")
                 local len=env.ansi.strip_len(p)-count
-                if csize < len then csize=len end    
+                if csize < len then csize=len end
             end
             if #grp > 1 then v=grp end
             if lines < #grp then lines = #grp end
-            if headind>0 then 
-                colsize[k][2] = -1             
+            if headind>0 then
+                colsize[k][2] = -1
             end
         end
         if headind==0 and title_style~="none" then
@@ -320,10 +320,10 @@ function grid:add(rs)
         rs[k]=v
 
         if grid.pivot==0 and headind==1 and colbase=="body" and self.printhead then colsize[k][1]=1 end
-        if (grid.pivot~=0 or colbase~="head" or not self.printhead or headind==0)  
-            and colsize[k][1] < csize 
-        then 
-            colsize[k][1] = csize 
+        if (grid.pivot~=0 or colbase~="head" or not self.printhead or headind==0)
+            and colsize[k][1] < csize
+        then
+            colsize[k][1] = csize
         end
     end
 
@@ -359,13 +359,13 @@ function grid:add_calc_ratio(column,adjust)
     end
 end
 
-function grid:wellform(col_del,row_del)    
+function grid:wellform(col_del,row_del)
     local result,colsize=self.data,self.colsize
     local rownum=grid.row_num
     local siz,rows=#result,{}
     if siz==0 then return rows end
     local fmt=""
-    local title_dels,row_dels={},""    
+    local title_dels,row_dels={},""
     col_del=col_del or grid.col_del
     row_del=(row_del or grid.row_del):sub(1,1)
     local pivot=grid.pivot
@@ -393,10 +393,10 @@ function grid:wellform(col_del,row_del)
                     n="<-Ratio"
                 elseif sum>0 then
                     n=tonumber(row[idx])
-                    if n then 
-                        n=string.format("%5.2f%%",100*n/sum*self.ratio_cols[idx]) 
+                    if n then
+                        n=string.format("%5.2f%%",100*n/sum*self.ratio_cols[idx])
                     else
-                        n=" "    
+                        n=" "
                     end
                 end
                 table.insert(row,idx+1,n)
@@ -431,13 +431,13 @@ function grid:wellform(col_del,row_del)
     if row_del~="" then
         row_dels=row_dels:gsub("%s",row_del)
         table.insert(rows,cut(self,row_dels:gsub("[^%"..row_del.."]",row_del)))
-    end    
+    end
 
     for k,v in ipairs(result) do
-        local filter_flag,match_flag=1,0              
+        local filter_flag,match_flag=1,0
         while #v<#colsize do table.insert(v,"") end
         local row=cut(self,v,format_func,v[0]==0 and head_fmt or fmt)
-        if v[0]==0 then 
+        if v[0]==0 then
             row=row..nor
         elseif grid.grep_text then
             if row:match(grid.grep_text) then
@@ -445,7 +445,7 @@ function grid:wellform(col_del,row_del)
                 row=row:gsub(grid.grep_text,hl.."%0"..nor)
             end
             if (match_flag ==0 and not grid.grep_dir) or (match_flag==1 and grid.grep_dir) then filter_flag=0  end
-        end 
+        end
         if filter_flag==1 then table.insert(rows,row) end
         if not result[k+1] or result[k+1][0]~=v[0] then
             if #row_del==1 and filter_flag==1 and v[0]~=0 then
@@ -456,7 +456,7 @@ function grid:wellform(col_del,row_del)
         end
     end
     self=nil
-    return rows    
+    return rows
 end
 
 function grid.print(rows,printhead,col_del,row_del,psize)
@@ -475,8 +475,8 @@ function grid.grep(keyword,stmt)
     if keyword:len()>1 and keyword:sub(1,1)=="-" then
         keyword,grid.grep_dir=keyword:sub(2),true
     end
-    grid.grep_text=keyword:case_insensitive_pattern()    
-    pcall(env.internal_eval,stmt)    
+    grid.grep_text=keyword:case_insensitive_pattern()
+    pcall(env.internal_eval,stmt)
     grid.grep_text,grid.grep_dir=nil,nil
 end
 

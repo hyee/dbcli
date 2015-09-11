@@ -31,7 +31,7 @@ function ora:validate_accessable(name,options,values)
                     break
                 end
             end
-        else--check version                                
+        else--check version
             local check_ver=option:match('^([%d%.]+)$')
             if check_ver then
                 check_flag=1
@@ -47,10 +47,10 @@ function ora:validate_accessable(name,options,values)
     if not default then
         env.raise("This command doesn't support current %s %s, expected as %s!",
             expect_name,
-            check_flag==1 and db.props.db_version 
+            check_flag==1 and db.props.db_version
                 or check_flag==2 and "rights"
                 or check_flag==3 and db.props.db_user,
-            expect) 
+            expect)
     end
 
     return default
@@ -73,7 +73,7 @@ function db:check_access(obj_name,...)
             e   VARCHAR2(500);
             obj VARCHAR2(30) := :owner||'.'||:object_name;
         BEGIN
-            IF instr(obj,'PUBLIC.')=1 THEN 
+            IF instr(obj,'PUBLIC.')=1 THEN
                 obj := :object_name;
             END IF;
             BEGIN

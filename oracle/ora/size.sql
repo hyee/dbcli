@@ -1,6 +1,6 @@
 /*[[
-    Show object size. Usage: ora size [-d] [ [owner.]object_name[.PARTITION_NAME] ]  
-    If not specify the parameter, then list the top 100 segments within current schema. 
+    Show object size. Usage: ora size [-d] [ [owner.]object_name[.PARTITION_NAME] ]
+    If not specify the parameter, then list the top 100 segments within current schema.
     option '-d': used to detail in segment level, otherwise in name level, only shows the top 1000 segments
     --[[
         @CHECK_ACCESS: dba_segments/dba_objects={}
@@ -30,11 +30,11 @@ BEGIN
         rws  AS(SELECT /*+materialize no_expand*/ a.*,inserts-deletes rws from sys.dba_tab_modifications a where table_owner=:object_owner and table_name=:object_name and (:object_subname is null or :object_subname in(partition_name,subpartition_name)))
         SELECT  /*+ordered use_hash(a b) use_nl(o2)*/ a.*,
                 CASE WHEN object_type LIKE 'TABLE%' THEN
-                    nvl(coalesce((select rowcnt from sys.tab$ where obj#=o2.obj#),(select rowcnt from sys.tabpart$ where obj#=o2.obj#),(select rowcnt from sys.tabsubpart$ where obj#=o2.obj#)),0)+ nvl(b.rws,0) 
+                    nvl(coalesce((select rowcnt from sys.tab$ where obj#=o2.obj#),(select rowcnt from sys.tabpart$ where obj#=o2.obj#),(select rowcnt from sys.tabsubpart$ where obj#=o2.obj#)),0)+ nvl(b.rws,0)
                 END rows#
         FROM(
-            SELECT /*+first_rows(1000) ordered use_nl(t o b o2) no_merge(t) no_merge*/ 
-                u.user#,u.name owner, o.name object_name, 
+            SELECT /*+first_rows(1000) ordered use_nl(t o b o2) no_merge(t) no_merge*/
+                u.user#,u.name owner, o.name object_name,
                 nvl(extractvalue(b.column_value, '/ROW/P'),rtrim(t.subname,'%')) PARTITION_NAME,
                 extractvalue(b.column_value, '/ROW/T') object_type,
                 round(extractvalue(b.column_value, '/ROW/C1') / 1024 / 1024, 2) size_mb,
@@ -49,7 +49,7 @@ BEGIN
                 TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(
                    q'[SELECT * FROM (
                         SELECT /*+opt_param('optimizer_index_cost_adj',1) ordered use_nl(a b) no_merge(b) push_pred(b)*/
-                               decode('&OPT3','null',a.object_type,b.segment_type) T, &OPT3 P, 
+                               decode('&OPT3','null',a.object_type,b.segment_type) T, &OPT3 P,
                                SUM(bytes) C1, SUM(EXTENTS) C2,
                                COUNT(1) C3, AVG(initial_extent) C4, AVG(nvl(next_extent, 0)) C5,
                                MAX(tablespace_name) KEEP(dense_rank LAST ORDER BY blocks) C6
@@ -62,7 +62,7 @@ BEGIN
                         AND    a.object_id = ' || t.obj# || '
                         AND    a.owner = ''' || u.name || '''
                         AND    a.object_name = ''' || o.name || '''
-                        GROUP  BY a.object_type, &OPT3,b.segment_type 
+                        GROUP  BY a.object_type, &OPT3,b.segment_type
                         ORDER  BY C1 DESC)
                     WHERE  ROWNUM <= 1000'),'/ROWSET/ROW'))) B
             WHERE t.obj#=o.obj# AND o.owner#=u.user#
@@ -76,10 +76,10 @@ BEGIN
         SELECT rownum "#",a.*
         FROM   ( SELECT OWNER,
                         SEGMENT_NAME,&OPT2  decode('&OPT2','',regexp_substr(segment_type, '\S+'),segment_type) object_type,
-                        round(SUM(bytes) / 1024 / 1024, 2) SIZE_MB, 
+                        round(SUM(bytes) / 1024 / 1024, 2) SIZE_MB,
                         round(SUM(bytes) / 1024 / 1024 /1024, 3) SIZE_GB,
-                        SUM(EXTENTS) EXTENTS, 
-                        count(1) SEGMENTS, 
+                        SUM(EXTENTS) EXTENTS,
+                        count(1) SEGMENTS,
                         ROUND(AVG(INITIAL_EXTENT)/1024) init_ext_kb,
                         ROUND(AVG(next_extent)/1024) next_ext_kb,
                     MAX(TABLESPACE_NAME) KEEP(DENSE_RANK LAST ORDER BY BYTES) TABLESPACE_NAME

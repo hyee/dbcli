@@ -12,15 +12,15 @@ function event.callback(name,...)
     event[name].src=env.callee(idx)
     local v=event[name]
     local flag,result
-    for k,v in ipairs(v) do        
+    for k,v in ipairs(v) do
         if v.obj then
-            flag,result=pcall(v.func,v.obj,...)    
+            flag,result=pcall(v.func,v.obj,...)
         else
             flag,result=pcall(v.func,...)
         end
         if not flag then
             result=tostring(result):gsub(".*000%-00000%:","")
-            print(result) 
+            print(result)
         end
     end
     return ...,result
@@ -40,7 +40,7 @@ function event.snoop(idx,name,func,obj,priority)
     if not func then
         return print("Event function not defined in "..src)
     end
-    table.insert(e,{src=src,func=func,obj=obj,prior=tonumber(priority) or 50})    
+    table.insert(e,{src=src,func=func,obj=obj,prior=tonumber(priority) or 50})
     --Higher priority would be triggered 1st
     table.sort(e,function(a,b) return a.prior>b.prior end)
 end

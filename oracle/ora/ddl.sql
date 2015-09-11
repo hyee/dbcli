@@ -15,14 +15,14 @@ DECLARE
 BEGIN
     IF obj_type='VIEW' THEN
         BEGIN
-            EXECUTE IMMEDIATE q'[SELECT VIEW_DEFINITION FROM V$FIXED_VIEW_DEFINITION WHERE VIEW_NAME=regexp_replace(:1,'^G?V\_','GV') AND 'SYS'=:2 AND 'VIEW'=:3]' 
+            EXECUTE IMMEDIATE q'[SELECT VIEW_DEFINITION FROM V$FIXED_VIEW_DEFINITION WHERE VIEW_NAME=regexp_replace(:1,'^G?V\_','GV') AND 'SYS'=:2 AND 'VIEW'=:3]'
                 INTO txt USING part1, SCHEM, obj_type;
             txt:=regexp_replace(txt,' from ',chr(10)||'from ',1,1);
-            txt:=regexp_replace(txt,',[ ]+',',');        
+            txt:=regexp_replace(txt,',[ ]+',',');
         EXCEPTION
             WHEN OTHERS THEN NULL;
         END;
-        
+
         IF txt IS NULL THEN
             FOR R IN(SELECT TEXT FROM   ALL_VIEWS WHERE  OWNER=schem AND VIEW_NAME=part1) LOOP
                 txt := r.text;
@@ -59,10 +59,10 @@ BEGIN
     :text := txt;
     :dest := part1 || '.'||nvl(:V2,'sql');
 EXCEPTION WHEN OTHERS THEN
-    raise_application_error(-20001,sqlerrm);    
+    raise_application_error(-20001,sqlerrm);
 END;
 /
 
 print text
-PRO 
+PRO
 save text dest

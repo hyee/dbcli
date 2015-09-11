@@ -12,13 +12,13 @@ local init={
         "lib/class",
         "lua/packer",
         "lua/trace",
-        "lua/printer",  
-        "lua/ansi",    
+        "lua/printer",
+        "lua/ansi",
         "lua/event",
-        "lua/grid",    
+        "lua/grid",
         "lua/helper",
         --"locale",
-        --CLI commands ->    
+        --CLI commands ->
         "lua/sleep",
         "lua/set",
         "lua/host",
@@ -60,7 +60,7 @@ function init.init_path()
     package.cpath=""
     package.path=""
 
-    for _,v in ipairs(dirs) do                
+    for _,v in ipairs(dirs) do
         os.execute('mkdir "'..env.WORK_DIR..v..'" 2> '..(env.OS=="windows" and 'NUL' or "/dev/null"))
     end
 
@@ -68,7 +68,7 @@ function init.init_path()
         local path=string.format("%s%s%s",env.WORK_DIR,v,path_del)
         local p1,p2=path.."?.lua",java.system:getProperty('java.library.path')..path_del.."?."..(env.OS=="windows" and "dll" or "so")
         package.path  = package.path .. (path_del=='/' and ':' or ';') ..p1
-        package.cpath = package.cpath ..(path_del=='/' and ':' or ';') ..p2        
+        package.cpath = package.cpath ..(path_del=='/' and ':' or ';') ..p2
     end
 end
 
@@ -113,12 +113,12 @@ function init.load_database()
                 if env.CURRENT_DB then break end
             end
         end
-        env.CURRENT_DB=env.CURRENT_DB or default_database 
-    end    
+        env.CURRENT_DB=env.CURRENT_DB or default_database
+    end
     local file=init.databases[env.CURRENT_DB]
     if not file then return end
     local name=file:match("([^\\/]+)$")
-    env[name]=exec(dofile,env.WORK_DIR..file:gsub("[\\/]+",env.PATH_DEL)..'.lua')    
+    env[name]=exec(dofile,env.WORK_DIR..file:gsub("[\\/]+",env.PATH_DEL)..'.lua')
     exec(type(env[name])=="table" and env[name].onload,env[name],name)
     init.module_list[#init.module_list+1]=file
     if env.event then env.event.callback('ON_DATABASE_ENV_LOADED',env.CURRENT_DB) end
@@ -135,8 +135,8 @@ function init.load_modules(list,tab,module_name)
     local f=io.open(file,"a")
     if f then f:close() end
     local config,err=env.loadfile(file)
-    if not config then 
-        io.write('Error on reading data/plugin.cfg: '..err..'\n') 
+    if not config then
+        io.write('Error on reading data/plugin.cfg: '..err..'\n')
     else
         err,config=pcall(config)
         if not err then io.write('Error on reading data/plugin.cfg: '..config..'\n') end
@@ -150,7 +150,7 @@ function init.load_modules(list,tab,module_name)
     for _,v in ipairs(config) do
         v=v:gsub("[\\/]+",del)
         n=v:match("([^\\/]+)$")
-        if not v:lower():match('%.lua') then 
+        if not v:lower():match('%.lua') then
             v=v..'.lua'
         else
             n=n:sub(1,#n-4)
@@ -158,14 +158,14 @@ function init.load_modules(list,tab,module_name)
         local file=io.open(v,'r')
         if not file then
             file=root..v
-        else 
+        else
             file:close();
-            file=v 
+            file=v
         end
         tab[n]=exec(dofile,file)
         modules[n]=tab[n]
     end
-    
+
     for k,v in pairs(modules) do
         exec(type(v)=="table" and v.onload,v,k)
     end
@@ -175,17 +175,17 @@ end
 function init.onload()
     init.load_modules(init.module_list,env)
     init.load_database()
-    if env.set then env.set.init("database",env.CURRENT_DB,init.set_database,'core','Define current database type',table.concat(init.db_list(),',')) end 
+    if env.set then env.set.init("database",env.CURRENT_DB,init.set_database,'core','Define current database type',table.concat(init.db_list(),',')) end
 end
 
 function init.unload(list,tab)
     if type(tab)~='table' then return end
     for i=#list,1,-1 do
-        local m=list[i]:match("([^\\/]+)$")    
+        local m=list[i]:match("([^\\/]+)$")
         if type(tab[m])=="table" and type(tab[m].onunload)=="function" then
             tab[m].onunload(tab[m])
         end
-        tab[m]=nil        
+        tab[m]=nil
     end
 end
 

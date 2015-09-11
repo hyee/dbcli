@@ -46,7 +46,7 @@ BEGIN
                    FROM  gv$sql
                    WHERE ROWNUM<2 AND sql_id=']'||a.sql_id||''' AND inst_id='||a.inst_id||' and child_number='||a.child)
                ,'/ROWSET/ROW'))) B
-        ),         
+        ),
         s4 AS
          (SELECT /*+materialize no_merge(s3)*/
                DECODE(LEVEL, 1, '', '  ') || SID NEW_SID,
@@ -56,7 +56,7 @@ BEGIN
           FROM   (SELECT s3.*,
                          CASE WHEN seconds_in_wait > 1300000000 THEN 0 ELSE seconds_in_wait END wait_secs,
                          CASE WHEN S3.SID = S3.qcsid AND S3.inst_id = NVL(s3.qcinst_id,s3.inst_id) THEN 1 ELSE 0 END ROOT_SID,
-                         plan_hash_value,          
+                         plan_hash_value,
                          program_name,
                          program_line#,
                          sql_text
@@ -68,7 +68,7 @@ BEGIN
               AND    ROOT_SID=0
               AND    LEVEL < 3
           ORDER SIBLINGS BY &V1)
-        SELECT /*+cardinality(a 1)*/ 
+        SELECT /*+cardinality(a 1)*/
                rownum "#",
                a.NEW_SID || ',' || a.serial# || ',@' || a.inst_id session#,
                (SELECT spid
@@ -84,7 +84,7 @@ BEGIN
         FROM   s4 a
         WHERE  (&filter)
         ORDER  BY r;
-        
+
     IF &tmodel = 1 THEN
         OPEN :time_model FOR
             SELECT *

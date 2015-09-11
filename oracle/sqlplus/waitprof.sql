@@ -34,8 +34,8 @@
 --              you may need to run this script as SYS as it looks like otherwise
 --              the global USE_NL hint is not propagated down to X$ base tables
 --
---              If sampling always reports a single distinct event even though 
---              many different events (or parameter values) are expected then 
+--              If sampling always reports a single distinct event even though
+--              many different events (or parameter values) are expected then
 --              the execution plan used is not right.
 ]]*/
 
@@ -60,7 +60,7 @@ col waitprof_avg_ms head "Avg time|ms/Event" format 99999.999
 prompt
 prompt -- WaitProf 1.04 by Tanel Poder ( http://www.tanelpoder.com )
 
-WITH 
+WITH
     t1 AS (SELECT hsecs FROM v$timer),
     samples AS (
     SELECT /*+ ORDERED NO_MERGE USE_NL(sw.gv$session_wait.s) */
@@ -75,7 +75,7 @@ WITH
         COUNT(DISTINCT seq#) dist_events,
         TRUNC(COUNT(*)/COUNT(DISTINCT seq#)) average_samples
     FROM
-        (    SELECT /*+ NO_MERGE */ TO_NUMBER(&_swp_sid) sid FROM 
+        (    SELECT /*+ NO_MERGE */ TO_NUMBER(&_swp_sid) sid FROM
                 (SELECT rownum r FROM dual CONNECT BY ROWNUM <= 1000) a,
                 (SELECT rownum r FROM dual CONNECT BY ROWNUM <= 1000) b,
                 (SELECT rownum r FROM dual CONNECT BY ROWNUM <= 1000) c

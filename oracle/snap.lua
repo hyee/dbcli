@@ -6,7 +6,7 @@ local snap=env.class(env.snapper)
 function snap:ctor()
     self.db=env.oracle
     self.command="snap"
-    
+
     self.script_dir=env.WORK_DIR.."oracle"..env.PATH_DEL.."snap"
 end
 

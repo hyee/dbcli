@@ -28,7 +28,7 @@ function tracer.format_profile()
         if l and l>0 and not files[file] then
             files[file]={}
             local f=io.open(file)
-            if f then                
+            if f then
                 for ln in f:lines() do
                     table.insert(files[file],ln)
                 end
@@ -39,7 +39,7 @@ function tracer.format_profile()
             code=(files[file][l] or " "):gsub("[%s\t]+"," "):sub(1,60)
         end
         file=file:gsub(env.WORK_DIR,"")
-        f:add{file,line or -1,func,v.N*d,v.I*d,v.C*d,v.G*d,v.J*d,v.samples*d,code}   
+        f:add{file,line or -1,func,v.N*d,v.I*d,v.C*d,v.G*d,v.J*d,v.samples*d,code}
     end
     files=nil
     f:add{"--Total--",0,"Total",sum[1]*d,sum[2]*d,sum[3]*d,sum[4]*d,sum[5]*d,sum[6]*d," "}
@@ -50,14 +50,14 @@ end
 
 function tracer.enable(name,flag)
     if name=="ENVTRACE" then
-        if tracer.status~=flag then        
+        if tracer.status~=flag then
             tracer.status=flag
-            if flag=="on" then        
+            if flag=="on" then
                 hook:reset()
                 hook:start()
             else
                 hook:stop()
-                local loc=env._CACHE_PATH..'ProfilingReport.txt' 
+                local loc=env._CACHE_PATH..'ProfilingReport.txt'
                 hook:writeReport(loc)
                 --print("Profiler file report written to "..loc)
             end
@@ -70,7 +70,7 @@ function tracer.enable(name,flag)
     if flag=="on" then
         tracer.prof_cache={}
         prof.start("fi1",tracer.profile)
-    else        
+    else
         prof.stop()
         tracer.format_profile()
     end

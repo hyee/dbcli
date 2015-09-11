@@ -17,7 +17,7 @@ function tester.do_test(target)
         if #keys==0 then return print("No available modules.") end
         if not target then print("Available modules:") end
         for i,k in ipairs(keys) do
-            if not target then 
+            if not target then
                 print(string.format("%3s %s",i,k))
             else
                 print("Start running unit test on '"..k.."'' module...")

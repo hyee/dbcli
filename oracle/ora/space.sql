@@ -21,7 +21,7 @@ DECLARE
         SELECT /*+leading(x seg y) use_nl(seg) use_hash(y) no_merge(y)*/
          distinct segment_owner || '.' || segment_name || nvl2(partition_name, '.' || segment_name, '') object_name,
          segment_type object_type,
-         seg.*,         
+         seg.*,
          (SELECT segment_space_management
           FROM   dba_tablespaces ts
           WHERE  seg.tablespace_name = ts.tablespace_name) mgnt,
@@ -99,13 +99,13 @@ DECLARE
         v_result             l_grp;
         v_group              l_CursorSet;
         v_tag                VARCHAR2(100);
-    
+
         PROCEDURE st(p_label IN VARCHAR2, p_val VARCHAR2, p_tag VARCHAR2 := NULL) IS
             v_tmp l_ary;
         BEGIN
             v_result(nvl(p_tag, v_tag))(p_label) := p_val;
         END;
-    
+
         FUNCTION rd(p_label IN VARCHAR2, p_tag VARCHAR2 := NULL) RETURN VARCHAR2 IS
             v_tar VARCHAR2(100) := nvl(p_tag, v_tag);
         BEGIN
@@ -115,7 +115,7 @@ DECLARE
             END IF;
             RETURN v_result(v_tar)(p_label);
         END;
-    
+
         PROCEDURE calc(p_label IN VARCHAR2, p_num IN NUMBER, p_tag VARCHAR2 := NULL) IS
             tag VARCHAR2(100) := nvl(p_tag, v_tag);
         BEGIN
@@ -146,7 +146,7 @@ DECLARE
             st('@msg', 'Object [' || rd('@target', '@all') || '] doesn''t exist!', '@all');
             RETURN v_result;
         END IF;
-    
+
         --start fetching space statistics for each segments
         FOR i IN 1 .. v_group.count LOOP
             v_tag := v_group(i).segment_name;
@@ -183,7 +183,7 @@ DECLARE
                         calc('HWM: FS4 Blocks(75-100)', v_fs4_blocks);
                         calc('HWM: Full Blocks', v_full_blocks);
                         calc('HWM: Full MBytes', round(v_full_bytes / 1024 / 1024,2));
-                        calc('HWM: Free Blocks(Est)', v_free_blks);                    
+                        calc('HWM: Free Blocks(Est)', v_free_blks);
                         calc('HWM: Unformatted Blocks', v_unformatted_blocks);
                     EXCEPTION WHEN OTHERS THEN
                     $IF DBMS_DB_VERSION.VERSION>10  $THEN
@@ -218,9 +218,9 @@ DECLARE
                                            free_blks         => v_free_blks);
                     v_free_bytes := v_free_blks * v_group(i).block_size;
                 END IF;
-                
+
                 calc('HWM: Free MBytes(Est)', round(v_free_bytes / 1024 / 1024,2));
-                
+
                 dbms_space.unused_space(segment_owner             => v_group(i).segment_owner,
                                         segment_name              => v_group(i).segment_name,
                                         segment_type              => v_group(i).segment_type,
@@ -231,13 +231,13 @@ DECLARE
                                         unused_bytes              => v_unused_bytes,
                                         LAST_USED_EXTENT_FILE_ID  => v_LastUsedExtFileId,
                                         LAST_USED_EXTENT_BLOCK_ID => v_LastUsedExtBlockId,
-                                        LAST_USED_BLOCK           => v_last_used_block);                        
+                                        LAST_USED_BLOCK           => v_last_used_block);
                 calc('ABOVE HWM: Unused Blocks', v_unused_blocks);
                 calc('ABOVE HWM: Unused MBytes', Round(v_unused_bytes / 1024/1024,2));
                 calc('HWM: Total Blocks', v_total_blocks - v_unused_blocks);
                 calc('HWM: Total MBytes', Round((v_total_blocks - v_unused_blocks)*v_group(i).block_size/1024/1024,2));
-                
-            EXCEPTION WHEN OTHERS THEN 
+
+            EXCEPTION WHEN OTHERS THEN
                 IF SQLCODE=-1031 THEN
                     RAISE;
                 END IF;
@@ -269,22 +269,22 @@ DECLARE
         end if;
         dbms_utility.comma_to_table(regexp_replace(v_target, '[''"]'), v_count, v_uncl_array);
         for i in 1..3 loop
-            if not v_uncl_array.exists(i) or v_uncl_array(i) is null then 
+            if not v_uncl_array.exists(i) or v_uncl_array(i) is null then
                 v_uncl_array(i) := ' ';
             end if;
             --dbms_output.put_line(i||'"'||v_uncl_array(i)||'"');
         end loop;
-        select max(owner),max(object_name),max(subobject_name),max(object_id) 
+        select max(owner),max(object_name),max(subobject_name),max(object_id)
         into v_ary('owner'),v_ary('segment'),v_ary('partition'),v_ary('object_id')
         from (
-            select /*+no_expand*/ * from dba_objects 
+            select /*+no_expand*/ * from dba_objects
             where owner in(sys_context('USERENV','CURRENT_SCHEMA'),v_uncl_array(1))
             and   object_type!='SYNONYM'
             and   object_name in(v_uncl_array(1),v_uncl_array(2))
             and   nvl(subobject_name,' ') in(v_uncl_array(2),v_uncl_array(3))
             order by decode(owner,sys_context('USERENV','CURRENT_SCHEMA'),1,2),nvl2(subobject_name,1,2)
         ) where rownum<2;
-        
+
         IF v_ary('object_id') is null then
             raise_application_error(-20001,'Cannot find target objects!');
         end if;
@@ -339,19 +339,19 @@ DECLARE
                             p_owner      => v_target('owner'),
                             p_partition  => v_target('partition'),
                             p_ignoreCase => p_ignoreCase);
-    
+
         IF v_ary('@all') ('@msg') != 'done' THEN
             pr(v_ary('@all') ('@msg'));
             RETURN;
         END IF;
-    
+
         v_sql :='SELECT extractvalue(column_value,''/ROW/C0'') Item,';
         v_all:=v_ary('@all');
-        
+
         if not v_ary.exists('@level2') then
             v_ary.delete('@all');
         end if;
-        
+
         v_idx := v_ary.first;
         LOOP
             IF v_ary(v_idx).exists('@level') and v_ary(v_idx)('@level')=1 THEN
@@ -365,7 +365,7 @@ DECLARE
                     v_sql:=v_sql||'"'||v_idx||'"';
                 END IF;
                 v_sql:=v_sql||',';
-                if v_idx='@level2' then 
+                if v_idx='@level2' then
                     v_sql:=v_sql||' ''|'' "*",';
                 end if;
             END IF;
@@ -373,8 +373,8 @@ DECLARE
             EXIT WHEN v_idx IS NULL;
         END LOOP;
         v_sql:=trim(',' from v_sql);
-		
-    
+
+
         v_idx := v_all.first;
         LOOP
             IF v_idx NOT LIKE '@%' THEN
@@ -383,7 +383,7 @@ DECLARE
             v_idx := v_all.next(v_idx);
             EXIT WHEN v_idx IS NULL;
         END LOOP;
-    
+
         FOR i IN 1 .. v_rows.count LOOP
             v_xml := v_xml || '<ROW><C0>'||v_rows(i)||'</C0>';
             FOR j IN 1 .. v_titles.count LOOP
@@ -397,7 +397,7 @@ DECLARE
         v_sql := v_sql||' from table(xmlsequence(extract(xmltype(:1),''/ROWSET[1]/ROW'')))';
         --dbms_output.put_line(v_sql);
         dbms_output.put_line('OBJECT: '||v_all('@target')||'    TYPE: '||v_all('@type'));
-        OPEN p_cur for v_sql using v_xml;    
+        OPEN p_cur for v_sql using v_xml;
     END;
 
     PROCEDURE seg_advise(p_cur        OUT SYS_REFCURSOR,
@@ -433,18 +433,18 @@ DECLARE
                                                   '" part="' || part || '" segtype="' || typ ||
                                                   '"/>'));
         END;
-    
+
     BEGIN
         --execute dbms_workload_repository.create_snapshot('ALL');
         IF v_list.count = 0 THEN
             RETURN;
         END IF;
-    
+
         SELECT COUNT(1) INTO v_objid FROM dba_advisor_tasks WHERE task_name = v_task;
         IF v_objid > 0 THEN
             DBMS_ADVISOR.delete_task(task_name => v_task);
         END IF;
-    
+
         DBMS_ADVISOR.create_task(advisor_name => 'Segment Advisor', task_name => v_task);
         DBMS_ADVISOR.set_task_parameter(task_name => v_task,
                                         parameter => 'RECOMMEND_ALL',
@@ -457,7 +457,7 @@ DECLARE
             FETCH l_CursorSegs BULK COLLECT
                 INTO v_segs;
             CLOSE l_CursorSegs;
-        
+
             v_top := parseName('Object: ' || v_list(i) ('owner'),
                                v_list(i) ('segment'),
                                v_list(i) ('partition'));
@@ -469,7 +469,7 @@ DECLARE
                     '--total--');
             v_seek := 0;
             FOR j IN 1 .. v_segs.count LOOP
-            
+
                 DBMS_ADVISOR.create_object(task_name   => v_task,
                                            object_type => v_segs(j).segment_type,
                                            attr1       => v_segs(j).segment_owner,
@@ -553,7 +553,7 @@ DECLARE
             WHERE  B.TASK_NAME(+) = v_task
             AND    B.OBJECT_ID(+) = a.object_id
             ORDER  BY id;
-    
+
     END;
 BEGIN
     if lower(nvl(:V2,'x'))!='advise' then
@@ -563,6 +563,6 @@ BEGIN
     end if;
     :cur := v_cur;
 EXCEPTION
-    WHEN OTHERS THEN raise_application_error(-20001,sqlerrm);    
+    WHEN OTHERS THEN raise_application_error(-20001,sqlerrm);
 END;
 /

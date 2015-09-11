@@ -19,7 +19,7 @@ SELECT /*+ordered*/ c.inst_id,
                 5, 'S/Row-X(SSX)',  /* C */
                 6, 'Exclusive',      /* X */
                 'Invalid')||']' lmode,
-       decode(d.REQUEST,0,'Request','Hold') ltype,  
+       decode(d.REQUEST,0,'Request','Hold') ltype,
        NULLIF(BLOCKING_SESSION||',@'||BLOCKING_INSTANCE,',@') BLOCK_BY,
        a.object_id,
        b.owner,
@@ -31,11 +31,11 @@ SELECT /*+ordered*/ c.inst_id,
        c.PROGRAM,
        c.MODULE,
        c.osuser,
-       c.machine       
+       c.machine
 FROM   a, b d, gv$session c,
        XMLTABLE('/ROWSET/ROW'
             passing(dbms_xmlgen.getxmltype('select owner,object_name,subobject_name from &CHECK_ACCESS where object_id='||a.object_id))
-            columns 
+            columns
                 owner             varchar2(30)
                ,object_name       varchar2(30)
                ,subobject_name    varchar2(30)

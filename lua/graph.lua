@@ -10,10 +10,10 @@ function graph:ctor()
         template=env.load_data(env.WORK_DIR.."lib"..env.PATH_DEL.."dygraphs.html",false)
         env.checkerr(type(template)=="string",'Cannot load file "dygraphs.html" in folder "lib"!')
         cr=[[
-        <div id="divNoshow@GRAPH_INDEX" style="display:none">@GRAPH_DATA</div> 
-        <div id="divShow@GRAPH_INDEX" style="width:100%;"></div><br/></br> 
+        <div id="divNoshow@GRAPH_INDEX" style="display:none">@GRAPH_DATA</div>
+        <div id="divShow@GRAPH_INDEX" style="width:100%;"></div><br/></br>
         <div id="divLabel@GRAPH_INDEX" style="width:90%; margin-left:5%"></div>
-        <script type="text/javascript"> 
+        <script type="text/javascript">
         new Dygraph(
             document.getElementById("divShow@GRAPH_INDEX"),
             function() {return document.getElementById("divNoshow@GRAPH_INDEX").innerHTML;},
@@ -125,7 +125,7 @@ function graph:run_script(cmd,...)
 
     --Print summary report
     local sorter={table.unpack(values[title],2)}
-    table.sort(sorter,function(a,b) 
+    table.sort(sorter,function(a,b)
         if collist[a][2]==collist[b][2] then return a<b end
         return collist[a][2]>collist[b][2]
     end)
@@ -138,7 +138,7 @@ function graph:run_script(cmd,...)
     output:add{"Item","Total "..(ylabels[1] or default_attrs.ylabel or ""),'|',"Rows","Appear",'%',"Min","Average","Max"}
 
     for k,v in pairs(collist) do
-        if v[2] then 
+        if v[2] then
             output:add{ k,math.round(v[2],2),'|',
                         v[3],math.round(v[3]*100/(counter-1),2),'|',
                         v[4],math.round(v[2]/v[3],2),v[5]}
@@ -170,7 +170,7 @@ function graph:run_script(cmd,...)
         end
     else
         self.dataindex=self.dataindex+1
-        self.data[self.dataindex]=table.concat(txt,'\n')    
+        self.data[self.dataindex]=table.concat(txt,'\n')
     end
 
     local replaces={
@@ -178,11 +178,11 @@ function graph:run_script(cmd,...)
     }
 
     for k,v in pairs(default_attrs) do
-        if k:sub(1,1)=='_' then 
+        if k:sub(1,1)=='_' then
             default_attrs[k]=nil
         end
     end
-    
+
     for i=1,self.dataindex do
         replaces['@GRAPH_INDEX']=i
         if i>1 then default_attrs.title="" end
@@ -209,7 +209,7 @@ local function set_param(name,value)
 end
 
 function graph:__onload()
-   
+
 end
 
 return graph

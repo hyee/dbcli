@@ -17,7 +17,7 @@ set feed off
 VAR C REFCURSOR Binding Variables
 BEGIN
     IF &binds=1 THEN
-        open :c for 
+        open :c for
         WITH b1 AS
          (SELECT *
           FROM   (SELECT child_number || ':' || INST_ID r,last_captured l
@@ -42,7 +42,7 @@ BEGIN
           AND    snap_id || ':' || instance_number = r)
         SELECT position,
                NAME,
-               datatype_string data_type,       
+               datatype_string data_type,
                nvl2(last_captured,value_string,'<no capture>') VALUE,
                inst_id,
                last_captured
@@ -93,11 +93,11 @@ WITH sql_plan_data AS
                          plan_hash_value,
                          dbid
                   FROM   dba_hist_sql_plan a
-                  WHERE  a.sql_id = :V1 
+                  WHERE  a.sql_id = :V1
                   AND    a.plan_hash_value = nvl(:V2,(
                      select --+index(c.sql(WRH$_SQLSTAT.SQL_ID)) index(c.sn)
-                            max(plan_hash_value) keep(dense_rank last order by snap_id) 
-                     from dba_hist_sqlstat c where sql_id=a.sql_id)) 
+                            max(plan_hash_value) keep(dense_rank last order by snap_id)
+                     from dba_hist_sqlstat c where sql_id=a.sql_id))
                   ) a
          WHERE flag>&src)
   WHERE  seq = 1),
@@ -161,8 +161,8 @@ rules sequential order (
           when id[cv()+2] = minid[cv()]
           then '|' || lpad('Pid |', csize[cv()]) || lpad('Ord |', csize[cv()])
           when id[cv()] is not null
-          then '|' || lpad(pid[cv()] || ' |', csize[cv()]) || lpad(oid[cv()] || ' |', csize[cv()]) 
-      end, 
+          then '|' || lpad(pid[cv()] || ' |', csize[cv()]) || lpad(oid[cv()] || ' |', csize[cv()])
+      end,
     plan_table_output[r] = case
          when inject[cv()] like '---%'
          then inject[cv()] || plan_table_output[cv()]
@@ -170,4 +170,4 @@ rules sequential order (
          then regexp_replace(plan_table_output[cv()], '\|', inject[cv()], 1, 2)
          else plan_table_output[cv()]
      END)
-order  by r; 
+order  by r;

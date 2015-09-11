@@ -3,11 +3,11 @@ local function explain(fmt,sql)
     local ora=db.C.ora
     local default_fmt,e10053="ALLSTATS ALL -PROJECTION OUTLINE REMOTE"
     if not fmt then return end
-    if fmt:sub(1,1)=='-' then        
+    if fmt:sub(1,1)=='-' then
         if not sql then return end
         fmt=fmt:sub(2)
         if fmt=='10053' then
-           e10053=true           
+           e10053=true
            fmt=default_fmt
         end
     else
@@ -89,8 +89,8 @@ local function explain(fmt,sql)
                                  when id[cv()+2] = 0
                                  then '|' || lpad('Pid |', csize[cv()]) || lpad('Ord |', csize[cv()])
                                  when id[cv()] is not null
-                                 then '|' || lpad(pid[cv()] || ' |', csize[cv()]) || lpad(oid[cv()] || ' |', csize[cv()]) 
-                              end, 
+                                 then '|' || lpad(pid[cv()] || ' |', csize[cv()]) || lpad(oid[cv()] || ' |', csize[cv()])
+                              end,
                   plan_table_output[r] = case
                                             when inject[cv()] like '---%'
                                             then inject[cv()] || plan_table_output[cv()]
@@ -100,7 +100,7 @@ local function explain(fmt,sql)
                                          END
                  )
         order  by r]]
-    sql=sql:gsub('@fmt@',fmt) 
+    sql=sql:gsub('@fmt@',fmt)
     db:query(sql)
     --db:rollback()
     cfg.set("feed",feed,true)

@@ -11,7 +11,7 @@ function sqlprof.extract_profile(sql_id,sql_plan)
             To generate the script to fix the execution plan with SQL profile
             Parameters:
               p_sqlid: The target SQL to be fixed, can be SQL_ID/SQL Profile name/SPM plan name
-              p_plan:  The exec plan to be used, can be: 
+              p_plan:  The exec plan to be used, can be:
                           a.Plan_hash_value of target SQL, when null then use the default plan
                           b.Another optimized SQL's sql id/SQL Profile name/SPM plan name
                        For the "b" option, the 2 SQLs have be of the same text except hints
@@ -64,7 +64,7 @@ function sqlprof.extract_profile(sql_id,sql_plan)
                         AND    b.signature = a.signature
                     $END
                         )
-                WHERE  rownum < 2;            
+                WHERE  rownum < 2;
             END;
 
             PROCEDURE get_plan IS
@@ -73,7 +73,7 @@ function sqlprof.extract_profile(sql_id,sql_plan)
                 v_plan := CASE
                               WHEN p_plan IS NULL THEN
                                '%'
-                              WHEN upper(p_plan) IN('PLAN','PLAN_TABLE') then 
+                              WHEN upper(p_plan) IN('PLAN','PLAN_TABLE') then
                                 '-1'
                               ELSE
                                nvl(regexp_substr(p_plan, '^\d+$'), 'z') || '%'
@@ -112,8 +112,8 @@ function sqlprof.extract_profile(sql_id,sql_plan)
                         WHERE  b.sp_name = nvl(p_plan, p_sqlid)
                         AND    b.signature = a.signature
                     $END
-                                  
-                        
+
+
                         )
                 WHERE  rownum < 2;
             EXCEPTION
@@ -133,7 +133,7 @@ function sqlprof.extract_profile(sql_id,sql_plan)
             dbms_output.enable(NULL);
             BEGIN
                 get_sql(p_sqlid);
-            EXCEPTION WHEN NO_DATA_FOUND THEN 
+            EXCEPTION WHEN NO_DATA_FOUND THEN
                 p_buffer:='#Cannot find SQL text for '||p_sqlid||'!';
                 return;
             END;
@@ -167,7 +167,7 @@ function sqlprof.extract_profile(sql_id,sql_plan)
                 v_signatrue := dbms_sqltune.SQLTEXT_TO_SIGNATURE(v_sql, TRUE);
                 BEGIN
                     get_sql(case when upper(p_plan) IN('PLAN','PLAN_TABLE') then p_sqlid else p_plan end );
-                EXCEPTION WHEN NO_DATA_FOUND THEN 
+                EXCEPTION WHEN NO_DATA_FOUND THEN
                     p_buffer:='#Cannot find SQL text for '||p_plan||'!';
                     return;
                 END;
@@ -214,17 +214,17 @@ function sqlprof.extract_profile(sql_id,sql_plan)
     BEGIN
         extract_profile(:1,:2,:3, TRUE);
     END;]]
-    env.checkerr(sql_id,"Please specify the SQL ID!")  
+    env.checkerr(sql_id,"Please specify the SQL ID!")
     if not db:check_access('sys.sql$text',1) then
         stmt=stmt:gsub("%$IF.-%$END","")
-    end  
+    end
     args={'#CLOB',sql_id,sql_plan or ""}
     db:internal_call(stmt,args)
     if args[1] and args[1]:sub(1,1)=="#" then
         env.raise(args[1]:sub(2))
     end
     --print(args[1])
-    print("Result written to file "..env.write_cache(sql_id..".sql",args[1]))    
+    print("Result written to file "..env.write_cache(sql_id..".sql",args[1]))
 end
 
 env.set_command(nil,"sqlprof","Extract sql profile. Usage: sqlprof <sql_id|sql_prof_name|spm_plan_name> [<plan_hash_value|new_sql_id|sql_prof_name|spm_plan_name>|plan]",sqlprof.extract_profile,false,3)

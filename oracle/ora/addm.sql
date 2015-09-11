@@ -1,6 +1,6 @@
-/*[[Show existing ADDM report. Usage: addm [task_id] [-f"<filter>"] 
+/*[[Show existing ADDM report. Usage: addm [task_id] [-f"<filter>"]
     --[[
-        &filter: default={1=1}, f={} 
+        &filter: default={1=1}, f={}
     --]]
 ]]*/
 SET FEED OFF printvar off
@@ -33,7 +33,7 @@ BEGIN
             ORDER  BY execution_start DESC NULLS LAST;
     ELSE
         SELECT COUNT(1) INTO c FROM ALL_OBJECTS WHERE OBJECT_NAME IN('DBMS_ADDM','DBMS_ADVISOR') AND OWNER='SYS';
-        OPEN :cur for 
+        OPEN :cur for
             WITH A AS
              (SELECT --+materialize
                dense_rank() OVER(ORDER BY impact DESC, a.message || a.more_info ASC) r, a.finding_id, b.rec_id,

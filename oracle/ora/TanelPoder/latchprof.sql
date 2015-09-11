@@ -12,7 +12,7 @@
 --
 -- Author:      Tanel Poder
 -- Copyright:   (c) http://www.tanelpoder.com
---              
+--
 -- Usage:       @latchprof <what> <sid> <latch name> <#samples>
 --              @latchprof name 350 % 100000                - monitor all latches SID 350 is holding
 --              @latchprof sid,name % library 1000000       - monitor which SIDs hold latches with "library" in their name
@@ -54,7 +54,7 @@
 --
 --------------------------------------------------------------------------------
 
-WITH 
+WITH
     t1 AS (SELECT hsecs FROM v$timer),
     sam AS (
         SELECT /*+ ORDERED USE_NL(l) USE_NL(s) USE_NL(l.gv$latchholder.x$ksuprlat) NO_TRANSFORM_DISTINCT_AGG  no_expand*/
@@ -62,14 +62,14 @@ WITH
           , COUNT(DISTINCT gets)           dist_samples
           , COUNT(*)                       total_samples
           , COUNT(*)/floor(power(10,&V3))  sample_rate
-        FROM 
+        FROM
             (SELECT /*+ NO_MERGE */ 1 FROM DUAL CONNECT BY LEVEL <= power(10,&V3)) s,
             gv$latchholder l,
             (SELECT inst_id inst
                   , sid  indx
                   , ROW_WAIT_OBJ# obj
                   , nvl2(ROW_WAIT_FILE#,ROW_WAIT_FILE#||','||ROW_WAIT_BLOCK#,'') block
-                  , sql_id                                  
+                  , sql_id
              FROM gv$session) s
         WHERE ('&V1' is null or '&V1' in(sql_id,''||sid))
         AND  (LOWER(l.name) LIKE LOWER('%&V2%') OR LOWER(RAWTOHEX(l.laddr)) LIKE LOWER('%&V2%'))

@@ -15,7 +15,7 @@ FROM   (SELECT OWNER,
                      SUBOBJECT_NAME || chr(1) || DATA_OBJECT_ID || chr(1) ||
                      TO_CHAR(CREATED, 'YYYY-MM-DD HH24:MI:SS') || chr(1) ||
                      TO_CHAR(CREATED, 'YYYY-MM-DD HH24:MI:SS') || chr(1) ||
-                     TO_CHAR(LAST_DDL_TIME, 'YYYY-MM-DD HH24:MI:SS') || chr(1) || STATUS) LIKE '%' || NVL(UPPER(:V1), 'x') || '%'        
+                     TO_CHAR(LAST_DDL_TIME, 'YYYY-MM-DD HH24:MI:SS') || chr(1) || STATUS) LIKE '%' || NVL(UPPER(:V1), 'x') || '%'
         UNION
         SELECT a.owner,
                a.object_name,

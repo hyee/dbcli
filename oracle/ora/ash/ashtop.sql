@@ -4,13 +4,13 @@
       fields : combination of columns concated by comma. Available columns: see v$active_session_history and dba_users
                available options: -sql,-p,-pr,-o,-plan,-none
       filters: available options: -id, -snap, -f
-      Source : -ash: gv$active_Session_history    -dash: Dba_Hist_Active_Sess_History 
+      Source : -ash: gv$active_Session_history    -dash: Dba_Hist_Active_Sess_History
     --[[
       &fields: sql={sql_id}, p={p1,p2,p3,p3text},pr={p1raw,p2raw,p3raw}, o={obj},plan={plan_hash,current_obj#,SQL_PLAN_LINE_ID} none={1}
       &View: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
       &BASE: ash={1}, dash={10}
       &filter: {
-            id={(trim(:V1) is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id)) and 
+            id={(trim(:V1) is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id)) and
                      sample_time+0 between nvl(to_date(nullif(:V2,'a'),'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(nullif(:V3,'a'),'YYMMDDHH24MISS'),sysdate)
                     &V4},
             snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id)) &V3}
@@ -21,7 +21,7 @@
   Examples:
       ora ashtop -sql               =  ora ashtop "sql_id,session_state,event"
       ora ashtop -p,qc_session_id   =  ora ashtop "session_state,event,current_obj#,p3text,qc_session_id"
-      ora ashtop -dash              =  Query dictionary ash view instead of dynamic ash view     
+      ora ashtop -dash              =  Query dictionary ash view instead of dynamic ash view
       ora ashtop -plan              =  ora ashtop "plan_hash,event,current_obj#,SQL_PLAN_LINE_ID"
       ora ashtop -p", qc_session_id, qc_session_serial#"  = ora ashtop "-p, qc_session_id, qc_session_serial#"
 ]]*/
@@ -63,7 +63,7 @@ SELECT * FROM (
         FROM &View a) a
       , all_users u
     WHERE a.user_id = u.user_id (+)
-    AND   &filter and (&more_filter) 
+    AND   &filter and (&more_filter)
     GROUP BY nvl2(qc_session_id,'PARALLEL','SERIAL'),nvl(a.program#,u.username),event_name,&fields
     ORDER BY Secs DESC nulls last,&fields
 )

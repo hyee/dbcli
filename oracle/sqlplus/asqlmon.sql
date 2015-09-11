@@ -8,7 +8,7 @@
 --
 -- Disclaimer:  This script is provided "as is", no warranties nor guarantees are
 --              made. Use at your own risk :)
---              
+--
 -- Usage:       @asqlmon <sqlid> <child#>
 --
 -- Notes:       This script runs on Oracle 11g+ and you should have the
@@ -17,7 +17,7 @@
 --
 ]]*/
 
-SET LINESIZE 999 PAGESIZE 5000 TRIMOUT ON TRIMSPOOL ON 
+SET LINESIZE 999 PAGESIZE 5000 TRIMOUT ON TRIMSPOOL ON
 
 COL asqlmon_operation  HEAD Plan_Operation FOR a100
 COL asqlmon_predicates HEAD PREDICATES     FOR a100 word_wrap
@@ -40,7 +40,7 @@ BREAK ON asqlmon_plan_hash_value SKIP 1 ON asqlmon_sql_id SKIP 1 ON asqlmon_sql_
 
 WITH  sample_times AS (
     select * from dual
-), 
+),
 sq AS (
 SELECT
     count(*) samples
@@ -84,7 +84,7 @@ SELECT
   , LPAD(' ', depth) || plan.operation ||' '|| plan.options || NVL2(plan.object_name, ' ['||plan.object_name ||']', null) asqlmon_operation
   , sq.session_state
   , sq.event
-  , sq.avg_p3 
+  , sq.avg_p3
   , plan.object_alias || CASE WHEN plan.qblock_name IS NOT NULL THEN ' ['|| plan.qblock_name || ']' END obj_alias_qbc_name
   , CASE WHEN plan.access_predicates IS NOT NULL THEN '[A:] '|| plan.access_predicates END || CASE WHEN plan.filter_predicates IS NOT NULL THEN ' [F:]' || plan.filter_predicates END asqlmon_predicates
 --  , plan.projection

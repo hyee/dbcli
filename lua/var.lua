@@ -31,7 +31,7 @@ function var.import_context(global,input,output)
     for k,v in pairs(global) do var.global_context[k]=v end
     for k,v in pairs(input or {}) do var.inputs[k]=v end
     if input then
-        for k,v in pairs(var.global_context) do 
+        for k,v in pairs(var.global_context) do
             if not global[k] and not output[k] then var.global_context[k]=nil end
         end
         for k,v in pairs(var.inputs) do
@@ -49,17 +49,17 @@ function var.backup_context()
 end
 
 function var.setOutput(name,datatype,desc)
-    if not name then 
+    if not name then
         return env.helper.helper("VAR")
     end
-    
+
     name=name:upper()
     if not datatype then
         if var.outputs[name] then var.outputs[name]=nil end
         return
     end
 
-    datatype=datatype:upper():match("(%w+)")    
+    datatype=datatype:upper():match("(%w+)")
     env.checkerr(var.types[datatype],'Unexpected data type['..datatype..']!')
     env.checkerr(name:match("^[%w%$_]+$"),'Unexpected variable name['..name..']!')
     var.inputs[name],var.outputs[name],var.desc[name]=nil,'#'..var.types[datatype],desc
@@ -83,7 +83,7 @@ function var.setInput(name,desc)
     if not name then env.raise('Usage: def name=<value> [description]') end
     value=value:gsub('^"(.*)"$','%1')
     name=name:upper()
-    env.checkerr(name:match("^[%w%$_]+$"),'Unexpected variable name['..name..']!')    
+    env.checkerr(name:match("^[%w%$_]+$"),'Unexpected variable name['..name..']!')
     var.inputs[name],var.outputs[name],var.desc[name]=value,nil,desc
 end
 
@@ -102,7 +102,7 @@ function var.accept_input(name,desc)
             local f=io.open(desc)
             env.checkerr(f,"Cannot find file '"..desc.."'!")
             var.inputs[uname]=f:read('*a')
-            f:close()            
+            f:close()
             return
         end
     end
@@ -117,7 +117,7 @@ end
 
 local function update_text(item,pos,params)
     if cfg.get("define")~='on' then return end
-    local count=1    
+    local count=1
     local function repl(s,s2,s3)
         local v,s=s2:upper(),s..s2..s3
         v=params[v] or var.inputs[v] or var.global_context[v] or s
@@ -152,8 +152,8 @@ function var.before_db_exec(item)
         item[2]=sql
         return
     end
-    
-    update_text(item,2,params)  
+
+    update_text(item,2,params)
 end
 
 function var.after_db_exec(item)
@@ -162,7 +162,7 @@ function var.after_db_exec(item)
     for k,v in pairs(var.outputs) do
         if v and k:upper()==k and args[k] and args[k]~="" and args[k]~=v then
             var.inputs[k],var.outputs[k]=args[k],nil
-            result[k]=args[k]            
+            result[k]=args[k]
         end
     end
     var.current_db=db
@@ -173,21 +173,21 @@ end
 
 function var.print(name)
     local db=var.current_db
-    if not name then return end    
+    if not name then return end
     if type(name)=="string" and name:lower()~='-a' then
         name=name:upper()
         local obj=var.inputs[name]
-        env.checkerr(obj,'Target variable[%s] does not exist!',name)   
+        env.checkerr(obj,'Target variable[%s] does not exist!',name)
         if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
             if var.desc[name] then print(var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)) end
             db.resultset:print(obj,db.conn)
-        else 
+        else
             print(obj)
         end
-    else 
+    else
         local list=type(name)=="table" and name or var.inputs
         local keys={}
-        for k,v in pairs(list) do  keys[#keys+1]={type(v),k,v} end 
+        for k,v in pairs(list) do  keys[#keys+1]={type(v),k,v} end
         if #keys==0 then return end
         table.sort(keys,function(a,b)
             if a[1]==b[1] then return a[2]<b[2] end
@@ -195,7 +195,7 @@ function var.print(name)
             if b[1]=="userdata" then return true end
             return a[1]<b[1]
         end)
-        
+
         list={{'Variable','Value'}}
         for _,obj in ipairs(keys) do
             local name,value=obj[2],obj[3]
@@ -215,12 +215,12 @@ function var.save(name,file)
     env.checkerr(type(name)=="string",'Usage: save <variable> <file name>')
     if type(file)~="string" or var.outputs[file:upper()] then return end
     if var.inputs[file:upper()] then
-        file=var.inputs[file:upper()] 
+        file=var.inputs[file:upper()]
         if file=='' then return end
     end
     name=name:upper()
     local obj=var.inputs[name]
-    env.checkerr(obj,'Target variable[%s] does not exist!',name)   
+    env.checkerr(obj,'Target variable[%s] does not exist!',name)
     if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
         return print("Unsupported variable '%s'!", name);
     end

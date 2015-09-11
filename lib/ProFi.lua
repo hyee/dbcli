@@ -1,6 +1,6 @@
 --[[
     ProFi v1.3, by Luke Perkin 2012. MIT Licpackere http://www.opensource.org/licenses/mit-license.php.
-    
+
     Example:
         ProFi = require 'ProFi'
         ProFi:start()
@@ -61,7 +61,7 @@ local FORMAT_BANNER            = [[
 --[[
     Starts profiling any method that is called between this and ProFi:stop().
     Pass the parameter 'once' to so that this methodis only run once.
-    Example: 
+    Example:
         ProFi:start( 'once' )
 ]]
 function ProFi:start( param )
@@ -83,7 +83,7 @@ end
     Stops profiling.
 ]]
 function ProFi:stop()
-    if self:shouldReturn() then 
+    if self:shouldReturn() then
         return
     end
     self.stopTime = getTime()
@@ -210,7 +210,7 @@ function ProFi:getTitleFromFuncInfo( funcInfo )
     local name,source,linedefined= (funcInfo.name or 'anonymous')..'('..funcInfo.what..')',
        funcInfo.short_src or 'C_FUNC',funcInfo.linedefined or 0
     linedefined = string.format( FORMAT_LINENUM, linedefined )
-    return string.format(FORMAT_TITLE, source, name, linedefined)    
+    return string.format(FORMAT_TITLE, source, name, linedefined)
 end
 
 function ProFi:createFuncReport( title )
@@ -407,7 +407,7 @@ function ProFi:onFunctionCall( funcInfo ,tim)
     --[[if funcReport.callTime then
                 funcReport.timer = funcReport.timer + (tim - funcReport.callTime)
             end]]
-    funcReport.callTime,funcReport.count,funcReport.sequpackere,funcReport.level = 
+    funcReport.callTime,funcReport.count,funcReport.sequpackere,funcReport.level =
         tim,funcReport.count+1,self.sequpackere,self.currentLevel
     if self.previousCall then
         self.previousCall.timer=self.previousCall.timer + (tim - self.previousCall.callTime)
@@ -420,7 +420,7 @@ function ProFi:onFunctionCall( funcInfo ,tim)
 end
 
 function ProFi:onFunctionReturn( funcInfo ,tim)
-    local funcReport = self:getFuncReport( funcInfo )    
+    local funcReport = self:getFuncReport( funcInfo )
     self.currentLevel=funcReport.level-1
     if funcReport.callTime then
         funcReport.timer = funcReport.timer + (tim - funcReport.callTime)
@@ -462,7 +462,7 @@ onDebugHook = function( hookType )
         hooker=ProFi:getFuncReport(hooker)
         ProFi.hookfunc=hooker
     end
-    
+
     local funcInfo = debug.getinfo( 2, 'nS' )
     if hookType == "call" then
         ProFi:onFunctionCall( funcInfo,tim )

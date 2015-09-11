@@ -2,11 +2,11 @@
 /*[[Report which blocks are in buffer cache, protected by a cache buffers chains child latch. Usage: bhla <child latch address>
 -- Author:      Tanel Poder
 -- Copyright:   (c) http://www.tanelpoder.com
---              
+--
 -- Usage:       @bhla <child latch address>
 --              @bhla 27E5A780
---             
---            
+--
+--
 -- Other:       This script reports all buffers "under" the given cache buffers
 --              chains child latch, their corresponding segment names and
 --              touch counts (TCH).

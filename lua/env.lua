@@ -6,8 +6,8 @@ local reader,coroutine,os,string,table,math,io=reader,coroutine,os,string,table,
 local getinfo, error, rawset, rawget,math = debug.getinfo, error, rawset, rawget,math
 
 local env=setmetatable({},{
-    __call =function(self, key, value)            
-            rawset(self,key,value) 
+    __call =function(self, key, value)
+            rawset(self,key,value)
             _G[key]=value
         end,
     __index=function(self,key) return _G[key] end,
@@ -38,7 +38,7 @@ end
 mt.__declared = {}
 
 mt.__newindex = function (t, n, v)
-    if not mt.__declared[n] and env.WORK_DIR then    
+    if not mt.__declared[n] and env.WORK_DIR then
         mt.__declared[n] = env.callee()
     end
     rawset(t, n, v)
@@ -87,7 +87,7 @@ end
 
 --Build command list
 env._CMDS=setmetatable({___ABBR___={}},{
-    __index=function(self,key) 
+    __index=function(self,key)
         if not key then return nil end
         local abbr=rawget(self,'___ABBR___')
         local value=rawget(abbr,key)
@@ -100,12 +100,12 @@ env._CMDS=setmetatable({___ABBR___={}},{
         if rawget(abbr,key) then
             if type(value)=="table" then
                 rawset(abbr,key,value)
-            else                
+            else
                 local cmd=rawget(abbr,key)
                 rawset(abbr,key,value)
                 if type(cmd)=="string" then
                     for k,v in pairs(abbr) do
-                        if v==cmd then rawset(abbr,k,value) end              
+                        if v==cmd then rawset(abbr,k,value) end
                     end
                 end
             end
@@ -146,7 +146,7 @@ function env.list_dir(file_dir,file_ext,text_macher)
         end
         if name and name~="" then
             local comment
-            if  text_macher then  
+            if  text_macher then
                 local f=io.open(n)
                 if f then
                     local txt=f:read("*a")
@@ -154,13 +154,13 @@ function env.list_dir(file_dir,file_ext,text_macher)
                     if type(text_macher)=="string" then
                         comment=txt:match(text_macher) or ""
                     elseif type(text_macher)=="function" then
-                        comment=text_macher(txt) or ""      
+                        comment=text_macher(txt) or ""
                     end
                 end
             end
             keylist[#keylist+1]={name,n,comment}
         end
-    end    
+    end
     return keylist
 end
 
@@ -172,7 +172,7 @@ function env.file_type(file_name)
     result=os.execute('dir /B /A:D "'..file_name..'" 1>nul 2>nul')
     if result then return 'folder' end
     return 'file'
-end    
+end
 
 local previous_prompt
 function env.set_subsystem(cmd,prompt)
@@ -195,15 +195,15 @@ function env.check_cmd_endless(cmd,other_parts)
         return true,other_parts
     end
     local p1=env.END_MARKS[1]..'[%s\t\n]*$'
-    if not _CMDS[cmd].MULTI then        
+    if not _CMDS[cmd].MULTI then
         return true,other_parts and other_parts:gsub(p1,"")
     elseif type(_CMDS[cmd].MULTI)=="function" then
         return _CMDS[cmd].MULTI(cmd,other_parts)
     elseif _CMDS[cmd].MULTI=='__SMART_PARSE__' then
         return env.smart_check_endless(cmd,other_parts,_CMDS[cmd].ARGS)
     end
-    
-    
+
+
     local p2=env.END_MARKS[2]..'[%s\t\n]*$'
     local match = (other_parts:match(p1) and 1) or (other_parts:match(p2) and 2) or false
     --print(match,other_parts)
@@ -219,7 +219,7 @@ function env.smart_check_endless(cmd,rest,from_pos)
     if env.check_cmd_endless(args[from_pos-1]:upper(),args[from_pos] or "") then
         return true,rest:gsub('[%s\n\r\t]+$',"")
     else
-        return false,rest 
+        return false,rest
     end
 end
 
@@ -233,7 +233,7 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
     if type(cmd)~="table" then cmd={cmd} end
     local tmp=cmd[1]:upper()
 
-    for i=1,#cmd do 
+    for i=1,#cmd do
         cmd[i]=cmd[i]:upper()
         if _CMDS[cmd[i]] then
             if _CMDS[cmd[i]].ISOVERRIDE~=true then
@@ -242,12 +242,12 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
                 _CMDS[cmd[i]]=nil
             end
         end
-        if i>1 then table.insert(abbr,cmd[i]) end                
+        if i>1 then table.insert(abbr,cmd[i]) end
     end
 
     for i=1,#cmd do _CMDS.___ABBR___[cmd[i]]=tmp  end
 
-    cmd=tmp 
+    cmd=tmp
 
     local src=env.callee()
     local desc=help_func
@@ -258,7 +258,7 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
 
     if type(desc)=="string" then
         desc = desc:gsub("^[\n\r%s\t]*[\n\r]+","")
-        desc = desc:match("([^\n\r]+)") 
+        desc = desc:match("([^\n\r]+)")
     elseif desc then
         print(cmd..': Unexpected command definition, the description should be a function or string, but got '..type(desc))
         desc=nil
@@ -269,7 +269,7 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
         FILE      = src,          --the file name that defines & executes the command
         DESC      = desc,         --command short help without \n
         HELPER    = help_func,    --command detail help, it is a function
-        FUNC      = call_func,    --command function        
+        FUNC      = call_func,    --command function
         MULTI     = is_multiline,
         ABBR      = table.concat(abbr,','),
         ARGS      = paramCount,
@@ -289,8 +289,8 @@ function env.remove_command(cmd)
     _CMDS[cmd]=nil
     for k,v in pairs(_CMDS.___ABBR___) do
         if(v==cmd) then _CMDS.___ABBR___[k]=nil end
-    end 
-end    
+    end
+end
 
 function env.callee(idx)
     if type(idx)~="number" then idx=3 end
@@ -303,7 +303,7 @@ function env.callee(idx)
     return src:gsub("%.%w+$","#"..info.currentline)
 end
 
-function env.format_error(src,errmsg,...)  
+function env.format_error(src,errmsg,...)
     errmsg=errmsg or ""
     --errmsg=errmsg:gsub('.*Exception%:%s*','')
     if src then
@@ -318,7 +318,7 @@ function env.format_error(src,errmsg,...)
 end
 
 function env.warn(...)
-    local str=env.format_error(env.callee(),...)   
+    local str=env.format_error(env.callee(),...)
     print(str)
 end
 
@@ -340,7 +340,7 @@ function env.checkerr(result,msg,...)
 end
 
 local writer=writer
-function env.exec_command(cmd,params)    
+function env.exec_command(cmd,params)
     local result
     local name=cmd:upper()
     cmd=_CMDS[cmd]
@@ -352,27 +352,27 @@ function env.exec_command(cmd,params)
     push_history(stack)
     if not cmd.FUNC then return end
     env.CURRENT_CMD=name
-    local _,isMain=coroutine.running() 
+    local _,isMain=coroutine.running()
 
-    
+
     local event=env.event and env.event.callback
     if event then
         event("BEFORE_COMMAND",name,params)
-        if isMain then 
+        if isMain then
             event("BEFORE_ROOT_COMMAND",name,params)
             env.CURRENT_ROOT_CMD=name
         end
     end
 
     local args= cmd.OBJ and {cmd.OBJ,table.unpack(params)} or {table.unpack(params)}
-    
+
     local funs=type(cmd.FUNC)=="table" and cmd.FUNC or {cmd.FUNC}
     for _,func in ipairs(funs) do
         if writer then
-            writer:print(env.ansi.mask("NOR","")) 
+            writer:print(env.ansi.mask("NOR",""))
             writer:flush()
         end
-        
+
         local co=coroutine.create(func)
         local res={coroutine.resume(co,table.unpack(args))}
 
@@ -390,10 +390,10 @@ function env.exec_command(cmd,params)
                 print(env.ansi.mask("HIR",res[2]))
             end
         elseif not result then
-            result=res       
+            result=res
         end
     end
-    
+
     if event then
         if not env.IS_INTERNAL_EVAL then event("AFTER_SUCCESS_COMMAND",name,params,result[1]) end
         if isMain then event("AFTER_ROOT_COMMAND",name,params,result[1]) end
@@ -414,7 +414,7 @@ function env.set_prompt(name,default,isdefault)
         previous_prompt=default
         return nil;
     end
-    default=default:upper()    
+    default=default:upper()
     if not name then
         cache_prompt=default
         if fix_prompt then default=fix_prompt end
@@ -434,13 +434,13 @@ function env.pending_command()
     return curr_stmt and curr_stmt~=""
 end
 
-function env.clear_command()    
+function env.clear_command()
     if env.pending_command() then
         multi_cmd,curr_stmt=nil,nil
         env.CURRENT_PROMPT=env.PRI_PROMPT
     end
     local prompt=env.PRI_PROMPT
-    
+
     if env.ansi then
         local prompt_color="%s%s"..env.ansi.get_color("NOR").."%s"
         prompt=prompt_color:format(env.ansi.get_color("PROMPTCOLOR"),prompt,env.ansi.get_color("COMMANDCOLOR"))
@@ -449,32 +449,32 @@ function env.clear_command()
     env.reset_input("")
 end
 
-function env.parse_args(cmd,rest)    
+function env.parse_args(cmd,rest)
     --deal with the single-line commands
     local arg_count
     if type(cmd)=="number" then
         arg_count=cmd+1
     else
-        if not cmd then 
-            cmd,rest=rest:match('([^%s\n\r\t'..env.END_MARKS[1]..']+)[%s\n\r\t]*(.*)') 
+        if not cmd then
+            cmd,rest=rest:match('([^%s\n\r\t'..env.END_MARKS[1]..']+)[%s\n\r\t]*(.*)')
             cmd = cmd and cmd:upper() or "_unknown_"
         end
         env.checkerr(_CMDS[cmd],'Unknown command "'..cmd..'"!')
         arg_count=_CMDS[cmd].ARGS
     end
-   
-    local args={}  
+
+    local args={}
     if arg_count == 1 then
         args[#args+1]=cmd..(rest:len()> 0 and (" "..rest) or "")
     elseif arg_count == 2 then
         args[#args+1]=rest
-    elseif rest then 
+    elseif rest then
         local piece=""
         local quote='"'
         local is_quote_string = false
         for i=1,#rest,1 do
             local char=rest:sub(i,i)
-            if is_quote_string then--if the parameter starts with quote                
+            if is_quote_string then--if the parameter starts with quote
                 if char ~= quote then
                     piece = piece .. char
                 elseif (rest:sub(i+1,i+1) or " "):match("^[%s\n\t\r]*$") then
@@ -487,7 +487,7 @@ function env.parse_args(cmd,rest)
             else
                 if char==quote then
                     --begin a quote string, if its previous char is not a space, then bypass
-                    is_quote_string,piece = true,piece..quote               
+                    is_quote_string,piece = true,piece..quote
                 elseif not char:match("([%s\t\r\n])") then
                     piece = piece ..char
                 elseif piece ~= '' then
@@ -495,7 +495,7 @@ function env.parse_args(cmd,rest)
                 end
             end
             if #args>=arg_count-2 then--the last parameter
-                piece=rest:sub(i+1):gsub("^([%s\t\r\n]+)",""):gsub('^"(.*)"$','%1')                
+                piece=rest:sub(i+1):gsub("^([%s\t\r\n]+)",""):gsub('^"(.*)"$','%1')
                 args[#args+1],piece=piece,''
                 break
             end
@@ -507,10 +507,10 @@ function env.parse_args(cmd,rest)
             end
         elseif piece~='' then
             args[#args+1]=piece
-        end   
+        end
     end
 
-    for i=#args,1,-1 do 
+    for i=#args,1,-1 do
         if args[i]=="" then table.remove(args,i) end
         break
     end
@@ -520,7 +520,7 @@ end
 function env.force_end_input()
     if not env.pending_command() then return end
     if curr_stmt then
-        local stmt={multi_cmd,env.parse_args(multi_cmd,curr_stmt)}                                
+        local stmt={multi_cmd,env.parse_args(multi_cmd,curr_stmt)}
         multi_cmd,curr_stmt=nil,nil
         env.CURRENT_PROMPT=env.PRI_PROMPT
         if exec~=false then
@@ -545,7 +545,7 @@ function env.eval_line(line,exec)
         if dbcli_current_item.skip_subsystem then
             subsystem_prefix=""
         elseif #subsystem_prefix>0 then
-            if line:lower():find(subsystem_prefix:lower(),1,true)== 1 then 
+            if line:lower():find(subsystem_prefix:lower(),1,true)== 1 then
                 subsystem_prefix=""
             else
                 local cmd=env.parse_args(2,line)[1]
@@ -553,7 +553,7 @@ function env.eval_line(line,exec)
                     subsystem_prefix=""
                     dbcli_current_item.skip_subsystem=true
                 end
-            end 
+            end
         end
         line=(subsystem_prefix..line:gsub("^%.","",1)):gsub('^[%z\128-\255%s\t]+','')
         if line:match('^([^%w])') then
@@ -561,7 +561,7 @@ function env.eval_line(line,exec)
             for i=math.min(#line,5),1,-1 do
                 cmd=line:sub(1,i)
                 if _CMDS[cmd] then
-                    if #line>i and not line:sub(i+1,i+1):find('[%s\t\r]') then 
+                    if #line>i and not line:sub(i+1,i+1):find('[%s\t\r]') then
                         line=cmd..' '..line:sub(i+1)
                     end
                     break
@@ -580,27 +580,27 @@ function env.eval_line(line,exec)
         curr_stmt = curr_stmt .."\n"
         return multi_cmd
     end
-    
+
     if multi_cmd then return check_multi_cmd(line) end
-    
+
     local cmd,rest=line:match('^%s*([^%s\t]+)[%s\t]*(.*)')
     if not cmd then return end
     cmd=subsystem_prefix=="" and cmd:gsub(env.END_MARKS[1]..'+$',''):upper() or cmd
     env.CURRENT_CMD=cmd
     if not (_CMDS[cmd]) then
         push_stack(false)
-        return print("No such command["..cmd.."], please type 'help' for more information.")        
+        return print("No such command["..cmd.."], please type 'help' for more information.")
     elseif _CMDS[cmd].MULTI then --deal with the commands that cross-lines
         multi_cmd=cmd
         env.CURRENT_PROMPT=env.MTL_PROMPT
         curr_stmt = ""
         return check_multi_cmd(rest)
     end
-    
+
     --print('Command:',cmd,table.concat (args,','))
     rest=subsystem_prefix=="" and rest:gsub("["..env.END_MARKS[1].."%s]+$","") or rest
     local args=env.parse_args(cmd,rest)
-    
+
     if exec~=false then
         env.exec_command(cmd,args,local_stack)
         push_stack(false)
@@ -644,8 +644,8 @@ function env.set_endmark(name,value)
     if value:gsub('\\[nrt]',''):match('[%w]') then return print('Cannot be alphanumeric characters. ') end;
     value=value:gsub("\\+",'\\')
     local p1=value:sub(1,1)
-    local p2=value:sub(2):gsub('\\(%w)',function(s) 
-        return s=='n' and '\n[%s\t]*' or s=='r' and '\r[%s\t]*' or s=='t' and '\t[%s\t]*' or '\\'..s  
+    local p2=value:sub(2):gsub('\\(%w)',function(s)
+        return s=='n' and '\n[%s\t]*' or s=='r' and '\r[%s\t]*' or s=='t' and '\t[%s\t]*' or '\\'..s
     end) or p1
 
     env.END_MARKS={p1,p2}
@@ -664,8 +664,8 @@ function env.check_comment(cmd,other_parts)
 end
 
 function env.onload(...)
-    env.__ARGS__={...} 
-    env.init=require("init")     
+    env.__ARGS__={...}
+    env.init=require("init")
     env.init.init_path()
     for k,v in ipairs({'jit','ffi','bit'}) do
         if not _G[v] then
@@ -683,17 +683,17 @@ function env.onload(...)
             end
         end
     end
-    
+
     os.setlocale('',"all")
 
     env.set_command(nil,"RELOAD","Reload environment, including variables, modules, etc",env.reload,false,1)
     env.set_command(nil,"LUAJIT","#Switch to luajit interpreter, press Ctrl+Z to exit.",function() os.execute(('"%sbin%sluajit"'):format(env.WORK_DIR,env.PATH_DEL)) end,false,1)
     env.set_command(nil,"-P","#Test parameters. Usage: -p <command> [<args>]",env.testcmd,false,99)
-    
+
     env.init.onload()
 
     env.set_prompt(nil,"SQL")
-    if env.set and env.set.init then 
+    if env.set and env.set.init then
         env.set.init("Prompt","SQL",env.set_prompt,
                   "core","Define command's prompt, if value is 'timing' then will record the time cost(in second) for each execution.")
         env.set.init("COMMAND_ENDMARKS",end_marks,env.set_endmark,
@@ -706,7 +706,7 @@ function env.onload(...)
     end
     if env.event then
         env.event.snoop("ON_COMMAND_ABORT",env.clear_command)
-        env.event.callback("ON_ENV_LOADED") 
+        env.event.callback("ON_ENV_LOADED")
     end
 
     set_command(nil,"/*"    ,   '#Comment',        nil   ,env.check_comment,2)
@@ -725,19 +725,19 @@ function env.onload(...)
                 env.eval_line(v..env.END_MARKS[1])
             end
         end
-    end 
+    end
 end
 
 function env.unload()
     if env.event then env.event.callback("ON_ENV_UNLOADED") end
     local e,msg=pcall(env.init.unload,init.module_list,env)
-    if not e then print(msg) end 
+    if not e then print(msg) end
     env.init=nil
     package.loaded['init']=nil
     _CMDS.___ABBR___={}
-    if env.jit and env.jit.flush then 
+    if env.jit and env.jit.flush then
         e,msg=pcall(env.jit.flush)
-        if not e then print(msg) end 
+        if not e then print(msg) end
     end
 end
 
@@ -754,7 +754,7 @@ function env.load_data(file,isUnpack)
     if not f then
         return {}
     end
-    local txt=f:read("*a")    
+    local txt=f:read("*a")
     f:close()
     if not txt or txt:gsub("[\n\t%s\r]+","")=="" then return {} end
     return isUnpack==false and txt or env.MessagePack.unpack(txt)
@@ -778,17 +778,17 @@ function env.write_cache(file,txt)
     local f=io.open(file,'w')
     if not f then
         env.raise("Unable to save "..file)
-    end   
+    end
     f:write(txt)
     f:close()
     return dest
 end
 
 function env.resolve_file(filename,ext)
-    if not filename:find('[\\/]') then 
-        filename= env._CACHE_PATH..filename 
+    if not filename:find('[\\/]') then
+        filename= env._CACHE_PATH..filename
     elseif not filename:find('^%a:') then
-        filename= env.WORK_DIR..env.PATH_DEL..filename 
+        filename= env.WORK_DIR..env.PATH_DEL..filename
     end
     filename=filename:gsub('[\\/]+',env.PATH_DEL)
 

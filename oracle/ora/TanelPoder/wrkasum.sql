@@ -15,10 +15,10 @@ PROMPT ==========================================
  FROM
      gv$sql_workarea_active
  WHERE (:V1 IS NULL OR :V1 in(''||qcsid,''||sid,sql_id))
- GROUP BY 
+ GROUP BY
      operation_type
    , policy
- ORDER BY 
+ ORDER BY
      actual_pga_mb DESC NULLS LAST
 /
 
@@ -37,7 +37,7 @@ BEGIN
         WHERE  sql_id = r.sql_id
         AND    ROWNUM < 2;
     END LOOP;
-    
+
     OPEN :WRKSQL FOR
         SELECT /*+no_expand*/
              sql_id
@@ -53,11 +53,11 @@ BEGIN
              gv$sql_workarea_active a,TABLE(sqls) b
          WHERE b.column_value(+) like a.sql_id||':%'
          AND   (:V1 IS NULL OR :V1 in(''||qcsid,''||sid,a.sql_id))
-         GROUP BY 
+         GROUP BY
              sql_id
            , policy
            , b.column_value
-         ORDER BY 
+         ORDER BY
              temp_mb DESC NULLS LAST;
 END;
 /

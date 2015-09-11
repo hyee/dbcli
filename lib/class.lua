@@ -18,14 +18,14 @@ function class(super,init)
     local this_class=setmetatable(init or {},{__newindex=newindex})
     super=super and rawget(super,'__class') or super
     this_class.__className=debug.getinfo(2).short_src
-    this_class.new=function(...) 
+    this_class.new=function(...)
         local obj={}
         local attrs,super
 
         obj.__class=this_class
 
         if this_class.__super then
-            super,attrs = this_class.__super.new(...)      
+            super,attrs = this_class.__super.new(...)
         else
             super,attrs={},{}
         end
@@ -48,7 +48,7 @@ function class(super,init)
 
                  if type(v)~="function" or rawget(attrs,k)==nil then
                     rawset(attrs,k,v)
-                 end                
+                 end
             end
         })
 
@@ -62,10 +62,10 @@ function class(super,init)
         return obj,attrs
     end
 
-    if type(super)=="table" and type(super.new)=="function" then    
+    if type(super)=="table" and type(super.new)=="function" then
         rawset(this_class,'__super',super)
     end
-    
+
     return this_class
 end
 

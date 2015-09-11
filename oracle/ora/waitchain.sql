@@ -3,7 +3,7 @@ WITH c AS(SELECT /*+materialize*/* FROM  v$wait_chains),
 r(cid,INSTANCE,SID,sess_serial#,lv) AS
  (SELECT chain_id,INSTANCE, SID, sess_serial#, 0 lv
   FROM   c
-  WHERE  blocker_SID IS NULL 
+  WHERE  blocker_SID IS NULL
   OR     (CHAIN_IS_CYCLE='TRUE' and chain_id=(select min(chain_id) from c where CHAIN_IS_CYCLE='TRUE'))
   UNION ALL
   SELECT c.chain_id,c.INSTANCE, c.SID, c.sess_serial#, r.lv + 1
@@ -11,7 +11,7 @@ r(cid,INSTANCE,SID,sess_serial#,lv) AS
   WHERE  c.blocker_instance = r.INSTANCE
   AND    c.blocker_sid = r.sid
   AND    c.blocker_sess_serial# = r.sess_serial#
-  AND    r.lv < 10) 
+  AND    r.lv < 10)
 SEARCH DEPTH FIRST BY cid SET cid_order
 SELECT rpad(' ',lv*2)|| nvl(wait_event_text,chain_signature) wait_event_text,
        c.INSTANCE inst,

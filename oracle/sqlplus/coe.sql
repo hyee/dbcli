@@ -1,5 +1,5 @@
 /*[[MOS#215187.1: Generate SQL Profile based on target SQL. Usage: coe [SQL_ID] [PLAN_HASH_VALUE]
-    
+
 REM $Header: 215187.1 coe_xfr_sql_profile.sql 11.4.1.4 2010/07/12 csierra $
 REM
 REM Copyright (c) 2000-2010, Oracle Corporation. All rights reserved.

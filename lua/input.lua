@@ -5,7 +5,7 @@ io.stdout:write("    | DBCLI, type 'conn' to connect to db, or 'help' for more i
 io.stdout:write("    ======================================================================================================================================\n\n")
 
 local env=require("env")
-env.onload(...)  
+env.onload(...)
 
 --start the CLI interpretor
 
@@ -32,26 +32,26 @@ function env.reset_input(line)
     end
 end
 
-while true do  
+while true do
     if env.CURRENT_PROMPT=="_____EXIT_____" then break end
     line = reader:readLine(prompt_color:format(env._SUBSYSTEM and color("PROMPTSUBCOLOR") or color("PROMPTCOLOR"),env.CURRENT_PROMPT,color("COMMANDCOLOR")))
     if not line or (line:lower() == 'quit' or line:lower() == 'exit') and not env._SUBSYSTEM then
         print("Exited.")
-        env.unload()        
-        os.exit(0,true) 
+        env.unload()
+        os.exit(0,true)
     end
 
     clock=os.clock(),eval(line)
-    
+
     if env.CURRENT_PROMPT==env.MTL_PROMPT and not stack then
         stack={line}
         reader:setMultiplePrompt(nil)
     elseif stack then
         env.reset_input(line)
     end
-  
+
     if env.PRI_PROMPT=="TIMING> " and env.CURRENT_PROMPT~=env.MTL_PROMPT then
         env.CURRENT_PROMPT=string.format('%06.2f',os.clock()-clock)..'> '
-        env.MTL_PROMPT=string.rep(' ',#env.CURRENT_PROMPT)    
+        env.MTL_PROMPT=string.rep(' ',#env.CURRENT_PROMPT)
     end
 end

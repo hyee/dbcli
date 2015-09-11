@@ -51,7 +51,7 @@ FLAG       NUMBER
                KCBBHFFW  0x200000  8.1  Buffer has been written once
                KCBBHFFB  0x400000       buffer is "logically" flushed
                KCBBHFRS  0x800000       ReSilvered already - do not redirty
-               KCBBHFKW 0x1000000  7.3  ckpt writing flag to avoid rescan 
+               KCBBHFKW 0x1000000  7.3  ckpt writing flag to avoid rescan
                         0x1000000  8.0  Not used
                KCBBHDRC 0x1000000  8.1  buffer is nocache
                         0x2000000  7.3  Not used
@@ -142,7 +142,7 @@ MOD         RAW(4)
 */
 
 WITH s AS(SELECT /*+no_merge*/* FROM gv$session WHERE  p1raw!='00'),
-     w AS(SELECT /*+MATERIALIZED*/ ROWNUM r,a.* FROM V$WAITSTAT a)  
+     w AS(SELECT /*+MATERIALIZED*/ ROWNUM r,a.* FROM V$WAITSTAT a)
 SELECT /*+ordered use_hash(s b o)*/
      s.inst_id, s.sid, s.serial#, s.event, b.obj data_obj_id,FILE#, b.DBABLK BLOCK#, o.owner,
      o.object_name, o.subobject_name, o.object_type,
@@ -150,9 +150,9 @@ SELECT /*+ordered use_hash(s b o)*/
      decode(b.state,0,'free',1,'xcur',2,'scur',3,'cr', 4,'read',5,'mrec',6,'irec',7,'write',8,'pi', 9,'memory',10,'mwrite',11,'donated') state,
      TCH,
      decode(bitand(flag, 1), 0, 'N', 'Y') DIRTY,
-     decode(bitand(flag, 16), 0, 'N', 'Y') TEMP, 
+     decode(bitand(flag, 16), 0, 'N', 'Y') TEMP,
      decode(bitand(flag, 1536), 0, 'N', 'Y') PING,
-     decode(bitand(flag, 16384), 0, 'N', 'Y') STALE, 
+     decode(bitand(flag, 16384), 0, 'N', 'Y') STALE,
      decode(bitand(flag, 65536), 0, 'N', 'Y') DIRECT
 FROM   s, x$bh b, dba_objects o
 WHERE  HLADDR = p1raw

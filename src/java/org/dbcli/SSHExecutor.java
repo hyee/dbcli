@@ -6,10 +6,7 @@ import jline.console.completer.Completer;
 import jline.internal.Ansi;
 
 import java.io.*;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.channels.CompletionHandler;
-import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -33,7 +30,6 @@ public class SSHExecutor {
     JSch ssh;
     PipedOutputStream shellWriter;
     PipedInputStream pipeIn;
-    PrintWriter writer;
     Printer pr;
     HashMap<Integer, Object[]> forwards;
     HashMap<String, Channel> channels;
@@ -62,6 +58,20 @@ public class SSHExecutor {
         connect(host, port, user, password, linePrefix);
     }
 
+    public void output(String message, boolean newLine) {
+        StringBuilder sb = new StringBuilder((linePrefix + message).length());
+        if (newLine) sb.append(linePrefix);
+        for (int i = 0; i < message.length(); i++) {
+            char c = message.charAt(i);
+            if (c == '\r') continue;
+            sb.append(c);
+            if (c == '\n') sb.append(linePrefix);
+        }
+        if (!newLine) System.out.print(sb.toString());
+        else System.out.println(sb.toString());
+        System.out.flush();
+    }
+
     public void connect(String host, int port, String user, final String password, String linePrefix) throws Exception {
         try {
             ssh = new JSch();
@@ -76,6 +86,8 @@ public class SSHExecutor {
             session.setServerAliveInterval((int) TimeUnit.SECONDS.toMillis(10));
             session.setServerAliveCountMax(10);
             session.setTimeout(0);
+            session.setInputStream(System.in);
+            session.setOutputStream(System.out);
             session.connect();
             session.setUserInfo((UserInfo) new SSHUserInfo("jsch"));
             this.host = host;
@@ -91,7 +103,7 @@ public class SSHExecutor {
             shellWriter = new PipedOutputStream(pipeIn);
             pr = new Printer();
             pr.reset(true);
-            writer=new PrintWriter((TERMTYPE!="none")?new OutputStreamWriter(System.out,Console.charset):Console.writer);
+
             shell.setInputStream(pipeIn);
             shell.setOutputStream(pr);
             shell.setEnv("TERM", TERMTYPE == "none" ? "ansi" : TERMTYPE);
@@ -99,7 +111,6 @@ public class SSHExecutor {
             shell.setPtyType(TERMTYPE == "none" ? "ansi" : TERMTYPE, COLS, ROWS, 1400, 900);
             shell.connect();
             waitCompletion();
-            session.sendKeepAliveMsg();
         } catch (Exception e) {
             throw e;
         }
@@ -112,12 +123,7 @@ public class SSHExecutor {
     }
 
     public boolean isConnect() {
-        if(shell==null) return false;
-        if(!shell.isConnected()) {
-            close();
-            return false;
-        }
-        return true;
+        return shell == null ? false : session.isConnected();
     }
 
     private void closeShell() {
@@ -128,15 +134,22 @@ public class SSHExecutor {
             if(shell!=null) {
                 shell.getInputStream().close();
                 shell.disconnect();
-                shell=null;
             }
         } catch (Exception e) {
             //e.printStackTrace();
         }
     }
 
+    public void testConnect() throws Exception {
+        if (isConnect() || !isLogin) return;
+        {
+            output("Connection is lost, try to re-connect ...", true);
+            closeShell();
+        }
+        connect(this.host, this.port, this.user, this.password, this.linePrefix);
+    }
 
-    public void close() {
+    public void close() throws Exception {
         closeShell();
         session.disconnect();
         isLogin = false;
@@ -147,7 +160,7 @@ public class SSHExecutor {
     }
 
     public int setForward(int localPort, Integer remotePort, String remoteHost) throws Exception {
-        if(!isConnect()) return -1;
+        testConnect();
         if (forwards.containsKey(localPort)) {
             session.delPortForwardingL(localPort);
             forwards.remove(localPort);
@@ -172,6 +185,7 @@ public class SSHExecutor {
 
     public void waitCompletion() throws Exception {
         long wait = 50L;
+        //shell.setInputStream(System.in);
         while (!isEnd && !shell.isClosed()) {
             int ch = Console.in.read(wait);
             while (ch >= 0) {
@@ -187,6 +201,8 @@ public class SSHExecutor {
         if (shell.isClosed()) {
             this.close();
         } else prompt = pr.getPrompt();
+
+        //shell.setInputStream(pipeIn);
     }
 
     public String getLastLine(String command, boolean isWait) throws Exception {
@@ -234,45 +250,40 @@ public class SSHExecutor {
         }
 
         public void showMessage(String m) {
-            System.out.println("Message from UserInfo: "+m);
+            output(m, true);
         }
     }
 
     class Printer extends OutputStream {
-        ByteBuffer buf=ByteBuffer.allocateDirect(1000000);
-        StringBuilder sb1= new StringBuilder(128);
+        StringBuilder sb;
         char lastChar;
         Pattern p = Pattern.compile("\33\\[[\\d\\;]+[mK]");
 
         boolean ignoreMessage;
 
         public Printer() {
-            buf.order(ByteOrder.nativeOrder());
             reset(false);
         }
 
         @Override
         public void write(int i) throws IOException {
             char c = (char) i;
-            buf.put((byte)i);
-            sb1.append(c);
+            //if (i == 0 || c=='\r') c=' ';
+            sb.append(c);
             if (c == '\n') {
-                lastLine=sb1.toString();
                 flush();
                 isStart = false;
-                buf.clear();
-                sb1.setLength(0);
-            } isEnd = (lastChar == '$' || lastChar == '>' || lastChar == '#') && c == ' ';
+                sb.setLength(0);
+            } else isEnd = (lastChar == '$' || lastChar == '>' || lastChar == '#') && c == ' ';
             lastChar = c;
         }
 
         public String getPrompt() {
-            return sb1.length() == 0 ? null : p.matcher(sb1.toString()).replaceAll("");
+            return sb.toString() == "" ? null : sb.toString();
         }
 
         public void reset(boolean ignoreMessage) {
-            buf.clear();
-            sb1.setLength(0);
+            sb = new StringBuilder(128);
             lastChar = '\0';
             isEnd = false;
             isStart = true;
@@ -281,25 +292,28 @@ public class SSHExecutor {
         }
 
         @Override
-        public synchronized void flush()  {
-                if (isStart || isEnd || buf.position() == 0) return;
-                int pos=buf.position();
-                buf.flip();
-                byte[] b=new byte[pos];
-                buf.get(b);
-                String line = new String(b);
-                isStart = false;
-                buf.clear();
-                if (!ignoreMessage) {
-                    if (TERMTYPE == "none") line=p.matcher(line).replaceAll("");
-                    writer.print(line);
-                    writer.flush();
+        public synchronized void flush() throws IOException{
+            if (isStart || isEnd || sb.length() == 0) return;
+            lastLine = sb.toString();
+            if (!ignoreMessage) {
+                if (TERMTYPE == "none") {
+                    Console.writer.write(p.matcher(lastLine).replaceAll(""));
+                    Console.writer.flush();
+                } else {
+                    System.out.print(lastLine);
+                    System.out.flush();
                 }
+
+            }
+            isStart = false;
+            sb.setLength(0);
         }
 
         @Override
         public void close() {
             reset(false);
+            sb = null;
+            //printer.close();
         }
     }
 }

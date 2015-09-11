@@ -40,7 +40,7 @@ function scripter:rehash(script_dir,ext_name)
         desc=desc:gsub("([\n\r]+%s*)REM","%1   ")
         desc=desc:gsub("([\n\r]+%s*)rem","%1   ")
         local cmd=v[1]:upper()
-        if cmdlist[cmd] then 
+        if cmdlist[cmd] then
             pathlist[cmdlist[cmd].path:lower()]=nil
         end
         cmdlist[cmd]={path=v[2],desc=desc,short_desc=desc:match("([^\n\r]+)") or ""}
@@ -60,7 +60,7 @@ function scripter:rehash(script_dir,ext_name)
         cmdlist[v[1]]={desc=v[2],short_desc=v[2]}
     end
 
-    cmdlist['./PATH'],cmdlist['./COUNT']=pathlist,counter 
+    cmdlist['./PATH'],cmdlist['./COUNT']=pathlist,counter
 
     return cmdlist
 end
@@ -70,25 +70,25 @@ Available parameters:
    Input bindings:  from :V1 to :V9
    Replacement:     from &V1 to &V9, used to replace the wildchars inside the SQL stmts
    Out   bindings:  :<alphanumeric>, the data type of output parameters should be defined in th comment scope
---]]-- 
+--]]--
 function scripter:parse_args(sql,args,print_args)
-    
+
     local outputlist={}
     local outputcount=0
-        
+
     --parse template
     local patterns,options={"(%b{})","([^\n\r]-)%s*[\n\r]"},{}
-    
+
     local desc
-    sql=sql:gsub(self.comment,function(item) 
+    sql=sql:gsub(self.comment,function(item)
         desc=item:match("%-%-%[%[(.*)%]%]%-%-")
-        if not desc then desc=item:match("%-%-%[%[(.*)%-%-%]%]") end    
-        return "" 
+        if not desc then desc=item:match("%-%-%[%[(.*)%-%-%]%]") end
+        return ""
     end,1)
-        
+
     args=args or {}
     local orgs,templates={},{}
-    
+
     local sub_pattern=('w_.$#/'):gsub('(.)',function(s) return '%'..s end)
     sub_pattern='(['..sub_pattern..']+)%s*=%s*(%b{})'
 
@@ -97,7 +97,7 @@ function scripter:parse_args(sql,args,print_args)
         args[param],orgs[param][2]=value,mapping and (param..'['..mapping..']') or ""
     end
 
-    if desc then    
+    if desc then
         --Parse the  &<V1-V30> and :<V1-V30> grammar, refer to ashtop.sql
         for _,p in ipairs(patterns) do
             for prefix,k,v in desc:gmatch('([&:@])([%w_]+)%s*:%s*'..p) do
@@ -108,7 +108,7 @@ function scripter:parse_args(sql,args,print_args)
                     for option,text in v:gmatch(sub_pattern) do
                         option,text=option:upper(),text:sub(2,-2)
                         default=default or option
-                        if prefix~="@" then                                                   
+                        if prefix~="@" then
                             if not options[option] then options[option]={} end
                             options[option][k]=text
                         else
@@ -127,21 +127,21 @@ function scripter:parse_args(sql,args,print_args)
                     if not k:match("^(V%d+)$") then
                         setvalue(k,templates[k][templates[k]['@default']],default)
                         templates[k]['@choose']=default
-                    end                    
+                    end
                 end
             end
         end
     end
 
     --Start to assign template value to args
-    for i=1,ARGS_COUNT do 
+    for i=1,ARGS_COUNT do
         args[i],args[tostring(i)],args["V"..i]=nil,nil,args["V"..i] or args[i] or args[tostring(i)] or ""
     end
 
     local arg1,ary={},{}
-    for i=1,ARGS_COUNT do    
+    for i=1,ARGS_COUNT do
         local k,v="V"..i,tostring(args["V"..i])
-        ary[i]=v        
+        ary[i]=v
         if v:sub(1,1)=="-"  then
             local idx,rest=v:sub(2):match("^([%w_]+)(.*)$")
             if idx then
@@ -149,8 +149,8 @@ function scripter:parse_args(sql,args,print_args)
                 for param,text in pairs(options[idx] or {}) do
                     ary[i]=nil
                     local ary_idx=tonumber(param:match("^V(%d+)$"))
-                    if args[param] and ary_idx then                    
-                        ary[ary_idx]=nil                    
+                    if args[param] and ary_idx then
+                        ary[ary_idx]=nil
                         arg1[param]=text..rest
                     else
                         setvalue(param,text..rest,idx)
@@ -160,8 +160,8 @@ function scripter:parse_args(sql,args,print_args)
                         templates[param]['@choose']=idx
                     end
                 end
-            end      
-        end    
+            end
+        end
     end
 
     for i=ARGS_COUNT,1,-1 do
@@ -170,7 +170,7 @@ function scripter:parse_args(sql,args,print_args)
 
     for i=1,ARGS_COUNT do
         local param="V"..i
-        if arg1[param] then 
+        if arg1[param] then
             table.insert(ary,i,arg1[param])
         end
         if ary[i]=="." then ary[i]="" end
@@ -183,9 +183,9 @@ function scripter:parse_args(sql,args,print_args)
         else
             local idx,rest=option:match("^([%w_]+)(.*)$")
             if idx then
-                idx,rest=idx:upper(),rest:gsub('^"(.*)"$','%1')               
+                idx,rest=idx:upper(),rest:gsub('^"(.*)"$','%1')
                 if options[idx] and options[idx][param] then
-                    setvalue(param,options[idx][param]..rest,idx)            
+                    setvalue(param,options[idx][param]..rest,idx)
                     template['@choose']=idx
                 end
             end
@@ -221,7 +221,7 @@ function scripter:parse_args(sql,args,print_args)
             local new,template,org=args[k],templates[k],orgs[k] or {}
             if type(template)=="table" then
                 local default,select=template['@default'],template['@choose']
-                for option,text in pairs(template) do                    
+                for option,text in pairs(template) do
                     if option~="@default" and option~="@choose" then
                         ind=ind+1
                         rows[#rows+1]={ind==1 and k or "",
@@ -229,7 +229,7 @@ function scripter:parse_args(sql,args,print_args)
                                        default==option and "Y" or "N",
                                        select==option and "Y" or "N",
                                        strip(text)}
-                    end                
+                    end
                 end
                 if #rows>1 then rows[#rows+1]={""} end
             end
@@ -253,12 +253,12 @@ function scripter:parse_args(sql,args,print_args)
 end
 
 function scripter:run_sql(sql,args,print_args)
-    if not self.db or not self.db.is_connect then 
+    if not self.db or not self.db.is_connect then
         env.raise("Database connection is not defined!")
     end
 
     env.checkerr(self.db:is_connect(),"Database is not connected!")
-    
+
     if print_args or not args then return end
     --remove comment
     sql=sql:gsub(self.comment,"",1)
@@ -266,7 +266,7 @@ function scripter:run_sql(sql,args,print_args)
     sql=('\n'..sql):gsub("\n%s*/%*.-%*/",""):gsub("/[\n\r\t%s]*$","")
     local sq="",cmd,params,pre_cmd,pre_params
     local cmds=env._CMDS
-    
+
     local ary=env.var.backup_context()
     env.var.import_context(args)
     local eval=env.eval_line
@@ -286,7 +286,7 @@ function scripter:get_script(cmd,args,print_args)
         local keys={}
         for k,_ in pairs(self.cmdlist) do
             keys[#keys+1]=k
-        end 
+        end
     end
 
     if not cmd then
@@ -298,7 +298,7 @@ function scripter:get_script(cmd,args,print_args)
     if cmd:sub(1,1)=='-' and args[1]=='@' and args[2] then
         args[2]='@'..args[2]
         table.remove(args,1)
-    elseif cmd=='@' and args[1] then 
+    elseif cmd=='@' and args[1] then
         cmd=cmd..args[1]
         table.remove(args,1)
     end
@@ -315,7 +315,7 @@ function scripter:get_script(cmd,args,print_args)
     end
 
     local file,f,target_dir
-    if cmd:sub(1,1)=="@" then   
+    if cmd:sub(1,1)=="@" then
         target_dir,file=self:check_ext_file(cmd)
         env.checkerr(target_dir['./COUNT']>0,"Cannot find script "..cmd:sub(2))
         if not file then return env.helper.helper(self:get_command(),cmd) end
@@ -325,7 +325,7 @@ function scripter:get_script(cmd,args,print_args)
         file=self.cmdlist[cmd].path
     end
     env.checkerr(file,'Cannot find this script under "'..self.short_dir..'"')
-    
+
     local f=io.open(file)
     env.checkerr(f,"Cannot find this script!")
     local sql=f:read('*a')
@@ -353,7 +353,7 @@ function scripter:check_ext_file(cmd)
     local target_dir
     cmd=cmd:lower():gsub('^@["%s]*(.-)["%s]*$','%1')
     target_dir=self.extend_dirs[cmd]
-    
+
     if not target_dir then
         for k,v in pairs(self.extend_dirs) do
             if cmd:find(k,1,true) then
@@ -376,7 +376,7 @@ function scripter:check_ext_file(cmd)
                 self.extend_dirs[k]=nil
             end
         end
-        return target_dir,nil 
+        return target_dir,nil
     end
     cmd=cmd:match('([^\\/]+)$'):match('[^%.%s]+'):upper()
     return target_dir,cmd
@@ -406,11 +406,11 @@ function scripter:helper(_,cmd,search_key)
         local undoc_index=0
         for k,v in pairs(cmdlist) do
             if (not search_key or k:find(search_key:upper(),1,true)) and k:sub(1,2)~='./' and k:sub(1,1)~='_' then
-                if search_key or not (v.path or ""):find('[\\/]test[\\/]') then                
+                if search_key or not (v.path or ""):find('[\\/]test[\\/]') then
                     local desc=v.short_desc:gsub("^[%s\t]+","")
                     if desc and desc~="" then
                         table.insert(rows[1],k)
-                        table.insert(rows[2],desc) 
+                        table.insert(rows[2],desc)
                     else
                         local flag=1
                         if v.path and v.path:lower():find(env.WORK_DIR:lower(),1,true) then
@@ -427,19 +427,19 @@ function scripter:helper(_,cmd,search_key)
                 end
             end
         end
-        if(undocs) then 
+        if(undocs) then
             undocs=undocs:gsub("[\n%s,]+$",'')
-            table.insert(rows[1],'_Undocumented_') 
-            table.insert(rows[2],undocs) 
+            table.insert(rows[1],'_Undocumented_')
+            table.insert(rows[2],undocs)
         end
         env.set.set("PIVOT",-1)
         env.set.set("HEADDEL",":")
         help=help..grid.tostring(rows)
-        env.set.restore("HEADDEL")    
+        env.set.restore("HEADDEL")
         return help
     end
     cmd = cmd:upper()
-    return cmdlist[cmd] and cmdlist[cmd].desc or "No such command["..cmd.."] !"        
+    return cmdlist[cmd] and cmdlist[cmd].desc or "No such command["..cmd.."] !"
 end
 
 function scripter:__onload()

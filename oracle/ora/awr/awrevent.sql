@@ -3,7 +3,7 @@
     @FIELD :{
                 11.0={,SUM(total_Waits_fg * flag) fg_counts, SUM(total_timeouts_fg * flag) fg_timeouts,
                   round(SUM(time_waited_micro * 1e-6 / 60 * flag), 2) fg_waited_mins},
-                10.0={} 
+                10.0={}
             }
     --]]
 ]]*/

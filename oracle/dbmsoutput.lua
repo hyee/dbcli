@@ -12,7 +12,7 @@ function output.setOutput(db)
 end
 
 local marker='/*GetDBMSOutput*/'
-output.stmt=marker..[[/*INTERNAL_DBCLI_CMD*/  
+output.stmt=marker..[[/*INTERNAL_DBCLI_CMD*/
         DECLARE
             l_line   VARCHAR2(32767);
             l_done   PLS_INTEGER := 32767;
@@ -46,7 +46,7 @@ function output.getOutput(db,sql)
     local isOutput=cfg.get("ServerOutput")
     if not ((output.prev_sql or ""):find(marker,1,true)) and not sql:find(marker,1,true) and not db:is_internal_call(sql) then
         local args={enable=isOutput,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB"}
-        if not pcall(db.internal_call,db,output.stmt,args) then return end  
+        if not pcall(db.internal_call,db,output.stmt,args) then return end
         local result=args.lob or args.buff
         if isOutput == "on" and result and result:match("[^\n%s]+") then
             result=result:gsub("[\n\r]","\n")
@@ -58,7 +58,7 @@ function output.getOutput(db,sql)
             env.set_title(prev_transaction and "TXN_ID: "..prev_transaction or "")
         end
     end
-    output.prev_sql=sql   
+    output.prev_sql=sql
 end
 
 
@@ -77,7 +77,7 @@ snoop("AFTER_ORACLE_EXEC",output.getOutput,nil,50)
 
 cfg.init("ServerOutput",
     "on",
-    function(name,value)        
+    function(name,value)
         output.setOutput(nil)
         return value
     end,
