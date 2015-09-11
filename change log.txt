@@ -1,3 +1,4 @@
+2015-09-11: ! public: fix issue "string slice too long" when fetching blob
 2015-09-11: ! oracle: fix issue for the "explain plan" statement
 2015-09-11: ! public: remove tailing spaces from codes; replace tab as 4 spaces
 2015-09-10: ! public: minor fixes

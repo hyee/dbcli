@@ -88,7 +88,8 @@ function db_Types:load_sql_types(className)
                 if action=="get" then
                     local str=result:getBytes(1,result:length())
                     result:free()
-                    local str1=string.rep('%2X',#str):format(str:byte(1,#str)):gsub(' ','0')
+                    str=str:sub(1,255)
+                    local str1=string.rep('%02X',#str):format(str:byte(1,#str))
                     return str1
                 else
                     return java.cast(result,'java.lang.String'):getBytes()
