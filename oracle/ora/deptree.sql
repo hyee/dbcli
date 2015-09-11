@@ -96,18 +96,18 @@ BEGIN
     n(v_objid, 0);
     dbms_lob.writeappend(v_result, 9, '</ROWSET>');
 
-	OPEN :cur FOR --
-	WITH dep AS(
-	   SELECT /*+materialize*/
-	          EXTRACTVALUE(COLUMN_VALUE,'/ROW/OBJ')+0 obj,
-	          EXTRACTVALUE(COLUMN_VALUE,'/ROW/CON')+0 con,
-			  EXTRACTVALUE(COLUMN_VALUE,'/ROW/LV')+0  lv
-	   FROM TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(v_result),'/ROWSET/ROW')))
-	) ,
-	res AS(
-		SELECT --+ordered use_nl(dep op us) index(us) no_expand
-			   LPAD(' ',lv*2*&CC) ||us.username||'.'||op.name
-				  ||nvl2(con,(select '('||name||')' from sys.con$ c where c.con#=dep.con),'') OBJECT_NAME,
+    OPEN :cur FOR --
+    WITH dep AS(
+       SELECT /*+materialize*/
+              EXTRACTVALUE(COLUMN_VALUE,'/ROW/OBJ')+0 obj,
+              EXTRACTVALUE(COLUMN_VALUE,'/ROW/CON')+0 con,
+              EXTRACTVALUE(COLUMN_VALUE,'/ROW/LV')+0  lv
+       FROM TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(v_result),'/ROWSET/ROW')))
+    ) ,
+    res AS(
+        SELECT --+ordered use_nl(dep op us) index(us) no_expand
+               LPAD(' ',lv*2*&CC) ||us.username||'.'||op.name
+                  ||nvl2(con,(select '('||name||')' from sys.con$ c where c.con#=dep.con),'') OBJECT_NAME,
               op.obj# OBJECT_ID,
               decode(op.type#,
                   0,'NEXT OBJECT',
@@ -173,10 +173,10 @@ BEGIN
                   decode(op.status, 0, 'N/A', 1, 'VALID', 'INVALID') STATUS,
                   op.ctime CREATED,
                   op.mtime LAST_DDL
-		FROM   dep,sys.obj$ op,dba_users us
-		WHERE  dep.obj = op.obj#
-		AND    op.owner#=us.user_id
-		AND   (us.username NOT IN('SYS','SYSTEM','PUBLIC') or v_owner in('SYS','SYSTEM','PUBLIC'))
+        FROM   dep,sys.obj$ op,dba_users us
+        WHERE  dep.obj = op.obj#
+        AND    op.owner#=us.user_id
+        AND   (us.username NOT IN('SYS','SYSTEM','PUBLIC') or v_owner in('SYS','SYSTEM','PUBLIC'))
         AND   (op.type#!=5 or us.username in('SYS','SYSTEM','PUBLIC')))
     select lpad(rownum,5)||' | ' "#", a.* FROM (select &DST * from res WHERE object_type NOT IN('UNDEFINED') ORDER BY &SRT) A;
 

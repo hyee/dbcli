@@ -20,7 +20,7 @@ FROM   (SELECT TABLESPACE_NAME,
         FROM   DBA_DATA_FILES
         GROUP  BY TABLESPACE_NAME) D,
        (SELECT TABLESPACE_NAME, ROUND(SUM(BYTES) / (1024 * 1024 * 1024), 2) FREE_SPACE,
-	           round(sqrt(max(blocks)/sum(blocks))* (100/sqrt(sqrt(count(blocks)))),2) fsfi
+               round(sqrt(max(blocks)/sum(blocks))* (100/sqrt(sqrt(count(blocks)))),2) fsfi
         FROM   DBA_FREE_SPACE
         GROUP  BY TABLESPACE_NAME) F
 WHERE  D.TABLESPACE_NAME = F.TABLESPACE_NAME(+)
