@@ -1,21 +1,16 @@
 package org.dbcli;
 
-import jline.AnsiWindowsTerminal;
 import jline.Terminal;
-import jline.TerminalFactory;
-import jline.WindowsTerminal;
 import jline.console.ConsoleReader;
 import jline.console.completer.Completer;
 import jline.console.history.History;
 import jline.internal.Configuration;
 import jline.internal.NonBlockingInputStream;
-import org.fusesource.jansi.WindowsAnsiOutputStream;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.IOException;
 import java.io.Writer;
-import java.util.Collection;
 import java.util.Iterator;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -27,7 +22,7 @@ public class Console extends ConsoleReader {
     public static ConsoleReader reader;
     public static NonBlockingInputStream in;
     public static Terminal terminal;
-    public static String   charset;
+    public static String charset;
     protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(5);
     private History his;
     private ScheduledFuture task;
@@ -37,7 +32,7 @@ public class Console extends ConsoleReader {
 
 
     public Console(Terminal t) throws IOException {
-        super(null,System.in, System.out,t);
+        super(null, System.in, System.out, t);
         his = getHistory();
         setExpandEvents(false);
         setHandleUserInterrupt(true);
@@ -47,7 +42,7 @@ public class Console extends ConsoleReader {
         Iterator<Completer> iterator = getCompleters().iterator();
         while (iterator.hasNext()) removeCompleter(iterator.next());
         reader = this;
-        charset=t.getOutputEncoding()==null?Configuration.getEncoding():t.getOutputEncoding();
+        charset = t.getOutputEncoding() == null ? Configuration.getEncoding() : t.getOutputEncoding();
     }
 
     public String readLine(String prompt) throws IOException {
@@ -99,7 +94,6 @@ public class Console extends ConsoleReader {
             try {
                 int ch = in.read(1L);
                 if (ch <= 0) return;
-                //System.out.println(ch);
                 for (int i = 0; i < keys.length; i++) {
                     if (ch != keys[i] && keys[i] != '*') continue;
                     event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, Character.toChars(ch).toString()));

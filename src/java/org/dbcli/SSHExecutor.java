@@ -2,13 +2,13 @@ package org.dbcli;
 
 
 import com.jcraft.jsch.*;
-import jline.console.completer.Completer;
-import jline.internal.Ansi;
 
-import java.io.*;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
 import java.nio.channels.CompletionHandler;
 import java.util.HashMap;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
@@ -128,10 +128,10 @@ public class SSHExecutor {
 
     private void closeShell() {
         try {
-            prompt=null;
-            if(pr!=null) pr.close();
-            if(shellWriter!=null) shellWriter.close();
-            if(shell!=null) {
+            prompt = null;
+            if (pr != null) pr.close();
+            if (shellWriter != null) shellWriter.close();
+            if (shell != null) {
                 shell.getInputStream().close();
                 shell.disconnect();
             }
@@ -193,9 +193,9 @@ public class SSHExecutor {
                 --wait;
                 ch = Console.in.read(1L);
             }
-            if(wait<50L) {
+            if (wait < 50L) {
                 shellWriter.flush();
-                wait=50L;
+                wait = 50L;
             }
         }
         if (shell.isClosed()) {
@@ -292,7 +292,7 @@ public class SSHExecutor {
         }
 
         @Override
-        public synchronized void flush() throws IOException{
+        public synchronized void flush() throws IOException {
             if (isStart || isEnd || sb.length() == 0) return;
             lastLine = sb.toString();
             if (!ignoreMessage) {

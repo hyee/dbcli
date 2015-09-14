@@ -305,7 +305,7 @@ end
 
 function env.format_error(src,errmsg,...)
     errmsg=errmsg or ""
-    --errmsg=errmsg:gsub('.*Exception%:%s*','')
+    errmsg=errmsg:gsub('^.*%s([^%: ]+Exception%:%s*)','%1'):gsub(".*IOException:%s*","")
     if src then
         local name,line=src:match("([^\\/]+)%#(%d+)$")
         if name then

@@ -5,7 +5,8 @@ import com.opencsv.CSVWriter;
 import com.opencsv.SQLWriter;
 import jline.AnsiWindowsTerminal;
 import jline.console.KeyMap;
-import org.fusesource.jansi.internal.WindowsSupport;
+import sun.misc.Signal;
+import sun.misc.SignalHandler;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -20,8 +21,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.Future;
 import java.util.zip.InflaterInputStream;
-
-import static jline.WindowsTerminal.ConsoleMode.ENABLE_ECHO_INPUT;
 
 
 public class Loader {
@@ -52,12 +51,18 @@ public class Loader {
             terminal = new AnsiWindowsTerminal();
             terminal.init();
             console = new Console(terminal);
-            printer=new PrintWriter(System.getenv("ANSICON_CMD")!=null?new OutputStreamWriter(System.out,Console.charset):Console.writer);
+
+            printer = new PrintWriter(System.getenv("ANSICON_CMD") != null ? new OutputStreamWriter(System.out, Console.charset) : Console.writer);
             //Ctrl+D
             keyMap = console.getKeys();
             keyMap.bind(String.valueOf(KeyMap.CTRL_D), new KeyListner(KeyMap.CTRL_D));
             q = new KeyListner('q');
-
+            Signal.handle(new Signal("INT"), new SignalHandler() {
+                @Override
+                public void handle(Signal signal) {
+                   q.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, Character.toChars(3).toString()));
+                }
+            });
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -263,6 +268,25 @@ public class Loader {
         }
     }
 
+    public void asyncCall(final Object o,final String func,final Object ... args) throws Exception {
+        asyncCall(new Callable<Integer>() {
+            @Override
+            public Integer call() throws Exception {
+                Method[] ms=o.getClass().getMethods();
+                for(Method m:ms) {
+                    System.out.println(m.getName());
+                    if(m.getName().equals(func))  {
+                        try {
+                            m.invoke(o,args);
+                            return 0;
+                        } catch (IllegalArgumentException e) {}
+                    }
+                }
+                throw new IOException("Cannot find target method :"+ func);
+            }
+        });
+    }
+
 
     public synchronized void sleep(int millSeconds) throws Exception {
         try {
@@ -295,8 +319,10 @@ public class Loader {
             try {
                 if (e != null) key = Character.codePointAt(e.getActionCommand(), 0);
                 if (!console.isRunning() && key != 'q' && key != 'Q') {
-                    lua.getGlobal("TRIGGER_ABORT");
-                    lua.call(0, 0);
+                    if(key!=3) {
+                        lua.getGlobal("TRIGGER_ABORT");
+                        lua.call(0, 0);
+                    }
                 } else {
                     if (stmt != null && !stmt.isClosed()) {
                         stmt.cancel();
