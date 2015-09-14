@@ -9,7 +9,7 @@ end
 
 function sqlstate.onload()
     env.event.snoop('ON_SQL_ERROR',sqlstate.parse_error,nil,1)
-    env.event.snoop('ON_SQL_PARSE_ERROR',sqlstate.parse_error,nil,1)  
+    env.event.snoop('ON_SQL_PARSE_ERROR',sqlstate.parse_error,nil,1)
 end
 
 return sqlstate

@@ -21,18 +21,18 @@ end
 
 function db2:connect(conn_str)
     java.loader:addPath(env.WORK_DIR..'db2'..env.PATH_DEL.."db2jcc4.jar")
-    java.loader:addPath(env.WORK_DIR..'db2'..env.PATH_DEL.."db2jcc_license_cu.jar") 
+    java.loader:addPath(env.WORK_DIR..'db2'..env.PATH_DEL.."db2jcc_license_cu.jar")
     java.system:setProperty('jdbc.drivers','com.ibm.db2.jcc.DB2Driver')
     java.system:setProperty('db2.jcc.charsetDecoderEncoder',3)
     local args
-    local usr,pwd,conn_desc 
+    local usr,pwd,conn_desc
     if type(conn_str)=="table" then
         args=conn_str
         usr,pwd,conn_desc=conn_str.user,
             packer.unpack_str(conn_str.password),
             conn_str.url:match("//(.*)$")--..(conn_str.internal_logon and " as "..conn_str.internal_logon or "")
         args.password=pwd
-        conn_str=string.format("%s/%s@%s",usr,pwd,conn_desc)        
+        conn_str=string.format("%s/%s@%s",usr,pwd,conn_desc)
     else
         usr,pwd,conn_desc = string.match(conn_str or "","(.*)/(.*)@(.+)")
     end
@@ -48,8 +48,8 @@ function db2:connect(conn_str)
     else
         database=conn_desc
     end
-    self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE') 
-    
+    self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
+
     local url, isdba=conn_desc:match('^(.*) as (%w+)$')
     url = url or conn_desc
 
@@ -61,7 +61,7 @@ function db2:connect(conn_str)
                   enableSeamlessFailover='1',
                   clientRerouteAlternateServerName=alt_addr,
                   clientRerouteAlternatePortNumber=alt_addr and (alt_port or port):sub(2)}
-    
+
     self:merge_props(
         {driverClassName="com.ibm.db2.jcc.DB2Driver",
          retrieveMessagesFromServerOnGetMessage='true',
@@ -73,8 +73,8 @@ function db2:connect(conn_str)
     local prompt=(args.jdbc_alias or url):match('([^:/@]+)$')
     if event then event("BEFORE_DB2_CONNECT",self,sql,args,result) end
     env.set_title("")
-    self.super.connect(self,args)    
-    
+    self.super.connect(self,args)
+
     self.conn=java.cast(self.conn,"com.ibm.db2.jcc.DB2Connection")
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     local version=self:get_value("select SERVICE_LEVEL FROM TABLE(sysproc.env_get_inst_info())")
@@ -82,10 +82,10 @@ function db2:connect(conn_str)
     self.props.db_user=args.user:upper()
     self.props.database=database
     self.conn_str=packer.pack_str(conn_str)
-    
-    prompt=(prompt or database:upper()):match("^([^,%.&]+)") 
+
+    prompt=(prompt or database:upper()):match("^([^,%.&]+)")
     env.set_prompt(nil,prompt)
-    
+
     env.set_title(('%s - User: %s   Server: %s   Version: DB2(%s)'):format(database,self.props.db_user,server,self.props.db_version))
     if event then event("AFTER_DB2_CONNECT",self,sql,args,result) end
     print("Database connected.")
@@ -106,7 +106,7 @@ function db2.check_completion(cmd,other_parts)
         BEGIN=1,
         JAVA=1
     }
-     
+
     local obj=env.parse_args(2,other_parts)[1]
     if obj and not objs[obj] and not objs[cmd] then
         p2=env.END_MARKS[1].."+[%s\t\n]*$"
@@ -120,7 +120,7 @@ function db2.check_completion(cmd,other_parts)
 end
 
 function db2:exec(sql,...)
-    local bypass=self:is_internal_call(sql) 
+    local bypass=self:is_internal_call(sql)
     local args=type(select(1,...)=="table") and ... or {...}
     sql=event("BEFORE_DB2_EXEC",{self,sql,args}) [2]
     local result=self.super.exec(self,sql,args)
@@ -137,7 +137,7 @@ function db2:exec(sql,...)
 end
 
 function db2:command_call(sql,...)
-    local bypass=self:is_internal_call(sql) 
+    local bypass=self:is_internal_call(sql)
     local args=type(select(1,...)=="table") and ... or {...}
     sql=event("BEFORE_DB2_EXEC",{self,sql,args}) [2]
     local result=self.super.exec(self,sql,{args})
@@ -157,7 +157,7 @@ function db2:onload()
     end
 
     add_default_sql_stmt('update','delete','insert','merge','truncate','drop')
-    add_default_sql_stmt('explain','lock','analyze','grant','revoke','call','select','with') 
+    add_default_sql_stmt('explain','lock','analyze','grant','revoke','call','select','with')
 
     local  conn_help = [[
         Connect to db2 database. Usage: conn <user>/<password>@[//]<host>[:<port>][^<alt_purescale_hosts>[:<alt_purescale_ports>] ]/<database>
@@ -170,7 +170,7 @@ function db2:onload()
     set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
     set_command(self,{"declare","begin"}, default_desc,  self.command_call  ,self.check_completion,1,true)
     set_command(self,"create",   default_desc,  self.command_call      ,self.check_completion,1,true)
-    set_command(self,"alter" ,   default_desc,  self.command_call      ,self.check_completion,1,true)
+    set_command(self,"alter" ,   default_desc,  self.command_call      ,true,1,true)
     for _,k in ipairs{'DESCRIBE','add','AUTOCONFIGURE','BACKUP','LOAD','IMPORT','EXPORT','FORCE','QUIESCE','PRUNE',
                       'REDISTRIBUTE','RUNSTATS','UNQUIESCE','REWIND','RESET'} do
         set_command(self,k, default_desc,self.admin_cmd,true,1,true)
@@ -178,7 +178,7 @@ function db2:onload()
     set_command(self,'adm', 'Run procedure ADMIN_CMD. Usage: adm <statement>',self.admin_cmd,true,2,true)
     self.C={}
     init.load_modules(module_list,self.C)
-    --env.event.snoop('ON_SQL_ERROR',self.handle_error,nil,1)  
+    --env.event.snoop('ON_SQL_ERROR',self.handle_error,nil,1)
 end
 
 function db2:onunload()
