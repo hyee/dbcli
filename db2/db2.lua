@@ -170,7 +170,7 @@ function db2:onload()
     set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
     set_command(self,{"declare","begin"}, default_desc,  self.command_call  ,self.check_completion,1,true)
     set_command(self,"create",   default_desc,  self.command_call      ,self.check_completion,1,true)
-    set_command(self,"alter" ,   default_desc,  self.command_call      ,self.check_completion,1,true)
+    set_command(self,"alter" ,   default_desc,  self.command_call      ,true,1,true)
     for _,k in ipairs{'DESCRIBE','add','AUTOCONFIGURE','BACKUP','LOAD','IMPORT','EXPORT','FORCE','QUIESCE','PRUNE',
                       'REDISTRIBUTE','RUNSTATS','UNQUIESCE','REWIND','RESET'} do
         set_command(self,k, default_desc,self.admin_cmd,true,1,true)

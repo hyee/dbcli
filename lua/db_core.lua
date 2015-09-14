@@ -86,9 +86,8 @@ function db_Types:load_sql_types(className)
         [5]={getter='getBlob',setter='setBytesForBlob', --setBytes
              handler=function(result,action,conn)
                 if action=="get" then
-                    local str=result:getBytes(1,result:length())
+                    local str=result:getBytes(1,math.min(255,result:length()))
                     result:free()
-                    str=str:sub(1,255)
                     local str1=string.rep('%02X',#str):format(str:byte(1,#str))
                     return str1
                 else

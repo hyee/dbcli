@@ -363,7 +363,7 @@ function oracle:onload()
     set_command(self,{"execute","exec","call"},default_desc,self.run_proc,false,2,true)
     set_command(self,{"declare","begin"},  default_desc,  self.exec  ,self.check_completion,1,true)
     set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)
-    set_command(self,"alter" ,   default_desc,        self.exec      ,self.check_completion,1,true)
+    set_command(self,"alter" ,   default_desc,        self.exec      ,true,1,true)
 
 
     self.C={}
