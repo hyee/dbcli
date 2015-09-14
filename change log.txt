@@ -1,3 +1,6 @@
+2015-09-14: + public: support CTRL+C to abort running command(same to 'q' and CTRL+D)
+2015-09-14: ! public: fix "dbcli.bat"
+2015-09-14: ! public: fix the completion determinnation of "alter" statement
 2015-09-11: ! public: fix issue "string slice too long" when fetching blob
 2015-09-11: ! oracle: fix issue for the "explain plan" statement
 2015-09-11: ! public: remove tailing spaces from codes; replace tab as 4 spaces
