@@ -74,7 +74,7 @@ function ssh:connect(conn_str)
             return print("Usage: ssh conn <user>/<passowrd>@host[:port]")
         end
         host,port=conn_desc:match('^([^:/]+)(:?%d*)$')
-        if port=="" then
+        if port=="" or not port then
             port=22
         else
             port=tonumber(port:sub(2))
