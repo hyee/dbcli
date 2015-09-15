@@ -113,7 +113,7 @@ function oracle:connect(conn_str)
                 (select instance_number from v$instance where rownum<2),
                 sys_context('userenv','isdba'),
                 sys_context('userenv','db_name')||nullif('.'||sys_context('userenv','db_domain'),'.'),
-                (select decode(DATABASE_ROLE,'PRIMARY','','PHYSICAL STANDBY','(Standby)') from v$database)
+                (select decode(DATABASE_ROLE,'PRIMARY','','PHYSICAL STANDBY',' (Standby)') from v$database)
        from dual]])
 
     self.props={db_user=params[1],db_version=params[2],db_nls_lang=params[3],service_name=params[7],isdba=params[6]=='TRUE' and true or false}
