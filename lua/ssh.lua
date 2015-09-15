@@ -12,7 +12,6 @@ function ssh:ctor()
     self.command='shell'
     self.ext_name='*'
     self.script_dir,self.extend_dirs,self.public_dir=nil,{},env.WORK_DIR.."lua"..env.PATH_DEL.."shell"
-
 end
 
 function ssh:rehash(script_dir,ext_name)
@@ -92,8 +91,11 @@ function ssh:connect(conn_str)
     self.conn=java.new("org.dbcli.SSHExecutor")
     instance=self
     self.set_config("term",env.set.get("term"))
-    local done,err=pcall(self.conn.connect,self.conn,host,port,usr,pwd,"")
-    env.checkerr(done,tostring(err))
+    local done,err=pcall(loader.asyncCall,loader,self.conn,'connect',host,port,usr,pwd,"")
+    if not done then
+        self.conn=nil
+        env.raise(tostring(err))
+    end
     self.login_alias=env.login.generate_name(url,conn_str)
     env.event.callback("TRIGGER_CONNECT","env.ssh",url,conn_str)
     env.set_title("SSH: "..usr..'@'..host)

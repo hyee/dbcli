@@ -57,10 +57,10 @@ public class Loader {
             keyMap = console.getKeys();
             keyMap.bind(String.valueOf(KeyMap.CTRL_D), new KeyListner(KeyMap.CTRL_D));
             q = new KeyListner('q');
-            Signal.handle(new Signal("INT"), new SignalHandler() {
+            Interrupter.listen("loader", new InterruptCallback() {
                 @Override
-                public void handle(Signal signal) {
-                   q.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, Character.toChars(3).toString()));
+                public void interrupt(ActionEvent e) throws Exception {
+                    q.actionPerformed(e);
                 }
             });
         } catch (Exception e) {
@@ -68,10 +68,10 @@ public class Loader {
         }
     }
 
-    public static void loadLua(Loader l, String args[]) throws Exception {
+    public static void loadLua(Loader loader, String args[]) throws Exception {
         lua = new LuaState();
         lua.openLibs();
-        lua.pushJavaObject(l);
+        lua.pushJavaObject(loader);
         lua.setGlobal("loader");
         if (printer != null) {
             lua.pushJavaObject(console);
@@ -183,7 +183,7 @@ public class Loader {
 
     public int ResultSet2CSV(final ResultSet rs, final String fileName, final String header, final boolean aync) throws Exception {
         setCurrentResultSet(rs);
-        return asyncCall(new Callable<Integer>() {
+        return (int) asyncCall(new Callable() {
             @Override
             public Integer call() throws Exception {
                 try (CSVWriter writer = new CSVWriter(fileName)) {
@@ -197,7 +197,7 @@ public class Loader {
 
     public int ResultSet2SQL(final ResultSet rs, final String fileName, final String header, final boolean aync) throws Exception {
         setCurrentResultSet(rs);
-        return asyncCall(new Callable<Integer>() {
+        return (int) asyncCall(new Callable() {
             @Override
             public Integer call() throws Exception {
                 try (SQLWriter writer = new SQLWriter(fileName)) {
@@ -212,7 +212,7 @@ public class Loader {
 
     public int CSV2SQL(final ResultSet rs, final String SQLFileName, final String CSVfileName, final String header) throws Exception {
         setCurrentResultSet(rs);
-        return asyncCall(new Callable<Integer>() {
+        return (int) asyncCall(new Callable() {
             @Override
             public Integer call() throws Exception {
                 try (SQLWriter writer = new SQLWriter(SQLFileName)) {
@@ -250,15 +250,16 @@ public class Loader {
     }
 
 
-    public synchronized int asyncCall(Callable<Integer> c) throws Exception {
+    public synchronized Object asyncCall(Callable<Object> c) throws Exception {
         try {
             sleeper = console.threadPool.submit(c);
             console.setEvents(q, new char[]{'q', KeyMap.CTRL_D});
-            return (Integer) sleeper.get();
+            return sleeper.get();
         } catch (CancellationException | InterruptedException e) {
             throw new IOException("Statement is aborted.");
         } catch (Exception e) {
-            e.printStackTrace();
+            while (e.getCause() != null) e = (Exception) e.getCause();
+            //e.printStackTrace();
             throw e;
         } finally {
             if (rs != null && !rs.isClosed()) rs.close();
@@ -268,25 +269,26 @@ public class Loader {
         }
     }
 
-    public void asyncCall(final Object o,final String func,final Object ... args) throws Exception {
-        asyncCall(new Callable<Integer>() {
+    public synchronized Object asyncCall(final Object o, final String func, final Object... args) throws Exception {
+        return asyncCall(new Callable() {
             @Override
-            public Integer call() throws Exception {
-                Method[] ms=o.getClass().getMethods();
-                for(Method m:ms) {
-                    System.out.println(m.getName());
-                    if(m.getName().equals(func))  {
-                        try {
-                            m.invoke(o,args);
-                            return 0;
-                        } catch (IllegalArgumentException e) {}
+            public Object call() throws Exception {
+                int len = args.length;
+                Object[] params = new Object[len];
+                Class[] clazz = new Class[len];
+                for (int i = 0; i < len; i++) {
+                    params[i] = args[i];
+                    clazz[i] = args[i].getClass();
+                    if (clazz[i] == Double.class) {
+                        clazz[i] = int.class;
+                        params[i] = (int) Math.round((Double) params[i]);
                     }
                 }
-                throw new IOException("Cannot find target method :"+ func);
+                Method m = o.getClass().getDeclaredMethod(func, clazz);
+                return m.invoke(o, params);
             }
         });
     }
-
 
     public synchronized void sleep(int millSeconds) throws Exception {
         try {
@@ -319,7 +321,7 @@ public class Loader {
             try {
                 if (e != null) key = Character.codePointAt(e.getActionCommand(), 0);
                 if (!console.isRunning() && key != 'q' && key != 'Q') {
-                    if(key!=3) {
+                    if (key != 3) {
                         lua.getGlobal("TRIGGER_ABORT");
                         lua.call(0, 0);
                     }

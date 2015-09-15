@@ -126,7 +126,7 @@ function oracle:connect(conn_str)
         end;]],{})
 
     prompt=(prompt or self.props.service_name):match("^([^,%.&]+)")
-    prompt=('%s %s'):format(prompt:upper(),params[8])
+    prompt=('%s%s'):format(prompt:upper(),params[8])
     env.set_prompt(nil,prompt)
     self.session_title=('%s%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)'):format(prompt:upper(),params[8], params[5],params[1],params[4],params[2])
     env.set_title(self.session_title)
@@ -287,7 +287,8 @@ function oracle.check_completion(cmd,other_parts)
         JAVA=1
     }
 
-    local obj=env.parse_args(2,other_parts)[1]
+    --alter package xxx compile ...
+    local obj,action=env.parse_args(2,other_parts)[1]
     if obj and not objs[obj:upper()] and not objs[cmd] then
         p2=env.END_MARKS[1].."+[%s\t\n]*$"
     end

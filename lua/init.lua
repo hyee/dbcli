@@ -4,8 +4,6 @@ local init={
     module_list={
        --Libraries ->
         "lib/json",
-        "lib/socket",
-        "lib/lanes",
         "lib/MessagePack",
         "lib/ProFi",
         "lib/misc",

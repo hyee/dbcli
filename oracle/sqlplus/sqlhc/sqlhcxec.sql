@@ -750,7 +750,7 @@ SELECT :E_GLOBAL, 'DBMS_STATS', SYSTIMESTAMP, 'DBA_AUTOTASK_CLIENT',
    AND client_name = 'auto optimizer stats collection'
    AND status = 'ENABLED'
    AND 0 = (SELECT count(*)
-             FROM dba_autotask_client_history
+		     FROM dba_autotask_client_history
             WHERE client_name = 'auto optimizer stats collection'
               AND window_start_time > (SYSDATE-8));
 
@@ -764,10 +764,10 @@ SELECT :E_GLOBAL, 'DBMS_STATS', SYSTIMESTAMP, 'DBA_AUTOTASK_CLIENT',
    AND client_name = 'auto optimizer stats collection'
    AND status = 'ENABLED'
    AND 0 <> (SELECT count(*)
-               FROM dba_autotask_client_history
+		       FROM dba_autotask_client_history
               WHERE client_name = 'auto optimizer stats collection'
                 AND window_start_time > (SYSDATE-8)
-                AND (jobs_created-jobs_started > 0 OR jobs_started-jobs_completed > 0));
+			    AND (jobs_created-jobs_started > 0 OR jobs_started-jobs_completed > 0));
 
 -- multiple CBO environments in SQL Area
 INSERT INTO plan_table (id, operation, object_alias, other_tag, remarks, projection)
@@ -1125,7 +1125,7 @@ INSERT INTO plan_table (id, operation, object_alias, other_tag, remarks, project
 SELECT :E_GLOBAL, 'OFFLOAD', SYSTIMESTAMP, 'OFFLOAD OFF',
        'Offload is not used for SQLs that don''t use direct path reads.',
        'Serial DMLs cannot be offloaded by default since they don''t use direct path reads<br>'||CHR(10)||
-       'If this execution is serial then make sure to use direct path reads or offload won'' be possible.'
+	   'If this execution is serial then make sure to use direct path reads or offload won'' be possible.'
   FROM v$sql
  WHERE :health_checks = 'Y'
    AND TRIM(UPPER(SUBSTR(LTRIM(sql_text),1,6))) IN ('INSERT','UPDATE','DELETE','MERGE')
@@ -4007,14 +4007,14 @@ PRO <!-- Please Wait -->
 SELECT CHR(10)||'<tr>'||CHR(10)||
     -- omit class for now   '<td>'||DECODE(after.class,1,'User',2,'Redo',4,'Enqueue',8,'Cache',16,'OS',32,'Real Application Clusters',64,'SQL',128,'Debug')||'</td>'||CHR(10)||
        '<td>'||after.name||'</td>'||CHR(10)||
-       '<td class="r">'||TO_CHAR(after.value - nvl(before.value,0),'999999999999')||'</td>'||CHR(10)||
-       '</tr>'
+	   '<td class="r">'||TO_CHAR(after.value - nvl(before.value,0),'999999999999')||'</td>'||CHR(10)||
+	   '</tr>'
   FROM (SELECT parent_id statistic#, cpu_cost value
           FROM plan_table
-         WHERE statement_id = 'B^^unique_id.') before,
+		 WHERE statement_id = 'B^^unique_id.') before,
        (SELECT parent_id statistic#, options name, time class, cpu_cost value
-          FROM plan_table
-         WHERE statement_id = 'A^^unique_id.') after
+	      FROM plan_table
+		 WHERE statement_id = 'A^^unique_id.') after
  WHERE before.statistic#(+) = after.statistic#
    AND before.value(+) <> after.value
  ORDER BY --DECODE(after.class,1,'User',2,'Redo',4,'Enqueue',8,'Cache',16,'OS',32,'Real Application Clusters',64,'SQL',128,'Debug'),
@@ -4931,7 +4931,7 @@ SELECT /* ^^script..sql DBMS_STATS System Preferences */
        '<td class="r">'||ROWNUM||'</td>'||CHR(10)||
        '<td>'||v.sname||'</td>'||CHR(10)||
        '<td>'||v.spare4||'</td>'||CHR(10)||
-       '</tr>'
+	   '</tr>'
   FROM sys.optstat_hist_control$ v
  WHERE v.sname IN ('AUTOSTATS_TARGET',
                    'ESTIMATE_PERCENT',
@@ -5003,9 +5003,9 @@ SELECT /* ^^script..sql Tables */
        '<td>'||v.table_name||'</td>'||CHR(10)||
        '<td>'||v.owner||'</td>'||CHR(10)||
        CASE WHEN v.partitioned = 'YES'
-         THEN '<td class="c"><a href="#tp_'||LOWER(v.table_name||'_'||v.owner)||'">'||v.partitioned||'</a></td>'
-         ELSE '<td class="c">'||v.partitioned||'</td>'
-       END||CHR(10)||
+	     THEN '<td class="c"><a href="#tp_'||LOWER(v.table_name||'_'||v.owner)||'">'||v.partitioned||'</a></td>'
+		 ELSE '<td class="c">'||v.partitioned||'</td>'
+	   END||CHR(10)||
        '<td class="c">'||v.degree||'</td>'||CHR(10)||
        '<td class="c">'||v.temporary||'</td>'||CHR(10)||
        '<td class="r">'||v.num_rows||'</td>'||CHR(10)||
@@ -5022,7 +5022,7 @@ SELECT /* ^^script..sql Tables */
        '<td class="c"><a href="#c_'||LOWER(v.table_name||'_'||v.owner)||'">'||v.columns||'</a></td>'||CHR(10)||
        '<td class="c"><a href="#i_'||LOWER(v.table_name||'_'||v.owner)||'">'||v.indexes||'</a></td>'||CHR(10)||
        '<td class="c"><a href="#ic_'||LOWER(v.table_name||'_'||v.owner)||'">'||v.index_columns||'</a></td>'||CHR(10)||
-       '<td class="c"><a href="#tbl_stat_ver">Versions</a></td>'||CHR(10)||
+	   '<td class="c"><a href="#tbl_stat_ver">Versions</a></td>'||CHR(10)||
        '</tr>'
   FROM (
 WITH object AS (
@@ -5156,14 +5156,14 @@ PRO <!-- Please Wait -->
 
 SELECT /* ^^script..sql DBMS_STATS Table Preferences */
        CHR(10)||'<tr>'||CHR(10)||
-       '<td class="r">'||ROWNUM||'</td>'||CHR(10)||
+	   '<td class="r">'||ROWNUM||'</td>'||CHR(10)||
        '<td>'||o.object_owner||'</td>'||CHR(10)||
-       '<td>'||o.object_name||'</td>'||CHR(10)||
-       '<td>'||v.obj#||'</td>'||CHR(10)||
+	   '<td>'||o.object_name||'</td>'||CHR(10)||
+	   '<td>'||v.obj#||'</td>'||CHR(10)||
        '<td>'||v.pname||'</td>'||CHR(10)||
        '<td>'||v.valchar||'</td>'||CHR(10)||
-       '<td>'||v.chgtime||'</td>'||CHR(10)||
-       '</tr>'
+	   '<td>'||v.chgtime||'</td>'||CHR(10)||
+	   '</tr>'
   FROM sys.optstat_user_prefs$ v,
        (WITH object AS (
           SELECT /*+ MATERIALIZE */
@@ -5190,19 +5190,19 @@ SELECT /* ^^script..sql DBMS_STATS Table Preferences */
               AND t.table_name = o.name
             UNION
            SELECT 'TABLE' object_type, i.table_owner object_owner, i.table_name object_name,
-                  (SELECT object_id
-                     FROM dba_objects io
-                    WHERE io.owner = i.table_owner
-                      AND io.object_name = i.table_name
-                      AND io.object_type = 'TABLE') obj#
+		          (SELECT object_id
+					 FROM dba_objects io
+					WHERE io.owner = i.table_owner
+					  AND io.object_name = i.table_name
+					  AND io.object_type = 'TABLE') obj#
              FROM dba_indexes i,
                   object o
             WHERE i.owner = o.owner
               AND i.index_name = o.name
           )
-          SELECT object_owner, object_name, obj#
-            FROM plan_tables
-          )    o
+		  SELECT object_owner, object_name, obj#
+		    FROM plan_tables
+          )	o
  WHERE v.obj# = o.obj#
 ORDER BY o.obj#, v.pname;
 
@@ -5464,8 +5464,8 @@ SELECT object_owner owner, object_name name
         object o
   WHERE i.owner = o.owner
     AND i.index_name = o.name
-    AND i.owner = p.index_owner
-    AND i.index_name = p.index_name
+	AND i.owner = p.index_owner
+	AND i.index_name = p.index_name
 )
 SELECT object_name table_name,
        object_owner owner,
@@ -5499,7 +5499,7 @@ SELECT v.table_name,
        ROWNUM row_num,
        CHR(10)||'<tr>'||CHR(10)||
        '<td class="r">'||ROWNUM||'</td>'||CHR(10)||
-       '<td class="c">'||v.partition_position||'</td>'||CHR(10)||
+	   '<td class="c">'||v.partition_position||'</td>'||CHR(10)||
        '<td class="c">'||v.partition_name||'</td>'||CHR(10)||
        '<td class="c">'||v.composite||'</td>'||CHR(10)||
        '<td class="r">'||v.subpartition_count||'</td>'||CHR(10)||
@@ -5516,10 +5516,10 @@ SELECT v.table_name,
   FROM (
 SELECT DISTINCT v.table_name,
        v.table_owner,
-       v.partition_name,
-       v.partition_position,
-       v.subpartition_count,
-       v.composite,
+	   v.partition_name,
+	   v.partition_position,
+	   v.subpartition_count,
+	   v.composite,
        v.num_rows,
        v.sample_size,
        v.sample_size_perc,
@@ -5533,10 +5533,10 @@ SELECT DISTINCT v.table_name,
 SELECT /*+ NO_MERGE LEADING(pt s m) */
        s.table_name,
        s.table_owner,
-       s.partition_name,
-       s.partition_position,
-       s.subpartition_count,
-       s.composite,
+	   s.partition_name,
+	   s.partition_position,
+	   s.subpartition_count,
+	   s.composite,
        s.num_rows,
        s.sample_size,
        CASE WHEN s.num_rows > 0 THEN TO_CHAR(ROUND(s.sample_size * 100 / s.num_rows, 1), '99999990D0') END sample_size_perc,
@@ -5546,7 +5546,7 @@ SELECT /*+ NO_MERGE LEADING(pt s m) */
        s.global_stats,
        s.user_stats,
        CASE WHEN s.num_rows > 0 THEN TO_CHAR(ROUND((m.inserts + m.updates + m.deletes) * 100 / s.num_rows, 1), '99999990D0') END staleness_perc,
-       ROW_NUMBER() OVER (PARTITION BY s.table_owner, s.table_name ORDER BY s.partition_position DESC) row_num
+	   ROW_NUMBER() OVER (PARTITION BY s.table_owner, s.table_name ORDER BY s.partition_position DESC) row_num
   FROM plan_tables pt,
        dba_tab_partitions s,
        sys.dba_tab_modifications m -- requires sys on 10g
@@ -5560,10 +5560,10 @@ UNION
 SELECT /*+ NO_MERGE LEADING(pt s m) */
        s.table_name,
        s.table_owner,
-       s.partition_name,
-       s.partition_position,
-       s.subpartition_count,
-       s.composite,
+	   s.partition_name,
+	   s.partition_position,
+	   s.subpartition_count,
+	   s.composite,
        s.num_rows,
        s.sample_size,
        CASE WHEN s.num_rows > 0 THEN TO_CHAR(ROUND(s.sample_size * 100 / s.num_rows, 1), '99999990D0') END sample_size_perc,
@@ -5573,7 +5573,7 @@ SELECT /*+ NO_MERGE LEADING(pt s m) */
        s.global_stats,
        s.user_stats,
        CASE WHEN s.num_rows > 0 THEN TO_CHAR(ROUND((m.inserts + m.updates + m.deletes) * 100 / s.num_rows, 1), '99999990D0') END staleness_perc,
-       ROW_NUMBER() OVER (PARTITION BY s.table_owner, s.table_name ORDER BY s.partition_position ASC) row_num
+	   ROW_NUMBER() OVER (PARTITION BY s.table_owner, s.table_name ORDER BY s.partition_position ASC) row_num
   FROM plan_tables pt,
        dba_tab_partitions s,
        sys.dba_tab_modifications m -- requires sys on 10g
@@ -5588,7 +5588,7 @@ SELECT /*+ NO_MERGE LEADING(pt s m) */
  ORDER BY
        v.table_name,
        v.table_owner,
-       v.partition_position DESC) v
+	   v.partition_position DESC) v
  UNION ALL
 SELECT object_name table_name,
        object_owner owner,
@@ -5690,11 +5690,11 @@ SELECT object_name table_name,
        '<th>Validated</th>'||CHR(10)||
        '<th>Generated</th>'||CHR(10)||
        '<th>Rely</th>'||CHR(10)||
-       '<th>Last<br>Change</th>'||CHR(10)||
-       '<th>Index<br>Owner</th>'||CHR(10)||
-       '<th>Index<br>Name</th>'||CHR(10)||
-       '<th>Invalid</th>'||CHR(10)||
-       '<th>View<br>Related</th>'||CHR(10)||
+	   '<th>Last<br>Change</th>'||CHR(10)||
+	   '<th>Index<br>Owner</th>'||CHR(10)||
+	   '<th>Index<br>Name</th>'||CHR(10)||
+	   '<th>Invalid</th>'||CHR(10)||
+	   '<th>View<br>Related</th>'||CHR(10)||
        '</tr>'||CHR(10) line_text
   FROM plan_tables
  WHERE object_type = 'TABLE'
@@ -5705,7 +5705,7 @@ SELECT v.table_name,
        ROWNUM row_num,
        CHR(10)||'<tr>'||CHR(10)||
        '<td class="r">'||ROWNUM||'</td>'||CHR(10)||
-       '<td class="c">'||v.constraint_name||'</td>'||CHR(10)||
+	   '<td class="c">'||v.constraint_name||'</td>'||CHR(10)||
        '<td class="c">'||v.constraint_type||'</td>'||CHR(10)||
      --  '<td class="c">'||v.search_condition||'</td>'||CHR(10)||
        '<td class="r">'||v.r_owner||'</td>'||CHR(10)||
@@ -5718,20 +5718,20 @@ SELECT v.table_name,
        '<td class="c">'||v.generated||'</td>'||CHR(10)||
        '<td class="c">'||v.rely||'</td>'||CHR(10)||
        '<td class="r">'||v.last_change||'</td>'||CHR(10)||
-       '<td class="r">'||v.index_owner||'</td>'||CHR(10)||
-       '<td class="r">'||v.index_name||'</td>'||CHR(10)||
-       '<td class="r">'||v.invalid||'</td>'||CHR(10)||
-       '<td class="r">'||v.view_related||'</td>'||CHR(10)||
+	   '<td class="r">'||v.index_owner||'</td>'||CHR(10)||
+	   '<td class="r">'||v.index_name||'</td>'||CHR(10)||
+	   '<td class="r">'||v.invalid||'</td>'||CHR(10)||
+	   '<td class="r">'||v.view_related||'</td>'||CHR(10)||
        '</tr>'
   FROM (
 SELECT /*+ NO_MERGE LEADING(pt s) */
        s.table_name,
        s.owner,
        s.constraint_name,
-       s.constraint_type,
-      -- dbms_lob.substr(s.search_condition,1,100) search_condition,
-       s.r_owner,
-       s.r_constraint_name,
+	   s.constraint_type,
+	  -- dbms_lob.substr(s.search_condition,1,100) search_condition,
+	   s.r_owner,
+	   s.r_constraint_name,
        s.delete_rule,
        s.status,
        s.deferrable,
@@ -5741,9 +5741,9 @@ SELECT /*+ NO_MERGE LEADING(pt s) */
        s.rely,
        s.last_change,
        s.index_owner,
-       s.index_name,
-       s.invalid,
-       s.view_related
+	   s.index_name,
+	   s.invalid,
+	   s.view_related
   FROM plan_tables pt,
        dba_constraints s
  WHERE pt.object_type = 'TABLE'
@@ -5768,11 +5768,11 @@ SELECT object_name table_name,
        '<th>Validated</th>'||CHR(10)||
        '<th>Generated</th>'||CHR(10)||
        '<th>Rely</th>'||CHR(10)||
-       '<th>Last<br>Change</th>'||CHR(10)||
-       '<th>Index<br>Owner</th>'||CHR(10)||
-       '<th>Index<br>Name</th>'||CHR(10)||
-       '<th>Invalid</th>'||CHR(10)||
-       '<th>View<br>Related</th>'||CHR(10)||
+	   '<th>Last<br>Change</th>'||CHR(10)||
+	   '<th>Index<br>Owner</th>'||CHR(10)||
+	   '<th>Index<br>Name</th>'||CHR(10)||
+	   '<th>Invalid</th>'||CHR(10)||
+	   '<th>View<br>Related</th>'||CHR(10)||
        '</tr>'||CHR(10) line_text
   FROM plan_tables
  WHERE object_type = 'TABLE'
@@ -5826,7 +5826,7 @@ SELECT /* ^^script..sql Tables Statistics Versions */
        '<td>'||v.owner||'</td>'||CHR(10)||
        '<td>'||v.version_type||'</td>'||CHR(10)||
        '<td nowrap>'||v.savtime||'</td>'||CHR(10)||
-       '<td nowrap>'||v.analyzetime||'</td>'||CHR(10)||
+	   '<td nowrap>'||v.analyzetime||'</td>'||CHR(10)||
        '<td class="r">'||v.rowcnt||'</td>'||CHR(10)||
        '<td class="r">'||v.samplesize||'</td>'||CHR(10)||
        '<td class="c">'||v.perc||'</td>'||CHR(10)||
@@ -5869,14 +5869,14 @@ SELECT *
 SELECT /*+ NO_MERGE LEADING(pt s t m) */
        t.table_name object_name,
        t.owner,
-       'CURRENT' version_type,
+	   'CURRENT' version_type,
        NULL savtime,
-       t.last_analyzed analyzetime,
-       t.num_rows rowcnt,
-       t.sample_size samplesize,
-       CASE WHEN t.num_rows > 0 THEN TO_CHAR(ROUND(t.sample_size * 100 / t.num_rows, 1), '99999990D0') END perc,
-       t.blocks blkcnt,
-       t.avg_row_len avgrln
+	   t.last_analyzed analyzetime,
+	   t.num_rows rowcnt,
+	   t.sample_size samplesize,
+	   CASE WHEN t.num_rows > 0 THEN TO_CHAR(ROUND(t.sample_size * 100 / t.num_rows, 1), '99999990D0') END perc,
+	   t.blocks blkcnt,
+	   t.avg_row_len avgrln
   FROM plan_tables pt,
        dba_tables t
  WHERE pt.object_type = 'TABLE'
@@ -5886,17 +5886,17 @@ UNION ALL
 SELECT /*+ NO_MERGE LEADING(pt s t m) */
        t.object_name,
        t.owner,
-       'HISTORY' version_type,
+	   'HISTORY' version_type,
        h.savtime,
-       h.analyzetime,
-       h.rowcnt,
-       h.samplesize,
-       CASE WHEN h.rowcnt > 0 THEN TO_CHAR(ROUND(h.samplesize * 100 / h.rowcnt, 1), '99999990D0') END perc,
-       h.blkcnt,
-       h.avgrln
+	   h.analyzetime,
+	   h.rowcnt,
+	   h.samplesize,
+	   CASE WHEN h.rowcnt > 0 THEN TO_CHAR(ROUND(h.samplesize * 100 / h.rowcnt, 1), '99999990D0') END perc,
+	   h.blkcnt,
+	   h.avgrln
   FROM plan_tables pt,
        dba_objects t,
-       sys.WRI$_OPTSTAT_TAB_HISTORY h
+	   sys.WRI$_OPTSTAT_TAB_HISTORY h
  WHERE pt.object_type = 'TABLE'
    AND pt.object_owner = t.owner
    AND pt.object_name = t.object_name
@@ -5905,7 +5905,7 @@ SELECT /*+ NO_MERGE LEADING(pt s t m) */
  ORDER BY
        object_name,
        owner,
-       savtime DESC NULLS FIRST) v;
+	   savtime DESC NULLS FIRST) v;
 
 PRO
 PRO <tr>
@@ -6018,10 +6018,10 @@ SELECT v.table_name,
        '<td>'||v.index_name||'</td>'||CHR(10)||
        '<td>'||v.owner||'</td>'||CHR(10)||
        '<td>'||v.index_type||'</td>'||CHR(10)||
-       CASE WHEN v.partitioned = 'YES'
-         THEN '<td class="c"><a href="#ip_'||LOWER(v.table_name||'_'||v.table_owner)||'">'||v.partitioned||'</a></td>'
-         ELSE '<td class="c">'||v.partitioned||'</td>'
-       END||CHR(10)||
+	   CASE WHEN v.partitioned = 'YES'
+	     THEN '<td class="c"><a href="#ip_'||LOWER(v.table_name||'_'||v.table_owner)||'">'||v.partitioned||'</a></td>'
+		 ELSE '<td class="c">'||v.partitioned||'</td>'
+	   END||CHR(10)||
        '<td class="c">'||v.degree||'</td>'||CHR(10)||
        '<td class="c">'||v.temporary||'</td>'||CHR(10)||
        '<td>'||v.uniqueness||'</td>'||CHR(10)||
@@ -6040,7 +6040,7 @@ SELECT v.table_name,
        '<td class="c">'||v.user_stats||'</td>'||CHR(10)||
        '<td class="c">'||v.stattype_locked||'</td>'||CHR(10)||
        '<td class="c">'||v.stale_stats||'</td>'||CHR(10)||
-       '<td class="c"><a href="#i_stat_ver_'||LOWER(v.table_name||'_'||v.table_owner)||'">Versions</a></td>'||CHR(10)||
+	   '<td class="c"><a href="#i_stat_ver_'||LOWER(v.table_name||'_'||v.table_owner)||'">Versions</a></td>'||CHR(10)||
        '</tr>'||CHR(10) line_text
   FROM (
 SELECT /*+ NO_MERGE LEADING(pt s i) */
@@ -6120,7 +6120,7 @@ SELECT object_name table_name,
        '<th>User<br>Stats</th>'||CHR(10)||
        '<th>Stat<br>Type<br>Locked</th>'||CHR(10)||
        '<th>Stale<br>Stats</th>'||CHR(10)||
-       '<th>Stats<br>Versions</th>'||CHR(10)||
+	   '<th>Stats<br>Versions</th>'||CHR(10)||
        '</tr>'||CHR(10) line_text
   FROM plan_tables
  WHERE object_type = 'TABLE'
@@ -6383,8 +6383,8 @@ SELECT object_owner owner, object_name name
         object o
   WHERE i.owner = o.owner
     AND i.index_name = o.name
-    AND i.owner = p.index_owner
-    AND i.index_name = p.index_name
+	AND i.owner = p.index_owner
+	AND i.index_name = p.index_name
 )
 SELECT object_name table_name,
        object_owner owner,
@@ -6422,7 +6422,7 @@ SELECT v.table_name,
        '<td class="r">'||ROWNUM||'</td>'||CHR(10)||
        '<td>'||v.index_name||'</td>'||CHR(10)||
        '<td>'||v.owner||'</td>'||CHR(10)||
-       '<td class="c">'||v.partition_position||'</td>'||CHR(10)||
+	   '<td class="c">'||v.partition_position||'</td>'||CHR(10)||
        '<td class="c">'||v.partition_name||'</td>'||CHR(10)||
        '<td class="r">'||v.subpartition_count||'</td>'||CHR(10)||
        '<td class="r">'||v.num_rows||'</td>'||CHR(10)||
@@ -6441,9 +6441,9 @@ SELECT DISTINCT v.table_name,
        v.table_owner,
        v.index_name,
        v.owner,
-       v.subpartition_count,
-       v.partition_name,
-       v.partition_position,
+	   v.subpartition_count,
+	   v.partition_name,
+	   v.partition_position,
        v.num_rows,
        v.sample_size,
        v.sample_size_perc,
@@ -6460,9 +6460,9 @@ SELECT /*+ NO_MERGE LEADING(pt s i) */
        s.table_owner,
        s.index_name,
        s.owner,
-       i.subpartition_count,
-       i.partition_name,
-       i.partition_position,
+	   i.subpartition_count,
+	   i.partition_name,
+	   i.partition_position,
        i.num_rows,
        i.sample_size,
        CASE WHEN s.num_rows > 0 THEN TO_CHAR(ROUND(i.sample_size * 100 / i.num_rows, 1), '99999990D0') END sample_size_perc,
@@ -6473,7 +6473,7 @@ SELECT /*+ NO_MERGE LEADING(pt s i) */
        i.avg_leaf_blocks_per_key,
        i.avg_data_blocks_per_key,
        i.clustering_factor,
-       ROW_NUMBER() OVER (PARTITION BY s.owner, s.index_name ORDER BY i.partition_position DESC) row_num
+	   ROW_NUMBER() OVER (PARTITION BY s.owner, s.index_name ORDER BY i.partition_position DESC) row_num
   FROM plan_tables pt,
        dba_indexes s,
        dba_ind_partitions i
@@ -6488,9 +6488,9 @@ SELECT /*+ NO_MERGE LEADING(pt s i) */
        s.table_owner,
        s.index_name,
        s.owner,
-       i.subpartition_count,
-       i.partition_name,
-       i.partition_position,
+	   i.subpartition_count,
+	   i.partition_name,
+	   i.partition_position,
        i.num_rows,
        i.sample_size,
        CASE WHEN s.num_rows > 0 THEN TO_CHAR(ROUND(i.sample_size * 100 / i.num_rows, 1), '99999990D0') END sample_size_perc,
@@ -6501,7 +6501,7 @@ SELECT /*+ NO_MERGE LEADING(pt s i) */
        i.avg_leaf_blocks_per_key,
        i.avg_data_blocks_per_key,
        i.clustering_factor,
-       ROW_NUMBER() OVER (PARTITION BY s.owner, s.index_name ORDER BY i.partition_position ASC) row_num
+	   ROW_NUMBER() OVER (PARTITION BY s.owner, s.index_name ORDER BY i.partition_position ASC) row_num
   FROM plan_tables pt,
        dba_indexes s,
        dba_ind_partitions i
@@ -6510,13 +6510,13 @@ SELECT /*+ NO_MERGE LEADING(pt s i) */
    AND pt.object_name = s.table_name
    AND s.index_name = i.index_name
    AND s.owner = i.index_owner
-      ) v
+	  ) v
  WHERE v.row_num BETWEEN 1 AND 100
  ORDER BY
        v.index_name,
        v.owner,
-       v.partition_position DESC
-      ) v
+	   v.partition_position DESC
+	  ) v
  UNION ALL
 SELECT object_name table_name,
        object_owner owner,
@@ -6611,9 +6611,9 @@ SELECT object_name table_name,
        '<th>#</th>'||CHR(10)||
        '<th>Index Name</th>'||CHR(10)||
        '<th>Owner</th>'||CHR(10)||
-       '<th>Version Type</th>'||CHR(10)||
-       '<th>Save Time</th>'||CHR(10)||
-       '<th>Last Analyzed</th>'||CHR(10)||
+	   '<th>Version Type</th>'||CHR(10)||
+	   '<th>Save Time</th>'||CHR(10)||
+	   '<th>Last Analyzed</th>'||CHR(10)||
        '<th>Num<br>Rows</th>'||CHR(10)||
        '<th>Sample<br>Size</th>'||CHR(10)||
        '<th>Perc</th>'||CHR(10)||
@@ -6635,8 +6635,8 @@ SELECT v.object_name,
        '<td class="r">'||ROWNUM||'</td>'||CHR(10)||
        '<td>'||v.index_name||'</td>'||CHR(10)||
        '<td>'||v.owner||'</td>'||CHR(10)||
-       '<td>'||v.version_type||'</td>'||CHR(10)||
-       '<td nowrap>'||v.save_time||'</td>'||CHR(10)||
+	   '<td>'||v.version_type||'</td>'||CHR(10)||
+	   '<td nowrap>'||v.save_time||'</td>'||CHR(10)||
        '<td nowrap>'||v.last_analyzed||'</td>'||CHR(10)||
        '<td class="r">'||v.num_rows||'</td>'||CHR(10)||
        '<td class="r">'||v.sample_size||'</td>'||CHR(10)||
@@ -6656,8 +6656,8 @@ SELECT /*+ NO_MERGE LEADING(pt s i) */
        i.table_owner object_owner,
        i.index_name,
        i.owner,
-       'HISTORY' version_type,
-       s.savtime save_time,
+	   'HISTORY' version_type,
+	   s.savtime save_time,
        TO_CHAR(s.analyzetime, 'YYYY-MM-DD/HH24:MI:SS') last_analyzed,
        s.rowcnt num_rows,
        s.samplesize sample_size,
@@ -6671,7 +6671,7 @@ SELECT /*+ NO_MERGE LEADING(pt s i) */
   FROM plan_tables pt,
        sys.wri$_optstat_ind_history s,
        dba_indexes i,
-       dba_objects o
+	   dba_objects o
  WHERE pt.object_type = 'TABLE'
    AND pt.object_owner = i.table_owner
    AND pt.object_name = i.table_name
@@ -6685,8 +6685,8 @@ SELECT /*+ NO_MERGE LEADING(pt s i) */
        s.table_owner,
        s.index_name,
        s.owner,
-       'CURRENT' version_type,
-       NULL save_time,
+	   'CURRENT' version_type,
+	   NULL save_time,
        TO_CHAR(s.last_analyzed, 'YYYY-MM-DD/HH24:MI:SS') last_analyzed,
        s.num_rows,
        s.sample_size,
@@ -6711,7 +6711,7 @@ SELECT /*+ NO_MERGE LEADING(pt s i) */
  ORDER BY
        index_name,
        owner,
-       save_time DESC NULLS FIRST) v
+	   save_time DESC NULLS FIRST) v
 UNION ALL
 SELECT object_name table_name,
        object_owner owner,
@@ -6721,9 +6721,9 @@ SELECT object_name table_name,
        '<th>#</th>'||CHR(10)||
        '<th>Index Name</th>'||CHR(10)||
        '<th>Owner</th>'||CHR(10)||
-       '<th>Version Type</th>'||CHR(10)||
-       '<th>Save Time</th>'||CHR(10)||
-       '<th>Last Analyzed</th>'||CHR(10)||
+	   '<th>Version Type</th>'||CHR(10)||
+	   '<th>Save Time</th>'||CHR(10)||
+	   '<th>Last Analyzed</th>'||CHR(10)||
        '<th>Num<br>Rows</th>'||CHR(10)||
        '<th>Sample<br>Size</th>'||CHR(10)||
        '<th>Perc</th>'||CHR(10)||

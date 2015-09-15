@@ -3,6 +3,7 @@ package org.dbcli;
 
 import com.jcraft.jsch.*;
 
+import java.awt.event.ActionEvent;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PipedInputStream;
@@ -31,12 +32,12 @@ public class SSHExecutor {
     PipedOutputStream shellWriter;
     PipedInputStream pipeIn;
     Printer pr;
-    HashMap<Integer, Object[]> forwards;
+    static HashMap<Integer, Object[]> forwards=new HashMap<>();
     HashMap<String, Channel> channels;
-    boolean isLogin = false;
     String lastLine;
-    boolean isStart = false;
-    boolean isEnd = true;
+    volatile boolean isStart = false;
+    volatile boolean isEnd = true;
+    volatile boolean isWating=false;
 
     CompletionHandler completer = new CompletionHandler() {
         @Override
@@ -94,16 +95,22 @@ public class SSHExecutor {
             this.port = port;
             this.user = user;
             this.password = password;
-            forwards = new HashMap<>();
             channels = new HashMap<>();
-            isLogin = true;
             setLinePrefix(linePrefix);
             shell = (ChannelShell) session.openChannel("shell");
             pipeIn = new PipedInputStream();
             shellWriter = new PipedOutputStream(pipeIn);
             pr = new Printer();
             pr.reset(true);
-
+            Interrupter.listen("SSHExecutor", new InterruptCallback() {
+                @Override
+                public void interrupt(ActionEvent e) throws Exception {
+                    if(isWating) {
+                        shellWriter.write(3);
+                        shellWriter.flush();
+                    }
+                }
+            });
             shell.setInputStream(pipeIn);
             shell.setOutputStream(pr);
             shell.setEnv("TERM", TERMTYPE == "none" ? "ansi" : TERMTYPE);
@@ -126,33 +133,20 @@ public class SSHExecutor {
         return shell == null ? false : session.isConnected();
     }
 
-    private void closeShell() {
+    public void close() {
         try {
             prompt = null;
+            isWating=false;
             if (pr != null) pr.close();
             if (shellWriter != null) shellWriter.close();
             if (shell != null) {
                 shell.getInputStream().close();
                 shell.disconnect();
             }
+            if (session != null) session.disconnect();
         } catch (Exception e) {
             //e.printStackTrace();
         }
-    }
-
-    public void testConnect() throws Exception {
-        if (isConnect() || !isLogin) return;
-        {
-            output("Connection is lost, try to re-connect ...", true);
-            closeShell();
-        }
-        connect(this.host, this.port, this.user, this.password, this.linePrefix);
-    }
-
-    public void close() throws Exception {
-        closeShell();
-        session.disconnect();
-        isLogin = false;
     }
 
     public void setLinePrefix(String linePrefix) {
@@ -160,7 +154,6 @@ public class SSHExecutor {
     }
 
     public int setForward(int localPort, Integer remotePort, String remoteHost) throws Exception {
-        testConnect();
         if (forwards.containsKey(localPort)) {
             session.delPortForwardingL(localPort);
             forwards.remove(localPort);
@@ -179,13 +172,10 @@ public class SSHExecutor {
         return channel;
     }
 
-    public void enterShell(boolean isEnter) {
-
-    }
 
     public void waitCompletion() throws Exception {
         long wait = 50L;
-        //shell.setInputStream(System.in);
+        isWating=true;
         while (!isEnd && !shell.isClosed()) {
             int ch = Console.in.read(wait);
             while (ch >= 0) {
@@ -198,10 +188,9 @@ public class SSHExecutor {
                 wait = 50L;
             }
         }
-        if (shell.isClosed()) {
-            this.close();
-        } else prompt = pr.getPrompt();
-
+        if (shell.isClosed()) close();
+        else prompt = pr.getPrompt();
+        isWating=false;
         //shell.setInputStream(pipeIn);
     }
 

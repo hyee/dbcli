@@ -328,33 +328,33 @@ DECLARE
 BEGIN
   DBMS_LOB.CREATETEMPORARY(:tables_list, TRUE, DBMS_LOB.SESSION);
   FOR i IN (WITH object AS (
-          SELECT /*+ MATERIALIZE */
-                 object_owner owner, object_name name
-            FROM gv$sql_plan^^my_dblink.
-           WHERE inst_id IN (SELECT inst_id FROM gv$instance)
-             AND sql_id = '^^sql_id.'
-             AND object_owner IS NOT NULL
-             AND object_name IS NOT NULL
-           UNION
-          SELECT object_owner owner, object_name name
-            FROM dba_hist_sql_plan^^my_dblink.
-           WHERE :olicense IN ('T', 'D')
-             AND dbid = ^^dbid.
-             AND sql_id = '^^sql_id.'
-             AND object_owner IS NOT NULL
-             AND object_name IS NOT NULL
-          )
-          SELECT 'TABLE', t.owner, t.table_name
-            FROM dba_tab_statistics^^my_dblink. t, -- include fixed objects
-                 object o
-           WHERE t.owner = o.owner
-             AND t.table_name = o.name
-           UNION
-          SELECT 'TABLE', i.table_owner, i.table_name
-            FROM dba_indexes^^my_dblink. i,
-                 object o
-           WHERE i.owner = o.owner
-             AND i.index_name = o.name)
+  	    SELECT /*+ MATERIALIZE */
+  	           object_owner owner, object_name name
+  	      FROM gv$sql_plan^^my_dblink.
+  	     WHERE inst_id IN (SELECT inst_id FROM gv$instance)
+  	       AND sql_id = '^^sql_id.'
+  	       AND object_owner IS NOT NULL
+  	       AND object_name IS NOT NULL
+  	     UNION
+  	    SELECT object_owner owner, object_name name
+  	      FROM dba_hist_sql_plan^^my_dblink.
+  	     WHERE :olicense IN ('T', 'D')
+  	       AND dbid = ^^dbid.
+  	       AND sql_id = '^^sql_id.'
+  	       AND object_owner IS NOT NULL
+  	       AND object_name IS NOT NULL
+  	    )
+  	    SELECT 'TABLE', t.owner, t.table_name
+  	      FROM dba_tab_statistics^^my_dblink. t, -- include fixed objects
+  	           object o
+  	     WHERE t.owner = o.owner
+  	       AND t.table_name = o.name
+  	     UNION
+  	    SELECT 'TABLE', i.table_owner, i.table_name
+  	      FROM dba_indexes^^my_dblink. i,
+  	           object o
+  	     WHERE i.owner = o.owner
+  	       AND i.index_name = o.name)
   LOOP
     IF l_pair IS NULL THEN
       DBMS_LOB.WRITEAPPEND(:tables_list, 1, '(');
@@ -557,7 +557,7 @@ BEGIN
                    AND data_length = 13
                    AND (table_name LIKE 'WR%' OR table_name LIKE 'DBA%' OR table_name LIKE 'SQL%' OR table_name LIKE 'GV!_%' ESCAPE '!' /* GV_$ */)
                    AND table_name NOT LIKE 'SQLT%'
-                   AND table_name NOT LIKE '%LOGSTDBY%'
+				   AND table_name NOT LIKE '%LOGSTDBY%'
                  ORDER BY
                        table_name)
       LOOP
@@ -681,7 +681,7 @@ BEGIN
                    AND c1.data_type = 'NUMBER'
                    AND (c1.table_name LIKE 'WR%' OR c1.table_name LIKE 'DBA%' OR c1.table_name LIKE 'SQL%' OR c1.table_name LIKE 'GV!_%' ESCAPE '!' /* GV_$ */)
                    AND c1.table_name NOT LIKE 'SQLT%'
-                   AND c1.table_name NOT LIKE '%LOGSTDBY%'
+				   AND c1.table_name NOT LIKE '%LOGSTDBY%'
                    AND NOT EXISTS (
                 SELECT NULL
                   FROM dba_tab_columns^^my_dblink. c2
@@ -814,7 +814,7 @@ BEGIN
                    AND c1.data_type = 'NUMBER'
                    AND (c1.table_name LIKE 'WR%' OR c1.table_name LIKE 'DBA%' OR c1.table_name LIKE 'SQL%' OR c1.table_name LIKE 'GV!_%' ESCAPE '!' /* GV_$ */)
                    AND c1.table_name NOT LIKE 'SQLT%'
-                   AND c1.table_name NOT LIKE '%LOGSTDBY%'
+				   AND c1.table_name NOT LIKE '%LOGSTDBY%'
                  ORDER BY
                        c1.table_name)
       LOOP
@@ -930,7 +930,7 @@ BEGIN
                   FROM dba_tab_columns^^my_dblink. c1
                  WHERE c1.column_name = 'TABLE_NAME'
                    AND c1.owner = 'SYS'
-                   AND c1.table_name NOT LIKE '%LOGSTDBY%'
+				   AND c1.table_name NOT LIKE '%LOGSTDBY%'
                    AND SUBSTR(c1.table_name, 1, 3) IN ('COL', 'DBA', 'ROL', 'TAB')
                    AND EXISTS (SELECT null
                                  FROM dba_tab_cols^^my_dblink. c2
@@ -957,19 +957,19 @@ BEGIN
                          END)
         LOOP
           l_table_name := REPLACE(i.table_name, 'GV_$', 'GV$');
-      l_file_name := REPLACE(l_table_name, '$', 's');
+	  l_file_name := REPLACE(l_table_name, '$', 's');
 
-      l_cnt := NULL;
-      BEGIN
-        DBMS_APPLICATION_INFO.SET_MODULE(module_name => '^^script..sql', action_name => 'TABLE '||i.table_name);
-        DBMS_APPLICATION_INFO.SET_CLIENT_INFO(i.table_name||' '||TO_CHAR(SYSDATE, 'YYYY-MM-DD/HH24:MI:SS'));
-        EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM '||l_table_name||'^^my_dblink. WHERE ('||j.column_name||', table_name) IN ^^tables_list.' INTO l_cnt;
-        DBMS_APPLICATION_INFO.SET_MODULE(module_name => NULL, action_name => NULL);
-        DBMS_APPLICATION_INFO.SET_CLIENT_INFO(NULL);
-      EXCEPTION
-        WHEN OTHERS THEN
-          put_line('-- skip: '||l_table_name||' by table. reason: '||SQLERRM);
-      END;
+	  l_cnt := NULL;
+	  BEGIN
+	    DBMS_APPLICATION_INFO.SET_MODULE(module_name => '^^script..sql', action_name => 'TABLE '||i.table_name);
+	    DBMS_APPLICATION_INFO.SET_CLIENT_INFO(i.table_name||' '||TO_CHAR(SYSDATE, 'YYYY-MM-DD/HH24:MI:SS'));
+	    EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM '||l_table_name||'^^my_dblink. WHERE ('||j.column_name||', table_name) IN ^^tables_list.' INTO l_cnt;
+	    DBMS_APPLICATION_INFO.SET_MODULE(module_name => NULL, action_name => NULL);
+	    DBMS_APPLICATION_INFO.SET_CLIENT_INFO(NULL);
+	  EXCEPTION
+	    WHEN OTHERS THEN
+	      put_line('-- skip: '||l_table_name||' by table. reason: '||SQLERRM);
+	  END;
 
           IF l_cnt > 0 THEN
             l_columns_list := get_columns_list(i.table_name);
@@ -1055,7 +1055,7 @@ BEGIN
                  WHERE owner = 'SYS'
                    AND (table_name LIKE 'WR%' OR table_name LIKE 'DBA%' OR table_name LIKE 'SQL%' OR table_name LIKE 'GV!_%' ESCAPE '!' /* GV_$ */)
                    AND table_name NOT LIKE 'SQLT%'
-                   AND table_name NOT LIKE '%LOGSTDBY%'
+				   AND table_name NOT LIKE '%LOGSTDBY%'
                    --AND table_name IN ('DBA_HIST_SNAPSHOT', 'DBA_OBJECTS', 'GV_$PARAMETER2')
                    AND table_name IN ('DBA_HIST_SNAPSHOT', 'GV_$PARAMETER2')
                  ORDER BY

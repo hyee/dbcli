@@ -1,8 +1,8 @@
-/*[[ SQL performance over time: Usage:  @sqlperf  <sql_id>  [days]
+/*[[ SQL performance over time: Usage:  @sqlperf  <sql_id>  [days]   
     --[[
     @BASE:11.2 ={}, 10.1={--}
     ]]--
-
+   
 ]]*/
 
 PROMPT
@@ -10,15 +10,15 @@ PROMPT
 PROMPT &V1 performance over AWR for &V2 day[s]
 PROMPT
 PROMPT
-select
+select  
                         s.instance_number inst_id,
                         ss.snap_id,
                     --  ss.sql_id,
                         to_char(s.begin_interval_time, 'Dy DD-MON HH24:MI') snap_time,
                         SS.PLAN_HASH_VALUE phv,
                         ss.executions_delta execs,
-                        round ((ss.elapsed_time_delta/1000000)/decode(ss.executions_delta,0,1,ss.executions_delta),6) ETIME,
-                        round(ss.buffer_gets_delta/decode(ss.executions_delta,0,1,ss.executions_delta),0) LIO,
+                        round ((ss.elapsed_time_delta/1000000)/decode(ss.executions_delta,0,1,ss.executions_delta),6) ETIME,  
+                        round(ss.buffer_gets_delta/decode(ss.executions_delta,0,1,ss.executions_delta),0) LIO,  
                         round(ss.disk_reads_delta/decode(ss.executions_delta,0,1,ss.executions_delta),0) PIO,
                         round(SS.FETCHES_DELTA/nullif(ss.executions_delta,1),0) Fetches_Ex,
 &BASE    round((ss.IO_INTERCONNECT_BYTES_DELTA/1024/1024)/decode(ss.executions_delta,0,1,ss.executions_delta),0) ICNT,
@@ -26,7 +26,7 @@ select
                         round((ss.ccwait_delta/1000000)/decode(ss.executions_delta,0,1,ss.executions_delta),6) CCTIME,
                         round((ss.clwait_delta/1000000)/decode(ss.executions_delta,0,1,ss.executions_delta),6) CLTIME,
                         round((ss.apwait_delta/1000000)/decode(ss.executions_delta,0,1,ss.executions_delta),6) ATIME,
-                        round((ss.cpu_time_delta/1000000)/decode(ss.executions_delta,0,1,ss.executions_delta),6) CPUTIME,
+                        round((ss.cpu_time_delta/1000000)/decode(ss.executions_delta,0,1,ss.executions_delta),6) CPUTIME, 
                         round ((ss.PLSEXEC_TIME_DELTA/1000000)/decode(ss.executions_delta,0,1,ss.executions_delta),6) PLSQLTIME,
                         round ((ss.JAVEXEC_TIME_DELTA/1000000)/decode(ss.executions_delta,0,1,ss.executions_delta),6) JAVATIME
                   --   ,round(percent_rank() over (order by ceil(ss.elapsed_time_delta/ss.executions_delta))*100, 2) as percentile
@@ -41,7 +41,7 @@ and    s.begin_interval_time >= sysdate - nvl(:V2,15)
 order by s.snap_id;
 
  SELECT  inst_id,
-                    plan_hash_value
+                    plan_hash_value 
                         || ' ('
 &BASE    ||nvl(sql_plan_baseline,null)
                         ||' / '||nvl(s.sql_profile, null)
@@ -77,14 +77,14 @@ order by s.snap_id;
 ORDER BY 1;
 
 
-WITH  EMS
+WITH  EMS 
 as (select  /*+ MATERIALIZE */ exact_matching_signature from gv$sql where sql_id=:V1 and rownum<2)
 &BASE            select  /*+ NO_MERGE */ SQL_HANDLE "NAME", PLAN_NAME, ENABLED, ACCEPTED,  FIXED,
 &BASE            substr(CREATED,1,18) created, OPTIMIZER_COST, EXECUTIONS, ORIGIN, S.LAST_MODIFIED, S.LAST_VERIFIED
 &BASE            from dba_sql_plan_baselines s, EMS
 &BASE            where sql_handle='SQL_'||lower(to_char(exact_matching_signature,'FMXXXXXXXXXXXXXXXX'))
 &BASE            UNION ALL
-select /*+ NO_MERGE */ name "NAME",'N/A' "PLAN_NAME",status "ENABLED", 'N/A' "ACCEPTED", 'N/A' "FIXED", to_char(created) created,null "OPTIMIZER_COST",null "EXECUTIONS", null "ORIGIN",
+select /*+ NO_MERGE */ name "NAME",'N/A' "PLAN_NAME",status "ENABLED", 'N/A' "ACCEPTED", 'N/A' "FIXED", to_char(created) created,null "OPTIMIZER_COST",null "EXECUTIONS", null "ORIGIN", 
 last_modified, null "LAST_VERIFIED" from dba_sql_profiles a, EMS
 where a.signature=ems.exact_matching_signature;
 

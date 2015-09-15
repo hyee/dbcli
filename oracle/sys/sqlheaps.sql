@@ -10,7 +10,7 @@
 -- Usage:       @curheaps <hash_value> <child#>
 --
 --              @curheaps 942515969 %   -- shows a summary of cursor heaps
---                @curheaps 942515969 0   -- shows detail for child cursor 0
+--	            @curheaps 942515969 0   -- shows detail for child cursor 0
 --
 -- Other:       "Child" cursor# 65535 is actually the parent cursor
 --
@@ -36,26 +36,26 @@ col KGLOBHD7 new_value v_curheaps_kglobhd7 noprint
 
 
 select
-    KGLNAHSH,
-    KGLHDPAR,
-    kglobt09 CHILD#,
-    KGLHDADR,
-    KGLOBHD0 , KGLOBHS0 curheaps_size0,
-    KGLOBHD1, KGLOBHS1 curheaps_size1,
-    KGLOBHD2, KGLOBHS2 curheaps_size2,
-    KGLOBHD3, KGLOBHS3 curheaps_size3,
-    KGLOBHD4, KGLOBHS4 curheaps_size4,
-    KGLOBHD5, KGLOBHS5 curheaps_size5,
-    KGLOBHD6, KGLOBHS6 curheaps_size6,
-    KGLOBHD7, KGLOBHS7 curheaps_size7,
---    KGLOBT00 CTXSTAT,
-    KGLOBSTA STATUS
+	KGLNAHSH,
+	KGLHDPAR,
+	kglobt09 CHILD#,
+	KGLHDADR,
+	KGLOBHD0 , KGLOBHS0 curheaps_size0,
+	KGLOBHD1, KGLOBHS1 curheaps_size1,
+	KGLOBHD2, KGLOBHS2 curheaps_size2,
+	KGLOBHD3, KGLOBHS3 curheaps_size3,
+	KGLOBHD4, KGLOBHS4 curheaps_size4,
+	KGLOBHD5, KGLOBHS5 curheaps_size5,
+	KGLOBHD6, KGLOBHS6 curheaps_size6,
+	KGLOBHD7, KGLOBHS7 curheaps_size7,
+--	KGLOBT00 CTXSTAT,
+	KGLOBSTA STATUS
 from
-    X$KGLOB
---    X$KGLCURSOR_CHILD
+	X$KGLOB
+--	X$KGLCURSOR_CHILD
 where
-    KGLNAHSH in (&1)
-and    KGLOBT09 like ('&2')
+	KGLNAHSH in (&1)
+and	KGLOBT09 like ('&2')
 order by
         KGLOBT09 ASC
 /

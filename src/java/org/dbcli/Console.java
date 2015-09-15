@@ -94,6 +94,7 @@ public class Console extends ConsoleReader {
             try {
                 int ch = in.read(1L);
                 if (ch <= 0) return;
+                //System.out.println(ch);
                 for (int i = 0; i < keys.length; i++) {
                     if (ch != keys[i] && keys[i] != '*') continue;
                     event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, Character.toChars(ch).toString()));

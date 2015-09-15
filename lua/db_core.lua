@@ -88,7 +88,7 @@ function db_Types:load_sql_types(className)
                 if action=="get" then
                     local str=result:getBytes(1,math.min(255,result:length()))
                     result:free()
-                    local str1=string.rep('%02X',#str):format(str:byte(1,#str))
+                    local str1=string.rep('%2X',#str):format(str:byte(1,#str)):gsub(' ','0')
                     return str1
                 else
                     return java.cast(result,'java.lang.String'):getBytes()
@@ -575,9 +575,9 @@ function db_core:connect(attrs,data_source)
                          setConnectionProperties=props} do
             if data_source[k] then data_source[k](data_source,v) end
         end
-        err,res=pcall(data_source.getConnection,data_source)
+        err,res=pcall(loader.asyncCall,loader,data_source,'getConnection')
     else
-        err,res=pcall(self.driver.getConnection,self.driver,url,props)
+        err,res=pcall(loader.asyncCall,loader,self.driver,'getConnection',url,props)
     end
 
     env.checkerr(err,tostring(res):gsub(".*Exception.%s*",""))
