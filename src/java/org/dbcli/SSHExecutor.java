@@ -20,6 +20,7 @@ public class SSHExecutor {
     public static String TERMTYPE;
     public static int COLS = 800;
     public static int ROWS = 60;
+    static HashMap<Integer, Object[]> forwards = new HashMap<>();
     public Session session;
     public String linePrefix = "";
     public String host;
@@ -32,12 +33,11 @@ public class SSHExecutor {
     PipedOutputStream shellWriter;
     PipedInputStream pipeIn;
     Printer pr;
-    static HashMap<Integer, Object[]> forwards=new HashMap<>();
     HashMap<String, Channel> channels;
     String lastLine;
     volatile boolean isStart = false;
     volatile boolean isEnd = true;
-    volatile boolean isWating=false;
+    volatile boolean isWating = false;
 
     CompletionHandler completer = new CompletionHandler() {
         @Override
@@ -105,7 +105,7 @@ public class SSHExecutor {
             Interrupter.listen("SSHExecutor", new InterruptCallback() {
                 @Override
                 public void interrupt(ActionEvent e) throws Exception {
-                    if(isWating) {
+                    if (isWating) {
                         shellWriter.write(3);
                         shellWriter.flush();
                     }
@@ -115,7 +115,7 @@ public class SSHExecutor {
             shell.setOutputStream(pr);
             shell.setEnv("TERM", TERMTYPE == "none" ? "ansi" : TERMTYPE);
             shell.setPty(true);
-            shell.setPtyType(TERMTYPE == "none" ? "ansi" : TERMTYPE, COLS, ROWS, 1400, 900);
+            shell.setPtyType(TERMTYPE == "none" ? "ansi" : TERMTYPE, COLS, ROWS, 0, 0);
             shell.connect();
             waitCompletion();
         } catch (Exception e) {
@@ -123,20 +123,24 @@ public class SSHExecutor {
         }
     }
 
-    public void setTermType(String termType, int cols, int rows) {
+    public void setTermType(String termType, int cols, int rows) throws Exception{
         TERMTYPE = termType.intern();
         COLS = cols;
         ROWS = rows;
+        if(isConnect()) {
+            shell.setPtySize(COLS, ROWS, 0, 0);
+            exec("export TERM="+(TERMTYPE == "none" ? "ansi" : TERMTYPE));
+        }
     }
 
     public boolean isConnect() {
-        return shell == null ? false : session.isConnected();
+        return shell == null ? false : shell.isConnected();
     }
 
     public void close() {
         try {
             prompt = null;
-            isWating=false;
+            isWating = false;
             if (pr != null) pr.close();
             if (shellWriter != null) shellWriter.close();
             if (shell != null) {
@@ -175,7 +179,7 @@ public class SSHExecutor {
 
     public void waitCompletion() throws Exception {
         long wait = 50L;
-        isWating=true;
+        isWating = true;
         while (!isEnd && !shell.isClosed()) {
             int ch = Console.in.read(wait);
             while (ch >= 0) {
@@ -190,8 +194,7 @@ public class SSHExecutor {
         }
         if (shell.isClosed()) close();
         else prompt = pr.getPrompt();
-        isWating=false;
-        //shell.setInputStream(pipeIn);
+        isWating = false;
     }
 
     public String getLastLine(String command, boolean isWait) throws Exception {
@@ -204,6 +207,7 @@ public class SSHExecutor {
 
     public void exec(String command) throws Exception {
         pr.reset(false);
+        if(command.charAt(command.length()-1)!='\n') command=command+"\n";
         shellWriter.write(command.getBytes());
         shellWriter.flush();
         waitCompletion();

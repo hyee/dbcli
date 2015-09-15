@@ -11,6 +11,7 @@ import java.util.HashMap;
  */
 public class Interrupter {
     static HashMap<String, InterruptCallback> map = new HashMap<>();
+
     static {
         Signal.handle(new Signal("INT"), new SignalHandler() {
             @Override

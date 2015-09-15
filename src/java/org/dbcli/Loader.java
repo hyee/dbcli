@@ -5,8 +5,6 @@ import com.opencsv.CSVWriter;
 import com.opencsv.SQLWriter;
 import jline.AnsiWindowsTerminal;
 import jline.console.KeyMap;
-import sun.misc.Signal;
-import sun.misc.SignalHandler;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -284,8 +282,13 @@ public class Loader {
                         params[i] = (int) Math.round((Double) params[i]);
                     }
                 }
-                Method m = o.getClass().getDeclaredMethod(func, clazz);
-                return m.invoke(o, params);
+                if (!(o instanceof Class)) {
+                    Method m = o.getClass().getDeclaredMethod(func, clazz);
+                    return m.invoke(o, params);
+                } else {
+                    Method m = ((Class) o).getDeclaredMethod(func, clazz);
+                    return m.invoke(null, params);
+                }
             }
         });
     }

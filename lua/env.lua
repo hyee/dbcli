@@ -304,7 +304,7 @@ function env.callee(idx)
 end
 
 function env.format_error(src,errmsg,...)
-    errmsg=errmsg or ""
+    errmsg=tostring(errmsg) or ""
     errmsg=errmsg:gsub('^.*%s([^%: ]+Exception%:%s*)','%1'):gsub(".*IOException:%s*","")
     --errmsg=errmsg:gsub('.*Exception%:%s*','')
     if src then
