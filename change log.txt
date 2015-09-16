@@ -1,3 +1,4 @@
+2015-09-15: + oracle: new command "shell asmdu"
 2015-09-15: + public: support interruption(ctrl+c/d,'q') on 'connect' and 'ssh' commands
 2015-09-15: - public: remove unused modules: LuaLanes and LuaSocket
 2015-09-14: + public: support CTRL+C to abort running command(same to 'q' and CTRL+D)
