@@ -1,0 +1,24 @@
+/*[[
+   Source: gv$session_event,gv$sess_time_model. parameters: <sid>
+   --[[
+      &V1: df={1}
+   --]]
+]]*/
+{
+    sql=[[
+        SELECT /*+no_expand*/ a.*
+        FROM   (SELECT inst_id, SID, 'Time' class#, stat_name NAME,0 count, VALUE * 1e-6 Secs
+                FROM   gv$sess_time_model
+                WHERE  (stat_name !='DB time' and stat_name not like '%background%')
+                UNION ALL
+                SELECT 0,0,'Time','elapsed time',0,hsecs/100
+                from   v$timer
+                UNION ALL
+                SELECT inst_id, SID, 'Event', event,total_waits, TIME_WAITED_MICRO * 1e-6 t
+                FROM   gv$session_event
+                where  wait_class!='Idle') a
+        WHERE   (:V1 IS NULL OR '' || sid = :V1)
+    ]],
+    agg_cols="secs,count",
+    grp_cols="inst_id,sid,class#,name"
+}

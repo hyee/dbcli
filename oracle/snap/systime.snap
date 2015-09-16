@@ -1,0 +1,10 @@
+/*[[Source: gv$sys_time_model]]*/
+{
+    sql=[[
+        SELECT inst_id, stat_name, round(VALUE * 1e-6, 3) secs
+        FROM   gv$sys_time_model
+        WHERE  stat_name != 'DB time'
+    ]],
+    agg_cols="secs",
+    grp_cols="inst_id,stat_name"
+}

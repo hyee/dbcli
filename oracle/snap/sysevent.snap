@@ -1,0 +1,10 @@
+/*[[Source: gv$system_event]]*/
+{
+    sql=[[
+        select inst_id,event,time_waited/100 secs,total_waits waits,total_timeouts timeouts,wait_class
+        FROM gv$system_event
+        WHERE wait_class!='Idle'
+    ]],
+    agg_cols="waits,timeouts,secs",
+    grp_cols="inst_id,wait_class,event"
+}

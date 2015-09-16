@@ -1,0 +1,20 @@
+/*[[Source: gv$latch]]*/
+{
+    sql=[[
+        SELECT inst_id,
+               ADDR,
+               NAME,
+               WAIT_TIME/1000 MS,
+               GETS,
+               MISSES,
+               SLEEPS,
+               IMMEDIATE_GETS,
+               IMMEDIATE_MISSES,
+               SPIN_GETS
+        FROM   gv$latch
+        WHERE  GETS+IMMEDIATE_GETS+MISSES+IMMEDIATE_MISSES+SLEEPS+SPIN_GETS>0
+    ]],
+    agg_cols="GETS,MISSES,SLEEPS,IMMEDIATE_GETS,IMMEDIATE_MISSES,SPIN_GETS,MS",
+    set_ratio='off',
+    grp_cols="inst_id,addr,name"
+}
