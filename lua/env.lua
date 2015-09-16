@@ -519,7 +519,6 @@ function env.parse_args(cmd,rest)
 end
 
 function env.force_end_input()
-    if not env.pending_command() then return end
     if curr_stmt then
         local stmt={multi_cmd,env.parse_args(multi_cmd,curr_stmt)}
         multi_cmd,curr_stmt=nil,nil
