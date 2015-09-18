@@ -25,7 +25,7 @@ function sqlprof.extract_profile(sql_id,sql_plan)
                4) Extract profile from SPM of another optimized SQL to target sql:
                   exec extract_profile('dc5n1gqgfq09h','SQL_PLAN_004szdq6gtbrtc3254462');
                4) Extract profile from plan_table, make sure there is only one statement in the plan table:
-                  exec extract_profile('dc5n1gqgfq09h',plan);
+                  exec extract_profile('dc5n1gqgfq09h','plan');
             */
             v_sql         CLOB;
             v_signatrue   INT;
@@ -80,7 +80,8 @@ function sqlprof.extract_profile(sql_id,sql_plan)
                           END;
                 SELECT xmltype(other_xml), src
                 INTO   v_hints, v_plan_source
-                FROM   (SELECT /*+no_expand*/
+                FROM   (
+                    SELECT /*+no_expand*/
                          other_xml, src
                         FROM   (SELECT other_xml, 'awr' src, sql_id, plan_hash_value
                                 FROM   dba_hist_sql_plan a
@@ -111,10 +112,7 @@ function sqlprof.extract_profile(sql_id,sql_plan)
                         FROM   sys.sqlprof$ b, sys.sqlprof$attr a
                         WHERE  b.sp_name = nvl(p_plan, p_sqlid)
                         AND    b.signature = a.signature
-                    $END
-
-
-                        )
+                    $END)
                 WHERE  rownum < 2;
             EXCEPTION
                 WHEN no_data_found THEN
@@ -179,7 +177,7 @@ function sqlprof.extract_profile(sql_id,sql_plan)
             pr('    sql_prof := SYS.SQLPROF_ATTR(');
             pr('        q''[BEGIN_OUTLINE_DATA]'',');
             FOR i IN (SELECT /*+ opt_param('parallel_execution_enabled', 'false') */
-                       SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) hint
+                             SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) hint
                       FROM   TABLE(XMLSEQUENCE(EXTRACT(v_hints, '//outline_data/hint'))) d) LOOP
                 v_hint := i.hint;
                 WHILE NVL(LENGTH(v_hint), 0) > 0 LOOP

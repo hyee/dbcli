@@ -4,6 +4,20 @@ local _G = _ENV or _G
 local reader,coroutine,os,string,table,math,io=reader,coroutine,os,string,table,math,io
 
 local getinfo, error, rawset, rawget,math = debug.getinfo, error, rawset, rawget,math
+--[[
+local global_vars,global_source,env={},{},{}
+_G['env']=env
+local global_meta=getmetatable(_G) or {}
+function global_meta.__newindex(self,key,value) rawset(global_vars,key,value) end
+function global_meta.__index(self,key) return rawget(global_vars,key) or rawget(_G,key) end
+function global_meta.__newindex(self,key,value) rawset(global_vars,key,value) end
+function global_meta.__pairs(self) return pairs(global_vars) end
+global_meta.__call=global_meta.__newindex
+
+debug.setmetatable(env,global_meta)
+setmetatable(_G,global_meta)
+--]]
+
 
 local env=setmetatable({},{
     __call =function(self, key, value)
@@ -14,6 +28,24 @@ local env=setmetatable({},{
     __newindex=function(self,key,value) self(key,value) end
 })
 _G['env']=env
+
+local mt = getmetatable(_G)
+
+if mt == nil then
+    mt = {}
+    setmetatable(_G, mt)
+end
+
+mt.__declared = {}
+
+mt.__newindex = function (t, n, v)
+    if not mt.__declared[n] and env.WORK_DIR then
+        rawset(mt.__declared, n,env.callee())
+    end
+    rawset(t, n, v)
+end
+
+env.globals=mt.__declared
 
 
 local function abort_thread()
@@ -28,23 +60,7 @@ _G['TRIGGER_ABORT']=function()
     env.safe_call(env.event and env.event.callback,5,"ON_COMMAND_ABORT")
 end
 
-local mt = getmetatable(_G)
 
-if mt == nil then
-    mt = {}
-    setmetatable(_G, mt)
-end
-
-mt.__declared = {}
-
-mt.__newindex = function (t, n, v)
-    if not mt.__declared[n] and env.WORK_DIR then
-        mt.__declared[n] = env.callee()
-    end
-    rawset(t, n, v)
-end
-
-env.globals=mt.__declared
 
 local dbcli_stack,dbcli_cmd_history={level=0,id=0},{}
 local dbcli_current_item,dbcli_last_id=dbcli_stack,dbcli_stack.id
@@ -177,16 +193,11 @@ end
 local previous_prompt
 function env.set_subsystem(cmd,prompt)
     if cmd~=nil then
-        if not prompt then
-            previous_prompt=env.PRI_PROMPT:sub(1,#env.PRI_PROMPT-2)
-            env.set.doset("prompt",cmd)
-        else
-            env.PRI_PROMPT,env.CURRENT_PROMPT=prompt,prompt
-        end
+        env.set_prompt(cmd,prompt or cmd,false,9)
         env._SUBSYSTEM=cmd
     else
+        env.set_prompt(cmd,nil,false,9)
         env._SUBSYSTEM,_G._SUBSYSTEM=nil,nil
-        env.set.doset("prompt",previous_prompt)
     end
 end
 
@@ -410,24 +421,28 @@ local multi_cmd
 
 local cache_prompt,fix_prompt
 
-function env.set_prompt(name,default,isdefault)
-    if env._SUBSYSTEM~=nil then
-        previous_prompt=default
-        return nil;
-    end
-    default=default:upper()
-    if not name then
-        cache_prompt=default
-        if fix_prompt then default=fix_prompt end
-    else
-        if isdefault then
-            fix_prompt,default=nil,cache_prompt
-        else
-            fix_prompt=default
+local prompt_stack={_base="SQL"}
+
+function env.set_prompt(class,default,is_default,level)
+    default=default and default:upper()
+    class=class or "default"
+    level=level or (class=="default" or default==prompt_stack._base) and 0 or 3
+    if prompt_stack[class] and prompt_stack[class]>level then prompt_stack[prompt_stack[class]]=nil end
+    prompt_stack[level],prompt_stack[class]=default,level
+
+    for i=9,0,-1 do
+        if prompt_stack[i] then
+            default=prompt_stack[i]
+            break
         end
     end
-    env.PRI_PROMPT,env.MTL_PROMPT=default.."> ",(" "):rep(#default+2)
-    env.CURRENT_PROMPT=env.PRI_PROMPT
+
+    if default and not default:match("[%w]%s*$") then 
+        env.PRI_PROMPT=default 
+    else
+        env.PRI_PROMPT=(default or "").."> "
+    end
+    env.CURRENT_PROMPT,env.MTL_PROMPT=env.PRI_PROMPT,(" "):rep(#env.PRI_PROMPT)
     return default
 end
 
@@ -667,7 +682,7 @@ function env.onload(...)
     env.__ARGS__={...}
     env.init=require("init")
     env.init.init_path()
-    for k,v in ipairs({'jit','ffi','bit'}) do
+    for _,v in ipairs({'jit','ffi','bit'}) do
         if not _G[v] then
             local m=package.loadlib("lua5.1."..(env.OS=="windows" and "dll" or "so"), "luaopen_"..v)()
             if not _G[v] then _G[v]=m end
@@ -692,9 +707,9 @@ function env.onload(...)
 
     env.init.onload()
 
-    env.set_prompt(nil,"SQL")
+    env.set_prompt(nil,prompt_stack._base,0)
     if env.set and env.set.init then
-        env.set.init("Prompt","SQL",env.set_prompt,
+        env.set.init("Prompt",prompt_stack._base,env.set_prompt,
                   "core","Define command's prompt, if value is 'timing' then will record the time cost(in second) for each execution.")
         env.set.init("COMMAND_ENDMARKS",end_marks,env.set_endmark,
                   "core","Define the symbols to indicate the end input the cross-lines command. Cannot be alphanumeric characters.")

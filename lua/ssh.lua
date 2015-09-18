@@ -472,7 +472,7 @@ function ssh:__onload()
     env.set_command(self,{'shell','sh'},self.helper,self.run_shell,false,20)
     env.event.snoop("BEFORE_DB_CONNECT",self.trigger_login,self)
     env.event.snoop("TRIGGER_LOGIN",self.login,self)
-    cfg.init("term",_term..","..(cfg.get("linesize")/2)..",auto",self.set_config,"ssh","Define termType/columns/rows in remote SSH server, the supported type depends on remote server",'*')
+    cfg.init("term",_term..",auto,auto",self.set_config,"ssh","Define termType/columns/rows in remote SSH server, the supported type depends on remote server",'*')
 end
 
 function ssh:__onunload()
