@@ -65,18 +65,18 @@ References
 -----------------------
 The project depends on some binary files of open-source projects, the binaries have been included into this project.
 Below is the list:<br>
-
-    luajit v2.1 : (MIT)  http://luajit.org/
-    jnlua       : (MIT)  https://github.com/hyee/JNLuaJIT (revised based on code.google.com/p/jnlua)
-    JLine2      : (BSD)  https://github.com/jline/jline2
-    ConsoleZ    : (GNU)  https://github.com/cbucher/console
-    MessagePack : (MIT)  https://github.com/fperrad/lua-MessagePack (pure lua)
-    OpenCSV     : (MIT)  https://github.com/hyee/OpenCSV
-    dygraphs    : (MIT)  https://github.com/danvk/dygraphs
-    JSch        : (BSD)  http://www.jcraft.com/jsch/
-    ANSICON     : (ZLIB) https://github.com/adoxa/ansicon
-    PSCP        : (MIT)  http://www.putty.org/
-    
+<pre>
+JLine2      : (BSD)  https://github.com/jline/jline2
+luajit v2.1 : (MIT)  http://luajit.org/
+jnlua       : (MIT)  https://github.com/hyee/JNLuaJIT(based on http://jnlua.googlecode.com/)
+OpenCSV     : (MIT)  https://github.com/hyee/OpenCSV(based on opencsv.sourceforge.net)
+ConsoleZ    : (GNU)  https://github.com/cbucher/console
+MessagePack : (MIT)  https://github.com/fperrad/lua-MessagePack (pure lua)
+dygraphs    : (MIT)  https://github.com/danvk/dygraphs
+JSch        : (BSD)  http://www.jcraft.com/jsch/
+ANSICON     : (ZLIB) https://github.com/adoxa/ansicon
+PSCP        : (MIT)  http://www.putty.org/
+</pre>  
 
 Besides, some SQL scripts are from internet.
 
