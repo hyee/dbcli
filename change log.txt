@@ -1,3 +1,5 @@
+2015-09-20: * public: Minor update on JNLua for LuaJit because the author has stopped the maintenance
+2015-09-18: ! public: minor fixes
 2015-09-15: + oracle: new command "shell asmdu"
 2015-09-15: + public: support interruption(ctrl+c/d,'q') on 'connect' and 'ssh' commands
 2015-09-15: - public: remove unused modules: LuaLanes and LuaSocket
@@ -6,7 +8,7 @@
 2015-09-14: ! public: fix the completion determination of "alter" statement
 2015-09-11: ! public: fix issue "string slice too long" when fetching blob
 2015-09-11: ! oracle: fix issue for the "explain plan" statement
-2015-09-11: ! public: remove tailing spaces from codes; replace tab as 4 spaces
+2015-09-11: * public: remove tailing spaces from codes; replace tab as 4 spaces
 2015-09-10: ! public: minor fixes
 2015-09-10: * public: open html file in async mode for 'chart' command to avoid blocking dbcli
 2015-09-05: * public: ssh download/upload: enable compression by default

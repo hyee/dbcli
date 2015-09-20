@@ -682,20 +682,16 @@ function env.onload(...)
     env.__ARGS__={...}
     env.init=require("init")
     env.init.init_path()
-    for _,v in ipairs({'jit','ffi','bit'}) do
-        if not _G[v] then
-            local m=package.loadlib("lua5.1."..(env.OS=="windows" and "dll" or "so"), "luaopen_"..v)()
-            if not _G[v] then _G[v]=m end
-            if v=="jit" then
-                table.new=require("table.new")
-                table.clear=require("table.clear")
-                env.jit.on()
-                env.jit.profile=require("jit.profile")
-                env.jit.util=require("jit.util")
-                env.jit.opt.start(3)
-            elseif v=='ffi' then
-                env.ffi=require("ffi")
-            end
+    for _,v in ipairs({'jit','ffi','bit'}) do   
+        if v=="jit" then
+            table.new=require("table.new")
+            table.clear=require("table.clear")
+            env.jit.on()
+            env.jit.profile=require("jit.profile")
+            env.jit.util=require("jit.util")
+            env.jit.opt.start(3)
+        elseif v=='ffi' then
+            env.ffi=require("ffi")
         end
     end
 

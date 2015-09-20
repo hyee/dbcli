@@ -1,7 +1,7 @@
 
 DBCLI : a CLI utility for DBA (Oracle/DB2)
 =====================================================
-[![Licence](http://img.shields.io/badge/Licence-MIT-brightgreen.svg)](COPYRIGHT)
+[![Licence](http://img.shields.io/badge/Licence-MIT-brightgreen.svg)](https://en.wikipedia.org/wiki/MIT_License)
 [drag]:https://raw.githubusercontent.com/hyee/dbcli/master/help.gif
 ![][drag]
 
@@ -63,11 +63,11 @@ Below are some common use of the utility:<br>
 
 References
 -----------------------
-The project depends on some binary files of open-source projects without modifications, the binaries have been included into this project.
+The project depends on some binary files of open-source projects, the binaries have been included into this project.
 Below is the list:<br>
 
     luajit v2.1 : (MIT)  http://luajit.org/
-    jnlua       : (MIT)  https://code.google.com/p/jnlua/
+    jnlua       : (MIT)  https://github.com/hyee/JNLuaJIT (revised based on code.google.com/p/jnlua)
     JLine2      : (BSD)  https://github.com/jline/jline2
     ConsoleZ    : (GNU)  https://github.com/cbucher/console
     MessagePack : (MIT)  https://github.com/fperrad/lua-MessagePack (pure lua)
@@ -75,8 +75,7 @@ Below is the list:<br>
     dygraphs    : (MIT)  https://github.com/danvk/dygraphs
     JSch        : (BSD)  http://www.jcraft.com/jsch/
     ANSICON     : (ZLIB) https://github.com/adoxa/ansicon
-    PSCP        : http://www.putty.org/
-    json4lua    : https://github.com/craigmj/json4lua
+    PSCP        : (MIT)  http://www.putty.org/
     
 
 Besides, some SQL scripts are from internet.
