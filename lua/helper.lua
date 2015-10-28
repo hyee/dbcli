@@ -101,8 +101,8 @@ function helper.helper(cmd,...)
         else
             helps  = _CMDS[cmd].HELPER or ""
         end
-        local spaces=helps:match("([%s\t]*)[^%s\t\n\r]") or ""
-        helps=('\n'..helps):gsub("[\n\r]"..spaces,"\n"):gsub("[%s\t\n\r]+$","")
+        local spaces=helps:match("([ \t]*)%S") or ""
+        helps=('\n'..helps):gsub("[\n\r]"..spaces,"\n"):gsub("%s+$","")
         if helps:sub(1,1)=="\n" then helps=helps:sub(2) end
         return print(helps)
     elseif cmd=="-e" or cmd=="-E" then
@@ -124,11 +124,11 @@ function helper.helper(cmd,...)
             local f=io.open(dest)
             local txt=f:read("*a")
             f:close()
-            for v in txt:gmatch("%[Loaded%s+([^%s]+).-%]") do
+            for v in txt:gmatch("%[Loaded%s+(%S+).-%]") do
                 java.loader:copyClass(v)
             end
 
-            for v in txt:gmatch("([^%s]+)%.class%W") do
+            for v in txt:gmatch("(%S+)%.class%W") do
                 java.loader:copyClass(v)
             end
         else
@@ -144,7 +144,7 @@ function helper.helper(cmd,...)
        end
        table.insert(rows[#rows],"Decription")
     for k,v in pairs(_CMDS) do
-        if k~="___ABBR___" and (v.DESC and not v.DESC:find("[%s\t]*#") or flag==1) then
+        if k~="___ABBR___" and (v.DESC and not v.DESC:find("[ \t]*#") or flag==1) then
             table.insert(rows,{
                     k,
                     v.ABBR,

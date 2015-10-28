@@ -2,7 +2,7 @@
 DBCLI : a CLI utility for DBA (Oracle/DB2)
 =====================================================
 [![Licence](http://img.shields.io/badge/Licence-MIT-brightgreen.svg)](https://en.wikipedia.org/wiki/MIT_License)
-[drag]:https://raw.githubusercontent.com/hyee/dbcli/master/help.gif
+[drag]:help.gif
 ![][drag]
 
 Description
@@ -31,7 +31,8 @@ To avoid the word wrap in the terminal window which affects the print layout, fo
 * In the `Font` tab, use Roster font with the size is `6 * 12`
 
 ###Configure environment
-Before running dbcli, make sure that you have installed JRE 1.7+ in your local PC. If you are using the version of "With-JRE" branch, this step can be skipped<br>
+Before running dbcli, make sure that you have installed JRE 1.7+ in your local PC. If you are using the version of "With-JRE" branch, this step can be skipped.
+
 Create file `init.cfg` under the "data" directory with following content:
    
     SET JRE_HOME=<JRE HOME>
@@ -43,7 +44,8 @@ Of which `TNS_ADM` is optional unless you need to connect Oracle via tnsnames.or
     SET TNS_ADM=d:\Soft\InstanceClient\network\admin
 
 ###Launch DBCLI
-After the above configurations, you are able to start DBCLI by executing `dbcli.bat` or `bin\ConsoleZ\Console.exe`.<br>    
+After the above configurations, you are able to start DBCLI by executing `dbcli.bat` or `bin\ConsoleZ\Console.exe`.
+
 `dbcli.bat` also supports arguments in `"<command>=<args>"` format, all available commands can be found by typing `help` or `help -a`.
 
 For example: `dbcli.bat "connect=tiger/scott@orcl"`<br><br>
@@ -57,8 +59,8 @@ Below are some common use of the utility:<br>
     3. Execute SQL statements which should match the database syntax, similar to SQL*Plus.
     4. "ora" command to execute pre-defined scripts under the "ora" sub-directory. i.e., ora ashtop, ora actives
     5. "alias" command which is similar to the Linux command
-    6. "set" command to config the shell enviroment
-    7. 'q' or CTRL + D or CTRL + C to abort running SQL
+    6. "set" command to configure the shell environment
+    7. 'q' or CTRL + D or CTRL + C to abort running command
     8. "help" or "help -a" to see other available commands.
 
 References
@@ -82,5 +84,6 @@ Besides, some SQL scripts are from internet.
 
 About ANSICON
 -----------------------
-ANSICON provides more ANSI escape features than JLine, especially when running bash commands(i.e.: top) via SSH.<br/>
-If you have concern on ANSICON, please remove it from bin, and edit `data\init.cfg` to add line `set ANSICON_CMD=`
+`ANSICON` provides more ANSI escape features than JLine, especially when running bash commands(i.e.: top) via SSH.
+
+If you have concern on `ANSICON`, please remove it from bin, and edit `data\init.cfg` to add line `set ANSICON_CMD=`

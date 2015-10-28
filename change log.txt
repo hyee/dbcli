@@ -1,3 +1,4 @@
+2015-10-28: ! public: minor fixes
 2015-09-20: * public: Minor update on JNLua for LuaJit because the author has stopped the maintenance
 2015-09-18: ! public: minor fixes
 2015-09-15: + oracle: new command "shell asmdu"

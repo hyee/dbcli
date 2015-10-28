@@ -86,7 +86,7 @@ local function push_stack(cmd)
 end
 
 local function push_history(cmd)
-    cmd=cmd:gsub("[\n\r%s\t]+"," "):gsub("^%+",""):sub(1,200)
+    cmd=cmd:gsub("%s+"," "):gsub("^%+",""):sub(1,200)
     dbcli_cmd_history[#dbcli_cmd_history+1]=("%d: %s%s"):format(dbcli_current_item.level, string.rep("   ",dbcli_current_item.level-1),cmd)
     while #dbcli_cmd_history>1000 do
         table.remove(dbcli_cmd_history,1)
@@ -205,7 +205,7 @@ function env.check_cmd_endless(cmd,other_parts)
     if not _CMDS[cmd] then
         return true,other_parts
     end
-    local p1=env.END_MARKS[1]..'[%s\t\n]*$'
+    local p1=env.END_MARKS[1]..'%s*$'
     if not _CMDS[cmd].MULTI then
         return true,other_parts and other_parts:gsub(p1,"")
     elseif type(_CMDS[cmd].MULTI)=="function" then
@@ -215,7 +215,7 @@ function env.check_cmd_endless(cmd,other_parts)
     end
 
 
-    local p2=env.END_MARKS[2]..'[%s\t\n]*$'
+    local p2=env.END_MARKS[2]..'%s*$'
     local match = (other_parts:match(p1) and 1) or (other_parts:match(p2) and 2) or false
     --print(match,other_parts)
     if not match then
@@ -226,9 +226,9 @@ end
 
 function env.smart_check_endless(cmd,rest,from_pos)
     local args=env.parse_args(from_pos,rest)
-    if not args[from_pos-1] then return true,rest:gsub('['..env.END_MARKS[1]..'%s\t]+$',"") end
+    if not args[from_pos-1] then return true,rest:gsub('['..env.END_MARKS[1]..' \t]+$',"") end
     if env.check_cmd_endless(args[from_pos-1]:upper(),args[from_pos] or "") then
-        return true,rest:gsub('[%s\n\r\t]+$',"")
+        return true,rest:gsub('%s+$',"")
     else
         return false,rest
     end
@@ -268,7 +268,7 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
     end
 
     if type(desc)=="string" then
-        desc = desc:gsub("^[\n\r%s\t]*[\n\r]+","")
+        desc = desc:gsub("^%s*[\n\r]+","")
         desc = desc:match("([^\n\r]+)")
     elseif desc then
         print(cmd..': Unexpected command definition, the description should be a function or string, but got '..type(desc))
@@ -315,28 +315,29 @@ function env.callee(idx)
 end
 
 function env.format_error(src,errmsg,...)
-    errmsg=tostring(errmsg) or ""
-    errmsg=errmsg:gsub('^.*%s([^%: ]+Exception%:%s*)','%1'):gsub(".*IOException:%s*","")
-    --errmsg=errmsg:gsub('.*Exception%:%s*','')
+    errmsg=(tostring(errmsg) or ""):gsub('^.*%s([^%: ]+Exception%:%s*)','%1')
+        :gsub(".*[IS][OQL]+Exception:%s*","")
+            :gsub("^.*000%-00000%:%s*","")
+                :gsub("%s+$","")
     if src then
         local name,line=src:match("([^\\/]+)%#(%d+)$")
         if name then
             name=name:upper():gsub("_",""):sub(1,3)
-            errmsg=name.."-"..string.format("%05i",tonumber(line))..": "..errmsg
+            errmsg='000-00000:'..name.."-"..string.format("%05i",tonumber(line))..": "..errmsg
         end
     end
     if select('#',...)>0 then errmsg=errmsg:format(...) end
-    return env.ansi and env.ansi.mask('HIR',errmsg) or errmsg
+    return errmsg
 end
 
 function env.warn(...)
-    local str=env.format_error(env.callee(),...)
-    print(str)
+    local str,count=env.format_error(nil,...):gsub("[^\n\r]*(%u%u%u+%-[^\n\r]*)",'%1')
+    print(env.ansi and env.ansi.mask('HIR',str) or str)
 end
 
 function env.raise(...)
     local str=env.format_error(env.callee(),...)
-    return error('000-00000:'..str)
+    return error(str)
 end
 
 function env.raise_error(...)
@@ -347,7 +348,7 @@ end
 function env.checkerr(result,msg,...)
     if not result then
         local str=env.format_error(env.callee(),msg,...)
-        return error('000-00000:'..str)
+        return error(str)
     end
 end
 
@@ -391,16 +392,7 @@ function env.exec_command(cmd,params)
         --local res = {pcall(func,table.unpack(args))}
         if not res[1] then
             result=res
-            local msg={}
-            res[2]=tostring(res[2]):gsub('^.*%s([^%: ]+Exception%:%s*)','%1'):gsub(".*IOException:%s*",""):gsub("^.*000%-00000%:%s*","")
-            for v in res[2]:gmatch("(%u%u%u+%-[^\n\r]*)") do
-                table.insert(msg,v)
-            end
-            if #msg > 0 then
-                print(env.ansi.mask("HIR",table.concat(msg,'\n')))
-            elseif #res[2]>0 then
-                print(env.ansi.mask("HIR",res[2]))
-            end
+            env.warn(res[2])
         elseif not result then
             result=res
         end
@@ -472,7 +464,7 @@ function env.parse_args(cmd,rest)
         arg_count=cmd+1
     else
         if not cmd then
-            cmd,rest=rest:match('([^%s\n\r\t'..env.END_MARKS[1]..']+)[%s\n\r\t]*(.*)')
+            cmd,rest=rest:match('([^%s'..env.END_MARKS[1]..']+)%s*(.*)')
             cmd = cmd and cmd:upper() or "_unknown_"
         end
         env.checkerr(_CMDS[cmd],'Unknown command "'..cmd..'"!')
@@ -493,7 +485,7 @@ function env.parse_args(cmd,rest)
             if is_quote_string then--if the parameter starts with quote
                 if char ~= quote then
                     piece = piece .. char
-                elseif (rest:sub(i+1,i+1) or " "):match("^[%s\n\t\r]*$") then
+                elseif (rest:sub(i+1,i+1) or " "):match("^%s*$") then
                     --end of a quote string if next char is a space
                     args[#args+1]=(piece..char):gsub('^"(.*)"$','%1')
                     piece,is_quote_string='',false
@@ -504,21 +496,21 @@ function env.parse_args(cmd,rest)
                 if char==quote then
                     --begin a quote string, if its previous char is not a space, then bypass
                     is_quote_string,piece = true,piece..quote
-                elseif not char:match("([%s\t\r\n])") then
+                elseif not char:match("(%s)") then
                     piece = piece ..char
                 elseif piece ~= '' then
                     args[#args+1],piece=piece,''
                 end
             end
             if #args>=arg_count-2 then--the last parameter
-                piece=rest:sub(i+1):gsub("^([%s\t\r\n]+)",""):gsub('^"(.*)"$','%1')
+                piece=rest:sub(i+1):gsub("^(%s+)",""):gsub('^"(.*)"$','%1')
                 args[#args+1],piece=piece,''
                 break
             end
         end
         --If the quote is not in couple, then treat it as a normal string
         if piece:sub(1,1)==quote then
-            for s in piece:gmatch('([^%s]+)') do
+            for s in piece:gmatch('(%S+)') do
                 args[#args+1]=s
             end
         elseif piece~='' then
@@ -551,7 +543,7 @@ function env.force_end_input()
 end
 
 function env.eval_line(line,exec)
-    if type(line)~='string' or line:gsub('[%s\n\r\t]+','')=='' then return end
+    if type(line)~='string' or line:gsub('%s+','')=='' then return end
     local subsystem_prefix=""
     --Remove BOM header
     if not env.pending_command() then
@@ -570,13 +562,13 @@ function env.eval_line(line,exec)
                 end
             end
         end
-        line=(subsystem_prefix..line:gsub("^%.","",1)):gsub('^[%z\128-\255%s\t]+','')
+        line=(subsystem_prefix..line:gsub("^%.","",1)):gsub('^[%z\128-\255 \t]+','')
         if line:match('^([^%w])') then
             local cmd=""
             for i=math.min(#line,5),1,-1 do
                 cmd=line:sub(1,i)
                 if _CMDS[cmd] then
-                    if #line>i and not line:sub(i+1,i+1):find('[%s\t\r]') then
+                    if #line>i and not line:sub(i+1,i+1):find('%s') then
                         line=cmd..' '..line:sub(i+1)
                     end
                     break
@@ -598,7 +590,7 @@ function env.eval_line(line,exec)
 
     if multi_cmd then return check_multi_cmd(line) end
 
-    local cmd,rest=line:match('^%s*([^%s\t]+)[%s\t]*(.*)')
+    local cmd,rest=line:match('^%s*([^ \t]+)[ \t]*(.*)')
     if not cmd then return end
     cmd=subsystem_prefix=="" and cmd:gsub(env.END_MARKS[1]..'+$',''):upper() or cmd
     env.CURRENT_CMD=cmd
@@ -660,7 +652,7 @@ function env.set_endmark(name,value)
     value=value:gsub("\\+",'\\')
     local p1=value:sub(1,1)
     local p2=value:sub(2):gsub('\\(%w)',function(s)
-        return s=='n' and '\n[%s\t]*' or s=='r' and '\r[%s\t]*' or s=='t' and '\t[%s\t]*' or '\\'..s
+        return s=='n' and '\n[ \t]*' or s=='r' and '\r[ \t]*' or s=='t' and '\t[ \t]*' or '\\'..s
     end) or p1
 
     env.END_MARKS={p1,p2}

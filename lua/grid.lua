@@ -191,7 +191,7 @@ function grid.show_pivot(rows,col_del)
     local del=grid.title_del
     del=(del=="-" and "=") or (del=="=" and "||") or (del=="." and ":") or del
     del=' '..del..' '
-    --if not grid.col_del:match("^[%s\t]+$") then del="" end
+    --if not grid.col_del:match("^[ \t]+$") then del="" end
     if pivot>#rows then pivot=#rows end
 
     local maxlen=0
@@ -299,7 +299,7 @@ function grid:add(rs)
                 v=table.concat(v1,'\n')
             end
             local grp={}
-            if headind>0 then v=v:gsub("[\n\r\t%s]+$",""):gsub("[%s\t]+[\n\r]","\n"):gsub("\t",'    ') end
+            if headind>0 then v=v:gsub("%s+$",""):gsub("[ \t]+[\n\r]","\n"):gsub("\t",'    ') end
             --if the column value has multiple lines, then split lines into table
             for p in v:gmatch('([^\n\r]+)') do
                 grp[#grp+1]=p

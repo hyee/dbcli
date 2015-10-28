@@ -313,7 +313,7 @@ end
 function db_core:check_sql_method(event_name,sql,method,...)
     local res,obj=pcall(method,...)
     if res==false then
-        local info={db=self,sql=sql,error=tostring(obj):gsub('[%s\t\n\r]+$','')}
+        local info={db=self,sql=sql,error=tostring(obj):gsub('%s+$','')}
         info.error=info.error:gsub('.*Exception:?%s*','')
         event(event_name,info)
         if info and info.error and info.error~="" then

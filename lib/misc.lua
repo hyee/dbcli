@@ -73,7 +73,7 @@ end
 
 
 function string.trim(s,sep)
-    return s:match('^[ \t\n\v\f\r]*(.-)[ \t\n\v\f\r]*$')
+    return s:match('^%s*(.-)%s*$')
 end
 
 local str=java.require("java.lang.String")

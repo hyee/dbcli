@@ -37,9 +37,9 @@ function oracle:helper(cmd)
     return ({
         CONNECT=[[
         Connect to Oracle database.
-        Usage  : connect <user>/<password>@<tns_name>  or
-                 connect <user>/<password>@[//]<ip_address|host_name>[:<port>]/<service_name> or
-                 connect <user>/<password>@[//]<ip_address|host_name>[:<port>]:<sid>
+        Usage  : connect <user>/<password>@<tns_name> [as sysdba] or
+                 connect <user>/<password>@[//]<ip_address|host_name>[:<port>]/<service_name> [as sysdba] or
+                 connect <user>/<password>@[//]<ip_address|host_name>[:<port>]:<sid> [as sysdba]
         ]],
         CONN=[[Refer to command 'connect']],
         RECONNECT=[[Re-connect the last connection, normally used when previous connection was disconnected for unknown reason.]],
@@ -80,7 +80,6 @@ function oracle:connect(conn_str)
          ['oracle.jdbc.useNio']='true',
          ['oracle.jdbc.TcpNoDelay']='true'
         },args)
-
     self:load_config(url,args)
     if args.jdbc_alias or not sqlplustr then
         local pwd=args.password
@@ -104,8 +103,13 @@ function oracle:connect(conn_str)
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     self.props={}
+    self:internal_call([[/*INTERNAL_DBCLI_CMD*/
+        begin
+            execute immediate 'alter session set nls_date_format=''yyyy-mm-dd hh24:mi:ss''';
+            execute immediate 'alter session set statistics_level=all';
+        end;]],{})
 
-    local params=self:get_value([[
+    local err,params=pcall(self.get_value,self,[[
        select /*INTERNAL_DBCLI_CMD*/ user,
                (SELECT VALUE FROM Nls_Database_Parameters WHERE parameter='NLS_RDBMS_VERSION') version,
                 sys_context('userenv','language'),
@@ -115,21 +119,19 @@ function oracle:connect(conn_str)
                 sys_context('userenv','db_name')||nullif('.'||sys_context('userenv','db_domain'),'.'),
                 (select decode(DATABASE_ROLE,'PRIMARY','','PHYSICAL STANDBY',' (Standby)') from v$database)
        from dual]])
-
-    self.props={db_user=params[1],db_version=params[2],db_nls_lang=params[3],service_name=params[7],isdba=params[6]=='TRUE' and true or false}
-    env._CACHE_PATH=env._CACHE_BASE..self.props.service_name..env.PATH_DEL
-    os.execute('mkdir "'..env._CACHE_PATH..'" 2> '..(env.OS=="windows" and 'NUL' or "/dev/null"))
-    self:internal_call([[/*INTERNAL_DBCLI_CMD*/
-        begin
-            execute immediate 'alter session set nls_date_format=''yyyy-mm-dd hh24:mi:ss''';
-            execute immediate 'alter session set statistics_level=all';
-        end;]],{})
-
-    prompt=(prompt or self.props.service_name):match("^([^,%.&]+)")
-    prompt=('%s%s'):format(prompt:upper(),params[8])
-    env.set_prompt(nil,prompt)
-    self.session_title=('%s%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)'):format(prompt:upper(),params[8], params[5],params[1],params[4],params[2])
-    env.set_title(self.session_title)
+    self.props={}
+    if not err then 
+        env.warn(tostring(params))
+    else
+        self.props={db_user=params[1],db_version=params[2],db_nls_lang=params[3],service_name=params[7],isdba=params[6]=='TRUE' and true or false}
+        env._CACHE_PATH=env._CACHE_BASE..self.props.service_name..env.PATH_DEL
+        os.execute('mkdir "'..env._CACHE_PATH..'" 2> '..(env.OS=="windows" and 'NUL' or "/dev/null"))
+        prompt=(prompt or self.props.service_name):match("^([^,%.&]+)")
+        prompt=('%s%s'):format(prompt:upper(),params[8])
+        env.set_prompt(nil,prompt)
+        self.session_title=('%s%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)'):format(prompt:upper(),params[8], params[5],params[1],params[4],params[2])
+        env.set_title(self.session_title)
+    end
     if event then event("AFTER_ORACLE_CONNECT",self,sql,args,result) end
     print("Database connected.")
 end
@@ -176,7 +178,7 @@ function oracle:parse(sql,params)
         return s:upper()
     end)
 
-    if sql:lower():match("^[%s\n\r\t]*explain") then
+    if sql:lower():match("^%s*explain") then
         params={V1=sql}
         p1={V1={self.db_types:set('CLOB',sql)}}
         sql=[[DECLARE /*INTERNAL_DBCLI_CMD*/ /*DBCLI_XPLAN*/
@@ -272,7 +274,7 @@ function oracle:dba_query(cmd,sql,args)
 end
 
 function oracle.check_completion(cmd,other_parts)
-    local p1=env.END_MARKS[2]..'[%s\t]*$'
+    local p1=env.END_MARKS[2]..'[ \t]*$'
     local p2
     local objs={
         OR=1,
@@ -290,7 +292,7 @@ function oracle.check_completion(cmd,other_parts)
     --alter package xxx compile ...
     local obj,action=env.parse_args(2,other_parts)[1]
     if obj and not objs[obj:upper()] and not objs[cmd] then
-        p2=env.END_MARKS[1].."+[%s\t\n]*$"
+        p2=env.END_MARKS[1].."+%s*$"
     end
     local match = (other_parts:match(p1) and 1) or (p2 and other_parts:match(p2) and 2) or false
     --print(match,other_parts)
@@ -314,7 +316,7 @@ function oracle:handle_error(info)
         info.sql=nil
         return
     end
-    local ora_code,msg=info.error:match('ORA%-(%d+):%s*([^\n\r]+)')
+    local ora_code,msg=info.error:match('ORA%-(%d+): *([^\n\r]+)')
     if ora_code and tonumber(ora_code)>=20001 and tonumber(ora_code)<20999 then
         info.sql=nil
         info.error=msg
@@ -366,10 +368,41 @@ function oracle:onload()
     set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)
     set_command(self,"alter" ,   default_desc,        self.exec      ,true,1,true)
 
-
+    set_command(self,"list_access" ,   default_desc,        self.list_access      ,false,1,false)
     self.C={}
     init.load_modules(module_list,self.C)
     env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)
+end
+
+function oracle:list_access()
+    local dir=io.popen('dir /B/S/A:-D '..env.WORK_DIR..'oracle')
+    local list={}
+    for n in dir:lines() do
+        if not n:match("jar$") then 
+            local f=io.open(n,'r')
+            local txt=f:read("*a")
+            f:close()
+            for m in txt:lower():gmatch("g?v_?%$([%w_%$%d]+)") do
+                list["v$"..m]=1
+            end
+            for m in txt:lower():gmatch("dba_([%w_%$%d]+)") do
+                list["dba_"..m]=1
+            end
+            for m in txt:lower():gmatch("all_([%w_%$%d]+)") do
+                list["dba_"..m]=1
+            end
+            for m in txt:lower():gmatch("(sys%.[%w_%$%d]+)") do
+                list[m]=1
+            end
+        end
+    end
+
+    for k,v in pairs(list) do
+        local res=pcall(self.get_value,self,'select * from '..k..' where 1=2')
+        if not res then list[k]=nil end
+    end
+
+    print(table.dump(list))
 end
 
 function oracle:onunload()
