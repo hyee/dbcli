@@ -100,10 +100,10 @@ DECLARE
 BEGIN
     FOR r IN (SELECT NVL2(b.column_name, a.column_name, 'null ' || a.column_name) || ',' col,a.column_id idx
               FROM   all_tab_columns a, all_tab_cols b
-              WHERE  a.owner = USER
-              AND    b.owner(+) = USER
-              AND    a.table_name = 'ACCOUNT_TEST2'
-              AND    b.table_name(+) = 'ACCOUNT_TEST1'
+              WHERE  a.owner = usr
+              AND    b.owner(+) = usr
+              AND    a.table_name = new_table
+              AND    b.table_name(+) = org_table
               AND    a.column_name = b.column_name(+)
               ORDER  BY a.column_id) LOOP
         cols := cols || r.col;
