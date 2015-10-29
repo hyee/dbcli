@@ -15,7 +15,7 @@ cd ..
 mkdir "%target%"
 cd /d "%target%"
 REM git pull
-forfiles /c "cmd /c if @isdir==TRUE (if @file NEQ \".git\" if @file NEQ \"aliases\" (del /S/F/Q @file\*.*)) else (del /S/F/Q @file)"
+forfiles /c "cmd /c if @isdir==TRUE (if @file NEQ \".git\" if @file NEQ \"aliases\" (del /S/Q @file\*.*)) else (del /S/F/Q @file)"
 
 cd /d "%~dp0"
 cd ..

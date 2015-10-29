@@ -6,7 +6,7 @@ local scripter=env.class()
 
 function scripter:ctor()
     self.script_dir,self.extend_dirs=nil,{}
-    self.comment="/%*[\t\n\r%s]*%[%[(.*)%]%][\t\n\r%s]*%*/"
+    self.comment="/%*%s*%[%[(.*)%]%]%s*%*/"
     self.command='sql'
     self.usage="[<script_name>|-r|-p|-h|-s] [parameters]"
     self.ext_name='sql'
@@ -34,7 +34,7 @@ function scripter:rehash(script_dir,ext_name)
     local counter=0
     for k,v in ipairs(keylist) do
         if script_dir:match("ssh") then print(table.dump(v)) end
-        local desc=v[3] and v[3]:gsub("^[\n\r%s\t]*[\n\r]+","") or ""
+        local desc=v[3] and v[3]:gsub("^%s*[\n\r]+","") or ""
         desc=desc:gsub("%-%-%[%[(.*)%]%]%-%-",""):gsub("%-%-%[%[(.*)%-%-%]%]","")
         desc=desc:gsub("([\n\r]+%s*)%-%-","%1  ")
         desc=desc:gsub("([\n\r]+%s*)REM","%1   ")
@@ -211,7 +211,7 @@ function scripter:parse_args(sql,args,print_args)
 
         local function strip(text)
             len=146
-            text= (text:gsub("[\t%s\n\r]+"," ")):sub(1,len)
+            text= (text:gsub("%s+"," ")):sub(1,len)
             if text:len()==len then text=text..' ...' end
             return text
         end
@@ -262,8 +262,8 @@ function scripter:run_sql(sql,args,print_args)
     if print_args or not args then return end
     --remove comment
     sql=sql:gsub(self.comment,"",1)
-    sql=('\n'..sql):gsub("\n[\t%s]*%-%-[^\n]*","")
-    sql=('\n'..sql):gsub("\n%s*/%*.-%*/",""):gsub("/[\n\r\t%s]*$","")
+    sql=('\n'..sql):gsub("\n[\t ]*%-%-[^\n]*","")
+    sql=('\n'..sql):gsub("\n%s*/%*.-%*/",""):gsub("/%s*$","")
     local sq="",cmd,params,pre_cmd,pre_params
     local cmds=env._CMDS
 
@@ -407,7 +407,7 @@ function scripter:helper(_,cmd,search_key)
         for k,v in pairs(cmdlist) do
             if (not search_key or k:find(search_key:upper(),1,true)) and k:sub(1,2)~='./' and k:sub(1,1)~='_' then
                 if search_key or not (v.path or ""):find('[\\/]test[\\/]') then
-                    local desc=v.short_desc:gsub("^[%s\t]+","")
+                    local desc=v.short_desc:gsub("^[ \t]+","")
                     if desc and desc~="" then
                         table.insert(rows[1],k)
                         table.insert(rows[2],desc)

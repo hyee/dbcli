@@ -101,7 +101,7 @@ end
 function ansi.mask(codes,msg,continue)
     if not enabled then return msg end
     local str
-    for v in codes:gmatch("([^;%s\t,]+)") do
+    for v in codes:gmatch("([^; \t,]+)") do
         v=v:upper()
         if not color[v] then v=ansi.cfg(v) or "" end
         if color[v] then

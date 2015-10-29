@@ -52,13 +52,13 @@ function alias.run_command(...)
         alias.rest={}
         for i=1,99 do
             v=alias.args[i] or ""
-            if v:find("[%s\n\r\b\t]") and not v:find('"') then v='"'..v..'"' end
+            if v:find("%s") and not v:find('"') then v='"'..v..'"' end
             alias.args[i]=v
             alias.rest[i]=v
         end
         target=target:gsub("%$(%d+)%[(.-)%]",alias.parser)
         target=target:gsub("%$([%d%*]+)",alias.parser)
-        target=target:gsub("[%s\n\r\b\t]+$","")
+        target=target:gsub("%s+$","")
         if not target:find(env.END_MARKS[2]..'$') and not target:find(env.END_MARKS[1]..'$') then target=target..env.END_MARKS[1] end
         if type(alias.cmdlist[name].text) == "string" and not target:find('[\n\r]') then
             print('$ '..target)
@@ -130,7 +130,7 @@ function alias.set(name,cmd,write)
 
         local desc
         if cmd:sub(1,5)~="FUNC:" then
-            desc=cmd:gsub("[\n\r]+[%s\t]*"," "):sub(1,300)
+            desc=cmd:gsub("[\n\r]+[ \t]*"," "):sub(1,300)
         else
             cmd=packer.unpack(cmd)
             desc=cmd

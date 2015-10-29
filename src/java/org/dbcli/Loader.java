@@ -256,8 +256,9 @@ public class Loader {
         } catch (CancellationException | InterruptedException e) {
             throw new IOException("Statement is aborted.");
         } catch (Exception e) {
-            while (e.getCause() != null) e = (Exception) e.getCause();
             //e.printStackTrace();
+            while (e.getCause() != null) e = (Exception) e.getCause();
+
             throw e;
         } finally {
             if (rs != null && !rs.isClosed()) rs.close();

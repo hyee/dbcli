@@ -92,7 +92,7 @@ function db2:connect(conn_str)
 end
 
 function db2.check_completion(cmd,other_parts)
-    local p1=env.END_MARKS[2]..'[%s\t]*$'
+    local p1=env.END_MARKS[2]..'[ \t]*$'
     local p2
     local objs={
         OR=1,
@@ -109,7 +109,7 @@ function db2.check_completion(cmd,other_parts)
 
     local obj=env.parse_args(2,other_parts)[1]
     if obj and not objs[obj] and not objs[cmd] then
-        p2=env.END_MARKS[1].."+[%s\t\n]*$"
+        p2=env.END_MARKS[1].."+%s*$"
     end
     local match = (other_parts:match(p1) and 1) or (p2 and other_parts:match(p2) and 2) or false
     --print(match,other_parts)

@@ -71,6 +71,7 @@ public class SSHExecutor {
             session.setConfig("compression.s2c", "zlib@openssh.com,zlib,none");
             session.setConfig("compression.c2s", "zlib@openssh.com,zlib,none");
             session.setConfig("compression_level", "9");
+            //session.set
             session.setDaemonThread(true);
             session.setServerAliveInterval((int) TimeUnit.SECONDS.toMillis(10));
             session.setServerAliveCountMax(10);
@@ -100,8 +101,6 @@ public class SSHExecutor {
             });
             shell.setInputStream(pipeIn);
             shell.setOutputStream(pr);
-
-            shell.setEnv("TERM", TERMTYPE == "none" ? "ansi" : TERMTYPE);
             shell.setPty(true);
             shell.setPtyType(TERMTYPE == "none" ? "ansi" : TERMTYPE, COLS, ROWS, 0, 0);
             shell.connect();

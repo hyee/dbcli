@@ -36,7 +36,7 @@ function tracer.format_profile()
             end
         end
         if l and files[file] then
-            code=(files[file][l] or " "):gsub("[%s\t]+"," "):sub(1,60)
+            code=(files[file][l] or " "):gsub("[ \t]+"," "):sub(1,60)
         end
         file=file:gsub(env.WORK_DIR,"")
         f:add{file,line or -1,func,v.N*d,v.I*d,v.C*d,v.G*d,v.J*d,v.samples*d,code}

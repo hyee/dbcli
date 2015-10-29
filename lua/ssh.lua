@@ -270,7 +270,7 @@ function ssh:load_script(alias,filename,...)
     else
         txt=filename:sub(2)
     end
-    txt=txt:gsub("\r\n","\n"):gsub("^[\n%s\t\v]+",""):gsub(self.comment,"\n",1)
+    txt=txt:gsub("\r\n","\n"):gsub("^%s+",""):gsub(self.comment,"\n",1)
     local intepreter=txt:match("^#!([^\n])+")
     if not intepreter then intepreter="/bin/bash" end
     self:getresult(alias.."='"..txt.."'\n")
@@ -278,15 +278,17 @@ function ssh:load_script(alias,filename,...)
     return self.script_stack[alias]
 end
 
-function ssh:upload_script(filename,dir)
+function ssh:upload_script(filename)
     if not filename or filename=="" then
         return print("Usage: ssh push_shell <file> [/tmp|.|<remote_dir>")
     end
+    local file,dir=env.parse_args(2,filename)
+    filename,dir=file[1],file[2]
     if filename:match("[\\/]") then filename='@'..filename end
     local txt,args,_,file,cmd=self:get_script(filename,{},false)
     if not file then return end
     self:check_connection()
-    txt=txt:gsub("\r\n","\n"):gsub("^[\n%s\t\v]+","")
+    txt=txt:gsub("\r\n","\n"):gsub("^%s+","")
     local intepreter=txt:match("^#!([^\n])+")
     if not intepreter then intepreter="/bin/bash" end
     cmd=filename:match("[^\\/]+$")
@@ -337,7 +339,7 @@ function ssh:run_shell(cmd,...)
     for i=1,20 do
         local v=args["V"..i]
         if v=="" then break end
-        if v:match("[%s\t]") then v='"'..v..'"' end
+        if v:match("[ \t]") then v='"'..v..'"' end
         stack[#stack+1]=v
     end
     self:run_command(table.concat(stack," "))
@@ -472,7 +474,7 @@ function ssh:__onload()
     env.set_command(self,{'shell','sh'},self.helper,self.run_shell,false,20)
     env.event.snoop("BEFORE_DB_CONNECT",self.trigger_login,self)
     env.event.snoop("TRIGGER_LOGIN",self.login,self)
-    cfg.init("term",_term..","..(cfg.get("linesize")/2)..",auto",self.set_config,"ssh","Define termType/columns/rows in remote SSH server, the supported type depends on remote server",'*')
+    cfg.init("term",_term..",auto,auto",self.set_config,"ssh","Define termType/columns/rows in remote SSH server, the supported type depends on remote server",'*')
 end
 
 function ssh:__onunload()

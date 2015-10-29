@@ -111,7 +111,7 @@ function snapper:exec(interval,typ,...)
 
     local cmds,cmd={}
 
-    for v in typ:gmatch("([^\n\t%s,]+)") do
+    for v in typ:gmatch("([^%s,]+)") do
         v=v:upper()
         if not self.cmdlist[v] then
             return print("Error: Cannot find command :" .. v)

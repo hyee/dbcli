@@ -3,6 +3,7 @@ local dirs={"lib","cache","data"}
 local init={
     module_list={
        --Libraries ->
+        "lib/glue",
         "lib/json",
         "lib/MessagePack",
         "lib/ProFi",
@@ -71,6 +72,9 @@ function init.init_path()
 end
 
 local function exec(func,...)
+    if func==nil and type(select(1,...))=="string" then 
+        return print('Error on loading module: '..tostring(select(1,...)):gsub(env.WORK_DIR,""))
+    end
     if type(func)~='function' then return end
     local res,rtn=pcall(func,...)
     if not res then
@@ -116,7 +120,7 @@ function init.load_database()
     local file=init.databases[env.CURRENT_DB]
     if not file then return end
     local name=file:match("([^\\/]+)$")
-    env[name]=exec(dofile,env.WORK_DIR..file:gsub("[\\/]+",env.PATH_DEL)..'.lua')
+    env[name]=exec(loadfile(env.WORK_DIR..file:gsub("[\\/]+",env.PATH_DEL)..'.lua'))
     exec(type(env[name])=="table" and env[name].onload,env[name],name)
     init.module_list[#init.module_list+1]=file
     if env.event then env.event.callback('ON_DATABASE_ENV_LOADED',env.CURRENT_DB) end
@@ -160,7 +164,7 @@ function init.load_modules(list,tab,module_name)
             file:close();
             file=v
         end
-        tab[n]=exec(dofile,file)
+        tab[n]=exec(loadfile(file),env)
         modules[n]=tab[n]
     end
 
