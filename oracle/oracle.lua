@@ -124,9 +124,9 @@ function oracle:connect(conn_str)
         env.warn(tostring(params))
     else
         self.props={db_user=params[1],db_version=params[2],db_nls_lang=params[3],service_name=params[7],isdba=params[6]=='TRUE' and true or false}
-        env._CACHE_PATH=env._CACHE_BASE..self.props.service_name..env.PATH_DEL
-        os.execute('mkdir "'..env._CACHE_PATH..'" 2> '..(env.OS=="windows" and 'NUL' or "/dev/null"))
         prompt=(prompt or self.props.service_name):match("^([^,%.&]+)")
+        env._CACHE_PATH=env._CACHE_BASE..prompt:lower()..env.PATH_DEL
+        os.execute('mkdir "'..env._CACHE_PATH..'" 2> '..(env.OS=="windows" and 'NUL' or "/dev/null"))
         prompt=('%s%s'):format(prompt:upper(),params[8])
         env.set_prompt(nil,prompt)
         self.session_title=('%s%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)'):format(prompt:upper(),params[8], params[5],params[1],params[4],params[2])
@@ -368,41 +368,9 @@ function oracle:onload()
     set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)
     set_command(self,"alter" ,   default_desc,        self.exec      ,true,1,true)
 
-    set_command(self,"list_access" ,   default_desc,        self.list_access      ,false,1,false)
     self.C={}
     init.load_modules(module_list,self.C)
     env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)
-end
-
-function oracle:list_access()
-    local dir=io.popen('dir /B/S/A:-D '..env.WORK_DIR..'oracle')
-    local list={}
-    for n in dir:lines() do
-        if not n:match("jar$") then 
-            local f=io.open(n,'r')
-            local txt=f:read("*a")
-            f:close()
-            for m in txt:lower():gmatch("g?v_?%$([%w_%$%d]+)") do
-                list["v$"..m]=1
-            end
-            for m in txt:lower():gmatch("dba_([%w_%$%d]+)") do
-                list["dba_"..m]=1
-            end
-            for m in txt:lower():gmatch("all_([%w_%$%d]+)") do
-                list["dba_"..m]=1
-            end
-            for m in txt:lower():gmatch("(sys%.[%w_%$%d]+)") do
-                list[m]=1
-            end
-        end
-    end
-
-    for k,v in pairs(list) do
-        local res=pcall(self.get_value,self,'select * from '..k..' where 1=2')
-        if not res then list[k]=nil end
-    end
-
-    print(table.dump(list))
 end
 
 function oracle:onunload()

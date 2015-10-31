@@ -1,4 +1,7 @@
-2015-10-28: ! public: minor fixes
+2015-10-31: ! public: fix "sys cbc" and "sys sqlheaps" 
+2015-10-29: + oracle: new command "ora redef"
+2015-10-29: ! public: fix repository(missing history)
+2015-10-28: ! public: minor fixes;rename jsch-0.1.5.3.jar as jsch.jar
 2015-09-20: * public: Minor update on JNLua for LuaJit because the author has stopped the maintenance
 2015-09-18: ! public: minor fixes
 2015-09-15: + oracle: new command "shell asmdu"

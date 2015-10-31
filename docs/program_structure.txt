@@ -21,8 +21,8 @@ Loader.class(JVM to load LUA lib)
                       |-Load intepreter                                          |->event-|-trigger event
                       |                                                          |        |-snoop event
                  Load modules                                                    |      |-define env                 
-                 (init.lua)    ->  |- Bridge JVM(jnula*.*,jvm.dll)               |->set-|-set/get env                                                          
-                      |            |- Load jdbc library                          |      |-list env
+                 (init.lua)    ->  |- Setup env paths                            |->set-|-set/get env                                                          
+                      |            |- Load JDBC library                          |      |-list env
                       |            |- Load common modules                        |              |-connect
                       |              (re,lpeg,misc,set,event,db_core,tester,etc)-|->db_core.lua-|-exec/query/getvalue
                       |                               |                                         |-resultset handler
@@ -30,9 +30,9 @@ Loader.class(JVM to load LUA lib)
                       |                    Load external modules
                       |                    (db-specific modules) ->|-> other external modules
                       |                                            |-> oracle.lua ->|-Load Oracle jdbc driver
-                      |                                            |      |         |-Load "ora" module -> scan command list("ora" folder)                                           
+                      |                                            |                |-Load "ora" module -> scan command list("ora" folder)                                           
                       |                                            |      |         |-Load other internal oracle module(dbmsoutput,etc) 
-                      |                                            |   Load external oracle modules(folder "plugins") 
+                      |                                            |    
                       |                                            |
                       |                                            |-> mysql.lua
                       |                                            |-> mssql.lua

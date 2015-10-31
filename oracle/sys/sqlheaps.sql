@@ -1,124 +1,50 @@
---------------------------------------------------------------------------------
---
--- File name:   curheaps.sql
--- Purpose:     Show main cursor data block heap sizes and their contents
---              (heap0 and heap6)
---
--- Author:      Tanel Poder
--- Copyright:   (c) http://www.tanelpoder.com
---
--- Usage:       @curheaps <hash_value> <child#>
---
---              @curheaps 942515969 %   -- shows a summary of cursor heaps
---	            @curheaps 942515969 0   -- shows detail for child cursor 0
---
--- Other:       "Child" cursor# 65535 is actually the parent cursor
---
---------------------------------------------------------------------------------
+/*[[Show main cursor data block heap sizes and their contents. Usage: sqlheaps <sql_id>
+    Author:      Tanel Poder(curheaps.sql)
+]]*/
 
-col curheaps_size0 heading SIZE0 for 9999999
-col curheaps_size1 heading SIZE1 for 9999999
-col curheaps_size2 heading SIZE2 for 9999999
-col curheaps_size3 heading SIZE3 for 9999999
-col curheaps_size4 heading SIZE4 for 9999999
-col curheaps_size5 heading SIZE5 for 9999999
-col curheaps_size6 heading SIZE6 for 9999999
-col curheaps_size7 heading SIZE7 for 9999999
+SET FEED OFF
 
-col KGLOBHD0 new_value v_curheaps_kglobhd0 print
-col KGLOBHD1 new_value v_curheaps_kglobhd1 noprint
-col KGLOBHD2 new_value v_curheaps_kglobhd2 noprint
-col KGLOBHD3 new_value v_curheaps_kglobhd3 noprint
-col KGLOBHD4 new_value v_curheaps_kglobhd4 print
-col KGLOBHD5 new_value v_curheaps_kglobhd5 noprint
-col KGLOBHD6 new_value v_curheaps_kglobhd6 print
-col KGLOBHD7 new_value v_curheaps_kglobhd7 noprint
+SELECT kglobt09 CHILD#, KGLHDADR, KGLOBHD0 heap0, KGLOBHS0 size0, KGLOBHD1 heap1, KGLOBHS1 size1,
+       KGLOBHD2 heap2, KGLOBHS2 size2, KGLOBHD3 heap3, KGLOBHS3 size3, KGLOBHD4 heap4,
+       KGLOBHS4 size4, KGLOBHD5 heap5, KGLOBHS5 size5, KGLOBHD6 heap6, KGLOBHS6 size6,
+       KGLOBHD7 heap7, KGLOBHS7 size7, KGLOBSTA STATUS
+FROM   X$KGLOB l
+WHERE  kglobt03 = :V1;
 
+PRO Memory Heap:
+PRO ==========
+SELECT /*+use_nl(l hp) ordered*/
+       DECODE(KSMCHDS,KGLOBHD0,'HEAP0',KGLOBHD1,'HEAP1',KGLOBHD3,'HEAP2',KGLOBHD3,'HEAP3',KGLOBHD4,'HEAP4',KGLOBHD5,'HEAP5',KGLOBHD6,'HEAP6','HEAP7')  heap#, 
+       ksmchcls CLASS, ksmchcom alloc_comment, SUM(ksmchsiz) bytes,
+       COUNT(*) chunks
+FROM   X$KGLOB l, x$ksmhp hp
+WHERE  kglobt03 = :V1
+AND    KSMCHDS !=hextoraw('00')
+AND    KSMCHDS IN (KGLOBHD0, KGLOBHD1, KGLOBHD2, KGLOBHD3, KGLOBHD4, KGLOBHD5, KGLOBHD6)
+GROUP  BY DECODE(KSMCHDS,KGLOBHD0,'HEAP0',KGLOBHD1,'HEAP1',KGLOBHD3,'HEAP2',KGLOBHD3,'HEAP3',KGLOBHD4,'HEAP4',KGLOBHD5,'HEAP5',KGLOBHD6,'HEAP6','HEAP7') , ksmchcls, ksmchcom;
 
-select
-	KGLNAHSH,
-	KGLHDPAR,
-	kglobt09 CHILD#,
-	KGLHDADR,
-	KGLOBHD0 , KGLOBHS0 curheaps_size0,
-	KGLOBHD1, KGLOBHS1 curheaps_size1,
-	KGLOBHD2, KGLOBHS2 curheaps_size2,
-	KGLOBHD3, KGLOBHS3 curheaps_size3,
-	KGLOBHD4, KGLOBHS4 curheaps_size4,
-	KGLOBHD5, KGLOBHS5 curheaps_size5,
-	KGLOBHD6, KGLOBHS6 curheaps_size6,
-	KGLOBHD7, KGLOBHS7 curheaps_size7,
---	KGLOBT00 CTXSTAT,
-	KGLOBSTA STATUS
-from
-	X$KGLOB
---	X$KGLCURSOR_CHILD
-where
-	KGLNAHSH in (&1)
-and	KGLOBT09 like ('&2')
-order by
-        KGLOBT09 ASC
-/
+PRO PGA Heap:
+PRO ==========
+SELECT /*+use_nl(l hp) ordered*/
+       DECODE(ksmchpar ,KGLOBHD0,'HEAP0',KGLOBHD1,'HEAP1',KGLOBHD3,'HEAP2',KGLOBHD3,'HEAP3',KGLOBHD4,'HEAP4',KGLOBHD5,'HEAP5',KGLOBHD6,'HEAP6','HEAP7')  heap#, 
+       ksmchcls CLASS, ksmchcom alloc_comment, SUM(ksmchsiz) bytes,
+       COUNT(*) chunks
+FROM   X$KGLOB l, x$ksmpp hp
+WHERE  kglobt03 = :V1
+AND    ksmchpar  !=hextoraw('00')
+AND    ksmchpar  IN (KGLOBHD0, KGLOBHD1, KGLOBHD2, KGLOBHD3, KGLOBHD4, KGLOBHD5, KGLOBHD6)
+GROUP  BY DECODE(ksmchpar ,KGLOBHD0,'HEAP0',KGLOBHD1,'HEAP1',KGLOBHD3,'HEAP2',KGLOBHD3,'HEAP3',KGLOBHD4,'HEAP4',KGLOBHD5,'HEAP5',KGLOBHD6,'HEAP6','HEAP7') , ksmchcls, ksmchcom;
 
--- Cursor data block summary
-select
-   'HEAP0'        heap
-  , ksmchcls      class
-  , ksmchcom      alloc_comment
-  , sum(ksmchsiz) bytes
-  , count(*)      chunks
-from
-    x$ksmhp
-where
-    KSMCHDS = hextoraw('&v_curheaps_kglobhd0')
-group by
-   'HEAP0'
-  , ksmchcls
-  , ksmchcom
-order by
-    sum(ksmchsiz) desc
-/
-
-select
-   'HEAP4'        heap
-  , ksmchcls      class
-  , ksmchcom      alloc_comment
-  , sum(ksmchsiz) bytes
-  , count(*)      chunks
-from
-    x$ksmhp
-where
-    KSMCHDS = hextoraw('&v_curheaps_kglobhd4')
-group by
-   'HEAP4'
-  , ksmchcls
-  , ksmchcom
-order by
-    sum(ksmchsiz) desc
-/
-
-
-
-select
-   'HEAP6'        heap
-  , ksmchcls      class
-  , ksmchcom      alloc_comment
-  , sum(ksmchsiz) bytes
-  , count(*)      chunks
-from
-    x$ksmhp
-where
-    KSMCHDS = hextoraw('&v_curheaps_kglobhd6')
-group by
-   'HEAP6'
-  , ksmchcls
-  , ksmchcom
-order by
-    sum(ksmchsiz) desc
-/
-
-
--- Cursor data block details
-
--- select * from x$ksmhp where KSMCHDS = hextoraw('&v_curheaps_kglobhd0');
--- select * from x$ksmhp where KSMCHDS = hextoraw('&v_curheaps_kglobhd6');
+/*
+PRO SGA Heap:
+PRO ==========
+SELECT --+use_nl(l hp) ordered
+       DECODE(ksmchpar ,KGLOBHD0,'HEAP0',KGLOBHD1,'HEAP1',KGLOBHD3,'HEAP2',KGLOBHD3,'HEAP3',KGLOBHD4,'HEAP4',KGLOBHD5,'HEAP5',KGLOBHD6,'HEAP6','HEAP7')  heap#, 
+       ksmchcls CLASS, ksmchcom alloc_comment, SUM(ksmchsiz) bytes,
+       COUNT(*) chunks
+FROM   X$KGLOB l, x$ksmsp hp
+WHERE  kglobt03 = :V1
+AND    ksmchpar  !=hextoraw('00')
+AND    ksmchpar  IN (KGLOBHD0, KGLOBHD1, KGLOBHD2, KGLOBHD3, KGLOBHD4, KGLOBHD5, KGLOBHD6)
+GROUP  BY DECODE(ksmchpar ,KGLOBHD0,'HEAP0',KGLOBHD1,'HEAP1',KGLOBHD3,'HEAP2',KGLOBHD3,'HEAP3',KGLOBHD4,'HEAP4',KGLOBHD5,'HEAP5',KGLOBHD6,'HEAP6','HEAP7') , ksmchcls, ksmchcom;
+*/
