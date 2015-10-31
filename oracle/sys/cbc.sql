@@ -156,6 +156,6 @@ SELECT /*+ordered use_hash(s b o)*/
      decode(bitand(flag, 65536), 0, 'N', 'Y') DIRECT
 FROM   s, x$bh b, dba_objects o
 WHERE  HLADDR = p1raw
-AND    b.obj = in(o.object_id,o.data_object_id)
+AND    b.obj in(o.object_id,o.data_object_id)
 AND    s.inst_id=b.inst_id
 ORDER BY 1,2,3,5;

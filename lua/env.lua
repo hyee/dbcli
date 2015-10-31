@@ -416,9 +416,11 @@ local cache_prompt,fix_prompt
 local prompt_stack={_base="SQL"}
 
 function env.set_prompt(class,default,is_default,level)
-    default=default and default:upper()
-    --print(default)
-    default=default:gsub("[^%w@%$#\\/ ~%[%]]+","")
+    if not env._SUBSYSTEM and default then
+        default=default:upper()
+    elseif default then
+        default=default--:gsub(".*[\27\33].-%a","")
+    end
     class=class or "default"
     level=level or (class=="default" or default==prompt_stack._base) and 0 or 3
     if prompt_stack[class] and prompt_stack[class]>level then prompt_stack[prompt_stack[class]]=nil end
