@@ -6,6 +6,7 @@ import jline.console.completer.Completer;
 import jline.console.history.History;
 import jline.internal.Configuration;
 import jline.internal.NonBlockingInputStream;
+import sun.security.util.PendingException;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -29,7 +30,7 @@ public class Console extends ConsoleReader {
     private EventReader monitor = new EventReader();
     private ActionListener event;
     private char[] keys;
-
+    private boolean isBlocking=false;
 
     public Console(Terminal t) throws IOException {
         super(null, System.in, System.out, t);
@@ -46,6 +47,7 @@ public class Console extends ConsoleReader {
     }
 
     public String readLine(String prompt) throws IOException {
+        isBlocking=false;
         if (isRunning()) setEvents(null, null);
         synchronized (in) {
             return super.readLine(prompt);
@@ -63,6 +65,7 @@ public class Console extends ConsoleReader {
     public synchronized void setEvents(ActionListener event, char[] keys) {
         this.event = event;
         this.keys = keys;
+        this.isBlocking=false;
         if (this.task != null) {
             this.task.cancel(true);
             this.task = null;
@@ -89,17 +92,20 @@ public class Console extends ConsoleReader {
 
     class EventReader implements Runnable {
         public int counter = 0;
-
         public void run() {
             try {
-                int ch = in.read(1L);
+                if(isBlocking) return;
+                int ch = in.peek(1L);
                 if (ch < -1) return;
                 //System.out.println(ch);
                 for (int i = 0; i < keys.length; i++) {
                     if (ch != keys[i] && keys[i] != '*') continue;
+                    in.read();
                     event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, Character.toChars(ch).toString()));
-                    break;
+                    return;
                 }
+                if(ch>32) isBlocking=true;
+                else in.read();
             } catch (Exception e) {
                 //e.printStackTrace();
             }

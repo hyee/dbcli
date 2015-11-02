@@ -1,3 +1,6 @@
+2015-11-02: + oracle: new commands "sys xdesc" and "ora trans"
+2015-11-02: ! oracle: performance improvement for "ora cursor"
+2015-11-02: ! public: fix incomplete statement when batch executing statements from clipboard
 2015-10-31: ! public: fix "sys cbc" and "sys sqlheaps" 
 2015-10-29: + oracle: new command "ora redef"
 2015-10-29: ! public: fix repository(missing history)
