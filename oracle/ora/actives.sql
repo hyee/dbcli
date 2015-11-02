@@ -9,7 +9,7 @@ Show active sessions. Usage: ora actives [-s|-p|-b] [-f"<filter>"|-u] [waits|sid
                  ROW_WAIT_BLOCK# WAIT_BLOCK#}
               }
         &V1 : sid={''||sid},wt={waits desc},ev={event},sql={sql_text}
-        &Filter: default={ROOT_SID =1 OR wait_class!='Idle' or sql_text is not null}, f={},u={(ROOT_SID =1 OR wait_class!='Idle' or sql_text is not null) and schemaname=sys_context('userenv','current_schema')}
+        &Filter: default={ROOT_SID =1 OR wait_class!='Idle' or sql_text is not null}, f={},u={(ROOT_SID =1 OR STATUS='ACTIVE' or sql_text is not null) and schemaname=sys_context('userenv','current_schema')}
         &tmodel : default={0}, m={1}
         @COST : 11.0={nvl(1440*(sysdate-SQL_EXEC_START),wait_secs/60)},10.0={(select TIME_WAITED/6000 from gv$session_event b where b.inst_id=a.inst_id and b.sid=a.sid and b.event=a.event)},9.0={null}
         @CHECK_ACCESS1: dba_objects={dba_objects},all_objects={all_objects}
