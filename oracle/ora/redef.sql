@@ -1,4 +1,4 @@
-/*[[Generate the script for online-redefintion, no DDL will be taken. Usage: redef [owner.]<orig_table_name>[.partition_name] <new_table_name>]]*/
+/*[[Generate the script for online-redefintion, no DML/DDL will be taken. Usage: redef [owner.]<orig_table_name>[.partition_name] <new_table_name>]]*/
 set feed off
 ora _find_object &V1
 DECLARE

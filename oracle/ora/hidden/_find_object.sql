@@ -17,43 +17,48 @@ DECLARE /*INTERNAL_DBCLI_CMD*/
     flag          BOOLEAN := TRUE;
     obj_type      VARCHAR2(100);
     objs          VARCHAR2(2000) := 'dba_objects';
-    target        VARCHAR2(100) := :V1;
+    target        VARCHAR2(100) := trim(:V1);
 BEGIN
-    <<CHECKER>>
-    FOR i IN 0 .. 9 LOOP
-        BEGIN
-            sys.dbms_utility.name_resolve(NAME          => target,
-                                          CONTEXT       => i,
-                                          SCHEMA        => schem,
-                                          part1         => part1,
-                                          part2         => part2,
-                                          dblink        => dblink,
-                                          part1_type    => part1_type,
-                                          object_number => object_number);
-            IF part2 IS NOT NULL AND part1 IS NULL THEN
-                part1:=part2;
-                part2:=null;
-            END IF;
-            EXIT;
-        EXCEPTION
-            WHEN OTHERS THEN
-                NULL;
-        END;
-    END LOOP;
-
-    IF schem IS NULL AND flag AND USER != sys_context('USERENV', 'CURRENT_SCHEMA') AND instr(target,'.')=0 THEN
-        flag   := FALSE;
-        target := sys_context('USERENV', 'CURRENT_SCHEMA') || '.' || target;
-        GOTO CHECKER;
-    END IF;
-
     BEGIN
         EXECUTE IMMEDIATE 'select 1 from dba_objects where rownum<1';
     EXCEPTION
         WHEN OTHERS THEN
             objs := 'all_objects';
     END;
+    
+    <<CHECKER>>
+    IF NOT regexp_like(target,'^\d+$') THEN
+        FOR i IN 0 .. 9 LOOP
+            BEGIN
+                sys.dbms_utility.name_resolve(NAME          => target,
+                                              CONTEXT       => i,
+                                              SCHEMA        => schem,
+                                              part1         => part1,
+                                              part2         => part2,
+                                              dblink        => dblink,
+                                              part1_type    => part1_type,
+                                              object_number => object_number);
+                IF part2 IS NOT NULL AND part1 IS NULL THEN
+                    part1:=part2;
+                    part2:=null;
+                END IF;
+                EXIT;
+            EXCEPTION
+                WHEN OTHERS THEN
+                    NULL;
+            END;
+        END LOOP;
 
+        IF schem IS NULL AND flag AND USER != sys_context('USERENV', 'CURRENT_SCHEMA') AND instr(target,'.')=0 THEN
+            flag   := FALSE;
+            target := sys_context('USERENV', 'CURRENT_SCHEMA') || '.' || target;
+            GOTO CHECKER;
+        END IF;
+    ELSE
+        EXECUTE IMMEDIATE 'select max(to_char(owner)),max(to_char(object_name)),max(to_char(subobject_name)),max(object_id) from '||objs||' where object_id=:1' 
+        INTO schem,part1,part2,object_number
+        USING 0+target;
+    END IF;
     target := REPLACE(upper(target),' ');
 
     IF schem IS NULL AND objs != 'all_objects' THEN
@@ -67,11 +72,11 @@ BEGIN
     END IF;
 
     objs:='SELECT /*+no_expand*/
-           MIN(OBJECT_TYPE)    keep(dense_rank first order by s_flag),
-           MIN(OWNER)          keep(dense_rank first order by s_flag),
-           MIN(OBJECT_NAME)    keep(dense_rank first order by s_flag),
-           MIN(SUBOBJECT_NAME) keep(dense_rank first order by s_flag),
-           MIN(OBJECT_ID)      keep(dense_rank first order by s_flag)
+           MIN(to_char(OBJECT_TYPE))    keep(dense_rank first order by s_flag),
+           MIN(to_char(OWNER))          keep(dense_rank first order by s_flag),
+           MIN(to_char(OBJECT_NAME))    keep(dense_rank first order by s_flag),
+           MIN(to_char(SUBOBJECT_NAME)) keep(dense_rank first order by s_flag),
+           MIN(to_number(OBJECT_ID))    keep(dense_rank first order by s_flag)
     FROM (
         SELECT a.*,
                case when owner=''' || schem || ''' then 0 else 100 end +

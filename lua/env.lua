@@ -563,10 +563,11 @@ function env.eval_line(line,exec)
                 if cmd:len()>1 and cmd:sub(1,1)=='.' and _CMDS[cmd:upper():sub(2)] then
                     subsystem_prefix=""
                     dbcli_current_item.skip_subsystem=true
+                    line=line:sub(2)
                 end
             end
         end
-        line=(subsystem_prefix..line:gsub("^%.","",1)):gsub('^[%z\128-\255 \t]+','')
+        line=(subsystem_prefix..line):gsub('^[%z\128-\255 \t]+','')
         if line:match('^([^%w])') then
             local cmd=""
             for i=math.min(#line,5),1,-1 do

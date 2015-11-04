@@ -1,4 +1,4 @@
-/*[[Show session memory usage: ora smem <sid|spid>
+/*[[Show session memory usage: smem <sid|spid>
     --[[
        Templates:
            @11g : 11.1={, pm.sql_id},10.0={}

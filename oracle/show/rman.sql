@@ -38,7 +38,5 @@ FROM   (SELECT /*+no_merge no_expand*/ *
                 FROM   a
                 LEFT   JOIN x
                 USING  (session_recid))
-        WHERE  nvl(upper(:V1),'A')='A'
-        OR     status || start_time || end_time  || device LIKE UPPER('%' || :V1 || '%')
         ORDER  BY start_time DESC) a
 WHERE  ROWNUM <= nvl(0+:V2,100)

@@ -1,4 +1,4 @@
-/*[[Find locked objects in gv$locked_object
+/*[[Show locked objects in gv$locked_object
    --[[
     @CHECK_ACCESS: dba_objects={dba_objects},all_objects={all_objects}
    --]]

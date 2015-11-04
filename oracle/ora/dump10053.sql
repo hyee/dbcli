@@ -1,6 +1,9 @@
 /*[[
     Dump the 10053 trace for the specific SQL ID. Usage dump10053 <sql_id> [<child_number>|<plan_hash_value>]
     Note: In RAC environment, it only supports dumping the SQL ID in local node(view v$sqlarea).
+    --[[
+    @version: 11.0={}
+    --]]
 ]]*/
 set feed off
 DECLARE
