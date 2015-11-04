@@ -14,6 +14,7 @@ local module_list={
     "oracle/awrdump",
     "oracle/unwrap",
     "oracle/sys",
+    "oracle/show",
     "oracle/chart",
     "oracle/ssh"
 }
@@ -73,12 +74,13 @@ function oracle:connect(conn_str)
          freeMemoryOnEnterImplicitCache="true",
          bigStringTryClob="true",
          clientEncoding=java.system:getProperty("input.encoding"),
+         processEscapes='false',
          ['v$session.program']='SQL Developer',
          ['oracle.jdbc.defaultLobPrefetchSize']="2097152",
          --['oracle.jdbc.mapDateToTimestamp']="false",
          ['oracle.jdbc.maxCachedBufferSize']="104857600",
          ['oracle.jdbc.useNio']='true',
-         ['oracle.jdbc.TcpNoDelay']='true'
+         ['oracle.jdbc.TcpNoDelay']='true',
         },args)
     self:load_config(url,args)
     if args.jdbc_alias or not sqlplustr then
@@ -102,7 +104,7 @@ function oracle:connect(conn_str)
     self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    self.props={}
+    self.props={instance=1}
     self:internal_call([[/*INTERNAL_DBCLI_CMD*/
         begin
             execute immediate 'alter session set nls_date_format=''yyyy-mm-dd hh24:mi:ss''';
@@ -119,11 +121,16 @@ function oracle:connect(conn_str)
                 sys_context('userenv','db_name')||nullif('.'||sys_context('userenv','db_domain'),'.'),
                 (select decode(DATABASE_ROLE,'PRIMARY','','PHYSICAL STANDBY',' (Standby)') from v$database)
        from dual]])
-    self.props={}
     if not err then 
         env.warn(tostring(params))
     else
-        self.props={db_user=params[1],db_version=params[2],db_nls_lang=params[3],service_name=params[7],isdba=params[6]=='TRUE' and true or false}
+        self.props={db_user=params[1],
+                    db_version=params[2],
+                    db_nls_lang=params[3],
+                    service_name=params[7],
+                    isdba=params[6]=='TRUE' and true or false,
+                    instance=tonumber(params[5]) or 1,
+                    sid=params[4]}
         prompt=(prompt or self.props.service_name):match("^([^,%.&]+)")
         env._CACHE_PATH=env._CACHE_BASE..prompt:lower()..env.PATH_DEL
         os.execute('mkdir "'..env._CACHE_PATH..'" 2> '..(env.OS=="windows" and 'NUL' or "/dev/null"))
@@ -142,6 +149,12 @@ function oracle:parse(sql,params)
 
     if cfg.get('SQLCACHESIZE') ~= self.MAX_CACHE_SIZE then
         self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
+    end
+
+    local instance=tonumber(cfg.get("instance"))
+    if instance>-1 then
+        if instance==0 then instance=self.props.instance end
+        sql= (sql.." "):gsub("%f[%w_%$:]([gG][vV]%$[%w_%$]+)([%s,])","(select /*+merge*/ * from %1 where inst_id="..instance..") %2")
     end
 
     sql=sql:gsub('%f[%w_%$:]:([%w_%$]+)',function(s)
@@ -177,6 +190,8 @@ function oracle:parse(sql,params)
 
         return s:upper()
     end)
+
+
 
     if sql:lower():match("^%s*explain") then
         params={V1=sql}
@@ -367,6 +382,7 @@ function oracle:onload()
     set_command(self,{"declare","begin"},  default_desc,  self.exec  ,self.check_completion,1,true)
     set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)
     set_command(self,"alter" ,   default_desc,        self.exec      ,true,1,true)
+    cfg.init("instance","-1",nil,"oracle","Used in RAC env, to filter inst_id of gv$ views. -1: unlimited, 0: current, >1: specific instance","-1 - 99")
 
     self.C={}
     init.load_modules(module_list,self.C)

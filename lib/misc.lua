@@ -38,15 +38,15 @@ function string.gsplit(s, sep, plain,occurrence)
     local start = 1
     local counter=0
     local done = false
-    local function pass(i, j, ...)
+    local function pass(i, j)
         if i and (not occurrence or counter<occurrence) then
-            local seg = s:sub(start, i - 1)
+            local seg = i>1 and s:sub(start, i - 1) or ""
             start = j + 1
             counter=counter+1
-            return seg, ...
+            return seg, s:sub(i,j)
         else
             done = true
-            return s:sub(start)
+            return s:sub(start),""
         end
     end
     return function()

@@ -51,26 +51,18 @@ function grid:cut(row,format_func,format_str)
         end
         row=format_func(format_str,table.unpack(row))
     end
-
-    local len=#row
-    if len>self.linesize then
-        _,len=row:find('^[^\27]+')
-        len=(len or 0)-self.linesize
-        if len>=0 then return row:sub(1,self.linesize) end
-
-        local stack,count=row:gsub("(\27%[[%d%s;]-m)([^\27]+)",function(ansi,s)
-            if len < 0 then
-                len = len+#s
-                if len>0 then
-                    return ansi..s:sub(1,len)
-                end
-                return ansi..s
+    if #row>self.linesize then
+        local tab,len,count={},-self.linesize,0
+        for piece,pattern in row:gsplit("(\27%[[%d;]*[mK])") do
+            len,count = len + #piece,count +1
+            tab[#tab+1] = len<0 and piece or piece:sub(1,#piece-len)
+            if (pattern or "")~="" then tab[#tab+1]=pattern end
+            if len>=0 then
+                tab[#tab+1]=env.ansi.get_color('NOR')
+                break 
             end
-            return ""
-        end)
-
-        if count > 0 then stack=stack..env.ansi.get_color('NOR') end
-        return stack
+        end
+        return table.concat(tab,'')
     end
     return row
 end
@@ -299,12 +291,13 @@ function grid:add(rs)
                 v=table.concat(v1,'\n')
             end
             local grp={}
-            if headind>0 then v=v:gsub("%s+$",""):gsub("[ \t]+[\n\r]","\n"):gsub("\t",'    ') end
+            v=v:gsub('\128\192',''):gsub('%z','')
+            if headind>0 then v=v:gsub("[%s ]+$",""):gsub("[ \t]+[\n\r]","\n"):gsub("\t",'    ') end
             --if the column value has multiple lines, then split lines into table
             for p in v:gmatch('([^\n\r]+)') do
                 grp[#grp+1]=p
                 --deal with unicode chars
-                local _, count = p:gsub("[%z\1-\127\194-\244][\128-\193]", "")
+                local _, count = p:gsub("[\1-\127\194-\244][\128-\193]", "")
                 local len=env.ansi.strip_len(p)-count
                 if csize < len then csize=len end
             end

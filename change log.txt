@@ -1,4 +1,12 @@
-2015-11-02: * public: update Chinese user manual
+2015-11-04: * Fix:    1) Public: occasionally unexpected layouts when printing a grid(grid.lua)
+                      2) Public: cannot scroll to historical command in sqlplus/luajit(dbcli.bat)
+              New:    1) Oracle: new command "show" which similar to "ora" except not allow parameters
+                      2) Oracle: some new scripts for "ora","sys" and "show"
+                      3) Oracle: new command "set instance <-1|0|inst_id>" to auto-limit the inst_id in gv$ views
+              Change: 1) Oracle: some scripts of "ora" moved to "show"
+                      2) Oracle: new command "ora obj", the original command "ora obj" renamed to "ora search"
+                      3) Public: minor changes on existing scripts and functions
+2015-11-02: * public: update user manual(in Chinese)
 2015-11-02: + oracle: new commands "sys xdesc" and "ora trans"
 2015-11-02: ! oracle: performance improvement for "ora cursor"
 2015-11-02: ! public: fix incomplete statement when batch executing statements from clipboard

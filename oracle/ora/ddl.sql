@@ -43,7 +43,7 @@ BEGIN
         txt := dbms_metadata.get_ddl(REPLACE(obj_type, ' ', '_'), part1, SCHEM);
         IF obj_type = 'TABLE' THEN
             BEGIN
-                --dbms_lob.append(txt,dbms_metadata.GET_DEPENDENT_DDL('INDEX', part1, SCHEM));
+                dbms_lob.append(txt,dbms_metadata.GET_DEPENDENT_DDL('INDEX', part1, SCHEM));
                 NULL;
             EXCEPTION
                 WHEN OTHERS THEN

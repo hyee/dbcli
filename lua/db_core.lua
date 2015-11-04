@@ -383,7 +383,7 @@ function db_core:parse(sql,params,prefix,prep)
             end
             args[#args+1],args[#args+2]=k,typ
             p1[#p1+1]=args
-            return '?'
+            return ':'..counter
         end)
     local res
     if not prep then prep=self:check_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007) end
@@ -466,6 +466,7 @@ function db_core:exec(sql,args)
     end
 
     prep,sql,params=self:parse(sql,params)
+    prep:setEscapeProcessing(false)
     self.__stmts[#self.__stmts+1]=prep
     prep:setFetchSize(cfg.get('FETCHSIZE'))
     prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))

@@ -9,6 +9,8 @@ SELECT sess.inst_id, sess.sid, XIDUSN || '.' || XIDSLOT || '.' || XIDSQN transac
                       'YES',
                       'RECURSIVE TX',
                       DECODE(t.noundo, 'YES', 'NO UNDO TX', t.status))) status, a.value total_commits,
+        case when bitand(t.flag,power(2,7)) > 0 then 'YES' else 'NO' end as rollback,
+       t.space,t.recursive, 
        t.start_date,
        round((sysdate-t.start_date)*1440,2) duration_min
 FROM   gv$transaction t, v$rollname r, gv$sesstat a,

@@ -11,7 +11,7 @@ end
 
 function sys:run_sql(sql,args,print_args)
     env.checkerr(self.db.props.isdba,"You don't have the SYSDBA privilege!")
-    self.super:run_sql(sql,args,print_args)
+    return self.super:run_sql(sql,args,print_args)
 end
 
 return sys.new()
