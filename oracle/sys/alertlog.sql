@@ -1,4 +1,4 @@
-/*[[Show top 300 alert logs for current instance. Usage: alertlog [yymmddhh24miss] [yymmddhh24miss] 
+/*[[Show top 300 alert logs of current instance. Usage: alertlog [yymmddhh24miss] [yymmddhh24miss] 
     --[[
         @check_version: 11.0={}
     ]]--
