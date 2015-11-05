@@ -6,7 +6,6 @@ import jline.console.completer.Completer;
 import jline.console.history.History;
 import jline.internal.Configuration;
 import jline.internal.NonBlockingInputStream;
-import sun.security.util.PendingException;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -30,10 +29,10 @@ public class Console extends ConsoleReader {
     private EventReader monitor = new EventReader();
     private ActionListener event;
     private char[] keys;
-    private boolean isBlocking=false;
+    private boolean isBlocking = false;
 
-    public Console(Terminal t) throws IOException {
-        super(null, System.in, System.out, t);
+    public Console() throws IOException {
+        super(System.in, System.out);
         his = getHistory();
         setExpandEvents(false);
         setHandleUserInterrupt(true);
@@ -43,11 +42,11 @@ public class Console extends ConsoleReader {
         Iterator<Completer> iterator = getCompleters().iterator();
         while (iterator.hasNext()) removeCompleter(iterator.next());
         reader = this;
-        charset = t.getOutputEncoding() == null ? Configuration.getEncoding() : t.getOutputEncoding();
+        charset = this.getTerminal().getOutputEncoding() == null ? Configuration.getEncoding() : this.getTerminal().getOutputEncoding();
     }
 
     public String readLine(String prompt) throws IOException {
-        isBlocking=false;
+        isBlocking = false;
         if (isRunning()) setEvents(null, null);
         synchronized (in) {
             return super.readLine(prompt);
@@ -62,13 +61,15 @@ public class Console extends ConsoleReader {
         return this.task != null;
     }
 
+
     public synchronized void setEvents(ActionListener event, char[] keys) {
         this.event = event;
         this.keys = keys;
-        this.isBlocking=false;
+        this.isBlocking = false;
         if (this.task != null) {
             this.task.cancel(true);
             this.task = null;
+
         }
         if (this.event != null && this.keys != null) {
             this.monitor.counter = 0;
@@ -92,9 +93,10 @@ public class Console extends ConsoleReader {
 
     class EventReader implements Runnable {
         public int counter = 0;
+
         public void run() {
             try {
-                if(isBlocking) return;
+                if (isBlocking) return;
                 int ch = in.peek(1L);
                 if (ch < -1) return;
                 //System.out.println(ch);
@@ -104,7 +106,7 @@ public class Console extends ConsoleReader {
                     event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, Character.toChars(ch).toString()));
                     return;
                 }
-                if(ch>32) isBlocking=true;
+                if (ch > 32) isBlocking = true;
                 else in.read();
             } catch (Exception e) {
                 //e.printStackTrace();

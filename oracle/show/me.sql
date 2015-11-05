@@ -1,14 +1,5 @@
 /*[[Show current connection's information]]*/
-set feed off printvar off
-var ssid VARCHAR2;
-var sinst VARCHAR2;
-BEGIN
-    :ssid := sys_context('userenv','sid');
-    :sinst := sys_context('userenv','instance');
-END;
-/
-ora session &ssid
-
+set feed off
 select /*INTERNAL_DBCLI_CMD*/ user username,
                (SELECT VALUE FROM Nls_Database_Parameters WHERE parameter='NLS_RDBMS_VERSION') version,
                 sys_context('userenv','language') lang,
@@ -16,6 +7,16 @@ select /*INTERNAL_DBCLI_CMD*/ user username,
                 (select instance_number from v$instance where rownum<2) inst_id,
                 sys_context('userenv','isdba') is_sysdba
 from dual;
+
+PRO Session Optimizer Env:
+PRO ======================
+select * from v$ses_optimizer_env where sid=userenv('sid') order by 3;
+
+PRO Session Cursor Cache:
+PRO =====================
+set pivot 1
+SELECT * FROM V$SESSION_OBJECT_CACHE;
+
 
 var pcur refcursor;
 DECLARE
@@ -37,4 +38,4 @@ BEGIN
     :pcur := pcur;
 END;
 /
-print pcur
+

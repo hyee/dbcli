@@ -25,10 +25,10 @@ public class SSHExecutor {
     public String host;
     public String user;
     public int port;
-    PrintWriter writer;
     public String password;
     public String prompt;
     public ChannelShell shell;
+    PrintWriter writer;
     JSch ssh;
     PipedOutputStream shellWriter;
     PipedInputStream pipeIn;
@@ -60,7 +60,6 @@ public class SSHExecutor {
     }
 
 
-
     public void connect(String host, int port, String user, final String password, String linePrefix) throws Exception {
         try {
             ssh = new JSch();
@@ -89,7 +88,7 @@ public class SSHExecutor {
             shellWriter = new PipedOutputStream(pipeIn);
             pr = new Printer();
             pr.reset(true);
-            writer=new PrintWriter((TERMTYPE!="none")?new OutputStreamWriter(System.out,Console.charset):Console.writer);
+            writer = new PrintWriter((TERMTYPE != "none") ? new OutputStreamWriter(System.out, Console.charset) : Console.writer);
             Interrupter.listen("SSHExecutor", new InterruptCallback() {
                 @Override
                 public void interrupt(ActionEvent e) throws Exception {
@@ -110,23 +109,23 @@ public class SSHExecutor {
         }
     }
 
-    public void setEnv(String name,String value) {
+    public void setEnv(String name, String value) {
 
     }
 
-    public void setTermType(String termType, int cols, int rows) throws Exception{
+    public void setTermType(String termType, int cols, int rows) throws Exception {
         TERMTYPE = termType.intern();
         COLS = cols;
         ROWS = rows;
-        if(isConnect()) {
+        if (isConnect()) {
             shell.setPtySize(COLS, ROWS, 0, 0);
-            exec("export TERM="+(TERMTYPE == "none" ? "ansi" : TERMTYPE));
+            exec("export TERM=" + (TERMTYPE == "none" ? "ansi" : TERMTYPE));
         }
     }
 
     public boolean isConnect() {
-        if(shell==null) return false;
-        if(!shell.isConnected()) {
+        if (shell == null) return false;
+        if (!shell.isConnected()) {
             close();
             return false;
         }
@@ -200,7 +199,7 @@ public class SSHExecutor {
 
     public void exec(String command) throws Exception {
         pr.reset(false);
-        if(command.charAt(command.length()-1)!='\n') command=command+"\n";
+        if (command.charAt(command.length() - 1) != '\n') command = command + "\n";
         shellWriter.write(command.getBytes());
         shellWriter.flush();
         waitCompletion();
@@ -241,7 +240,7 @@ public class SSHExecutor {
     }
 
     class Printer extends OutputStream {
-        ByteBuffer buf= ByteBuffer.allocateDirect(1000000);
+        ByteBuffer buf = ByteBuffer.allocateDirect(1000000);
         StringBuilder sb = new StringBuilder(128);
         char lastChar;
         Pattern p = Pattern.compile("\33\\[[\\d\\;]+[mK]");
@@ -256,15 +255,16 @@ public class SSHExecutor {
         @Override
         public void write(int i) throws IOException {
             char c = (char) i;
-            buf.put((byte)i);
+            buf.put((byte) i);
             sb.append(c);
             if (c == '\n') {
-                lastLine= sb.toString();
+                lastLine = sb.toString();
                 flush();
                 isStart = false;
                 buf.clear();
                 sb.setLength(0);
-            } isEnd = (lastChar == '$' || lastChar == '>' || lastChar == '#') && c == ' ';
+            }
+            isEnd = (lastChar == '$' || lastChar == '>' || lastChar == '#') && c == ' ';
             lastChar = c;
         }
 
@@ -283,17 +283,17 @@ public class SSHExecutor {
         }
 
         @Override
-        public synchronized void flush()  {
+        public synchronized void flush() {
             if (isStart || isEnd || buf.position() == 0) return;
-            int pos=buf.position();
+            int pos = buf.position();
             buf.flip();
-            byte[] b=new byte[pos];
+            byte[] b = new byte[pos];
             buf.get(b);
             String line = new String(b);
             isStart = false;
             buf.clear();
             if (!ignoreMessage) {
-                if (TERMTYPE == "none") line=p.matcher(line).replaceAll("");
+                if (TERMTYPE == "none") line = p.matcher(line).replaceAll("");
                 writer.print(line);
                 writer.flush();
             }

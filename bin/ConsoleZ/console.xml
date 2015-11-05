@@ -31,7 +31,7 @@
 			<color use="0" r="0" g="255" b="0"/>
 		</font>
 		<window title="ConsoleZ" icon="" use_tab_icon="1" use_console_title="0" show_cmd="1" show_cmd_tabs="1" use_tab_title="1" trim_tab_titles="30" trim_tab_titles_right="0" main_title_format="?U([%u] )?N({%u} )%m?s( - %s)" tab_title_format="?s( %s):( DBCLI - Not Connected)"/>
-		<controls show_menu="1" show_toolbar="0" show_statusbar="0" show_tabs="1" hide_single_tab="0" show_scrollbars="1" flat_scrollbars="1" tabs_on_bottom="0" hide_tab_icons="1" show_searchbar="1"/>
+		<controls show_menu="1" show_toolbar="0" show_statusbar="0" show_tabs="1" hide_single_tab="0" show_scrollbars="1" flat_scrollbars="0" tabs_on_bottom="0" hide_tab_icons="1" show_searchbar="1"/>
 		<styles caption="1" resizable="1" taskbar_button="1" border="0" inside_border="2" tray_icon="1" quake_like="0" jumplist="0" integrated_ime="1" quake_animation_time="300" hide_when_inactive="0">
 			<selection_color r="128" g="128" b="128"/>
 		</styles>
@@ -215,9 +215,6 @@
 				<color id="14" r="255" g="255" b="0"/>
 				<color id="15" r="255" g="255" b="255"/>
 			</colors>
-		</tab>
-		<tab title="plink" use_default_icon="0">
-			<console shell="D:\Green\msys\mingw32_shell.bat" init_dir="D:\Green\msys" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
 		</tab>
 	</tabs>
 	<external_commands>

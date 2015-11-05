@@ -31,9 +31,11 @@ public class Interrupter {
                         }
                     }
                     return null;
-                }});
+                }
+            });
             signalClass.getMethod("handle", signalClass, signalHandlerClass).invoke(null, signal, signalHandler);
-        } catch (Exception e) {}
+        } catch (Exception e) {
+        }
     }
 
     public static void listen(String name, InterruptCallback c) {

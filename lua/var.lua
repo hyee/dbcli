@@ -121,7 +121,10 @@ local function update_text(item,pos,params)
     local function repl(s,s2,s3)
         local v,s=s2:upper(),s..s2..s3
         v=params[v] or var.inputs[v] or var.global_context[v] or s
-        if v~=s then count=count+1 end
+        if v~=s then 
+            count=count+1 
+            env.log_debug("var",s,'==>',v==nil and "<nil>" or v=="" and '<empty>' or tostring(v))
+        end
         return v
     end
 
@@ -230,6 +233,7 @@ end
 
 function var.capture_before_cmd(cmd,args)
     if cmd~="DEF" and cmd~="DEFINE"  and not (env._CMDS[cmd] and tostring(env._CMDS[cmd].DESC) or ""):find('(DEF',1,true) then
+        env.log_debug("var","Backup variables")
         var._backup,var._inputs_backup,var._outputs_backup=var.backup_context()
     else
         var._backup,var._inputs_backup,var._outputs_backup=nil,nil,nil
@@ -238,6 +242,7 @@ end
 
 function var.capture_after_cmd(cmd,args)
     if var._backup then
+        env.log_debug("var","Reset variables")
         var.import_context(var._backup,var._inputs_backup,var._outputs_backup)
         var._backup,var._inputs_backup,var._outputs_backup=nil,nil,nil
     end

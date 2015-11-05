@@ -16,6 +16,6 @@ BEGIN
         WHERE  owner=:object_owner
         AND    object_name=:object_name
         AND    object_type like :object_type||'%'
-        AND    (:object_type IN('PACKAGE','TYPE') OR nvl(:object_subname,' ')=nvl(subobject_name,' '));
+        AND    (:object_type IN('PACKAGE','TYPE') OR object_id=:object_id);
 END;
 /

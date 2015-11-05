@@ -13,6 +13,7 @@ function event.callback(name,...)
     local v=event[name]
     local flag,result
     for k,v in ipairs(v) do
+        env.log_debug("Event",name,'-->',v.src)
         if v.obj then
             flag,result=pcall(v.func,v.obj,...)
         else

@@ -163,11 +163,12 @@ end
 
 function helper.desc()
     return [[
-        Type 'help' to see the available comand list. Usage: help [<command>[,<sub_command1>...]|-a|-j|-e [<obj>]|help ]
+        Type 'help' to see the available comand list. Usage: help [<command>[,<sub_command1>...]|-a|-j|-stack|-e [<obj>]|help ]
         Options:
-           -a  To show all commands, including the hidden commands.
-           -j  To show current JVM information
-           -e  To show current environment infomation. Usage: help -e [<lua_table>[.<sub_table>] ]
+           -stack To print stack of historical commands
+           -a     To show all commands, including the hidden commands.
+           -j     To show current JVM information
+           -e     To show current environment infomation. Usage: help -e [<lua_table>[.<sub_table>] ]
         Other commands:
             help                             To brief the available commands(excluding hiddens)
             help <command>                   To show the help detail of a specific command

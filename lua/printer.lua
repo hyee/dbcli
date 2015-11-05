@@ -1,4 +1,4 @@
-local env=env
+local env,select,table=env,select,table
 local event
 local writer,reader=writer,reader
 local out=writer
@@ -6,7 +6,6 @@ local printer={rawprint=print}
 local io=io
 local NOR=""
 local strip_ansi
-local space=env.space
 
 function printer.load_text(text)
     printer.print(event.callback("BEFORE_PRINT_TEXT",{text or ""})[1])
@@ -36,9 +35,12 @@ function printer.more(output)
 end
 
 function printer.print(...)
-    local output=""
-    table.foreach({...},function(k,v) output=output..tostring(v)..' ' end)
-    output=NOR..space..output:gsub("(\r?\n\r?)","%1"..space)
+    local output={NOR,env.space:sub(1,#env.space-2)}
+    for i=1,select('#',...) do
+        local v=select(i,...)
+        output[i+2]=v==nil and "nil" or tostring(v)
+    end
+    output=table.concat(output,' '):gsub("(\r?\n\r?)","%1"..env.space)
     if printer.is_more then more_text[#more_text+1]=output;return end
     out:println(output)
     out:flush()
@@ -48,7 +50,7 @@ function printer.print(...)
 end
 
 function printer.write(output)
-    out:write(space..output)
+    out:write(env.space..output)
     out:flush()
 end
 
@@ -72,7 +74,7 @@ function printer.spool(file,option)
     option=option and option:upper() or "CREATE"
     if not file then
         if printer.hdl then
-            printer.rawprint(space..'Output is writing to "'..printer.file..'".')
+            printer.rawprint(env.space..'Output is writing to "'..printer.file..'".')
         else
             print("SPOOL is OFF.")
         end

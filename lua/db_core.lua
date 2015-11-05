@@ -205,7 +205,6 @@ function ResultSet:fetch(rs,conn)
 end
 
 function ResultSet:close(rs)
-
     if rs then
         if not rs:isClosed() then rs:close() end
         if self[rs] then self[rs]=nil end
@@ -471,8 +470,8 @@ function db_core:exec(sql,args)
     prep:setFetchSize(cfg.get('FETCHSIZE'))
     prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
     self.current_stmt=prep
-    --reader:setRunning(true)
-    --loader:setStatement(prep)
+    env.log_debug("db","SQL:",sql)
+    env.log_debug("db","Parameters:",params)
     local is_query=self:check_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
     self.current_stmt=nil
     --is_query=prep:execute()
@@ -552,6 +551,7 @@ function db_core:connect(attrs,data_source)
     if not self.driver then
         self.driver= java.require("java.sql.DriverManager")
     end
+    env.log_debug("db","Start connecting:\n",attrs)
     attrs.account_type="database"
     local url=attrs.url
     env.checkerr(url,"'url' property is not defined !")
@@ -600,6 +600,7 @@ function db_core:connect(attrs,data_source)
                 --print(k)
                 self.properties[k]=v
             end
+            env.log_debug("db","Connection properties:\n",self.properties)
         end
     end
     return self.conn

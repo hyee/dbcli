@@ -65,6 +65,10 @@ function cfg.remove(name)
     cfg[name]=nil
 end
 
+function cfg.exists(name)
+    return cfg[name:upper()]
+end
+
 function cfg.get(name)
     name=name:upper()
     if not cfg[name] then
@@ -81,6 +85,7 @@ function cfg.temp(name,value,backup)
     end
     cfg[name].prebackup=backup
     cfg[name].value=value
+    env.log_debug("set",name,value)
 end
 
 function cfg.set(name,value,backup,isdefault)
@@ -154,9 +159,11 @@ function cfg.force_set(item,value)
 end
 
 function cfg.restore(name)
+
     if not name then
         return
     elseif type(name)=="table" then
+        env.log_debug("set","Start restore")
         for k,v in pairs(name) do
             if v.value~=cfg[k].value and k~="PROMPT" then
                 cfg.doset(k,v.value)
@@ -166,6 +173,7 @@ function cfg.restore(name)
         return
     end
     name=name:upper()
+    env.log_debug("set","Restoring",name)
     if not cfg[name] or cfg[name].org==nil then return end
     cfg.set(name,cfg[name].org)
 end
@@ -184,6 +192,7 @@ function cfg.backup()
             end
         end
     end
+    env.log_debug("set","Start backup")
     return backup
 end
 

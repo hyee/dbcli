@@ -1,17 +1,15 @@
-/*[[Show temp tablespace usage]]*/
+/*[[Show temp tablespace usage.]]*/
 SELECT /*+ ordered */
-     B.SID,
-     B.SERIAL#,
-     B.INST_ID,
+     B.SID||','||B.SERIAL#||',@'||B.INST_ID sid,
      P.SPID,
      B.USERNAME,
      TABLESPACE,
-     round(A.BLOCKS * 8 / 1024, 2) MB,
+     round(A.BLOCKS*(select value/1024/1024 from v$parameter where name='db_block_size'), 2) MB,
      A.SEGTYPE,
      b.event,
      a.SQL_ID,
      extractvalue(c.column_value,'/ROW/SQL_TEXT')  sql_text
-FROM   gV$tempseg_usage A, gV$SESSION B, gV$PROCESS P,
+FROM   gv$tempseg_usage A, gV$SESSION B, gv$PROCESS P,
        TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'{
            SELECT substr(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200) sql_text
            FROM   gv$sqlstats

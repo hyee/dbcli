@@ -242,6 +242,7 @@ function grid:ctor(printhead)
 end
 
 function grid:add(rs)
+    if type(rs)~="table" then return end
     local result,headind,colsize=self.data,self.headind,self.colsize
     local title_style=grid.title_style
     local colbase=grid.col_auto_size
