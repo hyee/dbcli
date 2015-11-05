@@ -31,7 +31,7 @@ Loader.class(JVM to load LUA lib)
                       |                    (db-specific modules) ->|-> other external modules
                       |                                            |-> oracle.lua ->|-Load Oracle jdbc driver
                       |                                            |                |-Load "ora" module -> scan command list("ora" folder)                                           
-                      |                                            |      |         |-Load other internal oracle module(dbmsoutput,etc) 
+                      |                                            |                |-Load other internal oracle module(dbmsoutput,etc) 
                       |                                            |    
                       |                                            |
                       |                                            |-> mysql.lua
@@ -40,4 +40,27 @@ Loader.class(JVM to load LUA lib)
                       |
                  Load command-line parameters(dbcli.bat)
 
-                                       
+                 
+Inheritances:
+================
+lua\db_core.lua
+    |->oracle\oracle.lua
+    |->db2\db2.lua
+    |->mysql\mysql.lua
+    
+lua\scripter.lua
+    |->lua\ssh.lua
+    |  |->db2\ssh.lua
+    |  |->oracle\ssh.lua
+    |->lua\snap.lua
+    |  |->db2\snap.lua
+    |  |->oracle\snap.lua
+    |->lua\graph.lua
+    |  |->db2\chart.lua
+    |  |->oracle\chart.lua
+    |->oracle\ora.lua
+    |  |->oracle\sys.lua
+    |  |->oracle\show.lua
+    |->oracle\sqlplus.lua
+    |->db2\sql.lua
+    

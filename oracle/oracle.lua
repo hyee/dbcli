@@ -144,10 +144,10 @@ function oracle:connect(conn_str)
 end
 
 local instance_pattern={
-    string.case_insensitive_pattern('%f[%w_%$:%.](("?)gv_?%$%a%a[%w_%$]*%2)([%s,;])'),
-    string.case_insensitive_pattern('%f[%w_%$:%.](sys%.%s*("?)gv_?%%a%a$[%w_%$]*%2)([%s,;])'),
-    string.case_insensitive_pattern('%f[%w_%$:%.](("?)x$%a%a[%w_%$]*%2)([%s,;])'),
-    string.case_insensitive_pattern('%f[%w_%$:%.](sys%.%s*("?)x$%a%a[%w_%$]*%2)([%s,;])')
+    string.case_insensitive_pattern('%f[%w_%$:%.](("?)gv_?%$%a%a[%w_%$]*%2)([%s%),;])'),
+    string.case_insensitive_pattern('%f[%w_%$:%.](sys%.%s*("?)gv_?%%a%a$[%w_%$]*%2)([%s%),;])'),
+    string.case_insensitive_pattern('%f[%w_%$:%.](("?)x$%a%a[%w_%$]*%2)([%s%),;])'),
+    string.case_insensitive_pattern('%f[%w_%$:%.](sys%.%s*("?)x$%a%a[%w_%$]*%2)([%s%),;])')
 }
 
 function oracle:parse(sql,params)
@@ -161,7 +161,7 @@ function oracle:parse(sql,params)
     if instance>-1 then
         if instance==0 then instance=self.props.instance end
         for _,pat in ipairs(instance_pattern) do
-            sql= sql:gsub(pat,"(select /*+merge*/ * from %1 where inst_id="..instance..") %2")
+            sql= sql:gsub(pat,"(select /*+merge*/ * from %1 where inst_id="..instance..")%3")
         end
     end
 
