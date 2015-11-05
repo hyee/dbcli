@@ -18,7 +18,7 @@ SET PATH=%JRE_HOME%;%EXT_PATH%;%PATH%
 if defined ANSICON_CMD (
    "%JRE_HOME%\java.exe" -version 2>&1 |findstr /i "64-bit" >nul
    if %errorlevel% == 0 (.\bin\ansiconx86.exe -m%CONSOLE_COLOR% -p) ELSE (%ANSICON_CMD% -m%CONSOLE_COLOR% -p) 
-) ELSE (CONSOLE_COLOR %CLR%)
+) ELSE (COLOR %CONSOLE_COLOR%)
 rem unpack jar files for the first use
 for /r %%i in (*.pack.gz) do (
   set "var=%%i" &set "str=!var:@=!"

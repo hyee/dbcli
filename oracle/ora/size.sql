@@ -3,7 +3,7 @@
     If not specify the parameter, then list the top 100 segments within current schema.
     option '-d': used to detail in segment level, otherwise in name level, only shows the top 1000 segments
     --[[
-        @CHECK_ACCESS: dba_segments/dba_objects={}
+        @CHECK_ACCESS: dba_segments/dba_objects/sys.seg$={}
         &OPT2: default={}, d={partition_name,}
         &OPT3: default={null}, d={partition_name}
     --]]
@@ -68,7 +68,9 @@ BEGIN
             WHERE t.obj#=o.obj# AND o.owner#=u.user#
         ) a
         LEFT JOIN sys.obj$ o2 on(o2.owner#=a.user# AND o2.name=a.object_name and nvl(o2.subname,' ')=nvl(a.partition_name,' ') and o2.namespace=1)
-        LEFT JOIN rws b ON(a.owner=b.table_owner and a.object_name=b.table_name and nvl(a.partition_name,' ') in (nvl(b.partition_name,' '),b.subpartition_name) AND A.object_type like 'TABLE%')
+        LEFT JOIN rws b ON(a.owner=b.table_owner and a.object_name=b.table_name and 
+                           (a.partition_name=b.subpartition_name or nvl(a.partition_name,' ') in nvl(b.partition_name,' ') and b.subpartition_name is null) and 
+                           A.object_type like 'TABLE%')
         WHERE seq<=1000
         ORDER BY seq;
     ELSE

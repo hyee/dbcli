@@ -1,9 +1,10 @@
 --init a global function to store CLI variables
 local _G = _ENV or _G
 
-local reader,coroutine,os,string,table,math,io=reader,coroutine,os,string,table,math,io
+local reader,coroutine,os,string,table,math,io,select=reader,coroutine,os,string,table,math,io,select
 
 local getinfo, error, rawset, rawget,math = debug.getinfo, error, rawset, rawget,math
+
 --[[
 local global_vars,global_source,env={},{},{}
 _G['env']=env
@@ -40,7 +41,7 @@ mt.__declared = {}
 
 mt.__newindex = function (t, n, v)
     if not mt.__declared[n] and env.WORK_DIR then
-        rawset(mt.__declared, n,env.callee())
+        rawset(mt.__declared, n,env.callee(5))
     end
     rawset(t, n, v)
 end
@@ -372,8 +373,13 @@ function env.exec_command(cmd,params)
     if event then
         event("BEFORE_COMMAND",name,params)
         if isMain then
+            if writer then
+                writer:print(env.ansi.mask("NOR",""))
+                writer:flush()
+            end
             event("BEFORE_ROOT_COMMAND",name,params)
             env.CURRENT_ROOT_CMD=name
+            env.log_debug("CMD",name,params)
         end
     end
 
@@ -381,10 +387,6 @@ function env.exec_command(cmd,params)
 
     local funs=type(cmd.FUNC)=="table" and cmd.FUNC or {cmd.FUNC}
     for _,func in ipairs(funs) do
-        if writer then
-            writer:print(env.ansi.mask("NOR",""))
-            writer:flush()
-        end
 
         local co=coroutine.create(func)
         local res={coroutine.resume(co,table.unpack(args))}
@@ -553,19 +555,15 @@ function env.eval_line(line,exec)
     if not env.pending_command() then
         push_stack(line)
         subsystem_prefix=env._SUBSYSTEM and (env._SUBSYSTEM.." ") or ""
+        local cmd=env.parse_args(2,line)[1]
         if dbcli_current_item.skip_subsystem then
             subsystem_prefix=""
-        elseif #subsystem_prefix>0 then
-            if line:lower():find(subsystem_prefix:lower(),1,true)== 1 then
-                subsystem_prefix=""
-            else
-                local cmd=env.parse_args(2,line)[1]
-                if cmd:len()>1 and cmd:sub(1,1)=='.' and _CMDS[cmd:upper():sub(2)] then
-                    subsystem_prefix=""
-                    dbcli_current_item.skip_subsystem=true
-                    line=line:sub(2)
-                end
-            end
+        elseif cmd:sub(1,1)=='.' and _CMDS[cmd:upper():sub(2)] then
+            subsystem_prefix=""
+            dbcli_current_item.skip_subsystem=true
+            line=line:sub(2)
+        elseif cmd:lower()==subsystem_prefix:lower() then
+            subsystem_prefix=""
         end
         line=(subsystem_prefix..line):gsub('^[%z\128-\255 \t]+','')
         if line:match('^([^%w])') then
@@ -675,6 +673,41 @@ function env.check_comment(cmd,other_parts)
     return true,other_parts
 end
 
+local print_debug
+local debug_group={ALL="all"}
+function env.log_debug(name,...)
+    name=name:upper()
+    if not debug_group[name] then debug_group[name]=env.callee(3) end
+    if not print_debug or env.set.get('debug')=="off" then return end
+    local value=env.set.get('debug'):upper()
+    local args={'['..name..']'}
+    for i=1,select('#',...) do
+        local v=select(i,...)
+        if v==nil then
+            args[i+1]='nil'
+        elseif type(v)=="table" then 
+            args[i+1]=table.dump(v)
+        else
+            args[i+1]=v
+        end
+    end
+    if value=="all" or value==name then print_debug(table.unpack(args)) end
+end
+
+function set_debug(name,value)
+    value=value:upper()
+    if env.grid then
+        local rows=env.grid.new()
+        rows:add{"Name","Source","Enabled"}
+        for k,v in pairs(debug_group) do
+            rows:add{k,v,k==value and "Yes" or "No"}
+        end
+        rows:sort(1,true)
+        rows:print()
+    end
+    return value
+end
+
 function env.onload(...)
     env.__ARGS__={...}
     env.init=require("init")
@@ -706,6 +739,8 @@ function env.onload(...)
                   "core","Define command's prompt, if value is 'timing' then will record the time cost(in second) for each execution.")
         env.set.init("COMMAND_ENDMARKS",end_marks,env.set_endmark,
                   "core","Define the symbols to indicate the end input the cross-lines command. Cannot be alphanumeric characters.")
+        env.set.init("Debug",'off',set_debug,"core","Indicates the option to print debug info, 'all' for always, 'off' for disable, others for specific modules.")
+        print_debug=print
     end
     if  env.ansi and env.ansi.define_color then
         env.ansi.define_color("Promptcolor","HIY","core","Define prompt's color")

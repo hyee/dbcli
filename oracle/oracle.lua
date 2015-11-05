@@ -143,6 +143,12 @@ function oracle:connect(conn_str)
     print("Database connected.")
 end
 
+local instance_pattern={
+    string.case_insensitive_pattern('%f[%w_%$:%.](("?)gv_?%$%a%a[%w_%$]*%2)([%s,;])'),
+    string.case_insensitive_pattern('%f[%w_%$:%.](sys%.%s*("?)gv_?%%a%a$[%w_%$]*%2)([%s,;])'),
+    string.case_insensitive_pattern('%f[%w_%$:%.](("?)x$%a%a[%w_%$]*%2)([%s,;])'),
+    string.case_insensitive_pattern('%f[%w_%$:%.](sys%.%s*("?)x$%a%a[%w_%$]*%2)([%s,;])')
+}
 
 function oracle:parse(sql,params)
     local p1,counter={},0
@@ -154,7 +160,9 @@ function oracle:parse(sql,params)
     local instance=tonumber(cfg.get("instance"))
     if instance>-1 then
         if instance==0 then instance=self.props.instance end
-        sql= (sql.." "):gsub("%f[%w_%$:]([gG][vV]%$[%w_%$]+)([%s,])","(select /*+merge*/ * from %1 where inst_id="..instance..") %2")
+        for _,pat in ipairs(instance_pattern) do
+            sql= sql:gsub(pat,"(select /*+merge*/ * from %1 where inst_id="..instance..") %2")
+        end
     end
 
     sql=sql:gsub('%f[%w_%$:]:([%w_%$]+)',function(s)
@@ -187,7 +195,6 @@ function oracle:parse(sql,params)
         end
 
         p1[k]=args
-
         return s:upper()
     end)
 
@@ -382,7 +389,7 @@ function oracle:onload()
     set_command(self,{"declare","begin"},  default_desc,  self.exec  ,self.check_completion,1,true)
     set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)
     set_command(self,"alter" ,   default_desc,        self.exec      ,true,1,true)
-    cfg.init("instance","-1",nil,"oracle","Used in RAC env, to filter inst_id of gv$ views. -1: unlimited, 0: current, >1: specific instance","-1 - 99")
+    cfg.init("instance","-1",nil,"oracle","Auto-limit the inst_id of gv$/x$ tables. -1: unlimited, 0: current, >0: specific instance","-1 - 99")
 
     self.C={}
     init.load_modules(module_list,self.C)

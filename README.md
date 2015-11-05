@@ -57,7 +57,7 @@ Below are some common use of the utility:<br>
     1. "conn" or "connect" to connect to the database with or without installing Oracle client, and "reconn"  to re-connect.
     2. "login" command to connect to the db without password via the account that has been connected before. 
     3. Execute SQL statements which should match the database syntax, similar to SQL*Plus.
-    4. "ora" command to execute pre-defined scripts under the "ora" sub-directory. i.e., ora ashtop, ora actives
+    4. "ora","show","sys" commands to execute pre-defined scripts. i.e., ora ashtop, ora actives  
     5. "alias" command which is similar to the Linux command
     6. "set" command to configure the shell environment
     7. 'q' or CTRL + D or CTRL + C to abort running command

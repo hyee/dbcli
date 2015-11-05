@@ -3,7 +3,7 @@ local host={}
 function host.run_command(cmd)
     if not cmd then return end
     io.flush()
-    os.execute(cmd)
+    os.execute('"'..cmd..'"')
 end
 
 function host.mkdir(path)
