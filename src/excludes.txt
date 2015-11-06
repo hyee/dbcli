@@ -16,6 +16,7 @@
 .alias
 .so
 .bak
+.cfg
 lib.zip
 jre.zip
 mysql-connector.jar
