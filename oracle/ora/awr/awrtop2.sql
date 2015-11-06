@@ -8,11 +8,11 @@
 
 ORA _sqlstat
 
-WITH qry as (SELECT nvl(upper(:V1),'A') inst,
+WITH qry as (SELECT nvl(upper(NVL(:V1,:INSTANCE)),'A') inst,
                     nullif(lower(:V2),'a') sqid,
                     nvl(lower(:V3),'total') calctype,
-                    to_timestamp(nvl(:V4,to_char(sysdate-7,'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
-                    to_timestamp(coalesce(:V5,''||(:V4+1),to_char(sysdate,'YYMMDDHH24MI')),'YYMMDDHH24MI') ed,
+                    to_timestamp(coalesce(:V4,:starttime,to_char(sysdate-7,'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
+                    to_timestamp(coalesce(:V5,:endtime,''||(:V4+1),to_char(sysdate,'YYMMDDHH24MI')),'YYMMDDHH24MI') ed,
                     lower(nvl(:V6,'ela')) sorttype
              FROM Dual)
 SELECT &grp,

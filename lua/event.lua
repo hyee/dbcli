@@ -20,8 +20,7 @@ function event.callback(name,...)
             flag,result=pcall(v.func,...)
         end
         if not flag then
-            result=tostring(result):gsub(".*000%-00000%:","")
-            print(result)
+            env.warn(result)
         end
     end
     return ...,result

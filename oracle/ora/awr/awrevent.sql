@@ -21,9 +21,9 @@ FROM   (SELECT  inst,event_name, wait_class, SUM(total_Waits * flag) counts,
                            FROM   dba_hist_system_event hs1, dba_hist_snapshot s
                            WHERE  s.snap_id = hs1.snap_id
                            AND    s.instance_number = hs1.instance_number
-                           AND    (nvl(LOWER(:V1),'a') in('0','a') or regexp_like(:V1,'^\d+$') and s.instance_number = :V1 or instr(event_name,:V1)>0)
+                           AND    (nvl(LOWER(nvl(:V1,:INSTANCE)),'a') in('0','a') or regexp_like(nvl(:V1,:INSTANCE),'^\d+$') and s.instance_number = nvl(:V1,:INSTANCE) or instr(event_name,nvl(:V1,:INSTANCE))>0)
                            AND    s.dbid = hs1.dbid
-                           AND    s.end_interval_time BETWEEN nvl(to_date(:V2,'YYMMDDHH24MI'),SYSDATE - 7) AND nvl(to_date(:V3,'YYMMDDHH24MI'),SYSDATE)
+                           AND    s.end_interval_time BETWEEN nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MI'),SYSDATE - 7) AND nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MI'),SYSDATE)
                            AND    wait_class != 'Idle') a
                   WHERE  snap_id IN (max_id, min_id))
          GROUP  BY inst,event_name, wait_class

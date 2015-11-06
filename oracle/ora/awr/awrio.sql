@@ -1,4 +1,5 @@
-WITH qry as(select nvl(upper(:V1),'0') inst,nvl(lower(:V2),'data') typ,nvl(upper(:V3),'RW') rw from dual )
+/*[[Show AWR IO Stats: Usage: awrio [0|a|inst_id]]]*/
+WITH qry as(select nvl(upper(nvl(:V1,:INSTANCE)),'0') inst,nvl(lower(:V2),'data') typ,nvl(upper(:V3),'RW') rw from dual )
 SELECT d "DATE",
        inst_id||'('||to_char(sum(c),'99990')||')' inst_id,
        MAX(DECODE(h, 0, c)) HH00,

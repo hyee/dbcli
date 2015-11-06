@@ -7,7 +7,7 @@ local event=env.event and env.event.callback or nil
 local db_Types={}
 function db_Types:set(typeName,value,conn)
     local typ=self[typeName]
-    if value==nil then
+    if value==nil or value=='' then
         return 'setNull',typ.id
     else
         return typ.setter,typ.handler and typ.handler(value,'set',conn) or value
@@ -335,7 +335,7 @@ function db_core:check_params(sql,prep,p1,params)
         hdl:add({"Param Sequence","Param Name","Param Type","Param Value","Description"})
         for i=1,math.max(param_count,#p1) do
             local v=p1[i] or {}
-            local res,typ=pcall(meta.getParameterTypeName,meta)
+            local res,typ=pcall(meta.getParameterTypeName,meta,i)
             typ=res and typ or v[4]
             local param_value=v[3] and params[v[3]]
             hdl:add{i,v[3],typ,type(param_value)=="table" and "OUT" or param_value,
@@ -390,11 +390,9 @@ function db_core:parse(sql,params,prefix,prep)
     self:check_params(sql,prep,p1,params)
 
     local meta=prep:getParameterMetaData()
-
-    local param_count=meta:getParameterCount()
+    local param_count=#p1
     if param_count==0 then return prep,sql,params end
     local checkerr=pcall(meta.getParameterMode,meta,1)
-
     if not checkerr then
         for k,v in ipairs(p1) do
             prep[v[1]](prep,k,v[2])
@@ -406,7 +404,6 @@ function db_core:parse(sql,params,prefix,prep)
             if mode<=2 then
                 prep[db_Types[p1[i][4]].setter](prep,i,type(param_value)=="table" and param_value[4] or param_value)
             end
-
             --output parameter
             if mode>=2 then
                 if type(param_value)~='table' then
@@ -480,26 +477,21 @@ function db_core:exec(sql,args)
             if type(v[2]) == "table" then
                 local res
                 for _,key in ipairs(v[2]) do
-                    local res1=db_Types:get(key,v[3],prep,self.conn)
-                    if res1  then
-                        res=res1
-                    end
+                    local res1=db_Types:get(key,v[3],prep,self.conn) or res
+                    if res1~=nil then res=res1 end
                 end
-                params[k]=res
+                params[k]=res or ''
             else
-                params[k]=db_Types:get(v[2],v[3],prep,self.conn)
+                params[k]=db_Types:get(v[2],v[3],prep,self.conn) or ''
             end
         end
     end
 
-    if args then
-        for k,v in pairs(args) do
-            if type(v)=="string" and v:sub(1,1)=="#" then
-                args[k]=params[tostring(k):upper()]
-            end
+    for k,v in pairs(args) do
+        if type(v)=="string" and v:sub(1,1)=="#" then
+            args[k]=params[tostring(k):upper()]
         end
     end
-
     --close statments
 
     params=nil
@@ -513,6 +505,10 @@ function db_core:exec(sql,args)
 
     self:clearStatements()
     if event then event("AFTER_DB_EXEC",{self,sql,args,result}) end
+    
+    for k,v in pairs(args) do
+        if v=="" then args[k]=nil end
+    end
     return #result==1 and result[1] or result
 end
 

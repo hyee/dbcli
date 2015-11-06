@@ -12,12 +12,15 @@ SELECT sess.inst_id, sess.sid, XIDUSN || '.' || XIDSLOT || '.' || XIDSQN transac
         case when bitand(t.flag,power(2,7)) > 0 then 'YES' else 'NO' end as rollback,
        t.space,t.recursive, 
        t.start_date,
-       round((sysdate-t.start_date)*1440,2) duration_min
-FROM   gv$transaction t, v$rollname r, gv$sesstat a,
-       (SELECT VALUE FROM v$parameter WHERE NAME = 'db_block_size') p, gv$session sess
+       round((sysdate-t.start_date)*1440,2) duration_min,
+       t.log_io,
+       t.phy_io
+FROM   gv$transaction t, v$rollname r,
+       (SELECT VALUE FROM v$parameter WHERE NAME = 'db_block_size') p, gv$session sess,gv$sesstat a
 WHERE  t.xidusn = r.usn
-AND    t.ses_addr = sess.saddr
-AND    t.inst_id = sess.inst_id
-AND    a.sid = sess.sid
-AND    a.inst_id = sess.inst_id
-AND    a.statistic# = 6
+AND    t.ses_addr = sess.saddr(+)
+AND    t.inst_id = sess.inst_id(+)
+AND    a.sid(+) = sess.sid
+AND    a.inst_id(+) = sess.inst_id
+AND    a.statistic#(+) = 6
+order by start_date

@@ -77,7 +77,7 @@ ash_base AS(
           FROM   qry a
           JOIN   &V9 b
           ON     ( b.sql_id=:V1 AND a.phv = b.sql_plan_hash_value AND sample_time+0 BETWEEN
-                  NVL(to_date(:V3,'YYMMDDHH24MI'),SYSDATE-90) AND NVL(to_date(:V4,'YYMMDDHH24MI'),SYSDATE))
+                  NVL(to_date(nvl(:V3,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-90) AND NVL(to_date(nvl(:V4,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE))
                   AND  (:V2 is null or nvl(lengthb(:V2),0) >6 or not regexp_like(:V2,'^\d+$') or :V2+0 in(QC_SESSION_ID,SESSION_ID))
                  )
     GROUP  BY nvl(SQL_PLAN_LINE_ID,0)

@@ -1,3 +1,5 @@
+2015-11-06: + oracle: 'set' commands 'starttime','endtime' and 'instance', which is the global parameters for all SQLs 
+2015-11-06: + oracle: some new scripts for 'ora' and 'sys'
 2015-11-05: * public: new command "set debug" for dev purpose; minor changes
 2015-11-04: * Fix:    1) Public: occasionally unexpected layouts when printing a grid(grid.lua)
                       2) Public: cannot scroll to historical command in sqlplus/luajit(dbcli.bat)

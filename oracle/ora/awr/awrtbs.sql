@@ -1,8 +1,8 @@
 WITH qry AS
  (SELECT MIN(begin_interval_time) st, MAX(begin_interval_time) + 1e-4 ed
   FROM   Dba_Hist_Snapshot a
-  WHERE  a.begin_interval_time between to_timestamp(nvl(:V1,to_char(sysdate-31,'YYMMDDHH24MI')),'YYMMDDHH24MI')
-  AND    to_timestamp(nvl(:V2,to_char(sysdate,'YYMMDDHH24MI')),'YYMMDDHH24MI')+TO_DSINTERVAL('0 0:1:0')),
+  WHERE  a.begin_interval_time between to_timestamp(coalesce(:V1,:starttime,to_char(sysdate-31,'YYMMDDHH24MI')),'YYMMDDHH24MI')
+  AND    to_timestamp(coalesce(:V2,:endtime,to_char(sysdate,'YYMMDDHH24MI')),'YYMMDDHH24MI')+TO_DSINTERVAL('0 0:1:0')),
 times AS
  (SELECT /*+materialize*/ ROWNUM r,
          st + (ed - st) / 12 * (ROWNUM - 1) + 0 st,
