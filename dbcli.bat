@@ -2,7 +2,7 @@
 Setlocal EnableDelayedExpansion EnableExtensions
 cd /d "%~dp0"
 SET CONSOLE_COLOR=0A
-SET JRE_HOME=d:\java
+SET JRE_HOME=d:\soft\java
 SET TNS_ADM=d:\Soft\InstanceClient\network\admin
 SET ANSICON_EXC=nvd3d9wrap.dll;nvd3d9wrapx.dll
 SET ANSICON_CMD=.\bin\ansiconx64.exe -m0A
@@ -17,7 +17,7 @@ SET PATH=%JRE_HOME%;%EXT_PATH%;%PATH%
 
 if defined ANSICON_CMD (
    "%JRE_HOME%\java.exe" -version 2>&1 |findstr /i "64-bit" >nul
-   if %errorlevel% == 0 (.\bin\ansiconx86.exe -m%CONSOLE_COLOR% -p) ELSE (%ANSICON_CMD% -m%CONSOLE_COLOR% -p) 
+   if %errorlevel% equ 1 (.\bin\ansiconx86.exe -m%CONSOLE_COLOR% -p) ELSE (%ANSICON_CMD% -m%CONSOLE_COLOR% -p) 
 ) ELSE (COLOR %CONSOLE_COLOR%)
 rem unpack jar files for the first use
 for /r %%i in (*.pack.gz) do (
