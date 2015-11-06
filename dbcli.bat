@@ -16,8 +16,7 @@ IF not exist "%JRE_HOME%\java.exe" if exist "%JRE_HOME%\bin\java.exe" (set JRE_H
 SET PATH=%JRE_HOME%;%EXT_PATH%;%PATH%
 
 if defined ANSICON_CMD (
-   "%JRE_HOME%\java.exe" -version 2>&1 |findstr /i "64-bit" >nul
-   if %errorlevel% equ 1 (.\bin\ansiconx86.exe -m%CONSOLE_COLOR% -p) ELSE (%ANSICON_CMD% -m%CONSOLE_COLOR% -p) 
+   "%JRE_HOME%\java.exe" -version 2>&1 |findstr /i "64-bit" >nul && %ANSICON_CMD% -m%CONSOLE_COLOR% -p ||.\bin\ansiconx86.exe -m%CONSOLE_COLOR% -p
 ) ELSE (COLOR %CONSOLE_COLOR%)
 rem unpack jar files for the first use
 for /r %%i in (*.pack.gz) do (
