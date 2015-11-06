@@ -7,10 +7,10 @@
 
 ORA _sqlstat
 
-WITH qry as (SELECT nvl(upper(:V1),'A') inst,
+WITH qry as (SELECT coalesce(upper(:V1),''||:instance,'A') inst,
                     lower(nvl(:V2,'ela')) typ,
-                    to_timestamp(nvl(:V3,to_char(sysdate-7,'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
-                    to_timestamp(coalesce(:V4,''||(:V3+1),to_char(sysdate,'YYMMDDHH24MI')),'YYMMDDHH24MI')  ed from dual)
+                    to_timestamp(coalesce(:V3,:starttime,to_char(sysdate-7,'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
+                    to_timestamp(coalesce(:V4,:endtime,''||(:V3+1),to_char(sysdate,'YYMMDDHH24MI')),'YYMMDDHH24MI')  ed from dual)
 SELECT /*+ordered use_nl(a b)*/
      r "#",
      a.sql_id,

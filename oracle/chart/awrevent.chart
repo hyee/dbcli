@@ -1,5 +1,6 @@
 /*[[
     Generate the graph chart based on wait event of dba_hist_system_event. Usage: awrevent [<event_id>|<event_abbr>|"<event_name>"|"<wait_class>"]|-f"<filter>"  [inst_id] [-f1"<filter>"]
+    Impacted by settings: starttime,endtime,instance
     inst_id: Default as current instance, other options are:
                 0         - Separate all instances
                 a         - Group all instances
@@ -44,8 +45,10 @@
                                FROM   DBA_HIST_SYSTEM_EVENT NATURAL
                                JOIN   dba_hist_snapshot NATURAL
                                JOIN   DBA_HIST_DATABASE_INSTANCE
-                               WHERE  end_interval_time>systimestamp-NUMTOYMINTERVAL(1,'month')
-                               AND    (:V2 IS NULL AND instance_number = userenv('instance') OR lower(nvl(:V2, '0')) IN ('0', 'a') OR instance_number = :V2)
+                               WHERE  end_interval_time between
+                                   NVL(to_timestamp(:starttime,'yymmddhh24miss'),systimestamp-NUMTOYMINTERVAL(1,'month'))
+                                   AND NVL(to_timestamp(:endtime,'yymmddhh24miss'),systimestamp)
+                               AND    (:V2 IS NULL AND instance_number = nvl(:instance,userenv('instance')) OR lower(nvl(:V2, '0')) IN ('0', 'a') OR instance_number = :V2)
                                AND    (&filter) AND (&ADDITIONAL_FILTER) ) a)
                  GROUP  BY STARTUP_TIME, event, snap_id) a
         WHERE  (count > 0 and total_time>0)

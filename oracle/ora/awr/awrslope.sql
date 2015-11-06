@@ -45,7 +45,8 @@ select /*+materialize*/ * from(
                  nvl(MIN(decode(executions,0,null,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN 0 FOLLOWING AND UNBOUNDED FOLLOWING),
                  MAX(decode(parse_calls,0,null,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN UNBOUNDED PRECEDING AND 0 PRECEDING)) snap
           FROM  &awr$sqlstat s
-          WHERE end_time BETWEEN NVL(TO_DATE(:V1,'YYMMDDHH24MI'),SYSDATE-31) AND NVL(TO_DATE(:V2,'YYMMDDHH24MI'),SYSDATE)
+          WHERE end_time BETWEEN NVL(TO_DATE(nvl(:V1,:starttime),'YYMMDDHH24MI'),SYSDATE-31) AND NVL(TO_DATE(nvl(:V2,:endtime),'YYMMDDHH24MI'),SYSDATE)
+          AND   (:instance is null or instance_number=:instance)
           AND   &filter)
     GROUP BY grouping sets((&BASE,snap),(&BASE,snap,plan_hash_value,snap_id,trunc(end_time)))
     ) where grp=1

@@ -163,9 +163,9 @@ function var.after_db_exec(item)
     local db,sql,args=table.unpack(item)
     local result,isPrint={},cfg.get("PrintVar")
     for k,v in pairs(var.outputs) do
-        if v and k:upper()==k and args[k] and args[k]~="" and args[k]~=v then
+        if v and k:upper()==k and args[k] and args[k]~=v then
             var.inputs[k],var.outputs[k]=args[k],nil
-            result[k]=args[k]
+            if args[k]~='@__unknown__' then result[k]=args[k] end
         end
     end
     var.current_db=db

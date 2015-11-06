@@ -49,10 +49,11 @@ function scripter:rehash(script_dir,ext_name)
     end
 
     local additions={
-        {'-R','Rebuild the help file and available commands'},
+        {'-R','Rebuild the help info and available commands'},
         {'-P','Verify the paramters/templates of the target script, instead of running it. Usage:  -p <cmd> [<args>]'},
         {'-H','Show the help detail of the target command. Usage:  -h <command>'},
-        {'-S','Search available command with inputed keyword. Usage:  -s <keyword>'},
+        {'-G','Print the content of the specific command. Usage: -g <command>'},
+        {'-S','Search available commands with inputed keyword. Usage:  -s <keyword>'},
         {'@','Run scripts that not belongs to the "'..self.short_dir..'" directory.'},
     }
 
@@ -302,11 +303,13 @@ function scripter:get_script(cmd,args,print_args)
         cmd=cmd..args[1]
         table.remove(args,1)
     end
-
+    local is_get=false
     if cmd=="-R" then
         return
     elseif cmd=="-H" then
         return  env.helper.helper(self:get_command(),args[1])
+    elseif cmd=="-G" then
+        cmd,is_get=args[1] and args[1]:upper() or "/",true
     elseif cmd=="-P" then
         cmd,print_args=args[1] and args[1]:upper() or "/",true
         table.remove(args,1)
@@ -330,6 +333,7 @@ function scripter:get_script(cmd,args,print_args)
     env.checkerr(f,"Cannot find this script!")
     local sql=f:read('*a')
     f:close()
+    if is_get then return print(sql) end
     args=self:parse_args(sql,args,print_args)
     return sql,args,print_args,file,cmd
 end

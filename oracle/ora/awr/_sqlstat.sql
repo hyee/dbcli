@@ -3,7 +3,7 @@ VAR awr$sqlstat VARCHAR2;
 
 BEGIN
     :awr$sqlstat:=q'[
-       (SELECT --+merge leading(s) use_hash(s h)
+       (SELECT --+merge leading(s) use_hash(s h) no_expand
                h.*,begin_interval_time,end_interval_time,
                begin_interval_time + 0 begin_time,
                end_interval_time + 0 end_time,
@@ -33,7 +33,7 @@ BEGIN
         WHERE  greatest(h.elapsed_time_delta, executions_total) > 0
         AND    s.snap_id = h.snap_id
         AND    s.dbid = h.dbid
-        AND    s.instance_number = h.instance_number)]';
+        AND    s.instance_number = h.instance_number )]';
 END;
 /
 SET FEED BACK PRINTVAR BACK;

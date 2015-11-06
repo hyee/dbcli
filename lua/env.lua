@@ -316,24 +316,31 @@ function env.callee(idx)
 end
 
 function env.format_error(src,errmsg,...)
-    errmsg=(tostring(errmsg) or ""):gsub('^.*%s([^%: ]+Exception%:%s*)','%1')
-        :gsub(".*[IS][OQL]+Exception:%s*","")
-            :gsub("^.*000%-00000%:%s*","")
-                :gsub("%s+$","")
+    errmsg=(tostring(errmsg) or "")
+    local HIR,NOR,count="",""
+    if env.ansi then
+        HIR,NOR=env.ansi.get_color('HIR'),env.ansi.get_color('NOR')
+        errmsg=env.ansi.strip_ansi(errmsg)
+    end
+    errmsg,count=errmsg:gsub('^.-(%u%u%u%-%d%d%d%d%d)','%1') 
+    if count==0 then
+        errmsg=errmsg:gsub('^.*%s([^%: ]+Exception%:%s*)','%1'):gsub(".*[IS][OQL]+Exception:%s*","")
+    end
+    errmsg=errmsg:gsub("^.*000%-00000%:%s*",""):gsub("%s+$","")
     if src then
         local name,line=src:match("([^\\/]+)%#(%d+)$")
         if name then
             name=name:upper():gsub("_",""):sub(1,3)
-            errmsg='000-00000:'..name.."-"..string.format("%05i",tonumber(line))..": "..errmsg
+            errmsg=string.format("%s-%05i: %s",name,tonumber(line),errmsg)
         end
     end
     if select('#',...)>0 then errmsg=errmsg:format(...) end
-    return errmsg
+    return HIR..errmsg..NOR
 end
 
 function env.warn(...)
-    local str,count=env.format_error(nil,...):gsub("[^\n\r]*(%u%u%u+%-[^\n\r]*)",'%1')
-    print(env.ansi and env.ansi.mask('HIR',str) or str)
+    local str,count=env.format_error(nil,...)
+    print(str)
 end
 
 function env.raise(...)
@@ -387,10 +394,8 @@ function env.exec_command(cmd,params)
 
     local funs=type(cmd.FUNC)=="table" and cmd.FUNC or {cmd.FUNC}
     for _,func in ipairs(funs) do
-
         local co=coroutine.create(func)
         local res={coroutine.resume(co,table.unpack(args))}
-
         --local res = {pcall(func,table.unpack(args))}
         if not res[1] then
             result=res

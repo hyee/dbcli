@@ -3,8 +3,8 @@ WITH qry AS
  (SELECT /*+materialize*/*
   FROM   (SELECT OBJECT_ID,
                  nvl(lower(:V2),'op') sorttype,
-                 to_timestamp(nvl(:V3, to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
-                 to_timestamp(nvl(:V4, to_char(SYSDATE, 'YYMMDDHH24MI')), 'YYMMDDHH24MI') ed
+                 to_timestamp(coalesce(:V3,:starttime, to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
+                 to_timestamp(coalesce(:V4,:endtime, to_char(SYSDATE, 'YYMMDDHH24MI')), 'YYMMDDHH24MI') ed
           FROM   DBA_OBJECTS
           WHERE  UPPER(OWNER || '.' || OBJECT_NAME || chr(10) || OBJECT_ID || chr(10) ||
                        SUBOBJECT_NAME || chr(10) || DATA_OBJECT_ID || chr(10) ||

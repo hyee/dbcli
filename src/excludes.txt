@@ -18,6 +18,8 @@
 .bak
 lib.zip
 jre.zip
+mysql-connector.jar
+postgresql-jdbc.jar
 dbcli.zip
 db2java.zip
 dbcli_F0.bat

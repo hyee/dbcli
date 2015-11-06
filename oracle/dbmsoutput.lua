@@ -49,8 +49,8 @@ function output.getOutput(db,sql)
         if not pcall(db.internal_call,db,output.stmt,args) then return end
         local result=args.lob or args.buff
         if isOutput == "on" and result and result:match("[^\n%s]+") then
-            result=result:gsub("[\n\r]","\n")
-            print(result)
+            result=result:gsub("\r\n","\n"):gsub("%s+$","")
+            if result~="" then print(result) end
         end
 
         if prev_transaction~=args.txn then
