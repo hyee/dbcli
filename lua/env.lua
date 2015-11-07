@@ -753,10 +753,10 @@ function env.onload(...)
         print_debug=print
     end
     if  env.ansi and env.ansi.define_color then
-        env.ansi.define_color("Promptcolor","HIY","core","Define prompt's color")
-        env.ansi.define_color("ERRCOLOR","HIR","core","Define color of the error messages")
-        env.ansi.define_color("PromptSubcolor","MAG","core","Define the prompt color for subsystem.")
-        env.ansi.define_color("commandcolor","HIC","core","Define command line's color")
+        env.ansi.define_color("Promptcolor","HIY","ansi.core","Define prompt's color, type 'ansi' for more available options")
+        env.ansi.define_color("ERRCOLOR","HIR","ansi.core","Define color of the error messages, type 'ansi' for more available options")
+        env.ansi.define_color("PromptSubcolor","MAG","ansi.core","Define the prompt color for subsystem, type 'ansi' for more available options")
+        env.ansi.define_color("commandcolor","HIC","ansi.core","Define command line's color, type 'ansi' for more available options")
     end
     if env.event then
         env.event.snoop("ON_COMMAND_ABORT",env.clear_command)

@@ -4,14 +4,15 @@ local cfg
 local reader,writer,str_completer,arg_completer,add=reader
 local terminal=reader:getTerminal()
 local isAnsiSupported=terminal:isAnsiSupported()
-local enabled=isAnsiSupported
 
-ansi.ansi_mode=os.getenv("ANSICON_CMD")
+ansi.ansi_mode=os.getenv("ANSICON")
 if not ansi.ansi_mode or ansi.ansi_mode:gsub("[ \t]","")=="" then
     ansi.ansi_mode="jline"
 else
     ansi.ansi_mode="ansicon"
+    isAnsiSupported=true
 end
+local enabled=isAnsiSupported
 
 --Color definitions from MUD, not all features are support in Ansicon/Jansi library
 local base_color={
@@ -25,23 +26,23 @@ local base_color={
 
 
     --Foreground Colors
-    BLK={"\27[0;30m","Foreground Color: Black"},
-    RED={"\27[0;31m","Foreground Color: Red"},
-    GRN={"\27[0;32m","Foreground Color: Green"},
-    YEL={"\27[0;33m","Foreground Color: Yellow"},
-    BLU={"\27[0;34m","Foreground Color: Blue"},
-    MAG={"\27[0;35m","Foreground Color: Magenta"},
-    CYN={"\27[0;36m","Foreground Color: Cyan"},
-    WHT={"\27[0;37m","Foreground Color: White"},
+    BLK={"\27[30m","Foreground Color: Black"},
+    RED={"\27[31m","Foreground Color: Red"},
+    GRN={"\27[32m","Foreground Color: Green"},
+    YEL={"\27[33m","Foreground Color: Yellow"},
+    BLU={"\27[34m","Foreground Color: Blue"},
+    MAG={"\27[35m","Foreground Color: Magenta"},
+    CYN={"\27[36m","Foreground Color: Cyan"},
+    WHT={"\27[37m","Foreground Color: White"},
 
     --High Intensity Foreground Colors
-    HIR={"\27[1;31m","High Intensity Foreground Color: Red"},
-    HIG={"\27[1;32m","High Intensity Foreground Color: Green"},
-    HIY={"\27[1;33m","High Intensity Foreground Color: Yellow"},
-    HIB={"\27[1;34m","High Intensity Foreground Color: Blue"},
-    HIM={"\27[1;35m","High Intensity Foreground Color: Magenta"},
-    HIC={"\27[1;36m","High Intensity Foreground Color: Cyan"},
-    HIW={"\27[1;37m","High Intensity Foreground Color: White"},
+    HIR={"\27[31;1m","High Intensity Foreground Color: Red"},
+    HIG={"\27[32;1m","High Intensity Foreground Color: Green"},
+    HIY={"\27[33;1m","High Intensity Foreground Color: Yellow"},
+    HIB={"\27[34;1m","High Intensity Foreground Color: Blue"},
+    HIM={"\27[35;1m","High Intensity Foreground Color: Magenta"},
+    HIC={"\27[36;1m","High Intensity Foreground Color: Cyan"},
+    HIW={"\27[37;1m","High Intensity Foreground Color: White"},
 
     --High Intensity Background Colors
     HBRED={"\27[41;1m","High Intensity Background Color: Red"},
@@ -236,20 +237,23 @@ function ansi.convert_ansi(str)
 end
 
 function ansi.test_text(str)
+    if not isAnsiSupported then return print("Ansi color is not supported!") end
     if not str or str=="" then
-        local bf,wf,bb,wb=ansi.string_color('BLK'),ansi.string_color('WHT'),ansi.string_color('BBLK'),ansi.string_color('BWHT')
+        local bf,wf,bb,wb=base_color['BLK'][1],base_color['WHT'][1],base_color['BBLK'][1],base_color['BWHT'][1]
         if env.grid then
             local row=env.grid.new()
-            local is_bg
-            local fmt="%s%s"..ansi.string_color('NOR')
-            row:add{"Ansi Code","Ansi Type","Description","Demo #1","Demo #2"}
-            for k,v in pairs(color) do
+            local is_bg,max_len=nil,0
+            row:add{"Ansi Code","Ansi Type","Description","Demo #1(White)","Demo #2(Black)"}
+            for k,v in pairs(base_color) do if type(v)=="table" and v[2] and max_len<#v[2] then max_len=#v[2] end end
+            local fmt="%s%s"..base_color['NOR'][1]
+            for k,v in pairs(base_color) do
                 if type(v)=="table" then
-                    is_bg=v[2]:lower():match("background")
+                    local text=string.format('%-'..max_len..'s',v[2])
+                    is_bg=text:lower():match("background")
                     row:add{k,
-                        v[3] and " Control" or is_bg and 'BG color' or 'FG color',v[2],
-                        v[3] and "N/A" or fmt:format(is_bg and wf..v[1] or v[1]..wb,v[2]),
-                        v[3] and "N/A" or fmt:format(is_bg and bf..v[1] or v[1]..bb,v[2])}
+                        v[3] and " Control" or is_bg and 'BG color' or 'FG color',text,
+                        v[3] and "N/A" or fmt:format(is_bg and wf..v[1] or v[1]..wb,text),
+                        v[3] and "N/A" or fmt:format(is_bg and bf..v[1] or v[1]..bb,text)}
                 end
             end
             row:sort("-2,1",true)
@@ -259,7 +263,7 @@ function ansi.test_text(str)
         rawprint(env.space.."Use '$<code>$<other text' to mask color in all outputs, including query, echo, etc.")
         rawprint(env.space.."For more ansi codes, refer to the 'color' block in file 'lua/ansi.lua'.")
         rawprint(env.space.."Run 'ansi <text> to test color, i.e.: ansi $HIR$ Hello $GRN$$BWHT$ ANSI!")
-        rawprint(env.space.."Or SQL:  select '$HIR$'||owner||'$NOR$.'||object_name obj from all_objects where rownum<10;")
+        rawprint(env.space.."Or SQL:  select '$HIR$'||owner||'$HIB$.$NOR$'||object_name obj from all_objects where rownum<10;")
         return
     end
    
