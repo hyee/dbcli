@@ -245,17 +245,20 @@ function ansi.test_text(str)
         if env.grid then
             local row=env.grid.new()
             local is_bg
-            local fmt="%s%s%s"..nor
-            row:add{"Color Code","Description#1","Description#2"}
+            local fmt="%s%s"..nor
+            row:add{"Color Code","B or F Ground","Description#1","Description#2"}
             for k,v in pairs(color) do
                 if type(v)=="table" then
                     is_bg=k:match("^HB") or k:match("^B") and not k~='BLK'
-                    row:add{'$'..k..'$',fmt:format(bg and wf or wb,v[1],v[2]),fmt:format(bg and bf or bb,v[1],v[2])}
+                    row:add{k,is_bg and 'Background' or 'Foreground',fmt:format(is_bg and wf..v[1] or v[1]..wb,v[2]),fmt:format(is_bg and bf..v[1] or v[1]..bb,v[2])}
                 end
             end
-            row:sort(1,true)
+            row:sort("2,1",true)
             row:print()
         end
+        rawprint(env.space..string.rep("=",100))
+        rawprint(env.space.."Use '$<code>$<other text' to mask color in all outputs, including query, echo, etc.")
+        rawprint(env.space.."For more ansi code, refer to the 'color' block in file 'lua/ansi.lua'.")
         rawprint(env.space.."Run 'ansi <text> to test color, i.e.: ansi $HIR$ Hello $GRN$$BWHT$ ANSI!")
         rawprint(env.space.."Or:  select '$HIR$'||owner||'$NOR$.'||object_name obj from all_objects where rownum<10;")
         return
