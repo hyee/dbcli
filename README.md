@@ -8,17 +8,20 @@ DBCLI : a CLI utility for DBA (Oracle/DB2)
 Description
 -----------------------
 
-DBCLI is a portable database command line utility that developed in Lua language, and bridges to JDBC in order to operate database. <br/> 
+DBCLI is a portable database command line utility, for DBA or application support to easily manage and execute their common scripts, similar to database built-in CLI tools but is more flexible.  
+
+It is  developed in Lua language, and bridges to JDBC in order to operate database. <br/> 
 It is designed to support multiple databases, and includes 2 types of modules, one is the public module whose functions are visible across all kinds of databases, and another one is the database-specific module.<br>
 Currently only public and Oracle and DB2 functions are developed, and only support windows platform.<br><br>
 
 It is not aim to support all features of the existing CLI utilities that embedded by the specific database(`Oracle SQL*Plus`, `DB2 CLP`, etc), but to provide the features other than those tools:<br>
-* Pretty print of the select statement and the flexible control of the grid layouts(see set command)
+* Pretty-print of the select statement and the flexible control of the grid layouts(see set command)
+* Automatically generate help documents for customized SQL/shell/etc scripts.
 * The `alias` command to reduce the frequent inputs
 * The powerful `snap` and `ora` commands as the replacement of the standard CLI scripts, so that DBA is able to quickly define and execute the SQL templates with the smallest input
 * Support SSH operations
 * Provide the graph charts of the database performance
-* Functions are easy to extend, change or deploy, because most of the source code is not required to compile
+* Easy to extend, modify or deploy, because most of the source code is not required to compile
 
 
 Build and Configuration
@@ -28,7 +31,7 @@ Branch `With-JRE` contains the shrinking JRE bundle, if you don't have JRE insta
 ###Configure terminal window
 To avoid the word wrap in the terminal window which affects the print layout, following settings are recommended in Windows command window:<br>
 * In the `Layout` tab, set buffer width and buffer height as `500+`
-* In the `Font` tab, use Roster font with the size is `6 * 12`
+* In the `Font` tab, change the font size as smaller value.
 
 ###Configure environment
 Before running dbcli, make sure that you have installed JRE 1.7+ in your local PC. If you are using the version of "With-JRE" branch, this step can be skipped.
@@ -43,12 +46,17 @@ Of which `TNS_ADM` is optional unless you need to connect Oracle via tnsnames.or
     SET JRE_HOME=d:\soft\java
     SET TNS_ADM=d:\Soft\InstanceClient\network\admin
 
-###Launch DBCLI
+###Launch DBCLI Console
 After the above configurations, you are able to start DBCLI by executing `dbcli.bat` or `bin\ConsoleZ\Console.exe`.
 
 `dbcli.bat` also supports arguments in `"<command>=<args>"` format, all available commands can be found by typing `help` or `help -a`.
 
 For example: `dbcli.bat "connect=tiger/scott@orcl"`<br><br>
+
+###Switch Database Platform
+DBCLI supports multiple database platforms(Oracle,db2,etc), default is `Oracle`.<br>
+To permanently change the preferred platform other than `Oracle`, run `set -p <platform>` after launching the console.<br>
+Without the `-p` option, the change only takes affect on current console window. Type `set database` for more available options.
 
 Quick Start
 -----------------------

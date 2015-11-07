@@ -11,7 +11,7 @@ end
 
 function sys:run_sql(sql,args,print_args)
     env.checkerr((args['V1'] or "")=="","Command 'Show' doesn't accept any parameters!")
-    return self.super:run_sql(sql,args,print_args)
+    return self.super.run_sql(self,sql,args,print_args)
 end
 
 return sys.new()

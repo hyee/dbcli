@@ -5,7 +5,7 @@ SET CONSOLE_COLOR=0A
 SET JRE_HOME=d:\soft\java
 SET TNS_ADM=d:\Soft\InstanceClient\network\admin
 SET ANSICON_EXC=nvd3d9wrap.dll;nvd3d9wrapx.dll
-SET ANSICON_CMD=.\bin\ansiconx64.exe -m0A
+SET ANSICON_CMD=.\bin\ansiconx64.exe
 SET DBCLI_ENCODING=UTF-8
 
 rem read config file
@@ -16,7 +16,7 @@ IF not exist "%JRE_HOME%\java.exe" if exist "%JRE_HOME%\bin\java.exe" (set JRE_H
 SET PATH=%JRE_HOME%;%EXT_PATH%;%PATH%
 
 if defined ANSICON_CMD (
-   "%JRE_HOME%\java.exe" -version 2>&1 |findstr /i "64-bit" >nul && %ANSICON_CMD% -m%CONSOLE_COLOR% -p ||.\bin\ansiconx86.exe -m%CONSOLE_COLOR% -p
+   "%JRE_HOME%\java.exe" -version 2>&1 |findstr /i "64-bit" >nul && (%ANSICON_CMD% -m%CONSOLE_COLOR% -p)||(.\bin\ansiconx86.exe -m%CONSOLE_COLOR% -p)
 ) ELSE (COLOR %CONSOLE_COLOR%)
 rem unpack jar files for the first use
 for /r %%i in (*.pack.gz) do (

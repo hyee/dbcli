@@ -312,11 +312,12 @@ end
 function db_core:check_sql_method(event_name,sql,method,...)
     local res,obj=pcall(method,...)
     if res==false then
-        local info={db=self,sql=sql,error=tostring(obj):gsub('%s+$','')}
+        local info,internal={db=self,sql=sql,error=tostring(obj):gsub('%s+$','')}
         info.error=info.error:gsub('.*Exception:?%s*','')
         event(event_name,info)
+        internal, self.internal_exec=self:is_internal_call(sql),false
         if info and info.error and info.error~="" then
-            if info.sql and info.sql:find(env.CURRENT_ROOT_CMD,1,true)~=1 then
+            if not internal and info.sql and info.sql:find(env.CURRENT_ROOT_CMD,1,true)~=1 then
                 print('SQL: '..info.sql:gsub("\n","\n     "))
             end
             env.raise_error(info.error)
@@ -519,6 +520,14 @@ function db_core:is_connect()
     return true
 end
 
+function db_core:internal_call(sql,args)
+    self.internal_exec=true
+    --local exec=self.super.exec or self.exec
+    local result=self:exec(sql,args)
+    self.internal_exec=false
+    return result
+end
+
 function db_core:is_internal_call(sql)
     if self.internal_exec then return true end
     return sql and sql:find("INTERNAL_DBCLI_CMD",1,true) and true or false
@@ -627,7 +636,7 @@ end
 
 --if the result contains more than 1 columns, then return an array, otherwise return the value of the 1st column
 function db_core:get_value(sql,args)
-    local result = self:exec(sql,args)
+    local result = self:internal_call(sql,args)
     if not result or type(result)=="number" then
         return result
     end

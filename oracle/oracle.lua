@@ -1,4 +1,4 @@
-local env,java,db=env,java
+local env,java,select=env,java,select
 local event,packer,cfg,init=env.event.callback,env.packer,env.set,env.init
 local set_command,exec_command=env.set_command,env.exec_command
 
@@ -16,13 +16,14 @@ local module_list={
     "oracle/sys",
     "oracle/show",
     "oracle/chart",
-    "oracle/ssh"
+    "oracle/ssh",
+    "oracle/extvars"
 }
 
 local oracle=env.class(env.db_core)
 
 function oracle:ctor(isdefault)
-    db,self.type=self,"oracle"
+    self.type="oracle"
     java.loader:addPath(env.WORK_DIR..'oracle'..env.PATH_DEL.."ojdbc7.jar")
     self.db_types:load_sql_types('oracle.jdbc.OracleTypes')
     local default_desc='#Oracle database SQL statement'
@@ -121,8 +122,8 @@ function oracle:connect(conn_str)
                 sys_context('userenv','db_name')||nullif('.'||sys_context('userenv','db_domain'),'.'),
                 (select decode(DATABASE_ROLE,'PRIMARY','','PHYSICAL STANDBY',' (Standby)') from v$database)
        from dual]])
-    if not err then 
-        env.warn(tostring(params))
+    if not err then
+        env.warn("Connecting with a limited user that not able to accesses many dba/gv$ views, some dbcli features may not work.")
     else
         self.props={db_user=params[1],
                     db_version=params[2],
@@ -143,26 +144,12 @@ function oracle:connect(conn_str)
     print("Database connected.")
 end
 
-local instance_pattern={
-    string.case_insensitive_pattern('%f[%w_%$:%.](("?)gv_?%$%a%a[%w_%$]*%2)([%s%),;])'),
-    string.case_insensitive_pattern('%f[%w_%$:%.](sys%.%s*("?)gv_?%%a%a$[%w_%$]*%2)([%s%),;])'),
-    string.case_insensitive_pattern('%f[%w_%$:%.](("?)x$%a%a[%w_%$]*%2)([%s%),;])'),
-    string.case_insensitive_pattern('%f[%w_%$:%.](sys%.%s*("?)x$%a%a[%w_%$]*%2)([%s%),;])')
-}
 
 function oracle:parse(sql,params)
     local p1,counter,index,org_sql={},0,0
 
     if cfg.get('SQLCACHESIZE') ~= self.MAX_CACHE_SIZE then
         self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    end
-
-    local instance=tonumber(cfg.get("instance"))
-    if instance>-1 then
-        if instance==0 then instance=self.props.instance end
-        for _,pat in ipairs(instance_pattern) do
-            sql= sql:gsub(pat,"(select /*+merge*/ * from %1 where inst_id="..instance..")%3")
-        end
     end
 
     org_sql,sql=sql,sql:gsub('%f[%w_%$:]:([%w_%$]+)',function(s)
@@ -221,13 +208,11 @@ function oracle:parse(sql,params)
     elseif counter==3 then return self.super.parse(self,org_sql,params,':')
     else org_sql=sql end
     local prep=java.cast(self.conn:prepareCall(sql,1003,1007),"oracle.jdbc.OracleCallableStatement")
-    --self:check_params(sql,prep,p1,params)
     for k,v in pairs(p1) do
         if v[1]=='#' then
             prep['registerOutParameter'](prep,k,v[2])
             params[k]={'#',k,self.db_types[v[2]].name}
         else
-
             prep[v[1].."AtName"](prep,k,v[2])
         end
     end
@@ -236,28 +221,20 @@ end
 
 function oracle:exec(sql,...)
     local bypass=self:is_internal_call(sql)
-    local args=type(select(1,...)=="table") and ... or {...}
-    local instance=tonumber(cfg.get("instance"))
-    args.instance=tostring(instance>0 and instance or instance<0 and "" or self.props.instance)
-    args.starttime,args.endtime=cfg.get("starttime"),cfg.get("endtime")
+    local args=type(select(1,...) or "")=="table" and ... or {...}
     sql=event("BEFORE_ORACLE_EXEC",{self,sql,args}) [2]
     local result=self.super.exec(self,sql,args)
-    if not bypass then event("AFTER_ORACLE_EXEC",self,sql,args,result) end
-    if type(result)=="number" and cfg.get("feed")=="on" then
-        local key=sql:match("(%w+)")
-        if self.feed_list[key] then
-            print(self.feed_list[key]:format(result)..".")
-        else
-            print("Statement completed.\n")
+    if not bypass then 
+        event("AFTER_ORACLE_EXEC",self,sql,args,result)
+        if type(result)=="number" and cfg.get("feed")=="on" then
+            local key=sql:match("(%w+)")
+            if self.feed_list[key] then
+                print(self.feed_list[key]:format(result)..".")
+            else
+                print("Statement completed.\n")
+            end
         end
     end
-    return result
-end
-
-function oracle:internal_call(sql,args)
-    self.internal_exec=true
-    local result=self.super.exec(self,sql,args)
-    self.internal_exec=false
     return result
 end
 
@@ -342,7 +319,7 @@ function oracle:handle_error(info)
     local ora_code,msg=info.error:match('ORA%-(%d+): *([^\n\r]+)')
     if ora_code and tonumber(ora_code)>=20001 and tonumber(ora_code)<20999 then
         info.sql=nil
-        info.error=msg
+        info.error=msg:gsub('%s+$','')
         return info
     end
 
@@ -358,17 +335,7 @@ function oracle:handle_error(info)
         end
     end
 
-    if info and info.sql and
-        info.sql:find("/*DBCLI_XPLAN*/",1,true) then info.sql=nil
-        if ora_code then info.error="ORA-"..ora_code..": ".. msg end
-    end
     return info
-end
-
-local function check_time(name,value)
-    if not value or value=="" then return "" end
-    print("Time set as",db:check_date(value,'YYMMDDHH24MISS'))
-    return value
 end
 
 function oracle:onload()
@@ -396,10 +363,7 @@ function oracle:onload()
     set_command(self,{"declare","begin"},  default_desc,  self.exec  ,self.check_completion,1,true)
     set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)
     set_command(self,"alter" ,   default_desc,        self.exec      ,true,1,true)
-    cfg.init("instance","-1",nil,"oracle","Auto-limit the inst_id of gv$/x$ tables. -1: unlimited, 0: current, >0: specific instance","-1 - 99")
-    cfg.init("starttime","",check_time,"oracle","Specify the start time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
-    cfg.init("endtime","",check_time,"oracle","Specify the end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
-
+    
     self.C={}
     init.load_modules(module_list,self.C)
     env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)
