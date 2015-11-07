@@ -5,7 +5,10 @@ local sys=env.class(db.C.ora)
 function sys:ctor()
     self.db=env.oracle
     self.command="sys"
-    self.help_title='Run SQL script under the "sys" directory that needs SYSDBA login. '
+    self.help_title=[[
+        Run SQL script under the "sys" directory that needs SYSDBA login or the accesses to the vx$ views.
+        The command is only  
+    ]]
     self.script_dir,self.extend_dirs=env.WORK_DIR.."oracle"..env.PATH_DEL.."sys",{}
 end
 

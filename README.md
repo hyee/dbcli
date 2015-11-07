@@ -28,7 +28,7 @@ Branch `With-JRE` contains the shrinking JRE bundle, if you don't have JRE insta
 ###Configure terminal window
 To avoid the word wrap in the terminal window which affects the print layout, following settings are recommended in Windows command window:<br>
 * In the `Layout` tab, set buffer width and buffer height as `500+`
-* In the `Font` tab, use Roster font with the size is `6 * 12`
+* In the `Font` tab, change the font size as smaller value.
 
 ###Configure environment
 Before running dbcli, make sure that you have installed JRE 1.7+ in your local PC. If you are using the version of "With-JRE" branch, this step can be skipped.
@@ -43,12 +43,18 @@ Of which `TNS_ADM` is optional unless you need to connect Oracle via tnsnames.or
     SET JRE_HOME=d:\soft\java
     SET TNS_ADM=d:\Soft\InstanceClient\network\admin
 
-###Launch DBCLI
+###Launch DBCLI Console
 After the above configurations, you are able to start DBCLI by executing `dbcli.bat` or `bin\ConsoleZ\Console.exe`.
 
 `dbcli.bat` also supports arguments in `"<command>=<args>"` format, all available commands can be found by typing `help` or `help -a`.
 
 For example: `dbcli.bat "connect=tiger/scott@orcl"`<br><br>
+
+###Switch Database Platform
+DBCLI supports multiple databases(Oracle,db2,etc), the default platform is `Oracle`.<br>
+To permanently change the preferred platform other than `Oracle`, you may run `set -p <platform>` after launching the console.<br>
+Without the `-p` option, the change only takes affect on current console window.<br>
+Type `set database` for more available options.
 
 Quick Start
 -----------------------
