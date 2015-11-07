@@ -13,69 +13,74 @@ else
     ansi.ansi_mode="ansicon"
 end
 
+--Color definitions from MUD, not all features are support
 local color=setmetatable({
-    BLK = "\27[30m", -- Black
-    RED = "\27[31m", -- Red
-    GRN = "\27[32m", -- Green
-    YEL = "\27[33m", -- Yellow
-    BLU = "\27[34m", -- Blue
-    MAG = "\27[35m", -- Magenta
-    CYN = "\27[36m", -- Cyan
-    WHT = "\27[37m", -- White
+        
+        SET        =function(r,c) return "\27["..r..";"..c.."H" end,--set cursor position
+        FRSCREEN   =function(a,b) return"\27["..a..";"..b.."r" end,
+        FR         =function(a) return "\27["..a.."r" end,
+        DELLINE    ="\27[K",                                        --erase the line where cursor is
 
-    GRAY=  "\27[1;30;40m", --BG Light gray
-    XXX=  "\27[48;5;15m", --BG Light gray
-    DCY=  "\27[0;36m", --Dark Cyan
+        --Foreground Colors
+        BLK={"\27[0;30m","Foreground Color: Black"},
+        RED={"\27[0;31m","Foreground Color: Red"},
+        GRN={"\27[0;32m","Foreground Color: Green"},
+        YEL={"\27[0;33m","Foreground Color: Yellow"},
+        BLU={"\27[0;34m","Foreground Color: Blue"},
+        MAG={"\27[0;35m","Foreground Color: Magenta"},
+        CYN={"\27[0;36m","Foreground Color: Cyan"},
+        WHT={"\27[0;37m","Foreground Color: White"},
 
-    HIR = "\27[1;31m", -- Light Red
-    HIG = "\27[1;32m", -- Light Green
-    HIY = "\27[1;33m", -- Light Yellow
-    HIB = "\27[1;34m", -- Light Blue
-    HIM = "\27[1;35m", -- Light Magenta
-    HIC = "\27[1;36m", -- Light Cyan
-    HIW = "\27[1;37m", -- Light White
-    DEF = "\27[39m", -- default FG color
+        --High Intensity Foreground Colors
+        HIR={"\27[1;31m","High Intensity Foreground Color: Red"},
+        HIG={"\27[1;32m","High Intensity Foreground Color: Green"},
+        HIY={"\27[1;33m","High Intensity Foreground Color: Yellow"},
+        HIB={"\27[1;34m","High Intensity Foreground Color: Blue"},
+        HIM={"\27[1;35m","High Intensity Foreground Color: Magenta"},
+        HIC={"\27[1;36m","High Intensity Foreground Color: Cyan"},
+        HIW={"\27[1;37m","High Intensity Foreground Color: White"},
 
-    --background color
-    HBRED = "\27[41;1m", -- BG Light Red
-    HBGRN = "\27[42;1m", -- BG Light Green
-    HBYEL = "\27[43;1m", -- BG Light Yellow
-    HBBLU = "\27[44;1m", -- BG Light Blue
-    HBMAG = "\27[45;1m", -- BG Light Magenta
-    HBCYN = "\27[46;1m", -- BG Light Cyan
-    HBWHT = "\27[47;1m", -- BG Light White
-    HBBLK = "\27[40;1m", -- BG Light Black
-    HBGRY=  "\27[0;37;47m", --BG Light gray
+        --High Intensity Background Colors
+        HBRED={"\27[41;1m","High Intensity Background Color: Red"},
+        HBGRN={"\27[42;1m","High Intensity Background Color: Green"},
+        HBYEL={"\27[43;1m","High Intensity Background Color: Yellow"},
+        HBBLU={"\27[44;1m","High Intensity Background Color: Blue"},
+        HBMAG={"\27[45;1m","High Intensity Background Color: Magenta"},
+        HBCYN={"\27[46;1m","High Intensity Background Color: Cyan"},
+        HBWHT={"\27[47;1m","High Intensity Background Color: White"},
 
-    BBLK = "\27[40m", -- BG Black
-    BRED = "\27[41m", -- BG Red
-    BGRN = "\27[42m", -- BG Green
-    BYEL = "\27[43m", -- BG Yellow
-    BBLU = "\27[44m", -- BG Blue
-    BMAG = "\27[45m", -- BG Magenta
-    BCYN = "\27[46m", -- BG Cyan
-    BDEF = "\27[49m", -- default BG color
+        --Background Colors
+        BBLK={"\27[40m","Background Color: Black"},
+        BRED={"\27[41m","Background Color: Red"},
+        BGRN={"\27[42m","Background Color: Green"},
+        BYEL={"\27[43m","Background Color: Yellow"},
+        BBLU={"\27[44m","Background Color: Blue"},
+        BMAG={"\27[45m","Background Color: Magenta"},
+        BCYN={"\27[46m","Background Color: Cyan"},
+        BWHT={"\27[47m","Background Color: White"},
+        NOR ={"\27[0;0m","Puts every color back to normal"},
 
-    NOR = "\27[0m", -- Reset
-
-    BOLD = "\27[1m", -- Bold
-    ITL = "\27[3m", -- ITalics
-    UDL = "\27[4m", -- Underline
-    BLINK = "\27[5m", -- Blink
-    REV = "\27[7m", -- Reverse
-    HIREV = "\27[1;7m", -- Revers and light color
-    HIDE = "\27[8m", -- Hidden
-
-
-    CLR = "\27[2J", -- Clear Screen
-    HOME = "\27[H", -- Send cursor back
-    REFCLR = "\27[2J;H", -- clean and reset cursor
-    SAVEC = "\27[s", -- Save cursor position
-    REST = "\27[u", -- Restore cursor to saved position
-
-    FRTOP = "\27[2;25r", -- Freeze first line
-    FRBOT = "\27[1;24r", -- Freeze last line
-    UNFR = "\27[r", -- Free 1st/last lines
+        --Additional ansi Esc codes added to ansi.h by Gothic  april 23,1993
+        --Note, these are Esc codes for VT100 terminals, and emmulators
+        --and they may not all work within the mud
+        BOLD    ="\27[1m",     --Turn on bold mode
+        CLR     ="\27[2J",     --Clear the screen
+        HOME    ="\27[H",      --Send cursor to home position
+        REF     ="\27[2J;H" ,  --Clear screen and home cursor
+        BIGTOP  ="\27#3",      --Dbl height characters, top half
+        BIGBOT  ="\27#4",      --Dbl height characters, bottem half
+        SAVEC   ="\27[s",      --Save cursor position
+        REST    ="\27[u",      --Restore cursor to saved position
+        REVINDEX="\27M",       --Scroll screen in opposite direction
+        SINGW   ="\27#5",      --Normal, single-width characters
+        DBL     ="\27#6",      --Creates double-width characters
+        FRTOP   ="\27[2;25r",  --Freeze top line
+        FRBOT   ="\27[1;24r",  --Freeze bottom line
+        UNFR    ="\27[r",      --Unfreeze top and bottom lines
+        BLINK   ="\27[5m",     --Initialize blink mode
+        U       ="\27[4m",     --Initialize underscore mode
+        REV     ="\27[7m",     --Turns reverse video mode on
+        HIREV   ="\27[1,7m",   --Hi intensity reverse video  
 
     },{
     __index=function(self,k)
@@ -98,21 +103,33 @@ function ansi.cfg(name,value,module,description)
     end
 end
 
+function ansi.string_color(code,...)
+    if not code then return end
+    local c=color[code:upper()]
+    if not c then return end
+    if type(c)=="table" then return c[1] end
+    if type(c)=="function" then return c(select(1,...) or 1,select(2,...) or 1) end
+    return c
+end
+
+local nor=ansi.string_color('NOR')
 function ansi.mask(codes,msg,continue)
     if not enabled then return msg end
     local str
     for v in codes:gmatch("([^; \t,]+)") do
         v=v:upper()
-        if not color[v] then v=ansi.cfg(v) or "" end
-        if color[v] then
+        local c=ansi.string_color(v)
+        if not c then 
+            v=ansi.cfg(v) or "" 
+        else
             if not str then
-                str=color[v]
+                str=c
             else
-                str=str:gsub("([%d;]+)","%1;"..color[v]:match("([%d;]+)"),1)
+                str=str:gsub("([%d;]+)","%1;"..c:match("([%d;]+)"),1)
             end
         end
     end
-    return str and (str..msg..(continue and "" or color.NOR)) or msg
+    return str and (str..msg..(continue and "" or nor)) or msg
 end
 
 function ansi.addCompleter(name,args)
@@ -143,6 +160,7 @@ end
 function ansi.define_color(name,value,module,description)
     if not value or not enabled then return end
     name,value=name:upper(),value:upper()
+    value=value:gsub("%$(%u+)%$",'%1')
     env.checkerr(not color[name],"Cannot define color ["..name.."] as a name!")
     if ansi.mask(value,"")=="" then
         env.raise("Undefined color code ["..value.."]!")
@@ -160,11 +178,11 @@ function ansi.define_color(name,value,module,description)
     end
 end
 
-function ansi.get_color(name)
+function ansi.get_color(name,...)
     --io.stdout:write(name,ansi.cfg(name),enabled and 1 or 0)
     if not name or not enabled then return "" end
     name=name:upper()
-    if color[name] then return color[name] end
+    if color[name] then return ansi.string_color(name,...) or "" end
     return ansi.cfg(name) and ansi.mask(ansi.cfg(name),"",true) or ""
 end
 
@@ -201,6 +219,7 @@ function ansi.onload()
         for k,v in pairs(color) do color[k]='' end
     end
     env.set.init("ansicolor",isAnsiSupported and 'on' or 'off',ansi.enable_color,"core","Enable color masking inside the intepreter.",'on,off')
+    env.set_command(nil,'ansi',"Show and test ansi colors, run 'ansi' for more details",ansi.test_text,false,2)
     ansi.color,ansi.map=color,cfg
 end
 
@@ -211,6 +230,38 @@ end
 
 function ansi.strip_len(str)
     return #ansi.strip_ansi(str)
+end
+
+function ansi.convert_ansi(str)
+    return str and str:gsub("%$((%u+)([, ]?)(%d*)([, ]?)(%d*))%$",
+        function(all,code,x,pos1,x,pos2) 
+            return ansi.string_color(code,pos1,pos2) or '$'..all..'$' 
+        end)
+end
+
+function ansi.test_text(str)
+    if not str or str=="" then
+        local bf,wf,bb,wb=ansi.string_color('BLK'),ansi.string_color('WHT'),ansi.string_color('BBLK'),ansi.string_color('BWHT')
+        if env.grid then
+            local row=env.grid.new()
+            local is_bg
+            local fmt="%s%s%s"..nor
+            row:add{"Color Code","Description#1","Description#2"}
+            for k,v in pairs(color) do
+                if type(v)=="table" then
+                    is_bg=k:match("^HB") or k:match("^B") and not k~='BLK'
+                    row:add{'$'..k..'$',fmt:format(bg and wf or wb,v[1],v[2]),fmt:format(bg and bf or bb,v[1],v[2])}
+                end
+            end
+            row:sort(1,true)
+            row:print()
+        end
+        rawprint(env.space.."Run 'ansi <text> to test color, i.e.: ansi $HIR$ Hello $GRN$$BWHT$ ANSI!")
+        rawprint(env.space.."Or:  select '$HIR$'||owner||'$NOR$.'||object_name obj from all_objects where rownum<10;")
+        return
+    end
+   
+    return rawprint(env.space.."ANSI result: "..ansi.convert_ansi(str)..nor)
 end
 
 

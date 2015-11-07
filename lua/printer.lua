@@ -41,7 +41,9 @@ function printer.print(...)
         output[i+2]=v==nil and "nil" or tostring(v)
     end
     output=table.concat(output,' '):gsub("(\r?\n\r?)","%1"..env.space)
+    if env.ansi then output=env.ansi.convert_ansi(output) end
     if printer.is_more then more_text[#more_text+1]=output;return end
+
     out:println(output)
     out:flush()
     if printer.hdl then
@@ -50,6 +52,7 @@ function printer.print(...)
 end
 
 function printer.write(output)
+    if env.ansi then output=env.ansi.convert_ansi(output) end
     out:write(env.space..output)
     out:flush()
 end
@@ -65,7 +68,7 @@ function printer.onunload()
 end
 
 function printer.onload()
-    NOR=env.ansi and env.ansi.color['NOR'] or ''
+    NOR=env.ansi and env.ansi.string_color('NOR') or ''
     event=env.event
     strip_ansi=env.ansi and env.ansi.strip_ansi or function(x) return x end
 end
