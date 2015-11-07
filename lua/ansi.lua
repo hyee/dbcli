@@ -13,13 +13,16 @@ else
     ansi.ansi_mode="ansicon"
 end
 
---Color definitions from MUD, not all features are support
+--Color definitions from MUD, not all features are support in Ansicon/Jansi library
 local color=setmetatable({
-        
-        SET        =function(r,c) return "\27["..r..";"..c.."H" end,--set cursor position
-        FRSCREEN   =function(a,b) return"\27["..a..";"..b.."r" end,
-        FR         =function(a) return "\27["..a.."r" end,
-        DELLINE    ="\27[K",                                        --erase the line where cursor is
+        --For the ansi controls that have parameter, used '$<code>[,parameters]$' format
+        --For example: $SET,1,2$ 
+        SET        =function(r,c) return "\27["..r..";"..c.."H" end, --'Set Cursor position, Usage: SET,<n rows>,<n cols>'
+    --  FRSCREEN   =function(a,b) return"\27["..a..";"..b.."r" end,
+    --  FR         =function(a) return "\27["..a.."r" end,
+        DELLINE    ={"\27[1K\27[1G",'Erase the whole line',1},
+        DELAFT     ={"\27[0K",'Erase from cursor to the end of line',1},
+
 
         --Foreground Colors
         BLK={"\27[0;30m","Foreground Color: Black"},
@@ -58,29 +61,29 @@ local color=setmetatable({
         BMAG={"\27[45m","Background Color: Magenta"},
         BCYN={"\27[46m","Background Color: Cyan"},
         BWHT={"\27[47m","Background Color: White"},
-        NOR ={"\27[0;0m","Puts every color back to normal"},
+        NOR ={"\27[0m","Puts every color back to normal"},
 
         --Additional ansi Esc codes added to ansi.h by Gothic  april 23,1993
         --Note, these are Esc codes for VT100 terminals, and emmulators
         --and they may not all work within the mud
-        BOLD    ="\27[1m",     --Turn on bold mode
-        CLR     ="\27[2J",     --Clear the screen
-        HOME    ="\27[H",      --Send cursor to home position
-        REF     ="\27[2J\27[H" ,  --Clear screen and home cursor
-        BIGTOP  ="\27#3",      --Dbl height characters, top half
-        BIGBOT  ="\27#4",      --Dbl height characters, bottem half
-        SAVEC   ="\27[s",      --Save cursor position
-        REST    ="\27[u",      --Restore cursor to saved position
-        REVINDEX="\27M",       --Scroll screen in opposite direction
-        SINGW   ="\27#5",      --Normal, single-width characters
-        DBL     ="\27#6",      --Creates double-width characters
-        FRTOP   ="\27[2;25r",  --Freeze top line
-        FRBOT   ="\27[1;24r",  --Freeze bottom line
-        UNFR    ="\27[r",      --Unfreeze top and bottom lines
-        BLINK   ="\27[5m",     --Initialize blink mode
-        U       ="\27[4m",     --Initialize underscore mode
-        REV     ="\27[7m",     --Turns reverse video mode on
-        HIREV   ="\27[1,7m",   --Hi intensity reverse video  
+        BOLD    ={"\27[1m","Turn on bold mode",1},
+        CLR     ={"\27[2J","Clear the screen",1},
+        HOME    ={"\27[H","Send cursor to home position",1},
+        REF     ={"\27[2J;H" , "Clear screen and home cursor",1},
+        BIGTOP  ={"\27#3","Dbl height characters, top half",1},
+        BIGBOT  ={"\27#4","Dbl height characters, bottem half",1},
+        SAVEC   ={"\27[s","Save cursor position",1},
+        REST    ={"\27[u","Restore cursor to saved position",1},
+     -- REVINDEX={"\27M","Scroll screen in opposite direction",1},
+     -- SINGW   ={"\27#5","Normal, single-width characters",1},
+     -- DBL     ={"\27#6","Creates double-width characters",1},
+     -- FRTOP   ={"\27[2;25r","Freeze top line",1},
+     -- FRBOT   ={"\27[1;24r","Freeze bottom line",1},
+     -- UNFR    ={"\27[r","Unfreeze top and bottom lines",1},
+        BLINK   ={"\27[5m","Initialize blink mode",1},
+        U       ={"\27[4m","Initialize underscore mode",1},
+        REV     ={"\27[7m","Turns reverse video mode on",1},
+        HIREV   ={"\27[1,7m","Hi intensity reverse video",1},
 
     },{
     __index=function(self,k)
@@ -108,7 +111,8 @@ function ansi.string_color(code,...)
     local c=color[code:upper()]
     if not c then return end
     if type(c)=="table" then return c[1] end
-    if type(c)=="function" then return c(select(1,...) or 1,select(2,...) or 1) end
+    local v1,v2=select(1,...) or '',select(2,...) or ''
+    if type(c)=="function" then return c(v1~='' and v1 or 1,v2~='' and v2 or 1) end
     return c
 end
 
@@ -246,21 +250,23 @@ function ansi.test_text(str)
             local row=env.grid.new()
             local is_bg
             local fmt="%s%s"..nor
-            row:add{"Color Code","B or F Ground","Description","Demo #1","Demo #2"}
+            row:add{"Ansi Code","Ansi Type","Description","Demo #1","Demo #2"}
             for k,v in pairs(color) do
                 if type(v)=="table" then
                     is_bg=v[2]:lower():match("background")
-                    row:add{k,is_bg and 'Background' or 'Foreground',v[2],fmt:format(is_bg and wf..v[1] or v[1]..wb,v[2]),fmt:format(is_bg and bf..v[1] or v[1]..bb,v[2])}
+                    row:add{k,v[3] and " Control" or is_bg and 'BG color' or 'FG color',v[2],
+                        v[3] and "N/A" or fmt:format(is_bg and wf..v[1] or v[1]..wb,v[2]),
+                        v[3] and "N/A" or fmt:format(is_bg and bf..v[1] or v[1]..bb,v[2])}
                 end
             end
-            row:sort("2,1",true)
+            row:sort("-2,1",true)
             row:print()
         end
         rawprint(env.space..string.rep("=",100))
         rawprint(env.space.."Use '$<code>$<other text' to mask color in all outputs, including query, echo, etc.")
-        rawprint(env.space.."For more ansi code, refer to the 'color' block in file 'lua/ansi.lua'.")
+        rawprint(env.space.."For more ansi codes, refer to the 'color' block in file 'lua/ansi.lua'.")
         rawprint(env.space.."Run 'ansi <text> to test color, i.e.: ansi $HIR$ Hello $GRN$$BWHT$ ANSI!")
-        rawprint(env.space.."Or:  select '$HIR$'||owner||'$NOR$.'||object_name obj from all_objects where rownum<10;")
+        rawprint(env.space.."Or SQL:  select '$HIR$'||owner||'$NOR$.'||object_name obj from all_objects where rownum<10;")
         return
     end
    
