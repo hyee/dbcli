@@ -175,24 +175,6 @@
 		<tab title="dbcli" use_default_icon="0">
 			<console shell="..\..\dbcli.bat" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
 			<cursor style="12" r="255" g="255" b="255"/>
-			<colors background_text_opacity="255">
-				<color id="0" r="0" g="0" b="0"/>
-				<color id="1" r="0" g="0" b="128"/>
-				<color id="2" r="0" g="128" b="0"/>
-				<color id="3" r="0" g="128" b="128"/>
-				<color id="4" r="128" g="0" b="0"/>
-				<color id="5" r="128" g="0" b="128"/>
-				<color id="6" r="128" g="128" b="0"/>
-				<color id="7" r="192" g="192" b="192"/>
-				<color id="8" r="128" g="128" b="128"/>
-				<color id="9" r="0" g="0" b="255"/>
-				<color id="10" r="0" g="255" b="0"/>
-				<color id="11" r="0" g="255" b="255"/>
-				<color id="12" r="255" g="0" b="0"/>
-				<color id="13" r="255" g="0" b="255"/>
-				<color id="14" r="255" g="255" b="0"/>
-				<color id="15" r="255" g="255" b="255"/>
-			</colors>
 		</tab>
 		<tab title="dbcli_db2" use_default_icon="0">
 			<console shell="..\..\dbcli.bat &quot;set database db2&quot;" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>

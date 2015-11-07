@@ -4,11 +4,11 @@ local extvars={}
 
 local instance_pattern={
     string.case_insensitive_pattern('%f[%w_%$:%.](("?)gv_?%$%a%a[%w_%$]*%2)([%s%),;])'),
-    string.case_insensitive_pattern('%f[%w_%$:%.](sys%.%s*("?)gv_?%%a%a$[%w_%$]*%2)([%s%),;])'),
-    string.case_insensitive_pattern('%f[%w_%$:%.](("?)x$%a%a[%w_%$]*%2)([%s%),;])'),
-    string.case_insensitive_pattern('%f[%w_%$:%.](sys%.%s*("?)x$%a%a[%w_%$]*%2)([%s%),;])'),
-    string.case_insensitive_pattern('%f[%w_%$:%.](("?)vx_?$%a%a[%w_%$]*%2)([%s%),;])'),
-    string.case_insensitive_pattern('%f[%w_%$:%.](sys%.%s*("?)vx_?$%a%a[%w_%$]*%2)([%s%),;])')
+    string.case_insensitive_pattern('%f[%w_%$:%.](sys%. *("?)gv_?%%a%a$[%w_%$]*%2)([%s%),;])'),
+    string.case_insensitive_pattern('%f[%w_%$:%.](("?)x$%a[%w_%$]+%2)([%s%),;])'),
+    string.case_insensitive_pattern('%f[%w_%$:%.](sys%. *("?)x$%a[%w_%$]+%2)([%s%),;])'),
+    string.case_insensitive_pattern('%f[%w_%$:%.]( *("?)xv_?$%a[%w_%$]+%2)([%s%),;])'),
+    string.case_insensitive_pattern('%f[%w_%$:%.](sys%. *("?)xv_?$%a[%w_%$]+%2)([%s%),;])')
 }
 
 function extvars.on_before_db_exec(item)

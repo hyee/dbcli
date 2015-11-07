@@ -318,8 +318,8 @@ end
 function env.format_error(src,errmsg,...)
     errmsg=(tostring(errmsg) or "")
     local HIR,NOR,count="",""
-    if env.ansi then
-        HIR,NOR=env.ansi.get_color('HIR'),env.ansi.get_color('NOR')
+    if env.ansi and env.set then
+        HIR,NOR=env.ansi.get_color(env.set.get("ERRCOLOR")),env.ansi.get_color('NOR')
         errmsg=env.ansi.strip_ansi(errmsg)
     end
     errmsg,count=errmsg:gsub('^.-(%u%u%u%-%d%d%d%d%d)','%1') 
@@ -335,12 +335,12 @@ function env.format_error(src,errmsg,...)
         end
     end
     if select('#',...)>0 then errmsg=errmsg:format(...) end
-    return HIR..errmsg..NOR
+    return errmsg=="" and errmsg or HIR..errmsg..NOR
 end
 
 function env.warn(...)
     local str,count=env.format_error(nil,...)
-    print(str)
+    if str and str~='' then print(str) end
 end
 
 function env.raise(...)
@@ -749,6 +749,7 @@ function env.onload(...)
     end
     if  env.ansi and env.ansi.define_color then
         env.ansi.define_color("Promptcolor","HIY","core","Define prompt's color")
+        env.ansi.define_color("ERRCOLOR","HIR","core","Define color of the error messages")
         env.ansi.define_color("PromptSubcolor","MAG","core","Define the prompt color for subsystem.")
         env.ansi.define_color("commandcolor","HIC","core","Define command line's color")
     end

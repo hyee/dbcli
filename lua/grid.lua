@@ -1,5 +1,5 @@
 --Usage: print / save a 2-D arrary
-local env=env
+local env,pairs,ipairs=env,pairs,ipairs
 local math,table,string,class=env.math,env.table,env.string,env.class
 local grid=class()
 

@@ -319,7 +319,7 @@ function oracle:handle_error(info)
     local ora_code,msg=info.error:match('ORA%-(%d+): *([^\n\r]+)')
     if ora_code and tonumber(ora_code)>=20001 and tonumber(ora_code)<20999 then
         info.sql=nil
-        info.error=msg
+        info.error=msg:gsub('%s+$','')
         return info
     end
 

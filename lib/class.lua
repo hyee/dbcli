@@ -1,4 +1,4 @@
-local rawget,rawset,setmetatable=rawget,rawset,setmetatable
+local rawget,rawset,setmetatable,pairs,ipairs=rawget,rawset,setmetatable,pairs,ipairs
 
 local function newindex(self,k,v)
     if type(v)=="function" then
@@ -26,6 +26,11 @@ function class(super,init)
 
         if this_class.__super then
             super,attrs = this_class.__super.new(...)
+            for k,v in pairs(super) do
+                if not rawget(this_class,k) and type(v)=="function" then
+                    rawset(obj,k,v)
+                end
+            end
         else
             super,attrs={},{}
         end
