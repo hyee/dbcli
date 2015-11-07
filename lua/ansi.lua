@@ -66,7 +66,7 @@ local color=setmetatable({
         BOLD    ="\27[1m",     --Turn on bold mode
         CLR     ="\27[2J",     --Clear the screen
         HOME    ="\27[H",      --Send cursor to home position
-        REF     ="\27[2J;H" ,  --Clear screen and home cursor
+        REF     ="\27[2J\27[H" ,  --Clear screen and home cursor
         BIGTOP  ="\27#3",      --Dbl height characters, top half
         BIGBOT  ="\27#4",      --Dbl height characters, bottem half
         SAVEC   ="\27[s",      --Save cursor position
@@ -246,11 +246,11 @@ function ansi.test_text(str)
             local row=env.grid.new()
             local is_bg
             local fmt="%s%s"..nor
-            row:add{"Color Code","B or F Ground","Description#1","Description#2"}
+            row:add{"Color Code","B or F Ground","Description","Demo #1","Demo #2"}
             for k,v in pairs(color) do
                 if type(v)=="table" then
-                    is_bg=k:match("^HB") or k:match("^B") and not k~='BLK'
-                    row:add{k,is_bg and 'Background' or 'Foreground',fmt:format(is_bg and wf..v[1] or v[1]..wb,v[2]),fmt:format(is_bg and bf..v[1] or v[1]..bb,v[2])}
+                    is_bg=v[2]:lower():match("background")
+                    row:add{k,is_bg and 'Background' or 'Foreground',v[2],fmt:format(is_bg and wf..v[1] or v[1]..wb,v[2]),fmt:format(is_bg and bf..v[1] or v[1]..bb,v[2])}
                 end
             end
             row:sort("2,1",true)
