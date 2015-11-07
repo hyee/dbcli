@@ -1,7 +1,7 @@
 --init a global function to store CLI variables
 local _G = _ENV or _G
 
-local reader,coroutine,os,string,table,math,io,select=reader,coroutine,os,string,table,math,io,select
+local reader,coroutine,os,string,table,math,io,select,xpcall,pcall=reader,coroutine,os,string,table,math,io,select,xpcall,pcall
 
 local getinfo, error, rawset, rawget,math = debug.getinfo, error, rawset, rawget,math
 
@@ -61,7 +61,13 @@ _G['TRIGGER_ABORT']=function()
     env.safe_call(env.event and env.event.callback,5,"ON_COMMAND_ABORT")
 end
 
+local function pcall_error(e)
+    return tostring(e) .. '\n' .. debug.traceback()
+end
 
+function env.ppcall(f, ...)
+    return xpcall(f, pcall_error, ...)
+end
 
 local dbcli_stack,dbcli_cmd_history={level=0,id=0},{}
 local dbcli_current_item,dbcli_last_id=dbcli_stack,dbcli_stack.id
@@ -318,7 +324,7 @@ end
 function env.format_error(src,errmsg,...)
     errmsg=(tostring(errmsg) or "")
     local HIR,NOR,count="",""
-    if env.ansi and env.set then
+    if env.ansi and env.set and env.set.exists("ERRCOLOR") then
         HIR,NOR=env.ansi.get_color(env.set.get("ERRCOLOR")),env.ansi.get_color('NOR')
         errmsg=env.ansi.strip_ansi(errmsg)
     end

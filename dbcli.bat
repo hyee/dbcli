@@ -4,7 +4,6 @@ cd /d "%~dp0"
 SET CONSOLE_COLOR=0A
 SET JRE_HOME=d:\soft\java
 SET TNS_ADM=d:\Soft\InstanceClient\network\admin
-
 SET ANSICON_CMD=.\bin\ansiconx64.exe
 SET DBCLI_ENCODING=UTF-8
 

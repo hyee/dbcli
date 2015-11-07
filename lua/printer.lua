@@ -43,7 +43,7 @@ function printer.print(...)
     output=table.concat(output,' '):gsub("(\r?\n\r?)","%1"..env.space)
     if env.ansi then output=env.ansi.convert_ansi(output) end
     if printer.is_more then more_text[#more_text+1]=output;return end
-
+    --printer.rawprint(output)
     out:println(output)
     out:flush()
     if printer.hdl then
