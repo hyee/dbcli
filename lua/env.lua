@@ -423,10 +423,9 @@ local cache_prompt,fix_prompt
 local prompt_stack={_base="SQL"}
 
 function env.set_prompt(class,default,is_default,level)
-    if not env._SUBSYSTEM and default then
-        default=default:upper()
-    elseif default then
-        default=default--:gsub(".*[\27\33].-%a","")
+    if default then
+        if not env._SUBSYSTEM  then default=default:upper() end
+        if env.ansi then default=env.ansi.convert_ansi(default) end
     end
     class=class or "default"
     level=level or (class=="default" or default==prompt_stack._base) and 0 or 3

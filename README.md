@@ -5,14 +5,16 @@ DBCLI : a CLI utility for DBA (Oracle/DB2)
 [drag]:help.gif
 ![][drag]
 
+
 Description
 -----------------------
 
-DBCLI is a portable database command line utility, for DBA or application support to easily manage and execute their common scripts, similar to database built-in CLI tools but is more flexible.  
+DBCLI is a portable database command line utility, for DBA or application support to easily manage and run their common used scripts, similar to database built-in CLI tools but is more flexible.  
 
-It is  developed in Lua language, and bridges to JDBC in order to operate database. <br/> 
-It is designed to support multiple databases, and includes 2 types of modules, one is the public module whose functions are visible across all kinds of databases, and another one is the database-specific module.<br>
-Currently only public and Oracle and DB2 functions are developed, and only support windows platform.<br><br>
+It is developed in Lua language, and bridges to JDBC in order to operate database. <br/> 
+It is designed to support multiple databases, and includes 2 types of modules, one is the public module whose functions are visible across all database platforms, 
+and another one is the platform-specific module.<br>
+Currently only public and Oracle and DB2 functions are developed, and only support windows platform.
 
 It is not aim to support all features of the existing CLI utilities that embedded by the specific database(`Oracle SQL*Plus`, `DB2 CLP`, etc), but to provide the features other than those tools:<br>
 * Pretty-print of the select statement and the flexible control of the grid layouts(see set command)
@@ -26,7 +28,7 @@ It is not aim to support all features of the existing CLI utilities that embedde
 
 Build and Configuration
 -----------------------
-DBCLI does not require compile, but depends on JRE 1.7+. Directly click `Download ZIP` and extract.<br/> 
+DBCLI does not require compile or installation, but depends on JRE 1.7+. Click `Download ZIP`, extract and use.<br/> 
 Branch `With-JRE` contains the shrinking JRE bundle, if you don't have JRE installed, you may switch to that branch to download. Due to the region and charset differences, this JRE bundle is not guaranteed to work well.<br/>
 ###Configure terminal window
 To avoid the word wrap in the terminal window which affects the print layout, following settings are recommended in Windows command window:<br>
@@ -55,8 +57,10 @@ For example: `dbcli.bat "connect=tiger/scott@orcl"`<br><br>
 
 ###Switch Database Platform
 DBCLI supports multiple database platforms(Oracle,db2,etc), default is `Oracle`.<br>
-To permanently change the preferred platform other than `Oracle`, run `set -p <platform>` after launching the console.<br>
-Without the `-p` option, the change only takes affect on current console window. Type `set database` for more available options.
+To permanently change the preferred platform other than `Oracle`, run `set -p <platform>` after launching the console. 
+For example, `set -p database db2`<br>
+Without the `-p` option, the change only takes affect on current console window. 
+Type `set database` to see all available options.
 
 Quick Start
 -----------------------
@@ -95,3 +99,7 @@ About ANSICON
 `ANSICON` provides more ANSI escape features than JLine, especially when running bash commands(i.e.: top) via SSH.
 
 If you have concern on `ANSICON`, please remove it from bin, and edit `data\init.cfg` to add line `set ANSICON_CMD=`
+
+About Contribution
+-----------------------
+Any contribution would be very welcome, I'm only familiar with Oracle database.

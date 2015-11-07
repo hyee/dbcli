@@ -8,8 +8,7 @@ function sys:ctor()
     self.help_title=[[
         Run SQL script under the "sys" directory that needs SYSDBA login or the accesses to the xv$ views.
         The command contains the scripts that required the SYSDBA privilege.
-        Please refer to 'sys\xvcreate' to create the xv$ views for normal user.   
-    ]]
+        Please refer to 'sys\xvcreate' or run 'sys xvcreate' to create the xv$ views for normal user.]]..'\n'
     self.script_dir,self.extend_dirs=env.WORK_DIR.."oracle"..env.PATH_DEL.."sys",{}
 end
 

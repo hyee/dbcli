@@ -75,10 +75,12 @@ function grid.fmt(format,...)
             idx=idx+1
             if siz=="" then return g end
             v=args[idx]
-            if not v or  type(v)~="string" then return g end
+            if not v or type(v)~="string" then return g end
             local _,c=v:gsub("[%z\1-\127\194-\244][\128-\193]", "")
-            if c==0 then return g end
-            return '%'..flag..tostring(tonumber(siz)+c)..'s'
+            if c>0 then return '%'..flag..tostring(tonumber(siz)+c)..'s' end
+            c=#v-env.ansi.strip_len(v)
+            if c>0 then return '%'..flag..tostring(tonumber(siz)+c)..'s' end
+            return g
         end)
     --print('new',format,',',fmt)
     return fmt:format(...)
@@ -292,6 +294,7 @@ function grid:add(rs)
                 v=table.concat(v1,'\n')
             end
             local grp={}
+            v=env.ansi.convert_ansi(v)
             v=v:gsub('\128\192',''):gsub('%z','')
             if headind>0 then v=v:gsub("[%s ]+$",""):gsub("[ \t]+[\n\r]","\n"):gsub("\t",'    ') end
             --if the column value has multiple lines, then split lines into table

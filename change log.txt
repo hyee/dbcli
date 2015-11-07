@@ -1,5 +1,6 @@
 2015-11-07: + oracle: normal user can run 'sys' commands if xv$ views are created and granted. Refer to 'help sys'
             + public: new command "set errcode" to customize the color of the error messages
+            + public: support user-defined colors when querying or echoing. type 'ansi' for more info
 2015-11-06: + oracle: 'set' commands 'starttime','endtime' and 'instance', as the global parameters for all SQLs 
             + oracle: some new scripts for 'ora' and 'sys'
             ! public: fixes on some known bugs, related to jdbc variable bindings
@@ -14,6 +15,7 @@
               Change: 1) Oracle: some scripts of "ora" moved to "show"
                       2) Oracle: new command "ora obj", the original command "ora obj" renamed to "ora search"
                       3) Public: minor changes on existing scripts and functions
+=======================begin v0.6================================================
 2015-11-02: * public: update user manual(in Chinese)
             + oracle: new commands "sys xdesc" and "ora trans"
             ! oracle: performance improvement for "ora cursor"
@@ -24,18 +26,21 @@
 2015-10-28: ! public: minor fixes;rename jsch-0.1.5.3.jar as jsch.jar
 2015-09-20: * public: Minor update on JNLua for LuaJit because the author has stopped the maintenance
 2015-09-18: ! public: minor fixes
+=======================begin v0.5================================================
 2015-09-15: + oracle: new command "shell asmdu"
             + public: support interruption(ctrl+c/d,'q') on 'connect' and 'ssh' commands
             - public: remove unused modules: LuaLanes and LuaSocket
 2015-09-14: + public: support CTRL+C to abort running command(same to 'q' and CTRL+D)
             ! public: fix "dbcli.bat"
             ! public: fix the completion determination of "alter" statement
+=======================begin v0.4================================================
 2015-09-11: ! public: fix issue "string slice too long" when fetching blob
             ! oracle: fix issue for the "explain plan" statement
             * public: remove tailing spaces from codes; replace tab as 4 spaces
 2015-09-10: ! public: minor fixes
              * public: open html file in async mode for 'chart' command to avoid blocking dbcli
             * public: ssh download/upload: enable compression by default
+=======================begin v0.3================================================
 2015-09-08: + oracle: merge request#3 from https://github.com/anjuls/dbcli.git
 2015-09-05: + public: "help -stack" to see internal call stack for development/investigation purpose
             + public: new command "more" for pagination, but doesn't support searching
@@ -118,7 +123,7 @@
             * public: new abbr '!' for existing command 'host'
 2015-03-08: ! oracle: fix issue for 'unwrap' command
             + db2   : support db2 database
-------------------------------------------------------------
+=======================begin v0.2================================================
 2015-03-07: * "connect" command supports default 1521 port when not specify the port
             ! minor fixes
 2015-03-07: + new command 'ora logmnr'
@@ -200,3 +205,4 @@
 2014-05-08: Bugfix for "set" and "ora" module
 2014-05-07: Enhanced the "oracle" module related to inherit
 2014-05-06: Renamed module "matrix" to "grid"
+=======================begin v0.1================================================

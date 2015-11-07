@@ -254,7 +254,6 @@ function var.onload()
     snoop('BEFORE_COMMAND',var.before_command)
     snoop("BEFORE_ROOT_COMMAND",var.capture_before_cmd)
     snoop("AFTER_ROOT_COMMAND",var.capture_after_cmd)
-
     cfg.init("PrintVar",'on',nil,"db.core","Max size of historical commands",'on,off')
     cfg.init("Define",'on',nil,"db.core","Defines the substitution character(&) and turns substitution on and off.",'on,off')
     env.set_command(nil,{"Accept","Acc"},'Assign user-input value into a existing variable. Usage: accept <var> [[prompt] <prompt_text>|@<file>]',var.accept_input,false,3)
