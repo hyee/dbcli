@@ -1,6 +1,4 @@
-/*[[Used to create xv$ views based on SYS x$ tables, so that normal user can access.
-    Fix tables list can be found in sys.x$kqfta
-]]*/
+/*[[Used to create xv$ views based on SYS x$ tables, so that normal user can run the scripts under command 'sys'.]]*/
 set feed off
 BEGIN
     dbms_output.put_line(CHR(27)||'[1;33mRun following statement with SYSDBA:'||chr(10)||rpad('=',36,'=')||CHR(27)||'[0m');
