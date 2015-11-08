@@ -28,9 +28,8 @@ ash AS (SELECT /*+ QB_NAME(ash) LEADING(a) USE_HASH(u) SWAP_JOIN_INPUTS(u) */
         FROM
             &V8 a
           , dba_users u
-        WHERE
-            a.user_id = u.user_id (+)
-        AND sample_time+0 BETWEEN NVL(TO_DATE(:V2,'YYMMDDHH24MI'),SYSDATE-1) AND NVL(TO_DATE(:V3,'YYMMDDHH24MI'),SYSDATE)
+        WHERE a.user_id = u.user_id (+)
+        AND sample_time+0 BETWEEN NVL(TO_DATE(NVL(:V2,:STARTTIME),'YYMMDDHH24MI'),SYSDATE-1) AND NVL(TO_DATE(NVL(:V3,:ENDTIME),'YYMMDDHH24MI'),SYSDATE)
     ),
 ash_samples AS (SELECT DISTINCT sample_id FROM ash),
 ash_data AS (SELECT /*+ MATERIALIZE */ * FROM ash),

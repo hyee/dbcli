@@ -58,7 +58,6 @@ end
 
 function db:check_obj(obj_name)
     db.C.ora:run_script('_find_object',obj_name,1)
-    local v=env.var.inputs
     local args={
         target=obj_name,
         owner=env.var.get_input('OBJECT_OWNER'),

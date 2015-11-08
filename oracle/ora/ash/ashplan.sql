@@ -168,7 +168,7 @@ rules sequential order (
             when inject[cv()] like '---%'
             then inject[cv()] || plan_table_output[cv()]
             when plan_table_output[cv()] like 'Plan hash value%'
-            then plan_table_output[cv()]||'   Source: &V9 from '||nvl(:V3,to_char(sysdate-90,'YYMMDDHH24MI'))||' to '||nvl(:V4,to_char(sysdate,'YYMMDDHH24MI'))
+            then plan_table_output[cv()]||'   Source: &V9 from '||COALESCE(:V3,:STARTTIME,to_char(sysdate-90,'YYMMDDHH24MI'))||' to '||COALESCE(:V4,:ENDTIME,to_char(sysdate,'YYMMDDHH24MI'))
             when inject[cv()] is not null
             then regexp_replace(plan_table_output[cv()], '\|', inject[cv()], 1, 2)
             else plan_table_output[cv()]
