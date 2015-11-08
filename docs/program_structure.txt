@@ -52,7 +52,7 @@ lua\scripter.lua
     |->lua\ssh.lua
     |  |->db2\ssh.lua
     |  |->oracle\ssh.lua
-    |->lua\snap.lua
+    |->lua\snapper.lua
     |  |->db2\snap.lua
     |  |->oracle\snap.lua
     |->lua\graph.lua

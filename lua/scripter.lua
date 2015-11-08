@@ -34,11 +34,12 @@ function scripter:rehash(script_dir,ext_name)
     local counter=0
     for k,v in ipairs(keylist) do
         if script_dir:match("ssh") then print(table.dump(v)) end
-        local desc=v[3] and v[3]:gsub("^%s*[\n\r]+","") or ""
+        local desc=v[3] and v[3]:gsub("^%s*[\n\r#]+","") or ""
         desc=desc:gsub("%-%-%[%[(.*)%]%]%-%-",""):gsub("%-%-%[%[(.*)%-%-%]%]","")
         desc=desc:gsub("([\n\r]+%s*)%-%-","%1  ")
         desc=desc:gsub("([\n\r]+%s*)REM","%1   ")
         desc=desc:gsub("([\n\r]+%s*)rem","%1   ")
+        desc=desc:gsub("([\n\r]+%s*)#","%1   ")
         local cmd=v[1]:upper()
         if cmdlist[cmd] then
             pathlist[cmdlist[cmd].path:lower()]=nil

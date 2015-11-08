@@ -291,14 +291,15 @@ function ssh:upload_script(filename)
     txt=txt:gsub("\r\n","\n"):gsub("^%s+","")
     local intepreter=txt:match("^#!([^\n])+")
     if not intepreter then intepreter="/bin/bash" end
-    cmd=filename:match("[^\\/]+$")
+    cmd=file:match("[^\\/]+$")
     if dir=='.' then dir=self:get_pwd() end
-    filename=(dir and dir:gsub("[\\/]$").."/" or ('/tmp/'))..cmd
+    filename=(dir and dir:gsub("[\\/]$","").."/" or ('/tmp/'))..cmd
     self:getresult('cat >'..filename..'<<"DBCLI"\n'..txt..'\nDBCLI\n')
     self:getresult('chmod +x '..filename)
     if env.set.get("feed")=="on" then
-        print("File uploaded into "..filename)
+        rawprint("File uploaded into "..filename)
     end
+    return filename
 end
 
 function ssh:login(account,list)
@@ -335,7 +336,7 @@ end
 function ssh:run_shell(cmd,...)
     local text,args,_,file,cmd=self:get_script(cmd,{...},false)
     if not file then return end
-    local stack=self:load_script(cmd,'@'..text)
+    local stack={self:upload_script(file)}
     for i=1,20 do
         local v=args["V"..i]
         if v=="" then break end
@@ -436,7 +437,7 @@ function ssh:__onload()
     helper:add{"ssh forward",'',"Forward/un-forward a remote port. Usage: ssh forward <local_port> [<remote_port>] [remote_host]"}
     helper:add{"ssh link",'',"Link/un-link current SSH connection to an existing database connection(see 'login' command). Usage: ssh link <login_id|login_alias>"}
     helper:add{"ssh  $<command>",'',"Run command in remote SSH server. "}
-    helper:add{"ssh   <command>",'',"Run embedded command if existing(i.e.: ssh conn), or run command in remote server."}
+    helper:add{"ssh   <command>",'',"Run embedded command if exist(i.e.: ssh conn), or run command in remote server."}
     helper:add{"ssh login",'',"Login to a saved SSH account."}
     helper:add{"ssh -i",'',"Enter into SSH interactive mode to omit the 'ssh ' prefix."}
     helper:add{"ssh push_shell",'',"Upload local script into remote directory and grant the execute access. Usage: ssh push_shell <file> [/tmp|.|<remote_dir>]"}
