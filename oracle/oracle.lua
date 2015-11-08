@@ -123,7 +123,7 @@ function oracle:connect(conn_str)
                 (select decode(DATABASE_ROLE,'PRIMARY','','PHYSICAL STANDBY',' (Standby)') from v$database)
        from dual]])
     if not err then
-        env.warn("Connecting with a limited user that not able to accesses many dba/gv$ views, some dbcli features may not work.")
+        env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
     else
         self.props={db_user=params[1],
                     db_version=params[2],
