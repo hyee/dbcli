@@ -205,4 +205,6 @@
 2014-05-08: Bugfix for "set" and "ora" module
 2014-05-07: Enhanced the "oracle" module related to inherit
 2014-05-06: Renamed module "matrix" to "grid"
-=======================begin v0.1================================================
+=======================Uploaded to github and begin v0.1==============================
+2014-04-15: Completion of the framework, common functions and scripts. 
+2014-03-02: Start dev in order to reduce the duplicated DBA works.
