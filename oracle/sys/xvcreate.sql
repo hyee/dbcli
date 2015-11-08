@@ -11,9 +11,9 @@ BEGIN
                 BEGIN
                     EXECUTE IMMEDIATE 'create or replace view SYS.XV' || substr(r.name,2,28) || ' AS SELECT * FROM SYS.' || r.name;
                     EXECUTE IMMEDIATE 'grant select on SYS.XV' || substr(r.name,2,28) || ' TO ' || target_user;
-                    EXCEPTION
-                        WHEN OTHERS THEN
-                            dbms_output.put_line('Error when creating refs to SYS.'||r.name||': '||SQLERRM);
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        dbms_output.put_line('Error when creating refs to SYS.'||r.name||': '||SQLERRM);
                 END;
             END LOOP;
         END;

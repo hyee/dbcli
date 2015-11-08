@@ -27,6 +27,11 @@ function var.helper()
     return help
 end
 
+function var.get_input(name)
+    local res = var.inputs[name:upper()]
+    return res=='' and nil or res 
+end
+
 function var.import_context(global,input,output)
     for k,v in pairs(global) do var.global_context[k]=v end
     for k,v in pairs(input or {}) do var.inputs[k]=v end

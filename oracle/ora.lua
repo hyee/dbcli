@@ -59,8 +59,14 @@ end
 function db:check_obj(obj_name)
     db.C.ora:run_script('_find_object',obj_name,1)
     local v=env.var.inputs
-    local args={target=obj_name,owner=v.OBJECT_OWNER,object_type=v.OBJECT_TYPE,object_name=v.OBJECT_NAME,object_subname=v.OBJECT_SUBNAME,object_id=v.OBJECT_ID}
-    return args and args.object_id and args
+    local args={
+        target=obj_name,
+        owner=env.var.get_input('OBJECT_OWNER'),
+        object_type=env.var.get_input('OBJECT_TYPE'),
+        object_name=env.var.get_input('OBJECT_NAME'),
+        object_subname=env.var.get_input('OBJECT_SUBNAME'),
+        object_id=env.var.get_input('OBJECT_ID')}
+    return args and args.object_id and args.object_id~='' and args
 end
 
 function db:check_access(obj_name,...)

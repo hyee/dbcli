@@ -82,9 +82,16 @@ local base_color={
  -- FRBOT   ={"\27[1;24r","Freeze bottom line",1},
  -- UNFR    ={"\27[r","Unfreeze top and bottom lines",1},
     BLINK   ={"\27[5m","Initialize blink mode",1},
+    UBLNK   ={"\27[25m","Blink off",1},
     U       ={"\27[4m","Initialize underscore mode",1},
+    UU      ={"\27[24m","Underline off",1},
     REV     ={"\27[7m","Turns reverse video mode on",1},
-    HIREV   ={"\27[1,7m","Hi intensity reverse video",1},
+    UREV    ={"\27[27m","Turns reverse video mode off",1},
+    CONC    ={"\27[8m","Concealed(foreground becomes background)",1},
+    uCONC   ={"\27[28m","Concealed off",1},
+    HIREV   ={"\27[1,7m","High intensity reverse video",1},
+    WRAP    ={"\27[?7h","Wrap lines at screen edge",1},
+    UNWRAP  ={"\27[?7l","Don't wrap lines at screen edge",1}
 }
 
 local color=setmetatable({},{__index=function(self,k) return rawget(self,k:upper()) end})
@@ -259,10 +266,10 @@ function ansi.test_text(str)
             row:sort("-2,1",true)
             row:print()
         end
-        rawprint(env.space..string.rep("=",100))
-        rawprint(env.space.."Use '$<code>$<other text' to mask color in all outputs, including query, echo, etc.")
-        rawprint(env.space.."For more ansi codes, refer to the 'color' block in file 'lua/ansi.lua'.")
-        rawprint(env.space.."Run 'ansi <text> to test color, i.e.: ansi $HIR$ Hello $GRN$$BWHT$ ANSI!")
+        rawprint(env.space..string.rep("=",140))
+        rawprint(env.space.."Use '$<code>$<other text' to mask color in all outputs, including query, echo, etc. Not all listed control codes are supported.")
+        rawprint(env.space.."For the color settings defined in command 'set', use '<code1>[;<code2>[...]]' format")
+        rawprint(env.space.."Run 'ansi <text>' to test the color, i.e.: ansi $HIR$ Hello $HIC$$HBGRN$ ANSI!")
         rawprint(env.space.."Or SQL:  select '$HIR$'||owner||'$HIB$.$NOR$'||object_name obj from all_objects where rownum<10;")
         return
     end
