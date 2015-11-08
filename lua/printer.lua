@@ -13,7 +13,7 @@ end
 
 local more_text
 function printer.set_more(stmt)
-    env.checkerr(stmt,"Usage: more <select statement>")
+    env.checkerr(stmt,"Usage: more <select statement>|<other command>")
     printer.is_more=true
     more_text={}
     local res,err=pcall(env.internal_eval,stmt)

@@ -9,9 +9,10 @@ cfg._p=env.load_data(file)
 
 function cfg.show_cfg(name)
     local rows={{'Name','Value','Default','Class','Available Values','Description'}}
-    print([[Usage: set <name>                                     : Get specific parmeter value
-       set    <name1> <value1> [<name2> <value2> ...] : Change settings in current window
-       set -p <name1> <value1> [<name2> <value2> ...] : Change settings permanently
+    print([[Usage: set      <name>                                  : Get specific parmeter value
+       set      <name1> <value1> [<name2> <value2> ...] : Change settings in current window
+       set -p   <name1> <value1> [<name2> <value2> ...] : Change settings permanently
+       set [-p] <name1> default  [<name2> back     ...] : Change settings back to the default/previous values
     ]])
     if name then
         local v=cfg[name]
