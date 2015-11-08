@@ -556,6 +556,8 @@ function db_core:connect(attrs,data_source)
     if not self.driver then
         self.driver= java.require("java.sql.DriverManager")
     end
+    if attrs.driverClassName then java.require('java.lang.Class',true):forName(attrs.driverClassName) end
+
     env.log_debug("db","Start connecting:\n",attrs)
     attrs.account_type="database"
     local url=attrs.url

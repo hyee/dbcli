@@ -1,3 +1,4 @@
+2015-11-08: ! public: fix issue for "ssh upload_script" and "shell" commands
 2015-11-07: + oracle: normal user can run 'sys' commands if xv$ views are created and granted. Refer to 'help sys'
             + public: new command "set errcode" to customize the color of the error messages
             + public: support user-defined colors when querying or echoing. type 'ansi' for more info

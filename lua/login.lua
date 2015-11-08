@@ -152,11 +152,12 @@ function login.onload()
     env.event.snoop("TRIGGER_CONNECT",login.capture)
     cfg.init("SaveLogin","on",nil,"core","Determine if autosave logins.",'on,off')
     local help_login=[[
-        Login with saved accounts. Usage: login [ -d | -a |<number|account_name>]
+        Login with saved accounts, type 'help login' for more detail. Usage: login [ -d | -a |<number|account_name>]
             login                     : list all saved a/c
             login -d <num|name|alias> : delete matched a/c
-            login <num|name|alias>    : login a/c
-            login -a <alias> <id|name>: set alias to an existing account]]
+            login    <num|name|alias> : login a/c
+            login -a <alias> <id|name>: set alias to an existing account
+        Use 'set savelogin off' to disable the autosave.]]
     env.set_command(nil,"login",help_login,login.trigger_login,false,3)
     login.load()
 end
