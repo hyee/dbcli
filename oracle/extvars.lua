@@ -11,6 +11,7 @@ local instance_pattern={
     string.case_insensitive_pattern('%f[%w_%$:%.](sys%. *("?)xv_?$%a[%w_%$]+%2)([%s%),;])')
 }
 
+
 function extvars.on_before_db_exec(item)
     local db,sql,args=table.unpack(item)
     args.starttime,args.endtime=cfg.get("starttime"),cfg.get("endtime")

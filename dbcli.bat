@@ -4,7 +4,6 @@ cd /d "%~dp0"
 SET CONSOLE_COLOR=0A
 SET JRE_HOME=d:\soft\java
 SET TNS_ADM=d:\Soft\InstanceClient\network\admin
-
 SET ANSICON_CMD=.\bin\ansiconx64.exe
 SET DBCLI_ENCODING=UTF-8
 
@@ -19,7 +18,7 @@ COLOR %CONSOLE_COLOR%
 if defined ANSICON_CMD (
    SET ANSICON_EXC=nvd3d9wrap.dll;nvd3d9wrapx.dll
    SET ANSICON_DEF=%CONSOLE_COLOR%
-   "%JRE_HOME%\java.exe" -version 2>&1 |findstr /i "64-bit" >nul && (%ANSICON_CMD% -m%CONSOLE_COLOR% -p)||(.\bin\ansiconx86.exe -m%CONSOLE_COLOR% -p)
+   "%JRE_HOME%\java.exe" -version 2>&1 |findstr /i "64-bit" >nul && (%ANSICON_CMD% -m%CONSOLE_COLOR% -p)||(.\bin\ansiconx86.exe -m%CONSOLE_COLOR% -p >nul||%ANSICON_CMD% -m%CONSOLE_COLOR% -p)
 )
 
 rem unpack jar files for the first use

@@ -1,6 +1,8 @@
 
 DBCLI : a CLI utility for DBA (Oracle/DB2)
 =====================================================
+
+[![Join the chat at https://gitter.im/hyee/dbcli](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/hyee/dbcli?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 [![Licence](http://img.shields.io/badge/Licence-MIT-brightgreen.svg)](https://en.wikipedia.org/wiki/MIT_License)
 [drag]:help.gif
 ![][drag]

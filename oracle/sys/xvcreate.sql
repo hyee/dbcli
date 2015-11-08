@@ -1,7 +1,7 @@
 /*[[Used to create xv$ views based on SYS x$ tables, so that normal user can run the scripts under command 'sys'.]]*/
 set feed off
 BEGIN
-    dbms_output.put_line(CHR(27)||'[1;33mRun following statement with SYSDBA:'||chr(10)||rpad('=',36,'=')||CHR(27)||'[0m');
+    dbms_output.put_line('$HIY$Run following statement with SYSDBA:'||chr(10)||rpad('=',36,'=')||'$NOR$');
     dbms_output.put_line(replace(q'[
         DECLARE
             target_user VARCHAR2(30) := 'SELECT_CATALOG_ROLE'; --Change target grantee here
@@ -11,9 +11,9 @@ BEGIN
                 BEGIN
                     EXECUTE IMMEDIATE 'create or replace view SYS.XV' || substr(r.name,2,28) || ' AS SELECT * FROM SYS.' || r.name;
                     EXECUTE IMMEDIATE 'grant select on SYS.XV' || substr(r.name,2,28) || ' TO ' || target_user;
-                    EXCEPTION
-                        WHEN OTHERS THEN
-                            dbms_output.put_line('Error when creating refs to SYS.'||r.name||': '||SQLERRM);
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        dbms_output.put_line('Error when creating refs to SYS.'||r.name||': '||SQLERRM);
                 END;
             END LOOP;
         END;

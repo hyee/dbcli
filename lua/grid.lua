@@ -483,8 +483,8 @@ function grid.onload()
         grid[v.name]=v.default
         set(k,grid[v.name],grid.set_param,"grid",v.desc,v.range)
     end
-    env.ansi.define_color("HEADCOLOR","HBRED;HIW","grid","Define grid title's color")
-    env.ansi.define_color("GREPCOLOR","BBLU;HIW","grid","Define highlight color for the grep command")
+    env.ansi.define_color("HEADCOLOR","HBRED;HIW","ansi.grid","Define grid title's color, type 'ansi' for more available options")
+    env.ansi.define_color("GREPCOLOR","BBLU;HIW","ansi.grid","Define highlight color for the grep command, type 'ansi' for more available options")
     env.set_command(nil,"grep","Filter matched text from the output. Usage: grep <keyword|-keyword> <other command>, -keyword means exclusive",grid.grep,'__SMART_PARSE__',3)
 end
 

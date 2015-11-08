@@ -1,4 +1,4 @@
-local env=env
+local env,print=env,print
 local dirs={"lib","cache","data"}
 local init={
     module_list={
@@ -71,12 +71,13 @@ function init.init_path()
     end
 end
 
+
 local function exec(func,...)
     if func==nil and type(select(1,...))=="string" then 
         return print('Error on loading module: '..tostring(select(1,...)):gsub(env.WORK_DIR,""))
     end
     if type(func)~='function' then return end
-    local res,rtn=pcall(func,...)
+    local res,rtn=env.pcall(func,...)
     if not res then
         return print('Error on loading module: '..tostring(rtn):gsub(env.WORK_DIR,""))
     end
@@ -164,7 +165,8 @@ function init.load_modules(list,tab,module_name)
             file:close();
             file=v
         end
-        tab[n]=exec(loadfile(file),env)
+        local c,err=loadfile(file)
+        tab[n]=exec(c,err or env)
         modules[n]=tab[n]
     end
 

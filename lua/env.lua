@@ -1,7 +1,7 @@
 --init a global function to store CLI variables
 local _G = _ENV or _G
 
-local reader,coroutine,os,string,table,math,io,select=reader,coroutine,os,string,table,math,io,select
+local reader,coroutine,os,string,table,math,io,select,xpcall,pcall=reader,coroutine,os,string,table,math,io,select,xpcall,pcall
 
 local getinfo, error, rawset, rawget,math = debug.getinfo, error, rawset, rawget,math
 
@@ -61,7 +61,13 @@ _G['TRIGGER_ABORT']=function()
     env.safe_call(env.event and env.event.callback,5,"ON_COMMAND_ABORT")
 end
 
+local function pcall_error(e)
+    return tostring(e) .. '\n' .. debug.traceback()
+end
 
+function env.ppcall(f, ...)
+    return xpcall(f, pcall_error, ...)
+end
 
 local dbcli_stack,dbcli_cmd_history={level=0,id=0},{}
 local dbcli_current_item,dbcli_last_id=dbcli_stack,dbcli_stack.id
@@ -318,7 +324,7 @@ end
 function env.format_error(src,errmsg,...)
     errmsg=(tostring(errmsg) or "")
     local HIR,NOR,count="",""
-    if env.ansi and env.set then
+    if env.ansi and env.set and env.set.exists("ERRCOLOR") then
         HIR,NOR=env.ansi.get_color(env.set.get("ERRCOLOR")),env.ansi.get_color('NOR')
         errmsg=env.ansi.strip_ansi(errmsg)
     end
@@ -747,10 +753,10 @@ function env.onload(...)
         print_debug=print
     end
     if  env.ansi and env.ansi.define_color then
-        env.ansi.define_color("Promptcolor","HIY","core","Define prompt's color")
-        env.ansi.define_color("ERRCOLOR","HIR","core","Define color of the error messages")
-        env.ansi.define_color("PromptSubcolor","MAG","core","Define the prompt color for subsystem.")
-        env.ansi.define_color("commandcolor","HIC","core","Define command line's color")
+        env.ansi.define_color("Promptcolor","HIY","ansi.core","Define prompt's color, type 'ansi' for more available options")
+        env.ansi.define_color("ERRCOLOR","HIR","ansi.core","Define color of the error messages, type 'ansi' for more available options")
+        env.ansi.define_color("PromptSubcolor","MAG","ansi.core","Define the prompt color for subsystem, type 'ansi' for more available options")
+        env.ansi.define_color("commandcolor","HIC","ansi.core","Define command line's color, type 'ansi' for more available options")
     end
     if env.event then
         env.event.snoop("ON_COMMAND_ABORT",env.clear_command)

@@ -310,7 +310,7 @@ function desc.desc(name,option)
     end
 
     rs={obj.owner,obj.object_name,obj.object_subname or "",
-       obj.object_subname and (obj.object_type=="PACKAGE" or obj.object_type=="TYPE") and "PROCEDURE"
+       obj.object_subname and obj.object_subname~='' and (obj.object_type=="PACKAGE" or obj.object_type=="TYPE") and "PROCEDURE"
        or obj.object_type,2}
 
     local sqls=desc_sql[rs[4]]
