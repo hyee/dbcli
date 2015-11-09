@@ -1,0 +1,39 @@
+/*[[Search for matched objects by the keyword(supports widechars). Usage: search <keyword> ]]*/
+SELECT *
+FROM   (SELECT 'TABLE' AS TYPE, VARCHAR(SUBSTR(T.TABSCHEMA, 1, 32), 32) AS SCHEMA,
+                VARCHAR(SUBSTR(T.TABNAME, 1, 32), 32) AS NAME
+         FROM   SYSCAT.TABLES T
+         WHERE  UPPER(T.TABSCHEMA || '.' || T.TABNAME) LIKE '%' || upper(:V1) || '%'
+         UNION ALL
+         SELECT 'FUNCTION' AS TYPE, VARCHAR(SUBSTR(F.FUNCSCHEMA, 1, 32), 32) AS SCHEMA,
+                VARCHAR(SUBSTR(F.FUNCNAME, 1, 32), 32) AS NAME
+         FROM   SYSCAT.FUNCTIONS F
+         WHERE  UPPER(F.FUNCSCHEMA || '.' || F.FUNCNAME) LIKE '%' || upper(:V1) || '%'
+         UNION ALL
+         SELECT 'INDEX' AS TYPE, VARCHAR(SUBSTR(I.INDSCHEMA, 1, 32), 32) AS SCHEMA,
+                VARCHAR(SUBSTR(I.INDNAME, 1, 32), 32) AS NAME
+         FROM   SYSCAT.INDEXES I
+         WHERE  UPPER(I.INDSCHEMA || '.' || I.INDNAME) LIKE '%' || upper(:V1) || '%'
+         UNION ALL
+         SELECT 'MODULE' AS TYPE, VARCHAR(SUBSTR(M.MODULESCHEMA, 1, 32), 32) AS SCHEMA,
+                VARCHAR(SUBSTR(M.MODULENAME, 1, 32), 32) AS NAME
+         FROM   SYSCAT.MODULES M
+         WHERE  UPPER(M.MODULESCHEMA || '.' || M.MODULENAME) LIKE '%' || upper(:V1) || '%'
+         UNION ALL
+         SELECT 'PACKAGE' AS TYPE, VARCHAR(SUBSTR(P.PKGSCHEMA, 1, 32), 32) AS SCHEMA,
+                VARCHAR(SUBSTR(P.PKGNAME, 1, 32), 32) AS NAME
+         FROM   SYSCAT.PACKAGES P
+         WHERE  UPPER(P.PKGSCHEMA || '.' || P.PKGNAME) LIKE '%' || upper(:V1) || '%'
+         UNION ALL
+         SELECT 'PROCEDURE' AS TYPE, VARCHAR(SUBSTR(SP.PROCSCHEMA, 1, 32), 32) AS SCHEMA,
+                VARCHAR(SUBSTR(SP.PROCNAME, 1, 32), 32) AS NAME
+         FROM   SYSCAT.PROCEDURES SP
+         WHERE  UPPER(SP.PROCSCHEMA || '.' || SP.PROCNAME) LIKE '%' || upper(:V1) || '%'
+         UNION ALL
+         SELECT 'SEQUENCE' AS TYPE, VARCHAR(SUBSTR(S.SEQSCHEMA, 1, 32), 32) AS SCHEMA,
+                VARCHAR(SUBSTR(S.SEQNAME, 1, 32), 32) AS NAME
+         FROM   SYSCAT.SEQUENCES S
+         WHERE  UPPER(S.SEQSCHEMA || '.' || S.SEQNAME) LIKE '%' || upper(:V1) || '%')
+ORDER  BY DECODE(UPPER(NAME), UPPER(:V1), 1, 2),SCHEMA,NAME;
+
+

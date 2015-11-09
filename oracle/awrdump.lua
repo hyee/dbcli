@@ -1,23 +1,50 @@
 local db,cfg=env.oracle,env.set
 local awr={}
 
-function awr.dump_report(stmt,starttime,endtime,instances)
-    if not endtime then
-        return print('Parameters: <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]')
+function awr.get_range(starttime,endtime,instances)
+    if (starttime=='.' or not starttime) then 
+        if cfg.get("starttime") and  cfg.get("starttime")~='' then 
+            starttime=cfg.get("starttime")
+        else
+            starttime=nil
+        end
+    else
+        db:check_date(starttime)
     end
-    db:check_date(starttime)
-    db:check_date(endtime)
 
+    if (endtime=='.' or not endtime) then 
+        if cfg.get("endtime") and  cfg.get("endtime")~='' then 
+            endtime=cfg.get("endtime")
+        else
+            endtime=nil
+        end
+    else
+        db:check_date(endtime)
+    end
+
+    if (instances=='.' or not instances) then 
+        if cfg.get("instance") and  tonumber(cfg.get("instance"))>0 then 
+            instances=cfg.get("instance")
+        else
+            instances=nil
+        end
+    end
+
+    env.checkerr(starttime and endtime,'Parameters: <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]')
+    return starttime,endtime,instances
+end
+
+function awr.dump_report(stmt,starttime,endtime,instances)
+    starttime,endtime,instances=awr.get_range(starttime,endtime,instances)
     env.checkerr(db:check_access('dbms_workload_repository.awr_report_html',1),'Sorry, you dont have the "execute" privilege on package "dbms_workload_repository"!')
-
     local args={starttime,endtime,instances or "",'#VARCHAR','#CLOB','#CURSOR'}
     cfg.set("feed","off")
     db:exec(stmt:replace('@get_range@',awr.extract_period()),args)
-    if args[5] and args[5]~="#CLOB" then
+    if args[5] then
         print("Result written to file "..env.write_cache(args[4],args[5]))
         db.resultset:print(args[6],db.conn)
     else
-        print(args[4])
+        print('Cannot generate file: '..args[4])
     end
 end
 
@@ -150,7 +177,6 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
                 END IF;
             $END
             END IF;
-
             dbms_lob.createtemporary(rs, TRUE);
             LOOP
                 BEGIN
@@ -159,10 +185,9 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
                     IF Trim(txt) IS NOT NULL THEN
                         dbms_lob.writeappend(rs,length(txt)+1,txt||chr(10));
                     END IF;
-                EXCEPTION WHEN OTHERS THEN NULL;
+                EXCEPTION WHEN OTHERS THEN null;
                 END;
             END LOOP;
-
             CLOSE rc;
         END;
     BEGIN
@@ -309,11 +334,7 @@ function awr.extract_addm(starttime,endtime,instances)
         extract_addm(:1, :2, :3,:4);
     END;]]
     env.checkerr(db:check_access('dbms_advisor.create_task',1),'Sorry, you dont have the "Advisor" privilege!')
-    if not endtime then
-        return print('Parameters: <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]')
-    end
-    db:check_date(starttime)
-    db:check_date(endtime)
+    starttime,endtime,instances=awr.get_range(starttime,endtime,instances)
     local args={starttime,endtime,instances or "",'#VARCHAR'}
     cfg.set("feed","off")
     db:exec(stmt:replace('@get_range@',awr.extract_period()),args)

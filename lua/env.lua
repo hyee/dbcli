@@ -221,7 +221,6 @@ function env.check_cmd_endless(cmd,other_parts)
         return env.smart_check_endless(cmd,other_parts,_CMDS[cmd].ARGS)
     end
 
-
     local p2=env.END_MARKS[2]..'%s*$'
     local match = (other_parts:match(p1) and 1) or (other_parts:match(p2) and 2) or false
     --print(match,other_parts)
@@ -233,12 +232,13 @@ end
 
 function env.smart_check_endless(cmd,rest,from_pos)
     local args=env.parse_args(from_pos,rest)
-    if not args[from_pos-1] then return true,rest:gsub('['..env.END_MARKS[1]..' \t]+$',"") end
-    if env.check_cmd_endless(args[from_pos-1]:upper(),args[from_pos] or "") then
-        return true,rest:gsub('%s+$',"")
-    else
-        return false,rest
+    if #args==0 then return true,rest:gsub('['..env.END_MARKS[1]..' \t]+$',"") end
+    for k=1,#args do
+        if not env.check_cmd_endless(args[k]:upper(),table.concat(args,' ',k+1)) then
+            return false,rest
+        end
     end
+    return true,rest:gsub('*%s*$',"")
 end
 
 function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbcmd,allow_overriden)
@@ -473,7 +473,7 @@ function env.clear_command()
     env.reset_input("")
 end
 
-function env.parse_args(cmd,rest)
+function env.parse_args(cmd,rest,is_cmd)
     --deal with the single-line commands
     local arg_count
     if type(cmd)=="number" then
@@ -496,6 +496,7 @@ function env.parse_args(cmd,rest)
         local piece=""
         local quote='"'
         local is_quote_string = false
+        local count=#args
         for i=1,#rest,1 do
             local char=rest:sub(i,i)
             if is_quote_string then--if the parameter starts with quote
@@ -512,16 +513,25 @@ function env.parse_args(cmd,rest)
                 if char==quote then
                     --begin a quote string, if its previous char is not a space, then bypass
                     is_quote_string,piece = true,piece..quote
-                elseif not char:match("(%s)") then
+                elseif not char:match("%s") then
                     piece = piece ..char
                 elseif piece ~= '' then
                     args[#args+1],piece=piece,''
                 end
             end
-            if #args>=arg_count-2 then--the last parameter
-                piece=rest:sub(i+1):gsub("^(%s+)",""):gsub('^"(.*)"$','%1')
-                args[#args+1],piece=piece,''
-                break
+
+            if count ~= #args then
+                count=#args
+                local is_multi_cmd=is_cmd==true and args[count] and _CMDS[args[count]:upper()]
+                if count>=arg_count-2 or is_multi_cmd then--the last parameter
+                    piece=rest:sub(i+1):gsub("^(%s+)",""):gsub('^"(.*)"$','%1')
+                    if is_multi_cmd and is_multi_cmd.ARGS==1 then
+                        args[count],piece=args[count]..' '..piece,''
+                    else        
+                        args[count+1],piece=piece,''
+                    end
+                    break
+                end
             end
         end
         --If the quote is not in couple, then treat it as a normal string
@@ -563,6 +573,7 @@ function env.eval_line(line,exec)
     local subsystem_prefix=""
     --Remove BOM header
     if not env.pending_command() then
+        line=line:gsub('^%s+','')
         push_stack(line)
         subsystem_prefix=env._SUBSYSTEM and (env._SUBSYSTEM.." ") or ""
         local cmd=env.parse_args(2,line)[1]
@@ -603,7 +614,7 @@ function env.eval_line(line,exec)
 
     if multi_cmd then return check_multi_cmd(line) end
 
-    local cmd,rest=line:match('^%s*([^ \t]+)[ \t]*(.*)')
+    local cmd,rest=line:match('^%s*(%S+)%s*(.*)')
     if not cmd then return end
     cmd=subsystem_prefix=="" and cmd:gsub(env.END_MARKS[1]..'+$',''):upper() or cmd
     env.CURRENT_CMD=cmd
@@ -619,7 +630,7 @@ function env.eval_line(line,exec)
 
     --print('Command:',cmd,table.concat (args,','))
     rest=subsystem_prefix=="" and rest:gsub("["..env.END_MARKS[1].."%s]+$","") or rest
-    local args=env.parse_args(cmd,rest)
+    local args=env.parse_args(cmd,rest,true)
 
     if exec~=false then
         env.exec_command(cmd,args,local_stack)

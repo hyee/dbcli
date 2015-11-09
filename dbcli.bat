@@ -14,16 +14,18 @@ If not exist "%TNS_ADM%\tnsnames.ora" if defined ORACLE_HOME (set TNS_ADM=%ORACL
 IF not exist "%JRE_HOME%\java.exe" if exist "%JRE_HOME%\bin\java.exe" (set JRE_HOME=%JRE_HOME%\bin) else (set JRE_HOME=.\jre\bin)
 SET PATH=%JRE_HOME%;%EXT_PATH%;%PATH%
 
-COLOR %CONSOLE_COLOR%
 if defined ANSICON_CMD (
    SET ANSICON_EXC=nvd3d9wrap.dll;nvd3d9wrapx.dll
    SET ANSICON_DEF=%CONSOLE_COLOR%
-   "%JRE_HOME%\java.exe" -version 2>&1 |findstr /i "64-bit" >nul && (%ANSICON_CMD% -m%CONSOLE_COLOR% -p)||(.\bin\ansiconx86.exe -m%CONSOLE_COLOR% -p >nul||%ANSICON_CMD% -m%CONSOLE_COLOR% -p)
+   echo %PROCESSOR_ARCHITECTURE%|findstr /i "64" >nul ||("%JRE_HOME%\java.exe" -version 2>&1 |findstr /i "64-bit" >nul)||(set ANSICON_CMD=.\bin\ansiconx86.exe)
 )
+
+if defined ANSICON_CMD (%ANSICON_CMD% -m%CONSOLE_COLOR% -p)
 
 rem unpack jar files for the first use
 for /r %%i in (*.pack.gz) do (
   set "var=%%i" &set "str=!var:@=!"
+  echo Unpacking %%i to jar file for the first use...
   unpack200 -q -r "%%i" "!str:~0,-8!"
 )
 
