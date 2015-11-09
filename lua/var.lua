@@ -29,7 +29,7 @@ end
 
 function var.get_input(name)
     local res = var.inputs[name:upper()]
-    return res=='' and nil or res 
+    return res==env.db_core.NOT_ASSIGNED and nil or res 
 end
 
 function var.import_context(global,input,output)
@@ -125,7 +125,7 @@ local function update_text(item,pos,params)
     local count=1
     local function repl(s,s2,s3)
         local v,s=s2:upper(),s..s2..s3
-        v=params[v] or var.inputs[v] or var.global_context[v] or s
+        v=params[v] or var.get_input(v) or var.global_context[v] or s
         if v~=s then 
             count=count+1 
             env.log_debug("var",s,'==>',v==nil and "<nil>" or v=="" and '<empty>' or tostring(v))
@@ -170,7 +170,7 @@ function var.after_db_exec(item)
     for k,v in pairs(var.outputs) do
         if v and k:upper()==k and args[k] and args[k]~=v then
             var.inputs[k],var.outputs[k]=args[k],nil
-            if args[k]~='' then result[k]=args[k] end
+            if args[k]~=env.db_core.NOT_ASSIGNED then result[k]=args[k] end
         end
     end
     var.current_db=db

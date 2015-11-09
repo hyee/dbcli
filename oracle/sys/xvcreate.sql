@@ -7,7 +7,7 @@ BEGIN
             target_user VARCHAR2(30) := 'SELECT_CATALOG_ROLE'; --Change target grantee here
         BEGIN
             dbms_output.enable(NULL);
-            FOR r IN (SELECT * FROM v$fixed_table WHERE NAME LIKE 'X$%' AND TYPE = 'TABLE' AND TABLE_NUM<65536) LOOP
+            FOR r IN (SELECT * FROM v$fixed_table WHERE NAME LIKE 'X$%' AND TYPE = 'TABLE') LOOP
                 BEGIN
                     EXECUTE IMMEDIATE 'create or replace view SYS.XV' || substr(r.name,2,28) || ' AS SELECT * FROM SYS.' || r.name;
                     EXECUTE IMMEDIATE 'grant select on SYS.XV' || substr(r.name,2,28) || ' TO ' || target_user;

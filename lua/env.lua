@@ -522,12 +522,13 @@ function env.parse_args(cmd,rest,is_cmd)
 
             if count ~= #args then
                 count=#args
-                local is_multi_cmd=is_cmd==true and args[count] and _CMDS[args[count]:upper()]
+                local name=args[count]:upper()
+                local is_multi_cmd=is_cmd==true and _CMDS[name] and _CMDS[name].MULTI
                 if count>=arg_count-2 or is_multi_cmd then--the last parameter
                     piece=rest:sub(i+1):gsub("^(%s+)",""):gsub('^"(.*)"$','%1')
-                    if is_multi_cmd and is_multi_cmd.ARGS==1 then
+                    if is_multi_cmd and _CMDS[name].ARGS==1 then
                         args[count],piece=args[count]..' '..piece,''
-                    else        
+                    else
                         args[count+1],piece=piece,''
                     end
                     break
@@ -553,7 +554,7 @@ end
 
 function env.force_end_input()
     if curr_stmt then
-        local stmt={multi_cmd,env.parse_args(multi_cmd,curr_stmt)}
+        local stmt={multi_cmd,env.parse_args(multi_cmd,curr_stmt,true)}
         multi_cmd,curr_stmt=nil,nil
         env.CURRENT_PROMPT=env.PRI_PROMPT
         if exec~=false then

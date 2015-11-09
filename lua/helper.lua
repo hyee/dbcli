@@ -140,7 +140,7 @@ function helper.helper(cmd,...)
     local flag=(cmd=="-a" or cmd=="-A") and 1 or 0
        table.insert(rows,{"Command","Abbr.","Max Args"})
        if flag==1 then
-           table.append(rows[#rows],"Multi-lines?","Source")
+           table.append(rows[#rows],"Cross-lines?","Source")
        end
        table.insert(rows[#rows],"Decription")
     for k,v in pairs(_CMDS) do
