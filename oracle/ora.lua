@@ -56,7 +56,10 @@ function ora:validate_accessable(name,options,values)
     return default
 end
 
+local cache_obj={}
 function db:check_obj(obj_name)
+    local obj=obj_name and obj_name:upper()
+    if obj and cache_obj[obj] then return cache_obj[obj] end
     db.C.ora:run_script('_find_object',obj_name,1)
     local args={
         target=obj_name,
@@ -65,12 +68,19 @@ function db:check_obj(obj_name)
         object_name=env.var.get_input('OBJECT_NAME'),
         object_subname=env.var.get_input('OBJECT_SUBNAME'),
         object_id=env.var.get_input('OBJECT_ID')}
+    if args.owner=='SYS' then
+        local full_name=table.concat({args.owner,args.object_name,args.object_subname},'.')
+        cache_obj[obj],cache_obj[args.object_name],cache_obj[full_name]=args,args,args
+        args.alias_list={obj,full_name,args.object_name}
+    end
     return args and args.object_id and args.object_id~='' and args
 end
 
 function db:check_access(obj_name,...)
+    local o=obj_name and obj_name:upper()
     local obj=self:check_obj(obj_name,...)
     if not obj or not obj.object_id then return false end
+    if cache_obj[o] and cache_obj[o].accessible then return cache_obj[o].accessible==1 and true or false end
     obj.count='#NUMBER'
     self:internal_call([[
         DECLARE
@@ -102,8 +112,19 @@ function db:check_access(obj_name,...)
             :count := x;
         END;
     ]],obj)
-
+    if cache_obj[o] then
+        local value=obj.count==1 and 1 or 0
+        for k,v in ipairs(cache_obj[o].alias_list) do cache_obj[v].accessible=value end
+    end
     return obj.count==1 and true or false;
+end
+
+function ora.onreset()
+    cache_obj={}
+end
+
+function ora.onload()
+    env.event.snoop("AFTER_ORACLE_CONNECT",ora.onreset)
 end
 
 return ora.new()

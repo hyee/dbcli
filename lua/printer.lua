@@ -1,4 +1,4 @@
-local env,select,table=env,select,table
+local env,select,table,pcall=env,select,table,pcall
 local event
 local writer,reader=writer,reader
 local out=writer

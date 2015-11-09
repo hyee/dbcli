@@ -1,7 +1,9 @@
 local db,cfg=env.oracle,env.set
-local function explain(fmt,sql)
+local xplan={}
+local default_fmt,e10053="ALLSTATS ALL -PROJECTION OUTLINE REMOTE"
+function xplan.explain(fmt,sql)
     local ora=db.C.ora
-    local default_fmt,e10053="ALLSTATS ALL -PROJECTION OUTLINE REMOTE"
+    
     if not fmt then return end
     if fmt:sub(1,1)=='-' then
         if not sql then return end
@@ -14,6 +16,7 @@ local function explain(fmt,sql)
         sql=fmt..(not sql and "" or " "..sql)
         fmt=default_fmt
     end
+    sql=sql:gsub(env.END_MARKS[1]..'$',''):gsub(env.END_MARKS[2]..'$','')
 
     if not sql:gsub("[\n\r]",""):match('(%s)') then
         sql=sql:gsub("[\n\r]","")
@@ -37,8 +40,7 @@ local function explain(fmt,sql)
           FROM   (SELECT id, parent_id, plan_id, dense_rank() OVER(ORDER BY plan_id DESC) seq FROM plan_table)
           WHERE  seq = 1
           ORDER  BY id),
-        qry AS
-         (SELECT DISTINCT PLAN_id FROM sql_plan_data),
+        qry AS (SELECT DISTINCT PLAN_id FROM sql_plan_data),
         hierarchy_data AS
          (SELECT id, parent_id
           FROM   sql_plan_data
@@ -109,5 +111,19 @@ local function explain(fmt,sql)
         oracle.C.tracefile.get_trace('default')
     end
 end
-env.set_command(nil,{"XPLAIN","XPLAN"},"Explain SQL execution plan. Usage: xplan [-format|-10053] <DML statement|SQL ID>",explain,true,3)
-return explain
+
+function xplan.onload()
+    local help=[[
+    Explain SQL execution plan. Usage: xplan [-<format>|-10053] <SQL statement|SQL ID>
+    Options:
+        -<format>: Refer to the 'format' field in the document of 'dbms_xplan'.
+                   Default is ']]..default_fmt..[['
+        -10053   : Generate the 10053 trace file after displaying the execution plan
+    Parameters:
+        <SQL Statement>: SELECT/DELETE/UPDATE/MERGE/etc that can produce the execution plan
+        <SQL ID>       : The SQL ID that can be found in SQL area or AWR history
+    ]]
+    env.set_command(nil,{"XPLAIN","XPLAN"},help,xplan.explain,'__SMART_PARSE__',3,true)
+end
+
+return xplan

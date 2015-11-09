@@ -705,7 +705,7 @@ end
 function db_core:sql2file(filename,sql,method,ext,...)
     local clock,counter,result
     if sql then
-        sql=type(sql)=="string" and env.var.get_input[sql:upper()] or sql
+        sql=type(sql)=="string" and env.var.get_input(sql:upper()) or sql
         if type(sql)~='string' then
             env.checkerr(not sql:isClosed(),"Target ResultSet is closed!")
             result=sql
