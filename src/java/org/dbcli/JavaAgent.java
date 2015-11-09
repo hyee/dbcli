@@ -104,7 +104,7 @@ public class JavaAgent implements ClassFileTransformer {
                 c = (domain == null ? Class.forName(className.replace("/", ".")).getProtectionDomain() : domain).getCodeSource();
                 if (c == null) throw e;
             } catch (Exception e1) {
-                if (className != null && !className.startsWith("sun/reflect"))
+                if (className != null && !className.startsWith("sun/reflect") && !className.startsWith("com/sun/proxy"))
                     System.out.println("Cannot find class " + className);
                 return null;
             }

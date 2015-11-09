@@ -77,6 +77,15 @@ Below are some common use of the utility:<br>
     7. 'q' or CTRL + D or CTRL + C to abort running command
     8. "help" or "help -a" to see other available commands.
 
+Command Types
+-----------------------
+The command rules is similar to SQL*Plus:
+* DDL commands that related to source code(`create trigger/package/function/procedure/type`) are cross-line commands and should be end with `/` in a stand-alone line.
+* Other DML,DDL,DCL commands are also cross-line commands that end with `;`, or end with `/` in a stand-alone line.
+* Apart from the above commands, most of other commands are single line command and will be executed after the `enter` key is pressed.
+
+Type `help -a` and refer to the `Multi-lines` field for the type of each command. 
+
 References
 -----------------------
 The project depends on some binary files of open-source projects, the binaries have been included into this project.
