@@ -1,4 +1,4 @@
-local env,print=env,print
+local env=env
 local dirs={"lib","cache","data"}
 local init={
     module_list={

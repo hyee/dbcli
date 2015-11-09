@@ -1,13 +1,14 @@
-local java,env,table,math,loader=java,env,table,math,loader
+local java,env,table,math,loader,pcall=java,env,table,math,loader,pcall
 local cfg,grid,bit,string=env.set,env.grid,env.bit,env.string
 local read=reader
 local event=env.event and env.event.callback or nil
-
-
+local db_core=env.class()
 local db_Types={}
+
+db_core.NOT_ASSIGNED='__NOT_ASSIGNED__'
 function db_Types:set(typeName,value,conn)
     local typ=self[typeName]
-    if value==nil or value=='' then
+    if value==nil or value==db_core.NOT_ASSIGNED then
         return 'setNull',typ.id
     else
         return typ.setter,typ.handler and typ.handler(value,'set',conn) or value
@@ -264,7 +265,7 @@ function ResultSet:print(res,conn,feed)
     if feed ~= false and feedflag ~= "off" then print((rows-1) .. ' rows returned.\n') end
 end
 
-local db_core=env.class()
+
 db_core.db_types   = db_Types
 db_core.feed_list={
     UPDATE  ="%d rows updated",
@@ -372,7 +373,7 @@ function db_core:parse(sql,params,prefix,prep)
                 args={db_Types:set(typ,v)}
             elseif v:sub(1,1)=="#" then
                 typ=v:upper():sub(2)
-                params[k]={'#',{counter},typ,v}
+                params[k]={'#',{counter},typ}
                 if not db_Types[typ] then
                     env.raise("Cannot find '"..typ.."' in java.sql.Types!")
                 end
@@ -385,7 +386,7 @@ function db_core:parse(sql,params,prefix,prep)
             p1[#p1+1]=args
             return ':'..counter
         end)
-    local res
+
     if not prep then prep=self:check_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007) end
 
     self:check_params(sql,prep,p1,params)
@@ -394,25 +395,32 @@ function db_core:parse(sql,params,prefix,prep)
     local param_count=#p1
     if param_count==0 then return prep,sql,params end
     local checkerr=pcall(meta.getParameterMode,meta,1)
+
+    local method,typeid,value,varname,typename=1,2,2,3,4
     if not checkerr then
         for k,v in ipairs(p1) do
-            prep[v[1]](prep,k,v[2])
+            prep[v[method]](prep,k,v[value])
         end
     else
         for i=1,param_count do
-            local mode=meta:getParameterMode(counter)
-            local v,param_value=p1[i],params[p1[i][3]]
+            local mode=meta:getParameterMode(i)
+            local v,param_name,param_value=p1[i],p1[i][varname],params[p1[i][varname]]
             if mode<=2 then
-                prep[db_Types[p1[i][4]].setter](prep,i,type(param_value)=="table" and param_value[4] or param_value)
+                --print(db_Types[p1[i][4]].setter,i,type(param_value)=="table" and param_value[4] or param_value)
+                prep[p1[i][method]](prep,i,p1[i][value])
             end
             --output parameter
             if mode>=2 then
                 if type(param_value)~='table' then
-                    params[p1[i][3]]={'#',{counter},typename,param_value}
+                    params[param_name]={'#',{i},p1[i][typename],param_value}
                 else
-                    table.insert(params[p1[i][3]][2],counter)
+                    local exists
+                    for _,idx in ipars(param_value) do 
+                        if idx==i then exists=idx end
+                    end
+                    if not exists then table.insert(params[param_name][2],i) end
                 end
-                prep['registerOutParameter'](prep,i,db_Types[typename].id)
+                prep[p1[i][1]](prep,i,p1[i][typeid])
             end
         end
     end
@@ -473,17 +481,18 @@ function db_core:exec(sql,args)
     local is_query=self:check_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
     self.current_stmt=nil
     --is_query=prep:execute()
+    local is_output,index,typename=1,2,3
     for k,v in pairs(params) do
-        if type(v) == "table" and v[1] == "#"  then
-            if type(v[2]) == "table" then
+        if type(v) == "table" and v[is_output] == "#"  then
+            if type(v[index]) == "table" then
                 local res
-                for _,key in ipairs(v[2]) do
-                    local res1=db_Types:get(key,v[3],prep,self.conn) or res
+                for _,idx in ipairs(v[index]) do
+                    local res1=db_Types:get(idx,v[typename],prep,self.conn) or res
                     if res1~=nil then res=res1 end
                 end
-                params[k]=res or ''
+                params[k]=res or db_core.NOT_ASSIGNED
             else
-                params[k]=db_Types:get(v[2],v[3],prep,self.conn) or ''
+                params[k]=db_Types:get(v[index],v[typename],prep,self.conn) or db_core.NOT_ASSIGNED
             end
         end
     end
@@ -508,7 +517,7 @@ function db_core:exec(sql,args)
     if event then event("AFTER_DB_EXEC",{self,sql,args,result}) end
     
     for k,v in pairs(args) do
-        if v=="" then args[k]=nil end
+        if v==db_core.NOT_ASSIGNED then args[k]=nil end
     end
     return #result==1 and result[1] or result
 end

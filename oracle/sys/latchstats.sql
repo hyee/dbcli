@@ -47,7 +47,7 @@ BEGIN
     SELECT MAX(addr)
     INTO   laddr
     FROM   (SELECT addr, NAME FROM v$latch UNION ALL SELECT addr, NAME FROM v$latch_children)
-    WHERE  addr = HEXTORAW(:V1);
+    WHERE  addr = HEXTORAW(:V1) OR name=upper(:V1);
 
     IF laddr IS NULL THEN
         dbms_output.put_line('Cannot find target latch, usage: latchstats <address|latch_name>');

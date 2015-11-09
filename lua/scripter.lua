@@ -1,5 +1,5 @@
 local env=env
-local grid,cfg=env.grid,env.set
+local grid,cfg,db_core=env.grid,env.set,env.db_core
 local ARGS_COUNT=20
 
 local scripter=env.class()
@@ -137,7 +137,7 @@ function scripter:parse_args(sql,args,print_args)
 
     --Start to assign template value to args
     for i=1,ARGS_COUNT do
-        args[i],args[tostring(i)],args["V"..i]=nil,nil,args["V"..i] or args[i] or args[tostring(i)] or ""
+        args[i],args[tostring(i)],args["V"..i]=nil,nil,args["V"..i] or args[i] or args[tostring(i)] or db_core.NOT_ASSIGNED
     end
 
     local arg1,ary={},{}
@@ -175,12 +175,12 @@ function scripter:parse_args(sql,args,print_args)
         if arg1[param] then
             table.insert(ary,i,arg1[param])
         end
-        if ary[i]=="." then ary[i]="" end
-        setvalue(param,ary[i] or "")
+        if ary[i]=="." then ary[i]=db_core.NOT_ASSIGNED end
+        setvalue(param,ary[i] or db_core.NOT_ASSIGNED)
         local option=args[param]:upper()
         local template=templates[param]
-        if args[param]=="" and template and not arg1[param] then
-            setvalue(param,template[template['@default']] or "",template['@default'])
+        if args[param]==db_core.NOT_ASSIGNED and template and not arg1[param] then
+            setvalue(param,template[template['@default']] or db_core.NOT_ASSIGNED,template['@default'])
             template['@choose']=template['@default']
         else
             local idx,rest=option:match("^([%w_]+)(.*)$")
@@ -328,7 +328,7 @@ function scripter:get_script(cmd,args,print_args)
     elseif self.cmdlist[cmd] then
         file=self.cmdlist[cmd].path
     end
-    env.checkerr(file,'Cannot find this script under "'..self.short_dir..'"')
+    env.checkerr(file,'Cannot find script "'..cmd..'" under folder "'..self.short_dir..'".')
 
     local f=io.open(file)
     env.checkerr(f,"Cannot find this script!")
