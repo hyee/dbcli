@@ -1,5 +1,5 @@
 local env=env
-local grid,snoop,cfg=env.grid,env.event.snoop,env.set
+local grid,snoop,cfg,db_core=env.grid,env.event.snoop,env.set,env.db_core
 local var=env.class()
 var.inputs,var.outputs,var.desc,var.global_context={},{},{},{}
 
@@ -29,7 +29,7 @@ end
 
 function var.get_input(name)
     local res = var.inputs[name:upper()]
-    return res==env.db_core.NOT_ASSIGNED and nil or res 
+    return res~=db_core.NOT_ASSIGNED and res or nil
 end
 
 function var.import_context(global,input,output)
@@ -125,8 +125,9 @@ local function update_text(item,pos,params)
     local count=1
     local function repl(s,s2,s3)
         local v,s=s2:upper(),s..s2..s3
-        v=params[v] or var.get_input(v) or var.global_context[v] or s
-        if v~=s then 
+        v=params[v] or var.inputs[v] or var.global_context[v] or s
+        if v~=s then
+            if v==db_core.NOT_ASSIGNED then v='' end
             count=count+1 
             env.log_debug("var",s,'==>',v==nil and "<nil>" or v=="" and '<empty>' or tostring(v))
         end
@@ -157,6 +158,7 @@ function var.before_db_exec(item)
 
     sql=var.inputs[sql:upper()] or var.global_context[sql:upper()] or sql
     if sql ~= item[2] then
+        if sql==db_core.NOT_ASSIGNED then sql='' end
         item[2]=sql
         return
     end

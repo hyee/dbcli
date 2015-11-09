@@ -362,7 +362,7 @@ function db_core:parse(sql,params,prefix,prep)
             counter=counter+1;
             local args,typ={}
             if type(v) =="table" then
-                table.insert(v[2],counter)
+                table.insert(params[k][2],counter)
                 typ=v[3]
                 args={'registerOutParameter',db_Types[v[3]].id}
             elseif type(v)=="number" then
@@ -391,38 +391,10 @@ function db_core:parse(sql,params,prefix,prep)
 
     self:check_params(sql,prep,p1,params)
 
-    local meta=prep:getParameterMetaData()
-    local param_count=#p1
-    if param_count==0 then return prep,sql,params end
-    local checkerr=pcall(meta.getParameterMode,meta,1)
-
+    if #p1==0 then return prep,sql,params end
     local method,typeid,value,varname,typename=1,2,2,3,4
-    if not checkerr then
-        for k,v in ipairs(p1) do
-            prep[v[method]](prep,k,v[value])
-        end
-    else
-        for i=1,param_count do
-            local mode=meta:getParameterMode(i)
-            local v,param_name,param_value=p1[i],p1[i][varname],params[p1[i][varname]]
-            if mode<=2 then
-                --print(db_Types[p1[i][4]].setter,i,type(param_value)=="table" and param_value[4] or param_value)
-                prep[p1[i][method]](prep,i,p1[i][value])
-            end
-            --output parameter
-            if mode>=2 then
-                if type(param_value)~='table' then
-                    params[param_name]={'#',{i},p1[i][typename],param_value}
-                else
-                    local exists
-                    for _,idx in ipars(param_value) do 
-                        if idx==i then exists=idx end
-                    end
-                    if not exists then table.insert(params[param_name][2],i) end
-                end
-                prep[p1[i][1]](prep,i,p1[i][typeid])
-            end
-        end
+    for k,v in ipairs(p1) do
+        prep[v[method]](prep,k,v[value])
     end
     return prep,sql,params
 end
