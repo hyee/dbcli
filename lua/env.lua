@@ -596,6 +596,7 @@ function env.eval_line(line,exec)
                 end
             end
         end
+        if env.event then line=env.event.callback('BEFORE_EVAL',{line},1)[1] end
     end
 
     local done

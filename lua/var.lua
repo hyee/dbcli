@@ -122,6 +122,7 @@ end
 
 local function update_text(item,pos,params)
     if cfg.get("define")~='on' then return end
+    pos,params=pos or 1,params or {}
     local count=1
     local function repl(s,s2,s3)
         local v,s=s2:upper(),s..s2..s3
@@ -261,6 +262,7 @@ end
 function var.onload()
     snoop('BEFORE_DB_EXEC',var.before_db_exec)
     snoop('AFTER_DB_EXEC',var.after_db_exec)
+    snoop('BEFORE_EVAL',update_text)
     snoop('BEFORE_COMMAND',var.before_command)
     snoop("BEFORE_ROOT_COMMAND",var.capture_before_cmd)
     snoop("AFTER_ROOT_COMMAND",var.capture_after_cmd)

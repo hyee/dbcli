@@ -205,7 +205,7 @@ function oracle:parse(sql,params)
                         RAISE;
                 END;
             END;]]
-    elseif counter==3 then return self.super.parse(self,org_sql,params,':')
+    elseif counter>1 then return self.super.parse(self,org_sql,params,':')
     else org_sql=sql end
     local prep=java.cast(self.conn:prepareCall(sql,1003,1007),"oracle.jdbc.OracleCallableStatement")
     for k,v in pairs(p1) do

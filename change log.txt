@@ -1,4 +1,4 @@
-2015-11-09: * public: change the argument orders of 'snap', also some fixes
+2015-11-10: * public: change the argument orders of 'snap', also some fixes
             + oracle: new command 'ora topsegs'
             * oracle: show content of 'starttime','endtime' and 'instance' in title bar if corresponding variables changed
                       command type of 'xplan' can be single-line if not follow with SQL text(i.e.,sql_id)

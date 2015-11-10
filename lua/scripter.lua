@@ -284,6 +284,18 @@ function scripter:run_sql(sql,args,cmds)
     env.var.import_context(ary)
 end
 
+function scripter:trigger_interval(msg)
+    if not self.command_stack then return end
+    if msg=="START" then
+        print(self.command_index,1)
+        self.command_stack.marker=self.command_index
+    elseif msg=="RESET" and self.command_stack.marker then
+        self.command_index=self.command_stack.marker
+        print(self.command_index,2)
+    end
+end
+
+
 function scripter:get_script(cmd,args,print_args)
     if not self.cmdlist or cmd=="-r" or cmd=="-R" then
         self.cmdlist,self.extend_dirs=self:rehash(self.script_dir,self.ext_name),{}
