@@ -1,6 +1,4 @@
 local env=env
-local grid=env.oracle,env.grid
-local cfg=env.set
 
 local snap=env.class(env.snapper)
 function snap:ctor()
@@ -11,11 +9,14 @@ function snap:ctor()
 end
 
 function snap:before_exec_action()
+    --self.db:internal_call("BEGIN DBMS_FLASHBACK.ENABLE_AT_TIME(systimestamp);END;")
     if self.db:is_connect() then self.db:internal_call("ALTER SESSION SET ISOLATION_LEVEL=SERIALIZABLE") end
 end
 
 function snap:after_exec_action()
-    if self.db:is_connect() then self.db:internal_call("ALTER SESSION SET ISOLATION_LEVEL=READ COMMITTED") end
+    if self.db:is_connect() then 
+        self.db:internal_call("BEGIN COMMIT;EXECUTE IMMEDIATE 'ALTER SESSION SET ISOLATION_LEVEL=READ COMMITTED';COMMIT;END;") 
+    end
 end
 
 function snap:get_db_time()

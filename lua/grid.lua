@@ -266,8 +266,8 @@ function grid:add(rs)
         local csize =0
         if not colsize[k] then colsize[k] = {0,1} end
         if headind>0 and (type(v) == "number" or  self.printhead and self.colinfo and self.colinfo[k].is_number) then
-            if grid.digits<38 then
-                v=math.round(v,grid.digits)
+            if grid.digits<38 and tonumber(v) then
+                v=math.round(tonumber(v),grid.digits)
             end
             if tostring(v):find('e',1,true) then v=string.format('%99.38f',v):gsub(' ',''):gsub('%.?0+$','') end
             csize = #tostring(v)

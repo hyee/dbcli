@@ -226,14 +226,7 @@ function oracle:exec(sql,...)
     local result=self.super.exec(self,sql,args)
     if not bypass then 
         event("AFTER_ORACLE_EXEC",self,sql,args,result)
-        if type(result)=="number" and cfg.get("feed")=="on" then
-            local key=sql:match("(%w+)")
-            if self.feed_list[key] then
-                print(self.feed_list[key]:format(result)..".")
-            else
-                print("Statement completed.\n")
-            end
-        end
+        self.print_feed(sql,result)
     end
     return result
 end

@@ -87,6 +87,9 @@ function cfg.temp(name,value,backup)
     cfg[name].prebackup=backup
     cfg[name].value=value
     env.log_debug("set",name,value)
+    if env.event then
+        env.event.callback("ON_SETTING_CHANGED",name,value,cfg[name].org)
+    end
 end
 
 function cfg.set(name,value,backup,isdefault)

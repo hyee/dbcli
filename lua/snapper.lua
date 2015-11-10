@@ -1,4 +1,4 @@
-local env=env
+local env,pairs,ipairs,table,tonumber=env,pairs,ipairs,table,tonumber
 local sleep,math,cfg=env.sleep,env.math,env.set
 local cfg_backup
 
@@ -7,32 +7,11 @@ function snapper:ctor()
     self.command="snap"
     self.ext_name='snap'
     self.help_title='Calculate a period of db/session performance/waits. '
-    self.usage='[<interval>|begin|end> <name1[,name2...]] [args]'
+    self.usage='<name1>[,<name2>...] <interval>|BEGIN|END [args]'
 end
 
-function snapper:fetch(cmd,pos)
-    local row
-    local grp_idx,idx=cmd.grp_idx,{}
-    local counter
-    local rs=cmd['rs'..pos]
-    while true do
-        row=self.db.resultset:fetch(rs)
-        if not row then
-            cmd['rs'..pos]=nil
-            return coroutine.yield(cmd.name,0)
-        end
-        counter=0
-        for k,_ in pairs(grp_idx) do
-            counter=counter+1
-            idx[counter]=row[k] or ""
-        end
-        coroutine.yield(cmd.name,pos,table.concat(idx,'\1'),row)
-    end
-end
 
-function snapper:parse(name,args)
-    local txt,print_args,file
-    txt,args,print_args,file=self:get_script(name,args)
+function snapper:parse(name,txt,args,file)
     txt=loadstring(('return '..txt):gsub(self.comment,"",1))
 
     if not txt then
@@ -57,7 +36,7 @@ function snapper:parse(name,args)
     return cmd,args
 end
 
-function snapper:after_exec()
+function snapper:after_script()
     self.db:commit()
     cfg.restore(cfg_backup)
     self:trigger('after_exec_action')
@@ -67,67 +46,55 @@ function snapper:get_time()
     return self:trigger('get_db_time') or "unknown"
 end
 
-function snapper:exec(interval,typ,...)
+function snapper:fetch_result(rs)
+    local result={}
+    rs:setFetchSize(10000)
+    while true do
+        local row=self.db.resultset:fetch(rs)
+        if type(row)~='table' then break end
+        result[#result+1]=row
+    end
+    return result;
+end
+
+function snapper:run_sql(sql,args,cmds,files)
     local db,print_args=self.db
     cfg_backup=cfg.backup()
     cfg.set("feed","off")
     cfg.set("autocommit","off")
     cfg.set("digits",2)
+    if type(sql)~="table" then sql,args,cmds,files={sql},{args},{cmds},{files} end
 
-    if not self.cmdlist then
-        self.cmdlist=self:rehash(self.script_dir,'snap')
-    end
-
-    if not interval then
-        return env.helper.helper(self.command)
-    end
-
-    interval=interval:upper()
-
-    if interval:sub(1,1)=="-" then
-        return self:get_script(interval,{typ,...})
-    end
+    local interval=args[1].V1
 
     local begin_flag
-    if interval=="END" and snapper.start_time then
-        self:next_exec()
-        return;
-    elseif interval=="BEGIN" then
-        begin_flag=true
-    end
-
-    if not (begin_flag or tonumber(interval)) or not typ then
-        return print("please set the interval and names.")
-    end
-
-    if not db:is_connect() then
-        env.raise("database is not connected!")
-    end
-
-    local args={...}
-    for i=1,9 do
-        args["V"..i]=args[i] or ""
-    end
-
-    local cmds,cmd={}
-
-    for v in typ:gmatch("([^%s,]+)") do
-        v=v:upper()
-        if not self.cmdlist[v] then
-            return print("Error: Cannot find command :" .. v)
+    if interval then
+        interval=interval:upper()
+        if interval=="END" and self.start_time then
+            return self:next_exec()
+        elseif interval=="BEGIN" then
+            begin_flag=true
         end
-        cmd,args=self:parse(v,args)
-        if not cmd then return end
-        cmds[v]=cmd
     end
 
-
-    local start_time=self:get_time()
+    env.checkerr(begin_flag or tonumber(interval),'Uage: '..self.command..' <names> <interval>|BEGIN|END [args] ')
+    
+    env.checkerr(self.db:is_connect(),"Database is not connected!")
+    
+    self.cmds,self.args,self.start_time={},{},self:get_time()
     self:trigger('before_exec_action')
     local clock=os.clock()
-    for _,cmd in pairs(cmds) do cmd.rs2=db:exec(cmd.sql,args) end
+    
+    
+    for idx,text in ipairs(sql) do
+        for i =1,20 do
+            args[idx]['V'..i]=args[idx]['V'..(i+1)]
+        end
+        local cmd,arg=self:parse(cmds[idx],sql[idx],args[idx],files[idx])
+        self.cmds[cmds[idx]],self.args[cmds[idx]]=cmd,arg
+        cmd.rs2=self:fetch_result(db:exec(cmd.sql,arg))
+    end
     db:commit()
-    self.cmds,self.start_time,self.args=cmds,start_time,args
 
     if not begin_flag then
         sleep(interval+clock-os.clock()-0.1)
@@ -138,110 +105,88 @@ end
 function snapper:next_exec()
     local cmds,args,start_time,db=self.cmds,self.args,self.start_time,self.db
     self.start_time=nil
-
+    --self:trigger('before_exec_action')
     local end_time=self:get_time()
-    for _,cmd in pairs(cmds) do
-        cmd.rs1=db:exec(cmd.sql,args)
+    for name,cmd in pairs(cmds) do
+        cmd.rs1=self:fetch_result(db:exec(cmd.sql,args[name]))
     end
-    db:commit()
-    self:trigger('after_exec_action')
+    
     local result={}
-    local cos={}
     for name,cmd in pairs(cmds) do
-        cmd.agg_idx,cmd.grp_idx={},{}
-        cmd.title=db.resultset:fetch(cmd.rs1),db.resultset:fetch(cmd.rs2)
-        for i,k in ipairs(cmd.title) do
+        agg_idx,grp_idx={},{}
+        local title=cmd.rs1[1]
+        for i,k in ipairs(title) do
             if cmd.agg_cols:find(','..k:upper()..',',1,true) then
-                cmd.agg_idx[i]=true
-                cmd.title[i]='*'..k
+                agg_idx[i]=true
+                title[i]='*'..k
             elseif not cmd.grp_cols or cmd.grp_cols:find(','..k:upper()..',',1,true) then
-                cmd.grp_idx[i]=true
+                grp_idx[i]=true
             end
         end
-        result[name]={}
+        result,rows={},{}
         cmd.grid=grid.new()
-        cmd.grid:add(cmd.title)
-        table.insert(cos,coroutine.create(function() self:fetch(cmd,1) end))
-        table.insert(cos,coroutine.create(function() self:fetch(cmd,2) end))
-    end
+        cmd.grid:add(title)
 
-    while #cos>0 do
-        local succ,rtn,pos,key,value
-        for k=#cos,1,-1 do
-            succ,name,pos,key,row=coroutine.resume(cos[k])
+        local idx,counter={},0
+        local function make_index(row)
+            counter=0        
+            for k,_ in pairs(grp_idx) do
+                counter=counter+1
+                idx[counter]=row[k] or ""
+            end
+            return table.concat(idx,'\1\2\1')
+        end
 
-            local agg_idx=name and cmds[name].agg_idx
-            if not row then
-                --print(succ,name,pos,key,row,cmds.rs1,cmds.rs2)
-                table.remove(cos,k)
+        table.remove(cmd.rs1,1)
+        table.remove(cmd.rs2,1)
+        for _,row in ipairs(cmd.rs1) do
+            local index=make_index(row)
+            local data=result[index]
+            if not data then
+                result[index]=row
+                rows[#rows+1]=row
+                result[index].rownum=#rows
             else
-                if not result[name][key] then result[name][key]={} end
-                value=result[name][key]
-                if not value[pos] then
-                    value[pos]=row
-                    if pos==1 then
-                        cmds[name].grid:add(row)
-                        value.indx=#cmds[name].grid.data
+                for k,_ in pairs(agg_idx) do
+                    if tonumber(data[k]) or tonumber(row[k]) then
+                        data[k]=math.round((tonumber(data[k]) or 0)+(tonumber(row[k]) or 0),2)
                     end
-                else
-                    for k,_ in pairs(agg_idx) do
-                        if tonumber(value[pos][k]) or tonumber(row[k]) then
-                            value[pos][k]= math.round((tonumber(value[pos][k]) or 0)+(tonumber(row[k]) or 0),2)
-                        end
-                    end
-                end
-                if value[1] and value[2] then
-                    local counter=0
-                    for k,_ in pairs(agg_idx) do
-                        if tonumber(value[1][k]) and value[2][k] then
-                            value[1][k]=math.round(value[1][k]-value[2][k],2)
-                            if value[1][k]>0 then counter=1 end
-                        end
-                    end
-
-                    --if counter==0 then cmds[name].grid.data[value.indx]=nil end
-                    result[name][key][2]=nil
                 end
             end
         end
-    end
 
-
-    for name,cmd in pairs(cmds) do
-        local idx=""
-
-        local counter
-        local data=cmd.grid.data
-
-        for i=#data,2,-1 do
-            counter=0
-            for j,_ in pairs(cmd.agg_idx) do
-                if data[i][j]>0 then
-                    counter=1
-                    break
+        for _,row in ipairs(cmd.rs2) do
+            local index=make_index(row)
+            local data=result[index]
+            if data then
+                for k,_ in pairs(agg_idx) do
+                    if tonumber(data[k]) and tonumber(row[k]) then
+                        data[k]=math.round(tonumber(data[k])-tonumber(row[k]),2)
+                    end
                 end
             end
-            --if dalta value is 0, then remove the data
-            --if counter==0 then table.remove(data,i) end
         end
 
-
-        for i,_ in pairs(cmd.agg_idx) do
-            idx=idx..(-i)..','
-            if cmd.set_ratio~='off' then cmd.grid:add_calc_ratio(i) end
+        if #rows>0 then 
+            for i=1,#rows do cmd.grid:add(rows[i]) end
+            idx=''
+            for i,_ in pairs(agg_idx) do
+                idx=idx..(-i)..','
+                if cmd.set_ratio~='off' then cmd.grid:add_calc_ratio(i) end
+            end
+            cmd.grid:sort(idx,true)
         end
-        cmd.grid:sort(idx,true)
         local title=("\n"..name..": From "..start_time.." to "..end_time..":\n"):format(name)
         print(title..string.rep("=",title:len()-2))
         cmd.grid:print(nil,nil,nil,cmd.max_rows or cfg.get(self.command.."rows"))
     end
+    self.db:commit()
+    self:trigger('after_exec_action')
 end
 
 
 function snapper:__onload()
     cfg.init(self.command.."rows","50",nil,"db.core","Number of max records for the '"..self.command.."' command result","5 - 3000")
-    env.remove_command(self.command)
-    env.set_command(self,self.command,self.helper,{self.exec,self.after_exec},false,21)
 end
 
 return snapper

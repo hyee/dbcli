@@ -36,7 +36,7 @@ output.stmt=marker..[[/*INTERNAL_DBCLI_CMD*/
                     END IF;
                 END LOOP;
             END IF;
-            :buff := l_buffer;
+            :buff:= l_buffer;
             :txn := dbms_transaction.local_transaction_id;
             :lob := l_lob;
         EXCEPTION WHEN OTHERS THEN NULL;

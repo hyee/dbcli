@@ -172,7 +172,9 @@ function var.after_db_exec(item)
     for k,v in pairs(var.outputs) do
         if v and k:upper()==k and args[k] and args[k]~=v then
             var.inputs[k],var.outputs[k]=args[k],nil
-            if args[k]~=env.db_core.NOT_ASSIGNED then result[k]=args[k] end
+            if args[k]~=db_core.NOT_ASSIGNED then 
+                result[k]=args[k]
+            end
         end
     end
     var.current_db=db
@@ -231,6 +233,7 @@ function var.save(name,file)
     name=name:upper()
     local obj=var.inputs[name]
     env.checkerr(obj,'Target variable[%s] does not exist!',name)
+    if not var.get_input(name) then return end
     if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
         return print("Unsupported variable '%s'!", name);
     end

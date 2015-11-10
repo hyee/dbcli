@@ -34,15 +34,26 @@ function extvars.on_before_parse(item)
     return item
 end
 
+function extvars.set_title(name,value,orig)
+    local get=env.set.get
+    if name~="STARTTIME" and name~="ENDTIME" and name~="INSTANCE" then return end
+    local title=table.concat({get("INSTANCE")>-1   and "Inst="..get("INSTANCE") or "",
+                              get("STARTTIME")~='' and "Start="..get("STARTTIME") or "",
+                              get("ENDTIME")~=''   and "End="..get("ENDTIME") or ""},"  ")
+    title=title:trim()
+    env.set_title(title~='' and "Filter: ["..title.."]" or nil)
+end
+
 function extvars.check_time(name,value)
     if not value or value=="" then return "" end
     print("Time set as",db:check_date(value,'YYMMDDHH24MISS'))
-    return value
+    return value:trim()
 end
 
 function extvars.onload()
     event.snoop('BEFORE_DB_EXEC',extvars.on_before_parse,nil,1)
     event.snoop('BEFORE_ORACLE_EXEC',extvars.on_before_db_exec)
+    event.snoop('ON_SETTING_CHANGED',extvars.set_title)
     cfg.init("instance","-1",nil,"oracle","Auto-limit the inst_id of gv$/x$ tables. -1: unlimited, 0: current, >0: specific instance","-1 - 99")
     cfg.init("starttime","",extvars.check_time,"oracle","Specify the start time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
     cfg.init("endtime","",extvars.check_time,"oracle","Specify the end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")

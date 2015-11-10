@@ -5,7 +5,7 @@ local event=env.event and env.event.callback or nil
 local db_core=env.class()
 local db_Types={}
 
-db_core.NOT_ASSIGNED='__NOT_ASSIGNED__'
+db_core.NOT_ASSIGNED='__NO_ASSIGNMENT__'
 function db_Types:set(typeName,value,conn)
     local typ=self[typeName]
     if value==nil or value==db_core.NOT_ASSIGNED then
@@ -235,7 +235,7 @@ function ResultSet:rows(rs,conn)
     return sets
 end
 
-function ResultSet:print(res,conn,feed)
+function ResultSet:print(res,conn)
     local result,hdl={},nil
     if res:isClosed() then
         return
@@ -261,8 +261,8 @@ function ResultSet:print(res,conn,feed)
         end
     end
     grid.print(hdl or result)
+    db_core.print_feed("SELECT",rows-1)
     print("")
-    if feed ~= false and feedflag ~= "off" then print((rows-1) .. ' rows returned.\n') end
 end
 
 
@@ -271,14 +271,34 @@ db_core.feed_list={
     UPDATE  ="%d rows updated",
     INSERT  ="%d rows inserted",
     DELETE  ="%d rows deleted",
-    MERGE   ="%d rows merge",
-    DROP    ="Object dropped",
-    CREATE  ="Object created",
+    SELECT  ="%d rows returned",
+    MERGE   ="%d rows merged",
+    ALTER   ="%s altered",
+    DROP    ="%s dropped",
+    CREATE  ="%s created",
     COMMIT  ="Committed",
     ROLLBACK="Rollbacked",
     GRANT   ="Granted",
     REVOKE  ="Revoked",
 }
+
+function db_core.print_feed(sql,result)
+    local args=env.parse_args(3,sql)
+    if cfg.get("feed")~="on" then return end
+    local cmd,obj=args[1]:upper(),(args[2] or ""):initcap()
+    local feed=db_core.feed_list[cmd] 
+    if feed then
+        feed='\n'..feed..'.\n'
+        if feed:find('%d',1,true) then
+            if type(result)=="number" then print(feed:format(result)) end
+            return
+        else
+            return print(feed:format(obj))
+        end
+    end
+    if type(result)=="number" and result>-1 then return print('\n'..result.." rows impacted.") end
+    return print('\nStatement completed.')
+end
 
 function db_core:ctor()
     self.resultset  = ResultSet.new()
@@ -469,28 +489,31 @@ function db_core:exec(sql,args)
         end
     end
 
+    local outputs={}
     for k,v in pairs(args) do
         if type(v)=="string" and v:sub(1,1)=="#" then
             args[k]=params[tostring(k):upper()]
+            outputs[k]=true
         end
     end
     --close statments
 
-    params=nil
+    local params1=nil
     local result={is_query and prep:getResultSet() or prep:getUpdateCount()}
 
     while true do
-        params,is_query=pcall(prep.getMoreResults,prep,2)
-        if not params or not is_query then break end
+        params1,is_query=pcall(prep.getMoreResults,prep,2)
+        if not params1 or not is_query then break end
         result[#result+1]=prep:getResultSet()
     end
 
     self:clearStatements()
     if event then event("AFTER_DB_EXEC",{self,sql,args,result}) end
     
-    for k,v in pairs(args) do
-        if v==db_core.NOT_ASSIGNED then args[k]=nil end
+    for k,v in pairs(outputs) do
+        if args[k]==db_core.NOT_ASSIGNED then args[k]=nil end
     end
+
     return #result==1 and result[1] or result
 end
 
@@ -514,9 +537,9 @@ function db_core:is_internal_call(sql)
     return sql and sql:find("INTERNAL_DBCLI_CMD",1,true) and true or false
 end
 
-function db_core:print_result(rs)
+function db_core:print_result(rs,sql)
     if type(rs)=='userdata' then
-        self.resultset:print(rs,self.conn)
+        return self.resultset:print(rs,self.conn)
     elseif type(rs)=='table' then
         for k,v in ipairs(rs) do
             if type(v)=='userdata' then
@@ -525,11 +548,9 @@ function db_core:print_result(rs)
                 print(v)
             end
         end
-    elseif v==-1 and cfg.get("feed")=="on" then
-        print('Statement Completed.')
-    elseif type(v)=="number" and cfg.get("feed")=="on" then
-        print(v..' Rows Impacted.')
+        return
     end
+    self.print_feed(sql,rs)
 end
 
 --the connection is a table that contain the connection properties

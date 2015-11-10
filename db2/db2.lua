@@ -141,7 +141,7 @@ function db2:command_call(sql,...)
     sql=event("BEFORE_DB2_EXEC",{self,sql,args}) [2]
     local result=self.super.exec(self,sql,{args})
     if not bypass then event("AFTER_DB2_EXEC",self,sql,args,result) end
-    self:print_result(result)
+    self:print_result(result,sql)
 end
 
 function db2:admin_cmd(cmd)

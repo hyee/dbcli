@@ -545,10 +545,6 @@ function env.parse_args(cmd,rest,is_cmd)
         end
     end
 
-    for i=#args,1,-1 do
-        if args[i]=="" then table.remove(args,i) end
-        break
-    end
     return args,cmd
 end
 
@@ -631,7 +627,7 @@ function env.eval_line(line,exec)
 
     --print('Command:',cmd,table.concat (args,','))
     rest=subsystem_prefix=="" and rest:gsub("["..env.END_MARKS[1].."%s]+$","") or rest
-    local args=env.parse_args(cmd,rest,true)
+    local args=env.parse_args(cmd,rest)
 
     if exec~=false then
         env.exec_command(cmd,args,local_stack)
