@@ -126,8 +126,8 @@ local function compare(a,b)
 end
 
 function math.round(num,digits)
-  digits=digits or 0
-  return math.floor(10^digits*num+0.5)/(10^digits)
+    digits=digits or 0
+    return math.floor(10^digits*num+0.5)/(10^digits)
 end
 
 function table.dump(tbl,indent,maxdep,tabs)

@@ -12,6 +12,7 @@ function scripter:ctor()
     self.ext_name='sql'
     self.help_title=""
     self.help_ind=0
+    self.db=env[env.CURRENT_DB]
 end
 
 function scripter:get_command()
@@ -33,7 +34,6 @@ function scripter:rehash(script_dir,ext_name)
     local cmdlist,pathlist={},{}
     local counter=0
     for k,v in ipairs(keylist) do
-        if script_dir:match("ssh") then print(table.dump(v)) end
         local desc=v[3] and v[3]:gsub("^%s*[\n\r#]+","") or ""
         desc=desc:gsub("%-%-%[%[(.*)%]%]%-%-",""):gsub("%-%-%[%[(.*)%-%-%]%]","")
         desc=desc:gsub("([\n\r]+%s*)%-%-","%1  ")
@@ -254,14 +254,16 @@ function scripter:parse_args(sql,args,print_args)
     return args
 end
 
-function scripter:run_sql(sql,args,print_args)
+function scripter:run_sql(sql,args,cmds)
+    if type(sql)=="table" then
+        for i=1,#sql do self:run_sql(sql[i],args[i],cmds[i]) end
+        return;
+    end
     if not self.db or not self.db.is_connect then
         env.raise("Database connection is not defined!")
     end
-
     env.checkerr(self.db:is_connect(),"Database is not connected!")
-
-    if print_args or not args then return end
+    
     --remove comment
     sql=sql:gsub(self.comment,"",1)
     sql=('\n'..sql):gsub("\n[\t ]*%-%-[^\n]*","")
@@ -291,11 +293,11 @@ function scripter:get_script(cmd,args,print_args)
         end
     end
 
-    if not cmd then
+    if not cmd or cmd:match('^%s*$') then
         return env.helper.helper(self:get_command())
     end
 
-    cmd=cmd:upper()
+    cmd=cmd:trim():upper()
 
     if cmd:sub(1,1)=='-' and args[1]=='@' and args[2] then
         args[2]='@'..args[2]
@@ -339,12 +341,19 @@ function scripter:get_script(cmd,args,print_args)
     return sql,args,print_args,file,cmd
 end
 
-function scripter:run_script(cmd,...)
-    local args,print_args,sql={...},false
-    sql,args,print_args=self:get_script(cmd,args,print_args)
-    if not args then return end
+function scripter:run_script(cmds,...)
+    local g_cmd,g_sql,g_args,g_files,index={},{},{},{},0
+    for cmd in (cmds or ""):gsub('%s',''):gsplit(',',true) do
+        local sql,args,print_args,file=self:get_script(cmd~='' and cmd or nil,{...},false)
+        if args and not print_args then
+            index=index+1
+            g_cmd[index],g_sql[index],g_args[index],g_files[index]=cmd,sql,args,file
+        end
+    end
+    if index==0 then return end
+    if index==1 then g_cmd,g_sql,g_args,g_files=g_cmd[1],g_sql[1],g_args[1],g_files[1] end
     --self._backup_context=env.var.backup_context()
-    self:run_sql(sql,args,print_args)
+    self:run_sql(g_sql,g_args,g_cmd,g_files)
 end
 
 function scripter:after_script()
