@@ -367,9 +367,10 @@ function env.checkerr(result,msg,...)
 end
 
 local writer=writer
+env.RUNNING_THREADS={}
 function env.exec_command(cmd,params)
     local result
-    local name=cmd:upper()
+    local name,theads=cmd:upper(),env.RUNNING_THREADS
     cmd=_CMDS[cmd]
     local stack=table.concat(params," ")
     if not cmd then
@@ -381,6 +382,13 @@ function env.exec_command(cmd,params)
     env.CURRENT_CMD=name
     local this,isMain=coroutine.running()
 
+    if not theads[this] then
+        theads[this],theads[#theads+1]=#theads+1,this
+    else
+        for i=theads[this]+1,#theads do 
+            theads[i],theads[theads[i]]=nil,nil
+        end
+    end
 
     local event=env.event and env.event.callback
     if event then
