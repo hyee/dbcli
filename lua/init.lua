@@ -165,7 +165,7 @@ function init.load_modules(list,tab,module_name)
             file:close();
             file=v
         end
-        local c,err=loadfile(file)
+        local c,err=loadfile(file,nil,nil,env)
         tab[n]=exec(c,err or env)
         modules[n]=tab[n]
     end

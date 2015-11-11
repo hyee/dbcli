@@ -379,7 +379,7 @@ function env.exec_command(cmd,params)
     push_history(stack)
     if not cmd.FUNC then return end
     env.CURRENT_CMD=name
-    local _,isMain=coroutine.running()
+    local this,isMain=coroutine.running()
 
 
     local event=env.event and env.event.callback

@@ -1,6 +1,9 @@
 local env,os=env,os
 local exec,sleep=env.eval_line,env.sleep
 local interval={}
+local stack={}
+
+
 function interval.itv(sec,count,target)
     env.checkerr(sec,'Invalid syntax! Usage: ITV <START [seconds]|END|OFF|seconds times command>')
     local cmd,sec,count=sec:upper(),tonumber(sec),tonumber(count)

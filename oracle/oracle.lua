@@ -146,67 +146,89 @@ end
 
 
 function oracle:parse(sql,params)
-    local p1,counter,index,org_sql={},0,0
+    local p1,p2,counter,index,org_sql={},{},0,0
 
     if cfg.get('SQLCACHESIZE') ~= self.MAX_CACHE_SIZE then
         self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     end
 
+
     org_sql,sql=sql,sql:gsub('%f[%w_%$:]:([%w_%$]+)',function(s)
         local k,s=s:upper(),':'..s
         local v=params[k]
-        if not v then return s end
+        local typ
+        if v==nil then return s end
         if p1[k] then return s:upper() end
 
-        local args={}
         if type(v) =="table" then
             return s
         elseif type(v)=="number" then
-            args={self.db_types:set('NUMBER',v)}
+            typ='NUMBER'
         elseif type(v)=="boolean" then
-            args={self.db_types:set('BOOLEAN',v)}
+            typ='BOOLEAN'
         elseif v:sub(1,1)=="#" then
-            local typ=v:upper():sub(2)
-            if not self.db_types[typ] then
-                env.raise("Cannot find '"..typ.."' in java.sql.Types!")
-            end
-            args={'#',self.db_types[typ].id}
+            typ,v=v:upper():sub(2),nil
+            env.checkerr(self.db_types[typ],"Cannot find '"..typ.."' in java.sql.Types!")
+
         else
-            args={self.db_types:set('VARCHAR',v)}
+            typ='VARCHAR'
         end
 
-        if args[1]=='#' then
+        if v==nil then
             if counter<2 then counter=counter+2 end
         else
             if counter~=1 and counter~=3 then counter=counter+1 end
         end
 
-        p1[k]=args
+        local typename,typeid=typ,self.db_types[typ].id
+        typ,v=self.db_types:set(typ,v)
+        p1[k],p2[#p2+1]={typ,v,typeid,typename},k
         return s:upper()
     end)
 
-    if sql:lower():match("^%s*explain") then
-        params={V1=sql}
-        p1={V1={self.db_types:set('CLOB',sql)}}
-        org_sql,sql=sql,[[DECLARE /*INTERNAL_DBCLI_CMD*/ /*DBCLI_XPLAN*/
-                v_cursor NUMBER := dbms_sql.open_cursor;
-                v_offset INT := -1;
-                v_finish INT;
-                v_sql    CLOB := :V1;
-            BEGIN
-                BEGIN
-                    dbms_sql.parse(v_cursor, v_sql, dbms_sql.native);
-                    v_finish := dbms_sql.execute(v_cursor);
-                    dbms_sql.close_cursor(v_cursor);
-                EXCEPTION
-                    WHEN OTHERS THEN
-                        v_offset := dbms_sql.last_error_position;
-                        dbms_sql.close_cursor(v_cursor);
-                        RAISE;
-                END;
-            END;]]
-    elseif counter>1 then return self.super.parse(self,org_sql,params,':')
-    else org_sql=sql end
+    local sql_type=sql:gsub("%s*/%*.-%*/%s*",''):upper():match("(%w+)")
+    if sql_type=='EXPLAIN' or #p2>0 and (sql_type=="DECLARE" or sql_type=="BEGIN" or sql_type=="CALL") then
+        local s0,s1,s2,index,typ={},{},{},0
+        params={_based_sql=sql}
+        if sql_type=='EXPLAIN' then
+            p1,p2={},{}
+        end
+        for idx=1,#p2 do
+            typ=p1[p2[idx]][4]
+            if typ=="CURSOR" then
+                p1[p2[idx]][5]=2
+                typ="SYS_REFCURSOR"
+                s1[idx]="V"..(idx+1)..' '..typ..';'
+            else
+                index=index+1;
+                p1[p2[idx]][5]=3
+                typ=(typ=="VARCHAR" and "VARCHAR2(32767)") or typ
+                s1[idx]="V"..(idx+1)..' '..typ..':=:'..(idx+1)..';'
+            end
+            s0[idx]=(idx==1 and 'USING ' or '') ..'IN OUT V'..(idx+1)
+            s2[idx]=":"..(idx+1+#p2).." := V"..(idx+1)..';'
+        end
+
+        typ = org_sql:len()<=30000 and 'VARCHAR2(32767)' or 'CLOB' 
+        local method=self.db_types:set(typ~='CLOB' and 'VARCHAR' or typ,org_sql)
+        sql='DECLARE V1 %s:=:1;%sBEGIN EXECUTE IMMEDIATE V1 %s;%sEND;'
+        sql=sql:format(typ,table.concat(s1,''),table.concat(s0,','),table.concat(s2,''))
+        local prep=java.cast(self.conn:prepareCall(sql,1003,1007),"oracle.jdbc.OracleCallableStatement")
+        
+        prep[method](prep,1,org_sql)
+        for k,v in ipairs(p2) do
+            local p=p1[v]
+            if p[5]~=2 then prep[p[1]](prep,k+1,p[2]) end
+            params[v]={'#',k+1+index,p[4]}
+            prep['registerOutParameter'](prep,k+1+index,p[3])
+        end
+        return prep,org_sql,params
+    elseif counter>1 then 
+        return self.super.parse(self,org_sql,params,':')
+    else 
+        org_sql=sql
+    end
+
     local prep=java.cast(self.conn:prepareCall(sql,1003,1007),"oracle.jdbc.OracleCallableStatement")
     for k,v in pairs(p1) do
         if v[1]=='#' then

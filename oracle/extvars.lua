@@ -37,7 +37,7 @@ end
 function extvars.set_title(name,value,orig)
     local get=env.set.get
     if name~="STARTTIME" and name~="ENDTIME" and name~="INSTANCE" then return end
-    local title=table.concat({get("INSTANCE")>-1   and "Inst="..get("INSTANCE") or "",
+    local title=table.concat({tonumber(get("INSTANCE"))>-1   and "Inst="..get("INSTANCE") or "",
                               get("STARTTIME")~='' and "Start="..get("STARTTIME") or "",
                               get("ENDTIME")~=''   and "End="..get("ENDTIME") or ""},"  ")
     title=title:trim()
