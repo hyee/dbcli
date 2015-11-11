@@ -26,7 +26,7 @@ function db_Types:get(position,typeName,res,conn)
         print('Column:',position,"    Datatype:",self[typeName].name,"    ",value)
         return nil
     end
-    --print(typeName,self[typeName].handler)
+   
     if value == nil or res:wasNull() then return nil end
     if not self[typeName].handler then return value end
     return self[typeName].handler(value,'get',conn)
@@ -96,7 +96,7 @@ function db_Types:load_sql_types(className)
                 end
             end},
 
-        [6]={getter='getObject',setter='setObject',
+        [6]={getter='getObject',setter='setCursor',
              handler=function(result,action,conn)
                 if action=="get" then
                     return java.cast(result,'java.sql.ResultSet')
@@ -272,6 +272,7 @@ db_core.feed_list={
     INSERT  ="%d rows inserted",
     DELETE  ="%d rows deleted",
     SELECT  ="%d rows returned",
+    WITH    ="%d rows returned",
     MERGE   ="%d rows merged",
     ALTER   ="%s altered",
     DROP    ="%s dropped",
@@ -280,6 +281,7 @@ db_core.feed_list={
     ROLLBACK="Rollbacked",
     GRANT   ="Granted",
     REVOKE  ="Revoked",
+    TRUNCATE="Truncated"
 }
 
 function db_core.print_feed(sql,result)
@@ -474,6 +476,7 @@ function db_core:exec(sql,args)
     self.current_stmt=nil
     --is_query=prep:execute()
     local is_output,index,typename=1,2,3
+    
     for k,v in pairs(params) do
         if type(v) == "table" and v[is_output] == "#"  then
             if type(v[index]) == "table" then
@@ -488,6 +491,7 @@ function db_core:exec(sql,args)
             end
         end
     end
+
 
     local outputs={}
     for k,v in pairs(args) do
@@ -661,14 +665,14 @@ end
 function db_core:commit()
     if self.conn then
         pcall(self.conn.commit,self.conn)
-        if cfg.get('feed')=='on' then print('Committed.') end
+        self.print_feed("COMMIT")
     end
 end
 
 function db_core:rollback()
     if self.conn then
         pcall(self.conn.rollback,self.conn)
-        if cfg.get('feed')=='on' then print('Rollbacked.') end
+        self.print_feed("ROLLBACK")
     end
 end
 

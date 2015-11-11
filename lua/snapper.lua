@@ -37,9 +37,13 @@ function snapper:parse(name,txt,args,file)
 end
 
 function snapper:after_script()
-    self.db:commit()
     cfg.restore(cfg_backup)
-    self:trigger('after_exec_action')
+    if self.start_flag then
+        self.start_flag=false
+        self:trigger('after_exec_action')
+        self.db:commit()
+        env.set.set("feed","back")
+    end
 end
 
 function snapper:get_time()
@@ -82,6 +86,8 @@ function snapper:run_sql(sql,args,cmds,files)
     env.checkerr(self.db:is_connect(),"Database is not connected!")
     
     self.cmds,self.args,self.start_time={},{},self:get_time()
+    self.start_flag=true
+    env.set.set("feed","off")
     self:trigger('before_exec_action')
     local clock=os.clock()
     

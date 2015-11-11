@@ -13,7 +13,7 @@ Description
 
 DBCLI is a portable database command line utility, for DBA or application support to easily manage and run their common used scripts, similar to database built-in CLI tools but is more flexible.  
 
-It is developed in Lua language, and bridges to JDBC in order to operate database. <br/> 
+It uses Lua language to build the framework, and bridges to JDBC to access database, many of the files are SQL scripts which is easy to maintain.<br/> 
 It is designed to support multiple databases, and includes 2 types of modules, one is the public module whose functions are visible across all database platforms, 
 and another one is the platform-specific module.<br>
 Currently only public and Oracle and DB2 functions are developed, and only support windows platform.
@@ -79,11 +79,11 @@ Below are some common use of the utility:<br>
 
 Command Types
 -----------------------
-The command rules is similar to SQL*Plus:
+The command rules are similar to SQL*Plus:
 * DDL commands that related to source code(`create trigger/package/function/procedure/type`) are cross-line commands and should be end with `/` in a stand-alone line.
 * Other DML,DDL,DCL commands are also cross-line commands that end with `;`, or end with `/` in a stand-alone line.
+* Command `SET COMMAND_ENDMARKS` is used to customized those 2 symboles.
 * Apart from the above commands, most of other commands are single line commands and will be executed after the `enter` key is pressed.
-
 Type `help -a` and refer to the `Multi-lines` field for the type of each command. 
 
 References

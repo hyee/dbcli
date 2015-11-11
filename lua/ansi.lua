@@ -67,7 +67,7 @@ local base_color={
     --Additional ansi Esc codes added to ansi.h by Gothic  april 23,1993
     --Note, these are Esc codes for VT100 terminals, and emmulators
     --and they may not all work within the mud
-    BOLD    ={"\27[1m","Turn on bold mode",1},
+    BOLD    ={"\27[1m","Turn on bold mode",0},
     CLR     ={"\27[2J","Clear the screen",1},
     HOME    ={"\27[H","Send cursor to home position",1},
     REF     ={"\27[2J;H" , "Clear screen and home cursor",1},
@@ -81,12 +81,12 @@ local base_color={
  -- FRTOP   ={"\27[2;25r","Freeze top line",1},
  -- FRBOT   ={"\27[1;24r","Freeze bottom line",1},
  -- UNFR    ={"\27[r","Unfreeze top and bottom lines",1},
-    BLINK   ={"\27[5m","Initialize blink mode",1},
-    UBLNK   ={"\27[25m","Blink off",1},
-    UDL     ={"\27[4m","Initialize underscore mode",1},
-    UUDL    ={"\27[24m","Underline off",1},
-    REV     ={"\27[7m","Turns reverse video mode on",1},
-    UREV    ={"\27[27m","Turns reverse video mode off",1},
+    BLINK   ={"\27[5m","Blink on",0},
+    UBLNK   ={"\27[25m","Blink off",0},
+    UDL     ={"\27[4m","Underline on",0},
+    UUDL    ={"\27[24m","Underline off",0},
+    REV     ={"\27[7m","Reverse video mode on",1},
+    UREV    ={"\27[27m","Reverse video mode off",1},
     CONC    ={"\27[8m","Concealed(foreground becomes background)",1},
     uCONC   ={"\27[28m","Concealed off",1},
     HIREV   ={"\27[1,7m","High intensity reverse video",1},
@@ -256,14 +256,15 @@ function ansi.test_text(str)
             for k,v in pairs(base_color) do
                 if type(v)=="table" then
                     local text=string.format('%-'..max_len..'s',v[2])
-                    is_bg=text:lower():match("background")
+                    is_fg=text:lower():match("Foreground")
+                    local ctl=v[3] or 0
                     row:add{k,
                         v[3] and " Control" or is_bg and 'BG color' or 'FG color',text,
-                        v[3] and "N/A" or fmt:format(is_bg and wf..v[1] or v[1]..wb,text),
-                        v[3] and "N/A" or fmt:format(is_bg and bf..v[1] or v[1]..bb,text)}
+                        ctl>0 and "N/A" or fmt:format(is_fg and v[1]..wb or wf..v[1],text),
+                        ctl>0 and "N/A" or fmt:format(is_fg and v[1]..bb or wf..v[1],text)}
                 end
             end
-            row:sort("-2,1",true)
+            row:sort("-2,3,1",true)
             row:print()
         end
         rawprint(env.space..string.rep("=",140))

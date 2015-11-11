@@ -98,6 +98,7 @@ BEGIN
     IF part1 IS NULL AND target IS NOT NULL AND :V2 IS NULL THEN
         raise_application_error(-20001,'Cannot find target object '||:V1||'!');
     END IF;
+    
 
     :object_owner   := schem;
     :object_type    := obj_type;
