@@ -1,7 +1,7 @@
 2015-11-12: ! public: minor code optimizations and fixes
-            + public: new option "set OnErrExit"
-                      script based commands(ora,snap,sqlplus,etc) support batch execution. i.e.: show sga,pga
-                      support 'COLUMN <var> {new_value|format} <column>' command, and ommit other "COLUMN" options
+            + public: new option "set OnErrExit";
+                    : script based commands(ora,snap,sqlplus,etc) support batch execution. i.e.: show sga,pga
+                    : support 'COLUMN <var> [new_value|format|head|print]' command, and ommit other "COLUMN" options
 2015-11-11: ! oracle: change statement parsing method, so that output variable can be used as 
                       input variable inside the same PL/SQL block, and vice versa
             + public: "itv start/end/off" to loop a block of statements, refer to 'show itvtest' for example
