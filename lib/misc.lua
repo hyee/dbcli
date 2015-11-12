@@ -88,6 +88,10 @@ function string.fmt(base,...)
     return str:format(base,table.unpack(args))
 end
 
+function string.format_number(base,s)
+    return str:format(base,s)
+end
+
 if not table.unpack then table.unpack=function(tab) return unpack(tab) end end
 
 function string.from(v)
