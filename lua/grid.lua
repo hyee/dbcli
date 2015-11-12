@@ -15,6 +15,7 @@ local params={
     PIVOTSORT={name="pivotsort",default="on",desc="To indicate if to sort the titles when pivot option is on",range="on,off"},
     MAXCOLS={name="maxcol",default=1024,desc="Define the max columns to be displayed in the grid",range="4-1024"},
     DIGITS={name="digits",default=38,desc="Define the digits for a number",range="0 - 38"},
+    SEP1K={name="sep1k",default="off",desc="Define wether to show number with thousands separator",range="on,off"},
     LINESIZE={name="linesize",default=800,desc="Define the max chars in one line, other overflow parts would be cutted.",range='10-32767'}
 }
 
@@ -270,8 +271,18 @@ function grid:add(rs)
         end
 
         if headind>0 and (type(v1) == "number" or type(v) == "number"  or self.printhead and self.colinfo and self.colinfo[k].is_number) then
-            if grid.digits<38 and tonumber(v) then
-                v=math.round(tonumber(v),grid.digits)
+            if v1==v and tonumber(v) then
+                v=tonumber(v)
+                if grid.digits<38  then
+                    v=math.round(v,grid.digits)
+                end
+                if grid.sep1k=="on" then
+                    if v~=math.floor(v) then
+                        v=string.format_number("%,.2f",v,'double')
+                    else
+                        v=string.format_number("%,d",v,'int')
+                    end
+                end
             end
             if tostring(v):find('e',1,true) then v=string.format('%99.38f',v):gsub(' ',''):gsub('%.?0+$','') end
             csize = #tostring(v)

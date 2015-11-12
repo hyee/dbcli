@@ -88,8 +88,9 @@ function string.fmt(base,...)
     return str:format(base,table.unpack(args))
 end
 
-function string.format_number(base,s)
-    return str:format(base,s)
+function string.format_number(base,s,cast)
+    if not tonumber(s) then return s end
+    return str:format(base,java.cast(tonumber(s),cast or 'double'))
 end
 
 if not table.unpack then table.unpack=function(tab) return unpack(tab) end end
