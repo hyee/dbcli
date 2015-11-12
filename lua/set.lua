@@ -1,5 +1,5 @@
 local env=env
-local cfg,grid={},env.grid
+local cfg,grid={name='SET'},env.grid
 local maxvalsize=20
 local file='setting.dat'
 local root_cmd
@@ -163,7 +163,6 @@ function cfg.force_set(item,value)
 end
 
 function cfg.restore(name)
-
     if not name then
         return
     elseif type(name)=="table" then
@@ -200,8 +199,10 @@ function cfg.backup()
     return backup
 end
 
-function cfg.capture_before_cmd(cmd,args)
-    if cmd~="SET" and not (env._CMDS[cmd] and tostring(env._CMDS[cmd].DESC) or ""):find('(SET)',1,true) then
+function cfg.capture_before_cmd(command)
+    if #env.RUNNING_THREADS>1 then return end
+    env.log_debug("set","taking full backup",command[1])
+    if command[1]~=cfg.name then
         cfg._backup=cfg.backup()
     else
         cfg._backup=nil
@@ -209,14 +210,16 @@ function cfg.capture_before_cmd(cmd,args)
 end
 
 function cfg.capture_after_cmd(cmd,args)
+    if #env.RUNNING_THREADS>1 then return end
+    env.log_debug("set","taking full reset")
     if cfg._backup then cfg.restore(cfg._backup) end
     cfg._backup=nil
 end
 
 function cfg.onload()
-    event.snoop("BEFORE_ROOT_COMMAND",cfg.capture_before_cmd)
-    event.snoop("AFTER_ROOT_COMMAND",cfg.capture_after_cmd)
-    env.set_command(nil,'SET',"Set environment parameters. Usage: set [-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]",cfg.doset,false,99)
+    event.snoop("BEFORE_COMMAND",cfg.capture_before_cmd)
+    event.snoop("AFTER_COMMAND",cfg.capture_after_cmd)
+    env.set_command(nil,cfg.name,"Set environment parameters. Usage: set [-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]",cfg.doset,false,99)
 end
 
 return cfg

@@ -5,9 +5,9 @@ local threads=env.RUNNING_THREADS
 interval.cmd='ITV'
 
 function interval.itv(sec,count,target)
-    env.checkerr(sec,'Invalid syntax! Usage: ITV <START [seconds] [remark]|END|seconds times command>')
+    env.checkerr(sec,env.helper.helper,env.CURRENT_CMD)
     local cmd,org_count,sec,count=sec:upper(),count,tonumber(sec),tonumber(count)
-    local thread,cmds=threads[#threads],stack[threads[#threads]]
+    local thread,cmds=threads[#threads-1],stack[threads[#threads-1]]
     if cmd=="START" then
         target=target and target:gsub("[ \t]+$","")
         stack[thread]={timer=count or 1,clock=os.clock(),msg=target,{interval.cmd ,{cmd,org_count,target}}}
@@ -22,12 +22,7 @@ function interval.itv(sec,count,target)
         else
             env.raise("Cannot find function env.sleep!")
         end
-        if(cmds.msg) then print("") end
-        sleep(cmds.timer)
-        stack[thread]=nil
-        for idx,cmd in ipairs(cmds) do
-            env.exec_command(cmd[1],cmd[2])
-        end
+        stack[thread].replay=true
     elseif cmd=="OFF" then
         stack[thread]=nil
     else
@@ -41,14 +36,23 @@ function interval.itv(sec,count,target)
     end
 end
 
-function interval.clear_stack()
+function interval.replay()
+    local cmds=stack[threads[#threads]]
+    if not cmds or not cmds.replay then return end
+    stack[threads[#threads]]=nil
+    if(cmds.msg) then print("") end
+    sleep(cmds.timer)
     
+    for idx,cmd in ipairs(cmds) do
+        env.exec_command(cmd[1],cmd[2])
+    end
 end
 
-function interval.capture(cmd,args)
+function interval.capture(command)
     local cmds=stack[threads[#threads]]
     if not cmds then return end
-    cmds[#cmds+1]={cmd,args}
+    local cmd,args=table.unpack(command)
+    cmds[#cmds+1]={cmd,{table.unpack(args)}}
 end
 
 
@@ -59,7 +63,10 @@ function interval.onload()
             1)  itv 5 5 ora actives
             2)  refer to 'show itvtest'
       ]],interval.itv,'__SMART_PARSE__',4)
-    if env.event then env.event.snoop('BEFORE_COMMAND',interval.capture,nil,99) end
+    if env.event then 
+        env.event.snoop('BEFORE_COMMAND',interval.capture,nil,99) 
+        env.event.snoop('AFTER_COMMAND',interval.replay,nil,1) 
+    end
 end
 
 return interval

@@ -279,7 +279,7 @@ desc_sql.FUNCTION=desc_sql.PROCEDURE
 desc_sql.TYPE={desc_sql.TYPE,desc_sql.PACKAGE}
 
 function desc.desc(name,option)
-    if not name then return end
+    env.checkerr(name,env.helper.helper,env.CURRENT_CMD)
     local rs,success,err
     local obj=db:check_obj(name)
     env.checkerr(obj,'Cannot find target object!')

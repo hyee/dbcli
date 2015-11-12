@@ -1,24 +1,40 @@
 /*[[
   Get ASH top event, type 'ora -h ashtop' for more info. Usage: ashtop [-sql|-p|-none|-pr|-o|-plan|-ash|-dash|-snap|-f] [fields] [filters]
-  
+   --[[
+      &fields: sql={sql_id}, p={p1,p2,p3,p3text},pr={p1raw,p2raw,p3raw}, o={obj},plan={plan_hash,current_obj#,SQL_PLAN_LINE_ID} none={1}
+      &View: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
+      &BASE: ash={1}, dash={10}
+      &Range: default={sample_time+0 between nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MISS'),sysdate)}
+      &filter: {
+            id={(trim(:V1) is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id)) and &range
+                    &V4},
+            snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id)) &V3},
+            u={username=sys_context('userenv','current_schema') and &range}
+        }
+      &more_filter: default={1=1},f={}
+      @counter: 11.2={, count(distinct sql_exec_id) "Execs"},10.1={}
+    ]]--
   Parameters:
       fields : combination of columns concated by comma. Available columns: see v$active_session_history and dba_users
                available options: -sql,-p,-pr,-o,-plan,-none
       filters: available options: -id, -snap, -f
       Source : -ash: gv$active_Session_history    -dash: Dba_Hist_Active_Sess_History
-    --[[
-      &fields: sql={sql_id}, p={p1,p2,p3,p3text},pr={p1raw,p2raw,p3raw}, o={obj},plan={plan_hash,current_obj#,SQL_PLAN_LINE_ID} none={1}
-      &View: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
-      &BASE: ash={1}, dash={10}
-      &filter: {
-            id={(trim(:V1) is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id)) and
-                     sample_time+0 between nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MISS'),sysdate)
-                    &V4},
-            snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id)) &V3}
-        }
-      &more_filter: default={1=1},f={}
-      @counter: 11.2={, count(distinct sql_exec_id) "Execs"},10.1={}
-    ]]--
+  Options:
+      Groupings :
+        -sql : group by sql_id+event (default)
+        -p   : group by p1,p2,p3
+        -pr  : group by p1raw,p2raw,p3raw
+        -o   : group by object_id
+        -plan: group by sql plan line(for 11g)
+      DataSource:
+        -ash : source table is gv$active_session_history(default)
+        -dash: source table is dba_hist_active_sess_history
+      Filters   :
+        -id  : show data for specific sql_id/sid. Usage: [-id] [sql_i|sid]  [starttime] [endtime]
+        -u   : only show the data related to current schema. Usage: -u <seconds> [starttime] [endtime]
+        -snap: only show the data within specific seconds. Usage: -snap <seconds> [sql_id|sid]
+      Addition filter:
+        -f   : additional fileter. Usage: -f"<filter>"
   Option examples:
       ora ashtop -sql               =  ora ashtop "sql_id,session_state,event"
       ora ashtop -p,qc_session_id   =  ora ashtop "session_state,event,current_obj#,p1,p2,p3,p3text,qc_session_id"

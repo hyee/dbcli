@@ -16,7 +16,7 @@ function printer.set_more(stmt)
     env.checkerr(stmt,"Usage: more <select statement>|<other command>")
     printer.is_more=true
     more_text={}
-    local res,err=pcall(env.internal_eval,stmt)
+    local res,err=pcall(env.eval_line,stmt,true,true)
     printer.is_more=false
     printer.more(table.concat(more_text,'\n'))
     more_text={}
@@ -25,7 +25,7 @@ end
 function printer.more(output)
     local width=(terminal:getWidth()/2+5)
     local list = java.new("java.util.ArrayList")
-    for v in output:gsplit('\n') do
+    for v in output:gsplit('\r?\n') do
         if v:len()<width then v=v..string.rep(" ",width-v:len()) end
         list:add(v)
     end
@@ -104,6 +104,6 @@ end
 _G.print=printer.print
 _G.rawprint=printer.rawprint
 env.set_command(nil,"more","Similar to Linux 'more' command. Usage: more <other command>",printer.set_more,'__SMART_PARSE__',2)
-env.set_command(nil,{"Prompt","pro"}, "Prompt messages. Usage: PRO[MPT] <message>",printer.load_text,false,2)
+env.set_command(nil,{"Prompt","pro",'echo'}, "Prompt messages. Usage: PRO[MPT] <message>",printer.load_text,false,2)
 env.set_command(nil,{"SPOOL","SPO"}, "Write the screen output into a file. Usage: SPO[OL] [file_name[.ext]] [CREATE] | APP[END]] | OFF]",printer.spool,false,3)
 return printer

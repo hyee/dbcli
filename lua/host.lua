@@ -1,7 +1,7 @@
 local env,os=env,os
 local host={}
 function host.run_command(cmd)
-    if not cmd then return end
+    env.checkerr(cmd,env.helper.helper,env.CURRENT_CMD)
     io.flush()
     os.execute('"'..cmd..'"')
 end

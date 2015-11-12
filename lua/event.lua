@@ -7,6 +7,7 @@ function event.callback(name,...)
         callee_idx,name=name,args[1]
         table.remove(args,1)
     end
+
     name=name:upper()
     if not event[name] then event[name]={} end
     event[name].src=env.callee(callee_idx)

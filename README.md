@@ -31,7 +31,7 @@ It is not aim to support all features of the existing CLI utilities that embedde
 Build and Configuration
 -----------------------
 DBCLI does not require compile or installation, but depends on JRE 1.7+. Click `Download ZIP`, extract and use.<br/> 
-Branch `With-JRE` contains the shrinking JRE bundle, if you don't have JRE installed, you may switch to that branch to download. Due to the region and charset differences, this JRE bundle is not guaranteed to work well.<br/>
+Branch `With-JRE` contains the shrinked                 JRE bundle, if you don't have JRE installed, you may switch to that branch to download. Due to the region and charset differences, this JRE bundle is not guaranteed to work well.<br/>
 ###Configure terminal window
 To avoid the word wrap in the terminal window which affects the print layout, following settings are recommended in Windows command window:<br>
 * In the `Layout` tab, set buffer width and buffer height as `500+`
@@ -66,7 +66,7 @@ Type `set database` to see all available options.
 
 Quick Start
 -----------------------
-Below are some common use of the utility:<br>
+Below are some common uses of the utility:<br>
 
     1. "conn" or "connect" to connect to the database with or without installing Oracle client, and "reconn"  to re-connect.
     2. "login" command to connect to the db without password via the account that has been connected before. 
@@ -80,15 +80,16 @@ Below are some common use of the utility:<br>
 Command Types
 -----------------------
 The command rules are similar to SQL*Plus:
-* DDL commands that related to source code(`create trigger/package/function/procedure/type`) are cross-line commands and should be end with `/` in a stand-alone line.
-* Other DML,DDL,DCL commands are also cross-line commands that end with `;`, or end with `/` in a stand-alone line.
-* Command `SET COMMAND_ENDMARKS` is used to customized those 2 symboles.
-* Apart from the above commands, most of other commands are single line commands and will be executed after the `enter` key is pressed.
-Type `help -a` and refer to the `Multi-lines` field for the type of each command. 
+* DDL commands that related to creating source code(`create trigger/package/function/procedure/type`) are cross-lines commands and should be end with `/` in a stand-alone line. `create table/inde/etc` are not of this kind because they related to structure.
+* Other DML,DDL,DCL commands are also cross-lines commands that end with either `;`, or `/` in a new line.
+* Command `SET COMMAND_ENDMARKS` is used to customize those 2 symbols.
+* Apart from the above commands, most of other commands are single line commands and will be executed after the `Enter` key is pressed.
+Type `help -a` and refer to the `Cross-lines` field for the type of each command. 
 
 References
 -----------------------
-The project depends on some binary files of open-source projects, the binaries have been included into this project.
+The utility depends on some binary files of open-source projects, the authors own the rights. 
+The binaries have been included into this project.
 Below is the list:<br>
 <pre>
 JLine2      : (BSD)  https://github.com/jline/jline2
@@ -103,7 +104,7 @@ ANSICON     : (ZLIB) https://github.com/adoxa/ansicon
 PSCP        : (MIT)  http://www.putty.org/
 </pre>  
 
-Besides, some SQL scripts are from internet.
+Besides, some SQL scripts come from internet.
 
 About ANSICON
 -----------------------

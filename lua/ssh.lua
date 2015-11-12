@@ -203,11 +203,11 @@ function ssh:exec(cmd,args)
         return
     end
     cmd=cmd:lower()
-    local alias=env.alias.cmdlist[cmd:upper()]
+    local alias=env.alias.make_command(cmd,env.parse_args(99,args or ""))
     if self.cmds[cmd] then
         self.cmds[cmd](self,args)
-    elseif alias and tostring(alias.desc):lower():match("^ssh ") then
-        return env.alias.force_command(cmd,env.parse_args(99,args or ""))
+    elseif alias and tostring(alias.desc):lower():match("ssh") then
+        return env.exec_command(alias[1],alias[2],true)
     else
         self:run_command(cmd:gsub("^%$","",1)..(args and ' '..args or ""))
     end

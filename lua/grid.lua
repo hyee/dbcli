@@ -473,7 +473,7 @@ function grid.grep(keyword,stmt)
         keyword,grid.grep_dir=keyword:sub(2),true
     end
     grid.grep_text=keyword:case_insensitive_pattern()
-    pcall(env.internal_eval,stmt)
+    pcall(env.eval_line,stmt,true,true)
     grid.grep_text,grid.grep_dir=nil,nil
 end
 

@@ -96,7 +96,7 @@ function db_Types:load_sql_types(className)
                 end
             end},
 
-        [6]={getter='getObject',setter='setCursor',
+        [6]={getter='getObject',setter='setObject',
              handler=function(result,action,conn)
                 if action=="get" then
                     return java.cast(result,'java.sql.ResultSet')
@@ -285,12 +285,12 @@ db_core.feed_list={
 }
 
 function db_core.print_feed(sql,result)
-    local args=env.parse_args(3,sql)
+    local args=env.parse_args(3,sql:upper():gsub("%s*or%s+replace%s*",""))
     if cfg.get("feed")~="on" then return end
     local cmd,obj=args[1]:upper(),(args[2] or ""):initcap()
     local feed=db_core.feed_list[cmd] 
     if feed then
-        feed='\n'..feed..'.\n'
+        feed='\n'..feed..'.'
         if feed:find('%d',1,true) then
             if type(result)=="number" then print(feed:format(result)) end
             return
@@ -340,7 +340,7 @@ function db_core:check_sql_method(event_name,sql,method,...)
         event(event_name,info)
         internal, self.internal_exec=self:is_internal_call(sql),false
         if info and info.error and info.error~="" then
-            if not internal and info.sql and info.sql:find(env.CURRENT_ROOT_CMD,1,true)~=1 then
+            if not internal and info.sql and #env.RUNNING_THREADS>1 then
                 print('SQL: '..info.sql:gsub("\n","\n     "))
             end
             env.raise_error(info.error)
@@ -728,6 +728,7 @@ function db_core:sql2file(filename,sql,method,ext,...)
     local file=io.open(filename,"w")
     env.checkerr(file,"File "..filename.." cannot be accessed because it is being used by another process!")
     file:close()
+    if cfg then cfg.set("SQLTIMEOUT",86400) end
     if type(result)=="table" then
         for idx,rs in pairs(rs) do
             if type(rs)=="userdata" then
@@ -746,18 +747,18 @@ function db_core:sql2file(filename,sql,method,ext,...)
 end
 
 function db_core:sql2sql(filename,sql)
-    env.checkerr(sql,'Usage: sql2file <file_name> <SQL>')
+    env.checkerr(sql,env.helper.helper,env.CURRENT_CMD)
     self:sql2file(env.resolve_file(filename,{'sql','zip','gz'}),sql,'ResultSet2SQL','sql',self.sql_export_header,cfg.get("ASYNCEXP"))
 end
 
 function db_core:sql2csv(filename,sql)
-    env.checkerr(sql,'Usage: sql2csv <file_name> <SQL>')
+    env.checkerr(sql,env.helper.helper,env.CURRENT_CMD)
     filename=env.resolve_file(filename,{'csv','zip','gz'})
     self:sql2file(filename,sql,'ResultSet2CSV','csv',self.sql_export_header,cfg.get("ASYNCEXP"))
 end
 
 function db_core:csv2sql(filename,src)
-    env.checkerr(src,'Usage: csv2sql <sql_file> <csv_file>')
+    env.checkerr(src,env.helper.helper,env.CURRENT_CMD)
     filename=env.resolve_file(filename,{'sql','zip','gz'})
     local table_name=filename:match('([^\\/]+)%.%w+$')
     local _,rs=pcall(self.exec,self,'select * from '..table_name..' where 1=2')

@@ -24,10 +24,12 @@ function history:show(index)
 end
 
 function history:capture(cmd,args)
+    if #env.RUNNING_THREADS>1 then return end
+    cmd=cmd:upper()
     if (cmd=="HIS" or cmd=="/" or cmd=="R" or cmd=="HISTORY") then return end
     local maxsiz=cfg.get("HISSIZE")
-    local key=table.concat(args," "):gsub("%s+"," "):sub(1,300)
-    if key:upper():find(cmd.." ")~=1 then
+    local key=table.concat(args," "):gsub("[%s%z\128\192]+"," "):sub(1,300):upper()
+    if key:find(cmd.." ")~=1 then
         key=cmd.." "..key
     end
     if keys[key] then
@@ -53,7 +55,7 @@ end
 
 function history.onload()
     cfg.init("HISSIZE",50,nil,"core","Max size of historical commands",'0 - 999')
-    event.snoop("AFTER_ROOT_COMMAND",history.capture,history)
+    event.snoop("AFTER_SUCCESS_COMMAND",history.capture,history)
     env.set_command(history,{'history','his'},"Show/run historical commands. Usage: his [index]",history.show,false,2)
     env.set_command(history,{'r','/'},"Rerun the previous command.",history.rerun,false,2)
 end

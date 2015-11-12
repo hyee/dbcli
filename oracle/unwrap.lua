@@ -75,10 +75,9 @@ local function decode_base64_package(base64str)
 end
 
 function unwrap.unwrap(obj,ext)
-    env.checkerr(obj and obj~='','Usage: unwrap <owner>.<object_name>');
+    env.checkerr(obj,env.helper.helper,env.CURRENT_CMD)
     local filename=obj
     obj=db:check_obj(obj)
-
     env.checkerr(obj,"Cannot find target object!")
 
     local rs=db:dba_query(db.exec,[[
@@ -115,7 +114,7 @@ function unwrap.unwrap(obj,ext)
 end
 
 function unwrap.onload()
-    env.set_command(nil,"unwrap",'Usage: unwrap [<owner>.]<object_name> [<file_ext>]',unwrap.unwrap,false,3)
+    env.set_command(nil,"unwrap",'Extract the source code of the specific object(procedure/package/function/trigger/type). Usage: unwrap [<owner>.]<object_name> [<file_ext>]',unwrap.unwrap,false,3)
 end
 
 return unwrap

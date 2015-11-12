@@ -1,6 +1,5 @@
 local env,pairs,ipairs,table,tonumber=env,pairs,ipairs,table,tonumber
 local sleep,math,cfg=env.sleep,env.math,env.set
-local cfg_backup
 
 local snapper=env.class(env.scripter)
 function snapper:ctor()
@@ -9,7 +8,6 @@ function snapper:ctor()
     self.help_title='Calculate a period of db/session performance/waits. '
     self.usage='<name1>[,<name2>...] <interval>|BEGIN|END [args]'
 end
-
 
 function snapper:parse(name,txt,args,file)
     txt=loadstring(('return '..txt):gsub(self.comment,"",1))
@@ -37,7 +35,6 @@ function snapper:parse(name,txt,args,file)
 end
 
 function snapper:after_script()
-    cfg.restore(cfg_backup)
     if self.start_flag then
         self.start_flag=false
         self:trigger('after_exec_action')
@@ -63,12 +60,9 @@ end
 
 function snapper:run_sql(sql,args,cmds,files)
     local db,print_args=self.db
-    cfg_backup=cfg.backup()
     cfg.set("feed","off")
     cfg.set("autocommit","off")
     cfg.set("digits",2)
-    if type(sql)~="table" then sql,args,cmds,files={sql},{args},{cmds},{files} end
-
     local interval=args[1].V1
 
     local begin_flag
@@ -91,14 +85,13 @@ function snapper:run_sql(sql,args,cmds,files)
     self:trigger('before_exec_action')
     local clock=os.clock()
     
-    
     for idx,text in ipairs(sql) do
         for i =1,20 do
             args[idx]['V'..i]=args[idx]['V'..(i+1)]
         end
         local cmd,arg=self:parse(cmds[idx],sql[idx],args[idx],files[idx])
         self.cmds[cmds[idx]],self.args[cmds[idx]]=cmd,arg
-        cmd.rs2=self:fetch_result(db:exec(cmd.sql,arg))
+        cmd.rs2=self:fetch_result(db:internal_call(cmd.sql,arg))
     end
     db:commit()
 
@@ -114,7 +107,7 @@ function snapper:next_exec()
     --self:trigger('before_exec_action')
     local end_time=self:get_time()
     for name,cmd in pairs(cmds) do
-        cmd.rs1=self:fetch_result(db:exec(cmd.sql,args[name]))
+        cmd.rs1=self:fetch_result(db:internal_call(cmd.sql,args[name]))
     end
     
     local result={}

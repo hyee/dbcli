@@ -92,12 +92,12 @@ if not table.unpack then table.unpack=function(tab) return unpack(tab) end end
 
 function string.from(v)
     local path=_G.WORK_DIR
-      path=path and #path or 0
+    path=path and #path or 0
     if type(v) == "function" then
           local d=debug.getinfo(v)
-          local src=d.short_src:sub(path+1)
+          local src=d.short_src:split(path,true)
           if src and src~='' then
-              return 'function('..src:gsub('%.lua$','#'..d.linedefined)..')'
+              return 'function('..src[#src]:gsub('%.lua$','#'..d.linedefined)..')'
           end
     elseif type(v) == "string" then
         return ("%q"):format(v:gsub("\t","    "))
@@ -119,7 +119,7 @@ end
 
 local function compare(a,b)
     local t1,t2=type(a[1]),type(b[1])
-    if t1==t2 and t1~='table' and t1~='function' and t1~='userdata' then return a[1]<b[1] end
+    if t1==t2 and t1~='table' and t1~='function' and t1~='userdata' and t1~='thread'  then return a[1]<b[1] end
     if t1=="number" then return true end
     if t2=="number" then return false end
     return tostring(a[1])<tostring(b[1])
@@ -149,7 +149,7 @@ function table.dump(tbl,indent,maxdep,tabs)
       local maxlen=0
       local keys={}
 
-    local fmtfun=string.format
+      local fmtfun=string.format
       for k,_ in pairs(tbl) do
       local k1=k
       if type(k)=="string" and not k:match("^[%w_]+$") then k1=string.format("[%q]",k) end

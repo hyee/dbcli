@@ -19,7 +19,11 @@ local instance_pattern={
     string.case_insensitive_pattern('%f[%w_%$:%.]sys%. *(("?)x$%a[%w_%$]+%2)([%s%),;])'),
 }
 
-function sys:run_sql(sql,args,print_args)
+function sys:run_sql(sql,args,cmds,files)
+    if type(sql)=="table" then
+        for i=1,#sql do self:run_sql(sql[i],args[i],cmds[i],files[i]) end
+        return;
+    end
     local founds,count=0
     if not self.db.props.isdba then
         for _,pattern in ipairs(instance_pattern) do
@@ -34,7 +38,7 @@ function sys:run_sql(sql,args,print_args)
         if founds==0 then founds=sql:find("%f[%w_%$:][Vv][Xx]_$%%a%w+") or 0 end
     end
     env.checkerr(self.db.props.isdba or founds>0,"You don't have the SYSDBA privilege!")
-    return self.super.run_sql(self,sql,args,print_args)
+    return self.super.run_sql(self,sql,args,cmds,files)
 end
 
 return sys.new()

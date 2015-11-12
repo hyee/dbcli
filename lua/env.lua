@@ -322,6 +322,7 @@ function env.callee(idx)
 end
 
 function env.format_error(src,errmsg,...)
+    if not errmsg then return end
     errmsg=(tostring(errmsg) or "")
     local HIR,NOR,count="",""
     if env.ansi and env.set and env.set.exists("ERRCOLOR") then
@@ -361,55 +362,32 @@ end
 
 function env.checkerr(result,msg,...)
     if not result then
+        if type(msg)=="function" then msg=msg(...) end
         local str=env.format_error(env.callee(),msg,...)
         return error(str)
     end
 end
 
-local writer=writer
-env.RUNNING_THREADS={}
-function env.exec_command(cmd,params)
+
+function _exec_command(name,params)
     local result
-    local name,theads=cmd:upper(),env.RUNNING_THREADS
-    cmd=_CMDS[cmd]
+    cmd=_CMDS[name:upper()]
     local stack=table.concat(params," ")
     if not cmd then
-        return print("No such comand["..name.." "..stack.."]!")
+        return env.warn("No such comand '%s'!",name)
     end
     stack=(cmd.ARGS==1 and stack or name.." "..stack)
     push_history(stack)
     if not cmd.FUNC then return end
-    env.CURRENT_CMD=name
-    local this,isMain=coroutine.running()
-
-    if not theads[this] then
-        theads[this],theads[#theads+1]=#theads+1,this
-    else
-        for i=theads[this]+1,#theads do 
-            theads[i],theads[theads[i]]=nil,nil
-        end
-    end
-
-    local event=env.event and env.event.callback
-    if event then
-        event("BEFORE_COMMAND",name,params)
-        if isMain then
-            if writer then
-                writer:print(env.ansi.mask("NOR",""))
-                writer:flush()
-            end
-            event("BEFORE_ROOT_COMMAND",name,params)
-            env.CURRENT_ROOT_CMD=name
-            env.log_debug("CMD",name,params)
-        end
-    end
-
     local args= cmd.OBJ and {cmd.OBJ,table.unpack(params)} or {table.unpack(params)}
 
     local funs=type(cmd.FUNC)=="table" and cmd.FUNC or {cmd.FUNC}
     for _,func in ipairs(funs) do
+        env.register_thread()
         local co=coroutine.create(func)
+        env.register_thread(co)
         local res={coroutine.resume(co,table.unpack(args))}
+        env.register_thread()
         --local res = {pcall(func,table.unpack(args))}
         if not res[1] then
             result=res
@@ -419,13 +397,58 @@ function env.exec_command(cmd,params)
         end
     end
 
-    if event then
-        if not env.IS_INTERNAL_EVAL then event("AFTER_SUCCESS_COMMAND",name,params,result[1]) end
-        if isMain then event("AFTER_ROOT_COMMAND",name,params,result[1]) end
-    end
-    env.IS_INTERNAL_EVAL=false
-    if not isMain and not result[1] then error('000-00000:') end
+    if not result[1] then error('000-00000:') end
+    
     return table.unpack(result)
+end
+
+local writer=writer
+env.RUNNING_THREADS={}
+
+function env.register_thread(this,isMain)
+    local threads=env.RUNNING_THREADS
+    if not this then this,isMain=coroutine.running() end
+    if isMain then
+        threads[this],threads[1]=1,this
+    end
+    if not threads[this] then
+        threads[this],threads[#threads+1]=#threads+1,this
+    else
+        for i=threads[this]+1,#threads do 
+            threads[i],threads[threads[i]]=nil,nil
+        end
+    end
+    return this,isMain,#threads
+end
+
+function env.exec_command(cmd,params,is_internal)
+    local name=cmd:upper()
+    local event=env.event and env.event.callback
+    local this,isMain=env.register_thread()
+
+    env.CURRENT_CMD=name
+    if event then
+        if isMain then
+            if writer then
+                writer:print(env.ansi.mask("NOR",""))
+                writer:flush()
+            end
+            env.log_debug("CMD",name,params)
+        end
+        
+        if event and not is_internal then 
+            name,params=table.unpack((event("BEFORE_COMMAND",{name,params}))) 
+        end
+    end
+    local res={pcall(_exec_command,name,params)}
+    if event and not is_internal then 
+        event("AFTER_COMMAND",name,params,res[2])
+    end
+    if not isMain and not res[1] and (not env.set or env.set.get("OnErrExit")=="on") then error() end
+    if event and not is_internal then 
+        event("AFTER_SUCCESS_COMMAND",name,params,res[2])
+    end
+    return table.unpack(res,2)
 end
 
 local is_in_multi_state=false
@@ -494,10 +517,12 @@ function env.parse_args(cmd,rest,is_cmd)
         env.checkerr(_CMDS[cmd],'Unknown command "'..cmd..'"!')
         arg_count=_CMDS[cmd].ARGS
     end
+    rest=rest:gsub("%s+$","")
+    if rest=="" then rest = nil end
 
     local args={}
     if arg_count == 1 then
-        args[#args+1]=cmd..(rest:len()> 0 and (" "..rest) or "")
+        args[#args+1]=cmd..(rest and #rest> 0 and (" "..rest) or "")
     elseif arg_count == 2 then
         args[#args+1]=rest
     elseif rest then
@@ -510,7 +535,7 @@ function env.parse_args(cmd,rest,is_cmd)
             if is_quote_string then--if the parameter starts with quote
                 if char ~= quote then
                     piece = piece .. char
-                elseif (rest:sub(i+1,i+1) or " "):match("^%s*$") then
+                elseif rest:sub(i+1,i+1):match("%s") or #rest==i then
                     --end of a quote string if next char is a space
                     args[#args+1]=(piece..char):gsub('^"(.*)"$','%1')
                     piece,is_quote_string='',false
@@ -541,6 +566,7 @@ function env.parse_args(cmd,rest,is_cmd)
                     end
                     break
                 end
+
             end
         end
         --If the quote is not in couple, then treat it as a normal string
@@ -548,7 +574,7 @@ function env.parse_args(cmd,rest,is_cmd)
             for s in piece:gmatch('(%S+)') do
                 args[#args+1]=s
             end
-        elseif piece~='' then
+        elseif not piece:match("^%s+$") then
             args[#args+1]=piece
         end
     end
@@ -556,13 +582,13 @@ function env.parse_args(cmd,rest,is_cmd)
     return args,cmd
 end
 
-function env.force_end_input()
+function env.force_end_input(exec,is_internal)
     if curr_stmt then
         local stmt={multi_cmd,env.parse_args(multi_cmd,curr_stmt,true)}
         multi_cmd,curr_stmt=nil,nil
         env.CURRENT_PROMPT=env.PRI_PROMPT
         if exec~=false then
-            env.exec_command(stmt[1],stmt[2])
+            env.exec_command(stmt[1],stmt[2],is_internal)
         else
             push_stack(false)
             return stmt[1],stmt[2]
@@ -573,7 +599,7 @@ function env.force_end_input()
     return
 end
 
-function env.eval_line(line,exec)
+function env.eval_line(line,exec,is_internal)
     if type(line)~='string' or line:gsub('%s+','')=='' then return end
     local subsystem_prefix=""
     --Remove BOM header
@@ -604,15 +630,15 @@ function env.eval_line(line,exec)
                 end
             end
         end
-        if env.event then line=env.event.callback('BEFORE_EVAL',{line},1)[1] end
+        
     end
 
     local done
     local function check_multi_cmd(lineval)
         curr_stmt = curr_stmt ..lineval
         done,curr_stmt=env.check_cmd_endless(multi_cmd,curr_stmt)
-        if done then
-            return env.force_end_input()
+        if done or is_internal then
+            return env.force_end_input(exec,is_internal)
         end
         curr_stmt = curr_stmt .."\n"
         return multi_cmd
@@ -621,12 +647,16 @@ function env.eval_line(line,exec)
     if multi_cmd then return check_multi_cmd(line) end
 
     local cmd,rest=line:match('^%s*(%S+)%s*(.*)')
+    if env.event then 
+        cmd,rest=table.unpack(env.event.callback('BEFORE_EVAL',{cmd,rest}))
+        if not (_CMDS[cmd]) then  cmd,rest=(cmd.." ".. rest):match('^%s*(%S+)%s*(.*)') end
+    end
     if not cmd then return end
     cmd=subsystem_prefix=="" and cmd:gsub(env.END_MARKS[1]..'+$',''):upper() or cmd
     env.CURRENT_CMD=cmd
     if not (_CMDS[cmd]) then
         push_stack(false)
-        return print("No such command["..cmd.."], please type 'help' for more information.")
+        return env.warn("No such command '%s', please type 'help' for more information.",cmd)
     elseif _CMDS[cmd].MULTI then --deal with the commands that cross-lines
         multi_cmd=cmd
         env.CURRENT_PROMPT=env.MTL_PROMPT
@@ -639,7 +669,7 @@ function env.eval_line(line,exec)
     local args=env.parse_args(cmd,rest)
 
     if exec~=false then
-        env.exec_command(cmd,args,local_stack)
+        env.exec_command(cmd,args,local_stack,is_internal)
         push_stack(false)
     else
         push_stack(false)
@@ -647,16 +677,10 @@ function env.eval_line(line,exec)
     end
 end
 
-function env.internal_eval(line,exec)
-    env.IS_INTERNAL_EVAL=true
-    env.eval_line(line,exec)
-    env.IS_INTERNAL_EVAL=false
-end
-
 function env.testcmd(...)
     local args,cmd={...}
-    for k,v in pairs(args) do
-        if v:find(" ") and not v:find('"') then
+    for k,v in ipairs(args) do
+        if v=="" or v:find(" ") and not v:find('"') then
             args[k]='"'..v..'"'
         end
     end
@@ -767,6 +791,7 @@ function env.onload(...)
         env.set.init("COMMAND_ENDMARKS",end_marks,env.set_endmark,
                   "core","Define the symbols to indicate the end input the cross-lines command. Cannot be alphanumeric characters.")
         env.set.init("Debug",'off',set_debug,"core","Indicates the option to print debug info, 'all' for always, 'off' for disable, others for specific modules.")
+        env.set.init("OnErrExit",'on',nil,"core","Indicates whether to continue the remaining statements if error encountered.","on,off")
         print_debug=print
     end
     if  env.ansi and env.ansi.define_color then
@@ -903,6 +928,11 @@ end
 function env.reset_title()
     for k,v in pairs(title_list) do title_list[k]="" end
     os.execute("title dbcli")
+end
+
+function env.find_extension(exe)
+    local cmd=(env.OS=="windows" and "where " or "which ")..exe.." >"..(env.OS=="windows" and ">nul" or "/dev/null")
+    env.checkerr((os.execute(cmd)),"Cannot find "..exe.." in the default path, please add it into EXT_PATH of file data/init.cfg")
 end
 
 return env

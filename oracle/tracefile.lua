@@ -84,7 +84,7 @@ function trace.get_trace(filename,mb,from_mb)
             :4 := buff;
     END;]]
 
-    env.checkerr(filename,"Please specify the trace file location !")
+    env.checkerr(filename,env.helper.helper,env.CURRENT_CMD)
     if not db.props.db_version then env.raise_error('Database is not connected!') end;
     db:internal_call("alter session set events '10046 trace name context off'")
     db:internal_call("alter session set tracefile_identifier=CLEANUP")

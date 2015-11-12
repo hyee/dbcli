@@ -192,6 +192,7 @@ function scripter:parse_args(sql,args,print_args)
                 end
             end
         end
+        --args[i],args[tostring(i)]=nil,args[param]
     end
 
     if print_args then
@@ -256,7 +257,7 @@ end
 
 function scripter:run_sql(sql,args,cmds)
     if type(sql)=="table" then
-        for i=1,#sql do self:run_sql(sql[i],args[i],cmds[i]) end
+        for i=1,#sql do scripter.run_sql(self,sql[i],args[i],cmds[i]) end
         return;
     end
     if not self.db or not self.db.is_connect then
@@ -351,8 +352,7 @@ function scripter:run_script(cmds,...)
         end
     end
     if index==0 then return end
-    if index==1 then g_cmd,g_sql,g_args,g_files=g_cmd[1],g_sql[1],g_args[1],g_files[1] end
-    --self._backup_context=env.var.backup_context()
+    env.register_thread()
     self:run_sql(g_sql,g_args,g_cmd,g_files)
 end
 
