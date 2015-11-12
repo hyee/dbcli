@@ -1,6 +1,6 @@
 --Usage: print / save a 2-D arrary
 local env,pairs,ipairs=env,pairs,ipairs
-local math,table,string,class=env.math,env.table,env.string,env.class
+local math,table,string,class,event=env.math,env.table,env.string,env.class,env.event
 local grid=class()
 
 local params={
@@ -263,9 +263,13 @@ function grid:add(rs)
     --run statement
     for k,v in ipairs(rs) do
         if k>grid.maxcol then break end
-        local csize =0
+        local csize,v1 =0,v
         if not colsize[k] then colsize[k] = {0,1} end
-        if headind>0 and (type(v) == "number" or  self.printhead and self.colinfo and self.colinfo[k].is_number) then
+        if self.printhead and #result>0 then
+            v=event.callback("ON_COLUMN_VALUE",{result[1][k],v,#result})[2]
+        end
+
+        if headind>0 and (type(v1) == "number" or type(v) == "number"  or self.printhead and self.colinfo and self.colinfo[k].is_number) then
             if grid.digits<38 and tonumber(v) then
                 v=math.round(tonumber(v),grid.digits)
             end

@@ -1,7 +1,7 @@
-local env=env
+local env,string,java=env,string,java
 local grid,snoop,cfg,db_core=env.grid,env.event.snoop,env.set,env.db_core
 local var=env.class()
-var.inputs,var.outputs,var.desc,var.global_context={},{},{},{}
+var.inputs,var.outputs,var.desc,var.global_context,var.columns={},{},{},{},{}
 var.cmd1,var.cmd2,var.cmd3,var.cmd4='DEFINE','DEF','VARIABLE','VAR'
 var.types={
     REFCURSOR =  'CURSOR',
@@ -257,17 +257,87 @@ function var.capture_after_cmd(cmd)
     end
 end
 
+function var.define_column(col,...)
+    local gramma={
+        {{'ALIAS','ALI'},'*'},
+        {{'CLEAR','CLE'}},
+        {'ENTMAP ',{'ON','OFF'}},
+        {{'FOLD_AFTER','FOLD_A'}},
+        {{'FOLD_BEFORE','FOLD_B'}},
+        {{'FORMAT','FOR'}, '*'},
+        {{'HEADING','HEA'},'*'},
+        {{'JUSTIFY','JUS'},{'LEFT','L','CENTER','C','RIGHT','R'}},
+        {'LIKE','.+'},
+        {{'NEWLINE','NEWL'}},
+        {{'NEW_VALUE','NEW_V'},'*'},
+        {{'NOPRINT','NOPRI','PRINT','PRI'}},
+        {{'OLD_VALUE','OLD_V'},'*'},
+        {{'NULL','NUL'},'*'},
+        {{'ON','OFF'}},
+        {{'WRAPPED','WRA','WORD_WRAPPED','WOR','TRUNCATED','TRU'}},
+    }
+
+    local args={...}
+    env.checkerr(args[1],env.helper.helper,env.CURRENT_CMD)
+    col=col:upper()
+    var.columns[col]={}
+    for i=1,#args do
+        if args[i]:upper()=='NEW_VALUE' or args[i]:upper()=='NEW_V' then
+            local arg=args[i+1]
+            env.checkerr(arg,'Format:  COL[UMN] <column> NEW_V[ALUE] <variable>.')
+            col,arg=col:upper(),arg:upper()
+            var.setOutput(arg,'VARCHAR')
+            var.columns[col].new_value=arg
+            i=i+1
+        elseif args[i]:upper()=='FORMAT' or args[i]:upper()=='FOR' then
+            local arg=args[i+1]
+            env.checkerr(arg,'Format:  COL[UMN] <column> FOR[MAT] <format>.')
+            if arg:upper():find('^A') then
+                var.columns[col].format=tonumber(arg:match("%d+"))
+            else
+                local fmt=java.new("java.text.DecimalFormat")
+                arg=arg:gsub('9','#')
+                local res,msg=pcall(fmt.applyPattern,fmt,arg)
+                env.checkerr(res,"Invalid format %s: %s",arg,tostring(msg))
+                var.columns[col].format=fmt
+            end
+            i=i+1
+        end
+    end
+end
+
+function var.trigger_column(field)
+    local col,value,rownum=table.unpack(field)
+    col=col:upper()
+    if not value or not var.columns[col] or rownum==0 then return end
+    local index=var.columns[col].new_value
+    if index then
+        var.inputs[index],var.outputs[index]=value,nil
+    end
+    index=var.columns[col].format
+    if index then
+        if type(index)=="number" then
+            field[2]=tostring(field[2])
+            field[2]=field[2]:sub(1,index)
+        else
+            field[2]=tonumber(field[2]) and index:format(java.cast(tonumber(field[2]),'double')) or  field[2]
+        end
+    end
+end
+
 function var.onload()
     snoop('BEFORE_DB_EXEC',var.before_db_exec)
     snoop('AFTER_DB_EXEC',var.after_db_exec)
     snoop('BEFORE_EVAL',update_text)
     snoop('BEFORE_COMMAND',var.before_command)
     snoop("AFTER_COMMAND",var.capture_after_cmd)
+    snoop("ON_COLUMN_VALUE",var.trigger_column)
     cfg.init("PrintVar",'on',nil,"db.core","Max size of historical commands",'on,off')
     cfg.init(var.cmd1,'on',nil,"db.core","Defines the substitution character(&) and turns substitution on and off.",'on,off')
     env.set_command(nil,{"Accept","Acc"},'Assign user-input value into a existing variable. Usage: accept <var> [[prompt] <prompt_text>|@<file>]',var.accept_input,false,3)
     env.set_command(nil,{var.cmd3,var.cmd4},var.helper,var.setOutput,false,4)
-    env.set_command(nil,{var.cmd1,var.cmd2},"Define input variables, Usage: def <name>=<value> [description], or def <name> to remove definition",var.setInput,false,3)
+    env.set_command(nil,{var.cmd1,var.cmd2},"Define input variables, Usage: def <name>[=]<value> [description], or def <name> to remove definition",var.setInput,false,3)
+    env.set_command(nil,{"COLUMN","COL"},'Specifies display attributes for a given column, refer to SQL*Plus manual.',var.define_column,false,30)
     env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables.Usage: print <variable|-a>',var.print,false,3)
     env.set_command(nil,"Save","Save variable value into a specific file under folder 'cache'. Usage: save <variable> <file name>",var.save,false,3);
 end
