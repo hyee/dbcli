@@ -152,7 +152,6 @@ function oracle:parse(sql,params)
         self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     end
 
-
     org_sql,sql=sql,sql:gsub('%f[%w_%$:]:([%w_%$]+)',function(s)
         local k,s=s:upper(),':'..s
         local v=params[k]
@@ -169,7 +168,6 @@ function oracle:parse(sql,params)
         elseif v:sub(1,1)=="#" then
             typ,v=v:upper():sub(2),nil
             env.checkerr(self.db_types[typ],"Cannot find '"..typ.."' in java.sql.Types!")
-
         else
             typ='VARCHAR'
         end
@@ -186,27 +184,33 @@ function oracle:parse(sql,params)
         return s:upper()
     end)
 
-    local sql_type=sql:gsub("%s*/%*.-%*/%s*",''):upper():match("(%w+)")
+    local sql_type=sql:gsub("%s*/%*.-%*/%s*",' '):upper():match("(%w+)")
+    local method,value,typeid,typename,inIdx,outIdx=1,2,3,4,5,6
     if sql_type=='EXPLAIN' or #p2>0 and (sql_type=="DECLARE" or sql_type=="BEGIN" or sql_type=="CALL") then
-        local s0,s1,s2,index,typ={},{},{},0
+        local s0,s1,s2,index,typ,siz={},{},{},1,nil,#p2
         params={_based_sql=sql}
         if sql_type=='EXPLAIN' then
             p1,p2={},{}
         end
         for idx=1,#p2 do
-            typ=p1[p2[idx]][4]
+            typ=p1[p2[idx]][typename]
             if typ=="CURSOR" then
-                p1[p2[idx]][5]=2
+                p1[p2[idx]][inIdx]=0
                 typ="SYS_REFCURSOR"
-                s1[idx]="V"..(idx+1)..' '..typ..';'
+                s1[idx]="V"..(idx+1)..' '..typ..';/* :'..p2[idx]..'*/'
             else
                 index=index+1;
-                p1[p2[idx]][5]=3
+                p1[p2[idx]][inIdx]=index
                 typ=(typ=="VARCHAR" and "VARCHAR2(32767)") or typ
-                s1[idx]="V"..(idx+1)..' '..typ..':=:'..(idx+1)..';'
+                s1[idx]="V"..(idx+1)..' '..typ..':=:'..index..';/* :'..p2[idx]..'*/'
             end
-            s0[idx]=(idx==1 and 'USING ' or '') ..'IN OUT V'..(idx+1)
-            s2[idx]=":"..(idx+1+#p2).." := V"..(idx+1)..';'
+            s0[idx]=(idx==1 and 'USING ' or '') ..'IN OUT V'..(idx+1)    
+        end
+
+        for idx=1,#p2 do
+            index=index+1;
+            p1[p2[idx]][outIdx]=index
+            s2[idx]=":"..index.." := V"..(idx+1)..';' 
         end
 
         typ = org_sql:len()<=30000 and 'VARCHAR2(32767)' or 'CLOB' 
@@ -218,12 +222,14 @@ function oracle:parse(sql,params)
         prep[method](prep,1,org_sql)
         for k,v in ipairs(p2) do
             local p=p1[v]
-            if p[5]~=2 then prep[p[1]](prep,k+1,p[2]) end
-            params[v]={'#',k+1+index,p[4]}
-            prep['registerOutParameter'](prep,k+1+index,p[3])
+            if p[inIdx]~=0 then
+                prep[p[1]](prep,p[inIdx],p[value]) 
+            end
+            params[v]={'#',p[outIdx],p[typename]}
+            prep['registerOutParameter'](prep,p[outIdx],p[typeid])
         end
         return prep,org_sql,params
-    elseif counter>1 then 
+    elseif counter>1 then
         return self.super.parse(self,org_sql,params,':')
     else 
         org_sql=sql
@@ -231,11 +237,11 @@ function oracle:parse(sql,params)
 
     local prep=java.cast(self.conn:prepareCall(sql,1003,1007),"oracle.jdbc.OracleCallableStatement")
     for k,v in pairs(p1) do
-        if v[1]=='#' then
-            prep['registerOutParameter'](prep,k,v[2])
-            params[k]={'#',k,self.db_types[v[2]].name}
+        if v[mehod]=='#' then
+            prep['registerOutParameter'](prep,k,v[typeid])
+            params[k]={'#',k,v[typename]}
         else
-            prep[v[1].."AtName"](prep,k,v[2])
+            prep[v[method].."AtName"](prep,k,v[value])
         end
     end
     return prep,org_sql,params

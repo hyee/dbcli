@@ -4,7 +4,7 @@
         &BASE : s={sql_id}, m={signature}
     --]]
 ]]*/
-
+set feed off
 ORA _sqlstat
 
 WITH qry as (SELECT coalesce(upper(:V1),''||:instance,'A') inst,

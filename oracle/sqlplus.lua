@@ -6,11 +6,13 @@ local sqlplus=env.class(env.scripter)
 function sqlplus:ctor()
     self.db=env.oracle
     self.command="sp"
+    self.name="sqlplus"
     self.help_title='Run SQL*Plus script under the "sqlplus" directory. '
     self.script_dir,self.extend_dirs=env.WORK_DIR.."oracle"..env.PATH_DEL.."sqlplus",{}
 end
 
 function sqlplus:start(...)
+    env.find_extension(self.name)
     local tnsadm=tostring(java.system:getProperty("oracle.net.tns_admin"))
     local export=env.OS=="windows" and "set " or "export "
     local props={}
@@ -63,53 +65,54 @@ function sqlplus:start(...)
     os.execute(cmd)
 end
 
-function sqlplus:before_exec(cmd,arg)
+function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
+   
+    for i=1,#g_sql do
+        local sql,args,cmd,file=g_sql[i],g_args[i],g_cmd[i],g_file[i]
+        local content=[[SET FEED OFF SERVEROUTPUT ON SIZE 1000000 TRIMSPOOL ON LONG 5000 LINESIZE 900 PAGESIZE 9999
+                        ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';
+                        SET FEED ON ECHO OFF VERIFY OFF
+                        DEF _WORK_DIR_="%s"
+                        DEF _FILE_DIR_="%s"
+                        DEF _SQLPLUS_DIR_="%s"
+                        %s
+                        @"%s" %s
+                        EXIT;]]
 
-    local content=[[SET FEED OFF SERVEROUTPUT ON SIZE 1000000 TRIMSPOOL ON LONG 5000 LINESIZE 900 PAGESIZE 9999
-                    ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';
-                    SET FEED ON ECHO OFF VERIFY OFF
-                    DEF _WORK_DIR_="%s"
-                    DEF _FILE_DIR_="%s"
-                    DEF _SQLPLUS_DIR_="%s"
-                    %s
-                    @"%s" %s
-                    EXIT;]]
-    local args=env.parse_args('ORA',arg)
-    local print_args,sql=false
-    sql,args,print_args,file=self:get_script(cmd,args,print_args)
-    if not file then return end
-    env.checkerr(db:is_connect(),"Database is not connected.")
-    local context=""
-    for k,v in pairs(args) do
-        if v~="" then context=context..'DEF '..k..'='..v..'\n' end
-    end
+        env.checkerr(db:is_connect(),"Database is not connected.")
+        local context=""
+        for k,v in pairs(args) do
+            if v==db.NOT_ASSIGNED then v='' end
+            local msg='DEF '..k.."='"..v.."'\n"
+            context=context..msg
+            if k:match("^V%d+$") then context=context..msg:gsub("V(%d+)",'%1',1) end
+        end
 
-    self.work_path=env._CACHE_PATH
-    local subdir=args.FILE_OUTPUT_DIR
-    if subdir then
-        self.work_path=self.work_path..subdir
-        os.execute('mkdir "'..self.work_path..'" >nul')
+        self.work_path=env._CACHE_PATH
+        local subdir=args.FILE_OUTPUT_DIR
+        if subdir then
+            self.work_path=self.work_path..subdir
+            os.execute('mkdir "'..self.work_path..'" >nul')
+        end
+        self.work_path=self.work_path:gsub(env.PATH_DEL..'+$','')
+        local file_dir=file:gsub('[\\/][^\\/]+$',"")
+        local tmpfile='sqlplus.tmp'
+        tmpfile=self.work_path..env.PATH_DEL..tmpfile
+        local f,err=io.open(tmpfile,'w')
+        env.checkerr(f,"Unable to write file "..tmpfile)
+        content=content:format(self.work_path,file_dir,self.script_dir,context,file,arg or ""):gsub('[\n\r]+%s+','\n')..'\n'
+        f:write(content)
+        f:close()
+        self:start('-s','@"'..tmpfile..'"')
     end
-    self.work_path=self.work_path:gsub(env.PATH_DEL..'+$','')
-    local file_dir=file:gsub('[\\/][^\\/]+$',"")
-    local tmpfile='sqlplus.tmp'
-    tmpfile=self.work_path..tmpfile
-    local f,err=io.open(tmpfile,'w')
-    env.checkerr(f,"Unable to write file "..tmpfile)
-    content=content:format(self.work_path,file_dir,self.script_dir,context,file,arg or ""):gsub('[\n\r]+%s+','\n')..'\n'
-    f:write(content)
-    f:close()
-    self:start('-s','@"'..tmpfile..'"')
 end
 
-function sqlplus:after_exec()
+function sqlplus:after_script()
     self.work_path=nil
 end
 
 function sqlplus:onload()
     set_command(self,"sqlplus",  "Switch to sqlplus with same login, the default working folder is 'oracle/sqlplus'. Usage: sqlplus [-d<work_path>] [other args]",self.start,false,9)
-    env.remove_command(self.command)
-    env.set_command(self,self.command,self.helper,{self.before_exec,self.after_exec},false,3)
 end
 
 return sqlplus.new()

@@ -41,14 +41,13 @@ function alias.parser(s,default_value)
     end
 end
 
-function alias.run_command(...)
-    local name=env.CURRENT_CMD
+function alias.make_command(name,args)
     name=name:upper()
-    if alias.cmdlist[name] then
+    if alias.cmdlist[name] and env._CMDS[name] and env._CMDS[name].FUNC==alias.run_command then
         local target=alias.cmdlist[name].text
         if type(target)=="function" then target=target(alias) end
         target=target.." $*"
-        alias.args={...}
+        alias.args=args
         alias.rest={}
         for i=1,99 do
             v=alias.args[i] or ""
@@ -63,16 +62,15 @@ function alias.run_command(...)
         if type(alias.cmdlist[name].text) == "string" and not target:find('[\n\r]') then
             print('$ '..target)
         end
-        env.internal_eval(target)
+        return target
     end
 end
 
-function alias.force_command(name,args)
-    if name and alias.cmdlist[name:upper()] then
-        env.CURRENT_CMD=name
-        return alias.run_command(table.unpack(args))
-    end
+function alias.run_command(...)
+    local cmd=alias.make_command(env.CURRENT_CMD,{...})
+    if cmd then env.eval_line(cmd,true,true) end
 end
+
 
 function alias.set(name,cmd,write)
     if not name and write~=false then
@@ -186,8 +184,22 @@ function alias.load_db_aliases(db_name)
     alias.rehash()
 end
 
+function alias.rewrite(command)
+    local cmd,args=table.unpack(command)
+    local name=cmd:upper()
+    if alias.cmdlist[name] then
+        local line=alias.make_command(name,args)
+        if line then
+            command[1],command[2]=env.eval_line(line,false)
+        end
+        return command
+    end
+    return nil
+end
+
 function alias.onload()
     --alias.rehash()
+    env.event.snoop('BEFORE_COMMAND',alias.rewrite,nil,80)
     env.event.snoop('ON_ENV_LOADED',alias.rehash,nil,1)
     env.event.snoop('ON_DATABASE_ENV_LOADED',alias.load_db_aliases,nil,1)
     env.set_command(nil,"alias", alias.helper,alias.set,'__SMART_PARSE__',3)

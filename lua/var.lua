@@ -2,7 +2,7 @@ local env=env
 local grid,snoop,cfg,db_core=env.grid,env.event.snoop,env.set,env.db_core
 local var=env.class()
 var.inputs,var.outputs,var.desc,var.global_context={},{},{},{}
-
+var.cmd1,var.cmd2,var.cmd3,var.cmd4='DEFINE','DEF','VARIABLE','VAR'
 var.types={
     REFCURSOR =  'CURSOR',
     CURSOR    =  'CURSOR',
@@ -128,6 +128,7 @@ local function update_text(item,pos,params)
         local v,s=s2:upper(),s..s2..s3
         v=params[v] or var.inputs[v] or var.global_context[v] or s
         if v~=s then
+            if v=='NEXT_ACTION' then print(env.callee(4)) end
             if v==db_core.NOT_ASSIGNED then v='' end
             count=count+1 
             env.log_debug("var",s,'==>',v==nil and "<nil>" or v=="" and '<empty>' or tostring(v))
@@ -141,27 +142,23 @@ local function update_text(item,pos,params)
     end
 end
 
-function var.before_command(name,args)
+function var.before_command(cmd)
+    local name,args=table.unpack(cmd)
     args=type(args)=='string' and {args} or args
     if type(args)~='table' then return end
     for i=1,#args do update_text(args,i,{}) end
+    if #env.RUNNING_THREADS==1 then var.capture_before_cmd(name,args) end
     return args
 end
 
 function var.before_db_exec(item)
+    if cfg.get("define")~='on' then return end
     local db,sql,args,params=table.unpack(item)
     for i=1,3 do
         for name,v in pairs(i==1 and var.outputs or i==2 and var.inputs or var.global_context) do
             if i==1 and not args[name] then args[name]=v end
             if not params[name] then params[name]=v end
         end
-    end
-
-    sql=var.inputs[sql:upper()] or var.global_context[sql:upper()] or sql
-    if sql ~= item[2] then
-        if sql==db_core.NOT_ASSIGNED then sql='' end
-        item[2]=sql
-        return
     end
 
     update_text(item,2,params)
@@ -243,7 +240,7 @@ function var.save(name,file)
 end
 
 function var.capture_before_cmd(cmd,args)
-    if cmd~="DEF" and cmd~="DEFINE"  and not (env._CMDS[cmd] and tostring(env._CMDS[cmd].DESC) or ""):find('(DEF',1,true) then
+    if cmd~=var.cmd1 and cmd~=var.cmd2 and cmd~=var.cmd3 and cmd~=var.cmd4 then
         env.log_debug("var","Backup variables")
         var._backup,var._inputs_backup,var._outputs_backup=var.backup_context()
     else
@@ -251,7 +248,8 @@ function var.capture_before_cmd(cmd,args)
     end
 end
 
-function var.capture_after_cmd(cmd,args)
+function var.capture_after_cmd(cmd)
+    if #env.RUNNING_THREADS>1 then return end
     if var._backup then
         env.log_debug("var","Reset variables")
         var.import_context(var._backup,var._inputs_backup,var._outputs_backup)
@@ -264,13 +262,12 @@ function var.onload()
     snoop('AFTER_DB_EXEC',var.after_db_exec)
     snoop('BEFORE_EVAL',update_text)
     snoop('BEFORE_COMMAND',var.before_command)
-    snoop("BEFORE_ROOT_COMMAND",var.capture_before_cmd)
-    snoop("AFTER_ROOT_COMMAND",var.capture_after_cmd)
+    snoop("AFTER_COMMAND",var.capture_after_cmd)
     cfg.init("PrintVar",'on',nil,"db.core","Max size of historical commands",'on,off')
-    cfg.init("Define",'on',nil,"db.core","Defines the substitution character(&) and turns substitution on and off.",'on,off')
+    cfg.init(var.cmd1,'on',nil,"db.core","Defines the substitution character(&) and turns substitution on and off.",'on,off')
     env.set_command(nil,{"Accept","Acc"},'Assign user-input value into a existing variable. Usage: accept <var> [[prompt] <prompt_text>|@<file>]',var.accept_input,false,3)
-    env.set_command(nil,{"variable","VAR"},var.helper,var.setOutput,false,4)
-    env.set_command(nil,{"Define","DEF"},"Define input variables, Usage: def <name>=<value> [description], or def <name> to remove definition",var.setInput,false,3)
+    env.set_command(nil,{var.cmd3,var.cmd4},var.helper,var.setOutput,false,4)
+    env.set_command(nil,{var.cmd1,var.cmd2},"Define input variables, Usage: def <name>=<value> [description], or def <name> to remove definition",var.setInput,false,3)
     env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables.Usage: print <variable|-a>',var.print,false,3)
     env.set_command(nil,"Save","Save variable value into a specific file under folder 'cache'. Usage: save <variable> <file name>",var.save,false,3);
 end

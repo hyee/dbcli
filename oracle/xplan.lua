@@ -3,8 +3,7 @@ local xplan={}
 local default_fmt,e10053="ALLSTATS ALL -PROJECTION OUTLINE REMOTE"
 function xplan.explain(fmt,sql)
     local ora=db.C.ora
-    
-    if not fmt then return end
+    env.checkerr(fmt,env.helper.helper,env.CURRENT_CMD)
     if fmt:sub(1,1)=='-' then
         if not sql then return end
         fmt=fmt:sub(2)

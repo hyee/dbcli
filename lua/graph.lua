@@ -27,15 +27,17 @@ function graph:ctor()
 end
 
 
-function graph:run_script(cmd,...)
-    local args,print_args,context,rs,file={...},false
-    local units={}
-    context,args,print_args,file=self:get_script(cmd,args,print_args)
-    if not args or cmd:sub(1,1)=='-' then return end
-    context=loadstring(('return '..context):gsub(self.comment,"",1))
-    if not context then
-       return print("Invalid syntax in "..file)
+function graph:run_sql(sql,args,cmd,file)
+
+    if type(sql)=="table" then
+        for i=1,#sql do self:run_sql(sql[i],args[i],cmd[i],file[i]) end
+        return
     end
+    local units,rs={}
+    
+    local context,err=loadstring(('return '..sql):gsub(self.comment,"",1))
+    env.checkerr(context,"Error when loading file %s: %s",file,err)
+   
     context=context()
     env.checkerr(type(context)=="table" and type(context._sql)=="string","Invalid definition, should be a table with '_sql' property!")
     local default_attrs={

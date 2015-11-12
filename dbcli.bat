@@ -20,8 +20,8 @@ if defined ANSICON_CMD (
    echo %PROCESSOR_ARCHITECTURE%|findstr /i "64" >nul ||("%JRE_HOME%\java.exe" -version 2>&1 |findstr /i "64-bit" >nul)||(set ANSICON_CMD=.\bin\ansiconx86.exe)
 )
 
-if defined ANSICON_CMD (%ANSICON_CMD% -m%CONSOLE_COLOR% -p)
-
+if defined ANSICON_CMD (%ANSICON_CMD% -p)
+color %CONSOLE_COLOR%
 rem unpack jar files for the first use
 for /r %%i in (*.pack.gz) do (
   set "var=%%i" &set "str=!var:@=!"
