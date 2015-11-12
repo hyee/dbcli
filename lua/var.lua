@@ -265,7 +265,7 @@ function var.define_column(col,...)
         {{'FOLD_AFTER','FOLD_A'}},
         {{'FOLD_BEFORE','FOLD_B'}},
         {{'FORMAT','FOR'}, '*'},
-        {{'HEADING','HEA'},'*'},
+        {{'HEADING','HEA','HEAD'},'*'},
         {{'JUSTIFY','JUS'},{'LEFT','L','CENTER','C','RIGHT','R'}},
         {'LIKE','.+'},
         {{'NEWLINE','NEWL'}},
@@ -280,48 +280,82 @@ function var.define_column(col,...)
     local args={...}
     env.checkerr(args[1],env.helper.helper,env.CURRENT_CMD)
     col=col:upper()
-    var.columns[col]={}
+    var.columns[col]=var.columns[col] or {}
     for i=1,#args do
-        if args[i]:upper()=='NEW_VALUE' or args[i]:upper()=='NEW_V' then
+        args[i]=args[i]:upper()
+        if args[i]=='NEW_VALUE' or args[i]=='NEW_V' then
             local arg=args[i+1]
-            env.checkerr(arg,'Format:  COL[UMN] <column> NEW_V[ALUE] <variable>.')
+            env.checkerr(arg,'Format:  COL[UMN] <column> NEW_V[ALUE] <variable> [PRINT|PRI|NOPRINT|NOPRI].')
             col,arg=col:upper(),arg:upper()
             var.setOutput(arg,'VARCHAR')
             var.columns[col].new_value=arg
             i=i+1
-        elseif args[i]:upper()=='FORMAT' or args[i]:upper()=='FOR' then
+        elseif args[i]=='FORMAT' or args[i]=='FOR' then
             local arg=args[i+1]
-            env.checkerr(arg,'Format:  COL[UMN] <column> FOR[MAT] <format>.')
+            env.checkerr(arg,'Format:  COL[UMN] <column> FOR[MAT] <format> JUS[TIFY] [LEFT|L|RIGHT|R].')
             if arg:upper():find('^A') then
-                var.columns[col].format=tonumber(arg:match("%d+"))
+                var.columns[col].format='%-'..tonumber(arg:match("%d+"))..'s'
             else
                 local fmt=java.new("java.text.DecimalFormat")
                 arg=arg:gsub('9','#')
                 local res,msg=pcall(fmt.applyPattern,fmt,arg)
                 env.checkerr(res,"Invalid format %s: %s",arg,tostring(msg))
                 var.columns[col].format=fmt
+                var.columns[col].num_len='%'..#arg..'s'
             end
             i=i+1
+        elseif args[i]=='PRINT' or args[i]=='PRI' then
+            var.columns[col].print=true
+        elseif args[i]=='NOPRINT' or args[i]=='NOPRI' then
+            var.columns[col].print=false
+        elseif args[i]=='HEADING' or args[i]=='HEAD'  or args[i]=='HEA' then
+            local arg=args[i+1]
+            env.checkerr(arg,'Format:  COL[UMN] <column> HEAD[ING] <new name>.')
+            var.columns[col].heading=arg
+        elseif args[i]=='JUSTIFY' or args[i]=='JUS' and var.columns[col].format then
+            local arg=args[i+1] and args[i+1]:upper()
+            local dir
+            if arg then
+                dir=(arg=='L' and '-') or (arg=='R' and '') or (arg=='LEFT' and '-') or (arg=='RIGHT' and '')
+            end
+            env.checkerr(dir,'Format:  COL[UMN] <column> FOR[MAT] <format> JUS[TIFY] [LEFT|L|RIGHT|R].')
+            if type(var.columns[col].format)=="string" then
+                var.columns[col].format=var.columns[col].format:gsub("-*(%d+)",dir..'%1')
+            else
+                var.columns[col].num_len=var.columns[col].num_len:gsub("-*(%d+)",dir..'%1')
+            end
         end
     end
 end
 
+
 function var.trigger_column(field)
-    local col,value,rownum=table.unpack(field)
+    local col,value,rownum,index=table.unpack(field)
     col=col:upper()
-    if not value or not var.columns[col] or rownum==0 then return end
-    local index=var.columns[col].new_value
-    if index then
-        var.inputs[index],var.outputs[index]=value,nil
+    if not var.columns[col] then return end
+    if rownum==0 then
+        index=var.columns[col].heading
+        if index then
+            field[2],var.columns[index:upper()]=index,var.columns[col]
+        end
+        return 
     end
+    
+    if not value then return end
     index=var.columns[col].format
     if index then
-        if type(index)=="number" then
-            field[2]=tostring(field[2])
-            field[2]=field[2]:sub(1,index)
+        if type(index)=="string" then
+            field[2]=index:format(tostring(value))
         else
-            field[2]=tonumber(field[2]) and index:format(java.cast(tonumber(field[2]),'double')) or  field[2]
+            value=tonumber(value)
+            field[2]=var.columns[col].num_len:format(value and index:format(java.cast(value,'double')) or field[2])
         end
+    end
+
+    index=var.columns[col].new_value
+    if index then
+        var.inputs[index],var.outputs[index]=value or db_core.NOT_ASSIGNED,nil
+        if var.columns[col].print==true then print(string.format("Variable %s == > %s",index,value or 'NULL')) end
     end
 end
 

@@ -265,8 +265,8 @@ function grid:add(rs)
         if k>grid.maxcol then break end
         local csize,v1 =0,v
         if not colsize[k] then colsize[k] = {0,1} end
-        if self.printhead and #result>0 then
-            v=event.callback("ON_COLUMN_VALUE",{result[1][k],v,#result})[2]
+        if self.printhead then
+            v=event.callback("ON_COLUMN_VALUE",{#result>0 and result[1][k] or v,v,#result})[2]
         end
 
         if headind>0 and (type(v1) == "number" or type(v) == "number"  or self.printhead and self.colinfo and self.colinfo[k].is_number) then
