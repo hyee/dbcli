@@ -40,7 +40,7 @@ function printer.print(...)
         local v=select(i,...)
         if v~='__BYPASS_GREP__' then output[i+2]=v==nil and "nil" or tostring(v) end
     end
-    output=table.concat(output,' '):gsub("(\r?\n\r?)","%1"..env.space):gsub('`([^\n\r`]+)`',BOLD)
+    output=table.concat(output,' '):gsub("(\r?\n\r?)","%1"..env.space)
     if printer.grep_text and select(2,...)~="__BYPASS_GREP__" then
         local fmt=(env.ansi and env.ansi.get_color("GREPCOLOR") or '')..'%0'..NOR
         local stack=output:split('\r?\n')
@@ -139,7 +139,7 @@ _G.rawprint=printer.rawprint
 function printer.onload()
     if env.ansi then
         NOR = env.ansi.string_color('NOR') 
-        BOLD= env.ansi.string_color('REV') 
+        BOLD= env.ansi.string_color('UDL') 
         strip_ansi=env.ansi.strip_ansi
     end
 

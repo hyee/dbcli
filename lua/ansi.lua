@@ -274,7 +274,7 @@ function ansi.test_text(str)
         rawprint(env.space.."Use `$<code>$<other text>` to mask color in all outputs, including query, echo, etc. Not all listed control codes are supported.")
         rawprint(env.space.."For the color settings defined in command 'set', use '<code1>[;<code2>[...]]' format")
         rawprint(env.space.."Run 'ansi <text>' to test the color, i.e.: ansi $HIR$ Hello $HIC$$HBGRN$ ANSI!")
-        rawprint(env.space.."Or SQL:  select '$HIR$'||owner||'$HIB$.$NOR$'||object_name obj from all_objects where rownum<10;")
+        rawprint(env.space.."Or SQL:  select '$HIR$'||owner||'$HIB$.$NOR$'||object_name obj,a.* from all_objects a where rownum<10;")
         return
     end
    

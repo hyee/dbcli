@@ -23,7 +23,7 @@ function cfg.show_cfg(name)
         for k,v in pairs(cfg) do
             if type(v)=="table" and k==k:upper() and v.src then
                 table.insert(rows,{
-                    '`'..(name and table.concat(cfg[k].abbr,', ') or k)..'`',
+                    name and table.concat(cfg[k].abbr,', ') or k,
                     string.from(cfg[k].value),
                     string.from(cfg[k].default),
                     cfg[k].class,cfg[k].range or '*',

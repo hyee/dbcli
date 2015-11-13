@@ -1,8 +1,5 @@
 local ffi = require("ffi")
-local string,table=string,table
-
-local java=java
-
+local string,table,java=string,table,java
 
 function string.initcap(v)
     return (' '..v):lower():gsub("([^%w])(%w)",function(a,b) return a..b:upper() end):sub(2)
@@ -17,7 +14,7 @@ typedef void *        HINSTANCE;
 void ShellExecuteA(HWND hwnd,LPCTSTR lpOperation,LPCTSTR lpFile,LPCTSTR lpParameters,LPCTSTR lpDirectory,INT nShowCmd);
 ]])
 function os.shell(cmd,args)
-  shell.ShellExecuteA(0,nil,cmd,nil,nil,1)
+    shell.ShellExecuteA(0,nil,cmd,nil,nil,1)
 end
 
 --Continus sep would return empty element
@@ -30,14 +27,14 @@ function string.split (s, sep, plain,occurrence)
 end
 
 function string.replace(s,sep,txt,plain,occurrence)
-  local r=s:split(sep,plain,occurrence)
-  return table.concat(r,txt)
+    local r=s:split(sep,plain,occurrence)
+    return table.concat(r,txt)
 end
 
 function string.escape(s, mode)
-  s = s:gsub('%%','%%%%'):gsub('%z','%%z'):gsub('([%^%$%(%)%.%[%]%*%+%-%?])', '%%%1')
-  if mode == '*i' then s = s:gsub('[%a]', function(s) return s:lower():format('[%s%s]',s:upper()) end) end
-  return s
+    s = s:gsub('%%','%%%%'):gsub('%z','%%z'):gsub('([%^%$%(%)%.%[%]%*%+%-%?])', '%%%1')
+    if mode == '*i' then s = s:gsub('[%a]', function(s) return s:lower():format('[%s%s]',s:upper()) end) end
+    return s
 end
 
 function string.gsplit(s, sep, plain,occurrence)
@@ -63,40 +60,40 @@ function string.gsplit(s, sep, plain,occurrence)
 end
 
 function string.case_insensitive_pattern(pattern)
-  -- find an optional '%' (group 1) followed by any character (group 2)
+    -- find an optional '%' (group 1) followed by any character (group 2)
     local p = pattern:gsub("(%%?)(.)",
-      function(percent, letter)
-          if percent ~= "" or not letter:match("%a") then
+        function(percent, letter)
+            if percent ~= "" or not letter:match("%a") then
           -- if the '%' matched, or `letter` is not a letter, return "as is"
-              return percent .. letter
-          else
+                return percent .. letter
+            else
           -- else, return a case-insensitive character class of the matched letter
-            return string.format("[%s%s]", letter:lower(), letter:upper())
-          end
-      end)
+                return string.format("[%s%s]", letter:lower(), letter:upper())
+            end
+        end)
     return p
 end
-
 
 function string.trim(s,sep)
     return s:match('^%s*(.-)%s*$')
 end
 
-local str=java.require("java.lang.String")
+String=java.require("java.lang.String")
+local String=String
 --this function only support %s
 function string.fmt(base,...)
     local args = {...}
     for k,v in ipairs(args) do
-      if type(v)~="string" then
-        args[k]=tostring(v)
-      end
+        if type(v)~="string" then
+            args[k]=tostring(v)
+        end
     end
-    return str:format(base,table.unpack(args))
+    return String:format(base,table.unpack(args))
 end
 
 function string.format_number(base,s,cast)
     if not tonumber(s) then return s end
-    return str:format(base,java.cast(tonumber(s),cast or 'double'))
+    return String:format(base,java.cast(tonumber(s),cast or 'double'))
 end
 
 if not table.unpack then table.unpack=function(tab) return unpack(tab) end end
@@ -105,11 +102,11 @@ function string.from(v)
     local path=_G.WORK_DIR
     path=path and #path or 0
     if type(v) == "function" then
-          local d=debug.getinfo(v)
-          local src=d.short_src:split(path,true)
-          if src and src~='' then
-              return 'function('..src[#src]:gsub('%.lua$','#'..d.linedefined)..')'
-          end
+        local d=debug.getinfo(v)
+        local src=d.short_src:split(path,true)
+        if src and src~='' then
+            return 'function('..src[#src]:gsub('%.lua$','#'..d.linedefined)..')'
+        end
     elseif type(v) == "string" then
         return ("%q"):format(v:gsub("\t","    "))
     end
@@ -142,43 +139,42 @@ function math.round(num,digits)
 end
 
 
-
 function table.dump(tbl,indent,maxdep,tabs)
-      maxdep=tonumber(maxdep) or 9
-      if maxdep<=1 then
-          return tostring(tbl)
-      end
+    maxdep=tonumber(maxdep) or 9
+    if maxdep<=1 then
+        return tostring(tbl)
+    end
 
-      if tabs==nil then
-          tabs={}
-      end
+    if tabs==nil then
+        tabs={}
+    end
 
-      if not indent then indent = '' end
+    if not indent then indent = '' end
 
-      indent=string.rep(' ',type(indent)=="number" and indent or #indent)
+    indent=string.rep(' ',type(indent)=="number" and indent or #indent)
 
-      local ind = 0
-      local pad=indent..'  '
-      local maxlen=0
-      local keys={}
+    local ind = 0
+    local pad=indent..'  '
+    local maxlen=0
+    local keys={}
 
-      local fmtfun=string.format
-      for k,_ in pairs(tbl) do
-      local k1=k
-      if type(k)=="string" and not k:match("^[%w_]+$") then k1=string.format("[%q]",k) end
-          keys[#keys+1]={k,k1}
-          if maxlen<#tostring(k1) then maxlen=#tostring(k1) end
-          if maxlen>99 then
-               fmtfun=string.fmt
-          end
-      end
+    local fmtfun=string.format
+    for k,_ in pairs(tbl) do
+        local k1=k
+        if type(k)=="string" and not k:match("^[%w_]+$") then k1=string.format("[%q]",k) end
+            keys[#keys+1]={k,k1}
+            if maxlen<#tostring(k1) then maxlen=#tostring(k1) end
+            if maxlen>99 then
+                fmtfun=string.fmt
+            end
+        end
 
-      table.sort(keys,compare)
-      local rs=""
-      for v, k in ipairs(keys) do
-          v,k=tbl[k[1]],k[2]
-      local fmt =(ind==0 and "{ " or pad)  .. fmtfun('%-'..maxlen..'s%s' ,tostring(k),'= ')
-      local margin=(ind==0 and indent or '')..fmt
+        table.sort(keys,compare)
+        local rs=""
+        for v, k in ipairs(keys) do
+            v,k=tbl[k[1]],k[2]
+        local fmt =(ind==0 and "{ " or pad)  .. fmtfun('%-'..maxlen..'s%s' ,tostring(k),'= ')
+        local margin=(ind==0 and indent or '')..fmt
         rs=rs..fmt
         if type(v) == "table" then
             if tabs then
@@ -186,28 +182,28 @@ function table.dump(tbl,indent,maxdep,tabs)
                     local c=tabs.__current_key or ''
                     local c1=c..(c=='' and '' or '.')..tostring(k)
                     tabs[v],tabs.__current_key=c1,c1
-                      rs=rs..table.dump(v,margin,maxdep-1,tabs)
-                      tabs.__current_key=c
-                  else
-                      rs=rs..'<<Refer to '..tabs[v]..'>>'
-                  end
+                    rs=rs..table.dump(v,margin,maxdep-1,tabs)
+                    tabs.__current_key=c
+                else
+                    rs=rs..'<<Refer to '..tabs[v]..'>>'
+                end
             else
                 rs=rs..table.dump(v,margin,maxdep-1,tabs)
-              end
-          elseif type(v) == "function" then
-              rs=rs..'<'..string.from(v)..'>'
-          elseif type(v) == "userdata" then
-              rs=rs..'<userdata('..tostring(v)..')>'
-          elseif type(v) == "string" then
-              rs=rs..string.format("%q",v:gsub("\n","\n"..string.rep(" ",#margin)))
+            end
+        elseif type(v) == "function" then
+            rs=rs..'<'..string.from(v)..'>'
+        elseif type(v) == "userdata" then
+            rs=rs..'<userdata('..tostring(v)..')>'
+        elseif type(v) == "string" then
+            rs=rs..string.format("%q",v:gsub("\n","\n"..string.rep(" ",#margin)))
         else
-              rs=rs..tostring(v)
+            rs=rs..tostring(v)
         end
         rs=rs..',\n'
         ind=ind+1
-      end
-      if ind==0 then return  '{}' end
-      rs=rs:sub(1,-3)..'\n'
-      if ind<2 then return rs:sub(1,-2)..' }' end
-      return rs..indent..'}'
+    end
+    if ind==0 then return  '{}' end
+    rs=rs:sub(1,-3)..'\n'
+    if ind<2 then return rs:sub(1,-2)..' }' end
+    return rs..indent..'}'
 end
