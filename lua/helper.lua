@@ -56,7 +56,6 @@ function helper.env(target,depth)
         add("Memory.Total(KB)",rows[2][1]+rows[2][2])
     end
     add("ENV.locale",os.setlocale())
-    add("env.Dir",'"'..java.system:getProperty("user.dir")..'"')
     local prefix=env.WORK_DIR:len()+1
     for k,v in pairs(_G) do
         --if not (k=='_G' or k=='_ENV' or k=='env') then

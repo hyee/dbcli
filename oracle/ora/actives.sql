@@ -1,14 +1,33 @@
 /*[[
-Show active sessions. Usage: ora actives [-s|-p|-b] [-f"<filter>"|-u] [waits|sid|sql|pkg|other field]
+    Show active sessions. Usage: ora actives [-s|-p|-b] [-f"<filter>"|-u] [sid|wt|ev|sql|<col>]
+    Options:
+        Filter options:
+            -u  : Only show the session of current_schema
+            -f  : Custimized filter, Usage: -f"<filter>"
+        Field options:  Field options can be following by other customized fields. ie: -s,p1raw
+            -s  : Show related procedures and lines(default)
+            -p  : Show p1/p2/p2text/p3
+            -b  : Show blocking sessions and waiting objects
+            -o  : Show os user id/machine/program/etc 
+        Sorting options: the '-' symbole is optional
+            sid : sort by sid(default)
+            wt  : sort by wait time
+            sql : sort by sql text
+            ev  : sort by event
+            -o  : together with the '-o' option above, sort by logon_time
+           <col>: field in v$session
+        Other options:
+            -m  : Show SQL memory information in additional
     --[[
         &fields : {
                s={coalesce(nullif(program_name,'0'),'['||regexp_replace(nvl(a.module,a.program),' *\(.*\)$')||'('||osuser||')]') PROGRAM,PROGRAM_LINE# line#},
+               o={osuser,logon_time,regexp_replace(machine,'(\..*|^.*\\)') machine,regexp_replace(program,' *\(.*') program},
                p={p1,p2,p2text,p3},
                b={NULLIF(BLOCKING_SESSION||',@'||BLOCKING_INSTANCE,',@') BLOCK_BY,
                  (SELECT OBJECT_NAME FROM ALL_OBJECTS WHERE OBJECT_ID=ROW_WAIT_OBJ# AND ROWNUM<2) WAITING_OBJ,
                  ROW_WAIT_BLOCK# WAIT_BLOCK#}
-              }
-        &V1 : sid={''||sid},wt={waits desc},ev={event},sql={sql_text}
+            }
+        &V1 : sid={''||sid},wt={seconds_in_wait desc},ev={event},sql={sql_text},o={logon_time}
         &Filter: default={ROOT_SID =1 OR wait_class!='Idle' or sql_text is not null}, f={},u={(ROOT_SID =1 OR STATUS='ACTIVE' or sql_text is not null) and schemaname=sys_context('userenv','current_schema')}
         &tmodel : default={0}, m={1}
         @COST : 11.0={nvl(1440*(sysdate-SQL_EXEC_START),wait_secs/60)},10.0={(select TIME_WAITED/6000 from gv$session_event b where b.inst_id=a.inst_id and b.sid=a.sid and b.event=a.event)},9.0={null}
@@ -18,7 +37,7 @@ Show active sessions. Usage: ora actives [-s|-p|-b] [-f"<filter>"|-u] [waits|sid
 ]]*/
 
 set feed off
-
+set printvar on
 VAR actives refcursor "Active Sessions"
 VAR time_model refcursor "Top Session Time Model"
 BEGIN
@@ -41,7 +60,7 @@ BEGIN
                TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'[
                    SELECT (select c.owner  ||'.' || c.object_name from &CHECK_ACCESS1 c where c.object_id=program_id and rownum<2) A1,
                           PROGRAM_LINE# A2,
-                          substr(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200) A3,
+                          trim(substr(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200)) A3,
                           plan_hash_value A4
                    FROM  gv$sql
                    WHERE ROWNUM<2 AND sql_id=']'||a.sql_id||''' AND inst_id='||a.inst_id||' and child_number='||a.child)

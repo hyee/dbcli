@@ -1,7 +1,8 @@
 itv start 5 Checking Active sessions in interval mode, type 'Ctrl + C' to abort
-PRO
+set printvar on
 ora actives
-PRO determine if need to abort(10%) ...
+pro
+PRO Determine if need to abort(10%) ...
 var next_action varchar2
 set printvar off
 

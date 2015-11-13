@@ -1,4 +1,4 @@
-local env,string,java=env,string,java
+local env,string,java,math,table,tonumber=env,string,java,math,table,tonumber
 local grid,snoop,cfg,db_core=env.grid,env.event.snoop,env.set,env.db_core
 local var=env.class()
 var.inputs,var.outputs,var.desc,var.global_context,var.columns={},{},{},{},{}
@@ -277,53 +277,85 @@ function var.define_column(col,...)
         {{'WRAPPED','WRA','WORD_WRAPPED','WOR','TRUNCATED','TRU'}},
     }
 
-    local args={...}
+    local args,arg={...}
     env.checkerr(args[1],env.helper.helper,env.CURRENT_CMD)
     col=col:upper()
     var.columns[col]=var.columns[col] or {}
+    local obj=var.columns[col]
     for i=1,#args do
-        args[i]=args[i]:upper()
+        args[i],arg=args[i]:upper(),args[i+1]
         if args[i]=='NEW_VALUE' or args[i]=='NEW_V' then
-            local arg=args[i+1]
             env.checkerr(arg,'Format:  COL[UMN] <column> NEW_V[ALUE] <variable> [PRINT|PRI|NOPRINT|NOPRI].')
-            col,arg=col:upper(),arg:upper()
+            arg=arg:upper()
             var.setOutput(arg,'VARCHAR')
-            var.columns[col].new_value=arg
+            obj.new_value=arg
             i=i+1
         elseif args[i]=='FORMAT' or args[i]=='FOR' then
-            local arg=args[i+1]
-            env.checkerr(arg,'Format:  COL[UMN] <column> FOR[MAT] <format> JUS[TIFY] [LEFT|L|RIGHT|R].')
-            if arg:upper():find('^A') then
-                var.columns[col].format='%-'..tonumber(arg:match("%d+"))..'s'
+            local f=arg:upper()
+            env.checkerr(arg,'Format:  COL[UMN] <column> FOR[MAT] [KMB|TMB|ITV|SMHD|<format>] JUS[TIFY] [LEFT|L|RIGHT|R].')
+            if f:find('^A') then
+                local siz=tonumber(arg:match("%d+"))
+                obj.format_dir='%-'..siz..'s'
+                obj.format=function(v) return tostring(v) and obj.format_dir:format(tostring(v):sub(1,siz)) or v end
+            elseif f=="KMG" or f=="TMB" then --KMGTP
+                local units=f=="KMG" and {'  B',' KB',' MB',' GB',' TB',' PB'} or {' ',' T',' M',' B',' T',' Q'}
+                local div=f=="KMG" and 1024 or 1000
+                obj.format=function(v)
+                    local s=tonumber(v)
+                    if not s then return v end
+                    for i=1,#units do
+                        v,s=s,s/div
+                        if s<1 then return math.round(v,2)..units[i] end
+                    end
+                end
+            elseif f=="SMHD" or f=="ITV" then
+                local fmt=arg=='SMHD' and '%dD %02dH %02dM %02dS' or
+                          f=='SMHD' and '%dd %02dh %02dm %02ds' or '%d %02d:%02d:%02d'
+                obj.format=function(v)
+                    if not tonumber(v) then return v end
+                    local s,u=tonumber(v),{}
+                    for i=1,3 do
+                        s,u[#u+1]=math.floor(s/60),s%60
+                    end
+                    u[#u+1]=math.floor(s/24)
+                    return fmt:format(u[4],u[3],u[2],u[1]):gsub("^0 ",'')
+                end
             else
                 local fmt=java.new("java.text.DecimalFormat")
                 arg=arg:gsub('9','#')
                 local res,msg=pcall(fmt.applyPattern,fmt,arg)
-                env.checkerr(res,"Invalid format %s: %s",arg,tostring(msg))
-                var.columns[col].format=fmt
-                var.columns[col].num_len='%'..#arg..'s'
+                obj.format_dir='%'..#arg..'s'
+                local format_func=function(v)
+                    if not tonumber(v) then return s end
+                    return obj.format_dir:format(fmt:format(java.cast(v,'double')))
+                end
+                local res,msg=pcall(format_func,999.99)
+                env.checkerr(res,"Unsupported format %s: %s",arg,tostring(msg))
+                obj.format=format_func
             end
             i=i+1
         elseif args[i]=='PRINT' or args[i]=='PRI' then
-            var.columns[col].print=true
+            obj.print=true
         elseif args[i]=='NOPRINT' or args[i]=='NOPRI' then
-            var.columns[col].print=false
+            obj.print=false
         elseif args[i]=='HEADING' or args[i]=='HEAD'  or args[i]=='HEA' then
             local arg=args[i+1]
             env.checkerr(arg,'Format:  COL[UMN] <column> HEAD[ING] <new name>.')
-            var.columns[col].heading=arg
-        elseif args[i]=='JUSTIFY' or args[i]=='JUS' and var.columns[col].format then
-            local arg=args[i+1] and args[i+1]:upper()
+            obj.heading=arg
+            i=i+1
+        elseif args[i]=='JUSTIFY' or args[i]=='JUS' and obj.format then
+            local arg=arg and arg:upper()
             local dir
             if arg then
                 dir=(arg=='L' and '-') or (arg=='R' and '') or (arg=='LEFT' and '-') or (arg=='RIGHT' and '')
             end
             env.checkerr(dir,'Format:  COL[UMN] <column> FOR[MAT] <format> JUS[TIFY] [LEFT|L|RIGHT|R].')
-            if type(var.columns[col].format)=="string" then
-                var.columns[col].format=var.columns[col].format:gsub("-*(%d+)",dir..'%1')
-            else
-                var.columns[col].num_len=var.columns[col].num_len:gsub("-*(%d+)",dir..'%1')
+            if type(obj.format_dir)=="string" then
+                obj.format_dir=obj.format_dir:gsub("-*(%d+)",dir..'%1')
             end
+            i=i+1
+        elseif args[i]=='CLEAR' or args[i]=='CLE' then
+            var.columns[col]=nil
         end
     end
 end
@@ -333,29 +365,23 @@ function var.trigger_column(field)
     local col,value,rownum,index=table.unpack(field)
     col=col:upper()
     if not var.columns[col] then return end
+    local obj=var.columns[col]
     if rownum==0 then
-        index=var.columns[col].heading
+        index=obj.heading
         if index then
-            field[2],var.columns[index:upper()]=index,var.columns[col]
+            field[2],var.columns[index:upper()]=index,obj
         end
         return 
     end
-    
     if not value then return end
-    index=var.columns[col].format
-    if index then
-        if type(index)=="string" then
-            field[2]=index:format(tostring(value))
-        else
-            value=tonumber(value)
-            field[2]=var.columns[col].num_len:format(value and index:format(java.cast(value,'double')) or field[2])
-        end
-    end
 
-    index=var.columns[col].new_value
+    index=obj.format
+    if index then field[2]=index(value) end
+
+    index=obj.new_value
     if index then
         var.inputs[index],var.outputs[index]=value or db_core.NOT_ASSIGNED,nil
-        if var.columns[col].print==true then print(string.format("Variable %s == > %s",index,value or 'NULL')) end
+        if obj.print==true then print(string.format("Variable %s == > %s",index,value or 'NULL')) end
     end
 end
 
@@ -366,12 +392,27 @@ function var.onload()
     snoop('BEFORE_COMMAND',var.before_command)
     snoop("AFTER_COMMAND",var.capture_after_cmd)
     snoop("ON_COLUMN_VALUE",var.trigger_column)
-    cfg.init("PrintVar",'on',nil,"db.core","Max size of historical commands",'on,off')
-    cfg.init(var.cmd1,'on',nil,"db.core","Defines the substitution character(&) and turns substitution on and off.",'on,off')
+    local fmt_help=[[
+    Specifies display attributes for a given column. Usage: COL <column> [NEW_VALUE|FORMAT|HEAD]
+    Refer to SQL*Plus manual for the detail, below are the supportted features:
+        1) COL <column> NEW_V[ALUE] <var>    [PRINT|NOPRINT]
+        2) COL <column> HEAD[ING]   <title>
+        3) COL <column> FOR[MAT]    <format> [JUS[TIFY] LEFT|L|RIGHT|R]
+        4) COL <column> CLE[AR]
+
+    Other addtional features:
+        1) COL <column> FOR[MAT] KMG :  Cast number as kb/mb/gb/etc format
+        2) COL <column> FOR[MAT] TMB :  Cast number as thousand/million/billion/etc format
+        3) COL <column> FOR[MAT] SMHD:  Cast number as 'xxD xxH xxM xxS' format
+        4) COL <column> FOR[MAT] smhd:  Cast number as 'xxd xxh xxm xxs' format
+        5) COL <column> FOR[MAT] ITV :  Cast number as 'dd hh:mm:ss' format
+    ]]
+    cfg.init({"PrintVar","VERIFY",'VER'},'on',nil,"db.core","Max size of historical commands",'on,off')
+    cfg.init({var.cmd1,var.cmd2},'on',nil,"db.core","Defines the substitution character(&) and turns substitution on and off.",'on,off')
     env.set_command(nil,{"Accept","Acc"},'Assign user-input value into a existing variable. Usage: accept <var> [[prompt] <prompt_text>|@<file>]',var.accept_input,false,3)
     env.set_command(nil,{var.cmd3,var.cmd4},var.helper,var.setOutput,false,4)
     env.set_command(nil,{var.cmd1,var.cmd2},"Define input variables, Usage: def <name>[=]<value> [description], or def <name> to remove definition",var.setInput,false,3)
-    env.set_command(nil,{"COLUMN","COL"},'Specifies display attributes for a given column, refer to SQL*Plus manual.',var.define_column,false,30)
+    env.set_command(nil,{"COLUMN","COL"},fmt_help,var.define_column,false,30)
     env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables.Usage: print <variable|-a>',var.print,false,3)
     env.set_command(nil,"Save","Save variable value into a specific file under folder 'cache'. Usage: save <variable> <file name>",var.save,false,3);
 end

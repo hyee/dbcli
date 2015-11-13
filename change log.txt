@@ -1,28 +1,33 @@
+2015-11-13: + public: new command options "column <col> <KMG|TMB|SMHD|smhd|ITV>", type "col" for more detail
+                    : same option in "set" allows multiple names, "set -a" for the detail
+                    : remove regexp maching for command "grep", match pure text instead
+            ! public: fixes on "spool" and "ansi"
+            * Oracle: update the help info for "ora actives/ashtop/plan", type "ora -h <cmd>" for the detail 
 2015-11-12: ! public: minor code optimizations and fixes
             + public: new option "set OnErrExit";
                     : script based commands(ora,snap,sqlplus,etc) support batch execution. i.e.: show sga,pga
-                    : support 'COLUMN <var> [new_value|format|head|print]' command, and ommit other "COLUMN" options
+                    : support "COLUMN <var> [new_value|format|head|print]" command, and ommit other "COLUMN" options
                     : new option "set sep1k" to determine if show thousands seperator for number
 2015-11-11: ! oracle: change statement parsing method, so that output variable can be used as 
                       input variable inside the same PL/SQL block, and vice versa
-            + public: "itv start/end/off" to loop a block of statements, refer to 'show itvtest' for example
+            + public: "itv start/end/off" to loop a block of statements, refer to "show itvtest" for example
                     : new command "set OnErr", mainly used within script
-2015-11-10: * public: change the argument orders of 'snap', also some fixes
-            + oracle: new command 'ora topsegs'
-            * oracle: show content of 'starttime','endtime' and 'instance' in title bar if corresponding variables changed
-                      command type of 'xplan' can be single-line if not follow with SQL text(i.e.,sql_id)
-                      changes on 'sys xvcreate'
+2015-11-10: * public: change the argument orders of "snap", also some fixes
+            + oracle: new command "ora topsegs"
+            * oracle: show content of "starttime","endtime" and "instance" in title bar if corresponding variables changed
+                      command type of "xplan" can be single-line if not follow with SQL text(i.e.,sql_id)
+                      changes on "sys xvcreate"
             ! public: minor fixes related to variable bindings
 =======================begin v0.7================================================
-2015-11-09: ! oracle: fix issues of 'set starttime/endtime'
+2015-11-09: ! oracle: fix issues of "set starttime/endtime"
               public: fix issues of ansicon; other minor fixes
 2015-11-08: + db2   : new commands "sql search" and "sh cksec"
 2015-11-08: ! public: fix issue for "ssh upload_script" and "shell" commands
-2015-11-07: + oracle: normal user can run 'sys' commands if xv$ views are created and granted. Refer to 'help sys'
+2015-11-07: + oracle: normal user can run "sys" commands if xv$ views are created and granted. Refer to "help sys"
             + public: new command "set errcode" to customize the color of the error messages
-            + public: support user-defined colors when querying or echoing. type 'ansi' for more info
-2015-11-06: + oracle: 'set' commands 'starttime','endtime' and 'instance', as the global parameters for all SQLs 
-            + oracle: some new scripts for 'ora' and 'sys'
+            + public: support user-defined colors when querying or echoing. type "ansi" for more info
+2015-11-06: + oracle: "set" commands "starttime","endtime" and "instance", as the global parameters for all SQLs 
+            + oracle: some new scripts for "ora" and "sys"
             ! public: fixes on some known bugs, related to jdbc variable bindings
             ! public: fixes on ansiconx64 not function in Win 10
             * minor changes
@@ -48,9 +53,9 @@
 2015-09-18: ! public: minor fixes
 =======================begin v0.5================================================
 2015-09-15: + oracle: new command "shell asmdu"
-            + public: support interruption(ctrl+c/d,'q') on 'connect' and 'ssh' commands
+            + public: support interruption(ctrl+c/d,"q") on "connect" and "ssh" commands
             - public: remove unused modules: LuaLanes and LuaSocket
-2015-09-14: + public: support CTRL+C to abort running command(same to 'q' and CTRL+D)
+2015-09-14: + public: support CTRL+C to abort running command(same to "q" and CTRL+D)
             ! public: fix "dbcli.bat"
             ! public: fix the completion determination of "alter" statement
 =======================begin v0.4================================================
@@ -58,12 +63,12 @@
             ! oracle: fix issue for the "explain plan" statement
             * public: remove tailing spaces from codes; replace tab as 4 spaces
 2015-09-10: ! public: minor fixes
-             * public: open html file in async mode for 'chart' command to avoid blocking dbcli
+             * public: open html file in async mode for "chart" command to avoid blocking dbcli
             * public: ssh download/upload: enable compression by default
 =======================begin v0.3================================================
 2015-09-08: + oracle: merge request#3 from https://github.com/anjuls/dbcli.git
 2015-09-05: + public: "help -stack" to see internal call stack for development/investigation purpose
-            + public: new command "more" for pagination, but doesn't support searching
+            + public: new command "more" for pagination, but doesnt support searching
 2015-09-05: + public: SSH: support local "alias" commands
             + db2:    SSH: new command "set AUTOSSH" to enable/disable auto-ssh connection when db is connected
             + public: SSH: new command "ssh upload/download/llcd" to invoke "pscp.exe" to support FTP function
@@ -99,8 +104,8 @@
             + public: new command "chart" to generate graph charts
 2015-07-12: + oracle: new command "ora deptree2" and "ora prof"
 2015-07-05: + oracle: new command "ora liblock" and "sys liblock" 
-2015-07-03: ! oracle: fixes on 'desc' and 'ora' commands
-2015-06-27: * oracle: enhancement and performance tuning on 'ora size'
+2015-07-03: ! oracle: fixes on "desc" and "ora" commands
+2015-06-27: * oracle: enhancement and performance tuning on "ora size"
 2015-06-26: ! public: update to latest consolez, which removes the "Administrator:" prefix from tab titles
             + oracle: new command "awrdiff" to extract AWR diff report
             + oracle: new command "sys" which is similar to "ora" command except only support SYSDBA a/c
@@ -110,57 +115,57 @@
 2015-06-13: + oracle: new command "ora pins" and "ora waiters"
             ! public: update to latest luajit and consolez
 2015-06-13: ! public: minor fixes
-2015-05-17: ! oracle: merge 'ora sqls' into 'ora sqlm'
+2015-05-17: ! oracle: merge "ora sqls" into "ora sqlm"
             + oracle: new command "ora indexfrag"
-2015-05-17: ! oracle: update 'ora rman'
+2015-05-17: ! oracle: update "ora rman"
 2015-04-03: ! public: fix issue when run another script from one script
-            * oracle: rename 'sqlslope' as 'awrslope'
+            * oracle: rename "sqlslope" as "awrslope"
 2015-04-03: ! oracle: fix the logics of AWR-related commands 
 2015-03-28: ! public: fix the historical commands issue
             * all   : update the help messages for some existing commands
             * oracle: sp scripts: parameters _WORK_DIR_/_FILE_DIR_/_SQLPLUS_DIR_/FILE_OUTPUT_DIR
-            ! oracle: sync edb360, and partial fix on 'sp sqld'
+            ! oracle: sync edb360, and partial fix on "sp sqld"
             ! public: minor fixes on public modules
-            * oracle: update on 'ora sqlslope' 
+            * oracle: update on "ora sqlslope" 
             + oracle: include edb360,sqld360 and sqlhc
-            + oracle: ora command 'sqlslope' to show the summary of performance changed sqls during a specific period
+            + oracle: ora command "sqlslope" to show the summary of performance changed sqls during a specific period
             + oracle: sqlplus commands: sqlhc/sqldx/sqlhcxec. Refer to MOS#1366133.1
-            + oracle: 'sp' command to run SqlPlus scripts under folder "sqlplus" 
+            + oracle: "sp" command to run SqlPlus scripts under folder "sqlplus" 
             ! public: minor fixes on cancel statement and def/connect/sqlplus commands
-2015-03-27: + public: support CTRL +D or 'q' to abort the running command
+2015-03-27: + public: support CTRL +D or "q" to abort the running command
             + public: support custimize & predefine a connection, something like Oracle tnsnames, refer to "data\jdbc_url_sample.cfg" 
 2015-03-22: + public: support IBM JRE 1.7+
             + public: support config file(data\init.cfg) which is fully managed by end user,refer to init_sample.cfg
 2015-03-22: ! public: fix the jansi cannot be loaded issue in some machines
 2015-03-21: + db2   : support PureScale connection
             ! public: recompile jnlua5.1.dll to support windows xp.
-2015-03-21: + public: support defining default '$1-$9' values for 'alias' command. i.e.: "alias sf select * from $1[dual];"
+2015-03-21: + public: support defining default "$1-$9" values for "alias" command. i.e.: "alias sf select * from $1[dual];"
 2015-03-15: + public: support automatically compression if target file extension is "zip" or "gz" for commands "csv2sql","sql2csv","sql2file"
             + public: new command "csv2sql","sql2csv","sql2file"
-2015-03-15: ! oracle: fix error "ORA-22998" for 'loadtrace' command
-            * public: for 'alias' command, if its connected command is database command, then create it in alias\<db_name> directory which is visible only when target db is loaded.
+2015-03-15: ! oracle: fix error "ORA-22998" for "loadtrace" command
+            * public: for "alias" command, if its connected command is database command, then create it in alias\<db_name> directory which is visible only when target db is loaded.
 2015-03-08: + public: new setting "COMMAND_ENDMARKS" to define the character to indicate the input completion of the cross-line command
-            * public: new abbr '!' for existing command 'host'
-2015-03-08: ! oracle: fix issue for 'unwrap' command
+            * public: new abbr "!" for existing command "host"
+2015-03-08: ! oracle: fix issue for "unwrap" command
             + db2   : support db2 database
 =======================begin v0.2================================================
 2015-03-07: * "connect" command supports default 1521 port when not specify the port
             ! minor fixes
-2015-03-07: + new command 'ora logmnr'
+2015-03-07: + new command "ora logmnr"
             ! move snap,ora,var,def,print,save,print,accept commands into public commands, use inherit instead
-2015-02-08: * -noverify -XX:-UseAdaptiveSizePolicy -XX:+UseParallelGC options in 'dbcli.bat'
-            + new command 'snap segstat' 
-            * update on 'ora ddl' to allow specifying the file extension name 
+2015-02-08: * -noverify -XX:-UseAdaptiveSizePolicy -XX:+UseParallelGC options in "dbcli.bat"
+            + new command "snap segstat" 
+            * update on "ora ddl" to allow specifying the file extension name 
             ! minor fixes according to 12c
-            * update command 'loadtrace' to remove the reference to 'utl_file'
-            + new 'unwrap' command to unwrap oracle procedures/function/etc
-            ! fix 'loadtrace alert' for Oracle 12c 
-2015-02-01: ! fixes on 'ora space'(partial)
+            * update command "loadtrace" to remove the reference to "utl_file"
+            + new "unwrap" command to unwrap oracle procedures/function/etc
+            ! fix "loadtrace alert" for Oracle 12c 
+2015-02-01: ! fixes on "ora space"(partial)
             * error message improvement
-2015-02-07: ! 'ora' command fully supports accessing the dirs that not belong to the 'ora' directory, i.e. 'ora -h @','ora -p @','ora @'
-            ! fixes on error of 'ora actives' when active sql texts contain char '\0'
-            ! fixes on unexpected layouts when the dbcli instance doesn't support ansi color for unknown reason
-            ! fixes on 'ora space'
+2015-02-07: ! "ora" command fully supports accessing the dirs that not belong to the "ora" directory, i.e. "ora -h @","ora -p @","ora @"
+            ! fixes on error of "ora actives" when active sql texts contain char "\0"
+            ! fixes on unexpected layouts when the dbcli instance doesn"t support ansi color for unknown reason
+            ! fixes on "ora space"
 2015-02-01: + "ctrl + d" to abort inputting command 
             + supports "loadtrace alert" to extract alert log in local instance, supports extracting a specific MB data from the trace file
             ! fixes on awrdump/addmdump/ashdump commands
@@ -171,26 +176,26 @@
             + "-m" option for "ora actives" to show the resource usages of the active SQLs
 2015-01-31: + dbcli now supports both 32 & 64 bit JVM.
             * move Loader.class into dbcli.jar, and dbcli.bat is changed accordingly
-            * small fixes on 'ora','db_core' and 'grid' modules
+            * small fixes on "ora","db_core" and "grid" modules
             + new command "ora latchprof"(Tanel Poder)
             + new command "ora block2rowid" and "ora io"
-2015-01-24: * performance tuning on 'ora actives' command
-            + Additional '-a' option on 'login' command, to set alias name of an existing account 
-2015-01-23: command 'ora deptree' to show dependence tree
-            performance tuning on 'desc' command
+2015-01-24: * performance tuning on "ora actives" command
+            + Additional "-a" option on "login" command, to set alias name of an existing account 
+2015-01-23: command "ora deptree" to show dependence tree
+            performance tuning on "desc" command
 2015-01-13: Updates on some ora scripts; add "Save" command
-2014-11-22: update on 'snap" command to support 'snap begin/end'
-            update on 'xplan' command to allow dumping the 10053 event('-10053' option), and extract the execution plan for a specific SQL ID
-2014-11-20: '.' parameter as special meaning for 'ora' command, means default value. used to skip the input of corresponding parameter
-            new 'ora ddl' command
-            new '-b' option on 'ora plan'
+2014-11-22: update on "snap" command to support "snap begin/end"
+            update on "xplan" command to allow dumping the 10053 event("-10053" option), and extract the execution plan for a specific SQL ID
+2014-11-20: "." parameter as special meaning for "ora" command, means default value. used to skip the input of corresponding parameter
+            new "ora ddl" command
+            new "-b" option on "ora plan"
             fix on binding variables when it is referenced more than once
 2014-11-15: show binding variables in "ora plan"
-2014-11-14: 'ora @<file> [parameters]' syntax to allow run scripts that not belongs to the 'ora' folder
-            add command 'accept' and parameter 'define' 
+2014-11-14: "ora @<file> [parameters]" syntax to allow run scripts that not belongs to the "ora" folder
+            add command "accept" and parameter "define" 
 2014-11-12: changes on var/def command, allow setting the description of the variables
-            add 'SQLCACHESIZE' parameter for database
-2014-11-12: add 'print' command and 'PrintVar' parameter for the variables(command var/def)
+            add "SQLCACHESIZE" parameter for database
+2014-11-12: add "print" command and "PrintVar" parameter for the variables(command var/def)
 2014-11-11: change the user-defined alias commands as the lowest priority
             remake luajit with newest V2.1 code and enable lua5.2 compatibility(option DLUAJIT_ENABLE_LUA52COMPAT)
             "set database" option to support multiple database types(i.e.  mssql)
@@ -208,7 +213,7 @@
 2014-08-21: add command "addmdump","awrdump","ashdump" to extract ADDM/AWR/ASH report into "cache" folder
 2014-08-20: add "sqlprof" command to extract SQL profile from AWR/memory/SQL Set/SPM/profile
 2014-08-19: add "-p" option for "set" command to permanently save the configurations
-2014-08-18: settings "prompt_color","command_color","headcolor" for jline console 
+2014-08-18: settings "prompt_color","command_color","headcolor" for JLine 
 2014-07-20: small fixes
 2014-05-22: "color_dbcli.bat" to support jline console
 2014-05-20: fix error for "set rowdel"
@@ -218,8 +223,8 @@
 2014-05-13: performance trace for dev purpose, see "set trace" and "set profiler"
 2014-05-10: add "password" module, as well as the "SaveLogin" option and "Login" command
             Fix of "table.dump" function
-2014-05-09: "ora" command: when current db version doesn't match the version requirement, just return error message iso execution script
-            'alias -e' option to encrypt alias text
+2014-05-09: "ora" command: when current db version doesn"t match the version requirement, just return error message iso execution script
+            "alias -e" option to encrypt alias text
             encrypt password for oracle "reconnect" command
             Add encrypt module "enc"
 2014-05-08: Bugfix for "set" and "ora" module

@@ -34,6 +34,12 @@ function string.replace(s,sep,txt,plain,occurrence)
   return table.concat(r,txt)
 end
 
+function string.escape(s, mode)
+  s = s:gsub('%%','%%%%'):gsub('%z','%%z'):gsub('([%^%$%(%)%.%[%]%*%+%-%?])', '%%%1')
+  if mode == '*i' then s = s:gsub('[%a]', function(s) return s:lower():format('[%s%s]',s:upper()) end) end
+  return s
+end
+
 function string.gsplit(s, sep, plain,occurrence)
     local start = 1
     local counter=0
@@ -134,6 +140,8 @@ function math.round(num,digits)
     digits=digits or 0
     return math.floor(10^digits*num+0.5)/(10^digits)
 end
+
+
 
 function table.dump(tbl,indent,maxdep,tabs)
       maxdep=tonumber(maxdep) or 9
