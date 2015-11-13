@@ -15,8 +15,10 @@ local params={
     PIVOTSORT={name="pivotsort",default="on",desc="To indicate if to sort the titles when pivot option is on",range="on,off"},
     MAXCOLS={name="maxcol",default=1024,desc="Define the max columns to be displayed in the grid",range="4-1024"},
     DIGITS={name="digits",default=38,desc="Define the digits for a number",range="0 - 38"},
+    SEP4K={name="sep4k",default="off",desc="Define wether to show number with thousands separator",range="on,off"},
     LINESIZE={name="linesize",default=800,desc="Define the max chars in one line, other overflow parts would be cutted.",range='10-32767'}
 }
+
 
 function grid.set_param(name,value)
     if (name=="TITLEDEL" or name=="ROWDEL") and #value>1 then
@@ -270,8 +272,18 @@ function grid:add(rs)
         end
 
         if headind>0 and (type(v1) == "number" or type(v) == "number"  or self.printhead and self.colinfo and self.colinfo[k].is_number) then
-            if grid.digits<38 and tonumber(v) then
-                v=math.round(tonumber(v),grid.digits)
+            if v1==v and tonumber(v) then
+                v=tonumber(v)
+                if grid.digits<38  then
+                    v=math.round(v,grid.digits)
+                end
+                if grid.sep4k=="on" then
+                    if v~=math.floor(v) then
+                        v=string.format_number("%,.2f",v,'double')
+                    else
+                        v=string.format_number("%,d",v,'int')
+                    end
+                end
             end
             if tostring(v):find('e',1,true) then v=string.format('%99.38f',v):gsub(' ',''):gsub('%.?0+$','') end
             csize = #tostring(v)
@@ -440,12 +452,9 @@ function grid:wellform(col_del,row_del)
         local row=cut(self,v,format_func,v[0]==0 and head_fmt or fmt)
         if v[0]==0 then
             row=row..nor
-        elseif grid.grep_text then
-            if row:match(grid.grep_text) then
-                match_flag=1
-                row=row:gsub(grid.grep_text,hl.."%0"..nor)
-            end
-            if (match_flag ==0 and not grid.grep_dir) or (match_flag==1 and grid.grep_dir) then filter_flag=0  end
+        elseif env.printer.grep_text then
+            row,match_flag=row:gsub(env.printer.grep_text,hl.."%0"..nor)
+            if (match_flag ==0 and not env.printer.grep_dir) or (match_flag>0 and env.printer.grep_dir) then filter_flag=0  end
         end
         if filter_flag==1 then table.insert(rows,row) end
         if not result[k+1] or result[k+1][0]~=v[0] then
@@ -464,21 +473,9 @@ function grid.print(rows,printhead,col_del,row_del,psize)
     psize=psize or 10000
     if rows.__class then
         rows=rows:wellform(col_del,row_del)
-        return print(table.concat(rows,"\n",1,math.min(#rows,psize+2)))
+        return print(table.concat(rows,"\n",1,math.min(#rows,psize+2)),"__BYPASS_GREP__")
     end
-    print(grid.tostring(rows,printhead,col_del,row_del,psize))
-end
-
-
-function grid.grep(keyword,stmt)
-    grid.grep_text,grid.grep_dir=nil,nil
-    env.checkerr(stmt,"Usage: grep <keyword> <select statement>")
-    if keyword:len()>1 and keyword:sub(1,1)=="-" then
-        keyword,grid.grep_dir=keyword:sub(2),true
-    end
-    grid.grep_text=keyword:case_insensitive_pattern()
-    pcall(env.eval_line,stmt,true,true)
-    grid.grep_text,grid.grep_dir=nil,nil
+    print(grid.tostring(rows,printhead,col_del,row_del,psize),"__BYPASS_GREP__")
 end
 
 function grid.onload()
@@ -488,8 +485,6 @@ function grid.onload()
         set(k,grid[v.name],grid.set_param,"grid",v.desc,v.range)
     end
     env.ansi.define_color("HEADCOLOR","HBRED;HIW","ansi.grid","Define grid title's color, type 'ansi' for more available options")
-    env.ansi.define_color("GREPCOLOR","BBLU;HIW","ansi.grid","Define highlight color for the grep command, type 'ansi' for more available options")
-    env.set_command(nil,"grep","Filter matched text from the output. Usage: grep <keyword|-keyword> <other command>, -keyword means exclusive",grid.grep,'__SMART_PARSE__',3)
 end
 
 for k,v in pairs(params) do grid[v.name]=v.default end

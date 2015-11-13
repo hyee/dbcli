@@ -71,18 +71,20 @@ function output.get_error_output(info)
     return info
 end
 
-snoop("ON_SQL_ERROR",output.get_error_output,nil,40)
-snoop("AFTER_ORACLE_CONNECT",output.setOutput)
-snoop("AFTER_ORACLE_EXEC",output.getOutput,nil,50)
+function output.onload()
+    snoop("ON_SQL_ERROR",output.get_error_output,nil,40)
+    snoop("AFTER_ORACLE_CONNECT",output.setOutput)
+    snoop("AFTER_ORACLE_EXEC",output.getOutput,nil,50)
 
-cfg.init("ServerOutput",
-    "on",
-    function(name,value)
-        output.setOutput(nil)
-        return value
-    end,
-    "oracle",
-    "Print Oracle dbms_output after each execution",
-    "on,off")
+    cfg.init({"ServerOutput",'SERVEROUT'},
+        "on",
+        function(name,value)
+            output.setOutput(nil)
+            return value
+        end,
+        "oracle",
+        "Print Oracle dbms_output after each execution",
+        "on,off")
+end
 
 return output

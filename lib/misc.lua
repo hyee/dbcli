@@ -34,6 +34,12 @@ function string.replace(s,sep,txt,plain,occurrence)
   return table.concat(r,txt)
 end
 
+function string.escape(s, mode)
+  s = s:gsub('%%','%%%%'):gsub('%z','%%z'):gsub('([%^%$%(%)%.%[%]%*%+%-%?])', '%%%1')
+  if mode == '*i' then s = s:gsub('[%a]', function(s) return s:lower():format('[%s%s]',s:upper()) end) end
+  return s
+end
+
 function string.gsplit(s, sep, plain,occurrence)
     local start = 1
     local counter=0
@@ -88,8 +94,9 @@ function string.fmt(base,...)
     return str:format(base,table.unpack(args))
 end
 
-function string.format_number(base,s)
-    return str:format(base,s)
+function string.format_number(base,s,cast)
+    if not tonumber(s) then return s end
+    return str:format(base,java.cast(tonumber(s),cast or 'double'))
 end
 
 if not table.unpack then table.unpack=function(tab) return unpack(tab) end end
@@ -133,6 +140,8 @@ function math.round(num,digits)
     digits=digits or 0
     return math.floor(10^digits*num+0.5)/(10^digits)
 end
+
+
 
 function table.dump(tbl,indent,maxdep,tabs)
       maxdep=tonumber(maxdep) or 9

@@ -52,6 +52,7 @@ local base_color={
     HBMAG={"\27[45;1m","High Intensity Background Color: Magenta"},
     HBCYN={"\27[46;1m","High Intensity Background Color: Cyan"},
     HBWHT={"\27[47;1m","High Intensity Background Color: White"},
+    
 
     --Background Colors
     BBLK={"\27[40m","Background Color: Black"},
@@ -125,8 +126,9 @@ function ansi.mask(codes,msg,continue)
     for v in codes:gmatch("([^; \t,]+)") do
         v=v:upper()
         local c=ansi.string_color(v)
-        if not c then 
-            v=ansi.cfg(v) or "" 
+        if not c then
+            v=ansi.cfg(v)
+            if v then return ansi.mask(v,msg,continue) end
         else
             if not str then
                 str=c
@@ -249,26 +251,27 @@ function ansi.test_text(str)
         local bf,wf,bb,wb=base_color['BLK'][1],base_color['WHT'][1],base_color['BBLK'][1],base_color['BWHT'][1]
         if env.grid then
             local row=env.grid.new()
-            local is_bg,max_len=nil,0
+            local is_fg,max_len=nil,0
             row:add{"Ansi Code","Ansi Type","Description","Demo #1(White)","Demo #2(Black)"}
             for k,v in pairs(base_color) do if type(v)=="table" and v[2] and max_len<#v[2] then max_len=#v[2] end end
             local fmt="%s%s"..base_color['NOR'][1]
             for k,v in pairs(base_color) do
                 if type(v)=="table" then
                     local text=string.format('%-'..max_len..'s',v[2])
-                    is_fg=text:lower():match("Foreground")
+                    is_fg=text:lower():match("foreground")
                     local ctl=v[3] or 0
                     row:add{k,
-                        v[3] and " Control" or is_bg and 'BG color' or 'FG color',text,
+                        v[3] and " Control" or is_fg and 'FG color' or 'BG color',
+                        text,
                         ctl>0 and "N/A" or fmt:format(is_fg and v[1]..wb or wf..v[1],text),
-                        ctl>0 and "N/A" or fmt:format(is_fg and v[1]..bb or wf..v[1],text)}
+                        ctl>0 and "N/A" or fmt:format(is_fg and v[1]..bb or bf..v[1],text)}
                 end
             end
             row:sort("-2,3,1",true)
             row:print()
         end
         rawprint(env.space..string.rep("=",140))
-        rawprint(env.space.."Use '$<code>$<other text' to mask color in all outputs, including query, echo, etc. Not all listed control codes are supported.")
+        rawprint(env.space.."Use `$<code>$<other text>` to mask color in all outputs, including query, echo, etc. Not all listed control codes are supported.")
         rawprint(env.space.."For the color settings defined in command 'set', use '<code1>[;<code2>[...]]' format")
         rawprint(env.space.."Run 'ansi <text>' to test the color, i.e.: ansi $HIR$ Hello $HIC$$HBGRN$ ANSI!")
         rawprint(env.space.."Or SQL:  select '$HIR$'||owner||'$HIB$.$NOR$'||object_name obj from all_objects where rownum<10;")

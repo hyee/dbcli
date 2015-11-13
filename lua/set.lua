@@ -10,17 +10,25 @@ cfg._p=env.load_data(file)
 function cfg.show_cfg(name)
     local rows={{'Name','Value','Default','Class','Available Values','Description'}}
     print([[Usage: set      <name>                                  : Get specific parmeter value
+       set -a                                           : Show abbrs and source.
        set      <name1> <value1> [<name2> <value2> ...] : Change settings in current window
        set -p   <name1> <value1> [<name2> <value2> ...] : Change settings permanently
        set [-p] <name1> default  [<name2> back     ...] : Change settings back to the default/previous values
     ]])
-    if name then
-        local v=cfg[name]
+    if name and name~='-a' and name~='-A' then
+        local v=cfg.exists(name)
         table.insert(rows,{name,string.from(v.value),string.from(v.default),v.class,v.range or '*',v.desc})
     else
+        if name then table.insert(rows[1],2,"Source") end
         for k,v in pairs(cfg) do
             if type(v)=="table" and k==k:upper() and v.src then
-                table.insert(rows,{k,string.from(cfg[k].value),string.from(cfg[k].default),cfg[k].class,cfg[k].range or '*',cfg[k].desc})
+                table.insert(rows,{
+                    name and table.concat(cfg[k].abbr,', ') or k,
+                    string.from(cfg[k].value),
+                    string.from(cfg[k].default),
+                    cfg[k].class,cfg[k].range or '*',
+                    cfg[k].desc})
+                if name then table.insert(rows[#rows],2,cfg[k].src) end
             end
         end
     end
@@ -28,14 +36,28 @@ function cfg.show_cfg(name)
     grid.print(rows)
 end
 
+cfg._commands={}
+function cfg.exists(name)
+    return name and cfg._commands[name:upper()]
+end
+
+function cfg.get(name)
+    local option=cfg.exists(name)
+    if not option then
+        return env.warn("Setting ["..name.."] does not exist!")
+    end
+    return option.value
+end
+
 function cfg.init(name,defaultvalue,validate,class,desc,range)
-    local abbr
+    local abbr={name}
     if type(name)=="table" then
-        name,abbr=name[1],name[2]
+        abbr=name
+        name=abbr[1]
     end
     name=name:upper()
-    if cfg[name] then
-        return print("Error : Environment parameter["..name.."] has been defined in "..cfg[name].src.."!")
+    if cfg.exists(name) then
+        env.raise("Environment parameter '%s' has been defined in %s!",name,cfg.exists(name).src)
     end
     if not cfg[name] then cfg[name]={} end
     cfg[name]={
@@ -47,8 +69,14 @@ function cfg.init(name,defaultvalue,validate,class,desc,range)
         desc=desc,
         range=range,
         org=defaultvalue,
-        src=env.callee()
+        src=env.callee(),
+        abbr=abbr
     }
+    for k,v in ipairs(abbr) do
+        if type(v)=="string" and v~="" then
+            abbr[k],cfg._commands[v:upper()]=v:upper(),cfg[name]
+        end
+    end
     if maxvalsize<tostring(defaultvalue):len() then
         maxvalsize=tostring(defaultvalue):len()
     end
@@ -58,37 +86,30 @@ function cfg.init(name,defaultvalue,validate,class,desc,range)
 end
 
 function cfg.remove(name)
-    if not cfg[name] then return end
+    local option=cfg.exists(name)
+    if not option then return end
     local src=env.callee()
-    if src:gsub("#%d+","")~=cfg[name].src:gsub("#%d+","") then
-        env.raise("Cannot remove setting '%s' from %s, it was defined in file %s!",cmd,src,_CMDS[cmd].FILE)
+    if src:gsub("#%d+","")~=option.src:gsub("#%d+","") then
+        env.raise("Cannot remove setting '%s' from %s, it was defined in file %s!",name,src,_CMDS[cmd].FILE)
     end
-    cfg[name]=nil
+    
+    for k,v in ipairs(option.abbr) do
+        cfg[v],cfg._commands[v]=nil,nil
+    end
 end
 
-function cfg.exists(name)
-    return cfg[name:upper()]
-end
-
-function cfg.get(name)
-    name=name:upper()
-    if not cfg[name] then
-        return print("["..name.."] setting does not exist!")
-    end
-    return cfg[name].value
-end
 
 function cfg.temp(name,value,backup)
     name=name:upper()
-    if not cfg[name] then return end
-    if backup or cfg[name].prebackup then
-        cfg[name].org=cfg[name].value
+    if not cfg.exists(name) then return end
+    if backup or cfg.exists(name).prebackup then
+        cfg.exists(name).org=cfg.exists(name).value
     end
-    cfg[name].prebackup=backup
-    cfg[name].value=value
+    cfg.exists(name).prebackup=backup
+    cfg.exists(name).value=value
     env.log_debug("set",name,value)
     if env.event then
-        env.event.callback("ON_SETTING_CHANGED",name,value,cfg[name].org)
+        env.event.callback("ON_SETTING_CHANGED",name,value,cfg.exists(name).org)
     end
 end
 
@@ -96,16 +117,16 @@ function cfg.set(name,value,backup,isdefault)
     --res,err=pcall(function()
     if not name then return cfg.show_cfg() end
     name=name:upper()
-    if not cfg[name] then return print("Cannot set ["..name.."], the parameter does not exist!") end
+    if not cfg.exists(name) then return print("Cannot set ["..name.."], the parameter does not exist!") end
     if not value then return cfg.show_cfg(name) end
 
     if tostring(value):upper()=="DEFAULT" then
-        return cfg.set(name,cfg[name].default,nil,true)
+        return cfg.set(name,cfg.exists(name).default,nil,true)
     elseif tostring(value):upper()=="BACK" then
         return cfg.restore(name)
     end
 
-    local range= cfg[name].range
+    local range= cfg.exists(name).range
     if range and range ~='' then
         local lower,upper=range:match("([%-%+]?%d+)%s*%-%s*([%-%+]?%d+)")
         if lower then
@@ -129,8 +150,8 @@ function cfg.set(name,value,backup,isdefault)
 
     local final=value
 
-    if cfg[name].func then
-        final=cfg[name].func(name,value,isdefault)
+    if cfg.exists(name).func then
+        final=cfg.exists(name).func(name,value,isdefault)
         if final==nil then return end
     end
 
@@ -143,7 +164,7 @@ end
 
 function cfg.doset(...)
     local args,idx={...},1
-    if #args==0 then return cfg.show_cfg() end
+    if #args==0 or args[1]=='-a' or args[1]=='-A' then return cfg.show_cfg(args[1]) end
     if args[1]:lower()=="-p" then idx=2 end
     for i=idx,#args,2 do
         local value=cfg.set(args[i],args[i+1],true)
@@ -177,8 +198,8 @@ function cfg.restore(name)
     end
     name=name:upper()
     env.log_debug("set","Restoring",name)
-    if not cfg[name] or cfg[name].org==nil then return end
-    cfg.set(name,cfg[name].org)
+    if not cfg.exists(name) or cfg.exists(name).org==nil then return end
+    cfg.set(name,cfg.exists(name).org)
 end
 
 function cfg.tester()
@@ -219,7 +240,7 @@ end
 function cfg.onload()
     event.snoop("BEFORE_COMMAND",cfg.capture_before_cmd)
     event.snoop("AFTER_COMMAND",cfg.capture_after_cmd)
-    env.set_command(nil,cfg.name,"Set environment parameters. Usage: set [-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]",cfg.doset,false,99)
+    env.set_command(nil,cfg.name,"Set environment parameters. Usage: set [-a] | {[-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]}",cfg.doset,false,99)
 end
 
 return cfg

@@ -41,6 +41,7 @@ mt.__declared = {}
 
 mt.__newindex = function (t, n, v)
     if not mt.__declared[n] and env.WORK_DIR then
+        --if n=='Dir' then print(debug.traceback()) end
         rawset(mt.__declared, n,env.callee(5))
     end
     rawset(t, n, v)
@@ -347,7 +348,7 @@ end
 
 function env.warn(...)
     local str,count=env.format_error(nil,...)
-    if str and str~='' then print(str) end
+    if str and str~='' then print(str,'__BYPASS_GREP__') end
 end
 
 function env.raise(...)
@@ -371,7 +372,7 @@ end
 
 function _exec_command(name,params)
     local result
-    cmd=_CMDS[name:upper()]
+    local cmd=_CMDS[name:upper()]
     local stack=table.concat(params," ")
     if not cmd then
         return env.warn("No such comand '%s'!",name)
@@ -437,16 +438,16 @@ function env.exec_command(cmd,params,is_internal)
         end
         
         if event and not is_internal then 
-            name,params=table.unpack((event("BEFORE_COMMAND",{name,params}))) 
+            name,params=table.unpack((event("BEFORE_COMMAND",{name,params,is_internal}))) 
         end
     end
     local res={pcall(_exec_command,name,params)}
     if event and not is_internal then 
-        event("AFTER_COMMAND",name,params,res[2])
+        event("AFTER_COMMAND",name,params,res[2],is_internal)
     end
     if not isMain and not res[1] and (not env.set or env.set.get("OnErrExit")=="on") then error() end
     if event and not is_internal then 
-        event("AFTER_SUCCESS_COMMAND",name,params,res[2])
+        event("AFTER_SUCCESS_COMMAND",name,params,res[2],is_internal)
     end
     return table.unpack(res,2)
 end
@@ -517,7 +518,7 @@ function env.parse_args(cmd,rest,is_cmd)
         env.checkerr(_CMDS[cmd],'Unknown command "'..cmd..'"!')
         arg_count=_CMDS[cmd].ARGS
     end
-    rest=rest:gsub("%s+$","")
+    if rest then rest=rest:gsub("%s+$","") end
     if rest=="" then rest = nil end
 
     local args={}
@@ -717,7 +718,6 @@ local end_marks=(";\\n/"):gsub("\\+",'\\')
 env.set_endmark(nil,end_marks)
 
 function env.check_comment(cmd,other_parts)
-    print(cmd,other_parts)
     if not other_parts:find("*/",1,true) then
         return false,other_parts
     end
@@ -786,7 +786,7 @@ function env.onload(...)
 
     env.set_prompt(nil,prompt_stack._base,0)
     if env.set and env.set.init then
-        env.set.init("Prompt",prompt_stack._base,env.set_prompt,
+        env.set.init({"Prompt","SQLPROMPT","SQLP"},prompt_stack._base,env.set_prompt,
                   "core","Define command's prompt, if value is 'timing' then will record the time cost(in second) for each execution.")
         env.set.init("COMMAND_ENDMARKS",end_marks,env.set_endmark,
                   "core","Define the symbols to indicate the end input the cross-lines command. Cannot be alphanumeric characters.")

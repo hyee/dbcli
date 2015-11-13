@@ -20,7 +20,7 @@
       filters: available options: -id, -snap, -f
       Source : -ash: gv$active_Session_history    -dash: Dba_Hist_Active_Sess_History
   Options:
-      Groupings :
+      Groupings : The grouping option can be followed by other custimized field, i.e.: 'ashtop -p,p1raw ...'
         -sql : group by sql_id+event (default)
         -p   : group by p1,p2,p3
         -pr  : group by p1raw,p2raw,p3raw
@@ -35,21 +35,14 @@
         -snap: only show the data within specific seconds. Usage: -snap <seconds> [sql_id|sid]
       Addition filter:
         -f   : additional fileter. Usage: -f"<filter>"
-  Option examples:
-      ora ashtop -sql               =  ora ashtop "sql_id,session_state,event"
-      ora ashtop -p,qc_session_id   =  ora ashtop "session_state,event,current_obj#,p1,p2,p3,p3text,qc_session_id"
-      ora ashtop -pr,qc_session_id  =  ora ashtop "session_state,event,current_obj#,p1raw,p2raw,p3raw,qc_session_id"
-      ora ashtop -dash              =  Query dictionary ash view instead of dynamic ash view
-      ora ashtop -plan              =  ora ashtop "plan_hash,event,current_obj#,SQL_PLAN_LINE_ID"
-      ora ashtop -p", qc_session_id, qc_session_serial#"  = ora ashtop "-p, qc_session_id, qc_session_serial#"
-      
+        
   Usage examples:  
-  1) Show top objects for the specific sql id: ashtop -o <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
-  2) Show top sqls for the specific sid      : ashtop <sid> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
-  3) Show top sqls within recent 60 secs     : ashtop -snap 60 [sql_id|sid]
-  4) Show top objects from dictionary ASH    : ashtop -dash <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
-  5) Show top objects based on execution plan: ashtop -plan <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
-  6) Show top sqls with user defined filter  : ashtop -f"inst_id=1 and username='ABCD'"    
+      1) Show top objects for the specific sql id: ashtop -o <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
+      2) Show top sqls for the specific sid      : ashtop <sid> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
+      3) Show top sqls within recent 60 secs     : ashtop -snap 60 [sql_id|sid]
+      4) Show top objects from dictionary ASH    : ashtop -dash <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
+      5) Show top objects based on execution plan: ashtop -plan <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
+      6) Show top sqls with user defined filter  : ashtop -f"inst_id=1 and username='ABCD'"    
 ]]*/
 
 SELECT * FROM (

@@ -50,7 +50,7 @@ function alias.make_command(name,args)
         alias.args=args
         alias.rest={}
         for i=1,99 do
-            v=alias.args[i] or ""
+            local v=alias.args[i] or ""
             if v:find("%s") and not v:find('"') then v='"'..v..'"' end
             alias.args[i]=v
             alias.rest[i]=v
@@ -148,16 +148,18 @@ end
 
 function alias.helper()
     local help=[[
-    Set a shortcut of other existing commands. Usage: alias [-r | <name> [parameters] | -e <alias name>]
+    Set a shortcut of other existing commands. Usage: alias [-r] | {<name> [parameters] | -e <alias name>}
     1) Set/modify alias: alias <name> <command>. Available wildchars: $1 - $9, or $*
+                         $1 - $9 can have default value, format as: $1[default]
     2) Remove alias    : alias <name>
     3) Reload alias    : alias -r
     4) Encrypt alias   : alias -e <alias name>
 
     All aliases are permanently stored in the "aliases" folder.
     Example:
-         aliase test pro $1
-         aliase test conn $1/$2@$3
+         alias test pro $1
+         alias ss select * from $1[dual]  
+         alias test conn $1/$2@$3
     Current aliases:
     ================]]
     local grid,rows=env.grid,{{"Name","Active?","Command"}}
