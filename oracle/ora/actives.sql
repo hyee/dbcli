@@ -21,7 +21,7 @@
     --[[
         &fields : {
                s={coalesce(nullif(program_name,'0'),'['||regexp_replace(nvl(a.module,a.program),' *\(.*\)$')||'('||osuser||')]') PROGRAM,PROGRAM_LINE# line#},
-               o={osuser,logon_time,regexp_replace(machine,'(\..*|^.*\\)') machine,regexp_replace(program,' *\(.*') program},
+               o={username,osuser,logon_time,regexp_replace(machine,'(\..*|^.*\\)') machine,regexp_replace(program,' *\(.*') program},
                p={p1,p2,p2text,p3},
                b={NULLIF(BLOCKING_SESSION||',@'||BLOCKING_INSTANCE,',@') BLOCK_BY,
                  (SELECT OBJECT_NAME FROM ALL_OBJECTS WHERE OBJECT_ID=ROW_WAIT_OBJ# AND ROWNUM<2) WAITING_OBJ,

@@ -562,7 +562,7 @@ function env.parse_args(cmd,rest,is_cmd)
                     piece=rest:sub(i+1):gsub("^(%s+)",""):gsub('^"(.*)"$','%1')
                     if is_multi_cmd and _CMDS[name].ARGS==1 then
                         args[count],piece=args[count]..' '..piece,''
-                    else
+                    elseif piece~='' then
                         args[count+1],piece=piece,''
                     end
                     break
@@ -575,7 +575,7 @@ function env.parse_args(cmd,rest,is_cmd)
             for s in piece:gmatch('(%S+)') do
                 args[#args+1]=s
             end
-        elseif not piece:match("^%s+$") then
+        elseif not piece:match("^%s*$") then
             args[#args+1]=piece
         end
     end
@@ -678,14 +678,9 @@ function env.eval_line(line,exec,is_internal)
     end
 end
 
-function env.testcmd(...)
-    local args,cmd={...}
-    for k,v in ipairs(args) do
-        if v=="" or v:find(" ") and not v:find('"') then
-            args[k]='"'..v..'"'
-        end
-    end
-    cmd,args=env.eval_line(table.concat(args,' ')..env.END_MARKS[1],false)
+function env.testcmd(command)
+    env.checkerr(command,"Usage: -p <other command>")
+    local args,cmd=env.eval_line(command,false,true)
     if not cmd then return end
     print("Command    : "..cmd.."\nParameters : "..#args..' - '..(_CMDS[cmd].ARGS-1).."\n============================")
     for k,v in ipairs(args) do
@@ -779,8 +774,8 @@ function env.onload(...)
     os.setlocale('',"all")
 
     env.set_command(nil,"RELOAD","Reload environment, including variables, modules, etc",env.reload,false,1)
-    env.set_command(nil,"LUAJIT","#Switch to luajit interpreter, press Ctrl+Z to exit.",function() os.execute(('"%sbin%sluajit"'):format(env.WORK_DIR,env.PATH_DEL)) end,false,1)
-    env.set_command(nil,"-P","#Test parameters. Usage: -p <command> [<args>]",env.testcmd,false,99)
+    env.set_command(nil,"LUAJIT","#Switch to luajit interpreter, press Ctrl+Z to exit.",function() os.execute(('"%slib%sx86%sluajit"'):format(env.WORK_DIR,env.PATH_DEL,env.PATH_DEL)) end,false,1)
+    env.set_command(nil,"-P","#Test parameters. Usage: -p <command> [<args>]",env.testcmd,'__SMART_PARSE__',2)
 
     env.init.onload()
 

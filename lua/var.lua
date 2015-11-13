@@ -393,7 +393,7 @@ function var.onload()
     snoop("AFTER_COMMAND",var.capture_after_cmd)
     snoop("ON_COLUMN_VALUE",var.trigger_column)
     local fmt_help=[[
-    Specifies display attributes for a given column. Usage: COL <column> [NEW_VALUE|FORMAT|HEAD]
+    Specifies display attributes for a given column. Usage: COL <column> [NEW_VALUE|FORMAT|HEAD] <value> [<OPTIONS>]
     Refer to SQL*Plus manual for the detail, below are the supportted features:
         1) COL <column> NEW_V[ALUE] <var>    [PRINT|NOPRINT]
         2) COL <column> HEAD[ING]   <title>

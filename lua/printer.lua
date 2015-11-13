@@ -139,7 +139,7 @@ _G.rawprint=printer.rawprint
 function printer.onload()
     if env.ansi then
         NOR = env.ansi.string_color('NOR') 
-        BOLD= env.ansi.string_color('BOLD') 
+        BOLD= env.ansi.string_color('UDL') 
         strip_ansi=env.ansi.strip_ansi
     end
 
