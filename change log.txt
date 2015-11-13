@@ -1,7 +1,9 @@
 2015-11-13: + public: new command options "column <col> <KMG|TMB|SMHD|smhd|ITV>", type "col" for more detail
                     : same option in "set" allows multiple names, "set -a" for the detail
-                    : remove regexp maching for command "grep", match pure text instead
+                    : remove regexp matching from command "grep", match pure text instead(case insensitive).
+                      and also apply to all output instead of only grid output
             ! public: fixes on "spool" and "ansi"
+                      fixed command-line parsing issue
             * Oracle: update the help info for "ora actives/ashtop/plan", type "ora -h <cmd>" for the detail 
 2015-11-12: ! public: minor code optimizations and fixes
             + public: new option "set OnErrExit";
