@@ -113,9 +113,11 @@ Below is the list:
 
 Besides, some SQL scripts come from internet.
 
-About ANSICON
------------------------
-`ANSICON` provides more ANSI escape features than JLine, especially when running bash commands(i.e.: top) via SSH.
+About ANSICON and ANSI Colour Escape
+------------------------------------
+Win10 command window supports VT100 ANSI escapes.
+
+For lower windows versions, `ANSICON` provides more ANSI escape features than JLine, especially when running bash commands(i.e.: top) via SSH.
 
 If you have concern on `ANSICON`, please remove it from bin, and edit `data\init.cfg` to add line `set ANSICON_CMD=`
 

@@ -32,12 +32,12 @@
 		</font>
 		<window title="ConsoleZ" icon="" use_tab_icon="1" use_console_title="0" show_cmd="1" show_cmd_tabs="1" use_tab_title="1" trim_tab_titles="30" trim_tab_titles_right="0" main_title_format="?U([%u] )?N({%u} )%m?s( - %s)" tab_title_format="?s( %s):( DBCLI - Not Connected)"/>
 		<controls show_menu="1" show_toolbar="0" show_statusbar="0" show_tabs="1" hide_single_tab="0" show_scrollbars="1" flat_scrollbars="0" tabs_on_bottom="0" hide_tab_icons="1" show_searchbar="1"/>
-		<styles caption="1" resizable="1" taskbar_button="1" border="0" inside_border="2" tray_icon="1" quake_like="0" jumplist="0" integrated_ime="1" quake_animation_time="300" hide_when_inactive="0">
+		<styles caption="1" resizable="1" taskbar_button="1" border="0" inside_border="2" tray_icon="1" quake_like="0" jumplist="1" integrated_ime="1" quake_animation_time="300" hide_when_inactive="0">
 			<selection_color r="128" g="128" b="128"/>
 		</styles>
 		<position x="0" y="0" dock="0" snap="-1" z_order="0" save_position="0" w="1024" h="768" save_size="0"/>
 		<transparency type="0" active_alpha="206" inactive_alpha="255" r="0" g="0" b="0"/>
-		<fullscreen start_in_fullscreen="0" fullscreen_monitor="0"/>
+		<fullscreen start_in_fullscreen="0" fullscreen_monitor="0"><controls show_menu="1" show_toolbar="1" show_searchbar="1" show_statusbar="1" show_tabs="1" hide_single_tab="1" tabs_on_bottom="0" hide_tab_icons="0" show_scrollbars="1"/></fullscreen>
 	</appearance>
 	<behavior>
 		<copy_paste copy_on_select="1" clear_on_copy="0" no_wrap="1" trim_spaces="1" copy_newline_char="0" sensitive_copy="1" include_left_delimiter="0" include_right_delimiter="0" left_delimiters=" ([" right_delimiters=" )]" eol_spaces="1" rtf="1"/>
@@ -46,7 +46,7 @@
 		<close allow_closing_last_view="0" confirm_closing_multiple_views="1"/>
 		<focus follow_mouse="0"/>
 		<instance allow_multi="0"/>
-		<clone use_current_dir="1"/>
+		<clone use_current_dir="0"/>
 		<search match_case="0" match_whole_word="0"/>
 		<runas use_credprov="1"/>
 	</behavior>
@@ -109,7 +109,7 @@
 		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="76" command="clear"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="1" code="45" command="copy"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="65" command="selectall"/>
-		<hotkey ctrl="0" shift="1" alt="0" extended="0" code="8" command="clear_selection"/>
+		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="90" command="clear_selection"/>
 		<hotkey ctrl="0" shift="1" alt="0" extended="1" code="45" command="paste"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="paste_selection"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="81" command="stopscroll"/>
@@ -175,6 +175,12 @@
 		<tab title="dbcli" use_default_icon="0">
 			<console shell="..\..\dbcli.bat" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
 			<cursor style="12" r="255" g="255" b="255"/>
+		</tab>
+		<tab title="dbcli(white)" use_default_icon="0">
+			<console shell="..\..\dbcli.bat &quot;set promptcolor HIW;BBLU commandcolor HIB&quot;" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0">
+				<env var="CONSOLE_COLOR" value="F0" check="1"/>
+			</console>
+			<cursor style="14" r="0" g="0" b="0"/>
 		</tab>
 		<tab title="dbcli_db2" use_default_icon="0">
 			<console shell="..\..\dbcli.bat &quot;set database db2&quot;" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
