@@ -47,17 +47,6 @@ function snapper:get_time()
     return self:trigger('get_db_time') or "unknown"
 end
 
-function snapper:fetch_result(rs)
-    local result={}
-    rs:setFetchSize(10000)
-    while true do
-        local row=self.db.resultset:fetch(rs)
-        if type(row)~='table' then break end
-        result[#result+1]=row
-    end
-    return result;
-end
-
 function snapper:run_sql(sql,args,cmds,files)
     local db,print_args=self.db
     cfg.set("feed","off")
@@ -91,7 +80,7 @@ function snapper:run_sql(sql,args,cmds,files)
         end
         local cmd,arg=self:parse(cmds[idx],sql[idx],args[idx],files[idx])
         self.cmds[cmds[idx]],self.args[cmds[idx]]=cmd,arg
-        cmd.rs2=self:fetch_result(db:internal_call(cmd.sql,arg))
+        cmd.rs2=self.db.resultset:rows(db:internal_call(cmd.sql,arg),-1)
     end
     db:commit()
 
@@ -107,7 +96,7 @@ function snapper:next_exec()
     --self:trigger('before_exec_action')
     local end_time=self:get_time()
     for name,cmd in pairs(cmds) do
-        cmd.rs1=self:fetch_result(db:internal_call(cmd.sql,args[name]))
+        cmd.rs1=self.db.resultset:rows(db:internal_call(cmd.sql,args[name]),-1) 
     end
     
     local result={}

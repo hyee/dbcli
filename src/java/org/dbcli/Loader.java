@@ -2,6 +2,7 @@ package org.dbcli;
 
 import com.naef.jnlua.LuaState;
 import com.opencsv.CSVWriter;
+import com.opencsv.ResultSetHelperService;
 import com.opencsv.SQLWriter;
 import jline.console.KeyMap;
 
@@ -14,6 +15,8 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.sql.CallableStatement;
 import java.sql.ResultSet;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.Future;
@@ -216,6 +219,17 @@ public class Loader {
         });
     }
 
+    public String[][] fetchResult(final ResultSet rs,final int rows) throws Exception{
+        setCurrentResultSet(rs);
+        ArrayList<String[]> ary= (ArrayList)asyncCall(new Callable() {
+            @Override
+            public Object call() throws Exception {
+                return new ResultSetHelperService(rs).fetchRows(rows);
+            }
+        });
+        return ary.toArray(new String[][]{});
+    }
+
     public String inflate(byte[] data) throws Exception {
         try (ByteArrayInputStream bis = new ByteArrayInputStream(data); InflaterInputStream iis = new InflaterInputStream(bis);) {
 
@@ -251,9 +265,8 @@ public class Loader {
         } catch (CancellationException | InterruptedException e) {
             throw new IOException("Statement is aborted.");
         } catch (Exception e) {
-            //e.printStackTrace();
+            e.printStackTrace();
             while (e.getCause() != null) e = (Exception) e.getCause();
-
             throw e;
         } finally {
             if (rs != null && !rs.isClosed()) rs.close();

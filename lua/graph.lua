@@ -33,7 +33,7 @@ function graph:run_sql(sql,args,cmd,file)
         for i=1,#sql do self:run_sql(sql[i],args[i],cmd[i],file[i]) end
         return
     end
-    local units,rs={}
+    local units,rs,rows={}
     
     local context,err=loadstring(('return '..sql):gsub(self.comment,"",1))
     env.checkerr(context,"Error when loading file %s: %s",file,err)
@@ -54,8 +54,9 @@ function graph:run_sql(sql,args,cmd,file)
         }
     if context._attrs then
         rs=self.db:exec(context._attrs,args)
-        local title=self.db.resultset:fetch(rs,self.db.conn)
-        local value=self.db.resultset:fetch(rs,self.db.conn)
+        rows=self.db.resultset:rows(rs,1)
+        local title=rows[1]
+        local value=rows[2]
         env.checkerr(value,context._error or 'No data found for the given criteria!')
         for k,v in ipairs(title) do
             if not v:find('[a-z]') then v=v:lower() end
@@ -69,16 +70,18 @@ function graph:run_sql(sql,args,cmd,file)
     local sql,pivot=context._sql,context._pivot
     rs=self.db:exec(sql,args)
     local title,txt,keys,values,collist,temp=string.char(0x1),{},{},{},{},{}
-    local counter=-1
+    
     local function getnum(val)
         if not val then return 0 end
         if type(val)=="number" then return val end
         return tonumber(val:match('[eE%.%-%d]+')) or 0
     end
+    local counter=-1
+    rows=self.db.resultset:rows(rs)
     while true do
-        local row=self.db.resultset:fetch(rs,self.db.conn)
-        if not row then break end
         counter=counter+1
+        local row=rows[counter+1]
+        if not row then break end
         --For pivot, col1=x-value, col2=Pivot,col3=y-value
         if pivot then
             local x,p,y=row[1],row[2],{table.unpack(row,3)}
