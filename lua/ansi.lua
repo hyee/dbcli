@@ -5,7 +5,7 @@ local reader,writer,str_completer,arg_completer,add=reader
 local terminal=reader:getTerminal()
 local isAnsiSupported=terminal:isAnsiSupported()
 
-ansi.ansi_mode=os.getenv("ANSICON")
+ansi.ansi_mode=os.getenv("ANSICON_CMD")
 if not ansi.ansi_mode or ansi.ansi_mode:gsub("[ \t]","")=="" then
     ansi.ansi_mode="jline"
 else
@@ -248,6 +248,10 @@ end
 function ansi.test_text(str)
     if not isAnsiSupported then return print("Ansi color is not supported!") end
     if not str or str=="" then
+        rawprint(env.space.."ANSI SGR Codes, where '$E' means ascii code 27(a.k.a chr(27)): ")
+        rawprint(env.space..string.rep("=",140))
+        print(env.load_data(env.WORK_DIR.."bin"..env.PATH_DEL.."ANSI.txt",false))
+        rawprint(env.space..string.rep("=",140))
         local bf,wf,bb,wb=base_color['BLK'][1],base_color['WHT'][1],base_color['BBLK'][1],base_color['BWHT'][1]
         if env.grid then
             local row=env.grid.new()

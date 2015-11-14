@@ -144,11 +144,11 @@ function printer.onload()
     end
 
     if env.event then
-        env.event.snoop('BEFORE_COMMAND',printer.before_command)
+        env.event.snoop('BEFORE_COMMAND',printer.before_command,nil,90)
     end
     BOLD=BOLD..'%1'..NOR
     event=env.event
-    env.set_command(nil,"grep","Filter matched text from the output. Usage: grep <keyword|-keyword> <other command>, -keyword means exclusive",{printer.grep,printer.grep_after},'__SMART_PARSE__',3)
+    env.set_command(nil,"grep","Filter matched text from the output. Usage: grep <keyword|-keyword> <other command>, -keyword means exclude",{printer.grep,printer.grep_after},'__SMART_PARSE__',3)
     env.set_command(nil,"more","Similar to Linux 'more' command. Usage: more <other command>",printer.set_more,'__SMART_PARSE__',2)
     env.set_command(nil,{"Prompt","pro",'echo'}, "Prompt messages. Usage: PRO[MPT] <message>",printer.load_text,false,2)
     env.set_command(nil,{"SPOOL","SPO"}, "Write the screen output into a file. Usage: SPO[OL] [file_name[.ext]] [CREATE] | APP[END]] | OFF]",printer.spool,false,3)
