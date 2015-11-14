@@ -113,11 +113,11 @@ Below is the list:
 
 Besides, some SQL scripts come from internet.
 
-About ANSICON and ANSI Colour Escape
+About ANSI Color Escapes
 ------------------------------------
-Win10 command window supports VT100 ANSI escapes.
+`Win10` command window has natively supported the `xterm` ANSI escapes.
 
-For lower windows versions, `ANSICON` provides more ANSI escape features than JLine, especially when running bash commands(i.e.: top) via SSH.
+For lower Windows versions, `ANSICON` supports more ANSI escapes features than JLine, especially when running bash commands(i.e.: top) via SSH.
 
 If you have concern on `ANSICON`, please remove it from bin, and edit `data\init.cfg` to add line `set ANSICON_CMD=`
 

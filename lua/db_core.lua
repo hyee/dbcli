@@ -139,26 +139,30 @@ end
 
 local ResultSet=env.class()
 
-function ResultSet:getHeads(rs)
+function ResultSet:getHeads(rs,limit)
     if self[rs] then return self[rs] end
+    loader:setCurrentResultSet(rs)
     local maxsiz=cfg.get("COLSIZE")
     local meta=rs:getMetaData()
     local len=meta:getColumnCount()
     local colinfo={}
+    local titles={}
     for i=1,len,1 do
         local cname=meta:getColumnLabel(i)
-        table.insert(colinfo,{
-            column_name=cname:sub(1,maxsiz),
+        colinfo[i]={
+            column_name=limit and cname:sub(1,maxsiz) or cname,
             data_typeName=meta:getColumnTypeName(i),
             data_type=meta:getColumnType(i),
             data_size=meta:getColumnDisplaySize(i),
             data_precision=meta:getPrecision(i),
             data_scale=meta:getScale(i),
             is_number=number_types[meta:getColumnTypeName(i)]
-        })
+        }
+        titles[i]=colinfo[i].column_name
         colinfo[cname:upper()]=i
     end
-    self[rs]=colinfo
+
+    colinfo.__titles,titles.colinfo,self[rs]=titles,colinfo,colinfo
     return colinfo
 end
 
@@ -176,18 +180,8 @@ end
 --The first rows is the title
 function ResultSet:fetch(rs,conn)
     local cols=self[rs]
-    if not cols then
-        loader:setCurrentResultSet(rs)
-        cols = self:getHeads(rs)
-        env.checkerr(cols,"No query result found!")
-        local titles={}
-        for k,v in ipairs(cols) do
-            table.insert(titles,v.column_name)
-        end
-        titles.colinfo=cols
-        return titles
-    end
-
+    if not self[rs] then return self:getHeads(rs).__titles end
+   
     if not rs:next() then
         self:close(rs)
         return nil
@@ -226,20 +220,45 @@ function ResultSet:close(rs)
     end
 end
 
-function ResultSet:rows(rs,conn)
-    local sets={}
-    repeat
-        local row=self:fetch(rs,conn)
-        table.insert(sets,row)
-    until not row
-    return sets
+function ResultSet:rows(rs,count,limit)
+    if rs:isClosed() then return end
+    count=tonumber(count) or tonumber(cfg.get("printsize"))
+    local head=self:getHeads(rs,limit).__titles
+    --print(table.dump(head.colinfo))
+    local rows,result={head},loader:fetchResult(rs,count)
+    if count~=0 then
+        local maxsiz=cfg.get("COLSIZE")
+        for i=1,#result do
+            rows[i+1]={}
+            for j=1,#result[i] do
+                rows[i+1][j]=tostring(result[i][j])
+                if limit and rows[i+1][j] then rows[i+1][j]=rows[i+1][j]:sub(1,maxsiz) end
+            end
+        end
+    end
+    return rows
 end
 
 function ResultSet:print(res,conn)
     local result,hdl={},nil
-    if res:isClosed() then
-        return
+    
+    local maxrows,pivot=cfg.get("printsize"),cfg.get("pivot")
+    if pivot~=0 then maxrows=math.abs(pivot) end
+    local result=self:rows(res,maxrows,true)
+    if not result then return end
+    if pivot==0 then 
+        hdl=grid.new()
+        for idx,row in ipairs(result) do hdl:add(row) end
     end
+    
+    grid.print(hdl or result)
+    db_core.print_feed("SELECT",#result-1)
+    print("")
+end
+
+function ResultSet:print_old(res,conn)
+    local result,hdl={},nil
+    if res:isClosed() then return end
     local rows,maxrows,feedflag,pivot=0,cfg.get("printsize"),cfg.get("feed"),cfg.get("pivot")
     if pivot==0 then hdl=grid.new() end
     while true do

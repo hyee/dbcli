@@ -1,6 +1,7 @@
-2015-11-14: + public: add white-style tab in console.exe
-            * public: disable ansi escape 
-                      For win10, use its embed ansi escape feature instead of ansicon/jline 
+2015-11-14: * public: For win10, use its native ANSI escape feature instead of ansicon/jline.
+                      This feature works well in black background, but not good with white bg.
+            * public: improve query performance, also impact "snap" and "chart" 
+            + public: add white-style tab in console.exe(not good in Win10)
 2015-11-13: + public: new command options "column <col> <KMG|TMB|SMHD|smhd|ITV>", type "col" for more detail
                     : same option in "set" allows multiple names, "set -a" for the detail
             ! public: fixes on "spool", "ansi", '-p' and command-line parsing issue

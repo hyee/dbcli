@@ -63,7 +63,7 @@ local base_color={
     BMAG={"\27[45m","Background Color: Magenta"},
     BCYN={"\27[46m","Background Color: Cyan"},
     BWHT={"\27[47m","Background Color: White"},
-    NOR ={"\27[0m","Puts every color back to normal"},
+    NOR ={"\27[0;39;49m","Puts every color back to normal"},
 
     --Additional ansi Esc codes added to ansi.h by Gothic  april 23,1993
     --Note, these are Esc codes for VT100 terminals, and emmulators

@@ -392,6 +392,7 @@ function _exec_command(name,params)
         --local res = {pcall(func,table.unpack(args))}
         if not res[1] then
             result=res
+            env.log_debug("CMD",res[2])
             env.warn(res[2])
         elseif not result then
             result=res
