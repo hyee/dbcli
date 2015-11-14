@@ -16,7 +16,6 @@ import java.net.URLClassLoader;
 import java.sql.CallableStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.Future;
@@ -219,9 +218,9 @@ public class Loader {
         });
     }
 
-    public String[][] fetchResult(final ResultSet rs,final int rows) throws Exception{
+    public String[][] fetchResult(final ResultSet rs, final int rows) throws Exception {
         setCurrentResultSet(rs);
-        ArrayList<String[]> ary= (ArrayList)asyncCall(new Callable() {
+        ArrayList<String[]> ary = (ArrayList) asyncCall(new Callable() {
             @Override
             public Object call() throws Exception {
                 return new ResultSetHelperService(rs).fetchRows(rows);
@@ -265,7 +264,7 @@ public class Loader {
         } catch (CancellationException | InterruptedException e) {
             throw new IOException("Statement is aborted.");
         } catch (Exception e) {
-            e.printStackTrace();
+            //e.printStackTrace();
             while (e.getCause() != null) e = (Exception) e.getCause();
             throw e;
         } finally {
