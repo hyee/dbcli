@@ -5,7 +5,7 @@ local reader,writer,str_completer,arg_completer,add=reader
 local terminal=reader:getTerminal()
 local isAnsiSupported=terminal:isAnsiSupported()
 
-ansi.ansi_mode=os.getenv("ANSICON_CMD")
+ansi.ansi_mode=os.getenv("ANSICON_DEF")
 if not ansi.ansi_mode or ansi.ansi_mode:gsub("[ \t]","")=="" then
     ansi.ansi_mode="jline"
 else
