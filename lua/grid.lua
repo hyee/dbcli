@@ -256,7 +256,7 @@ function grid:add(rs)
     end
 
     if headind==0 then
-        if rownum == "on" then table.insert(rs.colinfo,1,{is_number=true}) end
+        if rownum == "on" and rs.colinfo then table.insert(rs.colinfo,1,{is_number=true}) end
         self.colinfo=rs.colinfo
     end
 
