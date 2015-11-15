@@ -1,3 +1,6 @@
+2015-11-15: * public: For win10, use its native ANSI escapes feature instead of ansicon/jline.
+                      This feature works well in black background, but not good with white bg.
+=======================begin v0.8================================================
 2015-11-14: * public: improve query performance, also impact "snap" and "chart" 
 2015-11-13: + public: new command options "column <col> <KMG|TMB|SMHD|smhd|ITV>", type "col" for more detail
                     : same option in "set" allows multiple names, "set -a" for the detail

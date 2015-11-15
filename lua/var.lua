@@ -393,15 +393,15 @@ function var.onload()
     snoop("AFTER_COMMAND",var.capture_after_cmd)
     snoop("ON_COLUMN_VALUE",var.trigger_column)
     local fmt_help=[[
-    Specifies display attributes for a given column. Usage: COL <column> [NEW_VALUE|FORMAT|HEAD] <value> [<OPTIONS>]
-    Refer to SQL*Plus manual for the detail, below are the supportted features:
+    Specifies display attributes for a given column. Usage: COL <column> [NEW_VALUE|FORMAT|HEAD] <value> [<options>]
+    Refer to SQL*Plus manual for the detail, below are the supported features:
         1) COL <column> NEW_V[ALUE] <var>    [PRINT|NOPRINT]
         2) COL <column> HEAD[ING]   <title>
         3) COL <column> FOR[MAT]    <format> [JUS[TIFY] LEFT|L|RIGHT|R]
         4) COL <column> CLE[AR]
 
     Other addtional features:
-        1) COL <column> FOR[MAT] KMG :  Cast number as kb/mb/gb/etc format
+        1) COL <column> FOR[MAT] KMG :  Cast number as KB/MB/GB/etc format
         2) COL <column> FOR[MAT] TMB :  Cast number as thousand/million/billion/etc format
         3) COL <column> FOR[MAT] SMHD:  Cast number as 'xxD xxH xxM xxS' format
         4) COL <column> FOR[MAT] smhd:  Cast number as 'xxd xxh xxm xxs' format
