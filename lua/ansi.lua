@@ -116,9 +116,8 @@ local default_color={
 
 ansi.ansi_mode=os.getenv("ANSICON_DEF")
 ansi.ansi_default=os.getenv("CONSOLE_COLOR"):upper()
-
 base_color['NOR'][1]=base_color['NOR'][1]..base_color[default_color[ansi.ansi_default:sub(2)][2]][1]..base_color[default_color[ansi.ansi_default:sub(1,1)][1]][1]
-if not ansi.ansi_mode or ansi.ansi_mode:gsub("[ \t]","")=="" then
+if not ansi.ansi_mode then
     ansi.ansi_mode="jline"
 else
     ansi.ansi_mode="ansicon"
