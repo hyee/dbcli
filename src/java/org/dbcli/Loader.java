@@ -218,15 +218,15 @@ public class Loader {
         });
     }
 
-    public String[][] fetchResult(final ResultSet rs, final int rows) throws Exception {
+    public Object[][] fetchResult(final ResultSet rs, final int rows) throws Exception {
         setCurrentResultSet(rs);
-        ArrayList<String[]> ary = (ArrayList) asyncCall(new Callable() {
+        ArrayList<Object[]> ary = (ArrayList) asyncCall(new Callable() {
             @Override
             public Object call() throws Exception {
                 return new ResultSetHelperService(rs).fetchRows(rows);
             }
         });
-        return ary.toArray(new String[][]{});
+        return ary.toArray(new Object[][]{});
     }
 
     public String inflate(byte[] data) throws Exception {
@@ -331,11 +331,10 @@ public class Loader {
         public void actionPerformed(ActionEvent e) {
             try {
                 if (e != null) key = Character.codePointAt(e.getActionCommand(), 0);
-                if (!console.isRunning() && key != 'q' && key != 'Q') {
-                    if (key != 3) {
-                        lua.getGlobal("TRIGGER_ABORT");
-                        lua.call(0, 0);
-                    }
+
+                if (key!=3 && !console.isRunning() && key != 'q' && key != 'Q') {
+                    lua.getGlobal("TRIGGER_ABORT");
+                    lua.call(0, 0);
                 } else {
                     if (stmt != null && !stmt.isClosed()) {
                         stmt.cancel();

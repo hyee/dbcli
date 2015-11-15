@@ -21,7 +21,7 @@ public class Interrupter {
             signalHandler = Proxy.newProxyInstance(Interrupter.class.getClassLoader(), new Class<?>[]{signalHandlerClass}, new InvocationHandler() {
                 public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
                     if (!map.isEmpty()) {
-                        ActionEvent e = new ActionEvent(this, ActionEvent.ACTION_PERFORMED, Character.toChars(3).toString());
+                        ActionEvent e = new ActionEvent(this, ActionEvent.ACTION_PERFORMED,"\3");
                         for (InterruptCallback c : map.values()) {
                             try {
                                 c.interrupt(e);
