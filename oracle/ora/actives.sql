@@ -2,14 +2,14 @@
     Show active sessions. Usage: ora actives [-s|-p|-b] [-f"<filter>"|-u] [sid|wt|ev|sql|<col>]
     Options:
         Filter options:
-            -u  : Only show the session of current_schema
+            -u  : Only show the sessions of current_schema
             -i  : Exclude the idle events
-            -f  : Custimized filter, Usage: -f"<filter>"
+            -f  : Customize the filter, Usage: -f"<filter>"
         Field options:  Field options can be following by other customized fields. ie: -s,p1raw
             -s  : Show related procedures and lines(default)
             -p  : Show p1/p2/p2text/p3
             -b  : Show blocking sessions and waiting objects
-            -o  : Show os user id/machine/program/etc 
+            -o  : Show OS user id/machine/program/etc 
         Sorting options: the '-' symbole is optional
             sid : sort by sid(default)
             wt  : sort by wait time

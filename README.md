@@ -3,7 +3,7 @@ DBCLI : A CLI utility for DBA (Oracle/DB2)
 =====================================================
 
 [![Join the chat at https://gitter.im/hyee/dbcli](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/hyee/dbcli?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-[![MIT Licence](http://img.shields.io/badge/Licence-MIT-brightgreen.svg)](https://en.wikipedia.org/wiki/MIT_License)
+[![MIT License](http://img.shields.io/badge/Licence-MIT-brightgreen.svg)](https://en.wikipedia.org/wiki/MIT_License)
 [drag]:help.gif
 ![][drag]
 
@@ -13,7 +13,7 @@ Description
 
 DBCLI is a portable database command line utility, for DBA or application support to easily manage and run their common used scripts, similar to database built-in CLI tools but is more flexible.  
 
-It uses Lua language to build the framework, and bridges to JDBC to access database, many of the files are SQL scripts which is easy to maintain.<br/> 
+It uses Lua language to build the framework, and bridges to JDBC to access database, many of the files are SQL scripts that easy to maintain.<br/> 
 It is designed to support multiple databases, and includes 2 types of modules, one is the public module whose functions are visible across all database platforms, 
 and another one is the platform-specific module.
 

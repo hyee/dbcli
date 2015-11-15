@@ -21,8 +21,9 @@ if defined ANSICON_CMD (
    echo %PROCESSOR_ARCHITECTURE%|findstr /i "64" >nul ||("%JRE_HOME%\java.exe" -version 2>&1 |findstr /i "64-bit" >nul)||(set ANSICON_CMD=.\bin\ansiconx86.exe)
 )
 
+if defined ANSICON_CMD (set ANSICON_CMD=%ANSICON_CMD% -m%CONSOLE_COLOR%)
 rem For win10, don't used both JLINE/Ansicon to escape the ANSI codes
-rem ver|findstr -r "[1-9][0-9]\.[0-9]\.[0-9]">NUL && (SET ANSICON_CMD=)
+ver|findstr -r "[1-9][0-9]\.[0-9]*\.[0-9]">NUL && (SET ANSICON_CMD=)
 color %CONSOLE_COLOR%
 rem unpack jar files for the first use
 for /r %%i in (*.pack.gz) do (

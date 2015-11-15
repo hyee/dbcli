@@ -256,6 +256,7 @@ function grid:add(rs)
     end
 
     if headind==0 then
+        if rownum == "on" then table.insert(rs.colinfo,1,{is_number=true}) end
         self.colinfo=rs.colinfo
     end
 
@@ -271,7 +272,7 @@ function grid:add(rs)
             v=event.callback("ON_COLUMN_VALUE",{#result>0 and result[1][k] or v,v,#result})[2]
         end
 
-        if headind>0 and (type(v1) == "number" or type(v) == "number"  or self.printhead and self.colinfo and self.colinfo[k].is_number) then
+        if headind>0 and (type(v1) == "number" or type(v) == "number"  or self.printhead and self.colinfo and self.colinfo[k] and self.colinfo[k].is_number) then
             if v1==v and tonumber(v) then
                 v=tonumber(v)
                 if grid.digits<38  then
