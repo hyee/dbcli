@@ -359,7 +359,7 @@ function db_core:check_sql_method(event_name,sql,method,...)
         event(event_name,info)
         internal, self.internal_exec=self:is_internal_call(sql),false
         if info and info.error and info.error~="" then
-            if not internal and info.sql and #env.RUNNING_THREADS>1 then
+            if not internal and info.sql and #env.RUNNING_THREADS>2 then
                 print('SQL: '..info.sql:gsub("\n","\n     "))
             end
             env.raise_error(info.error)

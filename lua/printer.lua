@@ -35,13 +35,17 @@ function printer.more(output)
 end
 
 function printer.print(...)
-    local output,found={NOR,env.space:sub(1,#env.space-2)}
+    local output,found,ignore={NOR,env.space:sub(1,#env.space-2)}
     for i=1,select('#',...) do
         local v=select(i,...)
-        if v~='__BYPASS_GREP__' then output[i+2]=v==nil and "nil" or tostring(v) end
+        if v~='__BYPASS_GREP__' then 
+            output[i+2]=v==nil and "nil" or tostring(v)
+        else
+            ignore=true
+        end
     end
     output=table.concat(output,' '):gsub("(\r?\n\r?)","%1"..env.space)
-    if printer.grep_text and select(2,...)~="__BYPASS_GREP__" then
+    if printer.grep_text and not ignore then
         local fmt=(env.ansi and env.ansi.get_color("GREPCOLOR") or '')..'%0'..NOR
         local stack=output:split('\r?\n')
         output={}

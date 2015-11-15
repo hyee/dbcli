@@ -101,12 +101,13 @@ The binaries have been included into this project.
 Below is the list:
 
     JLine2      : (BSD)  https://github.com/jline/jline2
+    ConsoleZ    : (GNU)  https://github.com/cbucher/console
     luajit v2.1 : (MIT)  https://github.com/LuaJIT/LuaJIT
     jnlua       : (MIT)  https://github.com/hyee/JNLuaJIT(based on http://jnlua.googlecode.com/)
     OpenCSV     : (MIT)  https://github.com/hyee/OpenCSV(based on opencsv.sourceforge.net)
-    ConsoleZ    : (GNU)  https://github.com/cbucher/console
     MessagePack : (MIT)  https://github.com/fperrad/lua-MessagePack (pure lua)
     dygraphs    : (MIT)  https://github.com/danvk/dygraphs
+    WinAPI      : (MIT)  https://github.com/stevedonovan/winapi
     ANSICON     : (ZLIB) https://github.com/adoxa/ansicon
     JSch        : (BSD)  http://www.jcraft.com/jsch/
     PSCP        : (MIT)  http://www.putty.org/ 

@@ -69,6 +69,7 @@ function init.init_path()
         package.path  = package.path .. (path_del=='/' and ':' or ';') ..p1
         package.cpath = package.cpath ..(path_del=='/' and ':' or ';') ..p2
     end
+    env.winapi=package.loadlib("winapi","luaopen_winapi")
 end
 
 

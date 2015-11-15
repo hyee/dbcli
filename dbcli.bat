@@ -2,9 +2,10 @@
 Setlocal EnableDelayedExpansion EnableExtensions
 cd /d "%~dp0"
 if not defined CONSOLE_COLOR SET CONSOLE_COLOR=0A
-SET JRE_HOME=d:\soft\java
-SET TNS_ADM=d:\Soft\InstanceClient\network\admin
-SET ANSICON_CMD=.\bin\ansiconx64.exe
+if not defined ANSICON_CMD SET ANSICON_CMD=.\bin\ansiconx64.exe
+if not defined JRE_HOME SET JRE_HOME=d:\soft\java
+if not defined JRE_HOME SET TNS_ADM=d:\Soft\InstanceClient\network\admin
+
 SET DBCLI_ENCODING=UTF-8
 
 rem read config file
@@ -21,7 +22,7 @@ if defined ANSICON_CMD (
 )
 
 rem For win10, don't used both JLINE/Ansicon to escape the ANSI codes
-ver|findstr -r "[1-9][0-9]\.[0-9]\.[0-9]">NUL && (SET ANSICON_CMD=WIN10) ||(if defined ANSICON_CMD (%ANSICON_CMD% -m%CONSOLE_COLOR% -p))
+rem ver|findstr -r "[1-9][0-9]\.[0-9]\.[0-9]">NUL && (SET ANSICON_CMD=)
 color %CONSOLE_COLOR%
 rem unpack jar files for the first use
 for /r %%i in (*.pack.gz) do (
@@ -30,7 +31,7 @@ for /r %%i in (*.pack.gz) do (
   unpack200 -q -r "%%i" "!str:~0,-8!"
 )
 
-"%JRE_HOME%\java.exe" -noverify -Xmx384M -cp .\lib\*;.\lib\ext\*%OTHER_LIB% ^
+%ANSICON_CMD% "%JRE_HOME%\java.exe" -noverify -Xmx384M -cp .\lib\*;.\lib\ext\*%OTHER_LIB% ^
     -XX:NewRatio=50 -XX:+UseG1GC -XX:+UnlockExperimentalVMOptions ^
     -XX:+AggressiveOpts -XX:MaxGCPauseMillis=400 -XX:GCPauseIntervalMillis=8000 ^
     -Dfile.encoding=%DBCLI_ENCODING% -Dsun.jnu.encoding=%DBCLI_ENCODING% -Dclient.encoding.override=%DBCLI_ENCODING% ^
