@@ -1,0 +1,9 @@
+
+
+gcc -m32 -O2 -c -o winapi.o -I/d/luajit-2.1/src winapi.c -DPSAPI_VERSION=1
+gcc -m32 -O2 -c -o wutils.o -I/d/luajit-2.1/src wutils.c -DPSAPI_VERSION=1
+gcc -m32 -Wl,-s -shared winapi.o wutils.o /D/dbcli/lib/x86/lua5.1.dll -lpsapi -static-libgcc  -lMpr -o winapi.dll
+
+gcc -m64 -O2 -c -o winapi.o -I/d/luajit-2.1/src winapi.c -DPSAPI_VERSION=1
+gcc -m64 -O2 -c -o wutils.o -I/d/luajit-2.1/src wutils.c -DPSAPI_VERSION=1
+gcc -m64 -Wl,-s -shared winapi.o wutils.o /D/dbcli/lib/x64/lua5.1.dll -lpsapi -static-libgcc -lMpr -o winapi.dll

@@ -484,7 +484,7 @@ function grid.onload()
         grid[v.name]=v.default
         set(k,grid[v.name],grid.set_param,"grid",v.desc,v.range)
     end
-    env.ansi.define_color("HEADCOLOR","HBRED;HIW","ansi.grid","Define grid title's color, type 'ansi' for more available options")
+    env.ansi.define_color("HEADCOLOR","BRED;HIW","ansi.grid","Define grid title's color, type 'ansi' for more available options")
 end
 
 for k,v in pairs(params) do grid[v.name]=v.default end

@@ -107,6 +107,7 @@ Below is the list:
     OpenCSV     : (MIT)  https://github.com/hyee/OpenCSV(based on opencsv.sourceforge.net)
     MessagePack : (MIT)  https://github.com/fperrad/lua-MessagePack (pure lua)
     dygraphs    : (MIT)  https://github.com/danvk/dygraphs
+    WinAPI      : (MIT)  https://github.com/stevedonovan/winapi
     ANSICON     : (ZLIB) https://github.com/adoxa/ansicon
     JSch        : (BSD)  http://www.jcraft.com/jsch/
     PSCP        : (MIT)  http://www.putty.org/ 

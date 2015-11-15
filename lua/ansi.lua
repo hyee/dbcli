@@ -5,13 +5,7 @@ local reader,writer,str_completer,arg_completer,add=reader
 local terminal=reader:getTerminal()
 local isAnsiSupported=terminal:isAnsiSupported()
 
-ansi.ansi_mode=os.getenv("ANSICON_DEF")
-if not ansi.ansi_mode or ansi.ansi_mode:gsub("[ \t]","")=="" then
-    ansi.ansi_mode="jline"
-else
-    ansi.ansi_mode="ansicon"
-    isAnsiSupported=true
-end
+
 local enabled=isAnsiSupported
 
 --Color definitions from MUD, not all features are support in Ansicon/Jansi library
@@ -26,16 +20,19 @@ local base_color={
 
 
     --Foreground Colors
-    BLK={"\27[30m","Foreground Color: Black"},
-    RED={"\27[31m","Foreground Color: Red"},
-    GRN={"\27[32m","Foreground Color: Green"},
-    YEL={"\27[33m","Foreground Color: Yellow"},
-    BLU={"\27[34m","Foreground Color: Blue"},
-    MAG={"\27[35m","Foreground Color: Magenta"},
-    CYN={"\27[36m","Foreground Color: Cyan"},
-    WHT={"\27[37m","Foreground Color: White"},
+    BLK={"\27[0;30m","Foreground Color: Black"},
+    RED={"\27[0;31m","Foreground Color: Red"},
+    GRN={"\27[0;32m","Foreground Color: Green"},
+    YEL={"\27[0;33m","Foreground Color: Yellow"},
+    BLU={"\27[0;34m","Foreground Color: Blue"},
+    MAG={"\27[0;35m","Foreground Color: Magenta"},
+    CYN={"\27[0;36m","Foreground Color: Cyan"},
+    WHT={"\27[0;37m","Foreground Color: White"},
+    GRY={"\27[30;1;40m","Foreground Color: Gray"}, 
 
     --High Intensity Foreground Colors
+   --BG Light gray
+    
     HIR={"\27[31;1m","High Intensity Foreground Color: Red"},
     HIG={"\27[32;1m","High Intensity Foreground Color: Green"},
     HIY={"\27[33;1m","High Intensity Foreground Color: Yellow"},
@@ -45,13 +42,14 @@ local base_color={
     HIW={"\27[37;1m","High Intensity Foreground Color: White"},
 
     --High Intensity Background Colors
-    HBRED={"\27[41;1m","High Intensity Background Color: Red"},
-    HBGRN={"\27[42;1m","High Intensity Background Color: Green"},
-    HBYEL={"\27[43;1m","High Intensity Background Color: Yellow"},
-    HBBLU={"\27[44;1m","High Intensity Background Color: Blue"},
-    HBMAG={"\27[45;1m","High Intensity Background Color: Magenta"},
-    HBCYN={"\27[46;1m","High Intensity Background Color: Cyan"},
-    HBWHT={"\27[47;1m","High Intensity Background Color: White"},
+    HBRED={"\27[4;41m","High Intensity Background Color: Red"},
+    HBGRN={"\27[4;42m","High Intensity Background Color: Green"},
+    HBYEL={"\27[4;43m","High Intensity Background Color: Yellow"},
+    HBBLU={"\27[4;44m","High Intensity Background Color: Blue"},
+    HBMAG={"\27[4;45m","High Intensity Background Color: Magenta"},
+    HBCYN={"\27[4;46m","High Intensity Background Color: Cyan"},
+    HBWHT={"\27[4;47m","High Intensity Background Color: White"},
+
     
 
     --Background Colors
@@ -63,7 +61,9 @@ local base_color={
     BMAG={"\27[45m","Background Color: Magenta"},
     BCYN={"\27[46m","Background Color: Cyan"},
     BWHT={"\27[47m","Background Color: White"},
+    BGRY={"\27[4;40m","Background Color: Gray"}, 
     NOR ={"\27[0m","Puts every color back to normal"},
+
 
     --Additional ansi Esc codes added to ansi.h by Gothic  april 23,1993
     --Note, these are Esc codes for VT100 terminals, and emmulators
@@ -94,6 +94,37 @@ local base_color={
     WRAP    ={"\27[?7h","Wrap lines at screen edge",1},
     UNWRAP  ={"\27[?7l","Don't wrap lines at screen edge",1}
 }
+
+local default_color={
+    ['0']={'BBLK','BLK'},
+    ['1']={'BBLU','BLU'},
+    ['2']={'BGRN','GRN'},
+    ['3']={'BCYN','CYN'},
+    ['4']={'BRED','RED'},
+    ['5']={'BMAG','MAG'},
+    ['6']={'BYEL','YEL'},
+    ['7']={'BGRY','WHT'},
+    ['8']={'BWHT','GRY'},
+    ['9']={'HBBLU','HIB'},
+    ['A']={'HBGRN','HIG'},
+    ['B']={'HBCYN','HIC'},
+    ['C']={'HBRED','HIR'},
+    ['D']={'HBMAG','HIM'},
+    ['E']={'HBYEL','HIY'},
+    ['F']={'HBWHT','HIW'},
+}
+
+ansi.ansi_mode=os.getenv("ANSICON_DEF")
+ansi.ansi_default=os.getenv("CONSOLE_COLOR"):upper()
+
+--base_color['NOR'][1]=base_color['NOR'][1]..base_color[default_color[ansi.ansi_default:sub(2)][2]][1]..base_color[default_color[ansi.ansi_default:sub(1,1)][1]][1]
+if not ansi.ansi_mode or ansi.ansi_mode:gsub("[ \t]","")=="" then
+    ansi.ansi_mode="jline"
+else
+    ansi.ansi_mode="ansicon"
+    isAnsiSupported=true
+end
+
 
 local color=setmetatable({},{__index=function(self,k) return rawget(self,k:upper()) end})
 
@@ -252,7 +283,7 @@ function ansi.test_text(str)
         rawprint(env.space..string.rep("=",140))
         print(env.load_data(env.WORK_DIR.."bin"..env.PATH_DEL.."ANSI.txt",false))
         rawprint(env.space..string.rep("=",140))
-        local bf,wf,bb,wb=base_color['BLK'][1],base_color['WHT'][1],base_color['BBLK'][1],base_color['BWHT'][1]
+        local bf,wf,bb,wb=base_color['BLK'][1],base_color['HIW'][1],base_color['BBLK'][1],base_color['HBWHT'][1]
         if env.grid then
             local row=env.grid.new()
             local is_fg,max_len=nil,0
