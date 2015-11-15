@@ -1,6 +1,7 @@
 2015-11-15: * public: For win10, use its native ANSI escapes feature instead of ansicon/jline.
                       This feature works well in black background, but not good with white bg.
-=======================begin v0.8================================================
+                    : changes on ansi color codes
+                    : fixes on "set rownum"                    
 2015-11-14: * public: improve query performance, also impact "snap" and "chart" 
 2015-11-13: + public: new command options "column <col> <KMG|TMB|SMHD|smhd|ITV>", type "col" for more detail
                     : same option in "set" allows multiple names, "set -a" for the detail
@@ -17,7 +18,6 @@
 2015-11-11: ! oracle: change statement parsing method, so that output variable can be used as 
                       input variable inside the same PL/SQL block, and vice versa
             + public: "itv start/end/off" to loop a block of statements, refer to "show itvtest" for example
-                    : new command "set OnErr", mainly used within script
 2015-11-10: * public: change the argument orders of "snap", also some fixes
             + oracle: new command "ora topseg"
             * oracle: show content of "starttime","endtime" and "instance" in title bar if corresponding variables changed
