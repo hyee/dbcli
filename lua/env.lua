@@ -29,6 +29,7 @@ local env=setmetatable({},{
     __newindex=function(self,key,value) self(key,value) end
 })
 _G['env']=env
+local record_maker=false
 
 local mt = getmetatable(_G)
 
@@ -41,7 +42,7 @@ mt.__declared = {}
 
 mt.__newindex = function (t, n, v)
     if not mt.__declared[n] and env.WORK_DIR then
-        --if n=='Dir' then print(debug.traceback()) end
+        --if record_maker then print('Detected unexpected global var "'..n..'" with', debug.traceback()) end
         rawset(mt.__declared, n,env.callee(5))
     end
     rawset(t, n, v)
@@ -107,6 +108,20 @@ function env.print_stack()
     stack=stack..'\n'.."Historical Commands:\n===================="
     stack=stack..'\n'..table.concat(dbcli_cmd_history,'\n')
     print(stack)
+end
+
+function env.reset_input(line)
+    if not stack or not line then return nil end
+    if not line:find('^[ \t]*$') then stack[#stack+1]=line end
+    if env.CURRENT_PROMPT==env.PRI_PROMPT then
+        if line:find('^[ \t]*'..env.END_MARKS[1]..'[ \t]*$') then
+            stack[#stack-1]=stack[#stack-1]..line
+            table.remove(stack)
+        end
+        line=table.concat(stack,'\n'..env.MTL_PROMPT)
+        reader:setMultiplePrompt(#stack==1 and line or "")
+        stack=nil
+    end
 end
 
 --Build command list
@@ -756,6 +771,7 @@ function set_debug(name,value)
 end
 
 function env.onload(...)
+    record_maker=false
     env.__ARGS__={...}
     env.init=require("init")
     env.init.init_path()
@@ -779,7 +795,7 @@ function env.onload(...)
     env.set_command(nil,"-P","#Test parameters. Usage: -p <command> [<args>]",env.testcmd,'__SMART_PARSE__',2)
 
     env.init.onload()
-
+    
     env.set_prompt(nil,prompt_stack._base,0)
     if env.set and env.set.init then
         env.set.init({"Prompt","SQLPROMPT","SQLP"},prompt_stack._base,env.set_prompt,
@@ -818,6 +834,7 @@ function env.onload(...)
             end
         end
     end
+    record_maker=true
 end
 
 function env.unload()
@@ -834,7 +851,7 @@ function env.unload()
 end
 
 function env.reload()
-    print("Reloading environemnt ...")
+    print("Reloading environment ...")
     env.unload()
     java.loader.ReloadNextTime=env.CURRENT_DB
     env.CURRENT_PROMPT="_____EXIT_____"

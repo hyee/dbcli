@@ -78,7 +78,7 @@ function oracle:connect(conn_str)
          processEscapes='false',
          ['v$session.program']='SQL Developer',
          ['oracle.jdbc.defaultLobPrefetchSize']="2097152",
-         --['oracle.jdbc.mapDateToTimestamp']="false",
+         ['oracle.jdbc.mapDateToTimestamp']="true",
          ['oracle.jdbc.maxCachedBufferSize']="104857600",
          ['oracle.jdbc.useNio']='true',
          ['oracle.jdbc.TcpNoDelay']='true',
@@ -136,7 +136,7 @@ function oracle:connect(conn_str)
         env._CACHE_PATH=env._CACHE_BASE..prompt:lower()..env.PATH_DEL
         os.execute('mkdir "'..env._CACHE_PATH..'" 2> '..(env.OS=="windows" and 'NUL' or "/dev/null"))
         prompt=('%s%s'):format(prompt:upper(),params[8])
-        env.set_prompt(nil,prompt)
+        env.set_prompt(nil,prompt,nil,2)
         self.session_title=('%s%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)'):format(prompt:upper(),params[8], params[5],params[1],params[4],params[2])
         env.set_title(self.session_title)
     end
@@ -184,7 +184,7 @@ function oracle:parse(sql,params)
         return s:upper()
     end)
 
-    local sql_type=sql:gsub("%s*/%*.-%*/%s*",' '):upper():match("(%w+)")
+    local sql_type=self.get_command_type(sql)
     local method,value,typeid,typename,inIdx,outIdx=1,2,3,4,5,6
     if sql_type=='EXPLAIN' or #p2>0 and (sql_type=="DECLARE" or sql_type=="BEGIN" or sql_type=="CALL") then
         local s0,s1,s2,index,typ,siz={},{},{},1,nil,#p2

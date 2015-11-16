@@ -9,8 +9,15 @@ function system:ctor(name,cmd)
     self.process=nil
 end
 
-function system:fetch_msg(is_print)
-
+function system:run_command(cmd,is_print)
+    self.handle:write(cmd.."\n")
+    local txt,prompt
+    while true do
+        txt=file:read()
+        prompt=txt:match("([^\n\r])+[>$#]%s+$")
+        if prompt then break end
+    end
+    env.set_subsystem(self.shell,prompt)
 end
 
 function system:open(...)

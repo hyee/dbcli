@@ -189,7 +189,7 @@ function cfg.restore(name)
     elseif type(name)=="table" then
         env.log_debug("set","Start restore")
         for k,v in pairs(name) do
-            if v.value~=cfg[k].value and k~="PROMPT" then
+            if v.value~=cfg.get(k) and k~="PROMPT" then
                 cfg.doset(k,v.value)
                 cfg[k]=v
             end
@@ -202,9 +202,6 @@ function cfg.restore(name)
     cfg.set(name,cfg.exists(name).org)
 end
 
-function cfg.tester()
-
-end
 
 function cfg.backup()
     local backup={}

@@ -47,9 +47,9 @@ function ora:validate_accessable(name,options,values)
     if not default then
         env.raise("This command doesn't support current %s %s, expected as %s!",
             expect_name,
-            check_flag==1 and db.props.db_version
+            check_flag==1 and (db.props.db_version or 'unkown')
                 or check_flag==2 and "rights"
-                or check_flag==3 and db.props.db_user,
+                or check_flag==3 and (db.props.db_user or 'unknown'),
             expect)
     end
 

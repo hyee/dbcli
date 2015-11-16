@@ -1,4 +1,4 @@
-local java,env,table,math,loader,pcall=java,env,table,math,loader,pcall
+local java,env,table,math,loader,pcall,os=java,env,table,math,loader,pcall,os
 local cfg,grid,bit,string=env.set,env.grid,env.bit,env.string
 local read=reader
 local event=env.event and env.event.callback or nil
@@ -224,7 +224,6 @@ function ResultSet:rows(rs,count,limit)
     if rs:isClosed() then return end
     count=tonumber(count) or tonumber(cfg.get("printsize"))
     local head=self:getHeads(rs,limit).__titles
-    --print(table.dump(head.colinfo))
     local rows,result={head},loader:fetchResult(rs,count)
     if count~=0 then
         local maxsiz=cfg.get("COLSIZE")
@@ -232,7 +231,14 @@ function ResultSet:rows(rs,count,limit)
             rows[i+1]={}
             for j=1,#result[i] do
                 rows[i+1][j]=tostring(result[i][j])
-                if limit and rows[i+1][j] then rows[i+1][j]=rows[i+1][j]:sub(1,maxsiz) end
+                if rows[i+1][j] then
+                    if limit then rows[i+1][j]=rows[i+1][j]:sub(1,maxsiz) end
+                    if head.colinfo[j].data_typeName=="DATE" or head.colinfo[j].data_typeName=="TIMESTAMP" then
+                        rows[i+1][j]=rows[i+1][j]:gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
+                    elseif head.colinfo[j].data_typeName=="BLOB" then
+                        rows[i+1][j]=rows[i+1][j]:sub(1,255)
+                    end
+                end
             end
         end
     end
@@ -303,18 +309,25 @@ db_core.feed_list={
     TRUNCATE="Truncated"
 }
 
+function db_core.get_command_type(sql)
+    return sql:gsub("%s*/%*.-%*/%s*",' '):trim():upper():gsub("%s*OR%s+REPLACE%s*"," "):match("^(%a+)%s*(%a*)")
+end
+
 function db_core.print_feed(sql,result)
-    local args=env.parse_args(3,sql:upper():gsub("%s*or%s+replace%s*",""))
     if cfg.get("feed")~="on" then return end
-    local cmd,obj=args[1]:upper(),(args[2] or ""):initcap()
+    local secs=''
+    if cfg.get("PROMPT")=='TIMING' and db_core.__start_clock then
+        secs=' (' ..math.round(os.clock()-db_core.__start_clock,3)..' secs)'
+    end
+    local cmd,obj=db_core.get_command_type(sql)
     local feed=db_core.feed_list[cmd] 
     if feed then
-        feed='\n'..feed..'.'
+        feed='\n'..feed..secs..'.'
         if feed:find('%d',1,true) then
             if type(result)=="number" then print(feed:format(result)) end
             return
         else
-            return print(feed:format(obj))
+            return print(feed:format(obj:initcap()))
         end
     end
     if type(result)=="number" and result>-1 then return print('\n'..result.." rows impacted.") end
@@ -451,6 +464,7 @@ function db_core:abort_statement()
 end
 
 function db_core:exec(sql,args)
+    db_core.__start_clock=os.clock()
     collectgarbage("collect")
     java.system:gc()
     java.system:runFinalization();

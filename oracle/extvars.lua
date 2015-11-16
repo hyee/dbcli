@@ -54,7 +54,7 @@ function extvars.onload()
     event.snoop('BEFORE_DB_EXEC',extvars.on_before_parse,nil,1)
     event.snoop('BEFORE_ORACLE_EXEC',extvars.on_before_db_exec)
     event.snoop('ON_SETTING_CHANGED',extvars.set_title)
-    cfg.init("instance","-1",nil,"oracle","Auto-limit the inst_id of gv$/x$ tables. -1: unlimited, 0: current, >0: specific instance","-1 - 99")
+    cfg.init("instance",-1,nil,"oracle","Auto-limit the inst_id of gv$/x$ tables. -1: unlimited, 0: current, >0: specific instance","-1 - 99")
     cfg.init("starttime","",extvars.check_time,"oracle","Specify the start time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
     cfg.init("endtime","",extvars.check_time,"oracle","Specify the end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
 end

@@ -28,14 +28,14 @@
                  (SELECT OBJECT_NAME FROM ALL_OBJECTS WHERE OBJECT_ID=ROW_WAIT_OBJ# AND ROWNUM<2) WAITING_OBJ,
                  ROW_WAIT_BLOCK# WAIT_BLOCK#}
             }
-        &V1 : sid={''||sid},wt={seconds_in_wait desc},ev={event},sql={sql_text},o={logon_time}
+        &V1 : sid={''||sid},wt={sql_secs desc},ev={event},sql={sql_text},o={logon_time}
         &Filter: {default={ROOT_SID =1 OR wait_class!='Idle' or sql_text is not null}, 
                   f={},
                   i={wait_class!='Idle'}
                   u={(ROOT_SID =1 OR STATUS='ACTIVE' or sql_text is not null) and schemaname=sys_context('userenv','current_schema')}
                  }
         &tmodel : default={0}, m={1}
-        @COST : 11.0={nvl(1440*(sysdate-SQL_EXEC_START),wait_secs/60)},10.0={(select TIME_WAITED/6000 from gv$session_event b where b.inst_id=a.inst_id and b.sid=a.sid and b.event=a.event)},9.0={null}
+        @COST : 11.0={COALESCE(1440*(sysdate-SQL_EXEC_START),sql_secs/60)},10.0={nvl(sql_secs/60,wait_secs/60)},9.0={null}
         @CHECK_ACCESS1: dba_objects={dba_objects},all_objects={all_objects}
         @CHECK_ACCESS2: gv$px_session/gv$sql/gv$process={}
     --]]
@@ -60,13 +60,15 @@ BEGIN
                extractvalue(b.column_value,'/ROW/A1')     program_name,
                extractvalue(b.column_value,'/ROW/A2')     PROGRAM_LINE#,
                extractvalue(b.column_value,'/ROW/A3')     sql_text,
-               extractvalue(b.column_value,'/ROW/A4')     plan_hash_value
+               extractvalue(b.column_value,'/ROW/A4')     plan_hash_value,
+               extractvalue(b.column_value,'/ROW/A5')     sql_secs
          FROM (select distinct inst_id,sql_id,nvl(sql_child_number,0) child from s1 where sql_id is not null) A,
                TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'[
                    SELECT (select c.owner  ||'.' || c.object_name from &CHECK_ACCESS1 c where c.object_id=program_id and rownum<2) A1,
                           PROGRAM_LINE# A2,
                           trim(substr(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200)) A3,
-                          plan_hash_value A4
+                          plan_hash_value A4,
+                          round(elapsed_time*1e-6/(1+executions)) A5
                    FROM  gv$sql
                    WHERE ROWNUM<2 AND sql_id=']'||a.sql_id||''' AND inst_id='||a.inst_id||' and child_number='||a.child)
                ,'/ROWSET/ROW'))) B
@@ -78,12 +80,13 @@ BEGIN
                rownum r,
                s3.*
           FROM   (SELECT s3.*,
-                         CASE WHEN seconds_in_wait > 1300000000 THEN 0 ELSE seconds_in_wait END wait_secs,
+                         seconds_in_wait wait_secs,
                          CASE WHEN S3.SID = S3.qcsid AND S3.inst_id = NVL(s3.qcinst_id,s3.inst_id) THEN 1 ELSE 0 END ROOT_SID,
                          plan_hash_value,
                          program_name,
                          program_line#,
-                         sql_text
+                         sql_text,
+                         sql_secs
                   FROM   s3, sq1
                   WHERE  s3.inst_id=sq1.inst_id(+) and s3.sql_id=sq1.sql_id(+) and nvl(s3.sql_child_number,0)=sq1.child(+)) s3
           START  WITH (qcsid IS NULL OR ROOT_SID=1)
@@ -103,7 +106,7 @@ BEGIN
                plan_hash_value plan_hash,
                sql_child_number child,
                a.event,&fields,
-               ROUND(&COST,1) waits,
+               ROUND(&COST,1) waited,
                sql_text
         FROM   s4 a
         WHERE  (&filter)
