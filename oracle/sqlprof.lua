@@ -203,6 +203,7 @@ function sqlprof.extract_profile(sql_id,sql_plan)
             pr('        validate    => TRUE,');
             pr('        replace     => TRUE,');
             pr('        force_match => ' || CASE WHEN p_forcematch THEN 'TRUE' ELSE 'FALSE' END || ');');
+            pr('    --To drop this profile, execute: DBMS_SQLTUNE.DROP_SQL_PROFILE('''||v_source||''')');
             pr('END;');
             pr('/');
             p_buffer := v_text;
@@ -225,5 +226,20 @@ function sqlprof.extract_profile(sql_id,sql_plan)
     print("Result written to file "..env.write_cache(sql_id..".sql",args[1]))
 end
 
-env.set_command(nil,"sqlprof","Extract sql profile. Usage: sqlprof <sql_id|sql_prof_name|spm_plan_name> [<plan_hash_value|new_sql_id|sql_prof_name|spm_plan_name>|plan]",sqlprof.extract_profile,false,3)
+function sqlprof.onload()
+    local help=[[
+    Extract sql profile. Usage: sqlprof <sql_id|sql_prof_name|spm_plan_name> [<plan_hash_value|new_sql_id|sql_prof_name|spm_plan_name>|plan]
+    The command will not make any changes on the database, but to create a SQL file that used to fix the execution plan by SQL Profile.
+    Examples:
+        1). Generate the profile for the last plan of target SQL ID: sqlprof gjm43un5cy843
+        2). Generate the profile of the specifc SQL ID + plan hash value: sqlprof gjm43un5cy843 1106594730
+        3). Generate the profile for a SQL id with the plan of another SQL: sqlprof gjm43un5cy843 53c2k4c43zcfx
+        4). Extract an existing SQL profile or baseline: sqlprof PROF_gjm43un5cy843
+        5). Generate the profile for a SQL id with the profile/baseline of another sql: sqlprof gjm43un5cy843  PROF_gjm43un5cy843
+        6). Generate the profile from plan table:
+                xplan select * from dual;
+                sqlprof gjm43un5cy843 plan;
+    ]]
+    env.set_command(nil,"sqlprof",help,sqlprof.extract_profile,false,3)
+end
 return sqlprof

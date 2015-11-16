@@ -1,14 +1,14 @@
 2015-11-16: * public: grid: auto adjust the aligin style of the titles
-                    : fix ansicon issues by moving the files into 'lib' directory accoding to the author's comments
+                    : fix ansicon issues by moving the files into 'lib' directory according to the author's comments
                     : fix the 'set' options sometimes cannot auto-restore after ora script is executed
-                    : 'Set prompt timing' also show the time cost(in secs) if option 'feed' is on
+                    : 'Set prompt timing' also show the time cost in the feed lines(in secs) if option 'feed' is on
             * oracle: auto-save the result of "ora sql <sql_id>"
-                    : reduce the triggers of reading server output(dbms_output) for performance purpose
-                    : fix on missing the time field of the 'date' column
+                    : reduce the triggers of reading server outputs(dbms_output) for performance purpose
+                    : fix on missing the time part of the 'date' columns in 10g
 2015-11-15: * public: For win10, use its native ANSI escapes feature instead of ansicon/jline.
                       This feature works well in black background, but not good with white bg.
                     : changes on ansi color codes
-                    : fixes on "set rownum"                    
+                    : fixes on "set rownum"
 2015-11-14: * public: improve query performance, also impact "snap" and "chart" 
 2015-11-13: + public: new command options "column <col> <KMG|TMB|SMHD|smhd|ITV>", type "col" for more detail
                     : same option in "set" allows multiple names, "set -a" for the detail
@@ -46,8 +46,8 @@
             * minor changes
 2015-11-05: * public: new command "set debug" for dev purpose; minor changes
 2015-11-04: * Fix:    1) Public: occasionally unexpected layouts when printing a grid(grid.lua)
-                      2) Public: cannot scroll to historical command in sqlplus/luajit(dbcli.bat)
-              New:    1) Oracle: new command "show" which similar to "ora" except not allow parameters
+                      2) Public: cannot scroll to historical commands in sqlplus/luajit(dbcli.bat)
+              New:    1) Oracle: new command "show" which similars to "ora" except not allow parameters
                       2) Oracle: some new scripts for "ora","sys" and "show"
                       3) Oracle: new command "set instance <-1|0|inst_id>" to auto-limit the inst_id in gv$/x$ views
               Change: 1) Oracle: some scripts of "ora" moved to "show"

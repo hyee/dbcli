@@ -118,9 +118,9 @@ ansi.ansi_mode=os.getenv("ANSICON_DEF")
 local console_color=os.getenv("CONSOLE_COLOR")
 if console_color then
     ansi.ansi_default=console_color
-    local bg,fg=default_color[console_color:sub(2)][2],default_color[console_color:sub(1,1)][1]
+    local fg,bg=default_color[console_color:sub(2)][2],default_color[console_color:sub(1,1)][1]
     if bg and fg then
-        base_color['NOR'][1]=base_color['NOR'][1]..base_color[bg][1]..base_color[fg][1]
+        base_color['NOR'][1]=base_color['NOR'][1]..base_color[fg][1]..base_color[bg][1]
     end
 end
 
