@@ -16,9 +16,9 @@ SELECT /*+ordered*/
          d.type,
          d.lmode || ' [' ||
          decode(d.lmode, 0, 'None', 1, 'Null', 2, 'Row-S(SS)', 3, 'Row-X(SX)', 4, 'Share', 5, 'S/Row-X(SSX)',
-                6, 'Exclusive', 'Invalid') || ']' lmode,
+                6, 'Exclusive', 'Invalid') || ']' lock_mode,
          decode(d.REQUEST, 0, 'Hold', 'Request') ltype,
-         NULLIF(BLOCKING_SESSION || ',@' || BLOCKING_INSTANCE, ',@') BLOCK_BY,
+         NULLIF(BLOCKING_SESSION || ',@' || BLOCKING_INSTANCE, ',@') BLOCKER,
          d.id1 object_id,
          b.owner,
          b.object_name table_name,

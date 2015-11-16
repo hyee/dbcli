@@ -160,6 +160,24 @@ function string.format_number(base,s,cast)
     return String:format(base,java.cast(tonumber(s),cast or 'double'))
 end
 
+function string.lpad(str, len, char)
+    str=tostring(str) or str
+    return (str and (str..(char or ' '):rep(len - #str)):sub(1,len)) or str
+end
+
+function string.rpad(str, len, char)
+    str=tostring(str) or str
+    return (str and ((char or ' '):rep(len - #str)..str):sub(-len)) or str
+end
+
+function string.cpad(str, len, char)
+    str,char=tostring(str) or str,char or ' '
+    if not str then return str end
+    char=char:rep(math.floor((len-#str)/2))
+    return string.format("%s%s%s",char,str,char):sub(1,len)
+end
+
+
 if not table.unpack then table.unpack=function(tab) return unpack(tab) end end
 
 function string.from(v)

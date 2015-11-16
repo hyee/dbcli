@@ -65,13 +65,13 @@ BEGIN
         flag  := FALSE;
         schem := regexp_substr(target, '[^\.]+', 1, 1);
         part1 := regexp_substr(target, '[^\.]+', 1, 2);
-        objs  := objs||' a WHERE owner IN(''PUBLIC'',sys_context(''USERENV'', ''CURRENT_SCHEMA''),''' ||schem || ''') AND object_name IN(''' || schem || ''',''' || part1 || '''))';
+        objs  := objs||' a WHERE owner IN(''PUBLIC'',sys_context(''USERENV'', ''CURRENT_SCHEMA''),:1) AND object_name IN(''' || schem || ''',:2))';
     ELSE
         flag  := TRUE;
-        objs  := objs|| ' a WHERE OWNER in(''PUBLIC'',''' || schem || ''') AND OBJECT_NAME=''' || part1 || ''')';
+        objs  := objs|| ' a WHERE OWNER in(''PUBLIC'',:1) AND OBJECT_NAME=:2)';
     END IF;
 
-    objs:='SELECT /*+no_expand*/
+    objs:=q'[SELECT /*+no_expand*/
            MIN(to_char(OBJECT_TYPE))    keep(dense_rank first order by s_flag),
            MIN(to_char(OWNER))          keep(dense_rank first order by s_flag),
            MIN(to_char(OBJECT_NAME))    keep(dense_rank first order by s_flag),
@@ -79,14 +79,14 @@ BEGIN
            MIN(to_number(OBJECT_ID))    keep(dense_rank first order by s_flag)
     FROM (
         SELECT a.*,
-               case when owner=''' || schem || ''' then 0 else 100 end +
-               case when ''' || target || q'[' like upper('%'||OBJECT_NAME||nullif('.'||SUBOBJECT_NAME||'%','.%')) then 0 else 10 end +
+               case when owner=:1 then 0 else 100 end +
+               case when :2 like upper('%'||OBJECT_NAME||nullif('.'||SUBOBJECT_NAME||'%','.%')) then 0 else 10 end +
                case substr(object_type,1,3) when 'TAB' then 1 when 'CLU' then 2 else 3 end s_flag
         FROM   ]' || objs;
 
     --dbms_output.put_line(objs);
     EXECUTE IMMEDIATE objs
-        INTO obj_type, schem, part1, part2_temp,object_number;
+        INTO obj_type, schem, part1, part2_temp,object_number USING schem,part1,schem, part1;
 
     IF part2 IS NULL THEN
         IF part2_temp IS NULL AND NOT flag THEN

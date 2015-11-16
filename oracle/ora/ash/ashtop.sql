@@ -14,11 +14,6 @@
       &more_filter: default={1=1},f={}
       @counter: 11.2={, count(distinct sql_exec_id) "Execs"},10.1={}
     ]]--
-  Parameters:
-      fields : combination of columns concated by comma. Available columns: see v$active_session_history and dba_users
-               available options: -sql,-p,-pr,-o,-plan,-none
-      filters: available options: -id, -snap, -f
-      Source : -ash: gv$active_Session_history    -dash: Dba_Hist_Active_Sess_History
   Options:
       Groupings : The grouping option can be followed by other custimized field, i.e.: 'ashtop -p,p1raw ...'
         -sql : group by sql_id+event (default)

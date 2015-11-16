@@ -83,7 +83,7 @@ function db2:connect(conn_str)
     self.conn_str=packer.pack_str(conn_str)
 
     prompt=(prompt or database:upper()):match("^([^,%.&]+)")
-    env.set_prompt(nil,prompt)
+    env.set_prompt(nil,prompt,nil,2)
 
     env.set_title(('%s - User: %s   Server: %s   Version: DB2(%s)'):format(database,self.props.db_user,server,self.props.db_version))
     if event then event("AFTER_DB2_CONNECT",self,sql,args,result) end

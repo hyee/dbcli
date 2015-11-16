@@ -427,7 +427,6 @@ function grid:wellform(col_del,row_del)
     local nor,hor,hl=color("NOR"),color("HEADCOLOR"),color("GREPCOLOR")
     local head_fmt=fmt
     for k,v in ipairs(colsize) do
-        --local siz=v[1] > 99 and 99 or v[1]
         local siz=v[1]
         if siz>99  then format_func=string.fmt end
         local del=" "
@@ -450,6 +449,19 @@ function grid:wellform(col_del,row_del)
     for k,v in ipairs(result) do
         local filter_flag,match_flag=1,0
         while #v<#colsize do table.insert(v,"") end
+        --adjust the title style(middle)
+        if v[0]==0 then
+            for col,value in ipairs(v) do
+                local pad=colsize[col][1]-#value
+                if pad>=2 then
+                    if colsize[col][1]<=40 or pad==2 then
+                        v[col]=v[col]:cpad(colsize[col][1])
+                    elseif colsize[col][1]<=60 then
+                        v[col]=' '..v[col]
+                    end
+                end
+            end
+        end
         local row=cut(self,v,format_func,v[0]==0 and head_fmt or fmt)
         if v[0]==0 then
             row=row..nor

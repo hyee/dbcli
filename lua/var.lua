@@ -229,9 +229,10 @@ function var.save(name,file)
         if file=='' then return end
     end
     name=name:upper()
-    local obj=var.inputs[name]
-    env.checkerr(obj,'Target variable[%s] does not exist!',name)
-    if not var.get_input(name) then return end
+
+    env.checkerr(var.inputs[name],'Fail to save due to variable `%s` does not exist!',name)
+    local obj=var.get_input(name)
+    if not obj then return end
     if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
         return print("Unsupported variable '%s'!", name);
     end

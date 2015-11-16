@@ -1,3 +1,10 @@
+2015-11-16: * public: grid: auto adjust the aligin style of the titles
+                    : fix ansicon issues by moving the files into 'lib' directory accoding to the author's comments
+                    : fix the 'set' options sometimes cannot auto-restore after ora script is executed
+                    : 'Set prompt timing' also show the time cost(in secs) if option 'feed' is on
+            * oracle: auto-save the result of "ora sql <sql_id>"
+                    : reduce the triggers of reading server output(dbms_output) for performance purpose
+                    : fix on missing the time field of the 'date' column
 2015-11-15: * public: For win10, use its native ANSI escapes feature instead of ansicon/jline.
                       This feature works well in black background, but not good with white bg.
                     : changes on ansi color codes

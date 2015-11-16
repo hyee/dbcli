@@ -1,4 +1,7 @@
-/*[[Show info in v$wait_chains]]*/
+/*[[Show info in v$wait_chains
+    --[[@check_version: 11.2={}
+    ]]--
+]]*/
 WITH c AS(SELECT /*+materialize*/* FROM  v$wait_chains),
 r(cid,INSTANCE,SID,sess_serial#,lv) AS
  (SELECT chain_id,INSTANCE, SID, sess_serial#, 0 lv
