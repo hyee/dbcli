@@ -1,15 +1,17 @@
 local db,cfg=env.oracle,env.set
 local xplan={}
-local default_fmt,e10053="ALLSTATS ALL -PROJECTION OUTLINE REMOTE"
+local default_fmt,e10053,prof="ALLSTATS ALL -PROJECTION OUTLINE REMOTE"
 function xplan.explain(fmt,sql)
-    local ora=db.C.ora
+    local ora,sqltext=db.C.ora
     env.checkerr(fmt,env.helper.helper,env.CURRENT_CMD)
     if fmt:sub(1,1)=='-' then
         if not sql then return end
         fmt=fmt:sub(2)
         if fmt=='10053' then
-           e10053=true
-           fmt=default_fmt
+            e10053,fmt=true,default_fmt
+            fmt=default_fmt
+        elseif fmt:lower()=="prof" then
+            prof,fmt=true,default_fmt
         end
     else
         sql=fmt..(not sql and "" or " "..sql)
@@ -19,10 +21,13 @@ function xplan.explain(fmt,sql)
 
     if not sql:gsub("[\n\r]",""):match('(%s)') then
         sql=sql:gsub("[\n\r]","")
-        sql=db:get_value([[SELECT * FROM(SELECT sql_text from dba_hist_sqltext WHERE sql_id=:1 AND ROWNUM<2
+        sqltext=db:get_value([[SELECT * FROM(SELECT sql_text from dba_hist_sqltext WHERE sql_id=:1 AND ROWNUM<2
                       UNION ALL
                       SELECT sql_fulltext from gv$sqlarea WHERE sql_id=:1 AND ROWNUM<2) WHERE ROWNUM<2]],{sql})
-        if not sql or sql=="" then return end
+        env.checkerr(sqltext,"Cannot find target SQL ID %s",sql)
+        sql=sqltext
+    else 
+        sqltext=sql
     end
     local args={}
     sql=sql:gsub("(:[%w_$]+)",function(s) args[s:sub(2)]=""; return s end)
@@ -34,8 +39,8 @@ function xplan.explain(fmt,sql)
     if e10053 then db:internal_call("ALTER SESSION SET EVENTS='10053 trace name context forever, level 1'") end
     db:internal_call("Explain PLAN /*INTERNAL_DBCLI_CMD*/ FOR "..sql,args)
     sql=[[
-        WITH sql_plan_data AS
-         (SELECT /*INTERNAL_DBCLI_CMD*/*
+        WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
+         (SELECT *
           FROM   (SELECT id, parent_id, plan_id, dense_rank() OVER(ORDER BY plan_id DESC) seq FROM plan_table)
           WHERE  seq = 1
           ORDER  BY id),
@@ -104,20 +109,23 @@ function xplan.explain(fmt,sql)
     sql=sql:gsub('@fmt@',fmt)
     db:query(sql)
     --db:rollback()
-    cfg.set("feed",feed,true)
     if e10053==true then
         db:internal_call("ALTER SESSION SET EVENTS '10053 trace name context off'")
         oracle.C.tracefile.get_trace('default')
+    elseif prof==true then
+        oracle.C.sqlprof.extract_profile(nil,'plan',sqltext)
     end
+    cfg.set("feed",feed,true)
 end
 
 function xplan.onload()
     local help=[[
-    Explain SQL execution plan. Usage: xplan [-<format>|-10053] <SQL statement|SQL ID>
+    Explain SQL execution plan. Usage: xplan [-<format>|-10053|-prof] <SQL statement|SQL ID>
     Options:
         -<format>: Refer to the 'format' field in the document of 'dbms_xplan'.
                    Default is ']]..default_fmt..[['
         -10053   : Generate the 10053 trace file after displaying the execution plan
+        -prof    : Generate the SQL profile script after displaying the execution plan
     Parameters:
         <SQL Statement>: SELECT/DELETE/UPDATE/MERGE/etc that can produce the execution plan
         <SQL ID>       : The SQL ID that can be found in SQL area or AWR history
