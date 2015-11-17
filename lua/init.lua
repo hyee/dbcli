@@ -31,7 +31,8 @@ local init={
         "lua/snapper",
         "lua/ssh",
         "lua/tester",
-        "lua/graph"}
+        "lua/graph",
+        "lua/subsystem"}
 }
 
 init.databases={oracle="oracle/oracle",mssql="mssql/mssql",db2="db2/db2",mysql="mysql/mysql"}
@@ -125,7 +126,7 @@ function init.load_database()
     env[name]=exec(loadfile(env.WORK_DIR..file:gsub("[\\/]+",env.PATH_DEL)..'.lua'))
     exec(type(env[name])=="table" and env[name].onload,env[name],name)
     init.module_list[#init.module_list+1]=file
-    if env.event then env.event.callback('ON_DATABASE_ENV_LOADED',env.CURRENT_DB) end
+    if env.event then env.event.callback('ON_DB_ENV_LOADED',env.CURRENT_DB) end
 end
 
 function init.load_modules(list,tab,module_name)

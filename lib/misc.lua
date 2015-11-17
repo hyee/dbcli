@@ -81,6 +81,16 @@ function os.CreateProcess(cmdline,  flags)
     kernel.CreateProcessA(cmdline,nil, nil, nil,false, 0, nil,nil,nil,nil)
 end
 
+function os.exists(file)
+    local f=io.open(file,'r')
+    if not f then
+        local r=os.execute('cd "'..file..'" 2>nul 1>nul')
+        return r and 2 or nil
+    end
+    f:close()
+    return 1
+end
+
 --Continus sep would return empty element
 function string.split (s, sep, plain,occurrence)
     local r={}

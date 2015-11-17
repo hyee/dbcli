@@ -371,8 +371,8 @@ function ssh:set_ftp_local_path(path)
     local current_path=(pscp_local_dir or env._CACHE_PATH)
     path=path=="." and env._CACHE_PATH or path
     if not path or current_path==path then return print("Current FTP local path is "..current_path..", to switch back to the default path, use 'ssh llcd .'") end
-    --path=self:check_ext_file(path)
-    --env.checkerr(path,"Cannot find target path "..path)
+    
+    env.checkerr(os.exists(path),"Cannot find target path "..path)
     pscp_local_dir=path:gsub("[\\/]",env.PATH_DEL):gsub('[\\/]$','')..env.PATH_DEL
     print(table.concat({"Local FTP path changed:",current_path,'==>',pscp_local_dir},' '))
 end

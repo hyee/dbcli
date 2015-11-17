@@ -110,20 +110,6 @@ function env.print_stack()
     print(stack)
 end
 
-function env.reset_input(line)
-    if not stack or not line then return nil end
-    if not line:find('^[ \t]*$') then stack[#stack+1]=line end
-    if env.CURRENT_PROMPT==env.PRI_PROMPT then
-        if line:find('^[ \t]*'..env.END_MARKS[1]..'[ \t]*$') then
-            stack[#stack-1]=stack[#stack-1]..line
-            table.remove(stack)
-        end
-        line=table.concat(stack,'\n'..env.MTL_PROMPT)
-        reader:setMultiplePrompt(#stack==1 and line or "")
-        stack=nil
-    end
-end
-
 --Build command list
 env._CMDS=setmetatable({___ABBR___={}},{
     __index=function(self,key)
@@ -174,7 +160,7 @@ function env.list_dir(file_dir,file_ext,text_macher)
     if env.OS=="windows" then
         dir=io.popen('dir /B/S/A:-D "'..file_dir..'" 2>nul & dir /B/S/A:-D "'..file_dir..'.'..file_ext..'" 2>nul')
     else
-        dir=io.popen('find "'..file_dir..'" -iname '..filter..' -print')
+        dir=io.popen('find "'..file_dir..'" -iname '..filter..' -print >/dev/null')
     end
 
     for n in dir:lines() do
@@ -493,7 +479,7 @@ function env.set_prompt(class,default,is_default,level)
         end
     end
 
-    if default and not default:match("[%w]%s*$") then 
+    if default and not default:match("[%a]%s*$") then 
         env.PRI_PROMPT=default 
     else
         env.PRI_PROMPT=(default or "").."> "
@@ -669,7 +655,7 @@ function env.eval_line(line,exec,is_internal)
         if not (_CMDS[cmd]) then  cmd,rest=(cmd.." ".. rest):match('^%s*(%S+)%s*(.*)') end
     end
     if not cmd then return end
-    cmd=subsystem_prefix=="" and cmd:gsub(env.END_MARKS[1]..'+$',''):upper() or cmd
+    cmd=(subsystem_prefix=="" and cmd:gsub(env.END_MARKS[1]..'+$',''):upper() or cmd):upper()
     env.CURRENT_CMD=cmd
     if not (_CMDS[cmd]) then
         push_stack(false)

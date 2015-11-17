@@ -88,7 +88,7 @@ Below are some common uses of the utility:
 Command Types
 -----------------------
 The command rules are similar to SQL*Plus:
-* DDL commands that related to creating source code(`create trigger/package/function/procedure/type`) are cross-lines commands and should be end with `/` in a stand-alone line. `create table/inde/etc` are not of this kind because they related to structure.
+* DDL commands that related to creating source code(`create trigger/package/function/procedure/type`) are cross-lines commands and should be end with `/` in a stand-alone line. `create table/index/etc` are not of this kind because they are related to structures.
 * Other DML,DDL,DCL commands are also cross-lines commands that end with either `;`, or `/` in a new line.
 * Command `SET COMMAND_ENDMARKS` is used to customize those 2 symbols.
 * Apart from the above commands, most of other commands are single line commands and will be executed after the `Enter` key is pressed.

@@ -1,12 +1,13 @@
 local db,cfg=env.oracle,env.set
 local sqlprof={}
-function sqlprof.extract_profile(sql_id,sql_plan)
+function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
     local stmt=[[
     DECLARE
+        v_SQL CLOB:=:1;
         PROCEDURE extract_profile(p_buffer     OUT CLOB,
                                   p_sqlid      VARCHAR2,
                                   p_plan       VARCHAR2 := NULL,
-                                  p_forcematch BOOLEAN := FALSE) IS
+                                  p_forcematch BOOLEAN := true) IS
             /*
             To generate the script to fix the execution plan with SQL profile
             Parameters:
@@ -27,7 +28,6 @@ function sqlprof.extract_profile(sql_id,sql_plan)
                4) Extract profile from plan_table, make sure there is only one statement in the plan table:
                   exec extract_profile('dc5n1gqgfq09h','plan');
             */
-            v_sql         CLOB;
             v_signatrue   INT;
             v_source      VARCHAR2(100);
             v_plan_source VARCHAR2(50);
@@ -42,17 +42,17 @@ function sqlprof.extract_profile(sql_id,sql_plan)
                 INTO   v_sql, v_source
                 FROM   (
                         --awr and sqlset
-                        SELECT SQL_TEXT, 'PROF_' || p_sqlid src
+                        SELECT SQL_TEXT,  p_sqlid src
                         FROM   dba_hist_sqltext a
                         WHERE  sql_id = p_sqlid
                         UNION ALL
-                        SELECT SQL_FULLTEXT, 'PROF_' || p_sqlid
+                        SELECT SQL_FULLTEXT, p_sqlid
                         FROM   gv$sql a
                         WHERE  sql_id = p_sqlid
                     $IF DBMS_DB_VERSION.VERSION>10  $THEN
                         UNION ALL
                         SELECT SQL_TEXT,
-                                decode(b.obj_type, 1, p_sqlid, 2, 'PROF_' || substr(p_sqlid, -26)) src
+                                decode(b.obj_type, 1, p_sqlid, 2,  substr(p_sqlid, -26)) src
                         FROM   sys.sqlobj$ b, sys.sql$text a
                         WHERE  b.name = p_sqlid
                         AND    b.signature = a.signature
@@ -62,21 +62,17 @@ function sqlprof.extract_profile(sql_id,sql_plan)
                         FROM   sys.sqlprof$ b, sys.sql$text a
                         WHERE  b.sp_name = p_sqlid
                         AND    b.signature = a.signature
-                    $END
-                        )
+                    $END)
                 WHERE  rownum < 2;
             END;
 
-            PROCEDURE get_plan IS
+            PROCEDURE get_plan(p_sql_id varchar2) IS
                 v_plan VARCHAR2(30);
             BEGIN
                 v_plan := CASE
-                              WHEN p_plan IS NULL THEN
-                               '%'
-                              WHEN upper(p_plan) IN('PLAN','PLAN_TABLE') then
-                                '-1'
-                              ELSE
-                               nvl(regexp_substr(p_plan, '^\d+$'), 'z') || '%'
+                              WHEN p_plan IS NULL THEN '%'
+                              WHEN upper(p_plan) IN('PLAN','PLAN_TABLE') then '-1'
+                              ELSE nvl(regexp_substr(p_plan, '^\d+$'), 'z') || '%'
                           END;
                 SELECT xmltype(other_xml), src
                 INTO   v_hints, v_plan_source
@@ -92,11 +88,10 @@ function sqlprof.extract_profile(sql_id,sql_plan)
                                 SELECT other_xml, 'memory', sql_id, plan_hash_value
                                 FROM   gv$sql_plan a
                                 UNION ALL
-                                SELECT other_xml, 'plan table', p_sqlid sql_id, -1
-                                FROM   PLAN_TABLE a
-                                )
+                                SELECT other_xml, 'plan table', p_sql_id sql_id, -1
+                                FROM   PLAN_TABLE a)
                         WHERE  rownum < 2
-                        AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR sql_id = p_plan)
+                        AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR sql_id = p_plan OR src='plan table' and sql_id='_x_')
                         AND    other_xml IS NOT NULL
                     $IF DBMS_DB_VERSION.VERSION>10 $THEN
                         UNION ALL
@@ -122,27 +117,29 @@ function sqlprof.extract_profile(sql_id,sql_plan)
             PROCEDURE pr(p_text VARCHAR2, flag BOOLEAN DEFAULT TRUE) IS
             BEGIN
                 IF flag THEN
-                    dbms_lob.writeappend(v_text, length(p_text) + 1, p_text || chr(10));
+                    dbms_lob.writeappend(v_text, lengthb(p_text) + 1, p_text || chr(10));
                 ELSE
-                    dbms_lob.writeappend(v_text, length(p_text), p_text);
+                    dbms_lob.writeappend(v_text, lengthb(p_text), p_text);
                 END IF;
             END;
         BEGIN
             dbms_output.enable(NULL);
-            BEGIN
-                get_sql(p_sqlid);
-            EXCEPTION WHEN NO_DATA_FOUND THEN
-                p_buffer:='#Cannot find SQL text for '||p_sqlid||'!';
-                return;
-            END;
-            get_plan;
+            IF v_sql IS NULL THEN 
+                BEGIN
+                    get_sql(p_sqlid);
+                EXCEPTION WHEN NO_DATA_FOUND THEN
+                    p_buffer:='#Cannot find SQL text for '||p_sqlid||'!';
+                    return;
+                END;
+            END IF;
+            get_plan(case when upper(p_plan) IN('PLAN','PLAN_TABLE') then '_x_' end);
             dbms_lob.createtemporary(v_text, TRUE);
-            --pr('Set define off sqlbl on');
+            pr('Set define off sqlbl on'||chr(10));
             pr('DECLARE');
             pr('    sql_txt   CLOB;');
             pr('    sql_prof  SYS.SQLPROF_ATTR;');
             pr('    signature NUMBER;');
-            pr('    procedure wr(x varchar2) is begin dbms_lob.writeappend(sql_txt, length(x), x);end;');
+            pr('    procedure wr(x varchar2) is begin dbms_lob.writeappend(sql_txt, lengthb(x), x);end;');
             pr('BEGIN');
             v_size := length(v_sql);
             IF v_size <= 1200 OR dbms_lob.instr(v_sql, CHR(10)) > 0 THEN
@@ -160,11 +157,11 @@ function sqlprof.extract_profile(sql_id,sql_plan)
                 END LOOP;
             END IF;
             pr('    ');
-            IF p_plan IS NOT NULL AND NOT regexp_like(p_plan, '^\d+$') THEN
+            v_signatrue := dbms_sqltune.SQLTEXT_TO_SIGNATURE(v_sql, TRUE);
+            IF p_plan IS NOT NULL AND NOT regexp_like(p_plan, '^\d+$') AND upper(p_plan) NOT IN('PLAN','PLAN_TABLE') THEN
                 v_sql       := regexp_replace(v_sql, '/\*.*?\*/');
-                v_signatrue := dbms_sqltune.SQLTEXT_TO_SIGNATURE(v_sql, TRUE);
                 BEGIN
-                    get_sql(case when upper(p_plan) IN('PLAN','PLAN_TABLE') then p_sqlid else p_plan end );
+                    get_sql(p_plan);
                 EXCEPTION WHEN NO_DATA_FOUND THEN
                     p_buffer:='#Cannot find SQL text for '||p_plan||'!';
                     return;
@@ -192,6 +189,8 @@ function sqlprof.extract_profile(sql_id,sql_plan)
                 END LOOP;
             END LOOP;
 
+            v_source:= 'PROF_'||nvl(v_source,to_char(v_signatrue,'fm'||rpad('X',length(v_signatrue),'X')));
+
             pr('        q''[END_OUTLINE_DATA]'');');
             pr('    signature := DBMS_SQLTUNE.SQLTEXT_TO_SIGNATURE(sql_txt);');
             pr('    DBMS_SQLTUNE.IMPORT_SQL_PROFILE (');
@@ -203,27 +202,42 @@ function sqlprof.extract_profile(sql_id,sql_plan)
             pr('        validate    => TRUE,');
             pr('        replace     => TRUE,');
             pr('        force_match => ' || CASE WHEN p_forcematch THEN 'TRUE' ELSE 'FALSE' END || ');');
+            pr('    --To drop this profile, execute: DBMS_SQLTUNE.DROP_SQL_PROFILE('''||v_source||''')');
             pr('END;');
             pr('/');
             p_buffer := v_text;
 
-            --dbms_output.put_line(v_text);
+            
         END;
     BEGIN
-        extract_profile(:1,:2,:3, TRUE);
+        extract_profile(:2,:3,:4, TRUE);
     END;]]
-    env.checkerr(sql_id,env.helper.helper,env.CURRENT_CMD)
+    env.checkerr(sql_id or sql_text,env.helper.helper,env.CURRENT_CMD)
     if not db:check_access('sys.sql$text',1) then
         stmt=stmt:gsub("%$IF.-%$END","")
     end
-    args={'#CLOB',sql_id,sql_plan or ""}
+    args={sql_text or "",'#CLOB',sql_id or "",sql_plan or ""}
     db:internal_call(stmt,args)
     if args[1] and args[1]:sub(1,1)=="#" then
         env.raise(args[1]:sub(2))
     end
-    --print(args[1])
-    print("Result written to file "..env.write_cache(sql_id..".sql",args[1]))
+    print("Result written to file "..env.write_cache((sql_id or "prof_plan_table")..".sql",args[2]))
 end
 
-env.set_command(nil,"sqlprof","Extract sql profile. Usage: sqlprof <sql_id|sql_prof_name|spm_plan_name> [<plan_hash_value|new_sql_id|sql_prof_name|spm_plan_name>|plan]",sqlprof.extract_profile,false,3)
+function sqlprof.onload()
+    local help=[[
+    Extract sql profile. Usage: sqlprof <sql_id|sql_prof_name|spm_plan_name> [<plan_hash_value|new_sql_id|sql_prof_name|spm_plan_name>|plan]
+    The command will not make any changes on the database, but to create a SQL file that used to fix the execution plan by SQL Profile.
+    Examples:
+        1). Generate the profile for the last plan of target SQL ID: sqlprof gjm43un5cy843
+        2). Generate the profile of the specifc SQL ID + plan hash value: sqlprof gjm43un5cy843 1106594730
+        3). Generate the profile for a SQL id with the plan of another SQL: sqlprof gjm43un5cy843 53c2k4c43zcfx
+        4). Extract an existing SQL profile or baseline: sqlprof PROF_gjm43un5cy843
+        5). Generate the profile for a SQL id with the profile/baseline of another sql: sqlprof gjm43un5cy843  PROF_53c2k4c43zcfx
+        6). Generate the profile from plan table:
+                xplan select * from dual;
+                sqlprof gjm43un5cy843 plan;
+    ]]
+    env.set_command(nil,"sqlprof",help,sqlprof.extract_profile,false,3)
+end
 return sqlprof
