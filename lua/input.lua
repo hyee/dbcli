@@ -19,6 +19,20 @@ local prompt_color="%s%s"..color("NOR").."%s"
 local os,clock=os
 local stack=nil
 
+function env.reset_input(line)
+    if not stack or not line then return nil end
+    if not line:find('^[ \t]*$') then stack[#stack+1]=line end
+    if env.CURRENT_PROMPT==env.PRI_PROMPT then
+        if line:find('^[ \t]*'..env.END_MARKS[1]..'[ \t]*$') then
+            stack[#stack-1]=stack[#stack-1]..line
+            table.remove(stack)
+        end
+        line=table.concat(stack,'\n'..env.MTL_PROMPT)
+        reader:setMultiplePrompt(#stack==1 and line or "")
+        stack=nil
+    end
+end
+
 while true do
     if env.CURRENT_PROMPT=="_____EXIT_____" then break end
     line = reader:readLine(prompt_color:format(env._SUBSYSTEM and color("PROMPTSUBCOLOR") or color("PROMPTCOLOR"),env.CURRENT_PROMPT,color("COMMANDCOLOR")))

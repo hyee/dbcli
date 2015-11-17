@@ -117,9 +117,9 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             PROCEDURE pr(p_text VARCHAR2, flag BOOLEAN DEFAULT TRUE) IS
             BEGIN
                 IF flag THEN
-                    dbms_lob.writeappend(v_text, length(p_text) + 1, p_text || chr(10));
+                    dbms_lob.writeappend(v_text, lengthb(p_text) + 1, p_text || chr(10));
                 ELSE
-                    dbms_lob.writeappend(v_text, length(p_text), p_text);
+                    dbms_lob.writeappend(v_text, lengthb(p_text), p_text);
                 END IF;
             END;
         BEGIN
@@ -139,7 +139,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             pr('    sql_txt   CLOB;');
             pr('    sql_prof  SYS.SQLPROF_ATTR;');
             pr('    signature NUMBER;');
-            pr('    procedure wr(x varchar2) is begin dbms_lob.writeappend(sql_txt, length(x), x);end;');
+            pr('    procedure wr(x varchar2) is begin dbms_lob.writeappend(sql_txt, lengthb(x), x);end;');
             pr('BEGIN');
             v_size := length(v_sql);
             IF v_size <= 1200 OR dbms_lob.instr(v_sql, CHR(10)) > 0 THEN

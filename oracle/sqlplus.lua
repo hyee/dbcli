@@ -1,23 +1,25 @@
 
 local env,db,os,java=env,env.oracle,os,java
 local ora=db.C.ora
-local sqlplus=env.class(env.scripter)
+local sqlplus=env.class(env.subsystem)
 
 function sqlplus:ctor()
     self.db=env.oracle
     self.command="sp"
     self.name="sqlplus"
+    self.description="Switch to sqlplus with same login, the default working folder is 'oracle/sqlplus'. Usage: sqlplus [-d<work_path>] [other args]"
     self.help_title='Run SQL*Plus script under the "sqlplus" directory. '
     self.script_dir,self.extend_dirs=env.WORK_DIR.."oracle"..env.PATH_DEL.."sqlplus",{}
+    self.idle_pattern="^(.-)([^\n\r]+[>%d]+ +)$"
 end
 
-function sqlplus:start(...)
+function sqlplus:get_start_cmd(...)
     env.find_extension(self.name)
     local tnsadm=tostring(java.system:getProperty("oracle.net.tns_admin"))
     local export=env.OS=="windows" and "set " or "export "
     local props={}
     if tnsadm and tnsadm~="" then
-        props[2]=export..'"TNS_ADMIN='..tnsadm..'"'
+        self.winapi.setenv("TNS_ADMIN",tnsadm)
     end
 
     local args,work_path={...},(self.work_path or self.script_dir)
@@ -29,9 +31,9 @@ function sqlplus:start(...)
         end
     end
 
-    props[1]='cd '..(env.OS=="windows" and "/d " or "")..'"'..work_path..'"'
+    self.work_dir=work_path
     if db.props.db_nls_lang then
-        props[3]=export..'"NLS_LANG='..db.props.db_nls_lang..'"'
+        self.winapi.setenv("NLS_LANG",db.props.db_nls_lang)
     end
 
 
@@ -61,12 +63,10 @@ function sqlplus:start(...)
 
     local del=(env.OS=="windows" and " & " or " ; ")
     local cmd=table.concat(props,del)..' '..table.concat(args,' ')
-    --print(cmd)
-    os.execute(cmd)
+    return conn_str
 end
 
 function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
-   
     for i=1,#g_sql do
         local sql,args,cmd,file=g_sql[i],g_args[i],g_cmd[i],g_file[i]
         local content=[[SET FEED OFF SERVEROUTPUT ON SIZE 1000000 TRIMSPOOL ON LONG 5000 LINESIZE 900 PAGESIZE 9999
@@ -77,7 +77,7 @@ function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
                         DEF _SQLPLUS_DIR_="%s"
                         %s
                         @"%s" %s
-                        EXIT;]]
+                        ]]
 
         env.checkerr(db:is_connect(),"Database is not connected.")
         local context=""
@@ -103,7 +103,7 @@ function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
         content=content:format(self.work_path,file_dir,self.script_dir,context,file,arg or ""):gsub('[\n\r]+%s+','\n')..'\n'
         f:write(content)
         f:close()
-        self:start('-s','@"'..tmpfile..'"')
+        self:call_process('@"'..tmpfile..'"')
     end
 end
 
@@ -112,7 +112,8 @@ function sqlplus:after_script()
 end
 
 function sqlplus:onload()
-    set_command(self,"sqlplus",  "Switch to sqlplus with same login, the default working folder is 'oracle/sqlplus'. Usage: sqlplus [-d<work_path>] [other args]",self.start,false,9)
+    env.event.snoop("AFTER_ORACLE_CONNECT",self.terminate,self)
+    env.event.snoop("ON_DB_DISCONNECTED",self.terminate,self)
 end
 
 return sqlplus.new()

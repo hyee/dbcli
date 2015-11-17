@@ -203,7 +203,7 @@ function alias.onload()
     --alias.rehash()
     env.event.snoop('BEFORE_COMMAND',alias.rewrite,nil,80)
     env.event.snoop('ON_ENV_LOADED',alias.rehash,nil,1)
-    env.event.snoop('ON_DATABASE_ENV_LOADED',alias.load_db_aliases,nil,1)
+    env.event.snoop('ON_DB_ENV_LOADED',alias.load_db_aliases,nil,1)
     env.set_command(nil,"alias", alias.helper,alias.set,'__SMART_PARSE__',3)
 end
 

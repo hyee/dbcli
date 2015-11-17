@@ -94,6 +94,7 @@ function oracle:connect(conn_str)
         sqlplustr=string.format("%s/%s@%s%s",args.user,pwd,args.url:match("@(.*)$"),
                                             args.internal_logon and " as "..args.internal_logon or "")
     end
+    --print(pwd)
     local prompt=(args.jdbc_alias or url):match('([^:/@]+)$')
     self.conn_str=packer.pack_str(sqlplustr)
 

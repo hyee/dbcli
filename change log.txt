@@ -1,3 +1,7 @@
+2015-11-17: ! public: fix unable to launch 'dbcli.bat' when path of %JRE_HOME% constains space
+                    : fix Ctrl+C not working with shrinked JRE(awt.dll)
+            ! oracle: fix error on dbms_lob.writeappend when a string contains multi-bytes chars
+                    : fix on error of reading "TIMESTAMP(3)" columns
 2015-11-16: * oracle: update the help information of command "sqlprof"
             + oracle: new option '-prof' for command 'xplan', to auto-generate the SQL profile script
 =======================begin v0.8================================================
@@ -8,7 +12,6 @@
             * oracle: auto-save the result of "ora sql <sql_id>"
                     : reduce the triggers of reading server outputs(dbms_output) for performance purpose
                     : fix on missing the time part of the 'date' columns in 10g
-                    : update the help information of command "sqlprof"
 2015-11-15: * public: For win10, use its native ANSI escapes feature instead of ansicon/jline.
                       This feature works well in black background, but not good with white bg.
                     : changes on ansi color codes

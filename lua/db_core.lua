@@ -602,11 +602,7 @@ function db_core:connect(attrs,data_source)
     local url=attrs.url
     env.checkerr(url,"'url' property is not defined !")
 
-    local conn=self.conn
-    if conn and conn.isClosed and not conn:isClosed() then
-        pcall(conn.close,conn)
-        self.conn=nil
-    end
+    self:disconnect(false)
     local props = java.new("java.util.Properties")
     for k,v in pairs(attrs) do
         props:put(k,v)
@@ -838,6 +834,14 @@ function db_core:merge_props(src,target)
     return target
 end
 
+function db_core:disconnect(feed)
+    if self:is_connect() then
+        pcall(self.conn.close,self.conn)
+        event("ON_DB_DISCONNECTED",self)
+        if feed~=false then print("Database disconnected.") end
+    end
+end
+
 function db_core:__onload()
     cfg.init("PRINTSIZE",1000,set_param,"db.query","Max rows to be printed for a select statement",'1-10000')
     cfg.init("FETCHSIZE",3000,set_param,"db.query","Rows to be prefetched from the resultset, 0 means auto.",'0-32767')
@@ -858,10 +862,7 @@ function db_core:__onload()
 end
 
 function db_core:__onunload()
-    if self:is_connect() then
-        pcall(self.conn.close,self.conn)
-        print("Database disconnected.")
-    end
+    self:disconnect()
 end
 
 return db_core

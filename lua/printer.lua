@@ -69,7 +69,7 @@ end
 
 function printer.write(output)
     if env.ansi then output=env.ansi.convert_ansi(output) end
-    out:write(env.space..output)
+    out:write(output)
     out:flush()
 end
 
