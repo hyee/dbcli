@@ -13,7 +13,7 @@ function sqlplus:ctor()
     self.idle_pattern="^(.-)([^\n\r]+[>%d]+ +)$"
 end
 
-function sqlplus:get_start_cmd(...)
+function sqlplus:get_startup_cmd(args)
     env.find_extension(self.name)
     local tnsadm=tostring(java.system:getProperty("oracle.net.tns_admin"))
     local export=env.OS=="windows" and "set " or "export "
@@ -22,11 +22,9 @@ function sqlplus:get_start_cmd(...)
         self.winapi.setenv("TNS_ADMIN",tnsadm)
     end
 
-    local args,work_path={...},(self.work_path or self.script_dir)
-
-    for i=#args,1,-1 do
-        if args[i]:lower():find("^%-d") then
-            work_path=args[i]:sub(3):gsub('"','')
+    local work_path=(self.work_path or self.script_dir)
+    for i=1,#args do
+        if args[i]:lower()=='-s' then
             table.remove(args,i)
         end
     end
@@ -36,17 +34,7 @@ function sqlplus:get_start_cmd(...)
         self.winapi.setenv("NLS_LANG",db.props.db_nls_lang)
     end
 
-
-    local conn_str='sqlplus '
-    if #args>0 then
-        for k,v in ipairs(args) do
-            if v:sub(1,1) ~='-' then break end
-            conn_str=conn_str..v..' '
-            table.remove(args,1)
-        end
-    end
-
-    conn_str=conn_str..(env.packer.unpack_str(db.conn_str) or "/nolog").." "
+    local conn_str='sqlplus '..(env.packer.unpack_str(db.conn_str) or "/nolog").." "
     if db.props.service_name then
         conn_str=conn_str:gsub("%:[%w_]+ ",'/'..db.props.service_name)
     else
@@ -54,15 +42,6 @@ function sqlplus:get_start_cmd(...)
     end
     props[#props+1]=conn_str
 
-
-    for k,v in ipairs(args) do
-        if type(v)=="string" and v:match(" ") then
-            args[k]='"'..v..'"'
-        end
-    end
-
-    local del=(env.OS=="windows" and " & " or " ; ")
-    local cmd=table.concat(props,del)..' '..table.concat(args,' ')
     return conn_str
 end
 

@@ -160,7 +160,7 @@ function env.list_dir(file_dir,file_ext,text_macher)
     if env.OS=="windows" then
         dir=io.popen('dir /B/S/A:-D "'..file_dir..'" 2>nul & dir /B/S/A:-D "'..file_dir..'.'..file_ext..'" 2>nul')
     else
-        dir=io.popen('find "'..file_dir..'" -iname '..filter..' -print')
+        dir=io.popen('find "'..file_dir..'" -iname '..filter..' -print >/dev/null')
     end
 
     for n in dir:lines() do
