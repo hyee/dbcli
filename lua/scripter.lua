@@ -65,7 +65,7 @@ function scripter:rehash(script_dir,ext_name,extend_dirs)
 
     cmdlist['./PATH'],cmdlist['./COUNT']=pathlist,counter
     if extend_dirs then
-        local cmds1=self:rehash(extend_dirs,ext_name)
+        local cmds1=scripter.rehash(self,extend_dirs,ext_name)
         for k,v in pairs(cmds1) do
             cmdlist[k]=v
         end
@@ -327,7 +327,7 @@ function scripter:get_script(cmd,args,print_args)
         self.extend_dirs=env.set.save_config(self.__className..".extension",args[1])
         self:rehash(self.script_dir,self.ext_name,self.extend_dirs)
         if self.extend_dirs then
-            print("Extended directory is set to '"..self.extend_dirs.."', and will take high priority than '"..self.script_dir.."'.")
+            print("Extended directory is set to '"..self.extend_dirs.."', and will take higher priority than '"..self.script_dir.."'.")
         else
             print("Extended directory is removed.")
         end

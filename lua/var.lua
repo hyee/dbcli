@@ -225,11 +225,10 @@ function var.save(name,file)
     env.checkerr(type(name)=="string",'Usage: save <variable> <file name>')
     if type(file)~="string" or var.outputs[file:upper()] then return end
     if var.inputs[file:upper()] then
-        file=var.inputs[file:upper()]
-        if file=='' then return end
+        file=var.get_input(file)
+        if file=='' or not file then return end
     end
     name=name:upper()
-
     env.checkerr(var.inputs[name],'Fail to save due to variable `%s` does not exist!',name)
     local obj=var.get_input(name)
     if not obj then return end
