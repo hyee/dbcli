@@ -36,10 +36,9 @@ function sqlplus:get_startup_cmd(args,is_native)
     end
 
     env.checkerr(not args[1] or not args[1]:find(".*/.*@.+"),"You cannot specify user/pwd here, default a/c should be used!")
-
     props[#props+1]=(env.packer.unpack_str(db.conn_str) or "/nolog")
     if db.props.service_name then
-        props[#props]=props[1]:gsub("%:[%w_]+ ",'/'..db.props.service_name)
+        props[#props]=props[#props]:gsub("%:[%w_]+ ",'/'..db.props.service_name)
     end
     
     return props
