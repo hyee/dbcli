@@ -13,6 +13,29 @@ function sqlplus:ctor()
     self.idle_pattern="^(.*?[>%$#\\d: ]+ +)$"
 end
 
+
+function sqlplus:after_process_created()
+    self.work_dir=self.env['SQLPATH']
+end
+
+function sqlplus:rebuild_commands(work_dir)
+    self.cmdlist=self.super.rehash(self,self.script_dir,self.ext_name,self.extend_dirs)
+    if work_dir and work_dir~=self.script_dir and work_dir~=self.extend_dirs then
+        local cmds=self.super.rehash(self,work_dir,self.ext_name)
+        for k,v in pairs(cmds) do
+            self.cmdlist[k]=v
+        end
+    end
+end
+
+function sqlplus:set_work_dir(path,quiet)
+    self.super.set_work_dir(self,path,quiet)
+    if not quiet then
+        self:rebuild_commands(self.work_dir)
+    end
+end
+
+
 function sqlplus:get_startup_cmd(args,is_native)
     local tnsadm=tostring(java.system:getProperty("oracle.net.tns_admin"))
     local export=env.OS=="windows" and "set " or "export "
@@ -20,7 +43,10 @@ function sqlplus:get_startup_cmd(args,is_native)
     if tnsadm and tnsadm~="" then self.env["TNS_ADMIN"]=tnsadm end
     if db.props.db_nls_lang then self.env["NLS_LANG"]=db.props.db_nls_lang end
 
-    self.work_dir=self.work_path or self.extend_dirs or self.script_dir
+    self.env['SQLPATH']=self.work_dir or self.extend_dirs or self.script_dir
+    self.work_dir=env._CACHE_PATH
+    self:rebuild_commands(self.env['SQLPATH'])
+
 
     while #args>0 do
         local arg=args[1]:lower()
@@ -63,7 +89,7 @@ function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
             if v==db.NOT_ASSIGNED then v='' end
             local msg='DEF '..k.."='"..v.."'\n"
             context=context..msg
-            if k:match("^V%d+$") then context=context..msg:gsub("V(%d+)",'%1',1) end
+            if k:match("^V%d+$") and v~='' then context=context..msg:gsub("V(%d+)",'%1',1) end
         end
 
         self.work_path=env._CACHE_PATH
