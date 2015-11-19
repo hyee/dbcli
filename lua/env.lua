@@ -152,22 +152,31 @@ env._CMDS=setmetatable({___ABBR___={}},{
 env.space="    "
 local _CMDS=env._CMDS
 function env.list_dir(file_dir,file_ext,text_macher)
-    local dir
+    local dir,dirs
     local keylist={}
-
+    
     local filter=file_ext and "*."..file_ext or "*"
-    file_dir=file_dir:gsub("[\\/]+",env.PATH_DEL)
-    if env.OS=="windows" then
-        dir=io.popen('dir /B/S/A:-D "'..file_dir..'" 2>nul & dir /B/S/A:-D "'..file_dir..'.'..file_ext..'" 2>nul')
+    
+    file_dir=file_dir:gsub("[\\/]+",env.PATH_DEL):gsub("[\\/]+$","")
+    local exists=os.exists(file_dir)
+    if not exists then return keylist end
+    if exists==1 then 
+        dir={file_dir}
     else
-        dir=io.popen('find "'..file_dir..'" -iname '..filter..' -print >/dev/null')
+        dir={}
+        if env.OS=="windows" then
+            dirs=io.popen('dir /B/S/A:-D "'..file_dir..env.PATH_DEL..filter.. '" 2>nul')
+        else
+            dirs=io.popen('find "'..file_dir..'" -iname '..filter..' -print >/dev/null')
+        end
+        for n in dirs:lines() do dir[#dir+1]=n end
     end
 
-    for n in dir:lines() do
+    for _,n in ipairs(dir) do
         local name,ext=n:match("([^\\/]+)$")
         if file_ext then
             name,ext=name:match("(.+)%.(%w+)$")
-            if ext:upper()~=file_ext:upper() and file_ext~="*" then name=nil end
+            if ext and ext:upper()~=file_ext:upper() and file_ext~="*" then name=nil end
         end
         if name and name~="" then
             local comment
@@ -187,16 +196,6 @@ function env.list_dir(file_dir,file_ext,text_macher)
         end
     end
     return keylist
-end
-
-function env.file_type(file_name)
-    local result=os.execute('dir /B "'..file_name..'" 1>nul 2>nul')
-    --file not exists
-    if result ~= true then return nil end
-    --is file
-    result=os.execute('dir /B /A:D "'..file_name..'" 1>nul 2>nul')
-    if result then return 'folder' end
-    return 'file'
 end
 
 local previous_prompt
@@ -479,7 +478,7 @@ function env.set_prompt(class,default,is_default,level)
         end
     end
 
-    if default and not default:match("[%a]%s*$") then 
+    if  not default:match("[%a] *$") then 
         env.PRI_PROMPT=default 
     else
         env.PRI_PROMPT=(default or "").."> "
@@ -756,6 +755,13 @@ function set_debug(name,value)
     return value
 end
 
+local function set_cache_path(name,path)
+    path=path:gsub("[\\/]+",env.PATH_DEL):gsub("[\\/]$","")..env.PATH_DEL
+    env.checkerr(os.exists(path)==2,"No such path: "..path)
+    env['_CACHE_BASE'],env["_CACHE_PATH"]=path,path
+    return path
+end
+
 function env.onload(...)
     record_maker=false
     env.__ARGS__={...}
@@ -790,6 +796,7 @@ function env.onload(...)
                   "core","Define the symbols to indicate the end input the cross-lines command. Cannot be alphanumeric characters.")
         env.set.init("Debug",'off',set_debug,"core","Indicates the option to print debug info, 'all' for always, 'off' for disable, others for specific modules.")
         env.set.init("OnErrExit",'on',nil,"core","Indicates whether to continue the remaining statements if error encountered.","on,off")
+        env.set.init("TEMPPATH",'cache',set_cache_path,"core","Define the dir to store the temp files.","*")
         print_debug=print
     end
     if  env.ansi and env.ansi.define_color then
@@ -927,11 +934,6 @@ end
 function env.reset_title()
     for k,v in pairs(title_list) do title_list[k]="" end
     os.execute("title dbcli")
-end
-
-function env.find_extension(exe)
-    local cmd=(env.OS=="windows" and "where " or "which ")..exe.." >"..(env.OS=="windows" and ">nul" or "/dev/null")
-    env.checkerr((os.execute(cmd)),"Cannot find "..exe.." in the default path, please add it into EXT_PATH of file data/init.cfg")
 end
 
 return env

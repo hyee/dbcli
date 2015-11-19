@@ -25,7 +25,6 @@ import java.util.zip.InflaterInputStream;
 public class Loader {
     public static String ReloadNextTime = "_init_";
     static LuaState lua;
-    static PrintWriter printer;
     static Console console;
     static String root = "";
     static String libPath;
@@ -47,7 +46,7 @@ public class Loader {
             addLibrary(libPath, true);
             System.setProperty("library.jansi.path", libPath);
             console = new Console();
-            printer = new PrintWriter(System.getenv("ANSICON_DEF") != null ? new OutputStreamWriter(System.out, Console.charset) : Console.writer);
+            console.writer = new PrintWriter(System.getenv("ANSICON_DEF") != null ? new OutputStreamWriter(System.out, Console.charset) : Console.writer);
             //Ctrl+D
             keyMap = console.getKeys();
             keyMap.bind(String.valueOf(KeyMap.CTRL_D), new KeyListner(KeyMap.CTRL_D));
@@ -68,10 +67,10 @@ public class Loader {
         lua.openLibs();
         lua.pushJavaObject(loader);
         lua.setGlobal("loader");
-        if (printer != null) {
+        if (console.writer != null) {
             lua.pushJavaObject(console);
             lua.setGlobal("reader");
-            lua.pushJavaObject(printer);
+            lua.pushJavaObject(console.writer);
             lua.setGlobal("writer");
             lua.pushJavaObject(console.getTerminal());
             lua.setGlobal("terminal");
@@ -332,7 +331,7 @@ public class Loader {
             try {
                 if (e != null) key = Character.codePointAt(e.getActionCommand(), 0);
 
-                if (key!=3 && !console.isRunning() && key != 'q' && key != 'Q') {
+                if (key != 3 && !console.isRunning() && key != 'q' && key != 'Q') {
                     lua.getGlobal("TRIGGER_ABORT");
                     lua.call(0, 0);
                 } else {

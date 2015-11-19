@@ -37,7 +37,7 @@ public class SSHExecutor {
     String lastLine;
     volatile boolean isStart = false;
     volatile boolean isEnd = true;
-    volatile boolean isWating = false;
+    volatile boolean isWaiting = false;
 
     CompletionHandler completer = new CompletionHandler() {
         @Override
@@ -88,11 +88,11 @@ public class SSHExecutor {
             shellWriter = new PipedOutputStream(pipeIn);
             pr = new Printer();
             pr.reset(true);
-            writer = new PrintWriter((TERMTYPE != "none") ? new OutputStreamWriter(System.out, Console.charset) : Console.writer);
+            writer = Console.writer;
             Interrupter.listen("SSHExecutor", new InterruptCallback() {
                 @Override
                 public void interrupt(ActionEvent e) throws Exception {
-                    if (isWating) {
+                    if (isWaiting) {
                         shellWriter.write(3);
                         shellWriter.flush();
                     }
@@ -135,7 +135,7 @@ public class SSHExecutor {
     public void close() {
         try {
             prompt = null;
-            isWating = false;
+            isWaiting = false;
             if (pr != null) pr.close();
             if (shellWriter != null) shellWriter.close();
             if (shell != null) shell.disconnect();
@@ -171,7 +171,7 @@ public class SSHExecutor {
 
     public void waitCompletion() throws Exception {
         long wait = 50L;
-        isWating = true;
+        isWaiting = true;
         while (!isEnd && !shell.isClosed()) {
             int ch = Console.in.read(wait);
             while (ch >= 0) {
@@ -186,7 +186,7 @@ public class SSHExecutor {
         }
         if (shell.isClosed()) close();
         else prompt = pr.getPrompt();
-        isWating = false;
+        isWaiting = false;
     }
 
     public String getLastLine(String command, boolean isWait) throws Exception {

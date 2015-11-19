@@ -10,7 +10,7 @@ import jline.internal.NonBlockingInputStream;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.IOException;
-import java.io.Writer;
+import java.io.PrintWriter;
 import java.util.Iterator;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -18,7 +18,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 public class Console extends ConsoleReader {
-    public static Writer writer;
+    public static PrintWriter writer;
     public static ConsoleReader reader;
     public static NonBlockingInputStream in;
     public static Terminal terminal;
@@ -38,7 +38,6 @@ public class Console extends ConsoleReader {
         setHandleUserInterrupt(true);
         setBellEnabled(false);
         in = (NonBlockingInputStream) this.getInput();
-        writer = this.getOutput();
         Iterator<Completer> iterator = getCompleters().iterator();
         while (iterator.hasNext()) removeCompleter(iterator.next());
         reader = this;

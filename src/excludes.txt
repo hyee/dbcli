@@ -29,3 +29,4 @@ dbcli_agent.bat
 dbcli_x64.bat
 dbcli_ibm.bat
 dbcli.sh
+.xplan_settings

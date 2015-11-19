@@ -1,3 +1,7 @@
+2015-11-18: * public: change the dep of 'subsystem' from 'winapi' to 'NuProcess' and minor fixes
+            + public: commands ora/snap/shell/chart allow linking to another customize dir. refer to the '-l' option
+                    : new command "set TEMPPATH", to customize the temporary path instead of 'cache'
+            + oracle: supports command '@<script>', which will invoke the sql*plus engine to run the script
 2015-11-17: ! public: fix unable to launch 'dbcli.bat' when path of %JRE_HOME% constains space
                     : fix Ctrl+C not working with shrinked JRE(awt.dll)
             + public: subsystem features, "sqlplus" for example

@@ -28,6 +28,7 @@ It is not aim to support all features of the existing CLI utilities that embedde
 * Support SSH operations
 * Provides the graph charts of the database performance
 * Easy to extend, modify or deploy, because most of the source code is not required to compile
+* Easily switch to the db built-in cli utility
 
 
 Build and Configuration
@@ -100,17 +101,18 @@ The utility depends on some binary files of open-source projects, the authors ow
 The binaries have been included into this project.
 Below is the list:
 
-    JLine2      : (BSD)  https://github.com/jline/jline2
-    ConsoleZ    : (GNU)  https://github.com/cbucher/console
-    luajit v2.1 : (MIT)  https://github.com/LuaJIT/LuaJIT
-    jnlua       : (MIT)  https://github.com/hyee/JNLuaJIT(based on http://jnlua.googlecode.com/)
-    OpenCSV     : (MIT)  https://github.com/hyee/OpenCSV(based on opencsv.sourceforge.net)
-    MessagePack : (MIT)  https://github.com/fperrad/lua-MessagePack (pure lua)
-    dygraphs    : (MIT)  https://github.com/danvk/dygraphs
-    WinAPI      : (MIT)  https://github.com/stevedonovan/winapi
-    ANSICON     : (ZLIB) https://github.com/adoxa/ansicon
-    JSch        : (BSD)  http://www.jcraft.com/jsch/
-    PSCP        : (MIT)  http://www.putty.org/ 
+    JLine2      : (BSD)    https://github.com/jline/jline2
+    ConsoleZ    : (GNU)    https://github.com/cbucher/console
+    luajit v2.1 : (MIT)    https://github.com/LuaJIT/LuaJIT
+    jnlua       : (MIT)    https://github.com/hyee/JNLuaJIT(based on http://jnlua.googlecode.com/)
+    OpenCSV     : (MIT)    https://github.com/hyee/OpenCSV(based on opencsv.sourceforge.net)
+    MessagePack : (MIT)    https://github.com/fperrad/lua-MessagePack (pure lua)
+    dygraphs    : (MIT)    https://github.com/danvk/dygraphs
+    JNA         : (LGPL)   https://github.com/java-native-access/jna
+    NuProcess   : (Apache) https://github.com/brettwooldridge/NuProcess
+    ANSICON     : (ZLIB)   https://github.com/adoxa/ansicon
+    JSch        : (BSD)    http://www.jcraft.com/jsch/
+    PSCP        : (MIT)    http://www.putty.org/ 
 
 Besides, some SQL scripts come from internet.
 

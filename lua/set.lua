@@ -5,7 +5,6 @@ local file='setting.dat'
 local root_cmd
 cfg._backup=nil
 
-cfg._p=env.load_data(file)
 
 function cfg.show_cfg(name)
     local rows={{'Name','Value','Default','Class','Available Values','Description'}}
@@ -49,7 +48,21 @@ function cfg.get(name)
     return option.value
 end
 
+function cfg.get_config(name,value)
+    return env.load_data(file)[name:upper()]
+end
+
+function cfg.save_config(name,value)
+    env.checkerr(name and not cfg.exists(name),"Cannot configure %s that already defined!",name)
+    cfg._p=env.load_data(file)
+    value=value and value:lower()~="default" and value or nil 
+    cfg._p[name:upper()]=value
+    env.save_data(file,cfg._p)
+    return value
+end
+
 function cfg.init(name,defaultvalue,validate,class,desc,range)
+    cfg._p=env.load_data(file)
     local abbr={name}
     if type(name)=="table" then
         abbr=name
@@ -169,6 +182,7 @@ function cfg.doset(...)
     for i=idx,#args,2 do
         local value=cfg.set(args[i],args[i+1],true)
         if value and idx==2 then
+            cfg._p=env.load_data(file)
             cfg._p[args[i]:upper()]=value
             if args[i+1] and args[i+1]:upper()=="DEFAULT" then
                 cfg._p[args[i]:upper()]=nil
