@@ -325,7 +325,7 @@ function scripter:get_script(cmd,args,print_args)
         env.checkerr(args[1],"Please specify the directory!")
         env.checkerr(os.exists(args[1])==2 or args[1]:lower()=="default","No such directory: %s",args[1])
         self.extend_dirs=env.set.save_config(self.__className..".extension",args[1])
-        self:rehash(self.script_dir,self.ext_name,self.extend_dirs)
+        self.cmdlist=self:rehash(self.script_dir,self.ext_name,self.extend_dirs)
         if self.extend_dirs then
             print("Extended directory is set to '"..self.extend_dirs.."', and will take higher priority than '"..self.script_dir.."'.")
         else

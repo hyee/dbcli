@@ -31,11 +31,13 @@ end
 function system:set_work_dir(path,quiet)
     if path=="" then return print("Current working dir is: "..self.work_dir) end
     path=path=="." and env._CACHE_PATH or path
+    path=path:gsub("[\\/]+",env.PATH_DEL):gsub("[\\/]$","")..env.PATH_DEL
     env.checkerr(os.exists(path)==2,"No such folder: %s!",path)
     self.work_dir=path
     if not quiet then
         print("Working dir changed to "..path)
     end
+    if not self.process then return end
 end
 
 function system:list_work_dir(filter)
@@ -89,6 +91,9 @@ function system:call_process(cmd,is_native)
             self.process=self.proc:create(self.idle_pattern,self.work_dir,self.startup_cmd,self.env)
             self.msg_stack={}
             self:run_command(nil,false)
+            if self.after_process_created then
+                self:after_process_created()
+            end
             if #args==0 then 
                 cmd=nil
             else
