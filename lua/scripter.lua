@@ -29,7 +29,7 @@ function scripter:format_version(version)
     return version:gsub("(%d+)",function(s) return s:len()<3 and string.rep('0',3-s:len())..s or s end)
 end
 
-function scripter:rehash(script_dir,ext_name)
+function scripter:rehash(script_dir,ext_name,extend_dirs)
     local keylist=env.list_dir(script_dir,ext_name or self.ext_name or "sql",self.comment)
     local cmdlist,pathlist={},{}
     local counter=0
@@ -54,6 +54,7 @@ function scripter:rehash(script_dir,ext_name)
         {'-P','Verify the paramters/templates of the target script, instead of running it. Usage:  -p <cmd> [<args>]'},
         {'-H','Show the help detail of the target command. Usage:  -h <command>'},
         {'-G','Print the content of the specific command. Usage: -g <command>'},
+        {'-L','Link this command to an extended directory'..(self.extend_dirs and ('(current is '..self.extend_dirs..')') or '')..". Usage: -l <directory>"},
         {'-S','Search available commands with inputed keyword. Usage:  -s <keyword>'},
         {'@','Run scripts that not belongs to the "'..self.short_dir..'" directory.'},
     }
@@ -63,7 +64,12 @@ function scripter:rehash(script_dir,ext_name)
     end
 
     cmdlist['./PATH'],cmdlist['./COUNT']=pathlist,counter
-
+    if extend_dirs then
+        local cmds1=self:rehash(extend_dirs,ext_name)
+        for k,v in pairs(cmds1) do
+            cmdlist[k]=v
+        end
+    end
     return cmdlist
 end
 
@@ -73,7 +79,7 @@ Available parameters:
    Replacement:     from &V1 to &V9, used to replace the wildchars inside the SQL stmts
    Out   bindings:  :<alphanumeric>, the data type of output parameters should be defined in th comment scope
 --]]--
-function scripter:parse_args(sql,args,print_args)
+function scripter:parse_args(sql,args,print_args,extend_dirs)
 
     local outputlist={}
     local outputcount=0
@@ -287,7 +293,7 @@ end
 
 function scripter:get_script(cmd,args,print_args)
     if not self.cmdlist or cmd=="-r" or cmd=="-R" then
-        self.cmdlist,self.extend_dirs=self:rehash(self.script_dir,self.ext_name),{}
+        self.cmdlist=self:rehash(self.script_dir,self.ext_name,self.extend_dirs)
         local keys={}
         for k,_ in pairs(self.cmdlist) do
             keys[#keys+1]=k
@@ -313,7 +319,19 @@ function scripter:get_script(cmd,args,print_args)
     elseif cmd=="-H" then
         return  env.helper.helper(self:get_command(),args[1])
     elseif cmd=="-G" then
+        env.checkerr(args[1],"Please specify the command name!")
         cmd,is_get=args[1] and args[1]:upper() or "/",true
+    elseif cmd=="-L" then
+        env.checkerr(args[1],"Please specify the directory!")
+        env.checkerr(os.exists(args[1])==2 or args[1]:lower()=="default","No such directory: %s",args[1])
+        self.extend_dirs=env.set.save_config(self.__className..".extension",args[1])
+        self:rehash(self.script_dir,self.ext_name,self.extend_dirs)
+        if self.extend_dirs then
+            print("Extended directory is set to '"..self.extend_dirs.."', and will take high priority than '"..self.script_dir.."'.")
+        else
+            print("Extended directory is removed.")
+        end
+        return
     elseif cmd=="-P" then
         cmd,print_args=args[1] and args[1]:upper() or "/",true
         table.remove(args,1)
@@ -323,11 +341,10 @@ function scripter:get_script(cmd,args,print_args)
 
     local file,f,target_dir
     if cmd:sub(1,1)=="@" then
-        target_dir,file=self:check_ext_file(cmd)
+        target_dir,file=self:check_ext_file(cmd:sub(2))
         env.checkerr(target_dir['./COUNT']>0,"Cannot find script "..cmd:sub(2))
         if not file then return env.helper.helper(self:get_command(),cmd) end
         cmd,file=file,target_dir[file].path
-
     elseif self.cmdlist[cmd] then
         file=self.cmdlist[cmd].path
     end
@@ -344,7 +361,8 @@ end
 
 function scripter:run_script(cmds,...)
     local g_cmd,g_sql,g_args,g_files,index={},{},{},{},0
-    for cmd in (cmds or ""):gsub('%s',''):gsplit(',',true) do
+    for cmd in (cmds or ""):gsplit(',',true) do
+        if cmd:sub(1,1)~='@' and cmd:find(env.PATH_DEL,1,true) then cmd='@'..cmd end
         local sql,args,print_args,file=self:get_script(cmd~='' and cmd or nil,{...},false)
         if args and not print_args then
             index=index+1
@@ -364,35 +382,11 @@ function scripter:after_script()
 end
 
 function scripter:check_ext_file(cmd)
-    local target_dir
-    cmd=cmd:lower():gsub('^@["%s]*(.-)["%s]*$','%1')
-    target_dir=self.extend_dirs[cmd]
-
-    if not target_dir then
-        for k,v in pairs(self.extend_dirs) do
-            if cmd:find(k,1,true) then
-                target_dir=self.extend_dirs[k]
-                break
-            end
-        end
-
-        if not target_dir then
-            if not cmd:match('[\\/]([^\\/]+)[\\/]') then env.raise('The target location cannot be under the drive root!') end
-            self.extend_dirs[cmd]=self:rehash(cmd,self.ext_name)
-            target_dir=self.extend_dirs[cmd]
-        end
-    end
-
-    if env.file_type(cmd)=='folder' then
-        --Remove the settings that only contains one file
-        for k,v in pairs(self.extend_dirs) do
-            if k:find(cmd,1,true) and v['./COUNT']==1 then
-                self.extend_dirs[k]=nil
-            end
-        end
-        return target_dir,nil
-    end
+    local exist=os.exists(cmd)
+    env.checkerr(exist==1,"Cannot find this file: "..cmd)
+    local target_dir=self:rehash(cmd,'*')
     cmd=cmd:match('([^\\/]+)$'):match('[^%.%s]+'):upper()
+    print(table.dump(target_dir))
     return target_dir,cmd
 end
 
@@ -406,7 +400,7 @@ function scripter:helper(_,cmd,search_key)
     cmdlist=self.cmdlist
     if cmd and cmd:sub(1,1)=='@' then
         help=""
-        cmdlist,cmd=self:check_ext_file(cmd)
+        cmdlist,cmd=self:check_ext_file(cmd:sub(2))
     end
     --[[
     format of cmdlist:  {cmd1={short_desc=<brief help>,desc=<help detail>},
@@ -460,6 +454,7 @@ function scripter:__onload()
     env.checkerr(self.script_dir,"Cannot find the script dir for the '"..self:get_command().."' command!")
     self.db=self.db or env.db_core.__instance
     self.short_dir=self.script_dir:match('([^\\/]+)$')
+    self.extend_dirs=env.set.get_config(self.__className..".extension")
     env.set_command(self,self.command, self.helper,{self.run_script,self.after_script},false,ARGS_COUNT+1)
 end
 

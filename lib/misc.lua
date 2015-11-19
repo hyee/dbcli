@@ -82,6 +82,7 @@ function os.CreateProcess(cmdline,  flags)
 end
 
 function os.exists(file)
+
     local f=io.open(file,'r')
     if not f then
         local r=os.execute('cd "'..file..'" 2>nul 1>nul')
@@ -89,6 +90,20 @@ function os.exists(file)
     end
     f:close()
     return 1
+end
+
+function os.find_extension(exe)
+    local cmd=(env.OS=="windows" and "where " or "which ")..exe.." >"..(env.OS=="windows" and ">nul" or "/dev/null")
+    env.checkerr((os.execute(cmd)),"Cannot find "..exe.." in the default path, please add it into EXT_PATH of file data/init.cfg")
+    cmd=(env.OS=="windows" and "where " or "which ")..exe
+    local f=io.popen(cmd)
+    local path
+    for n in f:lines() do 
+        path=n
+        break
+    end
+    f:close()
+    return path
 end
 
 --Continus sep would return empty element

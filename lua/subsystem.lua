@@ -1,43 +1,29 @@
 local env=env
 local write
 local system=env.class(env.scripter)
-local winapi=require("winapi")
-
 
 function system:ctor()
-    self.winapi=winapi
-    self.handle=nil
     self.process=nil
-    self.idle_pattern="^(.-)([^\n\r]+[>$#] )$"
+    self.proc=java.require("org.dbcli.SubSystem")
+    self.idle_pattern="^(.*?)([^\n\r]+[>\\$#] )$"
+end
+
+function system:kill_reader(cmds)
+    if not self.reader then return end
+    if cmds[1]:upper()==self.name:upper() then return end
+    self.reader:kill()
+    self.reader=nil
 end
 
 function system:run_command(cmd,is_print)
-    if cmd then self.handle:write(cmd.."\n") end
-    local txt,prompt,msg
-    while true do
-        txt=self.handle:read()
-        if not txt then break end
-        msg,prompt=txt:match(self.idle_pattern)
-        if is_print then write(msg or txt) end
-        if prompt then break end
-        self.sleep(0.2)
-    end
-
-    if not prompt then
-        return self:terminate()
-    else
-        self.prompt=prompt
-        if self.enter_flag then
-            env.set_subsystem(self.name,prompt)
-        end
-    end
+    self.prompt=self.process:write(cmd and cmd.."\n" or nil,is_print and true or false)
+    if not self.prompt then return self:terminate() end
 end
 
 function system:terminate()
     if not self.process then return end
-    pcall(self.process.kill,self.process)
     self.process:close()
-    self.process,self.handle,self.startup_cmd=nil,nil,nil
+    self.process,self.enter_flag,self.startup_cmd=nil,nil,nil
     print("Sub-system '"..self.name.."' is terminated.")
     return env.set_subsystem(nil)
 end
@@ -56,29 +42,52 @@ function system:list_work_dir(filter)
     os.execute('dir "'..self.work_dir..'" /B/S/A:-D '..(filter or ""))
 end
 
-function system:call_process(cmd)
-    if not self.handle then
-        local is_native
+function system:make_native_command(arg)
+    local env,cmd={},{}
+    for k,v in pairs(self.env) do
+        env[#env+1]='(set '..k..'='..v.." )"
+    end
+    env[#env+1]='cd /d "'..self.work_dir..'"'
+
+    for i,v in ipairs(self.startup_cmd) do
+        cmd[#cmd+1]='"'..v..'"'
+    end
+
+    for i,v in ipairs(arg) do
+        cmd[#cmd+1]='"'..v..'"'
+    end
+
+    env[#env+1]=table.concat(cmd," ")
+    cmd=table.concat(env,' & ')
+    return cmd
+end
+
+function system:call_process(cmd,is_native)
+    if not self.process or is_native==true then
         local args=env.parse_args(99,cmd or "") or {}
-        for i,k in ipairs(args) do
-            if k:upper()=="-F" then 
+        for i=1,#args do
+            local k=args[1]:upper()
+            if k:sub(1,1)~='-' then break end
+            if k=="-N" then 
                 is_native=true 
-                table.remove(args,i)
-            elseif k:upper():find("^%-D") then
+                table.remove(args,1)
+            elseif k:find("^%-D") then
                 self.work_dir=k:sub(3):gsub('"','')
-                table.remove(args,i)
+                table.remove(args,1)
             end
         end
-        env.find_extension(self.name)
+        
+        self.env={}
 
-        self.startup_cmd=self:get_startup_cmd(args)
+        self.startup_cmd=self:get_startup_cmd(args,is_native)
+        table.insert(self.startup_cmd,1,os.find_extension(self.name))
         if not self.work_dir then self.work_dir=env._CACHE_PATH end
         self:set_work_dir(self.work_dir,true)
-
-        self.process,self.handle=winapi.spawn_process(self.startup_cmd,self.work_dir)
-        env.checkerr(self.process,self.handle)
+        
         --self.process:wait_async(function(...) print(...);print("Sub-system is terminated") end)
         if not is_native then
+            self.process=self.proc:create(self.idle_pattern,self.work_dir,self.startup_cmd,self.env)
+            self.msg_stack={}
             self:run_command(nil,false)
             if #args==0 then 
                 cmd=nil
@@ -86,7 +95,7 @@ function system:call_process(cmd)
                 cmd=table.concat(args," ")
             end
         else
-            return os.execute(self.exec_cmd)
+            return os.execute(self:make_native_command(args))
         end
     end
 
@@ -95,19 +104,20 @@ function system:call_process(cmd)
         self.enter_flag=true
         local help=[[
             You are entering '%s' interactive mode, work dir is '%s'.
-            To switch to the native CLI mode, execute '-f' or '.%s -f'.
+            To switch to the native CLI mode, execute '-n' or '.%s -n'.
             Type 'lls' to list the files in current work dir, to change the work dir, execute 'llcd <path>'.
             Type '.<cmd>' to run the root command, 'bye' to leave, or 'exit' to terminate."]]
         help=help:format(self.name,self.work_dir,self.name):gsub("%s%s%s+",'\n')
         print(env.ansi.mask("PromptColor",help))
+        env.set_subsystem(self.name,self.prompt)
         return
     end
 
     local command=cmd:upper()
     if command=='BYE' then
         return env.set_subsystem(nil)
-    elseif command=="-F" then
-        return os.execute(self.startup_cmd)
+    elseif command:find("^%-N") then
+        return self:call_process(cmd,true)
     elseif command:find("^LLS ") or command=="LLS" then
         return self:list_work_dir(cmd:sub(5))
     elseif command:find("^LCD ") or command=="LCD"  then
@@ -122,6 +132,7 @@ function system:__onload()
     self.sleep=env.sleep
     write=env.printer.write
     set_command(self,self.name,self.description,self.call_process,false,2)
+    env.event.snoop("BEFORE_COMMAND",self.kill_reader,self,1)
 end
 
 function system:onunload()

@@ -5,44 +5,44 @@ local sqlplus=env.class(env.subsystem)
 
 function sqlplus:ctor()
     self.db=env.oracle
-    self.command="sp"
+    self.command={"sp",'@'}
     self.name="sqlplus"
-    self.description="Switch to sqlplus with same login, the default working folder is 'oracle/sqlplus'. Usage: sqlplus [-d<work_path>] [other args]"
+    self.description="Switch to sqlplus with same login, the default working folder is 'oracle/sqlplus'. Usage: sqlplus [-n|-d<work_path>] [other args]"
     self.help_title='Run SQL*Plus script under the "sqlplus" directory. '
     self.script_dir,self.extend_dirs=env.WORK_DIR.."oracle"..env.PATH_DEL.."sqlplus",{}
-    self.idle_pattern="^(.-)([^\n\r]+[>%d]+ +)$"
+    self.idle_pattern="^(.*?[>%$#\\d: ]+ +)$"
 end
 
-function sqlplus:get_startup_cmd(args)
-    env.find_extension(self.name)
+function sqlplus:get_startup_cmd(args,is_native)
     local tnsadm=tostring(java.system:getProperty("oracle.net.tns_admin"))
     local export=env.OS=="windows" and "set " or "export "
     local props={}
-    if tnsadm and tnsadm~="" then
-        self.winapi.setenv("TNS_ADMIN",tnsadm)
-    end
+    if tnsadm and tnsadm~="" then self.env["TNS_ADMIN"]=tnsadm end
+    if db.props.db_nls_lang then self.env["NLS_LANG"]=db.props.db_nls_lang end
 
-    local work_path=(self.work_path or self.script_dir)
-    for i=1,#args do
-        if args[i]:lower()=='-s' then
-            table.remove(args,i)
+    self.work_dir=self.work_path or self.extend_dirs or self.script_dir
+
+    while #args>0 do
+        local arg=args[1]:lower()
+        if arg:sub(1,1)~='-' then break end
+        if arg:lower()~='-s' or is_native then 
+            props[#props+1]=arg
+        end
+        table.remove(args,1)
+        if args[1] and arg=="-c" or arg=='-m' or arg=='-r' then
+            props[#props+1]=args[1]
+            table.remove(args,1)
         end
     end
 
-    self.work_dir=work_path
-    if db.props.db_nls_lang then
-        self.winapi.setenv("NLS_LANG",db.props.db_nls_lang)
-    end
+    env.checkerr(not args[1] or not args[1]:find(".*/.*@.+"),"You cannot specify user/pwd here, default a/c should be used!")
 
-    local conn_str='sqlplus '..(env.packer.unpack_str(db.conn_str) or "/nolog").." "
+    props[#props+1]=(env.packer.unpack_str(db.conn_str) or "/nolog")
     if db.props.service_name then
-        conn_str=conn_str:gsub("%:[%w_]+ ",'/'..db.props.service_name)
-    else
-
+        props[#props]=props[1]:gsub("%:[%w_]+ ",'/'..db.props.service_name)
     end
-    props[#props+1]=conn_str
-
-    return conn_str
+    
+    return props
 end
 
 function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
