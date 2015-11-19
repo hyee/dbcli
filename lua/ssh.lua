@@ -14,14 +14,13 @@ function ssh:ctor()
     self.script_dir,self.extend_dirs,self.public_dir=nil,{},env.WORK_DIR.."lua"..env.PATH_DEL.."shell"
 end
 
-function ssh:rehash(script_dir,ext_name)
-    local cmds={}
-    if(self==self.__instance) and script_dir==self.script_dir and self.public_dir then
-        cmds=self.super:rehash(self.public_dir,ext_name)
-    end
-    local cmds1=self.super:rehash(script_dir,ext_name)
-    for k,v in pairs(cmds1) do
-        cmds[k]=v
+function ssh:rehash(script_dir,ext_name,extend_dirs)
+    local cmds=env.scripter.rehash(self,self.public_dir,ext_name,script_dir)
+    if extend_dirs then 
+        local cmds1=env.scripter.rehash(self,extend_dirs,ext_name)
+        for k,v in pairs(cmds1) do
+            cmds[k]=v
+        end
     end
     return cmds
 end

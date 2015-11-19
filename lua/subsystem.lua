@@ -5,7 +5,7 @@ local system=env.class(env.scripter)
 function system:ctor()
     self.process=nil
     self.proc=java.require("org.dbcli.SubSystem")
-    self.idle_pattern="^(.*?)([^\n\r]+[>\\$#] )$"
+    self.idle_pattern="^(.+[>\\$#] )$"
 end
 
 function system:kill_reader(cmds)

@@ -1,6 +1,7 @@
 /*[[Generate the script for online-redefintion, no DML/DDL will be taken. Usage: redef [owner.]<orig_table_name>[.partition_name] <new_table_name>]]*/
-set feed off
+set feed off verify off
 ora _find_object &V1
+var text varchar2(32767)
 DECLARE
     usr       VARCHAR2(30) := :object_owner;
     org_table VARCHAR2(30) := :object_name;
@@ -125,7 +126,8 @@ DECLARE
             END LOOP;
             pr(RPAD('*',85,'*'),false);
             pr('Done.');
-        END;}';
+        END;
+        /}';
     cols  VARCHAR2(32767);
 BEGIN
     FOR r IN (SELECT NVL2(b.column_name, b.column_name, 'NULL ' || upper(a.column_name)) col,a.column_id idx
@@ -155,6 +157,9 @@ BEGIN
     v_sql := REPLACE(v_sql, '@new_table', new_table);
     v_sql := REPLACE(v_sql, '@part_name', part_name);
     v_sql := REPLACE(v_sql, '@cols', cols);
-    dbms_output.put_line(v_sql);
+    :text := v_sql;
 END;
 /
+
+print text;
+save text redef_result.sql

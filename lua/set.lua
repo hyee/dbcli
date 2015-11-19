@@ -62,7 +62,6 @@ function cfg.save_config(name,value)
 end
 
 function cfg.init(name,defaultvalue,validate,class,desc,range)
-    cfg._p=env.load_data(file)
     local abbr={name}
     if type(name)=="table" then
         abbr=name
@@ -90,9 +89,11 @@ function cfg.init(name,defaultvalue,validate,class,desc,range)
             abbr[k],cfg._commands[v:upper()]=v:upper(),cfg[name]
         end
     end
+
     if maxvalsize<tostring(defaultvalue):len() then
         maxvalsize=tostring(defaultvalue):len()
     end
+    if not cfg_P then cfg._p=env.load_data(file) end
     if cfg._p[name] and cfg._p[name]~=defaultvalue then
         cfg.doset(name,cfg._p[name])
     end
