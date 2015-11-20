@@ -28,7 +28,7 @@ rem unpack jar files for the first use
 for /r %%i in (*.pack.gz) do (
    set "var=%%i" &set "str=!var:@=!"
    echo Unpacking %%i to jar file for the first use...
-   unpack200 -q -r "%%i" "!str:~0,-8!"
+   .\jre\bin\unpack200 -q -r "%%i" "!str:~0,-8!"
 )
 
 (%ANSICON_CMD% !JAVA! -noverify -Xmx384M -cp .\lib\*;.\lib\ext\*%OTHER_LIB% ^

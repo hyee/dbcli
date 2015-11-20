@@ -296,8 +296,8 @@ db_core.feed_list={
     UPDATE  ="%d rows updated",
     INSERT  ="%d rows inserted",
     DELETE  ="%d rows deleted",
-    SELECT  ="%d rows returned",
-    WITH    ="%d rows returned",
+    SELECT  ="\n%d rows returned",
+    WITH    ="\n%d rows returned",
     MERGE   ="%d rows merged",
     ALTER   ="%s altered",
     DROP    ="%s dropped",
@@ -322,7 +322,7 @@ function db_core.print_feed(sql,result)
     local cmd,obj=db_core.get_command_type(sql)
     local feed=db_core.feed_list[cmd] 
     if feed then
-        feed='\n'..feed..secs..'.'
+        feed=feed..secs..'.'
         if feed:find('%d',1,true) then
             if type(result)=="number" then print(feed:format(result)) end
             return
@@ -331,7 +331,7 @@ function db_core.print_feed(sql,result)
         end
     end
     if type(result)=="number" and result>-1 then return print('\n'..result.." rows impacted.") end
-    return print('\nStatement completed.')
+    return print('Statement completed.')
 end
 
 function db_core:ctor()

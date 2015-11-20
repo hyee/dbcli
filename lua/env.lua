@@ -71,27 +71,25 @@ function env.ppcall(f, ...)
     return xpcall(f, pcall_error, ...)
 end
 
-local dbcli_stack,dbcli_cmd_history={level=0,id=0},{}
-local dbcli_current_item,dbcli_last_id=dbcli_stack,dbcli_stack.id
+local dbcli_stack,dbcli_cmd_history={},{}
+local dbcli_current_item=dbcli_stack
 env.__DBCLI__STACK,env.__DBCLI__CMD_HIS=dbcli_stack,dbcli_cmd_history
 local function push_stack(cmd)
-    local item,callee
-    if type(cmd)~="boolean" then --stack end
-        item,callee={},env.callee(4)
-        for k,v in pairs(dbcli_current_item) do
+    local threads=env.RUNNING_THREADS
+    local thread,isMain,index=env.register_thread()
+    local item,callee={},env.callee(4)
+    local parent=dbcli_stack[index-1]
+    if parent then
+        for k,v in pairs(parent) do
             if type(k) ~="number" then item[k]=v end
         end
-        item.closed,item.last=nil
-        dbcli_last_id=dbcli_last_id+1
-        item.clock,item.command,item.callee,item.parent,item.level,item.id=os.clock(),cmd,callee,dbcli_current_item,dbcli_current_item.level+1,dbcli_last_id
-        item.parent[item.id],dbcli_current_item=item,item
-        dbcli_stack.last=item
-    else
-        item,callee=dbcli_current_item,env.callee()
-        dbcli_current_item=item.parent or dbcli_stack
-        item.closer,item.parent,item.clock=callee,nil,os.clock()-item.clock
-        dbcli_current_item[item.id],dbcli_stack.closed=nil,item
     end
+
+    dbcli_stack[index],dbcli_current_item,dbcli_stack.last=item,item,index
+
+    item.clock,item.command,item.callee,item.parent,item.level,item.id=os.clock(),cmd,callee,parent,index,thread
+
+    item=dbcli_stack[index+1]
 end
 
 local function push_history(cmd)
@@ -103,7 +101,7 @@ local function push_history(cmd)
 end
 
 function env.print_stack()
-    local stack=table.concat({"CURRENT_ID:",dbcli_current_item.id,"   CURRENT_LEVEL:",dbcli_current_item.level,"   CURRENT_COMMAND:",dbcli_current_item.command}," ")
+    local stack=table.concat({"CURRENT_ID:",tostring(dbcli_current_item.id),"   CURRENT_LEVEL:",dbcli_current_item.level,"   CURRENT_COMMAND:",dbcli_current_item.command}," ")
     stack=stack..'\n'..table.dump(dbcli_stack)
     stack=stack..'\n'.."Historical Commands:\n===================="
     stack=stack..'\n'..table.concat(dbcli_cmd_history,'\n')
@@ -369,7 +367,6 @@ function env.checkerr(result,msg,...)
     end
 end
 
-
 function _exec_command(name,params)
     local result
     local cmd=_CMDS[name:upper()]
@@ -479,7 +476,7 @@ function env.set_prompt(class,default,is_default,level)
     end
 
     if  not default:match("[%a] *$") then 
-        env.PRI_PROMPT=default 
+        env.PRI_PROMPT=default
     else
         env.PRI_PROMPT=(default or "").."> "
     end
@@ -519,9 +516,10 @@ function env.parse_args(cmd,rest,is_cmd)
         env.checkerr(_CMDS[cmd],'Unknown command "'..cmd..'"!')
         arg_count=_CMDS[cmd].ARGS
     end
+
     if rest then rest=rest:gsub("%s+$","") end
     if rest=="" then rest = nil end
-
+    
     local args={}
     if arg_count == 1 then
         args[#args+1]=cmd..(rest and #rest> 0 and (" "..rest) or "")
@@ -592,34 +590,41 @@ function env.force_end_input(exec,is_internal)
         if exec~=false then
             env.exec_command(stmt[1],stmt[2],is_internal)
         else
-            push_stack(false)
             return stmt[1],stmt[2]
         end
     end
-    push_stack(false)
     multi_cmd,curr_stmt=nil,nil
     return
 end
 
-function env.eval_line(line,exec,is_internal)
+function env.eval_line(line,exec,is_internal,not_skip)
     if type(line)~='string' or line:gsub('%s+','')=='' then return end
     local subsystem_prefix=""
     --Remove BOM header
     if not env.pending_command() then
-        line=line:gsub('^%s+','')
         push_stack(line)
         subsystem_prefix=env._SUBSYSTEM and (env._SUBSYSTEM.." ") or ""
         local cmd=env.parse_args(2,line)[1]
-        if dbcli_current_item.skip_subsystem then
+        if dbcli_current_item.skip_subsystem and not not_skip then
             subsystem_prefix=""
         elseif cmd:sub(1,1)=='.' and _CMDS[cmd:upper():sub(2)] then
             subsystem_prefix=""
             dbcli_current_item.skip_subsystem=true
-            line=line:sub(2)
+            line=line:gsub("^[ %.]+","")
         elseif cmd:lower()==subsystem_prefix:lower() then
             subsystem_prefix=""
         end
-        line=(subsystem_prefix..line):gsub('^[%z\128-\255 \t]+','')
+
+        if subsystem_prefix~="" then
+            if exec~=false then
+                env.exec_command(env._SUBSYSTEM,{line})
+                return;
+            else
+                return cmd,{line}
+            end
+        end
+
+        line=line:gsub('^[%s%z\128-\255 \t]+','')
         if line:match('^([^%w])') then
             local cmd=""
             for i=math.min(#line,5),1,-1 do
@@ -654,10 +659,9 @@ function env.eval_line(line,exec,is_internal)
         if not (_CMDS[cmd]) then  cmd,rest=(cmd.." ".. rest):match('^%s*(%S+)%s*(.*)') end
     end
     if not cmd then return end
-    cmd=(subsystem_prefix=="" and cmd:gsub(env.END_MARKS[1]..'+$',''):upper() or cmd):upper()
+    cmd= cmd:gsub(env.END_MARKS[1]..'+$',''):upper()
     env.CURRENT_CMD=cmd
     if not (_CMDS[cmd]) then
-        push_stack(false)
         return env.warn("No such command '%s', please type 'help' for more information.",cmd)
     elseif _CMDS[cmd].MULTI then --deal with the commands that cross-lines
         multi_cmd=cmd
@@ -667,14 +671,12 @@ function env.eval_line(line,exec,is_internal)
     end
 
     --print('Command:',cmd,table.concat (args,','))
-    rest=subsystem_prefix=="" and rest:gsub("["..env.END_MARKS[1].."%s]+$","") or rest
+    rest=rest:gsub("["..env.END_MARKS[1].."%s]+$","")
     local args=env.parse_args(cmd,rest)
 
     if exec~=false then
         env.exec_command(cmd,args,local_stack,is_internal)
-        push_stack(false)
     else
-        push_stack(false)
         return cmd,args
     end
 end

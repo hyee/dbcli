@@ -10,7 +10,7 @@ function sqlplus:ctor()
     self.description="Switch to sqlplus with same login, the default working folder is 'oracle/sqlplus'. Usage: sqlplus [-n|-d<work_path>] [other args]"
     self.help_title='Run SQL*Plus script under the "sqlplus" directory. '
     self.script_dir,self.extend_dirs=env.WORK_DIR.."oracle"..env.PATH_DEL.."sqlplus",{}
-    self.idle_pattern="^(.*?[>%$#\\d: ]+ +)$"
+    self.idle_pattern="^(.*?[>%$#\\d:]+ +)$"
 end
 
 

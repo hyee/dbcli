@@ -191,7 +191,8 @@ function ssh:exit_i()
     --if self:is_connect() then self.conn:enterShell(false) end
 end
 
-function ssh:exec(cmd,args)
+function ssh:exec(line)
+    local cmd,args=table.unpack((env.parse_args(2,line)))
     if cmd and cmd:lower():match("^ssh ") then cmd=cmd:sub(5) end
     if not cmd or cmd=="" or cmd:lower()=="help" then
         if env._SUBSYSTEM~=self.name then
@@ -208,7 +209,7 @@ function ssh:exec(cmd,args)
     elseif alias and tostring(alias.desc):lower():match("ssh") then
         return env.exec_command(alias[1],alias[2],true)
     else
-        self:run_command(cmd:gsub("^%$","",1)..(args and ' '..args or ""))
+        self:run_command((line:gsub("^%$","",1)))
     end
     self:sync_prompt()
 end
@@ -470,7 +471,7 @@ function ssh:__onload()
         push_shell=self.upload_script,
     }
     env.remove_command(self.command)
-    env.set_command(self,self.name,self.ssh_help,self.exec,false,3)
+    env.set_command(self,self.name,self.ssh_help,self.exec,false,2)
     env.set_command(self,{'shell','sh'},self.helper,self.run_shell,false,20)
     env.event.snoop("BEFORE_DB_CONNECT",self.trigger_login,self)
     env.event.snoop("TRIGGER_LOGIN",self.login,self)
