@@ -1,10 +1,12 @@
 @echo off
-set path=d:\java\bin;%path%;
+set jre=d:\java\jre
+set path=%jre%\bin;path
 cd "%~dp0"
 cd ..\dump
 for /f %%a in ('dir /b /a:d') do (cd %%a & echo Entering %%a & jar cvf ..\%%a.jar * & cd ..)
 copy /B /Y *.jar ..\jre\lib
 cd ..\jre\lib
-del ojdbc* jline* dbcli* jnlua* db2* opencsv.jar jzlib* jsch* jna* nuproces*
+del ojdbc* jline* dbcli* jnlua* db2* opencsv.jar jzlib* jsch* jna* nuproces* sunjce_provider*
+copy /B/Y %jre%\lib\ext\sunjce_provider* ..\jre\lib\ext
 cd "%~dp0"
 pause

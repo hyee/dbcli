@@ -5,7 +5,7 @@ var text varchar2(32767)
 DECLARE
     usr       VARCHAR2(30) := :object_owner;
     org_table VARCHAR2(30) := :object_name;
-    part_name VARCHAR2(30) := '';
+    part_name VARCHAR2(30) := :object_subname;
     new_table VARCHAR2(30) := UPPER('&V2');
     
     v_sql VARCHAR2(32767) := q'{

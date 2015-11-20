@@ -68,7 +68,7 @@ end
 
 function alias.run_command(...)
     local cmd=alias.make_command(env.CURRENT_CMD,{...})
-    if cmd then env.eval_line(cmd,true,true) end
+    if cmd then env.eval_line(cmd,true,true,true) end
 end
 
 
@@ -201,7 +201,7 @@ end
 
 function alias.onload()
     --alias.rehash()
-    env.event.snoop('BEFORE_COMMAND',alias.rewrite,nil,80)
+    --env.event.snoop('BEFORE_COMMAND',alias.rewrite,nil,80)
     env.event.snoop('ON_ENV_LOADED',alias.rehash,nil,1)
     env.event.snoop('ON_DB_ENV_LOADED',alias.load_db_aliases,nil,1)
     env.set_command(nil,"alias", alias.helper,alias.set,'__SMART_PARSE__',3)

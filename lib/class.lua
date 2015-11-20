@@ -32,7 +32,7 @@ function class(super,init)
                 end
             end
         else
-            super,attrs={},{}
+            super,attrs={},{__base=obj}
         end
         rawset(obj,'super',super)
 

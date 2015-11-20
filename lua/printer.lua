@@ -47,7 +47,7 @@ function printer.print(...)
     output=table.concat(output,' '):gsub("(\r?\n\r?)","%1"..env.space)
     if printer.grep_text and not ignore then
         local fmt=(env.ansi and env.ansi.get_color("GREPCOLOR") or '')..'%0'..NOR
-        local stack=output:split('\r?\n')
+        local stack=output:split('[\n\r]+')
         output={}
         for k,v in ipairs(stack) do
             v,found=v:gsub(printer.grep_text,fmt)
@@ -59,11 +59,12 @@ function printer.print(...)
     end
     if env.ansi then output=env.ansi.convert_ansi(output) end
     if printer.is_more then more_text[#more_text+1]=output;return end
-    --printer.rawprint(output)
-    out:println(output)
-    out:flush()
-    if printer.hdl then
-        pcall(printer.hdl.write,printer.hdl,strip_ansi(output).."\n")
+    if ignore or output~="" or not printer.grep_text then
+        out:println(output)
+        out:flush()
+        if printer.hdl then
+            pcall(printer.hdl.write,printer.hdl,strip_ansi(output).."\n")
+        end
     end
 end
 

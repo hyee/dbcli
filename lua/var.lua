@@ -121,7 +121,7 @@ function var.setInputs(name,args)
 end
 
 local function update_text(item,pos,params)
-    if cfg.get("define")~='on' then return end
+    if cfg.get("define")~='on' or not item[pos] then return end
     pos,params=pos or 1,params or {}
     local count=1
     local function repl(s,s2,s3)

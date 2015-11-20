@@ -18,6 +18,7 @@ end
 function system:run_command(cmd,is_print)
     self.prompt=self.process:write(cmd and cmd.."\n" or nil,is_print and true or false)
     if not self.prompt then return self:terminate() end
+    if self.enter_flag==true then env.set_subsystem(self.name,self.prompt) end
 end
 
 function system:terminate()
@@ -29,7 +30,7 @@ function system:terminate()
 end
 
 function system:set_work_dir(path,quiet)
-    if path=="" then return print("Current working dir is: "..self.work_dir) end
+    if path=="" then return print("Current working dir is "..self.work_dir) end
     path=path=="." and env._CACHE_PATH or path
     path=path:gsub("[\\/]+",env.PATH_DEL):gsub("[\\/]$","")..env.PATH_DEL
     env.checkerr(os.exists(path)==2,"No such folder: %s!",path)
@@ -118,7 +119,7 @@ function system:call_process(cmd,is_native)
         return
     end
 
-    local command=cmd:upper()
+    local command=cmd:upper():gsub("^%s+","")
     if command=='BYE' then
         return env.set_subsystem(nil)
     elseif command:find("^%-N") then
