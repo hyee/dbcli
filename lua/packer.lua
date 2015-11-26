@@ -22,7 +22,7 @@ end
 
 function packer.unpack(str)
     if not str or str:sub(1,5)~= "FUNC:" then
-        return
+        return str
     end
     str=str:sub(6)
     local ind=#str
@@ -45,7 +45,12 @@ function packer.pack_str(str)
 end
 
 function packer.unpack_str(str)
-    return str and packer.unpack(str) and packer.unpack(str)() or str
+    while true do
+        str=packer.unpack(str)
+        if type(str)=="function" then str=str() end
+        if not str or tostring(str):sub(1,5)~= "FUNC:" then break end
+    end
+    return str
 end
 
 return packer
