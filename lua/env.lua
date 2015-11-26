@@ -199,11 +199,11 @@ end
 local previous_prompt
 function env.set_subsystem(cmd,prompt)
     if cmd~=nil then
-        env.set_prompt(cmd,prompt or cmd,false,9)
         env._SUBSYSTEM=cmd
+        env.set_prompt(cmd,prompt or cmd,false,9)
     else
-        env.set_prompt(cmd,nil,false,9)
         env._SUBSYSTEM,_G._SUBSYSTEM=nil,nil
+        env.set_prompt(cmd,nil,false,9)
     end
 end
 
@@ -475,11 +475,12 @@ function env.set_prompt(class,default,is_default,level)
         end
     end
 
-    if  not default:match("[%a] *$") then 
-        env.PRI_PROMPT=default
+    if env._SUBSYSTEM or (default and not default:match("[%w]%s*$")) then 
+        env.PRI_PROMPT=default 
     else
         env.PRI_PROMPT=(default or "").."> "
     end
+
     env.CURRENT_PROMPT,env.MTL_PROMPT=env.PRI_PROMPT,(" "):rep(#env.PRI_PROMPT)
     return default
 end

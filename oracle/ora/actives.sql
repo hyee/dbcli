@@ -35,7 +35,7 @@
                   u={(ROOT_SID =1 OR STATUS='ACTIVE' or sql_text is not null) and schemaname=sys_context('userenv','current_schema')}
                  }
         &tmodel : default={0}, m={1}
-        @COST : 11.0={COALESCE(1440*(sysdate-SQL_EXEC_START),sql_secs/60)},10.0={nvl(sql_secs/60,wait_secs/60)},9.0={null}
+        @COST : 11.0={COALESCE(1440*(sysdate-sql_exec_start),sql_secs/60)},10.0={nvl(sql_secs,wait_secs)/60},9.0={null}
         @CHECK_ACCESS1: dba_objects={dba_objects},all_objects={all_objects}
         @CHECK_ACCESS2: gv$px_session/gv$sql/gv$process={}
     --]]

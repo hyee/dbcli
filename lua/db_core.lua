@@ -29,7 +29,7 @@ function db_Types:get(position,typeName,res,conn)
    
     if value == nil or res:wasNull() then return nil end
     if not self[typeName].handler then return value end
-    return self[typeName].handler(value,'get',conn)
+    return self[typeName].handler(value,'get',conn,res)
  end
 
 local number_types={
@@ -75,9 +75,11 @@ function db_Types:load_sql_types(className)
             end},
 
         [4]={getter='getClob',setter='setStringForClob',--setString
-             handler=function(result,action,conn)
+             handler=function(result,action,conn,res)
                 if action=="get" then
-                    local str=result:getSubString(1,result:length())
+                    local succ,len=pcall(result.length,result)
+                    if not succ then return nil end
+                    local str=result:getSubString(1,len)
                     result:free()
                     return str
                 end
@@ -87,10 +89,12 @@ function db_Types:load_sql_types(className)
         [5]={getter='getBlob',setter='setBytesForBlob', --setBytes
              handler=function(result,action,conn)
                 if action=="get" then
-                    local str=result:getBytes(1,math.min(255,result:length()))
+                    local succ,len=pcall(result.length,result)
+                    if not succ then return nil end
+                    local str=result:getBytes(1,math.min(255,len))
                     result:free()
-                    local str1=string.rep('%2X',#str):format(str:byte(1,#str)):gsub(' ','0')
-                    return str1
+                    str=string.rep('%2X',#str):format(str:byte(1,#str)):gsub(' ','0')
+                    return str
                 else
                     return java.cast(result,'java.lang.String'):getBytes()
                 end
@@ -509,7 +513,6 @@ function db_core:exec(sql,args)
     self.current_stmt=nil
     --is_query=prep:execute()
     local is_output,index,typename=1,2,3
-    
     for k,v in pairs(params) do
         if type(v) == "table" and v[is_output] == "#"  then
             if type(v[index]) == "table" then

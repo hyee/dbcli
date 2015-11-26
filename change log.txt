@@ -1,3 +1,5 @@
+2015-11-26: ! public: fix prompt issue
+                    : fix errors of fetching null CLOB
 2015-11-20: ! public: fix the issue of 'unpack200.exe'
                     : fix the issue of SSH failure with shrinked JRE bundle
                     : fix the issues of subsystem

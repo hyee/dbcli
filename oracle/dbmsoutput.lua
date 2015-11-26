@@ -45,7 +45,7 @@ output.stmt=marker..[[/*INTERNAL_DBCLI_CMD*/
 function output.getOutput(db,sql)
     local isOutput=cfg.get("ServerOutput")
     local typ=db.get_command_type(sql)
-    if typ~='DECLARE' and typ~='BEGIN' and typ~='CALL' and typ~='EXECUTE' then return end
+    if typ=='SELECT' or typ=='WITH' then return end
     if not ((output.prev_sql or ""):find(marker,1,true)) and not sql:find(marker,1,true) and not db:is_internal_call(sql) then
         local args={enable=isOutput,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB"}
         if not pcall(db.internal_call,db,output.stmt,args) then return end

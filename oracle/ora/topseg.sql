@@ -1,8 +1,8 @@
 /*[[Show top segments, default sort by logical reads. Usage: topseg [-d] [-u|-a|<owner>|<object_name>[.<partition_name>]]] [<sort_by_field>]
     Options:
         -d      :  Show the detail segment, instead of grouping by object name
-        -u      :  Group the segments  by schema
-        -a      :  Only show the segment statistics of current schema
+        -u      :  Only show the segment statistics of current schema
+        -a      :  Group the segments  by schema
     Tips:
         The query is based on GV$SEGMENT_STATISTICS which can be very slow. Use 'set instance' to limit the target instance.
     --[[
@@ -12,7 +12,8 @@
     --]]
 ]]*/
 set rownum on sqltimeout 1800
-SELECT /*+NO_EXPAND MONITOR*/ min(obj#) obj#,owner,  &cols object_type,
+SELECT /*+NO_EXPAND MONITOR opt_param('_optimizer_sortmerge_join_enabled','false') */ 
+       min(obj#) obj#,owner,  &cols object_type,
        SUM(DECODE(statistic_name, 'logical reads', VALUE)) logi_reads,
        SUM(DECODE(statistic_name, 'physical reads', VALUE)) phy_reads,
        SUM(DECODE(statistic_name, 'physical writes', VALUE)) phy_writes,

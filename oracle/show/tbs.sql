@@ -3,7 +3,7 @@
         @CHECK_ACCESS: wmsys.wm_concat={wmsys.wm_concat(DISTINCT regexp_substr(file_name, '\w+'))}, default={null}
     --]]
 ]]*/
-SELECT /*+no_merge(d) no_merge(f)*/ D.TABLESPACE_NAME,
+SELECT /*+no_merge(d) no_merge(f) opt_param('_optimizer_sortmerge_join_enabled','false')*/ D.TABLESPACE_NAME,
        siz "MAX_SIZE(G)",
        SPACE "FILE_SIZE(G)",
        SPACE - NVL(FREE_SPACE, 0) "USED_SPACE(G)",

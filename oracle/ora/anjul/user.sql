@@ -6,7 +6,7 @@ select
   username,
   account_status,
   profile,
-  authentication_type,
+  --authentication_type,
   created,
   expiry_date,
   lock_date,
