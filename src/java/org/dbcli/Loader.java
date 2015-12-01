@@ -4,7 +4,9 @@ import com.naef.jnlua.LuaState;
 import com.opencsv.CSVWriter;
 import com.opencsv.ResultSetHelperService;
 import com.opencsv.SQLWriter;
+import com.sun.applet2.preloader.CancelException;
 import jline.console.KeyMap;
+import oracle.jdbc.OracleCallableStatement;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -31,9 +33,10 @@ public class Loader {
     KeyMap keyMap;
     KeyListner q;
     private CallableStatement stmt = null;
-    private Future sleeper;
+    Future sleeper;
     private Sleeper runner = new Sleeper();
     private ResultSet rs;
+    private IOException CancelError=new IOException("Statement is aborted.");
 
     public Loader() {
         try {
@@ -218,6 +221,7 @@ public class Loader {
     }
 
     public Object[][] fetchResult(final ResultSet rs, final int rows) throws Exception {
+        if(rs.getStatement().isClosed()||rs.isClosed()) throw CancelError;
         setCurrentResultSet(rs);
         ArrayList<Object[]> ary = (ArrayList) asyncCall(new Callable() {
             @Override
@@ -245,7 +249,10 @@ public class Loader {
         try {
             this.stmt = p;
             console.setEvents(p == null ? null : q, new char[]{'q', 'Q', KeyMap.CTRL_D});
-            return this.stmt == null ? false : this.stmt.execute();
+            if(p == null) return false;
+            boolean result=p.execute();
+            if(p.isClosed()) throw CancelError;
+            return result;
         } catch (Exception e) {
             throw e;
         } finally {
@@ -255,13 +262,13 @@ public class Loader {
     }
 
 
-    public synchronized Object asyncCall(Callable<Object> c) throws Exception {
+    public Object asyncCall(Callable<Object> c) throws Exception {
         try {
-            sleeper = console.threadPool.submit(c);
+            this.sleeper = console.threadPool.submit(c);
             console.setEvents(q, new char[]{'q', KeyMap.CTRL_D});
             return sleeper.get();
         } catch (CancellationException | InterruptedException e) {
-            throw new IOException("Statement is aborted.");
+            throw CancelError;
         } catch (Exception e) {
             //e.printStackTrace();
             while (e.getCause() != null) e = (Exception) e.getCause();
@@ -307,7 +314,7 @@ public class Loader {
             console.setEvents(q, new char[]{'q', KeyMap.CTRL_D});
             sleeper.get();
         } catch (Exception e) {
-            throw new IOException("Statement is aborted.");
+            throw CancelError;
         } finally {
             sleeper = null;
             console.setEvents(null, null);
@@ -330,7 +337,9 @@ public class Loader {
         public void actionPerformed(ActionEvent e) {
             try {
                 if (e != null) key = Character.codePointAt(e.getActionCommand(), 0);
-
+                if (sleeper != null) {
+                    sleeper.cancel(true);
+                }
                 if (key != 3 && !console.isRunning() && key != 'q' && key != 'Q') {
                     lua.getGlobal("TRIGGER_ABORT");
                     lua.call(0, 0);
@@ -338,11 +347,10 @@ public class Loader {
                     if (stmt != null && !stmt.isClosed()) {
                         stmt.cancel();
                     }
-                    //if (rs  != null && !rs.isClosed()) rs.close();
+                    //
                 }
-                if (sleeper != null) synchronized (sleeper) {
-                    sleeper.cancel(true);
-                }
+
+                if (rs  != null && !rs.isClosed()) rs.close();
             } catch (Exception err) {
                 //err.printStackTrace();
             }

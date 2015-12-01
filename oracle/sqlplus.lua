@@ -15,7 +15,7 @@ end
 
 
 function sqlplus:after_process_created()
-    self.work_dir=self.env['SQLPATH']
+    self.work_dir=self.work_path
 end
 
 function sqlplus:rebuild_commands(work_dir)
@@ -42,9 +42,15 @@ function sqlplus:get_startup_cmd(args,is_native)
     local props={}
     if tnsadm and tnsadm~="" then self.env["TNS_ADMIN"]=tnsadm end
     if db.props.db_nls_lang then self.env["NLS_LANG"]=db.props.db_nls_lang end
-
-    self.env['SQLPATH']=self.work_dir or self.extend_dirs or self.script_dir
-    self.work_dir=env._CACHE_PATH
+    local path,prefix={},'dir /s/b/a:d "'
+    if self.work_dir then path[#path+1]=prefix..self.work_dir..'"' end
+    if self.extend_dirs then path[#path+1]=prefix..self.extend_dirs..'"' end
+    if self.script_dir then path[#path+1]=prefix..self.script_dir..'"' end
+    local dirs=io.popen(table.concat(path,' & ').." 2>nul")
+    path={}
+    for n in dirs:lines() do path[#path+1]=n end
+    self.env['SQLPATH']=table.concat(path,';')
+    self.work_path,self.work_dir=self.work_dir,env._CACHE_PATH
     self:rebuild_commands(self.env['SQLPATH'])
 
 
@@ -62,6 +68,7 @@ function sqlplus:get_startup_cmd(args,is_native)
     end
 
     env.checkerr(not args[1] or not args[1]:find(".*/.*@.+"),"You cannot specify user/pwd here, default a/c should be used!")
+    
     props[#props+1]=(env.packer.unpack_str(db.conn_str) or "/nolog")
     if db.props.service_name then
         props[#props]=props[#props]:gsub("%:[%w_]+ ",'/'..db.props.service_name)
@@ -73,10 +80,7 @@ end
 function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
     for i=1,#g_sql do
         local sql,args,cmd,file=g_sql[i],g_args[i],g_cmd[i],g_file[i]
-        local content=[[SET FEED OFF SERVEROUTPUT ON SIZE 1000000 TRIMSPOOL ON LONG 5000 LINESIZE 900 PAGESIZE 9999
-                        ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';
-                        SET FEED ON ECHO OFF VERIFY OFF
-                        DEF _WORK_DIR_="%s"
+        local content=[[DEF _WORK_DIR_="%s"
                         DEF _FILE_DIR_="%s"
                         DEF _SQLPLUS_DIR_="%s"
                         %s

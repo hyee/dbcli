@@ -1,6 +1,7 @@
 /*[[search objects with object_id/keyword. Usage: search [object_id|data_object_id|keyword] 
     --[[
-        @check_access_obj: dba_objects={dba_objects}, all_objects={dba_objects}
+        @check_access_obj: dba_objects={dba_objects}, default={all_objects}
+        @check_access_pro: all_Procedures={dba_Procedures}, default={all_Procedures}
     --]]
 ]]*/
 SELECT *
@@ -18,9 +19,8 @@ FROM   (SELECT OWNER,
         WHERE  UPPER(OWNER || '.' || OBJECT_NAME || chr(1) || OBJECT_ID || chr(1) ||
                      SUBOBJECT_NAME || chr(1) || DATA_OBJECT_ID || chr(1) ||
                      TO_CHAR(CREATED, 'YYYY-MM-DD HH24:MI:SS') || chr(1) ||
-                     TO_CHAR(CREATED, 'YYYY-MM-DD HH24:MI:SS') || chr(1) ||
                      TO_CHAR(LAST_DDL_TIME, 'YYYY-MM-DD HH24:MI:SS') || chr(1) || STATUS) LIKE '%' || NVL(UPPER(:V1), 'x') || '%'
-        UNION
+        UNION ALL
         SELECT a.owner,
                a.object_name,
                a.procedure_name subobject_name,
@@ -31,7 +31,7 @@ FROM   (SELECT OWNER,
                b.last_ddl_time,
                b.STATUS,
                b.TEMPORARY
-        FROM   all_Procedures a, &check_access_obj b
+        FROM   &check_access_pro a, &check_access_obj b
         WHERE  a.object_id = b.object_id
         AND    upper(a.procedure_name || CHR(1) || a.subprogram_id) LIKE '%' || NVL(UPPER(:V1), 'x') || '%'
         ORDER  BY 1, 2)

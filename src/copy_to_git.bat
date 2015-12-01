@@ -3,8 +3,8 @@ cd ..
 set GIT_HOME=d:\green\github
 setlocal enabledelayedexpansion
 del /F/S/Q ".\src\java"
-XCOPY /S /Y "D:\JavaProjects\dbcli\src\*" .\src\java
-XCOPY /S /Y "D:\JavaProjects\dbcli\opencsv\src\*" "%GIT_HOME%\opencsv\src"
+XCOPY /S /Y "d:\JavaProjects\dbcli\src\*" .\src\java
+XCOPY /S /Y "d:\JavaProjects\dbcli\opencsv\src\*" "%GIT_HOME%\opencsv\src"
 XCOPY  /S /Y ".\lib\opencsv.jar" "%GIT_HOME%\opencsv\release"
 set copyflag=1
 
@@ -33,7 +33,7 @@ goto start
 :end
 xcopy /S /Y .\jre "%target%\jre"
 cd /d "%target%"
-for /f %%i in ('dir /b/s/a:-H .\*.jar') do ("d:\java\jre\bin\pack200" -O -S-1 -G "%%i.pack.gz" "%%i" && del "%%i")
+for /f %%i in ('dir /b/s/a:-H .\*.jar') do ("d:\java\bin\pack200" -O -S-1 -G "%%i.pack.gz" "%%i" && del "%%i")
 
 del ..\dbcli.zip
 rmdir /S /Q src 

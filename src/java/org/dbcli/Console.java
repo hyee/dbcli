@@ -33,6 +33,7 @@ public class Console extends ConsoleReader {
 
     public Console() throws IOException {
         super(System.in, System.out);
+
         his = getHistory();
         setExpandEvents(false);
         setHandleUserInterrupt(true);

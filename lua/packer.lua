@@ -47,8 +47,11 @@ end
 function packer.unpack_str(str)
     while true do
         str=packer.unpack(str)
-        if type(str)=="function" then str=str() end
-        if not str or tostring(str):sub(1,5)~= "FUNC:" then break end
+        if type(str)=="function" then 
+            str=str() 
+        else 
+            break
+        end
     end
     return str
 end

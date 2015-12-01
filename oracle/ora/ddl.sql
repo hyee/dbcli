@@ -1,4 +1,9 @@
-/*[[Get DDL statement. Usage: ddl [owner.]<object_name> [<file_ext>] ]]*/
+/*[[
+   Get DDL statement. Usage: ddl [owner.]<object_name> [<file_ext>]
+   --[[
+      @CHECK_ACCESS_OBJ: dba_objects={dba_views}, default={all_views}
+   --]]
+]]*/
 
 
 SET FEED OFF PRINTVAR OFF
@@ -13,7 +18,7 @@ DECLARE
     obj_type      VARCHAR2(30):= :object_type;
     txt           CLOB;
 BEGIN
-    IF obj_type='VIEW' THEN
+    IF obj_type in('VIEW','SYNONYM') THEN
         BEGIN
             EXECUTE IMMEDIATE q'[SELECT VIEW_DEFINITION FROM V$FIXED_VIEW_DEFINITION WHERE VIEW_NAME=regexp_replace(:1,'^G?V\_','GV') AND 'SYS'=:2 AND 'VIEW'=:3]'
                 INTO txt USING part1, SCHEM, obj_type;
@@ -24,7 +29,7 @@ BEGIN
         END;
 
         IF txt IS NULL THEN
-            FOR R IN(SELECT TEXT FROM   ALL_VIEWS WHERE  OWNER=schem AND VIEW_NAME=part1) LOOP
+            FOR R IN(SELECT TEXT FROM &CHECK_ACCESS_OBJ WHERE OWNER=schem AND VIEW_NAME=part1) LOOP
                 txt := r.text;
             END LOOP;
         END IF;

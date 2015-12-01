@@ -84,9 +84,10 @@ function system:call_process(cmd,is_native)
 
         self.startup_cmd=self:get_startup_cmd(args,is_native)
         table.insert(self.startup_cmd,1,os.find_extension(self.name))
+        
         if not self.work_dir then self.work_dir=env._CACHE_PATH end
         self:set_work_dir(self.work_dir,true)
-        env.log_debug("sqlplus","Command :" ..table.concat(self.startup_cmd," "))
+        env.log_debug("sqlplus","Command : " ..table.concat(self.startup_cmd," "))
         env.log_debug("sqlplus","Work dir: "..self.work_dir)
         env.log_debug("sqlplus","Environment: \n"..table.dump(self.env))
         --self.process:wait_async(function(...) print(...);print("Sub-system is terminated") end)
@@ -112,10 +113,10 @@ function system:call_process(cmd,is_native)
         env.set_subsystem(self.name,self.prompt)
         self.enter_flag=true
         local help=[[
-            You are entering '%s' interactive mode, work dir is '%s'.
+            You are entering '%s' interactive mode, working dir is '%s'.
             To switch to the native CLI mode, execute '-n' or '.%s -n'.
-            Type 'lls' to list the files in current work dir, to change the work dir, execute 'lcd <path>'.
-            Type '.<cmd>' to run the root command, 'bye' to leave, or 'exit' to terminate."]]
+            Type 'lls' to list the files in current working dir, to change the working dir, execute 'lcd <path>'.
+            Type '.<cmd>' to run the root command, 'bye' to leave, or 'exit' to terminate.]]
         help=help:format(self.name,self.work_dir,self.name):gsub("%s%s%s+",'\n')
         print(env.ansi.mask("PromptColor",help))
         env.set_subsystem(self.name,self.prompt)
@@ -124,6 +125,7 @@ function system:call_process(cmd,is_native)
 
     local command=cmd:upper():gsub("^%s+","")
     if command=='BYE' then
+        self.enter_flag=false
         return env.set_subsystem(nil)
     elseif command:find("^%-N") then
         return self:call_process(cmd,true)
@@ -131,8 +133,8 @@ function system:call_process(cmd,is_native)
         return self:list_work_dir(cmd:sub(5))
     elseif command:find("^LCD ") or command=="LCD"  then
         return self:set_work_dir(cmd:sub(5))
-    elseif command=='EXIT' then
-        return self:terminate()
+    --elseif command=='EXIT' then
+    --    return self:terminate()
     end
     self:run_command(cmd,true)
 end

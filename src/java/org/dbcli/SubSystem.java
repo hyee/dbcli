@@ -37,7 +37,6 @@ public class SubSystem {
         ProcessHandler handler = new ProcessHandler();
         pb.setProcessListener(handler);
         process = pb.start();
-
         writer = ByteBuffer.allocateDirect(32767);
         writer.order(ByteOrder.nativeOrder());
         //Respond to the ctrl+c event
@@ -112,7 +111,7 @@ public class SubSystem {
                         remain = buff.substring(index + 1);
                         Matcher m = p.matcher(remain);
                         if (m.find()) {
-                            Thread.currentThread().sleep(10);
+                            Thread.currentThread().sleep(5);
                             if(sb.length()==0) {
                                 lastPrompt = remain;
                                 return remain;
@@ -120,10 +119,10 @@ public class SubSystem {
                         }
                         print(remain, isPrint);
                     }
-                } else if ((remain != null && ++counter > 100)) {
+                } else if ((remain != null && ++counter > 200)) {
                     return "";
                 }
-                Thread.currentThread().sleep(5);
+                Thread.currentThread().sleep(10);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -149,8 +148,13 @@ public class SubSystem {
         }
 
         @Override
+        public void onStderr(ByteBuffer buffer, boolean closed) {
+            onStdout(buffer,closed);
+        }
+
+        @Override
         public void onStdout(ByteBuffer buffer, boolean closed) {
-            isEOF=closed;
+            isEOF = closed;
             if (!isWaiting) {
                 buffer.flip();
                 return;
