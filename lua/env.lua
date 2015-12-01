@@ -199,11 +199,11 @@ end
 local previous_prompt
 function env.set_subsystem(cmd,prompt)
     if cmd~=nil then
-        env.set_prompt(cmd,prompt or cmd,false,9)
         env._SUBSYSTEM=cmd
+        env.set_prompt(cmd,prompt or cmd,false,9)
     else
-        env.set_prompt(cmd,nil,false,9)
         env._SUBSYSTEM,_G._SUBSYSTEM=nil,nil
+        env.set_prompt(cmd,nil,false,9)
     end
 end
 
@@ -231,14 +231,14 @@ end
 
 function env.smart_check_endless(cmd,rest,from_pos)
     local args=env.parse_args(from_pos,rest)
-    if #args==0 then return true,rest:gsub('['..env.END_MARKS[1]..' \t]+$',"") end
-    for k=1,#args do
-        if not env.check_cmd_endless(args[k]:upper(),table.concat(args,' ',k+1)) then
-            return false,rest
-        end
+    if not args[from_pos-1] then return true,rest:gsub('['..env.END_MARKS[1]..' \t]+$',"") end
+    if env.check_cmd_endless(args[from_pos-1]:upper(),args[from_pos] or "") then
+        return true,rest:gsub('%s+$',"")
+    else
+        return false,rest
     end
-    return true,rest:gsub('*%s*$',"")
 end
+
 
 function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbcmd,allow_overriden)
     local abbr={}
@@ -429,6 +429,7 @@ function env.exec_command(cmd,params,is_internal)
     if event then
         if isMain then
             if writer then
+                env.ROOT_CMD=name
                 writer:print(env.ansi.mask("NOR",""))
                 writer:flush()
             end
@@ -475,11 +476,12 @@ function env.set_prompt(class,default,is_default,level)
         end
     end
 
-    if  not default:match("[%a] *$") then 
-        env.PRI_PROMPT=default
+    if env._SUBSYSTEM or (default and not default:match("[%w]%s*$")) then 
+        env.PRI_PROMPT=default 
     else
         env.PRI_PROMPT=(default or "").."> "
     end
+
     env.CURRENT_PROMPT,env.MTL_PROMPT=env.PRI_PROMPT,(" "):rep(#env.PRI_PROMPT)
     return default
 end
@@ -584,7 +586,7 @@ end
 
 function env.force_end_input(exec,is_internal)
     if curr_stmt then
-        local stmt={multi_cmd,env.parse_args(multi_cmd,curr_stmt,true)}
+        local stmt={multi_cmd,env.parse_args(multi_cmd,curr_stmt)}
         multi_cmd,curr_stmt=nil,nil
         env.CURRENT_PROMPT=env.PRI_PROMPT
         if exec~=false then

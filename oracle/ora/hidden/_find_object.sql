@@ -65,17 +65,17 @@ BEGIN
         flag  := FALSE;
         schem := regexp_substr(target, '[^\.]+', 1, 1);
         part1 := regexp_substr(target, '[^\.]+', 1, 2);
-        objs  := objs||' a WHERE owner IN(''PUBLIC'',sys_context(''USERENV'', ''CURRENT_SCHEMA''),:1) AND object_name IN(''' || schem || ''',:2))';
+        objs  := objs||' a WHERE owner IN(''SYS'',''PUBLIC'',sys_context(''USERENV'', ''CURRENT_SCHEMA''),:1) AND object_name IN(''' || schem || ''',:2))';
     ELSE
         flag  := TRUE;
-        objs  := objs|| ' a WHERE OWNER in(''PUBLIC'',:1) AND OBJECT_NAME=:2)';
+        objs  := objs|| ' a WHERE OWNER IN(''SYS'',''PUBLIC'',:1) AND OBJECT_NAME=:2)';
     END IF;
 
     objs:=q'[SELECT /*+no_expand*/
-           MIN(to_char(OBJECT_TYPE))    keep(dense_rank first order by s_flag),
-           MIN(to_char(OWNER))          keep(dense_rank first order by s_flag),
-           MIN(to_char(OBJECT_NAME))    keep(dense_rank first order by s_flag),
-           MIN(to_char(SUBOBJECT_NAME)) keep(dense_rank first order by s_flag),
+           MIN(to_char(OBJECT_TYPE))    keep(dense_rank first order by s_flag,object_id),
+           MIN(to_char(OWNER))          keep(dense_rank first order by s_flag,object_id),
+           MIN(to_char(OBJECT_NAME))    keep(dense_rank first order by s_flag,object_id),
+           MIN(to_char(SUBOBJECT_NAME)) keep(dense_rank first order by s_flag,object_id),
            MIN(to_number(OBJECT_ID))    keep(dense_rank first order by s_flag)
     FROM (
         SELECT a.*,
@@ -84,7 +84,6 @@ BEGIN
                case substr(object_type,1,3) when 'TAB' then 1 when 'CLU' then 2 else 3 end s_flag
         FROM   ]' || objs;
 
-    --dbms_output.put_line(objs);
     EXECUTE IMMEDIATE objs
         INTO obj_type, schem, part1, part2_temp,object_number USING schem,part1,schem, part1;
 

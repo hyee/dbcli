@@ -29,7 +29,7 @@ function db_Types:get(position,typeName,res,conn)
    
     if value == nil or res:wasNull() then return nil end
     if not self[typeName].handler then return value end
-    return self[typeName].handler(value,'get',conn)
+    return self[typeName].handler(value,'get',conn,res)
  end
 
 local number_types={
@@ -75,9 +75,11 @@ function db_Types:load_sql_types(className)
             end},
 
         [4]={getter='getClob',setter='setStringForClob',--setString
-             handler=function(result,action,conn)
+             handler=function(result,action,conn,res)
                 if action=="get" then
-                    local str=result:getSubString(1,result:length())
+                    local succ,len=pcall(result.length,result)
+                    if not succ then return nil end
+                    local str=result:getSubString(1,len)
                     result:free()
                     return str
                 end
@@ -87,10 +89,12 @@ function db_Types:load_sql_types(className)
         [5]={getter='getBlob',setter='setBytesForBlob', --setBytes
              handler=function(result,action,conn)
                 if action=="get" then
-                    local str=result:getBytes(1,math.min(255,result:length()))
+                    local succ,len=pcall(result.length,result)
+                    if not succ then return nil end
+                    local str=result:getBytes(1,math.min(255,len))
                     result:free()
-                    local str1=string.rep('%2X',#str):format(str:byte(1,#str)):gsub(' ','0')
-                    return str1
+                    str=string.rep('%2X',#str):format(str:byte(1,#str)):gsub(' ','0')
+                    return str
                 else
                     return java.cast(result,'java.lang.String'):getBytes()
                 end
@@ -372,8 +376,14 @@ function db_core:check_sql_method(event_name,sql,method,...)
         event(event_name,info)
         internal, self.internal_exec=self:is_internal_call(sql),false
         if info and info.error and info.error~="" then
-            if not internal and info.sql and #env.RUNNING_THREADS>2 then
-                print('SQL: '..info.sql:gsub("\n","\n     "))
+            if not internal and info.sql and env.ROOT_CMD~=self.get_command_type(sql) then
+                if cfg.get("SQLERRLINE")=="off" then
+                    print('SQL: '..info.sql:gsub("\n","\n     "))
+                else
+                    local lineno=0
+                    local fmt='\n%5d|  '
+                    print(('\n'..info.sql):gsub("\n",function() lineno=lineno+1;return fmt:format(lineno) end):sub(2))
+                end
             end
             env.raise_error(info.error)
         end
@@ -509,7 +519,6 @@ function db_core:exec(sql,args)
     self.current_stmt=nil
     --is_query=prep:execute()
     local is_output,index,typename=1,2,3
-    
     for k,v in pairs(params) do
         if type(v) == "table" and v[is_output] == "#"  then
             if type(v[index]) == "table" then
@@ -622,7 +631,7 @@ function db_core:connect(attrs,data_source)
     else
         err,res=pcall(loader.asyncCall,loader,self.driver,'getConnection',url,props)
     end
-
+    
     env.checkerr(err,tostring(res))
 
     self.conn=res
@@ -854,6 +863,7 @@ function db_core:__onload()
     cfg.init("ASYNCEXP",true,set_param,"db.export","Detemine if use parallel process for the export(SQL2CSV and SQL2FILE)",'true,false')
     cfg.init("CSVSEP",string.char(csv.DEFAULT_SEPARATOR),set_param,"db.export","Define the seperator for CSV data for export(SQL2CSV and CSV2SQL)",'*')
     cfg.init("SQLLINEWIDTH",sqlw.maxLineWidth,set_param,"db.export","Define the max line width(in chars) of exporting SQL file(SQL2FILE and CSV2SQL)",'*')
+    cfg.init("SQLERRLINE",'off',nil,"db.core","Also print the line number when error SQL is printed",'on,off')
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
     env.event.snoop('TRIGGER_LOGIN',self.login,self)
     env.set_command(self,"sql2file","Export Query Result into SQL file. Usage: sql2file <file_name>[.sql|gz|zip] <sql|cursor>" ,self.sql2sql,'__SMART_PARSE__',3)

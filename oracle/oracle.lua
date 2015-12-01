@@ -96,49 +96,67 @@ function oracle:connect(conn_str)
     end
     --print(pwd)
     local prompt=(args.jdbc_alias or url):match('([^:/@]+)$')
-    self.conn_str=packer.pack_str(sqlplustr)
+    
 
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
     env.set_title("")
     local data_source=java.new('oracle.jdbc.pool.OracleDataSource')
 
     self.super.connect(self,args,data_source)
-    self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
+    self.conn,self.conn_str=java.cast(self.conn,"oracle.jdbc.OracleConnection"),sqlplustr
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    self.props={instance=1}
-    self:internal_call([[/*INTERNAL_DBCLI_CMD*/
-        begin
-            execute immediate 'alter session set nls_date_format=''yyyy-mm-dd hh24:mi:ss''';
-            execute immediate 'alter session set statistics_level=all';
-        end;]],{})
+    self.props={instance="#NUMBER",sid="#NUMBER"}
+    for k,v in ipairs{'db_user','db_version','nls_lang','isdba','serivce_name','db_role'} do self.props[v]="#VARCHAR" end
+    local succ,err=pcall(self.internal_call,self,[[
+        DECLARE
+            vs  PLS_INTEGER := dbms_db_version.version;
+            ver PLS_INTEGER := sign(vs-9);
+        BEGIN
+            EXECUTE IMMEDIATE 'alter session set nls_date_format=''yyyy-mm-dd hh24:mi:ss''';
+            EXECUTE IMMEDIATE 'alter session set statistics_level=all';
 
-    local err,params=pcall(self.get_value,self,[[
-       select /*INTERNAL_DBCLI_CMD*/ user,
-               (SELECT VALUE FROM Nls_Database_Parameters WHERE parameter='NLS_RDBMS_VERSION') version,
-                sys_context('userenv','language'),
-                (select sid from v$mystat where rownum<2),
-                (select instance_number from v$instance where rownum<2),
-                sys_context('userenv','isdba'),
-                sys_context('userenv','db_name')||nullif('.'||sys_context('userenv','db_domain'),'.'),
-                (select decode(DATABASE_ROLE,'PRIMARY','','PHYSICAL STANDBY',' (Standby)') from v$database)
-       from dual]])
-    if not err then
+            SELECT user,
+                   (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_RDBMS_VERSION') version,
+                   (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_LANGUAGE') || '_' ||
+                   (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_TERRITORY') || '.' || value nls,
+                   decode(ver,1,userenv('sid')) ssid,
+                   decode(ver,1,userenv('instance')) inst,
+                   sys_context('userenv', 'isdba') isdba,
+                   sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.') serivce_name,
+                   decode(sign(vs-10),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY','','PHYSICAL STANDBY',' (Standby)'))
+            INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :isdba, :serivce_name,:db_role
+            FROM   nls_Database_Parameters
+            WHERE  parameter = 'NLS_CHARACTERSET';
+            
+            BEGIN
+                IF vs < 11 THEN 
+                    EXECUTE IMMEDIATE q'[select decode(DATABASE_ROLE,'PRIMARY','',' (Standby)') from v$database]'
+                    into :db_role;
+                END IF;
+
+                IF vs < 10 THEN
+                    EXECUTE IMMEDIATE '
+                        SELECT (select sid from v$mystat where rownum<2),
+                               (select instance_number from v$instance where rownum<2)
+                        FROM DUAL'
+                    INTO :sid,:instance;
+                END IF;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+        END;]],self.props)
+
+    
+    if not succ then
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
     else
-        self.props={db_user=params[1],
-                    db_version=params[2],
-                    db_nls_lang=params[3],
-                    service_name=params[7],
-                    isdba=params[6]=='TRUE' and true or false,
-                    instance=tonumber(params[5]) or 1,
-                    sid=params[4]}
         prompt=(prompt or self.props.service_name):match("^([^,%.&]+)")
         env._CACHE_PATH=env._CACHE_BASE..prompt:lower()..env.PATH_DEL
         os.execute('mkdir "'..env._CACHE_PATH..'" 2> '..(env.OS=="windows" and 'NUL' or "/dev/null"))
-        prompt=('%s%s'):format(prompt:upper(),params[8])
+        prompt=('%s%s'):format(prompt:upper(),self.props.db_role or '')
         env.set_prompt(nil,prompt,nil,2)
-        self.session_title=('%s%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)'):format(prompt:upper(),params[8], params[5],params[1],params[4],params[2])
+        self.session_title=('%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)')
+            :format(prompt,self.props.instance,self.props.db_user,self.props.sid,self.props.db_version)
         env.set_title(self.session_title)
     end
     if event then event("AFTER_ORACLE_CONNECT",self,sql,args,result) end
@@ -189,7 +207,7 @@ function oracle:parse(sql,params)
     local method,value,typeid,typename,inIdx,outIdx=1,2,3,4,5,6
     if sql_type=='EXPLAIN' or #p2>0 and (sql_type=="DECLARE" or sql_type=="BEGIN" or sql_type=="CALL") then
         local s0,s1,s2,index,typ,siz={},{},{},1,nil,#p2
-        params={_based_sql=sql}
+        params={}
         if sql_type=='EXPLAIN' then
             p1,p2={},{}
         end
