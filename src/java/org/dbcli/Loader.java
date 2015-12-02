@@ -338,7 +338,7 @@ public class Loader {
                 if (sleeper != null) {
                     sleeper.cancel(true);
                 }
-                if (key != 3 && !console.isRunning() && key != 'q' && key != 'Q') {
+                if (/*key != 3 && */!console.isRunning() && key != 'q' && key != 'Q') {
                     lua.getGlobal("TRIGGER_ABORT");
                     lua.call(0, 0);
                 } else {

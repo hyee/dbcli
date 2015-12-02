@@ -1,32 +1,34 @@
 package org.dbcli;
 
-import com.zaxxer.nuprocess.windows.HANDLER_ROUTINE;
-import com.zaxxer.nuprocess.windows.NuKernel32;
+import sun.misc.Signal;
+import sun.misc.SignalHandler;
+
 import java.awt.event.ActionEvent;
 import java.util.HashMap;
 
 public class Interrupter {
     static HashMap<Object, InterruptCallback> map = new HashMap<>();
-    static HANDLER_ROUTINE handler=new HANDLER_ROUTINE()
-    {
-        @Override
-        public long callback(long dwCtrlType) {
-            if ((int)dwCtrlType == CTRL_C_EVENT&&!map.isEmpty()) {
-                ActionEvent e = new ActionEvent(this, ActionEvent.ACTION_PERFORMED, "\3");
-                for (InterruptCallback c : map.values()) {
-                    try {
-                        c.interrupt(e);
-                    } catch (Exception ex) {
-                        ex.printStackTrace();
+
+    static {
+        Signal.handle(new Signal("INT"), new SignalHandler() {
+            @Override
+            public void handle(Signal signal) {
+                if (!map.isEmpty()) {
+                    ActionEvent e = new ActionEvent(this, ActionEvent.ACTION_PERFORMED,"\3");
+                    for (InterruptCallback c : map.values()) {
+                        //System.out.println(c.toString());
+                        try {
+                            c.interrupt(e);
+                        } catch (StackOverflowError e1) {
+                            return;
+                        } catch (Exception ex) {
+                            ex.printStackTrace();
+                        }
                     }
                 }
-                return 1;
+                //this.handle(signal);
             }
-            return 0;
-        }
-    };
-    static {
-        NuKernel32.SetConsoleCtrlHandler(handler, true);
+        });
     }
 
     public static void listen(Object name, InterruptCallback c) {
