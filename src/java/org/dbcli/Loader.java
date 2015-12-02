@@ -4,9 +4,7 @@ import com.naef.jnlua.LuaState;
 import com.opencsv.CSVWriter;
 import com.opencsv.ResultSetHelperService;
 import com.opencsv.SQLWriter;
-import com.sun.applet2.preloader.CancelException;
 import jline.console.KeyMap;
-import oracle.jdbc.OracleCallableStatement;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -32,11 +30,11 @@ public class Loader {
     static String libPath;
     KeyMap keyMap;
     KeyListner q;
-    private CallableStatement stmt = null;
     Future sleeper;
+    private CallableStatement stmt = null;
     private Sleeper runner = new Sleeper();
     private ResultSet rs;
-    private IOException CancelError=new IOException("Statement is aborted.");
+    private IOException CancelError = new IOException("Statement is aborted.");
 
     public Loader() {
         try {
@@ -221,7 +219,7 @@ public class Loader {
     }
 
     public Object[][] fetchResult(final ResultSet rs, final int rows) throws Exception {
-        if(rs.getStatement().isClosed()||rs.isClosed()) throw CancelError;
+        if (rs.getStatement().isClosed() || rs.isClosed()) throw CancelError;
         setCurrentResultSet(rs);
         ArrayList<Object[]> ary = (ArrayList) asyncCall(new Callable() {
             @Override
@@ -249,9 +247,9 @@ public class Loader {
         try {
             this.stmt = p;
             console.setEvents(p == null ? null : q, new char[]{'q', 'Q', KeyMap.CTRL_D});
-            if(p == null) return false;
-            boolean result=p.execute();
-            if(p.isClosed()) throw CancelError;
+            if (p == null) return false;
+            boolean result = p.execute();
+            if (p.isClosed()) throw CancelError;
             return result;
         } catch (Exception e) {
             throw e;
@@ -350,7 +348,7 @@ public class Loader {
                     //
                 }
 
-                if (rs  != null && !rs.isClosed()) rs.close();
+                if (rs != null && !rs.isClosed()) rs.close();
             } catch (Exception err) {
                 //err.printStackTrace();
             }

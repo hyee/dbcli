@@ -10,3 +10,4 @@ SELECT decode(userenv('instance')+0,inst_id,'*',' ')||inst_id inst_id, instance_
        to_char(startup_time,'YYYY-MM-DD HH24:MI') startup_time,
        (select to_char(max(end_time),'YYYY-MM-DD HH24:MI:SS') from gv$sessmetric b where b.inst_id=a.inst_id) current_time
 from gv$instance a
+order by a.inst_id

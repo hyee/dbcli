@@ -3,6 +3,8 @@ package org.dbcli;
 import com.zaxxer.nuprocess.NuAbstractProcessHandler;
 import com.zaxxer.nuprocess.NuProcess;
 import com.zaxxer.nuprocess.NuProcessBuilder;
+import com.zaxxer.nuprocess.windows.HANDLER_ROUTINE;
+import com.zaxxer.nuprocess.windows.WindowsProcess;
 
 import java.awt.event.ActionEvent;
 import java.io.File;
@@ -10,44 +12,41 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.Map;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Created by 1506428 on 11/18/2015.
- */
+
 public class SubSystem {
     NuProcessBuilder pb;
-    NuProcess process;
-    StringBuilder sb;
+    volatile WindowsProcess process;
+
     ByteBuffer writer;
     Pattern p;
+    volatile String lastLine;
     volatile Boolean isWaiting = false;
+    volatile Boolean isBreak = false;
     volatile Boolean isEOF = false;
-    String lastPrompt = "";
+    volatile Boolean isPrint = false;
+    volatile String lastPrompt = "";
+    volatile String prevPrompt;
 
     public SubSystem() {
     }
 
-    public SubSystem(String pattern, String cwd, String[] command, Map env) {
-        sb = new StringBuilder();
+    public SubSystem(String promptPattern, String cwd, String[] command, Map env) {
         pb = new NuProcessBuilder(Arrays.asList(command), env);
         pb.setCwd(new File(cwd).toPath());
-        p = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE + Pattern.DOTALL);
+        p = Pattern.compile(promptPattern, Pattern.CASE_INSENSITIVE + Pattern.DOTALL);
         ProcessHandler handler = new ProcessHandler();
         pb.setProcessListener(handler);
-        process = pb.start();
+        process = (WindowsProcess) pb.start();
         writer = ByteBuffer.allocateDirect(32767);
         writer.order(ByteOrder.nativeOrder());
         //Respond to the ctrl+c event
-        Interrupter.listen(process, new InterruptCallback() {
+        Interrupter.listen(this, new InterruptCallback() {
             @Override
             public void interrupt(ActionEvent e) throws Exception {
-                if (isWaiting) SendKey((byte) 3);
-                synchronized (sb) {
-                    isWaiting = false;
-                    sb.setLength(0);
-                }
+                isBreak = true;
+                SendKey((byte) 3);
             }
         });
     }
@@ -57,73 +56,68 @@ public class SubSystem {
     }
 
     public void SendKey(byte c) {
-        writer.clear();
-        writer.put(c);
-        writer.flip();
-        process.writeStdin(writer);
+        //System.out.println("break");
+        if (process == null) return;
+        process.sendCtrlEvent((int)HANDLER_ROUTINE.CTRL_C_EVENT);
     }
 
     public Boolean isPending() {
         return process.hasPendingWrites();
     }
 
-    void print(String buff, Boolean isPrint) {
-        if (isPrint) {
+    void print(String buff) {
+        if (isPrint&&!isBreak) {
             Console.writer.print(buff);
             Console.writer.flush();
         }
     }
 
+    public void waitCompletion() throws Exception {
+        StringBuilder buff = new StringBuilder();
+        long wait = 150L;
+        while (isWaiting && process != null) {
+            if (wait > 50) {//Waits 0.5 sec for the prompt and then enters into interactive mode
+                --wait;
+                Thread.sleep(5);
+            } else {
+                int ch = Console.in.read(wait);
+                while (ch >= 0) {
+                    if (ch == 13) ch = 10; //Convert '\r' as '\n'
+                    buff.append((char) ch);
+                    --wait;
+                    ch = Console.in.read(10L);
+                }
+                if (wait < 50L) {
+                    synchronized (writer) {
+                        writer.clear();
+                        writer.put(buff.toString().getBytes());
+                        writer.flip();
+                        process.writeStdin(writer);
+                    }
+                    print(buff.toString());
+                    buff.setLength(0);
+                    wait = 60L; //Waits 0.05 sec
+                }
+            }
+        }
+    }
+
     //return null means the process is terminated
-    public String write(String command, Boolean isPrint) throws Exception {
+    public String execute(String command, Boolean isPrint) throws Exception {
         try {
-            String remain = null;
-            int counter = 0;
-            if (process == null) return null;
+            this.isPrint = isPrint;
+            this.prevPrompt=this.lastPrompt;
+            this.lastPrompt = null;
             isWaiting = true;
-            isEOF = false;
+            isBreak = false;
             if (command != null) {
                 writer.clear();
                 writer.put(command.getBytes());
                 writer.flip();
                 process.writeStdin(writer);
             }
-            while (true) {
-                if (process == null) return null;
-                if (!isWaiting) {
-                    print("\n",true);
-                    sb.setLength(0);
-                    return lastPrompt;
-                }
-                if (sb.length() > 0) {
-                    counter = 0;
-                    String buff;
-                    synchronized (sb) {
-                        buff = sb.toString();
-                        sb.setLength(0);
-                    }
-                    if (buff.endsWith("\n")) {
-                        print(buff, isPrint);
-                        remain = null;
-                    } else {
-                        int index = buff.lastIndexOf("\n");
-                        if (index != -1) print(buff.substring(0, index+1), isPrint);
-                        remain = buff.substring(index + 1);
-                        Matcher m = p.matcher(remain);
-                        if (m.find()) {
-                            Thread.currentThread().sleep(5);
-                            if(sb.length()==0) {
-                                lastPrompt = remain;
-                                return remain;
-                            }
-                        }
-                        print(remain, isPrint);
-                    }
-                } else if ((remain != null && ++counter > 200)) {
-                    return "";
-                }
-                Thread.currentThread().sleep(10);
-            }
+            waitCompletion();
+            return lastPrompt;
         } catch (Exception e) {
             e.printStackTrace();
             throw e;
@@ -133,7 +127,9 @@ public class SubSystem {
     }
 
     public void close() {
+        Interrupter.listen(this, null);
         isWaiting = false;
+        isBreak = false;
         if (process == null) return;
         process.destroy(true);
         process = null;
@@ -141,6 +137,8 @@ public class SubSystem {
 
     class ProcessHandler extends NuAbstractProcessHandler {
         private NuProcess nuProcess;
+        private char lastChar;
+        private StringBuilder sb = new StringBuilder();
 
         @Override
         public void onStart(NuProcess nuProcess) {
@@ -149,23 +147,38 @@ public class SubSystem {
 
         @Override
         public void onStderr(ByteBuffer buffer, boolean closed) {
-            onStdout(buffer,closed);
+            onStdout(buffer, closed);
+            isWaiting = false;
         }
 
         @Override
         public void onStdout(ByteBuffer buffer, boolean closed) {
-            isEOF = closed;
-            if (!isWaiting) {
-                buffer.flip();
-                return;
-            }
             byte[] bytes = new byte[buffer.remaining()];
-            // You must update buffer.position() before returning (either implicitly,
-            // like this, or explicitly) to indicate how many bytes your handler has consumed.
             buffer.get(bytes);
 
-            synchronized (sb) {
-                sb.append(new String(bytes));
+            lastChar = '\n';
+            isEOF = closed;
+            isWaiting = true;
+
+            for (byte c : bytes) {
+                lastChar = (char) c;
+                sb.append(lastChar);
+                if (lastChar == '\n') {
+                    lastLine = sb.toString();
+                    print(lastLine);
+                    sb.setLength(0);
+                }
+            }
+
+            if (lastChar != '\n') {
+                String line = sb.toString();
+                sb.setLength(0);
+                if (p.matcher(line).find()) {
+                    isWaiting = false;
+                    lastPrompt = isBreak? prevPrompt: line;
+                } else {
+                    print(line);
+                }
             }
         }
 
