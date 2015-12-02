@@ -5,7 +5,7 @@ local system=env.class(env.scripter)
 function system:ctor()
     self.process=nil
     self.proc=java.require("org.dbcli.SubSystem")
-    self.idle_pattern="^(.+[>\\$#] )$"
+    self.prompt_pattern="^.+[>\\$#@] *$"
 end
 
 function system:kill_reader(cmds)
@@ -16,7 +16,7 @@ function system:kill_reader(cmds)
 end
 
 function system:run_command(cmd,is_print)
-    self.prompt=self.process:write(cmd and cmd.."\n" or nil,is_print and true or false)
+    self.prompt=self.process:execute(cmd and cmd.."\n" or nil,is_print and true or false)
     if not self.prompt then return self:terminate() end
     if self.enter_flag==true then env.set_subsystem(self.name,self.prompt) end
 end
@@ -48,7 +48,7 @@ end
 function system:make_native_command(arg)
     local env,cmd={},{}
     for k,v in pairs(self.env) do
-        env[#env+1]='(set '..k..'='..v.." )"
+        env[#env+1]='(set "'..k..'='..v..'" )'
     end
     env[#env+1]='cd /d "'..self.work_dir..'"'
 
@@ -80,7 +80,7 @@ function system:call_process(cmd,is_native)
             end
         end
         
-        self.env={}
+        self.env={PATH=os.getenv("PATH")}
 
         self.startup_cmd=self:get_startup_cmd(args,is_native)
         table.insert(self.startup_cmd,1,os.find_extension(self.name))
@@ -92,7 +92,7 @@ function system:call_process(cmd,is_native)
         env.log_debug("sqlplus","Environment: \n"..table.dump(self.env))
         --self.process:wait_async(function(...) print(...);print("Sub-system is terminated") end)
         if not is_native then
-            self.process=self.proc:create(self.idle_pattern,self.work_dir,self.startup_cmd,self.env)
+            self.process=self.proc:create(self.prompt_pattern,self.work_dir,self.startup_cmd,self.env)
             self.msg_stack={}
             self:run_command(nil,false)
             if not self.process then return end

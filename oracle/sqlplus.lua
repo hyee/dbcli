@@ -10,7 +10,7 @@ function sqlplus:ctor()
     self.description="Switch to sqlplus with same login, the default working folder is 'oracle/sqlplus'. Usage: sqlplus [-n|-d<work_path>] [other args]"
     self.help_title='Run SQL*Plus script under the "sqlplus" directory. '
     self.script_dir,self.extend_dirs=env.WORK_DIR.."oracle"..env.PATH_DEL.."sqlplus",{}
-    self.idle_pattern="^(.*?[>%$#\\d:]+ +)$"
+    self.prompt_pattern="^(.+[>\\$#@] *| *\\d+ +)$"
 end
 
 
@@ -43,11 +43,10 @@ function sqlplus:get_startup_cmd(args,is_native)
     if tnsadm and tnsadm~="" then self.env["TNS_ADMIN"]=tnsadm end
     if db.props.db_nls_lang then self.env["NLS_LANG"]=db.props.db_nls_lang end
     local path,prefix={},'dir /s/b/a:d "'
-    if self.work_dir then path[#path+1]=prefix..self.work_dir..'"' end
-    if self.extend_dirs then path[#path+1]=prefix..self.extend_dirs..'"' end
-    if self.script_dir then path[#path+1]=prefix..self.script_dir..'"' end
-    local dirs=io.popen(table.concat(path,' & ').." 2>nul")
-    path={}
+    if self.work_dir then path[#path+1]=self.work_dir end
+    if self.extend_dirs then path[#path+1]=self.extend_dirs end
+    if self.script_dir then path[#path+1]=self.script_dir end
+    local dirs=io.popen('dir /s/b/a:d "'..table.concat(path,'" "')..'" 2>nul')
     for n in dirs:lines() do path[#path+1]=n end
     self.env['SQLPATH']=table.concat(path,';')
     self.work_path,self.work_dir=self.work_dir,env._CACHE_PATH

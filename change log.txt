@@ -1,7 +1,16 @@
+2015-12-02: ! public: minor fixes related to subsystem
+            * public: not use sun.misc.Signal(awrt.dll) to handle the ctrl+c event, use JNA instead
+            + public: support ctrl+c event in subsystem(sqlplus for example)
+2015-12-01: * oracle: enhancement on the "SQLPATH" env, which is related to sqlplus
+            ! oracle: minor fixes
+            ! public: fix 'ctrl-c' breaks the channel for SSH commands
+                    : fix "reconn" issue
+                    : minor other fixes
+            + public: new option 'set sqlerrline' to show the line number when error is detected and related sql is printed
+2015-11-26: ! oracle: fix 'ORA-22275: invalid LOB locator specified' when output var is not assigned
+            ! public: fix prompt missing the '>' suffix issue
 2015-11-20: ! public: fix the issue of 'unpack200.exe'
                     : fix the issue of SSH failure with shrinked JRE bundle
-                    : fix the issues of subsystem
-            + public: subsystem supports alias and ctrl+c
 2015-11-19: * public: change the dep of 'subsystem' from 'winapi' to 'NuProcess' and minor fixes
             + public: commands ora/snap/shell/chart allow linking to another customize dir. refer to the '-l' option
                     : new command "set TEMPPATH", to customize the temporary path instead of 'cache'
