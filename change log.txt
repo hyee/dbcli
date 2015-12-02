@@ -1,5 +1,4 @@
 2015-12-02: ! public: minor fixes related to subsystem
-            * public: not use sun.misc.Signal(awrt.dll) to handle the ctrl+c event, use JNA instead
             + public: support ctrl+c event in subsystem(sqlplus for example)
 2015-12-01: * oracle: enhancement on the "SQLPATH" env, which is related to sqlplus
             ! oracle: minor fixes
