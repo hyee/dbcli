@@ -16,6 +16,8 @@ end
 
 function sqlplus:after_process_created()
     self.work_dir=self.work_path
+    print(self:get_last_line("select * from(&prompt_sql);"))
+    self:run_command('store set dbcli_sqlplus_settings.sql replace',false)
 end
 
 function sqlplus:rebuild_commands(work_dir)
@@ -30,11 +32,32 @@ end
 
 function sqlplus:set_work_dir(path,quiet)
     self.super.set_work_dir(self,path,quiet)
-    if not quiet then
+    if not quiet and path and path~="" then
+        self:make_sqlpath()
         self:rebuild_commands(self.work_dir)
     end
 end
 
+function sqlplus:make_sqlpath()
+    local path={}
+    if self.work_dir then path[#path+1]=self.work_dir end
+    if self.extend_dirs then path[#path+1]=self.extend_dirs end
+    if self.script_dir then path[#path+1]=self.script_dir end
+    for i=#path,1,-1 do
+        if path[i]==env._CACHE_PATH then table.remove(path,i) end
+    end
+    local dirs=io.popen('dir /s/b/a:d "'..table.concat(path,'" "')..'" 2>nul')
+    for n in dirs:lines() do path[#path+1]=n end
+    table.sort(path,function(a,b)
+        a,b=a:lower(),b:lower()
+        local c1=(a:find(self.script_dir:lower(),1,true) and 3) or (self.extend_dirs and a:find(self.extend_dirs:lower(),1,true) and 2) or 1
+        local c2=(b:find(self.script_dir:lower(),1,true) and 3) or (self.extend_dirs and b:find(self.extend_dirs:lower(),1,true) and 2) or 1
+        if c1~=c2 then return c1<c2 end
+        return a<b
+    end)
+    self.env['SQLPATH']=table.concat(path,';')
+    --self.proc:setEnv("SQLPATH",self.env['SQLPATH'])
+end
 
 function sqlplus:get_startup_cmd(args,is_native)
     local tnsadm=tostring(java.system:getProperty("oracle.net.tns_admin"))
@@ -42,17 +65,10 @@ function sqlplus:get_startup_cmd(args,is_native)
     local props={}
     if tnsadm and tnsadm~="" then self.env["TNS_ADMIN"]=tnsadm end
     if db.props.db_nls_lang then self.env["NLS_LANG"]=db.props.db_nls_lang end
-    local path,prefix={},'dir /s/b/a:d "'
-    if self.work_dir then path[#path+1]=self.work_dir end
-    if self.extend_dirs then path[#path+1]=self.extend_dirs end
-    if self.script_dir then path[#path+1]=self.script_dir end
-    local dirs=io.popen('dir /s/b/a:d "'..table.concat(path,'" "')..'" 2>nul')
-    for n in dirs:lines() do path[#path+1]=n end
-    self.env['SQLPATH']=table.concat(path,';')
+    self.env['NLS_DATE_FORMAT']='YYYY-MM-DD HH24:MI:SS'
+    self:make_sqlpath()
     self.work_path,self.work_dir=self.work_dir,env._CACHE_PATH
     self:rebuild_commands(self.env['SQLPATH'])
-
-
     while #args>0 do
         local arg=args[1]:lower()
         if arg:sub(1,1)~='-' then break end
@@ -116,6 +132,7 @@ end
 
 function sqlplus:after_script()
     self.work_path=nil
+    self:run_command('@dbcli_sqlplus_settings.sql',false)
 end
 
 function sqlplus:onload()
