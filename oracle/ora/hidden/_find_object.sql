@@ -26,6 +26,10 @@ BEGIN
             objs := 'all_objects';
     END;
     
+    IF regexp_like(target,'^[^"].*" *\. *".+[^"]$') THEN
+        target := '"'||target||'"';
+    END IF;
+    
     <<CHECKER>>
     IF NOT regexp_like(target,'^\d+$') THEN
         FOR i IN 0 .. 9 LOOP

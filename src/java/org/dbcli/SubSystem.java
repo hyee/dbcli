@@ -4,6 +4,7 @@ import com.zaxxer.nuprocess.NuAbstractProcessHandler;
 import com.zaxxer.nuprocess.NuProcess;
 import com.zaxxer.nuprocess.NuProcessBuilder;
 import com.zaxxer.nuprocess.windows.HANDLER_ROUTINE;
+import com.zaxxer.nuprocess.windows.NuKernel32;
 import com.zaxxer.nuprocess.windows.WindowsProcess;
 
 import java.awt.event.ActionEvent;
@@ -29,26 +30,34 @@ public class SubSystem {
     volatile String lastPrompt = "";
     volatile String prevPrompt;
 
-    public SubSystem() {
+    public SubSystem() {}
+
+    public static boolean setEnv(String name, String value) {
+        return NuKernel32.SetEnvironmentVariable(name,value);
     }
 
     public SubSystem(String promptPattern, String cwd, String[] command, Map env) {
-        pb = new NuProcessBuilder(Arrays.asList(command), env);
-        pb.setCwd(new File(cwd).toPath());
-        p = Pattern.compile(promptPattern, Pattern.CASE_INSENSITIVE + Pattern.DOTALL);
-        ProcessHandler handler = new ProcessHandler();
-        pb.setProcessListener(handler);
-        process = (WindowsProcess) pb.start();
-        writer = ByteBuffer.allocateDirect(32767);
-        writer.order(ByteOrder.nativeOrder());
-        //Respond to the ctrl+c event
-        Interrupter.listen(this, new InterruptCallback() {
-            @Override
-            public void interrupt(ActionEvent e) throws Exception {
-                isBreak = true;
-                SendKey((byte) 3);
-            }
-        });
+        try {
+            pb = new NuProcessBuilder(Arrays.asList(command), env);
+            pb.setCwd(new File(cwd).toPath());
+            p = Pattern.compile(promptPattern, Pattern.CASE_INSENSITIVE + Pattern.DOTALL);
+            ProcessHandler handler = new ProcessHandler();
+            pb.setProcessListener(handler);
+            process = (WindowsProcess) pb.start();
+            writer = ByteBuffer.allocateDirect(32767);
+            writer.order(ByteOrder.nativeOrder());
+            //Respond to the ctrl+c event
+            Interrupter.listen(this, new InterruptCallback() {
+                @Override
+                public void interrupt(ActionEvent e) throws Exception {
+                    isBreak = true;
+                    SendKey((byte) 3);
+                }
+            });
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw  e;
+        }
     }
 
     public static SubSystem create(String pattern, String cwd, String[] command, Map env) {
@@ -58,7 +67,7 @@ public class SubSystem {
     public void SendKey(byte c) {
         //System.out.println("break");
         if (process == null) return;
-        process.sendCtrlEvent((int)HANDLER_ROUTINE.CTRL_C_EVENT);
+        process.sendCtrlEvent((int) HANDLER_ROUTINE.CTRL_C_EVENT);
     }
 
     public Boolean isPending() {
@@ -66,7 +75,7 @@ public class SubSystem {
     }
 
     void print(String buff) {
-        if (isPrint&&!isBreak) {
+        if (isPrint && !isBreak) {
             Console.writer.print(buff);
             Console.writer.flush();
         }
@@ -75,6 +84,7 @@ public class SubSystem {
     public void waitCompletion() throws Exception {
         StringBuilder buff = new StringBuilder();
         long wait = 150L;
+        int prev = 0;
         while (isWaiting && process != null) {
             if (wait > 50) {//Waits 0.5 sec for the prompt and then enters into interactive mode
                 --wait;
@@ -82,6 +92,8 @@ public class SubSystem {
             } else {
                 int ch = Console.in.read(wait);
                 while (ch >= 0) {
+                    if ((ch == 10 && prev == 13) || (ch == 13 && prev == 10)) continue;
+                    prev = ch;
                     if (ch == 13) ch = 10; //Convert '\r' as '\n'
                     buff.append((char) ch);
                     --wait;
@@ -106,17 +118,18 @@ public class SubSystem {
     public String execute(String command, Boolean isPrint) throws Exception {
         try {
             this.isPrint = isPrint;
-            this.prevPrompt=this.lastPrompt;
             this.lastPrompt = null;
             isWaiting = true;
             isBreak = false;
             if (command != null) {
+                lastLine = null;
                 writer.clear();
                 writer.put(command.getBytes());
                 writer.flip();
                 process.writeStdin(writer);
             }
             waitCompletion();
+            if(this.prevPrompt==null) this.prevPrompt = this.lastPrompt;
             return lastPrompt;
         } catch (Exception e) {
             e.printStackTrace();
@@ -124,6 +137,11 @@ public class SubSystem {
         } finally {
             isWaiting = false;
         }
+    }
+
+    public String getLastLine(String command) throws Exception {
+        execute(command, false);
+        return lastLine == null ? null : lastLine.replaceAll("[\r\n]+$", "");
     }
 
     public void close() {
@@ -170,12 +188,12 @@ public class SubSystem {
                 }
             }
 
-            if (lastChar != '\n') {
-                String line = sb.toString();
+            if (lastChar != '\n' || isBreak) {
+                String line = isBreak ? prevPrompt : sb.toString();
                 sb.setLength(0);
                 if (p.matcher(line).find()) {
                     isWaiting = false;
-                    lastPrompt = isBreak? prevPrompt: line;
+                    lastPrompt = line;
                 } else {
                     print(line);
                 }

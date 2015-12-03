@@ -15,7 +15,13 @@ function system:kill_reader(cmds)
     self.reader=nil
 end
 
+function system:get_last_line(cmd)
+    if not self.process then return end
+    --return self.process:getLastLine(cmd)
+end
+
 function system:run_command(cmd,is_print)
+    if not self.process then return end
     self.prompt=self.process:execute(cmd and cmd.."\n" or nil,is_print and true or false)
     if not self.prompt then return self:terminate() end
     if self.enter_flag==true then env.set_subsystem(self.name,self.prompt) end
@@ -75,31 +81,29 @@ function system:call_process(cmd,is_native)
                 is_native=true 
                 table.remove(args,1)
             elseif k:find("^%-D") then
-                self.work_dir=k:sub(3):gsub('"','')
+                self.work_dir=args[1]:sub(3):gsub('"','')
                 table.remove(args,1)
             end
         end
         
         self.env={PATH=os.getenv("PATH")}
-
+        if not self.work_dir then self.work_dir=env._CACHE_PATH end
         self.startup_cmd=self:get_startup_cmd(args,is_native)
         table.insert(self.startup_cmd,1,os.find_extension(self.name))
         
-        if not self.work_dir then self.work_dir=env._CACHE_PATH end
         self:set_work_dir(self.work_dir,true)
         env.log_debug("sqlplus","Command : " ..table.concat(self.startup_cmd," "))
         env.log_debug("sqlplus","Work dir: "..self.work_dir)
         env.log_debug("sqlplus","Environment: \n"..table.dump(self.env))
+
         --self.process:wait_async(function(...) print(...);print("Sub-system is terminated") end)
         if not is_native then
             self.process=self.proc:create(self.prompt_pattern,self.work_dir,self.startup_cmd,self.env)
             self.msg_stack={}
             self:run_command(nil,false)
             if not self.process then return end
-            if self.after_process_created then
-                self:after_process_created()
-            end
-            if #args==0 then 
+            if self.after_process_created then self:after_process_created() end
+            if #args==0 then
                 cmd=nil
             else
                 cmd=table.concat(args," ")

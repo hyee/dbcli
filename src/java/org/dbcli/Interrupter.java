@@ -14,7 +14,7 @@ public class Interrupter {
             @Override
             public void handle(Signal signal) {
                 if (!map.isEmpty()) {
-                    ActionEvent e = new ActionEvent(this, ActionEvent.ACTION_PERFORMED,"\3");
+                    ActionEvent e = new ActionEvent(this, ActionEvent.ACTION_PERFORMED, "\3");
                     for (InterruptCallback c : map.values()) {
                         //System.out.println(c.toString());
                         try {

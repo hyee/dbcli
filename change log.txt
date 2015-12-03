@@ -1,3 +1,13 @@
+2015-12-03: + public: user is able to custimize the "ConsoleZ" settings by:
+                        1) Create config file "user.xml" in folder bin\consoleZ,
+                        2) Launch the application via "console.bat".           
+                      instead of always being overridden by the new release(console.xml)
+            + oracle: when call "@<script>" without entering the sqlplus interactive mode, the sqlplus settings will be 
+                      automatically reset as the status of "login.sql". run "store set dbcli_sqlplus_settings.sql replace"
+                      in sqlplus interactive mode if you want to adjust the setting during run time.
+                    : "login.sql" in folder "sqlplus\init". you may define your own "login.sql" by placing it in "sqlplus"
+                      or the folder that defined by "sp -l" without overriding this file  
+                    : new field "inst_current_time" in "show instance"                       
 2015-12-02: ! public: minor fixes related to subsystem
             + public: support ctrl+c event in subsystem(sqlplus for example)
 2015-12-01: * oracle: enhancement on the "SQLPATH" env, which is related to sqlplus

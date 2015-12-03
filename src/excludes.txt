@@ -30,3 +30,4 @@ dbcli_x64.bat
 dbcli_ibm.bat
 dbcli.sh
 .xplan_settings
+user.xml
