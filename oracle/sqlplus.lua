@@ -30,6 +30,13 @@ function sqlplus:rebuild_commands(work_dir)
     end
 end
 
+function sqlplus:run_command(cmd,is_print)
+    if not self.enter_flag and cmd then
+        cmd=cmd..env.END_MARKS[1]
+    end
+    return self.super.run_command(self,cmd,is_print)
+end
+
 function sqlplus:set_work_dir(path,quiet)
     self.super.set_work_dir(self,path,quiet)
     if not quiet and path and path~="" then
@@ -100,7 +107,7 @@ function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
                         DEF _SQLPLUS_DIR_="%s"
                         %s
                         @"%s" %s
-                        ]]
+                        @dbcli_sqlplus_settings.sql]]
 
         env.checkerr(db:is_connect(),"Database is not connected.")
         local context=""
@@ -132,7 +139,6 @@ end
 
 function sqlplus:after_script()
     self.work_path=nil
-    self:run_command('@dbcli_sqlplus_settings.sql',false)
 end
 
 function sqlplus:onload()

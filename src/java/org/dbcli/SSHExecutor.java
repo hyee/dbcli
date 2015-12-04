@@ -38,7 +38,7 @@ public class SSHExecutor {
     volatile boolean isStart = false;
     volatile boolean isEnd = true;
     volatile boolean isWaiting = false;
-
+    volatile boolean isBreak = false;
     CompletionHandler completer = new CompletionHandler() {
         @Override
         public void completed(Object o, Object o2) {
@@ -70,6 +70,7 @@ public class SSHExecutor {
             session.setConfig("compression.s2c", "zlib@openssh.com,zlib,none");
             session.setConfig("compression.c2s", "zlib@openssh.com,zlib,none");
             session.setConfig("compression_level", "9");
+            session.setConfig("ServerAliveInterval", "10");
             //session.set
             session.setDaemonThread(true);
             session.setServerAliveInterval((int) TimeUnit.SECONDS.toMillis(10));
@@ -92,10 +93,7 @@ public class SSHExecutor {
             Interrupter.listen("SSHExecutor", new InterruptCallback() {
                 @Override
                 public void interrupt(ActionEvent e) throws Exception {
-                    if (isWaiting) {
-                        shellWriter.write(3);
-                        shellWriter.flush();
-                    }
+                    isBreak = true;
                 }
             });
             shell.setInputStream(pipeIn);
@@ -170,18 +168,28 @@ public class SSHExecutor {
 
 
     public void waitCompletion() throws Exception {
-        long wait = 50L;
+        long wait = 150L;
         isWaiting = true;
         while (!isEnd && !shell.isClosed()) {
-            int ch = Console.in.read(wait);
-            while (ch >= 0) {
-                shellWriter.write(ch);
-                --wait;
-                ch = Console.in.read(1L);
-            }
-            if (wait < 50L) {
+            if (isBreak) {
+                isBreak = false;
+                shellWriter.write(3);
                 shellWriter.flush();
-                wait = 50L;
+            }
+            if (wait > 50) {
+                --wait;
+                Thread.sleep(5);
+            } else {
+                int ch = Console.in.read(wait);
+                while (ch >= 0) {
+                    shellWriter.write(ch);
+                    --wait;
+                    ch = Console.in.read(1L);
+                }
+                if (wait < 50L) {
+                    shellWriter.flush();
+                    wait = 60L;
+                }
             }
         }
         if (shell.isClosed()) close();
@@ -198,6 +206,7 @@ public class SSHExecutor {
     }
 
     public void exec(String command) throws Exception {
+        isBreak = false;
         pr.reset(false);
         if (command.charAt(command.length() - 1) != '\n') command = command + "\n";
         shellWriter.write(command.getBytes());

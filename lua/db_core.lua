@@ -45,7 +45,6 @@ local number_types={
     }
 --
 function db_Types:load_sql_types(className)
-
     local typ=java.require(className)
     local m2={
         [1]={getter="getBoolean",setter="setBoolean"},
@@ -475,9 +474,11 @@ end
 
 function db_core:exec(sql,args)
     db_core.__start_clock=os.clock()
-    collectgarbage("collect")
-    java.system:gc()
-    java.system:runFinalization();
+    if #env.RUNNING_THREADS<=2 then
+        collectgarbage("collect")
+        java.system:gc()
+        java.system:runFinalization();
+    end
     local params={}
     args=type(args)=="table" and args or {args}
     local prep;

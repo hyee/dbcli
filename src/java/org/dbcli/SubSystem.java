@@ -30,10 +30,8 @@ public class SubSystem {
     volatile String lastPrompt = "";
     volatile String prevPrompt;
 
-    public SubSystem() {}
 
-    public static boolean setEnv(String name, String value) {
-        return NuKernel32.SetEnvironmentVariable(name,value);
+    public SubSystem() {
     }
 
     public SubSystem(String promptPattern, String cwd, String[] command, Map env) {
@@ -49,25 +47,20 @@ public class SubSystem {
             //Respond to the ctrl+c event
             Interrupter.listen(this, new InterruptCallback() {
                 @Override
-                public void interrupt(ActionEvent e) throws Exception {
-                    isBreak = true;
-                    SendKey((byte) 3);
-                }
+                public void interrupt(ActionEvent e) {isBreak = true;}
             });
         } catch (Exception e) {
             e.printStackTrace();
-            throw  e;
+            throw e;
         }
+    }
+
+    public static boolean setEnv(String name, String value) {
+        return NuKernel32.SetEnvironmentVariable(name, value);
     }
 
     public static SubSystem create(String pattern, String cwd, String[] command, Map env) {
         return new SubSystem(pattern, cwd, command, env);
-    }
-
-    public void SendKey(byte c) {
-        //System.out.println("break");
-        if (process == null) return;
-        process.sendCtrlEvent((int) HANDLER_ROUTINE.CTRL_C_EVENT);
     }
 
     public Boolean isPending() {
@@ -75,10 +68,17 @@ public class SubSystem {
     }
 
     void print(String buff) {
-        if (isPrint && !isBreak) {
+        if (isPrint&&!isBreak) {
             Console.writer.print(buff);
             Console.writer.flush();
         }
+    }
+
+    synchronized void write(byte[] b) {
+        writer.clear();
+        writer.put(b);
+        writer.flip();
+        process.writeStdin(writer);
     }
 
     public void waitCompletion() throws Exception {
@@ -86,6 +86,11 @@ public class SubSystem {
         long wait = 150L;
         int prev = 0;
         while (isWaiting && process != null) {
+            if (isBreak) {
+                isBreak = false;
+                lastPrompt=prevPrompt;
+                process.sendCtrlEvent(HANDLER_ROUTINE.CTRL_C_EVENT);
+            }
             if (wait > 50) {//Waits 0.5 sec for the prompt and then enters into interactive mode
                 --wait;
                 Thread.sleep(5);
@@ -100,12 +105,7 @@ public class SubSystem {
                     ch = Console.in.read(10L);
                 }
                 if (wait < 50L) {
-                    synchronized (writer) {
-                        writer.clear();
-                        writer.put(buff.toString().getBytes());
-                        writer.flip();
-                        process.writeStdin(writer);
-                    }
+                    write(buff.toString().getBytes());
                     print(buff.toString());
                     buff.setLength(0);
                     wait = 60L; //Waits 0.05 sec
@@ -123,13 +123,10 @@ public class SubSystem {
             isBreak = false;
             if (command != null) {
                 lastLine = null;
-                writer.clear();
-                writer.put(command.getBytes());
-                writer.flip();
-                process.writeStdin(writer);
+                write((command.replaceAll("[\r\n]+$", "") + "\n").getBytes());
             }
             waitCompletion();
-            if(this.prevPrompt==null) this.prevPrompt = this.lastPrompt;
+            if (this.prevPrompt == null) this.prevPrompt = this.lastPrompt;
             return lastPrompt;
         } catch (Exception e) {
             e.printStackTrace();
@@ -188,8 +185,8 @@ public class SubSystem {
                 }
             }
 
-            if (lastChar != '\n' || isBreak) {
-                String line = isBreak ? prevPrompt : sb.toString();
+            if (lastChar != '\n') {
+                String line = sb.toString();
                 sb.setLength(0);
                 if (p.matcher(line).find()) {
                     isWaiting = false;
