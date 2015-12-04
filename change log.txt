@@ -1,3 +1,4 @@
+2015-12-04: * oracle: Auto-adjust the SQL of "ora actives" based on different access rights.
 2015-12-03: + public: user is able to custimize the "ConsoleZ" settings by:
                         1) Create config file "user.xml" in folder bin\consoleZ,
                         2) Launch the application via "console.bat".           

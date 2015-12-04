@@ -1,15 +1,20 @@
 /*[[
-    Show active sessions. Usage: ora actives [-s|-p|-b] [-f"<filter>"|-u] [sid|wt|ev|sql|<col>]
-    Options:
-        Filter options:
+    Show active sessions. Usage: ora actives [-s|-p|-b|-o] [-f"<filter>"|-u|-i] [sid|wt|ev|sql|<col>]
+    
+    Options(options within same group cannot combine, i.e. "ora actives -u -i" is illegal, used "ora actives -u -i2" instead):
+        Filter options#1:
             -u  : Only show the sessions of current_schema
             -i  : Exclude the idle events
             -f  : Customize the filter, Usage: -f"<filter>"
+        Filter options#2:
+            -u2 : Only show the sessions of current_schema
+            -i2 : Exclude the idle events
+            -f2 : Customize the filter, Usage: -f2"<filter>"
         Field options:  Field options can be following by other customized fields. ie: -s,p1raw
             -s  : Show related procedures and lines(default)
             -p  : Show p1/p2/p2text/p3
             -b  : Show blocking sessions and waiting objects
-            -o  : Show OS user id/machine/program/etc 
+            -o  : Show OS user id/machine/program/etc
         Sorting options: the '-' symbole is optional
             sid : sort by sid(default)
             wt  : sort by wait time
@@ -34,42 +39,63 @@
                   i={wait_class!='Idle'}
                   u={(ROOT_SID =1 OR STATUS='ACTIVE' or sql_text is not null) and schemaname=sys_context('userenv','current_schema')}
                  }
-        &tmodel : default={0}, m={1}
-        @COST : 11.0={COALESCE(1440*(sysdate-sql_exec_start),sql_secs/60)},10.0={nvl(sql_secs,wait_secs)/60},9.0={null}
-        @CHECK_ACCESS1: dba_objects={dba_objects},all_objects={all_objects}
-        @CHECK_ACCESS2: gv$px_session/gv$sql/gv$process={}
+        &Filter2:{default={1=1}, 
+                  f2={},
+                  i2={wait_class!='Idle'}
+                  u2={(ROOT_SID =1 OR STATUS='ACTIVE' or sql_text is not null) and schemaname=sys_context('userenv','current_schema')}
+                 }
+        &smen : default={0}, m={&CHECK_ACCESS_M}
+        @COST : 11.0={1440*(sysdate-sql_exec_start)},10.0={sql_secs/60}
+        @CHECK_ACCESS_OBJ: dba_objects={dba_objects},all_objects={all_objects}
+        @CHECK_ACCESS_SES: gv$session={gv$session}, v$session={(select /*+merge*/ userenv('instance') inst_id,a.* from v$session a)}
+        @CHECK_ACCESS_SQL: gv$sql={gv$sql}, v$sql={(select /*+merge*/ userenv('instance') inst_id,a.* from v$sql a)}
+        @CHECK_ACCESS_PX: {
+            gv$px_session={gv$px_session},
+            v$px_session={(select /*+merge*/ userenv('instance') inst_id,a.* from v$px_session a)},
+            default={(select null inst_id,null sid,null qcinst_id,null qcsid from dual where 1=2)}
+        }
+        @CHECK_ACCESS_PRO: {
+            gv$process={gv$process},
+            v$process={(select /*+merge*/ userenv('instance') inst_id,a.* from v$process a)},
+            default={(select null inst_id,null addr,null spid from dual where 1=2)}
+        }
+        @CHECK_ACCESS_M: gv$sql_workarea_active/gv$sessmetric={1},default={0}
     --]]
 ]]*/
+
 
 set feed off
 set printvar on
 VAR actives refcursor "Active Sessions"
 VAR time_model refcursor "Top Session Time Model"
+ALTER SESSION SET PLSQL_CCFlags = "CHECK_ACCESS_M:&smen";
+DECLARE
+    time_model sys_refcursor;
 BEGIN
     OPEN :actives FOR
         WITH s1 AS
          (SELECT /*+no_merge*/*
-          FROM   gv$session
+          FROM   &CHECK_ACCESS_SES
           WHERE  sid != USERENV('SID')
           AND    audsid != userenv('sessionid')
           And    (event not like 'Streams%')),
         s3 AS
-         (SELECT /*+no_merge no_merge(s2)*/ * FROM s1 LEFT JOIN  gv$px_session s2 USING (inst_id, SID, serial#,saddr)),
+         (SELECT /*+no_merge no_merge(s2)*/ s1.*,qcinst_id,qcsid FROM s1,&CHECK_ACCESS_PX s2 where s1.inst_id=s2.inst_id(+) and s1.SID=s2.sid(+)),
         sq1 as(
          SELECT /*+materialize ordered use_nl(a b)*/ a.*,
-               extractvalue(b.column_value,'/ROW/A1')     program_name,
-               extractvalue(b.column_value,'/ROW/A2')     PROGRAM_LINE#,
-               extractvalue(b.column_value,'/ROW/A3')     sql_text,
-               extractvalue(b.column_value,'/ROW/A4')     plan_hash_value,
-               extractvalue(b.column_value,'/ROW/A5')     sql_secs
+               extractvalue(b.column_value,'/ROW/A1')              program_name,
+               extractvalue(b.column_value,'/ROW/A2')              PROGRAM_LINE#,
+               extractvalue(b.column_value,'/ROW/A3')              sql_text,
+               extractvalue(b.column_value,'/ROW/A4')              plan_hash_value,
+               nvl(extractvalue(b.column_value,'/ROW/A5')+0,0)     sql_secs
          FROM (select distinct inst_id,sql_id,nvl(sql_child_number,0) child from s1 where sql_id is not null) A,
                TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'[
-                   SELECT (select c.owner  ||'.' || c.object_name from &CHECK_ACCESS1 c where c.object_id=program_id and rownum<2) A1,
+                   SELECT (select c.owner  ||'.' || c.object_name from &CHECK_ACCESS_OBJ c where c.object_id=program_id and rownum<2) A1,
                           PROGRAM_LINE# A2,
                           trim(substr(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200)) A3,
                           plan_hash_value A4,
-                          round(elapsed_time*1e-6/(1+executions)) A5
-                   FROM  gv$sql
+                          round(decode(child_number,0,elapsed_time*1e-6/(1+executions),86400*(sysdate-to_date(last_load_time,'yyyy-mm-dd/hh24:mi:ss')))) A5
+                   FROM  &CHECK_ACCESS_SQL
                    WHERE ROWNUM<2 AND sql_id=']'||a.sql_id||''' AND inst_id='||a.inst_id||' and child_number='||a.child)
                ,'/ROWSET/ROW'))) B
         ),
@@ -80,7 +106,7 @@ BEGIN
                rownum r,
                s3.*
           FROM   (SELECT s3.*,
-                         seconds_in_wait wait_secs,
+                         CASE WHEN seconds_in_wait > 1.3E9 THEN 0 ELSE seconds_in_wait END wait_secs,
                          CASE WHEN S3.SID = S3.qcsid AND S3.inst_id = NVL(s3.qcinst_id,s3.inst_id) THEN 1 ELSE 0 END ROOT_SID,
                          plan_hash_value,
                          program_name,
@@ -99,21 +125,21 @@ BEGIN
                rownum "#",
                a.NEW_SID || ',' || a.serial# || ',@' || a.inst_id session#,
                (SELECT spid
-                FROM   gv$process d
+                FROM   &CHECK_ACCESS_PRO d
                 WHERE  d.inst_id = a.inst_id
                 AND    d.addr = a.paddr) || regexp_substr(program, '\(.*\)') spid,
                a.sql_id,
                plan_hash_value plan_hash,
                sql_child_number child,
-               a.event,&fields,
-               ROUND(&COST,1) waited,
-               sql_text
+               a.event,
+               ROUND(greatest(nvl(&COST,0),wait_secs/60,nvl2(sql_id,last_call_et,0)/60),1) waited,
+               &fields,sql_text
         FROM   s4 a
-        WHERE  (&filter)
+        WHERE  (&filter) AND (&Filter2)
         ORDER  BY r;
-
-    IF &tmodel = 1 THEN
-        OPEN :time_model FOR
+        
+    $IF $$CHECK_ACCESS_M=1 $THEN
+        OPEN time_model FOR
             SELECT *
             FROM   (SELECT session#,
                            max(regexp_replace(nvl(c.module,c.program),' *\(TNS.*\)$')||'('||c.osuser||')') program,
@@ -156,6 +182,7 @@ BEGIN
             WHERE  "CPU%" + "PSC%" + "LGC%" + hard_parse > 0
             ORDER  BY GREATEST("CPU%", "PSC%", "LGC%") DESC;
 
-    END IF;
+    $END
+    :time_model:=time_model;
 END;
 /

@@ -22,7 +22,7 @@ end
 
 function system:run_command(cmd,is_print)
     if not self.process then return end
-    self.prompt=self.process:execute(cmd and cmd.."\n" or nil,is_print and true or false)
+    self.prompt=self.process:execute(cmd,is_print and true or false)
     if not self.prompt then return self:terminate() end
     if self.enter_flag==true then env.set_subsystem(self.name,self.prompt) end
 end
@@ -137,8 +137,8 @@ function system:call_process(cmd,is_native)
         return self:list_work_dir(cmd:sub(5))
     elseif command:find("^LCD ") or command=="LCD"  then
         return self:set_work_dir(cmd:sub(5))
-    --elseif command=='EXIT' then
-    --    return self:terminate()
+    elseif command=='EXIT' then
+        return self:terminate()
     end
     self:run_command(cmd,true)
 end
