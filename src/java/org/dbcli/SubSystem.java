@@ -47,7 +47,9 @@ public class SubSystem {
             //Respond to the ctrl+c event
             Interrupter.listen(this, new InterruptCallback() {
                 @Override
-                public void interrupt(ActionEvent e) {isBreak = true;}
+                public void interrupt(ActionEvent e) {
+                    isBreak = true;
+                }
             });
         } catch (Exception e) {
             e.printStackTrace();
@@ -68,7 +70,7 @@ public class SubSystem {
     }
 
     void print(String buff) {
-        if (isPrint&&!isBreak) {
+        if (isPrint && !isBreak) {
             Console.writer.print(buff);
             Console.writer.flush();
         }
@@ -85,10 +87,11 @@ public class SubSystem {
         StringBuilder buff = new StringBuilder();
         long wait = 150L;
         int prev = 0;
+        //process.setConsoleMode(NuKernel32.ENABLE_ECHO_INPUT|NuKernel32.ENABLE_LINE_INPUT);
         while (isWaiting && process != null) {
             if (isBreak) {
                 isBreak = false;
-                lastPrompt=prevPrompt;
+                lastPrompt = prevPrompt;
                 process.sendCtrlEvent(HANDLER_ROUTINE.CTRL_C_EVENT);
             }
             if (wait > 50) {//Waits 0.5 sec for the prompt and then enters into interactive mode
@@ -112,6 +115,7 @@ public class SubSystem {
                 }
             }
         }
+        //process.setConsoleMode(NuKernel32.ENABLE_LINE_INPUT);
     }
 
     //return null means the process is terminated

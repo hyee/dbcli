@@ -73,38 +73,36 @@ DECLARE
     time_model sys_refcursor;
 BEGIN
     OPEN :actives FOR
-        WITH s1 AS
-         (SELECT /*+no_merge*/*
+        WITH s1 AS(
+          SELECT /*+no_merge*/*
           FROM   &CHECK_ACCESS_SES
           WHERE  sid != USERENV('SID')
           AND    audsid != userenv('sessionid')
           And    (event not like 'Streams%')),
-        s3 AS
-         (SELECT /*+no_merge no_merge(s2)*/ s1.*,qcinst_id,qcsid FROM s1,&CHECK_ACCESS_PX s2 where s1.inst_id=s2.inst_id(+) and s1.SID=s2.sid(+)),
-        sq1 as(
-         SELECT /*+materialize ordered use_nl(a b)*/ a.*,
-               extractvalue(b.column_value,'/ROW/A1')              program_name,
-               extractvalue(b.column_value,'/ROW/A2')              PROGRAM_LINE#,
-               extractvalue(b.column_value,'/ROW/A3')              sql_text,
-               extractvalue(b.column_value,'/ROW/A4')              plan_hash_value,
-               nvl(extractvalue(b.column_value,'/ROW/A5')+0,0)     sql_secs
-         FROM (select distinct inst_id,sql_id,nvl(sql_child_number,0) child from s1 where sql_id is not null) A,
-               TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'[
-                   SELECT (select c.owner  ||'.' || c.object_name from &CHECK_ACCESS_OBJ c where c.object_id=program_id and rownum<2) A1,
-                          PROGRAM_LINE# A2,
-                          trim(substr(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200)) A3,
-                          plan_hash_value A4,
-                          round(decode(child_number,0,elapsed_time*1e-6/(1+executions),86400*(sysdate-to_date(last_load_time,'yyyy-mm-dd/hh24:mi:ss')))) A5
-                   FROM  &CHECK_ACCESS_SQL
-                   WHERE ROWNUM<2 AND sql_id=']'||a.sql_id||''' AND inst_id='||a.inst_id||' and child_number='||a.child)
-               ,'/ROWSET/ROW'))) B
-        ),
-        s4 AS
-         (SELECT /*+materialize no_merge(s3)*/
-               DECODE(LEVEL, 1, '', '  ') || SID NEW_SID,
-               decode(LEVEL, 1, sql_id) new_sql_id,
-               rownum r,
-               s3.*
+        s3  AS(SELECT /*+no_merge no_merge(s2)*/ s1.*,qcinst_id,qcsid FROM s1,&CHECK_ACCESS_PX s2 where s1.inst_id=s2.inst_id(+) and s1.SID=s2.sid(+)),
+        sq1 AS(
+          SELECT /*+materialize ordered use_nl(a b)*/ a.*,
+                extractvalue(b.column_value,'/ROW/A1')              program_name,
+                extractvalue(b.column_value,'/ROW/A2')              PROGRAM_LINE#,
+                extractvalue(b.column_value,'/ROW/A3')              sql_text,
+                extractvalue(b.column_value,'/ROW/A4')              plan_hash_value,
+                nvl(extractvalue(b.column_value,'/ROW/A5')+0,0)     sql_secs
+          FROM (select distinct inst_id,sql_id,nvl(sql_child_number,0) child from s1 where sql_id is not null) A,
+                TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'[
+                    SELECT (select c.owner  ||'.' || c.object_name from &CHECK_ACCESS_OBJ c where c.object_id=program_id and rownum<2) A1,
+                           PROGRAM_LINE# A2,
+                           trim(substr(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200)) A3,
+                           plan_hash_value A4,
+                           round(decode(child_number,0,elapsed_time*1e-6/(1+executions),86400*(sysdate-to_date(last_load_time,'yyyy-mm-dd/hh24:mi:ss')))) A5
+                    FROM  &CHECK_ACCESS_SQL
+                    WHERE ROWNUM<2 AND sql_id=']'||a.sql_id||''' AND inst_id='||a.inst_id||' and child_number='||a.child)
+                ,'/ROWSET/ROW'))) B),
+        s4 AS(
+          SELECT /*+materialize no_merge(s3)*/
+                 DECODE(LEVEL, 1, '', '  ') || SID NEW_SID,
+                 decode(LEVEL, 1, sql_id) new_sql_id,
+                 rownum r,
+                 s3.*
           FROM   (SELECT s3.*,
                          CASE WHEN seconds_in_wait > 1.3E9 THEN 0 ELSE seconds_in_wait END wait_secs,
                          CASE WHEN S3.SID = S3.qcsid AND S3.inst_id = NVL(s3.qcinst_id,s3.inst_id) THEN 1 ELSE 0 END ROOT_SID,

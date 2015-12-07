@@ -231,14 +231,16 @@ end
 
 function env.smart_check_endless(cmd,rest,from_pos)
     local args=env.parse_args(from_pos,rest)
-    if not args[from_pos-1] then return true,rest:gsub('['..env.END_MARKS[1]..' \t]+$',"") end
-    if env.check_cmd_endless(args[from_pos-1]:upper(),args[from_pos] or "") then
-        return true,rest:gsub('%s+$',"")
-    else
-        return false,rest
+    if #args==0 then return true,rest:gsub('['..env.END_MARKS[1]..' \t]+$',"") end
+    for k=#args,1,-1 do
+        if not env.check_cmd_endless(args[k]:upper(),table.concat(args,' ',k+1)) then
+            return false,rest
+        elseif _CMDS[args[k]:upper()] then
+            break 
+        end
     end
+    return true,rest:gsub('*%s*$',"")
 end
-
 
 function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbcmd,allow_overriden)
     local abbr={}
@@ -505,7 +507,7 @@ function env.clear_command()
     env.reset_input("")
 end
 
-function env.parse_args(cmd,rest,is_cmd)
+function env.parse_args(cmd,rest,is_cross_line)
     --deal with the single-line commands
     local arg_count
     if type(cmd)=="number" then
@@ -558,7 +560,7 @@ function env.parse_args(cmd,rest,is_cmd)
             if count ~= #args then
                 count=#args
                 local name=args[count]:upper()
-                local is_multi_cmd=is_cmd==true and _CMDS[name] and _CMDS[name].MULTI
+                local is_multi_cmd=char~=quote and is_cross_line==true and _CMDS[name] and _CMDS[name].MULTI
                 if count>=arg_count-2 or is_multi_cmd then--the last parameter
                     piece=rest:sub(i+1):gsub("^(%s+)",""):gsub('^"(.*)"$','%1')
                     if is_multi_cmd and _CMDS[name].ARGS==1 then
@@ -586,7 +588,7 @@ end
 
 function env.force_end_input(exec,is_internal)
     if curr_stmt then
-        local stmt={multi_cmd,env.parse_args(multi_cmd,curr_stmt)}
+        local stmt={multi_cmd,env.parse_args(multi_cmd,curr_stmt,true)}
         multi_cmd,curr_stmt=nil,nil
         env.CURRENT_PROMPT=env.PRI_PROMPT
         if exec~=false then

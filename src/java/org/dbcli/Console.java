@@ -10,7 +10,9 @@ import jline.internal.NonBlockingInputStream;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.lang.reflect.Field;
 import java.util.Iterator;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -19,8 +21,8 @@ import java.util.concurrent.TimeUnit;
 
 public class Console extends ConsoleReader {
     public static PrintWriter writer;
-    public static ConsoleReader reader;
-    public static NonBlockingInputStream in;
+    //public static NonBlockingInputStream in;
+    public static WindowsInputReader in;
     public static Terminal terminal;
     public static String charset;
     protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(5);
@@ -31,18 +33,26 @@ public class Console extends ConsoleReader {
     private char[] keys;
     private boolean isBlocking = false;
 
-    public Console() throws IOException {
-        super(System.in, System.out);
-
+    public Console() throws Exception {
+        super();
         his = getHistory();
         setExpandEvents(false);
         setHandleUserInterrupt(true);
         setBellEnabled(false);
-        in = (NonBlockingInputStream) this.getInput();
+        in = new WindowsInputReader();
+        ((NonBlockingInputStream) this.getInput()).shutdown();
+        Field field = ConsoleReader.class.getDeclaredField("in");
+        field.setAccessible(true);
+        field.set(this, in);
+        field.setAccessible(false);
+        field = ConsoleReader.class.getDeclaredField("reader");
+        field.setAccessible(true);
+        charset = this.getTerminal().getOutputEncoding() == null ? Configuration.getEncoding() : this.getTerminal().getOutputEncoding();
+        field.set(this, new InputStreamReader(in, charset));
+        field.setAccessible(false);
+        //in=(NonBlockingInputStream)this.getInput();
         Iterator<Completer> iterator = getCompleters().iterator();
         while (iterator.hasNext()) removeCompleter(iterator.next());
-        reader = this;
-        charset = this.getTerminal().getOutputEncoding() == null ? Configuration.getEncoding() : this.getTerminal().getOutputEncoding();
     }
 
     public String readLine(String prompt) throws IOException {
@@ -52,6 +62,7 @@ public class Console extends ConsoleReader {
             return super.readLine(prompt);
         }
     }
+
 
     public String readLine() throws IOException {
         return readLine((String) null);
@@ -73,6 +84,7 @@ public class Console extends ConsoleReader {
         }
         if (this.event != null && this.keys != null) {
             this.monitor.counter = 0;
+            //this.task=this.threadPool.schedule(this.monitor,1000,TimeUnit.MILLISECONDS);
             this.task = this.threadPool.scheduleWithFixedDelay(this.monitor, 1000, 200, TimeUnit.MILLISECONDS);
         }
     }
@@ -97,9 +109,8 @@ public class Console extends ConsoleReader {
         public void run() {
             try {
                 if (isBlocking) return;
-                int ch = in.peek(1L);
+                int ch = in.peek(0L);
                 if (ch < -1) return;
-                //System.out.println(ch);
                 for (int i = 0; i < keys.length; i++) {
                     if (ch != keys[i] && keys[i] != '*') continue;
                     in.read();
