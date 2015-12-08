@@ -9,7 +9,6 @@ import java.awt.event.KeyEvent;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -26,9 +25,9 @@ public class WindowsInputReader extends NonBlockingInputStream {
     public static final int KEY_CHAR = 2;
     public static final int KEY_CTRL = 3;
     public static final int KEY_REPE = 4;
+    private final static ArrayBlockingQueue<long[]> inputQueue = new ArrayBlockingQueue(32767);
     static HashMap<Object, EventCallback> eventMap = new HashMap<>();
     private static HashMap<Integer, byte[]> keyEvents = new HashMap();
-
     //Escape information: https://www.novell.com/documentation/extend5/Docs/help/Composer/books/TelnetAppendixB.html
     static {
         keyEvents.put(KeyEvent.VK_ESCAPE, "\u001b".getBytes());
@@ -58,12 +57,10 @@ public class WindowsInputReader extends NonBlockingInputStream {
         keyEvents.put(KeyEvent.VK_TAB, "\u0009".getBytes());
 
     }
-
     byte[] buf = null;
     int bufIdx = 0;
     private volatile boolean isShutdown = false;
     private IOException exception = null;
-    private final static ArrayBlockingQueue<long[]> inputQueue=new ArrayBlockingQueue(32767);
     private volatile long[][] peeker;
     private ByteBuffer inputBuff = ByteBuffer.allocateDirect(255);
     private boolean nonBlockingEnabled;
@@ -83,6 +80,19 @@ public class WindowsInputReader extends NonBlockingInputStream {
         //System.out.println(name.toString()+(c==null?"null":c.toString()));
         if (eventMap.containsKey(name)) eventMap.remove(name);
         if (c != null) eventMap.put(name, c);
+    }
+
+    public synchronized static void writeInput(INPUT_RECORD rec) throws Exception {
+        inputQueue.put(new long[]{rec.keyEvent.keyDown ? 1 : 0, rec.keyEvent.keyCode, (long) rec.keyEvent.uchar, rec.keyEvent.controlKeyState & anyCtrl, rec.keyEvent.repeatCount});
+    }
+
+    public synchronized static void writeInput(String input) throws Exception {
+        int prev = 0;
+        for (byte b : input.getBytes()) {
+            if ((b == 10 && prev == 13) || (b == 13 && prev == 10)) continue;
+            inputQueue.put(new long[]{1, 0, b == 13 ? 10 : b, b < 27 ? ctrlState : 0, 0, 1});
+            inputQueue.put(new long[]{0, 0, b == 13 ? 10 : b, b < 27 ? ctrlState : 0, 1});
+        }
     }
 
     public boolean isNonBlockingEnabled() {
@@ -174,11 +184,17 @@ public class WindowsInputReader extends NonBlockingInputStream {
      * @return The character read, -1 if EOF is reached, or -2 if the read timed out.
      */
     public synchronized int read(long timeout, boolean isPeek) throws IOException {
+        int ch = _read(timeout, isPeek);
+        return ch;
+    }
+
+
+    int _read(long timeout, boolean isPeek) throws IOException {
         if (buf != null && bufIdx < buf.length - 1) return (isPeek ? buf[bufIdx + 1] : buf[++bufIdx]) & 0xff;
         String c = readChar(timeout, isPeek);
         if (c == null) return -2;
-        if (c.equals("\0")) return -1;
-        buf = ((c.equals("\t") && readChar(10, true) != null) ? "    " : c).getBytes();
+        if (c == "\0") return -1;
+        buf = (c == "\t" && readChar(10, true) != null ? "    " : c).getBytes();
         bufIdx = 0;
         return buf[0] & 0xff;
     }
@@ -235,7 +251,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
 
     public synchronized long[][] readRaw(long timeout, boolean isPeek) throws IOException {
         long[][] c = peeker;
-        if (c != null) {
+        if (c != null && c[0] != null) {
             peeker = null;
             return c;
         }
@@ -280,19 +296,6 @@ public class WindowsInputReader extends NonBlockingInputStream {
             exception = e;
         } catch (Exception e1) {
             exception = new IOException(e1.getMessage());
-        }
-    }
-
-    public synchronized static void writeInput(INPUT_RECORD rec) throws Exception {
-        inputQueue.put(new long[]{rec.keyEvent.keyDown ? 1 : 0, rec.keyEvent.keyCode, (long) rec.keyEvent.uchar, rec.keyEvent.controlKeyState & anyCtrl, rec.keyEvent.repeatCount});
-    }
-
-    public synchronized static void writeInput(String input) throws Exception {
-        int prev = 0;
-        for (byte b : input.getBytes()) {
-            if ((b == 10 && prev == 13) || (b == 13 && prev == 10)) continue;
-            inputQueue.put(new long[]{1, 0, b == 13 ? 10 : b,b<27?ctrlState:0, 0, 1});
-            inputQueue.put(new long[]{0, 0, b == 13 ? 10 : b, b<27?ctrlState:0, 1});
         }
     }
 }
