@@ -59,8 +59,9 @@ local function abort_thread()
     end
 end
 
-_G['TRIGGER_ABORT']=function()
-    env.safe_call(env.event and env.event.callback,5,"ON_COMMAND_ABORT")
+_G['TRIGGER_EVENT']=function(key_event,str)
+    --print(key_event[1],key_event[3])
+    env.safe_call(env.event and env.event.callback,5,"ON_KEY_EVENT",key_event,str)
 end
 
 local function pcall_error(e)
@@ -492,7 +493,11 @@ function env.pending_command()
     return curr_stmt and curr_stmt~=""
 end
 
-function env.clear_command()
+function env.clear_command(_,key_event)
+    --ctrl_c or ctrl_d
+    if key_event and key_event[3]~=3 and key_event[3]~=4 then
+        return 
+    end
     if env.pending_command() then
         multi_cmd,curr_stmt=nil,nil
         env.CURRENT_PROMPT=env.PRI_PROMPT
@@ -658,7 +663,8 @@ function env.eval_line(line,exec,is_internal,not_skip)
     if multi_cmd then return check_multi_cmd(line) end
 
     local cmd,rest=line:match('^%s*(%S+)%s*(.*)')
-    if env.event then 
+    if not cmd then return env.warn("unknown command "..line) end
+    if env.event then
         cmd,rest=table.unpack(env.event.callback('BEFORE_EVAL',{cmd,rest}))
         if not (_CMDS[cmd]) then  cmd,rest=(cmd.." ".. rest):match('^%s*(%S+)%s*(.*)') end
     end
@@ -812,7 +818,7 @@ function env.onload(...)
         env.ansi.define_color("commandcolor","HIC","ansi.core","Define command line's color, type 'ansi' for more available options")
     end
     if env.event then
-        env.event.snoop("ON_COMMAND_ABORT",env.clear_command)
+        env.event.snoop("ON_KEY_EVENT",env.clear_command)
         env.event.callback("ON_ENV_LOADED")
     end
 

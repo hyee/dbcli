@@ -4,6 +4,7 @@ local maxvalsize=20
 local file='setting.dat'
 local root_cmd
 cfg._backup=nil
+cfg._plugins={}
 
 
 function cfg.show_cfg(name)
@@ -20,13 +21,13 @@ function cfg.show_cfg(name)
     else
         if name then table.insert(rows[1],2,"Source") end
         for k,v in pairs(cfg) do
-            if type(v)=="table" and k==k:upper() and v.src then
+            if type(v)=="table" and k==k:upper() and v.src and (name or (v.desc and not v.desc:find('^#'))) then
                 table.insert(rows,{
-                    name and table.concat(cfg[k].abbr,', ') or k,
-                    string.from(cfg[k].value),
-                    string.from(cfg[k].default),
-                    cfg[k].class,cfg[k].range or '*',
-                    cfg[k].desc})
+                    name and table.concat(v.abbr,', ') or k,
+                    #tostring(v.value)<=30 and tostring(v.value) or tostring(v.value):sub(1,27)..'...',
+                    #tostring(v.default)<=30 and tostring(v.default) or tostring(v.default):sub(1,27)..'...',
+                    v.class,v.range or '*',
+                    v.desc})
                 if name then table.insert(rows[#rows],2,cfg[k].src) end
             end
         end
@@ -61,7 +62,7 @@ function cfg.save_config(name,value)
     return value
 end
 
-function cfg.init(name,defaultvalue,validate,class,desc,range)
+function cfg.init(name,defaultvalue,validate,class,desc,range,instance)
     local abbr={name}
     if type(name)=="table" then
         abbr=name
@@ -82,7 +83,8 @@ function cfg.init(name,defaultvalue,validate,class,desc,range)
         range=range,
         org=defaultvalue,
         src=env.callee(),
-        abbr=abbr
+        abbr=abbr,
+        instance=(type(instance)=="table" or type(instance)=="userdata") and instance
     }
     for k,v in ipairs(abbr) do
         if type(v)=="string" and v~="" then
@@ -97,6 +99,10 @@ function cfg.init(name,defaultvalue,validate,class,desc,range)
     if cfg._p[name] and cfg._p[name]~=defaultvalue then
         cfg.doset(name,cfg._p[name])
     end
+end
+
+function cfg.inject_cfg(name,callback,obj)
+    cfg.init(name,"unkown",callback,env.callee(),"#hidden",'*',obj)
 end
 
 function cfg.remove(name)
@@ -131,16 +137,17 @@ function cfg.set(name,value,backup,isdefault)
     --res,err=pcall(function()
     if not name then return cfg.show_cfg() end
     name=name:upper()
-    if not cfg.exists(name) then return print("Cannot set ["..name.."], the parameter does not exist!") end
+    local config=cfg.exists(name)
+    if not config then return print("Cannot set ["..name.."], the parameter does not exist!") end
     if not value then return cfg.show_cfg(name) end
 
     if tostring(value):upper()=="DEFAULT" then
-        return cfg.set(name,cfg.exists(name).default,nil,true)
+        return cfg.set(name,config.default,nil,true)
     elseif tostring(value):upper()=="BACK" then
         return cfg.restore(name)
     end
 
-    local range= cfg.exists(name).range
+    local range= config.range
     if range and range ~='' then
         local lower,upper=range:match("([%-%+]?%d+)%s*%-%s*([%-%+]?%d+)")
         if lower then
@@ -163,9 +170,12 @@ function cfg.set(name,value,backup,isdefault)
     end
 
     local final=value
-
-    if cfg.exists(name).func then
-        final=cfg.exists(name).func(name,value,isdefault)
+    if config.func then
+        if config.instance then
+            final=config.func(config.instance,name,value,isdefault)
+        else
+            final=config.func(name,value,isdefault)
+        end
         if final==nil then return end
     end
 
@@ -181,6 +191,12 @@ function cfg.doset(...)
     if #args==0 or args[1]=='-a' or args[1]=='-A' then return cfg.show_cfg(args[1]) end
     if args[1]:lower()=="-p" then idx=2 end
     for i=idx,#args,2 do
+        local config=cfg.exists(args[i])
+        if config and config.desc and config.desc:find('^#') then
+            local arg=table.concat(args,' ',i+1)
+            cfg.set(args[i],arg,true)
+            break;
+        end;
         local value=cfg.set(args[i],args[i+1],true)
         if value and idx==2 then
             cfg._p=env.load_data(file)
