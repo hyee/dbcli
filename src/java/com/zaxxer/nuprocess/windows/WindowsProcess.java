@@ -163,11 +163,11 @@ public final class WindowsProcess implements NuProcess {
     }
 
     public int GetConsoleMode() {
-        return NuKernel32.GetConsoleMode(stdoutPipe.pipeHandle);
+        return NuKernel32.GetConsoleMode(stdinPipe.pipeHandle);
     }
 
     public void setConsoleMode(int mode) {
-        if(!NuKernel32.SetConsoleMode(stdoutPipe.pipeHandle,mode))
+        if(!NuKernel32.SetConsoleMode(stdinPipe.pipeHandle,mode))
             throw new RuntimeException(getError());
     }
 

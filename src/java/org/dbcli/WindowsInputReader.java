@@ -7,28 +7,27 @@ import org.fusesource.jansi.internal.WindowsSupport;
 
 import java.awt.event.KeyEvent;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 
 public class WindowsInputReader extends NonBlockingInputStream {
+    public static final int altState = KEY_EVENT_RECORD.LEFT_ALT_PRESSED | KEY_EVENT_RECORD.RIGHT_ALT_PRESSED;
+    public static final int ctrlState = KEY_EVENT_RECORD.LEFT_CTRL_PRESSED | KEY_EVENT_RECORD.RIGHT_CTRL_PRESSED;
+    public static final int shiftState = KEY_EVENT_RECORD.SHIFT_PRESSED;
+    public static final int anyCtrl = altState | ctrlState | shiftState;
+    public static final int funcState = 64;
+    public static final int KEY_DOWN = 0;
+    public static final int KEY_CODE = 1;
+    public static final int KEY_CHAR = 2;
+    public static final int KEY_CTRL = 3;
+    public static final int KEY_REPE = 4;
+    static HashMap<Object, EventCallback> eventMap = new HashMap<>();
     private static HashMap<Integer, byte[]> keyEvents = new HashMap();
-    // support some C1 control sequences: ALT + [@-_] (and [a-z]?) => ESC <ascii>
-    // http://en.wikipedia.org/wiki/C0_and_C1_control_codes#C1_set
-    final int altState = KEY_EVENT_RECORD.LEFT_ALT_PRESSED | KEY_EVENT_RECORD.RIGHT_ALT_PRESSED;
-    // Pressing "Alt Gr" is translated to Alt-Ctrl, hence it has to be checked that Ctrl is _not_ pressed,
-    // otherwise inserting of "Alt Gr" codes on non-US keyboards would yield errors
-    final int ctrlState = KEY_EVENT_RECORD.LEFT_CTRL_PRESSED | KEY_EVENT_RECORD.RIGHT_CTRL_PRESSED;
-
-    final int shiftState = KEY_EVENT_RECORD.SHIFT_PRESSED;
-
-    final int funcState = 64;
-    byte[] buf = null;
-    int bufIdx = 0;
 
     //Escape information: https://www.novell.com/documentation/extend5/Docs/help/Composer/books/TelnetAppendixB.html
     static {
@@ -57,28 +56,33 @@ public class WindowsInputReader extends NonBlockingInputStream {
         keyEvents.put(KeyEvent.VK_LEFT, "\u001b[D".getBytes());
         keyEvents.put(KeyEvent.VK_BACK_SPACE, "\u0008".getBytes());
         keyEvents.put(KeyEvent.VK_TAB, "\u0009".getBytes());
+
     }
 
-    private int ch = -2;             // Recently read character
+    byte[] buf = null;
+    int bufIdx = 0;
     private volatile boolean isShutdown = false;
     private IOException exception = null;
-    private ArrayBlockingQueue<INPUT_RECORD[]> inputQueue;
-    private volatile INPUT_RECORD[] peeker;
+    private final static ArrayBlockingQueue<long[]> inputQueue=new ArrayBlockingQueue(32767);
+    private volatile long[][] peeker;
     private ByteBuffer inputBuff = ByteBuffer.allocateDirect(255);
     private boolean nonBlockingEnabled;
     private int ctrlFlags;
-    private InputStream in;
-
 
     public WindowsInputReader() {
         super(System.in, false);
-        this.nonBlockingEnabled = true;
-        inputQueue = new ArrayBlockingQueue(32767);
         inputBuff.order(ByteOrder.nativeOrder());
+        this.nonBlockingEnabled = true;
         Thread t = new Thread(this);
         t.setName("NonBlockingInputStreamThread");
         t.setDaemon(true);
         t.start();
+    }
+
+    public static void listen(Object name, EventCallback c) {
+        //System.out.println(name.toString()+(c==null?"null":c.toString()));
+        if (eventMap.containsKey(name)) eventMap.remove(name);
+        if (c != null) eventMap.put(name, c);
     }
 
     public boolean isNonBlockingEnabled() {
@@ -104,14 +108,12 @@ public class WindowsInputReader extends NonBlockingInputStream {
         }
     }
 
-
     @Override
     public void close() throws IOException {
         /*
          * The underlying input stream is closed first. This means that if the
          * I/O thread was blocked waiting on input, it will be woken for us.
          */
-        inputQueue = null;
         shutdown();
     }
 
@@ -164,7 +166,6 @@ public class WindowsInputReader extends NonBlockingInputStream {
         return 1;
     }
 
-
     /**
      * Attempts to read a character from the input stream for a specific
      * period of time.
@@ -173,13 +174,11 @@ public class WindowsInputReader extends NonBlockingInputStream {
      * @return The character read, -1 if EOF is reached, or -2 if the read timed out.
      */
     public synchronized int read(long timeout, boolean isPeek) throws IOException {
-        //System.out.println(1);
         if (buf != null && bufIdx < buf.length - 1) return (isPeek ? buf[bufIdx + 1] : buf[++bufIdx]) & 0xff;
         String c = readChar(timeout, isPeek);
         if (c == null) return -2;
-        if (c == "\0") return -1;
-        if (c == "\t" && readChar(-1, true) != null) buf = "    ".getBytes();
-        else buf = c.getBytes();
+        if (c.equals("\0")) return -1;
+        buf = ((c.equals("\t") && readChar(10, true) != null) ? "    " : c).getBytes();
         bufIdx = 0;
         return buf[0] & 0xff;
     }
@@ -188,76 +187,79 @@ public class WindowsInputReader extends NonBlockingInputStream {
         return ctrlFlags;
     }
 
-    public String readChar(long timeout, boolean isPeek) throws IOException {
-        INPUT_RECORD[] events = readRaw(timeout, isPeek);
+    public synchronized String readChar(long timeout, boolean isPeek) throws IOException {
+        long[][] events = readRaw(timeout, isPeek);
         ctrlFlags = 0;
-        if (events == null) {
+        if (events == null || events[0] == null) {
             return null;
         }
+
         if (events.length == 0) {
             return "\0".intern();
         }
         inputBuff.clear();
-        for (INPUT_RECORD event : events) {
-            KEY_EVENT_RECORD keyEvent = event.keyEvent;
+        for (long[] event : events) {
             // Compute the overall alt state
-            ctrlFlags = ctrlFlags | keyEvent.controlKeyState;
-            boolean isAlt = ((keyEvent.controlKeyState & altState) != 0) && ((keyEvent.controlKeyState & ctrlState) == 0);
+            ctrlFlags |= event[KEY_CTRL];
+            boolean isAlt = ((event[KEY_CTRL] & altState) != 0) && ((event[KEY_CTRL] & ctrlState) == 0);
             //Log.trace(keyEvent.keyDown? "KEY_DOWN" : "KEY_UP", "key code:", keyEvent.keyCode, "char:", (long)keyEvent.uchar);
-            if (keyEvent.keyDown) {
-                if (keyEvent.uchar > 0) {
-                    if (isAlt && ((keyEvent.uchar >= '@' && keyEvent.uchar <= '_') || (keyEvent.uchar >= 'a' && keyEvent.uchar <= 'z'))) {
+            if (event[KEY_DOWN] == 1) {
+                if (event[KEY_CHAR] > 0) {
+                    if (isAlt && ((event[KEY_CHAR] >= '@' && event[KEY_CHAR] <= '_') || (event[KEY_CHAR] >= 'a' && event[KEY_CHAR] <= 'z')))
                         inputBuff.put((byte) '\u001B');
-                    }
-                    inputBuff.put((byte) keyEvent.uchar);
-                } else if (keyEvents.containsKey(Integer.valueOf(keyEvent.keyCode))) {
-                    ctrlFlags = ctrlFlags | funcState;
-                    for (int k = 0; k < keyEvent.repeatCount; k++) {
-                        if (isAlt) {
-                            inputBuff.put((byte) '\u001B');
-                        }
-                        inputBuff.put(keyEvents.get(Integer.valueOf(keyEvent.keyCode)));
+                    inputBuff.put((byte) event[KEY_CHAR]);
+                } else if (keyEvents.containsKey(Integer.valueOf((int) event[KEY_CODE]))) {
+                    ctrlFlags |= funcState;
+                    for (int k = 0; k < event[KEY_REPE]; k++) {
+                        if (isAlt) inputBuff.put((byte) '\u001B');
+                        inputBuff.put(keyEvents.get(Integer.valueOf((int) event[KEY_CODE])));
                     }
                 }
-
             } else {
                 // key up event
                 // support ALT+NumPad input method
-                if (keyEvent.keyCode == 0x12/*VK_MENU ALT key*/ && keyEvent.uchar > 0) {
-                    inputBuff.put((byte) keyEvent.uchar);
+                if (event[KEY_CODE] == KeyEvent.VK_ALT && event[KEY_CHAR] > 0) {
+                    inputBuff.put((byte) event[KEY_CHAR]);
                 }
             }
         }
         if (inputBuff.position() > 0) {
             inputBuff.flip();
             //System.out.println(inputBuff.remaining()+","+inputBuff.position());
-            buf = new byte[inputBuff.remaining()];
+            byte[] buf = new byte[inputBuff.remaining()];
             inputBuff.get(buf);
-            bufIdx = 0;
-            //System.out.println(new String(buf)+","+buf[buf.length-1]+","+buf[0]);
             return new String(buf).intern();
         }
         return readChar(timeout, isPeek);
     }
 
-
-    public synchronized INPUT_RECORD[] readRaw(long timeout, boolean isPeek) throws IOException {
-        INPUT_RECORD[] c = peeker;
+    public synchronized long[][] readRaw(long timeout, boolean isPeek) throws IOException {
+        long[][] c = peeker;
         if (c != null) {
             peeker = null;
             return c;
         }
         if (exception != null) throw exception;
         try {
-            c = timeout < 0 ? inputQueue.poll() : (timeout == 0 ? inputQueue.take() : inputQueue.poll(timeout, TimeUnit.MILLISECONDS));
-            if (c != null && c.length == 1 && c[0] != null && c[0].keyEvent.keyDown) {
-                INPUT_RECORD[] c1 = inputQueue.poll();
-                if (c1 != null && c1.length > 0) c = new INPUT_RECORD[]{c[0], c1[0]};
+            c = new long[][]{timeout < 0 ? inputQueue.poll() : (timeout == 0 ? inputQueue.take() : inputQueue.poll(timeout, TimeUnit.MILLISECONDS))};
+            if (c[0] != null && c[0][KEY_DOWN] == 1) {
+                long[] c1 = inputQueue.poll(200, TimeUnit.MILLISECONDS);
+                if (c1 != null) c = new long[][]{c[0], c1};
+            }
+            for (long[] c0 : c) {
+                //System.out.println(Arrays.toString(c0));
+                if (!isPeek && c0 != null && c0[KEY_DOWN] == 1 && (//
+                        (c0[KEY_CTRL] > 0 && c0[KEY_CHAR] > 0) || //
+                                (c0[KEY_CODE] >= KeyEvent.VK_F1 && c0[KEY_CODE] <= KeyEvent.VK_F12 && c0[KEY_CHAR] == 0))) {
+                    for (EventCallback callback : eventMap.values()) callback.interrupt(c0);
+                }
             }
             if (isPeek) peeker = c;
             return c;
         } catch (InterruptedException e) {
-            return new INPUT_RECORD[0];
+            return new long[0][0];
+        } catch (Exception e1) {
+            throw new IOException(e1.getMessage());
         }
     }
 
@@ -266,7 +268,13 @@ public class WindowsInputReader extends NonBlockingInputStream {
         exception = null;
         try {
             while (!isShutdown) {
-                inputQueue.put(WindowsSupport.readConsoleInput(1));
+                INPUT_RECORD[] input = WindowsSupport.readConsoleInput(1);
+                if (input == null || input.length == 0) continue;
+
+                for (INPUT_RECORD rec : input) {
+                    //System.out.println(rec.keyEvent.toString());
+                    inputQueue.put(new long[]{rec.keyEvent.keyDown ? 1 : 0, rec.keyEvent.keyCode, (long) rec.keyEvent.uchar, rec.keyEvent.controlKeyState & anyCtrl, rec.keyEvent.repeatCount});
+                }
             }
         } catch (IOException e) {
             exception = e;
@@ -275,29 +283,16 @@ public class WindowsInputReader extends NonBlockingInputStream {
         }
     }
 
-    public synchronized void writeInput(INPUT_RECORD[] input) throws Exception {
-        inputQueue.put(input);
+    public synchronized static void writeInput(INPUT_RECORD rec) throws Exception {
+        inputQueue.put(new long[]{rec.keyEvent.keyDown ? 1 : 0, rec.keyEvent.keyCode, (long) rec.keyEvent.uchar, rec.keyEvent.controlKeyState & anyCtrl, rec.keyEvent.repeatCount});
     }
 
-    public void writeInput(String input) throws Exception {
+    public synchronized static void writeInput(String input) throws Exception {
         int prev = 0;
         for (byte b : input.getBytes()) {
             if ((b == 10 && prev == 13) || (b == 13 && prev == 10)) continue;
-            INPUT_RECORD c0 = new INPUT_RECORD();
-            INPUT_RECORD c1 = new INPUT_RECORD();
-            c0.keyEvent.uchar = b == 13 ? '\n' : (char) b;
-            prev = b;
-            c0.keyEvent.keyDown = true;
-            c0.keyEvent.repeatCount = 1;
-            c0.keyEvent.scanCode = 38;
-            c0.keyEvent.controlKeyState = 0;
-            c0.eventType = 0;
-            c1.keyEvent.keyDown = false;
-            c1.keyEvent.uchar = c0.keyEvent.uchar;
-            c1.keyEvent.repeatCount = c0.keyEvent.repeatCount;
-            c1.keyEvent.controlKeyState = c0.keyEvent.controlKeyState;
-            c1.keyEvent.scanCode = c0.keyEvent.scanCode;
-            inputQueue.put(new INPUT_RECORD[]{c0, c1});
+            inputQueue.put(new long[]{1, 0, b == 13 ? 10 : b,b<27?ctrlState:0, 0, 1});
+            inputQueue.put(new long[]{0, 0, b == 13 ? 10 : b, b<27?ctrlState:0, 1});
         }
     }
 }

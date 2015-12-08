@@ -1,5 +1,6 @@
 package org.dbcli;
 
+import com.naef.jnlua.LuaState;
 import jline.Terminal;
 import jline.console.ConsoleReader;
 import jline.console.completer.Completer;
@@ -26,11 +27,13 @@ public class Console extends ConsoleReader {
     public static Terminal terminal;
     public static String charset;
     protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(5);
+    public LuaState lua;
     private History his;
     private ScheduledFuture task;
     private EventReader monitor = new EventReader();
     private ActionListener event;
     private char[] keys;
+    private long threadID;
     private boolean isBlocking = false;
 
     public Console() throws Exception {
@@ -52,7 +55,18 @@ public class Console extends ConsoleReader {
         field.setAccessible(false);
         //in=(NonBlockingInputStream)this.getInput();
         Iterator<Completer> iterator = getCompleters().iterator();
+        threadID = Thread.currentThread().getId();
         while (iterator.hasNext()) removeCompleter(iterator.next());
+        in.listen(this, new EventCallback() {
+            @Override
+            public void interrupt(Object c) throws Exception {
+                if (!isRunning() && lua != null && threadID == Thread.currentThread().getId()) {
+                    lua.getGlobal("TRIGGER_EVENT");
+                    lua.pushJavaObject((long[]) c);
+                    lua.call(1, 0);
+                }
+            }
+        });
     }
 
     public String readLine(String prompt) throws IOException {
@@ -62,7 +76,6 @@ public class Console extends ConsoleReader {
             return super.readLine(prompt);
         }
     }
-
 
     public String readLine() throws IOException {
         return readLine((String) null);
@@ -84,7 +97,7 @@ public class Console extends ConsoleReader {
         }
         if (this.event != null && this.keys != null) {
             this.monitor.counter = 0;
-            //this.task=this.threadPool.schedule(this.monitor,1000,TimeUnit.MILLISECONDS);
+            //this.task = this.threadPool.schedule(this.monitor, 1000, TimeUnit.MILLISECONDS);
             this.task = this.threadPool.scheduleWithFixedDelay(this.monitor, 1000, 200, TimeUnit.MILLISECONDS);
         }
     }
@@ -109,16 +122,16 @@ public class Console extends ConsoleReader {
         public void run() {
             try {
                 if (isBlocking) return;
-                int ch = in.peek(0L);
-                if (ch < -1) return;
+                int ch = in.peek(-1);
+                if (ch < 1) return;
                 for (int i = 0; i < keys.length; i++) {
                     if (ch != keys[i] && keys[i] != '*') continue;
-                    in.read();
+                    in.read(-1);
                     event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, Character.toChars(ch).toString()));
                     return;
                 }
                 if (ch > 32) isBlocking = true;
-                else in.read();
+                else in.read(-1);
             } catch (Exception e) {
                 //e.printStackTrace();
             }

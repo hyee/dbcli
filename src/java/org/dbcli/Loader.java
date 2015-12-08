@@ -52,10 +52,10 @@ public class Loader {
             keyMap = console.getKeys();
             keyMap.bind(String.valueOf(KeyMap.CTRL_D), new KeyListner(KeyMap.CTRL_D));
             q = new KeyListner('q');
-            Interrupter.listen("loader", new InterruptCallback() {
+            Interrupter.listen("loader", new EventCallback() {
                 @Override
-                public void interrupt(ActionEvent e) throws Exception {
-                    q.actionPerformed(e);
+                public void interrupt(Object e) throws Exception {
+                    q.actionPerformed((ActionEvent) e);
                 }
             });
         } catch (Exception e) {
@@ -68,6 +68,7 @@ public class Loader {
         lua.openLibs();
         lua.pushJavaObject(loader);
         lua.setGlobal("loader");
+        console.lua = lua;
         if (console.writer != null) {
             lua.pushJavaObject(console);
             lua.setGlobal("reader");
@@ -338,14 +339,8 @@ public class Loader {
                 if (sleeper != null) {
                     sleeper.cancel(true);
                 }
-                if (key != 3 && !console.isRunning() && key != 'q' && key != 'Q') {
-                    lua.getGlobal("TRIGGER_ABORT");
-                    lua.call(0, 0);
-                } else {
-                    if (stmt != null && !stmt.isClosed()) {
-                        stmt.cancel();
-                    }
-                    //
+                if (console.isRunning() && stmt != null && !stmt.isClosed()) {
+                    stmt.cancel();
                 }
 
                 if (rs != null && !rs.isClosed()) rs.close();

@@ -7,7 +7,6 @@ import com.zaxxer.nuprocess.windows.HANDLER_ROUTINE;
 import com.zaxxer.nuprocess.windows.NuKernel32;
 import com.zaxxer.nuprocess.windows.WindowsProcess;
 
-import java.awt.event.ActionEvent;
 import java.io.File;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -45,9 +44,9 @@ public class SubSystem {
             writer = ByteBuffer.allocateDirect(32767);
             writer.order(ByteOrder.nativeOrder());
             //Respond to the ctrl+c event
-            Interrupter.listen(this, new InterruptCallback() {
+            Interrupter.listen(this, new EventCallback() {
                 @Override
-                public void interrupt(ActionEvent e) {
+                public void interrupt(Object e) {
                     isBreak = true;
                 }
             });
@@ -87,7 +86,7 @@ public class SubSystem {
         StringBuilder buff = new StringBuilder();
         long wait = 150L;
         int prev = 0;
-        //process.setConsoleMode(NuKernel32.ENABLE_ECHO_INPUT|NuKernel32.ENABLE_LINE_INPUT);
+        //process.setConsoleMode(process.GetConsoleMode() | NuKernel32.ENABLE_ECHO_INPUT | NuKernel32.ENABLE_LINE_INPUT);
         while (isWaiting && process != null) {
             if (isBreak) {
                 isBreak = false;
@@ -98,13 +97,14 @@ public class SubSystem {
                 --wait;
                 Thread.sleep(5);
             } else {
-                int ch = Console.in.read(wait);
-                while (ch >= 0) {
-                    if ((ch == 10 && prev == 13) || (ch == 13 && prev == 10)) continue;
-                    prev = ch;
-                    if (ch == 13) ch = 10; //Convert '\r' as '\n'
-                    buff.append((char) ch);
-                    --wait;
+                int ch = Console.in.read(10L);
+                while (ch > 0) {
+                    if (!(ch == 10 && prev == 13) && !(ch == 13 && prev == 10)) {
+                        prev = ch;
+                        if (ch == 13) ch = 10; //Convert '\r' as '\n'
+                        buff.append((char) ch);
+                        --wait;
+                    }
                     ch = Console.in.read(10L);
                 }
                 if (wait < 50L) {
@@ -114,8 +114,9 @@ public class SubSystem {
                     wait = 60L; //Waits 0.05 sec
                 }
             }
+
         }
-        //process.setConsoleMode(NuKernel32.ENABLE_LINE_INPUT);
+        //process.setConsoleMode(process.GetConsoleMode() & NuKernel32.ENABLE_ECHO_INPUT);
     }
 
     //return null means the process is terminated

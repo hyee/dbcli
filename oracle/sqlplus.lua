@@ -51,7 +51,7 @@ function sqlplus:make_sqlpath()
     if self.extend_dirs then path[#path+1]=self.extend_dirs end
     if self.script_dir then path[#path+1]=self.script_dir end
     for i=#path,1,-1 do
-        if path[i]==env._CACHE_PATH then table.remove(path,i) end
+        if path[i]:lower():find(env._CACHE_BASE:lower(),1,true) then table.remove(path,i) end
     end
     local dirs=io.popen('dir /s/b/a:d "'..table.concat(path,'" "')..'" 2>nul')
     for n in dirs:lines() do path[#path+1]=n end
@@ -141,9 +141,17 @@ function sqlplus:after_script()
     self.work_path=nil
 end
 
+function sqlplus:f7(n,key_event,str)
+    --VK_F7
+    if self.enter_flag and key_event[2]==118 then
+        self:run_command(str)
+    end 
+end
+
 function sqlplus:onload()
     env.event.snoop("AFTER_ORACLE_CONNECT",self.terminate,self)
     env.event.snoop("ON_DB_DISCONNECTED",self.terminate,self)
+    --env.event.snoop("ON_KEY_EVENT",self.f7,self)
 end
 
 return sqlplus.new()

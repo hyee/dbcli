@@ -3,7 +3,6 @@ package org.dbcli;
 
 import com.jcraft.jsch.*;
 
-import java.awt.event.ActionEvent;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -90,9 +89,9 @@ public class SSHExecutor {
             pr = new Printer();
             pr.reset(true);
             writer = Console.writer;
-            Interrupter.listen("SSHExecutor", new InterruptCallback() {
+            Interrupter.listen("SSHExecutor", new EventCallback() {
                 @Override
-                public void interrupt(ActionEvent e) throws Exception {
+                public void interrupt(Object e) throws Exception {
                     isBreak = true;
                 }
             });
@@ -170,6 +169,7 @@ public class SSHExecutor {
     public void waitCompletion() throws Exception {
         long wait = 150L;
         isWaiting = true;
+        int prev = 0;
         while (!isEnd && !shell.isClosed()) {
             if (isBreak) {
                 isBreak = false;
@@ -180,11 +180,15 @@ public class SSHExecutor {
                 --wait;
                 Thread.sleep(5);
             } else {
-                int ch = Console.in.read(wait);
+                int ch = Console.in.read(10L);
                 while (ch >= 0) {
-                    shellWriter.write(ch);
-                    --wait;
-                    ch = Console.in.read(1L);
+                    if (!(ch == 10 && prev == 13) && !(ch == 13 && prev == 10)) {
+                        prev = ch;
+                        if (ch == 13) ch = 10; //Convert '\r' as '\n'
+                        shellWriter.write(ch);
+                        --wait;
+                    }
+                    ch = Console.in.read(10L);
                 }
                 if (wait < 50L) {
                     shellWriter.flush();

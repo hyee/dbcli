@@ -26,7 +26,7 @@ function oracle:ctor(isdefault)
     self.type="oracle"
     java.loader:addPath(env.WORK_DIR..'oracle'..env.PATH_DEL.."ojdbc7.jar")
     self.db_types:load_sql_types('oracle.jdbc.OracleTypes')
-    local default_desc='#Oracle database SQL statement'
+    
     local header = "set feed off sqlbl on define off;\n";
     header = header.."ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';\n"
     header = header.."ALTER SESSION SET NLS_TIMESTAMP_FORMAT='YYYY-MM-DD HH24:MI:SSXFF';\n"
@@ -378,7 +378,14 @@ function oracle:handle_error(info)
     return info
 end
 
+function oracle:set_session(cmd,args)
+    env.checkerr(self:is_connect(),"Database is not connected!")
+    self:internal_call('set '..cmd.." "..(args or ""),{})
+    return args
+end
+
 function oracle:onload()
+    local default_desc='#Oracle database SQL statement'
     local function add_default_sql_stmt(...)
         for i=1,select('#',...) do
             env.remove_command(select(i,...))
@@ -407,6 +414,7 @@ function oracle:onload()
     self.C={}
     init.load_modules(module_list,self.C)
     env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)
+    env.set.inject_cfg({"transaction","role","constraint","constraints"},self.set_session,self)
 end
 
 function oracle:onunload()
