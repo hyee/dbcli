@@ -264,7 +264,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
             }
             for (long[] c0 : c) {
                 //System.out.println(Arrays.toString(c0));
-                if (!isPeek && c0 != null && c0[KEY_DOWN] == 1 && (//
+                if (!isPeek && c0 != null && (c0[KEY_DOWN] == 1|| c0[KEY_CHAR] ==3) && (//
                         (c0[KEY_CTRL] > 0 && c0[KEY_CHAR] > 0) || //
                                 (c0[KEY_CODE] >= KeyEvent.VK_F1 && c0[KEY_CODE] <= KeyEvent.VK_F12 && c0[KEY_CHAR] == 0))) {
                     for (EventCallback callback : eventMap.values()) callback.interrupt(c0);
@@ -286,7 +286,6 @@ public class WindowsInputReader extends NonBlockingInputStream {
             while (!isShutdown) {
                 INPUT_RECORD[] input = WindowsSupport.readConsoleInput(1);
                 if (input == null || input.length == 0) continue;
-
                 for (INPUT_RECORD rec : input) {
                     //System.out.println(rec.keyEvent.toString());
                     inputQueue.put(new long[]{rec.keyEvent.keyDown ? 1 : 0, rec.keyEvent.keyCode, (long) rec.keyEvent.uchar, rec.keyEvent.controlKeyState & anyCtrl, rec.keyEvent.repeatCount});
