@@ -89,7 +89,7 @@ BEGIN
         FROM   ]' || objs;
 
     EXECUTE IMMEDIATE objs
-        INTO obj_type, schem, part1, part2_temp,object_number USING schem,part1,schem, part1;
+        INTO obj_type, schem, part1, part2_temp,object_number USING schem,target,schem, part1;
 
     IF part2 IS NULL THEN
         IF part2_temp IS NULL AND NOT flag THEN
