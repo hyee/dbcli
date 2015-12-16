@@ -142,14 +142,7 @@ local function update_text(item,pos,params)
     end
 end
 
-function var.before_command(cmd)
-    local name,args=table.unpack(cmd)
-    args=type(args)=='string' and {args} or args
-    if type(args)~='table' then return end
-    for i=1,#args do update_text(args,i,{}) end
-    if #env.RUNNING_THREADS==1 then var.capture_before_cmd(name,args) end
-    return args
-end
+
 
 function var.before_db_exec(item)
     if cfg.get("define")~='on' then return end
@@ -240,7 +233,7 @@ function var.save(name,file)
 end
 
 function var.capture_before_cmd(cmd,args)
-    if cmd~=var.cmd1 and cmd~=var.cmd2 and cmd~=var.cmd3 and cmd~=var.cmd4 then
+    if not var.cmdlist or not var.cmdlist[cmd] then
         env.log_debug("var","Backup variables")
         var._backup,var._inputs_backup,var._outputs_backup=var.backup_context()
     else
@@ -255,6 +248,15 @@ function var.capture_after_cmd(cmd)
         var.import_context(var._backup,var._inputs_backup,var._outputs_backup)
         var._backup,var._inputs_backup,var._outputs_backup=nil,nil,nil
     end
+end
+
+function var.before_command(cmd)
+    local name,args=table.unpack(cmd)
+    args=type(args)=='string' and {args} or args
+    if type(args)~='table' then return end
+    for i=1,#args do update_text(args,i,{}) end
+    if #env.RUNNING_THREADS==1 then var.capture_before_cmd(name,args) end
+    return args
 end
 
 function var.define_column(col,...)
@@ -415,6 +417,12 @@ function var.onload()
     env.set_command(nil,{"COLUMN","COL"},fmt_help,var.define_column,false,30)
     env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables.Usage: print <variable|-a>',var.print,false,3)
     env.set_command(nil,"Save","Save variable value into a specific file under folder 'cache'. Usage: save <variable> <file name>",var.save,false,3);
+    env.event.snoop("ON_ENV_LOADED",var.on_env_load,nil,2)
+end
+
+
+function var.on_env_load()
+    var.cmdlist=env.get_command_by_source{"default","alias"}
 end
 
 return var

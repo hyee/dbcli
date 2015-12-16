@@ -87,7 +87,8 @@ BEGIN
                case when :2 like upper('%'||OBJECT_NAME||nullif('.'||SUBOBJECT_NAME||'%','.%')) then 0 else 10 end +
                case substr(object_type,1,3) when 'TAB' then 1 when 'CLU' then 2 else 3 end s_flag
         FROM   ]' || objs;
-
+    
+    
     EXECUTE IMMEDIATE objs
         INTO obj_type, schem, part1, part2_temp,object_number USING schem,target,schem, part1;
 
@@ -102,7 +103,6 @@ BEGIN
         raise_application_error(-20001,'Cannot find target object '||:V1||'!');
     END IF;
     
-
     :object_owner   := schem;
     :object_type    := obj_type;
     :object_name    := part1;

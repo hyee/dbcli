@@ -251,7 +251,9 @@ end
 function cfg.capture_before_cmd(command)
     if #env.RUNNING_THREADS>1 then return end
     env.log_debug("set","taking full backup",command[1])
-    if command[1]~=cfg.name then
+    local cmd=env._CMDS[command[1]]
+
+    if not cfg.cmdlist or not cfg.cmdlist[command[1]] then
         cfg._backup=cfg.backup()
     else
         cfg._backup=nil
@@ -269,6 +271,12 @@ function cfg.onload()
     event.snoop("BEFORE_COMMAND",cfg.capture_before_cmd)
     event.snoop("AFTER_COMMAND",cfg.capture_after_cmd)
     env.set_command(nil,cfg.name,"Set environment parameters. Usage: set [-a] | {[-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]}",cfg.doset,false,99)
+    env.event.snoop("ON_ENV_LOADED",cfg.on_env_load,nil,2)
+    
+end
+
+function cfg.on_env_load()
+    cfg.cmdlist=env.get_command_by_source{"default","alias"}
 end
 
 return cfg

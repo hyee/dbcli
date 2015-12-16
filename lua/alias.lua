@@ -13,16 +13,9 @@ function alias.rehash()
 
     alias.cmdlist={}
     for k,v in ipairs(env.list_dir(alias.command_dir,"alias",comment)) do
-        if(v[2]:lower()==(alias.command_dir..v[1]..'.alias'):lower()) then
+        if v[2]:lower()==(alias.command_dir..v[1]..'.alias'):lower() or
+           v[2]:lower()==(alias.db_dir..v[1]..'.alias'):lower() then
             alias.set(v[1],v[3],false)
-        end
-    end
-
-    if alias.db_dir~=alias.command_dir then
-        for k,v in ipairs(env.list_dir(alias.db_dir,"alias",comment)) do
-            if(v[2]:lower()==(alias.db_dir..v[1]..'.alias'):lower()) then
-                alias.set(v[1],v[3],false)
-            end
         end
     end
 end
@@ -202,7 +195,7 @@ end
 function alias.onload()
     --alias.rehash()
     --env.event.snoop('BEFORE_COMMAND',alias.rewrite,nil,80)
-    env.event.snoop('ON_ENV_LOADED',alias.rehash,nil,1)
+    --env.event.snoop('ON_ENV_LOADED',alias.rehash,nil,1)
     env.event.snoop('ON_DB_ENV_LOADED',alias.load_db_aliases,nil,1)
     env.set_command(nil,"alias", alias.helper,alias.set,'__SMART_PARSE__',3)
 end

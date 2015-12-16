@@ -373,9 +373,8 @@ function db_core:check_sql_method(event_name,sql,method,...)
         local info,internal={db=self,sql=sql,error=tostring(obj):gsub('%s+$','')}
         info.error=info.error:gsub('.*Exception:?%s*','')
         event(event_name,info)
-        internal, self.internal_exec=self:is_internal_call(sql),false
         if info and info.error and info.error~="" then
-            if not internal and info.sql and env.ROOT_CMD~=self.get_command_type(sql) then
+            if not self:is_internal_call(sql) and info.sql and env.ROOT_CMD~=self.get_command_type(sql) then
                 if cfg.get("SQLERRLINE")=="off" then
                     print('SQL: '..info.sql:gsub("\n","\n     "))
                 else
@@ -473,7 +472,9 @@ function db_core:abort_statement()
 end
 
 function db_core:exec(sql,args)
-    db_core.__start_clock=os.clock()
+    if not self:is_internal_call(sql) then
+        db_core.__start_clock=os.clock()
+    end
     if #env.RUNNING_THREADS<=2 then
         collectgarbage("collect")
         java.system:gc()
@@ -574,8 +575,9 @@ end
 function db_core:internal_call(sql,args)
     self.internal_exec=true
     --local exec=self.super.exec or self.exec
-    local result=self:exec(sql,args)
+    local succ,result=pcall(self.exec,self,sql,args)
     self.internal_exec=false
+    if not succ then error(result) end
     return result
 end
 
