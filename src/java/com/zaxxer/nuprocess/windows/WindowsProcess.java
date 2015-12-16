@@ -20,13 +20,11 @@ import com.sun.jna.LastErrorException;
 import com.sun.jna.Memory;
 import com.sun.jna.Native;
 import com.sun.jna.WString;
-import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.ptr.PointerByReference;
 import com.zaxxer.nuprocess.NuProcess;
 import com.zaxxer.nuprocess.NuProcessHandler;
 import com.zaxxer.nuprocess.windows.NuKernel32.OVERLAPPED;
 import com.zaxxer.nuprocess.windows.NuWinNT.*;
-import org.fusesource.jansi.internal.Kernel32;
 
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
@@ -64,9 +62,12 @@ public final class WindowsProcess implements NuProcess {
     private volatile PipeBundle stdinPipe;
     private volatile PipeBundle stdoutPipe;
     private volatile PipeBundle stderrPipe;
-    private HANDLE hStdinWidow;
-    private HANDLE hStdoutWidow;
-    private HANDLE hStderrWidow;
+    private HANDLE hStdin_wr;
+    //private HANDLE hStdin_wr;
+    private HANDLE hStdout_rd;
+    private HANDLE hStdout_wr;
+    private HANDLE hStderr_rd;
+    private HANDLE hStderr_wr;
     private ConcurrentLinkedQueue<ByteBuffer> pendingWrites;
     private volatile boolean inClosed;
     private volatile boolean outClosed;
@@ -167,13 +168,21 @@ public final class WindowsProcess implements NuProcess {
     }
 
     public void setConsoleMode(int mode) {
-        if(!NuKernel32.SetConsoleMode(stdinPipe.pipeHandle,mode))
-            throw new RuntimeException(getError());
+        //HANDLE tmp=NuKernel32.GetStdHandle(NuKernel32.STD_INPUT_HANDLE);
+        checkError(NuKernel32.SetConsoleMode(stdinPipe.pipeHandle, mode));
+        //checkError(NuKernel32.AttachConsole(processInfo.dwProcessId.intValue()));
+        //checkError(NuKernel32.AllocConsole());
+        try {
+            //checkError(NuKernel32.SetConsoleMode(NuKernel32.GetStdHandle(NuKernel32.STD_INPUT_HANDLE), mode));
+        } finally {
+            //checkError(NuKernel32.FreeConsole());
+            //checkError(NuKernel32.AttachConsole(-1));
+            //NuKernel32.SetStdHandle(NuKernel32.STD_INPUT_HANDLE,tmp);
+        }
     }
 
     public void sendCtrlEvent(int event) {
-        if(!NuKernel32.GenerateConsoleCtrlEvent(event, processInfo.dwProcessId))
-            System.out.println(getError());
+        if (!NuKernel32.GenerateConsoleCtrlEvent(event, processInfo.dwProcessId)) System.out.println(getError());
     }
 
     /**
@@ -181,7 +190,7 @@ public final class WindowsProcess implements NuProcess {
      */
     @Override
     public void wantWrite() {
-        if (hStdinWidow != null && !NuWinNT.INVALID_HANDLE_VALUE.getPointer().equals(hStdinWidow.getPointer())) {
+        if (hStdin_wr != null && !NuWinNT.INVALID_HANDLE_VALUE.getPointer().equals(hStdin_wr.getPointer())) {
             userWantsWrite.set(true);
             myProcessor.wantWrite(this);
         }
@@ -192,7 +201,7 @@ public final class WindowsProcess implements NuProcess {
      */
     @Override
     public synchronized void writeStdin(ByteBuffer buffer) {
-        if (hStdinWidow != null && !NuWinNT.INVALID_HANDLE_VALUE.getPointer().equals(hStdinWidow.getPointer())) {
+        if (hStdin_wr != null && !NuWinNT.INVALID_HANDLE_VALUE.getPointer().equals(hStdin_wr.getPointer())) {
             pendingWrites.add(buffer);
             if (!writePending) {
                 myProcessor.wantWrite(this);
@@ -272,18 +281,30 @@ public final class WindowsProcess implements NuProcess {
             STARTUPINFO startupInfo = new STARTUPINFO();
             startupInfo.clear();
             startupInfo.cb = new DWORD(startupInfo.size());
-            startupInfo.hStdInput = hStdinWidow;
-            startupInfo.hStdError = hStderrWidow;
-            startupInfo.hStdOutput = hStdoutWidow;
+            startupInfo.hStdInput = hStdin_wr;
+            startupInfo.hStdError = hStderr_rd;
+            startupInfo.hStdOutput = hStdout_rd;
             startupInfo.dwFlags = NuWinNT.STARTF_USESTDHANDLES;
+
+            HANDLE stdin = NuKernel32.GetStdHandle(NuKernel32.STD_INPUT_HANDLE);
+            HANDLE stdout = NuKernel32.GetStdHandle(NuKernel32.STD_OUTPUT_HANDLE);
+            HANDLE stdtmp = NuKernel32.GetStdHandle(NuKernel32.STD_ERROR_HANDLE);
+
+            NuKernel32.SetStdHandle(NuKernel32.STD_INPUT_HANDLE, stdinPipe.pipeHandle);
+            NuKernel32.SetStdHandle(NuKernel32.STD_OUTPUT_HANDLE, stdoutPipe.pipeHandle);
+            NuKernel32.SetStdHandle(NuKernel32.STD_ERROR_HANDLE, stderrPipe.pipeHandle);
 
             processInfo = new PROCESS_INFORMATION();
 
-            DWORD dwCreationFlags = new DWORD(NuWinNT.CREATE_NO_WINDOW | NuWinNT.CREATE_UNICODE_ENVIRONMENT | NuWinNT.CREATE_SUSPENDED );
+            DWORD dwCreationFlags = new DWORD(NuWinNT.CREATE_NO_WINDOW | NuWinNT.CREATE_UNICODE_ENVIRONMENT | NuWinNT.CREATE_SUSPENDED);
             char[] cwdChars = (cwd != null) ? Native.toCharArray(cwd.toAbsolutePath().toString()) : null;
             if (!NuKernel32.CreateProcessW(null, getCommandLine(commands), null /*lpProcessAttributes*/, null /*lpThreadAttributes*/, true /*bInheritHandles*/, dwCreationFlags, env, cwdChars, startupInfo, processInfo)) {
                 throw new RuntimeException("CreateProcessW() failed, error: " + getError());
             }
+
+            NuKernel32.SetStdHandle(NuKernel32.STD_INPUT_HANDLE, stdin);
+            NuKernel32.SetStdHandle(NuKernel32.STD_OUTPUT_HANDLE, stdout);
+            NuKernel32.SetStdHandle(NuKernel32.STD_ERROR_HANDLE, stdtmp);
 
             afterStart();
 
@@ -296,9 +317,9 @@ public final class WindowsProcess implements NuProcess {
             onExit(Integer.MIN_VALUE);
             throw e;
         } finally {
-            NuKernel32.CloseHandle(hStdinWidow);
-            NuKernel32.CloseHandle(hStdoutWidow);
-            NuKernel32.CloseHandle(hStderrWidow);
+            NuKernel32.CloseHandle(hStdin_wr);
+            NuKernel32.CloseHandle(hStdout_rd);
+            NuKernel32.CloseHandle(hStderr_rd);
         }
 
         return this;
@@ -526,6 +547,10 @@ public final class WindowsProcess implements NuProcess {
         }
     }
 
+    public void checkError(boolean success) {
+        if (!success) throw new RuntimeException(getError());
+    }
+
     private void createPipes() {
         SECURITY_ATTRIBUTES sattr = new SECURITY_ATTRIBUTES();
         sattr.dwLength = new DWORD(sattr.size());
@@ -533,37 +558,52 @@ public final class WindowsProcess implements NuProcess {
         sattr.lpSecurityDescriptor = null;
 
         // ################ STDOUT PIPE ################
+
         long ioCompletionKey = namedPipeCounter.getAndIncrement();
         WString pipeName = new WString(namedPipePathPrefix + ioCompletionKey);
-        hStdoutWidow = NuKernel32.CreateNamedPipeW(pipeName, NuKernel32.PIPE_ACCESS_INBOUND, 0 /*dwPipeMode*/, 1 /*nMaxInstances*/, BUFFER_SIZE, BUFFER_SIZE, 0 /*nDefaultTimeOut*/, sattr);
-        checkHandleValidity(hStdoutWidow);
 
+
+        /*
+        HANDLEByReference rd=new HANDLEByReference();
+        HANDLEByReference wr=new HANDLEByReference();
+
+            checkError(NuKernel32.CreatePipe(rd, wr, sattr, 0));
+        hStdout_rd=rd.getValue();
+        hStdout_wr=wr.getValue();
+            checkError(NuKernel32.SetHandleInformation(hStdout_rd, NuKernel32.HANDLE_FLAG_INHERIT, 0));
+            checkHandleValidity(hStdout_rd);
+            stdoutPipe = new PipeBundle(hStdout_rd, ioCompletionKey);
+
+        */
+
+        hStdout_rd = NuKernel32.CreateNamedPipeW(pipeName, NuKernel32.PIPE_ACCESS_DUPLEX, 0 /*dwPipeMode*/, 1 /*nMaxInstances*/, BUFFER_SIZE, BUFFER_SIZE, 0 /*nDefaultTimeOut*/, sattr);
+        checkHandleValidity(hStdout_rd);
         HANDLE stdoutHandle = NuKernel32.CreateFile(pipeName, NuWinNT.GENERIC_READ, NuWinNT.FILE_SHARE_READ, null, NuWinNT.OPEN_EXISTING, NuWinNT.FILE_ATTRIBUTE_NORMAL | NuWinNT.FILE_FLAG_OVERLAPPED, null /*hTemplateFile*/);
         checkHandleValidity(stdoutHandle);
         stdoutPipe = new PipeBundle(stdoutHandle, ioCompletionKey);
-        checkPipeConnected(NuKernel32.ConnectNamedPipe(hStdoutWidow, null));
+        checkPipeConnected(NuKernel32.ConnectNamedPipe(hStdout_rd, null));
 
         // ################ STDERR PIPE ################
         ioCompletionKey = namedPipeCounter.getAndIncrement();
         pipeName = new WString(namedPipePathPrefix + ioCompletionKey);
-        hStderrWidow = NuKernel32.CreateNamedPipeW(pipeName, NuKernel32.PIPE_ACCESS_INBOUND, 0 /*dwPipeMode*/, 1 /*nMaxInstances*/, BUFFER_SIZE, BUFFER_SIZE, 0 /*nDefaultTimeOut*/, sattr);
-        checkHandleValidity(hStderrWidow);
+        hStderr_rd = NuKernel32.CreateNamedPipeW(pipeName, NuKernel32.PIPE_ACCESS_DUPLEX, 0 /*dwPipeMode*/, 1 /*nMaxInstances*/, BUFFER_SIZE, BUFFER_SIZE, 0 /*nDefaultTimeOut*/, sattr);
+        checkHandleValidity(hStderr_rd);
 
         HANDLE stderrHandle = NuKernel32.CreateFile(pipeName, NuWinNT.GENERIC_READ, NuWinNT.FILE_SHARE_READ, null, NuWinNT.OPEN_EXISTING, NuWinNT.FILE_ATTRIBUTE_NORMAL | NuWinNT.FILE_FLAG_OVERLAPPED, null /*hTemplateFile*/);
         checkHandleValidity(stderrHandle);
         stderrPipe = new PipeBundle(stderrHandle, ioCompletionKey);
-        checkPipeConnected(NuKernel32.ConnectNamedPipe(hStderrWidow, null));
+        checkPipeConnected(NuKernel32.ConnectNamedPipe(hStderr_rd, null));
 
         // ################ STDIN PIPE ################
         ioCompletionKey = namedPipeCounter.getAndIncrement();
         pipeName = new WString(namedPipePathPrefix + ioCompletionKey);
-        hStdinWidow = NuKernel32.CreateNamedPipeW(pipeName, NuKernel32.PIPE_ACCESS_OUTBOUND, 0 /*dwPipeMode*/, 1 /*nMaxInstances*/, BUFFER_SIZE, BUFFER_SIZE, 0 /*nDefaultTimeOut*/, sattr);
-        checkHandleValidity(hStdinWidow);
+        hStdin_wr = NuKernel32.CreateNamedPipeW(pipeName, NuKernel32.PIPE_ACCESS_DUPLEX, 0 /*dwPipeMode*/, 1 /*nMaxInstances*/, BUFFER_SIZE, BUFFER_SIZE, 0 /*nDefaultTimeOut*/, sattr);
+        checkHandleValidity(hStdin_wr);
 
         HANDLE stdinHandle = NuKernel32.CreateFile(pipeName, NuWinNT.GENERIC_WRITE, NuWinNT.FILE_SHARE_WRITE, null, NuWinNT.OPEN_EXISTING, NuWinNT.FILE_ATTRIBUTE_NORMAL | NuWinNT.FILE_FLAG_OVERLAPPED, null /*hTemplateFile*/);
         checkHandleValidity(stdinHandle);
         stdinPipe = new PipeBundle(stdinHandle, ioCompletionKey);
-        checkPipeConnected(NuKernel32.ConnectNamedPipe(hStdinWidow, null));
+        checkPipeConnected(NuKernel32.ConnectNamedPipe(hStdin_wr, null));
     }
 
     private void afterStart() {

@@ -26,6 +26,7 @@ public class LibEpoll {
     static {
         Native.register(NativeLibrary.getProcess());
     }
+
     public static final int SIGPIPE = 13;
     /* from /usr/include/sys/epoll.h */
     public static final int EPOLL_CTL_ADD = 1; /* Add a file decriptor to the interface.  */

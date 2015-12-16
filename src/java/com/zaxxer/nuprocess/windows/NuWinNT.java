@@ -22,6 +22,7 @@ package com.zaxxer.nuprocess.windows;
 import com.sun.jna.*;
 import com.sun.jna.ptr.ByReference;
 import com.sun.jna.ptr.ByteByReference;
+import com.sun.jna.win32.StdCallLibrary;
 
 import java.util.Arrays;
 import java.util.List;
@@ -74,6 +75,16 @@ public interface NuWinNT {
 
     HANDLE INVALID_HANDLE_VALUE = new HANDLE(Pointer.createConstant(Pointer.SIZE == 8 ? -1 : 0xFFFFFFFFL));
 
+    public interface HANDLER_ROUTINE extends StdCallLibrary.StdCallCallback {
+        public static final int CTRL_C_EVENT = 0;
+        public static final int CTRL_BREAK_EVENT = 1;
+        public static final int CTRL_CLOSE_EVENT = 2;
+        public static final int CTRL_LOGOFF_EVENT = 5;
+        public static final int CTRL_SHUTDOWN_EVENT = 6;
+
+        long callback(long dwCtrlType);
+    }
+
     class HANDLE extends PointerType {
         public HANDLE() {
         }
@@ -89,6 +100,34 @@ public interface NuWinNT {
                 return INVALID_HANDLE_VALUE;
             }
             return o;
+        }
+    }
+
+    public static class HANDLEByReference extends ByReference {
+        public HANDLEByReference() {
+            this(null);
+        }
+
+        public HANDLEByReference(HANDLE h) {
+            super(Pointer.SIZE);
+            setValue(h);
+        }
+
+        public HANDLE getValue() {
+            Pointer p = getPointer().getPointer(0);
+            if (p == null) {
+                return null;
+            }
+            if (INVALID_HANDLE_VALUE.getPointer().equals(p)) {
+                return INVALID_HANDLE_VALUE;
+            }
+            HANDLE h = new HANDLE();
+            h.setPointer(p);
+            return h;
+        }
+
+        public void setValue(HANDLE h) {
+            getPointer().setPointer(0, h != null ? h.getPointer() : null);
         }
     }
 
@@ -206,6 +245,175 @@ public interface NuWinNT {
         @SuppressWarnings("rawtypes")
         protected List getFieldOrder() {
             return Arrays.asList(new String[]{"hProcess", "hThread", "dwProcessId", "dwThreadId"});
+        }
+    }
+
+    // typedef struct _COORD {
+//    SHORT X;
+//    SHORT Y;
+//  } COORD, *PCOORD;
+    public class COORD extends Structure implements Structure.ByValue {
+        private static String[] fieldOrder = {"X", "Y"};
+        public short X;
+        public short Y;
+
+        public COORD() {
+        }
+
+        public COORD(short X, short Y) {
+            this.X = X;
+            this.Y = Y;
+        }
+
+        @Override
+        protected java.util.List<String> getFieldOrder() {
+            return java.util.Arrays.asList(fieldOrder);
+        }
+    }
+
+    public class UnionChar extends Union {
+        public char UnicodeChar;
+        public byte AsciiChar;
+
+        public UnionChar() {
+        }
+
+        public UnionChar(char c) {
+            setType(char.class);
+            UnicodeChar = c;
+        }
+
+        public UnionChar(byte c) {
+            setType(byte.class);
+            AsciiChar = c;
+        }
+
+        public void set(char c) {
+            setType(char.class);
+            UnicodeChar = c;
+        }
+
+        public void set(byte c) {
+            setType(byte.class);
+            AsciiChar = c;
+        }
+    }
+
+    // typedef struct _KEY_EVENT_RECORD {
+//   BOOL  bKeyDown;
+//   WORD  wRepeatCount;
+//   WORD  wVirtualKeyCode;
+//   WORD  wVirtualScanCode;
+//   union {
+//     WCHAR UnicodeChar;
+//     CHAR  AsciiChar;
+//   } uChar;
+//   DWORD dwControlKeyState;
+// } KEY_EVENT_RECORD;
+    public class KEY_EVENT_RECORD extends Structure {
+        private static String[] fieldOrder = {"bKeyDown", "wRepeatCount", "wVirtualKeyCode", "wVirtualScanCode", "uChar", "dwControlKeyState"};
+        public boolean bKeyDown;
+        public short wRepeatCount;
+        public short wVirtualKeyCode;
+        public short wVirtualScanCode;
+        public UnionChar uChar;
+        public int dwControlKeyState;
+
+        @Override
+        protected java.util.List<String> getFieldOrder() {
+            return java.util.Arrays.asList(fieldOrder);
+        }
+    }
+
+    // typedef struct _MOUSE_EVENT_RECORD {
+//   COORD dwMousePosition;
+//   DWORD dwButtonState;
+//   DWORD dwControlKeyState;
+//   DWORD dwEventFlags;
+// } MOUSE_EVENT_RECORD;
+    public class MOUSE_EVENT_RECORD extends Structure {
+        public static final short MOUSE_MOVED = 0x0001;
+        public static final short DOUBLE_CLICK = 0x0002;
+        public static final short MOUSE_WHEELED = 0x0004;
+        public static final short MOUSE_HWHEELED = 0x0008;
+
+        public static final short FROM_LEFT_1ST_BUTTON_PRESSED = 0x0001;
+        public static final short RIGHTMOST_BUTTON_PRESSED = 0x0002;
+        public static final short FROM_LEFT_2ND_BUTTON_PRESSED = 0x0004;
+        public static final short FROM_LEFT_3RD_BUTTON_PRESSED = 0x0008;
+        public static final short FROM_LEFT_4TH_BUTTON_PRESSED = 0x0010;
+        private static String[] fieldOrder = {"dwMousePosition", "dwButtonState", "dwControlKeyState", "dwEventFlags"};
+        public COORD dwMousePosition;
+        public int dwButtonState;
+        public int dwControlKeyState;
+        public int dwEventFlags;
+
+        @Override
+        protected java.util.List<String> getFieldOrder() {
+            return java.util.Arrays.asList(fieldOrder);
+        }
+    }
+
+    // typedef struct _INPUT_RECORD {
+//   WORD  EventType;
+//   union {
+//     KEY_EVENT_RECORD          KeyEvent;
+//     MOUSE_EVENT_RECORD        MouseEvent;
+//     WINDOW_BUFFER_SIZE_RECORD WindowBufferSizeEvent;
+//     MENU_EVENT_RECORD         MenuEvent;
+//     FOCUS_EVENT_RECORD        FocusEvent;
+//   } Event;
+// } INPUT_RECORD;
+    public class INPUT_RECORD extends Structure {
+        public static final short FOCUS_EVENT = 0x0010;
+        public static final short KEY_EVENT = 0x0001;
+        public static final short MENU_EVENT = 0x0008;
+        public static final short MOUSE_EVENT = 0x0002;
+        public static final short WINDOW_BUFFER_SIZE_EVENT = 0x0004;
+        private static String[] fieldOrder = {"EventType", "Event"};
+        public short EventType;
+        public EventUnion Event;
+
+        @Override
+        public void read() {
+            readField("EventType");
+            switch (EventType) {
+                case KEY_EVENT:
+                    Event.setType(KEY_EVENT_RECORD.class);
+                    break;
+                case MOUSE_EVENT:
+                    Event.setType(MOUSE_EVENT_RECORD.class);
+                    break;
+            }
+            super.read();
+        }
+
+        @Override
+        public void write() {
+            readField("EventType");
+            switch (EventType) {
+                case KEY_EVENT:
+                    Event.setType(KEY_EVENT_RECORD.class);
+                    break;
+                case MOUSE_EVENT:
+                    Event.setType(MOUSE_EVENT_RECORD.class);
+                    break;
+            }
+            super.write();
+        }
+
+
+        @Override
+        protected java.util.List<String> getFieldOrder() {
+            return java.util.Arrays.asList(fieldOrder);
+        }
+
+        public static class EventUnion extends Union {
+            public KEY_EVENT_RECORD KeyEvent;
+            public MOUSE_EVENT_RECORD MouseEvent;
+            // WINDOW_BUFFER_SIZE_RECORD WindowBufferSizeEvent;
+            // MENU_EVENT_RECORD MenuEvent;
+            // FOCUS_EVENT_RECORD FocusEvent;
         }
     }
 }

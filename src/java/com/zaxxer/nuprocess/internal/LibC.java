@@ -31,6 +31,7 @@ public class LibC {
             O_NONBLOCK = 2048; // Linux
         }
     }
+
     public static final int F_GETFL = 3;
     public static final int F_SETFL = 4;
     public static final int O_NONBLOCK;

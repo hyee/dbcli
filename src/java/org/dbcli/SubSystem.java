@@ -3,8 +3,8 @@ package org.dbcli;
 import com.zaxxer.nuprocess.NuAbstractProcessHandler;
 import com.zaxxer.nuprocess.NuProcess;
 import com.zaxxer.nuprocess.NuProcessBuilder;
-import com.zaxxer.nuprocess.windows.HANDLER_ROUTINE;
 import com.zaxxer.nuprocess.windows.NuKernel32;
+import com.zaxxer.nuprocess.windows.NuWinNT;
 import com.zaxxer.nuprocess.windows.WindowsProcess;
 
 import java.io.File;
@@ -83,15 +83,16 @@ public class SubSystem {
     }
 
     public void waitCompletion() throws Exception {
+        //System.out.println(process.GetConsoleMode());
         StringBuilder buff = new StringBuilder();
         long wait = 150L;
         int prev = 0;
-        //process.setConsoleMode(process.GetConsoleMode() | NuKernel32.ENABLE_ECHO_INPUT | NuKernel32.ENABLE_LINE_INPUT);
+        //process.setConsoleMode(NuKernel32.ENABLE_ECHO_INPUT | NuKernel32.ENABLE_LINE_INPUT);
         while (isWaiting && process != null) {
             if (isBreak) {
                 isBreak = false;
                 lastPrompt = prevPrompt;
-                process.sendCtrlEvent(HANDLER_ROUTINE.CTRL_C_EVENT);
+                process.sendCtrlEvent(NuWinNT.HANDLER_ROUTINE.CTRL_C_EVENT);
             }
             if (wait > 50) {//Waits 0.5 sec for the prompt and then enters into interactive mode
                 --wait;

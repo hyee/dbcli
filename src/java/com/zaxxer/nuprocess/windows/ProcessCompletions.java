@@ -55,7 +55,7 @@ public final class ProcessCompletions implements Runnable {
     static {
         int lingerTimeMs = Math.max(1000, Integer.getInteger("com.zaxxer.nuprocess.lingerTimeMs", 2500));
 
-        DEADPOOL_POLL_INTERVAL = Math.min(lingerTimeMs, Math.max(100, Integer.getInteger("com.zaxxer.nuprocess.deadPoolPollMs", 32767)));
+        DEADPOOL_POLL_INTERVAL = Math.min(lingerTimeMs, Math.max(100, Integer.getInteger("com.zaxxer.nuprocess.deadPoolPollMs", 250)));
 
         LINGER_ITERATIONS = lingerTimeMs / DEADPOOL_POLL_INTERVAL;
     }

@@ -28,6 +28,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
     private final static ArrayBlockingQueue<long[]> inputQueue = new ArrayBlockingQueue(32767);
     static HashMap<Object, EventCallback> eventMap = new HashMap<>();
     private static HashMap<Integer, byte[]> keyEvents = new HashMap();
+
     //Escape information: https://www.novell.com/documentation/extend5/Docs/help/Composer/books/TelnetAppendixB.html
     static {
         keyEvents.put(KeyEvent.VK_ESCAPE, "\u001b".getBytes());
@@ -57,6 +58,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
         keyEvents.put(KeyEvent.VK_TAB, "\u0009".getBytes());
 
     }
+
     byte[] buf = null;
     int bufIdx = 0;
     private volatile boolean isShutdown = false;
@@ -264,7 +266,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
             }
             for (long[] c0 : c) {
                 //System.out.println(Arrays.toString(c0));
-                if (!isPeek && c0 != null && (c0[KEY_DOWN] == 1|| c0[KEY_CHAR] ==3) && (//
+                if (!isPeek && c0 != null && (c0[KEY_DOWN] == 1 || c0[KEY_CHAR] == 3) && (//
                         (c0[KEY_CTRL] > 0 && c0[KEY_CHAR] > 0) || //
                                 (c0[KEY_CODE] >= KeyEvent.VK_F1 && c0[KEY_CODE] <= KeyEvent.VK_F12 && c0[KEY_CHAR] == 0))) {
                     for (EventCallback callback : eventMap.values()) callback.interrupt(c0);

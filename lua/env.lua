@@ -29,7 +29,6 @@ local env=setmetatable({},{
     __newindex=function(self,key,value) self(key,value) end
 })
 _G['env']=env
-local record_maker=false
 
 local mt = getmetatable(_G)
 
@@ -153,7 +152,6 @@ local _CMDS=env._CMDS
 function env.list_dir(file_dir,file_ext,text_macher)
     local dir,dirs
     local keylist={}
-    
     local filter=file_ext and "*."..file_ext or "*"
     
     file_dir=file_dir:gsub("[\\/]+",env.PATH_DEL):gsub("[\\/]+$","")
@@ -297,6 +295,20 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
         ISOVERRIDE= allow_overriden
     }
 end
+
+function env.get_command_by_source(list)
+    local cmdlist={}
+    if type(list)=="string" then list={list} end
+    for k,v in pairs(_CMDS.___ABBR___) do
+        if type(v)=="string" then v=_CMDS.___ABBR___[v] end
+        for _,name in ipairs(list) do
+            name=name=="default" and env.callee():match("([^\\/]+)#") or name
+            if v.FILE:lower():match('[\\/]'..name:lower()..'#') then cmdlist[k]=1 end
+        end
+    end
+    return cmdlist
+end
+
 
 function env.remove_command(cmd)
     cmd=cmd:upper()
@@ -775,10 +787,10 @@ local function set_cache_path(name,path)
 end
 
 function env.onload(...)
-    record_maker=false
     env.__ARGS__={...}
     env.init=require("init")
     env.init.init_path()
+    env.IS_ENV_LOADED=false
     for _,v in ipairs({'jit','ffi','bit'}) do   
         if v=="jit" then
             table.new=require("table.new")
@@ -839,7 +851,7 @@ function env.onload(...)
             end
         end
     end
-    record_maker=true
+    env.IS_ENV_LOADED=true
 end
 
 function env.unload()

@@ -21,7 +21,6 @@ import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.ptr.PointerByReference;
 import com.sun.jna.win32.W32APIOptions;
 import com.zaxxer.nuprocess.windows.NuWinNT.*;
-import org.fusesource.jansi.internal.Kernel32;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -37,14 +36,19 @@ public class NuKernel32 {
     public static final int PIPE_ACCESS_INBOUND = 0x00000002;
     public static final int PIPE_ACCESS_OUTBOUND = 0x00000001;
     public static final int FILE_FLAG_OVERLAPPED = 0x40000000;
-    public static final int ENABLE_PROCESSED_INPUT=0x0001;
-    public static final int ENABLE_LINE_INPUT=0x0002;
-    public static final int ENABLE_ECHO_INPUT=0x0004;
-    public static final int ENABLE_WINDOW_INPUT=0x0008;
-    public static final int ENABLE_MOUSE_INPUT=0x0010;
-    public static final int ENABLE_INSERT_MODE=0x0020;
-    public static final int ENABLE_QUICK_EDIT_MODE=0x0040;
-    public static final int ENABLE_EXTENDED_FLAGS=0x0080;
+    public static final int ENABLE_PROCESSED_INPUT = 0x0001;
+    public static final int ENABLE_LINE_INPUT = 0x0002;
+    public static final int ENABLE_ECHO_INPUT = 0x0004;
+    public static final int ENABLE_WINDOW_INPUT = 0x0008;
+    public static final int ENABLE_MOUSE_INPUT = 0x0010;
+    public static final int ENABLE_INSERT_MODE = 0x0020;
+    public static final int ENABLE_QUICK_EDIT_MODE = 0x0040;
+    public static final int ENABLE_EXTENDED_FLAGS = 0x0080;
+    public static final int HANDLE_FLAG_INHERIT = 0x00000001;
+    public static final int STD_INPUT_HANDLE = -10;
+    public static final int STD_OUTPUT_HANDLE = -11;
+    public static final int STD_ERROR_HANDLE = -12;
+
 
     public static native boolean CloseHandle(HANDLE hObject);
 
@@ -67,6 +71,10 @@ public class NuKernel32 {
     public static native int ConnectNamedPipe(HANDLE hNamedPipe, OVERLAPPED lpo);
 
     public static native boolean DisconnectNamedPipe(HANDLE hNamedPipe);
+
+    public static native boolean CreatePipe(HANDLEByReference hReadPipe, HANDLEByReference hWritePipe, SECURITY_ATTRIBUTES securityAttributes, int size);
+
+    public static native boolean SetHandleInformation(HANDLE hObject, int dwMask, int dwFlags);
 
     public static native DWORD ResumeThread(HANDLE hThread);
 
@@ -94,9 +102,16 @@ public class NuKernel32 {
 
     public static native boolean FreeConsole();
 
+    public static native boolean AllocConsole();
+
     public static native boolean SetConsoleMode(HANDLE hProcess, int mode);
+
     public static native int GetConsoleMode(HANDLE hProcess);
-    //public static native boolean WriteConsoleInput(HANDLE hProcess, Kernel32.INPUT_RECORD[] input,int length,IntByReference lpNumberOfEventsWritten);
+
+    public static native HANDLE GetStdHandle(int nStdHandle);
+
+    public static native boolean SetStdHandle(int nStdHandle, HANDLE hHandle);
+    //public static native boolean WriteConsoleInput(HANDLE hProcess, INPUT_RECORD[] input,int length,IntByReference lpNumberOfEventsWritten);
 
 
     public static native boolean WriteProcessMemory(HANDLE hProcess, Pointer lpBaseAddress, Pointer lpBuffer, int nSize, IntByReference lpNumberOfBytesWritten);

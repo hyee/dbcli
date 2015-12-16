@@ -693,6 +693,7 @@ public abstract class BasePosixProcess implements NuProcess {
             return newThread;
         }
     }
+
     static {
         IS_SOFTEXIT_DETECTION = Boolean.valueOf(System.getProperty("com.zaxxer.nuprocess.softExitDetection", "true"));
 

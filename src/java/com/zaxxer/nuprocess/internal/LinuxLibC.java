@@ -23,6 +23,7 @@ public class LinuxLibC {
     static {
         Native.register(Platform.C_LIBRARY_NAME);
     }
+
     // from /usr/include/bits/sched.h
     public static final int CLONE_FS = 0x00000200; /* Share or unshare cwd between threads / processes */
 

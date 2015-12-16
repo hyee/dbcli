@@ -393,8 +393,7 @@ end
 function scripter:helper(_,cmd,search_key)
     local help,cmdlist=""
     help=('%sUsage: %s %s \nAvailable commands:\n=================\n'):format(self.help_title,self:get_command(),self.usage)
-    self.help_ind=self.help_ind+1
-    if self.help_ind==2 and not self.cmdlist then
+    if env.IS_ENV_LOADED and not self.cmdlist then
         self:run_script('-r')
     end
     cmdlist=self.cmdlist
