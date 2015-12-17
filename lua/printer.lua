@@ -36,6 +36,7 @@ end
 
 function printer.print(...)
     local output,found,ignore={NOR,env.space:sub(1,#env.space-2)}
+    local fmt=(env.ansi and env.ansi.get_color("GREPCOLOR") or '')..'%1'..NOR
     for i=1,select('#',...) do
         local v=select(i,...)
         if v~='__BYPASS_GREP__' then 
@@ -44,9 +45,8 @@ function printer.print(...)
             ignore=true
         end
     end
-    output=table.concat(output,' '):gsub("(\r?\n\r?)","%1"..env.space)
+    output=table.concat(output,' '):gsub("(\r?\n\r?)","%1"..env.space):gsub('`([^\n\r]+)`',fmt)
     if printer.grep_text and not ignore then
-        local fmt=(env.ansi and env.ansi.get_color("GREPCOLOR") or '')..'%0'..NOR
         local stack=output:split('[\n\r]+')
         output={}
         for k,v in ipairs(stack) do
@@ -119,7 +119,7 @@ function printer.grep(keyword,stmt)
         keyword,printer.grep_dir=keyword:sub(2),true
     end
     --printer.grep_text=keyword:escape():case_insensitive_pattern()
-    printer.grep_text=keyword:escape():case_insensitive_pattern()
+    printer.grep_text='('..keyword:escape():case_insensitive_pattern()..')'
     env.eval_line(stmt,true,true)
 end
 
