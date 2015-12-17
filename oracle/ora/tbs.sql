@@ -1,4 +1,4 @@
-/*[[Show tablspace usage, or file usage when specifying the tablespace name. Usage: tbs [<tablespace_name>]
+/*[[Show tablspace usage, or file usage if specify the tablespace name. Usage: tbs [<tablespace_name>]
     --[[
         @CHECK_ACCESS: wmsys.wm_concat={wmsys.wm_concat(DISTINCT regexp_substr(file_name, '^.[^\\/]+'))}, default={null}
     --]]
@@ -21,6 +21,7 @@ SELECT TABLESPACE_NAME,
        siz+FREE_SPACE-space "TOTAL_FREE",
        ROUND(((SPACE - NVL(FREE_SPACE, 0)) / nullif(siz, 0)) * 100, 2) "USED_RATE(%)",
        FSFI "FSFI(%)",
+       'No' TEMP,
        g location
 FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION*/ 
               decode(grouping_id(file_id),0,null,TABLESPACE_NAME) TABLESPACE_NAME,
@@ -54,11 +55,12 @@ SELECT /*+NO_EXPAND_GSET_TO_UNION no_expand no_merge(h) no_merge(p) no_merge(f) 
        SUM(decode(f.autoextensible, 'YES', f.maxbytes, 'NO', f.bytes))  file_size,
        SUM(h.bytes_free + h.bytes_used)  space_all,
        SUM(nvl(p.bytes_used, 0)) space_used,
-       NULL,
+       NULL HWM_SPACE,
        SUM((h.bytes_free + h.bytes_used) - nvl(p.bytes_used, 0)) space_free,
        NULL,
        round(SUM(nvl(p.bytes_used, 0)) / SUM(h.bytes_free + h.bytes_used), 2) space_pct,
        NULL,
+       'Yes',
        decode(grouping_id(h.file_id),0,max(f.file_name),&CHECK_ACCESS)
 FROM   v$TEMP_SPACE_HEADER h, v$Temp_extent_pool p, dba_temp_files f
 WHERE  p.file_id(+) = h.file_id
@@ -68,4 +70,4 @@ AND    f.tablespace_name = h.tablespace_name
 AND   (:V1 IS NULL OR h.TABLESPACE_NAME=upper(:V1))
 GROUP  BY h.tablespace_name,ROLLUP(h.FILE_ID)
 HAVING :V1 IS NOT NULL OR h.FILE_ID IS NULL
-ORDER  BY 5 DESC;
+ORDER  BY TEMP,"USED_RATE(%)" DESC;
