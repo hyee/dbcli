@@ -6,7 +6,7 @@ Show or advise object's space, it could be time-consuming for the object who own
 ]]*/
 
 
-set feed off SQLTIMEOUT 1800
+set feed off SQLTIMEOUT 86400
 VAR CUR REFCURSOR;
 
 DECLARE

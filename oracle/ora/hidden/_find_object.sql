@@ -21,17 +21,21 @@ DECLARE /*INTERNAL_DBCLI_CMD*/
 BEGIN
     BEGIN
         EXECUTE IMMEDIATE 'select 1 from dba_objects where rownum<1';
-    EXCEPTION
-        WHEN OTHERS THEN
-            objs := 'all_objects';
+    EXCEPTION WHEN OTHERS THEN
+        objs := 'all_objects';
     END;
     
-    IF regexp_like(target,'^[^"].*" *\. *".+[^"]$') THEN
-        target := '"'||target||'"';
-    END IF;
+    
     
     <<CHECKER>>
     IF NOT regexp_like(target,'^\d+$') THEN
+        IF regexp_like(target,'^[^"].*" *\. *".+[^"]$') THEN
+            target := '"'||target||'"';
+        END IF;
+        
+        sys.dbms_utility.name_tokenize(target,schem,part1,part2,dblink,part1_type);
+        target:=trim('.' from schem||'.'||part1||'.'||part2);
+        schem:=null;
         FOR i IN 0 .. 9 LOOP
             BEGIN
                 sys.dbms_utility.name_resolve(NAME          => target,
@@ -46,10 +50,8 @@ BEGIN
                     part1:=part2;
                     part2:=null;
                 END IF;
-                EXIT;
-            EXCEPTION
-                WHEN OTHERS THEN
-                    NULL;
+                EXIT WHEN schem IS NOT NULL;
+            EXCEPTION WHEN OTHERS THEN NULL;
             END;
         END LOOP;
 
@@ -63,13 +65,16 @@ BEGIN
         INTO schem,part1,part2,object_number
         USING 0+target;
     END IF;
-    target := REPLACE(upper(target),' ');
 
-    IF schem IS NULL AND objs != 'all_objects' THEN
+    IF schem IS NULL THEN
         flag  := FALSE;
         schem := regexp_substr(target, '[^\.]+', 1, 1);
         part1 := regexp_substr(target, '[^\.]+', 1, 2);
-        objs  := objs||' a WHERE owner IN(''SYS'',''PUBLIC'',sys_context(''USERENV'', ''CURRENT_SCHEMA''),:1) AND object_name IN(''' || schem || ''',:2))';
+        IF part1 IS NULL THEN
+            part1 := schem;
+            schem := null;
+        END IF;
+        objs  := objs||' a WHERE owner IN(''SYS'',''PUBLIC'',sys_context(''USERENV'', ''CURRENT_SCHEMA''),:1) AND object_name IN('''||schem||''',:2))';
     ELSE
         flag  := TRUE;
         objs  := objs|| ' a WHERE OWNER IN(''SYS'',''PUBLIC'',:1) AND OBJECT_NAME=:2)';
@@ -84,10 +89,9 @@ BEGIN
     FROM (
         SELECT a.*,
                case when owner=:1 then 0 else 100 end +
-               case when :2 like upper('%'||OBJECT_NAME||nullif('.'||SUBOBJECT_NAME||'%','.%')) then 0 else 10 end +
+               case when :2 like '%'||OBJECT_NAME||nullif('.'||SUBOBJECT_NAME||'%','.%') then 0 else 10 end +
                case substr(object_type,1,3) when 'TAB' then 1 when 'CLU' then 2 else 3 end s_flag
         FROM   ]' || objs;
-    
     
     EXECUTE IMMEDIATE objs
         INTO obj_type, schem, part1, part2_temp,object_number USING schem,target,schem, part1;
@@ -100,7 +104,7 @@ BEGIN
     END IF;
 
     IF part1 IS NULL AND target IS NOT NULL AND :V2 IS NULL THEN
-        raise_application_error(-20001,'Cannot find target object '||:V1||'!');
+        raise_application_error(-20001,'Cannot find target object `'||target||'`!');
     END IF;
     
     :object_owner   := schem;
