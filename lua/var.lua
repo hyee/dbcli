@@ -307,7 +307,7 @@ function var.define_column(col,...)
                     if not s then return v end
                     for i=1,#units do
                         v,s=s,s/div
-                        if s<1 then return math.round(v,2)..units[i] end
+                        if s<1 then return string.format(i>1 and "%.2f%s" or "%d%s",v,units[i]) end
                     end
                 end
             elseif f=="SMHD" or f=="ITV" then

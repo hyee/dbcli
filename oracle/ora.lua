@@ -70,7 +70,7 @@ function db:check_obj(obj_name)
         object_id=env.var.get_input('OBJECT_ID')}
     if args.owner=='SYS' then
         local full_name=table.concat({args.owner,args.object_name,args.object_subname},'.')
-        cache_obj[obj],cache_obj[args.object_name],cache_obj[full_name]=args,args,args
+        cache_obj[obj],cache_obj[args.object_name..(args.object_subname and ('.'..args.object_subname) or '')],cache_obj[full_name]=args,args,args
         args.alias_list={obj,full_name,args.object_name}
     end
     return args and args.object_id and args.object_id~='' and args

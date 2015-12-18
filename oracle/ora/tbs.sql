@@ -1,6 +1,7 @@
 /*[[Show tablspace usage, or file usage if specify the tablespace name. Usage: tbs [<tablespace_name>]
     --[[
-        @CHECK_ACCESS: wmsys.wm_concat={wmsys.wm_concat(DISTINCT regexp_substr(file_name, '^.[^\\/]+'))}, default={null}
+        @CHECK_ACCESS: wmsys.wm_concat={wmsys.wm_concat(DISTINCT regexp_substr(file_name, '^.[^\\/]+'))}, default={&VERSION}
+        @VERSION: 11.2={regexp_replace(listagg(regexp_substr(file_name, '^.[^\\/]+'),',') within group(order by file_name),'([^,]+)(,\1)+','\1')} default={null}
     --]]
 ]]*/
 set printsize 1000
@@ -19,7 +20,7 @@ SELECT TABLESPACE_NAME,
        HWM_SPACE "HWM_SPACE",
        FREE_SPACE "FREE_SPACE",
        siz+FREE_SPACE-space "TOTAL_FREE",
-       ROUND(((SPACE - NVL(FREE_SPACE, 0)) / nullif(siz, 0)) * 100, 2) "USED_RATE(%)",
+       ROUND(((SPACE - NVL(FREE_SPACE, 0)) / nullif(siz, 0)) * 100, 2) "USED(%)",
        FSFI "FSFI(%)",
        'No' TEMP,
        g location
@@ -70,4 +71,4 @@ AND    f.tablespace_name = h.tablespace_name
 AND   (:V1 IS NULL OR h.TABLESPACE_NAME=upper(:V1))
 GROUP  BY h.tablespace_name,ROLLUP(h.FILE_ID)
 HAVING :V1 IS NOT NULL OR h.FILE_ID IS NULL
-ORDER  BY TEMP,"USED_RATE(%)" DESC;
+ORDER  BY TEMP,"USED_SPACE" DESC;

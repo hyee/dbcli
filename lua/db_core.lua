@@ -317,7 +317,7 @@ function db_core.get_command_type(sql)
 end
 
 function db_core.print_feed(sql,result)
-    if cfg.get("feed")~="on" then return end
+    if cfg.get("feed")~="on" or not sql then return end
     local secs=''
     if cfg.get("PROMPT")=='TIMING' and db_core.__start_clock then
         secs=' (' ..math.round(os.clock()-db_core.__start_clock,3)..' secs)'
