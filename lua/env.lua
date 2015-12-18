@@ -521,8 +521,6 @@ function env.clear_command(_,key_event)
         end
         env.reader:resetPromptLine(prompt,"",0)
         env.reset_input("")
-    elseif key_event.isalt==1 then --shift+backspace
-        print(table.dump(key_event))
     end
 end
 

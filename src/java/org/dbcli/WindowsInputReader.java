@@ -266,7 +266,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
             for (long[] c0 : c) {
                 //System.out.println(Arrays.toString(c0));
                 if (!isPeek && c0 != null && (c0[KEY_DOWN] == 1 || c0[KEY_CHAR] == 3) && (//
-                        (c0[KEY_CTRL] > 0 && (c0[KEY_CHAR] > 0||keyEvents.containsKey(c0[KEY_CODE]))) || //
+                        (c0[KEY_CTRL] > 0 && (c0[KEY_CHAR] > 0||keyEvents.containsKey(Integer.valueOf((int)c0[KEY_CODE])))) || //
                                 (c0[KEY_CODE] >= KeyEvent.VK_F1 && c0[KEY_CODE] <= KeyEvent.VK_F12 && c0[KEY_CHAR] == 0))) {
                     for (EventCallback callback : eventMap.values()) callback.interrupt(c0);
                 }

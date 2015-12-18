@@ -38,7 +38,7 @@ public class Console extends ConsoleReader {
     private char[] keys;
     private long threadID;
     private boolean isBlocking = false;
-    private Method tput;
+    private Method _tput;
 
     public Console() throws Exception {
         super();
@@ -57,8 +57,8 @@ public class Console extends ConsoleReader {
         charset = this.getTerminal().getOutputEncoding() == null ? Configuration.getEncoding() : this.getTerminal().getOutputEncoding();
         field.set(this, new InputStreamReader(in, charset));
         field.setAccessible(false);
-        tput = ConsoleReader.class.getDeclaredMethod("tputs",String.class,Object[].class);
-        tput.setAccessible(true);
+        _tput = ConsoleReader.class.getDeclaredMethod("tputs",String.class,Object[].class);
+        _tput.setAccessible(true);
         this.getKeys().bind(String.valueOf(KeyMap.CTRL_H), Operation.BACKWARD_KILL_WORD);
         this.getKeys().bind("\u001B\u001B[D", Operation.BACKWARD_WORD); //ALT + ARROW_LEFT
         this.getKeys().bind("\u001B\u001B[C", Operation.FORWARD_WORD); //ALT + ARROW_RIGHT
@@ -76,6 +76,10 @@ public class Console extends ConsoleReader {
                 }
             }
         });
+    }
+
+    public void tput(String arg, Object ... o) throws Exception{
+        _tput.invoke(arg,o);
     }
 
     public String readLine(String prompt) throws IOException {
