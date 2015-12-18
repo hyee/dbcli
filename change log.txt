@@ -1,4 +1,4 @@
-2015-12-18: + public: Ctrl+backspace=>kill previous word; Ctrl+KEY_LEFT=>move previous word; Ctrl+KEY_RIGHT=>move next word
+2015-12-18: + public: shift+backspace=>kill previous word; Ctrl+KEY_LEFT=>move previous word; Ctrl+KEY_RIGHT=>move next word
             * oracle: fixes; enhancement on 'desc' command
 2015-12-17: * oracle: enhancement on 'show tbs', and move 'show tbs' as 'ora tbs', refer to 'ora -h tbs' for more info
 2015-12-16: * public: minor fixes
