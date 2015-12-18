@@ -13,7 +13,6 @@ import java.util.HashMap;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
-
 public class WindowsInputReader extends NonBlockingInputStream {
     public static final int altState = KEY_EVENT_RECORD.LEFT_ALT_PRESSED | KEY_EVENT_RECORD.RIGHT_ALT_PRESSED;
     public static final int ctrlState = KEY_EVENT_RECORD.LEFT_CTRL_PRESSED | KEY_EVENT_RECORD.RIGHT_CTRL_PRESSED;
@@ -267,7 +266,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
             for (long[] c0 : c) {
                 //System.out.println(Arrays.toString(c0));
                 if (!isPeek && c0 != null && (c0[KEY_DOWN] == 1 || c0[KEY_CHAR] == 3) && (//
-                        (c0[KEY_CTRL] > 0 && c0[KEY_CHAR] > 0) || //
+                        (c0[KEY_CTRL] > 0 && (c0[KEY_CHAR] > 0||keyEvents.containsKey(c0[KEY_CODE]))) || //
                                 (c0[KEY_CODE] >= KeyEvent.VK_F1 && c0[KEY_CODE] <= KeyEvent.VK_F12 && c0[KEY_CHAR] == 0))) {
                     for (EventCallback callback : eventMap.values()) callback.interrupt(c0);
                 }
@@ -290,7 +289,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
                 if (input == null || input.length == 0) continue;
                 for (INPUT_RECORD rec : input) {
                     //System.out.println(rec.keyEvent.toString());
-                    inputQueue.put(new long[]{rec.keyEvent.keyDown ? 1 : 0, rec.keyEvent.keyCode, (long) rec.keyEvent.uchar, rec.keyEvent.controlKeyState & anyCtrl, rec.keyEvent.repeatCount});
+                    inputQueue.put(new long[]{rec.keyEvent.keyDown ? 1 : 0, rec.keyEvent.keyCode, (long) rec.keyEvent.uchar, rec.keyEvent.controlKeyState & anyCtrl, rec.keyEvent.repeatCount, (rec.keyEvent.controlKeyState & altState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & ctrlState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & shiftState) > 0 ? 1 : 0,});
                 }
             }
         } catch (IOException e) {

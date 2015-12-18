@@ -3,6 +3,8 @@ package org.dbcli;
 import com.naef.jnlua.LuaState;
 import jline.Terminal;
 import jline.console.ConsoleReader;
+import jline.console.KeyMap;
+import jline.console.Operation;
 import jline.console.completer.Completer;
 import jline.console.history.History;
 import jline.internal.Configuration;
@@ -14,6 +16,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.Iterator;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -35,6 +38,7 @@ public class Console extends ConsoleReader {
     private char[] keys;
     private long threadID;
     private boolean isBlocking = false;
+    private Method tput;
 
     public Console() throws Exception {
         super();
@@ -53,6 +57,11 @@ public class Console extends ConsoleReader {
         charset = this.getTerminal().getOutputEncoding() == null ? Configuration.getEncoding() : this.getTerminal().getOutputEncoding();
         field.set(this, new InputStreamReader(in, charset));
         field.setAccessible(false);
+        tput = ConsoleReader.class.getDeclaredMethod("tputs",String.class,Object[].class);
+        tput.setAccessible(true);
+        this.getKeys().bind(String.valueOf(KeyMap.CTRL_H), Operation.BACKWARD_KILL_WORD);
+        this.getKeys().bind("\u001B\u001B[D", Operation.BACKWARD_WORD); //ALT + ARROW_LEFT
+        this.getKeys().bind("\u001B\u001B[C", Operation.FORWARD_WORD); //ALT + ARROW_RIGHT
         //in=(NonBlockingInputStream)this.getInput();
         Iterator<Completer> iterator = getCompleters().iterator();
         threadID = Thread.currentThread().getId();
