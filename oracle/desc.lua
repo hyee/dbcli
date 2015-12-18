@@ -4,27 +4,116 @@ local desc={}
 
 local desc_sql={
     PROCEDURE=[[
-        SELECT /*INTERNAL_DBCLI_CMD*/ --+use_nl(a b)
-               NVL2(overload, overload || '.', '') || position NO#,
-               decode(position,0,'(RESULT)',Nvl(ARGUMENT_NAME, DATA_TYPE)) Argument,
-               (CASE
-                   WHEN a.pls_type IS NOT NULL THEN
-                    a.pls_type
-                   WHEN a.type_subname IS NOT NULL THEN
-                    a.type_name || '.' || a.type_subname
-                   WHEN a.type_name IS NOT NULL THEN
-                    a.type_name||'('||DATA_TYPE||')'
-                   ELSE
-                    data_type
-               END) DATA_TYPE,a.in_out,decode(b.default#,1,'Y','N') "Default?",character_set_name charset
-        FROM   all_arguments a, sys.argument$ b
-        WHERE a.object_id=b.obj#
-        AND   a.subprogram_id=b.procedure#
-        AND   NVL(a.overload,0)=b.overload#
-        AND   a.sequence=b.sequence#
-        AND   owner=:1 and nvl(package_name,' ')=nvl(:2,' ') and object_name=:3
-        AND   data_level=0
-        ORDER  BY overload, POSITION]],
+    DECLARE /*INTERNAL_DBCLI_CMD*/ 
+        over    dbms_describe.number_table;
+        posn    dbms_describe.number_table;
+        levl    dbms_describe.number_table;
+        arg     dbms_describe.varchar2_table;
+        dtyp    dbms_describe.number_table;
+        defv    dbms_describe.number_table;
+        inout   dbms_describe.number_table;
+        len     dbms_describe.number_table;
+        prec    dbms_describe.number_table;
+        scal    dbms_describe.number_table;
+        n       dbms_describe.number_table;
+        iodesc  VARCHAR2(6);
+        v_xml   XMLTYPE := XMLTYPE('<ROWSET/>');
+        v_stack VARCHAR2(3000);
+        v_ov    PLS_INTEGER:=-1;
+        v_seq   PLS_INTEGER:=-1;
+        v_type  VARCHAR2(300);
+    BEGIN
+        dbms_describe.describe_procedure(:owner || NULLIF('.' || :object_name, '.') || NULLIF('.' || :object_subname, '.'), NULL, NULL, over, posn, levl,
+                                         arg, dtyp, defv, inout, len, prec, scal, n, n);
+        FOR i IN 1 .. over.COUNT LOOP
+            IF over(i) != v_ov THEN
+                v_ov := over(i);
+                v_seq:= 1; 
+            ELSE
+                v_seq:=v_seq+1;
+            END IF;
+            SELECT decode(dtyp(i),  /* DATA_TYPE */
+                0, null,
+                1, 'VARCHAR2',
+                2, decode(scal(i), -127, 'FLOAT', 'NUMBER'),
+                3, 'NATIVE INTEGER',
+                8, 'LONG',
+                9, 'VARCHAR',
+                11, 'ROWID',
+                12, 'DATE',
+                23, 'RAW',
+                24, 'LONG RAW',
+                29, 'BINARY_INTEGER',
+                69, 'ROWID',
+                96, 'CHAR',
+                100, 'BINARY_FLOAT',
+                101, 'BINARY_DOUBLE',
+                102, 'REF CURSOR',
+                104, 'UROWID',
+                105, 'MLSLABEL',
+                106, 'MLSLABEL',
+                110, 'REF',
+                111, 'REF',
+                112, 'CLOB',
+                113, 'BLOB', 114, 'BFILE', 115, 'CFILE',
+                121, 'OBJECT',
+                122, 'TABLE',
+                123, 'VARRAY',
+                178, 'TIME',
+                179, 'TIME WITH TIME ZONE',
+                180, 'TIMESTAMP',
+                181, 'TIMESTAMP WITH TIME ZONE',
+                231, 'TIMESTAMP WITH LOCAL TIME ZONE',
+                182, 'INTERVAL YEAR TO MONTH',
+                183, 'INTERVAL DAY TO SECOND',
+                250, 'PL/SQL RECORD',
+                251, 'PL/SQL TABLE',
+                252, 'PL/SQL BOOLEAN',
+                'UNDEFINED') 
+            INTO  v_type FROM dual;
+            v_stack := '<ROW><OVERLOAD>' || over(i) || '</OVERLOAD><LEVEL>' || levl(i) || '</LEVEL><POSITION>' || posn(i) || '</POSITION><ARGUMENT_NAME>' ||arg(i) || '</ARGUMENT_NAME><DEFAULT>' 
+                || defv(i) || '</DEFAULT><SEQUENCE>' || v_seq || '</SEQUENCE><DATA_TYPE>' || v_type || '</DATA_TYPE><INOUT>' || inout(i) || '</INOUT></ROW>';
+            v_xml   := v_xml.AppendChildXML('//ROWSET', XMLTYPE(v_stack));
+        END LOOP;
+
+        OPEN :v_cur FOR
+            SELECT /*+no_merge(a) no_merge(b) use_nl(b a) push_pred(a) ordered*/
+                     decode(b.overload,0,'', b.overload||'.') || b.pos NO#,
+                     lpad(' ',b.lv*3)||decode(b.pos, 0, '(RESULT)', Nvl(b.argument_name, '<Array>')) Argument,
+                     nvl(CASE
+                         WHEN a.pls_type IS NOT NULL THEN
+                              a.pls_type
+                         WHEN a.type_subname IS NOT NULL THEN
+                              a.type_name || '.' || a.type_subname || '(' || DATA_TYPE || ')'
+                         WHEN a.type_name IS NOT NULL THEN
+                              a.type_name || '(' || DATA_TYPE || ')'
+                         ELSE
+                              a.data_type
+                     END,b.dtype) DATA_TYPE,
+                     decode(b.inout,0,'IN', 1, 'IN-OUT', 'OUT') IN_OUT,
+                     decode(b.default#, 1, 'Y', 'N') "Default?",
+                     a.character_set_name charset
+            FROM   (SELECT extractvalue(column_value, '/ROW/OVERLOAD') + 0 OVERLOAD,
+                           extractvalue(column_value, '/ROW/LEVEL') + 0  lv,
+                           extractvalue(column_value, '/ROW/POSITION') + 0  pos,
+                           extractvalue(column_value, '/ROW/SEQUENCE') + 0  seq,
+                           extractvalue(column_value, '/ROW/ARGUMENT_NAME') ARGUMENT_NAME,
+                           extractvalue(column_value, '/ROW/DATA_TYPE') DTYPE,
+                           extractvalue(column_value, '/ROW/DEFAULT') + 0 DEFAULT#,
+                           extractvalue(column_value, '/ROW/INOUT') + 0 INOUT
+                    FROM   TABLE(XMLSEQUENCE(EXTRACT(v_xml, '/ROWSET/ROW')))) b,
+                    all_arguments a
+            WHERE  a.object_id(+) = :object_id
+            AND    a.owner(+) = :owner
+            AND    a.object_name(+) = nvl(:object_subname, :object_name)
+            AND    nvl(a.overload(+), 0) = b.overload
+            AND    a.position(+) = b.pos
+            AND    a.sequence(+)=b.seq
+            --AND    nvl(a.argument_name(+),' ') = nvl(b.argument_name,' ')
+            AND    a.data_level(+) = b.lv
+            --AND    b.lv=0
+            ORDER  BY b.overload, b.seq ,b.pos;
+    END;]],
 
     PACKAGE=[[
     SELECT NO#,ELEMENT,NVL2(RETURNS,'FUNCTION','PROCEDURE') Type,ARGUMENTS,RETURNS,
@@ -59,8 +148,8 @@ local desc_sql={
                INTERFACE,
                DETERMINISTIC,
                AUTHID
-        FROM   all_PROCEDURES a
-        WHERE  owner=:1 and object_name =:2
+        FROM   ALL_PROCEDURES a
+        WHERE  owner=:owner and object_id =:object_id and object_name=:object_name
         AND    SUBPROGRAM_ID > 0
     ) ORDER  BY NO#]],
 
@@ -107,11 +196,11 @@ local desc_sql={
                END data_type,
                Inherited
         FROM   all_type_attrs
-        WHERE  owner=:1  and type_name=:2
+        WHERE  owner=:owner and type_name=:object_name
         ORDER BY NO#]],
     TABLE={[[
         SELECT /*INTERNAL_DBCLI_CMD*/ --+no_merge(b) no_merge(a)
-               COLUMN_ID NO#,
+               INTERNAL_COLUMN_ID NO#,
                COLUMN_NAME NAME,
                DATA_TYPE_OWNER || NVL2(DATA_TYPE_OWNER, '.', '') ||
                CASE WHEN DATA_TYPE IN('CHAR',
@@ -121,7 +210,7 @@ local desc_sql={
                                       'NVARCHAR',
                                       'NVARCHAR2',
                                       'RAW') --
-               THEN DATA_TYPE||'(' || DATA_LENGTH || DECODE(CHAR_USED, 'C', ' CHAR') || ')' --
+               THEN DATA_TYPE||'(' || DECODE(CHAR_USED, 'C', CHAR_LENGTH,DATA_LENGTH) || DECODE(CHAR_USED, 'C', ' CHAR') || ')' --
                WHEN DATA_TYPE = 'NUMBER' --
                THEN (CASE WHEN nvl(DATA_scale, DATA_PRECISION) IS NULL THEN DATA_TYPE
                           WHEN DATA_scale > 0 THEN DATA_TYPE||'(' || NVL(''||DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
@@ -138,8 +227,8 @@ local desc_sql={
                HIDDEN_COLUMN "Hidden?",
                AVG_COL_LEN AVG_LEN,
                num_distinct "NDV",
-               round(num_nulls*100/nullif(num_rows,0),2) "Nulls(%)",
-               round((num_rows-num_nulls)/nullif(num_distinct,0),2) CARDINALITY,
+               CASE WHEN num_rows>=num_nulls THEN round(num_nulls*100/nullif(num_rows,0),2) END "Nulls(%)",
+               CASE WHEN num_rows>=num_nulls THEN round((num_rows-num_nulls)/nullif(num_distinct,0),2) END CARDINALITY,
                nullif(HISTOGRAM,'NONE') HISTOGRAM
                /*
                ,decode(data_type
@@ -172,8 +261,8 @@ local desc_sql={
                            LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 11, 2), 'XX') - 1, '00')) || ':' ||
                            LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 13, 2), 'XX') - 1, '00')))
                       ,  high_value) hi_v*/
-        FROM   (select * from all_tab_cols a where a.owner=:1  and a.table_name=:2) a,
-               (select * from all_tables a where a.owner=:1  and a.table_name=:2) b
+        FROM   (select * from all_tab_cols a where a.owner=:owner  and a.table_name=:object_name) a,
+               (select * from all_tables a where a.owner=:owner  and a.table_name=:object_name) b
         WHERE  a.table_name=b.table_name(+)
         AND    a.owner=b.owner(+)
         ORDER BY NO#]],
@@ -191,8 +280,8 @@ local desc_sql={
         FROM   ALL_IND_COLUMNS C, ALL_INDEXES I
         WHERE  C.INDEX_OWNER = I.OWNER
         AND    C.INDEX_NAME = I.INDEX_NAME
-        AND    I.TABLE_OWNER = :1
-        AND    I.TABLE_NAME = :2
+        AND    I.TABLE_OWNER = :owner
+        AND    I.TABLE_NAME = :object_name
         ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION]],
     [[
         SELECT DECODE(R, 1, CONSTRAINT_NAME) CONSTRAINT_NAME,
@@ -217,7 +306,7 @@ local desc_sql={
                        A.SEARCH_CONDITION,
                        c.COLUMN_NAME,
                        ROW_NUMBER() OVER(PARTITION BY A.CONSTRAINT_NAME ORDER BY C.COLUMN_NAME) R
-                FROM   (select * from all_constraints where owner=:1 and table_name=:2) a,
+                FROM   (select * from all_constraints where owner=:owner and table_name=:object_name) a,
                        all_constraints R, ALL_CONS_COLUMNS C
                 WHERE  A.R_OWNER = R.OWNER(+)
                 AND    A.R_CONSTRAINT_NAME = R.CONSTRAINT_NAME(+)
@@ -227,8 +316,8 @@ local desc_sql={
     ]],
     [[
         SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/*
-        FROM   all_TABLES T
-        WHERE  T.OWNER = :1 AND T.TABLE_NAME = :2]]},
+        FROM   ALL_TABLES T
+        WHERE  T.OWNER = :owner AND T.TABLE_NAME = :object_name]]},
     ['TABLE PARTITION']={[[
          SELECT /*INTERNAL_DBCLI_CMD*/ COLUMN_ID NO#,
                 a.COLUMN_NAME NAME,
@@ -240,7 +329,7 @@ local desc_sql={
                                        'NVARCHAR',
                                        'NVARCHAR2',
                                        'RAW') --
-                THEN DATA_TYPE||'(' || DATA_LENGTH || DECODE(CHAR_USED, 'C', ' CHAR') || ')' --
+                THEN DATA_TYPE||'(' || DECODE(CHAR_USED, 'C', CHAR_LENGTH,DATA_LENGTH) || DECODE(CHAR_USED, 'C', ' CHAR') || ')' --
                 WHEN DATA_TYPE = 'NUMBER' --
                 THEN (CASE WHEN nvl(DATA_scale, DATA_PRECISION) IS NULL THEN DATA_TYPE
                            WHEN DATA_scale > 0 THEN DATA_TYPE||'(' || NVL(''||DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
@@ -257,14 +346,14 @@ local desc_sql={
                 HIDDEN_COLUMN "Hidden?",
                 a.AVG_COL_LEN AVG_LEN,
                 a.num_distinct "NDV",
-                round(a.num_nulls*100/nullif(b.num_rows,0),2) "Nulls(%)",
-                round((num_rows-a.num_nulls)/nullif(a.num_distinct,0),2) CARDINALITY,
+                CASE WHEN b.num_rows>=a.num_nulls THEN round(a.num_nulls*100/nullif(b.num_rows,0),2) END "Nulls(%)",
+                CASE WHEN b.num_rows>=a.num_nulls THEN round((num_rows-a.num_nulls)/nullif(a.num_distinct,0),2) END CARDINALITY,
                 nullif(a.HISTOGRAM,'NONE') HISTOGRAM
          FROM   all_tab_cols c,  all_Part_Col_Statistics a ,all_tab_partitions  b
          WHERE  a.owner=c.owner and a.table_name=c.table_name
          AND    a.column_name=c.column_name
          AND    a.owner=B.table_owner and a.table_name=B.table_name and a.partition_name=b.partition_name
-         AND    upper(a.owner)=:1 and a.table_name=:2 AND a.partition_name=:3
+         AND    upper(a.owner)=:owner and a.table_name=:object_name AND a.partition_name=:object_subname
          ORDER BY NO#]],
     [[
         SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/*
@@ -320,13 +409,24 @@ function desc.desc(name,option)
         rs[2],rs[3]=rs[3],rs[2]
     end
 
+    for k,v in pairs{owner=rs[1],object_name=rs[2],object_subname=rs[3],object_type=rs[4],object_id=obj.object_id} do
+        rs[k]=v
+    end
+
     local dels=string.rep("=",100)
     local feed=cfg.get("feed")
     cfg.set("feed","off",true)
     print(("%s : %s%s%s\n"..dels):format(rs[4],rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3]))
     for i,sql in ipairs(sqls) do
         if sql:find("/*PIVOT*/",1,true) then cfg.set("PIVOT",1) end
-        db:dba_query(db.query,sql,rs)
+        local typ=db.get_command_type(sql)
+        if typ=='DECLARE' or typ=='BEGIN' then
+            rs['v_cur']='#CURSOR'
+            db:dba_query(db.internal_call,sql,rs)
+            db:print_result(rs.v_cur)
+        else
+            db:dba_query(db.query,sql,rs)
+        end
         if i<#sqls then print(dels) end
     end
 

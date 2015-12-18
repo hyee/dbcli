@@ -1,4 +1,7 @@
 /*[[Show histogram. Usage: ora histogram <table_name>[.<partition_name>] <column_name>]]*/
+SET FEED OFF
+ora _find_object &V1
+
 WITH r AS
  (SELECT /*+materialize*/
    *
@@ -21,8 +24,10 @@ WITH r AS
           AND    a.column_name = b.column_name
           AND    a.owner = c.owner
           AND    a.table_name = c.table_name
-          AND    upper('.' || a.owner || '.' || a.table_name || '.') LIKE '%.' || UPPER(:V1) || '.%'
+          AND    a.owner=:object_owner
+          AND    a.table_name=:object_name
           AND    upper(a.column_name) = UPPER(:V2)
+          AND    :object_subname IS NULL
           UNION ALL
           SELECT bucket_number Bucket#,
                  endpoint_value ev,
@@ -49,9 +54,9 @@ WITH r AS
           AND    a.owner = c.table_owner
           AND    a.table_name = c.table_name
           AND    a.partition_name = c.partition_name
-          AND    instr(UPPER(:V1), upper('.' || a.partition_name)) > 1
-          AND    upper('.' || a.owner || '.' || a.table_name || '.' || a.partition_name || '.') LIKE
-                 '%.' || UPPER(:V1) || '.%'
+          AND    a.owner=:object_owner
+          AND    a.table_name=:object_name
+          AND    a.partition_name=:object_subname
           AND    upper(a.column_name) = UPPER(:V2))),
 r0 AS
  (SELECT /*+materialize*/ r.*,

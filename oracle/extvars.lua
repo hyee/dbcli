@@ -15,8 +15,10 @@ local instance_pattern={
 function extvars.on_before_db_exec(item)
     local db,sql,args=table.unpack(item)
     args.starttime,args.endtime=cfg.get("starttime"),cfg.get("endtime")
-    local instance=tonumber(cfg.get("instance"))
-    args.instance=tostring(instance>0 and instance or instance<0 and "" or db.props.instance)
+    if not args.instance or args.instance=="" then
+        local instance=tonumber(cfg.get("instance"))
+        args.instance=tostring(instance>0 and instance or instance<0 and "" or db.props.instance)
+    end
     return item
 end
 
