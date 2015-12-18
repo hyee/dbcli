@@ -522,15 +522,15 @@ function env.clear_command(_,key_event,raw_event)
         end
         env.reader:resetPromptLine(prompt,"",0)
         env.reset_input("")
-    elseif key_event.issift==1 and key_event.keycode==8 then
+    elseif key_event.issift==1 and key_event.keycode==8 then --shift+backspace
         reader:inject_call("deletePreviousWord")
         key_event.isbreak=true
-    elseif key_event.isctrl==1 and key_event.keycode==37 then
+    elseif (key_event.isctrl==1 or key_event.issift==1) and key_event.keycode==37 then --ctrl+arrow_left
         reader:inject_call("previousWord")
         key_event.isbreak=true
-    elseif key_event.isctrl==1 and key_event.keycode==39 then
+    elseif (key_event.isctrl==1 or key_event.issift==1) and key_event.keycode==39 then --ctrl+arrow_right
         reader:inject_call("nextWord")
-        key_event.isbreak=true        
+        key_event.isbreak=true
     end
 end
 
