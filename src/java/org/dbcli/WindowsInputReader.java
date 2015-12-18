@@ -18,13 +18,16 @@ public class WindowsInputReader extends NonBlockingInputStream {
     public static final int altState = KEY_EVENT_RECORD.LEFT_ALT_PRESSED | KEY_EVENT_RECORD.RIGHT_ALT_PRESSED;
     public static final int ctrlState = KEY_EVENT_RECORD.LEFT_CTRL_PRESSED | KEY_EVENT_RECORD.RIGHT_CTRL_PRESSED;
     public static final int shiftState = KEY_EVENT_RECORD.SHIFT_PRESSED;
-    public static final int anyCtrl = altState | ctrlState | shiftState;
+    public static final int anyCtrl = altState | ctrlState;
     public static final int funcState = 64;
     public static final int KEY_DOWN = 0;
     public static final int KEY_CODE = 1;
     public static final int KEY_CHAR = 2;
     public static final int KEY_CTRL = 3;
     public static final int KEY_REPE = 4;
+    public static final int KEY_ALT = 5;
+    public static final int KEY_CTL = 6;
+    public static final int KEY_SFT = 7;
     private final static ArrayBlockingQueue<long[]> inputQueue = new ArrayBlockingQueue(32767);
     static HashMap<Object, EventCallback> eventMap = new HashMap<>();
     private static HashMap<Integer, byte[]> keyEvents = new HashMap();
@@ -56,7 +59,6 @@ public class WindowsInputReader extends NonBlockingInputStream {
         keyEvents.put(KeyEvent.VK_LEFT, "\u001b[D".getBytes());
         keyEvents.put(KeyEvent.VK_BACK_SPACE, "\u0008".getBytes());
         keyEvents.put(KeyEvent.VK_TAB, "\u0009".getBytes());
-
     }
 
     byte[] buf = null;
@@ -270,7 +272,8 @@ public class WindowsInputReader extends NonBlockingInputStream {
                 //System.out.println(Arrays.toString(c0));
                 if (!isPeek && c0 != null && (c0[KEY_DOWN] == 1 || c0[KEY_CHAR] == 3) && (//
                         (c0[KEY_CTRL] > 0 && (c0[KEY_CHAR] > 0||keyEvents.containsKey(Integer.valueOf((int)c0[KEY_CODE])))) || //
-                                (c0[KEY_CODE] >= KeyEvent.VK_F1 && c0[KEY_CODE] <= KeyEvent.VK_F12 && c0[KEY_CHAR] == 0))) {
+                                (c0[KEY_SFT] > 0&&keyEvents.containsKey(Integer.valueOf((int)c0[KEY_CODE]))) ||//
+                                    (c0[KEY_CODE] >= KeyEvent.VK_F1 && c0[KEY_CODE] <= KeyEvent.VK_F12 && c0[KEY_CHAR] == 0))) {
                     for (EventCallback callback : eventMap.values()) callback.interrupt(c0);
                     if(c0[0]==2) return readRaw(timeout,isPeek);
                 }
@@ -293,7 +296,8 @@ public class WindowsInputReader extends NonBlockingInputStream {
                 if (input == null || input.length == 0) continue;
                 for (INPUT_RECORD rec : input) {
                     //System.out.println(rec.keyEvent.toString()+" uchar="+(int)rec.keyEvent.uchar);
-                    inputQueue.put(new long[]{rec.keyEvent.keyDown ? 1 : 0, rec.keyEvent.keyCode, (long)(int) rec.keyEvent.uchar, rec.keyEvent.controlKeyState & anyCtrl, rec.keyEvent.repeatCount, (rec.keyEvent.controlKeyState & altState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & ctrlState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & shiftState) > 0 ? 1 : 0,});
+                    inputQueue.put(new long[]{rec.keyEvent.keyDown ? 1 : 0, rec.keyEvent.keyCode, (long)(int) rec.keyEvent.uchar, rec.keyEvent.controlKeyState & anyCtrl, rec.keyEvent.repeatCount,//
+                     (rec.keyEvent.controlKeyState & altState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & ctrlState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & shiftState) > 0 ? 1 : 0,});
                 }
             }
         } catch (IOException e) {

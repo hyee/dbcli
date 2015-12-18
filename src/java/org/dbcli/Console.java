@@ -68,8 +68,9 @@ public class Console extends ConsoleReader {
                 if (!isRunning() && lua != null && threadID == Thread.currentThread().getId()) {
                     lua.getGlobal("TRIGGER_EVENT");
                     lua.pushJavaObject((long[]) c);
-                    lua.call(1,1);
-                    ((long[])c)[0]=lua.toInteger(lua.getTop());
+                    lua.call(1, 1);
+                    int r=lua.toInteger(lua.getTop());
+                    if(r>0) ((long[])c)[0]=2;
                 }
             }
         });
