@@ -17,6 +17,7 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -38,7 +39,7 @@ public class Console extends ConsoleReader {
     private char[] keys;
     private long threadID;
     private boolean isBlocking = false;
-    private Method _tput;
+    private HashMap<String,Method> methods=new HashMap();
 
     public Console() throws Exception {
         super();
@@ -57,11 +58,6 @@ public class Console extends ConsoleReader {
         charset = this.getTerminal().getOutputEncoding() == null ? Configuration.getEncoding() : this.getTerminal().getOutputEncoding();
         field.set(this, new InputStreamReader(in, charset));
         field.setAccessible(false);
-        _tput = ConsoleReader.class.getDeclaredMethod("tputs",String.class,Object[].class);
-        _tput.setAccessible(true);
-        this.getKeys().bind(String.valueOf(KeyMap.CTRL_H), Operation.BACKWARD_KILL_WORD);
-        this.getKeys().bind("\u001B\u001B[D", Operation.BACKWARD_WORD); //ALT + ARROW_LEFT
-        this.getKeys().bind("\u001B\u001B[C", Operation.FORWARD_WORD); //ALT + ARROW_RIGHT
         //in=(NonBlockingInputStream)this.getInput();
         Iterator<Completer> iterator = getCompleters().iterator();
         threadID = Thread.currentThread().getId();
@@ -72,14 +68,24 @@ public class Console extends ConsoleReader {
                 if (!isRunning() && lua != null && threadID == Thread.currentThread().getId()) {
                     lua.getGlobal("TRIGGER_EVENT");
                     lua.pushJavaObject((long[]) c);
-                    lua.call(1, 0);
+                    lua.call(1,1);
+                    ((long[])c)[0]=lua.toInteger(lua.getTop());
                 }
             }
         });
     }
 
-    public void tput(String arg, Object ... o) throws Exception{
-        _tput.invoke(arg,o);
+    public Object inject_call(String method,Object ...o) throws Exception{
+        Method m;
+        if(!methods.containsKey(method)) {
+            if(o.length>0) m=ConsoleReader.class.getDeclaredMethod(method,o.getClass());
+            else m=ConsoleReader.class.getDeclaredMethod(method);
+            m.setAccessible(true);
+            methods.put(method,m);
+        } else m=methods.get(method);
+        Object r=  m.invoke(this,o);
+        flush();
+        return r;
     }
 
     public String readLine(String prompt) throws IOException {

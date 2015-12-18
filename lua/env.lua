@@ -58,11 +58,12 @@ local function abort_thread()
     end
 end
 
-_G['TRIGGER_EVENT']=function(key_event,str)
+_G['TRIGGER_EVENT']=function(key_event)
     --print(key_event[1],key_event[3])
     local event={'keydown','keycode','uchar','isfunc','repeat','isalt','isctrl','issift'}
     for i,j in ipairs(event) do event[j],event[i]=key_event[i] end
-    env.safe_call(env.event and env.event.callback,5,"ON_KEY_EVENT",event,str)
+    env.safe_call(env.event and env.event.callback,5,"ON_KEY_EVENT",event,key_event)
+    return event.isbreak and 2 or 0
 end
 
 local function pcall_error(e)
@@ -507,7 +508,7 @@ function env.pending_command()
     return curr_stmt and curr_stmt~=""
 end
 
-function env.clear_command(_,key_event)
+function env.clear_command(_,key_event,raw_event)
     if key_event.uchar==3 or key_event.uchar==4 then --ctrl+c and ctrl+d
         if env.pending_command() then
             multi_cmd,curr_stmt=nil,nil
@@ -521,6 +522,15 @@ function env.clear_command(_,key_event)
         end
         env.reader:resetPromptLine(prompt,"",0)
         env.reset_input("")
+    elseif key_event.issift==1 and key_event.keycode==8 then
+        reader:inject_call("deletePreviousWord")
+        key_event.isbreak=true
+    elseif key_event.isctrl==1 and key_event.keycode==37 then
+        reader:inject_call("previousWord")
+        key_event.isbreak=true
+    elseif key_event.isctrl==1 and key_event.keycode==39 then
+        reader:inject_call("nextWord")
+        key_event.isbreak=true        
     end
 end
 

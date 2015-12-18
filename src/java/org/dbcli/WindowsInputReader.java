@@ -9,6 +9,7 @@ import java.awt.event.KeyEvent;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -219,17 +220,19 @@ public class WindowsInputReader extends NonBlockingInputStream {
             // Compute the overall alt state
             ctrlFlags |= event[KEY_CTRL];
             boolean isAlt = ((event[KEY_CTRL] & altState) != 0) && ((event[KEY_CTRL] & ctrlState) == 0);
+            Integer  code=Integer.valueOf((int) event[KEY_CODE]);
             //Log.trace(keyEvent.keyDown? "KEY_DOWN" : "KEY_UP", "key code:", keyEvent.keyCode, "char:", (long)keyEvent.uchar);
             if (event[KEY_DOWN] == 1) {
+                //System.out.println(Arrays.toString(event)+","+KEY_CHAR+","+event[KEY_CHAR]);
                 if (event[KEY_CHAR] > 0) {
                     if (isAlt && ((event[KEY_CHAR] >= '@' && event[KEY_CHAR] <= '_') || (event[KEY_CHAR] >= 'a' && event[KEY_CHAR] <= 'z')))
                         inputBuff.put((byte) '\u001B');
                     inputBuff.put((byte) event[KEY_CHAR]);
-                } else if (keyEvents.containsKey(Integer.valueOf((int) event[KEY_CODE]))) {
+                } else if (keyEvents.containsKey(code)) {
                     ctrlFlags |= funcState;
                     for (int k = 0; k < event[KEY_REPE]; k++) {
                         if (isAlt) inputBuff.put((byte) '\u001B');
-                        inputBuff.put(keyEvents.get(Integer.valueOf((int) event[KEY_CODE])));
+                        inputBuff.put(keyEvents.get(code));
                     }
                 }
             } else {
@@ -260,7 +263,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
         try {
             c = new long[][]{timeout < 0 ? inputQueue.poll() : (timeout == 0 ? inputQueue.take() : inputQueue.poll(timeout, TimeUnit.MILLISECONDS))};
             if (c[0] != null && c[0][KEY_DOWN] == 1) {
-                long[] c1 = inputQueue.poll(200, TimeUnit.MILLISECONDS);
+                long[] c1 = inputQueue.poll(100, TimeUnit.MILLISECONDS);
                 if (c1 != null) c = new long[][]{c[0], c1};
             }
             for (long[] c0 : c) {
@@ -269,6 +272,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
                         (c0[KEY_CTRL] > 0 && (c0[KEY_CHAR] > 0||keyEvents.containsKey(Integer.valueOf((int)c0[KEY_CODE])))) || //
                                 (c0[KEY_CODE] >= KeyEvent.VK_F1 && c0[KEY_CODE] <= KeyEvent.VK_F12 && c0[KEY_CHAR] == 0))) {
                     for (EventCallback callback : eventMap.values()) callback.interrupt(c0);
+                    if(c0[0]==2) return readRaw(timeout,isPeek);
                 }
             }
             if (isPeek) peeker = c;
@@ -288,8 +292,8 @@ public class WindowsInputReader extends NonBlockingInputStream {
                 INPUT_RECORD[] input = WindowsSupport.readConsoleInput(1);
                 if (input == null || input.length == 0) continue;
                 for (INPUT_RECORD rec : input) {
-                    //System.out.println(rec.keyEvent.toString());
-                    inputQueue.put(new long[]{rec.keyEvent.keyDown ? 1 : 0, rec.keyEvent.keyCode, (long) rec.keyEvent.uchar, rec.keyEvent.controlKeyState & anyCtrl, rec.keyEvent.repeatCount, (rec.keyEvent.controlKeyState & altState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & ctrlState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & shiftState) > 0 ? 1 : 0,});
+                    //System.out.println(rec.keyEvent.toString()+" uchar="+(int)rec.keyEvent.uchar);
+                    inputQueue.put(new long[]{rec.keyEvent.keyDown ? 1 : 0, rec.keyEvent.keyCode, (long)(int) rec.keyEvent.uchar, rec.keyEvent.controlKeyState & anyCtrl, rec.keyEvent.repeatCount, (rec.keyEvent.controlKeyState & altState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & ctrlState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & shiftState) > 0 ? 1 : 0,});
                 }
             }
         } catch (IOException e) {
