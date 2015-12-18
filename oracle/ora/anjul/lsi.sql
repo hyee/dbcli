@@ -52,9 +52,9 @@ select
        , substr(s.status,1,4) status
        , floor(s.last_call_et/3600)||':'||
          floor(mod(s.last_call_et,3600)/60)||':'||
-         mod(mod(s.last_call_et,3600),60)  			last_call_et
+         mod(mod(s.last_call_et,3600),60)              last_call_et
        , s.lockwait
-	 , Substr(s.program,1,20) program, sw.event , s.sql_id
+     , Substr(s.program,1,20) program, sw.event , s.sql_id
   from
        gv$session s
      , gv$process p
@@ -65,12 +65,12 @@ and    sw.sid  = s.sid
 and s.inst_id = p.inst_id
 and s.sid = sw.sid
 and s.inst_id = sw.inst_id
-and	s.username is not null
+and    s.username is not null
 and &filter
  order
      by s.status desc
       , s.last_call_et desc
-	, P.spid
+    , P.spid
 ;
 
 
@@ -86,15 +86,15 @@ prompt -- ----------------------------------------------------------------------
 
 
 Select
-       '--  Time : '||Time||' - Process : '||Proc||' - Session '||Sess			Status
+       '--  Time : '||Time||' - Process : '||Proc||' - Session '||Sess            Status
  From
-       ( Select To_Char(Sysdate, 'HH24:MI') 	Time
+       ( Select To_Char(Sysdate, 'HH24:MI')     Time
          From Dual
        )
-     , ( Select Count(*)				Proc
+     , ( Select Count(*)                Proc
          From GV$Process
        )
-     , ( Select Count(*) 				Sess
+     , ( Select Count(*)                 Sess
          From GV$Session
         )
 ;
@@ -105,8 +105,8 @@ Prompt
 
 
 Select
-	 Initcap(S.Status)	status
-     , Count(*)			nb_sess
+     Initcap(S.Status)    status
+     , Count(*)            nb_sess
   From
        GV$Session S
  Group
@@ -130,13 +130,13 @@ prompt -- ----------------------------------------------------------------------
 
 Select
        sn.sid
-     , substr(sn.username,1,8) 		username
+     , substr(sn.username,1,8)         username
      , Trunc(sl.sofar/sl.totalwork * 100) pct
-     , sn.machine					machine
-     , sn.program 				program
-     , sn.module					modu
-	 , sl.message
-     , to_char(start_time,'DD-MON-YY HH:MI:SS') 	Sta_Time
+     , sn.machine                    machine
+     , sn.program                 program
+     , sn.module                    modu
+     , sl.message
+     , to_char(start_time,'DD-MON-YY HH:MI:SS')     Sta_Time
      , to_char(last_update_time,'DD-MON-YY HH:MI:SS') LUTime
      , To_Char(To_Date(TIME_REMAINING,'SSSSS'),'HH24:MI:SS') Time_Left
   From

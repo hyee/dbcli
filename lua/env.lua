@@ -60,7 +60,9 @@ end
 
 _G['TRIGGER_EVENT']=function(key_event,str)
     --print(key_event[1],key_event[3])
-    env.safe_call(env.event and env.event.callback,5,"ON_KEY_EVENT",key_event,str)
+    local event={'keydown','keycode','uchar','isfunc','repeat','isalt','isctrl','issift'}
+    for i,j in ipairs(event) do event[j],event[i]=key_event[i] end
+    env.safe_call(env.event and env.event.callback,5,"ON_KEY_EVENT",event,str)
 end
 
 local function pcall_error(e)
@@ -506,22 +508,22 @@ function env.pending_command()
 end
 
 function env.clear_command(_,key_event)
-    --ctrl_c or ctrl_d
-    if key_event and key_event[3]~=3 and key_event[3]~=4 then
-        return 
-    end
-    if env.pending_command() then
-        multi_cmd,curr_stmt=nil,nil
-        env.CURRENT_PROMPT=env.PRI_PROMPT
-    end
-    local prompt=env.PRI_PROMPT
+    if key_event.uchar==3 or key_event.uchar==4 then --ctrl+c and ctrl+d
+        if env.pending_command() then
+            multi_cmd,curr_stmt=nil,nil
+            env.CURRENT_PROMPT=env.PRI_PROMPT
+        end
+        local prompt=env.PRI_PROMPT
 
-    if env.ansi then
-        local prompt_color="%s%s"..env.ansi.get_color("NOR").."%s"
-        prompt=prompt_color:format(env.ansi.get_color("PROMPTCOLOR"),prompt,env.ansi.get_color("COMMANDCOLOR"))
+        if env.ansi then
+            local prompt_color="%s%s"..env.ansi.get_color("NOR").."%s"
+            prompt=prompt_color:format(env.ansi.get_color("PROMPTCOLOR"),prompt,env.ansi.get_color("COMMANDCOLOR"))
+        end
+        env.reader:resetPromptLine(prompt,"",0)
+        env.reset_input("")
+    elseif key_event.isalt==1 then --shift+backspace
+        print(table.dump(key_event))
     end
-    env.reader:resetPromptLine(prompt,"",0)
-    env.reset_input("")
 end
 
 function env.parse_args(cmd,rest,is_cross_line)

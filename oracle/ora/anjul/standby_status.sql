@@ -1,7 +1,7 @@
-/* [[ standby status	Usage: standby_status
-	--[[
-	@CHECKVERSION: 11.1 = {1}
-	]]--
+/* [[ standby status    Usage: standby_status
+    --[[
+    @CHECKVERSION: 11.1 = {1}
+    ]]--
 ]]*/
 
 SELECT y.thread thread,

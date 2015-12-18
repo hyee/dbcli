@@ -7,8 +7,8 @@ SET FEED OFF
 DECLARE
     TYPE t IS TABLE OF VARCHAR2(2000);
     t1 t;
-	begin_time DATE:=nvl(to_date(:V1,'YYMMDDHH24MI'),SYSDATE-30/1440);
-	end_time   DATE:=nvl(to_date(:V2,'YYMMDDHH24MI'),SYSDATE-30/1440);
+    begin_time DATE:=nvl(to_date(:V1,'YYMMDDHH24MI'),SYSDATE-30/1440);
+    end_time   DATE:=nvl(to_date(:V2,'YYMMDDHH24MI'),SYSDATE-30/1440);
 BEGIN
     EXECUTE IMMEDIATE 'ALTER SESSION SET NLS_DATE_FORMAT=''YYYY-MM-DD HH24:MI:SS''';
     SELECT MAX(MEMBER) BULK COLLECT
@@ -26,10 +26,10 @@ BEGIN
     WHERE  first_time <=end_time AND last_time>=begin_time
     GROUP  BY GROUP#;
 
-	BEGIN
-		sys.dbms_logmnr.end_logmnr;
+    BEGIN
+        sys.dbms_logmnr.end_logmnr;
     EXCEPTION WHEN OTHERS THEN NULL;
-	END;
+    END;
 
     FOR i IN 1 .. t1.COUNT LOOP
         sys.dbms_logmnr.add_logfile(t1(i),

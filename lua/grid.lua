@@ -205,7 +205,7 @@ function grid.show_pivot(rows,col_del)
     for k,v in ipairs(title) do
         table.insert(r,{("%s%-"..maxlen.."s %s%s "):format(hor,grid.format_title(v),nor,del)})
         for i=2,pivot,1 do
-            table.insert(r[k],rows[i][keys[v]])
+            table.insert(r[k],tostring(rows[i][keys[v]]):trim())
         end
     end
 
@@ -328,6 +328,8 @@ function grid:add(rs)
                 colsize[k][2] = -1
             end
         end
+
+
         if headind==0 and title_style~="none" then
             v=grid.format_title(v)
         end
