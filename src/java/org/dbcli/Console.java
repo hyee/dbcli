@@ -75,7 +75,7 @@ public class Console extends ConsoleReader {
         });
     }
 
-    public Object inject_call(String method,Object ...o) throws Exception{
+    public Object invokeMethod(String method,Object ...o) throws Exception{
         Method m;
         if(!methods.containsKey(method)) {
             if(o.length>0) m=ConsoleReader.class.getDeclaredMethod(method,o.getClass());
