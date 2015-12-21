@@ -41,7 +41,7 @@ mt.__declared = {}
 
 mt.__newindex = function (t, n, v)
     if not mt.__declared[n] and env.WORK_DIR then
-        --if record_maker then print('Detected unexpected global var "'..n..'" with', debug.traceback()) end
+        --if n=='args' then print('Detected unexpected global var "'..n..'" with', debug.traceback()) end
         rawset(mt.__declared, n,env.callee(5))
     end
     rawset(t, n, v)
@@ -508,7 +508,7 @@ function env.pending_command()
     return curr_stmt and curr_stmt~=""
 end
 
-function env.clear_command(_,key_event,raw_event)
+function env.modify_command(_,key_event,raw_event)
     if key_event.uchar==3 or key_event.uchar==4 then --ctrl+c and ctrl+d
         if env.pending_command() then
             multi_cmd,curr_stmt=nil,nil
@@ -520,9 +520,9 @@ function env.clear_command(_,key_event,raw_event)
             local prompt_color="%s%s"..env.ansi.get_color("NOR").."%s"
             prompt=prompt_color:format(env.ansi.get_color("PROMPTCOLOR"),prompt,env.ansi.get_color("COMMANDCOLOR"))
         end
-        env.reader:resetPromptLine(prompt,"",0)
+        reader:resetPromptLine(prompt,"",0)
         env.reset_input("")
-    elseif key_event.issift==1 and key_event.keycode==8 then --shift+backspace
+    elseif (key_event.isctrl==1 or key_event.issift==1) and key_event.keycode==8 then --shift+backspace
         reader:invokeMethod("deletePreviousWord")
         key_event.isbreak=true
     elseif (key_event.isctrl==1 or key_event.issift==1) and key_event.keycode==37 then --ctrl+arrow_left
@@ -840,7 +840,7 @@ function env.onload(...)
         env.ansi.define_color("commandcolor","HIC","ansi.core","Define command line's color, type 'ansi' for more available options")
     end
     if env.event then
-        env.event.snoop("ON_KEY_EVENT",env.clear_command)
+        env.event.snoop("ON_KEY_EVENT",env.modify_command)
         env.event.callback("ON_ENV_LOADED")
     end
 

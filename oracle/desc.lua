@@ -22,9 +22,13 @@ local desc_sql={
         v_ov    PLS_INTEGER:=-1;
         v_seq   PLS_INTEGER:=-1;
         v_type  VARCHAR2(300);
+        v_pos   VARCHAR2(30);
+        v_target VARCHAR2(100):=:owner || NULLIF('.' || :object_name, '.') || NULLIF('.' || :object_subname, '.');
+        type t_idx IS TABLE OF PLS_INTEGER INDEX BY PLS_INTEGER;
+        v_idx    t_idx;
     BEGIN
-        dbms_describe.describe_procedure(:owner || NULLIF('.' || :object_name, '.') || NULLIF('.' || :object_subname, '.'), NULL, NULL, over, posn, levl,
-                                         arg, dtyp, defv, inout, len, prec, scal, n, n);
+        v_target:='"'||replace(v_target,'.','"."')||'"';
+        dbms_describe.describe_procedure(v_target, NULL, NULL, over, posn, levl,arg, dtyp, defv, inout, len, prec, scal, n, n);
         FOR i IN 1 .. over.COUNT LOOP
             IF over(i) != v_ov THEN
                 v_ov := over(i);
@@ -32,6 +36,14 @@ local desc_sql={
             ELSE
                 v_seq:=v_seq+1;
             END IF;
+
+            v_idx(levl(i)) := posn(i);
+            v_pos          := '';
+            FOR j IN 0..levl(i)-1 LOOP
+                v_pos := v_pos||v_idx(j)||'.';
+            END LOOP;
+            v_pos := v_pos||posn(i);
+
             SELECT decode(dtyp(i),  /* DATA_TYPE */
                 0, null,
                 1, 'VARCHAR2',
@@ -71,7 +83,7 @@ local desc_sql={
                 252, 'PL/SQL BOOLEAN',
                 'UNDEFINED') 
             INTO  v_type FROM dual;
-            v_stack := '<ROW><OVERLOAD>' || over(i) || '</OVERLOAD><LEVEL>' || levl(i) || '</LEVEL><POSITION>' || posn(i) || '</POSITION><ARGUMENT_NAME>' ||arg(i) || '</ARGUMENT_NAME><DEFAULT>' 
+            v_stack := '<ROW><OVERLOAD>' || over(i) || '</OVERLOAD><LEVEL>' || levl(i) || '</LEVEL><POSITION>' || v_pos || '</POSITION><ARGUMENT_NAME>' ||arg(i) || '</ARGUMENT_NAME><DEFAULT>' 
                 || defv(i) || '</DEFAULT><SEQUENCE>' || v_seq || '</SEQUENCE><DATA_TYPE>' || v_type || '</DATA_TYPE><INOUT>' || inout(i) || '</INOUT></ROW>';
             v_xml   := v_xml.AppendChildXML('//ROWSET', XMLTYPE(v_stack));
         END LOOP;
@@ -79,7 +91,7 @@ local desc_sql={
         OPEN :v_cur FOR
             SELECT /*+no_merge(a) no_merge(b) use_nl(b a) push_pred(a) ordered*/
                      decode(b.overload,0,'', b.overload||'.') || b.pos NO#,
-                     lpad(' ',b.lv*3)||decode(b.pos, 0, '(RESULT)', Nvl(b.argument_name, '<Array>')) Argument,
+                     lpad(' ',b.lv*2)||decode(0+regexp_substr(b.pos,'\d+$'), 0, '(RETURNS)', Nvl(b.argument_name, '<Array>')) Argument,
                      nvl(CASE
                          WHEN a.pls_type IS NOT NULL THEN
                               a.pls_type
@@ -90,12 +102,12 @@ local desc_sql={
                          ELSE
                               a.data_type
                      END,b.dtype) DATA_TYPE,
-                     decode(b.inout,0,'IN', 1, 'IN-OUT', 'OUT') IN_OUT,
+                     decode(b.inout,0,'IN', 1, 'IN/OUT', 'OUT') IN_OUT,
                      decode(b.default#, 1, 'Y', 'N') "Default?",
                      a.character_set_name charset
             FROM   (SELECT extractvalue(column_value, '/ROW/OVERLOAD') + 0 OVERLOAD,
                            extractvalue(column_value, '/ROW/LEVEL') + 0  lv,
-                           extractvalue(column_value, '/ROW/POSITION') + 0  pos,
+                           extractvalue(column_value, '/ROW/POSITION')  pos,
                            extractvalue(column_value, '/ROW/SEQUENCE') + 0  seq,
                            extractvalue(column_value, '/ROW/ARGUMENT_NAME') ARGUMENT_NAME,
                            extractvalue(column_value, '/ROW/DATA_TYPE') DTYPE,
@@ -107,11 +119,10 @@ local desc_sql={
             AND    a.owner(+) = :owner
             AND    a.object_name(+) = nvl(:object_subname, :object_name)
             AND    nvl(a.overload(+), 0) = b.overload
-            AND    a.position(+) = b.pos
+            AND    a.position(+) = 0+regexp_substr(b.pos,'\d+$')
             AND    a.sequence(+)=b.seq
             --AND    nvl(a.argument_name(+),' ') = nvl(b.argument_name,' ')
             AND    a.data_level(+) = b.lv
-            --AND    b.lv=0
             ORDER  BY b.overload, b.seq ,b.pos;
     END;]],
 
@@ -199,7 +210,7 @@ local desc_sql={
         WHERE  owner=:owner and type_name=:object_name
         ORDER BY NO#]],
     TABLE={[[
-        SELECT /*INTERNAL_DBCLI_CMD*/ --+no_merge(b) no_merge(a)
+        SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('_optim_peek_user_binds','false') no_merge(b) no_merge(a)
                INTERNAL_COLUMN_ID NO#,
                COLUMN_NAME NAME,
                DATA_TYPE_OWNER || NVL2(DATA_TYPE_OWNER, '.', '') ||
@@ -267,7 +278,7 @@ local desc_sql={
         AND    a.owner=b.owner(+)
         ORDER BY NO#]],
     [[
-        SELECT /*INTERNAL_DBCLI_CMD*/
+        SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('_optim_peek_user_binds','false')
              DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
              DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
              DECODE(C.COLUMN_POSITION, 1, DECODE(I.UNIQUENESS,'UNIQUE','YES','NO'), '') "UNIQUE",
@@ -284,7 +295,8 @@ local desc_sql={
         AND    I.TABLE_NAME = :object_name
         ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION]],
     [[
-        SELECT DECODE(R, 1, CONSTRAINT_NAME) CONSTRAINT_NAME,
+        SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('_optim_peek_user_binds','false')
+               DECODE(R, 1, CONSTRAINT_NAME) CONSTRAINT_NAME,
                DECODE(R, 1, CONSTRAINT_TYPE) CTYPE,
                DECODE(R, 1, R_TABLE) R_TABLE,
                DECODE(R, 1, R_CONSTRAINT) R_CONSTRAINT,
@@ -423,6 +435,7 @@ function desc.desc(name,option)
         if typ=='DECLARE' or typ=='BEGIN' then
             rs['v_cur']='#CURSOR'
             db:dba_query(db.internal_call,sql,rs)
+
             db:print_result(rs.v_cur)
         else
             db:dba_query(db.query,sql,rs)

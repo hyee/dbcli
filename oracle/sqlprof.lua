@@ -216,7 +216,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
     if not db:check_access('sys.sql$text',1) then
         stmt=stmt:gsub("%$IF.-%$END","")
     end
-    args={sql_text or "",'#CLOB',sql_id or "",sql_plan or ""}
+    local args={sql_text or "",'#CLOB',sql_id or "",sql_plan or ""}
     db:internal_call(stmt,args)
     if args[1] and args[1]:sub(1,1)=="#" then
         env.raise(args[1]:sub(2))
