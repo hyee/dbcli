@@ -42,7 +42,8 @@ local desc_sql={
                        DECODE(TYPE#, 1, 0, 96, 0, NVL(SCALE, 0)) SCALE
                 FROM   SYS.ARGUMENT$ A
                 WHERE  OBJ# = :id
-                AND    PROCEDURE$=:name'
+                AND   (PROCEDURE$=:name or PROCEDURE$ IS NULL)
+                ORDER  BY OVERLOAD#,SEQUENCE#'
             BULK COLLECT INTO arg,over,posn,dtyp,defv,inout,levl,len,prec,scal USING :object_id,nvl(:object_subname, :object_name);
         EXCEPTION WHEN OTHERS THEN
             v_target:='"'||replace(v_target,'.','"."')||'"';
