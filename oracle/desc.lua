@@ -107,8 +107,8 @@ local desc_sql={
                 252, 'PL/SQL BOOLEAN',
                 'UNDEFINED') || 
                 CASE 
-                    WHEN dtyp(i) =22 AND prec(i)>0 AND nullif(scal(i),0) IS NULL THEN '('||prec(i)||NULLIF(','||scal(i),',')||')'
-                    WHEN dtyp(i)!=22 AND len(i) >0 THEN '('||len(i)||')' 
+                    WHEN dtyp(i) =2 AND prec(i)>0 AND nvl(nullif(scal(i),0),prec(i)) NOT IN(38,-127) THEN '('||prec(i)||NULLIF(','||scal(i),',')||')'
+                    WHEN dtyp(i)!=2 AND len(i) >0 THEN '('||len(i)||')' 
                 END
             INTO  v_type FROM dual;
             v_stack := '<ROW><OVERLOAD>' || over(i) || '</OVERLOAD><LEVEL>' || levl(i) || '</LEVEL><POSITION>' || v_pos || '</POSITION><ARGUMENT_NAME>' ||arg(i) || '</ARGUMENT_NAME><DEFAULT>' 
@@ -127,7 +127,7 @@ local desc_sql={
                               a.type_name || '.' || a.type_subname || '(' || DATA_TYPE || ')'
                          WHEN a.type_name IS NOT NULL THEN
                               a.type_name || '(' || a.data_type || ')'
-                         WHEN a.data_type='NUMBER' AND a.data_precision=22 AND nvl(a.data_scale,0)=0 THEN 'INTEGER'      
+                         WHEN a.data_type='NUMBER' AND a.data_length=22 AND nvl(a.data_scale,0)=0 THEN 'INTEGER'      
                          WHEN a.data_type IN('FLOAT','INTEGER','INT','BINARY_FLOAT','BINARY_DOUBLE') THEN a.data_type
                          ELSE a.data_type || 
                             CASE WHEN DATA_PRECISION>0 THEN '('||DATA_PRECISION||NULLIF(','||DATA_SCALE,',')||')'
