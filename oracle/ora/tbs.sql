@@ -25,11 +25,11 @@ SELECT TABLESPACE_NAME,
        'No' TEMP,
        g location
 FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION*/ 
-              decode(grouping_id(file_id),0,null,TABLESPACE_NAME) TABLESPACE_NAME,
+              decode(grouping_id(TABLESPACE_NAME,file_id),0,null,3,'TOTAL(Permanent)',nvl2(:V1,'','  ')||TABLESPACE_NAME) TABLESPACE_NAME,
               decode(grouping_id(file_id),0,file_id,count(1)) files,
               nvl(SUM(FREE_BYTES-6*blocksiz),0)  FREE_SPACE, --minus 6 end blocks
               round(sqrt(sum(m_blocks)/sum(s_blocks))* (100/sqrt(sqrt(sum(c_blocks)))),2) fsfi,
-              sum(hwm_block*blocksiz) HWM_SPACE,
+              sum(nvl(hwm_block*blocksiz,space)) HWM_SPACE,
               SUM(siz) siz,
               SUM(space) SPACE,
               decode(grouping_id(file_id),0,max(file_name),&CHECK_ACCESS) g
@@ -42,16 +42,16 @@ FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION*/
                    max(b.bytes/b.blocks) blocksiz, 
                    max(greatest(b.maxbytes, b.bytes)) siz,
                    max(b.bytes) space,
-                   nvl(max(case when a.block_id+a.blocks-1>=b.user_blocks then a.block_id end),max(b.blocks)) hwm_block,
+                   max(case when a.block_id+a.blocks-1>=b.user_blocks then a.block_id end) hwm_block,
                    max(b.file_name) file_name
             FROM   DBA_FREE_SPACE a RIGHT JOIN DBA_DATA_FILES b USING(TABLESPACE_NAME,FILE_ID)
             WHERE  (:V1 IS NULL OR TABLESPACE_NAME=upper(:V1))
             GROUP  BY TABLESPACE_NAME,FILE_ID)
-        GROUP BY  TABLESPACE_NAME,ROLLUP(FILE_ID)
-        HAVING :V1 IS NOT NULL OR FILE_ID IS NULL)
+        GROUP BY  ROLLUP(TABLESPACE_NAME,FILE_ID)
+        HAVING (:V1 IS NOT NULL AND grouping_id(TABLESPACE_NAME)<1) OR (:V1 IS NULL AND FILE_ID IS NULL))
 UNION ALL
 SELECT /*+NO_EXPAND_GSET_TO_UNION no_expand no_merge(h) no_merge(p) no_merge(f) use_hash(h p f)*/
-       decode(grouping_id(h.file_id),0,null,h.tablespace_name),
+       decode(grouping_id(h.TABLESPACE_NAME,h.file_id),0,null,3,'TOTAL(Temporary)',nvl2(:V1,'','  ')||h.TABLESPACE_NAME) TABLESPACE_NAME,
        decode(grouping_id(h.file_id),0,h.file_id,count(distinct f.file_id)) files,
        SUM(decode(f.autoextensible, 'YES', f.maxbytes, 'NO', f.bytes))  file_size,
        SUM(h.bytes_free + h.bytes_used)  space_all,
@@ -69,6 +69,6 @@ AND    p.tablespace_name(+) = h.tablespace_name
 AND    f.file_id = h.file_id
 AND    f.tablespace_name = h.tablespace_name
 AND   (:V1 IS NULL OR h.TABLESPACE_NAME=upper(:V1))
-GROUP  BY h.tablespace_name,ROLLUP(h.FILE_ID)
-HAVING :V1 IS NOT NULL OR h.FILE_ID IS NULL
-ORDER  BY TEMP,"USED_SPACE" DESC;
+GROUP  BY ROLLUP(h.tablespace_name,h.FILE_ID)
+HAVING (:V1 IS NOT NULL AND grouping_id(H.TABLESPACE_NAME)<1) OR (:V1 IS NULL AND H.FILE_ID IS NULL)
+ORDER  BY TEMP,USED_SPACE DESC,TABLESPACE_NAME DESC;

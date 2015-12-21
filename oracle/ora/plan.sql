@@ -8,7 +8,7 @@ Option:
     -adv  : the plan with the 'advanced' format
     -a    : the plan with the 'all' format
 --[[
-    @STAT: 10.1={&DF &V3 &V4 &V5 &V6 &V7 &V8 &V9}
+    &STAT: default={&DF &V3 &V4 &V5 &V6 &V7 &V8 &V9}
     &V3: none={} ol={outline alias}
     &DF: default={ALLSTATS ALL -PROJECTION LAST -ALIAS}, basic={BASIC}, adv={advanced}, a={all}
     &SRC: {

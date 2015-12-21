@@ -12,7 +12,7 @@
             u={username=sys_context('userenv','current_schema') and &range}
         }
       &more_filter: default={1=1},f={}
-      @counter: 11.2={, count(distinct sql_exec_id) "Execs"},10.1={}
+      @counter: 11.2={, count(distinct sql_exec_id) "Execs"},default={}
     ]]--
   Options:
       Groupings : The grouping option can be followed by other custimized field, i.e.: 'ashtop -p,p1raw ...'

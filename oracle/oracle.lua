@@ -112,6 +112,7 @@ function oracle:connect(conn_str)
         DECLARE
             vs  PLS_INTEGER := dbms_db_version.version;
             ver PLS_INTEGER := sign(vs-9);
+            re  PLS_INTEGER := dbms_db_version.release;
         BEGIN
             EXECUTE IMMEDIATE 'alter session set nls_date_format=''yyyy-mm-dd hh24:mi:ss''';
             EXECUTE IMMEDIATE 'alter session set statistics_level=all';
@@ -124,15 +125,17 @@ function oracle:connect(conn_str)
                    decode(ver,1,userenv('instance')) inst,
                    sys_context('userenv', 'isdba') isdba,
                    sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.') serivce_name,
-                   decode(sign(vs-10),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY','','PHYSICAL STANDBY',' (Standby)'))
+                   decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY',' ','PHYSICAL STANDBY',' (Standby)')) END
             INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :isdba, :serivce_name,:db_role
             FROM   nls_Database_Parameters
             WHERE  parameter = 'NLS_CHARACTERSET';
             
             BEGIN
-                IF vs < 11 THEN 
+                IF :db_role IS NULL THEN 
                     EXECUTE IMMEDIATE q'[select decode(DATABASE_ROLE,'PRIMARY','',' (Standby)') from v$database]'
                     into :db_role;
+                ELSIF :db_role = ' ' THEN
+                    :db_role := trim(:db_role);
                 END IF;
 
                 IF vs < 10 THEN
@@ -148,6 +151,8 @@ function oracle:connect(conn_str)
 
     
     if not succ then
+        self.props.instance=1
+        self.props.db_version='99.9'
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
     else
         prompt=(prompt or self.props.service_name):match("^([^,%.&]+)")

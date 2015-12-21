@@ -3,8 +3,6 @@ package org.dbcli;
 import com.naef.jnlua.LuaState;
 import jline.Terminal;
 import jline.console.ConsoleReader;
-import jline.console.KeyMap;
-import jline.console.Operation;
 import jline.console.completer.Completer;
 import jline.console.history.History;
 import jline.internal.Configuration;
@@ -39,7 +37,7 @@ public class Console extends ConsoleReader {
     private char[] keys;
     private long threadID;
     private boolean isBlocking = false;
-    private HashMap<String,Method> methods=new HashMap();
+    private HashMap<String, Method> methods = new HashMap();
 
     public Console() throws Exception {
         super();
@@ -69,22 +67,23 @@ public class Console extends ConsoleReader {
                     lua.getGlobal("TRIGGER_EVENT");
                     lua.pushJavaObject((long[]) c);
                     lua.call(1, 1);
-                    int r=lua.toInteger(lua.getTop());
-                    if(r>0) ((long[])c)[0]=2;
+                    int r = lua.toInteger(lua.getTop());
+                    //System.out.println(r);
+                    if (r == 2) ((long[]) c)[0] = 2;
                 }
             }
         });
     }
 
-    public Object invokeMethod(String method,Object ...o) throws Exception{
+    public Object invokeMethod(String method, Object... o) throws Exception {
         Method m;
-        if(!methods.containsKey(method)) {
-            if(o.length>0) m=ConsoleReader.class.getDeclaredMethod(method,o.getClass());
-            else m=ConsoleReader.class.getDeclaredMethod(method);
+        if (!methods.containsKey(method)) {
+            if (o.length > 0) m = ConsoleReader.class.getDeclaredMethod(method, o.getClass());
+            else m = ConsoleReader.class.getDeclaredMethod(method);
             m.setAccessible(true);
-            methods.put(method,m);
-        } else m=methods.get(method);
-        Object r=  m.invoke(this,o);
+            methods.put(method, m);
+        } else m = methods.get(method);
+        Object r = m.invoke(this, o);
         flush();
         return r;
     }

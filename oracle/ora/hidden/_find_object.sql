@@ -33,7 +33,14 @@ BEGIN
             target := '"'||target||'"';
         END IF;
         
-        sys.dbms_utility.name_tokenize(target,schem,part1,part2,dblink,part1_type);
+        BEGIN 
+            sys.dbms_utility.name_tokenize(target,schem,part1,part2,dblink,part1_type);
+        EXCEPTION WHEN OTHERS THEN
+            IF SQLCODE=-931 THEN --ORA-00931: Missing identifier
+                --dbms_output.put_line(-20001,'"'||REPLACE(UPPER(target),'.','"."')||'"');
+                sys.dbms_utility.name_tokenize('"'||REPLACE(UPPER(target),'.','"."')||'"',schem,part1,part2,dblink,part1_type);
+            END IF;
+        END;
         target:=trim('.' from schem||'.'||part1||'.'||part2);
         schem:=null;
         FOR i IN 0 .. 9 LOOP

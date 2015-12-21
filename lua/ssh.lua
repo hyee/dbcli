@@ -51,8 +51,7 @@ end
 function ssh:connect(conn_str)
     self.script_stack={}
     local usr,pwd,host,port,url
-    if type(conn_str)=="table" then --from 'login' command
-        args=conn_str
+    if type(conn_str)=="table" then --from 'login' commands
         usr,pwd,url,host,port=conn_str.user,packer.unpack_str(conn_str.password),conn_str.url,conn_str.host,conn_str.port
         if not host then
             usr,host,port=url:match("^SSH:(.+)@(.+):(%d+)$")
