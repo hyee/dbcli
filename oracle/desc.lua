@@ -29,7 +29,7 @@ local desc_sql={
     BEGIN
         BEGIN 
             EXECUTE IMMEDIATE '
-                SELECT /*+index(a)*/ 
+                SELECT /*+index(a) opt_param(''_optim_peek_user_binds'',''false'') no_expand*/ 
                        ARGUMENT,
                        OVERLOAD#,
                        POSITION# POSITION,
@@ -41,9 +41,9 @@ local desc_sql={
                        NVL(PRECISION#, 0) PRECISION,
                        DECODE(TYPE#, 1, 0, 96, 0, NVL(SCALE, 0)) SCALE
                 FROM   SYS.ARGUMENT$ A
-                WHERE  OBJ# = :id
-                AND   (PROCEDURE$=:name or PROCEDURE$ IS NULL)
-                ORDER  BY OVERLOAD#,SEQUENCE#'
+                WHERE  OBJ# = 0+:id
+                AND   (PROCEDURE$ IS NULL OR PROCEDURE$=:name)
+                ORDER BY OVERLOAD#,SEQUENCE#'
             BULK COLLECT INTO arg,over,posn,dtyp,defv,inout,levl,len,prec,scal USING :object_id,nvl(:object_subname, :object_name);
         EXCEPTION WHEN OTHERS THEN
             v_target:='"'||replace(v_target,'.','"."')||'"';
@@ -53,6 +53,10 @@ local desc_sql={
             IF over(i) != v_ov THEN
                 v_ov := over(i);
                 v_seq:= 1; 
+                IF v_ov > 1 THEN
+                    v_stack := '<ROW><OVERLOAD>' || v_ov || '</OVERLOAD><LEVEL>0</LEVEL><POSITION>-1</POSITION><ARGUMENT_NAME>---------------</ARGUMENT_NAME><DEFAULT/><SEQUENCE>0</SEQUENCE><DATA_TYPE>---------------</DATA_TYPE></ROW>';
+                    v_xml   := v_xml.AppendChildXML('//ROWSET', XMLTYPE(v_stack));
+                END IF;
             ELSE
                 v_seq:=v_seq+1;
             END IF;
@@ -103,7 +107,7 @@ local desc_sql={
                 252, 'PL/SQL BOOLEAN',
                 'UNDEFINED') || 
                 CASE 
-                    WHEN dtyp(i) =22 AND prec(i)>0 AND NVL(nullif(scal(i),0),prec(i))!=22 THEN '('||prec(i)||NULLIF(','||scal(i),',')||')'
+                    WHEN dtyp(i) =22 AND prec(i)>0 AND nullif(scal(i),0) IS NULL THEN '('||prec(i)||NULLIF(','||scal(i),',')||')'
                     WHEN dtyp(i)!=22 AND len(i) >0 THEN '('||len(i)||')' 
                 END
             INTO  v_type FROM dual;
@@ -114,8 +118,8 @@ local desc_sql={
 
         OPEN :v_cur FOR
             SELECT /*+no_merge(a) no_merge(b) use_nl(b a) push_pred(a) ordered*/
-                     decode(b.overload,0,'', b.overload||'.') || b.pos NO#,
-                     lpad(' ',b.lv*2)||decode(0+regexp_substr(b.pos,'\d+$'), 0, '(RETURNS)', Nvl(b.argument_name, '<Array>')) Argument,
+                     decode(b.pos,'-1','---',decode(b.overload,0,'', b.overload||'.') || b.pos) NO#,
+                     lpad(' ',b.lv*2)||decode(0+regexp_substr(b.pos,'\d+$'), 0, '(RETURNS)', Nvl(b.argument_name, '<Collection>')) Argument,
                      nvl(CASE
                          WHEN a.pls_type IS NOT NULL AND a.pls_type!=a.data_type THEN
                               a.pls_type
@@ -130,9 +134,9 @@ local desc_sql={
                                  WHEN DATA_LENGTH   >0 THEN '('||DECODE(CHAR_USED,'C',CHAR_LENGTH||' CHAR',DATA_LENGTH)||')'
                             END
                          END,b.dtype) DATA_TYPE,
-                     decode(b.inout,0,'IN', 1, 'IN/OUT', 'OUT') IN_OUT,
-                     decode(b.default#, 1, 'Y', 'N') "Default?",
-                     a.character_set_name charset
+                     decode(b.inout,0,'IN', 1, 'IN/OUT',2,'OUT','------') IN_OUT,
+                     decode(b.default#, 1, 'Y', 0, 'N','--------') "Default?",
+                     decode(b.pos,'-1','-------',a.character_set_name) charset
             FROM   (SELECT extractvalue(column_value, '/ROW/OVERLOAD') + 0 OVERLOAD,
                            extractvalue(column_value, '/ROW/LEVEL') + 0  lv,
                            extractvalue(column_value, '/ROW/POSITION')  pos,
