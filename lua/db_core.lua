@@ -240,6 +240,8 @@ function ResultSet:rows(rs,count,limit)
                         rows[i+1][j]=rows[i+1][j]:gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
                     elseif head.colinfo[j].data_typeName=="BLOB" then
                         rows[i+1][j]=rows[i+1][j]:sub(1,255)
+                    elseif head.colinfo[j].is_number then
+                        rows[i+1][j]=tonumber(rows[i+1][j]) or rows[i+1][j]
                     end
                 end
             end

@@ -71,7 +71,7 @@ local desc_sql={
             SELECT decode(dtyp(i),  /* DATA_TYPE */
                 0, null,
                 1, 'VARCHAR2',
-                2, decode(scal(i), -127, 'FLOAT', CASE WHEN prec(i)=38 AND scal(i) IS NULL THEN 'INTEGER' ELSE 'NUMBER' END),
+                2, decode(scal(i), -127, 'FLOAT', CASE WHEN prec(i)=38 AND nvl(scal(i),0)=0 THEN 'INTEGER' ELSE 'NUMBER' END),
                 3, 'NATIVE INTEGER',
                 8, 'LONG',
                 9, 'VARCHAR',

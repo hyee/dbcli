@@ -16,9 +16,9 @@ BEGIN
             FROM   &check_access_obj 
             WHERE  owner=:object_owner
             AND    object_name=:object_name
-            AND    object_type like :object_type||'%'
+            --AND    object_type like :object_type||'%'
             AND    (:object_type IN('PACKAGE','TYPE')  OR nvl(subobject_name,' ') like :object_subname||'%')
-            ORDER  BY subobject_name desc nulls first)
+            ORDER  BY OBJECT_ID)
         WHERE ROWNUM<=50;
 END;
 /

@@ -1,4 +1,6 @@
-2015-12-18: + public: shift+backspace=>kill previous word; Ctrl/shift+ARROW_LEFT=>move previous word; Ctrl/shift+ARROW_RIGHT=>move next word
+2015-12-23: * oracle: performance tuning on command 'unwrap'; minor fixes
+            + oracle: new command 'ora trace' to enable trace for sql_id/sid/ora-xxx    
+2015-12-18: + public: Ctrl/shift+backspace=>kill previous word; Ctrl/shift+ARROW_LEFT=>move previous word; Ctrl/shift+ARROW_RIGHT=>move next word
             * oracle: fixes; enhancement on 'desc' command
 2015-12-17: * oracle: enhancement on 'show tbs', and move 'show tbs' as 'ora tbs', refer to 'ora -h tbs' for more info
 2015-12-16: * public: minor fixes

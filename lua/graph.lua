@@ -77,7 +77,7 @@ function graph:run_sql(sql,args,cmd,file)
         return tonumber(val:match('[eE%.%-%d]+')) or 0
     end
     local counter=-1
-    rows=self.db.resultset:rows(rs)
+    rows=self.db.resultset:rows(rs,-1)
     while true do
         counter=counter+1
         local row=rows[counter+1]

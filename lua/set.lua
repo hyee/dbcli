@@ -121,15 +121,16 @@ end
 
 function cfg.temp(name,value,backup)
     name=name:upper()
-    if not cfg.exists(name) then return end
-    if backup or cfg.exists(name).prebackup then
-        cfg.exists(name).org=cfg.exists(name).value
+    local item=cfg.exists(name)
+    if not item then return end
+    if (backup or item.prebackup) then
+        item.org=item.value
     end
-    cfg.exists(name).prebackup=backup
-    cfg.exists(name).value=value
+    item.prebackup=backup
+    item.value=value
     env.log_debug("set",name,value)
     if env.event then
-        env.event.callback("ON_SETTING_CHANGED",name,value,cfg.exists(name).org)
+        env.event.callback("ON_SETTING_CHANGED",name,value,item.org)
     end
 end
 

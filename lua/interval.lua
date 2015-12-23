@@ -57,10 +57,10 @@ end
 
 
 function interval.onload()
-    env.set_command(nil,{"INTERVAL",interval.cmd},[[
-        Run a command with specific interval, type 'help itv' for detail. Usage: ITV <START [seconds] [remark]|END|seconds times command>
+    env.set_command(nil,{"REPEAT",interval.cmd},[[
+        Run a command with specific interval, type 'help itv' for detail. Usage: repeat <START [seconds] [remark]|END|seconds times command>
         Example:
-            1)  itv 5 5 ora actives
+            1)  repeat 5 5 ora actives
             2)  refer to 'show itvtest'
       ]],interval.itv,'__SMART_PARSE__',4)
     if env.event then 

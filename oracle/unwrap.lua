@@ -89,22 +89,22 @@ function unwrap.unwrap(obj,ext)
          WHERE OWNER = :1
          AND   NAME  = :2
          ORDER BY TYPE, LINE]],{obj.owner,obj.object_name})
-    db.resultset:fetch(rs,db.conn)
     local cache={}
     local result=""
     local txt=""
-    while true do
-        local piece=db.resultset:fetch(rs,db.conn)
-        if not piece then break end
+    local rows=db.resultset:rows(rs,-1)
+    table.remove(rows,1)
+    for index,piece in ipairs(rows) do
         cache[#cache+1]=piece[1]
         if piece[3]==piece[4] then
             txt,cache=table.concat(cache,''),{};
-            if piece[2]==1 then
+            if tonumber(piece[2])==1 then
                 local cnt,lines=txt:match('[\n\r][0-9a-f]+ ([0-9a-f]+)[\n\r](.*)')
                 env.checkerr(lines,'Cannot find matched text!')
                 txt=decode_base64_package(lines:gsub('[\n\r]+',''))
             end
-            result=result..'CREATE OR REPLACE '..txt:gsub('[^;]+$','')..'\n/\n\n'
+            txt=txt:sub(1,-100)..(txt:sub(-99):gsub('%s*;[^;]*$',';'))
+            result=result..'CREATE OR REPLACE '..txt..'\n/\n\n'
         end
     end
     db.resultset:close(rs)
@@ -114,7 +114,7 @@ function unwrap.unwrap(obj,ext)
 end
 
 function unwrap.onload()
-    env.set_command(nil,"unwrap",'Extract the source code of the specific object(procedure/package/function/trigger/type). Usage: unwrap [<owner>.]<object_name> [<file_ext>]',unwrap.unwrap,false,3)
+    env.set_command(nil,"unwrap",'Extract and unwrap(if wrapped) the source code of the specific object(procedure/package/function/trigger/type). Usage: unwrap [<owner>.]<object_name> [<file_ext>]',unwrap.unwrap,false,3)
 end
 
 return unwrap

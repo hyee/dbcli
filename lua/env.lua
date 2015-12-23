@@ -822,9 +822,9 @@ function env.onload(...)
 
     env.init.onload()
     
-    env.set_prompt(nil,prompt_stack._base,0)
+    env.set_prompt(nil,prompt_stack._base,nil,0)
     if env.set and env.set.init then
-        env.set.init({"Prompt","SQLPROMPT","SQLP"},prompt_stack._base,env.set_prompt,
+        env.set.init({"Prompt","SQLPROMPT","SQLP"},prompt_stack._base,function(n,v,d) return env.set_prompt(n,v,d,3) end,
                   "core","Define command's prompt, if value is 'timing' then will record the time cost(in second) for each execution.")
         env.set.init("COMMAND_ENDMARKS",end_marks,env.set_endmark,
                   "core","Define the symbols to indicate the end input the cross-lines command. Cannot be alphanumeric characters.")
