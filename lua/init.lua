@@ -121,8 +121,12 @@ function init.load_database()
     end
     local file=init.databases[env.CURRENT_DB]
     if not file then return end
-    local name=file:match("([^\\/]+)$")
-    env[name]=exec(loadfile(env.WORK_DIR..file:gsub("[\\/]+",env.PATH_DEL)..'.lua'))
+    local dir,name=file:match("^(.-)([^\\/]+)$")
+    dir=env.WORK_DIR..dir:gsub("[\\/]+",env.PATH_DEL)
+    for k,v in pairs(env.list_dir(dir,"jar")) do
+        java.loader:addPath(v[2])
+    end
+    env[name]=exec(loadfile(dir..name..'.lua'))
     exec(type(env[name])=="table" and env[name].onload,env[name],name)
     init.module_list[#init.module_list+1]=file
     if env.event then env.event.callback('ON_DB_ENV_LOADED',env.CURRENT_DB) end
