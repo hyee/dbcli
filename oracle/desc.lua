@@ -269,9 +269,10 @@ local desc_sql={
                num_distinct "NDV",
                CASE WHEN num_rows>=num_nulls THEN round(num_nulls*100/nullif(num_rows,0),2) END "Nulls(%)",
                CASE WHEN num_rows>=num_nulls THEN round((num_rows-num_nulls)/nullif(num_distinct,0),2) END CARDINALITY,
-               nullif(HISTOGRAM,'NONE') HISTOGRAM
-               /*
-               ,decode(data_type
+               nullif(HISTOGRAM,'NONE') HISTOGRAM,
+               (select trim(comments) from all_col_comments where owner=a.owner and table_name=a.table_name and column_name=a.column_name) comments
+               
+               /*,decode(data_type
                   ,'NUMBER'       ,to_char(utl_raw.cast_to_number(low_value))
                   ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(low_value))
                   ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(low_value))
@@ -301,8 +302,8 @@ local desc_sql={
                            LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 11, 2), 'XX') - 1, '00')) || ':' ||
                            LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 13, 2), 'XX') - 1, '00')))
                       ,  high_value) hi_v*/
-        FROM   (select * from all_tab_cols a where a.owner=:owner  and a.table_name=:object_name) a,
-               (select * from all_tables a where a.owner=:owner  and a.table_name=:object_name) b
+        FROM   (select * from all_tab_cols a where a.owner=:owner and a.table_name=:object_name) a,
+               (select * from all_tables a where a.owner=:owner and a.table_name=:object_name) b
         WHERE  a.table_name=b.table_name(+)
         AND    a.owner=b.owner(+)
         ORDER BY NO#]],

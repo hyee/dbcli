@@ -20,8 +20,6 @@ function db2:ctor(isdefault)
 end
 
 function db2:connect(conn_str)
-    java.loader:addPath(env.WORK_DIR..'db2'..env.PATH_DEL.."db2jcc4.jar")
-    java.loader:addPath(env.WORK_DIR..'db2'..env.PATH_DEL.."db2jcc_license_cu.jar")
     java.system:setProperty('db2.jcc.charsetDecoderEncoder',3)
     local args
     local usr,pwd,conn_desc

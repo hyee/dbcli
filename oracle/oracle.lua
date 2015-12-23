@@ -24,7 +24,6 @@ local oracle=env.class(env.db_core)
 
 function oracle:ctor(isdefault)
     self.type="oracle"
-    java.loader:addPath(env.WORK_DIR..'oracle'..env.PATH_DEL.."ojdbc7.jar")
     self.db_types:load_sql_types('oracle.jdbc.OracleTypes')
     
     local header = "set feed off sqlbl on define off;\n";

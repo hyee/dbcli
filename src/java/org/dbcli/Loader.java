@@ -65,6 +65,7 @@ public class Loader {
 
     public static void loadLua(Loader loader, String args[]) throws Exception {
         lua = new LuaState();
+
         lua.openLibs();
         lua.pushJavaObject(loader);
         lua.setGlobal("loader");
