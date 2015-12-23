@@ -13,7 +13,7 @@ Option:
     &DF: default={ALLSTATS ALL -PROJECTION LAST -ALIAS}, basic={BASIC}, adv={advanced}, a={all}
     &SRC: {
             default={0}, # Both
-            d={1}        # Dictionary only
+            d={2}        # Dictionary only
           }
     &binds: default={0}, b={1}
 ]]--
@@ -106,7 +106,7 @@ WITH sql_plan_data AS
                             max(plan_hash_value) keep(dense_rank last order by snap_id)
                      from dba_hist_sqlstat c where sql_id=a.sql_id))
                   ) a
-         WHERE flag>&src)
+         WHERE flag>=&src)
   WHERE  seq = 1),
 hierarchy_data AS
  (SELECT id, parent_id, plan_hash_value,minid

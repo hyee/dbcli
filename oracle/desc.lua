@@ -27,12 +27,36 @@ local desc_sql={
         type t_idx IS TABLE OF PLS_INTEGER INDEX BY PLS_INTEGER;
         v_idx    t_idx;
     BEGIN
-        v_target:='"'||replace(v_target,'.','"."')||'"';
-        dbms_describe.describe_procedure(v_target, NULL, NULL, over, posn, levl,arg, dtyp, defv, inout, len, prec, scal, n, n);
+        BEGIN 
+            EXECUTE IMMEDIATE '
+                SELECT /*+index(a) opt_param(''_optim_peek_user_binds'',''false'') no_expand*/ 
+                       ARGUMENT,
+                       OVERLOAD#,
+                       POSITION# POSITION,
+                       TYPE# TYPE,
+                       NVL(DEFAULT#, 0) DEFAULT#,
+                       NVL(IN_OUT, 0) IN_OUT,
+                       NVL(LEVEL#, 0) LEVEL#,
+                       NVL(LENGTH, 0) LENGTH,
+                       NVL(PRECISION#, 0) PRECISION,
+                       DECODE(TYPE#, 1, 0, 96, 0, NVL(SCALE, 0)) SCALE
+                FROM   SYS.ARGUMENT$ A
+                WHERE  OBJ# = 0+:id
+                AND   (PROCEDURE$ IS NULL OR PROCEDURE$=:name)
+                ORDER BY OVERLOAD#,SEQUENCE#'
+            BULK COLLECT INTO arg,over,posn,dtyp,defv,inout,levl,len,prec,scal USING :object_id,nvl(:object_subname, :object_name);
+        EXCEPTION WHEN OTHERS THEN
+            v_target:='"'||replace(v_target,'.','"."')||'"';
+            dbms_describe.describe_procedure(v_target, NULL, NULL, over, posn, levl,arg, dtyp, defv, inout, len, prec, scal, n, n,true);
+        END;
         FOR i IN 1 .. over.COUNT LOOP
             IF over(i) != v_ov THEN
                 v_ov := over(i);
                 v_seq:= 1; 
+                IF v_ov > 1 THEN
+                    v_stack := '<ROW><OVERLOAD>' || v_ov || '</OVERLOAD><LEVEL>0</LEVEL><POSITION>-1</POSITION><ARGUMENT_NAME>---------------</ARGUMENT_NAME><DEFAULT/><SEQUENCE>0</SEQUENCE><DATA_TYPE>---------------</DATA_TYPE></ROW>';
+                    v_xml   := v_xml.AppendChildXML('//ROWSET', XMLTYPE(v_stack));
+                END IF;
             ELSE
                 v_seq:=v_seq+1;
             END IF;
@@ -47,7 +71,7 @@ local desc_sql={
             SELECT decode(dtyp(i),  /* DATA_TYPE */
                 0, null,
                 1, 'VARCHAR2',
-                2, decode(scal(i), -127, 'FLOAT', 'NUMBER'),
+                2, decode(scal(i), -127, 'FLOAT', CASE WHEN prec(i)=38 AND nvl(scal(i),0)=0 THEN 'INTEGER' ELSE 'NUMBER' END),
                 3, 'NATIVE INTEGER',
                 8, 'LONG',
                 9, 'VARCHAR',
@@ -81,7 +105,11 @@ local desc_sql={
                 250, 'PL/SQL RECORD',
                 251, 'PL/SQL TABLE',
                 252, 'PL/SQL BOOLEAN',
-                'UNDEFINED') 
+                'UNDEFINED') || 
+                CASE 
+                    WHEN dtyp(i) =2 AND prec(i)>0 AND nvl(nullif(scal(i),0),prec(i)) NOT IN(38,-127) THEN '('||prec(i)||NULLIF(','||scal(i),',')||')'
+                    WHEN dtyp(i)!=2 AND len(i) >0 THEN '('||len(i)||')' 
+                END
             INTO  v_type FROM dual;
             v_stack := '<ROW><OVERLOAD>' || over(i) || '</OVERLOAD><LEVEL>' || levl(i) || '</LEVEL><POSITION>' || v_pos || '</POSITION><ARGUMENT_NAME>' ||arg(i) || '</ARGUMENT_NAME><DEFAULT>' 
                 || defv(i) || '</DEFAULT><SEQUENCE>' || v_seq || '</SEQUENCE><DATA_TYPE>' || v_type || '</DATA_TYPE><INOUT>' || inout(i) || '</INOUT></ROW>';
@@ -90,21 +118,25 @@ local desc_sql={
 
         OPEN :v_cur FOR
             SELECT /*+no_merge(a) no_merge(b) use_nl(b a) push_pred(a) ordered*/
-                     decode(b.overload,0,'', b.overload||'.') || b.pos NO#,
-                     lpad(' ',b.lv*2)||decode(0+regexp_substr(b.pos,'\d+$'), 0, '(RETURNS)', Nvl(b.argument_name, '<Array>')) Argument,
+                     decode(b.pos,'-1','---',decode(b.overload,0,'', b.overload||'.') || b.pos) NO#,
+                     lpad(' ',b.lv*2)||decode(0+regexp_substr(b.pos,'\d+$'), 0, '(RETURNS)', Nvl(b.argument_name, '<Collection>')) Argument,
                      nvl(CASE
-                         WHEN a.pls_type IS NOT NULL THEN
+                         WHEN a.pls_type IS NOT NULL AND a.pls_type!=a.data_type THEN
                               a.pls_type
                          WHEN a.type_subname IS NOT NULL THEN
                               a.type_name || '.' || a.type_subname || '(' || DATA_TYPE || ')'
                          WHEN a.type_name IS NOT NULL THEN
-                              a.type_name || '(' || DATA_TYPE || ')'
-                         ELSE
-                              a.data_type
-                     END,b.dtype) DATA_TYPE,
-                     decode(b.inout,0,'IN', 1, 'IN/OUT', 'OUT') IN_OUT,
-                     decode(b.default#, 1, 'Y', 'N') "Default?",
-                     a.character_set_name charset
+                              a.type_name || '(' || a.data_type || ')'
+                         WHEN a.data_type='NUMBER' AND a.data_length=22 AND nvl(a.data_scale,0)=0 THEN 'INTEGER'      
+                         WHEN a.data_type IN('FLOAT','INTEGER','INT','BINARY_FLOAT','BINARY_DOUBLE') THEN a.data_type
+                         ELSE a.data_type || 
+                            CASE WHEN DATA_PRECISION>0 THEN '('||DATA_PRECISION||NULLIF(','||DATA_SCALE,',')||')'
+                                 WHEN DATA_LENGTH   >0 THEN '('||DECODE(CHAR_USED,'C',CHAR_LENGTH||' CHAR',DATA_LENGTH)||')'
+                            END
+                         END,b.dtype) DATA_TYPE,
+                     decode(b.inout,0,'IN', 1, 'IN/OUT',2,'OUT','------') IN_OUT,
+                     decode(b.default#, 1, 'Y', 0, 'N','--------') "Default?",
+                     decode(b.pos,'-1','-------',a.character_set_name) charset
             FROM   (SELECT extractvalue(column_value, '/ROW/OVERLOAD') + 0 OVERLOAD,
                            extractvalue(column_value, '/ROW/LEVEL') + 0  lv,
                            extractvalue(column_value, '/ROW/POSITION')  pos,
@@ -121,7 +153,6 @@ local desc_sql={
             AND    nvl(a.overload(+), 0) = b.overload
             AND    a.position(+) = 0+regexp_substr(b.pos,'\d+$')
             AND    a.sequence(+)=b.seq
-            --AND    nvl(a.argument_name(+),' ') = nvl(b.argument_name,' ')
             AND    a.data_level(+) = b.lv
             ORDER  BY b.overload, b.seq ,b.pos;
     END;]],
@@ -189,10 +220,8 @@ local desc_sql={
                           ELSE attr_type_name||'(' || PRECISION  || ')' END) ELSE attr_type_name END
                data_type,
                attr_type_name || CASE
-                   WHEN attr_type_name IN
-                        ('CHAR', 'VARCHAR', 'VARCHAR2', 'NCHAR', 'NVARCHAR', 'NVARCHAR2', 'RAW') --
-                    THEN
-                    '(' || LENGTH || ')'
+                   WHEN attr_type_name IN ('CHAR', 'VARCHAR', 'VARCHAR2', 'NCHAR', 'NVARCHAR', 'NVARCHAR2', 'RAW') --
+                   THEN '(' || LENGTH || ')'
                    WHEN attr_type_name = 'NUMBER' THEN
                     (CASE
                         WHEN scale IS NULL AND PRECISION IS NULL THEN

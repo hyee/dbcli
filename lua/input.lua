@@ -1,7 +1,7 @@
 local string,io,table=string,io,table
 package.path=debug.getinfo(1).short_src:gsub('[%w%.]+$','?.lua')
 io.stdout:write("    --------------------------------------------------------------------------------------------------------------------------------------\n")
-io.stdout:write("    | DBCLI, type 'conn' to connect to db, or 'help' for more information. (c)2014-2015 hyee, MIT license (https://github.com/hyee/dbcli)|\n")
+io.stdout:write("    | DBCLI, type 'conn' to connect to db, or 'help' for more information. (c)2014-2016 hyee, MIT license (https://github.com/hyee/dbcli)|\n")
 io.stdout:write("    ======================================================================================================================================\n\n")
 
 local env=require("env")

@@ -45,7 +45,7 @@ function printer.print(...)
             ignore=true
         end
     end
-    output=table.concat(output,' '):gsub("(\r?\n\r?)","%1"..env.space):gsub('`([^\n\r]+)`',fmt)
+    output=table.concat(output,' '):gsub("(\r?\n\r?)","%1"..env.space)--:gsub('`([^\n\r]+)`',env.ansi.get_color("PROMPTCOLOR")..'%1'..NOR)
     if printer.grep_text and not ignore then
         local stack=output:split('[\n\r]+')
         output={}

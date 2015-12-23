@@ -37,11 +37,11 @@ BEGIN
             sys.dbms_utility.name_tokenize(target,schem,part1,part2,dblink,part1_type);
         EXCEPTION WHEN OTHERS THEN
             IF SQLCODE=-931 THEN --ORA-00931: Missing identifier
-                --dbms_output.put_line(-20001,'"'||REPLACE(UPPER(target),'.','"."')||'"');
                 sys.dbms_utility.name_tokenize('"'||REPLACE(UPPER(target),'.','"."')||'"',schem,part1,part2,dblink,part1_type);
             END IF;
         END;
-        target:=trim('.' from schem||'.'||part1||'.'||part2);
+        target:='"'||REPLACE(trim('.' from schem||'.'||part1||'.'||part2),'.','"."')||'"';
+        
         schem:=null;
         FOR i IN 0 .. 9 LOOP
             BEGIN
@@ -75,8 +75,8 @@ BEGIN
 
     IF schem IS NULL THEN
         flag  := FALSE;
-        schem := regexp_substr(target, '[^\.]+', 1, 1);
-        part1 := regexp_substr(target, '[^\.]+', 1, 2);
+        schem := regexp_substr(target, '[^\."]+', 1, 1);
+        part1 := regexp_substr(target, '[^\."]+', 1, 2);
         IF part1 IS NULL THEN
             part1 := schem;
             schem := null;
@@ -96,7 +96,7 @@ BEGIN
     FROM (
         SELECT a.*,
                case when owner=:1 then 0 else 100 end +
-               case when :2 like '%'||OBJECT_NAME||nullif('.'||SUBOBJECT_NAME||'%','.%') then 0 else 10 end +
+               case when :2 like '%"'||OBJECT_NAME||'"'||nvl2(SUBOBJECT_NAME,'."'||SUBOBJECT_NAME||'"%','') then 0 else 10 end +
                case substr(object_type,1,3) when 'TAB' then 1 when 'CLU' then 2 else 3 end s_flag
         FROM   ]' || objs;
     
@@ -105,7 +105,7 @@ BEGIN
 
     IF part2 IS NULL THEN
         IF part2_temp IS NULL AND NOT flag THEN
-            part2_temp := regexp_substr(target, '[^\.]+', 1, CASE WHEN part1=regexp_substr(target, '[^\.]+', 1, 1) THEN 2 ELSE 3 END);
+            part2_temp := regexp_substr(target, '[^\."]+', 1, CASE WHEN part1=regexp_substr(target, '[^\."]+', 1, 1) THEN 2 ELSE 3 END);
         END IF;
         part2 := part2_temp;
     END IF;
