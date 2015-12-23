@@ -1,4 +1,4 @@
-/*[[Enable/Disable Trace: Usage: trace [<sql_id>|<SES-XXXXX>|<SYS-XXXXX>|<ORA-XXXXX>|<sid,serial#>|<event>|me|default] [trace_level]  ]]
+/*[[Enable/disable trace. Usage: trace [<sql_id>|<SES-XXXXX>|<SYS-XXXXX>|<ORA-XXXXX>|<sid,serial#>|<event>|me|default] [trace_level]  ]]
     Trace specific SQL ID(11g+ only):  trace <sql_id>      [trace_level]
     Trace specific Session          :  trace <sid,serial>  [trace_level] -- Only able to trace the sid in local instance
     Trace specific ORA error        :  trace <ORA-XXXXX>   [trace_level] -- System level,ORA-00001(unique constraint violated) for example
@@ -7,14 +7,14 @@
     Trace this session(event 10046) :  trace me            [trace_level]
     Trace for a specific event      :  trace <event_name>  [trace_level]
     
-    Parameter "trace_level"(default as 12 not specify):
-        off or  0 :   turn off trace
-        on  or  1 :   turn on with header or without binds/waits
-                2 :   turn on with public header
-                4 :   turn on with binds only
-                8 :   turn on with waits only
-                10:   turn on with full dump information 
-                12:   turn on with binds/waits
+    Parameter "trace_level"(default as 12 if not specify):
+        off or 0:   turn off trace
+        on  or 1:   turn on with header or without binds/waits
+               2:   turn on with public header
+               4:   turn on with binds only
+               8:   turn on with waits only
+              10:   turn on with full dump information 
+              12:   turn on with binds/waits
                 
     Availble values for <event_name> and related levels:
         buffers       : dump buffer header in SGA
@@ -43,7 +43,7 @@ set feed off
 DECLARE
     target  VARCHAR2(100) := :V1;
     args    VARCHAR2(30)  := :V2;
-    v_stmt  VARCHAR2(300);
+    stmt    VARCHAR2(300);
     typ     VARCHAR2(30);
     lv      PLS_INTEGER;
     serial# PLS_INTEGER;
@@ -84,15 +84,15 @@ BEGIN
         target := regexp_substr(target,'\d+');
         get_trace_file(target);
         IF lv>0 THEN
-            v_stmt := 'BEGIN dbms_monitor.session_trace_enable('||target||', '||serial#||', case when '||BITAND(lv, 8)||' >0 then true else false end,case when '||BITAND(lv, 4)||' >0 then true else false end &check_ver1);END;';
+            stmt := 'BEGIN dbms_monitor.session_trace_enable('||target||', '||serial#||','||case when BITAND(lv, 4) >0 then 'true' else 'false' end||','||case when BITAND(lv, 4) >0 then 'true' else 'false' end||'&check_ver1);END;';
         ELSE
-            v_stmt := 'BEGIN dbms_monitor.session_trace_disable('||target||', '||serial#||');END;';
+            stmt := 'BEGIN dbms_monitor.session_trace_disable('||target||', '||serial#||');END;';
         END IF;
     ELSIF regexp_like(upper(target), '^ORA\-\d+$') THEN
         IF lv>0 THEN
-            v_stmt := 'ALTER SYSTEM SET events = ''' || (0+regexp_substr(target, '\d+$')) || ' TRACE NAME ERRORSTACK LEVEL '||lv||'''';
+            stmt := 'ALTER SYSTEM SET events = ''' || (0+regexp_substr(target, '\d+$')) || ' TRACE NAME ERRORSTACK LEVEL '||lv||'''';
         ELSE
-            v_stmt := 'ALTER SYSTEM SET events = ''' || (0+regexp_substr(target, '\d+$')) || ' TRACE NAME ERRORSTACK OFF''';
+            stmt := 'ALTER SYSTEM SET events = ''' || (0+regexp_substr(target, '\d+$')) || ' TRACE NAME ERRORSTACK OFF''';
         END IF;
     ELSIF upper(target) ='ME' OR regexp_like(UPPER(target), '^(SES|SYS)\-\d+$') THEN
         COMMIT;
@@ -109,37 +109,37 @@ BEGIN
                 EXECUTE IMMEDIATE 'alter session set tracefile_identifier=''' || ('dbcli' || round(dbms_random.value(10000, 99999))) || '''';
                 get_trace_file(USERENV('sid'));
             END IF;
-            v_stmt := 'alter '||typ||' set events = '''||target||' trace name context forever, level ' || lv || '''';
+            stmt := 'alter '||typ||' set events = '''||target||' trace name context forever, level ' || lv || '''';
         ELSE
             IF typ='SESSION' THEN
                 get_trace_file(USERENV('sid'));
                 EXECUTE IMMEDIATE 'alter session set tracefile_identifier=''''';
             END IF;
-            v_stmt := 'alter '||typ||' set events = '''||target||' trace name context off''';
+            stmt := 'alter '||typ||' set events = '''||target||' trace name context off''';
         END IF;
     ELSIF regexp_like(target, '^\w+$') and length(target)=13 THEN
         IF lv>0 THEN
-            v_stmt := 'ALTER SYSTEM SET events = ''sql_trace[SQL:' || target || '] {pgadep: exactdepth 0} {callstack: fname opiexe} plan_stat=all_executions, wait='||case when BITAND(lv, 8)>0 then 'true' else 'false' end ||',bind='||case when BITAND(lv, 4)>0 then 'true' else 'false' end ||'''';
+            stmt := 'ALTER SYSTEM SET events = ''sql_trace[SQL:' || target || '] {pgadep: exactdepth 0} {callstack: fname opiexe} plan_stat=all_executions, wait='||case when BITAND(lv, 8)>0 then 'true' else 'false' end ||',bind='||case when BITAND(lv, 4)>0 then 'true' else 'false' end ||'''';
         ELSE
-            v_stmt := 'ALTER SYSTEM SET events = ''sql_trace[SQL:' || target || '] off''';
+            stmt := 'ALTER SYSTEM SET events = ''sql_trace[SQL:' || target || '] off''';
         END IF;
     ELSIF target IS NOT NULL THEN
         IF lv>0 THEN
             EXECUTE IMMEDIATE 'alter session set tracefile_identifier=''' || ('dbcli' || round(dbms_random.value(10000, 99999))) || '''';
             get_trace_file(USERENV('sid'));
-            v_stmt := 'alter session set events ''immediate trace name '||target||' level ' || lv || '''';
+            stmt := 'alter session set events ''immediate trace name '||target||' level ' || lv || '''';
         END IF;
     ELSE
         raise_application_error(-20001,'Please specify the trace options, type "ora -h trace" for more detail!');
     END IF;
 
-    IF v_stmt IS NOT NULL THEN
+    IF stmt IS NOT NULL THEN
         BEGIN
-            IF LV>0 THEN dbms_output.put_line('Executing statement: ' || v_stmt); END IF;
-            EXECUTE IMMEDIATE v_stmt;
-            IF LV=0 THEN dbms_output.put_line('Executing statement: ' || v_stmt); END IF;
+            IF LV>0 THEN dbms_output.put_line('Executing statement: ' || stmt); END IF;
+            EXECUTE IMMEDIATE stmt;
+            IF LV=0 THEN dbms_output.put_line('Executing statement: ' || stmt); END IF;
         EXCEPTION WHEN OTHERS THEN
-            raise_application_error(-20001,sqlerrm||': '|| v_stmt);
+            raise_application_error(-20001,sqlerrm||': '|| stmt);
         END;
     END IF;
 END;
