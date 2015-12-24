@@ -1,7 +1,7 @@
 /*[[
     Show active sessions. Usage: ora actives [-s|-p|-b|-o] [-f"<filter>"|-u|-i] [sid|wt|ev|sql|<col>]
     
-    Options(options within same group cannot combine, i.e. "ora actives -u -i" is illegal, used "ora actives -u -i2" instead):
+    Options(options within same group cannot combine, i.e. "ora actives -u -i" is illegal, use "ora actives -u -i2" instead):
         Filter options#1:
             -u  : Only show the sessions of current_schema
             -i  : Exclude the idle events
@@ -10,7 +10,7 @@
             -u2 : Only show the sessions of current_schema
             -i2 : Exclude the idle events
             -f2 : Customize the filter, Usage: -f2"<filter>"
-        Field options:  Field options can be following by other customized fields. ie: -s,p1raw
+        Field options:  Field options can be followed by other customized fields. ie: -s,p1raw
             -s  : Show related procedures and lines(default)
             -p  : Show p1/p2/p2text/p3
             -b  : Show blocking sessions and waiting objects
