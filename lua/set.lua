@@ -84,6 +84,7 @@ function cfg.init(name,defaultvalue,validate,class,desc,range,instance)
         org=defaultvalue,
         src=env.callee(),
         abbr=abbr,
+        base_name=name,
         instance=(type(instance)=="table" or type(instance)=="userdata") and instance
     }
     for k,v in ipairs(abbr) do
@@ -130,7 +131,7 @@ function cfg.temp(name,value,backup)
     item.value=value
     env.log_debug("set",name,value)
     if env.event then
-        env.event.callback("ON_SETTING_CHANGED",name,value,item.org)
+        env.event.callback("ON_SETTING_CHANGED",item.base_name,value,item.org)
     end
 end
 
@@ -173,9 +174,9 @@ function cfg.set(name,value,backup,isdefault)
     local final=value
     if config.func then
         if config.instance then
-            final=config.func(config.instance,name,value,isdefault)
+            final=config.func(config.instance,config.base_name,value,isdefault)
         else
-            final=config.func(name,value,isdefault)
+            final=config.func(config.base_name,value,isdefault)
         end
         if final==nil then return end
     end

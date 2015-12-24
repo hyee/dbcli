@@ -46,7 +46,7 @@ public class SubSystem {
             //Respond to the ctrl+c event
             Interrupter.listen(this, new EventCallback() {
                 @Override
-                public void interrupt(Object e) {
+                public void interrupt(Object... o) {
                     isBreak = true;
                 }
             });

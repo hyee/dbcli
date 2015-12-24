@@ -3,6 +3,7 @@ package org.dbcli;
 import com.naef.jnlua.LuaState;
 import jline.Terminal;
 import jline.console.ConsoleReader;
+import jline.console.Operation;
 import jline.console.completer.Completer;
 import jline.console.history.History;
 import jline.internal.Configuration;
@@ -10,6 +11,7 @@ import jline.internal.NonBlockingInputStream;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.KeyEvent;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
@@ -45,6 +47,7 @@ public class Console extends ConsoleReader {
         setExpandEvents(false);
         setHandleUserInterrupt(true);
         setBellEnabled(false);
+        getKeys().bind("\u001bOn", Operation.DELETE_CHAR); //The delete key
         in = new WindowsInputReader();
         ((NonBlockingInputStream) this.getInput()).shutdown();
         Field field = ConsoleReader.class.getDeclaredField("in");
@@ -62,14 +65,15 @@ public class Console extends ConsoleReader {
         while (iterator.hasNext()) removeCompleter(iterator.next());
         in.listen(this, new EventCallback() {
             @Override
-            public void interrupt(Object c) throws Exception {
+            public void interrupt(Object... c) throws Exception {
                 if (!isRunning() && lua != null && threadID == Thread.currentThread().getId()) {
                     lua.getGlobal("TRIGGER_EVENT");
-                    lua.pushJavaObject((long[]) c);
-                    lua.call(1, 1);
+                    lua.pushJavaObject(c[0]);
+                    lua.pushString((String)c[1]);
+                    lua.call(2, 1);
                     int r = lua.toInteger(lua.getTop());
                     //System.out.println(r);
-                    if (r == 2) ((long[]) c)[0] = 2;
+                    if (r == 2) ((long[]) c[0])[0] = 2;
                 }
             }
         });
@@ -92,7 +96,9 @@ public class Console extends ConsoleReader {
         isBlocking = false;
         if (isRunning()) setEvents(null, null);
         synchronized (in) {
-            return super.readLine(prompt);
+            String line = super.readLine(prompt);
+            //in.pause(true);
+            return line;
         }
     }
 

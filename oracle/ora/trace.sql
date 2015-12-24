@@ -1,11 +1,12 @@
 /*[[Enable/disable trace. Usage: trace [<sql_id>|<SES-XXXXX>|<SYS-XXXXX>|<ORA-XXXXX>|<sid,serial#>|<event>|me|default] [trace_level]  ]]
-    Trace specific SQL ID(11g+ only):  trace <sql_id>      [trace_level]
-    Trace specific Session          :  trace <sid,serial>  [trace_level] -- Only able to trace the sid in local instance
-    Trace specific ORA error        :  trace <ORA-XXXXX>   [trace_level] -- System level,ORA-00001(unique constraint violated) for example
-    Trace session-level event       :  trace <SES-XXXXX>   [trace_level] -- SES-10046 for example, see "ora events" for more info
-    Trace system-level event        :  trace <SYS-XXXXX>   [trace_level] -- SYS-10046 for example, see "ora events" for more info
-    Trace this session(event 10046) :  trace me            [trace_level]
-    Trace for a specific event      :  trace <event_name>  [trace_level]
+    Trace specific SQL ID(11g+ only):  trace <sql_id[|sql_id...]> [trace_level] --i.e. ora trace c4s58ggj09n39|2v88j3u7nuddj 1
+    Trace specific process(11g+)    :  trace "process:..."        [trace_level] --i.e. ora trace process:6917|7293 / process:pid=2 / process:orapid=46|48 / process:pname=dbw0|smon
+    Trace specific Session          :  trace <sid,serial>         [trace_level] --i.e. ora trace 1,1
+    Trace specific ORA error        :  trace <ORA-XXXXX>          [trace_level] --i.e. ora trace ora-00001 12
+    Trace session-level event       :  trace <SES-XXXXX>          [trace_level] --i.e. ora trace ses-10949 (see "ora events" for more info)
+    Trace system-level event        :  trace <SYS-XXXXX>          [trace_level] --i.e. ora trace sys-10949 (see "ora events" for more info)
+    Trace this session(event 10046) :  trace me                   [trace_level]
+    Trace for a specific event      :  trace <event_name>         [trace_level] --i.e.  ora trace buffers 1
     
     Parameter "trace_level"(default as 12 if not specify):
         off or 0:   turn off trace
@@ -117,13 +118,18 @@ BEGIN
             END IF;
             stmt := 'alter '||typ||' set events = '''||target||' trace name context off''';
         END IF;
-    ELSIF regexp_like(target, '^\w+$') and length(target)=13 THEN
-        IF lv>0 THEN
-            stmt := 'ALTER SYSTEM SET events = ''sql_trace[SQL:' || target || '] {pgadep: exactdepth 0} {callstack: fname opiexe} plan_stat=all_executions, wait='||case when BITAND(lv, 8)>0 then 'true' else 'false' end ||',bind='||case when BITAND(lv, 4)>0 then 'true' else 'false' end ||'''';
+    ELSIF regexp_like(target, '^[0-9a-z\|]+$') and length(target)>=13 and not regexp_like(target,'^\d+$') or regexp_like(lower(target), '^process\:') THEN
+        IF NOT regexp_like(lower(target), '^process:') THEN 
+            target:='[SQL:'||target||']';
         ELSE
-            stmt := 'ALTER SYSTEM SET events = ''sql_trace[SQL:' || target || '] off''';
+            target:='{'||target||'}';
         END IF;
-    ELSIF target IS NOT NULL THEN
+        IF lv>0 THEN
+            stmt := 'alter system set events = ''sql_trace' || target || ' {pgadep: exactdepth 0} {callstack: fname opiexe} plan_stat=all_executions, wait='||case when BITAND(lv, 8)>0 then 'true' else 'false' end ||',bind='||case when BITAND(lv, 4)>0 then 'true' else 'false' end ||'''';
+        ELSE
+            stmt := 'alter system set events = ''sql_trace' || target || ' off''';
+        END IF;
+    ELSIF regexp_like(target,'^\w+$') THEN
         IF lv>0 THEN
             EXECUTE IMMEDIATE 'alter session set tracefile_identifier=''' || ('dbcli' || round(dbms_random.value(10000, 99999))) || '''';
             get_trace_file(USERENV('sid'));

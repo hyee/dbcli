@@ -54,8 +54,8 @@ public class Loader {
             q = new KeyListner('q');
             Interrupter.listen("loader", new EventCallback() {
                 @Override
-                public void interrupt(Object e) throws Exception {
-                    q.actionPerformed((ActionEvent) e);
+                public void interrupt(Object... e) throws Exception {
+                    q.actionPerformed((ActionEvent) e[0]);
                 }
             });
         } catch (Exception e) {
@@ -65,7 +65,6 @@ public class Loader {
 
     public static void loadLua(Loader loader, String args[]) throws Exception {
         lua = new LuaState();
-
         lua.openLibs();
         lua.pushJavaObject(loader);
         lua.setGlobal("loader");

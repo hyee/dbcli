@@ -7,8 +7,10 @@ import org.fusesource.jansi.internal.WindowsSupport;
 
 import java.awt.event.KeyEvent;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -29,7 +31,8 @@ public class WindowsInputReader extends NonBlockingInputStream {
     public static final int KEY_SFT = 7;
     private final static ArrayBlockingQueue<long[]> inputQueue = new ArrayBlockingQueue(32767);
     static HashMap<Object, EventCallback> eventMap = new HashMap<>();
-    private static HashMap<Integer, byte[]> keyEvents = new HashMap();
+    public static HashMap<Integer, byte[]> keyEvents = new HashMap();
+    public static HashMap<Integer,String> keyCodes=new HashMap<>();
 
     //Escape information: https://www.novell.com/documentation/extend5/Docs/help/Composer/books/TelnetAppendixB.html
     static {
@@ -58,6 +61,15 @@ public class WindowsInputReader extends NonBlockingInputStream {
         keyEvents.put(KeyEvent.VK_LEFT, "\u001b[D".getBytes());
         keyEvents.put(KeyEvent.VK_BACK_SPACE, "\u0008".getBytes());
         keyEvents.put(KeyEvent.VK_TAB, "\u0009".getBytes());
+        keyEvents.put(KeyEvent.VK_PERIOD,"\u001bOn".getBytes());
+        Field[] fields=KeyEvent.class.getDeclaredFields();
+        try {
+            for(Field field:fields) {
+                if(field.getName().startsWith("VK_")&&field.getType().getName().equals("int"))
+                    keyCodes.put(field.getInt(null),field.getName().substring(3));
+            }
+        } catch (Exception e) {}
+
     }
 
     byte[] buf = null;
@@ -65,6 +77,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
     private volatile boolean isShutdown = false;
     private IOException exception = null;
     private volatile long[][] peeker;
+    private volatile boolean isPause = false;
     private ByteBuffer inputBuff = ByteBuffer.allocateDirect(255);
     private boolean nonBlockingEnabled;
     private int ctrlFlags;
@@ -254,6 +267,14 @@ public class WindowsInputReader extends NonBlockingInputStream {
         return readChar(timeout, isPeek);
     }
 
+    public void pause(boolean pause) {
+        if (this.isPause == pause) return;
+        this.isPause = pause;
+        if (!this.isPause) synchronized (inputQueue) {
+            inputQueue.notify();
+        }
+    }
+
     public synchronized long[][] readRaw(long timeout, boolean isPeek) throws IOException {
         long[][] c = peeker;
         if (c != null && c[0] != null) {
@@ -261,20 +282,32 @@ public class WindowsInputReader extends NonBlockingInputStream {
             return c;
         }
         if (exception != null) throw exception;
+        pause(false);
         try {
+            notify();
             c = new long[][]{timeout < 0 ? inputQueue.poll() : (timeout == 0 ? inputQueue.take() : inputQueue.poll(timeout, TimeUnit.MILLISECONDS))};
             if (c[0] != null && c[0][KEY_DOWN] == 1) {
                 long[] c1 = inputQueue.poll(100, TimeUnit.MILLISECONDS);
                 if (c1 != null) c = new long[][]{c[0], c1};
             }
             for (long[] c0 : c) {
+                if (c0 == null) continue;
                 //System.out.println(Arrays.toString(c0));
-                if (!isPeek && c0 != null && (c0[KEY_DOWN] == 1 || c0[KEY_CHAR] == 3) && (//
+                if (!isPeek && (c0[KEY_DOWN] == 1 || c0[KEY_CHAR] == 3) && (//
                         (c0[KEY_CTRL] > 0 && (c0[KEY_CHAR] > 0 || keyEvents.containsKey(Integer.valueOf((int) c0[KEY_CODE])))) || //
                                 (c0[KEY_SFT] > 0 && keyEvents.containsKey(Integer.valueOf((int) c0[KEY_CODE]))) ||//
                                 (c0[KEY_CODE] >= KeyEvent.VK_F1 && c0[KEY_CODE] <= KeyEvent.VK_F12 && c0[KEY_CHAR] == 0))) {
-                    for (EventCallback callback : eventMap.values()) callback.interrupt(c0);
+                    StringBuilder sb=new StringBuilder(32);
+                    if(c0[KEY_CTL]>0) sb.append("CTRL+");
+                    if(c0[KEY_ALT]>0) sb.append("ALT+");
+                    if(c0[KEY_SFT]>0) sb.append("SHIFT+");
+                    sb.append(keyCodes.get(Integer.valueOf((int)c0[KEY_CODE])));
+                    for (EventCallback callback : eventMap.values()) callback.interrupt(c0,sb.toString());
                     if (c0[0] == 2) return readRaw(timeout, isPeek);
+                }
+
+                if ((c0[KEY_CHAR] == 10 || c0[KEY_CHAR] == 13) && c0[KEY_DOWN] == 0 && c0[KEY_CTRL] == 0) {
+                    isPause = true;
                 }
             }
             if (isPeek) peeker = c;
@@ -282,6 +315,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
         } catch (InterruptedException e) {
             return new long[0][0];
         } catch (Exception e1) {
+            e1.printStackTrace();
             throw new IOException(e1.getMessage());
         }
     }
@@ -289,14 +323,20 @@ public class WindowsInputReader extends NonBlockingInputStream {
     //@Override
     public void run() {
         exception = null;
+        INPUT_RECORD[] input;
         try {
             while (!isShutdown) {
-                INPUT_RECORD[] input = WindowsSupport.readConsoleInput(1);
-                if (input == null || input.length == 0) continue;
-                for (INPUT_RECORD rec : input) {
-                    //System.out.println(rec.keyEvent.toString()+" uchar="+(int)rec.keyEvent.uchar);
-                    inputQueue.put(new long[]{rec.keyEvent.keyDown ? 1 : 0, rec.keyEvent.keyCode, (long) (int) rec.keyEvent.uchar, rec.keyEvent.controlKeyState & anyCtrl, rec.keyEvent.repeatCount,//
-                            (rec.keyEvent.controlKeyState & altState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & ctrlState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & shiftState) > 0 ? 1 : 0,});
+                if (!isPause) {
+                    input = WindowsSupport.readConsoleInput(1);
+                    if ((input == null || input.length == 0) /*|| isPause*/) continue;
+                    for (INPUT_RECORD rec : input) {
+                        //System.out.println(rec.keyEvent.toString() + " uchar=" + (int) rec.keyEvent.uchar);
+                        inputQueue.put(new long[]{rec.keyEvent.keyDown ? 1 : 0, rec.keyEvent.keyCode, (long) (int) rec.keyEvent.uchar, rec.keyEvent.controlKeyState & anyCtrl, rec.keyEvent.repeatCount,//
+                                (rec.keyEvent.controlKeyState & altState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & ctrlState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & shiftState) > 0 ? 1 : 0,});
+                    }
+                    WindowsSupport.peekConsoleInput(1);
+                } else synchronized (inputQueue) {
+                    inputQueue.wait(0);
                 }
             }
         } catch (IOException e) {

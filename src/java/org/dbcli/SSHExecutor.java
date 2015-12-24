@@ -91,7 +91,7 @@ public class SSHExecutor {
             writer = Console.writer;
             Interrupter.listen("SSHExecutor", new EventCallback() {
                 @Override
-                public void interrupt(Object e) throws Exception {
+                public void interrupt(Object... e) throws Exception {
                     isBreak = true;
                 }
             });

@@ -4,11 +4,11 @@ local math,table,string,class,event=env.math,env.table,env.string,env.class,env.
 local grid=class()
 
 local params={
-    HEADDEL={name="title_del",default='-',desc="The delimiter to devide header and body when printing a grid"},
-    COLDEL={name="col_del",   default=' ',desc="The delimiter to split the fields when printing a grid"},
+    [{'HEADSEP','HEADDEL'}]={name="title_del",default='-',desc="The delimiter to devide header and body when printing a grid"},
+    [{'COLSEP','COLDEL'}]={name="col_del",   default=' ',desc="The delimiter to split the fields when printing a grid"},
+    [{'ROWSEP','ROWDEL'}]={name="row_del",   default=''  ,desc="The delimiter to split the rows when printing a grid"},
     COLWRAP={name="col_wrap", default=0,desc="If the column size is larger than COLDEL, then wrap the text",range="0 - 32767"},
     COLAUTOSIZE={name="col_auto_size", default='auto',desc="Define the base of calculating column width",range="head,body,auto"},
-    ROWDEL={name="row_del",   default=''  ,desc="The delimiter to split the rows when printing a grid"},
     ROWNUM={name="row_num",   default="off",desc="To indicate if need to show the row numbers",range="on,off"},
     HEADSTYLE={name="title_style",default="none",desc="Display style of the grid title",range="upper,lower,initcap,none"},
     PIVOT={name="pivot",default=0,desc="Pivot a grid when next print, afterward the value would be reset",range="-30 - +30"},
@@ -18,7 +18,6 @@ local params={
     SEP4K={name="sep4k",default="off",desc="Define wether to show number with thousands separator",range="on,off"},
     LINESIZE={name="linesize",default=800,desc="Define the max chars in one line, other overflow parts would be cutted.",range='10-32767'}
 }
-
 
 function grid.set_param(name,value)
     if (name=="TITLEDEL" or name=="ROWDEL") and #value>1 then
@@ -497,11 +496,14 @@ function grid.onload()
     local set=env.set.init
     for k,v in pairs(params) do
         grid[v.name]=v.default
-        set(k,grid[v.name],grid.set_param,"grid",v.desc,v.range)
+        if type(k)=='table' then
+            v.is_array=true
+            params[k[1]]=v 
+        end
+        if type(k)=='table' or not v.is_array then set(k,grid[v.name],grid.set_param,"grid",v.desc,v.range) end
     end
     env.ansi.define_color("HEADCOLOR","BRED;HIW","ansi.grid","Define grid title's color, type 'ansi' for more available options")
 end
 
 for k,v in pairs(params) do grid[v.name]=v.default end
-
 return grid

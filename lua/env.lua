@@ -58,10 +58,10 @@ local function abort_thread()
     end
 end
 
-_G['TRIGGER_EVENT']=function(key_event)
-    --print(key_event[1],key_event[3])
+_G['TRIGGER_EVENT']=function(key_event,key_name)
     local event={'keydown','keycode','uchar','isfunc','repeat','isalt','isctrl','issift'}
     for i,j in ipairs(event) do event[j],event[i]=key_event[i] end
+    event.name=tostring(key_name)
     env.safe_call(env.event and env.event.callback,5,"ON_KEY_EVENT",event,key_event)
     return event.isbreak and 2 or 0
 end
@@ -508,8 +508,9 @@ function env.pending_command()
     return curr_stmt and curr_stmt~=""
 end
 
-function env.modify_command(_,key_event,raw_event)
-    if key_event.uchar==3 or key_event.uchar==4 then --ctrl+c and ctrl+d
+function env.modify_command(_,key_event)
+    --print(key_event.name)
+    if key_event.name=="CTRL+C" or key_event.name=="CTRL+D" then
         if env.pending_command() then
             multi_cmd,curr_stmt=nil,nil
             env.CURRENT_PROMPT=env.PRI_PROMPT
@@ -522,13 +523,13 @@ function env.modify_command(_,key_event,raw_event)
         end
         reader:resetPromptLine(prompt,"",0)
         env.reset_input("")
-    elseif (key_event.isctrl==1 or key_event.issift==1) and key_event.keycode==8 then --shift+backspace
+    elseif key_event.name=="CTRL+BACK_SPACE" or key_event.name=="SHIFT+BACK_SPACE" then --shift+backspace
         reader:invokeMethod("deletePreviousWord")
         key_event.isbreak=true
-    elseif (key_event.isctrl==1 or key_event.issift==1) and key_event.keycode==37 then --ctrl+arrow_left
+    elseif key_event.name=="CTRL+LEFT" or key_event.name=="SHIFT+LEFT" then --ctrl+arrow_left
         reader:invokeMethod("previousWord")
         key_event.isbreak=true
-    elseif (key_event.isctrl==1 or key_event.issift==1) and key_event.keycode==39 then --ctrl+arrow_right
+    elseif key_event.name=="CTRL+RIGHT" or key_event.name=="SHIFT+RIGHT" then --ctrl+arrow_right
         reader:invokeMethod("nextWord")
         key_event.isbreak=true
     end

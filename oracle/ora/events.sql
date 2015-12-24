@@ -13,7 +13,7 @@ BEGIN
     FOR err_num IN 10000 .. 10999 LOOP
         err_msg := SQLERRM(-err_num);
         IF err_msg NOT LIKE '%Message ' || err_num || ' not found%' AND lower(err_msg) LIKE v_filter THEN
-            dbms_output.put_line(err_msg);
+            dbms_output.put_line(regexp_replace(err_msg,'^ORA-'));
         END IF;
     END LOOP;
 END;

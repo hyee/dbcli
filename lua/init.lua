@@ -184,7 +184,7 @@ end
 function init.onload()
     init.load_modules(init.module_list,env)
     init.load_database()
-    if env.set then env.set.init("database",env.CURRENT_DB,init.set_database,'core','Define current database type',table.concat(init.db_list(),',')) end
+    if env.set then env.set.init({"platform","database"},env.CURRENT_DB,init.set_database,'core','Define current database type',table.concat(init.db_list(),',')) end
 end
 
 function init.unload(list,tab)
