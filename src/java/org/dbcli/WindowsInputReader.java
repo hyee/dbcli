@@ -334,7 +334,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
                         inputQueue.put(new long[]{rec.keyEvent.keyDown ? 1 : 0, rec.keyEvent.keyCode, (long) (int) rec.keyEvent.uchar, rec.keyEvent.controlKeyState & anyCtrl, rec.keyEvent.repeatCount,//
                                 (rec.keyEvent.controlKeyState & altState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & ctrlState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & shiftState) > 0 ? 1 : 0,});
                     }
-                    WindowsSupport.peekConsoleInput(1);
+                    //WindowsSupport.peekConsoleInput(1);
                 } else synchronized (inputQueue) {
                     inputQueue.wait(0);
                 }
