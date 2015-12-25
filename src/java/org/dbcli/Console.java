@@ -11,7 +11,6 @@ import jline.internal.NonBlockingInputStream;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.awt.event.KeyEvent;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
@@ -69,7 +68,7 @@ public class Console extends ConsoleReader {
                 if (!isRunning() && lua != null && threadID == Thread.currentThread().getId()) {
                     lua.getGlobal("TRIGGER_EVENT");
                     lua.pushJavaObject(c[0]);
-                    lua.pushString((String)c[1]);
+                    lua.pushString((String) c[1]);
                     lua.call(2, 1);
                     int r = lua.toInteger(lua.getTop());
                     //System.out.println(r);
