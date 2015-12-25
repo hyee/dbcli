@@ -96,7 +96,7 @@ function trace.get_trace(filename,mb,from_mb)
         if lv then
             db:internal_call("alter session set tracefile_identifier='dbcli_"..math.random(1e6).."'");
         end
-        if db.props.db_version>'11' then
+        if db.props.db_version>'10' then
             filename=db:get_value[[select value from v$diag_info where name='Default Trace File']]
         else
             filename=db:get_value[[SELECT u_dump.value || '/' || SYS_CONTEXT('userenv','instance_name') || '_ora_' || p.spid ||
@@ -118,7 +118,7 @@ function trace.get_trace(filename,mb,from_mb)
             return
         end
     elseif filename=="alert" then
-        if db.props.db_version<='11' then
+        if db.props.db_version<'11' then
             filename=db:get_value[[SELECT u_dump.value || '/alert_' || SYS_CONTEXT('userenv', 'instance_name') || '.log' "Trace File"
                                    FROM   v$parameter u_dump
                                    WHERE  u_dump.name = 'background_dump_dest']]

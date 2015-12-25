@@ -143,8 +143,8 @@ end
 
 function sqlplus:f7(n,key_event,str)
     --VK_F7
-    if self.enter_flag and key_event.keycode==118 then
-        self:run_command(str)
+    if self.enter_flag and key_event.name=='F7' then
+        --self:run_command(str)
     end 
 end
 
