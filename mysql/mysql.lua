@@ -27,9 +27,21 @@ function mysql:connect(conn_str)
             packer.unpack_str(conn_str.password),
             conn_str.url:match("//(.*)$")--..(conn_str.internal_logon and " as "..conn_str.internal_logon or "")
         args.password=pwd
-        conn_str=string.format("%s[:/]%s@%s",usr,pwd,conn_desc)
+        conn_str=string.format("%s/%s@%s",usr,pwd,conn_desc)
     else
-        usr,pwd,conn_desc = string.match(conn_str or "","(.*)/(.*)@(.+)")
+        usr,pwd,conn_desc = string.match(conn_str or "","(.*)[/:](.*)@(.+)")
+        local args={}
+        if conn_desc:match("%?.*=.*") then
+            for k,v in conn_desc:gmatch("([^=%?&]+)%s*=%s*([^&]+)") do
+                args[k]=v
+            end
+            conn_desc=conn_desc:gsub("%?.*","")
+        end
+        self:merge_props({
+            user=usr,
+            password=pwd,
+            url="jdbc:mysql://"..conn_desc,
+        },args)
     end
 
     if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
@@ -48,28 +60,30 @@ function mysql:connect(conn_str)
     local url, isdba=conn_desc:match('^(.*) as (%w+)$')
     url = url or conn_desc
 
-    args=args or {user=usr,password=pwd,url="jdbc:mysql://"..url,
-                  internal_logon=isdba,
+    args=args or {user=usr,password=pwd,
+                  url="jdbc:mysql://"..url,
                   server=server,
-                  database=database,
-                  enableSysplexWLB='true',
-                  enableSeamlessFailover='1',
-                  clientRerouteAlternateServerName=alt_addr,
-                  clientRerouteAlternatePortNumber=alt_addr and (alt_port or port):sub(2)}
+                  database=database}
 
     self:merge_props(
-        {driverClassName="com.ibm.mysql.jcc.mysqlDriver",
-         retrieveMessagesFromServerOnGetMessage='true',
-         clientProgramName='SQL Developer',
-         useCachedCursor=self.MAX_CACHE_SIZE
+        {driverClassName="com.mysql.jdbc.Driver",
+         --retrieveMessagesFromServerOnGetMessage='true',
+         --clientProgramName='SQL Developer',
+         useCachedCursor=self.MAX_CACHE_SIZE,
+         useUnicode='true',
+         characterEncoding='UTF8',
+         useCompression='true',
+         callableStmtCacheSize=10,
+         enableEscapeProcessing='false'
         },args)
 
     self:load_config(url,args)
     local prompt=(args.jdbc_alias or url):match('([^:/@]+)$')
     if event then event("BEFORE_mysql_CONNECT",self,sql,args,result) end
     env.set_title("")
+    print(table.dump(args))
     self.super.connect(self,args)
-
+--[[
     self.conn=java.cast(self.conn,"com.ibm.mysql.jcc.mysqlConnection")
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     local version=self:get_value("select SERVICE_LEVEL FROM TABLE(sysproc.env_get_inst_info())")
@@ -84,6 +98,7 @@ function mysql:connect(conn_str)
     env.set_title(('%s - User: %s   Server: %s   Version: mysql(%s)'):format(database,self.props.db_user,server,self.props.db_version))
     if event then event("AFTER_mysql_CONNECT",self,sql,args,result) end
     print("Database connected.")
+    ]]--
 end
 
 function mysql.check_completion(cmd,other_parts)

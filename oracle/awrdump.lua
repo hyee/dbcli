@@ -120,7 +120,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
                 get_range(stim,etim,inst,dbid,st,ed,stim,etim);
             END;
         BEGIN
-            IF DBMS_DB_VERSION.VERSION < 11 THEN
+            IF DBMS_DB_VERSION.VERSION+DBMS_DB_VERSION.release < 13 THEN
                 IF inst IS NULL THEN
                     inst := USERENV('instance');
                 END IF;
@@ -158,7 +158,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
                 from    dual;
             END IF;
 
-            $IF DBMS_DB_VERSION.VERSION>10 $THEN
+            $IF DBMS_DB_VERSION.VERSION>11 OR DBMS_DB_VERSION.VERSION>10 AND DBMS_DB_VERSION.release>1 $THEN
                 dbms_workload_repository.awr_set_report_thresholds(top_n_sql => 50);
             $END
 
@@ -168,7 +168,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
                 ELSE
                     OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_diff_report_html(dbid, inst, st, ed,dbid2, inst, st2, ed2));
                 END IF;
-            $IF DBMS_DB_VERSION.VERSION>10 $THEN
+            $IF DBMS_DB_VERSION.VERSION>11 OR DBMS_DB_VERSION.VERSION>10 AND DBMS_DB_VERSION.release>1 $THEN
             ELSE
                 IF ed2 IS NULL THEN
                     OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_global_report_html(dbid,inst,st,ed));
@@ -227,7 +227,7 @@ function awr.extract_ash(starttime,endtime,instances)
             inst VARCHAR2(30) := NULLIF(upper(p_inst), 'A');
         BEGIN
 
-            IF DBMS_DB_VERSION.VERSION < 11 THEN
+            IF DBMS_DB_VERSION.VERSION+DBMS_DB_VERSION.RELEASE < 13 THEN
                 IF inst IS NULL THEN
                     inst := USERENV('instance');
                 END IF;
@@ -257,7 +257,7 @@ function awr.extract_ash(starttime,endtime,instances)
                         dbms_lob.writeappend(rs, LENGTHB(r.output), r.output);
                     END IF;
                 END LOOP;
-                $IF DBMS_DB_VERSION.VERSION>10 $THEN
+                $IF DBMS_DB_VERSION.VERSION>11 OR DBMS_DB_VERSION.VERSION>10 AND DBMS_DB_VERSION.release>1 $THEN
             ELSE
                 FOR r IN (SELECT *
                           FROM   TABLE(dbms_workload_repository.ash_global_report_html(dbid,
@@ -295,7 +295,7 @@ function awr.extract_addm(starttime,endtime,instances)
             inst     VARCHAR2(30) := NULLIF(p_inst, 'A');
         BEGIN
 
-            IF DBMS_DB_VERSION.VERSION < 11 THEN
+            IF DBMS_DB_VERSION.VERSION+DBMS_DB_VERSION.release < 13 THEN
                 IF inst IS NULL THEN
                     inst := USERENV('instance');
                 END IF;
@@ -314,7 +314,7 @@ function awr.extract_addm(starttime,endtime,instances)
                     NULL;
             END;
             dbms_output.put_line('Extracting addm report from ' || st || ' to ' || ed || ' with instance ' || nvl(inst, 'a') || '...');
-            $IF DBMS_DB_VERSION.VERSION>10 $THEN
+            $IF DBMS_DB_VERSION.VERSION>11 OR DBMS_DB_VERSION.VERSION>10 AND DBMS_DB_VERSION.release>1 $THEN
                 IF inst IS NULL THEN
                     DBMS_ADDM.ANALYZE_DB(taskname, st, ed, dbid);
                 ELSE
