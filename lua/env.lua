@@ -385,6 +385,10 @@ function env.checkerr(result,msg,...)
     end
 end
 
+function env.checkhelp(arg)
+    env.checkerr(arg,env.helper.helper,env.CURRENT_CMD)
+end
+
 function _exec_command(name,params)
     local result
     local cmd=_CMDS[name:upper()]
@@ -716,7 +720,7 @@ end
 
 function env.testcmd(command)
     env.checkerr(command,"Usage: -p <other command>")
-    local args,cmd=env.eval_line(command,false,true)
+    local cmd,args=env.eval_line(command,false,true)
     if not cmd then return end
     print("Command    : "..cmd.."\nParameters : "..#args..' - '..(_CMDS[cmd].ARGS-1).."\n============================")
     for k,v in ipairs(args) do

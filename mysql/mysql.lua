@@ -3,6 +3,8 @@ local event,packer,cfg,init=env.event.callback,env.packer,env.set,env.init
 local set_command,exec_command=env.set_command,env.exec_command
 
 local module_list={
+    "mysql/usedb",
+    "mysql/show",
     "mysql/snap",
     "mysql/sql",
     "mysql/chart",
@@ -20,54 +22,30 @@ end
 
 function mysql:connect(conn_str)
     local args
-    local usr,pwd,conn_desc
+    local usr,pwd,conn_desc,url
     if type(conn_str)=="table" then
         args=conn_str
-        usr,pwd,conn_desc=conn_str.user,
-            packer.unpack_str(conn_str.password),
-            conn_str.url:match("//(.*)$")--..(conn_str.internal_logon and " as "..conn_str.internal_logon or "")
+        usr,pwd,url=conn_str.user,packer.unpack_str(conn_str.password),conn_str.url:match("//(.*)$")
         args.password=pwd
-        conn_str=string.format("%s/%s@%s",usr,pwd,conn_desc)
+        conn_str=string.format("%s/%s@%s",usr,pwd,url)
     else
         usr,pwd,conn_desc = string.match(conn_str or "","(.*)[/:](.*)@(.+)")
-        local args={}
+        if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
+        args={user=usr,password=pwd}
         if conn_desc:match("%?.*=.*") then
             for k,v in conn_desc:gmatch("([^=%?&]+)%s*=%s*([^&]+)") do
                 args[k]=v
             end
             conn_desc=conn_desc:gsub("%?.*","")
         end
-        self:merge_props({
-            user=usr,
-            password=pwd,
-            url="jdbc:mysql://"..conn_desc,
-        },args)
+        usr,pwd,url,args.url=args.user,args.password,conn_desc,"jdbc:mysql://"..conn_desc
     end
-
-    if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
-
-    conn_desc=conn_desc:gsub('^(/+)','')
-    local server,port,alt,database=conn_desc:match('^([^:/%^]+)(:?%d*)(%^?[^/]*)/(.+)$')
-    if database then
-        if port=="" then port=':3306' end
-        conn_desc=server..port..'/'..database
-        local alt_addr,alt_port=alt:gsub('[%s%^]+',''):match('([^:]+)(:*.*)')
-    else
-        database=conn_desc
-    end
+    
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-
-    local url, isdba=conn_desc:match('^(.*) as (%w+)$')
-    url = url or conn_desc
-
-    args=args or {user=usr,password=pwd,
-                  url="jdbc:mysql://"..url,
-                  server=server,
-                  database=database}
 
     self:merge_props(
         {driverClassName="com.mysql.jdbc.Driver",
-         --retrieveMessagesFromServerOnGetMessage='true',
+         retrieveMessagesFromServerOnGetMessage='true',
          --clientProgramName='SQL Developer',
          useCachedCursor=self.MAX_CACHE_SIZE,
          useUnicode='true',
@@ -76,29 +54,27 @@ function mysql:connect(conn_str)
          callableStmtCacheSize=10,
          enableEscapeProcessing='false'
         },args)
-
-    self:load_config(url,args)
-    local prompt=(args.jdbc_alias or url):match('([^:/@]+)$')
+    --print(table.dump(args))   
+    local prompt=(args.jdbc_alias or url):match('^([^:/@]+)$')
     if event then event("BEFORE_mysql_CONNECT",self,sql,args,result) end
     env.set_title("")
-    print(table.dump(args))
-    self.super.connect(self,args)
---[[
-    self.conn=java.cast(self.conn,"com.ibm.mysql.jcc.mysqlConnection")
-    self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    local version=self:get_value("select SERVICE_LEVEL FROM TABLE(sysproc.env_get_inst_info())")
-    self.props.db_version=version:gsub('mysql',''):match('([%d%.]+)')
-    self.props.db_user=args.user:upper()
-    self.props.database=database
-    self.conn_str=packer.pack_str(conn_str)
 
-    prompt=(prompt or database:upper()):match("^([^,%.&]+)")
+    for k,v in pairs(args) do args[k]=tostring(v) end
+    self.super.connect(self,args)
+    self.conn,self.conn_str=java.cast(self.conn,"com.mysql.jdbc.JDBC4MySQLConnection"),conn_str
+    self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
+    local info=self:get_value("select database(),version(),CONNECTION_ID(),user(),@@hostname,@@sql_mode")
+    self.props.db_version,self.props.server=info[2]:match('^([%d%.]+)'),info[5]
+    self.props.db_user=info[4]:match("([^@]+)")
+    self.props.database=(info[1] or "")=="" and "None" or info[1]
+    self.props.sql_mode=info[6]
+
+    prompt=(prompt or self.props.database:upper()):match("^([^,%.&]+)")
     env.set_prompt(nil,prompt,nil,2)
 
-    env.set_title(('%s - User: %s   Server: %s   Version: mysql(%s)'):format(database,self.props.db_user,server,self.props.db_version))
-    if event then event("AFTER_mysql_CONNECT",self,sql,args,result) end
+    env.set_title(('%s - User: %s    Version: %s'):format(self.props.server,self.props.db_user,info[2]))
+    if event then event("AFTER_MYSQL_CONNECT",self,sql,args,result) end
     print("Database connected.")
-    ]]--
 end
 
 function mysql.check_completion(cmd,other_parts)
@@ -149,15 +125,12 @@ end
 function mysql:command_call(sql,...)
     local bypass=self:is_internal_call(sql)
     local args=type(select(1,...)=="table") and ... or {...}
-    sql=event("BEFORE_mysql_EXEC",{self,sql,args}) [2]
+    sql=event("BEFORE_MYSQL_EXEC",{self,sql,args}) [2]
     local result=self.super.exec(self,sql,{args})
-    if not bypass then event("AFTER_mysql_EXEC",self,sql,args,result) end
+    if not bypass then event("BEFORE_MYSQL_EXEC",self,sql,args,result) end
     self:print_result(result,sql)
 end
 
-function mysql:admin_cmd(cmd)
-    self:command_call('call sysproc.admin_cmd(:1)',cmd)
-end
 
 function mysql:onload()
     local function add_default_sql_stmt(...)
@@ -166,22 +139,33 @@ function mysql:onload()
         end
     end
 
-    add_default_sql_stmt('update','delete','insert','merge','truncate','drop')
-    add_default_sql_stmt('explain','lock','analyze','grant','revoke','call','select','with')
+    add_default_sql_stmt('update','delete','insert','merge','truncate','drop','BINLOG')
+    add_default_sql_stmt('lock','analyze','grant','revoke','call','select','with',{"DESC","EXPLAIN","DESCRBE"})
 
     local  conn_help = [[
-        Connect to mysql database. Usage: conn <user>:<password>@[//]<host>[:<port>][/<database>] [&<other parameters>]
-                                       or conn <user>/<password>@[//]<host>[:<port>][/<database>] [&<other parameters>] 
-        Example: 
+        Connect to mysql database. Usage: conn <user>{:|/}<password>@<host>[:<port>][/<database>][?<properties>]
+                                       or conn <user>{:|/}<password>@[host1][:port1][,[host2][:port2]...][/database][?properties]
+                                       or conn <user>{:|/}<password>@address=(key1=value)[(key2=value)...][,address=(key3=value)[(key4=value)...][/database][?properties]
+
+        Refer to "MySQL Connector/J Developer Guide" chapter 5.1 "Setting Configuration Propertie" for the available properties  
+        Example:  conn root/@localhost      --if not specify the port, then it is 3306
+                  conn root/root@localhost:3310
+                  conn root/root@localhost:3310/test?useCompression=false
+                  conn root:root@address=(protocol=tcp)(host=primaryhost)(port=3306),address=(protocol=tcp)(host=secondaryhost1)(port=3310)(user=test2)/test
     ]]
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
     set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
-    set_command(self,{"declare","begin"}, default_desc,  self.command_call  ,self.check_completion,1,true)
+    set_command(self,{"STATUS","\\S"}, "Get status information from the server",self.command_call,false,1)
     set_command(self,"create",   default_desc,  self.command_call      ,self.check_completion,1,true)
     set_command(self,"alter" ,   default_desc,  self.command_call      ,true,1,true)
-    set_command(self,'adm', 'Run procedure ADMIN_CMD. Usage: adm <statement>',self.admin_cmd,true,2,true)
     self.C={}
+    env.set.inject_cfg({"password","role","constraint","constraints"},self.set_session,self)
     init.load_modules(module_list,self.C)
+end
+
+function mysql:set_session(name,value)
+    env.checkerr(self:is_connect(),"Database is not connected!")
+    return self:exec(table.concat({"SET",name,value}," "))
 end
 
 function mysql:onunload()

@@ -75,7 +75,7 @@ local function decode_base64_package(base64str)
 end
 
 function unwrap.unwrap(obj,ext)
-    env.checkerr(obj,env.helper.helper,env.CURRENT_CMD)
+    env.checkhelp(obj)
     local filename=obj
     obj=db:check_obj(obj)
     env.checkerr(obj,"Cannot find target object!")

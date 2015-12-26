@@ -114,7 +114,7 @@ end
 
 function printer.grep(keyword,stmt)
     printer.grep_text,printer.grep_dir=nil,nil
-    env.checkerr(stmt,env.helper.helper,env.CURRENT_CMD)
+    env.checkhelp(stmt)
     if keyword:len()>1 and keyword:sub(1,1)=="-" then
         keyword,printer.grep_dir=keyword:sub(2),true
     end

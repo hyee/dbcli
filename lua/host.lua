@@ -1,7 +1,7 @@
 local env,os=env,os
 local host={}
 function host.run_command(cmd)
-    env.checkerr(cmd,env.helper.helper,env.CURRENT_CMD)
+    env.checkhelp(cmd)
     io.flush()
     os.execute('"'..cmd..'"')
 end

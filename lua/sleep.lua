@@ -1,6 +1,6 @@
 local env,loader,math=env,loader,math
 function sleep(second)
-    env.checkerr(tonumber(second),env.helper.helper,env.CURRENT_CMD)
+    env.checkhelp(tonumber(second))
     second=tonumber(second)
     if second <= 0 then return end
     loader:sleep(math.round(second*1000,0))
