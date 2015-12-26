@@ -280,7 +280,7 @@ function var.define_column(col,...)
     }
 
     local args,arg={...}
-    env.checkerr(args[1],env.helper.helper,env.CURRENT_CMD)
+    env.checkhelp(args[1])
     col=col:upper()
     var.columns[col]=var.columns[col] or {}
     local obj=var.columns[col]

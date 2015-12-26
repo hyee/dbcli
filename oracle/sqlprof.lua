@@ -212,7 +212,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
     BEGIN
         extract_profile(:2,:3,:4, TRUE);
     END;]]
-    env.checkerr(sql_id or sql_text,env.helper.helper,env.CURRENT_CMD)
+    env.checkhelp(sql_id or sql_text)
     if not db:check_access('sys.sql$text',1) then
         stmt=stmt:gsub("%$IF.-%$END","")
     end

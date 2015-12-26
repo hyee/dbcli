@@ -790,18 +790,18 @@ function db_core:sql2file(filename,sql,method,ext,...)
 end
 
 function db_core:sql2sql(filename,sql)
-    env.checkerr(sql,env.helper.helper,env.CURRENT_CMD)
+    env.checkhelp(sql)
     self:sql2file(env.resolve_file(filename,{'sql','zip','gz'}),sql,'ResultSet2SQL','sql',self.sql_export_header,cfg.get("ASYNCEXP"))
 end
 
 function db_core:sql2csv(filename,sql)
-    env.checkerr(sql,env.helper.helper,env.CURRENT_CMD)
+    env.checkhelp(sql)
     filename=env.resolve_file(filename,{'csv','zip','gz'})
     self:sql2file(filename,sql,'ResultSet2CSV','csv',self.sql_export_header,cfg.get("ASYNCEXP"))
 end
 
 function db_core:csv2sql(filename,src)
-    env.checkerr(src,env.helper.helper,env.CURRENT_CMD)
+    env.checkhelp(src)
     filename=env.resolve_file(filename,{'sql','zip','gz'})
     local table_name=filename:match('([^\\/]+)%.%w+$')
     local _,rs=pcall(self.exec,self,'select * from '..table_name..' where 1=2')
