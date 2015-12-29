@@ -275,6 +275,12 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
     local args= obj and {obj,cmd} or {cmd}
     if type(help_func) == "function" then
         desc=help_func(table.unpack(args))
+    elseif type(help_func) =="table" then
+        desc,help_func=help_func[1],help_func[2]
+        if not help_func then help_func=desc end
+        if type(desc)=="function" then
+            desc=desc(table.unpack(args))
+        end
     end
 
     if type(desc)=="string" then

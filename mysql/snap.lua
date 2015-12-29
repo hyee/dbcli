@@ -1,13 +1,13 @@
 local env=env
-local grid=env.mysql,env.grid
+local grid=env.getdb(),env.grid
 local cfg=env.set
 
 local snap=env.class(env.snapper)
 function snap:ctor()
-    self.db=env.mysql
+    self.db=env.getdb()
     self.command="snap"
     self.help_title='Calculate a period of db/session performance/waits. '
-    self.script_dir=env.WORK_DIR.."mysql"..env.PATH_DEL.."snap"
+    self.script_dir=self.db.ROOT_PATH.."snap"
 end
 
 function snap:get_db_time()

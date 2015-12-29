@@ -1,13 +1,13 @@
 local env=env
-local db,grid=env.db2,env.grid
+local db,grid=env.getdb(),env.grid
 local cfg=env.set
 
 local sql=env.class(env.scripter)
 function sql:ctor()
-    self.db=env.db2
+    self.db=env.getdb()
     self.command="sql"
     self.help_title='Run SQL script under the "sql" directory. '
-    self.script_dir,self.extend_dirs=env.WORK_DIR.."db2"..env.PATH_DEL.."sql",{}
+    self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."sql",{}
 end
 
 local function format_version(version)

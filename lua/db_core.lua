@@ -33,6 +33,8 @@ function db_Types:get(position,typeName,res,conn)
  end
 
 local number_types={
+        INT      = 1,
+        MEDIUMINT= 1,
         BIGINT   = 1,
         TINYINT  = 1,
         SMALLINT = 1,
@@ -252,7 +254,7 @@ end
 
 function ResultSet:print(res,conn)
     local result,hdl={},nil
-    
+    --print(table.dump(self:getHeads(res,-1)))
     local maxrows,pivot=cfg.get("printsize"),cfg.get("pivot")
     if pivot~=0 then maxrows=math.abs(pivot) end
     local result=self:rows(res,maxrows,true)
@@ -448,7 +450,7 @@ function db_core:parse(sql,params,prefix,prep)
             end
             args[#args+1],args[#args+2]=k,typ
             p1[#p1+1]=args
-            return ':'..counter
+            return '?'
         end)
 
     if not prep then prep=self:check_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007) end
@@ -698,7 +700,7 @@ function db_core:get_value(sql,args)
     if type(rtn)~="table" then
         return rtn
     end
-    return #rtn==1 and rtn[1] or rtn
+    return rtn and #rtn==1 and rtn[1] or rtn
 end
 
 function db_core:set_feed(value)

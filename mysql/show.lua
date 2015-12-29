@@ -1,5 +1,5 @@
 local env=env
-local db=env[env.CURRENT_DB]
+local db=env.getdb()
 local words,abbrs={
     'AUTHORS','BINARY','BINLOG','CHARACTER','CODE','COLLATION','COLUMNS','CONTRIBUTORS','CREATE',
     'DATABASE','DATABASES','ENGINE','ERRORS','EVENT','FROM','FULL','FUNCTION',
@@ -18,9 +18,13 @@ function show.run(arg)
         cmd[#cmd+1]=i<3 and abbrs[k:upper()] or k
     end
     cmd=table.concat(cmd,' ')
-    if cmd~=arg then print("Command: "..cmd) end
+    if cmd~="SHOW "..arg then print("Command: "..cmd) end
     env.set.set("feed","off")
     db:query(cmd)
+end
+
+function show.help(...)
+    return db:help_topic(table.concat({...}," "))
 end
 
 function show.onload()
@@ -34,7 +38,7 @@ function show.onload()
     abbrs["ENS"]="ENGINES"
     abbrs["POS"]="PROFILES"
     abbrs["TRS"]="TRIGGERS"
-    env.set_command(nil,show.name, "Show database information",show.run,false,2)
+    env.set_command(nil,show.name, {"Show database information",show.help},show.run,false,2)
 end
 
 return show

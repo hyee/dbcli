@@ -1,5 +1,5 @@
 local env=env
-local db,grid=env.oracle,env.grid
+local db,grid=env.getdb(),env.grid
 local trace={}
 function trace.get_trace(filename,mb,from_mb)
     local sql=[[

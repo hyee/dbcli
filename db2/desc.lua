@@ -1,5 +1,5 @@
 local env=env
-local db,cfg=env.db2,env.set
+local db,cfg=env.getdb(),env.set
 local desc={}
 
 local desc_sql={

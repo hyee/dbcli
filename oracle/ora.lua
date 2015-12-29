@@ -1,13 +1,13 @@
 local env=env
-local db,grid=env.oracle,env.grid
+local db,grid=env.getdb(),env.grid
 local cfg=env.set
 
 local ora=env.class(env.scripter)
 function ora:ctor()
-    self.db=env.oracle
+    self.db=env.getdb()
     self.command="ora"
     self.help_title='Run SQL script under the "ora" directory. '
-    self.script_dir,self.extend_dirs=env.WORK_DIR.."oracle"..env.PATH_DEL.."ora",{}
+    self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."ora",{}
 end
 
 function ora:validate_accessable(name,options,values)

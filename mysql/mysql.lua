@@ -1,22 +1,20 @@
 local env,java=env,java
 local event,packer,cfg,init=env.event.callback,env.packer,env.set,env.init
 local set_command,exec_command=env.set_command,env.exec_command
-
-local module_list={
-    "mysql/usedb",
-    "mysql/show",
-    "mysql/snap",
-    "mysql/sql",
-    "mysql/chart",
-    "mysql/ssh",
-}
-
 local mysql=env.class(env.db_core)
+mysql.module_list={
+    "mysql_exe",
+    "usedb",
+    "show",
+    "snap",
+    "sql",
+    "chart",
+    "ssh",
+}
 
 function mysql:ctor(isdefault)
     self.type="mysql"
     self.C,self.props={},{}
-    local default_desc='#mysql database SQL statement'
     self.C,self.props={},{}
 end
 
@@ -55,24 +53,26 @@ function mysql:connect(conn_str)
          enableEscapeProcessing='false'
         },args)
     --print(table.dump(args))   
-    local prompt=(args.jdbc_alias or url):match('^([^:/@]+)$')
+    
     if event then event("BEFORE_mysql_CONNECT",self,sql,args,result) end
     env.set_title("")
 
     for k,v in pairs(args) do args[k]=tostring(v) end
     self.super.connect(self,args)
-    self.conn,self.conn_str=java.cast(self.conn,"com.mysql.jdbc.JDBC4MySQLConnection"),conn_str
+    self.conn=java.cast(self.conn,"com.mysql.jdbc.JDBC4MySQLConnection")
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    local info=self:get_value("select database(),version(),CONNECTION_ID(),user(),@@hostname,@@sql_mode")
+    local info=self:get_value("select database(),version(),CONNECTION_ID(),user(),@@hostname,@@sql_mode,@@port")
     self.props.db_version,self.props.server=info[2]:match('^([%d%.]+)'),info[5]
     self.props.db_user=info[4]:match("([^@]+)")
-    self.props.database=(info[1] or "")=="" and "None" or info[1]
+    self.props.db_conn_id=tostring(info[3])
+    self.props.database=info[1] or ""
     self.props.sql_mode=info[6]
+    args.database=info[1] or ""
+    args.hostname=url:match("^[^/%:]+")
+    args.port=info[7]
+    self.connection_info=args
 
-    prompt=(prompt or self.props.database:upper()):match("^([^,%.&]+)")
-    env.set_prompt(nil,prompt,nil,2)
-
-    env.set_title(('%s - User: %s    Version: %s'):format(self.props.server,self.props.db_user,info[2]))
+    env.set_title(('%s - User: %s   ID: %s   Version: %s'):format(self.props.server,self.props.db_user,self.props.db_conn_id,info[2]))
     if event then event("AFTER_MYSQL_CONNECT",self,sql,args,result) end
     print("Database connected.")
 end
@@ -108,16 +108,11 @@ end
 function mysql:exec(sql,...)
     local bypass=self:is_internal_call(sql)
     local args=type(select(1,...)=="table") and ... or {...}
-    sql=event("BEFORE_mysql_EXEC",{self,sql,args}) [2]
+    sql=event("BEFORE_MYSQL_EXEC",{self,sql,args}) [2]
     local result=self.super.exec(self,sql,args)
-    if not bypass then event("AFTER_mysql_EXEC",self,sql,args,result) end
-    if type(result)=="number" and cfg.get("feed")=="on" then
-        local key=sql:match("(%w+)")
-        if self.feed_list[key] then
-            print(self.feed_list[key]:format(result)..".")
-        else
-            print("Statement completed.\n")
-        end
+    if not bypass then 
+        event("AFTER_MYSQL_EXEC",self,sql,args,result)
+        self.print_feed(sql,result)
     end
     return result
 end
@@ -131,8 +126,8 @@ function mysql:command_call(sql,...)
     self:print_result(result,sql)
 end
 
-
 function mysql:onload()
+    local default_desc={"#MYSQL database SQL command",self.help_topic}
     local function add_default_sql_stmt(...)
         for i=1,select('#',...) do
             set_command(self,select(i,...), default_desc,self.command_call,true,1,true)
@@ -155,12 +150,10 @@ function mysql:onload()
     ]]
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
     set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
-    set_command(self,{"STATUS","\\S"}, "Get status information from the server",self.command_call,false,1)
     set_command(self,"create",   default_desc,  self.command_call      ,self.check_completion,1,true)
     set_command(self,"alter" ,   default_desc,  self.command_call      ,true,1,true)
     self.C={}
     env.set.inject_cfg({"password","role","constraint","constraints"},self.set_session,self)
-    init.load_modules(module_list,self.C)
 end
 
 function mysql:set_session(name,value)
@@ -168,10 +161,19 @@ function mysql:set_session(name,value)
     return self:exec(table.concat({"SET",name,value}," "))
 end
 
+function mysql:help_topic(...)
+    local keyword=table.concat({...}," "):upper():trim()
+    local topic=self:get_value("select description,example from mysql.help_topic where name=:1 limit 1",{keyword})
+    env.checkerr(topic,"No such topic: "..keyword)
+    local desc="Description:\n============"..("\n"..topic[1]):gsub("\r?\n\r?","\n"..env.space)
+    if (topic[2] or ""):trim()~="" then
+        desc=desc.."\nExamples:\n============"..("\n"..topic[2]):gsub("\r?\n\r?","\n"..env.space)
+    end
+    return desc
+end
+
 function mysql:onunload()
     env.set_title("")
-    init.unload(module_list,self.C)
-    self.C=nil
 end
 
 return mysql.new()

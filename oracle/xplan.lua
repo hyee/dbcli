@@ -1,4 +1,4 @@
-local db,cfg=env.oracle,env.set
+local db,cfg=env.getdb(),env.set
 local xplan={}
 local default_fmt,e10053,prof="ALLSTATS ALL -PROJECTION OUTLINE REMOTE"
 function xplan.explain(fmt,sql)

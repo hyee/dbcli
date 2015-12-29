@@ -121,8 +121,8 @@ function init.load_database()
     end
     local file=init.databases[env.CURRENT_DB]
     if not file then return end
-    local dir,name=file:match("^(.-)([^\\/]+)$")
-    dir=env.WORK_DIR..dir:gsub("[\\/]+",env.PATH_DEL)
+    local short_dir,name=file:match("^(.-)([^\\/]+)$")
+    local dir=env.WORK_DIR..short_dir:gsub("[\\/]+",env.PATH_DEL)
     for k,v in pairs(env.list_dir(dir,"jar")) do
         java.loader:addPath(v[2])
     end
@@ -130,6 +130,16 @@ function init.load_database()
     exec(type(env[name])=="table" and env[name].onload,env[name],name)
     init.module_list[#init.module_list+1]=file
     if env.event then env.event.callback('ON_DB_ENV_LOADED',env.CURRENT_DB) end
+    env[name].ROOT_PATH,env[name].SHORT_PATH=dir,short_dir
+    env.getdb=function() return env[name] end
+    if env[name].module_list then
+        local list={}
+        for k,v in ipairs(env[name].module_list) do
+            list[k]=v:find('^'..short_dir:gsub("([\\/]+)","[\\/]")) and v or (short_dir..v)
+        end
+        env[name].C={}
+        init.load_modules(list,env[name].C)
+    end
 end
 
 function init.load_modules(list,tab,module_name)
@@ -192,6 +202,10 @@ function init.unload(list,tab)
     for i=#list,1,-1 do
         local m=list[i]:match("([^\\/]+)$")
         if type(tab[m])=="table" and type(tab[m].onunload)=="function" then
+            if type(tab[m].C)=="table" and type(tab[m].module_list)=="table" then
+                init.unload(tab[m].module_list,tab[m].C)
+                tab[m].C=nil
+            end
             tab[m].onunload(tab[m])
         end
         tab[m]=nil
