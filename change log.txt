@@ -1,3 +1,7 @@
+2015-12-29: + mysql : plug mysql 'help'/'set' commands into dbcli(requires db connect)
+              mysql : 'show var <keywword>'='show variable like <keyword>'
+              mysql : 'help c'='help contents', search help contents with 'help {s|search} <keyword>'
+            * public: code optimizations  
 2015-12-26: + mysql : initially support mysql, refer to 'mysql\readme.txt' before use
               mysql : 'show' command support abbr, i.e. show variables=show var
 =======================begin v0.9================================================

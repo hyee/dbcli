@@ -165,14 +165,23 @@ end
 
 function mysql:help_topic(...)
     local keyword=table.concat({...}," "):upper():trim()
-    local topic=self:get_value("select name,description,example from mysql.help_topic where name like :1 order by name limit 1",{keyword..(keyword:find("%$") and "" or "%")})
-    env.checkerr(topic,"No such topic: "..keyword)
-    topic[1]="Name: "..topic[1]
-    local desc=topic[1]..":\n"..('='):rep(#topic[1]+1)..("\n"..topic[2]):gsub("\r?\n\r?","\n  ")
-    if (topic[3] or ""):trim()~="" then
-        desc=desc.."\nExamples:\n============"..(("\n"..topic[3]):gsub("\r?\n\r?","\n  "))
+    local desc
+    env.set.set("feed","off")
+    if keyword=="C" or keyword=="CONTENTS" then
+        self:query("select * from mysql.help_category order by name")
+    elseif keyword:find("^SEARCH%s+") or keyword:find("^S%s+") then
+        keyword=keyword:gsub("^[^%s+]%s+","")
+        self:query("select a.name,b.name as category,a.url from mysql.help_topic as a join mysql.help_category as b using(help_category_id) where (upper(a.name) like :1 or upper(b.name) like :1) order by a.name",{keyword..(keyword:find("%$") and "" or "%")})
+    else
+        local topic=self:get_value("select a.name,description,example,b.name as category from mysql.help_topic as a join mysql.help_category as b using(help_category_id) where a.name like :1 order by a.name limit 1",{keyword..(keyword:find("%$") and "" or "%")})
+        env.checkerr(topic,"No such topic: "..keyword)
+        topic[1]='Name: '..topic[1].."   Category: "..topic[4]
+        local desc=topic[1].."\n"..('='):rep(#topic[1])..("\n"..topic[2]):gsub("\r?\n\r?","\n  ")
+        if (topic[3] or ""):trim()~="" then
+            desc=desc.."\nExamples:\n============"..(("\n"..topic[3]):gsub("\r?\n\r?","\n  "))
+        end
+        print(desc:gsub("%s+$",""))
     end
-    print(desc:gsub("%s+$",""))
 end
 
 function mysql:set(item)

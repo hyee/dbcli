@@ -161,7 +161,7 @@ function ResultSet:getHeads(rs,limit)
             data_size=meta:getColumnDisplaySize(i),
             data_precision=meta:getPrecision(i),
             data_scale=meta:getScale(i),
-            is_number=number_types[meta:getColumnTypeName(i)]
+            is_number=number_types[meta:getColumnTypeName(i):match("^%w+")]
         }
         titles[i]=colinfo[i].column_name
         colinfo[cname:upper()]=i

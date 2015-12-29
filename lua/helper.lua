@@ -89,7 +89,7 @@ function helper.helper(cmd,...)
     local rows={}
     if cmd and cmd:sub(1,1)~="-" then
         cmd = cmd:upper()
-        if not _CMDS[cmd] or not _CMDS[cmd].DESC then
+        if not _CMDS[cmd] or not _CMDS[cmd].HELPER then
             if env.event then env.event.callback("ON_HELP_NOTFOUND",cmd,...) end
             return 
         end

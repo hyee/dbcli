@@ -14,6 +14,7 @@ function show.run(arg)
     env.checkerr(db:is_connect(),"Database is not connected!")
     local cmd={"SHOW"}
     local args=env.parse_args(3,arg)
+    env.set.set("printsize",10000)
     for i,k in ipairs(args) do
         cmd[#cmd+1]=i<3 and abbrs[k:upper()] or k
         if cmd[#cmd]:upper()=="VARIABLES" then
