@@ -1,4 +1,4 @@
-local db,cfg=env.oracle,env.set
+local db,cfg=env.getdb(),env.set
 local sqlprof={}
 function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
     local stmt=[[

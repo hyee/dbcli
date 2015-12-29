@@ -1,26 +1,27 @@
 
 local env,db,os,java=env,env.getdb(),os,java
 local ora=db.C.ora
-local sqlplus=env.class(env.subsystem)
+local mysql_exe=env.class(env.subsystem)
 
-function sqlplus:ctor()
+function mysql_exe:ctor()
     self.db=env.getdb()
-    self.command={"sp",'@'}
-    self.name="sqlplus"
-    self.description="Switch to sqlplus with same login, the default working folder is 'oracle/sqlplus'. Usage: sqlplus [-n|-d<work_path>] [other args]"
-    self.help_title='Run SQL*Plus script under the "sqlplus" directory. '
-    self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."sqlplus",{}
+    self.command={"source",'\\.'}
+    self.name="mysql"
+    self.executable="mysql.exe"
+    self.description="Switch to mysql.exe with same login, the default working folder is 'mysql/mysql'. Usage: mysql [-n|-d<work_path>] [other args]"
+    self.help_title='Run mysql script under the "mysql" directory. '
+    self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."mysql",{}
     self.prompt_pattern="^(.+[>\\$#@] *| *\\d+ +)$"
 end
 
 
-function sqlplus:after_process_created()
+function mysql_exe:after_process_created()
     self.work_dir=self.work_path
     print(self:get_last_line("select * from(&prompt_sql);"))
-    self:run_command('store set dbcli_sqlplus_settings.sql replace',false)
+    self:run_command('store set dbcli_mysql_exe_settings.sql replace',false)
 end
 
-function sqlplus:rebuild_commands(work_dir)
+function mysql_exe:rebuild_commands(work_dir)
     self.cmdlist=self.super.rehash(self,self.script_dir,self.ext_name,self.extend_dirs)
     if work_dir and work_dir~=self.script_dir and work_dir~=self.extend_dirs then
         local cmds=self.super.rehash(self,work_dir,self.ext_name)
@@ -30,14 +31,14 @@ function sqlplus:rebuild_commands(work_dir)
     end
 end
 
-function sqlplus:run_command(cmd,is_print)
+function mysql_exe:run_command(cmd,is_print)
     if not self.enter_flag and cmd then
         cmd=cmd..env.END_MARKS[1]
     end
     return self.super.run_command(self,cmd,is_print)
 end
 
-function sqlplus:set_work_dir(path,quiet)
+function mysql_exe:set_work_dir(path,quiet)
     self.super.set_work_dir(self,path,quiet)
     if not quiet and path and path~="" then
         self:make_sqlpath()
@@ -45,7 +46,7 @@ function sqlplus:set_work_dir(path,quiet)
     end
 end
 
-function sqlplus:make_sqlpath()
+function mysql_exe:make_sqlpath()
     local path={}
     if self.work_dir then path[#path+1]=self.work_dir end
     if self.extend_dirs then path[#path+1]=self.extend_dirs end
@@ -66,40 +67,38 @@ function sqlplus:make_sqlpath()
     --self.proc:setEnv("SQLPATH",self.env['SQLPATH'])
 end
 
-function sqlplus:get_startup_cmd(args,is_native)
-    local tnsadm=tostring(java.system:getProperty("oracle.net.tns_admin"))
-    local export=env.OS=="windows" and "set " or "export "
-    local props={}
-    if tnsadm and tnsadm~="" then self.env["TNS_ADMIN"]=tnsadm end
-    if db.props.db_nls_lang then self.env["NLS_LANG"]=db.props.db_nls_lang end
-    self.env['NLS_DATE_FORMAT']='YYYY-MM-DD HH24:MI:SS'
+function mysql_exe:get_startup_cmd(args,is_native)
+    env.checkerr(db:is_connect(),"Database is not connected!")
+    local conn=db.connection_info
+    local props={"--default-character-set=utf8",'-n','-W','-u',conn.user,'-P',conn.port,'-h',conn.hostname}
+    if conn.database~="" then
+        props[#props+1]="--database="..conn.database
+    end
+    local pwd=packer.unpack_str(conn.password)
+    if (pwd or "")~="" then
+        props[#props+1]="--password="..pwd
+    end
+
     self:make_sqlpath()
     self.work_path,self.work_dir=self.work_dir,env._CACHE_PATH
     self:rebuild_commands(self.env['SQLPATH'])
     while #args>0 do
         local arg=args[1]:lower()
-        if arg:sub(1,1)~='-' then break end
-        if arg:lower()~='-s' or is_native then 
+        env.checkerr(not (args[1]:find("^-[upPD]$") or 
+                          arg:find("^--user") or 
+                          arg:find("^--port") or 
+                          arg:find("^--password") or
+                          arg:find("^--database")), "You should not specify user/password/port/database here, those information should be automatically provided.")
+        
+        if arg:lower()~='-n' and arg~="--unbuffered" then 
             props[#props+1]=arg
         end
         table.remove(args,1)
-        if args[1] and arg=="-c" or arg=='-m' or arg=='-r' then
-            props[#props+1]=args[1]
-            table.remove(args,1)
-        end
     end
-
-    env.checkerr(not args[1] or not args[1]:find(".*/.*@.+"),"You cannot specify user/pwd here, default a/c should be used!")
-    
-    props[#props+1]=(env.packer.unpack_str(db.conn_str) or "/nolog")
-    if db.props.service_name then
-        props[#props]=props[#props]:gsub("%:[%w_]+ ",'/'..db.props.service_name)
-    end
-    
     return props
 end
 
-function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
+function mysql_exe:run_sql(g_sql,g_args,g_cmd,g_file)
     for i=1,#g_sql do
         local sql,args,cmd,file=g_sql[i],g_args[i],g_cmd[i],g_file[i]
         local content=[[DEF _WORK_DIR_="%s"
@@ -107,7 +106,7 @@ function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
                         DEF _SQLPLUS_DIR_="%s"
                         %s
                         @"%s" %s
-                        @dbcli_sqlplus_settings.sql]]
+                        @dbcli_mysql_exe_settings.sql]]
 
         env.checkerr(db:is_connect(),"Database is not connected.")
         local context=""
@@ -126,7 +125,7 @@ function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
         end
         self.work_path=self.work_path:gsub(env.PATH_DEL..'+$','')
         local file_dir=file:gsub('[\\/][^\\/]+$',"")
-        local tmpfile='sqlplus.tmp'
+        local tmpfile='mysql_exe.tmp'
         tmpfile=self.work_path..env.PATH_DEL..tmpfile
         local f,err=io.open(tmpfile,'w')
         env.checkerr(f,"Unable to write file "..tmpfile)
@@ -137,21 +136,13 @@ function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
     end
 end
 
-function sqlplus:after_script()
+function mysql_exe:after_script()
     self.work_path=nil
 end
 
-function sqlplus:f7(n,key_event,str)
-    --VK_F7
-    if self.enter_flag and key_event.name=='F7' then
-        --self:run_command(str)
-    end 
-end
-
-function sqlplus:onload()
-    env.event.snoop("AFTER_ORACLE_CONNECT",self.terminate,self)
+function mysql_exe:onload()
+    env.event.snoop("AFTER_MYSQL_CONNECT",self.terminate,self)
     env.event.snoop("ON_DB_DISCONNECTED",self.terminate,self)
-    --env.event.snoop("ON_KEY_EVENT",self.f7,self)
 end
 
-return sqlplus.new()
+return mysql_exe.new()

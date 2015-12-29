@@ -479,6 +479,13 @@ function grid:wellform(col_del,row_del)
             end
         end
     end
+
+    if result[#result][0]>0 and (row_del or "")=="" and (col_del or ""):trim()~="" then
+        local line=cut(self,title_dels,format_func,fmt)
+        line=line:gsub(" ",grid.title_del):gsub(col_del:trim(),function(a) return ('+'):rep(#a) end)
+        table.insert(rows,line)
+        table.insert(rows,1,line)
+    end
     self=nil
     return rows
 end

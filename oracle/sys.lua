@@ -1,9 +1,9 @@
 
-local db,string=env.oracle,string
+local db,string=env.getdb(),string
 
 local sys=env.class(db.C.ora)
 function sys:ctor()
-    self.db=env.oracle
+    self.db=env.getdb()
     self.command={"sys","dba"}
     self.help_title=[[
         Run SQL script under the "sys" directory that needs SYSDBA role or the accesses to the xv$ views.
@@ -11,7 +11,7 @@ function sys:ctor()
         For the non-sysdba user, the x$ views inside the scripts will be automatically renamed to xv$ views during the execution.
         These xv$ views wold be validated in runtime and determine if the script is accessible.
         Please refer to 'sys\xvcreate' or run 'sys xvcreate' to create the xv$ views for normal user.]]..'\n'
-    self.script_dir,self.extend_dirs=env.WORK_DIR.."oracle"..env.PATH_DEL.."sys",{}
+    self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."sys",{}
 end
 
 local instance_pattern={

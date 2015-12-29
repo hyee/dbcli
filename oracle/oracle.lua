@@ -1,26 +1,24 @@
 local env,java,select=env,java,select
 local event,packer,cfg,init=env.event.callback,env.packer,env.set,env.init
 local set_command,exec_command=env.set_command,env.exec_command
-
-local module_list={
-    "oracle/ora",
-    "oracle/dbmsoutput",
-    "oracle/sqlplus",
-    "oracle/xplan",
-    "oracle/desc",
-    "oracle/snap",
-    "oracle/sqlprof",
-    "oracle/tracefile",
-    "oracle/awrdump",
-    "oracle/unwrap",
-    "oracle/sys",
-    "oracle/show",
-    "oracle/chart",
-    "oracle/ssh",
-    "oracle/extvars"
-}
-
 local oracle=env.class(env.db_core)
+oracle.module_list={
+    "ora",
+    "dbmsoutput",
+    "sqlplus",
+    "xplan",
+    "desc",
+    "snap",
+    "sqlprof",
+    "tracefile",
+    "awrdump",
+    "unwrap",
+    "sys",
+    "show",
+    "chart",
+    "ssh",
+    "extvars"
+}
 
 function oracle:ctor(isdefault)
     self.type="oracle"
@@ -414,16 +412,12 @@ function oracle:onload()
     set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)
     set_command(self,"alter" ,   default_desc,        self.exec      ,true,1,true)
     
-    self.C={}
-    init.load_modules(module_list,self.C)
     env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)
     env.set.inject_cfg({"transaction","role","constraint","constraints"},self.set_session,self)
 end
 
 function oracle:onunload()
     env.set_title("")
-    init.unload(module_list,self.C)
-    self.C=nil
 end
 
 return oracle.new()

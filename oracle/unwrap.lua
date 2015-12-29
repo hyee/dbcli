@@ -3,7 +3,7 @@
 --    http://blog.csdn.net/akinosun/article/details/8041199
 
 local table,string=table,string
-local env,db,ffi,zlib=env,env.oracle,env.ffi,env.zlib
+local env,db,ffi,zlib=env,env.getdb(),env.ffi,env.zlib
 local unwrap={}
 
 local charmap={0x3d, 0x65, 0x85, 0xb3, 0x18, 0xdb, 0xe2, 0x87, 0xf1, 0x52,

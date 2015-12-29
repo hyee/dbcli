@@ -93,7 +93,7 @@ function os.exists(file)
 end
 
 function os.find_extension(exe)
-    local cmd=(env.OS=="windows" and "where " or "which ")..exe.." >"..(env.OS=="windows" and ">nul" or "/dev/null")
+    local cmd=(env.OS=="windows" and "where " or "which ")..exe.." >"..(env.OS=="windows" and "nul 2>nul" or "/dev/null")
     env.checkerr((os.execute(cmd)),"Cannot find "..exe.." in the default path, please add it into EXT_PATH of file data/init.cfg")
     cmd=(env.OS=="windows" and "where " or "which ")..exe
     local f=io.popen(cmd)

@@ -1,4 +1,4 @@
-local db,cfg=env.oracle,env.set
+local db,cfg=env.getdb(),env.set
 local awr={}
 
 function awr.get_range(starttime,endtime,instances)

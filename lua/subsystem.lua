@@ -89,18 +89,20 @@ function system:call_process(cmd,is_native)
         self.env={PATH=os.getenv("PATH")}
         if not self.work_dir then self.work_dir=env._CACHE_PATH end
         self.startup_cmd=self:get_startup_cmd(args,is_native)
-        table.insert(self.startup_cmd,1,os.find_extension(self.name))
+        table.insert(self.startup_cmd,1,os.find_extension(self.executable or self.name))
         
         self:set_work_dir(self.work_dir,true)
-        env.log_debug("sqlplus","Command : " ..table.concat(self.startup_cmd," "))
-        env.log_debug("sqlplus","Work dir: "..self.work_dir)
-        env.log_debug("sqlplus","Environment: \n"..table.dump(self.env))
+        env.log_debug("subsystem","Command : " ..table.concat(self.startup_cmd," "))
+        env.log_debug("subsystem","Work dir: "..self.work_dir)
+        env.log_debug("subsystem","Environment: \n"..table.dump(self.env))
 
         --self.process:wait_async(function(...) print(...);print("Sub-system is terminated") end)
         if not is_native then
+            --printer.write("Connecting "..self.name.."...")
             self.process=self.proc:create(self.prompt_pattern,self.work_dir,self.startup_cmd,self.env)
             self.msg_stack={}
             self:run_command(nil,false)
+            --reader:redrawLine()
             if not self.process then return end
             if self.after_process_created then self:after_process_created() end
             if #args==0 then

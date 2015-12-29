@@ -1,5 +1,5 @@
 local env,stategroup,statecode=env
-local db=env.db2
+local db=env.getdb()
 local sqlstate={}
 function sqlstate.parse_error(info)
     local sqlcode=info.error:match('SQLCODE=%D?(%d+)')

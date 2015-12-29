@@ -1,21 +1,20 @@
 local env,java=env,java
 local event,packer,cfg,init=env.event.callback,env.packer,env.set,env.init
 local set_command,exec_command=env.set_command,env.exec_command
-
-local module_list={
-    "db2/sqlstate",
-    "db2/snap",
-    "db2/sql",
-    "db2/chart",
-    "db2/ssh",
+local db2=env.class(env.db_core)
+db2.module_list={
+    "sqlstate",
+    "snap",
+    "sql",
+    "chart",
+    "ssh",
 }
 
-local db2=env.class(env.db_core)
+
 
 function db2:ctor(isdefault)
     self.type="db2"
     self.C,self.props={},{}
-    local default_desc='#DB2 database SQL statement'
     self.C,self.props={},{}
 end
 
@@ -121,14 +120,9 @@ function db2:exec(sql,...)
     local args=type(select(1,...)=="table") and ... or {...}
     sql=event("BEFORE_DB2_EXEC",{self,sql,args}) [2]
     local result=self.super.exec(self,sql,args)
-    if not bypass then event("AFTER_DB2_EXEC",self,sql,args,result) end
-    if type(result)=="number" and cfg.get("feed")=="on" then
-        local key=sql:match("(%w+)")
-        if self.feed_list[key] then
-            print(self.feed_list[key]:format(result)..".")
-        else
-            print("Statement completed.\n")
-        end
+    if not bypass then 
+        event("AFTER_DB2_EXEC",self,sql,args,result)
+        self.print_feed(sql,result)
     end
     return result
 end
@@ -147,6 +141,7 @@ function db2:admin_cmd(cmd)
 end
 
 function db2:onload()
+    local default_desc='#DB2 database SQL statement'
     local function add_default_sql_stmt(...)
         for i=1,select('#',...) do
             set_command(self,select(i,...), default_desc,self.command_call,true,1,true)
@@ -174,14 +169,11 @@ function db2:onload()
     end
     set_command(self,'adm', 'Run procedure ADMIN_CMD. Usage: adm <statement>',self.admin_cmd,true,2,true)
     self.C={}
-    init.load_modules(module_list,self.C)
     --env.event.snoop('ON_SQL_ERROR',self.handle_error,nil,1)
 end
 
 function db2:onunload()
     env.set_title("")
-    init.unload(module_list,self.C)
-    self.C=nil
 end
 
 return db2.new()

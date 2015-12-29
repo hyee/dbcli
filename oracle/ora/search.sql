@@ -1,7 +1,7 @@
 /*[[search objects with object_id/keyword. Usage: search [object_id|data_object_id|keyword] 
     --[[
         @check_access_obj: dba_objects={dba_objects}, default={all_objects}
-        @check_access_pro: all_Procedures={dba_Procedures}, default={all_Procedures}
+        @check_access_pro: dba_Procedures={dba_Procedures}, default={all_Procedures}
     --]]
 ]]*/
 SELECT *

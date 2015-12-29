@@ -12,7 +12,7 @@ function scripter:ctor()
     self.ext_name='sql'
     self.help_title=""
     self.help_ind=0
-    self.db=env[env.CURRENT_DB]
+    self.db=env.getdb()
 end
 
 function scripter:get_command()

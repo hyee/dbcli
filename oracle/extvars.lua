@@ -1,5 +1,5 @@
 local env=env
-local db,cfg,event=env.oracle,env.set,env.event 
+local db,cfg,event=env.getdb(),env.set,env.event 
 local extvars={}
 
 local instance_pattern={
