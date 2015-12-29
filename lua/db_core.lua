@@ -313,7 +313,8 @@ db_core.feed_list={
     ROLLBACK="Rollbacked",
     GRANT   ="Granted",
     REVOKE  ="Revoked",
-    TRUNCATE="Truncated"
+    TRUNCATE="Truncated",
+    SET     ="Variable set"
 }
 
 function db_core.get_command_type(sql)

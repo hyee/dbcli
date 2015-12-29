@@ -90,9 +90,9 @@ function helper.helper(cmd,...)
     if cmd and cmd:sub(1,1)~="-" then
         cmd = cmd:upper()
         if not _CMDS[cmd] or not _CMDS[cmd].DESC then
-            return
+            if env.event then env.event.callback("ON_HELP_NOTFOUND",cmd,...) end
+            return 
         end
-
         local helps
         if type(_CMDS[cmd].HELPER) =="function" then
             local args= _CMDS[cmd].OBJ and {_CMDS[cmd].OBJ,cmd,...} or {cmd,...}
@@ -100,6 +100,7 @@ function helper.helper(cmd,...)
         else
             helps  = _CMDS[cmd].HELPER or ""
         end
+        if helps=="" then return end
         local spaces=helps:match("([ \t]*)%S") or ""
         helps=('\n'..helps):gsub("[\n\r]"..spaces,"\n"):gsub("%s+$","")
         if helps:sub(1,1)=="\n" then helps=helps:sub(2) end
@@ -137,11 +138,11 @@ function helper.helper(cmd,...)
     end
 
     local flag=(cmd=="-a" or cmd=="-A") and 1 or 0
-       table.insert(rows,{"Command","Abbr.","Max Args"})
-       if flag==1 then
-           table.append(rows[#rows],"Cross-lines?","Source")
-       end
-       table.insert(rows[#rows],"Decription")
+    table.insert(rows,{"Command","Abbr.","Max Args"})
+    if flag==1 then
+        table.append(rows[#rows],"Cross-lines?","Source")
+    end
+    table.insert(rows[#rows],"Decription")
     for k,v in pairs(_CMDS) do
         if k~="___ABBR___" and (v.DESC and not v.DESC:find("[ \t]*#") or flag==1) then
             table.insert(rows,{

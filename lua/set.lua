@@ -142,7 +142,6 @@ function cfg.set(name,value,backup,isdefault)
     local config=cfg.exists(name)
     if not config then return print("Cannot set ["..name.."], the parameter does not exist!") end
     if not value then return cfg.show_cfg(name) end
-
     if tostring(value):upper()=="DEFAULT" then
         return cfg.set(name,config.default,nil,true)
     elseif tostring(value):upper()=="BACK" then
@@ -199,6 +198,11 @@ function cfg.doset(...)
             cfg.set(args[i],arg,true)
             break;
         end;
+        if i==1 and not config and env.event then
+            local rtn={...}
+            env.event.callback("ON_SET_NOTFOUND",rtn)
+            if rtn[1]==true then break end
+        end
         local value=cfg.set(args[i],args[i+1],true)
         if value and idx==2 then
             cfg._p=env.load_data(file)
@@ -274,7 +278,6 @@ function cfg.onload()
     event.snoop("AFTER_COMMAND",cfg.capture_after_cmd)
     env.set_command(nil,cfg.name,"Set environment parameters. Usage: set [-a] | {[-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]}",cfg.doset,false,99)
     env.event.snoop("ON_ENV_LOADED",cfg.on_env_load,nil,2)
-    
 end
 
 function cfg.on_env_load()

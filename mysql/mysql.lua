@@ -154,6 +154,8 @@ function mysql:onload()
     set_command(self,"alter" ,   default_desc,  self.command_call      ,true,1,true)
     self.C={}
     env.set.inject_cfg({"password","role","constraint","constraints"},self.set_session,self)
+    env.event.snoop("ON_HELP_NOTFOUND",self.help_topic,self)
+    env.event.snoop("ON_SET_NOTFOUND",self.set,self)
 end
 
 function mysql:set_session(name,value)
@@ -163,13 +165,21 @@ end
 
 function mysql:help_topic(...)
     local keyword=table.concat({...}," "):upper():trim()
-    local topic=self:get_value("select description,example from mysql.help_topic where name=:1 limit 1",{keyword})
+    local topic=self:get_value("select name,description,example from mysql.help_topic where name like :1 order by name limit 1",{keyword..(keyword:find("%$") and "" or "%")})
     env.checkerr(topic,"No such topic: "..keyword)
-    local desc="Description:\n============"..("\n"..topic[1]):gsub("\r?\n\r?","\n"..env.space)
-    if (topic[2] or ""):trim()~="" then
-        desc=desc.."\nExamples:\n============"..("\n"..topic[2]):gsub("\r?\n\r?","\n"..env.space)
+    topic[1]="Name: "..topic[1]
+    local desc=topic[1]..":\n"..('='):rep(#topic[1]+1)..("\n"..topic[2]):gsub("\r?\n\r?","\n  ")
+    if (topic[3] or ""):trim()~="" then
+        desc=desc.."\nExamples:\n============"..(("\n"..topic[3]):gsub("\r?\n\r?","\n  "))
     end
-    return desc
+    print(desc:gsub("%s+$",""))
+end
+
+function mysql:set(item)
+    if not self:is_connect() then return end
+    local cmd="SET "..table.concat(item," ")
+    item[1]=true
+    self:exec(cmd)
 end
 
 function mysql:onunload()

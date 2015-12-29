@@ -112,14 +112,18 @@ function printer.spool(file,option)
     printer.file=file
 end
 
-function printer.grep(keyword,stmt)
+function printer.set_grep(keyword)
     printer.grep_text,printer.grep_dir=nil,nil
-    env.checkhelp(stmt)
     if keyword:len()>1 and keyword:sub(1,1)=="-" then
         keyword,printer.grep_dir=keyword:sub(2),true
     end
     --printer.grep_text=keyword:escape():case_insensitive_pattern()
     printer.grep_text='('..keyword:escape():case_insensitive_pattern()..')'
+end
+
+function printer.grep(keyword,stmt)
+    env.checkhelp(stmt)
+    printer.set_grep(keyword)
     env.eval_line(stmt,true,true)
 end
 
@@ -128,13 +132,18 @@ function printer.grep_after()
 end
 
 function printer.before_command(command)
-    if #env.RUNNING_THREADS>1 or not printer.hdl then return end
+    if not printer.hdl or #env.RUNNING_THREADS>1 then return end
     local cmd,params,is_internal=table.unpack(command)
     if is_internal then return end
     local line= (env._CMDS[cmd] and env._CMDS[cmd].ARGS>1 and cmd.." ") or ""
     line=line..table.concat(params," "):gsub('\n','\n'..env.MTL_PROMPT)
     line=env.PRI_PROMPT..line
     pcall(printer.hdl.write,printer.hdl,line.."\n")
+end
+
+function printer.after_command()
+    if not printer.grep_text or #env.RUNNING_THREADS>1  then return end
+    printer.grep_after()
 end
 
 
@@ -147,12 +156,13 @@ function printer.onload()
         BOLD= env.ansi.string_color('UDL') 
         strip_ansi=env.ansi.strip_ansi
     end
-
+    event=env.event
     if env.event then
         env.event.snoop('BEFORE_COMMAND',printer.before_command,nil,90)
+        env.event.snoop('AFTER_COMMAND',printer.after_command,nil,90)
     end
     BOLD=BOLD..'%1'..NOR
-    event=env.event
+    
     env.set_command(nil,"grep","Filter matched text from the output. Usage: grep <keyword|-keyword> <other command>, -keyword means exclude",{printer.grep,printer.grep_after},'__SMART_PARSE__',3)
     env.set_command(nil,"more","Similar to Linux 'more' command. Usage: more <other command>",printer.set_more,'__SMART_PARSE__',2)
     env.set_command(nil,{"Prompt","pro",'echo'}, "Prompt messages. Usage: PRO[MPT] <message>",printer.load_text,false,2)
