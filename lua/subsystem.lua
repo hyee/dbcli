@@ -98,11 +98,12 @@ function system:call_process(cmd,is_native)
 
         --self.process:wait_async(function(...) print(...);print("Sub-system is terminated") end)
         if not is_native then
-            --printer.write("Connecting "..self.name.."...")
+            io.write("Connecting to "..self.name.."...")
+            reader:flush()
             self.process=self.proc:create(self.prompt_pattern,self.work_dir,self.startup_cmd,self.env)
             self.msg_stack={}
             self:run_command(nil,false)
-            --reader:redrawLine()
+            env.printer.write("$DELLINE$")
             if not self.process then return end
             if self.after_process_created then self:after_process_created() end
             if #args==0 then
@@ -123,7 +124,7 @@ function system:call_process(cmd,is_native)
             To switch to the native CLI mode, execute '-n' or '.%s -n'.
             Type 'lls' to list the files in current working dir, to change the working dir, execute 'lcd <path>'.
             Type '.<cmd>' to run the root command, 'bye' to leave, or 'exit' to terminate.]]
-        help=help:format(self.name,self.work_dir,self.name):gsub("%s%s%s+",'\n')
+        help=help:format(self.name,self.work_dir,self.name):gsub("%s%s%s+",'\n'):gsub("^%s+","")
         print(env.ansi.mask("PromptColor",help))
         env.set_subsystem(self.name,self.prompt)
         return

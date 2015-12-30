@@ -133,6 +133,7 @@ function mysql:onload()
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
     set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
     set_command(self,"create",   default_desc,  self.command_call      ,self.check_completion,1,true)
+    set_command(self,"?",nil,self.help_topic,false,9)
     set_command(nil,{"delimiter","\\d"},"Set statement delimiter.",
         function(sep)
             if #env.RUNNING_THREADS<=2 then
