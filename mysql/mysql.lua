@@ -10,6 +10,7 @@ mysql.module_list={
     "sql",
     "chart",
     "ssh",
+    "mysqluc"
 }
 
 function mysql:ctor(isdefault)

@@ -450,11 +450,13 @@ function scripter:helper(_,cmd,search_key)
 end
 
 function scripter:__onload()
-    env.checkerr(self.script_dir,"Cannot find the script dir for the '"..self:get_command().."' command!")
+    --env.checkerr(self.script_dir,"Cannot find the script dir for the '"..self:get_command().."' command!")
     self.db=self.db or env.db_core.__instance
     self.short_dir=self.script_dir:match('([^\\/]+)$')
     self.extend_dirs=env.set.get_config(self.__className..".extension")
-    env.set_command(self,self.command, self.helper,{self.run_script,self.after_script},false,ARGS_COUNT+1)
+    if self.command and self.command~="" then
+        env.set_command(self,self.command, self.helper,{self.run_script,self.after_script},false,ARGS_COUNT+1)
+    end
 end
 
 return scripter

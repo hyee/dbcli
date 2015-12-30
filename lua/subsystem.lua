@@ -6,6 +6,7 @@ function system:ctor()
     self.process=nil
     self.proc=java.require("org.dbcli.SubSystem")
     self.prompt_pattern="^.+[>\\$#@] *$"
+    self.support_redirect=true
 end
 
 function system:kill_reader(cmds)
@@ -86,8 +87,9 @@ function system:call_process(cmd,is_native)
             end
         end
         
+        if not self.support_redirect then is_native=true end
         self.env={PATH=os.getenv("PATH")}
-        if not self.work_dir then self.work_dir=env._CACHE_PATH end
+        if not self.work_dir then self.work_dir=self.extend_dirs or self.script_dir or env._CACHE_PATH end
         self.startup_cmd=self:get_startup_cmd(args,is_native)
         table.insert(self.startup_cmd,1,os.find_extension(self.executable or self.name))
         

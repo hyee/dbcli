@@ -6,19 +6,17 @@ local mysql_exe=env.class(env.subsystem)
 function mysql_exe:ctor()
     self.db=env.getdb()
     self.command={"source",'\\.'}
+    self.support_redirect=false
     self.name="mysql"
     self.executable="mysql.exe"
     self.description="Switch to mysql.exe with same login, the default working folder is 'mysql/mysql'. Usage: mysql [-n|-d<work_path>] [other args]"
     self.help_title='Run mysql script under the "mysql" directory. '
-    self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."mysql",{}
+    self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."mysql",nil
     self.prompt_pattern="^(.+[>\\$#@] *| *\\d+ +)$"
 end
 
-
 function mysql_exe:after_process_created()
-    self.work_dir=self.work_path
-    print(self:get_last_line("select * from(&prompt_sql);"))
-    self:run_command('store set dbcli_mysql_exe_settings.sql replace',false)
+    
 end
 
 function mysql_exe:rebuild_commands(work_dir)
@@ -70,7 +68,7 @@ end
 function mysql_exe:get_startup_cmd(args,is_native)
     env.checkerr(db:is_connect(),"Database is not connected!")
     local conn=db.connection_info
-    local props={"--default-character-set=utf8",'-n','-W','-u',conn.user,'-P',conn.port,'-h',conn.hostname}
+    local props={"--default-character-set=utf8",'-n','-u',conn.user,'-P',conn.port,'-h',conn.hostname}
     if conn.database~="" then
         props[#props+1]="--database="..conn.database
     end
@@ -117,7 +115,6 @@ function mysql_exe:run_sql(g_sql,g_args,g_cmd,g_file)
             if k:match("^V%d+$") and v~='' then context=context..msg:gsub("V(%d+)",'%1',1) end
         end
 
-        self.work_path=env._CACHE_PATH
         local subdir=args.FILE_OUTPUT_DIR
         if subdir then
             self.work_path=self.work_path..subdir
