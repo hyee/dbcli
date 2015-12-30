@@ -14,12 +14,21 @@ function show.run(arg)
     env.checkerr(db:is_connect(),"Database is not connected!")
     local cmd={"SHOW"}
     local args=env.parse_args(3,arg)
+    env.set.set("printsize",10000)
     for i,k in ipairs(args) do
         cmd[#cmd+1]=i<3 and abbrs[k:upper()] or k
+        if cmd[#cmd]:upper()=="VARIABLES" then
+            local text=(args[i+1] or ""):upper()
+            if text~="" and not text:find("^LIKE") and not text:find("^WHERE") then
+                env.printer.set_grep(text)
+                break
+            end
+        end
     end
     cmd=table.concat(cmd,' ')
     if cmd~="SHOW "..arg then print("Command: "..cmd) end
     env.set.set("feed","off")
+
     db:query(cmd)
 end
 

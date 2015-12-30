@@ -16,8 +16,8 @@ SELECT TABLESPACE_NAME,
        files,
        siz "MAX_SIZE",
        SPACE "FILE_SIZE",
-       SPACE - NVL(FREE_SPACE, 0) "USED_SPACE",
        HWM_SPACE "HWM_SPACE",
+       SPACE - NVL(FREE_SPACE, 0) "USED_SPACE",
        FREE_SPACE "FREE_SPACE",
        siz+FREE_SPACE-space "TOTAL_FREE",
        ROUND(((SPACE - NVL(FREE_SPACE, 0)) / nullif(siz, 0)) * 100, 2) "USED(%)",
@@ -55,8 +55,8 @@ SELECT /*+NO_EXPAND_GSET_TO_UNION no_expand no_merge(h) no_merge(p) no_merge(f) 
        decode(grouping_id(h.file_id),0,h.file_id,count(distinct f.file_id)) files,
        SUM(decode(f.autoextensible, 'YES', f.maxbytes, 'NO', f.bytes))  file_size,
        SUM(h.bytes_free + h.bytes_used)  space_all,
-       SUM(nvl(p.bytes_used, 0)) space_used,
        NULL HWM_SPACE,
+       SUM(nvl(p.bytes_used, 0)) space_used,
        SUM((h.bytes_free + h.bytes_used) - nvl(p.bytes_used, 0)) space_free,
        NULL,
        round(SUM(nvl(p.bytes_used, 0)) / SUM(h.bytes_free + h.bytes_used), 2) space_pct,
@@ -71,4 +71,4 @@ AND    f.tablespace_name = h.tablespace_name
 AND   (:V1 IS NULL OR h.TABLESPACE_NAME=upper(:V1))
 GROUP  BY ROLLUP(h.tablespace_name,h.FILE_ID)
 HAVING (:V1 IS NOT NULL AND grouping_id(H.TABLESPACE_NAME)<1) OR (:V1 IS NULL AND H.FILE_ID IS NULL)
-ORDER  BY TEMP,USED_SPACE DESC,TABLESPACE_NAME DESC;
+ORDER  BY TEMP,USED_SPACE DESC,TABLESPACE_NAME DESC NULLS LAST;

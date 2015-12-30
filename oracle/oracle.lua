@@ -314,35 +314,6 @@ function oracle:dba_query(cmd,sql,args)
     return res,args
 end
 
-function oracle.check_completion(cmd,other_parts)
-    local p1=env.END_MARKS[2]..'[ \t]*$'
-    local p2
-    local objs={
-        OR=1,
-        VIEW=1,
-        TRIGGER=1,
-        TYPE=1,
-        PACKAGE=1,
-        PROCEDURE=1,
-        FUNCTION=1,
-        DECLARE=1,
-        BEGIN=1,
-        JAVA=1
-    }
-
-    --alter package xxx compile ...
-    local obj,action=env.parse_args(2,other_parts)[1]
-    if obj and not objs[obj:upper()] and not objs[cmd] then
-        p2=env.END_MARKS[1].."+%s*$"
-    end
-    local match = (other_parts:match(p1) and 1) or (p2 and other_parts:match(p2) and 2) or false
-    --print(match,other_parts)
-    if not match then
-        return false,other_parts
-    end
-    return true,other_parts:gsub(match==1 and p1 or p2,"")
-end
-
 local ignore_errors={
     ['ORA-00028']='Connection is lost, please login again.',
     ['socket']='Connection is lost, please login again.',

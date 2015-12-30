@@ -17,7 +17,7 @@ function xplan.explain(fmt,sql)
         sql=fmt..(not sql and "" or " "..sql)
         fmt=default_fmt
     end
-    sql=sql:gsub(env.END_MARKS[1]..'$',''):gsub(env.END_MARKS[2]..'$','')
+    sql=env.END_MARKS.match(sql)
 
     if not sql:gsub("[\n\r]",""):match('(%s)') then
         sql=sql:gsub("[\n\r]","")
