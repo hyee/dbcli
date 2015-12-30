@@ -95,7 +95,7 @@ end
 function var.accept_input(name,desc)
     if not name then return end
     local uname=name:upper()
-    if not var.inputs[uname] then return end
+    --if not var.inputs[uname] then return end
     if not desc then
         desc=var.desc[uname] or name
     else
@@ -114,6 +114,7 @@ function var.accept_input(name,desc)
     desc=desc:match("^[%s']*(.-)[%s':]*$")..': '
     env.printer.write(desc)
     var.inputs[uname]=io.read()
+    var.outputs[uname]=nil
 end
 
 function var.setInputs(name,args)

@@ -47,7 +47,6 @@ public class Loader {
             addLibrary(libPath, true);
             System.setProperty("library.jansi.path", libPath);
             console = new Console();
-            console.writer = new PrintWriter(System.getenv("ANSICON_DEF") != null ? new OutputStreamWriter(System.out, Console.charset) : Console.writer);
             //Ctrl+D
             keyMap = console.getKeys();
             keyMap.bind(String.valueOf(KeyMap.CTRL_D), new KeyListner(KeyMap.CTRL_D));
