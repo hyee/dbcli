@@ -16,7 +16,7 @@ function printer.set_more(stmt)
     env.checkerr(stmt,"Usage: more <select statement>|<other command>")
     printer.is_more=true
     more_text={}
-    local res,err=pcall(env.eval_line,stmt,true,true)
+    if stmt then pcall(env.eval_line,stmt,true,true) end
     printer.is_more=false
     printer.more(table.concat(more_text,'\n'))
     more_text={}
@@ -132,20 +132,39 @@ function printer.grep_after()
 end
 
 function printer.before_command(command)
+    local cmd,params,is_internal,line,text=table.unpack(command)
+    if not printer.grep_text then
+        cmd,text=line:match("^(.*)|%s*[gG][rR][eR][pP] ([^\n\r]-)$")
+        if text then
+            command[1],command[2]=env.eval_line(cmd,false,true)
+            printer.set_grep(text)
+        end
+    end
+    if not printer.is_more then
+        cmd,text=line:match("^(.*)|%s*[mM][oO][rR][eE]$")
+
+        if cmd then
+            command[1],command[2]=env.eval_line(cmd,false,true)
+            printer.is_more,more_text=true,{}
+        end
+    end
     if not printer.hdl or #env.RUNNING_THREADS>1 then return end
-    local cmd,params,is_internal=table.unpack(command)
     if is_internal then return end
-    local line= (env._CMDS[cmd] and env._CMDS[cmd].ARGS>1 and cmd.." ") or ""
-    line=line..table.concat(params," "):gsub('\n','\n'..env.MTL_PROMPT)
+    line=line:gsub('\n','\n'..env.MTL_PROMPT)
     line=env.PRI_PROMPT..line
     pcall(printer.hdl.write,printer.hdl,line.."\n")
 end
 
 function printer.after_command()
-    if not printer.grep_text or #env.RUNNING_THREADS>1  then return end
-    printer.grep_after()
+    if #env.RUNNING_THREADS>1  then return end
+    if more_text and #more_text>0 then
+       printer.more(table.concat(more_text,'\n')) 
+    end
+    if printer.grep_text then 
+        printer.grep_after()
+    end
+    printer.is_more,more_text=false,{}
 end
-
 
 _G.print=printer.print
 _G.rawprint=printer.rawprint

@@ -115,8 +115,9 @@ end
 env._CMDS=setmetatable({___ABBR___={}},{
     __index=function(self,key)
         if not key then return nil end
+        key=key:upper()
         local abbr=rawget(self,'___ABBR___')
-        local value=rawget(abbr,key)
+        local value=rawget(self,key) or rawget(abbr,key)
         return value and rawget(abbr,value) or value
     end,
 
@@ -213,27 +214,26 @@ function env.check_cmd_endless(cmd,other_parts)
     if not _CMDS[cmd] then
         return true,other_parts
     end
-    local p1=env.END_MARKS[1]..'%s*$'
+    --print(other_parts,debug.traceback())
     if not _CMDS[cmd].MULTI then
-        return true,other_parts and other_parts:gsub(p1,"")
+        return true,other_parts and env.END_MARKS.match(other_parts)
     elseif type(_CMDS[cmd].MULTI)=="function" then
         return _CMDS[cmd].MULTI(cmd,other_parts)
     elseif _CMDS[cmd].MULTI=='__SMART_PARSE__' then
         return env.smart_check_endless(cmd,other_parts,_CMDS[cmd].ARGS)
     end
 
-    local p2=env.END_MARKS[2]..'%s*$'
-    local match = (other_parts:match(p1) and 1) or (other_parts:match(p2) and 2) or false
+    local match,typ,index = env.END_MARKS.match(other_parts)
     --print(match,other_parts)
-    if not match then
+    if index==0 then
         return false,other_parts
     end
-    return true,other_parts:gsub(match==1 and p1 or p2,"")
+    return true,match
 end
 
 function env.smart_check_endless(cmd,rest,from_pos)
     local args=env.parse_args(from_pos,rest)
-    if #args==0 then return true,rest:gsub('['..env.END_MARKS[1]..' \t]+$',"") end
+    if #args==0 then return true,env.END_MARKS.match(rest) end
     for k=#args,1,-1 do
         if not env.check_cmd_endless(args[k]:upper(),table.concat(args,' ',k+1)) then
             return false,rest
@@ -398,12 +398,9 @@ end
 function _exec_command(name,params)
     local result
     local cmd=_CMDS[name:upper()]
-    local stack=table.concat(params," ")
     if not cmd then
         return env.warn("No such comand '%s'!",name)
     end
-    stack=(cmd.ARGS==1 and stack or name.." "..stack)
-    push_history(stack)
     if not cmd.FUNC then return end
     local args= cmd.OBJ and {cmd.OBJ,table.unpack(params)} or {table.unpack(params)}
 
@@ -448,12 +445,14 @@ function env.register_thread(this,isMain)
     return this,isMain,#threads
 end
 
-function env.exec_command(cmd,params,is_internal)
+function env.exec_command(cmd,params,is_internal,arg_text)
     local name=cmd:upper()
     local event=env.event and env.event.callback
     local this,isMain=env.register_thread()
-
+    is_internal,arg_text=is_internal or false,arg_text or ""
     env.CURRENT_CMD=name
+    if _CMDS[name] and _CMDS[name].ARGS>1 then arg_text=cmd.." "..arg_text end
+    push_history(arg_text)
     if event then
         if isMain then
             if writer then
@@ -464,13 +463,13 @@ function env.exec_command(cmd,params,is_internal)
             env.log_debug("CMD",name,params)
         end
         
-        if event and not is_internal then 
-            name,params=table.unpack((event("BEFORE_COMMAND",{name,params,is_internal}))) 
+        if event and not is_internal then
+            name,params,is_internal,arg_text=table.unpack((event("BEFORE_COMMAND",{name,params,is_internal,arg_text}))) 
         end
     end
-    local res={pcall(_exec_command,name,params)}
+    local res={pcall(_exec_command,name,params,arg_text)}
     if event and not is_internal then 
-        event("AFTER_COMMAND",name,params,res[2],is_internal)
+        event("AFTER_COMMAND",name,params,res[2],is_internal,arg_text)
     end
     if not isMain and not res[1] and (not env.set or env.set.get("OnErrExit")=="on") then error() end
     if event and not is_internal then 
@@ -552,7 +551,7 @@ function env.parse_args(cmd,rest,is_cross_line)
         arg_count=cmd+1
     else
         if not cmd then
-            cmd,rest=rest:match('([^%s'..env.END_MARKS[1]..']+)%s*(.*)')
+            cmd,rest=env.END_MARKS.match(rest):match('(%S+)%s*(.*)')
             cmd = cmd and cmd:upper() or "_unknown_"
         end
         env.checkerr(_CMDS[cmd],'Unknown command "'..cmd..'"!')
@@ -626,11 +625,11 @@ end
 
 function env.force_end_input(exec,is_internal)
     if curr_stmt then
-        local stmt={multi_cmd,env.parse_args(multi_cmd,curr_stmt,true)}
+        local text,stmt=multi_cmd..' '..curr_stmt,{multi_cmd,env.parse_args(multi_cmd,curr_stmt,true)}
         multi_cmd,curr_stmt=nil,nil
         env.CURRENT_PROMPT=env.PRI_PROMPT
         if exec~=false then
-            env.exec_command(stmt[1],stmt[2],is_internal)
+            env.exec_command(stmt[1],stmt[2],is_internal,text)
         else
             return stmt[1],stmt[2]
         end
@@ -692,17 +691,16 @@ function env.eval_line(line,exec,is_internal,not_skip)
         curr_stmt = curr_stmt .."\n"
         return multi_cmd
     end
-
-    if multi_cmd then return check_multi_cmd(line) end
-
-    local cmd,rest=line:match('^%s*(%S+)%s*(.*)')
-    if not cmd then return env.warn("unknown command "..line) end
     if env.event then
-        cmd,rest=table.unpack(env.event.callback('BEFORE_EVAL',{cmd,rest}))
-        if not (_CMDS[cmd]) then  cmd,rest=(cmd.." ".. rest):match('^%s*(%S+)%s*(.*)') end
+        line=table.concat(env.event.callback('BEFORE_EVAL',{line:match('^%s*(%S+)%s*(.*)')})," ")
     end
-    if not cmd then return end
-    cmd= cmd:gsub(env.END_MARKS[1]..'+$',''):upper()
+    if multi_cmd then return check_multi_cmd(line) end
+    local cmd,rest,end_mark
+    line,end_mark=env.END_MARKS.match(line)
+    cmd,rest=line:match('^%s*(%S+)%s*(.*)')
+    rest=rest..(end_mark or "")
+    if not cmd or cmd=="" then return end
+    cmd=cmd:upper()
     env.CURRENT_CMD=cmd
     if not (_CMDS[cmd]) then
         return env.warn("No such command '%s', please type 'help' for more information.",cmd)
@@ -714,11 +712,11 @@ function env.eval_line(line,exec,is_internal,not_skip)
     end
 
     --print('Command:',cmd,table.concat (args,','))
-    rest=rest:gsub("["..env.END_MARKS[1].."%s]+$","")
+    rest=env.END_MARKS.match(rest)
     local args=env.parse_args(cmd,rest)
 
     if exec~=false then
-        env.exec_command(cmd,args,local_stack,is_internal)
+        env.exec_command(cmd,args,is_internal,rest)
     else
         return cmd,args
     end
@@ -744,18 +742,29 @@ function env.safe_call(func,...)
 end
 
 function env.set_endmark(name,value)
-    if value:gsub('\\[nrt]',''):match('[%w]') then return print('Cannot be alphanumeric characters. ') end;
-    value=value:gsub("\\+",'\\')
-    local p1=value:sub(1,1)
-    local p2=value:sub(2):gsub('\\(%w)',function(s)
-        return s=='n' and '\n[ \t]*' or s=='r' and '\r[ \t]*' or s=='t' and '\t[ \t]*' or '\\'..s
-    end) or p1
+    if value:gsub('[\\%%]%a',''):match('[%w]') then return print('The delimiter cannot be alphanumeric characters. ') end;
+    local p={value:gsub("\\+",'\\'):match("^([^, ]+)( *,? *(.*))$")}
+    table.remove(p,2)
+    for k,v in ipairs(p) do
+        p[k]=v:gsub('\\(%w)',function(s) return s=='n' and '\n' or s=='r' and '\r' or s=='t' and '\t' or '\\'..s end)
+        local c=p[k]:gsub("(.?)([%$%(%)%^%.])",function(a,b) return a..(a=="%" and "" or "%")..b end)
+        p["p"..k]="^(.-)[ \t]*("..c..(#(c:gsub("%%",""))==1 and "+" or "")..")[ \t]*$"
+        p[k]=p[k]:gsub("([^%+%*%?%-])[%+%*%?%-]","%1"):gsub("%%.","")
+    end
+    if p[2]=="" then p[2],p["p2"]=p[1],p["p1"] end
 
-    env.END_MARKS={p1,p2}
+    env.END_MARKS=p
+    env.END_MARKS.match=function(s)
+        local c,r=s:match(p["p1"])
+        if c then return c,r,1 end
+        c,r=s:match(p["p2"])
+        if c then return c,r,2 end
+        return s,nil,0
+    end
     return value
 end
 
-local end_marks=(";\\n/"):gsub("\\+",'\\')
+local end_marks=(";,\\n%s*/")
 env.set_endmark(nil,end_marks)
 
 function env.check_comment(cmd,other_parts)
@@ -838,7 +847,7 @@ function env.onload(...)
         env.set.init({"Prompt","SQLPROMPT","SQLP"},prompt_stack._base,function(n,v,d) return env.set_prompt(n,v,d,3) end,
                   "core","Define command's prompt, if value is 'timing' then will record the time cost(in second) for each execution.")
         env.set.init("COMMAND_ENDMARKS",end_marks,env.set_endmark,
-                  "core","Define the symbols to indicate the end input the cross-lines command. Cannot be alphanumeric characters.")
+                  "core","Define the symbols to indicate the end input the cross-lines command. ")
         env.set.init("Debug",'off',set_debug,"core","Indicates the option to print debug info, 'all' for always, 'off' for disable, others for specific modules.")
         env.set.init("OnErrExit",'on',nil,"core","Indicates whether to continue the remaining statements if error encountered.","on,off")
         env.set.init("TEMPPATH",'cache',set_cache_path,"core","Define the dir to store the temp files.","*")

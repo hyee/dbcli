@@ -379,7 +379,7 @@ function db_core:check_sql_method(event_name,sql,method,...)
         info.error=info.error:gsub('.*Exception:?%s*','')
         event(event_name,info)
         if info and info.error and info.error~="" then
-            if not self:is_internal_call(sql) and info.sql and env.ROOT_CMD~=self.get_command_type(sql) then
+            if not self:is_internal_call(sql) and info.sql  and env.ROOT_CMD~=self.get_command_type(sql) then
                 if cfg.get("SQLERRLINE")=="off" then
                     print('SQL: '..info.sql:gsub("\n","\n     "))
                 else
@@ -762,7 +762,7 @@ function db_core:sql2file(filename,sql,method,ext,...)
             env.checkerr(not sql:isClosed(),"Target ResultSet is closed!")
             result=sql
         else
-            sql=sql:gsub(env.END_MARKS[1]..'$',''):gsub(env.END_MARKS[2]..'$','')
+            sql=env.END_MARKS.match(sql)
             result=self:exec(sql)
         end
 
@@ -790,6 +790,29 @@ function db_core:sql2file(filename,sql,method,ext,...)
         print_export_result(filename,clock,counter)
     end
     self:clearStatements(true)
+end
+
+function db_core.check_completion(cmd,other_parts)
+    local objs={
+        OR=1,
+        VIEW=1,
+        TRIGGER=1,
+        TYPE=1,
+        PACKAGE=1,
+        PROCEDURE=1,
+        FUNCTION=1,
+        DECLARE=1,
+        BEGIN=1,
+        JAVA=1
+    }
+    --alter package xxx compile ...
+    local obj=env.parse_args(2,other_parts)[1]
+    local match,typ,index=env.END_MARKS.match(other_parts)
+    --print(match,other_parts)
+    if index==0 or (index==1 and ((obj and objs[obj:upper()]) or objs[cmd])) then
+        return false,other_parts
+    end
+    return true,match
 end
 
 function db_core:sql2sql(filename,sql)

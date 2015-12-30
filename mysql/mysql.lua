@@ -77,34 +77,6 @@ function mysql:connect(conn_str)
     print("Database connected.")
 end
 
-function mysql.check_completion(cmd,other_parts)
-    local p1=env.END_MARKS[2]..'[ \t]*$'
-    local p2
-    local objs={
-        OR=1,
-        VIEW=1,
-        TRIGGER=1,
-        TYPE=1,
-        PACKAGE=1,
-        PROCEDURE=1,
-        FUNCTION=1,
-        DECLARE=1,
-        BEGIN=1,
-        JAVA=1
-    }
-
-    local obj=env.parse_args(2,other_parts)[1]
-    if obj and not objs[obj] and not objs[cmd] then
-        p2=env.END_MARKS[1].."+%s*$"
-    end
-    local match = (other_parts:match(p1) and 1) or (p2 and other_parts:match(p2) and 2) or false
-    --print(match,other_parts)
-    if not match then
-        return false,other_parts
-    end
-    return true,other_parts:gsub(match==1 and p1 or p2,"")
-end
-
 function mysql:exec(sql,...)
     local bypass=self:is_internal_call(sql)
     local args=type(select(1,...)=="table") and ... or {...}
@@ -121,6 +93,7 @@ function mysql:command_call(sql,...)
     local bypass=self:is_internal_call(sql)
     local args=type(select(1,...)=="table") and ... or {...}
     sql=event("BEFORE_MYSQL_EXEC",{self,sql,args}) [2]
+    env.checkhelp(#env.parse_args(2,sql)>1)
     local result=self.super.exec(self,sql,{args})
     if not bypass then event("BEFORE_MYSQL_EXEC",self,sql,args,result) end
     self:print_result(result,sql)
@@ -134,8 +107,17 @@ function mysql:onload()
         end
     end
 
-    add_default_sql_stmt('update','delete','insert','merge','truncate','drop','BINLOG')
-    add_default_sql_stmt('lock','analyze','grant','revoke','call','select','with',{"DESC","EXPLAIN","DESCRBE"})
+    --[[
+        select group_concat(concat('''',name,'''') order by name ) 
+        from(
+            select distinct coalesce(nullif(substring(name,1,instr(name," ")-1),''),name) as name 
+            from help_topic where help_category_id in(10,27,40,28,21,8,29)) o
+        where name not in('SET','DO','DUAL','JOIN','UNION','HELP','SHOW','USE','EXPLAIN','DESCRIBE','DESC','CONSTRAINT','CREATE')
+        order by 1
+    --]]
+
+    add_default_sql_stmt('ALTER','ANALYZE','BINLOG','CACHE','CALL','CHANGE','CHECK','CHECKSUM','DEALLOCATE','DELETE','DROP','EXECUTE','FLUSH','GRANT','HANDLER','INSERT','ISOLATION','KILL','LOAD','LOCK','OPTIMIZE','PREPARE','PURGE')
+    add_default_sql_stmt('RENAME','REPAIR','REPLACE','RESET','REVOKE','SAVEPOINT','SELECT','START','STOP','TRUNCATE','UPDATE','XA',{"DESC","EXPLAIN","DESCRBE"})
 
     local  conn_help = [[
         Connect to mysql database. Usage: conn <user>{:|/}<password>@<host>[:<port>][/<database>][?<properties>]
@@ -151,11 +133,30 @@ function mysql:onload()
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
     set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
     set_command(self,"create",   default_desc,  self.command_call      ,self.check_completion,1,true)
-    set_command(self,"alter" ,   default_desc,  self.command_call      ,true,1,true)
+    set_command(nil,{"delimiter","\\d"},"Set statement delimiter.",
+        function(sep)
+            if #env.RUNNING_THREADS<=2 then
+                return env.set.force_set("COMMAND_ENDMARKS",sep)
+            else
+                env.set.doset("COMMAND_ENDMARKS",sep)
+            end
+        end,false,2)
     self.C={}
     env.set.inject_cfg({"password","role","constraint","constraints"},self.set_session,self)
     env.event.snoop("ON_HELP_NOTFOUND",self.help_topic,self)
     env.event.snoop("ON_SET_NOTFOUND",self.set,self)
+    env.event.snoop("BEFORE_EVAL",self.on_eval,self)
+end
+
+function mysql:on_eval(line)
+    local ind=line[2] and line[2]~="" and 2 or 1
+    local rest=env.END_MARKS.match(line[ind])
+    if rest:match("\\[gG]$") then
+        line[ind]=line[ind]:sub(1,-3)..env.END_MARKS[1]
+        if rest:sub(-2)=="\\G" then
+            env.set.doset("PIVOT",20)
+        end
+    end
 end
 
 function mysql:set_session(name,value)
@@ -165,22 +166,30 @@ end
 
 function mysql:help_topic(...)
     local keyword=table.concat({...}," "):upper():trim()
+    local liker={keyword..(keyword:find("%$") and "" or "%")}
     local desc
     env.set.set("feed","off")
+    local help_table=" from mysql.help_topic as a join mysql.help_category as b using(help_category_id) "
     if keyword=="C" or keyword=="CONTENTS" then
-        self:query("select * from mysql.help_category order by name")
+        self:query("select help_category_id as `Category#`,b.name as `Category`,group_concat(distinct coalesce(nullif(substring(a.name,1,instr(a.name,' ')-1),''),a.name) order by a.name) as `Keywords`"..help_table.."group by help_category_id,b.name order by 2")
     elseif keyword:find("^SEARCH%s+") or keyword:find("^S%s+") then
         keyword=keyword:gsub("^[^%s+]%s+","")
-        self:query("select a.name,b.name as category,a.url from mysql.help_topic as a join mysql.help_category as b using(help_category_id) where (upper(a.name) like :1 or upper(b.name) like :1) order by a.name",{keyword..(keyword:find("%$") and "" or "%")})
+        self:query("select a.name,b.name as category,a.url"..help_table.."where (upper(a.name) like :1 or upper(b.name) like :1) order by a.name",liker)
     else
-        local topic=self:get_value("select a.name,description,example,b.name as category from mysql.help_topic as a join mysql.help_category as b using(help_category_id) where a.name like :1 order by a.name limit 1",{keyword..(keyword:find("%$") and "" or "%")})
-        env.checkerr(topic,"No such topic: "..keyword)
-        topic[1]='Name: '..topic[1].."   Category: "..topic[4]
-        local desc=topic[1].."\n"..('='):rep(#topic[1])..("\n"..topic[2]):gsub("\r?\n\r?","\n  ")
-        if (topic[3] or ""):trim()~="" then
-            desc=desc.."\nExamples:\n============"..(("\n"..topic[3]):gsub("\r?\n\r?","\n  "))
+        local topic=self:get_value("select 1"..help_table.."where upper(b.name)=:1 or convert(help_category_id,char)=:1",{keyword})
+        if topic then
+            self:query("select a.name,b.name as category,a.url"..help_table.." where upper(b.name)=:1 or convert(help_category_id,char)=:1 order by a.name",{keyword})
+        else
+            local topic=self:get_value("select a.name,description,example,b.name as category"..help_table.."where a.name like :1 order by a.name limit 1",liker)
+            env.checkerr(topic,"No such topic: "..keyword)
+            topic[1]='Name:  '..topic[4].." / "..topic[1]
+            local desc='$HEADCOLOR$'..topic[1].."$NOR$ \n$HEADCOLOR$"..('='):rep(#topic[1])
+                      ..("$NOR$ \n"..topic[2]:gsub("^%s*Syntax:%s*","")):gsub("\r?\n\r?","\n  ")
+            if (topic[3] or ""):trim()~="" then
+                desc=desc.."\n$HEADCOLOR$Examples: $NOR$\n$HEADCOLOR$========= $NOR$"..(("\n"..topic[3]):gsub("\r?\n\r?","\n  "))
+            end
+            print(ansi.convert_ansi((desc:gsub("%s+$",""))))
         end
-        print(desc:gsub("%s+$",""))
     end
 end
 

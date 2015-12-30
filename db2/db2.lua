@@ -87,34 +87,6 @@ function db2:connect(conn_str)
     print("Database connected.")
 end
 
-function db2.check_completion(cmd,other_parts)
-    local p1=env.END_MARKS[2]..'[ \t]*$'
-    local p2
-    local objs={
-        OR=1,
-        VIEW=1,
-        TRIGGER=1,
-        TYPE=1,
-        PACKAGE=1,
-        PROCEDURE=1,
-        FUNCTION=1,
-        DECLARE=1,
-        BEGIN=1,
-        JAVA=1
-    }
-
-    local obj=env.parse_args(2,other_parts)[1]
-    if obj and not objs[obj] and not objs[cmd] then
-        p2=env.END_MARKS[1].."+%s*$"
-    end
-    local match = (other_parts:match(p1) and 1) or (p2 and other_parts:match(p2) and 2) or false
-    --print(match,other_parts)
-    if not match then
-        return false,other_parts
-    end
-    return true,other_parts:gsub(match==1 and p1 or p2,"")
-end
-
 function db2:exec(sql,...)
     local bypass=self:is_internal_call(sql)
     local args=type(select(1,...)=="table") and ... or {...}

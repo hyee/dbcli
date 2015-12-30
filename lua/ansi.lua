@@ -158,7 +158,6 @@ function ansi.string_color(code,...)
 end
 
 function ansi.mask(codes,msg,continue)
-    if not enabled then return msg end
     local str
     for v in codes:gmatch("([^; \t,]+)") do
         v=v:upper()
@@ -169,12 +168,13 @@ function ansi.mask(codes,msg,continue)
         else
             if not str then
                 str=c
-            else
+            elseif c~="" then
                 str=str:gsub("([%d;]+)","%1;"..c:match("([%d;]+)"),1)
             end
         end
     end
-    return str and (str..msg..(continue and "" or ansi.string_color('NOR'))) or msg
+    if str and not enabled then str="" end
+    return str and (str..(msg or "")..(continue and "" or ansi.string_color('NOR'))) or msg
 end
 
 function ansi.addCompleter(name,args)
@@ -278,7 +278,8 @@ end
 function ansi.convert_ansi(str)
     return str and str:gsub("%$((%u+)([, ]?)(%d*)([, ]?)(%d*))%$",
         function(all,code,x,pos1,x,pos2) 
-            return ansi.string_color(code,pos1,pos2) or '$'..all..'$' 
+            if pos1~="" then return ansi.string_color(code,pos1,pos2) or '$'..all..'$' end
+            return ansi.mask(code,nil,true) or '$'..all..'$'
         end)
 end
 
