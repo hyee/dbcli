@@ -16,7 +16,9 @@ function mysql_exe:ctor()
 end
 
 function mysql_exe:after_process_created()
-    
+    if self.work_dir==env._CACHE_PATH and self.work_path then
+        self.work_dir,self.work_path=self.work_path,nil
+    end
 end
 
 function mysql_exe:rebuild_commands(work_dir)
@@ -54,8 +56,9 @@ function mysql_exe:get_startup_cmd(args,is_native)
     if (pwd or "")~="" then
         props[#props+1]="--password="..pwd
     end
-
-    self.work_path,self.work_dir=self.work_dir,env._CACHE_PATH
+    if self.work_dir==self.script_dir or self.work_dir==self.extend_dirs then
+        self.work_path,self.work_dir=self.work_dir,env._CACHE_PATH
+    end
     self:rebuild_commands(self.env['SQLPATH'])
     while #args>0 do
         local arg=args[1]:lower()

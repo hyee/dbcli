@@ -63,8 +63,11 @@ function mysql:connect(conn_str)
     self.super.connect(self,args)
     self.conn=java.cast(self.conn,"com.mysql.jdbc.JDBC4MySQLConnection")
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    local info=self:get_value("select database(),version(),CONNECTION_ID(),user(),@@hostname,@@sql_mode,@@port")
-    self.props.db_version,self.props.server=info[2]:match('^([%d%.]+)'),info[5]
+    local info=self:get_value([[
+        select database(),version(),CONNECTION_ID(),user(),@@hostname,@@sql_mode,@@port,plugin_version 
+        from   INFORMATION_SCHEMA.PLUGINS
+        where  plugin_name='InnoDB']])
+    self.props.db_version,self.props.server=info[8]:match('^([%d%.]+)'),info[5]
     self.props.db_user=info[4]:match("([^@]+)")
     self.props.db_conn_id=tostring(info[3])
     self.props.database=info[1] or ""
@@ -73,8 +76,11 @@ function mysql:connect(conn_str)
     args.hostname=url:match("^[^/%:]+")
     args.port=info[7]
     self.connection_info=args
-
-    env.set_title(('%s - User: %s   CID: %s   Version: %s'):format(self.props.server,self.props.db_user,self.props.db_conn_id,info[2]))
+    if not self.props.db_version or tonumber(self.props.db_version:match("^%d+"))<5 then self.props.db_version=info[2]:match('^([%d%.]+)') end
+    if tonumber(self.props.db_version:match("^%d+%.%d"))<5.5 then
+        env.warn("You are connecting to a lower-vesion MySQL sever, some features may not support.")
+    end
+    env.set_title(('%s - User: %s   CID: %s   Version: %s(InnoDB-%s)'):format(self.props.server,self.props.db_user,self.props.db_conn_id,info[2],info[8]))
     if event then event("AFTER_MYSQL_CONNECT",self,sql,args,result) end
     print("Database connected.")
 end
