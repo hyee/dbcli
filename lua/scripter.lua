@@ -370,6 +370,7 @@ function scripter:run_script(cmds,...)
         end
     end
     if index==0 then return end
+    env.set.set("COMMAND_ENDMARKS","default")
     env.register_thread()
     self:run_sql(g_sql,g_args,g_cmd,g_files)
 end
