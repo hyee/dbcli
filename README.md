@@ -1,5 +1,5 @@
 
-DBCLI : A CLI utility for DBA (Oracle/DB2)
+DBCLI : A CLI utility for DBA (Oracle/Mysql/DB2)
 =====================================================
 
 [![Join the chat at https://gitter.im/hyee/dbcli](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/hyee/dbcli?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
@@ -17,7 +17,7 @@ It uses Lua language to build the framework, and bridges to JDBC to access datab
 It is designed to support multiple databases, and includes 2 types of modules, one is the public module whose functions are visible across all database platforms, 
 and another one is the platform-specific module.
 
-Currently only public and Oracle and DB2 functions are developed, and only support windows platform.
+Currently only public and Oracle/Mysql/DB2 functions are developed, and only support windows platform.
 
 It is not aim to support all features of the existing CLI utilities that embedded by the specific database(`Oracle SQL*Plus`, `DB2 CLP`, etc), but to provide the features other than those tools:
 
@@ -64,7 +64,7 @@ For example: `dbcli.bat "connect=tiger/scott@orcl"`
 
 
 ###Switch Database Platform
-DBCLI supports multiple database platforms(Oracle,db2,etc), default is `Oracle`.
+DBCLI supports multiple database platforms(Oracle,mysql,db2,etc), default is `Oracle`.
 
 To permanently change the preferred platform other than `Oracle`, run `set -p <platform>` after launching the console. 
 For example, `set -p database db2`

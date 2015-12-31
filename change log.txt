@@ -3,7 +3,7 @@
                     : new command "sql search"
             ! mysql : minor fixes        
             + public: new command "set null" to specify the null display value(default as empty)
-                    : in the help information, "@@NAME" should be automatically replaced as the command name            
+                    : in the help information, "@@NAME" would be automatically replaced as the command name            
             * public: code optimizations and some fixes
 2015-12-30: + mysql : support syntax "\g","\G","delimiter"
                     : support all SQL commands
