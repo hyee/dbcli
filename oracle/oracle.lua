@@ -351,7 +351,7 @@ function oracle:handle_error(info)
 end
 
 function oracle:set_session(cmd,args)
-    env.checkerr(self:is_connect(),"Database is not connected!")
+    self:assert_connect()
     self:internal_call('set '..cmd.." "..(args or ""),{})
     return args
 end

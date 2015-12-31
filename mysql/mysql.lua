@@ -177,7 +177,7 @@ function mysql:on_eval(line)
 end
 
 function mysql:set_session(name,value)
-    env.checkerr(self:is_connect(),"Database is not connected!")
+    self:assert_connect()
     return self:exec(table.concat({"SET",name,value}," "))
 end
 

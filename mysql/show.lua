@@ -11,7 +11,7 @@ local show={name="SHOW"}
 
 function show.run(arg)
     env.checkhelp(arg)
-    env.checkerr(db:is_connect(),"Database is not connected!")
+    db:assert_connect()
     local cmd={"SHOW"}
     local args=env.parse_args(3,arg)
     env.set.set("printsize",10000)

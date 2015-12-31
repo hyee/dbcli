@@ -44,7 +44,7 @@ function mysql_exe:set_work_dir(path,quiet)
 end
 
 function mysql_exe:get_startup_cmd(args,is_native)
-    env.checkerr(db:is_connect(),"Database is not connected!")
+    db:assert_connect()
     local conn=db.connection_info
     local props={"--default-character-set=utf8",'-n','-u',conn.user,'-P',conn.port,'-h',conn.hostname}
     if conn.database~="" then
@@ -74,7 +74,7 @@ function mysql_exe:get_startup_cmd(args,is_native)
 end
 
 function mysql_exe:run_sql(g_sql,g_args,g_cmd,g_file)
-    env.checkerr(db:is_connect(),"Database is not connected.")
+    db:assert_connect()
     local context={}
     for k,v in pairs(g_args[1]) do
         context[#context+1]='SET @'..k.."='"..v.."'\\g"

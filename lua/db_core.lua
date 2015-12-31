@@ -505,11 +505,8 @@ function db_core:exec(sql,args)
             params[tostring(k)]=v
         end
     end
-
-    if not self.conn or self.conn:isClosed() then
-        self.__stmts={}
-        env.raise("Database is not connected!")
-    end
+    
+    self:assert_connect()
 
     local autocommit=cfg.get("AUTOCOMMIT")
     if self.autocommit~=autocommit then
@@ -581,9 +578,14 @@ end
 
 function db_core:is_connect()
     if type(self.conn)~='userdata' or not self.conn.isClosed or self.conn:isClosed() then
+        self.__stmts={}
         return false
     end
     return true
+end
+
+function db_core:assert_connect()
+    env.checkerr(self:is_connect(),2,"Database is not connected!")
 end
 
 function db_core:internal_call(sql,args)
@@ -812,10 +814,13 @@ function db_core.check_completion(cmd,other_parts)
         FUNCTION=1,
         DECLARE=1,
         BEGIN=1,
-        JAVA=1
+        JAVA=1,
+        DEFINER=1,
+        EVENT=1,
     }
     --alter package xxx compile ...
     local obj=env.parse_args(2,other_parts)[1]
+    if obj then obj=obj:match("^%w+") end
     local match,typ,index=env.END_MARKS.match(other_parts)
     --print(match,other_parts)
     if index==0 or (index==1 and ((obj and objs[obj:upper()]) or objs[cmd])) then
