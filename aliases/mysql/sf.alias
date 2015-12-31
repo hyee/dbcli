@@ -1,1 +1,1 @@
-select * from $* limit 50;
+select * from $* limit 50

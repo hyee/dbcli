@@ -206,7 +206,7 @@ function ssh:exec(line)
     if self.cmds[cmd] then
         self.cmds[cmd](self,args)
     elseif alias and tostring(alias.desc):lower():match("ssh") then
-        return env.exec_command(alias[1],alias[2],true)
+        return env.exec_command(alias[1],alias[2],true,cmd.." "..args)
     else
         self:run_command((line:gsub("^%$","",1)))
     end
