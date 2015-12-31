@@ -1,4 +1,4 @@
-/*[[ Get the event related to p3.Usage: bclass <block_class#> ]]*/
+/*[[ Get the event related to p3. Usage: @@NAME <block_class#> ]]*/
 
 --with undostart as (select r from (select rownum r, class from v$waitstat) where class = 'undo header')
 

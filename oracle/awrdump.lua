@@ -344,10 +344,10 @@ function awr.extract_addm(starttime,endtime,instances)
 end
 
 function awr.onload()
-    env.set_command(nil,"awrdump","Extract AWR report. Usage: awrdump <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]",awr.extract_awr,false,4)
-    env.set_command(nil,"awrdiff","Extract AWR Diff report. Usage: awrdiff <YYMMDDHH24MI> <YYMMDDHH24MI> <YYMMDDHH24MI> [YYMMDDHH24MI] [inst_id|a|<inst1,inst2,...>]",awr.extract_awr_diff,false,6)
-    env.set_command(nil,"ashdump","Extract ASH report. Usage: ashdump <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]",awr.extract_ash,false,4)
-    env.set_command(nil,"addmdump","Extract ADDM report. Usage: addmdump <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]",awr.extract_addm,false,4)
+    env.set_command(nil,"awrdump","Extract AWR report. Usage: @@NAME <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]",awr.extract_awr,false,4)
+    env.set_command(nil,"awrdiff","Extract AWR Diff report. Usage: @@NAME <YYMMDDHH24MI> <YYMMDDHH24MI> <YYMMDDHH24MI> [YYMMDDHH24MI] [inst_id|a|<inst1,inst2,...>]",awr.extract_awr_diff,false,6)
+    env.set_command(nil,"ashdump","Extract ASH report. Usage: @@NAME <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]",awr.extract_ash,false,4)
+    env.set_command(nil,"addmdump","Extract ADDM report. Usage: @@NAME <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]",awr.extract_addm,false,4)
 end
 
 return awr

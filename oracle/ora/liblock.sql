@@ -1,5 +1,5 @@
 /*[[
-Check the holder of library cache objects, only support situation where holder and waiter are of the same instance. Usage: liblock [<sid>|<object_name>]
+Check the holder of library cache objects, only support situation where holder and waiter are of the same instance. Usage: @@NAME [<sid>|<object_name>]
     --[[
         @CHECK_ACCESS: gv$db_object_cache/gv$object_Dependency={}
     --]]

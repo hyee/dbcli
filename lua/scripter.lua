@@ -51,11 +51,11 @@ function scripter:rehash(script_dir,ext_name,extend_dirs)
 
     local additions={
         {'-R','Rebuild the help info and available commands'},
-        {'-P','Verify the paramters/templates of the target script, instead of running it. Usage:  -p <cmd> [<args>]'},
-        {'-H','Show the help detail of the target command. Usage:  -h <command>'},
-        {'-G','Print the content of the specific command. Usage: -g <command>'},
-        {'-L','Link this command to an extended directory'..(self.extend_dirs and ('(current is '..self.extend_dirs..')') or '')..". Usage: -l <directory>"},
-        {'-S','Search available commands with inputed keyword. Usage:  -s <keyword>'},
+        {'-P','Verify the paramters/templates of the target script, instead of running it. Usage: @@NAME <command> [<args>]'},
+        {'-H','Show the help detail of the target command. Usage: @@NAME <command>'},
+        {'-G','Print the content of the specific command. Usage: @@NAME <command>'},
+        {'-L','Link this command to an extended directory'..(self.extend_dirs and ('(current is '..self.extend_dirs..')') or '')..". Usage: @@NAME <directory>"},
+        {'-S','Search available commands with inputed keyword. Usage: @@NAME <keyword>'},
         {'@','Run scripts that not belongs to the "'..self.short_dir..'" directory.'},
     }
 
@@ -414,7 +414,7 @@ function scripter:helper(_,cmd,search_key)
         for k,v in pairs(cmdlist) do
             if (not search_key or k:find(search_key:upper(),1,true)) and k:sub(1,2)~='./' and k:sub(1,1)~='_' then
                 if search_key or not (v.path or ""):find('[\\/]test[\\/]') then
-                    local desc=v.short_desc:gsub("^[ \t]+","")
+                    local desc=v.short_desc:gsub("^[ \t]+",""):gsub("@@NAME","@@NAME "..k:lower())
                     if desc and desc~="" then
                         table.insert(rows[1],k)
                         table.insert(rows[2],desc)

@@ -1,4 +1,4 @@
-/*[[Show source text from dba_source with specific line no. Usage: lines [owner.]<object_name> <line#> [rows]
+/*[[Show source text from dba_source with specific line no. Usage: @@NAME [owner.]<object_name> <line#> [rows]
     --[[
         @CHECK_ACCESS_OBJ: dba_source={dba_source), all_source={all_source}
     --]]

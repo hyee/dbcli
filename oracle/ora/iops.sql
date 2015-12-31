@@ -1,4 +1,4 @@
-/*[[Call DBMS_RESOURCE_MANAGER.CALIBRATE_IO. Usage: iops [disks] [max latency]
+/*[[Call DBMS_RESOURCE_MANAGER.CALIBRATE_IO. Usage: @@NAME [disks] [max latency]
    --[[@limitation: 11.1={Oracle 11g+}]]--
 ]]*/
 

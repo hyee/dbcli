@@ -1,4 +1,4 @@
-/* [[ Kill Session using APPDBA.KILL_SESSION package.  Usage acnkill <sid> <serial#>
+/* [[ Kill Session using APPDBA.KILL_SESSION package.  Usage: @@NAME <sid> <serial#>
  --[[ ]]--
 ]] */
 BEGIN

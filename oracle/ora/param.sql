@@ -1,4 +1,4 @@
-/*[[Show db parameters info, pls use 'set instance' to show the specific instance. Usage: ora param [<keyword1>[,<keyword2>...]]]]*/
+/*[[Show db parameters info, pls use 'set instance' to show the specific instance. Usage: @@NAME [<keyword1>[,<keyword2>...]]]]*/
 
 select inst_id,NAME,substr(DISPLAY_VALUE,1,90) value,
        isdefault,isses_modifiable,issys_modifiable,DESCRIPTION

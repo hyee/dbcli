@@ -1,4 +1,4 @@
-/*[[Library cache lock/pin holders/waiters. Usage: liblock [sid] ]]*/
+/*[[Library cache lock/pin holders/waiters. Usage: @@NAME [sid] ]]*/
 with sess as(select /*+materialize*/ * from gv$session)
 SELECT /*+no_expand*/
      distinct hl.*, ho.kglnaown||'.'||ho.kglnaobj object_name, h.sid || ',' || h.serial# || ',@' || h.inst_id holder,

@@ -1,5 +1,5 @@
 /*[[
-  Get ASH top event, type 'ora -h ashtop' for more info. Usage: ashtop [-sql|-p|-none|-pr|-o|-plan|-ash|-dash|-snap|-f] [fields] [filters]
+  Get ASH top event, type 'help @@NAME' for more info. Usage: @@NAME [-sql|-p|-none|-pr|-o|-plan|-ash|-dash|-snap|-f] [fields] [filters]
    --[[
       &fields: sql={sql_id}, p={p1,p2,p3,p3text},pr={p1raw,p2raw,p3raw}, o={obj},plan={plan_hash,current_obj#,SQL_PLAN_LINE_ID} none={1}
       &View: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
@@ -15,7 +15,7 @@
       @counter: 11.2={, count(distinct sql_exec_id) "Execs"},default={}
     ]]--
   Options:
-      Groupings : The grouping option can be followed by other custimized field, i.e.: 'ashtop -p,p1raw ...'
+      Groupings : The grouping option can be followed by other custimized field, i.e.: '@@NAME -p,p1raw ...'
         -sql : group by sql_id+event (default)
         -p   : group by p1,p2,p3
         -pr  : group by p1raw,p2raw,p3raw
@@ -32,12 +32,12 @@
         -f   : additional fileter. Usage: -f"<filter>"
         
   Usage examples:  
-      1) Show top objects for the specific sql id: ashtop -o <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
-      2) Show top sqls for the specific sid      : ashtop <sid> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
-      3) Show top sqls within recent 60 secs     : ashtop -snap 60 [sql_id|sid]
-      4) Show top objects from dictionary ASH    : ashtop -dash <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
-      5) Show top objects based on execution plan: ashtop -plan <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
-      6) Show top sqls with user defined filter  : ashtop -f"inst_id=1 and username='ABCD'"    
+      1) Show top objects for the specific sql id: @@NAME -o <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
+      2) Show top sqls for the specific sid      : @@NAME <sid> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
+      3) Show top sqls within recent 60 secs     : @@NAME -snap 60 [sql_id|sid]
+      4) Show top objects from dictionary ASH    : @@NAME -dash <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
+      5) Show top objects based on execution plan: @@NAME -plan <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
+      6) Show top sqls with user defined filter  : @@NAME -f"inst_id=1 and username='ABCD'"    
 ]]*/
 
 SELECT * FROM (

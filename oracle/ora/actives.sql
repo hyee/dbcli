@@ -1,7 +1,7 @@
 /*[[
-    Show active sessions. Usage: ora actives [-s|-p|-b|-o] [-f"<filter>"|-u|-i] [sid|wt|ev|sql|<col>]
+    Show active sessions. Usage: @@NAME [-s|-p|-b|-o] [-f"<filter>"|-u|-i] [sid|wt|ev|sql|<col>]
     
-    Options(options within same group cannot combine, i.e. "ora actives -u -i" is illegal, use "ora actives -u -i2" instead):
+    Options(options within same group cannot combine, i.e. "@@NAME -u -i" is illegal, use "@@NAME -u -i2" instead):
         Filter options#1:
             -u  : Only show the sessions of current_schema
             -i  : Exclude the idle events

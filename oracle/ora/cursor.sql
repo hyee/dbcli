@@ -1,4 +1,4 @@
-/*[[Show data in gv$open_cursor, usage: cursor [[-s] <sid> [inst]|-o <object_name>
+/*[[Show data in gv$open_cursor, usage: @@NAME [[-s] <sid> [inst]|-o <object_name>
     --[[
         
         &V9: {s={SID=REGEXP_SUBSTR(:V1,'^\d+$') AND (:V2 IS NULL OR INST_ID=:V2)},

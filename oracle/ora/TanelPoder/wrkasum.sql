@@ -1,4 +1,4 @@
-/*[[Show top allocation for PGA and temp space. Usage wrkasum [sql_id|sid] ]]*/
+/*[[Show top allocation for PGA and temp space. Usage: @@NAME [sql_id|sid] ]]*/
 set feed off
 PROMPT Top allocation reason by PGA memory usage:
 PROMPT ==========================================

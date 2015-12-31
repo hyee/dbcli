@@ -1,4 +1,4 @@
-/*[[Show existing ADDM report. Usage: addm [task_id] [-f"<filter>"]
+/*[[Show existing ADDM report. Usage: @@NAME [task_id] [-f"<filter>"]
     --[[
         &filter: default={1=1}, f={}
     --]]

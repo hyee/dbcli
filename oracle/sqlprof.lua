@@ -226,17 +226,17 @@ end
 
 function sqlprof.onload()
     local help=[[
-    Extract sql profile. Usage: sqlprof <sql_id|sql_prof_name|spm_plan_name> [<plan_hash_value|new_sql_id|sql_prof_name|spm_plan_name>|plan]
+    Extract sql profile. Usage: @@NAME <sql_id|sql_prof_name|spm_plan_name> [<plan_hash_value|new_sql_id|sql_prof_name|spm_plan_name>|plan]
     The command will not make any changes on the database, but to create a SQL file that used to fix the execution plan by SQL Profile.
     Examples:
-        1). Generate the profile for the last plan of target SQL ID: sqlprof gjm43un5cy843
-        2). Generate the profile of the specifc SQL ID + plan hash value: sqlprof gjm43un5cy843 1106594730
-        3). Generate the profile for a SQL id with the plan of another SQL: sqlprof gjm43un5cy843 53c2k4c43zcfx
-        4). Extract an existing SQL profile or baseline: sqlprof PROF_gjm43un5cy843
-        5). Generate the profile for a SQL id with the profile/baseline of another sql: sqlprof gjm43un5cy843  PROF_53c2k4c43zcfx
+        1). Generate the profile for the last plan of target SQL ID: @@NAME gjm43un5cy843
+        2). Generate the profile of the specifc SQL ID + plan hash value: @@NAME gjm43un5cy843 1106594730
+        3). Generate the profile for a SQL id with the plan of another SQL: @@NAME gjm43un5cy843 53c2k4c43zcfx
+        4). Extract an existing SQL profile or baseline: @@NAME PROF_gjm43un5cy843
+        5). Generate the profile for a SQL id with the profile/baseline of another sql: @@NAME gjm43un5cy843  PROF_53c2k4c43zcfx
         6). Generate the profile from plan table:
                 xplan select * from dual;
-                sqlprof gjm43un5cy843 plan;
+                @@NAME gjm43un5cy843 plan;
     ]]
     env.set_command(nil,"sqlprof",help,sqlprof.extract_profile,false,3)
 end

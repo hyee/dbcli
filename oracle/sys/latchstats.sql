@@ -1,4 +1,4 @@
-/*[[  This file is part of demos for "Latch Mutex and beyond blog". Usage: latchstats address
+/*[[  This file is part of demos for "Latch Mutex and beyond blog". Usage: @@NAME address
      Andrey S. Nikolaev (Andrey.Nikolaev@rdtex.ru)
  
      http://AndreyNikolaev.wordpress.com

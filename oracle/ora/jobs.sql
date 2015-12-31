@@ -1,4 +1,4 @@
-/*[[show schedule job information. Usage: jobs [<schema>|all] [-e|-f"<filter>"]
+/*[[show schedule job information. Usage: @@NAME [<schema>|all] [-e|-f"<filter>"]
     options:
         -e: list the failure job history
         -f: customized the filter on the job history. i.e.: -f"job_name like 'ABCD%'"

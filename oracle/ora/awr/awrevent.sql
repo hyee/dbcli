@@ -1,4 +1,4 @@
-/*[[Show AWR Top events for a specific period. Usage: awrevent [0|a|<inst_id>|event_name_key] [yymmddhh24mi] [yymmddhh24mi]
+/*[[Show AWR Top events for a specific period. Usage: @@NAME [0|a|<inst_id>|event_name_key] [yymmddhh24mi] [yymmddhh24mi]
     --[[
     @FIELD :{
                 11.0={,SUM(total_Waits_fg * flag) fg_counts, SUM(total_timeouts_fg * flag) fg_timeouts,

@@ -51,7 +51,8 @@ function mysql:connect(conn_str)
          characterEncoding='UTF8',
          useCompression='true',
          callableStmtCacheSize=10,
-         enableEscapeProcessing='false'
+         enableEscapeProcessing='false',
+         allowMultiQueries="true",
         },args)
     --print(table.dump(args))   
     
@@ -73,7 +74,7 @@ function mysql:connect(conn_str)
     args.port=info[7]
     self.connection_info=args
 
-    env.set_title(('%s - User: %s   ID: %s   Version: %s'):format(self.props.server,self.props.db_user,self.props.db_conn_id,info[2]))
+    env.set_title(('%s - User: %s   CID: %s   Version: %s'):format(self.props.server,self.props.db_user,self.props.db_conn_id,info[2]))
     if event then event("AFTER_MYSQL_CONNECT",self,sql,args,result) end
     print("Database connected.")
 end
@@ -121,22 +122,30 @@ function mysql:onload()
     add_default_sql_stmt('RENAME','REPAIR','REPLACE','RESET','REVOKE','SAVEPOINT','SELECT','START','STOP','TRUNCATE','UPDATE','XA',{"DESC","EXPLAIN","DESCRBE"})
 
     local  conn_help = [[
-        Connect to mysql database. Usage: conn <user>{:|/}<password>@<host>[:<port>][/<database>][?<properties>]
-                                       or conn <user>{:|/}<password>@[host1][:port1][,[host2][:port2]...][/database][?properties]
-                                       or conn <user>{:|/}<password>@address=(key1=value)[(key2=value)...][,address=(key3=value)[(key4=value)...][/database][?properties]
+        Connect to mysql database. Usage: @@NAME <user>{:|/}<password>@<host>[:<port>][/<database>][?<properties>]
+                                       or @@NAME <user>{:|/}<password>@[host1][:port1][,[host2][:port2]...][/database][?properties]
+                                       or @@NAME <user>{:|/}<password>@address=(key1=value)[(key2=value)...][,address=(key3=value)[(key4=value)...][/database][?properties]
 
         Refer to "MySQL Connector/J Developer Guide" chapter 5.1 "Setting Configuration Propertie" for the available properties  
-        Example:  conn root/@localhost      --if not specify the port, then it is 3306
-                  conn root/root@localhost:3310
-                  conn root/root@localhost:3310/test?useCompression=false
-                  conn root:root@address=(protocol=tcp)(host=primaryhost)(port=3306),address=(protocol=tcp)(host=secondaryhost1)(port=3310)(user=test2)/test
+        Example:  @@NAME root/@localhost      --if not specify the port, then it is 3306
+                  @@NAME root/root@localhost:3310
+                  @@NAME root/root@localhost:3310/test?useCompression=false
+                  @@NAME root:root@address=(protocol=tcp)(host=primaryhost)(port=3306),address=(protocol=tcp)(host=secondaryhost1)(port=3310)(user=test2)/test
     ]]
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
     set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
     set_command(self,"create",   default_desc,  self.command_call      ,self.check_completion,1,true)
     set_command(self,"?",nil,self.help_topic,false,9)
-    set_command(nil,{"delimiter","\\d"},"Set statement delimiter.",
-        function(sep)
+
+    env.set.change_default("null","NULL")
+    env.event.snoop("ON_HELP_NOTFOUND",self.help_topic,self)
+    env.event.snoop("ON_SET_NOTFOUND",self.set,self)
+    env.event.snoop("BEFORE_EVAL",self.on_eval,self)
+    env.rename_command("SPOOL",{"TEE","\\t","SPOOL"})
+    env.rename_command("PRINT","PRINTVAR")
+    env.rename_command("PROMPT",{"PRINT","ECHO","\\p"})
+    set_command(nil,{"delimiter","\\d"},"Set statement delimiter. Usage: @@NAME {<text>|default|back}",
+         function(sep)
             if #env.RUNNING_THREADS<=2 then
                 return env.set.force_set("COMMAND_ENDMARKS",sep)
             else
@@ -144,10 +153,15 @@ function mysql:onload()
             end
         end,false,2)
     self.C={}
-    env.set.inject_cfg({"password","role","constraint","constraints"},self.set_session,self)
-    env.event.snoop("ON_HELP_NOTFOUND",self.help_topic,self)
-    env.event.snoop("ON_SET_NOTFOUND",self.set,self)
-    env.event.snoop("BEFORE_EVAL",self.on_eval,self)
+
+    set_command(nil,{"PROMPT","\\R"},"Change your mysql prompt. Usage: @@NAME {<text>|default|back}",
+        function(sep)
+            if #env.RUNNING_THREADS<=2 then
+                return env.set.force_set("PROMPT",sep)
+            else
+                env.set.doset("PROMPT",sep)
+            end
+        end,false,2)
 end
 
 function mysql:on_eval(line)
@@ -176,6 +190,7 @@ function mysql:help_topic(...)
         self:query("select help_category_id as `Category#`,b.name as `Category`,group_concat(distinct coalesce(nullif(substring(a.name,1,instr(a.name,' ')-1),''),a.name) order by a.name) as `Keywords`"..help_table.."group by help_category_id,b.name order by 2")
     elseif keyword:find("^SEARCH%s+") or keyword:find("^S%s+") then
         keyword=keyword:gsub("^[^%s+]%s+","")
+        liker={keyword..(keyword:find("%$") and "" or "%")}
         self:query("select a.name,b.name as category,a.url"..help_table.."where (upper(a.name) like :1 or upper(b.name) like :1) order by a.name",liker)
     else
         local topic=self:get_value("select 1"..help_table.."where upper(b.name)=:1 or convert(help_category_id,char)=:1",{keyword})

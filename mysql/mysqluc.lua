@@ -9,7 +9,7 @@ function utils:ctor()
     self.name="mysqluc"
     self.command=nil
     self.executable="mysqluc.exe"
-    self.description="Switch to MySQL Utilities, the default working folder is 'mysql/util'. Usage: mysqluc [-n|-d<work_path>] [other args]"
+    self.description="Switch to MySQL Utilities, the default working folder is 'mysql/util'. Usage: @@NAME [-n|-d<work_path>] [other args]"
     self.help_title='Run mysql script under the "mysqluc" directory. '
     self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."mysqluc",{}
     self.prompt_pattern="^(.+[>\\$#@] *| *\\d+ +)$"

@@ -1,4 +1,4 @@
-/*[[Show the AWR performance trend for a specific SQL. Usage: awrstat <sql_id>
+/*[[Show the AWR performance trend for a specific SQL. Usage: @@NAME <sql_id>
     --[[
         &BASE : s={sql_id}, m={signature}
     --]]

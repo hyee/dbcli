@@ -114,7 +114,7 @@ function unwrap.unwrap(obj,ext)
 end
 
 function unwrap.onload()
-    env.set_command(nil,"unwrap",'Extract and unwrap(if wrapped) the source code of the specific object(procedure/package/function/trigger/type). Usage: unwrap [<owner>.]<object_name> [<file_ext>]',unwrap.unwrap,false,3)
+    env.set_command(nil,"unwrap",'Extract and unwrap(if wrapped) the source code of the specific object(procedure/package/function/trigger/type). Usage: @@NAME [<owner>.]<object_name> [<file_ext>]',unwrap.unwrap,false,3)
 end
 
 return unwrap

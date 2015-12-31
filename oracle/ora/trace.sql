@@ -1,12 +1,12 @@
-/*[[Enable/disable trace. Usage: trace [<sql_id>|<SES-XXXXX>|<SYS-XXXXX>|<ORA-XXXXX>|<sid,serial#>|<event>|me|default] [trace_level]  ]]
-    Trace specific SQL ID(11g+ only):  trace <sql_id[|sql_id...]> [trace_level] --i.e. ora trace c4s58ggj09n39|2v88j3u7nuddj 1
-    Trace specific process(11g+)    :  trace "process:..."        [trace_level] --i.e. ora trace process:6917|7293 / process:pid=2 / process:orapid=46|48 / process:pname=dbw0|smon
-    Trace specific Session          :  trace <sid,serial>         [trace_level] --i.e. ora trace 1,1
-    Trace specific ORA error        :  trace <ORA-XXXXX>          [trace_level] --i.e. ora trace ora-00001 12
-    Trace session-level event       :  trace <SES-XXXXX>          [trace_level] --i.e. ora trace ses-10949 (see "ora events" for more info)
-    Trace system-level event        :  trace <SYS-XXXXX>          [trace_level] --i.e. ora trace sys-10949 (see "ora events" for more info)
-    Trace this session(event 10046) :  trace me                   [trace_level]
-    Trace for a specific event      :  trace <event_name>         [trace_level] --i.e.  ora trace buffers 1
+/*[[Enable/disable trace. Usage: @@NAME [<sql_id>|<SES-XXXXX>|<SYS-XXXXX>|<ORA-XXXXX>|<sid,serial#>|<event>|me|default] [trace_level]  ]]
+    Trace specific SQL ID(11g+ only):  @@NAME <sql_id[|sql_id...]> [trace_level] --i.e. @@NAME c4s58ggj09n39|2v88j3u7nuddj 1
+    Trace specific process(11g+)    :  @@NAME "process:..."        [trace_level] --i.e. @@NAME process:6917|7293 / process:pid=2 / process:orapid=46|48 / process:pname=dbw0|smon
+    Trace specific Session          :  @@NAME <sid,serial>         [trace_level] --i.e. @@NAME 1,1
+    Trace specific ORA error        :  @@NAME <ORA-XXXXX>          [trace_level] --i.e. @@NAME ora-00001 12
+    Trace session-level event       :  @@NAME <SES-XXXXX>          [trace_level] --i.e. @@NAME ses-10949 (see "ora events" for more info)
+    Trace system-level event        :  @@NAME <SYS-XXXXX>          [trace_level] --i.e. @@NAME sys-10949 (see "ora events" for more info)
+    Trace this session(event 10046) :  @@NAME me                   [trace_level]
+    Trace for a specific event      :  @@NAME <event_name>         [trace_level] --i.e. @@NAME buffers 1
     
     Parameter "trace_level"(default as 12 if not specify):
         off or 0:   turn off trace

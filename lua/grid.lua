@@ -17,6 +17,7 @@ local params={
     DIGITS={name="digits",default=38,desc="Define the digits for a number",range="0 - 38"},
     SEP4K={name="sep4k",default="off",desc="Define wether to show number with thousands separator",range="on,off"},
     LINESIZE={name="linesize",default=800,desc="Define the max chars in one line, other overflow parts would be cutted.",range='10-32767'}
+    --NULL={name="null_value",default="",desc="Define display value for NULL."}
 }
 
 function grid.set_param(name,value)
