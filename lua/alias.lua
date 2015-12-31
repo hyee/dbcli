@@ -51,7 +51,7 @@ function alias.make_command(name,args)
         target=target:gsub("%$(%d+)%[(.-)%]",alias.parser)
         target=target:gsub("%$([%d%*]+)",alias.parser)
         target=target:gsub("%s+$","")
-        if env.END_MARKS.match(target)==target then target=target..env.END_MARKS[1] end
+        --if env.END_MARKS.match(target)==target then target=target..env.END_MARKS[1] end
         if type(alias.cmdlist[name].text) == "string" and not target:find('[\n\r]') then
             print('$ '..target)
         end
@@ -98,7 +98,7 @@ function alias.set(name,cmd,write)
         if not name:match("^[%w_]+$") then
             return print("Alias '"..name.."' is invalid. ")
         end
-
+        cmd=env.END_MARKS.match(cmd)
         local target_dir=alias.command_dir
         local sub_cmd=env.parse_args(2,cmd)[1]:upper()
         if env._CMDS[sub_cmd] then

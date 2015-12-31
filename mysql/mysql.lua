@@ -119,7 +119,7 @@ function mysql:onload()
     --]]
 
     add_default_sql_stmt('ALTER','ANALYZE','BINLOG','CACHE','CALL','CHANGE','CHECK','CHECKSUM','DEALLOCATE','DELETE','DROP','EXECUTE','FLUSH','GRANT','HANDLER','INSERT','ISOLATION','KILL','LOAD','LOCK','OPTIMIZE','PREPARE','PURGE')
-    add_default_sql_stmt('RENAME','REPAIR','REPLACE','RESET','REVOKE','SAVEPOINT','SELECT','START','STOP','TRUNCATE','UPDATE','XA',{"DESC","EXPLAIN","DESCRBE"})
+    add_default_sql_stmt('RENAME','REPAIR','REPLACE','RESET','REVOKE','SAVEPOINT','SELECT','START','STOP','TRUNCATE','UPDATE','XA',"SIGNAL","RESIGNAL",{"DESC","EXPLAIN","DESCRBE"})
 
     local  conn_help = [[
         Connect to mysql database. Usage: @@NAME <user>{:|/}<password>@<host>[:<port>][/<database>][?<properties>]
