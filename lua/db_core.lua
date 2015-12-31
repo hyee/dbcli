@@ -322,7 +322,8 @@ db_core.feed_list={
     GRANT   ="Granted",
     REVOKE  ="Revoked",
     TRUNCATE="Truncated",
-    SET     ="Variable set"
+    SET     ="Variable set",
+    USE     ="Database changed"
 }
 
 function db_core.get_command_type(sql)

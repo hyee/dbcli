@@ -91,7 +91,7 @@ function system:call_process(cmd,is_native)
             end
         end
         
-        if not self.support_redirect then is_native=true end
+        
         self.env={PATH=os.getenv("PATH")}
         if not self.work_dir then self.work_dir=self.extend_dirs or self.script_dir or env._CACHE_PATH end
         self.startup_cmd=self:get_startup_cmd(args,is_native)
@@ -102,9 +102,9 @@ function system:call_process(cmd,is_native)
         env.log_debug("subsystem","Work dir: "..self.work_dir)
         env.log_debug("subsystem","Environment: \n"..table.dump(self.env))
 
-        --self.process:wait_async(function(...) print(...);print("Sub-system is terminated") end)
-        if not is_native then
+        if not is_native and self.support_redirect then
             io.write("Connecting to "..self.name.."...")
+            --print(table.concat(self.startup_cmd," "))
             self.process=self.proc:create(self.prompt_pattern,self.work_dir,self.startup_cmd,self.env)
             self.msg_stack={}
             self:run_command(nil,false)
