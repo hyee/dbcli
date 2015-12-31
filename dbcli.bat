@@ -16,7 +16,7 @@ If exist "data\init.cfg" (for /f "eol=# delims=" %%i in (data\init.cfg) do (%%i)
 If not exist "%TNS_ADM%\tnsnames.ora" if defined ORACLE_HOME (set TNS_ADM=%ORACLE_HOME%\network\admin )
 for %%x in ("%JRE_HOME%") do set JRE_HOME=%%~sx
 IF not exist "%JRE_HOME%\java.exe" if exist "%JRE_HOME%\bin\java.exe" (set JRE_HOME=%JRE_HOME%\bin) else (set JRE_HOME=.\jre\bin)
-SET PATH=%JRE_HOME%;%EXT_PATH%;%PATH%
+SET PATH=%JRE_HOME%;%EXT_PATH%;.\bin;%PATH%
 if defined ANSICON_CMD (
    SET ANSICON_EXC=nvd3d9wrap.dll;nvd3d9wrapx.dll
    SET ANSICON_DEF=!CONSOLE_COLOR!

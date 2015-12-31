@@ -1,7 +1,9 @@
 2015-12-31: + mysql : support "tee" command, but not support "notee", pls use "tee off" instead
                     : new command "ms" which run script with params via "mysql.exe" engine
                     : new command "sql search"
-            + public: new command "set null" to specify the null display value(default as empty) 
+            ! mysql : minor fixes        
+            + public: new command "set null" to specify the null display value(default as empty)
+                    : in the help information, "@@NAME" should be automatically replaced as the command name            
             * public: code optimizations and some fixes
 2015-12-30: + mysql : support syntax "\g","\G","delimiter"
                     : support all SQL commands
@@ -13,7 +15,7 @@
             ! public: minor fixes
             * oracle: adjust "ora tbs"
 2015-12-29: + mysql : plug mysql 'help'/'set' commands into dbcli(requires db connect)
-                    : 'show var <keywword>'='show variable like <keyword>'
+                    : 'show var/sta/clt <keywword>'='show variable/status/collation like <keyword>'
                     : 'help c'='help contents', search help contents with 'help {s|search} <keyword>'
             * public: code optimizations  
 2015-12-26: + mysql : initially support mysql, refer to 'mysql\readme.txt' before use

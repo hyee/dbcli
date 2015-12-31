@@ -17,7 +17,8 @@ function show.run(arg)
     env.set.set("printsize",10000)
     for i,k in ipairs(args) do
         cmd[#cmd+1]=i<3 and abbrs[k:upper()] or k
-        if cmd[#cmd]:upper()=="VARIABLES" then
+        local c=cmd[#cmd]:upper()
+        if c=="VARIABLES" or c=="STATUS" or c=="COLLATION" then
             local text=(args[i+1] or ""):upper()
             if text~="" and not text:find("^LIKE") and not text:find("^WHERE") then
                 env.printer.set_grep(text)
@@ -47,6 +48,7 @@ function show.onload()
     abbrs["ENS"]="ENGINES"
     abbrs["POS"]="PROFILES"
     abbrs["TRS"]="TRIGGERS"
+    abbrs["CLT"]="COLLATION"
     env.set_command(nil,show.name, {"Show database information",show.help},show.run,false,2)
 end
 

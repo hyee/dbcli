@@ -135,7 +135,7 @@ function mysql:onload()
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
     set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
     set_command(self,"create",   default_desc,  self.command_call      ,self.check_completion,1,true)
-    set_command(self,"?",nil,self.help_topic,false,9)
+    set_command(self,{"?","\\?"},nil,self.help_topic,false,9)
 
     env.set.change_default("null","NULL")
     env.event.snoop("ON_HELP_NOTFOUND",self.help_topic,self)
@@ -144,6 +144,7 @@ function mysql:onload()
     env.rename_command("SPOOL",{"TEE","\\t","SPOOL"})
     env.rename_command("PRINT","PRINTVAR")
     env.rename_command("PROMPT",{"PRINT","ECHO","\\p"})
+    env.rename_command("HELP",{"HELP","\\h"})
     set_command(nil,{"delimiter","\\d"},"Set statement delimiter. Usage: @@NAME {<text>|default|back}",
          function(sep)
             if #env.RUNNING_THREADS<=2 then

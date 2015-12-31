@@ -71,7 +71,7 @@ end
 function utils:get_startup_cmd(args,is_native)
     env.checkerr(db:is_connect(),"Database is not connected!")
     local conn=db.connection_info
-    local props={"--utildir=="..self.work_dir}
+    local props={"--utildir=="..self.work_dir,'--width=200'}
     self:make_sqlpath()
     self.work_path,self.work_dir=self.work_dir,env._CACHE_PATH
     self:rebuild_commands(self.env['SQLPATH'])
@@ -79,6 +79,8 @@ function utils:get_startup_cmd(args,is_native)
         if args[i]:find("^--utildir=.+") then 
             props[1]=v
             self.work_dir=v:match("=(.*+)")
+        elseif args[i]:find("^--width=.+") then
+            props[2]=v
         else
             props[#props+1]=v
         end
