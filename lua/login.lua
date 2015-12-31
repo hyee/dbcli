@@ -87,7 +87,7 @@ function login.search(id,filter,url_filter)
         local a=env.parse_args(2,filter)
         alias,filter=a[1],a[2]
         if not filter then
-            return print('Usage: login -a <alias> <id|name>')
+            return print('Usage: @@NAME -a <alias> <id|name>')
         end
         if list[alias] then
            return print('Usage: Cannot specify an alias that has been used by a name.')
@@ -152,11 +152,11 @@ function login.onload()
     env.event.snoop("TRIGGER_CONNECT",login.capture)
     cfg.init("SaveLogin","on",nil,"core","Determine if autosave logins.",'on,off')
     local help_login=[[
-        Login with saved accounts, type 'help login' for more detail. Usage: login [ -d | -a |<number|account_name>]
-            login                     : list all saved a/c
-            login -d <num|name|alias> : delete matched a/c
-            login    <num|name|alias> : login a/c
-            login -a <alias> <id|name>: set alias to an existing account
+        Login with saved accounts, type 'help login' for more detail. Usage: @@NAME [ -d | -a |<number|account_name>]
+            @@NAME                     : list all saved a/c
+            @@NAME -d <num|name|alias> : delete matched a/c
+            @@NAME    <num|name|alias> : login a/c
+            @@NAME -a <alias> <id|name>: set alias to an existing account
         Use 'set savelogin off' to disable the autosave.]]
     env.set_command(nil,"login",help_login,login.trigger_login,false,3)
     login.load()

@@ -1,4 +1,4 @@
-/*[[Run SQL Tuning Advisor on target SQL. Usage: sta <sql_id> [run-as user] [time limit]
+/*[[Run SQL Tuning Advisor on target SQL. Usage: @@NAME <sql_id> [run-as user] [time limit]
 --[[
      &exe_mode: async={0}, sync={1}
 --]]

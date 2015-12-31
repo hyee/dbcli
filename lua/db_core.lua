@@ -225,26 +225,31 @@ function ResultSet:close(rs)
     end
 end
 
-function ResultSet:rows(rs,count,limit)
+function ResultSet:rows(rs,count,limit,null_value)
     if rs:isClosed() then return end
     count=tonumber(count) or tonumber(cfg.get("printsize"))
     local head=self:getHeads(rs,limit).__titles
     local rows,result={head},loader:fetchResult(rs,count)
+    null_value=null_value or ""
     if count~=0 then
         local maxsiz=cfg.get("COLSIZE")
         for i=1,#result do
             rows[i+1]={}
-            for j=1,#result[i] do
-                rows[i+1][j]=tostring(result[i][j])
-                if rows[i+1][j] then
-                    if limit then rows[i+1][j]=rows[i+1][j]:sub(1,maxsiz) end
-                    if head.colinfo[j].data_typeName=="DATE" or head.colinfo[j].data_typeName=="TIMESTAMP" then
-                        rows[i+1][j]=rows[i+1][j]:gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
-                    elseif head.colinfo[j].data_typeName=="BLOB" then
-                        rows[i+1][j]=rows[i+1][j]:sub(1,255)
-                    elseif head.colinfo[j].is_number then
-                        rows[i+1][j]=tonumber(rows[i+1][j]) or rows[i+1][j]
+            for j=1,#head do
+                if result[i][j] ~=nil then
+                    rows[i+1][j]=tostring(result[i][j])
+                    if rows[i+1][j] then
+                        if limit then rows[i+1][j]=rows[i+1][j]:sub(1,maxsiz) end
+                        if head.colinfo[j].data_typeName=="DATE" or head.colinfo[j].data_typeName=="TIMESTAMP" then
+                            rows[i+1][j]=rows[i+1][j]:gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
+                        elseif head.colinfo[j].data_typeName=="BLOB" then
+                            rows[i+1][j]=rows[i+1][j]:sub(1,255)
+                        elseif head.colinfo[j].is_number then
+                            rows[i+1][j]=tonumber(rows[i+1][j]) or rows[i+1][j]
+                        end
                     end
+                else
+                    rows[i+1][j]=null_value
                 end
             end
         end
@@ -257,11 +262,13 @@ function ResultSet:print(res,conn)
     --print(table.dump(self:getHeads(res,-1)))
     local maxrows,pivot=cfg.get("printsize"),cfg.get("pivot")
     if pivot~=0 then maxrows=math.abs(pivot) end
-    local result=self:rows(res,maxrows,true)
+    local result=self:rows(res,maxrows,true,cfg.get("null"))
     if not result then return end
     if pivot==0 then 
         hdl=grid.new()
-        for idx,row in ipairs(result) do hdl:add(row) end
+        for idx,row in ipairs(result) do 
+            hdl:add(row)
+        end
     end
     
     grid.print(hdl or result)
@@ -305,6 +312,7 @@ db_core.feed_list={
     DELETE  ="%d rows deleted",
     SELECT  ="\n%d rows returned",
     WITH    ="\n%d rows returned",
+    SHOW    ="\n%d rows returned",
     MERGE   ="%d rows merged",
     ALTER   ="%s altered",
     DROP    ="%s dropped",
@@ -895,11 +903,12 @@ function db_core:__onload()
     cfg.init("CSVSEP",string.char(csv.DEFAULT_SEPARATOR),set_param,"db.export","Define the seperator for CSV data for export(SQL2CSV and CSV2SQL)",'*')
     cfg.init("SQLLINEWIDTH",sqlw.maxLineWidth,set_param,"db.export","Define the max line width(in chars) of exporting SQL file(SQL2FILE and CSV2SQL)",'*')
     cfg.init("SQLERRLINE",'off',nil,"db.core","Also print the line number when error SQL is printed",'on,off')
+    cfg.init("NULL","",nil,"db.core","Define the display value for NULL value")
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
     env.event.snoop('TRIGGER_LOGIN',self.login,self)
-    env.set_command(self,"sql2file","Export Query Result into SQL file. Usage: sql2file <file_name>[.sql|gz|zip] <sql|cursor>" ,self.sql2sql,'__SMART_PARSE__',3)
-    env.set_command(self,"sql2csv","Export Query Result into CSV file. Usage: sql2csv <file_name>[.csv|gz|zip] <sql|cursor>" ,self.sql2csv,'__SMART_PARSE__',3)
-    env.set_command(self,"csv2sql","Convert CSV file into SQL file. Usage: csv2sql <sql_file>[.sql|gz|zip] <csv_file>" ,self.csv2sql,false,3)
+    env.set_command(self,"sql2file","Export Query Result into SQL file. Usage: @@NAME <file_name>[.sql|gz|zip] <sql|cursor>" ,self.sql2sql,'__SMART_PARSE__',3)
+    env.set_command(self,"sql2csv","Export Query Result into CSV file. Usage: @@NAME <file_name>[.csv|gz|zip] <sql|cursor>" ,self.sql2csv,'__SMART_PARSE__',3)
+    env.set_command(self,"csv2sql","Convert CSV file into SQL file. Usage: @@NAME <sql_file>[.sql|gz|zip] <csv_file>" ,self.csv2sql,false,3)
 end
 
 function db_core:__onunload()

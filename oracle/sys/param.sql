@@ -1,4 +1,4 @@
-/*[[Show instance parameters, including hidden parameters, pls use 'set instance' to show the specific instance. Usage: param [<keyword1>[,<keyword2>...]]]]*/
+/*[[Show instance parameters, including hidden parameters, pls use 'set instance' to show the specific instance. Usage: @@NAME [<keyword1>[,<keyword2>...]]]]*/
 SELECT x.inst_id,ksppinm NAME, ksppity TYPE, substr(ksppstdvl,1,80) DISPLAY_VALUE, ksppstdf ISDEFAULT,
        decode(bitand(ksppiflg / 256, 1), 1, 'TRUE', 'FALSE') ISSES_Mdf,
        decode(bitand(ksppiflg / 65536, 3), 1, 'IMMEDIATE', 2, 'DEFERRED', 3, 'IMMEDIATE', 'FALSE') ISSYS_MDF,

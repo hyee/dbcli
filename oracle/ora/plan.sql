@@ -1,5 +1,5 @@
 /*[[
-Show execution plan. Usage: plan [-a|-b|-d|-s|-ol|-adv] <sql_id> [<plan_hash_value>|<child_number>] [format1..n]
+Show execution plan. Usage: @@NAME [-a|-b|-d|-s|-ol|-adv] <sql_id> [<plan_hash_value>|<child_number>] [format1..n]
 Option:
     -ol   : show outline information
     -b    : show binding variables

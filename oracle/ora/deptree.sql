@@ -1,5 +1,5 @@
 /*[[
-    Show object dependency, usage: ora deptree [-c|-p] [-t|-l] [owner.]name
+    Show object dependency, usage: @@NAME [-c|-p] [-t|-l] [owner.]name
     Options:
        p: Show target object's depending objects(default)
        c: Show the objects that depend on target object

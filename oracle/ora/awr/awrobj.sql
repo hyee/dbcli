@@ -1,4 +1,4 @@
-/*[[Search for the SQLs in AWR snapshots that reference the specific object. Usage: awrobj  <[owner.]object_name> ]] [ela|exe|id|text|op] [yymmddhhmi] [yymmddhhmi] ]]*/
+/*[[Search for the SQLs in AWR snapshots that reference the specific object. Usage: @@NAME <[owner.]object_name> ]] [ela|exe|id|text|op] [yymmddhhmi] [yymmddhhmi] ]]*/
 WITH qry AS
  (SELECT /*+materialize*/*
   FROM   (SELECT OBJECT_ID,

@@ -287,7 +287,7 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
         desc = desc:gsub("^%s*[\n\r]+","")
         desc = desc:match("([^\n\r]+)")
     elseif desc then
-        print(cmd..': Unexpected command definition, the description should be a function or string, but got '..type(desc))
+        env.warn(cmd..': Unexpected command definition, the description should be a function or string, but got '..type(desc))
         desc=nil
     end
 
@@ -303,6 +303,27 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
         DBCMD     = dbcmd,
         ISOVERRIDE= allow_overriden
     }
+end
+
+function env.rename_command(name,new_name)
+    local info=_CMDS[name]
+    env.checkerr(info,"No such command: "..name)
+    for k,v in pairs(_CMDS.___ABBR___) do
+        if _CMDS[k]==info then
+            _CMDS[k]=nil 
+        end
+    end
+    if type(new_name)=="string" then
+        info.ABBR=""
+        new_name={new_name}
+    else
+        info.ABBR=table.concat(new_name,",",2):upper()
+    end
+    
+    for k,v in ipairs(new_name) do
+        _CMDS.___ABBR___[v:upper()]=new_name[1]:upper()
+    end
+    _CMDS[new_name[1]:upper()]=info
 end
 
 function env.get_command_by_source(list)

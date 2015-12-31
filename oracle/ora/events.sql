@@ -1,4 +1,4 @@
-/*[[List the available event number that used by 'alter session set events' statement. Usage: events [filter] ]]*/
+/*[[List the available event number that used by 'alter session set events' statement. Usage: @@NAME [filter] ]]*/
 set feed off
 DECLARE
     err_msg VARCHAR2(120);

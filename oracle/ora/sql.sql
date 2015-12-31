@@ -1,4 +1,4 @@
-/*[[Get SQL text. Usage: sql <sql_id>]]*/
+/*[[Get SQL text. Usage: @@NAME <sql_id>]]*/
 set linesize 32767 colwrap 150 feed off 
 column sql_text new_value txt;
 SELECT * FROM(

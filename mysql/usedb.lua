@@ -10,6 +10,7 @@ function usedb.on_connect(db)
 end
 
 function usedb.switch_db(name)
+    if not name then return db.C.show.run("databases") end
     db:internal_call("use "..name)
     db.props.database=db:get_value("select database()") or ""
     usedb.on_connect(db)

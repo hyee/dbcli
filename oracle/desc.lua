@@ -483,5 +483,5 @@ function desc.desc(name,option)
     cfg.temp("feed",feed,true)
 end
 
-env.set_command(nil,{"describe","desc"},'Describe datbase object. Usage: desc [owner.]<object>[.partition] | [owner.]<pkg|typ>[.<function|procedure>]',desc.desc,false,3)
+env.set_command(nil,{"describe","desc"},'Describe datbase object. Usage: @@NAME [owner.]<object>[.partition] | [owner.]<pkg|typ>[.<function|procedure>]',desc.desc,false,3)
 return desc

@@ -1,4 +1,4 @@
-/*[[Generate the script for online-redefintion, no DML/DDL will be taken. Usage: redef [owner.]<orig_table_name>[.partition_name] <new_table_name>]]*/
+/*[[Generate the script for online-redefintion, no DML/DDL will be taken. Usage: @@NAME [owner.]<orig_table_name>[.partition_name] <new_table_name>]]*/
 set feed off verify off
 ora _find_object &V1
 var text varchar2(32767)

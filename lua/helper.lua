@@ -35,7 +35,6 @@ function helper.env(target,depth)
         end
         return
     end
-
     local grid=env.grid
     local set=env.set
     local rows={{},{}}
@@ -93,16 +92,18 @@ function helper.helper(cmd,...)
             if env.event then env.event.callback("ON_HELP_NOTFOUND",cmd,...) end
             return 
         end
-        local helps
+        local helps,target
         if type(_CMDS[cmd].HELPER) =="function" then
             local args= _CMDS[cmd].OBJ and {_CMDS[cmd].OBJ,cmd,...} or {cmd,...}
             helps = (_CMDS[cmd].HELPER)(table.unpack(args)) or ""
+            target= table.concat({cmd,...}," ")
         else
-            helps  = _CMDS[cmd].HELPER or ""
+            helps = _CMDS[cmd].HELPER or ""
+            target=cmd
         end
         if helps=="" then return end
         local spaces=helps:match("([ \t]*)%S") or ""
-        helps=('\n'..helps):gsub("[\n\r]"..spaces,"\n"):gsub("%s+$","")
+        helps=('\n'..helps):gsub("[\n\r]"..spaces,"\n"):gsub("%s+$",""):gsub("@@NAME",target:lower())
         if helps:sub(1,1)=="\n" then helps=helps:sub(2) end
         return print(helps)
     elseif cmd=="-e" or cmd=="-E" then
@@ -152,7 +153,7 @@ function helper.helper(cmd,...)
             if flag==1 then
                 table.append(rows[#rows],(type(v.MULTI)=="function" or type(v.MULTI)=="string") and "Auto" or v.MULTI and 'Yes' or 'No',v.FILE)
             end
-            table.insert(rows[#rows],v.DESC and v.DESC:gsub("^[\r\n\t%s#]+","") or " ")
+            table.insert(rows[#rows],v.DESC and v.DESC:gsub("^[%s#]+",""):gsub("@@NAME",k:lower()) or " ")
         end
     end
     print("Available comands:\n===============")

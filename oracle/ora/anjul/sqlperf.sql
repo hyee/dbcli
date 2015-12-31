@@ -1,4 +1,4 @@
-/*[[ SQL performance over time: Usage:  @sqlperf  <sql_id>  [days]   
+/*[[ SQL performance over time: Usage: @@NAME <sql_id> [days]   
     --[[
     @BASE:11.2 ={}, 10.1={--}
     ]]--

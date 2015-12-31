@@ -1,4 +1,4 @@
-/*[[Show tablspace usage, or file usage if specify the tablespace name. Usage: tbs [<tablespace_name>]
+/*[[Show tablspace usage, or file usage if specify the tablespace name. Usage: @@NAME [<tablespace_name>]
     --[[
         @CHECK_ACCESS: wmsys.wm_concat={wmsys.wm_concat(DISTINCT regexp_substr(file_name, '^.[^\\/]+'))}, default={&VERSION}
         @VERSION: 11.2={regexp_replace(listagg(regexp_substr(file_name, '^.[^\\/]+'),',') within group(order by file_name),'([^,]+)(,\1)+','\1')} default={null}

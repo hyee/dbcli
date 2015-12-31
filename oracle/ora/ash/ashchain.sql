@@ -1,5 +1,5 @@
 /*[[
-Show ash wait chains. Usage: ashchain [<sql_id>] [YYMMDDHH24MI [YYMMDDHH24MI]]
+Show ash wait chains. Usage: @@NAME [<sql_id>] [YYMMDDHH24MI [YYMMDDHH24MI]]
 --[[
 Templates:
       &V8: ash={gv$active_session_history},dash={Dba_Hist_Active_Sess_History}

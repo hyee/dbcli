@@ -1,5 +1,5 @@
 /*[[
-Show or advise object's space, it could be time-consuming for the object who owns many partitions. Usage: space <[owner.]object_name[.partition_name]> [stats|advise]
+Show or advise object's space, it could be time-consuming for the object who owns many partitions. Usage: @@NAME <[owner.]object_name[.partition_name]> [stats|advise]
     --[[
         @CHECK_ACCESS: dbms_space/dba_objects/dba_tablespaces={}
     --]]

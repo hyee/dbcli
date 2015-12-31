@@ -7,7 +7,7 @@ function sqlplus:ctor()
     self.db=env.getdb()
     self.command={"sp",'@'}
     self.name="sqlplus"
-    self.description="Switch to sqlplus with same login, the default working folder is 'oracle/sqlplus'. Usage: sqlplus [-n|-d<work_path>] [other args]"
+    self.description="Switch to sqlplus with same login, the default working folder is 'oracle/sqlplus'. Usage: @@NAME [-n|-d<work_path>] [other args]"
     self.help_title='Run SQL*Plus script under the "sqlplus" directory. '
     self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."sqlplus",{}
     self.prompt_pattern="^(.+[>\\$#@] *| *\\d+ +)$"

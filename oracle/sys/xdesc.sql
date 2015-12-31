@@ -1,4 +1,4 @@
-/*[[Describe X$ tables, column offsets and report indexed fixed table. Usage: xdesc <x$table name>
+/*[[Describe X$ tables, column offsets and report indexed fixed table. Usage: @@NAME <x$table name>
 Author:      Tanel Poder
 ]]*/
 SELECT t.kqftanam TABLE_NAME, c.KQFCOCNO COL#, c.kqfconam COLUMN_NAME,

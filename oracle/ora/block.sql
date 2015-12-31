@@ -1,4 +1,4 @@
-/*[[Show object info for the input block in bh. Usage: ora block <file#> <block#>]]*/
+/*[[Show object info for the input block in bh. Usage: @@NAME <file#> <block#>]]*/
 
 SELECT b.*
 FROM   gv$bh a, all_objects b

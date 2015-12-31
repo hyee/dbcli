@@ -88,7 +88,7 @@ function printer.spool(file,option)
     option=option and option:upper() or "CREATE"
     if not file then
         if printer.hdl then
-            printer.rawprint(env.space..'Output is writing to "'..printer.file..'".')
+            printer.rawprint(env.space..'Output is writting to "'..printer.file..'".')
         else
             print("SPOOL is OFF.")
         end
@@ -96,6 +96,9 @@ function printer.spool(file,option)
     end
     if file:upper()=="OFF" or option=="OFF" or printer.hdl then
         if printer.hdl then pcall(printer.hdl.close,printer.hdl) end
+        if env.set and env.set.get("feed")=="on" then
+            printer.rawprint(env.space..'Output is written to "'..printer.file..'".')
+        end
         printer.hdl=nil
         printer.file=nil
         if file:upper()=="OFF" or option=="OFF" then return end
@@ -110,6 +113,9 @@ function printer.spool(file,option)
         return
     end
     printer.file=file
+    if env.set and env.set.get("feed")=="on" then
+        printer.rawprint(env.space..'Output is writting to "'..printer.file..'".')
+    end
 end
 
 function printer.set_grep(keyword)
@@ -137,7 +143,7 @@ function printer.before_command(command)
         cmd,text=line:match("^(.*)|%s*[gG][rR][eR][pP] ([^\n\r]-)$")
         if text then
             command[1],command[2]=env.eval_line(cmd,false,true)
-            printer.set_grep(text)
+            printer.set_grep((text:gsub('^("?)(.-)%1$',"%2")))
         end
     end
     if not printer.is_more then
@@ -182,10 +188,10 @@ function printer.onload()
     end
     BOLD=BOLD..'%1'..NOR
     
-    env.set_command(nil,"grep","Filter matched text from the output. Usage: grep <keyword|-keyword> <other command>, -keyword means exclude",{printer.grep,printer.grep_after},'__SMART_PARSE__',3)
-    env.set_command(nil,"more","Similar to Linux 'more' command. Usage: more <other command>",printer.set_more,'__SMART_PARSE__',2)
-    env.set_command(nil,{"Prompt","pro",'echo'}, "Prompt messages. Usage: PRO[MPT] <message>",printer.load_text,false,2)
-    env.set_command(nil,{"SPOOL","SPO"}, "Write the screen output into a file. Usage: SPO[OL] [file_name[.ext]] [CREATE] | APP[END]] | OFF]",printer.spool,false,3)
+    env.set_command(nil,"grep","Filter matched text from the output. Usage: @@NAME <keyword|-keyword> <other command>, -keyword means exclude",{printer.grep,printer.grep_after},'__SMART_PARSE__',3)
+    env.set_command(nil,"more","Similar to Linux 'more' command. Usage: @@NAME <other command>",printer.set_more,'__SMART_PARSE__',2)
+    env.set_command(nil,{"Prompt","pro",'echo'}, "Prompt messages. Usage: @@NAME <message>",printer.load_text,false,2)
+    env.set_command(nil,{"SPOOL","SPO"}, "Write the screen output into a file. Usage: @@NAME [file_name[.ext]] [CREATE] | APP[END]] | OFF]",printer.spool,false,3)
     env.ansi.define_color("GREPCOLOR","BBLU;HIW","ansi.grid","Define highlight color for the grep command, type 'ansi' for more available options")
 end
 return printer

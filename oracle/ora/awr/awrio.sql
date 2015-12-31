@@ -1,4 +1,4 @@
-/*[[Show AWR IO Stats: Usage: awrio [0|a|inst_id]]]*/
+/*[[Show AWR IO Stats: Usage: @@NAME [0|a|inst_id]]]*/
 WITH qry as(select nvl(upper(nvl(:V1,:INSTANCE)),'0') inst,nvl(lower(:V2),'data') typ,nvl(upper(:V3),'RW') rw from dual )
 SELECT d "DATE",
        inst_id||'('||to_char(sum(c),'99990')||')' inst_id,

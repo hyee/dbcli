@@ -134,7 +134,7 @@ function trace.get_trace(filename,mb,from_mb)
 end
 
 env.set_command(nil,{"loadtrace","dumptrace"},[[
-    Download Oracle trace file into local directory. Usage: loadtrace <trace_file|default|alert|0/1/4/8/12> [MB [begin_MB] ]
+    Download Oracle trace file into local directory. Usage: @@NAME <trace_file|default|alert|0/1/4/8/12> [MB [begin_MB] ]
     This command requires the "create directory" privilige.
     Parameters:
         trace_file: 1) The absolute path of the target trace file, or

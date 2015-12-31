@@ -18,9 +18,9 @@ var.types={
 
 function var.helper()
     local help=[[
-        Define output variables for db execution. Usage: "var <name> <data type> [description]", or "var <name>" to remove
-            Define variable: var <name> <data_type> [description]
-            Remove variable: var <name>
+        Define output variables for db execution. Usage: "@@NAME <name> <data type> [description]", or "@@NAME <name>" to remove
+            Define variable: @@NAME <name> <data_type> [description]
+            Remove variable: @@NAME <name>
         Available Data types:
         ====================
         REFCURSOR CURSOR CLOB NUMBER CHAR VARCHAR VARCHAR2 NCHAR NVARCHAR2 BOOLEAN]]
@@ -396,28 +396,28 @@ function var.onload()
     snoop("AFTER_COMMAND",var.capture_after_cmd)
     snoop("ON_COLUMN_VALUE",var.trigger_column)
     local fmt_help=[[
-    Specifies display attributes for a given column. Usage: COL <column> [NEW_VALUE|FORMAT|HEAD] <value> [<options>]
+    Specifies display attributes for a given column. Usage: @@NAME <column> [NEW_VALUE|FORMAT|HEAD] <value> [<options>]
     Refer to SQL*Plus manual for the detail, below are the supported features:
-        1) COL <column> NEW_V[ALUE] <var>    [PRINT|NOPRINT]
-        2) COL <column> HEAD[ING]   <title>
-        3) COL <column> FOR[MAT]    <format> [JUS[TIFY] LEFT|L|RIGHT|R]
-        4) COL <column> CLE[AR]
+        1) @@NAME <column> NEW_V[ALUE] <var>    [PRINT|NOPRINT]
+        2) @@NAME <column> HEAD[ING]   <title>
+        3) @@NAME <column> FOR[MAT]    <format> [JUS[TIFY] LEFT|L|RIGHT|R]
+        4) @@NAME <column> CLE[AR]
 
     Other addtional features:
-        1) COL <column> FOR[MAT] KMG :  Cast number as KB/MB/GB/etc format
-        2) COL <column> FOR[MAT] TMB :  Cast number as thousand/million/billion/etc format
-        3) COL <column> FOR[MAT] SMHD:  Cast number as 'xxD xxH xxM xxS' format
-        4) COL <column> FOR[MAT] smhd:  Cast number as 'xxd xxh xxm xxs' format
-        5) COL <column> FOR[MAT] ITV :  Cast number as 'dd hh:mm:ss' format
+        1) @@NAME <column> FOR[MAT] KMG :  Cast number as KB/MB/GB/etc format
+        2) @@NAME <column> FOR[MAT] TMB :  Cast number as thousand/million/billion/etc format
+        3) @@NAME <column> FOR[MAT] SMHD:  Cast number as 'xxD xxH xxM xxS' format
+        4) @@NAME <column> FOR[MAT] smhd:  Cast number as 'xxd xxh xxm xxs' format
+        5) @@NAME <column> FOR[MAT] ITV :  Cast number as 'dd hh:mm:ss' format
     ]]
     cfg.init({"PrintVar","VERIFY",'VER'},'on',nil,"db.core","Max size of historical commands",'on,off')
     cfg.init({var.cmd1,var.cmd2},'on',nil,"db.core","Defines the substitution character(&) and turns substitution on and off.",'on,off')
-    env.set_command(nil,{"Accept","Acc"},'Assign user-input value into a existing variable. Usage: accept <var> [[prompt] <prompt_text>|@<file>]',var.accept_input,false,3)
+    env.set_command(nil,{"Accept","Acc"},'Assign user-input value into a existing variable. Usage: @@NAME <var> [[prompt] <prompt_text>|@<file>]',var.accept_input,false,3)
     env.set_command(nil,{var.cmd3,var.cmd4},var.helper,var.setOutput,false,4)
-    env.set_command(nil,{var.cmd1,var.cmd2},"Define input variables, Usage: def <name>[=]<value> [description], or def <name> to remove definition",var.setInput,false,3)
+    env.set_command(nil,{var.cmd1,var.cmd2},"Define input variables, Usage: @@NAME <name>[=]<value> [description], or @@NAME <name> to remove definition",var.setInput,false,3)
     env.set_command(nil,{"COLUMN","COL"},fmt_help,var.define_column,false,30)
-    env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables.Usage: print <variable|-a>',var.print,false,3)
-    env.set_command(nil,"Save","Save variable value into a specific file under folder 'cache'. Usage: save <variable> <file name>",var.save,false,3);
+    env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables.Usage: @@NAME <variable|-a>',var.print,false,3)
+    env.set_command(nil,"Save","Save variable value into a specific file under folder 'cache'. Usage: @@NAME <variable> <file name>",var.save,false,3);
     env.event.snoop("ON_ENV_LOADED",var.on_env_load,nil,2)
 end
 

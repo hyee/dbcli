@@ -1,4 +1,4 @@
-/*[[Get resource usage from SQL monitor. Usage: sqlm <sql_id> [A|A1|B [,<sid>]]
+/*[[Get resource usage from SQL monitor. Usage: @@NAME <sql_id> [A|A1|B [,<sid>]]
    --[[
       @CHECK_VERSION: 11.0={1}
    --]]

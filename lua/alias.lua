@@ -121,7 +121,7 @@ function alias.set(name,cmd,write)
 
         local desc
         if cmd:sub(1,5)~="FUNC:" then
-            desc=cmd:gsub("[\n\r]+[ \t]*"," "):sub(1,300)
+            desc=cmd:gsub("%s+"," "):sub(1,300)
         else
             cmd=packer.unpack(cmd)
             desc=cmd
@@ -141,18 +141,18 @@ end
 
 function alias.helper()
     local help=[[
-    Set a shortcut of other existing commands. Usage: alias [-r] | {<name> [parameters] | -e <alias name>}
-    1) Set/modify alias: alias <name> <command>. Available wildchars: $1 - $9, or $*
+    Set a shortcut of other existing commands. Usage: @@NAME [-r] | {<name> [parameters] | -e <alias name>}
+    1) Set/modify alias: @@NAME <name> <command>. Available wildchars: $1 - $9, or $*
                          $1 - $9 can have default value, format as: $1[default]
-    2) Remove alias    : alias <name>
-    3) Reload alias    : alias -r
-    4) Encrypt alias   : alias -e <alias name>
+    2) Remove alias    : @@NAME <name>
+    3) Reload alias    : @@NAME -r
+    4) Encrypt alias   : @@NAME -e <alias name>
 
     All aliases are permanently stored in the "aliases" folder.
     Example:
-         alias test pro $1
-         alias ss select * from $1[dual]  
-         alias test conn $1/$2@$3
+         @@NAME test pro $1
+         @@NAME ss select * from $1[dual]  
+         @@NAME test conn $1/$2@$3
     Current aliases:
     ================]]
     local grid,rows=env.grid,{{"Name","Active?","Command"}}

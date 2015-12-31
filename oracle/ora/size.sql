@@ -1,5 +1,5 @@
 /*[[
-    Show object size. Usage: ora size [-d] [ [owner.]object_name[.PARTITION_NAME] ]
+    Show object size. Usage: @@NAME [-d] [ [owner.]object_name[.PARTITION_NAME] ]
     If not specify the parameter, then list the top 100 segments within current schema.
     option '-d': used to detail in segment level, otherwise in name level, only shows the top 1000 segments
     --[[

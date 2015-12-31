@@ -54,17 +54,21 @@ end
 
 function system:make_native_command(arg)
     local env,cmd={},{}
-    for k,v in pairs(self.env) do
-        env[#env+1]='(set "'..k..'='..v..'" )'
+    local function enclose(s)
+        return tostring(s):find("%s") and ('"'..s..'"') or s
     end
-    env[#env+1]='cd /d "'..self.work_dir..'"'
+    for k,v in pairs(self.env) do
+        env[#env+1]='(set '..enclose(k..'='..v)..' )'
+    end
+
+    env[#env+1]='cd /d '..enclose(self.work_dir)
 
     for i,v in ipairs(self.startup_cmd) do
-        cmd[#cmd+1]='"'..v..'"'
+        cmd[#cmd+1]=enclose(v)
     end
 
     for i,v in ipairs(arg) do
-        cmd[#cmd+1]='"'..v..'"'
+        cmd[#cmd+1]=enclose(v)
     end
 
     env[#env+1]=table.concat(cmd," ")
@@ -101,7 +105,6 @@ function system:call_process(cmd,is_native)
         --self.process:wait_async(function(...) print(...);print("Sub-system is terminated") end)
         if not is_native then
             io.write("Connecting to "..self.name.."...")
-            reader:flush()
             self.process=self.proc:create(self.prompt_pattern,self.work_dir,self.startup_cmd,self.env)
             self.msg_stack={}
             self:run_command(nil,false)
@@ -114,7 +117,9 @@ function system:call_process(cmd,is_native)
                 cmd=table.concat(args," ")
             end
         else
-            return os.execute(self:make_native_command(args))
+            local line=self:make_native_command(args)
+            env.log_debug("subsystem","SQL: "..line)
+            return os.execute(line)
         end
     end
 
