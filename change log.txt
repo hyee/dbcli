@@ -1,3 +1,4 @@
+2016-01-01: + mysql : new command "sql buffstats"
 2015-12-31: + mysql : support "tee" command, but not support "notee", pls use "tee off" instead
                     : new command "ms" which run script with params via "mysql.exe" engine
                     : new command "sql search"
