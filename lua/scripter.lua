@@ -126,7 +126,7 @@ function scripter:parse_args(sql,args,print_args,extend_dirs)
                     end
 
                     if prefix=="@" then
-                        env.checkerr(self.db:is_connect(),'Database is not connected!')
+                        self.db:assert_connect()
                         default=self:trigger('validate_accessable',k,keys,templates[k])
                     end
 
@@ -266,10 +266,11 @@ function scripter:run_sql(sql,args,cmds)
         for i=1,#sql do scripter.run_sql(self,sql[i],args[i],cmds[i]) end
         return;
     end
+
     if not self.db or not self.db.is_connect then
         env.raise("Database connection is not defined!")
     end
-    env.checkerr(self.db:is_connect(),"Database is not connected!")
+    self.db:assert_connect()
     
     --remove comment
     sql=sql:gsub(self.comment,"",1)

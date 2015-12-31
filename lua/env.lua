@@ -394,21 +394,34 @@ function env.warn(...)
     if str and str~='' then print(str,'__BYPASS_GREP__') end
 end
 
-function env.raise(...)
-    local str=env.format_error(env.callee(),...)
-    return error(str)
-end
-
 function env.raise_error(...)
     local str=env.format_error(nil,...)
     return error('000-00000:'..str)
 end
 
-function env.checkerr(result,msg,...)
+function env.raise(index,...)
+    local stack
+    if type(index)~="number" then
+        index,stack=3,{index,...}
+    else
+        stack={...}
+    end
+    table.insert(stack,1,(env.callee(index)))
+    local str=env.format_error(table.unpack(stack))
+    return error(str)
+end
+
+function env.checkerr(result,index,msg,...)
+    local stack
+    if type(index)~="number" then
+        index,msg,stack=4,index,{4,index,msg,...}
+    else
+        stack={index+3,msg,...}
+    end
+    
     if not result then
         if type(msg)=="function" then msg=msg(...) end
-        local str=env.format_error(env.callee(),msg,...)
-        return error(str)
+        env.raise(table.unpack(stack))
     end
 end
 

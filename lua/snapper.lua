@@ -66,7 +66,7 @@ function snapper:run_sql(sql,args,cmds,files)
 
     env.checkerr(begin_flag or tonumber(interval),'Uage: '..self.command..' <names> <interval>|BEGIN|END [args] ')
     
-    env.checkerr(self.db:is_connect(),"Database is not connected!")
+    self.db:assert_connect()
     
     self.cmds,self.args,self.start_time={},{},self:get_time()
     self.start_flag=true

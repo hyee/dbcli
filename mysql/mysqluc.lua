@@ -69,7 +69,7 @@ function utils:make_sqlpath()
 end
 
 function utils:get_startup_cmd(args,is_native)
-    env.checkerr(db:is_connect(),"Database is not connected!")
+    db:assert_connect()
     local conn=db.connection_info
     local props={"--utildir=="..self.work_dir,'--width=200'}
     self:make_sqlpath()

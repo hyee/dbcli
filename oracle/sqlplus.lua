@@ -109,7 +109,7 @@ function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
                         @"%s" %s
                         @dbcli_sqlplus_settings.sql]]
 
-        env.checkerr(db:is_connect(),"Database is not connected.")
+        db:assert_connect()
         local context=""
         for k,v in pairs(args) do
             if v==db.NOT_ASSIGNED then v='' end
