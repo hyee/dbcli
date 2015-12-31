@@ -814,10 +814,13 @@ function db_core.check_completion(cmd,other_parts)
         FUNCTION=1,
         DECLARE=1,
         BEGIN=1,
-        JAVA=1
+        JAVA=1,
+        DEFINER=1,
+        EVENT=1,
     }
     --alter package xxx compile ...
     local obj=env.parse_args(2,other_parts)[1]
+    if obj then obj=obj:match("^%w+") end
     local match,typ,index=env.END_MARKS.match(other_parts)
     --print(match,other_parts)
     if index==0 or (index==1 and ((obj and objs[obj:upper()]) or objs[cmd])) then
