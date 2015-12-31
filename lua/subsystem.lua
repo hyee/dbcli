@@ -104,7 +104,7 @@ function system:call_process(cmd,is_native)
 
         if not is_native and self.support_redirect then
             io.write("Connecting to "..self.name.."...")
-            print(table.concat(self.startup_cmd," "))
+            --print(table.concat(self.startup_cmd," "))
             self.process=self.proc:create(self.prompt_pattern,self.work_dir,self.startup_cmd,self.env)
             self.msg_stack={}
             self:run_command(nil,false)
