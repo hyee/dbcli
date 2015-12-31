@@ -139,19 +139,21 @@ end
 
 function printer.before_command(command)
     local cmd,params,is_internal,line,text=table.unpack(command)
-    if not printer.grep_text then
-        cmd,text=line:match("^(.*)|%s*[gG][rR][eR][pP] ([^\n\r]-)$")
-        if text then
-            command[1],command[2]=env.eval_line(cmd,false,true)
-            printer.set_grep((text:gsub('^("?)(.-)%1$',"%2")))
-        end
-    end
+    
     if not printer.is_more then
         cmd,text=line:match("^(.*)|%s*[mM][oO][rR][eE]$")
 
         if cmd then
             command[1],command[2]=env.eval_line(cmd,false,true)
             printer.is_more,more_text=true,{}
+        end
+    end
+
+    if not printer.grep_text then
+        cmd,text=line:match("^(.*)|%s*[gG][rR][eR][pP] ([^\n\r]-)$")
+        if text then
+            command[1],command[2]=env.eval_line(cmd,false,true)
+            printer.set_grep((text:gsub('^("?)(.-)%1$',"%2")))
         end
     end
     if not printer.hdl or #env.RUNNING_THREADS>1 then return end
