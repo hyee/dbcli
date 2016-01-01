@@ -353,7 +353,7 @@ function scripter:get_script(cmd,args,print_args)
 
     local f=io.open(file)
     env.checkerr(f,"Cannot find this script!")
-    local sql=f:read('*a')
+    local sql=f:read(10485760)
     f:close()
     if is_get then return print(sql) end
     args=self:parse_args(sql,args,print_args)
