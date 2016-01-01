@@ -124,7 +124,7 @@ function mysql:onload()
         order by 1
     --]]
 
-    add_default_sql_stmt('ALTER','ANALYZE','BINLOG','CACHE','CALL','CHANGE','CHECK','CHECKSUM','DEALLOCATE','DELETE','DROP','EXECUTE','FLUSH','GRANT','HANDLER','INSERT','ISOLATION','KILL','LOAD','LOCK','OPTIMIZE','PREPARE','PURGE')
+    add_default_sql_stmt('DO','ALTER','ANALYZE','BINLOG','CACHE','CALL','CHANGE','CHECK','CHECKSUM','DEALLOCATE','DELETE','DROP','EXECUTE','FLUSH','GRANT','HANDLER','INSERT','ISOLATION','KILL','LOAD','LOCK','OPTIMIZE','PREPARE','PURGE')
     add_default_sql_stmt('RENAME','REPAIR','REPLACE','RESET','REVOKE','SAVEPOINT','SELECT','START','STOP','TRUNCATE','UPDATE','XA',"SIGNAL","RESIGNAL",{"DESC","EXPLAIN","DESCRBE"})
 
     local  conn_help = [[
@@ -139,7 +139,6 @@ function mysql:onload()
                   @@NAME root:root@address=(protocol=tcp)(host=primaryhost)(port=3306),address=(protocol=tcp)(host=secondaryhost1)(port=3310)(user=test2)/test
     ]]
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
-    set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
     set_command(self,"create",   default_desc,  self.command_call      ,self.check_completion,1,true)
     set_command(self,{"?","\\?"},nil,self.help_topic,false,9)
 
@@ -189,7 +188,7 @@ end
 
 function mysql:help_topic(...)
     local keyword=table.concat({...}," "):upper():trim()
-    local liker={keyword..(keyword:find("%$") and "" or "%")}
+    liker={keyword:find("%$") and keyword or (keyword.."%")}
     local desc
     env.set.set("feed","off")
     local help_table=" from mysql.help_topic as a join mysql.help_category as b using(help_category_id) "
@@ -197,7 +196,7 @@ function mysql:help_topic(...)
         self:query("select help_category_id as `Category#`,b.name as `Category`,group_concat(distinct coalesce(nullif(substring(a.name,1,instr(a.name,' ')-1),''),a.name) order by a.name) as `Keywords`"..help_table.."group by help_category_id,b.name order by 2")
     elseif keyword:find("^SEARCH%s+") or keyword:find("^S%s+") then
         keyword=keyword:gsub("^[^%s+]%s+","")
-        liker={keyword..(keyword:find("%$") and "" or "%")}
+        liker={keyword:find("%$") and keyword or ("%"..keyword.."%")}
         self:query("select a.name,b.name as category,a.url"..help_table.."where (upper(a.name) like :1 or upper(b.name) like :1) order by a.name",liker)
     else
         local topic=self:get_value("select 1"..help_table.."where upper(b.name)=:1 or convert(help_category_id,char)=:1",{keyword})
