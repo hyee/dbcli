@@ -16,7 +16,6 @@ local ansi,event=env.ansi,env.event
 local color=ansi and ansi.get_color or function() return "";end
 local prompt_color="%s%s"..color("NOR").."%s"
 
-local os,clock=os
 local stack=nil
 
 function env.reset_input(line)
@@ -34,7 +33,7 @@ function env.reset_input(line)
 end
 
 while true do
-    if env.CURRENT_PROMPT=="_____EXIT_____" then break end
+    if env.PRI_PROMPT=="_____EXIT_____" then return end
     line = reader:readLine(prompt_color:format(env._SUBSYSTEM and color("PROMPTSUBCOLOR") or color("PROMPTCOLOR"),env.CURRENT_PROMPT,color("COMMANDCOLOR")))
     if not line or (line:lower() == 'quit' or line:lower() == 'exit') and not env._SUBSYSTEM then
         print("Exited.")
@@ -42,7 +41,7 @@ while true do
         os.exit(0,true)
     end
 
-    clock=os.clock(),eval(line)
+    eval(line)
 
     if env.CURRENT_PROMPT==env.MTL_PROMPT and not stack then
         stack={line}
@@ -51,8 +50,4 @@ while true do
         env.reset_input(line)
     end
 
-    if env.PRI_PROMPT=="TIMING> " and env.CURRENT_PROMPT~=env.MTL_PROMPT then
-        env.CURRENT_PROMPT=string.format('%06.2f',os.clock()-clock)..'> '
-        env.MTL_PROMPT=string.rep(' ',#env.CURRENT_PROMPT)
-    end
 end

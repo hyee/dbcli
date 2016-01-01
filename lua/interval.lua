@@ -5,7 +5,7 @@ local threads=env.RUNNING_THREADS
 interval.cmd='ITV'
 
 function interval.itv(sec,count,target)
-    env.checkhelp(src)
+    env.checkhelp(sec)
     local cmd,org_count,sec,count=sec:upper(),count,tonumber(sec),tonumber(count)
     local thread,cmds=threads[#threads-1],stack[threads[#threads-1]]
     if cmd=="START" then

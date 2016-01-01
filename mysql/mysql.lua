@@ -171,11 +171,18 @@ function mysql:onload()
 end
 
 function mysql:on_eval(line)
-    local ind=line[2] and line[2]~="" and 2 or 1
-    local rest=env.END_MARKS.match(line[ind])
-    if rest:match("\\[gG]$") then
-        line[ind]=line[ind]:sub(1,-3)..env.END_MARKS[1]
-        if rest:sub(-2)=="\\G" then
+    --[[
+    local first,near,symbol,rest=line:match("^(.*)(.)\\([gG])(.*)")
+    if not first or near=="\\" then return end
+    if near==env.END_MARKS[1] then near="" end
+    if not env.pending_command() then
+
+    end
+    --]]
+    local c=line[1]:sub(-2)
+    if c:lower()=="\\g" then
+        line[1]=line[1]:sub(1,-3)..env.END_MARKS[1]
+        if c=="\\G" then
             env.set.doset("PIVOT",20)
         end
     end

@@ -139,10 +139,8 @@ end
 
 function printer.before_command(command)
     local cmd,params,is_internal,line,text=table.unpack(command)
-    
     if not printer.is_more then
         cmd,text=line:match("^(.*)|%s*[mM][oO][rR][eE]$")
-
         if cmd then
             command[1],command[2]=env.eval_line(cmd,false,true)
             printer.is_more,more_text=true,{}

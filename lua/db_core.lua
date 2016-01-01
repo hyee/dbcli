@@ -347,7 +347,7 @@ function db_core.print_feed(sql,result)
             return print(feed:format(obj:initcap()))
         end
     end
-    if type(result)=="number" and result>-1 then return print('\n'..result.." rows impacted.") end
+    if type(result)=="number" and result>0 then return print(result.." rows impacted.") end
     return print('Statement completed.')
 end
 
