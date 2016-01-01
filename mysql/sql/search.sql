@@ -1,7 +1,7 @@
 /*[[ Fuzzily search object. Usage: @@NAME <keyword> ]]*/
 set feed off
 set @target=UPPER(concat('%',:V1,'%'))
-SELECT m.*
+SELECT M.*
 FROM   (SELECT table_schema `Schema`,
                table_name `Top Name`,
                NULL `Sub Name`,

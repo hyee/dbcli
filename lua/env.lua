@@ -184,7 +184,7 @@ function env.list_dir(file_dir,file_ext,text_macher)
             if  text_macher then
                 local f=io.open(n)
                 if f then
-                    local txt=f:read("*a")
+                    local txt=f:read(32767)
                     f:close()
                     if type(text_macher)=="string" then
                         comment=txt:match(text_macher) or ""
@@ -726,7 +726,7 @@ function env.eval_line(line,exec,is_internal,not_skip)
         return multi_cmd
     end
     if env.event then
-        line=table.concat(env.event.callback('BEFORE_EVAL',{line:match('^%s*(%S+)%s*(.*)')})," ")
+        line=table.concat(env.event.callback('BEFORE_EVAL',{line:match('^(.+)%s*(.*)')})," ")
     end
     if multi_cmd then return check_multi_cmd(line) end
     local cmd,rest,end_mark

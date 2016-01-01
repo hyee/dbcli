@@ -219,7 +219,7 @@ function ssh:do_forward(port_info)
     end
     self:check_connection()
     local args=env.parse_args(3,port_info)
-    local_port,remote_port,remote_host=tonumber(args[1]),tonumber(args[2]),args[3]
+    local local_port,remote_port,remote_host=tonumber(args[1]),tonumber(args[2]),args[3]
     env.checkerr(local_port,"Local port should be a number!")
     env.checkerr(remote_port or not args[2],"Remote port should be a number!")
     env.checkerr(local_port>0 and (not remote_port or remote_port>0),"Port number must be larger than 0!")
@@ -264,7 +264,7 @@ function ssh:load_script(alias,filename,...)
     if filename:sub(1,1)~="@" then
         local file=io.open(filename,'r')
         env.checkerr(file,'Cannot open file '..filename)
-        txt=file:read('*a')
+        txt=file:read(10485760)
         file:close()
     else
         txt=filename:sub(2)
