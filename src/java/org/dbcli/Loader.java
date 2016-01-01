@@ -176,60 +176,6 @@ public class Loader {
         this.rs = res;
     }
 
-    public int ResultSet2CSV(final ResultSet rs, final String fileName, final String header, final boolean aync) throws Exception {
-        setCurrentResultSet(rs);
-        return (int) asyncCall(new Callable() {
-            @Override
-            public Integer call() throws Exception {
-                try (CSVWriter writer = new CSVWriter(fileName)) {
-                    writer.setAsyncMode(aync);
-                    int result = writer.writeAll(rs, true);
-                    return result - 1;
-                }
-            }
-        });
-    }
-
-    public int ResultSet2SQL(final ResultSet rs, final String fileName, final String header, final boolean aync) throws Exception {
-        setCurrentResultSet(rs);
-        return (int) asyncCall(new Callable() {
-            @Override
-            public Integer call() throws Exception {
-                try (SQLWriter writer = new SQLWriter(fileName)) {
-                    writer.setAsyncMode(aync);
-                    writer.setFileHead(header);
-                    int count = writer.writeAll2SQL(rs, "", 1500);
-                    return count;
-                }
-            }
-        });
-    }
-
-    public int CSV2SQL(final ResultSet rs, final String SQLFileName, final String CSVfileName, final String header) throws Exception {
-        setCurrentResultSet(rs);
-        return (int) asyncCall(new Callable() {
-            @Override
-            public Integer call() throws Exception {
-                try (SQLWriter writer = new SQLWriter(SQLFileName)) {
-                    writer.setFileHead(header);
-                    return writer.writeAll2SQL(CSVfileName, rs);
-                }
-            }
-        });
-    }
-
-    public Object[][] fetchResult(final ResultSet rs, final int rows) throws Exception {
-        if (rs.getStatement().isClosed() || rs.isClosed()) throw CancelError;
-        setCurrentResultSet(rs);
-        ArrayList<Object[]> ary = (ArrayList) asyncCall(new Callable() {
-            @Override
-            public Object call() throws Exception {
-                return new ResultSetHelperService(rs).fetchRows(rows);
-            }
-        });
-        return ary.toArray(new Object[][]{});
-    }
-
     public String inflate(byte[] data) throws Exception {
         try (ByteArrayInputStream bis = new ByteArrayInputStream(data); InflaterInputStream iis = new InflaterInputStream(bis);) {
 
