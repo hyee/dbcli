@@ -32,7 +32,7 @@ function var.get_input(name)
     return res~=db_core.NOT_ASSIGNED and res or nil
 end
 
-function var.import_context(global,input,output)
+function var.import_context(global,input,output,cols)
     for k,v in pairs(global) do var.global_context[k]=v end
     for k,v in pairs(input or {}) do var.inputs[k]=v end
     if input then
@@ -43,14 +43,21 @@ function var.import_context(global,input,output)
             if not input[k] and not output[k] then var.inputs[k]=nil end
         end
     end
+    if cols then
+        for k,v in pairs(cols) do var.columns[k]=v end
+        for k,v in pairs(var.columns) do
+            if not cols[k] then var.columns[k]=nil end
+        end
+    end
 end
 
 function var.backup_context()
-    local global,input,output={},{},{}
+    local global,input,output,cols={},{},{},{}
     for k,v in pairs(var.global_context) do global[k]=v end
     for k,v in pairs(var.inputs) do input[k]=v end
     for k,v in pairs(var.outputs) do output[k]=v end
-    return global,input,output
+    for k,v in pairs(var.columns) do cols[k]=v end
+    return global,input,output,cols
 end
 
 function var.setOutput(name,datatype,desc)
@@ -236,9 +243,9 @@ end
 function var.capture_before_cmd(cmd,args)
     if not var.cmdlist or not var.cmdlist[cmd] then
         env.log_debug("var","Backup variables")
-        var._backup,var._inputs_backup,var._outputs_backup=var.backup_context()
+        var._backup,var._inputs_backup,var._outputs_backup,var._columns_backup=var.backup_context()
     else
-        var._backup,var._inputs_backup,var._outputs_backup=nil,nil,nil
+        var._backup,var._inputs_backup,var._outputs_backup,var._columns_backup=nil,nil,nil,nil
     end
 end
 
@@ -246,8 +253,8 @@ function var.capture_after_cmd(cmd)
     if #env.RUNNING_THREADS>1 then return end
     if var._backup then
         env.log_debug("var","Reset variables")
-        var.import_context(var._backup,var._inputs_backup,var._outputs_backup)
-        var._backup,var._inputs_backup,var._outputs_backup=nil,nil,nil
+        var.import_context(var._backup,var._inputs_backup,var._outputs_backup,var._columns_backup)
+        var._backup,var._inputs_backup,var._outputs_backup,var._columns_backup=nil,nil,nil,nil
     end
 end
 
