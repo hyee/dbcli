@@ -936,11 +936,12 @@ function env.unload()
     end
 end
 
+env.REOAD_SIGNAL=false
 function env.reload()
     print("Reloading environment ...")
     env.unload()
     java.loader.ReloadNextTime=env.CURRENT_DB
-    env.PRI_PROMPT="_____EXIT_____"
+    env.REOAD_SIGNAL=true
 end
 
 function env.load_data(file,isUnpack)
