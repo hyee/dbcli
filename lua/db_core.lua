@@ -510,6 +510,7 @@ function db_core:exec(sql,args)
 
     local autocommit=cfg.get("AUTOCOMMIT")
     if self.autocommit~=autocommit then
+        if self.autocommit=="on" then self.conn:commit() end
         self.conn:setAutoCommit(autocommit=="on" and true or false)
         self.autocommit=autocommit
     end
@@ -585,7 +586,7 @@ function db_core:is_connect()
 end
 
 function db_core:assert_connect()
-    env.checkerr(self:is_connect(),2,"Database is not connected!")
+    env.checkerr(self:is_connect(),2,"%s database is not connected!",env.set.get("database"):initcap())
 end
 
 function db_core:internal_call(sql,args)
@@ -655,9 +656,8 @@ function db_core:connect(attrs,data_source)
 
     self.conn=res
     env.checkerr(self.conn,"Unable to connect to db!")
-    local autocommit=cfg.get("AUTOCOMMIT")
-    self.autocommit=autocommit
-    self.conn:setAutoCommit(autocommit=="on" and true or false)
+    self.autocommit=cfg.get("AUTOCOMMIT")
+    self.conn:setAutoCommit(self.autocommit=="on" and true or false)
     if event then
         event("TRIGGER_CONNECT",self,attrs.jdbc_alias or url,attrs)
         event("AFTER_DB_CONNECT",self,attrs.jdbc_alias or url,attrs)
@@ -673,12 +673,13 @@ function db_core:connect(attrs,data_source)
             env.log_debug("db","Connection properties:\n",self.properties)
         end
     end
+    self.last_login_account=attrs
     return self.conn
 end
 
 function db_core:reconnnect()
-    if self.conn_str then
-        self:connect(packer.unpack_str(self.conn_str))
+    if self.last_login_account then
+        self:connect(self.last_login_account)
     end
 end
 
@@ -912,6 +913,7 @@ function db_core:__onload()
     cfg.init("NULL","",nil,"db.core","Define the display value for NULL value")
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
     env.event.snoop('TRIGGER_LOGIN',self.login,self)
+    set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
     env.set_command(self,"sql2file","Export Query Result into SQL file. Usage: @@NAME <file_name>[.sql|gz|zip] <sql|cursor>" ,self.sql2sql,'__SMART_PARSE__',3)
     env.set_command(self,"sql2csv","Export Query Result into CSV file. Usage: @@NAME <file_name>[.csv|gz|zip] <sql|cursor>" ,self.sql2csv,'__SMART_PARSE__',3)
     env.set_command(self,"csv2sql","Convert CSV file into SQL file. Usage: @@NAME <sql_file>[.sql|gz|zip] <csv_file>" ,self.csv2sql,false,3)

@@ -41,8 +41,6 @@ function oracle:helper(cmd)
                  connect <user>/<password>@[//]<ip_address|host_name>[:<port>]:<sid> [as sysdba]
         ]],
         CONN=[[Refer to command 'connect']],
-        RECONNECT=[[Re-connect the last connection, normally used when previous connection was disconnected for unknown reason.]],
-        RECONN=[[Refer to command 'reconnect']],
     })[cmd]
 end
 
@@ -376,7 +374,7 @@ function oracle:onload()
     add_default_sql_stmt('update','delete','insert','merge','truncate','drop','flashback')
     add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge')
     set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
-    set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
+    
     set_command(self,{"select","with"},   default_desc,        self.query     ,true,1,true)
     set_command(self,{"execute","exec","call"},default_desc,self.run_proc,false,2,true)
     set_command(self,{"declare","begin"},  default_desc,  self.exec  ,self.check_completion,1,true)
