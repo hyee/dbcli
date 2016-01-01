@@ -131,7 +131,6 @@ function db2:onload()
                  4) Connect to remote PureScale db#2: conn db2admin/db2pwd@192.168.6.1:60001^192.168.6.2:60002/sample
     ]]
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
-    set_command(self,{"reconnect","reconn"}, "Re-connect current database",self.reconnnect,false,2)
     set_command(self,{"declare","begin"}, default_desc,  self.command_call  ,self.check_completion,1,true)
     set_command(self,"create",   default_desc,  self.command_call      ,self.check_completion,1,true)
     set_command(self,"alter" ,   default_desc,  self.command_call      ,true,1,true)
