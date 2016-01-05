@@ -507,6 +507,7 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     if not isMain and not res[1] and (not env.set or env.set.get("OnErrExit")=="on") then error() end
 
     local clock=os.clock()-_THREADS._clock[index]
+    clock,_THREADS._clock[index]=math.floor(clock*1e3)/1e3
     if event and not is_internal then
         event("AFTER_SUCCESS_COMMAND",name,params,res[2],is_internal,arg_text,clock)
     end
@@ -514,7 +515,6 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     if env.PRI_PROMPT=="TIMING> " and isMain then
         env.CURRENT_PROMPT=string.format('%06.2f',clock)..'> '
         env.MTL_PROMPT=string.rep(' ',#env.CURRENT_PROMPT)
-        _THREADS._clock[index]=nil
     end
     return table.unpack(res,2)
 end
