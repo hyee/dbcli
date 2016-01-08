@@ -17,7 +17,7 @@ SELECT sess.inst_id, sess.sid, XIDUSN || '.' || XIDSLOT || '.' || XIDSQN transac
        t.phy_io
 FROM   gv$transaction t, v$rollname r,
        (SELECT VALUE FROM v$parameter WHERE NAME = 'db_block_size') p, gv$session sess,gv$sesstat a
-WHERE  t.xidusn = r.usn
+WHERE  t.xidusn = r.usn(+)
 AND    t.ses_addr = sess.saddr(+)
 AND    t.inst_id = sess.inst_id(+)
 AND    a.sid(+) = sess.sid

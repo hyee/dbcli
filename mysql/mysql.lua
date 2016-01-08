@@ -213,10 +213,10 @@ function mysql:help_topic(...)
             local topic=self:get_value("select a.name,description,example,b.name as category"..help_table.."where a.name like :1 order by a.name limit 1",liker)
             env.checkerr(topic,"No such topic: "..keyword)
             topic[1]='Name:  '..topic[4].." / "..topic[1]
-            local desc='$HEADCOLOR$'..topic[1].."$NOR$ \n$HEADCOLOR$"..('='):rep(#topic[1])
-                      ..("$NOR$ \n"..topic[2]:gsub("^%s*Syntax:%s*","")):gsub("\r?\n\r?","\n  ")
+            local desc='$HEADCOLOR$'..topic[1].."$NOR$ \n"..('='):rep(#topic[1])
+                      ..(" \n"..topic[2]:gsub("^%s*Syntax:%s*","")):gsub("\r?\n\r?","\n  ")
             if (topic[3] or ""):trim()~="" then
-                desc=desc.."\n$HEADCOLOR$Examples: $NOR$\n$HEADCOLOR$========= $NOR$"..(("\n"..topic[3]):gsub("\r?\n\r?","\n  "))
+                desc=desc.."\n$HEADCOLOR$Examples: $NOR$\n========= "..(("\n"..topic[3]):gsub("\r?\n\r?","\n  "))
             end
             print(ansi.convert_ansi((desc:gsub("%s+$",""))))
         end

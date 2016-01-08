@@ -1,4 +1,4 @@
-/*[[Enable/disable trace. Usage: @@NAME [<sql_id>|<SES-XXXXX>|<SYS-XXXXX>|<ORA-XXXXX>|<sid,serial#>|<event>|me|default] [trace_level]  ]]
+/*[[Enable/disable trace. Usage: @@NAME [<sql_id>|<SES-XXXXX>|<SYS-XXXXX>|<ORA-XXXXX>|<sid,serial#>|<event>|me|default] [trace_level] 
     Trace specific SQL ID(11g+ only):  @@NAME <sql_id[|sql_id...]> [trace_level] --i.e. @@NAME c4s58ggj09n39|2v88j3u7nuddj 1
     Trace specific process(11g+)    :  @@NAME "process:..."        [trace_level] --i.e. @@NAME process:6917|7293 / process:pid=2 / process:orapid=46|48 / process:pname=dbw0|smon
     Trace specific Session          :  @@NAME <sid,serial>         [trace_level] --i.e. @@NAME 1,1

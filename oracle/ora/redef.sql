@@ -14,7 +14,7 @@ DECLARE
             org_table       VARCHAR2(30) := '@org_table'; --Table to be redefined
             new_table       VARCHAR2(30) := '@new_table'; --The interim table
             part_name       VARCHAR2(30) := '@part_name'; --Partition name of org_table
-            parallel_degree PLS_INTEGER := 16;
+            parallel_degree PLS_INTEGER  := 16;
             options_flag    PLS_INTEGER;
             cnt             PLS_INTEGER;
             cols            VARCHAR2(32767):='@cols';--Can be null if all columns are equal
@@ -66,9 +66,9 @@ DECLARE
                 options_flag := sys.dbms_redefinition.cons_use_rowid;
                 pr('Entering mode: dbms_redefinition.cons_use_rowid');
             END IF;
-            pr('Verifying the practicability of online redefintion...');
+            pr('Verifying the practicability of online redefinition...');
             sys.dbms_redefinition.can_redef_table(usr, org_table, options_flag, part_name);
-            pr('Start online redefintion...');
+            pr('Start online redefinition...');
             sys.dbms_redefinition.start_redef_table(uname        => usr,
                                                     orig_table   => org_table,
                                                     int_table    => new_table,
@@ -83,14 +83,14 @@ DECLARE
                 pr('Start sync data...');
                 sys.dbms_redefinition.sync_interim_table(usr, org_table, new_table, part_name);
                 sys.dbms_redefinition.finish_redef_table(usr, org_table, new_table, part_name);
-                pr('Completion of online redefintion.');
+                pr('Completion of online redefinition.');
             EXCEPTION
                 WHEN OTHERS THEN
                     sys.dbms_redefinition.abort_redef_table(usr, org_table, new_table, part_name);
                     RAISE;
             END;
             
-            pr('Validating dependencies after online redefintion...');
+            pr('Validating dependencies after online redefinition...');
             FOR r IN (SELECT constraint_name, constraint_type
                       FROM   all_constraints
                       WHERE  owner = usr

@@ -227,7 +227,7 @@ end
 
 function ResultSet:rows(rs,count,limit,null_value)
     if rs:isClosed() then return end
-    count=tonumber(count) or tonumber(cfg.get("printsize"))
+    count=tonumber(count) or -1
     local head=self:getHeads(rs,limit).__titles
     local rows,result={head},loader:fetchResult(rs,count)
     null_value=null_value or ""
