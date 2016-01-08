@@ -171,11 +171,18 @@ function mysql:onload()
 end
 
 function mysql:on_eval(line)
-    local ind=line[2] and line[2]~="" and 2 or 1
-    local rest=env.END_MARKS.match(line[ind])
-    if rest:match("\\[gG]$") then
-        line[ind]=line[ind]:sub(1,-3)..env.END_MARKS[1]
-        if rest:sub(-2)=="\\G" then
+    --[[
+    local first,near,symbol,rest=line:match("^(.*)(.)\\([gG])(.*)")
+    if not first or near=="\\" then return end
+    if near==env.END_MARKS[1] then near="" end
+    if not env.pending_command() then
+
+    end
+    --]]
+    local c=line[1]:sub(-2)
+    if c:lower()=="\\g" then
+        line[1]=line[1]:sub(1,-3)..env.END_MARKS[1]
+        if c=="\\G" then
             env.set.doset("PIVOT",20)
         end
     end
@@ -206,10 +213,10 @@ function mysql:help_topic(...)
             local topic=self:get_value("select a.name,description,example,b.name as category"..help_table.."where a.name like :1 order by a.name limit 1",liker)
             env.checkerr(topic,"No such topic: "..keyword)
             topic[1]='Name:  '..topic[4].." / "..topic[1]
-            local desc='$HEADCOLOR$'..topic[1].."$NOR$ \n$HEADCOLOR$"..('='):rep(#topic[1])
-                      ..("$NOR$ \n"..topic[2]:gsub("^%s*Syntax:%s*","")):gsub("\r?\n\r?","\n  ")
+            local desc='$HEADCOLOR$'..topic[1].."$NOR$ \n"..('='):rep(#topic[1])
+                      ..(" \n"..topic[2]:gsub("^%s*Syntax:%s*","")):gsub("\r?\n\r?","\n  ")
             if (topic[3] or ""):trim()~="" then
-                desc=desc.."\n$HEADCOLOR$Examples: $NOR$\n$HEADCOLOR$========= $NOR$"..(("\n"..topic[3]):gsub("\r?\n\r?","\n  "))
+                desc=desc.."\n$HEADCOLOR$Examples: $NOR$\n========= "..(("\n"..topic[3]):gsub("\r?\n\r?","\n  "))
             end
             print(ansi.convert_ansi((desc:gsub("%s+$",""))))
         end

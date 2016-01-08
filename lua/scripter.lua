@@ -457,7 +457,7 @@ function scripter:__onload()
     self.short_dir=self.script_dir:match('([^\\/]+)$')
     self.extend_dirs=env.set.get_config(self.__className..".extension")
     if self.command and self.command~="" then
-        env.set_command(self,self.command, self.helper,{self.run_script,self.after_script},false,ARGS_COUNT+1)
+        env.set_command(self,self.command, {self.help_title.." Type '@@NAME' for more detail.",self.helper},{self.run_script,self.after_script},false,ARGS_COUNT+1)
     end
 end
 

@@ -68,7 +68,7 @@ set feed off
 set printvar on
 VAR actives refcursor "Active Sessions"
 VAR time_model refcursor "Top Session Time Model"
-ALTER SESSION SET PLSQL_CCFlags = "CHECK_ACCESS_M:&smen";
+ALTER /*INTERNAL_DBCLI_CMD*/ SESSION SET PLSQL_CCFlags = "CHECK_ACCESS_M:&smen";
 DECLARE
     time_model sys_refcursor;
 BEGIN

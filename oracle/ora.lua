@@ -56,9 +56,54 @@ function ora:validate_accessable(name,options,values)
     return default
 end
 
-local cache_obj={}
+local cache_obj,loaded={}
 function db:check_obj(obj_name)
     local obj=obj_name and obj_name:upper()
+    if not loaded then
+        local args={"#CLOB"}
+        db:internal_call([[
+        DECLARE
+            TYPE t IS TABLE OF VARCHAR2(120);
+            t1 t;
+            c  CLOB;
+            c1 VARCHAR2(32767);
+        BEGIN
+            SELECT /*+ordered_predicates*/ 
+                   owner || '/' || object_name || '/' || object_type || '/' || object_id || ','
+            BULK   COLLECT
+            INTO   t1
+            FROM   all_objects
+            WHERE  owner IN ('SYS', 'PUBLIC')
+            AND    regexp_like(object_name, '^(G?V\_?\$|DBA|DBMS|UTL)')
+            AND    subobject_name IS NULL
+            AND    object_type not like '% BODY';
+            dbms_lob.createtemporary(c, TRUE);
+            FOR i IN 1 .. t1.count LOOP
+                c1 := c1 || t1(i);
+                IF LENGTHB(c1) > 32000 THEN
+                    dbms_lob.writeappend(c, LENGTHB(c1), c1);
+                    c1 := NULL;
+                END IF;
+            END LOOP;
+            IF c1 IS NOT NULL THEN
+                dbms_lob.writeappend(c, LENGTHB(c1), c1);
+            END IF;
+            :1 := c;
+        END;]],args)
+        loaded=0
+        for o,n,t,i in args[1]:gmatch("(.-)/(.-)/(.-)/(.-),") do
+            loaded=loaded+1
+            local item={
+                target=o.."."..n,
+                owner=o,
+                object_type=t,
+                object_name=n,
+                object_subname="",
+                object_id=i}
+            item.alias_list={item.target,n}
+            cache_obj[item.target],cache_obj[n]=item,item
+        end
+    end
     if obj and cache_obj[obj] then return cache_obj[obj] end
     db.C.ora:run_script('_find_object',obj_name,1)
     local args={
@@ -121,7 +166,7 @@ function db:check_access(obj_name,...)
 end
 
 function ora.onreset()
-    cache_obj={}
+    cache_obj,loaded={}
 end
 
 function ora.onload()

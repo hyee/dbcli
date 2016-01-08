@@ -39,9 +39,10 @@ end
 
 mt.__declared = {}
 
+local debug_mode=os.getenv("DEBUG_MODE")
 mt.__newindex = function (t, n, v)
     if not mt.__declared[n] and env.WORK_DIR then
-        --if n=='args' then print('Detected unexpected global var "'..n..'" with', debug.traceback()) end
+        if debug_mode and env.IS_ENV_LOADED and n~='reset_input' and n:upper()~=n then print('Detected unexpected global var "'..n..'" with', debug.traceback()) end
         rawset(mt.__declared, n,env.callee(5))
     end
     rawset(t, n, v)
@@ -74,11 +75,13 @@ function env.ppcall(f, ...)
     return xpcall(f, pcall_error, ...)
 end
 
+local writer,_THREADS=writer,{_clock={}}
+env.RUNNING_THREADS=_THREADS
 local dbcli_stack,dbcli_cmd_history={},{}
 local dbcli_current_item=dbcli_stack
 env.__DBCLI__STACK,env.__DBCLI__CMD_HIS=dbcli_stack,dbcli_cmd_history
 local function push_stack(cmd)
-    local threads=env.RUNNING_THREADS
+    local threads=_THREADS
     local thread,isMain,index=env.register_thread()
     local item,callee={},env.callee(4)
     local parent=dbcli_stack[index-1]
@@ -90,7 +93,7 @@ local function push_stack(cmd)
 
     dbcli_stack[index],dbcli_current_item,dbcli_stack.last=item,item,index
 
-    item.clock,item.command,item.callee,item.parent,item.level,item.id=os.clock(),cmd,callee,parent,index,thread
+    item.clock,item.command,item.callee,item.parent,item.level,item.id=_THREADS._clock[index],cmd,callee,parent,index,thread
 
     item=dbcli_stack[index+1]
 end
@@ -413,16 +416,14 @@ end
 
 function env.checkerr(result,index,msg,...)
     local stack
+    if result then return end
     if type(index)~="number" then
-        index,msg,stack=4,index,{4,index,msg,...}
+        stack={4,index,msg,...}
     else
-        stack={index+3,msg,...}
+        stack={index+3,msg,...}  
     end
-    
-    if not result then
-        if type(msg)=="function" then msg=msg(...) end
-        env.raise(table.unpack(stack))
-    end
+    if type(stack[2])=="function" then stack[2]=stack[2](table.unpack(stack,3)) end
+    env.raise(table.unpack(stack))
 end
 
 function env.checkhelp(arg)
@@ -460,33 +461,31 @@ function _exec_command(name,params)
     return table.unpack(result)
 end
 
-local writer=writer
-env.RUNNING_THREADS={}
 
 function env.register_thread(this,isMain)
-    local threads=env.RUNNING_THREADS
+    local threads=_THREADS
     if not this then this,isMain=coroutine.running() end
-    if isMain then
-        threads[this],threads[1]=1,this
-    end
-    if not threads[this] then
-        threads[this],threads[#threads+1]=#threads+1,this
+    if isMain then threads[this],threads[1]=1,this end
+    local index,clock=threads[this],threads._clock
+    if not index then
+        index=#threads+1
+        threads[this],threads[index],clock[index]=index,this,os.clock()
     else
-        for i=threads[this]+1,#threads do 
+        for i=index+1,#threads do 
             threads[i],threads[threads[i]]=nil,nil
         end
+        if not clock[index] then clock[index]=os.clock() end
     end
-    return this,isMain,#threads
+    return this,isMain,index
 end
 
 function env.exec_command(cmd,params,is_internal,arg_text)
     local name=cmd:upper()
     local event=env.event and env.event.callback
-    local this,isMain=env.register_thread()
+    local this,isMain,index=env.register_thread()
     is_internal,arg_text=is_internal or false,arg_text or ""
     env.CURRENT_CMD=name
-    if _CMDS[name] and _CMDS[name].ARGS>1 then arg_text=cmd.." "..arg_text end
-    push_history(arg_text)
+    arg_text=cmd.." "..arg_text
     if event then
         if isMain then
             if writer then
@@ -506,8 +505,16 @@ function env.exec_command(cmd,params,is_internal,arg_text)
         event("AFTER_COMMAND",name,params,res[2],is_internal,arg_text)
     end
     if not isMain and not res[1] and (not env.set or env.set.get("OnErrExit")=="on") then error() end
-    if event and not is_internal then 
-        event("AFTER_SUCCESS_COMMAND",name,params,res[2],is_internal)
+
+    local clock=os.clock()-_THREADS._clock[index]
+    clock,_THREADS._clock[index]=math.floor(clock*1e3)/1e3
+    if event and not is_internal then
+        event("AFTER_SUCCESS_COMMAND",name,params,res[2],is_internal,arg_text,clock)
+    end
+
+    if env.PRI_PROMPT=="TIMING> " and isMain then
+        env.CURRENT_PROMPT=string.format('%06.2f',clock)..'> '
+        env.MTL_PROMPT=string.rep(' ',#env.CURRENT_PROMPT)
     end
     return table.unpack(res,2)
 end
@@ -653,13 +660,12 @@ function env.parse_args(cmd,rest,is_cross_line)
             args[#args+1]=piece
         end
     end
-
     return args,cmd
 end
 
 function env.force_end_input(exec,is_internal)
     if curr_stmt then
-        local text,stmt=multi_cmd..' '..curr_stmt,{multi_cmd,env.parse_args(multi_cmd,curr_stmt,true)}
+        local text,stmt=curr_stmt,{multi_cmd,env.parse_args(multi_cmd,curr_stmt,true)}
         multi_cmd,curr_stmt=nil,nil
         env.CURRENT_PROMPT=env.PRI_PROMPT
         if exec~=false then
@@ -726,7 +732,7 @@ function env.eval_line(line,exec,is_internal,not_skip)
         return multi_cmd
     end
     if env.event then
-        line=table.concat(env.event.callback('BEFORE_EVAL',{line:match('^(.+)%s*(.*)')})," ")
+        line=env.event.callback('BEFORE_EVAL',{line})[1]
     end
     if multi_cmd then return check_multi_cmd(line) end
     local cmd,rest,end_mark
@@ -748,7 +754,6 @@ function env.eval_line(line,exec,is_internal,not_skip)
     --print('Command:',cmd,table.concat (args,','))
     rest=env.END_MARKS.match(rest)
     local args=env.parse_args(cmd,rest)
-
     if exec~=false then
         env.exec_command(cmd,args,is_internal,rest)
     else
@@ -931,11 +936,12 @@ function env.unload()
     end
 end
 
+env.REOAD_SIGNAL=false
 function env.reload()
     print("Reloading environment ...")
     env.unload()
     java.loader.ReloadNextTime=env.CURRENT_DB
-    env.CURRENT_PROMPT="_____EXIT_____"
+    env.REOAD_SIGNAL=true
 end
 
 function env.load_data(file,isUnpack)

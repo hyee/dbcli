@@ -9,10 +9,10 @@ function history:show(index)
     index=tonumber(index)
     if not index then
         local hdl,counter=grid.new(),0
-        grid.add(hdl,{"#","Command"})
+        grid.add(hdl,{"#","Secs","Command"})
         for i=#self,1,-1 do
             counter=counter+1
-            grid.add(hdl,{counter,self[i].desc})
+            grid.add(hdl,{counter,self[i].clock,self[i].desc})
         end
         grid.print(hdl)
     else
@@ -23,19 +23,17 @@ function history:show(index)
     end
 end
 
-function history:capture(cmd,args)
+function history:capture(cmd,args,res,is_internal,command_text,clock)
     if #env.RUNNING_THREADS>1 then return end
+    --if(cmd==nil) then print(debug.traceback()) end
     cmd=cmd:upper()
     if (cmd=="HIS" or cmd=="/" or cmd=="R" or cmd=="HISTORY") then return end
     local maxsiz=cfg.get("HISSIZE")
-    local key=table.concat(args," "):gsub("[%s%z\128\192]+"," "):sub(1,300):upper()
-    if key:find(cmd.." ")~=1 then
-        key=cmd.." "..key
-    end
+    local key=command_text:gsub("[%s%z\128\192]+"," "):sub(1,300):upper()
     if keys[key] then
         table.remove(self,keys[key])
     end
-    lastcommand={cmd=cmd,desc=key,args=args,tim=os.clock()}
+    lastcommand={cmd=cmd,desc=key,args=args,tim=os.clock(),clock=clock}
     if maxsiz < 1 then return end
     table.insert(self,lastcommand)
     while #self>maxsiz do
