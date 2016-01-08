@@ -388,7 +388,6 @@ function scripter:check_ext_file(cmd)
     env.checkerr(exist==1,"Cannot find this file: "..cmd)
     local target_dir=self:rehash(cmd,'*')
     cmd=cmd:match('([^\\/]+)$'):match('[^%.%s]+'):upper()
-    print(table.dump(target_dir))
     return target_dir,cmd
 end
 
