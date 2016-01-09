@@ -195,7 +195,7 @@ end
 
 function mysql:help_topic(...)
     local keyword=table.concat({...}," "):upper():trim()
-    liker={keyword:find("%$") and keyword or (keyword.."%")}
+    local liker={keyword:find("%$") and keyword or (keyword.."%")}
     local desc
     env.set.set("feed","off")
     local help_table=" from mysql.help_topic as a join mysql.help_category as b using(help_category_id) "

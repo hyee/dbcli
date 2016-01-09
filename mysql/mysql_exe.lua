@@ -49,8 +49,8 @@ function mysql_exe:get_startup_cmd(args,is_native)
     db:assert_connect()
     local conn=db.connection_info
     local props={"--default-character-set=utf8",'-n','-u',conn.user,'-P',conn.port,'-h',conn.hostname}
-    if conn.database~="" then
-        props[#props+1]="--database="..conn.database
+    if db.props.database~="" then
+        props[#props+1]="--database="..db.props.database
     end
     local pwd=packer.unpack_str(conn.password)
     if (pwd or "")~="" then
