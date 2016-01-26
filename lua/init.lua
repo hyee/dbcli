@@ -3,7 +3,6 @@ local dirs={"lib","cache","data"}
 local init={
     module_list={
        --Libraries ->
-        "lib/glue",
         "lib/json",
         "lib/MessagePack",
         "lib/ProFi",
