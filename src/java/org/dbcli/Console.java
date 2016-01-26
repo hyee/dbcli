@@ -60,9 +60,9 @@ public class Console extends ConsoleReader {
         charset = this.getTerminal().getOutputEncoding() == null ? Configuration.getEncoding() : this.getTerminal().getOutputEncoding();
         field.set(this, new InputStreamReader(in, charset));
         field.setAccessible(false);
-        t_puts=ConsoleReader.class.getDeclaredMethod("tputs", String.class, Object[].class);
+        t_puts = ConsoleReader.class.getDeclaredMethod("tputs", String.class, Object[].class);
         t_puts.setAccessible(true);
-        writer=new PrintWriter(System.getenv("ANSICON_DEF") != null ? new OutputStreamWriter(System.out, Console.charset) : getOutput());
+        writer = new PrintWriter(System.getenv("ANSICON_DEF") != null ? new OutputStreamWriter(System.out, Console.charset) : getOutput());
         //in=(NonBlockingInputStream)this.getInput();
         Iterator<Completer> iterator = getCompleters().iterator();
         threadID = Thread.currentThread().getId();
@@ -83,21 +83,21 @@ public class Console extends ConsoleReader {
         });
     }
 
-    public void doTPuts(String s,Object... o) throws Exception{
-        t_puts.invoke(this,s,o);
+    public void doTPuts(String s, Object... o) throws Exception {
+        t_puts.invoke(this, s, o);
     }
 
-    public void write(String msg) throws Exception{
+    public void write(String msg) throws Exception {
         print(msg);
         flush();
     }
 
     public Object invokeMethod(String method, Object... o) throws Exception {
-        Method m=null;
+        Method m = null;
         if (!methods.containsKey(method)) {
-            Class<?>[] cls=new Class[o.length];
-            for(int i=0;i<o.length;i++) cls[i]=o[i] instanceof Class<?> ? (Class<?>) o[i] : o[i].getClass();
-            m = ConsoleReader.class.getDeclaredMethod(method,cls);
+            Class<?>[] cls = new Class[o.length];
+            for (int i = 0; i < o.length; i++) cls[i] = o[i] instanceof Class<?> ? (Class<?>) o[i] : o[i].getClass();
+            m = ConsoleReader.class.getDeclaredMethod(method, cls);
             m.setAccessible(true);
             methods.put(method, m);
         } else m = methods.get(method);
