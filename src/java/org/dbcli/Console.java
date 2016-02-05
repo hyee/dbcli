@@ -77,7 +77,7 @@ public class Console extends ConsoleReader {
                     lua.call(2, 1);
                     int r = lua.toInteger(lua.getTop());
                     //System.out.println(r);
-                    if (r == 2) ((long[]) c[0])[0] = 2;
+                    if (r == 2) ((byte[]) c[0])[0] = 2;
                 }
             }
         });
