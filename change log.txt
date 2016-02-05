@@ -1,5 +1,5 @@
 2016-02-05: * oracle: Can limit the depth(2nd parameter) of 'ora deptree'
-            * public: import input performance
+            * public: improve input performance
 2016-01-26: * oracle: new -e option on 'ora ashtop'
             * public: update LuaJIT 
 2016-01-06: + public: new command "hotkeys" to show available hot keys
