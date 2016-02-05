@@ -1,5 +1,5 @@
 /*[[show active transactions]]*/
-SELECT sess.inst_id, sess.sid, XIDUSN || '.' || XIDSLOT || '.' || XIDSQN transaction#, r.name rollback_seg_name,
+SELECT sess.inst_id, sess.sid, schemaname, XIDUSN || '.' || XIDSLOT || '.' || XIDSQN transaction#, r.name rollback_seg_name,
        USED_UBLK undo_blocks, t.used_urec records,
        round(t.used_ublk * p.value/1024/1024,2) used_mb,
        DECODE(t.space,

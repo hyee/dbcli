@@ -1,5 +1,5 @@
 /*[[
-    Show object dependency, usage: @@NAME [-c|-p] [-t|-l] [owner.]name
+    Show object dependency, usage: @@NAME [-c|-p] [-t|-l] [owner.]name [depth]
     Options:
        p: Show target object's depending objects(default)
        c: Show the objects that depend on target object
@@ -30,11 +30,11 @@ DECLARE
     TYPE t IS TABLE OF VARCHAR2(1) INDEX BY VARCHAR2(22);
     v_founds  t;
     v_result  CLOB;
-    v_object  VARCHAR2(61) := UPPER(:V1);
     v_objid   INT;
     v_owner   VARCHAR2(30);
     v_counter PLS_INTEGER := 0;
     v_curobj  INT:=-1;
+    v_level   PLS_INTEGER := nvl(to_number(:V2),99);
     cur       SYS_REFCURSOR;
     PROCEDURE n(obj INT, lv INT, con INT:=NULL) IS
         TYPE t IS TABLE OF INT;
@@ -44,6 +44,7 @@ DECLARE
         v_stack VARCHAR2(200);
         v_bdy   INT;
     BEGIN
+        IF lv>v_level THEN RETURN; END IF;
         IF &CC =1 OR NOT v_founds.exists(obj) THEN
             v_stack := '<ROW><OBJ>' || obj||  '</OBJ><CON>' || con ||'</CON><LV>' || lv || '</LV></ROW>';
             dbms_lob.writeappend(v_result, LENGTH(v_stack), v_stack);
