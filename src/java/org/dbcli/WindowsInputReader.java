@@ -1,6 +1,5 @@
 package org.dbcli;
 
-import com.sun.org.apache.bcel.internal.generic.Select;
 import jline.internal.NonBlockingInputStream;
 import org.fusesource.jansi.internal.Kernel32.INPUT_RECORD;
 import org.fusesource.jansi.internal.Kernel32.KEY_EVENT_RECORD;
@@ -13,13 +12,7 @@ import java.io.PipedOutputStream;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.channels.Pipe;
-import java.nio.channels.ReadableByteChannel;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
-import java.util.Arrays;
 import java.util.HashMap;
-import java.util.Iterator;
 
 public class WindowsInputReader extends NonBlockingInputStream {
     public static final int altState = KEY_EVENT_RECORD.LEFT_ALT_PRESSED | KEY_EVENT_RECORD.RIGHT_ALT_PRESSED;
@@ -81,27 +74,23 @@ public class WindowsInputReader extends NonBlockingInputStream {
     static HashMap<Object, EventCallback> eventMap = new HashMap<>();
     byte[] buf = null;
     int bufIdx = 0;
-
+    PipedOutputStream pipeOut;
+    PipedInputStream pipeIn;
     private volatile boolean isShutdown = false;
     private IOException exception = null;
     private volatile byte[][] peeker;
     private volatile boolean isPause = false;
     private volatile boolean isRead = false;
-    private ByteBuffer inputBuff = ByteBuffer.allocateDirect(255).order(ByteOrder.nativeOrder());
-    private ByteBuffer keyBuff = ByteBuffer.allocateDirect(KEY_SIZE).order(ByteOrder.nativeOrder());
+    private ByteBuffer inputBuff = ByteBuffer.allocateDirect(255);
     private boolean nonBlockingEnabled;
     private int ctrlFlags;
 
-    Selector selector= Selector.open();
-    Pipe pipe= Pipe.open();
-    Iterator<SelectionKey> keys;
-
     public WindowsInputReader() throws Exception {
         super(System.in, false);
+        inputBuff.order(ByteOrder.nativeOrder());
         this.nonBlockingEnabled = true;
-        selector.wakeup();
-        pipe.source().configureBlocking(false);
-        pipe.source().register(selector, SelectionKey.OP_READ, ByteBuffer.allocateDirect(32767).order(ByteOrder.nativeOrder()));
+        pipeOut = new PipedOutputStream();
+        pipeIn = new PipedInputStream(pipeOut);
         Thread t = new Thread(this);
         t.setName("NonBlockingInputStreamThread");
         t.setDaemon(true);
@@ -131,10 +120,10 @@ public class WindowsInputReader extends NonBlockingInputStream {
     public synchronized void shutdown() {
         if (!isShutdown) try{
             isShutdown = true;
-            selector.close();
-            synchronized (pipe) {pipe.notify();}
-            pipe.sink().close();
-            pipe.source().close();
+            synchronized(pipeOut) {pipeOut.notify();}
+            synchronized(pipeIn) {pipeIn.notify();}
+            pipeIn.close();
+            pipeOut.close();
         } catch (Exception e) {}
     }
 
@@ -275,27 +264,24 @@ public class WindowsInputReader extends NonBlockingInputStream {
 
     public void pause(boolean pause) {
         if (this.isPause == pause) return;
-        if (this.isPause) synchronized (pipe) {
-            pipe.notify();
+        if (this.isPause) synchronized (pipeOut) {
+            pipeOut.notify();
         }
         else this.isPause = pause;
     }
 
     public byte[] getKey(long timeout) throws InterruptedException, IOException {
-        if(keys==null) {
-            pause(false);
-            int n=selector.selectNow();
-            if(n==0&&timeout>=0) n=selector.select(timeout);
-            if(selector.selectedKeys().size()==0) return null;
-            keys=selector.selectedKeys().iterator();
-        }
         byte[] b = new byte[KEY_SIZE];
-        keyBuff.clear();
-        ((ReadableByteChannel)keys.next().channel()).read(keyBuff);
-        keys.remove();
-        if(!keys.hasNext()) keys=null;
-        keyBuff.flip();
-        keyBuff.get(b);
+        if (pipeIn.available() < 1) {
+            pause(false);
+            if (timeout > 0) synchronized (pipeIn) {
+                isRead = true;
+                pipeIn.wait(timeout);
+                isRead = false;
+            }
+            if (pipeIn.available() < 1 && timeout != 0) return null;
+        }
+        pipeIn.read(b,0,KEY_SIZE);
         return b;
     }
 
@@ -339,7 +325,6 @@ public class WindowsInputReader extends NonBlockingInputStream {
         exception = null;
         INPUT_RECORD[] input;
         byte[] c;
-        ByteBuffer buff=ByteBuffer.allocateDirect(KEY_SIZE).order(ByteOrder.nativeOrder());
         try {
             while (!isShutdown) {
                 if (!isPause) {
@@ -351,16 +336,17 @@ public class WindowsInputReader extends NonBlockingInputStream {
                         //System.out.println(rec.keyEvent.toString()+"  code="+keyCodes.get(code) + "  uchar=" + (int) rec.keyEvent.uchar);
                         c = new byte[]{(byte) (rec.keyEvent.keyDown ? 1 : 0), (byte) rec.keyEvent.keyCode, (byte) rec.keyEvent.uchar, (byte) (rec.keyEvent.controlKeyState & anyCtrl), (byte) rec.keyEvent.repeatCount,//
                                 (byte) ((rec.keyEvent.controlKeyState & altState) > 0 ? 1 : 0), (byte) ((rec.keyEvent.controlKeyState & ctrlState) > 0 ? 1 : 0), (byte) ((rec.keyEvent.controlKeyState & shiftState) > 0 ? 1 : 0)};
-                        buff.clear();
-                        buff.put(c,0,KEY_SIZE);
-                        buff.flip();
-                        pipe.sink().write(buff);
-                        //pipeIn.notify();
+                        //inputQueue.put(c);
+                        pipeOut.write(c, 0, KEY_SIZE);
+                        pipeOut.flush();
+                        if (isRead) synchronized (pipeIn) {
+                            pipeIn.notify();
+                        }
                         if ((c[KEY_CHAR] == 10 || c[KEY_CHAR] == 13) && c[KEY_DOWN] == 0 && c[KEY_CTRL] == 0)
                             isPause = true;
                     }
-                } else synchronized (pipe) {
-                    pipe.wait(0);
+                } else synchronized (pipeOut) {
+                    pipeOut.wait(0);
                     isPause = false;
                 }
             }
