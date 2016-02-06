@@ -31,6 +31,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
     public static final int KEY_SIZE = 8;
     public static HashMap<Integer, byte[]> keyEvents = new HashMap();
     public static HashMap<Integer, String> keyCodes = new HashMap<>();
+    static HashMap<Object, EventCallback> eventMap = new HashMap<>();
 
     //Escape information: https://www.novell.com/documentation/extend5/Docs/help/Composer/books/TelnetAppendixB.html
     static {
@@ -71,7 +72,6 @@ public class WindowsInputReader extends NonBlockingInputStream {
 
     }
 
-    static HashMap<Object, EventCallback> eventMap = new HashMap<>();
     byte[] buf = null;
     int bufIdx = 0;
     PipedOutputStream pipeOut;
@@ -80,7 +80,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
     private IOException exception = null;
     private volatile byte[][] peeker;
     private volatile boolean isPause = false;
-    private volatile boolean isRead = false;
+    private boolean isRead = false;
     private ByteBuffer inputBuff = ByteBuffer.allocateDirect(255);
     private boolean nonBlockingEnabled;
     private int ctrlFlags;
@@ -118,13 +118,18 @@ public class WindowsInputReader extends NonBlockingInputStream {
      * to return false.
      */
     public synchronized void shutdown() {
-        if (!isShutdown) try{
+        if (!isShutdown) try {
             isShutdown = true;
-            synchronized(pipeOut) {pipeOut.notify();}
-            synchronized(pipeIn) {pipeIn.notify();}
+            synchronized (pipeOut) {
+                pipeOut.notify();
+            }
+            synchronized (pipeIn) {
+                pipeIn.notify();
+            }
             pipeIn.close();
             pipeOut.close();
-        } catch (Exception e) {}
+        } catch (Exception e) {
+        }
     }
 
     @Override
@@ -192,7 +197,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
      * @param timeout The amount of time to wait for the character(<0: without wait, 0: always wait, >0: wait within <timeout> milliseconds)
      * @return The character read, -1 if EOF is reached, or -2 if the read timed out.
      */
-    public synchronized int read(long timeout, boolean isPeek) throws IOException {
+    public int read(long timeout, boolean isPeek) throws IOException {
         int ch = _read(timeout, isPeek);
         return ch;
     }
@@ -270,19 +275,22 @@ public class WindowsInputReader extends NonBlockingInputStream {
         else this.isPause = pause;
     }
 
-    public byte[] getKey(long timeout) throws InterruptedException, IOException {
+    private byte[] getKey(long timeout) throws InterruptedException, IOException {
         byte[] b = new byte[KEY_SIZE];
-        if (pipeIn.available() < 1) {
-            pause(false);
-            if (timeout > 0) synchronized (pipeIn) {
+        try {
+            if (pipeIn.available() < 1) {
+                pause(false);
                 isRead = true;
-                pipeIn.wait(timeout);
-                isRead = false;
+                if (timeout > 0) synchronized(pipeIn){
+                    pipeIn.wait(timeout);
+                }
+                if (isRead && pipeIn.available() < 1 && timeout != 0) return null;
             }
-            if (pipeIn.available() < 1 && timeout != 0) return null;
+            pipeIn.read(b, 0, KEY_SIZE);
+            return b;
+        } finally {
+            isRead=false;
         }
-        pipeIn.read(b,0,KEY_SIZE);
-        return b;
     }
 
     public synchronized byte[][] readRaw(long timeout, boolean isPeek) throws IOException {
@@ -334,12 +342,18 @@ public class WindowsInputReader extends NonBlockingInputStream {
                         //Integer code=Integer.valueOf(rec.keyEvent.keyCode);
                         //if(!keyCodes.containsKey(code)&&rec.keyEvent.uchar>0) keyCodes.put(code,String.valueOf(rec.keyEvent.uchar));
                         //System.out.println(rec.keyEvent.toString()+"  code="+keyCodes.get(code) + "  uchar=" + (int) rec.keyEvent.uchar);
-                        c = new byte[]{(byte) (rec.keyEvent.keyDown ? 1 : 0), (byte) rec.keyEvent.keyCode, (byte) rec.keyEvent.uchar, (byte) (rec.keyEvent.controlKeyState & anyCtrl), (byte) rec.keyEvent.repeatCount,//
-                                (byte) ((rec.keyEvent.controlKeyState & altState) > 0 ? 1 : 0), (byte) ((rec.keyEvent.controlKeyState & ctrlState) > 0 ? 1 : 0), (byte) ((rec.keyEvent.controlKeyState & shiftState) > 0 ? 1 : 0)};
+                        c = new byte[]{(byte) (rec.keyEvent.keyDown ? 1 : 0),//
+                                (byte) rec.keyEvent.keyCode, (byte) rec.keyEvent.uchar,//
+                                (byte) (rec.keyEvent.controlKeyState & anyCtrl),//
+                                (byte) rec.keyEvent.repeatCount,//
+                                (byte) ((rec.keyEvent.controlKeyState & altState) > 0 ? 1 : 0),//
+                                (byte) ((rec.keyEvent.controlKeyState & ctrlState) > 0 ? 1 : 0),//
+                                (byte) ((rec.keyEvent.controlKeyState & shiftState) > 0 ? 1 : 0)};
                         //inputQueue.put(c);
                         pipeOut.write(c, 0, KEY_SIZE);
                         pipeOut.flush();
                         if (isRead) synchronized (pipeIn) {
+                            isRead = false;
                             pipeIn.notify();
                         }
                         if ((c[KEY_CHAR] == 10 || c[KEY_CHAR] == 13) && c[KEY_DOWN] == 0 && c[KEY_CTRL] == 0)
