@@ -12,6 +12,7 @@ import java.io.PipedOutputStream;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 import java.util.HashMap;
 
 public class WindowsInputReader extends NonBlockingInputStream {
@@ -22,13 +23,17 @@ public class WindowsInputReader extends NonBlockingInputStream {
     public static final int funcState = 64;
     public static final int KEY_DOWN = 0;
     public static final int KEY_CODE = 1;
-    public static final int KEY_CHAR = 2;
+    public static final int KEY_CHAR0 = 2;
     public static final int KEY_CTRL = 3;
     public static final int KEY_REPE = 4;
     public static final int KEY_ALT = 5;
     public static final int KEY_CTL = 6;
     public static final int KEY_SFT = 7;
-    public static final int KEY_SIZE = 8;
+    public static final int KEY_CHAR1 = 8;
+    public static final int KEY_CHAR2 = 9;
+    public static final int KEY_CHAR3 = 10;
+    public static final int KEY_SIZE = 11;
+    public static final int[] CHARS= new int[]{KEY_CHAR0,KEY_CHAR1,KEY_CHAR2,KEY_CHAR3};
     public static HashMap<Integer, byte[]> keyEvents = new HashMap();
     public static HashMap<Integer, String> keyCodes = new HashMap<>();
     static HashMap<Object, EventCallback> eventMap = new HashMap<>();
@@ -72,7 +77,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
 
     }
 
-    byte[] buf = null;
+    char[] buf = null;
     int bufIdx = 0;
     PipedOutputStream pipeOut;
     PipedInputStream pipeIn;
@@ -204,13 +209,15 @@ public class WindowsInputReader extends NonBlockingInputStream {
 
 
     int _read(long timeout, boolean isPeek) throws IOException {
-        if (buf != null && bufIdx < buf.length - 1) return (isPeek ? buf[bufIdx + 1] : buf[++bufIdx]) & 0xff;
+        if (buf != null && bufIdx < buf.length - 1) return isPeek ? buf[bufIdx + 1] : buf[++bufIdx];
         String c = readChar(timeout, isPeek);
         if (c == null) return -2;
         if (c == "\0") return -1;
-        buf = (c == "\t" && readChar(10, true) != null ? "    " : c).getBytes();
+        if (c == "\t" && readChar(10, true) != null) c="    ";
+        buf=new char[c.length()];
+        c.getChars(0,buf.length,buf,0);
         bufIdx = 0;
-        return buf[0] & 0xff;
+        return buf[0];
     }
 
     public int getCtrlFlags() {
@@ -229,6 +236,8 @@ public class WindowsInputReader extends NonBlockingInputStream {
             return "\0".intern();
         }
         inputBuff.clear();
+
+
         for (byte[] event : events) {
             if (event == null) continue;
             // Compute the overall alt state
@@ -237,11 +246,14 @@ public class WindowsInputReader extends NonBlockingInputStream {
             Integer code = Integer.valueOf((int) event[KEY_CODE]);
             //Log.trace(keyEvent.keyDown? "KEY_DOWN" : "KEY_UP", "key code:", keyEvent.keyCode, "char:", (long)keyEvent.uchar);
             if (event[KEY_DOWN] == 1) {
-                //System.out.println(Arrays.toString(event)+","+KEY_CHAR+","+event[KEY_CHAR]);
-                if (event[KEY_CHAR] > 0) {
-                    if (isAlt && ((event[KEY_CHAR] >= '@' && event[KEY_CHAR] <= '_') || (event[KEY_CHAR] >= 'a' && event[KEY_CHAR] <= 'z')))
+                //System.out.println("->"+Arrays.toString(event));
+                if (event[KEY_CHAR0] !=0) {
+                    if (isAlt &&event[KEY_CHAR1]==0&& ((event[KEY_CHAR0] >= '@' && event[KEY_CHAR0] <= '_') || (event[KEY_CHAR0] >= 'a' && event[KEY_CHAR0] <= 'z')))
                         inputBuff.put((byte) '\u001B');
-                    inputBuff.put((byte) event[KEY_CHAR]);
+                    for(int i:CHARS) {
+                        if(event[i]==0) break;
+                        inputBuff.put(event[i]);
+                    }
                 } else if (keyEvents.containsKey(code)) {
                     ctrlFlags |= funcState;
                     for (int k = 0; k < event[KEY_REPE]; k++) {
@@ -252,8 +264,8 @@ public class WindowsInputReader extends NonBlockingInputStream {
             } else {
                 // key up event
                 // support ALT+NumPad input method
-                if (event[KEY_CODE] == KeyEvent.VK_ALT && event[KEY_CHAR] > 0) {
-                    inputBuff.put((byte) event[KEY_CHAR]);
+                if (event[KEY_CODE] == KeyEvent.VK_ALT && event[KEY_CHAR0] > 0 && event[KEY_CHAR1] ==0) {
+                    inputBuff.put((byte) event[KEY_CHAR0]);
                 }
             }
         }
@@ -281,6 +293,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
             if (pipeIn.available() < 1) {
                 pause(false);
                 isRead = true;
+                Thread.sleep(timeout);
                 if (timeout > 0) synchronized(pipeIn){
                     pipeIn.wait(timeout);
                 }
@@ -302,13 +315,13 @@ public class WindowsInputReader extends NonBlockingInputStream {
         if (exception != null) throw exception;
         try {
             c = new byte[][]{getKey(timeout), null};
-            if (c[0] != null && c[0][KEY_DOWN] == 1) c[1] = getKey(timeout);
+            //if (c[0] != null && c[0][KEY_DOWN] == 1) c[1] = getKey(timeout);
             for (byte[] c0 : c) {
                 if (c0 == null) continue;
-                if (!isPeek && (c0[KEY_DOWN] == 1 || c0[KEY_CHAR] == 3) && (//
-                        (c0[KEY_CTRL] > 0 && (c0[KEY_CHAR] > 0 || keyEvents.containsKey(Integer.valueOf((int) c0[KEY_CODE])))) || //
+                if (!isPeek && (c0[KEY_DOWN] == 1 || c0[KEY_CHAR0] == 3) && (//
+                        ((c0[KEY_CTRL] > 0||c0[KEY_ALT] >0) && (c0[KEY_CHAR0] > 0&&c0[KEY_CHAR0]!=10 || keyEvents.containsKey(Integer.valueOf((int) c0[KEY_CODE])))) || //
                                 (c0[KEY_SFT] > 0 && keyEvents.containsKey(Integer.valueOf((int) c0[KEY_CODE]))) ||//
-                                (c0[KEY_CODE] >= KeyEvent.VK_F1 && c0[KEY_CODE] <= KeyEvent.VK_F12 && c0[KEY_CHAR] == 0))) {
+                                (c0[KEY_CODE] >= KeyEvent.VK_F1 && c0[KEY_CODE] <= KeyEvent.VK_F12 && c0[KEY_CHAR0] == 0))) {
                     StringBuilder sb = new StringBuilder(32);
                     if (c0[KEY_CTL] > 0) sb.append("CTRL+");
                     if (c0[KEY_ALT] > 0) sb.append("ALT+");
@@ -342,21 +355,24 @@ public class WindowsInputReader extends NonBlockingInputStream {
                         //Integer code=Integer.valueOf(rec.keyEvent.keyCode);
                         //if(!keyCodes.containsKey(code)&&rec.keyEvent.uchar>0) keyCodes.put(code,String.valueOf(rec.keyEvent.uchar));
                         //System.out.println(rec.keyEvent.toString()+"  code="+keyCodes.get(code) + "  uchar=" + (int) rec.keyEvent.uchar);
+                        byte[] b=Character.toString(rec.keyEvent.uchar).getBytes();
                         c = new byte[]{(byte) (rec.keyEvent.keyDown ? 1 : 0),//
-                                (byte) rec.keyEvent.keyCode, (byte) rec.keyEvent.uchar,//
+                                (byte) rec.keyEvent.keyCode, b[0],//
                                 (byte) (rec.keyEvent.controlKeyState & anyCtrl),//
                                 (byte) rec.keyEvent.repeatCount,//
                                 (byte) ((rec.keyEvent.controlKeyState & altState) > 0 ? 1 : 0),//
                                 (byte) ((rec.keyEvent.controlKeyState & ctrlState) > 0 ? 1 : 0),//
-                                (byte) ((rec.keyEvent.controlKeyState & shiftState) > 0 ? 1 : 0)};
-                        //inputQueue.put(c);
+                                (byte) ((rec.keyEvent.controlKeyState & shiftState) > 0 ? 1 : 0),
+                                b.length>1?b[1]:0,
+                                b.length>2?b[2]:0,
+                                b.length>3?b[3]:0};
                         pipeOut.write(c, 0, KEY_SIZE);
                         pipeOut.flush();
                         if (isRead) synchronized (pipeIn) {
                             isRead = false;
                             pipeIn.notify();
                         }
-                        if ((c[KEY_CHAR] == 10 || c[KEY_CHAR] == 13) && c[KEY_DOWN] == 0 && c[KEY_CTRL] == 0)
+                        if ((c[KEY_CHAR0] == 10 || c[KEY_CHAR0] == 13) && c[KEY_DOWN] == 0 && c[KEY_CTRL] == 0)
                             isPause = true;
                     }
                 } else synchronized (pipeOut) {
