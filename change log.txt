@@ -1,3 +1,4 @@
+2016-02-11: ! public: fix paste text issue when using console.exe
 2016-02-05: * oracle: Can limit the depth(2nd parameter) of 'ora deptree'
             * public: improve input performance
 2016-01-26: * oracle: new -e option on 'ora ashtop'
