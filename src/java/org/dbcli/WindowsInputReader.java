@@ -293,7 +293,6 @@ public class WindowsInputReader extends NonBlockingInputStream {
             if (pipeIn.available() < 1) {
                 pause(false);
                 isRead = true;
-                Thread.sleep(timeout);
                 if (timeout > 0) synchronized(pipeIn){
                     pipeIn.wait(timeout);
                 }
