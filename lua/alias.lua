@@ -28,7 +28,10 @@ function alias.parser(s,default_value)
         alias.rest[v]=""
         return alias.args[v]
     else
-        local res= table.concat(alias.rest," "):gsub(' +$','')
+        for i=#alias.rest,1,-1 do
+            if alias.rest[i]=="" then table.remove(alias.rest,i) end
+        end
+        local res= table.concat(alias.rest," ")
         alias.rest={}
         return res
     end

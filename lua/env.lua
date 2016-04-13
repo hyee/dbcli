@@ -738,6 +738,7 @@ function env.eval_line(line,exec,is_internal,not_skip)
     local cmd,rest,end_mark
     line,end_mark=env.END_MARKS.match(line)
     cmd,rest=line:match('^%s*(%S+)%s*(.*)')
+    if not rest then return end
     rest=rest..(end_mark or "")
     if not cmd or cmd=="" then return end
     cmd=cmd:upper()

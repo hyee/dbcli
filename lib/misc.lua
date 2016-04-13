@@ -81,9 +81,11 @@ function os.CreateProcess(cmdline,  flags)
     kernel.CreateProcessA(cmdline,nil, nil, nil,false, 0, nil,nil,nil,nil)
 end
 
-function os.exists(file)
-
+function os.exists(file,ext)
     local f=io.open(file,'r')
+    if not f and type(ext)=="string" then 
+        f=io.open(file..'.'..ext,'r')
+    end
     if not f then
         local r=os.execute('cd "'..file..'" 2>nul 1>nul')
         return r and 2 or nil

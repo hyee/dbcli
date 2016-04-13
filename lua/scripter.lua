@@ -384,7 +384,7 @@ function scripter:after_script()
 end
 
 function scripter:check_ext_file(cmd)
-    local exist=os.exists(cmd)
+    local exist=os.exists(cmd,self.ext_name)
     env.checkerr(exist==1,"Cannot find this file: "..cmd)
     local target_dir=self:rehash(cmd,'*')
     cmd=cmd:match('([^\\/]+)$'):match('[^%.%s]+'):upper()

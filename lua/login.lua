@@ -59,7 +59,7 @@ function login.search(id,filter,url_filter)
     login.load()
     local typ=env.set.get("database")
     local list=login.list[typ]
-    local alias,alist=nil,{}
+    local alias,alist,prt=nil,{}
 
     id=(id or ""):lower()
     if id=="" then id= nil end
@@ -82,7 +82,6 @@ function login.search(id,filter,url_filter)
 
     grid.add(hdl,{"#","Alias","Name","User","SSH Link","Url","Last Login"})
 
-
     if id=="-a" then
         local a=env.parse_args(2,filter)
         alias,filter=a[1],a[2]
@@ -95,6 +94,8 @@ function login.search(id,filter,url_filter)
         if not alias:match('^[a-z][%w_%$]+$') then
             return print('Unexpected alias name "'..alias..'".')
         end
+    elseif id=="-p" then
+        prt=true
     end
 
     local nfilter=filter and tonumber(filter) or -1
@@ -118,7 +119,7 @@ function login.search(id,filter,url_filter)
             end
         end
     end
-
+    
     if id=="-d" then
         if account then list[account]=nil end
         login.save()
@@ -129,6 +130,10 @@ function login.search(id,filter,url_filter)
         end
         list[account].alias=alias
         login.save()
+        return
+    elseif prt and counter==1 then
+        local u=list[account]
+        print(string.format('Conn %s/%s@%s',u.user,env.packer.unpack_str(u.password),u.url:match('[^@]+$')))
         return
     end
 
@@ -155,6 +160,7 @@ function login.onload()
         Login with saved accounts, type 'help login' for more detail. Usage: @@NAME [ -d | -a |<number|account_name>]
             @@NAME                     : list all saved a/c
             @@NAME -d <num|name|alias> : delete matched a/c
+            @@NAME -p <num|name|alias> : print the connection information for a specific a/c
             @@NAME    <num|name|alias> : login a/c
             @@NAME -a <alias> <id|name>: set alias to an existing account
         Use 'set savelogin off' to disable the autosave.]]
