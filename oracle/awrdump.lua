@@ -97,17 +97,17 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
         cur      SYS_REFCURSOR;
         @get_range@
         PROCEDURE extract_awr(p_start VARCHAR2, p_end VARCHAR2, p_inst VARCHAR2,p_start2 VARCHAR2:=NULL, p_end2 VARCHAR2:=NULL) IS
-            stim  date;
-            etim  date;
-            dbid  INT;
-            st    INT;
-            ed    INT;
-            dbid2 INT;
-            st2   INT;
-            ed2   INT;
-            rc    SYS_REFCURSOR;
-            txt   VARCHAR2(32000);
-            inst  VARCHAR2(30) := NULLIF(upper(p_inst), 'A');
+            stim          date;
+            etim          date;
+            dbid          INT;
+            st            INT;
+            ed            INT;
+            dbid2         INT;
+            st2           INT;
+            ed2           INT;
+            rc            SYS_REFCURSOR;
+            txt           VARCHAR2(32000);
+            inst          VARCHAR2(30) := NULLIF(upper(p_inst), 'A');
             PROCEDURE gen_ranges(p_start VARCHAR2, p_end VARCHAR2,dbid OUT INT,st OUT INT,ed OUT INT) IS
             BEGIN
                 IF p_end IS NULL AND stim IS NOT NULL AND etim IS NOT NULL THEN
@@ -217,6 +217,11 @@ function awr.extract_ash(starttime,endtime,instances)
         rs       CLOB;
         filename VARCHAR2(200);
         cur      SYS_REFCURSOR;
+        wait_class    VARCHAR2(100);
+        service_name  VARCHAR2(30);
+        module        VARCHAR2(300);
+        action        VARCHAR2(300);
+        client_id     VARCHAR2(300);
         @get_range@
         PROCEDURE extract_ash(p_start VARCHAR2, p_end VARCHAR2, p_inst VARCHAR2) IS
             dbid INT;
@@ -226,6 +231,30 @@ function awr.extract_ash(starttime,endtime,instances)
             ed   INT;
             inst VARCHAR2(30) := NULLIF(upper(p_inst), 'A');
         BEGIN
+            IF not regexp_like(replace(inst,','),'^\d+$') AND inst!='A' THEN
+                SELECT MAX(DECODE(typ, 'service_name', nam)), MAX(DECODE(typ, 'wait_class', nam)), 
+                       MAX(DECODE(typ, 'module', nam)), MAX(DECODE(typ, 'action', nam)),
+                       MAX(DECODE(typ, 'client_id', nam))
+                INTO   service_name, wait_class, module, action, client_id
+                FROM   (SELECT 'service_name' typ, to_char(NAME_hash) nam
+                         FROM   GV$ACTIVE_SERVICES
+                         WHERE  upper(NAME) LIKE inst
+                         AND    ROWNUM < 2
+                         UNION ALL
+                         SELECT 'wait_class', NAME
+                         FROM   v$event_name
+                         WHERE  upper(NAME) LIKE inst
+                         AND    ROWNUM < 2
+                         UNION ALL
+                         SELECT /*+no_expand*/
+                          DECODE(upper(inst), upper(MODULE), 'module', upper(action), 'action', upper(client_identifier), 'client_id'),
+                          DECODE(upper(inst), upper(MODULE), MODULE, upper(action), action, upper(client_identifier), client_identifier)
+                         FROM   gv$session
+                         WHERE  (upper(MODULE) = inst OR UPPER(action) = inst OR upper(client_identifier) = inst)
+                         AND    ROWNUM < 2)
+                WHERE  ROWNUM < 2;
+                inst := NULL;
+            END IF;
 
             IF DBMS_DB_VERSION.VERSION+DBMS_DB_VERSION.RELEASE < 13 THEN
                 IF inst IS NULL THEN
@@ -249,10 +278,17 @@ function awr.extract_ash(starttime,endtime,instances)
             dbms_lob.createtemporary(rs, TRUE);
             IF NOT (inst IS NULL OR INSTR(inst, ',') > 0) THEN
                 FOR r IN (SELECT *
-                          FROM   TABLE(dbms_workload_repository.ash_report_html(dbid,
-                                                                                inst,
-                                                                                stim ,
-                                                                                etim ,0,600))) LOOP
+                          FROM   TABLE(dbms_workload_repository.ash_report_html(l_dbid=>dbid,
+                                                                                l_inst_num=>inst,
+                                                                                L_BTIME=>stim ,
+                                                                                L_ETIME=>etim ,
+                                                                                L_OPTIONS=>0,
+                                                                                l_slot_width=>600,
+                                                                                l_wait_class=>wait_class,
+                                                                                l_service_hash=>service_name,
+                                                                                l_module=>module,
+                                                                                l_action=>action,
+                                                                                l_client_id=>client_id))) LOOP
                     IF r.output IS NOT NULL THEN
                         dbms_lob.writeappend(rs, LENGTHB(r.output), r.output);
                     END IF;
@@ -263,9 +299,16 @@ function awr.extract_ash(starttime,endtime,instances)
                           FROM   TABLE(dbms_workload_repository.ash_global_report_html(dbid,
                                                                                        inst,
                                                                                        stim ,
-                                                                                       etim ,0,600))) LOOP
+                                                                                       etim ,0,
+                                                                                       l_slot_width=>600,
+                                                                                       l_wait_class=>wait_class,
+                                                                                       l_service_hash=>service_name,
+                                                                                       l_module=>module,
+                                                                                       l_action=>action,
+                                                                                       l_client_id=>client_id))) LOOP
                     IF r.output IS NOT NULL THEN
                         dbms_lob.writeappend(rs, LENGTHB(r.output), r.output);
+
                     END IF;
                 END LOOP;
                 $END
@@ -346,7 +389,7 @@ end
 function awr.onload()
     env.set_command(nil,"awrdump","Extract AWR report. Usage: @@NAME <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]",awr.extract_awr,false,4)
     env.set_command(nil,"awrdiff","Extract AWR Diff report. Usage: @@NAME <YYMMDDHH24MI> <YYMMDDHH24MI> <YYMMDDHH24MI> [YYMMDDHH24MI] [inst_id|a|<inst1,inst2,...>]",awr.extract_awr_diff,false,6)
-    env.set_command(nil,"ashdump","Extract ASH report. Usage: @@NAME <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]",awr.extract_ash,false,4)
+    env.set_command(nil,"ashdump","Extract ASH report. Usage: @@NAME <YYMMDDHH24MI> <YYMMDDHH24MI> [<inst1[,inst2...>]|<client_id>|<wait_class>|<service_name>|<module>|<action>]",awr.extract_ash,false,4)
     env.set_command(nil,"addmdump","Extract ADDM report. Usage: @@NAME <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]",awr.extract_addm,false,4)
 end
 

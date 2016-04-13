@@ -95,7 +95,7 @@ function sqlplus:get_startup_cmd(args,is_native)
     if db.props.service_name then
         props[#props]=props[#props]:gsub("%:[%w_]+ ",'/'..db.props.service_name)
     end
-    
+    --print(self.env['SQLPATH'])
     return props
 end
 

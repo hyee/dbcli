@@ -1,4 +1,6 @@
-2016-02-11: ! public: fix paste text issue when using console.exe
+2016-04-13: + public: "login -p <id|name|alias>" to print the connection information with "connect" syntax
+            ! public: minor fixes
+            + oracle: support other filter with ASH report. Usage: ashdump <YYMMDDHH24MI> <YYMMDDHH24MI> [<inst1[,inst2...>]|<client_id>|<wait_class>|<service_name>|<module>|<action>]
 2016-02-05: * oracle: Can limit the depth(2nd parameter) of 'ora deptree'
             * public: improve input performance
 2016-01-26: * oracle: new -e option on 'ora ashtop'
