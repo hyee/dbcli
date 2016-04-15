@@ -83,15 +83,17 @@ end
 
 function os.exists(file,ext)
     local f=io.open(file,'r')
-    if not f and type(ext)=="string" then 
+    if not f and type(ext)=="string" then
         f=io.open(file..'.'..ext,'r')
+        if f then file=file..'.'..ext end
     end
-    if not f then
-        local r=os.execute('cd "'..file..'" 2>nul 1>nul')
-        return r and 2 or nil
+    if f then
+        f:close()
+        return 1,file
     end
-    f:close()
-    return 1
+
+    local r=os.execute('cd "'..file..'" 2>nul 1>nul')
+    return r and 2 or nil,file
 end
 
 function os.find_extension(exe)

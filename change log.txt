@@ -1,3 +1,5 @@
+2016-04-15: ! public: fix on "csv2sql"
+            + oracle: some changes on 'chart' sub-commands, and new command 'chart filemetric'
 2016-04-13: + public: "login -p <id|name|alias>" to print the connection information with "connect" syntax
             ! public: minor fixes
             + oracle: support other filter with ASH report. Usage: ashdump <YYMMDDHH24MI> <YYMMDDHH24MI> [<inst1[,inst2...>]|<client_id>|<wait_class>|<service_name>|<module>|<action>]

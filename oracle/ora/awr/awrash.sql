@@ -1,7 +1,7 @@
 WITH qry AS
  (SELECT nvl(upper(:V1), 'A') inst,
          '%' || nullif(upper(:V2),'a') || '%' filter,
-         to_timestamp(nvl(NVL(:V3,:STARTTIME), to_char(SYSDATE - 7, 'YYMMDDHH24MI')), 'YYMMDDHH24MI') st,
+         to_timestamp(coalesce(:V3,:STARTTIME, to_char(SYSDATE - 7, 'YYMMDDHH24MI')), 'YYMMDDHH24MI') st,
          to_timestamp(coalesce(:V4,:ENDTIME, '' || (:V3 + 1), to_char(SYSDATE, 'YYMMDDHH24MI')),'YYMMDDHH24MI') ed
   FROM   dual)
 SELECT *
