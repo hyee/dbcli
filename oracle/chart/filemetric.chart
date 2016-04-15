@@ -1,0 +1,48 @@
+/*[[Show chart for GV$FILEMETRIC_HISTORY/DBA_HIST_FILESTATXS. Usage: filemetric [-d] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [tablespace_name]
+   -d:  based on DBA_HIST_FILESTATXS, otherwise based on GV$FILEMETRIC_HISTORY
+    --[[
+      @BASE : 10.2={}
+      &DICT : V={V}, D={D}
+      &TITLE: V={GV$FILEMETRIC_HISTORY}, D={DBA_HIST_FILESTATXS}
+    ]]--
+]]*/
+
+   {
+       _attrs=[[select 'File IO Stats(&TITLE)' title from dual]],
+       _sql=[[
+        SELECT /*+no_expand */
+               end_time, tsname, SUM(phyrds) "Physical Read Requests", round(SUM(phyrgb), 3) "Physical Read Size(GB)",
+               ROUND(SUM(readtim) / nullif(SUM(phyrds),0) * 10, 2) "Miliseconds per Physical Read", SUM(phywrs) "Physical Write Requests",
+               round(SUM(phywgb), 3) "Physical Write Size(GB)", ROUND(SUM(WRITETIM) / nullif(SUM(phywrs),0) * 10, 2) "Miliseconds per Physical Write"
+        FROM   (SELECT  end_time, inst_id, tablespace_name tsname, physical_reads phyrds, physical_writes phywrs,
+                        bytes / blocks * physical_block_reads / 1024 / 1024 / 1024 phyrgb, bytes / blocks * physical_block_writes / 1024 / 1024 / 1024 phywgb,
+                        AVERAGE_READ_TIME * physical_reads READTIM, AVERAGE_WRITE_TIME * physical_writes WRITETIM
+                 FROM   GV$FILEMETRIC_HISTORY
+                 JOIN   dba_data_files
+                 USING  (file_id)
+                 WHERE  'V' = UPPER(:DICT)
+                 AND    end_time between nvl(to_date(nvl(:V2,:STARTTIME),'yymmddhh24mi'),sysdate-7) and nvl(to_date(nvl(:V3,:ENDTIME),'yymmddhh24mi'),sysdate)
+                 UNION ALL
+                 SELECT /*+no_expand */
+                        end_interval_time + 0, instance_number, tsname, PHYRDS - LEAD(PHYRDS) OVER(PARTITION BY instance_number, file# ORDER BY snap_id DESC),
+                        PHYWRTS - LEAD(PHYWRTS) OVER(PARTITION BY instance_number, file# ORDER BY snap_id DESC),
+                        (PHYBLKRD - LEAD(PHYBLKRD) OVER(PARTITION BY instance_number, file# ORDER BY snap_id DESC)) * block_size / 1024 / 1024 / 1024,
+                        (PHYBLKWRT - LEAD(PHYBLKWRT) OVER(PARTITION BY instance_number, file# ORDER BY snap_id DESC)) * block_size / 1024 / 1024 / 1024,
+                        READTIM - LEAD(READTIM) OVER(PARTITION BY instance_number, file# ORDER BY snap_id DESC),
+                        WRITETIM - LEAD(WRITETIM) OVER(PARTITION BY instance_number, file# ORDER BY snap_id DESC)
+                 FROM   dba_hist_snapshot a
+                 JOIN   DBA_HIST_FILESTATXS b
+                 USING  (instance_number, snap_id)
+                 WHERE  'D' = UPPER(:DICT)
+                 AND    end_interval_time + 0 between nvl(to_date(nvl(:V2,:STARTTIME),'yymmddhh24mi'),sysdate-7) and nvl(to_date(nvl(:V3,:ENDTIME),'yymmddhh24mi'),sysdate))
+        WHERE  (:V1 is null or inst_id=:V1)
+        AND    (:V4 is null or tsname like upper('%&V4%'))
+        GROUP  BY end_time, tsname
+        ]],
+       _pivot=true,
+       rollPeriod=1,
+       labelsKMB=true,
+       fillGraph=true,
+       stackedGraph=false,
+       labelsSeparateLines=true,
+   }

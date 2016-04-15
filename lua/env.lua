@@ -162,10 +162,11 @@ function env.list_dir(file_dir,file_ext,text_macher)
     local filter=file_ext and "*."..file_ext or "*"
     
     file_dir=file_dir:gsub("[\\/]+",env.PATH_DEL):gsub("[\\/]+$","")
-    local exists=os.exists(file_dir)
+
+    local exists,file=os.exists(file_dir,file_ext)
     if not exists then return keylist end
     if exists==1 then 
-        dir={file_dir}
+        dir={file}
     else
         dir={}
         if env.OS=="windows" then
@@ -725,6 +726,7 @@ function env.eval_line(line,exec,is_internal,not_skip)
     local function check_multi_cmd(lineval)
         curr_stmt = curr_stmt ..lineval
         done,curr_stmt=env.check_cmd_endless(multi_cmd,curr_stmt)
+
         if done or is_internal then
             return env.force_end_input(exec,is_internal)
         end
