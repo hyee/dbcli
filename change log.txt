@@ -1,3 +1,6 @@
+2016-04-19: + public: -e(exclude columns),-r(remap columns) options for "sql2csv","sql2file" and "csv2sql". Examples:
+                      sql2csv  user_objects -e"object_id,object_type" select * from user_objects where rownum<10
+                      sql2file user_objects -r"object_id=seq_obj.nextval,timestamp=sysdate" select * from user_objects where rownum<10
 2016-04-15: ! public: fix on "csv2sql"
             + oracle: some changes on 'chart' sub-commands, and new command 'chart filemetric'
             * public: Up to date : JLine 2, LuaJIT 2.1 and ConsoleZ 1.17

@@ -830,15 +830,46 @@ function db_core.check_completion(cmd,other_parts)
     return true,match
 end
 
+function db_core:resolve_expsql(sql)
+    self.EXCLUDES=nil
+    self.REMAPS=nil
+    if type(sql)~="string" then return sql end
+    local args=env.parse_args(3,sql)
+    if #args<2 then return sql end
+    for i=2,1,-1 do
+        if args[i]:lower():sub(1,2)=="-e" then
+            self.EXCLUDES=args[i]:sub(3):gsub('^"(.*)"$','%1')
+            table.remove(args,i)
+        elseif args[i]:lower():sub(1,2)=="-r" then
+            local remap=args[i]:sub(3):gsub('^"(.*)"$','%1')
+            self.REMAPS={}
+            while true do
+                local k,v,v1=remap:match("([%w%$#%_]+)=(.*)")
+                if k then
+                    v1,remap=v:match("^(.-),([%w%$#%_]+=.*)")
+                    table.insert(self.REMAPS,k..'='..(v1 or v):gsub(',+$',''))
+                    if not v1 then break end
+                else
+                    break
+                end
+            end
+            table.remove(args,i)
+       end;
+    end
+    return table.concat(args," ")
+end
+
 function db_core:sql2sql(filename,sql)
     env.checkhelp(sql)
-    self:sql2file(env.resolve_file(filename,{'sql','zip','gz'}),sql,'ResultSet2SQL','sql',self.sql_export_header,cfg.get("ASYNCEXP"))
+    sql=self:resolve_expsql(sql)
+    self:sql2file(env.resolve_file(filename,{'sql','zip','gz'}),sql,'ResultSet2SQL','sql',self.sql_export_header,cfg.get("ASYNCEXP"),self.EXCLUDES,self.REMAPS)
 end
 
 function db_core:sql2csv(filename,sql)
     env.checkhelp(sql)
+    sql=self:resolve_expsql(sql)
     filename=env.resolve_file(filename,{'csv','zip','gz'})
-    self:sql2file(filename,sql,'ResultSet2CSV','csv',self.sql_export_header,cfg.get("ASYNCEXP"))
+    self:sql2file(filename,sql,'ResultSet2CSV','csv',self.sql_export_header,cfg.get("ASYNCEXP"),self.EXCLUDES,self.REMAPS)
 end
 
 function db_core:csv2sql(filename,src)
@@ -847,8 +878,9 @@ function db_core:csv2sql(filename,src)
     local table_name=filename:match('([^\\/]+)%.%w+$')
     local _,rs=pcall(self.exec,self,'select * from '..table_name..' where 1=2')
     if type(rs)~='userdata' then rs=nil end
+    src=self:resolve_expsql(src)
     src=env.resolve_file(src)
-    self:sql2file(filename,rs,'CSV2SQL','sql',src,self.sql_export_header)
+    self:sql2file(filename,rs,'CSV2SQL','sql',src,self.sql_export_header,self.EXCLUDES,self.REMAPS)
 end
 
 function db_core:load_config(db_alias,props)
@@ -898,6 +930,19 @@ function db_core:disconnect(feed)
 end
 
 function db_core:__onload()
+    local txt="\n   Refer to 'set expPrefetch' to define the fetch size of the statement which impacts the export performance."
+    txt=txt..'\n   -e: format is "-e<column1>[,...]"'
+    txt=txt..'\n   -r: format is "-r<column1=<expression>>[,...]"'
+    txt=txt..'\n    Other examples:'
+    txt=txt..'\n        1. sql2csv  user_objects.zip select * from user_objects;'
+    txt=txt..'\n        2. sql2file user_objects.zip select * from user_objects;'
+    txt=txt..'\n        3. csv2sql  user_objects.zip c:\\user_objects.csv'
+    txt=txt..'\n        4. sql2csv  user_objects -e"object_id,object_type" select * from user_objects where rownum<10'
+    txt=txt..'\n        5. sql2file user_objects -r"object_id=seq_obj.nextval,timestamp=sysdate" select * from user_objects where rownum<10'
+    txt=txt..'\n        6. set printvar off;'
+    txt=txt..'\n           var x refcursor;'
+    txt=txt..'\n           exec open :x for select * from user_objects where rownum<10;'
+    txt=txt..'\n           sql2csv user_objects x;'
     cfg.init("PRINTSIZE",1000,set_param,"db.query","Max rows to be printed for a select statement",'1-10000')
     cfg.init("FETCHSIZE",3000,set_param,"db.query","Rows to be prefetched from the resultset, 0 means auto.",'0-32767')
     cfg.init("COLSIZE",32767,set_param,"db.query","Max column size of a result set",'5-1073741824')
@@ -914,9 +959,9 @@ function db_core:__onload()
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
     env.event.snoop('TRIGGER_LOGIN',self.login,self)
     set_command(self,{"reconnect","reconn"}, "Re-connect to database with the last login account.",self.reconnnect,false,2)
-    env.set_command(self,"sql2file","Export Query Result into SQL file. Usage: @@NAME <file_name>[.sql|gz|zip] <sql|cursor>" ,self.sql2sql,'__SMART_PARSE__',3)
-    env.set_command(self,"sql2csv","Export Query Result into CSV file. Usage: @@NAME <file_name>[.csv|gz|zip] <sql|cursor>" ,self.sql2csv,'__SMART_PARSE__',3)
-    env.set_command(self,"csv2sql","Convert CSV file into SQL file. Usage: @@NAME <sql_file>[.sql|gz|zip] <csv_file>" ,self.csv2sql,false,3)
+    env.set_command(self,"sql2file",'Export Query Result into SQL file. Usage: @@NAME <file_name>[.sql|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <sql|cursor>'..txt ,self.sql2sql,'__SMART_PARSE__',3)
+    env.set_command(self,"sql2csv",'Export Query Result into CSV file. Usage: @@NAME <file_name>[.csv|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <sql|cursor>'..txt ,self.sql2csv,'__SMART_PARSE__',3)
+    env.set_command(self,"csv2sql",'Convert CSV file into SQL file. Usage: @@NAME <sql_file>[.sql|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <csv_file>'..txt ,self.csv2sql,false,3)
 end
 
 function db_core:__onunload()
