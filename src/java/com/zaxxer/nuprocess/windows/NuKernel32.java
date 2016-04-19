@@ -45,9 +45,9 @@ public class NuKernel32 {
     public static final int ENABLE_QUICK_EDIT_MODE = 0x0040;
     public static final int ENABLE_EXTENDED_FLAGS = 0x0080;
     public static final int HANDLE_FLAG_INHERIT = 0x00000001;
-    public static final int STD_INPUT_HANDLE = -10;
-    public static final int STD_OUTPUT_HANDLE = -11;
-    public static final int STD_ERROR_HANDLE = -12;
+    public static final DWORD STD_INPUT_HANDLE = new DWORD(-10);
+    public static final DWORD STD_OUTPUT_HANDLE = new DWORD(-11);
+    public static final DWORD STD_ERROR_HANDLE = new DWORD(-12);
 
 
     public static native boolean CloseHandle(HANDLE hObject);
@@ -108,9 +108,11 @@ public class NuKernel32 {
 
     public static native int GetConsoleMode(HANDLE hProcess);
 
-    public static native HANDLE GetStdHandle(int nStdHandle);
+    public static native HANDLE GetStdHandle(DWORD nStdHandle);
 
-    public static native boolean SetStdHandle(int nStdHandle, HANDLE hHandle);
+    public static native boolean SetStdHandle(DWORD nStdHandle, HANDLE hHandle);
+
+    public static final native int ReadConsoleInputW(HANDLE in_hConsoleOutput, INPUT_RECORD[] out_lpBuffer, int in_nLength, IntByReference out_lpNumberOfEventsRead);
     //public static native boolean WriteConsoleInput(HANDLE hProcess, INPUT_RECORD[] input,int length,IntByReference lpNumberOfEventsWritten);
 
 

@@ -311,6 +311,14 @@ public interface NuWinNT {
 //   DWORD dwControlKeyState;
 // } KEY_EVENT_RECORD;
     public class KEY_EVENT_RECORD extends Structure {
+        public static final short CAPSLOCK_ON = 0x0080;
+        public static final short ENHANCED_KEY = 0x0100;
+        public static final short LEFT_ALT_PRESSED = 0x0002;
+        public static final short LEFT_CTRL_PRESSED = 0x0008;
+        public static final short NUMLOCK_ON = 0x0020;
+        public static final short RIGHT_ALT_PRESSED = 0x0001;
+        public static final short RIGHT_CTRL_PRESSED = 0x0004;
+        public static final short SHIFT_PRESSED = 0x0010;
         private static String[] fieldOrder = {"bKeyDown", "wRepeatCount", "wVirtualKeyCode", "wVirtualScanCode", "uChar", "dwControlKeyState"};
         public boolean bKeyDown;
         public short wRepeatCount;

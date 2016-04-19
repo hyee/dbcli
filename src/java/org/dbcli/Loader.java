@@ -176,13 +176,28 @@ public class Loader {
         this.rs = res;
     }
 
-    public int ResultSet2CSV(final ResultSet rs, final String fileName, final String header, final boolean aync) throws Exception {
+    private void setExclusiveAndRemap(CSVWriter writer, String excludes, String[] remaps) {
+        if (excludes != null && !excludes.trim().equals("")) {
+            String ary[] = excludes.split(",");
+            for (String column : ary) writer.setExclude(column, true);
+        }
+        if (remaps != null) {
+            for (String column : remaps) {
+                if(column==null||column.trim().equals("")) continue;
+                String[] o = column.split("=",2);
+                writer.setRemap(o[0], o.length < 2 ? null : o[1]);
+            }
+        }
+    }
+
+    public int ResultSet2CSV(final ResultSet rs, final String fileName, final String header, final boolean aync, final String excludes, final String[] remaps) throws Exception {
         setCurrentResultSet(rs);
         return (int) asyncCall(new Callable() {
             @Override
             public Integer call() throws Exception {
                 try (CSVWriter writer = new CSVWriter(fileName)) {
                     writer.setAsyncMode(aync);
+                    setExclusiveAndRemap(writer, excludes, remaps);
                     int result = writer.writeAll(rs, true);
                     return result - 1;
                 }
@@ -190,7 +205,7 @@ public class Loader {
         });
     }
 
-    public int ResultSet2SQL(final ResultSet rs, final String fileName, final String header, final boolean aync) throws Exception {
+    public int ResultSet2SQL(final ResultSet rs, final String fileName, final String header, final boolean aync, final String excludes, final String[] remaps) throws Exception {
         setCurrentResultSet(rs);
         return (int) asyncCall(new Callable() {
             @Override
@@ -198,6 +213,7 @@ public class Loader {
                 try (SQLWriter writer = new SQLWriter(fileName)) {
                     writer.setAsyncMode(aync);
                     writer.setFileHead(header);
+                    setExclusiveAndRemap(writer, excludes, remaps);
                     int count = writer.writeAll2SQL(rs, "", 1500);
                     return count;
                 }
@@ -205,13 +221,14 @@ public class Loader {
         });
     }
 
-    public int CSV2SQL(final ResultSet rs, final String SQLFileName, final String CSVfileName, final String header) throws Exception {
+    public int CSV2SQL(final ResultSet rs, final String SQLFileName, final String CSVfileName, final String header, final String excludes, final String[] remaps) throws Exception {
         setCurrentResultSet(rs);
         return (int) asyncCall(new Callable() {
             @Override
             public Integer call() throws Exception {
                 try (SQLWriter writer = new SQLWriter(SQLFileName)) {
                     writer.setFileHead(header);
+                    setExclusiveAndRemap(writer, excludes, remaps);
                     return writer.writeAll2SQL(CSVfileName, rs);
                 }
             }

@@ -49,7 +49,6 @@ public class Console extends ConsoleReader {
         setHandleUserInterrupt(true);
         setBellEnabled(false);
         getKeys().bind("\u001bOn", Operation.DELETE_CHAR); //The delete key
-        charset = this.getTerminal().getOutputEncoding() == null ? Configuration.getEncoding() : this.getTerminal().getOutputEncoding();
         in = new WindowsInputReader();
         ((NonBlockingInputStream) this.getInput()).shutdown();
         Field field = ConsoleReader.class.getDeclaredField("in");
@@ -58,7 +57,7 @@ public class Console extends ConsoleReader {
         field.setAccessible(false);
         field = ConsoleReader.class.getDeclaredField("reader");
         field.setAccessible(true);
-
+        charset = this.getTerminal().getOutputEncoding() == null ? Configuration.getEncoding() : this.getTerminal().getOutputEncoding();
         field.set(this, new InputStreamReader(in, charset));
         field.setAccessible(false);
         t_puts = ConsoleReader.class.getDeclaredMethod("tputs", String.class, Object[].class);
@@ -110,8 +109,11 @@ public class Console extends ConsoleReader {
     public String readLine(String prompt) throws IOException {
         isBlocking = false;
         if (isRunning()) setEvents(null, null);
-        String line = super.readLine(prompt);
-        return line;
+        synchronized (in) {
+            String line = super.readLine(prompt);
+            //in.pause(true);
+            return line;
+        }
     }
 
     public String readLine() throws IOException {

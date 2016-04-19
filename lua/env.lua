@@ -245,7 +245,7 @@ function env.smart_check_endless(cmd,rest,from_pos)
             break 
         end
     end
-    return true,rest:gsub('*%s*$',"")
+    return true,env.END_MARKS.match(rest)
 end
 
 function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbcmd,allow_overriden)
