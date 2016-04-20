@@ -1,7 +1,26 @@
 local env=env
 local json,math,graph,cfg=env.json,env.math,env.class(env.scripter),env.set
 local template,cr
---Please refer to http://dygraphs.com/options.html for the graph options that used in .chart files
+--[[
+    Please refer to "http://dygraphs.com/options.html" for the graph options that used in .chart files
+    Common options from dygraphs:
+        ylabel,title,height,rollPeriod
+    Other options:
+        _attrs="<sql_statement>" : Select statement to proceduce the attributes, 
+                                   field name matches the attribute name,
+                                   and must return only one row, it can also can be used as a variable inside "_sql" option
+        _sql  ="<sql_statement>" : The select statement to produce the graph data
+                                   1st field : the value of X-Asis, mainly be a time value
+                                   _pivot=true:
+                                       2nd  field      : as the name of the curve
+                                       3rd+ fields     : as the values of Y-Asis, must be number, if >1 fields then split into multiple charts
+                                       3rd+ field names: as the y-label
+                                   _pivot=false:
+                                       2nd+ fields: field name as the curve name and value as the Y-Asis
+        _pivot=true|false        : indicate if pivot the >2nd numberic fields  
+        _ylabels={"<label1>",...}: Customize the ylabel for each chart, not not define then use the names from "_sql"
+        _range="<Time range>"    : Used in sub-title, if not specified then auto-caculate the range                  
+]]--
 
 function graph:ctor()
     self.command='graph'
@@ -13,14 +32,30 @@ function graph:ctor()
         <div id="divNoshow@GRAPH_INDEX" style="display:none">@GRAPH_DATA</div>
         <div id="divShow@GRAPH_INDEX" style="width:100%;"></div><br/></br>
         <div id="divLabel@GRAPH_INDEX" style="width:90%; margin-left:5%"></div>
+        <div style="width: 100%; text-align: center;">
+          <button id="linear@GRAPH_INDEX" disabled="true">Linear Scale</button>&nbsp;
+          <button id="log@GRAPH_INDEX">Log Scale</button>
+        </div>
         <script type="text/javascript">
-        new Dygraph(
+        var g@GRAPH_INDEX=new Dygraph(
             document.getElementById("divShow@GRAPH_INDEX"),
             function() {return document.getElementById("divNoshow@GRAPH_INDEX").innerHTML;},
             @GRAPH_ATTRIBUTES
         );
+        var linear@GRAPH_INDEX = document.getElementById("linear@GRAPH_INDEX");
+        var log@GRAPH_INDEX = document.getElementById("log@GRAPH_INDEX");
+        var setLog@GRAPH_INDEX = function(val) {
+            g@GRAPH_INDEX.updateOptions({ logscale: val });
+            linear@GRAPH_INDEX.disabled = !val;
+            log@GRAPH_INDEX.disabled = val;
+        };
+        linear@GRAPH_INDEX.onclick = function() { setLog@GRAPH_INDEX(false); };
+        log@GRAPH_INDEX.onclick = function() { setLog@GRAPH_INDEX(true); };
+        //gs.push(g@GRAPH_INDEX);
+        //if(sync!=null) sync.detach();
+        //sync = Dygraph.synchronize(gs);
         </script>
-        <br/>]]
+        <hr/><br/><br/>]]
         --template=template:gsub('@GRAPH_FIELDS',cr)
     end
     cfg.init("ChartSeries",12,set_param,"core","Number of top series to be show in graph chart(see command 'chart')",'1-500')
@@ -68,6 +103,12 @@ function graph:run_sql(sql,args,cmd,file)
     end
 
     local sql,pivot=context._sql,context._pivot
+    --Only proceduce top 30 curves to improve the performance in case of there is 'RNK_' field
+    if sql:match('RNK%_%W') and not sql:match('RND%_%W') then
+        sql='SELECT * FROM (SELECT /*+NO_NOMERGE(A)*/ A.*,dense_rank() over(order by RNK_ desc) RND_ FROM (\n'..sql..'\n) A) WHERE RND_<=30 ORDER BY 1,2'
+        print("Detected field 'RNK_' and re-applying the SQL...")
+    end
+
     rs=self.db:exec(sql,args)
     local title,txt,keys,values,collist,temp=string.char(0x1),{},{},{},{},{}
     
@@ -76,18 +117,32 @@ function graph:run_sql(sql,args,cmd,file)
         if type(val)=="number" then return val end
         return tonumber(val:match('[eE%.%-%d]+')) or 0
     end
-    local counter=-1
+    local counter,range_begin,range_end=-1
     rows=self.db.resultset:rows(rs,-1)
     while true do
         counter=counter+1
         local row=rows[counter+1]
         if not row then break end
+        if counter>0 and row[1]~="" then
+            local x=row[1]
+            if not range_begin then
+                if tonumber(x) then
+                    range_begin,range_end=9E9,0
+                else
+                    range_begin,range_end='ZZZZ','0'
+                end
+            end
+            if type(range_begin)=="number" then x=tonumber(x) end
+            range_begin,range_end=range_begin>x and x or range_begin, range_end<x and x or range_end
+        end
         --For pivot, col1=x-value, col2=Pivot,col3=y-value
         if pivot then
             local x,p,y=row[1],row[2],{table.unpack(row,3)}
+            for i=#y,1,-1 do
+               if rows[1][i+2]=="RNK_" or rows[1][i+2]=="RND_" then table.remove(y,i) end 
+            end
             if #keys==0 then
-                units={table.unpack(row,3)}
-                keys[1],values[title]=title,{x}
+                units,keys[1],values[title]=y,title,{x}
                 env.checkerr(#units>0,'Pivot mode should have at least 3 columns!')
                 print('Start fetching data into HTML file...')
             else
@@ -179,7 +234,8 @@ function graph:run_sql(sql,args,cmd,file)
     end
 
     local replaces={
-        ['@GRAPH_TITLE']=default_attrs.title
+        ['@GRAPH_TITLE']=default_attrs.title,
+        ['@TIME_RANGE']=default_attrs._range or ('Range:  '..tostring(range_begin)..' ~~ '..tostring(range_end))
     }
 
     for k,v in pairs(default_attrs) do
@@ -188,9 +244,9 @@ function graph:run_sql(sql,args,cmd,file)
         end
     end
 
+    default_attrs.title=nil
     for i=1,self.dataindex do
         replaces['@GRAPH_INDEX']=i
-        if i>1 then default_attrs.title="" end
         default_attrs.ylabel=ylabels[i] or default_ylabel or units[i]
         local attr=json.encode(default_attrs)
         local graph_unit=cr:replace('@GRAPH_ATTRIBUTES',attr,true)

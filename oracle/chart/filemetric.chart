@@ -1,4 +1,4 @@
-/*[[Show chart for GV$FILEMETRIC_HISTORY/DBA_HIST_FILESTATXS. Usage: filemetric [-d] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [tablespace_name]
+/*[[Show chart for GV$FILEMETRIC_HISTORY/DBA_HIST_FILESTATXS. Usage: @@NAME [-d] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [tablespace_name]
    -d:  based on DBA_HIST_FILESTATXS, otherwise based on GV$FILEMETRIC_HISTORY
     --[[
       @BASE : 10.2={}
@@ -35,7 +35,7 @@
                  USING  (instance_number, snap_id)
                  WHERE  'D' = UPPER(:DICT)
                  AND    end_interval_time + 0 between nvl(to_date(nvl(:V2,:STARTTIME),'yymmddhh24mi'),sysdate-7) and nvl(to_date(nvl(:V3,:ENDTIME),'yymmddhh24mi'),sysdate))
-        WHERE  (:V1 is null or inst_id=:V1)
+        WHERE  (:V1 IS NULL AND INST_ID=nvl(:instance,userenv('instance')) OR lower(:V1) IN ('0', 'a') OR inst_id = :V1)
         AND    (:V4 is null or tsname like upper('%&V4%'))
         GROUP  BY end_time, tsname
         ]],

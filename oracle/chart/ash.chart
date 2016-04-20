@@ -1,52 +1,67 @@
 /*[[
-    Generate the graph chart based on wait class of gv$active_session_history. Usage: ash 0|a|inst_id [-t minutes] [-f]"<filter>"
+    Generate the graph chart based on wait class of gv$active_session_history/dba_hist_active_Sess_history. Usage: @@NAME 0|a|inst_id [-d] [-t <minutes>|-r <YYMMDDHH24MI> <YYMMDDHH24MI>] [-u|-f"<filter>"]
+    Based View:
+        -d: Query based on dba_hist_active_Sess_history, default as gv$active_session_history
+    Counting:
+        -sec: count based on unique second, default as "count(1)"
+    Time range:
+        -t: Define the begin time (sysdate - minutes). i.e.: @@NAME .  10 -t
+        -r: Define both begin time and end time in YYMMDDHH24MI format. i.e.: @@NAME . 160412 160413 -r -d
+    Filter:    
+        -u                     : Filter based on current_schema
+        -f"<predicates>"       : Costimized filter
+    Grouping:
+        -event                 : group by event
+        -schema                : group by schema name
+        -g"<field expressions>": group by customized fields
     --[[
-    @BASE:11.2 = {}
-    &Time_Filter:default={sample_time > SYSDATE - INTERVAL '60' MINUTE},t={sample_time > SYSDATE - INTERVAL '&V2' MINUTE}
-    &Filter:default={1=1},f={}
+        &VIEW_NAME: default={gv$active_session_history}, d={(select instance_number inst_id,a.* from dba_hist_active_Sess_history a)}
+        &TIME_BAND: default={sample_time > sysdate - INTERVAL '60' MINUTE},d={sample_time between nvl(to_date(:STARTTIME,'YYMMDDHH24MI'),sysdate-interval '3' day) and nvl(to_date(:ENDTIME,'YYMMDDHH24MI'),sysdate)}
+        &Time_Filter:{
+            default={&TIME_BAND},
+            t={sample_time > sysdate - INTERVAL '&V2' MINUTE}, 
+            r={sample_time between nvl(to_date(nvl(:V2,:STARTTIME),'YYMMDDHH24MI'),sysdate-to_dsinterval('2 0:0:0')) and nvl(to_date(nvl(:V3,:ENDTIME),'YYMMDDHH24MI'),sysdate)}
+        }    
+        &Filter:default={1=1},u={username=sys_context('userenv','current_schema')},f={}
+        &GROUPS:{
+            default={DECODE(session_state, 'ON CPU', DECODE(session_type, 'BACKGROUND', 'BG CPU', 'ON CPU'), wait_class)},
+            event={nvl(event,'['||p1text||nullif('|'||p2text,'|')||nullif('|'||p3text,'|')||']')},
+            schema={username}, g={}
+        }
+        &GROUP_NAME : default={Wait Class}, event={Event}, schema={Schema Name}, g={}
+        &COUNTER    : default={count(1)}, sec={count(distinct sample_time+0)}
+        &COUNT_NAME : default={Avg Active Sessions}, sec={Distinct Seconds}
     ]]--
 ]]*/
 
 {
-    title='ASH Chart (Group By Wait Class)',
+    _attrs=[[select 'ASH Chart (Group By "&GROUP_NAME")' title,
+             '&COUNT_NAME' ylabel from dual]],
     _sql=[[
-    SELECT
-     *
-FROM (SELECT
-             TO_CHAR (sample_time, 'YYYY-MM-DD HH24:MI:SS')
-                sample_time,
-             DECODE (
-                session_state,
-                'ON CPU', DECODE (session_type,
-                                  'BACKGROUND', 'BCPU',
-                                  'ON CPU'),
-                wait_class)
-                AS wait_class
-        FROM gv$active_session_history
-       WHERE
-       &Time_Filter
-       AND  (:V1 is null and inst_id=userenv('instance') or lower(nvl(:V1,'0')) in('0','a') or inst_id=:V1)
-       AND &Filter
-       ) PIVOT (COUNT (*)
-                                                           FOR wait_class
-                                                           IN  ('ON CPU' AS cpu,
-                                                               'BCPU' AS "BACKGROUND CPU",
-                                                               'Scheduler' AS SCHEDULER,
-                                                               'User I/O' AS "USER I/O",
-                                                               'System I/O' AS "SYSTEM I/O",
-                                                               'Concurrency' AS CONCURRENCY,
-                                                               'Application' AS APPLICATION,
-                                                               'Commit' AS "COMMIT",
-                                                               'Configuration' AS CONFIGURATION,
-                                                               'Administrative' AS ADMINISTRATIVE,
-                                                               'Network' AS NETWORK,
-                                                               'Queueing' AS QUEUEING,
-                                                               'Cluster' AS "CLUSTER",
-                                                               'Other' AS OTHER))
-ORDER BY  sample_time
+    SELECT sample_time,group_by,cnt
+    FROM (
+        SELECT to_char(MEDIAN(MEDIAN(sample_time)) over(partition by bucket_id),'YYYY-MM-DD HH24:MI') sample_time,group_by,cnt,
+               dense_rank() over(order by sums desc) rn
+        FROM(
+             SELECT /*+no_expand*/
+                    trunc(sample_time, 'MI') sample_time,
+                    &GROUPS AS group_by,
+                    &COUNTER cnt,
+                    sum(&counter) over(partition by &GROUPS) sums,
+                    NTILE(1000) over(partition by &GROUPS order by trunc(sample_time, 'MI')) bucket_id
+             FROM   &VIEW_NAME a, all_users b
+             WHERE  a.user_id=b.user_id
+             AND    (&Time_Filter)
+             AND    (:V1 IS NULL AND INST_ID=nvl(:instance,userenv('instance')) OR lower(:V1) IN ('0', 'a') OR inst_id = :V1)
+             AND    (&Filter)
+             AND    (&GROUPS IS NOT NULL)
+             GROUP BY trunc(sample_time, 'MI'),&GROUPS
+        )
+        group by bucket_id,group_by,cnt,sums
+    ) WHERE RN<=30
+    order by 1,2
     ]],
-    _pivot=false,
-    ylabel='Avg Active Sessions',
+    _pivot=true,
     fillGraph=true,
     stackedGraph=true,
     labelsSeparateLines=true,
