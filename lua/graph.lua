@@ -33,8 +33,12 @@ function graph:ctor()
         <div id="divShow@GRAPH_INDEX" style="width:100%;"></div><br/></br>
         <div id="divLabel@GRAPH_INDEX" style="width:90%; margin-left:5%"></div>
         <div style="width: 100%; text-align: center;">
-          <button id="linear@GRAPH_INDEX" disabled="true">Linear Scale</button>&nbsp;
-          <button id="log@GRAPH_INDEX">Log Scale</button>
+          <input type="checkbox" onclick="javascript:g@GRAPH_INDEX.updateOptions({drawPoints:this.checked})">Point</button>&nbsp;&nbsp;&nbsp;
+          <input type="checkbox" onclick="javascript:g@GRAPH_INDEX.updateOptions({logscale:this.checked})">Log Scale</button>&nbsp;&nbsp;&nbsp;
+          <input type="checkbox" onclick="javascript:g@GRAPH_INDEX.updateOptions({fillGraph:this.checked})">Fill Graph</input>&nbsp;&nbsp;&nbsp;
+          <input type="checkbox" onclick="javascript:g@GRAPH_INDEX.updateOptions({stackedGraph:this.checked})">Stacked Graph</input>&nbsp;&nbsp;&nbsp;
+          <input type="checkbox" onclick="javascript:g@GRAPH_INDEX.updateOptions({stepPlot:this.checked})">Step Plot</input>&nbsp;&nbsp;&nbsp;
+          <input type="checkbox" onclick="javascript:g@GRAPH_INDEX.updateOptions({strokePattern:this.checked?Dygraph.DASHED_LINE:null})">Stroke Pattern</input>
         </div>
         <script type="text/javascript">
         var g@GRAPH_INDEX=new Dygraph(
@@ -42,15 +46,6 @@ function graph:ctor()
             function() {return document.getElementById("divNoshow@GRAPH_INDEX").innerHTML;},
             @GRAPH_ATTRIBUTES
         );
-        var linear@GRAPH_INDEX = document.getElementById("linear@GRAPH_INDEX");
-        var log@GRAPH_INDEX = document.getElementById("log@GRAPH_INDEX");
-        var setLog@GRAPH_INDEX = function(val) {
-            g@GRAPH_INDEX.updateOptions({ logscale: val });
-            linear@GRAPH_INDEX.disabled = !val;
-            log@GRAPH_INDEX.disabled = val;
-        };
-        linear@GRAPH_INDEX.onclick = function() { setLog@GRAPH_INDEX(false); };
-        log@GRAPH_INDEX.onclick = function() { setLog@GRAPH_INDEX(true); };
         //gs.push(g@GRAPH_INDEX);
         //if(sync!=null) sync.detach();
         //sync = Dygraph.synchronize(gs);
@@ -106,7 +101,7 @@ function graph:run_sql(sql,args,cmd,file)
     --Only proceduce top 30 curves to improve the performance in case of there is 'RNK_' field
     if sql:match('RNK%_%W') and not sql:match('RND%_%W') then
         sql='SELECT * FROM (SELECT /*+NO_NOMERGE(A)*/ A.*,dense_rank() over(order by RNK_ desc) RND_ FROM (\n'..sql..'\n) A) WHERE RND_<=30 ORDER BY 1,2'
-        print("Detected field 'RNK_' and re-applying the SQL...")
+        --print("Detected field 'RNK_' and re-applying the SQL...")
     end
 
     rs=self.db:exec(sql,args)
@@ -248,6 +243,7 @@ function graph:run_sql(sql,args,cmd,file)
     for i=1,self.dataindex do
         replaces['@GRAPH_INDEX']=i
         default_attrs.ylabel=ylabels[i] or default_ylabel or units[i]
+        default_attrs.title="Unit: "..default_attrs.ylabel
         local attr=json.encode(default_attrs)
         local graph_unit=cr:replace('@GRAPH_ATTRIBUTES',attr,true)
         for k,v in pairs(replaces) do

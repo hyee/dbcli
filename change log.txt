@@ -1,9 +1,9 @@
-2016-04-20: + public: Enhacement on "chart" commands:
+2016-04-20: + public: Enhancement on "chart" commands:
                            1.add comment of script format, refer to graph.lua
-                           2.add "Linear Scale" and "Log Scale" buttons
+                           2.add "Point/Log Scale/Fill Graph/Stacked Graph/Step Plot/Stroke Pattern" checkboxes
                            3.add calculation based on the "RNK_" field(if exists in _sql)
                            4.add time range into the title
-            + oracle: Enhacement on "ch ash"(add -r/-u/-d/-event/-schema/-sec options)
+            + oracle: Enhancement on "ch ash"(add -r/-u/-d/-event/-schema/-sec options)
                       Add "-e" option on "ch awrevent"
                       new command "ch sysstat"
 2016-04-19: + public: -e(exclude columns),-r(remap columns) options for "sql2csv","sql2file" and "csv2sql". Examples:
