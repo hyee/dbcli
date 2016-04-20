@@ -128,7 +128,11 @@ function var.setInputs(name,args)
     var.inputs[name]=args
 end
 
-local function update_text(item,pos,params)
+function var.update_text(item,pos,params)
+    local org_txt
+    if type(item)=="string" then
+        org_txt,item=item,{item}
+    end
     if cfg.get("define")~='on' or not item[pos] then return end
     pos,params=pos or 1,params or {}
     local count=1
@@ -148,9 +152,9 @@ local function update_text(item,pos,params)
         count=0
         item[pos]=item[pos]:gsub('%f[%w_%$&](&+)([%w%_%$]+)(%.?)',repl)
     end
+
+    if org_txt then return item[1] end
 end
-
-
 
 function var.before_db_exec(item)
     if cfg.get("define")~='on' then return end
@@ -162,7 +166,7 @@ function var.before_db_exec(item)
         end
     end
 
-    update_text(item,2,params)
+    var.update_text(item,2,params)
 end
 
 function var.after_db_exec(item)
@@ -262,7 +266,7 @@ function var.before_command(cmd)
     local name,args=table.unpack(cmd)
     args=type(args)=='string' and {args} or args
     if type(args)~='table' then return end
-    for i=1,#args do update_text(args,i,{}) end
+    for i=1,#args do var.update_text(args,i,{}) end
     if #env.RUNNING_THREADS==1 then var.capture_before_cmd(name,args) end
     return args
 end
@@ -398,7 +402,7 @@ end
 function var.onload()
     snoop('BEFORE_DB_EXEC',var.before_db_exec)
     snoop('AFTER_DB_EXEC',var.after_db_exec)
-    snoop('BEFORE_EVAL',function(item) if not env.pending_command() then update_text(item) end end)
+    snoop('BEFORE_EVAL',function(item) if not env.pending_command() then var.update_text(item) end end)
     snoop('BEFORE_COMMAND',var.before_command)
     snoop("AFTER_COMMAND",var.capture_after_cmd)
     snoop("ON_COLUMN_VALUE",var.trigger_column)

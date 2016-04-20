@@ -1,3 +1,11 @@
+2016-04-20: + public: Enhacement on "chart" commands:
+                           1.add comment of script format, refer to graph.lua
+                           2.add "Linear Scale" and "Log Scale" buttons
+                           3.add calculation based on the "RNK_" field(if exists in _sql)
+                           4.add time range into the title
+            + oracle: Enhacement on "ch ash"(add -r/-u/-d/-event/-schema/-sec options)
+                      Add "-e" option on "ch awrevent"
+                      new command "ch sysstat"
 2016-04-19: + public: -e(exclude columns),-r(remap columns) options for "sql2csv","sql2file" and "csv2sql". Examples:
                       sql2csv  user_objects -e"object_id,object_type" select * from user_objects where rownum<10
                       sql2file user_objects -r"object_id=seq_obj.nextval,timestamp=sysdate" select * from user_objects where rownum<10
@@ -91,7 +99,7 @@
             + oracle: new option '-prof' for command 'xplan', to auto-generate the SQL profile script
 =======================begin v0.8================================================
 2015-11-16: * public: grid: auto adjust the align style of the titles
-                    : fix ansicon issues by moving the files into 'lib' directory according to the author's comments
+                    : fix ansicon issues by moving the files into 'lib' directory according to the author comments
                     : fix the 'set' options sometimes cannot auto-restore after ora script is executed
                     : 'Set prompt timing' also show the time cost in the feed lines(in secs) if option 'feed' is on
             * oracle: auto-save the result of "ora sql <sql_id>"
