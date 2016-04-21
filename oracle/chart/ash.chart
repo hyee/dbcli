@@ -1,5 +1,5 @@
 /*[[
-    Generate the graph chart based on wait class of gv$active_session_history/dba_hist_active_Sess_history. Usage: @@NAME 0|a|inst_id [-d] [-t <minutes>|-r <YYMMDDHH24MI> <YYMMDDHH24MI>] [-u|-f"<filter>"]
+    Generate the graph chart based on gv$active_session_history/dba_hist_active_Sess_history. Usage: @@NAME 0|a|inst_id [-d] [-t <minutes>|-r <YYMMDDHH24MI> <YYMMDDHH24MI>] [-u|-f"<filter>"]
     Based View:
         -d: Query based on dba_hist_active_Sess_history, default as gv$active_session_history
     Counting:
@@ -15,12 +15,15 @@
         -schema                : group by schema name
         -g"<field expressions>": group by customized fields
     --[[
+        &V1       : default={&INSTANCE}
+        &V2       : default={&STARTTIME}
+        &V3       : default={&ENDTIME}
         &VIEW_NAME: default={gv$active_session_history}, d={(select instance_number inst_id,a.* from dba_hist_active_Sess_history a)}
-        &TIME_BAND: default={sample_time > sysdate - INTERVAL '60' MINUTE},d={sample_time between nvl(to_date(:STARTTIME,'YYMMDDHH24MI'),sysdate-interval '3' day) and nvl(to_date(:ENDTIME,'YYMMDDHH24MI'),sysdate)}
+        &TIME_BAND: default={sample_time > sysdate - INTERVAL '60' MINUTE},d={sample_time between nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-interval '3' day) and nvl(to_date(:V3,'YYMMDDHH24MI'),sysdate)}
         &Time_Filter:{
             default={&TIME_BAND},
             t={sample_time > sysdate - INTERVAL '&V2' MINUTE}, 
-            r={sample_time between nvl(to_date(nvl(:V2,:STARTTIME),'YYMMDDHH24MI'),sysdate-to_dsinterval('2 0:0:0')) and nvl(to_date(nvl(:V3,:ENDTIME),'YYMMDDHH24MI'),sysdate)}
+            r={sample_time between nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-to_dsinterval('2 0:0:0')) and nvl(to_date(:V3,'YYMMDDHH24MI'),sysdate)}
         }    
         &Filter:default={1=1},u={username=sys_context('userenv','current_schema')},f={}
         &GROUPS:{
@@ -52,7 +55,7 @@
              FROM   &VIEW_NAME a, all_users b
              WHERE  a.user_id=b.user_id
              AND    (&Time_Filter)
-             AND    (:V1 IS NULL AND INST_ID=nvl(:instance,userenv('instance')) OR lower(:V1) IN ('0', 'a') OR inst_id = :V1)
+             AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR inst_id = :V1)
              AND    (&Filter)
              AND    (&GROUPS IS NOT NULL)
              GROUP BY trunc(sample_time, 'MI'),&GROUPS
@@ -63,6 +66,5 @@
     ]],
     _pivot=true,
     fillGraph=true,
-    stackedGraph=true,
     labelsSeparateLines=true,
 }

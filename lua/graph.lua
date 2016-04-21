@@ -4,7 +4,7 @@ local template,cr
 --[[
     Please refer to "http://dygraphs.com/options.html" for the graph options that used in .chart files
     Common options from dygraphs:
-        ylabel,title,height,rollPeriod
+        ylabel,title,height,rollPeriod,drawPoints,logscale,fillGraph,stackedGraph,stepPlot,strokePattern
     Other options:
         _attrs="<sql_statement>" : Select statement to proceduce the attributes, 
                                    field name matches the attribute name,
@@ -30,15 +30,15 @@ function graph:ctor()
         env.checkerr(type(template)=="string",'Cannot load file "dygraphs.html" in folder "lib"!')
         cr=[[
         <div id="divNoshow@GRAPH_INDEX" style="display:none">@GRAPH_DATA</div>
-        <div id="divShow@GRAPH_INDEX" style="width:100%;"></div><br/></br>
+        <div id="divShow@GRAPH_INDEX" style="width:100%;"></div>
         <div id="divLabel@GRAPH_INDEX" style="width:90%; margin-left:5%"></div>
         <div style="width: 100%; text-align: center;">
-          <input type="checkbox" onclick="javascript:g@GRAPH_INDEX.updateOptions({drawPoints:this.checked})">Point</button>&nbsp;&nbsp;&nbsp;
-          <input type="checkbox" onclick="javascript:g@GRAPH_INDEX.updateOptions({logscale:this.checked})">Log Scale</button>&nbsp;&nbsp;&nbsp;
-          <input type="checkbox" onclick="javascript:g@GRAPH_INDEX.updateOptions({fillGraph:this.checked})">Fill Graph</input>&nbsp;&nbsp;&nbsp;
-          <input type="checkbox" onclick="javascript:g@GRAPH_INDEX.updateOptions({stackedGraph:this.checked})">Stacked Graph</input>&nbsp;&nbsp;&nbsp;
-          <input type="checkbox" onclick="javascript:g@GRAPH_INDEX.updateOptions({stepPlot:this.checked})">Step Plot</input>&nbsp;&nbsp;&nbsp;
-          <input type="checkbox" onclick="javascript:g@GRAPH_INDEX.updateOptions({strokePattern:this.checked?Dygraph.DASHED_LINE:null})">Stroke Pattern</input>
+          <input type="checkbox" id="drawPoints@GRAPH_INDEX" onclick="javascript:g@GRAPH_INDEX.updateOptions({drawPoints:this.checked})">Point</button>&nbsp;&nbsp;&nbsp;
+          <input type="checkbox" id="logscale@GRAPH_INDEX" onclick="javascript:g@GRAPH_INDEX.updateOptions({logscale:this.checked})">Log Scale</button>&nbsp;&nbsp;&nbsp;
+          <input type="checkbox" id="fillGraph@GRAPH_INDEX" onclick="javascript:g@GRAPH_INDEX.updateOptions({fillGraph:this.checked})">Fill Graph</input>&nbsp;&nbsp;&nbsp;
+          <input type="checkbox" id="stackedGraph@GRAPH_INDEX" onclick="javascript:g@GRAPH_INDEX.updateOptions({stackedGraph:this.checked})">Stacked Graph</input>&nbsp;&nbsp;&nbsp;
+          <input type="checkbox" id="stepPlot@GRAPH_INDEX" onclick="javascript:g@GRAPH_INDEX.updateOptions({stepPlot:this.checked})">Step Plot</input>&nbsp;&nbsp;&nbsp;
+          <input type="checkbox" id="strokePattern@GRAPH_INDEX" onclick="javascript:g@GRAPH_INDEX.updateOptions({strokePattern:this.checked?Dygraph.DASHED_LINE:null})">Stroke Pattern</input>
         </div>
         <script type="text/javascript">
         var g@GRAPH_INDEX=new Dygraph(
@@ -46,6 +46,12 @@ function graph:ctor()
             function() {return document.getElementById("divNoshow@GRAPH_INDEX").innerHTML;},
             @GRAPH_ATTRIBUTES
         );
+        var ary=['drawPoints','logscale','fillGraph','stackedGraph','strokePattern'];
+        for(i=0;i<ary.length;i++) {
+            var val=g@GRAPH_INDEX.getOption(ary[i]);
+            document.getElementById(ary[i]+"@GRAPH_INDEX").checked=(val==null||val==false)?false:true; 
+        }
+        
         //gs.push(g@GRAPH_INDEX);
         //if(sync!=null) sync.detach();
         //sync = Dygraph.synchronize(gs);
@@ -76,6 +82,7 @@ function graph:run_sql(sql,args,cmd,file)
             rollPeriod=8,
             showRoller=true,
             height= 400,
+            includeZero=true,
             highlightSeriesOpts= {
               strokeWidth= 2,
               strokeBorderWidth=2,
@@ -230,7 +237,7 @@ function graph:run_sql(sql,args,cmd,file)
 
     local replaces={
         ['@GRAPH_TITLE']=default_attrs.title,
-        ['@TIME_RANGE']=default_attrs._range or ('Range:  '..tostring(range_begin)..' ~~ '..tostring(range_end))
+        ['@TIME_RANGE']=default_attrs._range or ('(Range:  '..tostring(range_begin)..' ~~ '..tostring(range_end)..')')
     }
 
     for k,v in pairs(default_attrs) do
@@ -243,7 +250,9 @@ function graph:run_sql(sql,args,cmd,file)
     for i=1,self.dataindex do
         replaces['@GRAPH_INDEX']=i
         default_attrs.ylabel=ylabels[i] or default_ylabel or units[i]
-        default_attrs.title="Unit: "..default_attrs.ylabel
+        if default_attrs.ylabel then
+            default_attrs.title="Unit: "..default_attrs.ylabel
+        end
         local attr=json.encode(default_attrs)
         local graph_unit=cr:replace('@GRAPH_ATTRIBUTES',attr,true)
         for k,v in pairs(replaces) do

@@ -1,6 +1,9 @@
 /*[[Show chart for GV$SYSMETRIC_HISTORY/DBA_HIST_SYSMETRIC_SUMMARY. Usage: @@NAME <metric_name|metric_group_name> [-d] [inst_id] [yymmddhh24mi] [yymmddhh24mi]
    -d:  based on DBA_HIST_SYSMETRIC_SUMMARY, otherwise based on GV$SYSMETRIC_HISTORY
     --[[
+      &V2   : default={&INSTANCE}
+      &V3   : default={&STARTTIME}
+      &V4   : default={&ENDTIME}
       @BASE : 10.2={}
       &DICT : V={V}, D={D}
       &TITLE: V={GV$SYSMETRIC_HISTORY}, D={DBA_HIST_SYSMETRIC_SUMMARY}
@@ -28,9 +31,9 @@
                           SELECT INSTANCE_NUMBER, END_TIME, METRIC_NAME, metric_unit,group_id,AVERAGE
                           FROM   DBA_HIST_SYSMETRIC_SUMMARY
                           WHERE  'D' = UPPER(:DICT)) A JOIN (SELECT group_id,group_name FROM V$METRICNAME) b USING(group_id)
-                 WHERE  (:V2 IS NULL AND INST_ID=nvl(:instance,userenv('instance')) OR lower(:V2) IN ('0', 'a') OR inst_id = :V2)
+                 WHERE  (:V2 IS NULL  OR lower(:V2) IN ('0', 'a') OR inst_id = :V2)
                  AND    (:V1 IS NULL OR UPPER(METRIC_NAME) LIKE UPPER('%&V1%') OR upper(B.GROUP_NAME)=upper(:V1)) /* changed from metric_id to metric_name as name is more intuitive*/
-                 AND    end_time between nvl(to_date(nvl(:V3,:STARTTIME),'yymmddhh24mi'),sysdate-7) and nvl(to_date(nvl(:V4,:ENDTIME),'yymmddhh24mi'),sysdate)
+                 AND    end_time between nvl(to_date(:V3,'yymmddhh24mi'),sysdate-7) and nvl(to_date(:V4,'yymmddhh24mi'),sysdate)
                  GROUP  BY a.end_time, A.METRIC_NAME, a.metric_unit
                  ORDER BY STD DESC)
         ]],
@@ -38,7 +41,6 @@
        rollPeriod=1,
        labelsKMB=true,
        ylabel='Value',
-       fillGraph=true,
        stackedGraph=false,
-       labelsSeparateLines=true,
+       labelsSeparateLines=false,
    }
