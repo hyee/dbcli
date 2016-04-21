@@ -1,0 +1,40 @@
+/*[[
+    Generate the graph chart based on DBA_HIST_SQL_SUMMARY. Usage: @@NAME [inst_id] [yymmddhh24mi] [yymmddhh24mi]
+    Impacted by settings: starttime,endtime,instance
+    --[[
+        &V1     : default={&INSTANCE}
+        &V2     : default={&STARTTIME}
+        &V3     : default={&ENDTIME}
+    --]]
+]]*/
+{
+    _attrs=[[
+        SELECT 'System SQL Summary Chart' title
+        from dual]],
+    _sql=[[
+        SELECT time,V1 "Total SQLs per Minute", V2 "Single Used SQLs per Minute"
+        FROM   (SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') TIME,
+                       sum(v1) v1,
+                       sum(v2) v2
+                FROM  (SELECT /*+merge*/
+                               A.*,
+                               TOTAL_SQL/slot_size V1,
+                               SINGLE_USE_SQL/slot_size V2
+                       FROM   (SELECT /*+merge no_expand ordered_predicates*/
+                                      instance_number inst_id,
+                                      end_interval_time+0 end_time,
+                                      ((end_interval_time+0)-(begin_interval_time+0))*1440 Slot_size,
+                                      TOTAL_SQL ,
+                                      SINGLE_USE_SQL 
+                               FROM   DBA_HIST_SQL_SUMMARY 
+                               NATURAL JOIN dba_hist_snapshot
+                               WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss')-3/144,sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
+                               AND    (:V2 IS NULL OR lower(nvl(:V2, '0')) IN ('0', 'a') OR instance_number = :V2)) a
+                       )
+                 GROUP  BY end_time) a
+        ORDER  BY 1]],
+    _pivot=false,
+    ylabel="SQLs per Minute",
+    labelsSeparateLines=true,
+    height=400,
+}

@@ -1,5 +1,5 @@
 local env=env
-local db,cfg,event=env.getdb(),env.set,env.event 
+local db,cfg,event,var=env.getdb(),env.set,env.event,env.var
 local extvars={}
 
 local instance_pattern={
@@ -13,11 +13,15 @@ local instance_pattern={
 
 
 function extvars.on_before_db_exec(item)
-    local db,sql,args=table.unpack(item)
-    args.starttime,args.endtime=cfg.get("starttime"),cfg.get("endtime")
-    if not args.instance or args.instance=="" then
-        local instance=tonumber(cfg.get("instance"))
-        args.instance=tostring(instance>0 and instance or instance<0 and "" or db.props.instance)
+    if not var.outputs['INSTANCE'] then
+        local instance=tonumber(cfg.get("INSTANCE"))
+        var.setInputs("INSTANCE",tostring(instance>0 and instance or instance<0 and "" or db.props.instance))
+    end
+    if not var.outputs['STARTTIME'] then
+        var.setInputs("STARTTIME",cfg.get("STARTTIME"))
+    end
+    if not var.outputs['ENDTIME'] then
+        var.setInputs("ENDTIME",cfg.get("ENDTIME"))
     end
     return item
 end
@@ -53,7 +57,7 @@ function extvars.check_time(name,value)
 end
 
 function extvars.onload()
-    event.snoop('BEFORE_DB_EXEC',extvars.on_before_parse,nil,1)
+    event.snoop('BEFORE_DB_EXEC',extvars.on_before_parse,nil,50)
     event.snoop('BEFORE_ORACLE_EXEC',extvars.on_before_db_exec)
     event.snoop('ON_SETTING_CHANGED',extvars.set_title)
     cfg.init("instance",-1,nil,"oracle","Auto-limit the inst_id of gv$/x$ tables. -1: unlimited, 0: current, >0: specific instance","-1 - 99")

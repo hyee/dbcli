@@ -148,7 +148,7 @@ function scripter:parse_args(sql,args,print_args,extend_dirs)
 
     local arg1,ary={},{}
     for i=1,ARGS_COUNT do
-        local k,v="V"..i,tostring(args["V"..i])
+        local k,v,cnt="V"..i,tostring(args["V"..i])
         ary[i]=v
         if v:sub(1,1)=="-"  then
             local idx,rest=v:sub(2):match("^([%w_]+)(.*)$")
@@ -157,11 +157,13 @@ function scripter:parse_args(sql,args,print_args,extend_dirs)
                 for param,text in pairs(options[idx] or {}) do
                     ary[i]=nil
                     local ary_idx=tonumber(param:match("^V(%d+)$"))
+                    text,cnt=text:gsub('&0',rest)
+                    if cnt==0 then text=text..rest end
                     if args[param] and ary_idx then
                         ary[ary_idx]=nil
-                        arg1[param]=text..rest
+                        arg1[param]=text
                     else
-                        setvalue(param,text..rest,idx)
+                        setvalue(param,text,idx)
                     end
 
                     if templates[param] then

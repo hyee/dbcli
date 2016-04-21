@@ -1,3 +1,4 @@
+2016-04-21: + oracle: add several sub-commands under "chart" 
 2016-04-20: + public: Enhancement on "chart" commands:
                            1.add comment of script format, refer to graph.lua
                            2.add "Point/Log Scale/Fill Graph/Stacked Graph/Step Plot/Stroke Pattern" checkboxes
