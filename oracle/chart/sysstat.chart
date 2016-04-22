@@ -1,5 +1,5 @@
 /*[[
-    Generate the graph chart based on wait event of dba_hist_system_event. Usage: @@NAME ["<state_name>"] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-f"<filter>"]
+    Show chart for dba_hist_system_event. Usage: @@NAME ["<state_name>"] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-f"<filter>"]
     Impacted by settings: starttime,endtime,instance
     inst_id: Default as all instances, other options are:
                 0         - Separate all instances
@@ -7,22 +7,17 @@
                 <inst_id> - Only the specific instance
     -f       : User-defined filter. For example, -f"stat_name like '%time%'"
     -c       : Group by class name, default is stat name.
-    -time    : Filter the states whose name like '%time%'
-    -l"<key>": Filter the states whose name like '%<key>%'
     --[[
         &V2     : default={&INSTANCE}
         &V3     : default={&STARTTIME}
         &V4     : default={&ENDTIME}
-        &filter : default={1=1},time={stat_name like '%time%'},l={lower(stat_name) like lower('%&0%')},f={}
         &GRP    : default={stat_name}, c={class_name}
     --]]
 ]]*/
 {
-    _attrs=[[
-        SELECT 'System State Chart' title,nvl2(:V1,'Value Per Minute','(Value/Average)%') ylabel
-        from dual]],
+    title='System State Chart',
     _sql=[[
-        SELECT time,event,ROUND(nvl2(:V1,V,A),2) v,RNK_
+        SELECT time,event,v "Value Per Minute",RNK_
         FROM   (SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') TIME, event,
                        sum(v) v,100*avg(v/a)  a,
                        stddev(sum(v/a)) over(partition by event) RNK_
@@ -42,15 +37,15 @@
                                NATURAL JOIN dba_hist_snapshot 
                                NATURAL JOIN v$statname
                                WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss')-3/144,sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
-                               AND    (:V2 IS NULL OR lower(nvl(:V2, '0')) IN ('0', 'a') OR instance_number = :V2)
+                               AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)
                                AND    (&filter) 
-                               AND    (:V1 is null or upper(stat_name)=upper(:V1))) a
+                               AND    (:V1 is null or upper(stat_name) like upper('%&V1%'))) a
                        where nvl(value,0)>0)
                  GROUP  BY event, end_time) a
         WHERE  (v>0)
         ORDER  BY 1]],
     _pivot=true,
-    labelsSeparateLines=true,
-    labelsKMB=true,
+    labelsKMG2=true,
     height=400,
+    multiScale=true,
 }

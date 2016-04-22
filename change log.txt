@@ -1,3 +1,7 @@
+2016-04-22: + public: Enhancement on "chart" commands:
+                           1.add options "Multi Scale/Follow Mouse/Show Roller"
+                           2.add enum "mixed" for option "_pivot", refer to "racping.chart" for example 
+                           3.Some other improvements
 2016-04-21: + oracle: add several sub-commands under "chart" 
 2016-04-20: + public: Enhancement on "chart" commands:
                            1.add comment of script format, refer to graph.lua

@@ -1,17 +1,16 @@
 /*[[
-    Generate the graph chart based on dba_hist_latch. Usage: @@NAME ["<latch_name>"] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-f"<filter>"]
+    Show chart for dba_hist_latch. Usage: @@NAME ["<latch_name>"] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-f"<filter>"]
     Impacted by settings: starttime,endtime,instance
     inst_id: Default as all instances, other options are:
                 0         - Separate all instances
                 a         - Group all instances
                 <inst_id> - Only the specific instance
     -f       : User-defined filter. For example, -f"latch_name like '%XDB%'"
-    -l"<key>": Filter the states whose name like '%<key>%'
     --[[
         &V2     : default={&INSTANCE}
         &V3     : default={&STARTTIME}
         &V4     : default={&ENDTIME}
-        &filter : default={1=1},l={lower(latch_name) like lower('%&0%')},f={}
+        &filter : default={1=1},f={}
     --]]
 ]]*/
 {
@@ -49,15 +48,14 @@
                                FROM   DBA_HIST_LATCH
                                NATURAL JOIN dba_hist_snapshot
                                WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss')-3/144,sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
-                               AND    (:V2 IS NULL OR lower(nvl(:V2, '0')) IN ('0', 'a') OR instance_number = :V2)
+                               AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)
                                AND    (&filter)
-                               AND    (:V1 is null or upper(LATCH_NAME)=upper(:V1))) a
+                               AND    (:V1 is null or upper(LATCH_NAME) like upper('%&V1%'))) a
                        where nvl(wait_time,0)>0)
                  GROUP  BY event, end_time) a
         WHERE  (v>0)
         ORDER  BY 1]],
     _pivot=true,
-    labelsSeparateLines=true,
     labelsKMB=true,
-    height=400,
+    
 }

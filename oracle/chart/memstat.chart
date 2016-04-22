@@ -1,5 +1,5 @@
 /*[[
-    Generate the graph chart based on DBA_HIST_MEM_DYNAMIC_COMP. Usage: @@NAME [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-f"<filter>"]
+    Show chart for DBA_HIST_MEM_DYNAMIC_COMP. Usage: @@NAME [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-f"<filter>"]
     Impacted by settings: starttime,endtime,instance
     inst_id: Default as all instances, other options are:
                 0         - Separate all instances
@@ -34,13 +34,12 @@
                                FROM   DBA_HIST_MEM_DYNAMIC_COMP
                                NATURAL JOIN DBA_HIST_SNAPSHOT
                                WHERE  end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss')-3/144,sysdate-7) AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate)
-                               AND    (:V1 IS NULL OR lower(nvl(:V1, '0')) IN ('0', 'a') OR instance_number = :V1)
+                               AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V1)
                                AND    (&filter)) a
                        )
                  GROUP  BY event, end_time) a
         ORDER  BY 1]],
     _pivot=true,
-    labelsSeparateLines=true,
     labelsKMG2=true,
     height=400,
 }

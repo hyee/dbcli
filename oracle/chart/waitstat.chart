@@ -1,5 +1,5 @@
 /*[[
-    Generate the graph chart based on DBA_HIST_WAITSTAT. Usage: @@NAME [inst_id] [yymmddhh24mi] [yymmddhh24mi]
+    Show chart for DBA_HIST_WAITSTAT. Usage: @@NAME [inst_id] [yymmddhh24mi] [yymmddhh24mi]
     Impacted by settings: starttime,endtime,instance
     inst_id: Default as all instances, other options are:
                 0         - Separate all instances
@@ -31,13 +31,12 @@
                        FROM   DBA_HIST_WAITSTAT 
                        NATURAL JOIN dba_hist_snapshot
                        WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss')-3/144,sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
-                       AND    (:V2 IS NULL OR lower(nvl(:V2, '0')) IN ('0', 'a') OR instance_number = :V2)
+                       AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)
                        AND    (:V1 is null or upper(CLASS)=upper(:V1))) a
                where nvl(WAIT_COUNT,0)>0)
          GROUP  BY event, end_time
         ]],
     _pivot=true,
-    labelsSeparateLines=true,
     labelsKMB=true,
     height=400,
 }

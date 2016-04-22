@@ -1,5 +1,5 @@
 /*[[
-    Generate the graph chart based on gv$active_session_history/dba_hist_active_Sess_history. Usage: @@NAME 0|a|inst_id [-d] [-t <minutes>|-r <YYMMDDHH24MI> <YYMMDDHH24MI>] [-u|-f"<filter>"]
+    Show chart for gv$active_session_history/dba_hist_active_Sess_history. Usage: @@NAME 0|a|inst_id [-d] [-t <minutes>|-r <YYMMDDHH24MI> <YYMMDDHH24MI>] [-u|-f"<filter>"]
     Based View:
         -d: Query based on dba_hist_active_Sess_history, default as gv$active_session_history
     Counting:
@@ -19,11 +19,11 @@
         &V2       : default={&STARTTIME}
         &V3       : default={&ENDTIME}
         &VIEW_NAME: default={gv$active_session_history}, d={(select instance_number inst_id,a.* from dba_hist_active_Sess_history a)}
-        &TIME_BAND: default={sample_time > sysdate - INTERVAL '60' MINUTE},d={sample_time between nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-interval '3' day) and nvl(to_date(:V3,'YYMMDDHH24MI'),sysdate)}
+        &TIME_BAND: default={sample_time > sysdate - INTERVAL '3' HOUR},d={sample_time between nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-interval '3' day) and nvl(to_date(:V3,'YYMMDDHH24MI'),sysdate)}
         &Time_Filter:{
             default={&TIME_BAND},
-            t={sample_time > sysdate - INTERVAL '&V2' MINUTE}, 
-            r={sample_time between nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-to_dsinterval('2 0:0:0')) and nvl(to_date(:V3,'YYMMDDHH24MI'),sysdate)}
+            t={sample_time > sysdate - :V2/1440}, 
+            r={sample_time between nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-3 and nvl(to_date(:V3,'YYMMDDHH24MI'),sysdate)}
         }    
         &Filter:default={1=1},u={username=sys_context('userenv','current_schema')},f={}
         &GROUPS:{
@@ -65,6 +65,4 @@
     order by 1,2
     ]],
     _pivot=true,
-    fillGraph=true,
-    labelsSeparateLines=true,
 }
