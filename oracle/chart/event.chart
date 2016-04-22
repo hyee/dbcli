@@ -1,5 +1,5 @@
 /*[[
-    Generate the graph chart based on dba_hist_system_event. Usage: @@NAME [<event_id>|<event_abbr>|"<event_name>"|"<wait_class>"] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-f"<filter>" [-f1"<filter>"]]
+    Show chart for dba_hist_system_event. Usage: @@NAME [<event_id>|<event_abbr>|"<event_name>"|"<wait_class>"] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-f"<filter>" [-f1"<filter>"]]
     Impacted by settings: starttime,endtime,instance
     inst_id: Default as all instances, other options are:
                 0         - Separate all instances
@@ -56,13 +56,12 @@
                                FROM   DBA_HIST_SYSTEM_EVENT NATURAL
                                JOIN   dba_hist_snapshot NATURAL
                                WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss')-3/144,sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
-                               AND    (:V2 IS NULL OR lower(nvl(:V2, '0')) IN ('0', 'a') OR instance_number = :V2)
+                               AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)
                                AND    (&filter) AND (&ADDITIONAL_FILTER) ) a)
                  WHERE nvl(v1,0)>0
                  GROUP  BY event, trunc(end_time,'MI'))
         ORDER  BY 1]],
     _pivot=true,
-    labelsSeparateLines=true,
     labelsKMB=true,
     height=400,
 }

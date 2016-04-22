@@ -1,0 +1,62 @@
+/*[[
+    Show chart for DBA_HIST_INTERCONNECT_PINGS. Usage: @@NAME [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-f"<filter>"]
+    Impacted by settings: starttime,endtime,instance
+    inst_id: Default as all instances, other options are:
+                0         - Separate all instances
+                a         - Group all instances
+                <inst_id> - Only the specific instance
+    -f       : User-defined filter. For example, -f"stat_name like '%time%'"
+    -byte    : Only show bytes/min
+    -ms      : Only show ms/req
+    -se      : Only show seconds/min
+    --[[
+        &V1     : default={&INSTANCE}
+        &V2     : default={&STARTTIME}
+        &V3     : default={&ENDTIME}
+        &filter : default={1=1},f={}
+        &COL    : default={A},byte={B},ms={M},sec={S}
+    --]]
+]]*/
+{
+    title="RAC Inter-Connect Stats Chart",
+    _sql=[[
+        SELECT to_char(end_time, 'YYYY-MM-DD HH24:MI') TIME, event,
+               case when '&COL' in ('A','M') then round(AVG(AVG_500B),2)  end "Ms/Req(500B)",
+               case when '&COL' in ('A','B') then round(sum(CNT_500B),2)  end "Bytes(500B)/Min",
+               case when '&COL' in ('A','S') then round(sum(WAIT_500B),2) end "Seconds(500B)/Min",
+               case when '&COL' in ('A','M') then round(sum(CNT_8K),2)    end "Bytes(8K)/Min",
+               case when '&COL' in ('A','B') then round(sum(WAIT_8K),2)   end "Seconds(8K)/Min",
+               case when '&COL' in ('A','S') then round(AVG(AVG_8K),2)    end "Ms/Req(8K)"
+        FROM  (SELECT /*+merge*/
+                       end_time,
+                       event || decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event,
+                       CNT_500B/Slot_size*500 CNT_500B,
+                       WAIT_500B/Slot_size*1E-6 WAIT_500B,
+                       WAIT_500B/CNT_500B*1E-3 AVG_500B,
+                       CNT_8K/Slot_size*8192 CNT_8K,
+                       WAIT_8K/Slot_size*1E-6 WAIT_8K,
+                       WAIT_8K/CNT_8K*1E-3 AVG_8K
+               FROM   (SELECT /*+merge no_expand ordered_predicates*/
+                              instance_number inst_id,
+                              trunc(end_interval_time+0,'MI') end_time,
+                              '#'||INSTANCE_NUMBER||'-#'||TARGET_INSTANCE event,
+                              ((end_interval_time+0)-(begin_interval_time+0))*1440 Slot_size,
+                              CNT_500B - LAG(CNT_500B) OVER(PARTITION BY instance_number,TARGET_INSTANCE,startup_time ORDER BY snap_id) CNT_500B,
+                              WAIT_500B - LAG(WAIT_500B) OVER(PARTITION BY instance_number,TARGET_INSTANCE,startup_time ORDER BY snap_id) WAIT_500B,
+                              WAIT_8K - LAG(WAIT_8K) OVER(PARTITION BY instance_number,TARGET_INSTANCE,startup_time ORDER BY snap_id) WAIT_8K,
+                              CNT_8K - LAG(CNT_8K) OVER(PARTITION BY instance_number,TARGET_INSTANCE,startup_time ORDER BY snap_id) CNT_8K
+                       FROM   DBA_HIST_INTERCONNECT_PINGS 
+                       NATURAL JOIN dba_hist_snapshot
+                       WHERE  end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss')-3/144,sysdate-7) AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate)
+                       AND    (:V1 IS NULL AND instance_number=userenv('instance') OR lower(:V1) IN ('0', 'a') OR instance_number = :V1)
+                       AND    (&filter)
+                       AND    INSTANCE_NUMBER!=TARGET_INSTANCE) a
+               where WAIT_500B>0 or WAIT_8K>0)
+        GROUP  BY event, end_time
+        ORDER  BY 1]],
+    _pivot="mixed",
+    labelsSeparateLines=true,
+    multiScale=true,
+    labelsKMG2=true,
+    height=400,
+}

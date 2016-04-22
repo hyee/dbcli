@@ -3,6 +3,9 @@ local json,math,graph,cfg=env.json,env.math,env.class(env.scripter),env.set
 local template,cr
 --[[
     Please refer to "http://dygraphs.com/options.html" for the graph options that used in .chart files
+    Settings:
+        set ChartSeries <number>: Define the max series to be shown in the chart.
+                                  If the data contains many series, only show the top <number> deviations
     Common options from dygraphs:
         ylabel,title,height,rollPeriod,drawPoints,logscale,fillGraph,stackedGraph,stepPlot,strokePattern
     Other options:
@@ -11,15 +14,47 @@ local template,cr
                                    and must return only one row, it can also can be used as a variable inside "_sql" option
         _sql  ="<sql_statement>" : The select statement to produce the graph data
                                    1st field : the value of X-Asis, mainly be a time value
-                                   _pivot=true:
-                                       2nd  field      : as the name of the curve
-                                       3rd+ fields     : as the values of Y-Asis, must be number, if >1 fields then split into multiple charts
-                                       3rd+ field names: as the y-label
                                    _pivot=false:
+                                       Asis Name  = 2nd+ field names
+                                       Asis Value = 2nd+ field values(number)
                                        2nd+ fields: field name as the curve name and value as the Y-Asis
-        _pivot=true|false        : indicate if pivot the >2nd numberic fields  
+                                       Example:
+                                           date(x-label)  latch1  latch2
+                                           --------------------------------
+                                           2015-1-1        99      98
+                                           2015-1-1        97      96
+                                   _pivot=true:
+                                       Asis Name  = 2nd field value(string)
+                                       Asis Value = 3rd+ values(number), if colums(N)>3, then create N-2 charts 
+                                       Example:
+                                           date(x-label)  name   Y1  Y2 
+                                           -----------------------------
+                                           2015-1-1      latch1  99  24 
+                                           2015-1-1      latch2  98  23 
+                                                                     ||(convert into)
+                                                                     \/
+                                           date(Y1) latch1  latch2      date(Y2)  latch1  latch2
+                                           ------------------------- +  ------------------------
+                                           2015-1-1  99      98         2015-1-1   24      23  
+                                           
+                                   _pivot="mixed":
+                                       Asis Name  = <2nd field value(string)> + <3rd+ field name>
+                                       Asis Value = 3rd+ values
+                                       Example:
+                                           date(x-label)  name   Y1  Y2
+                                           ----------------------------
+                                           2015-1-1      latch1  99  24
+                                           2015-1-1      latch2  98  23 
+                                                     ||(convert into)
+                                                     \/
+                                           date(x-label)  latch1[Y1] latch1[Y2] latch2[Y1] latch2[Y1]
+                                           ----------------------------------------------------------
+                                           2015-1-1        99         24        98          23
+                                            
+        _pivot=true|false|"mixed": indicate if pivot the >2nd numberic fields, refer to above  
         _ylabels={"<label1>",...}: Customize the ylabel for each chart, not not define then use the names from "_sql"
-        _range="<Time range>"    : Used in sub-title, if not specified then auto-caculate the range                  
+        _range="<Time range>"    : Used in sub-title, if not specified then auto-caculate the range
+        multiScale=true|false    : False for org value, and true to display the data based on deviation%(value*100/average)
 ]]--
 
 function graph:ctor()
@@ -30,31 +65,14 @@ function graph:ctor()
         env.checkerr(type(template)=="string",'Cannot load file "dygraphs.html" in folder "lib"!')
         cr=[[
         <div id="divNoshow@GRAPH_INDEX" style="display:none">@GRAPH_DATA</div>
-        <div id="divShow@GRAPH_INDEX" style="width:100%;"></div>
-        <div id="divLabel@GRAPH_INDEX" style="width:90%; margin-left:5%"></div>
-        <div style="width: 100%; text-align: center;">
-          <input type="checkbox" id="drawPoints@GRAPH_INDEX" onclick="javascript:g@GRAPH_INDEX.updateOptions({drawPoints:this.checked})">Point</button>&nbsp;&nbsp;&nbsp;
-          <input type="checkbox" id="logscale@GRAPH_INDEX" onclick="javascript:g@GRAPH_INDEX.updateOptions({logscale:this.checked})">Log Scale</button>&nbsp;&nbsp;&nbsp;
-          <input type="checkbox" id="fillGraph@GRAPH_INDEX" onclick="javascript:g@GRAPH_INDEX.updateOptions({fillGraph:this.checked})">Fill Graph</input>&nbsp;&nbsp;&nbsp;
-          <input type="checkbox" id="stackedGraph@GRAPH_INDEX" onclick="javascript:g@GRAPH_INDEX.updateOptions({stackedGraph:this.checked})">Stacked Graph</input>&nbsp;&nbsp;&nbsp;
-          <input type="checkbox" id="stepPlot@GRAPH_INDEX" onclick="javascript:g@GRAPH_INDEX.updateOptions({stepPlot:this.checked})">Step Plot</input>&nbsp;&nbsp;&nbsp;
-          <input type="checkbox" id="strokePattern@GRAPH_INDEX" onclick="javascript:g@GRAPH_INDEX.updateOptions({strokePattern:this.checked?Dygraph.DASHED_LINE:null})">Stroke Pattern</input>
-        </div>
         <script type="text/javascript">
+        write_options(@GRAPH_INDEX);
         var g@GRAPH_INDEX=new Dygraph(
             document.getElementById("divShow@GRAPH_INDEX"),
             function() {return document.getElementById("divNoshow@GRAPH_INDEX").innerHTML;},
             @GRAPH_ATTRIBUTES
         );
-        var ary=['drawPoints','logscale','fillGraph','stackedGraph','strokePattern'];
-        for(i=0;i<ary.length;i++) {
-            var val=g@GRAPH_INDEX.getOption(ary[i]);
-            document.getElementById(ary[i]+"@GRAPH_INDEX").checked=(val==null||val==false)?false:true; 
-        }
-        
-        //gs.push(g@GRAPH_INDEX);
-        //if(sync!=null) sync.detach();
-        //sync = Dygraph.synchronize(gs);
+        sync_options(@GRAPH_INDEX);
         </script>
         <hr/><br/><br/>]]
         --template=template:gsub('@GRAPH_FIELDS',cr)
@@ -64,7 +82,6 @@ end
 
 
 function graph:run_sql(sql,args,cmd,file)
-
     if type(sql)=="table" then
         for i=1,#sql do self:run_sql(sql[i],args[i],cmd[i],file[i]) end
         return
@@ -80,9 +97,11 @@ function graph:run_sql(sql,args,cmd,file)
             --legend='always',
             labelsDivStyles= {border='1px solid black',width=80},
             rollPeriod=8,
-            showRoller=true,
+            showRoller=false,
             height= 400,
             includeZero=true,
+            axisLabelFontSize=12,
+            labelsSeparateLines=true,
             highlightSeriesOpts= {
               strokeWidth= 2,
               strokeBorderWidth=2,
@@ -104,6 +123,10 @@ function graph:run_sql(sql,args,cmd,file)
         end
     end
 
+    if default_attrs.title then
+        print("Running Report ==> "..default_attrs.title..'...')
+    end
+
     local sql,pivot=context._sql,context._pivot
     --Only proceduce top 30 curves to improve the performance in case of there is 'RNK_' field
     if sql:match('RNK%_%W') and not sql:match('RND%_%W') then
@@ -121,6 +144,21 @@ function graph:run_sql(sql,args,cmd,file)
     end
     local counter,range_begin,range_end=-1
     rows=self.db.resultset:rows(rs,-1)
+    local head=table.remove(rows,1)
+    table.sort(rows,function(a,b) return a[1]<b[1] end)
+    if pivot=="mixed" then
+        local data={}
+        for k,v in ipairs(rows) do
+            for i=3,#v do
+                data[#data+1]={v[1],v[2].."["..head[i]..']',v[i]}
+            end
+        end
+        table.insert(data,1,{head[1],head[2],"Value"})
+        pivot,rows=true,data
+    else
+        table.insert(rows,1,head)
+    end
+    
     while true do
         counter=counter+1
         local row=rows[counter+1]
@@ -137,43 +175,47 @@ function graph:run_sql(sql,args,cmd,file)
             if type(range_begin)=="number" then x=tonumber(x) end
             range_begin,range_end=range_begin>x and x or range_begin, range_end<x and x or range_end
         end
-        --For pivot, col1=x-value, col2=Pivot,col3=y-value
+        --For pivot, col1=label, col2=Pivot,col3=y-value
+        --collist: {label={1:nth-label,2:count,3:1st-min,4:1st-max,5+:sum(value)-of-each-chart},...}
         if pivot then
-            local x,p,y=row[1],row[2],{table.unpack(row,3)}
+            local x,label,y=row[1],row[2],{table.unpack(row,3)}
             for i=#y,1,-1 do
-               if rows[1][i+2]=="RNK_" or rows[1][i+2]=="RND_" then table.remove(y,i) end 
+               if rows[1][i+2]=="RNK_" or rows[1][i+2]=="RND_" then table.remove(y,i) end
             end
             if #keys==0 then
                 units,keys[1],values[title]=y,title,{x}
                 env.checkerr(#units>0,'Pivot mode should have at least 3 columns!')
-                print('Start fetching data into HTML file...')
+                print('Fetching data into HTML file...')
             else
-                if not collist[p] then
-                    values[title][#values[title]+1],temp[#temp+1]=p,{}
-                    collist[p]={#values[title],0,0}
+                if not collist[label] then
+                    values[title][#values[title]+1],temp[#temp+1]=label,0
+                    collist[label]={#values[title],0,data={}}
                 end
+                local col=collist[label]
                 if not values[x] then
                     values[x]={x,table.unpack(temp)}
                     keys[#keys+1]=x
                 end
-                values[x][collist[p][1]]=y
+                values[x][col[1]]=y
                 local val=getnum(y[1])
-                collist[p][2]=collist[p][2]+val
-                if y[1] and y[1]~="" then
-                    collist[p][3]=collist[p][3]+1
-                    collist[p][4],collist[p][5]=math.min(val,collist[p][4] or val),math.max(val,collist[p][5] or val)
+                if counter>0 and val then
+                    col[2],col.data[#col.data+1]=col[2]+1,val
+                    col[3],col[4]=math.min(val,col[3] or val),math.max(val,col[4] or val)
                 end
+                for i=1,#y do
+                    col[4+i]=(col[4+i] or 0)+(getnum(y[i]) or 0)
+                end 
             end
         else
             if not values[title] then values[title]=row end
             for i=2,#row do
                 if #txt==0 then
-                    collist[row[i]]={i,0,0}
+                    collist[row[i]]={i,0,data={}}
                 else
                     local col,val=collist[values[title][i]],getnum(row[i])
-                    col[2]=col[2]+val
-                    if row[i] and row[i]~="" and val then
-                        col[3],col[4],col[5]=col[3]+1,math.min(val,col[4] or val),math.max(val,col[5] or val)
+                    if counter>0 and val then
+                        col[2],col[5],col.data[#col.data+1]=col[2]+1,(col[5] or 0)+val,val
+                        col[3],col[4]=math.min(val,col[3] or val),math.max(val,col[4] or val)
                     end
                     if not row[i] then row[i]=0 end
                 end
@@ -186,8 +228,8 @@ function graph:run_sql(sql,args,cmd,file)
     print(string.format("%d rows processed.",counter))
 
     --Print summary report
-    local sorter={table.unpack(values[title],2)}
-    table.sort(sorter,function(a,b)
+    local labels={table.unpack(values[title],2)}
+    table.sort(labels,function(a,b)
         if collist[a][2]==collist[b][2] then return a<b end
         return collist[a][2]>collist[b][2]
     end)
@@ -197,42 +239,59 @@ function graph:run_sql(sql,args,cmd,file)
     end
     local content,ylabels,default_ylabel = template,default_attrs._ylabels or {},default_attrs.ylabel
     local output=env.grid.new()
-    output:add{"Item","Total "..(ylabels[1] or default_attrs.ylabel or ""),'|',"Rows","Appear",'%',"Min","Average","Max"}
+    output:add{"Item","Total "..(ylabels[1] or default_attrs.ylabel or ""),'|',"Rows","Appear",'%',"Min","Average","Max","Std Deviation","Deviation(%)"}
 
     for k,v in pairs(collist) do
-        if v[2] then
-            output:add{ k,math.round(v[2],2),'|',
-                        v[3],math.round(v[3]*100/(counter-1),2),'|',
-                        v[4],math.round(v[2]/v[3],2),v[5]}
+        if v[5] and v[5]>0 then
+            local avg,stddev=v[5]/v[2],0;
+            for _,o in ipairs(v.data) do
+                stddev=stddev+(o-avg)^2/v[2]
+            end
+            v.data,stddev=nil,stddev^0.5
+            output:add{ k,math.round(v[5],2),'|',
+                        v[2],math.round(v[2]*100/counter,2),'|',
+                        math.round(v[3],5),math.round(avg,3),math.round(v[4],5),
+                        math.round(stddev,3),math.round(100*stddev/avg,3)}
         else
-            output:add{k,0,'|',0,0,'|',0,0,0}
+            output:add{k,0,'|',0,0,'|',0,0,0,0,0}
         end
     end
 
     output:add_calc_ratio(2)
-    output:sort(2,true)
+    output:sort(#output.data[1],true)
     output:print(true)
+    local data,legends,temp=output.data,{},{}
+    table.remove(data,1)
+    for i=math.max(1,#data-cfg.get('ChartSeries')+1),#data do
+        legends[#legends+1],temp[#temp+1]=data[i][1],0
+    end
     --Generate graph data
     self.dataindex,self.data=0,{}
+    
     if pivot then
         --Sort the columns by sum(value)
-        local max_series=math.min(#sorter,cfg.get('ChartSeries'))
         for idx=1,#units do
-            local txt={}
+            local txt,avgs={},{}
             for k,v in ipairs(keys) do
-                local row={values[v][1],table.unpack(temp,1,max_series)}
-                for i=1,max_series do
-                    local col=values[v][collist[sorter[i]][1]]
-                    row[i+1]=k==1 and col or col and col[idx] or 0
+                local row={values[v][1],table.unpack(temp)}
+                for i=1,#legends do
+                    local col=collist[legends[i]]
+                    local cell=values[v][col[1]]
+                    avgs[i],avgs[legends[i]]=legends[i],col[4+idx]/col[2]
+                    row[i+1]=k==1 and cell or cell==0 and cell or cell and cell[idx] or 0
                 end
                 txt[k]=table.concat(row,',')
             end
             self.dataindex=self.dataindex+1
-            self.data[self.dataindex]=table.concat(txt,'\n')
+            self.data[self.dataindex]={table.concat(txt,'\n'),avgs}
         end
     else
+        local avgs={}
+        for k,v in pairs(collist) do
+            avgs[#avgs+1],avgs[k]=k,v[5]/v[2]
+        end
         self.dataindex=self.dataindex+1
-        self.data[self.dataindex]=table.concat(txt,'\n')
+        self.data[self.dataindex]={table.concat(txt,'\n'),avgs}
     end
 
     local replaces={
@@ -250,6 +309,7 @@ function graph:run_sql(sql,args,cmd,file)
     for i=1,self.dataindex do
         replaces['@GRAPH_INDEX']=i
         default_attrs.ylabel=ylabels[i] or default_ylabel or units[i]
+        default_attrs._avgs=self.data[i][2]
         if default_attrs.ylabel then
             default_attrs.title="Unit: "..default_attrs.ylabel
         end
@@ -261,7 +321,7 @@ function graph:run_sql(sql,args,cmd,file)
                 content=content:replace(k,v,true)
             end
         end
-        graph_unit=graph_unit:replace('@GRAPH_DATA',self.data[i],true)
+        graph_unit=graph_unit:replace('@GRAPH_DATA',self.data[i][1],true)
         content=content..graph_unit
     end
     content=content.."</body></html>"

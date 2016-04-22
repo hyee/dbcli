@@ -1,5 +1,5 @@
 /*[[
-    Generate the graph chart based on DBA_HIST_SQL_SUMMARY. Usage: @@NAME [inst_id] [yymmddhh24mi] [yymmddhh24mi]
+    Show chart for DBA_HIST_SQL_SUMMARY. Usage: @@NAME [inst_id] [yymmddhh24mi] [yymmddhh24mi]
     Impacted by settings: starttime,endtime,instance
     --[[
         &V1     : default={&INSTANCE}
@@ -29,12 +29,13 @@
                                FROM   DBA_HIST_SQL_SUMMARY 
                                NATURAL JOIN dba_hist_snapshot
                                WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss')-3/144,sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
-                               AND    (:V2 IS NULL OR lower(nvl(:V2, '0')) IN ('0', 'a') OR instance_number = :V2)) a
+                               AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) a
                        )
                  GROUP  BY end_time) a
         ORDER  BY 1]],
     _pivot=false,
     ylabel="SQLs per Minute",
+    logscale=true,
     labelsSeparateLines=true,
     height=400,
 }

@@ -1,5 +1,6 @@
 /*[[Show chart for GV$SYSMETRIC_HISTORY/DBA_HIST_SYSMETRIC_SUMMARY. Usage: @@NAME <metric_name|metric_group_name> [-d] [inst_id] [yymmddhh24mi] [yymmddhh24mi]
    -d:  based on DBA_HIST_SYSMETRIC_SUMMARY, otherwise based on GV$SYSMETRIC_HISTORY
+
     --[[
       &V2   : default={&INSTANCE}
       &V3   : default={&STARTTIME}
@@ -38,9 +39,7 @@
                  ORDER BY STD DESC)
         ]],
        _pivot=true,
-       rollPeriod=1,
        labelsKMB=true,
        ylabel='Value',
-       stackedGraph=false,
-       labelsSeparateLines=false,
+       multiScale=true,
    }
