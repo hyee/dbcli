@@ -17,10 +17,10 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
 //# sourceMappingURL=dygraph-combined.js.map
     </script>
     <script type="text/javascript">
-        var _options=['showRoller','drawPoints','multiScale','logscale','fillGraph','stackedGraph','strokePattern','legend'];
-        var _optionNames=['Show Roller','Draw Points','Multi Scale','Log Scale','Fill Graph','Stacked Graph','Stroke Pattern','Follow Mouse'];
+        var _options=['plotter','showRoller','drawPoints','multiScale','logscale','fillGraph','stackedGraph','strokePattern','legend'];
+        var _optionNames=['Bar Chart','Show Roller','Draw Points','Multi Scale','Log Scale','Fill Graph','Stacked Graph','Stroke Pattern','Follow Mouse'];
         var _graph;
-        function multi_scale(g,enabled) {
+        function reAxes(g,enabled) {
             var axes=g.getOption("axes");
             var avgs=g.getOption("_avgs");
             var data=g.rawData_;
@@ -65,27 +65,35 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
             g.rawData_=enabled?axes.y._adj:axes.y._data;
             return axes;
         }
+        
         function write_options(index) {
             var str="";
-            for(var i=0;i<_options.length;i++) {
-                if(str!="") str+="&nbsp;&nbsp;&nbsp;";
-                str+='<input type="checkbox" id="'+_options[i]+String(index)+'" onclick="javascript:update_options('+String(index)+')">'+_optionNames[i]+'</button>';
-            };
+            for(var i=0;i<_options.length;i++) 
+                str+='<input type="checkbox" id="'+_options[i]+String(index)+'" onclick="javascript:update_options('+String(index)+')">'+_optionNames[i]+'</button>&nbsp;&nbsp;&nbsp;';
+            str+='\n<select id="ShowAxis'+String(index)+'" onchange="javascript:update_options('+String(index)+')">';
+            for(var i=1;i<=20;i++) str+='<option value='+String(i)+'>'+String(i)+' Axis</option>\n';
+            str+='</select>';
             str='<div id="divShow'+String(index)+'" style="width:100%;"></div>\n'
                 +'<div id="divLabel'+String(index)+'" style="width:90%; margin-left:5%"></div>\n'
                 +'<div style="width: 100%; text-align: center;">'+str+'</div>';
             document.write(str);
         };
+        
         function sync_options(index) {
             eval("_graph=g"+String(index));
             for(var i=0;i<_options.length;i++) {
                 var val=_graph.getOption(_options[i]);
-                var res=(val==null||val==false||(String(val)!='follow'&&_options[i]=="legend"))?false:true; 
+                if(_options[i]=='plotter'&&val!=BarPlotter) val=false;
+                var res=(typeof val=='undefined'||val==null||String(val)=='false'||(String(val)!='follow'&&_options[i]=="legend"))?false:true; 
                 document.getElementById(_options[i]+String(index)).checked=res;
-                if(_options[i]=="multiScale") _graph.updateOptions({axes:multi_scale(_graph,res)},false);
+                if(_options[i]=="multiScale") _graph.updateOptions({axes:reAxes(_graph,res)},false);
             };
-            
-        };    
+            var visibles=_graph.getOption("visibility");
+            var cnt=0;
+            for(var i=0;i<visibles.length;i++) cnt+=visibles[i]?1:0;
+            document.getElementById("ShowAxis"+String(index)).value=cnt;
+        };
+        
         function update_options(index) {
             eval("_graph=g"+String(index));
             var opt={};
@@ -93,10 +101,68 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
                 opt[_options[i]]=document.getElementById(_options[i]+String(index)).checked;
                 if(_options[i]=='legend') opt[_options[i]]=opt[_options[i]]?'follow':'onmouseover';
                 else if(_options[i]=="strokePattern") opt[_options[i]]=opt[_options[i]]?Dygraph.DASHED_LINE:null;
+                else if(_options[i]=='plotter') opt[_options[i]]=opt[_options[i]]?BarPlotter:null;
             };
-            opt.axes=multi_scale(_graph,opt['multiScale']);
+            var visible=parseInt(document.getElementById("ShowAxis"+String(index)).value);
+            var vs=_graph.getOption("visibility");
+            for(var i=0;i<vs.length;i++) vs[i]=i<visible?true:false;
+            opt.visibility=vs;
+            opt.axes=reAxes(_graph,opt['multiScale']);
             _graph.updateOptions(opt,false);
         };
+        
+        function darkenColor(colorStr) {
+            // Defined in dygraph-utils.js
+            var color = Dygraph.toRGB_(colorStr);
+            color.r = Math.floor((255 + color.r) / 2);
+            color.g = Math.floor((255 + color.g) / 2);
+            color.b = Math.floor((255 + color.b) / 2);
+            return 'rgb(' + color.r + ',' + color.g + ',' + color.b + ')';
+        }
+
+        function BarPlotter(e) {
+            // We need to handle all the series simultaneously.
+            if (e.seriesIndex !== 0) return;
+
+            var g = e.dygraph;
+            var ctx = e.drawingContext;
+            var sets = e.allSeriesPoints;
+            var y_bottom = e.dygraph.toDomYCoord(0);
+            var len = sets.length;
+
+            // Find the minimum separation between x-values.
+            // This determines the bar width.
+            var min_sep = Infinity;
+            for (var j = 0; j < len; j++) {
+                var points = sets[j];
+                for (var i = 1; i < points.length; i++) {
+                    var sep = points[i].canvasx - points[i - 1].canvasx;
+                    if (sep < min_sep) min_sep = sep;
+                }
+            }
+            var bar_width = Math.floor(2.0 / 3 * min_sep);
+            var fillColors = [];
+            var strokeColors = g.getColors();
+            for (var i = 0; i < len; i++) {
+                fillColors.push(darkenColor(strokeColors[i]));
+            }
+
+            for (var j = 0; j < len; j++) {
+                ctx.fillStyle = fillColors[j];
+                ctx.strokeStyle = strokeColors[j];
+                for (var i = 0; i < sets[j].length; i++) {
+                    var p = sets[j][i];
+                    var center_x = p.canvasx;
+                    var x_left = center_x - (bar_width / 2) * (1 - j/(sets.length-1));
+
+                    ctx.fillRect(x_left, p.canvasy,
+                        bar_width/sets.length, y_bottom - p.canvasy);
+
+                    ctx.strokeRect(x_left, p.canvasy,
+                        bar_width/sets.length, y_bottom - p.canvasy);
+                }
+            }
+        }
     </script>
     <style type="text/css"> 
     .dygraph-legend > span.highlight { border: 1px solid grey; }

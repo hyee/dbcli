@@ -1,0 +1,54 @@
+/*[[
+    Show chart for dba_hist_mutex_sleep. Usage: @@NAME ["<MUTEX_TYPE|LOCATION>"] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-f"<filter>"]
+    Impacted by settings: starttime,endtime,instance
+    inst_id: Default as all instances, other options are:
+                0         - Separate all instances
+                a         - Group all instances
+                <inst_id> - Only the specific instance
+    -f       : User-defined filter. 
+    -c       : Group by mutex location, default is mutex type.
+    --[[
+        &V2     : default={&INSTANCE}
+        &V3     : default={&STARTTIME}
+        &V4     : default={&ENDTIME}
+        &GRP    : default={MUTEX_TYPE}, c={MUTEX_TYPE||' - '||trim(LOCATION)}
+    --]]
+]]*/
+{
+    _attrs=[[
+        SELECT 'System Mutex State Chart' title
+        from dual]],
+    _sql=[[
+        WITH snap AS
+         (SELECT /*+materialize no_expand*/
+                trunc(end_interval_time + 0, 'mi') end_time, instance_number inst_id, dbid,
+                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 1440 Slot_size,
+                CASE WHEN end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate) THEN 0 END flag, 
+                snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
+          FROM   dba_hist_snapshot
+          WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
+          AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) 
+        SELECT time,event,v "Sleeps per Minute",RNK_
+        FROM   (SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') TIME, event,
+                       round(sum(v),2) v,
+                       stddev(sum(v/a)) over(partition by event) RNK_
+                FROM  (SELECT /*+merge*/
+                               A.*,
+                               name|| decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event,
+                               greatest(value/Slot_size,0) v,
+                               avg(greatest(value/Slot_size,0)) over(partition by inst_id,LOCATION) a
+                       FROM   (SELECT /*+merge no_expand*/
+                                      inst_id,end_time,flag,Slot_size,
+                                      location,
+                                      CASE WHEN upper(MUTEX_TYPE)=upper(:V1) THEN MUTEX_TYPE||' - '||trim(LOCATION) ELSE &GRP END name,
+                                      SLEEPS - nvl(LAG(SLEEPS) OVER(PARTITION BY part_key,MUTEX_TYPE,LOCATION ORDER BY snap_id),0) value
+                               FROM   DBA_HIST_MUTEX_SLEEP NATURAL JOIN SNAP
+                               WHERE  (:V1 is null or upper(MUTEX_TYPE)=upper(:V1)) or upper(TRIM(LOCATION)) like upper(TRIM('%&V1%'))) a
+                       where nvl(value,0)>0 and flag=0)
+                 GROUP  BY event, end_time) a
+        WHERE  (v>0)
+        ORDER  BY 1]],
+    _pivot=true,
+    labelsSeparateLines=true,
+    height=400,
+}
