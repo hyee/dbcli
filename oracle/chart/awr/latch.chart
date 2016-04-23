@@ -1,0 +1,61 @@
+/*[[
+    Show chart for dba_hist_latch. Usage: @@NAME ["<latch_name>"] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-f"<filter>"]
+    Impacted by settings: starttime,endtime,instance
+    inst_id: Default as all instances, other options are:
+                0         - Separate all instances
+                a         - Group all instances
+                <inst_id> - Only the specific instance
+    -f       : User-defined filter. For example, -f"latch_name like '%XDB%'"
+    --[[
+        &V2     : default={&INSTANCE}
+        &V3     : default={&STARTTIME}
+        &V4     : default={&ENDTIME}
+        &filter : default={1=1},f={}
+    --]]
+]]*/
+{
+    _attrs=[[
+        SELECT 'System Latch State Chart' title
+        from dual]],
+    _sql=[[
+        WITH snap AS
+         (SELECT /*+materialize no_expand*/
+                trunc(end_interval_time + 0, 'mi') end_time, instance_number inst_id, dbid,
+                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 1440 Slot_size,
+                CASE WHEN end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate) THEN 0 END flag, 
+                snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
+          FROM   dba_hist_snapshot
+          WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
+          AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2))
+        SELECT time,event,
+               a "Deviation%(Time/Avg)",
+               round(v*1e-3,2) "Seconds per Minute",
+               round(gets,2) "Gets per Minute",
+               round(misses,2) "Misses per Minute",
+               round(sleeps,2) "Sleeps per Minute",
+               RNK_
+        FROM   (SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') TIME, event,
+                       sum(v) v,100*avg(v/a)  a,
+                       sum(gets/Slot_size) gets,
+                       sum(misses/slot_size) misses,
+                       sum(sleeps/slot_size) sleeps,
+                       stddev(sum(v/a)) over(partition by event) RNK_
+                FROM  (SELECT /*+merge*/
+                               A.*,
+                               LATCH_NAME || decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event,
+                               wait_time/Slot_size v,
+                               avg(wait_time/Slot_size) over(partition by inst_id,LATCH_NAME) a
+                       FROM   (SELECT  flag,inst_id, end_time, LATCH_NAME, Slot_size,
+                                       wait_time - nvl(LAG(wait_time) OVER(PARTITION BY part_key, LATCH_NAME ORDER BY snap_id),0) wait_time,
+                                       GETS - nvl(LAG(GETS) OVER(PARTITION BY part_key, LATCH_NAME ORDER BY snap_id),0) GETS,
+                                       MISSES - nvl(LAG(MISSES) OVER(PARTITION BY part_key, LATCH_NAME ORDER BY snap_id),0) MISSES,
+                                       SLEEPS - nvl(LAG(SLEEPS) OVER(PARTITION BY part_key, LATCH_NAME ORDER BY snap_id),0) SLEEPS
+                               FROM   DBA_HIST_LATCH NATURAL JOIN snap
+                               WHERE  (&filter)) a
+                       where flag=0 AND wait_time>0)
+                 GROUP  BY event, end_time) a
+        WHERE  (v>0)
+        ORDER  BY 1]],
+    _pivot=true,
+    labelsKMB=true,
+}

@@ -1,3 +1,5 @@
+2016-04-23: + public: Enhancement on "chart" commands: new options "Show Axis" and "Bar Chart"
+            * oracle: some changes on "chart" command
 2016-04-22: + public: Enhancement on "chart" commands:
                            1.add options "Multi Scale/Follow Mouse/Show Roller"
                            2.add enum "mixed" for option "_pivot", refer to "racping.chart" for example 

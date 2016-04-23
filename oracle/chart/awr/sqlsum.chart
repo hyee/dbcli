@@ -1,0 +1,46 @@
+/*[[
+    Show chart for dba_hist_sql_summary. Usage: @@NAME [inst_id] [yymmddhh24mi] [yymmddhh24mi]
+    Impacted by settings: starttime,endtime,instance
+    --[[
+        &V1     : default={&INSTANCE}
+        &V2     : default={&STARTTIME}
+        &V3     : default={&ENDTIME}
+    --]]
+]]*/
+{
+    _attrs=[[
+        SELECT 'System SQL Summary Chart' title
+        from dual]],
+    _sql=[[
+        WITH snap AS
+         (SELECT /*+materialize no_expand*/
+                trunc(end_interval_time + 0, 'mi') end_time, instance_number inst_id, dbid,
+                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 1440 Slot_size,
+                CASE WHEN end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate) THEN 0 END flag, 
+                snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
+          FROM   dba_hist_snapshot
+          WHERE  end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate)
+          AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V2)) 
+        SELECT time,V1 "Total SQLs per Minute", V2 "Single Used SQLs per Minute"
+        FROM   (SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') TIME,
+                       sum(v1) v1,
+                       sum(v2) v2
+                FROM  (SELECT /*+merge*/
+                               A.*,
+                               TOTAL_SQL/slot_size V1,
+                               SINGLE_USE_SQL/slot_size V2
+                       FROM   (SELECT /*+merge no_expand*/
+                                      inst_id,end_time,flag,Slot_size,
+                                      TOTAL_SQL ,
+                                      SINGLE_USE_SQL 
+                               FROM   DBA_HIST_SQL_SUMMARY NATURAL JOIN snap
+                               WHERE  FLAG=0) a
+                       )
+                 GROUP  BY end_time) a
+        ORDER  BY 1]],
+    _pivot=false,
+    ylabel="SQLs per Minute",
+    logscale=true,
+    labelsSeparateLines=true,
+    height=400,
+}

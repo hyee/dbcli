@@ -1,0 +1,44 @@
+/*[[
+    Show chart for dba_hist_waitstat. Usage: @@NAME [inst_id] [yymmddhh24mi] [yymmddhh24mi]
+    Impacted by settings: starttime,endtime,instance
+    inst_id: Default as all instances, other options are:
+                0         - Separate all instances
+                a         - Group all instances
+                <inst_id> - Only the specific instance
+    --[[
+        &V1     : default={&INSTANCE}
+        &V2     : default={&STARTTIME}
+        &V3     : default={&ENDTIME}
+    --]]
+]]*/
+{
+    title='System Wait State Chart',
+    _sql=[[
+        WITH snap AS
+         (SELECT /*+materialize no_expand*/
+                trunc(end_interval_time + 0, 'mi') end_time, instance_number inst_id, dbid,
+                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 1440 Slot_size,
+                CASE WHEN end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate) THEN 0 END flag, 
+                snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
+          FROM   dba_hist_snapshot
+          WHERE  end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate)
+          AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V2)) 
+        SELECT to_char(end_time, 'YYYY-MM-DD HH24:MI') TIME, event,
+               Round(SUM(WAIT_TIME/SLOT_SIZE),2)  "Wait Time Per Minute",
+               Round(SUM(WAIT_COUNT/SLOT_SIZE),2) "Wait Count Per Minute",
+               Round(SUM(WAIT_TIME)/SUM(WAIT_COUNT)*10,2) "Wait Time per Request"
+        FROM  (SELECT /*+merge*/
+                       A.*,
+                       CLASS || decode(nvl(lower(:V1), 'a'), 'a', NULL, ' #' || inst_id) event
+               FROM   (SELECT /*+merge no_expand*/
+                              inst_id,end_time,flag,Slot_size,CLASS,
+                              WAIT_COUNT - nvl(LAG(WAIT_COUNT) OVER(PARTITION BY part_key,CLASS ORDER BY snap_id),0) WAIT_COUNT,
+                              TIME - nvl(LAG(TIME) OVER(PARTITION BY part_key,CLASS ORDER BY snap_id),0) WAIT_TIME
+                       FROM   DBA_HIST_WAITSTAT NATURAL JOIN snap) a
+               where nvl(WAIT_COUNT,0)>0 and flag=0)
+         GROUP  BY event, end_time
+        ]],
+    _pivot=true,
+    labelsKMB=true,
+    height=400,
+}
