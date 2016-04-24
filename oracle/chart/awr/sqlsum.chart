@@ -8,9 +8,7 @@
     --]]
 ]]*/
 {
-    _attrs=[[
-        SELECT 'System SQL Summary Chart' title
-        from dual]],
+    title='System SQL Summary Chart',
     _sql=[[
         WITH snap AS
          (SELECT /*+materialize no_expand*/
@@ -41,6 +39,4 @@
     _pivot=false,
     ylabel="SQLs per Minute",
     logscale=true,
-    labelsSeparateLines=true,
-    height=400,
 }

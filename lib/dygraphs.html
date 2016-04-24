@@ -3,6 +3,10 @@
   <head> 
     <meta http-equiv="X-UA-Compatible" content="IE=EmulateIE7; IE=EmulateIE9"> 
     <title>@GRAPH_TITLE</title> 
+    <style type="text/css">
+        .dygraph-legend > span {font-size:12px;}
+        .dygraph-legend > span.highlight { border: 1px solid blue; }
+    </style> 
 <!--[if IE]>
     <script type="text/javascript">
     </script>
@@ -17,15 +21,17 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
 //# sourceMappingURL=dygraph-combined.js.map
     </script>
     <script type="text/javascript">
-        var _options=['plotter','showRoller','drawPoints','multiScale','logscale','fillGraph','stackedGraph','strokePattern','legend'];
-        var _optionNames=['Bar Chart','Show Roller','Draw Points','Multi Scale','Log Scale','Fill Graph','Stacked Graph','Stroke Pattern','Follow Mouse'];
+        var _options=['plotter','showRoller','drawPoints','deviation','logscale','fillGraph','stackedGraph','strokePattern','legend'];
+        var _optionNames=['Bar Chart','Show Roller','Draw Points','Deviation(%)','Log Scale','Fill Graph','Stacked Graph','Stroke Pattern','Follow Mouse'];
         var _graph;
-        function reAxes(g,enabled) {
+        
+        function reOptions(g,enabled,options) {
             var axes=g.getOption("axes");
             var avgs=g.getOption("_avgs");
             var data=g.rawData_;
             var rows=data.length;
             var cols=data[0].length;
+            options.deviation=enabled;
             if(axes.x.ticker==Dygraph.dateTicker) {
                 axes.x.ticker=function(a, b, pixels, opts, dygraph, vals) {
                     var chosen = Dygraph.pickDateTickGranularity(a, b, pixels, opts);
@@ -39,31 +45,54 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
                     return [];
                 }
             }
+            
             if(axes.y._data==null) {
                 axes.y._data=data;
                 axes.y._orgFormatter=axes.y.valueFormatter;
+                axes.y._title=g.getOption("title");
+                axes.y._ylabel=g.getOption("ylabel");
+                var label=(typeof axes.y._ylabel=="string")? " "+axes.y._ylabel.toLowerCase()+" ":" ";
                 axes.y.valueFormatter=function(y, opts, series_name,dygraph, row, col) {
-                    return axes.y._orgFormatter(axes.y._data[row][col], opts, series_name,dygraph, row, col);
+                    if(opts("deviation")) return axes.y._orgFormatter(y, opts, series_name,dygraph, row, col)+"%";
+                    var l=label+series_name.toLowerCase();
+                    if(l.indexOf(" bytes")>-1||l.indexOf("(bytes")>-1) 
+                        return axes.y._orgFormatter(y,function(opt){return opt=="labelsKMG2"?true:(opt=="labelsKMB"?false:opts(opt));} , series_name,dygraph, row, col)+"B";
+                    if(l.indexOf(" seconds")>-1||l.indexOf("(seconds")>-1||l.indexOf("(secs")>-1||l.indexOf(" secs")>-1) {
+                        if(y>=8640000) return Dygraph.floatFormat(y/86400,2)+" days";
+                        if(y>=36000) return Dygraph.floatFormat(y/3600,2)+" hrs";
+                        if(y>=600) return Dygraph.floatFormat(y/60,2)+" mins";
+                    }
+                    return axes.y._orgFormatter(y, opts, series_name,dygraph, row, col);
                 };
             };
            
-            if(enabled&&axes.y._adj==null) {
-                var adj=new Array();
-                axes.y._adj=adj;
-                for(i=1;i<cols;i++) {
-                    var avg=avgs[avgs[i]];
-                   // alert(String(i)+":"+avgs[i]+","+String(avg));
-                    for(j=0;j<rows;j++) {
-                        if(adj[j]==null) {
-                            adj[j]=new Array();
-                            adj[j][0]=data[j][0];
+            if(enabled) {
+                if(axes.y._adj==null) {
+                    var adj=new Array();
+                    axes.y._adj=adj;
+                    for(i=1;i<cols;i++) {
+                        var avg=avgs[avgs[i]];
+                       // alert(String(i)+":"+avgs[i]+","+String(avg));
+                        for(j=0;j<rows;j++) {
+                            if(adj[j]==null) {
+                                adj[j]=new Array();
+                                adj[j][0]=data[j][0];
+                            }
+                            adj[j][i]=avg==0?data[j][i]:Math.round(data[j][i]*10000/avg)/100;
                         }
-                        adj[j][i]=avg==0?data[j][i]:Math.round(data[j][i]*10000/avg)/100;
                     }
-                };
-            };
-            g.rawData_=enabled?axes.y._adj:axes.y._data;
-            return axes;
+                }    
+                g.rawData_=axes.y._adj;
+                options.ylabel="Deviation %(Value/Average)";
+                options.title="Unit: "+options.ylabel;
+            } else {
+                g.rawData_=axes.y._data;
+                options.ylabel=axes.y._ylabel;
+                options.title=axes.y._title;
+            }
+            options.axes=axes;
+            g.updateOptions(options,false);
+            return options;
         }
         
         function write_options(index) {
@@ -81,17 +110,17 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
         
         function sync_options(index) {
             eval("_graph=g"+String(index));
+            var visibles=_graph.getOption("visibility");
+            var cnt=0;
+            for(var i=0;i<visibles.length;i++) cnt+=visibles[i]?1:0;
+            document.getElementById("ShowAxis"+String(index)).value=cnt;
             for(var i=0;i<_options.length;i++) {
                 var val=_graph.getOption(_options[i]);
                 if(_options[i]=='plotter'&&val!=BarPlotter) val=false;
                 var res=(typeof val=='undefined'||val==null||String(val)=='false'||(String(val)!='follow'&&_options[i]=="legend"))?false:true; 
                 document.getElementById(_options[i]+String(index)).checked=res;
-                if(_options[i]=="multiScale") _graph.updateOptions({axes:reAxes(_graph,res)},false);
+                if(_options[i]=="deviation") reOptions(_graph,res,{});
             };
-            var visibles=_graph.getOption("visibility");
-            var cnt=0;
-            for(var i=0;i<visibles.length;i++) cnt+=visibles[i]?1:0;
-            document.getElementById("ShowAxis"+String(index)).value=cnt;
         };
         
         function update_options(index) {
@@ -107,8 +136,7 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
             var vs=_graph.getOption("visibility");
             for(var i=0;i<vs.length;i++) vs[i]=i<visible?true:false;
             opt.visibility=vs;
-            opt.axes=reAxes(_graph,opt['multiScale']);
-            _graph.updateOptions(opt,false);
+            reOptions(_graph,opt['deviation'],opt);
         };
         
         function darkenColor(colorStr) {
@@ -164,9 +192,6 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
             }
         }
     </script>
-    <style type="text/css"> 
-    .dygraph-legend > span.highlight { border: 1px solid grey; }
-    </style> 
   </head>
   <div style='width:100%;text-align:center;font-size:36px;font-weight:bold'>@GRAPH_TITLE<br/>
   <div style='width:100%;text-align:center;font-size:12px;font-weight:normal'>@TIME_RANGE</div></div><br/>

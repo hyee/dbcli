@@ -26,7 +26,7 @@ It is not aim to support all features of the existing CLI utilities that embedde
 * The `alias` command to reduce the frequent inputs
 * The powerful `snap` and `ora` commands as the replacement of the standard CLI scripts, so that DBA is able to quickly define and execute the SQL templates with the smallest input
 * Support SSH operations
-* Provides the graph charts of the database performance
+* Provides the graph charts of the database performance, refer to the "chart" command
 * Easy to extend, modify or deploy, because most of the source code is not required to compile
 * Easily switch to the db built-in cli utility
 
@@ -67,10 +67,10 @@ For example: `dbcli.bat "connect=tiger/scott@orcl"`
 DBCLI supports multiple database platforms(oracle,mysql,db2,etc), default is `Oracle`.
 
 To permanently change the preferred platform other than `Oracle`, run `set -p <platform>` after launching the console. 
-For example, `set -p database db2`
+For example, `set -p platform db2`
 
 Without the `-p` option, the change only takes affect on current console window. 
-Type `set database` to see all available options.
+Type `set platform` to see all available options.
 
 Quick Start
 -----------------------
@@ -123,7 +123,3 @@ About ANSI Color Escapes
 For lower Windows versions, `ANSICON` supports more ANSI escapes features than JLine, especially when running bash commands(i.e.: top) via SSH.
 
 If you have concern on `ANSICON`, please remove it from bin, and edit `data\init.cfg` to add line `set ANSICON_CMD=`
-
-About Contribution
------------------------
-Any contribution would be very welcome, I'm only familiar with Oracle database.

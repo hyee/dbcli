@@ -60,7 +60,7 @@
         ORDER  BY 1]],
     _pivot="mixed",
     labelsSeparateLines=true,
-    multiScale=true,
+    deviation=true,
     labelsKMG2=true,
     height=400,
 }

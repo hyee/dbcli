@@ -54,11 +54,14 @@ local template,cr
                                            date(x-label)  latch1[Y1] latch1[Y2] latch2[Y1] latch2[Y2]
                                            ----------------------------------------------------------
                                            2015-1-1        99         24        98          23
-                                        Refer to "racping.chart" for more example        
+                                        Refer to "racping.chart" for more example
+                                    RNK_: If the output contains the "RNK_" field, then only procedure the top 30 RNK_ data.
+                                          Refer to "ash.chart" for example     
         _pivot=true|false|"mixed": indicate if pivot the >2nd numberic fields, refer to above
         _ylabels={"<label1>",...}: Customize the ylabel for each chart, not not define then use the names from "_sql"
         _range="<Time range>"    : Used in sub-title, if not specified then auto-caculate the range
-        multiScale=true|false    : False for org value, and true to display the data based on deviation%(value*100/average)
+        _sorter=<number>         : Choose the top <ChartSeries> based on the nth field of the summary, default as deviation%(12)
+        deviation=true|false     : False for org value, and true to display the data based on deviation%(value*100/average)
 ]]--
 
 function graph:ctor()
@@ -91,7 +94,7 @@ function graph:run_sql(sql,args,cmd,file)
             function() {return document.getElementById("divNoshow@GRAPH_INDEX").innerHTML;},
             @GRAPH_ATTRIBUTES
         );
-        sync_options(@GRAPH_INDEX);
+        g@GRAPH_INDEX.ready(function() {sync_options(@GRAPH_INDEX);});
         </script>
         <hr/><br/><br/>]]
         --template=template:gsub('@GRAPH_FIELDS',cr)
@@ -140,9 +143,8 @@ function graph:run_sql(sql,args,cmd,file)
 
     local sql,pivot=context._sql,context._pivot
     --Only proceduce top 30 curves to improve the performance in case of there is 'RNK_' field
-    if sql:match('RNK%_%W') and not sql:match('RND%_%W') then
+    if sql:find('RNK_',1,true) and not sql:find('RND_',1,true) then
         sql='SELECT * FROM (SELECT /*+NO_NOMERGE(A)*/ A.*,dense_rank() over(order by RNK_ desc) RND_ FROM (\n'..sql..'\n) A) WHERE RND_<=30 ORDER BY 1,2'
-        --print("Detected field 'RNK_' and re-applying the SQL...")
     end
 
     rs=self.db:exec(sql,args)
@@ -172,7 +174,7 @@ function graph:run_sql(sql,args,cmd,file)
     else
         table.insert(rows,1,head)
     end
-    
+
     local cols=#rows[1]
     while true do
         counter=counter+1
@@ -223,10 +225,11 @@ function graph:run_sql(sql,args,cmd,file)
                 end 
             end
         else
-            csv={}
-            if not values[title] then values[title]=row end
-            for i=2,math.min(cols,maxaxis+1) do
-                if #csv==0 then
+            local c=math.min(cols,maxaxis+1)
+            if not values[title] then values[title]={table.unpack(row,1,c)} end
+            csv[#csv+1]=table.concat(row,',',1,c)
+            for i=2,c do
+                if counter==0 then
                     collist[row[i]]={i,0,data={}}
                     --row[i]='"'..row[i]:gsub('"','""')..'"' --quote title fields
                 else
@@ -237,7 +240,7 @@ function graph:run_sql(sql,args,cmd,file)
                     end
                 end
             end
-            csv[#csv+1]=table.concat(row,',',1,math.min(cols,maxaxis+1))
+            
         end
     end
 
@@ -275,7 +278,7 @@ function graph:run_sql(sql,args,cmd,file)
     end
 
     output:add_calc_ratio(2)
-    output:sort(#output.data[1],true)
+    output:sort(tonumber(default_attrs._sorter) or #output.data[1],true)
     output:print(true)
     local data,axises,temp=output.data,{},{}
     table.remove(data,1)

@@ -109,11 +109,8 @@ public class Console extends ConsoleReader {
     public String readLine(String prompt) throws IOException {
         isBlocking = false;
         if (isRunning()) setEvents(null, null);
-        synchronized (in) {
-            String line = super.readLine(prompt);
-            //in.pause(true);
-            return line;
-        }
+        String line = super.readLine(prompt);
+        return line;
     }
 
     public String readLine() throws IOException {

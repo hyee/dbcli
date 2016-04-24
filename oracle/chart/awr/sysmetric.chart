@@ -1,5 +1,5 @@
 /*[[Show chart for gv$sysmetric_history/dba_hist_sysmetric_summary. Usage: @@NAME <metric_name|metric_group_name> [-d] [inst_id] [yymmddhh24mi] [yymmddhh24mi]
-   -d:  based on DBA_HIST_SYSMETRIC_SUMMARY, otherwise based on GV$SYSMETRIC_HISTORY
+    -d:  based on DBA_HIST_SYSMETRIC_SUMMARY, otherwise based on GV$SYSMETRIC_HISTORY
 
     --[[
       &V2   : default={&INSTANCE}
@@ -15,16 +15,11 @@
        _attrs=[[select 'Sysmetric History(&TITLE)' title from dual]],
        _sql=[[
         SELECT sample_time, 
-               REPLACE(REPLACE(METRIC_NAME, ' Bytes', ' MB'), ' Per ', ' / ') metric_name,
-               VALUE / CASE
-                   WHEN LOWER(' ' || metric_unit || ' ') LIKE '% bytes %' THEN
-                    1024 * 1024
-                   ELSE
-                    1
-               END metric_value,
+               REPLACE(METRIC_NAME, ' Per ', ' / ') metric_name,
+               VALUE metric_value,
                STD RNK_
         FROM   (SELECT /*+merge no_expand*/
-                        A.end_time sample_time, A.METRIC_NAME , A.metric_unit, SUM(VALUE) VALUE,STDDEV(SUM(VALUE)) OVER(PARTITION BY A.METRIC_NAME) std
+                        A.end_time sample_time, A.METRIC_NAME , A.metric_unit, ROUND(AVG(VALUE),3) VALUE,STDDEV(AVG(VALUE)) OVER(PARTITION BY A.METRIC_NAME) std
                 FROM   (SELECT inst_id, end_time, metric_unit,group_id, VALUE,METRIC_NAME||decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) METRIC_NAME
                         FROM  (SELECT inst_id, end_time, METRIC_NAME, metric_unit,group_id, VALUE
                               FROM   GV$SYSMETRIC_HISTORY
@@ -43,5 +38,5 @@
        _pivot=true,
        labelsKMB=true,
        ylabel='Value',
-       multiScale=true,
+       deviation=true,
    }
