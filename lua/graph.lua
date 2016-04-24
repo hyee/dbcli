@@ -94,7 +94,7 @@ function graph:run_sql(sql,args,cmd,file)
             function() {return document.getElementById("divNoshow@GRAPH_INDEX").innerHTML;},
             @GRAPH_ATTRIBUTES
         );
-        sync_options(@GRAPH_INDEX);
+        g@GRAPH_INDEX.ready(function() {sync_options(@GRAPH_INDEX);});
         </script>
         <hr/><br/><br/>]]
         --template=template:gsub('@GRAPH_FIELDS',cr)

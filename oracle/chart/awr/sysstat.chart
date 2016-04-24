@@ -48,5 +48,5 @@
     _pivot=true,
     labelsKMG2=true,
     height=400,
-    multiScale=true,
+    deviation=true,
 }

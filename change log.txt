@@ -1,15 +1,19 @@
+2016-04-24: * public: command "Chart":
+                        change option "Multi Scale" as "Deviation"
+                        layout adjustments
+                        some bug fixes
 2016-04-23: + public: Enhancement on "chart" commands: new options "Show Axis" and "Bar Chart"
             * oracle: some changes on "chart" command
 2016-04-22: + public: Enhancement on "chart" commands:
-                           1.add options "Multi Scale/Follow Mouse/Show Roller"
-                           2.add enum "mixed" for option "_pivot", refer to "racping.chart" for example 
-                           3.Some other improvements
+                        1.add options "Multi Scale/Follow Mouse/Show Roller"
+                        2.add enum "mixed" for option "_pivot", refer to "racping.chart" for example 
+                        3.Some other improvements
 2016-04-21: + oracle: add several sub-commands under "chart" 
 2016-04-20: + public: Enhancement on "chart" commands:
-                           1.add comment of script format, refer to graph.lua
-                           2.add "Point/Log Scale/Fill Graph/Stacked Graph/Step Plot/Stroke Pattern" checkboxes
-                           3.add calculation based on the "RNK_" field(if exists in _sql)
-                           4.add time range into the title
+                        1.add comment of script format, refer to graph.lua
+                        2.add "Point/Log Scale/Fill Graph/Stacked Graph/Step Plot/Stroke Pattern" checkboxes
+                        3.add calculation based on the "RNK_" field(if exists in _sql)
+                        4.add time range into the title
             + oracle: Enhancement on "ch ash"(add -r/-u/-d/-event/-schema/-sec options)
                       Add "-e" option on "ch awrevent"
                       new command "ch sysstat"
