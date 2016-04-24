@@ -33,7 +33,7 @@
                                A.*,
                                &GRP || decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event,
                                value/Slot_size v,
-                               value/Slot_size over(partition by inst_id,stat_name) a
+                               avg(value/Slot_size) over(partition by inst_id,stat_name) a
                        FROM   (SELECT /*+merge no_expand*/
                                       inst_id,end_time,flag,Slot_size,stat_name,
                                       decode(CLASS,1,'User',2,'Redo',4,'Enqueue',8,'Cache',16,'OS',32,'RAC',64,'SQL',128,'DEBUG') class_name,

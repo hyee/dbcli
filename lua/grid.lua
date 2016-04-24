@@ -152,10 +152,7 @@ function grid.sort(rows,cols,bypass_head)
         sorts[#sorts+1]=function() return col,l end
     end
 
-    if bypass_head==true then
-        head=rows[1]
-        table.remove(rows,1)
-    end
+    if bypass_head==true then head=table.remove(rows,1) end
 
     table.sort(rows,function(a,b)
         for ind,item in ipairs(sorts) do
@@ -165,6 +162,13 @@ function grid.sort(rows,cols,bypass_head)
                 return false
             elseif b1==nil then
                 return true
+            elseif type(a1)~=type(b1) then
+                local a2,b2=tonumber(a1),tonumber(b1)
+                if a2 and b2 then 
+                    a1,b1=a2,b2
+                else
+                    a1,b1=tostring(a1),tostring(b1)
+                end
             end
 
             if a1~=b1 then

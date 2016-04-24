@@ -13,6 +13,7 @@
     Grouping:
         -event                 : group by event
         -schema                : group by schema name
+        -sql                   : group by sql_id
         -g"<field expressions>": group by customized fields
     --[[
         &V1       : default={&INSTANCE}
@@ -29,7 +30,7 @@
         &GROUPS:{
             default={DECODE(session_state, 'ON CPU', DECODE(session_type, 'BACKGROUND', 'BG CPU', 'ON CPU'), wait_class)},
             event={nvl(event,'['||p1text||nullif('|'||p2text,'|')||nullif('|'||p3text,'|')||']')},
-            schema={username}, g={}
+            schema={username}, sql={sql_id}, g={}
         }
         &GROUP_NAME : default={Wait Class}, event={Event}, schema={Schema Name}, g={}
         &COUNTER    : default={count(1)}, sec={count(distinct sample_time+0)}
@@ -41,10 +42,8 @@
     _attrs=[[select 'ASH Chart (Group By "&GROUP_NAME")' title,
              '&COUNT_NAME' ylabel from dual]],
     _sql=[[
-    SELECT sample_time,group_by,cnt
-    FROM (
-        SELECT to_char(MEDIAN(MEDIAN(sample_time)) over(partition by bucket_id),'YYYY-MM-DD HH24:MI') sample_time,group_by,cnt,
-               dense_rank() over(order by sums desc) rn
+        SELECT to_char(MEDIAN(MEDIAN(sample_time)) over(partition by bucket_id),'YYYY-MM-DD HH24:MI') sample_time,
+               group_by,sum(cnt) cnt,sums RNK_
         FROM(
              SELECT /*+no_expand*/
                     trunc(sample_time, 'MI') sample_time,
@@ -60,9 +59,8 @@
              AND    (&GROUPS IS NOT NULL)
              GROUP BY trunc(sample_time, 'MI'),&GROUPS
         )
-        group by bucket_id,group_by,cnt,sums
-    ) WHERE RN<=30
-    order by 1,2
+        group by bucket_id,group_by,sums
+        order by 1,2
     ]],
     _pivot=true,
 }

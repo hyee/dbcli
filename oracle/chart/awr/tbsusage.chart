@@ -11,22 +11,26 @@
     _sql=[[
         SELECT to_char(end_time, 'YYYY-MM-DD HH24:MI') TIME,
                name,
-               max(value)*1024 "Used Size"
+               max(value) "Used Size(Bytes)",
+               round(max(value/mvalue)*100,3) "Used Size(%)"
         FROM  (SELECT /*+merge no_expand ordered_predicates*/
                       instance_number inst_id,
                       trunc(end_interval_time+0,'mi') end_time,
                       NAME,
-                      TABLESPACE_USEDSIZE value
+                      TABLESPACE_USEDSIZE*BLOCK_SIZE value,
+                      TABLESPACE_MAXSIZE*BLOCK_SIZE mvalue
                FROM   DBA_HIST_TBSPC_SPACE_USAGE 
                NATURAL JOIN dba_hist_snapshot
-               JOIN   V$TABLESPACE on(TABLESPACE_ID=TS#)
+               JOIN   V$TABLESPACE A on(TABLESPACE_ID=TS#)
+               JOIN   dba_tablespaces B ON(A.NAME=B.TABLESPACE_NAME)
                WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss')-3/144,sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
                AND    (:V1 IS NULL OR upper(name) like upper('%&V1%'))
                and    INSTANCE_NUMBER=userenv('instance'))
+         WHERE VALUE>0
          GROUP BY end_time,name
          ORDER BY 1]],
     _pivot=true,
-    ylabel="SQLs per Minute",
+    _sorter=2,
     labelsSeparateLines=true,
     labelsKMG2=true,
     height=400,
