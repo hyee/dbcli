@@ -67,10 +67,10 @@ For example: `dbcli.bat "connect=tiger/scott@orcl"`
 DBCLI supports multiple database platforms(oracle,mysql,db2,etc), default is `Oracle`.
 
 To permanently change the preferred platform other than `Oracle`, run `set -p <platform>` after launching the console. 
-For example, `set -p database db2`
+For example, `set -p platform db2`
 
 Without the `-p` option, the change only takes affect on current console window. 
-Type `set database` to see all available options.
+Type `set platform` to see all available options.
 
 Quick Start
 -----------------------
