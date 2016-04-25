@@ -23,8 +23,11 @@ BEGIN
                                                     sql_id       => :V1,
                                                     session_id   => :V3) AS report
             FROM   dual;
-        :rs:=DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => 'ALL',TYPE=> 'ACTIVE',sql_id=> :V1,session_id=> :V3) ;
-        :filename:='sqlm_'||:V1||'.html';
+        BEGIN
+            :rs:=DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => 'ALL',TYPE=> 'ACTIVE',sql_id=> :V1,session_id=> :V3) ;
+            :filename:='sqlm_'||:V1||'.html';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
     ELSE
         OPEN :c FOR
             SELECT *

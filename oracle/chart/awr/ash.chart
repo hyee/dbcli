@@ -35,20 +35,22 @@
         &GROUP_NAME : default={Wait Class}, event={Event}, schema={Schema Name}, g={}
         &COUNTER    : default={count(1)}, sec={count(distinct sample_time+0)}
         &COUNT_NAME : default={Avg Active Sessions}, sec={Distinct Seconds}
+        @VER1       : 11.2={COUNT(DISTINCT SQL_ID||SQL_EXEC_ID)}, default={NULL}
+        @VER2       : 11.2={Running SQLs}, default={HIDDEN_}
     ]]--
 ]]*/
 
 {
-    _attrs=[[select 'ASH Chart (Group By "&GROUP_NAME")' title,
-             '&COUNT_NAME' ylabel from dual]],
+    _attrs=[[select 'ASH Chart (Group By "&GROUP_NAME")' title from dual]],
     _sql=[[
         SELECT to_char(MEDIAN(MEDIAN(sample_time)) over(partition by bucket_id),'YYYY-MM-DD HH24:MI') sample_time,
-               group_by,sum(cnt) cnt,sums RNK_
+               group_by,sum(cnt) "&COUNT_NAME",SUM(SQLS) "&VER2",sums RNK_
         FROM(
              SELECT /*+no_expand*/
                     trunc(sample_time, 'MI') sample_time,
                     &GROUPS AS group_by,
                     &COUNTER cnt,
+                    &VER1 SQLS,
                     sum(&counter) over(partition by &GROUPS) sums,
                     NTILE(1000) over(partition by &GROUPS order by trunc(sample_time, 'MI')) bucket_id
              FROM   &VIEW_NAME a, all_users b

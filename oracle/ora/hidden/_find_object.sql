@@ -25,8 +25,6 @@ BEGIN
         objs := 'all_objects';
     END;
     
-    
-    
     <<CHECKER>>
     IF NOT regexp_like(target,'^\d+$') THEN
         IF regexp_like(target,'^[^"].*" *\. *".+[^"]$') THEN
@@ -102,7 +100,6 @@ BEGIN
     
     EXECUTE IMMEDIATE objs
         INTO obj_type, schem, part1, part2_temp,object_number USING schem,target,schem, part1;
-
     IF part2 IS NULL THEN
         IF part2_temp IS NULL AND NOT flag THEN
             part2_temp := regexp_substr(target, '[^\."]+', 1, CASE WHEN part1=regexp_substr(target, '[^\."]+', 1, 1) THEN 2 ELSE 3 END);

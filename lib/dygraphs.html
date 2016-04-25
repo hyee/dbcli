@@ -21,8 +21,8 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
 //# sourceMappingURL=dygraph-combined.js.map
     </script>
     <script type="text/javascript">
-        var _options=['plotter','showRoller','drawPoints','deviation','logscale','fillGraph','stackedGraph','strokePattern','legend'];
-        var _optionNames=['Bar Chart','Show Roller','Draw Points','Deviation(%)','Log Scale','Fill Graph','Stacked Graph','Stroke Pattern','Follow Mouse'];
+        var _options=['plotter','showRoller','drawPoints','deviation','logscale','fillGraph','stackedGraph','stepPlot','strokePattern','legend'];
+        var _optionNames=['Bar Chart','Show Roller','Draw Points','Deviation(%)','Log Scale','Fill Graph','Step Plot','Stacked Graph','Stroke Pattern','Follow Mouse'];
         var _graph;
         
         function reOptions(g,enabled,options) {
@@ -47,6 +47,35 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
             }
             
             if(axes.y._data==null) {
+                g.setAnnotations([]);
+                options.annotationClickHandler=function(ann, p, g, event) {
+                    if(!p.annotation) return;
+                    var anns = g.annotations();
+                    for(var i=0;i<anns.length;i++) {
+                        if(anns[i].xval==p.xval&&anns[i].series==p.name) {
+                            anns.splice(i,1);
+                            break;
+                        }
+                    }
+                    g.setAnnotations(anns)
+                }
+                options.pointClickCallback=function(event, p) {
+                    if (p.annotation) return;
+                    // If not, add one.
+                    var opts=this.optionsViewForAxis_('y');
+                    var yval = opts('valueFormatter').call(this, p.yval, opts, p.name, this, 2, p.idx);
+                    var ann = {
+                        series: p.name,
+                        xval: p.xval,
+                        shortText: yval,
+                        text: p.name+": " + yval,
+                        width: 45,
+                        
+                    };
+                    var anns = this.annotations();
+                    anns.push(ann);
+                    this.setAnnotations(anns);
+                }
                 axes.y._data=data;
                 axes.y._orgFormatter=axes.y.valueFormatter;
                 axes.y._title=g.getOption("title");
@@ -65,7 +94,8 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
                     return axes.y._orgFormatter(y, opts, series_name,dygraph, row, col);
                 };
             };
-           
+            
+            if(g.getOption("deviation")!=enabled) g.setAnnotations([]);
             if(enabled) {
                 if(axes.y._adj==null) {
                     var adj=new Array();

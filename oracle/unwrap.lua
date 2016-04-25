@@ -79,7 +79,6 @@ function unwrap.unwrap(obj,ext)
     local filename=obj
     obj=db:check_obj(obj)
     env.checkerr(obj,"Cannot find target object!")
-
     local rs=db:dba_query(db.exec,[[
         SELECT TEXT,
                MAX(CASE WHEN LINE = 1 AND TEXT LIKE '% wrapped%' || CHR(10) || '%' THEN 1 ELSE 0 END) OVER(PARTITION BY TYPE) FLAG,
