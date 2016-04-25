@@ -30,8 +30,8 @@
         SELECT to_char(end_time,'YYYY-MM-DD HH24:MI') end_time,namespace,
                round(sum(gets/slot_size),2) "Gets per Minute",
                round(sum(PINS/slot_size),2) "Pins per Minute",
-               round(sum(GETHITS)/nullif(sum(GETS),0),2) "Gets Hit Ratio(%)",
-               round(sum(PINHITS)/nullif(sum(PINS),0),2) "Pins Hit Ratio(%)"
+               round(sum(GETHITS)*100/nullif(sum(GETS),0),2) "Gets Hit Ratio(%)",
+               round(sum(PINHITS)*100/nullif(sum(PINS),0),2) "Pins Hit Ratio(%)"
         FROM   (SELECT /*+merge no_expand ordered_predicates*/
                       inst_id,end_time,flag,Slot_size,namespace|| decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) namespace,
                       GETHITS - nvl(LAG(GETHITS) OVER(PARTITION BY part_key,namespace ORDER BY snap_id),0) GETHITS,

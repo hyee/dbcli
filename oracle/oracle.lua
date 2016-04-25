@@ -150,7 +150,7 @@ function oracle:connect(conn_str)
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
     else
         prompt=(prompt or self.props.service_name):match("^([^,%.&]+)")
-        env._CACHE_PATH=env._CACHE_BASE..prompt:lower()..env.PATH_DEL
+        env._CACHE_PATH=env._CACHE_BASE..prompt:lower():trim()..env.PATH_DEL
         os.execute('mkdir "'..env._CACHE_PATH..'" 2> '..(env.OS=="windows" and 'NUL' or "/dev/null"))
         prompt=('%s%s'):format(prompt:upper(),self.props.db_role or '')
         env.set_prompt(nil,prompt,nil,2)

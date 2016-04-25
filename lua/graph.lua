@@ -143,7 +143,7 @@ function graph:run_sql(sql,args,cmd,file)
 
     local sql,pivot=context._sql,context._pivot
     --Only proceduce top 30 curves to improve the performance in case of there is 'RNK_' field
-    if sql:find('RNK_',1,true) and not sql:find('RND_',1,true) then
+    if sql:match('%WRNK_%W') and not sql:find('%WRND_%W') then
         sql='SELECT * FROM (SELECT /*+NO_NOMERGE(A)*/ A.*,dense_rank() over(order by RNK_ desc) RND_ FROM (\n'..sql..'\n) A) WHERE RND_<=30 ORDER BY 1,2'
     end
 
@@ -198,7 +198,7 @@ function graph:run_sql(sql,args,cmd,file)
         if pivot then
             local x,label,y=row[1],row[2],{table.unpack(row,3)}
             for i=#y,1,-1 do
-               if rows[1][i+2]=="RNK_" or rows[1][i+2]=="RND_" then table.remove(y,i) end
+               if rows[1][i+2]=="RNK_" or rows[1][i+2]=="RND_" or rows[1][i+2]=="HIDDEN_" then table.remove(y,i) end
             end
             if #xlabels==0 then
                 charts,xlabels[1],values[title]=y,title,{x}

@@ -69,14 +69,15 @@ function db:check_obj(obj_name)
             c1 VARCHAR2(32767);
         BEGIN
             SELECT /*+ordered_predicates*/ 
-                   owner || '/' || object_name || '/' || object_type || '/' || object_id || ','
+                   max(owner || '/' || object_name || '/' || object_type || '/' || object_id || ',')
             BULK   COLLECT
             INTO   t1
             FROM   all_objects
             WHERE  owner IN ('SYS', 'PUBLIC')
             AND    regexp_like(object_name, '^(G?V\_?\$|DBA|DBMS|UTL)')
             AND    subobject_name IS NULL
-            AND    object_type not like '% BODY';
+            AND    object_type not like '% BODY'
+            GROUP  BY object_name;
             dbms_lob.createtemporary(c, TRUE);
             FOR i IN 1 .. t1.count LOOP
                 c1 := c1 || t1(i);

@@ -1,3 +1,7 @@
+2016-04-25: + public: command "Chart": add text(annotation) at the axis point when it is clicked.
+            * oracle: add one more chart on "ch ash" to show the sql count(11g+ only)
+                      some updates on the charts scripts
+                      small fixes/changes on some other commands
 2016-04-24: * public: command "Chart":
                         change option "Multi Scale" as "Deviation"
                         layout adjustments

@@ -26,8 +26,9 @@
           WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
           AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2))
         SELECT time,event,v "Value per Minute"
-        FROM   (SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') TIME, event,
-                       round(sum(v),2) v
+        FROM   (SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') TIME, 
+                       event||case when event||' ' like '%TIME %' THEN '(Seconds)' END,
+                       round(sum(v)*case when event||' ' like '%TIME %' THEN 1e-6 else 1 end,2) v
                 FROM  (SELECT /*+merge*/
                                A.*,
                                stat_name || decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event,
