@@ -1,5 +1,5 @@
 /*[[
-    Show chart for dba_hist_system_event. Usage: @@NAME [<event_id>|<event_abbr>|"<event_name>"|"<wait_class>"] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-f"<filter>" [-f1"<filter>"]]
+    Show chart for dba_hist_system_event. Usage: @@NAME [<event_id>|<event_abbr>|"<event_name>"|"<wait_class>"] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-e] [-f"<filter>" [-f1"<filter>"]]
     Impacted by settings: starttime,endtime,instance
     inst_id: Default as all instances, other options are:
                 0         - Separate all instances

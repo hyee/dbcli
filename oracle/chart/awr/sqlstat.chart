@@ -1,0 +1,90 @@
+/*[[
+    Show chart for dba_hist_sqlstat. Usage: @@NAME [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-time|-io|-exec] [-u|-f"<filter>"]
+    Impacted by settings: starttime,endtime,instance
+    -time      : Show the report related to time cost, this is the default option
+    -io        : Show the report related to IO cost
+    -exec      : Show the report related to execution count
+    -u         : Only show the report whose executor is current_schema
+    -s"<name>" : Only show the report whose executor is <name>
+    --[[
+        &V1     : default={&INSTANCE}
+        &V2     : default={&STARTTIME}
+        &V3     : default={&ENDTIME}
+        &GRP    : {
+            time={ela "Elapsed Time",cpu "CPU Time",io "IO Time",ap "Application Time",cc "Concurrency Time",cl "Cluster Time",pl "PL/SQL Exec Time",java "Java Exec Time"},
+            io={phr "Physical Reads",phw "Physical writes",buff "Logical Reads" &VER,opr "Optimized Physical Reads", clr "Cluster Communication",iooff "I/O Offload",cuzip "Cell Un-Compressed"},
+            exec={exec "Executions",parses "Parse Calls",loads "Loads",pxe "PX Executions"}
+        }
+        &LABEL  : time={Seconds per minute}, io={Bytes per Minute}, exec={Count per Minute}
+        &FILTER : default={1=1}, u={PARSING_SCHEMA_NAME=sys_context('userenv','current_schema')},s={PARSING_SCHEMA_NAME='&0'}, f={}
+        @VER    : 11.2={}, default={--}
+    --]]
+]]*/
+{
+    title='System SQL Stats Chart',
+    _attrs=[[select '&LABEL' ylabel from dual]],
+    _sql=[[
+        WITH snap AS
+         (SELECT /*+materialize no_expand*/
+                to_char(end_interval_time, 'yyyy-mm-dd hh24:mi') end_time, instance_number inst_id, dbid,
+                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 1440 Slot_size,
+                CASE WHEN end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate) THEN 0 END flag, 
+                snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
+          FROM   dba_hist_snapshot
+          WHERE  end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate)
+          AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V2))
+        SELECT end_time,inst,&GRP
+        FROM (
+            SELECT end_time,
+                   inst,
+                   round(sum(ela),2) ela ,
+                   round(sum(cpu),2) cpu,
+                   round(sum(io),2) io,
+                   round(sum(ap),2) ap ,
+                   round(sum(cc),2) cc ,
+                   round(sum(cl),2) cl ,
+                   round(sum(pl),2) pl,
+                   round(sum(java),2) java,
+                   round(sum(phr),2) phr,
+                   round(sum(phw),2) phw,
+                   round(sum(buff),2) buff,
+                   &VER round(sum(opr),2) opr,
+                   &VER round(sum(clr),2) clr,
+                   &VER round(sum(cuzip),2) cuzip,
+                   &VER round(sum(iooff),2) iooff,
+                   round(sum(exec),2) exec,
+                   round(sum(pxe),2) pxe,
+                   round(sum(parses),2) parses,
+                   round(sum(loads),2) loads
+            FROM   (SELECT /*+merge no_expand*/
+                          inst_id,end_time,Slot_size,
+                          decode(nvl(lower(:V1), 'a'), 'a', '', ' #' || inst_id) inst,
+                          ELAPSED_TIME_DELTA*1e-6/slot_size ela,
+                          IOWAIT_DELTA*1e-6/slot_size io,
+                          APWAIT_DELTA*1e-6/slot_size ap,
+                          CCWAIT_DELTA*1e-6/slot_size cc,
+                          CLWAIT_DELTA*1e-6/slot_size cl,
+                          PLSEXEC_TIME_DELTA*1e-6/slot_size pl,
+                          JAVEXEC_TIME_DELTA*1e-6/slot_size java,
+                          CPU_TIME_DELTA*1e-6/slot_size cpu,
+                          block_size*(DISK_READS_DELTA)/slot_size phr,
+                          block_size*DIRECT_WRITES_DELTA/slot_size phw,
+                          block_size*BUFFER_GETS_DELTA/slot_size buff,
+                          &VER  block_size*OPTIMIZED_PHYSICAL_READS_DELTA opr,
+                          &VER IO_INTERCONNECT_BYTES_DELTA/slot_size clr,
+                          &VER CELL_UNCOMPRESSED_BYTES_DELTA/slot_size cuzip,
+                          &VER IO_OFFLOAD_RETURN_BYTES_DELTA/slot_size iooff,
+                          EXECUTIONS_DELTA/slot_size exec,
+                          PX_SERVERS_EXECS_DELTA/slot_size pxe,
+                          PARSE_CALLS_DELTA/slot_size parses,
+                          LOADS_DELTA/slot_size loads
+                   FROM   DBA_HIST_SQLSTAT JOIN snap a USING(snap_id,instance_number),
+                          (select /*+no_merge*/ value block_size from v$parameter where name='db_block_size') c
+                   WHERE  a.FLAG=0 AND (&FILTER)) a
+            group by end_time,inst
+        )
+        ORDER  BY 1]],
+    _pivot="mixed",
+    _sorter=2,
+    labelsKMB=true,
+}

@@ -1,18 +1,18 @@
 /*[[
-    Show chart for dba_hist_iostat_detail. Usage: @@NAME ["<function/file type name>"] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-f"<filter>"]
+    Show chart for dba_hist_iostat_detail. Usage: @@NAME ["<function/file type name>"] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-n] [-f"<filter>"]
     Impacted by settings: starttime,endtime,instance
     inst_id: Default as all instances, other options are:
                 0         - Separate all instances
                 a         - Group all instances
                 <inst_id> - Only the specific instance
     -f       : User-defined filter. For example, -f"stat_name like '%time%'"
-    -c       : Group by FILETYPE_NAME
+    -n       : Group by FILETYPE_NAME, default as group by FUNCTION_NAME
     --[[
         @VERSION: 11.2={}
         &V2     : default={&INSTANCE}
         &V3     : default={&STARTTIME}
         &V4     : default={&ENDTIME}
-        &GRP    : default={FUNCTION_NAME}, c={FILETYPE_NAME}, f={FILETYPE_NAME}
+        &GRP    : default={FUNCTION_NAME}, n={FILETYPE_NAME}
         &filter : default={1=1},f={}
     --]]
 ]]*/
