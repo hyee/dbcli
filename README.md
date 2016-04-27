@@ -66,7 +66,7 @@ For example: `dbcli.bat "connect=tiger/scott@orcl"`
 ###Switch Database Platform
 DBCLI supports multiple database platforms(oracle,mysql,db2,etc), default is `Oracle`.
 
-To permanently change the preferred platform other than `Oracle`, run `set -p <platform>` after launching the console. 
+To permanently change the preferred platform other than `Oracle`, run `set -p platform <platform>` after launching the console. 
 For example, `set -p platform db2`
 
 Without the `-p` option, the change only takes affect on current console window. 
@@ -84,7 +84,8 @@ Below are some common uses of the utility:
     5. "alias" command which is similar to the Linux command
     6. "set" command to configure the shell environment
     7. 'q' or CTRL + D or CTRL + C to abort running command
-    8. "help" or "help -a" to see other available commands.
+    8. "help" or "help -a" to see other available commands
+    9. 'chart' or 'ch' command to generate performance charts based on customize configs
 
 Command Types
 -----------------------
@@ -113,6 +114,7 @@ Below is the list:
     ANSICON     : (ZLIB)   https://github.com/adoxa/ansicon
     JSch        : (BSD)    http://www.jcraft.com/jsch/
     PSCP        : (MIT)    http://www.putty.org/ 
+    JsonForLua  : (MIT)    https://github.com/craigmj/json4lua 
 
 Besides, some SQL scripts come from internet.
 
