@@ -1,5 +1,5 @@
 /*[[
-    Show chart for dba_hist_interconnect_pings. Usage: @@NAME [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-f"<filter>"]
+    Show chart for dba_hist_interconnect_pings. Usage: @@NAME [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-byte|-ms|-sec] [-f"<filter>"]
     Impacted by settings: starttime,endtime,instance
     inst_id: Default as all instances, other options are:
                 0         - Separate all instances
@@ -8,7 +8,7 @@
     -f       : User-defined filter. For example, -f"stat_name like '%time%'"
     -byte    : Only show bytes/min
     -ms      : Only show ms/req
-    -se      : Only show seconds/min
+    -sec     : Only show seconds/min
     --[[
         &V1     : default={&INSTANCE}
         &V2     : default={&STARTTIME}

@@ -1,3 +1,6 @@
+2016-04-27: ! public: minor fixes or graph charts
+2016-04-26: * oracle: add/change some chart reports
+            + public: graph chart: support only show a specific axis, refer to the "Axis" option
 2016-04-25: + public: command "Chart": add text(annotation) at the axis point when it is clicked.
             * oracle: add one more chart on "ch ash" to show the sql count(11g+ only)
                       some updates on the charts scripts

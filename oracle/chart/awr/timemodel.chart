@@ -1,16 +1,17 @@
 /*[[
-    Show chart for dba_hist_sys_time_model. Usage: @@NAME ["<state_name>"] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-f"<filter>"]
+    Show chart for dba_hist_sys_time_model. Usage: @@NAME ["<state_name>"] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-sql|-f"<filter>"]
     Impacted by settings: starttime,endtime,instance
     inst_id: Default as all instances, other options are:
                 0         - Separate all instances
                 a         - Group all instances
                 <inst_id> - Only the specific instance
-    -f       : User-defined filter. For example, -f"stat_name like '%time%'"
+    -f      : User-defined filter. For example, -f"stat_name like '%time%'"
+    -sql    : Show stats related to SQL efficiency
     --[[
         &V2     : default={&INSTANCE}
         &V3     : default={&STARTTIME}
         &V4     : default={&ENDTIME}
-        &filter : default={1=1},f={}
+        &filter : default={1=1},f={},sql={stat_name in ('sql execute elapsed time','PL/SQL execution elapsed time','parse time elapsed','hard parse elapsed time','soft parse time')}
     --]]
 ]]*/
 {

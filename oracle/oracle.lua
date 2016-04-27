@@ -236,7 +236,6 @@ function oracle:parse(sql,params)
         sql='DECLARE V1 %s:=:1;%sBEGIN EXECUTE IMMEDIATE V1 %s;%sEND;'
         sql=sql:format(typ,table.concat(s1,''),table.concat(s0,','),table.concat(s2,''))
         local prep=java.cast(self.conn:prepareCall(sql,1003,1007),"oracle.jdbc.OracleCallableStatement")
-        
         prep[method](prep,1,org_sql)
         for k,v in ipairs(p2) do
             local p=p1[v]

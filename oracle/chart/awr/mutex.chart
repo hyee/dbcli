@@ -1,17 +1,17 @@
 /*[[
-    Show chart for dba_hist_mutex_sleep. Usage: @@NAME ["<MUTEX_TYPE|LOCATION>"] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-f"<filter>"]
+    Show chart for dba_hist_mutex_sleep. Usage: @@NAME ["<MUTEX_TYPE|LOCATION>"] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-l] [-f"<filter>"]
     Impacted by settings: starttime,endtime,instance
     inst_id: Default as all instances, other options are:
                 0         - Separate all instances
                 a         - Group all instances
                 <inst_id> - Only the specific instance
     -f       : User-defined filter. 
-    -c       : Group by mutex location, default is mutex type.
+    -l       : Group by mutex location, default is mutex type.
     --[[
         &V2     : default={&INSTANCE}
         &V3     : default={&STARTTIME}
         &V4     : default={&ENDTIME}
-        &GRP    : default={MUTEX_TYPE}, c={MUTEX_TYPE||' - '||trim(LOCATION)}
+        &GRP    : default={MUTEX_TYPE}, l={MUTEX_TYPE||' - '||trim(LOCATION)}
     --]]
 ]]*/
 {

@@ -22,7 +22,7 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
     </script>
     <script type="text/javascript">
         var _options=['plotter','showRoller','drawPoints','deviation','logscale','fillGraph','stackedGraph','stepPlot','strokePattern','legend'];
-        var _optionNames=['Bar Chart','Show Roller','Draw Points','Deviation(%)','Log Scale','Fill Graph','Step Plot','Stacked Graph','Stroke Pattern','Follow Mouse'];
+        var _optionNames=['Bar Chart','Show Roller','Draw Points','Deviation(%)','Log Scale','Fill Graph','Stacked Graph','Step Plot','Stroke Pattern','Follow Mouse'];
         var _graph;
         
         function reOptions(g,enabled,options) {
@@ -78,21 +78,38 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
                 }
                 axes.y._data=data;
                 axes.y._orgFormatter=axes.y.valueFormatter;
+                axes.y._orgLabelFormatter=axes.y.axisLabelFormatter;
                 axes.y._title=g.getOption("title");
                 axes.y._ylabel=g.getOption("ylabel");
                 var label=(typeof axes.y._ylabel=="string")? " "+axes.y._ylabel.toLowerCase()+" ":" ";
-                axes.y.valueFormatter=function(y, opts, series_name,dygraph, row, col) {
-                    if(opts("deviation")) return axes.y._orgFormatter(y, opts, series_name,dygraph, row, col)+"%";
-                    var l=label+series_name.toLowerCase();
-                    if(l.indexOf(" bytes")>-1||l.indexOf("(bytes")>-1) 
-                        return axes.y._orgFormatter(y,function(opt){return opt=="labelsKMG2"?true:(opt=="labelsKMB"?false:opts(opt));} , series_name,dygraph, row, col)+"B";
-                    if(l.indexOf(" seconds")>-1||l.indexOf("(seconds")>-1||l.indexOf("(secs")>-1||l.indexOf(" secs")>-1) {
-                        if(y>=8640000) return Dygraph.floatFormat(y/86400,2)+" days";
-                        if(y>=36000) return Dygraph.floatFormat(y/3600,2)+" hrs";
-                        if(y>=600) return Dygraph.floatFormat(y/60,2)+" mins";
+                
+                var formatter=function(name,y,opts,def,dygraph) {
+                    if(opts("deviation")) return def+"%";
+                    if(name.indexOf(" bytes")>-1||name.indexOf("(bytes")>-1) 
+                        return Dygraph.numberValueFormatter(y,function(opt){return opt=="labelsKMG2"?true:(opt=="labelsKMB"?false:opts(opt));} );
+                    if(name.indexOf(" kb")>-1||name.indexOf("(kb")>-1)
+                        return Dygraph.numberValueFormatter(y*1024,function(opt){return opt=="labelsKMG2"?true:(opt=="labelsKMB"?false:opts(opt));} )+"B";
+                    if(name.indexOf(" mb")>-1||name.indexOf("(mb")>-1)
+                        return Dygraph.numberValueFormatter(y*1024*1024,function(opt){return opt=="labelsKMG2"?true:(opt=="labelsKMB"?false:opts(opt));} )+"B";
+                    if(name.indexOf(" seconds")>-1||name.indexOf("(seconds")>-1||name.indexOf("(secs")>-1||name.indexOf(" secs")>-1) {
+                        if(y>=86400*2) return Dygraph.floatFormat(y/86400,2)+"d";
+                        if(y>=7200) return Dygraph.floatFormat(y/3600,2)+"h";
+                        if(y>=120) return Dygraph.floatFormat(y/60,2)+"m";
+                        return def+"s";
                     }
-                    return axes.y._orgFormatter(y, opts, series_name,dygraph, row, col);
+                    return def;
+                }
+                
+                axes.y.valueFormatter=function(y, opts, series_name,dygraph, row, col) {
+                    var def=axes.y._orgFormatter(y, opts, series_name,dygraph, row, col);
+                    var l=label+series_name.toLowerCase();
+                    return formatter(l,y,opts,def,dygraph);
                 };
+                
+                axes.y.axisLabelFormatter=function(y, granularity, opts, dygraph) {
+                    var def=axes.y._orgLabelFormatter(y, granularity, opts, dygraph);
+                    return formatter(label,y,opts,def,dygraph);
+                }
             };
             
             if(g.getOption("deviation")!=enabled) g.setAnnotations([]);
@@ -129,8 +146,8 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
             var str="";
             for(var i=0;i<_options.length;i++) 
                 str+='<input type="checkbox" id="'+_options[i]+String(index)+'" onclick="javascript:update_options('+String(index)+')">'+_optionNames[i]+'</button>&nbsp;&nbsp;&nbsp;';
-            str+='\n<select id="ShowAxis'+String(index)+'" onchange="javascript:update_options('+String(index)+')">';
-            for(var i=1;i<=20;i++) str+='<option value='+String(i)+'>'+String(i)+' Axis</option>\n';
+            str+='\n<select id="ShowAxis'+String(index)+'" onchange="javascript:update_options('+String(index)+')" style="width:70px">';
+            for(var i=1;i<=20;i++) str+='<option value="'+String(i)+'">'+String(i)+' Axis</option>\n';
             str+='</select>';
             str='<div id="divShow'+String(index)+'" style="width:100%;"></div>\n'
                 +'<div id="divLabel'+String(index)+'" style="width:90%; margin-left:5%"></div>\n'
@@ -142,15 +159,21 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
             eval("_graph=g"+String(index));
             var visibles=_graph.getOption("visibility");
             var cnt=0;
-            for(var i=0;i<visibles.length;i++) cnt+=visibles[i]?1:0;
-            document.getElementById("ShowAxis"+String(index)).value=cnt;
             for(var i=0;i<_options.length;i++) {
                 var val=_graph.getOption(_options[i]);
                 if(_options[i]=='plotter'&&val!=BarPlotter) val=false;
                 var res=(typeof val=='undefined'||val==null||String(val)=='false'||(String(val)!='follow'&&_options[i]=="legend"))?false:true; 
                 document.getElementById(_options[i]+String(index)).checked=res;
                 if(_options[i]=="deviation") reOptions(_graph,res,{});
-            };
+            }
+            var str="";
+            var setNames = _graph.getLabels().slice(1);
+            var select=document.getElementById("ShowAxis"+String(index))
+            for(var i=0;i<setNames.length;i++) str+='<option value="'+(-i)+'">'+setNames[i]+"</option>";
+            for(var i=0;i<visibles.length;i++) cnt+=visibles[i]?1:0;
+            for(var i=select.options.length-1;i>=visibles.length;i--) select.removeChild(select.options[i]);
+            select.innerHTML=str+select.innerHTML;
+            select.value=String(cnt);
         };
         
         function update_options(index) {
@@ -164,7 +187,7 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
             };
             var visible=parseInt(document.getElementById("ShowAxis"+String(index)).value);
             var vs=_graph.getOption("visibility");
-            for(var i=0;i<vs.length;i++) vs[i]=i<visible?true:false;
+            for(var i=0;i<vs.length;i++) vs[i]=i<visible?true:(visible==-i?true:false);
             opt.visibility=vs;
             reOptions(_graph,opt['deviation'],opt);
         };
@@ -181,12 +204,14 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
         function BarPlotter(e) {
             // We need to handle all the series simultaneously.
             if (e.seriesIndex !== 0) return;
-
+            
             var g = e.dygraph;
             var ctx = e.drawingContext;
             var sets = e.allSeriesPoints;
             var y_bottom = e.dygraph.toDomYCoord(0);
             var len = sets.length;
+            var visibles=g.getOption("visibility");
+            
 
             // Find the minimum separation between x-values.
             // This determines the bar width.
@@ -199,25 +224,20 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
                 }
             }
             var bar_width = Math.floor(2.0 / 3 * min_sep);
-            var fillColors = [];
             var strokeColors = g.getColors();
-            for (var i = 0; i < len; i++) {
-                fillColors.push(darkenColor(strokeColors[i]));
-            }
-
+            var rec=[];
             for (var j = 0; j < len; j++) {
-                ctx.fillStyle = fillColors[j];
+                ctx.fillStyle = darkenColor(strokeColors[j]);
                 ctx.strokeStyle = strokeColors[j];
                 for (var i = 0; i < sets[j].length; i++) {
                     var p = sets[j][i];
+                    --Ignore the zero value
+                    if(p.canvasy==0) continue;
                     var center_x = p.canvasx;
-                    var x_left = center_x - (bar_width / 2) * (1 - j/(sets.length-1));
-
-                    ctx.fillRect(x_left, p.canvasy,
-                        bar_width/sets.length, y_bottom - p.canvasy);
-
-                    ctx.strokeRect(x_left, p.canvasy,
-                        bar_width/sets.length, y_bottom - p.canvasy);
+                    rec[i]=(rec[i]==null?-1:rec[i])+1;
+                    var x_left = center_x-(bar_width/2)+bar_width/sets.length*rec[i];
+                    ctx.fillRect(x_left, p.canvasy,bar_width/sets.length, y_bottom - p.canvasy);
+                    ctx.strokeRect(x_left, p.canvasy,bar_width/sets.length, y_bottom - p.canvasy);
                 }
             }
         }
