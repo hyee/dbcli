@@ -35,7 +35,7 @@
                               SELECT INSTANCE_NUMBER, END_TIME, METRIC_NAME, metric_unit,group_id,AVERAGE
                               FROM   DBA_HIST_SYSMETRIC_SUMMARY
                               WHERE  'D' = UPPER(:DICT)) A 
-                              JOIN (SELECT group_id,group_name FROM V$METRICNAME) b USING(group_id)
+                              JOIN (SELECT distinct group_id,group_name FROM V$METRICNAME) b USING(group_id)
                         WHERE  (:V2 IS NULL  OR lower(:V2) IN ('0', 'a') OR inst_id = :V2)
                         AND    (:V1 IS NULL AND &CAT OR :V1 IS NOT NULL AND (UPPER(METRIC_NAME) LIKE UPPER('%&V1%') OR upper(B.GROUP_NAME)=upper(:V1)))
                         AND    end_time between nvl(to_date(:V3,'yymmddhh24mi'),sysdate-7) and nvl(to_date(:V4,'yymmddhh24mi'),sysdate)) A

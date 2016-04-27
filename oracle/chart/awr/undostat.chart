@@ -6,12 +6,11 @@
                 a         - Group all instances
                 <inst_id> - Only the specific instance
     -f       : User-defined filter. For example, -f"stat_name like '%time%'"
-    -time    : Only show the data related to time cost
     --[[
         &V1     : default={&INSTANCE}
         &V2     : default={&STARTTIME}
         &V3     : default={&ENDTIME}
-        &filter : default={1=1},time={stat_name like '%time%'},f={}
+        &filter : default={1=1},f={}
     --]]
 ]]*/
 {
@@ -28,9 +27,9 @@
           AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V2)) 
         SELECT end_time, 
                event,
-               Round(SUM(bytes),2) "Used Size(MB)",
-               SUM(TXNCOUNT) "Transactions",
-               SUM(MAXQUERYLEN) "Longest SQL Time(secs)"
+               Round(SUM(bytes),2) "Undo Size(MB)",
+               Round(SUM(TXNCOUNT),2) "Transactions/Min",
+               MAX(MAXQUERYLEN) "Longest SQL Time(secs)"
         FROM  (SELECT /*+merge*/
                        A.*,
                        name || decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event
@@ -39,7 +38,7 @@
                               s.end_time,
                               a.name,
                               UNDOBLKS*BLOCK_SIZE/1024/1024 bytes,
-                              TXNCOUNT,
+                              TXNCOUNT/Slot_size TXNCOUNT,
                               MAXQUERYLEN
                        FROM   dba_hist_undostat C JOIN snap S USING(snap_id,instance_number)
                        JOIN   V$TABLESPACE A on(TS#=UNDOTSN)

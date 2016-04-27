@@ -4,11 +4,12 @@ local template,cr
 --[[
     Please refer to "http://dygraphs.com/options.html" for the graph options that used in .chart files
     The content of .chart file must follow the lua table syntax. for example: {a=..,b={...}}
+        and it contains at least one element2: _sql
     Settings:
         set ChartSeries <number>: Define the max series to be shown in the chart.
                                   If the data contains many series, only show the top <number> deviations
     Common options from dygraphs(available values are all true/false):
-        ylabel,title,height,rollPeriod,drawPoints,logscale,fillGraph,stackedGraph,
+        height,ylabel,title,height,rollPeriod,drawPoints,logscale,fillGraph,stackedGraph,
         stepPlot,strokePattern,plotter
     Other options:
         _attrs="<sql_statement>" : Select statement to proceduce the attributes, 
@@ -112,6 +113,7 @@ function graph:run_sql(sql,args,cmd,file)
             labelsDivStyles= {border='1px solid black',width=80},
             rollPeriod=8,
             showRoller=false,
+            _pivot=true,
             height= 400,
             includeZero=true,
             axisLabelFontSize=12,
@@ -157,7 +159,7 @@ function graph:run_sql(sql,args,cmd,file)
     end
     local counter,range_begin,range_end=-1
     rows=self.db.resultset:rows(rs,-1)
-    local head=table.remove(rows,1)
+    local head,cols=table.remove(rows,1)
     local maxaxis=cfg.get('ChartSeries')
     table.sort(rows,function(a,b) return a[1]<b[1] end)
     --print(table.dump(rows))
@@ -175,12 +177,23 @@ function graph:run_sql(sql,args,cmd,file)
         table.insert(rows,1,head)
     end
 
-    local cols=#rows[1]
+    head,cols={},0
     while true do
         counter=counter+1
         local row=rows[counter+1]
         if not row then break end
+        if counter==0 then
+            for i=1,#row do
+                local flag=row[i]
+                flag=not (flag=="RNK_" or flag=="RND_" or flag=="HIDDEN_" or flag:match('^%W*$')) and true or false
+                head[#head+1],head[row[i]],cols=row[i],flag,cols+(flag and 1 or 0)
+            end
+        end
+
+        for i=#head,1,-1 do if not head[head[i]] then table.remove(row,i) end end
+
         for i=1,cols do if row[i]==nil then row[i]=0 end end
+
         if counter>0 and row[1]~="" then
             local x=row[1]
             if not range_begin then
@@ -197,9 +210,7 @@ function graph:run_sql(sql,args,cmd,file)
         --collist: {label={1:nth-axis,2:count,3:1st-min,4:1st-max,5+:sum(value)-of-each-chart},...}
         if pivot then
             local x,label,y=row[1],row[2],{table.unpack(row,3)}
-            for i=#y,1,-1 do
-               if rows[1][i+2]=="RNK_" or rows[1][i+2]=="RND_" or rows[1][i+2]=="HIDDEN_" then table.remove(y,i) end
-            end
+            
             if #xlabels==0 then
                 charts,xlabels[1],values[title]=y,title,{x}
                 env.checkerr(#charts>0,'Pivot mode should have at least 3 columns!')
@@ -225,7 +236,7 @@ function graph:run_sql(sql,args,cmd,file)
                 end 
             end
         else
-            local c=math.min(cols,maxaxis+1)
+            local c=math.min(#row,maxaxis+1)
             if not values[title] then values[title]={table.unpack(row,1,c)} end
             csv[#csv+1]=table.concat(row,',',1,c)
             for i=2,c do

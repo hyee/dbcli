@@ -24,15 +24,21 @@
           WHERE  end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate)
           AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V2))
         SELECT /*+no_expand */
-               end_time, nvl2(:V4,regexp_substr(file_name,'[^\\/]+$'),&GRP) tsname, SUM(phyrds) "Physical Read Requests", round(SUM(phyrgb), 3) "Physical Read Size(Bytes)",
-               ROUND(SUM(readtim) / nullif(SUM(phyrds),0) * 10, 2) "Miliseconds per Physical Read", SUM(phywrs) "Physical Write Requests",
-               round(SUM(phywgb), 3) "Physical Write Size(Bytes)", ROUND(SUM(WRITETIM) / nullif(SUM(phywrs),0) * 10, 2) "Miliseconds per Physical Write",
+               end_time, nvl2(:V4,regexp_substr(file_name,'[^\\/]+$'),&GRP) tsname, 
+               SUM(phyrds) "Physical Read Requests/Minute", 
+               round(SUM(phyrgb), 3) "Physical Read Bytes/Minute",
+               ROUND(SUM(readtim) / nullif(SUM(phyrds),0) * 10, 2) "Miliseconds per Physical Read", 
+               SUM(phywrs) "Physical Write Requests/Minute",
+               round(SUM(phywgb), 3) "Physical Write Bytes/Minute", 
+               ROUND(SUM(WRITETIM) / nullif(SUM(phywrs),0) * 10, 2) "Miliseconds per Physical Write",
                SUM(sum(WRITETIM+readtim)) over(PARTITION BY nvl2(:V4,regexp_substr(file_name,'[^\\/]+$'),&GRP)) RNK_
-        FROM   (SELECT  end_time, inst_id, tablespace_name tsname,file_name, physical_reads phyrds, physical_writes phywrs,
-                        bytes / blocks * physical_block_reads  phyrgb, 
-                        bytes / blocks * physical_block_writes phywgb,
-                        AVERAGE_READ_TIME * physical_reads READTIM, 
-                        AVERAGE_WRITE_TIME * physical_writes WRITETIM,0 flag
+        FROM   (SELECT  end_time, inst_id, tablespace_name tsname,file_name, 
+                        physical_reads/(INTSIZE_CSEC/6000) phyrds, 
+                        physical_writes/(INTSIZE_CSEC/6000) phywrs,
+                        bytes / blocks * physical_block_reads/(INTSIZE_CSEC/6000)  phyrgb, 
+                        bytes / blocks * physical_block_writes/(INTSIZE_CSEC/6000) phywgb,
+                        AVERAGE_READ_TIME * physical_reads/(INTSIZE_CSEC/6000) READTIM, 
+                        AVERAGE_WRITE_TIME * physical_writes/(INTSIZE_CSEC/6000) WRITETIM,0 flag
                  FROM   GV$FILEMETRIC_HISTORY
                  JOIN   dba_data_files
                  USING  (file_id)
@@ -44,12 +50,12 @@
                  SELECT * FROM (
                      SELECT /*+no_expand */
                             end_time, inst_id, tsname,FILENAME, 
-                            PHYRDS - nvl(LAG(PHYRDS) OVER(PARTITION BY part_key, file# ORDER BY snap_id),0),
-                            PHYWRTS - nvl(LAG(PHYWRTS) OVER(PARTITION BY part_key, file# ORDER BY snap_id),0),
-                            (PHYBLKRD - nvl(LAG(PHYBLKRD) OVER(PARTITION BY part_key, file# ORDER BY snap_id),0)) * block_size ,
-                            (PHYBLKWRT - nvl(LAG(PHYBLKWRT) OVER(PARTITION BY part_key, file# ORDER BY snap_id),0)) * block_size ,
-                            READTIM - nvl(LAG(READTIM) OVER(PARTITION BY part_key, file# ORDER BY snap_id),0),
-                            WRITETIM - nvl(LAG(WRITETIM) OVER(PARTITION BY part_key, file# ORDER BY snap_id),0),
+                            (PHYRDS - nvl(LAG(PHYRDS) OVER(PARTITION BY part_key, file# ORDER BY snap_id),0))/slot_size,
+                            (PHYWRTS - nvl(LAG(PHYWRTS) OVER(PARTITION BY part_key, file# ORDER BY snap_id),0))/slot_size,
+                            (PHYBLKRD - nvl(LAG(PHYBLKRD) OVER(PARTITION BY part_key, file# ORDER BY snap_id),0)) * block_size/slot_size ,
+                            (PHYBLKWRT - nvl(LAG(PHYBLKWRT) OVER(PARTITION BY part_key, file# ORDER BY snap_id),0)) * block_size/slot_size ,
+                            (READTIM - nvl(LAG(READTIM) OVER(PARTITION BY part_key, file# ORDER BY snap_id),0))/slot_size,
+                            (WRITETIM - nvl(LAG(WRITETIM) OVER(PARTITION BY part_key, file# ORDER BY snap_id),0))/slot_size,
                             flag
                      FROM   DBA_HIST_FILESTATXS b natural join snap
                      WHERE  'D' = UPPER(:DICT)
@@ -59,5 +65,5 @@
         GROUP  BY end_time, nvl2(:V4,regexp_substr(file_name,'[^\\/]+$'),&GRP)
         ]],
        _pivot=true,
-       labelsKMG2=true,
+       labelsKMB=true,
    }
