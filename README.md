@@ -105,16 +105,16 @@ Below is the list:
     JLine2      : (BSD)    https://github.com/jline/jline2
     ConsoleZ    : (GNU)    https://github.com/cbucher/console
     luajit v2.1 : (MIT)    https://github.com/LuaJIT/LuaJIT
-    jnlua       : (MIT)    https://github.com/hyee/JNLuaJIT(based on http://jnlua.googlecode.com/)
-    OpenCSV     : (MIT)    https://github.com/hyee/OpenCSV(based on opencsv.sourceforge.net)
+    jnlua       : (MIT)    https://github.com/hyee/JNLuaJIT(revised from jnlua.googlecode.com)
+    OpenCSV     : (MIT)    https://github.com/hyee/OpenCSV(revised from opencsv.sourceforge.net)
     MessagePack : (MIT)    https://github.com/fperrad/lua-MessagePack (pure lua)
     dygraphs    : (MIT)    https://github.com/danvk/dygraphs
     JNA         : (LGPL)   https://github.com/java-native-access/jna
     NuProcess   : (Apache) https://github.com/brettwooldridge/NuProcess
     ANSICON     : (ZLIB)   https://github.com/adoxa/ansicon
+    JsonForLua  : (MIT)    https://github.com/craigmj/json4lua 
     JSch        : (BSD)    http://www.jcraft.com/jsch/
     PSCP        : (MIT)    http://www.putty.org/ 
-    JsonForLua  : (MIT)    https://github.com/craigmj/json4lua 
 
 Besides, some SQL scripts come from internet.
 
