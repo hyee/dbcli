@@ -430,7 +430,7 @@ packers['double'] = function (buffer, n)
     if mant ~= mant then
         buffer[#buffer+1] = char(0xCB,  -- nan
                                  0xFF, 0xF8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
-    elseif mant == huge then
+    elseif mant == huge or expo > 0x400 then
         if sign == 0 then
             buffer[#buffer+1] = char(0xCB,      -- inf
                                      0x7F, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
@@ -438,7 +438,7 @@ packers['double'] = function (buffer, n)
             buffer[#buffer+1] = char(0xCB,      -- -inf
                                      0xFF, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
         end
-    elseif mant == 0.0 and expo == 0 then
+    elseif (mant == 0.0 and expo == 0) or expo < -0x3FE then
         buffer[#buffer+1] = char(0xCB,  -- zero
                                  sign, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
     else
@@ -469,7 +469,7 @@ local set_number = function (number)
         end
     elseif number == 'double' then
         packers['number'] = function (buffer, n)
-            if floor(n) ~= n or n ~= n or n == huge or n == -huge then
+            if floor(n) ~= n or n ~= n or n > 1.7976931348623e+308 or n < -1.7976931348623e+308 then
                 return packers['double'](buffer, n)
             else
                 return packers['integer'](buffer, n)
@@ -594,7 +594,7 @@ local function unpack_map (c, n)
     for i = 1, n do
         local k = decode(c)
         local val = decode(c)
-        if k == nil then
+        if k == nil or k ~= k then
             k = m.sentinel
         end
         if k ~= nil then
@@ -1114,12 +1114,15 @@ elseif SIZEOF_NUMBER == 4 then
     set_number'float'
 else
     set_number'double'
+    if SIZEOF_NUMBER > 8 then
+        m.long_double = true
+    end
 end
 set_array'without_hole'
 
-m._VERSION = '0.3.3'
+m._VERSION = '0.3.4'
 m._DESCRIPTION = "lua-MessagePack : a pure Lua implementation"
-m._COPYRIGHT = "Copyright (c) 2012-2015 Francois Perrad"
+m._COPYRIGHT = "Copyright (c) 2012-2016 Francois Perrad"
 return m
 --
 -- This library is licensed under the terms of the MIT/X11 license,

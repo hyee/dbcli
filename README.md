@@ -6,14 +6,14 @@ DBCLI : A CLI utility for DBA (Oracle/MySQL/DB2)
 [![MIT License](http://img.shields.io/badge/Licence-MIT-brightgreen.svg)](https://en.wikipedia.org/wiki/MIT_License)
 [drag]:help.gif
 ![][drag]
-
+![sshot-13](https://cloud.githubusercontent.com/assets/761520/14856219/d23eccbe-0cc9-11e6-9256-7275e91656d8.jpg)
 
 Description
 -----------------------
 
 DBCLI is a portable database command line utility, for DBA or application support to easily manage and run their common used scripts, similar to database built-in CLI tools but is more flexible.  
 
-It uses Lua language to build the framework, and bridges to JDBC to access database, many of the files are SQL scripts that easy to maintain.<br/> 
+It is mainly developed by Lua language, and bridges to JDBC to access database, many of the files are SQL scripts that easy to maintain.<br/> 
 It is designed to support multiple databases, and includes 2 types of modules, one is the public module whose functions are visible across all database platforms, 
 and another one is the platform-specific module.
 
@@ -66,7 +66,7 @@ For example: `dbcli.bat "connect=tiger/scott@orcl"`
 ###Switch Database Platform
 DBCLI supports multiple database platforms(oracle,mysql,db2,etc), default is `Oracle`.
 
-To permanently change the preferred platform other than `Oracle`, run `set -p <platform>` after launching the console. 
+To permanently change the preferred platform other than `Oracle`, run `set -p platform <platform>` after launching the console. 
 For example, `set -p platform db2`
 
 Without the `-p` option, the change only takes affect on current console window. 
@@ -84,7 +84,8 @@ Below are some common uses of the utility:
     5. "alias" command which is similar to the Linux command
     6. "set" command to configure the shell environment
     7. 'q' or CTRL + D or CTRL + C to abort running command
-    8. "help" or "help -a" to see other available commands.
+    8. "help" or "help -a" to see other available commands
+    9. 'chart' or 'ch' command to generate performance charts based on customize configs
 
 Command Types
 -----------------------
@@ -104,13 +105,14 @@ Below is the list:
     JLine2      : (BSD)    https://github.com/jline/jline2
     ConsoleZ    : (GNU)    https://github.com/cbucher/console
     luajit v2.1 : (MIT)    https://github.com/LuaJIT/LuaJIT
-    jnlua       : (MIT)    https://github.com/hyee/JNLuaJIT(based on http://jnlua.googlecode.com/)
-    OpenCSV     : (MIT)    https://github.com/hyee/OpenCSV(based on opencsv.sourceforge.net)
+    jnlua       : (MIT)    https://github.com/hyee/JNLuaJIT(revised from jnlua.googlecode.com)
+    OpenCSV     : (MIT)    https://github.com/hyee/OpenCSV(revised from opencsv.sourceforge.net)
     MessagePack : (MIT)    https://github.com/fperrad/lua-MessagePack (pure lua)
     dygraphs    : (MIT)    https://github.com/danvk/dygraphs
     JNA         : (LGPL)   https://github.com/java-native-access/jna
     NuProcess   : (Apache) https://github.com/brettwooldridge/NuProcess
     ANSICON     : (ZLIB)   https://github.com/adoxa/ansicon
+    JsonForLua  : (MIT)    https://github.com/craigmj/json4lua 
     JSch        : (BSD)    http://www.jcraft.com/jsch/
     PSCP        : (MIT)    http://www.putty.org/ 
 

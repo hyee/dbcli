@@ -231,7 +231,7 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
                 ctx.strokeStyle = strokeColors[j];
                 for (var i = 0; i < sets[j].length; i++) {
                     var p = sets[j][i];
-                    --Ignore the zero value
+                    //Ignore the zero value
                     if(p.canvasy==0) continue;
                     var center_x = p.canvasx;
                     rec[i]=(rec[i]==null?-1:rec[i])+1;
