@@ -2,14 +2,15 @@ local env=env
 local json,math,graph,cfg=env.json,env.math,env.class(env.scripter),env.set
 local template,cr
 --[[
-    Please refer to "http://dygraphs.com/options.html" for the graph options that used in .chart files
+    Please refer to "http://dygraphs.com/options.html" for the graph options that used in .chart files.
+    More examples can be found in folder "oracle\chart" 
     The content of .chart file must follow the lua table syntax. for example: {a=..,b={...}}
-        and it contains at least one element2: _sql
+        and it contains at least one attribute "_sql" which returns <date>+<name>+<value(s)> fields
     Settings:
         set ChartSeries <number>: Define the max series to be shown in the chart.
                                   If the data contains many series, only show the top <number> deviations
     Common options from dygraphs(available values are all true/false):
-        height,ylabel,title,height,rollPeriod,drawPoints,logscale,fillGraph,stackedGraph,
+        ylabel,title,height,rollPeriod,drawPoints,logscale,fillGraph,stackedGraph,
         stepPlot,strokePattern,plotter
     Other options:
         _attrs="<sql_statement>" : Select statement to proceduce the attributes, 
@@ -18,46 +19,52 @@ local template,cr
                                    i.e.:In below case, the chart title is defined as 'THIS IS TITLE', and &title, &group by variables can be used. 
                                        _attrs="select 'THIS IS TITLE' title, 'event_name' group_by from dual"
         _sql  ="<sql_statement>" : The select statement to produce the graph data
-                                   X-label: the value of the 1st field, mainly be a time value
-                                   _pivot=false:
-                                        Asis Name  = 2nd+ field names
-                                        Asis Value = 2nd+ field values(number)
-                                        2nd+ fields: field name as the curve name and value as the Y-Asis
-                                        Example:
-                                           date(x-label)  latch1  latch2
-                                           --------------------------------
-                                           2015-1-1        99      98
-                                           2015-1-1        97      96
-                                   _pivot=true:
-                                        Axis Name  = 2nd field value(string)
-                                        Axis Value = 3rd+ values(number), if colums(N)>3, then create N-2 charts 
-                                        Example:
-                                           date(x-label)  name   Y1  Y2 
-                                           -----------------------------
-                                           2015-1-1      latch1  99  24 
-                                           2015-1-1      latch2  98  23 
-                                                                    ||(split into)
-                                                                    \/
-                                           date(Y1) latch1  latch2      date(Y2)  latch1  latch2
-                                           ------------------------- + ------------------------
-                                           2015-1-1  99      98         2015-1-1   24      23  
-                                           
-                                   _pivot="mixed":
-                                        Axis Name  = <2nd field value(string)> + <3rd+ field name>
-                                        Axis Value = 3rd+ values
-                                        Example:
-                                           date(x-label)  name   Y1  Y2
-                                           ----------------------------
-                                           2015-1-1      latch1  99  24
-                                           2015-1-1      latch2  98  23 
-                                                     ||(convert into)
-                                                     \/
-                                           date(x-label)  latch1[Y1] latch1[Y2] latch2[Y1] latch2[Y2]
-                                           ----------------------------------------------------------
-                                           2015-1-1        99         24        98          23
-                                        Refer to "racping.chart" for more example
-                                    RNK_: If the output contains the "RNK_" field, then only procedure the top 30 RNK_ data.
-                                          Refer to "ash.chart" for example     
+                                   The "_pivot" attribute impacts the SQL output:
+                                       _pivot=false:
+                                            X-label    = 1st field values, mainly be a time value
+                                            Asis Name  = 2nd+ field names
+                                            Asis Value = 2nd+ field values(number)
+                                            2nd+ fields: field name as the curve name and value as the Y-Asis
+                                            Example:
+                                               date(x-label)  latch1  latch2
+                                               --------------------------------
+                                               2015-1-1        99      98
+                                               2015-1-1        97      96
+                                       _pivot=true:
+                                            X-label    = 1st field values, mainly be a time value
+                                            Axis Name  = 2nd field value(string)
+                                            Axis Value = 3rd+ values(number), if colums(N)>3, then create N-2 charts 
+                                            Example:
+                                               date(x-label)  name   Y1  Y2 
+                                               -----------------------------
+                                               2015-1-1      latch1  99  24 
+                                               2015-1-1      latch2  98  23 
+                                                                        ||(split into)
+                                                                        \/
+                                               date(Y1) latch1  latch2      date(Y2)  latch1  latch2
+                                               ------------------------- + ------------------------
+                                               2015-1-1  99      98         2015-1-1   24      23  
+                                               
+                                       _pivot="mixed":
+                                            X-label    = 1st field values, mainly be a time value
+                                            Axis Name  = <2nd field value(string)> + <3rd+ field name>
+                                            Axis Value = 3rd+ values
+                                            Example:
+                                               date(x-label)  name   Y1  Y2
+                                               ----------------------------
+                                               2015-1-1      latch1  99  24
+                                               2015-1-1      latch2  98  23 
+                                                         ||(convert into)
+                                                         \/
+                                               date(x-label)  latch1[Y1] latch1[Y2] latch2[Y1] latch2[Y2]
+                                               ----------------------------------------------------------
+                                               2015-1-1        99         24        98          23
+                                            Refer to "racping.chart" for more example
+                                   Special column names: Special column names will not be shown in the report
+                                       RNK_: If the output contains the "RNK_" field, then only proceduce the top 30 RNK_ data. Refer to "ash.chart" for example
+                                       RND_: If the output contains both "RNK_" and "RND_", then will not produce the top 30 RNK_ data
+                                       |   : To be developed
+                                       none-alphanumeric: If the column name is all none-alphanumeric chars or is "", then will not include into the chart report. for example, '*','&%'
         _pivot=true|false|"mixed": indicate if pivot the >2nd numberic fields, refer to above
         _ylabels={"<label1>",...}: Customize the ylabel for each chart, not not define then use the names from "_sql"
         _range="<Time range>"    : Used in sub-title, if not specified then auto-caculate the range
@@ -118,6 +125,7 @@ function graph:run_sql(sql,args,cmd,file)
             includeZero=true,
             axisLabelFontSize=12,
             labelsSeparateLines=true,
+            animatedZooms=true,
             highlightSeriesOpts= {
               strokeWidth= 2,
               strokeBorderWidth=2,

@@ -13,7 +13,7 @@ Description
 
 DBCLI is a portable database command line utility, for DBA or application support to easily manage and run their common used scripts, similar to database built-in CLI tools but is more flexible.  
 
-It uses Lua language to build the framework, and bridges to JDBC to access database, many of the files are SQL scripts that easy to maintain.<br/> 
+It is mainly developed by Lua language, and bridges to JDBC to access database, many of the files are SQL scripts that easy to maintain.<br/> 
 It is designed to support multiple databases, and includes 2 types of modules, one is the public module whose functions are visible across all database platforms, 
 and another one is the platform-specific module.
 

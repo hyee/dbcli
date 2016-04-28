@@ -151,7 +151,7 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
             str+='</select>';
             str='<div id="divShow'+String(index)+'" style="width:100%;"></div>\n'
                 +'<div id="divLabel'+String(index)+'" style="width:90%; margin-left:5%"></div>\n'
-                +'<div style="width: 100%; text-align: center;">'+str+'</div>';
+                +'<div style="width: 100%; text-align: center;font-size:12px">'+str+'</div>';
             document.write(str);
         };
         
@@ -232,7 +232,7 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
                 for (var i = 0; i < sets[j].length; i++) {
                     var p = sets[j][i];
                     //Ignore the zero value
-                    if(p.canvasy==0) continue;
+                    if(p.canvasy==y_bottom) continue;
                     var center_x = p.canvasx;
                     rec[i]=(rec[i]==null?-1:rec[i])+1;
                     var x_left = center_x-(bar_width/2)+bar_width/sets.length*rec[i];
