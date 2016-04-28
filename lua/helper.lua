@@ -102,6 +102,7 @@ function helper.helper(cmd,...)
             target=cmd
         end
         if helps=="" then return end
+        helps=helps:gsub('^(%s*[^\n\r]+)([Uu]sage[: \t"\']+@@NAME)','%1\n%2')
         local spaces=helps:match("([ \t]*)%S") or ""
         helps=('\n'..helps):gsub("[\n\r]"..spaces,"\n"):gsub("%s+$",""):gsub("@@NAME",target:lower())
         if helps:sub(1,1)=="\n" then helps=helps:sub(2) end

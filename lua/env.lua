@@ -288,8 +288,7 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
     end
 
     if type(desc)=="string" then
-        desc = desc:gsub("^%s*[\n\r]+","")
-        desc = desc:match("([^\n\r]+)")
+        desc = desc:gsub("^%s*[\n\r]+",""):match("([^\n\r]+)")
     elseif desc then
         env.warn(cmd..': Unexpected command definition, the description should be a function or string, but got '..type(desc))
         desc=nil

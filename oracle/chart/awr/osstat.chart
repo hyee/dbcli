@@ -15,7 +15,7 @@
 ]]*/
 {
     title="System OS Stats Chart",
-    _attrs=[[select case when lower(:V1) like '%time%' then 'Seconds' when lower(:V1) like '%byte%' then 'Bytes' else 'Value' end||' per Minute' ylabel from dual]],
+    _attrs=[[select case when lower(:V1) like '%time%' then 'Seconds' when lower(:V1) like '%byte%' then 'Bytes' else 'Value' end||' per Second' ylabel from dual]],
     _sql=[[
         WITH snap AS
          (SELECT /*+materialize no_expand*/
@@ -33,7 +33,7 @@
                 FROM  (SELECT /*+merge*/
                                A.*,
                                initcap(replace(stat_name,'_',' '))|| decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event,
-                               value/Slot_size v
+                               value/Slot_size/60 v
                        FROM   (SELECT /*+merge no_expand ordered_predicates*/
                                       inst_id,
                                       end_time,

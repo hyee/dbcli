@@ -1,66 +1,42 @@
 /* [[Provides information about the user. Usage: user <username>]] */
 
+set feed off
+SELECT user_id, username, account_status, profile,
+       INITIAL_RSRC_CONSUMER_GROUP RESOURCE_GROUP,
+       created, expiry_date, lock_date, lcount lock_count, default_tablespace, temporary_tablespace
+FROM   dba_users, sys.user$
+WHERE  user_id = user#
+AND    username LIKE NVL2(:V1,upper('%&V1%'),SYS_CONTEXT('USERENV','CURRENT_SCHEMA'));
 
-select
-  user_id,
-  username,
-  account_status,
-  profile,
-  --authentication_type,
-  created,
-  expiry_date,
-  lock_date,
-  lcount lock_count,
-  default_tablespace,
-  temporary_tablespace
-from dba_users, sys.user$
-  where
-  user_id=user#
-  and username like upper('%&V1%');
+SELECT username, tablespace_name, decode(max_bytes, -1, 'UNLIMITED', ceil(max_bytes / 1024 / 1024) || 'M') "QUOTA"
+FROM   dba_ts_quotas
+WHERE  username LIKE NVL2(:V1,upper('%&V1%'),SYS_CONTEXT('USERENV','CURRENT_SCHEMA'))
+ORDER  BY 1,2;
 
-  select tablespace_name
-  ,      decode(max_bytes, -1, 'unlimited'
-  ,      ceil(max_bytes / 1024 / 1024) || 'M' ) "QUOTA"
-  from   dba_ts_quotas
-  where  username like upper('%&V1%');
+SELECT grantee username, granted_role || ' ' || decode(admin_option, 'NO', '', 'YES', 'WITH ADMIN OPTION') "User Roles"
+FROM   dba_role_privs
+WHERE  grantee LIKE NVL2(:V1,upper('%&V1%'),SYS_CONTEXT('USERENV','CURRENT_SCHEMA'))
+ORDER  BY 1,2;
 
+SELECT grantee username, privilege || ' ' || decode(admin_option, 'NO', '', 'YES', 'WITH ADMIN OPTION') "User Privileges"
+FROM   dba_sys_privs
+WHERE  grantee LIKE NVL2(:V1,upper('%&V1%'),SYS_CONTEXT('USERENV','CURRENT_SCHEMA'))
+ORDER  BY 1,2;
 
-  select granted_role || ' ' || decode(admin_option, 'NO', '', 'YES', 'with admin option') "User Roles"
-  from   dba_role_privs
-  where  grantee like upper('%&V1%');
+SELECT /*+no_merge(a)*/ CONNECT_BY_ROOT(granted_role) username, lpad(' ', 2 * LEVEL) || granted_role "User, its roles and privileges"
+FROM   (
+         /* THE USERS */
+         SELECT NULL grantee, username granted_role
+         FROM   dba_users
+         WHERE  username LIKE NVL2(:V1,upper('%&V1%'),SYS_CONTEXT('USERENV','CURRENT_SCHEMA'))
+         /* THE ROLES TO ROLES RELATIONS */
+         UNION
+         SELECT grantee, granted_role
+         FROM   dba_role_privs
+         /* THE ROLES TO PRIVILEGE RELATIONS */
+         UNION
+         SELECT grantee, privilege
+         FROM   dba_sys_privs) a
+START  WITH grantee IS NULL
+CONNECT BY grantee = PRIOR granted_role;
 
-
-
-  select privilege || ' ' || decode(admin_option, 'NO', '', 'YES', 'with admin option') "User Privileges"
-  from   dba_sys_privs
-  where  grantee like upper('%&V1%');
-
-  select
-    lpad(' ', 2*level) || granted_role "User, its roles and privileges"
-  from
-    (
-    /* THE USERS */
-      select
-        null     grantee,
-        username granted_role
-      from
-        dba_users
-      where
-        username like upper('%&V1%')--Change the username accordingly
-    /* THE ROLES TO ROLES RELATIONS */
-    union
-      select
-        grantee,
-        granted_role
-      from
-        dba_role_privs
-    /* THE ROLES TO PRIVILEGE RELATIONS */
-    union
-      select
-        grantee,
-        privilege
-      from
-        dba_sys_privs
-    )
-  start with grantee is null
-  connect by grantee = prior granted_role;
