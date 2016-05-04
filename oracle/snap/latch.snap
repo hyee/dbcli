@@ -1,4 +1,4 @@
-/*[[Source: gv$latch]]*/
+/*[[Generate delta values based on gv$latch. Usage: @@NAME [keyword] [<inst_id>]]]*/
 {
     sql=[[
         SELECT inst_id,
@@ -12,9 +12,12 @@
                IMMEDIATE_MISSES,
                SPIN_GETS
         FROM   gv$latch
-        WHERE  GETS+IMMEDIATE_GETS+MISSES+IMMEDIATE_MISSES+SLEEPS+SPIN_GETS>0
+        WHERE  (GETS+IMMEDIATE_GETS+MISSES+IMMEDIATE_MISSES+SLEEPS+SPIN_GETS>0 or :V1 is not null)
+        AND    (:V1 is null or lower(NAME) like lower('%&V1%'))
+        AND    (:V2 is null OR inst_id=:V2)
     ]],
     agg_cols="GETS,MISSES,SLEEPS,IMMEDIATE_GETS,IMMEDIATE_MISSES,SPIN_GETS,MS",
     set_ratio='off',
-    grp_cols="inst_id,addr,name"
+    grp_cols="inst_id,addr,name",
+    top_grp_cols="name"
 }

@@ -1,9 +1,10 @@
-/*[[Source: gv$sesstat. parameters: <sid> [<key>]]]*/
+/*[[Generate delta values based on gv$sesstat. parameters: <sid> [<inst_id>] [<key>]]]*/
 {
     sql=[[
     SELECT A.*,VALUE DELTA FROM(
         SELECT /*+no_expand*/
          inst_id,
+         sid,
          NAME,
          VALUE / CASE
              WHEN NAME LIKE '%bytes%' THEN
@@ -32,10 +33,12 @@
         FROM   gv$sesstat
         JOIN   gv$statname
         USING  (inst_id, statistic#)
-        WHERE  (VALUE > 0 OR :V2 IS NOT NULL)
-        AND    (:V2 IS NULL OR lower(name) like lower('%&V2%'))
-        AND    sid=:V1) A
+        WHERE  (VALUE > 0 OR :V3 IS NOT NULL)
+        AND    (:V3 IS NULL OR lower(name) like lower('%&V3%'))
+        AND    (:V1 IS NULL OR sid=:V1)
+        AND    (:V2 IS NULL OR inst_id=:V2) A
     ORDER BY NAME]],
     agg_cols="Delta",
-    grp_cols="inst_id,sid,NAME"
+    grp_cols="inst_id,sid,NAME",
+    grp_top_cols="name"
 }

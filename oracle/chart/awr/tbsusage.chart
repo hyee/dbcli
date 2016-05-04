@@ -14,18 +14,16 @@
                max(value) "Used Size(Bytes)",
                round(max(value/mvalue)*100,3) "Used Size(%)"
         FROM  (SELECT /*+merge no_expand ordered_predicates*/
-                      instance_number inst_id,
                       trunc(end_interval_time+0,'mi') end_time,
-                      NAME,
+                      TSNAME NAME,
                       TABLESPACE_USEDSIZE*BLOCK_SIZE value,
                       TABLESPACE_MAXSIZE*BLOCK_SIZE mvalue
-               FROM   DBA_HIST_TBSPC_SPACE_USAGE 
+               FROM   DBA_HIST_TBSPC_SPACE_USAGE
+               JOIN   (SELECT A.*, TS# TABLESPACE_ID FROM DBA_HIST_TABLESPACE_STAT A WHERE INSTANCE_NUMBER=userenv('instance')) USING(SNAP_ID,DBID,TABLESPACE_ID)
                NATURAL JOIN dba_hist_snapshot
-               JOIN   V$TABLESPACE A on(TABLESPACE_ID=TS#)
-               JOIN   dba_tablespaces B ON(A.NAME=B.TABLESPACE_NAME)
+               JOIN   DBA_TABLESPACES on (TABLESPACE_NAME=tsname)
                WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss')-3/144,sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
-               AND    (:V1 IS NULL OR upper(name) like upper('%&V1%'))
-               and    INSTANCE_NUMBER=userenv('instance'))
+               AND    (:V1 IS NULL OR upper(TSNAME) like upper('%&V1%')))
          WHERE VALUE>0
          GROUP BY end_time,name
          ORDER BY 1]],

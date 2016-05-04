@@ -1,21 +1,19 @@
 /*[[
-    Show chart for dba_hist_sysstat. Usage: @@NAME ["<state_name>"] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-c] [-f"<filter>"]
+    Show chart for dba_hist_dlm_misc. Usage: @@NAME ["<state_name>"] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-c] [-f"<filter>"]
     Impacted by settings: starttime,endtime,instance
     inst_id: Default as all instances, other options are:
                 0         - Separate all instances
                 a         - Group all instances
                 <inst_id> - Only the specific instance
-    -f       : User-defined filter. For example, -f"stat_name like '%time%'"
-    -c       : Group by class name, default is stat name.
+    -f       : User-defined filter. For example, -f"name like '%time%'"
     --[[
         &V2     : default={&INSTANCE}
         &V3     : default={&STARTTIME}
         &V4     : default={&ENDTIME}
-        &GRP    : default={stat_name}, c={class_name}
     --]]
 ]]*/
 {
-    title='System State Chart',
+    title='RAC DLM Miscellaneous Stats Chart',
     _sql=[[
         WITH snap AS
          (SELECT /*+materialize no_expand*/
@@ -31,22 +29,18 @@
                        round(sum(v),2) v,stddev(sum(v/a)) over(partition by event) RNK_
                 FROM  (SELECT /*+merge*/
                                A.*,
-                               &GRP || decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event,
+                               name || decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event,
                                value/Slot_size v,
-                               avg(value/Slot_size) over(partition by inst_id,stat_name) a
+                               avg(value/Slot_size) over(partition by inst_id,name) a
                        FROM   (SELECT /*+merge no_expand*/
-                                      inst_id,end_time,flag,Slot_size,stat_name,
-                                      decode(CLASS,1,'User',2,'Redo',4,'Enqueue',8,'Cache',16,'OS',32,'RAC',64,'SQL',128,'DEBUG') class_name,
-                                      VALUE - nvl(LAG(VALUE) OVER(PARTITION BY part_key,stat_name ORDER BY snap_id),0) value
-                               FROM   dba_hist_sysstat NATURAL JOIN snap 
-                               NATURAL JOIN v$statname
-                               WHERE  (:V1 is null or upper(stat_name) like upper('%&V1%'))) a
+                                      inst_id,end_time,flag,Slot_size,name,
+                                      VALUE - nvl(LAG(VALUE) OVER(PARTITION BY part_key,name ORDER BY snap_id),0) value
+                               FROM   dba_hist_dlm_misc NATURAL JOIN snap 
+                               WHERE  (:V1 is null or upper(name) like upper('%&V1%'))) a
                        where nvl(value,0)>0 and flag=0)
                  GROUP  BY event, end_time) a
         WHERE  (v>0)
         ORDER  BY 1]],
     _pivot=true,
-    labelsKMB=true,
-    height=400,
     deviation=true,
 }

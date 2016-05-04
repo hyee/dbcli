@@ -1,3 +1,7 @@
+2016-04-30: * oracle: fixes and minor changes on command 'chart' and 'snap'
+2016-04-29: + oracle: new command 'ora sestop' 
+2016-04-28: * public: command "Chart": smooth the series; some fixes
+=======================begin v1.0================================================
 2016-04-27: ! public: minor fixes or graph charts
 2016-04-26: * oracle: add/change some chart reports
             + public: graph chart: support only show a specific axis, refer to the "Axis" option
