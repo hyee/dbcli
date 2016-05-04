@@ -9,17 +9,17 @@ WHERE  user_id = user#
 AND    username LIKE NVL2(:V1,upper('%&V1%'),SYS_CONTEXT('USERENV','CURRENT_SCHEMA'));
 
 SELECT username, tablespace_name, decode(max_bytes, -1, 'UNLIMITED', ceil(max_bytes / 1024 / 1024) || 'M') "QUOTA"
-FROM   dba_ts_quotas
+FROM   dba_ts_quotas 
 WHERE  username LIKE NVL2(:V1,upper('%&V1%'),SYS_CONTEXT('USERENV','CURRENT_SCHEMA'))
 ORDER  BY 1,2;
 
 SELECT grantee username, granted_role || ' ' || decode(admin_option, 'NO', '', 'YES', 'WITH ADMIN OPTION') "User Roles"
-FROM   dba_role_privs
+FROM   dba_role_privs join dba_users on(username=grantee) 
 WHERE  grantee LIKE NVL2(:V1,upper('%&V1%'),SYS_CONTEXT('USERENV','CURRENT_SCHEMA'))
 ORDER  BY 1,2;
 
 SELECT grantee username, privilege || ' ' || decode(admin_option, 'NO', '', 'YES', 'WITH ADMIN OPTION') "User Privileges"
-FROM   dba_sys_privs
+FROM   dba_sys_privs join dba_users on(username=grantee) 
 WHERE  grantee LIKE NVL2(:V1,upper('%&V1%'),SYS_CONTEXT('USERENV','CURRENT_SCHEMA'))
 ORDER  BY 1,2;
 

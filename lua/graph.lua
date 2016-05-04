@@ -93,13 +93,12 @@ function graph:run_sql(sql,args,cmd,file)
     if not template then
         template=env.load_data(env.WORK_DIR.."lib"..env.PATH_DEL.."dygraphs.html",false)
         env.checkerr(type(template)=="string",'Cannot load file "dygraphs.html" in folder "lib"!')
-        cr=[[
-        <div id="divNoshow@GRAPH_INDEX" style="display:none">@GRAPH_DATA</div>
+        cr=[[<textarea id="divNoshow@GRAPH_INDEX" style="display:none">@GRAPH_DATA</textarea>
         <script type="text/javascript">
         write_options(@GRAPH_INDEX);
         var g@GRAPH_INDEX=new Dygraph(
             document.getElementById("divShow@GRAPH_INDEX"),
-            function() {return document.getElementById("divNoshow@GRAPH_INDEX").innerHTML;},
+            function() {return document.getElementById("divNoshow@GRAPH_INDEX").value;},
             @GRAPH_ATTRIBUTES
         );
         g@GRAPH_INDEX.ready(function() {sync_options(@GRAPH_INDEX);});
@@ -245,8 +244,9 @@ function graph:run_sql(sql,args,cmd,file)
             end
         else
             local c=math.min(#row,maxaxis+1)
-            if not values[title] then values[title]={table.unpack(row,1,c)} end
-            csv[#csv+1]=table.concat(row,',',1,c)
+            row={table.unpack(row,1,c)}
+            if not values[title] then values[title]=row end
+            csv[#csv+1]=table.concat(row,',')
             for i=2,c do
                 if counter==0 then
                     collist[row[i]]={i,0,data={}}
@@ -302,7 +302,7 @@ function graph:run_sql(sql,args,cmd,file)
     local data,axises,temp=output.data,{},{}
     table.remove(data,1)
     for i=#data,math.max(1,#data-maxaxis+1),-1 do
-        axises[#axises+1],temp[#temp+1]=data[i][1],0
+        axises[#axises+1],temp[#temp+1]=data[i][1],""
     end
     --Generate graph data
     self.dataindex,self.data=0,{}
@@ -346,6 +346,7 @@ function graph:run_sql(sql,args,cmd,file)
     end
 
     default_attrs.title=nil
+
     for i=1,self.dataindex do
         replaces['@GRAPH_INDEX']=i
         default_attrs.ylabel=ylabels[i] or default_ylabel or charts[i]
@@ -361,7 +362,7 @@ function graph:run_sql(sql,args,cmd,file)
                 content=content:replace(k,v,true)
             end
         end
-        graph_unit=graph_unit:replace('@GRAPH_DATA',self.data[i][1],true)
+        graph_unit=graph_unit:replace('@GRAPH_DATA','\n'..self.data[i][1]..'\n',true)
         content=content..graph_unit
     end
     content=content.."</body></html>"

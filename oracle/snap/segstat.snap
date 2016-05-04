@@ -1,5 +1,4 @@
-/*[[
-   Source: gv$segstat,gv$sql_plan. parameters: <sql_id>
+/*[[Generate delta values based on gv$segstat,gv$sql_plan. parameters: <sql_id>
    --[[
       &V1: df={1}
    --]]

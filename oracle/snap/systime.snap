@@ -1,9 +1,10 @@
-/*[[Source: gv$sys_time_model]]*/
+/*[[Generate delta values based on gv$sys_time_model. Usage: @@NAME [<inst_id>]]]*/
 {
     sql=[[
         SELECT inst_id, stat_name, round(VALUE * 1e-6, 3) secs
         FROM   gv$sys_time_model
         WHERE  stat_name != 'DB time'
+        AND    (:V1 is null OR inst_id=:V1)
     ]],
     agg_cols="secs",
     grp_cols="inst_id,stat_name"
