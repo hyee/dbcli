@@ -60,9 +60,10 @@
                                       TIME_WAITED_MICRO-nvl(LAG(TIME_WAITED_MICRO) OVER(PARTITION BY event_name,part_key ORDER BY snap_id),0) TIME_WAITED,
                                       TOTAL_WAITS-nvl(LAG(TOTAL_WAITS) OVER(PARTITION BY event_name,part_key ORDER BY snap_id),0) TOTAL_WAITS
                                FROM   DBA_HIST_SYSTEM_EVENT NATURAL JOIN snap
-                               WHERE  (&filter) AND (&ADDITIONAL_FILTER) ) a)
+                               WHERE  (&filter) AND (&ADDITIONAL_FILTER)) a)
                  WHERE nvl(v1,0)>0 and flag=0
-                 GROUP  BY event, end_time)
+                 GROUP  BY event, end_time
+                 HAVING SUM(v2) > 0)
         ORDER  BY 1]],
     _pivot=true,
     labelsKMB=true,

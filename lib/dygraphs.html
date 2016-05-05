@@ -38,7 +38,7 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
                     if (chosen >= 0) {
                         for(i=20;i>=0;i--) {
                             chosen=Dygraph.getDateAxis(a, b, i, opts, dygraph);
-                            if(chosen.length>10) return chosen;
+                            if(chosen.length>=10) return chosen;
                         }
                         return chosen;
                     }
