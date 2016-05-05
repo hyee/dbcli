@@ -1,3 +1,4 @@
+2016-05-05: * oracle: performance fix on 'ora addm' and other small fixes
 2016-04-30: * oracle: fixes and minor changes on command 'chart' and 'snap'
 2016-04-29: + oracle: new command 'ora sestop' 
 2016-04-28: * public: command "Chart": smooth the series; some fixes

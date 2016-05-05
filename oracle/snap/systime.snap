@@ -3,7 +3,7 @@
     sql=[[
         SELECT inst_id, stat_name, round(VALUE * 1e-6, 3) secs
         FROM   gv$sys_time_model
-        WHERE  stat_name != 'DB time'
+        WHERE  stat_name != 'DB time' and value>0
         AND    (:V1 is null OR inst_id=:V1)
     ]],
     agg_cols="secs",

@@ -36,7 +36,7 @@
         WHERE  (VALUE > 0 OR :V3 IS NOT NULL)
         AND    (:V3 IS NULL OR lower(name) like lower('%&V3%'))
         AND    (:V1 IS NULL OR sid=:V1)
-        AND    (:V2 IS NULL OR inst_id=:V2) A
+        AND    (:V2 IS NULL OR inst_id=:V2)) A
     ORDER BY NAME]],
     agg_cols="Delta",
     grp_cols="inst_id,sid,NAME",

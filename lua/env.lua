@@ -241,7 +241,7 @@ function env.smart_check_endless(cmd,rest,from_pos)
     for k=#args,1,-1 do
         if not env.check_cmd_endless(args[k]:upper(),table.concat(args,' ',k+1)) then
             return false,rest
-        elseif _CMDS[args[k]:upper()] then
+        elseif _CMDS[args[k]:upper()] and not _CMDS[args[k]:upper()].ISOVERRIDE then
             break 
         end
     end
