@@ -93,7 +93,7 @@ function graph:run_sql(sql,args,cmd,file)
     if not template then
         template=env.load_data(env.WORK_DIR.."lib"..env.PATH_DEL.."dygraphs.html",false)
         env.checkerr(type(template)=="string",'Cannot load file "dygraphs.html" in folder "lib"!')
-        cr=[[<textarea id="divNoshow@GRAPH_INDEX" style="display:none">@GRAPH_DATA</textarea>
+        cr=[[<textarea id="divNoshow1" style="white-space: nowrap;width:100%;height:300px;display:none">@GRAPH_DATA</textarea>
         <script type="text/javascript">
         write_options(@GRAPH_INDEX);
         var g@GRAPH_INDEX=new Dygraph(
@@ -199,7 +199,13 @@ function graph:run_sql(sql,args,cmd,file)
 
         for i=#head,1,-1 do if not head[head[i]] then table.remove(row,i) end end
 
-        for i=1,cols do if row[i]==nil then row[i]=0 end end
+        for i=1,cols do 
+            if row[i]==nil then 
+                row[i]=0
+            elseif type(row[i])=="string" then
+                row[i]=row[i]:gsub(",",".")
+            end 
+        end
 
         if counter>0 and row[1]~="" then
             local x=row[1]

@@ -21,8 +21,8 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
 //# sourceMappingURL=dygraph-combined.js.map
     </script>
     <script type="text/javascript">
-        var _options=['plotter','showRoller','drawPoints','deviation','logscale','fillGraph','stackedGraph','stepPlot','strokePattern','legend'];
-        var _optionNames=['Bar Chart','Show Roller','Draw Points','Deviation(%)','Log Scale','Fill Graph','Stacked Graph','Step Plot','Stroke Pattern','Follow Mouse'];
+        var _options=['plotter','showRoller','drawPoints','deviation','logscale','fillGraph','stackedGraph','stepPlot','strokePattern','legend','csv'];
+        var _optionNames=['Bar Chart','Show Roller','Draw Points','Deviation(%)','Log Scale','Fill Graph','Stacked Graph','Step Plot','Stroke Pattern','Follow Mouse','CSV'];
         var _graph;
         
         function reOptions(g,enabled,options) {
@@ -184,6 +184,10 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
                 if(_options[i]=='legend') opt[_options[i]]=opt[_options[i]]?'follow':'onmouseover';
                 else if(_options[i]=="strokePattern") opt[_options[i]]=opt[_options[i]]?Dygraph.DASHED_LINE:null;
                 else if(_options[i]=='plotter') opt[_options[i]]=opt[_options[i]]?BarPlotter:null;
+                else if(_options[i]=='csv') {
+                    document.getElementById('divNoshow'+String(index)).style.display=opt[_options[i]]?"":"none";
+                    document.getElementById('divShow'+String(index)).style.display=opt[_options[i]]?"none":"";
+                }
             };
             var visible=parseInt(document.getElementById("ShowAxis"+String(index)).value);
             var vs=_graph.getOption("visibility");
