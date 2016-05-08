@@ -64,5 +64,4 @@
         group by bucket_id,group_by,sums
         order by 1,2
     ]],
-    _pivot=true,
 }

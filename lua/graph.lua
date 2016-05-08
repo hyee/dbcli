@@ -75,6 +75,7 @@ local template,cr
 function graph:ctor()
     self.command='graph'
     self.ext_name='chart'
+    self.ext_command={"graph","gr"}
     cfg.init("ChartSeries",12,set_param,"core","Number of top series to be show in graph chart(see command 'chart')",'1-20')
 end
 
@@ -85,7 +86,7 @@ end
 
 
 function graph:run_sql(sql,args,cmd,file)
-    if type(sql)=="table" then
+    if type(sql)=="table" and not sql._sql then
         for i=1,#sql do self:run_sql(sql[i],args[i],cmd[i],file[i]) end
         return
     end
@@ -93,7 +94,7 @@ function graph:run_sql(sql,args,cmd,file)
     if not template then
         template=env.load_data(env.WORK_DIR.."lib"..env.PATH_DEL.."dygraphs.html",false)
         env.checkerr(type(template)=="string",'Cannot load file "dygraphs.html" in folder "lib"!')
-        cr=[[<textarea id="divNoshow1" style="white-space: nowrap;width:100%;height:300px;display:none">@GRAPH_DATA</textarea>
+        cr=[[<textarea id="divNoshow@GRAPH_INDEX" style="white-space: nowrap;width:100%;height:300px;display:none">@GRAPH_DATA</textarea>
         <script type="text/javascript">
         write_options(@GRAPH_INDEX);
         var g@GRAPH_INDEX=new Dygraph(
@@ -109,17 +110,19 @@ function graph:run_sql(sql,args,cmd,file)
 
     local charts,rs,rows={}
     
-    local context,err=loadstring(('return '..sql):gsub(self.comment,"",1))
-    env.checkerr(context,"Error when loading file %s: %s",file,err)
-
-    context=context()
+    local context,err=sql
+    if type(sql)=='string' then 
+        context,err=loadstring(('return '..sql):gsub(self.comment,"",1))
+        env.checkerr(context,"Error when loading file %s: %s",file,err)
+        context=context()
+    end
+    
     env.checkerr(type(context)=="table" and type(context._sql)=="string","Invalid definition, should be a table with '_sql' property!")
     local default_attrs={
             --legend='always',
             labelsDivStyles= {border='1px solid black',width=80},
             rollPeriod=8,
             showRoller=false,
-            _pivot=true,
             height= 400,
             includeZero=true,
             axisLabelFontSize=12,
@@ -164,25 +167,51 @@ function graph:run_sql(sql,args,cmd,file)
         if type(val)=="number" then return val end
         return tonumber(val:match('[eE%.%-%d]+')) or 0
     end
+
+    local function is_visible(title)
+        return not (title=="RNK_" or title=="RND_" or title=="HIDDEN_" or title:match('^%W*$')) and true or false
+    end
+
     local counter,range_begin,range_end=-1
     rows=self.db.resultset:rows(rs,-1)
     local head,cols=table.remove(rows,1)
     local maxaxis=cfg.get('ChartSeries')
     table.sort(rows,function(a,b) return a[1]<b[1] end)
     --print(table.dump(rows))
+    if pivot==nil then
+        for i=2,6 do
+            local row=rows[i]
+            if not row then break end
+            local cell=row[2]
+            if cell and cell~="" then
+                if type(cell)=="number" then
+                    pivot=false
+                elseif type(cell)~="string" or not cell:match('%d+') then 
+                    pivot=true
+                    break
+                elseif pivot==nil then
+                    pivot=false
+                end
+            end
+        end
+    end
 
     if pivot=="mixed" then
         local data={}
         for k,v in ipairs(rows) do
             for i=3,#v do
-                data[#data+1]={v[1],v[2].."["..head[i]..']',v[i]}
+                if is_visible(head[i]) then
+                    data[#data+1]={v[1],v[2].."["..head[i]..']',v[i]}
+                end
             end
         end
         table.insert(data,1,{head[1],head[2],"Value"})
-        pivot,rows=true,data
+        pivot,rows,head=true,data,data[1]
     else
         table.insert(rows,1,head)
     end
+
+    local start_value=pivot and 3 or 2
 
     head,cols={},0
     while true do
@@ -191,19 +220,20 @@ function graph:run_sql(sql,args,cmd,file)
         if not row then break end
         if counter==0 then
             for i=1,#row do
-                local flag=row[i]
-                flag=not (flag=="RNK_" or flag=="RND_" or flag=="HIDDEN_" or flag:match('^%W*$')) and true or false
-                head[#head+1],head[row[i]],cols=row[i],flag,cols+(flag and 1 or 0)
+                local cell=is_visible(row[i])
+                head[#head+1],head[row[i]],cols=row[i],cell,cols+(cell and 1 or 0)
             end
         end
 
         for i=#head,1,-1 do if not head[head[i]] then table.remove(row,i) end end
 
-        for i=1,cols do 
-            if row[i]==nil then 
-                row[i]=0
-            elseif type(row[i])=="string" then
-                row[i]=row[i]:gsub(",",".")
+        for i=1,cols do
+            if row[i]==nil or row[i]=='' then 
+                row[i]=''
+            elseif (counter==0 or i<start_value) then
+                row[i]=tostring(row[i]):gsub(",",".")
+            elseif counter>0 and i>=start_value and type(row[i])~="number" and not tostring(row[i]):match('^%d') then
+                env.raise("Invalid number at row #%d field #%d '%s', row information: %s",counter,i,row[i],table.concat(row,','))
             end 
         end
 
@@ -341,7 +371,7 @@ function graph:run_sql(sql,args,cmd,file)
     end
 
     local replaces={
-        ['@GRAPH_TITLE']=default_attrs.title,
+        ['@GRAPH_TITLE']=default_attrs.title or "",
         ['@TIME_RANGE']=default_attrs._range or ('(Range:  '..tostring(range_begin)..' ~~ '..tostring(range_end)..')')
     }
 
@@ -381,8 +411,30 @@ local function set_param(name,value)
     return tonumber(value)
 end
 
-function graph:__onload()
+function graph:run_stmt(option,sql)
+    env.checkhelp(option)
+    local fmt={}
+    if option:sub(1,1)=='-' then
+        option=option:sub(2):lower()
+        if option~='y' and option~='n' and option~='m' then env.checkhelp(nil) end
+        fmt._pivot=option=='y' and true or option=='m' and 'mixed'
+        if option=='n' then fmt._pivot=false end
+    else
+        sql=option
+    end
+    fmt._sql=sql
+    return self:run_sql(fmt,{},'last_chart')
+end
 
+function graph:__onload()
+    local help=[[
+    Generate graph chart regarding to the input SQL. Usage: @@NAME [-n|-p|-m] <Select statement>
+    Options:
+        -y: the output fields are "<date> <label> <values...>"
+        -n: the output fields are "date <label-1-value> ... <label-n-value>"
+        -m: mix mode,  the output fields are "<date> <label> <sub-label values...>"
+    If not specify the option, will auto determine the layout based on the outputs.]]
+    env.set_command(self,self.ext_command, help,self.run_stmt,'__SMART_PARSE__',3)
 end
 
 return graph
