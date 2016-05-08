@@ -36,7 +36,6 @@
                        )
                  GROUP  BY end_time) a
         ORDER  BY 1]],
-    _pivot=false,
     ylabel="SQLs per Minute",
     logscale=true,
 }

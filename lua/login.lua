@@ -4,7 +4,12 @@ local login={list={}}
 local file="password.dat"
 local packer=env.MessagePack
 function login.load()
-    login.list=env.load_data(file)
+    local done,f
+    f=env.WORK_DIR..'data'..env.PATH_DEL..file
+    done,login.list=pcall(env.load_data,file)
+    if not done then
+        return env.warn('Unable to load "'..f..'" due to it is interrupted, please backup and remove it.')
+    end
 end
 
 function login.save()
@@ -65,7 +70,7 @@ function login.search(id,filter,url_filter)
     if id=="" then id= nil end
 
     if not list then
-        return print("No available logins for '"..(id or "").."' in group '"..typ.."'.")
+        return print("No available logins"..(id and (" for '"..id.."'") or "").." in group '"..typ.."'.")
     end
 
     local keys={}
