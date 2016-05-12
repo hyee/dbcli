@@ -1,4 +1,4 @@
-/*[[Show top segments, default sort by logical reads. Usage: @@NAME [-d] [-u|-a|<owner>|<object_name>[.<partition_name>]]] [<sort_by_field>]
+/*[[Show top segments, default sort by logical reads. Usage: @@NAME {[-u|<owner>|<object_name>[.<partition_name>]]] [<sort_by_field>]} [-a] [-d]
     Options:
         -d      :  Show the detail segment, instead of grouping by object name
         -u      :  Only show the segment statistics of current schema

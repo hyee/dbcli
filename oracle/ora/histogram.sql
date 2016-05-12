@@ -1,4 +1,4 @@
-/*[[Show histogram. Usage: @@NAME <table_name>[.<partition_name>] <column_name>]]*/
+/*[[Show histogram. Usage: @@NAME {<table_name>[.<partition_name>] <column_name>}]]*/
 SET FEED OFF
 ora _find_object &V1
 

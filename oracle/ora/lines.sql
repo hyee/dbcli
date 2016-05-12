@@ -1,4 +1,4 @@
-/*[[Show source text from dba_source with specific line no. Usage: @@NAME [-u] {[owner.]<object_name> <line#> [rows] | -t"<keyword>"} [-f"<filter>"]
+/*[[Show source text from dba_source with specific line no. Usage: @@NAME {[owner.]<object_name> <line#> [rows] | -t"<keyword>"} [-u] [-f"<filter>"]
     -u           : Based on user_source, default as based on dba_source/all_source
     -t"<keyword>": Search the source contains the <keyword> text
     -f"<filter>" : Custimize the filter predicate

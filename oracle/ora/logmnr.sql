@@ -1,5 +1,5 @@
 /*[[
-    Specify the period before querying v$logmnr_contents(default as recent 30 mins). Usage: @@NAME [YYMMDDHH24MI] [YYMMDDHH24MI]
+    Specify the period before querying v$logmnr_contents(default as recent 30 mins). Usage: @@NAME {[YYMMDDHH24MI] [YYMMDDHH24MI]}
     This commands requires the "SELECT ANY TRANSACTION" and the "execute" access right on dbms_logmnr
 ]]*/
 

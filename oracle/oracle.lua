@@ -36,9 +36,9 @@ function oracle:helper(cmd)
     return ({
         CONNECT=[[
         Connect to Oracle database.
-        Usage  : connect <user>/<password>@<tns_name> [as sysdba] or
-                 connect <user>/<password>@[//]<ip_address|host_name>[:<port>]/<service_name> [as sysdba] or
-                 connect <user>/<password>@[//]<ip_address|host_name>[:<port>]:<sid> [as sysdba]
+        Usage  : @@NAME {<user>/<password>@<tns_name> [as sysdba]} or
+                 @@NAME {<user>/<password>@[//]<ip_address|host_name>[:<port>]/<service_name> [as sysdba]} or
+                 @@NAME {<user>/<password>@[//]<ip_address|host_name>[:<port>]:<sid> [as sysdba]}
         ]],
         CONN=[[Refer to command 'connect']],
     })[cmd]

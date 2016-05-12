@@ -1,5 +1,5 @@
 /*[[
-    Show active sessions. Usage: @@NAME [-s|-p|-b|-o] [-f"<filter>"|-u|-i] [sid|wt|ev|sql|<col>]
+    Show active sessions. Usage: @@NAME [sid|wt|ev|sql|<col>] [-s|-p|-b|-o|-m] {[-f"<filter>"|-u|-i] [-f2"<filter>"|-u2|-i2]}
     
     Options(options within same group cannot combine, i.e. "@@NAME -u -i" is illegal, use "@@NAME -u -i2" instead):
         Filter options#1:
@@ -15,6 +15,7 @@
             -p  : Show p1/p2/p2text/p3
             -b  : Show blocking sessions and waiting objects
             -o  : Show OS user id/machine/program/etc
+            -m  : Show SQL Mornitor report(gv$sql_monitor)
         Sorting options: the '-' symbole is optional
             sid : sort by sid(default)
             wt  : sort by wait time
@@ -22,8 +23,6 @@
             ev  : sort by event
             -o  : together with the '-o' option above, sort by logon_time
            <col>: field in v$session
-        Other options:
-            -m  : Show SQL memory information in additional
     --[[
         &fields : {
                s={coalesce(nullif(program_name,'0'),'['||regexp_replace(nvl(a.module,a.program),' *\(.*\)$')||'('||osuser||')]') PROGRAM,PROGRAM_LINE# line#},
@@ -31,9 +30,25 @@
                p={p1,p2,p2text,p3},
                b={NULLIF(BLOCKING_SESSION||',@'||BLOCKING_INSTANCE,',@') BLOCK_BY,
                  (SELECT OBJECT_NAME FROM ALL_OBJECTS WHERE OBJECT_ID=ROW_WAIT_OBJ# AND ROWNUM<2) WAITING_OBJ,
-                 ROW_WAIT_BLOCK# WAIT_BLOCK#}
+                 ROW_WAIT_BLOCK# WAIT_BLOCK#},
+               m={ela,cpu,io,app,cc,cl,plsql,java,read_mb,write_mb}  
             }
-        &V1 : sid={''||sid},wt={sql_secs desc},ev={event},sql={sql_text},o={logon_time}
+        &V1 :   sid={''||sid},wt={wait_secs desc},ev={event},sql={sql_text},o={logon_time}
+        &SQLM:  {default={},
+                 m={LEFT JOIN (
+                        SELECT sid, inst_id, sql_id, sql_exec_id, 
+                               round(SUM(ELAPSED_TIME)*1e-6,2) ela, round(SUM(QUEUING_TIME)*1e-6,2) QUEUE, 
+                               round(SUM(CPU_TIME)*1e-6,2) CPU, round(SUM(APPLICATION_WAIT_TIME)*1e-6,2) app,
+                               round(SUM(CONCURRENCY_WAIT_TIME)*1e-6,2) cc, 
+                               round(SUM(CLUSTER_WAIT_TIME)*1e-6,2) cl, 
+                               round(SUM(PLSQL_EXEC_TIME)*1e-6,2) plsql, 
+                               round(SUM(JAVA_EXEC_TIME)*1e-6,2) JAVA, round(SUM(USER_IO_WAIT_TIME)*1e-6,2) io,
+                               round(SUM(PHYSICAL_READ_BYTES)/1024/1024,2) read_mb, round(SUM(PHYSICAL_WRITE_BYTES)/1024/1024,2) write_mb
+                        FROM   gv$sql_monitor
+                        WHERE  status = 'EXECUTING'
+                        GROUP BY sid, inst_id, sql_id, sql_exec_id)
+                    USING (sid, inst_id, sql_id, sql_exec_id)}
+                } 
         &Filter: {default={ROOT_SID =1 OR wait_class!='Idle' or sql_text is not null}, 
                   f={},
                   i={wait_class!='Idle'}
@@ -75,7 +90,7 @@ BEGIN
     OPEN :actives FOR
         WITH s1 AS(
           SELECT /*+no_merge*/*
-          FROM   &CHECK_ACCESS_SES
+          FROM   &CHECK_ACCESS_SES &SQLM
           WHERE  sid != USERENV('SID')
           AND    audsid != userenv('sessionid')
           And    (event not like 'Streams%')),

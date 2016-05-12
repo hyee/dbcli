@@ -1,5 +1,5 @@
 /*[[
-    Show object dependency, usage: @@NAME [-c|-p] [-t|-l] [owner.]name [depth]
+    Show object dependency, usage: @@NAME {[owner.]name [depth]} [-c|-p] [-t|-l] 
     Options:
        p: Show target object's depending objects(default)
        c: Show the objects that depend on target object

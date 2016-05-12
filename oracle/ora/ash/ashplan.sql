@@ -1,4 +1,4 @@
-/*[[Show ash cost for a specific SQL. usage: @@NAME [-dash] <sql_id> [[plan_hash_value|sid|a] [YYMMDDHH24MI] [YYMMDDHH24MI]]
+/*[[Show ash cost for a specific SQL. usage: @@NAME {<sql_id> [plan_hash_value|sid|a] [YYMMDDHH24MI] [YYMMDDHH24MI]} [-dash] 
 --[[
     @Required_Ver : 11.1={Oracle 11.1+ Only}
     &V9: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}

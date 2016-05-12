@@ -1,6 +1,6 @@
-/*[[Show Top sessions based on session stats. Usage: @@NAME <stat_name> [top n] [-a] [-u|-f"<filter>"]
+/*[[Show Top sessions based on session stats. Usage: @@NAME {<stat_name> [top-n]} [-a] [-u|-f"<filter>"]
     <stat_name>: Fussy search(like operator) based on the input keyword
-    top n      : Default as 1
+    top-n      : Default as 1
     -u         : Only query the sessions within current schema
     -a         : Only query the active sessions
     --[[
@@ -22,6 +22,5 @@ WITH stat AS
   WHERE  rnk <= &V2)
 SELECT  /*+no_expand*/ stat_name, rnk,stat_value, status, SID || ',' || serial# || ',@' || inst_id SID,event, sql_id, schemaname, osuser,logon_time, machine, program, MODULE, action
 FROM   stat NATURAL JOIN gv$session
-WHERE (&FILTER1) AND (&FILTER2)
-AND   (:instance is null or inst_id=:instance) 
+WHERE (&FILTER1) AND (&FILTER2) 
 ORDER BY stat_name,rnk;

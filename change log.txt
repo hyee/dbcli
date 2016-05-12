@@ -1,3 +1,5 @@
+2016-05-12: ! oracle: fix on 'ora liblock' and other issues
+                    : fix the descriptions of some command usages
 2016-05-08: + public: new command "graph/gr" to auto generate chart based on SQL. refer to 'help graph'
             ! public: fix the alert message when password file is damanged, and other small fixes.
 2016-05-06: + public: graph chart: add option to show CSV data

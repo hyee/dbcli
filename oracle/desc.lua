@@ -313,6 +313,7 @@ local desc_sql={
              DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
              DECODE(C.COLUMN_POSITION, 1, DECODE(I.UNIQUENESS,'UNIQUE','YES','NO'), '') "UNIQUE",
              DECODE(C.COLUMN_POSITION, 1, PARTITIONED, '') "PARTITIONED",
+             DECODE(C.COLUMN_POSITION, 1, (select nvl(max(LOCALITY),'GLOBAL') from all_part_indexes l where l.owner=i.owner and l.index_name=i.index_name), '') "LOCALITY",
            --DECODE(C.COLUMN_POSITION, 1, (SELECT NVL(MAX('YES'),'NO') FROM ALL_Constraints AC WHERE AC.INDEX_OWNER = I.OWNER AND AC.INDEX_NAME = I.INDEX_NAME), '') "IS_PK",
              DECODE(C.COLUMN_POSITION, 1, decode(I.STATUS,'N/A',(SELECT MIN(STATUS) FROM All_Ind_Partitions p WHERE p.INDEX_OWNER = I.OWNER AND p.INDEX_NAME = I.INDEX_NAME),I.STATUS), '') STATUS,
              C.COLUMN_POSITION NO#,
@@ -483,5 +484,5 @@ function desc.desc(name,option)
     cfg.temp("feed",feed,true)
 end
 
-env.set_command(nil,{"describe","desc"},'Describe datbase object. Usage: @@NAME [owner.]<object>[.partition] | [owner.]<pkg|typ>[.<function|procedure>]',desc.desc,false,3)
+env.set_command(nil,{"describe","desc"},'Describe datbase object. Usage: @@NAME {[owner.]<object>[.partition] | [owner.]<pkg|typ>[.<function|procedure>]}',desc.desc,false,3)
 return desc

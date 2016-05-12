@@ -1,4 +1,4 @@
-/*[[Generate delta values based on gv$session_event,gv$sess_time_model. parameters: <sid> [<inst_id>] [keyword]]]*/
+/*[[Generate delta values based on gv$session_event,gv$sess_time_model. Usage: @@NAME {<sid> [<inst_id>] [keyword]}]]*/
 {
     sql=[[
         SELECT /*+no_expand*/ a.*
