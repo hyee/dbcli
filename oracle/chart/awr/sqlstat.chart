@@ -1,5 +1,5 @@
 /*[[
-    Show chart for dba_hist_sqlstat. Usage: @@NAME [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-time|-io|-exec] [-u|-f"<filter>"]
+    Show chart for dba_hist_sqlstat. Usage: @@NAME {[0|inst_id] [yymmddhh24mi] [yymmddhh24mi]} [-time|-io|-exec] [-u|-f"<filter>"]
     Impacted by settings: starttime,endtime,instance
     -time      : Show the report related to time cost, this is the default option
     -io        : Show the report related to IO cost

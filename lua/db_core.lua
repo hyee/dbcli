@@ -806,8 +806,6 @@ end
 
 function db_core.check_completion(cmd,other_parts)
     local objs={
-        OR=1,
-        VIEW=1,
         TRIGGER=1,
         TYPE=1,
         PACKAGE=1,
@@ -820,11 +818,10 @@ function db_core.check_completion(cmd,other_parts)
         EVENT=1,
     }
     --alter package xxx compile ...
-    local obj=env.parse_args(2,other_parts)[1]
-    if obj then obj=obj:match("^%w+") end
+    local action,obj=db_core.get_command_type(cmd..' '..other_parts)
     local match,typ,index=env.END_MARKS.match(other_parts)
-    --print(match,other_parts)
-    if index==0 or (index==1 and ((obj and objs[obj:upper()]) or objs[cmd])) then
+    obj=obj or ""
+    if index==0 or index==1 and ((obj and objs[obj:upper()]) or objs[cmd]) then
         return false,other_parts
     end
     return true,match

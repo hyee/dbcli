@@ -1,4 +1,4 @@
-/*[[Show Tablespace stats chart for gv$filemetric_history/dba_hist_filestatxs. Usage: @@NAME [-d] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [tablespace_name] [-c|-d]
+/*[[Show Tablespace stats chart for gv$filemetric_history/dba_hist_filestatxs. Usage: @@NAME {[0|inst_id] [yymmddhh24mi] [yymmddhh24mi] [tablespace_name]} [-c] [-d] 
     -d:  Based on DBA_HIST_FILESTATXS, otherwise based on GV$FILEMETRIC_HISTORY
     -c:  Group by file name, otherwise group by tablespace name
     --[[

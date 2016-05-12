@@ -76,7 +76,6 @@ function graph:ctor()
     self.command='graph'
     self.ext_name='chart'
     self.ext_command={"graph","gr"}
-    cfg.init("ChartSeries",12,set_param,"core","Number of top series to be show in graph chart(see command 'chart')",'1-20')
 end
 
 function graph:rehash(script_dir,ext_name,extend_dirs)
@@ -435,6 +434,7 @@ function graph:__onload()
         -m: mix mode,  the output fields are "<date> <label> <sub-label values...>"
     If not specify the option, will auto determine the layout based on the outputs.]]
     env.set_command(self,self.ext_command, help,self.run_stmt,'__SMART_PARSE__',3)
+    cfg.init("ChartSeries",15,set_param,"core","Number of top series to be show in graph chart(see command 'chart')",'1-30')
 end
 
 return graph

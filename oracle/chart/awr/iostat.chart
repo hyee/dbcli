@@ -1,5 +1,5 @@
 /*[[
-    Show chart for dba_hist_iostat_detail. Usage: @@NAME ["<function/file type name>"] [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-n] [-f"<filter>"]
+    Show chart for dba_hist_iostat_detail. Usage: @@NAME {["<function/file type name>"] [0|inst_id] [yymmddhh24mi] [yymmddhh24mi]} [-n] [-f"<filter>"]
     Impacted by settings: starttime,endtime,instance
     inst_id: Default as all instances, other options are:
                 0         - Separate all instances

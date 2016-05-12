@@ -1,4 +1,4 @@
-/*[[Show AWR Top SQLs for a specific period. Usage: @@NAME [0|<inst>] [-m] [-f"<filter>"] [ela|exec|cpu|io|cc|fetch|sort|px|row|load|parse|read|write|mem] [yymmddhhmi] [yymmddhhmi]
+/*[[Show AWR Top SQLs for a specific period. Usage: @@NAME {[0|<inst>] [ela|exec|cpu|io|cc|fetch|sort|px|row|load|parse|read|write|mem] [yymmddhhmi] [yymmddhhmi]} [-m] [-f"<filter>"] 
     --[[
         &filter: s={1=1},u={PARSING_SCHEMA_NAME||''=sys_context('userenv','current_schema')},f={}
         &BASE : s={sql_id}, m={signature}

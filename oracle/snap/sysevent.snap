@@ -1,4 +1,4 @@
-/*[[Generate delta values based on gv$system_event. Usage: @@NAME [keyword] [<inst_id>]]]]*/
+/*[[Generate delta values based on gv$system_event. Usage: @@NAME {[keyword] [<inst_id>]}]]]*/
 {
     sql=[[
         select inst_id,event,time_waited/100 secs,total_waits waits,total_timeouts timeouts,wait_class

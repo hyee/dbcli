@@ -1,5 +1,5 @@
 /*[[
-    Show tablespace usage based on dba_hist_tbspc_space_usage. Usage: @@NAME [tablesapce_name] [yymmddhh24mi] [yymmddhh24mi]
+    Show tablespace usage based on dba_hist_tbspc_space_usage. Usage: @@NAME {[tablespace_name] [yymmddhh24mi] [yymmddhh24mi]}
     The result in dba_hist_tbspc_space_usage is incorrect in some versions
     --[[
         &V2     : default={&STARTTIME}

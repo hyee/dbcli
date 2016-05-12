@@ -1,5 +1,5 @@
 /*[[
-   Get DDL statement. Usage: @@NAME [owner.]<object_name> [<file_ext>]
+   Get DDL statement. Usage: @@NAME {[owner.]<object_name> [<file_ext>]}
    --[[
       @CHECK_ACCESS_OBJ: dba_objects={dba_views}, default={all_views}
    --]]

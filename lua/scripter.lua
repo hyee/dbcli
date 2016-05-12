@@ -8,7 +8,7 @@ function scripter:ctor()
     self.script_dir,self.extend_dirs=nil,{}
     self.comment="/%*%s*%[%[(.*)%]%]%s*%*/"
     self.command='sql'
-    self.usage="[<name[,name2[...]]>|-r|-p|-h|-s|-g] [parameters]"
+    self.usage="[-r|-h|-s|-g] | {[-p|<name[,name2[...]]>] [parameters]}"
     self.ext_name='sql'
     self.help_title=""
     self.help_ind=0

@@ -1,5 +1,5 @@
 /*[[
-    Show chart for gv$active_session_history/dba_hist_active_Sess_history. Usage: @@NAME 0|a|inst_id [-d] [-t <minutes>|-r <YYMMDDHH24MI> <YYMMDDHH24MI>] [-event|-schema|-sql|-g"<column>"] [-u|-f"<filter>"]
+    Show chart for gv$active_session_history/dba_hist_active_Sess_history. Usage: @@NAME {[0|inst_id] [-t <minutes>|-r <YYMMDDHH24MI> <YYMMDDHH24MI>]} [-d] [-event|-schema|-sql|-g"<column>"] [-u|-f"<filter>"]
     Based View:
         -d: Query based on dba_hist_active_Sess_history, default as gv$active_session_history
     Counting:

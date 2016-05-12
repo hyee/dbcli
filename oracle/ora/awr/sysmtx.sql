@@ -1,4 +1,4 @@
-/*[[Show system metric based on AWR data. Usage: @@NAME [yymmddhh24mi] [yymmddhh24mi] [inst_id] ]]*/
+/*[[Show system metric based on AWR data. Usage: @@NAME {[yymmddhh24mi] [yymmddhh24mi] [inst_id]} ]]*/
 
 SELECT metric_name, round(AVG(average), 2) average, '| '||metric_unit unit
 FROM   dba_hist_sysmetric_summary

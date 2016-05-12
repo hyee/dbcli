@@ -196,6 +196,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
         :5 := rs;
         :6 := cur;
     END;]]
+    env.checkhelp(endtime)
     if not starttime2 then
         stmt=stmt:gsub(',@diff','')
     else
@@ -207,6 +208,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
 end
 
 function awr.extract_awr_diff(starttime,endtime,starttime2,endtime2,instances)
+    env.checkhelp(starttime2)
     if endtime2=='.' then endtime2=nil end
     awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
 end
@@ -320,7 +322,7 @@ function awr.extract_ash(starttime,endtime,instances)
         :5 := rs;
         :6 := cur;
     END;]]
-
+    env.checkhelp(endtime)
     awr.dump_report(stmt,starttime,endtime,instances)
 end
 
@@ -376,6 +378,7 @@ function awr.extract_addm(starttime,endtime,instances)
     BEGIN
         extract_addm(:1, :2, :3,:4);
     END;]]
+    env.checkhelp(endtime)
     env.checkerr(db:check_access('dbms_advisor.create_task',1),'Sorry, you dont have the "Advisor" privilege!')
     starttime,endtime,instances=awr.get_range(starttime,endtime,instances)
     local args={starttime,endtime,instances or "",'#VARCHAR'}
@@ -387,10 +390,10 @@ function awr.extract_addm(starttime,endtime,instances)
 end
 
 function awr.onload()
-    env.set_command(nil,"awrdump","Extract AWR report. Usage: @@NAME <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]",awr.extract_awr,false,4)
-    env.set_command(nil,"awrdiff","Extract AWR Diff report. Usage: @@NAME <YYMMDDHH24MI> <YYMMDDHH24MI> <YYMMDDHH24MI> [YYMMDDHH24MI] [inst_id|a|<inst1,inst2,...>]",awr.extract_awr_diff,false,6)
-    env.set_command(nil,"ashdump","Extract ASH report. Usage: @@NAME <YYMMDDHH24MI> <YYMMDDHH24MI> [<inst1[,inst2...>]|<client_id>|<wait_class>|<service_name>|<module>|<action>]",awr.extract_ash,false,4)
-    env.set_command(nil,"addmdump","Extract ADDM report. Usage: @@NAME <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]",awr.extract_addm,false,4)
+    env.set_command(nil,"awrdump","Extract AWR report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>]}",awr.extract_awr,false,4)
+    env.set_command(nil,"awrdiff","Extract AWR Diff report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> <YYMMDDHH24MI> [YYMMDDHH24MI] [inst_id|<inst1,inst2,...>]}",awr.extract_awr_diff,false,6)
+    env.set_command(nil,"ashdump","Extract ASH report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [<inst1[,inst2...>]|<client_id>|<wait_class>|<service_name>|<module>|<action>]}",awr.extract_ash,false,4)
+    env.set_command(nil,"addmdump","Extract ADDM report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>]}",awr.extract_addm,false,4)
 end
 
 return awr

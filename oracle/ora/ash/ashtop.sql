@@ -1,5 +1,5 @@
 /*[[
-  Get ASH top event, type 'help @@NAME' for more info. Usage: @@NAME [-sql|-p|-none|-pr|-o|-plan|-ash|-dash|-snap|-f] [fields] [filters]
+  Get ASH top event, type 'help @@NAME' for more info. Usage: @@NAME [-sql|-p|-none|-pr|-o|-plan|-ash|-dash|-snap|-f] {[fields] [filters]}
    --[[
       &fields: sql={sql_id},e={null}, p={p1,p2,p3,p3text},pr={p1raw,p2raw,p3raw}, o={obj},plan={plan_hash,current_obj#,SQL_PLAN_LINE_ID} none={1}
       &View: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}

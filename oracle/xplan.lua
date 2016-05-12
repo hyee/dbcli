@@ -120,7 +120,7 @@ end
 
 function xplan.onload()
     local help=[[
-    Explain SQL execution plan. Usage: @@NAME [-<format>|-10053|-prof] <SQL statement|SQL ID>
+    Explain SQL execution plan. Usage: @@NAME {[-<format>|-10053|-prof] <SQL statement|SQL ID>}
     Options:
         -<format>: Refer to the 'format' field in the document of 'dbms_xplan'.
                    Default is ']]..default_fmt..[['

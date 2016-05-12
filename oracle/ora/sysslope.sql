@@ -1,4 +1,4 @@
-/*[[Show change slope based on GV$SYSMETRIC_HISTORY. Usage: @@NAME [metric_name] [inst_id] ]]*/
+/*[[Show change slope based on GV$SYSMETRIC_HISTORY. Usage: @@NAME {[metric_name] [inst_id]} ]]*/
 set feed off
 var cur refcursor
 BEGIN

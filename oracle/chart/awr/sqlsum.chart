@@ -1,5 +1,5 @@
 /*[[
-    Show chart for dba_hist_sql_summary. Usage: @@NAME [inst_id] [yymmddhh24mi] [yymmddhh24mi]
+    Show chart for dba_hist_sql_summary. Usage: @@NAME {[0|inst_id] [yymmddhh24mi] [yymmddhh24mi]}
     Impacted by settings: starttime,endtime,instance
     --[[
         &V1     : default={&INSTANCE}

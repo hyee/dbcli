@@ -1,5 +1,5 @@
 /*[[
-   Lists SQL Statements with Elapsed Time per Execution changing over time. Usage: @@NAME [-m] [YYMMDDHH24MI] [YYMMDDHH24MI]
+   Lists SQL Statements with Elapsed Time per Execution changing over time. Usage: @@NAME {[YYMMDDHH24MI] [YYMMDDHH24MI]} [-m]
    Author:      Carlos Sierra
    Version:     Modified version based on V2014/10/31
    Usage:       Lists statements that have changed their elapsed time per execution over

@@ -1,5 +1,5 @@
 /*[[
-    Show chart for dba_hist_mem_dynamic_comp. Usage: @@NAME [inst_id] [yymmddhh24mi] [yymmddhh24mi] [-l"<key>"|-f"<filter>"]
+    Show chart for dba_hist_mem_dynamic_comp. Usage: @@NAME {[0|inst_id] [yymmddhh24mi] [yymmddhh24mi]} [-l"<key>"|-f"<filter>"]
     Impacted by settings: starttime,endtime,instance
     inst_id: Default as all instances, other options are:
                 0         - Separate all instances
