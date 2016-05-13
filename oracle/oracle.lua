@@ -235,14 +235,17 @@ function oracle:parse(sql,params)
         local method=self.db_types:set(typ~='CLOB' and 'VARCHAR' or typ,org_sql)
         sql='DECLARE V1 %s:=:1;%sBEGIN EXECUTE IMMEDIATE V1 %s;%sEND;'
         sql=sql:format(typ,table.concat(s1,''),table.concat(s0,','),table.concat(s2,''))
+        env.log_debug("parse","SQL:",sql)
         local prep=java.cast(self.conn:prepareCall(sql,1003,1007),"oracle.jdbc.OracleCallableStatement")
         prep[method](prep,1,org_sql)
         for k,v in ipairs(p2) do
             local p=p1[v]
             if p[inIdx]~=0 then
+                env.log_debug("parse","Param #"..k,p[inIdx]..'='..p[value])
                 prep[p[1]](prep,p[inIdx],p[value]) 
             end
             params[v]={'#',p[outIdx],p[typename]}
+            env.log_debug("parse","Param #"..k,p[outIdx]..'='..p[typeid])
             prep['registerOutParameter'](prep,p[outIdx],p[typeid])
         end
         return prep,org_sql,params

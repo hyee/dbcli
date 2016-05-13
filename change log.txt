@@ -1,3 +1,4 @@
+2016-05-13: + oracle: new chart 'chart segstat'
 2016-05-12: ! oracle: fix on 'ora liblock' and other issues
                     : fix the descriptions of some command usages
 2016-05-08: + public: new command "graph/gr" to auto generate chart based on SQL. refer to 'help graph'
