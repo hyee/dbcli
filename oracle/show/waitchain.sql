@@ -1,18 +1,21 @@
 /*[[Show info in v$wait_chains
-    --[[@check_version: 11.2={}
+    --[[
+        @check_version: 11.2={}
     ]]--
 ]]*/
 WITH c AS(SELECT /*+materialize*/* FROM  v$wait_chains),
-r(cid,INSTANCE,SID,sess_serial#,lv) AS
- (SELECT chain_id,INSTANCE, SID, sess_serial#, 0 lv
+r(cid,INSTANCE,SID,sess_serial#,lv,blocker_instance,blocker_sid) AS
+ (SELECT chain_id,INSTANCE, SID, sess_serial#, 0 lv,blocker_instance,blocker_sid
   FROM   c
   WHERE  blocker_SID IS NULL
   OR     (CHAIN_IS_CYCLE='TRUE' and chain_id=(select min(chain_id) from c where CHAIN_IS_CYCLE='TRUE'))
   UNION ALL
-  SELECT c.chain_id,c.INSTANCE, c.SID, c.sess_serial#, r.lv + 1
+  SELECT c.chain_id,c.INSTANCE, c.SID, c.sess_serial#, r.lv + 1,c.blocker_instance,c.blocker_sid
   FROM   c, r
   WHERE  c.blocker_instance = r.INSTANCE
   AND    c.blocker_sid = r.sid
+  AND    (not (c.sid=r.sid and c.instance=r.instance) or r.lv<2)
+  AND    (not (r.blocker_instance=r.instance and r.blocker_sid = r.sid and r.lv>0))
   AND    c.blocker_sess_serial# = r.sess_serial#
   AND    r.lv < 10)
 SEARCH DEPTH FIRST BY cid SET cid_order

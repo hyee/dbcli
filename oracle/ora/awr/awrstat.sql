@@ -5,7 +5,8 @@
 ]]*/
 
 ORA _sqlstat
-select max(tim) tim,sql_id,plan_hash,
+select /*+no_expand*/
+       max(tim) tim,sql_id,plan_hash,
        sum(exec)   exec,
        sum(parse)  parse,
        count(1)    "SEENS",
