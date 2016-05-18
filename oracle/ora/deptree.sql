@@ -34,7 +34,7 @@ DECLARE
     v_owner   VARCHAR2(30);
     v_counter PLS_INTEGER := 0;
     v_curobj  INT:=-1;
-    v_level   PLS_INTEGER := nvl(to_number(:V2),99);
+    v_level   PLS_INTEGER := nvl(to_number(:V2),5);
     cur       SYS_REFCURSOR;
     PROCEDURE n(obj INT, lv INT, con INT:=NULL) IS
         TYPE t IS TABLE OF INT;

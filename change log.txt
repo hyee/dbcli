@@ -1,3 +1,8 @@
+2016-05-18: + public: new command 'tee' which also supports piping. i.e. : select * from segs|tee 1.txt
+2016-05-16: ! oracle: fix error on 'ashdump' for 10g
+                    : fix on 'show waitchain'
+            * oracle: remove 'ora asd' because it's merged as 'ora actives -m'
+                    : remove some 'ora awr*' commands because the functions have been included in 'chart' commands
 2016-05-13: + oracle: new chart 'chart segstat'
 2016-05-12: ! oracle: fix on 'ora liblock' and other issues
                     : fix the descriptions of some command usages

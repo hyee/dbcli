@@ -280,22 +280,22 @@ function awr.extract_ash(starttime,endtime,instances)
             dbms_lob.createtemporary(rs, TRUE);
             IF NOT (inst IS NULL OR INSTR(inst, ',') > 0) THEN
                 FOR r IN (SELECT *
-                          FROM   TABLE(dbms_workload_repository.ash_report_html(l_dbid=>dbid,
-                                                                                l_inst_num=>inst,
-                                                                                L_BTIME=>stim ,
-                                                                                L_ETIME=>etim ,
-                                                                                L_OPTIONS=>0,
-                                                                                l_slot_width=>600,
-                                                                                l_wait_class=>wait_class,
-                                                                                l_service_hash=>service_name,
-                                                                                l_module=>module,
-                                                                                l_action=>action,
-                                                                                l_client_id=>client_id))) LOOP
+                          FROM   TABLE(dbms_workload_repository.ash_report_html(dbid,
+                                                                                inst,
+                                                                                stim ,
+                                                                                etim ,
+                                                                                0,
+                                                                                600,null,null,
+                                                                                wait_class,
+                                                                                service_name,
+                                                                                module,
+                                                                                action,
+                                                                                client_id))) LOOP
                     IF r.output IS NOT NULL THEN
                         dbms_lob.writeappend(rs, LENGTHB(r.output), r.output);
                     END IF;
                 END LOOP;
-                $IF DBMS_DB_VERSION.VERSION>11 OR DBMS_DB_VERSION.VERSION>10 AND DBMS_DB_VERSION.release>1 $THEN
+            $IF DBMS_DB_VERSION.VERSION>11 OR DBMS_DB_VERSION.VERSION>10 AND DBMS_DB_VERSION.release>1 $THEN
             ELSE
                 FOR r IN (SELECT *
                           FROM   TABLE(dbms_workload_repository.ash_global_report_html(dbid,
@@ -313,7 +313,7 @@ function awr.extract_ash(starttime,endtime,instances)
 
                     END IF;
                 END LOOP;
-                $END
+            $END
             END IF;
         END;
     BEGIN

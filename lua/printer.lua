@@ -65,6 +65,10 @@ function printer.print(...)
         if printer.hdl then
             pcall(printer.hdl.write,printer.hdl,strip_ansi(output).."\n")
         end
+
+        if printer.tee_hdl then
+            pcall(printer.tee_hdl.write,printer.tee_hdl,strip_ansi(output).."\n")
+        end
     end
 end
 
@@ -108,10 +112,8 @@ function printer.spool(file,option)
         file=env._CACHE_PATH..file
     end
     printer.hdl,err=io.open(file,(option=="APPEND" or option=="APP" ) and "a+" or "w")
-    if not printer.hdl then
-        print("Failed to open the target file :"..file)
-        return
-    end
+    env.checkerr(printer.hdl,"Failed to open the target file "..file)
+    
     printer.file=file
     if env.set and env.set.get("feed")=="on" then
         printer.rawprint(env.space..'Output is writting to "'..printer.file..'".')
@@ -137,23 +139,26 @@ function printer.grep_after()
     printer.grep_text,printer.grep_dir=nil,nil
 end
 
+function printer.tee(file,stmt)
+    env.checkhelp(stmt)
+    if not file:find("[\\/]") then
+        file=env._CACHE_PATH..file
+    end
+    printer.tee_file=file
+    printer.tee_hdl,err=io.open(file,"a+")
+    env.checkerr(printer.tee_hdl,"Failed to open the target file "..file)
+    env.eval_line(stmt,true,true)
+end
+
+function printer.tee_after()
+    if not printer.tee_hdl then return end
+    pcall(printer.tee_hdl.close,printer.tee_hdl)
+    printer.rawprint(env.space.."Output is writtern to "..printer.tee_file)
+    printer.tee_file,printer.tee_hdl=nil,nil
+end
+
 function printer.before_command(command)
     local cmd,params,is_internal,line,text=table.unpack(command)
-    if not printer.is_more then
-        cmd,text=line:match("^(.*)|%s*[mM][oO][rR][eE]$")
-        if cmd then
-            command[1],command[2]=env.eval_line(cmd,false,true)
-            printer.is_more,more_text=true,{}
-        end
-    end
-
-    if not printer.grep_text then
-        cmd,text=line:match("^(.*)|%s*[gG][rR][eR][pP] ([^\n\r]-)$")
-        if text then
-            command[1],command[2]=env.eval_line(cmd,false,true)
-            printer.set_grep((text:gsub('^("?)(.-)%1$',"%2")))
-        end
-    end
     if not printer.hdl or #env.RUNNING_THREADS>1 then return end
     if is_internal then return end
     line=line:gsub('\n','\n'..env.MTL_PROMPT)
@@ -168,6 +173,9 @@ function printer.after_command()
     end
     if printer.grep_text then 
         printer.grep_after()
+    end
+    if printer.tee_hdl then 
+        printer.tee_after()
     end
     printer.is_more,more_text=false,{}
 end
@@ -188,8 +196,9 @@ function printer.onload()
     end
     BOLD=BOLD..'%1'..NOR
     
-    env.set_command(nil,"grep","Filter matched text from the output. Usage: @@NAME <keyword|-keyword> <other command>, -keyword means exclude",{printer.grep,printer.grep_after},'__SMART_PARSE__',3)
-    env.set_command(nil,"more","Similar to Linux 'more' command. Usage: @@NAME <other command>",printer.set_more,'__SMART_PARSE__',2)
+    env.set_command(nil,"grep","Filter matched text from the output. Usage: @@NAME <keyword|-keyword> <other command>, -keyword means exclude",{printer.grep,printer.grep_after},'__SMART_PARSE__',3,false,false,true)
+    env.set_command(nil,"tee"," Write command output to target file. Usage: @@NAME <file> <other command>",{printer.tee,printer.tee_after},'__SMART_PARSE__',3,false,false,true)
+    env.set_command(nil,"more","Similar to Linux 'more' command. Usage: @@NAME <other command>",printer.set_more,'__SMART_PARSE__',2,false,false,true)
     env.set_command(nil,{"Prompt","pro",'echo'}, "Prompt messages. Usage: @@NAME <message>",printer.load_text,false,2)
     env.set_command(nil,{"SPOOL","SPO"}, "Write the screen output into a file. Usage: @@NAME [file_name[.ext]] [CREATE] | APP[END]] | OFF]",printer.spool,false,3)
     env.ansi.define_color("GREPCOLOR","BBLU;HIW","ansi.grid","Define highlight color for the grep command, type 'ansi' for more available options")

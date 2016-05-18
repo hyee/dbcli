@@ -1,5 +1,5 @@
 
-set printvar off feed off
+set verify off feed off
 var object_owner   VARCHAR2;
 VAR object_type    VARCHAR2;
 VAR object_name    VARCHAR2;
@@ -118,4 +118,4 @@ BEGIN
     :object_id      := object_number;
 END;
 /
-set printvar back feed back
+set verify back feed back

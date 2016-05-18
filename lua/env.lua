@@ -246,7 +246,7 @@ function env.smart_check_endless(cmd,rest,from_pos)
     return true,env.END_MARKS.match(rest)
 end
 
-function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbcmd,allow_overriden)
+function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbcmd,allow_overriden,is_pipable)
     local abbr={}
 
     if not paramCount then
@@ -302,7 +302,8 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
         ABBR      = table.concat(abbr,','),
         ARGS      = paramCount,
         DBCMD     = dbcmd,
-        ISOVERRIDE= allow_overriden
+        ISOVERRIDE= allow_overriden,
+        ISPIPABLE = is_pipable
     }
 end
 
@@ -733,8 +734,20 @@ function env.eval_line(line,exec,is_internal,not_skip)
     if env.event then
         line=env.event.callback('BEFORE_EVAL',{line})[1]
     end
-    if multi_cmd then return check_multi_cmd(line) end
     local cmd,rest,end_mark
+
+    local rest,pipe_cmd,param = (' '..line):match('^(.*[^|])|%s*(%w+)(.*)$')
+    if pipe_cmd and _CMDS[pipe_cmd:upper()] and _CMDS[pipe_cmd:upper()].ISPIPABLE==true then
+        param=env.END_MARKS.match(param)
+        if multi_cmd then
+            param,multi_cmd=param..' '..multi_cmd..' '..curr_stmt,nil
+        end
+        pipe_cmd=pipe_cmd..' '..param..rest
+        return eval_line(pipe_cmd,exec,true,not_skip)
+    end
+
+    if multi_cmd then return check_multi_cmd(line) end
+    
     line,end_mark=env.END_MARKS.match(line)
     cmd,rest=line:match('^%s*(%S+)%s*(.*)')
     if not rest then return end
