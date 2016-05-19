@@ -90,9 +90,11 @@ public class SubSystem {
         //process.setConsoleMode(NuKernel32.ENABLE_ECHO_INPUT | NuKernel32.ENABLE_LINE_INPUT);
         while (isWaiting && process != null) {
             if (isBreak) {
-                isBreak = false;
-                lastPrompt = prevPrompt;
-                process.sendCtrlEvent(NuWinNT.HANDLER_ROUTINE.CTRL_C_EVENT);
+                //isBreak = false;
+                //lastPrompt = prevPrompt;
+                //process.sendCtrlEvent(NuWinNT.HANDLER_ROUTINE.CTRL_C_EVENT);
+                close();
+                break;
             }
             if (wait > 50) {//Waits 0.5 sec for the prompt and then enters into interactive mode
                 --wait;
@@ -154,6 +156,7 @@ public class SubSystem {
         if (process == null) return;
         process.destroy(true);
         process = null;
+        lastPrompt=null;
     }
 
     class ProcessHandler extends NuAbstractProcessHandler {
@@ -191,7 +194,7 @@ public class SubSystem {
                 }
             }
 
-            if (lastChar != '\n') {
+            if (lastChar != '\n'&&!isEOF) {
                 String line = sb.toString();
                 sb.setLength(0);
                 if (p.matcher(line).find()) {

@@ -182,7 +182,8 @@ public final class WindowsProcess implements NuProcess {
     }
 
     public void sendCtrlEvent(int event) {
-        if (!NuKernel32.GenerateConsoleCtrlEvent(event, processInfo.dwProcessId)) System.out.println(getError());
+        if(!NuKernel32.SetConsoleCtrlHandler(null,true)) System.out.println(getError());
+        if(!NuKernel32.GenerateConsoleCtrlEvent(event, new DWORD(0))) System.out.println(getError());
     }
 
     /**

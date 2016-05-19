@@ -98,7 +98,7 @@ public class NuKernel32 {
 
     public static native Pointer LocalFree(Pointer hLocal);
 
-    public static native boolean AttachConsole(int dwProcessId);
+    public static native boolean AttachConsole(DWORD dwProcessId);
 
     public static native boolean FreeConsole();
 
