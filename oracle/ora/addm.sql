@@ -37,7 +37,7 @@ BEGIN
     ELSE
         SELECT COUNT(1) INTO c FROM ALL_OBJECTS WHERE OBJECT_NAME IN('DBMS_ADDM','DBMS_ADVISOR') AND OWNER='SYS';
         OPEN :cur for
-            WITH act AS(SELECT /*+materialize*/ action_id,task_id,command,command_id,message,rec_id,object_id,
+            WITH act AS(SELECT /*+materialize*/ action_id,task_id,message,rec_id,object_id,
                                 nvl2(attr1,trim(attr1||nvl2(attr2,'.'||attr2,'')||nvl2(attr3,'.'||attr3,'')),'') obj,
                                 to_char(nullif(NUM_ATTR1,0)) obj_id
                         FROM DBA_ADVISOR_ACTIONS WHERE task_id = :V1),
@@ -54,18 +54,16 @@ BEGIN
                     FROM   Dba_Advisor_Parameters f
                     WHERE  parameter_name = 'DB_ELAPSED_TIME'
                     AND    f.task_id = a.task_id) elapsed,
-                   (SELECT MAX(decode(f.message#, 388, f.p2 * f.p3 * 1e6))
-                     FROM   sys.wri$_adv_rationale e, sys.wri$_adv_message_groups f
-                     WHERE  f.task_id = E.task_id
-                     AND    e.task_id = b.task_id
-                     AND    e.rec_id = b.rec_id
-                     AND    f.id = e.msg_id) rationale_impact,
+                   (SELECT nullif(sum(impact),0)
+                    FROM   DBA_ADVISOR_RATIONALE e
+                    WHERE  B.task_id = E.task_id
+                    AND    B.rec_id  = E.rec_id) rationale_impact,
                    (SELECT RTRIM(NVL2(MAX(E.task_id), 'Rationale: ', '') ||
                                    regexp_replace(&VER,CHR(10)||',*',chr(10) || LPAD(' ', 15)),
                                    chr(0) || chr(10))
                      FROM   DBA_ADVISOR_RATIONALE e
-                     WHERE  B.task_id = E.task_id
-                     AND    B.rec_id = E.rec_id) rationale_msg, c.command action_cmd, c.command_id action_cmdid,
+                     WHERE  B.task_id   = E.task_id
+                     AND    B.rec_id    = E.rec_id) rationale_msg, 
                      nvl2(c.message, 'Action: ', '') || c.message action_msg, d.object_id, d.type target,
                      nvl(d.attr1,nvl2(c.obj,c.obj_id,'')) target_id, d.attr2 sql_plan_id, 
                      nvl(trim(to_char(substr(d.attr4,1,3000))),c.obj) sql_text
@@ -88,7 +86,6 @@ BEGIN
                                2,case when a.r1=1 then remgroup end,
                                3,nvl(case when a.r1=1 then rationale_msg else ' ' end, action_msg),
                                4,action_msg) "Message",
-                       round(DECODE(b.r, 1, IMPACT, 2, benefit, 3, rationale_impact) * 1e-6 / 60, 2) "Minutes",
                        rpad(' ', LEAST(b.r - 1, 2)) ||nullif(to_char(DECODE(b.r, 1, IMPACT, 2, benefit, 3, nvl(rationale_impact,benefit)) * 100 /a.elapsed,'fm990.00')||'%','%') "Impact", 
                        CASE WHEN b.r>=3 THEN  target end "Target Obj",
                        CASE WHEN b.r>=3 THEN  target_id end "Target#", DECODE(b.r, 4, sql_plan_id) "Plan Hash",
@@ -99,14 +96,14 @@ BEGIN
               ORDER  BY 1, 2, 3, 4)
             SELECT "Impact", "Target#", "Message"
             from (
-                select r1,r2,r3,r4,is_top,"Impact", "Target#", "Message"
+                select r1,r2,r3,r4,is_top,"Impact", "Minutes","Target#", "Message"
                 FROM   b
                 where  trim("Message") is not null
                 UNION ALL
-                select distinct r1,99,99,99,null,RPAD('_',8,'_'),RPAD('_',14,'_'),RPAD('_',300,'_') from b
+                select distinct r1,99,99,99,null,RPAD('_',8,'_'),RPAD('_',max(lengthb("Target#")) over(),'_'),RPAD('_',300,'_') from b
                 order by 1,2,3,4)
             UNION ALL
-            select RPAD('*',8,'*'),RPAD('*',14,'*'),RPAD('*',300,'*') from dual
+            select RPAD('*',8,'*'),RPAD('*',max(lengthb("Target#")),'*'),RPAD('*',300,'*') from b
             UNION ALL
             select to_char(impact,'fm900.00')||'%',target_id,
                     nvl(sql_text,(select max(owner||'.'||object_name||nullif('.'||subobject_name,'.')) from dba_objects where object_id=regexp_substr(target_id,'^\d+$')))

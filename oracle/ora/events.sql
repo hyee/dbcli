@@ -7,6 +7,10 @@ BEGIN
     IF v_filter IS NULL THEN
         v_filter:='%';
     ELSE
+        IF regexp_like(v_filter,'^-?\d+$') THEN
+            dbms_output.put_line(regexp_replace(SQLERRM(-abs(v_filter+0)),'^ORA-'));
+            RETURN;
+        END IF;
         v_filter:='%'||v_filter||'%';
     END IF;
     dbms_output.enable(null);
