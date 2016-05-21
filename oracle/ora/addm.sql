@@ -37,7 +37,7 @@ BEGIN
     ELSE
         SELECT COUNT(1) INTO c FROM ALL_OBJECTS WHERE OBJECT_NAME IN('DBMS_ADDM','DBMS_ADVISOR') AND OWNER='SYS';
         OPEN :cur for
-            WITH act AS(SELECT /*+materialize*/ action_id,task_id,message,rec_id,object_id,
+            WITH act AS(SELECT /*+materialize*/ action_id,task_id,command,command_id,message,rec_id,object_id,
                                 nvl2(attr1,trim(attr1||nvl2(attr2,'.'||attr2,'')||nvl2(attr3,'.'||attr3,'')),'') obj,
                                 to_char(nullif(NUM_ATTR1,0)) obj_id
                         FROM DBA_ADVISOR_ACTIONS WHERE task_id = :V1),
@@ -63,7 +63,8 @@ BEGIN
                                    chr(0) || chr(10))
                      FROM   DBA_ADVISOR_RATIONALE e
                      WHERE  B.task_id   = E.task_id
-                     AND    B.rec_id    = E.rec_id) rationale_msg, 
+                     AND    B.rec_id    = E.rec_id
+                     ) rationale_msg, c.command action_cmd, c.command_id action_cmdid,
                      nvl2(c.message, 'Action: ', '') || c.message action_msg, d.object_id, d.type target,
                      nvl(d.attr1,nvl2(c.obj,c.obj_id,'')) target_id, d.attr2 sql_plan_id, 
                      nvl(trim(to_char(substr(d.attr4,1,3000))),c.obj) sql_text
@@ -86,6 +87,7 @@ BEGIN
                                2,case when a.r1=1 then remgroup end,
                                3,nvl(case when a.r1=1 then rationale_msg else ' ' end, action_msg),
                                4,action_msg) "Message",
+                       round(DECODE(b.r, 1, IMPACT, 2, benefit, 3, rationale_impact) * 1e-6 / 60, 2) "Minutes",
                        rpad(' ', LEAST(b.r - 1, 2)) ||nullif(to_char(DECODE(b.r, 1, IMPACT, 2, benefit, 3, nvl(rationale_impact,benefit)) * 100 /a.elapsed,'fm990.00')||'%','%') "Impact", 
                        CASE WHEN b.r>=3 THEN  target end "Target Obj",
                        CASE WHEN b.r>=3 THEN  target_id end "Target#", DECODE(b.r, 4, sql_plan_id) "Plan Hash",
@@ -96,7 +98,7 @@ BEGIN
               ORDER  BY 1, 2, 3, 4)
             SELECT "Impact", "Target#", "Message"
             from (
-                select r1,r2,r3,r4,is_top,"Impact", "Minutes","Target#", "Message"
+                select r1,r2,r3,r4,is_top,"Impact", "Target#", "Message"
                 FROM   b
                 where  trim("Message") is not null
                 UNION ALL

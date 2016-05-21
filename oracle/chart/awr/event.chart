@@ -18,21 +18,21 @@
         &V3 : default={&STARTTIME}
         &V4 : default={&ENDTIME}
         &f0 : default={0},f={}
-        &f1 : default={:V1 IS NULL OR LOWER(:V1) IN (lower(wait_class),event_name,abbr,LOWER(event_id))}, f={}
+        &f1 : default={:V1 IS NULL OR LOWER(:V1) IN (lower(wait_class),lower(event_name),abbr,LOWER(event_id))}, f={}
         &grp: default={wait_class}, e={event_name}
         &ADDITIONAL_FILTER: default={1=1}, f1={}
     --]]
 ]]*/
 {
     _attrs=[[
-        SELECT a.*,'System Wait Event ('||filter||') Group by '||group_by title
+        SELECT a.*,'System Wait Event ('||filter||')' title
         FROM (     
             SELECT decode(q'[&F0]','0',NVL2(:V1,FIELD_NAME || ' = ''' || FIELD_VALUE||'''','Wait_Class != ''Idle'''),q'[&F0]') filter,
                    case when q'[&F0]'='0' then nvl2(:V1,'event_name','&grp') when lower(q'[&F0]') not like '%event_name%' then 'wait_class' else 'event_name' end group_by
             FROM   (SELECT CASE WHEN lower(wait_class) = LOWER(:V1) OR :V1 IS NULL THEN 'Wait_Class' ELSE 'Event_name' END FIELD_NAME,
                            CASE WHEN lower(wait_class) = LOWER(:V1) OR :V1 IS NULL THEN wait_class ELSE event_name END FIELD_VALUE
                      FROM  (select /*+merge*/ s.*,
-                                   lower(name) event_name,
+                                   name event_name,
                                    lower(LOWER(regexp_replace(NAME || ' ', '(\w)[^ ]* ', '\1'))) abbr
                             from v$event_name s)
                      WHERE  ROWNUM < 2 and (&F1))) a]],
