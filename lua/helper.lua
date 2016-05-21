@@ -94,9 +94,10 @@ function helper.helper(cmd,...)
         end
         local helps,target
         if type(_CMDS[cmd].HELPER) =="function" then
-            local args= _CMDS[cmd].OBJ and {_CMDS[cmd].OBJ,cmd,...} or {cmd,...}
-            helps = (_CMDS[cmd].HELPER)(table.unpack(args)) or ""
-            target= table.concat({cmd,...}," ")
+            local args,sub= _CMDS[cmd].OBJ and {_CMDS[cmd].OBJ,cmd,...} or {cmd,...}
+            helps,sub = (_CMDS[cmd].HELPER)(table.unpack(args))
+            helps = helps or "No help information."
+            target= table.concat({cmd,sub}," ")
         else
             helps = _CMDS[cmd].HELPER or ""
             target=cmd
