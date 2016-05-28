@@ -140,12 +140,13 @@ function printer.grep_after()
 end
 
 function printer.tee(file,stmt)
-    env.checkhelp(stmt)
+    env.checkhelp(file)
+    if not stmt then file,stmt='last_output.txt',file end
     if not file:find("[\\/]") then
         file=env._CACHE_PATH..file
     end
     printer.tee_file=file
-    printer.tee_hdl,err=io.open(file,"a+")
+    printer.tee_hdl,err=io.open(file,"w")
     env.checkerr(printer.tee_hdl,"Failed to open the target file "..file)
     env.eval_line(stmt,true,true)
 end

@@ -21,7 +21,7 @@ local stack=nil
 function env.reset_input(line)
     if not stack or not line then return nil end
     if not line:find('^[ \t]*$') then stack[#stack+1]=line end
-    if env.CURRENT_PROMPT==env.PRI_PROMPT then
+    if env.CURRENT_PROMPT~=env.MTL_PROMPT then
         if line:find('^[ \t]*'..env.END_MARKS[1]..'[ \t]*$') then
             stack[#stack-1]=stack[#stack-1]..line
             table.remove(stack)

@@ -29,9 +29,10 @@ function history:capture(cmd,args,res,is_internal,command_text,clock)
     cmd=cmd:upper()
     if (cmd=="HIS" or cmd=="/" or cmd=="R" or cmd=="HISTORY") then return end
     local maxsiz=cfg.get("HISSIZE")
-    local key=command_text:gsub("[%s%z\128\192]+"," "):sub(1,300):upper()
+    local key=command_text:gsub("[%s%z\128\192]+"," "):sub(1,300)
+    local k1=key:upper()
     if keys[key] then
-        table.remove(self,keys[key])
+        table.remove(self,keys[k1])
     end
     lastcommand={cmd=cmd,desc=key,args=args,tim=os.clock(),clock=clock}
     if maxsiz < 1 then return end
@@ -41,7 +42,7 @@ function history:capture(cmd,args,res,is_internal,command_text,clock)
         table.remove(self,1)
         keys[k]=nil
     end
-    keys[key]=#self
+    keys[k1]=#self
 end
 
 
