@@ -50,7 +50,7 @@ end
 
 function ssh:connect(conn_str)
     self.script_stack={}
-    local usr,pwd,host,port,url
+    local usr,pwd,host,port,url,conn_desc
     if type(conn_str)=="table" then --from 'login' commands
         usr,pwd,url,host,port=conn_str.user,packer.unpack_str(conn_str.password),conn_str.url,conn_str.host,conn_str.port
         if not host then

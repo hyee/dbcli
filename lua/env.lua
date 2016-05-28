@@ -562,8 +562,8 @@ function env.modify_command(_,key_event)
     if key_event.name=="CTRL+C" or key_event.name=="CTRL+D" then
         if env.pending_command() then
             multi_cmd,curr_stmt=nil,nil
-            env.CURRENT_PROMPT=env.PRI_PROMPT
         end
+        env.CURRENT_PROMPT=env.PRI_PROMPT
         local prompt=env.PRI_PROMPT
 
         if env.ansi then
