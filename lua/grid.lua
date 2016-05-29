@@ -78,10 +78,9 @@ function grid.fmt(format,...)
             if siz=="" then return g end
             v=args[idx]
             if not v or type(v)~="string" then return g end
-            local _,c=v:gsub("[%z\1-\127\194-\244][\128-\193]", "")
-            if c>0 then return '%'..flag..tostring(tonumber(siz)+c)..'s' end
-            c=#v-env.ansi.strip_len(v)
-            if c>0 then return '%'..flag..tostring(tonumber(siz)+c)..'s' end
+            local clen,dlen=v:ulen()
+            clen =dlen-clen+#v-env.ansi.strip_len(v)
+            if clen>0 then return '%'..flag..tostring(tonumber(siz)+clen)..'s' end
             return g
         end)
     --print('new',format,',',fmt)
@@ -322,8 +321,8 @@ function grid:add(rs)
             for p in v:gmatch('([^\n\r]+)') do
                 grp[#grp+1]=p
                 --deal with unicode chars
-                local _, count = p:gsub("[\1-\127\194-\244][\128-\193]", "")
-                local len=env.ansi.strip_len(p)-count
+                local len, dlen = p:ulen()
+                local len=env.ansi.strip_len(p)-dlen+len
                 if csize < len then csize=len end
             end
             if #grp > 1 then v=grp end
