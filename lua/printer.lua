@@ -1,6 +1,7 @@
 local env,select,table,pcall=env,select,table,pcall
 local writer,reader=writer,reader
 local out=writer
+local jwriter=jwriter
 local event
 local printer={rawprint=print}
 local io=io
@@ -146,7 +147,7 @@ function printer.tee(file,stmt)
         file=env._CACHE_PATH..file
     end
     printer.tee_file=file
-    printer.tee_hdl,err=io.open(file,"w")
+    printer.tee_hdl=io.open(file,"w")
     env.checkerr(printer.tee_hdl,"Failed to open the target file "..file)
     env.eval_line(stmt,true,true)
 end

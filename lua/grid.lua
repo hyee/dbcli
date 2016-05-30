@@ -321,8 +321,8 @@ function grid:add(rs)
             for p in v:gmatch('([^\n\r]+)') do
                 grp[#grp+1]=p
                 --deal with unicode chars
-                local len, dlen = p:ulen()
-                local len=env.ansi.strip_len(p)-dlen+len
+                local l, len = env.ansi.strip_ansi(p):ulen()
+                if l~=len then self.use_jwriter=true end
                 if csize < len then csize=len end
             end
             if #grp > 1 then v=grp end

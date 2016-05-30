@@ -330,13 +330,12 @@ end
 -- F0         90 - BF     80 - BF    80 - BF
 -- F1 - F3    80 - BF     80 - BF    80 - BF
 -- F4         80 - 8F     80 - BF    80 - BF
-function string.ulen(s)
-    if s=="" then return 0,0 end
-    if not s then return nil end 
-    local i,len1,len2=1,0,0
-    while i<=#s do
-        local c,i1 = s:byte(i),i
-        if not c then break end
+function string.chars(s,start)
+    local i = start or 1
+    if not s or i>#s then return nil end
+    local function next()
+        local c,i1,p,is_multi = s:byte(i),i
+        if not c then return end
         if c >= 0xC2 and c <= 0xDF then
             local c2 = s:byte(i + 1)
             if c2 and c2 >= 0x80 and c2 <= 0xBF then i=i+1 end
@@ -381,7 +380,18 @@ function string.ulen(s)
                 then i1=i+3 end
             end
         end
-        i,len1,len2=i1+1,len1+1,len2+(i1>i and 2 or 1)
+        p,i,is_multi=s:sub(i,i1),i1+1,i1>i
+        return p,is_multi,i
+    end
+    return next
+end
+
+function string.ulen(s)
+    if s=="" then return 0,0 end
+    if not s then return nil end 
+    local len1,len2=0,0
+    for c,is_multi in s:chars() do
+        len1,len2=len1+1,len2+(is_multi and 2 or 1)
     end
     return len1,len2
 end

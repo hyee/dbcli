@@ -1,3 +1,4 @@
+2016-05-30: + oracle: new command "copy" to copy data between two dbs which depends on sql*plus
 2016-05-21: ! public: small fixes/changes
 2016-05-18: + public: new command 'tee' which also supports piping. i.e. : select * from segs|tee 1.txt
 2016-05-16: ! oracle: fix error on 'ashdump' for 10g
