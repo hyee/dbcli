@@ -71,7 +71,7 @@ function sqlplus:get_startup_cmd(args,is_native)
     local export=env.OS=="windows" and "set " or "export "
     local props={}
     if tnsadm and tnsadm~="" then self.env["TNS_ADMIN"]=tnsadm end
-    if db.props.db_nls_lang then self.env["NLS_LANG"]=db.props.db_nls_lang end
+    if db.props.nls_lang then self.env["NLS_LANG"]=db.props.nls_lang end
     self.env['NLS_DATE_FORMAT']='YYYY-MM-DD HH24:MI:SS'
     self:make_sqlpath()
     self.work_path,self.work_dir=self.work_dir,env._CACHE_PATH
@@ -137,6 +137,36 @@ function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
     end
 end
 
+function sqlplus:copy_data(dest,login,table,query)
+    env.checkhelp(table)
+    local list,account,dest_mask,acc_mask
+    local stmt="set long 8000 arraysize 5000 copycommit 1;\n"
+    if not query then
+        dest,login,table,query="from",dest,login,table
+    end
+    dest = dest:lower()
+    if dest ~="from" and dest ~="to" then
+        list,account=env.login.search(dest)
+        env.checkerr(account,"Cannot find the login account that exactly matches '%s', type 'login' for more information!",dest)
+        dest=string.format('from %s/%s@%s to',list.user,env.packer.unpack_str(list.password),list.url:match('[^@]+$'))
+        dest_mask=string.format('from %s/***@%s to',list.user,list.url:match('[^@]+$'))
+    end
+    list,account=env.login.search(login)
+    env.checkerr(account,"Cannot find the login account that exactly matches '%s', type 'login' for more information!",login)
+    account=string.format('%s/%s@%s',list.user,env.packer.unpack_str(list.password),list.url:match('[^@]+$'))
+    acc_mask=string.format('%s/***@%s',list.user,list.url:match('[^@]+$'))
+    stmt=string.format("%scopy %s %s append %s using %s;",stmt,dest,account,table,query:gsub("[\n\r]+"," "))
+    local output="SQL*Plus Command:\n=================\n"..stmt:replace(account,acc_mask,true,1)
+    if dest_mask then
+        output=output:replace(dest,dest_mask,true,1)
+    end
+    env.rawprint(output)
+    if not dest_mask then db:assert_connect() end
+    local file="last_sqlplus_script.sql"
+    env.write_cache(file,stmt.."\n")
+    self:call_process('@"'..env._CACHE_PATH..file..'"')
+end    
+
 function sqlplus:after_script()
     self.work_path=nil
 end
@@ -151,7 +181,22 @@ end
 function sqlplus:onload()
     env.event.snoop("AFTER_ORACLE_CONNECT",self.terminate,self)
     env.event.snoop("ON_DB_DISCONNECTED",self.terminate,self)
-    --env.event.snoop("ON_KEY_EVENT",self.f7,self)
+    local help=[[
+    Copy data from one database to another. Usage: @@NAME {[from|to|<source_login>] <login> <table> <query>}
+    This command requires sql*plus to be included into current path. 
+    The performance of the copy highly relies on the network speed between client and db servers.
+    Parameters:
+        <login>               : Refer to command 'login', can be the login id or login alias
+        <table>               : Target table name, if exists then append data, else create table firstly
+        <query>               : Select statement that used as the source data
+        from|to|<source_login>: 1) from(default): copy data from <login> db to current db.
+                                2) to: copy data from current db to <login> db
+                                3) <source_login>:  copy data from <source_login> db to <login> db
+    Examples: 
+              1) copy 1 objs select * from all_objects; 
+              2) copy to 1 objs select * from all_objects;
+              3) copy qa uat objs select * from all_objects;]]
+    env.set_command(self,{"COPY"},help,self.copy_data,'__SMART_PARSE__',5,true)
 end
 
 return sqlplus.new()

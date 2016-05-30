@@ -75,6 +75,8 @@ public class Loader {
             lua.setGlobal("writer");
             lua.pushJavaObject(console.getTerminal());
             lua.setGlobal("terminal");
+            lua.pushJavaObject( new PrintWriter(console.getOutput()));
+            lua.setGlobal("jwriter");
         }
         String separator = File.separator;
 
