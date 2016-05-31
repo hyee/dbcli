@@ -54,10 +54,11 @@ function grid:cut(row,format_func,format_str)
         row=format_func(format_str,table.unpack(row))
     end
     if #row>self.linesize then
-        local tab,len,count={},-self.linesize,0
+        local tab,len,count,clen,ulen={},-self.linesize,0
         for piece,pattern in row:gsplit("(\27%[[%d;]*[mK])") do
-            len,count = len + #piece,count +1
-            tab[#tab+1] = len<0 and piece or piece:sub(1,#piece-len)
+            clen,ulen=piece:ulen()
+            len,count = len + ulen,count +1
+            tab[#tab+1] = len<0 and piece or piece:sub(1,ulen-len)
             if (pattern or "")~="" then tab[#tab+1]=pattern end
             if len>=0 then
                 tab[#tab+1]=env.ansi.get_color('NOR')
