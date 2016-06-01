@@ -1,6 +1,7 @@
 package org.dbcli;
 
 import com.naef.jnlua.LuaState;
+import jline.AnsiWindowsTerminal;
 import jline.Terminal;
 import jline.console.ConsoleReader;
 import jline.console.Operation;
@@ -63,6 +64,7 @@ public class Console extends ConsoleReader {
         t_puts = ConsoleReader.class.getDeclaredMethod("tputs", String.class, Object[].class);
         t_puts.setAccessible(true);
         writer = new PrintWriter(System.getenv("ANSICON_DEF") != null ? new OutputStreamWriter(System.out, Console.charset) : getOutput());
+
         //in=(NonBlockingInputStream)this.getInput();
         Iterator<Completer> iterator = getCompleters().iterator();
         threadID = Thread.currentThread().getId();

@@ -29,7 +29,7 @@ DECLARE
                       FROM   all_constraints
                       WHERE  owner = usr
                       AND    table_name = new_table) LOOP
-                EXECUTE IMMEDIATE 'alter table ' || usr || '.' || new_table || ' drop constraint "' || r.constraint_name || '"';
+                EXECUTE IMMEDIATE 'alter table ' || usr || '.' || new_table || ' drop constraint "' || r.constraint_name || '" cascade';
             END LOOP;
 
             pr('Removing all indexes/triggers from new table...');
@@ -74,7 +74,7 @@ DECLARE
                                                     int_table    => new_table,
                                                     part_name    => part_name,
                                                     options_flag => options_flag,
-                                                    col_mapping  => regexp_replace(cols,'[ '||chr(10)||']'),
+                                                    col_mapping  => regexp_replace(cols,'\s+'),
                                                     orderby_cols => NULL);
             EXECUTE IMMEDIATE 'alter session force parallel ddl parallel ' || parallel_degree;
             EXECUTE IMMEDIATE 'alter session force parallel dml parallel ' || parallel_degree;
@@ -130,18 +130,17 @@ DECLARE
         /}';
     cols  VARCHAR2(32767);
 BEGIN
-    FOR r IN (SELECT NVL2(b.column_name, b.column_name, 'NULL ' || upper(a.column_name)) col,a.column_id idx
-              FROM   all_tab_columns a, all_tab_cols b
+    FOR r IN (SELECT column_name col,row_number() over(order by min(column_id)) idx
+              FROM   all_tab_cols a
               WHERE  a.owner = usr
-              AND    b.owner(+) = usr
-              AND    a.table_name = new_table
-              AND    b.table_name(+) = org_table
-              AND    upper(a.column_name) = upper(b.column_name(+))
-              ORDER  BY a.column_id) LOOP
+              AND    a.table_name in (new_table,org_table)
+              AND    a.column_id>0
+              AND    a.segment_column_id is not null
+              AND    a.virtual_column='NO'
+              GROUP BY column_name
+              HAVING count(1)>1
+              ORDER  BY idx) LOOP
         cols := cols || CASE WHEN UPPER(r.col)=r.col THEN r.col ELSE '"'||r.col||'"' END||',';
-        IF mod(r.idx,10)=0 THEN
-            cols := cols||chr(10)||RPAD(' ', 8);
-        END IF;
     END LOOP;
 
     IF cols IS NULL THEN
