@@ -75,7 +75,8 @@ end
 
 function printer.write(output)
     if env.ansi then output=env.ansi.convert_ansi(output) end
-    out:write(output)
+    output=output:gsub("(\r?\n\r?)","%1"..env.space)
+    out:write(env.space..output)
     out:flush()
 end
 
@@ -142,12 +143,22 @@ end
 
 function printer.tee(file,stmt)
     env.checkhelp(file)
-    if not stmt then file,stmt='last_output.txt',file end
+    local mode='w'
+    if not stmt then 
+        file,stmt='',file 
+    elseif file:sub(1,1)=='+' then
+        mode,file='a+',file:sub(2)
+    elseif file:sub(-1)=='+' then
+        mode,file='a+',file:sub(1,#file-1)
+    end
+    if file=="" or file=="." then
+        file='last_output.txt'
+    end
     if not file:find("[\\/]") then
         file=env._CACHE_PATH..file
     end
     printer.tee_file=file
-    printer.tee_hdl=io.open(file,"w")
+    printer.tee_hdl=io.open(file,mode)
     env.checkerr(printer.tee_hdl,"Failed to open the target file "..file)
     env.eval_line(stmt,true,true)
 end
@@ -199,7 +210,7 @@ function printer.onload()
     BOLD=BOLD..'%1'..NOR
     
     env.set_command(nil,"grep","Filter matched text from the output. Usage: @@NAME <keyword|-keyword> <other command>, -keyword means exclude",{printer.grep,printer.grep_after},'__SMART_PARSE__',3,false,false,true)
-    env.set_command(nil,"tee"," Write command output to target file. Usage: @@NAME <file> <other command>",{printer.tee,printer.tee_after},'__SMART_PARSE__',3,false,false,true)
+    env.set_command(nil,"tee"," Write command output to target file,'+' means append mode. Usage: @@NAME {+|.|[+]<file>|<file>+} <other command>",{printer.tee,printer.tee_after},'__SMART_PARSE__',3,false,false,true)
     env.set_command(nil,"more","Similar to Linux 'more' command. Usage: @@NAME <other command>",printer.set_more,'__SMART_PARSE__',2,false,false,true)
     env.set_command(nil,{"Prompt","pro",'echo'}, "Prompt messages. Usage: @@NAME <message>",printer.load_text,false,2)
     env.set_command(nil,{"SPOOL","SPO"}, "Write the screen output into a file. Usage: @@NAME [file_name[.ext]] [CREATE] | APP[END]] | OFF]",printer.spool,false,3)

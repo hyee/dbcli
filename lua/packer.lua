@@ -40,6 +40,9 @@ function packer.unpack(str)
 end
 
 function packer.pack_str(str)
+    if not str or str:sub(1,5)== "FUNC:" then
+        return str
+    end
     local func=loadstring("return function() local tmp=[["..tostring({}).."]];return [["..str.."]] end")()
     return packer.pack(func)
 end
