@@ -1,5 +1,6 @@
 2016-06-02: * public: remove 'set CSVSEP/EXPPREFETCH/SQLLINEWIDTH', ask questions each time when calling 'sql2csv/sql2file' instead
-            * public: support 'tee +<file> <command>' which means append mode
+                    : support 'tee +<file> <command>' which means append mode
+            ! public: fix duplicated items issue for command 'history'  
 2016-06-01: ! oracle: fix on 'ora redef'
                     : minor fixes related to oracle connection
             ! public: fix some charset layout issue

@@ -31,14 +31,15 @@ function history:capture(cmd,args,res,is_internal,command_text,clock)
     local maxsiz=cfg.get("HISSIZE")
     local key=command_text:gsub("[%s%z\128\192]+"," "):sub(1,300)
     local k1=key:upper()
-    if keys[key] then
+    if keys[k1] then
         table.remove(self,keys[k1])
+        for k,v in pairs(keys) do if v>keys[k1] then keys[k]=v-1 end end
     end
-    lastcommand={cmd=cmd,desc=key,args=args,tim=os.clock(),clock=clock}
+    lastcommand={cmd=cmd,desc=key,args=args,tim=os.clock(),clock=clock,key=k1}
     if maxsiz < 1 then return end
     table.insert(self,lastcommand)
     while #self>maxsiz do
-        local k=self[1].desc
+        local k=self[1].k1
         table.remove(self,1)
         keys[k]=nil
     end
