@@ -782,8 +782,8 @@ function db_core:sql2file(filename,sql,method,ext,...)
     if method:find("CSV",1,true) then
         local quoter=string.byte(env.ask("Please define the field encloser",'^.$','"'))
         local sep=string.byte(env.ask("Please define the field seperator",'^[^'..string.char(quoter)..']$',','))
-        csv.DEFAULT_QUOTE_CHARACTER,cparse.DEFAULT_QUOTE_CHARACTER=quoter,quoter
-        csv.DEFAULT_SEPARATOR,cparse.DEFAULT_SEPARATOR=sep,sep
+        cparse.DEFAULT_QUOTE_CHARACTER=quoter
+        cparse.DEFAULT_SEPARATOR=sep
     end
 
     local file=io.open(filename,"w")
