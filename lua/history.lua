@@ -39,8 +39,9 @@ function history:capture(cmd,args,res,is_internal,command_text,clock)
     if maxsiz < 1 then return end
     table.insert(self,lastcommand)
     while #self>maxsiz do
-        local k=self[1].k1
+        local k=self[1].key
         table.remove(self,1)
+        for o,v in pairs(keys) do if v>1 then keys[o]=v-1 end end
         keys[k]=nil
     end
     keys[k1]=#self
