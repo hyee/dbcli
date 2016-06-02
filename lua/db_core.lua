@@ -778,7 +778,10 @@ function db_core:sql2file(filename,sql,method,ext,...)
     if method~='CSV2SQL' then
         exp.RESULT_FETCH_SIZE=tonumber(env.ask("Please set fetch array size",'10-100000',30000))
     end
-
+    if method:find("SQL",1,true) then
+        sqlw.maxLineWidth=tonumber(env.ask("Please set line width","100-32767",2000))
+        sqlw.COLUMN_ENCLOSER=string.byte(env.ask("Please define the column name encloser","^%W$",'"'))
+    end
     if method:find("CSV",1,true) then
         local quoter=string.byte(env.ask("Please define the field encloser",'^.$','"'))
         local sep=string.byte(env.ask("Please define the field seperator",'^[^'..string.char(quoter)..']$',','))
@@ -862,7 +865,6 @@ end
 function db_core:sql2sql(filename,sql)
     env.checkhelp(sql)
     sql=self:resolve_expsql(sql)
-    sqlw.maxLineWidth=tonumber(env.ask("Please set line width","100-32767",2000))
     self:sql2file(env.resolve_file(filename,{'sql','zip','gz'}),sql,'ResultSet2SQL','sql',self.sql_export_header,cfg.get("ASYNCEXP"),self.EXCLUDES,self.REMAPS)
 end
 
