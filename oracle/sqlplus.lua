@@ -92,10 +92,6 @@ function sqlplus:get_startup_cmd(args,is_native)
     env.checkerr(not args[1] or not args[1]:find(".*/.*@.+"),"You cannot specify user/pwd here, default a/c should be used!")
     
     props[#props+1]=(env.packer.unpack_str(db.conn_str) or "/nolog")
-    if db.props.service_name then
-        props[#props]=props[#props]:gsub("%:[%w_]+ ",'/'..db.props.service_name)
-    end
-    --print(self.env['SQLPATH'])
     return props
 end
 
@@ -148,12 +144,18 @@ function sqlplus:copy_data(dest,login,table,query)
     if dest ~="from" and dest ~="to" then
         list,account=env.login.search(dest)
         env.checkerr(account,"Cannot find the login account that exactly matches '%s', type 'login' for more information!",dest)
-        dest=string.format('from %s/%s@%s to',list.user,env.packer.unpack_str(list.password),list.url:match('[^@]+$'))
+        dest=string.format('from %s to',env.packer.unpack_str(list.oci_connection))
+        if not dest then 
+            dest=string.format('from %s/%s@%s to',list.user,env.packer.unpack_str(list.password),list.url:match('[^@]+$'))
+        end
         dest_mask=string.format('from %s/***@%s to',list.user,list.url:match('[^@]+$'))
     end
     list,account=env.login.search(login)
     env.checkerr(account,"Cannot find the login account that exactly matches '%s', type 'login' for more information!",login)
-    account=string.format('%s/%s@%s',list.user,env.packer.unpack_str(list.password),list.url:match('[^@]+$'))
+    account=env.packer.unpack_str(list.oci_connection)
+    if not account then
+        account=string.format('from %s/%s@%s to',list.user,env.packer.unpack_str(list.password),list.url:match('[^@]+$'))
+    end
     acc_mask=string.format('%s/***@%s',list.user,list.url:match('[^@]+$'))
     stmt=string.format("%scopy %s %s append %s using %s;",stmt,dest,account,table,query:gsub("[\n\r]+"," "))
     local output="SQL*Plus Command:\n=================\n"..stmt:replace(account,acc_mask,true,1)

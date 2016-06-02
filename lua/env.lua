@@ -560,6 +560,7 @@ end
 function env.modify_command(_,key_event)
     --print(key_event.name)
     if key_event.name=="CTRL+C" or key_event.name=="CTRL+D" then
+        if env.IS_ASKING then return end
         if env.pending_command() then
             multi_cmd,curr_stmt=nil,nil
         end
@@ -1041,6 +1042,52 @@ end
 function env.reset_title()
     for k,v in pairs(title_list) do title_list[k]="" end
     os.execute("title dbcli")
+end
+
+function env.ask(question,range,default)
+    local isValid,desc,value=true,question
+    if default then 
+        desc=desc..' ['..tostring(default)..']' 
+    elseif range then
+        desc=desc..' ['..range..']'
+    end
+    --env.printer.write(desc..': ')
+    env.IS_ASKING=question
+    value=reader:readLine(env.space..desc..": ")
+    if not env.IS_ASKING then error('000-00000:') end
+    env.IS_ASKING,value=nil,value and value:trim() or ""
+
+    value=value:gsub('\\([0-9]+)',function(x) return string.char(tonumber(x)) end)
+    value=value:gsub('(0x[0-9a-f][0-9a-fA-F]?)',function(x) return string.char(tonumber(string.format("%d",x))) end)
+   
+    if value=="" then
+        if default~=nil then return default end
+        isValid=false
+    elseif range and range ~='' then
+        local lower,upper=range:match("([%-%+]?%d+)%s*%-%s*([%-%+]?%d+)")
+        if lower then
+            value,lower,upper=tonumber(value),tonumber(lower),tonumber(upper)
+            if not value or not (value>=lower and value<=upper) then
+                isValid=false
+            end
+        elseif range:find(",") then
+            local match=0
+            local v=value:lower()
+            for k in range:gmatch('([^,%s]+)') do
+                if v==k:lower() then
+                    match=1
+                end
+            end
+            if match==0 then
+                isValid=false
+            end
+        elseif not value:match(range) then
+            isValid=false
+        end
+    end
+
+    if isValid then return value end
+    return env.ask(question,range,default)
 end
 
 return env

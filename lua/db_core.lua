@@ -674,7 +674,7 @@ function db_core:connect(attrs,data_source)
         end
     end
     self.last_login_account=attrs
-    return self.conn
+    return self.conn,attrs
 end
 
 function db_core:reconnnect()
@@ -734,22 +734,10 @@ function db_core:rollback()
     end
 end
 
-local exp=java.require("com.opencsv.ResultSetHelperService")
-local csv=java.require("com.opencsv.CSVWriter")
-local sqlw=java.require("com.opencsv.SQLWriter")
+
 local function set_param(name,value)
     if name=="FEED" or name=="AUTOCOMMIT" then
         return value:lower()
-    elseif name=="EXPPREFETCH" then
-        exp.RESULT_FETCH_SIZE=tonumber(value)
-    elseif name=="CSVSEP" then
-        env.checkerr(#value==1,"The seperator must be a character!")
-        env.checkerr(value~='"',"The seperator cannot be a quote character!")
-        csv.DEFAULT_SEPARATOR=string.byte(value)
-        java.require("com.opencsv.CSVParser").DEFAULT_SEPARATOR=csv.DEFAULT_SEPARATOR
-        return value
-    elseif name=="SQLLINEWIDTH" then
-       sqlw.maxLineWidth=tonumber(value)
     elseif name=="ASYNCEXP" then
         return value and value:lower()=="true" and true or false
     end
@@ -766,6 +754,10 @@ local function print_export_result(filename,start_clock,counter)
     print(str..'Result written to file '..filename)
 end
 
+local exp=java.require("com.opencsv.ResultSetHelperService")
+local csv=java.require("com.opencsv.CSVWriter")
+local cparse=java.require("com.opencsv.CSVParser")
+local sqlw=java.require("com.opencsv.SQLWriter")
 function db_core:sql2file(filename,sql,method,ext,...)
     local clock,counter,result
     if sql then
@@ -781,6 +773,17 @@ function db_core:sql2file(filename,sql,method,ext,...)
         if ext and filename:lower():match("%.gz$") and not filename:lower():match("%."..ext.."%.gz$") then
             filename=filename:gsub("[gG][zZ]$",ext..".gz")
         end
+    end
+
+    if method~='CSV2SQL' then
+        exp.RESULT_FETCH_SIZE=tonumber(env.ask("Please set fetch array size",'10-100000',30000))
+    end
+
+    if method:find("CSV",1,true) then
+        local quoter=string.byte(env.ask("Please define the field encloser",'^.$','"'))
+        local sep=string.byte(env.ask("Please define the field seperator",'^[^'..string.char(quoter)..']$',','))
+        csv.DEFAULT_QUOTE_CHARACTER,cparse.DEFAULT_QUOTE_CHARACTER=quoter,quoter
+        csv.DEFAULT_SEPARATOR,cparse.DEFAULT_SEPARATOR=sep,sep
     end
 
     local file=io.open(filename,"w")
@@ -859,6 +862,7 @@ end
 function db_core:sql2sql(filename,sql)
     env.checkhelp(sql)
     sql=self:resolve_expsql(sql)
+    sqlw.maxLineWidth=tonumber(env.ask("Please set line width","100-32767",2000))
     self:sql2file(env.resolve_file(filename,{'sql','zip','gz'}),sql,'ResultSet2SQL','sql',self.sql_export_header,cfg.get("ASYNCEXP"),self.EXCLUDES,self.REMAPS)
 end
 
@@ -947,10 +951,7 @@ function db_core:__onload()
     cfg.init({"FEED","FEEDBACK"},'on',set_param,"db.core","Detemine if need to print the feedback after db execution",'on,off')
     cfg.init("AUTOCOMMIT",'off',set_param,"db.core","Detemine if auto-commit every db execution",'on,off')
     cfg.init("SQLCACHESIZE",30,set_param,"db.core","Number of cached statements in JDBC",'5-500')
-    cfg.init("EXPPREFETCH",exp.RESULT_FETCH_SIZE,set_param,"db.export","Number of rows to be prefetched for the export(SQL2CSV and SQL2FILE)",'10-1000000')
     cfg.init("ASYNCEXP",true,set_param,"db.export","Detemine if use parallel process for the export(SQL2CSV and SQL2FILE)",'true,false')
-    cfg.init("CSVSEP",string.char(csv.DEFAULT_SEPARATOR),set_param,"db.export","Define the seperator for CSV data for export(SQL2CSV and CSV2SQL)",'*')
-    cfg.init("SQLLINEWIDTH",sqlw.maxLineWidth,set_param,"db.export","Define the max line width(in chars) of exporting SQL file(SQL2FILE and CSV2SQL)",'*')
     cfg.init("SQLERRLINE",'off',nil,"db.core","Also print the line number when error SQL is printed",'on,off')
     cfg.init("NULL","",nil,"db.core","Define the display value for NULL value")
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)

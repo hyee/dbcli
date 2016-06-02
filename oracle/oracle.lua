@@ -79,6 +79,9 @@ function oracle:connect(conn_str)
          ['oracle.jdbc.TcpNoDelay']='true',
         },args)
     self:load_config(url,args)
+    if args.db_version and tonumber(args.db_version:match("(%d+)"))>0 then
+        args['oracle.jdbc.mapDateToTimestamp']=nil
+    end
     if args.jdbc_alias or not sqlplustr then
         local pwd=args.password
         if not pwd:find('^[%w_%$#]+$') and not pwd:find('^".*"$') then
@@ -95,13 +98,14 @@ function oracle:connect(conn_str)
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
     env.set_title("")
     local data_source=java.new('oracle.jdbc.pool.OracleDataSource')
-
-    self.super.connect(self,args,data_source)
-    self.conn,self.conn_str=java.cast(self.conn,"oracle.jdbc.OracleConnection"),sqlplustr
+    self.working_db_link=nil
+    self.conn,args=self.super.connect(self,args,data_source)
+    self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
+    self.conn_str=sqlplustr
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     self.props={instance="#NUMBER",sid="#NUMBER"}
-    for k,v in ipairs{'db_user','db_version','nls_lang','isdba','serivce_name','db_role'} do self.props[v]="#VARCHAR" end
+    for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role'} do self.props[v]="#VARCHAR" end
     local succ,err=pcall(self.internal_call,self,[[
         DECLARE
             vs  PLS_INTEGER := dbms_db_version.version;
@@ -118,9 +122,9 @@ function oracle:connect(conn_str)
                    decode(ver,1,userenv('sid')) ssid,
                    decode(ver,1,userenv('instance')) inst,
                    sys_context('userenv', 'isdba') isdba,
-                   sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.') serivce_name,
+                   sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.') service_name,
                    decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY',' ','PHYSICAL STANDBY',' (Standby)')) END
-            INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :isdba, :serivce_name,:db_role
+            INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :isdba, :service_name,:db_role
             FROM   nls_Database_Parameters
             WHERE  parameter = 'NLS_CHARACTERSET';
             
@@ -142,13 +146,12 @@ function oracle:connect(conn_str)
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
         END;]],self.props)
-
-    
     if not succ then
         self.props.instance=1
-        self.props.db_version='99.9'
+        self.props.db_version='9.1'
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
     else
+        self.conn_str=self.conn_str:gsub("%:[^/%:]+$",'/'..self.props.service_name)
         prompt=(prompt or self.props.service_name):match("^([^,%.&]+)")
         env._CACHE_PATH=env._CACHE_BASE..prompt:lower():trim()..env.PATH_DEL
         os.execute('mkdir "'..env._CACHE_PATH..'" 2> '..(env.OS=="windows" and 'NUL' or "/dev/null"))
@@ -158,6 +161,10 @@ function oracle:connect(conn_str)
             :format(prompt,self.props.instance,self.props.db_user,self.props.sid,self.props.db_version)
         env.set_title(self.session_title)
     end
+    self.conn_str=packer.pack_str(self.conn_str)
+    for k,v in pairs(self.props) do args[k]=v end
+    args.oci_connection=self.conn_str
+    env.login.capture(self,args.jdbc_alias or args.url,args)
     if event then event("AFTER_ORACLE_CONNECT",self,sql,args,result) end
     print("Database connected.")
 end
@@ -242,7 +249,7 @@ function oracle:parse(sql,params)
             local p=p1[v]
             if p[inIdx]~=0 then
                 env.log_debug("parse","Param #"..k,p[inIdx]..'='..p[value])
-                prep[p[1]](prep,p[inIdx],p[value]) 
+                prep[p[1]](prep,p[inIdx],p[value])
             end
             params[v]={'#',p[outIdx],p[typename]}
             env.log_debug("parse","Param #"..k,p[outIdx]..'='..p[typeid])
@@ -356,6 +363,28 @@ function oracle:set_session(cmd,args)
     return args
 end
 
+function oracle:set_db_link(name,value)
+    if not value or value:lower()=="off" or value=="" then
+        env.set_title(self.session_title)
+        self.working_db_link=nil
+        return ""
+    else
+        value=value:upper()
+        local args={"#INTEGER"}
+        local stmt=[[
+        BEGIN
+           execute immediate 'select * from dual@link';
+           :1 := 1;
+        EXCEPTION WHEN OTHERS THEN
+           :1 := 0;
+        END;]]
+        self:internal_call(stmt:gsub("link",value),args)
+        env.checkerr(args[1]==1,'Database link does not exists',string,fmt)
+        self.working_db_link=value
+        env.set_title(self.session_title.."   DB-LINK: "..value)
+    end
+end
+
 function oracle:onload()
     local default_desc='#Oracle database SQL statement'
     local function add_default_sql_stmt(...)
@@ -376,13 +405,12 @@ function oracle:onload()
     add_default_sql_stmt('update','delete','insert','merge','truncate','drop','flashback')
     add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge')
     set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
-    
     set_command(self,{"select","with"},   default_desc,        self.query     ,true,1,true)
     set_command(self,{"execute","exec","call"},default_desc,self.run_proc,false,2,true)
     set_command(self,{"declare","begin"},  default_desc,  self.exec  ,self.check_completion,1,true)
     set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)
     set_command(self,"alter" ,   default_desc,        self.exec      ,true,1,true)
-    
+    cfg.init("dblink","",self.set_db_link,"oracle","Define the db link to run all SQLs in target db",nil,self)
     env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)
     env.set.inject_cfg({"transaction","role","constraint","constraints"},self.set_session,self)
 end
