@@ -35,7 +35,7 @@ end
 while true do
     if env.REOAD_SIGNAL then return end
     line = reader:readLine(prompt_color:format(env._SUBSYSTEM and color("PROMPTSUBCOLOR") or color("PROMPTCOLOR"),env.CURRENT_PROMPT,color("COMMANDCOLOR")))
-    if not line or (line:lower() == 'quit' or line:lower() == 'exit') and not env._SUBSYSTEM then
+    if not line then
         print("Exited.")
         env.unload()
         os.exit(0,true)

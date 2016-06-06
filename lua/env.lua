@@ -179,9 +179,9 @@ function env.list_dir(file_dir,file_ext,text_macher)
 
     for _,n in ipairs(dir) do
         local name,ext=n:match("([^\\/]+)$")
-        if file_ext then
+        if name:find('.',1,true) then
             name,ext=name:match("(.+)%.(%w+)$")
-            if ext and ext:upper()~=file_ext:upper() and file_ext~="*" then name=nil end
+            --if ext and ext:upper()~=file_ext:upper() and file_ext~="*" then name=nil end
         end
         if name and name~="" then
             local comment
@@ -888,7 +888,7 @@ function env.onload(...)
     end
 
     os.setlocale('',"all")
-
+    env.set_command(nil,"EXIT","#Exit environment, including variables, modules, etc",env.exit,false,1)
     env.set_command(nil,"RELOAD","Reload environment, including variables, modules, etc",env.reload,false,1)
     env.set_command(nil,"LUAJIT","#Switch to luajit interpreter, press Ctrl+Z to exit.",function() os.execute(('"%slib%sx86%sluajit"'):format(env.WORK_DIR,env.PATH_DEL,env.PATH_DEL)) end,false,1)
     env.set_command(nil,"-P","#Test parameters. Usage: -p <command> [<args>]",env.testcmd,'__SMART_PARSE__',2)
@@ -956,6 +956,12 @@ function env.reload()
     env.unload()
     java.loader.ReloadNextTime=env.CURRENT_DB
     env.REOAD_SIGNAL=true
+end
+
+function env.exit()
+    print("Exited.")
+    env.unload()
+    os.exit(0,true)
 end
 
 function env.load_data(file,isUnpack)
@@ -1053,9 +1059,8 @@ function env.ask(question,range,default)
     end
     --env.printer.write(desc..': ')
     env.IS_ASKING=question
-    value=reader:readLine(env.space..desc..": ")
-    if not env.IS_ASKING then error('000-00000:') end
-    env.IS_ASKING,value=nil,value and value:trim() or ""
+    value,env.IS_ASKING=reader:readLine(env.space..desc..": "),nil
+    value=value and value:trim() or ""
 
     value=value:gsub('\\([0-9]+)',function(x) return string.char(tonumber(x)) end)
     value=value:gsub('(0x[0-9a-f][0-9a-fA-F]?)',function(x) return string.char(tonumber(string.format("%d",x))) end)
