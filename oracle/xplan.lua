@@ -37,6 +37,7 @@ function xplan.explain(fmt,sql)
     --db:internal_call("alter session set statistics_level=all")
     db:rollback()
     if e10053 then db:internal_call("ALTER SESSION SET EVENTS='10053 trace name context forever, level 1'") end
+    db:internal_call("delete plan_table");
     db:internal_call("Explain PLAN /*INTERNAL_DBCLI_CMD*/ FOR "..sql,args)
     sql=[[
         WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
