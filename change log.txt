@@ -1,3 +1,5 @@
+2016-06-08: ! public: fix the issues when the file path of dbcli is too long
+            ! oracle: fix incorrect execute plan for command 'xplan' in some cases  
 2016-06-02: * public: remove 'set CSVSEP/EXPPREFETCH/SQLLINEWIDTH', ask questions each time when calling 'sql2csv/sql2file' instead
                     : support 'tee +<file> <command>' which means append mode
             ! public: fix duplicated items issue for command 'history'  
