@@ -37,11 +37,11 @@ function xplan.explain(fmt,sql)
     --db:internal_call("alter session set statistics_level=all")
     db:rollback()
     if e10053 then db:internal_call("ALTER SESSION SET EVENTS='10053 trace name context forever, level 1'") end
-    db:internal_call("Explain PLAN /*INTERNAL_DBCLI_CMD*/ FOR "..sql,args)
+    db:internal_call("Explain PLAN SET STATEMENT_ID='INTERNAL_DBCLI_CMD' FOR "..sql,args)
     sql=[[
         WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
          (SELECT *
-          FROM   (SELECT id, parent_id, plan_id, dense_rank() OVER(ORDER BY plan_id DESC) seq FROM plan_table)
+          FROM   (SELECT id, parent_id, plan_id, dense_rank() OVER(ORDER BY plan_id DESC) seq FROM plan_table WHERE STATEMENT_ID='INTERNAL_DBCLI_CMD')
           WHERE  seq = 1
           ORDER  BY id),
         qry AS (SELECT DISTINCT PLAN_id FROM sql_plan_data),
