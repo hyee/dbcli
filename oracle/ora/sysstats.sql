@@ -1,4 +1,4 @@
-/*[[Gather and show system statistics. Usage: @@NAME <secs>]]*/
+/*[[Gather and show system statistics. Usage: @@NAME <secs>|<query>]]*/
 set feed off
 VAR CUR REFCURSOR;
 DECLARE
@@ -6,7 +6,7 @@ DECLARE
     start_time DATE;
     stop_time  DATE;
     PVALUE     INT;
-    i          BINARY_INTEGER := 1;
+    i          int;
     TYPE t IS RECORD(
         NAME        VARCHAR2(30),
         DESCRIPTION VARCHAR2(1000));
@@ -15,7 +15,11 @@ DECLARE
     x  VARCHAR2(5000) := '<ROWSET>';
 BEGIN
     DBMS_STATS.GATHER_SYSTEM_STATS(gathering_mode => 'start');
-    dbms_lock.sleep(nvl(:V1,10));
+    IF regexp_like(nvl(:V1,'10'),'^\d+$') THEN
+        dbms_lock.sleep(nvl(:V1,10));
+    ELSE
+        execute immediate 'select /*+full(a)*/ count(1) from ('||:V1||') a' into i;
+    END IF;
     DBMS_STATS.GATHER_SYSTEM_STATS(gathering_mode => 'stop');
     SELECT DECODE(ROWNUM, 1, 'iotfrspeed', 2, 'ioseektim', 3, 'sreadtim', 4, 'mreadtim', 5, 'cpuspeed', 6, 'cpuspeednw', 7, 'mbrc', 8, 'maxthr', 9,'slavethr') n,
            DECODE(ROWNUM, 1,'I/O transfer speed in bytes for each millisecond', 
