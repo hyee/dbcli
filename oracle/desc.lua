@@ -316,6 +316,10 @@ local desc_sql={
              DECODE(C.COLUMN_POSITION, 1, (select nvl(max(LOCALITY),'GLOBAL') from all_part_indexes l where l.owner=i.owner and l.index_name=i.index_name), '') "LOCALITY",
            --DECODE(C.COLUMN_POSITION, 1, (SELECT NVL(MAX('YES'),'NO') FROM ALL_Constraints AC WHERE AC.INDEX_OWNER = I.OWNER AND AC.INDEX_NAME = I.INDEX_NAME), '') "IS_PK",
              DECODE(C.COLUMN_POSITION, 1, decode(I.STATUS,'N/A',(SELECT MIN(STATUS) FROM All_Ind_Partitions p WHERE p.INDEX_OWNER = I.OWNER AND p.INDEX_NAME = I.INDEX_NAME),I.STATUS), '') STATUS,
+             DECODE(C.COLUMN_POSITION, 1, i.BLEVEL) BLEVEL,
+             DECODE(C.COLUMN_POSITION, 1, i.LEAF_BLOCKS) LEAF_BLOCKS,
+             DECODE(C.COLUMN_POSITION, 1, i.DISTINCT_KEYS) DISTINCT_KEYS,
+             DECODE(C.COLUMN_POSITION, 1, i.LAST_ANALYZED) LAST_ANALYZED,
              C.COLUMN_POSITION NO#,
              C.COLUMN_NAME,
              C.DESCEND
