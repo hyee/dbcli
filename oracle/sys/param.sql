@@ -1,4 +1,8 @@
-/*[[Show instance parameters, including hidden parameters, pls use 'set instance' to show the specific instance. Usage: @@NAME [<keyword1>[,<keyword2>...]]]]*/
+/*[[Show instance parameters, including hidden parameters, pls use 'set instance' to show the specific instance. Usage: @@NAME [<keyword1>[,<keyword2>...]]
+   --[[
+      @ctn: 12={decode(bitand(ksppiflg, 4), 4, 'FALSE', decode(bitand(ksppiflg / 65536, 3), 0, 'FALSE', 'TRUE')) ISPDB_MDF,}, default={}
+   --]]
+]]*/
 SELECT x.inst_id,ksppinm NAME, ksppity TYPE, substr(ksppstdvl,1,80) DISPLAY_VALUE, ksppstdf ISDEFAULT,
        decode(bitand(ksppiflg / 256, 1), 1, 'TRUE', 'FALSE') ISSES_Mdf,
        decode(bitand(ksppiflg / 65536, 3), 1, 'IMMEDIATE', 2, 'DEFERRED', 3, 'IMMEDIATE', 'FALSE') ISSYS_MDF,
@@ -6,7 +10,7 @@ SELECT x.inst_id,ksppinm NAME, ksppity TYPE, substr(ksppstdvl,1,80) DISPLAY_VALU
                4,
                'FALSE',
                decode(bitand(ksppiflg / 65536, 3), 0, 'FALSE', 'TRUE')) ISINST_MDF,
-       decode(bitand(ksppstvf, 7), 1, 'MODIFIED', 4, 'SYSTEM_MOD', 'FALSE') ISMODIFIED,
+       &ctn
        decode(bitand(ksppstvf, 2), 2, 'TRUE', 'FALSE') ISDEPRECATED,ksppdesc DESCRIPTION
 FROM   (select x.*,min(inst_id) over() m_inst from x$ksppi x) x, x$ksppcv y
 WHERE  (x.indx = y.indx)

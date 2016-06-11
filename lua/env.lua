@@ -1027,7 +1027,7 @@ function env.resolve_file(filename,ext)
     return filename
 end
 
-local title_list,title_keys={},{}
+local title_list,title_keys,CURRENT_TITLE={},{}
 function env.set_title(title)
     local callee=env.callee():gsub("#%d+$","")
     if not title_list[callee] then
@@ -1042,11 +1042,15 @@ function env.set_title(title)
         end
     end
     if not titles or titles=="" then titles="DBCLI - Disconnected" end
-    os.execute("title "..titles)
+    if CURRENT_TITLE~=title then
+        CURRENT_TITLE=title
+        os.execute("title "..titles)
+    end
 end
 
 function env.reset_title()
     for k,v in pairs(title_list) do title_list[k]="" end
+    CURRENT_TITLE=nil
     os.execute("title dbcli")
 end
 

@@ -105,8 +105,8 @@ function oracle:connect(conn_str)
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     self.props={instance="#NUMBER",sid="#NUMBER"}
-    for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role'} do self.props[v]="#VARCHAR" end
-    local succ,err=pcall(self.internal_call,self,[[
+    for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container'} do self.props[v]="#VARCHAR" end
+    local succ,err=pcall(self.exec,self,[[
         DECLARE
             vs  PLS_INTEGER := dbms_db_version.version;
             ver PLS_INTEGER := sign(vs-9);
@@ -119,12 +119,23 @@ function oracle:connect(conn_str)
                    (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_RDBMS_VERSION') version,
                    (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_LANGUAGE') || '_' ||
                    (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_TERRITORY') || '.' || value nls,
-                   decode(ver,1,userenv('sid')) ssid,
-                   decode(ver,1,userenv('instance')) inst,
+            $IF dbms_db_version.version > 9 $THEN      
+                   userenv('sid') ssid,
+                   userenv('instance') inst,
+            $ELSE
+                   (select sid from v$mystat where rownum<2) ssid,
+                   (select instance_number from v$instance where rownum<2) inst,
+            $END
+
+            $IF dbms_db_version.version > 11 $THEN
+                   sys_context('userenv', 'con_name') con_name,
+            $ELSE
+                   null con_name,
+            $END   
                    sys_context('userenv', 'isdba') isdba,
                    sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.') service_name,
                    decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY',' ','PHYSICAL STANDBY',' (Standby)')) END
-            INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :isdba, :service_name,:db_role
+            INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :container, :isdba, :service_name,:db_role
             FROM   nls_Database_Parameters
             WHERE  parameter = 'NLS_CHARACTERSET';
             
@@ -134,14 +145,6 @@ function oracle:connect(conn_str)
                     into :db_role;
                 ELSIF :db_role = ' ' THEN
                     :db_role := trim(:db_role);
-                END IF;
-
-                IF vs < 10 THEN
-                    EXECUTE IMMEDIATE '
-                        SELECT (select sid from v$mystat where rownum<2),
-                               (select instance_number from v$instance where rownum<2)
-                        FROM DUAL'
-                    INTO :sid,:instance;
                 END IF;
             EXCEPTION WHEN OTHERS THEN NULL;
             END;

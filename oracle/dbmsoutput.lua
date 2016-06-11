@@ -21,6 +21,7 @@ output.stmt=marker..[[/*INTERNAL_DBCLI_CMD*/
             l_lob    CLOB;
             l_enable VARCHAR2(3) := :enable;
             l_size   PLS_INTEGER;
+            l_cont   varchar2(50);
         BEGIN
             dbms_output.get_lines(l_arr, l_done);
             IF l_enable = 'on' THEN
@@ -36,8 +37,10 @@ output.stmt=marker..[[/*INTERNAL_DBCLI_CMD*/
                     END IF;
                 END LOOP;
             END IF;
+            $IF dbms_db_version.version > 11 $THEN l_cont:=sys_context('userenv', 'con_name'); $END
             :buff:= l_buffer;
             :txn := dbms_transaction.local_transaction_id;
+            :cont:= l_cont;
             :lob := l_lob;
         EXCEPTION WHEN OTHERS THEN NULL;
         END;]]
@@ -47,17 +50,20 @@ function output.getOutput(db,sql)
     local typ=db.get_command_type(sql)
     if typ=='SELECT' or typ=='WITH' then return end
     if not ((output.prev_sql or ""):find(marker,1,true)) and not sql:find(marker,1,true) and not db:is_internal_call(sql) then
-        local args={enable=isOutput,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB"}
+        local args={enable=isOutput,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB",cont="#VARCHAR"}
         if not pcall(db.internal_call,db,output.stmt,args) then return end
         local result=args.lob or args.buff
         if isOutput == "on" and result and result:match("[^\n%s]+") then
             result=result:gsub("\r\n","\n"):gsub("%s+$","")
             if result~="" then print(result) end
         end
-
-        if prev_transaction~=args.txn then
-            prev_transaction = args.txn
-            env.set_title(prev_transaction and "TXN_ID: "..prev_transaction or "")
+        db.props.container=args.cont
+        local title={args.cont and ("Container: "..args.cont)}
+        title[#title+1]=args.txn and ("TXN_ID: "..args.txn)
+        title=table.concat(title,"   ")
+        if prev_transaction~=title then
+            prev_transaction=title
+            env.set_title(title)
         end
     end
     output.prev_sql=sql
