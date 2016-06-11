@@ -17,12 +17,10 @@
 .so
 .bak
 .cfg
-lib.zip
-jre.zip
+.zip
+.7z
 mysql-connector.jar
 postgresql-jdbc.jar
-dbcli.zip
-db2java.zip
 dbcli_F0.bat
 dbcli_nojre.bat
 dbcli_agent.bat

@@ -59,10 +59,17 @@ qry AS
          NVL(child_number, plan_hash_value) plan_hash,
          inst_id
   FROM   sql_plan_data),
+ash as(SELECT /*+no_expand materialize ordered use_nl(b)*/ 
+              b.*,COUNT(distinct nvl2(event,sample_id,null)) OVER(PARTITION BY SQL_PLAN_LINE_ID,event) tenv,decode(flag,1,1,10) cnt
+       FROM   qry a
+       JOIN   &V9 b
+       ON     ( b.sql_id=:V1 AND a.phv = b.sql_plan_hash_value AND sample_time BETWEEN NVL(to_date(nvl(:V3,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7) AND NVL(to_date(nvl(:V4,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE))
+       AND    (:V2 is null or nvl(lengthb(:V2),0) >6 or not regexp_like(:V2,'^\d+$') or :V2+0 in(QC_SESSION_ID,SESSION_ID))
+       ),
 ash_base AS(
    SELECT /*+materialize no_expand*/ nvl(SQL_PLAN_LINE_ID,0) ID,
            COUNT(1) px_hits,
-           COUNT(DISTINCT sample_id) hits,
+           COUNT(DISTINCT sample_id)*cnt hits,
            COUNT(DISTINCT sql_exec_id) exes,
            COUNT(DISTINCT TRUNC(sample_time + 0, 'MI')) mins,
            ROUND(COUNT(DECODE(wait_class, NULL, 1)) * NVL2(max(sample_id),100,0) / COUNT(1), 1) "CPU",
@@ -72,15 +79,25 @@ ash_base AS(
            ROUND(COUNT(DECODE(wait_class, 'Application', 1)) * 100 / COUNT(1), 1) "APP",
            ROUND(COUNT(CASE WHEN NVL(wait_class,'1') NOT IN ('1','User I/O','System I/O','Cluster','Concurrency','Application') THEN 1 END) * 100 / COUNT(1), 1) oth,
            MAX(nvl2(event,event||'('||tenv||')',null)) KEEP(dense_rank LAST ORDER BY tenv) top_event
-    FROM (SELECT /*+no_expand*/ b.*,
-                 COUNT(distinct nvl2(event,sample_id,null)) OVER(PARTITION BY SQL_PLAN_LINE_ID,event) tenv
-          FROM   qry a
-          JOIN   &V9 b
-          ON     ( b.sql_id=:V1 AND a.phv = b.sql_plan_hash_value AND sample_time+0 BETWEEN
-                  NVL(to_date(nvl(:V3,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-90) AND NVL(to_date(nvl(:V4,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE))
-                  AND  (:V2 is null or nvl(lengthb(:V2),0) >6 or not regexp_like(:V2,'^\d+$') or :V2+0 in(QC_SESSION_ID,SESSION_ID))
-                 )
-    GROUP  BY nvl(SQL_PLAN_LINE_ID,0)
+    FROM   ash
+    GROUP  BY nvl(SQL_PLAN_LINE_ID,0),cnt
+),
+ash_obj as(
+    SELECT /*+materialize no_expand*/ 
+           CASE WHEN CURRENT_OBJ#<1 THEN -1 ELSE CURRENT_OBJ# END obj#,
+           COUNT(1) px_hits,
+           COUNT(DISTINCT sample_id)*cnt hits,
+           COUNT(DISTINCT sql_exec_id) exes,
+           COUNT(DISTINCT TRUNC(sample_time + 0, 'MI')) mins,
+           ROUND(COUNT(DECODE(wait_class, NULL, 1)) * NVL2(max(sample_id),100,0) / COUNT(1), 1) "CPU",
+           ROUND(COUNT(CASE WHEN wait_class IN ('User I/O','System I/O') THEN 1 END) * 100 / COUNT(1), 1) "IO",
+           ROUND(COUNT(DECODE(wait_class, 'Cluster', 1)) * 100 / COUNT(1), 1) "CL",
+           ROUND(COUNT(DECODE(wait_class, 'Concurrency', 1)) * 100 / COUNT(1), 1) "CC",
+           ROUND(COUNT(DECODE(wait_class, 'Application', 1)) * 100 / COUNT(1), 1) "APP",
+           ROUND(COUNT(CASE WHEN NVL(wait_class,'1') NOT IN ('1','User I/O','System I/O','Cluster','Concurrency','Application') THEN 1 END) * 100 / COUNT(1), 1) oth,
+           MAX(nvl2(event,event||'('||tenv||')',null)) KEEP(dense_rank LAST ORDER BY tenv) top_event
+    FROM   ash
+    GROUP  BY CASE WHEN CURRENT_OBJ#<1 THEN -1 ELSE CURRENT_OBJ# END,cnt
 ),
 ash_data AS(
     SELECT /*+materialize no_expand no_merge(a) no_merge(b)*/*

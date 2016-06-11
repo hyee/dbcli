@@ -1,7 +1,11 @@
-/*[[Show db parameters info, pls use 'set instance' to show the specific instance. Usage: @@NAME [<keyword1>[,<keyword2>...]]]]*/
+/*[[Show db parameters info, pls use 'set instance' to show the specific instance. Usage: @@NAME [<keyword1>[,<keyword2>...]]
+   --[[
+      @ctn: 12={ISPDB_MODIFIABLE,}, default={}
+   --]]
+]]*/
 
 select inst_id,NAME,substr(DISPLAY_VALUE,1,90) value,
-       isdefault,isses_modifiable,issys_modifiable,DESCRIPTION
+       isdefault,isses_modifiable,issys_modifiable,&CTN DESCRIPTION
 from (select a.*,min(inst_id) over() m_inst from  gv$parameter a) 
 WHERE ((
       :V1 is NOT NULL and (NAME LIKE LOWER('%'||:V1||'%') OR lower(DESCRIPTION) LIKE LOWER('%'||:V1||'%'))  OR 
