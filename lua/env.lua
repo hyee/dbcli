@@ -965,7 +965,7 @@ function env.exit()
 end
 
 function env.load_data(file,isUnpack)
-    if not file:find(env.PATH_DEL) then file=env.WORK_DIR.."data"..env.PATH_DEL..file end
+    if not file:find('[\\/]') then file=env.WORK_DIR.."data"..env.PATH_DEL..file end
     local f=io.open(file,file:match('%.dat$') and "rb" or "r")
     if not f then
         return {}
@@ -977,7 +977,7 @@ function env.load_data(file,isUnpack)
 end
 
 function env.save_data(file,txt)
-    file=env.WORK_DIR.."data"..env.PATH_DEL..file
+    if not file:find('[\\/]') then file=env.WORK_DIR.."data"..env.PATH_DEL..file end
     local f=io.open(file,file:match('%.dat$') and "wb" or "w")
     if not f then
         env.raise("Unable to save "..file)
