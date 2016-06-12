@@ -36,7 +36,6 @@ local function rep_container(str,full,obj)
     return str
 end
 
-
 function extvars.on_before_parse(item)
     local db,sql,args,params=table.unpack(item)
     instance,container=tonumber(cfg.get("instance")),tonumber(cfg.get("container"))
@@ -53,7 +52,6 @@ end
 
 function extvars.set_title(name,value,orig)
     local get=env.set.get
-    if name~="STARTTIME" and name~="ENDTIME" and name~="INSTANCE" then return end
     local title=table.concat({tonumber(get("INSTANCE"))>-1   and "Inst="..get("INSTANCE") or "",
                               tonumber(get("CONTAINER"))>-1   and "Con_id="..get("CONTAINER") or "",
                               get("STARTTIME")~='' and "Start="..get("STARTTIME") or "",
@@ -103,7 +101,7 @@ function extvars.set_instance(name,value)
 end
 
 function extvars.set_container(name,value)
-    env.checkerr(tonumber(db.props.db_version:match('%d+')),'Unsupported version!')
+    env.checkerr(db.props.db_version and tonumber(db.props.db_version:match('%d+')),'Unsupported version!')
     return tonumber(value)
 end
 
