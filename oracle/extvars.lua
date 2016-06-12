@@ -1,7 +1,7 @@
 local env=env
 local db,cfg,event,var=env.getdb(),env.set,env.event,env.var
 local extvars={}
-local datapath=debug.getinfo(1, "S").source:sub(2):gsub('[%w%.]+$','dict.dat')
+local datapath=debug.getinfo(1, "S").source:sub(2):gsub('[%w%.]+$','dict')
 local re=env.re
 
 function extvars.on_before_db_exec(item)
