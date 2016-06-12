@@ -1,4 +1,5 @@
-2016-06-11: + public: support some 12c features
+2016-06-12: + oracle: new command 'set container/con/con_id' to limit querying target con_id for 12c
+2016-06-11: + oracle: support some 12c features
 2016-06-08: + oracle: new command 'ora sysstats','ora plan2' and 'ora/sys objbuff'
 2016-06-08: ! public: fix the issues when the file path of dbcli is too long
             ! oracle: fix incorrect execute plan for command 'xplan' in some cases  

@@ -8,6 +8,7 @@ local init={
         "lib/ProFi",
         "lib/misc",
         "lib/class",
+        "lib/re",
         "lua/hotkeys",
         "lua/packer",
         "lua/trace",

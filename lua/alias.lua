@@ -64,7 +64,10 @@ end
 
 function alias.run_command(...)
     local cmd=alias.make_command(env.CURRENT_CMD,{...})
-    if cmd then env.eval_line(cmd,true,false,true) end
+    if cmd then 
+        env.eval_line(cmd,true,false,true) 
+        env.force_end_input(true)
+    end
 end
 
 
