@@ -33,7 +33,7 @@ function env.reset_input(line)
 end
 
 while true do
-    if env.REOAD_SIGNAL then return end
+    if env.REOAD_SIGNAL then break end
     line = reader:readLine(prompt_color:format(env._SUBSYSTEM and color("PROMPTSUBCOLOR") or color("PROMPTCOLOR"),env.CURRENT_PROMPT,color("COMMANDCOLOR")))
     if not line then
         print("Exited.")

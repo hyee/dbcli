@@ -961,7 +961,7 @@ end
 function env.exit()
     print("Exited.")
     env.unload()
-    os.exit(0,true)
+    os.exit(true,true)
 end
 
 function env.load_data(file,isUnpack)

@@ -1,8 +1,8 @@
 /*[[
 Show ash wait chains. Usage: @@NAME {[<sql_id>] [YYMMDDHH24MI] [YYMMDDHH24MI]} [-dash]
 --[[
-Templates:
-      &V8: ash={gv$active_session_history},dash={Dba_Hist_Active_Sess_History}
+    &V8: ash={gv$active_session_history},dash={Dba_Hist_Active_Sess_History}
+    &snap: default={--}, snap={}
 --]]
 
 ]]*/
@@ -29,7 +29,8 @@ ash AS (SELECT /*+ QB_NAME(ash) LEADING(a) USE_HASH(u) SWAP_JOIN_INPUTS(u) */
             &V8 a
           , dba_users u
         WHERE a.user_id = u.user_id (+)
-        AND sample_time+0 BETWEEN NVL(TO_DATE(NVL(:V2,:STARTTIME),'YYMMDDHH24MI'),SYSDATE-1) AND NVL(TO_DATE(NVL(:V3,:ENDTIME),'YYMMDDHH24MI'),SYSDATE)
+        AND sample_time BETWEEN NVL(TO_DATE(NVL(:V2,:STARTTIME),'YYMMDDHH24MI'),SYSDATE-1) AND NVL(TO_DATE(NVL(:V3,:ENDTIME),'YYMMDDHH24MI'),SYSDATE)
+  &snap AND sample_time>=sysdate - nvl(:V1,10)/86400  
     ),
 ash_samples AS (SELECT DISTINCT sample_id FROM ash),
 ash_data AS (SELECT /*+ MATERIALIZE */ * FROM ash),
@@ -37,7 +38,7 @@ chains AS (
     SELECT /*+NO_EXPAND*/
         level lvl
       --, sql_id
-      , sid
+      , sid w_sid
       , REPLACE(SYS_CONNECT_BY_PATH(sql_id, '->'), '->', ' -> ') sql_ids
       , REPLACE(SYS_CONNECT_BY_PATH(program2||event2, '->'), '->', ' -> ') path -- there's a reason why I'm doing this (ORA-30004 :)
      -- , CASE WHEN CONNECT_BY_ISLEAF = 1 THEN d.session_id ELSE NULL END sids
@@ -60,7 +61,7 @@ SELECT * FROM (
     SELECT
         LPAD(ROUND(RATIO_TO_REPORT(COUNT(*)) OVER () * 100)||'%',5,' ') "%This"
       , COUNT(*) seconds
-      --, COUNT(DISTINCT sql_exec_id) execs
+    &snap , w_sid, b_sid
       , (SELECT nvl(max(object_name),''||current_obj#) FROM all_objects WHERE object_id=current_obj#) obj#
     --  , ROUND(COUNT(*) / ((MAX(sample_time+0)-MIN(sample_time+0)) * 86400), 1) AAS
       , sql_ids
@@ -72,6 +73,7 @@ SELECT * FROM (
     GROUP BY
         current_obj#
       , path,sql_ids
+    &snap , w_sid, b_sid
     ORDER BY
         COUNT(*) DESC
     )
