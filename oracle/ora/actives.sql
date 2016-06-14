@@ -49,7 +49,7 @@
                         GROUP BY sid, inst_id, sql_id)
                     USING (sid, inst_id, sql_id)}
                 } 
-        &Filter: {default={ROOT_SID =1 OR wait_class!='Idle' or sql_text is not null}, 
+        &Filter: {default={ROOT_SID =1 OR (wait_class!='Idle' and event not like '%PX%') or sql_text is not null}, 
                   f={},
                   i={wait_class!='Idle'}
                   u={(ROOT_SID =1 OR STATUS='ACTIVE' or sql_text is not null) and schemaname=sys_context('userenv','current_schema')}
@@ -91,9 +91,8 @@ BEGIN
         WITH s1 AS(
           SELECT /*+no_merge*/*
           FROM   &CHECK_ACCESS_SES &SQLM
-          WHERE  sid != USERENV('SID')
-          AND    audsid != userenv('sessionid')
-          And    (event not like 'Streams%')),
+          WHERE  not (sid = USERENV('SID') and inst_id = userenv('instance'))
+          AND   (event not like 'Streams%')),
         s3  AS(SELECT /*+no_merge no_merge(s2)*/ s1.*,qcinst_id,qcsid FROM s1,&CHECK_ACCESS_PX s2 where s1.inst_id=s2.inst_id(+) and s1.SID=s2.sid(+)),
         sq1 AS(
           SELECT /*+materialize ordered use_nl(a b)*/ a.*,

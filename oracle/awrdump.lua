@@ -1,7 +1,7 @@
 local db,cfg=env.getdb(),env.set
 local awr={}
 
-function awr.get_range(starttime,endtime,instances)
+function awr.get_range(starttime,endtime,instances,container)
     if (starttime=='.' or not starttime) then 
         if cfg.get("starttime") and  cfg.get("starttime")~='' then 
             starttime=cfg.get("starttime")
@@ -23,19 +23,35 @@ function awr.get_range(starttime,endtime,instances)
     end
 
     if (instances=='.' or not instances) then 
-        if cfg.get("instance") and  tonumber(cfg.get("instance"))>0 then 
-            instances=cfg.get("instance")
+        if cfg.get("instance") then 
+            if  tonumber(cfg.get("instance"))>0 then
+                instances=cfg.get("instance")
+            else
+                instances=db.props.instance
+            end
         else
             instances=nil
         end
     end
 
+    if (container=='.' or not container) then 
+        if cfg.get("container") then 
+            if  tonumber(cfg.get("container"))>0 then
+                container=cfg.get("container")
+            else
+                container=db.props.container_id
+            end
+        else
+            container=nil
+        end
+    end
+
     env.checkerr(starttime and endtime,'Parameters: <YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|a|<inst1,inst2,...>]')
-    return starttime,endtime,instances
+    return starttime,endtime,instances,container
 end
 
-function awr.dump_report(stmt,starttime,endtime,instances)
-    starttime,endtime,instances=awr.get_range(starttime,endtime,instances)
+function awr.dump_report(stmt,starttime,endtime,instances,container)
+    starttime,endtime,instances,container=awr.get_range(starttime,endtime,instances,container)
     env.checkerr(db:check_access('dbms_workload_repository.awr_report_html',1),'Sorry, you dont have the "execute" privilege on package "dbms_workload_repository"!')
     local args={starttime,endtime,instances or "",'#VARCHAR','#CLOB','#CURSOR'}
     cfg.set("feed","off")
@@ -89,7 +105,7 @@ function awr.extract_period()
         END;]]
 end
 
-function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
+function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,container)
     local stmt=[[
     DECLARE
         rs       CLOB;
@@ -204,16 +220,16 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
         db:check_date(endtime2 or starttime2)
         stmt=stmt:gsub('@diff',string.format("'%s','%s'",starttime2,endtime2 or ''))
     end
-    awr.dump_report(stmt,starttime,endtime,instances)
+    awr.dump_report(stmt,starttime,endtime,instances,container)
 end
 
-function awr.extract_awr_diff(starttime,endtime,starttime2,endtime2,instances)
+function awr.extract_awr_diff(starttime,endtime,starttime2,endtime2,instances,container)
     env.checkhelp(starttime2)
     if endtime2=='.' then endtime2=nil end
-    awr.extract_awr(starttime,endtime,instances,starttime2,endtime2)
+    awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,container)
 end
 
-function awr.extract_ash(starttime,endtime,instances)
+function awr.extract_ash(starttime,endtime,instances,container)
     local stmt=[[
     DECLARE
         rs       CLOB;
@@ -323,10 +339,10 @@ function awr.extract_ash(starttime,endtime,instances)
         :6 := cur;
     END;]]
     env.checkhelp(endtime)
-    awr.dump_report(stmt,starttime,endtime,instances)
+    awr.dump_report(stmt,starttime,endtime,instances,container)
 end
 
-function awr.extract_addm(starttime,endtime,instances)
+function awr.extract_addm(starttime,endtime,instances,container)
     local stmt=[[
     DECLARE
         @get_range@
@@ -339,7 +355,6 @@ function awr.extract_addm(starttime,endtime,instances)
             taskname VARCHAR2(30) := 'ADDM_DBCLI_REPORT';
             inst     VARCHAR2(30) := NULLIF(p_inst, 'A');
         BEGIN
-
             IF DBMS_DB_VERSION.VERSION+DBMS_DB_VERSION.release < 13 THEN
                 IF inst IS NULL THEN
                     inst := USERENV('instance');
@@ -380,7 +395,7 @@ function awr.extract_addm(starttime,endtime,instances)
     END;]]
     env.checkhelp(endtime)
     env.checkerr(db:check_access('dbms_advisor.create_task',1),'Sorry, you dont have the "Advisor" privilege!')
-    starttime,endtime,instances=awr.get_range(starttime,endtime,instances)
+    starttime,endtime,instances,instances=awr.get_range(starttime,endtime,instances,container)
     local args={starttime,endtime,instances or "",'#VARCHAR'}
     cfg.set("feed","off")
     db:exec(stmt:replace('@get_range@',awr.extract_period()),args)
@@ -390,10 +405,10 @@ function awr.extract_addm(starttime,endtime,instances)
 end
 
 function awr.onload()
-    env.set_command(nil,"awrdump","Extract AWR report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>]}",awr.extract_awr,false,4)
-    env.set_command(nil,"awrdiff","Extract AWR Diff report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> <YYMMDDHH24MI> [YYMMDDHH24MI] [inst_id|<inst1,inst2,...>]}",awr.extract_awr_diff,false,6)
-    env.set_command(nil,"ashdump","Extract ASH report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [<inst1[,inst2...>]|<client_id>|<wait_class>|<service_name>|<module>|<action>]}",awr.extract_ash,false,4)
-    env.set_command(nil,"addmdump","Extract ADDM report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>]}",awr.extract_addm,false,4)
+    env.set_command(nil,"awrdump","Extract AWR report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>] [container]}",awr.extract_awr,false,5)
+    env.set_command(nil,"awrdiff","Extract AWR Diff report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> <YYMMDDHH24MI> [YYMMDDHH24MI] [inst_id|<inst1,inst2,...>] [container]}",awr.extract_awr_diff,false,7)
+    env.set_command(nil,"ashdump","Extract ASH report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [<inst1[,inst2...>]|<client_id>|<wait_class>|<service_name>|<module>|<action>] [container]}",awr.extract_ash,false,5)
+    env.set_command(nil,"addmdump","Extract ADDM report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>] [container]}",awr.extract_addm,false,5)
 end
 
 return awr
