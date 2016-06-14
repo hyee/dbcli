@@ -18,21 +18,24 @@ function extvars.on_before_db_exec(item)
     return item
 end
 
-local fmt='%s(select /*+merge*/ * from %s where %s=%d)'
+local fmt='%s(select /*+merge*/ * from %s where %s=%d :others:)'
 local instance,container
 local function rep_instance(str,full,obj)
-    if extvars.dict[obj] and extvars.dict[obj].inst_col then
+    local flag=0
+    if instance>0 and extvars.dict[obj] and extvars.dict[obj].inst_col then
         str=fmt:format(str:sub(1,1),full,extvars.dict[obj].inst_col,instance)
-        env.log_debug('extvars',str)
+        flag=flag+1
     end
-    return str
-end
-
-local function rep_container(str,full,obj)
-    if extvars.dict[obj] and extvars.dict[obj].cdb_col then
-        str=fmt:format(str:sub(1,1),full,extvars.dict[obj].cdb_col,container)
-        env.log_debug('extvars',str)
+    if container>0 and extvars.dict[obj] and extvars.dict[obj].cdb_col then
+        if flag==0 then
+            str=fmt:format(str:sub(1,1),full,extvars.dict[obj].cdb_col,container)
+        else
+            str=str:gsub(':others:','and '..extvars.dict[obj].cdb_col..'='..container)
+        end
+        flag=flag+2
     end
+    if flag>0 and flag<3 then str=str:gsub(' :others:','') end
+    env.log_debug('extvars',str)
     return str
 end
 
@@ -40,12 +43,9 @@ function extvars.on_before_parse(item)
     local db,sql,args,params=table.unpack(item)
     instance,container=tonumber(cfg.get("instance")),tonumber(cfg.get("container"))
     if instance==0 then instance=tonumber(db.props.instance) end
-    if instance>-1 then
-        item[2]=re.replace(sql,extvars.P,rep_instance)
-    end
     if container==0 then container=tonumber(db.props.container_id) end
-    if container>-1 then
-        item[2]=re.replace(sql,extvars.P,rep_container)
+    if instance>0 or container>0 then
+        item[2]=re.replace(sql,extvars.P,rep_instance)
     end
     return item
 end

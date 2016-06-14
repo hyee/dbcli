@@ -8,7 +8,7 @@ local prev_transaction
 function output.setOutput(db)
     local flag=cfg.get("ServerOutput")
     local stmt="begin dbms_output."..(flag=="on" and "enable(null)" or "disable()")..";end;"
-    pcall(function() (db or default_db):internal_call(stmt) end)
+    pcall(function() (db or env.getdb()):internal_call(stmt) end)
 end
 
 local marker='/*GetDBMSOutput*/'
@@ -42,11 +42,11 @@ output.stmt=marker..[[/*INTERNAL_DBCLI_CMD*/
                 l_cont:=sys_context('userenv', 'con_name'); 
                 l_cid :=sys_context('userenv', 'con_id'); 
             $END
-            :buff   := l_buffer;
-            :txn    := dbms_transaction.local_transaction_id;
-            :cont   := l_cont;
-            :con_id := l_cid;
-            :lob    := l_lob;
+            :buff    := l_buffer;
+            :txn     := dbms_transaction.local_transaction_id;
+            :con_name:= l_cont;
+            :con_id  := l_cid;
+            :lob     := l_lob;
         EXCEPTION WHEN OTHERS THEN NULL;
         END;]]
 
@@ -55,7 +55,7 @@ function output.getOutput(db,sql)
     local typ=db.get_command_type(sql)
     if typ=='SELECT' or typ=='WITH' then return end
     if not ((output.prev_sql or ""):find(marker,1,true)) and not sql:find(marker,1,true) and not db:is_internal_call(sql) then
-        local args={enable=isOutput,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB",cont="#VARCHAR",con_id="#NUMBER"}
+        local args={enable=isOutput,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB",con_name="#VARCHAR",con_id="#NUMBER"}
         if not pcall(db.internal_call,db,output.stmt,args) then return end
         local result=args.lob or args.buff
         if isOutput == "on" and result and result:match("[^\n%s]+") then
@@ -64,7 +64,7 @@ function output.getOutput(db,sql)
         end
         db.props.container=args.cont
         db.props.container_id=args.con_id
-        local title={args.cont and ("Container: "..args.cont)}
+        local title={args.con_name and ("Container: "..args.con_name..'('..args.con_id..')')}
         title[#title+1]=args.txn and ("TXN_ID: "..args.txn)
         title=table.concat(title,"   ")
         if prev_transaction~=title then
