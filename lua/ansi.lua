@@ -126,6 +126,8 @@ end
 
 if not ansi.ansi_mode then
     ansi.ansi_mode="jline"
+elseif os.getenv("ANSICOLOR")=="off" then
+    isAnsiSupported,enabled=false,false
 else
     ansi.ansi_mode="ansicon"
     isAnsiSupported=true

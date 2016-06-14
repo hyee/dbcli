@@ -7,7 +7,7 @@ function snap:ctor()
 
     self.script_dir=self.db.ROOT_PATH.."snap"
 end
-
+--[[
 function snap:before_exec_action()
     --self.db:internal_call("BEGIN DBMS_FLASHBACK.ENABLE_AT_TIME(systimestamp);END;")
     if self.db:is_connect() then self.db:internal_call("ALTER SESSION SET ISOLATION_LEVEL=SERIALIZABLE") end
@@ -18,7 +18,7 @@ function snap:after_exec_action()
         self.db:internal_call("BEGIN COMMIT;EXECUTE IMMEDIATE 'ALTER SESSION SET ISOLATION_LEVEL=READ COMMITTED';COMMIT;END;") 
     end
 end
-
+--]]
 function snap:get_db_time()
     return self.db:get_value("select /*INTERNAL_DBCLI_CMD*/ to_char(sysdate,'yyyy-mm-dd hh24:mi:ss') from dual")
 end

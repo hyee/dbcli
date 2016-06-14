@@ -36,6 +36,6 @@ FROM   b d,
                 object_name VARCHAR2(30), subobject_name VARCHAR2(30)) b
 WHERE  d.inst_id = c.inst_id
 AND    d.sid = c.sid
-ORDER  BY 1, 2;
+ORDER  BY owner, table_name,sub_name,1,2;
 
 
