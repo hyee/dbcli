@@ -9,4 +9,4 @@ SELECT inst_id,
        to_char(100*sofar/totalwork,'fm990.99')||'%' progress,
        message
 FROM   gv$session_longops
-WHERE  sofar < totalwork
+WHERE  sofar < totalwork;

@@ -565,14 +565,15 @@ function env.modify_command(_,key_event)
             multi_cmd,curr_stmt=nil,nil
         end
         env.CURRENT_PROMPT=env.PRI_PROMPT
-        local prompt=env.PRI_PROMPT
+        local prompt,reset=env.PRI_PROMPT,""
 
         if env.ansi then
             local prompt_color="%s%s"..env.ansi.get_color("NOR").."%s"
             prompt=prompt_color:format(env.ansi.get_color("PROMPTCOLOR"),prompt,env.ansi.get_color("COMMANDCOLOR"))
+            reset=env.ansi.get_color("KILLBL")
         end
         reader:resetPromptLine(prompt,"",0)
-        env.reset_input("")
+         env.printer.write(reset)
     elseif key_event.name=="CTRL+BACK_SPACE" or key_event.name=="SHIFT+BACK_SPACE" then --shift+backspace
         reader:invokeMethod("deletePreviousWord")
         key_event.isbreak=true

@@ -5,9 +5,13 @@ local keys={}
 history.keys=keys
 local lastcommand
 
-function history:show(index)
-    index=tonumber(index)
+function history:show(key)
+    local index=tonumber(key)
     if not index then
+        if key and key:lower()=="last" then
+            print(lastcommand.text)
+            return
+        end
         local hdl,counter=grid.new(),0
         grid.add(hdl,{"#","Secs","Command"})
         for i=#self,1,-1 do
@@ -35,7 +39,7 @@ function history:capture(cmd,args,res,is_internal,command_text,clock)
         table.remove(self,keys[k1])
         for k,v in pairs(keys) do if v>keys[k1] then keys[k]=v-1 end end
     end
-    lastcommand={cmd=cmd,desc=key,args=args,tim=os.clock(),clock=clock,key=k1}
+    lastcommand={cmd=cmd,desc=key,args=args,tim=os.clock(),clock=clock,key=k1,text=command_text}
     if maxsiz < 1 then return end
     table.insert(self,lastcommand)
     while #self>maxsiz do
@@ -57,7 +61,7 @@ end
 function history.onload()
     cfg.init("HISSIZE",50,nil,"core","Max size of historical commands",'0 - 999')
     event.snoop("AFTER_SUCCESS_COMMAND",history.capture,history)
-    env.set_command(history,{'history','his'},"Show/run historical commands. Usage: @@NAME [index]",history.show,false,2)
+    env.set_command(history,{'history','his'},"Show/run historical commands. Usage: @@NAME [index|last]",history.show,false,2)
     env.set_command(history,{'r','/'},"Rerun the previous command.",history.rerun,false,2)
 end
 
