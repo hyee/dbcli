@@ -263,6 +263,19 @@ function scripter:parse_args(sql,args,print_args,extend_dirs)
     return args
 end
 
+local echo_stack={}
+function scripter.set_echo(name,value)
+    local current_thead,_,level=env.register_thread()
+    if level>1 then current_thead=env.RUNNING_THREADS[level-1] end
+    value=value:lower()
+    if value=="on" then
+        echo_stack[current_thead]=true
+    else
+        echo_stack[current_thead]=nil
+    end
+    return value
+end
+
 function scripter:run_sql(sql,args,cmds)
     if type(sql)=="table" then
         for i=1,#sql do scripter.run_sql(self,sql[i],args[i],cmds[i]) end
@@ -272,8 +285,8 @@ function scripter:run_sql(sql,args,cmds)
     if not self.db or not self.db.is_connect then
         env.raise("Database connection is not defined!")
     end
-    self.db:assert_connect()
-    
+    --self.db:assert_connect()
+    local current_thead,_,level=env.register_thread()
     --remove comment
     sql=sql:gsub(self.comment,"",1)
     sql=('\n'..sql):gsub("\n[\t ]*%-%-[^\n]*","")
@@ -284,7 +297,11 @@ function scripter:run_sql(sql,args,cmds)
     local ary=env.var.backup_context()
     env.var.import_context(args)
     local eval=env.eval_line
+    local echo=cfg.get("echo"):lower()=="on"
     for line in sql:gsplit("[\n\r]+") do
+        if echo_stack[current_thead] or (echo_stack[env.RUNNING_THREADS[1]] and level==2) then
+            print(line) 
+        end
         eval(line)
     end
 
@@ -293,6 +310,7 @@ function scripter:run_sql(sql,args,cmds)
     end
     env.var.import_context(ary)
 end
+
 
 function scripter:get_script(cmd,args,print_args)
     if not self.cmdlist or cmd=="-r" or cmd=="-R" then
@@ -457,6 +475,7 @@ function scripter:__onload()
     self.db=self.db or env.db_core.__instance
     self.short_dir=self.script_dir:match('([^\\/]+)$')
     self.extend_dirs=env.set.get_config(self.__className..".extension")
+    if not cfg.exists("echo") then cfg.init("echo","off",scripter.set_echo,"core","Controls whether the START command lists each command in a script as the command is executed.","on,off") end
     if self.command and self.command~="" then
         env.set_command(self,self.command, {self.help_title.." Type '@@NAME' for more detail.",self.helper},{self.run_script,self.after_script},false,ARGS_COUNT+1)
     end

@@ -75,8 +75,8 @@ end
 
 function printer.write(output)
     if env.ansi then output=env.ansi.convert_ansi(output) end
-    output=output:gsub("(\r?\n\r?)","%1"..env.space)
-    out:write(env.space..output)
+    --output=output:gsub("(\r?\n\r?)","%1"..env.space)
+    out:write(output)
     out:flush()
 end
 

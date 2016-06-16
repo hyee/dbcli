@@ -5,14 +5,7 @@
    --]]
 ]]*/
 set feed off
-select /*INTERNAL_DBCLI_CMD*/ user username,sys_context('userenv','current_schema') current_schema,
-               (SELECT VALUE FROM Nls_Database_Parameters WHERE parameter='NLS_RDBMS_VERSION') version,
-                sys_context('userenv','language') lang,
-                (select sid from v$mystat where rownum<2) sid,
-                (select instance_number from v$instance where rownum<2) inst_id,
-                &ctn
-                sys_context('userenv','isdba') is_sysdba
-from dual;
+
 
 PRO Session Optimizer Env:
 PRO ======================
@@ -45,3 +38,11 @@ BEGIN
 END;
 /
 
+select /*INTERNAL_DBCLI_CMD*/ user username,sys_context('userenv','current_schema') current_schema,
+               (SELECT VALUE FROM Nls_Database_Parameters WHERE parameter='NLS_RDBMS_VERSION') version,
+                sys_context('userenv','language') lang,
+                (select sid from v$mystat where rownum<2) sid,
+                (select instance_number from v$instance where rownum<2) inst_id,
+                &ctn
+                sys_context('userenv','isdba') is_sysdba
+from dual;

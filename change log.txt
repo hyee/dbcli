@@ -1,7 +1,10 @@
+2016-06-16: + oracle: new "-d" option for "ora awrstat"
+            + public: new setting "set echo on/off"
+            ! public: fix invalid cursor position when 'Ctrl+C' in Win10 
 2016-06-12: + oracle: new command 'set container/con/con_id' to limit querying target con_id for 12c
 2016-06-11: + oracle: support some 12c features
 2016-06-08: + oracle: new command 'ora sysstats','ora plan2' and 'ora/sys objbuff'
-2016-06-08: ! public: fix the issues when the file path of dbcli is too long
+            ! public: fix the issues when the file path of dbcli is too long
             ! oracle: fix incorrect execute plan for command 'xplan' in some cases  
 2016-06-02: * public: remove 'set CSVSEP/EXPPREFETCH/SQLLINEWIDTH', ask questions each time when calling 'sql2csv/sql2file' instead
                     : support 'tee +<file> <command>' which means append mode

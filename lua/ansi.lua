@@ -72,6 +72,7 @@ local base_color={
     CLR     ={"\27[2J","Clear the screen",1},
     HOME    ={"\27[H","Send cursor to home position",1},
     REF     ={"\27[2J;H" , "Clear screen and home cursor",1},
+    KILLBL  ={"\27[0J","Clear from cursor to end of screen",1},
     BIGTOP  ={"\27#3","Dbl height characters, top half",1},
     BIGBOT  ={"\27#4","Dbl height characters, bottem half",1},
     SAVEC   ={"\27[s","Save cursor position",1},
