@@ -1,4 +1,4 @@
-/*[[Generate delta values based on gv$session_event,gv$sess_time_model. Usage: @@NAME {<sid> [<inst_id>] [keyword]}]]*/
+/*[[Generate delta values based on gv$session_event,gv$sess_time_model. Usage: @@NAME {<0|sid> [<inst_id>] [keyword]}]]*/
 {
     sql=[[
         SELECT /*+no_expand*/ a.*
@@ -9,7 +9,7 @@
                 SELECT inst_id, SID, 'Event', event,total_waits, TIME_WAITED_MICRO * 1e-6 t
                 FROM   gv$session_event
                 where  wait_class!='Idle' or :V3 is not null) a
-        WHERE   (sid = :V1 or :V1 IS NULL) and (:V2 IS NULL OR inst_id=:V2) and (:V3 is null or lower(name) like '%&V3%')
+        WHERE   (:V1 IS NULL or sid=decode(:V1,'0',userenv('sid'),:V1)) and (:V2 IS NULL OR inst_id=:V2) and (:V3 is null or lower(name) like '%&V3%')
     ]],
     agg_cols="secs,count",
     grp_cols="inst_id,sid,class#,name",

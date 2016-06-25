@@ -1,7 +1,16 @@
 /*[[
   Get ASH top event, type 'help @@NAME' for more info. Usage: @@NAME [-sql|-p|-none|-pr|-o|-plan|-ash|-dash|-snap|-f] {[fields] [filters]}
    --[[
-      &fields: sql={sql_id},e={null}, p={p1,p2,p3,p3text},pr={p1raw,p2raw,p3raw}, o={obj},plan={plan_hash,current_obj#,SQL_PLAN_LINE_ID} none={1}
+      &fields: {
+            sql={sql_id},
+            e={null}, 
+            p={p1,p2,p3,p3text},
+            pr={p1raw,p2raw,p3raw}, 
+            o={obj},
+            plan={plan_hash,current_obj#,SQL_PLAN_LINE_ID} 
+            none={1},
+            proc={sql_id,PLSQL_ENTRY_OBJECT_ID},
+        }
       &View: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
       &BASE: ash={1}, dash={10}
       &Range: default={sample_time+0 between nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MISS'),sysdate)}
@@ -22,6 +31,7 @@
         -pr  : group by event+p1raw,p2raw,p3raw
         -o   : group by event+object_id
         -plan: group by sql plan line(for 11g)
+        -proc: group by procedure name
       DataSource:
         -ash : source table is gv$active_session_history(default)
         -dash: source table is dba_hist_active_sess_history

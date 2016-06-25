@@ -4,8 +4,11 @@ cd /d "%~dp0"
 SET JAVA_HOME=
 SET CLASSPATH=
 SET JAVA_TOOL_OPTIONS=
+set ANSICOLOR=off
 if not defined CONSOLE_COLOR SET CONSOLE_COLOR=0A
 if not defined ANSICON_CMD SET ANSICON_CMD=.\lib\x64\ansicon.exe
+if !ANSICOLOR!==off set ANSICON_CMD=
+
 if not defined JRE_HOME SET JRE_HOME=d:\soft\java
 if not defined TNS_ADM SET TNS_ADM=d:\Soft\InstanceClient\network\admin
 SET DBCLI_ENCODING=UTF-8
