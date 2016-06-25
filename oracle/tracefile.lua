@@ -1,6 +1,7 @@
 local env=env
 local db,grid=env.getdb(),env.grid
 local trace={}
+local tracefile
 function trace.get_trace(filename,mb,from_mb)
     local sql=[[
     DECLARE
@@ -95,18 +96,24 @@ function trace.get_trace(filename,mb,from_mb)
     if filename=="default" or lv then
         if lv then
             db:internal_call("alter session set tracefile_identifier='dbcli_"..math.random(1e6).."'");
+            tracefile=nil
         end
-        if db.props.db_version>'11' then
-            filename=db:get_value[[select value from v$diag_info where name='Default Trace File']]
+        if not tracefile  then
+            if db.props.db_version>'11' then
+                filename=db:get_value[[select value from v$diag_info where name='Default Trace File']]
+            else
+                filename=db:get_value[[SELECT u_dump.value || '/' || SYS_CONTEXT('userenv','instance_name') || '_ora_' || p.spid ||
+                                               nvl2(p.traceid, '_' || p.traceid, NULL) || '.trc' "Trace File"
+                                        FROM   v$parameter u_dump
+                                        CROSS  JOIN v$process p
+                                        JOIN   v$session s
+                                        ON     p.addr = s.paddr
+                                        WHERE  u_dump.name = 'user_dump_dest'
+                                        AND    s.audsid = sys_context('userenv', 'sessionid')]]
+            end
+            tracefile=filename
         else
-            filename=db:get_value[[SELECT u_dump.value || '/' || SYS_CONTEXT('userenv','instance_name') || '_ora_' || p.spid ||
-                                           nvl2(p.traceid, '_' || p.traceid, NULL) || '.trc' "Trace File"
-                                    FROM   v$parameter u_dump
-                                    CROSS  JOIN v$process p
-                                    JOIN   v$session s
-                                    ON     p.addr = s.paddr
-                                    WHERE  u_dump.name = 'user_dump_dest'
-                                    AND    s.audsid = sys_context('userenv', 'sessionid')]]
+            filename,tracefile=tracefile,nil
         end
         if lv then
             if lv > 0 then
@@ -133,16 +140,23 @@ function trace.get_trace(filename,mb,from_mb)
     print("Result written to file "..env.write_cache(args[2],args[3]))
 end
 
-env.set_command(nil,{"loadtrace","dumptrace"},[[
-    Download Oracle trace file into local directory. Usage: @@NAME {<trace_file|default|alert|0/1/4/8/12> [MB] [begin_MB]}
-    This command requires the "create directory" privilige.
-    Parameters:
-        trace_file: 1) The absolute path of the target trace file, or
-                    2) "default" to extract current session's trace, or
-                    4) 0/1/4/8/12 to enable 10046 trace with specific level
-                    3) "alert" to extract local instance's alert log.
-        MB        : MegaBytes to extract, default as 2 MB.
-        begin_MB  : The start file position(in MB) to extract, default as "total_MB - <MB>"
-    ]],trace.get_trace,false,4)
+function trace.reset()
+    tracefile=nil
+end
+
+function trace.onload()
+    env.set_command(nil,{"loadtrace","dumptrace"},[[
+        Download Oracle trace file into local directory. Usage: @@NAME {<trace_file|default|alert|0/1/4/8/12> [MB] [begin_MB]}
+        This command requires the "create directory" privilige.
+        Parameters:
+            trace_file: 1) The absolute path of the target trace file, or
+                        2) "default" to extract current session's trace, or
+                        4) 0/1/4/8/12 to enable 10046 trace with specific level
+                        3) "alert" to extract local instance's alert log.
+            MB        : MegaBytes to extract, default as 2 MB.
+            begin_MB  : The start file position(in MB) to extract, default as "total_MB - <MB>"
+        ]],trace.get_trace,false,4)
+    env.event.snoop("AFTER_ORACLE_CONNECT",trace.reset)
+end
 
 return trace

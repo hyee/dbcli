@@ -1,6 +1,6 @@
 -- Store current SQL*Plus environment
 -- This requires at least a 10.2 SQL*Plus version to work
-store set .xplan_settings replace
+--store set .xplan_settings replace
 set echo off verify off termout off timing off define "&" concat "." trimspool on
 -- If you need to debug, uncomment the following line
 -- set echo on verify on termout on
@@ -14231,4 +14231,4 @@ end;
 /
 
 -- Restore previous SQL*Plus environment
-@.xplan_settings
+--@.xplan_settings

@@ -10,15 +10,15 @@
       &TITLE: V={GV$SYSMETRIC_HISTORY}, D={DBA_HIST_SYSMETRIC_SUMMARY}
       &CAT  : {
             default={1=1},
-            eff={METRIC_NAME in ('CPU Usage Per Sec','CPU Usage Per Txn','Database CPU Time Ratio',
-                                 'Database Wait Time Ratio','Executions Per Sec','Executions Per Txn',
-                                 'Response Time Per Txn','SQL Service Response Time','User Transaction Per Sec')}
+            eff={METRIC_NAME in ('Host CPU Utilization (%)','Database CPU Time Ratio',
+                                 'Database Wait Time Ratio','Executions Per Sec',
+                                 'SQL Service Response Time','Physical Read Total IO Requests Per Sec','Physical Write Total IO Requests Per Sec')}
         }
     ]]--
 ]]*/
 
    {
-       _attrs=[[select 'Sysmetric History(&TITLE)' title from dual]],
+       _attrs=[[select 'System Metric History(&TITLE)' title from dual]],
        _sql=[[
         SELECT sample_time, 
                REPLACE(METRIC_NAME, ' Per ', ' / ') metric_name,
