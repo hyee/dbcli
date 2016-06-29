@@ -18,23 +18,28 @@ function extvars.on_before_db_exec(item)
     return item
 end
 
-local fmt='%s(select /*+merge*/ * from %s where %s=%d :others:)'
+local fmt='%s(select /*+merge*/ * from %s where %s=%d :others:)%s'
 local instance,container
-local function rep_instance(str,full,obj)
-    local flag=0
+local function rep_instance(prefix,full,obj,suffix)
+    obj=obj:upper()
+    local flag,str=0
     if instance>0 and extvars.dict[obj] and extvars.dict[obj].inst_col then
-        str=fmt:format(str:sub(1,1),full,extvars.dict[obj].inst_col,instance)
+        str=fmt:format(prefix,full,extvars.dict[obj].inst_col,instance,suffix)
         flag=flag+1
     end
     if container>0 and extvars.dict[obj] and extvars.dict[obj].cdb_col then
         if flag==0 then
-            str=fmt:format(str:sub(1,1),full,extvars.dict[obj].cdb_col,container)
+            str=fmt:format(prefix,full,extvars.dict[obj].cdb_col,container,suffix)
         else
             str=str:gsub(':others:','and '..extvars.dict[obj].cdb_col..'='..container)
         end
         flag=flag+2
     end
-    if flag>0 and flag<3 then str=str:gsub(' :others:','') end
+    if flag==0 then
+        str=prefix..full..suffix
+    elseif flag<3 then 
+        str=str:gsub(' :others:','') 
+    end
     env.log_debug('extvars',str)
     return str
 end
@@ -45,7 +50,7 @@ function extvars.on_before_parse(item)
     if instance==0 then instance=tonumber(db.props.instance) end
     if container==0 then container=tonumber(db.props.container_id) end
     if instance>0 or container>0 then
-        item[2]=re.replace(sql,extvars.P,rep_instance)
+        item[2]=re.gsub(sql..' ',extvars.P,rep_instance):sub(1,-2)
     end
     return item
 end
@@ -114,21 +119,15 @@ function extvars.onload()
     cfg.init("starttime","",extvars.check_time,"oracle","Specify the start time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
     cfg.init("endtime","",extvars.check_time,"oracle","Specify the end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
     extvars.dict=env.load_data(datapath)
-    extvars.P=re.compile[[
-         pattern <- pt {owner* obj}
-         suffix  <- %s/","/")"/";"
-         pt      <- %s/','/'('
-         owner   <- 'SYS.'/ 'PUBLIC.'/'"SYS".'/'"PUBLIC".'
-         obj     <- full/name
-         full    <- '"' name '"'
-         name    <- {prefix %a%a (%w/"_"/"$"/"#")+}
-         prefix  <- "GV_$"/"GV$"/"V_$"/"V$"/"DBA_"/"ALL_"/"CDB_"
-      ]]
---[[
-    print(re.replace('Q; sys."dba_objects",sys.cdb_adbs,O',p,function(a,b,c) 
-        return a:sub(1,1)..'x'
-    end
-    ))
-    --]]
+    extvars.P=re.compile([[
+        pattern <- {pt} {owner* obj} {suffix}
+        suffix  <- [%s,;)]
+        pt      <- [%s,(]
+        owner   <- ('SYS.'/ 'PUBLIC.'/'"SYS".'/'"PUBLIC".')
+        obj     <- full/name
+        full    <- '"' name '"'
+        name    <- {prefix %a%a [%w$#__]+}
+        prefix  <- "GV_$"/"GV$"/"V_$"/"V$"/"DBA_"/"ALL_"/"CDB_"
+    ]],nil,true)
 end
 return extvars

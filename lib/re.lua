@@ -1,7 +1,7 @@
 -- $Id: re.lua,v 1.44 2013/03/26 20:11:40 roberto Exp $
 
 -- imported functions and modules
-local tonumber, type, print, error = tonumber, type, print, error
+local tonumber, type, print, error,string = tonumber, type, print, error,string
 local setmetatable = setmetatable
 local m = require"lpeg"
 
@@ -202,27 +202,61 @@ local exp = m.P{ "Exp",
 
 local pattern = S * m.Cg(m.Cc(false), "G") * exp / mm.P * (-any + patt_error)
 
+local fmt="[%s%s]"
+local function case_insensitive_pattern(quote,pattern)
+    -- find an optional '%' (group 1) followed by any character (group 2)
+    local stack={}
+    local is_letter=nil
+    local p = pattern:gsub("(%%?)(.)",
+        function(percent, letter)
+            if percent ~= "" or not letter:match("%a") then
+                -- if the '%' matched, or `letter` is not a letter, return "as is"
+                if is_letter==false then
+                    stack[#stack]=stack[#stack]..percent .. letter
+                else
+                    stack[#stack+1]=percent .. letter
+                    is_letter=false
+                end
+            else
+                if is_letter==false then
+                    stack[#stack]=quote..stack[#stack]..quote
+                    is_letter=true
+                end
+                -- else, return a case-insensitive character class of the matched letter
+                stack[#stack+1]=fmt:format(letter:lower(), letter:upper())
+            end
+            return ""
+        end)
+    if is_letter==false then
+        stack[#stack]=quote..stack[#stack]..quote
+    end
+    if #stack<2 then return stack[1] or (quote..pattern..quote) end
+    return '('..table.concat(stack,' ')..')'
+end
 
-local function compile (p, defs)
+local function compile (p, defs, case_insensitive)
   if mm.type(p) == "pattern" then return p end   -- already compiled
+  if case_insensitive==true then
+    p=p:gsub([[(['"'])([^\n]-)(%1)]],case_insensitive_pattern):gsub("%(%s*%((.-)%)%s*%)","(%1)")
+  end
   local cp = pattern:match(p, 1, defs)
   if not cp then error("incorrect pattern", 3) end
   return cp
 end
 
-local function match (s, p, i)
+local function match (s, p, i,case_insensitive)
   local cp = mem[p]
   if not cp then
-    cp = compile(p)
+    cp = compile(p,nil,case_insensitive)
     mem[p] = cp
   end
   return cp:match(s, i or 1)
 end
 
-local function find (s, p, i)
+local function find (s, p, i,case_insensitive)
   local cp = fmem[p]
   if not cp then
-    cp = compile(p) / 0
+    cp = compile(p,nil,case_insensitive) / 0
     cp = mm.P{ mm.Cp() * cp * mm.Cp() + 1 * mm.V(1) }
     fmem[p] = cp
   end
@@ -232,36 +266,18 @@ local function find (s, p, i)
   end
 end
 
-local function gsub (s, p, rep)
+local function gsub (s, p, rep,case_insensitive)
   local g = gmem[p] or {}   -- ensure gmem[p] is not collected while here
   gmem[p] = g
   local cp = g[rep]
   if not cp then
-    cp = compile(p)
+    cp = compile(p,nil,case_insensitive)
     cp = mm.Cs((cp / rep + 1)^0)
     g[rep] = cp
   end
   return cp:match(s)
 end
 
-local function replace(s,p,rep,occurs)
-   local s1,set,piece=s:upper(),{}
-   local pos1,pos2,pos0,counter=0,0,0,0
-   while true do
-     pos0=pos2+1
-     pos1,pos2=find(s1,p,pos0)
-     if occurs and counter>=occurs or not pos2 then break end
-     set[#set+1]=s:sub(pos0,pos1-1) or ""
-     if type(rep)=="function" then
-       set[#set+1]=rep(s:sub(pos1,pos2),p:match(s1:sub(pos1,pos2)))
-     else 
-       set[#set+1]=gsub(s1:sub(pos1,pos2),p,rep) or ""
-     end
-     counter=counter+1
-   end
-   set[#set+1]=s:sub(pos0)
-   return table.concat(set,'')
-end
 
 -- exported names
 local re = {
@@ -269,7 +285,6 @@ local re = {
   match = match,
   find = find,
   gsub = gsub,
-  replace =  replace,
   updatelocale = updatelocale,
 }
 _G.re=re
