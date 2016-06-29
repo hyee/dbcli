@@ -36,7 +36,7 @@
         &V1 :   sid={''||sid},wt={wait_secs desc},ev={event},sql={sql_text},o={logon_time}
         &SQLM:  {default={},
                  m={LEFT JOIN (
-                        SELECT sid, inst_id, sql_id, count(distinct sql_id) execs,
+                        SELECT sid, inst_id, sql_id, count(distinct sql_exec_id) execs,
                                round(SUM(ELAPSED_TIME)*1e-6/60,2) ela, round(SUM(QUEUING_TIME)*1e-6,2) QUEUE, 
                                round(SUM(CPU_TIME)*1e-6/60,2) CPU, round(SUM(APPLICATION_WAIT_TIME)*1e-6/60,2) app,
                                round(SUM(CONCURRENCY_WAIT_TIME)*1e-6/60,2) cc, 
@@ -80,7 +80,7 @@
 
 
 set feed off
-set printvar on
+set VERIFY on
 VAR actives refcursor "Active Sessions"
 VAR time_model refcursor "Top Session Time Model"
 ALTER /*INTERNAL_DBCLI_CMD*/ SESSION SET PLSQL_CCFlags = "CHECK_ACCESS_M:&smen";

@@ -1,4 +1,8 @@
-/*[[  Session Details. Usage: @@NAME <sid> <inst_id>]]*/
+/*[[  Session Details. Usage: @@NAME <sid> <inst_id>
+    --[[
+        @ALIAS: sd
+    --]]
+]]*/
 
 DECLARE
    v_sid           gv$session.sid%TYPE;

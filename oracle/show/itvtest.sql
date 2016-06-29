@@ -1,10 +1,10 @@
 itv start 5 Checking Active sessions in interval mode, type 'Ctrl + C' to abort
-set printvar on
+set VERIFY on
 ora actives
 pro
 PRO Determine if need to abort(10%) ...
 var next_action varchar2
-set printvar off
+set VERIFY off
 
 begin
     if dbms_random.value(0,10)>9 then

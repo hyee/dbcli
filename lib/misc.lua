@@ -121,7 +121,7 @@ end
 
 function string.replace(s,sep,txt,plain,occurrence)
     local r=s:split(sep,plain,occurrence)
-    return table.concat(r,txt)
+    return table.concat(r,txt),#r-1
 end
 
 function string.escape(s, mode)

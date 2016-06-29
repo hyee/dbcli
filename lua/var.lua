@@ -304,6 +304,7 @@ function var.define_column(col,...)
     col=col:upper()
     var.columns[col]=var.columns[col] or {}
     local obj=var.columns[col]
+    
     for i=1,#args do
         args[i],arg=args[i]:upper(),args[i+1]
         if args[i]=='NEW_VALUE' or args[i]=='NEW_V' then
@@ -429,7 +430,7 @@ function var.onload()
         4) @@NAME <column> FOR[MAT] smhd:  Cast number as 'xxd xxh xxm xxs' format
         5) @@NAME <column> FOR[MAT] ITV :  Cast number as 'dd hh:mm:ss' format
     ]]
-    cfg.init({"PrintVar","VERIFY",'VER'},'on',nil,"db.core","Max size of historical commands",'on,off')
+    cfg.init({"VERIFY","PrintVar",'VER'},'on',nil,"db.core","Max size of historical commands",'on,off')
     cfg.init({var.cmd1,var.cmd2},'on',nil,"db.core","Defines the substitution character(&) and turns substitution on and off.",'on,off')
     env.set_command(nil,{"Accept","Acc"},'Assign user-input value into a existing variable. Usage: @@NAME <var> [[prompt] <prompt_text>|@<file>]',var.accept_input,false,3)
     env.set_command(nil,{var.cmd3,var.cmd4},var.helper,var.setOutput,false,4)

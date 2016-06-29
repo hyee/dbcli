@@ -14,7 +14,7 @@ local reader=reader
 local history=reader:getHistory()
 local ansi,event=env.ansi,env.event
 local color=ansi and ansi.get_color or function() return "";end
-local prompt_color="%s%s"..color("NOR").."%s"
+local prompt_color="%s%s%s%s%s%s"
 
 local stack=nil
 
@@ -32,9 +32,13 @@ function env.reset_input(line)
     end
 end
 
+
 while true do
+    local subcolor,pcolor,ccolor=color("PROMPTSUBCOLOR"),color("PROMPTCOLOR"),color("COMMANDCOLOR")
+    local ncolor=color("NOR")
+    local prompt,empty=env.CURRENT_PROMPT:match("^(.-)(%s*)$")
     if env.REOAD_SIGNAL then break end
-    line = reader:readLine(prompt_color:format(env._SUBSYSTEM and color("PROMPTSUBCOLOR") or color("PROMPTCOLOR"),env.CURRENT_PROMPT,color("COMMANDCOLOR")))
+    line = reader:readLine(prompt_color:format(env._SUBSYSTEM and subcolor or pcolor,prompt,ncolor,ncolor,empty,ccolor))
     if not line then
         print("Exited.")
         env.unload()

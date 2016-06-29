@@ -4,7 +4,7 @@
         @VER   : 11.2={listagg(e.message,chr(10)) within group(order by e.message)} default={to_char(wmsys.wm_concat(e.message || CHR(10)))}
     --]]
 ]]*/
-SET FEED OFF printvar off COLSEP |
+SET FEED OFF VERIFY off COLSEP |
 var cur refcursor;
 var res CLOB;
 VAR DEST VARCHAR2;

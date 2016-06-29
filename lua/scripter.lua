@@ -1,4 +1,4 @@
-local env=env
+local env,rawset=env,rawset
 local grid,cfg,db_core=env.grid,env.set,env.db_core
 local ARGS_COUNT=20
 
@@ -31,11 +31,14 @@ end
 
 function scripter:rehash(script_dir,ext_name,extend_dirs)
     local keylist=env.list_dir(script_dir,ext_name or self.ext_name or "sql",self.comment)
-    local cmdlist,pathlist={},{}
+    local abbrs={}
+    local cmdlist,pathlist=setmetatable({},{__index=abbrs}),{}
     local counter=0
     for k,v in ipairs(keylist) do
         local desc=v[3] and v[3]:gsub("^%s*[\n\r#]+","") or ""
-        desc=desc:gsub("%-%-%[%[(.*)%]%]%-%-",""):gsub("%-%-%[%[(.*)%-%-%]%]","")
+        local tmp,abbr,attrs
+        local function set_tmp(s) tmp=s;return ""; end
+        desc=desc:gsub("%-%-%[%[(.*)%]%]%-%-",set_tmp):gsub("%-%-%[%[(.*)%-%-%]%]",set_tmp)
         desc=desc:gsub("([\n\r]+%s*)%-%-","%1  ")
         desc=desc:gsub("([\n\r]+%s*)REM","%1   ")
         desc=desc:gsub("([\n\r]+%s*)rem","%1   ")
@@ -44,7 +47,18 @@ function scripter:rehash(script_dir,ext_name,extend_dirs)
         if cmdlist[cmd] then
             pathlist[cmdlist[cmd].path:lower()]=nil
         end
-        cmdlist[cmd]={path=v[2],desc=desc,short_desc=desc:match("([^\n\r]+)") or ""}
+        attrs={path=v[2],desc=desc,short_desc=desc:match("([^\n\r]+)") or ""}
+        rawset(cmdlist,cmd,attrs)
+        if tmp then
+            local alias=("\n"..tmp):match("\n%s*@ALIAS:%s*(%S+)")
+            if alias then
+                abbr=alias:upper():split('[,; ]+')
+                attrs.abbr=table.concat(abbr,',')
+                for x,y in ipairs(abbr) do
+                    abbrs[y]=attrs
+                end
+            end
+        end
         pathlist[v[2]:lower()]=cmd
         counter=counter+1
     end
@@ -125,7 +139,7 @@ function scripter:parse_args(sql,args,print_args,extend_dirs)
                         templates[k][option]=text
                     end
 
-                    if prefix=="@" then
+                    if prefix=="@" and k~="ALIAS" then
                         self.db:assert_connect()
                         default=self:trigger('validate_accessable',k,keys,templates[k])
                     end
@@ -157,7 +171,7 @@ function scripter:parse_args(sql,args,print_args,extend_dirs)
                 for param,text in pairs(options[idx] or {}) do
                     ary[i]=nil
                     local ary_idx=tonumber(param:match("^V(%d+)$"))
-                    text,cnt=text:gsub('&0',rest)
+                    text,cnt=text:replace('&0',rest,true)
                     if cnt==0 then text=text..rest end
                     if args[param] and ary_idx then
                         ary[ary_idx]=nil
@@ -375,7 +389,7 @@ function scripter:get_script(cmd,args,print_args)
     env.checkerr(f,"Cannot find this script!")
     local sql=f:read(10485760)
     f:close()
-    if is_get then return print(sql) end
+    if is_get then return rawprint(sql) end
     args=self:parse_args(sql,args,print_args)
     return sql,args,print_args,file,cmd
 end
@@ -433,6 +447,7 @@ function scripter:helper(_,cmd,search_key)
         local undocs=nil
         local undoc_index=0
         for k,v in pairs(cmdlist) do
+            if type(v)=="table" and v.abbr then k=k..','..v.abbr end
             if (not search_key or k:find(search_key:upper(),1,true)) and k:sub(1,2)~='./' and k:sub(1,1)~='_' then
                 if search_key or not (v.path or ""):find('[\\/]test[\\/]') then
                     local desc=v.short_desc:gsub("^[ \t]+",""):gsub("@@NAME","@@NAME "..k:lower())
