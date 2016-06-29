@@ -23,7 +23,7 @@ FROM   lp h LEFT JOIN lp w
 ON    (h.lock_type = w.lock_type AND w.type = 'WAIT' AND
       (h.object_name = w.object_name OR nvl(h.object_name, w.object_name) IS NULL AND h.inst_id = w.inst_id AND h.handler = w.handler))
 WHERE (:V2 IS NULL OR :V2=h.inst_id OR :V2=w.inst_id)
-AND   (:V1 IS NULL AND h.object_name not like 'SYS.%' and instr(h.object_name,'.')>0 OR :V1 IS NOT NULL AND (regexp_substr(:V1,'^\d+$') in (h.sid,nvl(w.sid,-1)) or h.object_name like upper('%&V1%')) )
+AND   h.object_name like upper('%sys%')
 AND   (&filter) and (&filter2)
 AND    h.type = 'HOLD' 
 ORDER  BY object_name,holding_session,waiting_session

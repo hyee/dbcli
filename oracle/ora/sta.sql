@@ -4,7 +4,7 @@
 --]]
 ]]*/
 set feed off
-SET printvar OFF
+SET VERIFY OFF
 VAR RES CLOB;
 
 DECLARE

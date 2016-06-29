@@ -1,4 +1,4 @@
-SET FEED OFF PRINTVAR OFF
+SET FEED OFF VERIFY OFF
 VAR awr$sqlstat VARCHAR2;
 
 BEGIN
@@ -36,4 +36,4 @@ BEGIN
         AND    s.instance_number = h.instance_number )]';
 END;
 /
-SET FEED BACK PRINTVAR BACK;
+SET FEED BACK VERIFY BACK;
