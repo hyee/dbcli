@@ -429,6 +429,7 @@ function env.checkhelp(arg)
     env.checkerr(arg,env.helper.helper,env.CURRENT_CMD)
 end
 
+local co_stacks={}
 function _exec_command(name,params)
     local result
     local cmd=_CMDS[name:upper()]
@@ -436,14 +437,20 @@ function _exec_command(name,params)
         return env.warn("No such comand '%s'!",name)
     end
     if not cmd.FUNC then return end
-    local args= cmd.OBJ and {cmd.OBJ,table.unpack(params)} or {table.unpack(params)}
+    
 
     local funs=type(cmd.FUNC)=="table" and cmd.FUNC or {cmd.FUNC}
+    local args= cmd.OBJ and {1,cmd.OBJ,table.unpack(params)} or {1,table.unpack(params)}
     for _,func in ipairs(funs) do
-        env.register_thread()
-        local co=coroutine.create(func)
+        local co,_,index=env.register_thread()
+        co=co_stacks[index+1]
+        if not co or coroutine.status(co)=='dead' then
+            co=coroutine.create(function(f) while f do f=coroutine.yield(f[1](table.unpack(f,2))) end end)
+            --print(co)
+        end
         env.register_thread(co)
-        local res={coroutine.resume(co,table.unpack(args))}
+        args[1]=func
+        local res={coroutine.resume(co,args)}
         env.register_thread()
         --local res = {pcall(func,table.unpack(args))}
         if not res[1] then
@@ -475,6 +482,7 @@ function env.register_thread(this,isMain)
         end
         if not clock[index] then clock[index]=os.clock() end
     end
+    co_stacks[index]=this
     return this,isMain,index
 end
 
@@ -505,15 +513,18 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     end
     if not isMain and not res[1] and (not env.set or env.set.get("OnErrExit")=="on") then error() end
 
-    local clock=os.clock()-_THREADS._clock[index]
-    clock,_THREADS._clock[index]=math.floor(clock*1e3)/1e3
+    local clock=math.floor((os.clock()-_THREADS._clock[index])*1e3)/1e3
+
     if event and not is_internal then
         event("AFTER_SUCCESS_COMMAND",name,params,res[2],is_internal,arg_text,clock)
     end
 
-    if env.PRI_PROMPT=="TIMING> " and isMain then
-        env.CURRENT_PROMPT=string.format('%06.2f',clock)..'> '
-        env.MTL_PROMPT=string.rep(' ',#env.CURRENT_PROMPT)
+    if isMain then
+        _THREADS._clock[index]=nil
+        if env.PRI_PROMPT=="TIMING> " then
+            env.CURRENT_PROMPT=string.format('%06.2f',clock)..'> '
+            env.MTL_PROMPT=string.rep(' ',#env.CURRENT_PROMPT)
+        end
     end
     return table.unpack(res,2)
 end
@@ -595,7 +606,9 @@ function env.parse_args(cmd,rest,is_cross_line)
         if not cmd then
             cmd,rest=env.END_MARKS.match(rest):match('(%S+)%s*(.*)')
             cmd = cmd and cmd:upper() or "_unknown_"
+            print(debug.traceback())
         end
+
         env.checkerr(_CMDS[cmd],'Unknown command "'..cmd..'"!')
         arg_count=_CMDS[cmd].ARGS
     end
@@ -665,7 +678,7 @@ function env.parse_args(cmd,rest,is_cross_line)
 end
 
 function env.force_end_input(exec,is_internal)
-    if curr_stmt then
+    if curr_stmt and multi_cmd then
         local text,stmt=curr_stmt,{multi_cmd,env.parse_args(multi_cmd,curr_stmt,true)}
         multi_cmd,curr_stmt=nil,nil
         env.CURRENT_PROMPT=env.PRI_PROMPT
