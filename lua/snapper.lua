@@ -98,11 +98,11 @@ function snapper:next_exec()
         cmd.rs1=self.db.resultset:rows(db:exec(cmd.sql,args[name]),-1) 
     end
     
-    local result={}
+    local result,groups={}
     for name,cmd in pairs(cmds) do
         local agg_idx,grp_idx,top_grp_idx={},{},{}
         local title=cmd.rs1[1]
-        local min_agg_pos,top_agg_idx=1e4
+        local min_agg_pos,top_agg_idx,top_agg=1e4
         for i,k in ipairs(title) do
             local idx=cmd.agg_cols:find(','..k:upper()..',',1,true)
             if idx then
@@ -123,7 +123,7 @@ function snapper:next_exec()
 
         if not cmd.top_grp_cols then top_grp_idx=grp_idx end
 
-        result,groups={},{}
+        result,groups=table.new(1,#cmd.rs1+10),{}
         cmd.grid=grid.new()
         cmd.grid:add(title)
 
@@ -146,7 +146,7 @@ function snapper:next_exec()
         table.remove(cmd.rs1,1)
         table.remove(cmd.rs2,1)
 
-        local top_data,r,d,data,index,top_index={}
+        local top_data,r,d,data,index,top_index=table.new(1,#cmd.rs1+10)
         for _,row in ipairs(cmd.rs1) do
             index,top_index=make_index(row)
             data=result[index]

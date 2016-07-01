@@ -1,4 +1,4 @@
-local env=env
+local env,table=env,table
 local json,math,graph,cfg=env.json,env.math,env.class(env.scripter),env.set
 local template,cr
 --[[
@@ -159,7 +159,7 @@ function graph:run_sql(sql,args,cmd,file)
     end
 
     rs=self.db:exec(sql,args)
-    local title,csv,xlabels,values,collist,temp=string.char(0x1),{},{},{},{},{}
+    local title,csv,xlabels,values,collist,temp=string.char(0x1),{},{},table.new(10,255),{},{}
     
     local function getnum(val)
         if not val then return 0 end
@@ -254,7 +254,8 @@ function graph:run_sql(sql,args,cmd,file)
             local x,label,y=row[1],row[2],{table.unpack(row,3)}
             
             if #xlabels==0 then
-                charts,xlabels[1],values[title]=y,title,{x}
+                charts,xlabels[1],values[title]=y,title,table.new(#rows+10,5)
+                values[tile][1]=x
                 env.checkerr(#charts>0,'Pivot mode should have at least 3 columns!')
                 print('Fetching data into HTML file...')
             else

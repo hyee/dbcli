@@ -245,8 +245,8 @@ end
 function grid:ctor(printhead)
     self.headind=printhead==false and 1 or 0
     self.printhead=self.headind == 0 and true or false
-    self.colsize={}
-    self.data={}
+    self.colsize=table.new(255,0)
+    self.data=table.new(1000,0)
 end
 
 function grid:add(rs)
@@ -382,7 +382,7 @@ end
 function grid:wellform(col_del,row_del)
     local result,colsize=self.data,self.colsize
     local rownum=grid.row_num
-    local siz,rows=#result,{}
+    local siz,rows=#result,table.new(#self.data+1,0)
     if siz==0 then return rows end
     local fmt=""
     local title_dels,row_dels={},""
