@@ -103,6 +103,7 @@ The binaries have been included into this project.
 Below is the list:
 
     JLine2      : (BSD)    https://github.com/jline/jline2
+    JSch        : (BSD)    http://www.jcraft.com/jsch/
     ConsoleZ    : (GNU)    https://github.com/cbucher/console
     luajit v2.1 : (MIT)    https://github.com/LuaJIT/LuaJIT
     LPeg        : (MIT)    http://www.inf.puc-rio.br/~roberto/lpeg/lpeg.html
@@ -110,12 +111,12 @@ Below is the list:
     OpenCSV     : (MIT)    https://github.com/hyee/OpenCSV(revised from opencsv.sourceforge.net)
     MessagePack : (MIT)    https://github.com/fperrad/lua-MessagePack (pure lua)
     dygraphs    : (MIT)    https://github.com/danvk/dygraphs
+    JsonForLua  : (MIT)    https://github.com/craigmj/json4lua 
+    PSCP        : (MIT)    http://www.putty.org/ 
     JNA         : (LGPL)   https://github.com/java-native-access/jna
     NuProcess   : (Apache) https://github.com/brettwooldridge/NuProcess
+    Luv(libuv)  : (Apache) https://github.com/luvit/luv
     ANSICON     : (ZLIB)   https://github.com/adoxa/ansicon
-    JsonForLua  : (MIT)    https://github.com/craigmj/json4lua 
-    JSch        : (BSD)    http://www.jcraft.com/jsch/
-    PSCP        : (MIT)    http://www.putty.org/ 
 
 Besides, some SQL scripts come from internet.
 
