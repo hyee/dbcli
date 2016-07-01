@@ -1,5 +1,6 @@
 /*[[
   Get ASH top event, type 'help @@NAME' for more info. Usage: @@NAME [-sql|-p|-none|-pr|-o|-plan|-ash|-dash|-snap|-f] {[fields] [filters]}
+  
    --[[
       &fields: {
             sql={sql_id},
@@ -48,7 +49,9 @@
       3) Show top sqls within recent 60 secs     : @@NAME -snap 60 [sql_id|sid]
       4) Show top objects from dictionary ASH    : @@NAME -dash <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
       5) Show top objects based on execution plan: @@NAME -plan <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
-      6) Show top sqls with user defined filter  : @@NAME -f"inst_id=1 and username='ABCD'"    
+      6) Show top sqls with user defined filter  : @@NAME -f"inst_id=1 and username='ABCD'" 
+  
+  This script references Tanel Poder's script
 ]]*/
 
 SELECT * FROM (

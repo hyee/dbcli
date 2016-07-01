@@ -885,8 +885,7 @@ end
 
 function env.onload(...)
     env.__ARGS__={...}
-    env.init=require("init")
-    env.init.init_path()
+    
     env.IS_ENV_LOADED=false
     for _,v in ipairs({'jit','ffi','bit'}) do   
         if v=="jit" then
@@ -895,11 +894,14 @@ function env.onload(...)
             env.jit.on()
             env.jit.profile=require("jit.profile")
             env.jit.util=require("jit.util")
-            env.jit.opt.start(3)
+            env.jit.opt.start(2)
         elseif v=='ffi' then
             env.ffi=require("ffi")
         end
     end
+
+    env.init=require("init")
+    env.init.init_path()
 
     os.setlocale('',"all")
     env.set_command(nil,"EXIT","#Exit environment, including variables, modules, etc",env.exit,false,1)

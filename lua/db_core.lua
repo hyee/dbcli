@@ -229,13 +229,15 @@ function ResultSet:rows(rs,count,limit,null_value)
     if rs:isClosed() then return end
     count=tonumber(count) or -1
     local head=self:getHeads(rs,limit).__titles
-    local rows,result={head},loader:fetchResult(rs,count)
+    local rows,result=table.new(1000,0),loader:fetchResult(rs,count)
+    local cols=#head
+    rows[1]=head
     null_value=null_value or ""
     if count~=0 then
         local maxsiz=cfg.get("COLSIZE")
         for i=1,#result do
-            rows[i+1]={}
-            for j=1,#head do
+            rows[i+1]=table.new(cols,0)
+            for j=1,cols do
                 if result[i][j] ~=nil then
                     rows[i+1][j]=tostring(result[i][j])
                     if rows[i+1][j] then

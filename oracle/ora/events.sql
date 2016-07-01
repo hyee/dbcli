@@ -11,10 +11,11 @@ DECLARE
     cnt      PLS_INTEGER:=0;
     mx       PLS_INTEGER:=65535;
     facility varchar2(30);
+    strip    varchar2(30):='['||chr(10)||chr(13)||chr(9)||']+';
     function msg(code PLS_INTEGER) return varchar2 IS
     BEGIN
         rtn:=utl_lms.get_message(abs(code),'rdbms',nvl(facility,'ora'),'us',err_msg);
-        return trim(err_msg);
+        return regexp_replace(err_msg,strip,' ');
     END;
 BEGIN
     IF filter IS NULL THEN
@@ -22,8 +23,8 @@ BEGIN
         mx:=10999;
     ELSE
         IF regexp_like(filter,'\d+$') THEN
-            facility := lower(regexp_substr(filter,'^[a-zA-Z]+'));
-            dbms_output.put_line(msg(regexp_substr(filter,'\d+$')));
+            facility := nvl(regexp_substr(filter,'^[a-zA-Z]+'),'ora');
+            dbms_output.put_line(upper(facility)||'-'||regexp_substr(filter,'\d+$')||': '||msg(regexp_substr(filter,'\d+$')));
             RETURN;
         END IF;
         filter:='%'||lower(filter)||'%';
@@ -36,7 +37,7 @@ BEGIN
             cnt := cnt +1;
         END IF;
     END LOOP;
-    dbms_output.put_line(cnt||' codes matched.');
+    dbms_output.put_line(chr(10)||cnt||' events matched.');
 END;
 /
 

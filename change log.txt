@@ -1,6 +1,7 @@
+2016-07-01: * oracle: enhancement on 'ora ashchain'
+            * public: luajit up to date
 2016-06-30: * public: support case-insensitive matching for 're.lua'
                     : some lua performance optimization 
-            * oracle: enhancement on 'ora events'        
 2016-06-29: + public: script commands(command ora/snap/show/etc) support abbr. refer to 'session_details.sql' for example
             + oracle: enhancement on 'ora sqlm' and new command 'ora sqld'
 2016-06-21: ! oracle: fix error for command 'loadtrace' in 10g
