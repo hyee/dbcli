@@ -90,7 +90,7 @@ end
 --[[
 Available parameters:
    Input bindings:  from :V1 to :V9
-   Replacement:     from &V1 to &V9, used to replace the wildchars inside the SQL stmts
+   Replacement:     from &V1 to &V9, used to replace the wildcards inside the SQL stmts
    Out   bindings:  :<alphanumeric>, the data type of output parameters should be defined in th comment scope
 --]]--
 function scripter:parse_args(sql,args,print_args,extend_dirs)
@@ -358,7 +358,7 @@ function scripter:get_script(cmd,args,print_args)
         cmd,is_get=args[1] and args[1]:upper() or "/",true
     elseif cmd=="-L" then
         env.checkerr(args[1],"Please specify the directory!")
-        env.checkerr(os.exists(args[1])==2 or args[1]:lower()=="default","No such directory: %s",args[1])
+        env.checkerr(os.exists(args[1])=='directory' or args[1]:lower()=="default","No such directory: %s",args[1])
         self.extend_dirs=env.set.save_config(self.__className..".extension",args[1])
         self.cmdlist=self:rehash(self.script_dir,self.ext_name,self.extend_dirs)
         if self.extend_dirs then
@@ -419,7 +419,7 @@ end
 
 function scripter:check_ext_file(cmd)
     local exist,cmd=os.exists(cmd,self.ext_name)
-    env.checkerr(exist==1,"Cannot find this file: "..cmd)
+    env.checkerr(exist=='file',"Cannot find this file: "..cmd)
     local target_dir=self:rehash(cmd,self.ext_name)
     cmd=cmd:match('([^\\/]+)$'):match('[^%.%s]+'):upper()
     return target_dir,cmd

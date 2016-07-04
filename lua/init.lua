@@ -9,6 +9,10 @@ local init={
         "lib/misc",
         "lib/class",
         "lib/re",
+        "lib/uv",
+
+        --"locale",
+        --CLI commands ->
         "lua/hotkeys",
         "lua/packer",
         "lua/trace",
@@ -17,8 +21,6 @@ local init={
         "lua/event",
         "lua/grid",
         "lua/helper",
-        --"locale",
-        --CLI commands ->
         "lua/sleep",
         "lua/set",
         "lua/host",
@@ -33,7 +35,8 @@ local init={
         "lua/ssh",
         "lua/tester",
         "lua/graph",
-        "lua/subsystem"}
+        "lua/subsystem",
+        "lua/ilua"}
 }
 
 init.databases={oracle="oracle/oracle",mssql="mssql/mssql",db2="db2/db2",mysql="mysql/mysql"}
@@ -44,6 +47,7 @@ function init.init_path()
     java.system=java.require("java.lang.System")
     java.loader=loader
     env('java',java)
+
     local path=package.path
     local path_del
     if path:sub(1,1)=="." then

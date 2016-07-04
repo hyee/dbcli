@@ -40,7 +40,7 @@ function system:set_work_dir(path,quiet)
     if path=="" then return print("Current working dir is "..self.work_dir) end
     path=path=="." and env._CACHE_PATH or path
     path=path:gsub("[\\/]+",env.PATH_DEL):gsub("[\\/]$","")..env.PATH_DEL
-    env.checkerr(os.exists(path)==2,"No such folder: %s!",path)
+    env.checkerr(env.uv.os.exists(path)=='directory',"No such folder: %s!",path)
     self.work_dir=path
     if not quiet then
         print("Working dir changed to "..path)

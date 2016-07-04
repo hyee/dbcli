@@ -163,9 +163,9 @@ function env.list_dir(file_dir,file_ext,text_macher)
     
     file_dir=file_dir:gsub("[\\/]+",env.PATH_DEL):gsub("[\\/]+$","")
 
-    local exists,file=os.exists(file_dir,file_ext)
+    local exists,file=env.uv.os.exists(file_dir,file_ext)
     if not exists then return keylist end
-    if exists==1 then 
+    if exists=='file' then 
         dir={file}
     else
         dir={}
@@ -878,7 +878,7 @@ end
 
 local function set_cache_path(name,path)
     path=path:gsub("[\\/]+",env.PATH_DEL):gsub("[\\/]$","")..env.PATH_DEL
-    env.checkerr(os.exists(path)==2,"No such path: "..path)
+    env.checkerr(env.uv.os.exists(path)=='directory',"No such path: "..path)
     env['_CACHE_BASE'],env["_CACHE_PATH"]=path,path
     return path
 end
@@ -889,11 +889,13 @@ function env.onload(...)
     env.IS_ENV_LOADED=false
     for _,v in ipairs({'jit','ffi','bit'}) do   
         if v=="jit" then
+
             table.new=require("table.new")
             table.clear=require("table.clear")
             env.jit.on()
             env.jit.profile=require("jit.profile")
             env.jit.util=require("jit.util")
+            
             env.jit.opt.start(2)
         elseif v=='ffi' then
             env.ffi=require("ffi")

@@ -148,7 +148,7 @@ end
 function alias.helper()
     local help=[[
     Set a shortcut of other existing commands. Usage: @@NAME [-r] | {<name> [parameters]} | {-e <alias name>}
-    1) Set/modify alias: @@NAME <name> <command>. Available wildchars: $1 - $9, or $*
+    1) Set/modify alias: @@NAME <name> <command>. Available wildcards: $1 - $9, or $*
                          $1 - $9 can have default value, format as: $1[default]
     2) Remove alias    : @@NAME <name>
     3) Reload alias    : @@NAME -r

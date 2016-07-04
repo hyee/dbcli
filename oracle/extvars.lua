@@ -50,6 +50,7 @@ function extvars.on_before_parse(item)
     if instance==0 then instance=tonumber(db.props.instance) end
     if container==0 then container=tonumber(db.props.container_id) end
     if instance>0 or container>0 then
+        if not extvars.dict then extvars.dict=env.load_data(datapath) end
         item[2]=re.gsub(sql..' ',extvars.P,rep_instance):sub(1,-2)
     end
     return item
@@ -118,7 +119,6 @@ function extvars.onload()
     cfg.init({"container","con","con_id"},-1,extvars.set_container,"oracle","Auto-limit the con_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-1 - 99")
     cfg.init("starttime","",extvars.check_time,"oracle","Specify the start time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
     cfg.init("endtime","",extvars.check_time,"oracle","Specify the end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
-    extvars.dict=env.load_data(datapath)
     extvars.P=re.compile([[
         pattern <- {pt} {owner* obj} {suffix}
         suffix  <- [%s,;)]

@@ -81,21 +81,6 @@ function os.CreateProcess(cmdline,  flags)
     kernel.CreateProcessA(cmdline,nil, nil, nil,false, 0, nil,nil,nil,nil)
 end
 
-function os.exists(file,ext)
-    local f=io.open(file,'r')
-    if not f and type(ext)=="string" then
-        f=io.open(file..'.'..ext,'r')
-        if f then file=file..'.'..ext end
-    end
-    if f then
-        f:close()
-        return 1,file
-    end
-
-    local r=os.execute('cd "'..file..'" 2>nul 1>nul')
-    return r and 2 or nil,file
-end
-
 function os.find_extension(exe)
     local cmd=(env.OS=="windows" and "where " or "which ")..exe.." >"..(env.OS=="windows" and "nul 2>nul" or "/dev/null")
     env.checkerr((os.execute(cmd)),"Cannot find "..exe.." in the default path, please add it into EXT_PATH of file data/init.cfg")
