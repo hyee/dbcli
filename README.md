@@ -132,23 +132,35 @@ If you have concern on `ANSICON`, please remove it from bin, and edit `data\init
 Customize Commands
 ------------------------------------
 
-###Customize simple commands
-User is able to use command `alias` to define to shortcut of the simple command, for instance:
-<code>alias sf select * from (select * from $*) where rownum<=50;<code>
-In this case, user can execute `sf dba_objects where object_id<1000` to simplify the input.
+###Customize new simple commands
+You are able to use command `alias` to define the shortcut of the simple command, for instance:<br/>
+`alias sf select * from (select * from $*) where rownum<=50;`
 
-The `alias` command supports the `$1-$9` and `$*` wildcats, of which `$n` corresponds to the `n`th parameter, and `$*` means the concatenation of `$n+1`-`$9` via space. 
+In this case, you can execute `sf dba_objects where object_id<1000` to simplify the input.
 
+The `alias` command supports the `$1-$9` and `$*` wildcard characters, of which `$n` corresponds to the `n`th parameter, and `$*` means the concatenation of `$n+1`-`$9` via space. 
 Type `alias` to see more usage.
+ 
+###Customize new sub-command from complex SQLs
+Take command `ora` for example, to define a sub-command `xxx`, create file ``oracle\ora\xxx.sql` and fill with following content: <br/>
+`alias sf select * from (select * from &V1) where rownum<=50;`
 
-###Customize command from complex SQLs
-Take command `ora` for example, to define a sub-command `xxx`, create file ``oracle\ora\xxx.sql` and fill with following content: 
-<code>alias sf select * from (select * from &V1) where rownum<=50;<code>
-After that, run `ora -r` to take effect, then user is able to run `ora xxx dba_objects` to query the view.
+After that, run `ora -r` to take effect, then you can run `ora xxx dba_objects` to query the view.
 
 The utility has created some pre-defined commands, if you want to modify the those commands without concern of overriding back by the updates, just create a sub-folder under the `ora` directory, and put the updated file into it, because for the scripts with same name, the one in the sub directory will be treated as higher priority. Or you may also use `ora -l <path>` to link to another work dir.
 
-Commands `show/sys/snap/chart/sql/shell/etc` follow the similar rules:
-* Accept `:V1-:V20` or '&V1-&V20' as the input parameters, of which `:Vn` means binding parameters, and `&Vn` means replacing text.
-* `/*[[...]]*/` is optional, as the help or usage information
-* `--[[...]]--` is also optional, normally used to specify the command options(i.e., `ora actives -m`), refer to other sub-commands for more examples
+Commands `ora/show/sys/snap/chart/sql/shell/etc` follow the similar rules:
+* Parameters: Accept `:V1-:V20` or `&V1-&V20` as the input parameters, of which `:Vn` means binding parameters, and `&Vn` means replacing text.
+* Help comment: `/*[[...]]*/` is optional, as the help or usage information
+* Options: `--[[...]]--` inside the help comment is also optional, normally used to specify the command options(i.e., `ora actives -m`) and access validation, refer to other sub-commands for more examples.
+
+###Customize new root command
+Different from sub-commands, the root command must be a lua script. To plug a user-define lua script into the utility, just add its path in `data\plugin.cfg`, you may refer to `data\plugin_sample.cfg` for the example.
+
+Below are the common interfaces that can be used in the script:
+*  Define new command: `env.set_command(...)`
+*  Define new setting: `env.set.init_cfg(...)`
+*  Get current database: `env.getdb()`
+You may also:
+* Execute `help -a` or `set -a` to see how those interfaces are used in other scripts
+* Execute `help -e env[.module] 2` to see the available interfaces
