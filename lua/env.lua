@@ -895,8 +895,8 @@ function env.onload(...)
             env.jit.on()
             env.jit.profile=require("jit.profile")
             env.jit.util=require("jit.util")
-            
-            env.jit.opt.start(2)
+
+            env.jit.opt.start(2,"maxsnap=4096","maxmcode=1024")
         elseif v=='ffi' then
             env.ffi=require("ffi")
         end

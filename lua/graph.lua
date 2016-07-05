@@ -255,7 +255,7 @@ function graph:run_sql(sql,args,cmd,file)
             
             if #xlabels==0 then
                 charts,xlabels[1],values[title]=y,title,table.new(#rows+10,5)
-                values[tile][1]=x
+                values[title][1]=x
                 env.checkerr(#charts>0,'Pivot mode should have at least 3 columns!')
                 print('Fetching data into HTML file...')
             else

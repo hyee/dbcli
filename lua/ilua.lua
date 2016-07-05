@@ -890,7 +890,7 @@ function Ilua:loop(...)
 end
 
 function Ilua:onload()
-    env.set_command(self,'ilua','Start interactive Lua. Usage: @@NAME [{-e <string>}|<file>]',Ilua.loop,false,2,false)
+    env.set_command(self,'ilua','Start interactive Lua. Usage: @@NAME [{-e <string>}|<file>]',Ilua.loop,false,3,false)
 end
 
 return ilua

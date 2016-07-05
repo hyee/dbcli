@@ -151,14 +151,14 @@ function var.update_text(item,pos,params)
     while count>0 do
         count=0
         for k,v in pairs(params) do
-            if type(v)=="string" then params[k]=v:gsub('%f[%w_%$&](&+)([%w%_%$]+)(%.?)',repl) end
+            if type(v)=="string" then params[k]=v:gsub('%f[\\&](&+)([%w%_%$]+)(%.?)',repl) end
         end
     end
 
     count=1
     while count>0 do
         count=0
-        item[pos]=item[pos]:gsub('%f[%w_%$&](&+)([%w%_%$]+)(%.?)',repl)
+        item[pos]=item[pos]:gsub('%f[\\&](&+)([%w%_%$]+)(%.?)',repl)
     end
 
     if org_txt then return item[1] end

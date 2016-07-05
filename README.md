@@ -147,10 +147,10 @@ Take command `ora` for example, to define a sub-command `xxx`, create file ``ora
 
 After that, run `ora -r` to take effect, then you can run `ora xxx dba_objects` to query the view.
 
-The utility has created some pre-defined commands, if you want to modify the those commands without concern of overriding back by the updates, just create a sub-folder under the `ora` directory, and put the updated file into it, because for the scripts with same name, the one in the sub directory will be treated as higher priority. Or you may also use `ora -l <path>` to link to another work dir.
+The utility has created some pre-defined commands, if you want to modify the those commands without concerning of overriding back by the new version, just create a sub-folder under the `ora` directory, and put the updated file into it, because for the scripts with same name, the one in the sub directory will be treated as higher priority. Or you may also use `ora -l <path>` to link to another work dir.
 
 Commands `ora/show/sys/snap/chart/sql/shell/etc` follow the similar rules:
-* Parameters: Accept `:V1-:V20` or `&V1-&V20` as the input parameters, of which `:Vn` means binding parameters, and `&Vn` means replacing text.
+* Parameters: Accept `:V1-:V20` or `&V1-&V20` as the input parameters, of which `:Vn` means binding parameters, and `&Vn` means variable substitution.
 * Help comment: `/*[[...]]*/` is optional, as the help or usage information
 * Options: `--[[...]]--` inside the help comment is also optional, normally used to specify the command options(i.e., `ora actives -m`) and access validation, refer to other sub-commands for more examples.
 
