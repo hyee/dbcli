@@ -214,7 +214,7 @@ function env.set_subsystem(cmd,prompt)
     end
 end
 
-local terminator_patt,terminator='%f[<%w]<<(%S+)%s*$'
+local terminator_patt,terminator='%f[<%w]<<(%S+)[ \r]*$'
 function env.check_cmd_endless(cmd,other_parts)
     if not _CMDS[cmd] then
         return true,other_parts
