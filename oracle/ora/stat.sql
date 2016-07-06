@@ -4,7 +4,7 @@ Example:
 @@NAME <<!
 show sga;
 ora actives
-!   
+!
 ]]*/
 
 snap sestime,sesstat begin 0
