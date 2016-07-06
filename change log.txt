@@ -1,4 +1,5 @@
-2016-07-04: + oracle: new command 'ora fixctl'
+2016-07-06: + public: command line supports Unix EOF syntax(<<string\n...\nstring).
+            + oracle: new command "ora stat" that supports EOF syntax
 2016-07-04: + public: add library "luv" that depends on "libuv"
                     : new command "ilua" for dev/debug purpose 
 2016-07-01: * oracle: enhancement on 'ora ashchain'

@@ -290,6 +290,7 @@ function scripter.set_echo(name,value)
     return value
 end
 
+local eval,var=env.eval_line,env.var
 function scripter:run_sql(sql,args,cmds)
     if type(sql)=="table" then
         for i=1,#sql do scripter.run_sql(self,sql[i],args[i],cmds[i]) end
@@ -305,12 +306,14 @@ function scripter:run_sql(sql,args,cmds)
     sql=sql:gsub(self.comment,"",1)
     sql=('\n'..sql):gsub("\n[\t ]*%-%-[^\n]*","")
     sql=('\n'..sql):gsub("\n%s*/%*.-%*/",""):gsub("/%s*$","")
+
     local sq="",cmd,params,pre_cmd,pre_params
     local cmds=env._CMDS
 
-    local ary=env.var.backup_context()
-    env.var.import_context(args)
-    local eval=env.eval_line
+    local ary=var.backup_context()
+    var.import_context(args)
+    sql=var.update_text(sql)
+    
     local echo=cfg.get("echo"):lower()=="on"
     for line in sql:gsplit("[\n\r]+") do
         if echo_stack[current_thead] or (echo_stack[env.RUNNING_THREADS[1]] and level==2) then

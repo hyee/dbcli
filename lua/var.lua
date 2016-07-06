@@ -131,7 +131,7 @@ end
 function var.update_text(item,pos,params)
     local org_txt
     if type(item)=="string" then
-        org_txt,item=item,{item}
+        org_txt,pos,item=item,1,{item}
     end
     if cfg.get("define")~='on' or not item[pos] then return end
     pos,params=pos or 1,params or {}
@@ -160,7 +160,6 @@ function var.update_text(item,pos,params)
         count=0
         item[pos]=item[pos]:gsub('%f[\\&](&+)([%w%_%$]+)(%.?)',repl)
     end
-
     if org_txt then return item[1] end
 end
 

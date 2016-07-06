@@ -214,12 +214,18 @@ function env.set_subsystem(cmd,prompt)
     end
 end
 
+local terminator
 function env.check_cmd_endless(cmd,other_parts)
     if not _CMDS[cmd] then
         return true,other_parts
     end
     --print(other_parts,debug.traceback())
-    if not _CMDS[cmd].MULTI then
+    if terminator then 
+        if other_parts and other_parts:sub(-#terminator)==terminator then
+            return true,other_parts
+        end
+        return false,other_parts
+    elseif not _CMDS[cmd].MULTI then
         return true,other_parts and env.END_MARKS.match(other_parts)
     elseif type(_CMDS[cmd].MULTI)=="function" then
         return _CMDS[cmd].MULTI(cmd,other_parts)
@@ -599,7 +605,7 @@ end
 
 function env.parse_args(cmd,rest,is_cross_line)
     --deal with the single-line commands
-    local arg_count
+    local arg_count,terminator,terminator_str
     if type(cmd)=="number" then
         arg_count=cmd+1
     else
@@ -613,8 +619,15 @@ function env.parse_args(cmd,rest,is_cross_line)
         arg_count=_CMDS[cmd].ARGS
     end
 
+
+
     if rest then rest=rest:gsub("%s+$","") end
-    if rest=="" then rest = nil end
+    if rest=="" then 
+        rest = nil 
+    elseif rest then
+        terminator=rest:match('([^\r\n]*)'):match(' <<(%S)$')
+        if terminator then terminator_str=' <<'..terminator..'\n' end
+    end
     
     local args={}
     if arg_count == 1 then
@@ -628,6 +641,16 @@ function env.parse_args(cmd,rest,is_cross_line)
         local count=#args
         for i=1,#rest,1 do
             local char=rest:sub(i,i)
+            if char==' ' and terminator and rest:sub(i,i+#terminator_str-1)==terminator_str then
+                rest=rest:sub(i+#terminator_str)
+                if rest:sub(-#terminator-1)=='\n'..terminator then
+                    rest=rest:sub(1,-#terminator-2)
+                end
+                if piece~="" then args[#args+1],piece=piece,"" end
+                args[#args+1]=rest
+                break
+            end
+            
             if is_quote_string then--if the parameter starts with quote
                 if char ~= quote then
                     piece = piece .. char
@@ -662,7 +685,6 @@ function env.parse_args(cmd,rest,is_cross_line)
                     end
                     break
                 end
-
             end
         end
         --If the quote is not in couple, then treat it as a normal string
@@ -739,7 +761,6 @@ function env.eval_line(line,exec,is_internal,not_skip)
     local function check_multi_cmd(lineval)
         curr_stmt = curr_stmt ..lineval
         done,curr_stmt=env.check_cmd_endless(multi_cmd,curr_stmt)
-
         if done or is_internal then
             return env.force_end_input(exec,is_internal)
         end
@@ -770,6 +791,7 @@ function env.eval_line(line,exec,is_internal,not_skip)
     if not cmd or cmd=="" then return end
     cmd=cmd:upper()
     env.CURRENT_CMD=cmd
+    terminator=nil
     if not (_CMDS[cmd]) then
         return env.warn("No such command '%s', please type 'help' for more information.",cmd)
     elseif _CMDS[cmd].MULTI then --deal with the commands that cross-lines
@@ -777,6 +799,12 @@ function env.eval_line(line,exec,is_internal,not_skip)
         env.CURRENT_PROMPT=env.MTL_PROMPT
         curr_stmt = ""
         return check_multi_cmd(rest)
+    elseif not end_mark and not rest:find('\n',1,true) then 
+        terminator=rest:match(' <<(%S)$')
+        if terminator then
+            terminator,multi_cmd,curr_stmt,env.CURRENT_PROMPT='\n'..terminator,cmd,"",env.MTL_PROMPT
+            return check_multi_cmd(rest)
+        end
     end
 
     --print('Command:',cmd,table.concat (args,','))
