@@ -312,9 +312,9 @@ function scripter:run_sql(sql,args,cmds)
 
     local ary=var.backup_context()
     var.import_context(args)
-    sql=var.update_text(sql)
     
     local echo=cfg.get("echo"):lower()=="on"
+    cfg.set("define","on")
     for line in sql:gsplit("[\n\r]+") do
         if echo_stack[current_thead] or (echo_stack[env.RUNNING_THREADS[1]] and level==2) then
             print(line) 
@@ -495,7 +495,11 @@ function scripter:__onload()
     self.extend_dirs=env.set.get_config(self.__className..".extension")
     if not cfg.exists("echo") then cfg.init("echo","off",scripter.set_echo,"core","Controls whether the START command lists each command in a script as the command is executed.","on,off") end
     if self.command and self.command~="" then
-        env.set_command(self,self.command, {self.help_title.." Type '@@NAME' for more detail.",self.helper},{self.run_script,self.after_script},false,ARGS_COUNT+1)
+        env.set_command{obj=self,cmd=self.command, 
+                        help_func={self.help_title.." Type '@@NAME' for more detail.",self.helper},
+                        call_func={self.run_script,self.after_script},
+                        is_multiline=false,parameters=ARGS_COUNT+1,color="HIB"
+                        }
     end
 end
 

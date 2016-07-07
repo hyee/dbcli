@@ -161,7 +161,7 @@ function env.list_dir(file_dir,file_ext,text_macher)
     local keylist={}
     local filter=file_ext and "*."..file_ext or "*"
     
-    file_dir=file_dir:gsub("[\\/]+",env.PATH_DEL):gsub("[\\/]+$","")
+    file_dir=env.join_path(file_dir,true)
 
     local exists,file=env.uv.os.exists(file_dir,file_ext)
     if not exists then return keylist end
@@ -170,7 +170,7 @@ function env.list_dir(file_dir,file_ext,text_macher)
     else
         dir={}
         if env.OS=="windows" then
-            dirs=io.popen('dir /B/S/A:-D "'..file_dir..env.PATH_DEL..filter.. '" 2>nul')
+            dirs=io.popen('dir /B/S/A:-D "'..env.join_path(file_dir,filter).. '" 2>nul')
         else
             dirs=io.popen('find "'..file_dir..'" -iname '..filter..' -print >/dev/null')
         end
@@ -252,10 +252,10 @@ function env.smart_check_endless(cmd,rest,from_pos)
     return true,env.END_MARKS.match(rest)
 end
 
-function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbcmd,allow_overriden,is_pipable)
+local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,is_dbcmd,allow_overriden,is_pipable,color)
     local abbr={}
 
-    if not paramCount then
+    if not parameters then
         env.raise("Incompleted command["..cmd.."], number of parameters is not defined!")
     end
 
@@ -306,11 +306,21 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
         FUNC      = call_func,    --command function
         MULTI     = is_multiline,
         ABBR      = table.concat(abbr,','),
-        ARGS      = paramCount,
-        DBCMD     = dbcmd,
+        ARGS      = parameters,
+        DBCMD     = is_dbcmd,
+        COLOR     = color,
         ISOVERRIDE= allow_overriden,
         ISPIPABLE = is_pipable
     }
+end
+
+function env.set_command(...)
+    local tab,siz=select(1,...),select('#',...)
+    if siz==1 and type(tab)=="table" and tab.cmd then
+        return _new_command(tab.obj,tab.cmd,tab.help_func,tab.call_func,tab.is_multiline,tab.parameters,tab.is_dbcmd,tab.allow_overriden,tab.is_pipable,tab.color)
+    else
+        return _new_command(...)
+    end
 end
 
 function env.rename_command(name,new_name)
@@ -379,7 +389,7 @@ function env.format_error(src,errmsg,...)
     local HIR,NOR,count="",""
     if env.ansi and env.set and env.set.exists("ERRCOLOR") then
         HIR,NOR=env.ansi.get_color(env.set.get("ERRCOLOR")),env.ansi.get_color('NOR')
-        errmsg=env.ansi.strip_ansi(errmsg)
+        errmsg=errmsg:strip_ansi()
     end
     errmsg,count=errmsg:gsub('^.-(%u%u%u%-%d%d%d%d%d)','%1') 
     if count==0 then
@@ -436,7 +446,7 @@ function env.checkhelp(arg)
 end
 
 local co_stacks={}
-function _exec_command(name,params)
+local function _exec_command(name,params)
     local result
     local cmd=_CMDS[name:upper()]
     if not cmd then
@@ -719,7 +729,7 @@ function env.force_end_input(exec,is_internal)
     return
 end
 
-function env.eval_line(line,exec,is_internal,not_skip)
+local function _eval_line(line,exec,is_internal,not_skip)
     if type(line)~='string' or line:gsub('%s+','')=='' then return end
     local subsystem_prefix=""
     --Remove BOM header
@@ -772,9 +782,7 @@ function env.eval_line(line,exec,is_internal,not_skip)
         curr_stmt = curr_stmt .."\n"
         return multi_cmd
     end
-    if env.event then
-        line=env.event.callback('BEFORE_EVAL',{line})[1]
-    end
+    
     local cmd,rest,end_mark
 
     local rest,pipe_cmd,param = (' '..line):match('^(.*[^|])|%s*(%w+)(.*)$')
@@ -821,6 +829,20 @@ function env.eval_line(line,exec,is_internal,not_skip)
         env.exec_command(cmd,args,is_internal,rest)
     else
         return cmd,args
+    end
+end
+
+function env.eval_line(lines,...)
+    if env.event then
+        lines=env.event.callback('BEFORE_EVAL',{lines})[1]
+    end
+    local stack=lines:split("[\n\r]+")
+    for index,line in ipairs(stack) do
+        if index==#stack then
+            return _eval_line(line,...)
+        else
+            _eval_line(line,...)
+        end
     end
 end
 
@@ -912,7 +934,7 @@ function set_debug(name,value)
 end
 
 local function set_cache_path(name,path)
-    path=path:gsub("[\\/]+",env.PATH_DEL):gsub("[\\/]$","")..env.PATH_DEL
+    path=env.join_path(path,"")
     env.checkerr(env.uv.os.exists(path)=='directory',"No such path: "..path)
     env['_CACHE_BASE'],env["_CACHE_PATH"]=path,path
     return path
@@ -924,14 +946,12 @@ function env.onload(...)
     env.IS_ENV_LOADED=false
     for _,v in ipairs({'jit','ffi','bit'}) do   
         if v=="jit" then
-
             table.new=require("table.new")
             table.clear=require("table.clear")
             env.jit.on()
             env.jit.profile=require("jit.profile")
             env.jit.util=require("jit.util")
-
-            env.jit.opt.start(2,"maxsnap=4096","maxmcode=1024")
+            env.jit.opt.start(3,"maxsnap=4096","maxmcode=1024")
         elseif v=='ffi' then
             env.ffi=require("ffi")
         end
@@ -1018,7 +1038,7 @@ function env.exit()
 end
 
 function env.load_data(file,isUnpack)
-    if not file:find('[\\/]') then file=env.WORK_DIR.."data"..env.PATH_DEL..file end
+    if not file:find('[\\/]') then file=env.join_path(env.WORK_DIR,"data",file) end
     local f=io.open(file,file:match('%.dat$') and "rb" or "r")
     if not f then
         return {}
@@ -1030,7 +1050,7 @@ function env.load_data(file,isUnpack)
 end
 
 function env.save_data(file,txt)
-    if not file:find('[\\/]') then file=env.WORK_DIR.."data"..env.PATH_DEL..file end
+    if not file:find('[\\/]') then file=env.join_path(env.WORK_DIR,"data",file) end
     local f=io.open(file,file:match('%.dat$') and "wb" or "w")
     if not f then
         env.raise("Unable to save "..file)
@@ -1055,11 +1075,10 @@ end
 
 function env.resolve_file(filename,ext)
     if not filename:find('[\\/]') then
-        filename= env._CACHE_PATH..filename
+        filename= env.join_path(env._CACHE_PATH,filename)
     elseif not filename:find('^%a:') then
-        filename= env.WORK_DIR..env.PATH_DEL..filename
+        filename= env.join_path(env.WORK_DIR,filename)
     end
-    filename=filename:gsub('[\\/]+',env.PATH_DEL)
 
     if ext then
         local exist_ext=filename:lower():match('%.([^%.\\/]+)$')

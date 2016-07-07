@@ -5,7 +5,7 @@ local file="password.dat"
 local packer=env.MessagePack
 function login.load()
     local done,f
-    f=env.WORK_DIR..'data'..env.PATH_DEL..file
+    f=env.join_path(env.WORK_DIR,'data',file)
     done,login.list=pcall(env.load_data,file)
     if not done then
         return env.warn('Unable to load "'..f..'" due to it is interrupted, please backup and remove it.')
@@ -162,14 +162,17 @@ function login.onload()
     env.event.snoop("TRIGGER_CONNECT",login.capture)
     cfg.init("SaveLogin","on",nil,"core","Determine if autosave logins.",'on,off')
     local help_login=[[
-        Login with saved accounts, type 'help login' for more detail. Usage: @@NAME [ -d | -a |<number|account_name>]
+        Logon with saved accounts, type 'help login' for more detail. Usage: @@NAME [ -d | -a |<number|account_name>]
             @@NAME                     : list all saved a/c
             @@NAME -d <num|name|alias> : delete matched a/c
             @@NAME -p <num|name|alias> : print the connection information for a specific a/c
             @@NAME    <num|name|alias> : login a/c
             @@NAME -a <alias> <id|name>: set alias to an existing account
         Use 'set savelogin off' to disable the autosave.]]
-    env.set_command(nil,"login",help_login,login.trigger_login,false,3)
+    env.set_command{obj=nil,cmd={"login","logon"}, 
+                    help_func=help_login,
+                    call_func=login.trigger_login,
+                    is_multiline=false,parameters=3,color="PROMPTCOLOR"}
     login.load()
 end
 

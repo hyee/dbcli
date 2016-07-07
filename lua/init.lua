@@ -77,6 +77,19 @@ function init.init_path()
     end
 end
 
+function env.join_path(base,...)
+    local paths,is_trim={base,...}
+    if paths[#paths]==true then 
+        is_trim=true
+        table.remove(paths,#paths)
+    end
+    local path=table.concat(paths,env.PATH_DEL):gsub('[\\/]+',env.PATH_DEL)
+    if is_trim then
+        path=path:gsub('[\\/]+$','')
+    end
+    return path
+end
+
 
 local function exec(func,...)
     if func==nil and type(select(1,...))=="string" then 
@@ -127,7 +140,7 @@ function init.load_database()
     local file=init.databases[env.CURRENT_DB]
     if not file then return end
     local short_dir,name=file:match("^(.-)([^\\/]+)$")
-    local dir=env.WORK_DIR..short_dir:gsub("[\\/]+",env.PATH_DEL)
+    local dir=env.join_path(env.WORK_DIR,short_dir)
     for k,v in pairs(env.list_dir(dir,"jar")) do
         java.loader:addPath(v[2])
     end
@@ -140,7 +153,7 @@ function init.load_database()
     if env[name].module_list then
         local list={}
         for k,v in ipairs(env[name].module_list) do
-            list[k]=v:find('^'..short_dir:gsub("([\\/]+)","[\\/]")) and v or (short_dir..v)
+            list[k]=v:find('^'..env.join_path(short_dir)) and v or (short_dir..v)
         end
         env[name].C={}
         init.load_modules(list,env[name].C)
@@ -154,7 +167,7 @@ function init.load_modules(list,tab,module_name)
     if not module_name then module_name=env.callee():match("([^\\/]+)") end
 
     --load plugin infomation
-    local file=env.WORK_DIR..'data'..env.PATH_DEL..'plugin.cfg'
+    local file=env.join_path(env.WORK_DIR,'data','plugin.cfg')
     local f=io.open(file,"a")
     if f then f:close() end
     local config,err=env.loadfile(file)
@@ -171,7 +184,7 @@ function init.load_modules(list,tab,module_name)
     end
 
     for _,v in ipairs(config) do
-        v=v:gsub("[\\/]+",del)
+        v=env.join_path(v)
         n=v:match("([^\\/]+)$")
         if not v:lower():match('%.lua') then
             v=v..'.lua'

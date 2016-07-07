@@ -123,7 +123,7 @@ function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
         self.work_path=self.work_path:gsub(env.PATH_DEL..'+$','')
         local file_dir=file:gsub('[\\/][^\\/]+$',"")
         local tmpfile='sqlplus.tmp'
-        tmpfile=self.work_path..env.PATH_DEL..tmpfile
+        tmpfile=env.join_path(self.work_path,tmpfile)
         local f,err=io.open(tmpfile,'w')
         env.checkerr(f,"Unable to write file "..tmpfile)
         content=content:format(self.work_path,file_dir,self.script_dir,context,file,arg or ""):gsub('[\n\r]+%s+','\n')..'\n'

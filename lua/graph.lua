@@ -91,7 +91,7 @@ function graph:run_sql(sql,args,cmd,file)
     end
 
     if not template then
-        template=env.load_data(env.WORK_DIR.."lib"..env.PATH_DEL.."dygraphs.html",false)
+        template=env.load_data(env.join_path(env.WORK_DIR,"lib","dygraphs.html"),false)
         env.checkerr(type(template)=="string",'Cannot load file "dygraphs.html" in folder "lib"!')
         cr=[[<textarea id="divNoshow@GRAPH_INDEX" style="white-space: nowrap;width:100%;height:300px;display:none">@GRAPH_DATA</textarea>
         <script type="text/javascript">

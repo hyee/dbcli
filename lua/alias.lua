@@ -1,5 +1,5 @@
 local env,globalcmds=env,env._CMDS
-local alias={command_dir=env.WORK_DIR.."aliases"..env.PATH_DEL,cmdlist={}}
+local alias={command_dir=env.join_path(env.WORK_DIR,"aliases",""),cmdlist={}}
 alias.db_dir=alias.command_dir
 local comment="(.-)[\n\r\b\t%s]*$"
 
@@ -180,7 +180,7 @@ function alias.helper()
 end
 
 function alias.load_db_aliases(db_name)
-    alias.db_dir=alias.command_dir..db_name..env.PATH_DEL
+    alias.db_dir=env.join_path(alias.command_dir,db_name,'')
     env.host.mkdir(alias.db_dir)
     alias.rehash()
 end
@@ -203,7 +203,10 @@ function alias.onload()
     --env.event.snoop('BEFORE_COMMAND',alias.rewrite,nil,80)
     --env.event.snoop('ON_ENV_LOADED',alias.rehash,nil,1)
     env.event.snoop('ON_DB_ENV_LOADED',alias.load_db_aliases,nil,1)
-    env.set_command(nil,"alias", alias.helper,alias.set,'__SMART_PARSE__',3)
+    env.set_command{obj=nil,cmd="alias", 
+                    help_func=alias.helper,
+                    call_func=alias.set,
+                    is_multiline='__SMART_PARSE__',parameters=3,color="PROMPTCOLOR"}
 end
 
 return alias

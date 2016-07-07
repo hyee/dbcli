@@ -1,10 +1,13 @@
-/*[[get performance stats regarding to the input command. Usage: @@NAME <other command>
-Example:
-@@NAME "ora actives"
-@@NAME <<!
-show sga;
-ora actives
-!
+/*[[get session performance stats regarding to the input command. Usage: @@NAME <other command>
+Examples:
+    +------------------------------
+    |@@NAME "ora actives"
+    +------------------------------
+    |@@NAME <<!
+    |  show sga;
+    |  ora actives
+    |!
+    +------------------------------
 ]]*/
 
 snap sestime,sesstat begin 0

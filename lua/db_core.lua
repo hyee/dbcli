@@ -889,7 +889,7 @@ function db_core:csv2sql(filename,src)
 end
 
 function db_core:load_config(db_alias,props)
-    local file=env.WORK_DIR..'data'..env.PATH_DEL..'jdbc_url.cfg'
+    local file=env.join_path(env.WORK_DIR,'data','jdbc_url.cfg')
     local f=io.open(file,"a")
     if f then f:close() end
     local config,err=env.loadfile(file)

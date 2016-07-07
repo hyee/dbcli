@@ -39,7 +39,7 @@ end
 function system:set_work_dir(path,quiet)
     if path=="" then return print("Current working dir is "..self.work_dir) end
     path=path=="." and env._CACHE_PATH or path
-    path=path:gsub("[\\/]+",env.PATH_DEL):gsub("[\\/]$","")..env.PATH_DEL
+    path=env.join_path(path,"")
     env.checkerr(env.uv.os.exists(path)=='directory',"No such folder: %s!",path)
     self.work_dir=path
     if not quiet then
@@ -156,7 +156,9 @@ end
 function system:__onload()
     self.sleep=env.sleep
     write=env.printer.write
-    set_command(self,self.name,self.description,self.call_process,false,2)
+    env.set_command{obj=self,cmd=self.name, 
+                    help_func=self.description,call_func=self.call_process,
+                    is_multiline=false,parameters=2,color="PROMPTSUBCOLOR"}
     env.event.snoop("BEFORE_COMMAND",self.kill_reader,self,1)
 end
 

@@ -304,17 +304,17 @@ function table.dump(tbl,indent,maxdep,tabs)
     return rs..indent..'}'
 end
 
--- byte  1          2           3          4
---------------------------------------------
+-- byte  1        2           3          4
+------------------------------------------
 -- 00 - 7F
--- C2 - DF    80 - BF
--- E0         A0 - BF     80 - BF
--- E1 - EC    80 - BF     80 - BF
--- ED         80 - 9F     80 - BF
--- EE - EF    80 - BF     80 - BF
--- F0         90 - BF     80 - BF    80 - BF
--- F1 - F3    80 - BF     80 - BF    80 - BF
--- F4         80 - 8F     80 - BF    80 - BF
+-- C2 - DF      80 - BF
+-- E0           A0 - BF     80 - BF
+-- E1 - EC      80 - BF     80 - BF
+-- ED           80 - 9F     80 - BF
+-- EE - EF      80 - BF     80 - BF
+-- F0           90 - BF     80 - BF    80 - BF
+-- F1 - F3      80 - BF     80 - BF    80 - BF
+-- F4           80 - 8F     80 - BF    80 - BF
 function string.chars(s,start)
     local i = start or 1
     if not s or i>#s then return nil end

@@ -11,7 +11,7 @@ function ssh:ctor()
     self.type="ssh"
     self.command='shell'
     self.ext_name='*'
-    self.script_dir,self.extend_dirs,self.public_dir=nil,{},env.WORK_DIR.."lua"..env.PATH_DEL.."shell"
+    self.script_dir,self.extend_dirs,self.public_dir=nil,{},env.join_path(env.WORK_DIR,"lua","shell")
 end
 
 function ssh:rehash(script_dir,ext_name,extend_dirs)
@@ -27,7 +27,7 @@ end
 
 function ssh:load_config(ssh_alias)
     if not ssh_alias then return end
-    local file=env.WORK_DIR..'data'..env.PATH_DEL..'jdbc_url.cfg'
+    local file=env.join_path(env.WORK_DIR,'data','jdbc_url.cfg')
     local f=io.open(file,"a")
     if f then f:close() end
     local config,err=env.loadfile(file)
@@ -361,7 +361,7 @@ local pscp_options='\n'..[[Options:
   -sftp     force use of SFTP protocol
   -scp      force use of SCP protocol]]
 
-local pscp='"'..env.WORK_DIR.."bin"..env.PATH_DEL..'pscp.exe"'
+local pscp='"'..env.join_path(env.WORK_DIR,"bin",'pscp.exe')..'"'
 if env.OS~="windows" then pscp="pscp" end
 local pscp_download_usage="Download file(s) from SSH server, support wildcards. Usage: ssh download [remote_path]<filename> [.|<local_path>] [options]"
 local pscp_upload_usage="Upload file(s) into SSH server, support wildcards. Usage: ssh uploaded  [local_path]<filename> [.|<remote_path>] [options]"
@@ -372,7 +372,7 @@ function ssh:set_ftp_local_path(path)
     if not path or current_path==path then return print("Current FTP local path is "..current_path..", to switch back to the default path, use 'ssh llcd .'") end
     
     env.checkerr(os.exists(path),"Cannot find target path "..path)
-    pscp_local_dir=path:gsub("[\\/]",env.PATH_DEL):gsub('[\\/]$','')..env.PATH_DEL
+    pscp_local_dir=env.join_path(path,"")
     print(table.concat({"Local FTP path changed:",current_path,'==>',pscp_local_dir},' '))
 end
 
@@ -470,8 +470,12 @@ function ssh:__onload()
         push_shell=self.upload_script,
     }
     env.remove_command(self.command)
-    env.set_command(self,self.name,self.ssh_help,self.exec,false,2)
-    env.set_command(self,{'shell','sh'},self.helper,self.run_shell,false,20)
+    env.set_command{obj=self,cmd=self.name, 
+                    help_func=self.ssh_help,call_func=self.exec,
+                    is_multiline=false,parameters=2,color="PROMPTSUBCOLOR"}
+    env.set_command{obj=self,cmd={'shell','sh'}, 
+                    help_func=self.helper,call_func=self.run_shell,
+                    is_multiline=false,parameters=20,color="HIB"}
     env.event.snoop("BEFORE_DB_CONNECT",self.trigger_login,self)
     env.event.snoop("TRIGGER_LOGIN",self.login,self)
     cfg.init("term",_term..",auto,auto",self.set_config,"ssh","Define termType/columns/rows in remote SSH server, the supported type depends on remote server",'*')
