@@ -156,52 +156,6 @@ env._CMDS=setmetatable({___ABBR___={}},{
 --
 env.space="    "
 local _CMDS=env._CMDS
-function env.list_dir(file_dir,file_ext,text_macher)
-    local dir,dirs
-    local keylist={}
-    local filter=file_ext and "*."..file_ext or "*"
-    
-    file_dir=env.join_path(file_dir,true)
-
-    local exists,file=env.uv.os.exists(file_dir,file_ext)
-    if not exists then return keylist end
-    if exists=='file' then 
-        dir={file}
-    else
-        dir={}
-        if env.OS=="windows" then
-            dirs=io.popen('dir /B/S/A:-D "'..env.join_path(file_dir,filter).. '" 2>nul')
-        else
-            dirs=io.popen('find "'..file_dir..'" -iname '..filter..' -print >/dev/null')
-        end
-        for n in dirs:lines() do dir[#dir+1]=n end
-    end
-
-    for _,n in ipairs(dir) do
-        local name,ext=n:match("([^\\/]+)$")
-        if name:find('.',1,true) then
-            name,ext=name:match("(.+)%.(%w+)$")
-            --if ext and ext:upper()~=file_ext:upper() and file_ext~="*" then name=nil end
-        end
-        if name and name~="" then
-            local comment
-            if  text_macher then
-                local f=io.open(n)
-                if f then
-                    local txt=f:read(32767) or ""
-                    f:close()
-                    if type(text_macher)=="string" then
-                        comment=txt:match(text_macher) or ""
-                    elseif type(text_macher)=="function" then
-                        comment=text_macher(txt) or ""
-                    end
-                end
-            end
-            keylist[#keylist+1]={name,n,comment}
-        end
-    end
-    return keylist
-end
 
 local previous_prompt
 function env.set_subsystem(cmd,prompt)
@@ -304,7 +258,7 @@ local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,
         DESC      = desc,         --command short help without \n
         HELPER    = help_func,    --command detail help, it is a function
         FUNC      = call_func,    --command function
-        MULTI     = is_multiline,
+        MULTI     = is_multiline or false,
         ABBR      = table.concat(abbr,','),
         ARGS      = parameters,
         DBCMD     = is_dbcmd,
@@ -935,7 +889,7 @@ end
 
 local function set_cache_path(name,path)
     path=env.join_path(path,"")
-    env.checkerr(env.uv.os.exists(path)=='directory',"No such path: "..path)
+    env.checkerr(os.exists(path)=='directory',"No such path: "..path)
     env['_CACHE_BASE'],env["_CACHE_PATH"]=path,path
     return path
 end

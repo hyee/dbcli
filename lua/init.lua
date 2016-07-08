@@ -24,6 +24,7 @@ local init={
         "lua/sleep",
         "lua/set",
         "lua/host",
+        "lua/search",
         "lua/history",
         "lua/alias",
         "lua/interval",
@@ -141,8 +142,8 @@ function init.load_database()
     if not file then return end
     local short_dir,name=file:match("^(.-)([^\\/]+)$")
     local dir=env.join_path(env.WORK_DIR,short_dir)
-    for k,v in pairs(env.list_dir(dir,"jar")) do
-        java.loader:addPath(v[2])
+    for _,file in pairs(os.list_dir(dir,"jar")) do
+        java.loader:addPath(file.fullname)
     end
     env[name]=exec(loadfile(dir..name..'.lua'))
     exec(type(env[name])=="table" and env[name].onload,env[name],name)

@@ -1,3 +1,5 @@
+2016-07-09: * public: new command 'search'
+            * public: minor code optimizations
 2016-07-07: * oracle: move "ora [ora]top" to "show [ora]top"
             * public: colorized 'help'
                     : minor code optimizations

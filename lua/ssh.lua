@@ -15,13 +15,7 @@ function ssh:ctor()
 end
 
 function ssh:rehash(script_dir,ext_name,extend_dirs)
-    local cmds=env.scripter.rehash(self,self.public_dir,ext_name,script_dir)
-    if extend_dirs then 
-        local cmds1=env.scripter.rehash(self,extend_dirs,ext_name)
-        for k,v in pairs(cmds1) do
-            cmds[k]=v
-        end
-    end
+    local cmds=env.scripter.rehash(self,self.public_dir,ext_name,{script_dir,extend_dirs})
     return cmds
 end
 

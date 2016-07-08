@@ -120,14 +120,14 @@ function string.gsplit(s, sep, plain,occurrence)
     local counter=0
     local done = false
     local function pass(i, j)
-        if i and (not occurrence or counter<occurrence) then
+        if i and ((not occurrence) or counter<occurrence) then
             local seg = i>1 and s:sub(start, i - 1) or ""
             start = j + 1
             counter=counter+1
-            return seg, s:sub(i,j)
+            return seg, s:sub(i,j),counter
         else
             done = true
-            return s:sub(start),""
+            return s:sub(start),"",counter+1
         end
     end
     return function()
@@ -142,10 +142,10 @@ function string.case_insensitive_pattern(pattern)
     local p = pattern:gsub("(%%?)(.)",
         function(percent, letter)
             if percent ~= "" or not letter:match("%a") then
-          -- if the '%' matched, or `letter` is not a letter, return "as is"
+                -- if the '%' matched, or `letter` is not a letter, return "as is"
                 return percent .. letter
             else
-          -- else, return a case-insensitive character class of the matched letter
+                -- else, return a case-insensitive character class of the matched letter
                 return string.format("[%s%s]", letter:lower(), letter:upper())
             end
         end)

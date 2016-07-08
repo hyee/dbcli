@@ -70,7 +70,7 @@ function grid:cut(row,format_func,format_str)
     return row
 end
 
-local s_format="%s%%%s%ds%s"
+local s_format="%s%%%s%ss%s"
 function grid.fmt(format,...)
     local idx,v,lpad,rpad,pad=0,nil
     local args={...}
@@ -82,19 +82,20 @@ function grid.fmt(format,...)
             lpad,rpad,pad="","",""
             v=args[idx]
             if not v or type(v)~="string" then return g end
-            local clen,dlen=v:ulen()
-            clen =dlen-clen+(#v-v:strip_len())
-            if clen>0 then siz=siz+clen end
+            local chars,length=v:ulen()
+            local strips=#v-v:strip_len()
+            chars=length-chars+strips
+            if chars>0 then siz=siz+chars end
             if siz>99 then
-                pad=string.rep(" ",siz-99)
+                pad=string.rep(" ",siz-length+strips) or ""
                 if flag~="-" then
                     lpad=pad
                 else
                     rpad=pad
                 end
-                siz=99
+                siz=''
             end
-            return s_format:format(lpad,flag,siz,rpad)
+            return s_format:format(lpad,flag,tostring(siz),rpad)
         end)
     --print('new',format,',',fmt)
     return fmt:format(...)

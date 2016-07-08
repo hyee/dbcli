@@ -387,6 +387,7 @@ end
 
 function var.trigger_column(field)
     local col,value,rownum,index=table.unpack(field)
+    if type(col)~="string" then return end
     col=col:upper()
     if not var.columns[col] then return end
     local obj=var.columns[col]
@@ -395,7 +396,7 @@ function var.trigger_column(field)
         if index then
             field[2],var.columns[index:upper()]=index,obj
         end
-        return 
+        return
     end
     if not value then return end
 

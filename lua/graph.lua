@@ -78,11 +78,6 @@ function graph:ctor()
     self.ext_command={"graph","gr"}
 end
 
-function graph:rehash(script_dir,ext_name,extend_dirs)
-    template=nil
-    return env.scripter.rehash(self,script_dir,ext_name,extend_dirs)
-end
-
 
 function graph:run_sql(sql,args,cmd,file)
     if type(sql)=="table" and not sql._sql then

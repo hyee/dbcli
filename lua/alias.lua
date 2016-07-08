@@ -12,11 +12,25 @@ function alias.rehash()
     end
 
     alias.cmdlist={}
-    for k,v in ipairs(env.list_dir(alias.command_dir,"alias",comment)) do
-        if v[2]:lower()==(alias.command_dir..v[1]..'.alias'):lower() or
-           v[2]:lower()==(alias.db_dir..v[1]..'.alias'):lower() then
-            alias.set(v[1],v[3],false)
+    local keys=os.list_dir(alias.command_dir,"alias",nil,function(event,file)
+        if event=='ON_SCAN' then
+            if file.fullname:lower()==(alias.command_dir..file.name):lower() or
+               file.fullname:lower()==(alias.db_dir..file.name):lower() then
+               return true
+            end
+            return false
         end
+        if not file.data then return end
+        local text
+        if type(comment)=="string" then
+            text=file.data:match(comment)
+        elseif type(comment)=="function" then
+            text=comment(file.data)
+        end
+        return text or ""
+    end)
+    for _,file in ipairs(keys) do
+        alias.set(file.shortname,file.data,false)
     end
 end
 
