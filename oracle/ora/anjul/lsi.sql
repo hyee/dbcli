@@ -9,17 +9,11 @@ Show gv$session [-a|-i|-k]
       }
   ]]--
 ]]*/
-
+set feed off
 prompt
-
 prompt -- ----------------------------------------------------------------------- ---
-
 prompt --   List of oracle's processes                                            ---
-
 prompt -- ----------------------------------------------------------------------- ---
-
-prompt
-
 
 select
        s.sid ||','|| s.serial#||',@'||s.inst_id "SID"
@@ -75,15 +69,10 @@ and &filter
 
 
 Prompt
-
 prompt
-
 prompt -- ----------------------------------------------------------------------- ---
-
 prompt --   Active / Inactive Sessions                                            ---
-
 prompt -- ----------------------------------------------------------------------- ---
-
 
 Select
        '--  Time : '||Time||' - Process : '||Proc||' - Session '||Sess            Status
@@ -116,17 +105,10 @@ Select
 
 
 Prompt
-
 prompt
-
 prompt -- ----------------------------------------------------------------------- ---
-
 prompt --   Active / Sessions In Progress ...                                     ---
-
 prompt -- ----------------------------------------------------------------------- ---
-
-
-
 
 Select
        sn.sid
@@ -150,9 +132,3 @@ Select
    and
        sl.sofar       != sl.totalwork
 ;
-
-
-
-Prompt
-
-Prompt

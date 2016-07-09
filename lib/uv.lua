@@ -1,5 +1,5 @@
 local u=require"luv"
-local table,math,type,tonumber=table,math,type,tonumber
+local table,math,type,tonumber,os,pcall=table,math,type,tonumber,os,pcall
 local uv,env={},env
 local index,pos,found
 local modules={timer=1,prepare=1,check=1,idle=1,async=1,tcp=1,pipe=1,tty=1,udp=1,fs_event=1,fs_poll=1,fs=1,thread=1,os=1,signal=1}
@@ -28,7 +28,7 @@ function os.exists(file,ext)
         file=file..'.'..ext
         attr=uv.fs.stat(file)
     end
-    return attr and attr.type,file
+    return attr and attr.type,env.join_path(file)
 end
 
 local function noop() end
@@ -135,7 +135,7 @@ function os.list_dir(path,ext,depth,read_func,filter,is_skip_binary)
             local n=name:lower():match('([^%.//\\]+)$')
             if binaries[n] then return end
         end
-        local file={fullname=env.join_path(fullname),name=name,type=typ,depth=depth,shortname=name:gsub('(%.[^%.\\/]*)$','')}
+        local file={fullname=env.join_path(fullname),name=name,type=typ,depth=depth%10000,shortname=name:gsub('(%.[^%.\\/]*)$','')}
         local is_allow,err
         if type(read_func)=="function" then 
             err,is_allow=pcall(read_func,'ON_SCAN',file)

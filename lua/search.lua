@@ -28,7 +28,7 @@ function search.do_search(filter)
         for line_text,_,line_no in file.data:gsplit('\n',true) do
             if #line_text<=1000 and line_text:find(filter) then
                 count=count+1
-                rows:add({file.fullname,line_no,line_text:trim():gsub('%s+',' ')})
+                rows:add({file.fullname,line_no,(line_text:trim():gsub('%s+',' '))})
             end
             if count>=10000 then return end
         end
@@ -39,7 +39,7 @@ function search.do_search(filter)
 end
 
 function search.onload()
-    env.set_command{cmd='search',help_func='Search items. Usage: @@NAME <text>',parameters=2,call_func=search.do_search}
+    env.set_command{cmd='search',help_func='Search text based on Lua regular expression. Usage: @@NAME <text>',parameters=2,call_func=search.do_search}
 end
 
 return search

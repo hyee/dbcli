@@ -1,4 +1,4 @@
-2016-07-09: * public: new command 'search'
+2016-07-09: + public: new command 'search', 'edit/ed' and 'set editor/_editor' 
             * public: minor code optimizations
 2016-07-07: * oracle: move "ora [ora]top" to "show [ora]top"
             * public: colorized 'help'

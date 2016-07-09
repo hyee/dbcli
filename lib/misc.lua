@@ -73,7 +73,7 @@ BOOL CreateProcessA(
     );
 ]])
 function os.shell(cmd,args)
-    shell.ShellExecuteA(0,nil,cmd,nil,nil,1)
+    shell.ShellExecuteA(0,"open",cmd,args,nil,1)
 end
 
 local WCS_ctype = ffi.typeof('char[?]')
@@ -82,8 +82,16 @@ function os.CreateProcess(cmdline,  flags)
 end
 
 function os.find_extension(exe)
+    local err="Cannot find "..exe.." in the default path, please add it into EXT_PATH of file data/init.cfg"
+    if exe:find('[\\/]') then
+        local type,file=os.exists(exe)
+        env.checkerr(type,err)
+        return file
+    end
+     exe='"'..env.join_path(exe):trim('"')..'"'
     local cmd=(env.OS=="windows" and "where " or "which ")..exe.." >"..(env.OS=="windows" and "nul 2>nul" or "/dev/null")
-    env.checkerr((os.execute(cmd)),"Cannot find "..exe.." in the default path, please add it into EXT_PATH of file data/init.cfg")
+
+    env.checkerr((os.execute(cmd)),err)
     cmd=(env.OS=="windows" and "where " or "which ")..exe
     local f=io.popen(cmd)
     local path

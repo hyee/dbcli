@@ -31,7 +31,7 @@ function history:capture(cmd,args,res,is_internal,command_text,clock)
     if #env.RUNNING_THREADS>1 then return end
     --if(cmd==nil) then print(debug.traceback()) end
     cmd=cmd:upper()
-    if (cmd=="HIS" or cmd=="/" or cmd=="R" or cmd=="HISTORY") then return end
+    if (cmd=="HIS" or cmd=="/" or cmd=="R" or cmd=="HISTORY" or cmd=='ED' or cmd=='EDIT') then return end
     local maxsiz=cfg.get("HISSIZE")
     local key=command_text:gsub("[%s%z\128\192]+"," "):sub(1,300)
     local k1=key:upper()
@@ -49,20 +49,44 @@ function history:capture(cmd,args,res,is_internal,command_text,clock)
         keys[k]=nil
     end
     keys[k1]=#self
+    local file=env.join_path(env._CACHE_PATH,'afiedt.buf')
+    local f,err=io.open(file,'w')
+    env.checkerr(f,err)
+    f:write(lastcommand.text)
+    f:close()
 end
 
 
 function history.rerun()
     if lastcommand then
-        env.exec_command(lastcommand.cmd,lastcommand.args)
+        local file=env.join_path(env._CACHE_PATH,'afiedt.buf')
+        local f,err=io.open(file,'r')
+        env.checkerr(f,err)
+        local text=f:read('*a')
+        env.eval_line(text,true,true)
+        env.force_end_input(true,true)
     end
 end
 
+function history.edit_buffer()
+    if not lastcommand then return end
+    local editor=cfg.get("editor")
+    env.checkerr(os.exists(editor),'Cannot find "'..editor..'" in current search path.')
+    os.shell(editor,file)
+end
+
+function history.set_editor(name,editor)
+    editor=os.find_extension(editor)
+    return editor
+end
+
 function history.onload()
-    cfg.init("HISSIZE",50,nil,"core","Max size of historical commands",'0 - 999')
+    cfg.init("HISSIZE",50,history.set_editor,"core","Max size of historical commands",'0 - 999')
+    cfg.init({"EDITOR",'_EDITOR'},'notepad',history.set_editor,"core","The editor to edit the buffer")
     event.snoop("AFTER_SUCCESS_COMMAND",history.capture,history)
     env.set_command(history,{'history','his'},"Show/run historical commands. Usage: @@NAME [index|last]",history.show,false,2)
     env.set_command(history,{'r','/'},"Rerun the previous command.",history.rerun,false,2)
+    env.set_command(history,{'EDIT','ED'},"Use the program that defined in 'set editor' to edit the buffer in order to run with '/'.",history.edit_buffer,false,2)
 end
 
 return history
