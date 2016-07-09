@@ -23,6 +23,7 @@
         }
       &more_filter: default={1=1},f={}
       @counter: 11.2={, count(distinct sql_exec_id) "Execs"},default={}
+      @UNIT   : 11.2={delta_time*1e-6}, default={&BASE}
     ]]--
   Options:
       Groupings : The grouping option can be followed by other custimized field, i.e.: '@@NAME -p,p1raw ...'
@@ -83,7 +84,7 @@ SELECT * FROM (
         (SELECT a.*,sql_plan_hash_value plan_hash,current_obj# obj,nvl2(CURRENT_FILE#,CURRENT_FILE#||','||current_block#,'') block,
             CASE WHEN a.session_type = 'BACKGROUND' OR REGEXP_LIKE(a.program, '.*\([PJ]\d+\)') THEN
               REGEXP_REPLACE(SUBSTR(a.program,INSTR(a.program,'(')), '\d', 'n')
-            END program#,&BASE c
+            END program#,&unit c
            , TO_CHAR(p1, '0XXXXXXXXXXXXXXX') p1raw
            , TO_CHAR(p2, '0XXXXXXXXXXXXXXX') p2raw
            , TO_CHAR(p3, '0XXXXXXXXXXXXXXX') p3raw

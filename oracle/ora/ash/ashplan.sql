@@ -1,7 +1,11 @@
-/*[[Show ash cost for a specific SQL. usage: @@NAME {<sql_id> [plan_hash_value|sid|a] [YYMMDDHH24MI] [YYMMDDHH24MI]} [-dash] 
+/*[[Show ash cost for a specific SQL. usage: @@NAME {<sql_id> [plan_hash_value|sid|a] [YYMMDDHH24MI] [YYMMDDHH24MI]} [-dash] [-o]
+-o    : Show top object#, otherwise show top event
+-dash : Based on dba_hist_active_sess_history, otherwise based on gv$active_session_history
 --[[
     @Required_Ver : 11.1={Oracle 11.1+ Only}
-    &V9: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
+    &V9 : ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
+    &OBJ: default={nvl(event,'ON CPU')}, O={CURRENT_OBJ#}
+    &Title: default={Event}, O={Obj#}
 --]]
 ]]*/
 set feed off printsize 3000
@@ -60,7 +64,7 @@ qry AS
          inst_id
   FROM   sql_plan_data),
 ash as(SELECT /*+no_expand materialize ordered use_nl(b)*/ 
-              b.*,COUNT(distinct nvl2(event,sample_id,null)) OVER(PARTITION BY SQL_PLAN_LINE_ID,event) tenv,decode(flag,1,1,10) cnt
+              b.*,CEIL(SUM(delta_time*1e-6) OVER(PARTITION BY SQL_PLAN_LINE_ID,&OBJ)) tenv
        FROM   qry a
        JOIN   &V9 b
        ON     ( b.sql_id=:V1 AND a.phv = b.sql_plan_hash_value AND sample_time BETWEEN NVL(to_date(nvl(:V3,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7) AND NVL(to_date(nvl(:V4,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE))
@@ -69,35 +73,18 @@ ash as(SELECT /*+no_expand materialize ordered use_nl(b)*/
 ash_base AS(
    SELECT /*+materialize no_expand*/ nvl(SQL_PLAN_LINE_ID,0) ID,
            COUNT(1) px_hits,
-           COUNT(DISTINCT sample_id)*cnt hits,
+           CEIL(SUM(nvl2(qc_session_id,0,Delta_time))*1e-6) hits,
            COUNT(DISTINCT sql_exec_id) exes,
-           COUNT(DISTINCT TRUNC(sample_time + 0, 'MI')) mins,
+           CEIL(SUM(nvl2(qc_session_id,0,Delta_time))*1e-7/6) mins,
            ROUND(COUNT(DECODE(wait_class, NULL, 1)) * NVL2(max(sample_id),100,0) / COUNT(1), 1) "CPU",
            ROUND(COUNT(CASE WHEN wait_class IN ('User I/O','System I/O') THEN 1 END) * 100 / COUNT(1), 1) "IO",
            ROUND(COUNT(DECODE(wait_class, 'Cluster', 1)) * 100 / COUNT(1), 1) "CL",
            ROUND(COUNT(DECODE(wait_class, 'Concurrency', 1)) * 100 / COUNT(1), 1) "CC",
            ROUND(COUNT(DECODE(wait_class, 'Application', 1)) * 100 / COUNT(1), 1) "APP",
            ROUND(COUNT(CASE WHEN NVL(wait_class,'1') NOT IN ('1','User I/O','System I/O','Cluster','Concurrency','Application') THEN 1 END) * 100 / COUNT(1), 1) oth,
-           MAX(nvl2(event,event||'('||tenv||')',null)) KEEP(dense_rank LAST ORDER BY tenv) top_event
+           MAX(&OBJ||'('||tenv||')') KEEP(dense_rank LAST ORDER BY tenv) top_event
     FROM   ash
-    GROUP  BY nvl(SQL_PLAN_LINE_ID,0),cnt
-),
-ash_obj as(
-    SELECT /*+materialize no_expand*/ 
-           CASE WHEN CURRENT_OBJ#<1 THEN -1 ELSE CURRENT_OBJ# END obj#,
-           COUNT(1) px_hits,
-           COUNT(DISTINCT sample_id)*cnt hits,
-           COUNT(DISTINCT sql_exec_id) exes,
-           COUNT(DISTINCT TRUNC(sample_time + 0, 'MI')) mins,
-           ROUND(COUNT(DECODE(wait_class, NULL, 1)) * NVL2(max(sample_id),100,0) / COUNT(1), 1) "CPU",
-           ROUND(COUNT(CASE WHEN wait_class IN ('User I/O','System I/O') THEN 1 END) * 100 / COUNT(1), 1) "IO",
-           ROUND(COUNT(DECODE(wait_class, 'Cluster', 1)) * 100 / COUNT(1), 1) "CL",
-           ROUND(COUNT(DECODE(wait_class, 'Concurrency', 1)) * 100 / COUNT(1), 1) "CC",
-           ROUND(COUNT(DECODE(wait_class, 'Application', 1)) * 100 / COUNT(1), 1) "APP",
-           ROUND(COUNT(CASE WHEN NVL(wait_class,'1') NOT IN ('1','User I/O','System I/O','Cluster','Concurrency','Application') THEN 1 END) * 100 / COUNT(1), 1) oth,
-           MAX(nvl2(event,event||'('||tenv||')',null)) KEEP(dense_rank LAST ORDER BY tenv) top_event
-    FROM   ash
-    GROUP  BY CASE WHEN CURRENT_OBJ#<1 THEN -1 ELSE CURRENT_OBJ# END,cnt
+    GROUP  BY nvl(SQL_PLAN_LINE_ID,0)
 ),
 ash_data AS(
     SELECT /*+materialize no_expand no_merge(a) no_merge(b)*/*
@@ -171,7 +158,7 @@ rules sequential order (
              ||LPAD('Mins|',smin[cv()])
              ||' CPU%  IO%  CL%  CC% APP% OTH%|'
             -- ||LPAD('Top_Obj',sobj[cv()])
-             ||RPAD(' Top Event',sevent[cv()]-1)||'|'
+             ||RPAD(' Top &title',sevent[cv()]-1)||'|'
          when id[cv()] is not null
          then '|' || lpad(oid[cv()] || ' |', csize[cv()])
              ||LPAD(exes[cv()], sexe[cv()])
