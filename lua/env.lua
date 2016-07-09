@@ -156,52 +156,6 @@ env._CMDS=setmetatable({___ABBR___={}},{
 --
 env.space="    "
 local _CMDS=env._CMDS
-function env.list_dir(file_dir,file_ext,text_macher)
-    local dir,dirs
-    local keylist={}
-    local filter=file_ext and "*."..file_ext or "*"
-    
-    file_dir=file_dir:gsub("[\\/]+",env.PATH_DEL):gsub("[\\/]+$","")
-
-    local exists,file=os.exists(file_dir,file_ext)
-    if not exists then return keylist end
-    if exists==1 then 
-        dir={file}
-    else
-        dir={}
-        if env.OS=="windows" then
-            dirs=io.popen('dir /B/S/A:-D "'..file_dir..env.PATH_DEL..filter.. '" 2>nul')
-        else
-            dirs=io.popen('find "'..file_dir..'" -iname '..filter..' -print >/dev/null')
-        end
-        for n in dirs:lines() do dir[#dir+1]=n end
-    end
-
-    for _,n in ipairs(dir) do
-        local name,ext=n:match("([^\\/]+)$")
-        if name:find('.',1,true) then
-            name,ext=name:match("(.+)%.(%w+)$")
-            --if ext and ext:upper()~=file_ext:upper() and file_ext~="*" then name=nil end
-        end
-        if name and name~="" then
-            local comment
-            if  text_macher then
-                local f=io.open(n)
-                if f then
-                    local txt=f:read(32767) or ""
-                    f:close()
-                    if type(text_macher)=="string" then
-                        comment=txt:match(text_macher) or ""
-                    elseif type(text_macher)=="function" then
-                        comment=text_macher(txt) or ""
-                    end
-                end
-            end
-            keylist[#keylist+1]={name,n,comment}
-        end
-    end
-    return keylist
-end
 
 local previous_prompt
 function env.set_subsystem(cmd,prompt)
@@ -214,12 +168,18 @@ function env.set_subsystem(cmd,prompt)
     end
 end
 
+local terminator_patt,terminator='%f[<%w]<<(%S+)[ \r]*$'
 function env.check_cmd_endless(cmd,other_parts)
     if not _CMDS[cmd] then
         return true,other_parts
     end
     --print(other_parts,debug.traceback())
-    if not _CMDS[cmd].MULTI then
+    if terminator then 
+        if other_parts and other_parts:trim():sub(-#terminator)==terminator then
+            return true,other_parts
+        end
+        return false,other_parts
+    elseif not _CMDS[cmd].MULTI then
         return true,other_parts and env.END_MARKS.match(other_parts)
     elseif type(_CMDS[cmd].MULTI)=="function" then
         return _CMDS[cmd].MULTI(cmd,other_parts)
@@ -246,10 +206,10 @@ function env.smart_check_endless(cmd,rest,from_pos)
     return true,env.END_MARKS.match(rest)
 end
 
-function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbcmd,allow_overriden,is_pipable)
+local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,is_dbcmd,allow_overriden,is_pipable,color)
     local abbr={}
 
-    if not paramCount then
+    if not parameters then
         env.raise("Incompleted command["..cmd.."], number of parameters is not defined!")
     end
 
@@ -298,13 +258,23 @@ function env.set_command(obj,cmd,help_func,call_func,is_multiline,paramCount,dbc
         DESC      = desc,         --command short help without \n
         HELPER    = help_func,    --command detail help, it is a function
         FUNC      = call_func,    --command function
-        MULTI     = is_multiline,
+        MULTI     = is_multiline or false,
         ABBR      = table.concat(abbr,','),
-        ARGS      = paramCount,
-        DBCMD     = dbcmd,
+        ARGS      = parameters,
+        DBCMD     = is_dbcmd,
+        COLOR     = color,
         ISOVERRIDE= allow_overriden,
         ISPIPABLE = is_pipable
     }
+end
+
+function env.set_command(...)
+    local tab,siz=select(1,...),select('#',...)
+    if siz==1 and type(tab)=="table" and tab.cmd then
+        return _new_command(tab.obj,tab.cmd,tab.help_func,tab.call_func,tab.is_multiline,tab.parameters,tab.is_dbcmd,tab.allow_overriden,tab.is_pipable,tab.color)
+    else
+        return _new_command(...)
+    end
 end
 
 function env.rename_command(name,new_name)
@@ -373,7 +343,7 @@ function env.format_error(src,errmsg,...)
     local HIR,NOR,count="",""
     if env.ansi and env.set and env.set.exists("ERRCOLOR") then
         HIR,NOR=env.ansi.get_color(env.set.get("ERRCOLOR")),env.ansi.get_color('NOR')
-        errmsg=env.ansi.strip_ansi(errmsg)
+        errmsg=errmsg:strip_ansi()
     end
     errmsg,count=errmsg:gsub('^.-(%u%u%u%-%d%d%d%d%d)','%1') 
     if count==0 then
@@ -430,7 +400,7 @@ function env.checkhelp(arg)
 end
 
 local co_stacks={}
-function _exec_command(name,params)
+local function _exec_command(name,params)
     local result
     local cmd=_CMDS[name:upper()]
     if not cmd then
@@ -599,7 +569,7 @@ end
 
 function env.parse_args(cmd,rest,is_cross_line)
     --deal with the single-line commands
-    local arg_count
+    local arg_count,terminator,terminator_str
     if type(cmd)=="number" then
         arg_count=cmd+1
     else
@@ -614,7 +584,22 @@ function env.parse_args(cmd,rest,is_cross_line)
     end
 
     if rest then rest=rest:gsub("%s+$","") end
-    if rest=="" then rest = nil end
+    if rest=="" then 
+        rest = nil 
+    elseif rest then
+        terminator=rest:match('([^\r\n]*)'):match(terminator_patt)
+        if terminator then 
+            terminator_str='<<'..terminator
+            rest=rest:trim()
+            if rest:sub(-#terminator-1)=='\n'..terminator then
+                rest=rest:sub(1,-#terminator-2)
+            end
+            if rest:sub(1,#terminator_str)==terminator_str then
+                rest=rest:sub(#terminator_str+1):trim()
+                arg_count=math.min(2,arg_count)
+            end
+        end
+    end
     
     local args={}
     if arg_count == 1 then
@@ -628,6 +613,13 @@ function env.parse_args(cmd,rest,is_cross_line)
         local count=#args
         for i=1,#rest,1 do
             local char=rest:sub(i,i)
+            if char=='<' and terminator and rest:sub(i,i+#terminator_str-1)==terminator_str then
+                rest=rest:sub(i+#terminator_str):trim()
+                if piece~="" then args[#args+1],piece=piece,"" end
+                args[#args+1]=rest
+                break
+            end
+            
             if is_quote_string then--if the parameter starts with quote
                 if char ~= quote then
                     piece = piece .. char
@@ -662,7 +654,6 @@ function env.parse_args(cmd,rest,is_cross_line)
                     end
                     break
                 end
-
             end
         end
         --If the quote is not in couple, then treat it as a normal string
@@ -692,7 +683,7 @@ function env.force_end_input(exec,is_internal)
     return
 end
 
-function env.eval_line(line,exec,is_internal,not_skip)
+local function _eval_line(line,exec,is_internal,not_skip)
     if type(line)~='string' or line:gsub('%s+','')=='' then return end
     local subsystem_prefix=""
     --Remove BOM header
@@ -739,16 +730,13 @@ function env.eval_line(line,exec,is_internal,not_skip)
     local function check_multi_cmd(lineval)
         curr_stmt = curr_stmt ..lineval
         done,curr_stmt=env.check_cmd_endless(multi_cmd,curr_stmt)
-
         if done or is_internal then
             return env.force_end_input(exec,is_internal)
         end
         curr_stmt = curr_stmt .."\n"
         return multi_cmd
     end
-    if env.event then
-        line=env.event.callback('BEFORE_EVAL',{line})[1]
-    end
+    
     local cmd,rest,end_mark
 
     local rest,pipe_cmd,param = (' '..line):match('^(.*[^|])|%s*(%w+)(.*)$')
@@ -770,9 +758,18 @@ function env.eval_line(line,exec,is_internal,not_skip)
     if not cmd or cmd=="" then return end
     cmd=cmd:upper()
     env.CURRENT_CMD=cmd
+    terminator=nil
     if not (_CMDS[cmd]) then
         return env.warn("No such command '%s', please type 'help' for more information.",cmd)
-    elseif _CMDS[cmd].MULTI then --deal with the commands that cross-lines
+    elseif not end_mark and not rest:find('\n',1,true) then 
+        terminator=rest:match(terminator_patt)
+        if terminator then
+            terminator,multi_cmd,curr_stmt,env.CURRENT_PROMPT='\n'..terminator,cmd,"",env.MTL_PROMPT
+            return check_multi_cmd(rest)
+        end
+    end
+    
+    if _CMDS[cmd].MULTI then --deal with the commands that cross-lines
         multi_cmd=cmd
         env.CURRENT_PROMPT=env.MTL_PROMPT
         curr_stmt = ""
@@ -786,6 +783,20 @@ function env.eval_line(line,exec,is_internal,not_skip)
         env.exec_command(cmd,args,is_internal,rest)
     else
         return cmd,args
+    end
+end
+
+function env.eval_line(lines,...)
+    if env.event then
+        lines=env.event.callback('BEFORE_EVAL',{lines})[1]
+    end
+    local stack=lines:split("[\n\r]+")
+    for index,line in ipairs(stack) do
+        if index==#stack then
+            return _eval_line(line,...)
+        else
+            _eval_line(line,...)
+        end
     end
 end
 
@@ -877,8 +888,8 @@ function set_debug(name,value)
 end
 
 local function set_cache_path(name,path)
-    path=path:gsub("[\\/]+",env.PATH_DEL):gsub("[\\/]$","")..env.PATH_DEL
-    env.checkerr(os.exists(path)==2,"No such path: "..path)
+    path=env.join_path(path,"")
+    env.checkerr(os.exists(path)=='directory',"No such path: "..path)
     env['_CACHE_BASE'],env["_CACHE_PATH"]=path,path
     return path
 end
@@ -894,7 +905,7 @@ function env.onload(...)
             env.jit.on()
             env.jit.profile=require("jit.profile")
             env.jit.util=require("jit.util")
-            env.jit.opt.start(2)
+            env.jit.opt.start(3,"maxsnap=4096","maxmcode=1024")
         elseif v=='ffi' then
             env.ffi=require("ffi")
         end
@@ -981,7 +992,7 @@ function env.exit()
 end
 
 function env.load_data(file,isUnpack)
-    if not file:find('[\\/]') then file=env.WORK_DIR.."data"..env.PATH_DEL..file end
+    if not file:find('[\\/]') then file=env.join_path(env.WORK_DIR,"data",file) end
     local f=io.open(file,file:match('%.dat$') and "rb" or "r")
     if not f then
         return {}
@@ -993,7 +1004,7 @@ function env.load_data(file,isUnpack)
 end
 
 function env.save_data(file,txt)
-    if not file:find('[\\/]') then file=env.WORK_DIR.."data"..env.PATH_DEL..file end
+    if not file:find('[\\/]') then file=env.join_path(env.WORK_DIR,"data",file) end
     local f=io.open(file,file:match('%.dat$') and "wb" or "w")
     if not f then
         env.raise("Unable to save "..file)
@@ -1018,11 +1029,10 @@ end
 
 function env.resolve_file(filename,ext)
     if not filename:find('[\\/]') then
-        filename= env._CACHE_PATH..filename
+        filename= env.join_path(env._CACHE_PATH,filename)
     elseif not filename:find('^%a:') then
-        filename= env.WORK_DIR..env.PATH_DEL..filename
+        filename= env.join_path(env.WORK_DIR,filename)
     end
-    filename=filename:gsub('[\\/]+',env.PATH_DEL)
 
     if ext then
         local exist_ext=filename:lower():match('%.([^%.\\/]+)$')

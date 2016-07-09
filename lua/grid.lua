@@ -70,19 +70,32 @@ function grid:cut(row,format_func,format_str)
     return row
 end
 
+local s_format="%s%%%s%ss%s"
 function grid.fmt(format,...)
-    local idx,v=0,nil
+    local idx,v,lpad,rpad,pad=0,nil
     local args={...}
     local fmt= format:gsub("(%%(-?)(%d*)s)",
         function(g,flag,siz)
             idx=idx+1
             if siz=="" then return g end
+            siz=tonumber(siz)
+            lpad,rpad,pad="","",""
             v=args[idx]
             if not v or type(v)~="string" then return g end
-            local clen,dlen=v:ulen()
-            clen =dlen-clen+#v-env.ansi.strip_len(v)
-            if clen>0 then return '%'..flag..tostring(tonumber(siz)+clen)..'s' end
-            return g
+            local chars,length=v:ulen()
+            local strips=#v-v:strip_len()
+            chars=length-chars+strips
+            if chars>0 then siz=siz+chars end
+            if siz>99 then
+                pad=string.rep(" ",siz-length+strips) or ""
+                if flag~="-" then
+                    lpad=pad
+                else
+                    rpad=pad
+                end
+                siz=''
+            end
+            return s_format:format(lpad,flag,tostring(siz),rpad)
         end)
     --print('new',format,',',fmt)
     return fmt:format(...)
@@ -170,6 +183,11 @@ function grid.sort(rows,cols,bypass_head)
                     a1,b1=tostring(a1),tostring(b1)
                 end
             end
+
+            if type(a1)=="string" then 
+                a1,b1=a1:strip_ansi() ,b1:strip_ansi() 
+            end
+
 
             if a1~=b1 then
                 if l<0 then return a1>b1 end
@@ -315,14 +333,15 @@ function grid:add(rs)
                 v=table.concat(v1,'\n')
             end
             local grp={}
-            v=env.ansi.convert_ansi(v)
-            v=v:gsub('\128\192',''):gsub('%z','')
+            v=v:convert_ansi()
+            v=v:gsub('\192\128',''):gsub('%z','')
             if headind>0 then v=v:gsub("[%s ]+$",""):gsub("[ \t]+[\n\r]","\n"):gsub("\t",'    ') end
+
             --if the column value has multiple lines, then split lines into table
             for p in v:gmatch('([^\n\r]+)') do
                 grp[#grp+1]=p
                 --deal with unicode chars
-                local l, len = env.ansi.strip_ansi(p):ulen()
+                local l, len = p:strip_ansi(p):ulen()
                 if l~=len then self.use_jwriter=true end
                 if csize < len then csize=len end
             end
@@ -434,7 +453,6 @@ function grid:wellform(col_del,row_del)
     local head_fmt=fmt
     for k,v in ipairs(colsize) do
         local siz=v[1]
-        if siz>99  then format_func=string.fmt end
         local del=" "
         if pivot==0 or k~=1+indx and (pivot~=1 or k~=3+indx) then del=col_del end
         if k==#colsize then del=del:gsub("%s+$","") end

@@ -156,7 +156,7 @@ function oracle:connect(conn_str)
     else
         self.conn_str=self.conn_str:gsub("%:[^/%:]+$",'/'..self.props.service_name)
         prompt=(prompt or self.props.service_name):match("^([^,%.&]+)")
-        env._CACHE_PATH=env._CACHE_BASE..prompt:lower():trim()..env.PATH_DEL
+        env._CACHE_PATH=env.join_path(env._CACHE_BASE,prompt:lower():trim(),'')
         os.execute('mkdir "'..env._CACHE_PATH..'" 2> '..(env.OS=="windows" and 'NUL' or "/dev/null"))
         prompt=('%s%s'):format(prompt:upper(),self.props.db_role or '')
         env.set_prompt(nil,prompt,nil,2)

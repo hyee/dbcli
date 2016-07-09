@@ -30,39 +30,64 @@ function scripter:format_version(version)
 end
 
 function scripter:rehash(script_dir,ext_name,extend_dirs)
-    local keylist=env.list_dir(script_dir,ext_name or self.ext_name or "sql",self.comment)
+    local dirs={script_dir}
+    if type(extend_dirs)=="table" then
+        for k,v in pairs(extend_dirs) do dirs[#dirs+1]=v end
+    else
+        dirs[#dirs+1]=extend_dirs
+    end
     local abbrs={}
-    local cmdlist,pathlist=setmetatable({},{__index=abbrs}),{}
-    local counter=0
-    for k,v in ipairs(keylist) do
-        local desc=v[3] and v[3]:gsub("^%s*[\n\r#]+","") or ""
-        local tmp,abbr,attrs
-        local function set_tmp(s) tmp=s;return ""; end
-        desc=desc:gsub("%-%-%[%[(.*)%]%]%-%-",set_tmp):gsub("%-%-%[%[(.*)%-%-%]%]",set_tmp)
-        desc=desc:gsub("([\n\r]+%s*)%-%-","%1  ")
-        desc=desc:gsub("([\n\r]+%s*)REM","%1   ")
-        desc=desc:gsub("([\n\r]+%s*)rem","%1   ")
-        desc=desc:gsub("([\n\r]+%s*)#","%1   ")
-        local cmd=v[1]:upper()
-        if cmdlist[cmd] then
-            pathlist[cmdlist[cmd].path:lower()]=nil
+    
+    local key_list=os.list_dir(dirs,ext_name or self.ext_name or "sql",nil,function(event,file)
+        if event=='ON_SCAN' then return 32767 end
+        if not file.data then return end
+        local desc,annotation
+        if type(self.comment)=="string" then
+            desc=file.data:match(self.comment)
+        elseif type(self.comment)=="function" then
+            desc=self.comment(file.data)
         end
-        attrs={path=v[2],desc=desc,short_desc=desc:match("([^\n\r]+)") or ""}
-        rawset(cmdlist,cmd,attrs)
-        if tmp then
-            local alias=("\n"..tmp):match("\n%s*@ALIAS:%s*(%S+)")
+        desc=desc or ""
+        local function set_annotation(s) annotation=s;return ""; end
+        if desc~="" then
+            desc=desc:gsub("%-%-%[%[(.*)%]%]%-%-",set_annotation):gsub("%-%-%[%[(.*)%-%-%]%]",set_annotation)
+            desc=desc:gsub("([\n\r]+%s*)%-%-","%1  ")
+            desc=desc:gsub("([\n\r]+%s*)REM","%1   ")
+            desc=desc:gsub("([\n\r]+%s*)rem","%1   ")
+            desc=desc:gsub("([\n\r]+%s*)#","%1   ")
+        end
+        local attrs={path=file.fullname,desc=desc,short_desc=desc:match("([^\n\r]+)") or ""}
+        if annotation then 
+            local alias=("\n"..annotation):match("\n%s*@ALIAS:%s*(%S+)")
             if alias then
-                abbr=alias:upper():split('[,; ]+')
+                local abbr=alias:upper():split('[,; ]+')
                 attrs.abbr=table.concat(abbr,',')
                 for x,y in ipairs(abbr) do
                     abbrs[y]=attrs
                 end
             end
         end
-        pathlist[v[2]:lower()]=cmd
+        return attrs
+    end)
+
+    local cmdlist,pathlist=setmetatable(table.new(1,#key_list+10),{__index=abbrs}),table.new(1,#key_list)
+
+    local counter=0
+    for _,file in ipairs(key_list) do
+        local cmd=file.shortname:upper()
+        if cmdlist[cmd] then
+            local old_cmd=cmdlist[cmd]
+            pathlist[old_cmd.path:lower()]=nil
+            for abbr,attrs in pairs(abbrs) do
+                if attrs==old_cmd then abbrs[abbr]=nil end
+            end
+            counter=counter-1
+        end
+        rawset(cmdlist,cmd,file.data)
+        rawset(pathlist,file.fullname:lower(),cmd)
         counter=counter+1
     end
-
+    
     local additions={
         {'-R','Rebuild the help info and available commands'},
         {'-P','Verify the paramters/templates of the target script, instead of running it. Usage: @@NAME <command> [<args>]'},
@@ -78,19 +103,13 @@ function scripter:rehash(script_dir,ext_name,extend_dirs)
     end
 
     cmdlist['./PATH'],cmdlist['./COUNT']=pathlist,counter
-    if extend_dirs then
-        local cmds1=scripter.rehash(self,extend_dirs,ext_name)
-        for k,v in pairs(cmds1) do
-            cmdlist[k]=v
-        end
-    end
     return cmdlist
 end
 
 --[[
 Available parameters:
    Input bindings:  from :V1 to :V9
-   Replacement:     from &V1 to &V9, used to replace the wildchars inside the SQL stmts
+   Replacement:     from &V1 to &V9, used to replace the wildcards inside the SQL stmts
    Out   bindings:  :<alphanumeric>, the data type of output parameters should be defined in th comment scope
 --]]--
 function scripter:parse_args(sql,args,print_args,extend_dirs)
@@ -290,6 +309,7 @@ function scripter.set_echo(name,value)
     return value
 end
 
+local eval,var=env.eval_line,env.var
 function scripter:run_sql(sql,args,cmds)
     if type(sql)=="table" then
         for i=1,#sql do scripter.run_sql(self,sql[i],args[i],cmds[i]) end
@@ -305,13 +325,15 @@ function scripter:run_sql(sql,args,cmds)
     sql=sql:gsub(self.comment,"",1)
     sql=('\n'..sql):gsub("\n[\t ]*%-%-[^\n]*","")
     sql=('\n'..sql):gsub("\n%s*/%*.-%*/",""):gsub("/%s*$","")
+
     local sq="",cmd,params,pre_cmd,pre_params
     local cmds=env._CMDS
 
-    local ary=env.var.backup_context()
-    env.var.import_context(args)
-    local eval=env.eval_line
+    local ary=var.backup_context()
+    var.import_context(args)
+    
     local echo=cfg.get("echo"):lower()=="on"
+    cfg.set("define","on")
     for line in sql:gsplit("[\n\r]+") do
         if echo_stack[current_thead] or (echo_stack[env.RUNNING_THREADS[1]] and level==2) then
             print(line) 
@@ -358,7 +380,7 @@ function scripter:get_script(cmd,args,print_args)
         cmd,is_get=args[1] and args[1]:upper() or "/",true
     elseif cmd=="-L" then
         env.checkerr(args[1],"Please specify the directory!")
-        env.checkerr(os.exists(args[1])==2 or args[1]:lower()=="default","No such directory: %s",args[1])
+        env.checkerr(os.exists(args[1])=='directory' or args[1]:lower()=="default","No such directory: %s",args[1])
         self.extend_dirs=env.set.save_config(self.__className..".extension",args[1])
         self.cmdlist=self:rehash(self.script_dir,self.ext_name,self.extend_dirs)
         if self.extend_dirs then
@@ -419,7 +441,7 @@ end
 
 function scripter:check_ext_file(cmd)
     local exist,cmd=os.exists(cmd,self.ext_name)
-    env.checkerr(exist==1,"Cannot find this file: "..cmd)
+    env.checkerr(exist=='file',"Cannot find this file: "..cmd)
     local target_dir=self:rehash(cmd,self.ext_name)
     cmd=cmd:match('([^\\/]+)$'):match('[^%.%s]+'):upper()
     return target_dir,cmd
@@ -492,8 +514,13 @@ function scripter:__onload()
     self.extend_dirs=env.set.get_config(self.__className..".extension")
     if not cfg.exists("echo") then cfg.init("echo","off",scripter.set_echo,"core","Controls whether the START command lists each command in a script as the command is executed.","on,off") end
     if self.command and self.command~="" then
-        env.set_command(self,self.command, {self.help_title.." Type '@@NAME' for more detail.",self.helper},{self.run_script,self.after_script},false,ARGS_COUNT+1)
+        env.set_command{obj=self,cmd=self.command, 
+                        help_func={self.help_title.." Type '@@NAME' for more detail.",self.helper},
+                        call_func={self.run_script,self.after_script},
+                        is_multiline=false,parameters=ARGS_COUNT+1,color="HIB"
+                        }
     end
+    env.event.snoop("ON_SEARCH",function(dir) dir[#dir+1]=self.extend_dirs end)
 end
 
 return scripter

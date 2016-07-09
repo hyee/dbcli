@@ -1,3 +1,13 @@
+2016-07-09: + public: new command 'search', 'edit/ed' and 'set editor/_editor' 
+            * public: minor code optimizations
+2016-07-07: * oracle: move "ora [ora]top" to "show [ora]top"
+            * public: colorized 'help'
+                    : minor code optimizations
+2016-07-06: + public: command line supports Unix EOF syntax(<<string\n...\nstring).
+            + oracle: new command "ora stat" that supports EOF syntax
+2016-07-05: + oracle: new command 'ora fixctl'
+2016-07-04: + public: add library "luv" that depends on "libuv"
+                    : new command "ilua" for dev/debug purpose 
 2016-07-01: * oracle: enhancement on 'ora ashchain'
             * public: luajit up to date
 2016-06-30: * public: support case-insensitive matching for 're.lua'

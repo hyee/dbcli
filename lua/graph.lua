@@ -78,11 +78,6 @@ function graph:ctor()
     self.ext_command={"graph","gr"}
 end
 
-function graph:rehash(script_dir,ext_name,extend_dirs)
-    template=nil
-    return env.scripter.rehash(self,script_dir,ext_name,extend_dirs)
-end
-
 
 function graph:run_sql(sql,args,cmd,file)
     if type(sql)=="table" and not sql._sql then
@@ -91,7 +86,7 @@ function graph:run_sql(sql,args,cmd,file)
     end
 
     if not template then
-        template=env.load_data(env.WORK_DIR.."lib"..env.PATH_DEL.."dygraphs.html",false)
+        template=env.load_data(env.join_path(env.WORK_DIR,"lib","dygraphs.html"),false)
         env.checkerr(type(template)=="string",'Cannot load file "dygraphs.html" in folder "lib"!')
         cr=[[<textarea id="divNoshow@GRAPH_INDEX" style="white-space: nowrap;width:100%;height:300px;display:none">@GRAPH_DATA</textarea>
         <script type="text/javascript">
@@ -255,7 +250,7 @@ function graph:run_sql(sql,args,cmd,file)
             
             if #xlabels==0 then
                 charts,xlabels[1],values[title]=y,title,table.new(#rows+10,5)
-                values[tile][1]=x
+                values[title][1]=x
                 env.checkerr(#charts>0,'Pivot mode should have at least 3 columns!')
                 print('Fetching data into HTML file...')
             else

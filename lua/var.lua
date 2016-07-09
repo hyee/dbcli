@@ -131,8 +131,9 @@ end
 function var.update_text(item,pos,params)
     local org_txt
     if type(item)=="string" then
-        org_txt,item=item,{item}
+        org_txt,pos,item=item,1,{item}
     end
+
     if cfg.get("define")~='on' or not item[pos] then return end
     pos,params=pos or 1,params or {}
     local count=1
@@ -151,14 +152,14 @@ function var.update_text(item,pos,params)
     while count>0 do
         count=0
         for k,v in pairs(params) do
-            if type(v)=="string" then params[k]=v:gsub('%f[%w_%$&](&+)([%w%_%$]+)(%.?)',repl) end
+            if type(v)=="string" then params[k]=v:gsub('%f[\\&](&+)([%w%_%$]+)(%.?)',repl) end
         end
     end
 
     count=1
     while count>0 do
         count=0
-        item[pos]=item[pos]:gsub('%f[%w_%$&](&+)([%w%_%$]+)(%.?)',repl)
+        item[pos]=item[pos]:gsub('%f[\\&](&+)([%w%_%$]+)(%.?)',repl)
     end
 
     if org_txt then return item[1] end
@@ -386,6 +387,7 @@ end
 
 function var.trigger_column(field)
     local col,value,rownum,index=table.unpack(field)
+    if type(col)~="string" then return end
     col=col:upper()
     if not var.columns[col] then return end
     local obj=var.columns[col]
@@ -394,7 +396,7 @@ function var.trigger_column(field)
         if index then
             field[2],var.columns[index:upper()]=index,obj
         end
-        return 
+        return
     end
     if not value then return end
 
@@ -411,7 +413,7 @@ end
 function var.onload()
     snoop('BEFORE_DB_EXEC',var.before_db_exec)
     snoop('AFTER_DB_EXEC',var.after_db_exec)
-    snoop('BEFORE_EVAL',function(item) if not env.pending_command() then var.update_text(item) end end)
+    snoop('BEFORE_EVAL',function(item) if not env.pending_command() then var.update_text(item,1) end end)
     snoop('BEFORE_COMMAND',var.before_command)
     snoop("AFTER_COMMAND",var.capture_after_cmd)
     snoop("ON_COLUMN_VALUE",var.trigger_column)

@@ -73,7 +73,7 @@ BOOL CreateProcessA(
     );
 ]])
 function os.shell(cmd,args)
-    shell.ShellExecuteA(0,nil,cmd,nil,nil,1)
+    shell.ShellExecuteA(0,"open",cmd,args,nil,1)
 end
 
 local WCS_ctype = ffi.typeof('char[?]')
@@ -81,24 +81,17 @@ function os.CreateProcess(cmdline,  flags)
     kernel.CreateProcessA(cmdline,nil, nil, nil,false, 0, nil,nil,nil,nil)
 end
 
-function os.exists(file,ext)
-    local f=io.open(file,'r')
-    if not f and type(ext)=="string" then
-        f=io.open(file..'.'..ext,'r')
-        if f then file=file..'.'..ext end
-    end
-    if f then
-        f:close()
-        return 1,file
-    end
-
-    local r=os.execute('cd "'..file..'" 2>nul 1>nul')
-    return r and 2 or nil,file
-end
-
 function os.find_extension(exe)
+    local err="Cannot find "..exe.." in the default path, please add it into EXT_PATH of file data/init.cfg"
+    if exe:find('[\\/]') then
+        local type,file=os.exists(exe)
+        env.checkerr(type,err)
+        return file
+    end
+     exe='"'..env.join_path(exe):trim('"')..'"'
     local cmd=(env.OS=="windows" and "where " or "which ")..exe.." >"..(env.OS=="windows" and "nul 2>nul" or "/dev/null")
-    env.checkerr((os.execute(cmd)),"Cannot find "..exe.." in the default path, please add it into EXT_PATH of file data/init.cfg")
+
+    env.checkerr((os.execute(cmd)),err)
     cmd=(env.OS=="windows" and "where " or "which ")..exe
     local f=io.popen(cmd)
     local path
@@ -135,14 +128,14 @@ function string.gsplit(s, sep, plain,occurrence)
     local counter=0
     local done = false
     local function pass(i, j)
-        if i and (not occurrence or counter<occurrence) then
+        if i and ((not occurrence) or counter<occurrence) then
             local seg = i>1 and s:sub(start, i - 1) or ""
             start = j + 1
             counter=counter+1
-            return seg, s:sub(i,j)
+            return seg, s:sub(i,j),counter
         else
             done = true
-            return s:sub(start),""
+            return s:sub(start),"",counter+1
         end
     end
     return function()
@@ -157,10 +150,10 @@ function string.case_insensitive_pattern(pattern)
     local p = pattern:gsub("(%%?)(.)",
         function(percent, letter)
             if percent ~= "" or not letter:match("%a") then
-          -- if the '%' matched, or `letter` is not a letter, return "as is"
+                -- if the '%' matched, or `letter` is not a letter, return "as is"
                 return percent .. letter
             else
-          -- else, return a case-insensitive character class of the matched letter
+                -- else, return a case-insensitive character class of the matched letter
                 return string.format("[%s%s]", letter:lower(), letter:upper())
             end
         end)
@@ -319,17 +312,17 @@ function table.dump(tbl,indent,maxdep,tabs)
     return rs..indent..'}'
 end
 
--- byte  1          2           3          4
---------------------------------------------
+-- byte  1        2           3          4
+------------------------------------------
 -- 00 - 7F
--- C2 - DF    80 - BF
--- E0         A0 - BF     80 - BF
--- E1 - EC    80 - BF     80 - BF
--- ED         80 - 9F     80 - BF
--- EE - EF    80 - BF     80 - BF
--- F0         90 - BF     80 - BF    80 - BF
--- F1 - F3    80 - BF     80 - BF    80 - BF
--- F4         80 - 8F     80 - BF    80 - BF
+-- C2 - DF      80 - BF
+-- E0           A0 - BF     80 - BF
+-- E1 - EC      80 - BF     80 - BF
+-- ED           80 - 9F     80 - BF
+-- EE - EF      80 - BF     80 - BF
+-- F0           90 - BF     80 - BF    80 - BF
+-- F1 - F3      80 - BF     80 - BF    80 - BF
+-- F4           80 - 8F     80 - BF    80 - BF
 function string.chars(s,start)
     local i = start or 1
     if not s or i>#s then return nil end

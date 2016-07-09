@@ -19,7 +19,7 @@ and another one is the platform-specific module.
 
 Currently only public and Oracle/MySQL/DB2 functions are developed, and only support windows platform.
 
-It is not aim to support all features of the existing CLI utilities that embedded by the specific database(`Oracle SQL*Plus`, `DB2 CLP`, etc), but to provide the features other than those tools:
+It is not intended to support all features of the existing CLI utilities that embedded by the specific database(`Oracle SQL*Plus`, `DB2 CLP`, etc), but to provide the features other than those tools:
 
 * Pretty-print of the select statement and the flexible control of the grid layouts(see set command)
 * Automatically generate help documents for customized SQL/shell/etc scripts.
@@ -103,19 +103,20 @@ The binaries have been included into this project.
 Below is the list:
 
     JLine2      : (BSD)    https://github.com/jline/jline2
+    JSch        : (BSD)    http://www.jcraft.com/jsch/
     ConsoleZ    : (GNU)    https://github.com/cbucher/console
     luajit v2.1 : (MIT)    https://github.com/LuaJIT/LuaJIT
-    LPeg        : (MIT)    http://www.inf.puc-rio.br/~roberto/lpeg/lpeg.html
     jnlua       : (MIT)    https://github.com/hyee/JNLuaJIT(revised from jnlua.googlecode.com)
     OpenCSV     : (MIT)    https://github.com/hyee/OpenCSV(revised from opencsv.sourceforge.net)
     MessagePack : (MIT)    https://github.com/fperrad/lua-MessagePack (pure lua)
     dygraphs    : (MIT)    https://github.com/danvk/dygraphs
+    JsonForLua  : (MIT)    https://github.com/craigmj/json4lua 
+    PSCP        : (MIT)    http://www.putty.org/ 
+    LPeg        : (MIT)    http://www.inf.puc-rio.br/~roberto/lpeg/lpeg.html
     JNA         : (LGPL)   https://github.com/java-native-access/jna
     NuProcess   : (Apache) https://github.com/brettwooldridge/NuProcess
+    Luv(libuv)  : (Apache) https://github.com/luvit/luv
     ANSICON     : (ZLIB)   https://github.com/adoxa/ansicon
-    JsonForLua  : (MIT)    https://github.com/craigmj/json4lua 
-    JSch        : (BSD)    http://www.jcraft.com/jsch/
-    PSCP        : (MIT)    http://www.putty.org/ 
 
 Besides, some SQL scripts come from internet.
 
@@ -126,3 +127,40 @@ About ANSI Color Escapes
 For lower Windows versions, `ANSICON` supports more ANSI escapes features than JLine, especially when running bash commands(i.e.: top) via SSH.
 
 If you have concern on `ANSICON`, please remove it from bin, and edit `data\init.cfg` to add line `set ANSICON_CMD=`
+
+
+Customize Commands
+------------------------------------
+
+###Customize new simple commands
+You are able to use command `alias` to define the shortcut of the simple command, for instance:<br/>
+`alias sf select * from (select * from $*) where rownum<=50;`
+
+In this case, you can execute `sf dba_objects where object_id<1000` to simplify the input.
+
+The `alias` command supports the `$1-$9` and `$*` wildcard characters, of which `$n` corresponds to the `n`th parameter, and `$*` means the concatenation of `$n+1`-`$9` via space. 
+Type `alias` to see more usage.
+ 
+###Customize new sub-command from complex SQLs
+Take command `ora` for example, to define a sub-command `xxx`, create file ``oracle\ora\xxx.sql` and fill with following content: <br/>
+`alias sf select * from (select * from &V1) where rownum<=50;`
+
+After that, run `ora -r` to take effect, then you can run `ora xxx dba_objects` to query the view.
+
+The utility has created some pre-defined commands, if you want to modify the those commands without concerning of overriding back by the new version, just create a sub-folder under the `ora` directory, and put the updated file into it, because for the scripts with same name, the one in the sub directory will be treated as higher priority. Or you may also use `ora -l <path>` to link to another work dir.
+
+Commands `ora/show/sys/snap/chart/sql/shell/etc` follow the similar rules:
+* Parameters: Accept `:V1-:V20` or `&V1-&V20` as the input parameters, of which `:Vn` means binding parameters, and `&Vn` means variable substitution.
+* Help comment: `/*[[...]]*/` is optional, as the help or usage information
+* Options: `--[[...]]--` inside the help comment is also optional, normally used to specify the command options(i.e., `ora actives -m`) and access validation, refer to other sub-commands for more examples.
+
+###Customize new root command
+Different from sub-commands, the root command must be a lua script. To plug a user-define lua script into the utility, just add its path in `data\plugin.cfg`, you may refer to `data\plugin_sample.cfg` for the example.
+
+Below are the common interfaces that can be used in the script:
+*  Define new command: `env.set_command(...)`
+*  Define new setting: `env.set.init_cfg(...)`
+*  Get current database: `env.getdb()`
+You may also:
+* Execute `help -a` or `set -a` to see how those interfaces are used in other scripts
+* Execute `help -e env[.module] 2` to see the available interfaces

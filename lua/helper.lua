@@ -146,6 +146,7 @@ function helper.helper(cmd,...)
         table.append(rows[#rows],"Cross-lines?","Source")
     end
     table.insert(rows[#rows],"Decription")
+    local ansi=env.ansi
     for k,v in pairs(_CMDS) do
         if k~="___ABBR___" and (v.DESC and not v.DESC:find("[ \t]*#") or flag==1) then
             table.insert(rows,{
@@ -156,6 +157,10 @@ function helper.helper(cmd,...)
                 table.append(rows[#rows],(type(v.MULTI)=="function" or type(v.MULTI)=="string") and "Auto" or v.MULTI and 'Yes' or 'No',v.FILE)
             end
             table.insert(rows[#rows],v.DESC and v.DESC:gsub("^[%s#]+",""):gsub("@@NAME",k:lower()) or " ")
+            if (v.COLOR or "")~="" then
+                rows[#rows][1]=ansi.mask(v.COLOR,rows[#rows][1])
+                rows[#rows][2]=ansi.mask(v.COLOR,rows[#rows][2])
+            end
         end
     end
     print("Available comands:\n===============")

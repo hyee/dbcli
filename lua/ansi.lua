@@ -274,8 +274,16 @@ function ansi.strip_ansi(str)
     return str:gsub("\27%[[%d;]*[mK]","")
 end
 
+function string.strip_ansi(str)
+    return ansi.strip_ansi(str)
+end
+
 function ansi.strip_len(str)
     return #ansi.strip_ansi(str)
+end
+
+function string.strip_len(str)
+    return ansi.strip_len(str)
 end
 
 function ansi.convert_ansi(str)
@@ -286,12 +294,16 @@ function ansi.convert_ansi(str)
         end)
 end
 
+function string.convert_ansi(str)
+    return ansi.convert_ansi(str)
+end
+
 function ansi.test_text(str)
     if not isAnsiSupported then return print("Ansi color is not supported!") end
     if not str or str=="" then
         rawprint(env.space.."ANSI SGR Codes, where '$E' means ascii code 27(a.k.a chr(27)): ")
         rawprint(env.space..string.rep("=",140))
-        print(env.load_data(env.WORK_DIR.."bin"..env.PATH_DEL.."ANSI.txt",false))
+        print(env.load_data(env.join_path(env.WORK_DIR,"bin","ANSI.txt"),false))
         rawprint(env.space..string.rep("=",140))
         local bf,wf,bb,wb=base_color['BLK'][1],base_color['HIW'][1],base_color['BBLK'][1],base_color['HBWHT'][1]
         if env.grid then

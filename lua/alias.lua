@@ -1,5 +1,5 @@
 local env,globalcmds=env,env._CMDS
-local alias={command_dir=env.WORK_DIR.."aliases"..env.PATH_DEL,cmdlist={}}
+local alias={command_dir=env.join_path(env.WORK_DIR,"aliases",""),cmdlist={}}
 alias.db_dir=alias.command_dir
 local comment="(.-)[\n\r\b\t%s]*$"
 
@@ -12,11 +12,25 @@ function alias.rehash()
     end
 
     alias.cmdlist={}
-    for k,v in ipairs(env.list_dir(alias.command_dir,"alias",comment)) do
-        if v[2]:lower()==(alias.command_dir..v[1]..'.alias'):lower() or
-           v[2]:lower()==(alias.db_dir..v[1]..'.alias'):lower() then
-            alias.set(v[1],v[3],false)
+    local keys=os.list_dir(alias.command_dir,"alias",nil,function(event,file)
+        if event=='ON_SCAN' then
+            if file.fullname:lower()==(alias.command_dir..file.name):lower() or
+               file.fullname:lower()==(alias.db_dir..file.name):lower() then
+               return true
+            end
+            return false
         end
+        if not file.data then return end
+        local text
+        if type(comment)=="string" then
+            text=file.data:match(comment)
+        elseif type(comment)=="function" then
+            text=comment(file.data)
+        end
+        return text or ""
+    end)
+    for _,file in ipairs(keys) do
+        alias.set(file.shortname,file.data,false)
     end
 end
 
@@ -148,7 +162,7 @@ end
 function alias.helper()
     local help=[[
     Set a shortcut of other existing commands. Usage: @@NAME [-r] | {<name> [parameters]} | {-e <alias name>}
-    1) Set/modify alias: @@NAME <name> <command>. Available wildchars: $1 - $9, or $*
+    1) Set/modify alias: @@NAME <name> <command>. Available wildcards: $1 - $9, or $*
                          $1 - $9 can have default value, format as: $1[default]
     2) Remove alias    : @@NAME <name>
     3) Reload alias    : @@NAME -r
@@ -180,7 +194,7 @@ function alias.helper()
 end
 
 function alias.load_db_aliases(db_name)
-    alias.db_dir=alias.command_dir..db_name..env.PATH_DEL
+    alias.db_dir=env.join_path(alias.command_dir,db_name,'')
     env.host.mkdir(alias.db_dir)
     alias.rehash()
 end
@@ -203,7 +217,10 @@ function alias.onload()
     --env.event.snoop('BEFORE_COMMAND',alias.rewrite,nil,80)
     --env.event.snoop('ON_ENV_LOADED',alias.rehash,nil,1)
     env.event.snoop('ON_DB_ENV_LOADED',alias.load_db_aliases,nil,1)
-    env.set_command(nil,"alias", alias.helper,alias.set,'__SMART_PARSE__',3)
+    env.set_command{obj=nil,cmd="alias", 
+                    help_func=alias.helper,
+                    call_func=alias.set,
+                    is_multiline='__SMART_PARSE__',parameters=3,color="PROMPTCOLOR"}
 end
 
 return alias

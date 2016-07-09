@@ -286,7 +286,10 @@ end
 function cfg.onload()
     event.snoop("BEFORE_COMMAND",cfg.capture_before_cmd)
     event.snoop("AFTER_COMMAND",cfg.capture_after_cmd)
-    env.set_command(nil,cfg.name,"Set environment parameters. Usage: set [-a] | {[-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]}",cfg.doset,false,99)
+    env.set_command{obj=nil,cmd=cfg.name, 
+                    help_func="Set environment parameters. Usage: set [-a] | {[-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]}",
+                    call_func=cfg.doset,
+                    is_multiline=false,parameters=99,color="PROMPTCOLOR"}
     env.event.snoop("ON_ENV_LOADED",cfg.on_env_load,nil,2)
 end
 
