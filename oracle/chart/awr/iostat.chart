@@ -32,10 +32,9 @@
                Round(SUM(WAIT_TIME/slot_size*1e-3),2) "Wait Seconds per Minute",
                Round(SUM(RMB/Slot_size*1024*1024),2)  "Read Bytes per Minute",
                Round(SUM(WMB/Slot_size*1024*1024),2)  "Write Bytes per Minute",
-               Round(SUM(RREQ/Slot_size*1024*1024),2) "Read Requests per Minute",
-               Round(SUM(WREQ/Slot_size*1024*1024),2) "Write Requests per Minute",
-               Round(sum(RMB)/sum(WAIT_TIME)*1e3*1024*1024,2) "AVG Read Speed(Bytes/Sec)",
-               Round(sum(WMB)/sum(WAIT_TIME)*1e3*1024*1024,2) "AVG Write Speed(Bytes/Sec)"
+               Round(SUM(RREQ/Slot_size),2) "Read Requests per Minute",
+               Round(SUM(WREQ/Slot_size),2) "Write Requests per Minute",
+               Round(sum(WAIT_TIME)/sum(WAITS),2) "AVG Milliseconds per Request"
         FROM  (SELECT /*+merge*/
                        A.*,
                        GROUP_BY || decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event
@@ -46,7 +45,8 @@
                               SMALL_WRITE_MEGABYTES + LARGE_WRITE_MEGABYTES - nvl(LAG(SMALL_WRITE_MEGABYTES + LARGE_WRITE_MEGABYTES) OVER(PARTITION BY part_key, FUNCTION_ID, FILETYPE_ID ORDER BY snap_id),0) wmb,
                               SMALL_READ_REQS+LARGE_READ_REQS-nvl(LAG(SMALL_READ_REQS+LARGE_READ_REQS) OVER(PARTITION BY part_key, FUNCTION_ID, FILETYPE_ID ORDER BY snap_id),0) RREQ,
                               SMALL_WRITE_REQS+LARGE_WRITE_REQS-nvl(LAG(SMALL_WRITE_REQS+LARGE_WRITE_REQS) OVER(PARTITION BY part_key, FUNCTION_ID, FILETYPE_ID ORDER BY snap_id),0) WREQ,
-                              WAIT_TIME-nvl(LAG(WAIT_TIME) OVER(PARTITION BY part_key, FUNCTION_ID, FILETYPE_ID ORDER BY snap_id),0) WAIT_TIME
+                              WAIT_TIME-nvl(LAG(WAIT_TIME) OVER(PARTITION BY part_key, FUNCTION_ID, FILETYPE_ID ORDER BY snap_id),0) WAIT_TIME,
+                              NUMBER_OF_WAITS-nvl(LAG(NUMBER_OF_WAITS) OVER(PARTITION BY part_key, FUNCTION_ID, FILETYPE_ID ORDER BY snap_id),0) WAITS
                        FROM   DBA_HIST_IOSTAT_DETAIL NATURAL JOIN snap
                        WHERE  (&filter)
                        AND    (:V1 is null or upper(FUNCTION_NAME)=upper(:V1) or upper(FILETYPE_NAME)=upper(:V1))) a

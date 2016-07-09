@@ -25,6 +25,11 @@ function search.do_search(filter)
             end
             return 1024*1024
         end
+
+        if file.fullname:find(filter) then
+            rows:add({file.fullname,0,""})
+        end
+
         for line_text,_,line_no in file.data:gsplit('\n',true) do
             if #line_text<=1000 and line_text:find(filter) then
                 count=count+1
