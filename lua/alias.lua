@@ -195,7 +195,7 @@ end
 
 function alias.load_db_aliases(db_name)
     alias.db_dir=env.join_path(alias.command_dir,db_name,'')
-    env.host.mkdir(alias.db_dir)
+    env.uv.fs.mkdir(alias.db_dir,777,function() end)
     alias.rehash()
 end
 
@@ -216,6 +216,7 @@ function alias.onload()
     --alias.rehash()
     --env.event.snoop('BEFORE_COMMAND',alias.rewrite,nil,80)
     --env.event.snoop('ON_ENV_LOADED',alias.rehash,nil,1)
+    env.uv.fs.mkdir(alias.command_dir,777,function() end)
     env.event.snoop('ON_DB_ENV_LOADED',alias.load_db_aliases,nil,1)
     env.set_command{obj=nil,cmd="alias", 
                     help_func=alias.helper,

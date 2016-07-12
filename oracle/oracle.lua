@@ -149,7 +149,6 @@ function oracle:connect(conn_str)
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
         END;]],self.props)
-    self.props.isdba=self.props.isdba=='TRUE' and true or false
     if not succ then
         self.props.instance=1
         self.props.db_version='9.1'
@@ -158,7 +157,7 @@ function oracle:connect(conn_str)
         self.conn_str=self.conn_str:gsub("%:[^/%:]+$",'/'..self.props.service_name)
         prompt=(prompt or self.props.service_name):match("^([^,%.&]+)")
         env._CACHE_PATH=env.join_path(env._CACHE_BASE,prompt:lower():trim(),'')
-        os.execute('mkdir "'..env._CACHE_PATH..'" 2> '..(env.OS=="windows" and 'NUL' or "/dev/null"))
+        env.uv.fs.mkdir(env._CACHE_PATH,777,function() end)
         prompt=('%s%s'):format(prompt:upper(),self.props.db_role or '')
         env.set_prompt(nil,prompt,nil,2)
         self.session_title=('%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)')

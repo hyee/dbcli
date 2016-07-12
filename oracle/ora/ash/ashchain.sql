@@ -5,17 +5,19 @@ This script references Tanel Poder's script
         &V8    : ash={gv$active_session_history},dash={Dba_Hist_Active_Sess_History}
         &Filter: default={sql_id='&V1'} -f={}
         &snap  : default={--}, snap={}
-        &group : default={}, g={,&0} 
+        &group : default={}, g={,&0}
+        &INST1 : default={inst_id}, dash={instance_number}
         @CHECK_ACCESS_OBJ  : dba_objects={dba_objects}, default={all_objects}
+        @INST: 11.2={',@'|| BLOCKING_INST_ID}, default={''}
     --]]
 ]]*/
 
 WITH
 bclass AS (SELECT class, ROWNUM r from v$waitstat),
-ash AS (SELECT /*+ QB_NAME(ash) LEADING(a) USE_HASH(u) SWAP_JOIN_INPUTS(u) */
+ash_data AS (SELECT /*+MATERIALIZE QB_NAME(ash) LEADING(a) USE_HASH(u) SWAP_JOIN_INPUTS(u) */
             coalesce(sql_id,p3text,p2text,p1text) sql_id_or_e,
-            SESSION_ID||',@'||INST_ID SID,
-            nullif(blocking_session||',@'|| BLOCKING_INST_ID,',@') b_sid
+            SESSION_ID||',@'||&INST1 SID,
+            nullif(blocking_session|| &INST,',@') b_sid
           , u.username
           , CASE WHEN a.session_type = 'BACKGROUND' OR REGEXP_LIKE(a.program, '.*\([PJ]\d+\)') THEN
               REGEXP_REPLACE(SUBSTR(a.program,INSTR(a.program,'(')), '\d', 'n')
@@ -33,11 +35,10 @@ ash AS (SELECT /*+ QB_NAME(ash) LEADING(a) USE_HASH(u) SWAP_JOIN_INPUTS(u) */
             &V8 a
           , dba_users u
         WHERE a.user_id = u.user_id (+)
-        AND sample_time BETWEEN NVL(TO_DATE(NVL(:V2,:STARTTIME),'YYMMDDHH24MI'),SYSDATE-1) AND NVL(TO_DATE(NVL(:V3,:ENDTIME),'YYMMDDHH24MI'),SYSDATE)
+        AND sample_time BETWEEN NVL(TO_DATE(NVL(:V2,:STARTTIME),'YYMMDDHH24MI'),SYSDATE-7) AND NVL(TO_DATE(NVL(:V3,:ENDTIME),'YYMMDDHH24MI'),SYSDATE)
   &snap AND sample_time>=sysdate - nvl(:V1,60)/86400  
     ),
-ash_samples AS (SELECT DISTINCT sample_id FROM ash),
-ash_data AS (SELECT /*+ MATERIALIZE */ * FROM ash),
+ash_samples AS (SELECT DISTINCT sample_id FROM ash_data),
 chains AS (
     SELECT /*+NO_EXPAND*/
         level lvl

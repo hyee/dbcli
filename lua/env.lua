@@ -302,7 +302,7 @@ function env.get_command_by_source(list)
     local cmdlist={}
     if type(list)=="string" then list={list} end
     for k,v in pairs(_CMDS.___ABBR___) do
-        if type(v)=="string" then v=_CMDS.___ABBR___[v] end
+        while type(v)=="string" do v=_CMDS.___ABBR___[v] end
         for _,name in ipairs(list) do
             name=name=="default" and env.callee():match("([^\\/]+)#") or name
             if v.FILE:lower():match('[\\/]'..name:lower()..'#') then cmdlist[k]=1 end
@@ -554,7 +554,7 @@ function env.modify_command(_,key_event)
             reset=env.ansi.get_color("KILLBL")
         end
         reader:resetPromptLine(prompt,"",0)
-         env.printer.write(reset)
+        env.printer.write(reset)
     elseif key_event.name=="CTRL+BACK_SPACE" or key_event.name=="SHIFT+BACK_SPACE" then --shift+backspace
         reader:invokeMethod("deletePreviousWord")
         key_event.isbreak=true
@@ -1053,31 +1053,28 @@ function env.resolve_file(filename,ext)
     return filename
 end
 
-local title_list,title_keys,CURRENT_TITLE={},{}
+local title_list,CURRENT_TITLE={}
+
 function env.set_title(title)
     local callee=env.callee():gsub("#%d+$","")
-    if not title_list[callee] then
-        title_keys[#title_keys+1]=callee
-    end
-    title_list[callee]=title or ""
+    title_list[callee]=title
     local titles=""
-    for _,k in ipairs(title_keys) do
+    for _,k in ipairs(env.module_list) do
         if (title_list[k] or "")~="" then
             if titles~="" then titles=titles.."    " end
             titles=titles..title_list[k]
         end
     end
     if not titles or titles=="" then titles="DBCLI - Disconnected" end
-    if CURRENT_TITLE~=title then
-        CURRENT_TITLE=title
+    if CURRENT_TITLE~=titles then
+        CURRENT_TITLE=titles
         os.execute("title "..titles)
     end
 end
 
 function env.reset_title()
-    for k,v in pairs(title_list) do title_list[k]="" end
-    CURRENT_TITLE=nil
-    os.execute("title dbcli")
+    title_list={}
+    env.set_title()
 end
 
 function env.ask(question,range,default)

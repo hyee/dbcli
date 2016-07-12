@@ -68,15 +68,8 @@ function history.rerun()
     end
 end
 
-function history:edit_buffer(index)
-    index=tonumber(index) or 1
-    local cmd=self[#self-index+1]
-    if not cmd then return end
-    local file=env.join_path(env._CACHE_PATH,'afiedt.buf')
-    local f,err=io.open(file,'w')
-    env.checkerr(f,err)
-    f:write(cmd.text)
-    f:close()
+function history.edit_buffer()
+    if not lastcommand then return end
     local editor=cfg.get("editor")
     env.checkerr(os.exists(editor),'Cannot find "'..editor..'" in current search path.')
     os.shell(editor,file)
@@ -93,7 +86,7 @@ function history.onload()
     event.snoop("AFTER_SUCCESS_COMMAND",history.capture,history)
     env.set_command(history,{'history','his'},"Show/run historical commands. Usage: @@NAME [index|last]",history.show,false,2)
     env.set_command(history,{'r','/'},"Rerun the previous command.",history.rerun,false,2)
-    env.set_command(history,{'EDIT','ED'},"Use the program that defined in 'set editor' to edit the buffer in order to run with '/'. Usage: @@NAME [his id]",history.edit_buffer,false,2)
+    env.set_command(history,{'EDIT','ED'},"Use the program that defined in 'set editor' to edit the buffer in order to run with '/'.",history.edit_buffer,false,2)
 end
 
 return history
