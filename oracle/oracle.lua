@@ -149,6 +149,7 @@ function oracle:connect(conn_str)
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
         END;]],self.props)
+    self.props.isdba=self.props.isdba=='TRUE' and true or false
     if not succ then
         self.props.instance=1
         self.props.db_version='9.1'
