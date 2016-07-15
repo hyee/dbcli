@@ -147,7 +147,7 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
             for(var i=0;i<_options.length;i++) 
                 options+='<input type="checkbox" id="'+_options[i]+String(index)+'" onclick="javascript:update_options('+String(index)+')">'+_optionNames[i]+'</button>&nbsp;&nbsp;&nbsp;';
             var str='<table style="width:100%"><tr><td style="width:95%" id="divShow'+String(index)+'"></td><td>\n'
-                +'<select size=15 multiple="multiple" id="ShowAxis'+String(index)+'" onchange="javascript:update_options('+String(index)+')" style="display:none;width:200px">'
+                +'<select size=15 multiple="multiple" id="ShowAxis'+String(index)+'" onchange="javascript:update_options('+String(index)+')" style="display:none;width:200px;overflow:hidden">'
             str+='</select></td></tr></table>\n'
                 +'<div id="divLabel'+String(index)+'" style="width:90%; margin-left:5%"></div>\n'
                 +'<div style="width: 100%; text-align: center;font-size:12px">'+options+'</div>';
