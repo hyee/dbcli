@@ -768,7 +768,7 @@ function db_core:sql2file(filename,sql,method,ext,...)
             env.checkerr(not sql:isClosed(),"Target ResultSet is closed!")
             result=sql
         else
-            sql=env.END_MARKS.match(sql)
+            sql=env.COMMAND_SEPS.match(sql)
             result=self:exec(sql)
         end
 
@@ -827,7 +827,7 @@ db_core.source_objs={
 function db_core.check_completion(cmd,other_parts)
     --alter package xxx compile ...
     local action,obj=db_core.get_command_type(cmd..' '..other_parts)
-    local match,typ,index=env.END_MARKS.match(other_parts)
+    local match,typ,index=env.COMMAND_SEPS.match(other_parts)
     obj=obj or ""
     if index==0 then return false,other_parts end
     if index==2 then return true,match end

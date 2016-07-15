@@ -180,14 +180,14 @@ function env.check_cmd_endless(cmd,other_parts)
         end
         return false,other_parts
     elseif not _CMDS[cmd].MULTI then
-        return true,other_parts and env.END_MARKS.match(other_parts)
+        return true,other_parts and env.COMMAND_SEPS.match(other_parts)
     elseif type(_CMDS[cmd].MULTI)=="function" then
         return _CMDS[cmd].MULTI(cmd,other_parts)
     elseif _CMDS[cmd].MULTI=='__SMART_PARSE__' then
         return env.smart_check_endless(cmd,other_parts,_CMDS[cmd].ARGS)
     end
 
-    local match,typ,index = env.END_MARKS.match(other_parts)
+    local match,typ,index = env.COMMAND_SEPS.match(other_parts)
     --print(match,other_parts)
     if index==0 then
         return false,other_parts
@@ -197,13 +197,13 @@ end
 
 function env.smart_check_endless(cmd,rest,from_pos)
     local args=env.parse_args(from_pos,rest)
-    if #args==0 then return true,env.END_MARKS.match(rest) end
+    if #args==0 then return true,env.COMMAND_SEPS.match(rest) end
     for k=#args,1,-1 do
         if not env.check_cmd_endless(args[k]:upper(),table.concat(args,' ',k+1)) then
             return false,rest
         end
     end
-    return true,env.END_MARKS.match(rest)
+    return true,env.COMMAND_SEPS.match(rest)
 end
 
 local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,is_dbcmd,allow_overriden,is_pipable,color)
@@ -574,7 +574,7 @@ function env.parse_args(cmd,rest,is_cross_line)
         arg_count=cmd+1
     else
         if not cmd then
-            cmd,rest=env.END_MARKS.match(rest):match('(%S+)%s*(.*)')
+            cmd,rest=env.COMMAND_SEPS.match(rest):match('(%S+)%s*(.*)')
             cmd = cmd and cmd:upper() or "_unknown_"
             print(debug.traceback())
         end
@@ -741,7 +741,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
 
     local rest,pipe_cmd,param = (' '..line):match('^(.*[^|])|%s*(%w+)(.*)$')
     if pipe_cmd and _CMDS[pipe_cmd:upper()] and _CMDS[pipe_cmd:upper()].ISPIPABLE==true then
-        param=env.END_MARKS.match(param)
+        param=env.COMMAND_SEPS.match(param)
         if multi_cmd then
             param,multi_cmd=param..' '..multi_cmd..' '..curr_stmt,nil
         end
@@ -751,7 +751,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
 
     if multi_cmd then return check_multi_cmd(line) end
     
-    line,end_mark=env.END_MARKS.match(line)
+    line,end_mark=env.COMMAND_SEPS.match(line)
     cmd,rest=line:match('^%s*(%S+)%s*(.*)')
     if not rest then return end
     rest=rest..(end_mark or "")
@@ -777,7 +777,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
     end
 
     --print('Command:',cmd,table.concat (args,','))
-    rest=env.END_MARKS.match(rest)
+    rest=env.COMMAND_SEPS.match(rest)
     local args=env.parse_args(cmd,rest)
     if exec~=false then
         env.exec_command(cmd,args,is_internal,rest)
@@ -831,8 +831,8 @@ function env.set_endmark(name,value)
     end
     if p[2]=="" then p[2],p["p2"]=p[1],p["p1"] end
 
-    env.END_MARKS=p
-    env.END_MARKS.match=function(s)
+    env.COMMAND_SEPS=p
+    env.COMMAND_SEPS.match=function(s)
         local c,r=s:match(p["p1"])
         if c then return c,r,1 end
         c,r=s:match(p["p2"])
@@ -960,7 +960,7 @@ function env.onload(...)
             v=v:gsub("="," ",1)
             local args=env.parse_args(2,v)
             if args[1] and _CMDS[args[1]:upper()] then
-                env.eval_line(v..env.END_MARKS[1])
+                env.eval_line(v..'\0')
             end
         end
     end

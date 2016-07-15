@@ -175,14 +175,14 @@ function mysql:on_eval(line)
     --[[
     local first,near,symbol,rest=line:match("^(.*)(.)\\([gG])(.*)")
     if not first or near=="\\" then return end
-    if near==env.END_MARKS[1] then near="" end
+    if near==env.COMMAND_SEPS[1] then near="" end
     if not env.pending_command() then
 
     end
     --]]
     local c=line[1]:sub(-2)
     if c:lower()=="\\g" then
-        line[1]=line[1]:sub(1,-3)..env.END_MARKS[1]
+        line[1]=line[1]:sub(1,-3)..'\0'
         if c=="\\G" then
             env.set.doset("PIVOT",20)
         end

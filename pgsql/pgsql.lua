@@ -139,7 +139,7 @@ function pgsql:on_eval(line)
     --[[
     local first,near,symbol,rest=line:match("^(.*)(.)\\([gG])(.*)")
     if not first or near=="\\" then return end
-    if near==env.END_MARKS[1] then near="" end
+    if near==env.COMMAND_SEPS[1] then near="" end
     if not env.pending_command() then
 
     end
