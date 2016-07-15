@@ -155,9 +155,9 @@ function mysql:onload()
     set_command(nil,{"delimiter","\\d"},"Set statement delimiter. Usage: @@NAME {<text>|default|back}",
          function(sep)
             if #env.RUNNING_THREADS<=2 then
-                return env.set.force_set("COMMAND_ENDMARKS",sep)
+                return env.set.force_set("SQLTERMINATOR",sep)
             else
-                env.set.doset("COMMAND_ENDMARKS",sep)
+                env.set.doset("SQLTERMINATOR",sep)
             end
         end,false,2)
     self.C={}

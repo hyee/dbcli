@@ -1,3 +1,4 @@
+2016-07-15: * public: small enhancement on the graph charts
 2016-07-12: + pgsql : initially support PostgreSQL
 2016-07-11: ! mysql : minor fixes on some mysql modules
 =======================begin v1.1================================================

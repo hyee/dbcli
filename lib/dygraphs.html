@@ -21,8 +21,8 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
 //# sourceMappingURL=dygraph-combined.js.map
     </script>
     <script type="text/javascript">
-        var _options=['plotter','showRoller','drawPoints','deviation','logscale','fillGraph','stackedGraph','stepPlot','strokePattern','legend','csv'];
-        var _optionNames=['Bar Chart','Show Roller','Draw Points','Deviation(%)','Log Scale','Fill Graph','Stacked Graph','Step Plot','Stroke Pattern','Follow Mouse','CSV'];
+        var _options=['plotter','showRoller','drawPoints','deviation','logscale','fillGraph','stackedGraph','stepPlot','strokePattern','legend','csv','axis'];
+        var _optionNames=['Bar Chart','Show Roller','Draw Points','Deviation(%)','Log Scale','Fill Graph','Stacked Graph','Step Plot','Stroke Pattern','Follow Mouse','CSV','Choose Axis'];
         var _graph;
         
         function reOptions(g,enabled,options) {
@@ -143,15 +143,14 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
         }
         
         function write_options(index) {
-            var str="";
+            var options="";
             for(var i=0;i<_options.length;i++) 
-                str+='<input type="checkbox" id="'+_options[i]+String(index)+'" onclick="javascript:update_options('+String(index)+')">'+_optionNames[i]+'</button>&nbsp;&nbsp;&nbsp;';
-            str+='\n<select id="ShowAxis'+String(index)+'" onchange="javascript:update_options('+String(index)+')" style="width:70px">';
-            for(var i=1;i<=20;i++) str+='<option value="'+String(i)+'">'+String(i)+' Axis</option>\n';
-            str+='</select>';
-            str='<div id="divShow'+String(index)+'" style="width:100%;"></div>\n'
+                options+='<input type="checkbox" id="'+_options[i]+String(index)+'" onclick="javascript:update_options('+String(index)+')">'+_optionNames[i]+'</button>&nbsp;&nbsp;&nbsp;';
+            var str='<table style="width:100%"><tr><td style="width:95%" id="divShow'+String(index)+'"></td><td>\n'
+                +'<select size=15 multiple="multiple" id="ShowAxis'+String(index)+'" onchange="javascript:update_options('+String(index)+')" style="display:none;width:200px">'
+            str+='</select></td></tr></table>\n'
                 +'<div id="divLabel'+String(index)+'" style="width:90%; margin-left:5%"></div>\n'
-                +'<div style="width: 100%; text-align: center;font-size:12px">'+str+'</div>';
+                +'<div style="width: 100%; text-align: center;font-size:12px">'+options+'</div>';
             document.write(str);
         };
         
@@ -159,6 +158,12 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
             eval("_graph=g"+String(index));
             var visibles=_graph.getOption("visibility");
             var cnt=0;
+            var str="";
+            var setNames = _graph.getLabels().slice(1);
+            var select=document.getElementById("ShowAxis"+String(index))
+            for(var i=0;i<setNames.length;i++) str+='<option selected="selected" value="'+(-i)+'">'+setNames[i]+"</option>";
+            select.innerHTML=str+select.innerHTML;
+            select.style.display='none';
             for(var i=0;i<_options.length;i++) {
                 var val=_graph.getOption(_options[i]);
                 if(_options[i]=='plotter'&&val!=BarPlotter) val=false;
@@ -166,19 +171,14 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
                 document.getElementById(_options[i]+String(index)).checked=res;
                 if(_options[i]=="deviation") reOptions(_graph,res,{});
             }
-            var str="";
-            var setNames = _graph.getLabels().slice(1);
-            var select=document.getElementById("ShowAxis"+String(index))
-            for(var i=0;i<setNames.length;i++) str+='<option value="'+(-i)+'">'+setNames[i]+"</option>";
-            for(var i=0;i<visibles.length;i++) cnt+=visibles[i]?1:0;
-            for(var i=select.options.length-1;i>=visibles.length;i--) select.removeChild(select.options[i]);
-            select.innerHTML=str+select.innerHTML;
-            select.value=String(cnt);
+            
         };
         
         function update_options(index) {
             eval("_graph=g"+String(index));
             var opt={};
+            var axis=document.getElementById("ShowAxis"+String(index));
+            var show=document.getElementById('divShow'+String(index));
             for(var i=0;i<_options.length;i++) {
                 opt[_options[i]]=document.getElementById(_options[i]+String(index)).checked;
                 if(_options[i]=='legend') opt[_options[i]]=opt[_options[i]]?'follow':'onmouseover';
@@ -186,12 +186,17 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
                 else if(_options[i]=='plotter') opt[_options[i]]=opt[_options[i]]?BarPlotter:null;
                 else if(_options[i]=='csv') {
                     document.getElementById('divNoshow'+String(index)).style.display=opt[_options[i]]?"":"none";
-                    document.getElementById('divShow'+String(index)).style.display=opt[_options[i]]?"none":"";
+                    show.style.display=opt[_options[i]]?"none":"";
+                }
+                else if(_options[i]=='axis') {
+                    axis.style.display=opt[_options[i]]==true?"":"none";
                 }
             };
-            var visible=parseInt(document.getElementById("ShowAxis"+String(index)).value);
+            var visible=parseInt(axis.value);
             var vs=_graph.getOption("visibility");
-            for(var i=0;i<vs.length;i++) vs[i]=i<visible?true:(visible==-i?true:false);
+            for(var i=0;i<vs.length;i++) {
+                vs[i]=axis.options[i].selected
+            }
             opt.visibility=vs;
             reOptions(_graph,opt['deviation'],opt);
         };

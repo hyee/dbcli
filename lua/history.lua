@@ -70,6 +70,7 @@ end
 function history.edit_buffer()
     if not lastcommand then return end
     local editor=cfg.get("editor")
+    local file=env.join_path(env._CACHE_PATH,'afiedt.buf')
     env.checkerr(os.exists(editor),'Cannot find "'..editor..'" in current search path.')
     os.shell(editor,file)
 end
