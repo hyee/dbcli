@@ -11,6 +11,7 @@ function pgsql:ctor(isdefault)
     self.type="pgsql"
     self.C,self.props={},{}
     self.C,self.props={},{}
+    self.JDBC_ADDRESS='https://jdbc.postgresql.org/download.html'
 end
 
 function pgsql:connect(conn_str)

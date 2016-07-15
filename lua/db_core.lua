@@ -948,6 +948,17 @@ function db_core:disconnect(feed)
 end
 
 function db_core:__onload()
+    self.root_dir=(self.__class.__className):gsub('[^\\/]+$','')
+    local jars=os.list_dir(self.root_dir,"jar")
+    for _,file in pairs(jars) do
+        java.loader:addPath(file.fullname)
+    end
+    if #jars==0 then 
+        env.warn("Cannot find JDBC library in '%s', you will not able to connect to any database.",self.root_dir)
+        if self.JDBC_ADDRESS then
+            env.warn("Please download and copy it from %s which should be compatible with JRE %s",self.JDBC_ADDRESS,java.system:getProperty('java.vm.specification.version'))
+        end
+    end
     local txt="\n   Refer to 'set expPrefetch' to define the fetch size of the statement which impacts the export performance."
     txt=txt..'\n   -e: format is "-e<column1>[,...]"'
     txt=txt..'\n   -r: format is "-r<column1=<expression>>[,...]"'

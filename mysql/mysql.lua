@@ -17,6 +17,7 @@ function mysql:ctor(isdefault)
     self.type="mysql"
     self.C,self.props={},{}
     self.C,self.props={},{}
+    self.JDBC_ADDRESS='http://dev.mysql.com/downloads/connector/j/'
 end
 
 function mysql:connect(conn_str)
