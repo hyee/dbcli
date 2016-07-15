@@ -144,7 +144,7 @@ Type `alias` to see more usage.
 ###Customize new sub-commands
 Similar to SQL*Plus script, a sub-command script is the combination of one or more existing commands that supports user-input parameters.
 Take command `ora` for example, to define a sub-command `xxx`, create file ``oracle\ora\xxx.sql` and fill with following content: <br/>
-`alias sf select * from (select * from &V1) where rownum<=50;`
+`select * from (select * from &V1) where rownum<=50;`
 
 After that, run `ora -r` to take effect, then you can run `ora xxx dba_objects` to query the view.
 

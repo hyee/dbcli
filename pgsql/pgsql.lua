@@ -102,10 +102,11 @@ function pgsql:onload()
 
 
 
-    add_default_sql_stmt('ABORT','ALTER','ANALYZE','BEGIN','CHECKPOINT','CLOSE','CLUSTER','COMMENT','COPY','CREATE','DEALLOCATE','DECLARE')
-    add_default_sql_stmt('DELETE','DISCARD','DO','DROP','END','EXECUTE','EXPLAIN','FETCH','GRANT','IMPORT','INSERT','LISTEN','LOAD','LOCK','MOVE','NOTIFY','PREPARE')
+    add_default_sql_stmt('ABORT','ALTER','ANALYZE','BEGIN','CHECKPOINT','CLOSE','CLUSTER','COMMENT','COPY','DEALLOCATE','DECLARE')
+    add_default_sql_stmt('DELETE','DISCARD','DROP','END','EXECUTE','EXPLAIN','FETCH','GRANT','IMPORT','INSERT','LISTEN','LOAD','LOCK','MOVE','NOTIFY','PREPARE')
     add_default_sql_stmt('REASSIGN','REFRESH','REINDEX','RELEASE','RESET','REVOKE','SECURITY','SELECT','START','TRUNCATE','UNLISTEN','UPDATE','VACUUM','WITH')
-
+    set_command(self,"create", default_desc, self.exec,self.check_completion,1,true)
+    set_command(self,"do", default_desc, self.exec,self.check_completion,1,true)
     local  conn_help = [[
         Connect to pgsql database. Usage: @@NAME <user>/<password>@<host>[:<port>][/<database>][?<properties>]
         Example:  @@NAME postgres/@localhost/postgres     --if not specify the port, then it is 5432
@@ -118,6 +119,10 @@ function pgsql:onload()
     env.event.snoop("BEFORE_EVAL",self.on_eval,self)
     env.event.snoop('ON_SQL_PARSE_ERROR',self.handle_error,self,1)
     self.C={}
+    self.source_objs.DO=1
+    self.source_objs.DECLARE=nil
+    self.source_objs.BEGIN=nil
+    env.db_core.source_obj_pattern={"$$%s+%w+%s+%w+%s*$","$$%s*$"}
 end
 
 function pgsql:handle_error(info)

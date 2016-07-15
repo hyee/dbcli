@@ -926,7 +926,7 @@ function env.onload(...)
     if env.set and env.set.init then
         env.set.init({"Prompt","SQLPROMPT","SQLP"},prompt_stack._base,function(n,v,d) return env.set_prompt(n,v,d,3) end,
                   "core","Define command's prompt, if value is 'timing' then will record the time cost(in second) for each execution.")
-        env.set.init("COMMAND_ENDMARKS",end_marks,env.set_endmark,
+        env.set.init({"sqlterminator","CMMAND_ENDMARKS"},end_marks,env.set_endmark,
                   "core","Define the symbols to indicate the end input the cross-lines command. ")
         env.set.init("Debug",'off',set_debug,"core","Indicates the option to print debug info, 'all' for always, 'off' for disable, others for specific modules.")
         env.set.init("OnErrExit",'on',nil,"core","Indicates whether to continue the remaining statements if error encountered.","on,off")

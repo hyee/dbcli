@@ -812,27 +812,40 @@ function db_core:sql2file(filename,sql,method,ext,...)
     self:clearStatements(true)
 end
 
+db_core.source_objs={
+    TRIGGER=1,
+    TYPE=1,
+    PACKAGE=1,
+    PROCEDURE=1,
+    FUNCTION=1,
+    DECLARE=1,
+    BEGIN=1,
+    JAVA=1,
+    DEFINER=1,
+    EVENT=1}
+
 function db_core.check_completion(cmd,other_parts)
-    local objs={
-        TRIGGER=1,
-        TYPE=1,
-        PACKAGE=1,
-        PROCEDURE=1,
-        FUNCTION=1,
-        DECLARE=1,
-        BEGIN=1,
-        JAVA=1,
-        DEFINER=1,
-        EVENT=1,
-    }
     --alter package xxx compile ...
     local action,obj=db_core.get_command_type(cmd..' '..other_parts)
     local match,typ,index=env.END_MARKS.match(other_parts)
     obj=obj or ""
-    if index==0 or index==1 and ((obj and objs[obj:upper()]) or objs[cmd]) then
-        return false,other_parts
+    if index==0 then return false,other_parts end
+    if index==2 then return true,match end
+    if db_core.source_objs[cmd] or db_core.source_objs[obj:upper()] then
+        typ=type(db_core.source_obj_pattern)
+        local patterns={}
+        if typ=='table' then 
+            patterns=db_core.source_obj_pattern
+        elseif typ=="string" then
+            patterns[1]=db_core.source_obj_pattern
+        end
+        for _,pattern in ipairs(patterns) do
+            if match:match(pattern) then
+                return true,match
+            end
+        end
     end
-    return true,match
+    return false,other_parts
 end
 
 function db_core:resolve_expsql(sql)
