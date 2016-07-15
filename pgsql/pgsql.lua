@@ -146,7 +146,7 @@ function pgsql:on_eval(line)
     --]]
     local c=line[1]:sub(-2)
     if c:lower()=="\\g" then
-        line[1]=line[1]:sub(1,-3)..env.END_MARKS[1]
+        line[1]=line[1]:sub(1,-3)..'\0'
         if c=="\\G" then
             env.set.doset("PIVOT",20)
         end

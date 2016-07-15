@@ -826,7 +826,7 @@ function env.set_endmark(name,value)
     for k,v in ipairs(p) do
         p[k]=v:gsub('\\(%w)',function(s) return s=='n' and '\n' or s=='r' and '\r' or s=='t' and '\t' or '\\'..s end)
         local c=p[k]:gsub("(.?)([%$%(%)%^%.])",function(a,b) return a..(a=="%" and "" or "%")..b end)
-        p["p"..k]="^(.-)[ \t]*("..c..(#(c:gsub("%%",""))==1 and "+" or "")..")[ \t]*$"
+        p["p"..k]="^(.-)[ \t]*("..c..(#(c:gsub("%%",""))==1 and "+" or "")..")[ \t%z]*$"
         p[k]=p[k]:gsub("([^%+%*%?%-])[%+%*%?%-]","%1"):gsub("%%.","")
     end
     if p[2]=="" then p[2],p["p2"]=p[1],p["p1"] end
@@ -837,6 +837,9 @@ function env.set_endmark(name,value)
         if c then return c,r,1 end
         c,r=s:match(p["p2"])
         if c then return c,r,2 end
+        if s:sub(-1)=='\0' then
+            return s:sub(1,-2),'\0',2
+        end
         return s,nil,0
     end
     return value
