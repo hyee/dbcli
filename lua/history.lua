@@ -63,14 +63,14 @@ function history.rerun()
         local f,err=io.open(file,'r')
         env.checkerr(f,err)
         local text=f:read('*a')
-        env.eval_line(text,true,true)
-        env.force_end_input(true,true)
+        env.eval_line(text..'\0',true,true)
     end
 end
 
 function history.edit_buffer()
     if not lastcommand then return end
     local editor=cfg.get("editor")
+    local file=env.join_path(env._CACHE_PATH,'afiedt.buf')
     env.checkerr(os.exists(editor),'Cannot find "'..editor..'" in current search path.')
     os.shell(editor,file)
 end

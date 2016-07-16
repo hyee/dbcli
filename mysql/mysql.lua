@@ -17,6 +17,7 @@ function mysql:ctor(isdefault)
     self.type="mysql"
     self.C,self.props={},{}
     self.C,self.props={},{}
+    self.JDBC_ADDRESS='http://dev.mysql.com/downloads/connector/j/'
 end
 
 function mysql:connect(conn_str)
@@ -146,6 +147,7 @@ function mysql:onload()
     env.event.snoop("ON_HELP_NOTFOUND",self.help_topic,self)
     env.event.snoop("ON_SET_NOTFOUND",self.set,self)
     env.event.snoop("BEFORE_EVAL",self.on_eval,self)
+    env.rename_command("TEE",{"write"})
     env.rename_command("SPOOL",{"TEE","\\t","SPOOL"})
     env.rename_command("PRINT","PRINTVAR")
     env.rename_command("PROMPT",{"PRINT","ECHO","\\p"})
@@ -153,9 +155,9 @@ function mysql:onload()
     set_command(nil,{"delimiter","\\d"},"Set statement delimiter. Usage: @@NAME {<text>|default|back}",
          function(sep)
             if #env.RUNNING_THREADS<=2 then
-                return env.set.force_set("COMMAND_ENDMARKS",sep)
+                return env.set.force_set("SQLTERMINATOR",sep)
             else
-                env.set.doset("COMMAND_ENDMARKS",sep)
+                env.set.doset("SQLTERMINATOR",sep)
             end
         end,false,2)
     self.C={}
@@ -174,14 +176,14 @@ function mysql:on_eval(line)
     --[[
     local first,near,symbol,rest=line:match("^(.*)(.)\\([gG])(.*)")
     if not first or near=="\\" then return end
-    if near==env.END_MARKS[1] then near="" end
+    if near==env.COMMAND_SEPS[1] then near="" end
     if not env.pending_command() then
 
     end
     --]]
     local c=line[1]:sub(-2)
     if c:lower()=="\\g" then
-        line[1]=line[1]:sub(1,-3)..env.END_MARKS[1]
+        line[1]=line[1]:sub(1,-3)..'\0'
         if c=="\\G" then
             env.set.doset("PIVOT",20)
         end

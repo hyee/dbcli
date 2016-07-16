@@ -175,11 +175,13 @@ function ssh:enter_i()
     if self:is_connect() then shell_env="("..self:getresult("echo $SHELL")..")" end
     print(env.ansi.mask(env.set.get("PROMPTCOLOR"),"Entering SSH interactive shell enviroment"..shell_env..", execute 'bye' to exit. Below are the embedded commands:"))
     self.inner_help:print(true)
+    self.is_enter_prompt=true
     env.set_subsystem(self.name)
     --if self:is_connect() then self.conn:enterShell(true) end
 end
 
 function ssh:exit_i()
+    self.is_enter_prompt=false
     env.set_subsystem(nil)
     --if self:is_connect() then self.conn:enterShell(false) end
 end
@@ -472,7 +474,14 @@ function ssh:__onload()
                     is_multiline=false,parameters=20,color="HIB"}
     env.event.snoop("BEFORE_DB_CONNECT",self.trigger_login,self)
     env.event.snoop("TRIGGER_LOGIN",self.login,self)
+    env.event.snoop("ON_KEY_EVENT",self.trigger_key,self)
     cfg.init("term",_term..",auto,auto",self.set_config,"ssh","Define termType/columns/rows in remote SSH server, the supported type depends on remote server",'*')
+end
+
+function ssh:trigger_key(_,key_event)
+    if key_event.name=='TAB' and self.is_enter_prompt and self:is_connect() then
+        key_event.isbreak=true
+    end
 end
 
 function ssh:__onunload()

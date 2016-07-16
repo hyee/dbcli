@@ -180,14 +180,14 @@ function env.check_cmd_endless(cmd,other_parts)
         end
         return false,other_parts
     elseif not _CMDS[cmd].MULTI then
-        return true,other_parts and env.END_MARKS.match(other_parts)
+        return true,other_parts and env.COMMAND_SEPS.match(other_parts)
     elseif type(_CMDS[cmd].MULTI)=="function" then
         return _CMDS[cmd].MULTI(cmd,other_parts)
     elseif _CMDS[cmd].MULTI=='__SMART_PARSE__' then
         return env.smart_check_endless(cmd,other_parts,_CMDS[cmd].ARGS)
     end
 
-    local match,typ,index = env.END_MARKS.match(other_parts)
+    local match,typ,index = env.COMMAND_SEPS.match(other_parts)
     --print(match,other_parts)
     if index==0 then
         return false,other_parts
@@ -197,13 +197,13 @@ end
 
 function env.smart_check_endless(cmd,rest,from_pos)
     local args=env.parse_args(from_pos,rest)
-    if #args==0 then return true,env.END_MARKS.match(rest) end
+    if #args==0 then return true,env.COMMAND_SEPS.match(rest) end
     for k=#args,1,-1 do
         if not env.check_cmd_endless(args[k]:upper(),table.concat(args,' ',k+1)) then
             return false,rest
         end
     end
-    return true,env.END_MARKS.match(rest)
+    return true,env.COMMAND_SEPS.match(rest)
 end
 
 local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,is_dbcmd,allow_overriden,is_pipable,color)
@@ -302,7 +302,7 @@ function env.get_command_by_source(list)
     local cmdlist={}
     if type(list)=="string" then list={list} end
     for k,v in pairs(_CMDS.___ABBR___) do
-        if type(v)=="string" then v=_CMDS.___ABBR___[v] end
+        while type(v)=="string" do v=_CMDS.___ABBR___[v] end
         for _,name in ipairs(list) do
             name=name=="default" and env.callee():match("([^\\/]+)#") or name
             if v.FILE:lower():match('[\\/]'..name:lower()..'#') then cmdlist[k]=1 end
@@ -554,7 +554,7 @@ function env.modify_command(_,key_event)
             reset=env.ansi.get_color("KILLBL")
         end
         reader:resetPromptLine(prompt,"",0)
-         env.printer.write(reset)
+        env.printer.write(reset)
     elseif key_event.name=="CTRL+BACK_SPACE" or key_event.name=="SHIFT+BACK_SPACE" then --shift+backspace
         reader:invokeMethod("deletePreviousWord")
         key_event.isbreak=true
@@ -574,7 +574,7 @@ function env.parse_args(cmd,rest,is_cross_line)
         arg_count=cmd+1
     else
         if not cmd then
-            cmd,rest=env.END_MARKS.match(rest):match('(%S+)%s*(.*)')
+            cmd,rest=env.COMMAND_SEPS.match(rest):match('(%S+)%s*(.*)')
             cmd = cmd and cmd:upper() or "_unknown_"
             print(debug.traceback())
         end
@@ -741,7 +741,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
 
     local rest,pipe_cmd,param = (' '..line):match('^(.*[^|])|%s*(%w+)(.*)$')
     if pipe_cmd and _CMDS[pipe_cmd:upper()] and _CMDS[pipe_cmd:upper()].ISPIPABLE==true then
-        param=env.END_MARKS.match(param)
+        param=env.COMMAND_SEPS.match(param)
         if multi_cmd then
             param,multi_cmd=param..' '..multi_cmd..' '..curr_stmt,nil
         end
@@ -751,7 +751,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
 
     if multi_cmd then return check_multi_cmd(line) end
     
-    line,end_mark=env.END_MARKS.match(line)
+    line,end_mark=env.COMMAND_SEPS.match(line)
     cmd,rest=line:match('^%s*(%S+)%s*(.*)')
     if not rest then return end
     rest=rest..(end_mark or "")
@@ -777,7 +777,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
     end
 
     --print('Command:',cmd,table.concat (args,','))
-    rest=env.END_MARKS.match(rest)
+    rest=env.COMMAND_SEPS.match(rest)
     local args=env.parse_args(cmd,rest)
     if exec~=false then
         env.exec_command(cmd,args,is_internal,rest)
@@ -826,17 +826,20 @@ function env.set_endmark(name,value)
     for k,v in ipairs(p) do
         p[k]=v:gsub('\\(%w)',function(s) return s=='n' and '\n' or s=='r' and '\r' or s=='t' and '\t' or '\\'..s end)
         local c=p[k]:gsub("(.?)([%$%(%)%^%.])",function(a,b) return a..(a=="%" and "" or "%")..b end)
-        p["p"..k]="^(.-)[ \t]*("..c..(#(c:gsub("%%",""))==1 and "+" or "")..")[ \t]*$"
+        p["p"..k]="^(.-)[ \t]*("..c..(#(c:gsub("%%",""))==1 and "+" or "")..")[ \t%z]*$"
         p[k]=p[k]:gsub("([^%+%*%?%-])[%+%*%?%-]","%1"):gsub("%%.","")
     end
     if p[2]=="" then p[2],p["p2"]=p[1],p["p1"] end
 
-    env.END_MARKS=p
-    env.END_MARKS.match=function(s)
+    env.COMMAND_SEPS=p
+    env.COMMAND_SEPS.match=function(s)
         local c,r=s:match(p["p1"])
         if c then return c,r,1 end
         c,r=s:match(p["p2"])
         if c then return c,r,2 end
+        if s:sub(-1)=='\0' then
+            return s:sub(1,-2),'\0',2
+        end
         return s,nil,0
     end
     return value
@@ -926,7 +929,7 @@ function env.onload(...)
     if env.set and env.set.init then
         env.set.init({"Prompt","SQLPROMPT","SQLP"},prompt_stack._base,function(n,v,d) return env.set_prompt(n,v,d,3) end,
                   "core","Define command's prompt, if value is 'timing' then will record the time cost(in second) for each execution.")
-        env.set.init("COMMAND_ENDMARKS",end_marks,env.set_endmark,
+        env.set.init({"sqlterminator","COMMAND_ENDMARKS"},end_marks,env.set_endmark,
                   "core","Define the symbols to indicate the end input the cross-lines command. ")
         env.set.init("Debug",'off',set_debug,"core","Indicates the option to print debug info, 'all' for always, 'off' for disable, others for specific modules.")
         env.set.init("OnErrExit",'on',nil,"core","Indicates whether to continue the remaining statements if error encountered.","on,off")
@@ -957,7 +960,7 @@ function env.onload(...)
             v=v:gsub("="," ",1)
             local args=env.parse_args(2,v)
             if args[1] and _CMDS[args[1]:upper()] then
-                env.eval_line(v..env.END_MARKS[1])
+                env.eval_line(v..'\0')
             end
         end
     end
@@ -1053,31 +1056,28 @@ function env.resolve_file(filename,ext)
     return filename
 end
 
-local title_list,title_keys,CURRENT_TITLE={},{}
+local title_list,CURRENT_TITLE={}
+
 function env.set_title(title)
     local callee=env.callee():gsub("#%d+$","")
-    if not title_list[callee] then
-        title_keys[#title_keys+1]=callee
-    end
-    title_list[callee]=title or ""
+    title_list[callee]=title
     local titles=""
-    for _,k in ipairs(title_keys) do
+    for _,k in ipairs(env.module_list) do
         if (title_list[k] or "")~="" then
             if titles~="" then titles=titles.."    " end
             titles=titles..title_list[k]
         end
     end
     if not titles or titles=="" then titles="DBCLI - Disconnected" end
-    if CURRENT_TITLE~=title then
-        CURRENT_TITLE=title
-        os.execute("title "..titles)
+    if CURRENT_TITLE~=titles then
+        CURRENT_TITLE=titles
+        env.uv.set_process_title(titles)
     end
 end
 
 function env.reset_title()
-    for k,v in pairs(title_list) do title_list[k]="" end
-    CURRENT_TITLE=nil
-    os.execute("title dbcli")
+    title_list={}
+    env.set_title()
 end
 
 function env.ask(question,range,default)

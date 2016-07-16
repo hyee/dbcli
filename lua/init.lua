@@ -1,5 +1,5 @@
 local env=env
-local dirs={"lib","cache","data"}
+local dirs={"cache","data"}
 local init={
     module_list={
        --Libraries ->
@@ -40,11 +40,12 @@ local init={
         "lua/ilua"}
 }
 
-init.databases={oracle="oracle/oracle",mssql="mssql/mssql",db2="db2/db2",mysql="mysql/mysql"}
+init.databases={oracle="oracle/oracle",mssql="mssql/mssql",db2="db2/db2",mysql="mysql/mysql",pgsql='pgsql/pgsql'}
 local default_database='oracle'
 
 function init.init_path()
     local java=java
+
     java.system=java.require("java.lang.System")
     java.loader=loader
     env('java',java)
@@ -66,16 +67,17 @@ function init.init_path()
     package.cpath=""
     package.path=""
 
-    for _,v in ipairs(dirs) do
-        os.execute('mkdir "'..env.WORK_DIR..v..'" 2> '..(env.OS=="windows" and 'NUL' or "/dev/null"))
-    end
-
     for _,v in ipairs({"lua","lib","oracle","bin"}) do
         local path=string.format("%s%s%s",env.WORK_DIR,v,path_del)
         local p1,p2=path.."?.lua",java.system:getProperty('java.library.path')..path_del.."?."..(env.OS=="windows" and "dll" or "so")
         package.path  = package.path .. (path_del=='/' and ':' or ';') ..p1
         package.cpath = package.cpath ..(path_del=='/' and ':' or ';') ..p2
     end
+    local luv=require "luv"
+    local function noop() end
+    for _,v in ipairs(dirs) do
+        luv.fs_mkdir(env.WORK_DIR..v,777,noop)
+    end 
 end
 
 function env.join_path(base,...)
@@ -142,12 +144,10 @@ function init.load_database()
     if not file then return end
     local short_dir,name=file:match("^(.-)([^\\/]+)$")
     local dir=env.join_path(env.WORK_DIR,short_dir)
-    for _,file in pairs(os.list_dir(dir,"jar")) do
-        java.loader:addPath(file.fullname)
-    end
     env[name]=exec(loadfile(dir..name..'.lua'))
     exec(type(env[name])=="table" and env[name].onload,env[name],name)
     init.module_list[#init.module_list+1]=file
+    env.module_list[#env.module_list+1]=env.join_path(file)
     if env.event then env.event.callback('ON_DB_ENV_LOADED',env.CURRENT_DB) end
     env[name].ROOT_PATH,env[name].SHORT_PATH=dir,short_dir
     env.getdb=function() return env[name] end
@@ -155,11 +155,13 @@ function init.load_database()
         local list={}
         for k,v in ipairs(env[name].module_list) do
             list[k]=v:find('^'..env.join_path(short_dir)) and v or (short_dir..v)
+            --init.module_list[#init.module_list+1]=list[k]
         end
         env[name].C={}
         init.load_modules(list,env[name].C)
     end
 end
+
 
 function init.load_modules(list,tab,module_name)
     local n
@@ -202,6 +204,7 @@ function init.load_modules(list,tab,module_name)
         local c,err=loadfile(file,nil,nil,env)
         tab[n]=exec(c,err or env)
         modules[n]=tab[n]
+        env.module_list[#env.module_list+1]=file:lower():gsub('%.lua$','')
     end
 
     for k,v in pairs(modules) do
@@ -211,6 +214,7 @@ function init.load_modules(list,tab,module_name)
 end
 
 function init.onload()
+    env.module_list={(env.join_path('lua/env'))}
     init.load_modules(init.module_list,env)
     init.load_database()
     if env.set then env.set.init({"platform","database"},env.CURRENT_DB,init.set_database,'core','Define current database type',table.concat(init.db_list(),',')) end

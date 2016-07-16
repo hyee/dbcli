@@ -68,7 +68,7 @@ function alias.make_command(name,args)
         target=target:gsub("%$(%d+)%[(.-)%]",alias.parser)
         target=target:gsub("%$([%d%*]+)",alias.parser)
         target=target:gsub("%s+$","")
-        --if env.END_MARKS.match(target)==target then target=target..env.END_MARKS[1] end
+        --if env.COMMAND_SEPS.match(target)==target then target=target..env.COMMAND_SEPS[1] end
         if type(alias.cmdlist[name].text) == "string" and not target:find('[\n\r]') then
             print('$ '..target)
         end
@@ -79,8 +79,7 @@ end
 function alias.run_command(...)
     local cmd=alias.make_command(env.CURRENT_CMD,{...})
     if cmd then 
-        env.eval_line(cmd,true,false,true) 
-        env.force_end_input(true)
+        env.eval_line(cmd..'\0',true,false,true) 
     end
 end
 
@@ -118,7 +117,7 @@ function alias.set(name,cmd,write)
         if not name:match("^[%w_]+$") then
             return print("Alias '"..name.."' is invalid. ")
         end
-        cmd=env.END_MARKS.match(cmd)
+        cmd=env.COMMAND_SEPS.match(cmd)
         local target_dir=alias.command_dir
         local sub_cmd=env.parse_args(2,cmd)[1]:upper()
         if env._CMDS[sub_cmd] then
@@ -146,7 +145,7 @@ function alias.set(name,cmd,write)
             cmd=packer.unpack(cmd)
             desc=cmd
         end
-        if type(desc)=="string" then desc=env.END_MARKS.match(desc)  end
+        if type(desc)=="string" then desc=env.COMMAND_SEPS.match(desc)  end
         alias.cmdlist[name].desc=desc
         alias.cmdlist[name].text=cmd
         alias.cmdlist[name].active=false
@@ -195,7 +194,7 @@ end
 
 function alias.load_db_aliases(db_name)
     alias.db_dir=env.join_path(alias.command_dir,db_name,'')
-    env.host.mkdir(alias.db_dir)
+    env.uv.fs.mkdir(alias.db_dir,777,function() end)
     alias.rehash()
 end
 
@@ -216,6 +215,7 @@ function alias.onload()
     --alias.rehash()
     --env.event.snoop('BEFORE_COMMAND',alias.rewrite,nil,80)
     --env.event.snoop('ON_ENV_LOADED',alias.rehash,nil,1)
+    env.uv.fs.mkdir(alias.command_dir,777,function() end)
     env.event.snoop('ON_DB_ENV_LOADED',alias.load_db_aliases,nil,1)
     env.set_command{obj=nil,cmd="alias", 
                     help_func=alias.helper,

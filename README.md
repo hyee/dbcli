@@ -141,9 +141,10 @@ In this case, you can execute `sf dba_objects where object_id<1000` to simplify 
 The `alias` command supports the `$1-$9` and `$*` wildcard characters, of which `$n` corresponds to the `n`th parameter, and `$*` means the concatenation of `$n+1`-`$9` via space. 
 Type `alias` to see more usage.
  
-###Customize new sub-command from complex SQLs
+###Customize new sub-commands
+Similar to SQL*Plus script, a sub-command script is the combination of one or more existing commands that supports user-input parameters.
 Take command `ora` for example, to define a sub-command `xxx`, create file ``oracle\ora\xxx.sql` and fill with following content: <br/>
-`alias sf select * from (select * from &V1) where rownum<=50;`
+`select * from (select * from &V1) where rownum<=50;`
 
 After that, run `ora -r` to take effect, then you can run `ora xxx dba_objects` to query the view.
 
@@ -154,13 +155,15 @@ Commands `ora/show/sys/snap/chart/sql/shell/etc` follow the similar rules:
 * Help comment: `/*[[...]]*/` is optional, as the help or usage information
 * Options: `--[[...]]--` inside the help comment is also optional, normally used to specify the command options(i.e., `ora actives -m`) and access validation, refer to other sub-commands for more examples.
 
-###Customize new root command
+###Customize new root commands
 Different from sub-commands, the root command must be a lua script. To plug a user-define lua script into the utility, just add its path in `data\plugin.cfg`, you may refer to `data\plugin_sample.cfg` for the example.
 
 Below are the common interfaces that can be used in the script:
-*  Define new command: `env.set_command(...)`
-*  Define new setting: `env.set.init_cfg(...)`
+*  Define a new command: `env.set_command(...)`
+*  Define a new setting: `env.set.init_cfg(...)`
+*  Add trigger to an event: `env.snoop('<event_name>', <parameters>)`
 *  Get current database: `env.getdb()`
+
 You may also:
-* Execute `help -a` or `set -a` to see how those interfaces are used in other scripts
-* Execute `help -e env[.module] 2` to see the available interfaces
+* Execute `help -a` or `set -a` or `event` to see how those interfaces are used in other scripts
+* Execute `help -e env[.module] 2` to see the available interfaces, i.e.: `help -e env.oracle 2`

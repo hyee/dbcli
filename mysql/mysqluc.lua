@@ -34,7 +34,7 @@ end
 
 function utils:run_command(cmd,is_print)
     if not self.enter_flag and cmd then
-        cmd=cmd..env.END_MARKS[1]
+        cmd=cmd..'\0'
     end
     return self.super.run_command(self,cmd,is_print)
 end

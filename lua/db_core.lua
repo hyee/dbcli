@@ -768,7 +768,7 @@ function db_core:sql2file(filename,sql,method,ext,...)
             env.checkerr(not sql:isClosed(),"Target ResultSet is closed!")
             result=sql
         else
-            sql=env.END_MARKS.match(sql)
+            sql=env.COMMAND_SEPS.match(sql)
             result=self:exec(sql)
         end
 
@@ -812,27 +812,40 @@ function db_core:sql2file(filename,sql,method,ext,...)
     self:clearStatements(true)
 end
 
+db_core.source_objs={
+    TRIGGER=1,
+    TYPE=1,
+    PACKAGE=1,
+    PROCEDURE=1,
+    FUNCTION=1,
+    DECLARE=1,
+    BEGIN=1,
+    JAVA=1,
+    DEFINER=1,
+    EVENT=1}
+
 function db_core.check_completion(cmd,other_parts)
-    local objs={
-        TRIGGER=1,
-        TYPE=1,
-        PACKAGE=1,
-        PROCEDURE=1,
-        FUNCTION=1,
-        DECLARE=1,
-        BEGIN=1,
-        JAVA=1,
-        DEFINER=1,
-        EVENT=1,
-    }
     --alter package xxx compile ...
     local action,obj=db_core.get_command_type(cmd..' '..other_parts)
-    local match,typ,index=env.END_MARKS.match(other_parts)
+    local match,typ,index=env.COMMAND_SEPS.match(other_parts)
     obj=obj or ""
-    if index==0 or index==1 and ((obj and objs[obj:upper()]) or objs[cmd]) then
-        return false,other_parts
+    if index==0 then return false,other_parts end
+    if index==2 then return true,match end
+    if db_core.source_objs[cmd] or db_core.source_objs[obj:upper()] then
+        typ=type(db_core.source_obj_pattern)
+        local patterns={}
+        if typ=='table' then 
+            patterns=db_core.source_obj_pattern
+        elseif typ=="string" then
+            patterns[1]=db_core.source_obj_pattern
+        end
+        for _,pattern in ipairs(patterns) do
+            if match:match(pattern) then
+                return true,match
+            end
+        end
     end
-    return true,match
+    return false,other_parts
 end
 
 function db_core:resolve_expsql(sql)
@@ -935,6 +948,17 @@ function db_core:disconnect(feed)
 end
 
 function db_core:__onload()
+    self.root_dir=(self.__class.__className):gsub('[^\\/]+$','')
+    local jars=os.list_dir(self.root_dir,"jar")
+    for _,file in pairs(jars) do
+        java.loader:addPath(file.fullname)
+    end
+    if #jars==0 then 
+        env.warn("Cannot find JDBC library in '%s', you will not able to connect to any database.",self.root_dir)
+        if self.JDBC_ADDRESS then
+            env.warn("Please download and copy it from %s which should be compatible with JRE %s",self.JDBC_ADDRESS,java.system:getProperty('java.vm.specification.version'))
+        end
+    end
     local txt="\n   Refer to 'set expPrefetch' to define the fetch size of the statement which impacts the export performance."
     txt=txt..'\n   -e: format is "-e<column1>[,...]"'
     txt=txt..'\n   -r: format is "-r<column1=<expression>>[,...]"'
