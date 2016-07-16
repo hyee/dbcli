@@ -1071,7 +1071,7 @@ function env.set_title(title)
     if not titles or titles=="" then titles="DBCLI - Disconnected" end
     if CURRENT_TITLE~=titles then
         CURRENT_TITLE=titles
-        os.execute("title "..titles)
+        env.uv.set_process_title(titles)
     end
 end
 
