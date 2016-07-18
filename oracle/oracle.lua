@@ -22,7 +22,7 @@ oracle.module_list={
 
 function oracle:ctor(isdefault)
     self.type="oracle"
-    self.db_types:load_sql_types('oracle.jdbc.OracleTypes')
+    
     
     local header = "set feed off sqlbl on define off;\n";
     header = header.."ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';\n"
@@ -445,6 +445,7 @@ function oracle:set_db_link(name,value)
 end
 
 function oracle:onload()
+    self.db_types:load_sql_types('oracle.jdbc.OracleTypes')
     local default_desc='#Oracle database SQL statement'
     local function add_default_sql_stmt(...)
         for i=1,select('#',...) do

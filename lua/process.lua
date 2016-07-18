@@ -1,27 +1,11 @@
 local env=env
-local uv = require('luv')
+local write=env.printer.write
+local uv = require('uv')
 
 local handle, pid
 
 local function onexit(code, signal)
-  p("exit", {code=code,signal=signal})
-end
-
-local function onclose()
-  p("close")
-end
-
-local function onread(err, chunk)
-  assert(not err, err)
-  if (chunk) then
-    p("data", {data=chunk})
-  else
-    p("end")
-  end
-end
-
-local function onshutdown()
-  uv.close(handle, onclose)
+    rint('exit',code,signal)
 end
 
 local process=env.class(env.scripter)
@@ -29,9 +13,19 @@ local process=env.class(env.scripter)
 function process:ctor()
     self.process=nil
     self.proc=java.require("org.dbcli.SubSystem")
-    self.prompt_pattern="^.+[>\\$#@] *$"
+    self.prompt_pattern="^.+[>$#@] *$"
     self.support_redirect=true
     
+end
+
+function process:on_read(err,chunk)
+    write(0)
+    env.checkerr(not err,err)
+    if chunk then
+        write(chunk)
+    else
+        write('1')
+    end
 end
 
 function process:kill_reader(cmds)
@@ -48,14 +42,19 @@ end
 
 function process:run_command(cmd,is_print)
     if not self.process then return end
-    self.prompt=self.process:execute(cmd,is_print and true or false)
+    if cmd then
+        self.stdin.write(cmd..'\n')
+    end
+    self.prompt='SQL> '
+   
     if not self.prompt then return self:terminate() end
     if self.enter_flag==true then env.set_subsystem(self.name,self.prompt) end
 end
 
 function process:terminate()
     if not self.process then return end
-    self.process:close()
+    uv.shutdown(self.stdin)
+    uv.walk(uv.close)
     self.process,self.enter_flag,self.startup_cmd=nil,nil,nil
     print("Sub-system '"..self.name.."' is terminated.")
     return env.set_subsystem(nil)
@@ -130,9 +129,15 @@ function process:call_process(cmd,is_native)
         if not is_native and self.support_redirect then
             io.write("Connecting to "..self.name.."...")
             --print(table.concat(self.startup_cmd," "))
-            local stdout,stderr,stdin = uv.new_pipe(false)，uv.new_pipe(false)，uv.new_pipe(false)
-            
-            self.process=self.proc:create(self.prompt_pattern,self.work_dir,self.startup_cmd,self.env)
+            self.stdout,self.stderr,self.stdin = uv.pipe.new(false),uv.pipe.new(false),uv.pipe.new(false)
+            local options={stdio={self.stdin,self.stdout,self.stderr,self.stdout,self.stdout}}
+            options.env={}
+            for k,v in pairs(self.env) do options.env[#options.env+1]=k..'='..v end
+            options.cwd=self.work_dir
+            self.process = uv.spawn(table.concat(self.startup_cmd,' '), options, onexit)
+            local reader=function(...) self:on_read(...) end
+            uv.read_start(self.stdout, reader)
+            uv.read_start(self.stderr, reader)
             self.msg_stack={}
             self:run_command(nil,false)
             env.printer.write("$DELLINE$")
@@ -193,23 +198,4 @@ function process:onunload()
     self:terminate()
 end
 
-
-
-
-handle, pid = uv.spawn("cat", {
-  stdio = {stdin, stdout, stderr}
-}, onexit)
-
-p{
-  handle=handle,
-  pid=pid
-}
-
-uv.read_start(stdout, onread)
-uv.read_start(stderr, onread)
-uv.write(stdin, "Hello World")
-uv.shutdown(stdin, onshutdown)
-
-uv.run()
-uv.walk(uv.close)
-uv.run()
+return process

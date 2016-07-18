@@ -67,7 +67,6 @@ function psql_exe:get_startup_cmd(args,is_native)
         end
         table.remove(args,1)
     end
-    print(table.dump(props))
     return props
 end
 
