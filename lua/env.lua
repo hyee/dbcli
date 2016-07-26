@@ -1062,6 +1062,7 @@ function env.set_title(title)
     local callee=env.callee():gsub("#%d+$","")
     title_list[callee]=title
     local titles=""
+    if not env.module_list then return end
     for _,k in ipairs(env.module_list) do
         if (title_list[k] or "")~="" then
             if titles~="" then titles=titles.."    " end

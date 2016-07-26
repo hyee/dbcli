@@ -37,7 +37,7 @@ local init={
         "lua/tester",
         "lua/graph",
         "lua/subsystem",
-        "lua/process",
+       -- "lua/process",
         "lua/ilua"}
 }
 
@@ -46,7 +46,6 @@ local default_database='oracle'
 
 function init.init_path()
     local java=java
-
     java.system=java.require("java.lang.System")
     java.loader=loader
     env('java',java)
@@ -68,17 +67,16 @@ function init.init_path()
     package.cpath=""
     package.path=""
 
+    for _,v in ipairs(dirs) do
+        os.execute('mkdir "'..env.WORK_DIR..v..'" 2> '..(env.OS=="windows" and 'NUL' or "/dev/null"))
+    end
+
     for _,v in ipairs({"lua","lib","oracle","bin"}) do
         local path=string.format("%s%s%s",env.WORK_DIR,v,path_del)
         local p1,p2=path.."?.lua",java.system:getProperty('java.library.path')..path_del.."?."..(env.OS=="windows" and "dll" or "so")
         package.path  = package.path .. (path_del=='/' and ':' or ';') ..p1
         package.cpath = package.cpath ..(path_del=='/' and ':' or ';') ..p2
     end
-    local luv=require "luv"
-    local function noop() end
-    for _,v in ipairs(dirs) do
-        luv.fs_mkdir(env.WORK_DIR..v,777,noop)
-    end 
 end
 
 function env.join_path(base,...)
@@ -162,7 +160,6 @@ function init.load_database()
         init.load_modules(list,env[name].C)
     end
 end
-
 
 function init.load_modules(list,tab,module_name)
     local n
