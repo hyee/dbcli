@@ -347,7 +347,7 @@ function env.format_error(src,errmsg,...)
     end
     errmsg,count=errmsg:gsub('^.-(%u%u%u%-%d%d%d%d%d)','%1') 
     if count==0 then
-        errmsg=errmsg:gsub('^.*%s([^%: ]+Exception%:%s*)','%1'):gsub(".*[IS][OQL]+Exception:%s*","")
+        errmsg=errmsg:gsub('^.*%s([^%: ]+Exception%:%s*)','%1'):gsub(".*[IS][OQL]+Exception:%s*([^\n\r]+).*","%1")
     end
     errmsg=errmsg:gsub("^.*000%-00000%:%s*",""):gsub("%s+$","")
     if src then
