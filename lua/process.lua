@@ -9,7 +9,6 @@ local function onexit(code, signal)
 end
 
 local process=env.class(env.scripter)
-
 function process:ctor()
     self.process=nil
     self.proc=java.require("org.dbcli.SubSystem")
@@ -19,7 +18,7 @@ function process:ctor()
 end
 
 function process:on_read(err,chunk)
-    write(0)
+    write('1')
     env.checkerr(not err,err)
     if chunk then
         write(chunk)
@@ -125,16 +124,17 @@ function process:call_process(cmd,is_native)
         env.log_debug("subsystem","Command : " ..table.concat(self.startup_cmd," "))
         env.log_debug("subsystem","Work dir: "..self.work_dir)
         env.log_debug("subsystem","Environment: \n"..table.dump(self.env))
-
         if not is_native and self.support_redirect then
             io.write("Connecting to "..self.name.."...")
             --print(table.concat(self.startup_cmd," "))
+            local cmd=self.startup_cmd[1]
+            table.remove(self.startup_cmd,1)
             self.stdout,self.stderr,self.stdin = uv.pipe.new(false),uv.pipe.new(false),uv.pipe.new(false)
-            local options={stdio={self.stdin,self.stdout,self.stderr,self.stdout,self.stdout}}
+            local options={stdio={self.stdin,self.stdout,self.stderr},verbatim=true,args=self.startup_cmd}
             options.env={}
             for k,v in pairs(self.env) do options.env[#options.env+1]=k..'='..v end
             options.cwd=self.work_dir
-            self.process = uv.spawn(table.concat(self.startup_cmd,' '), options, onexit)
+            self.process = uv.spawn(cmd,options, onexit)
             local reader=function(...) self:on_read(...) end
             uv.read_start(self.stdout, reader)
             uv.read_start(self.stderr, reader)

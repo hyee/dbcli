@@ -345,10 +345,12 @@ function env.format_error(src,errmsg,...)
         HIR,NOR=env.ansi.get_color(env.set.get("ERRCOLOR")),env.ansi.get_color('NOR')
         errmsg=errmsg:strip_ansi()
     end
+    env.log_debug("ERROR",errmsg)
     errmsg,count=errmsg:gsub('^.-(%u%u%u%-%d%d%d%d%d)','%1') 
     if count==0 then
         errmsg=errmsg:gsub('^.*%s([^%: ]+Exception%:%s*)','%1'):gsub(".*[IS][OQL]+Exception:%s*","")
     end
+    errmsg=errmsg:gsub("\n%s+at%s+.*$","")
     errmsg=errmsg:gsub("^.*000%-00000%:%s*",""):gsub("%s+$","")
     if src then
         local name,line=src:match("([^\\/]+)%#(%d+)$")
@@ -1062,6 +1064,7 @@ function env.set_title(title)
     local callee=env.callee():gsub("#%d+$","")
     title_list[callee]=title
     local titles=""
+    if not env.module_list then return end
     for _,k in ipairs(env.module_list) do
         if (title_list[k] or "")~="" then
             if titles~="" then titles=titles.."    " end

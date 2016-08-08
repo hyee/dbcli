@@ -394,10 +394,10 @@ function oracle:handle_error(info)
         info.sql=nil
         return
     end
-    local ora_code,msg=info.error:match('ORA%-(%d+): *([^\n\r]+)')
+    local ora_code,msg=info.error:match('ORA%-(20%d+): *(.+)')
     if ora_code and tonumber(ora_code)>=20001 and tonumber(ora_code)<20999 then
         info.sql=nil
-        info.error=msg:gsub('%s+$','')
+        info.error=msg:gsub('%s*ORA%-%d+.*$',''):gsub('%s+$','')
         return info
     end
 
