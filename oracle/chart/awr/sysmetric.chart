@@ -1,6 +1,9 @@
 /*[[Show chart for gv$sysmetric_history/dba_hist_sysmetric_summary. Usage: @@NAME <metric_name|metric_group_name> {[0|inst_id] [yymmddhh24mi] [yymmddhh24mi]} [-d] [-eff]
-    -d   : Based on DBA_HIST_SYSMETRIC_SUMMARY, otherwise based on GV$SYSMETRIC_HISTORY
-    -eff : Show metrics related to DB efficiency
+    -d    : Based on DBA_HIST_SYSMETRIC_SUMMARY, otherwise based on GV$SYSMETRIC_HISTORY
+    -eff  : Show metrics related to DB efficiency
+    -iops : Show TPS/IOPS(read)/IOPS(write)
+    -time : Show CPU/DB usage(in centiseconds)
+    -ratio: Show metrics based on percentage
     --[[
       &V2   : default={&INSTANCE}
       &V3   : default={&STARTTIME}
@@ -10,15 +13,20 @@
       &TITLE: V={GV$SYSMETRIC_HISTORY}, D={DBA_HIST_SYSMETRIC_SUMMARY}
       &CAT  : {
             default={1=1},
+            iops={METRIC_NAME in ('User Transaction Per Sec','Physical Read Total IO Requests Per Sec',
+                                 'Physical Write Total IO Requests Per Sec')}，
+            time={metric_unit='CentiSeconds Per Second'},
+            ratio={METRIC_NAME like '%Ratio' and METRIC_NAME not like '% Miss %'},
             eff={METRIC_NAME in ('Host CPU Utilization (%)','Database CPU Time Ratio',
                                  'Database Wait Time Ratio','Executions Per Sec',
                                  'SQL Service Response Time','Physical Read Total IO Requests Per Sec','Physical Write Total IO Requests Per Sec')}
         }
+      &UNIT : default={Value},time={CentiSeconds},Ratio={Ratio(%)},iops={Count}  
     ]]--
 ]]*/
 
    {
-       _attrs=[[select 'System Metric History(&TITLE)' title from dual]],
+       _attrs=[[select 'System Metric History(&TITLE)' title,'&UNIT' ylabel from dual]],
        _sql=[[
         SELECT sample_time, 
                REPLACE(METRIC_NAME, ' Per ', ' / ') metric_name,
@@ -45,6 +53,5 @@
         ]],
        _pivot=true,
        labelsKMB=true,
-       ylabel='Value',
        deviation=true,
    }

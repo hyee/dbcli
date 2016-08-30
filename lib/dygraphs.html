@@ -144,8 +144,11 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
         
         function write_options(index) {
             var options="";
-            for(var i=0;i<_options.length;i++) 
-                options+='<input type="checkbox" id="'+_options[i]+String(index)+'" onclick="javascript:update_options('+String(index)+')">'+_optionNames[i]+'</button>&nbsp;&nbsp;&nbsp;';
+            for(var i=0;i<_options.length;i++) {
+                var id=_options[i]+String(index);
+                options+='<input type="checkbox" id="'+id+'" onclick="javascript:update_options('
+                    +String(index)+')"/><label for="'+id+'">'+_optionNames[i]+'</label>&nbsp;&nbsp;';
+            }    
             var str='<table style="width:100%"><tr><td style="width:95%" id="divShow'+String(index)+'"></td><td>\n'
                 +'<select size=15 multiple="multiple" id="ShowAxis'+String(index)+'" onchange="javascript:update_options('+String(index)+')" style="display:none;width:200px;overflow:hidden">'
             str+='</select></td></tr></table>\n'
@@ -167,8 +170,10 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
             for(var i=0;i<_options.length;i++) {
                 var val=_graph.getOption(_options[i]);
                 if(_options[i]=='plotter'&&val!=BarPlotter) val=false;
-                var res=(typeof val=='undefined'||val==null||String(val)=='false'||(String(val)!='follow'&&_options[i]=="legend"))?false:true; 
-                document.getElementById(_options[i]+String(index)).checked=res;
+                var res=(typeof val=='undefined'||val==null||String(val)=='false'||(String(val)!='follow'&&_options[i]=="legend"))?false:true;
+                var obj=document.getElementById(_options[i]+String(index));
+                obj.checked=res;
+                if(res==true) obj.nextSibling.style.color='red';
                 if(_options[i]=="deviation") reOptions(_graph,res,{});
             }
             
@@ -180,7 +185,9 @@ p.appendChild(r),this.xlabels_.push(r)}}h.strokeStyle=i.getOptionForAxis("axisLi
             var axis=document.getElementById("ShowAxis"+String(index));
             var show=document.getElementById('divShow'+String(index));
             for(var i=0;i<_options.length;i++) {
-                opt[_options[i]]=document.getElementById(_options[i]+String(index)).checked;
+                var obj=document.getElementById(_options[i]+String(index));
+                obj.nextSibling.style.color=obj.checked?'red':"inherit";
+                opt[_options[i]]=obj.checked;
                 if(_options[i]=='legend') opt[_options[i]]=opt[_options[i]]?'follow':'onmouseover';
                 else if(_options[i]=="strokePattern") opt[_options[i]]=opt[_options[i]]?Dygraph.DASHED_LINE:null;
                 else if(_options[i]=='plotter') opt[_options[i]]=opt[_options[i]]?BarPlotter:null;
