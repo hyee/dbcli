@@ -844,8 +844,9 @@ function db_core.check_completion(cmd,other_parts)
                 return true,match
             end
         end
+        return false,other_parts
     end
-    return false,other_parts
+    return true,match
 end
 
 function db_core:resolve_expsql(sql)
