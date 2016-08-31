@@ -19,7 +19,9 @@
             ratio={METRIC_NAME like '%Ratio' and METRIC_NAME not like '% Miss %'},
             eff={METRIC_NAME in ('Host CPU Utilization (%)','Database CPU Time Ratio',
                                  'Database Wait Time Ratio','Executions Per Sec',
-                                 'SQL Service Response Time','Physical Read Total IO Requests Per Sec','Physical Write Total IO Requests Per Sec')}
+                                 'Redo Generated Per Sec','User Calls Per Sec','Logons Per Sec','DB Block Changes Per Sec','Logical Reads Per Sec',
+                                 'Total Parse Count Per Sec','Hard Parse Count Per Sec','User Transaction Per Sec',
+                                 'SQL Service Response Time','Physical Read Total Bytes Per Sec','Physical Write Total Bytes Per Sec')}
         }
       &UNIT : default={Value},time={CentiSeconds},Ratio={Ratio(%)},iops={Count}  
     ]]--
@@ -29,7 +31,7 @@
        _attrs=[[select 'System Metric History(&TITLE)' title,'&UNIT' ylabel from dual]],
        _sql=[[
         SELECT sample_time, 
-               REPLACE(METRIC_NAME, ' Per ', ' / ') metric_name,
+               REPLACE(METRIC_NAME, ' Per ', '/') metric_name,
                VALUE metric_value,
                STD RNK_
         FROM   (SELECT /*+merge no_expand*/

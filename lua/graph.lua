@@ -115,7 +115,7 @@ function graph:run_sql(sql,args,cmd,file)
     local default_attrs={
             --legend='always',
             labelsDivStyles= {border='1px solid black',width=80},
-            rollPeriod=8,
+            rollPeriod=3,
             showRoller=false,
             height= 400,
             includeZero=true,
