@@ -37,7 +37,7 @@ local init={
         "lua/tester",
         "lua/graph",
         "lua/subsystem",
-       -- "lua/process",
+        "lua/process",
         "lua/ilua"}
 }
 

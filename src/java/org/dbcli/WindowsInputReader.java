@@ -279,7 +279,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
     public synchronized long[][] readRaw(long timeout, boolean isPeek) throws IOException {
         long[][] c = peeker;
         if (c != null && c[0] != null) {
-            peeker = null;
+            if(!isPeek) peeker = null;
             return c;
         }
         if (exception != null) throw exception;
@@ -291,23 +291,26 @@ public class WindowsInputReader extends NonBlockingInputStream {
                     c[0] = timeout == 0 ? inputQueue.take() : inputQueue.poll(timeout, TimeUnit.MILLISECONDS);
             }
             if (c[0] != null && c[0][KEY_DOWN] == 1) c[1] = inputQueue.poll(100, TimeUnit.MILLISECONDS);
-            for (long[] c0 : c) {
-                if (c0 == null) continue;
-                //System.out.println(Arrays.toString(c0));
-                if (!isPeek && (c0[KEY_DOWN] == 1 || c0[KEY_CHAR] == 3) && (//
-                        (c0[KEY_CTRL] > 0 && (c0[KEY_CHAR] > 0 || keyEvents.containsKey(Integer.valueOf((int) c0[KEY_CODE])))) || //
-                                (c0[KEY_SFT] > 0 && keyEvents.containsKey(Integer.valueOf((int) c0[KEY_CODE]))) ||//
-                                (c0[KEY_CODE] >= KeyEvent.VK_F1 && c0[KEY_CODE] <= KeyEvent.VK_F12 && c0[KEY_CHAR] == 0))) {
-                    StringBuilder sb = new StringBuilder(32);
-                    if (c0[KEY_CTL] > 0) sb.append("CTRL+");
-                    if (c0[KEY_ALT] > 0) sb.append("ALT+");
-                    if (c0[KEY_SFT] > 0) sb.append("SHIFT+");
-                    sb.append(keyCodes.get(Integer.valueOf((int) c0[KEY_CODE])));
-                    for (EventCallback callback : eventMap.values()) callback.interrupt(c0, sb.toString());
-                    if (c0[0] == 2) return readRaw(timeout, isPeek);
+            if (isPeek) {
+                peeker = c;
+            } else {
+                for (long[] c0 : c) {
+                    if (c0 == null) continue;
+                    //System.out.println(Arrays.toString(c0));
+                    if ((c0[KEY_DOWN] == 1 || c0[KEY_CHAR] == 3) && (//
+                            (c0[KEY_CTRL] > 0 && (c0[KEY_CHAR] > 0 || keyEvents.containsKey(Integer.valueOf((int) c0[KEY_CODE])))) || //
+                                    (c0[KEY_SFT] > 0 && keyEvents.containsKey(Integer.valueOf((int) c0[KEY_CODE]))) ||//
+                                    (c0[KEY_CODE] >= KeyEvent.VK_F1 && c0[KEY_CODE] <= KeyEvent.VK_F12 && c0[KEY_CHAR] == 0))) {
+                        StringBuilder sb = new StringBuilder(32);
+                        if (c0[KEY_CTL] > 0) sb.append("CTRL+");
+                        if (c0[KEY_ALT] > 0) sb.append("ALT+");
+                        if (c0[KEY_SFT] > 0) sb.append("SHIFT+");
+                        sb.append(keyCodes.get(Integer.valueOf((int) c0[KEY_CODE])));
+                        for (EventCallback callback : eventMap.values()) callback.interrupt(c0, sb.toString());
+                        if (c0[0] == 2) return readRaw(timeout, isPeek);
+                    }
                 }
             }
-            if (isPeek) peeker = c;
             return c;
         } catch (InterruptedException e) {
             return new long[0][0];

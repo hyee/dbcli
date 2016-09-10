@@ -40,8 +40,8 @@
                                       flag,
                                       stat_name,
                                       Slot_size,
-                                      VALUE - nvl(LAG(decode(CUMULATIVE,'NO',0,VALUE)) OVER(PARTITION BY part_key,stat_name ORDER BY snap_id),0) value
-                               FROM   dba_hist_osstat NATURAL JOIN snap NATURAL JOIN(select /*+no_merge*/ OSSTAT_ID STAT_ID,CUMULATIVE FROM V$OSSTAT)
+                                      VALUE - nvl(LAG(case when stat_id in(1,2,3,4,5,6,14,15,1009,1010) then VALUE else 0 end) OVER(PARTITION BY part_key,stat_name ORDER BY snap_id),0) value
+                               FROM   dba_hist_osstat NATURAL JOIN snap
                                WHERE  (&filter) and (:V1 IS NULL OR lower(stat_name) like lower('%&V1%'))) a
                        where value>0 and flag=0)
                  GROUP  BY event, end_time) a
