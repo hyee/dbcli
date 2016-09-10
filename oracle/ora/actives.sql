@@ -191,7 +191,7 @@ BEGIN
                     AND    c.sid != USERENV('SID')
                     AND    c.audsid != userenv('sessionid')
                     GROUP  BY session#)
-            WHERE  "CPU%" + "PSC%" + "LGC%" + hard_parse > 0
+            WHERE  "CPU%" + "PSC%" + nvl("LGC%",0) + hard_parse > 0
             ORDER  BY GREATEST("CPU%", "PSC%", "LGC%") DESC;
 
     $END

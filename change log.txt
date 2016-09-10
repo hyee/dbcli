@@ -1,4 +1,4 @@
-2016-09-05: * public: new "Smoothed" option on graph chart 
+2016-09-05: * public: new "Smooth" option on graph chart 
 2016-08-31: + oracle: new options "ch sysmetric -iops/-ratio/-time" 
 2016-08-30: * public: update libs, minor fixes
 2016-07-15: * public: small enhancement on the graph charts
