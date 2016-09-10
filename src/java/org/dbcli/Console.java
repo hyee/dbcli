@@ -1,7 +1,6 @@
 package org.dbcli;
 
 import com.naef.jnlua.LuaState;
-import jline.AnsiWindowsTerminal;
 import jline.Terminal;
 import jline.console.ConsoleReader;
 import jline.console.Operation;

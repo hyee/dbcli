@@ -17,7 +17,7 @@
 ]]*/
 {
     _attrs=[[
-        SELECT 'System OS State Chart' title
+        SELECT 'System Memory Usage' title
         from dual]],
     _sql=[[
         SELECT time,event,value "Memory Size"

@@ -75,7 +75,7 @@ public class Loader {
             lua.setGlobal("writer");
             lua.pushJavaObject(console.getTerminal());
             lua.setGlobal("terminal");
-            lua.pushJavaObject( new PrintWriter(console.getOutput()));
+            lua.pushJavaObject(new PrintWriter(console.getOutput()));
             lua.setGlobal("jwriter");
         }
         String separator = File.separator;
@@ -185,8 +185,8 @@ public class Loader {
         }
         if (remaps != null) {
             for (String column : remaps) {
-                if(column==null||column.trim().equals("")) continue;
-                String[] o = column.split("=",2);
+                if (column == null || column.trim().equals("")) continue;
+                String[] o = column.split("=", 2);
                 writer.setRemap(o[0], o.length < 2 ? null : o[1]);
             }
         }

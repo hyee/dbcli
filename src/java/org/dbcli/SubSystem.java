@@ -4,7 +4,6 @@ import com.zaxxer.nuprocess.NuAbstractProcessHandler;
 import com.zaxxer.nuprocess.NuProcess;
 import com.zaxxer.nuprocess.NuProcessBuilder;
 import com.zaxxer.nuprocess.windows.NuKernel32;
-import com.zaxxer.nuprocess.windows.NuWinNT;
 import com.zaxxer.nuprocess.windows.WindowsProcess;
 
 import java.io.File;
@@ -156,7 +155,7 @@ public class SubSystem {
         if (process == null) return;
         process.destroy(true);
         process = null;
-        lastPrompt=null;
+        lastPrompt = null;
     }
 
     class ProcessHandler extends NuAbstractProcessHandler {
@@ -194,7 +193,7 @@ public class SubSystem {
                 }
             }
 
-            if (lastChar != '\n'&&!isEOF) {
+            if (lastChar != '\n' && !isEOF) {
                 String line = sb.toString();
                 sb.setLength(0);
                 if (p.matcher(line).find()) {
