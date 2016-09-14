@@ -571,7 +571,7 @@ function db_core:exec(sql,args)
     end
 
     self:clearStatements()
-    if event then event("AFTER_DB_EXEC",{self,sql,args,result}) end
+    if event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
     
     for k,v in pairs(outputs) do
         if args[k]==db_core.NOT_ASSIGNED then args[k]=nil end

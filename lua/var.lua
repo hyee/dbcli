@@ -179,8 +179,14 @@ function var.before_db_exec(item)
 end
 
 function var.after_db_exec(item)
-    local db,sql,args=table.unpack(item)
+    local db,sql,args,_,params=table.unpack(item)
     local result,isPrint={},cfg.get("PrintVar")
+    for k,v in pairs(params) do
+        if var.inputs[k] and type(v) ~= "table" and v~=db_core.NOT_ASSIGNED then
+            var.inputs[k]=v
+        end
+    end
+
     for k,v in pairs(var.outputs) do
         if v and k:upper()==k and args[k] and args[k]~=v then
             var.inputs[k],var.outputs[k]=args[k],nil
@@ -189,6 +195,7 @@ function var.after_db_exec(item)
             end
         end
     end
+
     var.current_db=db
     if isPrint=="on" then
         var.print(result)
