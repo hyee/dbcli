@@ -552,6 +552,7 @@ function db_core:exec(sql,args)
 
 
     local outputs={}
+
     for k,v in pairs(args) do
         if type(v)=="string" and v:sub(1,1)=="#" then
             args[k]=params[tostring(k):upper()]
