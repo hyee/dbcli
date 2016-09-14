@@ -1,4 +1,3 @@
-2016-09-15: ！public: fix output parameter(var) cannot be assigned twice in diff stmts
 2016-09-11: + oracle: new chart 'ch sgapga'
 2016-09-05: * public: new "Smooth" option on graph chart 
 2016-08-31: + oracle: new options "ch sysmetric -iops/-ratio/-time" 

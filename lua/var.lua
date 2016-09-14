@@ -121,6 +121,7 @@ function var.accept_input(name,desc)
     desc=desc:match("^[%s']*(.-)[%s':]*$")..': '
     env.printer.write(desc)
     var.inputs[uname]=io.read()
+    var.outputs[uname]=nil
 end
 
 function var.setInputs(name,args)
@@ -182,7 +183,7 @@ function var.after_db_exec(item)
     local result,isPrint={},cfg.get("PrintVar")
     for k,v in pairs(var.outputs) do
         if v and k:upper()==k and args[k] and args[k]~=v then
-            var.inputs[k]=args[k]
+            var.inputs[k],var.outputs[k]=args[k],nil
             if args[k]~=db_core.NOT_ASSIGNED then 
                 result[k]=args[k]
             end
