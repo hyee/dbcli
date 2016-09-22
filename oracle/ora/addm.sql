@@ -15,6 +15,7 @@ VAR DEST VARCHAR2;
 DECLARE
     c PLS_INTEGER;
     taskname varchar2(50);
+    advtype  varchar2(100);
     rs CLOB;
     sq VARCHAR2(2000);
 BEGIN
@@ -39,11 +40,16 @@ BEGIN
             WHERE  &FILTER
             ORDER  BY execution_start DESC NULLS LAST;
     ELSE
-        select max(task_name) into taskname FROM DBA_ADVISOR_TASKS where task_id=regexp_substr(:V1,'\d+');
+        select max(ADVISOR_NAME),max(task_name),max(owner) into advtype,taskname,sq FROM DBA_ADVISOR_TASKS where task_id=regexp_substr(:V1,'\d+');
         IF taskname IS NULL THEN
             OPEN :cur for select 'No such task' message from dual;
-        ELSIF taskname LIKE 'SYS_AUTO_SPC%' THEN
+        ELSIF advtype LIKE 'Segment%' THEN
             OPEN :cur for 'select * from table(SYS.DBMS_SPACE.ASA_RECOMMENDATIONS) where task_id=:task_id' using :V1;
+        ELSIF advtype like 'SQL%' THEN
+            EXECUTE IMMEDIATE 'BEGIN :rs :=sys.DBMS_SQLTUNE.REPORT_TUNING_TASK(task_name=>:1,owner_name=>:2);END;' using out rs,taskname,sq;
+            OPEN :cur for select rs result from dual;
+            :res  := rs;
+            :dest := replace(taskname,':','_')||'.txt';
         ELSE
             SELECT COUNT(1) INTO c FROM ALL_OBJECTS WHERE OBJECT_NAME IN('DBMS_ADDM','DBMS_ADVISOR') AND OWNER='SYS';
             OPEN :cur for
@@ -127,19 +133,18 @@ BEGIN
                     group by target_id
                     order by 1 desc);
             IF c > 0 THEN
-                SELECT MAX(TASK_NAME) INTO taskname from DBA_ADVISOR_TASKS where task_id=:V1;
-            $IF DBMS_DB_VERSION.VERSION > 10 $THEN
-                sq := 'BEGIN :rs := DBMS_ADDM.GET_REPORT(:rtask);END;';
-            $ELSE
-                sq := q'[BEGIN :rs := dbms_advisor.get_task_report(:rtask, 'TEXT', 'ALL');END;]';
-            $END
-            BEGIN
-                EXECUTE IMMEDIATE sq using out rs, taskname;
-                :dest := replace(taskname,':','_')||'.txt';
-                :res  := rs;
-            EXCEPTION WHEN OTHERS THEN
-                dbms_output.put_line('Cannot extract ADDM report into file because of '||sqlerrm);
-            END;
+                BEGIN
+                $IF DBMS_DB_VERSION.VERSION > 10 $THEN
+                    sq := 'BEGIN :rs := DBMS_ADDM.GET_REPORT(:rtask);END;';
+                $ELSE
+                    sq := q'[BEGIN :rs := dbms_advisor.get_task_report(:rtask, 'TEXT', 'ALL');END;]';
+                $END
+                    EXECUTE IMMEDIATE sq using out rs, taskname;
+                    :dest := replace(taskname,':','_')||'.txt';
+                    :res  := rs;
+                EXCEPTION WHEN OTHERS THEN
+                    dbms_output.put_line('Cannot extract ADDM report into file because of '||sqlerrm);
+                END;
             END IF;
         END IF;
     END IF;
