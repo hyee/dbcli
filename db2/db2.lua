@@ -87,6 +87,11 @@ function db2:connect(conn_str)
     print("Database connected.")
 end
 
+function db2:disconnect(...)
+    self.super.disconnect(self,...)
+    env.set_title("")
+end
+
 function db2:exec(sql,...)
     local bypass=self:is_internal_call(sql)
     local args=type(select(1,...)=="table") and ... or {...}

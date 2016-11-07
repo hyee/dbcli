@@ -368,6 +368,11 @@ function oracle:check_date(string,fmt)
     return args[4]
 end
 
+function oracle:disconnect(...)
+    self.super.disconnect(self,...)
+    env.set_title("")
+end
+
 local is_executing=false
 function oracle:dba_query(cmd,sql,args)
     local sql1,count,success,res=sql:gsub('([Aa][Ll][Ll]%_)','dba_')
