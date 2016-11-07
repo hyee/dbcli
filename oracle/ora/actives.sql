@@ -82,7 +82,7 @@
 set feed off
 set VERIFY on
 VAR actives refcursor "Active Sessions"
-VAR time_model refcursor "Top Session Time Model"
+VAR time_model refcursor "Top Session Metric"
 ALTER /*INTERNAL_DBCLI_CMD*/ SESSION SET PLSQL_CCFlags = "CHECK_ACCESS_M:&smen";
 DECLARE
     time_model sys_refcursor;
@@ -157,10 +157,10 @@ BEGIN
                            max(regexp_replace(nvl(c.module,c.program),' *\(TNS.*\)$')||'('||c.osuser||')') program,
                            max(a.sql_id) sql_id,
                            COUNT(1) PX,
-                           MAX(intsize_csec / 100) Secs,
+                           MAX(intsize_csec / 100) metric_Secs,
                            round(SUM(PGA_MEMORY) / 1024 / 1024, 2) PGA_MB,
-                           round(SUM(exp_size) / 1024 / 1024, 2) WRK_MB,
-                           round(SUM(TEMP_SIZE) / 1024 / 1024, 2) TEMP_MB,
+                           round(SUM(ACTUAL_MEM_USED) / 1024 / 1024, 2) WRK_MB,
+                           round(SUM(TEMPSEG_SIZE) / 1024 / 1024, 2) TEMP_MB,
                            round(SUM(cpu), 2) cpu,
                            round(100 * ratio_to_report(SUM(CPU)) OVER(), 2) "CPU%",
                            round(SUM(physical_reads * blksiz), 2) physical_MB,
@@ -191,7 +191,7 @@ BEGIN
                     AND    c.sid != USERENV('SID')
                     AND    c.audsid != userenv('sessionid')
                     GROUP  BY session#)
-            WHERE  "CPU%" + "PSC%" + "LGC%" + hard_parse > 0
+            WHERE  "CPU%" + "PSC%" + nvl("LGC%",0) + hard_parse > 0
             ORDER  BY GREATEST("CPU%", "PSC%", "LGC%") DESC;
 
     $END

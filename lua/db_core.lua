@@ -552,6 +552,7 @@ function db_core:exec(sql,args)
 
 
     local outputs={}
+
     for k,v in pairs(args) do
         if type(v)=="string" and v:sub(1,1)=="#" then
             args[k]=params[tostring(k):upper()]
@@ -570,7 +571,7 @@ function db_core:exec(sql,args)
     end
 
     self:clearStatements()
-    if event then event("AFTER_DB_EXEC",{self,sql,args,result}) end
+    if event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
     
     for k,v in pairs(outputs) do
         if args[k]==db_core.NOT_ASSIGNED then args[k]=nil end
@@ -944,6 +945,7 @@ function db_core:disconnect(feed)
     if self:is_connect() then
         pcall(self.conn.close,self.conn)
         event("ON_DB_DISCONNECTED",self)
+        self.conn=nil
         if feed~=false then print("Database disconnected.") end
     end
 end
@@ -986,9 +988,10 @@ function db_core:__onload()
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
     env.event.snoop('TRIGGER_LOGIN',self.login,self)
     set_command(self,{"reconnect","reconn"}, "Re-connect to database with the last login account.",self.reconnnect,false,2)
-    env.set_command(self,"sql2file",'Export Query Result into SQL file. Usage: @@NAME <file_name>[.sql|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <sql|cursor>'..txt ,self.sql2sql,'__SMART_PARSE__',3)
-    env.set_command(self,"sql2csv",'Export Query Result into CSV file. Usage: @@NAME <file_name>[.csv|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <sql|cursor>'..txt ,self.sql2csv,'__SMART_PARSE__',3)
-    env.set_command(self,"csv2sql",'Convert CSV file into SQL file. Usage: @@NAME <sql_file>[.sql|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <csv_file>'..txt ,self.csv2sql,false,3)
+    set_command(self,{"disconnect","disc"},"Disconnect current login.",self.disconnect,false,2)
+    set_command(self,"sql2file",'Export Query Result into SQL file. Usage: @@NAME <file_name>[.sql|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <sql|cursor>'..txt ,self.sql2sql,'__SMART_PARSE__',3)
+    set_command(self,"sql2csv",'Export Query Result into CSV file. Usage: @@NAME <file_name>[.csv|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <sql|cursor>'..txt ,self.sql2csv,'__SMART_PARSE__',3)
+    set_command(self,"csv2sql",'Convert CSV file into SQL file. Usage: @@NAME <sql_file>[.sql|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <csv_file>'..txt ,self.csv2sql,false,3)
 end
 
 function db_core:__onunload()

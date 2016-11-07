@@ -1,3 +1,9 @@
+2016-11-08: + public: new command "disc[onnect]"
+2016-09-15: ！public: fix output parameter(var) cannot be assigned twice in diff stmts
+2016-09-11: + oracle: new chart 'ch sgapga'
+2016-09-05: * public: new "Smooth" option on graph chart 
+2016-08-31: + oracle: new options "ch sysmetric -iops/-ratio/-time" 
+2016-08-30: * public: update libs, minor fixes
 2016-07-15: * public: small enhancement on the graph charts
 2016-07-12: + pgsql : initially support PostgreSQL
 2016-07-11: ! mysql : minor fixes on some mysql modules

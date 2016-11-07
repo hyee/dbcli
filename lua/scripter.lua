@@ -58,7 +58,7 @@ function scripter:rehash(script_dir,ext_name,extend_dirs)
         end
         local attrs={path=file.fullname,desc=desc,short_desc=desc:match("([^\n\r]+)") or ""}
         if annotation then 
-            local alias=("\n"..annotation):match("\n%s*@ALIAS:%s*(%S+)")
+            local alias=("\n"..annotation):match("\n%s*@ALIAS[ \t]*:[ \t]*(%S+)")
             if alias then
                 local abbr=alias:upper():split('[,; ]+')
                 attrs.abbr=table.concat(abbr,',')
@@ -254,7 +254,7 @@ function scripter:parse_args(sql,args,print_args,extend_dirs)
         end)
 
         local function strip(text)
-            len=146
+            local len=146
             text= (text:gsub("%s+"," ")):sub(1,len)
             if text:len()==len then text=text..' ...' end
             return text

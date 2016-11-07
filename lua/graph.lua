@@ -115,7 +115,7 @@ function graph:run_sql(sql,args,cmd,file)
     local default_attrs={
             --legend='always',
             labelsDivStyles= {border='1px solid black',width=80},
-            rollPeriod=8,
+            rollPeriod=1,
             showRoller=false,
             height= 400,
             includeZero=true,
@@ -246,7 +246,7 @@ function graph:run_sql(sql,args,cmd,file)
         --For pivot, col1=label, col2=Pivot,col3=y-value
         --collist: {label={1:nth-axis,2:count,3:1st-min,4:1st-max,5+:sum(value)-of-each-chart},...}
         if pivot then
-            local x,label,y=row[1],row[2],{table.unpack(row,3)}
+            local x,label,y=row[1],row[2]:trim(),{table.unpack(row,3)}
             
             if #xlabels==0 then
                 charts,xlabels[1],values[title]=y,title,table.new(#rows+10,5)
@@ -280,6 +280,7 @@ function graph:run_sql(sql,args,cmd,file)
             csv[#csv+1]=table.concat(row,',')
             for i=2,c do
                 if counter==0 then
+                    row[i]=row[i]:trim()
                     collist[row[i]]={i,0,data={}}
                     --row[i]='"'..row[i]:gsub('"','""')..'"' --quote title fields
                 else
