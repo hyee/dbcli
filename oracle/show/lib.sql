@@ -1,5 +1,5 @@
 /*[[Show library cache information.]]*/
-set feed off
+set feed off digits 4
 PRO Library Cache Ratio:
 PRO ====================
 select * from gv$LIBRARYCACHE order by 1,2;
