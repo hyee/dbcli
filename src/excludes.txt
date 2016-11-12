@@ -11,6 +11,7 @@
 \dump\
 \classdump\
 \ConsoleTest\
+\emviewers\
 .sublime-project
 .sublime-workspace
 .alias
