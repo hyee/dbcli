@@ -33,5 +33,5 @@ FROM   (SELECT OWNER,
                b.TEMPORARY
         FROM   &check_access_pro a, &check_access_obj b
         WHERE  a.object_id = b.object_id
-        AND    upper(a.procedure_name || CHR(1) || a.subprogram_id) LIKE '%' || NVL(UPPER(:V1), 'x') || '%'
+        AND    upper('.'||a.procedure_name || CHR(1) || a.subprogram_id) LIKE '%' || NVL(UPPER(:V1), 'x') || '%'
         ORDER  BY 1, 2)

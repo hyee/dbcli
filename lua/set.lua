@@ -16,8 +16,11 @@ function cfg.show_cfg(name)
        set [-p] <name1> default  [<name2> back     ...] : Change settings back to the default/previous values
     ]])
     if name and name~='-a' and name~='-A' then
-        local v=cfg.exists(name)
-        table.insert(rows,{name,string.from(v.value),string.from(v.default),v.class,v.range or '*',v.desc})
+        for k,v in pairs(cfg) do
+            if type(v)=="table" and k==k:upper() and k:find(name,1,true) and v.src and (name or (v.desc and not v.desc:find('^#'))) then
+                table.insert(rows,{k,string.from(v.value),string.from(v.default),v.class,v.range or '*',v.desc})
+            end
+        end
     else
         if name then table.insert(rows[1],2,"Source") end
         for k,v in pairs(cfg) do
@@ -149,9 +152,9 @@ function cfg.set(name,value,backup,isdefault)
     --res,err=pcall(function()
     if not name then return cfg.show_cfg() end
     name=name:upper()
-    local config=cfg.exists(name)
-    if not config then return print("Cannot set ["..name.."], the parameter does not exist!") end
     if not value then return cfg.show_cfg(name) end
+    local config=cfg.exists(name)
+    env.checkerr(config,"Cannot set ["..name.."], the parameter does not exist!")
     if tostring(value):upper()=="DEFAULT" then
         return cfg.set(name,config.default,nil,true)
     elseif tostring(value):upper()=="BACK" then
