@@ -154,7 +154,7 @@ function cfg.set(name,value,backup,isdefault)
     name=name:upper()
     if not value then return cfg.show_cfg(name) end
     local config=cfg.exists(name)
-    env.checkerr(config,"Cannot set ["..name.."], the parameter does not exist!")
+    if not config then return print("Cannot set ["..name.."], the parameter does not exist!") end
     if tostring(value):upper()=="DEFAULT" then
         return cfg.set(name,config.default,nil,true)
     elseif tostring(value):upper()=="BACK" then
