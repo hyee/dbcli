@@ -111,7 +111,7 @@ r1 AS
              END) bp_value
   FROM   r0),
 r3 AS
- (SELECT (1 - SUM(buckets) / MAX(num_buckets)) / (MAX(num_distinct) - COUNT(1)) new_density
+ (SELECT (1 - SUM(buckets) / MAX(num_buckets)) / NULLIF(MAX(num_distinct) - COUNT(1),0) new_density
   FROM   r0
   WHERE  buckets > 1)
 SELECT column_name,
