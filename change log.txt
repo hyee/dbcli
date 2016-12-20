@@ -1,3 +1,4 @@
+2016-12-20: + oracle: new command "ora expstats <sql_id>|<table_name>' 
 2016-11-13: * public: update lib LuaJIT
 2016-11-08: + public: new command "disc[onnect]"
             * public: update lib JSch to v0.1.54
