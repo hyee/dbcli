@@ -8,7 +8,7 @@
 
 
 ora _find_object &V1 1
-set verify off
+set verify off feed off
 var text CLOB;
 DECLARE
     v_stgtab VARCHAR2(30) := 'DBCLI_STATS_TABLE';
@@ -44,7 +44,6 @@ BEGIN
                   WHERE  object_type IS NOT NULL
                   AND    sql_id = v_sqlid
                   &CHECK_ACCESS_AWR))
-        
         SELECT object_owner, object_name
         BULK   COLLECT
         INTO   v_tabs
@@ -57,7 +56,7 @@ BEGIN
     END IF;
     
     IF v_tabs.count =0 THEN
-        raise_application_error(-20001,'Cannot find impacted tables regarding to the input table_name/sql_id!');
+        raise_application_error(-20001,'Cannot find impacted tables regarding to the input table_name or sql_id!');
     END IF;
 
     BEGIN
@@ -71,32 +70,44 @@ BEGIN
         dbms_stats.export_table_stats(v_tabs(i).owner, v_tabs(i).tname, stattab => v_stgtab, statown => USER);
     END LOOP;
     EXECUTE IMMEDIATE q'|alter session set nls_date_format='YYYY-MM-DD HH24:MI:SS'|';
+    v_xml := dbms_xmlgen.getxml('select * from '||v_stgtab);
+    dbms_stats.drop_stat_table(USER, v_stgtab);
+    
     dbms_lob.createtemporary(v_text, TRUE);
     pr('Set define off sqlbl on' || chr(10));
     pr('DECLARE');
     pr('    txt    CLOB;');
     pr('    hdr    NUMBER;');
-    pr('    stgtab VARCHAR2(30) := ''DBCLI_STATS_TABLE'';');
+    pr('    stgtab VARCHAR2(30) := '''||v_stgtab||''';');
     pr('    procedure wr(x varchar2) is begin dbms_lob.writeappend(txt, lengthb(x), x);end;');
+    pr(q'[    procedure do_insert(cols varchar2,vals varchar2) is begin execute immediate 'insert into '||stgtab||'('||cols||') values('||vals||')';end;]');
     pr('BEGIN');
     pr(q'[    execute immediate q'|ALTER session SET nls_date_format = 'YYYY-MM-DD HH24:MI:SS'|';]');
-    pr('    dbms_lob.createtemporary(txt, TRUE);');
-    v_xml := dbms_xmlgen.getxml('select * from '||v_stgtab);
-    dbms_stats.drop_stat_table(USER, v_stgtab);
-    LOOP
-        v_pos := INSTR(v_xml,CHR(10),v_start);
-        EXIT WHEN v_pos=0;
-        v_piece := SUBSTR(v_xml,v_start,v_pos-v_start);
-        v_start := v_pos+1;
-        pr('    wr(q''['||rtrim(v_piece)||']'');');
-    END LOOP;
     pr('    BEGIN');
     pr('        dbms_stats.drop_stat_table(USER, stgtab);');
     pr('    EXCEPTION WHEN OTHERS THEN NULL;');
     pr('    END;');
     pr('    dbms_stats.create_stat_table(USER, stgtab);');
-    pr('    hdr:=dbms_xmlstore.newContext(stgtab);');
-    pr('    dbms_output.put_line(dbms_xmlstore.insertXML(hdr,txt)||'' records imported.'');');
+    $IF DBMS_DB_VERSION.VERSION > 10 $THEN
+        v_piece := 'let $last:=name(/ROW/*[last()]) return <r>    do_insert(''{for $i in /ROW/* return concat(name($i),if (name($i)=$last) then "" else ",")}'',' ||CHR(10)||
+                  q'[      q'({for $i in /ROW/* return concat("'",data($i),"'",if (name($i)=$last) then "" else ",")})');</r>]';
+        FOR r in(SELECT EXTRACTVALUE(xmlquery(v_piece PASSING COLUMN_VALUE RETURNING CONTENT), '/r') stmt
+                 FROM   XMLTABLE('/ROWSET/ROW' PASSING XMLTYPE(v_xml)) a) LOOP
+            pr(replace(r.stmt,q'[', ']',q'[',']'));
+        END LOOP;
+        pr('    COMMIT;');
+    $ELSE
+        pr('    dbms_lob.createtemporary(txt, TRUE);');
+        LOOP
+            v_pos := INSTR(v_xml,CHR(10),v_start);
+            EXIT WHEN v_pos=0;
+            v_piece := SUBSTR(v_xml,v_start,v_pos-v_start);
+            v_start := v_pos+1;
+            pr('    wr(q''['||rtrim(v_piece)||']'');');
+        END LOOP;
+        pr('    hdr:=dbms_xmlstore.newContext(stgtab);');
+        pr('    dbms_output.put_line(dbms_xmlstore.insertXML(hdr,txt)||'' records imported.'');');
+    $END
     FOR i in 1..v_tabs.COUNT LOOP
         pr('    dbms_stats.import_table_stats('''||v_tabs(i).owner||''','''|| v_tabs(i).tname||''',stattab => stgtab, statown => USER);');
     END LOOP;
