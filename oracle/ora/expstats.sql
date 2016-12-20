@@ -1,4 +1,9 @@
 /*[[Generate the script to import the stats of the input table/sql. Usage: @@NAME <sql_id>|<table_name>
+--[[
+    @CHECK_ACCESS_PLAN: gv$sql_plan={g},default={}
+    @CHECK_ACCESS_AWR: dba_hist_sql_plan={UNION SELECT object_owner, object_name, object_type FROM dba_hist_sql_plan WHERE  object_type IS NOT NULL AND sql_id = v_sqlid}
+    @CHECK_ACCESS_IDXVIEW: dba_indexes={dba_indexes}, default={all_indexes}
+--]]
 ]]*/
 
 
@@ -33,16 +38,12 @@ BEGIN
        v_tabs(1).tname:= :OBJECT_NAME;
     ELSE
         WITH r AS
-         (SELECT /*+materialize*/*
+         (SELECT /*+materialize*/DISTINCT *
           FROM   (SELECT object_owner, object_name, object_type
-                  FROM   gv$sql_plan
+                  FROM   &CHECK_ACCESS_PLAN.v$sql_plan
                   WHERE  object_type IS NOT NULL
                   AND    sql_id = v_sqlid
-                  UNION
-                  SELECT object_owner, object_name, object_type
-                  FROM   dba_hist_sql_plan
-                  WHERE  object_type IS NOT NULL
-                  AND    sql_id = v_sqlid))
+                  &CHECK_ACCESS_AWR))
         
         SELECT object_owner, object_name
         BULK   COLLECT
@@ -51,7 +52,7 @@ BEGIN
         WHERE  object_type LIKE 'TABLE%'
         UNION
         SELECT /*+ordered push_pred(i) no_merge(i)*/table_owner, table_name
-        FROM   r, dba_indexes i
+        FROM   r, &CHECK_ACCESS_IDXVIEW i
         WHERE  object_type LIKE 'INDEX%' AND owner = object_owner AND index_name = object_name;
     END IF;
     
