@@ -197,7 +197,7 @@ function oracle:parse(sql,params)
         elseif v:sub(1,1)=="#" then
             typ,v=v:upper():sub(2),nil
             env.checkerr(self.db_types[typ],"Cannot find '"..typ.."' in java.sql.Types!")
-        elseif type(v)=="string" and #v>2000 then
+        elseif type(v)=="string" and #v>32000 then
             typ='CLOB'
         else
             typ='VARCHAR'
