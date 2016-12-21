@@ -197,6 +197,8 @@ function oracle:parse(sql,params)
         elseif v:sub(1,1)=="#" then
             typ,v=v:upper():sub(2),nil
             env.checkerr(self.db_types[typ],"Cannot find '"..typ.."' in java.sql.Types!")
+        elseif type(v)=="string" and #v>2000 then
+            typ='CLOB'
         else
             typ='VARCHAR'
         end
@@ -250,7 +252,7 @@ function oracle:parse(sql,params)
             s2[#s2+1]=':'..index..' := dbms_sql.to_refcursor@link(hdl);'
         end
 
-        typ = org_sql:len()<=30000 and 'VARCHAR2(32767)' or 'CLOB' 
+        typ = org_sql:len()<=32000 and 'VARCHAR2(32767)' or 'CLOB' 
         local method=self.db_types:set(typ~='CLOB' and 'VARCHAR' or typ,org_sql)
         sql='DECLARE V1 %s:=:1;hdl NUMBER:=dbms_sql.open_cursor@link;c int;%sBEGIN dbms_sql.parse@link(hdl,v1,dbms_sql.native);%sc:=dbms_sql.execute@link(hdl);%sEND;'
         sql=sql:format(typ,table.concat(s1,''),table.concat(s0,''),table.concat(s2,''))
@@ -273,9 +275,11 @@ function oracle:parse(sql,params)
     elseif sql_type=='EXPLAIN' or #p2>0 and (sql_type=="DECLARE" or sql_type=="BEGIN" or sql_type=="CALL") then
         local s0,s1,s2,index,typ,siz={},{},{},1,nil,#p2
         params={}
+
         if sql_type=='EXPLAIN' then
             p1,p2={},{}
         end
+
         for idx=1,#p2 do
             typ=p1[p2[idx]][typename]
             if typ=="CURSOR" then
