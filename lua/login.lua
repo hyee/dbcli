@@ -42,7 +42,8 @@ function login.capture(db,url,props)
 
     login.load()
     url=login.generate_name(url,props)
-    props.password,props.lastlogin=env.packer.pack_str(props.password),os.date()
+    local d=os.date('*t',os.time())
+    props.password,props.lastlogin=env.packer.pack_str(props.password),string.format("%d-%02d-%02d %02d:%02d:%02d",d.year,d.month,d.day,d.hour,d.min,d.sec)
     if not login.list[typ] then login.list[typ]={} end
     local list=login.list[typ]
     if list[url] then
