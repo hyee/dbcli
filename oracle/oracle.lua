@@ -56,7 +56,7 @@ function oracle:connect(conn_str)
         if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
         url, isdba=conn_desc:match('^(.*) as (%w+)$')
         sqlplustr,url=conn_str,url or conn_desc
-        local server,port,database=url:match('^([^:/]+)(:?%d*)[:/](.+)$')
+        local server,port,database=url:match('^[/]*([^:/]+)(:?%d*)[:/](.+)$')
         if port=="" then url=server..':1521/'..database end
     end
 
@@ -92,7 +92,7 @@ function oracle:connect(conn_str)
         sqlplustr=string.format("%s/%s@%s%s",args.user,pwd,args.url:match("@(.*)$"),args.internal_logon and " as "..args.internal_logon or "")
     end
     
-    local prompt=(args.jdbc_alias or url):match('([^:/@]+)$')
+    local prompt=(args.jdbc_alias or url)
     
 
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
@@ -155,8 +155,10 @@ function oracle:connect(conn_str)
         self.props.db_version='9.1'
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
     else
-        self.conn_str=self.conn_str:gsub("%:[^/%:]+$",'/'..self.props.service_name)
-        prompt=(prompt or self.props.service_name):match("^([^,%.&]+)")
+        if not self.conn_str:lower():find(':pooled%s*') then 
+            self.conn_str=self.conn_str:gsub("%:[^/%:]+$",'/'..self.props.service_name)
+        end
+        if not prompt or prompt:find('[:/]') then prompt=self.props.service_name end
         env._CACHE_PATH=env.join_path(env._CACHE_BASE,prompt:lower():trim(),'')
         env.uv.fs.mkdir(env._CACHE_PATH,777,function() end)
         prompt=('%s%s'):format(prompt:upper(),self.props.db_role or '')
@@ -172,6 +174,7 @@ function oracle:connect(conn_str)
     if event then event("AFTER_ORACLE_CONNECT",self,sql,args,result) end
     print("Database connected.")
 end
+
 
 
 function oracle:parse(sql,params)
