@@ -175,8 +175,6 @@ function oracle:connect(conn_str)
     print("Database connected.")
 end
 
-
-
 function oracle:parse(sql,params)
     local p1,p2,counter,index,org_sql={},{},0,0
 
@@ -366,7 +364,7 @@ function oracle:check_date(string,fmt)
     local args={string and string~="" and string or " ",fmt,'#INTEGER','#VARCHAR'}
     self:internal_call([[
         BEGIN
-           :4:=to_date(:1,:2);
+           :4 := to_char(to_date(:1,:2),:2);
            :3 := 1;
         EXCEPTION WHEN OTHERS THEN
            :3 := 0;
