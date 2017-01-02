@@ -77,6 +77,7 @@ function oracle:connect(conn_str)
          ['oracle.jdbc.maxCachedBufferSize']="104857600",
          ['oracle.jdbc.useNio']='true',
          ['oracle.jdbc.TcpNoDelay']='true',
+         ["oracle.jdbc.J2EE13Compliant"]='true'
         },args)
     self:load_config(url,args)
     if args.db_version and tonumber(args.db_version:match("(%d+)"))>0 then
@@ -158,7 +159,7 @@ function oracle:connect(conn_str)
         if not self.conn_str:lower():find(':pooled%s*') then 
             self.conn_str=self.conn_str:gsub("%:[^/%:]+$",'/'..self.props.service_name)
         end
-        if not prompt or prompt:find('[:/]') then prompt=self.props.service_name end
+        if not prompt or prompt:find('[:/%(%)]') then prompt=self.props.service_name end
         env._CACHE_PATH=env.join_path(env._CACHE_BASE,prompt:lower():trim(),'')
         env.uv.fs.mkdir(env._CACHE_PATH,777,function() end)
         prompt=('%s%s'):format(prompt:upper(),self.props.db_role or '')

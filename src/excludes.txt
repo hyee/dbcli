@@ -12,6 +12,7 @@
 \classdump\
 \ConsoleTest\
 \emviewers\
+\RWP\
 .sublime-project
 .sublime-workspace
 .alias
