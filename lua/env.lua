@@ -705,6 +705,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
 
         if subsystem_prefix~="" then
             if exec~=false then
+                line=line:gsub('%z+$','')
                 env.exec_command(env._SUBSYSTEM,{line})
                 return;
             else
@@ -901,7 +902,6 @@ end
 
 function env.onload(...)
     env.__ARGS__={...}
-    
     env.IS_ENV_LOADED=false
     for _,v in ipairs({'jit','ffi','bit'}) do   
         if v=="jit" then
@@ -952,6 +952,7 @@ function env.onload(...)
     set_command(nil,"/*"    ,   '#Comment',        nil   ,env.check_comment,2)
     set_command(nil,"--"    ,   '#Comment',        nil   ,false,2)
     set_command(nil,"REM"   ,   '#Comment',        nil   ,false,2)
+    env.reset_title()
     --load initial settings
     for _,v in ipairs(env.__ARGS__) do
         if v:sub(1,2) == "-D" then

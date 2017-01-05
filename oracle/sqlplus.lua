@@ -1,4 +1,3 @@
-
 local env,db,os,java=env,env.getdb(),os,java
 local ora=db.C.ora
 local sqlplus=env.class(env.subsystem)
@@ -73,6 +72,7 @@ function sqlplus:get_startup_cmd(args,is_native)
     if tnsadm and tnsadm~="" then self.env["TNS_ADMIN"]=tnsadm end
     if db.props.nls_lang then self.env["NLS_LANG"]=db.props.nls_lang end
     self.env['NLS_DATE_FORMAT']='YYYY-MM-DD HH24:MI:SS'
+    --self.env['ORACLE_HOME']="d:\\Soft\\InstanceClient\\bin"
     self:make_sqlpath()
     self.work_path,self.work_dir=self.work_dir,env._CACHE_PATH
     self:rebuild_commands(self.env['SQLPATH'])

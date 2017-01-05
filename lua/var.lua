@@ -112,6 +112,7 @@ function var.accept_input(name,desc)
             desc=desc:sub(2)
             if not desc:match('(%.%w+)$') then desc=desc..'.sql' end
             local f=io.open(desc)
+            if not f then f=io.open(env._CACHE_PATH..desc) end
             env.checkerr(f,"Cannot find file '"..desc.."'!")
             var.inputs[uname]=f:read(10485760)
             f:close()

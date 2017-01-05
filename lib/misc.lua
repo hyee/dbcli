@@ -161,7 +161,7 @@ function string.case_insensitive_pattern(pattern)
 end
 
 function string.trim(s,sep)
-    return s:match('^%s*(.-)%s*$')
+    return s:match('^[%s%z]*(.-)[%s%z]*$')
 end
 
 String=java.require("java.lang.String")

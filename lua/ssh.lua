@@ -73,7 +73,7 @@ function ssh:connect(conn_str)
         end
         conn_str={}
     end
-
+    env.checkerr(usr and host and port,"Invalid SSH connect format!")
     url='SSH:'..usr..'@'..host..':'..port
     conn_str.user,conn_str.password,conn_str.url,conn_str.account_type=usr,pwd,url,"ssh"
 
@@ -198,7 +198,7 @@ function ssh:exec(line)
         return
     end
     cmd=cmd:lower()
-    local alias=env.alias.make_command(cmd,env.parse_args(99,args or ""))
+    local alias=env.alias.make_command(cmd,env.parse_args(99,args or ""),false)
     if self.cmds[cmd] then
         self.cmds[cmd](self,args)
     elseif alias and tostring(alias.desc):lower():match("ssh") then
@@ -366,8 +366,12 @@ function ssh:set_ftp_local_path(path)
     local current_path=(pscp_local_dir or env._CACHE_PATH)
     path=path=="." and env._CACHE_PATH or path
     if not path or current_path==path then return print("Current FTP local path is "..current_path..", to switch back to the default path, use 'ssh llcd .'") end
-    
-    env.checkerr(os.exists(path),"Cannot find target path "..path)
+    local path1=env.join_path(current_path..env.PATH_DEL..path)
+    if not os.exists(path1) then
+        env.checkerr(os.exists(path),"Cannot find target path "..path)
+    else
+        path=path1
+    end
     pscp_local_dir=env.join_path(path,"")
     print(table.concat({"Local FTP path changed:",current_path,'==>',pscp_local_dir},' '))
 end
@@ -382,8 +386,11 @@ function ssh:ftp_file(op,info)
     if op~='download' then remote_file,local_dir=local_dir,remote_file end
     if not remote_file then
         remote_file=pwd
-    elseif not remote_file:match("^/") then
-        remote_file=pwd.."/"..remote_file
+    else
+        remote_file=self:getresult('echo "'..remote_file..'"')
+        if not remote_file:match("^/") then
+            remote_file=pwd.."/"..remote_file
+        end
     end
     remote_file=self.conn.user.."@"..self.conn.host..":"..remote_file
     if not local_dir then
@@ -397,12 +404,16 @@ function ssh:ftp_file(op,info)
         remote_file,local_dir=local_dir,remote_file
         remote_display,local_display=local_display,remote_display
     end
+    
     if not options then
         options="-C"
     elseif not options:lower():find('-c',1,true) then
         options=options..' -C'
     elseif options:find('-c',1,true) then
         options=options:gsub("%s*-c","")
+    end
+    if not options:lower():find('-r',1,true) then
+        options=options..' -r'
     end
     rawprint(table.concat({op:initcap().."ing:    ",remote_display,"==>",local_display,"   Options:",options}," "))
     local command='"'..table.concat({pscp,options or "","-pw",self.conn.password,remote_file,local_dir}," ")..'"'

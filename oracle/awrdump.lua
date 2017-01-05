@@ -1,6 +1,11 @@
 local db,cfg=env.getdb(),env.set
 local awr={}
 
+function awr.get_snap_time(time)
+    local t=db:get_value("select max(to_char(end_interval_time+0,'yymmddhh24miss')) from dba_hist_snapshot where snap_id=regexp_substr(:1,'\\d+')",{time})
+    return t~="" and t or db:check_date(time)
+end
+
 function awr.get_range(starttime,endtime,instances,container)
     if (starttime=='.' or not starttime) then 
         if cfg.get("starttime") and  cfg.get("starttime")~='' then 
@@ -9,7 +14,7 @@ function awr.get_range(starttime,endtime,instances,container)
             starttime=nil
         end
     else
-        db:check_date(starttime)
+        starttime=awr.get_snap_time(starttime)
     end
 
     if (endtime=='.' or not endtime) then 
@@ -19,7 +24,7 @@ function awr.get_range(starttime,endtime,instances,container)
             endtime=nil
         end
     else
-        db:check_date(endtime)
+        endtime=awr.get_snap_time(endtime)
     end
 
     if (instances=='.' or not instances) then 
@@ -80,16 +85,17 @@ function awr.extract_period()
                     RAISE_APPLICATION_ERROR(-20001,'Not a valid date format: "'||p_start||'" or "'||p_end||'"!');
                 END;
             END;
+
             SELECT max(dbid),
                    max(st),max(ed),
                    max((select nvl(max(end_interval_time+0),s) from Dba_Hist_Snapshot WHERE snap_id=st AND dbid=a.dbid)),
                    max((select nvl(max(end_interval_time+0),e) from Dba_Hist_Snapshot WHERE snap_id=ed AND dbid=a.dbid))
             INTO dbid,st,ed,stim,etim
             FROM   (SELECT dbid,
-                           nvl(MAX(decode(sign(end_interval_time-0.004-s),1,null,snap_id)),min(snap_id)) st,
-                           nvl(min(decode(sign(end_interval_time+0.004-e),-1,null,snap_id)),max(snap_id)) ed
+                           nvl(MAX(decode(sign(end_interval_time-3e-4-s),1,null,snap_id)),min(snap_id)) st,
+                           nvl(min(decode(sign(end_interval_time+3e-4-e),-1,null,snap_id)),max(snap_id)) ed
                     FROM   Dba_Hist_Snapshot
-                    WHERE  begin_interval_time-0.04 <= e and end_interval_time+0.004>=s
+                    WHERE  begin_interval_time-3e-4 <= e and end_interval_time+3e-4>=s
                     AND    (p_inst IS NULL OR instr(',' || p_inst || ',', instance_number) > 0)
                     GROUP  BY DBID
                     ORDER  BY 2 DESC) a
@@ -127,11 +133,11 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
             PROCEDURE gen_ranges(p_start VARCHAR2, p_end VARCHAR2,dbid OUT INT,st OUT INT,ed OUT INT) IS
             BEGIN
                 IF p_end IS NULL AND stim IS NOT NULL AND etim IS NOT NULL THEN
-                    etim := to_date(p_start, 'YYMMDDHH24MI')+(etim-stim);
+                    etim := to_date(p_start, 'YYMMDDHH24MISS')+(etim-stim);
                 ELSE
-                    etim := to_date(p_end, 'YYMMDDHH24MI');
+                    etim := to_date(p_end, 'YYMMDDHH24MISS');
                 END IF;
-                stim := to_date(p_start, 'YYMMDDHH24MI');
+                stim := to_date(p_start, 'YYMMDDHH24MISS');
 
                 get_range(stim,etim,inst,dbid,st,ed,stim,etim);
             END;

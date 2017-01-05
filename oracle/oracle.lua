@@ -56,7 +56,7 @@ function oracle:connect(conn_str)
         if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
         url, isdba=conn_desc:match('^(.*) as (%w+)$')
         sqlplustr,url=conn_str,url or conn_desc
-        local server,port,database=url:match('^([^:/]+)(:?%d*)[:/](.+)$')
+        local server,port,database=url:match('^[/]*([^:/]+)(:?%d*)[:/](.+)$')
         if port=="" then url=server..':1521/'..database end
     end
 
@@ -77,6 +77,7 @@ function oracle:connect(conn_str)
          ['oracle.jdbc.maxCachedBufferSize']="104857600",
          ['oracle.jdbc.useNio']='true',
          ['oracle.jdbc.TcpNoDelay']='true',
+         ["oracle.jdbc.J2EE13Compliant"]='true'
         },args)
     self:load_config(url,args)
     if args.db_version and tonumber(args.db_version:match("(%d+)"))>0 then
@@ -92,7 +93,7 @@ function oracle:connect(conn_str)
         sqlplustr=string.format("%s/%s@%s%s",args.user,pwd,args.url:match("@(.*)$"),args.internal_logon and " as "..args.internal_logon or "")
     end
     
-    local prompt=(args.jdbc_alias or url):match('([^:/@]+)$')
+    local prompt=(args.jdbc_alias or url)
     
 
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
@@ -155,8 +156,10 @@ function oracle:connect(conn_str)
         self.props.db_version='9.1'
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
     else
-        self.conn_str=self.conn_str:gsub("%:[^/%:]+$",'/'..self.props.service_name)
-        prompt=(prompt or self.props.service_name):match("^([^,%.&]+)")
+        if not self.conn_str:lower():find(':(pooled|shared|dedicated)%s*') then 
+            self.conn_str=self.conn_str:gsub("%:[^/%:]+$",'/'..self.props.service_name)
+        end
+        if not prompt or prompt:find('[:/%(%)]') then prompt=self.props.service_name end
         env._CACHE_PATH=env.join_path(env._CACHE_BASE,prompt:lower():trim(),'')
         env.uv.fs.mkdir(env._CACHE_PATH,777,function() end)
         prompt=('%s%s'):format(prompt:upper(),self.props.db_role or '')
@@ -172,7 +175,6 @@ function oracle:connect(conn_str)
     if event then event("AFTER_ORACLE_CONNECT",self,sql,args,result) end
     print("Database connected.")
 end
-
 
 function oracle:parse(sql,params)
     local p1,p2,counter,index,org_sql={},{},0,0
@@ -197,6 +199,8 @@ function oracle:parse(sql,params)
         elseif v:sub(1,1)=="#" then
             typ,v=v:upper():sub(2),nil
             env.checkerr(self.db_types[typ],"Cannot find '"..typ.."' in java.sql.Types!")
+        elseif type(v)=="string" and #v>32000 then
+            typ='CLOB'
         else
             typ='VARCHAR'
         end
@@ -250,7 +254,7 @@ function oracle:parse(sql,params)
             s2[#s2+1]=':'..index..' := dbms_sql.to_refcursor@link(hdl);'
         end
 
-        typ = org_sql:len()<=30000 and 'VARCHAR2(32767)' or 'CLOB' 
+        typ = org_sql:len()<=32000 and 'VARCHAR2(32767)' or 'CLOB' 
         local method=self.db_types:set(typ~='CLOB' and 'VARCHAR' or typ,org_sql)
         sql='DECLARE V1 %s:=:1;hdl NUMBER:=dbms_sql.open_cursor@link;c int;%sBEGIN dbms_sql.parse@link(hdl,v1,dbms_sql.native);%sc:=dbms_sql.execute@link(hdl);%sEND;'
         sql=sql:format(typ,table.concat(s1,''),table.concat(s0,''),table.concat(s2,''))
@@ -273,9 +277,11 @@ function oracle:parse(sql,params)
     elseif sql_type=='EXPLAIN' or #p2>0 and (sql_type=="DECLARE" or sql_type=="BEGIN" or sql_type=="CALL") then
         local s0,s1,s2,index,typ,siz={},{},{},1,nil,#p2
         params={}
+
         if sql_type=='EXPLAIN' then
             p1,p2={},{}
         end
+
         for idx=1,#p2 do
             typ=p1[p2[idx]][typename]
             if typ=="CURSOR" then
@@ -359,7 +365,7 @@ function oracle:check_date(string,fmt)
     local args={string and string~="" and string or " ",fmt,'#INTEGER','#VARCHAR'}
     self:internal_call([[
         BEGIN
-           :4:=to_date(:1,:2);
+           :4 := to_char(to_date(:1,:2),:2);
            :3 := 1;
         EXCEPTION WHEN OTHERS THEN
            :3 := 0;
@@ -468,7 +474,7 @@ function oracle:onload()
 
     add_single_line_stmt('commit','rollback','savepoint')
     add_default_sql_stmt('update','delete','insert','merge','truncate','drop','flashback')
-    add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge')
+    add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge','audit')
     set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
     set_command(self,{"select","with"},   default_desc,        self.query     ,true,1,true)
     set_command(self,{"execute","exec","call"},default_desc,self.run_proc,false,2,true)

@@ -54,7 +54,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                         SELECT SQL_TEXT,
                                 decode(b.obj_type, 1, p_sqlid, 2,  substr(p_sqlid, -26)) src
                         FROM   sys.sqlobj$ b, sys.sql$text a
-                        WHERE  b.name = p_sqlid
+                        WHERE  p_sqlid in(b.name,a.sql_handle)
                         AND    b.signature = a.signature
                     $ELSE
                         UNION ALL
@@ -128,8 +128,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                 BEGIN
                     get_sql(p_sqlid);
                 EXCEPTION WHEN NO_DATA_FOUND THEN
-                    p_buffer:='#Cannot find SQL text for '||p_sqlid||'!';
-                    return;
+                    raise_application_error(-20001, 'Cannot find SQL text for '||p_sqlid||'!');
                 END;
             END IF;
             get_plan(case when upper(p_plan) IN('PLAN','PLAN_TABLE') then '_x_' end);
@@ -189,14 +188,15 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                 END LOOP;
             END LOOP;
 
-            v_source:= 'PROF_'||nvl(v_source,to_char(v_signatrue,'fm'||rpad('X',length(v_signatrue),'X')));
+            v_source:= substr('PROF_'||nvl(v_source,to_char(v_signatrue,'fm'||rpad('X',length(v_signatrue),'X'))),1,30);
 
             pr('        q''[END_OUTLINE_DATA]'');');
             pr('    signature := DBMS_SQLTUNE.SQLTEXT_TO_SIGNATURE(sql_txt);');
+            pr('    BEGIN DBMS_SQLTUNE.DROP_SQL_PROFILE(''' ||v_source||''');EXCEPTION WHEN OTHERS THEN NULL;END;');
             pr('    DBMS_SQLTUNE.IMPORT_SQL_PROFILE (');
             pr('        sql_text    => sql_txt,');
             pr('        profile     => sql_prof,');
-            pr('        name        => ''' || v_source || ''',');
+            pr('        name        => ''' ||v_source||''',');
             pr('        description => ''' || v_source || '_''||signature,');
             pr('        category    => ''DEFAULT'',');
             pr('        validate    => TRUE,');
@@ -206,8 +206,6 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             pr('END;');
             pr('/');
             p_buffer := v_text;
-
-            
         END;
     BEGIN
         extract_profile(:2,:3,:4, TRUE);
@@ -226,7 +224,7 @@ end
 
 function sqlprof.onload()
     local help=[[
-    Extract sql profile. Usage: @@NAME {<sql_id|sql_prof_name|spm_plan_name> [<plan_hash_value|new_sql_id|sql_prof_name|spm_plan_name> | plan]}
+    Extract sql profile. Usage: @@NAME {<sql_id|sql_prof_name|spm_plan_name|spm_sql> [<plan_hash_value|new_sql_id|sql_prof_name|spm_plan_name> | plan]}
     The command will not make any changes on the database, but to create a SQL file that used to fix the execution plan by SQL Profile.
     Examples:
         1). Generate the profile for the last plan of target SQL ID: @@NAME gjm43un5cy843

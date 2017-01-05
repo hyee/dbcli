@@ -1,5 +1,11 @@
+2017-01-05: + public: "tee" command supports export as html/csv. Usage: <query>|tee <file>.[html|csv]
+            ! public: minor fixes
+2017-01-02: + oracle: support begin/end snap_id as the parameters for "awrdump/ashdump/addmdump"
+2016-12-20: + oracle: new command "ora expstats <sql_id>|<table_name>"
+2016-11-13: * public: update lib LuaJIT
 2016-11-08: + public: new command "disc[onnect]"
-2016-09-15: ！public: fix output parameter(var) cannot be assigned twice in diff stmts
+            * public: update lib JSch to v0.1.54
+2016-09-15: ! public: fix output parameter(var) cannot be assigned twice in diff stmts
 2016-09-11: + oracle: new chart 'ch sgapga'
 2016-09-05: * public: new "Smooth" option on graph chart 
 2016-08-31: + oracle: new options "ch sysmetric -iops/-ratio/-time" 

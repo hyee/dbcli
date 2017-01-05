@@ -470,9 +470,11 @@ function grid:wellform(col_del,row_del)
         table.insert(rows,cut(self,row_dels:gsub("[^%"..row_del.."]",row_del)))
     end
 
+    local len=#result
     for k,v in ipairs(result) do
         local filter_flag,match_flag=1,0
         while #v<#colsize do table.insert(v,"") end
+        env.event.callback("ON_PRINT_GRID_ROW",v,len)
         --adjust the title style(middle)
         if v[0]==0 then
             for col,value in ipairs(v) do
@@ -487,6 +489,7 @@ function grid:wellform(col_del,row_del)
             end
         end
         local row=cut(self,v,format_func,v[0]==0 and head_fmt or fmt)
+
         if v[0]==0 then
             row=row..nor
         elseif env.printer.grep_text then
