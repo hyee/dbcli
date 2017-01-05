@@ -705,6 +705,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
 
         if subsystem_prefix~="" then
             if exec~=false then
+                line=line:gsub('%z+$','')
                 env.exec_command(env._SUBSYSTEM,{line})
                 return;
             else

@@ -67,7 +67,7 @@ function printer.print(...)
             pcall(printer.hdl.write,printer.hdl,strip_ansi(output).."\n")
         end
 
-        if printer.tee_hdl then
+        if printer.tee_hdl and printer.tee_type~='csv' and printer.tee_type~='html' then
             pcall(printer.tee_hdl.write,printer.tee_hdl,strip_ansi(output).."\n")
         end
     end
@@ -159,6 +159,8 @@ function printer.tee(file,stmt)
     end
     printer.tee_file=file
     printer.tee_hdl=io.open(file,mode)
+    printer.tee_type=file:lower():match("%.([^%.]+)$")
+    if printer.tee_type=='htm' then printer.tee_type='html' end
     env.checkerr(printer.tee_hdl,"Failed to open the target file "..file)
     env.eval_line(stmt,true,true)
 end
@@ -193,6 +195,45 @@ function printer.after_command()
     printer.is_more,more_text=false,{}
 end
 
+function printer.tee_to_file(row,total_rows)
+    if not printer.tee_hdl then return end
+    local hdl=printer.tee_hdl
+    if printer.tee_type=="html" then
+        local td='td'
+        if(row[0]==0) then
+            hdl:write("<table>\n")
+            td='th'
+        end
+        hdl:write("<tr>")
+        for _,cell in ipairs(row) do
+            hdl:write("<"..td..">")
+            if type(cell)=="string" then
+                hdl:write((cell:gsub("( +)",function(s)
+                        if #s==1 then return s end
+                        return " "..string.rep('&nbsp;',#s-1)
+                    end):gsub("\r?\n","<br/>"):gsub("<",'&lt;'):gsub(">","&gt;")))
+            elseif cell~=nil then
+                hdl:write(cell)
+            end
+            hdl:write("</"..td..">")
+        end
+        hdl:write("</tr>\n")
+        if row[0]==total_rows-1 then hdl:write("</table>") end
+    elseif printer.tee_type=="csv" then
+        for idx,cell in ipairs(row) do
+            if idx>1 then hdl:write(",") end
+            if type(cell)=="string" then
+                cell=cell:gsub('"','""')
+                if cell:find('[",\n\r]') then cell='"'..cell..'"' end
+                hdl:write(cell)
+            elseif cell~=nil then
+                hdl:write(cell)    
+            end
+        end
+        hdl:write("\n")
+    end
+end
+
 _G.print=printer.print
 _G.rawprint=printer.rawprint
 
@@ -206,6 +247,7 @@ function printer.onload()
     if env.event then
         env.event.snoop('BEFORE_COMMAND',printer.before_command,nil,90)
         env.event.snoop('AFTER_COMMAND',printer.after_command,nil,90)
+        env.event.snoop('ON_PRINT_GRID_ROW',printer.tee_to_file,nil,90)
     end
     BOLD=BOLD..'%1'..NOR
     

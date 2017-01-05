@@ -1,4 +1,7 @@
-2016-12-20: + oracle: new command "ora expstats <sql_id>|<table_name>' 
+2017-01-05: + public: "tee" command supports export as html/csv. Usage: <query>|tee <file>.[html|csv]
+            ! public: minor fixes
+2017-01-02: + oracle: support begin/end snap_id as the parameters for "awrdump/ashdump/addmdump"
+2016-12-20: + oracle: new command "ora expstats <sql_id>|<table_name>"
 2016-11-13: * public: update lib LuaJIT
 2016-11-08: + public: new command "disc[onnect]"
             * public: update lib JSch to v0.1.54

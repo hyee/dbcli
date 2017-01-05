@@ -73,7 +73,7 @@ function ssh:connect(conn_str)
         end
         conn_str={}
     end
-
+    env.checkerr(usr and host and port,"Invalid SSH connect format!")
     url='SSH:'..usr..'@'..host..':'..port
     conn_str.user,conn_str.password,conn_str.url,conn_str.account_type=usr,pwd,url,"ssh"
 
@@ -198,7 +198,7 @@ function ssh:exec(line)
         return
     end
     cmd=cmd:lower()
-    local alias=env.alias.make_command(cmd,env.parse_args(99,args or ""))
+    local alias=env.alias.make_command(cmd,env.parse_args(99,args or ""),false)
     if self.cmds[cmd] then
         self.cmds[cmd](self,args)
     elseif alias and tostring(alias.desc):lower():match("ssh") then

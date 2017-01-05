@@ -156,7 +156,7 @@ function oracle:connect(conn_str)
         self.props.db_version='9.1'
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
     else
-        if not self.conn_str:lower():find(':pooled%s*') then 
+        if not self.conn_str:lower():find(':(pooled|shared|dedicated)%s*') then 
             self.conn_str=self.conn_str:gsub("%:[^/%:]+$",'/'..self.props.service_name)
         end
         if not prompt or prompt:find('[:/%(%)]') then prompt=self.props.service_name end
@@ -474,7 +474,7 @@ function oracle:onload()
 
     add_single_line_stmt('commit','rollback','savepoint')
     add_default_sql_stmt('update','delete','insert','merge','truncate','drop','flashback')
-    add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge')
+    add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge','audit')
     set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
     set_command(self,{"select","with"},   default_desc,        self.query     ,true,1,true)
     set_command(self,{"execute","exec","call"},default_desc,self.run_proc,false,2,true)

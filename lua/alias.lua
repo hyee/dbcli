@@ -51,7 +51,7 @@ function alias.parser(s,default_value)
     end
 end
 
-function alias.make_command(name,args)
+function alias.make_command(name,args,is_print)
     name=name:upper()
     if alias.cmdlist[name] and env._CMDS[name] and env._CMDS[name].FUNC==alias.run_command then
         local target=alias.cmdlist[name].text
@@ -69,7 +69,7 @@ function alias.make_command(name,args)
         target=target:gsub("%$([%d%*]+)",alias.parser)
         target=target:gsub("%s+$","")
         --if env.COMMAND_SEPS.match(target)==target then target=target..env.COMMAND_SEPS[1] end
-        if type(alias.cmdlist[name].text) == "string" and not target:find('[\n\r]') then
+        if is_print~=false and type(alias.cmdlist[name].text) == "string" and not target:find('[\n\r]') then
             print('$ '..target)
         end
         return target
