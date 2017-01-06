@@ -139,8 +139,8 @@
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="scrollpagedown"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="scrollcolleft"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="scrollcolright"/>
-		<hotkey ctrl="1" shift="0" alt="0" extended="1" code="37" command="scrollpageleft"/>
-		<hotkey ctrl="1" shift="0" alt="0" extended="1" code="39" command="scrollpageright"/>
+		<hotkey ctrl="0" shift="1" alt="0" extended="1" code="37" command="scrollpageleft"/>
+		<hotkey ctrl="0" shift="1" alt="0" extended="1" code="39" command="scrollpageright"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="find"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="findnext"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="findprev"/>

@@ -202,11 +202,12 @@ function printer.tee_to_file(row,total_rows)
         local td='td'
         if(row[0]==0) then
             hdl:write("<table>\n")
+            printer.tee_colinfo=row.colinfo
             td='th'
         end
         hdl:write("<tr>")
-        for _,cell in ipairs(row) do
-            hdl:write("<"..td..">")
+        for idx,cell in ipairs(row) do
+            hdl:write("<"..td..(printer.tee_colinfo and printer.tee_colinfo[idx].is_number==1 and ' align="right"' or '')..">")
             if type(cell)=="string" then
                 hdl:write((cell:gsub("( +)",function(s)
                         if #s==1 then return s end
@@ -218,7 +219,10 @@ function printer.tee_to_file(row,total_rows)
             hdl:write("</"..td..">")
         end
         hdl:write("</tr>\n")
-        if row[0]==total_rows-1 then hdl:write("</table>") end
+        if row[0]==total_rows-1 then 
+            hdl:write("</table>")
+            printer.tee_colinfo=nil
+        end
     elseif printer.tee_type=="csv" then
         for idx,cell in ipairs(row) do
             if idx>1 then hdl:write(",") end

@@ -654,7 +654,7 @@ function db_core:connect(attrs,data_source)
     else
         err,res=pcall(loader.asyncCall,loader,self.driver,'getConnection',url,props)
     end
-    
+
     env.checkerr(err,tostring(res))
 
     self.conn=res

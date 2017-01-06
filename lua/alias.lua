@@ -65,9 +65,10 @@ function alias.make_command(name,args,is_print)
             alias.args[i]=v
             alias.rest[i]=v
         end
-        target=target:gsub("%$(%d+)%[(.-)%]",alias.parser)
-        target=target:gsub("%$([%d%*]+)",alias.parser)
+        target=target:gsub("%f[\\%$]%$(%d+)%[(.-)%]",alias.parser)
+        target=target:gsub("%f[\\%$]%$([%d%*]+)",alias.parser)
         target=target:gsub("%s+$","")
+        target=target:gsub("\\%$","$")
         --if env.COMMAND_SEPS.match(target)==target then target=target..env.COMMAND_SEPS[1] end
         if is_print~=false and type(alias.cmdlist[name].text) == "string" and not target:find('[\n\r]') then
             print('$ '..target)

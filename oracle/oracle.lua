@@ -45,26 +45,54 @@ function oracle:helper(cmd)
 end
 
 function oracle:connect(conn_str)
-    local args,usr,pwd,conn_desc,url,isdba
+    local args,usr,pwd,conn_desc,url,isdba,server,server_sep,proxy_user
     local sqlplustr
     if type(conn_str)=="table" then --from 'login' command
         args=conn_str
+        server,proxy_user,sqlplustr=args.server,args.PROXY_USER_NAME,args.conn_str
         usr,pwd,url,isdba=conn_str.user,packer.unpack_str(conn_str.password),conn_str.url,conn_str.internal_logon
         args.password=pwd
     else
         usr,pwd,conn_desc = string.match(conn_str or "","(.*)/(.*)@(.+)")
         if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
+        if usr:find('%[.*%]') then usr,proxy_user=usr:match('(.*)%[(.*)%]') end
         url, isdba=conn_desc:match('^(.*) as (%w+)$')
         sqlplustr,url=conn_str,url or conn_desc
-        local server,port,database=url:match('^[/]*([^:/]+)(:?%d*)[:/](.+)$')
-        if port=="" then url=server..':1521/'..database end
+        local host,port,server_sep,database=url:match('^[/]*([^:/]+)(:?%d*)([:/])(.+)$')
+        local flag=true
+        if database then
+            if database:sub(1,1)=='/' then
+                flag,server_sep,database=false,':',database:sub(2)
+            elseif database:sub(1,1)==':' then
+                flag,server_sep,server,database=false,':',database:match('^:(.*):(.*)')
+            elseif database:find('/',1,true) then
+                flag,server_sep,database=false,':',database:match('[^:]+$')
+            end
+            if database:find(':',1,true) then 
+                database,server=database:match('(.*):(.*)')
+                flag,server=false,server:upper()
+            end
+            if port=="" then flag,port=false,':1521' end
+            if not flag then 
+                url=host..port..server_sep..database
+                sqlplustr=string.format('%s/%s@%s%s/%s%s',
+                    usr..(proxy_user and ('['..proxy_user..']') or ''),
+                    pwd,host,port,
+                    server_sep==':' and server and (':'..server..'/'..database) or
+                    server_sep==':' and not server and '/'..database or
+                    database..(server and (':'..server)) or '',
+                    isdba and (' as '..isdba) or '')
+            end
+        end
     end
-
-    args=args or {user=usr,password=pwd,url="jdbc:oracle:thin:@"..url,internal_logon=isdba}
+    
+    args=args or {user=usr,password=pwd,url="jdbc:oracle:thin:@"..url,internal_logon=isdba,conn_str=sqlplustr}
 
     self:merge_props(
         {driverClassName="oracle.jdbc.driver.OracleDriver",
          defaultRowPrefetch="3000",
+         PROXY_USER_NAME=proxy_user,
+         server=server,
          useFetchSizeWithLongColumn='true',
          useThreadLocalBufferCache="true",
          freeMemoryOnEnterImplicitCache="true",
@@ -156,9 +184,6 @@ function oracle:connect(conn_str)
         self.props.db_version='9.1'
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
     else
-        if not self.conn_str:lower():find(':(pooled|shared|dedicated)%s*') then 
-            self.conn_str=self.conn_str:gsub("%:[^/%:]+$",'/'..self.props.service_name)
-        end
         if not prompt or prompt:find('[:/%(%)]') then prompt=self.props.service_name end
         env._CACHE_PATH=env.join_path(env._CACHE_BASE,prompt:lower():trim(),'')
         env.uv.fs.mkdir(env._CACHE_PATH,777,function() end)
