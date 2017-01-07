@@ -19,8 +19,8 @@ import java.util.ArrayList;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.Future;
+import java.util.regex.Pattern;
 import java.util.zip.InflaterInputStream;
-
 
 public class Loader {
     public static String ReloadNextTime = "_init_";
@@ -169,7 +169,9 @@ public class Loader {
         String packageName = Loader.class.getPackage().getName() + ".FileDump";
         String sep = File.separator;
         stack = stack.split("@")[0];
-        stack = String.format("java -cp \"%s%slib%ssa-jdi.jar;%s\" -Dsun.jvm.hotspot.tools.jcore.outputDir=%s %s %s", System.getProperty("java.home"), sep, sep, cp, folder, packageName, stack);
+        Pattern p = Pattern.compile("[\\\\/]jre.*", Pattern.CASE_INSENSITIVE);
+        String java_home = p.matcher(System.getProperty("java.home")).replaceAll("");
+        stack = String.format("java -cp \"%s%slib%s*;%s\" -Dsun.jvm.hotspot.tools.jcore.outputDir=%s %s %s", java_home, sep, sep, cp, folder, packageName, stack);
         //System.out.println("Command: "+stack);
         return stack;
     }
@@ -261,7 +263,6 @@ public class Loader {
         }
     }
 
-
     public synchronized boolean setStatement(CallableStatement p) throws Exception {
         try {
             this.stmt = p;
@@ -277,7 +278,6 @@ public class Loader {
             console.setEvents(null, null);
         }
     }
-
 
     public Object asyncCall(Callable<Object> c) throws Exception {
         try {

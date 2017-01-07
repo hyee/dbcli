@@ -51,7 +51,6 @@ public interface NuWinNT {
     int CREATE_DEFAULT_ERROR_MODE = 0x04000000;
     int CREATE_NO_WINDOW = 0x08000000;
 
-
     int ERROR_SUCCESS = 0;
     int ERROR_BROKEN_PIPE = 109;
     int ERROR_PIPE_NOT_CONNECTED = 233;
@@ -401,7 +400,6 @@ public interface NuWinNT {
             }
             super.write();
         }
-
 
         @Override
         protected java.util.List<String> getFieldOrder() {

@@ -13,7 +13,6 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-
 public class SubSystem {
     NuProcessBuilder pb;
     volatile WindowsProcess process;
@@ -27,7 +26,6 @@ public class SubSystem {
     volatile Boolean isPrint = false;
     volatile String lastPrompt = "";
     volatile String prevPrompt;
-
 
     public SubSystem() {
     }

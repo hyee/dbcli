@@ -36,9 +36,11 @@ function oracle:helper(cmd)
     return ({
         CONNECT=[[
         Connect to Oracle database.
-        Usage  : @@NAME {<user>/<password>@<tns_name> [as sysdba]} or
-                 @@NAME {<user>/<password>@[//]<ip_address|host_name>[:<port>]/<service_name> [as sysdba]} or
-                 @@NAME {<user>/<password>@[//]<ip_address|host_name>[:<port>]:<sid> [as sysdba]}
+        Usage  : @@NAME <user>/<password>@<tns_name> [as sysdba]                                       or
+                 @@NAME <user>/<password>@[//]host[:port][/[service_name][:server][/sid] ] [as sysdba] or
+                 @@NAME <user>/<password>@[//]host[:port][:sid[:server] ] [as sysdba]                  or
+                 @@NAME <user>/<password>@(DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)...))                    or
+                 @@NAME <user>/<password>@<jdbc_url in "data/jdbc_url.cfg">
         ]],
         CONN=[[Refer to command 'connect']],
     })[cmd]
@@ -61,38 +63,36 @@ function oracle:connect(conn_str)
         local host,port,server_sep,database=url:match('^[/]*([^:/]+)(:?%d*)([:/])(.+)$')
         local flag=true
         if database then
-            if database:sub(1,1)=='/' then
+            if database:sub(1,1)=='/' then -- //<sid>
                 flag,server_sep,database=false,':',database:sub(2)
-            elseif database:sub(1,1)==':' then
-                flag,server_sep,server,database=false,':',database:match('^:(.*):(.*)')
-            elseif database:find('/',1,true) then
-                flag,server_sep,database=false,':',database:match('[^:]+$')
+            elseif database:match('^:(%w+)/([%w_]+)$') then -- /:<server>/<sid>
+                flag,server_sep,server,database=false,':',database:match('^:(%w+)/([%w_]+)$')
+            elseif database:match('^[%w_]+:(%w+)/([%w_]+)$') then --/<database>:<server>/<sid>
+                flag,server_sep,server,database=false,':',database:match('^[%w_]+:(%w+)/([%w_]+)$')
+            elseif database:match('^([%w_]+):(%w+)$') then--/<database>:<server>
+                flag,server_sep,database,server=false,'/',database:match('^([%w_]+):(%w+)$')
             end
-            if database:find(':',1,true) then 
-                database,server=database:match('(.*):(.*)')
-                flag,server=false,server:upper()
-            end
+            if server then server=server:upper() end
             if port=="" then flag,port=false,':1521' end
             if not flag then 
-                url=host..port..server_sep..database
+                url=host..port..server_sep..database..(server and (':'..server) or '')
                 sqlplustr=string.format('%s/%s@%s%s/%s%s',
                     usr..(proxy_user and ('['..proxy_user..']') or ''),
                     pwd,host,port,
                     server_sep==':' and server and (':'..server..'/'..database) or
                     server_sep==':' and not server and '/'..database or
-                    database..(server and (':'..server)) or '',
+                    database..(server and (':'..server) or ''),
                     isdba and (' as '..isdba) or '')
             end
         end
     end
-    
+
     args=args or {user=usr,password=pwd,url="jdbc:oracle:thin:@"..url,internal_logon=isdba,conn_str=sqlplustr}
 
     self:merge_props(
         {driverClassName="oracle.jdbc.driver.OracleDriver",
          defaultRowPrefetch="3000",
          PROXY_USER_NAME=proxy_user,
-         server=server,
          useFetchSizeWithLongColumn='true',
          useThreadLocalBufferCache="true",
          freeMemoryOnEnterImplicitCache="true",
