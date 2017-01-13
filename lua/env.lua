@@ -789,16 +789,16 @@ local function _eval_line(line,exec,is_internal,not_skip)
     end
 end
 
-function env.eval_line(lines,...)
+function env.eval_line(lines,is_internal,is_skip)
     if env.event then
         lines=env.event.callback('BEFORE_EVAL',{lines})[1]
     end
     local stack=lines:split("[\n\r]+")
     for index,line in ipairs(stack) do
         if index==#stack then
-            return _eval_line(line,...)
+            return _eval_line(line,is_internal,is_skip)
         else
-            _eval_line(line,...)
+            _eval_line(line,false,false)
         end
     end
 end
