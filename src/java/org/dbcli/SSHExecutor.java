@@ -1,6 +1,5 @@
 package org.dbcli;
 
-
 import com.jcraft.jsch.*;
 
 import java.io.*;
@@ -50,14 +49,12 @@ public class SSHExecutor {
         }
     };
 
-
     public SSHExecutor() {
     }
 
     public SSHExecutor(String host, int port, String user, String password, String linePrefix) throws Exception {
         connect(host, port, user, password, linePrefix);
     }
-
 
     public void connect(String host, int port, String user, final String password, String linePrefix) throws Exception {
         try {
@@ -164,7 +161,6 @@ public class SSHExecutor {
         channels.put(type, channel);
         return channel;
     }
-
 
     public void waitCompletion() throws Exception {
         long wait = 150L;

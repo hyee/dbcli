@@ -204,7 +204,6 @@ public class WindowsInputReader extends NonBlockingInputStream {
         return ch;
     }
 
-
     int _read(long timeout, boolean isPeek) throws IOException {
         if (buf != null && bufIdx < buf.length - 1) return (isPeek ? buf[bufIdx + 1] : buf[++bufIdx]) & 0xff;
         String c = readChar(timeout, isPeek);
@@ -279,7 +278,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
     public synchronized long[][] readRaw(long timeout, boolean isPeek) throws IOException {
         long[][] c = peeker;
         if (c != null && c[0] != null) {
-            if(!isPeek) peeker = null;
+            if (!isPeek) peeker = null;
             return c;
         }
         if (exception != null) throw exception;

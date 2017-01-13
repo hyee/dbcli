@@ -122,7 +122,6 @@ public class Console extends ConsoleReader {
         return this.task != null;
     }
 
-
     public synchronized void setEvents(ActionListener event, char[] keys) {
         this.event = event;
         this.keys = keys;

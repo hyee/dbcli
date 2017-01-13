@@ -49,7 +49,6 @@ public class NuKernel32 {
     public static final int STD_OUTPUT_HANDLE = -11;
     public static final int STD_ERROR_HANDLE = -12;
 
-
     public static native boolean CloseHandle(HANDLE hObject);
 
     public static native HANDLE CreateIoCompletionPort(HANDLE fileHandle, HANDLE existingCompletionPort, ULONG_PTR completionKey, int numberOfThreads);
@@ -112,7 +111,6 @@ public class NuKernel32 {
 
     public static native boolean SetStdHandle(int nStdHandle, HANDLE hHandle);
     //public static native boolean WriteConsoleInput(HANDLE hProcess, INPUT_RECORD[] input,int length,IntByReference lpNumberOfEventsWritten);
-
 
     public static native boolean WriteProcessMemory(HANDLE hProcess, Pointer lpBaseAddress, Pointer lpBuffer, int nSize, IntByReference lpNumberOfBytesWritten);
 
