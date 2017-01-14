@@ -113,15 +113,15 @@ function graph:run_sql(sql,args,cmd,file)
     
     env.checkerr(type(context)=="table" and type(context._sql)=="string","Invalid definition, should be a table with '_sql' property!")
     local default_attrs={
-            --legend='always',
-            labelsDivStyles= {border='1px solid black',width=80},
+            legend='always',
             rollPeriod=1,
             showRoller=false,
             height= 400,
             includeZero=true,
             axisLabelFontSize=12,
-            labelsSeparateLines=true,
             animatedZooms=true,
+            legendFormatter="?legendFormatter?", 
+            labelsDiv="?document.getElementById('divLabel@INDEX')?",
             highlightSeriesOpts= {
               strokeWidth= 2,
               strokeBorderWidth=2,
@@ -386,7 +386,7 @@ function graph:run_sql(sql,args,cmd,file)
         if default_attrs.ylabel then
             default_attrs.title="Unit: "..default_attrs.ylabel
         end
-        local attr=json.encode(default_attrs)
+        local attr=json.encode(default_attrs):gsub("@INDEX",i):gsub('"%?([^"]+)%?"','%1')
         local graph_unit=cr:replace('@GRAPH_ATTRIBUTES',attr,true)
         for k,v in pairs(replaces) do
             graph_unit=graph_unit:replace(k,v,true)
