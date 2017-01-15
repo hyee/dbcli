@@ -63,7 +63,8 @@ function history.rerun()
         local f,err=io.open(file,'r')
         env.checkerr(f,err)
         local text=f:read('*a')
-        env.eval_line(text..'\0',true,true)
+        f:close()
+        env.eval_line(text,true,true)
     end
 end
 
