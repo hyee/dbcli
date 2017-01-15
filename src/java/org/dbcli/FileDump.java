@@ -35,6 +35,7 @@ public class FileDump extends ClassDump {
             } catch (Exception e1) {
                 method = Tool.class.getDeclaredMethod("start", new Class[]{String[].class});
             }
+            method.setAccessible(true);
             method.invoke((Tool) cd, new Object[]{args});
         } catch (Exception e) {
             e.printStackTrace();

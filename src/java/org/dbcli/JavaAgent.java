@@ -89,6 +89,7 @@ public class JavaAgent implements ClassFileTransformer {
     public static URL getClassURL(String className, ProtectionDomain domain) throws Exception {
         String source = className;
         URL location;
+        if (className == null) return null;
         try {
             source = "/" + className.replace(".", "/") + ".class";
             location = JavaAgent.class.getResource(source);
