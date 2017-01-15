@@ -127,6 +127,7 @@ function graph:run_sql(sql,args,cmd,file)
               strokeBorderWidth=2,
               highlightCircleSize=2,
             },
+            axes={x={pixelsPerLabel=50}}
         }
     if context._attrs then
         rs=self.db:exec(context._attrs,args)
