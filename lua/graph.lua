@@ -408,16 +408,21 @@ local function set_param(name,value)
     return tonumber(value)
 end
 
-function graph:run_stmt(option,sql)
-    env.checkhelp(option)
+function graph:run_stmt(...)
+    local args={...}
+    env.checkhelp(args[1])
+    sql=args[#args]
+    table.remove(args,#args)
     local fmt={}
-    if option:sub(1,1)=='-' then
-        option=option:sub(2):lower()
-        if option~='y' and option~='n' and option~='m' then env.checkhelp(nil) end
-        fmt._pivot=option=='y' and true or option=='m' and 'mixed'
-        if option=='n' then fmt._pivot=false end
-    else
-        sql=option
+    for index,option in ipairs(args) do
+        if option:sub(1,1)=='-' then
+            option=option:sub(2):lower()
+            if option~='y' and option~='n' and option~='m' then env.checkhelp(nil) end
+            fmt._pivot=option=='y' and true or option=='m' and 'mixed'
+            if option=='n' then fmt._pivot=false end
+        else
+            fmt.title=option
+        end
     end
     fmt._sql=sql
     return self:run_sql(fmt,{},'last_chart')
@@ -425,13 +430,13 @@ end
 
 function graph:__onload()
     local help=[[
-    Generate graph chart regarding to the input SQL. Usage: @@NAME [-n|-p|-m] <Select statement>
+    Generate graph chart regarding to the input SQL. Usage: @@NAME [-n|-p|-m] [Graph Title] <Select Statement>
     Options:
         -y: the output fields are "<date> <label> <values...>"
         -n: the output fields are "date <label-1-value> ... <label-n-value>"
         -m: mix mode,  the output fields are "<date> <label> <sub-label values...>"
     If not specify the option, will auto determine the layout based on the outputs.]]
-    env.set_command(self,self.ext_command, help,self.run_stmt,'__SMART_PARSE__',3)
+    env.set_command(self,self.ext_command, help,self.run_stmt,'__SMART_PARSE__',4)
     cfg.init("ChartSeries",15,set_param,"core","Number of top series to be show in graph chart(see command 'chart')",'1-30')
 end
 

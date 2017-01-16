@@ -115,7 +115,7 @@ function helper.helper(cmd,...)
     elseif cmd=="-m" or cmd=="-M" then
         return helper.makejar(...)
     elseif cmd=="-dump" then
-        local cmd=java.loader:dumpClass("dump")
+        local cmd=java.loader:dumpClass(env.WORK_DIR.."dump")
         io.write("Command: "..cmd.."\n");
         return os.execute(cmd)
     elseif cmd=="-stack" then
@@ -123,7 +123,7 @@ function helper.helper(cmd,...)
     elseif cmd=="-verbose" then
         local dest=select(1,...)
         if not dest then
-            dest=env._CACHE_PATH.."verbose.log"
+            dest=env.WORK_DIR.."cache"..env.PATH_DEL.."verbose.log"
             local f=io.open(dest)
             local txt=f:read("*a")
             f:close()
