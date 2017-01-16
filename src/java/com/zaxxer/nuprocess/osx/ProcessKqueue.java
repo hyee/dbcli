@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.zaxxer.nuprocess.osx;
 
 import com.sun.jna.Native;
@@ -41,9 +40,7 @@ final class ProcessKqueue extends BaseEventProcessor<OsxProcess> {
     private static final int LINGER_ITERATIONS = 0;
     private static final int NUM_KEVENTS = 64;
     private static final int JAVA_PID;
-
     private volatile int kqueue;
-
     // Re-used in process() to avoid repeatedly allocating and destroying array of events.
     private Kevent[] processEvents;
     private BlockingQueue<OsxProcess> closeQueue;

@@ -16,7 +16,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.zaxxer.nuprocess.windows;
 
 import com.sun.jna.*;
@@ -50,28 +49,21 @@ public interface NuWinNT {
     int CREATE_PRESERVE_CODE_AUTHZ_LEVEL = 0x02000000;
     int CREATE_DEFAULT_ERROR_MODE = 0x04000000;
     int CREATE_NO_WINDOW = 0x08000000;
-
     int ERROR_SUCCESS = 0;
     int ERROR_BROKEN_PIPE = 109;
     int ERROR_PIPE_NOT_CONNECTED = 233;
     int ERROR_PIPE_CONNECTED = 535;
     int ERROR_IO_PENDING = 997;
-
     int FILE_ATTRIBUTE_NORMAL = 0x00000080;
     int FILE_FLAG_OVERLAPPED = 0x40000000;
     int FILE_SHARE_READ = 0x00000001;
     int FILE_SHARE_WRITE = 0x00000002;
-
     int GENERIC_READ = 0x80000000;
     int GENERIC_WRITE = 0x40000000;
-
     int OPEN_EXISTING = 3;
-
     int STATUS_PENDING = 0x00000103;
     int STILL_ACTIVE = STATUS_PENDING;
-
     int STARTF_USESTDHANDLES = 0x100;
-
     HANDLE INVALID_HANDLE_VALUE = new HANDLE(Pointer.createConstant(Pointer.SIZE == 8 ? -1 : 0xFFFFFFFFL));
 
     public interface HANDLER_ROUTINE extends StdCallLibrary.StdCallCallback {
@@ -335,7 +327,6 @@ public interface NuWinNT {
         public static final short DOUBLE_CLICK = 0x0002;
         public static final short MOUSE_WHEELED = 0x0004;
         public static final short MOUSE_HWHEELED = 0x0008;
-
         public static final short FROM_LEFT_1ST_BUTTON_PRESSED = 0x0001;
         public static final short RIGHTMOST_BUTTON_PRESSED = 0x0002;
         public static final short FROM_LEFT_2ND_BUTTON_PRESSED = 0x0004;

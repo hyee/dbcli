@@ -10,7 +10,10 @@ import sun.jvm.hotspot.tools.jcore.ClassDump;
 import sun.jvm.hotspot.tools.jcore.ClassFilter;
 import sun.jvm.hotspot.tools.jcore.ClassWriter;
 
-import java.io.*;
+import java.io.BufferedOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
 import java.lang.reflect.Method;
 
 public class FileDump extends ClassDump {
@@ -31,14 +34,14 @@ public class FileDump extends ClassDump {
         try {
             Method method;
             try {
-                method = Tool.class.getDeclaredMethod("execute", new Class[]{String[].class});
+                method = Tool.class.getDeclaredMethod("execute", String[].class);
             } catch (Exception e1) {
-                method = Tool.class.getDeclaredMethod("start", new Class[]{String[].class});
+                method = Tool.class.getDeclaredMethod("start", String[].class);
             }
             method.setAccessible(true);
             method.invoke((Tool) cd, new Object[]{args});
         } catch (Exception e) {
-            e.printStackTrace();
+            Loader.getRootCause(e).printStackTrace();
             return;
         }
         //cd.start(args);
@@ -57,30 +60,22 @@ public class FileDump extends ClassDump {
             ioe = VM.getVM().getSystemDictionary();
             ioe.classesDo(new SystemDictionary.ClassVisitor() {
                 public void visit(Klass k) {
-                    if (k instanceof InstanceKlass) {
-                        try {
-                            FileDump.this.dumpKlass((InstanceKlass) k);
-                        } catch (Exception var3) {
-                            System.out.println(k.getName().asString());
-                            var3.printStackTrace();
-                        }
-                    }
-
+                    if (k instanceof InstanceKlass)
+                        FileDump.this.dumpKlass((InstanceKlass) k);
                 }
             });
-        } catch (AddressException var3) {
-            System.err.println("Error accessing address 0x" + Long.toHexString(var3.getAddress()));
-            var3.printStackTrace();
+        } catch (AddressException e) {
+            System.err.println("Error accessing address 0x" + Long.toHexString(e.getAddress()));
+            Loader.getRootCause(e).printStackTrace();
         }
-
     }
 
-    private void dumpKlass(InstanceKlass kls) throws Exception {
+    private void dumpKlass(InstanceKlass kls) {
         String klassName = kls.getName().asString();
-        String jar = JavaAgent.resolveDest(null, klassName);
-        if (jar == null) return;
-        klassName = klassName.replace('/', File.separatorChar);
         try {
+            String jar = JavaAgent.resolveDest(null, klassName);
+            if (jar == null) return;
+            klassName = klassName.replace('/', File.separatorChar);
             OutputStream os = null;
             int index = klassName.lastIndexOf(File.separatorChar);
             File dir = null;
@@ -93,6 +88,7 @@ public class FileDump extends ClassDump {
             dir.mkdirs();
             File f = new File(dir, klassName.substring(index + 1) + ".class");
             f.createNewFile();
+            System.out.println(f.getAbsolutePath());
             os = new BufferedOutputStream(new FileOutputStream(f));
             try {
                 ClassWriter cw = new ClassWriter(kls, os);
@@ -101,9 +97,8 @@ public class FileDump extends ClassDump {
             } finally {
                 os.close();
             }
-        } catch (IOException exp) {
-            exp.printStackTrace();
+        } catch (Exception e) {
+            Loader.getRootCause(e).printStackTrace();
         }
     }
-
 }

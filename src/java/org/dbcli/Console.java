@@ -46,7 +46,7 @@ public class Console extends ConsoleReader {
         super();
         his = getHistory();
         setExpandEvents(false);
-        setHandleUserInterrupt(true);
+        setHandleUserInterrupt(false);
         setBellEnabled(false);
         getKeys().bind("\u001bOn", Operation.DELETE_CHAR); //The delete key
         in = new WindowsInputReader();
@@ -129,7 +129,6 @@ public class Console extends ConsoleReader {
         if (this.task != null) {
             this.task.cancel(true);
             this.task = null;
-
         }
         if (this.event != null && this.keys != null) {
             this.monitor.counter = 0;
@@ -169,7 +168,7 @@ public class Console extends ConsoleReader {
                 if (ch > 32) isBlocking = true;
                 else in.read(-1);
             } catch (Exception e) {
-                //e.printStackTrace();
+                //Loader.getRootCause(e).printStackTrace();
             }
         }
     }

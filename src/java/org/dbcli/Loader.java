@@ -58,8 +58,14 @@ public class Loader {
                 }
             });
         } catch (Exception e) {
-            e.printStackTrace();
+            getRootCause(e).printStackTrace();
         }
+    }
+
+    public static Exception getRootCause(Exception e) {
+        Throwable t = e.getCause();
+        while (t != null && t.getCause() != null) t = t.getCause();
+        return t == null ? e : new Exception(t);
     }
 
     public static void loadLua(Loader loader, String args[]) throws Exception {
@@ -167,6 +173,7 @@ public class Loader {
         String cp = System.getProperty("java.class.path");
         String stack = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
         String packageName = Loader.class.getPackage().getName() + ".FileDump";
+        //packageName="sun.jvm.hotspot.tools.jcore.ClassDump";
         String sep = File.separator;
         stack = stack.split("@")[0];
         Pattern p = Pattern.compile("[\\\\/]jre.*", Pattern.CASE_INSENSITIVE);
@@ -287,8 +294,7 @@ public class Loader {
         } catch (CancellationException | InterruptedException e) {
             throw CancelError;
         } catch (Exception e) {
-            //e.printStackTrace();
-            while (e.getCause() != null) e = (Exception) e.getCause();
+            e = getRootCause(e);
             //e.printStackTrace();
             throw e;
         } finally {
@@ -364,7 +370,7 @@ public class Loader {
 
                 if (rs != null && !rs.isClosed()) rs.close();
             } catch (Exception err) {
-                //err.printStackTrace();
+                //getRootCause(err).printStackTrace();
             }
         }
     }

@@ -16,7 +16,6 @@ import java.util.regex.Pattern;
 public class SubSystem {
     NuProcessBuilder pb;
     volatile WindowsProcess process;
-
     ByteBuffer writer;
     Pattern p;
     volatile String lastLine;
@@ -48,7 +47,7 @@ public class SubSystem {
                 }
             });
         } catch (Exception e) {
-            e.printStackTrace();
+            Loader.getRootCause(e).printStackTrace();
             throw e;
         }
     }
@@ -114,7 +113,6 @@ public class SubSystem {
                     wait = 60L; //Waits 0.05 sec
                 }
             }
-
         }
         //process.setConsoleMode(process.GetConsoleMode() & NuKernel32.ENABLE_ECHO_INPUT);
     }
@@ -134,7 +132,7 @@ public class SubSystem {
             if (this.prevPrompt == null) this.prevPrompt = this.lastPrompt;
             return lastPrompt;
         } catch (Exception e) {
-            e.printStackTrace();
+            Loader.getRootCause(e).printStackTrace();
             throw e;
         } finally {
             isWaiting = false;
