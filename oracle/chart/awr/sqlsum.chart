@@ -19,7 +19,7 @@
           FROM   dba_hist_snapshot
           WHERE  end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate)
           AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V1)) 
-        SELECT time,V1 "Total SQLs per Minute", V2 "Single Used SQLs per Minute"
+        SELECT time sample_time,V1 "Total SQLs per Minute", V2 "Single Used SQLs per Minute"
         FROM   (SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') TIME,
                        sum(v1) v1,
                        sum(v2) v2

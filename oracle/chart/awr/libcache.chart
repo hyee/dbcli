@@ -27,7 +27,7 @@
           FROM   dba_hist_snapshot
           WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
           AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) 
-        SELECT to_char(end_time,'YYYY-MM-DD HH24:MI') end_time,namespace,
+        SELECT to_char(end_time,'YYYY-MM-DD HH24:MI') sample_time,namespace,
                round(sum(gets/slot_size),2) "Gets per Minute",
                round(sum(PINS/slot_size),2) "Pins per Minute",
                round(sum(GETHITS)*100/nullif(sum(GETS),0),2) "Gets Hit Ratio(%)",

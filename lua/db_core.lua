@@ -226,7 +226,7 @@ function ResultSet:close(rs)
 end
 
 function ResultSet:rows(rs,count,limit,null_value)
-    if rs:isClosed() then return end
+    if rs.isClosed and rs:isClosed() then return end
     count=tonumber(count) or -1
     local head=self:getHeads(rs,limit).__titles
     local rows,result=table.new(1000,0),loader:fetchResult(rs,count)
@@ -738,11 +738,20 @@ function db_core:rollback()
 end
 
 
+local exp=java.require("com.opencsv.ResultSetHelperService")
+local csv=java.require("com.opencsv.CSVWriter")
+local cparse=java.require("com.opencsv.CSVParser")
+local sqlw=java.require("com.opencsv.SQLWriter")
+
 local function set_param(name,value)
     if name=="FEED" or name=="AUTOCOMMIT" then
         return value:lower()
     elseif name=="ASYNCEXP" then
         return value and value:lower()=="true" and true or false
+    elseif name=="CSVSEP" then
+        env.checkerr(#value==1,'CSV separator can only be one char!')
+        cparse.DEFAULT_SEPARATOR=value:byte()
+        return value
     end
 
     return tonumber(value)
@@ -757,10 +766,6 @@ local function print_export_result(filename,start_clock,counter)
     print(str..'Result written to file '..filename)
 end
 
-local exp=java.require("com.opencsv.ResultSetHelperService")
-local csv=java.require("com.opencsv.CSVWriter")
-local cparse=java.require("com.opencsv.CSVParser")
-local sqlw=java.require("com.opencsv.SQLWriter")
 function db_core:sql2file(filename,sql,method,ext,...)
     local clock,counter,result
     if sql then
@@ -787,9 +792,8 @@ function db_core:sql2file(filename,sql,method,ext,...)
     end
     if method:find("CSV",1,true) then
         local quoter=string.byte(env.ask("Please define the field encloser",'^.$','"'))
-        local sep=string.byte(env.ask("Please define the field seperator",'^[^'..string.char(quoter)..']$',','))
         cparse.DEFAULT_QUOTE_CHARACTER=quoter
-        cparse.DEFAULT_SEPARATOR=sep
+        cfg.set("CSVSEP",env.ask("Please define the field separator",'^[^'..string.char(quoter)..']$',','))
     end
 
     local file=io.open(filename,"w")
@@ -985,6 +989,7 @@ function db_core:__onload()
     cfg.init("ASYNCEXP",true,set_param,"db.export","Detemine if use parallel process for the export(SQL2CSV and SQL2FILE)",'true,false')
     cfg.init("SQLERRLINE",'off',nil,"db.core","Also print the line number when error SQL is printed",'on,off')
     cfg.init("NULL","",nil,"db.core","Define the display value for NULL value")
+    cfg.init("CSVSEP",",",set_param,"db.core","Define the default separator between CSV fields.")
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
     env.event.snoop('TRIGGER_LOGIN',self.login,self)
     set_command(self,{"reconnect","reconn"}, "Re-connect to database with the last login account.",self.reconnnect,false,2)

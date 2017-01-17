@@ -183,6 +183,17 @@ function cfg.set(name,value,backup,isdefault)
         end
     end
 
+    local default_type=type(config.default)
+    if type(value)=="string" and default_type~="string" then
+        if default_type=="number" and tonumber(value) then
+            value=tonumber(value)
+        elseif default_type=="boolean" and value:lower()=="true" then
+            value=true
+        elseif default_type=="boolean" and value:lower()=="false" then
+            value=false
+        end
+    end
+    
     local final=value
     if config.func then
         if config.instance then

@@ -1,9 +1,11 @@
 package org.dbcli;
 
 import com.naef.jnlua.LuaState;
+import com.opencsv.CSVReader;
 import com.opencsv.CSVWriter;
 import com.opencsv.ResultSetHelperService;
 import com.opencsv.SQLWriter;
+import com.sun.tools.javac.code.Attribute;
 import jline.console.KeyMap;
 
 import java.awt.event.ActionEvent;
@@ -16,6 +18,7 @@ import java.net.URLClassLoader;
 import java.sql.CallableStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.Future;
@@ -256,6 +259,26 @@ public class Loader {
             }
         });
         return ary.toArray(new Object[][]{});
+    }
+
+    public String[][] fetchCSV(final String CSVFileSource,final int rows) throws Exception {
+        ArrayList<String[]> list= (ArrayList<String[]>)asyncCall(new Callable() {
+            @Override
+            public ArrayList<String[]> call() throws Exception {
+                ArrayList<String[]> ary=new ArrayList();
+                String[] line;
+                int size=0;
+                try (CSVReader reader=new CSVReader(new FileReader(CSVFileSource))) {
+                    while((line=reader.readNext())!=null) {
+                        ++size;
+                        if(rows>-1&&size>rows) break;
+                        ary.add(line);
+                    }
+                }
+                return ary;
+            }
+        });
+        return list.toArray(new String[][]{});
     }
 
     public String inflate(byte[] data) throws Exception {

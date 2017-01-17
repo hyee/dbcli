@@ -20,7 +20,7 @@
         SELECT 'System Memory Usage' title
         from dual]],
     _sql=[[
-        SELECT time,event,value "Memory Size"
+        SELECT time sample_time,event,value "Memory Size"
         FROM   (SELECT to_char(end_time,'YYYY-MM-DD HH24:MI') TIME, event,
                        max(VALUE) VALUE
                 FROM  (SELECT /*+merge*/

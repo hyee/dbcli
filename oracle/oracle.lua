@@ -86,7 +86,7 @@ function oracle:connect(conn_str)
             end
         end
     end
-
+    env.log_debug('connect',usr,pwd,url)
     args=args or {user=usr,password=pwd,url="jdbc:oracle:thin:@"..url,internal_logon=isdba}
 
     self:merge_props(
@@ -183,7 +183,12 @@ function oracle:connect(conn_str)
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
     else
         if not prompt or prompt:find('[:/%(%)]') then prompt=self.props.service_name end
-        self.conn_str=self.conn_str:gsub('(:%d+):([%w%.$#]+)$','%1'..'/'..self.props.service_name..'/'..'%2')
+        self.conn_str=self.conn_str:gsub('(:%d+)([:/]+)([%w%.$#]+)$',function(port,sep,sid)
+            if sep==':' or sep=='//' then
+                return port..'/'..self.props.service_name..'/'..sid
+            end
+            return port..sep..sid
+        end)
         env._CACHE_PATH=env.join_path(env._CACHE_BASE,prompt:lower():trim(),'')
         env.uv.fs.mkdir(env._CACHE_PATH,777,function() end)
         prompt=('%s%s'):format(prompt:upper(),self.props.db_role or '')
@@ -194,6 +199,9 @@ function oracle:connect(conn_str)
     end
     for k,v in pairs(self.props) do args[k]=v end
     args.oci_connection=packer.pack_str(self.conn_str)
+    if not packer.unpack_str(args.oci_connection) then
+        env.warn("Failed to pack '%s', the unpack result is nil!",self.conn_str)
+    end
     env.login.capture(self,args.jdbc_alias or args.url,args)
     if event then event("AFTER_ORACLE_CONNECT",self,sql,args,result) end
     print("Database connected.")

@@ -1040,7 +1040,7 @@ function env.resolve_file(filename,ext)
         filename= env.join_path(env.WORK_DIR,filename)
     end
 
-    if ext then
+    if ext and ext~="" then
         local exist_ext=filename:lower():match('%.([^%.\\/]+)$')
         local found=false
         if type(ext)=="table" then
@@ -1053,7 +1053,7 @@ function env.resolve_file(filename,ext)
         else
             found=(exist_ext==ext:lower())
         end
-        if not found then filename=filename..'.'..(type(ext)=="table" and ext[1] or exit) end
+        if not found then filename=filename..'.'..(type(ext)=="table" and ext[1] or ext) end
     end
 
     return filename
