@@ -9,7 +9,7 @@
 {
     title='Database TableSpace Growth Chart',
     _sql=[[
-        SELECT to_char(end_time, 'YYYY-MM-DD HH24:MI') TIME,
+        SELECT to_char(end_time, 'YYYY-MM-DD HH24:MI') sample_time,
                name,
                max(value) "Used Size(Bytes)",
                round(max(value/mvalue)*100,3) "Used Size(%)"

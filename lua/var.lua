@@ -110,7 +110,7 @@ function var.accept_input(name,desc)
             desc=desc:sub(8)
         elseif desc:sub(1,1)=='@' then
             desc=desc:sub(2)
-            if not desc:match('(%.%w+)$') then desc=desc..'.sql' end
+            desc=env.resolve_file(desc,'sql')
             local f=io.open(desc)
             if not f then f=io.open(env._CACHE_PATH..desc) end
             env.checkerr(f,"Cannot find file '"..desc.."'!")

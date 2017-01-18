@@ -24,7 +24,7 @@
           WHERE  end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate)
           AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V1))
         SELECT /*+no_expand */
-               end_time, nvl2(:V4,regexp_substr(file_name,'[^\\/]+$'),&GRP) tsname, 
+               end_time sample_time, nvl2(:V4,regexp_substr(file_name,'[^\\/]+$'),&GRP) tsname, 
                SUM(phyrds) "Physical Read Requests/Minute", 
                round(SUM(phyrgb), 3) "Physical Read Bytes/Minute",
                ROUND(SUM(readtim) / nullif(SUM(phyrds),0) * 10, 2) "Miliseconds per Physical Read", 

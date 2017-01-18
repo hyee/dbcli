@@ -25,15 +25,13 @@ function packer.unpack(str)
         return str
     end
     str=str:sub(6)
-    local ind=#str
-    local half,start=math.floor(ind/2),math.ceil(ind/2)
+    local half=math.ceil(#str/2)
     local obj={}
     for i=1,half,1 do
         obj[#obj+1]=rechar(str:sub(i,i),-1)
-        obj[#obj+1]=rechar(str:sub(i+start,i+start),-1)
-    end
-    if half~=start then
-        obj[#obj+1]=rechar(str:sub(start,start),-1)
+        if half+i<=#str then
+            obj[#obj+1]=rechar(str:sub(i+half,i+half),-1)
+        end
     end
     str=loadstring(table.concat(obj,""))
     return str

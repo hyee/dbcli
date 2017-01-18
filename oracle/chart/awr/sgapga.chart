@@ -8,7 +8,7 @@
     --]]
 ]]*/
 {
-    title="SGA PGA Memory Chart",
+    title="SGA/PGA Memory Chart",
     _sql=[[
         WITH snap AS
          (SELECT /*+materialize no_expand*/
@@ -19,7 +19,7 @@
           FROM   dba_hist_snapshot
           WHERE  end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate)
           AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V1)) 
-        SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') TIME, event, avg(sga_value) "SGA Used Bytes", avg(buff_value) "Buffer Cache Bytes",avg(pga_value) "PGA Used Bytes"
+        SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') sample_time, event, avg(sga_value) "SGA Used Bytes", avg(buff_value) "Buffer Cache Bytes",avg(pga_value) "PGA Used Bytes"
         FROM   (SELECT a.*, decode(nvl(lower(:V1), 'a'), 'a', '', ' #' || inst_id) event
                 FROM   (SELECT *
                         FROM   snap NATURAL

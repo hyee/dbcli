@@ -1,6 +1,12 @@
+2017-01-18: ! oracle: update on 'sqlprof' due to sometimes fixed plan doesn' work
+2017-01-17: + public: add some settings related to graphing feature,"set graph" for more detail
+                      command "graph" supports CSV file source
+2017-01-16: + public: command "graph" supports custimize title
+            * public: update lib "jline2" to v2.14.3, as well as some fixes
+2017-01-15: + public: enhancemen on the graphing features
 2017-01-05: + public: "tee" command supports export as html/csv. Usage: <query>|tee <file>.[html|csv]
             ! public: minor fixes
-2017-01-02: + oracle: support begin/end snap_id as the parameters for "awrdump/ashdump/addmdump"
+2017-01-02: + oracle: support begin/end snap_id as the parameters for "awrdump/awrdiff/ashdump/addmdump"
 2016-12-20: + oracle: new command "ora expstats <sql_id>|<table_name>"
 2016-11-13: * public: update lib LuaJIT
 2016-11-08: + public: new command "disc[onnect]"
