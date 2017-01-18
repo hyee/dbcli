@@ -226,7 +226,7 @@ function ResultSet:close(rs)
 end
 
 function ResultSet:rows(rs,count,limit,null_value)
-    if rs.isClosed and rs:isClosed() then return end
+    if not rs.isClosed or rs:isClosed() then return end
     count=tonumber(count) or -1
     local head=self:getHeads(rs,limit).__titles
     local rows,result=table.new(1000,0),loader:fetchResult(rs,count)

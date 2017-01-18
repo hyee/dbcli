@@ -60,8 +60,7 @@ public class FileDump extends ClassDump {
             ioe = VM.getVM().getSystemDictionary();
             ioe.classesDo(new SystemDictionary.ClassVisitor() {
                 public void visit(Klass k) {
-                    if (k instanceof InstanceKlass)
-                        FileDump.this.dumpKlass((InstanceKlass) k);
+                    if (k instanceof InstanceKlass) FileDump.this.dumpKlass((InstanceKlass) k);
                 }
             });
         } catch (AddressException e) {

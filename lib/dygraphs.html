@@ -138,26 +138,28 @@ var u=document.createElement("div");u.style.fontSize=t.getOption("axisLabelFontS
     .dygraph-legend-line {border-bottom-width: 3px;}
     .dygraph-ylabel {
       /* This rule only applies to the y-axis label */
-      font-size: 20px;
+      font-size: 18px;
       text-shadow: gray -2px 2px 2px;  /* (offsets are in a rotated frame) */
     }
     
     .dygraph-xlabel {
       /* This rule only applies to the y-axis label */
       font-size: 12px;
+      font-family:  "Times New Roman"
     }
     
     .dygraph-title {
       /* This rule only applies to the chart title */
       font-size: 24px;
-      text-shadow: gray 2px 2px 2px;  /* color, delta-x, delta-y, blur radius */
+      color:#2f2f4f;
+      font-family:  "Times New Roman"
     }
     
     .dygraph-title-l2 {font-size:14px;text-shadow:none;block:inline-block}
     </style>
     <script type="text/javascript">
-    var _options = ['barchart', 'smoothed', 'showRoller', 'drawPoints', 'deviation', 'logscale', 'fillGraph', 'stackedGraph', 'stepPlot', 'strokePattern', 'csv', 'axis'];
-    var _optionNames = ['Bar Chart', 'Smooth', 'Show Roller', 'Draw Points', 'Deviation(%)', 'Log Scale', 'Fill Graph', 'Stacked Graph', 'Step Plot', 'Stroke Pattern', 'CSV', 'Choose Axis'];
+    var _options = [/*'showRangeSelector',*/'smoothed', 'showRoller', 'drawPoints', 'deviation', 'logscale', 'fillGraph', 'stackedGraph', 'stepPlot', 'strokePattern','barchart', 'csv', 'axis'];
+    var _optionNames = [/*'Ranger',*/'Smooth', 'Show Roller', 'Draw Points', 'Deviation(%)', 'LogScale', 'FillGraph', 'StackedGraph', 'StepPlot', 'StrokePattern','BarChart', 'CSV', 'ChooseAxis'];
     var _graph;
     var defaultPlotter = null;
     var _graphs = [];
@@ -350,7 +352,7 @@ var u=document.createElement("div");u.style.fontSize=t.getOption("axisLabelFontS
         var str = '<table style="width:98%" id="tabGraph'+index+'"><tr><td><div id="divShow' + index + '"></div></td><td width=1 valign="top" style="padding-top:30px"><div><div class="divLabel" id="divLabel' + index + '">\n' +
             '</div></div><div id="ShowAxis' + index + '" style="overflow:hidden"><select style="width:@LEGEND_WIDTH;overflow:hidden" size=15 multiple="multiple" onchange="javascript:update_options(' + index + ')">'
         str += '</select></div></td></tr></table>' +
-            '<div style="text-align: right;font-size:12px;margin-right:@LEGEND_WIDTH">' + options + '</div>';
+            '<div style="text-align: center;font-size:12px;margin-right:@LEGEND_WIDTH">' + options + '</div>';
         document.write(str);
     };
 

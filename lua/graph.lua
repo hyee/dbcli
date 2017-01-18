@@ -129,7 +129,8 @@ function graph:run_sql(sql,args,cmd,file)
             avoidMinZero=true,
             includeZero=true,
             labelsKMB=true,
-            showRangeSelector=cfg.get("GRAPH_SETRANGE"),
+            errorbars=true,
+            showRangeSelector=cfg.get("GRAPH_RANGER"),
             axisLabelFontSize=12,
             animatedZooms=true,
             legendFormatter="?legendFormatter?", 
@@ -418,7 +419,7 @@ function graph:run_sql(sql,args,cmd,file)
         default_attrs.title=title
         if default_attrs.ylabel then
             if title=="" then 
-                default_attrs.title=default_attrs.ylabel
+                default_attrs.title="Unit: "..default_attrs.ylabel
             elseif self.dataindex>1 then 
                 default_attrs.title=title.."<div class='dygraph-title-l2'>Unit: "..default_attrs.ylabel..'</div>'
             end
@@ -473,7 +474,7 @@ function graph:__onload()
     cfg.init("Graph_logscale",false,nil,"graph","Enable/disable the default graph log-scale option",'true/false')
     cfg.init("Graph_smooth",false,nil,"graph","Enable/disable the default graph smooth option",'true/false')
     cfg.init("Graph_deviation",false,nil,"graph","Enable/disable the default graph deviation option",'true/false')
-    cfg.init("Graph_setrange",true,nil,"graph","Enable/disable the default graph range-selector option",'true/false')
+    cfg.init("Graph_ranger",false,nil,"graph","Enable/disable the default graph range-selector option",'true/false')
     cfg.init("Graph_fillgraph",false,nil,"graph","Enable/disable the default graph fill-graph option",'true/false')
     cfg.init("Graph_stackedgraph",false,nil,"graph","Enable/disable the default graph stacked-graph option",'true/false')
     cfg.init("Graph_stepplot",false,nil,"graph","Enable/disable the default graph step-plot option",'true/false')
