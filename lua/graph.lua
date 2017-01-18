@@ -444,7 +444,7 @@ end
 function graph:run_stmt(...)
     local args={...}
     env.checkhelp(args[1])
-    sql=args[#args]
+    local sql=args[#args]
     table.remove(args,#args)
     local fmt={}
     for index,option in ipairs(args) do
@@ -468,7 +468,24 @@ function graph:__onload()
         -y: the output fields are "<date> <label> <values...>"
         -n: the output fields are "date <label-1-value> ... <label-n-value>"
         -m: mix mode,  the output fields are "<date> <label> <sub-label values...>"
-    If not specify the option, will auto determine the layout based on the outputs.]]
+    If not specify the option, will auto determine the layout based on the outputs.
+    For the query or CSV file, the output should one of the following rule:
+    1. Column#1 (X-Label)  :date/date-in-string/int
+       Column#2 (Axis-Name):string 
+       Column#3+(Y-Value)  :number, the column name would be the Y-UnitName,more columns would generate more charts except specifying the -m option
+    2. Column#1(X-label)   :date/date-in-string/int
+       Column#2+(Y-Value)  :number, the column name would be the axis-name,more columns would generate more charts except specifying the -m option
+
+    Use 'set graph_xxx <value>' to specify the initial chart setting, type 'set graph' for more information   
+    Examples:
+       graph select sysdate+dbms_random.value*365 d,dbms_Random.value*1e6 x,dbms_Random.value*1e6 y from dual connect by rownum<=100;
+
+       graph select sysdate+dbms_random.value*365 time,
+                    decode(mod(rownum,2),1,'X','Y') typ,
+                    dbms_Random.value*1e6 value
+             from dual connect by rownum<=200;
+
+    ]]   
     env.set_command(self,self.ext_command, help,self.run_stmt,'__SMART_PARSE__',4)
     cfg.init("Graph_Series",12,nil,"graph","Number of top series to be show in graph chart",'1-30')
     cfg.init("Graph_logscale",false,nil,"graph","Enable/disable the default graph log-scale option",'true/false')

@@ -3,7 +3,7 @@
                       command "graph" supports CSV file source
 2017-01-16: + public: command "graph" supports custimize title
             * public: update lib "jline2" to v2.14.3, as well as some fixes
-2017-01-15: + public: enhancemen on the graphing features
+2017-01-15: + public: enhancement on the graphing features
 2017-01-05: + public: "tee" command supports export as html/csv. Usage: <query>|tee <file>.[html|csv]
             ! public: minor fixes
 2017-01-02: + oracle: support begin/end snap_id as the parameters for "awrdump/awrdiff/ashdump/addmdump"
