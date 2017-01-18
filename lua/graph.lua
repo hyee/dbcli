@@ -469,14 +469,15 @@ function graph:__onload()
         -n: the output fields are "date <label-1-value> ... <label-n-value>"
         -m: mix mode,  the output fields are "<date> <label> <sub-label values...>"
     If not specify the option, will auto determine the layout based on the outputs.
-    For the query or CSV file, the output should one of the following rule:
+    For the query or CSV file, the output should follow one of the following rule:
     1. Column#1 (X-Label)  :date/date-in-string/int
        Column#2 (Axis-Name):string 
-       Column#3+(Y-Value)  :number, the column name would be the Y-UnitName,more columns would generate more charts except specifying the -m option
-    2. Column#1(X-label)   :date/date-in-string/int
+       Column#3+(Y-Value)  :number, the column name would be the unit description,more columns would generate more charts except specifying the -m option
+    2. Column#1 (X-label)  :date/date-in-string/int
        Column#2+(Y-Value)  :number, the column name would be the axis-name,more columns would generate more charts except specifying the -m option
 
-    Use 'set graph_xxx <value>' to specify the initial chart setting, type 'set graph' for more information   
+    Use 'set graph_xxx <value>' to specify the initial chart settings, type 'set graph' for more information   
+
     Examples:
        graph select sysdate+dbms_random.value*365 d,dbms_Random.value*1e6 x,dbms_Random.value*1e6 y from dual connect by rownum<=100;
 
