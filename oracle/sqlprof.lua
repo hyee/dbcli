@@ -36,6 +36,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             v_text        CLOB;
             v_pos         PLS_INTEGER;
             v_size        PLS_INTEGER;
+            v_embed       VARCHAR2(200);
             PROCEDURE get_sql(p_sqlid VARCHAR2) IS
             BEGIN
                 SELECT REPLACE(sql_text, chr(0), ' '), src
@@ -134,27 +135,31 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             get_plan(case when upper(p_plan) IN('PLAN','PLAN_TABLE') then '_x_' end);
             dbms_lob.createtemporary(v_text, TRUE);
             pr('Set define off sqlbl on'||chr(10));
-            pr('DECLARE');
+            pr('DECLARE --Better for this script to have the access on gv$sqlarea');
             pr('    sql_txt   CLOB;');
             pr('    sql_prof  SYS.SQLPROF_ATTR;');
             pr('    signature NUMBER;');
             pr('    procedure wr(x varchar2) is begin dbms_lob.writeappend(sql_txt, lengthb(x), x);end;');
             pr('BEGIN');
             v_size := length(v_sql);
+            pr('    BEGIN execute immediate ''SELECT SQL_FULLTEXT FROM gv$sqlarea WHERE ROWNUM<2 AND SQL_ID=:1'' INTO sql_txt USING '''||p_sqlid||''';');
+            pr('    EXCEPTION WHEN OTHERS THEN NULL;END;');
+            pr('    IF sql_txt IS NULL THEN');
             IF v_size <= 1200 OR dbms_lob.instr(v_sql, CHR(10)) > 0 THEN
-                pr('    sql_txt := q''[', FALSE);
+                pr('        sql_txt := q''[', FALSE);
                 dbms_lob.append(v_text, v_sql);
                 pr(']'';');
             ELSE
-                pr('    dbms_lob.createtemporary(sql_txt, TRUE);');
+                pr('        dbms_lob.createtemporary(sql_txt, TRUE);');
                 v_pos := 0;
                 WHILE TRUE LOOP
-                    pr('    wr(q''[' || dbms_lob.substr(v_sql, 1000, v_pos * 1000 + 1) || ']'');');
+                    pr('        wr(q''[' || dbms_lob.substr(v_sql, 1000, v_pos * 1000 + 1) || ']'');');
                     v_pos  := v_pos + 1;
                     v_size := v_size - 1000;
                     EXIT WHEN v_size < 1;
                 END LOOP;
             END IF;
+            pr('    END IF;');
             pr('    ');
             v_signatrue := dbms_sqltune.SQLTEXT_TO_SIGNATURE(v_sql, TRUE);
             IF p_plan IS NOT NULL AND NOT regexp_like(p_plan, '^\d+$') AND upper(p_plan) NOT IN('PLAN','PLAN_TABLE') THEN
@@ -175,21 +180,27 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             FOR i IN (SELECT /*+ opt_param('parallel_execution_enabled', 'false') */
                              SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) hint
                       FROM   TABLE(XMLSEQUENCE(EXTRACT(v_hints, '//outline_data/hint'))) d) LOOP
-                v_hint := i.hint;
-                WHILE NVL(LENGTH(v_hint), 0) > 0 LOOP
-                    IF LENGTH(v_hint) <= 500 THEN
-                        pr('        q''[' || v_hint || ']'',');
-                        v_hint := NULL;
-                    ELSE
-                        v_pos := INSTR(SUBSTR(v_hint, 1, 500), ' ', -1);
-                        pr('        q''[' || SUBSTR(v_hint, 1, v_pos) || ']'',');
-                        v_hint := '   ' || SUBSTR(v_hint, v_pos);
-                    END IF;
-                END LOOP;
+                v_hint := REGEXP_REPLACE(i.hint,'INDEX\_[A-Z\_]+\(','INDEX(');
+                IF v_hint LIKE '%IGNORE_OPTIM_EMBEDDED_HINTS%' THEN
+                    v_embed := '        q''[' || v_hint || ']'',';
+                ELSE
+                    WHILE NVL(LENGTH(v_hint), 0) > 0 LOOP
+                        IF LENGTH(v_hint) <= 500 THEN
+                            pr('        q''[' || v_hint || ']'',');
+                            v_hint := NULL;
+                        ELSE
+                            v_pos := INSTR(SUBSTR(v_hint, 1, 500), ' ', -1);
+                            pr('        q''[' || SUBSTR(v_hint, 1, v_pos) || ']'',');
+                            v_hint := '   ' || SUBSTR(v_hint, v_pos);
+                        END IF;
+                    END LOOP;
+                END IF;
             END LOOP;
 
             v_source:= substr('PROF_'||nvl(v_source,to_char(v_signatrue,'fm'||rpad('X',length(v_signatrue),'X'))),1,30);
-
+            IF v_embed IS NOT NULL THEN
+                pr(v_embed);
+            END IF;
             pr('        q''[END_OUTLINE_DATA]'');');
             pr('    signature := DBMS_SQLTUNE.SQLTEXT_TO_SIGNATURE(sql_txt);');
             pr('    BEGIN DBMS_SQLTUNE.DROP_SQL_PROFILE(''' ||v_source||''');EXCEPTION WHEN OTHERS THEN NULL;END;');
@@ -199,7 +210,6 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             pr('        name        => ''' ||v_source||''',');
             pr('        description => ''' || v_source || '_''||signature,');
             pr('        category    => ''DEFAULT'',');
-            pr('        validate    => TRUE,');
             pr('        replace     => TRUE,');
             pr('        force_match => ' || CASE WHEN p_forcematch THEN 'TRUE' ELSE 'FALSE' END || ');');
             pr('    --To drop this profile, execute: DBMS_SQLTUNE.DROP_SQL_PROFILE('''||v_source||''')');

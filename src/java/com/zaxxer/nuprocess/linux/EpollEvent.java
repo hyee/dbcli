@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.zaxxer.nuprocess.linux;
 
 import com.sun.jna.Pointer;
@@ -40,7 +39,6 @@ public class EpollEvent extends Structure {
          epoll_data_t data; // User data variable
        };
    */
-
     public int events;
     public EpollData data;
 
@@ -64,5 +62,4 @@ public class EpollEvent extends Structure {
         public int u32;
         public long u64;
     }
-
 }

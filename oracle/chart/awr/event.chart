@@ -46,7 +46,8 @@
           FROM   dba_hist_snapshot
           WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
           AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) 
-        SELECT time,event,round(total_time*1e-6,1) "Seconds per Minute",count "Requests per Minute",round(total_time/count/1000,2) "Milliseconds per Request",
+        SELECT time sample_time,event,round(total_time*1e-6,1) "Seconds per Minute",count "Requests per Minute",
+               round(total_time/count/1000,2) "Milliseconds per Request",
                sum(total_time) over(partition by event) RNK_
         FROM   (SELECT to_char(end_time, 'YYYY-MM-DD HH24:MI') TIME, event,
                        SUM(v1) total_time,

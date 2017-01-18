@@ -68,7 +68,6 @@ public class WindowsInputReader extends NonBlockingInputStream {
             }
         } catch (Exception e) {
         }
-
     }
 
     static HashMap<Object, EventCallback> eventMap = new HashMap<>();

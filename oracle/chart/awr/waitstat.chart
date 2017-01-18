@@ -23,7 +23,7 @@
           FROM   dba_hist_snapshot
           WHERE  end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate)
           AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V1)) 
-        SELECT to_char(end_time, 'YYYY-MM-DD HH24:MI') TIME, event,
+        SELECT to_char(end_time, 'YYYY-MM-DD HH24:MI') sample_time, event,
                Round(SUM(WAIT_TIME/SLOT_SIZE),2)  "Wait Time Per Minute",
                Round(SUM(WAIT_COUNT/SLOT_SIZE),2) "Wait Count Per Minute",
                Round(SUM(WAIT_TIME)/SUM(WAIT_COUNT)*10,2) "Wait Time per Request"

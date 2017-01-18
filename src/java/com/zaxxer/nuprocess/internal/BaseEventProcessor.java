@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.zaxxer.nuprocess.internal;
 
 import com.sun.jna.ptr.IntByReference;
@@ -29,16 +28,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public abstract class BaseEventProcessor<T extends BasePosixProcess> implements IEventProcessor<T> {
     public static final int LINGER_TIME_MS;
-
     protected static final int DEADPOOL_POLL_INTERVAL;
     protected static final int LINGER_ITERATIONS;
     private final int lingerIterations;
-
     protected Map<Integer, T> pidToProcessMap;
     protected Map<Integer, T> fildesToProcessMap;
-
     protected volatile boolean shutdown;
-
     private CyclicBarrier startBarrier;
     private AtomicBoolean isRunning;
 

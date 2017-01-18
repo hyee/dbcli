@@ -35,7 +35,7 @@ public class JavaAgent implements ClassFileTransformer {
             inst.addTransformer(new JavaAgent());
             dumpAllClasses();
         } catch (Exception e) {
-            e.printStackTrace();
+            Loader.getRootCause(e).printStackTrace();
         }
     }
 
@@ -111,12 +111,18 @@ public class JavaAgent implements ClassFileTransformer {
             }
             location = c.getLocation();
         }
-        if ((location.toExternalForm().endsWith(".jar")) || (location.toExternalForm().endsWith(".zip"))) {
-            location = new URL("jar:".concat(location.toExternalForm()).concat("!/").concat(source));
-        } else if (new File(location.getFile()).isDirectory()) {
-            location = new URL(location, source);
+
+        try {
+            if ((location.toExternalForm().endsWith(".jar")) || (location.toExternalForm().endsWith(".zip"))) {
+                location = new URL("jar:".concat(location.toExternalForm()).concat("!/").concat(source));
+            } else if (new File(location.getFile()).isDirectory()) {
+                location = new URL(location, source);
+            }
+            return location;
+        } catch (MalformedURLException e1) {
+            Loader.getRootCause(e1).printStackTrace();
+            throw e1;
         }
-        return location;
     }
 
     public static String resolveDest(ProtectionDomain domain, String className) throws Exception {
@@ -172,7 +178,7 @@ public class JavaAgent implements ClassFileTransformer {
         try {
             copyFile(domain, className);
         } catch (Exception e) {
-            e.printStackTrace();
+            Loader.getRootCause(e).printStackTrace();
         }
         return classFileBuffer;
     }

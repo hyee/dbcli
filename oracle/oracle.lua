@@ -51,7 +51,7 @@ function oracle:connect(conn_str)
     local sqlplustr
     if type(conn_str)=="table" then --from 'login' command
         args=conn_str
-        server,proxy_user,sqlplustr=args.server,args.PROXY_USER_NAME,args.conn_str
+        server,proxy_user,sqlplustr=args.server,args.PROXY_USER_NAME,packer.unpack_str(args.oci_connection)
         usr,pwd,url,isdba=conn_str.user,packer.unpack_str(conn_str.password),conn_str.url,conn_str.internal_logon
         args.password=pwd
     else
@@ -86,8 +86,8 @@ function oracle:connect(conn_str)
             end
         end
     end
-
-    args=args or {user=usr,password=pwd,url="jdbc:oracle:thin:@"..url,internal_logon=isdba,conn_str=sqlplustr}
+    env.log_debug('connect',usr,pwd,url)
+    args=args or {user=usr,password=pwd,url="jdbc:oracle:thin:@"..url,internal_logon=isdba}
 
     self:merge_props(
         {driverClassName="oracle.jdbc.driver.OracleDriver",
@@ -122,8 +122,6 @@ function oracle:connect(conn_str)
     end
     
     local prompt=(args.jdbc_alias or url)
-    
-
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
     env.set_title("")
     local data_source=java.new('oracle.jdbc.pool.OracleDataSource')
@@ -185,6 +183,12 @@ function oracle:connect(conn_str)
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
     else
         if not prompt or prompt:find('[:/%(%)]') then prompt=self.props.service_name end
+        self.conn_str=self.conn_str:gsub('(:%d+)([:/]+)([%w%.$#]+)$',function(port,sep,sid)
+            if sep==':' or sep=='//' then
+                return port..'/'..self.props.service_name..'/'..sid
+            end
+            return port..sep..sid
+        end)
         env._CACHE_PATH=env.join_path(env._CACHE_BASE,prompt:lower():trim(),'')
         env.uv.fs.mkdir(env._CACHE_PATH,777,function() end)
         prompt=('%s%s'):format(prompt:upper(),self.props.db_role or '')
@@ -193,9 +197,11 @@ function oracle:connect(conn_str)
             :format(prompt,self.props.instance,self.props.db_user,self.props.sid,self.props.db_version)
         env.set_title(self.session_title)
     end
-    self.conn_str=packer.pack_str(self.conn_str)
     for k,v in pairs(self.props) do args[k]=v end
-    args.oci_connection=self.conn_str
+    args.oci_connection=packer.pack_str(self.conn_str)
+    if not packer.unpack_str(args.oci_connection) then
+        env.warn("Failed to pack '%s', the unpack result is nil!",self.conn_str)
+    end
     env.login.capture(self,args.jdbc_alias or args.url,args)
     if event then event("AFTER_ORACLE_CONNECT",self,sql,args,result) end
     print("Database connected.")

@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.zaxxer.nuprocess.internal;
 
 import com.sun.jna.Native;
@@ -44,14 +43,11 @@ public abstract class BasePosixProcess implements NuProcess {
     protected volatile boolean isRunning;
     protected AtomicInteger exitCode;
     protected CountDownLatch exitPending;
-
     protected AtomicBoolean userWantsWrite;
-
     // ******* Input/Output Buffers
     protected ByteBuffer outBuffer;
     protected ByteBuffer errBuffer;
     protected ByteBuffer inBuffer;
-
     // ******* Stdin/Stdout/Stderr pipe handles
     protected AtomicInteger stdin;
     protected AtomicInteger stdout;
@@ -59,11 +55,9 @@ public abstract class BasePosixProcess implements NuProcess {
     protected volatile int stdinWidow;
     protected volatile int stdoutWidow;
     protected volatile int stderrWidow;
-
     protected AtomicBoolean stdinClosing;
     protected boolean outClosed;
     protected boolean errClosed;
-
     private ConcurrentLinkedQueue<ByteBuffer> pendingWrites;
 
     protected BasePosixProcess(NuProcessHandler processListener) {
