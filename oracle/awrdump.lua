@@ -119,6 +119,8 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
         cur      SYS_REFCURSOR;
         @get_range@
         PROCEDURE extract_awr(p_start VARCHAR2, p_end VARCHAR2, p_inst VARCHAR2,p_start2 VARCHAR2:=NULL, p_end2 VARCHAR2:=NULL) IS
+            stim1         date;
+            etim1         date;
             stim          date;
             etim          date;
             dbid          INT;
@@ -155,17 +157,21 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
             gen_ranges(p_start,p_end,dbid,st,ed);
 
             IF p_start2 IS NOT NULL THEN
+                stim1 := stim;
+                etim1 := etim;
                 gen_ranges(p_start2,p_end2,dbid2,st2,ed2);
                 filename := 'awr_diff_' || least(st,st2) || '_' || greatest(ed,ed2) || '_' || nvl(inst, 'all') || '.html';
                 OPEN cur for
                 select 'AWR' report_type,
                         nvl(inst,'ALL') INSTANCES,
+                        to_char(stim1,'YYYY-MM-DD HH24:MI') begin_time1,
+                        to_char(etim1,'YYYY-MM-DD HH24:MI') end_time1,
                         st begin_snap1,
                         ed end_snap1,
-                        '*' "*",
+                        '|' "|",
                         to_char(stim,'YYYY-MM-DD HH24:MI') begin_time2,
-                        st2 begin_snap2,
                         to_char(etim,'YYYY-MM-DD HH24:MI') end_time2,
+                        st2 begin_snap2,
                         ed2 end_snap2
                 from    dual;
             ELSE
@@ -222,9 +228,8 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
     if not starttime2 then
         stmt=stmt:gsub(',@diff','')
     else
-        db:check_date(starttime2)
-        db:check_date(endtime2 or starttime2)
-        stmt=stmt:gsub('@diff',string.format("'%s','%s'",starttime2,endtime2 or ''))
+        starttime2,endtime2=awr.get_range(starttime2,endtime2 or starttime2,instances,container)
+        stmt=stmt:gsub('@diff',string.format("'%s','%s'",starttime2,endtime2==starttime2 and '' or endtime2))
     end
     awr.dump_report(stmt,starttime,endtime,instances,container)
 end

@@ -26,7 +26,7 @@
           FROM   dba_hist_snapshot
           WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
           AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2))
-        SELECT time,event,v "Value per Minute"
+        SELECT time sample_time,event,v "Value per Minute"
         FROM   (SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') TIME, 
                        event||case when event||' ' like '% Time %' THEN '(Seconds)' END event,
                        round(sum(v)*case when event||' ' like '%TIME %' THEN 0.01 else 1 end,2) v

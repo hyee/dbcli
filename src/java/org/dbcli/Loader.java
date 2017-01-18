@@ -1,6 +1,7 @@
 package org.dbcli;
 
 import com.naef.jnlua.LuaState;
+import com.opencsv.CSVReader;
 import com.opencsv.CSVWriter;
 import com.opencsv.ResultSetHelperService;
 import com.opencsv.SQLWriter;
@@ -58,8 +59,14 @@ public class Loader {
                 }
             });
         } catch (Exception e) {
-            e.printStackTrace();
+            getRootCause(e).printStackTrace();
         }
+    }
+
+    public static Exception getRootCause(Exception e) {
+        Throwable t = e.getCause();
+        while (t != null && t.getCause() != null) t = t.getCause();
+        return t == null ? e : new Exception(t);
     }
 
     public static void loadLua(Loader loader, String args[]) throws Exception {
@@ -167,6 +174,7 @@ public class Loader {
         String cp = System.getProperty("java.class.path");
         String stack = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
         String packageName = Loader.class.getPackage().getName() + ".FileDump";
+        //packageName="sun.jvm.hotspot.tools.jcore.ClassDump";
         String sep = File.separator;
         stack = stack.split("@")[0];
         Pattern p = Pattern.compile("[\\\\/]jre.*", Pattern.CASE_INSENSITIVE);
@@ -251,6 +259,26 @@ public class Loader {
         return ary.toArray(new Object[][]{});
     }
 
+    public String[][] fetchCSV(final String CSVFileSource, final int rows) throws Exception {
+        ArrayList<String[]> list = (ArrayList<String[]>) asyncCall(new Callable() {
+            @Override
+            public ArrayList<String[]> call() throws Exception {
+                ArrayList<String[]> ary = new ArrayList();
+                String[] line;
+                int size = 0;
+                try (CSVReader reader = new CSVReader(new FileReader(CSVFileSource))) {
+                    while ((line = reader.readNext()) != null) {
+                        ++size;
+                        if (rows > -1 && size > rows) break;
+                        ary.add(line);
+                    }
+                }
+                return ary;
+            }
+        });
+        return list.toArray(new String[][]{});
+    }
+
     public String inflate(byte[] data) throws Exception {
         try (ByteArrayInputStream bis = new ByteArrayInputStream(data); InflaterInputStream iis = new InflaterInputStream(bis);) {
 
@@ -287,8 +315,7 @@ public class Loader {
         } catch (CancellationException | InterruptedException e) {
             throw CancelError;
         } catch (Exception e) {
-            //e.printStackTrace();
-            while (e.getCause() != null) e = (Exception) e.getCause();
+            e = getRootCause(e);
             //e.printStackTrace();
             throw e;
         } finally {
@@ -364,7 +391,7 @@ public class Loader {
 
                 if (rs != null && !rs.isClosed()) rs.close();
             } catch (Exception err) {
-                //err.printStackTrace();
+                //getRootCause(err).printStackTrace();
             }
         }
     }

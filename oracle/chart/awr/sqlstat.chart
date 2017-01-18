@@ -33,7 +33,7 @@
           FROM   dba_hist_snapshot
           WHERE  end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate)
           AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V1))
-        SELECT end_time,inst,&GRP
+        SELECT end_time sample_time,inst,&GRP
         FROM (
             SELECT end_time,
                    inst,

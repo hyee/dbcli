@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.zaxxer.nuprocess.linux;
 
 import com.sun.jna.Native;
@@ -35,7 +34,6 @@ import static com.zaxxer.nuprocess.internal.LibC.*;
  */
 public class LinuxProcess extends BasePosixProcess {
     private static final boolean LINUX_USE_VFORK = Boolean.parseBoolean(System.getProperty("com.zaxxer.nuprocess.linuxUseVfork", "true"));
-
     private static ExecutorService linuxCwdExecutorService;
 
     static {

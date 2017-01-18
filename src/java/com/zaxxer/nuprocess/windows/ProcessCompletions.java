@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.zaxxer.nuprocess.windows;
 
 import com.sun.jna.Native;
@@ -36,15 +35,11 @@ public final class ProcessCompletions implements Runnable {
     private static final int LINGER_ITERATIONS;
     private static final int STDOUT = 0;
     private static final int STDERR = 1;
-
     private HANDLE ioCompletionPort;
-
     private List<WindowsProcess> deadPool;
     private BlockingQueue<WindowsProcess> pendingPool;
     private BlockingQueue<WindowsProcess> wantsWrite;
-
     private Map<Long, WindowsProcess> completionKeyToProcessMap;
-
     private volatile CyclicBarrier startBarrier;
     private volatile boolean shutdown;
     private AtomicBoolean isRunning;

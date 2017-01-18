@@ -114,10 +114,23 @@ function graph:run_sql(sql,args,cmd,file)
     env.checkerr(type(context)=="table" and type(context._sql)=="string","Invalid definition, should be a table with '_sql' property!")
     local default_attrs={
             legend='always',
-            rollPeriod=1,
+            rollPeriod=cfg.get("GRAPH_ROLLER"),
             showRoller=false,
-            height= 400,
+            height=cfg.get("GRAPH_HEIGHT"),
+            barchart=cfg.get("GRAPH_BARCHART"),
+            smoothed=cfg.get("GRAPH_SMOOTH"),
+            drawPoints=cfg.get("GRAPH_DRAWPOINTS"),
+            deviation=cfg.get("GRAPH_DEVIATION"),
+            logscale=cfg.get("GRAPH_LOGSCALE"),
+            fillGraph=cfg.get("GRAPH_FILLGRAPH"),
+            stackedGraph=cfg.get("GRAPH_STACKEDGRAPH"),
+            stepPlot=cfg.get("GRAPH_STEPPLOT"),
+            strokePattern=cfg.get("GRAPH_STROKEPATTERN"),
+            avoidMinZero=true,
             includeZero=true,
+            labelsKMB=true,
+            errorbars=true,
+            showRangeSelector=cfg.get("GRAPH_RANGER"),
             axisLabelFontSize=12,
             animatedZooms=true,
             legendFormatter="?legendFormatter?", 
@@ -149,12 +162,27 @@ function graph:run_sql(sql,args,cmd,file)
     end
 
     local sql,pivot=context._sql,context._pivot
-    --Only proceduce top 30 curves to improve the performance in case of there is 'RNK_' field
-    if sql:match('%WRNK_%W') and not sql:find('%WRND_%W') then
-        sql='SELECT * FROM (SELECT /*+NO_NOMERGE(A)*/ A.*,dense_rank() over(order by RNK_ desc) RND_ FROM (\n'..sql..'\n) A) WHERE RND_<=30 ORDER BY 1,2'
+    local command_type=self.db.get_command_type(sql)
+    if not command_type or not env._CMDS[command_type:upper()] then
+        local found,csv=os.exists(sql,"csv")
+        env.checkerr(found,"Cannot find file "..sql)
+        cfg.set("CSVSEP",env.ask("Please define the field separator",'^[^"]$',','))
+        local result=loader:fetchCSV(csv,-1)
+        rows={}
+        for i=1,#result do
+            rows[i]={}
+            for j=1,#result[1] do
+                rows[i][j]=tostring(result[i][j])
+            end
+        end
+    else    
+        --Only proceduce top 30 curves to improve the performance in case of there is 'RNK_' field
+        if sql:match('%WRNK_%W') and not sql:find('%WRND_%W') then
+            sql='SELECT * FROM (SELECT /*+NO_NOMERGE(A)*/ A.*,dense_rank() over(order by RNK_ desc) RND_ FROM (\n'..sql..'\n) A) WHERE RND_<=30 ORDER BY 1,2'
+        end
+        rs=self.db:exec(sql,args)
+        rows=self.db.resultset:rows(rs,-1)
     end
-
-    rs=self.db:exec(sql,args)
     local title,csv,xlabels,values,collist,temp=string.char(0x1),{},{},table.new(10,255),{},{}
     
     local function getnum(val)
@@ -167,10 +195,9 @@ function graph:run_sql(sql,args,cmd,file)
         return not (title=="RNK_" or title=="RND_" or title=="HIDDEN_" or title:match('^%W*$')) and true or false
     end
 
-    local counter,range_begin,range_end=-1
-    rows=self.db.resultset:rows(rs,-1)
+    local counter,range_begin,range_end,x_name=-1
     local head,cols=table.remove(rows,1)
-    local maxaxis=cfg.get('ChartSeries')
+    local maxaxis=cfg.get('Graph_Series')
     table.sort(rows,function(a,b) return a[1]<b[1] end)
     --print(table.dump(rows))
     if pivot==nil then
@@ -209,6 +236,8 @@ function graph:run_sql(sql,args,cmd,file)
     local start_value=pivot and 3 or 2
 
     head,cols={},0
+    x_name=rows[1][1]
+
     while true do
         counter=counter+1
         local row=rows[counter+1]
@@ -234,6 +263,7 @@ function graph:run_sql(sql,args,cmd,file)
 
         if counter>0 and row[1]~="" then
             local x=row[1]
+
             if not range_begin then
                 if tonumber(x) then
                     range_begin,range_end=9E9,0
@@ -369,23 +399,30 @@ function graph:run_sql(sql,args,cmd,file)
 
     local replaces={
         ['@GRAPH_TITLE']=default_attrs.title or "",
-        ['@TIME_RANGE']=default_attrs._range or ('(Range:  '..tostring(range_begin)..' ~~ '..tostring(range_end)..')')
+        ['@LEGEND_WIDTH']=cfg.get("GRAPH_LEGENDWIDTH")..'px'
     }
+
+    local title
+    title,default_attrs.title=default_attrs.title or "",nil
+    x_name=x_name..': '..range_begin..' -- '..range_end
 
     for k,v in pairs(default_attrs) do
         if k:sub(1,1)=='_' then
             default_attrs[k]=nil
         end
     end
-
-    default_attrs.title=nil
-
+    default_attrs.xlabel=x_name
     for i=1,self.dataindex do
         replaces['@GRAPH_INDEX']=i
         default_attrs.ylabel=ylabels[i] or default_ylabel or charts[i]
         default_attrs._avgs=self.data[i][2]
+        default_attrs.title=title
         if default_attrs.ylabel then
-            default_attrs.title="Unit: "..default_attrs.ylabel
+            if title=="" then 
+                default_attrs.title="Unit: "..default_attrs.ylabel
+            elseif self.dataindex>1 then 
+                default_attrs.title=title.."<div class='dygraph-title-l2'>Unit: "..default_attrs.ylabel..'</div>'
+            end
         end
         local attr=json.encode(default_attrs):gsub("@INDEX",i):gsub('"%?([^"]+)%?"','%1')
         local graph_unit=cr:replace('@GRAPH_ATTRIBUTES',attr,true)
@@ -404,20 +441,21 @@ function graph:run_sql(sql,args,cmd,file)
     os.shell(file)
 end
 
-local function set_param(name,value)
-    return tonumber(value)
-end
-
-function graph:run_stmt(option,sql)
-    env.checkhelp(option)
+function graph:run_stmt(...)
+    local args={...}
+    env.checkhelp(args[1])
+    sql=args[#args]
+    table.remove(args,#args)
     local fmt={}
-    if option:sub(1,1)=='-' then
-        option=option:sub(2):lower()
-        if option~='y' and option~='n' and option~='m' then env.checkhelp(nil) end
-        fmt._pivot=option=='y' and true or option=='m' and 'mixed'
-        if option=='n' then fmt._pivot=false end
-    else
-        sql=option
+    for index,option in ipairs(args) do
+        if option:sub(1,1)=='-' then
+            option=option:sub(2):lower()
+            if option~='y' and option~='n' and option~='m' then env.checkhelp(nil) end
+            fmt._pivot=option=='y' and true or option=='m' and 'mixed'
+            if option=='n' then fmt._pivot=false end
+        else
+            fmt.title=option
+        end
     end
     fmt._sql=sql
     return self:run_sql(fmt,{},'last_chart')
@@ -425,14 +463,27 @@ end
 
 function graph:__onload()
     local help=[[
-    Generate graph chart regarding to the input SQL. Usage: @@NAME [-n|-p|-m] <Select statement>
+    Generate graph chart regarding to the input SQL. Usage: @@NAME [-n|-p|-m] [Graph Title] {<Select Statement>|<CSV file>}
     Options:
         -y: the output fields are "<date> <label> <values...>"
         -n: the output fields are "date <label-1-value> ... <label-n-value>"
         -m: mix mode,  the output fields are "<date> <label> <sub-label values...>"
     If not specify the option, will auto determine the layout based on the outputs.]]
-    env.set_command(self,self.ext_command, help,self.run_stmt,'__SMART_PARSE__',3)
-    cfg.init("ChartSeries",15,set_param,"core","Number of top series to be show in graph chart(see command 'chart')",'1-30')
+    env.set_command(self,self.ext_command, help,self.run_stmt,'__SMART_PARSE__',4)
+    cfg.init("Graph_Series",12,nil,"graph","Number of top series to be show in graph chart",'1-30')
+    cfg.init("Graph_logscale",false,nil,"graph","Enable/disable the default graph log-scale option",'true/false')
+    cfg.init("Graph_smooth",false,nil,"graph","Enable/disable the default graph smooth option",'true/false')
+    cfg.init("Graph_deviation",false,nil,"graph","Enable/disable the default graph deviation option",'true/false')
+    cfg.init("Graph_ranger",false,nil,"graph","Enable/disable the default graph range-selector option",'true/false')
+    cfg.init("Graph_fillgraph",false,nil,"graph","Enable/disable the default graph fill-graph option",'true/false')
+    cfg.init("Graph_stackedgraph",false,nil,"graph","Enable/disable the default graph stacked-graph option",'true/false')
+    cfg.init("Graph_stepplot",false,nil,"graph","Enable/disable the default graph step-plot option",'true/false')
+    cfg.init("Graph_BarChart",false,nil,"graph","Enable/disable the default graph bar-chart option",'true/false')
+    cfg.init("Graph_strokepattern",false,nil,"graph","Enable/disable the default graph stroke-pattern option",'true/false')
+    cfg.init("Graph_drawpoints",false,nil,"graph","Enable/disable the default graph draw-points option",'true/false/indeterminate')
+    cfg.init("Graph_roller",1,nil,"graph","Set the default graph roll period",'1-20')
+    cfg.init("Graph_height",400,nil,"graph","Set the default graph height(in px)",'50-1000')
+    cfg.init("Graph_legendWidth",220,nil,"graph","Set the default graph legend width(in px)",'50-400')
 end
 
 return graph

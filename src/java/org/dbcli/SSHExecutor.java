@@ -135,7 +135,7 @@ public class SSHExecutor {
             if (shell != null) shell.disconnect();
             if (session != null) session.disconnect();
         } catch (Exception e) {
-            //e.printStackTrace();
+            //Loader.getRootCause(e).printStackTrace();
         }
     }
 
@@ -215,7 +215,6 @@ public class SSHExecutor {
     }
 
     class SSHUserInfo implements UserInfo {
-
         private String passphrase = null;
 
         public SSHUserInfo(String passphrase) {
@@ -253,7 +252,6 @@ public class SSHExecutor {
         StringBuilder sb = new StringBuilder(128);
         char lastChar;
         Pattern p = Pattern.compile("\33\\[[\\d\\;]+[mK]");
-
         boolean ignoreMessage;
 
         public Printer() {

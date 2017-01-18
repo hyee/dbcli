@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.zaxxer.nuprocess.windows;
 
 import com.sun.jna.LastErrorException;
@@ -41,11 +40,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class WindowsProcess implements NuProcess {
     public static final int PROCESSOR_THREADS;
-
     private static final boolean IS_SOFTEXIT_DETECTION;
-
     private static final int BUFFER_SIZE = 65536;
-
     private static final ProcessCompletions[] processors;
     private static final String namedPipePathPrefix;
     private static final AtomicInteger namedPipeCounter;
@@ -72,7 +68,6 @@ public final class WindowsProcess implements NuProcess {
     private volatile boolean inClosed;
     private volatile boolean outClosed;
     private volatile boolean errClosed;
-
     private PROCESS_INFORMATION processInfo;
 
     static {

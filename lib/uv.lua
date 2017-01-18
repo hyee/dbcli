@@ -23,12 +23,13 @@ end
 uv.event,uv.fs_event=uv.fs_event,nil
 
 function os.exists(file,ext)
+    file=env.resolve_file(file)
     local attr=uv.fs.stat(file)
     if not attr and type(ext)=="string" then
         file=file..'.'..ext
         attr=uv.fs.stat(file)
     end
-    return attr and attr.type,env.join_path(file)
+    return attr and attr.type,file
 end
 
 local function noop() end

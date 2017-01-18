@@ -132,7 +132,7 @@ var u=document.createElement("div");u.style.fontSize=t.getOption("axisLabelFontS
 
     </style> 
     <style type="text/css">
-    .divLabel {width:200px; font-size:11px;vertical-align:bottom}
+    .divLabel {width:@LEGEND_WIDTH; font-size:11px;vertical-align:bottom}
     .divLabel th {font-size:12px;background-color:#2F2F4F;color:white}
     .dygraph-roller {width: 15px;}
     .dygraph-legend-line {border-bottom-width: 3px;}
@@ -141,10 +141,25 @@ var u=document.createElement("div");u.style.fontSize=t.getOption("axisLabelFontS
       font-size: 18px;
       text-shadow: gray -2px 2px 2px;  /* (offsets are in a rotated frame) */
     }
+    
+    .dygraph-xlabel {
+      /* This rule only applies to the y-axis label */
+      font-size: 12px;
+      font-family:  "Times New Roman"
+    }
+    
+    .dygraph-title {
+      /* This rule only applies to the chart title */
+      font-size: 24px;
+      color:#2f2f4f;
+      font-family:  "Times New Roman"
+    }
+    
+    .dygraph-title-l2 {font-size:14px;text-shadow:none;block:inline-block}
     </style>
     <script type="text/javascript">
-    var _options = ['plotter', 'smoothed', 'showRoller', 'drawPoints', 'deviation', 'logscale', 'fillGraph', 'stackedGraph', 'stepPlot', 'strokePattern', 'csv', 'axis'];
-    var _optionNames = ['Bar Chart', 'Smooth', 'Show Roller', 'Draw Points', 'Deviation(%)', 'Log Scale', 'Fill Graph', 'Stacked Graph', 'Step Plot', 'Stroke Pattern', 'CSV', 'Choose Axis'];
+    var _options = [/*'showRangeSelector',*/'smoothed', 'showRoller', 'drawPoints', 'deviation', 'logscale', 'fillGraph', 'stackedGraph', 'stepPlot', 'strokePattern','barchart', 'csv', 'axis'];
+    var _optionNames = [/*'Ranger',*/'Smooth', 'Show Roller', 'Draw Points', 'Deviation(%)', 'LogScale', 'FillGraph', 'StackedGraph', 'StepPlot', 'StrokePattern','BarChart', 'CSV', 'ChooseAxis'];
     var _graph;
     var defaultPlotter = null;
     var _graphs = [];
@@ -197,17 +212,21 @@ var u=document.createElement("div");u.style.fontSize=t.getOption("axisLabelFontS
         
     }
     
-    function reOptions(g, enabled, options) {
+    function reOptions(g, options) {
         setCustomCircle(g,options);
         var axes = g.getOption("axes");
         var avgs = g.getOption("_avgs");
         var data = g.rawData_;
         var rows = data.length;
         var cols = data[0].length;
+
+        if(options['barchart']==true) options['plotter']=BarPlotter;
+        else if(options['smoothed']==true) options['plotter']=smoothPlotter;
+        else if(options['barchart']==false) options['plotter']=defaultPlotter;
         
         if(!axes.x) axes.x={};
         if(!axes.y) axes.y={};
-        options.deviation = enabled;
+        var enabled = options.deviation;
         /*
         if(axes.x.ticker==Dygraph.dateTicker) {
             axes.x.ticker=function(a, b, pixels, opts, dygraph, vals) {
@@ -312,12 +331,13 @@ var u=document.createElement("div");u.style.fontSize=t.getOption("axisLabelFontS
             }
             g.rawData_ = axes.y._adj;
             options.ylabel = "Deviation %(Value/Average)";
-            options.title = "Unit: " + options.ylabel;
+            options.title = axes.y._title.replace(/Unit: [^<]+/,"Unit: " + options.ylabel);
         } else {
             g.rawData_ = axes.y._data;
             options.ylabel = axes.y._ylabel;
             options.title = axes.y._title;
         }
+        
         g.updateOptions(options, false);
         return options;
     }
@@ -329,10 +349,10 @@ var u=document.createElement("div");u.style.fontSize=t.getOption("axisLabelFontS
             options += '<input type="checkbox" id="' + id + '" onclick="javascript:update_options(' +
                 index + ')"/><label for="' + id + '">' + _optionNames[i] + '</label>&nbsp;&nbsp;';
         }
-        var str = '<table style="width:98%"><tr><td><div id="divShow' + index + '"></div></td><td width=1 valign="top" style="padding-top:30px"><div><div class="divLabel" id="divLabel' + index + '">\n' +
-            '</div></div><div id="ShowAxis' + index + '" style="overflow:hidden"><select style="width:200px;overflow:hidden" size=15 multiple="multiple" onchange="javascript:update_options(' + index + ')">'
+        var str = '<table style="width:98%" id="tabGraph'+index+'"><tr><td><div id="divShow' + index + '"></div></td><td width=1 valign="top" style="padding-top:30px"><div><div class="divLabel" id="divLabel' + index + '">\n' +
+            '</div></div><div id="ShowAxis' + index + '" style="overflow:hidden"><select style="width:@LEGEND_WIDTH;overflow:hidden" size=15 multiple="multiple" onchange="javascript:update_options(' + index + ')">'
         str += '</select></div></td></tr></table>' +
-            '<div style="text-align: right;font-size:12px;margin-right:200px">' + options + '</div>';
+            '<div style="text-align: center;font-size:12px;margin-right:@LEGEND_WIDTH">' + options + '</div>';
         document.write(str);
     };
 
@@ -348,16 +368,22 @@ var u=document.createElement("div");u.style.fontSize=t.getOption("axisLabelFontS
         for (var i = 0; i < setNames.length; i++) str += '<option selected="selected" value="' + (-i) + '">' + setNames[i] + "</option>";
         select.innerHTML = str + select.innerHTML;
         select.parentNode.style.display = 'none';
+        var options={};
         for (var i = 0; i < _options.length; i++) {
             var val = _graph.getOption(_options[i]);
-            if (_options[i] == 'plotter' && val != BarPlotter && val != true) val = false;
-            if (_options[i] == 'smoothed' && val != smoothPlotter && val != true) val = false;
-            var res = (typeof val == 'undefined' || val == null || String(val) == 'false') ? false : true;
             var obj = document.getElementById(_options[i] + index);
+            if (_options[i] == 'barchart' && val != BarPlotter && val != true) val = false;
+            if (_options[i] == 'smoothed' && val != smoothPlotter && val != true) val = false;
+            var res = (!val|| String(val) == 'false') ? false : true;
             obj.checked = res;
+            if (_options[i] == 'drawPoints' && val=="indeterminate") {
+                obj.indeterminate=true;
+                res="indeterminate";
+            }
             if (res == true) obj.nextSibling.style.color = 'red';
-            if (_options[i] == "deviation") reOptions(_graph, res, {});
+            options[_options[i]]=res;
         }
+        reOptions(_graph, options);
     };
 
     function update_options(index) {
@@ -365,13 +391,11 @@ var u=document.createElement("div");u.style.fontSize=t.getOption("axisLabelFontS
         var opt = {};
         var axis = document.getElementById("ShowAxis" + index).firstChild;
         var show = document.getElementById('divShow' + index);
-        opt['plotter'] = defaultPlotter = document.getElementById('smoothed' + index).checked ? smoothPlotter : null;
         for (var i = 0; i < _options.length; i++) {
             var obj = document.getElementById(_options[i] + index);
             obj.nextSibling.style.color = obj.checked ? 'red' : "inherit";
             opt[_options[i]] = obj.checked;
             if (_options[i] == "strokePattern") opt[_options[i]] = opt[_options[i]] ? Dygraph.DASHED_LINE : null;
-            else if (_options[i] == 'plotter') opt[_options[i]] = opt[_options[i]] ? BarPlotter : defaultPlotter;
             else if(_options[i] == 'drawPoints') {
                 var enabled=obj.checked;
                 if(enabled==obj.prevstat) {
@@ -384,7 +408,7 @@ var u=document.createElement("div");u.style.fontSize=t.getOption("axisLabelFontS
                 obj.prevstat=enabled;
             } else if (_options[i] == 'csv') {
                 document.getElementById('divNoshow' + index).style.display = opt[_options[i]] ? "" : "none";
-                show.style.display = opt[_options[i]] ? "none" : "";
+                document.getElementById('tabGraph' + index).style.display = opt[_options[i]] ? "none" : "";
             } else if (_options[i] == 'axis') {
                 axis.parentNode.style.display = opt[_options[i]] == true ? "" : "none";
                 document.getElementById('divLabel' + index).parentNode.style.display = opt[_options[i]] == true ? "none" : "";
@@ -396,7 +420,7 @@ var u=document.createElement("div");u.style.fontSize=t.getOption("axisLabelFontS
             vs[i] = axis.options[i].selected
         }
         opt.visibility = vs;
-        reOptions(_graph, opt['deviation'], opt);
+        reOptions(_graph, opt);
     };
 
     function darkenColor(colorStr) {
@@ -450,6 +474,3 @@ var u=document.createElement("div");u.style.fontSize=t.getOption("axisLabelFontS
     }
   </script>
   </head><body resize="doResize()">
-  <div style='width:100%;text-align:center;font-size:36px;font-weight:bold'>@GRAPH_TITLE<br/>
-  <div style='width:100%;text-align:center;font-size:12px;font-weight:normal'>@TIME_RANGE</div></div><br/>
-  

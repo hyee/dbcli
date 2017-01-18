@@ -19,7 +19,7 @@
           FROM   dba_hist_snapshot
           WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
           AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) 
-        SELECT time,event,V1 "Logical read bytes/Minute", V2 "Physical read bytes/Minute", V3 "Physical write bytes/Minute", V4 "GC CR+CU bytes/Minute"
+        SELECT time sample_time,event,V1 "Logical read bytes/Minute", V2 "Physical read bytes/Minute", V3 "Physical write bytes/Minute", V4 "GC CR+CU bytes/Minute"
         FROM   (SELECT to_char(end_time, 'YYYY-MM-DD HH24:MI') TIME,
                        event,
                        sum(v1) v1,
