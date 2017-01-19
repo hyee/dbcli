@@ -835,8 +835,7 @@ function db_core.check_completion(cmd,other_parts)
     local match,typ,index=env.COMMAND_SEPS.match(other_parts)
     obj=obj or ""
     if index==0 then return false,other_parts end
-    if index==2 then return true,match end
-    if db_core.source_objs[cmd] or db_core.source_objs[obj:upper()] then
+    if index==1 and (db_core.source_objs[cmd] or db_core.source_objs[obj:upper()]) then
         typ=type(db_core.source_obj_pattern)
         local patterns={}
         if typ=='table' then 
@@ -846,11 +845,13 @@ function db_core.check_completion(cmd,other_parts)
         end
         for _,pattern in ipairs(patterns) do
             if match:match(pattern) then
+                if action=="WITH" then match=match:gsub('[%s;]+$','') end
                 return true,match
             end
         end
         return false,other_parts
     end
+    if action=="WITH" then match=match:gsub('[%s;]+$','') end
     return true,match
 end
 
