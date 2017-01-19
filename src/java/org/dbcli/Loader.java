@@ -250,13 +250,13 @@ public class Loader {
     public Object[][] fetchResult(final ResultSet rs, final int rows) throws Exception {
         if (rs.getStatement().isClosed() || rs.isClosed()) throw CancelError;
         setCurrentResultSet(rs);
-        ArrayList<Object[]> ary = (ArrayList) asyncCall(new Callable() {
+        return (Object[][]) asyncCall(new Callable() {
             @Override
             public Object call() throws Exception {
-                return new ResultSetHelperService(rs).fetchRows(rows);
+                ResultSetHelperService helper=new ResultSetHelperService(rs);
+                return (rows>=0&&rows<=10000)?helper.fetchRows(rows):helper.fetchRowsAsync(rows);
             }
         });
-        return ary.toArray(new Object[][]{});
     }
 
     public String[][] fetchCSV(final String CSVFileSource, final int rows) throws Exception {
