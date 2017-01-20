@@ -115,7 +115,7 @@ local default_color={
     ['F']={'HBWHT','HIW'},
 }
 
-ansi.ansi_mode=os.getenv("ANSICON_DEF")
+ansi.ansi_mode=os.getenv("ANSICON_DEF") or "jline"
 local console_color=os.getenv("CONSOLE_COLOR")
 if console_color then
     ansi.ansi_default=console_color
@@ -125,12 +125,9 @@ if console_color then
     end
 end
 
-if not ansi.ansi_mode then
-    ansi.ansi_mode="jline"
-elseif os.getenv("ANSICOLOR")=="off" then
+if os.getenv("ANSICOLOR")=="off" then
     isAnsiSupported,enabled=false,false
 else
-    ansi.ansi_mode="ansicon"
     isAnsiSupported=true
 end
 
@@ -332,6 +329,7 @@ function ansi.test_text(str)
         rawprint(env.space.."For the color settings defined in command 'set', use '<code1>[;<code2>[...]]' format")
         rawprint(env.space.."Run 'ansi <text>' to test the color, i.e.: ansi $HIR$ Hello $HIC$$HBGRN$ ANSI!")
         rawprint(env.space.."Or SQL:  select '$HIR$'||owner||'$HIB$.$NOR$'||object_name obj,a.* from all_objects a where rownum<10;")
+        rawprint(env.space.."Use 'set color' to adjust the color preferences of the console.")
         return
     end
    

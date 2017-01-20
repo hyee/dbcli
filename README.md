@@ -31,10 +31,12 @@ It is not intended to support all features of the existing CLI utilities that em
 * Easily switch to the db built-in cli utility
 
 
-Build and Configuration
+Download
 -----------------------
-DBCLI does not require compile or installation, but depends on JRE 1.7+. Click `Download ZIP`, extract and use.<br/> 
-Branch `With-JRE` contains the shrinked                 JRE bundle, if you don't have JRE installed, you may switch to that branch to download. Due to the region and charset differences, this JRE bundle is not guaranteed to work well.<br/>
+DBCLI does not require compile or installation, but depends on JRE 1.7+. Click `Download ZIP`,extract and use. Or you can also download from the published releases<br/> 
+Branch `With-JRE` contains the shrinked JRE bundle, if you don't have JRE installed,
+you may switch to that branch to download. Due to the region and charset differences, this JRE bundle is not guaranteed to work well.<br/>
+
 ###Configure terminal window
 To avoid the word wrap in the terminal window which affects the print layout, following settings are recommended in Windows command window:
 
@@ -72,11 +74,9 @@ For example, `set -p platform db2`
 Without the `-p` option, the change only takes affect on current console window. 
 Type `set platform` to see all available options.
 
-Quick Start
+Command Overview
 -----------------------
 Below are some common uses of the utility:
-
-
     1. "conn" or "connect" to connect to the database with or without installing Oracle client, and "reconn"  to re-connect.
     2. "login" command to connect to the db without password via the account that has been connected before. 
     3. Execute SQL statements which should match the database syntax, similar to SQL*Plus.
@@ -86,6 +86,7 @@ Below are some common uses of the utility:
     7. 'q' or CTRL + D or CTRL + C to abort running command
     8. "help" or "help -a" to see other available commands
     9. 'chart' or 'ch' command to generate performance charts based on customize configs
+For more information of the available commands refer to page [Command Overview](docs/command.md)`
 
 Command Types
 -----------------------
@@ -126,8 +127,7 @@ About ANSI Color Escapes
 
 For lower Windows versions, `ANSICON` supports more ANSI escapes features than JLine, especially when running bash commands(i.e.: top) via SSH.
 
-If you have concern on `ANSICON`, please remove it from bin, and edit `data\init.cfg` to add line `set ANSICON_CMD=`
-
+`ANSICON` defaults to be excluded from the release, if you like to try the feature, download from the `ansicon` branch and override the local `lib` directory.
 
 Customize Commands
 ------------------------------------
@@ -167,3 +167,4 @@ Below are the common interfaces that can be used in the script:
 You may also:
 * Execute `help -a` or `set -a` or `event` to see how those interfaces are used in other scripts
 * Execute `help -e env[.module] 2` to see the available interfaces, i.e.: `help -e env.oracle 2`
+
