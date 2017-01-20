@@ -86,7 +86,7 @@ Below are some common uses of the utility:
     7. 'q' or CTRL + D or CTRL + C to abort running command
     8. "help" or "help -a" to see other available commands
     9. 'chart' or 'ch' command to generate performance charts based on customize configs
-For more information of the available commands refer to page [Command Overview](docs/command.md)`
+For more information of the available commands refer to page [Command Overview](../docs/command.md)
 
 Command Types
 -----------------------
@@ -117,7 +117,7 @@ Below is the list:
     JNA         : (LGPL)   https://github.com/java-native-access/jna
     NuProcess   : (Apache) https://github.com/brettwooldridge/NuProcess
     Luv(libuv)  : (Apache) https://github.com/luvit/luv
-    ANSICON     : (ZLIB)   https://github.com/adoxa/ansicon
+    ANSICON     : (ZLIB)   https://github.com/adoxa/ansicon (Optional)
 
 Besides, some SQL scripts come from internet.
 
