@@ -77,6 +77,7 @@ Type `set platform` to see all available options.
 Command Overview
 -----------------------
 Below are some common uses of the utility:
+
     1. "conn" or "connect" to connect to the database with or without installing Oracle client, and "reconn"  to re-connect.
     2. "login" command to connect to the db without password via the account that has been connected before. 
     3. Execute SQL statements which should match the database syntax, similar to SQL*Plus.
@@ -86,6 +87,7 @@ Below are some common uses of the utility:
     7. 'q' or CTRL + D or CTRL + C to abort running command
     8. "help" or "help -a" to see other available commands
     9. 'chart' or 'ch' command to generate performance charts based on customize configs
+    
 For more information of the available commands refer to page [Command Overview](../docs/command.md)
 
 Command Types
