@@ -135,9 +135,10 @@ function oracle:connect(conn_str)
     for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container'} do self.props[v]="#VARCHAR" end
     local succ,err=pcall(self.exec,self,[[
         DECLARE
-            vs  PLS_INTEGER := dbms_db_version.version;
-            ver PLS_INTEGER := sign(vs-9);
-            re  PLS_INTEGER := dbms_db_version.release;
+            vs  PLS_INTEGER  := dbms_db_version.version;
+            ver PLS_INTEGER  := sign(vs-9);
+            re  PLS_INTEGER  := dbms_db_version.release;
+            sv  VARCHAR2(200):= sys_context('userenv','service_name');
         BEGIN
             EXECUTE IMMEDIATE 'alter session set nls_date_format=''yyyy-mm-dd hh24:mi:ss''';
             EXECUTE IMMEDIATE 'alter session set statistics_level=all';
@@ -160,8 +161,8 @@ function oracle:connect(conn_str)
                    null con_name,
             $END   
                    sys_context('userenv', 'isdba') isdba,
-                   sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.') service_name,
-                   decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY',' ','PHYSICAL STANDBY',' (Standby)')) END
+                   case when sv like 'SYS%' then (select global_name from global_name) else sv end service_name,
+                   decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY',' ','PHYSICAL STANDBY',' (Standby)>')) END
             INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :container, :isdba, :service_name,:db_role
             FROM   nls_Database_Parameters
             WHERE  parameter = 'NLS_CHARACTERSET';
@@ -183,6 +184,7 @@ function oracle:connect(conn_str)
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
     else
         if not prompt or prompt:find('[:/%(%)]') then prompt=self.props.service_name end
+        prompt=prompt:match('([^%.]+)')
         self.conn_str=self.conn_str:gsub('(:%d+)([:/]+)([%w%.$#]+)$',function(port,sep,sid)
             if sep==':' or sep=='//' then
                 return port..'/'..self.props.service_name..'/'..sid
@@ -507,7 +509,8 @@ function oracle:onload()
     add_default_sql_stmt('update','delete','insert','merge','truncate','drop','flashback')
     add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge','audit')
     set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
-    set_command(self,{"select","with"},   default_desc,        self.query     ,true,1,true)
+    set_command(self,"select",   default_desc,        self.query     ,true,1,true)
+    set_command(self,"with",   default_desc,        self.query     ,self.check_completion,1,true)
     set_command(self,{"execute","exec","call"},default_desc,self.run_proc,false,2,true)
     set_command(self,{"declare","begin"},  default_desc,  self.exec  ,self.check_completion,1,true)
     set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)
