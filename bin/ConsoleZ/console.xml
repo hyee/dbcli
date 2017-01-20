@@ -1,6 +1,6 @@
-<?xml version="1.0"?>
-<settings>
-	<console change_refresh="10" refresh="100" rows="200" columns="200" buffer_rows="9999" buffer_columns="1000" shell="" init_dir="" start_hidden="0" save_size="0" background_text_opacity="255">
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<settings lang="auto" icon_size="0">
+	<console shell="" init_dir="" refresh="100" change_refresh="10" rows="200" columns="200" buffer_rows="9999" buffer_columns="1000" start_hidden="0" save_size="0">
 		<colors background_text_opacity="255">
 			<color id="0" r="0" g="0" b="0"/>
 			<color id="1" r="0" g="0" b="128"/>
@@ -22,34 +22,30 @@
 		<cursor style="0" r="255" g="255" b="255"/>
 		<background type="0" r="0" g="0" b="0">
 			<image file="" relative="0" extend="0" position="0">
-				<tint opacity="0" r="0" g="0" b="0"/>
-			</image>
-		</background>
-	</console>
+				<tint opacity="0" r="0" g="0" b="0"/></image></background></console>
 	<appearance>
-		<font name="Lucida Console" size="10" bold="0" italic="0" smoothing="2" bold_intensified="0" italic_intensified="0" extra_width="0" ligature="0">
-			<color use="0" r="0" g="255" b="0"/>
-		</font>
-		<window title="ConsoleZ" icon="" use_tab_icon="1" use_console_title="0" show_cmd="1" show_cmd_tabs="1" use_tab_title="1" trim_tab_titles="30" trim_tab_titles_right="0" main_title_format="?U([%u] )?N({%u} )%m?s( - %s)" tab_title_format="?s( %s):( DBCLI - Not Connected)"/>
-		<controls show_menu="1" show_toolbar="1" show_statusbar="0" show_tabs="1" hide_single_tab="0" show_scrollbars="1" flat_scrollbars="0" tabs_on_bottom="0" hide_tab_icons="1" show_searchbar="1"/>
-		<styles caption="1" resizable="1" taskbar_button="1" border="0" inside_border="2" tray_icon="1" quake_like="0" jumplist="1" integrated_ime="1" quake_animation_time="300" hide_when_inactive="0" per_monitor_dpi="0">
+		<font name="Lucida Console" size="10" extra_width="0" bold="0" italic="0" smoothing="2" bold_intensified="0" italic_intensified="0" ligature="0">
+			<color use="0" r="0" g="255" b="0"/></font>
+		<window title="ConsoleZ" icon="" main_title_format="?U([%u] )?N({%u} )%m?s( - %s)" tab_title_format="?s( %s):( DBCLI - Not Connected)" use_tab_icon="1" use_tab_title="1" trim_tab_titles="30" trim_tab_titles_right="0"/>
+		<fullscreen start_in_fullscreen="0" fullscreen_monitor="0">
+			<controls show_menu="1" show_toolbar="1" show_searchbar="1" show_statusbar="1" show_tabs="1" hide_single_tab="1" tabs_on_bottom="0" hide_tab_icons="0" hide_tab_close_button="0" show_scrollbars="1"/></fullscreen>
+		<controls show_menu="1" show_toolbar="1" show_searchbar="1" show_statusbar="0" show_tabs="1" hide_single_tab="0" tabs_on_bottom="0" hide_tab_icons="1" hide_tab_close_button="0" show_scrollbars="1"/>
+		<styles caption="1" resizable="1" taskbar_button="1" border="0" inside_border="2" tray_icon="1" quake_like="0" quake_animation_time="300" jumplist="1" integrated_ime="1" hide_when_inactive="0" per_monitor_dpi="0">
 			<selection_color r="128" g="128" b="128"/>
 			<highlight_color r="191" g="191" b="191"/></styles>
-		<position x="0" y="0" dock="0" snap="-1" z_order="0" save_position="0" w="1000" h="700" save_size="0" save_state="0" state="2"/>
-		<transparency type="0" active_alpha="206" inactive_alpha="255" r="0" g="0" b="0"/>
-		<fullscreen start_in_fullscreen="0" fullscreen_monitor="0"><controls show_menu="1" show_toolbar="1" show_searchbar="1" show_statusbar="1" show_tabs="1" hide_single_tab="1" tabs_on_bottom="0" hide_tab_icons="0" show_scrollbars="1"/></fullscreen>
-	</appearance>
+		<position x="0" y="0" save_position="0" w="1000" h="700" save_size="0" z_order="0" dock="0" snap="-1" save_state="0" state="2"/>
+		<transparency type="0" active_alpha="206" inactive_alpha="255" r="0" g="0" b="0"/></appearance>
 	<behavior>
-		<copy_paste copy_on_select="1" clear_on_copy="0" no_wrap="1" trim_spaces="1" copy_newline_char="0" sensitive_copy="1" include_left_delimiter="0" include_right_delimiter="0" left_delimiters=" ([" right_delimiters=" )]" eol_spaces="1" rtf="1"/>
+		<copy_paste copy_on_select="1" clear_on_copy="0" sensitive_copy="1" no_wrap="1" eol_spaces="1" trim_spaces="1" rtf="1" copy_newline_char="0" include_left_delimiter="0" include_right_delimiter="0" left_delimiters=" ([" right_delimiters=" )]"/>
 		<scroll page_scroll_rows="0"/>
 		<tab_highlight flashes="3" stay_highligted="1"/>
-		<close allow_closing_last_view="0" confirm_closing_multiple_views="1"/>
+		<environment inherit="1" sync="1"/>
 		<focus follow_mouse="0"/>
 		<instance allow_multi="0"/>
 		<clone use_current_dir="0"/>
 		<search match_case="0" match_whole_word="0"/>
 		<runas use_credprov="1"/>
-	</behavior>
+		<close allow_closing_last_view="0" exit_on_closing_of_last_tab="1" confirm_closing_multiple_views="1" save_workspace_on_exit="0"/></behavior>
 	<hotkeys use_scroll_lock="1">
 		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="83" command="settings"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="112" command="help"/>
@@ -145,12 +141,15 @@
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="findnext"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="findprev"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="switchtransparency"/>
+		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="alwaysontop"/>
 		<hotkey ctrl="1" shift="1" alt="0" extended="0" code="112" command="dumpbuffer"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="cmdMenu1"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="cmdMenu2"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="cmdMenu3"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="cmdSnippets"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="ctrlC"/>
+		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="wspload"/>
+		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="wspsave"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="externalcmd1"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="externalcmd2"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="externalcmd3"/>
@@ -163,6 +162,8 @@
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="externalcmd10"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="activate" win="0"/>
 	</hotkeys>
+	<external_commands>
+	</external_commands>
 	<mouse>
 		<actions>
 			<action ctrl="0" shift="0" alt="0" button="2" name="copy"/>
@@ -175,8 +176,8 @@
 			<action ctrl="0" shift="0" alt="0" button="0" name="menu2"/>
 			<action ctrl="0" shift="0" alt="0" button="0" name="menu3"/>
 			<action ctrl="0" shift="0" alt="0" button="0" name="snippets"/>
-		</actions>
-	</mouse>
+		</actions></mouse>
+	<snippets dir=""/>
 	<tabs>
 		<tab title="dbcli" use_default_icon="0">
 			<console shell="..\..\dbcli.bat" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
@@ -208,9 +209,12 @@
 				<color id="13" r="255" g="0" b="255"/>
 				<color id="14" r="255" g="255" b="0"/>
 				<color id="15" r="255" g="255" b="255"/>
-			</colors>
+		</colors>
 		</tab>
-	</tabs>
-	<external_commands>
-</external_commands>
-	<snippets dir=""/></settings>
+		<tab title="cmd" use_default_icon="0">
+			<console shell="" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
+		</tab>
+		<tab title="PowerShell" use_default_icon="1">
+			<console shell="powershell" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
+		</tab>
+	</tabs></settings>

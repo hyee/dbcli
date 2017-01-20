@@ -103,7 +103,7 @@ Command Overview
 |||`more`|Similar to the Unix `more` command but only supports piping from other command
 |||`tee`|Similar to the Unix `tee` command but only supports piping from other command, also can export the screen output into `csv` or `html` format regarding to the file extension, the command name can be different regarding to different db platforms
 |||`prompt/pro/echo`|Print text, if the text contains variables, then also convert as the the vairable values, the command name can be different regarding to different db platforms
-||_Scripting_||A command set, run customized script file which includes a batch of commands that supported in DBCLI, supports the features of variables, options and pre-compiled conditions. The engine maps the input parameters as `V1 - V20` variables except the parameter in `-<option>` format. This is the interface for some other commands to implement or extend, such as `snap`/`shell`/`ora`/`sys`/`chart`/`sql`/etc, different command owns different folder to store the script files, and those file names are regconized as the sub-command names.
+||_Scripting_|`*`|A command set, run customized script file which includes a batch of commands that supported in DBCLI, supports the features of variables, options and pre-compiled conditions. The engine maps the input parameters as `V1 - V20` variables except the parameter in `-<option>` format. This is the interface for some other commands to implement or extend, such as `snap`/`shell`/`ora`/`sys`/`chart`/`sql`/etc, different command owns different folder to store the script files, and those file names are regconized as the sub-command names.
 |||`snap`|A command set,used in following scenario: `[capture db pre-stats] => [run other commands / sleep for seconds] => [capture db post-stats] => [generate db delta-stats]`
 ||_Graphing_|`chart/ch`|A command set, run customized script to generate graph chart from SQL statement
 |||`graph/gr`|Generate graph chart from input parameter which is a SQL text or a CSV file
@@ -122,8 +122,8 @@ Command Overview
 |||`ilua`|Enter into Lua console, can access environment objects
 |||`search`|Search the source code
 |||`-p`|Test a command and verify its input parameters
-|||`help -a` or `set -a`| see where the command/setting is defined
-|=========|=========|=========|======================================================|
+|||`help -a` or `set -a`| see where the commands/settings are defined
+|=========|=========|=========|======================================|
 |**Oracle**|_SQL_|`*`|Supports almost all Oracle database SQL statements
 ||_Report_|`awrdump`|Generate AWR report regarding to the input time range or snap_id
 |||`awrdiff`|Generate AWR diff report regarding to the input time range or snap_id
@@ -143,11 +143,11 @@ Command Overview
 |||`set endtime`|Auto-limit the default end time of the predefined SQLs that specify the time range predicate
 ||_Others_|`describe/desc`|Describe Oracle object, provides more features than that of `sqlplus`
 |||`xplan`|Show execution plan for input `SQL text/ID`, as well as downloading the 10053 trace file if specify the `-10053` option
-|=========|=========|=========|======================================================|
+|=========|=========|=========|======================================|
 |**db2**<br/>(to be enhanced)|_SQL_|`*`|Supports almost all DB2 database SQL statements, be noted that all SQL commands should be ended with `;`, or `/` in a new line
 ||_Scripting_|`sql`|Inherited from the scripting engine, to run scripts which contains a batches of all available commands
 ||_Admin_|`ADM`|Run db2 `ADMIN_CMD` commands
-|=========|=========|=========|======================================================|
+|=========|=========|=========|======================================|
 |**MySQL**<br/>(to be enhanced)|_SQL_|`*`|Supports almost all MySQL database SQL statements
 ||_Console_|`mysql`|Switch to `mysql.exe` with same login plus other input parameters
 |||`mysqluc`|Switch to `mysqluc.exe` with same login plus other input parameters
@@ -156,7 +156,7 @@ Command Overview
 ||_Others_|`show`| A bit different from the native `show`, provides more features such as fuzzy search.
 |||`?` or `\?`| A bit different from the native `\?`, provides more features
 |||`N/A`| Some commands are similar to the native `mysql` console
-|=========|=========|=========|======================================================|
+|=========|=========|=========|======================================|
 |**PostgreSQL**<br/>(to be enhanced)|_SQL_|`*`|Supports almost all PostgreSQL database SQL statements
 ||_Console_|`psql`|Switch to `psql.exe` with same login plus other input parameters
 |||`file` or `-f`|Switch to `psql.exe` with same login and execute the target script
