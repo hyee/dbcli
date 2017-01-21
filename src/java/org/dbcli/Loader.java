@@ -253,8 +253,8 @@ public class Loader {
         return (Object[][]) asyncCall(new Callable() {
             @Override
             public Object call() throws Exception {
-                ResultSetHelperService helper=new ResultSetHelperService(rs);
-                return (rows>=0&&rows<=10000)?helper.fetchRows(rows):helper.fetchRowsAsync(rows);
+                ResultSetHelperService helper = new ResultSetHelperService(rs);
+                return (rows >= 0 && rows <= 10000) ? helper.fetchRows(rows) : helper.fetchRowsAsync(rows);
             }
         });
     }

@@ -433,12 +433,17 @@ function graph:run_sql(sql,args,cmd,file)
             end
         end
         graph_unit=graph_unit:replace('@GRAPH_DATA','\n'..self.data[i][1]..'\n',true)
+        self:draw_gnuplot(self.data[i][1],default_attrs)
         content=content..graph_unit
     end
     content=content.."</body></html>"
     local file=env.write_cache(cmd.."_"..os.date('%Y%m%d%H%M%S')..".html",content)
     print("Result written to "..file)
     os.shell(file)
+end
+
+function graph:draw_gnuplot(data,options)
+
 end
 
 function graph:run_stmt(...)
