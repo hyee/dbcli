@@ -229,14 +229,12 @@ function ResultSet:rows(rs,count,limit,null_value)
     if not rs.isClosed or rs:isClosed() then return end
     count=tonumber(count) or -1
     local head=self:getHeads(rs,limit).__titles
-    print(123)
     local rows,result=table.new(1000,0),loader:fetchResult(rs,count)
     local cols=#head
     rows[1]=head
     null_value=null_value or ""
     if count~=0 then
         local maxsiz=cfg.get("COLSIZE")
-        print('x',#result)
         for i=1,#result do
             rows[i+1]=table.new(cols,0)
             for j=1,cols do
