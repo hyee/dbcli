@@ -976,7 +976,7 @@ function db_core:__onload()
     txt=txt..'\n        3. csv2sql  user_objects.zip c:\\user_objects.csv'
     txt=txt..'\n        4. sql2csv  user_objects -e"object_id,object_type" select * from user_objects where rownum<10'
     txt=txt..'\n        5. sql2file user_objects -r"object_id=seq_obj.nextval,timestamp=sysdate" select * from user_objects where rownum<10'
-    txt=txt..'\n        6. set printvar off;'
+    txt=txt..'\n        6. set verify off;'
     txt=txt..'\n           var x refcursor;'
     txt=txt..'\n           exec open :x for select * from user_objects where rownum<10;'
     txt=txt..'\n           sql2csv user_objects x;'

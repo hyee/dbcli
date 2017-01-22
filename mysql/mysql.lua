@@ -49,6 +49,7 @@ function mysql:connect(conn_str)
          --clientProgramName='SQL Developer',
          useCachedCursor=self.MAX_CACHE_SIZE,
          useUnicode='true',
+         useServerPrepStmts='true',
          characterEncoding='UTF8',
          useCompression='true',
          callableStmtCacheSize=10,

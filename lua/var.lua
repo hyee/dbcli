@@ -213,6 +213,7 @@ function var.print(name)
         if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
             if var.desc[name] then print(var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)) end
             db.resultset:print(obj,db.conn)
+            var.outputs[name]="#CURSOR"
         else
             print(obj)
         end
@@ -235,6 +236,7 @@ function var.print(name)
                 if var.desc[name] then print(var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)) end
                 db.resultset:print(value,db.conn)
                 var.inputs[name]=nil
+                var.outputs[name]="#CURSOR"
             else
                 list[#list+1]={var.desc[name] or name,value}
             end
