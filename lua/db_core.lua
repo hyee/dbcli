@@ -229,12 +229,14 @@ function ResultSet:rows(rs,count,limit,null_value)
     if not rs.isClosed or rs:isClosed() then return end
     count=tonumber(count) or -1
     local head=self:getHeads(rs,limit).__titles
+    print(123)
     local rows,result=table.new(1000,0),loader:fetchResult(rs,count)
     local cols=#head
     rows[1]=head
     null_value=null_value or ""
     if count~=0 then
         local maxsiz=cfg.get("COLSIZE")
+        print('x',#result)
         for i=1,#result do
             rows[i+1]=table.new(cols,0)
             for j=1,cols do
@@ -784,10 +786,10 @@ function db_core:sql2file(filename,sql,method,ext,...)
     end
 
     if method~='CSV2SQL' then
-        exp.RESULT_FETCH_SIZE=tonumber(env.ask("Please set fetch array size",'10-100000',30000))
+        exp.RESULT_FETCH_SIZE=tonumber(env.ask("Please set fetch array size",'10-100000',exp.RESULT_FETCH_SIZE))
     end
     if method:find("SQL",1,true) then
-        sqlw.maxLineWidth=tonumber(env.ask("Please set line width","100-32767",2000))
+        sqlw.maxLineWidth=tonumber(env.ask("Please set line width","100-32767",sqlw.maxLineWidth))
         sqlw.COLUMN_ENCLOSER=string.byte(env.ask("Please define the column name encloser","^%W$",'"'))
     end
     if method:find("CSV",1,true) then

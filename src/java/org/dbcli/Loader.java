@@ -197,6 +197,7 @@ public class Loader {
             for (String column : remaps) {
                 if (column == null || column.trim().equals("")) continue;
                 String[] o = column.split("=", 2);
+                System.out.println(o[0]);
                 writer.setRemap(o[0], o.length < 2 ? null : o[1]);
             }
         }
@@ -253,8 +254,9 @@ public class Loader {
         return (Object[][]) asyncCall(new Callable() {
             @Override
             public Object call() throws Exception {
-                ResultSetHelperService helper = new ResultSetHelperService(rs);
+                try(ResultSetHelperService helper = new ResultSetHelperService(rs)) {
                 return (rows >= 0 && rows <= 10000) ? helper.fetchRows(rows) : helper.fetchRowsAsync(rows);
+                }
             }
         });
     }
