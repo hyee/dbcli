@@ -119,7 +119,7 @@ BEGIN
                  rownum r,
                  s3.*
           FROM   (SELECT s3.*,
-                         CASE WHEN seconds_in_wait > 1.3E9 THEN 0 ELSE seconds_in_wait END wait_secs,
+                         CASE WHEN seconds_in_wait > 1.3E9 THEN 0 ELSE round(seconds_in_wait-WAIT_TIME/100) END wait_secs,
                          CASE WHEN S3.SID = S3.qcsid AND S3.inst_id = NVL(s3.qcinst_id,s3.inst_id) THEN 1 ELSE 0 END ROOT_SID,
                          plan_hash_value,
                          program_name,

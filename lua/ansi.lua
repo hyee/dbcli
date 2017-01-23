@@ -62,7 +62,7 @@ local base_color={
     BCYN={"\27[46m","Background Color: Cyan"},
     BWHT={"\27[47m","Background Color: White"},
     BGRY={"\27[4;40m","Background Color: Gray"}, 
-    NOR ={"\27[0m","Puts every color back to normal"},
+    NOR ={"\27[29;39;0m","Puts every color back to normal"},
 
 
     --Additional ansi Esc codes added to ansi.h by Gothic  april 23,1993
@@ -90,7 +90,7 @@ local base_color={
     REV     ={"\27[7m","Reverse video mode on",1},
     UREV    ={"\27[27m","Reverse video mode off",1},
     CONC    ={"\27[8m","Concealed(foreground becomes background)",1},
-    uCONC   ={"\27[28m","Concealed off",1},
+    UCONC   ={"\27[28m","Concealed off",1},
     HIREV   ={"\27[1,7m","High intensity reverse video",1},
     WRAP    ={"\27[?7h","Wrap lines at screen edge",1},
     UNWRAP  ={"\27[?7l","Don't wrap lines at screen edge",1}
