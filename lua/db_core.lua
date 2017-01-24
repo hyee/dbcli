@@ -229,33 +229,33 @@ function ResultSet:rows(rs,count,limit,null_value)
     if not rs.isClosed or rs:isClosed() then return end
     count=tonumber(count) or -1
     local head=self:getHeads(rs,limit).__titles
-    local rows,result=table.new(1000,0),loader:fetchResult(rs,count)
+    local rows={}
     local cols=#head
-    rows[1]=head
     null_value=null_value or ""
     if count~=0 then
+        rows=loader:fetchResult(rs,count)
         local maxsiz=cfg.get("COLSIZE")
-        for i=1,#result do
-            rows[i+1]=table.new(cols,0)
+        for i=1,#rows do
             for j=1,cols do
-                if result[i][j] ~=nil then
-                    rows[i+1][j]=tostring(result[i][j])
-                    if rows[i+1][j] then
-                        if limit then rows[i+1][j]=rows[i+1][j]:sub(1,maxsiz) end
+                if rows[i][j]~=nil then
+                    if rows[i][j] then
+                        if limit and type(rows[i][j])=="string" then rows[i][j]=rows[i][j]:sub(1,maxsiz) end
                         if head.colinfo[j].data_typeName=="DATE" or head.colinfo[j].data_typeName=="TIMESTAMP" then
-                            rows[i+1][j]=rows[i+1][j]:gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
+                            rows[i][j]=rows[i][j]:gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
                         elseif head.colinfo[j].data_typeName=="BLOB" then
-                            rows[i+1][j]=rows[i+1][j]:sub(1,255)
-                        elseif head.colinfo[j].is_number then
-                            rows[i+1][j]=tonumber(rows[i+1][j]) or rows[i+1][j]
+                            rows[i][j]=rows[i][j]:sub(1,255)
+                        elseif head.colinfo[j].is_number and type(rows[i][j])~="number" then
+                            local int=tonumber(rows[i][j])
+                            rows[i][j]=tostring(int)==rows[i][j] and int or rows[i][j]
                         end
                     end
                 else
-                    rows[i+1][j]=null_value
+                    rows[i][j]=null_value
                 end
             end
         end
     end
+    table.insert(rows,1,head)
     return rows
 end
 

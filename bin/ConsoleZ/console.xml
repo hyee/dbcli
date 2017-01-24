@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <settings lang="auto" icon_size="0">
-	<console shell="" init_dir="" refresh="100" change_refresh="10" rows="200" columns="200" buffer_rows="9999" buffer_columns="1000" start_hidden="0" save_size="0">
+	<console shell="" init_dir="" refresh="100" change_refresh="10" rows="200" columns="200" buffer_rows="9999" buffer_columns="1000" start_hidden="1" save_size="0">
 		<colors background_text_opacity="255">
 			<color id="0" r="0" g="0" b="0"/>
 			<color id="1" r="0" g="0" b="128"/>

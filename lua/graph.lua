@@ -167,14 +167,7 @@ function graph:run_sql(sql,args,cmd,file)
         local found,csv=os.exists(sql,"csv")
         env.checkerr(found,"Cannot find file "..sql)
         cfg.set("CSVSEP",env.ask("Please define the field separator",'^[^"]$',','))
-        local result=loader:fetchCSV(csv,-1)
-        rows={}
-        for i=1,#result do
-            rows[i]={}
-            for j=1,#result[1] do
-                rows[i][j]=tostring(result[i][j])
-            end
-        end
+        rows=loader:fetchCSV(csv,-1)
     else    
         --Only proceduce top 30 curves to improve the performance in case of there is 'RNK_' field
         if sql:match('%WRNK_%W') and not sql:find('%WRND_%W') then

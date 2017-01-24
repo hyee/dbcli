@@ -62,7 +62,8 @@ public class Console extends ConsoleReader {
         field.setAccessible(false);
         t_puts = ConsoleReader.class.getDeclaredMethod("tputs", String.class, Object[].class);
         t_puts.setAccessible(true);
-        writer = new PrintWriter(System.getenv("ANSICON_DEF") != null ? new OutputStreamWriter(System.out, Console.charset) : getOutput());
+        String colorPlan=System.getenv("ANSICON_DEF");
+        writer = new PrintWriter(colorPlan!=null&&!("jline").equals(colorPlan) ? new OutputStreamWriter(System.out, Console.charset) : getOutput());
 
         //in=(NonBlockingInputStream)this.getInput();
         Iterator<Completer> iterator = getCompleters().iterator();

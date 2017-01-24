@@ -62,7 +62,7 @@ local base_color={
     BCYN={"\27[46m","Background Color: Cyan"},
     BWHT={"\27[47m","Background Color: White"},
     BGRY={"\27[4;40m","Background Color: Gray"}, 
-    NOR ={"\27[29;39;0m","Puts every color back to normal"},
+    NOR ={"\27[39;49;0m","Puts every color back to normal"},
 
 
     --Additional ansi Esc codes added to ansi.h by Gothic  april 23,1993
