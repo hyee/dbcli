@@ -295,8 +295,8 @@ function grid:add(rs)
         end
 
         if headind>0 and (type(v) == "number"  or self.printhead and self.colinfo and self.colinfo[k] and self.colinfo[k].is_number) then
-            if tonumber(v) then
-                v1=tonumber(v)
+            v1=tonumber(v)
+            if v1 then
                 if grid.digits<38  then
                     v1=math.round(v1,grid.digits)
                     v=v1
