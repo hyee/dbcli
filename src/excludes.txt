@@ -15,6 +15,9 @@
 \RWP\
 .sublime-project
 .sublime-workspace
+ANSI32.DLL
+ANSI64.DLL
+ansicon.exe
 .alias
 .so
 .bak

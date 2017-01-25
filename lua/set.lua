@@ -17,7 +17,7 @@ function cfg.show_cfg(name)
     ]])
     if name and name~='-a' and name~='-A' then
         for k,v in pairs(cfg) do
-            if type(v)=="table" and k==k:upper() and k:find(name,1,true) and v.src and (name or (v.desc and not v.desc:find('^#'))) then
+            if type(v)=="table" and k==k:upper() and v.src and (k:find(name,1,true) or v.class and v.class:upper():find(name,1,true)) then
                 table.insert(rows,{k,string.from(v.value),string.from(v.default),v.class,v.range or '*',v.desc})
             end
         end

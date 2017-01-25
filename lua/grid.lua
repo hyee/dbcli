@@ -294,18 +294,20 @@ function grid:add(rs)
             v=event.callback("ON_COLUMN_VALUE",{#result>0 and result[1][k] or v,v,#result})[2]
         end
 
-        if headind>0 and (type(v1) == "number" or type(v) == "number"  or self.printhead and self.colinfo and self.colinfo[k] and self.colinfo[k].is_number) then
-            if v1==v and tonumber(v) then
-                v=tonumber(v)
+        if headind>0 and (type(v) == "number"  or self.printhead and self.colinfo and self.colinfo[k] and self.colinfo[k].is_number) then
+            v1=tonumber(v)
+            if v1 then
                 if grid.digits<38  then
-                    v=math.round(v,grid.digits)
+                    v1=math.round(v1,grid.digits)
+                    v=v1
                 end
                 if grid.sep4k=="on" then
-                    if v~=math.floor(v) then
-                        v=string.format_number("%,.2f",v,'double')
+                    if v1~=math.floor(v1) then
+                        v1=string.format_number("%,.2f",v1,'double')
                     else
-                        v=string.format_number("%,d",v,'int')
+                        v1=string.format_number("%,d",v1,'int')
                     end
+                    v=v1
                 end
             end
             if tostring(v):find('e',1,true) then v=string.format('%99.38f',v):gsub(' ',''):gsub('%.?0+$','') end

@@ -205,7 +205,7 @@ function printer.tee_to_file(row,total_rows)
             printer.tee_colinfo=row.colinfo
             td='th'
         end
-        hdl:write("<tr>")
+        hdl:write("  <tr>")
         for idx,cell in ipairs(row) do
             hdl:write("<"..td..(printer.tee_colinfo and printer.tee_colinfo[idx].is_number==1 and ' align="right"' or '')..">")
             if type(cell)=="string" then
@@ -220,7 +220,7 @@ function printer.tee_to_file(row,total_rows)
         end
         hdl:write("</tr>\n")
         if row[0]==total_rows-1 then 
-            hdl:write("</table>")
+            hdl:write("</table>\n")
             printer.tee_colinfo=nil
         end
     elseif printer.tee_type=="csv" then
@@ -254,9 +254,17 @@ function printer.onload()
         env.event.snoop('ON_PRINT_GRID_ROW',printer.tee_to_file,nil,90)
     end
     BOLD=BOLD..'%1'..NOR
-    
-    env.set_command(nil,"grep","Filter matched text from the output. Usage: @@NAME <keyword|-keyword> <other command>, -keyword means exclude",{printer.grep,printer.grep_after},'__SMART_PARSE__',3,false,false,true)
-    env.set_command(nil,"tee"," Write command output to target file,'+' means append mode. Usage: @@NAME {+|.|[+]<file>|<file>+} <other command>",{printer.tee,printer.tee_after},'__SMART_PARSE__',3,false,false,true)
+    local tee_help=[[
+    Write command output to target file,'+' means append mode. Usage: @@NAME {+|.|[+]<file>|<file>+} <other command>
+        or <other command>|@@NAME {+|.|[+]<file>|<file>+}
+    When <other command> is a query, then the output can be same to the screen output/csv file/html file which depends on the file extension. ]]
+
+    local grep_help=[[
+    Filter matched text from the output. Usage: @@NAME <keyword|-keyword> <other command>, -keyword means exclude.
+        or <other command>|@@NAME <keyword|-keyword>
+    ]]
+    env.set_command(nil,"grep",grep_help,{printer.grep,printer.grep_after},'__SMART_PARSE__',3,false,false,true)
+    env.set_command(nil,"tee",tee_help,{printer.tee,printer.tee_after},'__SMART_PARSE__',3,false,false,true)
     env.set_command(nil,"more","Similar to Linux 'more' command. Usage: @@NAME <other command>",printer.set_more,'__SMART_PARSE__',2,false,false,true)
     env.set_command(nil,{"Prompt","pro",'echo'}, "Prompt messages. Usage: @@NAME <message>",printer.load_text,false,2)
     env.set_command(nil,{"SPOOL","SPO"}, "Write the screen output into a file. Usage: @@NAME [file_name[.ext]] [CREATE] | APP[END]] | OFF]",printer.spool,false,3)

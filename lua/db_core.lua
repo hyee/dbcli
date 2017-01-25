@@ -229,33 +229,33 @@ function ResultSet:rows(rs,count,limit,null_value)
     if not rs.isClosed or rs:isClosed() then return end
     count=tonumber(count) or -1
     local head=self:getHeads(rs,limit).__titles
-    local rows,result=table.new(1000,0),loader:fetchResult(rs,count)
+    local rows={}
     local cols=#head
-    rows[1]=head
     null_value=null_value or ""
     if count~=0 then
+        rows=loader:fetchResult(rs,count)
         local maxsiz=cfg.get("COLSIZE")
-        for i=1,#result do
-            rows[i+1]=table.new(cols,0)
+        for i=1,#rows do
             for j=1,cols do
-                if result[i][j] ~=nil then
-                    rows[i+1][j]=tostring(result[i][j])
-                    if rows[i+1][j] then
-                        if limit then rows[i+1][j]=rows[i+1][j]:sub(1,maxsiz) end
+                if rows[i][j]~=nil then
+                    if rows[i][j] then
+                        if limit and type(rows[i][j])=="string" then rows[i][j]=rows[i][j]:sub(1,maxsiz) end
                         if head.colinfo[j].data_typeName=="DATE" or head.colinfo[j].data_typeName=="TIMESTAMP" then
-                            rows[i+1][j]=rows[i+1][j]:gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
+                            rows[i][j]=rows[i][j]:gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
                         elseif head.colinfo[j].data_typeName=="BLOB" then
-                            rows[i+1][j]=rows[i+1][j]:sub(1,255)
-                        elseif head.colinfo[j].is_number then
-                            rows[i+1][j]=tonumber(rows[i+1][j]) or rows[i+1][j]
+                            rows[i][j]=rows[i][j]:sub(1,255)
+                        elseif head.colinfo[j].is_number and type(rows[i][j])~="number" then
+                            local int=tonumber(rows[i][j])
+                            rows[i][j]=tostring(int)==rows[i][j] and int or rows[i][j]
                         end
                     end
                 else
-                    rows[i+1][j]=null_value
+                    rows[i][j]=null_value
                 end
             end
         end
     end
+    table.insert(rows,1,head)
     return rows
 end
 
@@ -624,6 +624,7 @@ end
 
 --the connection is a table that contain the connection properties
 function db_core:connect(attrs,data_source)
+    env.log_debug("connect",table.dump(attrs))
     if not self.driver then
         self.driver= java.require("java.sql.DriverManager")
     end
@@ -784,10 +785,10 @@ function db_core:sql2file(filename,sql,method,ext,...)
     end
 
     if method~='CSV2SQL' then
-        exp.RESULT_FETCH_SIZE=tonumber(env.ask("Please set fetch array size",'10-100000',30000))
+        exp.RESULT_FETCH_SIZE=tonumber(env.ask("Please set fetch array size",'10-100000',exp.RESULT_FETCH_SIZE))
     end
     if method:find("SQL",1,true) then
-        sqlw.maxLineWidth=tonumber(env.ask("Please set line width","100-32767",2000))
+        sqlw.maxLineWidth=tonumber(env.ask("Please set line width","100-32767",sqlw.maxLineWidth))
         sqlw.COLUMN_ENCLOSER=string.byte(env.ask("Please define the column name encloser","^%W$",'"'))
     end
     if method:find("CSV",1,true) then
@@ -835,8 +836,7 @@ function db_core.check_completion(cmd,other_parts)
     local match,typ,index=env.COMMAND_SEPS.match(other_parts)
     obj=obj or ""
     if index==0 then return false,other_parts end
-    if index==2 then return true,match end
-    if db_core.source_objs[cmd] or db_core.source_objs[obj:upper()] then
+    if index==1 and (db_core.source_objs[cmd] or db_core.source_objs[obj:upper()]) then
         typ=type(db_core.source_obj_pattern)
         local patterns={}
         if typ=='table' then 
@@ -846,11 +846,13 @@ function db_core.check_completion(cmd,other_parts)
         end
         for _,pattern in ipairs(patterns) do
             if match:match(pattern) then
+                if action=="WITH" then match=match:gsub('[%s;]+$','') end
                 return true,match
             end
         end
         return false,other_parts
     end
+    if action=="WITH" then match=match:gsub('[%s;]+$','') end
     return true,match
 end
 
@@ -975,7 +977,7 @@ function db_core:__onload()
     txt=txt..'\n        3. csv2sql  user_objects.zip c:\\user_objects.csv'
     txt=txt..'\n        4. sql2csv  user_objects -e"object_id,object_type" select * from user_objects where rownum<10'
     txt=txt..'\n        5. sql2file user_objects -r"object_id=seq_obj.nextval,timestamp=sysdate" select * from user_objects where rownum<10'
-    txt=txt..'\n        6. set printvar off;'
+    txt=txt..'\n        6. set verify off;'
     txt=txt..'\n           var x refcursor;'
     txt=txt..'\n           exec open :x for select * from user_objects where rownum<10;'
     txt=txt..'\n           sql2csv user_objects x;'
