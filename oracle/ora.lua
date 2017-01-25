@@ -60,6 +60,7 @@ local cache_obj,loaded={}
 function db:check_obj(obj_name)
     local obj=obj_name and obj_name:upper()
     if not loaded then
+        --printer.write(env.space.."Caching dictionary objects ... ")
         local args={"#CLOB"}
         db:internal_call([[
         DECLARE
@@ -104,6 +105,7 @@ function db:check_obj(obj_name)
             item.alias_list={item.target,n}
             cache_obj[item.target],cache_obj[n]=item,item
         end
+        --printer.write("Done.\n")
     end
     if obj and cache_obj[obj] then return cache_obj[obj] end
     db.C.ora:run_script('_find_object',obj_name,1)

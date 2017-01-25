@@ -167,14 +167,7 @@ function graph:run_sql(sql,args,cmd,file)
         local found,csv=os.exists(sql,"csv")
         env.checkerr(found,"Cannot find file "..sql)
         cfg.set("CSVSEP",env.ask("Please define the field separator",'^[^"]$',','))
-        local result=loader:fetchCSV(csv,-1)
-        rows={}
-        for i=1,#result do
-            rows[i]={}
-            for j=1,#result[1] do
-                rows[i][j]=tostring(result[i][j])
-            end
-        end
+        rows=loader:fetchCSV(csv,-1)
     else    
         --Only proceduce top 30 curves to improve the performance in case of there is 'RNK_' field
         if sql:match('%WRNK_%W') and not sql:find('%WRND_%W') then
@@ -433,6 +426,7 @@ function graph:run_sql(sql,args,cmd,file)
             end
         end
         graph_unit=graph_unit:replace('@GRAPH_DATA','\n'..self.data[i][1]..'\n',true)
+        self:draw_gnuplot(self.data[i][1],default_attrs)
         content=content..graph_unit
     end
     content=content.."</body></html>"
@@ -441,10 +435,14 @@ function graph:run_sql(sql,args,cmd,file)
     os.shell(file)
 end
 
+function graph:draw_gnuplot(data,options)
+
+end
+
 function graph:run_stmt(...)
     local args={...}
     env.checkhelp(args[1])
-    sql=args[#args]
+    local sql=args[#args]
     table.remove(args,#args)
     local fmt={}
     for index,option in ipairs(args) do
@@ -468,7 +466,27 @@ function graph:__onload()
         -y: the output fields are "<date> <label> <values...>"
         -n: the output fields are "date <label-1-value> ... <label-n-value>"
         -m: mix mode,  the output fields are "<date> <label> <sub-label values...>"
-    If not specify the option, will auto determine the layout based on the outputs.]]
+    If not specify the option, will auto determine the layout based on the outputs.
+
+    For the query or CSV file, the output should follow one of the following rules:
+    1. Column#1 (X-Label)  :date/date-in-string/int
+       Column#2 (Axis-Name):string 
+       Column#3+(Y-Value)  :number, the column name would be the unit description,more columns would generate more charts except specifying the -m option
+    2. Column#1 (X-label)  :date/date-in-string/int
+       Column#2+(Y-Value)  :number, the column name would be the axis-name,more columns would generate more charts except specifying the -m option
+
+    Use 'set graph_xxx <value>' to specify the initial chart settings, type 'set graph' for more information   
+
+    Examples:
+       @@NAME select sysdate+dbms_random.value*365 d,dbms_Random.value*1e6 x,dbms_Random.value*1e6 y from dual connect by rownum<=100;
+
+       @@NAME select sysdate+dbms_random.value*365 time,
+                    decode(mod(rownum,2),1,'X','Y') typ,
+                    dbms_Random.value*1e6 value1,
+                    dbms_Random.value*1e6 value2
+             from dual connect by rownum<=200;
+
+    ]]   
     env.set_command(self,self.ext_command, help,self.run_stmt,'__SMART_PARSE__',4)
     cfg.init("Graph_Series",12,nil,"graph","Number of top series to be show in graph chart",'1-30')
     cfg.init("Graph_logscale",false,nil,"graph","Enable/disable the default graph log-scale option",'true/false')

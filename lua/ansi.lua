@@ -62,7 +62,7 @@ local base_color={
     BCYN={"\27[46m","Background Color: Cyan"},
     BWHT={"\27[47m","Background Color: White"},
     BGRY={"\27[4;40m","Background Color: Gray"}, 
-    NOR ={"\27[0m","Puts every color back to normal"},
+    NOR ={"\27[39;49;0m","Puts every color back to normal"},
 
 
     --Additional ansi Esc codes added to ansi.h by Gothic  april 23,1993
@@ -90,7 +90,7 @@ local base_color={
     REV     ={"\27[7m","Reverse video mode on",1},
     UREV    ={"\27[27m","Reverse video mode off",1},
     CONC    ={"\27[8m","Concealed(foreground becomes background)",1},
-    uCONC   ={"\27[28m","Concealed off",1},
+    UCONC   ={"\27[28m","Concealed off",1},
     HIREV   ={"\27[1,7m","High intensity reverse video",1},
     WRAP    ={"\27[?7h","Wrap lines at screen edge",1},
     UNWRAP  ={"\27[?7l","Don't wrap lines at screen edge",1}
@@ -115,7 +115,7 @@ local default_color={
     ['F']={'HBWHT','HIW'},
 }
 
-ansi.ansi_mode=os.getenv("ANSICON_DEF")
+ansi.ansi_mode=os.getenv("ANSICON_DEF") or "jline"
 local console_color=os.getenv("CONSOLE_COLOR")
 if console_color then
     ansi.ansi_default=console_color
@@ -125,12 +125,9 @@ if console_color then
     end
 end
 
-if not ansi.ansi_mode then
-    ansi.ansi_mode="jline"
-elseif os.getenv("ANSICOLOR")=="off" then
+if os.getenv("ANSICOLOR")=="off" then
     isAnsiSupported,enabled=false,false
 else
-    ansi.ansi_mode="ansicon"
     isAnsiSupported=true
 end
 
@@ -332,6 +329,7 @@ function ansi.test_text(str)
         rawprint(env.space.."For the color settings defined in command 'set', use '<code1>[;<code2>[...]]' format")
         rawprint(env.space.."Run 'ansi <text>' to test the color, i.e.: ansi $HIR$ Hello $HIC$$HBGRN$ ANSI!")
         rawprint(env.space.."Or SQL:  select '$HIR$'||owner||'$HIB$.$NOR$'||object_name obj,a.* from all_objects a where rownum<10;")
+        rawprint(env.space.."Use 'set color' to adjust the color preferences of the console.")
         return
     end
    
