@@ -180,7 +180,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             FOR i IN (SELECT /*+ opt_param('parallel_execution_enabled', 'false') */
                              SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) hint
                       FROM   TABLE(XMLSEQUENCE(EXTRACT(v_hints, '//outline_data/hint'))) d) LOOP
-                v_hint := REGEXP_REPLACE(i.hint,'INDEX\_[A-Z\_]+\(','INDEX(');
+                v_hint := REGEXP_REPLACE(i.hint,'^((NO\_)?INDEX)\_[A-Z\_]+\(','\1(');
                 IF v_hint LIKE '%IGNORE_OPTIM_EMBEDDED_HINTS%' THEN
                     v_embed := '        q''[' || v_hint || ']'',';
                 ELSE

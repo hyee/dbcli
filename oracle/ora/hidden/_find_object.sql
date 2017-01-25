@@ -14,6 +14,7 @@ DECLARE /*INTERNAL_DBCLI_CMD*/
     dblink        VARCHAR2(100);
     part1_type    PLS_INTEGER;
     object_number PLS_INTEGER;
+    cnt           PLS_INTEGER;
     flag          BOOLEAN := TRUE;
     obj_type      VARCHAR2(100);
     objs          VARCHAR2(2000) := 'dba_objects';
@@ -70,7 +71,7 @@ BEGIN
         INTO schem,part1,part2,object_number
         USING 0+target;
     END IF;
-
+   
     IF schem IS NULL THEN
         flag  := FALSE;
         schem := regexp_substr(target, '[^\."]+', 1, 1);
@@ -78,8 +79,18 @@ BEGIN
         IF part1 IS NULL THEN
             part1 := schem;
             schem := null;
+            objs  := objs||' a WHERE nvl(:1,''X'')=''X'' AND object_name =:2)';
+        ELSE
+            part2_temp := schem;
+            BEGIN EXECUTE IMMEDIATE 'SELECT MAX(username) FROM DBA_USERS WHERE upper(username)=:1' INTO schem using upper(schem);
+            EXCEPTION WHEN OTHERS THEN SELECT MAX(username) INTO schem FROM DBA_USERS WHERE upper(username)=upper(schem);END;
+            IF schem IS NOT NULL THEN
+                objs  := objs||' a WHERE owner=:1 AND object_name =:2)';
+            ELSE
+                part1      := part2_temp;
+                objs       := objs||' a WHERE nvl(:1,''X'')=''X'' AND object_name=:2)';
+            END IF;            
         END IF;
-        objs  := objs||' a WHERE owner IN(''SYS'',''PUBLIC'',sys_context(''USERENV'', ''CURRENT_SCHEMA''),:1) AND object_name IN('''||schem||''',:2))';
     ELSE
         flag  := TRUE;
         objs  := objs|| ' a WHERE OWNER IN(''SYS'',''PUBLIC'',:1) AND OBJECT_NAME=:2)';
@@ -92,12 +103,11 @@ BEGIN
            MIN(to_char(SUBOBJECT_NAME)) keep(dense_rank first order by s_flag,object_id),
            MIN(to_number(OBJECT_ID))    keep(dense_rank first order by s_flag)
     FROM (
-        SELECT a.*,
+        SELECT /*+INDEX_SS(a) MERGE(A) no_expand*/ a.*,
                case when owner=:1 then 0 else 100 end +
                case when :2 like '%"'||OBJECT_NAME||'"'||nvl2(SUBOBJECT_NAME,'."'||SUBOBJECT_NAME||'"%','') then 0 else 10 end +
                case substr(object_type,1,3) when 'TAB' then 1 when 'CLU' then 2 else 3 end s_flag
         FROM   ]' || objs;
-    
     EXECUTE IMMEDIATE objs
         INTO obj_type, schem, part1, part2_temp,object_number USING schem,target,schem, part1;
     IF part2 IS NULL THEN

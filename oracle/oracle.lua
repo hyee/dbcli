@@ -86,7 +86,6 @@ function oracle:connect(conn_str)
             end
         end
     end
-    env.log_debug('connect',usr,pwd,url)
     args=args or {user=usr,password=pwd,url="jdbc:oracle:thin:@"..url,internal_logon=isdba}
 
     self:merge_props(
@@ -143,6 +142,12 @@ function oracle:connect(conn_str)
             EXECUTE IMMEDIATE 'alter session set nls_date_format=''yyyy-mm-dd hh24:mi:ss''';
             EXECUTE IMMEDIATE 'alter session set statistics_level=all';
 
+            IF sv like 'SYS$%' THEN
+                sv := NULL;
+                BEGIN EXECUTE IMMEDIATE q'{select regexp_substr(value,'[^ ,]+') from v$parameter where name='service_names'}' into sv;
+                EXCEPTION WHEN OTHERS THEN NULL;END;
+            END IF;
+
             SELECT user,
                    (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_RDBMS_VERSION') version,
                    (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_LANGUAGE') || '_' ||
@@ -161,7 +166,7 @@ function oracle:connect(conn_str)
                    null con_name,
             $END   
                    sys_context('userenv', 'isdba') isdba,
-                   case when sv like 'SYS%' then (select global_name from global_name) else sv end service_name,
+                   nvl(sv,sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.')) service_name,
                    decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY',' ','PHYSICAL STANDBY',' (Standby)>')) END
             INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :container, :isdba, :service_name,:db_role
             FROM   nls_Database_Parameters
@@ -169,13 +174,12 @@ function oracle:connect(conn_str)
             
             BEGIN
                 IF :db_role IS NULL THEN 
-                    EXECUTE IMMEDIATE q'[select decode(DATABASE_ROLE,'PRIMARY','',' (Standby)') from v$database]'
+                    EXECUTE IMMEDIATE q'[select decode(DATABASE_ROLE,'PRIMARY','',' (Standby)>') from v$database]'
                     into :db_role;
                 ELSIF :db_role = ' ' THEN
                     :db_role := trim(:db_role);
                 END IF;
-            EXCEPTION WHEN OTHERS THEN NULL;
-            END;
+            EXCEPTION WHEN OTHERS THEN NULL;END;
         END;]],self.props)
     self.props.isdba=self.props.isdba=='TRUE' and true or false
     if not succ then

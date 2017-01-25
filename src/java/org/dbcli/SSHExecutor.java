@@ -251,7 +251,7 @@ public class SSHExecutor {
         ByteBuffer buf = ByteBuffer.allocateDirect(1000000);
         StringBuilder sb = new StringBuilder(128);
         char lastChar;
-        Pattern p = Pattern.compile("\33\\[[\\d\\;]+[mK]");
+        Pattern p = Pattern.compile("\33\\[[\\d\\;]*[mK]");
         boolean ignoreMessage;
 
         public Printer() {

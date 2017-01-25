@@ -7,6 +7,7 @@ XCOPY /S /Y "d:\JavaProjects\dbcli\src\*" .\src\java
 XCOPY /S /Y "d:\JavaProjects\dbcli\opencsv\src\*" "%GIT_HOME%\opencsv\src"
 XCOPY /S /Y "d:\JavaProjects\dbcli\nuprocess\src\*" "%GIT_HOME%\nuprocess\src"
 XCOPY  /S /Y ".\lib\opencsv.jar" "%GIT_HOME%\opencsv\release"
+XCOPY  /S /Y ".\lib\disruptor*.jar" "%GIT_HOME%\opencsv\release"
 set copyflag=1
 
 set target=%GIT_HOME%\dbcli
@@ -34,7 +35,7 @@ goto start
 :end
 xcopy /S /Y .\jre "%target%\jre"
 cd /d "%target%"
-for /f %%i in ('dir /b/s/a:-H .\*.jar') do ("d:\java\bin\pack200" -O -S-1 -G "%%i.pack.gz" "%%i" && del "%%i")
+for /f %%i in ('dir /b/s/a:-H .\*.jar') do ("D:\JDK8\bin\pack200" -O -S-1 -G "%%i.pack.gz" "%%i" && del "%%i")
 
 del ..\dbcli.zip
 rmdir /S /Q src 
