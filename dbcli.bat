@@ -15,16 +15,16 @@ rem read config file
 If exist "data\init.cfg" (for /f "eol=# delims=" %%i in (data\init.cfg) do (%%i))
 rem if JRE_HOME is not defined in init.cfg, find java.exe in default path
 if not defined JRE_HOME (
-    for /F %%p in ('where java.exe') do ^^
-        for /f tokens^=2-5^ delims^=.-_^" %%j in ('"%%p" -fullversion 2^>^&1') do ^^
-            if 17000 LSS %%j%%k%%l%%m  set "JRE_HOME=%%~dpsp"
-)
+    for /F %%p in ('where java.exe') do (
+        for /f tokens^=2-5^ delims^=.-_^" %%j in ('"%%p" -fullversion 2^>^&1') do (
+            if 18000 LSS %%j%%k%%l%%m  set "JRE_HOME=%%~dpsp"
+)))
 
 If not exist "%TNS_ADM%\tnsnames.ora" if defined ORACLE_HOME (set TNS_ADM=%ORACLE_HOME%\network\admin )
 for %%x in ("!JRE_HOME!") do set JRE_HOME=%%~sx
 IF %JRE_HOME:~-1%==\ SET JRE_HOME=%JRE_HOME:~0,-1%
 
-IF not exist "%JRE_HOME%\java.exe" if exist "%JRE_HOME%\bin\java.exe" (set JRE_HOME=%JRE_HOME%\bin) else (set JRE_HOME=.\jre\bin)
+IF not exist "%JRE_HOME%\java.exe" if exist "%JRE_HOME%\bin\java.exe" (set "JRE_HOME=%JRE_HOME%\bin") else (set JRE_HOME=.\jre\bin)
 SET PATH=%JRE_HOME%;%EXT_PATH%;.\bin;%PATH%
 if defined ANSICON_CMD (
    SET ANSICON_EXC=nvd3d9wrap.dll;nvd3d9wrapx.dll

@@ -86,7 +86,6 @@ function oracle:connect(conn_str)
             end
         end
     end
-    env.log_debug('connect',usr,pwd,url)
     args=args or {user=usr,password=pwd,url="jdbc:oracle:thin:@"..url,internal_logon=isdba}
 
     self:merge_props(

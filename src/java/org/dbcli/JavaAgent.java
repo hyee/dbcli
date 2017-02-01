@@ -6,11 +6,13 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
+import java.lang.reflect.Modifier;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.security.CodeSource;
 import java.security.ProtectionDomain;
+import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -34,6 +36,13 @@ public class JavaAgent implements ClassFileTransformer {
             in = inst;
             inst.addTransformer(new JavaAgent());
             dumpAllClasses();
+            ArrayList<Class<?>> classes = new ArrayList<Class<?>>();
+            for (Class<?> c: inst.getAllLoadedClasses()) {
+                if (inst.isModifiableClass(c)) {
+                    classes.add(c);
+                }
+            }
+            inst.retransformClasses(classes.toArray(new Class<?>[classes.size()]));
         } catch (Exception e) {
             Loader.getRootCause(e).printStackTrace();
         }
@@ -42,11 +51,11 @@ public class JavaAgent implements ClassFileTransformer {
     public static void agentmain(String agentArgs, Instrumentation inst) {
         premain(agentArgs, inst);
     }
-
+    private static Pattern re1=Pattern.compile("^\\[L(.+);");
     private static String isCandidate(String className) {
         if (className.charAt(0) == '[') {
-            //Matcher mt = re1.matcher(className);
-            //if (mt.find()) return mt.group(1).replace('.', '/');
+            Matcher mt = re1.matcher(className);
+            if (mt.find()) return mt.group(1).replace('.', '/');
             return null;
         }
         return className;
@@ -162,11 +171,7 @@ public class JavaAgent implements ClassFileTransformer {
     }
 
     public static void dumpAllClasses() throws Exception {
-        Class[] classes = in.getAllLoadedClasses();
-        Class[] arrayOfClass1 = classes;
-        int j = classes.length;
-        for (int i = 0; i < j; i++) {
-            Class c = arrayOfClass1[i];
+        for(Class c:in.getAllLoadedClasses()){
             String className = isCandidate(c.getName());
             if (className != null) {
                 copyFile(c.getProtectionDomain(), className);
@@ -176,7 +181,7 @@ public class JavaAgent implements ClassFileTransformer {
 
     public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined, ProtectionDomain domain, byte[] classFileBuffer) {
         try {
-            copyFile(domain, className);
+            if(className!=null) copyFile(domain, className);
         } catch (Exception e) {
             Loader.getRootCause(e).printStackTrace();
         }

@@ -624,6 +624,7 @@ end
 
 --the connection is a table that contain the connection properties
 function db_core:connect(attrs,data_source)
+    env.log_debug("connect",table.dump(attrs))
     if not self.driver then
         self.driver= java.require("java.sql.DriverManager")
     end
