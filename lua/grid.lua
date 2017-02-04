@@ -16,6 +16,7 @@ local params={
     MAXCOLS={name="maxcol",default=1024,desc="Define the max columns to be displayed in the grid",range="4-1024"},
     DIGITS={name="digits",default=38,desc="Define the digits for a number",range="0 - 38"},
     SEP4K={name="sep4k",default="off",desc="Define wether to show number with thousands separator",range="on,off"},
+    HEADING={name="heading",default="on",desc="Controls printing of column headings in reports",range="on,off"},
     LINESIZE={name="linesize",default=800,desc="Define the max chars in one line, other overflow parts would be cutted.",range='10-32767'}
     --NULL={name="null_value",default="",desc="Define display value for NULL."}
 }
@@ -261,6 +262,7 @@ function grid.show_pivot(rows,col_del)
 end
 
 function grid:ctor(printhead)
+    if printhead==nil then printhead=(grid.heading or "on")=="on" and true or false end
     self.headind=printhead==false and 1 or 0
     self.printhead=self.headind == 0 and true or false
     self.colsize=table.new(255,0)
@@ -286,6 +288,7 @@ function grid:add(rs)
     rs[0]=headind
     local cnt=0
     --run statement
+    if grid.col_wrap==nil then print(debug.traceback()) end
     for k,v in ipairs(rs) do
         if k>grid.maxcol then break end
         local csize,v1 =0,v
@@ -531,14 +534,9 @@ function grid.onload()
     local set=env.set.init
     for k,v in pairs(params) do
         grid[v.name]=v.default
-        if type(k)=='table' then
-            v.is_array=true
-            params[k[1]]=v 
-        end
-        if type(k)=='table' or not v.is_array then set(k,grid[v.name],grid.set_param,"grid",v.desc,v.range) end
+        set(k,grid[v.name],grid.set_param,"grid",v.desc,v.range)
     end
     env.ansi.define_color("HEADCOLOR","BRED;HIW","ansi.grid","Define grid title's color, type 'ansi' for more available options")
 end
 
-for k,v in pairs(params) do grid[v.name]=v.default end
 return grid
