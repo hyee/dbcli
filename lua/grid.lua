@@ -27,7 +27,7 @@ function grid.set_param(name,value)
     elseif name=="COLWRAP" and value>0 and value<30 then
         return print("The value cannot be less than 30 !")
     end
-    grid[params[name].name]=value
+    grid[grid.params[name].name]=value
     return value
 end
 
@@ -262,8 +262,12 @@ function grid.show_pivot(rows,col_del)
 end
 
 function grid:ctor(printhead)
-    if printhead==nil then printhead=(grid.heading or "on")=="on" and true or false end
-    self.headind=printhead==false and 1 or 0
+    if printhead==nil then 
+        printhead=(grid.heading or "on")=="on" and true or false
+        self.headind=printhead==false and -1 or 0
+    else
+        self.headind=printhead==false and 1 or 0
+    end
     self.printhead=self.headind == 0 and true or false
     self.colsize=table.new(255,0)
     self.data=table.new(1000,0)
@@ -275,6 +279,10 @@ function grid:add(rs)
     local title_style=grid.title_style
     local colbase=grid.col_auto_size
     local rownum=grid.row_num
+    if self.headind==-1 then
+        self.headind=1
+        return
+    end
     if rownum == "on" then
         table.insert(rs,1,headind==0 and "#" or headind)
     end
@@ -532,8 +540,14 @@ end
 
 function grid.onload()
     local set=env.set.init
+    grid.params={}
     for k,v in pairs(params) do
         grid[v.name]=v.default
+        if type(k)=="table" then
+            for _,k1 in ipairs(k) do grid.params[k1]=v end
+        else
+            grid.params[k]=v
+        end
         set(k,grid[v.name],grid.set_param,"grid",v.desc,v.range)
     end
     env.ansi.define_color("HEADCOLOR","BRED;HIW","ansi.grid","Define grid title's color, type 'ansi' for more available options")
