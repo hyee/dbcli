@@ -46,7 +46,7 @@ for /r %%i in (*.pack.gz) do (
    unpack200 -q -r "%%i" "!str:~0,-8!"
 )
 
-(%ANSICON_CMD%  "!JRE_HOME!\java.exe" -noverify -Xmx384M -cp .\lib\*;.\lib\ext\*%OTHER_LIB% ^
+(%ANSICON_CMD%  "!JRE_HOME!\java.exe" -server -noverify -Xmx384M -cp .\lib\*;.\lib\ext\*%OTHER_LIB% ^
     -XX:+UseG1GC -XX:+UseStringDeduplication ^
     -Dfile.encoding=%DBCLI_ENCODING% -Dsun.jnu.encoding=%DBCLI_ENCODING% -Dclient.encoding.override=%DBCLI_ENCODING% ^
     -Dinput.encoding=%DBCLI_ENCODING% -Duser.language=en -Duser.region=US -Duser.country=US ^

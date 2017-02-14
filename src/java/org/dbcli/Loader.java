@@ -167,7 +167,7 @@ public class Loader {
     }
 
     public void copyClass(String className) throws Exception {
-        JavaAgent.copyFile(null, className.replace("\\.", "/"));
+        JavaAgent.copyFile(null, className.replace("\\.", "/"), null);
     }
 
     public String dumpClass(String folder) throws Exception {
@@ -253,8 +253,8 @@ public class Loader {
         return (Object[][]) asyncCall(new Callable() {
             @Override
             public Object call() throws Exception {
-                try(ResultSetHelperService helper = new ResultSetHelperService(rs)) {
-                return (rows >= 0 && rows <= 10000) ? helper.fetchRows(rows) : helper.fetchRowsAsync(rows);
+                try (ResultSetHelperService helper = new ResultSetHelperService(rs)) {
+                    return (rows >= 0 && rows <= 10000) ? helper.fetchRows(rows) : helper.fetchRowsAsync(rows);
                 }
             }
         });

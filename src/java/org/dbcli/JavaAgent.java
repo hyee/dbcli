@@ -1,18 +1,20 @@
 package org.dbcli;
 
+import jdk.internal.org.objectweb.asm.ClassReader;
+
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
-import java.lang.reflect.Modifier;
-import java.net.MalformedURLException;
+import java.lang.reflect.Field;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.security.CodeSource;
 import java.security.ProtectionDomain;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -21,13 +23,18 @@ public class JavaAgent implements ClassFileTransformer {
     static Instrumentation in;
     static Pattern re;
     static String separator = File.separator;
+    static Field classFinder = null;
 
     static {
         try {
             re = Pattern.compile("/([^/]+?)\\.(jar|zip)");
             File f = new File(JavaAgent.class.getProtectionDomain().getCodeSource().getLocation().toURI());
             destFolder = f.getParentFile().getParent() + separator + "dump" + separator;
+            classFinder = ClassLoader.class.getDeclaredField("classes");
+            classFinder.setAccessible(true);
         } catch (URISyntaxException localURISyntaxException) {
+        } catch (NoSuchFieldException ex) {
+            ex.printStackTrace();
         }
     }
 
@@ -37,7 +44,7 @@ public class JavaAgent implements ClassFileTransformer {
             inst.addTransformer(new JavaAgent());
             dumpAllClasses();
             ArrayList<Class<?>> classes = new ArrayList<Class<?>>();
-            for (Class<?> c: inst.getAllLoadedClasses()) {
+            for (Class<?> c : inst.getAllLoadedClasses()) {
                 if (inst.isModifiableClass(c)) {
                     classes.add(c);
                 }
@@ -51,12 +58,15 @@ public class JavaAgent implements ClassFileTransformer {
     public static void agentmain(String agentArgs, Instrumentation inst) {
         premain(agentArgs, inst);
     }
-    private static Pattern re1=Pattern.compile("^\\[+L(.+);");
-    private static String isCandidate(String className) {
+
+    private static Pattern re1 = Pattern.compile("^\\[+L(.+);?$");
+
+    private static String getCandidate(String className) {
         if (className.charAt(0) == '[') {
             Matcher mt = re1.matcher(className);
-            if (mt.find()) return mt.group(1).replace('.', '/');
-            return null;
+            if (mt.find()) className = mt.group(1).replace('.', '/');
+            else return null;
+            if (className.indexOf("/") == -1) return null;
         }
         return className;
     }
@@ -74,52 +84,29 @@ public class JavaAgent implements ClassFileTransformer {
             if (cs != null) {
                 result = cs.getLocation();
             }
-            if (result != null) {
-                if ("file".equals(result.getProtocol())) {
-                    try {
-                        if ((result.toExternalForm().endsWith(".jar")) || (result.toExternalForm().endsWith(".zip"))) {
-                            result = new URL("jar:".concat(result.toExternalForm()).concat("!/").concat(clsAsResource));
-                        } else if (new File(result.getFile()).isDirectory()) {
-                            result = new URL(result, clsAsResource);
-                        }
-                    } catch (MalformedURLException localMalformedURLException) {
-                    }
-                }
-            }
         }
         if (result == null) {
             ClassLoader clsLoader = cls.getClassLoader();
-
-            result = clsLoader != null ? clsLoader.getResource(clsAsResource) : ClassLoader.getSystemResource(clsAsResource);
+            if (clsLoader != null) result = clsLoader.getResource(clsAsResource);
+            if (result == null) result = ClassLoader.getSystemResource(clsAsResource);
         }
         return result;
     }
 
     public static URL getClassURL(String className, ProtectionDomain domain) throws Exception {
         String source = className;
-        URL location;
+        URL location = null;
         if (className == null) return null;
         try {
             source = "/" + className.replace(".", "/") + ".class";
-            location = JavaAgent.class.getResource(source);
-        } catch (Exception e1) {
-            location = null;
-            System.out.println("Error on loading Source: " + source);
-            //e1.printStackTrace();
-        }
-        Exception e = new Exception();
-        if (location == null) {
-            CodeSource c;
-            try {
-                c = (domain == null ? Class.forName(className.replace("/", ".")).getProtectionDomain() : domain).getCodeSource();
-                if (c == null) throw e;
-            } catch (Exception e1) {
-                if (className != null && !className.startsWith("sun/reflect") && !className.startsWith("com/sun/proxy"))
-                    System.out.println("Cannot find class " + className);
-                return null;
+            if (domain != null) {
+                CodeSource c = domain.getCodeSource();
+                if (c != null) location = c.getLocation();
             }
-            location = c.getLocation();
+            if (location == null) location = JavaAgent.class.getResource(source);
+        } catch (Exception e1) {
         }
+        if (location == null) return null;
 
         try {
             if ((location.toExternalForm().endsWith(".jar")) || (location.toExternalForm().endsWith(".zip"))) {
@@ -128,17 +115,17 @@ public class JavaAgent implements ClassFileTransformer {
                 location = new URL(location, source);
             }
             return location;
-        } catch (MalformedURLException e1) {
+        } catch (Exception e1) {
             Loader.getRootCause(e1).printStackTrace();
             throw e1;
         }
     }
 
-    public static String resolveDest(ProtectionDomain domain, String className) throws Exception {
+    public static String resolveDest(ProtectionDomain domain, Object clz) throws Exception {
         String jar = null;
         String source;
         Matcher mt;
-        URL location = getClassURL(className, domain);
+        URL location = (clz instanceof Class) ? getClassLocation((Class) clz) : getClassURL((String) clz, domain);
         if (location == null) return null;
         source = location.toString();
         mt = re.matcher(source);
@@ -146,21 +133,49 @@ public class JavaAgent implements ClassFileTransformer {
         return jar;
     }
 
-    public static void copyFile(ProtectionDomain domain, String className) throws Exception {
-        String jar = resolveDest(domain, className);
-        if (jar == null) return;
+    public static void copyFile(ProtectionDomain domain, Object clz, byte[] bytes) throws Exception {
+        String jar = "";
+        String className = (clz instanceof Class) ? ((Class) clz).getName() : (String) clz;
+        if (className.startsWith("[")) {
+            className = getCandidate(className);
+            while ((clz instanceof Class) && ((Class) clz).isArray()) clz = ((Class) clz).getComponentType();
+        }
+        if (className == null) {
+            System.out.println("Cannot resolve class:" + clz);
+            return;
+        }
+        className = className.replace(";", "");
+        jar = resolveDest(domain, clz);
+        if (jar == null) jar = "temp";
         File destFile = new File(destFolder + jar + separator + className.replace(".", separator).replace("/", separator) + ".class");
         if (destFile.exists()) return;
-        System.out.println("Folder: " + jar + "     Class: " + className);
+
         destFile.getParentFile().mkdirs();
-        byte[] classFileBuffer = getClassBuffer(className, domain);
-        FileOutputStream destStream = new FileOutputStream(destFile);
-        destStream.write(classFileBuffer, 0, classFileBuffer.length);
-        destStream.close();
+        byte[] classFileBuffer;
+        if (bytes == null) classFileBuffer = getClassBuffer(clz, domain);
+        else classFileBuffer = bytes;
+        if (classFileBuffer != null) {
+            System.out.println("Folder: " + jar + "     Class: " + className);
+            FileOutputStream destStream = new FileOutputStream(destFile);
+            destStream.write(classFileBuffer, 0, classFileBuffer.length);
+            destStream.close();
+            ClassReader cr = new ClassReader(classFileBuffer);
+            String superClassName = cr.getSuperName();
+            String[] interfaces = cr.getInterfaces();
+            if (superClassName != null && !superClassName.replace(".", "/").equals(className.replace(".", "/")))
+                copyFile(null, superClassName, null);
+            if (interfaces != null && interfaces.length > 0) {
+                for (int k = 0; k < interfaces.length; k++)
+                    copyFile(null, interfaces[k], null);
+            }
+            //System.out.println("superClassName :"+superClassName);
+        } else {
+            System.out.println("Cannot load file: " + className);
+        }
     }
 
-    public static byte[] getClassBuffer(String className, ProtectionDomain domain) throws Exception {
-        URL classLocation = getClassURL(className, domain);
+    public static byte[] getClassBuffer(Object clz, ProtectionDomain domain) throws Exception {
+        URL classLocation = (clz instanceof String) ? getClassURL((String) clz, domain) : getClassLocation((Class) clz);
         InputStream srcStream = classLocation.openStream();
         ByteArrayOutputStream outStream = new ByteArrayOutputStream();
         int count = -1;
@@ -171,77 +186,31 @@ public class JavaAgent implements ClassFileTransformer {
     }
 
     public static void dumpAllClasses() throws Exception {
-        for(Class c:in.getAllLoadedClasses()){
-            String className = isCandidate(c.getName());
+        ArrayList<Class> ary = new ArrayList();
+        ary.addAll(Arrays.asList(in.getAllLoadedClasses()));
+        ClassLoader[] loaders = new ClassLoader[]{Thread.currentThread().getContextClassLoader(), JavaAgent.class.getClassLoader(), ClassLoader.getSystemClassLoader()};
+        for (ClassLoader loader : loaders) {
+            while (loader != null) {
+                ary.addAll(Arrays.asList(in.getInitiatedClasses(loader)));
+                loader = loader.getParent();
+            }
+        }
+        for (Class c : ary) {
+            String className = getCandidate(c.getName());
             if (className != null) {
-                copyFile(c.getProtectionDomain(), className);
+                copyFile(c.getProtectionDomain(), c, null);
             } //else System.out.println("Cannot dump " + c.getName());
         }
     }
 
     public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined, ProtectionDomain domain, byte[] classFileBuffer) {
         try {
-            if(className!=null) copyFile(domain, className);
+            ClassReader cr = new ClassReader(classFileBuffer);
+            if (className == null) className = cr.getClassName();
+            if (className != null) copyFile(domain, className, classFileBuffer);
         } catch (Exception e) {
             Loader.getRootCause(e).printStackTrace();
         }
         return classFileBuffer;
     }
-
-/*
-    public static void addFilesToExistingJar(File zipFile, File[] files) throws IOException {
-        // get a temp file
-        File tempFile = File.createTempFile(zipFile.getName(), null);
-        // delete it, otherwise you cannot rename your existing zip to it.
-        tempFile.delete();
-        boolean renameOk=zipFile.renameTo(tempFile);
-        if (!renameOk)
-        {
-            throw new RuntimeException("could not rename the file "+zipFile.getAbsolutePath()+" to "+tempFile.getAbsolutePath());
-        }
-        byte[] buf = new byte[1024];
-        JarInputStream zin = new JarInputStream(new FileInputStream(tempFile));
-        JarOutputStream out = new JarOutputStream(new FileOutputStream(zipFile));
-        JarEntry entry = zin.getNextJarEntry();
-        while (entry != null) {
-            String name = entry.getName();
-            boolean notInFiles = true;
-            for (File f : files) {
-                if (f.getName().equals(name)) {
-                    notInFiles = false;
-                    break;
-                }
-            }
-            if (notInFiles) {
-                // Add ZIP entry to output stream.
-                out.putNextEntry(new JarEntry(name));
-                // Transfer bytes from the ZIP file to the output file
-                int len;
-                while ((len = zin.read(buf)) > 0) {
-                    out.write(buf, 0, len);
-                }
-            }
-            entry = zin.getNextJarEntry();
-        }
-        // Close the streams
-        zin.close();
-        // Compress the files
-        for (int i = 0; i < files.length; i++) {
-            InputStream in = new FileInputStream(files[i]);
-            // Add ZIP entry to output stream.
-            out.putNextEntry(new JarEntry(files[i].getName()));
-            // Transfer bytes from the file to the ZIP file
-            int len;
-            while ((len = in.read(buf)) > 0) {
-                out.write(buf, 0, len);
-            }
-            // Complete the entry
-            out.closeEntry();
-            in.close();
-        }
-        // Complete the ZIP file
-        out.close();
-        tempFile.delete();
-    }
- */
 }
