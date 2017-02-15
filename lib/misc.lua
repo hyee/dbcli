@@ -389,3 +389,22 @@ function string.ulen(s)
     return len1,len2
 end
 
+function try(args)
+    local succ,res=pcall(args[1])
+    local catch=args.catch or args[2]
+    local finally=args.finally or args[3]
+
+    if not succ and catch then
+        if(type(res)=="string" and env.ansi) then 
+            res=res:match(env.ansi.pattern.."(.-)"..env.ansi.pattern)
+        end
+        succ,res=pcall(catch,res)
+    end
+
+    if finally then
+        succ,res=pcall(finally)
+    end
+
+    if not succ then env.raise_error(res) end
+    return res
+end

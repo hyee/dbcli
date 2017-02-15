@@ -39,7 +39,14 @@ function xplan.explain(fmt,sql)
     if e10053 then db:internal_call("ALTER SESSION SET EVENTS='10053 trace name context forever, level 1'") end
     local args={}
     sql=sql:gsub("(:[%w_$]+)",function(s) args[s:sub(2)]=""; return s end)
-    db:internal_call("Explain PLAN SET STATEMENT_ID='INTERNAL_DBCLI_CMD' FOR "..sql,args)
+    try{function() db:internal_call("Explain PLAN SET STATEMENT_ID='INTERNAL_DBCLI_CMD' FOR "..sql,args) end,
+        function(err)
+            if type(err)=="string" and err:find("ORA-00942",1,true) then
+                env.raise("Unable to EXPLAIN the SQL due to the inaccessibility of its depending objects, please make sure you've switched to the correct schema.")
+            else
+                env.raise_error(err)
+            end
+        end}
     sql=[[
         WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
         (SELECT *

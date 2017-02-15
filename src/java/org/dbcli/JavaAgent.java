@@ -1,5 +1,6 @@
 package org.dbcli;
 
+import com.esotericsoftware.reflectasm.ClassAccess;
 import jdk.internal.org.objectweb.asm.ClassReader;
 
 import java.io.ByteArrayOutputStream;
@@ -97,6 +98,7 @@ public class JavaAgent implements ClassFileTransformer {
         String source = className;
         URL location = null;
         if (className == null) return null;
+        if (className.replace("/",".").startsWith(ClassAccess.ACCESS_CLASS_PREFIX)) return null;
         try {
             source = "/" + className.replace(".", "/") + ".class";
             if (domain != null) {
