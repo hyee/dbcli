@@ -23,7 +23,6 @@ import java.util.Arrays;
 import java.util.List;
 
 public class EpollEvent extends Structure {
-
     /*
         typedef union epoll_data
         {

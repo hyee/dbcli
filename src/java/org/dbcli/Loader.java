@@ -1,6 +1,7 @@
 package org.dbcli;
 
 import com.naef.jnlua.LuaState;
+import com.naef.jnlua.LuaTable;
 import com.opencsv.CSVReader;
 import com.opencsv.CSVWriter;
 import com.opencsv.ResultSetHelperService;
@@ -71,19 +72,13 @@ public class Loader {
 
     public static void loadLua(Loader loader, String args[]) throws Exception {
         lua = new LuaState();
-        lua.openLibs();
-        lua.pushJavaObject(loader);
-        lua.setGlobal("loader");
+        lua.pushGlobal("loader", loader);
         console.lua = lua;
         if (console.writer != null) {
-            lua.pushJavaObject(console);
-            lua.setGlobal("reader");
-            lua.pushJavaObject(console.writer);
-            lua.setGlobal("writer");
-            lua.pushJavaObject(console.getTerminal());
-            lua.setGlobal("terminal");
-            lua.pushJavaObject(new PrintWriter(console.getOutput()));
-            lua.setGlobal("jwriter");
+            lua.pushGlobal("reader", console);
+            lua.pushGlobal("writer", console.writer);
+            lua.pushGlobal("terminal", console.getTerminal());
+            lua.pushGlobal("jwriter", new PrintWriter(console.getOutput()));
         }
         String separator = File.separator;
 
@@ -99,19 +94,15 @@ public class Loader {
         //System.out.println(sb.toString());
         lua.load(sb.toString(), input);
         if (ReloadNextTime != null && ReloadNextTime.equals("_init_")) ReloadNextTime = null;
-        //lua.getTop();
+        ArrayList<String> list = new ArrayList<>(args.length);
+        if (ReloadNextTime != null) list.add("set database " + ReloadNextTime);
         for (int i = 0; i < args.length; i++) {
-            if (args[i].toLowerCase().contains("database ") && ReloadNextTime != null) {
-                args[i] = "set database " + ReloadNextTime;
-                ReloadNextTime = null;
-            }
-            lua.pushString(args[i]);
+            if (ReloadNextTime != null && (args[i].toLowerCase().contains(" database ") || args[i].toLowerCase().contains(" platform ")))
+                continue;
+            list.add(args[i]);
         }
-        if (ReloadNextTime != null) {
-            lua.pushString("set database " + ReloadNextTime);
-            ReloadNextTime = null;
-            lua.call(args.length + 1, 0);
-        } else lua.call(args.length, 0);
+        ReloadNextTime = null;
+        lua.call(list.toArray());
         lua.close();
         lua = null;
         System.gc();
@@ -150,7 +141,6 @@ public class Loader {
 
     public static void main(String args[]) throws Exception {
         Loader l = new Loader();
-        System.loadLibrary("lua5.1");
         while (ReloadNextTime != null) loadLua(l, args);
         //console.threadPool.shutdown();
     }
@@ -247,20 +237,20 @@ public class Loader {
         });
     }
 
-    public Object[][] fetchResult(final ResultSet rs, final int rows) throws Exception {
+    public LuaTable fetchResult(final ResultSet rs, final int rows) throws Exception {
         if (rs.getStatement().isClosed() || rs.isClosed()) throw CancelError;
         setCurrentResultSet(rs);
-        return (Object[][]) asyncCall(new Callable() {
+        return new LuaTable((Object[]) asyncCall(new Callable() {
             @Override
-            public Object call() throws Exception {
+            public Object[] call() throws Exception {
                 try (ResultSetHelperService helper = new ResultSetHelperService(rs)) {
                     return (rows >= 0 && rows <= 10000) ? helper.fetchRows(rows) : helper.fetchRowsAsync(rows);
                 }
             }
-        });
+        }));
     }
 
-    public String[][] fetchCSV(final String CSVFileSource, final int rows) throws Exception {
+    public LuaTable fetchCSV(final String CSVFileSource, final int rows) throws Exception {
         ArrayList<String[]> list = (ArrayList<String[]>) asyncCall(new Callable() {
             @Override
             public ArrayList<String[]> call() throws Exception {
@@ -277,7 +267,7 @@ public class Loader {
                 return ary;
             }
         });
-        return list.toArray(new String[][]{});
+        return new LuaTable(list.toArray());
     }
 
     public String inflate(byte[] data) throws Exception {

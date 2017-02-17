@@ -98,7 +98,8 @@ public class JavaAgent implements ClassFileTransformer {
         String source = className;
         URL location = null;
         if (className == null) return null;
-        if (className.replace("/",".").startsWith(ClassAccess.ACCESS_CLASS_PREFIX)) return null;
+        final String tmp=className.replace("/", ".");
+        if (tmp.startsWith(ClassAccess.ACCESS_CLASS_PREFIX)||tmp.contains("$$Lambda$")) return null;
         try {
             source = "/" + className.replace(".", "/") + ".class";
             if (domain != null) {

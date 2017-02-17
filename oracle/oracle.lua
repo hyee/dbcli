@@ -183,7 +183,6 @@ function oracle:connect(conn_str)
         END;]],self.props)
     self.props.isdba=self.props.isdba=='TRUE' and true or false
     if not succ then
-        print(err)
         self.props.instance=1
         self.props.db_version='9.1'
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
