@@ -1,5 +1,6 @@
 package org.dbcli;
 
+import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
 import com.naef.jnlua.LuaTable;
 import com.opencsv.CSVReader;
@@ -194,45 +195,36 @@ public class Loader {
 
     public int ResultSet2CSV(final ResultSet rs, final String fileName, final String header, final boolean aync, final String excludes, final String[] remaps) throws Exception {
         setCurrentResultSet(rs);
-        return (int) asyncCall(new Callable() {
-            @Override
-            public Integer call() throws Exception {
-                try (CSVWriter writer = new CSVWriter(fileName)) {
-                    writer.setAsyncMode(aync);
-                    setExclusiveAndRemap(writer, excludes, remaps);
-                    int result = writer.writeAll(rs, true);
-                    return result - 1;
-                }
+        return (int) asyncCall(() -> {
+            try (CSVWriter writer = new CSVWriter(fileName)) {
+                writer.setAsyncMode(aync);
+                setExclusiveAndRemap(writer, excludes, remaps);
+                int result = writer.writeAll(rs, true);
+                return result - 1;
             }
         });
     }
 
     public int ResultSet2SQL(final ResultSet rs, final String fileName, final String header, final boolean aync, final String excludes, final String[] remaps) throws Exception {
         setCurrentResultSet(rs);
-        return (int) asyncCall(new Callable() {
-            @Override
-            public Integer call() throws Exception {
-                try (SQLWriter writer = new SQLWriter(fileName)) {
-                    writer.setAsyncMode(aync);
-                    writer.setFileHead(header);
-                    setExclusiveAndRemap(writer, excludes, remaps);
-                    int count = writer.writeAll2SQL(rs, "", 1500);
-                    return count;
-                }
+        return (int) asyncCall(() -> {
+            try (SQLWriter writer = new SQLWriter(fileName)) {
+                writer.setAsyncMode(aync);
+                writer.setFileHead(header);
+                setExclusiveAndRemap(writer, excludes, remaps);
+                int count = writer.writeAll2SQL(rs, "", 1500);
+                return count;
             }
         });
     }
 
     public int CSV2SQL(final ResultSet rs, final String SQLFileName, final String CSVfileName, final String header, final String excludes, final String[] remaps) throws Exception {
         setCurrentResultSet(rs);
-        return (int) asyncCall(new Callable() {
-            @Override
-            public Integer call() throws Exception {
-                try (SQLWriter writer = new SQLWriter(SQLFileName)) {
-                    writer.setFileHead(header);
-                    setExclusiveAndRemap(writer, excludes, remaps);
-                    return writer.writeAll2SQL(CSVfileName, rs);
-                }
+        return (int) asyncCall(() -> {
+            try (SQLWriter writer = new SQLWriter(SQLFileName)) {
+                writer.setFileHead(header);
+                setExclusiveAndRemap(writer, excludes, remaps);
+                return writer.writeAll2SQL(CSVfileName, rs);
             }
         });
     }
@@ -251,21 +243,18 @@ public class Loader {
     }
 
     public LuaTable fetchCSV(final String CSVFileSource, final int rows) throws Exception {
-        ArrayList<String[]> list = (ArrayList<String[]>) asyncCall(new Callable() {
-            @Override
-            public ArrayList<String[]> call() throws Exception {
-                ArrayList<String[]> ary = new ArrayList();
-                String[] line;
-                int size = 0;
-                try (CSVReader reader = new CSVReader(new FileReader(CSVFileSource))) {
-                    while ((line = reader.readNext()) != null) {
-                        ++size;
-                        if (rows > -1 && size > rows) break;
-                        ary.add(line);
-                    }
+        ArrayList<String[]> list = (ArrayList<String[]>) asyncCall(() -> {
+            ArrayList<String[]> ary = new ArrayList();
+            String[] line;
+            int size = 0;
+            try (CSVReader reader = new CSVReader(new FileReader(CSVFileSource))) {
+                while ((line = reader.readNext()) != null) {
+                    ++size;
+                    if (rows > -1 && size > rows) break;
+                    ary.add(line);
                 }
-                return ary;
             }
+            return ary;
         });
         return new LuaTable(list.toArray());
     }
@@ -318,28 +307,9 @@ public class Loader {
     }
 
     public synchronized Object asyncCall(final Object o, final String func, final Object... args) throws Exception {
-        return asyncCall(new Callable() {
-            @Override
-            public Object call() throws Exception {
-                int len = args.length;
-                Object[] params = new Object[len];
-                Class[] clazz = new Class[len];
-                for (int i = 0; i < len; i++) {
-                    params[i] = args[i];
-                    clazz[i] = args[i].getClass();
-                    if (clazz[i] == Double.class) {
-                        clazz[i] = int.class;
-                        params[i] = (int) Math.round((Double) params[i]);
-                    }
-                }
-                if (!(o instanceof Class)) {
-                    Method m = o.getClass().getDeclaredMethod(func, clazz);
-                    return m.invoke(o, params);
-                } else {
-                    Method m = ((Class) o).getDeclaredMethod(func, clazz);
-                    return m.invoke(null, params);
-                }
-            }
+        return asyncCall(() -> {
+            ClassAccess access=ClassAccess.access(lua.toClass(o));
+            return access.invoke(o,func,args);
         });
     }
 
