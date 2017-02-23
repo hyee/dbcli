@@ -74,11 +74,7 @@ public class Console extends ConsoleReader {
             public void interrupt(Object... c) throws Exception {
                 if (!isRunning() && lua != null && threadID == Thread.currentThread().getId()) {
                     lua.getGlobal("TRIGGER_EVENT");
-                    lua.pushJavaObject(c[0]);
-                    lua.pushString((String) c[1]);
-                    lua.call(2, 1);
-                    int r = lua.toInteger(lua.getTop());
-                    //System.out.println(r);
+                    Integer r = (Integer) (lua.call(c)[0]);
                     if (r == 2) ((long[]) c[0])[0] = 2;
                 }
             }

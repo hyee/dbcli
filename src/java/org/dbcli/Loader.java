@@ -308,8 +308,8 @@ public class Loader {
 
     public synchronized Object asyncCall(final Object o, final String func, final Object... args) throws Exception {
         return asyncCall(() -> {
-            ClassAccess access=ClassAccess.access(lua.toClass(o));
-            return access.invoke(o,func,args);
+            ClassAccess access = ClassAccess.access(lua.toClass(o));
+            return access.invoke(o, func, args);
         });
     }
 

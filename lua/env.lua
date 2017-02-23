@@ -793,6 +793,10 @@ function env.eval_line(lines,is_internal,is_skip)
     if env.event then
         lines=env.event.callback('BEFORE_EVAL',{lines})[1]
     end
+    if type(lines)~="string" then
+        print(debug.traceback())
+        return nil 
+    end 
     local stack=lines:split("[\n\r]+")
     for index,line in ipairs(stack) do
         if index==#stack then
