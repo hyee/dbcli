@@ -3,7 +3,7 @@
     If not specify the parameter, then list the top 100 segments within current schema.
     option '-d': used to detail in segment level, otherwise in name level, only shows the top 1000 segments
     --[[
-        @CHECK_ACCESS: dba_segments/dba_objects/sys.seg$={}
+        @CHECK_ACCESS: sys.user$/sys.obj$/sys.seg$={}
         &OPT2: default={}, d={partition_name,}
         &OPT3: default={null}, d={partition_name}
     --]]
