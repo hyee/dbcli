@@ -1,6 +1,7 @@
 .cfg
 .dat
 .ini
+.log
 \jre\
 \src\
 \cache\

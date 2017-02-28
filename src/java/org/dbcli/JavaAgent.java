@@ -155,7 +155,13 @@ public class JavaAgent implements ClassFileTransformer {
 
         destFile.getParentFile().mkdirs();
         byte[] classFileBuffer;
-        if (bytes == null) classFileBuffer = getClassBuffer(clz, domain);
+        if (bytes == null) {
+            classFileBuffer = getClassBuffer(clz, domain);
+            if(classFileBuffer==null) {
+                System.out.println("Cannot load file: " + className);
+                return;
+            }
+        }
         else classFileBuffer = bytes;
         if (classFileBuffer != null) {
             System.out.println("Folder: " + jar + "     Class: " + className);
@@ -179,6 +185,7 @@ public class JavaAgent implements ClassFileTransformer {
 
     public static byte[] getClassBuffer(Object clz, ProtectionDomain domain) throws Exception {
         URL classLocation = (clz instanceof String) ? getClassURL((String) clz, domain) : getClassLocation((Class) clz);
+        if(classLocation==null) return null;
         InputStream srcStream = classLocation.openStream();
         ByteArrayOutputStream outStream = new ByteArrayOutputStream();
         int count = -1;
