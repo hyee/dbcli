@@ -13,7 +13,7 @@ DECLARE
     v_version   varchar2(30);
 BEGIN
     OPEN :cur FOR
-        SELECT SNAP_ID,DBID,INSTANCE_NUMBER,REPORT_ID,COMPONENT_ID,PERIOD_START_TIME,
+        SELECT REPORT_ID,SNAP_ID,DBID,INSTANCE_NUMBER,COMPONENT_ID,PERIOD_START_TIME,
                PERIOD_END_TIME,GENERATION_TIME,reps_xml."trigger_cause", reps_xml."impact"
         FROM  dba_hist_reports  reps,
            XMLTABLE('/report_repository_summary/trigger'

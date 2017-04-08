@@ -3,7 +3,8 @@
       @ctn: 12={decode(bitand(ksppiflg, 4), 4, 'FALSE', decode(bitand(ksppiflg / 65536, 3), 0, 'FALSE', 'TRUE')) ISPDB_MDF,}, default={}
    --]]
 ]]*/
-SELECT x.inst_id,ksppinm NAME, ksppity TYPE, substr(ksppstdvl,1,80) DISPLAY_VALUE, ksppstdf ISDEFAULT,
+SELECT x.inst_id,ksppinm NAME, ksppity TYPE, substr(ksppstdvl,1,80) DISPLAY_VALUE, KSPPSTDFL default_value,
+       decode(upper(KSPPSTVL),upper(KSPPSTDFL),'TRUE','FALSE') ISDEFAULT,
        decode(bitand(ksppiflg / 256, 1), 1, 'TRUE', 'FALSE') ISSES_Mdf,
        decode(bitand(ksppiflg / 65536, 3), 1, 'IMMEDIATE', 2, 'DEFERRED', 3, 'IMMEDIATE', 'FALSE') ISSYS_MDF,
        decode(bitand(ksppiflg, 4),
@@ -20,5 +21,5 @@ AND   ((:V1 is not null and (ksppinm LIKE LOWER('%'||:V1||'%') or lower(ksppdesc
        :V3 is not null and (ksppinm LIKE LOWER('%'||:V3||'%') or lower(ksppdesc) LIKE LOWER('%'||:V3||'%')) or
        :V4 is not null and (ksppinm LIKE LOWER('%'||:V4||'%') or lower(ksppdesc) LIKE LOWER('%'||:V4||'%')) or
        :V5 is not null and (ksppinm LIKE LOWER('%'||:V5||'%') or lower(ksppdesc) LIKE LOWER('%'||:V5||'%'))) 
-  OR (:V1 is null and ksppstdf='FALSE'))
+  OR (:V1 is null and ksppstdf='FALSE') and  decode(upper(KSPPSTVL),upper(KSPPSTDFL),'TRUE','FALSE')='FALSE')
 ORDER BY 1,NAME;
