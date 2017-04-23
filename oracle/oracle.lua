@@ -206,7 +206,7 @@ function oracle:connect(conn_str)
     for k,v in pairs(self.props) do args[k]=v end
     args.oci_connection=packer.pack_str(self.conn_str)
     if not packer.unpack_str(args.oci_connection) then
-        env.warn("Failed to pack '%s', the unpack result is nil!",self.conn_str)
+        --env.warn("Failed to pack '%s', the unpack result is nil!",self.conn_str)
     end
     env.login.capture(self,args.jdbc_alias or args.url,args)
     if event then event("AFTER_ORACLE_CONNECT",self,sql,args,result) end

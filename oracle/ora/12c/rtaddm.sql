@@ -25,7 +25,46 @@ BEGIN
         WHERE reps.COMPONENT_NAME='perf'
         AND   REPORT_ID=nvl(v_report_id,REPORT_ID)
         ORDER BY REPORT_ID DESC;
-    IF v_report_id IS NOT NULL THEN
+    IF v_report_id=0 THEN
+        v_report := dbms_addm.REAL_TIME_ADDM_REPORT ();
+        :report := q'[<?xml version="1.0" encoding="UTF-8"?><html>
+        <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+        <base href="http://download.oracle.com/otn_software/"/>
+        <script language="javascript" type="text/javascript" src="emviewers/scripts/flashver.js">
+        <!--Test flash version-->
+        </script>
+        <style>
+              body { margin: 0px; overflow:hidden }
+            </style>
+        </head>
+        <body scroll="no">
+        <script type="text/xml">]'||v_report||q'[<!--FXTMODEL-->
+        </script>
+        <script id="scriptVersion" language="javascript" type="text/javascript">var version = "12";</script>
+        <script language="JavaScript" type="text/javascript" src="emviewers/scripts/loadswf.js">
+        
+        <!--Load report viewer-->
+        </script>
+        <iframe name="_history" frameborder="0" scrolling="no" width="22" height="0">
+        <html>
+        <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1"/>
+        <script type="text/javascript" language="JavaScript1.2" charset="utf-8">
+            var v = new top.Vars(top.getSearch(window));
+            var fv = v.toString('$_');
+        </script>
+        </head>
+        <body>
+        <script type="text/javascript" language="JavaScript1.2" charset="utf-8" src="emviewers/scripts/document.js">
+        <!--Run document script-->
+        </script>
+        </body>
+        </html>
+        </iframe>
+        </body>
+        </html>]';
+    ELSIF v_report_id IS NOT NULL THEN
         v_report := dbms_perf.report_addm_watchdog_xml(v_report_id).getClobVal();
         SELECT extractvalue(xmltype(v_report), '/report/@db_version')
         INTO v_version

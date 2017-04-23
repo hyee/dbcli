@@ -343,6 +343,18 @@ function var.define_column(col,...)
                     end
                     return string.format("%.2f%s",v,units[#units])
                 end
+            elseif f=="SMHD2" then
+                local units={'s','m','h','d'}
+                local div={60,60,24}
+                obj.format=function(v)
+                    local s=tonumber(v)
+                    if not s then return v end
+                    for i=1,#units-1 do
+                        v,s=s,s/div[i]
+                        if s<1 then return string.format("%.2f%s",v,units[i]) end
+                    end
+                    return string.format("%.2f%s",s,units[#units])
+                end
             elseif f=="SMHD" or f=="ITV" then
                 local fmt=arg=='SMHD' and '%dD %02dH %02dM %02dS' or
                           f=='SMHD' and '%dd %02dh %02dm %02ds' or '%d %02d:%02d:%02d'
@@ -441,6 +453,7 @@ function var.onload()
         2) @@NAME <column> FOR[MAT] TMB :  Cast number as thousand/million/billion/etc format
         3) @@NAME <column> FOR[MAT] SMHD:  Cast number as 'xxD xxH xxM xxS' format
         4) @@NAME <column> FOR[MAT] smhd:  Cast number as 'xxd xxh xxm xxs' format
+        4) @@NAME <column> FOR[MAT] smhd2: Cast number as 'x.xx[s|m|h|d]' format
         5) @@NAME <column> FOR[MAT] ITV :  Cast number as 'dd hh:mm:ss' format
     ]]
     cfg.init({"VERIFY","PrintVar",'VER'},'on',nil,"db.core","Max size of historical commands",'on,off')
