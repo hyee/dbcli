@@ -104,7 +104,9 @@ function oracle:connect(conn_str)
          ['oracle.jdbc.maxCachedBufferSize']="104857600",
          ['oracle.jdbc.useNio']='true',
          ['oracle.jdbc.TcpNoDelay']='true',
-         ["oracle.jdbc.J2EE13Compliant"]='true'
+         ["oracle.jdbc.J2EE13Compliant"]='true',
+         ['oracle.net.networkCompression']='on',
+         ['oracle.net.keepAlive']='true'
         },args)
     self:load_config(url,args)
     if args.db_version and tonumber(args.db_version:match("(%d+)"))>0 then

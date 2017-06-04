@@ -100,7 +100,7 @@ function trace.get_trace(filename,mb,from_mb)
         end
         if not tracefile  then
             if db.props.db_version>'11' then
-                filename=db:get_value[[select value from v$diag_info where name='Default Trace File']]
+                filename=db:get_value[[select tracefile from v$process where addr=(select paddr from v$session where sid=userenv('sid'))]]
             else
                 filename=db:get_value[[SELECT u_dump.value || '/' || SYS_CONTEXT('userenv','instance_name') || '_ora_' || p.spid ||
                                                nvl2(p.traceid, '_' || p.traceid, NULL) || '.trc' "Trace File"

@@ -1,14 +1,16 @@
 /*[[
-    Show object size. Usage: @@NAME [-d] [ [owner.]object_name[.PARTITION_NAME] ]
-    If not specify the parameter, then list the top 100 segments within current schema.
+    Show object size. Usage: @@NAME [-d] [[owner.]object_name[.PARTITION_NAME]|-a]
+    If not specify the parameter, then list the top 100 segments.
     option '-d': used to detail in segment level, otherwise in name level, only shows the top 1000 segments
+    option '-a': based on all schemas, default as current schema only.
     --[[
         @CHECK_ACCESS: sys.user$/sys.obj$/sys.seg$={}
         &OPT2: default={}, d={partition_name,}
         &OPT3: default={null}, d={partition_name}
+        &OPT4: default={OWNER=SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')}, a={1=1}
     --]]
 ]]*/
-ora _find_object &V1 1
+ora _find_object "&V1" 1
 set feed off
 VAR cur REFCURSOR
 BEGIN
@@ -86,7 +88,7 @@ BEGIN
                         ROUND(AVG(next_extent)/1024) next_ext_kb,
                     MAX(TABLESPACE_NAME) KEEP(DENSE_RANK LAST ORDER BY BYTES) TABLESPACE_NAME
             FROM   dba_segments s
-            WHERE  OWNER=SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
+            WHERE  &OPT4
             GROUP BY OWNER,SEGMENT_NAME,&OPT2  decode('&OPT2','',regexp_substr(segment_type, '\S+'),segment_type)
             ORDER BY SIZE_MB DESC) a
         WHERE  ROWNUM <= 100;

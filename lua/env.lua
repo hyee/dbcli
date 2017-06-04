@@ -1023,6 +1023,7 @@ function env.save_data(file,txt)
     txt=env.MessagePack.pack(txt)
     f:write(txt)
     f:close()
+    return file
 end
 
 function env.write_cache(file,txt)

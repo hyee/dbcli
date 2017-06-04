@@ -36,7 +36,7 @@
         
         Others        : workareatab_dump,shared_server_state,treedump,errorstack,events
     --[[
-        @check_ver1: 11.2={ ,plan_stat=>''all_executions''}, default={}
+        @check_ver1        : 11.2={ ,plan_stat=>''all_executions''}, default={}
     --]]    
 ]]*/
 
@@ -50,19 +50,29 @@ DECLARE
     serial# PLS_INTEGER;
 
     PROCEDURE get_trace_file(p_sid INT) IS
+        v_path varchar2(100);
     BEGIN
-        FOR r IN (SELECT u_dump.value || '/' || SYS_CONTEXT('userenv', 'instance_name') || '_ora_' || p.spid ||
-                          nvl2(p.traceid, '_' || p.traceid, NULL) || '.trc' fil, s.serial#
-                  FROM   v$parameter u_dump
-                  CROSS  JOIN v$process p
-                  JOIN   v$session s
-                  ON     p.addr = s.paddr
-                  WHERE  u_dump.name = 'user_dump_dest'
-                  AND    s.sid = p_sid) LOOP
-            serial# := r.serial#;
-            dbms_output.put_line('Target trace file is ' || r.fil);
-        END LOOP;
-    
+        IF '&check_ver1' IS NOT NULL THEN
+            for r in(SELECT p.*,s.serial# se FROM v$process p
+                     JOIN   v$session s
+                     ON     p.addr = s.paddr
+                     where  s.sid = p_sid) loop
+                  serial# := r.se;
+                  dbms_output.put_line('Target trace file is ' || r.tracefile);
+            end loop;
+        ELSE 
+            FOR r IN (SELECT u_dump.value || '/' || SYS_CONTEXT('userenv', 'instance_name') || '_ora_' || p.spid ||
+                              nvl2(p.traceid, '_' || p.traceid, NULL) || '.trc' fil, s.serial#
+                      FROM   v$parameter u_dump
+                      CROSS  JOIN v$process p
+                      JOIN   v$session s
+                      ON     p.addr = s.paddr
+                      WHERE  u_dump.name = 'user_dump_dest'
+                      AND    s.sid = p_sid) LOOP
+                serial# := r.serial#;
+                dbms_output.put_line('Target trace file is ' || r.fil);
+            END LOOP;
+        END IF;
         IF serial# IS NULL THEN
             raise_application_error(-20001, 'Cannot find session with sid = ' || p_sid || ' in local instance!');
         END IF;

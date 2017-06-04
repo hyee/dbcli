@@ -12,7 +12,7 @@
       @CHECK_VERSION: 11.0={1}
       &option: default={}, l={,sql_exec_id}
       &filter: default={1=1},f={},l={sql_id=:V1},u={username=sys_context('userenv','current_schema')}
-      &format: default={BASIC+PLAN},s={ALL-SESSIONS}, a={ALL} 
+      &format: default={BASIC+PLAN+BINDS},s={ALL-SESSIONS}, a={ALL} 
    --]]
 ]]*/
 
