@@ -33,12 +33,11 @@ public class Console extends ConsoleReader {
     protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(5);
     public LuaState lua;
     private History his;
-    private ScheduledFuture task;
+    volatile private ScheduledFuture task;
     private EventReader monitor = new EventReader();
     private ActionListener event;
     private char[] keys;
     private long threadID;
-    private boolean isBlocking = false;
     private HashMap<String, Method> methods = new HashMap();
     private Method t_puts;
 
@@ -105,7 +104,6 @@ public class Console extends ConsoleReader {
     }
 
     public String readLine(String prompt) throws IOException {
-        isBlocking = false;
         if (isRunning()) setEvents(null, null);
         String line = super.readLine(prompt);
         return line;
@@ -122,16 +120,18 @@ public class Console extends ConsoleReader {
     public synchronized void setEvents(ActionListener event, char[] keys) {
         this.event = event;
         this.keys = keys;
-        this.isBlocking = false;
         if (this.task != null) {
             this.task.cancel(true);
             this.task = null;
         }
         if (this.event != null && this.keys != null) {
             this.monitor.counter = 0;
-            //this.task = this.threadPool.schedule(this.monitor, 1000, TimeUnit.MILLISECONDS);
             this.task = this.threadPool.scheduleWithFixedDelay(this.monitor, 1000, 200, TimeUnit.MILLISECONDS);
         }
+    }
+
+    public void setEvents() {
+        setEvents(null, null);
     }
 
     public void setMultiplePrompt(String Content) {
@@ -153,7 +153,6 @@ public class Console extends ConsoleReader {
 
         public void run() {
             try {
-                if (isBlocking) return;
                 int ch = in.peek(-1);
                 if (ch < 1) return;
                 for (int i = 0; i < keys.length; i++) {
@@ -162,7 +161,7 @@ public class Console extends ConsoleReader {
                     event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, Character.toChars(ch).toString()));
                     return;
                 }
-                if (ch > 32) isBlocking = true;
+                if (ch > 32) setEvents(null, null);
                 else in.read(-1);
             } catch (Exception e) {
                 //Loader.getRootCause(e).printStackTrace();

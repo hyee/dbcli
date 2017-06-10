@@ -34,9 +34,9 @@
         JOIN   gv$statname
         USING  (inst_id, statistic#)
         WHERE  (VALUE > 0 OR :V3 IS NOT NULL)
-        AND    (:V3 IS NULL OR lower(name) like lower('%&V3%'))
-        AND    (:V1 IS NULL OR sid=decode(:V1,'0',userenv('sid'),:V1))
-        AND    (:V2 IS NULL OR inst_id=:V2)) A
+        AND    (:V1 IS NULL AND SID=USERENV('SID') or sid=:V1 OR :V1='0') 
+        AND    ((:V2 IS NULL AND (:V1 IS NULL AND inst_id=userenv('instance') or 1=1)) OR inst_id=:V2) 
+        AND    (:V3 IS NULL OR lower(name) like lower('%&V3%'))) A
     ORDER BY NAME]],
     agg_cols="Delta",
     grp_cols="inst_id,sid,NAME",

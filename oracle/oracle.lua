@@ -391,7 +391,7 @@ function oracle:exec(sql,...)
 end
 
 function oracle:run_proc(sql)
-    return self:exec('BEGIN '..sql..';END;')
+    return self:query('BEGIN '..sql..';END;')
 end
 
 function oracle:asql_single_line(...)
@@ -518,7 +518,7 @@ function oracle:onload()
     set_command(self,"select",   default_desc,        self.query     ,true,1,true)
     set_command(self,"with",   default_desc,        self.query     ,self.check_completion,1,true)
     set_command(self,{"execute","exec","call"},default_desc,self.run_proc,false,2,true)
-    set_command(self,{"declare","begin"},  default_desc,  self.exec  ,self.check_completion,1,true)
+    set_command(self,{"declare","begin"},  default_desc,  self.query  ,self.check_completion,1,true)
     set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)
     set_command(self,"alter" ,   default_desc,        self.exec      ,true,1,true)
     --cfg.init("dblink","",self.set_db_link,"oracle","Define the db link to run all SQLs in target db",nil,self)

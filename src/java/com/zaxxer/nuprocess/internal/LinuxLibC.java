@@ -13,19 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.zaxxer.nuprocess.internal;
 
 import com.sun.jna.Native;
 import com.sun.jna.Platform;
 
-public class LinuxLibC {
-    static {
-        Native.register(Platform.C_LIBRARY_NAME);
-    }
+public class LinuxLibC
+{
+   static {
+      Native.register(Platform.C_LIBRARY_NAME);
+   }
 
-    // from /usr/include/bits/sched.h
-    public static final int CLONE_FS = 0x00000200; /* Share or unshare cwd between threads / processes */
+   // from /usr/include/sched.h
+   public static native int unshare(int flags);
 
-    // from /usr/include/sched.h
-    public static native int unshare(int flags);
+   // from /usr/include/bits/sched.h
+   public static final int CLONE_FS = 0x00000200; /* Share or unshare cwd between threads / processes */
 }

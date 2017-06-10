@@ -11,6 +11,7 @@
         AND    (:V2 is null OR inst_id=:V2)
     ]],
     agg_cols="value",
+    after_sql=[[col *count format kmg]],
     grp_cols="inst_id,NAME,class",
     grp_cols="NAME"
 }

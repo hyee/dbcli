@@ -600,6 +600,7 @@ function env.parse_args(cmd,rest,is_cross_line)
                 rest=rest:sub(#terminator_str+1):trim()
                 arg_count=math.min(2,arg_count)
             end
+
         end
     end
     
@@ -649,6 +650,9 @@ function env.parse_args(cmd,rest,is_cross_line)
                 local is_multi_cmd=char~=quote and is_cross_line==true and _CMDS[name] and _CMDS[name].MULTI
                 if count>=arg_count-2 or is_multi_cmd then--the last parameter
                     piece=rest:sub(i+1):gsub("^(%s+)",""):gsub('^"(.*)"$','%1')
+                    if terminator and piece:find(terminator_str,1,true)==1 then
+                        piece=piece:sub(#terminator_str+1):gsub("^%s+","")
+                    end
                     if is_multi_cmd and _CMDS[name].ARGS==1 then
                         args[count],piece=args[count]..' '..piece,''
                     elseif piece~='' then
@@ -789,7 +793,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
     end
 end
 
-function env.eval_line(lines,is_internal,is_skip)
+function env.eval_line(lines,exec,is_internal,is_skip)
     if env.event then
         lines=env.event.callback('BEFORE_EVAL',{lines})[1]
     end
@@ -800,9 +804,9 @@ function env.eval_line(lines,is_internal,is_skip)
     local stack=lines:split("[\n\r]+")
     for index,line in ipairs(stack) do
         if index==#stack then
-            return _eval_line(line,is_internal,is_skip)
+            return _eval_line(line,exec,is_internal,is_skip)
         else
-            _eval_line(line,false,false)
+            _eval_line(line,exec,false,false)
         end
     end
 end

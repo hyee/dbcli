@@ -316,7 +316,7 @@ function grid:add(rs)
                     if v1~=math.floor(v1) then
                         v1=string.format_number("%,.2f",v1,'double')
                     else
-                        v1=string.format_number("%,d",v1,'int')
+                        v1=string.format_number("%,d",v1,'long')
                     end
                     v=v1
                 end

@@ -13,6 +13,7 @@
 ora _find_object "&V1" 1
 set feed off
 VAR cur REFCURSOR
+col bytes format kmg
 BEGIN
     IF :V1 IS NOT NULL THEN
         OPEN :cur FOR
@@ -39,9 +40,8 @@ BEGIN
                 u.user#,u.name owner, o.name object_name,
                 nvl(extractvalue(b.column_value, '/ROW/P'),rtrim(t.subname,'%')) PARTITION_NAME,
                 extractvalue(b.column_value, '/ROW/T') object_type,
-                round(extractvalue(b.column_value, '/ROW/C1') / 1024 / 1024, 2) size_mb,
+                extractvalue(b.column_value, '/ROW/C1') +0 bytes,
                 row_number() over(order by extractvalue(b.column_value, '/ROW/C1')+0 desc) seq,
-                round(extractvalue(b.column_value, '/ROW/C1') / 1024 / 1024 / 1024, 3) size_gb,
                 extractvalue(b.column_value, '/ROW/C2') + 0 extents,
                 extractvalue(b.column_value, '/ROW/C3') + 0 segments,
                 round(extractvalue(b.column_value, '/ROW/C4') / 1024) init_kb,

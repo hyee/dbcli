@@ -563,10 +563,11 @@ function db_core:exec(sql,args)
 
     local params1=nil
     local result={is_query and prep:getResultSet() or prep:getUpdateCount()}
-
+    local i=0;
     while true do
         params1,is_query=pcall(prep.getMoreResults,prep,2)
         if not params1 or not is_query then break end
+        if result[1]==-1 then table.remove(result,1) end
         result[#result+1]=prep:getResultSet()
     end
 
@@ -700,7 +701,15 @@ end
 function db_core:query(sql,args)
     local result = self:exec(sql,args)
     if result and type(result)~="number" then
-        self.resultset:print(result,self.conn)
+        if type(result)=="table" then
+            for _,rs in ipairs(result) do
+                if type(rs) ~='number' then
+                    self.resultset:print(rs,self.conn)
+                end
+            end
+        else
+            self.resultset:print(result,self.conn)
+        end
     end
 end
 

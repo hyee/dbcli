@@ -19,6 +19,7 @@ import java.net.URLClassLoader;
 import java.sql.CallableStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.Future;
@@ -34,9 +35,9 @@ public class Loader {
     KeyMap keyMap;
     KeyListner q;
     Future sleeper;
-    private CallableStatement stmt = null;
+    private volatile CallableStatement stmt = null;
     private Sleeper runner = new Sleeper();
-    private ResultSet rs;
+    private volatile ResultSet rs;
     private IOException CancelError = new IOException("Statement is aborted.");
 
     public Loader() {
@@ -218,6 +219,12 @@ public class Loader {
         });
     }
 
+    Pattern pbase = Pattern.compile("(\\S{64,64}[\n\r])%1+");
+
+    public String Base64ZlibToText(String str) throws Exception {
+        return inflate(Base64.getDecoder().decode(str.replaceAll("\\s+", "")));
+    }
+
     public int CSV2SQL(final ResultSet rs, final String SQLFileName, final String CSVfileName, final String header, final String excludes, final String[] remaps) throws Exception {
         setCurrentResultSet(rs);
         return (int) asyncCall(() -> {
@@ -236,6 +243,7 @@ public class Loader {
             @Override
             public Object[] call() throws Exception {
                 try (ResultSetHelperService helper = new ResultSetHelperService(rs)) {
+                    helper.IS_TRIM = false;
                     return (rows >= 0 && rows <= 10000) ? helper.fetchRows(rows) : helper.fetchRowsAsync(rows);
                 }
             }
@@ -272,7 +280,7 @@ public class Loader {
     }
 
     public synchronized boolean setStatement(CallableStatement p) throws Exception {
-        try {
+        try (Closeable clo = console::setEvents) {
             this.stmt = p;
             console.setEvents(p == null ? null : q, new char[]{'q', 'Q', KeyMap.CTRL_D});
             if (p == null) return false;
@@ -283,7 +291,6 @@ public class Loader {
             throw e;
         } finally {
             this.stmt = null;
-            console.setEvents(null, null);
         }
     }
 
@@ -314,7 +321,7 @@ public class Loader {
     }
 
     public synchronized void sleep(int millSeconds) throws Exception {
-        try {
+        try (Closeable clo = console::setEvents) {
             runner.setSleep(millSeconds);
             sleeper = console.threadPool.submit(runner);
             console.setEvents(q, new char[]{'q', KeyMap.CTRL_D});
@@ -323,7 +330,6 @@ public class Loader {
             throw CancelError;
         } finally {
             sleeper = null;
-            console.setEvents(null, null);
         }
     }
 
