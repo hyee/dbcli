@@ -42,7 +42,7 @@ public class NuKernel32
       NativeLibrary nativeLibrary = NativeLibrary.getInstance("kernel32", W32APIOptions.UNICODE_OPTIONS);
       Native.register(NuKernel32.class, nativeLibrary);
    }
-
+   public static native boolean SetEnvironmentVariable(String lpName, String lpValue);
    public static native int GetProcessId(HANDLE hObject);
    
    public static native boolean CloseHandle(HANDLE hObject);

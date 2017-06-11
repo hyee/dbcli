@@ -530,4 +530,120 @@ function oracle:onunload()
     env.set_title("")
 end
 
+oracle.lz_compress=[[
+    FUNCTION adler32(p_src IN BLOB) RETURN VARCHAR2 IS
+        s1 INT := 1;
+        s2 INT := 0;
+        ll PLS_INTEGER := dbms_lob.getlength(p_src);
+        cc VARCHAR2(32766);
+        p  PLS_INTEGER := 1;
+        l  PLS_INTEGER;
+    BEGIN
+        LOOP
+            cc := to_char(dbms_lob.substr(p_src,16383,p));
+            l  := LENGTH(cc)/2;
+            FOR i IN 1 .. l LOOP
+                s1 := s1 + to_number(SUBSTR(cc,(i-1)*2+1,2), 'XX');
+                s2 := s2 + s1;
+            END LOOP;
+            s1 := mod(s1,65521);
+            s2 := mod(s2,65521);
+            p := p + 16383;
+            EXIT WHEN p >= ll;
+        END LOOP;
+        RETURN to_char(s2, 'fm0XXX') || to_char(s1, 'fm0XXX');
+    END;
+
+    FUNCTION zlib_compress(p_src IN BLOB) RETURN BLOB IS
+        t_tmp BLOB;
+        t_cpr BLOB;
+    BEGIN
+        t_tmp := utl_compress.lz_compress(p_src);
+        dbms_lob.createtemporary(t_cpr, FALSE);
+        t_cpr := hextoraw('789C'); -- zlib header
+        dbms_lob.copy(t_cpr, t_tmp, dbms_lob.getlength(t_tmp) - 10 - 8, 3, 11);
+        dbms_lob.append(t_cpr, hextoraw(adler32(p_src))); -- zlib trailer
+        dbms_lob.freetemporary(t_tmp);
+        RETURN t_cpr;
+    END;
+
+    FUNCTION zlib_decompress(p_src IN BLOB) RETURN BLOB IS
+        t_out      BLOB;
+        t_tmp      BLOB;
+        t_buffer   RAW(1);
+        t_hdl      BINARY_INTEGER;
+        t_s1       PLS_INTEGER; -- s1 part of adler32 checksum
+        t_last_chr PLS_INTEGER;
+    BEGIN
+        dbms_lob.createtemporary(t_out, FALSE);
+        dbms_lob.createtemporary(t_tmp, FALSE);
+        t_tmp := hextoraw('1F8B0800000000000003'); -- gzip header
+        dbms_lob.copy(t_tmp, p_src, dbms_lob.getlength(p_src) - 2 - 4, 11, 3);
+        dbms_lob.append(t_tmp, hextoraw('0000000000000000')); -- add a fake trailer
+        t_hdl := utl_compress.lz_uncompress_open(t_tmp);
+        t_s1  := 1;
+        LOOP
+            BEGIN
+                utl_compress.lz_uncompress_extract(t_hdl, t_buffer);
+            EXCEPTION
+                WHEN OTHERS THEN
+                    EXIT;
+            END;
+            dbms_lob.append(t_out, t_buffer);
+            t_s1 := MOD(t_s1 + to_number(rawtohex(t_buffer), 'xx'), 65521);
+        END LOOP;
+        t_last_chr := to_number(dbms_lob.substr(p_src, 2, dbms_lob.getlength(p_src) - 1), '0XXX') - t_s1;
+        IF t_last_chr < 0 THEN
+            t_last_chr := t_last_chr + 65521;
+        END IF;
+        dbms_lob.append(t_out, hextoraw(to_char(t_last_chr, 'fm0X')));
+        IF utl_compress.isopen(t_hdl) THEN
+            utl_compress.lz_uncompress_close(t_hdl);
+        END IF;
+        dbms_lob.freetemporary(t_tmp);
+        RETURN t_out;
+    END;
+
+    PROCEDURE base64encode(p_clob IN OUT NOCOPY CLOB, p_width INT := 20000) IS
+        v_blob       BLOB;
+        v_raw        RAW(32767);
+        v_chars      VARCHAR2(32767);
+        dest_offset  INTEGER := 1;
+        src_offset   INTEGER := 1;
+        lob_csid     NUMBER := dbms_lob.default_csid;
+        lang_context INTEGER := dbms_lob.default_lang_ctx;
+        warning      INTEGER;
+    BEGIN
+        IF dbms_lob.getLength(p_clob) IS NULL THEN
+            RETURN;
+        END IF;
+        IF p_width !=1000 THEN
+            BEGIN
+                EXECUTE IMMEDIATE 'begin :lob := sys.dbms_report.ZLIB2BASE64_CLOB(:lob);end;'
+                    USING IN OUT p_clob;
+                p_clob := REPLACE(p_clob, CHR(10));
+                RETURN;
+            EXCEPTION
+                WHEN OTHERS THEN
+                    NULL;
+            END;
+        END IF;
+        dbms_lob.createtemporary(v_blob, TRUE);
+        dbms_lob.ConvertToBLOB(v_blob, p_clob, dbms_lob.getLength(p_clob), dest_offset, src_offset, lob_csid, lang_context, warning);
+        v_blob := zlib_compress(v_blob);
+        dbms_lob.createtemporary(p_clob, TRUE);
+        src_offset  := 1;
+        dest_offset := dbms_lob.getLength(v_blob);
+        LOOP
+            v_raw   := dbms_lob.substr(v_blob, p_width, OFFSET => src_offset);
+            v_chars := regexp_replace(utl_raw.cast_to_varchar2(utl_encode.base64_encode(v_raw)), '[' || CHR(10) || chr(13) || ']+');
+            IF src_offset > 1 THEN
+                v_chars := CHR(10) || v_chars;
+            END IF;
+            dbms_lob.writeappend(p_clob, LENGTH(v_chars), v_chars);
+            src_offset := src_offset + p_width;
+            EXIT WHEN src_offset >= dest_offset;
+        END LOOP;
+    END;]]
+
 return oracle.new()

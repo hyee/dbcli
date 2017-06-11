@@ -16,9 +16,13 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.Charset;
 import java.sql.CallableStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
@@ -221,8 +225,43 @@ public class Loader {
 
     Pattern pbase = Pattern.compile("(\\S{64,64}[\n\r])%1+");
 
-    public String Base64ZlibToText(String str) throws Exception {
-        return inflate(Base64.getDecoder().decode(str.replaceAll("\\s+", "")));
+    public static byte[] hexStringToByteArray(String s) {
+        int len = s.length();
+        byte[] data = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            data[i / 2] = (byte) ((Character.digit(s.charAt(i), 16) << 4)
+                    + Character.digit(s.charAt(i+1), 16));
+        }
+        return data;
+    }
+
+    public String Base64ZlibToText(String[] pieces) throws Exception {
+        byte[] buff=new byte[]{};
+        for(String piece:pieces) {
+            if(piece==null) continue;
+            byte[] tmp=Base64.getDecoder().decode(piece.replaceAll("\\s+", ""));
+            byte[] joinedArray = Arrays.copyOf(buff, buff.length + tmp.length);
+            System.arraycopy(tmp, 0, joinedArray, buff.length, tmp.length);
+            buff=joinedArray;
+        }
+        if(buff.length==0) return "";
+        try {
+            return inflate(buff);
+        } catch (Exception e) {
+            ByteBuffer bytes=ByteBuffer.allocateDirect(buff.length);
+            bytes.put(hexStringToByteArray("789c"));
+            bytes.put(Arrays.copyOfRange(buff,10,buff.length-8));
+            int s1=1,s2=0;
+            for(byte b:buff) {
+                s1=(s1+b&0xff)%65521;
+                s2=(s1+s2)%65521;
+            }
+            bytes.put(hexStringToByteArray(String.format("%04X%04X",s2,s1)));
+            bytes.flip();
+            buff=new byte[bytes.remaining()];
+            bytes.get(buff);
+            return inflate(buff);
+        }
     }
 
     public int CSV2SQL(final ResultSet rs, final String SQLFileName, final String CSVfileName, final String header, final String excludes, final String[] remaps) throws Exception {

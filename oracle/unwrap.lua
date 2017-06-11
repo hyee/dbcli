@@ -100,7 +100,7 @@ function unwrap.unwrap(obj,ext)
         end
         local txt=table.concat(stack,'')
         if not txt or txt=='' then return end
-        txt=loader:Base64ZlibToText(txt);
+        txt=loader:Base64ZlibToText({txt});
         env.save_data(filename,txt)
         print("Decoded Base64 written to file "..filename)
         return;

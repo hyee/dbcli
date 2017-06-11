@@ -60,8 +60,13 @@ function awr.dump_report(stmt,starttime,endtime,instances,container)
     env.checkerr(db:check_access('dbms_workload_repository.awr_report_html',1),'Sorry, you dont have the "execute" privilege on package "dbms_workload_repository"!')
     local args={starttime,endtime,instances or "",'#VARCHAR','#CLOB','#CURSOR'}
     cfg.set("feed","off")
+    stmt=stmt:replace("@lz_compress@",env.oracle.lz_compress)
     db:exec(stmt:replace('@get_range@',awr.extract_period()),args)
-    if args[5] then
+    if args[5] and args[5]~='' then
+        if not args[5]:find(' ') then
+            local pieces=args[5]:split('\n')
+            args[5]=loader:Base64ZlibToText(pieces);
+        end
         print("Result written to file "..env.write_cache(args[4],args[5]))
         db.resultset:print(args[6],db.conn)
     else
@@ -118,6 +123,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
         filename VARCHAR2(200);
         cur      SYS_REFCURSOR;
         @get_range@
+        @lz_compress@
         PROCEDURE extract_awr(p_start VARCHAR2, p_end VARCHAR2, p_inst VARCHAR2,p_start2 VARCHAR2:=NULL, p_end2 VARCHAR2:=NULL) IS
             stim1         date;
             etim1         date;
@@ -220,6 +226,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
         END;
     BEGIN
         extract_awr(:1, :2, :3,@diff);
+        base64encode(rs);
         :4 := filename;
         :5 := rs;
         :6 := cur;
@@ -252,6 +259,7 @@ function awr.extract_ash(starttime,endtime,instances,container)
         action        VARCHAR2(300);
         client_id     VARCHAR2(300);
         @get_range@
+        @lz_compress@
         PROCEDURE extract_ash(p_start VARCHAR2, p_end VARCHAR2, p_inst VARCHAR2) IS
             dbid INT;
             stim date;
@@ -345,6 +353,7 @@ function awr.extract_ash(starttime,endtime,instances,container)
         END;
     BEGIN
         extract_ash(:1, :2, :3);
+        base64encode(rs);
         :4 := filename;
         :5 := rs;
         :6 := cur;
@@ -409,6 +418,7 @@ function awr.extract_addm(starttime,endtime,instances,container)
     starttime,endtime,instances,instances=awr.get_range(starttime,endtime,instances,container)
     local args={starttime,endtime,instances or "",'#VARCHAR'}
     cfg.set("feed","off")
+    stmt=stmt:replace("@lz_compress@",env.oracle.lz_compress)
     db:exec(stmt:replace('@get_range@',awr.extract_period()),args)
     if args[4] ~='#VARCHAR' then
         db.C.ora:run_script('addm',args[4])
