@@ -105,6 +105,8 @@ function oracle:connect(conn_str)
          ['oracle.jdbc.useNio']='true',
          ['oracle.jdbc.TcpNoDelay']='true',
          ["oracle.jdbc.J2EE13Compliant"]='true',
+         ['oracle.jdbc.autoCommitSpecCompliant']='false',
+         ['oracle.jdbc.useFetchSizeWithLongColumn']='true',
          ['oracle.net.networkCompression']='on',
          ['oracle.net.keepAlive']='true'
         },args)

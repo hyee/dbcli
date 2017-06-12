@@ -28,6 +28,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.Future;
 import java.util.regex.Pattern;
+import java.util.zip.GZIPInputStream;
 import java.util.zip.InflaterInputStream;
 
 public class Loader {
@@ -230,38 +231,22 @@ public class Loader {
         byte[] data = new byte[len / 2];
         for (int i = 0; i < len; i += 2) {
             data[i / 2] = (byte) ((Character.digit(s.charAt(i), 16) << 4)
-                    + Character.digit(s.charAt(i+1), 16));
+                    + Character.digit(s.charAt(i + 1), 16));
         }
         return data;
     }
 
     public String Base64ZlibToText(String[] pieces) throws Exception {
-        byte[] buff=new byte[]{};
-        for(String piece:pieces) {
-            if(piece==null) continue;
-            byte[] tmp=Base64.getDecoder().decode(piece.replaceAll("\\s+", ""));
+        byte[] buff = new byte[]{};
+        for (String piece : pieces) {
+            if (piece == null) continue;
+            byte[] tmp = Base64.getDecoder().decode(piece.replaceAll("\\s+", ""));
             byte[] joinedArray = Arrays.copyOf(buff, buff.length + tmp.length);
             System.arraycopy(tmp, 0, joinedArray, buff.length, tmp.length);
-            buff=joinedArray;
+            buff = joinedArray;
         }
-        if(buff.length==0) return "";
-        try {
-            return inflate(buff);
-        } catch (Exception e) {
-            ByteBuffer bytes=ByteBuffer.allocateDirect(buff.length);
-            bytes.put(hexStringToByteArray("789c"));
-            bytes.put(Arrays.copyOfRange(buff,10,buff.length-8));
-            int s1=1,s2=0;
-            for(byte b:buff) {
-                s1=(s1+b&0xff)%65521;
-                s2=(s1+s2)%65521;
-            }
-            bytes.put(hexStringToByteArray(String.format("%04X%04X",s2,s1)));
-            bytes.flip();
-            buff=new byte[bytes.remaining()];
-            bytes.get(buff);
-            return inflate(buff);
-        }
+        if (buff.length == 0) return "";
+        return inflate(buff);
     }
 
     public int CSV2SQL(final ResultSet rs, final String SQLFileName, final String CSVfileName, final String header, final String excludes, final String[] remaps) throws Exception {
@@ -307,8 +292,19 @@ public class Loader {
     }
 
     public String inflate(byte[] data) throws Exception {
-        try (ByteArrayInputStream bis = new ByteArrayInputStream(data); InflaterInputStream iis = new InflaterInputStream(bis);) {
+        ByteArrayInputStream bis = new ByteArrayInputStream(data);
+        InflaterInputStream iis;
+        try {
+            iis = new InflaterInputStream(bis);
+        } catch (Exception e1) {
+            try {
+                iis = new GZIPInputStream(bis);
+            } catch (Exception e2) {
+                throw e1;
+            }
+        }
 
+        try (Closeable c2 = iis) {
             StringBuffer sb = new StringBuffer();
             int i = 0;
             for (int c = iis.read(); c != -1; c = iis.read()) {

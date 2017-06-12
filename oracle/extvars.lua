@@ -133,6 +133,7 @@ function extvars.onload()
 end
 
 db.lz_compress=[[
+    --Refer to: https://technology.amis.nl/2010/03/13/utl_compress-gzip-and-zlib/ 
     FUNCTION adler32(p_src IN BLOB) RETURN VARCHAR2 IS
         s1 INT := 1;
         s2 INT := 0;
@@ -161,7 +162,7 @@ db.lz_compress=[[
         t_cpr BLOB;
     BEGIN
         t_tmp := utl_compress.lz_compress(p_src);
-        dbms_lob.createtemporary(t_cpr, FALSE);
+        dbms_lob.createtemporary(t_cpr, TRUE);
         t_cpr := hextoraw('789C'); -- zlib header
         dbms_lob.copy(t_cpr, t_tmp, dbms_lob.getlength(t_tmp) - 10 - 8, 3, 11);
         dbms_lob.append(t_cpr, hextoraw(adler32(p_src))); -- zlib trailer
@@ -170,83 +171,90 @@ db.lz_compress=[[
     END;
 
     FUNCTION zlib_decompress(p_src IN BLOB) RETURN BLOB IS
-        t_out      BLOB;
         t_tmp      BLOB;
-        t_buffer   RAW(1);
-        t_hdl      BINARY_INTEGER;
-        t_s1       PLS_INTEGER; -- s1 part of adler32 checksum
-        t_last_chr PLS_INTEGER;
-    BEGIN
-        dbms_lob.createtemporary(t_out, FALSE);
-        dbms_lob.createtemporary(t_tmp, FALSE);
+    BEGIN  
+        dbms_lob.createtemporary(t_tmp, TRUE);
         t_tmp := hextoraw('1F8B0800000000000003'); -- gzip header
         dbms_lob.copy(t_tmp, p_src, dbms_lob.getlength(p_src) - 2 - 4, 11, 3);
-        dbms_lob.append(t_tmp, hextoraw('0000000000000000')); -- add a fake trailer
-        t_hdl := utl_compress.lz_uncompress_open(t_tmp);
-        t_s1  := 1;
-        LOOP
-            BEGIN
-                utl_compress.lz_uncompress_extract(t_hdl, t_buffer);
-            EXCEPTION
-                WHEN OTHERS THEN
-                    EXIT;
-            END;
-            dbms_lob.append(t_out, t_buffer);
-            t_s1 := MOD(t_s1 + to_number(rawtohex(t_buffer), 'xx'), 65521);
-        END LOOP;
-        t_last_chr := to_number(dbms_lob.substr(p_src, 2, dbms_lob.getlength(p_src) - 1), '0XXX') - t_s1;
-        IF t_last_chr < 0 THEN
-            t_last_chr := t_last_chr + 65521;
-        END IF;
-        dbms_lob.append(t_out, hextoraw(to_char(t_last_chr, 'fm0X')));
-        IF utl_compress.isopen(t_hdl) THEN
-            utl_compress.lz_uncompress_close(t_hdl);
-        END IF;
-        dbms_lob.freetemporary(t_tmp);
-        RETURN t_out;
+        --dbms_lob.append( t_tmp, hextoraw( '0000000000000000' ) ); -- add a fake trailer
+        t_tmp := utl_compress.lz_uncompress(t_tmp);
+        RETURN t_tmp;
     END;
 
-    PROCEDURE base64encode(p_clob IN OUT NOCOPY CLOB, p_width INT := 20000) IS
+        PROCEDURE base64encode(p_clob IN OUT NOCOPY CLOB, p_func_name VARCHAR2 := NULL) IS
         v_blob       BLOB;
         v_raw        RAW(32767);
         v_chars      VARCHAR2(32767);
+        v_impmode    BOOLEAN := (p_func_name IS NOT NULL);
+        v_width PLS_INTEGER := CASE WHEN v_impmode THEN 1000 ELSE 20000 END;
         dest_offset  INTEGER := 1;
         src_offset   INTEGER := 1;
         lob_csid     NUMBER := dbms_lob.default_csid;
         lang_context INTEGER := dbms_lob.default_lang_ctx;
         warning      INTEGER;
+        PROCEDURE wr(p_line VARCHAR2) IS
+        BEGIN
+            dbms_lob.writeAppend(p_clob, LENGTH(p_line) + 1, p_line || CHR(10));
+            dbms_output.put_line(p_line);
+        END;
     BEGIN
         IF dbms_lob.getLength(p_clob) IS NULL THEN
             RETURN;
         END IF;
-        IF p_width !=1000 THEN
+        IF NOT v_impmode THEN
             BEGIN
                 EXECUTE IMMEDIATE 'begin :lob := sys.dbms_report.ZLIB2BASE64_CLOB(:lob);end;'
                     USING IN OUT p_clob;
                 p_clob := REPLACE(p_clob, CHR(10));
                 RETURN;
-            EXCEPTION WHEN OTHERS THEN NULL;
+            EXCEPTION
+                WHEN OTHERS THEN
+                    NULL;
             END;
         END IF;
         dbms_lob.createtemporary(v_blob, TRUE);
         dbms_lob.ConvertToBLOB(v_blob, p_clob, dbms_lob.getLength(p_clob), dest_offset, src_offset, lob_csid, lang_context, warning);
-        IF p_width !=1000 THEN
+        dbms_lob.createtemporary(p_clob, TRUE);
+        IF NOT v_impmode THEN
             v_blob := zlib_compress(v_blob);
         ELSE
             v_blob := utl_compress.lz_compress(v_blob);
+            wr('FUNCTION '||p_func_name||' RETURN CLOB IS ');
+            wr('    v_clob       CLOB;');
+            wr('    v_blob       BLOB;');
+            wr('    dest_offset  INTEGER := 1;');
+            wr('    src_offset   INTEGER := 1;');
+            wr('    lob_csid     NUMBER  := dbms_lob.default_csid;');
+            wr('    lang_context INTEGER := dbms_lob.default_lang_ctx;');
+            wr('    warning      INTEGER;');
+            wr('    procedure ap(p_line VARCHAR2) is r RAW(32767) := utl_encode.base64_decode(utl_raw.cast_to_raw(p_line));begin dbms_lob.writeAppend(v_blob,utl_raw.length(r),r);end;');
+            wr('BEGIN');
+            wr('    dbms_lob.CreateTemporary(v_blob,TRUE);');
+            wr('    dbms_lob.CreateTemporary(v_clob,TRUE);');
         END IF;
-        dbms_lob.createtemporary(p_clob, TRUE);
+        
         src_offset  := 1;
         dest_offset := dbms_lob.getLength(v_blob);
+    
         LOOP
-            v_raw   := dbms_lob.substr(v_blob, p_width, OFFSET => src_offset);
+            v_raw   := dbms_lob.substr(v_blob, v_width, OFFSET => src_offset);
             v_chars := regexp_replace(utl_raw.cast_to_varchar2(utl_encode.base64_encode(v_raw)), '[' || CHR(10) || chr(13) || ']+');
-            IF src_offset > 1 THEN
-                v_chars := CHR(10) || v_chars;
+            IF v_impmode THEN
+                wr('    ap(''' || v_chars || ''');');
+            ELSE
+                IF src_offset > 1 THEN
+                    v_chars := CHR(10) || v_chars;
+                END IF;
+                dbms_lob.writeappend(p_clob, LENGTH(v_chars), v_chars);
             END IF;
-            dbms_lob.writeappend(p_clob, LENGTH(v_chars), v_chars);
-            src_offset := src_offset + p_width;
+            src_offset := src_offset + v_width;
             EXIT WHEN src_offset >= dest_offset;
         END LOOP;
+        IF v_impmode THEN
+           wr('    v_blob := utl_compress.lz_uncompress(v_blob);');
+           wr('    dbms_lob.ConvertToCLOB(v_clob, v_blob, dbms_lob.getLength(v_blob), dest_offset, src_offset, lob_csid, lang_context, warning);');
+           wr('    return v_clob;'); 
+           wr('END;'); 
+        END IF;
     END;]]
 return extvars
