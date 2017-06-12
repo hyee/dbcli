@@ -259,7 +259,7 @@ function ResultSet:rows(rs,count,limit,null_value)
     return rows
 end
 
-function ResultSet:print(res,conn)
+function ResultSet:print(res,conn,prefix)
     local result,hdl={},nil
     --print(table.dump(self:getHeads(res,-1)))
     local maxrows,pivot=cfg.get("printsize"),cfg.get("pivot")
@@ -273,9 +273,7 @@ function ResultSet:print(res,conn)
         end
     end
     
-    grid.print(hdl or result)
-    db_core.print_feed("SELECT",#result-1)
-    print("")
+    grid.print(hdl or result,nil,nil,nil,nil,prefix,'\n'..(#result-1).." rows returned.\n")
 end
 
 function ResultSet:print_old(res,conn)

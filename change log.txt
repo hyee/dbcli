@@ -1,3 +1,6 @@
+2017-06-12: + public: new option 'set bypassemptyrs on/off'
+2017-06-12: ! oracle: fixed wrong output timezone with 'TIMESTAMP(*) WITH TIMEZONE' data type
+2017-06-11: * oracle: compression transferring on awrdump/addmdump/ashdump to save network time 
 2017-06-10: + public: enhancement on "snap":
                       1). supports parameters in file: before_sql and after_sql
                       2). supports linux style EOF: syntax: snap <<EOF ... EOF
