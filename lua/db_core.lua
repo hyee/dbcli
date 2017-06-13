@@ -272,8 +272,7 @@ function ResultSet:print(res,conn,prefix)
             hdl:add(row)
         end
     end
-    
-    grid.print(hdl or result,nil,nil,nil,nil,prefix,'\n'..(#result-1).." rows returned.\n")
+    grid.print(hdl or result,nil,nil,nil,nil,prefix,(cfg.get("feed")=="on" and '\n'..(#result-1).." rows returned." or "").."\n")
 end
 
 function ResultSet:print_old(res,conn)
