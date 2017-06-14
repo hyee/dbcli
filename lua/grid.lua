@@ -137,7 +137,8 @@ end
 function grid.sort(rows,cols,bypass_head)
     local head
     local sorts={}
-    if rows.__class then rows=rows.data end
+    local has_header
+    if rows.__class then rows,has_header=rows.data,rows.include_head end
     for ind in tostring(cols):gsub('^,*(.-),*$','%1'):gmatch("([^,]+)") do
         local col,l
         if tonumber(ind) then
@@ -167,7 +168,7 @@ function grid.sort(rows,cols,bypass_head)
         sorts[#sorts+1]=function() return col,l end
     end
 
-    if bypass_head==true then head=table.remove(rows,1) end
+    if bypass_head or has_header then head=table.remove(rows,1) end
 
     table.sort(rows,function(a,b)
         for ind,item in ipairs(sorts) do
@@ -542,7 +543,7 @@ function grid.print(rows,include_head,col_del,row_del,psize,prefix,suffix)
         str=str..grid.tostring(rows,include_head,col_del,row_del,psize)
     end
     if grid.bypassemptyrs=='on' and #rows<(include_head and 3 or 1) then return end
-    print(str)
+    print(str,'__BYPASS_GREP__')
     if suffix then print(suffix) end
 end
 
