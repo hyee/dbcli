@@ -134,8 +134,12 @@ public class Console extends ConsoleReader {
         setEvents(null, null);
     }
 
-    public void setMultiplePrompt(String Content) {
-        if (Content == null) {
+    boolean hisEnabled=true;
+    public void setMultiplePrompt(String line) {
+        boolean enabled=line!=null;
+        if(hisEnabled==enabled) return;
+        hisEnabled=enabled;
+        if (!enabled) {
             try {
                 setHistoryEnabled(false);
                 his.removeLast();
@@ -143,7 +147,7 @@ public class Console extends ConsoleReader {
             }
         } else {
             setHistoryEnabled(true);
-            if (!Content.equals("")) this.his.add(Content);
+            if (!line.equals("")) this.his.add(line);
             this.his.moveToEnd();
         }
     }

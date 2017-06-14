@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CountDownLatch;
@@ -353,7 +354,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
                     c = new long[]{rec.keyEvent.keyDown ? 1 : 0, rec.keyEvent.keyCode, uchar, rec.keyEvent.controlKeyState & anyCtrl, rec.keyEvent.repeatCount,//
                             (rec.keyEvent.controlKeyState & altState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & ctrlState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & shiftState) > 0 ? 1 : 0,};
                     inputQueue.put(c);
-                    if ((c[KEY_CHAR] == 10 || c[KEY_CHAR] == 13) && c[KEY_DOWN] == 0 && c[KEY_CTRL] == 0)
+                    if ((c[KEY_CHAR] == 10) && c[KEY_DOWN] == 0 && c[KEY_CTRL] == 0)
                         pause(true);
                 }
             }
