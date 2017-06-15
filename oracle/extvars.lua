@@ -181,7 +181,7 @@ db.lz_compress=[[
         RETURN t_tmp;
     END;
 
-        PROCEDURE base64encode(p_clob IN OUT NOCOPY CLOB, p_func_name VARCHAR2 := NULL) IS
+    PROCEDURE base64encode(p_clob IN OUT NOCOPY CLOB, p_func_name VARCHAR2 := NULL) IS
         v_blob       BLOB;
         v_raw        RAW(32767);
         v_chars      VARCHAR2(32767);

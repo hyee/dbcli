@@ -15,6 +15,10 @@ function db_Types:set(typeName,value,conn)
     end
 end
 
+function db_Types:getTyeName(typeID)
+    return self[typeID] and self[typeID].name
+end
+
 --return column value according to the specific resulset and column index
 function db_Types:get(position,typeName,res,conn)
     --local value=res:getObject(position)
@@ -546,7 +550,6 @@ function db_core:exec(sql,args)
             end
         end
     end
-
 
     local outputs={}
 
