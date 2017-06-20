@@ -1,35 +1,11 @@
 /*[[Generate delta values based on gv$sesstat. Usage: @@NAME {[0|<sid>] [<inst_id>] [<key>]}]]*/
 {
     sql=[[
-    SELECT A.*,VALUE DELTA FROM(
+    SELECT A.* FROM(
         SELECT /*+no_expand*/
          inst_id,
          sid,
-         NAME,
-         VALUE / CASE
-             WHEN NAME LIKE '%bytes%' THEN
-              1024 * 1024
-             WHEN NAME LIKE '%memory%' THEN
-              1024 * 1024
-             WHEN NAME LIKE '%size' THEN
-              1 
-             WHEN NAME LIKE '%time%' THEN
-              1E3
-             ELSE
-              1
-         END VALUE,
-         CASE
-             WHEN NAME LIKE '%bytes%' THEN
-              'MB'
-             WHEN NAME LIKE '%memory%' THEN
-              'MB'
-             WHEN NAME LIKE '%size' THEN
-              'COUNT'
-             WHEN NAME LIKE '%time%' THEN
-              'MS'
-             ELSE
-              'COUNT'
-         END unit
+         NAME,VALUE
         FROM   gv$sesstat
         JOIN   gv$statname
         USING  (inst_id, statistic#)
@@ -38,7 +14,7 @@
         AND    ((:V2 IS NULL AND (:V1 IS NULL AND inst_id=userenv('instance') or 1=1)) OR inst_id=:V2) 
         AND    (:V3 IS NULL OR lower(name) like lower('%&V3%'))) A
     ORDER BY NAME]],
-    agg_cols="Delta",
+    agg_cols="value",
     grp_cols="inst_id,sid,NAME",
     grp_top_cols="name"
 }

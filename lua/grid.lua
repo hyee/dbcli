@@ -22,6 +22,16 @@ local params={
     --NULL={name="null_value",default="",desc="Define display value for NULL."}
 }
 
+local function toNum(v)
+    if type(v)=="number" then
+        return v
+    elseif type(v)=="string" then
+        return tonumber((v:gsub(",",'')))
+    else
+        return tonumber(v)
+    end
+end
+
 function grid.set_param(name,value)
     if (name=="TITLEDEL" or name=="ROWDEL") and #value>1 then
         return print("The value should be only one char!")
@@ -111,7 +121,6 @@ function grid.format(rows,include_head,col_del,row_del)
         this=grid.new(include_head)
         for i,rs in ipairs(rows) do
             this:add(rs)
-            rows[i]=nil
         end
     end
     return this:wellform(col_del,row_del)
@@ -174,12 +183,14 @@ function grid.sort(rows,cols,bypass_head)
         for ind,item in ipairs(sorts) do
             local col,l=item()
             local a1,b1= a[col],b[col]
+            
+
             if a1==nil then
                 return false
             elseif b1==nil then
                 return true
-            elseif type(a1)~=type(b1) then
-                local a2,b2=tonumber(a1),tonumber(b1)
+            else
+                local a2,b2=toNum(a1),toNum(b1)
                 if a2 and b2 then 
                     a1,b1=a2,b2
                 else
@@ -190,7 +201,6 @@ function grid.sort(rows,cols,bypass_head)
             if type(a1)=="string" then 
                 a1,b1=a1:strip_ansi() ,b1:strip_ansi() 
             end
-
 
             if a1~=b1 then
                 if l<0 then return a1>b1 end
@@ -275,12 +285,14 @@ function grid:ctor(include_head)
     self.data=table.new(1000,0)
 end
 
-function grid:add(rs)
-    if type(rs)~="table" then return end
+function grid:add(row)
+    if type(row)~="table" then return end
+    local rs={}
     local result,headind,colsize=self.data,self.headind,self.colsize
     local title_style=grid.title_style
     local colbase=grid.col_auto_size
     local rownum=grid.row_num
+    for k,v in pairs(row) do rs[k]=v end
     if self.headind==-1 then
         self.headind=1
         return
@@ -435,19 +447,19 @@ function grid:wellform(col_del,row_del)
         end
         table.sort(keys)
         local rows=self.data
-
+        
         for c=#keys,1,-1 do
             local sum,idx=0,keys[c]
             for _,row in ipairs(rows) do
-                sum=sum+(tonumber(row[idx]) or 0)
+                sum=sum+(toNum(row[idx]) or 0)
             end
             for i,row in ipairs(rows) do
                 local n=" "
                 if row[0]==0 and i==1 then
                     n="<-Ratio"
                 elseif sum>0 then
-                    n=tonumber(row[idx])
-                    if n then
+                    n=toNum(row[idx])
+                    if n~=nil then
                         n=string.format("%5.2f%%",100*n/sum*self.ratio_cols[idx])
                     else
                         n=" "
@@ -456,7 +468,6 @@ function grid:wellform(col_del,row_del)
                 table.insert(row,idx+1,n)
                 --print(table.dump(row))
             end
-
             table.insert(colsize,idx+1,{7,1})
         end
         self.ratio_cols=nil

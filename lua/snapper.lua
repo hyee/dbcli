@@ -38,7 +38,9 @@ function snapper:after_script()
         self.start_flag=false
         self:trigger('after_exec_action')
         self.db:commit()
-        env.set.set("feed","back")
+        cfg.set("feed","back")
+        cfg.set("digits","back")
+        cfg.set("sep4k","back")
     end
 end
 
@@ -118,6 +120,7 @@ function snapper:run_sql(sql,main_args,cmds,files)
         local rs=db:exec(cmd.sql,arg)
         if type(rs)=="userdata" then
             cmd.rs2=self.db.resultset:rows(rs,-1)
+            --grid.print(cmd.rs2)
         end
     end
     db:commit()
@@ -135,11 +138,13 @@ function snapper:next_exec()
     local cmds,args,start_time,db=self.cmds,self.args,self.start_time,self.db
     self.start_time=nil
     --self:trigger('before_exec_action')
+    db:commit()
     local end_time=self:get_time()
     for name,cmd in pairs(cmds) do
         local rs=db:exec(cmd.sql,args[name])
         if cmd.rs2 and type(rs)=="userdata" then
             cmd.rs1=self.db.resultset:rows(rs,-1)
+            --grid.print(cmd.rs1)
         end
         if cmd.after_sql then
             env.eval_line(cmd.after_sql,true,true) 
@@ -208,10 +213,15 @@ function snapper:next_exec()
                     result[index],top_data[top_index][#top_data[top_index]+1]=row,row
                     data,row=row,{}
                 end
+                local sum=0
                 for k,_ in pairs(agg_idx) do
                     r,d=tonumber(row[k]),tonumber(data[k])
-                    if r or d then data[k]=math.round((d or 0)+(r or 0),2) end
+                    if r or d then 
+                        data[k]=math.round((d or 0)+(r or 0),2) 
+                        sum=(sum==1 or data[k]>0) and 1 or 0
+                    end
                 end
+                result[index]['_non_zero_']=sum>0
             end
 
             for _,row in ipairs(cmd.rs2) do
