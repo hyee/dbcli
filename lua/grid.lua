@@ -182,9 +182,8 @@ function grid.sort(rows,cols,bypass_head)
     table.sort(rows,function(a,b)
         for ind,item in ipairs(sorts) do
             local col,l=item()
-            local a1,b1= a[col],b[col]
+            local a1,b1= a._org and a._org[col] or a[col],b._org and b._org[col] or b[col]
             
-
             if a1==nil then
                 return false
             elseif b1==nil then
@@ -287,7 +286,7 @@ end
 
 function grid:add(row)
     if type(row)~="table" then return end
-    local rs={}
+    local rs={_org={}}
     local result,headind,colsize=self.data,self.headind,self.colsize
     local title_style=grid.title_style
     local colbase=grid.col_auto_size
@@ -312,6 +311,7 @@ function grid:add(row)
     --run statement
     if grid.col_wrap==nil then print(debug.traceback()) end
     for k,v in ipairs(rs) do
+        rs._org[k]=v
         if k>grid.maxcol then break end
         local csize,v1 =0,v
         if not colsize[k] then colsize[k] = {0,1} end
@@ -398,6 +398,7 @@ function grid:add(row)
         for i=1,lines,1 do
             local r=table.new(#rs,2)
             r[0]=rs[0]
+            r._org=rs._org
             for k,v in ipairs(rs) do
                 r[k]= (type(v) == "table" and (v[i] or "")) or (i==1 and v or "")
             end
@@ -451,14 +452,14 @@ function grid:wellform(col_del,row_del)
         for c=#keys,1,-1 do
             local sum,idx=0,keys[c]
             for _,row in ipairs(rows) do
-                sum=sum+(toNum(row[idx]) or 0)
+                sum=sum+(toNum(row._org[idx]) or 0)
             end
             for i,row in ipairs(rows) do
                 local n=" "
                 if row[0]==0 and i==1 then
                     n="<-Ratio"
                 elseif sum>0 then
-                    n=toNum(row[idx])
+                    n=toNum(row._org[idx])
                     if n~=nil then
                         n=string.format("%5.2f%%",100*n/sum*self.ratio_cols[idx])
                     else

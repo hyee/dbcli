@@ -329,8 +329,27 @@ db_core.feed_list={
     USE     ="Database changed"
 }
 
+local excluded_keywords={
+    OR=1,
+    REPLACE=1,
+    NONEDITIONABLE=1,
+    EDITIONABLE=1,
+    NO=1,
+    FORCE=1,
+    EDITIONING=1
+}
+
 function db_core.get_command_type(sql)
-    return sql:gsub("%s*/%*.-%*/%s*",' '):trim():upper():gsub("%s*OR%s+REPLACE%s*"," "):match("^(%a+)%s*(%a*)")
+    local list={}
+    for word in sql:gsub("%s*/%*.-%*/%s*",' '):gmatch("[^%s%(%)]+") do
+        local w=word:upper()
+        if not excluded_keywords[w] then
+            list[#list+1]=(#list < 3 and word or w):gsub('["`]','')
+            if #list > 3 then break end
+        end
+    end
+    for i=#list+1,3 do list[i]='' end
+    return table.unpack(list)
 end
 
 function db_core.print_feed(sql,result)

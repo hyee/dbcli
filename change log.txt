@@ -1,3 +1,4 @@
+2017-06-15: + oracle: new commands 'show im' and 'show rscache' 
 2017-06-12: * public: refresh lib luajit
 2017-06-15: + oracle: enhancement on 'loadtrace' which supports loading trace from view(12c) 
 2017-06-12: + public: new option 'set bypassemptyrs on/off'

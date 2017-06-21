@@ -173,8 +173,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
      * read timed out.
      */
     public int read(long timeout) throws IOException {
-        int ch = read(timeout, false);
-        return ch;
+        return read(timeout, false);
     }
 
     @Override
@@ -202,72 +201,79 @@ public class WindowsInputReader extends NonBlockingInputStream {
      * @param timeout The amount of time to wait for the character(<0: without wait, 0: always wait, >0: wait within <timeout> milliseconds)
      * @return The character read, -1 if EOF is reached, or -2 if the read timed out.
      */
+    ReentrantLock readLock=new ReentrantLock();
     public int read(long timeout, boolean isPeek) throws IOException {
-        int ch = _read(timeout, isPeek);
-        return ch;
-    }
-
-    int _read(long timeout, boolean isPeek) throws IOException {
-        if (buf != null && bufIdx < buf.length - 1) return (isPeek ? buf[bufIdx + 1] : buf[++bufIdx]) & 0xff;
-        String c = readChar(timeout, isPeek);
-        if (c == null) return -2;
-        if (c == "\0") return -1;
-        buf = (c == "\t" && readChar(10, true) != null ? "    " : c).getBytes();
-        bufIdx = 0;
-        return buf[0] & 0xff;
+        try(Closeable clz=readLock::unlock) {
+            readLock.lock();
+            if (buf != null && bufIdx < buf.length - 1) return (isPeek ? buf[bufIdx + 1] : buf[++bufIdx]) & 0xff;
+            String c = readChar(timeout, isPeek);
+            if (c == null) return -2;
+            else if(!isPeek) {
+                if (c == "\0"&& readChar(-1, true) != null) c = readChar(0, false);
+                else if (c == "0x0d"  && readChar(-1, true) == "\n") c = readChar(0, false);
+                else if (c == "\t" && readChar(-1, true) != null) c = "    ";
+            }
+            if (c == "\0") return -1;
+            buf = c.getBytes();
+            bufIdx = 0;
+            return buf[0] & 0xff;
+        }
     }
 
     public int getCtrlFlags() {
         return ctrlFlags;
     }
 
-    public synchronized String readChar(long timeout, boolean isPeek) throws IOException {
-        long[][] events = readRaw(timeout, isPeek);
-        ctrlFlags = 0;
-        if (events == null || events[0] == null) {
-            return null;
-        }
+    public String readChar(long timeout, boolean isPeek) throws IOException {
+        try(Closeable clz=readLock::unlock) {
+            readLock.lock();
+            long[][] events = readRaw(timeout, isPeek);
+            ctrlFlags = 0;
+            if (events == null || events[0] == null) {
+                return null;
+            }
 
-        if (events.length == 0) {
-            return "\0".intern();
-        }
-        inputBuff.clear();
-        for (long[] event : events) {
-            if (event == null) continue;
-            // Compute the overall alt state
-            ctrlFlags |= event[KEY_CTRL];
-            boolean isAlt = ((event[KEY_CTRL] & altState) != 0) && ((event[KEY_CTRL] & ctrlState) == 0);
-            Integer code = Integer.valueOf((int) event[KEY_CODE]);
-            //Log.trace(keyEvent.keyDown? "KEY_DOWN" : "KEY_UP", "key code:", keyEvent.keyCode, "char:", (long)keyEvent.uchar);
-            if (event[KEY_DOWN] == 1) {
-                //System.out.println(Arrays.toString(event)+","+KEY_CHAR+","+event[KEY_CHAR]);
-                if (event[KEY_CHAR] > 0) {
-                    if (isAlt && ((event[KEY_CHAR] >= '@' && event[KEY_CHAR] <= '_') || (event[KEY_CHAR] >= 'a' && event[KEY_CHAR] <= 'z')))
-                        inputBuff.put((byte) '\u001B');
-                    inputBuff.put((byte) event[KEY_CHAR]);
-                } else if (keyEvents.containsKey(code)) {
-                    ctrlFlags |= funcState;
-                    for (int k = 0; k < event[KEY_REPE]; k++) {
-                        if (isAlt) inputBuff.put((byte) '\u001B');
-                        inputBuff.put(keyEvents.get(code));
+            if (events.length == 0) {
+                return "\0".intern();
+            }
+            inputBuff.clear();
+            for (long[] event : events) {
+                if (event == null) continue;
+                // Compute the overall alt state
+                ctrlFlags |= event[KEY_CTRL];
+                boolean isAlt = ((event[KEY_CTRL] & altState) != 0) && ((event[KEY_CTRL] & ctrlState) == 0);
+                Integer code = Integer.valueOf((int) event[KEY_CODE]);
+                //Log.trace(keyEvent.keyDown? "KEY_DOWN" : "KEY_UP", "key code:", keyEvent.keyCode, "char:", (long)keyEvent.uchar);
+                if (event[KEY_DOWN] == 1) {
+                    //System.out.println(Arrays.toString(event)+","+KEY_CHAR+","+event[KEY_CHAR]);
+                    if (event[KEY_CHAR] > 0) {
+                        if (isAlt && ((event[KEY_CHAR] >= '@' && event[KEY_CHAR] <= '_') || (event[KEY_CHAR] >= 'a' && event[KEY_CHAR] <= 'z')))
+                            inputBuff.put((byte) '\u001B');
+                        inputBuff.put((byte) event[KEY_CHAR]);
+                    } else if (keyEvents.containsKey(code)) {
+                        ctrlFlags |= funcState;
+                        for (int k = 0; k < event[KEY_REPE]; k++) {
+                            if (isAlt) inputBuff.put((byte) '\u001B');
+                            inputBuff.put(keyEvents.get(code));
+                        }
+                    }
+                } else {
+                    // key up event
+                    // support ALT+NumPad input method
+                    if (event[KEY_CODE] == KeyEvent.VK_ALT && event[KEY_CHAR] > 0) {
+                        inputBuff.put((byte) event[KEY_CHAR]);
                     }
                 }
-            } else {
-                // key up event
-                // support ALT+NumPad input method
-                if (event[KEY_CODE] == KeyEvent.VK_ALT && event[KEY_CHAR] > 0) {
-                    inputBuff.put((byte) event[KEY_CHAR]);
-                }
             }
+            if (inputBuff.position() > 0) {
+                inputBuff.flip();
+                //System.out.println(inputBuff.remaining()+","+inputBuff.position());
+                byte[] buf = new byte[inputBuff.remaining()];
+                inputBuff.get(buf);
+                return new String(buf).intern();
+            }
+            return readChar(timeout, isPeek);
         }
-        if (inputBuff.position() > 0) {
-            inputBuff.flip();
-            //System.out.println(inputBuff.remaining()+","+inputBuff.position());
-            byte[] buf = new byte[inputBuff.remaining()];
-            inputBuff.get(buf);
-            return new String(buf).intern();
-        }
-        return readChar(timeout, isPeek);
     }
 
     CountDownLatch lock = new CountDownLatch(1);
@@ -278,7 +284,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
             try (Closeable c = lock1::unlock) {
                 lock1.lock();
                 if (pause) {
-                    if(inputQueue.isEmpty()) return;
+                    if (inputQueue.isEmpty()) return;
                     lock = new CountDownLatch(1);
                 } else {
                     lock.countDown();
@@ -286,52 +292,57 @@ public class WindowsInputReader extends NonBlockingInputStream {
                 }
             }
             lock.await();
-        } catch (Exception e) {e.printStackTrace();}
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
-    public synchronized long[][] readRaw(long timeout, boolean isPeek) throws IOException {
-        long[][] c = peeker;
-        if (c != null && c[0] != null) {
-            if (!isPeek) peeker = null;
-            return c;
-        }
-        if (exception != null) throw exception;
-        try {
-            c = new long[][]{inputQueue.poll(), null};
-            if (c[0] == null) {
-                pause(false);
-                if (timeout >= 0)
-                    c[0] = timeout == 0 ? inputQueue.take() : inputQueue.poll(timeout, TimeUnit.MILLISECONDS);
-                else
-                    c[0] = inputQueue.poll();
+    public long[][] readRaw(long timeout, boolean isPeek) throws IOException {
+        try(Closeable clz=readLock::unlock) {
+            readLock.lock();
+            long[][] c = peeker;
+            if (c != null && c[0] != null) {
+                if (!isPeek) peeker = null;
+                return c;
             }
-            if (c[0] != null && c[0][KEY_DOWN] == 1) c[1] = inputQueue.poll(100, TimeUnit.MILLISECONDS);
-            if (isPeek) {
-                peeker = c;
-            } else {
-                for (long[] c0 : c) {
-                    if (c0 == null) continue;
-                    //System.out.println(Arrays.toString(c0));
-                    if ((c0[KEY_DOWN] == 1 || c0[KEY_CHAR] == 3) && (//
-                            (c0[KEY_CTRL] > 0 && (c0[KEY_CHAR] > 0 || keyEvents.containsKey(Integer.valueOf((int) c0[KEY_CODE])))) || //
-                                    (c0[KEY_SFT] > 0 && keyEvents.containsKey(Integer.valueOf((int) c0[KEY_CODE]))) ||//
-                                    (c0[KEY_CODE] >= KeyEvent.VK_F1 && c0[KEY_CODE] <= KeyEvent.VK_F12 && c0[KEY_CHAR] == 0))) {
-                        StringBuilder sb = new StringBuilder(32);
-                        if (c0[KEY_CTL] > 0) sb.append("CTRL+");
-                        if (c0[KEY_ALT] > 0) sb.append("ALT+");
-                        if (c0[KEY_SFT] > 0) sb.append("SHIFT+");
-                        sb.append(keyCodes.get(Integer.valueOf((int) c0[KEY_CODE])));
-                        for (EventCallback callback : eventMap.values()) callback.interrupt(c0, sb.toString());
-                        if (c0[0] == 2) return readRaw(timeout, isPeek);
+            if (exception != null) throw exception;
+            try {
+                c = new long[][]{inputQueue.poll(), null};
+                if (c[0] == null) {
+                    pause(false);
+                    if (timeout >= 0)
+                        c[0] = timeout == 0 ? inputQueue.take() : inputQueue.poll(timeout, TimeUnit.MILLISECONDS);
+                    else
+                        c[0] = inputQueue.poll();
+                }
+                if (c[0] != null && c[0][KEY_DOWN] == 1) c[1] = inputQueue.poll(100, TimeUnit.MILLISECONDS);
+                if (isPeek) {
+                    peeker = c;
+                } else {
+                    for (long[] c0 : c) {
+                        if (c0 == null) continue;
+                        //System.out.println(Arrays.toString(c0));
+                        if ((c0[KEY_DOWN] == 1 || c0[KEY_CHAR] == 3) && (//
+                                (c0[KEY_CTRL] > 0 && (c0[KEY_CHAR] > 0 || keyEvents.containsKey(Integer.valueOf((int) c0[KEY_CODE])))) || //
+                                        (c0[KEY_SFT] > 0 && keyEvents.containsKey(Integer.valueOf((int) c0[KEY_CODE]))) ||//
+                                        (c0[KEY_CODE] >= KeyEvent.VK_F1 && c0[KEY_CODE] <= KeyEvent.VK_F12 && c0[KEY_CHAR] == 0))) {
+                            StringBuilder sb = new StringBuilder(32);
+                            if (c0[KEY_CTL] > 0) sb.append("CTRL+");
+                            if (c0[KEY_ALT] > 0) sb.append("ALT+");
+                            if (c0[KEY_SFT] > 0) sb.append("SHIFT+");
+                            sb.append(keyCodes.get(Integer.valueOf((int) c0[KEY_CODE])));
+                            for (EventCallback callback : eventMap.values()) callback.interrupt(c0, sb.toString());
+                            if (c0[0] == 2) return readRaw(timeout, isPeek);
+                        }
                     }
                 }
+                return c;
+            } catch (InterruptedException e) {
+                return new long[0][0];
+            } catch (Exception e1) {
+                e1.printStackTrace();
+                throw new IOException(e1.getMessage());
             }
-            return c;
-        } catch (InterruptedException e) {
-            return new long[0][0];
-        } catch (Exception e1) {
-            e1.printStackTrace();
-            throw new IOException(e1.getMessage());
         }
     }
 
@@ -354,7 +365,7 @@ public class WindowsInputReader extends NonBlockingInputStream {
                     c = new long[]{rec.keyEvent.keyDown ? 1 : 0, rec.keyEvent.keyCode, uchar, rec.keyEvent.controlKeyState & anyCtrl, rec.keyEvent.repeatCount,//
                             (rec.keyEvent.controlKeyState & altState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & ctrlState) > 0 ? 1 : 0, (rec.keyEvent.controlKeyState & shiftState) > 0 ? 1 : 0,};
                     inputQueue.put(c);
-                    if ((c[KEY_CHAR] == 10) && c[KEY_DOWN] == 0 && c[KEY_CTRL] == 0)
+                    if ((c[KEY_CHAR] == 10 || c[KEY_CHAR] == 13) && c[KEY_DOWN] == 0 && c[KEY_CTRL] == 0)
                         pause(true);
                 }
             }

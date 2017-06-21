@@ -193,12 +193,12 @@ function oracle:connect(conn_str)
     else
         if not prompt or prompt:find('[:/%(%)]') then prompt=self.props.service_name end
         prompt=prompt:match('([^%.]+)')
-        self.conn_str=self.conn_str:gsub('(:%d+)([:/]+)([%w%.$#]+)$',function(port,sep,sid)
+        self.conn_str=self.conn_str:gsub('(:%d+)([:/]+)([%w%.$#]+)',function(port,sep,sid)
             if sep==':' or sep=='//' then
                 return port..'/'..self.props.service_name..'/'..sid
             end
             return port..sep..sid
-        end)
+        end,1)
         env._CACHE_PATH=env.join_path(env._CACHE_BASE,prompt:lower():trim(),'')
         env.uv.fs.mkdir(env._CACHE_PATH,777,function() end)
         prompt=('%s%s'):format(prompt:upper(),self.props.db_role or '')
