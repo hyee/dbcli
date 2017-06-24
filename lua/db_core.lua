@@ -15,6 +15,10 @@ function db_Types:set(typeName,value,conn)
     end
 end
 
+function db_Types:getTyeName(typeID)
+    return self[typeID] and self[typeID].name
+end
+
 --return column value according to the specific resulset and column index
 function db_Types:get(position,typeName,res,conn)
     --local value=res:getObject(position)
@@ -259,7 +263,7 @@ function ResultSet:rows(rs,count,limit,null_value)
     return rows
 end
 
-function ResultSet:print(res,conn)
+function ResultSet:print(res,conn,prefix)
     local result,hdl={},nil
     --print(table.dump(self:getHeads(res,-1)))
     local maxrows,pivot=cfg.get("printsize"),cfg.get("pivot")
@@ -272,10 +276,7 @@ function ResultSet:print(res,conn)
             hdl:add(row)
         end
     end
-    
-    grid.print(hdl or result)
-    db_core.print_feed("SELECT",#result-1)
-    print("")
+    grid.print(hdl or result,nil,nil,nil,nil,prefix,(cfg.get("feed")=="on" and '\n'..(#result-1).." rows returned." or "").."\n")
 end
 
 function ResultSet:print_old(res,conn)
@@ -328,8 +329,31 @@ db_core.feed_list={
     USE     ="Database changed"
 }
 
+local excluded_keywords={
+    OR=1,
+    REPLACE=1,
+    NONEDITIONABLE=1,
+    EDITIONABLE=1,
+    NO=1,
+    FORCE=1,
+    EDITIONING=1,
+    GLOBAL=1,
+    TEMPORARY=1,
+    SHARED=1,
+    DUPLICATED=1
+}
+
 function db_core.get_command_type(sql)
-    return sql:gsub("%s*/%*.-%*/%s*",' '):trim():upper():gsub("%s*OR%s+REPLACE%s*"," "):match("^(%a+)%s*(%a*)")
+    local list={}
+    for word in sql:gsub("%s*/%*.-%*/%s*",' '):gmatch("[^%s%(%)]+") do
+        local w=word:upper()
+        if #list>2 or not excluded_keywords[w] then
+            list[#list+1]=(#list < 3 and word or w):gsub('["`]','')
+            if #list > 3 then break end
+        end
+    end
+    for i=#list+1,3 do list[i]='' end
+    return table.unpack(list)
 end
 
 function db_core.print_feed(sql,result)
@@ -550,7 +574,6 @@ function db_core:exec(sql,args)
         end
     end
 
-
     local outputs={}
 
     for k,v in pairs(args) do
@@ -563,10 +586,11 @@ function db_core:exec(sql,args)
 
     local params1=nil
     local result={is_query and prep:getResultSet() or prep:getUpdateCount()}
-
+    local i=0;
     while true do
         params1,is_query=pcall(prep.getMoreResults,prep,2)
         if not params1 or not is_query then break end
+        if result[1]==-1 then table.remove(result,1) end
         result[#result+1]=prep:getResultSet()
     end
 
@@ -700,7 +724,15 @@ end
 function db_core:query(sql,args)
     local result = self:exec(sql,args)
     if result and type(result)~="number" then
-        self.resultset:print(result,self.conn)
+        if type(result)=="table" then
+            for _,rs in ipairs(result) do
+                if type(rs) ~='number' then
+                    self.resultset:print(rs,self.conn)
+                end
+            end
+        else
+            self.resultset:print(result,self.conn)
+        end
     end
 end
 

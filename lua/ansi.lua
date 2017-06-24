@@ -266,9 +266,11 @@ function ansi.onload()
     ansi.color,ansi.map=color,cfg
 end
 
+ansi.pattern="\27%[[%d;]*[mK]"
+
 function ansi.strip_ansi(str)
     if not enabled then return str end
-    return str:gsub("\27%[[%d;]*[mK]","")
+    return str:gsub(ansi.pattern,"")
 end
 
 function string.strip_ansi(str)

@@ -82,7 +82,7 @@ function cfg.init(name,defaultvalue,validate,class,desc,range,instance)
     end
     name=name:upper()
     if cfg.exists(name) then
-        env.raise("Environment parameter '%s' has been defined in %s!",name,cfg.exists(name).src)
+        return env.warn("Environment parameter '%s' has been defined in %s!",name,cfg.exists(name).src)
     end
     if not cfg[name] then cfg[name]={} end
     cfg[name]={

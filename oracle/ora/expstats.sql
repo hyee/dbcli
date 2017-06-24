@@ -7,7 +7,7 @@
 ]]*/
 
 
-ora _find_object &V1 1
+ora _find_object "&V1" 1
 set verify off feed off
 var text CLOB;
 DECLARE

@@ -29,7 +29,7 @@ function os.exists(file,ext)
         file=file..'.'..ext
         attr=uv.fs.stat(file)
     end
-    return attr and attr.type,file
+    return attr and attr.type,attr and file
 end
 
 local function noop() end

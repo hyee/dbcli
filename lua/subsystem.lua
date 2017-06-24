@@ -23,7 +23,7 @@ end
 
 function system:run_command(cmd,is_print)
     if not self.process then return end
-    self.prompt=self.process:execute(cmd,is_print and true or false)
+    self.prompt=self.process:execute(cmd,is_print and true or false,self.block_input or false)
     if not self.prompt then return self:terminate() end
     if self.enter_flag==true then env.set_subsystem(self.name,self.prompt) end
 end

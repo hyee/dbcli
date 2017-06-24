@@ -1,2 +1,5 @@
 *.dat
 data/init.cfg
+cache/
+plugin.cfg
+jre/
