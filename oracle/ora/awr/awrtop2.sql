@@ -35,8 +35,8 @@ SELECT &grp,
        lpad(replace(to_char(FETCH,decode(sign(FETCH - 1e5),-1,'fm99990','fm0.00EEEE')),'+0'),7) FETCHS,
        lpad(replace(to_char(RWS,decode(sign(RWS - 1e5),-1,'fm99990','fm0.00EEEE')),'+0'),7) "ROWS",
        lpad(replace(to_char(PX,decode(sign(PX - 1e5),-1,'fm99990','fm0.00EEEE')),'+0'),7) PX_SVRS,
-       (SELECT substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'['||chr(10)||chr(13)||chr(9)||' ]+',' '),1,100) text FROM DBA_HIST_SQLTEXT WHERE SQL_ID=a.sq_id) SQL_TEXT
-FROM   (SELECT &grp,sq_id,
+       (SELECT substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'['||chr(10)||chr(13)||chr(9)||' ]+',' '),1,100) text FROM DBA_HIST_SQLTEXT WHERE SQL_ID=a.sq_id and dbid=a.dbid and rownum<2) SQL_TEXT
+FROM   (SELECT &grp,sq_id,dbid,
                plan_hash,
                to_char(lastest,'MM-DD"|"HH24:MI') last_call,
                exe,
@@ -62,6 +62,7 @@ FROM   (SELECT &grp,sq_id,
                                                'rows', rws, 'px', px,'cc',ccwait)/exe1 desc nulls last) r
         FROM   (SELECT --+no_expand
                        &grp,
+                       max(dbid) dbid,
                        max(sql_id) sq_id,
                        plan_hash_value plan_hash,
                        qry.sorttype,
@@ -89,10 +90,7 @@ FROM   (SELECT &grp,sq_id,
                                       NULLIF(PARSE_CALLS, 0))),
                               1) exe1
                 FROM   qry,&&awr$sqlstat s
-                WHERE  s.snap_id = s.snap_id
-                AND    s.instance_number = s.instance_number
-                AND    s.dbid = s.dbid
-                AND    (qry.sqid = &grp or qry.sqid is null)
+                WHERE  (qry.sqid = &grp or qry.sqid is null)
                 AND    (&filter)
                 AND    s.begin_interval_time between qry.st and ed
                 AND    (qry.inst in('A','0') or qry.inst= ''||s.instance_number)

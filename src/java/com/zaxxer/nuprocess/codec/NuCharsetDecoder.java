@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.zaxxer.nuprocess.codec;
 
 import com.zaxxer.nuprocess.NuProcess;
@@ -28,59 +29,63 @@ import java.nio.charset.CoderResult;
  * Implementation of {@link NuProcessHandler#onStdout(ByteBuffer, boolean)} or
  * {@link NuProcessHandler#onStderr(ByteBuffer, boolean)} which handles decoding
  * of stdout or stderr bytes to Java UTF-16 string data.
- * <p/>
+ *
  * Calls back into a {@link NuCharsetDecoderHandler} with decoded stdout or
  * stderr string data.
- * <p/>
+ *
  * This class is not intended to be subclassed.
  *
  * @author Ben Hamilton
  */
-public final class NuCharsetDecoder {
-    private final NuCharsetDecoderHandler handler;
-    private final CharsetDecoder decoder;
-    private final CharBuffer charBuffer;
+public final class NuCharsetDecoder
+{
+   private final NuCharsetDecoderHandler handler;
+   private final CharsetDecoder decoder;
+   private final CharBuffer charBuffer;
 
-    /**
-     * Creates a decoder which uses a single {@link Charset} to decode output
-     * data.
-     *
-     * @param handler {@link NuCharsetDecoderHandler} called back with decoded
-     *                string data
-     * @param charset {@link Charset} used to decode output data
-     */
-    public NuCharsetDecoder(NuCharsetDecoderHandler handler, Charset charset) {
-        this(handler, charset.newDecoder());
-    }
+   /**
+    * Creates a decoder which uses a single {@link Charset} to decode output
+    * data.
+    *
+    * @param handler {@link NuCharsetDecoderHandler} called back with decoded
+    *        string data
+    * @param charset {@link Charset} used to decode output data
+    */
+   public NuCharsetDecoder(NuCharsetDecoderHandler handler, Charset charset)
+   {
+      this(handler, charset.newDecoder());
+   }
 
-    /**
-     * Creates a decoder which uses a {@link CharsetDecoder CharsetDecoders} to
-     * decode output data.
-     *
-     * @param handler {@link NuCharsetDecoderHandler} called back with decoded
-     *                string data
-     * @param decoder {@link CharsetDecoder} used to decode stdout bytes to
-     *                string data
-     */
-    public NuCharsetDecoder(NuCharsetDecoderHandler handler, CharsetDecoder decoder) {
-        this.handler = handler;
-        this.decoder = decoder;
-        this.charBuffer = CharBuffer.allocate(NuProcess.BUFFER_CAPACITY);
-    }
+   /**
+    * Creates a decoder which uses a {@link CharsetDecoder CharsetDecoders} to
+    * decode output data.
+    *
+    * @param handler {@link NuCharsetDecoderHandler} called back with decoded
+    *        string data
+    * @param decoder {@link CharsetDecoder} used to decode stdout bytes to
+    *        string data
+    */
+   public NuCharsetDecoder(NuCharsetDecoderHandler handler, CharsetDecoder decoder)
+   {
+      this.handler = handler;
+      this.decoder = decoder;
+      this.charBuffer = CharBuffer.allocate(NuProcess.BUFFER_CAPACITY);
+   }
 
-    /**
-     * Implementation of {@link NuProcessHandler#onStdout(ByteBuffer, boolean)}
-     * or {@link NuProcessHandler#onStderr(ByteBuffer, boolean)} which decodes
-     * output data and forwards it to {@code handler}.
-     *
-     * @param buffer {@link ByteBuffer} which received bytes from stdout or
-     *               stderr
-     * @param closed true if stdout or stderr was closed, false otherwise
-     */
-    public void onOutput(ByteBuffer buffer, boolean closed) {
-        CoderResult coderResult = decoder.decode(buffer, charBuffer, /* endOfInput */ closed);
-        charBuffer.flip();
-        this.handler.onDecode(charBuffer, closed, coderResult);
-        charBuffer.compact();
-    }
+   /**
+    * Implementation of {@link NuProcessHandler#onStdout(ByteBuffer, boolean)}
+    * or {@link NuProcessHandler#onStderr(ByteBuffer, boolean)} which decodes
+    * output data and forwards it to {@code handler}.
+    *
+    * @param buffer {@link ByteBuffer} which received bytes from stdout or
+    *        stderr
+    * @param closed true if stdout or stderr was closed, false otherwise
+    */
+   public void onOutput(ByteBuffer buffer, boolean closed)
+   {
+      CoderResult coderResult = decoder.decode(buffer, charBuffer, /* endOfInput */ closed);
+      charBuffer.flip();
+      this.handler.onDecode(charBuffer, closed, coderResult);
+      charBuffer.compact();
+   }
 }

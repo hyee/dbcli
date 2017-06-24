@@ -33,7 +33,7 @@ It is not intended to support all features of the existing CLI utilities that em
 
 Download
 -----------------------
-DBCLI does not require compile or installation, but depends on JRE 1.7+. Click `Download ZIP`,extract and use. Or you can also download from the published releases<br/> 
+DBCLI does not require compile or installation, but depends on JRE 1.8+. Click `Download ZIP`,extract and use. Or you can also download from the published releases<br/> 
 Branch `With-JRE` contains the shrinked JRE bundle, if you don't have JRE installed,
 you may switch to that branch to download. Due to the region and charset differences, this JRE bundle is not guaranteed to work well.<br/>
 
@@ -44,7 +44,7 @@ To avoid the word wrap in the terminal window which affects the print layout, fo
 * In the `Font` tab, change the font size as smaller value.
 
 ###Configure environment
-Before running dbcli, make sure that you have installed JRE 1.7+ in your local PC. If you are using the version of "With-JRE" branch, this step can be skipped.
+Before running dbcli, make sure that you have installed JRE 1.8+ in your local PC. If you are using the version of "With-JRE" branch, this step can be skipped.
 
 Create file `init.cfg` under the "data" directory with following content:
    

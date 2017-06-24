@@ -104,7 +104,11 @@ function oracle:connect(conn_str)
          ['oracle.jdbc.maxCachedBufferSize']="104857600",
          ['oracle.jdbc.useNio']='true',
          ['oracle.jdbc.TcpNoDelay']='true',
-         ["oracle.jdbc.J2EE13Compliant"]='true'
+         ["oracle.jdbc.J2EE13Compliant"]='true',
+         ['oracle.jdbc.autoCommitSpecCompliant']='false',
+         ['oracle.jdbc.useFetchSizeWithLongColumn']='true',
+         ['oracle.net.networkCompression']='on',
+         ['oracle.net.keepAlive']='true'
         },args)
     self:load_config(url,args)
     if args.db_version and tonumber(args.db_version:match("(%d+)"))>0 then
@@ -189,12 +193,12 @@ function oracle:connect(conn_str)
     else
         if not prompt or prompt:find('[:/%(%)]') then prompt=self.props.service_name end
         prompt=prompt:match('([^%.]+)')
-        self.conn_str=self.conn_str:gsub('(:%d+)([:/]+)([%w%.$#]+)$',function(port,sep,sid)
+        self.conn_str=self.conn_str:gsub('(:%d+)([:/]+)([%w%.$#]+)',function(port,sep,sid)
             if sep==':' or sep=='//' then
                 return port..'/'..self.props.service_name..'/'..sid
             end
             return port..sep..sid
-        end)
+        end,1)
         env._CACHE_PATH=env.join_path(env._CACHE_BASE,prompt:lower():trim(),'')
         env.uv.fs.mkdir(env._CACHE_PATH,777,function() end)
         prompt=('%s%s'):format(prompt:upper(),self.props.db_role or '')
@@ -206,7 +210,7 @@ function oracle:connect(conn_str)
     for k,v in pairs(self.props) do args[k]=v end
     args.oci_connection=packer.pack_str(self.conn_str)
     if not packer.unpack_str(args.oci_connection) then
-        env.warn("Failed to pack '%s', the unpack result is nil!",self.conn_str)
+        --env.warn("Failed to pack '%s', the unpack result is nil!",self.conn_str)
     end
     env.login.capture(self,args.jdbc_alias or args.url,args)
     if event then event("AFTER_ORACLE_CONNECT",self,sql,args,result) end
@@ -226,7 +230,6 @@ function oracle:parse(sql,params)
         local typ
         if v==nil then return s end
         if p1[k] then return s:upper() end
-
         if type(v) =="table" then
             return s
         elseif type(v)=="number" then
@@ -250,12 +253,12 @@ function oracle:parse(sql,params)
 
         local typename,typeid=typ,self.db_types[typ].id
         typ,v=self.db_types:set(typ,v)
-        p1[k],p2[#p2+1]={typ,v,typeid,typename},k
+        p1[k],p2[#p2+1]={typ,v,typeid,typename,nil,nil,s},k
         return s:upper()
     end)
 
     local sql_type=self.get_command_type(sql)
-    local method,value,typeid,typename,inIdx,outIdx=1,2,3,4,5,6
+    local method,value,typeid,typename,inIdx,outIdx,vname=1,2,3,4,5,6,7
     if self.working_db_link and not sql:find('GetDBMSOutput',1,true) then
         local s0,s1,s2,index,typ,siz={},{},{},1,nil,#p2
         params={}
@@ -297,17 +300,16 @@ function oracle:parse(sql,params)
         sql=sql:format(typ,table.concat(s1,''),table.concat(s0,''),table.concat(s2,''))
         sql=sql:gsub("@link",'@'..self.working_db_link)
         env.log_debug("parse","SQL:",sql)
-        env.log_debug("parse","ORG_SQL:",org_sql)
         local prep=java.cast(self.conn:prepareCall(sql,1003,1007),"oracle.jdbc.OracleCallableStatement")
         prep[method](prep,1,org_sql)
         for k,v in ipairs(p2) do
             local p=p1[v]
             if p[inIdx]~=0 then
-                env.log_debug("parse","Param #"..k,p[inIdx]..'='..p[value])
+                env.log_debug("parse","Param #"..k..'('..p[vname]..')',p[inIdx]..'='..p[value])
                 prep[p[1]](prep,p[inIdx],p[value])
             end
             params[v]={'#',p[outIdx],p[typename]}
-            env.log_debug("parse","Param #"..k,p[outIdx]..'='..p[typeid]..'('..p[typename]..')')
+            env.log_debug("parse","Param #"..k..'('..p[vname]..')',p[outIdx]..'='..p[typeid]..'('..p[typename]..')')
             prep['registerOutParameter'](prep,p[outIdx],p[typeid])
         end
         return prep,org_sql,params
@@ -350,13 +352,14 @@ function oracle:parse(sql,params)
         for k,v in ipairs(p2) do
             local p=p1[v]
             if p[inIdx]~=0 then
-                env.log_debug("parse","Param #"..k,p[inIdx]..'='..p[value])
+                env.log_debug("parse","Param In#"..k..'('..p[vname]..')',':'..p[inIdx]..'='..p[value])
                 prep[p[1]](prep,p[inIdx],p[value])
             end
             params[v]={'#',p[outIdx],p[typename]}
-            env.log_debug("parse","Param #"..k,p[outIdx]..'='..p[typeid])
+            env.log_debug("parse","Param Out#"..k..'('..p[vname]..')',':'..p[outIdx]..'='..self.db_types:getTyeName(typeid))
             prep['registerOutParameter'](prep,p[outIdx],p[typeid])
         end
+        env.log_debug("parse","Params-before:",table.dump(params))
         return prep,org_sql,params
     elseif counter>1 then
         return self.super.parse(self,org_sql,params,':')
@@ -389,7 +392,7 @@ function oracle:exec(sql,...)
 end
 
 function oracle:run_proc(sql)
-    return self:exec('BEGIN '..sql..';END;')
+    return self:query('BEGIN '..sql..';END;')
 end
 
 function oracle:asql_single_line(...)
@@ -511,12 +514,12 @@ function oracle:onload()
 
     add_single_line_stmt('commit','rollback','savepoint')
     add_default_sql_stmt('update','delete','insert','merge','truncate','drop','flashback')
-    add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge','audit')
+    add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge','audit','noaudit')
     set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
     set_command(self,"select",   default_desc,        self.query     ,true,1,true)
     set_command(self,"with",   default_desc,        self.query     ,self.check_completion,1,true)
     set_command(self,{"execute","exec","call"},default_desc,self.run_proc,false,2,true)
-    set_command(self,{"declare","begin"},  default_desc,  self.exec  ,self.check_completion,1,true)
+    set_command(self,{"declare","begin"},  default_desc,  self.query  ,self.check_completion,1,true)
     set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)
     set_command(self,"alter" ,   default_desc,        self.exec      ,true,1,true)
     --cfg.init("dblink","",self.set_db_link,"oracle","Define the db link to run all SQLs in target db",nil,self)
@@ -527,5 +530,7 @@ end
 function oracle:onunload()
     env.set_title("")
 end
+
+
 
 return oracle.new()

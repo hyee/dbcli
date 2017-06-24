@@ -440,11 +440,11 @@ function scripter:after_script()
 end
 
 function scripter:check_ext_file(cmd)
-    local exist,cmd=os.exists(cmd,self.ext_name)
+    local exist,c=os.exists(cmd,self.ext_name)
     env.checkerr(exist=='file',"Cannot find this file: "..cmd)
-    local target_dir=self:rehash(cmd,self.ext_name)
-    cmd=cmd:match('([^\\/]+)$'):match('[^%.%s]+'):upper()
-    return target_dir,cmd
+    local target_dir=self:rehash(c,self.ext_name)
+    c=c:match('([^\\/]+)$'):match('[^%.%s]+'):upper()
+    return target_dir,c
 end
 
 function scripter:helper(_,cmd,search_key)

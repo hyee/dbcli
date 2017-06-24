@@ -30,7 +30,7 @@ function interval.itv(sec,count,target)
             env.raise('Invalid syntax!')
         end
         for i=1,count do
-            exec(target)
+            exec(target,true,true)
             if i<count then sleep(sec) end
         end
     end
@@ -61,7 +61,12 @@ function interval.onload()
         Run a command with specific interval, type 'help @@NAME' for detail. Usage: @@NAME <START [seconds] [remark]|END|seconds times command>
         Example:
             1)  @@NAME 5 5 ora actives
-            2)  @@NAME to 'show itvtest'
+            2)  refer to 'show itvtest
+            3)  @@NAME 1 2 <<!
+                   show lockobj
+                   ora actives
+                !
+
       ]],interval.itv,'__SMART_PARSE__',4)
     if env.event then 
         env.event.snoop('BEFORE_COMMAND',interval.capture,nil,99) 

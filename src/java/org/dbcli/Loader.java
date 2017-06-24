@@ -1,6 +1,8 @@
 package org.dbcli;
 
+import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
+import com.naef.jnlua.LuaTable;
 import com.opencsv.CSVReader;
 import com.opencsv.CSVWriter;
 import com.opencsv.ResultSetHelperService;
@@ -14,13 +16,19 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.Charset;
 import java.sql.CallableStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.Future;
 import java.util.regex.Pattern;
+import java.util.zip.GZIPInputStream;
 import java.util.zip.InflaterInputStream;
 
 public class Loader {
@@ -32,9 +40,9 @@ public class Loader {
     KeyMap keyMap;
     KeyListner q;
     Future sleeper;
-    private CallableStatement stmt = null;
+    private volatile CallableStatement stmt = null;
     private Sleeper runner = new Sleeper();
-    private ResultSet rs;
+    private volatile ResultSet rs;
     private IOException CancelError = new IOException("Statement is aborted.");
 
     public Loader() {
@@ -71,19 +79,13 @@ public class Loader {
 
     public static void loadLua(Loader loader, String args[]) throws Exception {
         lua = new LuaState();
-        lua.openLibs();
-        lua.pushJavaObject(loader);
-        lua.setGlobal("loader");
+        lua.pushGlobal("loader", loader);
         console.lua = lua;
         if (console.writer != null) {
-            lua.pushJavaObject(console);
-            lua.setGlobal("reader");
-            lua.pushJavaObject(console.writer);
-            lua.setGlobal("writer");
-            lua.pushJavaObject(console.getTerminal());
-            lua.setGlobal("terminal");
-            lua.pushJavaObject(new PrintWriter(console.getOutput()));
-            lua.setGlobal("jwriter");
+            lua.pushGlobal("reader", console);
+            lua.pushGlobal("writer", console.writer);
+            lua.pushGlobal("terminal", console.getTerminal());
+            lua.pushGlobal("jwriter", new PrintWriter(console.getOutput()));
         }
         String separator = File.separator;
 
@@ -99,19 +101,15 @@ public class Loader {
         //System.out.println(sb.toString());
         lua.load(sb.toString(), input);
         if (ReloadNextTime != null && ReloadNextTime.equals("_init_")) ReloadNextTime = null;
-        //lua.getTop();
+        ArrayList<String> list = new ArrayList<>(args.length);
+        if (ReloadNextTime != null) list.add("set database " + ReloadNextTime);
         for (int i = 0; i < args.length; i++) {
-            if (args[i].toLowerCase().contains("database ") && ReloadNextTime != null) {
-                args[i] = "set database " + ReloadNextTime;
-                ReloadNextTime = null;
-            }
-            lua.pushString(args[i]);
+            if (ReloadNextTime != null && (args[i].toLowerCase().contains(" database ") || args[i].toLowerCase().contains(" platform ")))
+                continue;
+            list.add(args[i]);
         }
-        if (ReloadNextTime != null) {
-            lua.pushString("set database " + ReloadNextTime);
-            ReloadNextTime = null;
-            lua.call(args.length + 1, 0);
-        } else lua.call(args.length, 0);
+        ReloadNextTime = null;
+        lua.call(list.toArray());
         lua.close();
         lua = null;
         System.gc();
@@ -150,7 +148,6 @@ public class Loader {
 
     public static void main(String args[]) throws Exception {
         Loader l = new Loader();
-        System.loadLibrary("lua5.1");
         while (ReloadNextTime != null) loadLua(l, args);
         //console.threadPool.shutdown();
     }
@@ -167,7 +164,7 @@ public class Loader {
     }
 
     public void copyClass(String className) throws Exception {
-        JavaAgent.copyFile(null, className.replace("\\.", "/"));
+        JavaAgent.copyFile(null, className.replace("\\.", "/"), null);
     }
 
     public String dumpClass(String folder) throws Exception {
@@ -204,85 +201,110 @@ public class Loader {
 
     public int ResultSet2CSV(final ResultSet rs, final String fileName, final String header, final boolean aync, final String excludes, final String[] remaps) throws Exception {
         setCurrentResultSet(rs);
-        return (int) asyncCall(new Callable() {
-            @Override
-            public Integer call() throws Exception {
-                try (CSVWriter writer = new CSVWriter(fileName)) {
-                    writer.setAsyncMode(aync);
-                    setExclusiveAndRemap(writer, excludes, remaps);
-                    int result = writer.writeAll(rs, true);
-                    return result - 1;
-                }
+        return (int) asyncCall(() -> {
+            try (CSVWriter writer = new CSVWriter(fileName)) {
+                writer.setAsyncMode(aync);
+                setExclusiveAndRemap(writer, excludes, remaps);
+                int result = writer.writeAll(rs, true);
+                return result - 1;
             }
         });
     }
 
     public int ResultSet2SQL(final ResultSet rs, final String fileName, final String header, final boolean aync, final String excludes, final String[] remaps) throws Exception {
         setCurrentResultSet(rs);
-        return (int) asyncCall(new Callable() {
-            @Override
-            public Integer call() throws Exception {
-                try (SQLWriter writer = new SQLWriter(fileName)) {
-                    writer.setAsyncMode(aync);
-                    writer.setFileHead(header);
-                    setExclusiveAndRemap(writer, excludes, remaps);
-                    int count = writer.writeAll2SQL(rs, "", 1500);
-                    return count;
-                }
+        return (int) asyncCall(() -> {
+            try (SQLWriter writer = new SQLWriter(fileName)) {
+                writer.setAsyncMode(aync);
+                writer.setFileHead(header);
+                setExclusiveAndRemap(writer, excludes, remaps);
+                int count = writer.writeAll2SQL(rs, "", 1500);
+                return count;
             }
         });
+    }
+
+    Pattern pbase = Pattern.compile("(\\S{64,64}[\n\r])%1+");
+
+    public static byte[] hexStringToByteArray(String s) {
+        int len = s.length();
+        byte[] data = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            data[i / 2] = (byte) ((Character.digit(s.charAt(i), 16) << 4)
+                    + Character.digit(s.charAt(i + 1), 16));
+        }
+        return data;
+    }
+
+    public String Base64ZlibToText(String[] pieces) throws Exception {
+        byte[] buff = new byte[]{};
+        for (String piece : pieces) {
+            if (piece == null) continue;
+            byte[] tmp = Base64.getDecoder().decode(piece.replaceAll("\\s+", ""));
+            byte[] joinedArray = Arrays.copyOf(buff, buff.length + tmp.length);
+            System.arraycopy(tmp, 0, joinedArray, buff.length, tmp.length);
+            buff = joinedArray;
+        }
+        if (buff.length == 0) return "";
+        return inflate(buff);
     }
 
     public int CSV2SQL(final ResultSet rs, final String SQLFileName, final String CSVfileName, final String header, final String excludes, final String[] remaps) throws Exception {
         setCurrentResultSet(rs);
-        return (int) asyncCall(new Callable() {
-            @Override
-            public Integer call() throws Exception {
-                try (SQLWriter writer = new SQLWriter(SQLFileName)) {
-                    writer.setFileHead(header);
-                    setExclusiveAndRemap(writer, excludes, remaps);
-                    return writer.writeAll2SQL(CSVfileName, rs);
-                }
+        return (int) asyncCall(() -> {
+            try (SQLWriter writer = new SQLWriter(SQLFileName)) {
+                writer.setFileHead(header);
+                setExclusiveAndRemap(writer, excludes, remaps);
+                return writer.writeAll2SQL(CSVfileName, rs);
             }
         });
     }
 
-    public Object[][] fetchResult(final ResultSet rs, final int rows) throws Exception {
+    public LuaTable fetchResult(final ResultSet rs, final int rows) throws Exception {
         if (rs.getStatement().isClosed() || rs.isClosed()) throw CancelError;
         setCurrentResultSet(rs);
-        return (Object[][]) asyncCall(new Callable() {
+        return new LuaTable((Object[]) asyncCall(new Callable() {
             @Override
-            public Object call() throws Exception {
-                try(ResultSetHelperService helper = new ResultSetHelperService(rs)) {
-                return (rows >= 0 && rows <= 10000) ? helper.fetchRows(rows) : helper.fetchRowsAsync(rows);
+            public Object[] call() throws Exception {
+                try (ResultSetHelperService helper = new ResultSetHelperService(rs)) {
+                    helper.IS_TRIM = false;
+                    return (rows >= 0 && rows <= 10000) ? helper.fetchRows(rows) : helper.fetchRowsAsync(rows);
                 }
             }
-        });
+        }));
     }
 
-    public String[][] fetchCSV(final String CSVFileSource, final int rows) throws Exception {
-        ArrayList<String[]> list = (ArrayList<String[]>) asyncCall(new Callable() {
-            @Override
-            public ArrayList<String[]> call() throws Exception {
-                ArrayList<String[]> ary = new ArrayList();
-                String[] line;
-                int size = 0;
-                try (CSVReader reader = new CSVReader(new FileReader(CSVFileSource))) {
-                    while ((line = reader.readNext()) != null) {
-                        ++size;
-                        if (rows > -1 && size > rows) break;
-                        ary.add(line);
-                    }
+    public LuaTable fetchCSV(final String CSVFileSource, final int rows) throws Exception {
+        ArrayList<String[]> list = (ArrayList<String[]>) asyncCall(() -> {
+            ArrayList<String[]> ary = new ArrayList();
+            String[] line;
+            int size = 0;
+            try (CSVReader reader = new CSVReader(new FileReader(CSVFileSource))) {
+                while ((line = reader.readNext()) != null) {
+                    ++size;
+                    if (rows > -1 && size > rows) break;
+                    ary.add(line);
                 }
-                return ary;
             }
+            return ary;
         });
-        return list.toArray(new String[][]{});
+        return new LuaTable(list.toArray());
     }
 
     public String inflate(byte[] data) throws Exception {
-        try (ByteArrayInputStream bis = new ByteArrayInputStream(data); InflaterInputStream iis = new InflaterInputStream(bis);) {
+        ByteArrayInputStream bis = new ByteArrayInputStream(data);
+        InflaterInputStream iis;
+        try {
+            iis = new InflaterInputStream(bis);
+        } catch (Exception e1) {
+            try {
+                iis = new GZIPInputStream(bis);
+            } catch (Exception e2) {
+                throw e1;
+            }
+        }
 
+        try (Closeable c2 = iis) {
             StringBuffer sb = new StringBuffer();
             int i = 0;
             for (int c = iis.read(); c != -1; c = iis.read()) {
@@ -293,7 +315,7 @@ public class Loader {
     }
 
     public synchronized boolean setStatement(CallableStatement p) throws Exception {
-        try {
+        try (Closeable clo = console::setEvents) {
             this.stmt = p;
             console.setEvents(p == null ? null : q, new char[]{'q', 'Q', KeyMap.CTRL_D});
             if (p == null) return false;
@@ -304,7 +326,6 @@ public class Loader {
             throw e;
         } finally {
             this.stmt = null;
-            console.setEvents(null, null);
         }
     }
 
@@ -328,33 +349,14 @@ public class Loader {
     }
 
     public synchronized Object asyncCall(final Object o, final String func, final Object... args) throws Exception {
-        return asyncCall(new Callable() {
-            @Override
-            public Object call() throws Exception {
-                int len = args.length;
-                Object[] params = new Object[len];
-                Class[] clazz = new Class[len];
-                for (int i = 0; i < len; i++) {
-                    params[i] = args[i];
-                    clazz[i] = args[i].getClass();
-                    if (clazz[i] == Double.class) {
-                        clazz[i] = int.class;
-                        params[i] = (int) Math.round((Double) params[i]);
-                    }
-                }
-                if (!(o instanceof Class)) {
-                    Method m = o.getClass().getDeclaredMethod(func, clazz);
-                    return m.invoke(o, params);
-                } else {
-                    Method m = ((Class) o).getDeclaredMethod(func, clazz);
-                    return m.invoke(null, params);
-                }
-            }
+        return asyncCall(() -> {
+            ClassAccess access = ClassAccess.access(lua.toClass(o));
+            return access.invoke(o, func, args);
         });
     }
 
     public synchronized void sleep(int millSeconds) throws Exception {
-        try {
+        try (Closeable clo = console::setEvents) {
             runner.setSleep(millSeconds);
             sleeper = console.threadPool.submit(runner);
             console.setEvents(q, new char[]{'q', KeyMap.CTRL_D});
@@ -363,7 +365,6 @@ public class Loader {
             throw CancelError;
         } finally {
             sleeper = null;
-            console.setEvents(null, null);
         }
     }
 

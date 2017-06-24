@@ -1,6 +1,7 @@
 .cfg
 .dat
 .ini
+.log
 \jre\
 \src\
 \cache\
@@ -24,6 +25,8 @@ ansicon.exe
 .cfg
 .zip
 .7z
+jnlua.c
+Makefile
 mysql-connector.jar
 postgresql-jdbc.jar
 dbcli_F0.bat

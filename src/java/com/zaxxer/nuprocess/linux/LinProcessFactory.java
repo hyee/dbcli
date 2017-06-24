@@ -13,30 +13,32 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.zaxxer.nuprocess.linux;
+
+import java.nio.file.Path;
+
+import java.util.List;
 
 import com.zaxxer.nuprocess.NuProcess;
 import com.zaxxer.nuprocess.NuProcessFactory;
 import com.zaxxer.nuprocess.NuProcessHandler;
-
-import java.nio.file.Path;
-import java.util.List;
 
 /**
  * Linux process factory.  Creates and starts a process.
  *
  * @author Brett Wooldridge
  */
-public class LinProcessFactory implements NuProcessFactory {
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public NuProcess createProcess(List<String> commands, String[] env, NuProcessHandler processListener, Path cwd) {
-        LinuxProcess process = new LinuxProcess(processListener);
-        synchronized (LinProcessFactory.class) {
-            process.start(commands, env, cwd);
-        }
-        return process;
-    }
+public class LinProcessFactory implements NuProcessFactory
+{
+   /** {@inheritDoc} */
+   @Override
+   public NuProcess createProcess(List<String> commands, String[] env, NuProcessHandler processListener, Path cwd)
+   {
+      LinuxProcess process = new LinuxProcess(processListener);
+      synchronized (LinProcessFactory.class) {
+         process.start(commands, env, cwd);
+      }
+      return process;
+   }
 }
