@@ -16,8 +16,8 @@ local init={
         "lua/hotkeys",
         "lua/packer",
         "lua/trace",
-        "lua/printer",
         "lua/ansi",
+        "lua/printer",
         "lua/event",
         "lua/grid",
         "lua/helper",
@@ -187,7 +187,7 @@ function init.load_modules(list,tab,module_name)
     for i=#list,1,-1 do
         table.insert(config,1,list[i])
     end
-
+    local load_list={}
     for _,v in ipairs(config) do
         v=env.join_path(v)
         n=v:match("([^\\/]+)$")
@@ -206,10 +206,12 @@ function init.load_modules(list,tab,module_name)
         local c,err=loadfile(file,nil,nil,env)
         tab[n]=exec(c,err or env)
         modules[n]=tab[n]
+        load_list[#load_list+1]=n
         env.module_list[#env.module_list+1]=file:lower():gsub('%.lua$','')
     end
 
-    for k,v in pairs(modules) do
+    for _,k in ipairs(load_list) do
+        local v=modules[k]
         exec(type(v)=="table" and v.onload,v,k)
     end
 

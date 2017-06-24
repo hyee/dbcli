@@ -18,7 +18,7 @@ public class Interrupter {
                     for (EventCallback c : map.values()) {
                         //System.out.println(c.toString());
                         try {
-                            c.interrupt(e);
+                            c.interrupt(e,"CTRL+C");
                         } catch (StackOverflowError e1) {
                             return;
                         } catch (Exception ex) {

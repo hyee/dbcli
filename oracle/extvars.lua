@@ -5,6 +5,7 @@ local datapath=debug.getinfo(1, "S").source:sub(2):gsub('[%w%.]+$','dict')
 local re=env.re
 
 function extvars.on_before_db_exec(item)
+    var.setInputs("lz_compress",db.lz_compress);
     if not var.outputs['INSTANCE'] then
         local instance=tonumber(cfg.get("INSTANCE"))
         var.setInputs("INSTANCE",tostring(instance>0 and instance or instance<0 and "" or db.props.instance))
@@ -130,4 +131,130 @@ function extvars.onload()
         prefix  <- "GV_$"/"GV$"/"V_$"/"V$"/"DBA_"/"ALL_"/"CDB_"
     ]],nil,true)
 end
+
+db.lz_compress=[[
+    --Refer to: https://technology.amis.nl/2010/03/13/utl_compress-gzip-and-zlib/ 
+    FUNCTION adler32(p_src IN BLOB) RETURN VARCHAR2 IS
+        s1 INT := 1;
+        s2 INT := 0;
+        ll PLS_INTEGER := dbms_lob.getlength(p_src);
+        cc VARCHAR2(32766);
+        p  PLS_INTEGER := 1;
+        l  PLS_INTEGER;
+    BEGIN
+        LOOP
+            cc := to_char(dbms_lob.substr(p_src,16383,p));
+            l  := LENGTH(cc)/2;
+            FOR i IN 1 .. l LOOP
+                s1 := s1 + to_number(SUBSTR(cc,(i-1)*2+1,2), 'XX');
+                s2 := s2 + s1;
+            END LOOP;
+            s1 := mod(s1,65521);
+            s2 := mod(s2,65521);
+            p := p + 16383;
+            EXIT WHEN p >= ll;
+        END LOOP;
+        RETURN to_char(s2, 'fm0XXX') || to_char(s1, 'fm0XXX');
+    END;
+
+    FUNCTION zlib_compress(p_src IN BLOB) RETURN BLOB IS
+        t_tmp BLOB;
+        t_cpr BLOB;
+    BEGIN
+        t_tmp := utl_compress.lz_compress(p_src);
+        dbms_lob.createtemporary(t_cpr, TRUE);
+        t_cpr := hextoraw('789C'); -- zlib header
+        dbms_lob.copy(t_cpr, t_tmp, dbms_lob.getlength(t_tmp) - 10 - 8, 3, 11);
+        dbms_lob.append(t_cpr, hextoraw(adler32(p_src))); -- zlib trailer
+        dbms_lob.freetemporary(t_tmp);
+        RETURN t_cpr;
+    END;
+
+    FUNCTION zlib_decompress(p_src IN BLOB) RETURN BLOB IS
+        t_tmp      BLOB;
+    BEGIN  
+        dbms_lob.createtemporary(t_tmp, TRUE);
+        t_tmp := hextoraw('1F8B0800000000000003'); -- gzip header
+        dbms_lob.copy(t_tmp, p_src, dbms_lob.getlength(p_src) - 2 - 4, 11, 3);
+        --dbms_lob.append( t_tmp, hextoraw( '0000000000000000' ) ); -- add a fake trailer
+        t_tmp := utl_compress.lz_uncompress(t_tmp);
+        RETURN t_tmp;
+    END;
+
+    PROCEDURE base64encode(p_clob IN OUT NOCOPY CLOB, p_func_name VARCHAR2 := NULL) IS
+        v_blob       BLOB;
+        v_raw        RAW(32767);
+        v_chars      VARCHAR2(32767);
+        v_impmode    BOOLEAN := (p_func_name IS NOT NULL);
+        v_width PLS_INTEGER := CASE WHEN v_impmode THEN 1000 ELSE 20000 END;
+        dest_offset  INTEGER := 1;
+        src_offset   INTEGER := 1;
+        lob_csid     NUMBER := dbms_lob.default_csid;
+        lang_context INTEGER := dbms_lob.default_lang_ctx;
+        warning      INTEGER;
+        PROCEDURE wr(p_line VARCHAR2) IS
+        BEGIN
+            dbms_lob.writeAppend(p_clob, LENGTH(p_line) + 1, p_line || CHR(10));
+            dbms_output.put_line(p_line);
+        END;
+    BEGIN
+        IF dbms_lob.getLength(p_clob) IS NULL THEN
+            RETURN;
+        END IF;
+        IF NOT v_impmode THEN
+            BEGIN
+                EXECUTE IMMEDIATE 'begin :lob := sys.dbms_report.ZLIB2BASE64_CLOB(:lob);end;'
+                    USING IN OUT p_clob;
+                p_clob := REPLACE(p_clob, CHR(10));
+                RETURN;
+            EXCEPTION
+                WHEN OTHERS THEN
+                    NULL;
+            END;
+        END IF;
+        dbms_lob.createtemporary(v_blob, TRUE);
+        dbms_lob.ConvertToBLOB(v_blob, p_clob, dbms_lob.getLength(p_clob), dest_offset, src_offset, lob_csid, lang_context, warning);
+        dbms_lob.createtemporary(p_clob, TRUE);
+        IF NOT v_impmode THEN
+            v_blob := zlib_compress(v_blob);
+        ELSE
+            v_blob := utl_compress.lz_compress(v_blob);
+            wr('FUNCTION '||p_func_name||' RETURN CLOB IS ');
+            wr('    v_clob       CLOB;');
+            wr('    v_blob       BLOB;');
+            wr('    dest_offset  INTEGER := 1;');
+            wr('    src_offset   INTEGER := 1;');
+            wr('    lob_csid     NUMBER  := dbms_lob.default_csid;');
+            wr('    lang_context INTEGER := dbms_lob.default_lang_ctx;');
+            wr('    warning      INTEGER;');
+            wr('    procedure ap(p_line VARCHAR2) is r RAW(32767) := utl_encode.base64_decode(utl_raw.cast_to_raw(p_line));begin dbms_lob.writeAppend(v_blob,utl_raw.length(r),r);end;');
+            wr('BEGIN');
+            wr('    dbms_lob.CreateTemporary(v_blob,TRUE);');
+            wr('    dbms_lob.CreateTemporary(v_clob,TRUE);');
+        END IF;
+        
+        src_offset  := 1;
+        dest_offset := dbms_lob.getLength(v_blob);
+    
+        LOOP
+            v_raw   := dbms_lob.substr(v_blob, v_width, OFFSET => src_offset);
+            v_chars := regexp_replace(utl_raw.cast_to_varchar2(utl_encode.base64_encode(v_raw)), '[' || CHR(10) || chr(13) || ']+');
+            IF v_impmode THEN
+                wr('    ap(''' || v_chars || ''');');
+            ELSE
+                IF src_offset > 1 THEN
+                    v_chars := CHR(10) || v_chars;
+                END IF;
+                dbms_lob.writeappend(p_clob, LENGTH(v_chars), v_chars);
+            END IF;
+            src_offset := src_offset + v_width;
+            EXIT WHEN src_offset >= dest_offset;
+        END LOOP;
+        IF v_impmode THEN
+           wr('    v_blob := utl_compress.lz_uncompress(v_blob);');
+           wr('    dbms_lob.ConvertToCLOB(v_clob, v_blob, dbms_lob.getLength(v_blob), dest_offset, src_offset, lob_csid, lang_context, warning);');
+           wr('    return v_clob;'); 
+           wr('END;'); 
+        END IF;
+    END;]]
 return extvars

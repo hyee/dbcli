@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.zaxxer.nuprocess;
 
 import java.nio.file.Path;
@@ -24,6 +25,7 @@ import java.util.List;
  *
  * @author Brett Wooldridge
  */
-public interface NuProcessFactory {
-    NuProcess createProcess(List<String> commands, String[] env, NuProcessHandler processListener, Path cwd);
+public interface NuProcessFactory
+{
+   NuProcess createProcess(List<String> commands, String[] env, NuProcessHandler processListener, Path cwd);
 }

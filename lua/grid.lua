@@ -15,10 +15,22 @@ local params={
     PIVOTSORT={name="pivotsort",default="on",desc="To indicate if to sort the titles when pivot option is on",range="on,off"},
     MAXCOLS={name="maxcol",default=1024,desc="Define the max columns to be displayed in the grid",range="4-1024"},
     DIGITS={name="digits",default=38,desc="Define the digits for a number",range="0 - 38"},
-    SEP4K={name="sep4k",default="off",desc="Define wether to show number with thousands separator",range="on,off"},
-    LINESIZE={name="linesize",default=800,desc="Define the max chars in one line, other overflow parts would be cutted.",range='10-32767'}
+    SEP4K={name="sep4k",default="off",desc="Define whether to show number with thousands separator",range="on,off"},
+    HEADING={name="heading",default="on",desc="Controls printing of column headings in reports",range="on,off"},
+    LINESIZE={name="linesize",default=800,desc="Define the max chars in one line, other overflow parts would be cutted.",range='10-32767'},
+    BYPASSEMPTYRS={name="bypassemptyrs",default="off",desc="Controls whether to print an empty resultset",range="on,off"}
     --NULL={name="null_value",default="",desc="Define display value for NULL."}
 }
+
+local function toNum(v)
+    if type(v)=="number" then
+        return v
+    elseif type(v)=="string" then
+        return tonumber((v:gsub(",",'')))
+    else
+        return tonumber(v)
+    end
+end
 
 function grid.set_param(name,value)
     if (name=="TITLEDEL" or name=="ROWDEL") and #value>1 then
@@ -26,7 +38,7 @@ function grid.set_param(name,value)
     elseif name=="COLWRAP" and value>0 and value<30 then
         return print("The value cannot be less than 30 !")
     end
-    grid[params[name].name]=value
+    grid[grid.params[name].name]=value
     return value
 end
 
@@ -101,30 +113,29 @@ function grid.fmt(format,...)
     return fmt:format(...)
 end
 
-function grid.format(rows,printhead,col_del,row_del)
+function grid.format(rows,include_head,col_del,row_del)
     local this
     if rows.__class then
         this=rows
     else
-        this=grid.new(printhead)
+        this=grid.new(include_head)
         for i,rs in ipairs(rows) do
             this:add(rs)
-            rows[i]=nil
         end
     end
     return this:wellform(col_del,row_del)
 end
 
-function grid.tostring(rows,printhead,col_del,row_del,rows_limit)
-    if grid.pivot ~= 0 and printhead~=false then
+function grid.tostring(rows,include_head,col_del,row_del,rows_limit)
+    if grid.pivot ~= 0 and include_head~=false then
         rows=grid.show_pivot(rows)
         if math.abs(grid.pivot)==1 then
-            printhead=false
+            include_head=false
         else
             rows_limit=rows_limit and rows_limit+2
         end
     end
-    rows=grid.format(rows,printhead,col_del,row_del)
+    rows=grid.format(rows,include_head,col_del,row_del)
     rows_limit=rows_limit and math.min(rows_limit,#rows) or #rows
     env.set.force_set("pivot",0)
 
@@ -135,7 +146,8 @@ end
 function grid.sort(rows,cols,bypass_head)
     local head
     local sorts={}
-    if rows.__class then rows=rows.data end
+    local has_header
+    if rows.__class then rows,has_header=rows.data,rows.include_head end
     for ind in tostring(cols):gsub('^,*(.-),*$','%1'):gmatch("([^,]+)") do
         local col,l
         if tonumber(ind) then
@@ -165,18 +177,19 @@ function grid.sort(rows,cols,bypass_head)
         sorts[#sorts+1]=function() return col,l end
     end
 
-    if bypass_head==true then head=table.remove(rows,1) end
+    if bypass_head or has_header then head=table.remove(rows,1) end
 
     table.sort(rows,function(a,b)
         for ind,item in ipairs(sorts) do
             local col,l=item()
-            local a1,b1= a[col],b[col]
+            local a1,b1= a._org and a._org[col] or a[col],b._org and b._org[col] or b[col]
+            
             if a1==nil then
                 return false
             elseif b1==nil then
                 return true
-            elseif type(a1)~=type(b1) then
-                local a2,b2=tonumber(a1),tonumber(b1)
+            else
+                local a2,b2=toNum(a1),toNum(b1)
                 if a2 and b2 then 
                     a1,b1=a2,b2
                 else
@@ -187,7 +200,6 @@ function grid.sort(rows,cols,bypass_head)
             if type(a1)=="string" then 
                 a1,b1=a1:strip_ansi() ,b1:strip_ansi() 
             end
-
 
             if a1~=b1 then
                 if l<0 then return a1>b1 end
@@ -260,19 +272,30 @@ function grid.show_pivot(rows,col_del)
     return r
 end
 
-function grid:ctor(printhead)
-    self.headind=printhead==false and 1 or 0
-    self.printhead=self.headind == 0 and true or false
+function grid:ctor(include_head)
+    if include_head==nil then 
+        include_head=(grid.heading or "on")=="on" and true or false
+        self.headind=include_head==false and -1 or 0
+    else
+        self.headind=include_head==false and 1 or 0
+    end
+    self.include_head=self.headind == 0 and true or false
     self.colsize=table.new(255,0)
     self.data=table.new(1000,0)
 end
 
-function grid:add(rs)
-    if type(rs)~="table" then return end
+function grid:add(row)
+    if type(row)~="table" then return end
+    local rs={_org={}}
     local result,headind,colsize=self.data,self.headind,self.colsize
     local title_style=grid.title_style
     local colbase=grid.col_auto_size
     local rownum=grid.row_num
+    for k,v in pairs(row) do rs[k]=v end
+    if self.headind==-1 then
+        self.headind=1
+        return
+    end
     if rownum == "on" then
         table.insert(rs,1,headind==0 and "#" or headind)
     end
@@ -286,15 +309,17 @@ function grid:add(rs)
     rs[0]=headind
     local cnt=0
     --run statement
+    if grid.col_wrap==nil then print(debug.traceback()) end
     for k,v in ipairs(rs) do
+        rs._org[k]=v
         if k>grid.maxcol then break end
         local csize,v1 =0,v
         if not colsize[k] then colsize[k] = {0,1} end
-        if self.printhead then
+        if self.include_head then
             v=event.callback("ON_COLUMN_VALUE",{#result>0 and result[1][k] or v,v,#result})[2]
         end
 
-        if headind>0 and (type(v) == "number"  or self.printhead and self.colinfo and self.colinfo[k] and self.colinfo[k].is_number) then
+        if headind>0 and (type(v) == "number"  or self.include_head and self.colinfo and self.colinfo[k] and self.colinfo[k].is_number) then
             v1=tonumber(v)
             if v1 then
                 if grid.digits<38  then
@@ -305,7 +330,7 @@ function grid:add(rs)
                     if v1~=math.floor(v1) then
                         v1=string.format_number("%,.2f",v1,'double')
                     else
-                        v1=string.format_number("%,d",v1,'int')
+                        v1=string.format_number("%,d",v1,'long')
                     end
                     v=v1
                 end
@@ -360,8 +385,8 @@ function grid:add(rs)
         end
         rs[k]=v
 
-        if grid.pivot==0 and headind==1 and colbase=="body" and self.printhead then colsize[k][1]=1 end
-        if (grid.pivot~=0 or colbase~="head" or not self.printhead or headind==0)
+        if grid.pivot==0 and headind==1 and colbase=="body" and self.include_head then colsize[k][1]=1 end
+        if (grid.pivot~=0 or colbase~="head" or not self.include_head or headind==0)
             and colsize[k][1] < csize
         then
             colsize[k][1] = csize
@@ -373,6 +398,7 @@ function grid:add(rs)
         for i=1,lines,1 do
             local r=table.new(#rs,2)
             r[0]=rs[0]
+            r._org=rs._org
             for k,v in ipairs(rs) do
                 r[k]= (type(v) == "table" and (v[i] or "")) or (i==1 and v or "")
             end
@@ -387,7 +413,7 @@ function grid:add_calc_ratio(column,adjust)
     adjust=tonumber(adjust) or 1
     if not self.ratio_cols then self.ratio_cols={} end
     if type(column)=="string" then
-        if not self.printhead then return end
+        if not self.include_head then return end
         local head=self.data[1]
         if not head then return end
         for k,v in pairs(head) do
@@ -422,19 +448,19 @@ function grid:wellform(col_del,row_del)
         end
         table.sort(keys)
         local rows=self.data
-
+        
         for c=#keys,1,-1 do
             local sum,idx=0,keys[c]
             for _,row in ipairs(rows) do
-                sum=sum+(tonumber(row[idx]) or 0)
+                sum=sum+(toNum(row._org[idx]) or 0)
             end
             for i,row in ipairs(rows) do
                 local n=" "
                 if row[0]==0 and i==1 then
                     n="<-Ratio"
                 elseif sum>0 then
-                    n=tonumber(row[idx])
-                    if n then
+                    n=toNum(row._org[idx])
+                    if n~=nil then
                         n=string.format("%5.2f%%",100*n/sum*self.ratio_cols[idx])
                     else
                         n=" "
@@ -443,7 +469,6 @@ function grid:wellform(col_del,row_del)
                 table.insert(row,idx+1,n)
                 --print(table.dump(row))
             end
-
             table.insert(colsize,idx+1,{7,1})
         end
         self.ratio_cols=nil
@@ -518,27 +543,35 @@ function grid:wellform(col_del,row_del)
     return rows
 end
 
-function grid.print(rows,printhead,col_del,row_del,psize)
+function grid.print(rows,include_head,col_del,row_del,psize,prefix,suffix)
     psize=psize or 10000
+    local str=prefix and (prefix.."\n") or ""
     if rows.__class then
+        include_head=rows.include_head
         rows=rows:wellform(col_del,row_del)
-        return print(table.concat(rows,"\n",1,math.min(#rows,psize+2)),"__BYPASS_GREP__")
+        str=str..table.concat(rows,"\n",1,math.min(#rows,psize+2));
+    else
+        include_head=grid.new(include_head).include_head
+        str=str..grid.tostring(rows,include_head,col_del,row_del,psize)
     end
-    print(grid.tostring(rows,printhead,col_del,row_del,psize),"__BYPASS_GREP__")
+    if grid.bypassemptyrs=='on' and #rows<(include_head and 3 or 1) then return end
+    print(str,'__BYPASS_GREP__')
+    if suffix then print(suffix) end
 end
 
 function grid.onload()
     local set=env.set.init
+    grid.params={}
     for k,v in pairs(params) do
         grid[v.name]=v.default
-        if type(k)=='table' then
-            v.is_array=true
-            params[k[1]]=v 
+        if type(k)=="table" then
+            for _,k1 in ipairs(k) do grid.params[k1]=v end
+        else
+            grid.params[k]=v
         end
-        if type(k)=='table' or not v.is_array then set(k,grid[v.name],grid.set_param,"grid",v.desc,v.range) end
+        set(k,grid[v.name],grid.set_param,"grid",v.desc,v.range)
     end
     env.ansi.define_color("HEADCOLOR","BRED;HIW","ansi.grid","Define grid title's color, type 'ansi' for more available options")
 end
 
-for k,v in pairs(params) do grid[v.name]=v.default end
 return grid

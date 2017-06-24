@@ -20,11 +20,11 @@ SELECT TABLESPACE_NAME,
        SPACE - NVL(FREE_SPACE, 0) "USED_SPACE",
        FREE_SPACE "FREE_SPACE",
        siz+FREE_SPACE-space "TOTAL_FREE",
-       ROUND(((SPACE - NVL(FREE_SPACE, 0)) / nullif(siz, 0)) * 100, 2) "USED(%)",
+       ROUND(100*(SPACE - NVL(FREE_SPACE, 0))/nullif(siz, 0),2) "USED(%)",
        FSFI "FSFI(%)",
        'No' TEMP,
        g location
-FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION*/ 
+FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION NO_MERGE*/ 
               decode(grouping_id(TABLESPACE_NAME,file_id),0,null,3,'TOTAL(Permanent)',nvl2(:V1,'','  ')||TABLESPACE_NAME) TABLESPACE_NAME,
               decode(grouping_id(file_id),0,file_id,count(1)) files,
               nvl(SUM(FREE_BYTES-6*blocksiz),0)  FREE_SPACE, --minus 6 end blocks
@@ -59,7 +59,7 @@ SELECT /*+NO_EXPAND_GSET_TO_UNION no_expand no_merge(h) no_merge(p) no_merge(f) 
        SUM(nvl(p.bytes_used, 0)) space_used,
        SUM((h.bytes_free + h.bytes_used) - nvl(p.bytes_used, 0)) space_free,
        NULL,
-       round(SUM(nvl(p.bytes_used, 0)) / SUM(h.bytes_free + h.bytes_used), 2) space_pct,
+       round(SUM(nvl(p.bytes_used, 0))*100 / SUM(h.bytes_free + h.bytes_used), 2) space_pct,
        NULL,
        'Yes',
        decode(grouping_id(h.file_id),0,max(f.file_name),&CHECK_ACCESS)

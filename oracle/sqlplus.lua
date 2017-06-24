@@ -10,6 +10,7 @@ function sqlplus:ctor()
     self.help_title='Run SQL*Plus script under the "sqlplus" directory. '
     self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."sqlplus",{}
     self.prompt_pattern="^(.+[>\\$#@] *| *\\d+ +)$"
+    self.block_input=true
 end
 
 

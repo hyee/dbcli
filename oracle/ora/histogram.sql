@@ -1,4 +1,8 @@
-/*[[Show histogram. Usage: @@NAME {<table_name>[.<partition_name>] <column_name>}]]*/
+/*[[Show histogram. Usage: @@NAME {<table_name>[.<partition_name>] <column_name>}
+    --[[
+        @hybrid: 12.1={nullif(a.ENDPOINT_REPEAT_COUNT,0)}, default={null} 
+    --]]
+]]*/
 SET FEED OFF
 ora _find_object &V1
 
@@ -17,7 +21,8 @@ WITH r AS
                  NUM_BUCKETS,
                  HISTOGRAM,
                  (c.num_rows - b.num_nulls) / b.sample_size ratio,
-                 c.num_rows - b.num_nulls orig_card
+                 c.num_rows - b.num_nulls orig_card,
+                 &hybrid card
           FROM   all_tab_histograms a, All_Tab_Cols b, all_tables c
           WHERE  a.owner = b.owner
           AND    a.table_name = b.table_name
@@ -45,7 +50,8 @@ WITH r AS
                  NUM_BUCKETS,
                  HISTOGRAM,
                  (c.num_rows - b.num_nulls) / b.sample_size ratio,
-                 c.num_rows - b.num_nulls orig_card
+                 c.num_rows - b.num_nulls orig_card,
+                 &hybrid card
           FROM   all_part_histograms a, All_Part_Col_Statistics b, all_tab_partitions c
           WHERE  a.owner = b.owner
           AND    a.table_name = b.table_name
@@ -63,21 +69,11 @@ r0 AS
          LPAD(to_char(ev, 'fmxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'), LENGTHB(high_value), '0') cv,
          lag(endpoint_actual_value) over(ORDER BY Bucket#) pva,
          Bucket# - lag(Bucket#,1,0) over(ORDER BY Bucket#) buckets,
-         lag(LPAD(to_char(ev + CASE
-                              WHEN data_type = 'DATE' OR data_type LIKE 'TIMESTAMP' THEN
-                               1e-5
-                              ELSE
-                               1
-                          END,
+         lag(LPAD(to_char(ev + CASE WHEN data_type = 'DATE' OR data_type LIKE 'TIMESTAMP' THEN 1e-5 ELSE 1 END,
                           'fmxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'),
                   LENGTHB(high_value),
                   '0')) over(ORDER BY Bucket#) pv,
-         lag(ev + CASE
-                 WHEN data_type = 'DATE' OR data_type LIKE 'TIMESTAMP' THEN
-                  1e-5
-                 ELSE
-                  1
-             END) over(ORDER BY Bucket#) opv
+         lag(ev + CASE WHEN data_type = 'DATE' OR data_type LIKE 'TIMESTAMP' THEN 1e-5 ELSE 1 END) over(ORDER BY Bucket#) opv
   FROM   r),
 r1 AS
  (SELECT r0.*,
@@ -119,7 +115,8 @@ SELECT column_name,
        buckets,
        bp_value,
        ep_value,
-       round(decode(HISTOGRAM,
+       nvl(card,round(decode(HISTOGRAM,
+                    'NONE',null,
                     'HEIGHT BALANCED',
                     CASE
                         WHEN buckets > 1 THEN
@@ -127,7 +124,6 @@ SELECT column_name,
                         ELSE
                          orig_card * nvl(new_density,density)
                     END,
-                    'FREQUENCY',
                     buckets * ratio),
-             2) cardinality
+             2)) cardinality
 FROM   r1, r3;

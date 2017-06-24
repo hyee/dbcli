@@ -1,3 +1,25 @@
+2017-06-23: + oracle: new command  'show undo'
+            * oracle: move 'ora lsi' as 'show lsi', as well as the optimization
+2017-06-21: + oracle: new commands 'show im' and 'show rscache'
+                    : new PL/SQL packge 'runstats_pkg'(Similar to Tome Kyte's version) 
+2017-06-15: * public: refresh lib luajit
+            + oracle: enhancement on 'loadtrace' which supports loading trace from view(12c) 
+2017-06-12: + public: new option 'set bypassemptyrs on/off'
+            ! oracle: fixed wrong output timezone with 'TIMESTAMP(*) WITH TIMEZONE' data type
+2017-06-11: * oracle: compression transferring on awrdump/addmdump/ashdump to save network time 
+2017-06-10: + public: enhancement on "snap":
+                      1). supports parameters in file: before_sql and after_sql
+                      2). supports linux style EOF: syntax: snap <<EOF ... EOF
+                      3). comma as number's thousand sepetor
+                      4). eliminates zero number rows
+                      5). merged 'snap sysevent' into 'snap systime'
+2017-06-10: ！public: many bug fixes
+2017-06-10: + oracle: "ora spd" for 12c only 
+2017-06-10: * oracle: some small changes on existing command
+2017-02-25: + oracle: "ora rtaddm/dsqlm/dumptrace" for 12c only 
+2017-02-24: * public: some fixes and changes; performance optimization on lib `jnlua`
+2017-02-04: + public: new option "set heading on/off"
+=======================begin v1.2================================================
 2017-01-20: * public: miscellaneous changes
 2017-01-19: ! oracle: some fixes related to input prompt after conn to db;
                       support 12c new 'with' clause featurs 

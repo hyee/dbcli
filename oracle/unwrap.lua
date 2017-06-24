@@ -65,8 +65,8 @@ local function decode_base64_package(base64str)
     local base64dec = unwrap.fromBase64(base64str):sub(21)
     local decoded = {}
     for i=1,#base64dec do
-        --print(base64dec:sub(i,i):byte(),base64dec:sub(i,i))
-        --decoded[i] = string.char(charmap[base64dec:sub(i,i):byte()+1])
+            --print(base64dec:sub(i,i):byte(),base64dec:sub(i,i))
+            --decoded[i] = string.char(charmap[base64dec:sub(i,i):byte()+1])
         decoded[i] = charmap[base64dec:sub(i,i):byte()+1]
     end
     --print(table.concat(decoded,''))
@@ -76,7 +76,36 @@ end
 
 function unwrap.unwrap(obj,ext)
     env.checkhelp(obj)
+    ext='.'..(ext or 'sql')
     local filename=obj
+    local typ,f=os.exists(obj)
+
+    if typ then
+        if typ~="file" then return end
+        filename=f..ext
+       
+        local found,stack=false,{}
+        for line in io.lines(f) do
+            local piece=line:match("^%s*([%w%+%/%=]+)$")
+            if not found and piece and #piece>=64 then
+                found=true
+            end
+            if found then 
+                if piece then
+                    stack[#stack+1]=piece
+                else
+                    break
+                end
+            end
+        end
+        local txt=table.concat(stack,'')
+        if not txt or txt=='' then return end
+        txt=loader:Base64ZlibToText({txt});
+        env.save_data(filename,txt)
+        print("Decoded Base64 written to file "..filename)
+        return;
+    end
+
     obj=db:check_obj(obj)
     env.checkerr(obj,"Cannot find target object!")
     local rs=db:dba_query(db.exec,[[
@@ -108,7 +137,6 @@ function unwrap.unwrap(obj,ext)
     end
     db.resultset:close(rs)
     env.checkerr(result~="",'Cannot find targt object!')
-    ext='.'..(ext or 'sql')
     print("Result written to file "..env.write_cache(filename..ext,result))
 end
 

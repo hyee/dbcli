@@ -3,3 +3,4 @@ Main-Class: org.dbcli.Loader
 Agent-Class: org.dbcli.JavaAgent
 Premain-Class: org.dbcli.JavaAgent
 Can-Redefine-Classes: true
+Can-Retransform-Classes: true
