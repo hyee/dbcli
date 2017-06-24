@@ -19,6 +19,7 @@
 2017-02-25: + oracle: "ora rtaddm/dsqlm/dumptrace" for 12c only 
 2017-02-24: * public: some fixes and changes; performance optimization on lib `jnlua`
 2017-02-04: + public: new option "set heading on/off"
+=======================begin v1.2================================================
 2017-01-20: * public: miscellaneous changes
 2017-01-19: ! oracle: some fixes related to input prompt after conn to db;
                       support 12c new 'with' clause featurs 
