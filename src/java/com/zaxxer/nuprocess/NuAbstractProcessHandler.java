@@ -21,49 +21,54 @@ import java.nio.ByteBuffer;
 /**
  * Convenience base class for a {@link NuProcessHandler} with default methods
  * that can be overridden.
- * 
+ *
  * @author Brett Wooldridge
  */
-public abstract class NuAbstractProcessHandler implements NuProcessHandler
-{
-   /** {@inheritDoc} */
-   @Override
-   public void onPreStart(NuProcess nuProcess)
-   {
-   }
+public abstract class NuAbstractProcessHandler implements NuProcessHandler {
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void onPreStart(NuProcess nuProcess) {
+    }
 
-   /** {@inheritDoc} */
-   @Override
-   public void onStart(NuProcess nuProcess)
-   {
-   }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void onStart(NuProcess nuProcess) {
+    }
 
-   /** {@inheritDoc} */
-   @Override
-   public void onExit(int statusCode)
-   {
-   }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void onExit(int statusCode) {
+    }
 
-   /** {@inheritDoc} */
-   @Override
-   public void onStdout(ByteBuffer buffer, boolean closed)
-   {
-      // Ensure we consume the entire buffer in case it's not used.
-      buffer.position(buffer.limit());
-   }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void onStdout(ByteBuffer buffer, boolean closed) {
+        // Ensure we consume the entire buffer in case it's not used.
+        buffer.position(buffer.limit());
+    }
 
-   /** {@inheritDoc} */
-   @Override
-   public void onStderr(ByteBuffer buffer, boolean closed)
-   {
-      // Ensure we consume the entire buffer in case it's not used.
-      buffer.position(buffer.limit());
-   }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void onStderr(ByteBuffer buffer, boolean closed) {
+        // Ensure we consume the entire buffer in case it's not used.
+        buffer.position(buffer.limit());
+    }
 
-   /** {@inheritDoc} */
-   @Override
-   public boolean onStdinReady(ByteBuffer buffer)
-   {
-      return false;
-   }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public boolean onStdinReady(ByteBuffer buffer) {
+        return false;
+    }
 }

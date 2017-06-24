@@ -11,6 +11,8 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.regex.Pattern;
 
 public class SubSystem {
@@ -42,7 +44,7 @@ public class SubSystem {
             //Respond to the ctrl+c event
             Interrupter.listen(this, new EventCallback() {
                 @Override
-                public void interrupt(Object... o) {
+                public void call(Object... o) {
                     isBreak = true;
                 }
             });
@@ -118,17 +120,21 @@ public class SubSystem {
     }
 
     //return null means the process is terminated
-    public String execute(String command, Boolean isPrint) throws Exception {
+    CountDownLatch lock=new CountDownLatch(1);
+    public String execute(String command, Boolean isPrint,Boolean isBlockInput) throws Exception {
         try {
             this.isPrint = isPrint;
             this.lastPrompt = null;
             isWaiting = true;
             isBreak = false;
+            if(isBlockInput) lock=new CountDownLatch(1);
             if (command != null) {
                 lastLine = null;
                 write((command.replaceAll("[\r\n]+$", "") + "\n").getBytes());
             }
-            waitCompletion();
+            if(!isBlockInput)
+                waitCompletion();
+            else lock.await();
             if (this.prevPrompt == null) this.prevPrompt = this.lastPrompt;
             return lastPrompt;
         } catch (Exception e) {
@@ -137,6 +143,10 @@ public class SubSystem {
         } finally {
             isWaiting = false;
         }
+    }
+
+    public String execute(String command, Boolean isPrint) throws Exception {
+        return execute(command,isPrint,false);
     }
 
     public String getLastLine(String command) throws Exception {
@@ -152,6 +162,7 @@ public class SubSystem {
         process.destroy(true);
         process = null;
         lastPrompt = null;
+        lock.countDown();
     }
 
     class ProcessHandler extends NuAbstractProcessHandler {
@@ -168,6 +179,7 @@ public class SubSystem {
         public void onStderr(ByteBuffer buffer, boolean closed) {
             onStdout(buffer, closed);
             isWaiting = false;
+            lock.countDown();
         }
 
         @Override
@@ -193,6 +205,7 @@ public class SubSystem {
                 String line = sb.toString();
                 sb.setLength(0);
                 if (p.matcher(line).find()) {
+                    lock.countDown();
                     isWaiting = false;
                     lastPrompt = line;
                 } else {

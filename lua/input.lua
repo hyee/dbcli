@@ -3,55 +3,26 @@ package.path=debug.getinfo(1, "S").source:sub(2):gsub('[%w%.]+$','?.lua')
 io.stdout:write("    --------------------------------------------------------------------------------------------------------------------------------------\n")
 io.stdout:write("    | DBCLI, type 'conn' to connect to db, or 'help' for more information. (c)2014-2017 hyee, MIT license (https://github.com/hyee/dbcli)|\n")
 io.stdout:write("    ======================================================================================================================================\n\n")
-
+local console=console
+local readLine=console.readLine
 local env=require("env")
 env.onload(...)
 
 --start the CLI interpretor
 
-local line,eval,prompt = "",env.eval_line
-local reader=reader
-local history=reader:getHistory()
+local line,eval = "",env.execute_line
 local ansi,event=env.ansi,env.event
 local color=ansi and ansi.get_color or function() return "";end
-local prompt_color="%s%s%s%s%s%s"
-
-local stack=nil
-
-function env.reset_input(line)
-    if not stack or not line then return nil end
-    if not line:find('^[ \t]*$') then stack[#stack+1]=line end
-    if env.CURRENT_PROMPT~=env.MTL_PROMPT then
-        if line:find('^[ \t]*'..env.COMMAND_SEPS[1]..'[ \t]*$') then
-            stack[#stack-1]=stack[#stack-1]..line
-            table.remove(stack)
-        end
-        line=table.concat(stack,'\n'..env.MTL_PROMPT)
-        reader:setMultiplePrompt(#stack==1 and line or "")
-        stack=nil
-    end
-end
-
+local prompt_color="%s%s%s%s"
+local ncolor=color("NOR")
 
 while true do
     local subcolor,pcolor,ccolor=color("PROMPTSUBCOLOR"),color("PROMPTCOLOR"),color("COMMANDCOLOR")
-    local ncolor=color("NOR")
     local prompt,empty=env.CURRENT_PROMPT:match("^(.-)(%s*)$")
     if env.REOAD_SIGNAL then break end
-    line = reader:readLine(prompt_color:format(env._SUBSYSTEM and subcolor or pcolor,prompt,ncolor,ncolor,empty,ccolor))
+    line = readLine(console,prompt_color:format(env._SUBSYSTEM and subcolor or pcolor,prompt,ncolor,empty))
     if not line then
-        print("Exited.")
-        env.unload()
-        os.exit(0,true)
+        env.eval_line('exit')
     end
-
-    eval(line)
-
-    if env.CURRENT_PROMPT==env.MTL_PROMPT and not stack then
-        stack={line}
-        reader:setMultiplePrompt(nil)
-    elseif stack then
-        env.reset_input(line)
-    end
-
+    eval()
 end

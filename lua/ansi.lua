@@ -3,7 +3,7 @@ local ansi={}
 local cfg
 local reader,writer,str_completer,arg_completer,add=reader
 local terminal=reader:getTerminal()
-local isAnsiSupported=terminal:isAnsiSupported()
+local isAnsiSupported=true
 
 
 local enabled=isAnsiSupported
@@ -62,7 +62,7 @@ local base_color={
     BCYN={"\27[46m","Background Color: Cyan"},
     BWHT={"\27[47m","Background Color: White"},
     BGRY={"\27[4;40m","Background Color: Gray"}, 
-    NOR ={"\27[39;49;0m","Puts every color back to normal"},
+    NOR ={"\27[0m","Puts every color back to normal"},
 
 
     --Additional ansi Esc codes added to ansi.h by Gothic  april 23,1993
@@ -256,10 +256,10 @@ end
 
 function ansi.onload()
     env.set_command(nil,{"clear","cls"},"Clear screen ",ansi.clear_sceen,false,1)
-    writer=reader:getOutput()
+    writer=console:getOutput()
     ansi.loaded=true
-    str_completer=java.require("jline.console.completer.StringsCompleter",true)
-    arg_completer=java.require("jline.console.completer.ArgumentCompleter",true)
+    --str_completer=java.require("jline.console.completer.StringsCompleter",true)
+    --arg_completer=java.require("jline.console.completer.ArgumentCompleter",true)
     for k,v in pairs(base_color) do color[k]=isAnsiSupported and v or '' end
     env.set.init("ansicolor",isAnsiSupported and 'on' or 'off',ansi.enable_color,"core","Enable color masking inside the intepreter.",'on,off')
     env.set_command(nil,'ansi',"Show and test ansi colors, run 'ansi' for more details",ansi.test_text,false,2)

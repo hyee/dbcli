@@ -79,14 +79,13 @@ SELECT sn.sid || ',' || sn.serial# || ',@' || sn.inst_id "SID",
        sn.sql_id top_sql_id,
        sl.sql_id,
        substr(sn.username, 1, 8) username,
-       Trunc(sl.sofar / sl.totalwork * 100) pct,
-       TIME_REMAINING Time_Left,
+       Round(ELAPSED_SECONDS / 60, 2) "Costed(Min)",
+       round((TIME_REMAINING) / 60,2) "Remain(Min)",
+       round(100*sofar/totalwork,2) "Pct(%)",
        sl.message,
        sn.machine machine,
        sn.program program,
-       sn.module modu,
-       to_char(start_time, 'DD-MON-YY HH:MI:SS') Sta_Time,
-       to_char(last_update_time, 'DD-MON-YY HH:MI:SS') LUTime
+       sn.module modu
 FROM   gv$session_longops sl, (SELECT * FROM gv$session WHERE &filter and &usr) sn
 WHERE  sl.inst_id = sn.inst_id
 AND    sn.status = 'ACTIVE'

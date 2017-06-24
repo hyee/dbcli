@@ -5,6 +5,8 @@ local reader,coroutine,os,string,table,math,io,select,xpcall,pcall=reader,corout
 
 local getinfo, error, rawset, rawget,math = debug.getinfo, error, rawset, rawget,math
 
+local pairs,ipairs=pairs,ipairs
+
 --[[
 local global_vars,global_source,env={},{},{}
 _G['env']=env
@@ -61,7 +63,7 @@ end
 
 _G['TRIGGER_EVENT']=function(key_event,key_name)
     local event={'keydown','keycode','uchar','isfunc','repeat','isalt','isctrl','issift'}
-    for i,j in ipairs(event) do event[j],event[i]=key_event[i] end
+    --for i,j in ipairs(event) do event[j],event[i]=key_event[i] end
     event.name=tostring(key_name)
     env.safe_call(env.event and env.event.callback,5,"ON_KEY_EVENT",event,key_event)
     return event.isbreak and 2 or 0
@@ -469,8 +471,8 @@ function env.exec_command(cmd,params,is_internal,arg_text)
         if isMain then
             if writer then
                 env.ROOT_CMD=name
-                writer:print(env.ansi.mask("NOR",""))
-                writer:flush()
+                --writer:print(env.ansi.mask("NOR",""))
+                --writer:flush()
             end
             env.log_debug("CMD",name,params)
         end
@@ -495,7 +497,7 @@ function env.exec_command(cmd,params,is_internal,arg_text)
         _THREADS._clock[index]=nil
         if env.PRI_PROMPT=="TIMING> " then
             env.CURRENT_PROMPT=string.format('%06.2f',clock)..'> '
-            env.MTL_PROMPT=string.rep(' ',#env.CURRENT_PROMPT)
+            env.MTL_PROMPT="%P "
         end
     end
     return table.unpack(res,2)
@@ -554,17 +556,17 @@ function env.modify_command(_,key_event)
             local prompt_color="%s%s"..env.ansi.get_color("NOR").."%s"
             prompt=prompt_color:format(env.ansi.get_color("PROMPTCOLOR"),prompt,env.ansi.get_color("COMMANDCOLOR"))
             reset=env.ansi.get_color("KILLBL")
+            env.printer.write("\27[1A"..reset)
         end
-        reader:resetPromptLine(prompt,"",0)
-        env.printer.write(reset)
+        reader:redrawLine();
     elseif key_event.name=="CTRL+BACK_SPACE" or key_event.name=="SHIFT+BACK_SPACE" then --shift+backspace
-        reader:invokeMethod("deletePreviousWord")
+        console:invokeMethod("backwardDeleteWord")
         key_event.isbreak=true
     elseif key_event.name=="CTRL+LEFT" or key_event.name=="SHIFT+LEFT" then --ctrl+arrow_left
-        reader:invokeMethod("previousWord")
+        console:invokeMethod("previousWord")
         key_event.isbreak=true
     elseif key_event.name=="CTRL+RIGHT" or key_event.name=="SHIFT+RIGHT" then --ctrl+arrow_right
-        reader:invokeMethod("nextWord")
+        console:invokeMethod("nextWord")
         key_event.isbreak=true
     end
 end
@@ -713,7 +715,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
                 env.exec_command(env._SUBSYSTEM,{line})
                 return;
             else
-                return cmd,{line}
+                return env._SUBSYSTEM,{line}
             end
         end
 
@@ -767,7 +769,11 @@ local function _eval_line(line,exec,is_internal,not_skip)
     env.CURRENT_CMD=cmd
     terminator=nil
     if not (_CMDS[cmd]) then
-        return env.warn("No such command '%s', please type 'help' for more information.",cmd)
+        local warning=("No such command '%s', please type 'help' for more information."):format(cmd)
+        if exec==false then
+            return nil,nil,warning
+        end
+        return env.warn(warning)
     elseif not end_mark and not rest:find('\n',1,true) then 
         terminator=rest:match(terminator_patt)
         if terminator then
@@ -790,6 +796,23 @@ local function _eval_line(line,exec,is_internal,not_skip)
         env.exec_command(cmd,args,is_internal,rest)
     else
         return cmd,args
+    end
+end
+
+local _cmd,_args,_errs
+function env.parse_line(line)
+    _cmd,_args,_errs=_eval_line(line,false)
+    return env.CURRENT_PROMPT==env.MTL_PROMPT,env.CURRENT_PROMPT
+end
+
+function env.execute_line()
+    local cmd,args
+    cmd,args,_cmd,_args=_cmd,_args
+    if cmd then
+        env.exec_command(cmd,args)
+    elseif _errs then
+        env.warn(_errs)
+        _errs=nil
     end
 end
 
@@ -1102,7 +1125,7 @@ function env.ask(question,range,default)
     end
     --env.printer.write(desc..': ')
     env.IS_ASKING=question
-    value,env.IS_ASKING=reader:readLine(env.space,null,desc..": "),nil
+    value,env.IS_ASKING=console:readLine(env.space,null,desc..": "),nil
     value=value and value:trim() or ""
 
     value=value:gsub('\\([0-9]+)',function(x) return string.char(tonumber(x)) end)

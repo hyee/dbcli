@@ -24,6 +24,7 @@ function printer.set_more(stmt)
 end
 
 function printer.more(output)
+    --[[
     local width=(terminal:getWidth()/2+5)
     local list = java.new("java.util.ArrayList")
     for v in output:gsplit('\r?\n') do
@@ -33,6 +34,14 @@ function printer.more(output)
     reader:setPaginationEnabled(true)
     reader:printColumns(list)
     reader:setPaginationEnabled(false)
+    --]]
+    local width=terminal:getWidth()
+    local tab={}
+    for v in output:gsplit('\r?\n') do
+        tab[#tab+1]=ansi.strip_ansi(v):sub(1,width-4)
+    end
+    output=table.concat(tab,"\n")
+    console:less(output)
 end
 
 function printer.print(...)
@@ -46,7 +55,7 @@ function printer.print(...)
             ignore=true
         end
     end
-    output=table.concat(output,' '):gsub("(\r?\n\r?)","%1"..env.space)--:gsub('`([^\n\r]+)`',env.ansi.get_color("PROMPTCOLOR")..'%1'..NOR)
+    output=table.concat(output,' '):gsub("(\r?\n\r?)","%1"..env.space)
     if printer.grep_text and not ignore then
         local stack=output:split('[\n\r]+')
         output={}
@@ -265,7 +274,7 @@ function printer.onload()
     ]]
     env.set_command(nil,"grep",grep_help,{printer.grep,printer.grep_after},'__SMART_PARSE__',3,false,false,true)
     env.set_command(nil,"tee",tee_help,{printer.tee,printer.tee_after},'__SMART_PARSE__',3,false,false,true)
-    env.set_command(nil,"more","Similar to Linux 'more' command. Usage: @@NAME <other command>",printer.set_more,'__SMART_PARSE__',2,false,false,true)
+    env.set_command(nil,{"more","less"},"Similar to Linux 'more' command. Usage: @@NAME <other command>",printer.set_more,'__SMART_PARSE__',2,false,false,true)
     env.set_command(nil,{"Prompt","pro",'echo'}, "Prompt messages. Usage: @@NAME <message>",printer.load_text,false,2)
     env.set_command(nil,{"SPOOL","SPO"}, "Write the screen output into a file. Usage: @@NAME [file_name[.ext]] [CREATE] | APP[END]] | OFF]",printer.spool,false,3)
     env.ansi.define_color("GREPCOLOR","BBLU;HIW","ansi.grid","Define highlight color for the grep command, type 'ansi' for more available options")

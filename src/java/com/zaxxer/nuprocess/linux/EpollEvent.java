@@ -16,15 +16,14 @@
 
 package com.zaxxer.nuprocess.linux;
 
-import java.util.Arrays;
-import java.util.List;
-
 import com.sun.jna.Pointer;
 import com.sun.jna.Structure;
 import com.sun.jna.Union;
 
-public class EpollEvent extends Structure
-{
+import java.util.Arrays;
+import java.util.List;
+
+public class EpollEvent extends Structure {
 
    /*
        typedef union epoll_data
@@ -42,31 +41,28 @@ public class EpollEvent extends Structure
        };
    */
 
-   public int events;
-   public EpollData data;
+    public int events;
+    public EpollData data;
 
-   EpollEvent()
-   {
-      // per eventpoll.h, x86_64 has the same alignment as 32-bit
-      super(ALIGN_GNUC);
+    EpollEvent() {
+        // per eventpoll.h, x86_64 has the same alignment as 32-bit
+        super(ALIGN_GNUC);
 
-      data = new EpollData();
-      data.setType("fd");
-   }
+        data = new EpollData();
+        data.setType("fd");
+    }
 
-   @SuppressWarnings("rawtypes")
-   @Override
-   protected List getFieldOrder()
-   {
-      return Arrays.asList("events", "data");
-   }
+    @SuppressWarnings("rawtypes")
+    @Override
+    protected List getFieldOrder() {
+        return Arrays.asList("events", "data");
+    }
 
-   public static class EpollData extends Union
-   {
-      public Pointer ptr;
-      public int fd;
-      public int u32;
-      public long u64;
-   }
+    public static class EpollData extends Union {
+        public Pointer ptr;
+        public int fd;
+        public int u32;
+        public long u64;
+    }
 
 }

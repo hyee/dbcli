@@ -1,37 +1,53 @@
 package org.dbcli;
 
+import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
-import jline.Terminal;
-import jline.console.ConsoleReader;
-import jline.console.Operation;
-import jline.console.completer.Completer;
-import jline.console.history.History;
-import jline.internal.Configuration;
-import jline.internal.NonBlockingInputStream;
+import org.jline.builtins.Commands;
+import org.jline.builtins.Less;
+import org.jline.builtins.Source;
+import org.jline.keymap.KeyMap;
+import org.jline.reader.EOFError;
+import org.jline.reader.History;
+import org.jline.reader.LineReader;
+import org.jline.reader.ParsedLine;
+import org.jline.reader.impl.DefaultParser;
+import org.jline.reader.impl.LineReaderImpl;
+import org.jline.terminal.Terminal;
+import org.jline.terminal.TerminalBuilder;
+import org.jline.utils.Curses;
+import org.jline.utils.InfoCmp;
+import org.jline.utils.NonBlockingReader;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
-import java.lang.reflect.Field;
+import java.io.*;
 import java.lang.reflect.Method;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 
-public class Console extends ConsoleReader {
+import static org.jline.reader.LineReader.*;
+
+public class Console {
     public static PrintWriter writer;
     //public static NonBlockingInputStream in;
-    public static WindowsInputReader in;
+    public static NonBlockingReader in;
+    public static String charset = "utf-8";
     public static Terminal terminal;
-    public static String charset;
+    LineReaderImpl reader;
+    public static ClassAccess<LineReaderImpl> accessor = ClassAccess.access(LineReaderImpl.class);
+
+    static {
+        try {
+            terminal = TerminalBuilder.builder().encoding(charset).system(true).nativeSignals(true).signalHandler(Terminal.SignalHandler.SIG_IGN).exec(true).build();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
     protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(5);
-    public LuaState lua;
+    private LuaState lua;
     private History his;
     volatile private ScheduledFuture task;
     private EventReader monitor = new EventReader();
@@ -39,77 +55,99 @@ public class Console extends ConsoleReader {
     private char[] keys;
     private long threadID;
     private HashMap<String, Method> methods = new HashMap();
-    private Method t_puts;
+    private EventCallback callback;
+    private ParserCallback parserCallback;
+    private Parser parser;
 
-    public Console() throws Exception {
-        super();
-        his = getHistory();
-        setExpandEvents(false);
-        setHandleUserInterrupt(false);
-        setBellEnabled(false);
-        getKeys().bind("\u001bOn", Operation.DELETE_CHAR); //The delete key
-        in = new WindowsInputReader();
-        ((NonBlockingInputStream) this.getInput()).shutdown();
-        Field field = ConsoleReader.class.getDeclaredField("in");
-        field.setAccessible(true);
-        field.set(this, in);
-        field.setAccessible(false);
-        field = ConsoleReader.class.getDeclaredField("reader");
-        field.setAccessible(true);
-        charset = this.getTerminal().getOutputEncoding() == null ? Configuration.getEncoding() : this.getTerminal().getOutputEncoding();
-        field.set(this, new InputStreamReader(in, charset));
-        field.setAccessible(false);
-        t_puts = ConsoleReader.class.getDeclaredMethod("tputs", String.class, Object[].class);
-        t_puts.setAccessible(true);
+    public void setLua(LuaState lua) {
+        this.lua = lua;
+        parserCallback = null;
+    }
+
+    public Console(LineReader reader) throws Exception {
+        this.reader = (LineReaderImpl) reader;
+        parser = new Parser();
+        this.reader.setParser(parser);
+        this.his = this.reader.getHistory();
+        //reader.getKeys().bind("\u001bOn", DELETE_CHAR); //The delete key
+        in = terminal.reader();
+
+        //map.bind(new Reference(BACKWARD_KILL_WORD),KeyMap.ctrl((char)KeyEvent.VK_BACK_SPACE));
+        //map.bind(new Reference(BACKWARD_WORD),KeyMap.ctrl((char)KeyEvent.VK_LEFT));
+
         String colorPlan = System.getenv("ANSICON_DEF");
-        writer = new PrintWriter(colorPlan != null && !("jline").equals(colorPlan) ? new OutputStreamWriter(System.out, Console.charset) : getOutput());
-
-        //in=(NonBlockingInputStream)this.getInput();
-        Iterator<Completer> iterator = getCompleters().iterator();
+        writer = new PrintWriter(colorPlan != null && !("jline").equals(colorPlan) ? new OutputStreamWriter(System.out,charset) : terminal.writer());
         threadID = Thread.currentThread().getId();
-        while (iterator.hasNext()) removeCompleter(iterator.next());
-        in.listen(this, new EventCallback() {
+        Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
+        callback = new EventCallback() {
             @Override
-            public void interrupt(Object... c) throws Exception {
+            public void call(Object... c) {
                 if (!isRunning() && lua != null && threadID == Thread.currentThread().getId()) {
                     lua.getGlobal("TRIGGER_EVENT");
                     Integer r = (Integer) (lua.call(c)[0]);
                     if (r == 2) ((long[]) c[0])[0] = 2;
+                } else if (event != null) {
+                    if (c[1] instanceof ActionEvent) event.actionPerformed((ActionEvent) c[0]);
+                    else event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, "\3"));
                 }
             }
-        });
+        };
+        Interrupter.listen(this, callback);
     }
 
-    public void doTPuts(String s, Object... o) throws Exception {
-        t_puts.invoke(this, s, o);
+    public void doTPuts(String s, Object... o) {
+        try {
+            Curses.tputs(new StringWriter(), terminal.getStringCapability(InfoCmp.Capability.carriage_return), o);
+        } catch (IOException e) {
+
+        }
     }
 
-    public void write(String msg) throws Exception {
-        print(msg);
-        flush();
+    public void less(String output) throws Exception {
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        Source source=new Source() {
+            @Override
+            public String getName() {
+                return "-MORE-";
+            }
+            @Override
+            public InputStream read() throws IOException {
+                return new ByteArrayInputStream(output.getBytes());
+            }
+        };
+        Less less=new Less(terminal);
+        less.veryQuiet=true;
+        less.chopLongLines=false;
+        less.ignoreCaseAlways=true;
+        less.run(source);
     }
 
-    public Object invokeMethod(String method, Object... o) throws Exception {
-        Method m = null;
-        if (!methods.containsKey(method)) {
-            Class<?>[] cls = new Class[o.length];
-            for (int i = 0; i < o.length; i++) cls[i] = o[i] instanceof Class<?> ? (Class<?>) o[i] : o[i].getClass();
-            m = ConsoleReader.class.getDeclaredMethod(method, cls);
-            m.setAccessible(true);
-            methods.put(method, m);
-        } else m = methods.get(method);
-        Object r = m.invoke(this, o);
-        flush();
-        return r;
+    public PrintWriter getOutput() {
+        return writer;
     }
 
-    public String readLine(String prompt) throws IOException {
-        if (isRunning()) setEvents(null, null);
-        String line = super.readLine(prompt);
-        return line;
+    public void write(String msg) {
+        if (writer == null) return;
+        writer.write(msg);
+        writer.flush();
     }
 
-    public String readLine() throws IOException {
+    public Object invokeMethod(String method, Object... o) {
+        return accessor.invoke(reader, method, o);
+    }
+
+    public String readLine(String prompt) {
+        try {
+            if (isRunning()) setEvents(null, null);
+            String line = reader.readLine(prompt);
+            return line;
+        } catch (Exception e) {
+            callback.call(null, "CTRL+C");
+            return "";
+        }
+    }
+
+    public String readLine() {
         return readLine((String) null);
     }
 
@@ -126,7 +164,7 @@ public class Console extends ConsoleReader {
         }
         if (this.event != null && this.keys != null) {
             this.monitor.counter = 0;
-            this.task = this.threadPool.scheduleWithFixedDelay(this.monitor, 1000, 200, TimeUnit.MILLISECONDS);
+            //this.task = this.threadPool.scheduleWithFixedDelay(this.monitor, 1000, 200, TimeUnit.MILLISECONDS);
         }
     }
 
@@ -134,22 +172,10 @@ public class Console extends ConsoleReader {
         setEvents(null, null);
     }
 
-    boolean hisEnabled=true;
-    public void setMultiplePrompt(String line) {
-        boolean enabled=line!=null;
-        if(hisEnabled==enabled) return;
-        hisEnabled=enabled;
-        if (!enabled) {
-            try {
-                setHistoryEnabled(false);
-                his.removeLast();
-            } catch (Exception e) {
-            }
-        } else {
-            setHistoryEnabled(true);
-            if (!line.equals("")) this.his.add(line);
-            this.his.moveToEnd();
-        }
+    public String getKeyMap(String[] options) {
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        Commands.keymap(reader, new PrintStream(stream), new PrintStream(new ByteArrayOutputStream()), options);
+        return stream.toString();
     }
 
     class EventReader implements Runnable {
@@ -157,18 +183,59 @@ public class Console extends ConsoleReader {
 
         public void run() {
             try {
-                int ch = in.peek(-1);
-                if (ch < 1) return;
+                int ch = in.peek(1L);
+                if (ch < -1) return;
                 for (int i = 0; i < keys.length; i++) {
                     if (ch != keys[i] && keys[i] != '*') continue;
-                    in.read(-1);
+                    in.read(1L);
                     event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, Character.toChars(ch).toString()));
                     return;
                 }
-                if (ch > 32) setEvents(null, null);
-                else in.read(-1);
+                setEvents(null, null);
             } catch (Exception e) {
                 //Loader.getRootCause(e).printStackTrace();
+            }
+        }
+    }
+
+    interface ParserCallback {
+        Object[] call(Object... e);
+    }
+
+    class Parser extends DefaultParser {
+        String secondPrompt = "    ";
+        final EOFError err = new EOFError(-1, -1, "Request new line", "");
+        int i=0;
+        public Parser() {
+            super();
+            super.setEofOnEscapedNewLine(true);
+            reader.setVariable(SECONDARY_PROMPT_PATTERN,secondPrompt);
+            reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
+        }
+
+        public ParsedLine parse(final String line, final int cursor, ParseContext context) {
+            //if (context == ParseContext.SECONDARY_PROMPT) throw err;
+            if (context != ParseContext.ACCEPT_LINE) return null;
+            if (parserCallback == null) {
+                lua.load("return {call=env.parse_line}", "proxy");
+                lua.call(0, 1);
+                parserCallback = lua.getProxy(-1, ParserCallback.class);
+                lua.pop(1);
+            }
+            String[] lines= line.split("\r?\n");
+            Object[] result = parserCallback.call(lines[lines.length-1]);
+            if ((Boolean) result[0]) {
+                if (result.length > 1 && !secondPrompt.equals(result[1])) {
+                    secondPrompt = (String) result[1];
+                    reader.setVariable(SECONDARY_PROMPT_PATTERN,secondPrompt);
+                }
+                throw err;
+            }
+
+            try {
+                return super.parse(line, cursor,context);
+            } catch (EOFError e) {
+                throw err;
             }
         }
     }

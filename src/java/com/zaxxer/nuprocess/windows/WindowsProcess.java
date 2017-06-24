@@ -16,15 +16,17 @@
 
 package com.zaxxer.nuprocess.windows;
 
+import com.sun.jna.Memory;
+import com.sun.jna.Native;
+import com.sun.jna.WString;
+import com.zaxxer.nuprocess.NuProcess;
+import com.zaxxer.nuprocess.NuProcessHandler;
+import com.zaxxer.nuprocess.windows.NuKernel32.OVERLAPPED;
+import com.zaxxer.nuprocess.windows.NuWinNT.*;
+
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
@@ -32,718 +34,667 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.sun.jna.Memory;
-import com.sun.jna.Native;
-import com.sun.jna.WString;
-import com.zaxxer.nuprocess.NuProcess;
-import com.zaxxer.nuprocess.NuProcessHandler;
-import com.zaxxer.nuprocess.windows.NuKernel32.OVERLAPPED;
-import com.zaxxer.nuprocess.windows.NuWinNT.DWORD;
-import com.zaxxer.nuprocess.windows.NuWinNT.HANDLE;
-import com.zaxxer.nuprocess.windows.NuWinNT.PROCESS_INFORMATION;
-import com.zaxxer.nuprocess.windows.NuWinNT.SECURITY_ATTRIBUTES;
-import com.zaxxer.nuprocess.windows.NuWinNT.STARTUPINFO;
-
 /**
  * @author Brett Wooldridge
  */
-public final class WindowsProcess implements NuProcess
-{
-   public static final int PROCESSOR_THREADS;
+public final class WindowsProcess implements NuProcess {
+    public static final int PROCESSOR_THREADS;
 
-   private static final boolean IS_SOFTEXIT_DETECTION;
+    private static final boolean IS_SOFTEXIT_DETECTION;
 
-   private static final int BUFFER_SIZE = 65536;
+    private static final int BUFFER_SIZE = 65536;
 
-   private static final ProcessCompletions[] processors;
-   private static int processorRoundRobin;
+    private static final ProcessCompletions[] processors;
+    private static int processorRoundRobin;
 
-   private static final String namedPipePathPrefix;
-   private static final AtomicInteger namedPipeCounter;
+    private static final String namedPipePathPrefix;
+    private static final AtomicInteger namedPipeCounter;
 
-   private volatile ProcessCompletions myProcessor;
-   private volatile NuProcessHandler processHandler;
+    private volatile ProcessCompletions myProcessor;
+    private volatile NuProcessHandler processHandler;
 
-   protected volatile boolean isRunning;
-   private AtomicInteger exitCode;
-   private CountDownLatch exitPending;
+    protected volatile boolean isRunning;
+    private AtomicInteger exitCode;
+    private CountDownLatch exitPending;
 
-   AtomicBoolean userWantsWrite;
-   private volatile boolean writePending;
-   private AtomicBoolean stdinClosing;
+    AtomicBoolean userWantsWrite;
+    private volatile boolean writePending;
+    private AtomicBoolean stdinClosing;
 
-   private volatile PipeBundle stdinPipe;
-   private volatile PipeBundle stdoutPipe;
-   private volatile PipeBundle stderrPipe;
+    private volatile PipeBundle stdinPipe;
+    private volatile PipeBundle stdoutPipe;
+    private volatile PipeBundle stderrPipe;
 
-   private HANDLE hStdinWidow;
-   private HANDLE hStdoutWidow;
-   private HANDLE hStderrWidow;
+    private HANDLE hStdinWidow;
+    private HANDLE hStdoutWidow;
+    private HANDLE hStderrWidow;
 
-   private ConcurrentLinkedQueue<ByteBuffer> pendingWrites;
-   private final ByteBuffer pendingWriteStdinClosedTombstone;
+    private ConcurrentLinkedQueue<ByteBuffer> pendingWrites;
+    private final ByteBuffer pendingWriteStdinClosedTombstone;
 
-   private volatile boolean inClosed;
-   private volatile boolean outClosed;
-   private volatile boolean errClosed;
+    private volatile boolean inClosed;
+    private volatile boolean outClosed;
+    private volatile boolean errClosed;
 
-   private PROCESS_INFORMATION processInfo;
+    private PROCESS_INFORMATION processInfo;
 
-   static {
-      namedPipePathPrefix = "\\\\.\\pipe\\NuProcess-" + UUID.randomUUID().toString() + "-";
-      namedPipeCounter = new AtomicInteger(100);
+    static {
+        namedPipePathPrefix = "\\\\.\\pipe\\NuProcess-" + UUID.randomUUID().toString() + "-";
+        namedPipeCounter = new AtomicInteger(100);
 
-      IS_SOFTEXIT_DETECTION = Boolean.valueOf(System.getProperty("com.zaxxer.nuprocess.softExitDetection", "true"));
+        IS_SOFTEXIT_DETECTION = Boolean.valueOf(System.getProperty("com.zaxxer.nuprocess.softExitDetection", "true"));
 
-      String threads = System.getProperty("com.zaxxer.nuprocess.threads", "auto");
-      if ("auto".equals(threads)) {
-         PROCESSOR_THREADS = Math.max(1, Runtime.getRuntime().availableProcessors() / 2);
-      }
-      else if ("cores".equals(threads)) {
-         PROCESSOR_THREADS = Runtime.getRuntime().availableProcessors();
-      }
-      else {
-         PROCESSOR_THREADS = Math.max(1, Integer.parseInt(threads));
-      }
-
-      processors = new ProcessCompletions[PROCESSOR_THREADS];
-      for (int i = 0; i < PROCESSOR_THREADS; i++) {
-         processors[i] = new ProcessCompletions();
-      }
-
-      if (Boolean.valueOf(System.getProperty("com.zaxxer.nuprocess.enableShutdownHook", "true"))) {
-         Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
-            @Override
-            public void run()
-            {
-               for (int i = 0; i < processors.length; i++) {
-                  if (processors[i] != null) {
-                     processors[i].shutdown();
-                  }
-               }
-            }
-         }));
-      }
-   }
-
-   public WindowsProcess(NuProcessHandler processListener)
-   {
-      this.processHandler = processListener;
-
-      this.userWantsWrite = new AtomicBoolean();
-      this.exitCode = new AtomicInteger();
-      this.exitPending = new CountDownLatch(1);
-      this.outClosed = true;
-      this.errClosed = true;
-      this.inClosed = true;
-      this.stdinClosing = new AtomicBoolean();
-      this.pendingWriteStdinClosedTombstone = ByteBuffer.allocate(1);
-   }
-
-   // ************************************************************************
-   //                        NuProcess interface methods
-   // ************************************************************************
-
-   /** {@inheritDoc} */
-   @Override
-   public int waitFor(long timeout, TimeUnit unit) throws InterruptedException
-   {
-      if (timeout == 0) {
-         exitPending.await();
-      }
-      else if (!exitPending.await(timeout, unit)) {
-         return Integer.MIN_VALUE;
-      }
-
-      return exitCode.get();
-   }
-
-   /** {@inheritDoc} */
-   @Override
-   public void wantWrite()
-   {
-      if (hStdinWidow != null && !NuWinNT.INVALID_HANDLE_VALUE.getPointer().equals(hStdinWidow.getPointer())) {
-         userWantsWrite.set(true);
-         myProcessor.wantWrite(this);
-      }
-   }
-
-   /** {@inheritDoc} */
-   @Override
-   public synchronized void writeStdin(ByteBuffer buffer)
-   {
-      if (hStdinWidow != null && !NuWinNT.INVALID_HANDLE_VALUE.getPointer().equals(hStdinWidow.getPointer())) {
-         pendingWrites.add(buffer);
-         if (!writePending) {
-            myProcessor.wantWrite(this);
-         }
-      }
-      else {
-         throw new IllegalStateException("closeStdin() method has already been called.");
-      }
-   }
-
-   /** {@inheritDoc} */
-   @Override
-   public void closeStdin(boolean force)
-   {
-      if (force) {
-         stdinClose();
-      } else {
-        if (stdinClosing.compareAndSet(false, true)) {
-           pendingWrites.add(pendingWriteStdinClosedTombstone);
-           if (!writePending) {
-              myProcessor.wantWrite(this);
-           }
+        String threads = System.getProperty("com.zaxxer.nuprocess.threads", "auto");
+        if ("auto".equals(threads)) {
+            PROCESSOR_THREADS = Math.max(1, Runtime.getRuntime().availableProcessors() / 2);
+        } else if ("cores".equals(threads)) {
+            PROCESSOR_THREADS = Runtime.getRuntime().availableProcessors();
         } else {
-           throw new IllegalStateException("closeStdin() method has already been called.");
+            PROCESSOR_THREADS = Math.max(1, Integer.parseInt(threads));
         }
-      }
-   }
 
-   /** {@inheritDoc} */
-   @Override
-   public boolean hasPendingWrites()
-   {
-      return !pendingWrites.isEmpty();
-   }
+        processors = new ProcessCompletions[PROCESSOR_THREADS];
+        for (int i = 0; i < PROCESSOR_THREADS; i++) {
+            processors[i] = new ProcessCompletions();
+        }
 
-   /** {@inheritDoc} */
-   @Override
-   public void destroy(boolean force)
-   {
-      NuKernel32.TerminateProcess(processInfo.hProcess, Integer.MAX_VALUE);
-   }
-   
-   public int getPID(){
-   	   //PointerByReference pointer = new PointerByReference();
-	   //return NuKernel32.User32DLL.GetWindowThreadProcessId(null, null);
+        if (Boolean.valueOf(System.getProperty("com.zaxxer.nuprocess.enableShutdownHook", "true"))) {
+            Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    for (int i = 0; i < processors.length; i++) {
+                        if (processors[i] != null) {
+                            processors[i].shutdown();
+                        }
+                    }
+                }
+            }));
+        }
+    }
 
-       return NuKernel32.GetProcessId(this.getPidHandle());
-   }
+    public WindowsProcess(NuProcessHandler processListener) {
+        this.processHandler = processListener;
 
-   /** {@inheritDoc} */
-   @Override
-   public boolean isRunning()
-   {
-      return isRunning;
-   }
+        this.userWantsWrite = new AtomicBoolean();
+        this.exitCode = new AtomicInteger();
+        this.exitPending = new CountDownLatch(1);
+        this.outClosed = true;
+        this.errClosed = true;
+        this.inClosed = true;
+        this.stdinClosing = new AtomicBoolean();
+        this.pendingWriteStdinClosedTombstone = ByteBuffer.allocate(1);
+    }
 
-   /** {@inheritDoc} */
-   @Override
-   public void setProcessHandler(NuProcessHandler processHandler)
-   {
-      this.processHandler = processHandler;
-   }
+    // ************************************************************************
+    //                        NuProcess interface methods
+    // ************************************************************************
 
-   // ************************************************************************
-   //                          Package-scoped methods
-   // ************************************************************************
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public int waitFor(long timeout, TimeUnit unit) throws InterruptedException {
+        if (timeout == 0) {
+            exitPending.await();
+        } else if (!exitPending.await(timeout, unit)) {
+            return Integer.MIN_VALUE;
+        }
 
-   NuProcess start(List<String> commands, String[] environment, Path cwd)
-   {
-      callPreStart();
+        return exitCode.get();
+    }
 
-      try {
-         createPipes();
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void wantWrite() {
+        if (hStdinWidow != null && !NuWinNT.INVALID_HANDLE_VALUE.getPointer().equals(hStdinWidow.getPointer())) {
+            userWantsWrite.set(true);
+            myProcessor.wantWrite(this);
+        }
+    }
 
-         char[] block = getEnvironment(environment);
-         Memory env = new Memory(block.length * 3);
-         env.write(0, block, 0, block.length);
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public synchronized void writeStdin(ByteBuffer buffer) {
+        if (hStdinWidow != null && !NuWinNT.INVALID_HANDLE_VALUE.getPointer().equals(hStdinWidow.getPointer())) {
+            pendingWrites.add(buffer);
+            if (!writePending) {
+                myProcessor.wantWrite(this);
+            }
+        } else {
+            throw new IllegalStateException("closeStdin() method has already been called.");
+        }
+    }
 
-         STARTUPINFO startupInfo = new STARTUPINFO();
-         startupInfo.clear();
-         startupInfo.cb = new DWORD(startupInfo.size());
-         startupInfo.hStdInput = hStdinWidow;
-         startupInfo.hStdError = hStderrWidow;
-         startupInfo.hStdOutput = hStdoutWidow;
-         startupInfo.dwFlags = NuWinNT.STARTF_USESTDHANDLES;
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void closeStdin(boolean force) {
+        if (force) {
+            stdinClose();
+        } else {
+            if (stdinClosing.compareAndSet(false, true)) {
+                pendingWrites.add(pendingWriteStdinClosedTombstone);
+                if (!writePending) {
+                    myProcessor.wantWrite(this);
+                }
+            } else {
+                throw new IllegalStateException("closeStdin() method has already been called.");
+            }
+        }
+    }
 
-         processInfo = new PROCESS_INFORMATION();
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public boolean hasPendingWrites() {
+        return !pendingWrites.isEmpty();
+    }
 
-         DWORD dwCreationFlags = new DWORD(NuWinNT.CREATE_NO_WINDOW | NuWinNT.CREATE_UNICODE_ENVIRONMENT | NuWinNT.CREATE_SUSPENDED);
-         char[] cwdChars = (cwd != null) ? Native.toCharArray(cwd.toAbsolutePath().toString()) : null;
-         if (!NuKernel32.CreateProcessW(null, getCommandLine(commands), null /*lpProcessAttributes*/, null /*lpThreadAttributes*/, true /*bInheritHandles*/,
-                                        dwCreationFlags, env, cwdChars, startupInfo, processInfo)) {
-            int lastError = Native.getLastError();
-            throw new RuntimeException("CreateProcessW() failed, error: " + lastError);
-         }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void destroy(boolean force) {
+        NuKernel32.TerminateProcess(processInfo.hProcess, Integer.MAX_VALUE);
+    }
 
-         afterStart();
+    public int getPID() {
+        //PointerByReference pointer = new PointerByReference();
+        //return NuKernel32.User32DLL.GetWindowThreadProcessId(null, null);
 
-         registerProcess();
+        return NuKernel32.GetProcessId(this.getPidHandle());
+    }
 
-         callStart();
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public boolean isRunning() {
+        return isRunning;
+    }
 
-         NuKernel32.ResumeThread(processInfo.hThread);
-      }
-      catch (Throwable e) {
-         e.printStackTrace();
-         onExit(Integer.MIN_VALUE);
-      }
-      finally {
-         NuKernel32.CloseHandle(hStdinWidow);
-         NuKernel32.CloseHandle(hStdoutWidow);
-         NuKernel32.CloseHandle(hStderrWidow);
-      }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void setProcessHandler(NuProcessHandler processHandler) {
+        this.processHandler = processHandler;
+    }
 
-      return this;
-   }
+    // ************************************************************************
+    //                          Package-scoped methods
+    // ************************************************************************
 
-   HANDLE getPidHandle()
-   {
-      return processInfo.hProcess;
-   }
+    NuProcess start(List<String> commands, String[] environment, Path cwd) {
+        callPreStart();
 
-   PipeBundle getStdinPipe()
-   {
-      return stdinPipe;
-   }
+        try {
+            createPipes();
 
-   PipeBundle getStdoutPipe()
-   {
-      return stdoutPipe;
-   }
+            char[] block = getEnvironment(environment);
+            Memory env = new Memory(block.length * 3);
+            env.write(0, block, 0, block.length);
 
-   PipeBundle getStderrPipe()
-   {
-      return stderrPipe;
-   }
+            STARTUPINFO startupInfo = new STARTUPINFO();
+            startupInfo.clear();
+            startupInfo.cb = new DWORD(startupInfo.size());
+            startupInfo.hStdInput = hStdinWidow;
+            startupInfo.hStdError = hStderrWidow;
+            startupInfo.hStdOutput = hStdoutWidow;
+            startupInfo.dwFlags = NuWinNT.STARTF_USESTDHANDLES;
 
-   void readStdout(int transferred)
-   {
-      if (outClosed) {
-         return;
-      }
+            processInfo = new PROCESS_INFORMATION();
 
-      try {
-         if (transferred < 0) {
-            outClosed = true;
-            stdoutPipe.buffer.flip();
-            processHandler.onStdout(stdoutPipe.buffer, true);
+            DWORD dwCreationFlags = new DWORD(NuWinNT.CREATE_NO_WINDOW | NuWinNT.CREATE_UNICODE_ENVIRONMENT | NuWinNT.CREATE_SUSPENDED);
+            char[] cwdChars = (cwd != null) ? Native.toCharArray(cwd.toAbsolutePath().toString()) : null;
+            if (!NuKernel32.CreateProcessW(null, getCommandLine(commands), null /*lpProcessAttributes*/, null /*lpThreadAttributes*/, true /*bInheritHandles*/,
+                    dwCreationFlags, env, cwdChars, startupInfo, processInfo)) {
+                int lastError = Native.getLastError();
+                throw new RuntimeException("CreateProcessW() failed, error: " + lastError);
+            }
+
+            afterStart();
+
+            registerProcess();
+
+            callStart();
+
+            NuKernel32.ResumeThread(processInfo.hThread);
+        } catch (Throwable e) {
+            e.printStackTrace();
+            onExit(Integer.MIN_VALUE);
+        } finally {
+            NuKernel32.CloseHandle(hStdinWidow);
+            NuKernel32.CloseHandle(hStdoutWidow);
+            NuKernel32.CloseHandle(hStderrWidow);
+        }
+
+        return this;
+    }
+
+    HANDLE getPidHandle() {
+        return processInfo.hProcess;
+    }
+
+    PipeBundle getStdinPipe() {
+        return stdinPipe;
+    }
+
+    PipeBundle getStdoutPipe() {
+        return stdoutPipe;
+    }
+
+    PipeBundle getStderrPipe() {
+        return stderrPipe;
+    }
+
+    void readStdout(int transferred) {
+        if (outClosed) {
             return;
-         }
-         else if (transferred == 0) {
-            return;
-         }
+        }
 
-         final ByteBuffer buffer = stdoutPipe.buffer;
-         buffer.limit(buffer.position() + transferred);
-         buffer.position(0);
-         processHandler.onStdout(buffer, false);
-         buffer.compact();
-      }
-      catch (Exception e) {
-         // Don't let an exception thrown from the user's handler interrupt us
-         e.printStackTrace();
-      }
-      if (!stdoutPipe.buffer.hasRemaining()) {
-         // The caller's onStdout() callback must set the buffer's position
-         // to indicate how many bytes were consumed, or else it will
-         // eventually run out of capacity.
-         throw new RuntimeException("stdout buffer has no bytes remaining");
-      }
-   }
+        try {
+            if (transferred < 0) {
+                outClosed = true;
+                stdoutPipe.buffer.flip();
+                processHandler.onStdout(stdoutPipe.buffer, true);
+                return;
+            } else if (transferred == 0) {
+                return;
+            }
 
-   void readStderr(int transferred)
-   {
-      if (errClosed) {
-         return;
-      }
-
-      try {
-         if (transferred < 0) {
-            errClosed = true;
-            stderrPipe.buffer.flip();
-            processHandler.onStderr(stderrPipe.buffer, true);
-            return;
-         }
-         else if (transferred == 0) {
-            return;
-         }
-
-         final ByteBuffer buffer = stderrPipe.buffer;
-         buffer.limit(buffer.position() + transferred);
-         buffer.position(0);
-         processHandler.onStderr(buffer, false);
-         buffer.compact();
-      }
-      catch (Exception e) {
-         // Don't let an exception thrown from the user's handler interrupt us
-         e.printStackTrace();
-      }
-      if (!stderrPipe.buffer.hasRemaining()) {
-         // The caller's onStdout() callback must set the buffer's position
-         // to indicate how many bytes were consumed, or else it will
-         // eventually run out of capacity.
-         throw new RuntimeException("stderr buffer has no bytes remaining");
-      }
-   }
-
-   boolean writeStdin(int transferred)
-   {
-      if (writePending && transferred == 0) {
-         return false;
-      }
-
-      stdinPipe.buffer.position(stdinPipe.buffer.position() + transferred);
-      if (stdinPipe.buffer.hasRemaining()) {
-         NuKernel32.WriteFile(stdinPipe.pipeHandle, stdinPipe.buffer, stdinPipe.buffer.remaining(), null, stdinPipe.overlapped);
-
-         writePending = true;
-         return false;
-      }
-
-      writePending = false;
-
-      if (!pendingWrites.isEmpty()) {
-         stdinPipe.buffer.clear();
-         // copy the next buffer into our direct buffer (inBuffer)
-         ByteBuffer byteBuffer = pendingWrites.peek();
-         if (byteBuffer == pendingWriteStdinClosedTombstone) {
-            closeStdin(true);
-            userWantsWrite.set(false);
-            pendingWrites.clear();
-            return false;
-         } else if (byteBuffer.remaining() > BUFFER_CAPACITY) {
-            ByteBuffer slice = byteBuffer.slice();
-            slice.limit(BUFFER_CAPACITY);
-            stdinPipe.buffer.put(slice);
-            byteBuffer.position(byteBuffer.position() + BUFFER_CAPACITY);
-         }
-         else {
-            stdinPipe.buffer.put(byteBuffer);
-            pendingWrites.poll();
-         }
-
-         stdinPipe.buffer.flip();
-
-         if (stdinPipe.buffer.hasRemaining()) {
-            return true;
-         }
-      }
-
-      if (userWantsWrite.compareAndSet(true, false)) {
-
-         try {
-            final ByteBuffer buffer = stdinPipe.buffer;
-            buffer.clear();
-            userWantsWrite.set(processHandler.onStdinReady(buffer));
-
-            return true;
-         }
-         catch (Exception e) {
+            final ByteBuffer buffer = stdoutPipe.buffer;
+            buffer.limit(buffer.position() + transferred);
+            buffer.position(0);
+            processHandler.onStdout(buffer, false);
+            buffer.compact();
+        } catch (Exception e) {
             // Don't let an exception thrown from the user's handler interrupt us
             e.printStackTrace();
+        }
+        if (!stdoutPipe.buffer.hasRemaining()) {
+            // The caller's onStdout() callback must set the buffer's position
+            // to indicate how many bytes were consumed, or else it will
+            // eventually run out of capacity.
+            throw new RuntimeException("stdout buffer has no bytes remaining");
+        }
+    }
+
+    void readStderr(int transferred) {
+        if (errClosed) {
+            return;
+        }
+
+        try {
+            if (transferred < 0) {
+                errClosed = true;
+                stderrPipe.buffer.flip();
+                processHandler.onStderr(stderrPipe.buffer, true);
+                return;
+            } else if (transferred == 0) {
+                return;
+            }
+
+            final ByteBuffer buffer = stderrPipe.buffer;
+            buffer.limit(buffer.position() + transferred);
+            buffer.position(0);
+            processHandler.onStderr(buffer, false);
+            buffer.compact();
+        } catch (Exception e) {
+            // Don't let an exception thrown from the user's handler interrupt us
+            e.printStackTrace();
+        }
+        if (!stderrPipe.buffer.hasRemaining()) {
+            // The caller's onStdout() callback must set the buffer's position
+            // to indicate how many bytes were consumed, or else it will
+            // eventually run out of capacity.
+            throw new RuntimeException("stderr buffer has no bytes remaining");
+        }
+    }
+
+    boolean writeStdin(int transferred) {
+        if (writePending && transferred == 0) {
             return false;
-         }
-      }
+        }
 
-      return false;
-   }
+        stdinPipe.buffer.position(stdinPipe.buffer.position() + transferred);
+        if (stdinPipe.buffer.hasRemaining()) {
+            NuKernel32.WriteFile(stdinPipe.pipeHandle, stdinPipe.buffer, stdinPipe.buffer.remaining(), null, stdinPipe.overlapped);
 
-   void onExit(int statusCode)
-   {
-      if (exitPending.getCount() == 0) {
-         return;
-      }
+            writePending = true;
+            return false;
+        }
 
-      try {
-         isRunning = false;
-         exitCode.set(statusCode);
-         if (stdoutPipe != null && stdoutPipe.buffer != null && !outClosed) {
-            stdoutPipe.buffer.flip();
-            processHandler.onStdout(stdoutPipe.buffer, true);
-         }
-         if (stderrPipe != null && stderrPipe.buffer != null && !errClosed) {
-            stderrPipe.buffer.flip();
-            processHandler.onStderr(stderrPipe.buffer, true);
-         }
-         if (statusCode != Integer.MAX_VALUE - 1) {
-            processHandler.onExit(statusCode);
-         }
-      }
-      catch (Exception e) {
-         // Don't let an exception thrown from the user's handler interrupt us
-         e.printStackTrace();
-      }
-      finally {
-         exitPending.countDown();
+        writePending = false;
 
-         if (stdinPipe != null) {
-            if (!inClosed) {
-               NuKernel32.CloseHandle(stdinPipe.pipeHandle);
+        if (!pendingWrites.isEmpty()) {
+            stdinPipe.buffer.clear();
+            // copy the next buffer into our direct buffer (inBuffer)
+            ByteBuffer byteBuffer = pendingWrites.peek();
+            if (byteBuffer == pendingWriteStdinClosedTombstone) {
+                closeStdin(true);
+                userWantsWrite.set(false);
+                pendingWrites.clear();
+                return false;
+            } else if (byteBuffer.remaining() > BUFFER_CAPACITY) {
+                ByteBuffer slice = byteBuffer.slice();
+                slice.limit(BUFFER_CAPACITY);
+                stdinPipe.buffer.put(slice);
+                byteBuffer.position(byteBuffer.position() + BUFFER_CAPACITY);
+            } else {
+                stdinPipe.buffer.put(byteBuffer);
+                pendingWrites.poll();
             }
-            // Once the last reference to the buffer is gone, Java will finalize the buffer
-            // and release the native memory we allocated in initializeBuffers().
-            stdinPipe.buffer = null;
-         }
 
-         if (stdoutPipe != null) {
-            NuKernel32.CloseHandle(stdoutPipe.pipeHandle);
-            stdoutPipe.buffer = null;
-         }
-         if (stderrPipe != null) {
-            NuKernel32.CloseHandle(stderrPipe.pipeHandle);
-            stderrPipe.buffer = null;
-         }
+            stdinPipe.buffer.flip();
 
-         if (processInfo != null) {
-            NuKernel32.CloseHandle(processInfo.hThread);
-            NuKernel32.CloseHandle(processInfo.hProcess);
-         }
-
-         stderrPipe = null;
-         stdoutPipe = null;
-         stdinPipe = null;
-         processHandler = null;
-      }
-   }
-
-   boolean isSoftExit()
-   {
-      return (outClosed && errClosed && IS_SOFTEXIT_DETECTION);
-   }
-
-   void stdinClose()
-   {
-      if (!inClosed && stdinPipe != null) {
-         NuKernel32.CloseHandle(stdinPipe.pipeHandle);
-      }
-      inClosed = true;
-   }
-
-   private void callPreStart()
-   {
-      try {
-         processHandler.onPreStart(this);
-      }
-      catch (Exception e) {
-         // Don't let an exception thrown from the user's handler interrupt us
-      }
-   }
-
-   private void callStart()
-   {
-      try {
-         processHandler.onStart(this);
-      }
-      catch (Exception e) {
-         // Don't let an exception thrown from the user's handler interrupt us
-         e.printStackTrace();
-      }
-   }
-
-   private void createPipes()
-   {
-      SECURITY_ATTRIBUTES sattr = new SECURITY_ATTRIBUTES();
-      sattr.dwLength = new DWORD(sattr.size());
-      sattr.bInheritHandle = true;
-      sattr.lpSecurityDescriptor = null;
-
-      // ################ STDOUT PIPE ################
-      long ioCompletionKey = namedPipeCounter.getAndIncrement();
-      WString pipeName = new WString(namedPipePathPrefix + ioCompletionKey);
-      hStdoutWidow = NuKernel32.CreateNamedPipeW(pipeName, NuKernel32.PIPE_ACCESS_INBOUND, 0 /*dwPipeMode*/, 1 /*nMaxInstances*/, BUFFER_SIZE, BUFFER_SIZE,
-                                                 0 /*nDefaultTimeOut*/, sattr);
-      checkHandleValidity(hStdoutWidow);
-
-      HANDLE stdoutHandle = NuKernel32.CreateFile(pipeName, NuWinNT.GENERIC_READ, NuWinNT.FILE_SHARE_READ, null, NuWinNT.OPEN_EXISTING,
-                                                  NuWinNT.FILE_ATTRIBUTE_NORMAL | NuWinNT.FILE_FLAG_OVERLAPPED, null /*hTemplateFile*/);
-      checkHandleValidity(stdoutHandle);
-      stdoutPipe = new PipeBundle(stdoutHandle, ioCompletionKey);
-      checkPipeConnected(NuKernel32.ConnectNamedPipe(hStdoutWidow, null));
-
-      // ################ STDERR PIPE ################
-      ioCompletionKey = namedPipeCounter.getAndIncrement();
-      pipeName = new WString(namedPipePathPrefix + ioCompletionKey);
-      hStderrWidow = NuKernel32.CreateNamedPipeW(pipeName, NuKernel32.PIPE_ACCESS_INBOUND, 0 /*dwPipeMode*/, 1 /*nMaxInstances*/, BUFFER_SIZE, BUFFER_SIZE,
-                                                 0 /*nDefaultTimeOut*/, sattr);
-      checkHandleValidity(hStderrWidow);
-
-      HANDLE stderrHandle = NuKernel32.CreateFile(pipeName, NuWinNT.GENERIC_READ, NuWinNT.FILE_SHARE_READ, null, NuWinNT.OPEN_EXISTING,
-                                                  NuWinNT.FILE_ATTRIBUTE_NORMAL | NuWinNT.FILE_FLAG_OVERLAPPED, null /*hTemplateFile*/);
-      checkHandleValidity(stderrHandle);
-      stderrPipe = new PipeBundle(stderrHandle, ioCompletionKey);
-      checkPipeConnected(NuKernel32.ConnectNamedPipe(hStderrWidow, null));
-
-      // ################ STDIN PIPE ################
-      ioCompletionKey = namedPipeCounter.getAndIncrement();
-      pipeName = new WString(namedPipePathPrefix + ioCompletionKey);
-      hStdinWidow = NuKernel32.CreateNamedPipeW(pipeName, NuKernel32.PIPE_ACCESS_OUTBOUND, 0 /*dwPipeMode*/, 1 /*nMaxInstances*/, BUFFER_SIZE, BUFFER_SIZE,
-                                                0 /*nDefaultTimeOut*/, sattr);
-      checkHandleValidity(hStdinWidow);
-
-      HANDLE stdinHandle = NuKernel32.CreateFile(pipeName, NuWinNT.GENERIC_WRITE, NuWinNT.FILE_SHARE_WRITE, null, NuWinNT.OPEN_EXISTING,
-                                                 NuWinNT.FILE_ATTRIBUTE_NORMAL | NuWinNT.FILE_FLAG_OVERLAPPED, null /*hTemplateFile*/);
-      checkHandleValidity(stdinHandle);
-      stdinPipe = new PipeBundle(stdinHandle, ioCompletionKey);
-      checkPipeConnected(NuKernel32.ConnectNamedPipe(hStdinWidow, null));
-   }
-
-   private void afterStart()
-   {
-      pendingWrites = new ConcurrentLinkedQueue<ByteBuffer>();
-
-      outClosed = false;
-      errClosed = false;
-      inClosed = false;
-      isRunning = true;
-
-      stdoutPipe.buffer = ByteBuffer.allocateDirect(BUFFER_CAPACITY);
-      stderrPipe.buffer = ByteBuffer.allocateDirect(BUFFER_CAPACITY);
-      stdinPipe.buffer = ByteBuffer.allocateDirect(BUFFER_CAPACITY);
-
-      // Ensure stdin initially has 0 bytes pending write. We'll
-      // update this before invoking onStdinReady.
-      stdinPipe.buffer.limit(0);
-   }
-
-   private void registerProcess()
-   {
-      int mySlot = 0;
-      synchronized (processors) {
-         mySlot = processorRoundRobin;
-         processorRoundRobin = (processorRoundRobin + 1) % processors.length;
-      }
-
-      myProcessor = processors[mySlot];
-      myProcessor.registerProcess(this);
-
-      if (myProcessor.checkAndSetRunning()) {
-         CyclicBarrier spawnBarrier = myProcessor.getSpawnBarrier();
-
-         Thread t = new Thread(myProcessor, "ProcessIoCompletion" + mySlot);
-         t.setDaemon(true);
-         t.start();
-
-         try {
-            spawnBarrier.await();
-         }
-         catch (Exception e) {
-            throw new RuntimeException(e);
-         }
-      }
-   }
-
-   private char[] getCommandLine(List<String> commands)
-   {
-      StringBuilder sb = new StringBuilder();
-      boolean isFirstCommand = true;
-      for (String command : commands) {
-         if (isFirstCommand) {
-            isFirstCommand = false;
-         } else {
-            // Prepend a space before the second and subsequent components of the command line.
-            sb.append(' ');
-         }
-         // It's OK to apply CreateProcess escaping to even the first item in the commands
-         // list (the path to execute). Since Windows paths cannot contain double-quotes
-         // (really!), the logic in WindowsCreateProcessEscape.quote() will either do nothing
-         // or simply add double-quotes around the path.
-         WindowsCreateProcessEscape.quote(sb, command);
-      }
-      return Native.toCharArray(sb.toString());
-   }
-
-   private char[] getEnvironment(String[] environment)
-   {
-      Map<String, String> env = new HashMap<String, String>();
-
-      final String SYSTEMROOT = "SystemRoot";
-      String systemRootValue = System.getenv(SYSTEMROOT);
-      if (systemRootValue != null) {
-         env.put(SYSTEMROOT, systemRootValue);
-      }
-      
-      for (String entry : environment) {
-         int ndx = entry.indexOf('=');
-         if (ndx != -1) {
-            env.put(entry.substring(0, ndx), (ndx < entry.length() ? entry.substring(ndx + 1) : ""));
-         }
-      }
-
-      return getEnvironmentBlock(env).toCharArray();
-   }
-
-   private String getEnvironmentBlock(Map<String, String> env)
-   {
-      // Sort by name using UPPERCASE collation
-      List<Map.Entry<String, String>> list = new ArrayList<Map.Entry<String, String>>(env.entrySet());
-      Collections.sort(list, new EntryComparator());
-
-      StringBuilder sb = new StringBuilder(32 * env.size());
-      for (Map.Entry<String, String> e : list) {
-         sb.append(e.getKey()).append('=').append(e.getValue()).append('\u0000');
-      }
-
-      // Add final NUL termination
-      sb.append('\u0000').append('\u0000');
-      return sb.toString();
-   }
-
-   private void checkHandleValidity(HANDLE handle)
-   {
-      if (NuWinNT.INVALID_HANDLE_VALUE.getPointer().equals(handle)) {
-         throw new RuntimeException("Unable to create pipe, error " + Native.getLastError());
-      }
-   }
-
-   private void checkPipeConnected(int status)
-   {
-      int lastError;
-      if (status == 0 && ((lastError = Native.getLastError()) != NuWinNT.ERROR_PIPE_CONNECTED)) {
-         throw new RuntimeException("Unable to connect pipe, error: " + lastError);
-      }
-   }
-
-   private static final class NameComparator implements Comparator<String>
-   {
-      @Override
-      public int compare(String s1, String s2)
-      {
-         int len1 = s1.length();
-         int len2 = s2.length();
-         for (int i = 0; i < Math.min(len1, len2); i++) {
-            char c1 = s1.charAt(i);
-            char c2 = s2.charAt(i);
-            if (c1 != c2) {
-               c1 = Character.toUpperCase(c1);
-               c2 = Character.toUpperCase(c2);
-               if (c1 != c2) {
-                  return c1 - c2;
-               }
+            if (stdinPipe.buffer.hasRemaining()) {
+                return true;
             }
-         }
+        }
 
-         return len1 - len2;
-      }
-   }
+        if (userWantsWrite.compareAndSet(true, false)) {
 
-   private static final class EntryComparator implements Comparator<Map.Entry<String, String>>
-   {
-      static NameComparator nameComparator = new NameComparator();
+            try {
+                final ByteBuffer buffer = stdinPipe.buffer;
+                buffer.clear();
+                userWantsWrite.set(processHandler.onStdinReady(buffer));
 
-      @Override
-      public int compare(Map.Entry<String, String> e1, Map.Entry<String, String> e2)
-      {
-         return nameComparator.compare(e1.getKey(), e2.getKey());
-      }
-   }
+                return true;
+            } catch (Exception e) {
+                // Don't let an exception thrown from the user's handler interrupt us
+                e.printStackTrace();
+                return false;
+            }
+        }
 
-   static final class PipeBundle
-   {
-      final OVERLAPPED overlapped;
-      final long ioCompletionKey;
-      final HANDLE pipeHandle;
-      ByteBuffer buffer;
-      boolean registered;
+        return false;
+    }
 
-      PipeBundle(HANDLE pipeHandle, long ioCompletionKey)
-      {
-         this.pipeHandle = pipeHandle;
-         this.ioCompletionKey = ioCompletionKey;
-         this.overlapped = new OVERLAPPED();
-      }
-   }
+    void onExit(int statusCode) {
+        if (exitPending.getCount() == 0) {
+            return;
+        }
+
+        try {
+            isRunning = false;
+            exitCode.set(statusCode);
+            if (stdoutPipe != null && stdoutPipe.buffer != null && !outClosed) {
+                stdoutPipe.buffer.flip();
+                processHandler.onStdout(stdoutPipe.buffer, true);
+            }
+            if (stderrPipe != null && stderrPipe.buffer != null && !errClosed) {
+                stderrPipe.buffer.flip();
+                processHandler.onStderr(stderrPipe.buffer, true);
+            }
+            if (statusCode != Integer.MAX_VALUE - 1) {
+                processHandler.onExit(statusCode);
+            }
+        } catch (Exception e) {
+            // Don't let an exception thrown from the user's handler interrupt us
+            e.printStackTrace();
+        } finally {
+            exitPending.countDown();
+
+            if (stdinPipe != null) {
+                if (!inClosed) {
+                    NuKernel32.CloseHandle(stdinPipe.pipeHandle);
+                }
+                // Once the last reference to the buffer is gone, Java will finalize the buffer
+                // and release the native memory we allocated in initializeBuffers().
+                stdinPipe.buffer = null;
+            }
+
+            if (stdoutPipe != null) {
+                NuKernel32.CloseHandle(stdoutPipe.pipeHandle);
+                stdoutPipe.buffer = null;
+            }
+            if (stderrPipe != null) {
+                NuKernel32.CloseHandle(stderrPipe.pipeHandle);
+                stderrPipe.buffer = null;
+            }
+
+            if (processInfo != null) {
+                NuKernel32.CloseHandle(processInfo.hThread);
+                NuKernel32.CloseHandle(processInfo.hProcess);
+            }
+
+            stderrPipe = null;
+            stdoutPipe = null;
+            stdinPipe = null;
+            processHandler = null;
+        }
+    }
+
+    boolean isSoftExit() {
+        return (outClosed && errClosed && IS_SOFTEXIT_DETECTION);
+    }
+
+    void stdinClose() {
+        if (!inClosed && stdinPipe != null) {
+            NuKernel32.CloseHandle(stdinPipe.pipeHandle);
+        }
+        inClosed = true;
+    }
+
+    private void callPreStart() {
+        try {
+            processHandler.onPreStart(this);
+        } catch (Exception e) {
+            // Don't let an exception thrown from the user's handler interrupt us
+        }
+    }
+
+    private void callStart() {
+        try {
+            processHandler.onStart(this);
+        } catch (Exception e) {
+            // Don't let an exception thrown from the user's handler interrupt us
+            e.printStackTrace();
+        }
+    }
+
+    private void createPipes() {
+        SECURITY_ATTRIBUTES sattr = new SECURITY_ATTRIBUTES();
+        sattr.dwLength = new DWORD(sattr.size());
+        sattr.bInheritHandle = true;
+        sattr.lpSecurityDescriptor = null;
+
+        // ################ STDOUT PIPE ################
+        long ioCompletionKey = namedPipeCounter.getAndIncrement();
+        WString pipeName = new WString(namedPipePathPrefix + ioCompletionKey);
+        hStdoutWidow = NuKernel32.CreateNamedPipeW(pipeName, NuKernel32.PIPE_ACCESS_INBOUND, 0 /*dwPipeMode*/, 1 /*nMaxInstances*/, BUFFER_SIZE, BUFFER_SIZE,
+                0 /*nDefaultTimeOut*/, sattr);
+        checkHandleValidity(hStdoutWidow);
+
+        HANDLE stdoutHandle = NuKernel32.CreateFile(pipeName, NuWinNT.GENERIC_READ, NuWinNT.FILE_SHARE_READ, null, NuWinNT.OPEN_EXISTING,
+                NuWinNT.FILE_ATTRIBUTE_NORMAL | NuWinNT.FILE_FLAG_OVERLAPPED, null /*hTemplateFile*/);
+        checkHandleValidity(stdoutHandle);
+        stdoutPipe = new PipeBundle(stdoutHandle, ioCompletionKey);
+        checkPipeConnected(NuKernel32.ConnectNamedPipe(hStdoutWidow, null));
+
+        // ################ STDERR PIPE ################
+        ioCompletionKey = namedPipeCounter.getAndIncrement();
+        pipeName = new WString(namedPipePathPrefix + ioCompletionKey);
+        hStderrWidow = NuKernel32.CreateNamedPipeW(pipeName, NuKernel32.PIPE_ACCESS_INBOUND, 0 /*dwPipeMode*/, 1 /*nMaxInstances*/, BUFFER_SIZE, BUFFER_SIZE,
+                0 /*nDefaultTimeOut*/, sattr);
+        checkHandleValidity(hStderrWidow);
+
+        HANDLE stderrHandle = NuKernel32.CreateFile(pipeName, NuWinNT.GENERIC_READ, NuWinNT.FILE_SHARE_READ, null, NuWinNT.OPEN_EXISTING,
+                NuWinNT.FILE_ATTRIBUTE_NORMAL | NuWinNT.FILE_FLAG_OVERLAPPED, null /*hTemplateFile*/);
+        checkHandleValidity(stderrHandle);
+        stderrPipe = new PipeBundle(stderrHandle, ioCompletionKey);
+        checkPipeConnected(NuKernel32.ConnectNamedPipe(hStderrWidow, null));
+
+        // ################ STDIN PIPE ################
+        ioCompletionKey = namedPipeCounter.getAndIncrement();
+        pipeName = new WString(namedPipePathPrefix + ioCompletionKey);
+        hStdinWidow = NuKernel32.CreateNamedPipeW(pipeName, NuKernel32.PIPE_ACCESS_OUTBOUND, 0 /*dwPipeMode*/, 1 /*nMaxInstances*/, BUFFER_SIZE, BUFFER_SIZE,
+                0 /*nDefaultTimeOut*/, sattr);
+        checkHandleValidity(hStdinWidow);
+
+        HANDLE stdinHandle = NuKernel32.CreateFile(pipeName, NuWinNT.GENERIC_WRITE, NuWinNT.FILE_SHARE_WRITE, null, NuWinNT.OPEN_EXISTING,
+                NuWinNT.FILE_ATTRIBUTE_NORMAL | NuWinNT.FILE_FLAG_OVERLAPPED, null /*hTemplateFile*/);
+        checkHandleValidity(stdinHandle);
+        stdinPipe = new PipeBundle(stdinHandle, ioCompletionKey);
+        checkPipeConnected(NuKernel32.ConnectNamedPipe(hStdinWidow, null));
+    }
+
+    private void afterStart() {
+        pendingWrites = new ConcurrentLinkedQueue<ByteBuffer>();
+
+        outClosed = false;
+        errClosed = false;
+        inClosed = false;
+        isRunning = true;
+
+        stdoutPipe.buffer = ByteBuffer.allocateDirect(BUFFER_CAPACITY);
+        stderrPipe.buffer = ByteBuffer.allocateDirect(BUFFER_CAPACITY);
+        stdinPipe.buffer = ByteBuffer.allocateDirect(BUFFER_CAPACITY);
+
+        // Ensure stdin initially has 0 bytes pending write. We'll
+        // update this before invoking onStdinReady.
+        stdinPipe.buffer.limit(0);
+    }
+
+    private void registerProcess() {
+        int mySlot = 0;
+        synchronized (processors) {
+            mySlot = processorRoundRobin;
+            processorRoundRobin = (processorRoundRobin + 1) % processors.length;
+        }
+
+        myProcessor = processors[mySlot];
+        myProcessor.registerProcess(this);
+
+        if (myProcessor.checkAndSetRunning()) {
+            CyclicBarrier spawnBarrier = myProcessor.getSpawnBarrier();
+
+            Thread t = new Thread(myProcessor, "ProcessIoCompletion" + mySlot);
+            t.setDaemon(true);
+            t.start();
+
+            try {
+                spawnBarrier.await();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    private char[] getCommandLine(List<String> commands) {
+        StringBuilder sb = new StringBuilder();
+        boolean isFirstCommand = true;
+        for (String command : commands) {
+            if (isFirstCommand) {
+                isFirstCommand = false;
+            } else {
+                // Prepend a space before the second and subsequent components of the command line.
+                sb.append(' ');
+            }
+            // It's OK to apply CreateProcess escaping to even the first item in the commands
+            // list (the path to execute). Since Windows paths cannot contain double-quotes
+            // (really!), the logic in WindowsCreateProcessEscape.quote() will either do nothing
+            // or simply add double-quotes around the path.
+            WindowsCreateProcessEscape.quote(sb, command);
+        }
+        return Native.toCharArray(sb.toString());
+    }
+
+    private char[] getEnvironment(String[] environment) {
+        Map<String, String> env = new HashMap<String, String>();
+
+        final String SYSTEMROOT = "SystemRoot";
+        String systemRootValue = System.getenv(SYSTEMROOT);
+        if (systemRootValue != null) {
+            env.put(SYSTEMROOT, systemRootValue);
+        }
+
+        for (String entry : environment) {
+            int ndx = entry.indexOf('=');
+            if (ndx != -1) {
+                env.put(entry.substring(0, ndx), (ndx < entry.length() ? entry.substring(ndx + 1) : ""));
+            }
+        }
+
+        return getEnvironmentBlock(env).toCharArray();
+    }
+
+    private String getEnvironmentBlock(Map<String, String> env) {
+        // Sort by name using UPPERCASE collation
+        List<Map.Entry<String, String>> list = new ArrayList<Map.Entry<String, String>>(env.entrySet());
+        Collections.sort(list, new EntryComparator());
+
+        StringBuilder sb = new StringBuilder(32 * env.size());
+        for (Map.Entry<String, String> e : list) {
+            sb.append(e.getKey()).append('=').append(e.getValue()).append('\u0000');
+        }
+
+        // Add final NUL termination
+        sb.append('\u0000').append('\u0000');
+        return sb.toString();
+    }
+
+    private void checkHandleValidity(HANDLE handle) {
+        if (NuWinNT.INVALID_HANDLE_VALUE.getPointer().equals(handle)) {
+            throw new RuntimeException("Unable to create pipe, error " + Native.getLastError());
+        }
+    }
+
+    private void checkPipeConnected(int status) {
+        int lastError;
+        if (status == 0 && ((lastError = Native.getLastError()) != NuWinNT.ERROR_PIPE_CONNECTED)) {
+            throw new RuntimeException("Unable to connect pipe, error: " + lastError);
+        }
+    }
+
+    private static final class NameComparator implements Comparator<String> {
+        @Override
+        public int compare(String s1, String s2) {
+            int len1 = s1.length();
+            int len2 = s2.length();
+            for (int i = 0; i < Math.min(len1, len2); i++) {
+                char c1 = s1.charAt(i);
+                char c2 = s2.charAt(i);
+                if (c1 != c2) {
+                    c1 = Character.toUpperCase(c1);
+                    c2 = Character.toUpperCase(c2);
+                    if (c1 != c2) {
+                        return c1 - c2;
+                    }
+                }
+            }
+
+            return len1 - len2;
+        }
+    }
+
+    private static final class EntryComparator implements Comparator<Map.Entry<String, String>> {
+        static NameComparator nameComparator = new NameComparator();
+
+        @Override
+        public int compare(Map.Entry<String, String> e1, Map.Entry<String, String> e2) {
+            return nameComparator.compare(e1.getKey(), e2.getKey());
+        }
+    }
+
+    static final class PipeBundle {
+        final OVERLAPPED overlapped;
+        final long ioCompletionKey;
+        final HANDLE pipeHandle;
+        ByteBuffer buffer;
+        boolean registered;
+
+        PipeBundle(HANDLE pipeHandle, long ioCompletionKey) {
+            this.pipeHandle = pipeHandle;
+            this.ioCompletionKey = ioCompletionKey;
+            this.overlapped = new OVERLAPPED();
+        }
+    }
 }

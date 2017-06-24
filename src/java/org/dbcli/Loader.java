@@ -7,7 +7,8 @@ import com.opencsv.CSVReader;
 import com.opencsv.CSVWriter;
 import com.opencsv.ResultSetHelperService;
 import com.opencsv.SQLWriter;
-import jline.console.KeyMap;
+import org.jline.keymap.KeyMap;
+import org.jline.reader.LineReaderBuilder;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -16,9 +17,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
-import java.nio.charset.Charset;
 import java.sql.CallableStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
@@ -32,6 +30,7 @@ import java.util.zip.GZIPInputStream;
 import java.util.zip.InflaterInputStream;
 
 public class Loader {
+
     public static String ReloadNextTime = "_init_";
     static LuaState lua;
     static Console console;
@@ -55,14 +54,16 @@ public class Loader {
             libPath += (bit.equals("64") ? "x64" : "x86");
             addLibrary(libPath, true);
             System.setProperty("library.jansi.path", libPath);
-            console = new Console();
+            console = new Console(LineReaderBuilder.builder()
+                    .terminal(Console.terminal)
+                    .build());
             //Ctrl+D
-            keyMap = console.getKeys();
-            keyMap.bind(String.valueOf(KeyMap.CTRL_D), new KeyListner(KeyMap.CTRL_D));
+            keyMap = console.reader.getKeys();
+            //keyMap.bind(String.valueOf(KeyMap.CTRL_D), new KeyListner(KeyMap.CTRL_D));
             q = new KeyListner('q');
             Interrupter.listen("loader", new EventCallback() {
                 @Override
-                public void interrupt(Object... e) throws Exception {
+                public void call(Object... e) {
                     q.actionPerformed((ActionEvent) e[0]);
                 }
             });
@@ -80,12 +81,12 @@ public class Loader {
     public static void loadLua(Loader loader, String args[]) throws Exception {
         lua = new LuaState();
         lua.pushGlobal("loader", loader);
-        console.lua = lua;
+        console.setLua(lua);
         if (console.writer != null) {
-            lua.pushGlobal("reader", console);
+            lua.pushGlobal("reader", console.reader);
             lua.pushGlobal("writer", console.writer);
-            lua.pushGlobal("terminal", console.getTerminal());
-            lua.pushGlobal("jwriter", new PrintWriter(console.getOutput()));
+            lua.pushGlobal("terminal", console.terminal);
+            lua.pushGlobal("console", console);
         }
         String separator = File.separator;
 
@@ -317,7 +318,7 @@ public class Loader {
     public synchronized boolean setStatement(CallableStatement p) throws Exception {
         try (Closeable clo = console::setEvents) {
             this.stmt = p;
-            console.setEvents(p == null ? null : q, new char[]{'q', 'Q', KeyMap.CTRL_D});
+            console.setEvents(p == null ? null : q, new char[]{'q', 'Q'});
             if (p == null) return false;
             boolean result = p.execute();
             if (p.isClosed()) throw CancelError;
@@ -332,7 +333,7 @@ public class Loader {
     public Object asyncCall(Callable<Object> c) throws Exception {
         try {
             this.sleeper = console.threadPool.submit(c);
-            console.setEvents(q, new char[]{'q', KeyMap.CTRL_D});
+            console.setEvents(q, new char[]{'q', 'Q'});
             return sleeper.get();
         } catch (CancellationException | InterruptedException e) {
             throw CancelError;
@@ -359,7 +360,7 @@ public class Loader {
         try (Closeable clo = console::setEvents) {
             runner.setSleep(millSeconds);
             sleeper = console.threadPool.submit(runner);
-            console.setEvents(q, new char[]{'q', KeyMap.CTRL_D});
+            console.setEvents(q, new char[]{'q'});
             sleeper.get();
         } catch (Exception e) {
             throw CancelError;
@@ -390,7 +391,6 @@ public class Loader {
                 if (console.isRunning() && stmt != null && !stmt.isClosed()) {
                     stmt.cancel();
                 }
-
                 if (rs != null && !rs.isClosed()) rs.close();
             } catch (Exception err) {
                 //getRootCause(err).printStackTrace();

@@ -1,39 +1,36 @@
 package org.dbcli;
 
-import sun.misc.Signal;
-import sun.misc.SignalHandler;
+import org.jline.terminal.Terminal;
 
 import java.awt.event.ActionEvent;
 import java.util.HashMap;
+import java.util.Map;
 
-public class Interrupter {
+public class Interrupter implements Terminal.SignalHandler {
     static HashMap<Object, EventCallback> map = new HashMap<>();
 
-    static {
-        Signal.handle(new Signal("INT"), new SignalHandler() {
-            @Override
-            public void handle(Signal signal) {
-                if (!map.isEmpty()) {
-                    ActionEvent e = new ActionEvent(this, ActionEvent.ACTION_PERFORMED, "\3");
-                    for (EventCallback c : map.values()) {
-                        //System.out.println(c.toString());
-                        try {
-                            c.interrupt(e,"CTRL+C");
-                        } catch (StackOverflowError e1) {
-                            return;
-                        } catch (Exception ex) {
-                            ex.printStackTrace();
-                        }
-                    }
-                }
-                //this.handle(signal);
-            }
-        });
-    }
+    public static Terminal.SignalHandler handler;
+
 
     public static void listen(Object name, EventCallback c) {
         //System.out.println(name.toString()+(c==null?"null":c.toString()));
         if (map.containsKey(name)) map.remove(name);
         if (c != null) map.put(name, c);
+    }
+
+    @Override
+    public void handle(Terminal.Signal signal) {
+        if (!map.isEmpty()) {
+            for (Map.Entry<Object, EventCallback> entry : map.entrySet()) {
+                ActionEvent e = new ActionEvent(entry.getKey(), ActionEvent.ACTION_PERFORMED, "\3");
+                try {
+                    entry.getValue().call(e, "CTRL+C");
+                } catch (StackOverflowError e1) {
+                    return;
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                }
+            }
+        }
     }
 }
