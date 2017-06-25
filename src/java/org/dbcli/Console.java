@@ -40,7 +40,7 @@ public class Console {
 
     static {
         try {
-            terminal = TerminalBuilder.builder().encoding(charset).system(true).nativeSignals(true).signalHandler(Terminal.SignalHandler.SIG_IGN).exec(true).build();
+            terminal = TerminalBuilder.builder().encoding(charset).system(true).nativeSignals(true).signalHandler(Terminal.SignalHandler.SIG_IGN).exec(true).jansi(true).build();
         } catch (Exception e) {
             e.printStackTrace();
         }

@@ -1,3 +1,4 @@
+2017-06-24: + oracle: new config  'set schema'
 2017-06-23: + oracle: new command  'show undo'
             * oracle: move 'ora lsi' as 'show lsi', as well as the optimization
 2017-06-21: + oracle: new commands 'show im' and 'show rscache'
