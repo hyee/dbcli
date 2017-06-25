@@ -555,6 +555,7 @@ function grid.print(rows,include_head,col_del,row_del,psize,prefix,suffix)
         str=str..grid.tostring(rows,include_head,col_del,row_del,psize)
     end
     if grid.bypassemptyrs=='on' and #rows<(include_head and 3 or 1) then return end
+    env.write_cache("demo.txt",str)
     print(str,'__BYPASS_GREP__')
     if suffix then print(suffix) end
 end

@@ -20,7 +20,7 @@ while true do
     local subcolor,pcolor,ccolor=color("PROMPTSUBCOLOR"),color("PROMPTCOLOR"),color("COMMANDCOLOR")
     local prompt,empty=env.CURRENT_PROMPT:match("^(.-)(%s*)$")
     if env.REOAD_SIGNAL then break end
-    line = readLine(console,prompt_color:format(env._SUBSYSTEM and subcolor or pcolor,prompt,ncolor,empty))
+    line = console:readLine(prompt_color:format(env._SUBSYSTEM and subcolor or pcolor,prompt,ncolor,empty),ccolor)
     if not line then
         env.eval_line('exit')
     end

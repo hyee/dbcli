@@ -102,7 +102,7 @@ public class SubSystem {
                 while (ch > 0) {
                     if (!(ch == 10 && prev == 13) && !(ch == 13 && prev == 10)) {
                         prev = ch;
-                        if (ch == 13) ch = 10; //Convert '\r' as '\n'
+                        //if (ch == 13) ch = 10; //Convert '\r' as '\n'
                         buff.append((char) ch);
                         --wait;
                     }

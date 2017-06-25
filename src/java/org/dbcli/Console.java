@@ -10,13 +10,12 @@ import org.jline.reader.EOFError;
 import org.jline.reader.History;
 import org.jline.reader.LineReader;
 import org.jline.reader.ParsedLine;
+import org.jline.reader.impl.DefaultHighlighter;
 import org.jline.reader.impl.DefaultParser;
 import org.jline.reader.impl.LineReaderImpl;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
-import org.jline.utils.Curses;
-import org.jline.utils.InfoCmp;
-import org.jline.utils.NonBlockingReader;
+import org.jline.utils.*;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -58,6 +57,7 @@ public class Console {
     private EventCallback callback;
     private ParserCallback parserCallback;
     private Parser parser;
+    private Highlighter highlighter;
 
     public void setLua(LuaState lua) {
         this.lua = lua;
@@ -67,7 +67,10 @@ public class Console {
     public Console(LineReader reader) throws Exception {
         this.reader = (LineReaderImpl) reader;
         parser = new Parser();
+        highlighter=new Highlighter();
         this.reader.setParser(parser);
+        this.reader.setHighlighter(highlighter);
+        //this.reader.setHighlighter(new org.apache.felix.gogo.jline.Highlighter());
         this.his = this.reader.getHistory();
         //reader.getKeys().bind("\u001bOn", DELETE_CHAR); //The delete key
         in = terminal.reader();
@@ -76,7 +79,7 @@ public class Console {
         //map.bind(new Reference(BACKWARD_WORD),KeyMap.ctrl((char)KeyEvent.VK_LEFT));
 
         String colorPlan = System.getenv("ANSICON_DEF");
-        writer = new PrintWriter(colorPlan != null && !("jline").equals(colorPlan) ? new OutputStreamWriter(System.out,charset) : terminal.writer());
+        writer = colorPlan != null && !("jline").equals(colorPlan) ? new PrintWriter(new OutputStreamWriter(System.out,charset)) : terminal.writer();
         threadID = Thread.currentThread().getId();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
         callback = new EventCallback() {
@@ -136,10 +139,14 @@ public class Console {
         return accessor.invoke(reader, method, o);
     }
 
-    public String readLine(String prompt) {
+    public String readLine(String prompt,String mask) {
         try {
             if (isRunning()) setEvents(null, null);
-            String line = reader.readLine(prompt);
+            if(mask.startsWith("\033")) {
+                highlighter.ansi=mask;
+                mask=null;
+            }
+            String line = reader.readLine(prompt, null, mask);
             return line;
         } catch (Exception e) {
             callback.call(null, "CTRL+C");
@@ -147,8 +154,12 @@ public class Console {
         }
     }
 
+    public String readLine(String prompt) {
+        return readLine(prompt);
+    }
+
     public String readLine() {
-        return readLine((String) null);
+        return readLine(null);
     }
 
     public Boolean isRunning() {
@@ -237,6 +248,17 @@ public class Console {
             } catch (EOFError e) {
                 throw err;
             }
+        }
+    }
+
+    class Highlighter extends DefaultHighlighter{
+        public String ansi="\033[0m";
+        @Override
+        public AttributedString highlight(LineReader reader, String buffer) {
+            AttributedStringBuilder sb = new AttributedStringBuilder();
+            sb.appendAnsi(ansi);
+            sb.append(buffer);
+            return  sb.toAttributedString();
         }
     }
 }

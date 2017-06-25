@@ -62,7 +62,7 @@ local base_color={
     BCYN={"\27[46m","Background Color: Cyan"},
     BWHT={"\27[47m","Background Color: White"},
     BGRY={"\27[4;40m","Background Color: Gray"}, 
-    NOR ={"\27[0m","Puts every color back to normal"},
+    NOR ={"\27[29;39;0m","Puts every color back to normal"},
 
 
     --Additional ansi Esc codes added to ansi.h by Gothic  april 23,1993
@@ -121,7 +121,7 @@ if console_color then
     ansi.ansi_default=console_color
     local fg,bg=default_color[console_color:sub(2)][2],default_color[console_color:sub(1,1)][1]
     if bg and fg then
-        base_color['NOR'][1]=base_color['NOR'][1]..base_color[fg][1]..base_color[bg][1]
+        base_color['NOR'][1]=base_color['NOR'][1]..base_color[fg][1]--..base_color[bg][1]
     end
 end
 

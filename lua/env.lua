@@ -1125,7 +1125,7 @@ function env.ask(question,range,default)
     end
     --env.printer.write(desc..': ')
     env.IS_ASKING=question
-    value,env.IS_ASKING=console:readLine(env.space,null,desc..": "),nil
+    value,env.IS_ASKING=console:readLine(env.space,desc..": "),nil
     value=value and value:trim() or ""
 
     value=value:gsub('\\([0-9]+)',function(x) return string.char(tonumber(x)) end)
