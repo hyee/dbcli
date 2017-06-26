@@ -56,12 +56,12 @@ local function rep_instance(prefix,full,obj,suffix)
 end
 
 function extvars.on_before_parse(item)
+    if not extvars.dict then return item end
     local db,sql,args,params=table.unpack(item)
     instance,container,usr=tonumber(cfg.get("instance")),tonumber(cfg.get("container")),cfg.get("schema")
     if instance==0 then instance=tonumber(db.props.instance) end
     if container==0 then container=tonumber(db.props.container_id) end
     if instance>0 or container>0 or (usr and usr~="") then
-        if not extvars.dict then extvars.dict=env.load_data(datapath) end
         item[2]=re.gsub(sql..' ',extvars.P,rep_instance):sub(1,-2)
     end
     return item
@@ -121,7 +121,13 @@ function extvars.set_instance(name,value)
                 dict[prefix:gsub('_','')..suffix]=dict[rows[i][1]]
             end
         end
-        env.save_data(datapath,dict)
+        local keywords={}
+        rs=db:internal_call("select KEYWORD from V$RESERVED_WORDS where length(KEYWORD)>3")
+        rows=db.resultset:rows(rs,-1)
+        for i=2,#rows do
+            keywords[rows[i][1]]=1
+        end
+        env.save_data(datapath,{dict=dict,keywords=keywords})
         extvars.dict=dict
         print((#rows-1)..' records saved into '..datapath)
     end
@@ -156,6 +162,10 @@ function extvars.onload()
         name    <- {prefix %a%a [%w$#__]+}
         prefix  <- "GV_$"/"GV$"/"V_$"/"V$"/"DBA_"/"ALL_"/"CDB_"/"X$"/"XV$"
     ]],nil,true)
+
+    local data=env.load_data(datapath) 
+    extvars.dict=data.dict
+    if data.keywords then console:setKeywords(data.keywords) end
 end
 
 db.lz_compress=[[

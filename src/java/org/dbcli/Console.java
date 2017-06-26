@@ -2,44 +2,48 @@ package org.dbcli;
 
 import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
+import org.apache.felix.gogo.runtime.EOFError;
+import org.apache.felix.gogo.runtime.SyntaxError;
+import org.apache.felix.gogo.runtime.Token;
 import org.jline.builtins.Commands;
 import org.jline.builtins.Less;
 import org.jline.builtins.Source;
-import org.jline.keymap.KeyMap;
-import org.jline.reader.EOFError;
 import org.jline.reader.History;
 import org.jline.reader.LineReader;
 import org.jline.reader.ParsedLine;
-import org.jline.reader.impl.DefaultHighlighter;
-import org.jline.reader.impl.DefaultParser;
 import org.jline.reader.impl.LineReaderImpl;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
-import org.jline.utils.*;
+import org.jline.utils.NonBlockingReader;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
 import java.lang.reflect.Method;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.regex.Pattern;
 
-import static org.jline.reader.LineReader.*;
+import static org.jline.reader.LineReader.SECONDARY_PROMPT_PATTERN;
 
 public class Console {
     public static PrintWriter writer;
     //public static NonBlockingInputStream in;
     public static NonBlockingReader in;
-    public static String charset = "utf-8";
+    //public static String charset = "utf-8";
     public static Terminal terminal;
     LineReaderImpl reader;
     public static ClassAccess<LineReaderImpl> accessor = ClassAccess.access(LineReaderImpl.class);
+    public static Pattern ansiPattern = Pattern.compile("\33\\[[\\d\\;]*[mK]");
 
     static {
         try {
-            terminal = TerminalBuilder.builder().encoding(charset).system(true).nativeSignals(true).signalHandler(Terminal.SignalHandler.SIG_IGN).exec(true).jansi(true).build();
+            terminal = TerminalBuilder.builder().system(true).nativeSignals(true).signalHandler(Terminal.SignalHandler.SIG_IGN).exec(true).jna(true).build();
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -64,22 +68,24 @@ public class Console {
         parserCallback = null;
     }
 
+    public void setKeywords(Map<String,Integer>  keywords) {
+        highlighter.keywords=keywords;
+    }
+
     public Console(LineReader reader) throws Exception {
         this.reader = (LineReaderImpl) reader;
         parser = new Parser();
-        highlighter=new Highlighter();
+        highlighter = new Highlighter();
         this.reader.setParser(parser);
         this.reader.setHighlighter(highlighter);
-        //this.reader.setHighlighter(new org.apache.felix.gogo.jline.Highlighter());
         this.his = this.reader.getHistory();
         //reader.getKeys().bind("\u001bOn", DELETE_CHAR); //The delete key
         in = terminal.reader();
+        System.setIn(terminal.input());
 
-        //map.bind(new Reference(BACKWARD_KILL_WORD),KeyMap.ctrl((char)KeyEvent.VK_BACK_SPACE));
-        //map.bind(new Reference(BACKWARD_WORD),KeyMap.ctrl((char)KeyEvent.VK_LEFT));
 
         String colorPlan = System.getenv("ANSICON_DEF");
-        writer = colorPlan != null && !("jline").equals(colorPlan) ? new PrintWriter(new OutputStreamWriter(System.out,charset)) : terminal.writer();
+        writer = colorPlan != null && !("jline").equals(colorPlan) ? new PrintWriter(new OutputStreamWriter(System.out)) : terminal.writer();
         threadID = Thread.currentThread().getId();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
         callback = new EventCallback() {
@@ -98,30 +104,24 @@ public class Console {
         Interrupter.listen(this, callback);
     }
 
-    public void doTPuts(String s, Object... o) {
-        try {
-            Curses.tputs(new StringWriter(), terminal.getStringCapability(InfoCmp.Capability.carriage_return), o);
-        } catch (IOException e) {
-
-        }
-    }
 
     public void less(String output) throws Exception {
         ByteArrayOutputStream stream = new ByteArrayOutputStream();
-        Source source=new Source() {
+        Source source = new Source() {
             @Override
             public String getName() {
                 return "-MORE-";
             }
+
             @Override
             public InputStream read() throws IOException {
                 return new ByteArrayInputStream(output.getBytes());
             }
         };
-        Less less=new Less(terminal);
-        less.veryQuiet=true;
-        less.chopLongLines=false;
-        less.ignoreCaseAlways=true;
+        Less less = new Less(terminal);
+        less.veryQuiet = true;
+        less.chopLongLines = false;
+        less.ignoreCaseAlways = true;
         less.run(source);
     }
 
@@ -139,12 +139,12 @@ public class Console {
         return accessor.invoke(reader, method, o);
     }
 
-    public String readLine(String prompt,String mask) {
+    public String readLine(String prompt, String mask) {
         try {
             if (isRunning()) setEvents(null, null);
-            if(mask.startsWith("\033")) {
-                highlighter.ansi=mask;
-                mask=null;
+            if (mask.startsWith("\033")) {
+                highlighter.ansi = mask;
+                mask = null;
             }
             String line = reader.readLine(prompt, null, mask);
             return line;
@@ -213,52 +213,80 @@ public class Console {
         Object[] call(Object... e);
     }
 
-    class Parser extends DefaultParser {
+    class Parser implements org.jline.reader.Parser {
         String secondPrompt = "    ";
-        final EOFError err = new EOFError(-1, -1, "Request new line", "");
-        int i=0;
+        final org.jline.reader.EOFError err = new org.jline.reader.EOFError(-1, -1, "Request new line", "");
+        int i = 0;
+        boolean isMulti=false;
+        Pattern p=Pattern.compile("(\r?\n|\r)");
         public Parser() {
             super();
-            super.setEofOnEscapedNewLine(true);
-            reader.setVariable(SECONDARY_PROMPT_PATTERN,secondPrompt);
+            //super.setEofOnEscapedNewLine(true);
+            reader.setVariable(SECONDARY_PROMPT_PATTERN, secondPrompt);
             reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
         }
 
-        public ParsedLine parse(final String line, final int cursor, ParseContext context) {
-            //if (context == ParseContext.SECONDARY_PROMPT) throw err;
+        public ParsedLine parse(String line, int cursor, ParseContext context){
             if (context != ParseContext.ACCEPT_LINE) return null;
+            String[] lines=null;
+            /*
+            if(!isMulti)
+            try {
+                ParsedLineImpl parsedLine=null;
+                org.apache.felix.gogo.runtime.Parser parser = new org.apache.felix.gogo.runtime.Parser(line);
+                org.apache.felix.gogo.runtime.Parser.Program program = parser.program();
+                List<org.apache.felix.gogo.runtime.Parser.Statement> statements = parser.statements();
+                // Find corresponding statement
+                org.apache.felix.gogo.runtime.Parser.Statement statement = null;
+                for (int i = statements.size() - 1; i >= 0; i--) {
+                    org.apache.felix.gogo.runtime.Parser.Statement s = statements.get(i);
+                    if (s.start() <= cursor) {
+                        boolean isOk = true;
+                        // check if there are only spaces after the previous statement
+                        if (s.start() + s.length() < cursor) {
+                            for (int j = s.start() + s.length(); isOk && j < cursor; j++) {
+                                isOk = Character.isWhitespace(line.charAt(j));
+                            }
+                        }
+                        statement = s;
+                        break;
+                    }
+                }
+                if (statement != null) {
+                    parsedLine=new ParsedLineImpl(program, statement, cursor, statement.tokens());
+                } else {
+                    // TODO:
+                    parsedLine= new ParsedLineImpl(program, program, cursor, Collections.<Token>singletonList(program));
+                }
+                lines=new String[]{p.matcher(parsedLine.line()).replaceAll(" ")};
+                System.out.println(lines[0]);
+            } catch (EOFError e) {
+                throw err;
+            } catch (SyntaxError e) {
+                throw new org.jline.reader.SyntaxError(e.line(), e.column(), e.getMessage());
+            }
+            */
             if (parserCallback == null) {
                 lua.load("return {call=env.parse_line}", "proxy");
                 lua.call(0, 1);
-                parserCallback = lua.getProxy(-1, ParserCallback.class);
+                parserCallback = lua.getProxy(-1, Console.ParserCallback.class);
                 lua.pop(1);
             }
-            String[] lines= line.split("\r?\n");
-            Object[] result = parserCallback.call(lines[lines.length-1]);
+
+            if(lines==null) lines = p.split(line);
+            Object[] result=null;
+            for(int i=isMulti?lines.length-1:0;i<lines.length;i++)
+                result=parserCallback.call(lines[i]);
             if ((Boolean) result[0]) {
                 if (result.length > 1 && !secondPrompt.equals(result[1])) {
                     secondPrompt = (String) result[1];
-                    reader.setVariable(SECONDARY_PROMPT_PATTERN,secondPrompt);
+                    reader.setVariable(SECONDARY_PROMPT_PATTERN, secondPrompt);
                 }
+                isMulti=true;
                 throw err;
             }
-
-            try {
-                return super.parse(line, cursor,context);
-            } catch (EOFError e) {
-                throw err;
-            }
-        }
-    }
-
-    class Highlighter extends DefaultHighlighter{
-        public String ansi="\033[0m";
-        @Override
-        public AttributedString highlight(LineReader reader, String buffer) {
-            AttributedStringBuilder sb = new AttributedStringBuilder();
-            sb.appendAnsi(ansi);
-            sb.append(buffer);
-            return  sb.toAttributedString();
+            isMulti=false;
+            return null;
         }
     }
 }

@@ -1,5 +1,3 @@
-
-
 import org.jline.reader.LineReaderBuilder;
 import org.jline.reader.impl.LineReaderImpl;
 import org.jline.terminal.Terminal;

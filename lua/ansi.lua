@@ -28,29 +28,27 @@ local base_color={
     MAG={"\27[0;35m","Foreground Color: Magenta"},
     CYN={"\27[0;36m","Foreground Color: Cyan"},
     WHT={"\27[0;37m","Foreground Color: White"},
-    GRY={"\27[30;1;40m","Foreground Color: Gray"}, 
+    GRY={"\27[90m","Foreground Color: Gray"},
+    --GRY={"\27[30;1;40m","Foreground Color: Gray"}, 
 
     --High Intensity Foreground Colors
    --BG Light gray
-    
-    HIR={"\27[31;1m","High Intensity Foreground Color: Red"},
-    HIG={"\27[32;1m","High Intensity Foreground Color: Green"},
-    HIY={"\27[33;1m","High Intensity Foreground Color: Yellow"},
-    HIB={"\27[34;1m","High Intensity Foreground Color: Blue"},
-    HIM={"\27[35;1m","High Intensity Foreground Color: Magenta"},
-    HIC={"\27[36;1m","High Intensity Foreground Color: Cyan"},
-    HIW={"\27[37;1m","High Intensity Foreground Color: White"},
+    HIR={"\27[91m","High Intensity Foreground Color: Red"},
+    HIG={"\27[92m","High Intensity Foreground Color: Green"},
+    HIY={"\27[93m","High Intensity Foreground Color: Yellow"},
+    HIB={"\27[94m","High Intensity Foreground Color: Blue"},
+    HIM={"\27[95m","High Intensity Foreground Color: Magenta"},
+    HIC={"\27[96m","High Intensity Foreground Color: Cyan"},
+    HIW={"\27[97m","High Intensity Foreground Color: White"},
 
     --High Intensity Background Colors
-    HBRED={"\27[4;41m","High Intensity Background Color: Red"},
-    HBGRN={"\27[4;42m","High Intensity Background Color: Green"},
-    HBYEL={"\27[4;43m","High Intensity Background Color: Yellow"},
-    HBBLU={"\27[4;44m","High Intensity Background Color: Blue"},
-    HBMAG={"\27[4;45m","High Intensity Background Color: Magenta"},
-    HBCYN={"\27[4;46m","High Intensity Background Color: Cyan"},
-    HBWHT={"\27[4;47m","High Intensity Background Color: White"},
-
-    
+    HBRED={"\27[101m","High Intensity Background Color: Red"},
+    HBGRN={"\27[102m","High Intensity Background Color: Green"},
+    HBYEL={"\27[103m","High Intensity Background Color: Yellow"},
+    HBBLU={"\27[104m","High Intensity Background Color: Blue"},
+    HBMAG={"\27[105m","High Intensity Background Color: Magenta"},
+    HBCYN={"\27[106m","High Intensity Background Color: Cyan"},
+    HBWHT={"\27[107m","High Intensity Background Color: White"},    
 
     --Background Colors
     BBLK={"\27[40m","Background Color: Black"},
@@ -61,7 +59,7 @@ local base_color={
     BMAG={"\27[45m","Background Color: Magenta"},
     BCYN={"\27[46m","Background Color: Cyan"},
     BWHT={"\27[47m","Background Color: White"},
-    BGRY={"\27[4;40m","Background Color: Gray"}, 
+    BGRY={"\27[100m","Background Color: Gray"}, 
     NOR ={"\27[29;39;0m","Puts every color back to normal"},
 
 
