@@ -91,17 +91,15 @@ function extvars.set_instance(name,value)
             SELECT table_name,
                    MAX(CASE WHEN COLUMN_NAME IN ('INST_ID', 'INSTANCE_NUMBER') THEN COLUMN_NAME END) INST_COL,
                    MAX(CASE WHEN COLUMN_NAME IN ('CON_ID') THEN COLUMN_NAME END) CON_COL,
-                   MAX(CASE WHEN COLUMN_NAME NOT IN ('INST_ID', 'INSTANCE_NUMBER','CON_ID') THEN COLUMN_NAME END)
+                   MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND (column_name LIKE '%OWNER' OR column_name LIKE '%SCHEMA%' OR column_name LIKE '%USER%NAME') THEN COLUMN_NAME END)
                        KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN COLUMN_NAME LIKE '%OWNER' THEN 1 ELSE 2 END) USR_COL
-            FROM   (SELECT table_name, column_name
+            FROM   (SELECT table_name, column_name,data_type
                     FROM   dba_tab_cols, dba_users
                     WHERE  user_id IN (SELECT SCHEMA# FROM sys.registry$ UNION ALL SELECT SCHEMA# FROM sys.registry$schemas)
                     AND    username = owner
-                    AND    regexp_like(table_name,'^(V_$|GV_$|V$|GV$|DBA_|ALL_|USER|CDB_)')
-                    AND    (column_name IN ('INST_ID', 'INSTANCE_NUMBER', 'CON_ID')
-                            OR (data_type='VARCHAR2' AND (column_name LIKE '%OWNER' OR column_name LIKE '%SCHEMA%' OR column_name LIKE '%USER%NAME')))  
+                    AND    regexp_like(table_name,'^(V_$|GV_$|V$|GV$|DBA_|ALL_|USER|CDB_)')  
                     UNION
-                    SELECT t.kqftanam, c.kqfconam
+                    SELECT t.kqftanam, c.kqfconam,null
                     FROM   (SELECT kqftanam,t.indx,t.inst_id FROM x$kqfta t
                             UNION ALL
                             SELECT KQFDTEQU,t.indx,t.inst_id FROM x$kqfta t,x$kqfdt where kqftanam=KQFDTNAM) t, x$kqfco c
@@ -163,9 +161,13 @@ function extvars.onload()
         prefix  <- "GV_$"/"GV$"/"V_$"/"V$"/"DBA_"/"ALL_"/"CDB_"/"X$"/"XV$"
     ]],nil,true)
 
-    local data=env.load_data(datapath) 
-    extvars.dict=data.dict
-    if data.keywords then console:setKeywords(data.keywords) end
+    env.load_data(datapath,true,function(data)
+        extvars.dict=data.dict
+        if data.keywords then
+            for k,v in pairs(data.dict) do data.keywords[k]=1 end
+            console:setKeywords(data.keywords) 
+        end
+    end)
 end
 
 db.lz_compress=[[

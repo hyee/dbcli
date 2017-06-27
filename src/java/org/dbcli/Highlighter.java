@@ -35,169 +35,65 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class Highlighter extends DefaultHighlighter {
-    public static final String DEFAULT_HIGHLIGHTER_COLORS = "rs=35:st=93:nu=94:co=95:va=95:vn=95:fu=36:bf=91:re=90";
-    public String ansi = "\033[0m";
+    public static final String DEFAULT_HIGHLIGHTER_COLORS = "rs=1:st=2:nu=3:co=4:va=5:vn=6:fu=7:bf=8:re=9";
+    public String ansi=null;
+    public String buffer=null;
     int adj=0;
     public static final Pattern numPattern=Pattern.compile("^^-?\\d+([,\\.]\\d+)?([eE]-?\\d+)?$$");
     public static Map<String, String> colors = Arrays.stream(DEFAULT_HIGHLIGHTER_COLORS.split(":"))
             .collect(Collectors.toMap(s -> s.substring(0, s.indexOf('=')),
                     s -> s.substring(s.indexOf('=') + 1)));
     public Map<String,Integer> keywords=new HashMap();
-    public AttributedString highlight(LineReader reader, String buffer) {
-        try {
-            Program program = null;
-            List<Token> tokens = null;
-            List<Statement> statements = null;
-            String repaired = buffer;
-            while (program == null) {
-                try {
-                    org.apache.felix.gogo.runtime.Parser parser = new org.apache.felix.gogo.runtime.Parser(repaired);
-                    program = parser.program();
-                    tokens = parser.tokens();
-                    statements = parser.statements();
-                } catch (EOFError e) {
-                    repaired = repaired + " " + e.repair();
-                    // Make sure we don't loop forever
-                    if (repaired.length() > buffer.length() + 1024) {
-                        return new AttributedStringBuilder().append(buffer).toAttributedString();
-                    }
-                }
+    public Map<String,Map> commands=new HashMap();
+    boolean enabled=true;
+
+    public void setAnsi(String ansi) {
+        if(ansi.equals(this.ansi)) return;
+        this.ansi=ansi;
+        enabled=!ansi.equals("\33[0m");
+        for(String key:colors.keySet()) {
+            String value;
+            switch (key) {
+                case "bf": value="\33[91m";break;
+                case "fu": value=ansi; break;
+                case "rs": value="\33[95m"; break;
+                default: value=ansi; break;
             }
-
-            int underlineStart = -1;
-            int underlineEnd = -1;
-            int negativeStart = -1;
-            int negativeEnd = -1;
-            String search = reader.getSearchTerm();
-            if (search != null && search.length() > 0) {
-                underlineStart = buffer.indexOf(search);
-                if (underlineStart >= 0) {
-                    underlineEnd = underlineStart + search.length() - 1;
-                }
-            }
-            if (reader.getRegionActive() != RegionType.NONE) {
-                negativeStart = reader.getRegionMark();
-                negativeEnd = reader.getBuffer().cursor();
-                if (negativeStart > negativeEnd) {
-                    int x = negativeEnd;
-                    negativeEnd = negativeStart;
-                    negativeStart = x;
-                }
-                if (reader.getRegionActive() == RegionType.LINE) {
-                    while (negativeStart > 0 && reader.getBuffer().atChar(negativeStart - 1) != '\n') {
-                        negativeStart--;
-                    }
-                    while (negativeEnd < reader.getBuffer().length() - 1 && reader.getBuffer().atChar(negativeEnd + 1) != '\n') {
-                        negativeEnd++;
-                    }
-                }
-            }
-
-            Type[] types = new Type[repaired.length()];
-
-            Arrays.fill(types, Type.Unknown);
-
-            int cur = 0;
-            for (Token token : tokens) {
-                // We're on the repair side, so exit now
-                if (token.start() >= buffer.length()) {
-                    break;
-                }
-                if (token.start() > cur) {
-                    cur = token.start();
-                }
-                // Find corresponding statement
-                Statement statement = null;
-                for (int i = statements.size() - 1; i >= 0; i--) {
-                    Statement s = statements.get(i);
-                    if (s.start() <= cur && cur < s.start() + s.length()) {
-                        statement = s;
-                        break;
-                    }
-                }
-
-                // Reserved tokens
-                Type type = Type.Unknown;
-
-                if (Token.eq(token, "{")
-                        || Token.eq(token, "}")
-                        || Token.eq(token, "(")
-                        || Token.eq(token, ")")
-                        || Token.eq(token, "[")
-                        || Token.eq(token, "]")
-                        || Token.eq(token, "|")
-                        || Token.eq(token, ";")
-                        || Token.eq(token, "=")
-                        || Token.eq(token,"/")) {
-                    type = Type.Reserved;
-                } else if (token.charAt(0) == '\'' || token.charAt(0) == '"') {
-                    type = Type.String;
-                } else if (numPattern.matcher(token.toString()).find()) {
-                    type = Type.Number;
-                } else if (token.charAt(0) == '&') {
-                    type = Type.Variable;
-                } else if (keywords.containsKey(token.toString().toUpperCase())) {
-                    type = Type.Function;
-                } else {
-                    boolean isFirst = statement != null && statement.tokens().size() > 0
-                            && token == statement.tokens().get(0);
-                    boolean isThirdWithNext = statement != null && statement.tokens().size() > 3
-                            && token == statement.tokens().get(2);
-                    boolean isAssign = statement != null && statement.tokens().size() > 1
-                            && Token.eq(statement.tokens().get(1), "=");
-                    if (isFirst && isAssign) {
-                        type = Type.VariableName;
-                    }
-                }
-                Arrays.fill(types, token.start(), Math.min(token.start() + token.length(), types.length), type);
-                cur = Math.min(token.start() + token.length(), buffer.length());
-            }
-
-            if (buffer.length() < repaired.length()) {
-                Arrays.fill(types, buffer.length(), repaired.length(), Type.Repair);
-            }
-
-            AttributedStringBuilder sb = new AttributedStringBuilder();
-
-            for (int i = 0; i < repaired.length(); i++) {
-                sb.style(AttributedStyle.DEFAULT);
-                applyStyle(sb, colors, types[i]);
-                if (i >= underlineStart && i <= underlineEnd) {
-                    sb.style(sb.style().underline());
-                }
-                if (i >= negativeStart && i <= negativeEnd) {
-                    sb.style(sb.style().inverse());
-                }
-                char c = repaired.charAt(i);
-                if (c == '\t' || c == '\n') {
-                    sb.append(c);
-                } else if (c < 32) {
-                    sb.style(sb.style().inverseNeg())
-                            .append('^')
-                            .append((char) (c + '@'))
-                            .style(sb.style().inverseNeg());
-                } else {
-                    int w = WCWidth.wcwidth(c);
-                    if (w > 0) {
-                        sb.append(c);
-                    }
-                }
-            }
-
-            return sb.toAttributedString();
-        } catch (SyntaxError e) {
-            return super.highlight(reader, buffer);
+            colors.put(key,value);
         }
+    }
+
+    public Highlighter() {
+        setAnsi("\033[0m");
+    }
+    Pattern p= Pattern.compile("(\\S+)(.*)");
+
+    public AttributedString highlight(LineReader reader, String buffer) {
+        AttributedStringBuilder sb = new AttributedStringBuilder();
+        Matcher m=p.matcher(buffer);
+        if(enabled&&m.find()) {
+            if(!commands.containsKey(m.group(1).toUpperCase())) {
+                sb.appendAnsi("\33[91m");
+                sb.append(m.group(1));
+                sb.appendAnsi(ansi);
+                sb.append(m.group(2));
+            } else {
+                sb.appendAnsi(ansi);
+                sb.append(buffer);
+            }
+        } else sb.append(buffer);
+        return sb.toAttributedString();
     }
 
     private void applyStyle(AttributedStringBuilder sb, Map<String, String> colors, Type type) {
         String col = colors.get(type.color);
         if (col != null && !col.isEmpty()) {
-            sb.appendAnsi("\033[" + col + "m");
+            sb.appendAnsi(col);
         } else sb.appendAnsi(ansi);
     }
 

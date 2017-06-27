@@ -2,16 +2,15 @@ package org.dbcli;
 
 import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
-import org.apache.felix.gogo.runtime.EOFError;
-import org.apache.felix.gogo.runtime.SyntaxError;
-import org.apache.felix.gogo.runtime.Token;
 import org.jline.builtins.Commands;
 import org.jline.builtins.Less;
 import org.jline.builtins.Source;
 import org.jline.reader.History;
 import org.jline.reader.LineReader;
 import org.jline.reader.ParsedLine;
+import org.jline.reader.impl.DefaultParser;
 import org.jline.reader.impl.LineReaderImpl;
+import org.jline.reader.impl.completer.StringsCompleter;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 import org.jline.utils.NonBlockingReader;
@@ -20,22 +19,23 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
 import java.lang.reflect.Method;
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.regex.Pattern;
 
+import static org.jline.reader.LineReader.DISABLE_HISTORY;
 import static org.jline.reader.LineReader.SECONDARY_PROMPT_PATTERN;
 
 public class Console {
     public static PrintWriter writer;
     //public static NonBlockingInputStream in;
     public static NonBlockingReader in;
-    //public static String charset = "utf-8";
+    public static String charset = "utf-8";
     public static Terminal terminal;
     LineReaderImpl reader;
     public static ClassAccess<LineReaderImpl> accessor = ClassAccess.access(LineReaderImpl.class);
@@ -62,14 +62,37 @@ public class Console {
     private ParserCallback parserCallback;
     private Parser parser;
     private Highlighter highlighter;
+    ArrayList<String> candidates = new ArrayList();
+    StringsCompleter completer = new StringsCompleter();
 
     public void setLua(LuaState lua) {
         this.lua = lua;
         parserCallback = null;
     }
 
-    public void setKeywords(Map<String,Integer>  keywords) {
-        highlighter.keywords=keywords;
+    public void addCompleters(Set keys) {
+        candidates.addAll(keys);
+        HashMap<String,Integer> map=new HashMap(candidates.size()*2);
+        for(String key:candidates) {
+            map.put(key.toUpperCase(),1);
+            map.put(key.toLowerCase(),1);
+        }
+        completer = new StringsCompleter(map.keySet());
+        reader.setCompleter(completer);
+    }
+
+    public void setKeywords(Map<String, Integer> keywords) {
+        highlighter.keywords = keywords;
+        addCompleters(keywords.keySet());
+    }
+
+    public void setCommands(Map<String, Map> commands) {
+        highlighter.commands = commands;
+        addCompleters(commands.keySet());
+        /*
+        for(Map.Entry<String,Map> entry:commands.entrySet()) {
+            if(entry.getValue().entrySet().size()==0) completer.getCompleters().add(new StringsCompleter(entry.getKey()));
+        }*/
     }
 
     public Console(LineReader reader) throws Exception {
@@ -79,13 +102,16 @@ public class Console {
         this.reader.setParser(parser);
         this.reader.setHighlighter(highlighter);
         this.his = this.reader.getHistory();
-        //reader.getKeys().bind("\u001bOn", DELETE_CHAR); //The delete key
+        /*
+        reader.getKeyMaps().get(LineReader.EMACS).unbind("\t");
+        reader.getKeyMaps().get(LineReader.EMACS).bind(new Reference(LineReader.EXPAND_OR_COMPLETE), "\t\t");
+        */
         in = terminal.reader();
         System.setIn(terminal.input());
 
-
         String colorPlan = System.getenv("ANSICON_DEF");
         writer = colorPlan != null && !("jline").equals(colorPlan) ? new PrintWriter(new OutputStreamWriter(System.out)) : terminal.writer();
+
         threadID = Thread.currentThread().getId();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
         callback = new EventCallback() {
@@ -143,7 +169,7 @@ public class Console {
         try {
             if (isRunning()) setEvents(null, null);
             if (mask.startsWith("\033")) {
-                highlighter.ansi = mask;
+                highlighter.setAnsi(mask);
                 mask = null;
             }
             String line = reader.readLine(prompt, null, mask);
@@ -155,11 +181,11 @@ public class Console {
     }
 
     public String readLine(String prompt) {
-        return readLine(prompt);
+        return readLine(prompt, null);
     }
 
     public String readLine() {
-        return readLine(null);
+        return readLine(null, null);
     }
 
     public Boolean isRunning() {
@@ -213,22 +239,23 @@ public class Console {
         Object[] call(Object... e);
     }
 
-    class Parser implements org.jline.reader.Parser {
+    class Parser extends DefaultParser {
         String secondPrompt = "    ";
         final org.jline.reader.EOFError err = new org.jline.reader.EOFError(-1, -1, "Request new line", "");
-        int i = 0;
-        boolean isMulti=false;
-        Pattern p=Pattern.compile("(\r?\n|\r)");
+        boolean isMulti = false;
+        Pattern p = Pattern.compile("(\r?\n|\r)");
+
         public Parser() {
             super();
-            //super.setEofOnEscapedNewLine(true);
+            super.setEofOnEscapedNewLine(true);
             reader.setVariable(SECONDARY_PROMPT_PATTERN, secondPrompt);
             reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
         }
 
-        public ParsedLine parse(String line, int cursor, ParseContext context){
+        public ParsedLine parse(String line, int cursor, ParseContext context) {
+            if (context == ParseContext.COMPLETE) return super.parse(line, cursor, context);
             if (context != ParseContext.ACCEPT_LINE) return null;
-            String[] lines=null;
+            String[] lines = null;
             /*
             if(!isMulti)
             try {
@@ -273,19 +300,20 @@ public class Console {
                 lua.pop(1);
             }
 
-            if(lines==null) lines = p.split(line);
-            Object[] result=null;
-            for(int i=isMulti?lines.length-1:0;i<lines.length;i++)
-                result=parserCallback.call(lines[i]);
+            if (lines == null) lines = p.split(line);
+            Object[] result = null;
+            for (int i = isMulti ? lines.length - 1 : 0; i < lines.length; i++)
+                result = parserCallback.call(lines[i]);
             if ((Boolean) result[0]) {
                 if (result.length > 1 && !secondPrompt.equals(result[1])) {
                     secondPrompt = (String) result[1];
                     reader.setVariable(SECONDARY_PROMPT_PATTERN, secondPrompt);
                 }
-                isMulti=true;
+                isMulti = true;
                 throw err;
             }
-            isMulti=false;
+            reader.setVariable(DISABLE_HISTORY, lines.length > 20);
+            isMulti = false;
             return null;
         }
     }

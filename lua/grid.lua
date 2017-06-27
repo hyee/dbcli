@@ -79,7 +79,7 @@ function grid:cut(row,format_func,format_str)
         end
         return table.concat(tab,'')
     end
-    return row
+    return row..env.ansi.get_color('NOR')
 end
 
 local s_format="%s%%%s%ss%s"
@@ -546,6 +546,8 @@ end
 function grid.print(rows,include_head,col_del,row_del,psize,prefix,suffix)
     psize=psize or 10000
     local str=prefix and (prefix.."\n") or ""
+    local test
+    if include_head=='test' then test,include_head=true,nil end
     if rows.__class then
         include_head=rows.include_head
         rows=rows:wellform(col_del,row_del)
@@ -555,7 +557,7 @@ function grid.print(rows,include_head,col_del,row_del,psize,prefix,suffix)
         str=str..grid.tostring(rows,include_head,col_del,row_del,psize)
     end
     if grid.bypassemptyrs=='on' and #rows<(include_head and 3 or 1) then return end
-    env.write_cache("demo.txt",str)
+    if test then env.write_cache("grid_output.txt",str) end
     print(str,'__BYPASS_GREP__')
     if suffix then print(suffix) end
 end

@@ -208,6 +208,7 @@ function env.smart_check_endless(cmd,rest,from_pos)
     return true,env.COMMAND_SEPS.match(rest)
 end
 
+env.root_cmds={}
 local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,is_dbcmd,allow_overriden,is_pipable,color)
     local abbr={}
 
@@ -227,6 +228,7 @@ local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,
                 _CMDS[cmd[i]]=nil
             end
         end
+        env.root_cmds[cmd[i]]={}
         if i>1 then table.insert(abbr,cmd[i]) end
     end
 
@@ -317,6 +319,7 @@ end
 function env.remove_command(cmd)
     cmd=cmd:upper()
     if not _CMDS[cmd] then return end
+    env.root_cmds[cmd]=nil
     local src=env.callee()
     --if src:gsub("#%d+","")~=_CMDS[cmd].FILE:gsub("#%d+","") then
     --    env.raise("Cannot remove command '%s' from %s, it was defined in file %s!",cmd,src,_CMDS[cmd].FILE)
@@ -984,6 +987,7 @@ function env.onload(...)
     set_command(nil,"--"    ,   '#Comment',        nil   ,false,2)
     set_command(nil,"REM"   ,   '#Comment',        nil   ,false,2)
     env.reset_title()
+    console:setCommands(env.root_cmds)
     --load initial settings
     for _,v in ipairs(env.__ARGS__) do
         if v:sub(1,2) == "-D" then
@@ -1028,16 +1032,25 @@ function env.exit()
     os.exit(true,true)
 end
 
-function env.load_data(file,isUnpack)
+function env.load_data(file,isUnpack,callback)
     if not file:find('[\\/]') then file=env.join_path(env.WORK_DIR,"data",file) end
-    local f=io.open(file,file:match('%.dat$') and "rb" or "r")
-    if not f then
-        return {}
+    if type(callback)~="function" then
+        local f=io.open(file,file:match('%.dat$') and "rb" or "r")
+        if not f then
+            return {}
+        end
+        local txt=f:read("*a")
+        f:close()
+        if not txt or txt:gsub("[\n\t%s\r]+","")=="" then return {} end
+        return isUnpack==false and txt or env.MessagePack.unpack(txt)
+    else
+        os.list_dir(file,nil,nil,function(event,file)
+            if event=='ON_SCAN' then return true end
+            if not file.data then return end
+            if isUnpack~=false then file.data=env.MessagePack.unpack(file.data) end
+            callback(file.data)
+        end)
     end
-    local txt=f:read("*a")
-    f:close()
-    if not txt or txt:gsub("[\n\t%s\r]+","")=="" then return {} end
-    return isUnpack==false and txt or env.MessagePack.unpack(txt)
 end
 
 function env.save_data(file,txt)

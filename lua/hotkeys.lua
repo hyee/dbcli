@@ -19,12 +19,19 @@ end
 function hotkeys.call(_,_,x)
     local maps=console:getKeyMap("-L");
     local hdl=env.grid.new()
-    hdl:add{"Key","*","Description"}
+    hdl:add{"Key","*","Description",'|',"Key","*","Description"}
+    local row
     for key,desc in maps:gmatch('("[^\n\r]+") +([^\n\r]+)[\n\r]') do
         key=key:gsub('"(.-)"',' $HEADCOLOR$%1$NOR$ ')
-        hdl:add({key,' ',desc})
+        if not row then 
+            row={key,' ',desc} 
+        else
+            row[#row+1],row[#row+2],row[#row+3],row[#row+4]='|',key,' ',desc
+            hdl:add(row)
+            row=nil
+        end
     end
-    hdl:sort(3)
+    if row then hdl:add(row) end
     hdl:print()
 end
 

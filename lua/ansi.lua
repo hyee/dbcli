@@ -60,7 +60,7 @@ local base_color={
     BCYN={"\27[46m","Background Color: Cyan"},
     BWHT={"\27[47m","Background Color: White"},
     BGRY={"\27[100m","Background Color: Gray"}, 
-    NOR ={"\27[29;39;0m","Puts every color back to normal"},
+    NOR ={"\27[39;49;0m","Puts every color back to normal"},
 
 
     --Additional ansi Esc codes added to ansi.h by Gothic  april 23,1993
@@ -118,8 +118,8 @@ local console_color=os.getenv("CONSOLE_COLOR")
 if console_color then
     ansi.ansi_default=console_color
     local fg,bg=default_color[console_color:sub(2)][2],default_color[console_color:sub(1,1)][1]
-    if bg and fg then
-        base_color['NOR'][1]=base_color['NOR'][1]..base_color[fg][1]--..base_color[bg][1]
+    if bg and fg and ansi.ansi_mode=="native" then
+        base_color['NOR'][1]=base_color['NOR'][1]..base_color[fg][1]..base_color[bg][1]
     end
 end
 
@@ -241,7 +241,7 @@ function ansi.enable_color(name,value)
         if enabled then return end
         for k,v in pairs(base_color) do color[k]=v end
         --env.set_command(nil,{"clear","cls"},"Clear screen ",ansi.clear_sceen,false,1)
-        for k,v in pairs(ansi.map or {}) do
+        for k,v in pairs(ansi.cfg() or {}) do
             env.set.init(k,v[4],ansi.define_color,v[2],v[3])
             if v[1] ~= v[4] then
                 env.set.doset(k,v[1])
@@ -264,11 +264,12 @@ function ansi.onload()
     ansi.color,ansi.map=color,cfg
 end
 
+ansi.escape="%f[\\]\\[eE](%[[%d;]*[mK])"
 ansi.pattern="\27%[[%d;]*[mK]"
 
 function ansi.strip_ansi(str)
     if not enabled then return str end
-    return str:gsub(ansi.pattern,"")
+    return str:gsub(ansi.pattern,""):gsub(ansi.escape,"")
 end
 
 function string.strip_ansi(str)
@@ -288,7 +289,7 @@ function ansi.convert_ansi(str)
         function(all,code,x,pos1,x,pos2) 
             if pos1~="" then return ansi.string_color(code,pos1,pos2) or '$'..all..'$' end
             return ansi.mask(code,nil,true) or '$'..all..'$'
-        end)
+        end):gsub(ansi.escape,"\27%1")
 end
 
 function string.convert_ansi(str)
@@ -298,10 +299,44 @@ end
 function ansi.test_text(str)
     if not isAnsiSupported then return print("Ansi color is not supported!") end
     if not str or str=="" then
+        local rows=env.grid.new()
+
+        local rep=function(escapes) return 
+            escapes:gsub("($E%[)(%d+)(.*)",function(e,bg,code)
+                return string.format("%s%-12s%s","\\e["..bg..code,e..code:sub(2),ansi.get_color("NOR"))
+            end) 
+        end
+        local backs={}
+        for i=0,31 do
+            local foreground,background,head={},{},{}
+            for j=0,7 do
+                local code=i*8+j
+                head[j*2+1],head[j*2+2]="Color#"..(j+1)..' + B',"Color#"..(j+1)..' + W'
+                foreground[j*2+1]=rep("$E[40;38;5;"..code..'m')
+                foreground[j*2+2]=rep("$E[47;38;5;"..code..'m')
+                background[j*2+1]=rep("$E[30;48;5;"..code..'m')
+                background[j*2+2]=rep("$E[37;48;5;"..code..'m')
+            end
+            if i==0 then
+                table.insert(head,1,"F/B Ground")
+                rows:add(head)
+            end
+            table.insert(foreground,1,"Foreground")
+            table.insert(background,1,"Background")
+            rows:add(foreground)
+            backs[#backs+1]=background
+        end
+        for k,v in ipairs(backs) do rows:add(v) end
+        rawprint(env.space.."ANSI 256 colors, where '$E' means ascii code 27(a.k.a chr(27)): ")
+        rawprint(env.space..string.rep("=",140))
+        rows:print('test')
+        rawprint("\n")
+        
         rawprint(env.space.."ANSI SGR Codes, where '$E' means ascii code 27(a.k.a chr(27)): ")
         rawprint(env.space..string.rep("=",140))
         print(env.load_data(env.join_path(env.WORK_DIR,"bin","ANSI.txt"),false))
         rawprint(env.space..string.rep("=",140))
+        
         local bf,wf,bb,wb=base_color['BLK'][1],base_color['HIW'][1],base_color['BBLK'][1],base_color['HBWHT'][1]
         if env.grid then
             local row=env.grid.new()
@@ -327,13 +362,15 @@ function ansi.test_text(str)
         rawprint(env.space..string.rep("=",140))
         rawprint(env.space.."Use `$<code>$<other text>` to mask color in all outputs, including query, echo, etc. Not all listed control codes are supported.")
         rawprint(env.space.."For the color settings defined in command 'set', use '<code1>[;<code2>[...]]' format")
-        rawprint(env.space.."Run 'ansi <text>' to test the color, i.e.: ansi $HIR$ Hello $HIC$$HBGRN$ ANSI!")
-        rawprint(env.space.."Or SQL:  select '$HIR$'||owner||'$HIB$.$NOR$'||object_name obj,a.* from all_objects a where rownum<10;")
+        rawprint(env.space.."Run 'ansi <text>' to test the color, i.e.: ")
+        rawprint(env.space.."    1). ansi $HIR$ Hello $HIC$$HBGRN$ ANSI!")
+        rawprint(env.space.."    2). ansi \\e[4;91m Bold+Underline+Red \\e[0m")
+        rawprint(env.space.."    3). select '$HIR$'||owner||'$HIB$.\\e[48;5;11m'||object_name obj,'$NOR$' x,a.* from all_objects a where rownum<10;")
         rawprint(env.space.."Use 'set color' to adjust the color preferences of the console.")
         return
     end
    
-    return rawprint(env.space.."ANSI result: "..ansi.convert_ansi(str)..ansi.string_color('NOR'))
+    return print(env.space.."ANSI result: "..ansi.convert_ansi(str)..ansi.string_color('NOR'))
 end
 
 
