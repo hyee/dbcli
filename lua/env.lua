@@ -216,25 +216,23 @@ local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,
         env.raise("Incompleted command["..cmd.."], number of parameters is not defined!")
     end
 
-    if type(cmd)~="table" then cmd={cmd} end
-    local tmp=cmd[1]:upper()
 
-    for i=1,#cmd do
-        cmd[i]=cmd[i]:upper()
-        if _CMDS[cmd[i]] then
-            if _CMDS[cmd[i]].ISOVERRIDE~=true then
-                env.raise("Command '"..cmd[i].."' is already defined in ".._CMDS[cmd[i]]["FILE"])
+    local cmds=type(cmd)~="table" and {cmd} or cmd
+    
+    for i=1,#cmds do
+        cmds[i]=cmds[i]:upper()
+        if _CMDS[cmds[i]] then
+            if _CMDS[cmds[i]].ISOVERRIDE~=true then
+                env.raise("Command '"..cmds[i].."' is already defined in ".._CMDS[cmds[i]]["FILE"])
             else
-                _CMDS[cmd[i]]=nil
+                _CMDS[cmds[i]]=nil
             end
         end
-        env.root_cmds[cmd[i]]={}
-        if i>1 then table.insert(abbr,cmd[i]) end
+        if i>1 then table.insert(abbr,cmds[i]) end
     end
 
-    for i=1,#cmd do _CMDS.___ABBR___[cmd[i]]=tmp  end
-
-    cmd=tmp
+    cmd=cmds[1]
+    
 
     local src=env.callee()
     local desc=help_func
@@ -247,6 +245,11 @@ local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,
         if type(desc)=="function" then
             desc=desc(table.unpack(args))
         end
+    end
+
+    for i=1,#cmds do 
+        _CMDS.___ABBR___[cmds[i]]=cmd
+        env.root_cmds[cmd]=desc
     end
 
     if type(desc)=="string" then

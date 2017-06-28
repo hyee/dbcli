@@ -5,24 +5,22 @@ import com.naef.jnlua.LuaState;
 import org.jline.builtins.Commands;
 import org.jline.builtins.Less;
 import org.jline.builtins.Source;
-import org.jline.reader.History;
-import org.jline.reader.LineReader;
-import org.jline.reader.ParsedLine;
+import org.jline.keymap.KeyMap;
+import org.jline.reader.*;
 import org.jline.reader.impl.DefaultParser;
 import org.jline.reader.impl.LineReaderImpl;
 import org.jline.reader.impl.completer.StringsCompleter;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
+import org.jline.terminal.impl.AbstractWindowsTerminal;
+import org.jline.utils.AttributedString;
 import org.jline.utils.NonBlockingReader;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
-import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -33,17 +31,16 @@ import static org.jline.reader.LineReader.SECONDARY_PROMPT_PATTERN;
 
 public class Console {
     public static PrintWriter writer;
-    //public static NonBlockingInputStream in;
     public static NonBlockingReader in;
     public static String charset = "utf-8";
-    public static Terminal terminal;
+    public static AbstractWindowsTerminal terminal;
     LineReaderImpl reader;
     public static ClassAccess<LineReaderImpl> accessor = ClassAccess.access(LineReaderImpl.class);
-    public static Pattern ansiPattern = Pattern.compile("\33\\[[\\d\\;]*[mK]");
+    public final static Pattern ansiPattern = Pattern.compile("^\33\\[[\\d\\;]*[mK]$");
 
     static {
         try {
-            terminal = TerminalBuilder.builder().system(true).nativeSignals(true).signalHandler(Terminal.SignalHandler.SIG_IGN).exec(true).jna(true).build();
+            terminal = (AbstractWindowsTerminal) TerminalBuilder.builder().system(true).nativeSignals(true).signalHandler(Terminal.SignalHandler.SIG_IGN).exec(true).jna(true).build();
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -51,66 +48,94 @@ public class Console {
 
     protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(5);
     private LuaState lua;
-    private History his;
     volatile private ScheduledFuture task;
     private EventReader monitor = new EventReader();
     private ActionListener event;
     private char[] keys;
     private long threadID;
-    private HashMap<String, Method> methods = new HashMap();
     private EventCallback callback;
     private ParserCallback parserCallback;
     private Parser parser;
-    private Highlighter highlighter;
-    ArrayList<String> candidates = new ArrayList();
-    StringsCompleter completer = new StringsCompleter();
+    private Highlighter highlighter=new Highlighter();
+    HashMap<String, Candidate[]> candidates = new HashMap<>(1024);
+    Completer completer = new Completer();
 
     public void setLua(LuaState lua) {
         this.lua = lua;
         parserCallback = null;
     }
 
-    public void addCompleters(Set keys) {
-        candidates.addAll(keys);
-        HashMap<String,Integer> map=new HashMap(candidates.size()*2);
-        for(String key:candidates) {
-            map.put(key.toUpperCase(),1);
-            map.put(key.toLowerCase(),1);
+    private Candidate candidate(String key,String desc) {
+        if(desc!=null&&(desc.equals("")||desc.equals("\0"))) desc=null;
+        return new Candidate(key, key,null,null, null, null, true);
+    }
+
+    public void addCompleters(Map<String, ?> keys,boolean isCommand) {
+        Candidate c=isCommand?candidate("",null):null;
+        for (Map.Entry<String, ?> entry : keys.entrySet()) {
+            String key = entry.getKey().trim().toUpperCase();
+            Object value=entry.getValue();
+            String desc=value instanceof Map?"\0":value instanceof String?(String)value:"";
+            Candidate[] cs=candidates.get(key);
+            if(cs==null||isCommand&&(cs[2]==null||cs[2].descr()==null)) {
+                candidates.put(key, new Candidate[]{candidate(key, desc), candidate(key.toLowerCase(), desc), c});
+                int index=key.lastIndexOf(".");
+                if(index>0) {
+                    key=key.substring(index+1);
+                    candidates.put(key, new Candidate[]{candidate(key, desc), candidate(key.toLowerCase(), desc), c});
+                }
+            }
+            if ("\0".equals(desc)) {
+                for (Map.Entry<String, String> e: ((Map<String, String>) entry.getValue()).entrySet()) {
+                    String k=e.getKey().trim().toUpperCase();
+                    desc=e.getValue();
+                    candidates.put(key + " " +k ,  new Candidate[]{candidate(k,desc),candidate(k.toLowerCase(),desc),c});
+                }
+            }
         }
-        completer = new StringsCompleter(map.keySet());
-        reader.setCompleter(completer);
+        completer.candidates.clear();
+        completer.candidates.putAll(candidates);
     }
 
-    public void setKeywords(Map<String, Integer> keywords) {
+    public void setKeywords(Map<String, ?> keywords) {
         highlighter.keywords = keywords;
-        addCompleters(keywords.keySet());
+        addCompleters(keywords,false);
     }
 
-    public void setCommands(Map<String, Map> commands) {
+    public void setCommands(Map<String, Object> commands) {
         highlighter.commands = commands;
-        addCompleters(commands.keySet());
-        /*
-        for(Map.Entry<String,Map> entry:commands.entrySet()) {
-            if(entry.getValue().entrySet().size()==0) completer.getCompleters().add(new StringsCompleter(entry.getKey()));
-        }*/
+        addCompleters(commands,true);
+    }
+
+    public void setSubCommands(Map<String, Object> commands) {
+        addCompleters(commands,true);
+        highlighter.commands.putAll(commands);
     }
 
     public Console(LineReader reader) throws Exception {
         this.reader = (LineReaderImpl) reader;
-        parser = new Parser();
-        highlighter = new Highlighter();
+        this.parser=new Parser();
         this.reader.setParser(parser);
         this.reader.setHighlighter(highlighter);
-        this.his = this.reader.getHistory();
+        this.reader.setCompleter(completer);
+        this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE);
+        this.reader.setOpt(LineReader.Option.MOUSE);
+        this.reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
+        this.reader.setOpt(LineReader.Option.BRACKETED_PASTE);
         /*
         reader.getKeyMaps().get(LineReader.EMACS).unbind("\t");
         reader.getKeyMaps().get(LineReader.EMACS).bind(new Reference(LineReader.EXPAND_OR_COMPLETE), "\t\t");
         */
+        reader.getKeyMaps().get(LineReader.EMACS).unbind("^Y");
+        reader.getKeyMaps().get(LineReader.EMACS).unbind("^Z");
+        reader.getKeyMaps().get(LineReader.EMACS).bind(new Reference(LineReader.REDO), KeyMap.translate("^Y"));
+        reader.getKeyMaps().get(LineReader.EMACS).bind(new Reference(LineReader.UNDO), KeyMap.translate("^Z"));
+
         in = terminal.reader();
         System.setIn(terminal.input());
 
         String colorPlan = System.getenv("ANSICON_DEF");
-        writer = colorPlan != null && !("jline").equals(colorPlan) ? new PrintWriter(new OutputStreamWriter(System.out)) : terminal.writer();
+        writer = colorPlan != null && !("jline").equals(colorPlan) ? new PrintWriter(new OutputStreamWriter(System.out,charset)) : terminal.writer();
 
         threadID = Thread.currentThread().getId();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
@@ -165,14 +190,25 @@ public class Console {
         return accessor.invoke(reader, method, o);
     }
 
+    public void writeInput(String msg) {
+        try {
+            for (char c : msg.toCharArray())
+                terminal.processInputByte((int) c);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
     public String readLine(String prompt, String mask) {
         try {
             if (isRunning()) setEvents(null, null);
-            if (mask.startsWith("\033")) {
+            //writeInput(reader.BRACKETED_PASTE_BEGIN);
+            if (mask!=null&&ansiPattern.matcher(mask).find()) {
                 highlighter.setAnsi(mask);
                 mask = null;
             }
             String line = reader.readLine(prompt, null, mask);
+            //writeInput(reader.BRACKETED_PASTE_END);
             return line;
         } catch (Exception e) {
             callback.call(null, "CTRL+C");
@@ -256,43 +292,7 @@ public class Console {
             if (context == ParseContext.COMPLETE) return super.parse(line, cursor, context);
             if (context != ParseContext.ACCEPT_LINE) return null;
             String[] lines = null;
-            /*
-            if(!isMulti)
-            try {
-                ParsedLineImpl parsedLine=null;
-                org.apache.felix.gogo.runtime.Parser parser = new org.apache.felix.gogo.runtime.Parser(line);
-                org.apache.felix.gogo.runtime.Parser.Program program = parser.program();
-                List<org.apache.felix.gogo.runtime.Parser.Statement> statements = parser.statements();
-                // Find corresponding statement
-                org.apache.felix.gogo.runtime.Parser.Statement statement = null;
-                for (int i = statements.size() - 1; i >= 0; i--) {
-                    org.apache.felix.gogo.runtime.Parser.Statement s = statements.get(i);
-                    if (s.start() <= cursor) {
-                        boolean isOk = true;
-                        // check if there are only spaces after the previous statement
-                        if (s.start() + s.length() < cursor) {
-                            for (int j = s.start() + s.length(); isOk && j < cursor; j++) {
-                                isOk = Character.isWhitespace(line.charAt(j));
-                            }
-                        }
-                        statement = s;
-                        break;
-                    }
-                }
-                if (statement != null) {
-                    parsedLine=new ParsedLineImpl(program, statement, cursor, statement.tokens());
-                } else {
-                    // TODO:
-                    parsedLine= new ParsedLineImpl(program, program, cursor, Collections.<Token>singletonList(program));
-                }
-                lines=new String[]{p.matcher(parsedLine.line()).replaceAll(" ")};
-                System.out.println(lines[0]);
-            } catch (EOFError e) {
-                throw err;
-            } catch (SyntaxError e) {
-                throw new org.jline.reader.SyntaxError(e.line(), e.column(), e.getMessage());
-            }
-            */
+
             if (parserCallback == null) {
                 lua.load("return {call=env.parse_line}", "proxy");
                 lua.call(0, 1);

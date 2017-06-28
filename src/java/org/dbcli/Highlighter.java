@@ -41,20 +41,24 @@ import java.util.stream.Collectors;
 
 public class Highlighter extends DefaultHighlighter {
     public static final String DEFAULT_HIGHLIGHTER_COLORS = "rs=1:st=2:nu=3:co=4:va=5:vn=6:fu=7:bf=8:re=9";
-    public String ansi=null;
+    String ansi=null;
+    String errorAnsi=null;
     public String buffer=null;
     int adj=0;
-    public static final Pattern numPattern=Pattern.compile("^^-?\\d+([,\\.]\\d+)?([eE]-?\\d+)?$$");
+    public static final Pattern numPattern=Pattern.compile("([0-9]+)");
     public static Map<String, String> colors = Arrays.stream(DEFAULT_HIGHLIGHTER_COLORS.split(":"))
             .collect(Collectors.toMap(s -> s.substring(0, s.indexOf('=')),
                     s -> s.substring(s.indexOf('=') + 1)));
-    public Map<String,Integer> keywords=new HashMap();
-    public Map<String,Map> commands=new HashMap();
+    public Map<String,?> keywords=new HashMap();
+    public Map<String,Object> commands=new HashMap();
     boolean enabled=true;
 
     public void setAnsi(String ansi) {
         if(ansi.equals(this.ansi)) return;
         this.ansi=ansi;
+        Matcher m=numPattern.matcher(ansi);
+        m.find();
+        this.errorAnsi=Integer.valueOf(m.group(1))>50?"\33[91m":"\33[31m";
         enabled=!ansi.equals("\33[0m");
         for(String key:colors.keySet()) {
             String value;

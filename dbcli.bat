@@ -40,7 +40,7 @@ if defined ANSICON_CMD (
 )
 
 rem For win10, don't used both JLINE/Ansicon to escape the ANSI codes
-ver|findstr -r "[1-9][0-9]\.[0-9]*\.[0-9]">NUL && (SET "ANSICON_CMD=" && set "ANSICON_DEF=native")
+rem ver|findstr -r "[1-9][0-9]\.[0-9]*\.[0-9]">NUL && (SET "ANSICON_CMD=" && set "ANSICON_DEF=native")
 color !CONSOLE_COLOR!
 rem unpack jar files for the first use
 for /r %%i in (*.pack.gz) do (
@@ -50,6 +50,6 @@ for /r %%i in (*.pack.gz) do (
 )
 
 (%ANSICON_CMD% "!JRE_HOME!\java.exe" -server -noverify -Xmx384M -cp .\lib\*;.\lib\ext\*%OTHER_LIB% ^
-    -XX:+UseG1GC -XX:+UseStringDeduplication -Duser.region=US -Duser.country=US ^
+    -XX:+UseG1GC -XX:+UseStringDeduplication -Dfile.encoding=%DBCLI_ENCODING% -Duser.language=en -Duser.region=US -Duser.country=US ^
     -Doracle.net.tns_admin="%TNS_ADM%" -Djline.terminal=windows org.dbcli.Loader %DBCLI_PARAMS% %* )||pause
 EndLocal

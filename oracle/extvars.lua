@@ -88,24 +88,38 @@ function extvars.set_instance(name,value)
     if tonumber(value)==-2 then
         local dict={}
         local rs=db:internal_call([[
-            SELECT table_name,
-                   MAX(CASE WHEN COLUMN_NAME IN ('INST_ID', 'INSTANCE_NUMBER') THEN COLUMN_NAME END) INST_COL,
-                   MAX(CASE WHEN COLUMN_NAME IN ('CON_ID') THEN COLUMN_NAME END) CON_COL,
-                   MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND (column_name LIKE '%OWNER' OR column_name LIKE '%SCHEMA%' OR column_name LIKE '%USER%NAME') THEN COLUMN_NAME END)
-                       KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN COLUMN_NAME LIKE '%OWNER' THEN 1 ELSE 2 END) USR_COL
-            FROM   (SELECT table_name, column_name,data_type
+            with r as(SELECT owner,table_name, column_name,data_type
                     FROM   dba_tab_cols, dba_users
                     WHERE  user_id IN (SELECT SCHEMA# FROM sys.registry$ UNION ALL SELECT SCHEMA# FROM sys.registry$schemas)
                     AND    username = owner
-                    AND    regexp_like(table_name,'^(V_$|GV_$|V$|GV$|DBA_|ALL_|USER|CDB_)')  
+                    AND    regexp_like(table_name,'^(V_\$|GV_\$|V\$|GV\$|DBA_|ALL_|USER_|CDB_|DBMS_|UTL_)')  
                     UNION
-                    SELECT t.kqftanam, c.kqfconam,null
+                    SELECT 'SYS',t.kqftanam, c.kqfconam,null
                     FROM   (SELECT kqftanam,t.indx,t.inst_id FROM x$kqfta t
                             UNION ALL
                             SELECT KQFDTEQU,t.indx,t.inst_id FROM x$kqfta t,x$kqfdt where kqftanam=KQFDTNAM) t, x$kqfco c
                     WHERE  c.kqfconam IN ('INST_ID', 'INSTANCE_NUMBER', 'CON_ID','KGLOBTS4')
                     AND    c.kqfcotab = t.indx
                     AND    c.inst_id = t.inst_id)
+            SELECT table_name,
+                   MAX(CASE WHEN COLUMN_NAME IN ('INST_ID', 'INSTANCE_NUMBER') THEN COLUMN_NAME END) INST_COL,
+                   MAX(CASE WHEN COLUMN_NAME IN ('CON_ID') THEN COLUMN_NAME END) CON_COL,
+                   MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND (column_name LIKE '%OWNER' OR column_name LIKE '%SCHEMA%' OR column_name LIKE '%USER%NAME') THEN COLUMN_NAME END)
+                       KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN COLUMN_NAME LIKE '%OWNER' THEN 1 ELSE 2 END) USR_COL,
+                   MAX(owner)
+            FROM   (select * from r
+                    union all
+                    select s.owner,s.synonym_name,r.column_name,r.data_type 
+                    from  dba_synonyms s,r 
+                    where r.table_name=s.table_name 
+                    and   r.owner=s.table_owner
+                    and   s.synonym_name!=s.table_name
+                    union all
+                    select owner,object_name,null,object_type
+                    from  dba_objects
+                    where owner='SYS' 
+                    and   regexp_like(object_name,'^(DBMS_|UTL_)')
+                    and   instr(object_type,' ')=0)
             GROUP  BY TABLE_NAME]])
         local rows=db.resultset:rows(rs,-1)
         for i=2,#rows do
@@ -113,6 +127,7 @@ function extvars.set_instance(name,value)
                 inst_col=(rows[i][2]~="" and rows[i][2] or nil),
                 cdb_col=(rows[i][3]~="" and rows[i][3] or nil),
                 usr_col=(rows[i][4]~="" and rows[i][4] or nil),
+                owner=rows[i][5]
             }
             local prefix,suffix=rows[i][1]:match('(.-$)(.*)')
             if prefix=='GV_$' or prefix=='V_$' then
@@ -160,11 +175,10 @@ function extvars.onload()
         name    <- {prefix %a%a [%w$#__]+}
         prefix  <- "GV_$"/"GV$"/"V_$"/"V$"/"DBA_"/"ALL_"/"CDB_"/"X$"/"XV$"
     ]],nil,true)
-
     env.load_data(datapath,true,function(data)
         extvars.dict=data.dict
         if data.keywords then
-            for k,v in pairs(data.dict) do data.keywords[k]=1 end
+            for k,v in pairs(data.dict) do data.keywords[v.owner..'.'..k]=1 end
             console:setKeywords(data.keywords) 
         end
     end)

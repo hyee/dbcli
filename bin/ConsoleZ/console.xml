@@ -187,36 +187,16 @@
 		</tab>
 		<tab title="dbcli(blue)" use_default_icon="0">
 			<console shell="..\..\dbcli.bat" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0">
-				<env var="CONSOLE_COLOR" value="1F" check="1"/>
+				<env var="CONSOLE_COLOR" value="0F" check="1"/>
 			</console>
 			<cursor style="4" r="255" g="255" b="255"/>
+			<background type="0" r="0" g="36" b="85">
+				<image file="" relative="0" extend="0" position="0">
+					<tint opacity="0" r="0" g="0" b="0"/>
+				</image>
+			</background>
 		</tab>
-		<tab title="dbcli_db2" use_default_icon="0">
-			<console shell="..\..\dbcli.bat" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
-			<cursor style="12" r="255" g="255" b="255"/>
-			<colors background_text_opacity="255">
-				<color id="0" r="0" g="0" b="0"/>
-				<color id="1" r="0" g="0" b="128"/>
-				<color id="2" r="0" g="128" b="0"/>
-				<color id="3" r="0" g="128" b="128"/>
-				<color id="4" r="128" g="0" b="0"/>
-				<color id="5" r="128" g="0" b="128"/>
-				<color id="6" r="128" g="128" b="0"/>
-				<color id="7" r="192" g="192" b="192"/>
-				<color id="8" r="128" g="128" b="128"/>
-				<color id="9" r="0" g="0" b="255"/>
-				<color id="10" r="0" g="255" b="0"/>
-				<color id="11" r="0" g="255" b="255"/>
-				<color id="12" r="255" g="0" b="0"/>
-				<color id="13" r="255" g="0" b="255"/>
-				<color id="14" r="255" g="255" b="0"/>
-				<color id="15" r="255" g="255" b="255"/>
-		</colors>
-		</tab>
-		<tab title="bash" use_default_icon="0">
-			<console shell="C:\Windows\System32\bash.exe" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
-		</tab>
-		<tab title="PowerShell" use_default_icon="1">
-			<console shell="powershell" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
+		<tab title="cmd" use_default_icon="1">
+			<console shell="cmd" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
 		</tab>
 	</tabs></settings>
