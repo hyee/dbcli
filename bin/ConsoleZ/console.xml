@@ -196,6 +196,14 @@
 				</image>
 			</background>
 		</tab>
+		<tab title="dbcli(white)" use_default_icon="0">
+			<console shell="..\..\dbcli.bat" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0">
+				<env var="CONSOLE_COLOR" value="F0" check="1"/>
+				<env var="PROMPTCOLOR" value="BBLU;HIW" check="1"/>
+				<env var="COMMANDCOLOR" value="BLU" check="1"/>
+			</console>
+			<cursor style="4" r="0" g="0" b="0"/>
+		</tab>
 		<tab title="cmd" use_default_icon="1">
 			<console shell="cmd" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
 		</tab>

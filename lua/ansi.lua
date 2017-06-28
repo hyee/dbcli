@@ -102,8 +102,8 @@ local default_color={
     ['4']={'BRED','RED'},
     ['5']={'BMAG','MAG'},
     ['6']={'BYEL','YEL'},
-    ['7']={'BGRY','WHT'},
-    ['8']={'BWHT','GRY'},
+    ['7']={'BWHT','WHT'},
+    ['8']={'BGRY','GRY'},
     ['9']={'HBBLU','HIB'},
     ['A']={'HBGRN','HIG'},
     ['B']={'HBCYN','HIC'},
@@ -210,6 +210,7 @@ function ansi.define_color(name,value,module,description)
     end
 
     if description then
+        value=os.getenv(name:upper()) or value
         ansi.cfg(name,ansi.cfg(name) or value,module,description)
         env.set.init(name,value,ansi.define_color,module,description)
         if value ~= ansi.cfg(name) then

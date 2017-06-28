@@ -17,11 +17,7 @@ end
 function class(super,init)
     local this_class=setmetatable(init or {},{__newindex=newindex})
     super=super and rawget(super,'__class') or super
-    for k,v in pairs(debug.getinfo(2)) do
-        print(k,v)
-    end
-    local source=debug.getinfo(2).short_src:gsub("^@","",1)
-    this_class.__className=source
+    this_class.__className=debug.getinfo(2).source:gsub("^@+","",1)
     this_class.new=function(...)
         local obj={}
         local attrs,super

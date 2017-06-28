@@ -986,10 +986,8 @@ end
 
 function db_core:__onload()
     self.root_dir=(self.__class.__className):gsub('[^\\/]+$','')
-    print(self.__class.__className)
     local jars=os.list_dir(self.root_dir,"jar")
     for _,file in pairs(jars) do
-        print(file.fullname)
         java.loader:addPath(file.fullname)
     end
     if #jars==0 then 

@@ -382,7 +382,7 @@ function ProFi:doInspection( inspect, funcReport )
     while currentLevel < levels do
         local funcInfo = debug.getinfo(currentLevel, 'nS' )
         if funcInfo then
-            local source = funcInfo.short_src or '[C]'
+            local source = funcInfo.source:gsub("^@+","",1) or '[C]'
             local name = funcInfo.name or 'anonymous'
             local line = funcInfo.linedefined
             local key = source..name..line

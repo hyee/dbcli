@@ -338,7 +338,7 @@ function env.callee(idx)
     if type(idx)~="number" then idx=3 end
     local info=getinfo(idx)
     if not info then return nil end
-    local src=info.short_src
+    local src=info.source:gsub("^@+","",1)
     if src:lower():find(env.WORK_DIR:lower(),1,true) then
         src=src:sub(#env.WORK_DIR+1)
     end
