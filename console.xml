@@ -83,8 +83,8 @@
 		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="82" command="renametab"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="1" code="34" command="nextview"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="1" code="33" command="prevview"/>
-		<hotkey ctrl="0" shift="0" alt="1" extended="1" code="37" command="leftview"/>
-		<hotkey ctrl="0" shift="0" alt="1" extended="1" code="39" command="rightview"/>
+		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="leftview"/>
+		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="rightview"/>
 		<hotkey ctrl="0" shift="0" alt="1" extended="1" code="38" command="topview"/>
 		<hotkey ctrl="0" shift="0" alt="1" extended="1" code="40" command="bottomview"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="dechsize"/>
@@ -182,11 +182,11 @@
 	<snippets dir=""/>
 	<tabs>
 		<tab title="dbcli" use_default_icon="0">
-			<console shell="..\..\dbcli.bat" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
+			<console shell="cmd.exe /c dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
 			<cursor style="4" r="255" g="255" b="255"/>
 		</tab>
 		<tab title="dbcli(blue)" use_default_icon="0">
-			<console shell="..\..\dbcli.bat" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0">
+			<console shell="cmd.exe /c dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0">
 				<env var="CONSOLE_COLOR" value="0F" check="1"/>
 			</console>
 			<cursor style="4" r="255" g="255" b="255"/>
@@ -197,14 +197,21 @@
 			</background>
 		</tab>
 		<tab title="dbcli(white)" use_default_icon="0">
-			<console shell="..\..\dbcli.bat" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0">
+			<console shell="cmd.exe /c dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0">
 				<env var="CONSOLE_COLOR" value="F0" check="1"/>
-				<env var="PROMPTCOLOR" value="BBLU;HIW" check="1"/>
+				<env var="PROMPTCOLOR" value="\e[38;5;31m" check="1"/>
 				<env var="COMMANDCOLOR" value="BLU" check="1"/>
 			</console>
 			<cursor style="4" r="0" g="0" b="0"/>
 		</tab>
+		<tab title="dbcli(simple)" use_default_icon="0">
+			<console shell="cmd.exe /c dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0">
+				<env var="ANSICOLOR" value="off" check="1"/>
+				<env var="CONSOLE_COLOR" value="NA" check="1"/>
+			</console>
+			<cursor style="4" r="255" g="255" b="255"/>
+		</tab>
 		<tab title="cmd" use_default_icon="1">
-			<console shell="cmd" init_dir="" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
+			<console shell="cmd" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
 		</tab>
 	</tabs></settings>

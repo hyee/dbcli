@@ -21,7 +21,7 @@ while true do
     local prompt,empty=env.CURRENT_PROMPT:match("^(.-)(%s*)$")
     if env.REOAD_SIGNAL then break end
     if ccolor=="" then ccolor="\27[0m" end
-    line = console:readLine(prompt_color:format(env._SUBSYSTEM and subcolor or pcolor,prompt,ncolor,empty),ccolor)
+    readLine(console,prompt_color:format(env._SUBSYSTEM and subcolor or pcolor,prompt,ncolor,empty),ccolor)
     if not line then
         env.eval_line('exit')
     end

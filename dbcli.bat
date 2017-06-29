@@ -40,8 +40,8 @@ if defined ANSICON_CMD (
 )
 
 rem For win10, don't used both JLINE/Ansicon to escape the ANSI codes
-ver|findstr -r "[1-9][0-9]\.[0-9]*\.[0-9]">NUL && (SET "ANSICON_CMD=" && set "ANSICON_DEF=native")
-color !CONSOLE_COLOR!
+rem ver|findstr -r "[1-9][0-9]\.[0-9]*\.[0-9]">NUL && (SET "ANSICON_CMD=" && set "ANSICON_DEF=native")
+IF !CONSOLE_COLOR! NEQ NA color !CONSOLE_COLOR!
 rem unpack jar files for the first use
 for /r %%i in (*.pack.gz) do (
    set "var=%%i" &set "str=!var:@=!"

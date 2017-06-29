@@ -88,41 +88,48 @@ function extvars.set_instance(name,value)
     if tonumber(value)==-2 then
         local dict={}
         local rs=db:internal_call([[
-            with r as(SELECT owner,table_name, column_name,data_type
+            with r as(
+                    SELECT /*+no_merge*/ owner,table_name, column_name col,data_type
                     FROM   dba_tab_cols, dba_users
                     WHERE  user_id IN (SELECT SCHEMA# FROM sys.registry$ UNION ALL SELECT SCHEMA# FROM sys.registry$schemas)
                     AND    username = owner
-                    AND    regexp_like(table_name,'^(V_\$|GV_\$|V\$|GV\$|DBA_|ALL_|USER_|CDB_|DBMS_|UTL_)')  
-                    UNION
-                    SELECT 'SYS',t.kqftanam, c.kqfconam,null
+                    AND    (owner,table_name) in(select distinct owner,TABLE_NAME from dba_tab_privs where grantee in('PUBLIC','SELECT_CATALOG_ROLE'))  
+                    UNION ALL
+                    SELECT 'SYS',t.kqftanam, c.kqfconam, decode(kqfcodty,1,'VARCHAR2',2,'NUMBER',null)
                     FROM   (SELECT kqftanam,t.indx,t.inst_id FROM x$kqfta t
                             UNION ALL
                             SELECT KQFDTEQU,t.indx,t.inst_id FROM x$kqfta t,x$kqfdt where kqftanam=KQFDTNAM) t, x$kqfco c
-                    WHERE  c.kqfconam IN ('INST_ID', 'INSTANCE_NUMBER', 'CON_ID','KGLOBTS4')
-                    AND    c.kqfcotab = t.indx
+                    WHERE  c.kqfcotab = t.indx
                     AND    c.inst_id = t.inst_id)
             SELECT table_name,
-                   MAX(CASE WHEN COLUMN_NAME IN ('INST_ID', 'INSTANCE_NUMBER') THEN COLUMN_NAME END) INST_COL,
-                   MAX(CASE WHEN COLUMN_NAME IN ('CON_ID') THEN COLUMN_NAME END) CON_COL,
-                   MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND (column_name LIKE '%OWNER' OR column_name LIKE '%SCHEMA%' OR column_name LIKE '%USER%NAME') THEN COLUMN_NAME END)
-                       KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN COLUMN_NAME LIKE '%OWNER' THEN 1 ELSE 2 END) USR_COL,
+                   MAX(CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') THEN col
+                            WHEN DATA_TYPE='NUMBER' AND col like '%INSTANCE%' THEN col END)
+                       KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') THEN 1 ELSE 2 END) INST_COL,
+                   MAX(CASE WHEN col IN ('CON_ID') THEN col END) CON_COL,
+                   MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND regexp_like(col,'(OWNER|SCHEMA|KGLOBTS4|USER.*NAME)') THEN col END)
+                       KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN col LIKE '%OWNER' THEN 1 ELSE 2 END) USR_COL,
                    MAX(owner)
             FROM   (select * from r
-                    union all
-                    select s.owner,s.synonym_name,r.column_name,r.data_type 
-                    from  dba_synonyms s,r 
-                    where r.table_name=s.table_name 
-                    and   r.owner=s.table_owner
-                    and   s.synonym_name!=s.table_name
-                    union all
+                    union  all
+                    select s.owner,s.synonym_name,r.col ,r.data_type 
+                    from   dba_synonyms s,r 
+                    where  r.table_name=s.table_name 
+                    and    r.owner=s.table_owner
+                    and    s.synonym_name!=s.table_name
+                    union  all
                     select owner,object_name,null,object_type
-                    from  dba_objects
-                    where owner='SYS' 
-                    and   regexp_like(object_name,'^(DBMS_|UTL_)')
-                    and   instr(object_type,' ')=0)
+                    from   dba_objects
+                    where  owner='SYS' 
+                    and    regexp_like(object_name,'^(DBMS_|UTL_)')
+                    and    instr(object_type,' ')=0
+                    union  all
+                    select owner,table_name,null,type 
+                    from   dba_tab_privs 
+                    where  grantee in('EXECUTE_CATALOG_ROLE','SELECT_CATALOG_ROLE'))
             GROUP  BY TABLE_NAME]])
         local rows=db.resultset:rows(rs,-1)
-        for i=2,#rows do
+        local cnt1=#rows
+        for i=2,cnt1 do
             dict[rows[i][1]]={
                 inst_col=(rows[i][2]~="" and rows[i][2] or nil),
                 cdb_col=(rows[i][3]~="" and rows[i][3] or nil),
@@ -137,12 +144,13 @@ function extvars.set_instance(name,value)
         local keywords={}
         rs=db:internal_call("select KEYWORD from V$RESERVED_WORDS where length(KEYWORD)>3")
         rows=db.resultset:rows(rs,-1)
-        for i=2,#rows do
+        local cnt2=#rows
+        for i=2,cnt2 do
             keywords[rows[i][1]]=1
         end
         env.save_data(datapath,{dict=dict,keywords=keywords})
         extvars.dict=dict
-        print((#rows-1)..' records saved into '..datapath)
+        print((cnt1+cnt2-2)..' records saved into '..datapath)
     end
     return tonumber(value)
 end
@@ -177,6 +185,7 @@ function extvars.onload()
     ]],nil,true)
     env.load_data(datapath,true,function(data)
         extvars.dict=data.dict
+        --env.write_cache("1.txt",table.dump(data))
         if data.keywords then
             for k,v in pairs(data.dict) do data.keywords[v.owner..'.'..k]=1 end
             console:setKeywords(data.keywords) 

@@ -16,12 +16,23 @@ function hotkeys.help()
         Ctrl+K                       : Kill all words that after cursor]]
 end
 
-function hotkeys.call(_,_,x)
+function hotkeys.call(event,_,x)
     local maps=console:getKeyMap("-L");
+    local keys={}
+    local matched=false
+    for key,desc in maps:gmatch('("[^\n\r]+") +([^\n\r]+)[\n\r]') do
+        if desc==event then matched=true end
+        keys[key]=desc
+    end
+    if event then
+        env.checkerr(matched,"No such event: "..event)
+        console:setKeyCode(event,nil)
+        return
+    end
     local hdl=env.grid.new()
     hdl:add{"Key","*","Description",'|',"Key","*","Description"}
     local row
-    for key,desc in maps:gmatch('("[^\n\r]+") +([^\n\r]+)[\n\r]') do
+    for key,desc in pairs(keys) do
         key=key:gsub('"(.-)"',' $HEADCOLOR$%1$NOR$ ')
         if not row then 
             row={key,' ',desc} 
@@ -33,6 +44,7 @@ function hotkeys.call(_,_,x)
     end
     if row then hdl:add(row) end
     hdl:print()
+    print("\n*Tips: input 'keymap <description> to manually define the keymap.")
 end
 
 

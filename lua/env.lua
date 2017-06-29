@@ -249,7 +249,7 @@ local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,
 
     for i=1,#cmds do 
         _CMDS.___ABBR___[cmds[i]]=cmd
-        env.root_cmds[cmd]=desc
+        env.root_cmds[cmds[i]]=desc
     end
 
     if type(desc)=="string" then
@@ -807,7 +807,9 @@ end
 
 local _cmd,_args,_errs
 function env.parse_line(line)
-    _cmd,_args,_errs=_eval_line(line,false)
+    multi_cmd,curr_stmt=nil,nil
+    env.CURRENT_PROMPT=env.PRI_PROMPT
+    _cmd,_args,_errs=eval_line(line,false)
     return env.CURRENT_PROMPT==env.MTL_PROMPT,env.CURRENT_PROMPT
 end
 
@@ -1134,15 +1136,10 @@ end
 
 function env.ask(question,range,default)
     local isValid,desc,value=true,question
-    if default then 
-        desc=desc..' ['..tostring(default)..']' 
-    elseif range then
-        desc=desc..' ['..range..']'
-    end
     --env.printer.write(desc..': ')
     env.IS_ASKING=question
-    value,env.IS_ASKING=console:readLine(env.space,desc..": "),nil
-    value=value and value:trim() or ""
+    value,env.IS_ASKING=console:readLine(env.space..desc..": ",ansi.get_color('HEADCOLOR')..default),nil
+    value=value and ansi.strip_ansi(value:trim()) or ""
 
     value=value:gsub('\\([0-9]+)',function(x) return string.char(tonumber(x)) end)
     value=value:gsub('(0x[0-9a-f][0-9a-fA-F]?)',function(x) return string.char(tonumber(string.format("%d",x))) end)

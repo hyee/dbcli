@@ -18,22 +18,13 @@
  */
 package org.dbcli;
 
-import org.apache.felix.gogo.runtime.EOFError;
-import org.apache.felix.gogo.runtime.Parser.Program;
-import org.apache.felix.gogo.runtime.Parser.Statement;
-import org.apache.felix.gogo.runtime.SyntaxError;
-import org.apache.felix.gogo.runtime.Token;
 import org.jline.reader.LineReader;
-import org.jline.reader.LineReader.RegionType;
 import org.jline.reader.impl.DefaultHighlighter;
 import org.jline.utils.AttributedString;
 import org.jline.utils.AttributedStringBuilder;
-import org.jline.utils.AttributedStyle;
-import org.jline.utils.WCWidth;
 
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -41,48 +32,57 @@ import java.util.stream.Collectors;
 
 public class Highlighter extends DefaultHighlighter {
     public static final String DEFAULT_HIGHLIGHTER_COLORS = "rs=1:st=2:nu=3:co=4:va=5:vn=6:fu=7:bf=8:re=9";
-    String ansi=null;
-    String errorAnsi=null;
-    public String buffer=null;
-    int adj=0;
-    public static final Pattern numPattern=Pattern.compile("([0-9]+)");
+    String ansi = null;
+    String errorAnsi = null;
+    public String buffer = null;
+    int adj = 0;
+    public static final Pattern numPattern = Pattern.compile("([0-9]+)");
     public static Map<String, String> colors = Arrays.stream(DEFAULT_HIGHLIGHTER_COLORS.split(":"))
             .collect(Collectors.toMap(s -> s.substring(0, s.indexOf('=')),
                     s -> s.substring(s.indexOf('=') + 1)));
-    public Map<String,?> keywords=new HashMap();
-    public Map<String,Object> commands=new HashMap();
-    boolean enabled=true;
+    public Map<String, ?> keywords = new HashMap();
+    public Map<String, Object> commands = new HashMap();
+    boolean enabled = true;
 
     public void setAnsi(String ansi) {
-        if(ansi.equals(this.ansi)) return;
-        this.ansi=ansi;
-        Matcher m=numPattern.matcher(ansi);
+        if (ansi.equals(this.ansi)) return;
+        this.ansi = ansi;
+        Matcher m = numPattern.matcher(ansi);
         m.find();
-        this.errorAnsi=Integer.valueOf(m.group(1))>50?"\33[91m":"\33[31m";
-        enabled=!ansi.equals("\33[0m");
-        for(String key:colors.keySet()) {
+        this.errorAnsi = Integer.valueOf(m.group(1)) > 50 ? "\33[91m" : "\33[31m";
+        enabled = !ansi.equals("\33[0m");
+        for (String key : colors.keySet()) {
             String value;
             switch (key) {
-                case "bf": value="\33[91m";break;
-                case "fu": value=ansi; break;
-                case "rs": value="\33[95m"; break;
-                default: value=ansi; break;
+                case "bf":
+                    value = "\33[91m";
+                    break;
+                case "fu":
+                    value = ansi;
+                    break;
+                case "rs":
+                    value = "\33[95m";
+                    break;
+                default:
+                    value = ansi;
+                    break;
             }
-            colors.put(key,value);
+            colors.put(key, value);
         }
     }
 
     public Highlighter() {
         setAnsi("\033[0m");
     }
-    Pattern p= Pattern.compile("(\\S+)(.*)");
+
+    Pattern p = Pattern.compile("(\\S+)(.*)");
 
     public AttributedString highlight(LineReader reader, String buffer) {
         AttributedStringBuilder sb = new AttributedStringBuilder();
-        Matcher m=p.matcher(buffer);
-        if(enabled&&m.find()) {
-            if(!commands.containsKey(m.group(1).toUpperCase())) {
-                sb.appendAnsi("\33[91m");
+        Matcher m = p.matcher(buffer);
+        if (enabled && m.find()) {
+            if (!commands.containsKey(m.group(1).toUpperCase())) {
+                sb.appendAnsi(errorAnsi);
                 sb.append(m.group(1));
                 sb.appendAnsi(ansi);
                 sb.append(m.group(2));

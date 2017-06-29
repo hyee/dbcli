@@ -804,7 +804,7 @@ function db_core:sql2file(filename,sql,method,ext,...)
             result=sql
         else
             sql=env.COMMAND_SEPS.match(sql)
-            result=self:exec(sql)
+            result=self:internal_call(sql)
         end
 
         if ext and filename:lower():match("%.gz$") and not filename:lower():match("%."..ext.."%.gz$") then

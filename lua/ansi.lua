@@ -113,22 +113,22 @@ local default_color={
     ['F']={'HBWHT','HIW'},
 }
 
+local var=os.getenv("ANSICOLOR")
+if var and var:lower()=="off" then
+    isAnsiSupported,enabled=false,false
+else
+    isAnsiSupported=true
+end
+
 ansi.ansi_mode=os.getenv("ANSICON_DEF") or "jline"
 local console_color=os.getenv("CONSOLE_COLOR")
-if console_color then
+if isAnsiSupported and console_color and console_color~='NA' then
     ansi.ansi_default=console_color
     local fg,bg=default_color[console_color:sub(2)][2],default_color[console_color:sub(1,1)][1]
     if bg and fg and ansi.ansi_mode=="native" then
         base_color['NOR'][1]=base_color['NOR'][1]..base_color[fg][1]..base_color[bg][1]
     end
 end
-
-if os.getenv("ANSICOLOR")=="off" then
-    isAnsiSupported,enabled=false,false
-else
-    isAnsiSupported=true
-end
-
 
 local color=setmetatable({},{__index=function(self,k) return rawget(self,k:upper()) end})
 
@@ -314,9 +314,9 @@ function ansi.test_text(str)
                 local code=i*8+j
                 head[j*2+1],head[j*2+2]="Color#"..(j+1)..' + B',"Color#"..(j+1)..' + W'
                 foreground[j*2+1]=rep("$E[40;38;5;"..code..'m')
-                foreground[j*2+2]=rep("$E[47;38;5;"..code..'m')
+                foreground[j*2+2]=rep("$E[107;38;5;"..code..'m')
                 background[j*2+1]=rep("$E[30;48;5;"..code..'m')
-                background[j*2+2]=rep("$E[37;48;5;"..code..'m')
+                background[j*2+2]=rep("$E[97;48;5;"..code..'m')
             end
             if i==0 then
                 table.insert(head,1,"F/B Ground")
