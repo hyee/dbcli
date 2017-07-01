@@ -330,7 +330,7 @@ function ansi.test_text(str)
         for k,v in ipairs(backs) do rows:add(v) end
         rawprint(env.space.."ANSI 256 colors, where '$E' means ascii code 27(a.k.a chr(27)): ")
         rawprint(env.space..string.rep("=",140))
-        rows:print('test')
+        rows:print()
         rawprint("\n")
         
         rawprint(env.space.."ANSI SGR Codes, where '$E' means ascii code 27(a.k.a chr(27)): ")

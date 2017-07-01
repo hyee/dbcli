@@ -203,6 +203,11 @@
 				<env var="COMMANDCOLOR" value="BLU" check="1"/>
 			</console>
 			<cursor style="4" r="0" g="0" b="0"/>
+			<background type="0" r="255" g="255" b="255">
+				<image file="" relative="0" extend="0" position="0">
+					<tint opacity="0" r="0" g="0" b="0"/>
+				</image>
+			</background>
 		</tab>
 		<tab title="dbcli(simple)" use_default_icon="0">
 			<console shell="cmd.exe /c dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0">

@@ -56,7 +56,7 @@ public class Console {
     private EventReader monitor = new EventReader();
     private ActionListener event;
     private char[] keys;
-    private long threadID;
+    long threadID;
     private EventCallback callback;
     private ParserCallback parserCallback;
     private Parser parser;
@@ -130,10 +130,8 @@ public class Console {
         reader.getKeyMaps().get(LineReader.EMACS).unbind("\t");
         reader.getKeyMaps().get(LineReader.EMACS).bind(new Reference(LineReader.EXPAND_OR_COMPLETE), "\t\t");
         */
-        setKeyCode("redo","^[y");
-        setKeyCode("undo","^[z");
-        setKeyCode("forward-word","^[[1;3C");
-        setKeyCode("backward-word","^[[1;3D");
+        setKeyCode("redo","^Y");
+        setKeyCode("undo","^Z");
 
 
         in = terminal.reader();

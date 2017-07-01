@@ -22,9 +22,7 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.Future;
+import java.util.concurrent.*;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.InflaterInputStream;
@@ -44,32 +42,56 @@ public class Loader {
     private volatile ResultSet rs;
     private IOException CancelError = new IOException("Statement is aborted.");
 
-    public Loader() {
-        try {
-            File f = new File(Loader.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-            root = f.getParentFile().getParent();
-            libPath = root + File.separator + "lib" + File.separator;
-            String bit = System.getProperty("sun.arch.data.model");
-            if (bit == null) bit = System.getProperty("com.ibm.vm.bitmode");
-            libPath += (bit.equals("64") ? "x64" : "x86");
-            addLibrary(libPath, true);
-            System.setProperty("library.jansi.path", libPath);
-            console = new Console(LineReaderBuilder.builder()
-                    .terminal(Console.terminal)
-                    .build());
-            //Ctrl+D
-            keyMap = console.reader.getKeys();
-            //keyMap.bind(String.valueOf(KeyMap.CTRL_D), new KeyListner(KeyMap.CTRL_D));
-            q = new KeyListner('q');
-            Interrupter.listen("loader", new EventCallback() {
-                @Override
-                public void call(Object... e) {
-                    q.actionPerformed((ActionEvent) e[0]);
+
+    public Loader() throws ExecutionException, InterruptedException {
+        Future<Console> t1 = Console.threadPool.schedule(new Callable<Console>() {
+            @Override
+            public Console call() {
+                try {
+                    Console console = new Console(LineReaderBuilder.builder()
+                            .terminal(Console.terminal)
+                            .build());
+                    //Ctrl+D
+                    keyMap = console.reader.getKeys();
+                    //keyMap.bind(String.valueOf(KeyMap.CTRL_D), new KeyListner(KeyMap.CTRL_D));
+                    q = new KeyListner('q');
+                    Interrupter.listen("loader", new EventCallback() {
+                        @Override
+                        public void call(Object... e) {
+                            q.actionPerformed((ActionEvent) e[0]);
+                        }
+                    });
+                    return console;
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    System.exit(0);
                 }
-            });
-        } catch (Exception e) {
-            getRootCause(e).printStackTrace();
-        }
+                return null;
+            }
+        }, 0, TimeUnit.MILLISECONDS);
+        Future<LuaState> t2 = Console.threadPool.schedule(new Callable<LuaState>() {
+            @Override
+            public LuaState call() {
+                try {
+                    File f = new File(Loader.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+                    root = f.getParentFile().getParent();
+                    libPath = root + File.separator + "lib" + File.separator;
+                    String bit = System.getProperty("sun.arch.data.model");
+                    if (bit == null) bit = System.getProperty("com.ibm.vm.bitmode");
+                    libPath += (bit.equals("64") ? "x64" : "x86");
+                    addLibrary(libPath, true);
+                    System.setProperty("library.jansi.path", libPath);
+
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    System.exit(0);
+                }
+                return new LuaState();
+            }
+        }, 0, TimeUnit.MILLISECONDS);
+        console=t1.get();
+        lua=t2.get();
+        console.threadID=Thread.currentThread().getId();
     }
 
     public static Exception getRootCause(Exception e) {
@@ -79,7 +101,7 @@ public class Loader {
     }
 
     public static void loadLua(Loader loader, String args[]) throws Exception {
-        lua = new LuaState();
+        if(lua==null) lua = new LuaState();
         lua.pushGlobal("loader", loader);
         console.setLua(lua);
         if (console.writer != null) {
