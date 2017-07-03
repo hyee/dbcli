@@ -1,116 +1,321 @@
 package org.dbcli;
 
+import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
-import jline.Terminal;
-import jline.console.ConsoleReader;
-import jline.console.Operation;
-import jline.console.completer.Completer;
-import jline.console.history.History;
-import jline.internal.Configuration;
-import jline.internal.NonBlockingInputStream;
+import org.jline.builtins.Commands;
+import org.jline.builtins.Less;
+import org.jline.builtins.Source;
+import org.jline.keymap.BindingReader;
+import org.jline.keymap.KeyMap;
+import org.jline.reader.Candidate;
+import org.jline.reader.LineReader;
+import org.jline.reader.ParsedLine;
+import org.jline.reader.Reference;
+import org.jline.reader.impl.DefaultParser;
+import org.jline.reader.impl.LineReaderImpl;
+import org.jline.terminal.Terminal;
+import org.jline.terminal.TerminalBuilder;
+import org.jline.terminal.impl.AbstractWindowsTerminal;
+import org.jline.utils.Curses;
+import org.jline.utils.NonBlockingReader;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
+import java.io.*;
 import java.util.HashMap;
-import java.util.Iterator;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-public class Console extends ConsoleReader {
+import static org.jline.reader.LineReader.DISABLE_HISTORY;
+import static org.jline.reader.LineReader.SECONDARY_PROMPT_PATTERN;
+
+public class Console {
     public static PrintWriter writer;
-    //public static NonBlockingInputStream in;
-    public static WindowsInputReader in;
-    public static Terminal terminal;
-    public static String charset;
+    public static NonBlockingReader in;
+    public static String charset = "utf-8";
+    public static AbstractWindowsTerminal terminal;
+    LineReaderImpl reader;
+    public static ClassAccess<LineReaderImpl> accessor = ClassAccess.access(LineReaderImpl.class);
+    public final static Pattern ansiPattern = Pattern.compile("^\33\\[[\\d\\;]*[mK]$");
+    public static HashMap<String, String> keyEvents = new HashMap<>();
+
+    static {
+        try {
+            terminal = (AbstractWindowsTerminal) TerminalBuilder.builder().system(true).nativeSignals(true).signalHandler(Terminal.SignalHandler.SIG_IGN).exec(true).jna(true).build();
+            keyEvents.put("\u0008", "BACKSPACE");
+            keyEvents.put("^[^H", "ALT-BACKSPACE");
+            keyEvents.put("\u0009", "TAB");
+            //keyEvents.put("^[","ESC");
+            keyEvents.put("^[[2~", "INSERT");
+            keyEvents.put("^[[3~", "DEL");
+            keyEvents.put("^[[5~", "PGUP");
+            keyEvents.put("^[[6~", "PGON");
+            keyEvents.put("^[[H", "HOME");
+            keyEvents.put("^[[1;%dH", "HOME");
+            keyEvents.put("^[[4~", "END");
+            keyEvents.put("^[[1;%dF", "END");
+
+            keyEvents.put("^[OP", "F1");
+            keyEvents.put("^[[1;%dP", "F1");
+            keyEvents.put("^[OQ", "F2");
+            keyEvents.put("^[[1;%dQ", "F1");
+            keyEvents.put("^[OR", "F3");
+            keyEvents.put("^[[1;%dR", "F1");
+            keyEvents.put("^[OS", "F4");
+            keyEvents.put("^[[1;%dS", "F1");
+            keyEvents.put("^[[15~", "F5");
+            keyEvents.put("^[[15;%d~", "F5");
+            keyEvents.put("^[[17~", "F6");
+            keyEvents.put("^[[17;%d~", "F6");
+            keyEvents.put("^[[18~", "F7");
+            keyEvents.put("^[[18;%d~", "F7");
+            keyEvents.put("^[[19~", "F8");
+            keyEvents.put("^[[19;%d~", "F8");
+            keyEvents.put("^[[20~", "F9");
+            keyEvents.put("^[[20;%d~", "F9");
+            keyEvents.put("^[[21~", "F10");
+            keyEvents.put("^[[21;%d~", "F10");
+            keyEvents.put("^[[23~", "F11");
+            keyEvents.put("^[[23;%d~", "F11");
+            keyEvents.put("^[[24~", "F12");
+            keyEvents.put("^[[24;%d~", "F12");
+
+            keyEvents.put("^[[D", "LEFT");
+            keyEvents.put("^[[1;%dD", "LEFT");
+            keyEvents.put("^[OD", "CTRL-LEFT");
+            keyEvents.put("^[[C", "RIGHT");
+            keyEvents.put("^[[1;%dC", "RIGHT");
+            keyEvents.put("^[OC", "CTRL-RIGHT");
+            keyEvents.put("^[[A", "UP");
+            keyEvents.put("^[[1;%dA", "UP");
+            keyEvents.put("^[OA", "CTRL-UP");
+            keyEvents.put("^[[B", "DOWN");
+            keyEvents.put("^[[1;%dB", "DOWN");
+            keyEvents.put("^[OB", "CTRL-DOWN");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    static String translateKey(String key) {
+        String org = key;
+        for (Map.Entry<String, String> e : keyEvents.entrySet()) {
+            String k = e.getKey().replaceAll("\\[", "\\\\[").replaceAll("\\^", "\\\\^");
+            if (k.indexOf("%d") > 0) {
+                String k1 = k.replaceAll("%d", "(\\\\d)");
+                Pattern p = Pattern.compile(k1);
+                Matcher m = p.matcher(key);
+                if (m.find()) {
+                    int c = Integer.valueOf(m.group(1)) - 1;
+                    StringBuilder sb = new StringBuilder();
+                    sb.append(" + ");
+                    if ((c & 4) > 0) sb.append("CTRL-");
+                    if ((c & 2) > 0) sb.append("ALT-");
+                    if ((c & 1) > 0) sb.append("SHIFT-");
+                    sb.append(e.getValue());
+                    sb.append(" + ");
+                    key = key.replaceAll(String.format(k, c + 1), sb.toString());
+                }
+            } else {
+                key = key.replace(e.getKey(), " + " + e.getValue() + " + ");
+            }
+        }
+        key = key.replaceAll("\\^\\[\\^", " + CTRL-ALT-").replaceAll("\\^\\[[ \\+]*(.)", " + ALT-$1").replaceAll("\\^[ \\+]*(.)", " + CTRL-$1").replaceAll("(^ \\+ | \\+ $)", "");
+        return key;//+" ("+org+") ";
+    }
+
     protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(5);
-    public LuaState lua;
-    private History his;
+    private LuaState lua;
     volatile private ScheduledFuture task;
     private EventReader monitor = new EventReader();
     private ActionListener event;
     private char[] keys;
-    private long threadID;
-    private HashMap<String, Method> methods = new HashMap();
-    private Method t_puts;
+    long threadID;
+    private EventCallback callback;
+    private ParserCallback parserCallback;
+    private Parser parser;
+    private Highlighter highlighter = new Highlighter();
+    HashMap<String, Candidate[]> candidates = new HashMap<>(1024);
+    Completer completer = new Completer();
 
-    public Console() throws Exception {
-        super();
-        his = getHistory();
-        setExpandEvents(false);
-        setHandleUserInterrupt(false);
-        setBellEnabled(false);
-        getKeys().bind("\u001bOn", Operation.DELETE_CHAR); //The delete key
-        in = new WindowsInputReader();
-        ((NonBlockingInputStream) this.getInput()).shutdown();
-        Field field = ConsoleReader.class.getDeclaredField("in");
-        field.setAccessible(true);
-        field.set(this, in);
-        field.setAccessible(false);
-        field = ConsoleReader.class.getDeclaredField("reader");
-        field.setAccessible(true);
-        charset = this.getTerminal().getOutputEncoding() == null ? Configuration.getEncoding() : this.getTerminal().getOutputEncoding();
-        field.set(this, new InputStreamReader(in, charset));
-        field.setAccessible(false);
-        t_puts = ConsoleReader.class.getDeclaredMethod("tputs", String.class, Object[].class);
-        t_puts.setAccessible(true);
+    public void setLua(LuaState lua) {
+        this.lua = lua;
+        parserCallback = null;
+    }
+
+    private Candidate candidate(String key, String desc) {
+        if (desc != null && (desc.equals("") || desc.equals("\0"))) desc = null;
+        return new Candidate(key, key, null, null, null, null, true);
+    }
+
+    public void addCompleters(Map<String, ?> keys, boolean isCommand) {
+        Candidate c = isCommand ? candidate("", null) : null;
+        for (Map.Entry<String, ?> entry : keys.entrySet()) {
+            String key = entry.getKey().trim().toUpperCase();
+            Object value = entry.getValue();
+            String desc = value instanceof Map ? "\0" : value instanceof String ? (String) value : "";
+            Candidate[] cs = candidates.get(key);
+            if (cs == null || isCommand && (cs[2] == null || cs[2].descr() == null)) {
+                candidates.put(key, new Candidate[]{candidate(key, desc), candidate(key.toLowerCase(), desc), c});
+                int index = key.lastIndexOf(".");
+                if (index > 0) {
+                    key = key.substring(index + 1);
+                    candidates.put(key, new Candidate[]{candidate(key, desc), candidate(key.toLowerCase(), desc), c});
+                }
+            }
+            if ("\0".equals(desc)) {
+                for (Map.Entry<String, String> e : ((Map<String, String>) entry.getValue()).entrySet()) {
+                    String k = e.getKey().trim().toUpperCase();
+                    desc = e.getValue();
+                    candidates.put(key + " " + k, new Candidate[]{candidate(k, desc), candidate(k.toLowerCase(), desc), c});
+                }
+            }
+        }
+        completer.candidates.clear();
+        completer.candidates.putAll(candidates);
+    }
+
+    public void setKeywords(Map<String, ?> keywords) {
+        highlighter.keywords = keywords;
+        addCompleters(keywords, false);
+    }
+
+    public void setCommands(Map<String, Object> commands) {
+        highlighter.commands = commands;
+        addCompleters(commands, true);
+    }
+
+    public void setSubCommands(Map<String, Object> commands) {
+        addCompleters(commands, true);
+        highlighter.commands.putAll(commands);
+    }
+
+    public Console(LineReader reader) throws Exception {
+        this.reader = (LineReaderImpl) reader;
+        this.parser = new Parser();
+        this.reader.setParser(parser);
+        this.reader.setHighlighter(highlighter);
+        this.reader.setCompleter(completer);
+        this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE);
+        this.reader.setOpt(LineReader.Option.MOUSE);
+        this.reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
+        this.reader.setOpt(LineReader.Option.BRACKETED_PASTE);
+        /*
+        reader.getKeyMaps().get(LineReader.EMACS).unbind("\t");
+        reader.getKeyMaps().get(LineReader.EMACS).bind(new Reference(LineReader.EXPAND_OR_COMPLETE), "\t\t");
+        */
+        setKeyCode("redo", "^Y");
+        setKeyCode("undo", "^Z");
+
+
+        in = terminal.reader();
+        System.setIn(terminal.input());
+
         String colorPlan = System.getenv("ANSICON_DEF");
-        writer = new PrintWriter(colorPlan != null && !("jline").equals(colorPlan) ? new OutputStreamWriter(System.out, Console.charset) : getOutput());
+        writer = colorPlan != null && !("jline").equals(colorPlan) ? new PrintWriter(new OutputStreamWriter(System.out, charset)) : terminal.writer();
 
-        //in=(NonBlockingInputStream)this.getInput();
-        Iterator<Completer> iterator = getCompleters().iterator();
         threadID = Thread.currentThread().getId();
-        while (iterator.hasNext()) removeCompleter(iterator.next());
-        in.listen(this, new EventCallback() {
+        Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
+        callback = new EventCallback() {
             @Override
-            public void interrupt(Object... c) throws Exception {
+            public void call(Object... c) {
                 if (!isRunning() && lua != null && threadID == Thread.currentThread().getId()) {
                     lua.getGlobal("TRIGGER_EVENT");
                     Integer r = (Integer) (lua.call(c)[0]);
                     if (r == 2) ((long[]) c[0])[0] = 2;
+                } else if (event != null) {
+                    if (c[1] instanceof ActionEvent) event.actionPerformed((ActionEvent) c[0]);
+                    else event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, "\3"));
                 }
             }
-        });
+        };
+        Interrupter.listen(this, callback);
     }
 
-    public void doTPuts(String s, Object... o) throws Exception {
-        t_puts.invoke(this, s, o);
+
+    public void less(String output) throws Exception {
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        Source source = new Source() {
+            @Override
+            public String getName() {
+                return "-MORE-";
+            }
+
+            @Override
+            public InputStream read() throws IOException {
+                return new ByteArrayInputStream(output.getBytes());
+            }
+        };
+        Less less = new Less(terminal);
+        less.veryQuiet = true;
+        less.chopLongLines = false;
+        less.ignoreCaseAlways = true;
+        less.run(source);
     }
 
-    public void write(String msg) throws Exception {
-        print(msg);
-        flush();
+    public PrintWriter getOutput() {
+        return writer;
     }
 
-    public Object invokeMethod(String method, Object... o) throws Exception {
-        Method m = null;
-        if (!methods.containsKey(method)) {
-            Class<?>[] cls = new Class[o.length];
-            for (int i = 0; i < o.length; i++) cls[i] = o[i] instanceof Class<?> ? (Class<?>) o[i] : o[i].getClass();
-            m = ConsoleReader.class.getDeclaredMethod(method, cls);
-            m.setAccessible(true);
-            methods.put(method, m);
-        } else m = methods.get(method);
-        Object r = m.invoke(this, o);
-        flush();
-        return r;
+    public void write(String msg) {
+        if (writer == null) return;
+        writer.write(msg);
+        writer.flush();
     }
 
-    public String readLine(String prompt) throws IOException {
-        if (isRunning()) setEvents(null, null);
-        String line = super.readLine(prompt);
-        return line;
+    public Object invokeMethod(String method, Object... o) {
+        return accessor.invoke(reader, method, o);
     }
 
-    public String readLine() throws IOException {
-        return readLine((String) null);
+    public void writeInput(String msg) {
+        try {
+            for (char c : msg.toCharArray())
+                terminal.processInputByte((int) c);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    boolean isPrompt = true;
+
+    public String readLine(String prompt, String buffer) {
+        try {
+            if (isRunning()) setEvents(null, null);
+            isPrompt = buffer != null && ansiPattern.matcher(buffer).find();
+            if (isPrompt) {
+                highlighter.setAnsi(buffer);
+                buffer = null;
+            } else {
+                reader.setOpt(LineReader.Option.DISABLE_HIGHLIGHTER);
+                reader.setOpt(LineReader.Option.DISABLE_EVENT_EXPANSION);
+                reader.setVariable(DISABLE_HISTORY, true);
+            }
+            String line = reader.readLine(prompt, null, buffer);
+            //writeInput(reader.BRACKETED_PASTE_END);
+            return line;
+        } catch (Exception e) {
+            callback.call(null, "CTRL+C");
+            return "";
+        } finally {
+            if (isPrompt) {
+                reader.unsetOpt(LineReader.Option.DISABLE_HIGHLIGHTER);
+                reader.unsetOpt(LineReader.Option.DISABLE_EVENT_EXPANSION);
+                reader.setVariable(DISABLE_HISTORY, false);
+            }
+        }
+    }
+
+    public String readLine(String prompt) {
+        return readLine(prompt, null);
+    }
+
+    public String readLine() {
+        return readLine(null, null);
     }
 
     public Boolean isRunning() {
@@ -134,22 +339,32 @@ public class Console extends ConsoleReader {
         setEvents(null, null);
     }
 
-    boolean hisEnabled=true;
-    public void setMultiplePrompt(String line) {
-        boolean enabled=line!=null;
-        if(hisEnabled==enabled) return;
-        hisEnabled=enabled;
-        if (!enabled) {
-            try {
-                setHistoryEnabled(false);
-                his.removeLast();
-            } catch (Exception e) {
+    public String getKeyMap(String[] options) {
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        Commands.keymap(reader, new PrintStream(stream), new PrintStream(new ByteArrayOutputStream()), options);
+        return stream.toString();
+    }
+
+    public String setKeyCode(String keyEvent, String keyCode) {
+        String keySeq;
+        if (keyCode == null) {
+            write("Input key code for '" + keyEvent + "'(hit Enter to complete): ");
+            int c;
+            StringBuilder sb = new StringBuilder();
+            while (true) {
+                c = reader.readCharacter();
+                if (c == 10 || c == 13) break;
+                String buff = new String(Character.toChars(c));
+                sb.append(buff);
             }
-        } else {
-            setHistoryEnabled(true);
-            if (!line.equals("")) this.his.add(line);
-            this.his.moveToEnd();
-        }
+            keySeq = sb.toString();
+            keyCode = KeyMap.display(keySeq);
+            write(keyCode + "\n");
+        } else keySeq = KeyMap.translate(keyCode);
+        if (keyCode.equals("")) return keyCode;
+        reader.getKeyMaps().get(LineReader.EMACS).unbind(keySeq);
+        reader.getKeyMaps().get(LineReader.EMACS).bind(new Reference(keyEvent), keySeq);
+        return keyCode;
     }
 
     class EventReader implements Runnable {
@@ -157,19 +372,64 @@ public class Console extends ConsoleReader {
 
         public void run() {
             try {
-                int ch = in.peek(-1);
-                if (ch < 1) return;
+                int ch = in.peek(1L);
+                if (ch < -1) return;
                 for (int i = 0; i < keys.length; i++) {
                     if (ch != keys[i] && keys[i] != '*') continue;
-                    in.read(-1);
+                    in.read(1L);
                     event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, Character.toChars(ch).toString()));
                     return;
                 }
-                if (ch > 32) setEvents(null, null);
-                else in.read(-1);
+                setEvents(null, null);
             } catch (Exception e) {
                 //Loader.getRootCause(e).printStackTrace();
             }
+        }
+    }
+
+    interface ParserCallback {
+        Object[] call(Object... e);
+    }
+
+    class Parser extends DefaultParser {
+        String secondPrompt = "    ";
+        final org.jline.reader.EOFError err = new org.jline.reader.EOFError(-1, -1, "Request new line", "");
+        boolean isMulti = false;
+        Pattern p = Pattern.compile("(\r?\n|\r)");
+
+        public Parser() {
+            super();
+            super.setEofOnEscapedNewLine(true);
+            reader.setVariable(SECONDARY_PROMPT_PATTERN, secondPrompt);
+            reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
+        }
+
+        public ParsedLine parse(String line, int cursor, ParseContext context) {
+            if (!isPrompt) return null;
+            if (context == ParseContext.COMPLETE) return super.parse(line, cursor, context);
+            if (context != ParseContext.ACCEPT_LINE) return null;
+            String[] lines = null;
+
+            if (parserCallback == null) {
+                lua.load("return {call=env.parse_line}", "proxy");
+                lua.call(0, 1);
+                parserCallback = lua.getProxy(-1, Console.ParserCallback.class);
+                lua.pop(1);
+            }
+
+            if (lines == null) lines = p.split(line);
+            Object[] result = parserCallback.call(line);
+            if ((Boolean) result[0]) {
+                if (result.length > 1 && !secondPrompt.equals(result[1])) {
+                    secondPrompt = (String) result[1];
+                    reader.setVariable(SECONDARY_PROMPT_PATTERN, secondPrompt);
+                }
+                isMulti = true;
+                throw err;
+            }
+            reader.setVariable(DISABLE_HISTORY, lines.length > Math.min(25, terminal.getHeight() - 5));
+            isMulti = false;
+            return null;
         }
     }
 }

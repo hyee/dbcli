@@ -25,7 +25,6 @@ import java.util.List;
  *
  * @author Brett Wooldridge
  */
-public interface NuProcessFactory
-{
-   NuProcess createProcess(List<String> commands, String[] env, NuProcessHandler processListener, Path cwd);
+public interface NuProcessFactory {
+    NuProcess createProcess(List<String> commands, String[] env, NuProcessHandler processListener, Path cwd);
 }

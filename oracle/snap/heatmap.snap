@@ -1,0 +1,18 @@
+/*[[Generate delta values based on gv$event_histogram. Usage: @@NAME [options] <event1[,...]> [inst_id|"<other command>"] ]]*/
+{
+    sql=[[
+        WITH e AS
+         (SELECT /*+no_merge*/inst_id,event
+          FROM   (SELECT lower(regexp_replace(regexp_replace(NAME, '([A-Za-z])[^ ]+ *', '\1'), '[^A-Za-z]+')) n1, LOWER(NAME) n2, inst_id,NAME event 
+                  FROM gv$event_name 
+                  WHERE (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0'))
+          WHERE  INSTR(',' || LOWER(:V1) || ',', ',' || n1 || ',') > 0
+          OR     INSTR(',' || LOWER(:V1) || ',', ',' || n2 || ',') > 0)
+        SELECT INST_ID,EVENT,WAIT_TIME_MILLI,WAIT_COUNT FROM gv$event_histogram natural join e
+        order by 1,2,3
+    ]],
+    agg_cols="WAIT_COUNT",
+    grp_cols="INST_ID,EVENT,WAIT_TIME_MILLI",
+    include_zero=true,
+    sort="1,2,3"
+}

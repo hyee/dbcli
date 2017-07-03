@@ -1,0 +1,1 @@
+set linesize 1000 pagesize 100

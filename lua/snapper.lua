@@ -6,7 +6,22 @@ function snapper:ctor()
     self.command="snap"
     self.ext_name='snap'
     self.help_title='Calculate a period of db/session performance/waits. '
-    self.usage='<name1>[,<name2>...] <interval>|BEGIN|END [args]'
+    self.usage=[[<name1>[,<name2>...] { {<seconds>|BEGIN|END} [args] | [args] "<command to be snapped>"}
+        1. calc the delta stats within a specific seconds: @@NAME <name1>[,<name2>...] $PROMPTCOLOR$<seconds>$NOR$ [args]
+        2. calc the delta stats for a specific series of commands:
+           1) @@NAME <name1>[,<name2>...] $PROMPTCOLOR$BEGIN$NOR$ [args]
+           2) <run other commands>
+           3) @@NAME <name1>[,<name2>...] $PROMPTCOLOR$END$NOR$
+        3. calc the delta stats for a specific command: @@NAME <name1>[,<name2>...] [args] "<command to be snapped>"
+        4. calc the delta stats for a specific series of commands:
+           @@NAME <name1>[,<name2>...] [args] $PROMPTCOLOR$<<EOF$NOR$
+               <run other commands>
+           $HIY$EOF$NOR$
+    Of which:
+        $HEADCOLOR$<name1>[,<name2>...]$NOR$ is the snap commands listed below
+        $HEADCOLOR$args$NOR$ is the parameter that required for the specific script
+        $HEADCOLOR$EOF$NOR$ is the unix EOF style, the keyword is not limited to just 'EOF'
+    ]]
 end
 
 function snapper:parse(name,txt,args,file)
@@ -29,7 +44,6 @@ function snapper:parse(name,txt,args,file)
     cmd.tops=tonumber(cmd.tops) or 1
     cmd.agg_cols=','..(cmd.agg_cols and cmd.agg_cols:upper() or '')..','
     cmd.name=name
-
     return cmd,args
 end
 
@@ -57,19 +71,17 @@ function snapper:run_sql(sql,main_args,cmds,files)
     
     local interval=main_args[1].V1
     local snap_cmd
-
     if interval~="END" then
         for i=20,1,-1 do
             local pos="V"..i
             local str=main_args[1][pos]
             if str and str ~= db_core.NOT_ASSIGNED then
-                if str:find("%s") then
-                    for k,v in pairs(main_args) do
-                        main_args[k].V1="END"
-                        if v[pos]==str then v[pos]=db_core.NOT_ASSIGNED end
+                if str:trim():find("%s") then
+                    local command=env.parse_args(2,str)
+                    if command and command[1] and env._CMDS[command[1]:upper()] then
+                        snap_cmd=str 
+                        interval="BEGIN"
                     end
-                    snap_cmd=str 
-                    interval="BEGIN"
                 end
                 break
             end
@@ -77,10 +89,25 @@ function snapper:run_sql(sql,main_args,cmds,files)
     end
 
     local args={}
+
     for k,v in pairs(main_args) do
         if type(v)=="table" then
+            local idx=0;
             args[k]={}
-            for x,y in pairs(v) do args[k][x]=y end
+            for i=1,20 do
+                local x="V"..i
+                local y=tostring(v[x]):upper()
+                if not (v[x]==snap_cmd or i==1 and (tonumber(y) or y=="END" or y=="BEGIN"))
+                then
+                    idx=idx+1
+                    args[k]["V"..idx]=v[x]
+                end
+            end
+            for x,y in pairs(v) do
+                if not tostring(x):find('^V%d+$') then
+                    args[k][x]=y
+                end 
+            end
         else
             args[k]=v
         end
@@ -106,30 +133,24 @@ function snapper:run_sql(sql,main_args,cmds,files)
     env.set.set("feed","off")
     self:trigger('before_exec_action')
     local clock=os.clock()
-    
     for idx,text in ipairs(sql) do
-        for i=1,20 do
-            args[idx]['V'..i]=args[idx]['V'..(i+1)]
-        end
-
         local cmd,arg=self:parse(cmds[idx],sql[idx],args[idx],files[idx])
         self.cmds[cmds[idx]],self.args[cmds[idx]]=cmd,arg
+        arg.snap_cmd=snap_cmd or ''
         if cmd.before_sql then
             env.eval_line(cmd.before_sql,true,true) 
         end
         local rs=db:exec(cmd.sql,arg)
         if type(rs)=="userdata" then
             cmd.rs2=self.db.resultset:rows(rs,-1)
-            --grid.print(cmd.rs2)
         end
     end
     db:commit()
-
-    if not begin_flag then
-        sleep(interval+clock-os.clock()-0.1)
-        self:next_exec()
-    elseif snap_cmd then
+    if snap_cmd then
         env.eval_line(snap_cmd,true,true)
+        self:next_exec()
+    elseif not begin_flag then
+        sleep(interval+clock-os.clock()-0.1)
         self:next_exec()
     end
 end
@@ -144,7 +165,6 @@ function snapper:next_exec()
         local rs=db:exec(cmd.sql,args[name])
         if cmd.rs2 and type(rs)=="userdata" then
             cmd.rs1=self.db.resultset:rows(rs,-1)
-            --grid.print(cmd.rs1)
         end
         if cmd.after_sql then
             env.eval_line(cmd.after_sql,true,true) 
@@ -221,7 +241,7 @@ function snapper:next_exec()
                         sum=(sum==1 or data[k]>0) and 1 or 0
                     end
                 end
-                result[index]['_non_zero_']=sum>0
+                result[index]['_non_zero_']=sum>0 or cmd.include_zero
             end
 
             for _,row in ipairs(cmd.rs2) do
@@ -238,7 +258,7 @@ function snapper:next_exec()
                             sum=(sum==1 or d>0) and 1 or 0
                         end
                     end
-                    result[index]['_non_zero_']=sum>0
+                    result[index]['_non_zero_']=sum>0 or cmd.include_zero
                 end
             end
 
@@ -257,7 +277,7 @@ function snapper:next_exec()
                     idx=idx..(-i)..','
                     if cmd.set_ratio~='off' then cmd.grid:add_calc_ratio(i) end
                 end
-                cmd.grid:sort(idx,true)
+                cmd.grid:sort(cmd.sort or idx,true)
             end
             local title=("\n["..(self.command..'#'..name):upper().."]: From "..start_time.." to "..end_time..":\n"):format(name)
             print(title..string.rep("=",title:len()-2))
