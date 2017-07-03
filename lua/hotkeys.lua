@@ -18,12 +18,15 @@ end
 
 function hotkeys.call(event,_,x)
     local maps=console:getKeyMap("-L");
-    local keys={}
+    local keys,keys1={},{}
     local matched=false
     for key,desc in maps:gmatch('("[^\n\r]+") +([^\n\r]+)[\n\r]') do
         if desc==event then matched=true end
         keys[key]=desc
+        if key:find('^',1,true) then keys1[#keys1+1]={key,desc} end
     end
+    table.sort(keys1,function(a,b) return a[2]<b[2] end)
+
     if event then
         env.checkerr(matched,"No such event: "..event)
         console:setKeyCode(event,nil)
@@ -32,8 +35,9 @@ function hotkeys.call(event,_,x)
     local hdl=env.grid.new()
     hdl:add{"Key","*","Description",'|',"Key","*","Description"}
     local row
-    for key,desc in pairs(keys) do
-        key=key:gsub('"(.-)"',' $HEADCOLOR$%1$NOR$ ')
+    for _,keys in ipairs(keys1) do
+        local key,desc=table.unpack(keys)
+        key=key:gsub('"(.-)"',function(s) return ' $HEADCOLOR$'..(console:translateKey(s))..'$NOR$ ' end)
         if not row then 
             row={key,' ',desc} 
         else

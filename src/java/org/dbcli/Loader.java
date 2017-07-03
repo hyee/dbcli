@@ -89,9 +89,9 @@ public class Loader {
                 return new LuaState();
             }
         }, 0, TimeUnit.MILLISECONDS);
-        console=t1.get();
-        lua=t2.get();
-        console.threadID=Thread.currentThread().getId();
+        console = t1.get();
+        lua = t2.get();
+        console.threadID = Thread.currentThread().getId();
     }
 
     public static Exception getRootCause(Exception e) {
@@ -101,7 +101,7 @@ public class Loader {
     }
 
     public static void loadLua(Loader loader, String args[]) throws Exception {
-        if(lua==null) lua = new LuaState();
+        if (lua == null) lua = new LuaState();
         lua.pushGlobal("loader", loader);
         console.setLua(lua);
         if (console.writer != null) {

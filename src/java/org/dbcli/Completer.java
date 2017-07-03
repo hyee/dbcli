@@ -41,7 +41,7 @@ public class Completer implements org.jline.reader.Completer {
                 ++counter;
             }
             if (counter >= 100) {
-                list.add(new Candidate(words[words.length - 1].trim()+"|..."));
+                list.add(new Candidate(words[words.length - 1].trim() + "|..."));
                 break;
             }
         }

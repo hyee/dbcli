@@ -75,7 +75,7 @@ public class Highlighter extends DefaultHighlighter {
         setAnsi("\033[0m");
     }
 
-    Pattern p = Pattern.compile("(\\S+)(.*)");
+    Pattern p = Pattern.compile("([^\\s\\|]+)(.*)");
 
     public AttributedString highlight(LineReader reader, String buffer) {
         AttributedStringBuilder sb = new AttributedStringBuilder();

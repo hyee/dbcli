@@ -16,9 +16,9 @@ import org.jline.reader.impl.LineReaderImpl;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 import org.jline.terminal.impl.AbstractWindowsTerminal;
+import org.jline.utils.Curses;
 import org.jline.utils.NonBlockingReader;
 
-import javax.swing.text.Keymap;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
@@ -28,6 +28,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.jline.reader.LineReader.DISABLE_HISTORY;
@@ -41,13 +42,91 @@ public class Console {
     LineReaderImpl reader;
     public static ClassAccess<LineReaderImpl> accessor = ClassAccess.access(LineReaderImpl.class);
     public final static Pattern ansiPattern = Pattern.compile("^\33\\[[\\d\\;]*[mK]$");
+    public static HashMap<String, String> keyEvents = new HashMap<>();
 
     static {
         try {
             terminal = (AbstractWindowsTerminal) TerminalBuilder.builder().system(true).nativeSignals(true).signalHandler(Terminal.SignalHandler.SIG_IGN).exec(true).jna(true).build();
+            keyEvents.put("\u0008", "BACKSPACE");
+            keyEvents.put("^[^H", "ALT-BACKSPACE");
+            keyEvents.put("\u0009", "TAB");
+            //keyEvents.put("^[","ESC");
+            keyEvents.put("^[[2~", "INSERT");
+            keyEvents.put("^[[3~", "DEL");
+            keyEvents.put("^[[5~", "PGUP");
+            keyEvents.put("^[[6~", "PGON");
+            keyEvents.put("^[[H", "HOME");
+            keyEvents.put("^[[1;%dH", "HOME");
+            keyEvents.put("^[[4~", "END");
+            keyEvents.put("^[[1;%dF", "END");
+
+            keyEvents.put("^[OP", "F1");
+            keyEvents.put("^[[1;%dP", "F1");
+            keyEvents.put("^[OQ", "F2");
+            keyEvents.put("^[[1;%dQ", "F1");
+            keyEvents.put("^[OR", "F3");
+            keyEvents.put("^[[1;%dR", "F1");
+            keyEvents.put("^[OS", "F4");
+            keyEvents.put("^[[1;%dS", "F1");
+            keyEvents.put("^[[15~", "F5");
+            keyEvents.put("^[[15;%d~", "F5");
+            keyEvents.put("^[[17~", "F6");
+            keyEvents.put("^[[17;%d~", "F6");
+            keyEvents.put("^[[18~", "F7");
+            keyEvents.put("^[[18;%d~", "F7");
+            keyEvents.put("^[[19~", "F8");
+            keyEvents.put("^[[19;%d~", "F8");
+            keyEvents.put("^[[20~", "F9");
+            keyEvents.put("^[[20;%d~", "F9");
+            keyEvents.put("^[[21~", "F10");
+            keyEvents.put("^[[21;%d~", "F10");
+            keyEvents.put("^[[23~", "F11");
+            keyEvents.put("^[[23;%d~", "F11");
+            keyEvents.put("^[[24~", "F12");
+            keyEvents.put("^[[24;%d~", "F12");
+
+            keyEvents.put("^[[D", "LEFT");
+            keyEvents.put("^[[1;%dD", "LEFT");
+            keyEvents.put("^[OD", "CTRL-LEFT");
+            keyEvents.put("^[[C", "RIGHT");
+            keyEvents.put("^[[1;%dC", "RIGHT");
+            keyEvents.put("^[OC", "CTRL-RIGHT");
+            keyEvents.put("^[[A", "UP");
+            keyEvents.put("^[[1;%dA", "UP");
+            keyEvents.put("^[OA", "CTRL-UP");
+            keyEvents.put("^[[B", "DOWN");
+            keyEvents.put("^[[1;%dB", "DOWN");
+            keyEvents.put("^[OB", "CTRL-DOWN");
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    static String translateKey(String key) {
+        String org = key;
+        for (Map.Entry<String, String> e : keyEvents.entrySet()) {
+            String k = e.getKey().replaceAll("\\[", "\\\\[").replaceAll("\\^", "\\\\^");
+            if (k.indexOf("%d") > 0) {
+                String k1 = k.replaceAll("%d", "(\\\\d)");
+                Pattern p = Pattern.compile(k1);
+                Matcher m = p.matcher(key);
+                if (m.find()) {
+                    int c = Integer.valueOf(m.group(1)) - 1;
+                    StringBuilder sb = new StringBuilder();
+                    sb.append(" + ");
+                    if ((c & 4) > 0) sb.append("CTRL-");
+                    if ((c & 2) > 0) sb.append("ALT-");
+                    if ((c & 1) > 0) sb.append("SHIFT-");
+                    sb.append(e.getValue());
+                    sb.append(" + ");
+                    key = key.replaceAll(String.format(k, c + 1), sb.toString());
+                }
+            } else {
+                key = key.replace(e.getKey(), " + " + e.getValue() + " + ");
+            }
+        }
+        key = key.replaceAll("\\^\\[\\^", " + CTRL-ALT-").replaceAll("\\^\\[[ \\+]*(.)", " + ALT-$1").replaceAll("\\^[ \\+]*(.)", " + CTRL-$1").replaceAll("(^ \\+ | \\+ $)", "");
+        return key;//+" ("+org+") ";
     }
 
     protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(5);
@@ -130,8 +209,8 @@ public class Console {
         reader.getKeyMaps().get(LineReader.EMACS).unbind("\t");
         reader.getKeyMaps().get(LineReader.EMACS).bind(new Reference(LineReader.EXPAND_OR_COMPLETE), "\t\t");
         */
-        setKeyCode("redo","^Y");
-        setKeyCode("undo","^Z");
+        setKeyCode("redo", "^Y");
+        setKeyCode("undo", "^Z");
 
 
         in = terminal.reader();
@@ -202,7 +281,8 @@ public class Console {
         }
     }
 
-    boolean isPrompt=true;
+    boolean isPrompt = true;
+
     public String readLine(String prompt, String buffer) {
         try {
             if (isRunning()) setEvents(null, null);
@@ -265,26 +345,25 @@ public class Console {
         return stream.toString();
     }
 
-    public String setKeyCode(String keyEvent,String keyCode) {
+    public String setKeyCode(String keyEvent, String keyCode) {
         String keySeq;
-        if(keyCode==null) {
+        if (keyCode == null) {
             write("Input key code for '" + keyEvent + "'(hit Enter to complete): ");
-            BindingReader binder = accessor.get(reader, "bindingReader");
             int c;
             StringBuilder sb = new StringBuilder();
             while (true) {
-                c = binder.readCharacter();
+                c = reader.readCharacter();
                 if (c == 10 || c == 13) break;
                 String buff = new String(Character.toChars(c));
                 sb.append(buff);
             }
-            keySeq=sb.toString();
-            keyCode=KeyMap.display(keySeq);
-            write(keyCode+"\n");
-        } else keySeq=KeyMap.translate(keyCode);
-        if(keyCode.equals("")) return keyCode;
+            keySeq = sb.toString();
+            keyCode = KeyMap.display(keySeq);
+            write(keyCode + "\n");
+        } else keySeq = KeyMap.translate(keyCode);
+        if (keyCode.equals("")) return keyCode;
         reader.getKeyMaps().get(LineReader.EMACS).unbind(keySeq);
-        reader.getKeyMaps().get(LineReader.EMACS).bind(new Reference(keyEvent),keySeq);
+        reader.getKeyMaps().get(LineReader.EMACS).bind(new Reference(keyEvent), keySeq);
         return keyCode;
     }
 

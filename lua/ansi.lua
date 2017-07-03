@@ -135,6 +135,7 @@ local color=setmetatable({},{__index=function(self,k) return rawget(self,k:upper
 function ansi.cfg(name,value,module,description)
     if not cfg then cfg={} end
     if not name then return cfg end
+    name=name:upper()
     if not cfg[name] then cfg[name]={} end
     if not value then return cfg[name][1] end
     cfg[name][1]=value
@@ -156,6 +157,7 @@ function ansi.string_color(code,...)
 end
 
 function ansi.mask(codes,msg,continue)
+    if codes==nil then return msg end
     local str
     for v in codes:gmatch("([^; \t,]+)") do
         v=v:upper()
@@ -201,7 +203,12 @@ function ansi.clear_sceen()
 end
 
 function ansi.define_color(name,value,module,description)
-    if not value or not enabled then return end
+    if not value or not enabled then
+        if description then
+            ansi.cfg(name,value,module,description)
+        end
+        return 
+    end
     name,value=name:upper(),value:upper()
     value=value:gsub("%$(%u+)%$",'%1')
     env.checkerr(not color[name],"Cannot define color ["..name.."] as a name!")
@@ -270,7 +277,9 @@ ansi.pattern="\27%[[%d;]*[mK]"
 
 function ansi.strip_ansi(str)
     if not enabled then return str end
-    return str:gsub(ansi.pattern,""):gsub(ansi.escape,"")
+    return str:gsub(ansi.pattern,""):gsub(ansi.escape,""):gsub("%$(.-)%$",function(s)
+            return (ansi.cfg(s) or color[s]) and '' or "$"..s.."$"
+        end)
 end
 
 function string.strip_ansi(str)
@@ -288,7 +297,6 @@ end
 function ansi.convert_ansi(str)
     return str and str:gsub("%$((%u+)([, ]?)(%d*)([, ]?)(%d*))%$",
         function(all,code,x,pos1,x,pos2) 
-            if pos1~="" then return ansi.string_color(code,pos1,pos2) or '$'..all..'$' end
             return ansi.mask(code,nil,true) or '$'..all..'$'
         end):gsub(ansi.escape,"\27%1")
 end
@@ -298,7 +306,7 @@ function string.convert_ansi(str)
 end
 
 function ansi.test_text(str)
-    if not isAnsiSupported then return print("Ansi color is not supported!") end
+    if not isAnsiSupported then return print("Ansi color support is disabled!") end
     if not str or str=="" then
         local rows=env.grid.new()
 
