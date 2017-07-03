@@ -19,26 +19,36 @@ function extvars.on_before_db_exec(item)
     return item
 end
 
-local fmt='%s(select /*+merge*/ * from %s where %s=%d :others:)%s'
-local instance,container
+local fmt='%s(select /*+merge*/ * from %s where %s=%s :others:)%s'
+local instance,container,usr
 local function rep_instance(prefix,full,obj,suffix)
     obj=obj:upper()
     local flag,str=0
     if instance>0 and extvars.dict[obj] and extvars.dict[obj].inst_col then
-        str=fmt:format(prefix,full,extvars.dict[obj].inst_col,instance,suffix)
+        str=fmt:format(prefix,full,extvars.dict[obj].inst_col,''..instance,suffix)
         flag=flag+1
     end
     if container>0 and extvars.dict[obj] and extvars.dict[obj].cdb_col then
         if flag==0 then
-            str=fmt:format(prefix,full,extvars.dict[obj].cdb_col,container,suffix)
+            str=fmt:format(prefix,full,extvars.dict[obj].cdb_col,''..container,suffix)
         else
-            str=str:gsub(':others:','and '..extvars.dict[obj].cdb_col..'='..container)
+            str=str:gsub(':others:','and '..extvars.dict[obj].cdb_col..'='..container..' :others:')
         end
         flag=flag+2
     end
+
+    if usr and usr~="" and extvars.dict[obj] and extvars.dict[obj].usr_col then
+        if flag==0 then
+            str=fmt:format(prefix,full,extvars.dict[obj].usr_col,"'"..usr.."'",suffix)
+        else
+            str=str:gsub(':others:','and '..extvars.dict[obj].usr_col.."='"..usr.."'")
+        end
+        flag=flag+4
+    end
+
     if flag==0 then
         str=prefix..full..suffix
-    elseif flag<3 then 
+    elseif flag<7 then
         str=str:gsub(' :others:','') 
     end
     env.log_debug('extvars',str)
@@ -46,12 +56,12 @@ local function rep_instance(prefix,full,obj,suffix)
 end
 
 function extvars.on_before_parse(item)
+    if not extvars.dict then return item end
     local db,sql,args,params=table.unpack(item)
-    instance,container=tonumber(cfg.get("instance")),tonumber(cfg.get("container"))
+    instance,container,usr=tonumber(cfg.get("instance")),tonumber(cfg.get("container")),cfg.get("schema")
     if instance==0 then instance=tonumber(db.props.instance) end
     if container==0 then container=tonumber(db.props.container_id) end
-    if instance>0 or container>0 then
-        if not extvars.dict then extvars.dict=env.load_data(datapath) end
+    if instance>0 or container>0 or (usr and usr~="") then
         item[2]=re.gsub(sql..' ',extvars.P,rep_instance):sub(1,-2)
     end
     return item
@@ -61,6 +71,7 @@ function extvars.set_title(name,value,orig)
     local get=env.set.get
     local title=table.concat({tonumber(get("INSTANCE"))>-1   and "Inst="..get("INSTANCE") or "",
                               tonumber(get("CONTAINER"))>-1   and "Con_id="..get("CONTAINER") or "",
+                              get("SCHEMA")~=""   and "Schema="..get("SCHEMA") or "",
                               get("STARTTIME")~='' and "Start="..get("STARTTIME") or "",
                               get("ENDTIME")~=''   and "End="..get("ENDTIME") or ""},"  ")
     title=title:trim()
@@ -77,32 +88,69 @@ function extvars.set_instance(name,value)
     if tonumber(value)==-2 then
         local dict={}
         local rs=db:internal_call([[
-            SELECT table_name,
-                   MAX(CASE WHEN COLUMN_NAME IN ('INST_ID', 'INSTANCE_NUMBER') THEN COLUMN_NAME END) INST_COL,
-                   MAX(CASE WHEN COLUMN_NAME IN ('CON_ID') THEN COLUMN_NAME END) CON_COL
-            FROM   (SELECT table_name, column_name
+            with r as(
+                    SELECT /*+no_merge*/ owner,table_name, column_name col,data_type
                     FROM   dba_tab_cols, dba_users
                     WHERE  user_id IN (SELECT SCHEMA# FROM sys.registry$ UNION ALL SELECT SCHEMA# FROM sys.registry$schemas)
                     AND    username = owner
-                    AND    column_name IN ('INST_ID', 'INSTANCE_NUMBER', 'CON_ID')
+                    AND    (owner,table_name) in(select distinct owner,TABLE_NAME from dba_tab_privs where grantee in('PUBLIC','SELECT_CATALOG_ROLE'))  
                     UNION ALL
-                    SELECT t.kqftanam, c.kqfconam
-                    FROM   x$kqfta t, x$kqfco c
-                    WHERE  c.kqfconam IN ('INST_ID', 'INSTANCE_NUMBER', 'CON_ID')
-                    AND    c.kqfcotab = t.indx
+                    SELECT 'SYS',t.kqftanam, c.kqfconam, decode(kqfcodty,1,'VARCHAR2',2,'NUMBER',null)
+                    FROM   (SELECT kqftanam,t.indx,t.inst_id FROM x$kqfta t
+                            UNION ALL
+                            SELECT KQFDTEQU,t.indx,t.inst_id FROM x$kqfta t,x$kqfdt where kqftanam=KQFDTNAM) t, x$kqfco c
+                    WHERE  c.kqfcotab = t.indx
                     AND    c.inst_id = t.inst_id)
+            SELECT table_name,
+                   MAX(CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') THEN col
+                            WHEN DATA_TYPE='NUMBER' AND col like '%INSTANCE%' THEN col END)
+                       KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') THEN 1 ELSE 2 END) INST_COL,
+                   MAX(CASE WHEN col IN ('CON_ID') THEN col END) CON_COL,
+                   MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND regexp_like(col,'(OWNER|SCHEMA|KGLOBTS4|USER.*NAME)') THEN col END)
+                       KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN col LIKE '%OWNER' THEN 1 ELSE 2 END) USR_COL,
+                   MAX(owner)
+            FROM   (select * from r
+                    union  all
+                    select s.owner,s.synonym_name,r.col ,r.data_type 
+                    from   dba_synonyms s,r 
+                    where  r.table_name=s.table_name 
+                    and    r.owner=s.table_owner
+                    and    s.synonym_name!=s.table_name
+                    union  all
+                    select owner,object_name,null,object_type
+                    from   dba_objects
+                    where  owner='SYS' 
+                    and    regexp_like(object_name,'^(DBMS_|UTL_)')
+                    and    instr(object_type,' ')=0
+                    union  all
+                    select owner,table_name,null,type 
+                    from   dba_tab_privs 
+                    where  grantee in('EXECUTE_CATALOG_ROLE','SELECT_CATALOG_ROLE'))
             GROUP  BY TABLE_NAME]])
         local rows=db.resultset:rows(rs,-1)
-        for i=2,#rows do
-            dict[rows[i][1]]={inst_col=(rows[i][2]~="" and rows[i][2] or nil),cdb_col=(rows[i][3]~="" and rows[i][3] or nil)}
+        local cnt1=#rows
+        for i=2,cnt1 do
+            dict[rows[i][1]]={
+                inst_col=(rows[i][2]~="" and rows[i][2] or nil),
+                cdb_col=(rows[i][3]~="" and rows[i][3] or nil),
+                usr_col=(rows[i][4]~="" and rows[i][4] or nil),
+                owner=rows[i][5]
+            }
             local prefix,suffix=rows[i][1]:match('(.-$)(.*)')
             if prefix=='GV_$' or prefix=='V_$' then
                 dict[prefix:gsub('_','')..suffix]=dict[rows[i][1]]
             end
         end
-        env.save_data(datapath,dict)
+        local keywords={}
+        rs=db:internal_call("select KEYWORD from V$RESERVED_WORDS where length(KEYWORD)>3")
+        rows=db.resultset:rows(rs,-1)
+        local cnt2=#rows
+        for i=2,cnt2 do
+            keywords[rows[i][1]]=1
+        end
+        env.save_data(datapath,{dict=dict,keywords=keywords})
         extvars.dict=dict
-        print((#rows-1)..' records saved into '..datapath)
+        print((cnt1+cnt2-2)..' records saved into '..datapath)
     end
     return tonumber(value)
 end
@@ -112,11 +160,16 @@ function extvars.set_container(name,value)
     return tonumber(value)
 end
 
+function extvars.set_schema(name,value)
+    return value:upper()
+end
+
 function extvars.onload()
     event.snoop('BEFORE_DB_EXEC',extvars.on_before_parse,nil,50)
     event.snoop('BEFORE_ORACLE_EXEC',extvars.on_before_db_exec)
     event.snoop('ON_SETTING_CHANGED',extvars.set_title)
     cfg.init("instance",-1,extvars.set_instance,"oracle","Auto-limit the inst_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-2 - 99")
+    cfg.init("schema","",extvars.set_schema,"oracle","Auto-limit the schema of impacted tables. ","*")
     cfg.init({"container","con","con_id"},-1,extvars.set_container,"oracle","Auto-limit the con_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-1 - 99")
     cfg.init("starttime","",extvars.check_time,"oracle","Specify the start time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
     cfg.init("endtime","",extvars.check_time,"oracle","Specify the end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
@@ -128,8 +181,16 @@ function extvars.onload()
         obj     <- full/name
         full    <- '"' name '"'
         name    <- {prefix %a%a [%w$#__]+}
-        prefix  <- "GV_$"/"GV$"/"V_$"/"V$"/"DBA_"/"ALL_"/"CDB_"
+        prefix  <- "GV_$"/"GV$"/"V_$"/"V$"/"DBA_"/"ALL_"/"CDB_"/"X$"/"XV$"
     ]],nil,true)
+    env.load_data(datapath,true,function(data)
+        extvars.dict=data.dict
+        --env.write_cache("1.txt",table.dump(data))
+        if data.keywords then
+            for k,v in pairs(data.dict) do data.keywords[v.owner..'.'..k]=1 end
+            console:setKeywords(data.keywords) 
+        end
+    end)
 end
 
 db.lz_compress=[[

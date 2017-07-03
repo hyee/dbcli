@@ -12,7 +12,6 @@ import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.CyclicBarrier;
 import java.util.regex.Pattern;
 
 public class SubSystem {
@@ -44,7 +43,7 @@ public class SubSystem {
             //Respond to the ctrl+c event
             Interrupter.listen(this, new EventCallback() {
                 @Override
-                public void interrupt(Object... o) {
+                public void call(Object... o) {
                     isBreak = true;
                 }
             });
@@ -102,7 +101,7 @@ public class SubSystem {
                 while (ch > 0) {
                     if (!(ch == 10 && prev == 13) && !(ch == 13 && prev == 10)) {
                         prev = ch;
-                        if (ch == 13) ch = 10; //Convert '\r' as '\n'
+                        //if (ch == 13) ch = 10; //Convert '\r' as '\n'
                         buff.append((char) ch);
                         --wait;
                     }
@@ -120,19 +119,20 @@ public class SubSystem {
     }
 
     //return null means the process is terminated
-    CountDownLatch lock=new CountDownLatch(1);
-    public String execute(String command, Boolean isPrint,Boolean isBlockInput) throws Exception {
+    CountDownLatch lock = new CountDownLatch(1);
+
+    public String execute(String command, Boolean isPrint, Boolean isBlockInput) throws Exception {
         try {
             this.isPrint = isPrint;
             this.lastPrompt = null;
             isWaiting = true;
             isBreak = false;
-            if(isBlockInput) lock=new CountDownLatch(1);
+            if (isBlockInput) lock = new CountDownLatch(1);
             if (command != null) {
                 lastLine = null;
                 write((command.replaceAll("[\r\n]+$", "") + "\n").getBytes());
             }
-            if(!isBlockInput)
+            if (!isBlockInput)
                 waitCompletion();
             else lock.await();
             if (this.prevPrompt == null) this.prevPrompt = this.lastPrompt;
@@ -146,7 +146,7 @@ public class SubSystem {
     }
 
     public String execute(String command, Boolean isPrint) throws Exception {
-        return execute(command,isPrint,false);
+        return execute(command, isPrint, false);
     }
 
     public String getLastLine(String command) throws Exception {

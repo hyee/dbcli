@@ -43,7 +43,7 @@ function uv.async_read(path, maxsize, callback,...)
         return callback(table.unpack(args))
     end
 
-    if maxsize<=0 then
+    if (maxsize or 0)<=0 then
         maxsize=1024*1024*1024
     end
     u.fs_open(path, "r", 438 --[[ 0666 ]], function (err, result)

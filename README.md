@@ -178,7 +178,7 @@ The utility depends on some binary files of open-source projects, the authors ow
 The binaries have been included into this project.
 Below is the list:
 
-    JLine2      : (BSD)    https://github.com/jline/jline2
+    JLine3      : (BSD)    https://github.com/jline/jline3
     JSch        : (BSD)    http://www.jcraft.com/jsch/
     ConsoleZ    : (GNU)    https://github.com/cbucher/console
     luajit v2.1 : (MIT)    https://github.com/LuaJIT/LuaJIT
@@ -195,14 +195,6 @@ Below is the list:
     ANSICON     : (ZLIB)   https://github.com/adoxa/ansicon (Optional)
 
 Besides, some SQL scripts come from internet.
-
-About ANSI Color Escapes
-------------------------------------
-`Win10` command window has natively supported the `xterm` ANSI escapes.
-
-For lower Windows versions, `ANSICON` supports more ANSI escapes features than JLine, especially when running bash commands(i.e.: top) via SSH.
-
-`ANSICON` defaults to be excluded from the release, if you like to try the feature, download from the `ansicon` branch and override the local `lib` directory.
 
 Customize Commands
 ------------------------------------

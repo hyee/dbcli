@@ -351,10 +351,15 @@ end
 function scripter:get_script(cmd,args,print_args)
     if not self.cmdlist or cmd=="-r" or cmd=="-R" then
         self.cmdlist=self:rehash(self.script_dir,self.ext_name,self.extend_dirs)
-        local keys={}
-        for k,_ in pairs(self.cmdlist) do
-            keys[#keys+1]=k
+        local list,keys={},{}
+        for _,cmd in pairs(type(self.command)=="table" and self.command or {self.command}) do
+            list[cmd],env.root_cmds[cmd]=keys,keys
         end
+
+        for k,v in pairs(self.cmdlist) do
+            keys[k]=type(v)=="table" and v.desc or nil
+        end
+        if env.IS_ENV_LOADED then console:setSubCommands(list) end
     end
 
     if not cmd or cmd:match('^%s*$') then
@@ -411,7 +416,7 @@ function scripter:get_script(cmd,args,print_args)
     env.checkerr(f,"Cannot find this script!")
     local sql=f:read(10485760)
     f:close()
-    if is_get then return rawprint(sql) end
+    if is_get then return print(sql) end
     args=self:parse_args(sql,args,print_args)
     return sql,args,print_args,file,cmd
 end
@@ -522,6 +527,8 @@ function scripter:__onload()
                         }
     end
     env.event.snoop("ON_SEARCH",function(dir) dir[#dir+1]=self.extend_dirs end)
+    --env.uv.thread.new(function(o) if not o.cmdlist then o:run_script("-r") end end,self)
+    if not self.cmdlist then self:run_script("-r") end
 end
 
 return scripter

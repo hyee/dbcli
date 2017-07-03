@@ -163,7 +163,7 @@ public class JavaAgent implements ClassFileTransformer {
             }
         } else classFileBuffer = bytes;
         if (classFileBuffer != null) {
-            System.out.println("Folder: " + jar + "     Class: " + className);
+            if (!jar.equals("temp")) System.out.println("Folder: " + jar + "     Class: " + className);
             FileOutputStream destStream = new FileOutputStream(destFile);
             destStream.write(classFileBuffer, 0, classFileBuffer.length);
             destStream.close();

@@ -1,7 +1,7 @@
 @echo off
 REM Use ConsoleZ as the terminal
 Setlocal EnableDelayedExpansion EnableExtensions
-cd /d "%~dp0\bin\consoleZ"
+cd /d "%~dp0"
 if exist user.xml (set pref=user.xml) else  (set pref=console.xml)
 
 ver|findstr -r " [1-5]\.[0-9]*\.[0-9]" > nul&&(

@@ -1,4 +1,4 @@
-/*[[Generate delta values based on gv$segstat,gv$sql_plan. Usage: @@NAME <sql_id>
+/*[[Generate delta values based on gv$segstat,gv$sql_plan. Usage: @@NAME [options] <sql_id>
    --[[
       &V1: df={1}
    --]]
@@ -11,8 +11,8 @@
         WHERE  a.dataobj# = b.dataobj#
         AND    (NAME, owner#) IN
                (SELECT object_name, (SELECT user_id FROM dba_users WHERE username = object_owner)
-                 FROM   gv$sql_plan
-                 WHERE  sql_id = :V1)
+                FROM   gv$sql_plan
+                WHERE  sql_id = :V1)
         AND    VALUE > 0
         GROUP BY NAME, STATISTIC_NAME
     ]],

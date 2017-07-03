@@ -130,7 +130,6 @@ function helper.helper(cmd,...)
             for v in txt:gmatch("%[Loaded%s+(%S+).-%]") do
                 java.loader:copyClass(v)
             end
-
             for v in txt:gmatch("(%S+)%.class%W") do
                 java.loader:copyClass(v)
             end

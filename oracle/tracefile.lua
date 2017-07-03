@@ -90,6 +90,8 @@ function trace.get_trace(filename,mb,from_mb)
             return;
         EXCEPTION
             WHEN OTHERS THEN
+                buff := dbms_utility.format_error_stack || dbms_utility.format_error_backtrace;
+                buff := regexp_replace(regexp_replace(buff,' *['||CHR(10)||CHR(13)||']+',','),',([A-Z]+\-\d+)',CHR(10)||'\1');
                 IF trace_file IS NOT NULL AND DBMS_LOB.FILEISOPEN(trace_file) = 1 THEN
                     dbms_lob.fileclose(trace_file);
                 END IF;
@@ -102,16 +104,13 @@ function trace.get_trace(filename,mb,from_mb)
                 ELSIF flag = 1 THEN
                     buff := 'File ' || f || ' under directory ' || tmp || ' does not exist!';
                 ELSIF flag = 2 THEN
-                    buff := 'Unable to open ' || f || ' under directory ' || tmp;
-                ELSE
-                    buff := dbms_utility.format_error_stack || dbms_utility.format_error_backtrace;
+                    buff := regexp_substr(buff,'([A-Z]+\-\d+)[^'||CHR(10)||']+')||'[dir="'||tmp||'" file="'||f||'"]';
                 END IF;
                 :4 := buff;
         END;
 
         IF vw IS NOT NULL THEN
             dir := regexp_replace(tmp,'[\\/]trace[\\/]$');
-            :4  := null;
             EXECUTE IMMEDIATE 'select count(1) from ' || REPLACE(upper(vw), '_CONTENTS') || ' where ADR_HOME=:d and TRACE_FILENAME=:f'
                 INTO flag
                 USING dir, f;

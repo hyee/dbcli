@@ -336,18 +336,14 @@ local excluded_keywords={
     EDITIONABLE=1,
     NO=1,
     FORCE=1,
-    EDITIONING=1,
-    GLOBAL=1,
-    TEMPORARY=1,
-    SHARED=1,
-    DUPLICATED=1
+    EDITIONING=1
 }
 
 function db_core.get_command_type(sql)
     local list={}
     for word in sql:gsub("%s*/%*.-%*/%s*",' '):gmatch("[^%s%(%)]+") do
         local w=word:upper()
-        if #list>2 or not excluded_keywords[w] then
+        if not excluded_keywords[w] then
             list[#list+1]=(#list < 3 and word or w):gsub('["`]','')
             if #list > 3 then break end
         end
@@ -808,7 +804,7 @@ function db_core:sql2file(filename,sql,method,ext,...)
             result=sql
         else
             sql=env.COMMAND_SEPS.match(sql)
-            result=self:exec(sql)
+            result=self:internal_call(sql)
         end
 
         if ext and filename:lower():match("%.gz$") and not filename:lower():match("%."..ext.."%.gz$") then
