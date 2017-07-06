@@ -8,7 +8,6 @@ import com.opencsv.CSVWriter;
 import com.opencsv.ResultSetHelperService;
 import com.opencsv.SQLWriter;
 import org.jline.keymap.KeyMap;
-import org.jline.reader.LineReaderBuilder;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -22,7 +21,10 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.concurrent.*;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.InflaterInputStream;
@@ -43,32 +45,7 @@ public class Loader {
     private IOException CancelError = new IOException("Statement is aborted.");
 
 
-    public Loader() throws ExecutionException, InterruptedException {
-        Future<Console> t1 = Console.threadPool.schedule(new Callable<Console>() {
-            @Override
-            public Console call() {
-                try {
-                    Console console = new Console(LineReaderBuilder.builder()
-                            .terminal(Console.terminal)
-                            .build());
-                    //Ctrl+D
-                    keyMap = console.reader.getKeys();
-                    //keyMap.bind(String.valueOf(KeyMap.CTRL_D), new KeyListner(KeyMap.CTRL_D));
-                    q = new KeyListner('q');
-                    Interrupter.listen("loader", new EventCallback() {
-                        @Override
-                        public void call(Object... e) {
-                            q.actionPerformed((ActionEvent) e[0]);
-                        }
-                    });
-                    return console;
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    System.exit(0);
-                }
-                return null;
-            }
-        }, 0, TimeUnit.MILLISECONDS);
+    public Loader() throws Exception {
         Future<LuaState> t2 = Console.threadPool.schedule(new Callable<LuaState>() {
             @Override
             public LuaState call() {
@@ -81,7 +58,7 @@ public class Loader {
                     libPath += (bit.equals("64") ? "x64" : "x86");
                     addLibrary(libPath, true);
                     System.setProperty("library.jansi.path", libPath);
-
+                    System.setProperty("jna.library.path", libPath);
                 } catch (Exception e) {
                     e.printStackTrace();
                     System.exit(0);
@@ -89,9 +66,18 @@ public class Loader {
                 return new LuaState();
             }
         }, 0, TimeUnit.MILLISECONDS);
-        console = t1.get();
+        console = new Console();
+        //Ctrl+D
+        keyMap = console.reader.getKeys();
+        //keyMap.bind(String.valueOf(KeyMap.CTRL_D), new KeyListner(KeyMap.CTRL_D));
+        q = new KeyListner('q');
+        Interrupter.listen("loader", new EventCallback() {
+            @Override
+            public void call(Object... e) {
+                q.actionPerformed((ActionEvent) e[0]);
+            }
+        });
         lua = t2.get();
-        console.threadID = Thread.currentThread().getId();
     }
 
     public static Exception getRootCause(Exception e) {
@@ -111,7 +97,6 @@ public class Loader {
             lua.pushGlobal("console", console);
         }
         String separator = File.separator;
-
         String input = root + separator + "lua" + separator + "input.lua";
         StringBuilder sb = new StringBuilder();
         String readline = "";
