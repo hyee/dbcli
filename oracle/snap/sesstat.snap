@@ -1,4 +1,4 @@
-/*[[Generate delta values based on gv$sesstat. Usage: @@NAME {[0|<sid>] [<inst_id>] [<key>]}]]*/
+/*[[Generate delta values based on gv$sesstat. Usage: @@NAME [options] {[0|<sid>] [<inst_id>] [<key>]}]]*/
 {
     sql=[[
     SELECT A.* FROM(
@@ -11,7 +11,7 @@
         USING  (inst_id, statistic#)
         WHERE  (VALUE > 0 OR :V3 IS NOT NULL)
         AND    (:V1 IS NULL AND SID=USERENV('SID') or sid=:V1 OR :V1='0') 
-        AND    ((:V2 IS NULL AND (:V1 IS NULL AND inst_id=userenv('instance') or 1=1)) OR inst_id=:V2) 
+        AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0') 
         AND    (:V3 IS NULL OR lower(name) like lower('%&V3%'))) A
     ORDER BY NAME]],
     agg_cols="value",

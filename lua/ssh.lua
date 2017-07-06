@@ -173,7 +173,7 @@ end
 function ssh:enter_i()
     local shell_env=""
     if self:is_connect() then shell_env="("..self:getresult("echo $SHELL")..")" end
-    print(env.ansi.mask(env.set.get("PROMPTCOLOR"),"Entering SSH interactive shell enviroment"..shell_env..", execute 'bye' to exit. Below are the embedded commands:"))
+    print("$PROMPTCOLOR$Entering SSH interactive shell enviroment"..shell_env..", execute 'bye' to exit. Below are the embedded commands:$NOR$")
     self.inner_help:print(true)
     self.is_enter_prompt=true
     env.set_subsystem(self.name)

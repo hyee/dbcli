@@ -207,7 +207,7 @@ function string.from(v)
     path=path and #path or 0
     if type(v) == "function" then
         local d=debug.getinfo(v)
-        local src=d.short_src:split(path,true)
+        local src=d.source:gsub("^@+","",1):split(path,true)
         if src and src~='' then
             return 'function('..src[#src]:gsub('%.lua$','#'..d.linedefined)..')'
         end
@@ -244,7 +244,6 @@ end
 
 
 function table.dump(tbl,indent,maxdep,tabs)
-    if type(tbl)~="table" then return tbl end
     maxdep=tonumber(maxdep) or 9
     if maxdep<=1 then
         return tostring(tbl)

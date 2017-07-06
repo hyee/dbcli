@@ -1,3 +1,11 @@
+2017-07-02: + oracle: new command "snap heatmap"
+            + public: supports 'sort' attr in the "snap" command
+            + public: upgrade to JLine3, including following new features:
+                      * history: support cross-line command
+                      * completer: shown on tab, autocomplete all commands and Oracle keywords
+                      * highlighter: highlights unrecognized command
+                      * keymap: refer to command 'keymap', support ctrl/shift/Alt+<keyEvent>
+2017-06-24: + oracle: new config  'set schema'
 2017-06-23: + oracle: new command  'show undo'
             * oracle: move 'ora lsi' as 'show lsi', as well as the optimization
 2017-06-21: + oracle: new commands 'show im' and 'show rscache'

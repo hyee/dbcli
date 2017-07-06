@@ -5,7 +5,7 @@ SET JAVA_HOME=
 SET CLASSPATH=
 SET JAVA_TOOL_OPTIONS=
 if not defined CONSOLE_COLOR SET CONSOLE_COLOR=0A
-if not defined ANSICON_CMD SET ANSICON_CMD=.\lib\x64\ansicon.exe
+if not defined ANSICON_CMD SET "ANSICON_CMD=.\lib\x64\ConEmuHk64.dll"
 if !ANSICOLOR!==off set ANSICON_CMD=
 
 if not defined TNS_ADM SET TNS_ADM=d:\Soft\InstanceClient\network\admin
@@ -32,16 +32,17 @@ SET PATH=%JRE_HOME%;%EXT_PATH%;.\bin;%PATH%
 if defined ANSICON_CMD (
    SET ANSICON_EXC=nvd3d9wrap.dll;nvd3d9wrapx.dll
    SET ANSICON_DEF=ansicon
-   echo %PROCESSOR_ARCHITECTURE%|findstr /i "64" >nul ||("!JRE_HOME!\java.exe" -version 2>&1 |findstr /i "64-bit" >nul)||(set ANSICON_CMD=.\lib\x86\ansicon.exe)
+   ("!JRE_HOME!\java.exe" -version 2>&1 |findstr /i "64-bit" >nul) ||(set "ANSICON_CMD=.\lib\x86\ConEmuHk.dll")
    if not exist "!ANSICON_CMD!" (
-        set "ANSICON_CMD="
         set "ANSICON_DEF=jline"
-   )     
+   )
+   set "ANSICON_CMD="
 )
 
 rem For win10, don't used both JLINE/Ansicon to escape the ANSI codes
-rem ver|findstr -r "[1-9][0-9]\.[0-9]*\.[0-9]">NUL && (SET "ANSICON_CMD=" && set "ANSICON_DEF=native")
-color !CONSOLE_COLOR!
+ver|findstr -r "[1-9][0-9]\.[0-9]*\.[0-9]">NUL && (SET "ANSICON_CMD=" && set "ANSICON_DEF=native")
+
+IF !CONSOLE_COLOR! NEQ NA color !CONSOLE_COLOR!
 rem unpack jar files for the first use
 for /r %%i in (*.pack.gz) do (
    set "var=%%i" &set "str=!var:@=!"
@@ -49,9 +50,7 @@ for /r %%i in (*.pack.gz) do (
    unpack200 -q -r "%%i" "!str:~0,-8!"
 )
 
-(%ANSICON_CMD% "!JRE_HOME!\java.exe" -noverify -Xmx384M -cp .\lib\*;.\lib\ext\*;%OTHER_LIB% ^
-    -XX:+UseG1GC -XX:+UseStringDeduplication ^
-    -Dfile.encoding=%DBCLI_ENCODING% -Dsun.jnu.encoding=%DBCLI_ENCODING% -Dclient.encoding.override=%DBCLI_ENCODING% ^
-    -Dinput.encoding=%DBCLI_ENCODING% -Duser.language=en -Duser.region=US -Duser.country=US ^
+(%ANSICON_CMD% "!JRE_HOME!\java.exe" -noverify -Xmx384M -cp .\lib\*;.\lib\ext\*%OTHER_LIB% ^
+    -XX:+UseG1GC -XX:+UseStringDeduplication -Dfile.encoding=%DBCLI_ENCODING% -Duser.language=en -Duser.region=US -Duser.country=US ^
     -Doracle.net.tns_admin="%TNS_ADM%" -Djline.terminal=windows org.dbcli.Loader %DBCLI_PARAMS% %* )||pause
 EndLocal

@@ -1,5 +1,5 @@
 /*[[
-  Generate delta values based on gv$system_event,gv$sys_time_model. Usage: @@NAME [-e|-t] {{[<inst_id>] [keyword]}|["<commands>"]} 
+  Generate delta values based on gv$system_event,gv$sys_time_model. Usage: @@NAME [options] [-e|-t] {{[<inst_id>] [keyword]}|["<commands>"]} 
   -e: only show info of gv$session_event
   -t: only show info of gv$sess_time_model
   --[[
@@ -18,7 +18,9 @@
                 FROM   gv$system_event
                 where  (wait_class!='Idle' or :V2 is not null)
                 AND    :filter in('a','e')) a
-        WHERE   (:V1 IS NULL OR inst_id=:V1) and (:V2 is null or lower(name) like '%&V3%') and count>0
+        WHERE  (:V1 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V1=INST_ID OR :V1='0') 
+        and    (:V2 is null or lower(name) like '%&V3%') 
+        and    count>0
     ]],
     agg_cols="ms,count",
     agg_model="ms(avg)=ms/count",

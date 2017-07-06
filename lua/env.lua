@@ -5,6 +5,8 @@ local reader,coroutine,os,string,table,math,io,select,xpcall,pcall=reader,corout
 
 local getinfo, error, rawset, rawget,math = debug.getinfo, error, rawset, rawget,math
 
+local pairs,ipairs=pairs,ipairs
+
 --[[
 local global_vars,global_source,env={},{},{}
 _G['env']=env
@@ -61,7 +63,7 @@ end
 
 _G['TRIGGER_EVENT']=function(key_event,key_name)
     local event={'keydown','keycode','uchar','isfunc','repeat','isalt','isctrl','issift'}
-    for i,j in ipairs(event) do event[j],event[i]=key_event[i] end
+    --for i,j in ipairs(event) do event[j],event[i]=key_event[i] end
     event.name=tostring(key_name)
     env.safe_call(env.event and env.event.callback,5,"ON_KEY_EVENT",event,key_event)
     return event.isbreak and 2 or 0
@@ -206,6 +208,7 @@ function env.smart_check_endless(cmd,rest,from_pos)
     return true,env.COMMAND_SEPS.match(rest)
 end
 
+env.root_cmds={}
 local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,is_dbcmd,allow_overriden,is_pipable,color)
     local abbr={}
 
@@ -213,24 +216,23 @@ local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,
         env.raise("Incompleted command["..cmd.."], number of parameters is not defined!")
     end
 
-    if type(cmd)~="table" then cmd={cmd} end
-    local tmp=cmd[1]:upper()
 
-    for i=1,#cmd do
-        cmd[i]=cmd[i]:upper()
-        if _CMDS[cmd[i]] then
-            if _CMDS[cmd[i]].ISOVERRIDE~=true then
-                env.raise("Command '"..cmd[i].."' is already defined in ".._CMDS[cmd[i]]["FILE"])
+    local cmds=type(cmd)~="table" and {cmd} or cmd
+    
+    for i=1,#cmds do
+        cmds[i]=cmds[i]:upper()
+        if _CMDS[cmds[i]] then
+            if _CMDS[cmds[i]].ISOVERRIDE~=true then
+                env.raise("Command '"..cmds[i].."' is already defined in ".._CMDS[cmds[i]]["FILE"])
             else
-                _CMDS[cmd[i]]=nil
+                _CMDS[cmds[i]]=nil
             end
         end
-        if i>1 then table.insert(abbr,cmd[i]) end
+        if i>1 then table.insert(abbr,cmds[i]) end
     end
 
-    for i=1,#cmd do _CMDS.___ABBR___[cmd[i]]=tmp  end
-
-    cmd=tmp
+    cmd=cmds[1]
+    
 
     local src=env.callee()
     local desc=help_func
@@ -243,6 +245,11 @@ local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,
         if type(desc)=="function" then
             desc=desc(table.unpack(args))
         end
+    end
+
+    for i=1,#cmds do 
+        _CMDS.___ABBR___[cmds[i]]=cmd
+        env.root_cmds[cmds[i]]=desc
     end
 
     if type(desc)=="string" then
@@ -315,6 +322,7 @@ end
 function env.remove_command(cmd)
     cmd=cmd:upper()
     if not _CMDS[cmd] then return end
+    env.root_cmds[cmd]=nil
     local src=env.callee()
     --if src:gsub("#%d+","")~=_CMDS[cmd].FILE:gsub("#%d+","") then
     --    env.raise("Cannot remove command '%s' from %s, it was defined in file %s!",cmd,src,_CMDS[cmd].FILE)
@@ -330,7 +338,7 @@ function env.callee(idx)
     if type(idx)~="number" then idx=3 end
     local info=getinfo(idx)
     if not info then return nil end
-    local src=info.short_src
+    local src=info.source:gsub("^@+","",1)
     if src:lower():find(env.WORK_DIR:lower(),1,true) then
         src=src:sub(#env.WORK_DIR+1)
     end
@@ -409,8 +417,7 @@ local function _exec_command(name,params)
         return env.warn("No such comand '%s'!",name)
     end
     if not cmd.FUNC then return end
-    
-
+    printer.write(env.ansi.get_color("NOR"))
     local funs=type(cmd.FUNC)=="table" and cmd.FUNC or {cmd.FUNC}
     local args= cmd.OBJ and {1,cmd.OBJ,table.unpack(params)} or {1,table.unpack(params)}
     for _,func in ipairs(funs) do
@@ -469,8 +476,8 @@ function env.exec_command(cmd,params,is_internal,arg_text)
         if isMain then
             if writer then
                 env.ROOT_CMD=name
-                writer:print(env.ansi.mask("NOR",""))
-                writer:flush()
+                --writer:print(env.ansi.mask("NOR",""))
+                --writer:flush()
             end
             env.log_debug("CMD",name,params)
         end
@@ -495,7 +502,7 @@ function env.exec_command(cmd,params,is_internal,arg_text)
         _THREADS._clock[index]=nil
         if env.PRI_PROMPT=="TIMING> " then
             env.CURRENT_PROMPT=string.format('%06.2f',clock)..'> '
-            env.MTL_PROMPT=string.rep(' ',#env.CURRENT_PROMPT)
+            env.MTL_PROMPT="%P "
         end
     end
     return table.unpack(res,2)
@@ -554,17 +561,17 @@ function env.modify_command(_,key_event)
             local prompt_color="%s%s"..env.ansi.get_color("NOR").."%s"
             prompt=prompt_color:format(env.ansi.get_color("PROMPTCOLOR"),prompt,env.ansi.get_color("COMMANDCOLOR"))
             reset=env.ansi.get_color("KILLBL")
+            env.printer.write("\27[1A"..reset)
         end
-        reader:resetPromptLine(prompt,"",0)
-        env.printer.write(reset)
+        reader:redrawLine();
     elseif key_event.name=="CTRL+BACK_SPACE" or key_event.name=="SHIFT+BACK_SPACE" then --shift+backspace
-        reader:invokeMethod("deletePreviousWord")
+        console:invokeMethod("backwardDeleteWord")
         key_event.isbreak=true
     elseif key_event.name=="CTRL+LEFT" or key_event.name=="SHIFT+LEFT" then --ctrl+arrow_left
-        reader:invokeMethod("previousWord")
+        console:invokeMethod("previousWord")
         key_event.isbreak=true
     elseif key_event.name=="CTRL+RIGHT" or key_event.name=="SHIFT+RIGHT" then --ctrl+arrow_right
-        reader:invokeMethod("nextWord")
+        console:invokeMethod("nextWord")
         key_event.isbreak=true
     end
 end
@@ -767,7 +774,11 @@ local function _eval_line(line,exec,is_internal,not_skip)
     env.CURRENT_CMD=cmd
     terminator=nil
     if not (_CMDS[cmd]) then
-        return env.warn("No such command '%s', please type 'help' for more information.",cmd)
+        local warning=("No such command '%s', please type 'help' for more information."):format(cmd)
+        if exec==false then
+            return nil,nil,warning
+        end
+        return env.warn(warning)
     elseif not end_mark and not rest:find('\n',1,true) then 
         terminator=rest:match(terminator_patt)
         if terminator then
@@ -790,6 +801,25 @@ local function _eval_line(line,exec,is_internal,not_skip)
         env.exec_command(cmd,args,is_internal,rest)
     else
         return cmd,args
+    end
+end
+
+local _cmd,_args,_errs
+function env.parse_line(line)
+    multi_cmd,curr_stmt=nil,nil
+    env.CURRENT_PROMPT=env.PRI_PROMPT
+    _cmd,_args,_errs=eval_line(line,false)
+    return env.CURRENT_PROMPT==env.MTL_PROMPT,env.CURRENT_PROMPT
+end
+
+function env.execute_line()
+    local cmd,args
+    cmd,args,_cmd,_args=_cmd,_args
+    if cmd then
+        env.exec_command(cmd,args)
+    elseif _errs then
+        env.warn(_errs)
+        _errs=nil
     end
 end
 
@@ -961,6 +991,7 @@ function env.onload(...)
     set_command(nil,"--"    ,   '#Comment',        nil   ,false,2)
     set_command(nil,"REM"   ,   '#Comment',        nil   ,false,2)
     env.reset_title()
+    console:setCommands(env.root_cmds)
     --load initial settings
     for _,v in ipairs(env.__ARGS__) do
         if v:sub(1,2) == "-D" then
@@ -1005,16 +1036,25 @@ function env.exit()
     os.exit(true,true)
 end
 
-function env.load_data(file,isUnpack)
+function env.load_data(file,isUnpack,callback)
     if not file:find('[\\/]') then file=env.join_path(env.WORK_DIR,"data",file) end
-    local f=io.open(file,file:match('%.dat$') and "rb" or "r")
-    if not f then
-        return {}
+    if type(callback)~="function" then
+        local f=io.open(file,file:match('%.dat$') and "rb" or "r")
+        if not f then
+            return {}
+        end
+        local txt=f:read("*a")
+        f:close()
+        if not txt or txt:gsub("[\n\t%s\r]+","")=="" then return {} end
+        return isUnpack==false and txt or env.MessagePack.unpack(txt)
+    else
+        os.list_dir(file,nil,nil,function(event,file)
+            if event=='ON_SCAN' then return true end
+            if not file.data then return end
+            if isUnpack~=false then file.data=env.MessagePack.unpack(file.data) end
+            callback(file.data)
+        end)
     end
-    local txt=f:read("*a")
-    f:close()
-    if not txt or txt:gsub("[\n\t%s\r]+","")=="" then return {} end
-    return isUnpack==false and txt or env.MessagePack.unpack(txt)
 end
 
 function env.save_data(file,txt)
@@ -1095,15 +1135,10 @@ end
 
 function env.ask(question,range,default)
     local isValid,desc,value=true,question
-    if default then 
-        desc=desc..' ['..tostring(default)..']' 
-    elseif range then
-        desc=desc..' ['..range..']'
-    end
     --env.printer.write(desc..': ')
     env.IS_ASKING=question
-    value,env.IS_ASKING=reader:readLine(env.space,null,desc..": "),nil
-    value=value and value:trim() or ""
+    value,env.IS_ASKING=console:readLine(env.space..desc..": ",ansi.get_color('HEADCOLOR')..default),nil
+    value=value and ansi.strip_ansi(value:trim()) or ""
 
     value=value:gsub('\\([0-9]+)',function(x) return string.char(tonumber(x)) end)
     value=value:gsub('(0x[0-9a-f][0-9a-fA-F]?)',function(x) return string.char(tonumber(string.format("%d",x))) end)

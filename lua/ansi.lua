@@ -3,7 +3,7 @@ local ansi={}
 local cfg
 local reader,writer,str_completer,arg_completer,add=reader
 local terminal=reader:getTerminal()
-local isAnsiSupported=terminal:isAnsiSupported()
+local isAnsiSupported=true
 
 
 local enabled=isAnsiSupported
@@ -28,29 +28,27 @@ local base_color={
     MAG={"\27[0;35m","Foreground Color: Magenta"},
     CYN={"\27[0;36m","Foreground Color: Cyan"},
     WHT={"\27[0;37m","Foreground Color: White"},
-    GRY={"\27[30;1;40m","Foreground Color: Gray"}, 
+    GRY={"\27[90m","Foreground Color: Gray"},
+    --GRY={"\27[30;1;40m","Foreground Color: Gray"}, 
 
     --High Intensity Foreground Colors
    --BG Light gray
-    
-    HIR={"\27[31;1m","High Intensity Foreground Color: Red"},
-    HIG={"\27[32;1m","High Intensity Foreground Color: Green"},
-    HIY={"\27[33;1m","High Intensity Foreground Color: Yellow"},
-    HIB={"\27[34;1m","High Intensity Foreground Color: Blue"},
-    HIM={"\27[35;1m","High Intensity Foreground Color: Magenta"},
-    HIC={"\27[36;1m","High Intensity Foreground Color: Cyan"},
-    HIW={"\27[37;1m","High Intensity Foreground Color: White"},
+    HIR={"\27[91m","High Intensity Foreground Color: Red"},
+    HIG={"\27[92m","High Intensity Foreground Color: Green"},
+    HIY={"\27[93m","High Intensity Foreground Color: Yellow"},
+    HIB={"\27[94m","High Intensity Foreground Color: Blue"},
+    HIM={"\27[95m","High Intensity Foreground Color: Magenta"},
+    HIC={"\27[96m","High Intensity Foreground Color: Cyan"},
+    HIW={"\27[97m","High Intensity Foreground Color: White"},
 
     --High Intensity Background Colors
-    HBRED={"\27[4;41m","High Intensity Background Color: Red"},
-    HBGRN={"\27[4;42m","High Intensity Background Color: Green"},
-    HBYEL={"\27[4;43m","High Intensity Background Color: Yellow"},
-    HBBLU={"\27[4;44m","High Intensity Background Color: Blue"},
-    HBMAG={"\27[4;45m","High Intensity Background Color: Magenta"},
-    HBCYN={"\27[4;46m","High Intensity Background Color: Cyan"},
-    HBWHT={"\27[4;47m","High Intensity Background Color: White"},
-
-    
+    HBRED={"\27[101m","High Intensity Background Color: Red"},
+    HBGRN={"\27[102m","High Intensity Background Color: Green"},
+    HBYEL={"\27[103m","High Intensity Background Color: Yellow"},
+    HBBLU={"\27[104m","High Intensity Background Color: Blue"},
+    HBMAG={"\27[105m","High Intensity Background Color: Magenta"},
+    HBCYN={"\27[106m","High Intensity Background Color: Cyan"},
+    HBWHT={"\27[107m","High Intensity Background Color: White"},    
 
     --Background Colors
     BBLK={"\27[40m","Background Color: Black"},
@@ -61,7 +59,7 @@ local base_color={
     BMAG={"\27[45m","Background Color: Magenta"},
     BCYN={"\27[46m","Background Color: Cyan"},
     BWHT={"\27[47m","Background Color: White"},
-    BGRY={"\27[4;40m","Background Color: Gray"}, 
+    BGRY={"\27[100m","Background Color: Gray"}, 
     NOR ={"\27[39;49;0m","Puts every color back to normal"},
 
 
@@ -104,8 +102,8 @@ local default_color={
     ['4']={'BRED','RED'},
     ['5']={'BMAG','MAG'},
     ['6']={'BYEL','YEL'},
-    ['7']={'BGRY','WHT'},
-    ['8']={'BWHT','GRY'},
+    ['7']={'BWHT','WHT'},
+    ['8']={'BGRY','GRY'},
     ['9']={'HBBLU','HIB'},
     ['A']={'HBGRN','HIG'},
     ['B']={'HBCYN','HIC'},
@@ -115,9 +113,16 @@ local default_color={
     ['F']={'HBWHT','HIW'},
 }
 
+local var=os.getenv("ANSICOLOR")
+if var and var:lower()=="off" then
+    isAnsiSupported,enabled=false,false
+else
+    isAnsiSupported=true
+end
+
 ansi.ansi_mode=os.getenv("ANSICON_DEF") or "jline"
 local console_color=os.getenv("CONSOLE_COLOR")
-if console_color then
+if isAnsiSupported and console_color and console_color~='NA' then
     ansi.ansi_default=console_color
     local fg,bg=default_color[console_color:sub(2)][2],default_color[console_color:sub(1,1)][1]
     if bg and fg then
@@ -125,18 +130,12 @@ if console_color then
     end
 end
 
-if os.getenv("ANSICOLOR")=="off" then
-    isAnsiSupported,enabled=false,false
-else
-    isAnsiSupported=true
-end
-
-
 local color=setmetatable({},{__index=function(self,k) return rawget(self,k:upper()) end})
 
 function ansi.cfg(name,value,module,description)
     if not cfg then cfg={} end
     if not name then return cfg end
+    name=name:upper()
     if not cfg[name] then cfg[name]={} end
     if not value then return cfg[name][1] end
     cfg[name][1]=value
@@ -158,6 +157,7 @@ function ansi.string_color(code,...)
 end
 
 function ansi.mask(codes,msg,continue)
+    if codes==nil then return msg end
     local str
     for v in codes:gmatch("([^; \t,]+)") do
         v=v:upper()
@@ -203,7 +203,12 @@ function ansi.clear_sceen()
 end
 
 function ansi.define_color(name,value,module,description)
-    if not value or not enabled then return end
+    if not value or not enabled then
+        if description then
+            ansi.cfg(name,value,module,description)
+        end
+        return 
+    end
     name,value=name:upper(),value:upper()
     value=value:gsub("%$(%u+)%$",'%1')
     env.checkerr(not color[name],"Cannot define color ["..name.."] as a name!")
@@ -212,6 +217,7 @@ function ansi.define_color(name,value,module,description)
     end
 
     if description then
+        value=os.getenv(name:upper()) or value
         ansi.cfg(name,ansi.cfg(name) or value,module,description)
         env.set.init(name,value,ansi.define_color,module,description)
         if value ~= ansi.cfg(name) then
@@ -243,7 +249,7 @@ function ansi.enable_color(name,value)
         if enabled then return end
         for k,v in pairs(base_color) do color[k]=v end
         --env.set_command(nil,{"clear","cls"},"Clear screen ",ansi.clear_sceen,false,1)
-        for k,v in pairs(ansi.map or {}) do
+        for k,v in pairs(ansi.cfg() or {}) do
             env.set.init(k,v[4],ansi.define_color,v[2],v[3])
             if v[1] ~= v[4] then
                 env.set.doset(k,v[1])
@@ -256,21 +262,24 @@ end
 
 function ansi.onload()
     env.set_command(nil,{"clear","cls"},"Clear screen ",ansi.clear_sceen,false,1)
-    writer=reader:getOutput()
+    writer=console:getOutput()
     ansi.loaded=true
-    str_completer=java.require("jline.console.completer.StringsCompleter",true)
-    arg_completer=java.require("jline.console.completer.ArgumentCompleter",true)
+    --str_completer=java.require("jline.console.completer.StringsCompleter",true)
+    --arg_completer=java.require("jline.console.completer.ArgumentCompleter",true)
     for k,v in pairs(base_color) do color[k]=isAnsiSupported and v or '' end
     env.set.init("ansicolor",isAnsiSupported and 'on' or 'off',ansi.enable_color,"core","Enable color masking inside the intepreter.",'on,off')
     env.set_command(nil,'ansi',"Show and test ansi colors, run 'ansi' for more details",ansi.test_text,false,2)
     ansi.color,ansi.map=color,cfg
 end
 
+ansi.escape="%f[\\]\\[eE](%[[%d;]*[mK])"
 ansi.pattern="\27%[[%d;]*[mK]"
 
 function ansi.strip_ansi(str)
     if not enabled then return str end
-    return str:gsub(ansi.pattern,"")
+    return str:gsub(ansi.pattern,""):gsub(ansi.escape,""):gsub("%$(.-)%$",function(s)
+            return (ansi.cfg(s) or color[s]) and '' or "$"..s.."$"
+        end)
 end
 
 function string.strip_ansi(str)
@@ -288,9 +297,8 @@ end
 function ansi.convert_ansi(str)
     return str and str:gsub("%$((%u+)([, ]?)(%d*)([, ]?)(%d*))%$",
         function(all,code,x,pos1,x,pos2) 
-            if pos1~="" then return ansi.string_color(code,pos1,pos2) or '$'..all..'$' end
             return ansi.mask(code,nil,true) or '$'..all..'$'
-        end)
+        end):gsub(ansi.escape,"\27%1")
 end
 
 function string.convert_ansi(str)
@@ -298,12 +306,46 @@ function string.convert_ansi(str)
 end
 
 function ansi.test_text(str)
-    if not isAnsiSupported then return print("Ansi color is not supported!") end
+    if not isAnsiSupported then return print("Ansi color support is disabled!") end
     if not str or str=="" then
+        local rows=env.grid.new()
+
+        local rep=function(escapes) return 
+            escapes:gsub("($E%[)(%d+)(.*)",function(e,bg,code)
+                return string.format("%s%-12s%s","\\e["..bg..code,e..code:sub(2),ansi.get_color("NOR"))
+            end) 
+        end
+        local backs={}
+        for i=0,31 do
+            local foreground,background,head={},{},{}
+            for j=0,7 do
+                local code=i*8+j
+                head[j*2+1],head[j*2+2]="Color#"..(j+1)..' + B',"Color#"..(j+1)..' + W'
+                foreground[j*2+1]=rep("$E[40;38;5;"..code..'m')
+                foreground[j*2+2]=rep("$E[107;38;5;"..code..'m')
+                background[j*2+1]=rep("$E[30;48;5;"..code..'m')
+                background[j*2+2]=rep("$E[97;48;5;"..code..'m')
+            end
+            if i==0 then
+                table.insert(head,1,"F/B Ground")
+                rows:add(head)
+            end
+            table.insert(foreground,1,"Foreground")
+            table.insert(background,1,"Background")
+            rows:add(foreground)
+            backs[#backs+1]=background
+        end
+        for k,v in ipairs(backs) do rows:add(v) end
+        rawprint(env.space.."ANSI 256 colors, where '$E' means ascii code 27(a.k.a chr(27)): ")
+        rawprint(env.space..string.rep("=",140))
+        rows:print()
+        rawprint("\n")
+        
         rawprint(env.space.."ANSI SGR Codes, where '$E' means ascii code 27(a.k.a chr(27)): ")
         rawprint(env.space..string.rep("=",140))
         print(env.load_data(env.join_path(env.WORK_DIR,"bin","ANSI.txt"),false))
         rawprint(env.space..string.rep("=",140))
+        
         local bf,wf,bb,wb=base_color['BLK'][1],base_color['HIW'][1],base_color['BBLK'][1],base_color['HBWHT'][1]
         if env.grid then
             local row=env.grid.new()
@@ -329,13 +371,15 @@ function ansi.test_text(str)
         rawprint(env.space..string.rep("=",140))
         rawprint(env.space.."Use `$<code>$<other text>` to mask color in all outputs, including query, echo, etc. Not all listed control codes are supported.")
         rawprint(env.space.."For the color settings defined in command 'set', use '<code1>[;<code2>[...]]' format")
-        rawprint(env.space.."Run 'ansi <text>' to test the color, i.e.: ansi $HIR$ Hello $HIC$$HBGRN$ ANSI!")
-        rawprint(env.space.."Or SQL:  select '$HIR$'||owner||'$HIB$.$NOR$'||object_name obj,a.* from all_objects a where rownum<10;")
+        rawprint(env.space.."Run 'ansi <text>' to test the color, i.e.: ")
+        rawprint(env.space.."    1). ansi $HIR$ Hello $HIC$$HBGRN$ ANSI!")
+        rawprint(env.space.."    2). ansi \\e[4;91m Bold+Underline+Red \\e[0m")
+        rawprint(env.space.."    3). select '$HIR$'||owner||'$HIB$.\\e[48;5;11m'||object_name obj,'$NOR$' x,a.* from all_objects a where rownum<10;")
         rawprint(env.space.."Use 'set color' to adjust the color preferences of the console.")
         return
     end
    
-    return rawprint(env.space.."ANSI result: "..ansi.convert_ansi(str)..ansi.string_color('NOR'))
+    return print(env.space.."ANSI result: "..ansi.convert_ansi(str)..ansi.string_color('NOR'))
 end
 
 
