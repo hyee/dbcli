@@ -332,7 +332,7 @@ public class Console {
                 isMulti = true;
                 throw err;
             }
-            terminal.lockReader(true);
+            if((Boolean) result[2]) terminal.lockReader(true);
             reader.setVariable(DISABLE_HISTORY, lines.length > Math.min(25, terminal.getHeight() - 5));
             isMulti = false;
             return null;

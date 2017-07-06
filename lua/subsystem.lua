@@ -158,7 +158,7 @@ function system:__onload()
     write=env.printer.write
     env.set_command{obj=self,cmd=self.name, 
                     help_func=self.description,call_func=self.call_process,
-                    is_multiline=false,parameters=2,color="PROMPTSUBCOLOR"}
+                    is_multiline=false,parameters=2,color="PROMPTSUBCOLOR",is_blocknewline=true}
     env.event.snoop("BEFORE_COMMAND",self.kill_reader,self,1)
 end
 
