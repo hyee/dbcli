@@ -15,7 +15,7 @@ rem read config file
 If exist "data\init.cfg" (for /f "eol=# delims=" %%i in (data\init.cfg) do (%%i))
 rem if JRE_HOME is not defined in init.cfg, find java.exe in default path
 if not defined JRE_HOME (
-    for /F %%p in ('where java.exe') do (
+    for /F "delims=" %%p in ('where java.exe') do (
         for /f tokens^=2-5^ delims^=.-_^" %%j in ('"%%p" -fullversion 2^>^&1') do (
             if 18000 LSS %%j%%k%%l%%m  set "JRE_HOME=%%~dpsp"
 )))
