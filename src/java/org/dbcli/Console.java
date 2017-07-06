@@ -5,18 +5,11 @@ import com.naef.jnlua.LuaState;
 import org.jline.builtins.Commands;
 import org.jline.builtins.Less;
 import org.jline.builtins.Source;
-import org.jline.keymap.BindingReader;
 import org.jline.keymap.KeyMap;
-import org.jline.reader.Candidate;
-import org.jline.reader.LineReader;
-import org.jline.reader.ParsedLine;
-import org.jline.reader.Reference;
+import org.jline.reader.*;
 import org.jline.reader.impl.DefaultParser;
 import org.jline.reader.impl.LineReaderImpl;
 import org.jline.terminal.Terminal;
-import org.jline.terminal.TerminalBuilder;
-import org.jline.terminal.impl.AbstractWindowsTerminal;
-import org.jline.utils.Curses;
 import org.jline.utils.NonBlockingReader;
 
 import java.awt.event.ActionEvent;
@@ -28,7 +21,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.jline.reader.LineReader.DISABLE_HISTORY;
@@ -38,96 +30,10 @@ public class Console {
     public static PrintWriter writer;
     public static NonBlockingReader in;
     public static String charset = "utf-8";
-    public static AbstractWindowsTerminal terminal;
+    public WindowsTerminal terminal;
     LineReaderImpl reader;
     public static ClassAccess<LineReaderImpl> accessor = ClassAccess.access(LineReaderImpl.class);
     public final static Pattern ansiPattern = Pattern.compile("^\33\\[[\\d\\;]*[mK]$");
-    public static HashMap<String, String> keyEvents = new HashMap<>();
-
-    static {
-        try {
-            terminal = (AbstractWindowsTerminal) TerminalBuilder.builder().system(true).nativeSignals(true).signalHandler(Terminal.SignalHandler.SIG_IGN).exec(true).jna(true).build();
-            keyEvents.put("\u0008", "BACKSPACE");
-            keyEvents.put("^[^H", "ALT-BACKSPACE");
-            keyEvents.put("\u0009", "TAB");
-            //keyEvents.put("^[","ESC");
-            keyEvents.put("^[[2~", "INSERT");
-            keyEvents.put("^[[3~", "DEL");
-            keyEvents.put("^[[5~", "PGUP");
-            keyEvents.put("^[[6~", "PGON");
-            keyEvents.put("^[[H", "HOME");
-            keyEvents.put("^[[1;%dH", "HOME");
-            keyEvents.put("^[[4~", "END");
-            keyEvents.put("^[[1;%dF", "END");
-
-            keyEvents.put("^[OP", "F1");
-            keyEvents.put("^[[1;%dP", "F1");
-            keyEvents.put("^[OQ", "F2");
-            keyEvents.put("^[[1;%dQ", "F1");
-            keyEvents.put("^[OR", "F3");
-            keyEvents.put("^[[1;%dR", "F1");
-            keyEvents.put("^[OS", "F4");
-            keyEvents.put("^[[1;%dS", "F1");
-            keyEvents.put("^[[15~", "F5");
-            keyEvents.put("^[[15;%d~", "F5");
-            keyEvents.put("^[[17~", "F6");
-            keyEvents.put("^[[17;%d~", "F6");
-            keyEvents.put("^[[18~", "F7");
-            keyEvents.put("^[[18;%d~", "F7");
-            keyEvents.put("^[[19~", "F8");
-            keyEvents.put("^[[19;%d~", "F8");
-            keyEvents.put("^[[20~", "F9");
-            keyEvents.put("^[[20;%d~", "F9");
-            keyEvents.put("^[[21~", "F10");
-            keyEvents.put("^[[21;%d~", "F10");
-            keyEvents.put("^[[23~", "F11");
-            keyEvents.put("^[[23;%d~", "F11");
-            keyEvents.put("^[[24~", "F12");
-            keyEvents.put("^[[24;%d~", "F12");
-
-            keyEvents.put("^[[D", "LEFT");
-            keyEvents.put("^[[1;%dD", "LEFT");
-            keyEvents.put("^[OD", "CTRL-LEFT");
-            keyEvents.put("^[[C", "RIGHT");
-            keyEvents.put("^[[1;%dC", "RIGHT");
-            keyEvents.put("^[OC", "CTRL-RIGHT");
-            keyEvents.put("^[[A", "UP");
-            keyEvents.put("^[[1;%dA", "UP");
-            keyEvents.put("^[OA", "CTRL-UP");
-            keyEvents.put("^[[B", "DOWN");
-            keyEvents.put("^[[1;%dB", "DOWN");
-            keyEvents.put("^[OB", "CTRL-DOWN");
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    static String translateKey(String key) {
-        String org = key;
-        for (Map.Entry<String, String> e : keyEvents.entrySet()) {
-            String k = e.getKey().replaceAll("\\[", "\\\\[").replaceAll("\\^", "\\\\^");
-            if (k.indexOf("%d") > 0) {
-                String k1 = k.replaceAll("%d", "(\\\\d)");
-                Pattern p = Pattern.compile(k1);
-                Matcher m = p.matcher(key);
-                if (m.find()) {
-                    int c = Integer.valueOf(m.group(1)) - 1;
-                    StringBuilder sb = new StringBuilder();
-                    sb.append(" + ");
-                    if ((c & 4) > 0) sb.append("CTRL-");
-                    if ((c & 2) > 0) sb.append("ALT-");
-                    if ((c & 1) > 0) sb.append("SHIFT-");
-                    sb.append(e.getValue());
-                    sb.append(" + ");
-                    key = key.replaceAll(String.format(k, c + 1), sb.toString());
-                }
-            } else {
-                key = key.replace(e.getKey(), " + " + e.getValue() + " + ");
-            }
-        }
-        key = key.replaceAll("\\^\\[\\^", " + CTRL-ALT-").replaceAll("\\^\\[[ \\+]*(.)", " + ALT-$1").replaceAll("\\^[ \\+]*(.)", " + CTRL-$1").replaceAll("(^ \\+ | \\+ $)", "");
-        return key;//+" ("+org+") ";
-    }
 
     protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(5);
     private LuaState lua;
@@ -195,8 +101,11 @@ public class Console {
         highlighter.commands.putAll(commands);
     }
 
-    public Console(LineReader reader) throws Exception {
-        this.reader = (LineReaderImpl) reader;
+    public Console() throws Exception {
+        String colorPlan = System.getenv("ANSICON_DEF");
+        if (colorPlan == null) colorPlan = "jline";
+        terminal = new WindowsTerminal(colorPlan);
+        this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).build();
         this.parser = new Parser();
         this.reader.setParser(parser);
         this.reader.setHighlighter(highlighter);
@@ -214,11 +123,7 @@ public class Console {
 
 
         in = terminal.reader();
-        System.setIn(terminal.input());
-
-        String colorPlan = System.getenv("ANSICON_DEF");
-        writer = colorPlan != null && !("jline").equals(colorPlan) ? new PrintWriter(new OutputStreamWriter(System.out, charset)) : terminal.writer();
-
+        writer = terminal.printer();
         threadID = Thread.currentThread().getId();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
         callback = new EventCallback() {
@@ -243,7 +148,7 @@ public class Console {
         Source source = new Source() {
             @Override
             public String getName() {
-                return "-MORE-";
+                return "";
             }
 
             @Override
@@ -285,6 +190,7 @@ public class Console {
 
     public String readLine(String prompt, String buffer) {
         try {
+            terminal.lockReader(false);
             if (isRunning()) setEvents(null, null);
             isPrompt = buffer != null && ansiPattern.matcher(buffer).find();
             if (isPrompt) {
@@ -354,8 +260,7 @@ public class Console {
             while (true) {
                 c = reader.readCharacter();
                 if (c == 10 || c == 13) break;
-                String buff = new String(Character.toChars(c));
-                sb.append(buff);
+                sb.append(new String(Character.toChars(c)));
             }
             keySeq = sb.toString();
             keyCode = KeyMap.display(keySeq);
@@ -427,6 +332,7 @@ public class Console {
                 isMulti = true;
                 throw err;
             }
+            terminal.lockReader(true);
             reader.setVariable(DISABLE_HISTORY, lines.length > Math.min(25, terminal.getHeight() - 5));
             isMulti = false;
             return null;

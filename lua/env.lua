@@ -417,8 +417,7 @@ local function _exec_command(name,params)
         return env.warn("No such comand '%s'!",name)
     end
     if not cmd.FUNC then return end
-    
-
+    printer.write(env.ansi.get_color("NOR"))
     local funs=type(cmd.FUNC)=="table" and cmd.FUNC or {cmd.FUNC}
     local args= cmd.OBJ and {1,cmd.OBJ,table.unpack(params)} or {1,table.unpack(params)}
     for _,func in ipairs(funs) do
