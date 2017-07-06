@@ -209,7 +209,7 @@ function env.smart_check_endless(cmd,rest,from_pos)
 end
 
 env.root_cmds={}
-local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,is_dbcmd,allow_overriden,is_pipable,color)
+local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,is_dbcmd,allow_overriden,is_pipable,color,is_blocknewline)
     local abbr={}
 
     if not parameters then
@@ -271,14 +271,15 @@ local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,
         DBCMD     = is_dbcmd,
         COLOR     = color,
         ISOVERRIDE= allow_overriden,
-        ISPIPABLE = is_pipable
+        ISPIPABLE = is_pipable,
+        ISBLOCKNEWLINE=is_blocknewline==true
     }
 end
 
 function env.set_command(...)
     local tab,siz=select(1,...),select('#',...)
     if siz==1 and type(tab)=="table" and tab.cmd then
-        return _new_command(tab.obj,tab.cmd,tab.help_func,tab.call_func,tab.is_multiline,tab.parameters,tab.is_dbcmd,tab.allow_overriden,tab.is_pipable,tab.color)
+        return _new_command(tab.obj,tab.cmd,tab.help_func,tab.call_func,tab.is_multiline,tab.parameters,tab.is_dbcmd,tab.allow_overriden,tab.is_pipable,tab.color,tab.is_blocknewline)
     else
         return _new_command(...)
     end
@@ -809,7 +810,8 @@ function env.parse_line(line)
     multi_cmd,curr_stmt=nil,nil
     env.CURRENT_PROMPT=env.PRI_PROMPT
     _cmd,_args,_errs=eval_line(line,false)
-    return env.CURRENT_PROMPT==env.MTL_PROMPT,env.CURRENT_PROMPT
+    local is_block=env._CMDS[_cmd] and env._CMDS[_cmd].ISBLOCKNEWLINE or false
+    return env.CURRENT_PROMPT==env.MTL_PROMPT,env.CURRENT_PROMPT,is_block
 end
 
 function env.execute_line()
