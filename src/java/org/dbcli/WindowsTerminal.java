@@ -26,10 +26,23 @@ public class WindowsTerminal extends JnaWinSysTerminal {
         this.output = super.output();
         this.writer = super.writer();
         this.printer = this.writer;
+        Charset charset=Charset.forName(System.getProperty("file.encoding"));
+        String ansicon=System.getenv("ANSICON");
+        if(ansicon!=null&&ansicon.split("\\d+").length>=3) name="native";
         if (!"jline".equals(name)) {
             if ("ansicon".equals(name)) this.output = new ConEmuOutputStream();
-            else this.output = new BufferedOutputStream(new FileOutputStream(FileDescriptor.out));
-            this.printer = new PrintWriter(new OutputStreamWriter(this.output, Charset.forName("UTF-8")));
+            else {
+                this.output = new BufferedOutputStream(new FileOutputStream(FileDescriptor.out));
+                final int cp=super.consoleOutputCP;
+                if(cp!=65001) try{
+                    charset=Charset.forName("ms"+cp);
+                } catch (Exception e) {
+                    try {
+                        charset = Charset.forName("cp" + cp);
+                    } catch (Exception e1) {}
+                }
+            }
+            this.printer = new PrintWriter(new OutputStreamWriter(this.output, charset));
             if ("native".equals(name)) {
                 this.writer = this.printer;
             }
@@ -50,6 +63,11 @@ public class WindowsTerminal extends JnaWinSysTerminal {
     }
 
     private long prev = 0;
+
+    @Override
+    protected void setConsoleOutputCP(int code) {
+        if("jline".equals(this.name)) super.setConsoleOutputCP(code);
+    } //ignore
 
     @Override
     protected String readConsoleInput() throws IOException {

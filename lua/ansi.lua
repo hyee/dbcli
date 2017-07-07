@@ -379,7 +379,7 @@ function ansi.test_text(str)
         return
     end
    
-    return print(env.space.."ANSI result: "..ansi.convert_ansi(str)..ansi.string_color('NOR'))
+    return print("ANSI result: "..ansi.convert_ansi(str)..ansi.string_color('NOR'))
 end
 
 

@@ -6,7 +6,7 @@ cd ..\dump
 for /f %%a in ('dir /b /a:d') do (cd %%a & echo Entering %%a & jar cvf ..\%%a.jar * & cd ..)
 copy /B /Y *.jar ..\jre\lib
 cd ..\jre\lib
-del ojdbc* disruptor* jline* *gogo* jansi* dbcli* jnlua* db2* opencsv* jzlib* jsch* jna* nuproces* mysql* postgre* xdb* xmlparser* temp*
-move sunjce_provider* .\ext
+del sunjce_provider* ojdbc* disruptor* jline* *gogo* jansi* dbcli* jnlua* db2* opencsv* jzlib* jsch* jna* nuproces* mysql* postgre* xdb* xmlparser* temp*
+rem move sunjce_provider* .\ext
 cd "%~dp0"
 pause

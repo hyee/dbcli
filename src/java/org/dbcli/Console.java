@@ -29,7 +29,7 @@ import static org.jline.reader.LineReader.SECONDARY_PROMPT_PATTERN;
 public class Console {
     public static PrintWriter writer;
     public static NonBlockingReader in;
-    public static String charset = "utf-8";
+    public static String charset = System.getProperty("sun.stdout.encoding");
     public WindowsTerminal terminal;
     LineReaderImpl reader;
     public static ClassAccess<LineReaderImpl> accessor = ClassAccess.access(LineReaderImpl.class);
