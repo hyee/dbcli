@@ -19,46 +19,46 @@ interface Kernel32 extends StdCallLibrary {
 
     Pointer INVALID_HANDLE_VALUE = Pointer.createConstant(-1L);
 
-    int STD_INPUT_HANDLE =  -10;
+    int STD_INPUT_HANDLE = -10;
     int STD_OUTPUT_HANDLE = -11;
-    int STD_ERROR_HANDLE =  -12;
+    int STD_ERROR_HANDLE = -12;
 
-    int ENABLE_PROCESSED_INPUT =    0x0001;
-    int ENABLE_LINE_INPUT =         0x0002;
-    int ENABLE_ECHO_INPUT =         0x0004;
-    int ENABLE_WINDOW_INPUT =       0x0008;
-    int ENABLE_MOUSE_INPUT =        0x0010;
-    int ENABLE_INSERT_MODE =        0x0020;
-    int ENABLE_QUICK_EDIT_MODE =    0x0040;
-    int ENABLE_EXTENDED_FLAGS =     0x0080;
+    int ENABLE_PROCESSED_INPUT = 0x0001;
+    int ENABLE_LINE_INPUT = 0x0002;
+    int ENABLE_ECHO_INPUT = 0x0004;
+    int ENABLE_WINDOW_INPUT = 0x0008;
+    int ENABLE_MOUSE_INPUT = 0x0010;
+    int ENABLE_INSERT_MODE = 0x0020;
+    int ENABLE_QUICK_EDIT_MODE = 0x0040;
+    int ENABLE_EXTENDED_FLAGS = 0x0080;
 
-    int RIGHT_ALT_PRESSED =     0x0001;
-    int LEFT_ALT_PRESSED =      0x0002;
-    int RIGHT_CTRL_PRESSED =    0x0004;
-    int LEFT_CTRL_PRESSED =     0x0008;
-    int SHIFT_PRESSED =         0x0010;
+    int RIGHT_ALT_PRESSED = 0x0001;
+    int LEFT_ALT_PRESSED = 0x0002;
+    int RIGHT_CTRL_PRESSED = 0x0004;
+    int LEFT_CTRL_PRESSED = 0x0008;
+    int SHIFT_PRESSED = 0x0010;
 
-    int FOREGROUND_BLUE =       0x0001;
-    int FOREGROUND_GREEN =      0x0002;
-    int FOREGROUND_RED =        0x0004;
-    int FOREGROUND_INTENSITY =  0x0008;
-    int BACKGROUND_BLUE =       0x0010;
-    int BACKGROUND_GREEN =      0x0020;
-    int BACKGROUND_RED =        0x0040;
-    int BACKGROUND_INTENSITY =  0x0080;
+    int FOREGROUND_BLUE = 0x0001;
+    int FOREGROUND_GREEN = 0x0002;
+    int FOREGROUND_RED = 0x0004;
+    int FOREGROUND_INTENSITY = 0x0008;
+    int BACKGROUND_BLUE = 0x0010;
+    int BACKGROUND_GREEN = 0x0020;
+    int BACKGROUND_RED = 0x0040;
+    int BACKGROUND_INTENSITY = 0x0080;
 
     // Button state
     int FROM_LEFT_1ST_BUTTON_PRESSED = 0x0001;
-    int RIGHTMOST_BUTTON_PRESSED     = 0x0002;
+    int RIGHTMOST_BUTTON_PRESSED = 0x0002;
     int FROM_LEFT_2ND_BUTTON_PRESSED = 0x0004;
     int FROM_LEFT_3RD_BUTTON_PRESSED = 0x0008;
     int FROM_LEFT_4TH_BUTTON_PRESSED = 0x0010;
 
     // Event flags
-    int MOUSE_MOVED                  = 0x0001;
-    int DOUBLE_CLICK                 = 0x0002;
-    int MOUSE_WHEELED                = 0x0004;
-    int MOUSE_HWHEELED               = 0x0008;
+    int MOUSE_MOVED = 0x0001;
+    int DOUBLE_CLICK = 0x0002;
+    int MOUSE_WHEELED = 0x0004;
+    int MOUSE_HWHEELED = 0x0008;
 
     // HANDLE WINAPI GetStdHandle(
     // __in DWORD nStdHandle
@@ -157,6 +157,7 @@ interface Kernel32 extends StdCallLibrary {
     void ReadConsoleOutput(Pointer in_hConsoleOutput, CHAR_INFO[] out_lpBuffer,
                            COORD in_dwBufferSize, COORD in_dwBufferCoord,
                            SMALL_RECT inout_lpReadRegion) throws LastErrorException;
+
     void ReadConsoleOutputA(Pointer in_hConsoleOutput, CHAR_INFO[] out_lpBuffer,
                             COORD in_dwBufferSize, COORD in_dwBufferCoord,
                             SMALL_RECT inout_lpReadRegion) throws LastErrorException;
@@ -171,6 +172,7 @@ interface Kernel32 extends StdCallLibrary {
                                     char[] ouy_lpCharacter, int in_nLength, COORD in_dwReadCoord,
                                     IntByReference out_lpNumberOfCharsRead)
             throws LastErrorException;
+
     void ReadConsoleOutputCharacterA(Pointer in_hConsoleOutput,
                                      byte[] ouy_lpCharacter, int in_nLength, COORD in_dwReadCoord,
                                      IntByReference out_lpNumberOfCharsRead)
@@ -242,6 +244,7 @@ interface Kernel32 extends StdCallLibrary {
     void WriteConsoleOutput(Pointer in_hConsoleOutput, CHAR_INFO[] in_lpBuffer,
                             COORD in_dwBufferSize, COORD in_dwBufferCoord,
                             SMALL_RECT inout_lpWriteRegion) throws LastErrorException;
+
     void WriteConsoleOutputA(Pointer in_hConsoleOutput, CHAR_INFO[] in_lpBuffer,
                              COORD in_dwBufferSize, COORD in_dwBufferCoord,
                              SMALL_RECT inout_lpWriteRegion) throws LastErrorException;
@@ -256,6 +259,7 @@ interface Kernel32 extends StdCallLibrary {
                                      char[] in_lpCharacter, int in_nLength, COORD in_dwWriteCoord,
                                      IntByReference out_lpNumberOfCharsWritten)
             throws LastErrorException;
+
     void WriteConsoleOutputCharacterA(Pointer in_hConsoleOutput,
                                       byte[] in_lpCharacter, int in_nLength, COORD in_dwWriteCoord,
                                       IntByReference out_lpNumberOfCharsWritten)
@@ -302,7 +306,7 @@ interface Kernel32 extends StdCallLibrary {
             return (CHAR_INFO[]) new CHAR_INFO().toArray(size);
         }
 
-        private static String[] fieldOrder = { "uChar", "Attributes" };
+        private static String[] fieldOrder = {"uChar", "Attributes"};
 
         @Override
         protected java.util.List<String> getFieldOrder() {
@@ -322,7 +326,7 @@ interface Kernel32 extends StdCallLibrary {
                 Structure.ByReference {
         }
 
-        private static String[] fieldOrder = { "dwSize", "bVisible" };
+        private static String[] fieldOrder = {"dwSize", "bVisible"};
 
         @Override
         protected java.util.List<String> getFieldOrder() {
@@ -338,13 +342,13 @@ interface Kernel32 extends StdCallLibrary {
     //   COORD      dwMaximumWindowSize;
     // } CONSOLE_SCREEN_BUFFER_INFO;
     class CONSOLE_SCREEN_BUFFER_INFO extends Structure {
-        public COORD      dwSize;
-        public COORD      dwCursorPosition;
-        public short      wAttributes;
+        public COORD dwSize;
+        public COORD dwCursorPosition;
+        public short wAttributes;
         public SMALL_RECT srWindow;
-        public COORD      dwMaximumWindowSize;
+        public COORD dwMaximumWindowSize;
 
-        private static String[] fieldOrder = { "dwSize", "dwCursorPosition", "wAttributes", "srWindow", "dwMaximumWindowSize" };
+        private static String[] fieldOrder = {"dwSize", "dwCursorPosition", "wAttributes", "srWindow", "dwMaximumWindowSize"};
 
         @Override
         protected java.util.List<String> getFieldOrder() {
@@ -376,7 +380,7 @@ interface Kernel32 extends StdCallLibrary {
         public short X;
         public short Y;
 
-        private static String[] fieldOrder = { "X", "Y" };
+        private static String[] fieldOrder = {"X", "Y"};
 
         @Override
         protected java.util.List<String> getFieldOrder() {
@@ -407,7 +411,7 @@ interface Kernel32 extends StdCallLibrary {
         public static class EventUnion extends Union {
             public KEY_EVENT_RECORD KeyEvent;
             public MOUSE_EVENT_RECORD MouseEvent;
-             public WINDOW_BUFFER_SIZE_RECORD WindowBufferSizeEvent;
+            public WINDOW_BUFFER_SIZE_RECORD WindowBufferSizeEvent;
             // MENU_EVENT_RECORD MenuEvent;
             // FOCUS_EVENT_RECORD FocusEvent;
         }
@@ -476,7 +480,7 @@ interface Kernel32 extends StdCallLibrary {
         public int dwControlKeyState;
         public int dwEventFlags;
 
-        private static String[] fieldOrder = { "dwMousePosition", "dwButtonState", "dwControlKeyState", "dwEventFlags"};
+        private static String[] fieldOrder = {"dwMousePosition", "dwButtonState", "dwControlKeyState", "dwEventFlags"};
 
         @Override
         protected java.util.List<String> getFieldOrder() {
@@ -524,7 +528,7 @@ interface Kernel32 extends StdCallLibrary {
         public short Right;
         public short Bottom;
 
-        private static String[] fieldOrder = { "Left", "Top", "Right", "Bottom" };
+        private static String[] fieldOrder = {"Left", "Top", "Right", "Bottom"};
 
         @Override
         protected java.util.List<String> getFieldOrder() {
@@ -532,11 +536,11 @@ interface Kernel32 extends StdCallLibrary {
         }
 
         public short width() {
-            return (short)(this.Right - this.Left);
+            return (short) (this.Right - this.Left);
         }
 
         public short height() {
-            return (short)(this.Bottom - this.Top);
+            return (short) (this.Bottom - this.Top);
         }
 
     }

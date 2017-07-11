@@ -30,7 +30,7 @@ public class Console {
     public static PrintWriter writer;
     public static NonBlockingReader in;
     public static String charset = System.getProperty("sun.stdout.encoding");
-    public WindowsTerminal terminal;
+    public Terminal terminal;
     LineReaderImpl reader;
     public static ClassAccess<LineReaderImpl> accessor = ClassAccess.access(LineReaderImpl.class);
     public final static Pattern ansiPattern = Pattern.compile("^\33\\[[\\d\\;]*[mK]$");
@@ -41,6 +41,7 @@ public class Console {
     private EventReader monitor = new EventReader();
     private ActionListener event;
     private char[] keys;
+    private String os;
     long threadID;
     private EventCallback callback;
     private ParserCallback parserCallback;
@@ -104,7 +105,8 @@ public class Console {
     public Console() throws Exception {
         String colorPlan = System.getenv("ANSICON_DEF");
         if (colorPlan == null) colorPlan = "jline";
-        terminal = new WindowsTerminal(colorPlan);
+        os = System.getProperty("os.name", "Windows").toLowerCase();
+        terminal = os.startsWith("windows") ? new WindowsTerminal(colorPlan) : new PosixTerminal(colorPlan);
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).build();
         this.parser = new Parser();
         this.reader.setParser(parser);
@@ -123,7 +125,8 @@ public class Console {
 
 
         in = terminal.reader();
-        writer = terminal.printer();
+
+        writer = ((MyTerminal) terminal).printer();
         threadID = Thread.currentThread().getId();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
         callback = new EventCallback() {
@@ -177,20 +180,12 @@ public class Console {
         return accessor.invoke(reader, method, o);
     }
 
-    public void writeInput(String msg) {
-        try {
-            for (char c : msg.toCharArray())
-                terminal.processInputByte((int) c);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
 
     boolean isPrompt = true;
 
     public String readLine(String prompt, String buffer) {
         try {
-            terminal.lockReader(false);
+            ((MyTerminal) terminal).lockReader(false);
             if (isRunning()) setEvents(null, null);
             isPrompt = buffer != null && ansiPattern.matcher(buffer).find();
             if (isPrompt) {
@@ -332,7 +327,7 @@ public class Console {
                 isMulti = true;
                 throw err;
             }
-            if((Boolean) result[2]) terminal.lockReader(true);
+            if ((Boolean) result[2]) ((MyTerminal) terminal).lockReader(true);
             reader.setVariable(DISABLE_HISTORY, lines.length > Math.min(25, terminal.getHeight() - 5));
             isMulti = false;
             return null;

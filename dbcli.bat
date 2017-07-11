@@ -4,7 +4,7 @@ cd /d "%~dp0"
 SET JAVA_HOME=
 SET CLASSPATH=
 SET JAVA_TOOL_OPTIONS=
-if not defined CONSOLE_COLOR SET CONSOLE_COLOR=0A
+if not defined CONSOLE_COLOR SET CONSOLE_COLOR=02
 if not defined ANSICON_CMD SET "ANSICON_CMD=.\lib\x64\ConEmuHk64.dll"
 if !ANSICOLOR!==off set ANSICON_CMD=
 
@@ -45,10 +45,10 @@ rem unpack jar files for the first use
 for /r %%i in (*.pack.gz) do (
    set "var=%%i" &set "str=!var:@=!"
    echo Unpacking %%i to jar file for the first use...
-   unpack200 -q -r "%%i" "!str:~0,-8!"
+   jre\bin\unpack200 -q -r "%%i" "!str:~0,-8!"
 )
 
 (%ANSICON_CMD% "!JRE_HOME!\java.exe" -noverify -Xmx384M -cp .\lib\*;.\lib\ext\*%OTHER_LIB% ^
     -XX:+UseG1GC -XX:+UseStringDeduplication -Dfile.encoding=%DBCLI_ENCODING% -Duser.language=en -Duser.region=US -Duser.country=US ^
-    -Doracle.net.tns_admin="%TNS_ADM%" -Djline.terminal=windows org.dbcli.Loader %DBCLI_PARAMS% %* )||pause
+    -Doracle.net.tns_admin="%TNS_ADM%" org.dbcli.Loader %DBCLI_PARAMS% %* )||pause
 EndLocal

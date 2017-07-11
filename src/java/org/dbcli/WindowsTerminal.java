@@ -8,7 +8,7 @@ import java.io.*;
 import java.nio.charset.Charset;
 import java.util.concurrent.CountDownLatch;
 
-public class WindowsTerminal extends JnaWinSysTerminal {
+public class WindowsTerminal extends JnaWinSysTerminal implements MyTerminal {
     private static final Pointer consoleIn = Kernel32.INSTANCE.GetStdHandle(Kernel32.STD_INPUT_HANDLE);
     private static final Pointer consoleOut = Kernel32.INSTANCE.GetStdHandle(Kernel32.STD_OUTPUT_HANDLE);
     private OutputStream output;
@@ -26,24 +26,27 @@ public class WindowsTerminal extends JnaWinSysTerminal {
         this.output = super.output();
         this.writer = super.writer();
         this.printer = this.writer;
-        Charset charset=Charset.forName(System.getProperty("file.encoding"));
-        String ansicon=System.getenv("ANSICON");
-        if(ansicon!=null&&ansicon.split("\\d+").length>=3) name="native";
-        if (!"jline".equals(name)) {
-            if ("ansicon".equals(name)) this.output = new ConEmuOutputStream();
-            else {
-                this.output = new BufferedOutputStream(new FileOutputStream(FileDescriptor.out));
-                final int cp=super.consoleOutputCP;
-                if(cp!=65001) try{
-                    charset=Charset.forName("ms"+cp);
-                } catch (Exception e) {
-                    try {
-                        charset = Charset.forName("cp" + cp);
-                    } catch (Exception e1) {}
-                }
+        Charset charset = Charset.forName(System.getProperty("file.encoding"));
+        Charset nativeCharset = charset;
+        final int cp = super.consoleOutputCP;
+        if (cp != 65001) try {
+            nativeCharset = Charset.forName("ms" + cp);
+        } catch (Exception e) {
+            try {
+                nativeCharset = Charset.forName("cp" + cp);
+            } catch (Exception e1) {
             }
-            this.printer = new PrintWriter(new OutputStreamWriter(this.output, charset));
-            if ("native".equals(name)) {
+        }
+        String ansicon = System.getenv("ANSICON");
+        if (ansicon != null && ansicon.split("\\d+").length >= 3) name = "native";
+        if (!"jline".equals(name)) {
+            if ("ansicon".equals(name)) {
+                this.output = new ConEmuOutputStream();
+                this.writer = new PrintWriter(new OutputStreamWriter(super.output(), nativeCharset));
+                this.printer = new PrintWriter(new OutputStreamWriter(output, charset));
+            } else {
+                this.output = new BufferedOutputStream(new FileOutputStream(FileDescriptor.out));
+                this.printer = new PrintWriter(new OutputStreamWriter(this.output, nativeCharset));
                 this.writer = this.printer;
             }
         }
@@ -54,7 +57,7 @@ public class WindowsTerminal extends JnaWinSysTerminal {
         try {
             if (enabled)
                 locker = new CountDownLatch(1);
-            else if(locker!=null) {
+            else if (locker != null) {
                 locker.countDown();
                 locker = null;
             }
@@ -66,7 +69,7 @@ public class WindowsTerminal extends JnaWinSysTerminal {
 
     @Override
     protected void setConsoleOutputCP(int code) {
-        if("jline".equals(this.name)) super.setConsoleOutputCP(code);
+        if ("jline".equals(this.name)) super.setConsoleOutputCP(code);
     } //ignore
 
     @Override

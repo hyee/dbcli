@@ -102,12 +102,13 @@ public class SSHExecutor {
             shell.setPtyType(TERMTYPE == "none" ? "ansi" : TERMTYPE, COLS, ROWS, 0, 0);
             shell.connect();
             waitCompletion();
-            String encoding=getLastLine("echo $LANG\n",true);
-            if(encoding!=null) {
-                String[] e=encoding.split(".");
-                try{
-                    charset=Charset.forName(e[e.length-1]);
-                } catch (Exception e1) {}
+            String encoding = getLastLine("echo $LANG\n", true);
+            if (encoding != null) {
+                String[] e = encoding.split(".");
+                try {
+                    charset = Charset.forName(e[e.length - 1]);
+                } catch (Exception e1) {
+                }
             }
         } catch (Exception e) {
             throw e;
@@ -272,7 +273,7 @@ public class SSHExecutor {
 
         @Override
         public void write(int i) throws IOException {
-            if(i==7||i==14||i==15) return;
+            if (i == 7 || i == 14 || i == 15) return;
             //System.out.print(i+" ");
             char c = (char) i;
             buf.put((byte) i);

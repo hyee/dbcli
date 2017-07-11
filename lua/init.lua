@@ -64,8 +64,8 @@ function init.init_path()
     env("_CACHE_BASE",env.WORK_DIR.."cache"..path_del)
     env("_CACHE_PATH",env._CACHE_BASE)
     local package=package
-    package.cpath=""
-    package.path=""
+    package.cpath="."
+    package.path="."
     
     for _,v in ipairs({"lua","lib","oracle","bin"}) do
         local path=string.format("%s%s%s",env.WORK_DIR,v,path_del)

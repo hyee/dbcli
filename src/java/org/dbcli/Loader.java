@@ -46,25 +46,27 @@ public class Loader {
 
 
     public Loader() throws Exception {
-        Future<LuaState> t2 = Console.threadPool.schedule(new Callable<LuaState>() {
-            @Override
-            public LuaState call() {
-                try {
-                    File f = new File(Loader.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-                    root = f.getParentFile().getParent();
-                    libPath = root + File.separator + "lib" + File.separator;
+        Future<LuaState> t2 = Console.threadPool.schedule(() -> {
+            try {
+                File f = new File(Loader.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+                root = f.getParentFile().getParent();
+                libPath = root + File.separator + "lib" + File.separator;
+                String os = System.getProperty("os.name", "Windows").toLowerCase();
+                if (os.startsWith("windows")) {
                     String bit = System.getProperty("sun.arch.data.model");
                     if (bit == null) bit = System.getProperty("com.ibm.vm.bitmode");
                     libPath += (bit.equals("64") ? "x64" : "x86");
-                    addLibrary(libPath, true);
-                    System.setProperty("library.jansi.path", libPath);
-                    System.setProperty("jna.library.path", libPath);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    System.exit(0);
+                } else if (os.startsWith("linux")) {
+                    libPath += "linux";
                 }
-                return new LuaState();
+                addLibrary(libPath, true);
+                System.setProperty("library.jansi.path", libPath);
+                System.setProperty("jna.library.path", libPath);
+            } catch (Exception e) {
+                e.printStackTrace();
+                System.exit(0);
             }
+            return new LuaState();
         }, 0, TimeUnit.MILLISECONDS);
         console = new Console();
         //Ctrl+D
