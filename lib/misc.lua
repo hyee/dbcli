@@ -5,75 +5,9 @@ function string.initcap(v)
     return (' '..v):lower():gsub("([^%w])(%w)",function(a,b) return a..b:upper() end):sub(2)
 end
 
-local shell=ffi.load("shell32")
-local kernel=ffi.load("kernel32")
-ffi.cdef([[
-typedef int           INT;
-typedef unsigned long    DWORD;
-typedef unsigned short   WORD;
-typedef unsigned char    BYTE;
-typedef char *        LPSTR;
-typedef const char *    LPCSTR;
-typedef const char *    PCSTR;
-typedef LPCSTR          LPCTSTR;
-typedef int           HWND;
-typedef void *        HINSTANCE;
-typedef void *        LPVOID;
-typedef WORD *           LPWORD;
-typedef int              BOOL;
-typedef void *HANDLE;
-typedef unsigned char  *   LPBYTE;
 
-typedef struct _SECURITY_ATTRIBUTES {
-    DWORD nLength;
-    LPVOID lpSecurityDescriptor;
-    BOOL bInheritHandle;
-} SECURITY_ATTRIBUTES,  *PSECURITY_ATTRIBUTES,  *LPSECURITY_ATTRIBUTES;
-typedef struct _STARTUPINFOA {
-    DWORD   cb;
-    LPSTR   lpReserved;
-    LPSTR   lpDesktop;
-    LPSTR   lpTitle;
-    DWORD   dwX;
-    DWORD   dwY;
-    DWORD   dwXSize;
-    DWORD   dwYSize;
-    DWORD   dwXCountChars;
-    DWORD   dwYCountChars;
-    DWORD   dwFillAttribute;
-    DWORD   dwFlags;
-    WORD    wShowWindow;
-    WORD    cbReserved2;
-    LPBYTE  lpReserved2;
-    HANDLE  hStdInput;
-    HANDLE  hStdOutput;
-    HANDLE  hStdError;
-} STARTUPINFOA, *LPSTARTUPINFOA;
-
-typedef struct _PROCESS_INFORMATION {
-    HANDLE hProcess;
-    HANDLE hThread;
-    DWORD dwProcessId;
-    DWORD dwThreadId;
-} PROCESS_INFORMATION, *PPROCESS_INFORMATION, *LPPROCESS_INFORMATION;
-
-void ShellExecuteA(HWND hwnd,LPCTSTR lpOperation,LPCTSTR lpFile,LPCTSTR lpParameters,LPCTSTR lpDirectory,INT nShowCmd);
-
-BOOL CreateProcessA(
-    LPCSTR lpApplicationName,
-    LPCTSTR lpCommandLine,
-    LPSECURITY_ATTRIBUTES lpProcessAttributes,
-    LPSECURITY_ATTRIBUTES lpThreadAttributes,
-    BOOL bInheritHandles,
-    DWORD dwCreationFlags,
-    LPVOID lpEnvironment,
-    LPCSTR lpCurrentDirectory,
-    LPSTARTUPINFOA lpStartupInfo,
-    LPPROCESS_INFORMATION lpProcessInformation
-    );
-]])
 function os.shell(cmd,args)
-    shell.ShellExecuteA(0,"open",cmd,args,nil,1)
+    --shell.ShellExecuteA(0,"open",cmd,args,nil,1)
 end
 
 local WCS_ctype = ffi.typeof('char[?]')

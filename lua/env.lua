@@ -1087,7 +1087,7 @@ end
 function env.resolve_file(filename,ext)
     if not filename:find('[\\/]') then
         filename= env.join_path(env._CACHE_PATH,filename)
-    elseif not filename:find('^%a:') then
+    elseif (env.OS=='windows' and not filename:find('^%a:')) or (env.OS~='windows' and not filename:find('^/'))  then
         filename= env.join_path(env.WORK_DIR,filename)
     end
 

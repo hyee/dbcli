@@ -33,36 +33,8 @@ local charmap={0x3d, 0x65, 0x85, 0xb3, 0x18, 0xdb, 0xe2, 0x87, 0xf1, 0x52,
                0x8d, 0x92, 0x4a, 0x11, 0x89, 0x74, 0x6b, 0x91, 0xfb, 0xfe,
                0xc9, 0x01, 0xea, 0x1b, 0xf7, 0xce}
 
-ffi.cdef[[
-    int __stdcall  CryptBinaryToStringA(
-            const char *pbBinary,
-            int  cbBinary,
-            int  dwFlags,
-            char * pszString,
-            int *pcchString
-    );
-    int __stdcall CryptStringToBinaryA(
-        const char *pszString,
-        int  cchString,
-        int  dwFlags,
-        char *pbBinary,
-        int  *pcbBinary,
-        int  *pdwSkip,
-        int  *pdwFlags
-    );
-]]
-local crypt = ffi.load(ffi.os == "Windows" and "crypt32")
-
-function unwrap.fromBase64(txt)
-  local buflen = ffi.new("int[1]")
-  crypt.CryptStringToBinaryA(txt, #txt, 1, nil, buflen, nil, nil)
-  local buf = ffi.new("char[?]", buflen[0])
-  crypt.CryptStringToBinaryA(txt, #txt, 1, buf, buflen, nil, nil)
-  return ffi.string(buf, buflen[0])
-end
-
 local function decode_base64_package(base64str)
-    local base64dec = unwrap.fromBase64(base64str):sub(21)
+    local base64dec = loader:Base642Bytes(base64str):sub(21)
     local decoded = {}
     for i=1,#base64dec do
             --print(base64dec:sub(i,i):byte(),base64dec:sub(i,i))

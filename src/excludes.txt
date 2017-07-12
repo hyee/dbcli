@@ -14,7 +14,6 @@
 \ConsoleTest\
 \emviewers\
 \RWP\
-\linux\
 \mac\
 .sublime-project
 .sublime-workspace
@@ -22,7 +21,6 @@ ANSI32.DLL
 ANSI64.DLL
 ansicon.exe
 .alias
-.so
 .bak
 .cfg
 .zip
@@ -36,6 +34,5 @@ dbcli_nojre.bat
 dbcli_agent.bat
 dbcli_x64.bat
 dbcli_ibm.bat
-dbcli.sh
 .xplan_settings
 user.xml

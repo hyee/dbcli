@@ -991,7 +991,7 @@ function db_core:__onload()
         java.loader:addPath(file.fullname)
     end
     if #jars==0 then 
-        env.warn("Cannot find JDBC library in '%s', you will not able to connect to any database.",self.root_dir)
+        env.warn("Cannot find JDBC library in '%s', you will not be able to connect to any database.",self.root_dir)
         if self.JDBC_ADDRESS then
             env.warn("Please download and copy it from %s which should be compatible with JRE %s",self.JDBC_ADDRESS,java.system:getProperty('java.vm.specification.version'))
         end
