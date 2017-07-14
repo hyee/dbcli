@@ -313,7 +313,6 @@ function grid:add(row)
     rs[0]=headind
     local cnt=0
     --run statement
-    if grid.col_wrap==nil then print(debug.traceback()) end
     for k,v in ipairs(rs) do
         rs._org[k]=v
         if k>grid.maxcol then break end
@@ -355,11 +354,15 @@ function grid:add(row)
                         string.rep(' ',math.ceil((max_len-len2)/2)),b)
                 end)
             end
-            if grid.col_wrap>0 and not v:find("\n") and #v>grid.col_wrap then
+
+            local col_wrap=grid.col_wrap
+            if linesize then col_wrap=math.min(col_wrap>0 and col_wrap or linesize,linesize) end
+
+            if col_wrap>0 and not v:find("\n") and #v>col_wrap then
                 local v1={}
                 while v and v~="" do
-                    table.insert(v1,v:sub(1,grid.col_wrap))
-                    v=v:sub(grid.col_wrap+1)
+                    table.insert(v1,v:sub(1,col_wrap))
+                    v=v:sub(col_wrap+1)
                 end
                 v=table.concat(v1,'\n')
             end

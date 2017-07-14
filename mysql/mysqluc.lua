@@ -46,7 +46,7 @@ function utils:set_work_dir(path,quiet)
         self:rebuild_commands(self.work_dir)
     end
 end
-
+local _os=env.PLATFORM
 function utils:make_sqlpath()
     local path={}
     if self.work_dir then path[#path+1]=self.work_dir end
@@ -55,7 +55,11 @@ function utils:make_sqlpath()
     for i=#path,1,-1 do
         if path[i]:lower():find(env._CACHE_BASE:lower(),1,true) then table.remove(path,i) end
     end
-    local dirs=io.popen('dir /s/b/a:d "'..table.concat(path,'" "')..'" 2>nul')
+    local cmd='dir /s/b/a:d "'..table.concat(path,'" "')..'" 2>nul'
+    if _os~="windows" then
+        cmd='find "'..table.concat(path,'" "')..'" -type d 2>/dev/null'
+    end
+    local dirs=io.popen(cmd)
     for n in dirs:lines() do path[#path+1]=n end
     table.sort(path,function(a,b)
         a,b=a:lower(),b:lower()

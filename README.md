@@ -43,7 +43,7 @@ For Windows OS, to avoid the word wrap in the terminal window which affects the 
 * In the `Font` tab, change the font size as smaller value.
 
 ###Linux: Pre-Requisitions
-Linux must be the `64-bit` version, and make sure JRE 1.8 and `glibc` larger than v2.6(use `ldd --version` to verify) are installed. Since Linux terminal doesn't have horizontal scrollbar, smaller font is preferred.
+Linux must be the `64-bit` version, and make sure JRE 1.8 and `glibc >= v2.4`(use `ldd --version` to verify) are installed. Since Linux terminal doesn't have horizontal scrollbar, smaller font is preferred.
 
 ###Configure environment
 Before running dbcli, make sure that you have installed JRE 1.8+ in your local PC. If you are using the version of "With-JRE" branch, this step can be skipped.

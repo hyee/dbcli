@@ -358,7 +358,7 @@ local pscp_options='\n'..[[Options:
   -scp      force use of SCP protocol]]
 
 local pscp='"'..env.join_path(env.WORK_DIR,"bin",'pscp.exe')..'"'
-if env.OS~="windows" then pscp="pscp" end
+if env.PLATFORM~="windows" then pscp="scp" end
 local pscp_download_usage="Download file(s) from SSH server, support wildcards. Usage: ssh download [remote_path]<filename> [.|<local_path>] [options]"
 local pscp_upload_usage="Upload file(s) into SSH server, support wildcards. Usage: ssh uploaded  [local_path]<filename> [.|<remote_path>] [options]"
 local pscp_local_dir
@@ -399,7 +399,7 @@ function ssh:ftp_file(op,info)
         local_dir=(pscp_local_dir or env._CACHE_PATH)..local_dir
     end
     local local_display,remote_display=local_dir,remote_file
-    if env.OS=="windows" then local_dir='"'..local_dir:gsub("[\\/]+","\\\\")..'"' end
+    if env.IS_WINDOWS then local_dir='"'..local_dir:gsub("[\\/]+","\\\\")..'"' end
     if op~='download' then
         remote_file,local_dir=local_dir,remote_file
         remote_display,local_display=local_display,remote_display

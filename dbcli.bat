@@ -50,5 +50,5 @@ for /r %%i in (*.pack.gz) do (
 
 (%ANSICON_CMD% "!JRE_HOME!\java.exe" -noverify -Xmx384M -cp .\lib\*;.\lib\ext\*%OTHER_LIB% ^
     -XX:+UseG1GC -XX:+UseStringDeduplication -Dfile.encoding=%DBCLI_ENCODING% -Duser.language=en -Duser.region=US -Duser.country=US ^
-    -Doracle.net.tns_admin="%TNS_ADM%" org.dbcli.Loader %DBCLI_PARAMS% %* )||pause
+    org.dbcli.Loader %DBCLI_PARAMS% %* )||pause
 EndLocal

@@ -168,7 +168,12 @@ public class JavaAgent implements ClassFileTransformer {
             destStream.write(classFileBuffer, 0, classFileBuffer.length);
             destStream.close();
             ClassReader cr = new ClassReader(classFileBuffer);
-            String superClassName = cr.getSuperName();
+            String superClassName;
+            try {
+                superClassName = cr.getSuperName();
+            } catch (Exception e) {
+                return;
+            }
             String[] interfaces = cr.getInterfaces();
             if (superClassName != null && !superClassName.replace(".", "/").equals(className.replace(".", "/")))
                 copyFile(null, superClassName, null);

@@ -87,6 +87,7 @@ BUILDMODE= mixed
 ##############################################################################
 # Enable/disable these features as needed, but make sure you force a full
 # recompile with "make clean", followed by "make".
+# XCFLAGS="-std=gnu99" # to build in Linux 5.9
 XCFLAGS=
 #
 # Permanently disable the FFI extension to reduce the size of the LuaJIT

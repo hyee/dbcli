@@ -125,7 +125,7 @@ local console_color=os.getenv("CONSOLE_COLOR")
 if isAnsiSupported and console_color and console_color~='NA' then
     ansi.ansi_default=console_color
     local fg,bg=default_color[console_color:sub(2)][2],default_color[console_color:sub(1,1)][1]
-    if bg and fg and env.OS=='windows' then
+    if bg and fg and env.IS_WINDOWS then
         base_color['NOR'][1]=base_color['NOR'][1]..base_color[fg][1]..base_color[bg][1]
     end
 end
@@ -199,7 +199,7 @@ function ansi.addCompleter(name,args)
 end
 
 function ansi.clear_sceen()
-    os.execute(env.OS == "windows" and "cls" or "clear")
+    os.execute(env.IS_WINDOWS and "cls" or "clear")
 end
 
 function ansi.define_color(name,value,module,description)

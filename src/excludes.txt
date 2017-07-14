@@ -22,6 +22,7 @@ ANSI64.DLL
 ansicon.exe
 .alias
 .bak
+.conf
 .cfg
 .zip
 .7z
@@ -36,3 +37,5 @@ dbcli_x64.bat
 dbcli_ibm.bat
 .xplan_settings
 user.xml
+NULL
+.stackdump

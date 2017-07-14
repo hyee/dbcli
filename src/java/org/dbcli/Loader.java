@@ -8,6 +8,7 @@ import com.opencsv.CSVWriter;
 import com.opencsv.ResultSetHelperService;
 import com.opencsv.SQLWriter;
 import org.jline.keymap.KeyMap;
+import org.jline.utils.OSUtils;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -24,7 +25,6 @@ import java.util.Base64;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.InflaterInputStream;
@@ -46,28 +46,30 @@ public class Loader {
 
 
     public Loader() throws Exception {
-        Future<LuaState> t2 = Console.threadPool.schedule(() -> {
-            try {
-                File f = new File(Loader.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-                root = f.getParentFile().getParent();
-                libPath = root + File.separator + "lib" + File.separator;
-                String os = System.getProperty("os.name", "Windows").toLowerCase();
-                if (os.startsWith("windows")) {
-                    String bit = System.getProperty("sun.arch.data.model");
-                    if (bit == null) bit = System.getProperty("com.ibm.vm.bitmode");
-                    libPath += (bit.equals("64") ? "x64" : "x86");
-                } else if (os.startsWith("linux")) {
-                    libPath += "linux";
-                }
-                addLibrary(libPath, true);
-                System.setProperty("library.jansi.path", libPath);
-                System.setProperty("jna.library.path", libPath);
-            } catch (Exception e) {
-                e.printStackTrace();
-                System.exit(0);
+
+        try {
+            File f = new File(Loader.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            root = f.getParentFile().getParent();
+            libPath = root + File.separator + "lib" + File.separator;
+            if (OSUtils.IS_WINDOWS) {
+                String bit = System.getProperty("sun.arch.data.model");
+                if (bit == null) bit = System.getProperty("com.ibm.vm.bitmode");
+                libPath += (bit.equals("64") ? "x64" : "x86");
+            } else if (OSUtils.IS_OSX) {
+                libPath += "mac";
+            } else {
+                libPath += "linux";
             }
-            return new LuaState();
-        }, 0, TimeUnit.MILLISECONDS);
+            String libs = System.getenv("LD_LIBRARY_PATH");
+            addLibrary(libPath + (libs == null ? "" : File.pathSeparator + libs), true);
+            System.setProperty("library.jansi.path", libPath);
+            System.setProperty("jna.library.path", libPath);
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.exit(0);
+        }
+        lua = new LuaState();
+
         console = new Console();
         //Ctrl+D
         keyMap = console.reader.getKeys();
@@ -79,7 +81,10 @@ public class Loader {
                 q.actionPerformed((ActionEvent) e[0]);
             }
         });
-        lua = t2.get();
+    }
+
+    public void mkdir(String path) {
+        new File(path).mkdirs();
     }
 
     public static Exception getRootCause(Exception e) {
@@ -173,6 +178,7 @@ public class Loader {
         System.setProperty("java.class.path", System.getProperty("java.class.path") + File.pathSeparator + file.replace(root, "."));
     }
 
+
     public void copyClass(String className) throws Exception {
         JavaAgent.copyFile(null, className.replace("\\.", "/"), null);
     }
@@ -246,11 +252,15 @@ public class Loader {
         return data;
     }
 
+    public byte[] Base642Bytes(String base64) {
+        return Base64.getDecoder().decode(base64.replaceAll("\\s+", ""));
+    }
+
     public String Base64ZlibToText(String[] pieces) throws Exception {
         byte[] buff = new byte[]{};
         for (String piece : pieces) {
             if (piece == null) continue;
-            byte[] tmp = Base64.getDecoder().decode(piece.replaceAll("\\s+", ""));
+            byte[] tmp = Base642Bytes(piece);
             byte[] joinedArray = Arrays.copyOf(buff, buff.length + tmp.length);
             System.arraycopy(tmp, 0, joinedArray, buff.length, tmp.length);
             buff = joinedArray;

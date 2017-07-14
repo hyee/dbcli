@@ -1087,7 +1087,7 @@ end
 function env.resolve_file(filename,ext)
     if not filename:find('[\\/]') then
         filename= env.join_path(env._CACHE_PATH,filename)
-    elseif (env.OS=='windows' and not filename:find('^%a:')) or (env.OS~='windows' and not filename:find('^/'))  then
+    elseif (env.IS_WINDOWS and not filename:find('^%a:')) or (not env.IS_WINDOWS and not filename:find('^/'))  then
         filename= env.join_path(env.WORK_DIR,filename)
     end
 
@@ -1127,6 +1127,14 @@ function env.set_title(title)
     if CURRENT_TITLE~=titles then
         CURRENT_TITLE=titles
         env.uv.set_process_title(titles)
+        --[[local term=os.getenv("TERM")
+            if term=="screen" then
+                os.execute("echo -n '\\033k"..titles.."\\033\\\\'")
+            elseif term == "xterm" then
+                os.execute("echo -n '\\033]2;"..titles.."\\007'")
+            else
+                env.uv.set_process_title(titles)
+        --end]]
     end
 end
 

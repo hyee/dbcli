@@ -7,14 +7,10 @@ end
 
 
 function os.shell(cmd,args)
-    --shell.ShellExecuteA(0,"open",cmd,args,nil,1)
+    io.popen(cmd..(args and (" "..args) or ""))
 end
 
-local WCS_ctype = ffi.typeof('char[?]')
-function os.CreateProcess(cmdline,  flags)
-    kernel.CreateProcessA(cmdline,nil, nil, nil,false, 0, nil,nil,nil,nil)
-end
-
+local _os=env.PLATFORM
 function os.find_extension(exe)
     local err="Cannot find "..exe.." in the default path, please add it into EXT_PATH of file data/init.cfg"
     if exe:find('[\\/]') then
@@ -22,18 +18,16 @@ function os.find_extension(exe)
         env.checkerr(type,err)
         return file
     end
-     exe='"'..env.join_path(exe):trim('"')..'"'
-    local cmd=(env.OS=="windows" and "where " or "which ")..exe.." >"..(env.OS=="windows" and "nul 2>nul" or "/dev/null")
-
-    env.checkerr((os.execute(cmd)),err)
-    cmd=(env.OS=="windows" and "where " or "which ")..exe
+    exe='"'..env.join_path(exe):trim('"')..'"'
+    local nul=_os=="windows" and "nul" or "/dev/null"
+    local cmd=string.format("%s %s 2>%s", _os=="windows" and "where " or "which ",exe,nul)
     local f=io.popen(cmd)
     local path
-    for n in f:lines() do 
-        path=n
+    for file in f:lines() do
+        path=file
         break
     end
-    f:close()
+    env.checkerr(path,err)
     return path
 end
 

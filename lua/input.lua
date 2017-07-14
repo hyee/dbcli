@@ -1,19 +1,19 @@
 local string,io,table=string,io,table
 package.path=debug.getinfo(1, "S").source:sub(2):gsub('[%w%.]+$','?.lua')
-io.stdout:write("    --------------------------------------------------------------------------------------------------------------------------------------\n")
-io.stdout:write("    | DBCLI, type 'conn' to connect to db, or 'help' for more information. (c)2014-2016 hyee, MIT license (https://github.com/hyee/dbcli)|\n")
-io.stdout:write("    ======================================================================================================================================\n")
 local console=console
 
-if console:getBufferWidth()<=terminal:getWidth()+1 then
-	io.stdout:write("    * Your terminal doesn't support horizontal scroll, lines longer than screen width default to be chopped.\n")
-	io.stdout:write("      Please run 'set linesize <cols>' to a larger value if preferred folding the long lines instead of chopping.\n")
-end
-io.stdout:write("\n")
+
 local readLine=console.readLine
 local env=require("env")
 env.onload(...)
-
+print("--------------------------------------------------------------------------------------------------------------------------------------")
+print("| DBCLI, type 'conn' to connect to db, or 'help' for more information. (c)2014-2016 hyee, MIT license (https://github.com/hyee/dbcli)|")
+print("======================================================================================================================================")
+if console:getBufferWidth()<=terminal:getWidth()+1 then
+	print("* Your terminal doesn't support horizontal scroll, lines longer than screen width default to be chopped.")
+	print("  Please run 'set linesize <cols>' to a larger value if preferred folding the long lines rather than chopping.")
+end
+print()
 --start the CLI interpretor
 
 local line,eval = "",env.execute_line

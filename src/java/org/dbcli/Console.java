@@ -11,6 +11,7 @@ import org.jline.reader.impl.DefaultParser;
 import org.jline.reader.impl.LineReaderImpl;
 import org.jline.terminal.Terminal;
 import org.jline.utils.NonBlockingReader;
+import org.jline.utils.OSUtils;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -41,7 +42,6 @@ public class Console {
     private EventReader monitor = new EventReader();
     private ActionListener event;
     private char[] keys;
-    private String os;
     long threadID;
     private EventCallback callback;
     private ParserCallback parserCallback;
@@ -87,6 +87,18 @@ public class Console {
         completer.candidates.putAll(candidates);
     }
 
+    public String getPlatform() {
+        if (OSUtils.IS_CYGWIN) return "cygwin";
+        if (OSUtils.IS_MINGW) return "mingw";
+        if (OSUtils.IS_OSX) return "mac";
+        if (OSUtils.IS_WINDOWS) return "windows";
+        return "linux";
+    }
+
+    public int getBufferWidth() {
+        return ((MyTerminal) terminal).getBufferWidth();
+    }
+
     public void setKeywords(Map<String, ?> keywords) {
         highlighter.keywords = keywords;
         addCompleters(keywords, false);
@@ -105,15 +117,14 @@ public class Console {
     public Console() throws Exception {
         String colorPlan = System.getenv("ANSICON_DEF");
         if (colorPlan == null) colorPlan = "jline";
-        os = System.getProperty("os.name", "Windows").toLowerCase();
-        terminal = os.startsWith("windows") ? new WindowsTerminal(colorPlan) : new PosixTerminal(colorPlan);
+        terminal = OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MINGW) ? new WindowsTerminal(colorPlan) : new PosixTerminal(colorPlan);
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).build();
         this.parser = new Parser();
         this.reader.setParser(parser);
         this.reader.setHighlighter(highlighter);
         this.reader.setCompleter(completer);
         this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE);
-        this.reader.setOpt(LineReader.Option.MOUSE);
+        //this.reader.setOpt(LineReader.Option.MOUSE);
         this.reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
         this.reader.setOpt(LineReader.Option.BRACKETED_PASTE);
         /*
@@ -173,6 +184,12 @@ public class Console {
     public void write(String msg) {
         if (writer == null) return;
         writer.write(msg);
+        writer.flush();
+    }
+
+    public void println(String msg) {
+        if (writer == null) return;
+        writer.println(msg);
         writer.flush();
     }
 

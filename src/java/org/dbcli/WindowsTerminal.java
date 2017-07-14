@@ -74,7 +74,11 @@ public class WindowsTerminal extends JnaWinSysTerminal implements MyTerminal {
 
     @Override
     protected String readConsoleInput() throws IOException {
-        if (locker != null) return "";
+        if (locker != null) try {
+            locker.await();
+        } catch (InterruptedException e) {
+
+        }
         final String input = super.readConsoleInput();
         final long timer = System.currentTimeMillis();
         try {

@@ -47,9 +47,9 @@ function system:set_work_dir(path,quiet)
     end
     if not self.process then return end
 end
-
+local _os=env.PLATFORM
 function system:list_work_dir(filter)
-    os.execute('dir "'..self.work_dir..'" /B/S/A:-D '..(filter or ""))
+    os.execute((_os=="windows" and ('dir "'..self.work_dir..'" /B/S/A:-D ') or ('find "'..self.work_dir..'" -type f'))..(filter or ""))
 end
 
 function system:make_native_command(arg)
@@ -58,10 +58,10 @@ function system:make_native_command(arg)
         return tostring(s):find("%s") and ('"'..s..'"') or s
     end
     for k,v in pairs(self.env) do
-        env[#env+1]='(set '..enclose(k..'='..v)..' )'
+        env[#env+1]=_os=="windows" and ('(set '..enclose(k..'='..v)..' )') or ('export k="'..v..'"')
     end
 
-    env[#env+1]='cd /d '..enclose(self.work_dir)
+    env[#env+1]=(_os=="windows" and 'cd /d ' or 'cd ')..enclose(self.work_dir)
 
     for i,v in ipairs(self.startup_cmd) do
         cmd[#cmd+1]=enclose(v)
@@ -72,7 +72,7 @@ function system:make_native_command(arg)
     end
 
     env[#env+1]=table.concat(cmd," ")
-    cmd=table.concat(env,' & ')
+    cmd=table.concat(env,_os=="windows" and ' & ' or " ; ")
     return cmd
 end
 

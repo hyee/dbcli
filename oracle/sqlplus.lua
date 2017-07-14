@@ -11,6 +11,7 @@ function sqlplus:ctor()
     self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."sqlplus",{}
     self.prompt_pattern="^(.+[>\\$#@] *| *\\d+ +)$"
     self.block_input=true
+    if env.PLATFORM~="windows" then self.support_redirect=false end
 end
 
 
@@ -45,6 +46,7 @@ function sqlplus:set_work_dir(path,quiet)
     end
 end
 
+local _os=env.PLATFORM
 function sqlplus:make_sqlpath()
     local path={}
     if self.work_dir then path[#path+1]=self.work_dir end
@@ -53,7 +55,12 @@ function sqlplus:make_sqlpath()
     for i=#path,1,-1 do
         if path[i]:lower():find(env._CACHE_BASE:lower(),1,true) then table.remove(path,i) end
     end
-    local dirs=io.popen('dir /s/b/a:d "'..table.concat(path,'" "')..'" 2>nul')
+    local cmd='dir /s/b/a:d "'..table.concat(path,'" "')..'" 2>nul'
+    if _os~="windows" then
+        cmd='find "'..table.concat(path,'" "')..'" -type d 2>/dev/null'
+    end
+    
+    local dirs=io.popen(cmd)
     for n in dirs:lines() do path[#path+1]=n end
     table.sort(path,function(a,b)
         a,b=a:lower(),b:lower()
@@ -68,7 +75,7 @@ end
 
 function sqlplus:get_startup_cmd(args,is_native)
     local tnsadm=tostring(java.system:getProperty("oracle.net.tns_admin"))
-    local export=env.OS=="windows" and "set " or "export "
+    local export=env.PLATFORM=="windows" and "set " or "export "
     local props={}
     if tnsadm and tnsadm~="" then self.env["TNS_ADMIN"]=tnsadm end
     if db.props.nls_lang then self.env["NLS_LANG"]=db.props.nls_lang end
@@ -118,7 +125,7 @@ function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
         local subdir=args.FILE_OUTPUT_DIR
         if subdir then
             self.work_path=self.work_path..subdir
-            os.execute('mkdir "'..self.work_path..'" >nul')
+            loader:mkdir(self.work_path)
         end
         self.work_path=self.work_path:gsub(env.PATH_DEL..'+$','')
         local file_dir=file:gsub('[\\/][^\\/]+$',"")
