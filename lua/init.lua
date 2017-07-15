@@ -1,5 +1,5 @@
 local env=env
-local dirs={"cache","data"}
+local dirs={"cache","data","lib/ext"}
 local init={
     module_list={
        --Libraries ->
@@ -73,7 +73,7 @@ function init.init_path()
     package.cpath=table.concat(paths,';')
     package.path="?.lua"
     
-    for _,v in ipairs({"lua","lib","oracle","bin"}) do
+    for _,v in ipairs({"lua","lib","bin"}) do
         local path=string.format("%s%s%s",env.WORK_DIR,v,path_del)
         local p1=path.."?.lua"
         package.path  = package.path .. ';' ..p1

@@ -67,7 +67,7 @@ local base_color={
     --Note, these are Esc codes for VT100 terminals, and emmulators
     --and they may not all work within the mud
     BOLD    ={"\27[1m","Turn on bold mode",0},
-    CLR     ={"\27[2J","Clear the screen",1},
+    CLR     ={"\27C\27[3J","Clear the screen",1},
     HOME    ={"\27[H","Send cursor to home position",1},
     REF     ={"\27[2J;H" , "Clear screen and home cursor",1},
     KILLBL  ={"\27[0J","Clear from cursor to end of screen",1},
@@ -199,7 +199,7 @@ function ansi.addCompleter(name,args)
 end
 
 function ansi.clear_sceen()
-    os.execute(env.IS_WINDOWS and "cls" or "clear")
+    os.execute(env.PLATFORM=='windows' and "cls" or "clear")
 end
 
 function ansi.define_color(name,value,module,description)

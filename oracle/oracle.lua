@@ -17,7 +17,8 @@ oracle.module_list={
     "show",
     "chart",
     "ssh",
-    "extvars"
+    "extvars",
+    "sqlcl"
 }
 
 local home,tns=os.getenv("ORACLE_HOME"),os.getenv("TNS_ADMIN")
@@ -72,7 +73,7 @@ function oracle:connect(conn_str)
                     usr,pwd,conn_desc = conn_str:match("(.*)/(.*)@(.+)")
                     url, isdba=(conn_desc or conn_str):match('^(.*) as (%w+)$')
                 elseif conn_str:find('/ ',1,true)==1 and isdba then
-                    env.checkerr(home,"Environment variable ORACLE_HOME is not found, cannot login with oci driver!")
+                    env.checkerr(home and os.getenv("ORACLE_SID"),"Environment variable ORACLE_HOME/ORACLE_SID is not found, cannot login with oci driver!")
                     driver,usr,pwd,conn_desc,url="oci8","sys","sys","/ as sysdba",""
                 end
             end

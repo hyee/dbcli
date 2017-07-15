@@ -56,6 +56,6 @@ done
 wait
 
 umask 000
-"$_java" -noverify -Xmx384M  -cp .:lib/*$OTHER_LIB -XX:+UseG1GC -XX:+UseStringDeduplication \
+"$_java" -noverify -Xmx384M  -cp .:lib/*:lib/ext/*$OTHER_LIB -XX:+UseG1GC -XX:+UseStringDeduplication \
     -Dfile.encoding=$DBCLI_ENCODING -Duser.language=en -Duser.region=US -Duser.country=US \
-    org.dbcli.Loader $*
+    -Djava.awt.headless=true org.dbcli.Loader $*

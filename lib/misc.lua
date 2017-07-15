@@ -19,8 +19,8 @@ function os.find_extension(exe)
         return file
     end
     exe='"'..env.join_path(exe):trim('"')..'"'
-    local nul=_os=="windows" and "nul" or "/dev/null"
-    local cmd=string.format("%s %s 2>%s", _os=="windows" and "where " or "which ",exe,nul)
+    local nul=env.IS_WINDOWS and "NUL" or "/dev/null"
+    local cmd=string.format("%s %s 2>%s", env.IS_WINDOWS and "where " or "which ",exe,nul)
     local f=io.popen(cmd)
     local path
     for file in f:lines() do

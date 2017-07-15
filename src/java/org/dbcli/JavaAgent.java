@@ -25,12 +25,14 @@ public class JavaAgent implements ClassFileTransformer {
     static Pattern re;
     static String separator = File.separator;
     static Field classFinder = null;
+    static String libPath = null;
 
     static {
         try {
-            re = Pattern.compile("/([^/]+?)\\.(jar|zip)");
+            re = Pattern.compile("(.*?)/([^/]+?)\\.(jar|zip)");
             File f = new File(JavaAgent.class.getProtectionDomain().getCodeSource().getLocation().toURI());
             destFolder = f.getParentFile().getParent() + separator + "dump" + separator;
+            libPath = f.getParentFile().getPath().replaceAll("([\\\\/])", "/");
             classFinder = ClassLoader.class.getDeclaredField("classes");
             classFinder.setAccessible(true);
         } catch (URISyntaxException localURISyntaxException) {
@@ -132,7 +134,11 @@ public class JavaAgent implements ClassFileTransformer {
         if (location == null) return null;
         source = location.toString();
         mt = re.matcher(source);
-        if (mt.find()) jar = mt.group(1);
+        if (mt.find()) {
+            source = mt.group(1);
+            if (source.contains(libPath)) return null;
+            jar = mt.group(2);
+        }
         return jar;
     }
 
@@ -189,13 +195,14 @@ public class JavaAgent implements ClassFileTransformer {
 
     public static byte[] getClassBuffer(Object clz, ProtectionDomain domain) throws Exception {
         URL classLocation = (clz instanceof String) ? getClassURL((String) clz, domain) : getClassLocation((Class) clz);
-        if (classLocation == null) return null;
+        if (classLocation == null) {
+            return null;
+        }
         InputStream srcStream = classLocation.openStream();
         ByteArrayOutputStream outStream = new ByteArrayOutputStream();
         int count = -1;
         byte[] buf = new byte[4096];
         while ((count = srcStream.read(buf)) != -1) outStream.write(buf, 0, count);
-        buf = null;
         return outStream.toByteArray();
     }
 

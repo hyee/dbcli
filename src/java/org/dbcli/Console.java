@@ -16,6 +16,9 @@ import org.jline.utils.OSUtils;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.security.Permission;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Executors;
@@ -156,6 +159,65 @@ public class Console {
         Interrupter.listen(this, callback);
     }
 
+    Thread subThread = null;
+
+    public void startSqlCL(final String[] args) throws Exception {
+        if (subThread != null) throw new IOException("SQLCL instance is running!");
+        Class clz;
+
+        try {
+            clz = Class.forName("oracle.dbtools.raptor.scriptrunner.cmdline.SqlCli");
+        } catch (ClassNotFoundException e) {
+            throw new IOException("Cannot find SqlCL libraries under folder 'lib/ext'!");
+        }
+
+        Method main = clz.getDeclaredMethod("main", String[].class);
+        subThread = new Thread(() -> {
+            try {
+                main.invoke(null, new Object[]{args});
+            } catch (IllegalAccessException e) {
+                e.printStackTrace();
+            } catch (InvocationTargetException e) {
+                e.printStackTrace();
+            } catch (Exception e) {
+            }
+        });
+
+        SecurityManager securityManager = System.getSecurityManager();
+        System.setSecurityManager(new NoExitSecurityManager(subThread));
+        try {
+            subThread.setDaemon(true);
+            subThread.start();
+            subThread.join();
+        } finally {
+            System.setSecurityManager(securityManager);
+            subThread = null;
+        }
+    }
+
+    private static class NoExitSecurityManager extends SecurityManager {
+        Thread running;
+
+        public NoExitSecurityManager(Thread running) {
+            this.running = running;
+        }
+
+        @Override
+        public void checkPermission(Permission perm) {
+            // allow anything.
+        }
+
+        @Override
+        public void checkPermission(Permission perm, Object context) {
+            // allow anything.
+        }
+
+        @Override
+        public void checkExit(int status) {
+            super.checkExit(status);
+            if (Thread.currentThread() == running) throw new SecurityException("Exited");
+        }
+    }
 
     public void less(String output) throws Exception {
         ByteArrayOutputStream stream = new ByteArrayOutputStream();
@@ -191,6 +253,10 @@ public class Console {
         if (writer == null) return;
         writer.println(msg);
         writer.flush();
+    }
+
+    public void clearScreen() {
+        reader.clearScreen();
     }
 
     public Object invokeMethod(String method, Object... o) {

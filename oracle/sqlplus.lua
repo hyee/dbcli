@@ -11,7 +11,7 @@ function sqlplus:ctor()
     self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."sqlplus",{}
     self.prompt_pattern="^(.+[>\\$#@] *| *\\d+ +)$"
     self.block_input=true
-    if env.PLATFORM~="windows" then self.support_redirect=false end
+    if not env.IS_WINDOWS then self.support_redirect=false end
 end
 
 
@@ -35,11 +35,11 @@ function sqlplus:run_command(cmd,is_print)
     if not self.enter_flag and cmd then
         cmd=cmd..'\0'
     end
-    return self.super.run_command(self,cmd,is_print)
+    return env.subsystem.run_command(self,cmd,is_print)
 end
 
 function sqlplus:set_work_dir(path,quiet)
-    self.super.set_work_dir(self,path,quiet)
+    env.subsystem.set_work_dir(self,path,quiet)
     if not quiet and path and path~="" then
         self:make_sqlpath()
         self:rebuild_commands(self.work_dir)
@@ -56,7 +56,7 @@ function sqlplus:make_sqlpath()
         if path[i]:lower():find(env._CACHE_BASE:lower(),1,true) then table.remove(path,i) end
     end
     local cmd='dir /s/b/a:d "'..table.concat(path,'" "')..'" 2>nul'
-    if _os~="windows" then
+    if not env.IS_WINDOWS then
         cmd='find "'..table.concat(path,'" "')..'" -type d 2>/dev/null'
     end
     
@@ -75,9 +75,8 @@ end
 
 function sqlplus:get_startup_cmd(args,is_native)
     local tnsadm=tostring(java.system:getProperty("oracle.net.tns_admin"))
-    local export=env.PLATFORM=="windows" and "set " or "export "
     local props={}
-    if tnsadm and tnsadm~="" then self.env["TNS_ADMIN"]=tnsadm end
+    if tnsadm~='nil' and tnsadm~="" then self.env["TNS_ADMIN"]=tnsadm end
     if db.props.nls_lang then self.env["NLS_LANG"]=db.props.nls_lang end
     self.env['NLS_DATE_FORMAT']='YYYY-MM-DD HH24:MI:SS'
     --self.env['ORACLE_HOME']="d:\\Soft\\InstanceClient\\bin"
@@ -185,6 +184,11 @@ function sqlplus:f7(n,key_event,str)
     if self.enter_flag and key_event.name=='F7' then
         --self:run_command(str)
     end 
+end
+
+function sqlplus:__onload()
+    
+    
 end
 
 function sqlplus:onload()

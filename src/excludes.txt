@@ -17,6 +17,8 @@
 \mac\
 \jre_linux\
 \jre_mac\
+\temp\
+\ext\
 .sublime-project
 .sublime-workspace
 ANSI32.DLL
