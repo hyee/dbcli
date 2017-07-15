@@ -209,7 +209,7 @@ function env.smart_check_endless(cmd,rest,from_pos)
 end
 
 env.root_cmds={}
-local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,is_dbcmd,allow_overriden,is_pipable,color)
+local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,is_dbcmd,allow_overriden,is_pipable,color,is_blocknewline)
     local abbr={}
 
     if not parameters then
@@ -271,14 +271,15 @@ local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,
         DBCMD     = is_dbcmd,
         COLOR     = color,
         ISOVERRIDE= allow_overriden,
-        ISPIPABLE = is_pipable
+        ISPIPABLE = is_pipable,
+        ISBLOCKNEWLINE=is_blocknewline==true
     }
 end
 
 function env.set_command(...)
     local tab,siz=select(1,...),select('#',...)
     if siz==1 and type(tab)=="table" and tab.cmd then
-        return _new_command(tab.obj,tab.cmd,tab.help_func,tab.call_func,tab.is_multiline,tab.parameters,tab.is_dbcmd,tab.allow_overriden,tab.is_pipable,tab.color)
+        return _new_command(tab.obj or tab[1],tab.cmd or tab[2],tab.help_func or tab[3],tab.call_func or tab[4],tab.is_multiline or tab[5],tab.parameters or tab[6],tab.is_dbcmd or tab[7],tab.allow_overriden or tab[8],tab.is_pipable or tab[9],tab.color or tab[10],tab.is_blocknewline or tab[11])
     else
         return _new_command(...)
     end
@@ -809,7 +810,8 @@ function env.parse_line(line)
     multi_cmd,curr_stmt=nil,nil
     env.CURRENT_PROMPT=env.PRI_PROMPT
     _cmd,_args,_errs=eval_line(line,false)
-    return env.CURRENT_PROMPT==env.MTL_PROMPT,env.CURRENT_PROMPT
+    local is_block=env._CMDS[_cmd] and env._CMDS[_cmd].ISBLOCKNEWLINE or false
+    return env.CURRENT_PROMPT==env.MTL_PROMPT,env.CURRENT_PROMPT,is_block
 end
 
 function env.execute_line()
@@ -1085,7 +1087,7 @@ end
 function env.resolve_file(filename,ext)
     if not filename:find('[\\/]') then
         filename= env.join_path(env._CACHE_PATH,filename)
-    elseif not filename:find('^%a:') then
+    elseif (env.IS_WINDOWS and not filename:find('^%a:')) or (not env.IS_WINDOWS and not filename:find('^/'))  then
         filename= env.join_path(env.WORK_DIR,filename)
     end
 
@@ -1125,6 +1127,14 @@ function env.set_title(title)
     if CURRENT_TITLE~=titles then
         CURRENT_TITLE=titles
         env.uv.set_process_title(titles)
+        --[[local term=os.getenv("TERM")
+            if term=="screen" then
+                os.execute("echo -n '\\033k"..titles.."\\033\\\\'")
+            elseif term == "xterm" then
+                os.execute("echo -n '\\033]2;"..titles.."\\007'")
+            else
+                env.uv.set_process_title(titles)
+        --end]]
     end
 end
 

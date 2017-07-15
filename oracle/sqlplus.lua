@@ -11,6 +11,7 @@ function sqlplus:ctor()
     self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."sqlplus",{}
     self.prompt_pattern="^(.+[>\\$#@] *| *\\d+ +)$"
     self.block_input=true
+    if not env.IS_WINDOWS then self.support_redirect=false end
 end
 
 
@@ -34,17 +35,18 @@ function sqlplus:run_command(cmd,is_print)
     if not self.enter_flag and cmd then
         cmd=cmd..'\0'
     end
-    return self.super.run_command(self,cmd,is_print)
+    return env.subsystem.run_command(self,cmd,is_print)
 end
 
 function sqlplus:set_work_dir(path,quiet)
-    self.super.set_work_dir(self,path,quiet)
+    env.subsystem.set_work_dir(self,path,quiet)
     if not quiet and path and path~="" then
         self:make_sqlpath()
         self:rebuild_commands(self.work_dir)
     end
 end
 
+local _os=env.PLATFORM
 function sqlplus:make_sqlpath()
     local path={}
     if self.work_dir then path[#path+1]=self.work_dir end
@@ -53,7 +55,12 @@ function sqlplus:make_sqlpath()
     for i=#path,1,-1 do
         if path[i]:lower():find(env._CACHE_BASE:lower(),1,true) then table.remove(path,i) end
     end
-    local dirs=io.popen('dir /s/b/a:d "'..table.concat(path,'" "')..'" 2>nul')
+    local cmd='dir /s/b/a:d "'..table.concat(path,'" "')..'" 2>nul'
+    if not env.IS_WINDOWS then
+        cmd='find "'..table.concat(path,'" "')..'" -type d 2>/dev/null'
+    end
+    
+    local dirs=io.popen(cmd)
     for n in dirs:lines() do path[#path+1]=n end
     table.sort(path,function(a,b)
         a,b=a:lower(),b:lower()
@@ -68,9 +75,8 @@ end
 
 function sqlplus:get_startup_cmd(args,is_native)
     local tnsadm=tostring(java.system:getProperty("oracle.net.tns_admin"))
-    local export=env.OS=="windows" and "set " or "export "
     local props={}
-    if tnsadm and tnsadm~="" then self.env["TNS_ADMIN"]=tnsadm end
+    if tnsadm~='nil' and tnsadm~="" then self.env["TNS_ADMIN"]=tnsadm end
     if db.props.nls_lang then self.env["NLS_LANG"]=db.props.nls_lang end
     self.env['NLS_DATE_FORMAT']='YYYY-MM-DD HH24:MI:SS'
     --self.env['ORACLE_HOME']="d:\\Soft\\InstanceClient\\bin"
@@ -118,7 +124,7 @@ function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
         local subdir=args.FILE_OUTPUT_DIR
         if subdir then
             self.work_path=self.work_path..subdir
-            os.execute('mkdir "'..self.work_path..'" >nul')
+            loader:mkdir(self.work_path)
         end
         self.work_path=self.work_path:gsub(env.PATH_DEL..'+$','')
         local file_dir=file:gsub('[\\/][^\\/]+$',"")
@@ -178,6 +184,11 @@ function sqlplus:f7(n,key_event,str)
     if self.enter_flag and key_event.name=='F7' then
         --self:run_command(str)
     end 
+end
+
+function sqlplus:__onload()
+    
+    
 end
 
 function sqlplus:onload()

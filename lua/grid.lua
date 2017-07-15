@@ -2,6 +2,8 @@
 local env,pairs,ipairs=env,pairs,ipairs
 local math,table,string,class,event=env.math,env.table,env.string,env.class,env.event
 local grid=class()
+local console=console
+local getWidth=console.getBufferWidth
 
 local params={
     [{'HEADSEP','HEADDEL'}]={name="title_del",default='-',desc="The delimiter to devide header and body when printing a grid"},
@@ -17,7 +19,7 @@ local params={
     DIGITS={name="digits",default=38,desc="Define the digits for a number",range="0 - 38"},
     SEP4K={name="sep4k",default="off",desc="Define whether to show number with thousands separator",range="on,off"},
     HEADING={name="heading",default="on",desc="Controls printing of column headings in reports",range="on,off"},
-    LINESIZE={name="linesize",default=800,desc="Define the max chars in one line, other overflow parts would be cutted.",range='10-32767'},
+    LINESIZE={name="linesize",default=0,desc="Define the max chars in one line, other overflow parts would be cutted.",range='0-32767'},
     BYPASSEMPTYRS={name="bypassemptyrs",default="off",desc="Controls whether to print an empty resultset",range="on,off"}
     --NULL={name="null_value",default="",desc="Define display value for NULL."}
 }
@@ -54,6 +56,7 @@ function grid.format_title(v)
     return v[grid.title_style](v)
 end
 
+local linesize
 function grid:cut(row,format_func,format_str)
     if type(row)=="table" then
         local colbase=self.col_auto_size
@@ -65,8 +68,9 @@ function grid:cut(row,format_func,format_str)
         end
         row=format_func(format_str,table.unpack(row))
     end
-    if #row>self.linesize then
-        local tab,len,count,clen,ulen={},-self.linesize,0
+    
+    if #row>linesize then
+        local tab,len,count,clen,ulen={},-linesize,0
         for piece,pattern in row:gsplit("(\27%[[%d;]*[mK])") do
             clen,ulen=piece:ulen()
             len,count = len + ulen,count +1
@@ -309,7 +313,6 @@ function grid:add(row)
     rs[0]=headind
     local cnt=0
     --run statement
-    if grid.col_wrap==nil then print(debug.traceback()) end
     for k,v in ipairs(rs) do
         rs._org[k]=v
         if k>grid.maxcol then break end
@@ -351,11 +354,15 @@ function grid:add(row)
                         string.rep(' ',math.ceil((max_len-len2)/2)),b)
                 end)
             end
-            if grid.col_wrap>0 and not v:find("\n") and #v>grid.col_wrap then
+
+            local col_wrap=grid.col_wrap
+            if linesize then col_wrap=math.min(col_wrap>0 and col_wrap or linesize,linesize) end
+
+            if col_wrap>0 and not v:find("\n") and #v>col_wrap then
                 local v1={}
                 while v and v~="" do
-                    table.insert(v1,v:sub(1,grid.col_wrap))
-                    v=v:sub(grid.col_wrap+1)
+                    table.insert(v1,v:sub(1,col_wrap))
+                    v=v:sub(col_wrap+1)
                 end
                 v=table.concat(v1,'\n')
             end
@@ -490,6 +497,10 @@ function grid:wellform(col_del,row_del)
             row_dels=row_dels..row_del:rep(siz)..del
         end
     end
+
+    linesize=self.linesize
+    if linesize<=10 then linesize=getWidth(console) end
+    linesize=linesize-#env.space-1
 
     local cut=self.cut
     if row_del~="" then

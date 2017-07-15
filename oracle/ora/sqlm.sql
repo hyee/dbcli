@@ -17,7 +17,6 @@
 ]]*/
 
 set feed off VERIFY off
-set linesize 3000
 var c refcursor;
 var rs CLOB;
 var filename varchar2;

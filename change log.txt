@@ -1,3 +1,14 @@
+2017-07-15: + public: supports Linux
+            + oracle: supports porting to sqlcl(puts it jar files into lib\ext)
+2017-07-14: + oracle: supports "conn / as sysdba"(12.2+) 
+=======================begin v1.3================================================
+2017-07-06: * public: some fixes and optimizations relative to jline upgades:
+                      * Uses ConEmu library as ANSI renderer if OS version < Win10
+                      * handles the '\t' char in case of copy-paste
+                      * blocks input from Jline in case of switching to other program
+                      * optimizes the predefined tabs in ConsoleZ
+                      * optimizes command 'keymap'
+                      * searches the suitable JRE when JRE_HOME is not defined
 2017-07-02: + oracle: new command "snap heatmap"
             + public: supports 'sort' attr in the "snap" command
             + public: upgrade to JLine3, including following new features:

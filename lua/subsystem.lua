@@ -49,19 +49,20 @@ function system:set_work_dir(path,quiet)
 end
 
 function system:list_work_dir(filter)
-    os.execute('dir "'..self.work_dir..'" /B/S/A:-D '..(filter or ""))
+    os.execute((env.IS_WINDOWS and ('dir "'..self.work_dir..'" /B/S/A:-D ') or ('find "'..self.work_dir..'" -type f'))..(filter or ""))
 end
 
 function system:make_native_command(arg)
+    local is_win=env.IS_WINDOWS
     local env,cmd={},{}
     local function enclose(s)
         return tostring(s):find("%s") and ('"'..s..'"') or s
     end
     for k,v in pairs(self.env) do
-        env[#env+1]='(set '..enclose(k..'='..v)..' )'
+        env[#env+1]=is_win and ('(set '..enclose(k..'='..v)..' )') or ('export k="'..v..'"')
     end
 
-    env[#env+1]='cd /d '..enclose(self.work_dir)
+    env[#env+1]=(is_win and 'cd /d ' or 'cd ')..enclose(self.work_dir)
 
     for i,v in ipairs(self.startup_cmd) do
         cmd[#cmd+1]=enclose(v)
@@ -72,7 +73,7 @@ function system:make_native_command(arg)
     end
 
     env[#env+1]=table.concat(cmd," ")
-    cmd=table.concat(env,' & ')
+    cmd=table.concat(env,is_win and ' & ' or " ; ")
     return cmd
 end
 
@@ -94,15 +95,16 @@ function system:call_process(cmd,is_native)
         
         self.env={PATH=os.getenv("PATH")}
         if not self.work_dir then self.work_dir=self.extend_dirs or self.script_dir or env._CACHE_PATH end
-        self.startup_cmd=self:get_startup_cmd(args,is_native)
-        table.insert(self.startup_cmd,1,os.find_extension(self.executable or self.name))
-        
+        local do_redirect
+        self.startup_cmd,do_redirect=self:get_startup_cmd(args,is_native)
+        if not self.startup_cmd then return end
+        table.insert(self.startup_cmd,1,self.boot_cmd or os.find_extension(self.executable or self.name))
         self:set_work_dir(self.work_dir,true)
         env.log_debug("subsystem","Command : " ..table.concat(self.startup_cmd," "))
         env.log_debug("subsystem","Work dir: "..self.work_dir)
         env.log_debug("subsystem","Environment: \n"..table.dump(self.env))
 
-        if not is_native and self.support_redirect then
+        if (do_redirect or not is_native) and self.support_redirect then
             io.write("Connecting to "..self.name.."...")
             --print(table.concat(self.startup_cmd," "))
             self.process=self.proc:create(self.prompt_pattern,self.work_dir,self.startup_cmd,self.env)
@@ -158,7 +160,7 @@ function system:__onload()
     write=env.printer.write
     env.set_command{obj=self,cmd=self.name, 
                     help_func=self.description,call_func=self.call_process,
-                    is_multiline=false,parameters=2,color="PROMPTSUBCOLOR"}
+                    is_multiline=false,parameters=2,color="PROMPTSUBCOLOR",is_blocknewline=true}
     env.event.snoop("BEFORE_COMMAND",self.kill_reader,self,1)
 end
 

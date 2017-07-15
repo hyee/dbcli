@@ -128,6 +128,7 @@ function helper.helper(cmd,...)
             local txt=f:read("*a")
             f:close()
             for v in txt:gmatch("%[Loaded%s+(%S+).-%]") do
+                v=v:gsub("%.class$","")
                 java.loader:copyClass(v)
             end
             for v in txt:gmatch("(%S+)%.class%W") do

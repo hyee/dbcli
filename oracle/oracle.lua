@@ -17,13 +17,20 @@ oracle.module_list={
     "show",
     "chart",
     "ssh",
-    "extvars"
+    "extvars",
+    "sqlcl"
 }
+
+local home,tns=os.getenv("ORACLE_HOME"),os.getenv("TNS_ADMIN")
+if tns then
+    java.system:setProperty("oracle.net.tns_admin",tns)
+elseif home then
+    java.system:setProperty("oracle.net.tns_admin",env.join_path(home..'/network/admin'))
+end
 
 function oracle:ctor(isdefault)
     self.type="oracle"
-    
-    
+    self.home=home
     local header = "set feed off sqlbl on define off;\n";
     header = header.."ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';\n"
     header = header.."ALTER SESSION SET NLS_TIMESTAMP_FORMAT='YYYY-MM-DD HH24:MI:SSXFF';\n"
@@ -49,16 +56,31 @@ end
 function oracle:connect(conn_str)
     local args,usr,pwd,conn_desc,url,isdba,server,server_sep,proxy_user
     local sqlplustr
+    local driver="thin"
     if type(conn_str)=="table" then --from 'login' command
         args=conn_str
         server,proxy_user,sqlplustr=args.server,args.PROXY_USER_NAME,packer.unpack_str(args.oci_connection)
         usr,pwd,url,isdba=conn_str.user,packer.unpack_str(conn_str.password),conn_str.url,conn_str.internal_logon
         args.password=pwd
     else
-        usr,pwd,conn_desc = string.match(conn_str or "","(.*)/(.*)@(.+)")
-        if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
+        conn_str=conn_str or ""
+        usr,pwd,conn_desc = conn_str:match("(.*)/(.*)@(.+)")
+        url, isdba=(conn_desc or conn_str):match('^(.*) as (%w+)$')
+        if conn_desc == nil then
+            if conn_str:find("/",1,true) and not conn_str:find("@",1,true) then
+                if not conn_str:find('/ ',1,true)==1 and os.getenv("TWO_TASK") then
+                    conn_str=(url or conn_str)..'@'..os.getenv("TWO_TASK")..(isdba and ('as '..isdba) or '')
+                    usr,pwd,conn_desc = conn_str:match("(.*)/(.*)@(.+)")
+                    url, isdba=(conn_desc or conn_str):match('^(.*) as (%w+)$')
+                elseif conn_str:find('/ ',1,true)==1 and isdba then
+                    env.checkerr(home and os.getenv("ORACLE_SID"),"Environment variable ORACLE_HOME/ORACLE_SID is not found, cannot login with oci driver!")
+                    driver,usr,pwd,conn_desc,url="oci8","sys","sys","/ as sysdba",""
+                end
+            end
+            if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
+        end
         if usr:find('%[.*%]') then usr,proxy_user=usr:match('(.*)%[(.*)%]') end
-        url, isdba=conn_desc:match('^(.*) as (%w+)$')
+        
         sqlplustr,url=conn_str,url or conn_desc
         local host,port,server_sep,database=url:match('^[/]*([^:/]+)(:?%d*)([:/])(.+)$')
         local flag=true
@@ -86,7 +108,7 @@ function oracle:connect(conn_str)
             end
         end
     end
-    args=args or {user=usr,password=pwd,url="jdbc:oracle:thin:@"..url,internal_logon=isdba}
+    args=args or {user=usr,password=pwd,url="jdbc:oracle:"..driver..":@"..url,internal_logon=isdba}
 
     self:merge_props(
         {driverClassName="oracle.jdbc.driver.OracleDriver",
@@ -108,7 +130,8 @@ function oracle:connect(conn_str)
          ['oracle.jdbc.autoCommitSpecCompliant']='false',
          ['oracle.jdbc.useFetchSizeWithLongColumn']='true',
          ['oracle.net.networkCompression']='on',
-         ['oracle.net.keepAlive']='true'
+         ['oracle.net.keepAlive']='true',
+         ['oracle.jdbc.timezoneAsRegion']='false'
         },args)
     self:load_config(url,args)
     if args.db_version and tonumber(args.db_version:match("(%d+)"))>0 then
@@ -191,7 +214,7 @@ function oracle:connect(conn_str)
         self.props.db_version='9.1'
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
     else
-        if not prompt or prompt:find('[:/%(%)]') then prompt=self.props.service_name end
+        if prompt=="" or not prompt or prompt:find('[:/%(%)]') then prompt=self.props.service_name end
         prompt=prompt:match('([^%.]+)')
         self.conn_str=self.conn_str:gsub('(:%d+)([:/]+)([%w%.$#]+)',function(port,sep,sid)
             if sep==':' or sep=='//' then
@@ -200,7 +223,7 @@ function oracle:connect(conn_str)
             return port..sep..sid
         end,1)
         env._CACHE_PATH=env.join_path(env._CACHE_BASE,prompt:lower():trim(),'')
-        env.uv.fs.mkdir(env._CACHE_PATH,777,function() end)
+        loader:mkdir(env._CACHE_PATH)
         prompt=('%s%s'):format(prompt:upper(),self.props.db_role or '')
         env.set_prompt(nil,prompt,nil,2)
         self.session_title=('%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)')
@@ -531,6 +554,22 @@ function oracle:onunload()
     env.set_title("")
 end
 
-
+function oracle:get_library()
+    if home then
+        local files={}
+        for i=10,7,-1 do
+            local jar=env.join_path(home..'/jdbc/lib/ojdbc'..i..'.jar')
+            if os.exists(jar) then 
+                files[#files+1]=jar
+                break
+            end
+        end
+        if #files>0 then
+            files[#files+1]=env.join_path(home..'/rdbms/jlib/xdb6.jar')
+            return files
+        end
+    end
+    return nil
+end
 
 return oracle.new()
