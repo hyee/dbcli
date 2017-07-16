@@ -67,7 +67,7 @@ local base_color={
     --Note, these are Esc codes for VT100 terminals, and emmulators
     --and they may not all work within the mud
     BOLD    ={"\27[1m","Turn on bold mode",0},
-    CLR     ={"\27[2J","Clear the screen",1},
+    CLR     ={"\27C\27[3J","Clear the screen",1},
     HOME    ={"\27[H","Send cursor to home position",1},
     REF     ={"\27[2J;H" , "Clear screen and home cursor",1},
     KILLBL  ={"\27[0J","Clear from cursor to end of screen",1},
@@ -125,7 +125,7 @@ local console_color=os.getenv("CONSOLE_COLOR")
 if isAnsiSupported and console_color and console_color~='NA' then
     ansi.ansi_default=console_color
     local fg,bg=default_color[console_color:sub(2)][2],default_color[console_color:sub(1,1)][1]
-    if bg and fg then
+    if bg and fg and env.IS_WINDOWS then
         base_color['NOR'][1]=base_color['NOR'][1]..base_color[fg][1]..base_color[bg][1]
     end
 end
@@ -199,7 +199,7 @@ function ansi.addCompleter(name,args)
 end
 
 function ansi.clear_sceen()
-    os.execute(env.OS == "windows" and "cls" or "clear")
+    os.execute(env.PLATFORM=='windows' and "cls" or "clear")
 end
 
 function ansi.define_color(name,value,module,description)
@@ -379,7 +379,7 @@ function ansi.test_text(str)
         return
     end
    
-    return print(env.space.."ANSI result: "..ansi.convert_ansi(str)..ansi.string_color('NOR'))
+    return print("ANSI result: "..ansi.convert_ansi(str)..ansi.string_color('NOR'))
 end
 
 

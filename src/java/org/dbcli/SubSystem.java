@@ -4,7 +4,6 @@ import com.zaxxer.nuprocess.NuAbstractProcessHandler;
 import com.zaxxer.nuprocess.NuProcess;
 import com.zaxxer.nuprocess.NuProcessBuilder;
 import com.zaxxer.nuprocess.windows.NuKernel32;
-import com.zaxxer.nuprocess.windows.WindowsProcess;
 
 import java.io.File;
 import java.nio.ByteBuffer;
@@ -16,7 +15,7 @@ import java.util.regex.Pattern;
 
 public class SubSystem {
     NuProcessBuilder pb;
-    volatile WindowsProcess process;
+    volatile NuProcess process;
     ByteBuffer writer;
     Pattern p;
     volatile String lastLine;
@@ -37,7 +36,7 @@ public class SubSystem {
             p = Pattern.compile(promptPattern, Pattern.CASE_INSENSITIVE + Pattern.DOTALL);
             ProcessHandler handler = new ProcessHandler();
             pb.setProcessListener(handler);
-            process = (WindowsProcess) pb.start();
+            process = pb.start();
             writer = ByteBuffer.allocateDirect(32767);
             writer.order(ByteOrder.nativeOrder());
             //Respond to the ctrl+c event

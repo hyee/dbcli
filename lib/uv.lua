@@ -166,6 +166,9 @@ function os.list_dir(path,ext,depth,read_func,filter,is_skip_binary)
             else
                 fullname,name=p .. '/' .. ent,ent
             end
+
+            fullname=fullname:gsub("([\\/]+)",env.PATH_DEL)
+            if (typ or "") == "" then typ=os.exists(fullname) end
             if typ=='directory' then
                 dirs[#dirs+1]={fullname,d+1}
             elseif (not ext) or ext=='*' or name:sub(-#ext):lower()==ext then

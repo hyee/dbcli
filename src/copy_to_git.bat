@@ -34,8 +34,9 @@ goto start
 
 :end
 xcopy /S /Y .\jre "%target%\jre"
+xcopy /S /Y .\jre_linux "%target%\jre_linux"
 cd /d "%target%"
-for /f %%i in ('dir /b/s/a:-H .\*.jar') do ("D:\JDK8\bin\pack200" -O -S-1 -G "%%i.pack.gz" "%%i" && del "%%i")
+for /f %%i in ('dir /b/s/a:-H .\*.jar') do (pack200 -O -S-1 -G "%%i.pack.gz" "%%i" && del "%%i")
 
 del ..\dbcli.zip
 rmdir /S /Q src 

@@ -517,7 +517,7 @@ function scripter:__onload()
     self.db=self.db or env.db_core.__instance
     self.short_dir=self.script_dir:match('([^\\/]+)$')
     self.extend_dirs=env.set.get_config(self.__className..".extension")
-    env.uv.fs.mkdir(self.script_dir,777,function() end)
+    loader:mkdir(self.script_dir)
     if not cfg.exists("echo") then cfg.init("echo","off",scripter.set_echo,"core","Controls whether the START command lists each command in a script as the command is executed.","on,off") end
     if self.command and self.command~="" then
         env.set_command{obj=self,cmd=self.command, 

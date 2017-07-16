@@ -1,3 +1,8 @@
+2017-07-15: + public: supports Linux/MingW/CygWin
+            + oracle: supports porting to sqlcl(puts its jar files into lib\ext to take affects)
+2017-07-14: + oracle: supports "conn / as sysdba"(12.2+) 
+2017-07-13: * public: update library "luv"
+=======================begin v1.3================================================
 2017-07-06: * public: some fixes and optimizations relative to jline upgades:
                       * Uses ConEmu library as ANSI renderer if OS version < Win10
                       * handles the '\t' char in case of copy-paste

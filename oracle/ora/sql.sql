@@ -1,5 +1,5 @@
 /*[[Get SQL text. Usage: @@NAME <sql_id>]]*/
-set linesize 32767 colwrap 150 feed off 
+set colwrap 150 feed off 
 column sql_text new_value txt;
 SELECT * FROM(
       select sql_text from dba_hist_sqltext where sql_id=:V1

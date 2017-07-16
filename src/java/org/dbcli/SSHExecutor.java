@@ -6,6 +6,8 @@ import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.CompletionHandler;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
@@ -23,6 +25,7 @@ public class SSHExecutor {
     public String host;
     public String user;
     public int port;
+    public Charset charset = StandardCharsets.UTF_8;
     public String password;
     public String prompt;
     public ChannelShell shell;
@@ -65,7 +68,7 @@ public class SSHExecutor {
             session.setConfig("PreferredAuthentications", "password,publickey,keyboard-interactive");
             session.setConfig("compression.s2c", "zlib@openssh.com,zlib,none");
             session.setConfig("compression.c2s", "zlib@openssh.com,zlib,none");
-            session.setConfig("compression_level", "9");
+            session.setConfig("compression_level", "6");
             session.setConfig("ServerAliveInterval", "10");
             //session.set
             session.setDaemonThread(true);
@@ -74,6 +77,7 @@ public class SSHExecutor {
             session.setTimeout(0);
             session.connect();
             session.setUserInfo(new SSHUserInfo("jsch"));
+
             this.host = host;
             this.port = port;
             this.user = user;
@@ -98,6 +102,14 @@ public class SSHExecutor {
             shell.setPtyType(TERMTYPE == "none" ? "ansi" : TERMTYPE, COLS, ROWS, 0, 0);
             shell.connect();
             waitCompletion();
+            String encoding = getLastLine("echo $LANG\n", true);
+            if (encoding != null) {
+                String[] e = encoding.split(".");
+                try {
+                    charset = Charset.forName(e[e.length - 1]);
+                } catch (Exception e1) {
+                }
+            }
         } catch (Exception e) {
             throw e;
         }
@@ -243,7 +255,7 @@ public class SSHExecutor {
         }
 
         public void showMessage(String m) {
-            System.out.println(m);
+            writer.println(m);
         }
     }
 
@@ -261,16 +273,22 @@ public class SSHExecutor {
 
         @Override
         public void write(int i) throws IOException {
+            if (i == 7 || i == 14 || i == 15) return;
+            //System.out.print(i+" ");
             char c = (char) i;
             buf.put((byte) i);
             sb.append(c);
+
             if (c == '\n') {
                 lastLine = sb.toString();
+                //System.out.println();
                 flush();
+
                 isStart = false;
                 buf.clear();
                 sb.setLength(0);
             }
+
             isEnd = (lastChar == '$' || lastChar == '>' || lastChar == '#') && c == ' ';
             lastChar = c;
         }
@@ -296,7 +314,7 @@ public class SSHExecutor {
             buf.flip();
             byte[] b = new byte[pos];
             buf.get(b);
-            String line = new String(b);
+            String line = new String(b, charset);
             isStart = false;
             buf.clear();
             if (!ignoreMessage) {

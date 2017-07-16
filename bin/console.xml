@@ -182,11 +182,11 @@
 	<snippets dir=""/>
 	<tabs>
 		<tab title="dbcli" use_default_icon="0">
-			<console shell="cmd.exe /c dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
+			<console shell="..\dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
 			<cursor style="4" r="255" g="255" b="255"/>
 		</tab>
 		<tab title="dbcli(blue)" use_default_icon="0">
-			<console shell="cmd.exe /c dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0">
+			<console shell="..\dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0">
 				<env var="CONSOLE_COLOR" value="0F" check="1"/>
 			</console>
 			<cursor style="4" r="255" g="255" b="255"/>
@@ -197,7 +197,7 @@
 			</background>
 		</tab>
 		<tab title="dbcli(white)" use_default_icon="0">
-			<console shell="cmd.exe /c dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0">
+			<console shell="..\dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0">
 				<env var="CONSOLE_COLOR" value="F0" check="1"/>
 				<env var="PROMPTCOLOR" value="\e[38;5;31m" check="1"/>
 				<env var="COMMANDCOLOR" value="BLU" check="1"/>
@@ -210,7 +210,7 @@
 			</background>
 		</tab>
 		<tab title="dbcli(simple)" use_default_icon="0">
-			<console shell="cmd.exe /c dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0">
+			<console shell="..\dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0">
 				<env var="ANSICOLOR" value="off" check="1"/>
 				<env var="CONSOLE_COLOR" value="NA" check="1"/>
 			</console>

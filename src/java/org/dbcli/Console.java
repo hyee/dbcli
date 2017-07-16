@@ -11,16 +11,22 @@ import org.jline.reader.impl.DefaultParser;
 import org.jline.reader.impl.LineReaderImpl;
 import org.jline.terminal.Terminal;
 import org.jline.utils.NonBlockingReader;
+import org.jline.utils.OSUtils;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.security.Permission;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 import static org.jline.reader.LineReader.DISABLE_HISTORY;
@@ -29,8 +35,8 @@ import static org.jline.reader.LineReader.SECONDARY_PROMPT_PATTERN;
 public class Console {
     public static PrintWriter writer;
     public static NonBlockingReader in;
-    public static String charset = "utf-8";
-    public WindowsTerminal terminal;
+    public static String charset = System.getProperty("sun.stdout.encoding");
+    public Terminal terminal;
     LineReaderImpl reader;
     public static ClassAccess<LineReaderImpl> accessor = ClassAccess.access(LineReaderImpl.class);
     public final static Pattern ansiPattern = Pattern.compile("^\33\\[[\\d\\;]*[mK]$");
@@ -86,6 +92,18 @@ public class Console {
         completer.candidates.putAll(candidates);
     }
 
+    public String getPlatform() {
+        if (OSUtils.IS_CYGWIN) return "cygwin";
+        if (OSUtils.IS_MINGW) return "mingw";
+        if (OSUtils.IS_OSX) return "mac";
+        if (OSUtils.IS_WINDOWS) return "windows";
+        return "linux";
+    }
+
+    public int getBufferWidth() {
+        return ((MyTerminal) terminal).getBufferWidth();
+    }
+
     public void setKeywords(Map<String, ?> keywords) {
         highlighter.keywords = keywords;
         addCompleters(keywords, false);
@@ -104,14 +122,14 @@ public class Console {
     public Console() throws Exception {
         String colorPlan = System.getenv("ANSICON_DEF");
         if (colorPlan == null) colorPlan = "jline";
-        terminal = new WindowsTerminal(colorPlan);
+        terminal = OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MINGW) ? new WindowsTerminal(colorPlan) : new PosixTerminal(colorPlan);
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).build();
         this.parser = new Parser();
         this.reader.setParser(parser);
         this.reader.setHighlighter(highlighter);
         this.reader.setCompleter(completer);
         this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE);
-        this.reader.setOpt(LineReader.Option.MOUSE);
+        //this.reader.setOpt(LineReader.Option.MOUSE);
         this.reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
         this.reader.setOpt(LineReader.Option.BRACKETED_PASTE);
         /*
@@ -123,7 +141,8 @@ public class Console {
 
 
         in = terminal.reader();
-        writer = terminal.printer();
+
+        writer = ((MyTerminal) terminal).printer();
         threadID = Thread.currentThread().getId();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
         callback = new EventCallback() {
@@ -142,6 +161,67 @@ public class Console {
         Interrupter.listen(this, callback);
     }
 
+    Thread subThread = null;
+
+    public void startSqlCL(final String[] args) throws Exception {
+        if (subThread != null) throw new IOException("SQLCL instance is running!");
+        Class clz;
+
+        try {
+            clz = Class.forName("oracle.dbtools.raptor.scriptrunner.cmdline.SqlCli");
+        } catch (ClassNotFoundException e) {
+            throw new IOException("Cannot find SqlCL libraries under folder 'lib/ext'!");
+        }
+
+        Method main = clz.getDeclaredMethod("main", String[].class);
+        subThread = new Thread(() -> {
+            try {
+                main.invoke(null, new Object[]{args});
+            } catch (IllegalAccessException e) {
+                e.printStackTrace();
+            } catch (InvocationTargetException e) {
+                e.printStackTrace();
+            } catch (Exception e) {
+            }
+        });
+
+
+        //System.setSecurityManager(new NoExitSecurityManager(subThread));
+        Logger.getLogger("OracleRestJDBCDriverLogger").setLevel(Level.OFF);
+        try {
+            subThread.setDaemon(true);
+            subThread.start();
+            subThread.join();
+        } catch (Exception e1) {
+        } finally {
+            //System.setSecurityManager(null);
+            subThread = null;
+        }
+    }
+
+    private static class NoExitSecurityManager extends SecurityManager {
+        Thread running;
+
+        public NoExitSecurityManager(Thread running) {
+            this.running = running;
+        }
+
+        @Override
+        public void checkPermission(Permission perm) {
+            // allow anything.
+        }
+
+        @Override
+        public void checkPermission(Permission perm, Object context) {
+            // allow anything.
+        }
+
+        @Override
+        public void checkExit(int status) {
+            super.checkExit(status);
+            if (Thread.currentThread() == running) throw new SecurityException("Exited");
+        }
+    }
 
     public void less(String output) throws Exception {
         ByteArrayOutputStream stream = new ByteArrayOutputStream();
@@ -173,24 +253,26 @@ public class Console {
         writer.flush();
     }
 
+    public void println(String msg) {
+        if (writer == null) return;
+        writer.println(msg);
+        writer.flush();
+    }
+
+    public void clearScreen() {
+        reader.clearScreen();
+    }
+
     public Object invokeMethod(String method, Object... o) {
         return accessor.invoke(reader, method, o);
     }
 
-    public void writeInput(String msg) {
-        try {
-            for (char c : msg.toCharArray())
-                terminal.processInputByte((int) c);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
 
     boolean isPrompt = true;
 
     public String readLine(String prompt, String buffer) {
         try {
-            terminal.lockReader(false);
+            ((MyTerminal) terminal).lockReader(false);
             if (isRunning()) setEvents(null, null);
             isPrompt = buffer != null && ansiPattern.matcher(buffer).find();
             if (isPrompt) {
@@ -332,7 +414,7 @@ public class Console {
                 isMulti = true;
                 throw err;
             }
-            if((Boolean) result[2]) terminal.lockReader(true);
+            if ((Boolean) result[2]) ((MyTerminal) terminal).lockReader(true);
             reader.setVariable(DISABLE_HISTORY, lines.length > Math.min(25, terminal.getHeight() - 5));
             isMulti = false;
             return null;

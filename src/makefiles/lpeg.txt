@@ -1,0 +1,1 @@
+gcc -shared -fPIC -O2 -s -o lpeg.so *.c -I/d/LuaJIT-2.1/src libluajit5.1.so
