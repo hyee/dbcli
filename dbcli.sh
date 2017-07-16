@@ -51,7 +51,7 @@ unset JAVA_HOME
 # unpack jar files for the first use
 for f in `find . -type f -name "*.pack.gz" 2>/dev/null`; do
   echo "Unpacking $f ..."
-  unpack200 -q -r  $f $(echo $f|sed 's/\.pack\.gz//g') &
+  ./jre_linux/bin/unpack200 -q -r  $f $(echo $f|sed 's/\.pack\.gz//g') &
 done
 wait
 

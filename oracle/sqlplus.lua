@@ -55,7 +55,7 @@ function sqlplus:make_sqlpath()
     for i=#path,1,-1 do
         if path[i]:lower():find(env._CACHE_BASE:lower(),1,true) then table.remove(path,i) end
     end
-    local cmd='dir /s/b/a:d "'..table.concat(path,'" "')..'" 2>nul'
+    local cmd='dir /s/b/a:d "'..table.concat(path,'" "')..'" 2>NUL'
     if not env.IS_WINDOWS then
         cmd='find "'..table.concat(path,'" "')..'" -type d 2>/dev/null'
     end
@@ -69,20 +69,17 @@ function sqlplus:make_sqlpath()
         if c1~=c2 then return c1<c2 end
         return a<b
     end)
-    self.env['SQLPATH']=table.concat(path,';')
+    env.uv.os.setenv("SQLPATH",table.concat(path,env.IS_WINDOWS and ';' or ':'))
+    
     --self.proc:setEnv("SQLPATH",self.env['SQLPATH'])
 end
 
 function sqlplus:get_startup_cmd(args,is_native)
     local tnsadm=tostring(java.system:getProperty("oracle.net.tns_admin"))
     local props={}
-    if tnsadm~='nil' and tnsadm~="" then self.env["TNS_ADMIN"]=tnsadm end
-    if db.props.nls_lang then self.env["NLS_LANG"]=db.props.nls_lang end
-    self.env['NLS_DATE_FORMAT']='YYYY-MM-DD HH24:MI:SS'
     --self.env['ORACLE_HOME']="d:\\Soft\\InstanceClient\\bin"
     self:make_sqlpath()
     self.work_path,self.work_dir=self.work_dir,env._CACHE_PATH
-    self:rebuild_commands(self.env['SQLPATH'])
     while #args>0 do
         local arg=args[1]:lower()
         if arg:sub(1,1)~='-' then break end
@@ -192,6 +189,7 @@ function sqlplus:__onload()
 end
 
 function sqlplus:onload()
+    self:make_sqlpath()
     env.event.snoop("AFTER_ORACLE_CONNECT",self.terminate,self)
     env.event.snoop("ON_DB_DISCONNECTED",self.terminate,self)
     local help=[[

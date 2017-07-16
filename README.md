@@ -33,7 +33,7 @@ It is not intended to support all features of the existing CLI utilities that em
 Download
 -----------------------
 DBCLI does not require compile or installation, but depends on JRE 1.8+. Click `Download ZIP`,extract and use. Or you can also download from the published releases<br/> 
-Branch `With-JRE` contains the shrinked JRE bundle(Windows only), if you don't have JRE installed,
+Branch `With-JRE` contains the shrinked JRE bundle, if you don't have JRE installed,
 you may switch to that branch to download. Due to the region and charset differences, this JRE bundle is not guaranteed to work well.<br/>
 
 ###Windows: Configure terminal window
@@ -43,12 +43,12 @@ For Windows OS, to avoid the word wrap in the terminal window which affects the 
 * In the `Font` tab, change the font size as smaller value.
 
 ###Linux: Pre-Requisitions
-Linux must be the `64-bit` version, and make sure JRE 1.8 and `glibc >= v2.4`(use `ldd --version` to verify) are installed. Since Linux terminal doesn't have horizontal scrollbar, smaller font is preferred.
+Linux must be the `64-bit` version, and make sure `glibc >= v2.4`(use `ldd --version` to verify) are installed. Since Linux terminal doesn't have horizontal scrollbar, smaller font is preferred.
 
 ###Configure environment
 Before running dbcli, make sure that you have installed JRE 1.8+ in your local PC. If you are using the version of "With-JRE" branch, this step can be skipped.
 
-Create file `init.cfg` under the "data" directory with following content:
+Create file `init.cfg` under the "data" directory with following content(for non-Windows OS use `export` instead):
    
     SET JRE_HOME=<JRE HOME>
     SET TNS_ADM=<location of tnsnames.ora>

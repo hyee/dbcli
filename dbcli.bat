@@ -48,7 +48,7 @@ for /r %%i in (*.pack.gz) do (
    jre\bin\unpack200 -q -r "%%i" "!str:~0,-8!"
 )
 
-(%ANSICON_CMD% "!JRE_HOME!\java.exe" -noverify -Xmx384M -cp .\lib\*;.\lib\ext\*%OTHER_LIB% ^
+(cmd /c %ANSICON_CMD% "!JRE_HOME!\java.exe" -noverify -Xmx384M -cp .\lib\*;.\lib\ext\*%OTHER_LIB% ^
     -XX:+UseG1GC -XX:+UseStringDeduplication -Dfile.encoding=%DBCLI_ENCODING% -Duser.language=en -Duser.region=US -Duser.country=US -Djava.awt.headless=true^
     org.dbcli.Loader %DBCLI_PARAMS% %* )||pause
 EndLocal

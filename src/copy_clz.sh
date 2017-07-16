@@ -2,32 +2,40 @@
 FOLDER=$1
 TARGET=${FOLDER}1
 SOURCE=/media/sf_D_DRIVE/jdk_linux
-JAR=$SOURCE/bin/jar
+JAR="$SOURCE/bin/jar"
 if [ ! -d "$SOURCE" ]; then
   echo "No such JRE directory: $SOURCE"
   exit 1
 fi
 
 if [ ! -x "$JAR" ]; then
-  echo "Cannot find executable program: $JAR"
-  exit 1
+    if type -p jar &>/dev/null; then
+        JAR=jar
+    else
+        echo "Cannot find executable program: $JAR"
+        exit 1
+    fi
 fi
 
 cd ../dump
-rm -rf $TARGET ${FOLDER}.jar temp
-rm -rf ${FOLDER}.jar
-cp -r $FOLDER $TARGET
-find $TARGET -name "*.class"| xargs rm -f
-mkdir temp
-cd temp
-find $SOURCE -name "$FOLDER.jar"|xargs $SOURCE/bin/jar xf
+echo "Initializing..."
+rm -rf $TARGET ${FOLDER}.jar jardump
+
+cp -r $FOLDER $TARGET && find $TARGET -name "*.*"| xargs rm -f &
+mkdir jardump
+cd jardump
+echo "Extracting $FOLDER.jar..."
+find "$SOURCE" -name "$FOLDER.jar"|xargs "$JAR" xf
+wait
 cd ..
-for f in `find $FOLDER -type f -name "*.*"`; do
+echo "Scanning matched files..."
+for f in `find $FOLDER -type f`; do
     sub=`echo $f|sed "s/^$FOLDER//"`
-    cp -r temp${sub} ${TARGET}${sub}
+    cp -r jardump${sub} ${TARGET}${sub}
 done
 cd $TARGET
-$SOURCE/bin/jar cnf ../${FOLDER}.jar *
+echo "Building new ${FOLDER}.jar..."
+"$JAR" cnf ../${FOLDER}.jar *
 cd ..
-rm -rf $TARGET temp
+rm -rf $TARGET jardump
 cp ${FOLDER}.jar ../jre_linux/lib

@@ -25,6 +25,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 import static org.jline.reader.LineReader.DISABLE_HISTORY;
@@ -183,14 +185,16 @@ public class Console {
             }
         });
 
-        SecurityManager securityManager = System.getSecurityManager();
-        System.setSecurityManager(new NoExitSecurityManager(subThread));
+
+        //System.setSecurityManager(new NoExitSecurityManager(subThread));
+        Logger.getLogger("OracleRestJDBCDriverLogger").setLevel(Level.OFF);
         try {
             subThread.setDaemon(true);
             subThread.start();
             subThread.join();
+        } catch (Exception e1) {
         } finally {
-            System.setSecurityManager(securityManager);
+            //System.setSecurityManager(null);
             subThread = null;
         }
     }
