@@ -25,8 +25,7 @@ end
 function login.generate_name(url,props)
     local url1=url
     url=url1:match("//([^&]+)")
-    if not url then url=('@'..url1):match("@/?([^@]+)$") end
-
+    if not url then url=('@'..url1):match("@/?([^@]+)$") or "" end
     url=url:gsub('([%.%:])([%w%-%_]+)',function(a,b)
         if a=='.' and b:match('^(%d+)$') then
             return a..b

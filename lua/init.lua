@@ -1,5 +1,5 @@
 local env=env
-local dirs={"cache","data"}
+local dirs={"cache","data","lib/ext"}
 local init={
     module_list={
        --Libraries ->
@@ -60,27 +60,31 @@ function init.init_path()
         path_del=env.WORK_DIR:sub(-1)
     end
     env("PATH_DEL",path_del)
-    env("OS",path_del=='/' and 'linux' or 'windows')
+    env("PLATFORM",console:getPlatform())
+    env("IS_WINDOWS",env.PLATFORM=="windows" or env.PLATFORM=="cygwin" or env.PLATFORM=="mingw")
     env("_CACHE_BASE",env.WORK_DIR.."cache"..path_del)
     env("_CACHE_PATH",env._CACHE_BASE)
     local package=package
-    package.cpath=""
-    package.path=""
+    local cpath=java.system:getProperty('java.library.path')
+    local paths={}
+    for v in cpath:gmatch("([^"..(path_del=='/' and ':' or ';').."]+)") do
+        paths[#paths+1]=v..path_del.."?."..(env.IS_WINDOWS and "dll" or "so")
+    end
+    package.cpath=table.concat(paths,';')
+    package.path="?.lua"
     
-    for _,v in ipairs({"lua","lib","oracle","bin"}) do
+    for _,v in ipairs({"lua","lib","bin"}) do
         local path=string.format("%s%s%s",env.WORK_DIR,v,path_del)
-        local p1,p2=path.."?.lua",java.system:getProperty('java.library.path')..path_del.."?."..(env.OS=="windows" and "dll" or "so")
-        package.path  = package.path .. (path_del=='/' and ':' or ';') ..p1
-        package.cpath = package.cpath ..(path_del=='/' and ':' or ';') ..p2
+        local p1=path.."?.lua"
+        package.path  = package.path .. ';' ..p1
     end
 
     local luv=require "luv"
-    local function noop() end
     for _,v in ipairs(dirs) do
-        luv.fs_mkdir(env.WORK_DIR..v,777,noop)
+        loader:mkdir(env.WORK_DIR..v)
     end
     --Seems to be luv bugs(stdin is ocuppied), bypassed by set title
-    os.execute("title Initializing...")
+    luv.set_process_title("title Initializing...")
 end
 
 function env.join_path(base,...)

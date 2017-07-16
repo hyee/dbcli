@@ -5,82 +5,12 @@ function string.initcap(v)
     return (' '..v):lower():gsub("([^%w])(%w)",function(a,b) return a..b:upper() end):sub(2)
 end
 
-local shell=ffi.load("shell32")
-local kernel=ffi.load("kernel32")
-ffi.cdef([[
-typedef int           INT;
-typedef unsigned long    DWORD;
-typedef unsigned short   WORD;
-typedef unsigned char    BYTE;
-typedef char *        LPSTR;
-typedef const char *    LPCSTR;
-typedef const char *    PCSTR;
-typedef LPCSTR          LPCTSTR;
-typedef int           HWND;
-typedef void *        HINSTANCE;
-typedef void *        LPVOID;
-typedef WORD *           LPWORD;
-typedef int              BOOL;
-typedef void *HANDLE;
-typedef unsigned char  *   LPBYTE;
 
-typedef struct _SECURITY_ATTRIBUTES {
-    DWORD nLength;
-    LPVOID lpSecurityDescriptor;
-    BOOL bInheritHandle;
-} SECURITY_ATTRIBUTES,  *PSECURITY_ATTRIBUTES,  *LPSECURITY_ATTRIBUTES;
-typedef struct _STARTUPINFOA {
-    DWORD   cb;
-    LPSTR   lpReserved;
-    LPSTR   lpDesktop;
-    LPSTR   lpTitle;
-    DWORD   dwX;
-    DWORD   dwY;
-    DWORD   dwXSize;
-    DWORD   dwYSize;
-    DWORD   dwXCountChars;
-    DWORD   dwYCountChars;
-    DWORD   dwFillAttribute;
-    DWORD   dwFlags;
-    WORD    wShowWindow;
-    WORD    cbReserved2;
-    LPBYTE  lpReserved2;
-    HANDLE  hStdInput;
-    HANDLE  hStdOutput;
-    HANDLE  hStdError;
-} STARTUPINFOA, *LPSTARTUPINFOA;
-
-typedef struct _PROCESS_INFORMATION {
-    HANDLE hProcess;
-    HANDLE hThread;
-    DWORD dwProcessId;
-    DWORD dwThreadId;
-} PROCESS_INFORMATION, *PPROCESS_INFORMATION, *LPPROCESS_INFORMATION;
-
-void ShellExecuteA(HWND hwnd,LPCTSTR lpOperation,LPCTSTR lpFile,LPCTSTR lpParameters,LPCTSTR lpDirectory,INT nShowCmd);
-
-BOOL CreateProcessA(
-    LPCSTR lpApplicationName,
-    LPCTSTR lpCommandLine,
-    LPSECURITY_ATTRIBUTES lpProcessAttributes,
-    LPSECURITY_ATTRIBUTES lpThreadAttributes,
-    BOOL bInheritHandles,
-    DWORD dwCreationFlags,
-    LPVOID lpEnvironment,
-    LPCSTR lpCurrentDirectory,
-    LPSTARTUPINFOA lpStartupInfo,
-    LPPROCESS_INFORMATION lpProcessInformation
-    );
-]])
 function os.shell(cmd,args)
-    shell.ShellExecuteA(0,"open",cmd,args,nil,1)
+    io.popen(cmd..(args and (" "..args) or ""))
 end
 
-local WCS_ctype = ffi.typeof('char[?]')
-function os.CreateProcess(cmdline,  flags)
-    kernel.CreateProcessA(cmdline,nil, nil, nil,false, 0, nil,nil,nil,nil)
-end
-
+local _os=env.PLATFORM
 function os.find_extension(exe)
     local err="Cannot find "..exe.." in the default path, please add it into EXT_PATH of file data/init.cfg"
     if exe:find('[\\/]') then
@@ -88,18 +18,16 @@ function os.find_extension(exe)
         env.checkerr(type,err)
         return file
     end
-     exe='"'..env.join_path(exe):trim('"')..'"'
-    local cmd=(env.OS=="windows" and "where " or "which ")..exe.." >"..(env.OS=="windows" and "nul 2>nul" or "/dev/null")
-
-    env.checkerr((os.execute(cmd)),err)
-    cmd=(env.OS=="windows" and "where " or "which ")..exe
+    exe='"'..env.join_path(exe):trim('"')..'"'
+    local nul=env.IS_WINDOWS and "NUL" or "/dev/null"
+    local cmd=string.format("%s %s 2>%s", env.IS_WINDOWS and "where " or "which ",exe,nul)
     local f=io.popen(cmd)
     local path
-    for n in f:lines() do 
-        path=n
+    for file in f:lines() do
+        path=file
         break
     end
-    f:close()
+    env.checkerr(path,err)
     return path
 end
 

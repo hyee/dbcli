@@ -17,7 +17,6 @@ It is mainly developed by Lua language, and bridges to JDBC to access database, 
 It is designed to support multiple databases, and includes 2 types of modules, one is the public module whose functions are visible across all database platforms, 
 and another one is the platform-specific module.
 
-Currently only public and Oracle/MySQL/DB2 functions are developed, and only support windows platform.
 
 It is not intended to support all features of the existing CLI utilities that embedded by the specific database(`Oracle SQL*Plus`, `DB2 CLP`, etc), but to provide the features other than those tools:
 
@@ -37,16 +36,19 @@ DBCLI does not require compile or installation, but depends on JRE 1.8+. Click `
 Branch `With-JRE` contains the shrinked JRE bundle, if you don't have JRE installed,
 you may switch to that branch to download. Due to the region and charset differences, this JRE bundle is not guaranteed to work well.<br/>
 
-###Configure terminal window
-To avoid the word wrap in the terminal window which affects the print layout, following settings are recommended in Windows command window:
+###Windows: Configure terminal window
+For Windows OS, to avoid the word wrap in the terminal window which affects the print layout, following settings are recommended in Windows command window:
 
 * In the `Layout` tab, set buffer width and buffer height as `500+`
 * In the `Font` tab, change the font size as smaller value.
 
+###Linux: Pre-Requisitions
+Linux must be the `64-bit` version, and make sure `glibc >= v2.4`(use `ldd --version` to verify) are installed. Since Linux terminal doesn't have horizontal scrollbar, smaller font is preferred.
+
 ###Configure environment
 Before running dbcli, make sure that you have installed JRE 1.8+ in your local PC. If you are using the version of "With-JRE" branch, this step can be skipped.
 
-Create file `init.cfg` under the "data" directory with following content:
+Create file `init.cfg` under the "data" directory with following content(for non-Windows OS use `export` instead):
    
     SET JRE_HOME=<JRE HOME>
     SET TNS_ADM=<location of tnsnames.ora>

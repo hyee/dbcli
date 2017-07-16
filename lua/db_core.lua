@@ -652,6 +652,7 @@ function db_core:connect(attrs,data_source)
 
     env.log_debug("db","Start connecting:\n",attrs)
     attrs.account_type="database"
+
     local url=attrs.url
     env.checkerr(url,"'url' property is not defined !")
 
@@ -986,12 +987,30 @@ end
 
 function db_core:__onload()
     self.root_dir=(self.__class.__className):gsub('[^\\/]+$','')
-    local jars=os.list_dir(self.root_dir,"jar")
-    for _,file in pairs(jars) do
-        java.loader:addPath(file.fullname)
+    local jars
+    if type(self.get_library)=="function" then
+        libdir=self:get_library()
+        if type(libdir)=="string" and os.exists(libdir) then
+            jars=os.list_dir(libdir,"jar")
+        elseif type(libdir)=="table" then
+            jars=libdir
+            for i=#jars,-1 do
+                if not os.exists(jars[i]) then
+                    table.remove(jars,i)
+                end
+            end
+        end
     end
+
+    if jars==nil or #jars==0 then
+        jars=os.list_dir(self.root_dir,"jar")
+    end
+    for _,file in pairs(jars) do
+        java.loader:addPath(type(file)=="string" and file or file.fullname)
+    end
+
     if #jars==0 then 
-        env.warn("Cannot find JDBC library in '%s', you will not able to connect to any database.",self.root_dir)
+        env.warn("Cannot find JDBC library in '%s', you will not be able to connect to any database.",self.root_dir)
         if self.JDBC_ADDRESS then
             env.warn("Please download and copy it from %s which should be compatible with JRE %s",self.JDBC_ADDRESS,java.system:getProperty('java.vm.specification.version'))
         end

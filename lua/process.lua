@@ -72,6 +72,7 @@ function process:set_work_dir(path,quiet)
 end
 
 function process:list_work_dir(filter)
+
     os.execute('dir "'..self.work_dir..'" /B/S/A:-D '..(filter or ""))
 end
 

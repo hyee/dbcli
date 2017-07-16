@@ -1,5 +1,5 @@
 local env,select,table,pcall=env,select,table,pcall
-local writer,reader=writer,reader
+local writer,reader,console=writer,reader,console
 local out=writer
 local jwriter=jwriter
 local event
@@ -7,6 +7,7 @@ local printer={rawprint=print}
 local io=io
 local NOR,BOLD="",""
 local strip_ansi=function(x) return x end
+local println,write=console.println,console.write
 
 function printer.load_text(text)
     printer.print(event.callback("BEFORE_PRINT_TEXT",{text or ""})[1])
@@ -44,13 +45,21 @@ function printer.more(output)
     console:less(output)
 end
 
+function printer.rawprint(...)
+    local msg={}
+    for i=1,select('#',...) do 
+        msg[i]=tostring(select(i,...))
+    end
+    println(console,table.concat(msg," "))
+end
+
 function printer.print(...)
     local output,found,ignore={NOR,env.space:sub(1,#env.space-2)}
     local fmt=(env.ansi and env.ansi.get_color("GREPCOLOR") or '')..'%1'..NOR
     for i=1,select('#',...) do
         local v=select(i,...)
         if v~='__BYPASS_GREP__' then 
-            output[i+2]=v==nil and "nil" or tostring(v)
+            output[i+2]=tostring(v)
         else
             ignore=true
         end
@@ -70,8 +79,7 @@ function printer.print(...)
     if env.ansi then output=env.ansi.convert_ansi(output) end
     if printer.is_more then more_text[#more_text+1]=output;return end
     if ignore or output~="" or not printer.grep_text then
-        out:println(output)
-        out:flush()
+        println(console,output)
         if printer.hdl then
             pcall(printer.hdl.write,printer.hdl,strip_ansi(output).."\n")
         end
@@ -84,9 +92,7 @@ end
 
 function printer.write(output)
     if env.ansi then output=env.ansi.convert_ansi(output) end
-    --output=output:gsub("(\r?\n\r?)","%1"..env.space)
-    out:write(output)
-    out:flush()
+    write(console,output)
 end
 
 function printer.onunload()
