@@ -27,12 +27,14 @@ IF not exist "%JRE_HOME%\java.exe" if exist "%JRE_HOME%\bin\java.exe" (set "JRE_
 for %%x in ("!JRE_HOME!") do set "JRE_HOME=%%~sx"
 IF %JRE_HOME:~-1%==\ SET "JRE_HOME=%JRE_HOME:~0,-1%"
 
-SET PATH=%JRE_HOME%;%EXT_PATH%;.\bin;%PATH%
+SET bit=x64
+("!JRE_HOME!\java.exe" -version 2>&1 |findstr /i "64-bit" >nul) || (set bit=x86)
+SET PATH=.\lib\%bit%;%JRE_HOME%;%EXT_PATH%;.\bin;%PATH%
 rem check if ConEmu dll exists to determine whether use it as the ANSI renderer
 if not defined ANSICON if defined ANSICON_CMD (
    SET ANSICON_EXC=nvd3d9wrap.dll;nvd3d9wrapx.dll
    SET ANSICON_DEF=ansicon
-   ("!JRE_HOME!\java.exe" -version 2>&1 |findstr /i "64-bit" >nul) ||(set "ANSICON_CMD=.\lib\x86\ConEmuHk.dll")
+   if "!bit!"=="x86" set "ANSICON_CMD=.\lib\x86\ConEmuHk.dll"
    if not exist "!ANSICON_CMD!" set "ANSICON_DEF=jline"
 )
 set "ANSICON_CMD="
