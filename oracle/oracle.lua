@@ -229,6 +229,7 @@ function oracle:connect(conn_str)
         self.session_title=('%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)')
             :format(prompt,self.props.instance,self.props.db_user,self.props.sid,self.props.db_version)
         env.set_title(self.session_title)
+        env.uv.os.setenv("NLS_LANG",self.props.nls_lang)
     end
     for k,v in pairs(self.props) do args[k]=v end
     args.oci_connection=packer.pack_str(self.conn_str)
@@ -520,6 +521,7 @@ end
 
 function oracle:onload()
     self.db_types:load_sql_types('oracle.jdbc.OracleTypes')
+    env.uv.os.setenv("NLS_DATE_FORMAT",'YYYY-MM-DD HH24:MI:SS')
     local default_desc='#Oracle database SQL statement'
     local function add_default_sql_stmt(...)
         for i=1,select('#',...) do
