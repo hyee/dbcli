@@ -32,12 +32,8 @@ local env=setmetatable({},{
 })
 _G['env']=env
 
-local mt = getmetatable(_G)
-
-if mt == nil then
-    mt = {}
-    setmetatable(_G, mt)
-end
+local mt = {}
+setmetatable(_G, mt)
 
 mt.__declared = {}
 
@@ -488,6 +484,7 @@ function env.exec_command(cmd,params,is_internal,arg_text)
         end
     end
     local res={pcall(_exec_command,name,params,arg_text)}
+    if not env then return end
     if event and not is_internal then 
         event("AFTER_COMMAND",name,params,res[2],is_internal,arg_text)
     end
@@ -1022,20 +1019,22 @@ function env.unload()
         e,msg=pcall(env.jit.flush)
         if not e then print(msg) end
     end
+    setmetatable(_G,nil)
+    _G['env'],env=nil
 end
 
-env.REOAD_SIGNAL=false
+
 function env.reload()
     print("Reloading environment ...")
-    env.unload()
     java.loader.ReloadNextTime=env.CURRENT_DB
-    env.REOAD_SIGNAL=true
+    env.RELOAD_SIGNAL=true
+    env.unload()
 end
 
 function env.exit()
     print("Exited.")
+    env.RELOAD_SIGNAL=false
     env.unload()
-    os.exit(true,true)
 end
 
 function env.load_data(file,isUnpack,callback)

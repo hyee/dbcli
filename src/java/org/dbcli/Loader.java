@@ -22,9 +22,7 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.Future;
+import java.util.concurrent.*;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.InflaterInputStream;
@@ -34,8 +32,8 @@ public class Loader {
     public static String ReloadNextTime = "_init_";
     static LuaState lua;
     static Console console;
-    static String root = "";
-    static String libPath;
+    public static String root = "";
+    public static String libPath;
     KeyMap keyMap;
     KeyListner q;
     Future sleeper;
@@ -43,10 +41,13 @@ public class Loader {
     private Sleeper runner = new Sleeper();
     private volatile ResultSet rs;
     private IOException CancelError = new IOException("Statement is aborted.");
+    private static Loader loader=null;
 
-
-    public Loader() throws Exception {
-
+    public static Loader get() throws Exception {
+        if(loader==null) loader=new Loader();
+        return  loader;
+    }
+    private Loader() throws Exception {
         try {
             File f = new File(Loader.class.getProtectionDomain().getCodeSource().getLocation().toURI());
             root = f.getParentFile().getParent();
@@ -61,16 +62,19 @@ public class Loader {
                 libPath += "linux";
             }
             String libs = System.getenv("LD_LIBRARY_PATH");
+
             addLibrary(libPath + (libs == null ? "" : File.pathSeparator + libs), true);
+
             //System.setProperty("library.jansi.path", libPath);
             System.setProperty("jna.library.path", libPath);
         } catch (Exception e) {
             e.printStackTrace();
             System.exit(0);
         }
-        lua = new LuaState();
 
         console = new Console();
+        lua=LuaState.getMainLuaState();
+        if(lua!=null) console.setLua(lua);
         //Ctrl+D
         keyMap = console.reader.getKeys();
         //keyMap.bind(String.valueOf(KeyMap.CTRL_D), new KeyListner(KeyMap.CTRL_D));
@@ -94,7 +98,7 @@ public class Loader {
     }
 
     public static void loadLua(Loader loader, String args[]) throws Exception {
-        if (lua == null) lua = new LuaState();
+        lua = new LuaState();
         lua.pushGlobal("loader", loader);
         console.setLua(lua);
         if (console.writer != null) {
@@ -162,7 +166,7 @@ public class Loader {
     }
 
     public static void main(String args[]) throws Exception {
-        Loader l = new Loader();
+        Loader l = get();
         while (ReloadNextTime != null) loadLua(l, args);
         //console.threadPool.shutdown();
     }
@@ -278,6 +282,42 @@ public class Loader {
                 return writer.writeAll2SQL(CSVfileName, rs);
             }
         });
+    }
+
+    public void AsyncPrintResult(final ResultSet rs, final String prefix,final int timeout) throws Exception {
+        ArrayBlockingQueue<String> queue=new ArrayBlockingQueue<String>(1000);
+        setCurrentResultSet(rs);
+        Exception[] e=new Exception[1];
+        Thread t=new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    while(rs.next()) {
+                        final String line=rs.getString(1);
+                        queue.put(line==null?"":line);
+                    }
+                    rs.close();
+                } catch (Exception e1) {
+                    e[0]=e1;
+                }
+            }
+        });
+        t.setDaemon(true);
+        t.start();
+        ArrayList<String> messages=new ArrayList<>();
+        String str;
+        while (t.isAlive()) {
+            while((str=queue.poll(timeout, TimeUnit.MILLISECONDS))!=null) {
+                messages.add(str);
+                if(messages.size()>=console.terminal.getHeight()*3) break;
+            }
+            if(messages.size()>0) {
+                String[] msg=messages.toArray(new String[0]);
+                messages.clear();
+                console.println(prefix+String.join("\n"+prefix,msg));
+            }
+        }
+        if(e[0]!=null) throw e[0];
     }
 
     public LuaTable fetchResult(final ResultSet rs, final int rows) throws Exception {

@@ -36,6 +36,7 @@ if [[ "$_java" ]]; then
     echo $version|grep "64-Bit" &>/dev/null ||  found=1
 fi
 
+chmod 777 ./jre_linux/bin/* &>/dev/null
 if [[ $found < 2 ]]; then
     if [[ -x ./jre_linux/bin/java ]];  then
         _java=./jre_linux/bin/java
@@ -51,11 +52,11 @@ unset JAVA_HOME
 # unpack jar files for the first use
 for f in `find . -type f -name "*.pack.gz" 2>/dev/null`; do
   echo "Unpacking $f ..."
-  ./jre_linux/bin/unpack200 -q -r  $f $(echo $f|sed 's/\.pack\.gz//g') &
+  unpack200 -q -r  $f $(echo $f|sed 's/\.pack\.gz//g') &
 done
 wait
 
 umask 000
-"$_java" -noverify -Xmx384M  -cp .:lib/*:lib/ext/*$OTHER_LIB -XX:+UseG1GC -XX:+UseStringDeduplication \
+"$_java" -noverify -Xmx384M  -cp .:lib/*$OTHER_LIB -XX:+UseG1GC -XX:+UseStringDeduplication \
     -Dfile.encoding=$DBCLI_ENCODING -Duser.language=en -Duser.region=US -Duser.country=US \
-    -Djava.awt.headless=true org.dbcli.Loader $*
+    org.dbcli.Loader $*

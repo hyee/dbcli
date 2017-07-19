@@ -20,7 +20,8 @@ local params={
     SEP4K={name="sep4k",default="off",desc="Define whether to show number with thousands separator",range="on,off"},
     HEADING={name="heading",default="on",desc="Controls printing of column headings in reports",range="on,off"},
     LINESIZE={name="linesize",default=0,desc="Define the max chars in one line, other overflow parts would be cutted.",range='0-32767'},
-    BYPASSEMPTYRS={name="bypassemptyrs",default="off",desc="Controls whether to print an empty resultset",range="on,off"}
+    BYPASSEMPTYRS={name="bypassemptyrs",default="off",desc="Controls whether to print an empty resultset",range="on,off"},
+    PIPEQUERY={name="pipequery",default="off",desc="Controls whether to print an empty resultset",range="on,off"},
     --NULL={name="null_value",default="",desc="Define display value for NULL."}
 }
 
@@ -57,10 +58,10 @@ function grid.format_title(v)
 end
 
 local linesize
-function grid:cut(row,format_func,format_str)
+function grid.cut(row,format_func,format_str)
     if type(row)=="table" then
-        local colbase=self.col_auto_size
-        local cs=self.colsize
+        local colbase=grid.col_auto_size
+        local cs=grid.colsize
         if colbase~='auto' then
             for i,var in ipairs(cs) do
                 row[i]=tostring(row[i]):sub(1,cs[i][1])
@@ -68,9 +69,9 @@ function grid:cut(row,format_func,format_str)
         end
         row=format_func(format_str,table.unpack(row))
     end
-    
-    if #row>linesize then
-        local tab,len,count,clen,ulen={},-linesize,0
+    local siz=type(format_func)=="number" and format_func or linesize
+    if #row>siz then
+        local tab,len,count,clen,ulen={},-siz,0
         for piece,pattern in row:gsplit("(\27%[[%d;]*[mK])") do
             clen,ulen=piece:ulen()
             len,count = len + ulen,count +1
@@ -505,7 +506,7 @@ function grid:wellform(col_del,row_del)
     local cut=self.cut
     if row_del~="" then
         row_dels=row_dels:gsub("%s",row_del)
-        table.insert(rows,cut(self,row_dels:gsub("[^%"..row_del.."]",row_del)))
+        table.insert(rows,cut(row_dels:gsub("[^%"..row_del.."]",row_del)))
     end
 
     local len=#result
@@ -526,7 +527,7 @@ function grid:wellform(col_del,row_del)
                 end
             end
         end
-        local row=cut(self,v,format_func,v[0]==0 and head_fmt or fmt)
+        local row=cut(v,format_func,v[0]==0 and head_fmt or fmt)
 
         if v[0]==0 then
             row=row..nor
@@ -537,15 +538,15 @@ function grid:wellform(col_del,row_del)
         if filter_flag==1 then table.insert(rows,row) end
         if not result[k+1] or result[k+1][0]~=v[0] then
             if #row_del==1 and filter_flag==1 and v[0]~=0 then
-                table.insert(rows,cut(self,row_dels))
+                table.insert(rows,cut(row_dels))
             elseif v[0]==0 then
-                table.insert(rows,cut(self,title_dels,format_func,fmt))
+                table.insert(rows,cut(title_dels,format_func,fmt))
             end
         end
     end
 
     if result[#result][0]>0 and (row_del or "")=="" and (col_del or ""):trim()~="" then
-        local line=cut(self,title_dels,format_func,fmt)
+        local line=cut(title_dels,format_func,fmt)
         line=line:gsub(" ",grid.title_del):gsub(col_del:trim(),function(a) return ('+'):rep(#a) end)
         table.insert(rows,line)
         table.insert(rows,1,line)

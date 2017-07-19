@@ -51,6 +51,7 @@ public class Console {
     private EventCallback callback;
     private ParserCallback parserCallback;
     private Parser parser;
+    private volatile boolean pause = false;
     private Highlighter highlighter = new Highlighter();
     HashMap<String, Candidate[]> candidates = new HashMap<>(1024);
     Completer completer = new Completer();
@@ -139,7 +140,6 @@ public class Console {
         setKeyCode("redo", "^Y");
         setKeyCode("undo", "^Z");
 
-
         in = terminal.reader();
 
         writer = ((MyTerminal) terminal).printer();
@@ -148,7 +148,7 @@ public class Console {
         callback = new EventCallback() {
             @Override
             public void call(Object... c) {
-                if (!isRunning() && lua != null && threadID == Thread.currentThread().getId()) {
+                if (!pause && lua != null && threadID == Thread.currentThread().getId()) {
                     lua.getGlobal("TRIGGER_EVENT");
                     Integer r = (Integer) (lua.call(c)[0]);
                     if (r == 2) ((long[]) c[0])[0] = 2;
@@ -272,8 +272,8 @@ public class Console {
 
     public String readLine(String prompt, String buffer) {
         try {
+            setEvents(null, null);
             ((MyTerminal) terminal).lockReader(false);
-            if (isRunning()) setEvents(null, null);
             isPrompt = buffer != null && ansiPattern.matcher(buffer).find();
             if (isPrompt) {
                 highlighter.setAnsi(buffer);
@@ -283,7 +283,9 @@ public class Console {
                 reader.setOpt(LineReader.Option.DISABLE_EVENT_EXPANSION);
                 reader.setVariable(DISABLE_HISTORY, true);
             }
+            pause = false;
             String line = reader.readLine(prompt, null, buffer);
+            pause = true;
             //writeInput(reader.BRACKETED_PASTE_END);
             return line;
         } catch (Exception e) {
@@ -307,7 +309,7 @@ public class Console {
     }
 
     public Boolean isRunning() {
-        return this.task != null;
+        return pause;
     }
 
     public synchronized void setEvents(ActionListener event, char[] keys) {
@@ -319,7 +321,7 @@ public class Console {
         }
         if (this.event != null && this.keys != null) {
             this.monitor.counter = 0;
-            this.task = this.threadPool.scheduleWithFixedDelay(this.monitor, 1000, 200, TimeUnit.MILLISECONDS);
+            //this.task = this.threadPool.scheduleWithFixedDelay(this.monitor, 1000, 200, TimeUnit.MILLISECONDS);
         }
     }
 
@@ -359,13 +361,15 @@ public class Console {
 
         public void run() {
             try {
-                int ch = in.peek(1L);
-                if (ch < -1) return;
-                for (int i = 0; i < keys.length; i++) {
-                    if (ch != keys[i] && keys[i] != '*') continue;
-                    in.read(1L);
-                    event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, Character.toChars(ch).toString()));
-                    return;
+                if (pause) {
+                    int ch = in.peek(1L);
+                    if (ch < -1) return;
+                    for (int i = 0; i < keys.length; i++) {
+                        if (ch != keys[i] && keys[i] != '*') continue;
+                        in.read(1L);
+                        event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, Character.toChars(ch).toString()));
+                        return;
+                    }
                 }
                 setEvents(null, null);
             } catch (Exception e) {
@@ -395,6 +399,7 @@ public class Console {
             if (!isPrompt) return null;
             if (context == ParseContext.COMPLETE) return super.parse(line, cursor, context);
             if (context != ParseContext.ACCEPT_LINE) return null;
+
             String[] lines = null;
 
             if (parserCallback == null) {

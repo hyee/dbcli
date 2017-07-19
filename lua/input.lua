@@ -1,4 +1,5 @@
 local string,io,table=string,io,table
+
 package.path=debug.getinfo(1, "S").source:sub(2):gsub('[%w%.]+$','?.lua')
 local console=console
 
@@ -25,11 +26,15 @@ local ncolor=color("NOR")
 while true do
     local subcolor,pcolor,ccolor=color("PROMPTSUBCOLOR"),color("PROMPTCOLOR"),color("COMMANDCOLOR")
     local prompt,empty=env.CURRENT_PROMPT:match("^(.-)(%s*)$")
-    if env.REOAD_SIGNAL then break end
+    if env.RELOAD_SIGNAL~=nil then
+        _G['REOAD_SIGNAL'],env=env.RELOAD_SIGNAL,nil
+        break 
+    end
     if ccolor=="" then ccolor="\27[0m" end
-    readLine(console,prompt_color:format(env._SUBSYSTEM and subcolor or pcolor,prompt,ncolor,empty),ccolor)
-    if not line then
+    line=readLine(console,prompt_color:format(env._SUBSYSTEM and subcolor or pcolor,prompt,ncolor,empty),ccolor)
+    if line then
+        eval()
+    else
         env.eval_line('exit')
     end
-    eval()
 end

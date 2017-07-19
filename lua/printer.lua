@@ -37,11 +37,14 @@ function printer.more(output)
     reader:setPaginationEnabled(false)
     --]]
     local width=terminal:getWidth()
-    local tab={}
-    for v in output:gsplit('\r?\n') do
-        tab[#tab+1]=ansi.strip_ansi(v):sub(1,width-4)
+    if console:getBufferWidth() > width and env.grid then
+        local tab={}
+        local cut=env.grid.cut
+        for v in output:gsplit('\r?\n') do
+            tab[#tab+1]=cut(v,width-1-#env.space)
+        end
+        output=table.concat(tab,"\n")
     end
-    output=table.concat(tab,"\n")
     console:less(output)
 end
 

@@ -26,10 +26,7 @@ function db_Types:get(position,typeName,res,conn)
     local getter=self[typeName].getter
 
     local rtn,value=pcall(res[getter],res,position)
-    if not rtn then
-        print('Column:',position,"    Datatype:",self[typeName].name,"    ",value)
-        return nil
-    end
+    env.checkerr(rtn,value)
    
     if value == nil or res:wasNull() then return nil end
     if not self[typeName].handler then return value end
@@ -266,6 +263,16 @@ end
 function ResultSet:print(res,conn,prefix)
     local result,hdl={},nil
     --print(table.dump(self:getHeads(res,-1)))
+    if cfg.get("pipequery")=="on" then
+        if not res.isClosed or res:isClosed() then return end
+        local head=self:getHeads(res,limit).__titles
+        if #head==1 then
+            res:setFetchSize(2)
+            loader:AsyncPrintResult(res,env.space,300)
+            return
+        end
+    end
+    res:setFetchSize(cfg.get("FETCHSIZE"))
     local maxrows,pivot=cfg.get("printsize"),cfg.get("pivot")
     if pivot~=0 then maxrows=math.abs(pivot) end
     local result=self:rows(res,maxrows,true,cfg.get("null"))
@@ -546,11 +553,12 @@ function db_core:exec(sql,args)
     prep,sql,params=self:parse(sql,params)
     prep:setEscapeProcessing(false)
     self.__stmts[#self.__stmts+1]=prep
-    prep:setFetchSize(cfg.get('FETCHSIZE'))
+    prep:setFetchSize(1)
     prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
     self.current_stmt=prep
     env.log_debug("db","SQL:",sql)
     env.log_debug("db","Parameters:",params)
+
     local is_query=self:check_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
     self.current_stmt=nil
     --is_query=prep:execute()
