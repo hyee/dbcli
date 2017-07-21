@@ -19,9 +19,7 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.sql.CallableStatement;
 import java.sql.ResultSet;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Base64;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
@@ -87,6 +85,10 @@ public class Loader {
         });
     }
 
+    public void resetLua() {
+        console.setLua(lua);
+    }
+
     public void mkdir(String path) {
         new File(path).mkdirs();
     }
@@ -138,25 +140,12 @@ public class Loader {
         try {
             Field field = ClassLoader.class.getDeclaredField("usr_paths");
             field.setAccessible(true);
-            if (!isReplace) {
-                String path = "s";
-                String[] paths = (String[]) field.get(null);
-                for (int i = 0; i < paths.length; i++) {
-                    if (s.equals(paths[i])) return;
-                    path = path + File.pathSeparator + paths[i];
-                }
-                String[] tmp = new String[paths.length + 1];
-                System.arraycopy(paths, 0, tmp, 0, paths.length);
-                tmp[paths.length] = s;
-                field.set(null, tmp);
-                System.setProperty("java.library.path", path);
-            } else {
-                System.setProperty("java.library.path", s);
-                //set sys_paths to null so that java.library.path will be reevalueted next time it is needed
-                final Field sysPathsField = ClassLoader.class.getDeclaredField("sys_paths");
-                sysPathsField.setAccessible(true);
-                sysPathsField.set(null, null);
-            }
+            TreeMap<String,Boolean> map=new TreeMap<>();
+            for(String t:s.split(File.pathSeparator)) map.put(t,true);
+            if(!isReplace) for(String t:(String[]) field.get(null)) map.put(t,true);
+            String[] tmp=map.keySet().toArray(new String[0]);
+            System.setProperty("java.library.path",String.join(File.pathSeparator,tmp));
+            field.set(null,tmp);
         } catch (IllegalAccessException e) {
             throw new IOException("Failed to get permissions to set library path");
         } catch (NoSuchFieldException e) {
@@ -179,7 +168,10 @@ public class Loader {
         Method method = clazz.getDeclaredMethod("addURL", new Class[]{URL.class});
         method.setAccessible(true);
         method.invoke(classLoader, new Object[]{url});
-        System.setProperty("java.class.path", System.getProperty("java.class.path") + File.pathSeparator + file.replace(root, "."));
+        TreeMap<String,Boolean> map=new TreeMap();
+        for(String s:(System.getProperty("java.class.path") + File.pathSeparator + file.replace(root, ".")).split(File.pathSeparator))
+            map.put(s,true);
+        System.setProperty("java.class.path", String.join(File.pathSeparator,map.keySet().toArray(new String[0])));
     }
 
 

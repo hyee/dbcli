@@ -96,7 +96,7 @@ public class SubSystem {
                 --wait;
                 Thread.sleep(5);
             } else {
-                int ch = Console.in.read(10L);
+                int ch = Console.input.read(10L);
                 while (ch > 0) {
                     if (!(ch == 10 && prev == 13) && !(ch == 13 && prev == 10)) {
                         prev = ch;
@@ -104,7 +104,7 @@ public class SubSystem {
                         buff.append((char) ch);
                         --wait;
                     }
-                    ch = Console.in.read(10L);
+                    ch = Console.input.read(10L);
                 }
                 if (wait < 50L) {
                     write(buff.toString().getBytes());

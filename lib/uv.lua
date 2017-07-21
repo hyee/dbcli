@@ -1,4 +1,5 @@
-local u=require"luv"
+local u=require "luv"
+luv=u
 local table,math,type,tonumber,os,pcall=table,math,type,tonumber,os,pcall
 local uv,env={},env
 local index,pos,found
@@ -6,6 +7,7 @@ local modules={timer=1,prepare=1,check=1,idle=1,async=1,tcp=1,pipe=1,tty=1,udp=1
 local sep=jit.os=='windows' and '\\' or '/'
 for k,v in pairs(modules) do uv[k]={} end
 for name,method in pairs(u) do
+    if name:find('setup') then print(name) end
     found=false
     for k,v in pairs(modules) do
         index,pos=name:find(k,1,true)

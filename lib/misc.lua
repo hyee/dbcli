@@ -120,11 +120,13 @@ function string.rpad(str, len, char)
     return (str and ((char or ' '):rep(len - #str)..str):sub(-len)) or str
 end
 
-function string.cpad(str, len, char)
+function string.cpad(str, len, char,func)
     str,char=tostring(str) or str,char or ' '
     if not str then return str end
-    char=char:rep(math.floor((len-#str)/2))
-    return string.format("%s%s%s",char,str,char):sub(1,len)
+    str=str:sub(1,len)
+    left=char:rep(math.floor((len-#str)/2))
+    right=char:rep(len-#left-#str)
+    return type(func)~="function" and string.format("%s%s%s",left,str,right) or func(left,str,right)
 end
 
 

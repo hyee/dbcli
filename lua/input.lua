@@ -1,17 +1,20 @@
 local string,io,table=string,io,table
+local mypath=debug.getinfo(1, "S").source:sub(2)
 
-package.path=debug.getinfo(1, "S").source:sub(2):gsub('[%w%.]+$','?.lua')
+package.path=mypath:gsub('[%w%.]+$','?.lua')
 local console=console
 
 
 local readLine=console.readLine
-local env=require("env")
+local env,err=loadfile((mypath:gsub('[%w%.]+$','env.lua')))
+if not env then return print(err) end
+env=env()
 env.onload(...)
 print("--------------------------------------------------------------------------------------------------------------------------------------")
 print("| DBCLI, type 'conn' to connect to db, or 'help' for more information. (c)2014-2016 hyee, MIT license (https://github.com/hyee/dbcli)|")
 print("======================================================================================================================================")
 if console:getBufferWidth()<=terminal:getWidth()+1 then
-	print("* Your terminal doesn't support horizontal scroll, lines longer than screen width default to be chopped.")
+	print("* Your terminal doesn't support horizontal scrolling, lines longer than screen width default to be chopped.")
 	print("  Please run 'set linesize <cols>' to a larger value if preferred folding the long lines rather than chopping.")
 end
 print()
@@ -27,7 +30,7 @@ while true do
     local subcolor,pcolor,ccolor=color("PROMPTSUBCOLOR"),color("PROMPTCOLOR"),color("COMMANDCOLOR")
     local prompt,empty=env.CURRENT_PROMPT:match("^(.-)(%s*)$")
     if env.RELOAD_SIGNAL~=nil then
-        _G['REOAD_SIGNAL'],env=env.RELOAD_SIGNAL,nil
+        _G['REOAD_SIGNAL']=env.RELOAD_SIGNAL
         break 
     end
     if ccolor=="" then ccolor="\27[0m" end

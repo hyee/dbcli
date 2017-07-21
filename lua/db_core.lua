@@ -385,8 +385,8 @@ function db_core:ctor()
     self.db_types:load_sql_types('java.sql.Types')
     self.__stmts = {}
     self.type="unknown"
-    set_command(self,"commit",nil,self.commit,false,1)
-    set_command(self,"rollback",nil,self.rollback,false,1)
+    env.set_command(self,"commit",nil,self.commit,false,1)
+    env.set_command(self,"rollback",nil,self.rollback,false,1)
 end
 
 function db_core:login(account,list)
@@ -1049,11 +1049,11 @@ function db_core:__onload()
     cfg.init("CSVSEP",",",set_param,"db.core","Define the default separator between CSV fields.")
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
     env.event.snoop('TRIGGER_LOGIN',self.login,self)
-    set_command(self,{"reconnect","reconn"}, "Re-connect to database with the last login account.",self.reconnnect,false,2)
-    set_command(self,{"disconnect","disc"},"Disconnect current login.",self.disconnect,false,2)
-    set_command(self,"sql2file",'Export Query Result into SQL file. Usage: @@NAME <file_name>[.sql|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <sql|cursor>'..txt ,self.sql2sql,'__SMART_PARSE__',3)
-    set_command(self,"sql2csv",'Export Query Result into CSV file. Usage: @@NAME <file_name>[.csv|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <sql|cursor>'..txt ,self.sql2csv,'__SMART_PARSE__',3)
-    set_command(self,"csv2sql",'Convert CSV file into SQL file. Usage: @@NAME <sql_file>[.sql|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <csv_file>'..txt ,self.csv2sql,false,3)
+    env.set_command(self,{"reconnect","reconn"}, "Re-connect to database with the last login account.",self.reconnnect,false,2)
+    env.set_command(self,{"disconnect","disc"},"Disconnect current login.",self.disconnect,false,2)
+    env.set_command(self,"sql2file",'Export Query Result into SQL file. Usage: @@NAME <file_name>[.sql|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <sql|cursor>'..txt ,self.sql2sql,'__SMART_PARSE__',3)
+    env.set_command(self,"sql2csv",'Export Query Result into CSV file. Usage: @@NAME <file_name>[.csv|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <sql|cursor>'..txt ,self.sql2csv,'__SMART_PARSE__',3)
+    env.set_command(self,"csv2sql",'Convert CSV file into SQL file. Usage: @@NAME <sql_file>[.sql|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <csv_file>'..txt ,self.csv2sql,false,3)
 end
 
 function db_core:__onunload()

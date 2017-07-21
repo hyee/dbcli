@@ -34,7 +34,7 @@ import static org.jline.reader.LineReader.SECONDARY_PROMPT_PATTERN;
 
 public class Console {
     public static PrintWriter writer;
-    public static NonBlockingReader in;
+    public static NonBlockingReader input;
     public static String charset = System.getProperty("sun.stdout.encoding");
     public Terminal terminal;
     LineReaderImpl reader;
@@ -140,7 +140,7 @@ public class Console {
         setKeyCode("redo", "^Y");
         setKeyCode("undo", "^Z");
 
-        in = terminal.reader();
+        input = terminal.reader();
 
         writer = ((MyTerminal) terminal).printer();
         threadID = Thread.currentThread().getId();
@@ -362,11 +362,11 @@ public class Console {
         public void run() {
             try {
                 if (pause) {
-                    int ch = in.peek(1L);
+                    int ch = input.peek(1L);
                     if (ch < -1) return;
                     for (int i = 0; i < keys.length; i++) {
                         if (ch != keys[i] && keys[i] != '*') continue;
-                        in.read(1L);
+                        input.read(1L);
                         event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, Character.toChars(ch).toString()));
                         return;
                     }

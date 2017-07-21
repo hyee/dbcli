@@ -118,35 +118,6 @@ function grid.fmt(format,...)
     return fmt:format(...)
 end
 
-function grid.format(rows,include_head,col_del,row_del)
-    local this
-    if rows.__class then
-        this=rows
-    else
-        this=grid.new(include_head)
-        for i,rs in ipairs(rows) do
-            this:add(rs)
-        end
-    end
-    return this:wellform(col_del,row_del)
-end
-
-function grid.tostring(rows,include_head,col_del,row_del,rows_limit)
-    if grid.pivot ~= 0 and include_head~=false then
-        rows=grid.show_pivot(rows)
-        if math.abs(grid.pivot)==1 then
-            include_head=false
-        else
-            rows_limit=rows_limit and rows_limit+2
-        end
-    end
-    rows=grid.format(rows,include_head,col_del,row_del)
-    rows_limit=rows_limit and math.min(rows_limit,#rows) or #rows
-    env.set.force_set("pivot",0)
-
-    return table.concat(rows,"\n",1,rows_limit)
-end
-
 
 function grid.sort(rows,cols,bypass_head)
     local head
@@ -555,23 +526,163 @@ function grid:wellform(col_del,row_del)
     return rows
 end
 
-function grid.print(rows,include_head,col_del,row_del,psize,prefix,suffix)
-    psize=psize or 10000
+function grid.format(rows,include_head,col_del,row_del)
+    local this
+    if rows.__class then
+        this=rows
+    else
+        this=grid.new(include_head)
+        for i,rs in ipairs(rows) do this:add(rs) end
+    end
+    return this:wellform(col_del,row_del)
+end
+
+function grid.tostring(rows,include_head,col_del,row_del,rows_limit)
+    if grid.pivot ~= 0 and include_head~=false then
+        rows=grid.show_pivot(rows)
+        if math.abs(grid.pivot)==1 then
+            include_head=false
+        else
+            rows_limit=rows_limit and rows_limit+2
+        end
+    end
+    rows=grid.format(rows,include_head,col_del,row_del)
+    rows_limit=rows_limit and math.min(rows_limit,#rows) or #rows
+    env.set.force_set("pivot",0)
+    return table.concat(rows,"\n",1,rows_limit)
+end
+
+function grid.print(rows,include_head,col_del,row_del,rows_limit,prefix,suffix)
+    rows_limit=rows_limit or 10000
     local str=prefix and (prefix.."\n") or ""
-    local test
+    local test,size
     if include_head=='test' then test,include_head=true,nil end
     if rows.__class then
         include_head=rows.include_head
-        rows=rows:wellform(col_del,row_del)
-        str=str..table.concat(rows,"\n",1,math.min(#rows,psize+2));
+        size=#rows.data
     else
+        size=#rows+(include_head and 1 or 0)
         include_head=grid.new(include_head).include_head
-        str=str..grid.tostring(rows,include_head,col_del,row_del,psize)
     end
-    if grid.bypassemptyrs=='on' and #rows<(include_head and 3 or 1) then return end
+    str=str..grid.tostring(rows,include_head,col_del,row_del,rows_limit)
+    if grid.bypassemptyrs=='on' and size<(include_head and 3 or 1) then return end
     if test then env.write_cache("grid_output.txt",str) end
     print(str,'__BYPASS_GREP__')
     if suffix then print(suffix) end
+end
+
+function grid.merge(tabs,is_print,col_del,row_del,rows_limit,prefix,suffix)
+    local size
+    local strip=env.ansi.strip_len
+    for idx,tab in ipairs(tabs) do
+        if type(tab) == "table" then
+            if not tab._is_drawed then
+                local topic,width,height=tab.topic,tab.width,tab.height
+                size=tab.data and #tab.data or (#tab+1)
+                tab=grid.tostring(tab,true,col_del,row_del,rows_limit):split("\n")
+                tab.topic,tab.width,tab.height=topic,width,height
+                if grid.bypassemptyrs=='on' and size<3 then tab={} end
+            end
+            tabs[idx]=tab
+        end
+    end
+
+    local function redraw(tab,cols,rows)
+        local newtab={_is_drawed=true,topic=tab.topic}
+        local function push(line) newtab[#newtab+1]=line end
+        local actcols=strip(tab[#tab])
+        local rspace=string.rep(' ',cols)
+
+        if tab._is_drawed then
+            for rowidx,row in ipairs(tab) do
+                push(row)
+            end
+        else
+            local cspace=string.rep(' ',cols-actcols-2)
+            local fmt='+%s+'
+            local head=fmt:format(string.rep('-',cols-2))
+            if tab.topic then
+                push(fmt:format(tab.topic:cpad(cols-2,'-',
+                    function(left,str,right) return env.ansi.convert_ansi(string.format("%s$PROMPTCOLOR$%s$NOR$%s",left,str,right)) end)))
+            else
+                push(head)
+            end
+            fmt='|%s%s|'
+            for rowidx,row in ipairs(tab) do
+                push(fmt:format(row,cspace))
+                if #newtab >= rows-1 then break end
+            end
+            push(head)
+        end
+
+        for i=#newtab+1,rows do
+            push(rspace)
+        end
+        return newtab
+    end
+
+    local result,newtab={},{}
+    local maxwidth=0
+    local function push(line) 
+        newtab[#newtab+1]=line
+        maxwidth = math.max(maxwidth,strip(line))
+    end
+    
+    for i=1,#tabs do
+        local tab,sep,nexttab=tabs[i]
+        if type(tab)=="table" and #tab>0 then
+            sep,nexttab=tabs[i+1],tabs[i+2]
+            if type(sep)=="string" and type(nexttab)=="table" and #nexttab>0 then
+                newtab={_is_drawed=true}
+                local m1,m2=tab._is_drawed and 2 or 0,nexttab._is_drawed and 2 or 0
+                local width1,width2=(tab.width or (strip(tab[#tab])-m1))+2,(nexttab.width or (strip(nexttab[#nexttab])-m2))+2
+                local height1,height2=(tab.height or (#tab-m1))+2,(nexttab.height or (#nexttab-m2))+2
+                if sep=='|' then
+                    local maxlen=math.max(height1,height2)
+                    tab,nexttab=redraw(tab,width1,maxlen),redraw(nexttab,width2,maxlen)
+                    width1,width2=strip(tab[#tab]),strip(nexttab[#nexttab])
+                    local fmt='%s  %s'
+                    for rowidx=1,math.max(#tab,#nexttab) do
+                        push(fmt:format(tab[rowidx] or string.rep(' ',width1),nexttab[rowidx] or string.rep(' ',width2)))
+                    end
+                else
+                    local maxlen=math.max(width1,width2)
+                    tab,nexttab=redraw(tab,maxlen,height1),redraw(nexttab,maxlen,height2)
+                    maxlen=math.max(strip(tab[#tab]),strip(nexttab[#nexttab]))
+                    for rowidx,row in ipairs(tab) do push(row) end
+                    push(string.rep(' ',maxlen))
+                    for rowidx,row in ipairs(nexttab) do push(row) end
+                end
+                tabs[i+2]=newtab
+                i=i+1
+            else
+                local m=tab._is_drawed and 2 or 0
+                local width=(tab.width or (strip(tab[#tab])-m))+2
+                local height=(tab.height or (#tab-m))+2
+                result[#result+1]=redraw(tab,width,height)
+                maxwidth = math.max(maxwidth,strip(tab[#tab]))
+            end
+        end
+    end
+
+    newtab={_is_drawed=true}
+    for i=1,#result do
+        if i>1 then
+            push(grid.cut(string.rep(' ',maxwidth),linesize))
+        end
+        for rowidx,row in ipairs(result[i]) do
+            push(grid.cut(row,linesize))
+        end
+    end
+    if is_print==true then
+        local str=prefix and (prefix.."\n") or ""
+        str=str..table.concat(newtab,"\n")
+        print(str,'__BYPASS_GREP__')
+        if suffix then print(suffix) end
+        return
+    else
+        return newtab
+    end
 end
 
 function grid.onload()

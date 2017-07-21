@@ -17,6 +17,9 @@ function snapper:ctor()
            @@NAME <name1>[,<name2>...] [args] $PROMPTCOLOR$<<EOF$NOR$
                <run other commands>
            $HIY$EOF$NOR$
+        5. calc the delta stats with repeat interval:
+           @@NAME <name1>[,<name2>...] $PROMPTCOLOR$<seconds>+$NOR$ [args]
+           @@NAME <name1>[,<name2>...] $PROMPTCOLOR$+$NOR$ [args] <"command"|EOF commands>
     Of which:
         $HEADCOLOR$<name1>[,<name2>...]$NOR$ is the snap commands listed below
         $HEADCOLOR$args$NOR$ is the parameter that required for the specific script
@@ -49,7 +52,7 @@ end
 
 function snapper:after_script()
     if self.start_flag then
-        self.start_flag=false
+        self.start_flag,self.snap_cmd,self.is_repeat=false
         self:trigger('after_exec_action')
         self.db:commit()
         cfg.set("feed","back")
@@ -70,6 +73,14 @@ function snapper:run_sql(sql,main_args,cmds,files)
     cfg.set("sep4k","on")
     
     local interval=main_args[1].V1
+    local args={}
+    self.is_repeat=false
+    local itv=interval:match("^(%d*)%+$")
+    if itv then
+        if itv=='' then itv='1' end 
+        interval,self.is_repeat=itv,tonumber(itv)
+    end
+
     local snap_cmd
     if interval~="END" then
         for i=20,1,-1 do
@@ -88,7 +99,7 @@ function snapper:run_sql(sql,main_args,cmds,files)
         end
     end
 
-    local args={}
+    self.snap_cmd=snap_cmd
 
     for k,v in pairs(main_args) do
         if type(v)=="table" then
@@ -97,7 +108,7 @@ function snapper:run_sql(sql,main_args,cmds,files)
             for i=1,20 do
                 local x="V"..i
                 local y=tostring(v[x]):upper()
-                if not (v[x]==snap_cmd or i==1 and (tonumber(y) or y=="END" or y=="BEGIN"))
+                if not (v[x]==snap_cmd or i==1 and (tonumber(interval) or self.is_repeat or y=="END" or y=="BEGIN"))
                 then
                     idx=idx+1
                     args[k]["V"..idx]=v[x]
@@ -114,6 +125,7 @@ function snapper:run_sql(sql,main_args,cmds,files)
     end
 
     local begin_flag
+    
     if interval then
         interval=interval:upper()
         if interval=="END" then
@@ -150,13 +162,14 @@ function snapper:run_sql(sql,main_args,cmds,files)
         env.eval_line(snap_cmd,true,true)
         self:next_exec()
     elseif not begin_flag then
-        sleep(interval+clock-os.clock()-0.1)
+        local timer=interval+clock-os.clock()-0.1
+        if timer>0 then sleep(timer) end
         self:next_exec()
     end
 end
 
 function snapper:next_exec()
-    local cmds,args,start_time,db=self.cmds,self.args,self.start_time,self.db
+    local cmds,args,start_time,db,clock=self.cmds,self.args,self.start_time,self.db
     self.start_time=nil
     --self:trigger('before_exec_action')
     db:commit()
@@ -170,6 +183,7 @@ function snapper:next_exec()
             env.eval_line(cmd.after_sql,true,true) 
         end 
     end
+    clock=os.clock()
 
 
     local result,groups={}
@@ -285,6 +299,19 @@ function snapper:next_exec()
         end
     end
     self.db:commit()
+    if self.is_repeat then
+        for name,cmd in pairs(cmds) do
+            cmd.rs2,cmd.rs1=cmd.rs1,nil
+        end
+        self.start_time=end_time
+        if self.snap_cmd then
+            env.eval_line(self.snap_cmd,true,true)
+        else
+            local timer=self.is_repeat+clock-os.clock()-0.1
+            if timer>0 then sleep(timer) end
+        end
+        return self:next_exec()
+    end
     self:trigger('after_exec_action')
 end
 

@@ -3,7 +3,7 @@ local db,cfg,event,var=env.getdb(),env.set,env.event,env.var
 local extvars={}
 local datapath=debug.getinfo(1, "S").source:sub(2):gsub('[%w%.]+$','dict')
 local re=env.re
-
+local uid=nil
 function extvars.on_before_db_exec(item)
     var.setInputs("lz_compress",db.lz_compress);
     if not var.outputs['INSTANCE'] then
@@ -15,6 +15,9 @@ function extvars.on_before_db_exec(item)
     end
     if not var.outputs['ENDTIME'] then
         var.setInputs("ENDTIME",cfg.get("ENDTIME"))
+    end
+    if not var.outputs['SCHEMA'] then
+        var.setInputs("SCHEMA",cfg.get("SCHEMA"))
     end
     return item
 end
@@ -37,11 +40,12 @@ local function rep_instance(prefix,full,obj,suffix)
         flag=flag+2
     end
 
-    if usr and usr~="" and extvars.dict[obj] and extvars.dict[obj].usr_col then
+    if uid and extvars.dict[obj] and extvars.dict[obj].usr_col then
+        local filter="(select /*+no_merge*/ username from all_users where user_id="..uid..")"
         if flag==0 then
-            str=fmt:format(prefix,full,extvars.dict[obj].usr_col,"'"..usr.."'",suffix)
+            str=fmt:format(prefix,full,extvars.dict[obj].usr_col,filter,suffix)
         else
-            str=str:gsub(':others:','and '..extvars.dict[obj].usr_col.."='"..usr.."'")
+            str=str:gsub(':others:','and '..extvars.dict[obj].usr_col.."="..filter)
         end
         flag=flag+4
     end
@@ -161,18 +165,53 @@ function extvars.set_container(name,value)
 end
 
 function extvars.set_schema(name,value)
-    return value:upper()
+    if value==nil or value=="" then 
+        uid=nil
+        return value
+    end
+    value=value:upper()
+    local id=db:get_value([[select max(user_id) from all_users where username=:1]],{value})
+    env.checkerr(id~=nil and id~="", "No such user: "..value)
+    uid=tonumber(id)
+    return value
+end
+
+function extvars.on_after_db_conn()
+    cfg.force_set('instance','default')
+    cfg.force_set('starttime','default')
+    cfg.force_set('endtime','default')
+    cfg.force_set('schema','default')
+    cfg.force_set('container','default')
+end
+
+function test_grid()
+    local rs1=db:internal_call([[select * from (select * from v$sysstat order by 1) where rownum<=20]])
+    local rs2=db:internal_call([[select * from (select rownum "#",name,hash from v$latch) where rownum<=30]])
+    local rs3=db:internal_call([[select * from (select rownum "#",event,total_Waits from v$system_event) where rownum<=60]])
+    local rs4=db:internal_call([[select * from (select * from v$sysmetric order by 1) where rownum<=10]])
+    
+    local merge=grid.merge
+    rs1=db.resultset:rows(rs1,-1)
+    rs2=db.resultset:rows(rs2,-1)
+    rs3=db.resultset:rows(rs3,-1)
+    rs4=db.resultset:rows(rs4,-1)
+    rs3.height=55
+    rs1.topic,rs2.topic,rs3.topic,rs4.topic="System State","System Latch","System Events","System Matrix"
+    merge({rs3,'|',merge({rs1,'+',rs2}),'+',rs4},true)
 end
 
 function extvars.onload()
+    env.set_command(nil,"TEST_GRID",nil,test_grid,false,1)
     event.snoop('BEFORE_DB_EXEC',extvars.on_before_parse,nil,50)
     event.snoop('BEFORE_ORACLE_EXEC',extvars.on_before_db_exec)
+    event.snoop('AFTER_ORACLE_CONNECT',extvars.on_after_db_conn)
     event.snoop('ON_SETTING_CHANGED',extvars.set_title)
     cfg.init("instance",-1,extvars.set_instance,"oracle","Auto-limit the inst_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-2 - 99")
     cfg.init("schema","",extvars.set_schema,"oracle","Auto-limit the schema of impacted tables. ","*")
     cfg.init({"container","con","con_id"},-1,extvars.set_container,"oracle","Auto-limit the con_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-1 - 99")
     cfg.init("starttime","",extvars.check_time,"oracle","Specify the start time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
     cfg.init("endtime","",extvars.check_time,"oracle","Specify the end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
+    
     extvars.P=re.compile([[
         pattern <- {pt} {owner* obj} {suffix}
         suffix  <- [%s,;)]
