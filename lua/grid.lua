@@ -572,21 +572,9 @@ function grid.print(rows,include_head,col_del,row_del,rows_limit,prefix,suffix)
 end
 
 function grid.merge(tabs,is_print,col_del,row_del,rows_limit,prefix,suffix)
-    local size
+    
     local strip=env.ansi.strip_len
-    for idx,tab in ipairs(tabs) do
-        if type(tab) == "table" then
-            if not tab._is_drawed then
-                local topic,width,height=tab.topic,tab.width,tab.height
-                size=tab.data and #tab.data or (#tab+1)
-                tab=grid.tostring(tab,true,col_del,row_del,rows_limit):split("\n")
-                tab.topic,tab.width,tab.height=topic,width,height
-                if grid.bypassemptyrs=='on' and size<3 then tab={} end
-            end
-            tabs[idx]=tab
-        end
-    end
-
+    
     local function redraw(tab,cols,rows)
         local newtab={_is_drawed=true,topic=tab.topic}
         local function push(line) newtab[#newtab+1]=line end
@@ -601,9 +589,10 @@ function grid.merge(tabs,is_print,col_del,row_del,rows_limit,prefix,suffix)
             local cspace=string.rep(' ',cols-actcols-2)
             local fmt='+%s+'
             local head=fmt:format(string.rep('-',cols-2))
-            if tab.topic then
-                push(fmt:format(tab.topic:cpad(cols-2,'-',
-                    function(left,str,right) return env.ansi.convert_ansi(string.format("%s$PROMPTCOLOR$%s$NOR$%s",left,str,right)) end)))
+            if (tab.topic or "") ~= "" then
+                local topic=tab.topic
+                push(fmt:format(topic:strip_ansi():cpad(cols-2,'-',
+                    function(left,str,right) return env.ansi.convert_ansi(string.format("%s$PROMPTCOLOR$%s$NOR$%s",left,(grid.cut(topic,cols-2)),right)) end)))
             else
                 push(head)
             end
@@ -621,51 +610,103 @@ function grid.merge(tabs,is_print,col_del,row_del,rows_limit,prefix,suffix)
         return newtab
     end
 
-    local result,newtab={},{}
-    local maxwidth=0
-    local function push(line) 
-        newtab[#newtab+1]=line
-        maxwidth = math.max(maxwidth,strip(line))
-    end
     
-    for i=1,#tabs do
-        local tab,sep,nexttab=tabs[i]
-        if type(tab)=="table" and #tab>0 then
-            sep,nexttab=tabs[i+1],tabs[i+2]
-            if type(sep)=="string" and type(nexttab)=="table" and #nexttab>0 then
-                newtab={_is_drawed=true}
-                local m1,m2=tab._is_drawed and 2 or 0,nexttab._is_drawed and 2 or 0
-                local width1,width2=(tab.width or (strip(tab[#tab])-m1))+2,(nexttab.width or (strip(nexttab[#nexttab])-m2))+2
-                local height1,height2=(tab.height or (#tab-m1))+2,(nexttab.height or (#nexttab-m2))+2
-                if sep=='|' then
-                    local maxlen=math.max(height1,height2)
-                    tab,nexttab=redraw(tab,width1,maxlen),redraw(nexttab,width2,maxlen)
-                    width1,width2=strip(tab[#tab]),strip(nexttab[#nexttab])
-                    local fmt='%s  %s'
-                    for rowidx=1,math.max(#tab,#nexttab) do
-                        push(fmt:format(tab[rowidx] or string.rep(' ',width1),nexttab[rowidx] or string.rep(' ',width2)))
+    local maxwidth=0
+    
+    
+    local function _merge(tabs,is_wrap)
+        local newtab={}
+        local function push(line) 
+            newtab[#newtab+1]=line
+            maxwidth = math.max(maxwidth,strip(line))
+        end
+        local result={}
+        for i=1,#tabs do
+            local tab,sep,nexttab=tabs[i]
+            if type(tab)=="table" and #tab>0 then
+                sep,nexttab=tabs[i+1],tabs[i+2]
+                if type(sep)=="string" and type(nexttab)=="table" and #nexttab>0 then
+                    newtab={_is_drawed=true}
+                    local m1,m2=tab._is_drawed and 2 or 0,nexttab._is_drawed and 2 or 0
+                    local width1,width2=(tab.width or (strip(tab[#tab])-m1))+2,(nexttab.width or (strip(nexttab[#nexttab])-m2))+2
+                    local height1,height2=(tab.height or (#tab-m1))+2,(nexttab.height or (#nexttab-m2))+2
+                    if sep=='+' and (tab._is_drawed or nexttab._is_drawed) then sep = '|' end
+                    if sep=='|' then
+                        local maxlen=math.max(height1,height2)
+                        tab,nexttab=redraw(tab,width1,maxlen),redraw(nexttab,width2,maxlen)
+                        width1,width2=strip(tab[#tab]),strip(nexttab[#nexttab])
+                        local fmt='%s  %s'
+                        for rowidx=1,math.max(#tab,#nexttab) do
+                            push(fmt:format(tab[rowidx] or string.rep(' ',width1),nexttab[rowidx] or string.rep(' ',width2)))
+                        end
+                    elseif sep=='+' then
+                        local space1,space2=string.rep(' ',width1-2),string.rep(' ',width2-2)
+                        local topic1,topic2=tab.topic or "",nexttab.topic or ""
+                        local fmt="%s | %s"
+                        for rowidx=1,math.max(#tab,#nexttab) do
+                            push(fmt:format(tab[rowidx] or space1,nexttab[rowidx] or space2))
+                        end
+                        local NOR=env.ansi.NOR
+                        if topic1~="" or topic2 ~="" then
+                            newtab.topic=topic1..(topic1~="" and topic2 ~="" and ' & ' or '')..topic2
+                        end
+                        newtab._is_drawed=false
+                    else
+                        local maxlen=math.max(width1,width2)
+                        tab,nexttab=redraw(tab,maxlen,height1),redraw(nexttab,maxlen,height2)
+                        maxlen=math.max(strip(tab[#tab]),strip(nexttab[#nexttab]))
+                        for rowidx,row in ipairs(tab) do push(row) end
+                        push(string.rep(' ',maxlen))
+                        for rowidx,row in ipairs(nexttab) do push(row) end
                     end
+                    tabs[i+2]=newtab
+                    i=i+1
                 else
-                    local maxlen=math.max(width1,width2)
-                    tab,nexttab=redraw(tab,maxlen,height1),redraw(nexttab,maxlen,height2)
-                    maxlen=math.max(strip(tab[#tab]),strip(nexttab[#nexttab]))
-                    for rowidx,row in ipairs(tab) do push(row) end
-                    push(string.rep(' ',maxlen))
-                    for rowidx,row in ipairs(nexttab) do push(row) end
+                    if is_wrap then
+                        local m=tab._is_drawed and 2 or 0
+                        local width=(tab.width or (strip(tab[#tab])-m))+2
+                        local height=(tab.height or (#tab-m))+2
+                        maxwidth = math.max(maxwidth,strip(tab[#tab]))
+                        tab=redraw(tab,width,height)
+                    end
+                    result[#result+1]=tab
                 end
-                tabs[i+2]=newtab
-                i=i+1
-            else
-                local m=tab._is_drawed and 2 or 0
-                local width=(tab.width or (strip(tab[#tab])-m))+2
-                local height=(tab.height or (#tab-m))+2
-                result[#result+1]=redraw(tab,width,height)
-                maxwidth = math.max(maxwidth,strip(tab[#tab]))
             end
         end
+        return result
     end
 
-    newtab={_is_drawed=true}
+    local function format_tables(tabs,is_wrap)
+        local result={}
+        for idx,tab in ipairs(tabs) do
+            if type(tab) == "table" then
+                if tab._is_drawed then 
+                    result[#result+1]=tab
+                elseif #tab>1 and type(tab[#tab])=="table" and type(tab[#tab][1])=="table" then
+                    for _,res in ipairs(format_tables(tab,false)) do
+                        result[#result+1]=res
+                    end
+                else
+                    local topic,width,height=tab.topic,tab.width,tab.height
+                    local size=tab.data and #tab.data or (#tab+1)
+                    tab=grid.tostring(tab,true,col_del,row_del,rows_limit):split("\n")
+                    tab.topic,tab.width,tab.height=topic,width,height
+                    if grid.bypassemptyrs=='on' and size<3 then tab={} end
+                    result[#result+1]=tab
+                end
+            else
+                result[#result+1]=tab
+            end
+
+        end
+        return _merge(result,is_wrap)
+    end
+   
+    local result=format_tables(tabs,true)
+
+
+    local newtab={_is_drawed=true}
+    local function push(line) newtab[#newtab+1]=line end
     for i=1,#result do
         if i>1 then
             push(grid.cut(string.rep(' ',maxwidth),linesize))

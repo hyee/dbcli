@@ -1,15 +1,13 @@
 #!/bin/bash
 # Java executable is required
-
 cd "$(dirname "$0")"
-
-if [ "$TNS_ADM" = "" ] ; then
-    export DBCLI_ENCODING=UTF-8
-fi
-
-if [ "$TNS_ADM" = "" ] && [[ -n "$ORACLE_HOME" ]] ; then
+cd ..
+if [ "$TNS_ADM" = "" ]; then
     export TNS_ADM="$ORACLE_HOME/network/admin"
 fi
+
+export LD_LIBRARY_PATH=./lib/linux:$LD_LIBRARY_PATH
+export DBCLI_ENCODING=UTF-8
 
 if [[ -r ./data/init.conf ]]; then
     source ./data/init.conf
@@ -21,12 +19,11 @@ fi
 if [[ -n "$JRE_HOME" ]] && [[ -x "$JRE_HOME/bin/java" ]];  then
     _java="$JRE_HOME/bin/java"
 elif type -p java &>/dev/null; then
-    _java="`type -p java`"
+    _java=java
 elif [[ -n "$JAVA_HOME" ]] && [[ -x "$JAVA_HOME/bin/java" ]];  then    
     _java="$JAVA_HOME/bin/java"
 fi
 
-# find executable java program
 found=0
 if [[ "$_java" ]]; then
     found=2
@@ -49,18 +46,17 @@ if [[ $found < 2 ]]; then
     fi
 fi
 
-unset _JAVA_OPTIONS JAVA_BIN
+unset _JAVA_OPTIONS
+unset JAVA_HOME
 
-JAVA_BIN="$(echo "$_java"|sed 's|/[^/]*$||')"
-JAVA_HOME="$(echo "$JAVA_BIN"|sed 's|/[^/]*$||')"
+# unpack jar files for the first use
+for f in `find . -type f -name "*.pack.gz" 2>/dev/null`; do
+  echo "Unpacking $f ..."
+  ./jre_linux/bin/unpack200 -q -r  $f $(echo $f|sed 's/\.pack\.gz//g') &
+done
+wait
 
-if [[ -r "$JAVA_HOME/jre" ]]; then
-    JAVA_BIN="$JAVA_HOME/jre/bin"
-    JAVA_HOME="$JAVA_HOME/jre"
-fi
-
-export LD_LIBRARY_PATH="./lib/linux:$JAVA_HOME/lib/amd64/server:$JAVA_HOME/lib/amd64:$JAVA_HOME/bin"
-
-
-./lib/linux/luajit ./lib/bootstrap.lua "$_java" $*
-
+umask 000
+"$_java" -noverify -Xmx384M  -cp .:lib/*:lib/ext/*$OTHER_LIB -XX:+UseG1GC -XX:+UseStringDeduplication \
+    -Dfile.encoding=$DBCLI_ENCODING -Duser.language=en -Duser.region=US -Duser.country=US \
+    -Djava.awt.headless=true org.dbcli.Loader $*

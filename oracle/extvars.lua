@@ -189,15 +189,17 @@ function test_grid()
     local rs2=db:internal_call([[select * from (select rownum "#",name,hash from v$latch) where rownum<=30]])
     local rs3=db:internal_call([[select * from (select rownum "#",event,total_Waits from v$system_event) where rownum<=60]])
     local rs4=db:internal_call([[select * from (select * from v$sysmetric order by 1) where rownum<=10]])
+    local rs5=db:internal_call([[select * from v$waitstat]])
     
     local merge=grid.merge
     rs1=db.resultset:rows(rs1,-1)
     rs2=db.resultset:rows(rs2,-1)
     rs3=db.resultset:rows(rs3,-1)
     rs4=db.resultset:rows(rs4,-1)
+    rs5=db.resultset:rows(rs5,-1)
     rs3.height=55
-    rs1.topic,rs2.topic,rs3.topic,rs4.topic="System State","System Latch","System Events","System Matrix"
-    merge({rs3,'|',merge({rs1,'+',rs2}),'+',rs4},true)
+    rs1.topic,rs2.topic,rs3.topic,rs4.topic,rs5.topic="System State","System Latch","System Events","System Matrix","Wait Stats"
+    merge({rs3,'|',merge{rs1,'-',{rs2,'+',rs5}},'-',rs4},true)
 end
 
 function extvars.onload()

@@ -275,11 +275,21 @@ end
 ansi.escape="%f[\\]\\[eE](%[[%d;]*[mK])"
 ansi.pattern="\27%[[%d;]*[mK]"
 
-function ansi.strip_ansi(str)
+local function _strip_ansi(str)
     if not enabled then return str end
     return str:gsub(ansi.pattern,""):gsub(ansi.escape,""):gsub("%$(.-)%$",function(s)
             return (ansi.cfg(s) or color[s]) and '' or "$"..s.."$"
         end)
+end
+
+function ansi.strip_ansi(str)
+    local e,s=pcall(_strip_ansi,str)
+    if not e then
+        print(debug.traceback())
+        print(table.dump(str))
+        error(s)
+    end
+    return s
 end
 
 function string.strip_ansi(str)

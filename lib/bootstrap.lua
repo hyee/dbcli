@@ -66,6 +66,7 @@ java_bin=java_bin:gsub("[\\/][^\\/]+$","")
 java_home=java_bin:gsub("[\\/][^\\/]+$","")
 if uv.fs_stat(resolve(java_home..'/jre')) then
 	java_bin=resolve(java_home..'/jre/bin')
+	java_home=java_bin:gsub("[\\/][^\\/]+$","")
 end
 
 local path={java_bin}

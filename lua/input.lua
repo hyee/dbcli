@@ -4,12 +4,13 @@ local mypath=debug.getinfo(1, "S").source:sub(2)
 package.path=mypath:gsub('[%w%.]+$','?.lua')
 local console=console
 
-
 local readLine=console.readLine
 local env,err=loadfile((mypath:gsub('[%w%.]+$','env.lua')))
 if not env then return print(err) end
+
 env=env()
 env.onload(...)
+local print=env.printer.print
 print("--------------------------------------------------------------------------------------------------------------------------------------")
 print("| DBCLI, type 'conn' to connect to db, or 'help' for more information. (c)2014-2016 hyee, MIT license (https://github.com/hyee/dbcli)|")
 print("======================================================================================================================================")
