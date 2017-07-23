@@ -4,23 +4,7 @@ local extvars={}
 local datapath=debug.getinfo(1, "S").source:sub(2):gsub('[%w%.]+$','dict')
 local re=env.re
 local uid=nil
-function extvars.on_before_db_exec(item)
-    var.setInputs("lz_compress",db.lz_compress);
-    if not var.outputs['INSTANCE'] then
-        local instance=tonumber(cfg.get("INSTANCE"))
-        var.setInputs("INSTANCE",tostring(instance>0 and instance or instance<0 and "" or db.props.instance))
-    end
-    if not var.outputs['STARTTIME'] then
-        var.setInputs("STARTTIME",cfg.get("STARTTIME"))
-    end
-    if not var.outputs['ENDTIME'] then
-        var.setInputs("ENDTIME",cfg.get("ENDTIME"))
-    end
-    if not var.outputs['SCHEMA'] then
-        var.setInputs("SCHEMA",cfg.get("SCHEMA"))
-    end
-    return item
-end
+
 
 local fmt='%s(select /*+merge*/ * from %s where %s=%s :others:)%s'
 local instance,container,usr
@@ -59,7 +43,21 @@ local function rep_instance(prefix,full,obj,suffix)
     return str
 end
 
-function extvars.on_before_parse(item)
+function extvars.on_before_db_exec(item)
+    var.setInputs("lz_compress",db.lz_compress);
+    if not var.outputs['INSTANCE'] then
+        local instance=tonumber(cfg.get("INSTANCE"))
+        var.setInputs("INSTANCE",tostring(instance>0 and instance or instance<0 and "" or db.props.instance))
+    end
+    if not var.outputs['STARTTIME'] then
+        var.setInputs("STARTTIME",cfg.get("STARTTIME"))
+    end
+    if not var.outputs['ENDTIME'] then
+        var.setInputs("ENDTIME",cfg.get("ENDTIME"))
+    end
+    if not var.outputs['SCHEMA'] then
+        var.setInputs("SCHEMA",cfg.get("SCHEMA"))
+    end
     if not extvars.dict then return item end
     local db,sql,args,params=table.unpack(item)
     instance,container,usr=tonumber(cfg.get("instance")),tonumber(cfg.get("container")),cfg.get("schema")
@@ -106,9 +104,7 @@ function extvars.set_instance(name,value)
                     WHERE  c.kqfcotab = t.indx
                     AND    c.inst_id = t.inst_id)
             SELECT table_name,
-                   MAX(CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') THEN col
-                            WHEN DATA_TYPE='NUMBER' AND col like '%INSTANCE%' THEN col END)
-                       KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') THEN 1 ELSE 2 END) INST_COL,
+                   MAX(CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') THEN col END) INST_COL,
                    MAX(CASE WHEN col IN ('CON_ID') THEN col END) CON_COL,
                    MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND regexp_like(col,'(OWNER|SCHEMA|KGLOBTS4|USER.*NAME)') THEN col END)
                        KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN col LIKE '%OWNER' THEN 1 ELSE 2 END) USR_COL,
@@ -204,8 +200,7 @@ end
 
 function extvars.onload()
     env.set_command(nil,"TEST_GRID",nil,test_grid,false,1)
-    event.snoop('BEFORE_DB_EXEC',extvars.on_before_parse,nil,50)
-    event.snoop('BEFORE_ORACLE_EXEC',extvars.on_before_db_exec)
+    event.snoop('BEFORE_DB_EXEC',extvars.on_before_db_exec,nil,1)
     event.snoop('AFTER_ORACLE_CONNECT',extvars.on_after_db_conn)
     event.snoop('ON_SETTING_CHANGED',extvars.set_title)
     cfg.init("instance",-1,extvars.set_instance,"oracle","Auto-limit the inst_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-2 - 99")

@@ -757,6 +757,76 @@ function db_core:get_value(sql,args)
     return rtn and #rtn==1 and rtn[1] or rtn
 end
 
+function db_core:grid_call(tabs,rows_limit,args)
+    local function execute_sqls(tabs)
+        local result={}
+        for k,v in ipairs(tabs) do result[k]=v end
+        for i=#result,1,-1 do
+            local tab=result[i]
+            if type(tab) == "table" then
+                result[i]=execute_sqls(tab,rows_limit,args)
+            elseif type(tab) ~= "string" then
+                env.raise("Unexpected table element, string only:"..tostring(tab))
+            elseif #tab>1 then
+                local grid_cfg=tab:match("grid%s*=%s*(%b{})")
+                if grid_cfg then
+                    local cfg,err=loadstring('return '..grid_cfg)
+                    env.checkerr(cfg,"Unexpected format: "..grid_cfg)
+                    grid_cfg=cfg()
+                else
+                    grid_cfg={}
+                end
+                grid_cfg._is_result=true
+                local rs=self:internal_call(tab,args)
+                if type(rs)=="table" or type(rs)=="userdata" then
+                    result[i]={rs=rs,grid_cfg=grid_cfg}
+                else
+                    table.remove(result,i)
+                end
+            end
+        end
+        return result
+    end
+    
+    --execute all SQLs firstly, then fetch later
+    local function fetch_result(tabs)
+        for k=#tabs,1,-1 do
+            local v=tabs[k]
+            if type(v)=="table" then 
+                if not v.rs then 
+                    tabs[k]=fetch_result(v)
+                elseif type(v.rs)=="table" then
+                    local tab={}
+                    for x,y in ipairs(v.rs) do 
+                        tab[x]=self.resultset:rows(y,rows_limit)
+                        for a,b in pairs(v.grid_cfg) do tab[x][a]=b end
+                    end
+                    tabs[k]=tab
+                else
+                    tabs[k]=self.resultset:rows(v.rs,rows_limit)
+                    for a,b in pairs(v.grid_cfg) do tabs[k][a]=b end
+                end
+            elseif type(v)~='string' or #v~=1 then
+                table.remove(tabs,k)
+            end
+        end
+        return tabs
+    end
+
+    local result=execute_sqls(tabs)
+    return fetch_result(result)
+end
+
+
+function db_core:grid_print(sqls)
+    env.checkhelp(sqls)
+    local grid_cfg,err=loadstring('return '..sqls)
+    env.checkerr(grid_cfg,"Unexpected format: "..(err or '').."\n"..sqls)
+    grid_cfg=grid_cfg()
+    local tabs=self:grid_call(grid_cfg,cfg.get("printsize"),{})
+    env.grid.merge(tabs,true)
+end
+
 function db_core:set_feed(value)
     self.feed=value
 end
@@ -993,6 +1063,7 @@ function db_core:disconnect(feed)
     end
 end
 
+
 function db_core:__onload()
     self.root_dir=(self.__class.__className):gsub('[^\\/]+$','')
     local jars
@@ -1054,6 +1125,44 @@ function db_core:__onload()
     env.set_command(self,"sql2file",'Export Query Result into SQL file. Usage: @@NAME <file_name>[.sql|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <sql|cursor>'..txt ,self.sql2sql,'__SMART_PARSE__',3)
     env.set_command(self,"sql2csv",'Export Query Result into CSV file. Usage: @@NAME <file_name>[.csv|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <sql|cursor>'..txt ,self.sql2csv,'__SMART_PARSE__',3)
     env.set_command(self,"csv2sql",'Convert CSV file into SQL file. Usage: @@NAME <sql_file>[.sql|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <csv_file>'..txt ,self.csv2sql,false,3)
+    local grid_desc=[[
+        Print merge grid based on inputed queries: Usage: @@NAME {"<SQL1>",<sep>,["<SQL2>"| {...} ]}
+        The input parameter must start with '{' and end with '}', as a LUA or JSON table format, support nested LUA/JSON tables
+        
+        Elements:
+            sep     : Can be 3 values:
+                        '+': merge query1 and query2 as single grid
+                        '-': query1 above query2
+                        '|': query1 left of query2
+            sql text: Must be a string which enclosed by '',"", or [[ ]']
+                      The comment inside the SQL supports defining the grid style, format:
+                          grid={height=<rows>,width=<columns>,topic='<grid topic>'}
+
+        Example:
+            grid {[[select rownum "#",event,total_Waits from v$system_event where rownum<56]'], --Query#1 left to next merged grid(query#2/query#3/query#4)
+                  '|',{'select * from v$sysstat where rownum<=20',                              --Query#2 left to next merged grid(query#3/query#4))
+                       '-', {'select rownum "#",name,hash from v$latch where rownum<=30',       --Query#3 above to query#4
+                             '+',"select /*grid={topic='Wait State'}*/ * from v$waitstat"
+                            }
+                       },
+                  '-','select /*grid={topic="Metrix"}*/ * from v$sysmetric where rownum<=10'    --Query#5 under merged grid(query#1-#4)
+                  }
+    ]]
+    grid_desc=grid_desc:gsub("%]'%]",']]')
+
+    env.set_command{obj=self,cmd="grid", 
+                    help_func=grid_desc,
+                    call_func=self.grid_print,
+                    is_multiline=function(cmd,rest)
+                        if not rest:find('^%s*{') then return true,rest end
+                        if rest:match('^%s*%b{}') then
+                            return true,rest
+                        else
+                            return false,rest
+                        end
+                    end,
+                    parameters=2,
+                    is_dbcmd=true}
 end
 
 function db_core:__onunload()

@@ -1,0 +1,35 @@
+/*[[Generate delta values based on gv$sesstat. Usage: @@NAME [options] {[0|<sid>] [<inst_id>] [<key>]}]]*/
+{
+    sql={
+      [[SELECT A.* FROM ( /*grid={topic='Session Stats'}*/
+            SELECT /*+no_expand*/
+                   inst_id,
+                   sid,
+                   NAME,VALUE
+            FROM   gv$sesstat
+            JOIN   gv$statname
+            USING  (inst_id, statistic#)
+            WHERE  (VALUE > 0 OR :V3 IS NOT NULL)
+            AND    (:V1 IS NULL AND SID=USERENV('SID') or sid=:V1 OR :V1='0') 
+            AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0') 
+            AND    (:V3 IS NULL OR lower(name) like lower('%&V3%'))) A
+        ORDER BY NAME]],
+        '|', {[[SELECT inst_id, SID, stat_name NAME,VALUE * 1e-3 "ms" /*grid={topic='Session Time Model'}*/
+                FROM   gv$sess_time_model
+                WHERE  ((stat_name not like '%background%') or :V3 is not null)
+                AND    (:V1 IS NULL AND SID=USERENV('SID') or sid=:V1 OR :V1='0') 
+                AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0')
+                AND    (:V3 is null or lower(stat_name) like '%&V3%')]],
+              '-',
+              [[SELECT inst_id, SID, wait_class, event NAME,total_waits, TIME_WAITED_MICRO * 1e-3 "ms",null "ms(avg)"
+                FROM   gv$session_event /*grid={topic='Session Events'}*/
+                WHERE  (wait_class!='Idle' or :V3 is not null)
+                AND    (:V1 IS NULL AND SID=USERENV('SID') or sid=:V1 OR :V1='0') 
+                AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0')
+                AND    (:V3 is null or lower(event) like '%&V3%')]]
+             }
+    },
+    agg_cols="value,ms,total_waits",
+    grp_cols="inst_id,sid,wait_class,name",
+    grp_top_cols="name"
+}

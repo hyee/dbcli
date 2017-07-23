@@ -1,3 +1,5 @@
+2017-07-24: + public: new command 'grid' to merge several query into a grid
+            * oracle: remove 'snap sestime/sesstat/systime/sysstat', replaced with 'snap session/system' 
 2017-07-21: + public: supports merge grids(symbol '| + -'), type 'test_grid' for sample
 2017-07-21: * public: switchs launcher with 'luajit' instead of 'java', original scripts moved into 'bin' dir
 2017-07-21: + public: 'snap' command support repeat execution(the '+' symbol)

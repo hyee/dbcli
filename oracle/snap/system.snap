@@ -1,0 +1,43 @@
+/*[[Generate delta values based on gv$sesstat/gv$sess_time_model/gv$session_event. Usage: @@NAME [options] {[keyword] [<inst_id>]}]]*/
+{
+    sql={
+      [[SELECT inst_id, /*grid={topic='System Stats',heiht=40}*/
+               NAME, 
+               decode(CLASS,1,'User',2,'Redo',4,'Enqueue',8,'Cache',16,'OS',32,'RAC',64,'SQL',128,'DEBUG') class,
+               value
+        FROM   gv$sysstat
+        WHERE  NAME != 'DB time'
+        AND    (:V1 is null or lower(NAME) like lower('%&V1%'))
+        AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0')]],
+        '|', {[[SELECT inst_id, stat_name NAME,VALUE * 1e-3 "ms"
+                FROM   gv$sys_time_model /*grid={topic='System Time Model'}*/
+                WHERE  ((stat_name not like '%background%') or :V2 is not null)
+                AND    (:V1 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V1=INST_ID OR :V1='0')
+                AND    (:V2 is null or lower(stat_name) like '%&V3%') ]],
+              '-',
+              [[SELECT inst_id, wait_class, event NAME, total_waits,TIME_WAITED_MICRO * 1e-3 "ms"
+                FROM   gv$system_event /*grid={topic='System Events'}*/
+                WHERE  (wait_class!='Idle' or :V2 is not null)
+                AND    (:V1 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V1=INST_ID OR :V1='0')
+                AND    (:V2 is null or lower(event) like '%&V3%')]],
+              '-',
+              [[SELECT inst_id, /*grid={topic='System Latches',set_ratio='off', height=30}*/
+                       ADDR,
+                       NAME,
+                       WAIT_TIME/1000 MS,
+                       GETS,
+                       MISSES,
+                       SLEEPS,
+                       IMMEDIATE_GETS IMGETS,
+                       IMMEDIATE_MISSES IMMISSES,
+                       SPIN_GETS SPINS
+                FROM   gv$latch
+                WHERE  (GETS+IMMEDIATE_GETS+MISSES+IMMEDIATE_MISSES+SLEEPS+SPIN_GETS>0 or :V1 is not null)
+                AND    (:V1 is null or lower(NAME) like lower('%&V1%'))
+                AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0')]]
+             }
+    },
+    agg_cols="value,ms,total_waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,MS",
+    grp_cols="inst_id,wait_class,name,ADDR",
+    grp_top_cols="name"
+}

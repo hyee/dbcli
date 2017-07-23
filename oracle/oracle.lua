@@ -366,6 +366,7 @@ function oracle:exec(sql,...)
     return result
 end
 
+
 function oracle:run_proc(sql)
     return self:query('BEGIN '..sql..';END;')
 end

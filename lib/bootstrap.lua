@@ -1,7 +1,3 @@
---export LUA_BIN=/media/sf_D_DRIVE/dbcli/lib/linux
--- export LD_LIBRARY_PATH=/media/sf_D_DRIVE/jdk_linux/jre/bin:/media/sf_D_DRIVE/jdk_linux/jre/lib/amd64/server:./lib/linux
---local java_bin="/media/sf_D_DRIVE/jdk_linux/jre/bin"
---local java_bin="d:/program files/java/jre/bin"
 
 
 local _os=jit.os:lower()
@@ -9,13 +5,10 @@ local psep,fsep,dll,which,dlldir
 if _os=="windows" then 
 	psep,fsep,dll,which,dlldir=';','\\','.dll','where java 2>nul',jit.arch
 else
-	psep,fsep,dll,which,dlldir=':','/',_os=="darwin" and ".dylib" or ".so",'which java 2>/dev/null',_os
+	psep,fsep,dll,which,dlldir=':','/',".so",'which java 2>/dev/null',_os
 end
 
 local function resolve(path) return (path:gsub("[\\/]+",fsep)) end
-
-local lua_path=resolve(debug.getinfo(1).source:sub(2):gsub('[^\\/]+$','')..dlldir)
-package.cpath='?'..dll..';'..resolve(lua_path..'/?'..dll)
 
 local uv=require("luv")
 
@@ -37,7 +30,7 @@ local function scan(dir,ext)
 		if ftype=="directory" then
 			subdirs[#subdirs+1]=name
 		elseif name:find(pattern) then
-			files[#files+1]=name
+			files[#files+1]='./'..name
 		end
 	end
 	for _,sub in ipairs(subdirs) do scan(sub,ext) end
@@ -72,14 +65,14 @@ end
 local path={java_bin}
 local jvmpath=uv.fs_stat(resolve(java_bin..'/server')) and resolve(java_bin..'/server')
 if not jvmpath then jvmpath=uv.fs_stat(resolve(java_bin..'/client')) and resolve(java_bin..'/client') end
-if not jvmpath then jvmpath=resolve(java_bin:gsub("/bin/?$",'/lib/amd64/server')) end
+if not jvmpath then jvmpath=resolve(java_home..'/lib/amd64/server') end
 
 path[#path+1]=jvmpath
---path[#path+1]=jvmpath:gsub("[\\/][^\\/]+$","")
+path[#path+1]=resolve(java_home..'/lib')
 
 local libpath=os.getenv("LD_LIBRARY_PATH")
 if libpath then path[#path+1]=libpath end
-uv.os_setenv("LD_LIBRARY_PATH",table.concat(path,psep))
+--uv.os_setenv("LD_LIBRARY_PATH",table.concat(path,psep))
 
 
 path[#path+1]=os.getenv("PATH")
@@ -92,7 +85,7 @@ local options ={'-noverify' ,
 			    '-Dfile.encoding='..charset,
 			    '-Duser.language=en','-Duser.region=US','-Duser.country=US',
 			    '-Djava.awt.headless=true',
-				'-Djava.home='..java_home,
+				--'-Djava.home='..java_home,
 			    '-Djava.class.path='..jars}
 for _,param in ipairs(other_options) do options[#options+1]=param end 
 

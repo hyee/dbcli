@@ -572,9 +572,7 @@ function grid.print(rows,include_head,col_del,row_del,rows_limit,prefix,suffix)
 end
 
 function grid.merge(tabs,is_print,col_del,row_del,rows_limit,prefix,suffix)
-    
     local strip=env.ansi.strip_len
-    
     local function redraw(tab,cols,rows)
         local newtab={_is_drawed=true,topic=tab.topic}
         local function push(line) newtab[#newtab+1]=line end
@@ -582,8 +580,21 @@ function grid.merge(tabs,is_print,col_del,row_del,rows_limit,prefix,suffix)
         local rspace=string.rep(' ',cols)
 
         if tab._is_drawed then
+            local cspace=string.rep(' ',cols-actcols)
             for rowidx,row in ipairs(tab) do
-                push(row)
+                if cspace=='' then 
+                    push(row)
+                else
+                    local last=row:sub(-1)
+                    if last=='+' then
+                        local right=math.ceil((cols-actcols)/2)
+                        local left=cols-actcols-right
+                        push('+'..string.rep('-',left)..row:sub(2,-2)..string.rep('-',right)..'+')
+                    else
+                        push(row:sub(1,-2)..cspace..last)
+                    end
+                    
+                end
             end
         else
             local cspace=string.rep(' ',cols-actcols-2)
@@ -610,12 +621,9 @@ function grid.merge(tabs,is_print,col_del,row_del,rows_limit,prefix,suffix)
         return newtab
     end
 
-    
-    local maxwidth=0
-    
-    
     local function _merge(tabs,is_wrap)
         local newtab={}
+        local maxwidth=0
         local function push(line) 
             newtab[#newtab+1]=line
             maxwidth = math.max(maxwidth,strip(line))
@@ -650,8 +658,8 @@ function grid.merge(tabs,is_print,col_del,row_del,rows_limit,prefix,suffix)
                         if topic1~="" or topic2 ~="" then
                             newtab.topic=topic1..(topic1~="" and topic2 ~="" and ' & ' or '')..topic2
                         end
-                        newtab._is_drawed=false
-                    else
+                        newtab._is_drawed=tab._is_drawed and nexttab._is_drawed
+                    else --sep=='-'
                         local maxlen=math.max(width1,width2)
                         tab,nexttab=redraw(tab,maxlen,height1),redraw(nexttab,maxlen,height2)
                         maxlen=math.max(strip(tab[#tab]),strip(nexttab[#nexttab]))
@@ -662,6 +670,7 @@ function grid.merge(tabs,is_print,col_del,row_del,rows_limit,prefix,suffix)
                     tabs[i+2]=newtab
                     i=i+1
                 else
+                    tab._is_drawed=tab._is_drawed and true or false
                     if is_wrap then
                         local m=tab._is_drawed and 2 or 0
                         local width=(tab.width or (strip(tab[#tab])-m))+2
@@ -673,19 +682,33 @@ function grid.merge(tabs,is_print,col_del,row_del,rows_limit,prefix,suffix)
                 end
             end
         end
-        return result
+
+        if #result==1 then return result[1] end
+
+        local _is_drawed=true
+        for i=1,#result do
+            if i> 1 then
+                push(string.rep(' ',maxwidth))
+            end
+            if not result[i]._is_drawed then _is_drawed=false end
+            for rowidx,row in ipairs(result[i]) do
+                local spaces=maxwidth-strip(row)
+                local s=spaces<=0 and '' or string.rep(' ',spaces)
+                push(row..s)
+            end
+        end
+        newtab={_is_drawed=_is_drawed}
+        return newtab
     end
 
     local function format_tables(tabs,is_wrap)
         local result={}
         for idx,tab in ipairs(tabs) do
             if type(tab) == "table" then
-                if tab._is_drawed then 
+                if tab._is_drawed ~= nil then
                     result[#result+1]=tab
-                elseif #tab>1 and type(tab[#tab])=="table" and type(tab[#tab][1])=="table" then
-                    for _,res in ipairs(format_tables(tab,false)) do
-                        result[#result+1]=res
-                    end
+                elseif #tab>1 and (type(tab[#tab])=="table" and type(tab[#tab][1])=="table" or type(tab[1].data)=="table") then
+                    result[#result+1]=format_tables(tab,false)
                 else
                     local topic,width,height=tab.topic,tab.width,tab.height
                     local size=tab.data and #tab.data or (#tab+1)
@@ -697,32 +720,25 @@ function grid.merge(tabs,is_print,col_del,row_del,rows_limit,prefix,suffix)
             else
                 result[#result+1]=tab
             end
-
         end
+
         return _merge(result,is_wrap)
     end
    
     local result=format_tables(tabs,true)
 
-
-    local newtab={_is_drawed=true}
-    local function push(line) newtab[#newtab+1]=line end
-    for i=1,#result do
-        if i>1 then
-            push(grid.cut(string.rep(' ',maxwidth),linesize))
-        end
-        for rowidx,row in ipairs(result[i]) do
-            push(grid.cut(row,linesize))
-        end
-    end
     if is_print==true then
-        local str=prefix and (prefix.."\n") or ""
-        str=str..table.concat(newtab,"\n")
+        local tab={prefix and (prefix.."\n") or ""}
+        for rowidx,row in ipairs(result) do 
+            tab[#tab+1]=grid.cut(row,linesize)
+        end
+
+        local str=table.concat(tab,"\n")
         print(str,'__BYPASS_GREP__')
         if suffix then print(suffix) end
         return
     else
-        return newtab
+        return result
     end
 end
 

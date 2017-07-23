@@ -28,8 +28,9 @@ function snapper:ctor()
 end
 
 function snapper:parse(name,txt,args,file)
-    txt=loadstring(('return '..txt):gsub(self.comment,"",1))
-    env.checkerr(txt,"Invalid syntax in "..file)
+    local orgtxt,err=txt
+    txt,err=loadstring(('return '..txt):gsub(self.comment,"",1))
+    env.checkerr(txt,"Invalid syntax in "..file..': '..(err or '')..'\n'..orgtxt)
 
     local cmd={}
     for k,v in pairs(txt()) do
@@ -63,6 +64,47 @@ end
 
 function snapper:get_time()
     return self:trigger('get_db_time') or "unknown"
+end
+
+function snapper:build_data(sqls,args)
+    local clock,time=os.clock(),os.date('%Y-%m-%d %H:%M:%S')
+    local rs,rsidx=nil,{}
+
+    if type(sqls)=="string" then
+        rs=self.db:exec(sqls,args)
+        if type(rs)=="userdata" then
+            rs={self.db.resultset:rows(rs,-1)}
+            rs[1]._is_result=true
+        elseif type(rs)=="table" then
+            for k,v in ipairs(rs) do 
+                rs[k]=db.resultset:rows(v,-1)
+                rs[k]._is_result=true
+            end
+        else
+            rs=nil
+        end
+    else
+        rs=self.db:grid_call(sqls,-1,args)
+    end
+
+    local function scanrs(rs)
+        for k,v in ipairs(rs) do
+            if type(v)=="table" then 
+                if not rs[k]._is_result then
+                    scanrs(v)
+                else
+                    rsidx[#rsidx+1]=v
+                end
+            end
+        end
+    end
+
+    if type(rs)=="table" then
+        scanrs(rs)
+        rs.rsidx=rsidx
+    end
+
+    return rs,clock,time
 end
 
 function snapper:run_sql(sql,main_args,cmds,files)
@@ -140,7 +182,7 @@ function snapper:run_sql(sql,main_args,cmds,files)
     
     self.db:assert_connect()
     
-    self.cmds,self.args,self.start_time={},{},self:get_time()
+    self.cmds,self.args={},{}
     self.start_flag=true
     env.set.set("feed","off")
     self:trigger('before_exec_action')
@@ -152,158 +194,165 @@ function snapper:run_sql(sql,main_args,cmds,files)
         if cmd.before_sql then
             env.eval_line(cmd.before_sql,true,true) 
         end
-        local rs=db:exec(cmd.sql,arg)
-        if type(rs)=="userdata" then
-            cmd.rs2=self.db.resultset:rows(rs,-1)
-        end
+        cmd.rs2,cmd.clock,cmd.starttime=self:build_data(cmd.sql,arg)
     end
     db:commit()
     if snap_cmd then
         env.eval_line(snap_cmd,true,true)
         self:next_exec()
     elseif not begin_flag then
-        local timer=interval+clock-os.clock()-0.1
+        local timer=interval+clock-os.clock()
         if timer>0 then sleep(timer) end
         self:next_exec()
     end
 end
 
 function snapper:next_exec()
-    local cmds,args,start_time,db,clock=self.cmds,self.args,self.start_time,self.db
-    self.start_time=nil
+    local cmds,args,db,clock=self.cmds,self.args,self.db
     --self:trigger('before_exec_action')
     db:commit()
-    local end_time=self:get_time()
+
     for name,cmd in pairs(cmds) do
-        local rs=db:exec(cmd.sql,args[name])
-        if cmd.rs2 and type(rs)=="userdata" then
-            cmd.rs1=self.db.resultset:rows(rs,-1)
+        local rs,clock,starttime=self:build_data(cmd.sql,args[name])
+        if cmd.rs2 and type(rs)=="table" then
+            cmd.rs1,cmd.clock,cmd.endtime,cmd.elapsed=rs,clock,starttime,clock-cmd.clock
         end
         if cmd.after_sql then
             env.eval_line(cmd.after_sql,true,true) 
-        end 
+        end
     end
     clock=os.clock()
-
 
     local result,groups={}
     for name,cmd in pairs(cmds) do
         if cmd.rs1 and cmd.rs2 then
-            local agg_idx,grp_idx,top_grp_idx,agg_model_idx={},{},{},{}
-            local title=cmd.rs1[1]
-            local min_agg_pos,top_agg_idx,top_agg=1e4
-            for i,k in ipairs(title) do
-                local idx=cmd.agg_cols:find(','..k:upper()..',',1,true)
-                if idx then
-                    if min_agg_pos> idx then
-                        min_agg_pos,top_agg=idx,i
-                    end
-                    agg_idx[i],title[i]=idx,'*'..k
-                else
-                    if not cmd.grp_cols or cmd.grp_cols:find(','..k:upper()..',',1,true) then
-                        grp_idx[i]=true
-                    end
+            for idx,_ in ipairs(cmd.rs1.rsidx) do
+                local rs1,rs2=cmd.rs1.rsidx[idx],cmd.rs2.rsidx[idx]
+                local agg_idx,grp_idx,top_grp_idx,agg_model_idx={},{},{},{}
+                local title=rs1[1]
+                local min_agg_pos,top_agg_idx,top_agg=1e4
+                for i,k in ipairs(title) do
+                    local idx=cmd.agg_cols:find(','..k:upper()..',',1,true)
+                    if idx then
+                        if min_agg_pos> idx then
+                            min_agg_pos,top_agg=idx,i
+                        end
+                        agg_idx[i],title[i]=idx,'*'..k
+                    else
+                        if not cmd.grp_cols or cmd.grp_cols:find(','..k:upper()..',',1,true) then
+                            grp_idx[i]=true
+                        end
 
-                    if cmd.top_grp_cols and cmd.top_grp_cols:find(','..k:upper()..',',1,true) then
-                        top_grp_idx[i]=true
-                    end
-                end
-            end
-
-            if not cmd.top_grp_cols then top_grp_idx=grp_idx end
-
-            result,groups=table.new(1,#cmd.rs1+10),{}
-            cmd.grid=grid.new()
-            cmd.grid:add(title)
-
-            local idx,top_idx,counter={},{},0
-            local function make_index(row)
-                counter=0
-                for k,_ in pairs(top_grp_idx) do
-                    counter=counter+1
-                    top_idx[counter]=row[k] or ""
-                end
-
-                counter=0        
-                for k,_ in pairs(grp_idx) do
-                    counter=counter+1
-                    idx[counter]=row[k] or ""
-                end
-                return table.concat(idx,'\1\2\1'),table.concat(top_idx,'\1\2\1')
-            end
-
-            table.remove(cmd.rs1,1)
-            table.remove(cmd.rs2,1)
-
-            local top_data,r,d,data,index,top_index=table.new(1,#cmd.rs1+10)
-            for _,row in ipairs(cmd.rs1) do
-                index,top_index=make_index(row)
-                data=result[index]
-                if not top_data[top_index] then 
-                    top_data[top_index]={}
-                    groups[#groups+1]=top_index
-                end
-                if not data then
-                    result[index],top_data[top_index][#top_data[top_index]+1]=row,row
-                    data,row=row,{}
-                end
-                local sum=0
-                for k,_ in pairs(agg_idx) do
-                    r,d=tonumber(row[k]),tonumber(data[k])
-                    if r or d then 
-                        data[k]=math.round((d or 0)+(r or 0),2) 
-                        sum=(sum==1 or data[k]>0) and 1 or 0
+                        if cmd.top_grp_cols and cmd.top_grp_cols:find(','..k:upper()..',',1,true) then
+                            top_grp_idx[i]=true
+                        end
                     end
                 end
-                result[index]['_non_zero_']=sum>0 or cmd.include_zero
-            end
 
-            for _,row in ipairs(cmd.rs2) do
-                index=make_index(row)
-                data=result[index]
-                if data then
+                if not cmd.top_grp_cols then top_grp_idx=grp_idx end
+
+                result,groups=table.new(1,#rs1+10),{}
+                local grid=grid.new()
+                grid:add(title)
+
+                local idx,top_idx,counter={},{},0
+                local function make_index(row)
+                    counter=0
+                    for k,_ in pairs(top_grp_idx) do
+                        counter=counter+1
+                        top_idx[counter]=row[k] or ""
+                    end
+
+                    counter=0        
+                    for k,_ in pairs(grp_idx) do
+                        counter=counter+1
+                        idx[counter]=row[k] or ""
+                    end
+                    return table.concat(idx,'\1\2\1'),table.concat(top_idx,'\1\2\1')
+                end
+
+                local top_data,r,d,data,index,top_index=table.new(1,#rs1+10)
+                for rx=2,#rs1 do
+                    local row=rs1[rx]
+                    index,top_index=make_index(row)
+                    data=result[index]
+                    if not top_data[top_index] then 
+                        top_data[top_index]={}
+                        groups[#groups+1]=top_index
+                    end
+                    if not data then
+                        result[index],top_data[top_index][#top_data[top_index]+1]=row,row
+                        data,row=row,{}
+                    end
                     local sum=0
                     for k,_ in pairs(agg_idx) do
                         r,d=tonumber(row[k]),tonumber(data[k])
-                        if r and d then 
-                            data[k]=d-math.round(r,2) 
+                        if r or d then 
+                            data[k]=math.round((d or 0)+(r or 0),2) 
                             sum=(sum==1 or data[k]>0) and 1 or 0
-                        else
-                            sum=(sum==1 or d>0) and 1 or 0
                         end
                     end
-                    result[index]['_non_zero_']=sum>0 or cmd.include_zero
+                    result[index]['_non_zero_']=sum>0 or rs2.include_zero or cmd.include_zero
                 end
-            end
 
-            if #groups>0 then
-                local func=function(a,b) return a[top_agg_idx]>b[top_agg_idx] end
-                for index,group_name in ipairs(groups) do
-                    if #top_data[group_name]>1 and top_agg_idx then
-                        table.sort(top_data[group_name],func)
-                    end
-                    if top_data[group_name][1]['_non_zero_'] then
-                        cmd.grid:add(top_data[group_name][1])
+                for rx=2,#rs2 do
+                    local row=rs2[rx]
+                    index=make_index(row)
+                    data=result[index]
+                    if data then
+                        local sum=0
+                        for k,_ in pairs(agg_idx) do
+                            r,d=tonumber(row[k]),tonumber(data[k])
+                            if r and d then 
+                                data[k]=d-math.round(r,2) 
+                                sum=(sum==1 or data[k]>0) and 1 or 0
+                            else
+                                sum=(sum==1 or d>0) and 1 or 0
+                            end
+                        end
+                        result[index]['_non_zero_']=sum>0 or rs2.include_zero or cmd.include_zero
                     end
                 end
-                idx=''
-                for i,_ in pairs(agg_idx) do
-                    idx=idx..(-i)..','
-                    if cmd.set_ratio~='off' then cmd.grid:add_calc_ratio(i) end
+
+                if #groups>0 then
+                    local func=function(a,b) return a[top_agg_idx]>b[top_agg_idx] end
+                    for index,group_name in ipairs(groups) do
+                        if #top_data[group_name]>1 and top_agg_idx then
+                            table.sort(top_data[group_name],func)
+                        end
+                        if top_data[group_name][1]['_non_zero_'] then
+                            grid:add(top_data[group_name][1])
+                        end
+                    end
+                    idx=''
+                    for i,_ in pairs(agg_idx) do
+                        idx=idx..(-i)..','
+                        if (rs2.set_ratio or cmd.set_ratio)~='off' then grid:add_calc_ratio(i) end
+                    end
+                    grid:sort(rs2.sort or cmd.sort or idx,true)
                 end
-                cmd.grid:sort(cmd.sort or idx,true)
+                grid.topic,grid.height,grid.width=rs2.topic,rs2.height or rs2.max_rows,rs2.width
+                for k,v in pairs(rs2) do rs2[k]=nil end
+                setmetatable(rs2,nil)
+                for k,v in pairs(grid) do rs2[k]=v end
+                setmetatable(rs2,getmetatable(grid))
+                rs2.height=rs2.height or cmd.max_rows
             end
-            local title=("\n["..(self.command..'#'..name):upper().."]: From "..start_time.." to "..end_time..":\n"):format(name)
+            local title=("\n["..(self.command..'#'..name):upper().."]: From "..cmd.starttime.." to "..cmd.endtime..":\n"):format(name)
             print(title..string.rep("=",title:len()-2))
-            cmd.grid:print(nil,nil,nil,cmd.max_rows or cfg.get(self.command.."rows"))
+            if #cmd.rs2.rsidx==1 then
+                (cmd.rs2.rsidx[1]):print(nil,nil,nil,cmd.max_rows or cfg.get(self.command.."rows"))
+            else
+                env.grid.merge(cmd.rs2,true)
+            end
         end
     end
+
     self.db:commit()
     if self.is_repeat then
         for name,cmd in pairs(cmds) do
-            cmd.rs2,cmd.rs1=cmd.rs1,nil
+            cmd.rs2,cmd.rs1,cmd.starttime,cmd.elapsed=cmd.rs1,nil,cmd.endtime
         end
-        self.start_time=end_time
         if self.snap_cmd then
             env.eval_line(self.snap_cmd,true,true)
         else
