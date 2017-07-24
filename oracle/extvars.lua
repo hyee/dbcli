@@ -200,7 +200,7 @@ end
 
 function extvars.onload()
     env.set_command(nil,"TEST_GRID",nil,test_grid,false,1)
-    event.snoop('BEFORE_DB_EXEC',extvars.on_before_db_exec,nil,1)
+    event.snoop('BEFORE_DB_EXEC',extvars.on_before_db_exec,nil,60)
     event.snoop('AFTER_ORACLE_CONNECT',extvars.on_after_db_conn)
     event.snoop('ON_SETTING_CHANGED',extvars.set_title)
     cfg.init("instance",-1,extvars.set_instance,"oracle","Auto-limit the inst_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-2 - 99")

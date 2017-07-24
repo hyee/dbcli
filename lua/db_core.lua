@@ -1136,7 +1136,7 @@ function db_core:__onload()
                         '|': query1 left of query2
             sql text: Must be a string which enclosed by '',"", or [[ ]']
                       The comment inside the SQL supports defining the grid style, format:
-                          grid={height=<rows>,width=<columns>,topic='<grid topic>'}
+                          grid={height=<rows>,width=<columns>,topic='<grid topic>',max_rows=<records>}
 
         Example:
             grid {[[select rownum "#",event,total_Waits from v$system_event where rownum<56]'], --Query#1 left to next merged grid(query#2/query#3/query#4)

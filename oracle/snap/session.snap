@@ -29,7 +29,7 @@
                 AND    (:V3 is null or lower(event) like '%&V3%')]]
              }
     },
-    agg_cols="value,ms,total_waits",
-    grp_cols="inst_id,sid,wait_class,name",
-    grp_top_cols="name"
+    delta_by="value,ms,total_waits",
+    group_by="inst_id,sid,wait_class,name",
+    top_by="name"
 }

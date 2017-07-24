@@ -1,43 +1,97 @@
-/*[[Generate delta values based on gv$sesstat/gv$sess_time_model/gv$session_event. Usage: @@NAME [options] {[keyword] [<inst_id>]}]]*/
+/*[[Generate delta values based on gv$sesstat/gv$sess_time_model/gv$session_event. Usage: @@NAME [options] {[<inst_id>]}]]*/
 {
     sql={
-      [[SELECT inst_id, /*grid={topic='System Stats',heiht=40}*/
-               NAME, 
-               decode(CLASS,1,'User',2,'Redo',4,'Enqueue',8,'Cache',16,'OS',32,'RAC',64,'SQL',128,'DEBUG') class,
-               value
-        FROM   gv$sysstat
-        WHERE  NAME != 'DB time'
+      [[SELECT  decode(:V2,'0',''||inst_id,decode(count(distinct inst_id) over(),1,''||inst_id,'A')) inst, 
+                ADDR,/*grid={topic='System Latch',max_rows=18}*/
+                substr(NAME,1,40) name,
+                WAIT_TIME/1000 "ms",
+                GETS,
+                MISSES,
+                SLEEPS,
+                IMMEDIATE_GETS IMGETS,
+                IMMEDIATE_MISSES IMMISSES,
+                SPIN_GETS SPINS
+        FROM   gv$latch
+        WHERE  (GETS+IMMEDIATE_GETS+MISSES+IMMEDIATE_MISSES+SLEEPS+SPIN_GETS>0 or :V1 is not null)
         AND    (:V1 is null or lower(NAME) like lower('%&V1%'))
         AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0')]],
-        '|', {[[SELECT inst_id, stat_name NAME,VALUE * 1e-3 "ms"
-                FROM   gv$sys_time_model /*grid={topic='System Time Model'}*/
+
+      '|',{[[SELECT  decode(:V2,'0',''||inst_id,decode(count(distinct inst_id) over(),1,''||inst_id,'A')) inst, 
+                       substr(stat_name,1,40) name,VALUE * 1e-3 "ms"
+                FROM   gv$sys_time_model   /*grid={topic='System Time Model',max_rows=10}*/
                 WHERE  ((stat_name not like '%background%') or :V2 is not null)
-                AND    (:V1 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V1=INST_ID OR :V1='0')
-                AND    (:V2 is null or lower(stat_name) like '%&V3%') ]],
-              '-',
-              [[SELECT inst_id, wait_class, event NAME, total_waits,TIME_WAITED_MICRO * 1e-3 "ms"
-                FROM   gv$system_event /*grid={topic='System Events'}*/
-                WHERE  (wait_class!='Idle' or :V2 is not null)
-                AND    (:V1 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V1=INST_ID OR :V1='0')
-                AND    (:V2 is null or lower(event) like '%&V3%')]],
-              '-',
-              [[SELECT inst_id, /*grid={topic='System Latches',set_ratio='off', height=30}*/
-                       ADDR,
-                       NAME,
-                       WAIT_TIME/1000 MS,
-                       GETS,
-                       MISSES,
-                       SLEEPS,
-                       IMMEDIATE_GETS IMGETS,
-                       IMMEDIATE_MISSES IMMISSES,
-                       SPIN_GETS SPINS
-                FROM   gv$latch
-                WHERE  (GETS+IMMEDIATE_GETS+MISSES+IMMEDIATE_MISSES+SLEEPS+SPIN_GETS>0 or :V1 is not null)
-                AND    (:V1 is null or lower(NAME) like lower('%&V1%'))
-                AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0')]]
-             }
+                AND    stat_name!='DB time'
+                AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0')
+                AND    (:V1 is null or lower(stat_name) like '%&V1%')]],
+             '-',
+             [[SELECT ''||inst_id inst, /*grid={topic='CPU Usage(%)',fixed_title=true,include_zero=true,order_by=1}*/
+                        MAX(DECODE(stat_name, 'BUSY_TIME', VALUE)) "Busy",
+                        MAX(DECODE(stat_name, 'USER_TIME', VALUE)) "User",
+                        MAX(DECODE(stat_name, 'SYS_TIME', VALUE)) "Sys",
+                        MAX(DECODE(stat_name, 'IDLE_TIME', VALUE)) "Idle",
+                        MAX(DECODE(stat_name, 'NICE_TIME', VALUE)) "Nice"
+                FROM   (SELECT inst_id,
+                               stat_name,
+                               VALUE / (SELECT VALUE FROM gv$osstat a WHERE a.inst_id = b.inst_id AND a.STAT_NAME = 'NUM_CPUS') VALUE
+                        FROM   gv$osstat b
+                        WHERE (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0'))
+                GROUP  BY inst_id]]},
+       
+      '_',{[[SELECT decode(:V2,'0',''||inst_id,decode(count(distinct inst_id) over(),1,''||inst_id,'A')) inst, 
+                    NAME, /*grid={topic='System Stats',max_rows=40}*/
+                    decode(CLASS,1,'User',2,'Redo',4,'Enqueue',8,'Cache',16,'OS',32,'RAC',64,'SQL',128,'DEBUG') class,
+                    value
+            FROM   gv$sysstat
+            WHERE  NAME != 'DB time'
+            AND    (:V1 is null or lower(NAME) like lower('%&V1%'))
+            AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0')]],
+            '|', 
+            {
+            [[SELECT inst_id inst, /*grid={topic='System Profile(per Second)',include_zero=true,fixed_title=true}*/
+                   SUM(DECODE(n, 'user logons cumulative', v)) "Logon",
+                   SUM(DECODE(n, 'user calls', v)) "Call",
+                   SUM(DECODE(n, 'execute count', v)) "Exec",
+                   SUM(DECODE(n, 'user commits', v)) "Commit",
+                   SUM(DECODE(n, 'parse count (total)', v)) "Parse",
+                   SUM(DECODE(n, 'parse count (hard)', v)) "hParse",
+                   SUM(DECODE(n, 'cell flash cache read hits', v)) "CcHit",
+                   SUM(DECODE(n, 'logical read bytes from cache', v)) "LogRead",
+                   SUM(DECODE(n, 'physical read total bytes', v)) "PhyRead",
+                   SUM(DECODE(n, 'physical write total IO requests', v)) "PhyWrite",
+                   SUM(DECODE(n, 'redo size', v)) "Redo",
+                   SUM(case when n like 'byte%SQL*Net% from%' then v end) "NetIn",
+                   SUM(case when n like 'byte%SQL*Net% to%' then v end) "NetOut"
+            FROM   (SELECT decode(:V2,'0',''||inst_id,decode(count(distinct inst_id) over(),1,''||inst_id,'A')) inst_id, NAME n, VALUE v FROM gv$sysstat)
+            GROUP  BY inst_id]],
+            '-',
+            [[SELECT inst_id inst,/*grid={topic='ExaData Profile(per Second)',include_zero=true,fixed_title=true}*/
+                     nvl(SUM(DECODE(n, 'cell IO uncompressed bytes', v)),0) "Unzip",
+                     nvl(SUM(DECODE(n, 'cell physical IO interconnect bytes returned by smart scan', v)),0) "SScan",
+                     to_number(null) "Offload(%)",
+                     nvl(SUM(DECODE(n, 'cell physical IO bytes eligible for predicate offload', v)),1) "Elig",
+                     SUM(DECODE(n, 'physical read total bytes', v)) "E(%)",
+                     SUM(DECODE(n, 'cell physical IO bytes saved by storage index', v)) "SISave",
+                     nvl(SUM(DECODE(n, 'cell flash cache read hits ', v)),0) "FcHit",
+                     SUM(DECODE(n, 'physical read total IO requests',v)) "H(%)"
+              FROM   (SELECT decode(:V2,'0',''||inst_id,decode(count(distinct inst_id) over(),1,''||inst_id,'A')) inst_id, NAME n, VALUE v FROM gv$sysstat)
+              GROUP  BY inst_id]],
+            '-',
+            [[SELECT decode(:V2,'0',''||inst_id,decode(count(distinct inst_id) over(),1,''||inst_id,'A')) inst, 
+                     wait_class, substr(event,1,40) NAME, total_waits "Waits",TIME_WAITED_MICRO * 1e-3 "ms",
+                     null "avg_ms"
+              FROM   gv$system_event /*grid={topic='System Events',max_rows=30}*/
+              WHERE  (wait_class!='Idle' or :V1 is not null)
+              AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0')
+              AND    (:V1 is null or lower(event) like '%&V1%')]]
+            }
+        }
     },
-    agg_cols="value,ms,total_waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,MS",
-    grp_cols="inst_id,wait_class,name,ADDR",
-    grp_top_cols="name"
+    delta_by="SScan,SISave,Unzip,FcHit,Offload(%),H(%),E(%),Logon,Call,Exec,Commit,Parse,hParse,CcHit,LogRead,PhyRead,PhyWrite,Redo,NetIn,NetOut,value,ms,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,MS,Busy,User,Sys,Idle,Nice",
+    group_by="inst,name,LOCATION,addr",
+    calc_rules={avg_ms='[ms]/[waits]',
+                ['H(%)']='[FcHit]*100/[H(%)]',
+                ['Offload(%)']='[SScan]*100/[Elig]',
+                ['E(%)']='[Elig]*100/[E(%)]'},
+    column_formatter={KMG='LogRead,PhyRead,PhyWrite,Redo,NetIn,NetOut,SScan,SISave,Unzip'},
+    per_second="on"
 }

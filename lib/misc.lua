@@ -167,9 +167,10 @@ local function compare(a,b)
     return tostring(a[1])<tostring(b[1])
 end
 
-function math.round(num,digits)
-    digits=digits or 0
-    return math.floor(10^digits*num+0.5)/(10^digits)
+function math.round(exact, quantum)
+    quantum = quantum and 0.1^quantum or 1
+    local quant,frac = math.modf(exact/quantum)
+    return quantum * (quant + (frac > 0.5 and 1 or 0))
 end
 
 

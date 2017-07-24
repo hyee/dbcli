@@ -571,29 +571,29 @@ function grid.print(rows,include_head,col_del,row_del,rows_limit,prefix,suffix)
     if suffix then print(suffix) end
 end
 
-function grid.merge(tabs,is_print,col_del,row_del,rows_limit,prefix,suffix)
+function grid.merge(tabs,is_print,prefix,suffix)
     local strip=env.ansi.strip_len
     local function redraw(tab,cols,rows)
         local newtab={_is_drawed=true,topic=tab.topic}
         local function push(line) newtab[#newtab+1]=line end
         local actcols=strip(tab[#tab])
-        local rspace=string.rep(' ',cols)
-
+        local hspace='|'..space.rep(' ',cols-2)..'|'
+        max_rows=tab.max_rows or rows
         if tab._is_drawed then
-            local cspace=string.rep(' ',cols-actcols)
+            local cspace=cols-actcols
             for rowidx,row in ipairs(tab) do
-                if cspace=='' then 
+                if rowidx==#tab then
+                    for i=rowidx+1,rows do
+                        push(hspace)
+                    end
+                end
+                if cspace==0 then 
                     push(row)
                 else
+                    --push(row..cspace)
+                    local right=cspace
                     local last=row:sub(-1)
-                    if last=='+' then
-                        local right=math.ceil((cols-actcols)/2)
-                        local left=cols-actcols-right
-                        push('+'..string.rep('-',left)..row:sub(2,-2)..string.rep('-',right)..'+')
-                    else
-                        push(row:sub(1,-2)..cspace..last)
-                    end
-                    
+                    push(row:sub(1,-2)..string.rep(last=='+' and '-' or ' ',right)..last)
                 end
             end
         else
@@ -610,14 +610,14 @@ function grid.merge(tabs,is_print,col_del,row_del,rows_limit,prefix,suffix)
             fmt='|%s%s|'
             for rowidx,row in ipairs(tab) do
                 push(fmt:format(row,cspace))
-                if #newtab >= rows-1 then break end
+                if #newtab >= math.min(rows,max_rows)-1 then break end
+            end
+            for i=#newtab+1,rows-1 do
+                push(hspace)
             end
             push(head)
         end
-
-        for i=#newtab+1,rows do
-            push(rspace)
-        end
+        
         return newtab
     end
 
@@ -638,6 +638,7 @@ function grid.merge(tabs,is_print,col_del,row_del,rows_limit,prefix,suffix)
                     local m1,m2=tab._is_drawed and 2 or 0,nexttab._is_drawed and 2 or 0
                     local width1,width2=(tab.width or (strip(tab[#tab])-m1))+2,(nexttab.width or (strip(nexttab[#nexttab])-m2))+2
                     local height1,height2=(tab.height or (#tab-m1))+2,(nexttab.height or (#nexttab-m2))+2
+                    height1,height2=math.min(tab.max_rows or 1e5,height1),math.min(nexttab.max_rows or 1e5,height2)
                     if sep=='+' and (tab._is_drawed or nexttab._is_drawed) then sep = '|' end
                     if sep=='|' then
                         local maxlen=math.max(height1,height2)
@@ -675,6 +676,7 @@ function grid.merge(tabs,is_print,col_del,row_del,rows_limit,prefix,suffix)
                         local m=tab._is_drawed and 2 or 0
                         local width=(tab.width or (strip(tab[#tab])-m))+2
                         local height=(tab.height or (#tab-m))+2
+                        height=math.min(tab.max_rows or 1e5,height)
                         maxwidth = math.max(maxwidth,strip(tab[#tab]))
                         tab=redraw(tab,width,height)
                     end
@@ -710,10 +712,10 @@ function grid.merge(tabs,is_print,col_del,row_del,rows_limit,prefix,suffix)
                 elseif #tab>1 and (type(tab[#tab])=="table" and type(tab[#tab][1])=="table" or type(tab[1].data)=="table") then
                     result[#result+1]=format_tables(tab,false)
                 else
-                    local topic,width,height=tab.topic,tab.width,tab.height
+                    local topic,width,height,max_rows=tab.topic,tab.width,tab.height,tab.max_rows
                     local size=tab.data and #tab.data or (#tab+1)
-                    tab=grid.tostring(tab,true,col_del,row_del,rows_limit):split("\n")
-                    tab.topic,tab.width,tab.height=topic,width,height
+                    tab=grid.tostring(tab,true," ","",rows_limit):split("\n")
+                    tab.topic,tab.width,tab.height,tab.max_rows=topic,width,height,max_rows
                     if grid.bypassemptyrs=='on' and size<3 then tab={} end
                     result[#result+1]=tab
                 end
