@@ -275,7 +275,6 @@ function scripter:parse_args(sql,args,print_args,extend_dirs)
                                        strip(text)}
                     end
                 end
-                if #rows>1 then rows[#rows+1]={""} end
             end
             rows1[#rows1+1]={k,strip(org[1] or ""),(org[2] or ''),strip(new)}
         end
@@ -321,11 +320,6 @@ function scripter:run_sql(sql,args,cmds)
     end
     --self.db:assert_connect()
     local current_thead,_,level=env.register_thread()
-    --remove comment
-    sql=sql:gsub(self.comment,"",1)
-    sql=('\n'..sql):gsub("\n[\t ]*%-%-[^\n]*","")
-    sql=('\n'..sql):gsub("\n%s*/%*.-%*/",""):gsub("/%s*$","")
-
     local sq="",cmd,params,pre_cmd,pre_params
     local cmds=env._CMDS
 
@@ -426,6 +420,12 @@ function scripter:run_script(cmds,...)
     for cmd in (cmds or ""):gsplit(',',true) do
         if cmd:sub(1,1)~='@' and cmd:find(env.PATH_DEL,1,true) then cmd='@'..cmd end
         local sql,args,print_args,file=self:get_script(cmd~='' and cmd or nil,{...},false)
+        --remove comment
+        if sql then
+            sql=sql:gsub(self.comment,"",1)
+            sql=('\n'..sql):gsub("\n[\t ]*%-%-[^\n]*","")
+            sql=('\n'..sql):gsub("\n%s*/%*.-%*/",""):gsub("/%s*$","")
+        end
         if args and not print_args then
             index=index+1
             g_cmd[index],g_sql[index],g_args[index],g_files[index]=cmd,sql,args,file

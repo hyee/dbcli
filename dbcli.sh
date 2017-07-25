@@ -89,4 +89,5 @@ for f in `find . -type f -name "*.pack.gz" 2>/dev/null`; do
 done
 wait
 
+chmod  777 ./lib/$os/luajit &>/dev/null
 ./lib/$os/luajit ./lib/bootstrap.lua "$_java" $*

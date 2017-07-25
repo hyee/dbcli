@@ -136,7 +136,7 @@ function db:check_access(obj_name,...)
         DECLARE
             x   PLS_INTEGER := 0;
             e   VARCHAR2(500);
-            obj VARCHAR2(30) := :owner||'.'||:object_name;
+            obj VARCHAR2(61) := :owner||'.'||:object_name;
         BEGIN
             IF instr(obj,'PUBLIC.')=1 THEN
                 obj := :object_name;

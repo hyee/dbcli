@@ -284,30 +284,35 @@ function grid:add(row)
     local lines = 1
     rs[0]=headind
     local cnt=0
+    local cols=#result>0 and #result[1] or #rs
+    local digits_formatter="%,."..grid.digits.."f"
     --run statement
-    for k,v in ipairs(rs) do
+    for k=1,cols do
+        local v=rs[k]
         rs._org[k]=v
+        
         if k>grid.maxcol then break end
         local csize,v1 =0,v
         if not colsize[k] then colsize[k] = {0,1} end
         if self.include_head then
             v=event.callback("ON_COLUMN_VALUE",{#result>0 and result[1][k] or v,v,#result})[2]
         end
-
+        if v==nil then v='' end
         if headind>0 and (type(v) == "number"  or self.include_head and self.colinfo and self.colinfo[k] and self.colinfo[k].is_number) then
-            v1=tonumber(v)
+            local v1,v2=tonumber(v)
             if v1 then
-                if grid.digits<38  then
-                    v1=math.round(v1,grid.digits)
-                    v=v1
-                end
+                local pre,scal=math.modf(v1)
                 if grid.sep4k=="on" then
-                    if v1~=math.floor(v1) then
-                        v1=string.format_number("%,.2f",v1,'double')
+                    if v1~=pre then
+                        v2=string.format_number("%,.2f",v1,'double')
                     else
-                        v1=string.format_number("%,d",v1,'long')
+                        v2=string.format_number("%,d",v1,'long')
                     end
-                    v=v1
+                elseif grid.digits<38 and scal>0 then
+                    v2=string.format_number(digits_formatter,v1,'double')
+                end
+                if v2 and tostring(v2) ~= tostring(v1) then
+                    v=v2 
                 end
             end
             if tostring(v):find('e',1,true) then v=string.format('%99.38f',v):gsub(' ',''):gsub('%.?0+$','') end
@@ -378,7 +383,8 @@ function grid:add(row)
             local r=table.new(#rs,2)
             r[0]=rs[0]
             r._org=rs._org
-            for k,v in ipairs(rs) do
+            for k=1,cols do
+                local v=rs[k]
                 r[k]= (type(v) == "table" and (v[i] or "")) or (i==1 and v or "")
             end
             result[#result+1]=r
@@ -549,6 +555,7 @@ function grid.tostring(rows,include_head,col_del,row_del,rows_limit)
     rows=grid.format(rows,include_head,col_del,row_del)
     rows_limit=rows_limit and math.min(rows_limit,#rows) or #rows
     env.set.force_set("pivot",0)
+
     return table.concat(rows,"\n",1,rows_limit)
 end
 
@@ -557,12 +564,13 @@ function grid.print(rows,include_head,col_del,row_del,rows_limit,prefix,suffix)
     local str=prefix and (prefix.."\n") or ""
     local test,size
     if include_head=='test' then test,include_head=true,nil end
+
     if rows.__class then
         include_head=rows.include_head
         size=#rows.data
     else
-        size=#rows+(include_head and 1 or 0)
         include_head=grid.new(include_head).include_head
+        size=#rows+(include_head and 1 or 0)
     end
     str=str..grid.tostring(rows,include_head,col_del,row_del,rows_limit)
     if grid.bypassemptyrs=='on' and size<(include_head and 3 or 1) then return end
@@ -578,7 +586,7 @@ function grid.merge(tabs,is_print,prefix,suffix)
         local function push(line) newtab[#newtab+1]=line end
         local actcols=strip(tab[#tab])
         local hspace='|'..space.rep(' ',cols-2)..'|'
-        max_rows=tab.max_rows or rows
+        local max_rows=tab.max_rows or rows
         if tab._is_drawed then
             local cspace=cols-actcols
             for rowidx,row in ipairs(tab) do

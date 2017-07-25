@@ -526,4 +526,24 @@ function oracle:get_library()
     return nil
 end
 
+function oracle:grid_db_call(sqls,args)
+    local stmt={'BEGIN'}
+    args=args or {}
+    for idx,sql in ipairs(sqls) do
+        local typ=self.get_command_type(sql.sql)
+        if typ=='SELECT' or typ=='WITH' then
+            local cursor='GRID_CURSOR_'..idx
+            args[cursor]='#CURSOR'
+            stmt[#stmt+1]='  OPEN :'..cursor..' FOR '..sql.sql..';'
+        end
+    end
+    stmt[#stmt+1]='END;'
+    local results=self:internal_call(table.concat(stmt,'\n'),args)
+    if type(results)~="table" and type(results)~="userdata" then results=nil end
+    for idx,sql in ipairs(sqls) do
+        local cursor='GRID_CURSOR_'..idx
+        sql.rs=args[cursor] or results
+    end
+end
+
 return oracle.new()

@@ -16,8 +16,8 @@
         AND    (:V1 is null or lower(NAME) like lower('%&V1%'))
         AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0') 
     ]],
-    agg_cols="GETS,MISSES,SLEEPS,IMMEDIATE_GETS,IMMEDIATE_MISSES,SPIN_GETS,MS",
+    delta_by="GETS,MISSES,SLEEPS,IMMEDIATE_GETS,IMMEDIATE_MISSES,SPIN_GETS,MS",
     set_ratio='off',
-    grp_cols="inst_id,addr,name",
-    top_grp_cols="name"
+    group_by="inst_id,addr,name",
+    top_by="name"
 }

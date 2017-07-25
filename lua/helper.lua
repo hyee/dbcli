@@ -56,7 +56,7 @@ function helper.env(target,depth)
     end
     add("ENV.locale",os.setlocale())
     local prefix=env.WORK_DIR:len()+1
-    for k,v in pairs(_G) do
+    for k,v in pairs(env) do
         --if not (k=='_G' or k=='_ENV' or k=='env') then
         if type(v)=="table" and type(v.props)=="table" then
             for i,j in pairs(v.props) do

@@ -758,18 +758,21 @@ function db_core:get_value(sql,args)
 end
 
 function db_core:grid_call(tabs,rows_limit,args)
-    local function execute_sqls(tabs)
+    local db_call=self.grid_db_call
+    local rs_idx={}
+    local function parse_sqls(tabs)
         local result={}
         for k,v in ipairs(tabs) do result[k]=v end
         for i=#result,1,-1 do
             local tab=result[i]
             if type(tab) == "table" then
-                result[i]=execute_sqls(tab,rows_limit,args)
+                result[i]=parse_sqls(tab,rows_limit)
             elseif type(tab) ~= "string" then
                 env.raise("Unexpected table element, string only:"..tostring(tab))
             elseif #tab>1 then
-                local grid_cfg=tab:match("grid%s*=%s*(%b{})")
+                local all,grid_cfg=tab:match("(grid%s*=%s*(%b{}))")
                 if grid_cfg then
+                    tab=tab:replace(all,'',true)
                     local cfg,err=loadstring('return '..grid_cfg)
                     env.checkerr(cfg,"Unexpected format: "..grid_cfg)
                     grid_cfg=cfg()
@@ -777,33 +780,33 @@ function db_core:grid_call(tabs,rows_limit,args)
                     grid_cfg={}
                 end
                 grid_cfg._is_result=true
-                local rs=self:internal_call(tab,args)
-                if type(rs)=="table" or type(rs)=="userdata" then
-                    result[i]={rs=rs,grid_cfg=grid_cfg}
-                else
-                    table.remove(result,i)
-                end
+                result[i]={grid_cfg=grid_cfg,sql=tab,index=i}
+                rs_idx[#rs_idx+1]=result[i]
             end
         end
         return result
     end
+
     
     --execute all SQLs firstly, then fetch later
     local function fetch_result(tabs)
         for k=#tabs,1,-1 do
             local v=tabs[k]
-            if type(v)=="table" then 
-                if not v.rs then 
+            if type(v)=="table" then
+                local rs=v.rs
+                if not rs and not v.sql then 
                     tabs[k]=fetch_result(v)
-                elseif type(v.rs)=="table" then
+                elseif v.sql and type(rs)~="table" and type(rs)~="userdata" then
+                    table.remove(tabs,k)
+                elseif type(rs)=="table" then
                     local tab={}
-                    for x,y in ipairs(v.rs) do 
+                    for x,y in ipairs(rs) do 
                         tab[x]=self.resultset:rows(y,rows_limit)
                         for a,b in pairs(v.grid_cfg) do tab[x][a]=b end
                     end
                     tabs[k]=tab
                 else
-                    tabs[k]=self.resultset:rows(v.rs,rows_limit)
+                    tabs[k]=self.resultset:rows(rs,rows_limit)
                     for a,b in pairs(v.grid_cfg) do tabs[k][a]=b end
                 end
             elseif type(v)~='string' or #v~=1 then
@@ -813,7 +816,15 @@ function db_core:grid_call(tabs,rows_limit,args)
         return tabs
     end
 
-    local result=execute_sqls(tabs)
+    local result=parse_sqls(tabs)
+    if type(db_call)=='function' then
+        db_call(self,rs_idx,args)
+    else
+        for idx,info in ipairs(rs_idx) do
+            info.rs=self:internal_call(info.sql,args)
+        end
+    end
+
     return fetch_result(result)
 end
 
@@ -1147,6 +1158,7 @@ function db_core:__onload()
                        },
                   '-','select /*grid={topic="Metrix"}*/ * from v$sysmetric where rownum<=10'    --Query#5 under merged grid(query#1-#4)
                   }
+        Refer to 'System.snap' for more example
     ]]
     grid_desc=grid_desc:gsub("%]'%]",']]')
 

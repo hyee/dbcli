@@ -313,7 +313,7 @@ function var.define_column(col,...)
     col=col:upper()
     var.columns[col]=var.columns[col] or {}
     local obj=var.columns[col]
-    
+
     for i=1,#args do
         args[i],arg=args[i]:upper(),args[i+1]
         if args[i]=='NEW_VALUE' or args[i]=='NEW_V' then
@@ -330,7 +330,7 @@ function var.define_column(col,...)
                 obj.format_dir='%-'..siz..'s'
                 obj.format=function(v) return tostring(v) and obj.format_dir:format(tostring(v):sub(1,siz)) or v end
             elseif f=="KMG" or f=="TMB" then --KMGTP
-                local units=f=="KMG" and {'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} or {' ',' T',' M',' B',' T',' Q'}
+                local units=f=="KMG" and {'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} or {' ',' K',' M',' B',' T',' Q'}
                 local div=f=="KMG" and 1024 or 1000
                 obj.format=function(v)
                     local s=tonumber(v)
@@ -403,6 +403,7 @@ function var.define_column(col,...)
             var.columns[col]=nil
         end
     end
+    
 end
 
 
@@ -423,6 +424,7 @@ function var.trigger_column(field)
 
     index=obj.format
     if index then field[2]=index(value) end
+    
 
     index=obj.new_value
     if index then

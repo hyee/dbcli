@@ -1,0 +1,16 @@
+/*[[Generate delta values based on gv$sys_time_model. Usage: @@NAME [options] {[keyword] [<inst_id>]}]]*/
+{
+    sql=[[
+        SELECT inst_id, 
+               NAME, 
+               decode(CLASS,1,'User',2,'Redo',4,'Enqueue',8,'Cache',16,'OS',32,'RAC',64,'SQL',128,'DEBUG') class,
+               value
+        FROM   gv$sysstat
+        WHERE  NAME != 'DB time'
+        AND    (:V1 is null or lower(NAME) like lower('%&V1%'))
+        AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0')
+    ]],
+    delta_by="value",
+    group_by="inst_id,NAME,class",
+    top_by="name"
+}

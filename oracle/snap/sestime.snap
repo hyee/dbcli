@@ -1,0 +1,30 @@
+/*[[
+  Generate delta values based on gv$session_event,gv$sess_time_model. Usage: @@NAME [options] [-e|-t] {{<0|sid> [<inst_id>] [keyword]}|["<commands>"]} 
+  -e: only show info of gv$session_event
+  -t: only show info of gv$sess_time_model
+  --[[
+        &filter: default={a}, e={e}, t={t}
+  --]]
+]]*/
+{
+    sql=[[
+        SELECT /*+no_expand*/ a.*
+        FROM   (SELECT inst_id, SID, 'Time' class#, stat_name NAME,1 count, VALUE * 1e-3 "ms",null "ms(avg)"
+                FROM   gv$sess_time_model
+                WHERE  ((stat_name not like '%background%') or :V3 is not null)
+                AND    :filter in('a','t')
+                UNION ALL
+                SELECT inst_id, SID, 'Event['||wait_class||']', event,total_waits, TIME_WAITED_MICRO * 1e-3 t,null
+                FROM   gv$session_event
+                where  (wait_class!='Idle' or :V3 is not null)
+                AND    :filter in('a','e')) a
+        WHERE   (:V1 IS NULL AND SID=USERENV('SID') or sid=:V1 OR :V1='0') 
+        and     (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0')
+        and     (:V3 is null or lower(name) like '%&V3%')
+        and     count>0
+    ]],
+    delta_by="ms,count",
+    agg_model="ms(avg)=ms/count",
+    group_by="inst_id,sid,class#,name",
+    top_by="name"
+}
