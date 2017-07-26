@@ -13,6 +13,8 @@ rem read config file
 If exist "data\init.cfg" (for /f "eol=# delims=" %%i in (data\init.cfg) do (%%i))
 
 rem search java 1.8+ executable
+
+
 SET TEMP_PATH=!PATH!
 set "PATH=.\jre\bin;!PATH!;%JAVA_HOME%\bin;%JRE_HOME%\bin;%JRE_HOME%"
 SET JAVA_HOME=
@@ -26,6 +28,8 @@ for /F "delims=" %%p in ('where java.exe') do (
         )
     )
 )
+
+IF not exist "!JAVA_EXE!" if exist "%JRE_HOME%\bin\java.exe" (set "JAVA_BIN=%JRE_HOME%\bin" && set "JAVA_EXE=%JRE_HOME%\bin\java.exe") else (set JAVA_BIN=.\jre\bin && set "JAVA_EXE=.\jre\bin\java.exe")
 
 If not exist "!JAVA_EXE!" (
     echo "Cannot find Java 1.8 executable, exit."

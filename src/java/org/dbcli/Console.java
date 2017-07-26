@@ -382,6 +382,7 @@ public class Console {
         Object[] call(Object... e);
     }
 
+
     class Parser extends DefaultParser {
         String secondPrompt = "    ";
         final org.jline.reader.EOFError err = new org.jline.reader.EOFError(-1, -1, "Request new line", "");

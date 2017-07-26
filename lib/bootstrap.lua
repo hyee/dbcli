@@ -85,6 +85,7 @@ local options ={'-noverify' ,
 			    '-Dfile.encoding='..charset,
 			    '-Duser.language=en','-Duser.region=US','-Duser.country=US',
 			    '-Djava.awt.headless=true',
+				--'-Djava.security.egd=file:/dev/./urandom',
 				--'-Djava.home='..java_home,
 			    '-Djava.class.path='..jars}
 for _,param in ipairs(other_options) do options[#options+1]=param end 

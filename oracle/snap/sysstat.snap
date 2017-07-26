@@ -1,4 +1,9 @@
-/*[[Generate delta values based on gv$sys_time_model. Usage: @@NAME [options] {[keyword] [<inst_id>]}]]*/
+/*[[Generate delta values based on gv$sys_time_model. Usage: @@NAME [options] {[<inst_id>]  [keyword]}
+   -s: Show stats data based on per second
+   --[[
+        &sec1: total={off}, s={on}
+   ]]--
+]]*/
 {
     sql=[[
         SELECT inst_id, 
@@ -7,10 +12,11 @@
                value
         FROM   gv$sysstat
         WHERE  NAME != 'DB time'
-        AND    (:V1 is null or lower(NAME) like lower('%&V1%'))
-        AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0')
+        AND    (:V1 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V1=INST_ID OR :V1='0')
+        AND    (:V2 is null or lower(NAME) like lower('%&V2%'))
     ]],
     delta_by="value",
     group_by="inst_id,NAME,class",
+    per_second="&sec1",
     top_by="name"
 }

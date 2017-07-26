@@ -233,6 +233,7 @@ function snapper:next_exec()
                     define_column(col,'format',k)
                 end
             end
+
             for idx,_ in ipairs(cmd.rs1.rsidx) do
                 local rs1,rs2=cmd.rs1.rsidx[idx],cmd.rs2.rsidx[idx]
                 local agg_idx,grp_idx,top_grp_idx,agg_model_idx={},{},{},{}
@@ -315,8 +316,19 @@ function snapper:next_exec()
                 local top_data,r,d,data,index,top_index=table.new(1,#rs1+10)
                 
                 if not is_groupped then
-                    grid=rs1
+                    grid,rs2=rs1,{}
                 else
+                    local sum=0
+                    local function check_zero(col,num)
+                        if calc_cols[col] or sum==1 then 
+                            return 
+                        elseif rs2.include_zero or cmd.include_zero then 
+                            sum=1
+                            return
+                        end
+                        sum=(num and num~=0) and 1 or 0
+                    end
+
                     grid:add(title)
                     for rx=2,#rs1 do
                         local row={}
@@ -327,11 +339,12 @@ function snapper:next_exec()
                             top_data[top_index]={}
                             groups[#groups+1]=top_index
                         end
-                        local sum=0
+                        sum=0
                         if not data then
                             result[index],top_data[top_index][#top_data[top_index]+1]=row,row
                             for k,_ in pairs(agg_idx) do
                                 local d=tonumber(row[k])
+                                check_zero(k,d)
                                 sum=(sum==1 or d and d~=0) and 1 or 0
                                 row[k]=d and math.round(d/elapsed,2) or nil
                             end
@@ -340,11 +353,11 @@ function snapper:next_exec()
                                 r,d=tonumber(row[k]),tonumber(data[k])
                                 if r or d then 
                                     data[k]=math.round((d or 0)+(r or 0)/elapsed,2)
-                                    sum=(sum==1 or data[k]~=0) and 1 or 0
+                                    check_zero(k,data[k])
                                 end
                             end
                         end
-                        result[index]['_non_zero_']=sum>0 or rs2.include_zero or cmd.include_zero
+                        result[index]['_non_zero_']=sum>0
                     end
 
                     for rx=2,#rs2 do
@@ -352,20 +365,22 @@ function snapper:next_exec()
                         index=make_index(row)
                         data=result[index]
                         if data then
-                            local sum=0
+                            sum=0
                             for k,_ in pairs(agg_idx) do
                                 r,d=tonumber(row[k]),tonumber(data[k])
                                 if r and d then 
                                     data[k]=math.round(d-r/elapsed,2)
-                                    sum=(sum==1 or data[k]~=0) and 1 or 0
+                                    check_zero(k,data[k])
                                 end
                             end
-                            result[index]['_non_zero_']=sum>0 or rs2.include_zero or cmd.include_zero
+                            result[index]['_non_zero_']=sum>0
                         end
                     end
+
                     if #groups>0 then
                         local func=function(a,b) return a[top_agg_idx]>b[top_agg_idx] end
                         for index,group_name in ipairs(groups) do
+                            
                             if #top_data[group_name]>1 and top_agg_idx then
                                 table.sort(top_data[group_name],func)
                             end
@@ -392,9 +407,9 @@ function snapper:next_exec()
                         grid:sort(order_by or idx,true)
                     end
                 end
-                grid.topic,grid.height,grid.width,grid.max_rows=rs2.topic,rs2.height,rs2.width,rs2.max_rows
+                
                 setmetatable(rs2,nil)
-                table.clear(rs2)
+                for k=#rs2,1,-1 do rs2[k]=nil end
                 for k,v in pairs(grid) do rs2[k]=v end
                 setmetatable(rs2,getmetatable(grid))
                 rs2.max_rows=rs2.max_rows or cmd.max_rows or cfg.get(self.command.."rows")
