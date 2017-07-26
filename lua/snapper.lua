@@ -29,12 +29,10 @@ end
 
 function snapper:parse(name,txt,args,file)
     txt=env.var.update_text(txt,1,args)
-    local orgtxt,err=txt
-    txt,err=loadstring(('return '..txt):gsub(self.comment,"",1))
-    env.checkerr(txt,"Invalid syntax in "..file..': '..(err or '')..'\n'..orgtxt)
+    txt=table.totable(txt)
 
     local cmd={}
-    for k,v in pairs(txt()) do
+    for k,v in pairs(txt) do
         cmd[tostring(k):lower()]=v
     end
 

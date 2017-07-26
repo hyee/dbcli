@@ -1,5 +1,5 @@
 local ffi = require("ffi")
-local string,table,java=string,table,java
+local string,table,java,loadstring=string,table,java,loadstring
 
 function string.initcap(v)
     return (' '..v):lower():gsub("([^%w])(%w)",function(a,b) return a..b:upper() end):sub(2)
@@ -10,7 +10,7 @@ function os.shell(cmd,args)
     io.popen(cmd..(args and (" "..args) or ""))
 end
 
-local _os=env.PLATFORM
+
 function os.find_extension(exe)
     local err="Cannot find "..exe.." in the default path, please add it into EXT_PATH of file data/init.cfg"
     if exe:find('[\\/]') then
@@ -157,6 +157,18 @@ function table.append(tab,...)
     for i=1,select('#',...) do
         tab[#tab+1]=select(i,...)
     end
+end
+
+local json=json
+function table.totable(str)
+    local txt,err,done=loadstring('return '..str)
+    if not txt then 
+        done,txt=pcall(json.decode,str) 
+    else
+        done,txt=pcall(txt)
+    end
+    env.checkerr(done,'Error while parsing text into Lua table:' ..(err or tostring(txt) or '')..'\n'..str)
+    return txt
 end
 
 local function compare(a,b)

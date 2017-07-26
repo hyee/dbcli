@@ -351,7 +351,7 @@ function db_core.get_command_type(sql)
     for word in sql:gsub("%s*/%*.-%*/%s*",' '):gmatch("[^%s%(%)]+") do
         local w=word:upper()
         if not excluded_keywords[w] then
-            list[#list+1]=(#list < 3 and word or w):gsub('["`]','')
+            list[#list+1]=(#list < 3 and w or word):gsub('["`]','')
             if #list > 3 then break end
         end
     end
@@ -773,9 +773,7 @@ function db_core:grid_call(tabs,rows_limit,args)
                 local all,grid_cfg=tab:match("(grid%s*=%s*(%b{}))")
                 if grid_cfg then
                     tab=tab:replace(all,'',true)
-                    local cfg,err=loadstring('return '..grid_cfg)
-                    env.checkerr(cfg,"Unexpected format: "..grid_cfg)
-                    grid_cfg=cfg()
+                    grid_cfg=table.totable(grid_cfg)
                 else
                     grid_cfg={}
                 end
@@ -786,7 +784,6 @@ function db_core:grid_call(tabs,rows_limit,args)
         end
         return result
     end
-
     
     --execute all SQLs firstly, then fetch later
     local function fetch_result(tabs)
@@ -831,9 +828,7 @@ end
 
 function db_core:grid_print(sqls)
     env.checkhelp(sqls)
-    local grid_cfg,err=loadstring('return '..sqls)
-    env.checkerr(grid_cfg,"Unexpected format: "..(err or '').."\n"..sqls)
-    grid_cfg=grid_cfg()
+    local grid_cfg=table.totable(sqls)
     local tabs=self:grid_call(grid_cfg,cfg.get("printsize"),{})
     env.grid.merge(tabs,true)
 end
@@ -1150,6 +1145,8 @@ function db_core:__onload()
                           grid={height=<rows>,width=<columns>,topic='<grid topic>',max_rows=<records>}
 
         Example:
+            Lua style:
+            ==========
             grid {[[select rownum "#",event,total_Waits from v$system_event where rownum<56]'], --Query#1 left to next merged grid(query#2/query#3/query#4)
                   '|',{'select * from v$sysstat where rownum<=20',                              --Query#2 left to next merged grid(query#3/query#4))
                        '-', {'select rownum "#",name,hash from v$latch where rownum<=30',       --Query#3 above to query#4
@@ -1158,6 +1155,16 @@ function db_core:__onload()
                        },
                   '-','select /*grid={topic="Metrix"}*/ * from v$sysmetric where rownum<=10'    --Query#5 under merged grid(query#1-#4)
                   }
+
+            JSON style:
+            ===========
+             grid ['select rownum "#",event,total_Waits from v$system_event where rownum<56', 
+                   '|',['select * from v$sysstat where rownum<=20',                            
+                        '-', ['select rownum "#",name,hash from v$latch where rownum<=30',     
+                              '+',"select /*grid={'topic':'Wait State'}*/ * from v$waitstat"]
+                       ],
+                    '-','select /*grid={"topic":"Metrix"}*/ * from v$sysmetric where rownum<=10']
+
         Refer to 'System.snap' for more example
     ]]
     grid_desc=grid_desc:gsub("%]'%]",']]')
@@ -1166,9 +1173,10 @@ function db_core:__onload()
                     help_func=grid_desc,
                     call_func=self.grid_print,
                     is_multiline=function(cmd,rest)
-                        if not rest:find('^%s*{') then return true,rest end
-                        if rest:match('^%s*%b{}') then
-                            return true,rest
+                        if not rest:find('^%s*{') and not rest:find('^%s*%[') then return true,rest end
+                        local part=rest:match('^%s*(%b{})') or rest:match('^%s*(%b[])')
+                        if part then
+                            return true,part
                         else
                             return false,rest
                         end
