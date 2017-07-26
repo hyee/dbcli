@@ -1,6 +1,6 @@
-
-
+local _G=_ENV or _G
 local _os=jit.os:lower()
+_os=_os=='osx' and 'mac' or _os
 local psep,fsep,dll,which,dlldir
 if _os=="windows" then 
 	psep,fsep,dll,which,dlldir=';','\\','.dll','where java 2>nul',jit.arch
@@ -85,6 +85,7 @@ local options ={'-noverify' ,
 			    '-Dfile.encoding='..charset,
 			    '-Duser.language=en','-Duser.region=US','-Duser.country=US',
 			    '-Djava.awt.headless=true',
+				'-Djava.library.path='..resolve("./lib/"..dlldir),
 				--'-Djava.security.egd=file:/dev/./urandom',
 				--'-Djava.home='..java_home,
 			    '-Djava.class.path='..jars}
@@ -106,6 +107,7 @@ while true do
 	if not input then error(err) end
 	loader:resetLua()
 	input(table.unpack(arg))
+	rawset(_env,'CURRENT_DB',rawget(_G,'CURRENT_DB'))
 	if not rawget(_G,'REOAD_SIGNAL') then break end
 	m.loaded=_loaded
 end

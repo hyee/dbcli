@@ -42,7 +42,7 @@ local init={
 }
 
 init.databases={oracle="oracle/oracle",mssql="mssql/mssql",db2="db2/db2",mysql="mysql/mysql",pgsql='pgsql/pgsql'}
-local default_database='oracle'
+local default_database=env.CURRENT_DB or 'oracle'
 
 function init.init_path(env)
     local java=java

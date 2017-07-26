@@ -1,6 +1,6 @@
 local string,io,table=string,io,table
 local mypath=debug.getinfo(1, "S").source:sub(2)
-
+local _G=_ENV or _G
 package.path=mypath:gsub('[%w%.]+$','?.lua')
 local console=console
 
@@ -31,7 +31,8 @@ while true do
     local subcolor,pcolor,ccolor=color("PROMPTSUBCOLOR"),color("PROMPTCOLOR"),color("COMMANDCOLOR")
     local prompt,empty=env.CURRENT_PROMPT:match("^(.-)(%s*)$")
     if env.RELOAD_SIGNAL~=nil then
-        _G['REOAD_SIGNAL']=env.RELOAD_SIGNAL
+        rawset(_G,'REOAD_SIGNAL',env.RELOAD_SIGNAL)
+        rawset(_G,'CURRENT_DB',env.CURRENT_DB)
         break 
     end
     if ccolor=="" then ccolor="\27[0m" end
