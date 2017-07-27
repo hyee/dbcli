@@ -198,7 +198,7 @@ function ansi.addCompleter(name,args)
 --]]
 end
 
-function ansi.clear_sceen()
+function ansi.clear_screen()
     os.execute(env.PLATFORM=='windows' and "cls" or "clear")
 end
 
@@ -248,7 +248,6 @@ function ansi.enable_color(name,value)
     else
         if enabled then return end
         for k,v in pairs(base_color) do color[k]=v end
-        --env.set_command(nil,{"clear","cls"},"Clear screen ",ansi.clear_sceen,false,1)
         for k,v in pairs(ansi.cfg() or {}) do
             env.set.init(k,v[4],ansi.define_color,v[2],v[3])
             if v[1] ~= v[4] then
@@ -261,7 +260,7 @@ function ansi.enable_color(name,value)
 end
 
 function ansi.onload()
-    env.set_command(nil,{"clear","cls"},"Clear screen ",ansi.clear_sceen,false,1)
+    env.set_command(nil,{"clear","cls"},"Clear screen ",ansi.clear_screen,false,1)
     writer=console:getOutput()
     ansi.loaded=true
     --str_completer=java.require("jline.console.completer.StringsCompleter",true)

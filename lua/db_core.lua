@@ -410,14 +410,14 @@ end
    returns: for the sql is a query stmt, then return the result set, otherwise return the affected rows(>=-1)
 ]]
 
-function db_core:check_sql_method(event_name,sql,method,...)
+function db_core:call_sql_method(event_name,sql,method,...)
     local res,obj=pcall(method,...)
     if res==false then
         local info,internal={db=self,sql=sql,error=tostring(obj):gsub('%s+$','')}
         info.error=info.error:gsub('.*Exception:?%s*','')
         event(event_name,info)
         if info and info.error and info.error~="" then
-            if not self:is_internal_call(sql) and info.sql  and env.ROOT_CMD~=self.get_command_type(sql) then
+            if not self:is_internal_call(sql) and info.sql and env.ROOT_CMD~=self.get_command_type(sql) then
                 if cfg.get("SQLERRLINE")=="off" then
                     print('SQL: '..info.sql:gsub("\n","\n     "))
                 else
@@ -434,7 +434,7 @@ function db_core:check_sql_method(event_name,sql,method,...)
 end
 
 function db_core:check_params(sql,prep,p1,params)
-    local meta=self:check_sql_method('ON_SQL_PARSE_ERROR',sql,prep.getParameterMetaData,prep)
+    local meta=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,prep.getParameterMetaData,prep)
     local param_count=meta:getParameterCount()
     if param_count~=#p1 then
         local errmsg="Parameters are unexpected, below are the detail:\nSQL:"..string.rep('-',80).."\n"..sql
@@ -492,7 +492,7 @@ function db_core:parse(sql,params,prefix,prep)
             return '?'
         end)
 
-    if not prep then prep=self:check_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007) end
+    if not prep then prep=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007) end
 
     self:check_params(sql,prep,p1,params)
 
@@ -559,7 +559,7 @@ function db_core:exec(sql,args)
     env.log_debug("db","SQL:",sql)
     env.log_debug("db","Parameters:",params)
 
-    local is_query=self:check_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
+    local is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
     self.current_stmt=nil
     --is_query=prep:execute()
     local is_output,index,typename=1,2,3

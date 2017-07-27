@@ -163,11 +163,13 @@ end
 function extvars.set_schema(name,value)
     if value==nil or value=="" then 
         uid=nil
+        --db:internal_call("alter session set current_schema="..db.props.db_user)
         return value
     end
     value=value:upper()
     local id=db:get_value([[select max(user_id) from all_users where username=:1]],{value})
     env.checkerr(id~=nil and id~="", "No such user: "..value)
+    --db:internal_call("alter session set current_schema="..value)
     uid=tonumber(id)
     return value
 end

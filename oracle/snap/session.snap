@@ -1,7 +1,10 @@
-/*[[Generate session stats. Usage: @@NAME [options] {[0|<sid>|<sql_id>|-f"<filter>"] [<inst_id>] } [-s] [-a]
+/*[[Generate session stats. Usage: @@NAME [options] {[0|<sid>|<sql_id>|-f"<filter>"] [<inst_id>] } [-s] [-a] [-top]
     -s: Show stats data based on per second
     -a: Aggregate across all matched sessions
+    -top   : Clear screen before print each result, similar to OS 'top' command
+
     --[[
+    &top : default={off} top={on}
     @CHECK_ACCESS_ALL: gv$session/gv$px_session/gv$sesstat/gv$sess_time_model/gv$statname/gv$session_event/gv$active_session_history={true}
     &sec1: total={off}, s={on}
     &sec2: total={}, s={(per Second)}    
@@ -12,7 +15,7 @@
                   where (&filter) 
                   and   (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0')),
               ses AS (
-              select /*+materialize*/ * from
+              select /*+no_merge*/ * from
                 (SELECT sid#,inst_id, SID
                 FROM   s1
                 UNION
@@ -30,11 +33,11 @@
 ]]*/
 {
     sql={
-      [[&base /*grid={topic='Session Stats &sec2',max_rows=50}*/
+      [[&base /*grid={topic='Session Stats &sec2',max_rows=45}*/
         SELECT A.* FROM ( 
             SELECT /*+no_expand*/
                    sid#,
-                   NAME,
+                   substr(NAME,1,40) name,
                    sum(VALUE) value
             FROM   gv$sesstat join ses using(inst_id,sid)
             JOIN   v$statname USING  (statistic#)
@@ -210,5 +213,6 @@
     column_formatter={KMG='Unzip,pops,re-pops,phyMem,freeMem,Swap,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,OptRead,OptWrite,SmartScan,SISave,Elig,CeUnzip,HCCZip,HUnZip,bytes',
                      TMB='scan,Sort,Fetch,Undo,popr,re-popr,rows,valid,proj,Disk,Cache,excluded,missCU',
                      smhd2='Time'},
-    top_by="name"
+    top_by="name",
+    is_clearscreen='&top'
 }

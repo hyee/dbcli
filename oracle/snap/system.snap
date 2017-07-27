@@ -1,40 +1,43 @@
-/*[[Show System statistics summary. Usage: @@NAME [options] [<inst_id>]  [-sql|-latch] [-total]
+/*[[Show System statistics summary. Usage: @@NAME [options] [<inst_id>]  [-sql|-latch] [-total] [-top]
     inst_id: Specify the instance number, default to aggregrate all instances' stats. When '0' means don't aggregrate across all instances
     -sql   : Show active sessions(default)
     -latch : Show latch stats
     -total : Show total delta stats instead of per second
+    -top   : Clear screen before print each result, similar to OS 'top' command
 
     --[[
-        @CHECK_ACCESS_ALL: gv$session/gv$latch/gv$osstat/gv$sysstat/gv$sys_time_model/gv$system_event/gv$active_session_history={true}
+        &top : default={off} top={on}
+        @CHECK_ACCESS_ALL: gv$session/gv$latch/gv$osstat/gv$sysstat/gv$sys_time_model/gv$system_event/gv$active_session_history/gv$sqlstats={true}
         &inst1: default={decode(:V1,'0',''||inst_id,decode(count(distinct inst_id) over(),1,''||inst_id,'A'))}
         &sec1: s={on}, total={off}
         &sec2: s={(per Second)}, total={}  
         &inst2: default={(:V1 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V1=INST_ID OR :V1='0')}
-        &sql1: {sql={[[
-                    SELECT /*+ignore_me*/inst,sql_id, ''||sum(sess) sess, sum(dur) Time, 
-                           max(substr(TRIM(regexp_replace(REPLACE(sql_text, chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 100)) sql_text
-                    FROM   (SELECT * /*grid={topic='Active SQLs'}*/
-                            FROM   (SELECT /*+no_merge*/
-                                           &inst1 inst,sql_id, SUM(LAST_CALL_ET) dur
-                                    FROM   gv$session
-                                    WHERE  sql_id IS NOT NULL
-                                    AND    wait_class != 'Idle'
-                                    AND    &inst2
-                                    GROUP  BY inst_id,sql_id
-                                    ORDER  BY dur DESC)
-                            WHERE  ROWNUM <= 16)
-                    JOIN   (SELECT /*+no_merge*/
-                                   &inst1 inst,sql_id, SUM(users_executing) sess, MAX(sql_text) sql_text
-                            FROM   gv$sql
-                            WHERE  users_executing > 0
-                            AND    &inst2
-                            GROUP  BY inst_id,sql_id)
-                    USING  (inst,sql_id)
-                    WHERE  sql_text NOT LIKE '%ignore_me%'
-                    GROUP BY inst,sql_id
-                    ORDER BY Time DESC]]},
+        &sql1: {sql={[[ SELECT *
+                        FROM   (SELECT /*+ignore_me no_merge(sq) no_merge(ash) grid={topic='Active SQLs',max_rows=15,include_zero=true,order_by='-aas,-busy'}*/
+                                        inst,
+                                        sql_id,
+                                        ela,
+                                        CPU,
+                                        AAS,
+                                        substr(TRIM(regexp_replace(REPLACE(sql_text, chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 80) sql_text
+                                FROM   (select inst,sql_id,sql_text,sum(busy)*1e-6 ela 
+                                        from (SELECT &inst1 inst, sql_id, sql_text,CPU_TIME+USER_IO_WAIT_TIME busy FROM gv$sqlstats WHERE last_active_time > SYSDATE - :snap_interval/ 86400 AND &inst2)
+                                        group by inst,sql_id,sql_text) sq
+                                LEFT   JOIN (SELECT inst,sql_id,
+                                                first_value(substr(event,1,25)) OVER(PARTITION BY inst, sql_id ORDER BY COUNT(1) DESC) top_event,
+                                                COUNT(1) aas,
+                                                SUM(NVL2(event, 0, 1)) CPU
+                                        FROM   (SELECT &inst1 inst, a.*
+                                                FROM   gv$active_Session_history a
+                                                WHERE  sql_id IS NOT NULL AND &inst2
+                                                AND    sample_time > SYSDATE - :snap_interval / 86400)
+                                        GROUP  BY inst, sql_id, event) ash
+                                USING  (inst, sql_id)
+                                WHERE  sql_text NOT LIKE '%ignore_me%'
+                                ORDER  BY aas DESC nulls last, ela desc nulls last)
+                        WHERE  ROWNUM <= 30]]},
                 latch={[[SELECT &inst1 inst, 
-                                ADDR,/*grid={topic='System Latch &sec2',fixed_title=true,max_rows=18}*/
+                                ADDR,/*grid={topic='System Latch &sec2',fixed_title=true,max_rows=15}*/
                                 substr(NAME,1,40) name,
                                 WAIT_TIME/1000 "ms",
                                 GETS,
@@ -75,7 +78,7 @@
         GROUP  BY inst_id]],
       '|', &sql1,
       '_',{[[SELECT &inst1  inst, 
-                    NAME, /*grid={topic='System Stats(Excluding Profiles)',max_rows=40}*/
+                    substr(NAME,1,40) name, /*grid={topic='System Stats(Excluding Profiles)',max_rows=40}*/
                     value
             FROM   gv$sysstat
             WHERE  value>0
@@ -201,8 +204,8 @@
             }
         }
     },
-    delta_by="missCU,Unzip,bytes,rows,valid(%),Cache,excluded,proj,pops,re-pops,popr,re-popr,Disk,Pct(%),Swap,HCCZip,HUnZip,OptRead,OptWrite,Elig,SmartScan,SISave,CeUnzip,FcHit,Offload(%),H(%),E(%),Logon,Call,Exec,Commit,Parse,hParse,CcHit,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,value,ms,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,MS,Busy,User,Sys,Idle,Nice",
-    group_by="inst,name,LOCATION,addr",
+    delta_by="ela,missCU,Unzip,bytes,rows,valid(%),Cache,excluded,proj,pops,re-pops,popr,re-popr,Disk,Pct(%),Swap,HCCZip,HUnZip,OptRead,OptWrite,Elig,SmartScan,SISave,CeUnzip,FcHit,Offload(%),H(%),E(%),Logon,Call,Exec,Commit,Parse,hParse,CcHit,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,value,ms,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,MS,Busy,User,Sys,Idle,Nice",
+    group_by="inst,sql_id,name,LOCATION,addr",
     calc_rules={avg_ms='[ms]/[waits]',
                 ['Pct(%)']='[ms]*100/[Pct(%)]',
                 ['H(%)']='[FcHit]*100/[H(%)]',
@@ -211,6 +214,7 @@
                 ['E(%)']='[Elig]*100/[E(%)]'},
     column_formatter={KMG='Unzip,pops,re-pops,phyMem,freeMem,Swap,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,OptRead,OptWrite,SmartScan,SISave,Elig,CeUnzip,HCCZip,HUnZip,bytes',
                      TMB='popr,re-popr,rows,valid,proj,Disk,Cache,excluded,missCU',
-                     smhd2='Time'},
-    per_second="&sec1"
+                     smhd2='Time,ela'},
+    per_second="&sec1",
+    is_clearscreen='&top'
 }

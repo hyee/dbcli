@@ -1,4 +1,5 @@
---Usage: print / save a 2-D arrary
+
+
 local env,pairs,ipairs=env,pairs,ipairs
 local math,table,string,class,event=env.math,env.table,env.string,env.class,env.event
 local grid=class()
@@ -639,14 +640,13 @@ function grid.merge(tabs,is_print,prefix,suffix)
         local result={}
         for i=1,#tabs do
             local tab,sep,nexttab=tabs[i]
-            local seq=i+1
-            while true do
-                  sep,nexttab=tabs[seq],tabs[seq+1]
-                  if type(sep)~="string" or type(nexttab)~="string" then break end
-                  seq=seq+1
-            end
-            ::next::
             if type(tab)=="table" and #tab>0 then
+                local seq=i+1
+                while true do
+                    sep,nexttab=tabs[seq],tabs[seq+1]
+                    if type(sep)~="string" or type(nexttab)~="string" then break end
+                    seq=seq+1
+                end
                 if type(sep)=="string" and type(nexttab)=="table" and #nexttab>0 then
                     newtab={_is_drawed=true}
                     local m1,m2=tab._is_drawed and 2 or 0,nexttab._is_drawed and 2 or 0
@@ -698,7 +698,6 @@ function grid.merge(tabs,is_print,prefix,suffix)
                 end
             end
         end
-        
         if #result==1 then return result[1] end
         newtab={_is_drawed=true}
         for i=1,#result do
@@ -717,36 +716,53 @@ function grid.merge(tabs,is_print,prefix,suffix)
 
     local function format_tables(tabs,is_wrap)
         local result={}
-        for idx,tab in ipairs(tabs) do
+        local max=30
+        for idx=0,max do
+            local tab=tabs[idx]
             if type(tab) == "table" then
                 if tab._is_drawed ~= nil then
                     result[#result+1]=tab
-                elseif #tab>1 and (type(tab[#tab])=="table" and type(tab[#tab][1])=="table" or type(tab[1].data)=="table") then
-                    result[#result+1]=format_tables(tab,false)
                 else
-                    local topic,width,height,max_rows=tab.topic,tab.width,tab.height,tab.max_rows
-                    local is_bypass=tab.bypassemptyrs or grid.bypassemptyrs
-                    tab=grid.tostring(tab,true," ","",rows_limit):split("\n")
-                    tab.topic,tab.width,tab.height,tab.max_rows=topic,width,height,max_rows
-                    if is_bypass~='on' and is_bypass~=true or #tab>2 then 
-                        result[#result+1]=tab
-                        
+                    local found=false
+                    for sub=0,max  do
+                        local child=tab[sub]
+                        if type(child)=="table" and (type(child.data)=="table" or type(child[#child])=="table") then
+                            found=true
+                            break
+                        end
+                    end
+                    
+                    if found then
+                        result[#result+1]=format_tables(tab,false)
+                    else
+                        local topic,width,height,max_rows=tab.topic,tab.width,tab.height,tab.max_rows
+                        local is_bypass=tab.bypassemptyrs
+                        tab=grid.tostring(tab,true," ","",rows_limit):split("\n")
+                        tab.topic,tab.width,tab.height,tab.max_rows=topic,width,height,max_rows
+                        if is_bypass~='on' and is_bypass~=true or #tab>2 then 
+                            result[#result+1]=tab
+                        end
                     end
                 end
-            else
+            elseif tab then
                 result[#result+1]=tab
             end
         end
-
         return _merge(result,is_wrap)
     end
    
     local result=format_tables(tabs,true)
 
     if is_print==true then
-        local tab={prefix and (prefix.."\n") or ""}
+        local tab={}
+        local height=tabs.max_rows or #result+1
+        if prefix then tab[1]=prefix.."\n" end
         for rowidx,row in ipairs(result) do 
             tab[#tab+1]=grid.cut(row,linesize)
+            if #tab>=height-1 then
+                if rowidx<#result then tab[#tab+1]=grid.cut(result[#result],linesize) end
+                break 
+            end
         end
 
         local str=table.concat(tab,"\n")

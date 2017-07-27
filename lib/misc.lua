@@ -160,6 +160,7 @@ function table.append(tab,...)
 end
 
 local json=json
+if json.use_lpeg then json.use_lpeg () end
 function table.totable(str)
     local txt,err,done=loadstring('return '..str)
     if not txt then 

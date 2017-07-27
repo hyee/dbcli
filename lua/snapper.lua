@@ -1,5 +1,28 @@
+--[[
+    Snapper: to generate delta stats based on specific period.
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Script template can be either Lua or JSON format, elements:
+    1. sql: Mandatory, can be a SQL string, or an array that in Lua/Json format, refer to command 'grid' for more detail
+    2. group_by: Optional, the columns that used for groupping the aggregation(similar to SQL 'GROUP BY' list)
+                 The columns that not listed in both 'group_by' and 'delta_by' will only show the post result
+    3. delta_by: Optional, the columns that for aggregation(similar to SQL 'SUM(...)' list)
+    4. order_by: The columns that used to sort the final result, "-<column_name>" means desc ordering. 
+    5. top_by  : Optional, if not specified then it equals to 'group_by', it is the subset of 'group_by' columns
+    6. per_second: 'on' or 'off'(default), controls if to devide the delta stats by elapsed seconds
+    7. bypassemptyrs: 'on' or 'off'(default),when a 'sql' is an array, and one of which returns no rows, then controls wether to show this sql
+    8. is_clearscreen: 'on' or 'off'(default), controls wether to clear the screen before print the result
+    9. calc_rules: the additional formula on a specific column after the 'delta_by' columns is calculated
+    10.fixed_title: true or false(default), controls wether not to change the 'delta_by' column titles
+    11.include_zero:  true or false(default), controls wether not to show the row in case of its 'delta_by' columns are all 0
+    12.set_ratio: true or false(default), controls wether not to add a percentage column on each 'delta_by' columns 
+
+    The belowing variables can be referenced by the SQLs in 'snapper':
+    1. :snap_cmd      :  The command that included by EOF
+    2. :snap_interval :  The elapsed seconds betweens 2 snapshots
+--]]
 local env,pairs,ipairs,table,tonumber=env,pairs,ipairs,table,tonumber
 local sleep,math,cfg=env.sleep,env.math,env.set
+local terminal,getHeight=terminal,terminal.getHeight
 
 local snapper=env.class(env.scripter)
 function snapper:ctor()
@@ -236,6 +259,7 @@ function snapper:next_exec()
                 local rs1,rs2=cmd.rs1.rsidx[idx],cmd.rs2.rsidx[idx]
                 local agg_idx,grp_idx,top_grp_idx,agg_model_idx={},{},{},{}
                 local title=rs2[1]
+                local cols=#title
                 local min_agg_pos,top_agg_idx,top_agg=1e4
                 local elapsed=cmd.per_second and cmd.elapsed or 1
                 local calc_rules=rs2.calc_rules or cmd.calc_rules or {}
@@ -292,7 +316,7 @@ function snapper:next_exec()
                 if not cmd.top_by then top_grp_idx=grp_idx end
 
                 result,groups=table.new(1,#rs1+10),{}
-                local grid=grid.new()
+                local grid=grid.new(true)
                 
 
                 local idx,top_idx,counter={},{},0
@@ -329,8 +353,8 @@ function snapper:next_exec()
 
                     grid:add(title)
                     for rx=2,#rs1 do
-                        local row={}
-                        for ix,cell in pairs(rs1[rx]) do row[ix]=cell end
+                        local row=table.new(cols,0)
+                        for ix=1,cols do row[ix]=rs1[rx][ix] end
                         index,top_index=make_index(row)
                         data=result[index]
                         if not top_data[top_index] then 
@@ -378,7 +402,6 @@ function snapper:next_exec()
                     if #groups>0 then
                         local func=function(a,b) return a[top_agg_idx]>b[top_agg_idx] end
                         for index,group_name in ipairs(groups) do
-                            
                             if #top_data[group_name]>1 and top_agg_idx then
                                 table.sort(top_data[group_name],func)
                             end
@@ -405,20 +428,30 @@ function snapper:next_exec()
                         grid:sort(order_by or idx,true)
                     end
                 end
-                
+
                 setmetatable(rs2,nil)
                 for k=#rs2,1,-1 do rs2[k]=nil end
                 for k,v in pairs(grid) do rs2[k]=v end
                 setmetatable(rs2,getmetatable(grid))
                 rs2.max_rows=rs2.max_rows or cmd.max_rows or cfg.get(self.command.."rows")
             end
+            local is_clearscreen=cmd.is_clearscreen
+            is_clearscreen=(is_clearscreen==true or is_clearscreen=="on") and true or false
             local title=("\n["..(self.command..'#'..name):upper().."]: From "..cmd.starttime.." to "..cmd.endtime..":\n"):format(name)
-            print(title..string.rep("=",title:len()-2))
+            title=title..string.rep("=",title:len()-2)
+            if is_clearscreen then
+                title=title:trim("\n")
+                env.ansi.clear_screen()
+                env.printer.top_mode=true
+            end
+            print(title)
             if #cmd.rs2.rsidx==1 then
                 (cmd.rs2.rsidx[1]):print(nil,nil,nil,cmd.max_rows or cfg.get(self.command.."rows"))
             else
+                if is_clearscreen then cmd.rs2.max_rows=getHeight(terminal)-3 end
                 env.grid.merge(cmd.rs2,true)
             end
+            env.printer.top_mode=false
         end
     end
 
@@ -438,7 +471,6 @@ function snapper:next_exec()
     end
     self:trigger('after_exec_action')
 end
-
 
 function snapper:__onload()
     cfg.init(self.command.."rows","50",nil,"db.core","Number of max records for the '"..self.command.."' command result","5 - 3000")

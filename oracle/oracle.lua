@@ -519,7 +519,9 @@ function oracle:get_library()
             end
         end
         if #files>0 then
-            files[#files+1]=env.join_path(home..'/rdbms/jlib/xdb6.jar')
+            files[#files+1]=env.join_path(env.WORK_DIR..'/oracle/xdb6.jar')
+            loader:addLibrary(env.join_path(home..'/lib'),false)
+            env.luv.os.setenv('LD_LIBRARY_PATH',java.system:getProperty("java.library.path"))
             return files
         end
     end
@@ -535,10 +537,12 @@ function oracle:grid_db_call(sqls,args)
             local cursor='GRID_CURSOR_'..idx
             args[cursor]='#CURSOR'
             stmt[#stmt+1]='  OPEN :'..cursor..' FOR '..sql.sql..';'
+        else
+            stmt[#stmt+1]=sql.sql..';'
         end
     end
     stmt[#stmt+1]='END;'
-    local results=self:internal_call(table.concat(stmt,'\n'),args)
+    local results=self.super.exec(self,table.concat(stmt,'\n'),args)
     if type(results)~="table" and type(results)~="userdata" then results=nil end
     for idx,sql in ipairs(sqls) do
         local cursor='GRID_CURSOR_'..idx

@@ -11,8 +11,8 @@ function helper.jvm()
         rows[1][siz],rows[2][siz]=name,value
     end
     for k,v in java.pairs(java.system:getProperties()) do
-        if (type(v)~="string" or #v<=100) and tostring(k)~="" then
-            add(k,v)
+        if tostring(k)~="" then
+            add(k,type(v)=="string" and v:gsub('([:;])','%1\n') or tostring(v))
         end
     end
     set.set("PIVOT",1)
