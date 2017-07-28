@@ -14,7 +14,9 @@
     9. calc_rules: the additional formula on a specific column after the 'delta_by' columns is calculated
     10.fixed_title: true or false(default), controls wether not to change the 'delta_by' column titles
     11.include_zero:  true or false(default), controls wether not to show the row in case of its 'delta_by' columns are all 0
-    12.set_ratio: true or false(default), controls wether not to add a percentage column on each 'delta_by' columns 
+    12.set_ratio: true or false(default), controls wether not to add a percentage column on each 'delta_by' columns
+    13.before_sql: the statements that executed before the 1st snapshot
+    14.after_sql: the statements that executed after the 2nd snapshot
 
     The belowing variables can be referenced by the SQLs in 'snapper':
     1. :snap_cmd      :  The command that included by EOF
@@ -68,6 +70,10 @@ function snapper:parse(name,txt,args,file)
 end
 
 function snapper:after_script()
+    if self.var_context then
+        env.var.import_context(table.unpack(self.var_context))
+        self.var_context=nil
+    end
     if self.start_flag then
         self.start_flag,self.snap_cmd,self.is_repeat=false
         self:trigger('after_exec_action')
@@ -82,7 +88,7 @@ function snapper:get_time()
 end
 
 function snapper:build_data(sqls,args)
-    local clock,time=os.clock(),os.date('%Y-%m-%d %H:%M:%S')
+    local clock,time=os.timer(),os.date('%Y-%m-%d %H:%M:%S')
     local rs,rsidx=nil,{}
 
     if type(sqls)=="string" then
@@ -127,6 +133,7 @@ function snapper:run_sql(sql,main_args,cmds,files)
     cfg.set("feed","off")
     cfg.set("autocommit","off")
     cfg.set("digits",2)
+    self.var_context={env.var.backup_context()}
     
     local interval=main_args[1].V1
     local args={}
@@ -200,7 +207,7 @@ function snapper:run_sql(sql,main_args,cmds,files)
     self.start_flag=true
     env.set.set("feed","off")
     self:trigger('before_exec_action')
-    local clock=os.clock()
+    local clock=os.timer()
     for idx,text in ipairs(sql) do
         local cmd,arg=self:parse(cmds[idx],sql[idx],args[idx],files[idx])
         self.cmds[cmds[idx]],self.args[cmds[idx]]=cmd,arg
@@ -216,7 +223,7 @@ function snapper:run_sql(sql,main_args,cmds,files)
         env.eval_line(snap_cmd,true,true)
         self:next_exec()
     elseif not begin_flag then
-        local timer=interval+clock-os.clock()
+        local timer=interval+clock-os.timer()
         if timer>0 then sleep(timer) end
         self:next_exec()
     end
@@ -228,16 +235,16 @@ function snapper:next_exec()
     db:commit()
 
     for name,cmd in pairs(cmds) do
-        args[name].snap_interval=os.clock()-cmd.clock
+        args[name].snap_interval=os.timer()-cmd.clock
         local rs,clock,starttime=self:build_data(cmd.sql,args[name])
-        if cmd.rs2 and type(rs)=="table" then
+        if type(cmd.rs2)=="table" and type(rs)=="table" then
             cmd.rs1,cmd.clock,cmd.endtime,cmd.elapsed=rs,clock,starttime,clock-cmd.clock
         end
         if cmd.after_sql then
             env.eval_line(cmd.after_sql,true,true) 
         end
     end
-    clock=os.clock()
+    clock=os.timer()
     self.db:commit()
 
     local result,groups={}
@@ -266,6 +273,7 @@ function snapper:next_exec()
                 local calc_cols={}
                 local is_groupped=false
                 local order_by=rs2.order_by or cmd.order_by
+
                 if type(order_by)=="string" then order_by=(','..order_by:upper()..','):gsub('%s*,[%s,]*',',') end
 
                 for k,v in pairs(calc_rules) do
@@ -367,7 +375,6 @@ function snapper:next_exec()
                             for k,_ in pairs(agg_idx) do
                                 local d=tonumber(row[k])
                                 check_zero(k,d)
-                                sum=(sum==1 or d and d~=0) and 1 or 0
                                 row[k]=d and math.round(d/elapsed,2) or nil
                             end
                         else
@@ -390,7 +397,7 @@ function snapper:next_exec()
                             sum=0
                             for k,_ in pairs(agg_idx) do
                                 r,d=tonumber(row[k]),tonumber(data[k])
-                                if r and d then 
+                                if r and d then
                                     data[k]=math.round(d-r/elapsed,2)
                                     check_zero(k,data[k])
                                 end
@@ -409,7 +416,7 @@ function snapper:next_exec()
                                 local row=top_data[group_name][1]
                                 for k,v in pairs(calc_cols) do
                                     for i,x in ipairs(rs1[1]) do
-                                        v=v:gsub('\1'..i..'\2',row[i]==nil and '' or tostring(row[i]))
+                                        v=v:gsub('\1'..i..'\2',row[i]==nil and '0' or tostring(row[i]))
                                     end
                                     v=loadstring(v)
                                     if v then
@@ -428,7 +435,6 @@ function snapper:next_exec()
                         grid:sort(order_by or idx,true)
                     end
                 end
-
                 setmetatable(rs2,nil)
                 for k=#rs2,1,-1 do rs2[k]=nil end
                 for k,v in pairs(grid) do rs2[k]=v end
@@ -464,7 +470,7 @@ function snapper:next_exec()
         if self.snap_cmd then
             env.eval_line(self.snap_cmd,true,true)
         else
-            local timer=self.is_repeat+clock-os.clock()-0.1
+            local timer=self.is_repeat+clock-os.timer()-0.1
             if timer>0 then sleep(timer) end
         end
         return self:next_exec()

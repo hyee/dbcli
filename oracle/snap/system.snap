@@ -7,7 +7,7 @@
 
     --[[
         &top : default={off} top={on}
-        @CHECK_ACCESS_ALL: gv$session/gv$latch/gv$osstat/gv$sysstat/gv$sys_time_model/gv$system_event/gv$active_session_history/gv$sqlstats={true}
+        @CHECK_ACCESS_ALL: gv$px_session/gv$session/gv$latch/gv$osstat/gv$sysstat/gv$sys_time_model/gv$system_event/gv$active_session_history/gv$sqlstats={true}
         &inst1: default={decode(:V1,'0',''||inst_id,decode(count(distinct inst_id) over(),1,''||inst_id,'A'))}
         &sec1: s={on}, total={off}
         &sec2: s={(per Second)}, total={}  
@@ -19,7 +19,7 @@
                                         ela,
                                         CPU,
                                         AAS,
-                                        substr(TRIM(regexp_replace(REPLACE(sql_text, chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 80) sql_text
+                                        substr(TRIM(regexp_replace(REPLACE(sql_text, chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 75) sql_text
                                 FROM   (select inst,sql_id,sql_text,sum(busy)*1e-6 ela 
                                         from (SELECT &inst1 inst, sql_id, sql_text,CPU_TIME+USER_IO_WAIT_TIME busy FROM gv$sqlstats WHERE last_active_time > SYSDATE - :snap_interval/ 86400 AND &inst2)
                                         group by inst,sql_id,sql_text) sq
@@ -36,49 +36,87 @@
                                 WHERE  sql_text NOT LIKE '%ignore_me%'
                                 ORDER  BY aas DESC nulls last, ela desc nulls last)
                         WHERE  ROWNUM <= 30]]},
-                latch={[[SELECT &inst1 inst, 
-                                ADDR,/*grid={topic='System Latch &sec2',fixed_title=true,max_rows=15}*/
-                                substr(NAME,1,40) name,
-                                WAIT_TIME/1000 "ms",
-                                GETS,
-                                MISSES,
-                                SLEEPS,
-                                IMMEDIATE_GETS IMGETS,
-                                IMMEDIATE_MISSES IMMISSES,
-                                SPIN_GETS SPINS
-                        FROM   gv$latch
-                        WHERE  (GETS+IMMEDIATE_GETS+MISSES+IMMEDIATE_MISSES+SLEEPS+SPIN_GETS>0)
-                        AND    &inst2]]}}
+                latch={[[
+                        SELECT inst,name,
+                               sum(ms) "ms",
+                               sum(gets) "Gets",
+                               sum(misses) "Misses",
+                               sum(sleeps) "Sleeps",
+                               sum(IMGETS) "ImGets",
+                               sum(IMMISSES) "ImMisses",
+                               sum(SPINS) "Spins"
+                        FROM ( /*grid={topic='System Latch &sec2',fixed_title=true,max_rows=15,order_by="-ms"}*/
+                            SELECT &inst1 inst, 
+                                    substr(NAME,1,40) name,
+                                    WAIT_TIME/1000 ms,
+                                    GETS,
+                                    MISSES,
+                                    SLEEPS,
+                                    IMMEDIATE_GETS IMGETS,
+                                    IMMEDIATE_MISSES IMMISSES,
+                                    SPIN_GETS SPINS
+                            FROM   gv$latch
+                            WHERE  (GETS+IMMEDIATE_GETS+MISSES+IMMEDIATE_MISSES+SLEEPS+SPIN_GETS>0)
+                            AND    &inst2
+                        ) GROUP BY inst,name]]}}
     --]]
 ]]*/
 {
     sql={
-      [[SELECT &inst1  inst, /*grid={topic='System Time Model &sec2',max_rows=10,fixed_title=true}*/
-               substr(stat_name,1,35) name,
-               (select value*1e-3 from gv$sys_time_model b 
-                where  a.inst_id=b.inst_id 
-                and    b.stat_name=case when a.stat_name like 'background%' then 'background elapsed time' else 'DB time' end) "Pct(%)",
-                VALUE * 1e-3 "ms"
-        FROM   gv$sys_time_model a
-        WHERE  stat_name not in('DB time','background elapsed time')
-        AND    &inst2]],
+      [[WITH PX   AS(SELECT /*+materialize*/ * FROM gv$px_session WHERE inst_id IS NOT NULL),
+             SS   AS(SELECT /*+materialize*/ inst_id,sid,logon_time from gv$session where status='ACTIVE' and username=user),
+             inst AS(SELECT /*+no_merge*/ inst_id,to_char(max(logon_time),'HH24:MI:SS') os_time
+                     FROM   ss left join PX using(inst_id,sid)
+                     WHERE  userenv('sid')      in(sid,qcsid)
+                     AND    userenv('instance') in(inst_id,qcinst_id)
+                     GROUP BY inst_id)
+        SELECT /*+opt_param('_optim_peek_user_binds','false')*/ 
+               inst_id "#",os_time "OS Time","CPUs"
+        FROM   inst
+        RIGHT  JOIN (SELECT inst_id,
+                            MAX(DECODE(stat_name, 'NUM_CPUS', VALUE)) --
+                            || nullif('/' || MAX(DECODE(stat_name, 'NUM_CPU_CORES', VALUE)), '/') --
+                            || nullif('/' || MAX(DECODE(stat_name, 'NUM_CPU_SOCKETS', VALUE)), '/') "CPUs"
+                     FROM   gv$osstat
+                     GROUP  BY inst_id)
+        USING  (inst_id)
+        WHERE &inst2
+        ORDER BY 1]],
+      '+',
+      [[
+        SELECT inst,name,sum(pct) "Pct(%)",sum(time) "Time"
+        FROM (
+            WITH model as(select /*+materialize*/ * from gv$sys_time_model WHERE &inst2)
+            SELECT &inst1  inst, /*grid={topic='System Time Model &sec2',max_rows=10,fixed_title=true}*/
+                   substr(stat_name,1,34) name,
+                   (select b.value*1e-6 from model b 
+                    where  a.inst_id=b.inst_id 
+                    and    b.stat_name=case when a.stat_name like 'background%' then 'background elapsed time' else 'DB time' end) pct,
+                    VALUE * 1e-6 time
+            FROM   model a
+            WHERE  stat_name not in('DB time','background elapsed time'))
+        GROUP BY inst,name]],
       '-',
       [[SELECT ''||inst_id inst, /*grid={topic='OS CPU(%) & Memory',fixed_title=true,include_zero=true,order_by=1}*/
-                MAX(DECODE(stat_name, 'BUSY_TIME', v)) "Busy",
-                MAX(DECODE(stat_name, 'USER_TIME', v)) "User",
-                MAX(DECODE(stat_name, 'SYS_TIME', v)) "Sys",
-                MAX(DECODE(stat_name, 'IDLE_TIME', v)) "Idle",
-                '|' "*",
+               MAX(DECODE(stat_name, 'BUSY_TIME', v)) "Busy",
+               MAX(DECODE(stat_name, 'USER_TIME', v)) "User",
+               MAX(DECODE(stat_name, 'SYS_TIME', v)) "Sys",
+               MAX(DECODE(stat_name, 'IOWAIT_TIME', v)) "I/O",
+               MAX(DECODE(stat_name, 'NICE_TIME', v)) "Nice",
+               '|' "*",
                MAX(DECODE(stat_name, 'PHYSICAL_MEMORY_BYTES', value)) "PhyMem",
                MAX(DECODE(stat_name, 'FREE_MEMORY_BYTES', value)) "FreeMem",
                SUM(DECODE(stat_name, 'VM_IN_BYTES', value,'VM_OUT_BYTES',value)) "Swap"
-        FROM   (SELECT inst_id,stat_name,VALUE,VALUE / (SELECT VALUE FROM gv$osstat a WHERE a.inst_id = b.inst_id AND a.STAT_NAME = 'NUM_CPUS') v
-                FROM   gv$osstat b
-                WHERE  &inst2)
+        FROM  (SELECT inst_id,stat_name,VALUE,round(VALUE / (SELECT min(VALUE) FROM gv$osstat a WHERE a.inst_id = b.inst_id AND a.STAT_NAME in ('NUM_CPUS','NUM_CPU_CORES')),2) v
+               FROM   gv$osstat b
+               WHERE  &inst2)
         GROUP  BY inst_id]],
       '|', &sql1,
-      '_',{[[SELECT &inst1  inst, 
-                    substr(NAME,1,40) name, /*grid={topic='System Stats(Excluding Profiles)',max_rows=40}*/
+      '_',{[[
+          SELECT inst,name,sum(value) value 
+          FROM ( /*grid={topic='System Stats(Excluding Profiles)',max_rows=40}*/
+            SELECT &inst1  inst, 
+                    substr(NAME,1,45) name, 
                     value
             FROM   gv$sysstat
             WHERE  value>0
@@ -90,6 +128,7 @@
                         'user commits',
                         'parse count (total)',
                         'parse count (hard)',
+                        'session cursor cache hits',
                         'cell flash cache read hits',
                         'logical read bytes from cache',
                         'physical read total bytes',
@@ -101,7 +140,6 @@
                         'cell physical IO interconnect bytes returned by smart scan',
                         'physical write total bytes optimized',
                         'cell physical IO bytes saved by storage index',
-                        'cell flash cache read hits ',
                         'physical read total IO requests',
                         'cell IO uncompressed bytes',
                         'cell physical IO interconnect bytes',
@@ -119,12 +157,11 @@
                         'table scan disk non-IMC rows gotten',
                         'IM scan CUs invalid or missing revert to on disk extent',
                         'temp space allocated (bytes)',
-                        'EHCC Decompressed Length Decompressed','EHCC Compressed Length Decompressed','HCC scan cell bytes compressed','HCC load direct bytes compressed',
-                        'EHCC Decompressed Length Compressed','HCC scan cell bytes decompressed','HCC load direct bytes uncompressed',
+                        'cell physical IO bytes saved by columnar cache',
                         'session uga memory','session pga memory','session uga memory max','session pga memory max')))
-            AND    &inst2]],
-            '|', 
-            {
+            AND    &inst2)
+          GROUP BY inst,name]],
+          '|', {
             [[SELECT inst_id inst, /*grid={topic='System Profiles &sec2',fixed_title=true,order_by=1}*/
                    SUM(DECODE(n, 'user logons cumulative', v)) "Logon",
                    SUM(DECODE(n, 'user calls', v)) "Call",
@@ -132,7 +169,7 @@
                    SUM(DECODE(n, 'user commits', v)) "Commit",
                    SUM(DECODE(n, 'parse count (total)', v)) "Parse",
                    SUM(DECODE(n, 'parse count (hard)', v)) "hParse",
-                   SUM(DECODE(n, 'cell flash cache read hits', v)) "CcHit",
+                   SUM(DECODE(n, 'session cursor cache hits', v)) "CcHit",
                    SUM(DECODE(n, 'logical read bytes from cache', v)) "LogRead",
                    SUM(DECODE(n, 'physical read total bytes', v)) "PhyRead",
                    SUM(DECODE(n, 'physical write total bytes', v)) "PhyWrite",
@@ -150,11 +187,10 @@
                      to_number(null) "Offload(%)",
                      nvl(SUM(DECODE(n,  'physical write total bytes optimized', v)),0) "OptWrite",
                      SUM(DECODE(n, 'cell physical IO bytes saved by storage index', v)) "SISave",
-                     nvl(SUM(DECODE(n, 'cell flash cache read hits ', v)),0) "FcHit",
+                     nvl(SUM(DECODE(n, 'cell flash cache read hits', v)),0) "FcHit",
                      SUM(DECODE(n, 'physical read total IO requests',v)) "H(%)",
                      nvl(SUM(DECODE(n, 'cell IO uncompressed bytes', v)),0) "CeUnzip",
-                     SUM(DECODE(n, 'EHCC Decompressed Length Compressed',v,'HCC scan cell bytes compressed',v,'HCC load direct bytes compressed',v)) "HCCZip",
-                     SUM(DECODE(n, 'EHCC Decompressed Length Decompressed',v,'EHCC Compressed Length Decompressed',v,'HCC scan cell bytes decompressed',v,'HCC load direct bytes uncompressed',v)) "HUnZip"
+                     SUM(DECODE(n, 'cell physical IO bytes saved by columnar cache',v)) "HCCCache"
               FROM   (SELECT &inst1 inst_id, NAME n, VALUE v FROM gv$sysstat WHERE &inst2  AND value>0)
               GROUP  BY inst_id]],
             '-',
@@ -190,21 +226,24 @@
                 GROUP  BY inst,event)
               SELECT inst,
                      wait_class, 
-                     substr(event,1,35) NAME,
+                     substr(event,1,35) name,
                      top_sql,
                      lpad(SQLS,4) "SQLs",
                      aas,
-                     total_waits "Waits",
-                     TIME_WAITED_MICRO * 1e-3 "ms",
+                     waits "Waits",
+                     micro * 1e-3 "ms",
                      max_ms "max_ms",
                      null "avg_ms"
-              FROM   (select &inst1 inst, a.* from gv$system_event a WHERE total_waits>0 AND &inst2)
+              FROM   (SELECT inst,wait_class,event,
+                             sum(total_waits) waits,sum(TIME_WAITED_MICRO) micro
+                      FROM  (select &inst1 inst, a.* from gv$system_event a WHERE total_waits>0 AND &inst2)
+                      GROUP  BY inst,wait_class,event)
               LEFT   JOIN ash using(inst,event)
               WHERE  (wait_class!='Idle')]]
             }
         }
     },
-    delta_by="ela,missCU,Unzip,bytes,rows,valid(%),Cache,excluded,proj,pops,re-pops,popr,re-popr,Disk,Pct(%),Swap,HCCZip,HUnZip,OptRead,OptWrite,Elig,SmartScan,SISave,CeUnzip,FcHit,Offload(%),H(%),E(%),Logon,Call,Exec,Commit,Parse,hParse,CcHit,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,value,ms,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,MS,Busy,User,Sys,Idle,Nice",
+    delta_by="ela,missCU,Unzip,bytes,rows,valid(%),Cache,excluded,proj,pops,re-pops,popr,re-popr,Disk,Pct(%),Swap,HCCCache,HCCZip,HUnZip,OptRead,OptWrite,Elig,SmartScan,SISave,CeUnzip,FcHit,Offload(%),H(%),E(%),Logon,Call,Exec,Commit,Parse,hParse,CcHit,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,value,ms,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,time,Busy,User,Sys,I/O,Nice,Nice",
     group_by="inst,sql_id,name,LOCATION,addr",
     calc_rules={avg_ms='[ms]/[waits]',
                 ['Pct(%)']='[ms]*100/[Pct(%)]',
@@ -212,9 +251,10 @@
                 ['valid(%)']='[valid(%)]*100/[rows]',
                 ['Offload(%)']='100-[SmartScan]*100/[Elig]',
                 ['E(%)']='[Elig]*100/[E(%)]'},
-    column_formatter={KMG='Unzip,pops,re-pops,phyMem,freeMem,Swap,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,OptRead,OptWrite,SmartScan,SISave,Elig,CeUnzip,HCCZip,HUnZip,bytes',
+    column_formatter={KMG='Unzip,pops,re-pops,phyMem,freeMem,Swap,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,OptRead,OptWrite,SmartScan,SISave,Elig,CeUnzip,HCCCache,HCCZip,HUnZip,bytes',
                      TMB='popr,re-popr,rows,valid,proj,Disk,Cache,excluded,missCU',
-                     smhd2='Time,ela'},
+                     smhd2='Time,ela',
+                     ['#,##0']='value'},
     per_second="&sec1",
     is_clearscreen='&top'
 }

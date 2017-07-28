@@ -11,44 +11,49 @@
     &base: {default={
               WITH s1 AS (
                   SELECT inst_id, SID, &session_info sid#
-                  FROM gv$session 
-                  where (&filter) 
-                  and   (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0')),
-              ses AS (
-              select /*+no_merge*/ * from
+                  FROM  gv$session 
+                  where (&filter)),
+              ses AS (select /*+no_merge*/ * from
                 (SELECT sid#,inst_id, SID
                 FROM   s1
                 UNION
-                SELECT sid#,s2.qcinst_id, s2.qcsid
+                SELECT sid#, s2.inst_id, s2.sid
                 FROM   s1, gv$px_session s2
                 WHERE  s1.inst_id = s2.inst_id
                 AND    s1.SID = s2.sid))}}
-        &filter: {default={:V1 IS NULL AND SID=USERENV('SID') or :V1 in(''||sid,sql_id)}
+        &filter: {default={:V1 IS NULL AND SID=USERENV('SID') or :V1 in(''||sid,sql_id) and (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0')}
              u={SCHEMANAME=sys_context('userenv','current_schema')}
              f={}
     }
 
     &session_info: default={sid||',@'||inst_id}, a={'A'}
+
+    &stats: {default={
+       (SELECT sid#, extractvalue(b.column_value, '/ROW/N') n, 0+extractvalue(b.column_value, '/ROW/V') v
+        FROM  (&base select * from ses) ses,
+        TABLE (XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype('
+        select name n,sum(value) v FROM   gv$sesstat join  v$statname USING (statistic#) 
+        WHERE  inst_id=' || ses.inst_id || ' and sid=' || ses.sid || '
+        AND    value>0 GROUP BY name'),'/ROWSET/ROW'))) b)
+    }}
     --]]
 ]]*/
 {
     sql={
-      [[&base /*grid={topic='Session Stats &sec2',max_rows=45}*/
-        SELECT A.* FROM ( 
+      [[SELECT A.* FROM ( /*grid={topic='Session Stats &sec2',max_rows=45}*/
             SELECT /*+no_expand*/
                    sid#,
-                   substr(NAME,1,40) name,
-                   sum(VALUE) value
-            FROM   gv$sesstat join ses using(inst_id,sid)
-            JOIN   v$statname USING  (statistic#)
-            WHERE  VALUE>0
-            AND    NAME not in ('DB time',
+                   substr(n,1,40) name,
+                   sum(v) value
+            FROM   &stats
+            WHERE  n not in ('DB time',
                         'user logons cumulative',
                         'user calls',
                         'execute count',
                         'user commits',
                         'parse count (total)',
                         'parse count (hard)',
+                        'session cursor cache hits',
                         'cell flash cache read hits',
                         'logical read bytes from cache',
                         'physical read total bytes',
@@ -60,7 +65,6 @@
                         'cell physical IO interconnect bytes returned by smart scan',
                         'physical write total bytes optimized',
                         'cell physical IO bytes saved by storage index',
-                        'cell flash cache read hits ',
                         'physical read total IO requests',
                         'cell IO uncompressed bytes',
                         'cell physical IO interconnect bytes',
@@ -77,23 +81,20 @@
                         'IM scan rows range excluded',
                         'table scan disk non-IMC rows gotten',
                         'table scan rows gotten',
-                        'IM scan CUs invalid or missing revert to on disk extent',
-                        'EHCC Decompressed Length Decompressed','EHCC Compressed Length Decompressed','HCC scan cell bytes compressed',
-                        'HCC load direct bytes compressed','HCC scan rdbms rows','EHCC Total Rows for Decompression',
-                        'EHCC Decompressed Length Compressed','HCC scan cell bytes decompressed',
-                        'HCC load direct bytes uncompressed','recursive calls',
+                        'recursive calls',
                         'temp space allocated (bytes)','sorts (rows)','rows fetched via callback',
+                        'cell physical IO bytes saved by columnar cache',
                         'session uga memory','session pga memory')
-            GROUP BY sid#,NAME) A
-            ORDER BY NAME]],
+            GROUP BY sid#,n) A
+            ORDER BY name]],
         '|', {[[&base /*grid={topic='Session Time Model &sec2', fixed_title=true,max_rows=10}*/
                 SELECT sid#,
                        substr(stat_name,1,35) name,
-                       sum((select value*1e-3 from gv$sess_time_model b 
+                       sum((select value*1e-6 from gv$sess_time_model b 
                         where  a.inst_id=b.inst_id
                         and    a.sid=b.sid
                         and    b.stat_name=case when a.stat_name like 'background%' then 'background elapsed time' else 'DB time' end)) "Pct(%)",
-                        sum(VALUE * 1e-3) "ms"
+                        sum(VALUE * 1e-6) "Time"
                 FROM   gv$sess_time_model a join ses on a.sid=ses.sid and a.inst_id=ses.inst_id
                 WHERE  stat_name not in('DB time','background elapsed time')
                 AND    value>0
@@ -107,12 +108,10 @@
                        SUM(DECODE(n, 'sorts (rows)', v)) "Sort",
                        SUM(DECODE(n, 'rows fetched via callback', v)) "Fetch",
                        SUM(DECODE(n, 'undo change vector size', v)) "Undo"
-                FROM   (select value v,a.* from gv$sesstat a WHERE VALUE>0) 
-                JOIN   ses USING(inst_id,sid)
-                JOIN   (select name n,a.* from v$statname a) USING  (statistic#)
+                FROM   &stats
                 GROUP  BY sid#]],
               '-',
-              [[&base /*grid={topic='Session Profiles &sec2',fixed_title=true}*/
+              [[&base /*grid={topic='Session Profiles &sec2',fixed_title=true,include_zero=true}*/
                 SELECT sid#, 
                     SUM(DECODE(n, 'user calls', v)) "Call",
                     SUM(DECODE(n, 'recursive calls', v)) "rCall",
@@ -120,16 +119,14 @@
                     SUM(DECODE(n, 'user commits', v)) "Commit",
                     SUM(DECODE(n, 'parse count (total)', v)) "Parse",
                     SUM(DECODE(n, 'parse count (hard)', v)) "hParse",
-                    SUM(DECODE(n, 'cell flash cache read hits', v)) "CcHit",
+                    SUM(DECODE(n, 'session cursor cache hits', v)) "CcHit",
                     SUM(DECODE(n, 'logical read bytes from cache', v)) "LogRead",
                     SUM(DECODE(n, 'physical read total bytes', v)) "PhyRead",
                     SUM(DECODE(n, 'physical write total bytes', v)) "PhyWrite",
                     SUM(DECODE(n, 'redo size', v)) "Redo",
                     SUM(DECODE(n, 'temp space allocated (bytes)', v)) "Temp",
                     SUM(case when n like 'byte%SQL*Net%' then v end) "SQL*Net"
-                FROM   (select value v,a.* from gv$sesstat a WHERE VALUE>0) 
-                JOIN   ses USING(inst_id,sid)
-                JOIN   (select name n,a.* from v$statname a) USING  (statistic#)
+                FROM   &stats
                 GROUP  BY sid#]],
             '-',
             [[&base /*grid={topic='Exadata Profiles &sec2',fixed_title=true,bypassemptyrs=true}*/
@@ -141,14 +138,11 @@
                      to_number(null) "Offload(%)",
                      nvl(SUM(DECODE(n,  'physical write total bytes optimized', v)),0) "OptWrite",
                      SUM(DECODE(n, 'cell physical IO bytes saved by storage index', v)) "SISave",
-                     nvl(SUM(DECODE(n, 'cell flash cache read hits ', v)),0) "FcHit",
+                     nvl(SUM(DECODE(n, 'cell flash cache read hits', v)),0) "FcHit",
                      SUM(DECODE(n, 'physical read total IO requests',v)) "H(%)",
                      nvl(SUM(DECODE(n, 'cell IO uncompressed bytes', v)),0) "CeUnzip",
-                     SUM(DECODE(n, 'EHCC Decompressed Length Compressed',v,'HCC scan cell bytes compressed',v,'HCC load direct bytes compressed',v)) "HCCZip",
-                     SUM(DECODE(n, 'EHCC Decompressed Length Decompressed',v,'EHCC Compressed Length Decompressed',v,'HCC scan cell bytes decompressed',v,'HCC load direct bytes uncompressed',v)) "HUnZip"
-              FROM   (select value v,a.* from gv$sesstat a WHERE VALUE>0) 
-              JOIN   ses USING(inst_id,sid)
-              JOIN   (select name n,a.* from v$statname a) USING  (statistic#)
+                     SUM(DECODE(n, 'cell physical IO bytes saved by columnar cache',v)) "HCCCache"
+              FROM   &stats
               GROUP  BY sid#]],
             '-',
             [[&base /*grid={topic='In-Memory Stats &sec2',fixed_title=true,bypassemptyrs=true}*/
@@ -168,9 +162,7 @@
                      SUM(DECODE(n, 'table scan disk non-IMC rows gotten', v,0)) "Disk",
                      '|' "*",
                      SUM(DECODE(n, 'IM scan CUs invalid or missing revert to on disk extent', v,0)) "missCU"
-              FROM   (select value v,a.* from gv$sesstat a WHERE VALUE>0) 
-              JOIN   ses USING(inst_id,sid)
-              JOIN   (select name n,a.* from v$statname a) USING  ( statistic#)
+              FROM   &stats
               GROUP  BY sid#]],
             '-',
             [[&base,ASH as(/*grid={topic='Session Events',order_by="-ms"}*/
@@ -199,7 +191,7 @@
               AND    wait_class!='Idle']]
             }
     },
-    delta_by="scan,IM(%),HCC(%),Sort,Fetch,Undo,missCU,Unzip,bytes,rows,valid(%),Cache,excluded,proj,pops,re-pops,popr,re-popr,Disk,Pct(%),Swap,HCCZip,HUnZip,OptRead,OptWrite,Elig,SmartScan,SISave,CeUnzip,FcHit,Offload(%),H(%),E(%),rCall,Call,Exec,Commit,Parse,hParse,CcHit,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,value,ms,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,MS,Busy,User,Sys,Idle,Nice",
+    delta_by="scan,IM(%),HCC(%),Sort,Fetch,Undo,missCU,Unzip,bytes,rows,valid(%),Cache,excluded,proj,pops,re-pops,popr,re-popr,Disk,Pct(%),Swap,HCCCache,HCCZip,HUnZip,OptRead,OptWrite,Elig,SmartScan,SISave,CeUnzip,FcHit,Offload(%),H(%),E(%),rCall,Call,Exec,Commit,Parse,hParse,CcHit,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,value,Time,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,MS,Busy,User,Sys,Idle,Nice",
     group_by="sid#,name",
     per_second="&sec1",
     calc_rules={avg_ms='[ms]/[waits]',
@@ -210,9 +202,9 @@
                 ['E(%)']='[Elig]*100/[E(%)]',
                 ['IM(%)']='[IM(%)]*100/[scan]',
                 ['HCC(%)']='[HCC(%)]*100/[scan]'},
-    column_formatter={KMG='Unzip,pops,re-pops,phyMem,freeMem,Swap,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,OptRead,OptWrite,SmartScan,SISave,Elig,CeUnzip,HCCZip,HUnZip,bytes',
+    column_formatter={KMG='Unzip,pops,re-pops,phyMem,freeMem,Swap,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,OptRead,OptWrite,SmartScan,SISave,Elig,CeUnzip,HCCCache,HCCZip,HUnZip,bytes',
                      TMB='scan,Sort,Fetch,Undo,popr,re-popr,rows,valid,proj,Disk,Cache,excluded,missCU',
-                     smhd2='Time'},
-    top_by="name",
+                     smhd2='Time',
+                     ['#,##0']='value'},
     is_clearscreen='&top'
 }

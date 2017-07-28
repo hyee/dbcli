@@ -132,6 +132,12 @@ end
 
 if not table.unpack then table.unpack=function(tab) return unpack(tab) end end
 
+local system=java.system
+local clocker=system.currentTimeMillis
+function os.timer()
+    return clocker()/1000
+end
+
 function string.from(v)
     local path=_G.WORK_DIR
     path=path and #path or 0

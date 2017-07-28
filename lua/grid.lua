@@ -598,15 +598,18 @@ function grid.merge(tabs,is_print,prefix,suffix)
                 end
                 if cspace==0 then 
                     push(row)
-                else
+                elseif cspace>0 then
                     --push(row..cspace)
                     local right=cspace
                     local last=row:sub(-1)
                     push(row:sub(1,-2)..string.rep(last=='+' and '-' or ' ',right)..last)
+                else
+                    push(grid.cut(row,cols))
                 end
             end
         else
-            local cspace=string.rep(' ',cols-actcols-2)
+            local diff=cols-actcols-2
+            local cspace=string.rep(' ',diff)
             local fmt='+%s+'
             local head=fmt:format(string.rep('-',cols-2))
             if (tab.topic or "") ~= "" then
@@ -618,7 +621,7 @@ function grid.merge(tabs,is_print,prefix,suffix)
             end
             fmt='|%s%s|'
             for rowidx,row in ipairs(tab) do
-                push(fmt:format(row,cspace))
+                push(fmt:format(diff>=0 and row or grid.cut(row,cols-2),cspace))
                 if #newtab >= math.min(rows,max_rows)-1 then break end
             end
             for i=#newtab+1,rows-1 do
@@ -665,7 +668,7 @@ function grid.merge(tabs,is_print,prefix,suffix)
                     elseif sep=='+' then
                         local space1,space2=string.rep(' ',width1-2),string.rep(' ',width2-2)
                         local topic1,topic2=tab.topic or "",nexttab.topic or ""
-                        local fmt="%s | %s"
+                        local fmt="%s|%s"
                         for rowidx=1,math.max(#tab,#nexttab) do
                             push(fmt:format(tab[rowidx] or space1,nexttab[rowidx] or space2))
                         end
@@ -679,7 +682,7 @@ function grid.merge(tabs,is_print,prefix,suffix)
                         tab,nexttab=redraw(tab,maxlen,height1),redraw(nexttab,maxlen,height2)
                         maxlen=math.max(strip(tab[#tab]),strip(nexttab[#nexttab]))
                         for rowidx,row in ipairs(tab) do push(row) end
-                        push(string.rep(' ',maxlen))
+                        --push(string.rep(' ',maxlen))
                         for rowidx,row in ipairs(nexttab) do push(row) end
                     end
                     tabs[seq+1]=newtab

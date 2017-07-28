@@ -448,12 +448,12 @@ function env.register_thread(this,isMain)
     local index,clock=threads[this],threads._clock
     if not index then
         index=#threads+1
-        threads[this],threads[index],clock[index]=index,this,os.clock()
+        threads[this],threads[index],clock[index]=index,this,os.timer()
     else
         for i=index+1,#threads do 
             threads[i],threads[threads[i]]=nil,nil
         end
-        if not clock[index] then clock[index]=os.clock() end
+        if not clock[index] then clock[index]=os.timer() end
     end
     co_stacks[index]=this
     return this,isMain,index
@@ -487,7 +487,7 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     end
     if not isMain and not res[1] and (not env.set or env.set.get("OnErrExit")=="on") then error() end
 
-    local clock=math.floor((os.clock()-_THREADS._clock[index])*1e3)/1e3
+    local clock=math.floor((os.timer()-_THREADS._clock[index])*1e3)/1e3
 
     if event and not is_internal then
         event("AFTER_SUCCESS_COMMAND",name,params,res[2],is_internal,arg_text,clock)

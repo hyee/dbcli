@@ -323,7 +323,7 @@ function scripter:run_sql(sql,args,cmds)
     local sq="",cmd,params,pre_cmd,pre_params
     local cmds=env._CMDS
 
-    local ary=var.backup_context()
+    local ary=env.var.backup_context()
     var.import_context(args)
     
     local echo=cfg.get("echo"):lower()=="on"

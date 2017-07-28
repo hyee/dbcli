@@ -210,7 +210,7 @@ function ResultSet:close(rs)
         if not rs:isClosed() then rs:close() end
         if self[rs] then self[rs]=nil end
     end
-    local clock=os.clock()
+    local clock=os.timer()
     --release the resultsets if they have been closed(every 1 min)
     if  self.__clock then
         if clock-self.__clock > 60 then
@@ -363,7 +363,7 @@ function db_core.print_feed(sql,result)
     if cfg.get("feed")~="on" or not sql then return end
     local secs=''
     if cfg.get("PROMPT")=='TIMING' and db_core.__start_clock then
-        secs=' (' ..math.round(os.clock()-db_core.__start_clock,3)..' secs)'
+        secs=' (' ..math.round(os.timer()-db_core.__start_clock,3)..' secs)'
     end
     local cmd,obj=db_core.get_command_type(sql)
     local feed=db_core.feed_list[cmd] 
@@ -516,7 +516,7 @@ end
 
 function db_core:exec(sql,args)
     if not self:is_internal_call(sql) then
-        db_core.__start_clock=os.clock()
+        db_core.__start_clock=os.timer()
     end
     if #env.RUNNING_THREADS<=2 then
         collectgarbage("collect")
@@ -875,7 +875,7 @@ local function print_export_result(filename,start_clock,counter)
     local str=""
     if start_clock then
         counter = (counter and (counter..' rows') or 'Data')..' exported'
-        str=counter..' in '..math.round(os.clock()-start_clock,3)..' seconds. '
+        str=counter..' in '..math.round(os.timer()-start_clock,3)..' seconds. '
     end
     print(str..'Result written to file '..filename)
 end
@@ -919,13 +919,13 @@ function db_core:sql2file(filename,sql,method,ext,...)
             if type(rs)=="userdata" then
                 local file=filename..tostring(idx)
                 print("Start to extract result into "..file)
-                clock,counter=os.clock(),loader[method](loader,rs,file,...)
+                clock,counter=os.timer(),loader[method](loader,rs,file,...)
                 print_export_result(file,clock,counter)
             end
         end
     else
         print("Start to extract result into "..filename)
-        clock,counter=os.clock(),loader[method](loader,result,filename,...)
+        clock,counter=os.timer(),loader[method](loader,result,filename,...)
         print_export_result(filename,clock,counter)
     end
     self:clearStatements(true)
