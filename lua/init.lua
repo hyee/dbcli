@@ -59,11 +59,15 @@ function init.init_path(env)
         env("WORK_DIR",path:gsub('%w+[\\/]%?.lua$',""))
         path_del=env.WORK_DIR:sub(-1)
     end
+    local lib=jit.os:lower()
+    lib=lib=='osx' and 'mac' or lib
+    lib=lib=="windows" and jit.arch or lib
     env("PATH_DEL",path_del)
     env("PLATFORM",console:getPlatform())
     env("IS_WINDOWS",env.PLATFORM=="windows" or env.PLATFORM=="cygwin" or env.PLATFORM=="mingw")
     env("_CACHE_BASE",env.WORK_DIR.."cache"..path_del)
     env("_CACHE_PATH",env._CACHE_BASE)
+    env("LIB_PATH",env.join_path(env.WORK_DIR,'lib/'..lib))
     local package=package
     local cpath=java.system:getProperty('java.library.path')
     local paths={}

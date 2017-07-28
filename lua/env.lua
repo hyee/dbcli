@@ -960,7 +960,7 @@ function env.onload(...)
     os.setlocale('',"all")
     env.set_command(nil,"EXIT","#Exit environment, including variables, modules, etc",env.exit,false,1)
     env.set_command(nil,"RELOAD","Reload environment, including variables, modules, etc",env.reload,false,1)
-    env.set_command(nil,"LUAJIT","#Switch to luajit interpreter, press Ctrl+Z to exit.",function() os.execute(('"%slib%sx86%sluajit"'):format(env.WORK_DIR,env.PATH_DEL,env.PATH_DEL)) end,false,1)
+    env.set_command(nil,"LUAJIT","#Switch to luajit interpreter, press Ctrl+Z to exit.",function() os.execute(env.join_path(env.LIB_PATH,'luajit')) end,false,1)
     env.set_command(nil,"-P","#Test parameters. Usage: -p <command> [<args>]",env.testcmd,'__SMART_PARSE__',2)
 
     env.init.onload(env)

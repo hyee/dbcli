@@ -2,21 +2,23 @@
     Snapper: to generate delta stats based on specific period.
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Script template can be either Lua or JSON format, elements:
-    1. sql: Mandatory, can be a SQL string, or an array that in Lua/Json format, refer to command 'grid' for more detail
-    2. group_by: Optional, the columns that used for groupping the aggregation(similar to SQL 'GROUP BY' list)
-                 The columns that not listed in both 'group_by' and 'delta_by' will only show the post result
-    3. delta_by: Optional, the columns that for aggregation(similar to SQL 'SUM(...)' list)
-    4. order_by: The columns that used to sort the final result, "-<column_name>" means desc ordering. 
-    5. top_by  : Optional, if not specified then it equals to 'group_by', it is the subset of 'group_by' columns
-    6. per_second: 'on' or 'off'(default), controls if to devide the delta stats by elapsed seconds
-    7. bypassemptyrs: 'on' or 'off'(default),when a 'sql' is an array, and one of which returns no rows, then controls wether to show this sql
-    8. is_clearscreen: 'on' or 'off'(default), controls wether to clear the screen before print the result
-    9. calc_rules: the additional formula on a specific column after the 'delta_by' columns is calculated
-    10.fixed_title: true or false(default), controls wether not to change the 'delta_by' column titles
-    11.include_zero:  true or false(default), controls wether not to show the row in case of its 'delta_by' columns are all 0
-    12.set_ratio: true or false(default), controls wether not to add a percentage column on each 'delta_by' columns
-    13.before_sql: the statements that executed before the 1st snapshot
-    14.after_sql: the statements that executed after the 2nd snapshot
+    Mandatory:
+        sql: can be a SQL string, or an array that in Lua/Json format, refer to command 'grid' for more detail
+    Optional:
+        1. group_by: Optional, the columns that used for groupping the aggregation(similar to SQL 'GROUP BY' list)
+                     The columns that not listed in both 'group_by' and 'delta_by' will only show the post result
+        2. delta_by: Optional, the columns that for aggregation(similar to SQL 'SUM(...)' list)
+        3. order_by: The columns that used to sort the final result, "-<column_name>" means desc ordering. 
+        4. top_by  : Optional, if not specified then it equals to 'group_by', it is the subset of 'group_by' columns
+        5. per_second: 'on' or 'off'(default), controls if to devide the delta stats by elapsed seconds
+        6. bypassemptyrs: 'on' or 'off'(default),when a 'sql' is an array, and one of which returns no rows, then controls wether to show this sql
+        7. is_clearscreen: 'on' or 'off'(default), controls wether to clear the screen before print the result
+        8. calc_rules: the additional formula on a specific column after the 'delta_by' columns is calculated
+        9.fixed_title: true or false(default), controls wether not to change the 'delta_by' column titles
+        10.include_zero:  true or false(default), controls wether not to show the row in case of its 'delta_by' columns are all 0
+        11.set_ratio: true or false(default), controls wether not to add a percentage column on each 'delta_by' columns
+        12.before_sql: the statements that executed before the 1st snapshot
+        13.after_sql: the statements that executed after the 2nd snapshot
 
     The belowing variables can be referenced by the SQLs in 'snapper':
     1. :snap_cmd      :  The command that included by EOF
@@ -61,6 +63,9 @@ function snapper:parse(name,txt,args,file)
         cmd[tostring(k):lower()]=v
     end
 
+    cmd.group_by=cmd.group_by or cmd.grp_cols
+    cmd.top_by=cmd.top_by or cmd.top_grp_cols
+    cmd.delta_by=cmd.delta_by or cmd.agg_cols
     cmd.group_by=cmd.group_by and (','..cmd.group_by:upper()..',') or nil
     cmd.top_by=cmd.top_by and (','..cmd.top_by:upper()..',')
     cmd.delta_by=','..(cmd.delta_by and cmd.delta_by:upper() or '')..','
@@ -264,7 +269,7 @@ function snapper:next_exec()
 
             for idx,_ in ipairs(cmd.rs1.rsidx) do
                 local rs1,rs2=cmd.rs1.rsidx[idx],cmd.rs2.rsidx[idx]
-                local agg_idx,grp_idx,top_grp_idx,agg_model_idx={},{},{},{}
+                local agg_idx,grp_idx,top_grp_idx,agg_model_idx,found_top={},{},{},{}
                 local title=rs2[1]
                 local cols=#title
                 local min_agg_pos,top_agg_idx,top_agg=1e4
@@ -311,6 +316,7 @@ function snapper:next_exec()
                         end
 
                         if cmd.top_by and cmd.top_by:find(','..tit..',',1,true) then
+                            found_top=true
                             top_grp_idx[i]=true
                         end
                     end
@@ -320,8 +326,7 @@ function snapper:next_exec()
                     order_by=order_by:trim(',')
                 end
 
-
-                if not cmd.top_by then top_grp_idx=grp_idx end
+                if not found_top then top_grp_idx=grp_idx end
 
                 result,groups=table.new(1,#rs1+10),{}
                 local grid=grid.new(true)
@@ -406,6 +411,7 @@ function snapper:next_exec()
                         end
                     end
 
+                    rs2.max_rows=rs2.max_rows or cmd.max_rows or cfg.get(self.command.."rows")
                     if #groups>0 then
                         local func=function(a,b) return a[top_agg_idx]>b[top_agg_idx] end
                         for index,group_name in ipairs(groups) do
@@ -439,7 +445,7 @@ function snapper:next_exec()
                 for k=#rs2,1,-1 do rs2[k]=nil end
                 for k,v in pairs(grid) do rs2[k]=v end
                 setmetatable(rs2,getmetatable(grid))
-                rs2.max_rows=rs2.max_rows or cmd.max_rows or cfg.get(self.command.."rows")
+                
             end
             local is_clearscreen=cmd.is_clearscreen
             is_clearscreen=(is_clearscreen==true or is_clearscreen=="on") and true or false
