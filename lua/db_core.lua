@@ -1144,8 +1144,15 @@ function db_core:__onload()
                       The comment inside the SQL supports defining the grid style, format:
                           grid={height=<rows>,width=<columns>,topic='<grid topic>',max_rows=<records>}
 
-        Example:
-            Lua style:
+        Examples:
+        1.  grid {
+                   'select name,value from v$sysstat where rownum<=5',
+               '-','select class,count from v$waitstat where rownum<=10',
+               '+','select event,total_Waits from v$system_event where rownum<20',
+               '|','select stat_id,value from v$sys_time_model where rownum<20',
+            }
+        
+        2.  Lua style:
             ==========
             grid {[[select rownum "#",event,total_Waits from v$system_event where rownum<56]'], --Query#1 left to next merged grid(query#2/query#3/query#4)
                   '|',{'select * from v$sysstat where rownum<=20',                              --Query#2 left to next merged grid(query#3/query#4))
@@ -1165,7 +1172,7 @@ function db_core:__onload()
                        ],
                     '-','select /*grid={"topic":"Metrix"}*/ * from v$sysmetric where rownum<=10']
 
-        Refer to 'System.snap' for more example
+        Refer to 'system.snap' for more example
     ]]
     grid_desc=grid_desc:gsub("%]'%]",']]')
 

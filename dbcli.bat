@@ -57,7 +57,11 @@ rem unpack jar files for the first use
 for /r %%i in (*.pack.gz) do (
    set "var=%%i" &set "str=!var:@=!"
    echo Unpacking %%i to jar file for the first use...
-   jre\bin\unpack200 -q -r "%%i" "!str:~0,-8!"
+   If not exist "jre\bin\unpack200" (
+       jre\bin\unpack200 -q -r "%%i" "!str:~0,-8!"
+   ) else (
+       "!JAVA_BIN!\unpack200" -q -r "%%i" "!str:~0,-8!"
+   )
 )
 
 cmd.exe /c %ANSICON_CMD% .\lib\%bit%\luajit .\lib\bootstrap.lua "!JAVA_EXE!" %*

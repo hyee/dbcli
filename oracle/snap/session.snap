@@ -181,14 +181,23 @@
                      top_sql,
                      lpad(SQLS,4) "SQLs",
                      aas,
-                     total_waits "Waits",
-                     TIME_WAITED_MICRO * 1e-3 "ms",
+                     waits "Waits",
+                     ms "ms",
                      max_ms "max_ms",
                      null "avg_ms"
-              FROM   gv$session_event join ses using(inst_id,sid)
-              LEFT   JOIN ash using(sid#,event)
-              WHERE  total_waits>0
-              AND    wait_class!='Idle']]
+              FROM  (SELECT sid#,
+                            extractvalue(b.column_value, '/ROW/EVENT') event,
+                            max(extractvalue(b.column_value, '/ROW/WAIT_CLASS')) wait_class,
+                            SUM(0+extractvalue(b.column_value, '/ROW/WAITS')) waits, 
+                            SUM(0+extractvalue(b.column_value, '/ROW/MS')) ms
+                     FROM  ses,
+                     TABLE (XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype('
+                     select EVENT,wait_class,total_waits WAITS,TIME_WAITED_MICRO MS FROM gv$session_event
+                     WHERE  inst_id=' || ses.inst_id || ' and sid=' || ses.sid || '
+                     AND    total_waits>0
+                     AND    wait_class!=''Idle'''),'/ROWSET/ROW'))) b
+                     GROUP  BY SID#,extractvalue(b.column_value, '/ROW/EVENT'))
+              LEFT   JOIN ash using(sid#,event)]]
             }
     },
     delta_by="scan,IM(%),HCC(%),Sort,Fetch,Undo,missCU,Unzip,bytes,rows,valid(%),Cache,excluded,proj,pops,re-pops,popr,re-popr,Disk,Pct(%),Swap,HCCCache,HCCZip,HUnZip,OptRead,OptWrite,Elig,SmartScan,SISave,CeUnzip,FcHit,Offload(%),H(%),E(%),rCall,Call,Exec,Commit,Parse,hParse,CcHit,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,value,Time,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,MS,Busy,User,Sys,Idle,Nice",

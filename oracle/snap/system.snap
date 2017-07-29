@@ -70,9 +70,8 @@
                      WHERE  userenv('sid')      in(sid,qcsid)
                      AND    userenv('instance') in(inst_id,qcinst_id)
                      GROUP BY inst_id)
-        SELECT /*+opt_param('_optim_peek_user_binds','false')*/ 
-               inst_id "#",os_time "OS Time","CPUs"
-        FROM   inst
+        SELECT inst_id "#",os_time "OS Time","CPUs"
+        FROM   inst /*grid={topic='Instances'}*/
         RIGHT  JOIN (SELECT inst_id,
                             MAX(DECODE(stat_name, 'NUM_CPUS', VALUE)) --
                             || nullif('/' || MAX(DECODE(stat_name, 'NUM_CPU_CORES', VALUE)), '/') --

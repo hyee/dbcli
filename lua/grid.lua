@@ -656,27 +656,20 @@ function grid.merge(tabs,is_print,prefix,suffix)
                     local width1,width2=(tab.width or (strip(tab[#tab])-m1))+2,(nexttab.width or (strip(nexttab[#nexttab])-m2))+2
                     local height1,height2=(tab.height or (#tab-m1))+2,(nexttab.height or (#nexttab-m2))+2
                     height1,height2=math.min(tab.max_rows or 1e5,height1),math.min(nexttab.max_rows or 1e5,height2)
-                    if sep=='+' and (tab._is_drawed or nexttab._is_drawed) then sep = '|' end
                     if sep=='|' then
                         local maxlen=math.max(height1,height2)
                         tab,nexttab=redraw(tab,width1,maxlen),redraw(nexttab,width2,maxlen)
-                        width1,width2=strip(tab[#tab]),strip(nexttab[#nexttab])
                         local fmt='%s  %s'
                         for rowidx=1,math.max(#tab,#nexttab) do
-                            push(fmt:format(tab[rowidx] or string.rep(' ',width1),nexttab[rowidx] or string.rep(' ',width2)))
+                            push(fmt:format(tab[rowidx],nexttab[rowidx]))
                         end
                     elseif sep=='+' then
-                        local space1,space2=string.rep(' ',width1-2),string.rep(' ',width2-2)
-                        local topic1,topic2=tab.topic or "",nexttab.topic or ""
-                        local fmt="%s|%s"
-                        for rowidx=1,math.max(#tab,#nexttab) do
-                            push(fmt:format(tab[rowidx] or space1,nexttab[rowidx] or space2))
+                        local maxlen=math.max(height1,height2)
+                        tab,nexttab=redraw(tab,width1,maxlen),redraw(nexttab,width2,maxlen)
+                        local fmt='%s%s%s'
+                        for rowidx=1,maxlen do
+                            push(fmt:format(tab[rowidx]:sub(1,-2),(rowidx==1 or rowidx==maxlen) and '+' or '|',nexttab[rowidx]:sub(2)))
                         end
-                        local NOR=env.ansi.NOR
-                        if topic1~="" or topic2 ~="" then
-                            newtab.topic=topic1..(topic1~="" and topic2 ~="" and ' & ' or '')..topic2
-                        end
-                        newtab._is_drawed=tab._is_drawed and nexttab._is_drawed
                     else --sep=='-'
                         local maxlen=math.max(width1,width2)
                         tab,nexttab=redraw(tab,maxlen,height1),redraw(nexttab,maxlen,height2)
