@@ -43,7 +43,6 @@ public class SSHExecutor {
     CompletionHandler completer = new CompletionHandler() {
         @Override
         public void completed(Object o, Object o2) {
-
         }
 
         @Override
@@ -188,7 +187,7 @@ public class SSHExecutor {
                 --wait;
                 Thread.sleep(5);
             } else {
-                int ch = Console.in.read(10L);
+                int ch = Console.input.read(10L);
                 while (ch >= 0) {
                     if (!(ch == 10 && prev == 13) && !(ch == 13 && prev == 10)) {
                         prev = ch;
@@ -196,7 +195,7 @@ public class SSHExecutor {
                         shellWriter.write(ch);
                         --wait;
                     }
-                    ch = Console.in.read(10L);
+                    ch = Console.input.read(10L);
                 }
                 if (wait < 50L) {
                     shellWriter.flush();

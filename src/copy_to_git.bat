@@ -42,4 +42,3 @@ del ..\dbcli.zip
 rmdir /S /Q src 
 zip -r -9 -q ..\dbcli.zip *
 
-pause

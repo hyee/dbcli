@@ -2,13 +2,14 @@ package org.dbcli;
 
 import com.sun.jna.Pointer;
 import org.jline.terminal.Size;
+import org.jline.terminal.impl.jansi.win.JansiWinSysTerminal;
 import org.jline.terminal.impl.jna.win.JnaWinSysTerminal;
 
 import java.io.*;
 import java.nio.charset.Charset;
 import java.util.concurrent.CountDownLatch;
 
-public class WindowsTerminal extends JnaWinSysTerminal implements MyTerminal {
+public class WindowsTerminal extends JansiWinSysTerminal implements MyTerminal {
     private static final Pointer consoleIn = Kernel32.INSTANCE.GetStdHandle(Kernel32.STD_INPUT_HANDLE);
     private static final Pointer consoleOut = Kernel32.INSTANCE.GetStdHandle(Kernel32.STD_OUTPUT_HANDLE);
     private OutputStream output;

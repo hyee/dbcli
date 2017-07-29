@@ -1,0 +1,41 @@
+
+set define off
+set pause on
+
+prompt
+prompt
+prompt **************************************************************************
+prompt **************************************************************************
+prompt
+prompt    MOATS Installer (for 10.2+ databases)
+prompt    =====================================
+prompt
+prompt    This will install MOATS v1.0 into the current schema.
+prompt
+prompt    Ensure that the target schema has the necessary privileges described
+prompt    in the README.txt file. 
+prompt
+prompt    To continue press Enter. To quit press Ctrl-C.
+prompt
+prompt    (c) www.oracle-developer.net & www.e2sn.com
+prompt
+prompt    RAC support is added by Sidney Chen (2014.12)
+prompt
+prompt **************************************************************************
+prompt **************************************************************************
+prompt
+prompt
+
+prompt Creating types...
+@@moats_types.sq
+
+prompt Creating package...
+@@moats.pks
+@@moats.pkb
+
+prompt Creating view...
+@@moats_views.sq
+
+set define on
+set pause off
+

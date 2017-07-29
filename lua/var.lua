@@ -313,7 +313,7 @@ function var.define_column(col,...)
     col=col:upper()
     var.columns[col]=var.columns[col] or {}
     local obj=var.columns[col]
-    
+
     for i=1,#args do
         args[i],arg=args[i]:upper(),args[i+1]
         if args[i]=='NEW_VALUE' or args[i]=='NEW_V' then
@@ -330,16 +330,18 @@ function var.define_column(col,...)
                 obj.format_dir='%-'..siz..'s'
                 obj.format=function(v) return tostring(v) and obj.format_dir:format(tostring(v):sub(1,siz)) or v end
             elseif f=="KMG" or f=="TMB" then --KMGTP
-                local units=f=="KMG" and {'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} or {' ',' T',' M',' B',' T',' Q'}
+                local units=f=="KMG" and {'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} or {' ',' K',' M',' B',' T',' Q'}
                 local div=f=="KMG" and 1024 or 1000
                 obj.format=function(v)
                     local s=tonumber(v)
                     if not s then return v end
+                    local prefix=s<0 and '-' or ''
+                    s=math.abs(s)
                     for i=1,#units do
                         v,s=s,s/div
-                        if s<1 then return string.format(i>1 and "%.2f%s" or "%d%s",v,units[i]) end
+                        if s<1 then return string.format(i>1 and "%s%.2f%s" or "%s%d%s",prefix,v,units[i]) end
                     end
-                    return string.format("%.2f%s",v,units[#units])
+                    return string.format("%s%.2f%s",prefix,v,units[#units])
                 end
             elseif f=="SMHD2" then
                 local units={'s','m','h','d'}
@@ -347,11 +349,13 @@ function var.define_column(col,...)
                 obj.format=function(v)
                     local s=tonumber(v)
                     if not s then return v end
+                    local prefix=s<0 and '-' or ''
+                    s=math.abs(s)
                     for i=1,#units-1 do
                         v,s=s,s/div[i]
-                        if s<1 then return string.format("%.2f%s",v,units[i]) end
+                        if s<1 then return string.format("%s%.2f%s",prefix,v,units[i]) end
                     end
-                    return string.format("%.2f%s",s,units[#units])
+                    return string.format("%s%.2f%s",prefix,s,units[#units])
                 end
             elseif f=="SMHD" or f=="ITV" then
                 local fmt=arg=='SMHD' and '%dD %02dH %02dM %02dS' or
@@ -359,11 +363,13 @@ function var.define_column(col,...)
                 obj.format=function(v)
                     if not tonumber(v) then return v end
                     local s,u=tonumber(v),{}
+                    local prefix=s<0 and '-' or ''
+                    s=math.abs(s)
                     for i=1,3 do
                         s,u[#u+1]=math.floor(s/60),s%60
                     end
                     u[#u+1]=math.floor(s/24)
-                    return fmt:format(u[4],u[3],u[2],u[1]):gsub("^0 ",'')
+                    return prefix..fmt:format(u[4],u[3],u[2],u[1]):gsub("^0 ",'')
                 end
             else
                 local fmt=java.new("java.text.DecimalFormat")
@@ -403,6 +409,7 @@ function var.define_column(col,...)
             var.columns[col]=nil
         end
     end
+    
 end
 
 
@@ -423,6 +430,7 @@ function var.trigger_column(field)
 
     index=obj.format
     if index then field[2]=index(value) end
+    
 
     index=obj.new_value
     if index then

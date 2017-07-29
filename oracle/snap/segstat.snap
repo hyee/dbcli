@@ -16,7 +16,7 @@
         AND    VALUE > 0
         GROUP BY NAME, STATISTIC_NAME
     ]],
-    agg_cols="VALUE,segs",
+    delta_by="VALUE,segs",
     set_ratio='off',
-    grp_cols="NAME, STATISTIC_NAME"
+    group_by="NAME, STATISTIC_NAME"
 }

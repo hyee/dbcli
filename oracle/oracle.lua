@@ -283,61 +283,12 @@ function oracle:parse(sql,params)
 
     local sql_type=self.get_command_type(sql)
     local method,value,typeid,typename,inIdx,outIdx,vname=1,2,3,4,5,6,7
-    if self.working_db_link and not sql:find('GetDBMSOutput',1,true) then
-        local s0,s1,s2,index,typ,siz={},{},{},1,nil,#p2
-        params={}
-        if sql_type=='EXPLAIN' then
-            p1,p2={},{}
+    if sql_type=="SELECT" or sql_type=="WITH" then 
+        if(sql:lower():find('%Wtable%s*%(')) then 
+            cfg.set("pipequery",'on') 
         end
-        for idx=1,#p2 do
-            typ=p1[p2[idx]][typename]
-            if typ=="CURSOR" then
-                p1[p2[idx]][inIdx]=0
-                typ="SYS_REFCURSOR"
-                s1[idx]="V"..(idx+1)..' '..typ..';/* :'..p2[idx]..'*/'
-            else
-                index=index+1;
-                p1[p2[idx]][inIdx]=index
-                typ=(typ=="VARCHAR" and "VARCHAR2(32767)") or typ
-                s1[idx]="V"..(idx+1)..' '..typ..':=:'..index..';/* :'..p2[idx]..'*/'
-            end
-            s0[idx]="dbms_sql.bind_variable@link(hdl,':"..idx.."',V".. (idx+1)..");"   
-        end
-
-        for idx=1,#p2 do
-            index=index+1;
-            p1[p2[idx]][outIdx]=index
-            s2[idx]="dbms_sql.variable_value@link(hdl,':"..(idx+1).."',:"..index..");"
-        end
-
-        if sql_type=='SELECT' or sql_type=='WITH' then
-            index=index+1
-            p2[#p2+1]=index
-            local type,v=self.db_types:set('CURSOR',v)
-            p1[index]={2,nil,self.db_types['CURSOR'].id,'CURSOR',0,index}
-            s2[#s2+1]=':'..index..' := dbms_sql.to_refcursor@link(hdl);'
-        end
-
-        typ = org_sql:len()<=32000 and 'VARCHAR2(32767)' or 'CLOB' 
-        local method=self.db_types:set(typ~='CLOB' and 'VARCHAR' or typ,org_sql)
-        sql='DECLARE V1 %s:=:1;hdl NUMBER:=dbms_sql.open_cursor@link;c int;%sBEGIN dbms_sql.parse@link(hdl,v1,dbms_sql.native);%sc:=dbms_sql.execute@link(hdl);%sEND;'
-        sql=sql:format(typ,table.concat(s1,''),table.concat(s0,''),table.concat(s2,''))
-        sql=sql:gsub("@link",'@'..self.working_db_link)
-        env.log_debug("parse","SQL:",sql)
-        local prep=java.cast(self.conn:prepareCall(sql,1003,1007),"oracle.jdbc.OracleCallableStatement")
-        prep[method](prep,1,org_sql)
-        for k,v in ipairs(p2) do
-            local p=p1[v]
-            if p[inIdx]~=0 then
-                env.log_debug("parse","Param #"..k..'('..p[vname]..')',p[inIdx]..'='..p[value])
-                prep[p[1]](prep,p[inIdx],p[value])
-            end
-            params[v]={'#',p[outIdx],p[typename]}
-            env.log_debug("parse","Param #"..k..'('..p[vname]..')',p[outIdx]..'='..p[typeid]..'('..p[typename]..')')
-            prep['registerOutParameter'](prep,p[outIdx],p[typeid])
-        end
-        return prep,org_sql,params
-    elseif sql_type=='EXPLAIN' or #p2>0 and (sql_type=="DECLARE" or sql_type=="BEGIN" or sql_type=="CALL") then
+    end
+    if sql_type=='EXPLAIN' or #p2>0 and (sql_type=="DECLARE" or sql_type=="BEGIN" or sql_type=="CALL") then
         local s0,s1,s2,index,typ,siz={},{},{},1,nil,#p2
         params={}
 
@@ -414,6 +365,7 @@ function oracle:exec(sql,...)
     end
     return result
 end
+
 
 function oracle:run_proc(sql)
     return self:query('BEGIN '..sql..';END;')
@@ -567,11 +519,35 @@ function oracle:get_library()
             end
         end
         if #files>0 then
-            files[#files+1]=env.join_path(home..'/rdbms/jlib/xdb6.jar')
+            files[#files+1]=env.join_path(env.WORK_DIR..'/oracle/xdb6.jar')
+            loader:addLibrary(env.join_path(home..'/lib'),false)
+            env.luv.os.setenv('LD_LIBRARY_PATH',java.system:getProperty("java.library.path"))
             return files
         end
     end
     return nil
+end
+
+function oracle:grid_db_call(sqls,args)
+    local stmt={'BEGIN'}
+    args=args or {}
+    for idx,sql in ipairs(sqls) do
+        local typ=self.get_command_type(sql.sql)
+        if typ=='SELECT' or typ=='WITH' then
+            local cursor='GRID_CURSOR_'..idx
+            args[cursor]='#CURSOR'
+            stmt[#stmt+1]='  OPEN :'..cursor..' FOR '..sql.sql..';'
+        else
+            stmt[#stmt+1]=sql.sql..';'
+        end
+    end
+    stmt[#stmt+1]='END;'
+    local results=self.super.exec(self,table.concat(stmt,'\n'),args)
+    if type(results)~="table" and type(results)~="userdata" then results=nil end
+    for idx,sql in ipairs(sqls) do
+        local cursor='GRID_CURSOR_'..idx
+        sql.rs=args[cursor] or results
+    end
 end
 
 return oracle.new()

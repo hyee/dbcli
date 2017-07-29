@@ -39,7 +39,7 @@ function history:capture(cmd,args,res,is_internal,command_text,clock)
         table.remove(self,keys[k1])
         for k,v in pairs(keys) do if v>keys[k1] then keys[k]=v-1 end end
     end
-    lastcommand={cmd=cmd,desc=key,args=args,tim=os.clock(),clock=clock,key=k1,text=command_text}
+    lastcommand={cmd=cmd,desc=key,args=args,tim=os.timer(),clock=clock,key=k1,text=command_text}
     if maxsiz < 1 then return end
     table.insert(self,lastcommand)
     while #self>maxsiz do
