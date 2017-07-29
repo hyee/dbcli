@@ -11,8 +11,8 @@ function helper.jvm()
         rows[1][siz],rows[2][siz]=name,value
     end
     for k,v in java.pairs(java.system:getProperties()) do
-        if (type(v)~="string" or #v<=100) and tostring(k)~="" then
-            add(k,v)
+        if tostring(k)~="" then
+            add(k,type(v)=="string" and v:gsub('([:;])','%1\n') or tostring(v))
         end
     end
     set.set("PIVOT",1)
@@ -56,7 +56,7 @@ function helper.env(target,depth)
     end
     add("ENV.locale",os.setlocale())
     local prefix=env.WORK_DIR:len()+1
-    for k,v in pairs(_G) do
+    for k,v in pairs(env) do
         --if not (k=='_G' or k=='_ENV' or k=='env') then
         if type(v)=="table" and type(v.props)=="table" then
             for i,j in pairs(v.props) do

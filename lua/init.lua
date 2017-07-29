@@ -42,9 +42,9 @@ local init={
 }
 
 init.databases={oracle="oracle/oracle",mssql="mssql/mssql",db2="db2/db2",mysql="mysql/mysql",pgsql='pgsql/pgsql'}
-local default_database='oracle'
+local default_database=env.CURRENT_DB or 'oracle'
 
-function init.init_path()
+function init.init_path(env)
     local java=java
     java.system=java.require("java.lang.System")
     java.loader=loader
@@ -59,11 +59,15 @@ function init.init_path()
         env("WORK_DIR",path:gsub('%w+[\\/]%?.lua$',""))
         path_del=env.WORK_DIR:sub(-1)
     end
+    local lib=jit.os:lower()
+    lib=lib=='osx' and 'mac' or lib
+    lib=lib=="windows" and jit.arch or lib
     env("PATH_DEL",path_del)
     env("PLATFORM",console:getPlatform())
     env("IS_WINDOWS",env.PLATFORM=="windows" or env.PLATFORM=="cygwin" or env.PLATFORM=="mingw")
     env("_CACHE_BASE",env.WORK_DIR.."cache"..path_del)
     env("_CACHE_PATH",env._CACHE_BASE)
+    env("LIB_PATH",env.join_path(env.WORK_DIR,'lib/'..lib))
     local package=package
     local cpath=java.system:getProperty('java.library.path')
     local paths={}
@@ -79,27 +83,10 @@ function init.init_path()
         package.path  = package.path .. ';' ..p1
     end
 
-    local luv=require "luv"
     for _,v in ipairs(dirs) do
         loader:mkdir(env.WORK_DIR..v)
     end
-    --Seems to be luv bugs(stdin is ocuppied), bypassed by set title
-    luv.set_process_title("title Initializing...")
 end
-
-function env.join_path(base,...)
-    local paths,is_trim={base,...}
-    if paths[#paths]==true then 
-        is_trim=true
-        table.remove(paths,#paths)
-    end
-    local path=table.concat(paths,env.PATH_DEL):gsub('[\\/]+',env.PATH_DEL)
-    if is_trim then
-        path=path:gsub('[\\/]+$','')
-    end
-    return path
-end
-
 
 local function exec(func,...)
     if func==nil and type(select(1,...))=="string" then 
@@ -221,7 +208,7 @@ function init.load_modules(list,tab,module_name)
 
 end
 
-function init.onload()
+function init.onload(env)
     env.module_list={(env.join_path('lua/env'))}
     init.load_modules(init.module_list,env)
     init.load_database()

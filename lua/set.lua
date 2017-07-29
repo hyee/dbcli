@@ -298,8 +298,8 @@ function cfg.capture_after_cmd(cmd,args)
 end
 
 function cfg.onload()
-    event.snoop("BEFORE_COMMAND",cfg.capture_before_cmd)
-    event.snoop("AFTER_COMMAND",cfg.capture_after_cmd)
+    env.event.snoop("BEFORE_COMMAND",cfg.capture_before_cmd)
+    env.event.snoop("AFTER_COMMAND",cfg.capture_after_cmd)
     env.set_command{obj=nil,cmd=cfg.name, 
                     help_func="Set environment parameters. Usage: set [-a] | {[-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]}",
                     call_func=cfg.doset,

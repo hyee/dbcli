@@ -23,35 +23,29 @@ setmetatable(_G,global_meta)
 
 
 local env=setmetatable({},{
-    __call =function(self, key, value)
-            rawset(self,key,value)
-            _G[key]=value
-        end,
+    __call =function(self, key, value) rawset(self,key,value) end,
     __index=function(self,key) return _G[key] end,
-    __newindex=function(self,key,value) self(key,value) end
+    __newindex=function(self,key,value) rawset(self,key,value) end
 })
-_G['env']=env
 
-local mt = getmetatable(_G)
+local mt={}
+for k,v in pairs{
+    __declared = {},
+    __index    = function(t,key) return rawget(env,key) end,
+    __newindex = function (t, n, v)
+        if not mt.__declared[n] and env.WORK_DIR then
+            if debug_mode and env.IS_ENV_LOADED and n~='reset_input' and n:upper()~=n then print('Detected unexpected global var "'..n..'" with', debug.traceback()) end
+            rawset(mt.__declared, n,env.callee(5))
+        end
+        rawset(env, n, v)
+    end
+} do mt[k]=v end
 
-if mt == nil then
-    mt = {}
-    setmetatable(_G, mt)
-end
-
-mt.__declared = {}
+rawset(_G,'env',env)
+rawset(env,'globals',mt.__declared)
+setmetatable(_G,mt)
 
 local debug_mode=os.getenv("DEBUG_MODE")
-mt.__newindex = function (t, n, v)
-    if not mt.__declared[n] and env.WORK_DIR then
-        if debug_mode and env.IS_ENV_LOADED and n~='reset_input' and n:upper()~=n then print('Detected unexpected global var "'..n..'" with', debug.traceback()) end
-        rawset(mt.__declared, n,env.callee(5))
-    end
-    rawset(t, n, v)
-end
-
-env.globals=mt.__declared
-
 
 local function abort_thread()
     if coroutine.running () then
@@ -233,7 +227,6 @@ local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,
 
     cmd=cmds[1]
     
-
     local src=env.callee()
     local desc=help_func
     local args= obj and {obj,cmd} or {cmd}
@@ -455,12 +448,12 @@ function env.register_thread(this,isMain)
     local index,clock=threads[this],threads._clock
     if not index then
         index=#threads+1
-        threads[this],threads[index],clock[index]=index,this,os.clock()
+        threads[this],threads[index],clock[index]=index,this,os.timer()
     else
         for i=index+1,#threads do 
             threads[i],threads[threads[i]]=nil,nil
         end
-        if not clock[index] then clock[index]=os.clock() end
+        if not clock[index] then clock[index]=os.timer() end
     end
     co_stacks[index]=this
     return this,isMain,index
@@ -488,12 +481,13 @@ function env.exec_command(cmd,params,is_internal,arg_text)
         end
     end
     local res={pcall(_exec_command,name,params,arg_text)}
+    if not env then return end
     if event and not is_internal then 
         event("AFTER_COMMAND",name,params,res[2],is_internal,arg_text)
     end
     if not isMain and not res[1] and (not env.set or env.set.get("OnErrExit")=="on") then error() end
 
-    local clock=math.floor((os.clock()-_THREADS._clock[index])*1e3)/1e3
+    local clock=math.floor((os.timer()-_THREADS._clock[index])*1e3)/1e3
 
     if event and not is_internal then
         event("AFTER_SUCCESS_COMMAND",name,params,res[2],is_internal,arg_text,clock)
@@ -901,6 +895,7 @@ end
 local print_debug
 local debug_group={ALL="all"}
 function env.log_debug(name,...)
+    if not env.set then return end
     name=name:upper()
     if not debug_group[name] then debug_group[name]=env.callee(3) end
     if not print_debug or env.set.get('debug')=="off" then return end
@@ -956,16 +951,19 @@ function env.onload(...)
         end
     end
 
-    env.init=require("init")
-    env.init.init_path()
+    local path=debug.getinfo(1, "S").source:sub(2):gsub('[%w%.]+$','init.lua')
+    local init,err=loadfile(path)
+    if not init then error(err) end
+    env.init=init()
+    env.init.init_path(env)
 
     os.setlocale('',"all")
     env.set_command(nil,"EXIT","#Exit environment, including variables, modules, etc",env.exit,false,1)
     env.set_command(nil,"RELOAD","Reload environment, including variables, modules, etc",env.reload,false,1)
-    env.set_command(nil,"LUAJIT","#Switch to luajit interpreter, press Ctrl+Z to exit.",function() os.execute(('"%slib%sx86%sluajit"'):format(env.WORK_DIR,env.PATH_DEL,env.PATH_DEL)) end,false,1)
+    env.set_command(nil,"LUAJIT","#Switch to luajit interpreter, press Ctrl+Z to exit.",function() os.execute(env.join_path(env.LIB_PATH,'luajit')) end,false,1)
     env.set_command(nil,"-P","#Test parameters. Usage: -p <command> [<args>]",env.testcmd,'__SMART_PARSE__',2)
 
-    env.init.onload()
+    env.init.onload(env)
     
     env.set_prompt(nil,prompt_stack._base,nil,0)
     if env.set and env.set.init then
@@ -989,9 +987,9 @@ function env.onload(...)
         env.event.callback("ON_ENV_LOADED")
     end
 
-    set_command(nil,"/*"    ,   '#Comment',        nil   ,env.check_comment,2)
-    set_command(nil,"--"    ,   '#Comment',        nil   ,false,2)
-    set_command(nil,"REM"   ,   '#Comment',        nil   ,false,2)
+    env.set_command(nil,"/*"    ,   '#Comment',        nil   ,env.check_comment,2)
+    env.set_command(nil,"--"    ,   '#Comment',        nil   ,false,2)
+    env.set_command(nil,"REM"   ,   '#Comment',        nil   ,false,2)
     env.reset_title()
     console:setCommands(env.root_cmds)
     --load initial settings
@@ -1015,27 +1013,27 @@ function env.unload()
     if env.event then env.event.callback("ON_ENV_UNLOADED") end
     local e,msg=pcall(env.init.unload,init.module_list,env)
     if not e then print(msg) end
-    env.init=nil
-    package.loaded['init']=nil
     _CMDS.___ABBR___={}
     if env.jit and env.jit.flush then
         e,msg=pcall(env.jit.flush)
         if not e then print(msg) end
     end
+    setmetatable(_G,nil)
 end
 
-env.REOAD_SIGNAL=false
+
 function env.reload()
     print("Reloading environment ...")
-    env.unload()
     java.loader.ReloadNextTime=env.CURRENT_DB
-    env.REOAD_SIGNAL=true
+    env.RELOAD_SIGNAL=true
+    env.unload()
 end
 
 function env.exit()
     print("Exited.")
+    env.RELOAD_SIGNAL=false
     env.unload()
-    os.exit(true,true)
+    java.system.exit(0)
 end
 
 function env.load_data(file,isUnpack,callback)
@@ -1181,6 +1179,19 @@ function env.ask(question,range,default)
 
     if isValid then return value end
     return env.ask(question,range,default)
+end
+
+function env.join_path(base,...)
+    local paths,is_trim={base,...}
+    if paths[#paths]==true then 
+        is_trim=true
+        table.remove(paths,#paths)
+    end
+    local path=table.concat(paths,env.PATH_DEL):gsub('[\\/]+',env.PATH_DEL)
+    if is_trim then
+        path=path:gsub('[\\/]+$','')
+    end
+    return path
 end
 
 return env

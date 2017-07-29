@@ -1,5 +1,5 @@
 local ffi = require("ffi")
-local string,table,java=string,table,java
+local string,table,java,loadstring=string,table,java,loadstring
 
 function string.initcap(v)
     return (' '..v):lower():gsub("([^%w])(%w)",function(a,b) return a..b:upper() end):sub(2)
@@ -10,7 +10,7 @@ function os.shell(cmd,args)
     io.popen(cmd..(args and (" "..args) or ""))
 end
 
-local _os=env.PLATFORM
+
 function os.find_extension(exe)
     local err="Cannot find "..exe.." in the default path, please add it into EXT_PATH of file data/init.cfg"
     if exe:find('[\\/]') then
@@ -120,15 +120,23 @@ function string.rpad(str, len, char)
     return (str and ((char or ' '):rep(len - #str)..str):sub(-len)) or str
 end
 
-function string.cpad(str, len, char)
+function string.cpad(str, len, char,func)
     str,char=tostring(str) or str,char or ' '
     if not str then return str end
-    char=char:rep(math.floor((len-#str)/2))
-    return string.format("%s%s%s",char,str,char):sub(1,len)
+    str=str:sub(1,len)
+    left=char:rep(math.floor((len-#str)/2))
+    right=char:rep(len-#left-#str)
+    return type(func)~="function" and string.format("%s%s%s",left,str,right) or func(left,str,right)
 end
 
 
 if not table.unpack then table.unpack=function(tab) return unpack(tab) end end
+
+local system=java.system
+local clocker=system.currentTimeMillis
+function os.timer()
+    return clocker()/1000
+end
 
 function string.from(v)
     local path=_G.WORK_DIR
@@ -157,6 +165,19 @@ function table.append(tab,...)
     end
 end
 
+local json=json
+if json.use_lpeg then json.use_lpeg () end
+function table.totable(str)
+    local txt,err,done=loadstring('return '..str)
+    if not txt then 
+        done,txt=pcall(json.decode,str) 
+    else
+        done,txt=pcall(txt)
+    end
+    env.checkerr(done,'Error while parsing text into Lua table:' ..(err or tostring(txt) or '')..'\n'..str)
+    return txt
+end
+
 local function compare(a,b)
     local t1,t2=type(a[1]),type(b[1])
     if t1==t2 and t1~='table' and t1~='function' and t1~='userdata' and t1~='thread'  then return a[1]<b[1] end
@@ -165,9 +186,10 @@ local function compare(a,b)
     return tostring(a[1])<tostring(b[1])
 end
 
-function math.round(num,digits)
-    digits=digits or 0
-    return math.floor(10^digits*num+0.5)/(10^digits)
+function math.round(exact, quantum)
+    quantum = quantum and 0.1^quantum or 1
+    local quant,frac = math.modf(exact/quantum)
+    return quantum * (quant + (frac > 0.5 and 1 or 0))
 end
 
 

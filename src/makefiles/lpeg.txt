@@ -1,1 +1,2 @@
 gcc -shared -fPIC -O2 -s -o lpeg.so *.c -I/d/LuaJIT-2.1/src libluajit5.1.so
+gcc -shared -std=c99 -static-libgcc -O2 -s -o lpeg.dll *.c -I/d/LuaJIT-2.1/src /d/dbcli/lib/x86/lua5.1.dll

@@ -2,8 +2,10 @@
   Generate delta values based on gv$session_event,gv$sess_time_model. Usage: @@NAME [options] [-e|-t] {{<0|sid> [<inst_id>] [keyword]}|["<commands>"]} 
   -e: only show info of gv$session_event
   -t: only show info of gv$sess_time_model
+  -s: Show stats data based on per second
   --[[
         &filter: default={a}, e={e}, t={t}
+        &sec1: total={off}, s={on}
   --]]
 ]]*/
 {
@@ -23,8 +25,9 @@
         and     (:V3 is null or lower(name) like '%&V3%')
         and     count>0
     ]],
-    agg_cols="ms,count",
-    agg_model="ms(avg)=ms/count",
-    grp_cols="inst_id,sid,class#,name",
-    top_grp_cols="name"
+    delta_by="ms,count",
+    calc_rules={avg_ms='[ms]/[count]'},
+    per_second="&sec1",
+    group_by="inst_id,sid,class#,name",
+    top_by="name"
 }

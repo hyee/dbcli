@@ -6,7 +6,7 @@ Show all database instances
 ]]*/
 
 --Show node-level sysdate by querying the logon time of px sessions from px queries
-WITH PX AS (SELECT /*+materialize*/ * FROM gv$px_session WHERE sid IS NOT NULL),
+WITH PX AS (SELECT /*+materialize*/ * FROM gv$px_session WHERE qcinst_id IS NOT NULL),
      SS AS (SELECT /*+materialize*/ inst_id,sid,logon_time from gv$session where status='ACTIVE' and username=user),
      tim AS(SELECT /*+no_merge*/ inst_id,max(logon_time) tim
             FROM   ss natural join PX
