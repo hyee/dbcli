@@ -198,7 +198,7 @@ function ansi.addCompleter(name,args)
 --]]
 end
 
-function ansi.clear_sceen()
+function ansi.clear_screen()
     os.execute(env.PLATFORM=='windows' and "cls" or "clear")
 end
 
@@ -248,7 +248,6 @@ function ansi.enable_color(name,value)
     else
         if enabled then return end
         for k,v in pairs(base_color) do color[k]=v end
-        --env.set_command(nil,{"clear","cls"},"Clear screen ",ansi.clear_sceen,false,1)
         for k,v in pairs(ansi.cfg() or {}) do
             env.set.init(k,v[4],ansi.define_color,v[2],v[3])
             if v[1] ~= v[4] then
@@ -261,7 +260,7 @@ function ansi.enable_color(name,value)
 end
 
 function ansi.onload()
-    env.set_command(nil,{"clear","cls"},"Clear screen ",ansi.clear_sceen,false,1)
+    env.set_command(nil,{"clear","cls"},"Clear screen ",ansi.clear_screen,false,1)
     writer=console:getOutput()
     ansi.loaded=true
     --str_completer=java.require("jline.console.completer.StringsCompleter",true)
@@ -275,11 +274,21 @@ end
 ansi.escape="%f[\\]\\[eE](%[[%d;]*[mK])"
 ansi.pattern="\27%[[%d;]*[mK]"
 
-function ansi.strip_ansi(str)
+local function _strip_ansi(str)
     if not enabled then return str end
     return str:gsub(ansi.pattern,""):gsub(ansi.escape,""):gsub("%$(.-)%$",function(s)
             return (ansi.cfg(s) or color[s]) and '' or "$"..s.."$"
         end)
+end
+
+function ansi.strip_ansi(str)
+    local e,s=pcall(_strip_ansi,str)
+    if not e then
+        print(debug.traceback())
+        print(table.dump(str))
+        error(s)
+    end
+    return s
 end
 
 function string.strip_ansi(str)

@@ -10,7 +10,7 @@ function interval.itv(sec,count,target)
     local thread,cmds=threads[#threads-1],stack[threads[#threads-1]]
     if cmd=="START" then
         target=target and target:gsub("[ \t]+$","")
-        stack[thread]={timer=count or 1,clock=os.clock(),msg=target,{interval.cmd ,{cmd,org_count,target}}}
+        stack[thread]={timer=count or 1,clock=os.timer(),msg=target,{interval.cmd ,{cmd,org_count,target}}}
         if target then print(target) end
     elseif cmd=="END" then
         if not cmds then return end;

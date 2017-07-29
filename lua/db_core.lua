@@ -26,10 +26,7 @@ function db_Types:get(position,typeName,res,conn)
     local getter=self[typeName].getter
 
     local rtn,value=pcall(res[getter],res,position)
-    if not rtn then
-        print('Column:',position,"    Datatype:",self[typeName].name,"    ",value)
-        return nil
-    end
+    env.checkerr(rtn,value)
    
     if value == nil or res:wasNull() then return nil end
     if not self[typeName].handler then return value end
@@ -213,7 +210,7 @@ function ResultSet:close(rs)
         if not rs:isClosed() then rs:close() end
         if self[rs] then self[rs]=nil end
     end
-    local clock=os.clock()
+    local clock=os.timer()
     --release the resultsets if they have been closed(every 1 min)
     if  self.__clock then
         if clock-self.__clock > 60 then
@@ -266,6 +263,16 @@ end
 function ResultSet:print(res,conn,prefix)
     local result,hdl={},nil
     --print(table.dump(self:getHeads(res,-1)))
+    if cfg.get("pipequery")=="on" then
+        if not res.isClosed or res:isClosed() then return end
+        local head=self:getHeads(res,limit).__titles
+        if #head==1 then
+            res:setFetchSize(2)
+            loader:AsyncPrintResult(res,env.space,300)
+            return
+        end
+    end
+    res:setFetchSize(cfg.get("FETCHSIZE"))
     local maxrows,pivot=cfg.get("printsize"),cfg.get("pivot")
     if pivot~=0 then maxrows=math.abs(pivot) end
     local result=self:rows(res,maxrows,true,cfg.get("null"))
@@ -344,7 +351,7 @@ function db_core.get_command_type(sql)
     for word in sql:gsub("%s*/%*.-%*/%s*",' '):gmatch("[^%s%(%)]+") do
         local w=word:upper()
         if not excluded_keywords[w] then
-            list[#list+1]=(#list < 3 and word or w):gsub('["`]','')
+            list[#list+1]=(#list < 3 and w or word):gsub('["`]','')
             if #list > 3 then break end
         end
     end
@@ -356,7 +363,7 @@ function db_core.print_feed(sql,result)
     if cfg.get("feed")~="on" or not sql then return end
     local secs=''
     if cfg.get("PROMPT")=='TIMING' and db_core.__start_clock then
-        secs=' (' ..math.round(os.clock()-db_core.__start_clock,3)..' secs)'
+        secs=' (' ..math.round(os.timer()-db_core.__start_clock,3)..' secs)'
     end
     local cmd,obj=db_core.get_command_type(sql)
     local feed=db_core.feed_list[cmd] 
@@ -378,8 +385,8 @@ function db_core:ctor()
     self.db_types:load_sql_types('java.sql.Types')
     self.__stmts = {}
     self.type="unknown"
-    set_command(self,"commit",nil,self.commit,false,1)
-    set_command(self,"rollback",nil,self.rollback,false,1)
+    env.set_command(self,"commit",nil,self.commit,false,1)
+    env.set_command(self,"rollback",nil,self.rollback,false,1)
 end
 
 function db_core:login(account,list)
@@ -403,14 +410,14 @@ end
    returns: for the sql is a query stmt, then return the result set, otherwise return the affected rows(>=-1)
 ]]
 
-function db_core:check_sql_method(event_name,sql,method,...)
+function db_core:call_sql_method(event_name,sql,method,...)
     local res,obj=pcall(method,...)
     if res==false then
         local info,internal={db=self,sql=sql,error=tostring(obj):gsub('%s+$','')}
         info.error=info.error:gsub('.*Exception:?%s*','')
         event(event_name,info)
         if info and info.error and info.error~="" then
-            if not self:is_internal_call(sql) and info.sql  and env.ROOT_CMD~=self.get_command_type(sql) then
+            if not self:is_internal_call(sql) and info.sql and env.ROOT_CMD~=self.get_command_type(sql) then
                 if cfg.get("SQLERRLINE")=="off" then
                     print('SQL: '..info.sql:gsub("\n","\n     "))
                 else
@@ -427,7 +434,7 @@ function db_core:check_sql_method(event_name,sql,method,...)
 end
 
 function db_core:check_params(sql,prep,p1,params)
-    local meta=self:check_sql_method('ON_SQL_PARSE_ERROR',sql,prep.getParameterMetaData,prep)
+    local meta=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,prep.getParameterMetaData,prep)
     local param_count=meta:getParameterCount()
     if param_count~=#p1 then
         local errmsg="Parameters are unexpected, below are the detail:\nSQL:"..string.rep('-',80).."\n"..sql
@@ -485,7 +492,7 @@ function db_core:parse(sql,params,prefix,prep)
             return '?'
         end)
 
-    if not prep then prep=self:check_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007) end
+    if not prep then prep=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007) end
 
     self:check_params(sql,prep,p1,params)
 
@@ -509,7 +516,7 @@ end
 
 function db_core:exec(sql,args)
     if not self:is_internal_call(sql) then
-        db_core.__start_clock=os.clock()
+        db_core.__start_clock=os.timer()
     end
     if #env.RUNNING_THREADS<=2 then
         collectgarbage("collect")
@@ -546,12 +553,13 @@ function db_core:exec(sql,args)
     prep,sql,params=self:parse(sql,params)
     prep:setEscapeProcessing(false)
     self.__stmts[#self.__stmts+1]=prep
-    prep:setFetchSize(cfg.get('FETCHSIZE'))
+    prep:setFetchSize(1)
     prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
     self.current_stmt=prep
     env.log_debug("db","SQL:",sql)
     env.log_debug("db","Parameters:",params)
-    local is_query=self:check_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
+
+    local is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
     self.current_stmt=nil
     --is_query=prep:execute()
     local is_output,index,typename=1,2,3
@@ -749,6 +757,82 @@ function db_core:get_value(sql,args)
     return rtn and #rtn==1 and rtn[1] or rtn
 end
 
+function db_core:grid_call(tabs,rows_limit,args)
+    local db_call=self.grid_db_call
+    local rs_idx={}
+    local function parse_sqls(tabs)
+        local result={}
+        for k,v in ipairs(tabs) do result[k]=v end
+        for i=#result,1,-1 do
+            local tab=result[i]
+            if type(tab) == "table" then
+                result[i]=parse_sqls(tab,rows_limit)
+            elseif type(tab) ~= "string" then
+                env.raise("Unexpected table element, string only:"..tostring(tab))
+            elseif #tab>1 then
+                local all,grid_cfg=tab:match("(grid%s*=%s*(%b{}))")
+                if grid_cfg then
+                    tab=tab:replace(all,'',true)
+                    grid_cfg=table.totable(grid_cfg)
+                else
+                    grid_cfg={}
+                end
+                grid_cfg._is_result=true
+                result[i]={grid_cfg=grid_cfg,sql=tab,index=i}
+                rs_idx[#rs_idx+1]=result[i]
+            end
+        end
+        return result
+    end
+    
+    --execute all SQLs firstly, then fetch later
+    local function fetch_result(tabs)
+        for k=#tabs,1,-1 do
+            local v=tabs[k]
+            if type(v)=="table" then
+                local rs=v.rs
+                if not rs and not v.sql then 
+                    tabs[k]=fetch_result(v)
+                elseif v.sql and type(rs)~="table" and type(rs)~="userdata" then
+                    table.remove(tabs,k)
+                elseif type(rs)=="table" then
+                    local tab={}
+                    for x,y in ipairs(rs) do 
+                        tab[x]=self.resultset:rows(y,rows_limit)
+                        for a,b in pairs(v.grid_cfg) do tab[x][a]=b end
+                    end
+                    tabs[k]=tab
+                else
+                    tabs[k]=self.resultset:rows(rs,rows_limit)
+                    for a,b in pairs(v.grid_cfg) do tabs[k][a]=b end
+                end
+            elseif type(v)~='string' or #v~=1 then
+                table.remove(tabs,k)
+            end
+        end
+        return tabs
+    end
+
+    local result=parse_sqls(tabs)
+    if type(db_call)=='function' then
+        db_call(self,rs_idx,args)
+    else
+        for idx,info in ipairs(rs_idx) do
+            info.rs=self:internal_call(info.sql,args)
+        end
+    end
+
+    return fetch_result(result)
+end
+
+
+function db_core:grid_print(sqls)
+    env.checkhelp(sqls)
+    local grid_cfg=table.totable(sqls)
+    local tabs=self:grid_call(grid_cfg,cfg.get("printsize"),{})
+    env.grid.merge(tabs,true)
+end
+
 function db_core:set_feed(value)
     self.feed=value
 end
@@ -791,7 +875,7 @@ local function print_export_result(filename,start_clock,counter)
     local str=""
     if start_clock then
         counter = (counter and (counter..' rows') or 'Data')..' exported'
-        str=counter..' in '..math.round(os.clock()-start_clock,3)..' seconds. '
+        str=counter..' in '..math.round(os.timer()-start_clock,3)..' seconds. '
     end
     print(str..'Result written to file '..filename)
 end
@@ -835,13 +919,13 @@ function db_core:sql2file(filename,sql,method,ext,...)
             if type(rs)=="userdata" then
                 local file=filename..tostring(idx)
                 print("Start to extract result into "..file)
-                clock,counter=os.clock(),loader[method](loader,rs,file,...)
+                clock,counter=os.timer(),loader[method](loader,rs,file,...)
                 print_export_result(file,clock,counter)
             end
         end
     else
         print("Start to extract result into "..filename)
-        clock,counter=os.clock(),loader[method](loader,result,filename,...)
+        clock,counter=os.timer(),loader[method](loader,result,filename,...)
         print_export_result(filename,clock,counter)
     end
     self:clearStatements(true)
@@ -985,6 +1069,7 @@ function db_core:disconnect(feed)
     end
 end
 
+
 function db_core:__onload()
     self.root_dir=(self.__class.__className):gsub('[^\\/]+$','')
     local jars
@@ -1041,11 +1126,70 @@ function db_core:__onload()
     cfg.init("CSVSEP",",",set_param,"db.core","Define the default separator between CSV fields.")
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
     env.event.snoop('TRIGGER_LOGIN',self.login,self)
-    set_command(self,{"reconnect","reconn"}, "Re-connect to database with the last login account.",self.reconnnect,false,2)
-    set_command(self,{"disconnect","disc"},"Disconnect current login.",self.disconnect,false,2)
-    set_command(self,"sql2file",'Export Query Result into SQL file. Usage: @@NAME <file_name>[.sql|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <sql|cursor>'..txt ,self.sql2sql,'__SMART_PARSE__',3)
-    set_command(self,"sql2csv",'Export Query Result into CSV file. Usage: @@NAME <file_name>[.csv|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <sql|cursor>'..txt ,self.sql2csv,'__SMART_PARSE__',3)
-    set_command(self,"csv2sql",'Convert CSV file into SQL file. Usage: @@NAME <sql_file>[.sql|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <csv_file>'..txt ,self.csv2sql,false,3)
+    env.set_command(self,{"reconnect","reconn"}, "Re-connect to database with the last login account.",self.reconnnect,false,2)
+    env.set_command(self,{"disconnect","disc"},"Disconnect current login.",self.disconnect,false,2)
+    env.set_command(self,"sql2file",'Export Query Result into SQL file. Usage: @@NAME <file_name>[.sql|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <sql|cursor>'..txt ,self.sql2sql,'__SMART_PARSE__',3)
+    env.set_command(self,"sql2csv",'Export Query Result into CSV file. Usage: @@NAME <file_name>[.csv|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <sql|cursor>'..txt ,self.sql2csv,'__SMART_PARSE__',3)
+    env.set_command(self,"csv2sql",'Convert CSV file into SQL file. Usage: @@NAME <sql_file>[.sql|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <csv_file>'..txt ,self.csv2sql,false,3)
+    local grid_desc=[[
+        Print merge grid based on inputed queries: Usage: @@NAME {"<SQL1>",<sep>,["<SQL2>"| {...} ]}
+        The input parameter must start with '{' and end with '}', as a LUA or JSON table format, support nested LUA/JSON tables
+        
+        Elements:
+            sep     : Can be 3 values:
+                        '+': merge query1 and query2 as single grid
+                        '-': query1 above query2
+                        '|': query1 left of query2
+            sql text: Must be a string which enclosed by '',"", or [[ ]']
+                      The comment inside the SQL supports defining the grid style, format:
+                          grid={height=<rows>,width=<columns>,topic='<grid topic>',max_rows=<records>}
+
+        Examples:
+        1.  grid {
+                   'select name,value from v$sysstat where rownum<=5',
+               '-','select class,count from v$waitstat where rownum<=10',
+               '+','select event,total_Waits from v$system_event where rownum<20',
+               '|','select stat_id,value from v$sys_time_model where rownum<20',
+            }
+        
+        2.  Lua style:
+            ==========
+            grid {[[select rownum "#",event,total_Waits from v$system_event where rownum<56]'], --Query#1 left to next merged grid(query#2/query#3/query#4)
+                  '|',{'select * from v$sysstat where rownum<=20',                              --Query#2 left to next merged grid(query#3/query#4))
+                       '-', {'select rownum "#",name,hash from v$latch where rownum<=30',       --Query#3 above to query#4
+                             '+',"select /*grid={topic='Wait State'}*/ * from v$waitstat"
+                            }
+                       },
+                  '-','select /*grid={topic="Metrix"}*/ * from v$sysmetric where rownum<=10'    --Query#5 under merged grid(query#1-#4)
+                  }
+
+            JSON style:
+            ===========
+             grid ['select rownum "#",event,total_Waits from v$system_event where rownum<56', 
+                   '|',['select * from v$sysstat where rownum<=20',                            
+                        '-', ['select rownum "#",name,hash from v$latch where rownum<=30',     
+                              '+',"select /*grid={'topic':'Wait State'}*/ * from v$waitstat"]
+                       ],
+                    '-','select /*grid={"topic":"Metrix"}*/ * from v$sysmetric where rownum<=10']
+
+        Refer to 'system.snap' for more example
+    ]]
+    grid_desc=grid_desc:gsub("%]'%]",']]')
+
+    env.set_command{obj=self,cmd="grid", 
+                    help_func=grid_desc,
+                    call_func=self.grid_print,
+                    is_multiline=function(cmd,rest)
+                        if not rest:find('^%s*{') and not rest:find('^%s*%[') then return true,rest end
+                        local part=rest:match('^%s*(%b{})') or rest:match('^%s*(%b[])')
+                        if part then
+                            return true,part
+                        else
+                            return false,rest
+                        end
+                    end,
+                    parameters=2,
+                    is_dbcmd=true}
 end
 
 function db_core:__onunload()

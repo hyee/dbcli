@@ -19,7 +19,9 @@ function db2:ctor(isdefault)
 end
 
 function db2:connect(conn_str)
+    
     java.system:setProperty('db2.jcc.charsetDecoderEncoder',3)
+
     local args
     local usr,pwd,conn_desc
     if type(conn_str)=="table" then
@@ -69,6 +71,7 @@ function db2:connect(conn_str)
     local prompt=(args.jdbc_alias or url):match('([^:/@]+)$')
     if event then event("BEFORE_DB2_CONNECT",self,sql,args,result) end
     env.set_title("")
+
     self.super.connect(self,args)
 
     self.conn=java.cast(self.conn,"com.ibm.db2.jcc.DB2Connection")

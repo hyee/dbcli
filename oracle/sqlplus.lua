@@ -69,8 +69,8 @@ function sqlplus:make_sqlpath()
         if c1~=c2 then return c1<c2 end
         return a<b
     end)
-    env.uv.os.setenv("SQLPATH",table.concat(path,env.IS_WINDOWS and ';' or ':'))
-    
+    self.env['SQLPATH']=table.concat(path,env.IS_WINDOWS and ';' or ':')
+    env.uv.os.setenv("SQLPATH",self.env['SQLPATH'])
     --self.proc:setEnv("SQLPATH",self.env['SQLPATH'])
 end
 
@@ -189,7 +189,7 @@ function sqlplus:__onload()
 end
 
 function sqlplus:onload()
-    self:make_sqlpath()
+    --self:make_sqlpath()
     env.event.snoop("AFTER_ORACLE_CONNECT",self.terminate,self)
     env.event.snoop("ON_DB_DISCONNECTED",self.terminate,self)
     local help=[[

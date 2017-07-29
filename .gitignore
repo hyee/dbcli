@@ -2,5 +2,4 @@
 data/init.cfg
 cache/
 plugin.cfg
-jre/
 jansi*.*

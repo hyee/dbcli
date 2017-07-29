@@ -18,7 +18,7 @@
         ProFi:writeReport( string/filename/'ProFi.txt' )
         ProFi:reset()
         ProFi:setHookCount( number/hookCount/0 )
-        ProFi:setGetTimeMethod( function/getTimeMethod/os.clock )
+        ProFi:setGetTimeMethod( function/getTimeMethod/os.timer )
         ProFi:setInspect( string/methodName, number/levels/1 )
 ]]
 
@@ -169,7 +169,7 @@ function ProFi:setSortMethod( sortType )
 end
 
 --[[
-    By default the getTime method is os.clock (CPU time),
+    By default the getTime method is os.timer (CPU time),
     If you wish to use other time methods pass it to this function.
     Param: [getTimeMethod:function]
 ]]
@@ -452,7 +452,7 @@ end
 -- Local Functions:
 -----------------------
 
-getTime = os.clock
+getTime = os.timer
 
 onDebugHook = function( hookType )
     local tim,hooker=getTime(),ProFi.hookfunc

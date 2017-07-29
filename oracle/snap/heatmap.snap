@@ -11,8 +11,8 @@
         SELECT INST_ID,EVENT,WAIT_TIME_MILLI,WAIT_COUNT FROM gv$event_histogram natural join e
         order by 1,2,3
     ]],
-    agg_cols="WAIT_COUNT",
-    grp_cols="INST_ID,EVENT,WAIT_TIME_MILLI",
+    delta_by="WAIT_COUNT",
+    group_by="INST_ID,EVENT,WAIT_TIME_MILLI",
     include_zero=true,
-    sort="1,2,3"
+    order_by="1,2,3"
 }

@@ -84,6 +84,7 @@ function graph:run_sql(sql,args,cmd,file)
         for i=1,#sql do self:run_sql(sql[i],args[i],cmd[i],file[i]) end
         return
     end
+    sql=env.var.update_text(sql,1,args)
 
     if not template then
         template=env.load_data(env.join_path(env.WORK_DIR,"lib","dygraphs.html"),false)
@@ -104,12 +105,8 @@ function graph:run_sql(sql,args,cmd,file)
 
     local charts,rs,rows={}
     
-    local context,err=sql
-    if type(sql)=='string' then 
-        context,err=loadstring(('return '..sql):gsub(self.comment,"",1))
-        env.checkerr(context,"Error when loading file %s: %s",file,err)
-        context=context()
-    end
+    local context,err=table.totable(sql)
+   
     
     env.checkerr(type(context)=="table" and type(context._sql)=="string","Invalid definition, should be a table with '_sql' property!")
     local default_attrs={

@@ -28,7 +28,8 @@ BEGIN
             SELECT DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => '&format-SQL_FULLTEXT-SQL_TEXT',
                                                     TYPE         => 'TEXT',
                                                     sql_id       => :V1,
-                                                    SQL_EXEC_ID  => :V2) AS report
+                                                    SQL_EXEC_ID  => :V2,
+                                                    inst_id      => :INSTANCE) AS report
             FROM   dual;
         BEGIN
             :rs:=DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => 'ALL',TYPE=> 'ACTIVE',sql_id=> :V1,SQL_EXEC_ID=> :V2) ;
