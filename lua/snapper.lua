@@ -273,7 +273,7 @@ function snapper:next_exec()
                 local title=rs2[1]
                 local cols=#title
                 local min_agg_pos,top_agg_idx,top_agg=1e4
-                local elapsed=cmd.per_second and cmd.elapsed or 1
+                local elapsed=(rs2.per_second=='on' or cmd.per_second) and cmd.elapsed or 1
                 local calc_rules=rs2.calc_rules or cmd.calc_rules or {}
                 local calc_cols={}
                 local is_groupped=false
