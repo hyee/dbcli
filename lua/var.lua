@@ -330,7 +330,7 @@ function var.define_column(col,...)
                 obj.format_dir='%-'..siz..'s'
                 obj.format=function(v) return tostring(v) and obj.format_dir:format(tostring(v):sub(1,siz)) or v end
             elseif f=="KMG" or f=="TMB" then --KMGTP
-                local units=f=="KMG" and {'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} or {' ',' K',' M',' B',' T',' Q'}
+                local units=f=="KMG" and {'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} or {'  ',' K',' M',' B',' T',' Q'}
                 local div=f=="KMG" and 1024 or 1000
                 obj.format=function(v)
                     local s=tonumber(v)

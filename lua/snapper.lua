@@ -24,7 +24,7 @@
     1. :snap_cmd      :  The command that included by EOF
     2. :snap_interval :  The elapsed seconds betweens 2 snapshots
 --]]
-local env,pairs,ipairs,table,tonumber=env,pairs,ipairs,table,tonumber
+local env,pairs,ipairs,table,tonumber,pcall,type=env,pairs,ipairs,table,tonumber,pcall,type
 local sleep,math,cfg=env.sleep,env.math,env.set
 local terminal,getHeight=terminal,terminal.getHeight
 
@@ -69,7 +69,6 @@ function snapper:parse(name,txt,args,file)
     cmd.group_by=cmd.group_by and (','..cmd.group_by:upper()..',') or nil
     cmd.top_by=cmd.top_by and (','..cmd.top_by:upper()..',')
     cmd.delta_by=','..(cmd.delta_by and cmd.delta_by:upper() or '')..','
-    cmd.per_second=(cmd.per_second==true or cmd.per_second=="on") and true or false
     cmd.name=name
     return cmd,args
 end
@@ -130,7 +129,7 @@ function snapper:build_data(sqls,args)
         rs.rsidx=rsidx
     end
 
-    return rs,clock,time
+    return rs,clock,time,os.timer()-clock
 end
 
 function snapper:run_sql(sql,main_args,cmds,files)
@@ -221,9 +220,9 @@ function snapper:run_sql(sql,main_args,cmds,files)
         if cmd.before_sql then
             env.eval_line(cmd.before_sql,true,true) 
         end
-        cmd.rs2,cmd.clock,cmd.starttime=self:build_data(cmd.sql,arg)
+        cmd.rs2,cmd.clock,cmd.starttime,cmd.fetch_time2=self:build_data(cmd.sql,arg)
     end
-    db:commit()
+    self.db:commit()
     if snap_cmd then
         env.eval_line(snap_cmd,true,true)
         self:next_exec()
@@ -235,28 +234,25 @@ function snapper:run_sql(sql,main_args,cmds,files)
 end
 
 function snapper:next_exec()
-    local cmds,args,db,clock=self.cmds,self.args,self.db
+    local cmds,args,db,clock=self.cmds,self.args,self.db,os.timer()
     --self:trigger('before_exec_action')
-    db:commit()
-
     for name,cmd in pairs(cmds) do
         args[name].snap_interval=os.timer()-cmd.clock
-        local rs,clock,starttime=self:build_data(cmd.sql,args[name])
+        local rs,clock,starttime,fetch_time1=self:build_data(cmd.sql,args[name])
         if type(cmd.rs2)=="table" and type(rs)=="table" then
-            cmd.rs1,cmd.clock,cmd.endtime,cmd.elapsed=rs,clock,starttime,clock-cmd.clock
+            cmd.rs1,cmd.clock,cmd.endtime,cmd.elapsed,cmd.fetch_time1=rs,clock,starttime,clock-cmd.clock,fetch_time1
         end
         if cmd.after_sql then
             env.eval_line(cmd.after_sql,true,true) 
         end
     end
-    clock=os.timer()
     self.db:commit()
 
     local result,groups={}
     local define_column=env.var.define_column
     for name,cmd in pairs(cmds) do
         if cmd.rs1 and cmd.rs2 then
-            local formatter=cmd.column_formatter or {}
+            local calc_clock,formatter=os.timer(),cmd.column_formatter or {}
             local defined_formatter={}
             
             for k,v in pairs(formatter) do
@@ -273,7 +269,8 @@ function snapper:next_exec()
                 local title=rs2[1]
                 local cols=#title
                 local min_agg_pos,top_agg_idx,top_agg=1e4
-                local elapsed=(rs2.per_second=='on' or cmd.per_second) and cmd.elapsed or 1
+                local per_second=rs2.per_second or cmd.per_second
+                local elapsed=(per_second=='on' or per_second==true) and cmd.elapsed or 1
                 local calc_rules=rs2.calc_rules or cmd.calc_rules or {}
                 local calc_cols={}
                 local is_groupped=false
@@ -300,7 +297,7 @@ function snapper:next_exec()
                         if min_agg_pos> idx then
                             min_agg_pos,top_agg=idx,i
                         end
-                        agg_idx[i],title[i]=idx,(rs2.fixed_title or cmd.fixed_title) and k  or (rs2.per_second or cmd.per_second) and (k..'/s') or ('*'..k)
+                        agg_idx[i],title[i]=idx,(rs2.fixed_title or cmd.fixed_title) and k  or elapsed~=1 and (k..'/s') or ('*'..k)
                         define_column(title[i],'format',defined_formatter[title[i]] or defined_formatter[tit] or "%,.2f")
                         if type(order_by)=="string" then
                             if order_by:find(',-'..tit..',',1,true) then
@@ -331,7 +328,6 @@ function snapper:next_exec()
                 result,groups=table.new(1,#rs1+10),{}
                 local grid=grid.new(true)
                 
-
                 local idx,top_idx,counter={},{},0
                 local function make_index(row)
                     counter=0
@@ -349,9 +345,10 @@ function snapper:next_exec()
                 end
 
                 local top_data,r,d,data,index,top_index=table.new(1,#rs1+10)
-                
+                rs2.max_rows=rs2.max_rows or rs2.height==0 and 300 or cmd.max_rows or cfg.get(self.command.."rows")
                 if not is_groupped then
-                    grid,rs2=rs1,{}
+                    grid=rs1
+                    if order_by then grid.sort(grid,order_by) end
                 else
                     local sum=0
                     local function check_zero(col,num)
@@ -411,7 +408,7 @@ function snapper:next_exec()
                         end
                     end
 
-                    rs2.max_rows=rs2.max_rows or cmd.max_rows or cfg.get(self.command.."rows")
+                    
                     if #groups>0 then
                         local func=function(a,b) return a[top_agg_idx]>b[top_agg_idx] end
                         for index,group_name in ipairs(groups) do
@@ -427,7 +424,9 @@ function snapper:next_exec()
                                     v=loadstring(v)
                                     if v then
                                         local done,rtn=pcall(v)
-                                        if done then row[k]=(rtn~=rtn or rtn==nil or rtn==1/0) and '' or rtn end
+                                        if done then
+                                            row[k]=(rtn~=rtn or rtn==nil or rtn==1/0) and '' or type(rtn)=="number" and math.round(rtn,2) or rtn
+                                        end
                                     end
                                 end
                                 grid:add(row)
@@ -449,7 +448,9 @@ function snapper:next_exec()
             end
             local is_clearscreen=cmd.is_clearscreen
             is_clearscreen=(is_clearscreen==true or is_clearscreen=="on") and true or false
-            local title=("\n["..(self.command..'#'..name):upper().."]: From "..cmd.starttime.." to "..cmd.endtime..":\n"):format(name)
+            local cost=string.format('(SQL:%.2f  Calc:%.2f)',cmd.fetch_time1+cmd.fetch_time2,os.timer()-calc_clock)
+            local title=string.format('\n[%s#%s]: From %s to %s%s:\n',self.command,name,cmd.starttime,cmd.endtime,
+                env.set.get("debug")~="SNAPPER" and '' or cost)
             title=title..string.rep("=",title:len()-2)
             if is_clearscreen then
                 title=title:trim("\n")
@@ -470,7 +471,7 @@ function snapper:next_exec()
     
     if self.is_repeat then
         for name,cmd in pairs(cmds) do
-            cmd.rs2,cmd.rs1,cmd.starttime,cmd.elapsed=cmd.rs1,nil,cmd.endtime
+            cmd.rs2,cmd.rs1,cmd.starttime,cmd.fetch_time2=cmd.rs1,nil,cmd.endtime,cmd.fetch_time1
         end
         
         if self.snap_cmd then

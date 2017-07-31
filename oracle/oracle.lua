@@ -15,6 +15,7 @@ oracle.module_list={
     "unwrap",
     "sys",
     "show",
+    "exa",
     "chart",
     "ssh",
     "extvars",

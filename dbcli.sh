@@ -24,6 +24,10 @@ elif [[ -r ./data/init.cfg ]]; then
     source ./data/init.cfg
 fi
 
+if [[ "$EXT_PATH" ]]; then
+    export PATH=$EXT_PATH:$PATH
+fi
+
 # find executable java program
 if [[ -n "$JRE_HOME" ]] && [[ -x "$JRE_HOME/bin/java" ]];  then
     _java="$JRE_HOME/bin/java"

@@ -12,14 +12,9 @@
         &sec1: s={on}, total={off}
         &sec2: s={(per Second)}, total={}  
         &inst2: default={(:V1 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V1=INST_ID OR :V1='0')}
-        &sql1: {sql={[[ SELECT *
-                        FROM   (SELECT /*+ignore_me no_merge(sq) no_merge(ash) grid={topic='Active SQLs',max_rows=15,include_zero=true,order_by='-aas,-busy'}*/
-                                        inst,
-                                        sql_id,
-                                        ela,
-                                        CPU,
-                                        AAS,
-                                        substr(TRIM(regexp_replace(REPLACE(sql_text, chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 75) sql_text
+        &sql1: {sql={[[ SELECT * /*+ignore_me no_merge(sq) no_merge(ash) grid={topic='Active SQLs',height=0,include_zero=true,order_by='-aas,-ela',per_second='off'}*/
+                        FROM   (SELECT inst,sql_id,ela,cpu,aas,
+                                       substr(TRIM(regexp_replace(REPLACE(sql_text, chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 75) sql_text
                                 FROM   (select inst,sql_id,sql_text,sum(busy)*1e-6 ela 
                                         from (SELECT &inst1 inst, sql_id, sql_text,CPU_TIME+USER_IO_WAIT_TIME busy FROM gv$sqlstats WHERE last_active_time > SYSDATE - :snap_interval/ 86400 AND &inst2)
                                         group by inst,sql_id,sql_text) sq
@@ -45,7 +40,7 @@
                                sum(IMGETS) "ImGets",
                                sum(IMMISSES) "ImMisses",
                                sum(SPINS) "Spins"
-                        FROM ( /*grid={topic='System Latch &sec2',fixed_title=true,max_rows=15,order_by="-ms"}*/
+                        FROM ( /*grid={topic='System Latch &sec2',fixed_title=true,height=0,order_by="-ms"}*/
                             SELECT &inst1 inst, 
                                     substr(NAME,1,40) name,
                                     WAIT_TIME/1000 ms,
@@ -113,14 +108,14 @@
       '|', &sql1,
       '_',{[[
           SELECT inst,name,sum(value) value 
-          FROM ( /*grid={topic='System Stats(Excluding Profiles)',max_rows=40}*/
+          FROM ( /*grid={topic='System Stats(Excluding Profiles)',height=0}*/
             SELECT &inst1  inst, 
                     substr(NAME,1,45) name, 
                     value
             FROM   gv$sysstat
             WHERE  value>0
             AND   (:V2 IS NOT NULL and upper(name) like upper('%&V2%') OR
-                  (:V2 IS NULL and NAME not like '%SQL*Net%' AND NAME not in ('DB time',
+                  (:V2 IS NULL AND NAME not like '%SQL*Net%' AND NAME not like 'OS%' AND NAME not in ('DB time',
                         'user logons cumulative',
                         'user calls',
                         'execute count',
@@ -212,7 +207,7 @@
               FROM   (SELECT &inst1 inst_id, NAME n, VALUE v FROM gv$sysstat WHERE &inst2  AND value>0)
               GROUP  BY inst_id]],
             '-',
-            [[WITH ASH as(/*grid={topic='System Events',max_rows=22,order_by="-ms"}*/
+            [[WITH ASH as(/*grid={topic='System Events',height=20,order_by="-ms"}*/
                 SELECT /*+materialize*/ inst,event,count(1) aas, MAX(w) max_ms, 
                        MAX(sql_id) keep(dense_rank LAST ORDER BY cnt) top_sql,
                        count(distinct sql_id) sqls

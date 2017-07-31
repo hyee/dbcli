@@ -1,0 +1,86 @@
+/*[[
+  Generate delta values based on v$celldb. Usage: @@NAME [options] [-s]} 
+  -s: Show stats data based on per second
+  --[[
+        &sec1: total={off}, s={on}
+        &cell: default={}, d={,cell}
+        &cellname: default={(select extractvalue(xmltype(a.confval),'/cli-output/context/@cell') from v$cell_config a where a.CELLNAME=b.CELL_NAME and rownum<2) cell}
+  --]]
+]]*/
+{
+    sql={
+    [[SELECT substr(METRIC_NAME,1,40) METRIC_NAME &cell, sum(METRIC_VALUE) value,METRIC_TYPE unit
+      FROM (select &cellname,b.* from V$CELL_GLOBAL b)
+      WHERE METRIC_VALUE>0 /*+grid={topic="Cell Global",height=0}*/
+      GROUP BY METRIC_NAME &cell,METRIC_TYPE]],
+    '|',{[[
+        SELECT  nvl(src,'--TOTAL--') src /*+grid={topic="Cell DB",order_by='1,2'}*/
+                &cell,
+                count(distinct cell) cells,
+                SUM(DECODE(metric_name, 'Per Db Bytes of IO', v, 'Per Db Bytes of IO for Flash', v)) bytes,
+                SUM(DECODE(metric_name, 'Per Db Bytes of IO for Flash', v)) f_bytes,
+                0 "Flash(%)",
+                SUM(DECODE(metric_name, 'Per Db Number of IOs', v, 'Per Db Number of IOs for Flash', v)) ios,
+                SUM(DECODE(metric_name, 'Per Db Number of IOs for Flash', v)) f_ios,
+                SUM(DECODE(metric_name, 'Per Db Number of large IOs', v, 'Per Db Number of large IOs for Flash', v)) lios,
+                SUM(DECODE(metric_name, 'Per Db Number of large IOs for Flash', v)) f_lios,
+                SUM(DECODE(metric_name, 'Per Db small IO service time', v * 1e-6, 'Per Db small IO service time for Flash', v * 1e-6)) service,
+                SUM(DECODE(metric_name, 'Per Db small IO service time for Flash', v * 1e-6)) f_service,
+                SUM(DECODE(metric_name, 'Per Db large IO queue time', v * 1e-6, 'Per Db large IO queue time for Flash', v * 1e-6)) queues,
+                SUM(DECODE(metric_name, 'Per Db large IO queue time for Flash', v * 1e-6)) f_queues
+            FROM   (SELECT &cellname,
+                           src_Dbname src, COUNT(1) cells, metric_name, SUM(metric_value) v, metric_type
+                    FROM   V$CELL_DB b
+                    GROUP  BY cell_name,src_Dbname, metric_name, metric_type
+                    ORDER  BY 1, 3)
+            GROUP  BY grouping sets((src &cell),()) ]],
+        '-',{[[
+            SELECT nvl(reason_name,'--TOTAL--') reason_name &cell, SUM(metric_value) metric_value
+            FROM   (SELECT &cellname,
+                           reason_name,/*+grid={topic="Cell Reason", max_rows=30}*/
+                           SUM(metric_value) metric_value
+                    FROM   V$CELL_IOREASON b
+                    WHERE  metric_type = 'bytes'
+                    AND    Metric_value > 0
+                    GROUP  BY CELL_NAME, reason_name)
+            GROUP  BY reason_name &cell]],
+            '|',
+            [[SELECT JOB_TYPE &cell,COUNT(1) AAS,WAIT_STATE,SQL_ID /*+grid={topic="Cell ASH", max_rows=30}*/
+              FROM   (select &cellname,b.* from V$CELL_THREAD_HISTORY b
+                      WHERE  SNAPSHOT_TIME>=sysdate-:SNAP_INTERVAL/86400)
+              GROUP BY JOB_TYPE &cell,WAIT_STATE,SQL_ID
+              ORDER BY AAS DESC]]}},
+    '-',
+    [[SELECT   nvl(g.name,'-ALL-') diskgroup &cell, /*+grid={topic="ASM Stats", max_rows=10,order_by='1,2'}*/
+               count(DISTINCT ds.inst_id) "INSTANCES",
+               count(DISTINCT di.disk_number) "DISKS",
+               count(DISTINCT regexp_replace(ds.path, '.*/', '')) paths,
+               SUM(di.bytes_read + di.bytes_written) total_bytes,
+               SUM(di.bytes_read) bytes_read,
+               SUM(di.bytes_written) bytes_written,
+               SUM(di.HOT_BYTES_READ + di.HOT_BYTES_written) hot_bytes,
+               SUM(di.reads + di.writes) total_io,
+               SUM(di.reads) READS,
+               SUM(di.writes) writes,
+               SUM(di.READ_ERRS + di.write_ERRS) io_errs,
+               SUM(di.reads + di.writes) total_time,
+               SUM(di.read_time) read_time,
+               SUM(di.write_time) write_time
+        FROM   gv$asm_disk_stat ds, (select failgroup cell,a.* from gv$asm_disk_iostat a) di, gv$asm_diskgroup_stat g
+        WHERE  ds.inst_id = di.inst_id
+        AND    ds.group_number = di.group_number
+        AND    ds.disk_number = di.disk_number
+        AND    ds.mount_status = 'CACHED'
+        AND    g.inst_id = ds.inst_id
+        AND    g.group_number = di.group_number
+        AND    di.instname NOT LIKE '+ASM%'
+        GROUP BY rollup((g.name &cell))]]},
+    delta_by="total_io,io_errs,writes,READS,hot_bytes,total_bytes,bytes_read,bytes_written,timeouts,total_time,read_time,write_time,METRIC_VALUE,value,bytes,f_bytes,ios,f_ios,lios,f_lios,queues,f_queues,service,f_service",
+    calc_rules={["Flash(%)"]='[f_bytes]*100/[bytes]'},
+    per_second="&sec1",
+    column_formatter={KMG='total_bytes,hot_bytes,bytes_read,bytes_written,bytes,f_bytes,metric_value',
+                      TMB='ios,f_ios,lios,f_lios,total_io,writes,READS,io_errs',
+                      smhd2='total_time,read_time,write_time,timeouts,queues,f_queues,service,f_service',
+                     ['#,##0']='value'},
+    group_by="diskgroup,cell,src,reason_name,METRIC_NAME"
+}
