@@ -21,4 +21,4 @@ FROM   v$cell_config a,
                 "creationTime" VARCHAR2(300) path 'creationTime',
                 "id" VARCHAR2(300) path 'id') b
 WHERE  conftype = 'GRIDDISKS'
-ORDER  BY 1, 2, 3;
+ORDER  BY 1, "cellDisk", "offset";

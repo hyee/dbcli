@@ -63,12 +63,6 @@ function snapper:parse(name,txt,args,file)
         cmd[tostring(k):lower()]=v
     end
 
-    cmd.group_by=cmd.group_by or cmd.grp_cols
-    cmd.top_by=cmd.top_by or cmd.top_grp_cols
-    cmd.delta_by=cmd.delta_by or cmd.agg_cols
-    cmd.group_by=cmd.group_by and (','..cmd.group_by:upper()..',') or nil
-    cmd.top_by=cmd.top_by and (','..cmd.top_by:upper()..',')
-    cmd.delta_by=','..(cmd.delta_by and cmd.delta_by:upper() or '')..','
     cmd.name=name
     return cmd,args
 end
@@ -269,12 +263,21 @@ function snapper:next_exec()
                 local title=rs2[1]
                 local cols=#title
                 local min_agg_pos,top_agg_idx,top_agg=1e4
-                local per_second=rs2.per_second or cmd.per_second
-                local elapsed=(per_second=='on' or per_second==true) and cmd.elapsed or 1
-                local calc_rules=rs2.calc_rules or cmd.calc_rules or {}
-                local calc_cols={}
                 local is_groupped=false
-                local order_by=rs2.order_by or cmd.order_by
+                local calc_cols={}
+                local props={}
+                for k,v in pairs(cmd) do if type(k)=="string" then props[k]=v end end
+                for k,v in pairs(rs2) do if type(k)=="string" then props[k]=v end end
+                local per_second=props.per_second 
+                local calc_rules=props.calc_rules or {}
+                local order_by=props.order_by
+                local elapsed=(per_second=='on' or per_second==true) and props.elapsed or 1
+                props.group_by=props.group_by or props.grp_cols
+                props.top_by=props.top_by or props.top_grp_cols
+                props.delta_by=props.delta_by or props.agg_cols
+                props.group_by=props.group_by and (','..props.group_by:upper()..',') or nil
+                props.top_by=props.top_by and (','..props.top_by:upper()..',')
+                props.delta_by=','..(props.delta_by and props.delta_by:upper() or '')..','
 
                 if type(order_by)=="string" then order_by=(','..order_by:upper()..','):gsub('%s*,[%s,]*',',') end
 
@@ -284,7 +287,7 @@ function snapper:next_exec()
 
                 for i,k in ipairs(title) do
                     local tit=k:upper()
-                    local idx=cmd.delta_by:find(','..tit..',',1,true)
+                    local idx=props.delta_by:find(','..tit..',',1,true)
                     if calc_rules[tit] then
                         local v=calc_rules[tit]:upper()
                         for i,x in ipairs(rs1[1]) do
@@ -293,11 +296,14 @@ function snapper:next_exec()
                         calc_cols[i]='return '..v
                     end
                     if idx then
+                        if not is_groupped and props.topic and elapsed~=1 then
+                            props.topic=props.topic..'(per Second)'
+                        end
                         is_groupped=true
                         if min_agg_pos> idx then
                             min_agg_pos,top_agg=idx,i
                         end
-                        agg_idx[i],title[i]=idx,(rs2.fixed_title or cmd.fixed_title) and k  or elapsed~=1 and (k..'/s') or ('*'..k)
+                        agg_idx[i],title[i]=idx,props.fixed_title  and k  or elapsed~=1 and not props.topic and (k..'/s') or ('*'..k)
                         define_column(title[i],'format',defined_formatter[title[i]] or defined_formatter[tit] or "%,.2f")
                         if type(order_by)=="string" then
                             if order_by:find(',-'..tit..',',1,true) then
@@ -308,11 +314,11 @@ function snapper:next_exec()
                             end
                         end
                     else
-                        if not cmd.group_by or cmd.group_by:find(','..tit..',',1,true) then
+                        if not props.group_by or props.group_by:find(','..tit..',',1,true) then
                             grp_idx[i]=true
                         end
 
-                        if cmd.top_by and cmd.top_by:find(','..tit..',',1,true) then
+                        if props.top_by and props.top_by:find(','..tit..',',1,true) then
                             found_top=true
                             top_grp_idx[i]=true
                         end
@@ -345,7 +351,7 @@ function snapper:next_exec()
                 end
 
                 local top_data,r,d,data,index,top_index=table.new(1,#rs1+10)
-                rs2.max_rows=rs2.max_rows or rs2.height==0 and 300 or cmd.max_rows or cfg.get(self.command.."rows")
+                props.max_rows=props.height==0 and 300 or props.max_rows or cfg.get(self.command.."rows")
                 if not is_groupped then
                     grid=rs1
                     if order_by then grid.sort(grid,order_by) end
@@ -354,7 +360,7 @@ function snapper:next_exec()
                     local function check_zero(col,num)
                         if calc_cols[col] or sum==1 then 
                             return 
-                        elseif rs2.include_zero or cmd.include_zero then 
+                        elseif props.include_zero then 
                             sum=1
                             return
                         end
@@ -407,7 +413,6 @@ function snapper:next_exec()
                             result[index]['_non_zero_']=sum>0
                         end
                     end
-
                     
                     if #groups>0 then
                         local func=function(a,b) return a[top_agg_idx]>b[top_agg_idx] end
@@ -425,7 +430,7 @@ function snapper:next_exec()
                                     if v then
                                         local done,rtn=pcall(v)
                                         if done then
-                                            row[k]=(rtn~=rtn or rtn==nil or rtn==1/0) and '' or type(rtn)=="number" and math.round(rtn,2) or rtn
+                                            row[k]=(rtn~=rtn or rtn==nil or rtn==1/0 or rtn==-1/0 ) and '' or type(rtn)=="number" and math.round(rtn,2) or rtn
                                         end
                                     end
                                 end
@@ -435,17 +440,18 @@ function snapper:next_exec()
                         idx=''
                         for i,_ in pairs(agg_idx) do
                             idx=idx..(-i)..','
-                            if (rs2.set_ratio or cmd.set_ratio)=='on' then grid:add_calc_ratio(i) end
+                            if props.set_ratio=='on' then grid:add_calc_ratio(i) end
                         end
                         grid:sort(order_by or idx,true)
                     end
                 end
                 setmetatable(rs2,nil)
-                for k=#rs2,1,-1 do rs2[k]=nil end
+                table.clear(rs2)
+                for k,v in pairs(props) do rs2[k]=v end
                 for k,v in pairs(grid) do rs2[k]=v end
                 setmetatable(rs2,getmetatable(grid))
-                
             end
+
             local is_clearscreen=cmd.is_clearscreen
             is_clearscreen=(is_clearscreen==true or is_clearscreen=="on") and true or false
             local cost=string.format('(SQL:%.2f  Calc:%.2f)',cmd.fetch_time1+cmd.fetch_time2,os.timer()-calc_clock)

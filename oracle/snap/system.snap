@@ -10,7 +10,6 @@
         @CHECK_ACCESS_ALL: gv$px_session/gv$session/gv$latch/gv$osstat/gv$sysstat/gv$sys_time_model/gv$system_event/gv$active_session_history/gv$sqlstats={true}
         &inst1: default={decode(:V1,'0',''||inst_id,decode(count(distinct inst_id) over(),1,''||inst_id,'A'))}
         &sec1: s={on}, total={off}
-        &sec2: s={(per Second)}, total={}  
         &inst2: default={(:V1 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V1=INST_ID OR :V1='0')}
         &sql1: {sql={[[ SELECT * /*+ignore_me no_merge(sq) no_merge(ash) grid={topic='Active SQLs',height=0,include_zero=true,order_by='-aas,-ela',per_second='off'}*/
                         FROM   (SELECT inst,sql_id,ela,cpu,aas,
@@ -40,7 +39,7 @@
                                sum(IMGETS) "ImGets",
                                sum(IMMISSES) "ImMisses",
                                sum(SPINS) "Spins"
-                        FROM ( /*grid={topic='System Latch &sec2',fixed_title=true,height=0,order_by="-ms"}*/
+                        FROM ( /*grid={topic='System Latch',fixed_title=true,height=0,order_by="-ms"}*/
                             SELECT &inst1 inst, 
                                     substr(NAME,1,40) name,
                                     WAIT_TIME/1000 ms,
@@ -81,7 +80,7 @@
         SELECT inst,name,sum(pct) "Pct(%)",sum(time) "Time"
         FROM (
             WITH model as(select /*+materialize*/ * from gv$sys_time_model WHERE &inst2)
-            SELECT &inst1  inst, /*grid={topic='System Time Model &sec2',max_rows=10,fixed_title=true}*/
+            SELECT &inst1  inst, /*grid={topic='System Time Model',max_rows=10,fixed_title=true}*/
                    substr(stat_name,1,34) name,
                    (select b.value*1e-6 from model b 
                     where  a.inst_id=b.inst_id 
@@ -146,6 +145,7 @@
                         'IM scan rows cache',
                         'IM scan rows projected',
                         'IM populate rows',
+                        'cell physical IO interconnect bytes', 
                         'IM repopulate (trickle incremental) total rows',
                         'IM scan rows range excluded',
                         'table scan disk non-IMC rows gotten',
@@ -156,7 +156,7 @@
             AND    &inst2)
           GROUP BY inst,name]],
           '|', {
-            [[SELECT inst_id inst, /*grid={topic='System Profiles &sec2',fixed_title=true,order_by=1}*/
+            [[SELECT inst_id inst, /*grid={topic='System Profiles',fixed_title=true,order_by=1}*/
                    SUM(DECODE(n, 'user logons cumulative', v)) "Logon",
                    SUM(DECODE(n, 'user calls', v)) "Call",
                    SUM(DECODE(n, 'execute count', v)) "Exec",
@@ -173,37 +173,37 @@
             FROM   (SELECT &inst1  inst_id, NAME n, VALUE v FROM gv$sysstat WHERE &inst2 AND value>0)
             GROUP  BY inst_id]],
             '-',
-            [[SELECT inst_id inst,/*grid={topic='Exadata Profiles &sec2',fixed_title=true,order_by=1,bypassemptyrs=true}*/
-                     nvl(SUM(DECODE(n, 'physical read total bytes optimized', v)),0) "OptRead",
-                     nvl(SUM(DECODE(n, 'cell physical IO bytes eligible for predicate offload', v)),1) "Elig",
-                     SUM(DECODE(n, 'physical read total bytes', v)) "E(%)",
-                     nvl(SUM(DECODE(n, 'cell physical IO interconnect bytes returned by smart scan', v)),0) "SmartScan",
-                     to_number(null) "Offload(%)",
-                     nvl(SUM(DECODE(n,  'physical write total bytes optimized', v)),0) "OptWrite",
-                     SUM(DECODE(n, 'cell physical IO bytes saved by storage index', v)) "SISave",
-                     nvl(SUM(DECODE(n, 'cell flash cache read hits', v)),0) "FcHit",
-                     SUM(DECODE(n, 'physical read total IO requests',v)) "H(%)",
-                     nvl(SUM(DECODE(n, 'cell IO uncompressed bytes', v)),0) "CeUnzip",
-                     SUM(DECODE(n, 'cell physical IO bytes saved by columnar cache',v)) "HCCCache"
+            [[SELECT inst_id inst,/*grid={topic='Exadata Profiles',fixed_title=true,order_by=1,bypassemptyrs=true}*/
+                     SUM(DECODE(n, 'cell physical IO interconnect bytes', v)) "BandWidth",
+                     SUM(DECODE(n, 'cell physical IO bytes eligible for predicate offload', v)) "Offload",
+                     SUM(DECODE(n, 'cell IO uncompressed bytes', v)) "Unzip",
+                     to_number(null) "OFL(%)",
+                     SUM(DECODE(n, 'cell physical IO bytes saved by storage index', v)) "SISave(%)",
+                     SUM(DECODE(n, 'cell physical IO interconnect bytes returned by smart scan', v)) "SScan(%)",
+                     SUM(DECODE(n, 'physical read total bytes optimized', v)) "OptRead",
+                     SUM(DECODE(n, 'physical write total bytes optimized', v)) "OptWrite",
+                     SUM(DECODE(n, 'cell flash cache read hits', v)) "FcHit",
+                     SUM(DECODE(n, 'physical read total IO requests',v)) "Fc(%)",
+                     SUM(DECODE(n, 'cell physical IO bytes saved by columnar cache',v)) "FcSave(%)"
               FROM   (SELECT &inst1 inst_id, NAME n, VALUE v FROM gv$sysstat WHERE &inst2  AND value>0)
+              WHERE  EXISTS(select 1 from v$sysstat where value>0 and name like '%offload%')
               GROUP  BY inst_id]],
             '-',
-            [[SELECT inst_id inst,/*grid={topic='In-Memory Stats &sec2',fixed_title=true,order_by=1,bypassemptyrs=true}*/
+            [[SELECT inst_id inst,/*grid={topic='In-Memory Stats',fixed_title=true,order_by=1,bypassemptyrs=true}*/
                      SUM(DECODE(n, 'IM scan bytes uncompressed', v,0)) "Unzip",
                      SUM(DECODE(n, 'IM scan bytes in-memory', v,0)) "Bytes",
                      SUM(DECODE(n, 'IM populate bytes from storage', v,0)) "Pops",
                      SUM(DECODE(n, 'IM repopulate (trickle) bytes from storage', v,0)) "re-Pops",
+                     SUM(DECODE(n, 'IM scan CUs invalid or missing revert to on disk extent', v,0)) "missCU",
                      '|' "*",
                      SUM(DECODE(n, 'IM scan rows', v,0)) "Rows",
+                     SUM(DECODE(n, 'table scan disk non-IMC rows gotten', v,0)) "Disk",
                      SUM(DECODE(n, 'IM scan rows valid', v,0)) "Valid(%)",
                      SUM(DECODE(n, 'IM scan rows cache', v,0)) "Cache",
                      SUM(DECODE(n, 'IM scan rows projected', v,0)) "Proj",
                      SUM(DECODE(n, 'IM populate rows', v,0)) "Popr",
                      SUM(DECODE(n, 'IM repopulate (trickle incremental) total rows', v,0)) "re-Popr",
-                     SUM(DECODE(n, 'IM scan rows range excluded', v,0)) "Excluded",
-                     SUM(DECODE(n, 'table scan disk non-IMC rows gotten', v,0)) "Disk",
-                     '|' "*",
-                     SUM(DECODE(n, 'IM scan CUs invalid or missing revert to on disk extent', v,0)) "missCU"
+                     SUM(DECODE(n, 'IM scan rows range excluded', v,0)) "Excluded"
               FROM   (SELECT &inst1 inst_id, NAME n, VALUE v FROM gv$sysstat WHERE &inst2  AND value>0)
               GROUP  BY inst_id]],
             '-',
@@ -237,16 +237,18 @@
             }
         }
     },
-    delta_by="ela,missCU,Unzip,bytes,rows,valid(%),Cache,excluded,proj,pops,re-pops,popr,re-popr,Disk,Pct(%),Swap,HCCCache,HCCZip,HUnZip,OptRead,OptWrite,Elig,SmartScan,SISave,CeUnzip,FcHit,Offload(%),H(%),E(%),Logon,Call,Exec,Commit,Parse,hParse,CcHit,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,value,ms,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,time,Busy,User,Sys,I/O,Nice,Nice",
+    delta_by="offload,BandWidth,SISave(%),SScan(%),FcSave(%),OptRead,OptWrite,FcHit,Fc(%),Unzip,ela,missCU,Unzip,bytes,rows,valid(%),Cache,excluded,proj,pops,re-pops,popr,re-popr,Disk,Pct(%),Swap,Logon,Call,Exec,Commit,Parse,hParse,CcHit,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,value,ms,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,time,Busy,User,Sys,I/O,Nice,Nice",
     group_by="inst,sql_id,name,LOCATION,addr",
     calc_rules={avg_ms='[ms]/[waits]',
                 ['Pct(%)']='[ms]*100/[Pct(%)]',
-                ['H(%)']='[FcHit]*100/[H(%)]',
                 ['valid(%)']='[valid(%)]*100/[rows]',
-                ['Offload(%)']='100-[SmartScan]*100/[Elig]',
-                ['E(%)']='[Elig]*100/[E(%)]'},
-    column_formatter={KMG='Unzip,pops,re-pops,phyMem,freeMem,Swap,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,OptRead,OptWrite,SmartScan,SISave,Elig,CeUnzip,HCCCache,HCCZip,HUnZip,bytes',
-                     TMB='popr,re-popr,rows,valid,proj,Disk,Cache,excluded,missCU',
+                ['Fc(%)']='[FcHit]*100/[Fc(%)]',
+                ['OFL(%)']='100-[BandWidth]*100/[offload]',
+                ['SISave(%)']='[SISave(%)]*100/[offload]',
+                ['SScan(%)']='[SScan(%)]*100/[BandWidth]',
+                ['FcSave(%)']='[FcSave(%)]*100/[BandWidth]'},
+    column_formatter={KMG='Unzip,pops,re-pops,phyMem,freeMem,Swap,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,OptRead,OptWrite,offload,BandWidth,Unzip,bytes',
+                     TMB='FcHit,popr,re-popr,rows,valid,proj,Disk,Cache,excluded,missCU',
                      smhd2='Time,ela',
                      ['#,##0']='value'},
     per_second="&sec1",

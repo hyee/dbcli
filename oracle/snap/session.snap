@@ -7,7 +7,6 @@
     &top : default={off} top={on}
     @CHECK_ACCESS_ALL: gv$session/gv$px_session/gv$sesstat/gv$sess_time_model/gv$statname/gv$session_event/gv$active_session_history={true}
     &sec1: total={off}, s={on}
-    &sec2: total={}, s={(per Second)}    
     &base: {default={
               WITH s1 AS (
                   SELECT inst_id, SID, &session_info sid#
@@ -40,7 +39,7 @@
 ]]*/
 {
     sql={
-      [[SELECT A.* FROM ( /*grid={topic='Session Stats &sec2',height=0}*/
+      [[SELECT A.* FROM ( /*grid={topic='Session Stats',height=0}*/
             SELECT /*+no_expand*/
                    sid#,
                    substr(n,1,40) name,
@@ -87,7 +86,7 @@
                         'session uga memory','session pga memory')
             GROUP BY sid#,n) A
             ORDER BY name]],
-        '|', {[[&base /*grid={topic='Session Time Model &sec2', fixed_title=true,max_rows=10}*/
+        '|', {[[&base /*grid={topic='Session Time Model', fixed_title=true,max_rows=10}*/
                 SELECT sid#,
                        substr(stat_name,1,35) name,
                        sum((select value*1e-6 from gv$sess_time_model b 
@@ -100,7 +99,7 @@
                 AND    value>0
                 group by sid#,stat_name]],
               '|',
-              [[/*grid={topic='Session Rows &sec2',fixed_title=true, order_by="-scan"}*/
+              [[/*grid={topic='Session Rows',fixed_title=true, order_by="-scan"}*/
                 SELECT sid#, 
                        SUM(DECODE(n, 'table scan rows gotten', v)) "Scan",
                        SUM(DECODE(n, 'IM scan rows', v)) "IM(%)",
@@ -111,7 +110,7 @@
                 FROM   &stats
                 GROUP  BY sid#]],
               '-',
-              [[/*grid={topic='Session Profiles &sec2',fixed_title=true,include_zero=true}*/
+              [[/*grid={topic='Session Profiles',fixed_title=true,include_zero=true}*/
                 SELECT sid#, 
                     SUM(DECODE(n, 'user calls', v)) "Call",
                     SUM(DECODE(n, 'recursive calls', v)) "rCall",
@@ -129,39 +128,39 @@
                 FROM   &stats
                 GROUP  BY sid#]],
             '-',
-            [[/*grid={topic='Exadata Profiles &sec2',fixed_title=true,bypassemptyrs=true}*/
+            [[/*grid={topic='Exadata Profiles',fixed_title=true,bypassemptyrs=true}*/
               SELECT sid#, 
-                     nvl(SUM(DECODE(n, 'physical read total bytes optimized', v)),0) "OptRead",
-                     nvl(SUM(DECODE(n, 'cell physical IO bytes eligible for predicate offload', v)),1) "Elig",
-                     SUM(DECODE(n, 'physical read total bytes', v)) "E(%)",
-                     nvl(SUM(DECODE(n, 'cell physical IO interconnect bytes returned by smart scan', v)),0) "SmartScan",
-                     to_number(null) "Offload(%)",
-                     nvl(SUM(DECODE(n,  'physical write total bytes optimized', v)),0) "OptWrite",
-                     SUM(DECODE(n, 'cell physical IO bytes saved by storage index', v)) "SISave",
-                     nvl(SUM(DECODE(n, 'cell flash cache read hits', v)),0) "FcHit",
-                     SUM(DECODE(n, 'physical read total IO requests',v)) "H(%)",
-                     nvl(SUM(DECODE(n, 'cell IO uncompressed bytes', v)),0) "CeUnzip",
-                     SUM(DECODE(n, 'cell physical IO bytes saved by columnar cache',v)) "HCCCache"
+                     SUM(DECODE(n, 'cell physical IO interconnect bytes', v)) "BandWidth",
+                     SUM(DECODE(n, 'cell physical IO bytes eligible for predicate offload', v)) "Offload",
+                     SUM(DECODE(n, 'cell IO uncompressed bytes', v)) "Unzip",
+                     to_number(null) "OFL(%)",
+                     SUM(DECODE(n, 'cell physical IO bytes saved by storage index', v)) "SISave(%)",
+                     SUM(DECODE(n, 'cell physical IO interconnect bytes returned by smart scan', v)) "SScan(%)",
+                     SUM(DECODE(n, 'physical read total bytes optimized', v)) "OptRead",
+                     SUM(DECODE(n, 'physical write total bytes optimized', v)) "OptWrite",
+                     SUM(DECODE(n, 'cell flash cache read hits', v)) "FcHit",
+                     SUM(DECODE(n, 'physical read total IO requests',v)) "Fc(%)",
+                     SUM(DECODE(n, 'cell physical IO bytes saved by columnar cache',v)) "FcSave(%)"
               FROM   &stats
+              WHERE  EXISTS(select 1 from v$sysstat where value>0 and name like '%offload%')
               GROUP  BY sid#]],
             '-',
-            [[/*grid={topic='In-Memory Stats &sec2',fixed_title=true,bypassemptyrs=true}*/
+            [[/*grid={topic='In-Memory Stats',fixed_title=true,bypassemptyrs=true}*/
               SELECT sid#,
                      SUM(DECODE(n, 'IM scan bytes uncompressed', v,0)) "Unzip",
                      SUM(DECODE(n, 'IM scan bytes in-memory', v,0)) "Bytes",
                      SUM(DECODE(n, 'IM populate bytes from storage', v,0)) "Pops",
                      SUM(DECODE(n, 'IM repopulate (trickle) bytes from storage', v,0)) "re-Pops",
+                     SUM(DECODE(n, 'IM scan CUs invalid or missing revert to on disk extent', v,0)) "missCU",
                      '|' "*",
                      SUM(DECODE(n, 'IM scan rows', v,0)) "Rows",
+                     SUM(DECODE(n, 'table scan disk non-IMC rows gotten', v,0)) "Disk",
                      SUM(DECODE(n, 'IM scan rows valid', v,0)) "Valid(%)",
                      SUM(DECODE(n, 'IM scan rows cache', v,0)) "Cache",
                      SUM(DECODE(n, 'IM scan rows projected', v,0)) "Proj",
                      SUM(DECODE(n, 'IM populate rows', v,0)) "Popr",
                      SUM(DECODE(n, 'IM repopulate (trickle incremental) total rows', v,0)) "re-Popr",
-                     SUM(DECODE(n, 'IM scan rows range excluded', v,0)) "Excluded",
-                     SUM(DECODE(n, 'table scan disk non-IMC rows gotten', v,0)) "Disk",
-                     '|' "*",
-                     SUM(DECODE(n, 'IM scan CUs invalid or missing revert to on disk extent', v,0)) "missCU"
+                     SUM(DECODE(n, 'IM scan rows range excluded', v,0)) "Excluded"
               FROM   &stats
               GROUP  BY sid#]],
             '-',
@@ -200,19 +199,21 @@
               LEFT   JOIN ash using(sid#,event)]]
             }
     },
-    delta_by="scan,IM(%),HCC(%),Sort,Fetch,Undo,missCU,Unzip,bytes,rows,valid(%),Cache,excluded,proj,pops,re-pops,popr,re-popr,Disk,Pct(%),Swap,HCCCache,HCCZip,HUnZip,OptRead,OptWrite,Elig,SmartScan,SISave,CeUnzip,FcHit,Offload(%),H(%),E(%),rCall,Call,Exec,Commit,Parse,hParse,CcHit,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,value,Time,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,MS,Busy,User,Sys,Idle,Nice",
+    delta_by="offload,BandWidth,SISave(%),SScan(%),FcSave(%),OptRead,OptWrite,FcHit,Fc(%),Unzip,scan,IM(%),HCC(%),Sort,Fetch,Undo,missCU,Unzip,bytes,rows,valid(%),Cache,excluded,proj,pops,re-pops,popr,re-popr,Disk,Pct(%),Swap,rCall,Call,Exec,Commit,Parse,hParse,CcHit,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,value,Time,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,MS,Busy,User,Sys,Idle,Nice",
     group_by="sid#,name",
     per_second="&sec1",
     calc_rules={avg_ms='[ms]/[waits]',
                 ['Pct(%)']='[ms]*100/[Pct(%)]',
-                ['H(%)']='[FcHit]*100/[H(%)]',
                 ['valid(%)']='[valid(%)]*100/[rows]',
-                ['Offload(%)']='100-[SmartScan]*100/[Elig]',
-                ['E(%)']='[Elig]*100/[E(%)]',
+                ['Fc(%)']='[FcHit]*100/[Fc(%)]',
+                ['OFL(%)']='100-[BandWidth]*100/[offload]',
+                ['SISave(%)']='[SISave(%)]*100/[offload]',
+                ['SScan(%)']='[SScan(%)]*100/[BandWidth]',
+                ['FcSave(%)']='[FcSave(%)]*100/[BandWidth]',
                 ['IM(%)']='[IM(%)]*100/[scan]',
                 ['HCC(%)']='[HCC(%)]*100/[scan]'},
-    column_formatter={KMG='Unzip,pops,re-pops,phyMem,freeMem,Swap,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,OptRead,OptWrite,SmartScan,SISave,Elig,CeUnzip,HCCCache,HCCZip,HUnZip,bytes',
-                     TMB='scan,Sort,Fetch,Undo,popr,re-popr,rows,valid,proj,Disk,Cache,excluded,missCU',
+    column_formatter={KMG='pops,re-pops,phyMem,freeMem,Swap,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,OptRead,OptWrite,offload,BandWidth,Unzip,bytes',
+                     TMB='FcHit,scan,Sort,Fetch,Undo,popr,re-popr,rows,valid,proj,Disk,Cache,excluded,missCU',
                      smhd2='Time',
                      ['#,##0']='value'},
     is_clearscreen='&top'

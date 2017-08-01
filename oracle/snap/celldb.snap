@@ -1,5 +1,5 @@
 /*[[
-  Generate delta values based on v$celldb. Usage: @@NAME [options] [-s]} 
+  Generate delta values based on Exadata cell stats. Usage: @@NAME [options] [-s]} 
   -s: Show stats data based on per second
   --[[
         &sec1: total={off}, s={on}
@@ -11,10 +11,11 @@
     sql={
     [[SELECT substr(METRIC_NAME,1,40) METRIC_NAME &cell, sum(METRIC_VALUE) value,METRIC_TYPE unit
       FROM (select &cellname,b.* from V$CELL_GLOBAL b)
-      WHERE METRIC_VALUE>0 /*+grid={topic="Cell Global",height=0}*/
+      WHERE METRIC_VALUE>0 /*+grid={topic="Cell Global Stats",height=0}*/
       GROUP BY METRIC_NAME &cell,METRIC_TYPE]],
     '|',{[[
-        SELECT  nvl(src,'--TOTAL--') src /*+grid={topic="Cell DB",order_by='1,2'}*/
+        SELECT  grouping_id(src) gid ,
+                nvl(src,'--TOTAL--') src /*+grid={topic="Cell DB",order_by='-gid,-bytes',max_rows=10}*/
                 &cell,
                 count(distinct cell) cells,
                 SUM(DECODE(metric_name, 'Per Db Bytes of IO', v, 'Per Db Bytes of IO for Flash', v)) bytes,
@@ -37,7 +38,7 @@
         '-',{[[
             SELECT nvl(reason_name,'--TOTAL--') reason_name &cell, SUM(metric_value) metric_value
             FROM   (SELECT &cellname,
-                           reason_name,/*+grid={topic="Cell Reason", max_rows=30}*/
+                           reason_name,/*+grid={topic="Cell Reason", max_rows=20}*/
                            SUM(metric_value) metric_value
                     FROM   V$CELL_IOREASON b
                     WHERE  metric_type = 'bytes'
@@ -45,13 +46,14 @@
                     GROUP  BY CELL_NAME, reason_name)
             GROUP  BY reason_name &cell]],
             '|',
-            [[SELECT JOB_TYPE &cell,COUNT(1) AAS,WAIT_STATE,SQL_ID /*+grid={topic="Cell ASH", max_rows=30}*/
+            [[SELECT JOB_TYPE &cell,COUNT(1) AAS,WAIT_STATE,SQL_ID /*+grid={topic="Cell ASH", max_rows=20}*/
               FROM   (select &cellname,b.* from V$CELL_THREAD_HISTORY b
                       WHERE  SNAPSHOT_TIME>=sysdate-:SNAP_INTERVAL/86400)
               GROUP BY JOB_TYPE &cell,WAIT_STATE,SQL_ID
               ORDER BY AAS DESC]]}},
     '-',
-    [[SELECT   nvl(g.name,'-ALL-') diskgroup &cell, /*+grid={topic="ASM Stats", max_rows=10,order_by='1,2'}*/
+    [[SELECT   grouping_id(g.name) gid, /*+grid={topic="ASM Stats", max_rows=10,order_by='-gid,-total_bytes'}*/
+               nvl(g.name,'-ALL-') diskgroup &cell, 
                count(DISTINCT ds.inst_id) "INSTANCES",
                count(DISTINCT di.disk_number) "DISKS",
                count(DISTINCT regexp_replace(ds.path, '.*/', '')) paths,
