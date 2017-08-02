@@ -9,13 +9,50 @@
 ]]*/
 {
     sql={
-    [[SELECT substr(METRIC_NAME,1,40) METRIC_NAME &cell, sum(METRIC_VALUE) value,METRIC_TYPE unit
+    [[SELECT   grouping_id(g.name) gid, /*+grid={topic="ASM Stats", max_rows=10,order_by='-gid,-bytes',fixed_title=true}*/
+               nvl(g.name,'-ALL-') diskgroup &cell, 
+               count(DISTINCT ds.inst_id) "INSTANCES",
+               count(DISTINCT di.disk_number) "DISKS",
+               count(DISTINCT regexp_replace(ds.path, '.*/', '')) paths,
+               SUM(di.bytes_read + di.bytes_written) bytes,
+               SUM((di.bytes_read + di.bytes_written)*dt) FD_bytes,
+               SUM(di.bytes_read) read,
+               SUM(di.bytes_read*dt) FD_read,
+               SUM(di.bytes_written) write,
+               SUM(di.bytes_written*dt) FD_write,
+               SUM(di.HOT_BYTES_READ + di.HOT_BYTES_written) hot_bytes,
+               SUM(di.reads + di.writes) total_io,
+               SUM(di.reads) READS,
+               SUM(di.writes) writes,
+               SUM(di.READ_ERRS + di.write_ERRS) io_errs,
+               SUM(di.reads + di.writes) total_time,
+               SUM(di.read_time) read_time,
+               SUM(di.write_time) write_time
+        FROM   gv$asm_disk_stat ds, gv$asm_disk_iostat di, gv$asm_diskgroup_stat g,
+               (SELECT distinct extractvalue(xmltype(a.confval),'/cli-output/context/@cell') cell, 
+                       asmDiskName,case when lower(diskType) like '%flash%' then 1 else 0 end dt
+                FROM   v$cell_config a,
+                       XMLTABLE('/cli-output/griddisk' PASSING xmltype(a.confval) COLUMNS --
+                                asmDiskName VARCHAR2(300) path 'asmDiskName',
+                                diskType VARCHAR2(300) path 'diskType') b
+                WHERE  conftype = 'GRIDDISKS') cell
+        WHERE  ds.inst_id = di.inst_id
+        AND    ds.group_number = di.group_number
+        AND    ds.disk_number = di.disk_number
+        AND    ds.name=cell.asmDiskName
+        AND    ds.mount_status = 'CACHED'
+        AND    g.inst_id = ds.inst_id
+        AND    g.group_number = di.group_number
+        AND    di.instname NOT LIKE '+ASM%'
+        GROUP BY rollup((g.name &cell))]],
+    '-',{[[
+      SELECT substr(METRIC_NAME,1,40) METRIC_NAME &cell, sum(METRIC_VALUE) value,METRIC_TYPE unit
       FROM (select &cellname,b.* from V$CELL_GLOBAL b)
       WHERE METRIC_VALUE>0 /*+grid={topic="Cell Global Stats",height=0}*/
       GROUP BY METRIC_NAME &cell,METRIC_TYPE]],
-    '|',{[[
+      '|',{[[
         SELECT  grouping_id(src) gid ,
-                nvl(src,'--TOTAL--') src /*+grid={topic="Cell DB",order_by='-gid,-bytes',max_rows=10}*/
+                nvl(src,'--TOTAL--') src /*+grid={topic="Cell DB",order_by='-gid,-bytes',max_rows=10,fixed_title=true}*/
                 &cell,
                 count(distinct cell) cells,
                 SUM(DECODE(metric_name, 'Per Db Bytes of IO', v, 'Per Db Bytes of IO for Flash', v)) bytes,
@@ -51,36 +88,11 @@
                       WHERE  SNAPSHOT_TIME>=sysdate-:SNAP_INTERVAL/86400)
               GROUP BY JOB_TYPE &cell,WAIT_STATE,SQL_ID
               ORDER BY AAS DESC]]}},
-    '-',
-    [[SELECT   grouping_id(g.name) gid, /*+grid={topic="ASM Stats", max_rows=10,order_by='-gid,-total_bytes'}*/
-               nvl(g.name,'-ALL-') diskgroup &cell, 
-               count(DISTINCT ds.inst_id) "INSTANCES",
-               count(DISTINCT di.disk_number) "DISKS",
-               count(DISTINCT regexp_replace(ds.path, '.*/', '')) paths,
-               SUM(di.bytes_read + di.bytes_written) total_bytes,
-               SUM(di.bytes_read) bytes_read,
-               SUM(di.bytes_written) bytes_written,
-               SUM(di.HOT_BYTES_READ + di.HOT_BYTES_written) hot_bytes,
-               SUM(di.reads + di.writes) total_io,
-               SUM(di.reads) READS,
-               SUM(di.writes) writes,
-               SUM(di.READ_ERRS + di.write_ERRS) io_errs,
-               SUM(di.reads + di.writes) total_time,
-               SUM(di.read_time) read_time,
-               SUM(di.write_time) write_time
-        FROM   gv$asm_disk_stat ds, (select failgroup cell,a.* from gv$asm_disk_iostat a) di, gv$asm_diskgroup_stat g
-        WHERE  ds.inst_id = di.inst_id
-        AND    ds.group_number = di.group_number
-        AND    ds.disk_number = di.disk_number
-        AND    ds.mount_status = 'CACHED'
-        AND    g.inst_id = ds.inst_id
-        AND    g.group_number = di.group_number
-        AND    di.instname NOT LIKE '+ASM%'
-        GROUP BY rollup((g.name &cell))]]},
-    delta_by="total_io,io_errs,writes,READS,hot_bytes,total_bytes,bytes_read,bytes_written,timeouts,total_time,read_time,write_time,METRIC_VALUE,value,bytes,f_bytes,ios,f_ios,lios,f_lios,queues,f_queues,service,f_service",
+    }},
+    delta_by="total_io,io_errs,writes,READS,hot_bytes,bytes,read,write,fd_bytes,fd_read,fd_write,timeouts,total_time,read_time,write_time,METRIC_VALUE,value,bytes,f_bytes,ios,f_ios,lios,f_lios,queues,f_queues,service,f_service",
     calc_rules={["Flash(%)"]='[f_bytes]*100/[bytes]'},
     per_second="&sec1",
-    column_formatter={KMG='total_bytes,hot_bytes,bytes_read,bytes_written,bytes,f_bytes,metric_value',
+    column_formatter={KMG='bytes,hot_bytes,read,write,bytes,fd_bytes,fd_read,fd_write,f_bytes,metric_value',
                       TMB='ios,f_ios,lios,f_lios,total_io,writes,READS,io_errs',
                       smhd2='total_time,read_time,write_time,timeouts,queues,f_queues,service,f_service',
                      ['#,##0']='value'},

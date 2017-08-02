@@ -250,10 +250,10 @@ function snapper:next_exec()
             local defined_formatter={}
             
             for k,v in pairs(formatter) do
+                define_column(v,'format',k)
                 local cols=v:split('%s*,%s*')
                 for _,col in ipairs(cols) do
                     defined_formatter[col:upper()]=k
-                    define_column(col,'format',k)
                 end
             end
 

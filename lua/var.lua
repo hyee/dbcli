@@ -289,6 +289,11 @@ function var.before_command(cmd)
 end
 
 function var.define_column(col,...)
+    if type(col)~="string" or col:trim()=="" then return end
+    if col:find(',',1,true) then
+        local cols=col:split("%s*,+%s*")
+        for k,v in ipairs(cols) do var.define_column(v,...) end
+    end
     local gramma={
         {{'ALIAS','ALI'},'*'},
         {{'CLEAR','CLE'}},
