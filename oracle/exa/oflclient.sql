@@ -1,4 +1,4 @@
-/*[[Show offload clients. Usage @@NAME [-d]
+/*[[Show offload clients. Usage: @@NAME [<cell>]|[-d]
     --[[
         &cell: default={}, d={,cell}
     --]]
@@ -40,6 +40,7 @@ grid {[[ /*grid={topic='Offload Clients'}*/
                             storage_idx_saved NUMBER path '//stat[@name="storage_idx_saved_bytes"]'
                             ) b
             WHERE  statistics_type = 'CLIENTDES')
+    WHERE lower(cell) like lower('%'||:V1||'%')
     GROUP  BY ROLLUP(client_name &cell)
     ORDER BY client_name,2]]
 }

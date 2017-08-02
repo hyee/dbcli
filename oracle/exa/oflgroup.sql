@@ -1,4 +1,4 @@
-/*[[Show offload predicate io and storage index info. Usage @@NAME [-d]
+/*[[Show offload predicate io and storage index info. Usage: @@NAME [<cell>]|[-d]
     --[[
         &cell: default={}, d={,cell}
     --]]
@@ -17,8 +17,8 @@ grid {[[ /*grid={topic='Predicate I/O'}*/
                             NAME VARCHAR2(50) path '@name',
                             VALUE NUMBER path '.') b
             WHERE  statistics_type = 'OFLGROUP')
-    WHERE VALUE>0
-    GROUP  BY NAME &cell
+    WHERE lower(cell) like lower('%'||:V1||'%') AND VALUE>0
+    GROUP BY NAME &cell
     ORDER BY NAME,2]],
     '|',[[ /*grid={topic='Storage Index Stats'}*/
     SELECT NAME &cell,SUM(VALUE) KMG,SUM(VALUE) TMB
@@ -32,7 +32,7 @@ grid {[[ /*grid={topic='Predicate I/O'}*/
                             NAME VARCHAR2(50) path '@name',
                             VALUE NUMBER path '.') b
             WHERE  statistics_type = 'OFLGROUP')
-    WHERE VALUE>0
+    WHERE lower(cell) like lower('%'||:V1||'%') AND VALUE>0
     GROUP BY NAME &cell
     ORDER BY NAME,2]]
 }

@@ -1,4 +1,4 @@
-/*[[Show OS memory info. Usage @@NAME [-d]
+/*[[Show OS memory info. Usage: @@NAME [<cell>]|[-d]
     --[[
         &cell: default={}, d={,cell}
     --]]
@@ -18,6 +18,7 @@ grid {[[ /*grid={topic='cellsrv_mem_stats'}*/
                             osmem INT path 'stat[@name="cellsrv_osmem"]',
                             allocated INT path 'stat[@name="cellsrv_allocmem"]') b
             WHERE  statistics_type = 'CELL')
+    WHERE lower(cell) like lower('%'||:V1||'%')
     GROUP  BY ROLLUP((memtype &cell))
     ORDER BY memtype,2]],
     '|',[[ /*grid={topic='group_mem_stats'}*/
@@ -33,6 +34,7 @@ grid {[[ /*grid={topic='cellsrv_mem_stats'}*/
                             osmem INT path 'stat[@name="group_osmem"]',
                             allocated INT path 'stat[@name="group_allocmem"]') b
             WHERE  statistics_type = 'CELL')
+    WHERE lower(cell) like lower('%'||:V1||'%')
     GROUP  BY ROLLUP((memtype &cell))
     ORDER BY memtype,2]],
 }

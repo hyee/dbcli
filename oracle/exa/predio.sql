@@ -1,4 +1,4 @@
-/*[[Show offload predicate io and storage index info. Usage @@NAME [-d]
+/*[[Show offload predicate io and storage index info. Usage: @@NAME [<cell>]|[-d]
     --[[
         &cell: default={}, d={,cell}
     --]]
@@ -19,8 +19,8 @@ grid {[[ /*grid={topic='Predicate I/O'}*/
                             NAME VARCHAR2(50) path '@name',
                             VALUE NUMBER path '.') b
             WHERE  statistics_type = 'PREDIO')
-    WHERE VALUE>0
-    GROUP  BY NAME &cell
+    WHERE lower(cell) like lower('%'||:V1||'%') AND VALUE>0
+    GROUP BY NAME &cell
     ORDER BY NAME,2]],
     '|',{[[ /*grid={topic='Storage Index Stats'}*/
         SELECT NAME &cell,SUM(VALUE) KMG,SUM(VALUE) TMB
@@ -34,7 +34,8 @@ grid {[[ /*grid={topic='Predicate I/O'}*/
                                 NAME VARCHAR2(50) path '@name',
                                 VALUE NUMBER path '.') b
                 WHERE  statistics_type = 'PREDIO')
-        WHERE VALUE>0
+        WHERE lower(cell) like lower('%'||:V1||'%') 
+        AND   VALUE>0
         GROUP BY NAME &cell
         ORDER BY NAME,2]],
         '-',[[ /*grid={topic='Storage Index Get Job Stats'}*/
@@ -49,6 +50,7 @@ grid {[[ /*grid={topic='Predicate I/O'}*/
                                 NAME VARCHAR2(50) path '@name',
                                 VALUE NUMBER path '.') b
                 WHERE  statistics_type = 'PREDIO')
+        WHERE lower(cell) like lower('%'||:V1||'%') 
         GROUP BY NAME &cell
         ORDER BY NAME,2]],
         '-',[[ /*grid={topic='CPU ResourceManager Stats'}*/
@@ -63,7 +65,7 @@ grid {[[ /*grid={topic='Predicate I/O'}*/
                                 NAME VARCHAR2(50) path '@name',
                                 VALUE NUMBER path '.') b
                 WHERE  statistics_type = 'PREDIO')
-        WHERE VALUE>0
+        WHERE lower(cell) like lower('%'||:V1||'%') AND VALUE>0
         GROUP BY NAME &cell
         ORDER BY NAME,2]],
         '-',[[ /*grid={topic='Predicate IMC Pop Job Stats'}*/
@@ -78,7 +80,7 @@ grid {[[ /*grid={topic='Predicate I/O'}*/
                                 NAME VARCHAR2(50) path '@name',
                                 VALUE NUMBER path '.') b
                 WHERE  statistics_type = 'PREDIO')
-        WHERE VALUE>0
+        WHERE lower(cell) like lower('%'||:V1||'%')  AND VALUE>0
         GROUP BY NAME &cell
         ORDER BY NAME,2]],},
     '-',[[/*grid={topic='Offload Predicate Histograms'}*/
@@ -96,6 +98,7 @@ grid {[[ /*grid={topic='Predicate I/O'}*/
                    xmltable('//bucket' passing c.value columns --
                             BUCKET# VARCHAR2(50) path '@limit', VALUE NUMBER path '.') b
             WHERE  statistics_type = 'PREDIO')
+        WHERE lower(cell) like lower('%'||:V1||'%') 
         GROUP BY name &cell,bucket#)
     PIVOT(SUM(VALUE) FOR BUCKET# IN(1, 2, 4, 8, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384))
     ORDER  BY NAME

@@ -1,4 +1,4 @@
-/*[[Show cache info. Usage @@NAME [-d]
+/*[[Show cache info. Usage: @@NAME [<cell>]|[-d]
     --[[
         &cell: default={}, d={,cell}
     --]]
@@ -17,6 +17,7 @@ grid {[[ /*grid={topic='Flash Cache'}*/
                             NAME VARCHAR2(50) path '@name',
                             VALUE NUMBER path '.') b
             WHERE  statistics_type = 'CELL')
+    WHERE lower(cell) like lower('%'||:V1||'%') 
     GROUP  BY NAME &cell
     ORDER BY NAME,2]],
     '|',[[ /*grid={topic='Cache'}*/
@@ -31,6 +32,7 @@ grid {[[ /*grid={topic='Flash Cache'}*/
                             NAME VARCHAR2(50) path '@name', 
                             VALUE NUMBER path '.') b
             WHERE  statistics_type = 'CELL')
+    WHERE lower(cell) like lower('%'||:V1||'%') 
     GROUP  BY NAME &cell
     ORDER BY NAME,2]],
     '|',[[ /*grid={topic='Mem cache'}*/
@@ -45,6 +47,7 @@ grid {[[ /*grid={topic='Flash Cache'}*/
                             NAME VARCHAR2(50) path '@name', 
                             VALUE NUMBER path '.') b
             WHERE  statistics_type = 'CELL')
+    WHERE lower(cell) like lower('%'||:V1||'%') 
     GROUP  BY NAME &cell
     ORDER BY NAME,2]]
 }
