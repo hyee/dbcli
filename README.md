@@ -46,7 +46,7 @@ For Windows OS, to avoid the word wrap in the terminal window which affects the 
 Linux must be the `64-bit` version, and make sure `glibc >= v2.4`(use `ldd --version` to verify) are installed. Since Linux terminal doesn't have horizontal scrollbar, smaller font is preferred.
 
 ### OSX: Pre-Requisitions
-Only tested on OSX 10.12, lower version should be must. Java 1.8 is required.
+Only tested on OSX 10.12, lower version should be fine. Java 1.8 is required.
 
 ### Configure environment
 Before running dbcli, make sure that you have installed JRE 1.8+ in your local PC. If you are using the version of "With-JRE" branch, this step can be skipped.

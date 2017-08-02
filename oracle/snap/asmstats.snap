@@ -1,0 +1,45 @@
+/*[[
+  Generate ASM stats. Usage: @@NAME [options] [-s]} 
+  -s: Show stats data based on per second
+  --[[
+        &sec1: total={off}, s={on}
+  --]]
+]]*/
+{
+    sql=[[SELECT grouping_id(ds.inst_id, g.name,di.disk_number) gid,
+               nvl(g.name,'-ALL-') diskgroup,
+               NVL(''||ds.inst_id,'A') inst,
+               di.disk_number,
+               nvl(di.failgroup,'-ALL-') failgroup,
+               SUM(di.bytes_read + di.bytes_written) total_bytes,
+               SUM(di.bytes_read) bytes_read,
+               SUM(di.bytes_written) bytes_written,
+               SUM(di.HOT_BYTES_READ + di.HOT_BYTES_written) hot_bytes,
+               SUM(di.reads + di.writes) total_io,
+               SUM(di.reads) READS,
+               SUM(di.writes) writes,
+               SUM(di.READ_ERRS + di.write_ERRS) io_errs,
+               SUM(di.reads + di.writes) total_time,
+               SUM(di.read_time) read_time,
+               SUM(di.write_time) write_time
+               --,regexp_replace(ds.path, '.*/', '') PATH
+        FROM   gv$asm_disk_stat ds, gv$asm_disk_iostat di, gv$asm_diskgroup_stat g
+        WHERE  ds.inst_id = di.inst_id
+        AND    ds.group_number = di.group_number
+        AND    ds.disk_number = di.disk_number
+        AND    ds.mount_status = 'CACHED'
+        AND    g.inst_id = ds.inst_id
+        AND    g.group_number = di.group_number
+        AND    di.instname NOT LIKE '+ASM%'
+        GROUP BY rollup( g.name,ds.inst_id,
+               (di.disk_number,
+               di.failgroup))]],
+    delta_by="total_io,writes,READS,total_bytes,hot_bytes,bytes_read,bytes_written,total_time,read_time,write_time,io_errs,timeouts",
+    per_second="&sec1",
+    max_rows=50,
+    column_formatter={KMG='total_bytes,hot_bytes,bytes_read,bytes_written',
+                      TMB='total_io,writes,READS,io_errs',
+                      smhd2='total_time,read_time,write_time,timeouts'},
+    group_by="diskgroup,inst,disk_number,failgroup",
+    order_by='-gid,-total_bytes',
+}

@@ -1,5 +1,3 @@
-
-
 local env,pairs,ipairs=env,pairs,ipairs
 local math,table,string,class,event=env.math,env.table,env.string,env.class,env.event
 local grid=class()
@@ -216,7 +214,8 @@ function grid.show_pivot(rows,col_del)
     for k,v in ipairs(title) do
         table.insert(r,{("%s%-"..maxlen.."s %s%s "):format(hor,grid.format_title(v),nor,del)})
         for i=2,pivot,1 do
-            table.insert(r[k],tostring(rows[i][keys[v]]):trim())
+            local _,value=grid.format_number(true,type(v)=="table" and v or {column_name=v},rows[i][keys[v]],i-1)
+            table.insert(r[k],tostring(value):trim())
         end
     end
 
@@ -246,6 +245,7 @@ function grid.show_pivot(rows,col_del)
         end
         table.insert(r,1,titles)
     end
+    r.pivot=grid.pivot
     return r
 end
 
@@ -259,6 +259,32 @@ function grid:ctor(include_head)
     self.include_head=self.headind == 0 and true or false
     self.colsize=table.new(255,0)
     self.data=table.new(1000,0)
+end
+
+function grid.format_number(include_head,colinfo,value,rownum)
+    if include_head then
+        value=event.callback("ON_COLUMN_VALUE",{colinfo.column_name,value,rownum})[2]
+    end
+    if value==nil then return false,'' end
+    if rownum>0 and (type(value) == "number"  or include_head and colinfo.is_number) then
+        local v1,v2=tonumber(value)
+        if v1 then
+            local pre,scal=math.modf(v1)
+            if grid.sep4k=="on" then
+                if v1~=pre then
+                    v2=string.format_number("%,.2f",v1,'double')
+                else
+                    v2=string.format_number("%,d",v1,'long')
+                end
+            elseif grid.digits<38 and scal>0 then
+                v2=math.round(v1,grid.digits)
+            end
+            return true,v2 or v1
+        end
+        if tostring(value):find('e',1,true) then return true,string.format('%99.38f',value):gsub(' ',''):gsub('%.?0+$','') end
+        return true,value
+    end
+    return false,value
 end
 
 function grid:add(row)
@@ -286,37 +312,17 @@ function grid:add(row)
     rs[0]=headind
     local cnt=0
     local cols=#result>0 and #result[1] or #rs
-    local digits_formatter="%,."..grid.digits.."f"
+    
     --run statement
     for k=1,cols do
         local v=rs[k]
         rs._org[k]=v
-        
         if k>grid.maxcol then break end
-        local csize,v1 =0,v
+        local csize,v1,is_number=0,v
         if not colsize[k] then colsize[k] = {0,1} end
-        if self.include_head then
-            v=event.callback("ON_COLUMN_VALUE",{#result>0 and result[1][k] or v,v,#result})[2]
-        end
-        if v==nil then v='' end
-        if headind>0 and (type(v) == "number"  or self.include_head and self.colinfo and self.colinfo[k] and self.colinfo[k].is_number) then
-            local v1,v2=tonumber(v)
-            if v1 then
-                local pre,scal=math.modf(v1)
-                if grid.sep4k=="on" then
-                    if v1~=pre then
-                        v2=string.format_number("%,.2f",v1,'double')
-                    else
-                        v2=string.format_number("%,d",v1,'long')
-                    end
-                elseif grid.digits<38 and scal>0 then
-                    v2=string.format_number(digits_formatter,v1,'double')
-                end
-                if v2 and tostring(v2) ~= tostring(v1) then
-                    v=v2 
-                end
-            end
-            if tostring(v):find('e',1,true) then v=string.format('%99.38f',v):gsub(' ',''):gsub('%.?0+$','') end
+        is_number,v1=grid.format_number(self.include_head,self.colinfo and self.colinfo[k] and self.colinfo[k] or {column_name=#result>0 and result[1][k] or v},v,#result)
+        if tostring(v)~=tostring(v1) then v=v1 end
+        if is_number then
             csize = #tostring(v)
         elseif type(v) ~= "string" or v=="" then
             v = tostring(v)  or ""
@@ -587,7 +593,7 @@ function grid.merge(tabs,is_print,prefix,suffix)
         local function push(line) newtab[#newtab+1]=line end
         local actcols=strip(tab[#tab])
         local hspace='|'..space.rep(' ',cols-2)..'|'
-        local max_rows=tab.max_rows or rows
+        local max_rows=(tab.max_rows or rows)+2
         if tab._is_drawed then
             local cspace=cols-actcols
             for rowidx,row in ipairs(tab) do
@@ -653,9 +659,9 @@ function grid.merge(tabs,is_print,prefix,suffix)
                 if type(sep)=="string" and type(nexttab)=="table" and #nexttab>0 then
                     newtab={_is_drawed=true}
                     local m1,m2=tab._is_drawed and 2 or 0,nexttab._is_drawed and 2 or 0
-                    local width1,width2=(tab.width or (strip(tab[#tab])-m1))+2,(nexttab.width or (strip(nexttab[#nexttab])-m2))+2
-                    local height1,height2=(tab.height or (#tab-m1))+2,(nexttab.height or (#nexttab-m2))+2
-                    height1,height2=math.min(tab.max_rows or 1e5,height1),math.min(nexttab.max_rows or 1e5,height2)
+                    local width1,width2=(tab.width and (tab.width+2) or (strip(tab[#tab])-m1))+2,(nexttab.width and(nexttab.width+2) or (strip(nexttab[#nexttab])-m2))+2
+                    local height1,height2=(tab.height and (tab.height+2) or (#tab-m1))+2,(nexttab.height and (nexttab.height+2) or (#nexttab-m2))+2
+                    height1,height2=math.min(tab.max_rows and (tab.max_rows+2) or 1e5,height1),math.min(nexttab.max_rows and (nexttab.max_rows+2) or 1e5,height2)
                     if sep=='|' then
                         local maxlen=math.max(height1,height2)
                         tab,nexttab=redraw(tab,width1,maxlen),redraw(nexttab,width2,maxlen)
