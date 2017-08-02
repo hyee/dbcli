@@ -1,3 +1,5 @@
+2017-08-01: + oracle: new command set 'exa' for Exadata/SuportCluster
+                    : new command 'snap celldb/asmstats'
 2017-07-24: + public: new command 'grid' to merge several query into a grid
             + oracle: new commands 'snap session/system', new alias 'top' 
 2017-07-21: + public: supports merge grids(symbol '| + -'), type 'test_grid' for sample

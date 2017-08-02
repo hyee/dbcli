@@ -15,6 +15,7 @@ oracle.module_list={
     "unwrap",
     "sys",
     "show",
+    "exa",
     "chart",
     "ssh",
     "extvars",
@@ -529,7 +530,7 @@ function oracle:get_library()
 end
 
 function oracle:grid_db_call(sqls,args)
-    local stmt={'BEGIN'}
+    local stmt={[[BEGIN]]}
     args=args or {}
     for idx,sql in ipairs(sqls) do
         local typ=self.get_command_type(sql.sql)
