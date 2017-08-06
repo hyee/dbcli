@@ -343,10 +343,11 @@ function var.define_column(col,...)
                     local prefix=s<0 and '-' or ''
                     s=math.abs(s)
                     for i=1,#units do
-                        v,s=s,s/div
+                        v,s=math.round(s,2),s/div
+                        if v==0 then prefix='' end
                         if s<1 then return string.format(i>1 and "%s%.2f%s" or "%s%d%s",prefix,v,units[i]) end
                     end
-                    return string.format("%s%.2f%s",prefix,v,units[#units])
+                    return string.format("%s%.2f%s",v==0 and '' or prefix,v,units[#units])
                 end
             elseif f=="SMHD2" then
                 local units={'s','m','h','d'}
@@ -357,7 +358,8 @@ function var.define_column(col,...)
                     local prefix=s<0 and '-' or ''
                     s=math.abs(s)
                     for i=1,#units-1 do
-                        v,s=s,s/div[i]
+                        v,s=math.round(s,2),s/div[i]
+                        if v==0 then prefix='' end
                         if s<1 then return string.format("%s%.2f%s",prefix,v,units[i]) end
                     end
                     return string.format("%s%.2f%s",prefix,s,units[#units])

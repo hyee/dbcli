@@ -531,19 +531,22 @@ end
 
 function oracle:grid_db_call(sqls,args)
     local stmt={[[BEGIN]]}
+    local clock=os.timer()
+    --stmt[#stmt+1]='BEGIN set transaction isolation level serializable;EXCEPTION WHEN OTHERS THEN NULL;END;'
     args=args or {}
     for idx,sql in ipairs(sqls) do
         local typ=self.get_command_type(sql.sql)
         if typ=='SELECT' or typ=='WITH' then
             local cursor='GRID_CURSOR_'..idx
             args[cursor]='#CURSOR'
-            stmt[#stmt+1]='  OPEN :'..cursor..' FOR '..sql.sql..';'
+            stmt[#stmt+1]='  OPEN :'..cursor..' FOR \n        '..sql.sql..';'
         else
             stmt[#stmt+1]=sql.sql..';'
         end
     end
     stmt[#stmt+1]='END;'
     local results=self.super.exec(self,table.concat(stmt,'\n'),args)
+    self.grid_cost=os.timer()-clock
     if type(results)~="table" and type(results)~="userdata" then results=nil end
     for idx,sql in ipairs(sqls) do
         local cursor='GRID_CURSOR_'..idx

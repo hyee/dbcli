@@ -1,7 +1,9 @@
+2017-08-04: + public: new alias 'topsec' which equals to 'snap <cmd> [interval]+ -top -sec'
+2017-08-04: + public: command 'snap' supports public options '-top' and '-sec'
 2017-08-01: + oracle: new command set 'exa' for Exadata/SuportCluster
                     : new command 'snap celldb/asmstats'
 2017-07-24: + public: new command 'grid' to merge several query into a grid
-            + oracle: new commands 'snap session/system', new alias 'top' 
+            + oracle: new commands 'snap session/system', new alias 'top/cellio' 
 2017-07-21: + public: supports merge grids(symbol '| + -'), type 'test_grid' for sample
 2017-07-21: * public: switchs launcher with 'luajit' instead of 'java', original scripts moved into 'bin' dir
 2017-07-21: + public: 'snap' command support repeat execution(the '+' symbol)

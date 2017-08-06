@@ -173,7 +173,7 @@ function grid.sort(rows,cols,bypass_head)
             end
 
             if type(a1)=="string" then 
-                a1,b1=a1:strip_ansi() ,b1:strip_ansi() 
+                a1,b1=a1:strip_ansi():upper(),b1:strip_ansi():upper()
             end
 
             if a1~=b1 then
@@ -279,7 +279,7 @@ function grid.format_number(include_head,colinfo,value,rownum)
             elseif grid.digits<38 and scal>0 then
                 v2=math.round(v1,grid.digits)
             end
-            return true,v2 or v1
+            value=v2 or v1
         end
         if tostring(value):find('e',1,true) then return true,string.format('%99.38f',value):gsub(' ',''):gsub('%.?0+$','') end
         return true,value
@@ -593,7 +593,7 @@ function grid.merge(tabs,is_print,prefix,suffix)
         local function push(line) newtab[#newtab+1]=line end
         local actcols=strip(tab[#tab])
         local hspace='|'..space.rep(' ',cols-2)..'|'
-        local max_rows=(tab.max_rows or rows)+2
+        local max_rows=(tab.max_rows and tab.max_rows+2 or rows)+2
         if tab._is_drawed then
             local cspace=cols-actcols
             for rowidx,row in ipairs(tab) do
@@ -661,7 +661,7 @@ function grid.merge(tabs,is_print,prefix,suffix)
                     local m1,m2=tab._is_drawed and 2 or 0,nexttab._is_drawed and 2 or 0
                     local width1,width2=(tab.width and (tab.width+2) or (strip(tab[#tab])-m1))+2,(nexttab.width and(nexttab.width+2) or (strip(nexttab[#nexttab])-m2))+2
                     local height1,height2=(tab.height and (tab.height+2) or (#tab-m1))+2,(nexttab.height and (nexttab.height+2) or (#nexttab-m2))+2
-                    height1,height2=math.min(tab.max_rows and (tab.max_rows+2) or 1e5,height1),math.min(nexttab.max_rows and (nexttab.max_rows+2) or 1e5,height2)
+                    height1,height2=math.min(tab.max_rows and (tab.max_rows+4) or 1e5,height1),math.min(nexttab.max_rows and (nexttab.max_rows+4) or 1e5,height2)
                     if sep=='|' then
                         local maxlen=math.max(height1,height2)
                         tab,nexttab=redraw(tab,width1,maxlen),redraw(nexttab,width2,maxlen)
@@ -692,7 +692,7 @@ function grid.merge(tabs,is_print,prefix,suffix)
                         local m=tab._is_drawed and 2 or 0
                         local width=(tab.width or (strip(tab[#tab])-m))+2
                         local height=(tab.height or (#tab-m))+2
-                        height=math.min(tab.max_rows or 1e5,height)
+                        height=math.min(tab.max_rows and tab.max_rows+4 or 1e5,height)
                         maxwidth = math.max(maxwidth,strip(tab[#tab]))
                         tab=redraw(tab,width,height)
                     end

@@ -1,100 +1,229 @@
 /*[[
-  Generate delta values based on Exadata cell stats. Usage: @@NAME [options] [-s]} 
-  -s: Show stats data based on per second
+  Generate delta values based on Exadata cell stats. Usage: @@NAME [options] [-pred] 
+  -pred: show offload predicate info instead of db wait events
   --[[
+        @CHECK_VERSION: 12.1={}
+        @CHECK_ACCESS_ALL: v$CELL_DB/v$CELL_GLOBAL/v$CELL_IOREASON/v$cell_state/v$cell_config/gv$osstat/gv$sys_time_model/gv$system_event/gv$asm_disk_stat/gv$asm_diskgroup={1}
         &sec1: total={off}, s={on}
         &cell: default={}, d={,cell}
-        &cellname: default={(select extractvalue(xmltype(a.confval),'/cli-output/context/@cell') from v$cell_config a where a.CELLNAME=b.CELL_NAME and rownum<2) cell}
+        &cellname: default={nvl((select /*+result_cache*/ extractvalue(xmltype(a.confval),'/cli-output/context/@cell') from v$cell_config a where a.CELLNAME=b.CELL_NAME and rownum<2),'--TOTAL--') cell}
+        &last: {
+            default={/*grid={topic="DB Wait Events", max_rows=10,order_by="-ms"}*/
+            SELECT substr(event, 1, 32) event, SUM(total_waits) waits, 
+                   SUM(TIME_WAITED_MICRO) * 1e-3 ms,null avg
+            FROM   gv$system_event
+            WHERE  total_waits > 0
+            AND    wait_class != 'Idle'
+            GROUP  BY wait_class, event},
+            
+            pred={/*grid={topic="Predicate IO", max_rows=10}*/
+            SELECT NAME &cell,SUM(VALUE) VALUE
+            FROM   (SELECT &cellname,c.*
+                    FROM   v$cell_state b,
+                           xmltable('/predio_stats/stats[@type=("predicateio","storidx_global_stats")]/stat[. > 0]' 
+                                    passing xmltype(b.statistics_value) columns --
+                                    NAME VARCHAR2(41) path '@name',
+                                    VALUE NUMBER path '.') c
+                    WHERE  statistics_type = 'PREDIO')
+            WHERE lower(cell) like lower('%'||:V1||'%') AND VALUE>0
+            GROUP BY NAME &cell}
+        }
   --]]
 ]]*/
 {
-    sql={
-    [[SELECT   grouping_id(g.name) gid, /*+grid={topic="ASM Stats", max_rows=10,order_by='-gid,-bytes',fixed_title=true}*/
-               nvl(g.name,'-ALL-') diskgroup &cell, 
+    sql={[[/*grid={topic="DB IO Stats",order_by='inst',fixed_title=true}*/
+        WITH bs AS
+        (SELECT VALUE FROM v$parameter WHERE NAME = 'db_block_size')
+        SELECT *
+        FROM   (SELECT nvl(''||inst_id, ' ') inst, round(AVG(CPU), 2) CPU, round(avg(ela)*1e-6,2) "Resp(s)"
+                FROM   (SELECT inst_id, 
+                               MAX(DECODE(stat_name, 'BUSY_TIME', VALUE)) / MAX(DECODE(stat_name, 'NUM_CPUS', VALUE)) cpu,
+                               (select MAX(DECODE(stat_name, 'sql execute elapsed time', VALUE)) from gv$sys_time_model b where b.inst_id=a.inst_id) ela
+                        FROM   gv$osstat a
+                        GROUP  BY inst_id)
+                GROUP  BY ROLLUP(inst_id))
+        JOIN   (SELECT nvl(''||inst_id, ' ') inst,
+                        SUM(DECODE(n, 'cell physical IO interconnect bytes', v)) "BandWidth",
+                        SUM(DECODE(n, 'user calls', v)) "Calls",
+                        SUM(DECODE(n, 'cell physical IO interconnect bytes returned by smart scan', v)) "OflOut",
+                        SUM(DECODE(n, 'physical read total bytes', v,'physical write total bytes',v,'redo size',v)) "AllIO",
+                        SUM(DECODE(n, 'physical read total bytes', v)) "PhyRead",
+                        SUM(DECODE(n, 'physical read total bytes optimized', v)) "OptR(%)",
+                        SUM(DECODE(n, 'physical reads direct', v)) * (SELECT * FROM bs) "dxr(%)",
+                        SUM(DECODE(n, 'physical write total bytes', v)) "PhyWrite",
+                        SUM(DECODE(n, 'physical write total bytes optimized', v)) "OptW(%)",
+                        SUM(DECODE(n, 'physical writes direct', v)) * (SELECT * FROM bs) "dxw(%)",
+                        SUM(DECODE(n, 'redo size', v)) "Redo",
+                        SUM(DECODE(n, 'cell physical IO bytes eligible for predicate offload', v, 'cell physical write IO bytes eligible for offload', v)) "Offload",
+                        SUM(DECODE(n, 'cell num bytes in passthru during predicate offload', v,'cell physical IO bytes sent directly to DB node to balance CPU',v)) "Passthru",
+                        SUM(DECODE(n, 'cell flash cache read hits', v)) "FcHit",
+                        SUM(DECODE(n, 'physical read total IO requests', v)) "Hit(%)",
+                        SUM(DECODE(n, 'cell physical IO bytes saved by storage index', v)) "SiSave",
+                        SUM(DECODE(n, 'cell physical IO bytes saved by columnar cache', v)) "FCCSave"
+                FROM   (SELECT inst_id, NAME n, VALUE v FROM gv$sysstat WHERE VALUE > 0)
+                GROUP  BY ROLLUP(inst_id))
+        USING  (inst)]],
+    '-',
+    [[/*grid={topic="ASM Stats", max_rows=10,order_by='-gid,-bytes',fixed_title=true}*/
+      SELECT   grouping_id(g.name) gid, 
+               nvl(g.name,'--TOTAL--') diskgroup &cell, 
                count(DISTINCT ds.inst_id) "INSTANCES",
-               count(DISTINCT di.disk_number) "DISKS",
+               count(DISTINCT ds.disk_number) "DISKS",
                count(DISTINCT regexp_replace(ds.path, '.*/', '')) paths,
-               SUM(di.bytes_read + di.bytes_written) bytes,
-               SUM((di.bytes_read + di.bytes_written)*dt) FD_bytes,
-               SUM(di.bytes_read) read,
-               SUM(di.bytes_read*dt) FD_read,
-               SUM(di.bytes_written) write,
-               SUM(di.bytes_written*dt) FD_write,
-               SUM(di.HOT_BYTES_READ + di.HOT_BYTES_written) hot_bytes,
-               SUM(di.reads + di.writes) total_io,
-               SUM(di.reads) READS,
-               SUM(di.writes) writes,
-               SUM(di.READ_ERRS + di.write_ERRS) io_errs,
-               SUM(di.reads + di.writes) total_time,
-               SUM(di.read_time) read_time,
-               SUM(di.write_time) write_time
-        FROM   gv$asm_disk_stat ds, gv$asm_disk_iostat di, gv$asm_diskgroup_stat g,
-               (SELECT distinct extractvalue(xmltype(a.confval),'/cli-output/context/@cell') cell, 
-                       asmDiskName,case when lower(diskType) like '%flash%' then 1 else 0 end dt
-                FROM   v$cell_config a,
-                       XMLTABLE('/cli-output/griddisk' PASSING xmltype(a.confval) COLUMNS --
-                                asmDiskName VARCHAR2(300) path 'asmDiskName',
-                                diskType VARCHAR2(300) path 'diskType') b
-                WHERE  conftype = 'GRIDDISKS') cell
-        WHERE  ds.inst_id = di.inst_id
-        AND    ds.group_number = di.group_number
-        AND    ds.disk_number = di.disk_number
-        AND    ds.name=cell.asmDiskName
-        AND    ds.mount_status = 'CACHED'
+               SUM(ds.TOTAL_MB)*1024*1024/count(DISTINCT ds.inst_id) TOTAL_SIZE,
+               SUM(ds.FREE_MB)*1024*1024/count(DISTINCT ds.inst_id) FREE_SIZE,
+               '|' "|",
+               SUM(ds.bytes_read + ds.bytes_written) bytes,
+               SUM(ds.HOT_BYTES_READ + ds.HOT_BYTES_written) hot_bytes,
+               SUM(ds.bytes_read) read,
+               SUM(ds.bytes_written) write,
+               '|' "|",
+               SUM(ds.reads + ds.writes) total_io,
+               SUM(ds.reads) READS,
+               SUM(ds.writes) writes,
+               SUM(ds.READ_ERRS + ds.write_ERRS)*1e3 io_errs,
+               SUM(ds.read_time + ds.write_time)*1e3 rw_ms,
+               SUM(ds.read_time)*1e3 read_ms,
+               SUM(ds.write_time)*1e3 write_ms
+        FROM   gv$asm_disk_stat ds, gv$asm_diskgroup g
+        WHERE  ds.mount_status = 'CACHED'
         AND    g.inst_id = ds.inst_id
-        AND    g.group_number = di.group_number
-        AND    di.instname NOT LIKE '+ASM%'
+        AND    g.group_number = ds.group_number
         GROUP BY rollup((g.name &cell))]],
-    '-',{[[
-      SELECT substr(METRIC_NAME,1,40) METRIC_NAME &cell, sum(METRIC_VALUE) value,METRIC_TYPE unit
-      FROM (select &cellname,b.* from V$CELL_GLOBAL b)
-      WHERE METRIC_VALUE>0 /*+grid={topic="Cell Global Stats",height=0}*/
-      GROUP BY METRIC_NAME &cell,METRIC_TYPE]],
-      '|',{[[
+    '-',[[/*grid={topic="Cell Throughput",fixed_title=true,order_by='cell'}*/
+        SELECT  nvl(c.name,'--TOTAL--') cell,
+                flashCacheMode "flashMode",
+                round(avg(temperatureReading),2) "Temp(C)",
+                round(avg(cpu),2) "CPU(%)",
+                GREATEST(SUM(largeio + smallio),SUM(ALLIO)) "AllIO",
+                SUM(fd) "FD(%)",
+                SUM(largeio) "LIO(%)",
+                sum(readio) "Read(%)",
+                SUM(smartio) "Smart(%)",
+                '|' "|",
+                SUM(redo) "Redo",
+                SUM(fd_redo) "FL(%)",
+                '|' "|",
+                SUM(smartio) "SmartIO",
+                SUM(fcio) "FC(%)",
+                SUM(ccio) "FCC(%)",
+                SUM(ofl_out) "OflOut",
+                SUM(sisave) "SiSave",
+                SUM(passthru) "Passthru",
+                SUM(bandwidth) "Net"
+        FROM   (SELECT cell_name,
+                       sum(decode(metric_name,'Per Db Bytes of IO',METRIC_VALUE)) allio,
+                       sum(decode(metric_name,'Per Db Bytes of IO for Flash',METRIC_VALUE)) fd
+                FROM   V$CELL_DB b
+                GROUP  BY cell_name) a,
+               (SELECT  cell_name,
+                        SUM(DECODE(n, 'Flash log redo bytes written to flash', v, 'Flash log redo bytes written to disk', v)) redo,
+                        SUM(DECODE(n, 'Flash log redo bytes written to flash', v)) fd_redo,
+                        SUM(DECODE(n, 'Network bytes transmitted', v, 'Network bytes received', v)) bandwidth,
+                        --SUM(DECODE(n, 'Smart IO issued bytes total', v)) smartio,
+                        SUM(DECODE(n, 'Large read bytes', v, 'Large write bytes', v)) largeio,
+                        SUM(DECODE(n, 'Small read bytes', v, 'Small write bytes', v)) smallio,
+                        SUM(DECODE(n, 'Small read bytes', v, 'Large read bytes', v)) readio,
+                        --SUM(DECODE(n, 'Flash cache write bytes - populate columnar', v, 'Flash cache read bytes - columnar', v)) ccio,
+                        --SUM(DECODE(n, 'Smart IO bytes read from flash cache', v)) fcio,
+                        --SUM(DECODE(n, 'Smart IO filtered bytes sent back to database', v)) ofl_out,
+                        --SUM(DECODE(n, 'Storage Index saved bytes', v)) SIsave,
+                        --SUM(DECODE(n, 'Flash cache columnar read bytes saved', v)) ccsave,
+                        --SUM(DECODE(n, 'Smart IO bytes pushed back in passthru mode', v)) passthru,
+                        null nil
+                FROM   (SELECT cell_name, metric_value v, metric_name n FROM v$cell_global)
+                GROUP  BY cell_name) b,
+                (SELECT a.cellname,
+                        b.*
+                FROM    v$cell_config a,
+                        XMLTABLE('/cli-output/cell' PASSING xmltype(a.confval) COLUMNS
+                                    name VARCHAR2(300) path 'name',
+                                    cpuCount VARCHAR2(300) path 'cpuCount',
+                                    temperatureReading VARCHAR2(300) path 'temperatureReading',
+                                    flashCacheMode VARCHAR2(300) path 'flashCacheMode') b
+                WHERE  conftype = 'CELL') c,
+                (SELECT cell_name,
+                        nvl(MAX(DECODE(n, 'current_cell_cpu_utilization', v)), 0) CPU,
+                        MAX(DECODE(n, 'total_filter_completed_io_size', v)) smartio,
+                        MAX(DECODE(n, 'total_filter_output_size', v)) ofl_out,
+                        MAX(DECODE(n, 'columnar_cache_read_bytes', v, 'columnar_cache_write_bytes', v)) ccio,
+                        MAX(DECODE(n, 'columnar_cache_saved_bytes', v)) ccsave,
+                        MAX(DECODE(n, 'filter_cpu_passthru_output_size', v)) passthru,
+                        MAX(DECODE(n, 'total_bytes_saved_by_storage_index', v)) sisave,
+                        MAX(DECODE(n, 'flash_cache_read_bytes', v, 'flash_cache_write_bytes', v)) fcio
+                FROM   v$cell_state a,
+                xmltable('/predio_stats/stats[@type=("predicateio")]/stat[. >0]' passing 
+                        xmltype(a.statistics_value) columns --
+                        n VARCHAR2(50) path '@name', v NUMBER path '.') b
+                WHERE  statistics_type = 'PREDIO'
+                GROUP  BY cell_name) d
+        WHERE b.cell_name=c.cellname
+        AND   b.cell_name=a.cell_name
+        AND   b.cell_name=d.cell_name
+        GROUP  BY ROLLUP((c.name,flashCacheMode))]],
+    '-',{[[/*grid={topic="Cell Global Stats",height=0}*/
+          SELECT substr(METRIC_NAME,1,40) METRIC_NAME &cell, sum(METRIC_VALUE) value,METRIC_TYPE unit
+          FROM (select &cellname,b.* from V$CELL_GLOBAL b)
+          WHERE METRIC_VALUE>0 
+          GROUP BY METRIC_NAME &cell,METRIC_TYPE]],
+      '|',{[[/*grid={topic="Cell DB",order_by='-gid,-bytes',max_rows=10,fixed_title=true}*/
         SELECT  grouping_id(src) gid ,
-                nvl(src,'--TOTAL--') src /*+grid={topic="Cell DB",order_by='-gid,-bytes',max_rows=10,fixed_title=true}*/
-                &cell,
+                nvl(src,'--TOTAL--') src &cell,
                 count(distinct cell) cells,
                 SUM(DECODE(metric_name, 'Per Db Bytes of IO', v, 'Per Db Bytes of IO for Flash', v)) bytes,
-                SUM(DECODE(metric_name, 'Per Db Bytes of IO for Flash', v)) f_bytes,
+                SUM(DECODE(metric_name, 'Per Db Bytes of IO for Flash', v)) fd_bytes,
                 0 "Flash(%)",
-                SUM(DECODE(metric_name, 'Per Db Number of IOs', v, 'Per Db Number of IOs for Flash', v)) ios,
-                SUM(DECODE(metric_name, 'Per Db Number of IOs for Flash', v)) f_ios,
-                SUM(DECODE(metric_name, 'Per Db Number of large IOs', v, 'Per Db Number of large IOs for Flash', v)) lios,
-                SUM(DECODE(metric_name, 'Per Db Number of large IOs for Flash', v)) f_lios,
-                SUM(DECODE(metric_name, 'Per Db small IO service time', v * 1e-6, 'Per Db small IO service time for Flash', v * 1e-6)) service,
-                SUM(DECODE(metric_name, 'Per Db small IO service time for Flash', v * 1e-6)) f_service,
-                SUM(DECODE(metric_name, 'Per Db large IO queue time', v * 1e-6, 'Per Db large IO queue time for Flash', v * 1e-6)) queues,
-                SUM(DECODE(metric_name, 'Per Db large IO queue time for Flash', v * 1e-6)) f_queues
+                SUM(DECODE(metric_name, 'Per Db Number of IOs', v, 'Per Db Number of IOs for Flash', v)) "IOs",
+                SUM(DECODE(metric_name, 'Per Db Number of IOs for Flash', v)) fd_io,
+                SUM(DECODE(metric_name, 'Per Db Number of large IOs', v, 'Per Db Number of large IOs for Flash', v)) "LIOs",
+                SUM(DECODE(metric_name, 'Per Db Number of large IOs for Flash', v)) fd_lio,
+                SUM(case when metric_name like '% IO % time%' then v end)*1e-3 avg_ms,
+                SUM(case when metric_name like '% IO % time' then v end)*1e-3 hd_ms,
+                SUM(case when metric_name like '% IO % time % Flash' then v end)*1e-3 fd_ms
             FROM   (SELECT &cellname,
                            src_Dbname src, COUNT(1) cells, metric_name, SUM(metric_value) v, metric_type
                     FROM   V$CELL_DB b
                     GROUP  BY cell_name,src_Dbname, metric_name, metric_type
                     ORDER  BY 1, 3)
             GROUP  BY grouping sets((src &cell),()) ]],
-        '-',{[[
-            SELECT nvl(reason_name,'--TOTAL--') reason_name &cell, SUM(metric_value) metric_value
+        '-',{[[/*grid={topic="Cell Reason", max_rows=10}*/
+            SELECT nvl(reason_name,'--TOTAL--') reason_name &cell, SUM(metric_value) bytes
             FROM   (SELECT &cellname,
-                           reason_name,/*+grid={topic="Cell Reason", max_rows=20}*/
+                           reason_name,
                            SUM(metric_value) metric_value
                     FROM   V$CELL_IOREASON b
                     WHERE  metric_type = 'bytes'
                     AND    Metric_value > 0
                     GROUP  BY CELL_NAME, reason_name)
             GROUP  BY reason_name &cell]],
-            '|',
-            [[SELECT JOB_TYPE &cell,COUNT(1) AAS,WAIT_STATE,SQL_ID /*+grid={topic="Cell ASH", max_rows=20}*/
-              FROM   (select &cellname,b.* from V$CELL_THREAD_HISTORY b
-                      WHERE  SNAPSHOT_TIME>=sysdate-:SNAP_INTERVAL/86400)
-              GROUP BY JOB_TYPE &cell,WAIT_STATE,SQL_ID
-              ORDER BY AAS DESC]]}},
+            '+',[[&last]]}},
     }},
-    delta_by="total_io,io_errs,writes,READS,hot_bytes,bytes,read,write,fd_bytes,fd_read,fd_write,timeouts,total_time,read_time,write_time,METRIC_VALUE,value,bytes,f_bytes,ios,f_ios,lios,f_lios,queues,f_queues,service,f_service",
-    calc_rules={["Flash(%)"]='[f_bytes]*100/[bytes]'},
-    per_second="&sec1",
-    column_formatter={KMG='bytes,hot_bytes,read,write,bytes,fd_bytes,fd_read,fd_write,f_bytes,metric_value',
-                      TMB='ios,f_ios,lios,f_lios,total_io,writes,READS,io_errs',
-                      smhd2='total_time,read_time,write_time,timeouts,queues,f_queues,service,f_service',
+    delta_by="Resp(s),Calls,CPU,BandWidth,PhyRead,OptR(%),dxr(%),PhyWrite,OptW(%),dxw(%),Redo,Offload,SmartIO,FcHit,Hit(%),SiSave,FCCSave,waits,ms,Net,AllIO,Smart(%),FD(%),LIO(%),Redo,FL(%),SmartIO,Offload,FCC(%),FC(%),Read(%),OflOut,FccSave,Passthru,total_io,io_errs,writes,READS,hot_bytes,bytes,read,write,fd_bytes,fd_read,fd_write,timeouts,rw_ms,read_ms,write_ms,METRIC_VALUE,value,bytes,fd_bytes,ios,fd_io,lios,fd_lio,avg_ms,hd_ms,fd_ms",
+    calc_rules={["Flash(%)"]='[fd_bytes]*100/[bytes]',
+                 avg='[ms]/[waits]',
+                 avg_ms='[avg_ms]/[ios]',
+                 hd_ms='[hd_ms]/([ios]-[fd_io])',
+                 fd_ms='[fd_ms]/[fd_io]',
+                 rw_ms='[rw_ms]/[total_io]',
+                 read_ms='[read_ms]/([reads])',
+                 write_ms='[write_ms]/[writes]',
+                 ["LIO(%)"]='[LIO(%)]*100/[AllIO]',
+                 ["Smart(%)"]='[Smart(%)]*100/[AllIO]',
+                 ["FD(%)"]='[FD(%)]*100/[AllIO]',
+                 ["FL(%)"]='[FL(%)]*100/[Redo]',
+                 ["FCC(%)"]='[FCC(%)]*100/[SmartIO]',
+                 ["FC(%)"]='[FC(%)]*100/[SmartIO]',
+                 ["Read(%)"]='[Read(%)]*100/[AllIO]',
+                 ['dxr(%)']='100*[dxr(%)]/[PhyRead]',
+                 ['dxw(%)']='100*[dxw(%)]/[PhyWrite]',
+                 ['OptR(%)']='100*[OptR(%)]/[PhyRead]',
+                 ['OptW(%)']='100*[OptW(%)]/[PhyWrite]',
+                 ['Hit(%)']='100*[FcHit]/[Hit(%)]',
+                 ['Resp(s)']='Resp(ms)/Calls'},
+    column_formatter={KMG='OflOut,BandWidth,PhyRead,PhyWrite,Redo,Offload,SmartIO,SiSave,FCCSave,Net,AllIO,Redo,SmartIO,Offload,OflOut,SiSave,FccSave,Passthru,OS_SIZE,TOTAL_SIZE,FREE_SIZE,bytes,hot_bytes,read,write,bytes,fd_bytes,fd_read,fd_write,fd_bytes',
+                      TMB='calls,fchit,ios,fd_io,lios,fd_lio,total_io,writes,READS,io_errs',
+                      smhd2='timeouts',
                      ['#,##0']='value'},
-    group_by="diskgroup,cell,src,reason_name,METRIC_NAME"
+    group_by="inst,event,diskgroup,cell,src,reason_name,METRIC_NAME,NAME",
+    per_second='on'
 }
