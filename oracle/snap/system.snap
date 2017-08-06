@@ -178,10 +178,10 @@
                      SUM(DECODE(n, 'cell physical IO bytes eligible for predicate offload', v,'cell physical write IO bytes eligible for offload',v)) "Offload",
                      SUM(DECODE(n, 'physical read total bytes', v, 'physical write total bytes', v)) "OflIn(%)",
                      SUM(DECODE(n, 'cell IO uncompressed bytes', v)) "Unzip",
-                     SUM(DECODE(n, 'cell physical IO bytes saved by storage index', v)) "SISave(%)",
+                     SUM(DECODE(n, 'cell physical IO interconnect bytes returned by smart scan', v)) "OflEff",
                      SUM(DECODE(n, 'physical read total bytes optimized', v)) "OptRead",
                      SUM(DECODE(n, 'physical write total bytes optimized', v)) "OptWrite",
-                     SUM(DECODE(n, 'cell physical IO bytes sent directly to DB node to balance CPU', v)) "passthru",
+                     SUM(DECODE(n, 'cell physical IO bytes saved by storage index', v)) "SISave",
                      SUM(DECODE(n, 'cell flash cache read hits', v)) "FcHit",
                      SUM(DECODE(n, 'physical read total IO requests',v)) "Fc(%)",
                      SUM(DECODE(n, 'cell physical IO bytes saved by columnar cache',v)) "FCC(%)"
@@ -240,7 +240,7 @@
             }
         }
     },
-    delta_by="OflIn(%),IM-LIO,LIO(%),dxr(%),dxw(%),passthru,offload,BandWidth,SISave(%),OflOut(%),FCC(%),OptRead,OptWrite,FcHit,Fc(%),Unzip,ela,missCU,Unzip,bytes,rows,valid(%),Cache,excluded,proj,pops,re-pops,popr,re-popr,Disk,Pct(%),Swap,Logon,Call,Exec,Commit,Parse,hParse,CcHit,LogRead,PhyRead,PhyWrite,Redo,SQL*Net,value,ms,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,time,Busy,User,Sys,I/O,Nice,Nice",
+    delta_by="OflEff,OflIn(%),IM-LIO,LIO(%),dxr(%),dxw(%),offload,BandWidth,SISave,OflOut(%),FCC(%),OptRead,OptWrite,FcHit,Fc(%),Unzip,ela,missCU,Unzip,bytes,rows,valid(%),Cache,excluded,proj,pops,re-pops,popr,re-popr,Disk,Pct(%),Swap,Logon,Call,Exec,Commit,Parse,hParse,CcHit,LogRead,PhyRead,PhyWrite,Redo,SQL*Net,value,ms,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,time,Busy,User,Sys,I/O,Nice,Nice",
     group_by="inst,sql_id,name,LOCATION,addr",
     calc_rules={avg_ms='[ms]/[waits]',
                 ['Pct(%)']='[ms]*100/[Pct(%)]',
@@ -251,9 +251,9 @@
                 ['Fc(%)']='[FcHit]*100/[Fc(%)]',
                 ['OflIn(%)']='[offload]*100/[OflIn(%)]',
                 ['OflOut(%)']='[OflOut(%)]*100/[BandWidth]',
-                ['SISave(%)']='[SISave(%)]*100/[offload]',
+                ['OflEff']='100-[OflEff]*100/([Unzip]+[SISave])',
                 ['FCC(%)']='[FCC(%)]*100/[offload]'},
-    column_formatter={KMG='IM-LIO,passthru,Unzip,pops,re-pops,phyMem,freeMem,Swap,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,OptRead,OptWrite,offload,BandWidth,Unzip,bytes',
+    column_formatter={KMG='SISave,IM-LIO,Unzip,pops,re-pops,phyMem,freeMem,Swap,LogRead,PhyRead,PhyWrite,Redo,Temp,SQL*Net,OptRead,OptWrite,offload,BandWidth,Unzip,bytes',
                      TMB='call,exec,commit,parse,hparse,cchit,FcHit,popr,re-popr,rows,valid,proj,Disk,Cache,excluded,missCU',
                      smhd2='Time,ela',
                      ['#,##0']='value'}
