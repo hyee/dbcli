@@ -78,6 +78,10 @@ fi
 export LUA_CPATH="./lib/$os/?.so;./lib/$os/?.dylib"
 export LD_LIBRARY_PATH="./lib/$os:$JAVA_ROOT/bin:$JAVA_ROOT/lib:$JAVA_ROOT/lib/jli:$JAVA_ROOT/lib/server:$JAVA_ROOT/lib/amd64:$JAVA_ROOT/lib/amd64/server"
 
+if [[ "$ORACLE_HOME" ]]; then
+    export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$ORACLE_HOME/lib"
+fi
+
 # unpack jar files for the first use
 unpack="$JAVA_ROOT/bin/unpack200"
 if [[ -x ./jre_$ox/bin/unpack200 ]]; then

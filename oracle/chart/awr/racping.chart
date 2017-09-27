@@ -6,9 +6,9 @@
                 a         - Group all instances
                 <inst_id> - Only the specific instance
     -f       : User-defined filter. For example, -f"stat_name like '%time%'"
-    -byte    : Only show bytes/min
+    -byte    : Only show bytes/sec
     -ms      : Only show ms/req
-    -sec     : Only show seconds/min
+    -sec     : Only show seconds/sec
     --[[
         &V1     : default={&INSTANCE}
         &V2     : default={&STARTTIME}
@@ -23,7 +23,7 @@
         WITH snap AS
          (SELECT /*+materialize no_expand*/
                 to_char(end_interval_time + 0, 'YYYY-MM-DD HH24:MI') end_time, instance_number inst_id, dbid,
-                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 1440 Slot_size,
+                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 86400 Slot_size,
                 CASE WHEN end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate) THEN 0 END flag, 
                 snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
           FROM   dba_hist_snapshot
@@ -31,10 +31,10 @@
           AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V1))
         SELECT end_time sample_time, event,
                case when '&COL' in ('A','M') then round(AVG(AVG_500B),2)  end "Ms/Req(500B)",
-               case when '&COL' in ('A','B') then round(sum(CNT_500B),2)  end "Bytes(500B)/Min",
-               case when '&COL' in ('A','S') then round(sum(WAIT_500B),2) end "Seconds(500B)/Min",
-               case when '&COL' in ('A','B') then round(sum(CNT_8K),2)    end "Bytes(8K)/Min",
-               case when '&COL' in ('A','S') then round(sum(WAIT_8K),2)   end "Seconds(8K)/Min",
+               case when '&COL' in ('A','B') then round(sum(CNT_500B),2)  end "Bytes(500B)/Sec",
+               case when '&COL' in ('A','S') then round(sum(WAIT_500B),2) end "Seconds(500B)/Sec",
+               case when '&COL' in ('A','B') then round(sum(CNT_8K),2)    end "Bytes(8K)/Sec",
+               case when '&COL' in ('A','S') then round(sum(WAIT_8K),2)   end "Seconds(8K)/Sec",
                case when '&COL' in ('A','M') then round(AVG(AVG_8K),2)    end "Ms/Req(8K)"
         FROM  (SELECT /*+merge*/
                        end_time,

@@ -52,7 +52,7 @@
         &Filter: {default={ROOT_SID =1 OR (wait_class!='Idle' and event not like '%PX%') or sql_text is not null}, 
                   f={},
                   i={wait_class!='Idle'}
-                  u={(ROOT_SID =1 OR STATUS='ACTIVE' or sql_text is not null) and schemaname=sys_context('userenv','current_schema')}
+                  u={(ROOT_SID =1 OR STATUS='ACTIVE' or sql_text is not null) and schemaname=nvl('&0',sys_context('userenv','current_schema'))}
                  }
         &Filter2:{default={1=1}, 
                   f2={},

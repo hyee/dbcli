@@ -26,7 +26,7 @@
             t={sample_time > sysdate - :V2/1440}, 
             r={sample_time between nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-3 and nvl(to_date(:V3,'YYMMDDHH24MI'),sysdate)}
         }    
-        &Filter:default={1=1},u={username=sys_context('userenv','current_schema')},f={}
+        &Filter:default={1=1},u={username=nvl('&0',sys_context('userenv','current_schema'))},f={}
         &GROUPS:{
             default={DECODE(session_state, 'ON CPU', DECODE(session_type, 'BACKGROUND', 'BG CPU', 'ON CPU'), wait_class)},
             event={nvl(event,'['||p1text||nullif('|'||p2text,'|')||nullif('|'||p3text,'|')||']')},

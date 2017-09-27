@@ -18,6 +18,7 @@
     ]],
     delta_by="GETS,MISSES,SLEEPS,IMMEDIATE_GETS,IMMEDIATE_MISSES,SPIN_GETS,MS",
     set_ratio='off',
+    order_by="-ms",
     group_by="inst_id,addr,name",
     top_by="name"
 }

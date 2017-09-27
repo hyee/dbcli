@@ -1,7 +1,7 @@
 /*[[Show tablspace usage, or file usage if specify the tablespace name. Usage: @@NAME [<tablespace_name>]
     --[[
-        @CHECK_ACCESS: wmsys.wm_concat={wmsys.wm_concat(DISTINCT regexp_substr(file_name, '^.[^\\/]+'))}, default={&VERSION}
-        @VERSION: 11.2={regexp_replace(listagg(regexp_substr(file_name, '^.[^\\/]+'),',') within group(order by file_name),'([^,]+)(,\1)+','\1')} default={null}
+        @CHECK_ACCESS: wmsys.wm_concat={wmsys.wm_concat(DISTINCT loc)}, default={&VERSION}
+        @VERSION: 11.2={regexp_replace(listagg(loc,',') within group(order by file_name),'([^,]+)(,\1)+','\1')} default={null}
     --]]
 ]]*/
 set printsize 1000
@@ -43,8 +43,10 @@ FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION NO_MERGE*/
                    max(greatest(b.maxbytes, b.bytes)) siz,
                    max(b.bytes) space,
                    max(case when a.block_id+a.blocks-1>=b.user_blocks then a.block_id end) hwm_block,
-                   max(b.file_name) file_name
-            FROM   DBA_FREE_SPACE a RIGHT JOIN DBA_DATA_FILES b USING(TABLESPACE_NAME,FILE_ID)
+                   max(b.file_name) file_name,
+                   max(decode(seq,1,regexp_substr(b.file_name, '^.[^\\/]+'))) loc
+            FROM   DBA_FREE_SPACE a 
+            RIGHT JOIN (select b.*,row_number() over(partition by TABLESPACE_NAME,regexp_substr(b.file_name, '^.[^\\/]+') order by 1) seq from DBA_DATA_FILES b) b USING(TABLESPACE_NAME,FILE_ID)
             WHERE  (:V1 IS NULL OR TABLESPACE_NAME=upper(:V1))
             GROUP  BY TABLESPACE_NAME,FILE_ID)
         GROUP BY  ROLLUP(TABLESPACE_NAME,FILE_ID)
@@ -63,7 +65,8 @@ SELECT /*+NO_EXPAND_GSET_TO_UNION no_expand no_merge(h) no_merge(p) no_merge(f) 
        NULL,
        'Yes',
        decode(grouping_id(h.file_id),0,max(f.file_name),&CHECK_ACCESS)
-FROM   v$TEMP_SPACE_HEADER h, v$Temp_extent_pool p, dba_temp_files f
+FROM   v$TEMP_SPACE_HEADER h, v$Temp_extent_pool p, 
+      (select a.*, regexp_substr(file_name, '^.[^\\/]+') loc,1 seq from dba_temp_files a) f
 WHERE  p.file_id(+) = h.file_id
 AND    p.tablespace_name(+) = h.tablespace_name
 AND    f.file_id = h.file_id

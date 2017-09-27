@@ -8,7 +8,7 @@
     --[[
         &cols   : default={object_name,regexp_substr(object_type,'^[^ ]+')}, d={object_name,subobject_name,object_type}, a={'ALL'}
         &V2     : default={logi_reads}
-        &Filter : default={instr('.'||owner||'.'||object_name||'.'||subobject_name||'.',upper('.'||:V1||'.'))>0}, u={owner=sys_context('userenv','current_schema')}
+        &Filter : default={instr('.'||owner||'.'||object_name||'.'||subobject_name||'.',upper('.'||:V1||'.'))>0}, u={owner=nvl('&0',sys_context('userenv','current_schema'))}
     --]]
 ]]*/
 set rownum on sqltimeout 1800

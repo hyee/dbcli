@@ -126,7 +126,6 @@ function graph:run_sql(sql,args,cmd,file)
             avoidMinZero=true,
             includeZero=true,
             labelsKMB=true,
-            errorbars=true,
             showRangeSelector=cfg.get("GRAPH_RANGER"),
             axisLabelFontSize=12,
             animatedZooms=true,
@@ -174,10 +173,15 @@ function graph:run_sql(sql,args,cmd,file)
         rows=self.db.resultset:rows(rs,-1)
     end
     local title,csv,xlabels,values,collist,temp=string.char(0x1),{},{},table.new(10,255),{},{}
-    
+
     local function getnum(val)
         if not val then return 0 end
         if type(val)=="number" then return val end
+        local middle=val:match("^.-;(.-);.-$")
+        if middle then
+            default_attrs.customBars=true
+            return getnum(middle) 
+        end
         return tonumber(val:match('[eE%.%-%d]+')) or 0
     end
 
@@ -246,8 +250,11 @@ function graph:run_sql(sql,args,cmd,file)
                 row[i]=''
             elseif (counter==0 or i<start_value) then
                 row[i]=tostring(row[i]):gsub(",",".")
-            elseif counter>0 and i>=start_value and type(row[i])~="number" and not tostring(row[i]):match('^%d') then
-                env.raise("Invalid number at row #%d field #%d '%s', row information: %s",counter,i,row[i],table.concat(row,','))
+            elseif counter>0 and i>=start_value and 
+                type(row[i])~="number" and 
+                not tostring(row[i]):match('^%d') and 
+                not tostring(row[i]):match("^.-;(.-);.-$") then
+                env.raise("Invalid number at row #%d field #%d '%s', row information: [%s]",counter,i,row[i],table.concat(row,','))
             end 
         end
 

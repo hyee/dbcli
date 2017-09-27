@@ -18,18 +18,18 @@ public class WindowsTerminal extends JansiWinSysTerminal implements MyTerminal {
     private int bufferWidth = 1000;
     private CountDownLatch locker = null;
 
-    public WindowsTerminal(String name) throws IOException {
-        this(name, true, SignalHandler.SIG_IGN);
+    public WindowsTerminal(String name, int codePage) throws IOException {
+        this(name, codePage,true, SignalHandler.SIG_IGN);
     }
 
-    public WindowsTerminal(String name, boolean nativeSignals, SignalHandler signalHandler) throws IOException {
-        super(name, nativeSignals, signalHandler);
+    public WindowsTerminal(String name, int codePage, boolean nativeSignals, SignalHandler signalHandler) throws IOException {
+        super(name, codePage, nativeSignals, signalHandler);
         this.output = super.output();
         this.writer = super.writer();
         this.printer = this.writer;
         Charset charset = Charset.forName(System.getProperty("file.encoding"));
         Charset nativeCharset = charset;
-        final int cp = super.consoleOutputCP;
+        final int cp = getConsoleOutputCP();
         if (cp != 65001) try {
             nativeCharset = Charset.forName("ms" + cp);
         } catch (Exception e) {

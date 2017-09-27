@@ -8,12 +8,14 @@
 ]]*/
 
 ORA _sqlstat
+col ela,ELA(Avg),iowait,cpuwait,clwait,apwait format smhd2
+Col "Buffer gets,IO Reads,IO Writes" format kmg
 
 select time,sql_id,plan_hash,
        sum(exec)   exec,
        sum(parse)  parse,
        count(1)    SEENS,
-       sum(ela)    "ELA(Mins)",
+       sum(ela)    ELA,
        round(sum(ela)/nullif(sum(exec),0),2) "ELA(Avg)",
        sum(iowait) iowait,
        sum(cpuwait) cpuwait,
@@ -21,9 +23,9 @@ select time,sql_id,plan_hash,
        sum(clwait) clwait,
        sum(apwait) apwait,
        max(px_count) px_count,
-       sum(bgs) "Buffer gets(MB)",
-       sum(ior) "IO Reads(MB)",
-       sum(wr)  "Writes(MB)",
+       sum(bgs) "Buffer gets",
+       sum(ior) "IO Reads",
+       sum(wr)  "IO Writes",
        sum(rows#) rows#
 FROM(
     select /*+no_expand*/
@@ -50,12 +52,12 @@ FROM(
                a.parse_calls parse,
                nvl(MIN(decode(executions,0,null,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN 0 FOLLOWING AND UNBOUNDED FOLLOWING),
                    MAX(decode(parse_calls,0,null,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN UNBOUNDED PRECEDING AND 0 PRECEDING)) snap_id,
-               round(a.elapsed_time/60,2) ela,
-               ROUND(a.iowait/60,2) iowait,
-               ROUND(a.cpu_time/60,2) cpuwait,
-               ROUND(a.ccwait/60,2) ccwait,
-               ROUND(a.clwait/60,2) clwait,
-               ROUND(a.apwait/60,2) apwait,
+               round(a.elapsed_time,2) ela,
+               ROUND(a.iowait,2) iowait,
+               ROUND(a.cpu_time,2) cpuwait,
+               ROUND(a.ccwait,2) ccwait,
+               ROUND(a.clwait,2) clwait,
+               ROUND(a.apwait,2) apwait,
                a.px_servers_execs px_count,
                round(buffer_gets,2) bgs,
                round(a.disk_reads,2) ior,

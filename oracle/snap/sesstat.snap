@@ -1,8 +1,4 @@
 /*[[Generate delta values based on gv$sesstat. Usage: @@NAME [options] {[0|<sid>] [<inst_id>] [<key>]}
-    -s: Show stats data based on per second
-    --[[
-        &sec1: total={off}, s={on}
-    --]]
 ]]*/
 {
     sql=[[
@@ -20,7 +16,7 @@
         AND    (:V3 IS NULL OR lower(name) like lower('%&V3%'))) A
     ORDER BY NAME]],
     delta_by="value",
-    per_second="&sec1",
+    order_by="-value",
     group_by="inst_id,sid,NAME",
     top_by="name"
 }

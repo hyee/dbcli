@@ -1,0 +1,68 @@
+/*[[Show Exadata cell disk IO
+    --[[
+       &cellname: default={nvl((select /*+result_cache*/ extractvalue(xmltype(a.confval),'/cli-output/context/@cell') from v$cell_config a where a.CELLNAME=b.CELL_NAME and rownum<2),'--TOTAL--') cell}
+    ]]--
+]]*/
+{
+    sql={[[
+        SELECT  &cellname,
+            SUM(decode(n, 'Total Reads', v, 'Total Writes', v)) "IOs",
+            SUM(decode(n, 'Total Reads', v, 'Total Writes', v)*fd) "FD(%)",
+            SUM(decode(n, 'Total Reads', v)) reads,
+            SUM(decode(n, 'Total Writes', v)) Writes,
+            SUM(DECODE(n, 'Large read bytes', v, 'Large write bytes', v, 'Small read bytes', v, 'Small write bytes', v)) bytes,
+            SUM(decode(n, 'Small read latency', v, 'Small write latency', v, 'Large read latency', v, 'Large write latency', v)) * 1e-3 avg_ms,
+            SUM(decode(n, 'Sectors Read', v)) Sectors_r,
+            SUM(decode(n, 'Sectors Written', v)) Sectors_w,
+            '|' "|",
+            SUM(decode(n, 'Small reads', v)) sreads,
+            SUM(decode(n, 'Small writes', v)) swrites,
+            SUM(decode(n, 'Small read bytes', v)) srbytes,
+            SUM(decode(n, 'Small write bytes', v)) swbytes,
+            '|' "|",
+            SUM(decode(n, 'Large reads', v)) lreads,
+            SUM(decode(n, 'Large writes', v)) lwrites,
+            SUM(decode(n, 'Large read bytes', v)) lrbytes,
+            SUM(decode(n, 'Large write bytes', v)) lwbytes
+        FROM   (SELECT cell_name,CASE WHEN disk_name LIKE 'FD%' THEN 1 ELSE 0 END fd, metric_name n, SUM(metric_value) v
+                FROM   v$cell_disk a
+                WHERE  disk_name NOT LIKE '/dev%'
+                GROUP  BY cell_name, metric_name,CASE WHEN disk_name LIKE 'FD%' THEN 1 ELSE 0 END) b
+        GROUP  BY rollup(cell_name)
+        ORDER BY 1]]
+        ,
+        [[SELECT &cellname,
+                disk_name,
+                SUM(decode(n, 'Total Reads', v, 'Total Writes', v)) "IOs",
+                MAX(decode(n, 'Total Reads', v)) reads,
+                MAX(decode(n, 'Total Writes', v)) Writes,
+                SUM(DECODE(n, 'Large read bytes', v, 'Large write bytes', v, 'Small read bytes', v, 'Small write bytes', v)) bytes,
+                SUM(decode(n, 'Small read latency', v, 'Small write latency', v, 'Large read latency', v, 'Large write latency', v)) * 1e-3 avg_ms,
+                MAX(decode(n, 'Sectors Read', v)) Sectors_r,
+                MAX(decode(n, 'Sectors Written', v)) Sectors_w,
+                '|' "|",
+                MAX(decode(n, 'Small reads', v)) sreads,
+                MAX(decode(n, 'Small writes', v)) swrites,
+                MAX(decode(n, 'Small read bytes', v)) srbytes,
+                MAX(decode(n, 'Small write bytes', v)) swbytes,
+                '|' "|",
+                MAX(decode(n, 'Large reads', v)) lreads,
+                MAX(decode(n, 'Large writes', v)) lwrites,
+                MAX(decode(n, 'Large read bytes', v)) lrbytes,
+                MAX(decode(n, 'Large write bytes', v)) lwbytes
+            FROM   (SELECT a.*,metric_name n,metric_value v FROM v$cell_disk a) b
+            WHERE disk_name NOT LIKE '/dev%'
+            GROUP  BY cell_name, disk_name]]},
+    group_by='cell,disk_name',
+    delta_by='FD(%),IOs,READS,WRITES,BYTES,avg_ms,SECTORS_R,SECTORS_W,SREADS,SWRITES,SRBYTES,SWBYTES,LREADS,LWRITES,LRBYTES,LWBYTES',
+    sort_by="-reads",
+    fixed_title=true,
+    calc_rules={
+        avg_ms='[avg_ms]/[IOs]',
+        ['FD(%)']='100*[FD(%)]/[IOS]',
+    },
+    column_formatter={
+        KMG='BYTES,SRBYTES,SWBYTES,LRBYTES,LWBYTES',
+        TMB='IOs,READS,WRITES,SECTORS_R,SECTORS_W,SREADS,SWRITES,LREADS,LWRITES',
+    }
+}

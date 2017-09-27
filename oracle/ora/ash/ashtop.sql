@@ -19,7 +19,7 @@
             id={(trim(:V1) is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id)) and &range
                     &V4},
             snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id)) &V3},
-            u={username=sys_context('userenv','current_schema') and &range}
+            u={username=nvl('&0',sys_context('userenv','current_schema')) and &range}
         }
       &more_filter: default={1=1},f={}
       @counter: 11.2={, count(distinct sql_exec_id) "Execs"},default={}

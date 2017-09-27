@@ -229,9 +229,12 @@ end
 function ResultSet:rows(rs,count,limit,null_value)
     if not rs.isClosed or rs:isClosed() then return end
     count=tonumber(count) or -1
-    local head=self:getHeads(rs,limit).__titles
+    local titles=self:getHeads(rs,limit)
+    local head=titles.__titles
     local rows={}
     local cols=#head
+    local dtype=titles[1].data_typeName
+    local is_lob=cols==1 and (dtype:find("[BC]LOB") or dtype:find("XML"))
     null_value=null_value or ""
     if count~=0 then
         rows=loader:fetchResult(rs,count)
@@ -239,16 +242,17 @@ function ResultSet:rows(rs,count,limit,null_value)
         for i=1,#rows do
             for j=1,cols do
                 if rows[i][j]~=nil then
-                    if rows[i][j] then
-                        if limit and type(rows[i][j])=="string" then rows[i][j]=rows[i][j]:sub(1,maxsiz) end
-                        if head.colinfo[j].data_typeName=="DATE" or head.colinfo[j].data_typeName=="TIMESTAMP" then
-                            rows[i][j]=rows[i][j]:gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
-                        elseif head.colinfo[j].data_typeName=="BLOB" then
-                            rows[i][j]=rows[i][j]:sub(1,255)
-                        elseif head.colinfo[j].is_number and type(rows[i][j])~="number" then
-                            local int=tonumber(rows[i][j])
-                            rows[i][j]=tostring(int)==rows[i][j] and int or rows[i][j]
-                        end
+                    if is_lob and type(rows[i][j])=="string" and #rows[i][j]>255 then
+                        print('Result writtern to '..env.write_cache(dtype:lower()..'_'..i..'.txt',rows[i][j]))
+                    end
+                    if limit and type(rows[i][j])=="string" then rows[i][j]=rows[i][j]:sub(1,maxsiz) end
+                    if head.colinfo[j].data_typeName=="DATE" or head.colinfo[j].data_typeName=="TIMESTAMP" then
+                        rows[i][j]=rows[i][j]:gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
+                    elseif head.colinfo[j].data_typeName=="BLOB" then
+                        rows[i][j]=rows[i][j]:sub(1,255)
+                    elseif head.colinfo[j].is_number and type(rows[i][j])~="number" then
+                        local int=tonumber(rows[i][j])
+                        rows[i][j]=tostring(int)==rows[i][j] and int or rows[i][j]
                     end
                 else
                     rows[i][j]=null_value
@@ -262,11 +266,10 @@ end
 
 function ResultSet:print(res,conn,prefix)
     local result,hdl={},nil
-    --print(table.dump(self:getHeads(res,-1)))
-    if cfg.get("pipequery")=="on" then
-        if not res.isClosed or res:isClosed() then return end
-        local head=self:getHeads(res,limit).__titles
-        if #head==1 then
+    if not res.isClosed or res:isClosed() then return end
+    local cols=self:getHeads(res,limit)
+    if #cols==1 then
+        if cfg.get("pipequery")=="on" then
             res:setFetchSize(2)
             loader:AsyncPrintResult(res,env.space,300)
             return

@@ -2,13 +2,13 @@
 -o    : Show top object#, otherwise show top event
 -dash : Based on dba_hist_active_sess_history, otherwise based on gv$active_session_history
 --[[
-    @Required_Ver : 11.1={Oracle 11.1+ Only}
+    @adaptive : 12.1={adaptive} 11.1={}
     &V9 : ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
     &OBJ: default={nvl(event,'ON CPU')}, O={CURRENT_OBJ#}
     &Title: default={Event}, O={Obj#}
 --]]
 ]]*/
-set feed off printsize 3000
+set feed off printsize 3000 pipequery off
 
 WITH sql_plan_data AS
  (SELECT *
@@ -58,7 +58,7 @@ qry AS
  (SELECT /*+materialize*/
          DISTINCT sql_id sq,
          flag flag,
-         'BASIC ROWS PARTITION PARALLEL PREDICATE NOTE' format,
+         'BASIC ROWS PARTITION PARALLEL PREDICATE NOTE &adaptive' format,
          plan_hash_value phv,
          NVL(child_number, plan_hash_value) plan_hash,
          inst_id
@@ -125,10 +125,7 @@ xplan_data AS
   FROM   (SELECT DISTINCT phv FROM ordered_hierarchy_data) p
   CROSS  JOIN xplan x
   LEFT JOIN ash_data o
-  ON     (o.phv = p.phv AND o.id = CASE
-             WHEN regexp_like(x.plan_table_output, '^\|[\* 0-9]+\|') THEN
-              to_number(regexp_substr(x.plan_table_output, '[0-9]+'))
-         END))
+  ON     (o.phv = p.phv AND o.id = CASE WHEN regexp_like(x.plan_table_output, '^\|[-\* ]*[0-9]+ \|') THEN to_number(regexp_substr(x.plan_table_output, '[0-9]+')) END))
 SELECT plan_table_output
 FROM   xplan_data --
 model  dimension by (rownum as r)
@@ -143,7 +140,7 @@ measures (plan_table_output,
          greatest(max(LENGTHB(exes)) over () + 1, 5) as sexe,
          greatest(max(LENGTHB(mins)) over () + 1, 6) as smin,
          greatest(max(LENGTHB(top_event)) over () + 2, 11) as sevent,
-         cast(null as varchar2(128)) as inject,
+         cast(null as varchar2(150)) as inject,
          cpu,io,cc,cl,app,oth,exes,hits,mins,px_hits,top_event,
          rc)
 rules sequential order (

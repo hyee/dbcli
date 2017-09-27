@@ -1,9 +1,6 @@
 /*[[
-  Generate ASM stats. Usage: @@NAME [options] [-s]} 
-  -s: Show stats data based on per second
-  --[[
-        &sec1: total={off}, s={on}
-  --]]
+  Generate ASM stats. Usage: @@NAME [options] } 
+
 ]]*/
 {
     sql=[[SELECT grouping_id(ds.inst_id, g.name,di.disk_number) gid,
@@ -35,7 +32,6 @@
                (di.disk_number,
                di.failgroup))]],
     delta_by="total_io,writes,READS,total_bytes,hot_bytes,bytes_read,bytes_written,total_time,read_time,write_time,io_errs,timeouts",
-    per_second="&sec1",
     max_rows=50,
     column_formatter={KMG='total_bytes,hot_bytes,bytes_read,bytes_written',
                       TMB='total_io,writes,READS,io_errs',

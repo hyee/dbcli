@@ -2,8 +2,10 @@
 DBCLI : A CLI utility for DBA (Oracle/MySQL/DB2)
 =====================================================
 
+[![Join the chat at https://gitter.im/hyee/dbcli](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/hyee/dbcli?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 [![MIT License](http://img.shields.io/badge/Licence-MIT-brightgreen.svg)](https://en.wikipedia.org/wiki/MIT_License)
-<img src="help.gif" alt="hi" class="inline"/>
+[drag]:help.gif
+![][drag]
 ![sshot-13](https://cloud.githubusercontent.com/assets/761520/14856219/d23eccbe-0cc9-11e6-9256-7275e91656d8.jpg)
 
 Description
@@ -34,19 +36,16 @@ DBCLI does not require compile or installation, but depends on JRE 1.8+. Click `
 Branch `With-JRE` contains the shrinked JRE bundle, if you don't have JRE installed,
 you may switch to that branch to download. Due to the region and charset differences, this JRE bundle is not guaranteed to work well.<br/>
 
-### Windows: Configure terminal window
+###Windows: Configure terminal window
 For Windows OS, to avoid the word wrap in the terminal window which affects the print layout, following settings are recommended in Windows command window:
 
 * In the `Layout` tab, set buffer width and buffer height as `500+`
 * In the `Font` tab, change the font size as smaller value.
 
-### Linux: Pre-Requisitions
+###Linux: Pre-Requisitions
 Linux must be the `64-bit` version, and make sure `glibc >= v2.4`(use `ldd --version` to verify) are installed. Since Linux terminal doesn't have horizontal scrollbar, smaller font is preferred.
 
-### OSX: Pre-Requisitions
-Only tested on OSX 10.12, lower version should be fine. Java 1.8 is required.
-
-### Configure environment
+###Configure environment
 Before running dbcli, make sure that you have installed JRE 1.8+ in your local PC. If you are using the version of "With-JRE" branch, this step can be skipped.
 
 Create file `init.cfg` under the "data" directory with following content(for non-Windows OS use `export` instead):
@@ -59,7 +58,7 @@ Of which `TNS_ADM` is optional unless you need to connect Oracle via tnsnames.or
     SET JRE_HOME=d:\soft\java
     SET TNS_ADM=d:\Soft\InstanceClient\network\admin
 
-### Launch DBCLI Console
+###Launch DBCLI Console
 After the above configurations, you are able to start DBCLI by executing `dbcli.bat` or `bin\ConsoleZ\Console.exe`.
 
 `dbcli.bat` also supports arguments in `"<command>=<args>"` format, all available commands can be found by typing `help` or `help -a`.
@@ -68,7 +67,7 @@ For example: `dbcli.bat "connect=tiger/scott@orcl"`
 
 
 
-### Switch Database Platform
+###Switch Database Platform
 DBCLI supports multiple database platforms(oracle,mysql,db2,etc), default is `Oracle`.
 
 To permanently change the preferred platform other than `Oracle`, run `set -p platform <platform>` after launching the console. 
@@ -202,8 +201,7 @@ Besides, some SQL scripts come from internet.
 Customize Commands
 ------------------------------------
 
-### Customize new simple commands
-
+###Customize new simple commands
 You are able to use command `alias` to define the shortcut of the simple command, for instance:<br/>
 `alias sf select * from (select * from $*) where rownum<=50;`
 
@@ -212,8 +210,7 @@ In this case, you can execute `sf dba_objects where object_id<1000` to simplify 
 The `alias` command supports the `$1-$9` and `$*` wildcard characters, of which `$n` corresponds to the `n`th parameter, and `$*` means the concatenation of `$n+1`-`$9` via space. 
 Type `alias` to see more usage.
  
-### Customize new sub-commands
-
+###Customize new sub-commands
 Similar to SQL*Plus script, a sub-command script is the combination of one or more existing commands that supports user-input parameters.
 Take command `ora` for example, to define a sub-command `xxx`, create file ``oracle\ora\xxx.sql` and fill with following content: <br/>
 `select * from (select * from &V1) where rownum<=50;`
@@ -227,7 +224,7 @@ Commands `ora/show/sys/snap/chart/sql/shell/etc` follow the similar rules:
 * Help comment: `/*[[...]]*/` is optional, as the help or usage information
 * Options: `--[[...]]--` inside the help comment is also optional, normally used to specify the command options(i.e., `ora actives -m`) and access validation, refer to other sub-commands for more examples.
 
-### Customize new root commands
+###Customize new root commands
 Different from sub-commands, the root command must be a lua script. To plug a user-define lua script into the utility, just add its path in `data\plugin.cfg`, you may refer to `data\plugin_sample.cfg` for the example.
 
 Below are the common interfaces that can be used in the script:

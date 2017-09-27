@@ -37,6 +37,8 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             v_pos         PLS_INTEGER;
             v_size        PLS_INTEGER;
             v_embed       VARCHAR2(200);
+            v_begin       VARCHAR2(10):='q''[';
+            v_end         VARCHAR2(10):=']''';
             PROCEDURE get_sql(p_sqlid VARCHAR2) IS
             BEGIN
                 SELECT REPLACE(sql_text, chr(0), ' '), src
@@ -90,16 +92,25 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                                 FROM   gv$sql_plan a
                                 UNION ALL
                                 SELECT other_xml, 'plan table', p_sql_id sql_id, -1
-                                FROM   PLAN_TABLE a)
+                                FROM   PLAN_TABLE a WHERE PLAN_ID=(select max(PLAN_ID) keep(dense_rank last order by timestamp) from PLAN_TABLE))
                         WHERE  rownum < 2
                         AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR sql_id = p_plan OR src='plan table' and sql_id='_x_')
                         AND    other_xml IS NOT NULL
+                    $IF DBMS_DB_VERSION.VERSION>11 $THEN
+                        UNION ALL
+                        SELECT other_xml, 'spm' src
+                        FROM   sys.sqlobj$ b, sys.sqlobj$plan a
+                        WHERE  b.name = nvl(p_plan, p_sqlid)
+                        AND    b.signature = a.signature
+                        AND    other_xml is not null
+                    $END
                     $IF DBMS_DB_VERSION.VERSION>10 $THEN
                         UNION ALL
                         SELECT comp_data, decode(b.obj_type, 1, 'profile', 'spm') src
                         FROM   sys.sqlobj$ b, sys.sqlobj$data a
                         WHERE  b.name = nvl(p_plan, p_sqlid)
                         AND    b.signature = a.signature
+                        AND    comp_data is not null
                     $ELSE
                         UNION ALL
                         SELECT Xmlelement("outline_data", xmlagg(Xmlelement("hint", attr_val) ORDER BY attr#))
@@ -118,9 +129,9 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             PROCEDURE pr(p_text VARCHAR2, flag BOOLEAN DEFAULT TRUE) IS
             BEGIN
                 IF flag THEN
-                    dbms_lob.writeappend(v_text, lengthb(p_text) + 1, p_text || chr(10));
+                    dbms_lob.writeappend(v_text, length(p_text) + 1, p_text || chr(10));
                 ELSE
-                    dbms_lob.writeappend(v_text, lengthb(p_text), p_text);
+                    dbms_lob.writeappend(v_text, length(p_text), p_text);
                 END IF;
             END;
         BEGIN
@@ -139,21 +150,25 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             pr('    sql_txt   CLOB;');
             pr('    sql_prof  SYS.SQLPROF_ATTR;');
             pr('    signature NUMBER;');
-            pr('    procedure wr(x varchar2) is begin dbms_lob.writeappend(sql_txt, lengthb(x), x);end;');
+            pr('    procedure wr(x varchar2) is begin dbms_lob.writeappend(sql_txt, length(x), x);end;');
             pr('BEGIN');
             v_size := length(v_sql);
             pr('    BEGIN execute immediate ''SELECT SQL_FULLTEXT FROM gv$sqlarea WHERE ROWNUM<2 AND SQL_ID=:1'' INTO sql_txt USING '''||p_sqlid||''';');
             pr('    EXCEPTION WHEN OTHERS THEN NULL;END;');
             pr('    IF sql_txt IS NULL THEN');
+            IF instr(v_sql,v_end)>0 THEN
+                v_begin := 'q''{';
+                v_end   := '}''';
+            END IF;
             IF v_size <= 1200 OR dbms_lob.instr(v_sql, CHR(10)) > 0 THEN
-                pr('        sql_txt := q''[', FALSE);
+                pr('        sql_txt := '||v_begin, FALSE);
                 dbms_lob.append(v_text, v_sql);
-                pr(']'';');
+                pr(v_end||';');
             ELSE
                 pr('        dbms_lob.createtemporary(sql_txt, TRUE);');
                 v_pos := 0;
                 WHILE TRUE LOOP
-                    pr('        wr(q''[' || dbms_lob.substr(v_sql, 1000, v_pos * 1000 + 1) || ']'');');
+                    pr('        wr('||v_begin|| dbms_lob.substr(v_sql, 1000, v_pos * 1000 + 1) || v_end||');');
                     v_pos  := v_pos + 1;
                     v_size := v_size - 1000;
                     EXIT WHEN v_size < 1;

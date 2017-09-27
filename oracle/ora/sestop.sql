@@ -4,7 +4,7 @@
     -u         : Only query the sessions within current schema
     -a         : Only query the active sessions
     --[[
-       &FILTER1: default={1=1}, u={schemaname=sys_context('userenv','current_schema')},f={}
+       &FILTER1: default={1=1}, u={schemaname=nvl('&0',sys_context('userenv','current_schema'))},f={}
        &FILTER2: default={1=1}, a={status='ACTIVE'}
        &V2     : default={1}
     --]]

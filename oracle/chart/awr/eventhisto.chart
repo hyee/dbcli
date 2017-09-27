@@ -1,0 +1,14 @@
+{
+    title='Event Histogram',
+    _sql=[[
+        SELECT snap_id,
+               EVENT_NAME,
+               MIN(WAIT_TIME_MILLI) || ';' || round(SUM(WAIT_TIME_MILLI * WAIT_COUNT * 0.75) / SUM(WAIT_COUNT), 3) || ';' || MAX(WAIT_TIME_MILLI) av
+        FROM   DBA_HIST_EVENT_HISTOGRAM
+        WHERE  event_name = 'log file parallel write'
+        GROUP  BY snap_id, EVENT_NAME
+        ORDER BY 1
+        ]],
+    labelsSeparateLines=true,
+    height=400,
+}

@@ -296,7 +296,8 @@ function string.strip_ansi(str)
 end
 
 function ansi.strip_len(str)
-    return #ansi.strip_ansi(str)
+    local len1,len2= ansi.strip_ansi(str):ulen()
+    return len2
 end
 
 function string.strip_len(str)

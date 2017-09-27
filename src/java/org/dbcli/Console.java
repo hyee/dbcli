@@ -2,6 +2,7 @@ package org.dbcli;
 
 import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
+import org.fusesource.jansi.internal.*;
 import org.jline.builtins.Commands;
 import org.jline.builtins.Less;
 import org.jline.builtins.Source;
@@ -12,7 +13,9 @@ import org.jline.reader.impl.LineReaderImpl;
 import org.jline.terminal.Terminal;
 import org.jline.utils.NonBlockingReader;
 import org.jline.utils.OSUtils;
+import org.jline.utils.WCWidth;
 
+import javax.swing.text.Keymap;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
@@ -64,6 +67,13 @@ public class Console {
     private Candidate candidate(String key, String desc) {
         if (desc != null && (desc.equals("") || desc.equals("\0"))) desc = null;
         return new Candidate(key, key, null, null, null, null, true);
+    }
+
+    public static String ulen(final String s) {
+        if(s==null) return "0:0";
+        int len=0;
+        for(int i=0,n=s.length();i<n;i++) len+= WCWidth.wcwidth(Character.codePointAt(s,i));
+        return s.length()+":"+len;
     }
 
     public void addCompleters(Map<String, ?> keys, boolean isCommand) {
@@ -123,7 +133,9 @@ public class Console {
     public Console() throws Exception {
         String colorPlan = System.getenv("ANSICON_DEF");
         if (colorPlan == null) colorPlan = "jline";
-        terminal = OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MINGW) ? new WindowsTerminal(colorPlan) : new PosixTerminal(colorPlan);
+        if(OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MINGW) ) {
+            terminal=new WindowsTerminal(colorPlan,Kernel32.INSTANCE.GetConsoleOutputCP());
+        } else terminal =new PosixTerminal(colorPlan);
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).build();
         this.parser = new Parser();
         this.reader.setParser(parser);
@@ -139,6 +151,9 @@ public class Console {
         */
         setKeyCode("redo", "^Y");
         setKeyCode("undo", "^Z");
+        setKeyCode("backward-kill-word", "^?");
+        setKeyCode("backward-word", "^[[1;3D");
+        setKeyCode("forward-word", "^[[1;3C");
 
         input = terminal.reader();
 

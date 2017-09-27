@@ -7,6 +7,7 @@
     --]]
 ]]*/
 VAR O REFCURSOR Many blocks for small values of 'rows/block' means fragmentation, and rebuild/coalesce is recommended;
+ora _find_object "&V1" 1
 
 DECLARE
     v_obj INT;
@@ -39,13 +40,9 @@ DECLARE
         GROUP  BY CEIL(r / 7)
         ORDER  BY CEIL(r / 7)]';
 BEGIN
-
-    SELECT MAX(OBJECT_ID),MAX(OWNER),MAX(OBJECT_NAME)
-    INTO  v_obj,v_owner,v_ind
-    FROM  ALL_OBJECTS
-    WHERE OWNER=SYS_CONTEXT('USERENV','CURRENT_SCHEMA')
-    AND   OBJECT_NAME=UPPER(:V1)
-    AND   SUBOBJECT_NAME IS NULL;
+    v_owner := :object_owner;
+    v_obj   := :object_id;
+    v_ind   := :object_name;
 
     SELECT MAX(OWNER),MAX(OBJECT_NAME),MAX(REGEXP_SUBSTR(OBJECT_TYPE,'[^ ]+$'))
     INTO v_owner,v_tab,v_typ
@@ -54,7 +51,7 @@ BEGIN
     AND   NVL(SUBOBJECT_NAME,' ')=NVL(v_part,' ');
 
     IF v_tab IS NULL THEN
-        OPEN :O FOR SELECT 'Cannot find target index!' message from dual;
+        OPEN :O FOR SELECT 'Cannot find target index in current schema!' message from dual;
     ELSE
         v_sql := replace(v_sql,'@tab',v_owner||'.'||v_tab||CASE WHEN v_part IS NOT NULL THEN ' '||v_typ||'('||v_part||')' END);
         v_sql := replace(v_sql,'@indx',v_ind);

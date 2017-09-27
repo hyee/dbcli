@@ -28,8 +28,8 @@ output.stmt=marker..[[/*INTERNAL_DBCLI_CMD*/
             IF l_enable = 'on' THEN
                 FOR i IN 1 .. l_done LOOP
                     l_buffer := l_buffer || l_arr(i) || chr(10);
-                    l_size   := lengthb(l_buffer);
-                    IF l_size + 255 > 32400 OR (l_lob IS NOT NULL AND l_buffer IS NOT NULL AND i = l_done) THEN
+                    l_size   := length(l_buffer);
+                    IF l_size + 255 > 30000 OR (l_lob IS NOT NULL AND l_buffer IS NOT NULL AND i = l_done) THEN
                         IF l_lob IS NULL THEN
                             dbms_lob.createtemporary(l_lob, TRUE);
                         END IF;

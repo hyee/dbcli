@@ -35,7 +35,7 @@
         WITH bs AS
         (SELECT VALUE FROM v$parameter WHERE NAME = 'db_block_size')
         SELECT *
-        FROM   (SELECT nvl(''||inst_id, ' ') inst, round(AVG(CPU), 2) CPU, round(avg(ela)*1e-6,2) "Resp(s)"
+        FROM   (SELECT nvl(''||inst_id, ' ') inst, round(AVG(CPU), 2) CPU, round(SUM(ela)*1e-3,2) "Resp(ms)"
                 FROM   (SELECT inst_id, 
                                MAX(DECODE(stat_name, 'BUSY_TIME', VALUE)) / MAX(DECODE(stat_name, 'NUM_CPUS', VALUE)) cpu,
                                (select MAX(DECODE(stat_name, 'sql execute elapsed time', VALUE)) from gv$sys_time_model b where b.inst_id=a.inst_id) ela
@@ -43,6 +43,7 @@
                         GROUP  BY inst_id)
                 GROUP  BY ROLLUP(inst_id))
         JOIN   (SELECT nvl(''||inst_id, ' ') inst,
+                        sum(CASE WHEN n IN('physical write total IO requests','physical read total IO requests') THEN v END) IOPs,
                         SUM(DECODE(n, 'cell physical IO interconnect bytes', v)) "BandWidth",
                         SUM(DECODE(n, 'cell physical IO interconnect bytes returned by smart scan', v)) "OflOut",
                         SUM(DECODE(n, 'user calls', v)) "Calls",
@@ -81,7 +82,7 @@
                SUM(ds.reads + ds.writes) total_io,
                SUM(ds.reads) READS,
                SUM(ds.writes) writes,
-               SUM(ds.READ_ERRS + ds.write_ERRS)*1e3 io_errs,
+               SUM(ds.READ_ERRS + ds.write_ERRS) io_errs,
                SUM(ds.read_time + ds.write_time)*1e3 rw_ms,
                SUM(ds.read_time)*1e3 read_ms,
                SUM(ds.write_time)*1e3 write_ms
@@ -93,7 +94,7 @@
     '-',[[/*grid={topic="Cell Throughput",fixed_title=true,order_by='cell'}*/
         SELECT  nvl(c.name,'--TOTAL--') cell,
                 flashCacheMode "flashMode",
-                round(avg(temperatureReading),2) "Temp(C)",
+                round(avg(temperatureReading),2) "ºC",
                 round(avg(cpu),2) "CPU(%)",
                 GREATEST(SUM(largeio + smallio),SUM(ALLIO)) "AllIO",
                 SUM(fd) "FD(%)",
@@ -198,7 +199,7 @@
             GROUP  BY reason_name &cell]],
             '+',[[&last]]}},
     }},
-    delta_by="OflEff,Resp(s),Calls,CPU,BandWidth,PhyRead,OptR(%),dxr(%),PhyWrite,OptW(%),dxw(%),Redo,Offload,SmartIO,FcHit,Hit(%),SiSave,FCCSave,waits,ms,Net,AllIO,Smart(%),FD(%),LIO(%),Redo,FL(%),SmartIO,Offload,FCC(%),FC(%),Read(%),OflOut,FccSave,Passthru,total_io,io_errs,writes,READS,hot_bytes,bytes,read,write,fd_bytes,fd_read,fd_write,timeouts,rw_ms,read_ms,write_ms,METRIC_VALUE,value,bytes,fd_bytes,ios,fd_io,lios,fd_lio,avg_ms,hd_ms,fd_ms",
+    delta_by="IOPs,OflEff,Resp(ms),Calls,CPU,BandWidth,PhyRead,OptR(%),dxr(%),PhyWrite,OptW(%),dxw(%),Redo,Offload,SmartIO,FcHit,Hit(%),SiSave,FCCSave,waits,ms,Net,AllIO,Smart(%),FD(%),LIO(%),Redo,FL(%),SmartIO,Offload,FCC(%),FC(%),Read(%),OflOut,FccSave,Passthru,total_io,io_errs,writes,READS,hot_bytes,bytes,read,write,fd_bytes,fd_read,fd_write,timeouts,rw_ms,read_ms,write_ms,METRIC_VALUE,value,bytes,fd_bytes,ios,fd_io,lios,fd_lio,avg_ms,hd_ms,fd_ms",
     calc_rules={["Flash(%)"]='[fd_bytes]*100/[bytes]',
                  avg='[ms]/[waits]',
                  avg_ms='[avg_ms]/[ios]',
@@ -219,11 +220,12 @@
                  ['OptR(%)']='100*[OptR(%)]/[PhyRead]',
                  ['OptW(%)']='100*[OptW(%)]/[PhyWrite]',
                  ['Hit(%)']='100*[FcHit]/[Hit(%)]',
-                 ['Resp(s)']='[Resp(s)]/[Calls]',
+                 ['Resp(ms)']='[Resp(ms)]/[Calls]',
                  ['OflEff']='100-[OflOut]*100/([OflEff]+[SISave])'},
     column_formatter={KMG='OflOut,BandWidth,PhyRead,PhyWrite,Redo,Offload,SmartIO,SiSave,FCCSave,Net,AllIO,Redo,SmartIO,Offload,OflOut,SiSave,FccSave,Passthru,OS_SIZE,TOTAL_SIZE,FREE_SIZE,bytes,hot_bytes,read,write,bytes,fd_bytes,fd_read,fd_write,fd_bytes',
-                      TMB='calls,fchit,ios,fd_io,lios,fd_lio,total_io,writes,READS,io_errs',
+                      TMB='IOPs,fchit,ios,fd_io,lios,fd_lio,total_io,writes,READS,io_errs',
                       smhd2='timeouts',
+                      noprint='calls',
                      ['#,##0']='value'},
     group_by="inst,event,diskgroup,cell,src,reason_name,METRIC_NAME,NAME",
     per_second='on'

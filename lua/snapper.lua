@@ -219,7 +219,7 @@ function snapper:run_sql(sql,main_args,cmds,files)
     for idx,text in ipairs(sql) do
         local cmd,arg=self:parse(cmds[idx],sql[idx],args[idx],files[idx])
         self.cmds[cmds[idx]],self.args[cmds[idx]]=cmd,arg
-        arg.snap_cmd=snap_cmd or ''
+        arg.snap_cmd=(snap_cmd or ''):sub(1,2000)
         arg.snap_interval=tonumber(interval) or 0
         if cmd.before_sql then
             env.eval_line(cmd.before_sql,true,true) 
@@ -263,8 +263,13 @@ function snapper:next_exec()
     for name,cmd in pairs(cmds) do
         if cmd.rs1 and cmd.rs2 then
             local calc_clock,formatter=os.timer(),cmd.column_formatter or {}
+            local defined_formatter={}
             for k,v in pairs(formatter) do
                 define_column(v,'format',k)
+                local cols=v:split('%s*,%s*')
+                for _,col in ipairs(cols) do
+                    defined_formatter[col:upper()]=k
+                end
             end
 
             for idx,_ in ipairs(cmd.rs1.rsidx) do
@@ -311,6 +316,8 @@ function snapper:next_exec()
                             min_agg_pos,top_agg=idx,i
                         end
                         agg_idx[i],title[i]=idx,props.fixed_title  and k  or elapsed~=1 and not props.topic and (k..'/s') or ('*'..k)
+                        local fmt = defined_formatter[title[i]] or defined_formatter[tit]
+                        if fmt then define_column(title[i],'format', fmt) end
                         if type(order_by)=="string" then
                             if order_by:find(',-'..tit..',',1,true) then
                                 order_by=order_by:replace(',-'..tit..',',',-'..title[i]..',',true)
@@ -476,6 +483,7 @@ function snapper:next_exec()
                 env.grid.merge(cmd.rs2,true)
             end
             env.printer.top_mode=false
+            env.var.import_context(table.unpack(self.var_context))
         end
     end
 

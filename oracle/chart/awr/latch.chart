@@ -14,14 +14,12 @@
     --]]
 ]]*/
 {
-    _attrs=[[
-        SELECT 'System Latch State Chart' title
-        from dual]],
+    title='System Latch State Chart',
     _sql=[[
         WITH snap AS
          (SELECT /*+materialize no_expand*/
                 trunc(end_interval_time + 0, 'mi') end_time, instance_number inst_id, dbid,
-                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 1440 Slot_size,
+                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 86400 Slot_size,
                 CASE WHEN end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate) THEN 0 END flag, 
                 snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
           FROM   dba_hist_snapshot
@@ -29,10 +27,10 @@
           AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2))
         SELECT time sample_time,event,
                a "Deviation%(Time/Avg)",
-               round(v*1e-3,2) "Seconds per Minute",
-               round(gets,2) "Gets per Minute",
-               round(misses,2) "Misses per Minute",
-               round(sleeps,2) "Sleeps per Minute",
+               round(v*1e-3,2) "Seconds per Second",
+               round(gets,2) "Gets per Second",
+               round(misses,2) "Misses per Second",
+               round(sleeps,2) "Sleeps per Second",
                RNK_
         FROM   (SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') TIME, event,
                        sum(v) v,100*avg(v/a)  a,

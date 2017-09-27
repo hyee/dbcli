@@ -285,8 +285,8 @@ function oracle:parse(sql,params)
     local sql_type=self.get_command_type(sql)
     local method,value,typeid,typename,inIdx,outIdx,vname=1,2,3,4,5,6,7
     if sql_type=="SELECT" or sql_type=="WITH" then 
-        if(sql:lower():find('%Wtable%s*%(')) then 
-            cfg.set("pipequery",'on') 
+        if sql:lower():find('%Wtable%s*%(') and not sql:lower():find('xplan') then 
+            cfg.set("pipequery",'on')
         end
     end
     if sql_type=='EXPLAIN' or #p2>0 and (sql_type=="DECLARE" or sql_type=="BEGIN" or sql_type=="CALL") then
@@ -522,7 +522,7 @@ function oracle:get_library()
         if #files>0 then
             files[#files+1]=env.join_path(env.WORK_DIR..'/oracle/xdb6.jar')
             loader:addLibrary(env.join_path(home..'/lib'),false)
-            env.luv.os.setenv('LD_LIBRARY_PATH',java.system:getProperty("java.library.path"))
+            env.uv.os.setenv('LD_LIBRARY_PATH',java.system:getProperty("java.library.path"))
             return files
         end
     end
