@@ -1,7 +1,6 @@
 /*[[
   Generate delta values based on gv$system_event,gv$sys_time_model. Usage: @@NAME [options] [-e|-t] {{[<inst_id>] [keyword]}|["<commands>"]} 
   -e: only show info of gv$session_event
-  -s: Show stats data based on per second
   -t: only show info of gv$sess_time_model
   --[[
         &filter: default={a}, e={e}, t={t}
@@ -27,6 +26,6 @@
     delta_by="ms,count",
     calc_rules={avg_ms='[ms]/[count]'},
     group_by="inst_id,sid,class#,name",
-    per_second="&sec1",
+    order_by="-ms",
     top_by="name"
 }

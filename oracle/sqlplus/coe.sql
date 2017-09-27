@@ -125,7 +125,7 @@ BEGIN -- 10g see bug 5017909
       DBMS_LOB.OPEN(:sql_text, DBMS_LOB.LOB_READWRITE);
     END IF;
     l_sql_text := REPLACE(i.sql_text, CHR(00), ' ');
-    DBMS_LOB.WRITEAPPEND(:sql_text, LENGTHB(l_sql_text), l_sql_text);
+    DBMS_LOB.WRITEAPPEND(:sql_text, LENGTH(l_sql_text), l_sql_text);
   END LOOP;
   IF :sql_text IS NOT NULL THEN
     DBMS_LOB.CLOSE(:sql_text);

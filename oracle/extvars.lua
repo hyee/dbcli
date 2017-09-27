@@ -44,7 +44,10 @@ local function rep_instance(prefix,full,obj,suffix)
 end
 
 function extvars.on_before_db_exec(item)
-    var.setInputs("lz_compress",db.lz_compress);
+    if item and item[2] and item[2]:find('lz_compress') then
+        var.setInputs("lz_compress",db.lz_compress);
+    end
+    
     if not var.outputs['INSTANCE'] then
         local instance=tonumber(cfg.get("INSTANCE"))
         var.setInputs("INSTANCE",tostring(instance>0 and instance or instance<0 and "" or db.props.instance))

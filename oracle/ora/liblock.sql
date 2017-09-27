@@ -2,7 +2,7 @@
 Check the holder of library cache objects. Usage: @@NAME {[<sid>|<object_name>] [inst_id]} [-u] [-w]
     -u: only show locked/pin objects within current_schema
     --[[
-        &FILTER: default={1=1}, u={h.object_name||'.' like sys_context('userenv','current_schema')||'.%'}
+        &FILTER: default={1=1}, u={h.object_name||'.' like nvl('&0',sys_context('userenv','current_schema'))||'.%'}
         &FILTER2: default={1=1), w={w.sid is not null}
         @CHECK_ACCESS: gv$libcache_locks={gv$libcache_locks},Dba_Kgllock={(SELECT NULL inst_id,KGLLKTYPE TYPE,KGLLKUSE HOLDING_USER_SESSION,KGLLKHDL OBJECT_HANDLE,KGLLKMOD MODE_HELD,KGLLKREQ MODE_REQUESTED FROM Dba_Kgllock)}
     --]]    

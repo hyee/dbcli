@@ -8,7 +8,7 @@ Show active SQLs/processes/sessions. Usage: @@NAME [-a|-i|-k] [-u]
         k={status='KILLED'}
       }
       
-      &usr: default={1=1}, u={username=sys_context('userenv','current_schema')}
+      &usr: default={1=1}, u={username=nvl('&0',sys_context('userenv','current_schema'))}
       @pname: 11={pname,}, default={}
   ]]--
 ]]*/

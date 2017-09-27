@@ -20,13 +20,13 @@
         WITH snap AS
          (SELECT /*+materialize no_expand*/
                 trunc(end_interval_time + 0, 'mi') end_time, instance_number inst_id, dbid,
-                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 1440 Slot_size,
+                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 86400 Slot_size,
                 CASE WHEN end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate) THEN 0 END flag, 
                 snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
           FROM   dba_hist_snapshot
           WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
           AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2))  
-        SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') sample_time, event,round(sum(v*1e-6),2) "Seconds per OS Minute"
+        SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') sample_time, event,round(sum(v*1e-6),2) "Seconds per OS Second"
         FROM  (SELECT /*+merge*/
                        A.*,
                        stat_name || decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event,

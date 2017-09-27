@@ -217,7 +217,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
                     fetch rc into txt;
                     exit when rc%notfound;
                     IF Trim(txt) IS NOT NULL THEN
-                        dbms_lob.writeappend(rs,lengthb(txt)+1,txt||chr(10));
+                        dbms_lob.writeappend(rs,length(txt)+1,txt||chr(10));
                     END IF;
                 EXCEPTION WHEN OTHERS THEN null;
                 END;
@@ -327,7 +327,7 @@ function awr.extract_ash(starttime,endtime,instances,container)
                                                                                 action,
                                                                                 client_id))) LOOP
                     IF r.output IS NOT NULL THEN
-                        dbms_lob.writeappend(rs, LENGTHB(r.output), r.output);
+                        dbms_lob.writeappend(rs, LENGTH(r.output), r.output);
                     END IF;
                 END LOOP;
             $IF DBMS_DB_VERSION.VERSION>11 OR DBMS_DB_VERSION.VERSION>10 AND DBMS_DB_VERSION.release>1 $THEN
@@ -344,7 +344,7 @@ function awr.extract_ash(starttime,endtime,instances,container)
                                                                                        l_action=>action,
                                                                                        l_client_id=>client_id))) LOOP
                     IF r.output IS NOT NULL THEN
-                        dbms_lob.writeappend(rs, LENGTHB(r.output), r.output);
+                        dbms_lob.writeappend(rs, LENGTH(r.output), r.output);
 
                     END IF;
                 END LOOP;

@@ -84,12 +84,12 @@ function db:check_obj(obj_name)
             FOR i IN 1 .. t1.count LOOP
                 c1 := c1 || t1(i);
                 IF LENGTHB(c1) > 32000 THEN
-                    dbms_lob.writeappend(c, LENGTHB(c1), c1);
+                    dbms_lob.writeappend(c, LENGTH(c1), c1);
                     c1 := NULL;
                 END IF;
             END LOOP;
             IF c1 IS NOT NULL THEN
-                dbms_lob.writeappend(c, LENGTHB(c1), c1);
+                dbms_lob.writeappend(c, LENGTH(c1), c1);
             END IF;
             :1 := c;
         END;]],args)

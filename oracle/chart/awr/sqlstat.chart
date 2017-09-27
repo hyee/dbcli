@@ -15,8 +15,8 @@
             io={phr "Physical Reads",phw "Physical writes",buff "Logical Reads" &VER,opr "Optimized Physical Reads", clr "Cluster Communication",iooff "I/O Offload",cuzip "Cell Un-Compressed"},
             exec={exec "Executions",parses "Parse Calls",loads "Loads",pxe "PX Executions"}
         }
-        &LABEL  : time={Seconds per minute}, io={Bytes per Minute}, exec={Count per Minute}
-        &FILTER : default={1=1}, u={PARSING_SCHEMA_NAME=sys_context('userenv','current_schema')},s={PARSING_SCHEMA_NAME='&0'}, f={}
+        &LABEL  : time={Seconds per Second}, io={Bytes per Second}, exec={Count per Second}
+        &FILTER : default={1=1}, u={PARSING_SCHEMA_NAME=nvl('&0',sys_context('userenv','current_schema'))},s={PARSING_SCHEMA_NAME='&0'}, f={}
         @VER    : 11.2={}, default={--}
     --]]
 ]]*/
@@ -27,7 +27,7 @@
         WITH snap AS
          (SELECT /*+materialize no_expand*/
                 to_char(end_interval_time, 'yyyy-mm-dd hh24:mi') end_time, instance_number inst_id, dbid,
-                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 1440 Slot_size,
+                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 86400 Slot_size,
                 CASE WHEN end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate) THEN 0 END flag, 
                 snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
           FROM   dba_hist_snapshot

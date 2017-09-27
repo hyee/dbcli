@@ -12,7 +12,7 @@ function helper.jvm()
     end
     for k,v in java.pairs(java.system:getProperties()) do
         if tostring(k)~="" then
-            add(k,type(v)=="string" and v:gsub('([:;])','%1\n') or tostring(v))
+            add(k,type(v)=="string" and v:gsub('(['..(env.IS_WINDOWS and ';' or ':')..'])','%1\n') or tostring(v))
         end
     end
     set.set("PIVOT",1)

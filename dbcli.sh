@@ -24,6 +24,10 @@ elif [[ -r ./data/init.cfg ]]; then
     source ./data/init.cfg
 fi
 
+if [[ "$EXT_PATH" ]]; then
+    export PATH=$EXT_PATH:$PATH
+fi
+
 # find executable java program
 if [[ -n "$JRE_HOME" ]] && [[ -x "$JRE_HOME/bin/java" ]];  then
     _java="$JRE_HOME/bin/java"
@@ -73,6 +77,10 @@ fi
 
 export LUA_CPATH="./lib/$os/?.so;./lib/$os/?.dylib"
 export LD_LIBRARY_PATH="./lib/$os:$JAVA_ROOT/bin:$JAVA_ROOT/lib:$JAVA_ROOT/lib/jli:$JAVA_ROOT/lib/server:$JAVA_ROOT/lib/amd64:$JAVA_ROOT/lib/amd64/server"
+
+if [[ "$ORACLE_HOME" ]]; then
+    export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$ORACLE_HOME/lib"
+fi
 
 # unpack jar files for the first use
 unpack="$JAVA_ROOT/bin/unpack200"

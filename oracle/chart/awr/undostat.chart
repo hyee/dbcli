@@ -19,7 +19,7 @@
         WITH snap AS
          (SELECT /*+materialize no_expand*/
                 to_char(end_interval_time + 0, 'yyyy-mm-dd hh24:mi') end_time, instance_number inst_id, dbid,
-                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 1440 Slot_size,
+                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 86400 Slot_size,
                 CASE WHEN end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate) THEN 0 END flag, 
                 snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
           FROM   dba_hist_snapshot
@@ -28,7 +28,7 @@
         SELECT end_time sample_time, 
                event,
                Round(SUM(bytes),2) "Undo Size(MB)",
-               Round(SUM(TXNCOUNT),2) "Transactions/Min",
+               Round(SUM(TXNCOUNT),2) "Transactions/Sec",
                MAX(MAXQUERYLEN) "Longest SQL Time(secs)"
         FROM  (SELECT /*+merge*/
                        A.*,

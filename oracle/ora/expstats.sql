@@ -26,9 +26,9 @@ DECLARE
     PROCEDURE pr(p_text VARCHAR2, flag BOOLEAN DEFAULT TRUE) IS
     BEGIN
         IF flag THEN
-            dbms_lob.writeappend(v_text, lengthb(p_text) + 1, p_text || chr(10));
+            dbms_lob.writeappend(v_text, length(p_text) + 1, p_text || chr(10));
         ELSE
-            dbms_lob.writeappend(v_text, lengthb(p_text), p_text);
+            dbms_lob.writeappend(v_text, length(p_text), p_text);
         END IF;
     END;
 BEGIN
@@ -79,7 +79,7 @@ BEGIN
     pr('    txt    CLOB;');
     pr('    hdr    NUMBER;');
     pr('    stgtab VARCHAR2(30) := '''||v_stgtab||''';');
-    pr('    procedure wr(x varchar2) is begin dbms_lob.writeappend(txt, lengthb(x), x);end;');
+    pr('    procedure wr(x varchar2) is begin dbms_lob.writeappend(txt, length(x), x);end;');
     pr(q'[    procedure do_insert(cols varchar2,vals varchar2) is begin execute immediate 'insert into '||stgtab||'('||cols||') values('||vals||')';end;]');
     pr('BEGIN');
     pr(q'[    execute immediate q'|ALTER session SET nls_date_format = 'YYYY-MM-DD HH24:MI:SS'|';]');

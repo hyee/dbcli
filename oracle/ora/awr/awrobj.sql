@@ -1,4 +1,6 @@
 /*[[Search for the SQLs in AWR snapshots that reference the specific object. Usage: @@NAME {<[owner.]object_name> [ela|exe|id|text|op] [yymmddhhmi] [yymmddhhmi]} ]]*/
+ora _find_object "&V1"
+
 WITH qry AS
  (SELECT /*+materialize*/*
   FROM   (SELECT OBJECT_ID,

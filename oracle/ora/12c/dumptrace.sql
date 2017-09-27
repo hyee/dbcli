@@ -23,7 +23,7 @@ BEGIN
     IF v_file IS NOT NULL THEN
         DBMS_LOB.CREATETEMPORARY(v_report,TRUE);
         FOR R IN(SELECT * FROM gv$diag_trace_file_contents WHERE v_file=ADR_HOME||TRACE_FILENAME) LOOP
-            DBMS_LOB.writeAppend(v_report,lengthb(r.PAYLOAD),r.PAYLOAD);
+            DBMS_LOB.writeAppend(v_report,length(r.PAYLOAD),r.PAYLOAD);
         END LOOP;
         :report := v_report;
     END IF;

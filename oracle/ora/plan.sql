@@ -8,7 +8,7 @@ Option:
     -adv  : the plan with the 'advanced' format
     -a    : the plan with the 'all' format
 --[[
-    &STAT: default={&DF &V3 &V4 &V5 &V6 &V7 &V8 &V9}
+    &STAT: default={&DF &adaptive &V3 &V4 &V5 &V6 &V7 &V8 &V9}
     &V3: none={} ol={outline alias}
     &DF: default={ALLSTATS ALL -PROJECTION LAST -ALIAS}, basic={BASIC}, adv={advanced}, a={all}
     &SRC: {
@@ -16,10 +16,11 @@ Option:
             d={2}        # Dictionary only
           }
     &binds: default={0}, b={1}
+    @adaptive: 12.1={adaptive} default={}
 ]]--
 ]]*/
 set PRINTSIZE 9999
-set feed off
+set feed off pipequery off
 
 VAR C REFCURSOR Binding Variables
 BEGIN
@@ -145,7 +146,7 @@ xplan AS
 xplan_data AS
  (SELECT /*+ordered use_nl(o) materialize*/
            x.plan_table_output AS plan_table_output,
-           nvl(o.id,CASE WHEN regexp_like(x.plan_table_output, '^\|[\* 0-9]+\|') THEN to_number(regexp_substr(x.plan_table_output, '[0-9]+')) END) id,
+           nvl(o.id,CASE WHEN regexp_like(x.plan_table_output, '^\|[-\* ]*[0-9]+ \|') THEN to_number(regexp_substr(x.plan_table_output, '[0-9]+')) END) id,
            o.pid,
            o.oid,
            o.maxid,
@@ -154,7 +155,7 @@ xplan_data AS
            COUNT(*) over() AS rc
   FROM   xplan x
   LEFT   OUTER JOIN ordered_hierarchy_data o
-  ON     (o.id = CASE WHEN regexp_like(x.plan_table_output, '^\|[\* 0-9]+\|') THEN to_number(regexp_substr(x.plan_table_output, '[0-9]+')) END))
+  ON     (o.id = CASE WHEN regexp_like(x.plan_table_output, '^\|[-\* ]*[0-9]+ \|') THEN to_number(regexp_substr(x.plan_table_output, '[0-9]+')) END))
 SELECT plan_table_output
 FROM   xplan_data --
 model  dimension by (r)

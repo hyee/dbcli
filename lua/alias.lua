@@ -119,18 +119,18 @@ function alias.set(name, cmd, write)
             return print("Alias '" .. name .. "' is invalid. ")
         end
         cmd = env.COMMAND_SEPS.match(cmd)
-        local target_dir = alias.command_dir
+        local target_dir = alias.db_dir
         local sub_cmd = env.parse_args(2, cmd)[1]:upper()
         if env._CMDS[sub_cmd] then
             local file = env._CMDS[sub_cmd].FILE or ""
             file = file:match('[\\/]([^#]+)')
-            if file == env.CURRENT_DB then target_dir = alias.db_dir end
+            if file ~= env.CURRENT_DB then target_dir = alias.command_dir end
         end
-        
+
         if write ~= false then
             os.remove(alias.command_dir .. name:lower() .. ".alias")
             os.remove(alias.db_dir .. name:lower() .. ".alias")
-            local f = io.open(target_dir .. name:lower() .. ".alias", "w")
+            local f = io.open(alias.db_dir .. name:lower() .. ".alias", "w")
             f:write(cmd)
             f:close()
         end
@@ -161,18 +161,18 @@ end
 
 function alias.helper()
     local help = [[
-    Set a shortcut of other existing commands. Usage: @@NAME [-r] | {<name> [parameters]} | {-e <alias name>}
+    Set a shortcut of other existing command. Usage: @@NAME [-r] | {<name> [parameters]} | {-e <name>}
     1) Set/modify alias: @@NAME <name> <command>. Available wildcards: $1 - $9, or $*
-                         $1 - $9 can have default value, format as: $1[default]
+                         $1 - $9 can have default value, format as: <$1-$9>[<value>]
     2) Remove alias    : @@NAME <name>
-    3) Reload alias    : @@NAME -r
-    4) Encrypt alias   : @@NAME -e <alias name>
+    3) Reload aliases  : @@NAME -r
+    4) Encrypt alias   : @@NAME -e <name>
 
     All aliases are permanently stored in the "aliases" folder.
-    Example:
-         @@NAME test pro $1
-         @@NAME ss select * from $1[dual]  
-         @@NAME test conn $1/$2@$3
+    Examples:
+         @@NAME test pro $1                  => "test 122"                    = "pro 122"
+         @@NAME ss select * from $1[dual]    => "ss"                          = "select * from dual"
+         @@NAME test conn $1/$2@$*           => "test sys pwd orcl as sysdba" = "conn sys/pwd@orcl as sysdba"
     Current aliases:
     ================]]
 

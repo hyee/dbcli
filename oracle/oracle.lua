@@ -15,6 +15,7 @@ oracle.module_list={
     "unwrap",
     "sys",
     "show",
+    "exa",
     "chart",
     "ssh",
     "extvars",
@@ -284,8 +285,8 @@ function oracle:parse(sql,params)
     local sql_type=self.get_command_type(sql)
     local method,value,typeid,typename,inIdx,outIdx,vname=1,2,3,4,5,6,7
     if sql_type=="SELECT" or sql_type=="WITH" then 
-        if(sql:lower():find('%Wtable%s*%(')) then 
-            cfg.set("pipequery",'on') 
+        if sql:lower():find('%Wtable%s*%(') and not sql:lower():find('xplan') then 
+            cfg.set("pipequery",'on')
         end
     end
     if sql_type=='EXPLAIN' or #p2>0 and (sql_type=="DECLARE" or sql_type=="BEGIN" or sql_type=="CALL") then
@@ -521,7 +522,7 @@ function oracle:get_library()
         if #files>0 then
             files[#files+1]=env.join_path(env.WORK_DIR..'/oracle/xdb6.jar')
             loader:addLibrary(env.join_path(home..'/lib'),false)
-            env.luv.os.setenv('LD_LIBRARY_PATH',java.system:getProperty("java.library.path"))
+            env.uv.os.setenv('LD_LIBRARY_PATH',java.system:getProperty("java.library.path"))
             return files
         end
     end
@@ -529,20 +530,23 @@ function oracle:get_library()
 end
 
 function oracle:grid_db_call(sqls,args)
-    local stmt={'BEGIN'}
+    local stmt={[[BEGIN]]}
+    local clock=os.timer()
+    --stmt[#stmt+1]='BEGIN set transaction isolation level serializable;EXCEPTION WHEN OTHERS THEN NULL;END;'
     args=args or {}
     for idx,sql in ipairs(sqls) do
         local typ=self.get_command_type(sql.sql)
         if typ=='SELECT' or typ=='WITH' then
             local cursor='GRID_CURSOR_'..idx
             args[cursor]='#CURSOR'
-            stmt[#stmt+1]='  OPEN :'..cursor..' FOR '..sql.sql..';'
+            stmt[#stmt+1]='  OPEN :'..cursor..' FOR \n        '..sql.sql..';'
         else
             stmt[#stmt+1]=sql.sql..';'
         end
     end
     stmt[#stmt+1]='END;'
     local results=self.super.exec(self,table.concat(stmt,'\n'),args)
+    self.grid_cost=os.timer()-clock
     if type(results)~="table" and type(results)~="userdata" then results=nil end
     for idx,sql in ipairs(sqls) do
         local cursor='GRID_CURSOR_'..idx

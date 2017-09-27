@@ -19,7 +19,7 @@
     --[[
         &BASE : s={sql_id}, m={signature},
         &SIG  : s={},m={signature,}
-        &FILTER: s={1=1},u={PARSING_SCHEMA_NAME=sys_context('userenv','current_schema')},f={}
+        &FILTER: s={1=1},u={PARSING_SCHEMA_NAME=nvl('&0',sys_context('userenv','current_schema'))},f={}
     --]]
 
 ]]*/

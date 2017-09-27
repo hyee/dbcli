@@ -174,7 +174,11 @@ function table.totable(str)
     else
         done,txt=pcall(txt)
     end
-    env.checkerr(done,'Error while parsing text into Lua table:' ..(err or tostring(txt) or '')..'\n'..str)
+    if not done then
+        local idx=0
+        str=('\n'..str):gsub('\n',function(s) idx=idx+1;return string.format('\n%4d',idx) end)
+        env.raise('Error while parsing text into Lua table:' ..(err or tostring(txt) or '')..str)
+    end
     return txt
 end
 
@@ -262,81 +266,18 @@ function table.dump(tbl,indent,maxdep,tabs)
     return rs..indent..'}'
 end
 
--- byte  1        2           3          4
-------------------------------------------
--- 00 - 7F
--- C2 - DF      80 - BF
--- E0           A0 - BF     80 - BF
--- E1 - EC      80 - BF     80 - BF
--- ED           80 - 9F     80 - BF
--- EE - EF      80 - BF     80 - BF
--- F0           90 - BF     80 - BF    80 - BF
--- F1 - F3      80 - BF     80 - BF    80 - BF
--- F4           80 - 8F     80 - BF    80 - BF
-function string.chars(s,start)
-    local i = start or 1
-    if not s or i>#s then return nil end
-    local function next()
-        local c,i1,p,is_multi = s:byte(i),i
-        if not c then return end
-        if c >= 0xC2 and c <= 0xDF then
-            local c2 = s:byte(i + 1)
-            if c2 and c2 >= 0x80 and c2 <= 0xBF then i=i+1 end
-        elseif c >= 0xE0 and c <= 0xEF then
-            local c2 = s:byte(i + 1)
-            local c3 = s:byte(i + 2)
-            local flag = c2 and c3 and true or false
-            if c == 0xE0 then
-                if flag and c2 >= 0xA0 and c2 <= 0xBF and c3 >= 0x80 and c3 <= 0xBF then i1=i+2 end
-            elseif c >= 0xE1 and c <= 0xEC then
-                if flag and c2 >= 0x80 and c2 <= 0xBF and c3 >= 0x80 and c3 <= 0xBF then i1=i+2 end
-            elseif c == 0xED then
-                if flag and c2 >= 0x80 and c2 <= 0x9F and c3 >= 0x80 and c3 <= 0xBF then i1=i+2 end
-            elseif c >= 0xEE and c <= 0xEF then
-                if flag and 
-                    not (c == 0xEF and c2 == 0xBF and (c3 == 0xBE or c3 == 0xBF)) and 
-                    c2 >= 0x80 and c2 <= 0xBF and c3 >= 0x80 and c3 <= 0xBF 
-                then i1=i+2 end
-            end
-        elseif c >= 0xF0 and c <= 0xF4 then
-            local c2 = s:byte(i + 1)
-            local c3 = s:byte(i + 2)
-            local c4 = s:byte(i + 3)
-            local flag = c2 and c3 and c4 and true or false
-            if c == 0xF0 then
-                if flag and
-                    c2 >= 0x90 and c2 <= 0xBF and
-                    c3 >= 0x80 and c3 <= 0xBF and
-                    c4 >= 0x80 and c4 <= 0xBF
-                then i1=i+3 end
-            elseif c >= 0xF1 and c <= 0xF3 then
-                if flag and
-                    c2 >= 0x80 and c2 <= 0xBF and
-                    c3 >= 0x80 and c3 <= 0xBF and
-                    c4 >= 0x80 and c4 <= 0xBF
-                then i1=i+3 end
-            elseif c == 0xF4 then
-                if flag and
-                    c2 >= 0x80 and c2 <= 0x8F and
-                    c3 >= 0x80 and c3 <= 0xBF and
-                    c4 >= 0x80 and c4 <= 0xBF
-                then i1=i+3 end
-            end
-        end
-        p,i,is_multi=s:sub(i,i1),i1+1,i1>i
-        return p,is_multi,i
-    end
-    return next
-end
-
+local ulen=console.ulen
 function string.ulen(s)
     if s=="" then return 0,0 end
-    if not s then return nil end 
-    local len1,len2=0,0
-    for c,is_multi in s:chars() do
-        len1,len2=len1+1,len2+(is_multi and 2 or 1)
+    if not s then return nil end
+    local len1,len2
+    if s:find('[%z\1-\127\194-\244][\128-\191]*') then
+        len1,len2= ulen(s):match("(%d+):(%d+)")
+        return tonumber(len1),tonumber(len2)
+    else
+        len1=#s
+        return len1,len1
     end
-    return len1,len2
 end
 
 function try(args)

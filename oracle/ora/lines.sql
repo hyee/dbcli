@@ -6,7 +6,7 @@
         &VW              : default={all_source}, u={user_source}
         &F2              : default={1=1}, f={}
         &OWN             : default={owner=:object_owner and }, u={}
-        &F1              : default={name=:object_name and line between trunc(:V2-nvl(:V3,100)/2) and trunc(:V2+nvl(:V3,100)/2)}, t={upper(text) like upper('%&0%')}
+        &F1              : default={name=:object_name and line between trunc(:V2-nvl(:V3,100)/2) and trunc(:V2+nvl(:V3,100)/2)}, t={upper(text) like upper(q'{%&0%}')}
         @CHECK_ACCESS_OBJ: dba_source={dba_source), all_source={&VW}
     --]]
 ]]*/

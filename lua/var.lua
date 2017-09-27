@@ -289,6 +289,12 @@ function var.before_command(cmd)
 end
 
 function var.define_column(col,...)
+    if type(col)~="string" or col:trim()=="" then return end
+    if col:find(',',1,true) then
+        local cols=col:split("%s*,+%s*")
+        for k,v in ipairs(cols) do var.define_column(v,...) end
+        return
+    end
     local gramma={
         {{'ALIAS','ALI'},'*'},
         {{'CLEAR','CLE'}},
@@ -313,7 +319,7 @@ function var.define_column(col,...)
     col=col:upper()
     var.columns[col]=var.columns[col] or {}
     local obj=var.columns[col]
-
+    local valid=false
     for i=1,#args do
         args[i],arg=args[i]:upper(),args[i+1]
         if args[i]=='NEW_VALUE' or args[i]=='NEW_V' then
@@ -322,6 +328,7 @@ function var.define_column(col,...)
             var.setOutput(arg,'VARCHAR')
             obj.new_value=arg
             i=i+1
+            valid=true
         elseif args[i]=='FORMAT' or args[i]=='FOR' then
             local f=arg:upper()
             env.checkerr(arg,'Format:  COL[UMN] <column> FOR[MAT] [KMB|TMB|ITV|SMHD|<format>] JUS[TIFY] [LEFT|L|RIGHT|R].')
@@ -330,7 +337,7 @@ function var.define_column(col,...)
                 obj.format_dir='%-'..siz..'s'
                 obj.format=function(v) return tostring(v) and obj.format_dir:format(tostring(v):sub(1,siz)) or v end
             elseif f=="KMG" or f=="TMB" then --KMGTP
-                local units=f=="KMG" and {'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} or {' ',' K',' M',' B',' T',' Q'}
+                local units=f=="KMG" and {'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} or {'  ',' K',' M',' B',' T',' Q'}
                 local div=f=="KMG" and 1024 or 1000
                 obj.format=function(v)
                     local s=tonumber(v)
@@ -338,10 +345,11 @@ function var.define_column(col,...)
                     local prefix=s<0 and '-' or ''
                     s=math.abs(s)
                     for i=1,#units do
-                        v,s=s,s/div
+                        v,s=math.round(s,2),s/div
+                        if v==0 then prefix='' end
                         if s<1 then return string.format(i>1 and "%s%.2f%s" or "%s%d%s",prefix,v,units[i]) end
                     end
-                    return string.format("%s%.2f%s",prefix,v,units[#units])
+                    return string.format("%s%.2f%s",v==0 and '' or prefix,v,units[#units])
                 end
             elseif f=="SMHD2" then
                 local units={'s','m','h','d'}
@@ -352,7 +360,8 @@ function var.define_column(col,...)
                     local prefix=s<0 and '-' or ''
                     s=math.abs(s)
                     for i=1,#units-1 do
-                        v,s=s,s/div[i]
+                        v,s=math.round(s,2),s/div[i]
+                        if v==0 then prefix='' end
                         if s<1 then return string.format("%s%.2f%s",prefix,v,units[i]) end
                     end
                     return string.format("%s%.2f%s",prefix,s,units[#units])
@@ -371,7 +380,7 @@ function var.define_column(col,...)
                     u[#u+1]=math.floor(s/24)
                     return prefix..fmt:format(u[4],u[3],u[2],u[1]):gsub("^0 ",'')
                 end
-            else
+            elseif not var.define_column(col,f) then
                 local fmt=java.new("java.text.DecimalFormat")
                 arg=arg:gsub('9','#')
                 local res,msg=pcall(fmt.applyPattern,fmt,arg)
@@ -385,15 +394,19 @@ function var.define_column(col,...)
                 obj.format=format_func
             end
             i=i+1
+            valid=true
         elseif args[i]=='PRINT' or args[i]=='PRI' then
             obj.print=true
+            valid=true
         elseif args[i]=='NOPRINT' or args[i]=='NOPRI' then
             obj.print=false
+            valid=true
         elseif args[i]=='HEADING' or args[i]=='HEAD'  or args[i]=='HEA' then
             local arg=args[i+1]
             env.checkerr(arg,'Format:  COL[UMN] <column> HEAD[ING] <new name>.')
             obj.heading=arg
             i=i+1
+            valid=true
         elseif args[i]=='JUSTIFY' or args[i]=='JUS' and obj.format then
             local arg=arg and arg:upper()
             local dir
@@ -405,11 +418,13 @@ function var.define_column(col,...)
                 obj.format_dir=obj.format_dir:gsub("-*(%d+)",dir..'%1')
             end
             i=i+1
+            valid=true
         elseif args[i]=='CLEAR' or args[i]=='CLE' then
             var.columns[col]=nil
+            valid=true
         end
     end
-    
+    return valid
 end
 
 
@@ -424,19 +439,23 @@ function var.trigger_column(field)
         if index then
             field[2],var.columns[index:upper()]=index,obj
         end
+        if obj.print==false then field[2]='' end
         return
     end
     if not value then return end
 
     index=obj.format
-    if index then field[2]=index(value) end
+    if index then 
+        field[2]=index(value) 
+    end
     
-
     index=obj.new_value
     if index then
         var.inputs[index],var.outputs[index]=value or db_core.NOT_ASSIGNED,nil
         if obj.print==true then print(string.format("Variable %s == > %s",index,value or 'NULL')) end
     end
+
+    if obj.print==false then field[2]='' end
 end
 
 function var.onload()

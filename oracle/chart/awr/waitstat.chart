@@ -17,15 +17,15 @@
         WITH snap AS
          (SELECT /*+materialize no_expand*/
                 trunc(end_interval_time + 0, 'mi') end_time, instance_number inst_id, dbid,
-                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 1440 Slot_size,
+                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 86400 Slot_size,
                 CASE WHEN end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate) THEN 0 END flag, 
                 snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
           FROM   dba_hist_snapshot
           WHERE  end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate)
           AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V1)) 
         SELECT to_char(end_time, 'YYYY-MM-DD HH24:MI') sample_time, event,
-               Round(SUM(WAIT_TIME/SLOT_SIZE),2)  "Wait Time Per Minute",
-               Round(SUM(WAIT_COUNT/SLOT_SIZE),2) "Wait Count Per Minute",
+               Round(SUM(WAIT_TIME/SLOT_SIZE),2)  "Wait Time Per Second",
+               Round(SUM(WAIT_COUNT/SLOT_SIZE),2) "Wait Count Per Second",
                Round(SUM(WAIT_TIME)/SUM(WAIT_COUNT)*10,2) "Wait Time per Request"
         FROM  (SELECT /*+merge*/
                        A.*,

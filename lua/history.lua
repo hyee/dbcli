@@ -28,18 +28,20 @@ function history:show(key)
 end
 
 function history:capture(cmd,args,res,is_internal,command_text,clock)
-    if #env.RUNNING_THREADS>1 then return end
+    if #env.RUNNING_THREADS>1 or not args then return end
     --if(cmd==nil) then print(debug.traceback()) end
     cmd=cmd:upper()
     if (cmd=="HIS" or cmd=="/" or cmd=="R" or cmd=="HISTORY" or cmd=='ED' or cmd=='EDIT') then return end
     local maxsiz=cfg.get("HISSIZE")
-    local key=command_text:gsub("[%s%z\128\192]+"," "):sub(1,300)
+    local text=table.concat(args," ")
+    if text:find(cmd,1,true)~=1 then text=cmd..' '..text end
+    local key=text:gsub("[%s%z\128\192]+"," "):sub(1,300)
     local k1=key:upper()
     if keys[k1] then
         table.remove(self,keys[k1])
         for k,v in pairs(keys) do if v>keys[k1] then keys[k]=v-1 end end
     end
-    lastcommand={cmd=cmd,desc=key,args=args,tim=os.timer(),clock=clock,key=k1,text=command_text}
+    lastcommand={cmd=cmd,desc=key,args=args,tim=os.timer(),clock=clock,key=k1,text=text}
     if maxsiz < 1 then return end
     table.insert(self,lastcommand)
     while #self>maxsiz do

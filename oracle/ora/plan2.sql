@@ -26,7 +26,7 @@
 var sqlid varchar2(32);
 var planHashValue varchar2(32);
 var showOptions varchar2(32);
-set verify off feed off
+set verify off feed off pipequery off
 begin select '&V1', '&V2', nvl(upper('&V3'),'BPDTLWS')||decode(instr('&V3','+'),0,'','BPDTLWS') into :sqlid, :planHashValue, :showOptions from dual; end;
 /
 

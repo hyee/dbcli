@@ -2,11 +2,14 @@
     Show AWR Top SQLs for a specific period. Usage: @@NAME {[0|<inst>] [a|<sql_id>] [total|avg] [yymmddhhmi] [yymmddhhmi] [exec|ela|cpu|io|cc|fetch|rows|load|parse|read|write|mem]} [-m] 
     --[[
         &grp: s={sql_id}, m={signature}
-        &filter: s={1=1},u={PARSING_SCHEMA_NAME||''=sys_context('userenv','current_schema')},f={}
+        &filter: s={1=1},u={PARSING_SCHEMA_NAME=nvl('&0',sys_context('userenv','current_schema'))},f={}
     --]]
 ]]*/
 
 ORA _sqlstat
+
+col ela,iowait,cpu,clwait,apwait,plsql,java format smhd2
+col reads,writes format kmg
 
 WITH qry as (SELECT nvl(upper(NVL(:V1,:INSTANCE)),'A') inst,
                     nullif(lower(:V2),'a') sqid,
@@ -23,15 +26,7 @@ SELECT &grp,
        lpad(replace(to_char(parse,decode(sign(parse - 1e5),-1,'fm99990','fm0.00EEEE')),'+0'),7) parses,
        seens,
        lpad(replace(to_char(mem,decode(sign(mem - 1e5),-1,'fm99990.09','fm0.00EEEE')),'+0'),7) memory,
-       lpad(replace(to_char(ela,decode(sign(ela - 1e5),-1,'fm99990.09','fm0.00EEEE')),'+0'),7) elapsed,
-       lpad(replace(to_char(CPU,decode(sign(CPU - 1e5),-1,'fm99990.09','fm0.00EEEE')),'+0'),7) CPU_TIM,
-       lpad(replace(to_char(iowait,decode(sign(iowait - 1e5),-1,'fm99990.09','fm0.00EEEE')),'+0'),7) io_wait,
-       lpad(replace(to_char(ccwait,decode(sign(ccwait - 1e5),-1,'fm99990.09','fm0.00EEEE')),'+0'),7) cc_wait,
-       lpad(replace(to_char(ccwait,decode(sign(clwait - 1e5),-1,'fm99990.09','fm0.00EEEE')),'+0'),7) cl_wait,
-       lpad(replace(to_char(PLSQL,decode(sign(PLSQL - 1e5),-1,'fm99990.09','fm0.00EEEE')),'+0'),7) "PL/SQL",
-       lpad(replace(to_char(JAVA,decode(sign(JAVA - 1e5),-1,'fm99990.09','fm0.00EEEE')),'+0'),7) JAVA_TM,
-       lpad(replace(to_char(READ,decode(sign(READ - 1e5),-1,'fm99990.09','fm0.00EEEE')),'+0'),7) READS_MB,
-       lpad(replace(to_char(WRITE,decode(sign(WRITE - 1e5),-1,'fm99990.09','fm0.00EEEE')),'+0'),7) WRITES_MB,
+       ela,iowait,cpu,clwait,apwait,plsql,java,reads,writes,
        lpad(replace(to_char(FETCH,decode(sign(FETCH - 1e5),-1,'fm99990','fm0.00EEEE')),'+0'),7) FETCHS,
        lpad(replace(to_char(RWS,decode(sign(RWS - 1e5),-1,'fm99990','fm0.00EEEE')),'+0'),7) "ROWS",
        lpad(replace(to_char(PX,decode(sign(PX - 1e5),-1,'fm99990','fm0.00EEEE')),'+0'),7) PX_SVRS,
@@ -49,10 +44,11 @@ FROM   (SELECT &grp,sq_id,dbid,
                iowait / exe1 iowait,
                ccwait / exe1 ccwait,
                clwait / exe1 clwait,
+               apwait / exe1 apwait,
                PLSQL / exe1 PLSQL,
                JAVA / exe1 JAVA,
-               READ / exe1 READ,
-               WRITE / exe1 WRITE,
+               READ / exe1 READS,
+               WRITE / exe1 WRITES,
                FETCH / exe1 FETCH,
                RWS / exe1 rws,
                PX / exe1 PX,
@@ -72,13 +68,14 @@ FROM   (SELECT &grp,sq_id,dbid,
                        SUM(LOADS) LOAD,
                        SUM(PARSE_CALLS) parse,
                        AVG(sharable_mem/1024/ 1024) mem,
-                       SUM(elapsed_time /60) ela,
-                       SUM(cpu_time /60) CPU,
-                       SUM(iowait /60) iowait,
-                       SUM(CCWAIT /60) ccwait,
-                       SUM(CLWAIT /60) clwait,
-                       SUM(PLSEXEC_TIME /60) PLSQL,
-                       SUM(JAVEXEC_TIME /60) JAVA,
+                       SUM(elapsed_time ) ela,
+                       SUM(cpu_time ) CPU,
+                       SUM(iowait) iowait,
+                       SUM(CCWAIT) ccwait,
+                       SUM(CLWAIT) clwait,
+                       SUM(apwait) apwait,
+                       SUM(PLSEXEC_TIME) PLSQL,
+                       SUM(JAVEXEC_TIME) JAVA,
                        SUM(disk_reads + s.buffer_gets) READ,
                        SUM(direct_writes) WRITE,
                        SUM(END_OF_FETCH_COUNT) FETCH,

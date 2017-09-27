@@ -17,9 +17,9 @@ BEGIN
                decode(elapsed_time_delta, 0, loads_total, loads_delta) loads,
                decode(elapsed_time_delta, 0, invalidations_total, invalidations_delta) invalidations,
                decode(elapsed_time_delta, 0, parse_calls_total, parse_calls_delta) parse_calls,
-               decode(elapsed_time_delta, 0, disk_reads_total, disk_reads_delta)*(select value/1024/1024 from v$parameter where name='db_block_size') disk_reads,
-               decode(elapsed_time_delta, 0, buffer_gets_total, buffer_gets_delta)*(select value/1024/1024 from v$parameter where name='db_block_size') buffer_gets,
-               decode(elapsed_time_delta, 0, direct_writes_total, direct_writes_delta)*(select value/1024/1024 from v$parameter where name='db_block_size') direct_writes,
+               decode(elapsed_time_delta, 0, disk_reads_total, disk_reads_delta)*(select value from v$parameter where name='db_block_size') disk_reads,
+               decode(elapsed_time_delta, 0, buffer_gets_total, buffer_gets_delta)*(select value from v$parameter where name='db_block_size') buffer_gets,
+               decode(elapsed_time_delta, 0, direct_writes_total, direct_writes_delta)*(select value from v$parameter where name='db_block_size') direct_writes,
                decode(elapsed_time_delta, 0, rows_processed_total, rows_processed_delta) rows_processed,
                decode(elapsed_time_delta, 0, elapsed_time_total, elapsed_time_delta)*1e-6 elapsed_time,
                decode(elapsed_time_delta, 0, cpu_time_total, cpu_time_delta)*1e-6 cpu_time,
@@ -30,7 +30,7 @@ BEGIN
                decode(elapsed_time_delta, 0, plsexec_time_total, plsexec_time_delta)*1e-6 plsexec_time,
                decode(elapsed_time_delta, 0, javexec_time_total, javexec_time_delta)*1e-6 javexec_time
         FROM   dba_hist_sqlstat h, dba_hist_snapshot s
-        WHERE  greatest(h.elapsed_time_delta, executions_total) > 0
+        WHERE  greatest(h.elapsed_time_delta, elapsed_time_total) > 0
         AND    s.snap_id = h.snap_id
         AND    s.dbid = h.dbid
         AND    s.instance_number = h.instance_number )]';

@@ -40,13 +40,13 @@
         WITH snap AS
          (SELECT /*+materialize no_expand*/
                 trunc(end_interval_time + 0, 'mi') end_time, instance_number inst_id, dbid,
-                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 1440 Slot_size,
+                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 86400 Slot_size,
                 CASE WHEN end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate) THEN 0 END flag, 
                 snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
           FROM   dba_hist_snapshot
           WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
           AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) 
-        SELECT time sample_time,event,round(total_time*1e-6,1) "Seconds per Minute",count "Requests per Minute",
+        SELECT time sample_time,event,round(total_time*1e-6,1) "Seconds per Second",count "Requests per Second",
                round(total_time/count/1000,2) "Milliseconds per Request",
                sum(total_time) over(partition by event) RNK_
         FROM   (SELECT to_char(end_time, 'YYYY-MM-DD HH24:MI') TIME, event,

@@ -1,8 +1,4 @@
 /*[[Generate delta values based on gv$sys_time_model. Usage: @@NAME [options] {[<inst_id>]  [keyword]}
-   -s: Show stats data based on per second
-   --[[
-        &sec1: total={off}, s={on}
-   ]]--
 ]]*/
 {
     sql=[[
@@ -17,6 +13,6 @@
     ]],
     delta_by="value",
     group_by="inst_id,NAME,class",
-    per_second="&sec1",
+    order_by="-value",
     top_by="name"
 }

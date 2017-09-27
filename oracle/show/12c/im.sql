@@ -1,6 +1,6 @@
 /*[[Show inmemory stats. Usage: @@NAME [-u]
     --[[
-        &filter: default={1=1}, u={owner=sys_context('userenv','current_schema')}
+        &filter: default={1=1}, u={owner=nvl('&0',sys_context('userenv','current_schema'))}
         @VER: 12.2={,regexp_replace(listagg(INMEMORY_SERVICE,'/') WITHIN GROUP(ORDER BY INMEMORY_SERVICE),'([^/]+)(/\1)+','\1') IM_SERVICE}, 12.1={}
     --]]
 ]]*/

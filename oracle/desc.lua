@@ -45,10 +45,12 @@ local desc_sql={
                 AND   (PROCEDURE$ IS NULL OR PROCEDURE$=:name)
                 ORDER BY OVERLOAD#,SEQUENCE#'
             BULK COLLECT INTO arg,over,posn,dtyp,defv,inout,levl,len,prec,scal USING :object_id,nvl(:object_subname, :object_name);
+        
         EXCEPTION WHEN OTHERS THEN
             v_target:='"'||replace(v_target,'.','"."')||'"';
             dbms_describe.describe_procedure(v_target, NULL, NULL, over, posn, levl,arg, dtyp, defv, inout, len, prec, scal, n, n,true);
         END;
+
         FOR i IN 1 .. over.COUNT LOOP
             IF over(i) != v_ov THEN
                 v_ov := over(i);
@@ -443,6 +445,8 @@ function desc.desc(name,option)
         if type(new_obj)=="table" and new_obj[1] then
             obj.object_id,obj.owner,obj.object_name,obj.object_type=table.unpack(new_obj)
         end
+    elseif obj.object_type=='PACKAGE' or obj.object_type=='PROCEDURE' or obj.object_type=='FUNCTION' then
+        obj.object_id=db:dba_query(db.get_value,'select object_id from all_procedures where owner=:1 and object_name=:2 and rownum<2',{obj.owner,obj.object_name})
     end
 
     rs={obj.owner,obj.object_name,obj.object_subname or "",
