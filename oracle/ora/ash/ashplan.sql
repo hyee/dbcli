@@ -38,7 +38,10 @@ WITH sql_plan_data AS
                          dbid
                   FROM   dba_hist_sql_plan a
                   WHERE  a.sql_id = :V1
-                  AND    a.plan_hash_value = case when nvl(lengthb(:V2),0) >6 then :V2+0 else (select max(plan_hash_value) keep(dense_rank last order by snap_id) from dba_hist_sqlstat where sql_id=:V1)  end
+                  AND    a.plan_hash_value = case 
+                          when nvl(lengthb(:V2),0) >6 then :V2+0 
+                          else nvl((select max(plan_hash_value) keep(dense_rank last order by snap_id) from dba_hist_sqlstat where sql_id=:V1),(select max(plan_hash_value) keep(dense_rank last order by snap_id) from dba_hist_sqlstat where sql_id=:V1)) 
+                        end
                   ) a)
   WHERE  seq = 1),
 hierarchy_data AS

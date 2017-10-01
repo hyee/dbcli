@@ -44,8 +44,8 @@ local function rep_instance(prefix,full,obj,suffix)
 end
 
 function extvars.on_before_db_exec(item)
-    if item and item[2] and item[2]:find('lz_compress') then
-        var.setInputs("lz_compress",db.lz_compress);
+    if item and item[2] and item[2]:find('&lz_compress',1,true) then
+        item[2]=item[2]:gsub("&lz_compress",db.lz_compress);
     end
     
     if not var.outputs['INSTANCE'] then
@@ -107,7 +107,7 @@ function extvars.set_instance(name,value)
                     WHERE  c.kqfcotab = t.indx
                     AND    c.inst_id = t.inst_id)
             SELECT table_name,
-                   MAX(CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') THEN col END) INST_COL,
+                   MAX(CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') AND TABLE_NAME NOT LIKE 'X$%' THEN col END) INST_COL,
                    MAX(CASE WHEN col IN ('CON_ID') THEN col END) CON_COL,
                    MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND regexp_like(col,'(OWNER|SCHEMA|KGLOBTS4|USER.*NAME)') THEN col END)
                        KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN col LIKE '%OWNER' THEN 1 ELSE 2 END) USR_COL,

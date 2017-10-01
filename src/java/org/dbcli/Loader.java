@@ -10,6 +10,7 @@ import com.opencsv.SQLWriter;
 import org.jline.keymap.KeyMap;
 import org.jline.utils.OSUtils;
 
+
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
@@ -18,6 +19,7 @@ import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.sql.CallableStatement;
+import java.sql.Connection;
 import java.sql.ResultSet;
 import java.util.*;
 import java.util.concurrent.*;
@@ -322,6 +324,17 @@ public class Loader {
                 }
             }
         }));
+    }
+
+    public void closeWithoutWait(final Connection conn) {
+        Thread t=new Thread(() -> {
+            try {
+                conn.close();
+            } catch (Exception e) {
+            }
+        });
+        t.setDaemon(true);
+        t.start();
     }
 
     public LuaTable fetchCSV(final String CSVFileSource, final int rows) throws Exception {

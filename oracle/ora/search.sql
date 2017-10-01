@@ -17,7 +17,7 @@ FROM   (SELECT OWNER,
                TEMPORARY
         FROM   &check_access_obj
         WHERE  UPPER(OWNER || '.' || OBJECT_NAME || chr(1) || OBJECT_ID || chr(1) ||
-                     SUBOBJECT_NAME || chr(1) || DATA_OBJECT_ID || chr(1) ||
+                     SUBOBJECT_NAME || chr(1) || DATA_OBJECT_ID || chr(1) ||object_type|| chr(1)||
                      TO_CHAR(CREATED, 'YYYY-MM-DD HH24:MI:SS') || chr(1) ||
                      TO_CHAR(LAST_DDL_TIME, 'YYYY-MM-DD HH24:MI:SS') || chr(1) || STATUS) LIKE '%' || NVL(UPPER(:V1), 'x') || '%'
         UNION ALL
@@ -32,6 +32,8 @@ FROM   (SELECT OWNER,
                b.STATUS,
                b.TEMPORARY
         FROM   &check_access_pro a, &check_access_obj b
-        WHERE  a.object_id = b.object_id
-        AND    upper('.'||a.procedure_name || CHR(1) || a.subprogram_id) LIKE '%' || NVL(UPPER(:V1), 'x') || '%'
+        WHERE  a.owner = b.owner
+        and    a.object_name=b.object_name
+        AND    procedure_name IS NOT NULL
+        AND    upper('.'||a.procedure_name || CHR(1) || a.subprogram_id|| chr(1) ||'PROCEDURE/FUNCTION'|| chr(1)) LIKE '%' || NVL(UPPER(:V1), 'x') || '%'
         ORDER  BY 1, 2)

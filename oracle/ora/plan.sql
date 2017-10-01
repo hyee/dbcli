@@ -16,7 +16,7 @@ Option:
             d={2}        # Dictionary only
           }
     &binds: default={0}, b={1}
-    @adaptive: 12.1={adaptive} default={}
+    @adaptive: 12.1={+adaptive} default={}
 ]]--
 ]]*/
 set PRINTSIZE 9999
@@ -102,10 +102,13 @@ WITH sql_plan_data AS
                          dbid
                   FROM   dba_hist_sql_plan a
                   WHERE  a.sql_id = :V1
-                  AND    a.plan_hash_value = nvl(:V2,(
+                  AND    a.plan_hash_value = coalesce(:V2+0,(
                      select --+index(c.sql(WRH$_SQLSTAT.SQL_ID)) index(c.sn)
                             max(plan_hash_value) keep(dense_rank last order by snap_id)
-                     from dba_hist_sqlstat c where sql_id=a.sql_id))
+                     from dba_hist_sqlstat c where sql_id=:V1),(
+                     select max(plan_hash_value) keep(dense_rank last order by timestamp) 
+                     from dba_hist_sql_plan where sql_id=:V1
+                     ))
                   ) a
          WHERE flag>=&src)
   WHERE  seq = 1),

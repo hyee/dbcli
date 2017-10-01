@@ -213,7 +213,7 @@ function var.print(name)
         if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
             db.resultset:print(obj,db.conn, var.desc[name] and (var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)))
             var.outputs[name]="#CURSOR"
-        else
+        elseif obj~=db_core.NOT_ASSIGNED then
             print(obj)
         end
     else
@@ -289,6 +289,7 @@ function var.before_command(cmd)
 end
 
 function var.define_column(col,...)
+    env.checkhelp(col)
     if type(col)~="string" or col:trim()=="" then return end
     if col:find(',',1,true) then
         local cols=col:split("%s*,+%s*")
