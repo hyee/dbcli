@@ -9,24 +9,37 @@
         &cellname: default={nvl((select /*+result_cache*/ extractvalue(xmltype(a.confval),'/cli-output/context/@cell') from v$cell_config a where a.CELLNAME=b.CELL_NAME and rownum<2),'--TOTAL--') cell}
         &last: {
             default={/*grid={topic="DB Wait Events", max_rows=10,order_by="-ms"}*/
-            SELECT substr(event, 1, 32) event, SUM(total_waits) waits, 
-                   SUM(TIME_WAITED_MICRO) * 1e-3 ms,null avg
-            FROM   gv$system_event
-            WHERE  total_waits > 0
-            AND    wait_class != 'Idle'
-            GROUP  BY wait_class, event},
+                SELECT substr(event, 1, 32) event, SUM(total_waits) waits, 
+                        SUM(TIME_WAITED_MICRO) * 1e-3 ms,null avg
+                FROM   gv$system_event
+                WHERE  total_waits > 0
+                AND    wait_class != 'Idle'
+                GROUP  BY wait_class, event},
             
             pred={/*grid={topic="Predicate IO", max_rows=10}*/
-            SELECT NAME &cell,SUM(VALUE) VALUE
-            FROM   (SELECT &cellname,c.*
-                    FROM   v$cell_state b,
-                           xmltable('/predio_stats/stats[@type=("predicateio","storidx_global_stats")]/stat[. > 0]' 
-                                    passing xmltype(b.statistics_value) columns --
-                                    NAME VARCHAR2(41) path '@name',
-                                    VALUE NUMBER path '.') c
-                    WHERE  statistics_type = 'PREDIO')
-            WHERE lower(cell) like lower('%'||:V1||'%') AND VALUE>0
-            GROUP BY NAME &cell}
+                SELECT NAME &cell,SUM(VALUE) VALUE
+                FROM   (SELECT &cellname,c.*
+                        FROM   v$cell_state b,
+                                xmltable('/predio_stats/stats[@type=("predicateio","storidx_global_stats")]/stat[. > 0]' 
+                                        passing xmltype(b.statistics_value) columns --
+                                        NAME VARCHAR2(41) path '@name',
+                                        VALUE NUMBER path '.') c
+                        WHERE  statistics_type = 'PREDIO')
+                WHERE lower(cell) like lower('%'||:V1||'%') AND VALUE>0
+                GROUP BY NAME &cell},
+            
+            fcc={/*grid={topic="Flash Columnar Cache ", max_rows=10}*/
+                SELECT NAME &cell,SUM(VALUE) VALUE
+                FROM   (SELECT &cellname,c.*
+                        FROM   v$cell_state b,
+                               xmltable('//stats[@type="columnarcache"]/stat[. > 0]' 
+                                        passing xmltype(b.statistics_value) columns --
+                                        NAME VARCHAR2(50) path '@name',
+                                        VALUE NUMBER path '.') c
+                        WHERE  statistics_type = 'CELL')
+                WHERE lower(cell) like lower('%'||:V1||'%') AND VALUE>0
+                GROUP BY NAME &cell
+            }
         }
   --]]
 ]]*/

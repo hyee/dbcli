@@ -28,17 +28,17 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                4) Extract profile from plan_table, make sure there is only one statement in the plan table:
                   exec extract_profile('dc5n1gqgfq09h','plan');
             */
-            v_signatrue   INT;
+            v_signature   INT;
             v_source      VARCHAR2(100);
             v_plan_source VARCHAR2(50);
             v_hints       xmltype;
             v_hint        VARCHAR2(32767);
             v_text        CLOB;
+            v_newSQL      CLOB;
             v_pos         PLS_INTEGER;
-            v_size        PLS_INTEGER;
             v_embed       VARCHAR2(200);
-            v_begin       VARCHAR2(10):='q''[';
-            v_end         VARCHAR2(10):=']''';
+            v_schema      VARCHAR2(60):='<unknown>';
+            
             PROCEDURE get_sql(p_sqlid VARCHAR2) IS
             BEGIN
                 SELECT REPLACE(sql_text, chr(0), ' '), src
@@ -67,6 +67,20 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                         AND    b.signature = a.signature
                     $END)
                 WHERE  rownum < 2;
+
+                SELECT schema_name INTO v_schema 
+                FROM (
+                    SELECT PARSING_SCHEMA_NAME schema_name
+                    FROM   GV$SQL where sql_id=p_sqlid
+                    UNION ALL
+                    SELECT PARSING_SCHEMA_NAME
+                    FROM    DBA_HIST_SQLSTAT where sql_id=p_sqlid
+                $IF DBMS_DB_VERSION.VERSION>10  $THEN
+                    UNION ALL
+                    SELECT USERNAME
+                    FROM   GV$SQL_MONITOR where sql_id=p_sqlid and username is not null
+                $END    
+                ) WHERE ROWNUM<2;
             END;
 
             PROCEDURE get_plan(p_sql_id varchar2) IS
@@ -134,6 +148,31 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                     dbms_lob.writeappend(v_text, length(p_text), p_text);
                 END IF;
             END;
+
+            PROCEDURE writeSQL(p_SQL CLOB,p_name VARCHAR2) IS
+                v_begin VARCHAR2(10):='q''[';
+                v_end   VARCHAR2(10):=']''';
+                v_size  PLS_INTEGER := length(p_SQL);
+            BEGIN
+                IF instr(p_SQL,v_end)>0 THEN
+                    v_begin := 'q''{';
+                    v_end   := '}''';
+                END IF;
+                IF v_size <= 1200 OR dbms_lob.instr(p_SQL, CHR(10)) > 0 THEN
+                    pr('        '||p_name||' := '||v_begin, FALSE);
+                    dbms_lob.append(v_text, p_SQL);
+                    pr(v_end||';');
+                ELSE
+                    pr('        dbms_lob.createtemporary(sql_txt, TRUE);');
+                    v_pos := 0;
+                    WHILE TRUE LOOP
+                        pr('        wr('||v_begin|| dbms_lob.substr('||p_name||', 1000, v_pos * 1000 + 1) || v_end||');');
+                        v_pos  := v_pos + 1;
+                        v_size := v_size - 1000;
+                        EXIT WHEN v_size < 1;
+                    END LOOP;
+                END IF;
+            END;
         BEGIN
             dbms_output.enable(NULL);
             IF v_sql IS NULL THEN 
@@ -143,42 +182,64 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                     raise_application_error(-20001, 'Cannot find SQL text for '||p_sqlid||'!');
                 END;
             END IF;
-            get_plan(case when upper(p_plan) IN('PLAN','PLAN_TABLE') then '_x_' end);
+            
             dbms_lob.createtemporary(v_text, TRUE);
             pr('Set define off sqlbl on'||chr(10));
             pr('DECLARE --Better for this script to have the access on gv$sqlarea');
             pr('    sql_txt   CLOB;');
+            pr('    sql_txt1  CLOB;');
             pr('    sql_prof  SYS.SQLPROF_ATTR;');
             pr('    signature NUMBER;');
+            pr('    prof_name VARCHAR2(30):=''SQLPROF'';');
             pr('    procedure wr(x varchar2) is begin dbms_lob.writeappend(sql_txt, length(x), x);end;');
             pr('BEGIN');
-            v_size := length(v_sql);
+           
             pr('    BEGIN execute immediate ''SELECT SQL_FULLTEXT FROM gv$sqlarea WHERE ROWNUM<2 AND SQL_ID=:1'' INTO sql_txt USING '''||p_sqlid||''';');
             pr('    EXCEPTION WHEN OTHERS THEN NULL;END;');
             pr('    IF sql_txt IS NULL THEN');
-            IF instr(v_sql,v_end)>0 THEN
-                v_begin := 'q''{';
-                v_end   := '}''';
-            END IF;
-            IF v_size <= 1200 OR dbms_lob.instr(v_sql, CHR(10)) > 0 THEN
-                pr('        sql_txt := '||v_begin, FALSE);
-                dbms_lob.append(v_text, v_sql);
-                pr(v_end||';');
-            ELSE
-                pr('        dbms_lob.createtemporary(sql_txt, TRUE);');
-                v_pos := 0;
-                WHILE TRUE LOOP
-                    pr('        wr('||v_begin|| dbms_lob.substr(v_sql, 1000, v_pos * 1000 + 1) || v_end||');');
-                    v_pos  := v_pos + 1;
-                    v_size := v_size - 1000;
-                    EXIT WHEN v_size < 1;
-                END LOOP;
-            END IF;
+            writeSQL(v_sql,'sql_txt');
             pr('    END IF;');
             pr('    ');
-            v_signatrue := dbms_sqltune.SQLTEXT_TO_SIGNATURE(v_sql, TRUE);
+
+            IF instr(p_plan,' ')>1 THEN
+                pr('    BEGIN');
+                writeSQL(p_plan,'sql_txt1');
+                pr('        --QUERY_REWRITE_INTEGRITY = TRUSTED');
+                pr('        --DBMS_ADVANCED_REWRITE.DECLARE_REWRITE_EQUIVALENCE('''||p_sqlid||''',sql_txt,sql_txt1,false,''GENERAL'');');
+                pr(q'[        dbms_sql_translator.create_profile(prof_name); ]');
+                pr(q'[        execute immediate 'grant all on sql translation profile '||prof_name||' to public';]');
+                pr(q'[    EXCEPTION WHEN OTHERS THEN NULL; END;]');
+                pr(q'[    dbms_sql_translator.register_sql_translation(prof_name,sql_txt,sql_txt1);]');
+                pr(replace(q'[    execute immediate '
+                CREATE OR REPLACE TRIGGER @schema.translate_logon_trigger
+                    AFTER logon ON @schema.schema
+                BEGIN
+                    EXECUTE IMMEDIATE ''alter session set sql_translation_profile = '||user||'.'||prof_name||''';
+                    EXECUTE IMMEDIATE q''{alter session set events = ''10601 trace name context forever, level 32''}'';
+                EXCEPTION WHEN OTHERS THEN NULL;
+                END;';]','@schema',v_schema));
+                pr(q'[    /* or :
+                1. modify existing service:
+                    declare
+                        params dbms_service.svc_parameter_array;
+                    begin
+                        params('SQL_TRANSLATION_PROFILE') := '<OWNER>.SQLPROF';
+                        dbms_service.modify_service(service_name=>'<service_name>',parameter_array=>params);
+                    end;
+                3. create new service:
+                    srvctl add service -db <db_name> -service <service_name> -sql_translation_profile <OWNER>.SQLPROF]');
+                pr('    */');
+                pr('END;');
+                pr('/');
+                p_buffer := v_text;
+                RETURN;
+            END IF;
+
+            get_plan(case when upper(p_plan) IN('PLAN','PLAN_TABLE') or instr(p_plan,' ')>1 then '_x_' end);
+
+            v_signature := dbms_sqltune.SQLTEXT_TO_SIGNATURE(v_sql, TRUE);
             IF p_plan IS NOT NULL AND NOT regexp_like(p_plan, '^\d+$') AND upper(p_plan) NOT IN('PLAN','PLAN_TABLE') THEN
-                v_sql       := regexp_replace(v_sql, '/\*.*?\*/');
+                v_signature := dbms_sqltune.SQLTEXT_TO_SIGNATURE(regexp_replace(v_sql, '/\*.*?\*/'), TRUE);
                 BEGIN
                     get_sql(p_plan);
                 EXCEPTION WHEN NO_DATA_FOUND THEN
@@ -186,7 +247,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                     return;
                 END;
                 v_sql := regexp_replace(v_sql, '/\*.*?\*/');
-                IF v_signatrue != dbms_sqltune.SQLTEXT_TO_SIGNATURE(v_sql, TRUE) THEN
+                IF v_signature != dbms_sqltune.SQLTEXT_TO_SIGNATURE(v_sql, TRUE) THEN
                     pr('    --! Warning: Signatures for the 2 SQLs are not matched!');
                 END IF;
             END IF;
@@ -212,7 +273,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                 END IF;
             END LOOP;
 
-            v_source:= substr('PROF_'||nvl(v_source,to_char(v_signatrue,'fm'||rpad('X',length(v_signatrue),'X'))),1,30);
+            v_source:= substr('PROF_'||nvl(v_source,to_char(v_signature,'fm'||rpad('X',length(v_signature),'X'))),1,30);
             IF v_embed IS NOT NULL THEN
                 pr(v_embed);
             END IF;
@@ -244,7 +305,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
     if args[1] and args[1]:sub(1,1)=="#" then
         env.raise(args[1]:sub(2))
     end
-    print("Result written to file "..env.write_cache((sql_id or "prof_plan_table")..".sql",args[2]))
+    print("Result written to file "..env.write_cache('prof_'..(sql_id or "prof_plan_table")..".sql",args[2]))
 end
 
 function sqlprof.onload()

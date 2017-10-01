@@ -1067,7 +1067,7 @@ end
 
 function db_core:disconnect(feed)
     if self:is_connect() then
-        pcall(self.conn.close,self.conn)
+        loader:closeWithoutWait(self.conn)
         event("ON_DB_DISCONNECTED",self)
         self.conn=nil
         if feed~=false then print("Database disconnected.") end
