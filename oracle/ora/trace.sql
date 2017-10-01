@@ -135,9 +135,11 @@ BEGIN
             target:='{'||target||'}';
         END IF;
         IF lv>0 THEN
-            stmt := 'alter system set events = ''sql_trace' || target || ' {pgadep: exactdepth 0} {callstack: fname opiexe} plan_stat=all_executions, wait='||case when BITAND(lv, 8)>0 then 'true' else 'false' end ||',bind='||case when BITAND(lv, 4)>0 then 'true' else 'false' end ||'''';
+            stmt := 'alter system set events  ''sql_trace' || target || ' {callstack: fname opiexe} plan_stat=all_executions, wait='||case when BITAND(lv, 8)>0 then 'true' else 'false' end ||',bind='||case when BITAND(lv, 4)>0 then 'true' else 'false' end ||'''';
+            execute immediate 'alter system set events ''trace[rdbms.SQL_Optimizer.*]'||target||'''';
         ELSE
             stmt := 'alter system set events = ''sql_trace' || target || ' off''';
+            execute immediate q'{ALTER SYSTEM SET EVENTS 'trace[SQL_Optimizer.*] off'}';
         END IF;
     ELSIF regexp_like(target,'^\w+$') THEN
         IF lv>0 THEN
