@@ -23,9 +23,8 @@ SELECT * FROM TABLE(GV$(CURSOR(
                    decode(bitand(ksppiflg / 65536, 3), 0, 'FALSE', 'TRUE')) ISINST_MDF,
            &ctn
            decode(bitand(ksppstvf, 2), 2, 'TRUE', 'FALSE') ISDEPRECATED,ksppdesc DESCRIPTION
-    FROM   (select x.*,min(inst_id) over() m_inst from x$ksppi x where inst_id=nvl(:instance,userenv('instance'))) x, x$ksppcv y
+    FROM   x$ksppi x, x$ksppcv y
     WHERE  (x.indx = y.indx)
-    AND    x.m_inst=x.inst_id
     AND   ((:V1 is not null and (ksppinm LIKE LOWER('%'||:V1||'%') or lower(ksppdesc) LIKE LOWER('%'||:V1||'%')) or
            :V2 is not null and (ksppinm LIKE LOWER('%'||:V2||'%') or lower(ksppdesc) LIKE LOWER('%'||:V2||'%')) or
            :V3 is not null and (ksppinm LIKE LOWER('%'||:V3||'%') or lower(ksppdesc) LIKE LOWER('%'||:V3||'%')) or
@@ -35,4 +34,5 @@ SELECT * FROM TABLE(GV$(CURSOR(
        &def and  decode(upper(KSPPSTVL),upper(KSPPSTDFL),'TRUE','FALSE')='FALSE'
       )
 )))
+where inst_id=nvl(:instance,userenv('instance'))
 ORDER BY 1,NAME;

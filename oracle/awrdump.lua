@@ -116,12 +116,13 @@ function awr.extract_period()
         END;]]
 end
 
-function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,container)
+function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,container,typ)
     local stmt=[[
     DECLARE
         rs       CLOB;
         filename VARCHAR2(200);
         cur      SYS_REFCURSOR;
+        typ      VARCHAR2(30):='AWR';
         @get_range@
         @lz_compress@
         PROCEDURE extract_awr(p_start VARCHAR2, p_end VARCHAR2, p_inst VARCHAR2,p_start2 VARCHAR2:=NULL, p_end2 VARCHAR2:=NULL) IS
@@ -138,6 +139,8 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
             rc            SYS_REFCURSOR;
             txt           VARCHAR2(32000);
             inst          VARCHAR2(30) := NULLIF(upper(p_inst), 'A');
+            inst1         INT;
+            inst2         INT;
             PROCEDURE gen_ranges(p_start VARCHAR2, p_end VARCHAR2,dbid OUT INT,st OUT INT,ed OUT INT) IS
             BEGIN
                 IF p_end IS NULL AND stim IS NOT NULL AND etim IS NOT NULL THEN
@@ -166,9 +169,9 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
                 stim1 := stim;
                 etim1 := etim;
                 gen_ranges(p_start2,p_end2,dbid2,st2,ed2);
-                filename := 'awr_diff_' || least(st,st2) || '_' || greatest(ed,ed2) || '_' || nvl(inst, 'all') || '.html';
+                filename := lower(typ)||'_diff_' || least(st,st2) || '_' || greatest(ed,ed2) || '_' || nvl(inst, 'all') || '.html';
                 OPEN cur for
-                select 'AWR' report_type,
+                select  typ report_type,
                         nvl(inst,'ALL') INSTANCES,
                         to_char(stim1,'YYYY-MM-DD HH24:MI') begin_time1,
                         to_char(etim1,'YYYY-MM-DD HH24:MI') end_time1,
@@ -181,9 +184,9 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
                         ed2 end_snap2
                 from    dual;
             ELSE
-                filename := 'awr_' || st || '_' || ed || '_' || nvl(inst, 'all') || '.html';
+                filename := lower(typ)||'_' || st || '_' || ed || '_' || nvl(inst, 'all') || '.html';
                 OPEN cur for
-                select 'AWR' report_type,
+                select  typ report_type,
                         nvl(inst,'ALL') INSTANCES,
                         to_char(stim,'YYYY-MM-DD HH24:MI') begin_time,
                         st begin_snap,
@@ -192,37 +195,56 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
                 from    dual;
             END IF;
 
-            $IF DBMS_DB_VERSION.VERSION>11 OR DBMS_DB_VERSION.VERSION>10 AND DBMS_DB_VERSION.release>1 $THEN
-                dbms_workload_repository.awr_set_report_thresholds(top_n_sql => 50);
-            $END
-
-            IF NOT (inst IS NULL OR INSTR(inst, ',') > 0) THEN
-                IF ed2 IS NULL THEN
-                    OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_report_html(dbid, inst, st, ed));
-                ELSE
-                    OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_diff_report_html(dbid, inst, st, ed,dbid2, inst, st2, ed2));
-                END IF;
-            $IF DBMS_DB_VERSION.VERSION>11 OR DBMS_DB_VERSION.VERSION>10 AND DBMS_DB_VERSION.release>1 $THEN
-            ELSE
-                IF ed2 IS NULL THEN
-                    OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_global_report_html(dbid,inst,st,ed));
-                ELSE
-                    OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_global_diff_report_html(dbid,inst,st,ed,dbid2,inst,st2,ed2));
-                END IF;
-            $END
-            END IF;
-            dbms_lob.createtemporary(rs, TRUE);
-            LOOP
-                BEGIN
-                    fetch rc into txt;
-                    exit when rc%notfound;
-                    IF Trim(txt) IS NOT NULL THEN
-                        dbms_lob.writeappend(rs,length(txt)+1,txt||chr(10));
+            IF typ='ADDM' THEN
+                $IF DBMS_DB_VERSION.VERSION>11 $THEN
+                    IF regexp_like(inst,'\d+') THEN
+                        inst1 := regexp_substr(inst,'\d+',1,1);
+                        inst2 := nvl(regexp_substr(inst,'\d+',1,2)+0,inst1);
+                        rs:=sys.dbms_addm.compare_instances(dbid, inst1,st, ed,dbid2,inst2,st2, ed2);
+                    ELSE
+                        rs:=sys.dbms_addm.compare_databases(dbid, st, ed,dbid2, st2, ed2);
                     END IF;
-                EXCEPTION WHEN OTHERS THEN null;
-                END;
-            END LOOP;
-            CLOSE rc;
+                $ELSE
+                    raise_application_error(-20001,'Unsupported database version!');
+                $END
+            ELSE
+                $IF DBMS_DB_VERSION.VERSION>11 OR DBMS_DB_VERSION.VERSION>10 AND DBMS_DB_VERSION.release>1 $THEN
+                    dbms_workload_repository.awr_set_report_thresholds(top_n_sql => 50);
+                $END
+
+                IF NOT (inst IS NULL OR INSTR(inst, ',') > 0) THEN
+                    IF ed2 IS NULL THEN
+                        OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_report_html(dbid, inst, st, ed));
+                    ELSE
+                        OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_diff_report_html(dbid, inst, st, ed,dbid2, inst, st2, ed2));
+                    END IF;
+                ELSIF INSTR(inst, ',') > 0 AND st=st2 THEN
+                    inst1 := regexp_substr(inst,'\d+',1,1);
+                    inst2 := nvl(regexp_substr(inst,'\d+',1,2)+0,inst1);
+                    OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_diff_report_html(dbid, inst1, st, ed,dbid2, inst2, st2, ed2));
+                $IF DBMS_DB_VERSION.VERSION>11 OR DBMS_DB_VERSION.VERSION>10 AND DBMS_DB_VERSION.release>1 $THEN
+                ELSE
+                    IF ed2 IS NULL THEN
+                        OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_global_report_html(dbid,inst,st,ed));
+                    ELSE
+                        OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_global_diff_report_html(dbid,inst,st,ed,dbid2,inst,st2,ed2));
+                    END IF;
+                $END
+                END IF;
+            
+                dbms_lob.createtemporary(rs, TRUE);
+                LOOP
+                    BEGIN
+                        fetch rc into txt;
+                        exit when rc%notfound;
+                        IF Trim(txt) IS NOT NULL THEN
+                            dbms_lob.writeappend(rs,length(txt)+1,txt||chr(10));
+                        END IF;
+                    EXCEPTION WHEN OTHERS THEN null;
+                    END;
+                END LOOP;
+                CLOSE rc;
+            END IF;
         END;
     BEGIN
         extract_awr(:1, :2, :3,@diff);
@@ -232,6 +254,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
         :6 := cur;
     END;]]
     env.checkhelp(endtime)
+    if typ=='ADDM' then stmt=stmt:gsub('AWR','ADDM') end
     if not starttime2 then
         stmt=stmt:gsub(',@diff','')
     else
@@ -242,9 +265,19 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
 end
 
 function awr.extract_awr_diff(starttime,endtime,starttime2,endtime2,instances,container)
-    env.checkhelp(starttime2)
     if endtime2=='.' then endtime2=nil end
+    if starttime2=='.' then starttime2=nil end
+    env.checkhelp(starttime2 or (instances and instances:find(',')))
+    if not starttime2 then starttime2=starttime end
     awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,container)
+end
+
+function awr.extract_addm_diff(starttime,endtime,starttime2,endtime2,instances,container)
+    if endtime2=='.' then endtime2=nil end
+    if starttime2=='.' then starttime2=nil end
+    env.checkhelp(starttime2 or (instances and instances:find(',')))
+    if not starttime2 then starttime2=starttime end
+    awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,container,'ADDM')
 end
 
 function awr.extract_ash(starttime,endtime,instances,container)
@@ -426,10 +459,11 @@ function awr.extract_addm(starttime,endtime,instances,container)
 end
 
 function awr.onload()
-    env.set_command(nil,"awrdump","Extract AWR report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>] [container]}",awr.extract_awr,false,5)
-    env.set_command(nil,"awrdiff","Extract AWR Diff report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> <YYMMDDHH24MI> [YYMMDDHH24MI] [inst_id|<inst1,inst2,...>] [container]}",awr.extract_awr_diff,false,7)
+    env.set_command(nil,"awrdump","Extract AWR report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>] }",awr.extract_awr,false,5)
+    env.set_command(nil,"awrdiff","Extract AWR Diff report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> <YYMMDDHH24MI> [YYMMDDHH24MI] [inst_id|<inst1,inst2,...>] }",awr.extract_awr_diff,false,7)
+    env.set_command(nil,"addmdiff","Extract AWR Diff report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> <YYMMDDHH24MI> [YYMMDDHH24MI] [inst_id|<inst1,inst2,...>] }",awr.extract_addm_diff,false,7)
     env.set_command(nil,"ashdump","Extract ASH report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [<inst1[,inst2...>]|<client_id>|<wait_class>|<service_name>|<module>|<action>] [container]}",awr.extract_ash,false,5)
-    env.set_command(nil,"addmdump","Extract ADDM report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>] [container]}",awr.extract_addm,false,5)
+    env.set_command(nil,"addmdump","Extract ADDM report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>] }",awr.extract_addm,false,5)
 end
 
 return awr

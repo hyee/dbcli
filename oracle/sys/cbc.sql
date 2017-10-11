@@ -141,21 +141,21 @@ ACC         RAW(4)
 MOD         RAW(4)
 */
 
-WITH s AS(SELECT /*+no_merge*/* FROM gv$session WHERE  p1raw!='00'),
-     w AS(SELECT /*+MATERIALIZED*/ ROWNUM r,a.* FROM V$WAITSTAT a)
-SELECT /*+ordered use_hash(s b o)*/
-     s.inst_id, s.sid, s.serial#, s.event, b.obj data_obj_id,FILE#, b.DBABLK BLOCK#, o.owner,
-     o.object_name, o.subobject_name, o.object_type,
-     (SELECT CLASS FROM w WHERE r=b.class) CLASS,
-     decode(b.state,0,'free',1,'xcur',2,'scur',3,'cr', 4,'read',5,'mrec',6,'irec',7,'write',8,'pi', 9,'memory',10,'mwrite',11,'donated') state,
-     TCH,
-     decode(bitand(flag, 1), 0, 'N', 'Y') DIRTY,
-     decode(bitand(flag, 16), 0, 'N', 'Y') TEMP,
-     decode(bitand(flag, 1536), 0, 'N', 'Y') PING,
-     decode(bitand(flag, 16384), 0, 'N', 'Y') STALE,
-     decode(bitand(flag, 65536), 0, 'N', 'Y') DIRECT
-FROM   s, x$bh b, dba_objects o
-WHERE  HLADDR = p1raw
-AND    b.obj in(o.object_id,o.data_object_id)
-AND    s.inst_id=b.inst_id
+SELECT /*+leading(a) use_hash(b)*/ b.owner,b.object_name,B.subobject_name,a.* 
+FROM TABLE(gv$(CURSOR (
+    SELECT /*+ordered use_hash(s b)*/
+        b.obj objd,b.inst_id, s.sid, s.serial#, s.event, FILE#, b.DBABLK BLOCK#, 
+        (SELECT CLASS FROM (SELECT ROWNUM r,a.* FROM V$WAITSTAT a) WHERE r=b.class) CLASS,
+        decode(b.state,0,'free',1,'xcur',2,'scur',3,'cr', 4,'read',5,'mrec',6,'irec',7,'write',8,'pi', 9,'memory',10,'mwrite',11,'donated') state,
+        TCH,
+        decode(bitand(flag, 1), 0, 'N', 'Y') DIRTY,
+        decode(bitand(flag, 16), 0, 'N', 'Y') TEMP,
+        decode(bitand(flag, 1536), 0, 'N', 'Y') PING,
+        decode(bitand(flag, 16384), 0, 'N', 'Y') STALE,
+        decode(bitand(flag, 65536), 0, 'N', 'Y') DIRECT
+    FROM   v$session s, x$bh b
+    WHERE  HLADDR = p1raw
+    AND    p1raw!='00'
+))) a, dba_objects b 
+WHERE a.objd=b.data_object_id
 ORDER BY 1,2,3,5;

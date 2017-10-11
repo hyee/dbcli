@@ -194,7 +194,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             pr('    procedure wr(x varchar2) is begin dbms_lob.writeappend(sql_txt, length(x), x);end;');
             pr('BEGIN');
            
-            pr('    BEGIN execute immediate ''SELECT SQL_FULLTEXT FROM gv$sqlarea WHERE ROWNUM<2 AND SQL_ID=:1'' INTO sql_txt USING '''||p_sqlid||''';');
+            pr('    BEGIN execute immediate ''select * from (SELECT SQL_FULLTEXT FROM gv$sqlarea WHERE SQL_ID=:1 union all SELECT SQL_TEXT FROM dba_hist_sqltext WHERE SQL_ID=:1) where rownum<2'' INTO sql_txt USING '''||p_sqlid||''','''||p_sqlid||''';');
             pr('    EXCEPTION WHEN OTHERS THEN NULL;END;');
             pr('    IF sql_txt IS NULL THEN');
             writeSQL(v_sql,'sql_txt');

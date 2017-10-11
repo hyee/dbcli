@@ -6,14 +6,14 @@
     Usages:
        1. @@NAME <sql_id> [<sql_exec_id>]           : Extract sql monitor report with specific sql_id, options: -s,-a,-f"<format>"
        2. @@NAME [. <keyword>]                      : List recent sql monitor reports,options: -avg,-u,-f"<filter>" 
-       3. @@NAME <sql_id> -l [plan_hash|sql_exec_id]: List the reports and generate perf hub report for specific SQL_ID, options: -avg,-u,-f"<filter>"
+       3. @@NAME <sql_id> -l [plan_hash|sql_exec_id]: List the reports and generate perf hub report for specific SQL_ID, options: -avg,-u,-a,-f"<filter>"
        4. @@NAME -snap <sec> <sid> [<serial#>]      : Monitor the specific <sid> for <sec> seconds, and then list the SQL monitor result, options: -avg
        
     Options:
         -u  : Only show the SQL list within current schema
         -f  : List the records that match the predicates, i.e.: -f"MODULE='DBMS_SCHEDULER'"
         -s  : Plan format is "ALL-SESSIONS-SQL_FULLTEXT-SQL_TEXT", this is the default
-        -a  : Plan format is "ALL-SQL_FULLTEXT-SQL_TEXT"
+        -a  : Plan format is "ALL-SQL_FULLTEXT-SQL_TEXT", when together with "-l" option, generate SQL Hub report
         -avg: Show avg time in case of listing the SQL monitor reports 
 
    --[[
@@ -25,7 +25,8 @@
       &tot : default={1} avg={0}
       &avg : defult={1} avg={count(distinct sql_exec_id)}
       &snap: default={0} snap={1}
-      @check_access_hub : SYS.DBMS_PERF={1} default={0}
+      &showhub: default={0} a={1}
+      @check_access_hub : SYS.DBMS_PERF={&showhub} default={0}
       @check_access_sqlm: SYS.DBMS_SQL_MONITOR/SYS.DBMS_LOCK={1} default={0}
    --]]
 ]]*/
@@ -132,14 +133,14 @@ BEGIN
                 $IF DBMS_DB_VERSION.VERSION>11 AND $$hub =1 $THEN
                     filename := 'sqlhub_' || sq_id || '.html';
                     content  := sys.dbms_perf.report_sql(sql_id => sq_id,
-                                                         is_realtime => 0,
+                                                         is_realtime => 1,
                                                          outer_start_time => start_time,
                                                          outer_end_time => end_time,
                                                          selected_start_time => start_time,
                                                          selected_end_time => end_time,
                                                          inst_id => inst,
                                                          dbid => null,
-                                                         monitor_list_detail => 50);
+                                                         monitor_list_detail => 20);
                 $END
                 
                 IF counter = 0 THEN
@@ -154,7 +155,7 @@ BEGIN
                            to_char(MIN(sql_exec_start), 'MMDD HH24:MI:SS') first_seen,
                            to_char(MAX(last_refresh_time), 'MMDD HH24:MI:SS') last_seen,
                            round(SUM((last_refresh_time - sql_exec_start)*nvl2(px_qcsid,0,1)) * 86400/&avg, 2) dur,
-                           round(SUM((first_refresh_time - sql_exec_start)*nvl2(px_qcsid,0,1)) * 86300/&avg, 2) parse,
+                           round(SUM(((last_refresh_time - sql_exec_start)* 86400-ELAPSED_TIME*1e-6)*nvl2(px_qcsid,0,1)) /&avg, 2) parse,
                            round(SUM(ELAPSED_TIME) * 1e-6 /&avg, 2) ela,
                            round(SUM(QUEUING_TIME) * 1e-6 /&avg, 2) QUEUE,
                            round(SUM(CPU_TIME) * 1e-6 /&avg, 2) CPU,
