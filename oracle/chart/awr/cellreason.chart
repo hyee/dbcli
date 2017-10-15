@@ -1,0 +1,42 @@
+/*[[
+    Show chart for DBA_HIST_CELL_IOREASON. Usage: @@NAME {[yymmddhh24mi] [yymmddhh24mi] [keyword]} [-f"<filter>"] [-c]
+    Impacted by settings: starttime,endtime,instance
+    -c : detail to cell name
+    --[[
+        @VERSION: 12.1={}
+        &V1     : default={&STARTTIME}
+        &V2     : default={&ENDTIME}
+        &filter : default={1=1} f={}
+        &obj    : default={null}, c={cell_name}
+    --]]
+]]*/
+{
+    title="Exadata Cell IO Reason Chart",
+    _sql=[[
+    WITH SNAP AS(
+          SELECT /*+no_expand ordered use_hash(a b) no_merge(a) no_merge(b) no_merge(c) no_merge(d)*/
+                   to_char(end_interval_time, 'YYYY-MM-DD HH24:MI') snap_time,
+                   snap_id,
+                   flag,
+                   nullif('['||&obj||']','[]')||reason_name reason,
+                   SUM(bytes)/sum(Slot_size) bytes,
+                   SUM(requests)/sum(Slot_size) request
+          FROM   (SELECT a.*, row_number() OVER(PARTITION BY snap_id, dbid ORDER BY instance_number) r,
+                          ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY dbid,instance_number,startup_time ORDER BY snap_id desc)) * 86400 Slot_size,
+                         CASE WHEN end_interval_time+0 between NVL(to_date(:V1,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V2,'yymmddhh24miss'),sysdate) THEN 0 END flag
+                  FROM   Dba_Hist_Snapshot a
+                  WHERE end_interval_time+0 between NVL(to_date(:V1,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V2,'yymmddhh24miss'),sysdate)) a
+          JOIN   DBA_HIST_CELL_NAME b USING(dbid, snap_id)
+          JOIN   DBA_HIST_CELL_IOREASON c USING(dbid, snap_id,cell_hash)
+          WHERE  r = 1 AND (&filter) 
+          AND   (:V3 IS NULL OR lower(nullif('['||&obj||']','[]')||reason_name) like lower('%&V3%'))
+          GROUP  BY snap_id,snap_id, flag,to_char(end_interval_time, 'YYYY-MM-DD HH24:MI'),reason_name,&obj
+          ORDER BY 1,2)
+    SELECT snap_time,reason,
+           round(bytes-nvl(lag(bytes) OVER(PARTITION BY reason ORDER BY snap_time),0),2) bytes,
+           round(request-nvl(lag(request) OVER(PARTITION BY reason ORDER BY snap_time),0),2) request
+    FROM   snap where flag=0]],
+    _pivot=true,
+    labelsKMG2=true,
+    height=400,
+}

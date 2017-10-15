@@ -380,6 +380,7 @@ var u=document.createElement("div");u.style.fontSize=t.getOption("axisLabelFontS
                 obj.indeterminate=true;
                 res="indeterminate";
             }
+            obj.prevstat=res;
             if (res == true) obj.nextSibling.style.color = 'red';
             options[_options[i]]=res;
         }

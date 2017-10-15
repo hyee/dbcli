@@ -243,7 +243,7 @@ function ResultSet:rows(rs,count,limit,null_value)
             for j=1,cols do
                 if rows[i][j]~=nil then
                     if is_lob and type(rows[i][j])=="string" and #rows[i][j]>255 then
-                        print('Result writtern to '..env.write_cache(dtype:lower()..'_'..i..'.txt',rows[i][j]))
+                        print('Result written to '..env.write_cache(dtype:lower()..'_'..i..'.txt',rows[i][j]))
                     end
                     if limit and type(rows[i][j])=="string" then rows[i][j]=rows[i][j]:sub(1,maxsiz) end
                     if head.colinfo[j].data_typeName=="DATE" or head.colinfo[j].data_typeName=="TIMESTAMP" then

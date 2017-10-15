@@ -202,7 +202,7 @@ function graph:run_sql(sql,args,cmd,file)
             if cell and cell~="" then
                 if type(cell)=="number" then
                     pivot=false
-                elseif type(cell)~="string" or not cell:match('%d+') then 
+                elseif type(cell)~="string" or not cell:match('^[ %d;,%-%+eE]+$') then 
                     pivot=true
                     break
                 elseif pivot==nil then

@@ -174,7 +174,7 @@ function cfg.set(name,value,backup,isdefault)
             local v=value:lower()
             for k in range:gmatch('([^,%s]+)') do
                 if v==k:lower() then
-                    match=1
+                    match,value=1,k
                 end
             end
             if match==0 then

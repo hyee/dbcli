@@ -1,5 +1,6 @@
-/*[[Show chart for gv$sysmetric_history/dba_hist_sysmetric_summary. Usage: @@NAME <metric_name|metric_group_name> {[0|inst_id] [yymmddhh24mi] [yymmddhh24mi]} [-d] [-eff]
-    -d    : Based on DBA_HIST_SYSMETRIC_SUMMARY, otherwise based on GV$SYSMETRIC_HISTORY
+/*[[Show chart for gv$sysmetric_history/dba_hist_sysmetric_summary. Usage: @@NAME <metric_name|metric_group_name> {[0|inst_id] [yymmddhh24mi] [yymmddhh24mi]} [-d|-h] [-eff]
+    -d    : Based on DBA_HIST_SYSMETRIC_SUMMARY
+    -h    : Based on DBA_HIST_SYSMETRIC_HISTORY
     -eff  : Show metrics related to DB efficiency
     -iops : Show TPS/IOPS(read)/IOPS(write)
     -time : Show CPU/DB usage(in centiseconds)
@@ -9,7 +10,7 @@
       &V3   : default={&STARTTIME}
       &V4   : default={&ENDTIME}
       @BASE : 10.2={}
-      &DICT : V={V}, D={D}
+      &DICT : V={V}, D={D} H={H}
       &TITLE: V={GV$SYSMETRIC_HISTORY}, D={DBA_HIST_SYSMETRIC_SUMMARY}
       &CAT  : {
             default={1=1},
@@ -44,7 +45,11 @@
                               UNION ALL
                               SELECT INSTANCE_NUMBER, trunc(END_TIME,'MI'), METRIC_NAME, metric_unit,group_id,AVERAGE
                               FROM   DBA_HIST_SYSMETRIC_SUMMARY
-                              WHERE  'D' = UPPER(:DICT)) A 
+                              WHERE  'D' = UPPER(:DICT)
+                              UNION ALL
+                              SELECT INSTANCE_NUMBER, trunc(END_TIME,'MI'), METRIC_NAME, metric_unit,group_id,VALUE
+                              FROM   DBA_HIST_SYSMETRIC_HISTORY
+                              WHERE  'H' = UPPER(:DICT)) A 
                               JOIN (SELECT distinct group_id,group_name FROM V$METRICNAME) b USING(group_id)
                         WHERE  (:V2 IS NULL  OR lower(:V2) IN ('0', 'a') OR inst_id = :V2)
                         AND    group_id NOT IN(3,5,10)

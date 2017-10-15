@@ -588,7 +588,7 @@ function grid.print(rows,include_head,col_del,row_del,rows_limit,prefix,suffix)
         size=#rows+(include_head and 1 or 0)
     end
     str=str..grid.tostring(rows,include_head,col_del,row_del,rows_limit)
-    if grid.bypassemptyrs=='on' and size<(include_head and 3 or 1) then return end
+    if grid.bypassemptyrs and grid.bypassemptyrs:lower()=='on' and size<(include_head and 2 or 1) then return end
     if test then env.write_cache("grid_output.txt",str) end
     print(str,'__BYPASS_GREP__')
     if suffix then print(suffix) end
