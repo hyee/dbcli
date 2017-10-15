@@ -186,7 +186,7 @@ end
 function printer.tee_after()
     if not printer.tee_hdl then return end
     pcall(printer.tee_hdl.close,printer.tee_hdl)
-    printer.rawprint(env.space.."Output is writtern to "..printer.tee_file)
+    printer.rawprint(env.space.."Output is written to "..printer.tee_file)
     printer.tee_file,printer.tee_hdl=nil,nil
 end
 

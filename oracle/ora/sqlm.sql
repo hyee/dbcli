@@ -7,7 +7,7 @@
        1. @@NAME <sql_id> [<sql_exec_id>]           : Extract sql monitor report with specific sql_id, options: -s,-a,-f"<format>"
        2. @@NAME [. <keyword>]                      : List recent sql monitor reports,options: -avg,-u,-f"<filter>" 
        3. @@NAME <sql_id> -l [plan_hash|sql_exec_id]: List the reports and generate perf hub report for specific SQL_ID, options: -avg,-u,-a,-f"<filter>"
-       4. @@NAME -snap <sec> <sid> [<serial#>]      : Monitor the specific <sid> for <sec> seconds, and then list the SQL monitor result, options: -avg
+       4. @@NAME -snap <sec> <sid>                  : Monitor the specific <sid> for <sec> seconds, and then list the SQL monitor result, options: -avg
        
     Options:
         -u  : Only show the SQL list within current schema
@@ -35,6 +35,7 @@ set feed off VERIFY off
 var c refcursor;
 var c0 refcursor;
 var c1 refcursor;
+var c2 refcursor;
 var rs CLOB;
 var filename varchar2;
 var plan_hash number;
@@ -49,7 +50,7 @@ DECLARE
     start_time DATE;
     end_time   DATE;
     sq_id      VARCHAR2(50):=:V1;
-    inst       INT := nvl(:V3,:INSTANCE);
+    inst       INT := :INSTANCE;
     execs      INT;
     counter    INT := &tot;
     filename   VARCHAR2(100);
@@ -57,25 +58,52 @@ DECLARE
     dopename   VARCHAR(30);
     dopeid     INT;
     keyw       VARCHAR2(300):=:V2;
+    c2         SYS_REFCURSOR;
+    serial     INT;
 BEGIN
     IF &SNAP=1 THEN
-        $IF $$sqlm=0 $THEN
-            raise_application_error(-20001,'You dont'' have access on dbms_sql_monitor/dbms_lock, or db version < 12c!');
+        $IF $$sqlm=0 OR DBMS_DB_VERSION.release=1 $THEN
+            raise_application_error(-20001,'You dont'' have access on dbms_sql_monitor/dbms_lock, or db version < 12.2!');
         $ELSE
             dopename := 'DBCLI_SNAPPER_'||USERENV('SESSIONID');
+            select max(serial#) into serial from v$session where sid=plan_hash;
+            if serial is null then 
+                raise_application_error(-20001, 'session#'||plan_hash||' cannot be found in v$session!');
+            end if;
             dopeid:= sys.dbms_sql_monitor.begin_operation (
                              dbop_name       => dopename,
                              dbop_eid        => dopeid,
                              forced_tracking => sys.dbms_sql_monitor.force_tracking,
                              session_id      => plan_hash,
-                             session_serial  => inst);
+                             session_serial  => serial);
             sys.dbms_lock.sleep(sq_id+0);
             sys.dbms_sql_monitor.end_operation(dopename,dopeid);
-            dbms_output.put_line('Filter: dbop_name='''||dopename||''' and dbop_eid='||dopeid);
+            dbms_output.put_line('Filter: dbop_name='''||dopename||''' and dbop_exec_id='||dopeid);
+            open c2 for 
+                SELECT *
+                FROM   (SELECT MAX(DECODE(MOD(rnk, 3), 1, NAME)) stat_name#1,
+                               MAX(DECODE(MOD(rnk, 3), 1, VALUE)) stat_value#1,
+                               MAX(DECODE(MOD(rnk, 3), 2, NAME)) stat_name#2,
+                               MAX(DECODE(MOD(rnk, 3), 2, VALUE)) stat_value#2,
+                               MAX(DECODE(MOD(rnk, 3), 0, NAME)) stat_name#3,
+                               MAX(DECODE(MOD(rnk, 3), 0, VALUE)) stat_value#3
+                        FROM   (SELECT substr(NAME, 1, 35) NAME, SUM(VALUE) VALUE, row_number() OVER(ORDER BY SUM(VALUE) DESC) rnk
+                                FROM   gv$sql_monitor
+                                JOIN   gv$sql_monitor_sesstat
+                                USING  (inst_id, KEY) NATURAL
+                                JOIN   v$statname
+                                WHERE  VALUE > 0
+                                AND    dbop_name = dopename
+                                AND    DBOP_EXEC_ID = dopeid
+                                GROUP  BY NAME)
+                        GROUP  BY CEIL(rnk / 3)
+                        ORDER  BY stat_value#1 DESC NULLS LAST)
+                WHERE  ROWNUM <= 30;
             sq_id     := NULL;
             keyw      := NULL;
             plan_hash := NULL;
         $END
+        :C2 := C2;
     END IF;
     
     IF sq_id IS NOT NULL AND '&option' IS NULL THEN
@@ -204,8 +232,8 @@ BEGIN
                                    MAX(plan_parent_id) pid,
                                    MIN(lpad(' ', plan_depth, ' ') || plan_operation || NULLIF(' ' || plan_options, ' ')) operation,
                                    MAX(plan_object_name) name,
-                                   round(SUM(TIME) / counter, 3) TIME,
-                                   round(100 * SUM(TIME) / NULLIF(SUM(tick),0), 2) "%",
+                                   round(SUM(TIME*flag), 3) TIME,
+                                   round(100 * SUM(TIME*flag) / NULLIF(SUM(tick*flag),0), 2) "%",
                                    --MAX(plan_cost) est_cost,
                                    MAX(plan_cardinality) est_rows,
                                    round(SUM(output_rows) / execs, 2) act_rows,
@@ -216,9 +244,10 @@ BEGIN
                                    round(SUM(physical_read_requests + physical_write_requests) / counter, 3) ioreq,
                                    MAX(workarea_max_mem) mem,
                                    MAX(workarea_max_tempseg) temp
-                            FROM   (SELECT a.*, ((b.last_refresh_time - b.sql_exec_start)*86400+1)*NVL2(b.px_qcsid,0,1) tick,
-                                           ((max(last_change_time)  over(partition by b.sql_exec_id,plan_line_id)-
-                                            min(first_change_time) over(partition by b.sql_exec_id,plan_line_id))*86400+1)*NVL2(b.px_qcsid,0,1) TIME
+                            FROM   (SELECT a.*,
+                                           decode(a.sql_exec_id,max(a.sql_exec_id) over(),1,0) flag,                            
+                                           ((b.last_refresh_time - b.sql_exec_start)*86400+1)*NVL2(b.px_qcsid,0,1) tick,
+                                           max((a.last_change_time-a.first_change_time)*86400+1) over(partition by a.sql_exec_id,a.plan_line_id) TIME
                                     FROM   gv$sql_plan_monitor a, gv$sql_monitor b
                                     WHERE  b.sql_id = sq_id
                                     AND    b.sql_plan_hash_value = plan_hash
@@ -240,6 +269,8 @@ END;
 /
 print c;
 set colsep |
+col stat_value#1,stat_value#2,stat_value#3 format #,##0
 print c0;
 print c1;
+print c2;
 save rs filename

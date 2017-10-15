@@ -141,6 +141,7 @@ ACC         RAW(4)
 MOD         RAW(4)
 */
 
+
 SELECT /*+leading(a) use_hash(b)*/ b.owner,b.object_name,B.subobject_name,a.* 
 FROM TABLE(gv$(CURSOR (
     SELECT /*+ordered use_hash(s b)*/

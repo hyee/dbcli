@@ -32,7 +32,7 @@ function awr.get_range(starttime,endtime,instances,container)
             if  tonumber(cfg.get("instance"))>0 then
                 instances=cfg.get("instance")
             else
-                instances=db.props.instance
+                instances='A'
             end
         else
             instances=nil
@@ -107,7 +107,7 @@ function awr.extract_period()
             WHERE  ROWNUM < 2;
 
             IF ed IS NULL THEN
-                RAISE_APPLICATION_ERROR(-20001,'Cannot find the matched AWR snapshots between '''||s||''' and '''||e||'''!' );
+                RAISE_APPLICATION_ERROR(-20001,'Cannot find the matched AWR snapshots between '''||s||''' and '''||e||''' for instance#'||p_inst||' !' );
             END IF;
 
             IF dbid IS NULL THEN

@@ -32,6 +32,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             v_source      VARCHAR2(100);
             v_plan_source VARCHAR2(50);
             v_hints       xmltype;
+            v_hints2      xmltype;
             v_hint        VARCHAR2(32767);
             v_text        CLOB;
             v_newSQL      CLOB;
@@ -55,7 +56,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                     $IF DBMS_DB_VERSION.VERSION>10  $THEN
                         UNION ALL
                         SELECT SQL_TEXT,
-                                decode(b.obj_type, 1, p_sqlid, 2,  substr(p_sqlid, -26)) src
+                               decode(b.obj_type, 1, p_sqlid, 2,  substr(p_sqlid, -26)) src
                         FROM   sys.sqlobj$ b, sys.sql$text a
                         WHERE  p_sqlid in(b.name,a.sql_handle)
                         AND    b.signature = a.signature
@@ -68,7 +69,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                     $END)
                 WHERE  rownum < 2;
 
-                SELECT schema_name INTO v_schema 
+                SELECT max(schema_name) INTO v_schema 
                 FROM (
                     SELECT PARSING_SCHEMA_NAME schema_name
                     FROM   GV$SQL where sql_id=p_sqlid
@@ -81,6 +82,9 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                     FROM   GV$SQL_MONITOR where sql_id=p_sqlid and username is not null
                 $END    
                 ) WHERE ROWNUM<2;
+            EXCEPTION
+                WHEN no_data_found THEN
+                    raise_application_error(-20001, 'Cannot find sql text for '||p_sqlid||'!');
             END;
 
             PROCEDURE get_plan(p_sql_id varchar2) IS
@@ -104,11 +108,16 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                                 UNION ALL
                                 SELECT other_xml, 'memory', sql_id, plan_hash_value
                                 FROM   gv$sql_plan a
+                                $IF DBMS_DB_VERSION.VERSION>11 $THEN
+                                UNION ALL
+                                SELECT other_xml, 'monitor', sql_id, SQL_PLAN_HASH_VALUE
+                                FROM   gv$sql_plan_monitor a
+                                $END
                                 UNION ALL
                                 SELECT other_xml, 'plan table', p_sql_id sql_id, -1
                                 FROM   PLAN_TABLE a WHERE PLAN_ID=(select max(PLAN_ID) keep(dense_rank last order by timestamp) from PLAN_TABLE))
                         WHERE  rownum < 2
-                        AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR sql_id = p_plan OR src='plan table' and sql_id='_x_')
+                        AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR plan_hash_value like p_sql_id OR sql_id = p_plan OR src='plan table' and sql_id='_x_')
                         AND    other_xml IS NOT NULL
                     $IF DBMS_DB_VERSION.VERSION>11 $THEN
                         UNION ALL
@@ -135,6 +144,12 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                         AND    b.signature = a.signature
                     $END)
                 WHERE  rownum < 2;
+                
+                IF upper(p_sqlid)='DIFF' THEN
+                    SELECT XMLELEMENT("outline_data", XMLAGG(XMLELEMENT("hint", XMLCDATA(EXTRACTVALUE(VALUE(D), '/hint')))))
+                    INTO   v_hints
+                    FROM   TABLE(XMLSEQUENCE(EXTRACT(v_hints, '/*/outline_data/hint'))) D;
+                END IF;
             EXCEPTION
                 WHEN no_data_found THEN
                     raise_application_error(-20001, 'Cannot find hints for the execution plan!');
@@ -175,12 +190,24 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             END;
         BEGIN
             dbms_output.enable(NULL);
+            IF upper(p_sqlid)='DIFF' THEN
+                $IF DBMS_DB_VERSION.VERSION>10 $THEN 
+                    IF nvl(instr(p_plan,' '),0)<2 THEN
+                        raise_application_error(-20001,'format: sqlprof <diff> <plan_hash_value_1> <plan_hash_value_1>');
+                    END IF;
+                    get_sql(regexp_substr(p_plan,'[^ ]+',1,1));
+                    get_plan(regexp_substr(p_plan,'[^ ]+',1,3));
+                    v_hints2 := v_hints;
+                    get_plan(regexp_substr(p_plan,'[^ ]+',1,2));
+                    p_buffer:=dbms_xplan.diff_plan_outline(v_sql,v_hints.getclobval,v_hints2.getclobval,nvl(v_schema,sys_context('userenv','current_schema')));
+                $ELSE
+                    raise_application_error(-20001,'Unsupported version!');
+                $END
+                return;
+            END IF;
+
             IF v_sql IS NULL THEN 
-                BEGIN
-                    get_sql(p_sqlid);
-                EXCEPTION WHEN NO_DATA_FOUND THEN
-                    raise_application_error(-20001, 'Cannot find SQL text for '||p_sqlid||'!');
-                END;
+                get_sql(p_sqlid);
             END IF;
             
             dbms_lob.createtemporary(v_text, TRUE);
@@ -302,8 +329,13 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
     end
     local args={sql_text or "",'#CLOB',sql_id or "",sql_plan or ""}
     db:internal_call(stmt,args)
+
     if args[1] and args[1]:sub(1,1)=="#" then
         env.raise(args[1]:sub(2))
+    end
+
+    if sql_id and sql_id:lower()=='diff' then
+        return print(args[1] or 'no result.')
     end
     print("Result written to file "..env.write_cache('prof_'..(sql_id or "prof_plan_table")..".sql",args[2]))
 end
@@ -321,6 +353,7 @@ function sqlprof.onload()
         6). Generate the profile from plan table:
                 xplan select * from dual;
                 @@NAME gjm43un5cy843 plan;
+        7). Diff SQL Plans: @@NAME 0smupm8p2dhq7 2443212686 2443212367
     ]]
     env.set_command(nil,"sqlprof",help,sqlprof.extract_profile,false,3)
 end
