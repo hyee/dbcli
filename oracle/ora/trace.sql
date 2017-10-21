@@ -52,7 +52,7 @@ DECLARE
     PROCEDURE get_trace_file(p_sid INT) IS
         v_path varchar2(100);
     BEGIN
-        IF '&check_ver1' IS NOT NULL THEN
+        $IF DBMS_DB_VERSION.VERSION>10 $THEN
             for r in(SELECT p.*,s.serial# se FROM v$process p
                      JOIN   v$session s
                      ON     p.addr = s.paddr
@@ -60,7 +60,7 @@ DECLARE
                   serial# := r.se;
                   dbms_output.put_line('Target trace file is ' || r.tracefile);
             end loop;
-        ELSE 
+        $ELSE 
             FOR r IN (SELECT u_dump.value || '/' || SYS_CONTEXT('userenv', 'instance_name') || '_ora_' || p.spid ||
                               nvl2(p.traceid, '_' || p.traceid, NULL) || '.trc' fil, s.serial#
                       FROM   v$parameter u_dump
@@ -72,7 +72,7 @@ DECLARE
                 serial# := r.serial#;
                 dbms_output.put_line('Target trace file is ' || r.fil);
             END LOOP;
-        END IF;
+        $END
         IF serial# IS NULL THEN
             raise_application_error(-20001, 'Cannot find session with sid = ' || p_sid || ' in local instance!');
         END IF;

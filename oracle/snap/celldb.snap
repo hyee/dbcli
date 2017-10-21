@@ -104,7 +104,26 @@
         AND    g.inst_id = ds.inst_id
         AND    g.group_number = ds.group_number
         GROUP BY rollup((g.name &cell))]],
-    '-',[[/*grid={topic="Cell Throughput",fixed_title=true,order_by='cell'}*/
+     '-',
+    [[/*grid={topic="Disk Level IO Stats(R=Read  W=Write S=Small L=Large)",include_zero=true,fixed_title=true,order_by=1}*/
+    SELECT *
+    FROM   (SELECT nvl(disk_type, '-ALL-') TYPE, 0 tot_io, 0 tot_b, 0 tot_ms,NAME, 
+                   round(DECODE(NAME,'Ticks',AVG(VALUE),SUM(VALUE)),3) VALUE
+            FROM   (SELECT cell_hash,
+                           disk_name,
+                           decode(SUBSTR(disk_name, 1, 2), 'FD', 'Flash', 'Hard') disk_type,
+                           CASE WHEN metric_name LIKE 'Ticks %' THEN 'Ticks' ELSE metric_name END NAME,
+                           case when metric_name like '%latency' then 1e-3 else 1 end*metric_value VALUE
+                    FROM   v$cell_disk a
+                    WHERE  disk_name NOT LIKE '/%') a
+            GROUP  BY NAME, ROLLUP(disk_type))
+    PIVOT(MAX(VALUE)
+    FOR   NAME IN( /*'Ticks' util, */'Total Reads' AS R, 'Total Writes' AS W, 
+                   'Small reads' AS SR, 'Small writes' AS SW, 'Large reads' AS lr,'Large writes' AS lw,
+                   'R_B' as R_B, 'W_B' as W_B,'Small read bytes' sr_b, 'Small write bytes' sw_b, 'Large read bytes' lr_b, 'Large write bytes' lw_b,
+                   'r_ms' r_ms,'w_ms' w_ms,'Small read latency' sr_ms, 'Small write latency' sw_ms, 'Large read latency' AS lr_ms, 'Large write latency' AS lw_ms))
+    ]],
+    '-',[[/*grid={topic="Cell Throughput(FD=FlashDisk  FL=FlashLog  LIO=LargeIO FC=FlashCache FCC=ColumnarFlashCache)",fixed_title=true,order_by='cell'}*/
         SELECT  nvl(c.name,'--TOTAL--') cell,
                 flashCacheMode "flashMode",
                 round(avg(temperatureReading),2) "ºC",
@@ -175,6 +194,7 @@
         AND   b.cell_name=a.cell_name
         AND   b.cell_name=d.cell_name
         GROUP  BY ROLLUP((c.name,flashCacheMode))]],
+   
     '-',{[[/*grid={topic="Cell Global Stats",height=0}*/
           SELECT substr(METRIC_NAME,1,40) METRIC_NAME &cell, sum(METRIC_VALUE) value,METRIC_TYPE unit
           FROM (select &cellname,b.* from V$CELL_GLOBAL b)
@@ -212,7 +232,7 @@
             GROUP  BY reason_name &cell]],
             '+',[[&last]]}},
     }},
-    delta_by="IOPs,OflEff,Resp(ms),Calls,CPU,BandWidth,PhyRead,OptR(%),dxr(%),PhyWrite,OptW(%),dxw(%),Redo,Offload,SmartIO,FcHit,Hit(%),SiSave,FCCSave,waits,ms,Net,AllIO,Smart(%),FD(%),LIO(%),Redo,FL(%),SmartIO,Offload,FCC(%),FC(%),Read(%),OflOut,FccSave,Passthru,total_io,io_errs,writes,READS,hot_bytes,bytes,read,write,fd_bytes,fd_read,fd_write,timeouts,rw_ms,read_ms,write_ms,METRIC_VALUE,value,bytes,fd_bytes,ios,fd_io,lios,fd_lio,avg_ms,hd_ms,fd_ms",
+    delta_by="UTIL,R,W,SR,SW,LR,LW,SR_B,SW_B,LR_B,LW_B,SR_MS,SW_MS,LR_MS,LW_MS,IOPs,OflEff,Resp(ms),Calls,CPU,BandWidth,PhyRead,OptR(%),dxr(%),PhyWrite,OptW(%),dxw(%),Redo,Offload,SmartIO,FcHit,Hit(%),SiSave,FCCSave,waits,ms,Net,AllIO,Smart(%),FD(%),LIO(%),Redo,FL(%),SmartIO,Offload,FCC(%),FC(%),Read(%),OflOut,FccSave,Passthru,total_io,io_errs,writes,READS,hot_bytes,bytes,read,write,fd_bytes,fd_read,fd_write,timeouts,rw_ms,read_ms,write_ms,METRIC_VALUE,value,bytes,fd_bytes,ios,fd_io,lios,fd_lio,avg_ms,hd_ms,fd_ms",
     calc_rules={["Flash(%)"]='[fd_bytes]*100/[bytes]',
                  avg='[ms]/[waits]',
                  avg_ms='[avg_ms]/[ios]',
@@ -221,6 +241,10 @@
                  rw_ms='[rw_ms]/[total_io]',
                  read_ms='[read_ms]/([reads])',
                  write_ms='[write_ms]/[writes]',
+                 tot_io='[R]+[W]',
+                 tot_b='[SR_B]+[SW_B]+[LR_B]+[LW_B]',
+                 r_b='[SR_B]+[LR_B]',
+                 W_b='[SW_B]+[LW_B]',
                  ["LIO(%)"]='[LIO(%)]*100/[AllIO]',
                  ["Smart(%)"]='[Smart(%)]*100/[AllIO]',
                  ["FD(%)"]='[FD(%)]*100/[AllIO]',
@@ -234,12 +258,19 @@
                  ['OptW(%)']='100*[OptW(%)]/[PhyWrite]',
                  ['Hit(%)']='100*[FcHit]/[Hit(%)]',
                  ['Resp(ms)']='[Resp(ms)]/[Calls]',
-                 ['OflEff']='100-[OflOut]*100/([OflEff]+[SISave])'},
-    column_formatter={KMG='OflOut,BandWidth,PhyRead,PhyWrite,Redo,Offload,SmartIO,SiSave,FCCSave,Net,AllIO,Redo,SmartIO,Offload,OflOut,SiSave,FccSave,Passthru,OS_SIZE,TOTAL_SIZE,FREE_SIZE,bytes,hot_bytes,read,write,bytes,fd_bytes,fd_read,fd_write,fd_bytes',
-                      TMB='IOPs,fchit,ios,fd_io,lios,fd_lio,total_io,writes,READS,io_errs',
+                 ['OflEff']='100-[OflOut]*100/([OflEff]+[SISave])',
+                 SR_MS='[SR_MS]/[SR]',
+                 SW_MS='[SW_MS]/[SW]',
+                 LR_MS='[LR_MS]/[LR]',
+                 LW_MS='[LW_MS]/[LW]',
+                 TOT_MS='([SR_MS]+[SW_MS]+[LR_MS]+[LW_MS])/([SR]+[SW]+[LR]+[LW])',
+                 R_MS='([SR_MS]+[LR_MS])/([SR]+[LR])',
+                 W_MS='([SW_MS]+[LW_MS])/([SW]+[LW])',},
+    column_formatter={KMG='TOT_B,R_B,W_B,SR_B,SW_B,LR_B,LW_B,OflOut,BandWidth,PhyRead,PhyWrite,Redo,Offload,SmartIO,SiSave,FCCSave,Net,AllIO,Redo,SmartIO,Offload,OflOut,SiSave,FccSave,Passthru,OS_SIZE,TOTAL_SIZE,FREE_SIZE,bytes,hot_bytes,read,write,bytes,fd_bytes,fd_read,fd_write,fd_bytes',
+                      TMB='TOT_IO,R,W,SR,LR,SW,LW,IOPs,fchit,ios,fd_io,lios,fd_lio,total_io,writes,READS,io_errs',
                       smhd2='timeouts',
                       noprint='calls',
                      ['#,##0']='value'},
-    group_by="inst,event,diskgroup,cell,src,reason_name,METRIC_NAME,NAME",
+    group_by="type,inst,event,diskgroup,cell,src,reason_name,METRIC_NAME,NAME",
     per_second='on'
 }

@@ -2,7 +2,6 @@ package org.dbcli;
 
 import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
-import org.fusesource.jansi.internal.*;
 import org.jline.builtins.Commands;
 import org.jline.builtins.Less;
 import org.jline.builtins.Source;
@@ -15,7 +14,6 @@ import org.jline.utils.NonBlockingReader;
 import org.jline.utils.OSUtils;
 import org.jline.utils.WCWidth;
 
-import javax.swing.text.Keymap;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
@@ -27,7 +25,6 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
@@ -70,10 +67,10 @@ public class Console {
     }
 
     public static String ulen(final String s) {
-        if(s==null) return "0:0";
-        int len=0;
-        for(int i=0,n=s.length();i<n;i++) len+= WCWidth.wcwidth(Character.codePointAt(s,i));
-        return s.length()+":"+len;
+        if (s == null) return "0:0";
+        int len = 0;
+        for (int i = 0, n = s.length(); i < n; i++) len += WCWidth.wcwidth(Character.codePointAt(s, i));
+        return s.length() + ":" + len;
     }
 
     public void addCompleters(Map<String, ?> keys, boolean isCommand) {
@@ -130,12 +127,12 @@ public class Console {
         highlighter.commands.putAll(commands);
     }
 
-    public Console() throws Exception {
+    public Console(String historyLog) throws Exception {
         String colorPlan = System.getenv("ANSICON_DEF");
         if (colorPlan == null) colorPlan = "jline";
-        if(OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MINGW) ) {
-            terminal=new WindowsTerminal(colorPlan,Kernel32.INSTANCE.GetConsoleOutputCP());
-        } else terminal =new PosixTerminal(colorPlan);
+        if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MINGW)) {
+            terminal = new WindowsTerminal(colorPlan, Kernel32.INSTANCE.GetConsoleOutputCP());
+        } else terminal = new PosixTerminal(colorPlan);
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).build();
         this.parser = new Parser();
         this.reader.setParser(parser);
@@ -145,6 +142,8 @@ public class Console {
         //this.reader.setOpt(LineReader.Option.MOUSE);
         this.reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
         this.reader.setOpt(LineReader.Option.BRACKETED_PASTE);
+        this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
+        this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);
         /*
         reader.getKeyMaps().get(LineReader.EMACS).unbind("\t");
         reader.getKeyMaps().get(LineReader.EMACS).bind(new Reference(LineReader.EXPAND_OR_COMPLETE), "\t\t");

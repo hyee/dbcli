@@ -29,6 +29,7 @@ select time,sql_id,plan_hash,
        round(sum(read)/&avg,2) read,
        round(sum(write)/&avg,2)  write,
        round(sum(rows#)/&avg,2) rows#,
+       round(sum(fetches)/&avg,2) fetches,
        max(px_count) px
 FROM(
     select /*+no_expand*/
@@ -49,7 +50,8 @@ FROM(
            sum(cellio) cellio,
            sum(oflin) oflin,
            sum(oflout) oflout,
-           sum(rows#) rows#
+           sum(rows#) rows#,
+           sum(fetches) fetches
     from(
         select a.end_interval_time tim,
                a.sql_id,
@@ -70,7 +72,8 @@ FROM(
                greatest(disk_reads,phyread) READ,
                nvl(phywrite,direct_writes) WRITE,
                buffer_gets buff,
-               a.rows_processed rows#
+               a.rows_processed rows#,
+               a.fetches
          from &awr$sqlstat  a
         WHERE a.&BASE=:V1)
     group by snap_id,sql_id,plan_hash)

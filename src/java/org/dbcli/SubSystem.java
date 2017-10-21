@@ -4,7 +4,6 @@ import com.zaxxer.nuprocess.NuAbstractProcessHandler;
 import com.zaxxer.nuprocess.NuProcess;
 import com.zaxxer.nuprocess.NuProcessBuilder;
 import com.zaxxer.nuprocess.windows.NuKernel32;
-import com.zaxxer.nuprocess.windows.NuWinNT;
 
 import java.io.File;
 import java.nio.ByteBuffer;
@@ -45,7 +44,7 @@ public class SubSystem {
                 @Override
                 public void call(Object... o) {
                     isBreak = true;
-                    if(lock!=null) lock.countDown();
+                    if (lock != null) lock.countDown();
                 }
             });
         } catch (Exception e) {
@@ -138,7 +137,7 @@ public class SubSystem {
                 waitCompletion();
             else {
                 lock.await();
-                if(isBreak) close();
+                if (isBreak) close();
             }
             if (this.prevPrompt == null) this.prevPrompt = this.lastPrompt;
             return lastPrompt;

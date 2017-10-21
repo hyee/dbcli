@@ -4,7 +4,7 @@
     --]]
 ]]*/
 col tmb,ALLOC_REQUESTS format tmb
-col block_size,kmg format kmg
+col block_size,kmg,availables,used format kmg
 grid {[[ /*grid={topic='Flash Cache'}*/
     SELECT NAME &cell,SUM(VALUE) KMG,SUM(VALUE) TMB
     FROM   (SELECT (SELECT extractvalue(xmltype(c.confval), '/cli-output/context/@cell')
@@ -51,7 +51,7 @@ grid {[[ /*grid={topic='Flash Cache'}*/
         GROUP BY NAME &cell
         ORDER BY NAME,2]],
         '-',[[ /*grid={topic='Cache Block Stats'}*/
-        SELECT siz block_size &cell,SUM(available_buffers) available_buffers,SUM(buffers_in_use) buffers_in_use,SUM(NetworkRead) NetworkRead,SUM(alloc_requests) alloc_requests,
+        SELECT siz block_size &cell,SUM(availables) availables,SUM(used) used,SUM(NetworkRead) NetworkRead,SUM(alloc_requests) alloc_requests,
                SUM(alloc_failures) alloc_failures,SUM(alloc_r_failures) alloc_r_failures,SUM(alloc_w_failures) alloc_w_failures
         FROM(
             SELECT (SELECT extractvalue(xmltype(c.confval), '/cli-output/context/@cell')
@@ -62,8 +62,8 @@ grid {[[ /*grid={topic='Flash Cache'}*/
             FROM   v$cell_state a,
                    xmltable('//stats[@type="cache"]/blocksize_stat' passing xmltype(a.statistics_value) columns --
                             siz int path '@size', --
-                            available_buffers NUMBER path 'stat[@name="total_available_buffers"]', --
-                            buffers_in_use NUMBER path 'stat[@name="num_buffers_in_use"]', --
+                            availables NUMBER path 'stat[@name="total_available_buffers"]*@size', --
+                            used NUMBER path 'stat[@name="num_buffers_in_use"]*@size', --
                             NetworkRead NUMBER path 'stat[@name="NetworkRead"]', --
                             alloc_requests NUMBER path 'stat[@name="total_alloc_requests"]',
                             alloc_failures NUMBER path 'stat[@name="alloc_failures"]', --

@@ -22,6 +22,7 @@
                    SUM(bytes)/sum(Slot_size) bytes,
                    SUM(requests)/sum(Slot_size) request
           FROM   (SELECT a.*, row_number() OVER(PARTITION BY snap_id, dbid ORDER BY instance_number) r,
+                         -8640000 * (startup_time + 0 - SYSDATE) + instance_number part_key,
                           ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY dbid,instance_number,startup_time ORDER BY snap_id desc)) * 86400 Slot_size,
                          CASE WHEN end_interval_time+0 between NVL(to_date(:V1,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V2,'yymmddhh24miss'),sysdate) THEN 0 END flag
                   FROM   Dba_Hist_Snapshot a
@@ -33,8 +34,8 @@
           GROUP  BY snap_id,snap_id, flag,to_char(end_interval_time, 'YYYY-MM-DD HH24:MI'),reason_name,&obj
           ORDER BY 1,2)
     SELECT snap_time,reason,
-           round(bytes-nvl(lag(bytes) OVER(PARTITION BY reason ORDER BY snap_time),0),2) bytes,
-           round(request-nvl(lag(request) OVER(PARTITION BY reason ORDER BY snap_time),0),2) request
+           round(bytes-nvl(lag(bytes) OVER(PARTITION BY part_key,reason ORDER BY snap_time),0),2) bytes,
+           round(request-nvl(lag(request) OVER(PARTITION BY part_key,reason ORDER BY snap_time),0),2) request
     FROM   snap where flag=0]],
     _pivot=true,
     labelsKMG2=true,

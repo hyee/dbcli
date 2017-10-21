@@ -52,12 +52,13 @@
 ]]*/
 {
     sql={
-      [[WITH PX   AS(SELECT /*+materialize*/ * FROM gv$px_session WHERE inst_id IS NOT NULL),
-             SS   AS(SELECT /*+materialize*/ inst_id,sid,logon_time from gv$session where status='ACTIVE' and username=user),
-             inst AS(SELECT /*+no_merge*/ inst_id,to_char(max(logon_time),'HH24:MI:SS') os_time
-                     FROM   ss left join PX using(inst_id,sid)
-                     WHERE  userenv('sid')      in(sid,qcsid)
-                     AND    userenv('instance') in(inst_id,qcinst_id)
+      [[WITH SS AS (SELECT /*+materialize*/ inst_id,sid,logon_time,qcsid,qcinst_id 
+                    from   gv$session join gv$px_session using(sid,inst_id)
+                    WHERE  username=user),
+            inst AS(SELECT /*+no_merge*/ inst_id,to_char(max(logon_time),'HH24:MI:SS') os_time
+                     FROM   ss
+                     WHERE  userenv('sid') =qcsid
+                     AND    userenv('instance')=qcinst_id
                      GROUP BY inst_id)
         SELECT inst_id "#",os_time "OS Time","CPUs"
         FROM   inst /*grid={topic='Instances'}*/

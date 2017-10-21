@@ -9,7 +9,7 @@ import com.opencsv.ResultSetHelperService;
 import com.opencsv.SQLWriter;
 import org.jline.keymap.KeyMap;
 import org.jline.utils.OSUtils;
-
+import org.mozilla.universalchardet.UniversalDetector;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -21,7 +21,10 @@ import java.net.URLClassLoader;
 import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.ResultSet;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.TreeMap;
 import java.util.concurrent.*;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
@@ -41,12 +44,13 @@ public class Loader {
     private Sleeper runner = new Sleeper();
     private volatile ResultSet rs;
     private IOException CancelError = new IOException("Statement is aborted.");
-    private static Loader loader=null;
+    private static Loader loader = null;
 
     public static Loader get() throws Exception {
-        if(loader==null) loader=new Loader();
-        return  loader;
+        if (loader == null) loader = new Loader();
+        return loader;
     }
+
     private Loader() throws Exception {
         try {
             File f = new File(Loader.class.getProtectionDomain().getCodeSource().getLocation().toURI());
@@ -70,9 +74,9 @@ public class Loader {
             System.exit(0);
         }
 
-        console = new Console();
-        lua=LuaState.getMainLuaState();
-        if(lua!=null) console.setLua(lua);
+        console = new Console(root + File.separator + "cache" + File.separator + "history.log");
+        lua = LuaState.getMainLuaState();
+        if (lua != null) console.setLua(lua);
         //Ctrl+D
         keyMap = console.reader.getKeys();
         //keyMap.bind(String.valueOf(KeyMap.CTRL_D), new KeyListner(KeyMap.CTRL_D));
@@ -140,12 +144,12 @@ public class Loader {
         try {
             Field field = ClassLoader.class.getDeclaredField("usr_paths");
             field.setAccessible(true);
-            TreeMap<String,Boolean> map=new TreeMap<>();
-            for(String t:s.split(File.pathSeparator)) map.put(t,true);
-            if(!isReplace) for(String t:(String[]) field.get(null)) map.put(t,true);
-            String[] tmp=map.keySet().toArray(new String[0]);
-            System.setProperty("java.library.path",String.join(File.pathSeparator,tmp));
-            field.set(null,tmp);
+            TreeMap<String, Boolean> map = new TreeMap<>();
+            for (String t : s.split(File.pathSeparator)) map.put(t, true);
+            if (!isReplace) for (String t : (String[]) field.get(null)) map.put(t, true);
+            String[] tmp = map.keySet().toArray(new String[0]);
+            System.setProperty("java.library.path", String.join(File.pathSeparator, tmp));
+            field.set(null, tmp);
         } catch (IllegalAccessException e) {
             throw new IOException("Failed to get permissions to set library path");
         } catch (NoSuchFieldException e) {
@@ -168,10 +172,10 @@ public class Loader {
         Method method = clazz.getDeclaredMethod("addURL", new Class[]{URL.class});
         method.setAccessible(true);
         method.invoke(classLoader, new Object[]{url});
-        TreeMap<String,Boolean> map=new TreeMap();
-        for(String s:(System.getProperty("java.class.path") + File.pathSeparator + file.replace(root, ".")).split(File.pathSeparator))
-            map.put(s,true);
-        System.setProperty("java.class.path", String.join(File.pathSeparator,map.keySet().toArray(new String[0])));
+        TreeMap<String, Boolean> map = new TreeMap();
+        for (String s : (System.getProperty("java.class.path") + File.pathSeparator + file.replace(root, ".")).split(File.pathSeparator))
+            map.put(s, true);
+        System.setProperty("java.class.path", String.join(File.pathSeparator, map.keySet().toArray(new String[0])));
     }
 
 
@@ -276,40 +280,40 @@ public class Loader {
         });
     }
 
-    public void AsyncPrintResult(final ResultSet rs, final String prefix,final int timeout) throws Exception {
-        ArrayBlockingQueue<String> queue=new ArrayBlockingQueue<String>(1000);
+    public void AsyncPrintResult(final ResultSet rs, final String prefix, final int timeout) throws Exception {
+        ArrayBlockingQueue<String> queue = new ArrayBlockingQueue<String>(1000);
         setCurrentResultSet(rs);
-        Exception[] e=new Exception[1];
-        Thread t=new Thread(new Runnable() {
+        Exception[] e = new Exception[1];
+        Thread t = new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
-                    while(rs.next()) {
-                        final String line=rs.getString(1);
-                        queue.put(line==null?"":line);
+                    while (rs.next()) {
+                        final String line = rs.getString(1);
+                        queue.put(line == null ? "" : line);
                     }
                     rs.close();
                 } catch (Exception e1) {
-                    e[0]=e1;
+                    e[0] = e1;
                 }
             }
         });
         t.setDaemon(true);
         t.start();
-        ArrayList<String> messages=new ArrayList<>();
+        ArrayList<String> messages = new ArrayList<>();
         String str;
         while (t.isAlive()) {
-            while((str=queue.poll(timeout, TimeUnit.MILLISECONDS))!=null) {
+            while ((str = queue.poll(timeout, TimeUnit.MILLISECONDS)) != null) {
                 messages.add(str);
-                if(messages.size()>=console.terminal.getHeight()*3) break;
+                if (messages.size() >= console.terminal.getHeight() * 3) break;
             }
-            if(messages.size()>0) {
-                String[] msg=messages.toArray(new String[0]);
+            if (messages.size() > 0) {
+                String[] msg = messages.toArray(new String[0]);
                 messages.clear();
-                console.println(prefix+String.join("\n"+prefix,msg));
+                console.println(prefix + String.join("\n" + prefix, msg));
             }
         }
-        if(e[0]!=null) throw e[0];
+        if (e[0] != null) throw e[0];
     }
 
     public LuaTable fetchResult(final ResultSet rs, final int rows) throws Exception {
@@ -327,7 +331,7 @@ public class Loader {
     }
 
     public void closeWithoutWait(final Connection conn) {
-        Thread t=new Thread(() -> {
+        Thread t = new Thread(() -> {
             try {
                 conn.close();
             } catch (Exception e) {
@@ -367,13 +371,21 @@ public class Loader {
             }
         }
 
-        try (Closeable c2 = iis) {
-            StringBuffer sb = new StringBuffer();
-            int i = 0;
-            for (int c = iis.read(); c != -1; c = iis.read()) {
-                sb.append((char) c);
-            }
-            return sb.toString();
+        try (Closeable c2 = iis; ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+            UniversalDetector detector = new UniversalDetector(null);
+            byte[] buffer = new byte[16384];
+            int len;
+            while ((len = iis.read(buffer)) > 0)
+                bos.write(buffer, 0, len);
+            buffer = bos.toByteArray();
+            detector.handleData(buffer);
+            detector.dataEnd();
+            String charset = detector.getDetectedCharset();
+            //System.out.println(charset);
+            if (charset != null && !charset.equals("null")) {
+                return new String(buffer, charset);
+            } else
+                return new String(buffer);
         }
     }
 
