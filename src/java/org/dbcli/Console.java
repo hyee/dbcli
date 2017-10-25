@@ -2,6 +2,9 @@ package org.dbcli;
 
 import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
+import com.sun.jna.Library;
+import com.sun.jna.Native;
+import com.sun.jna.Platform;
 import org.jline.builtins.Commands;
 import org.jline.builtins.Less;
 import org.jline.builtins.Source;
@@ -56,6 +59,18 @@ public class Console {
     HashMap<String, Candidate[]> candidates = new HashMap<>(1024);
     Completer completer = new Completer();
 
+    public interface CLibrary extends Library {
+        Console.CLibrary INSTANCE = (Console.CLibrary)
+                Native.loadLibrary((Platform.isWindows() ? "kernel32" : "c"),
+                        Console.CLibrary.class);
+
+        boolean SetConsoleTitleA(String title);
+    }
+
+    public void setTitle(String title) {
+        CLibrary.INSTANCE.SetConsoleTitleA(title);
+    }
+
     public void setLua(LuaState lua) {
         this.lua = lua;
         parserCallback = null;
@@ -109,6 +124,7 @@ public class Console {
     }
 
     public int getBufferWidth() {
+        if("terminator".equals(System.getenv("TERM"))) return 2000;
         return ((MyTerminal) terminal).getBufferWidth();
     }
 

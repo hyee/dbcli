@@ -1,8 +1,15 @@
 #!/bin/bash
 FOLDER=$1
+if [ "$FOLDER"="" ]; then
+  FOLDER=rt
+fi
+
 TARGET=${FOLDER}1
 SOURCE=/media/sf_D_DRIVE/jdk_linux
 JAR="$SOURCE/bin/jar"
+
+
+
 if [ ! -d "$SOURCE" ]; then
   echo "No such JRE directory: $SOURCE"
   exit 1

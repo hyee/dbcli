@@ -436,7 +436,13 @@ function graph:run_sql(sql,args,cmd,file)
     content=content.."</body></html>"
     local file=env.write_cache(cmd.."_"..os.date('%Y%m%d%H%M%S')..".html",content)
     print("Result written to "..file)
-    os.shell(file)
+    if env.IS_WINDOWS then
+        os.shell(file)
+    elseif PLATFORM=="mac" then
+        os.shell('open','"'..file..'"')
+    else
+        os.shell("xdg-open",'"'..file..'" 2>/dev/null')
+    end
 end
 
 function graph:draw_gnuplot(data,options)

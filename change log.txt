@@ -1,3 +1,4 @@
+2017-10-20: + oracle: new command 'exa diskio'
 2017-10-15: + oracle: new command 'exa cellwait','ora sqlfn' and 'chart cellio/cellreason'
 2017-10-11: + oracle: new command 'addmdiff' (12c only)
                     : new command 'sys segcache'

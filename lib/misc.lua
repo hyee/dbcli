@@ -5,11 +5,9 @@ function string.initcap(v)
     return (' '..v):lower():gsub("([^%w])(%w)",function(a,b) return a..b:upper() end):sub(2)
 end
 
-
 function os.shell(cmd,args)
     io.popen(cmd..(args and (" "..args) or ""))
 end
-
 
 function os.find_extension(exe)
     local err="Cannot find "..exe.." in the default path, please add it into EXT_PATH of file data/init.cfg"
