@@ -188,7 +188,7 @@ function graph:run_sql(sql,args,cmd,file)
     local function is_visible(title)
         return not (title=="RNK_" or title=="RND_" or title=="HIDDEN_" or title:match('^%W*$')) and true or false
     end
-
+    --grid.print(rows)
     local counter,range_begin,range_end,x_name=-1
     local head,cols=table.remove(rows,1)
     local maxaxis=cfg.get('Graph_Series')
@@ -436,7 +436,13 @@ function graph:run_sql(sql,args,cmd,file)
     content=content.."</body></html>"
     local file=env.write_cache(cmd.."_"..os.date('%Y%m%d%H%M%S')..".html",content)
     print("Result written to "..file)
-    os.shell(file)
+    if env.IS_WINDOWS then
+        os.shell(file)
+    elseif PLATFORM=="mac" then
+        os.shell('open','"'..file..'"')
+    else
+        os.shell("xdg-open",'"'..file..'" 2>/dev/null')
+    end
 end
 
 function graph:draw_gnuplot(data,options)

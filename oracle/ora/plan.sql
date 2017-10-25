@@ -10,7 +10,7 @@ Option:
 --[[
     &STAT: default={&DF &adaptive &V3 &V4 &V5 &V6 &V7 &V8 &V9}
     &V3: none={} ol={outline alias}
-    &DF: default={ALLSTATS ALL -PROJECTION LAST -ALIAS}, basic={BASIC}, adv={advanced}, a={all}
+    &DF: default={ALLSTATS ALL -PROJECTION -ALIAS LAST}, basic={BASIC}, adv={advanced}, a={all}
     &SRC: {
             default={0}, # Both
             d={2}        # Dictionary only

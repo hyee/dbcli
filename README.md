@@ -195,6 +195,7 @@ Below is the list:
     NuProcess   : (Apache) https://github.com/brettwooldridge/NuProcess
     Luv(libuv)  : (Apache) https://github.com/luvit/luv
     ConEmu      : (BSD)    https://github.com/Maximus5/ConEmu
+    juniversalchardet :    https://github.com/albfernandez/juniversalchardet                       
 
 Besides, some SQL scripts come from internet.
 

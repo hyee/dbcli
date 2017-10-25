@@ -48,29 +48,24 @@ WHERE  conftype = 'CELL'
 ORDER BY 2;
 
 col total_size,free_size,HD_SIZE,FD_SIZE,flash_cache,flash_log format kmg
+col FC_ALLOC,ALLOC_OLTP,ALLOC_OLTP_KEEP,alloc_unflush_keep,ALLOC_UNFLUSH,USED,OLTP,KEEP,OLTP_KEEP,FCC,FCC_KEEP format kmg
 grid {[[
-        SELECT NVL((SELECT extractvalue(xmltype(c.confval), '/cli-output/context/@cell')
-                FROM   v$cell_config c
-                WHERE  c.CELLNAME = a.CELLNAME
-                AND    rownum < 2),'--TOTAL') cell,
-                cellhash,
-                COUNT(DISTINCT NAME) DISKS,
+        SELECT * FROM (
+        SELECT  NVL((SELECT extractvalue(xmltype(c.confval), '/cli-output/context/@cell')
+                        FROM   v$cell_config c
+                        WHERE  c.CELLNAME = a.CELLNAME
+                        AND    rownum < 2),'--TOTAL') cell,
+                nvl(cellhash,0) cellhash,
+                SUM(DECODE(disktype, 'HardDisk', 1,0)) HD,
+                SUM(DECODE(disktype, 'HardDisk', 0,1))  FD,
                 SUM(siz) total_size,
                 SUM(freeSpace) free_size,
                 SUM(DECODE(disktype, 'HardDisk', siz)) HD_SIZE,
                 SUM(DECODE(disktype, 'FlashDisk', siz)) FD_SIZE,
-                SUM(siz * is_fc) flash_cache,
-                SUM(fl) flash_log
+                SUM(fl) flash_log,
+                '|' "|"
         FROM   (SELECT  CELLNAME,CELLHASH,
                         b.*,
-                        (SELECT COUNT(1)
-                                FROM   v$cell_config d,
-                                XMLTABLE('/cli-output/griddisk' PASSING xmltype(d.confval) COLUMNS --
-                                        cellDisk VARCHAR2(300) path 'cellDisk',
-                                        cacheby VARCHAR2(300) path 'cachedBy') c
-                                WHERE  INSTR(cacheby, b.name) > 0
-                                AND    d.cellname = a.cellname
-                                AND    ROWNUM < 2) is_fc,
                         (SELECT SUM(siz)
                                 FROM   v$cell_state d,
                                 XMLTABLE('/flashlogstore_stats' PASSING XMLTYPE(d.statistics_value) COLUMNS --
@@ -86,9 +81,27 @@ grid {[[
                             siz INT path 'size',
                             freeSpace INT path 'freeSpace') b
                 WHERE  conftype = 'CELLDISKS') a
-        GROUP  BY ROLLUP((cellname,CELLHASH))
-        ORDER BY cellname NULLS FIRST
-]],'|',[[
+        GROUP  BY rollup((cellname,CELLHASH))) 
+        RIGHT JOIN (SELECT * FROM (
+                SELECT nvl(cell_hash,0) cellhash,metric_name n, sum(metric_value) v 
+                FROM  v$cell_global 
+                WHERE metric_name LIKE '%alloc%' OR metric_name LIKE '%use%' 
+                group by metric_name,rollup(cell_hash)
+                ) PIVOT (
+                MAX(v) FOR n IN(
+                'Flash cache bytes allocated' AS fc_alloc,
+                'Flash cache bytes allocated for OLTP data' AS alloc_oltp,
+                'Flash cache bytes allocated for OLTP keep objects' AS alloc_oltp_keep,
+                'Flash cache bytes allocated for unflushed data' AS alloc_unflush,
+                'Flash cache bytes allocated for unflushed keep objects' AS alloc_unflush_keep,
+                'Flash cache bytes used' AS used,
+                'Flash cache bytes used for OLTP data' AS oltp,
+                'Flash cache bytes used - keep objects' AS keep,
+                'Flash cache bytes allocated for OLTP keep objects' AS oltp_keep,
+                'Flash cache bytes used - columnar' AS fcc,
+                'Flash cache bytes used - columnar keep' AS fcc_keep))) b 
+        USING(cellhash)
+]],'-',[[
         WITH grid AS(
                 SELECT b.*
                 FROM   v$cell_config a,
@@ -101,7 +114,7 @@ grid {[[
                                 "creationTime" VARCHAR2(300) path 'creationTime', "id" VARCHAR2(300) path 'id') b
                 WHERE  conftype = 'GRIDDISKS')
         SELECT  /*+no_merge(c) no_merge(a) use_hash(c a)*/
-                DISTINCT a.*, listagg(tbs,chr(10)) WITHIN GROUP(ORDER BY tbs) OVER(PARTITION BY DISKGROUP) tbs
+                DISTINCT a.*, listagg(tbs,',') WITHIN GROUP(ORDER BY tbs) OVER(PARTITION BY DISKGROUP) tbs
         FROM   (SELECT  /*+no_merge(c) no_merge(b) use_hash(c b)*/
                         b.DISKGROUP,
                         SUM(decode(diskType, 'HardDisk', 1, 0))||'/'||SUM(decode(diskType, 'HardDisk', 0, 1)) "HD/FD",

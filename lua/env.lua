@@ -974,10 +974,10 @@ function env.onload(...)
         print_debug=print
     end
     if  env.ansi and env.ansi.define_color then
-        env.ansi.define_color("Promptcolor","HIY","ansi.core","Define prompt's color, type 'ansi' for more available options")
+        env.ansi.define_color("Promptcolor",env.IS_WINDOWS and "HIY" or "YEL","ansi.core","Define prompt's color, type 'ansi' for more available options")
         env.ansi.define_color("ERRCOLOR","HIR","ansi.core","Define color of the error messages, type 'ansi' for more available options")
         env.ansi.define_color("PromptSubcolor","HIM","ansi.core","Define the prompt color for subsystem, type 'ansi' for more available options")
-        env.ansi.define_color("commandcolor","HIC","ansi.core","Define command line's color, type 'ansi' for more available options")
+        env.ansi.define_color("commandcolor",env.IS_WINDOWS and "HIC" or "CYN","ansi.core","Define command line's color, type 'ansi' for more available options")
     end
     if env.event then
         env.event.snoop("ON_KEY_EVENT",env.modify_command)

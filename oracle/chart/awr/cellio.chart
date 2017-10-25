@@ -1,5 +1,5 @@
 /*[[
-    Show chart for DBA_HIST_CELL_DISK_SUMMARY. Usage: @@NAME {[yymmddhh24mi] [yymmddhh24mi]} [-f"<filter>"|-fd|-hd] [-c|-dn|-dt]
+    Show chart for DBA_HIST_CELL_DISK_SUMMARY. Usage: @@NAME {[yymmddhh24mi] [yymmddhh24mi] [keyword]} [-f"<filter>"|-fd|-hd] [-c|-dn|-dt]
     Impacted by settings: starttime,endtime,instance
     -c : detail to cell name
     -dn: detail to disk name
@@ -18,7 +18,7 @@
     title="Exadata Cell IO State Chart",
     _sql=[[
         WITH snap AS
-         (SELECT /*+materialize ordered use_hash(a b) no_merge(a) no_merge(b) no_merge(c) no_merge(d)*/
+         (SELECT /*+no_expand materialize ordered use_hash(a b) no_merge(a) no_merge(b) no_merge(c) no_merge(d)*/
                    snap_id, nullif('['||&obj||']','[]') obj,
                    to_char(end_interval_time, 'YYYY-MM-DD HH24:MI') end_time,
                    round(SUM(APP_IO_REQUESTS_AVG), 3) app_io_requests,
@@ -32,51 +32,53 @@
                    round(SUM(small_write_bytes_avg), 3) small_write_bytes,
                    round(SUM(large_write_bytes_avg), 3) large_write_bytes,
                    round(AVG(APP_IO_LATENCY_AVG) * 1e-3, 3) app_io_ms,
+                   round(avg(DISK_UTILIZATION_AVG),2) util,
                    round(AVG(small_read_latency_avg) * 1e-3, 3) small_read_ms,
                    round(AVG(large_read_latency_avg) * 1e-3, 3) large_read_ms,
                    round(AVG(small_write_latency_avg) * 1e-3, 3) small_write_ms,
                    round(AVG(large_write_latency_avg) * 1e-3, 3) large_write_ms
-          FROM   (SELECT a.*, row_number() OVER(PARTITION BY snap_id, dbid ORDER BY instance_number) r 
+          FROM   (SELECT a.*, row_number() OVER(PARTITION BY snap_id, dbid ORDER BY instance_number) r
                   FROM   Dba_Hist_Snapshot a
-                  WHERE end_interval_time+0 between NVL(to_date(:V1,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V2,'yymmddhh24miss'),sysdate)) a
+                  WHERE  end_interval_time+0 between NVL(to_date(:V1,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V2,'yymmddhh24miss'),sysdate)) a
           JOIN   DBA_HIST_CELL_NAME b USING(dbid, snap_id)
           JOIN   DBA_HIST_CELL_DISK_SUMMARY c USING(dbid, snap_id,cell_hash)
           JOIN   DBA_HIST_CELL_DISK_NAME d USING(dbid, snap_id,cell_hash,DISK_ID)
-          WHERE  r = 1 AND (&filter)
+          WHERE  r = 1 AND (&filter) AND (:V3 IS NULL OR upper(:V3) in(upper(disk),upper(cell_name),upper(disk_name)))
           GROUP  BY snap_id, to_char(end_interval_time, 'YYYY-MM-DD HH24:MI'),&obj)
         SELECT end_time snap_time,
                obj||'APP_IO' item,
                app_io_requests iops,
-               app_io_bytes bytes,
-               app_io_ms "Latency(ms)"
+               app_io_bytes "Bytes/s",
+               app_io_ms "Latency(ms)",
+               util "Disk Utilization(%)"
         FROM   snap
         UNION ALL
         SELECT end_time snap_time,
                obj||'SMALL_READ' item,
                small_reads iops,
-               small_read_bytes bytes,
-               small_read_ms ms
+               small_read_bytes,
+               small_read_ms ms,null
         FROM   snap
         UNION ALL
         SELECT end_time snap_time,
                obj||'SMALL_WRITE' item,
                small_writes iops,
-               small_write_bytes bytes,
-               small_write_ms ms
+               small_write_bytes,
+               small_write_ms ms,null
         FROM   snap
         UNION ALL
         SELECT end_time snap_time,
                obj||'LARGE_READ' item,
                large_reads iops,
-               large_read_bytes bytes,
-               large_read_ms ms
+               large_read_bytes,
+               large_read_ms ms,null
         FROM   snap
         UNION ALL
         SELECT end_time snap_time,
                obj||'LARGE_WRITE' item,
                large_writes iops,
-               large_write_bytes bytes,
-               large_write_ms ms
+               large_write_bytes,
+               large_write_ms ms,null
         FROM   snap
         ORDER  BY 1,2]],  
     labelsKMG2=true,

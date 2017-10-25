@@ -24,9 +24,9 @@ print()
 local line,eval = "",env.execute_line
 local ansi,event=env.ansi,env.event
 local color=ansi and ansi.get_color or function() return "";end
-local prompt_color="%s%s%s%s"
-local ncolor=color("NOR")
 
+local ncolor=color("NOR")
+local prompt_color="%s%s%s%s%s"
 while true do
     local subcolor,pcolor,ccolor=color("PROMPTSUBCOLOR"),color("PROMPTCOLOR"),color("COMMANDCOLOR")
     local prompt,empty=env.CURRENT_PROMPT:match("^(.-)(%s*)$")
@@ -36,7 +36,7 @@ while true do
         break 
     end
     if ccolor=="" then ccolor="\27[0m" end
-    line=readLine(console,prompt_color:format(env._SUBSYSTEM and subcolor or pcolor,prompt,ncolor,empty),ccolor)
+    line=readLine(console,prompt_color:format(ncolor,env._SUBSYSTEM and subcolor or pcolor,prompt,ncolor,empty),ccolor)
     if line then
         eval()
     else

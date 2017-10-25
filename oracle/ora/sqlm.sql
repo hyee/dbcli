@@ -59,6 +59,7 @@ DECLARE
     dopeid     INT;
     keyw       VARCHAR2(300):=:V2;
     c2         SYS_REFCURSOR;
+    sql_exec   INT;
     serial     INT;
 BEGIN
     IF &SNAP=1 THEN
@@ -107,14 +108,87 @@ BEGIN
     END IF;
     
     IF sq_id IS NOT NULL AND '&option' IS NULL THEN
-        EXECUTE IMMEDIATE 'alter session set "_sqlmon_max_planlines"=3000';
+        --EXECUTE IMMEDIATE 'alter session set "_sqlmon_max_planlines"=3000';
+        sql_exec := :V2;
+        IF sql_exec IS NULL THEN
+            select max(sql_exec_id) keep(dense_rank last order by last_refresh_time)
+            into  sql_exec
+            from  gv$sql_monitor
+            where sql_id=sq_id
+            and   inst_id=nvl(inst,inst_id);
+        END IF;
         OPEN :c FOR
-            SELECT DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => '&format-SQL_FULLTEXT-SQL_TEXT', TYPE => 'TEXT', sql_id => sq_id, SQL_EXEC_ID => :V2, inst_id => inst) AS report FROM   dual;
+            SELECT DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => '&format-SQL_FULLTEXT-SQL_TEXT', TYPE => 'TEXT', sql_id => sq_id, SQL_EXEC_ID => sql_exec, inst_id => inst) AS report FROM   dual;
         BEGIN
-            content  := DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => 'ALL', TYPE => 'ACTIVE', sql_id => sq_id, SQL_EXEC_ID => :V2, inst_id => inst);
+            content  := DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => 'ALL', TYPE => 'ACTIVE', sql_id => sq_id, SQL_EXEC_ID => sql_exec, inst_id => inst);
             filename := 'sqlm_' || sq_id || '.html';
         EXCEPTION WHEN OTHERS THEN NULL;
         END;
+        --refer to https://ctandrewsayer.wordpress.com/2017/10/19/how-many-rows-were-insertedupdateddeleted-in-my-merge/
+        $IF dbms_db_version.version>11 $THEN
+            OPEN c2 FOR
+            SELECT up.plan_line_id, sms.name, up.value, dop_down.value_text, sms.description
+            FROM   (SELECT *
+                    FROM   (SELECT sql_id,
+                                   plan_line_id,
+                                   otherstat_1_id,
+                                   otherstat_1_type,
+                                   otherstat_1_value,
+                                   otherstat_2_id,
+                                   otherstat_2_type,
+                                   otherstat_2_value,
+                                   otherstat_3_id,
+                                   otherstat_3_type,
+                                   otherstat_3_value,
+                                   otherstat_4_id,
+                                   otherstat_4_type,
+                                   otherstat_4_value,
+                                   otherstat_5_id,
+                                   otherstat_5_type,
+                                   otherstat_5_value,
+                                   otherstat_6_id,
+                                   otherstat_6_type,
+                                   otherstat_6_value,
+                                   otherstat_7_id,
+                                   otherstat_7_type,
+                                   otherstat_7_value,
+                                   otherstat_8_id,
+                                   otherstat_8_type,
+                                   otherstat_8_value,
+                                   otherstat_9_id,
+                                   otherstat_9_type,
+                                   otherstat_9_value,
+                                   otherstat_10_id,
+                                   otherstat_10_type,
+                                   otherstat_10_value
+                            FROM   gv$sql_plan_monitor spm
+                            WHERE  spm.sql_id = sq_id
+                            AND    spm.sql_exec_id = sql_exec) --
+                           unpivot((id, TYPE, VALUE) --
+                           FOR pivId IN((otherstat_1_id, otherstat_1_type, otherstat_1_value) AS 1, (otherstat_2_id, otherstat_2_type, otherstat_2_value) AS 2,
+                                        (otherstat_3_id, otherstat_3_type, otherstat_3_value) AS 3, (otherstat_4_id, otherstat_4_type, otherstat_4_value) AS 4,
+                                        (otherstat_5_id, otherstat_5_type, otherstat_5_value) AS 5, (otherstat_6_id, otherstat_6_type, otherstat_6_value) AS 6,
+                                        (otherstat_7_id, otherstat_7_type, otherstat_7_value) AS 7, (otherstat_8_id, otherstat_8_type, otherstat_8_value) AS 8,
+                                        (otherstat_9_id, otherstat_9_type, otherstat_9_value) AS 9, (otherstat_10_id, otherstat_10_type, otherstat_10_value) AS 10))) up
+            LEFT   JOIN v$sql_monitor_statname sms
+            ON     up.id = sms.id
+            LEFT   JOIN (SELECT 'downgrade reason' NAME, 350 VALUE, 'DOP downgrade due to adaptive DOP' value_text
+                         FROM   dual
+                         UNION ALL
+                         SELECT 'downgrade reason' NAME, 351 VALUE, 'DOP downgrade due to resource manager max DOP' value_text
+                         FROM   dual
+                         UNION ALL
+                         SELECT 'downgrade reason' NAME, 352 VALUE, 'DOP downgrade due to insufficient number of processes' value_text
+                         FROM   dual
+                         UNION ALL
+                         SELECT 'downgrade reason' NAME, 353 VALUE, 'DOP downgrade because slaves failed to join' value_text
+                         FROM   dual) dop_down
+            ON     sms.name = dop_down.name
+            AND    up.value = dop_down.value
+            ORDER  BY 1, 2;
+        $END
+        
+        :c1 := c2; 
     ELSE
         OPEN :c FOR
             SELECT *
@@ -260,6 +334,7 @@ BEGIN
                     SELECT row_number() over(ORDER BY rownum DESC) OID, m.*
                     FROM   (select * FROM (SELECT * FROM SQLM LEFT JOIN ash USING (id)) START WITH ID = (SELECT MIN(id) FROM SQLM) CONNECT BY PRIOR id = pid ORDER SIBLINGS BY id DESC) m
                     ORDER  BY id;
+                
             END IF;
         END IF;
     END IF;

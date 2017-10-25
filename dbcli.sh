@@ -3,7 +3,6 @@
 
 cd "$(dirname "$0")"
 os=$(uname)
-
 if [ "$os" = "Darwin" ]; then
     os="mac"
 else

@@ -82,14 +82,12 @@ function trace.get_trace(filename,mb,from_mb)
             dbms_lob.fileclose(trace_file);
             drop_dir;
 
-            :res := 'File Size: ' || round(fsize/1024/1024, 3) || ' MB        Extract Size: ' || round(length(text)/1024/1024, 3) ||
+            tmp := 'File Size: ' || round(fsize/1024/1024, 3) || ' MB        Extract Size: ' || round(length(text)/1024/1024, 3) ||
                     ' MB        Start Extract Position: ' || round(from_MB/1024/1024, 3) || ' MB';
             base64encode(text);
-            :2   := f;
-            :3   := text;
-            return;
         EXCEPTION
             WHEN OTHERS THEN
+                text := null;
                 buff := dbms_utility.format_error_stack || dbms_utility.format_error_backtrace;
                 buff := regexp_replace(regexp_replace(buff,' *['||CHR(10)||CHR(13)||']+',','),',([A-Z]+\-\d+)',CHR(10)||'\1');
                 IF trace_file IS NOT NULL AND DBMS_LOB.FILEISOPEN(trace_file) = 1 THEN
@@ -106,10 +104,9 @@ function trace.get_trace(filename,mb,from_mb)
                 ELSIF flag = 2 THEN
                     buff := regexp_substr(buff,'([A-Z]+\-\d+)[^'||CHR(10)||']+')||'[dir="'||tmp||'" file="'||f||'"]';
                 END IF;
-                :4 := buff;
         END;
 
-        IF vw IS NOT NULL THEN
+        IF text IS NULL AND vw IS NOT NULL THEN
             dir := regexp_replace(tmp,'[\\/]trace[\\/]$');
             EXECUTE IMMEDIATE 'select count(1) from ' || REPLACE(upper(vw), '_CONTENTS') || ' where ADR_HOME=:d and TRACE_FILENAME=:f'
                 INTO flag
@@ -169,14 +166,15 @@ function trace.get_trace(filename,mb,from_mb)
                     MBs := least(MBs, fsize - from_MB + 1);
                 END IF;
                 CLOSE cur;
-                :res := 'File Size: > ' || round(fsize/1024/1024, 3) || ' MB        Extract Size: ' 
+                tmp := 'File Size: > ' || round(fsize/1024/1024, 3) || ' MB        Extract Size: ' 
                         || round(length(text)/1024/1024, 3) ||' MB        Start Extract Position: ' 
                         || round(from_MB/1024/1024, 3) || ' MB';
                 base64encode(text);
-                :2   := f;
-                :3   := text;
             END IF;
         END IF;
+        :res := tmp;
+        :2   := f;
+        :3   := text;
     END;]]
     local target_view
     if not filename then
@@ -241,7 +239,7 @@ function trace.get_trace(filename,mb,from_mb)
     db:internal_call(sql,args)
     env.checkerr(args[2],args[4])
     print(args.res);
-    args[3]=loader:Base64ZlibToText(args[3]);
+    args[3]=loader:Base64ZlibToText(args[3]:split('\n'));
     print("Result written to file "..env.write_cache(args[2],args[3]))
 end
 

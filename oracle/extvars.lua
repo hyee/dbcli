@@ -300,7 +300,7 @@ db.lz_compress=[[
             dbms_output.put_line(p_line);
         END;
     BEGIN
-        IF dbms_lob.getLength(p_clob) IS NULL THEN
+        IF p_clob IS NULL OR dbms_lob.getLength(p_clob) IS NULL THEN
             RETURN;
         END IF;
         IF NOT v_impmode THEN
