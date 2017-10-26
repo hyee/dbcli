@@ -193,7 +193,7 @@ var u=document.createElement("div");u.style.fontSize=t.getOption("axisLabelFontS
         var stats=opts["drawPoints"];
         if(stats=="indeterminate") opts["drawPoints"]=true;
         //alert(stats=="indeterminate"?"x":null);
-        opts.pointSize=opts.drawPoints?5:2;
+        opts.pointSize=opts.drawPoints?4:2;
         var setNames = g.getLabels().slice(1);
         var shapes=[];
         for (var shape in Dygraph.Circles) {
