@@ -78,8 +78,8 @@ Type `set platform` to see all available options.
 
 Command Overview
 -----------------------
-* Public Commands: visible in all database platforms
-  * Instruction
+* **Public Commands: visible in all database platforms**
+  * _Instruction_
     * `help` : Show help information,Use `"help <command>"` to show the detail information of other commands, or `"help help"` to see more usage of the `help` command. <br/>The default database platform is `Oracle`, to switch to other platform, use the `"set [-p] platform"` command
     * `ansi` :Show the usage of console color solution
     * `hotkeys` :Show the available hotkeys in console|
@@ -133,8 +133,9 @@ Command Overview
     * `search` :Search the source code
     * `-p` :Test a command and verify its input parameters
     * `help -a` or `set -a` : see where the commands/settings are defined
-* Oracle
-  * SQL
+    
+* **Oracle Database**
+  * _SQL_
     * `*` :Supports almost all Oracle database SQL statements
   * _Report_
     * `awrdump` :Generate AWR report regarding to the input time range or snap_id
@@ -150,6 +151,7 @@ Command Overview
     * `ora` :A command set that implement the scripting engine, to run predefined or customized script that used for DBA or db developer, this command has pre-defined many useful scripts
     * `sys` :A command set that inherited from `ora` and similar to `ora`, except can only used by SYSDBA
     * `show` :A command set that inherited from `ora` and similar to `ora`, except that it doesn't accept input parameters
+    * `exa` : A command set that inherited from `ora`, used to query `Exadata` cell configurations and statisticses
   * _SQL*Plus_
     * `sqlplus` :Launch `sqlplus` console with the same login in native mode or embbed mode,  plus other input parameters
     * `@` or `sp` :Run sqlplus script in embbed mode with the same login
@@ -161,14 +163,16 @@ Command Overview
   * _Others_
     * `describe/desc` :Describe Oracle object, provides more features than that of `sqlplus`
     * `xplan` :Show execution plan for input `SQL text/ID`, as well as downloading the 10053 trace file if specify the `-10053` option
-* DB2(to be enhanced)
+    
+* **DB2 Database(to be enhanced)**
   * _SQL_
     * `*` :Supports almost all DB2 database SQL statements, be noted that all SQL commands should be ended with `;`, or `/` in a new line
   * _Scripting_
     * `sql` :Inherited from the scripting engine, to run scripts which contains a batches of all available commands
   * _Admin_
     * `ADM` :Run db2 `ADMIN_CMD` commands
-* MySQL(to be enhanced)
+    
+* **MySQL Database(to be enhanced)**
   * _SQL_
     * `*` :Supports almost all MySQL database SQL statements
   * _Console_
@@ -181,7 +185,8 @@ Command Overview
     * `show` : A bit different from the native `show`, provides more features such as fuzzy search.
     * `?` or `\?` : A bit different from the native `\?`, provides more features
     * `N/A` : Some commands are similar to the native `mysql` console
-* PostgreSQL(to be enhanced)
+    
+* **PostgreSQL Database(to be enhanced)**
   * _SQL_
     * `*` :Supports almost all PostgreSQL database SQL statements
   * _Console_
