@@ -166,7 +166,6 @@ public class Console {
         */
         setKeyCode("redo", "^Y");
         setKeyCode("undo", "^Z");
-        setKeyCode("backward-kill-word", "^?");
         setKeyCode("backward-word", "^[[1;3D");
         setKeyCode("forward-word", "^[[1;3C");
 

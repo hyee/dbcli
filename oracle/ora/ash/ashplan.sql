@@ -97,7 +97,7 @@ ash_data AS(
 ) ,
 xplan AS
  (SELECT a.*
-  FROM   qry, TABLE(dbms_xplan.display_awr(sq, plan_hash, NULL, format)) a
+  FROM   qry, TABLE(dbms_xplan.display_awr(sq, plan_hash, inst_id, format)) a
   WHERE  flag = 2
   UNION ALL
   SELECT a.*

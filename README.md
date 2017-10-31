@@ -2,7 +2,7 @@
 DBCLI : A CLI utility for DBA (Oracle/MySQL/DB2)
 =====================================================
 [![MIT License](http://img.shields.io/badge/Licence-MIT-brightgreen.svg)](https://en.wikipedia.org/wiki/MIT_License)
-![HELP](https://github.com/hyee/dbcli/blob/master/help.gif)
+![HELP](./help.gif)
 ![sshot-13](https://cloud.githubusercontent.com/assets/761520/14856219/d23eccbe-0cc9-11e6-9256-7275e91656d8.jpg)
 
 Description
@@ -40,10 +40,10 @@ For Windows OS, to avoid the word wrap in the terminal window which affects the 
 * In the `Font` tab, change the font size as smaller value.
 
 ### Linux: Pre-Requisitions
-Linux must be the `64-bit` version, and make sure `glibc >= v2.4`(use `ldd --version` to verify) are installed. Since Linux terminal doesn't have horizontal scrollbar, smaller font is preferred. It's recommended [Jessis Terminator](https://github.com/software-jessies-org/jessies/wiki/Downloads) which supports horizontal scrolling to launch dbcli in desktop enviroment.
+Linux must be the `64-bit` version, and make sure `glibc >= v2.4`(use `ldd --version` to verify) are installed. Since Linux terminal doesn't have horizontal scrollbar, smaller font is preferred. It's recommended [Jessies Terminator](https://github.com/software-jessies-org/jessies/wiki/Downloads) which supports horizontal scrolling to launch dbcli in desktop enviroment.
 
 ### OSX: Pre-Requisitions
-Only tested on OSX 10.12, lower version should be fine. Java 1.8 is required. It's recommended [Jessis Terminator](https://github.com/software-jessies-org/jessies/wiki/Downloads) which supports horizontal scrolling to launch dbcli in desktop enviroment.
+Only tested on OSX 10.12, lower version should be fine. Java 1.8 is required. It's recommended [Jessies Terminator](https://github.com/software-jessies-org/jessies/wiki/Downloads) which supports horizontal scrolling to launch dbcli in desktop enviroment.
 
 ### Configure environment
 Before running dbcli, make sure that you have installed JRE 1.8+ in your local PC. If you are using the version of "With-JRE" branch, this step can be skipped.
@@ -133,7 +133,6 @@ Command Overview
     * `search` :Search the source code
     * `-p` :Test a command and verify its input parameters
     * `help -a` or `set -a` : see where the commands/settings are defined
-    
 * **Oracle Database**
   * _SQL_
     * `*` :Supports almost all Oracle database SQL statements
@@ -163,7 +162,7 @@ Command Overview
   * _Others_
     * `describe/desc` :Describe Oracle object, provides more features than that of `sqlplus`
     * `xplan` :Show execution plan for input `SQL text/ID`, as well as downloading the 10053 trace file if specify the `-10053` option
-    
+
 * **DB2 Database(to be enhanced)**
   * _SQL_
     * `*` :Supports almost all DB2 database SQL statements, be noted that all SQL commands should be ended with `;`, or `/` in a new line
@@ -171,7 +170,7 @@ Command Overview
     * `sql` :Inherited from the scripting engine, to run scripts which contains a batches of all available commands
   * _Admin_
     * `ADM` :Run db2 `ADMIN_CMD` commands
-    
+
 * **MySQL Database(to be enhanced)**
   * _SQL_
     * `*` :Supports almost all MySQL database SQL statements
@@ -185,7 +184,7 @@ Command Overview
     * `show` : A bit different from the native `show`, provides more features such as fuzzy search.
     * `?` or `\?` : A bit different from the native `\?`, provides more features
     * `N/A` : Some commands are similar to the native `mysql` console
-    
+
 * **PostgreSQL Database(to be enhanced)**
   * _SQL_
     * `*` :Supports almost all PostgreSQL database SQL statements
