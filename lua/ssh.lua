@@ -358,7 +358,7 @@ local pscp_options='\n'..[[Options:
   -scp      force use of SCP protocol]]
 
 local pscp='"'..env.join_path(env.WORK_DIR,"bin",'pscp.exe')..'"'
-if not env.IS_WINDOWS~="windows" then pscp="scp" end
+if not env.IS_WINDOWS then pscp="scp" end
 local pscp_download_usage="Download file(s) from SSH server, support wildcards. Usage: ssh download [remote_path]<filename> [.|<local_path>] [options]"
 local pscp_upload_usage="Upload file(s) into SSH server, support wildcards. Usage: ssh uploaded  [local_path]<filename> [.|<remote_path>] [options]"
 local pscp_local_dir

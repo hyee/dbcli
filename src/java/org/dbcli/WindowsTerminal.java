@@ -3,7 +3,6 @@ package org.dbcli;
 import com.sun.jna.Pointer;
 import org.jline.terminal.Size;
 import org.jline.terminal.impl.jansi.win.JansiWinSysTerminal;
-import org.jline.terminal.impl.jna.win.JnaWinSysTerminal;
 
 import java.io.*;
 import java.nio.charset.Charset;
@@ -19,7 +18,7 @@ public class WindowsTerminal extends JansiWinSysTerminal implements MyTerminal {
     private CountDownLatch locker = null;
 
     public WindowsTerminal(String name, int codePage) throws IOException {
-        this(name, codePage,true, SignalHandler.SIG_IGN);
+        this(name, codePage, true, SignalHandler.SIG_IGN);
     }
 
     public WindowsTerminal(String name, int codePage, boolean nativeSignals, SignalHandler signalHandler) throws IOException {

@@ -55,9 +55,10 @@ public class Console {
     private ParserCallback parserCallback;
     private Parser parser;
     private volatile boolean pause = false;
-    private Highlighter highlighter = new Highlighter();
+    private Highlighter highlighter = new Highlighter(this);
     HashMap<String, Candidate[]> candidates = new HashMap<>(1024);
     Completer completer = new Completer();
+    public boolean isSubSystem = false;
 
     public interface CLibrary extends Library {
         Console.CLibrary INSTANCE = (Console.CLibrary)
@@ -124,7 +125,7 @@ public class Console {
     }
 
     public int getBufferWidth() {
-        if("terminator".equals(System.getenv("TERM"))) return 2000;
+        if ("terminator".equals(System.getenv("TERM"))) return 2000;
         return ((MyTerminal) terminal).getBufferWidth();
     }
 
@@ -410,7 +411,6 @@ public class Console {
     interface ParserCallback {
         Object[] call(Object... e);
     }
-
 
     class Parser extends DefaultParser {
         String secondPrompt = "    ";

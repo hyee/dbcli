@@ -157,9 +157,11 @@ local previous_prompt
 function env.set_subsystem(cmd,prompt)
     if cmd~=nil then
         env._SUBSYSTEM=cmd
+        console.isSubSystem=true
         env.set_prompt(cmd,prompt or cmd,false,9)
     else
         env._SUBSYSTEM,_G._SUBSYSTEM=nil,nil
+        console.isSubSystem=false
         env.set_prompt(cmd,nil,false,9)
     end
 end

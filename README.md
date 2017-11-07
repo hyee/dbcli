@@ -43,7 +43,13 @@ For Windows OS, to avoid the word wrap in the terminal window which affects the 
 Linux must be the `64-bit` version, and make sure `glibc >= v2.4`(use `ldd --version` to verify) are installed. Since Linux terminal doesn't have horizontal scrollbar, smaller font is preferred. It's recommended [Jessies Terminator](https://github.com/software-jessies-org/jessies/wiki/Downloads) which supports horizontal scrolling to launch dbcli in desktop enviroment.
 
 ### OSX: Pre-Requisitions
-Only tested on OSX 10.12, lower version should be fine. Java 1.8 is required. It's recommended [Jessies Terminator](https://github.com/software-jessies-org/jessies/wiki/Downloads) which supports horizontal scrolling to launch dbcli in desktop enviroment.
+Only tested on OSX 10.12, lower version should be fine. Java 1.8 is required. It's recommended [Jessies Terminator](https://github.com/software-jessies-org/jessies/wiki/Downloads) which supports horizontal scrolling to launch dbcli in desktop enviroment, and add entry `<hostname>.local` into `/etc/hosts` to speed up the JVM performance.
+For Example:
+```
+127.0.0.1  localhost mac-pc.local
+::1        localhost mac-pc.local
+```
+
 
 ### Configure environment
 Before running dbcli, make sure that you have installed JRE 1.8+ in your local PC. If you are using the version of "With-JRE" branch, this step can be skipped.

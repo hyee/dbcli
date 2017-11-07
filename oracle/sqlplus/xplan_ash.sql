@@ -5,7 +5,7 @@ set echo off verify off termout off timing off define "&" concat "." trimspool o
 -- If you need to debug, uncomment the following line
 -- set echo on verify on termout on
 set doc off
-doc
+
 /*[[
    Single SQL statement execution analysis using ASH (from 10.2 on)
 -- Script:       xplan_ash.sql

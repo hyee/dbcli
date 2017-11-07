@@ -43,6 +43,11 @@ public class Highlighter extends DefaultHighlighter {
     public Map<String, ?> keywords = new HashMap();
     public Map<String, Object> commands = new HashMap();
     boolean enabled = true;
+    Console console;
+
+    public Highlighter(Console console) {
+        this.console = console;
+    }
 
     public void setAnsi(String ansi) {
         if (ansi.equals(this.ansi)) return;
@@ -75,22 +80,24 @@ public class Highlighter extends DefaultHighlighter {
         setAnsi("\033[0m");
     }
 
-    Pattern p = Pattern.compile("([^\\s\\|]+)(.*)");
+    Pattern p = Pattern.compile("([^\\s\\|;/]+)(.*)");
+    AttributedStringBuilder sb = new AttributedStringBuilder();
 
     public AttributedString highlight(LineReader reader, String buffer) {
-        AttributedStringBuilder sb = new AttributedStringBuilder();
-        Matcher m = p.matcher(buffer);
-        if (enabled && m.find()) {
-            if (!commands.containsKey(m.group(1).toUpperCase())) {
-                sb.appendAnsi(errorAnsi);
-                sb.append(m.group(1));
-                sb.appendAnsi(ansi);
-                sb.append(m.group(2));
-            } else {
-                sb.appendAnsi(ansi);
-                sb.append(buffer);
-            }
-        } else sb.append(buffer);
+        sb.setLength(0);
+        if (console.isSubSystem) {
+            sb.appendAnsi(ansi);
+            sb.append(buffer);
+        } else {
+            Matcher m = p.matcher(buffer);
+            if (enabled && m.find()) {
+                if (!commands.containsKey(m.group(1).toUpperCase())) {
+                    sb.ansiAppend(errorAnsi).append(m.group(1)).ansiAppend(ansi).append(m.group(2));
+                } else {
+                    sb.ansiAppend(ansi).append(buffer);
+                }
+            } else sb.append(buffer);
+        }
         return sb.toAttributedString();
     }
 

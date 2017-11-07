@@ -5,7 +5,7 @@ local system=env.class(env.scripter)
 function system:ctor()
     self.process=nil
     self.proc=java.require("org.dbcli.SubSystem")
-    self.prompt_pattern="^.+[>\\$#@] *$"
+    self.prompt_pattern="^.+[>\\$#@:] *$"
     self.support_redirect=true
 end
 
@@ -104,7 +104,7 @@ function system:call_process(cmd,is_native)
         env.log_debug("subsystem","Work dir: "..self.work_dir)
         env.log_debug("subsystem","Environment: \n"..table.dump(self.env))
 
-        if (do_redirect or not is_native) and self.support_redirect then
+        if (do_redirect or not is_native) and self.support_redirect or (is_native and not self.support_redirect) then
             io.write("Connecting to "..self.name.."...")
             --print(table.concat(self.startup_cmd," "))
             self.process=self.proc:create(self.prompt_pattern,self.work_dir,self.startup_cmd,self.env)
