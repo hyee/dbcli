@@ -58,7 +58,7 @@ end
 function awr.dump_report(stmt,starttime,endtime,instances,container)
     starttime,endtime,instances,container=awr.get_range(starttime,endtime,instances,container)
     env.checkerr(db:check_access('dbms_workload_repository.awr_report_html',1),'Sorry, you dont have the "execute" privilege on package "dbms_workload_repository"!')
-    local args={starttime,endtime,instances or "",'#VARCHAR','#CLOB','#CURSOR'}
+    local args={starttime,endtime,instances or "",'#VARCHAR','#CLOB','#CURSOR','#VARCHAR','#CLOB'}
     cfg.set("feed","off")
     stmt=stmt:replace("@lz_compress@",env.oracle.lz_compress)
     db:exec(stmt:replace('@get_range@',awr.extract_period()),args)
@@ -68,6 +68,13 @@ function awr.dump_report(stmt,starttime,endtime,instances,container)
             args[5]=loader:Base64ZlibToText(pieces);
         end
         print("Result written to file "..env.write_cache(args[4],args[5]))
+        if args[8] and args[8]~='' then
+            if not args[8]:find(' ') then
+                local pieces=args[8]:split('\n')
+                args[8]=loader:Base64ZlibToText(pieces);
+            end
+            print("Result written to file "..env.write_cache(args[7],args[8]))
+        end
         db.resultset:print(args[6],db.conn)
     else
         print('Cannot generate file: '..args[4])
@@ -119,10 +126,11 @@ end
 function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,container,typ)
     local stmt=[[
     DECLARE
-        rs       CLOB;
-        filename VARCHAR2(200);
-        cur      SYS_REFCURSOR;
-        typ      VARCHAR2(30):='AWR';
+        rs        CLOB;
+        rs1       CLOB;
+        filename  VARCHAR2(200);
+        cur       SYS_REFCURSOR;
+        typ       VARCHAR2(30):='AWR';
         @get_range@
         @lz_compress@
         PROCEDURE extract_awr(p_start VARCHAR2, p_end VARCHAR2, p_inst VARCHAR2,p_start2 VARCHAR2:=NULL, p_end2 VARCHAR2:=NULL) IS
@@ -209,7 +217,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
                 $END
             ELSE
                 $IF DBMS_DB_VERSION.VERSION>11 OR DBMS_DB_VERSION.VERSION>10 AND DBMS_DB_VERSION.release>1 $THEN
-                    dbms_workload_repository.awr_set_report_thresholds(top_n_sql => 50);
+                    dbms_workload_repository.awr_set_report_thresholds(top_n_sql => 50,top_n_segments=>30);
                 $END
 
                 IF NOT (inst IS NULL OR INSTR(inst, ',') > 0) THEN
@@ -244,6 +252,23 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
                     END;
                 END LOOP;
                 CLOSE rc;
+                /*
+                $IF DBMS_DB_VERSION.VERSION>11 $THEN
+                IF inst is null or not instr(inst,',')>0 THEN
+                    rs1 := sys.dbms_perf.report_perfhub(is_realtime => 0,
+                                                        outer_start_time => stim,
+                                                        outer_end_time => etim,
+                                                        selected_start_time => stim,
+                                                        selected_end_time => etim,
+                                                        inst_id => inst,
+                                                        monitor_list_detail => 50,
+                                                        workload_sql_detail => 50,
+                                                        addm_task_detail => 20);
+                   
+                    dbms_lob.append(rs,rs1);
+                END IF;
+                $END
+                */
             END IF;
         END;
     BEGIN
@@ -283,9 +308,11 @@ end
 function awr.extract_ash(starttime,endtime,instances,container)
     local stmt=[[
     DECLARE
-        rs       CLOB;
-        filename VARCHAR2(200);
-        cur      SYS_REFCURSOR;
+        rs            CLOB;
+        rs1           CLOB;
+        filename      VARCHAR2(200);
+        filename2     VARCHAR2(200);
+        cur           SYS_REFCURSOR;
         wait_class    VARCHAR2(100);
         service_name  VARCHAR2(30);
         module        VARCHAR2(300);
@@ -378,9 +405,12 @@ function awr.extract_ash(starttime,endtime,instances,container)
                                                                                        l_client_id=>client_id))) LOOP
                     IF r.output IS NOT NULL THEN
                         dbms_lob.writeappend(rs, LENGTH(r.output), r.output);
-
                     END IF;
                 END LOOP;
+                $IF DBMS_DB_VERSION.VERSION>11 $THEN
+                    rs1       := DBMS_WORKLOAD_REPOSITORY.ASH_REPORT_ANALYTICS(dbid,inst,stim,etim);
+                    filename2 := 'ash_analytics_' || p_start || '_' || p_end || '_' || nvl(inst, 'a') || '.html';
+                $END
             $END
             END IF;
         END;
@@ -390,6 +420,8 @@ function awr.extract_ash(starttime,endtime,instances,container)
         :4 := filename;
         :5 := rs;
         :6 := cur;
+        :7 := filename2;
+        :8 := rs1;
     END;]]
     env.checkhelp(endtime)
     awr.dump_report(stmt,starttime,endtime,instances,container)
@@ -459,11 +491,11 @@ function awr.extract_addm(starttime,endtime,instances,container)
 end
 
 function awr.onload()
-    env.set_command(nil,"awrdump","Extract AWR report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>] }",awr.extract_awr,false,5)
+    env.set_command(nil,{"awrrpt","awrdump"},"Extract AWR report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>] }",awr.extract_awr,false,5)
     env.set_command(nil,"awrdiff","Extract AWR Diff report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> <YYMMDDHH24MI> [YYMMDDHH24MI] [inst_id|<inst1,inst2,...>] }",awr.extract_awr_diff,false,7)
     env.set_command(nil,"addmdiff","Extract AWR Diff report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> <YYMMDDHH24MI> [YYMMDDHH24MI] [inst_id|<inst1,inst2,...>] }",awr.extract_addm_diff,false,7)
-    env.set_command(nil,"ashdump","Extract ASH report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [<inst1[,inst2...>]|<client_id>|<wait_class>|<service_name>|<module>|<action>] [container]}",awr.extract_ash,false,5)
-    env.set_command(nil,"addmdump","Extract ADDM report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>] }",awr.extract_addm,false,5)
+    env.set_command(nil,{"ashrpt","ashdump"},"Extract ASH report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [<inst1[,inst2...>]|<client_id>|<wait_class>|<service_name>|<module>|<action>] [container]}",awr.extract_ash,false,5)
+    env.set_command(nil,{"addmrpt","addmdump"},"Extract ADDM report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>] }",awr.extract_addm,false,5)
 end
 
 return awr
