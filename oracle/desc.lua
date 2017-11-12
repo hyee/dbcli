@@ -200,6 +200,26 @@ local desc_sql={
     INDEX={[[select /*INTERNAL_DBCLI_CMD*/ column_position NO#,column_name,column_length,char_length,descend from all_ind_columns
             WHERE  index_owner=:1 and index_name=:2
             ORDER BY NO#]],
+            [[WITH r1 AS (SELECT /*+no_merge*/* FROM all_part_key_columns WHERE owner=:owner and NAME = :object_name),
+                    r2 AS (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=:owner and NAME = :object_name)
+             SELECT LOCALITY,
+                    PARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
+                                            FROM   r1
+                                            START  WITH column_position = 1
+                                            CONNECT BY PRIOR column_position = column_position - 1) PARTITIONED_BY,
+                    PARTITION_COUNT PARTS,
+                    SUBPARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
+                                                FROM   R2
+                                                START  WITH column_position = 1
+                                                CONNECT BY PRIOR column_position = column_position - 1) SUBPART_BY,
+                    def_subpartition_count subs,
+                    DEF_TABLESPACE_NAME,
+                    DEF_PCT_FREE,
+                    DEF_INI_TRANS,
+                    DEF_LOGGING
+                FROM   all_part_indexes
+                WHERE  index_name = :object_name
+                AND    owner = :owner]],
             [[SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/* FROM ALL_INDEXES WHERE owner=:1 and index_name=:2]]},
     TYPE=[[
         SELECT /*INTERNAL_DBCLI_CMD*/
@@ -272,9 +292,10 @@ local desc_sql={
                CASE WHEN num_rows>=num_nulls THEN round(num_nulls*100/nullif(num_rows,0),2) END "Nulls(%)",
                CASE WHEN num_rows>=num_nulls THEN round((num_rows-num_nulls)/nullif(num_distinct,0),2) END CARDINALITY,
                nullif(HISTOGRAM,'NONE') HISTOGRAM,
+               NUM_BUCKETS buckets,
                (select trim(comments) from all_col_comments where owner=a.owner and table_name=a.table_name and column_name=a.column_name) comments
                
-               /*,decode(data_type
+               ,decode(data_type
                   ,'NUMBER'       ,to_char(utl_raw.cast_to_number(low_value))
                   ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(low_value))
                   ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(low_value))
@@ -288,7 +309,7 @@ local desc_sql={
                            LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(low_value, 9, 2), 'XX') - 1, '00')) || ':' ||
                            LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(low_value, 11, 2), 'XX') - 1, '00')) || ':' ||
                            LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(low_value, 13, 2), 'XX') - 1, '00')))
-                  ,  low_value) low_v,
+                  ,  low_value) low_value,
                 decode(data_type
                       ,'NUMBER'       ,to_char(utl_raw.cast_to_number(high_value))
                       ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(high_value))
@@ -303,19 +324,36 @@ local desc_sql={
                            LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 9, 2), 'XX') - 1, '00')) || ':' ||
                            LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 11, 2), 'XX') - 1, '00')) || ':' ||
                            LTRIM(TO_CHAR(TO_NUMBER(SUBSTR(high_value, 13, 2), 'XX') - 1, '00')))
-                      ,  high_value) hi_v*/
+                      ,  high_value) high_value
         FROM   (select * from all_tab_cols a where a.owner=:owner and a.table_name=:object_name) a,
                (select * from all_tables a where a.owner=:owner and a.table_name=:object_name) b
         WHERE  a.table_name=b.table_name(+)
         AND    a.owner=b.owner(+)
         ORDER BY NO#]],
     [[
+        WITH I AS (SELECT /*+no_merge*/ I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
+                   PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
+                            SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
+                            FROM   (SELECT /*+no_merge*/* FROM all_part_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
+                            START  WITH column_position = 1
+                            CONNECT BY PRIOR column_position = column_position - 1]'),'//V') PARTITIONED_BY,
+                   nullif(SUBPARTITIONING_TYPE,'NONE')||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
+                            SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
+                            FROM   (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
+                            START  WITH column_position = 1
+                            CONNECT BY PRIOR column_position = column_position - 1]'),'//V') SUBPART_BY
+                    FROM   ALL_INDEXES I,ALL_PART_INDEXES C
+                    WHERE  C.OWNER(+) = I.OWNER
+                    AND    C.INDEX_NAME(+) = I.INDEX_NAME
+                    AND    I.TABLE_OWNER = :owner
+                    AND    I.TABLE_NAME = :object_name)
         SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('_optim_peek_user_binds','false')
+             DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
              DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
              DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
              DECODE(C.COLUMN_POSITION, 1, DECODE(I.UNIQUENESS,'UNIQUE','YES','NO'), '') "UNIQUE",
-             DECODE(C.COLUMN_POSITION, 1, PARTITIONED, '') "PARTITIONED",
-             DECODE(C.COLUMN_POSITION, 1, (select nvl(max(LOCALITY),'GLOBAL') from all_part_indexes l where l.owner=i.owner and l.index_name=i.index_name), '') "LOCALITY",
+             DECODE(C.COLUMN_POSITION, 1, NVL(PARTITIONED_BY||NULLIF(','||SUBPART_BY,','),'NO'), '') "PARTITIONED",
+             DECODE(C.COLUMN_POSITION, 1, LOCALITY, '') "LOCALITY",
            --DECODE(C.COLUMN_POSITION, 1, (SELECT NVL(MAX('YES'),'NO') FROM ALL_Constraints AC WHERE AC.INDEX_OWNER = I.OWNER AND AC.INDEX_NAME = I.INDEX_NAME), '') "IS_PK",
              DECODE(C.COLUMN_POSITION, 1, decode(I.STATUS,'N/A',(SELECT MIN(STATUS) FROM All_Ind_Partitions p WHERE p.INDEX_OWNER = I.OWNER AND p.INDEX_NAME = I.INDEX_NAME),I.STATUS), '') STATUS,
              DECODE(C.COLUMN_POSITION, 1, i.BLEVEL) BLEVEL,
@@ -325,11 +363,9 @@ local desc_sql={
              C.COLUMN_POSITION NO#,
              C.COLUMN_NAME,
              C.DESCEND
-        FROM   ALL_IND_COLUMNS C, ALL_INDEXES I
+        FROM   ALL_IND_COLUMNS C,  I
         WHERE  C.INDEX_OWNER = I.OWNER
         AND    C.INDEX_NAME = I.INDEX_NAME
-        AND    I.TABLE_OWNER = :owner
-        AND    I.TABLE_NAME = :object_name
         ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION]],
     [[
         SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('_optim_peek_user_binds','false')
@@ -363,6 +399,26 @@ local desc_sql={
                 AND    A.CONSTRAINT_NAME = C.CONSTRAINT_NAME(+)
                 AND    (A.constraint_type != 'C' OR A.constraint_name NOT LIKE 'SYS\_%' ESCAPE '\'))
     ]],
+    [[WITH r1 AS (SELECT /*+no_merge*/* FROM all_part_key_columns WHERE owner=:owner and NAME = :object_name),
+           r2 AS (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=:owner and NAME = :object_name)
+    SELECT PARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
+                                FROM   r1
+                                START  WITH column_position = 1
+                                CONNECT BY PRIOR column_position = column_position - 1) PARTITIONED_BY,
+        PARTITION_COUNT PARTS,
+        SUBPARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
+                                    FROM   R2
+                                    START  WITH column_position = 1
+                                    CONNECT BY PRIOR column_position = column_position - 1) SUBPART_BY,
+        def_subpartition_count subs,
+        DEF_TABLESPACE_NAME,
+        DEF_PCT_FREE,
+        DEF_INI_TRANS,
+        DEF_LOGGING,
+        DEF_COMPRESSION
+    FROM   all_part_tables
+    WHERE  table_name = :object_name
+    AND    owner = :owner]],
     [[
         SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/*
         FROM   ALL_TABLES T
@@ -418,6 +474,7 @@ desc_sql.TYPE={desc_sql.TYPE,desc_sql.PACKAGE}
 
 function desc.desc(name,option)
     env.checkhelp(name)
+    set.set("BYPASSEMPTYRS","on")
     local rs,success,err
     local obj=db:check_obj(name)
     env.checkerr(obj,'Cannot find target object!')
@@ -464,22 +521,57 @@ function desc.desc(name,option)
         rs[k]=v
     end
 
-    local dels=string.rep("=",100)
+    local dels='\n'..string.rep("=",100)
     local feed=cfg.get("feed")
     cfg.set("feed","off",true)
     print(("%s : %s%s%s\n"..dels):format(rs[4],rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3]))
+    
+    --[[
+    local function travel(list)
+        for index,sql in ipairs(list) do
+            if type(sql)=="table" then 
+                travel(sql)
+            elseif type(sql)=="string" and #sql>10 then
+                --if sql:find("/*PIVOT*/",1,true) then cfg.set("PIVOT",1) end
+                local typ=db.get_command_type(sql)
+                local result
+                if typ=='DECLARE' or typ=='BEGIN' then
+                    rs['v_cur']='#CURSOR'
+                    db:dba_query(db.internal_call,sql,rs)
+                    result=rs.v_cur
+                else
+                    result=db:dba_query(db.internal_call,sql,rs)
+                end
+                list[index]=db.resultset:rows(result,-1)
+                if sql:find("/*PIVOT*/",1,true) then list[index]=grid.show_pivot(list[index]) end
+            end 
+        end
+    end
+    travel(sqls)
+    
+    if #sqls==1 then
+        env.grid.print(sqls[1])
+    else
+        env.grid.merge(sqls,true)
+    end
+    --]]
+    
     for i,sql in ipairs(sqls) do
         if sql:find("/*PIVOT*/",1,true) then cfg.set("PIVOT",1) end
         local typ=db.get_command_type(sql)
+        local result
         if typ=='DECLARE' or typ=='BEGIN' then
             rs['v_cur']='#CURSOR'
             db:dba_query(db.internal_call,sql,rs)
-
-            db:print_result(rs.v_cur)
+            result=rs.v_cur
         else
-            db:dba_query(db.query,sql,rs)
+            result=db:dba_query(db.internal_call,sql,rs)
         end
-        if i<#sqls then print(dels) end
+        result=db.resultset:rows(result,-1)
+        if #result>1 then 
+            grid.print(result)
+            if i<#sqls then print(dels) end
+        end
     end
 
     if option and option:upper()=='ALL' then

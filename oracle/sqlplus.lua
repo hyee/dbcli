@@ -9,9 +9,9 @@ function sqlplus:ctor()
     self.description="Switch to sqlplus with same login, the default working folder is 'oracle/sqlplus'. Usage: @@NAME [-n|-d<work_path>] [other args]"
     self.help_title='Run SQL*Plus script under the "sqlplus" directory. '
     self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."sqlplus",{}
-    self.prompt_pattern="^(.+[>\\$#@] *| *\\d+ +)$"
+    self.prompt_pattern="^(.+[>\\$#@:] *| *\\d+ +)$"
     self.block_input=true
-    if not env.IS_WINDOWS then self.support_redirect=false end
+    self.support_redirect=false
 end
 
 
@@ -69,8 +69,11 @@ function sqlplus:make_sqlpath()
         if c1~=c2 then return c1<c2 end
         return a<b
     end)
+    
     self.env['SQLPATH']=table.concat(path,env.IS_WINDOWS and ';' or ':')
+    self.env['ORACLE_PATH']=self.env['SQLPATH']
     env.uv.os.setenv("SQLPATH",self.env['SQLPATH'])
+    env.uv.os.setenv("ORACLE_PATH",self.env['ORACLE_PATH'])
     --self.proc:setEnv("SQLPATH",self.env['SQLPATH'])
 end
 
@@ -129,7 +132,19 @@ function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
         tmpfile=env.join_path(self.work_path,tmpfile)
         local f,err=io.open(tmpfile,'w')
         env.checkerr(f,"Unable to write file "..tmpfile)
-        content=content:format(self.work_path,file_dir,self.script_dir,context,file,arg or ""):gsub('[\n\r]+%s+','\n')..'\n'
+        local param=""
+        if type(args)=="table" then
+            param={}
+            for k,v in ipairs(args) do
+                if not tostring(v):find('^".*"$') and tostring(v):find("%s") then
+                    param[k]='"'..v..'"'
+                else
+                    param[k]=v
+                end
+            end
+            param=table.concat(param," ") or ""
+        end
+        content=content:format(self.work_path,file_dir,self.script_dir,context,file,param):gsub('[\n\r]+%s+','\n')..'\n'
         f:write(content)
         f:close()
         self:call_process('@"'..tmpfile..'"')
@@ -184,7 +199,6 @@ function sqlplus:f7(n,key_event,str)
 end
 
 function sqlplus:__onload()
-    
     
 end
 

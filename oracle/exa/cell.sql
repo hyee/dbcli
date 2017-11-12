@@ -48,8 +48,38 @@ WHERE  conftype = 'CELL'
 ORDER BY 2;
 
 col total_size,free_size,HD_SIZE,FD_SIZE,flash_cache,flash_log format kmg
-col FC_ALLOC,ALLOC_OLTP,ALLOC_OLTP_KEEP,alloc_unflush_keep,ALLOC_UNFLUSH,USED,OLTP,KEEP,OLTP_KEEP,FCC,FCC_KEEP format kmg
+col flashcache,flashlog,FC_ALLOC,ALLOC_OLTP,ALLOC_OLTP_KEEP,alloc_dirty_keep,ALLOC_dirty,USED,OLTP,KEEP,OLTP_KEEP,FCC,FCC_KEEP format kmg
 grid {[[
+    SELECT NVL(CELL,'--TOTAL--') cell,
+           SUM("FlashCache") "FlashCache",
+           SUM("FlashLog") "FlashLog",
+           SUM("CellDisks") "CellDisks",
+           SUM("GridDisks") "GridDisks",
+           SUM("HardDisks") "HardDisks",
+           SUM("FlashDisks") "FlashDisks",
+           SUM("maxHDIOPS") "HDmaxIOPS",
+           SUM("maxFDIOPS") "FDmaxIOPS",
+           SUM("maxHDMBPS") "HDmaxMBPS",
+           SUM("maxFDMBPS") "FDmaxMBPS",
+           SUM("dwhHDQL") "HDdwhQL",
+           SUM("dwhFDQL") "FDdwhQL",
+           SUM("oltpHDQL") "HDoltpQL",
+           SUM("oltpFDQL") "FDoltpQL",
+           MAX("hardDiskType") "hardDiskType",
+           MAX("flashDiskType") "flashDiskType"
+    FROM   (SELECT extractvalue(xmltype(a.confval), '/cli-output/context/@cell') cell, b.*
+            FROM   v$cell_config_info a,
+                   XMLTABLE('/cli-output/not-set' PASSING xmltype(a.confval) COLUMNS --
+                            "FlashCache" INT path 'effectiveFlashCacheSize', "FlashLog" INT path 'effectiveFlashLogSize',
+                            "GridDisks" INT path 'numGridDisks', "CellDisks" INT path 'numCellDisks', "HardDisks" INT path 'numHardDisks',
+                            "FlashDisks" INT path 'numFlashDisks', "maxHDIOPS" INT path 'maxPDIOPS', "maxFDIOPS" INT path 'maxFDIOPS',
+                            "maxHDMBPS" INT path 'maxPDMBPS', "maxFDMBPS" INT path 'maxFDMBPS', "dwhHDQL" INT path 'dwhPDQL', "dwhFDQL" INT path 'dwhFDQL',
+                            "oltpHDQL" INT path 'oltpPDQL', "oltpFDQL" INT path 'oltpFDQL', "hardDiskType" VARCHAR2(300) path 'hardDiskType',
+                            "flashDiskType" VARCHAR2(300) path 'flashDiskType', "flashCacheStatus" VARCHAR2(300) path 'flashCacheStatus',
+                            "cellPkg" VARCHAR2(300) path 'cellPkg') b
+            WHERE  conftype = 'AWRXML')
+    GROUP  BY ROLLUP(CELL)
+]],'-',[[
         SELECT * FROM (
         SELECT  NVL((SELECT extractvalue(xmltype(c.confval), '/cli-output/context/@cell')
                         FROM   v$cell_config c
@@ -62,18 +92,9 @@ grid {[[
                 SUM(freeSpace) free_size,
                 SUM(DECODE(disktype, 'HardDisk', siz)) HD_SIZE,
                 SUM(DECODE(disktype, 'FlashDisk', siz)) FD_SIZE,
-                SUM(fl) flash_log,
                 '|' "|"
         FROM   (SELECT  CELLNAME,CELLHASH,
-                        b.*,
-                        (SELECT SUM(siz)
-                                FROM   v$cell_state d,
-                                XMLTABLE('/flashlogstore_stats' PASSING XMLTYPE(d.statistics_value) COLUMNS --
-                                        celldisk VARCHAR2(100) path 'stat[@name="celldisk"]',
-                                        siz INT path 'stat[@name="size"]') c
-                                WHERE  d.statistics_type = 'FLASHLOG'
-                                AND    d.cell_name = a.cellname
-                                AND    c.celldisk = b.name) fl
+                        b.*
                 FROM   v$cell_config a,
                 XMLTABLE('//celldisk' PASSING xmltype(a.confval) COLUMNS --
                             NAME VARCHAR2(300) path 'name',
@@ -92,8 +113,8 @@ grid {[[
                 'Flash cache bytes allocated' AS fc_alloc,
                 'Flash cache bytes allocated for OLTP data' AS alloc_oltp,
                 'Flash cache bytes allocated for OLTP keep objects' AS alloc_oltp_keep,
-                'Flash cache bytes allocated for unflushed data' AS alloc_unflush,
-                'Flash cache bytes allocated for unflushed keep objects' AS alloc_unflush_keep,
+                'Flash cache bytes allocated for unflushed data' AS alloc_dirty,
+                'Flash cache bytes allocated for unflushed keep objects' AS alloc_dirty_keep,
                 'Flash cache bytes used' AS used,
                 'Flash cache bytes used for OLTP data' AS oltp,
                 'Flash cache bytes used - keep objects' AS keep,

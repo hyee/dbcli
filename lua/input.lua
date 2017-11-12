@@ -18,6 +18,7 @@ if console:getBufferWidth()<=terminal:getWidth()+1 then
 	print("* Your terminal doesn't support horizontal scrolling, lines longer than screen width default to be chopped.")
 	print("  Please run 'set linesize <cols>' to a larger value if preferred folding the long lines rather than chopping.")
 end
+console.isSubSystem=false
 print()
 --start the CLI interpretor
 

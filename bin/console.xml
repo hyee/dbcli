@@ -31,11 +31,11 @@
 			<controls show_menu="1" show_toolbar="1" show_searchbar="1" show_statusbar="1" show_tabs="1" hide_single_tab="1" tabs_on_bottom="0" hide_tab_icons="0" hide_tab_close_button="0" show_scrollbars="1" hide_tab_new_button="0"/>
 			<transparency type="0" active_alpha="206" inactive_alpha="255" r="0" g="0" b="0" active="1"/></fullscreen>
 		<controls show_menu="1" show_toolbar="1" show_searchbar="1" show_statusbar="0" show_tabs="1" hide_single_tab="0" tabs_on_bottom="0" hide_tab_icons="1" hide_tab_close_button="0" show_scrollbars="1" hide_tab_new_button="0"/>
-		<styles caption="1" resizable="1" taskbar_button="1" border="1" inside_border="2" split_bar_size="0" tray_icon="1" quake_like="0" quake_animation_time="300" jumplist="1" integrated_ime="1" hide_when_inactive="0" per_monitor_dpi="0" keep_view_theme="0">
+		<styles caption="1" resizable="1" taskbar_button="1" border="1" inside_border="2" split_bar_size="1" tray_icon="1" quake_like="0" quake_animation_time="300" jumplist="1" integrated_ime="1" hide_when_inactive="0" per_monitor_dpi="0" keep_view_theme="0">
 			<selection_color r="128" g="128" b="128"/>
 			<highlight_color r="191" g="191" b="191"/></styles>
 		<position x="0" y="0" save_position="0" w="1000" h="700" save_size="0" z_order="0" dock="0" snap="-1" save_state="0" state="2"/>
-		<transparency type="0" active_alpha="206" inactive_alpha="255" r="0" g="0" b="0" active="1"/></appearance>
+		<transparency type="0" active_alpha="206" inactive_alpha="255" r="0" g="0" b="0" active="0"/></appearance>
 	<behavior>
 		<copy_paste copy_on_select="1" clear_on_copy="0" sensitive_copy="1" no_wrap="1" eol_spaces="1" trim_spaces="1" rtf="1" copy_newline_char="0" include_left_delimiter="0" include_right_delimiter="0" left_delimiters=" ([" right_delimiters=" )]"/>
 		<scroll page_scroll_rows="0"/>
@@ -152,7 +152,7 @@
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="wspload"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="wspsave"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="fwdmouse"/>
-		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="externalcmd1"/>
+		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="80" command="externalcmd1"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="externalcmd2"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="externalcmd3"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="externalcmd4"/>

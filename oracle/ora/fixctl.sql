@@ -5,7 +5,7 @@
    --]]
 ]]*/
 select * from &CHECK_ACCESS_CTL
-where ((:V1 IS NULL and optimizer_feature_enable=(select value from v$parameter where name='optimizer_features_enable'))
+where ((:V1 IS NULL and value=0)
   or   (:V1 IS NOT NULL and instr(lower(BUGNO||DESCRIPTION||SQL_FEATURE||event),lower(:V1))>0))
 AND    inst_id=nvl(:V3,userenv('instance'))
 and    session_id=nvl(:V2,userenv('sid')) 

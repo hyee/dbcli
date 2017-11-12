@@ -1,12 +1,61 @@
 /*[[
-  Generate delta values based on Exadata cell stats. Usage: @@NAME [options] [-pred] 
+  Generate delta values based on Exadata cell stats. Usage: @@NAME [options] [-pred|-fcc] [-cell] [-diskio] 
   -pred: show offload predicate info instead of db wait events
+  -fcc : show columnar flash cache detail
+  -cell: detail to cell level
+  -diskio: show disk IO stats instead of ASM stats
   --[[
         @CHECK_VERSION: 12.1={}
         @CHECK_ACCESS_ALL: v$CELL_DB/v$CELL_GLOBAL/v$CELL_IOREASON/v$cell_state/v$cell_config/gv$osstat/gv$sys_time_model/gv$system_event/gv$asm_disk_stat/gv$asm_diskgroup={1}
         &sec1: total={off}, s={on}
-        &cell: default={}, d={,cell}
+        &cell: default={}, cell={,cell}
         &cellname: default={nvl((select /*+result_cache*/ extractvalue(xmltype(a.confval),'/cli-output/context/@cell') from v$cell_config a where a.CELLNAME=b.CELL_NAME and rownum<2),'--TOTAL--') cell}
+        &diskio: {
+            default={/*grid={topic="ASM Stats", max_rows=10,order_by='-gid,-bytes',fixed_title=true}*/
+              SELECT   grouping_id(g.name) gid, 
+                       nvl(g.name,'--TOTAL--') diskgroup &cell, 
+                       count(DISTINCT ds.inst_id) "INSTANCES",
+                       count(DISTINCT ds.disk_number) "DISKS",
+                       count(DISTINCT regexp_replace(ds.path, '.*/', '')) paths,
+                       SUM(ds.TOTAL_MB)*1024*1024/count(DISTINCT ds.inst_id) TOTAL_SIZE,
+                       SUM(ds.FREE_MB)*1024*1024/count(DISTINCT ds.inst_id) FREE_SIZE,
+                       '|' "|",
+                       SUM(ds.bytes_read + ds.bytes_written) bytes,
+                       SUM(ds.HOT_BYTES_READ + ds.HOT_BYTES_written) hot_bytes,
+                       SUM(ds.bytes_read) read,
+                       SUM(ds.bytes_written) write,
+                       '|' "|",
+                       SUM(ds.reads + ds.writes) total_io,
+                       SUM(ds.reads) READS,
+                       SUM(ds.writes) writes,
+                       SUM(ds.READ_ERRS + ds.write_ERRS) io_errs,
+                       SUM(ds.read_time + ds.write_time)*1e3 rw_ms,
+                       SUM(ds.read_time)*1e3 read_ms,
+                       SUM(ds.write_time)*1e3 write_ms
+                FROM   (select failgroup cell,a.* from gv$asm_disk_stat a) ds, gv$asm_diskgroup g
+                WHERE  ds.mount_status = 'CACHED'
+                AND    g.inst_id = ds.inst_id
+                AND    g.group_number = ds.group_number
+                GROUP BY rollup((g.name &cell))},
+            diskio={/*grid={topic="Disk Level IO Stats(R=Read  W=Write S=Small L=Large)",include_zero=true,fixed_title=true,order_by=1}*/
+                    SELECT *
+                    FROM   (SELECT nvl(disk_type, '-ALL-') TYPE, 0 tot_io, 0 tot_b, 0 tot_ms,NAME, 
+                                   round(DECODE(NAME,'Ticks',AVG(VALUE),SUM(VALUE)),3) VALUE
+                            FROM   (SELECT cell_hash,
+                                           disk_name,
+                                           decode(SUBSTR(disk_name, 1, 2), 'FD', 'Flash', 'Hard') disk_type,
+                                           CASE WHEN metric_name LIKE 'Ticks %' THEN 'Ticks' ELSE metric_name END NAME,
+                                           case when metric_name like '%latency' then 1e-3 else 1 end*metric_value VALUE
+                                    FROM   v$cell_disk a
+                                    WHERE  disk_name NOT LIKE '/%') a
+                            GROUP  BY NAME, ROLLUP(disk_type))
+                    PIVOT(MAX(VALUE)
+                    FOR   NAME IN( /*'Ticks' util, */'Total Reads' AS R, 'Total Writes' AS W, 
+                                   'Small reads' AS SR, 'Small writes' AS SW, 'Large reads' AS lr,'Large writes' AS lw,
+                                   'R_B' as R_B, 'W_B' as W_B,'Small read bytes' sr_b, 'Small write bytes' sw_b, 'Large read bytes' lr_b, 'Large write bytes' lw_b,
+                                   'r_ms' r_ms,'w_ms' w_ms,'Small read latency' sr_ms, 'Small write latency' sw_ms, 'Large read latency' AS lr_ms, 'Large write latency' AS lw_ms))
+                    }
+        }
         &last: {
             default={/*grid={topic="DB Wait Events", max_rows=10,order_by="-ms"}*/
                 SELECT substr(event, 1, 32) event, SUM(total_waits) waits, 
@@ -77,52 +126,7 @@
                 FROM   (SELECT inst_id, NAME n, VALUE v FROM gv$sysstat WHERE VALUE > 0)
                 GROUP  BY ROLLUP(inst_id))
         USING  (inst)]],
-    '-',
-    [[/*grid={topic="ASM Stats", max_rows=10,order_by='-gid,-bytes',fixed_title=true}*/
-      SELECT   grouping_id(g.name) gid, 
-               nvl(g.name,'--TOTAL--') diskgroup &cell, 
-               count(DISTINCT ds.inst_id) "INSTANCES",
-               count(DISTINCT ds.disk_number) "DISKS",
-               count(DISTINCT regexp_replace(ds.path, '.*/', '')) paths,
-               SUM(ds.TOTAL_MB)*1024*1024/count(DISTINCT ds.inst_id) TOTAL_SIZE,
-               SUM(ds.FREE_MB)*1024*1024/count(DISTINCT ds.inst_id) FREE_SIZE,
-               '|' "|",
-               SUM(ds.bytes_read + ds.bytes_written) bytes,
-               SUM(ds.HOT_BYTES_READ + ds.HOT_BYTES_written) hot_bytes,
-               SUM(ds.bytes_read) read,
-               SUM(ds.bytes_written) write,
-               '|' "|",
-               SUM(ds.reads + ds.writes) total_io,
-               SUM(ds.reads) READS,
-               SUM(ds.writes) writes,
-               SUM(ds.READ_ERRS + ds.write_ERRS) io_errs,
-               SUM(ds.read_time + ds.write_time)*1e3 rw_ms,
-               SUM(ds.read_time)*1e3 read_ms,
-               SUM(ds.write_time)*1e3 write_ms
-        FROM   gv$asm_disk_stat ds, gv$asm_diskgroup g
-        WHERE  ds.mount_status = 'CACHED'
-        AND    g.inst_id = ds.inst_id
-        AND    g.group_number = ds.group_number
-        GROUP BY rollup((g.name &cell))]],
-     '-',
-    [[/*grid={topic="Disk Level IO Stats(R=Read  W=Write S=Small L=Large)",include_zero=true,fixed_title=true,order_by=1}*/
-    SELECT *
-    FROM   (SELECT nvl(disk_type, '-ALL-') TYPE, 0 tot_io, 0 tot_b, 0 tot_ms,NAME, 
-                   round(DECODE(NAME,'Ticks',AVG(VALUE),SUM(VALUE)),3) VALUE
-            FROM   (SELECT cell_hash,
-                           disk_name,
-                           decode(SUBSTR(disk_name, 1, 2), 'FD', 'Flash', 'Hard') disk_type,
-                           CASE WHEN metric_name LIKE 'Ticks %' THEN 'Ticks' ELSE metric_name END NAME,
-                           case when metric_name like '%latency' then 1e-3 else 1 end*metric_value VALUE
-                    FROM   v$cell_disk a
-                    WHERE  disk_name NOT LIKE '/%') a
-            GROUP  BY NAME, ROLLUP(disk_type))
-    PIVOT(MAX(VALUE)
-    FOR   NAME IN( /*'Ticks' util, */'Total Reads' AS R, 'Total Writes' AS W, 
-                   'Small reads' AS SR, 'Small writes' AS SW, 'Large reads' AS lr,'Large writes' AS lw,
-                   'R_B' as R_B, 'W_B' as W_B,'Small read bytes' sr_b, 'Small write bytes' sw_b, 'Large read bytes' lr_b, 'Large write bytes' lw_b,
-                   'r_ms' r_ms,'w_ms' w_ms,'Small read latency' sr_ms, 'Small write latency' sw_ms, 'Large read latency' AS lr_ms, 'Large write latency' AS lw_ms))
-    ]],
+    '-',[[&diskio]],
     '-',[[/*grid={topic="Cell Throughput(FD=FlashDisk  FL=FlashLog  LIO=LargeIO FC=FlashCache FCC=ColumnarFlashCache)",fixed_title=true,order_by='cell'}*/
         SELECT  nvl(c.name,'--TOTAL--') cell,
                 flashCacheMode "flashMode",

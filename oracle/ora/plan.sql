@@ -8,14 +8,14 @@ Option:
     -adv  : the plan with the 'advanced' format
     -a    : the plan with the 'all' format
 --[[
-    &STAT: default={&DF &adaptive &V3 &V4 &V5 &V6 &V7 &V8 &V9}
+    &STAT: default={&DF &adaptive &binds &V3 &V4 &V5 &V6 &V7 &V8 &V9}
     &V3: none={} ol={outline alias}
     &DF: default={ALLSTATS ALL -PROJECTION -ALIAS LAST}, basic={BASIC}, adv={advanced}, a={all}
     &SRC: {
             default={0}, # Both
             d={2}        # Dictionary only
           }
-    &binds: default={0}, b={1}
+    &binds: default={}, b={PEEKED_BINDS}
     @adaptive: 12.1={+adaptive} default={}
 ]]--
 ]]*/
@@ -24,37 +24,49 @@ set feed off pipequery off
 
 VAR C REFCURSOR Binding Variables
 BEGIN
-    IF &binds=1 THEN
+    IF :binds='PEEKED_BINDS' THEN
         open :c for
         WITH b1 AS
          (SELECT *
-          FROM   (SELECT child_number || ':' || INST_ID r,last_captured l
+          FROM   (SELECT child_number || ':' || INST_ID r,last_captured l,0 flag,:V1 sql_id
                   FROM   gv$sql_bind_capture a
                   WHERE  sql_id = :V1
                   AND    1>&SRC
                   UNION ALL
-                  SELECT snap_id || ':' || instance_number r,last_captured l
+                  SELECT snap_id || ':' || instance_number r,last_captured l,1 flag,:V1
                   FROM   dba_hist_sqlbind a
                   WHERE  sql_id = :V1
                   ORDER  BY l DESC NULLS LAST)
           WHERE  ROWNUM < 2),
-        qry AS
-         (SELECT NVL2(MAX(last_captured) OVER(),1,3) flag, position, NAME, datatype_string, value_string, inst_id, last_captured
-          FROM   gv$sql_bind_capture a, b1
-          WHERE  sql_id = :V1
-          AND    child_number || ':' || INST_ID = r
-          UNION ALL
-          SELECT NVL2(MAX(last_captured) OVER(),2,4) flag, position, NAME, datatype_string, value_string, instance_number, last_captured
-          FROM   dba_hist_sqlbind, b1
-          WHERE  sql_id = :V1
-          AND    snap_id || ':' || instance_number = r)
-        SELECT position,
-               NAME,
+        qry AS (
+          SELECT /*+materialize*/ * FROM
+             (SELECT position, NAME, datatype_string, value_string, inst_id, last_captured,0+regexp_substr(NAME,'\d+$') seq
+              FROM   gv$sql_bind_capture a, b1
+              WHERE  a.sql_id = b1.sql_id and a.sql_id = :V1
+              AND    child_number || ':' || INST_ID = r
+              AND    flag=0
+              UNION ALL
+              SELECT position, NAME, datatype_string, value_string, instance_number, last_captured,0+regexp_substr(NAME,'\d+$') seq
+              FROM   dba_hist_sqlbind a, b1
+              WHERE  a.sql_id = b1.sql_id and a.sql_id = :V1
+              AND    flag=1
+              AND    snap_id || ':' || instance_number = r)),
+        qry1 AS(
+              SELECT distinct
+                     name,
+                     nvl(max(last_captured) over(partition by name),date'2000-1-1') last_captured 
+              FROM qry
+        )
+        SELECT DISTINCT 
+               qry.NAME,
                datatype_string data_type,
-               nvl2(last_captured,value_string,'<no capture>') VALUE,
+               nvl2(qry.last_captured,value_string,'<no capture>') VALUE,
                inst_id,
-               last_captured
-        FROM   qry;
+               qry.last_captured
+        FROM   qry,qry1 
+        WHERE  nvl(qry.last_captured,date'2000-1-1')=qry1.last_captured
+        AND    qry.name=qry1.name
+        ORDER  by 1;
     END IF;
 END;
 /

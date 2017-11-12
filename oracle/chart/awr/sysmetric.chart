@@ -1,10 +1,11 @@
-/*[[Show chart for gv$sysmetric_history/dba_hist_sysmetric_summary. Usage: @@NAME <metric_name|metric_group_name> {[0|inst_id] [yymmddhh24mi] [yymmddhh24mi]} [-d|-h] [-eff]
+/*[[Show chart for gv$sysmetric_history/dba_hist_sysmetric_summary. Usage: @@NAME <metric_name|metric_group_name> {[0|inst_id] [yymmddhh24mi] [yymmddhh24mi]} [-d|-h] [-eff] [-max]
     -d    : Based on DBA_HIST_SYSMETRIC_SUMMARY
     -h    : Based on DBA_HIST_SYSMETRIC_HISTORY
     -eff  : Show metrics related to DB efficiency
     -iops : Show TPS/IOPS(read)/IOPS(write)
     -time : Show CPU/DB usage(in centiseconds)
     -ratio: Show metrics based on percentage
+    -max  : Use max value across all instances, default as avg value
     --[[
       &V2   : default={&INSTANCE}
       &V3   : default={&STARTTIME}
@@ -24,7 +25,9 @@
                                  'Total Parse Count Per Sec','Hard Parse Count Per Sec','User Transaction Per Sec',
                                  'SQL Service Response Time','Physical Read Total Bytes Per Sec','Physical Write Total Bytes Per Sec')}
         }
-      &UNIT : default={Value},time={CentiSeconds},Ratio={Ratio(%)},iops={Count}  
+      &UNIT : default={Value},time={CentiSeconds},Ratio={Ratio(%)},iops={Count}
+      &AGG  : default={avg} ,max={max}
+      &VAL  : default={AVERAGE}, max={maxval}
     ]]--
 ]]*/
 
@@ -36,18 +39,18 @@
                VALUE metric_value,
                STD RNK_
         FROM   (SELECT /*+merge no_expand*/
-                        A.end_time sample_time, A.METRIC_NAME , A.metric_unit, ROUND(AVG(VALUE),3) VALUE,STDDEV(AVG(VALUE)) OVER(PARTITION BY A.METRIC_NAME) std
+                        A.end_time sample_time, A.METRIC_NAME , A.metric_unit, ROUND(&AGG(VALUE),3) VALUE,STDDEV(&AGG(VALUE)) OVER(PARTITION BY A.METRIC_NAME) std
                 FROM   (SELECT inst_id, end_time, metric_unit,group_id, VALUE,
                               METRIC_NAME||(case when lower(metric_unit)='bytes' and instr(lower(METRIC_NAME),'bytes')=0 then '(bytes)' end)||decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) METRIC_NAME
-                        FROM  (SELECT inst_id, trunc(END_TIME,'MI') end_time, METRIC_NAME, metric_unit,group_id, VALUE
+                        FROM  (SELECT inst_id, round(END_TIME,'MI') end_time, METRIC_NAME, metric_unit,group_id, VALUE
                               FROM   GV$SYSMETRIC_HISTORY
                               WHERE  'V' = UPPER(:DICT)
                               UNION ALL
-                              SELECT INSTANCE_NUMBER, trunc(END_TIME,'MI'), METRIC_NAME, metric_unit,group_id,AVERAGE
+                              SELECT INSTANCE_NUMBER, ROUND(max(END_TIME) OVER(partition by dbid,snap_id),'MI'), METRIC_NAME, metric_unit,group_id,&VAL
                               FROM   DBA_HIST_SYSMETRIC_SUMMARY
                               WHERE  'D' = UPPER(:DICT)
                               UNION ALL
-                              SELECT INSTANCE_NUMBER, trunc(END_TIME,'MI'), METRIC_NAME, metric_unit,group_id,VALUE
+                              SELECT INSTANCE_NUMBER, ROUND(max(END_TIME) OVER(partition by dbid,snap_id),'MI'), METRIC_NAME, metric_unit,group_id,VALUE
                               FROM   DBA_HIST_SYSMETRIC_HISTORY
                               WHERE  'H' = UPPER(:DICT)) A 
                               JOIN (SELECT distinct group_id,group_name FROM V$METRICNAME) b USING(group_id)

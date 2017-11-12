@@ -21,7 +21,7 @@
       &option : default={}, l={,sql_exec_id,plan_hash}
       &option1: default={count(distinct sql_exec_id) execs,round(sum(ELAPSED_TIME)/count(distinct sql_exec_id)*1e-6,2) avg_ela,}, l={}
       &filter: default={1=1},f={},l={sql_id=sq_id},snap={DBOP_EXEC_ID=dopeid and dbop_name=dopename},u={username=nvl('&0',sys_context('userenv','current_schema'))}
-      &format: default={BASIC+PLAN+BINDS},s={ALL-SESSIONS}, a={ALL}, f={}
+      &format: default={BASIC+PLAN+BINDS},s={ALL-SESSIONS}, a={ALL}
       &tot : default={1} avg={0}
       &avg : defult={1} avg={count(distinct sql_exec_id)}
       &snap: default={0} snap={1}

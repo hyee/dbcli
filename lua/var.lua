@@ -1,5 +1,5 @@
 local env,string,java,math,table,tonumber=env,string,java,math,table,tonumber
-local grid,snoop,cfg,db_core=env.grid,env.event.snoop,env.set,env.db_core
+local grid,snoop,callback,cfg,db_core=env.grid,env.event.snoop,env.event.callback,env.set,env.db_core
 local var=env.class()
 var.inputs,var.outputs,var.desc,var.global_context,var.columns={},{},{},{},{}
 var.cmd1,var.cmd2,var.cmd3,var.cmd4='DEFINE','DEF','VARIABLE','VAR'
@@ -134,6 +134,8 @@ function var.update_text(item,pos,params)
     if type(item)=="string" then
         org_txt,pos,item=item,1,{item}
     end
+
+    callback("ON_SUBSTITUTION",item)
 
     if cfg.get("define")~='on' or not item[pos] then return end
     pos,params=pos or 1,params or {}

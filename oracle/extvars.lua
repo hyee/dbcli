@@ -44,10 +44,12 @@ local function rep_instance(prefix,full,obj,suffix)
 end
 
 function extvars.on_before_db_exec(item)
-    if item and item[2] and item[2]:find('&lz_compress',1,true) then
-        item[2]=item[2]:gsub("&lz_compress",db.lz_compress);
+    for i=1,2 do
+        if item and type(item[i])=="string" and item[i]:find('&lz_compress',1,true) then
+            item[i]=item[i]:gsub("&lz_compress",db.lz_compress);
+        end
     end
-    
+
     if not var.outputs['INSTANCE'] then
         local instance=tonumber(cfg.get("INSTANCE"))
         var.setInputs("INSTANCE",tostring(instance>0 and instance or instance<0 and "" or db.props.instance))
@@ -206,6 +208,7 @@ end
 function extvars.onload()
     env.set_command(nil,"TEST_GRID",nil,test_grid,false,1)
     event.snoop('BEFORE_DB_EXEC',extvars.on_before_db_exec,nil,60)
+    event.snoop('ON_SUBSTITUTION',extvars.on_before_db_exec,nil,60)
     event.snoop('AFTER_ORACLE_CONNECT',extvars.on_after_db_conn)
     event.snoop('ON_SETTING_CHANGED',extvars.set_title)
     cfg.init("instance",-1,extvars.set_instance,"oracle","Auto-limit the inst_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-2 - 99")
