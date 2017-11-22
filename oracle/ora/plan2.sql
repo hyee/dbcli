@@ -1,28 +1,29 @@
--- ################################################################################
--- #
--- #          name: showplan.sql v1.0
--- #
--- #          File: showplan.sql
--- #   Description: Show SQL Plan and performance details
--- #         Usage: @showplan <SQL_ID> [Plan Hash Value] [Details: [+](B)inds|SQL (T)ext|(Pee(K)ed Binds|(P)lan|(O)utlines|Pre(D)icate|Plan (L)oading|(W)ait events|(S)tatistics]
--- #       Created: 2014-03-12
--- #        Author: Wei Huang
--- #      Web Site: www.HelloDBA.com
--- #Latest Version: http://www.HelloDBA.com/download/showplan.zip
--- #   User run as: dba
--- #     Tested DB: 11gR2
--- #    Parameters: 1: SQL_ID of SQL to be shown
--- #    Parameters: 2: Plan Hash Value, if null (Default), will show all plans
--- #    Parameters: 3: Details to be shown: [+](B)inds|SQL (T)ext|(Pee(K)ed Binds|(P)lan|(O)utlines|Pre(D)icate|Plan (L)oading|(W)ait events|(S)tatistics, 
--- #                   default is BPDTLWS; + stand for the default options
--- #
--- #  Copyright (c) 2014 Wei Huang
--- #
--- # History
--- # Modified by   When      Why
--- # -----------   -------   ----------------------------------------------------
--- ################################################################################
-
+/*[[ HelloDBA's show plan
+ |###############################################################################
+ |
+ |          name: showplan.sql v1.0
+ |
+ |          File: showplan.sql
+ |   Description: Show SQL Plan and performance details
+ |         Usage: @showplan <SQL_ID> [Plan Hash Value] [Details: [+](B)inds|SQL (T)ext|(Pee(K)ed Binds|(P)lan|(O)utlines|Pre(D)icate|Plan (L)oading|(W)ait events|(S)tatistics]
+ |       Created: 2014-03-12
+ |        Author: Wei Huang
+ |      Web Site: www.HelloDBA.com
+ |Latest Version: http://www.HelloDBA.com/download/showplan.zip
+ |   User run as: dba
+ |     Tested DB: 11gR2
+ |    Parameters: 1: SQL_ID of SQL to be shown
+ |    Parameters: 2: Plan Hash Value, if null (Default), will show all plans
+ |    Parameters: 3: Details to be shown: [+](B)inds|SQL (T)ext|(Pee(K)ed Binds|(P)lan|(O)utlines|Pre(D)icate|Plan (L)oading|(W)ait events|(S)tatistics, 
+ |                   default is BPDTLWS; + stand for the default options
+ |
+ |  Copyright (c) 2014 Wei Huang
+ |
+ | History
+ | Modified by   When      Why
+ | -----------   -------   ----------------------------------------------------
+ |###############################################################################
+]]*/
 var sqlid varchar2(32);
 var planHashValue varchar2(32);
 var showOptions varchar2(32);

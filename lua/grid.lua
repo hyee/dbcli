@@ -558,7 +558,19 @@ function grid.format(rows,include_head,col_del,row_del)
     return this:wellform(col_del,row_del)
 end
 
-function grid.tostring(rows,include_head,col_del,row_del,rows_limit)
+function grid.get_config(sql)
+    local all,grid_cfg=sql:match("(grid%s*=%s*(%b{}))")
+    if grid_cfg then
+        sql=sql:replace(all,'',true):gsub('/%*%s*%*/','')
+        grid_cfg=table.totable(grid_cfg)
+    else
+        grid_cfg={}
+    end
+    return sql,grid_cfg
+end
+
+function grid.tostring(rows,include_head,col_del,row_del,rows_limit,pivot)
+    if pivot then grid.pivot=pivot end
     if grid.pivot ~= 0 and include_head~=false then
         rows=grid.show_pivot(rows)
         if math.abs(grid.pivot)==1 then
@@ -747,7 +759,7 @@ function grid.merge(tabs,is_print,prefix,suffix)
                     else
                         local topic,width,height,max_rows=tab.topic,tab.width,tab.height,tab.max_rows
                         local is_bypass=tab.bypassemptyrs
-                        tab=grid.tostring(tab,true," ","",rows_limit):split("\n")
+                        tab=grid.tostring(tab,true," ","",rows_limit,tab.pivot):split("\n")
                         tab.topic,tab.width,tab.height,tab.max_rows=topic,width,height,max_rows
                         if is_bypass~='on' and is_bypass~=true or #tab>2 then 
                             result[#result+1]=tab

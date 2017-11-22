@@ -8,7 +8,7 @@ Show all database instances
 --Show node-level sysdate by querying the logon time of px sessions from px queries
 WITH SS AS (SELECT /*+materialize*/ inst_id,sid,logon_time,qcsid,qcinst_id 
             from   gv$session join gv$px_session using(sid,inst_id)
-            WHERE  logon_time>=sysdate and username=user),
+            WHERE  username=user),
      tim AS(SELECT /*+no_merge*/ inst_id,max(logon_time) tim
             FROM   ss
             WHERE  qcsid = userenv('sid')

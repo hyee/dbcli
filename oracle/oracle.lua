@@ -168,6 +168,8 @@ function oracle:connect(conn_str)
             sv  VARCHAR2(200):= sys_context('userenv','service_name');
         BEGIN
             EXECUTE IMMEDIATE 'alter session set nls_date_format=''yyyy-mm-dd hh24:mi:ss''';
+            EXECUTE IMMEDIATE 'alter session set nls_timestamp_format=''yyyy-mm-dd hh24:mi:ssxff''';
+            EXECUTE IMMEDIATE 'alter session set nls_timestamp_tz_format=''yyyy-mm-dd hh24:mi:ssxff TZH:TZM''';
             EXECUTE IMMEDIATE 'alter session set statistics_level=all';
 
             IF sv like 'SYS$%' THEN

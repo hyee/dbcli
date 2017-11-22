@@ -28,9 +28,9 @@
 			<color use="0" r="0" g="255" b="0"/></font>
 		<window title="ConsoleZ" icon="" main_title_format="?U([%u] )?N({%u} )%m?s( - %s)" tab_title_format="?s( %s):( DBCLI - Not Connected)" use_tab_icon="1" use_tab_title="1" trim_tab_titles="30" trim_tab_titles_right="0"/>
 		<fullscreen start_in_fullscreen="0" fullscreen_monitor="0">
-			<controls show_menu="1" show_toolbar="1" show_searchbar="1" show_statusbar="1" show_tabs="1" hide_single_tab="1" tabs_on_bottom="0" hide_tab_icons="0" hide_tab_close_button="0" show_scrollbars="1" hide_tab_new_button="0"/>
+			<controls show_menu="1" show_toolbar="1" show_searchbar="1" show_statusbar="1" show_tabs="1" hide_single_tab="1" tabs_on_bottom="0" hide_tab_icons="0" hide_tab_close_button="0" hide_tab_new_button="0" show_scrollbars="1"/>
 			<transparency type="0" active_alpha="206" inactive_alpha="255" r="0" g="0" b="0" active="1"/></fullscreen>
-		<controls show_menu="1" show_toolbar="1" show_searchbar="1" show_statusbar="0" show_tabs="1" hide_single_tab="0" tabs_on_bottom="0" hide_tab_icons="1" hide_tab_close_button="0" show_scrollbars="1" hide_tab_new_button="0"/>
+		<controls show_menu="1" show_toolbar="1" show_searchbar="1" show_statusbar="0" show_tabs="1" hide_single_tab="0" tabs_on_bottom="0" hide_tab_icons="1" hide_tab_close_button="0" hide_tab_new_button="0" show_scrollbars="1"/>
 		<styles caption="1" resizable="1" taskbar_button="1" border="1" inside_border="2" split_bar_size="1" tray_icon="1" quake_like="0" quake_animation_time="300" jumplist="1" integrated_ime="1" hide_when_inactive="0" per_monitor_dpi="0" keep_view_theme="0">
 			<selection_color r="128" g="128" b="128"/>
 			<highlight_color r="191" g="191" b="191"/></styles>
@@ -216,7 +216,7 @@
 			</console>
 			<cursor style="4" r="255" g="255" b="255"/>
 		</tab>
-		<tab title="cmd" use_default_icon="1">
-			<console shell="cmd" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
+		<tab title="dbcli(linux)" use_default_icon="1">
+			<console shell="bash.exe -c &quot;/mnt/d/dbcli/dbcli.sh&quot;" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
 		</tab>
 	</tabs></settings>

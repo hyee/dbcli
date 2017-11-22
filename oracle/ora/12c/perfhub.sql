@@ -16,7 +16,7 @@ var filename VARCHAR2
 DECLARE
     v_start    DATE :=to_date(:starttime, 'YYMMDDHH24MI');
     v_end      DATE :=to_date(:endtime, 'YYMMDDHH24MI');
-    v_realtime INT := CASE WHEN :V1 = '1' THEN 1 ELSE 0 END;
+    v_realtime INT := CASE WHEN nvl(:V1,'1') = '1' THEN 1 ELSE 0 END;
     v_report   CLOB;
     v_file     VARCHAR2(50);
     v_inst     INT := :instance;

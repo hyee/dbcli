@@ -209,7 +209,7 @@ BEGIN
                              round(sum(USER_IO_WAIT_TIME)/&avg * 1e-6, 2) io,
                              round(sum(PHYSICAL_READ_BYTES)/&avg, 2) READ,
                              round(sum(PHYSICAL_WRITE_BYTES)/&avg, 2) WRITE,
-                             substr(regexp_replace(regexp_replace(MAX(sql_text), '^\s+|[' || CHR(10) || CHR(13) || ']'), '\s{2,}', ' '), 1, 200) sql_text
+                             substr(regexp_replace(regexp_replace(MAX(sql_text), '^\s+'), '\s+', ' '), 1, 200) sql_text
                     FROM   (SELECT /*+no_expand*/a.*, SQL_PLAN_HASH_VALUE plan_hash
                             FROM   gv$sql_monitor a
                             WHERE  (&SNAP=1 OR NOT regexp_like(a.process_name, '^[pP]\d+$'))
@@ -276,7 +276,7 @@ BEGIN
                            &ver round(SUM(IO_CELL_OFFLOAD_RETURNED_BYTES) /&avg, 2) offlrtn,
                            MAX(PX_MAXDOP) DOP,
                            MAX(DOPS) SIDS,
-                           regexp_replace(MAX(ERROR_MESSAGE) keep(dense_rank LAST ORDER BY nvl2(ERROR_MESSAGE, last_refresh_time, NULL) NULLS FIRST),'[' || chr(9) || chr(10) || chr(13) || ' ]+', ' ') last_error
+                           regexp_replace(MAX(ERROR_MESSAGE) keep(dense_rank LAST ORDER BY nvl2(ERROR_MESSAGE, last_refresh_time, NULL) NULLS FIRST),'\s+', ' ') last_error
                     FROM   (SELECT a.*,sql_plan_hash_value phv,
                                    count(distinct inst_id||','||sid) over(partition by sql_exec_id) dops 
                             FROM gv$sql_monitor a WHERE sql_id = sq_id) b
