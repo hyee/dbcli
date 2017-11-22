@@ -1,16 +1,24 @@
 local _G=_ENV or _G
 local _os=jit.os:lower()
+local uv=require("luv")
 _os=_os=='osx' and 'mac' or _os
 local psep,fsep,dll,which,dlldir
 if _os=="windows" then 
 	psep,fsep,dll,which,dlldir=';','\\','.dll','where java 2>nul',jit.arch
 else
 	psep,fsep,dll,which,dlldir=':','/',".so",'which java 2>/dev/null',_os
+    local f,err=io.popen('uname -a 2>/dev/null')
+	if f then
+		for line in f:lines() do
+			if line:lower():find("microsoft") then
+				uv.os_setenv("TERM","terminator")
+			end
+		end
+		f:close()
+	end
 end
 
 local function resolve(path) return (path:gsub("[\\/]+",fsep)) end
-
-local uv=require("luv")
 
 uv.set_process_title("DBCli - Initializing")
 local files={}

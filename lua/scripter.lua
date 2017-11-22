@@ -359,7 +359,7 @@ function scripter:get_script(cmd,args,print_args)
     if not cmd or cmd:match('^%s*$') then
         return env.helper.helper(self:get_command())
     end
-
+    local org=cmd
     cmd=cmd:trim():upper()
 
     if cmd:sub(1,1)=='-' and args[1]=='@' and args[2] then
@@ -397,9 +397,9 @@ function scripter:get_script(cmd,args,print_args)
 
     local file,f,target_dir
     if cmd:sub(1,1)=="@" then
-        target_dir,file=self:check_ext_file(cmd:sub(2))
-        env.checkerr(target_dir['./COUNT']>0,"Cannot find script "..cmd:sub(2))
-        if not file then return env.helper.helper(self:get_command(),cmd) end
+        target_dir,file=self:check_ext_file(org:sub(2))
+        env.checkerr(target_dir['./COUNT']>0,"Cannot find script "..org:sub(2))
+        if not file then return env.helper.helper(self:get_command(),org) end
         cmd,file=file,target_dir[file].path
     elseif self.cmdlist[cmd] then
         file=self.cmdlist[cmd].path

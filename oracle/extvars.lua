@@ -68,7 +68,7 @@ function extvars.on_before_db_exec(item)
     instance,container,usr=tonumber(cfg.get("instance")),tonumber(cfg.get("container")),cfg.get("schema")
     if instance==0 then instance=tonumber(db.props.instance) end
     if container==0 then container=tonumber(db.props.container_id) end
-    if instance>0 or container>0 or (usr and usr~="") then
+    if sql and (instance>0 or container>0 or (usr and usr~="")) then
         item[2]=re.gsub(sql..' ',extvars.P,rep_instance):sub(1,-2)
     end
     return item

@@ -773,13 +773,8 @@ function db_core:grid_call(tabs,rows_limit,args)
             elseif type(tab) ~= "string" then
                 env.raise("Unexpected table element, string only:"..tostring(tab))
             elseif #tab>1 then
-                local all,grid_cfg=tab:match("(grid%s*=%s*(%b{}))")
-                if grid_cfg then
-                    tab=tab:replace(all,'',true):gsub('/%*%s*%*/','')
-                    grid_cfg=table.totable(grid_cfg)
-                else
-                    grid_cfg={}
-                end
+                local grid_cfg
+                tab,grid_cfg=env.grid.get_config(tab)
                 grid_cfg._is_result=true
                 result[i]={grid_cfg=grid_cfg,sql=tab,index=i}
                 rs_idx[#rs_idx+1]=result[i]

@@ -69,11 +69,11 @@ r0 AS
          LPAD(to_char(ev, 'fmxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'), LENGTHB(high_value), '0') cv,
          lag(endpoint_actual_value) over(ORDER BY Bucket#) pva,
          Bucket# - lag(Bucket#,1,0) over(ORDER BY Bucket#) buckets,
-         lag(LPAD(to_char(ev + CASE WHEN data_type = 'DATE' OR data_type LIKE 'TIMESTAMP' THEN 1e-5 ELSE 1 END,
+         lag(LPAD(to_char(ev + CASE WHEN data_type = 'DATE' OR data_type LIKE 'TIMESTAMP%)' THEN 1e-5 ELSE 1 END,
                           'fmxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'),
                   LENGTHB(high_value),
                   '0')) over(ORDER BY Bucket#) pv,
-         lag(ev + CASE WHEN data_type = 'DATE' OR data_type LIKE 'TIMESTAMP' THEN 1e-5 ELSE 1 END) over(ORDER BY Bucket#) opv
+         lag(ev + CASE WHEN data_type = 'DATE' OR data_type LIKE 'TIMESTAMP%)' THEN 1e-5 ELSE 1 END) over(ORDER BY Bucket#) opv
   FROM   r),
 r1 AS
  (SELECT r0.*,
@@ -83,7 +83,7 @@ r1 AS
                   utl_raw.cast_to_varchar2(cv)
                  WHEN data_type LIKE '%N%CHAR%' THEN
                   to_char(utl_raw.cast_to_nvarchar2(cv))
-                 WHEN data_type = 'DATE' OR data_type LIKE 'TIMESTAMP' THEN
+                 WHEN data_type = 'DATE' OR data_type LIKE 'TIMESTAMP%)' THEN
                   to_char(to_date(trunc(ev), 'J') + MOD(ev, 1),
                           'YYYY-MM-DD' || DECODE(MOD(ev, 1), 0, '', ' HH24:MI:SS'))
                  WHEN data_type IN ('NUMBER', 'BINARY_DOUBLE', 'BINARY_FLOAT') THEN
@@ -97,7 +97,7 @@ r1 AS
                   utl_raw.cast_to_varchar2(pv)
                  WHEN data_type LIKE '%N%CHAR%' THEN
                   to_char(utl_raw.cast_to_nvarchar2(pv))
-                 WHEN data_type = 'DATE' OR data_type LIKE 'TIMESTAMP' THEN
+                 WHEN data_type = 'DATE' OR data_type LIKE 'TIMESTAMP%)' THEN
                   to_char(to_date(trunc(opv), 'J') + MOD(opv, 1),
                           'YYYY-MM-DD' || DECODE(MOD(opv, 1), 0, '', ' HH24:MI:SS'))
                  WHEN data_type IN ('NUMBER', 'BINARY_DOUBLE', 'BINARY_FLOAT') THEN
