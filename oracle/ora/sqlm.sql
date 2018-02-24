@@ -18,12 +18,13 @@
 
    --[[
       @ver: 12.2={} 11.2={--}
-      &option : default={}, l={,sql_exec_id,plan_hash}
-      &option1: default={count(distinct sql_exec_id) execs,round(sum(ELAPSED_TIME)/count(distinct sql_exec_id)*1e-6,2) avg_ela,}, l={}
+      &uniq:    default={count(DISTINCT sql_exec_id||','||to_char(sql_exec_start,'YYYYMMDDHH24MISS'))}
+      &option : default={}, l={,sql_exec_id,plan_hash,sql_exec_start}
+      &option1: default={&uniq execs,round(sum(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME))/&uniq*1e-6,2) avg_ela,}, l={}
       &filter: default={1=1},f={},l={sql_id=sq_id},snap={DBOP_EXEC_ID=dopeid and dbop_name=dopename},u={username=nvl('&0',sys_context('userenv','current_schema'))}
       &format: default={BASIC+PLAN+BINDS},s={ALL-SESSIONS}, a={ALL}
       &tot : default={1} avg={0}
-      &avg : defult={1} avg={count(distinct sql_exec_id)}
+      &avg : defult={1} avg={&uniq}
       &snap: default={0} snap={1}
       &showhub: default={0} a={1}
       @check_access_hub : SYS.DBMS_PERF={&showhub} default={0}
@@ -40,8 +41,8 @@ var rs CLOB;
 var filename varchar2;
 var plan_hash number;
 col dur,avg_ela,ela,parse,queue,cpu,app,cc,cl,plsql,java,io,time format smhd2
-col read,write,iosize,mem,temp,cellio,buffget,offload,offlrtn format kmg
-col est_cost,est_rows,act_rows,ioreq,execs,outputs,FETCHES,dxwrite format TMB
+col read,write,iosize,mem,temp,cellio,buffget,offload,offlrtn,calc_kmg format kmg
+col est_cost,est_rows,act_rows,ioreq,execs,outputs,FETCHES,dxwrite,calc_tmb format TMB
 
 ALTER SESSION SET PLSQL_CCFLAGS = 'hub:&check_access_hub,sqlm:&check_access_sqlm';
 
@@ -60,6 +61,7 @@ DECLARE
     keyw       VARCHAR2(300):=:V2;
     c2         SYS_REFCURSOR;
     sql_exec   INT;
+    sql_start  DATE;
     serial     INT;
 BEGIN
     IF &SNAP=1 THEN
@@ -111,25 +113,40 @@ BEGIN
         --EXECUTE IMMEDIATE 'alter session set "_sqlmon_max_planlines"=3000';
         sql_exec := :V2;
         IF sql_exec IS NULL THEN
-            select max(sql_exec_id) keep(dense_rank last order by last_refresh_time)
-            into  sql_exec
+            select max(sql_exec_id) keep(dense_rank last order by sql_exec_start),
+                   max(sql_exec_start)
+            into  sql_exec,sql_start
             from  gv$sql_monitor
             where sql_id=sq_id
+            AND   PX_SERVER# IS NULL
             and   inst_id=nvl(inst,inst_id);
         END IF;
         OPEN :c FOR
-            SELECT DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => '&format-SQL_FULLTEXT-SQL_TEXT', TYPE => 'TEXT', sql_id => sq_id, SQL_EXEC_ID => sql_exec, inst_id => inst) AS report FROM   dual;
+            SELECT DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => '&format-SQL_FULLTEXT-SQL_TEXT', TYPE => 'TEXT', sql_id => sq_id, SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst) AS report FROM   dual;
         BEGIN
-            content  := DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => 'ALL', TYPE => 'ACTIVE', sql_id => sq_id, SQL_EXEC_ID => sql_exec, inst_id => inst);
+            content  := DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => 'ALL', TYPE => 'ACTIVE', sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
             filename := 'sqlm_' || sq_id || '.html';
         EXCEPTION WHEN OTHERS THEN NULL;
         END;
         --refer to https://ctandrewsayer.wordpress.com/2017/10/19/how-many-rows-were-insertedupdateddeleted-in-my-merge/
         $IF dbms_db_version.version>11 $THEN
             OPEN c2 FOR
-            SELECT up.plan_line_id, sms.name, up.value, dop_down.value_text, sms.description
+            SELECT up.plan_line_id,sms.name,UP.type,count(1) processes, 
+                   decode(decode(up.type,5,max(up.typ1),up.type),
+                                 1,sum(up.value)
+                                 ,2,sum(up.value)
+                                 ,3,sum(up.value)
+                                 ,4,max(up.value)
+                                 ,min(up.value)) calc_tmb,
+                   decode(decode(up.type,5,max(up.typ1),up.type),
+                                 1,sum(up.value)
+                                 ,2,sum(up.value)
+                                 ,3,sum(up.value)
+                                 ,4,max(up.value)
+                                 ,min(up.value)) calc_kmg,
+                   dop_down.value_text, sms.description
             FROM   (SELECT *
-                    FROM   (SELECT sql_id,
+                    FROM   (SELECT process_name,
                                    plan_line_id,
                                    otherstat_1_id,
                                    otherstat_1_type,
@@ -163,13 +180,14 @@ BEGIN
                                    otherstat_10_value
                             FROM   gv$sql_plan_monitor spm
                             WHERE  spm.sql_id = sq_id
-                            AND    spm.sql_exec_id = sql_exec) --
-                           unpivot((id, TYPE, VALUE) --
-                           FOR pivId IN((otherstat_1_id, otherstat_1_type, otherstat_1_value) AS 1, (otherstat_2_id, otherstat_2_type, otherstat_2_value) AS 2,
-                                        (otherstat_3_id, otherstat_3_type, otherstat_3_value) AS 3, (otherstat_4_id, otherstat_4_type, otherstat_4_value) AS 4,
-                                        (otherstat_5_id, otherstat_5_type, otherstat_5_value) AS 5, (otherstat_6_id, otherstat_6_type, otherstat_6_value) AS 6,
-                                        (otherstat_7_id, otherstat_7_type, otherstat_7_value) AS 7, (otherstat_8_id, otherstat_8_type, otherstat_8_value) AS 8,
-                                        (otherstat_9_id, otherstat_9_type, otherstat_9_value) AS 9, (otherstat_10_id, otherstat_10_type, otherstat_10_value) AS 10))) up
+                            AND    spm.sql_exec_id = sql_exec
+                            AND    sql_exec_start=sql_start) --
+                           unpivot((typ1,id, TYPE, VALUE) --
+                           FOR pivId IN((otherstat_1_type,otherstat_1_id, otherstat_1_type, otherstat_1_value) AS 1, (otherstat_1_type,otherstat_2_id, otherstat_2_type, otherstat_2_value) AS 2,
+                                        (otherstat_1_type,otherstat_3_id, otherstat_3_type, otherstat_3_value) AS 3, (otherstat_1_type,otherstat_4_id, otherstat_4_type, otherstat_4_value) AS 4,
+                                        (otherstat_1_type,otherstat_5_id, otherstat_5_type, otherstat_5_value) AS 5, (otherstat_1_type,otherstat_6_id, otherstat_6_type, otherstat_6_value) AS 6,
+                                        (otherstat_1_type,otherstat_7_id, otherstat_7_type, otherstat_7_value) AS 7, (otherstat_1_type,otherstat_8_id, otherstat_8_type, otherstat_8_value) AS 8,
+                                        (otherstat_1_type,otherstat_9_id, otherstat_9_type, otherstat_9_value) AS 9, (otherstat_1_type,otherstat_10_id, otherstat_10_type, otherstat_10_value) AS 10))) up
             LEFT   JOIN v$sql_monitor_statname sms
             ON     up.id = sms.id
             LEFT   JOIN (SELECT 'downgrade reason' NAME, 350 VALUE, 'DOP downgrade due to adaptive DOP' value_text
@@ -185,6 +203,8 @@ BEGIN
                          FROM   dual) dop_down
             ON     sms.name = dop_down.name
             AND    up.value = dop_down.value
+            WHERE  up.value IS NOT NULL
+            group  by  up.plan_line_id, sms.name,up.type, dop_down.value_text, sms.description
             ORDER  BY 1, 2;
         $END
         
@@ -198,7 +218,7 @@ BEGIN
                              MAX(sid || ',@' || inst_id) keep(dense_rank LAST ORDER BY nvl2(px_qcsid,to_date(null),last_refresh_time) nulls first) last_sid,
                              MAX(status) keep(dense_rank LAST ORDER BY last_refresh_time, sid) last_status,
                              round(sum((last_refresh_time - sql_exec_start)*nvl2(px_qcsid,0,1))/&avg * 86400, 2) dur,
-                             round(sum(ELAPSED_TIME)/&avg * 1e-6, 2) ela,
+                             round(sum(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME))/&avg * 1e-6, 2) ela,
                              round(sum(QUEUING_TIME)/&avg * 1e-6, 2) QUEUE,
                              round(sum(CPU_TIME)/&avg * 1e-6, 2) CPU,
                              round(sum(APPLICATION_WAIT_TIME)/&avg * 1e-6, 2) app,
@@ -215,7 +235,8 @@ BEGIN
                             WHERE  (&SNAP=1 OR NOT regexp_like(a.process_name, '^[pP]\d+$'))
                             AND    (&SNAP=1 OR (plan_hash IS NULL AND :V2 IS NOT NULL OR NOT regexp_like(upper(TRIM(SQL_TEXT)), '^(BEGIN|DECLARE|CALL)')))
                             AND    (&SNAP=1 OR (keyw IS NULL OR a.sql_id ||'_'|| sql_plan_hash_value||'_'|| sql_exec_id || lower(sql_text) LIKE '%' || lower(keyw) || '%'))
-                            AND    (&filter)) a
+                            AND    (&filter)
+                            AND    PX_SERVER# IS NULL) a
                     GROUP  BY sql_id &OPTION
                     ORDER  BY last_seen DESC)
             WHERE  ROWNUM <= 100
@@ -226,10 +247,11 @@ BEGIN
             WHERE sql_id = sq_id AND (plan_hash IS NULL OR plan_hash in(sql_exec_id,sql_plan_hash_value));
         
             IF plan_hash IS NOT NULL THEN
-                SELECT MIN(sql_exec_start), MAX(last_refresh_time), COUNT(DISTINCT sql_exec_id)
+                SELECT MIN(sql_exec_start), MAX(last_refresh_time), &uniq
                 INTO   start_time, end_time, execs
                 FROM   gv$sql_monitor
                 WHERE  sql_id = sq_id
+                AND    PX_SERVER# IS NULL
                 AND    sql_plan_hash_value = plan_hash;
                 
                 $IF DBMS_DB_VERSION.VERSION>11 AND $$hub =1 $THEN
@@ -251,14 +273,13 @@ BEGIN
             
                 OPEN :c0 FOR
                     SELECT DECODE(phv, plan_hash, '*', ' ') || phv plan_hash,
-                           COUNT(DISTINCT sql_exec_id) execs,
+                           &uniq execs,
                            SUM(nvl2(ERROR_MESSAGE, 1, 0)) errs,
                            round(SUM(FETCHES), 2) FETCHES,
                            to_char(MIN(sql_exec_start), 'MMDD HH24:MI:SS') first_seen,
                            to_char(MAX(last_refresh_time), 'MMDD HH24:MI:SS') last_seen,
-                           round(SUM((last_refresh_time - sql_exec_start)*nvl2(px_qcsid,0,1)) * 86400/&avg, 2) dur,
-                           round(SUM(((last_refresh_time - sql_exec_start)* 86400-ELAPSED_TIME*1e-6)*nvl2(px_qcsid,0,1)) /&avg, 2) parse,
-                           round(SUM(ELAPSED_TIME) * 1e-6 /&avg, 2) ela,
+                           round(SUM(dur*nvl2(px_qcsid,0,1))/&avg, 2) dur,
+                           round(SUM(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME)) * 1e-6 /&avg, 2) ela,
                            round(SUM(QUEUING_TIME) * 1e-6 /&avg, 2) QUEUE,
                            round(SUM(CPU_TIME) * 1e-6 /&avg, 2) CPU,
                            round(SUM(APPLICATION_WAIT_TIME) * 1e-6 /&avg, 2) app,
@@ -278,7 +299,8 @@ BEGIN
                            MAX(DOPS) SIDS,
                            regexp_replace(MAX(ERROR_MESSAGE) keep(dense_rank LAST ORDER BY nvl2(ERROR_MESSAGE, last_refresh_time, NULL) NULLS FIRST),'\s+', ' ') last_error
                     FROM   (SELECT a.*,sql_plan_hash_value phv,
-                                   count(distinct inst_id||','||sid) over(partition by sql_exec_id) dops 
+                                   max(greatest((last_refresh_time-sql_exec_start)*86400,ELAPSED_TIME*1e-6,(CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME)*1e-6))  over(partition by sql_exec_id,sql_exec_start) dur,
+                                   count(distinct inst_id||','||sid) over(partition by sql_exec_id,sql_exec_start) dops 
                             FROM gv$sql_monitor a WHERE sql_id = sq_id) b
                     GROUP  BY phv
                     ORDER  BY decode(phv, plan_hash, SYSDATE + 1, MAX(last_refresh_time));
@@ -287,14 +309,14 @@ BEGIN
                     WITH ASH AS
                      (SELECT /*+materialize*/id, SUM(cnt) aas, MAX(SUBSTR(event, 1, 30) || '(' || cnt || ')') keep(dense_rank LAST ORDER BY cnt) top_event
                       FROM   (SELECT id, nvl(event, 'ON CPU') event, round(SUM(flag) / counter, 3) cnt
-                              FROM   (SELECT a.*, rank() over(PARTITION BY sql_exec_id ORDER BY flag) r
-                                      FROM   (SELECT SQL_PLAN_LINE_ID id, event, current_obj#, sql_exec_id, 1 flag
+                              FROM   (SELECT a.*, rank() over(PARTITION BY sql_exec_id,sql_exec_start ORDER BY flag) r
+                                      FROM   (SELECT SQL_PLAN_LINE_ID id, event, current_obj#, sql_exec_id,sql_exec_start, 1 flag
                                               FROM   gv$active_session_history
                                               WHERE  sql_id = sq_id
                                               AND    sql_plan_hash_value = plan_hash
                                               AND    sample_time BETWEEN start_time AND end_time
                                               UNION ALL
-                                              SELECT SQL_PLAN_LINE_ID id, event, current_obj#, sql_exec_id, 10 flag
+                                              SELECT SQL_PLAN_LINE_ID id, event, current_obj#, sql_exec_id,sql_exec_start, 10 flag
                                               FROM   dba_hist_active_sess_history
                                               WHERE  sql_id = sq_id
                                               AND    sql_plan_hash_value = plan_hash
@@ -307,11 +329,11 @@ BEGIN
                                    MIN(lpad(' ', plan_depth, ' ') || plan_operation || NULLIF(' ' || plan_options, ' ')) operation,
                                    MAX(plan_object_name) name,
                                    round(SUM(TIME*flag), 3) TIME,
-                                   round(100 * SUM(TIME*flag) / NULLIF(SUM(tick*flag),0), 2) "%",
+                                   round(SUM(TIME*flag) / NULLIF(SUM(tick*flag),0), 2) "%",
                                    --MAX(plan_cost) est_cost,
                                    MAX(plan_cardinality) est_rows,
                                    round(SUM(output_rows) / execs, 2) act_rows,
-                                   round(SUM(starts) / execs, 2) execs,
+                                   round(SUM(starts) / execs, 2) avg_exec,
                                    round(SUM(output_rows) / counter, 3) outputs,
                                    round(SUM(io_interconnect_bytes) / counter, 3) cellio,
                                    round(SUM(physical_read_bytes + physical_write_bytes) / counter, 3) iosize,
@@ -319,14 +341,16 @@ BEGIN
                                    MAX(workarea_max_mem) mem,
                                    MAX(workarea_max_tempseg) temp
                             FROM   (SELECT a.*,
-                                           decode(a.sql_exec_id,max(a.sql_exec_id) over(),1,0) flag,                            
+                                           decode(a.sql_exec_start,max(a.sql_exec_start) over(),1,0) flag,                            
                                            ((b.last_refresh_time - b.sql_exec_start)*86400+1)*NVL2(b.px_qcsid,0,1) tick,
-                                           max((a.last_change_time-a.first_change_time)*86400+1) over(partition by a.sql_exec_id,a.plan_line_id) TIME
+                                           max((a.last_change_time-a.first_change_time)*86400+1) over(partition by a.sql_exec_id,a.sql_exec_start,a.plan_line_id) TIME
                                     FROM   gv$sql_plan_monitor a, gv$sql_monitor b
                                     WHERE  b.sql_id = sq_id
                                     AND    b.sql_plan_hash_value = plan_hash
                                     AND    b.sql_id = a.sql_id
                                     AND    b.sql_exec_id = a.sql_exec_id
+                                    AND    b.sql_exec_start=a.sql_exec_start
+                                    AND    b.key=a.key
                                     AND    b.inst_id = a.inst_id
                                     AND    b.sid = a.sid
                                     AND    b.sql_plan_hash_value = a.sql_plan_hash_value)

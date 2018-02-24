@@ -21,10 +21,7 @@ import java.net.URLClassLoader;
 import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.ResultSet;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.TreeMap;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
@@ -53,6 +50,7 @@ public class Loader {
 
     private Loader() throws Exception {
         try {
+            Locale.setDefault(Locale.ENGLISH);
             File f = new File(Loader.class.getProtectionDomain().getCodeSource().getLocation().toURI());
             root = f.getParentFile().getParent();
             libPath = root + File.separator + "lib" + File.separator;

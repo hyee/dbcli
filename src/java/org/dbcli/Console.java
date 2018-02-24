@@ -61,9 +61,9 @@ public class Console {
     public boolean isSubSystem = false;
 
     public interface CLibrary extends Library {
-        Console.CLibrary INSTANCE = (Console.CLibrary)
+        CLibrary INSTANCE = (CLibrary)
                 Native.loadLibrary((Platform.isWindows() ? "kernel32" : "c"),
-                        Console.CLibrary.class);
+                        CLibrary.class);
 
         boolean SetConsoleTitleA(String title);
     }
@@ -414,7 +414,7 @@ public class Console {
 
     class Parser extends DefaultParser {
         String secondPrompt = "    ";
-        final org.jline.reader.EOFError err = new org.jline.reader.EOFError(-1, -1, "Request new line", "");
+        final EOFError err = new EOFError(-1, -1, "Request new line", "");
         boolean isMulti = false;
         Pattern p = Pattern.compile("(\r?\n|\r)");
 
@@ -435,7 +435,7 @@ public class Console {
             if (parserCallback == null) {
                 lua.load("return {call=env.parse_line}", "proxy");
                 lua.call(0, 1);
-                parserCallback = lua.getProxy(-1, Console.ParserCallback.class);
+                parserCallback = lua.getProxy(-1, ParserCallback.class);
                 lua.pop(1);
             }
 

@@ -238,6 +238,7 @@ function trace.get_trace(filename,mb,from_mb)
     local args={filename,"#VARCHAR","#CLOB","#VARCHAR",target_view and target_view.object_name or '',mb=mb or 2,from_mb=from_mb or '',res='#VARCHAR'}
     db:internal_call(sql,args)
     env.checkerr(args[2],args[4])
+    env.checkerr(args[3],'Target file does not exists!')
     print(args.res);
     args[3]=loader:Base64ZlibToText(args[3]:split('\n'));
     print("Result written to file "..env.write_cache(args[2],args[3]))

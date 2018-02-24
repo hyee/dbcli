@@ -70,8 +70,8 @@ qry AS
 ash as(SELECT /*+no_expand materialize ordered use_nl(b)*/ 
               b.*,CEIL(SUM(AAS) OVER(PARTITION BY SQL_PLAN_LINE_ID,&OBJ)) tenv
        FROM (select b.*,
-                    row_number() over(partition by SQL_PLAN_LINE_ID,sql_exec_id,sample_time+0 order by delta_time desc) r,
-                    count(1) over(partition by SQL_PLAN_LINE_ID,sql_exec_id,sample_time+0) aas
+                    row_number() over(partition by SQL_PLAN_LINE_ID,sql_exec_id,sql_exec_start,sample_time+0 order by delta_time desc) r,
+                    count(1) over(partition by SQL_PLAN_LINE_ID,sql_exec_id,sql_exec_start,sample_time+0) aas
              FROM   qry a
              JOIN   &V9 b
              ON     (b.sql_id=:V1 AND a.phv = b.sql_plan_hash_value AND sample_time BETWEEN NVL(to_date(nvl(:V3,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7) AND NVL(to_date(nvl(:V4,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE))
@@ -82,7 +82,7 @@ ash_base AS(
            nvl(SQL_PLAN_LINE_ID,0) ID,
            sum(aas) px_hits,
            CEIL(SUM(Delta_time)*1e-6) secs,
-           COUNT(DISTINCT sql_exec_id) exes,
+           COUNT(DISTINCT sql_exec_id||to_char(sql_exec_start,'yyyymmddhh24miss')) exes,
            ROUND(COUNT(DECODE(wait_class, NULL, 1)) * NVL2(max(sample_id),100,0) / COUNT(1), 1) "CPU",
            ROUND(COUNT(CASE WHEN wait_class IN ('User I/O','System I/O') THEN 1 END) * 100 / COUNT(1), 1) "IO",
            ROUND(COUNT(DECODE(wait_class, 'Cluster', 1)) * 100 / COUNT(1), 1) "CL",
@@ -114,7 +114,7 @@ ash_agg AS
                          SQL_PLAN_LINE_ID ID,
                          &OBJ obj,
                          &OBJ1 obj1,
-                         COUNT(DISTINCT sql_exec_id) over(PARTITION BY &OBJ) execs,
+                         COUNT(DISTINCT sql_exec_id||to_char(sql_exec_start,'yyyymmddhh24miss')) over(PARTITION BY &OBJ) execs,
                          SUM(AAS) OVER(PARTITION BY &OBJ, SQL_PLAN_LINE_ID) aas,
                          SUM(AAS) OVER(PARTITION BY &OBJ, &OBJ1) aas1
                   FROM   ash a)

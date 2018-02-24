@@ -90,7 +90,7 @@ FROM   gv$session_longops sl, (SELECT * FROM gv$session WHERE &filter and &usr) 
 WHERE  sl.inst_id = sn.inst_id
 AND    sn.status = 'ACTIVE'
 AND    sl.sid = sn.sid
-AND    s1.totalwork > 0
+AND    sl.totalwork > 0
 AND    sl.sofar != sl.totalwork;
 
 prompt  Running SQLs 
