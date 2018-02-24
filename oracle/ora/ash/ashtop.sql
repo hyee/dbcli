@@ -22,7 +22,7 @@
             u={username=nvl('&0',sys_context('userenv','current_schema')) and &range}
         }
       &more_filter: default={1=1},f={}
-      @counter: 11.2={, count(distinct sql_exec_id) "Execs"},default={}
+      @counter: 11.2={, count(distinct sql_exec_id||to_char(sql_exec_start,'yyyymmddhh24miss')) "Execs"},default={}
       @UNIT   : 11.2={delta_time*1e-6}, default={&BASE}
       @IOS    : 11.2={,SUM(DELTA_READ_IO_BYTES) reads,SUM(DELTA_Write_IO_BYTES) writes},default={}
     ]]--

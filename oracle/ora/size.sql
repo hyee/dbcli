@@ -103,7 +103,7 @@ BEGIN
                 IF r.object_type='INDEX' THEN
                     v_ddl := dbms_metadata.get_ddl(r.object_type,r.object_name,r.owner);
                     dbms_space.create_index_cost(v_ddl,v_alloc,v_used);
-                    SELECT SUM(a.avg_col_len+1),max(c.pct_free),max(trim(c.degree)+0),max(c.ini_trans)
+                    SELECT SUM(a.avg_col_len+1),max(c.pct_free),max(nvl(regexp_substr(c.degree,'\d+'),'1')+0),max(c.ini_trans)
                     INTO   v_used,v_free,v_degree,v_initrans
                     FROM   dba_tab_cols a,dba_ind_columns b,dba_indexes c
                     WHERE  b.index_owner=r.owner
@@ -117,7 +117,7 @@ BEGIN
                     AND    b.column_name=a.column_name;
                 ELSIF r.object_type LIKE 'TABLE%' THEN
                     for r1 in(
-                            select tablespace_name,avg_row_len,num_rows,pct_free,trim(degree)+0 degree,ini_trans from dba_tables where table_name=r.object_name and owner=r.owner and avg_row_len>0 and num_rows>0 and r.object_type='TABLE'
+                            select tablespace_name,avg_row_len,num_rows,pct_free,nvl(regexp_substr(degree,'\d+'),'1')+0 degree,ini_trans from dba_tables where table_name=r.object_name and owner=r.owner and avg_row_len>0 and num_rows>0 and r.object_type='TABLE'
                             UNION  ALL
                             select tablespace_name,avg_row_len,num_rows,pct_free,null degree,ini_trans from dba_tab_partitions where table_name=r.object_name and table_owner=r.owner and partition_name=r.partition_name and avg_row_len>0 and num_rows>0 and r.object_type='TABLE PARTITION'
                             UNION  ALL

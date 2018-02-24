@@ -120,6 +120,7 @@ function alias.set(name, cmd, write)
         end
         cmd = env.COMMAND_SEPS.match(cmd)
         local target_dir = alias.db_dir
+        if not cmd or cmd:trim()=="" then return end
         local sub_cmd = env.parse_args(2, cmd)[1]:upper()
         if env._CMDS[sub_cmd] then
             local file = env._CMDS[sub_cmd].FILE or ""
