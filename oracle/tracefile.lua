@@ -8,6 +8,7 @@ function trace.get_trace(filename,mb,from_mb)
         org        VARCHAR2(2000) := :1;
         f          VARCHAR2(2000) := org;
         vw         VARCHAR2(61)   := :5;
+        al         VARCHAR2(61)   := :6;
         dir        VARCHAR2(200);
         tmp        varchar2(200);
         buff       VARCHAR2(32767);
@@ -84,7 +85,7 @@ function trace.get_trace(filename,mb,from_mb)
 
             tmp := 'File Size: ' || round(fsize/1024/1024, 3) || ' MB        Extract Size: ' || round(length(text)/1024/1024, 3) ||
                     ' MB        Start Extract Position: ' || round(from_MB/1024/1024, 3) || ' MB';
-            base64encode(text);
+            --base64encode(text);
         EXCEPTION
             WHEN OTHERS THEN
                 text := null;
@@ -106,15 +107,16 @@ function trace.get_trace(filename,mb,from_mb)
                 END IF;
         END;
 
-        IF text IS NULL AND vw IS NOT NULL THEN
-            dir := regexp_replace(tmp,'[\\/]trace[\\/]$');
-            EXECUTE IMMEDIATE 'select count(1) from ' || REPLACE(upper(vw), '_CONTENTS') || ' where ADR_HOME=:d and TRACE_FILENAME=:f'
-                INTO flag
-                USING dir, f;
-            IF flag > 0 THEN
+        IF text IS NULL THEN
+            dir  := regexp_replace(tmp,'[\\/]trace[\\/]$');
+            IF al IS NOT NULL THEN
+                OPEN cur FOR 'SELECT message_text FROM table(gv$(CURSOR(SELECT * FROM V$DIAG_ALERT_EXT WHERE filename LIKE :d1)))' USING dir||'%';
+            ELSIF vw IS NOT NULL THEN
+                OPEN cur FOR 'select PAYLOAD from ' || vw || '_CONTENTS where ADR_HOME=:d and TRACE_FILENAME=:f' USING dir, f;
+            END IF;
+        
+            IF cur IS NOT NULL THEN
                 flag := -2;
-                OPEN cur FOR 'select PAYLOAD from ' || vw || ' where ADR_HOME=:d and TRACE_FILENAME=:f'
-                    USING dir, f;
                 fsize := 0;
                 dbms_lob.createtemporary(text, true);
                 LOOP
@@ -153,6 +155,7 @@ function trace.get_trace(filename,mb,from_mb)
                         END IF;
                     END IF;
                 END LOOP;
+                CLOSE cur;
             
                 IF fsize > 0 THEN
                     IF from_MB IS NULL THEN
@@ -165,11 +168,11 @@ function trace.get_trace(filename,mb,from_mb)
                     END IF;
                     MBs := least(MBs, fsize - from_MB + 1);
                 END IF;
-                CLOSE cur;
+                
                 tmp := 'File Size: > ' || round(fsize/1024/1024, 3) || ' MB        Extract Size: ' 
                         || round(length(text)/1024/1024, 3) ||' MB        Start Extract Position: ' 
                         || round(from_MB/1024/1024, 3) || ' MB';
-                base64encode(text);
+                --base64encode(text);
             END IF;
         END IF;
         :res := tmp;
@@ -177,9 +180,9 @@ function trace.get_trace(filename,mb,from_mb)
         :3   := text;
     END;]]
     local target_view
+    target_view=db:check_obj("GV$DIAG_TRACE_FILE")
+    if not target_view then target_view=db:check_obj("V$DIAG_TRACE_FILE") end
     if not filename then
-        target_view=db:check_obj("GV$DIAG_TRACE_FILE")
-        if not target_view then target_view=db:check_obj("V$DIAG_TRACE_FILE") end
         if target_view then 
             target_view=target_view.object_name
             db:query([[SELECT * FROM(select ADR_HOME||regexp_substr(ADR_HOME,'[\\/]')||'trace'||regexp_substr(ADR_HOME,'[\\/]')||TRACE_FILENAME TRACE_FILENAME,CHANGE_TIME from ]]..target_view.." order by CHANGE_TIME desc) WHERE ROWNUM<=30")
@@ -233,14 +236,18 @@ function trace.get_trace(filename,mb,from_mb)
             filename=db:get_value[[select value|| '/alert_' || SYS_CONTEXT('userenv', 'instance_name') || '.log' from v$diag_info where name='Diag Trace']]
         end
     end
-    target_view=db:check_obj("GV$DIAG_TRACE_FILE_CONTENTS")
-    if not target_view then target_view=db:check_obj("V$DIAG_TRACE_FILE_CONTENTS") end
-    local args={filename,"#VARCHAR","#CLOB","#VARCHAR",target_view and target_view.object_name or '',mb=mb or 2,from_mb=from_mb or '',res='#VARCHAR'}
+
+    local alert_view
+    if filename:find('alert.*.log') then
+        alert_view=db:check_obj("V$DIAG_ALERT_EXT")
+    end
+    
+    local args={filename,"#VARCHAR","#CLOB","#VARCHAR",target_view and target_view.object_name or '',alert_view and alert_view.object_name or '',mb=mb or 2,from_mb=from_mb or '',res='#VARCHAR'}
     db:internal_call(sql,args)
     env.checkerr(args[2],args[4])
-    env.checkerr(args[3],'Target file does not exists!')
+    env.checkerr(args[3],'Target file('..filename..') does not exists!')
     print(args.res);
-    args[3]=loader:Base64ZlibToText(args[3]:split('\n'));
+    --args[3]=loader:Base64ZlibToText(args[3]:split('\n'));
     print("Result written to file "..env.write_cache(args[2],args[3]))
 end
 

@@ -104,7 +104,7 @@ public class Loader {
     public static void loadLua(Loader loader, String args[]) throws Exception {
         lua = new LuaState();
         lua.pushGlobal("loader", loader);
-        console.isSubSystem=false;
+        console.isSubSystem = false;
         console.setLua(lua);
         if (console.writer != null) {
             lua.pushGlobal("reader", console.reader);

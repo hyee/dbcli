@@ -149,8 +149,10 @@
                         'IM scan rows cache',
                         'IM scan rows projected',
                         'IM populate rows',
+                        'IM populate rows',
                         'cell physical IO interconnect bytes', 
                         'IM repopulate (trickle incremental) total rows',
+                        'IM prepopulate bytes from storage',
                         'IM scan rows pcode aggregated','session logical reads - IM',
                         'table scan disk non-IMC rows gotten',
                         'IM scan CUs invalid or missing revert to on disk extent',
@@ -206,7 +208,7 @@
                      SUM(DECODE(n, 'IM scan bytes in-memory', v,0)) "Bytes",
                      SUM(DECODE(n, 'IM scan bytes uncompressed', v,0)) "Unzip",
                      SUM(DECODE(n, 'IM populate bytes from storage', v,0)) "Pops",
-                     SUM(DECODE(n, 'IM repopulate (trickle) bytes from storage', v,0)) "re-Pops",
+                     SUM(DECODE(n, 'IM repopulate (trickle) bytes from storage',v,'IM prepopulate bytes from storage', v,0)) "re-Pops",
                      SUM(DECODE(n, 'IM scan CUs invalid or missing revert to on disk extent', v,0)) "missCU",
                      '|' "*",
                      SUM(DECODE(n, 'IM scan rows', v,0)) "Rows",
@@ -216,7 +218,7 @@
                      SUM(DECODE(n, 'IM scan rows valid', v,0)) "Valid(%)",
                      SUM(DECODE(n, 'IM scan rows cache', v,0)) "Cache",
                      SUM(DECODE(n, 'IM populate rows', v,0)) "Popr",
-                     SUM(DECODE(n, 'IM repopulate (trickle incremental) total rows', v,0)) "re-Popr"
+                     SUM(DECODE(n, 'IM repopulate (trickle incremental) total rows', v,'IM repopulate rows',v,0)) "re-Popr"
                      
               FROM   (SELECT &inst1 inst_id, NAME n, VALUE v FROM gv$sysstat WHERE &inst2  AND value>0)
               GROUP  BY inst_id]],

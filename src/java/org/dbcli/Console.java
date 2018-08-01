@@ -12,6 +12,8 @@ import org.jline.keymap.KeyMap;
 import org.jline.reader.*;
 import org.jline.reader.impl.DefaultParser;
 import org.jline.reader.impl.LineReaderImpl;
+import org.jline.reader.impl.history.DefaultHistory;
+import org.jline.terminal.MouseEvent;
 import org.jline.terminal.Terminal;
 import org.jline.utils.NonBlockingReader;
 import org.jline.utils.OSUtils;
@@ -22,8 +24,9 @@ import java.awt.event.ActionListener;
 import java.io.*;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.security.Permission;
+import java.time.Instant;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -42,6 +45,7 @@ public class Console {
     public Terminal terminal;
     LineReaderImpl reader;
     public static ClassAccess<LineReaderImpl> accessor = ClassAccess.access(LineReaderImpl.class);
+    public static ClassAccess<DefaultHistory> historyAccess = ClassAccess.access(DefaultHistory.class);
     public final static Pattern ansiPattern = Pattern.compile("^\33\\[[\\d\\;]*[mK]$");
 
     protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(5);
@@ -53,7 +57,8 @@ public class Console {
     long threadID;
     private EventCallback callback;
     private ParserCallback parserCallback;
-    private Parser parser;
+    private DefaultHistory history;
+    private LinkedList<DefaultHistory.Entry> historyItems;
     private volatile boolean pause = false;
     private Highlighter highlighter = new Highlighter(this);
     HashMap<String, Candidate[]> candidates = new HashMap<>(1024);
@@ -150,17 +155,34 @@ public class Console {
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MINGW)) {
             terminal = new WindowsTerminal(colorPlan, Kernel32.INSTANCE.GetConsoleOutputCP());
         } else terminal = new PosixTerminal(colorPlan);
+
+
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).build();
-        this.parser = new Parser();
-        this.reader.setParser(parser);
         this.reader.setHighlighter(highlighter);
         this.reader.setCompleter(completer);
+        history=(DefaultHistory)this.reader.getHistory();
+        historyItems=historyAccess.get(history,"items");
         this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE);
+        this.reader.setParser(new Parser());
         //this.reader.setOpt(LineReader.Option.MOUSE);
         this.reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
-        this.reader.setOpt(LineReader.Option.BRACKETED_PASTE);
+        //this.reader.unsetOpt(LineReader.Option.BRACKETED_PASTE);
+        this.reader.setOpt(LineReader.Option.INSERT_TAB);
         this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
+        this.reader.setOpt(LineReader.Option.DISABLE_HIGHLIGHTER);
         this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);
+        reader.getWidgets().put(LineReader.CALLBACK_INIT, () -> {
+            terminal.trackMouse(Terminal.MouseTracking.Any);
+            return true;
+        });
+        reader.getWidgets().put(LineReader.MOUSE, () -> {
+            MouseEvent event = reader.readMouseEvent();
+            if ("Button3".equals(event.getButton().name())) {
+
+            }
+            return true;
+        });
+
         /*
         reader.getKeyMaps().get(LineReader.EMACS).unbind("\t");
         reader.getKeyMaps().get(LineReader.EMACS).bind(new Reference(LineReader.EXPAND_OR_COMPLETE), "\t\t");
@@ -171,7 +193,6 @@ public class Console {
         setKeyCode("forward-word", "^[[1;3C");
 
         input = terminal.reader();
-
         writer = ((MyTerminal) terminal).printer();
         threadID = Thread.currentThread().getId();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
@@ -206,12 +227,17 @@ public class Console {
         Method main = clz.getDeclaredMethod("main", String[].class);
         subThread = new Thread(() -> {
             try {
+                SystemExitControl.forbidSystemExitCall();
                 main.invoke(null, new Object[]{args});
             } catch (IllegalAccessException e) {
                 e.printStackTrace();
             } catch (InvocationTargetException e) {
                 e.printStackTrace();
+            } catch (SecurityException e) {
+                System.out.println("Forbidding call to System.exit");
             } catch (Exception e) {
+            } finally {
+                SystemExitControl.enableSystemExitCall();
             }
         });
 
@@ -219,39 +245,19 @@ public class Console {
         //System.setSecurityManager(new NoExitSecurityManager(subThread));
         Logger.getLogger("OracleRestJDBCDriverLogger").setLevel(Level.OFF);
         try {
+            terminal.pause();
             subThread.setDaemon(true);
             subThread.start();
             subThread.join();
         } catch (Exception e1) {
+            subThread.interrupt();
         } finally {
             //System.setSecurityManager(null);
             subThread = null;
+            terminal.resume();
         }
     }
 
-    private static class NoExitSecurityManager extends SecurityManager {
-        Thread running;
-
-        public NoExitSecurityManager(Thread running) {
-            this.running = running;
-        }
-
-        @Override
-        public void checkPermission(Permission perm) {
-            // allow anything.
-        }
-
-        @Override
-        public void checkPermission(Permission perm, Object context) {
-            // allow anything.
-        }
-
-        @Override
-        public void checkExit(int status) {
-            super.checkExit(status);
-            if (Thread.currentThread() == running) throw new SecurityException("Exited");
-        }
-    }
 
     public void less(String output) throws Exception {
         ByteArrayOutputStream stream = new ByteArrayOutputStream();
@@ -303,7 +309,7 @@ public class Console {
     public String readLine(String prompt, String buffer) {
         try {
             setEvents(null, null);
-            ((MyTerminal) terminal).lockReader(false);
+            terminal.resume();
             isPrompt = buffer != null && ansiPattern.matcher(buffer).find();
             if (isPrompt) {
                 highlighter.setAnsi(buffer);
@@ -425,10 +431,10 @@ public class Console {
             reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
         }
 
-        public ParsedLine parse(String line, int cursor, ParseContext context) {
+        public ParsedLine parse(String line, int cursor, org.jline.reader.Parser.ParseContext context) {
             if (!isPrompt) return null;
-            if (context == ParseContext.COMPLETE) return super.parse(line, cursor, context);
-            if (context != ParseContext.ACCEPT_LINE) return null;
+            if (context == org.jline.reader.Parser.ParseContext.COMPLETE) return super.parse(line, cursor, context);
+            if (context != org.jline.reader.Parser.ParseContext.ACCEPT_LINE) return null;
 
             String[] lines = null;
 
@@ -449,7 +455,7 @@ public class Console {
                 isMulti = true;
                 throw err;
             }
-            if ((Boolean) result[2]) ((MyTerminal) terminal).lockReader(true);
+            if ((Boolean) result[2]) terminal.pause();
             reader.setVariable(DISABLE_HISTORY, lines.length > Math.min(25, terminal.getHeight() - 5));
             isMulti = false;
             return null;

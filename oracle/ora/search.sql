@@ -35,5 +35,5 @@ FROM   (SELECT OWNER,
         WHERE  a.owner = b.owner
         and    a.object_name=b.object_name
         AND    procedure_name IS NOT NULL
-        AND    upper('.'||a.procedure_name || CHR(1) || a.subprogram_id|| chr(1) ||'PROCEDURE/FUNCTION'|| chr(1)) LIKE '%' || NVL(UPPER(:V1), 'x') || '%'
+        AND    upper(a.owner||'.'||a.procedure_name || CHR(1) || a.subprogram_id|| chr(1) ||'PROCEDURE/FUNCTION'|| chr(1)) LIKE '%' || NVL(UPPER(:V1), 'x') || '%'
         ORDER  BY 1, 2)

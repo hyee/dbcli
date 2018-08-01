@@ -15,7 +15,7 @@ public class PosixTerminal extends PosixSysTerminal implements MyTerminal {
     Short bufferWidth = null;
 
     public PosixTerminal(String name, String type, Pty pty, String encoding, boolean nativeSignals, SignalHandler signalHandler) throws IOException {
-        super(name, type, pty, encoding, nativeSignals, signalHandler);
+        super(name, type, pty, null, nativeSignals, signalHandler);
     }
 
     public PosixTerminal(String name) throws IOException {

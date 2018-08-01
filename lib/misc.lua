@@ -271,10 +271,10 @@ function string.ulen(s)
     local len1,len2
     if s:find('[%z\1-\127\194-\244][\128-\191]*') then
         len1,len2= ulen(s):match("(%d+):(%d+)")
-        return tonumber(len1),tonumber(len2)
+        return tonumber(len1) or 0,tonumber(len2) or 0
     else
         len1=#s
-        return len1,len1
+        return 0,0
     end
 end
 

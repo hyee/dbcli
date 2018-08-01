@@ -39,7 +39,6 @@ SELECT t.kqftanam TABLE_NAME, c.KQFCOCNO COL#, c.kqfconam COLUMN_NAME,
 FROM   x$kqfta t, x$kqfco c
 WHERE  c.kqfcotab = t.indx
 and    c.inst_id = t.inst_id
-and    c.inst_id=1
 AND    trim(:V1) is not null
 AND   (upper(t.kqftanam) LIKE upper(:V1) or t.kqftanam=(SELECT KQFDTEQU FROM x$kqfdt WHERE KQFDTNAM=upper(:V1)))
 ORDER  BY 1,2;
