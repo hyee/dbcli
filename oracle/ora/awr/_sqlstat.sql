@@ -10,7 +10,6 @@ BEGIN
                begin_interval_time + 0 begin_time,
                end_interval_time + 0 end_time,
                decode(force_matching_signature, 0, sql_id, to_char(force_matching_signature)) signature,
-               
                decode(delta_flag, 0, fetches_total, fetches_delta) fetches,
                decode(delta_flag, 0, end_of_fetch_count_total, end_of_fetch_count_delta) end_of_fetch_count,
                decode(delta_flag, 0, sorts_total, sorts_delta) sorts,
@@ -32,7 +31,7 @@ BEGIN
                decode(delta_flag, 0, plsexec_time_total, plsexec_time_delta)*1e-6 plsexec_time,
                decode(delta_flag, 0, javexec_time_total, javexec_time_delta)*1e-6 javexec_time
                @11g@
-        FROM   (select h.*,sign(elapsed_time_delta) delta_flag from dba_hist_sqlstat H) h, dba_hist_snapshot s
+        FROM   (select h.*,sign(elapsed_time_delta) delta_flag from dba_hist_sqlstat H /*where BITAND(NVL(flag, 0), 1) = 0*/) h, dba_hist_snapshot s
         WHERE  greatest(h.elapsed_time_delta, elapsed_time_total) > 0
         AND    s.snap_id = h.snap_id
         AND    s.dbid = h.dbid

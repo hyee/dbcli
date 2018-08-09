@@ -14,7 +14,7 @@ FROM   (SELECT /*+use_hash(b a) leading(b) no_expand*/
                disk_name,
                NAME,
                round(CASE
-                   WHEN NAME LIKE 'Average%' THEN
+                   WHEN NAME LIKE 'Avg%' THEN
                     AVG(VALUE)
                    ELSE
                     SUM(VALUE)

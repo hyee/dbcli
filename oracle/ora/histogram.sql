@@ -1,11 +1,19 @@
 /*[[Show histogram. Usage: @@NAME {<table_name>[.<partition_name>] <column_name>}
     --[[
         @hybrid: 12.1={nullif(a.ENDPOINT_REPEAT_COUNT,0)}, default={null} 
+        @CHECK_ACCESS_DBA: DBA_TAB_COLS={DBA} DEFAULT={ALL} 
     --]]
 ]]*/
 SET FEED OFF
 ora _find_object &V1
 
+BEGIN
+    IF :V2 IS NULL THEN
+        raise_application_error(-20001,'Please specify the column name!');
+    END IF;
+END;
+/
+PRO Histogram of &OBJECT_TYPE &OBJECT_OWNER..&OBJECT_NAME[&V2]
 WITH r AS
  (SELECT /*+materialize*/
    *
@@ -23,7 +31,7 @@ WITH r AS
                  (c.num_rows - b.num_nulls) / b.sample_size ratio,
                  c.num_rows - b.num_nulls orig_card,
                  &hybrid card
-          FROM   all_tab_histograms a, All_Tab_Cols b, all_tables c
+          FROM   &CHECK_ACCESS_DBA._tab_histograms a, &CHECK_ACCESS_DBA._Tab_Cols b, &CHECK_ACCESS_DBA._tables c
           WHERE  a.owner = b.owner
           AND    a.table_name = b.table_name
           AND    a.column_name = b.column_name
@@ -42,7 +50,7 @@ WITH r AS
                  num_distinct,
                  b.high_value,
                  (SELECT data_type
-                  FROM   all_tab_cols c
+                  FROM   &CHECK_ACCESS_DBA._tab_cols c
                   WHERE  a.owner = c.owner
                   AND    a.table_name = c.table_name
                   AND    a.column_name = c.column_name),
@@ -52,7 +60,7 @@ WITH r AS
                  (c.num_rows - b.num_nulls) / b.sample_size ratio,
                  c.num_rows - b.num_nulls orig_card,
                  &hybrid card
-          FROM   all_part_histograms a, All_Part_Col_Statistics b, all_tab_partitions c
+          FROM   &CHECK_ACCESS_DBA._part_histograms a, &CHECK_ACCESS_DBA._Part_Col_Statistics b, &CHECK_ACCESS_DBA._tab_partitions c
           WHERE  a.owner = b.owner
           AND    a.table_name = b.table_name
           AND    a.column_name = b.column_name
@@ -80,26 +88,28 @@ r1 AS
          NVL(endpoint_actual_value,
              CASE
                  WHEN data_type LIKE '%CHAR%' THEN
-                  utl_raw.cast_to_varchar2(cv)
+                     utl_raw.cast_to_varchar2(cv)
                  WHEN data_type LIKE '%N%CHAR%' THEN
-                  to_char(utl_raw.cast_to_nvarchar2(cv))
-                 WHEN data_type = 'DATE' OR data_type LIKE 'TIMESTAMP%)' THEN
-                  to_char(to_date(trunc(ev), 'J') + MOD(ev, 1),
-                          'YYYY-MM-DD' || DECODE(MOD(ev, 1), 0, '', ' HH24:MI:SS'))
+                     to_char(utl_raw.cast_to_nvarchar2(cv))
+                 WHEN data_type = 'DATE'THEN
+                     to_char(to_date(trunc(ev), 'J') + MOD(ev, 1), 'YYYY-MM-DD' || DECODE(MOD(ev, 1), 0, '', ' HH24:MI:SS'))
+                 WHEN data_type LIKE 'TIMESTAMP%)' THEN
+                     to_char(to_timestamp(''||trunc(ev), 'J') + numtodsinterval(MOD(ev, 1),'DAY'), 'YYYY-MM-DD' || DECODE(MOD(ev, 1), 0, '', ' HH24:MI:SSxff6')) 
                  WHEN data_type IN ('NUMBER', 'BINARY_DOUBLE', 'BINARY_FLOAT') THEN
                   '' || ev
                  ELSE
-                  cv
+                     cv
              END) ep_value,
          NVL(pva,
              CASE
                  WHEN data_type LIKE '%CHAR%' THEN
-                  utl_raw.cast_to_varchar2(pv)
+                     utl_raw.cast_to_varchar2(pv)
                  WHEN data_type LIKE '%N%CHAR%' THEN
-                  to_char(utl_raw.cast_to_nvarchar2(pv))
-                 WHEN data_type = 'DATE' OR data_type LIKE 'TIMESTAMP%)' THEN
-                  to_char(to_date(trunc(opv), 'J') + MOD(opv, 1),
-                          'YYYY-MM-DD' || DECODE(MOD(opv, 1), 0, '', ' HH24:MI:SS'))
+                     to_char(utl_raw.cast_to_nvarchar2(pv))
+                 WHEN data_type = 'DATE' THEN
+                     to_char(to_date(trunc(opv), 'J') + MOD(opv, 1), 'YYYY-MM-DD' || DECODE(MOD(opv, 1), 0, '', ' HH24:MI:SS'))
+                 WHEN data_type LIKE 'TIMESTAMP%)' THEN
+                     to_char(to_timestamp(''||trunc(opv), 'J') + numtodsinterval(MOD(opv, 1),'DAY'), 'YYYY-MM-DD' || DECODE(MOD(opv, 1), 0, '', ' HH24:MI:SSxff6')) 
                  WHEN data_type IN ('NUMBER', 'BINARY_DOUBLE', 'BINARY_FLOAT') THEN
                   '' || opv
                  ELSE

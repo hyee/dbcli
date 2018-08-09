@@ -17,13 +17,16 @@ DECLARE
     part1         VARCHAR2(30):= :object_name;
     obj_type      VARCHAR2(30):= :object_type;
     txt           CLOB;
+    vw            VARCHAR2(60);
 BEGIN
     IF obj_type in('VIEW','SYNONYM') THEN
         BEGIN
-            EXECUTE IMMEDIATE q'[SELECT VIEW_DEFINITION FROM V$FIXED_VIEW_DEFINITION WHERE VIEW_NAME=regexp_replace(:1,'^G?V\_','GV') AND 'SYS'=:2 AND 'VIEW'=:3]'
-                INTO txt USING part1, SCHEM, obj_type;
-            txt:=regexp_replace(txt,' from ',chr(10)||'from ',1,1);
-            txt:=regexp_replace(txt,',[ ]+',',');
+            EXECUTE IMMEDIATE q'[SELECT VIEW_NAME,VIEW_DEFINITION FROM V$FIXED_VIEW_DEFINITION WHERE VIEW_NAME=regexp_replace(:1,'^G?V_','GV')]'
+                INTO vw,txt USING part1;
+            IF txt is not null then
+                txt:='CREATE OR REPLACE VIEW SYS.'||vw||' AS '||chr(10)||regexp_replace(txt,' from ',chr(10)||'from ',1,1);
+                txt:=regexp_replace(txt,',[ ]+',',');
+            END IF;
         EXCEPTION
             WHEN OTHERS THEN NULL;
         END;

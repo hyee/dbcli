@@ -45,6 +45,11 @@ BEGIN
             OPEN :cur for select 'No such task' message from dual;
         ELSIF advtype LIKE 'Segment%' THEN
             OPEN :cur for 'select * from table(SYS.DBMS_SPACE.ASA_RECOMMENDATIONS) where task_id=:task_id' using :V1;
+        ELSIF advtype LIKE 'Statistics%' THEN
+            EXECUTE IMMEDIATE 'BEGIN :rs :=dbms_stats.report_advisor_task(:1);END;' using out rs,taskname;
+            OPEN :cur for select rs result from dual;
+            :res  := rs;
+            :dest := replace(taskname,':','_')||'.txt';
         ELSIF advtype like 'SQL%' THEN
             EXECUTE IMMEDIATE 'BEGIN :rs :=sys.DBMS_SQLTUNE.REPORT_TUNING_TASK(task_name=>:1,owner_name=>:2);END;' using out rs,taskname,sq;
             OPEN :cur for select rs result from dual;
