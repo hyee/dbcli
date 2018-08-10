@@ -15,8 +15,7 @@ END;
 /
 PRO Histogram of &OBJECT_TYPE &OBJECT_OWNER..&OBJECT_NAME[&V2]
 WITH r AS
- (SELECT /*+materialize*/
-   *
+ (SELECT /*+materialize*/*
   FROM   (SELECT endpoint_number Bucket#,
                  endpoint_value ev,
                  endpoint_actual_value,
@@ -111,7 +110,7 @@ r1 AS
                  WHEN data_type LIKE 'TIMESTAMP%)' THEN
                      to_char(to_timestamp(''||trunc(opv), 'J') + numtodsinterval(MOD(opv, 1),'DAY'), 'YYYY-MM-DD' || DECODE(MOD(opv, 1), 0, '', ' HH24:MI:SSxff6')) 
                  WHEN data_type IN ('NUMBER', 'BINARY_DOUBLE', 'BINARY_FLOAT') THEN
-                  '' || opv
+                     '' || opv
                  ELSE
                   pv
              END) bp_value

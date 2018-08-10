@@ -7,36 +7,30 @@ local uid=nil
 
 
 local fmt='%s(select /*+merge*/ * from %s where %s=%s :others:)%s'
-local instance,container,usr
+local instance,container,usr,dbid,starttime,endtime
 local function rep_instance(prefix,full,obj,suffix)
     obj=obj:upper()
     local flag,str=0
-    if instance>0 and extvars.dict[obj] and extvars.dict[obj].inst_col then
-        str=fmt:format(prefix,full,extvars.dict[obj].inst_col,''..instance,suffix)
-        flag=flag+1
-    end
-    if container>0 and extvars.dict[obj] and extvars.dict[obj].cdb_col then
-        if flag==0 then
-            str=fmt:format(prefix,full,extvars.dict[obj].cdb_col,''..container,suffix)
-        else
-            str=str:gsub(':others:','and '..extvars.dict[obj].cdb_col..'='..container..' :others:')
+    if extvars.dict[obj] then
+        for k,v in ipairs{
+            {instance>0,extvars.dict[obj].inst_col,instance},
+            {container>=0,extvars.dict[obj].cdb_col,container},
+            {dbid>0,extvars.dict[obj].dbid_col,dbid},
+            {usr and usr~="",extvars.dict[obj].usr_col,"(select /*+no_merge*/ username from all_users where user_id="..usr..")"},
+        } do
+            if v[1] and v[2] and v[3] then
+                if flag==0 then
+                    str=fmt:format(prefix,full,v[2],''..v[3],suffix)
+                else
+                    str=str:gsub(':others:','and '..v[2]..'='..v[3]..' :others:')
+                end
+                flag = flag +1
+            end
         end
-        flag=flag+2
     end
-
-    if uid and extvars.dict[obj] and extvars.dict[obj].usr_col then
-        local filter="(select /*+no_merge*/ username from all_users where user_id="..uid..")"
-        if flag==0 then
-            str=fmt:format(prefix,full,extvars.dict[obj].usr_col,filter,suffix)
-        else
-            str=str:gsub(':others:','and '..extvars.dict[obj].usr_col.."="..filter)
-        end
-        flag=flag+4
-    end
-
     if flag==0 then
         str=prefix..full..suffix
-    elseif flag<7 then
+    else
         str=str:gsub(' :others:','') 
     end
     env.log_debug('extvars',str)
@@ -50,25 +44,22 @@ function extvars.on_before_db_exec(item)
         end
     end
 
-    if not var.outputs['INSTANCE'] then
-        local instance=tonumber(cfg.get("INSTANCE"))
-        var.setInputs("INSTANCE",tostring(instance>0 and instance or instance<0 and "" or db.props.instance))
+    instance,container,usr,dbid,starttime,endtime=tonumber(cfg.get("instance")),tonumber(cfg.get("container")),cfg.get("schema"),cfg.get("dbid"),cfg.get("STARTTIME"),cfg.get("ENDTIME")
+    if instance==0 then instance=tonumber(db.props.instance) end
+    for k,v in ipairs{
+        {'INSTANCE',instance>0 and instance or instance<0 and ""},
+        {'DBID',dbid>0 and dbid or ""},
+        {'CON_ID',container>=0 and container or ""},
+        {'STARTTIME',starttime},
+        {'ENDTIME',endtime},
+        {'SCHEMA',usr}
+    } do
+        if not var.outputs[v[1]] then var.setInputs(v[1],''..v[2]) end
     end
-    if not var.outputs['STARTTIME'] then
-        var.setInputs("STARTTIME",cfg.get("STARTTIME"))
-    end
-    if not var.outputs['ENDTIME'] then
-        var.setInputs("ENDTIME",cfg.get("ENDTIME"))
-    end
-    if not var.outputs['SCHEMA'] then
-        var.setInputs("SCHEMA",cfg.get("SCHEMA"))
-    end
+
     if not extvars.dict then return item end
     local db,sql,args,params=table.unpack(item)
-    instance,container,usr=tonumber(cfg.get("instance")),tonumber(cfg.get("container")),cfg.get("schema")
-    if instance==0 then instance=tonumber(db.props.instance) end
-    if container==0 then container=tonumber(db.props.container_id) end
-    if sql and (instance>0 or container>0 or (usr and usr~="")) then
+    if sql then
         item[2]=re.gsub(sql..' ',extvars.P,rep_instance):sub(1,-2)
     end
     return item
@@ -77,6 +68,7 @@ end
 function extvars.set_title(name,value,orig)
     local get=env.set.get
     local title=table.concat({tonumber(get("INSTANCE"))>-1   and "Inst="..get("INSTANCE") or "",
+                              tonumber(get("DBID"))>0   and "DBID="..get("DBID") or "",
                               tonumber(get("CONTAINER"))>-1   and "Con_id="..get("CONTAINER") or "",
                               get("SCHEMA")~=""   and "Schema="..get("SCHEMA") or "",
                               get("STARTTIME")~='' and "Start="..get("STARTTIME") or "",
@@ -93,7 +85,7 @@ end
 
 function extvars.set_instance(name,value)
     if tonumber(value)==-2 then
-        local dict={}
+        local dict=extvars.dict or {}
         local rs=db:internal_call([[
             with r as(
                     SELECT /*+no_merge*/ owner,table_name, column_name col,data_type
@@ -111,6 +103,7 @@ function extvars.set_instance(name,value)
             SELECT table_name,
                    MAX(CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') AND TABLE_NAME NOT LIKE 'X$%' THEN col END) INST_COL,
                    MAX(CASE WHEN col IN ('CON_ID') THEN col END) CON_COL,
+                   MAX(CASE WHEN col IN ('DBID') THEN col END) DBID_COL,
                    MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND regexp_like(col,'(OWNER|SCHEMA|KGLOBTS4|USER.*NAME)') THEN col END)
                        KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN col LIKE '%OWNER' THEN 1 ELSE 2 END) USR_COL,
                    MAX(owner)
@@ -128,18 +121,19 @@ function extvars.set_instance(name,value)
                     and    regexp_like(object_name,'^(DBMS_|UTL_)')
                     and    instr(object_type,' ')=0
                     union  all
-                    select owner,table_name,null,type 
-                    from   dba_tab_privs 
+                    select owner,table_name,null,null 
+                    from   dba_tab_privs a
                     where  grantee in('EXECUTE_CATALOG_ROLE','SELECT_CATALOG_ROLE'))
             GROUP  BY TABLE_NAME]])
         local rows=db.resultset:rows(rs,-1)
         local cnt1=#rows
         for i=2,cnt1 do
             dict[rows[i][1]]={
-                inst_col=(rows[i][2]~="" and rows[i][2] or nil),
-                cdb_col=(rows[i][3]~="" and rows[i][3] or nil),
-                usr_col=(rows[i][4]~="" and rows[i][4] or nil),
-                owner=rows[i][5]
+                inst_col=(rows[i][2] or "")~="" and rows[i][2] or dict[rows[i][1]].inst_col,
+                cdb_col=(rows[i][3] or "")~=""  and rows[i][3] or dict[rows[i][1]].cdb_col,
+                dbid_col=(rows[i][4] or "")~="" and rows[i][4] or dict[rows[i][1]].dbid_col,
+                usr_col=(rows[i][5] or "")~=""  and rows[i][5] or dict[rows[i][1]].usr_col,
+                owner=(rows[i][6] or "")~=""    and rows[i][6] or dict[rows[i][1]].owner
             }
             local prefix,suffix=rows[i][1]:match('(.-$)(.*)')
             if prefix=='GV_$' or prefix=='V_$' then
@@ -165,6 +159,7 @@ function extvars.set_container(name,value)
     return tonumber(value)
 end
 
+
 function extvars.set_schema(name,value)
     if value==nil or value=="" then 
         uid=nil
@@ -185,6 +180,7 @@ function extvars.on_after_db_conn()
     cfg.force_set('endtime','default')
     cfg.force_set('schema','default')
     cfg.force_set('container','default')
+    cfg.force_set('dbid','default')
 end
 
 function test_grid()
@@ -214,9 +210,9 @@ function extvars.onload()
     cfg.init("instance",-1,extvars.set_instance,"oracle","Auto-limit the inst_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-2 - 99")
     cfg.init("schema","",extvars.set_schema,"oracle","Auto-limit the schema of impacted tables. ","*")
     cfg.init({"container","con","con_id"},-1,extvars.set_container,"oracle","Auto-limit the con_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-1 - 99")
+    cfg.init("dbid",0,extvars.set_container,"oracle","Specify the dbid for AWR analysis")
     cfg.init("starttime","",extvars.check_time,"oracle","Specify the start time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
     cfg.init("endtime","",extvars.check_time,"oracle","Specify the end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
-    
     extvars.P=re.compile([[
         pattern <- {pt} {owner* obj} {suffix}
         suffix  <- [%s,;)]

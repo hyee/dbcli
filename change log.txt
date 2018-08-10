@@ -1,3 +1,8 @@
+2018-08-10: + oracle: new setting 'set dbid' 
+            + oracle: new PTF functions print_table/print_cursor under oracle/sqlplus/ptf
+            + oracle: new commands 'ora tabusage/flush_table/awrlist'
+            * oracle: some fixes/enhancements on existing commands
+2018-08-01: * public: some bug fixes
 2017-11-15: + oracle: new command 'ora stats'
 2017-11-10: * oracle: enhancement on 'ora sql/ashplan' and 'desc'
 2017-10-20: + oracle: new command 'exa diskio'

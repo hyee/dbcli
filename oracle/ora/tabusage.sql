@@ -1,5 +1,6 @@
 /*[[Report table usages. Usage: @@NAME [owner.]<table_name>
     Parameters that impacts column tracking: _column_tracking_level,_dml_monitoring_enabled
+    Parameters that impacts index usage tracking: _iut_enable,_iut_max_entries,_iut_stat_collection_type,
 	--[[
 		@check_access_usage: SYS.COL_USAGE$/SYS.COL_GROUP_USAGE$={2} SYS.COL_USAGE$={1} default={0}
 		@check_access_index: dba_index_usage={1} default={0}
