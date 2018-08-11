@@ -101,6 +101,7 @@ BEGIN
         exception when others then null;
         end;
     end loop;
+    dbms_output.put_line(rpad('Statistics History Retention',40) ||': '||dbms_stats.GET_STATS_HISTORY_RETENTION||' days(Avail: '||to_char(dbms_stats.GET_STATS_HISTORY_AVAILABILITY,'yyyy-mm-dd hh24:mi:ssxff3 TZH:TZM')||')');
 END;
 /
 set BYPASSEMPTYRS on
