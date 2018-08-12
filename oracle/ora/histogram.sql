@@ -48,6 +48,7 @@ DECLARE
     datefmt   VARCHAR2(30)  := 'YYYY-MM-DD HH24:MI:SS';
     tstampfmt VARCHAR2(30)  := 'YYYY-MM-DD HH24:MI:SSxff';
     rawfmt    VARCHAR2(32)  := 'fm'||lpad('x',30,'x');
+    rawinput  RAW(128);
     restoret  VARCHAR2(128);
     srec      DBMS_STATS.STATREC;
     nrec      DBMS_STATS.STATREC;
@@ -77,26 +78,26 @@ DECLARE
     dlen      PLS_INTEGER;
     buckets   PLS_INTEGER;
     pops      PLS_INTEGER := 0;
+    pop_based NUMBER      := 0;
     cnt       PLS_INTEGER := 0;
     cep       VARCHAR2(128);
     pep       VARCHAR2(128) := lpad(' ',32);
-    FUNCTION conv(idx PLS_INTEGER) RETURN VARCHAR2 IS
-        rtn    NUMBER := srec.novals(idx);
-        pv     VARCHAR2(2);
+    FUNCTION conv(idx PLS_INTEGER, num NUMBER := null) RETURN VARCHAR2 IS
+        rtn    NUMBER   := nvl(num,case when idx is not null then srec.novals(idx) end);
+        eva    RAW(128);
     BEGIN
+        $IF dbms_db_version.version > 11 $THEN
+            IF idx is not null and srec.eavals IS NOT NULL AND srec.eavals.exists(idx) THEN
+                eva := srec.eavals(idx);
+            END IF;
+        $END
         CASE
-            WHEN srec.chvals.exists(idx) AND srec.chvals(idx) IS NOT NULL THEN
+            WHEN idx is not null and srec.chvals IS NOT NULL AND srec.chvals.exists(idx) AND srec.chvals(idx) IS NOT NULL THEN
                 RETURN RTRIM(srec.chvals(idx));
             WHEN dtype IN ('VARCHAR2', 'CHAR', 'CLOB','ROWID', 'UROWID') THEN
-                $IF dbms_db_version.version > 11 $THEN
-                    RETURN utl_raw.cast_to_varchar2(srec.eavals(idx));
-                $END
-                RETURN substrb(utl_raw.cast_to_varchar2(to_char(rtn,rawfmt)),1,15);
+                RETURN utl_raw.cast_to_varchar2(nvl(eva,to_char(rtn,rawfmt)));
             WHEN dtype IN ('NVARCHAR2', 'NCHAR', 'NCLOB') THEN
-                $IF dbms_db_version.version > 11 $THEN
-                    RETURN utl_raw.cast_to_nvarchar2(srec.eavals(idx));
-                $END
-                RETURN utl_raw.cast_to_nvarchar2(to_char(rtn,rawfmt));
+                RETURN utl_raw.cast_to_nvarchar2(nvl(eva,to_char(rtn,rawfmt)));
             WHEN dtype = 'BINARY_DOUBLE' THEN
                 RETURN TO_CHAR(TO_BINARY_DOUBLE(rtn),'TM');
             WHEN dtype = 'BINARY_FLOAT' THEN
@@ -111,16 +112,15 @@ DECLARE
                 IF dtype = 'DATE' THEN
                     RETURN to_char(tstamp + MOD(rtn, 1), datefmt);
                 ELSE
-                    RETURN to_char(tstamp + NUMTODSINTERVAL(MOD(rtn, 1), 'DAY'), tstampfmt || dlen);
+                    RETURN trim(trailing '0' from to_char(tstamp + NUMTODSINTERVAL(MOD(rtn, 1)*86400, 'SECOND'), tstampfmt));
                 END IF;
             ELSE
                 RETURN substr(to_char(rtn, rawfmt),1,16);
         END CASE;
     END;
 
-    FUNCTION conr(idx PLS_INTEGER) RETURN RAW IS
-        rtn    VARCHAR2(128) := conv(idx);
-        pv     VARCHAR2(2);
+    FUNCTION conr(idx PLS_INTEGER, num NUMBER := null) RETURN RAW IS
+        rtn    VARCHAR2(128) := conv(idx,num);
         d      TIMESTAMP;
     BEGIN
         CASE
@@ -297,7 +297,7 @@ DECLARE
     PROCEDURE init IS
     BEGIN
         IF nrec.epc = 0 THEN
-            nrec.eavs   := 0;
+            nrec.eavs   := srec.eavs;
             nrec.bkvals := dbms_stats.numarray();
             nrec.novals := dbms_stats.numarray();
             nrec.chvals := dbms_stats.chararray();
@@ -324,9 +324,7 @@ DECLARE
         nrec.novals(nrec.epc):= noval;
         nrec.bkvals(nrec.epc):= buckets;
         $IF dbms_db_version.version > 11 $THEN
-            IF dtype IN ('VARCHAR2', 'CHAR', 'CLOB','NVARCHAR2', 'NCHAR', 'NCLOB','ROWID', 'UROWID') THEN
-                nrec.eavals(nrec.epc):=eaval;
-            END IF;
+            nrec.eavals(nrec.epc):=eaval;
             IF HISTOGRAM='HYBRID' AND rpcnt IS NOT NULL THEN
                 nrec.rpcnts(nrec.epc) := rpcnt;
             END IF;
@@ -372,13 +370,16 @@ BEGIN
                                 avgclen  => avgclen);
     --Modify column stats, following fields to be updated: EPC,BKVALS,NOVALS,EAVALS,MINVAL,MAXVAL
     IF INPUT IS NOT NULL AND max_v IS NOT NULL THEN
-        numval := toNum(input);
+        numval   := toNum(input);
         nrec.epc := 0;
+        rawinput := case when numval is null then utl_raw.cast_to_raw(input) else conr(null,numval) end;
         --For "NONE" histogram, support adjusting the low/high value
         IF histogram = 'NONE' THEN
-            set_rec(input,numval,srec.bkvals(1),null,utl_raw.cast_to_raw(input));
-            set_rec(max_v,toNum(max_v),srec.bkvals(2),null,utl_raw.cast_to_raw(max_v));
-        ELSIF nvl(histogram,'x') IN('x','HYBRID','HEIGHT BALANCED') THEN
+            set_rec(input,numval,srec.bkvals(1),null,rawinput);
+            numval := toNum(max_v);
+            rawinput := case when numval is null then utl_raw.cast_to_raw(max_v) else conr(null,numval) end;
+            set_rec(max_v,numval,srec.bkvals(2)-srec.bkvals(1),null,rawinput);
+        ELSIF nvl(histogram,'x') IN('x'/*,'HYBRID','HEIGHT BALANCED'*/) THEN
             raise_application_error(-20001,'Unsupported histogram: '||histogram);
         ELSE
             IF bk_adj IS NULL THEN
@@ -387,40 +388,39 @@ BEGIN
             IF srec.chvals IS NULL THEN 
                 srec.chvals := dbms_stats.chararray();
             END IF;
-
+            srec.chvals.extend(srec.epc-srec.chvals.count);
             other_adj := 0;
             prevb     := 0;
             FOR i IN 1 .. srec.epc LOOP
                 buckets := srec.bkvals(i) - prevb;
-                rpcnt := 0;
-                rawval:= NULL;
+                rpcnt   := 0;
+                rawval  := NULL;
+                max_v   := srec.chvals(i);
                 $IF dbms_db_version.version > 11 $THEN
                     rpcnt := case when srec.rpcnts is not null and srec.rpcnts.exists(i) then srec.rpcnts(i) end;
                     rawval:= case when srec.eavals is not null and srec.eavals.exists(i) then srec.eavals(i) end;
+                    max_v := nvl(max_v,getv(rawval));
                 $END
-                IF NOT srec.chvals.exists(i) THEN 
-                    srec.chvals.extend;
-                END IF;
 
                 IF other_adj=0 AND (input < srec.chvals(i)  OR numval < srec.novals(i)) THEN
-                    set_rec(input,numval,prevb + bk_adj,card_adj,utl_raw.cast_to_raw(input));
+                    set_rec(input,numval, bk_adj,card_adj,rawinput);
                     other_adj := bk_adj;
-                    set_rec(srec.chvals(i),srec.novals(i),srec.bkvals(i) + other_adj,rpcnt,rawval);
+                    set_rec(max_v,srec.novals(i),buckets,rpcnt,rawval);
                 ELSIF input = srec.chvals(i)  OR numval = srec.novals(i) THEN
                     IF bk_adj = 0 THEN --remove entry
                         other_adj := - buckets;
                     ELSE
-                        set_rec(srec.chvals(i),srec.novals(i),prevb + bk_adj,coalesce(card_adj,rpcnt,1),rawval);
+                        set_rec(max_v,srec.novals(i), bk_adj, coalesce(card_adj,rpcnt,1),rawval);
                         other_adj := nullif(bk_adj - buckets,0);
                     END IF;
                 ELSE
-                    set_rec(srec.chvals(i),srec.novals(i),srec.bkvals(i) + nvl(other_adj,0),rpcnt,rawval);
+                    set_rec(max_v,srec.novals(i),buckets,rpcnt,rawval);
                 END IF;
                 prevb   := srec.bkvals(i);
             END LOOP;
             --in case of input > high_value
-            IF other_adj = 0 THEN
-                set_rec(input,numval,srec.bkvals(srec.epc)+bk_adj,card_adj,utl_raw.cast_to_raw(input));
+            IF nrec.epc>0 AND other_adj = 0 AND bk_adj>0 THEN
+                set_rec(input,numval, bk_adj, card_adj, rawinput);
             END IF;
         END IF;
 
@@ -432,11 +432,19 @@ BEGIN
                 srec.eavals := nrec.eavals;
             $END
             IF dtype IN ('VARCHAR2', 'CHAR', 'CLOB','NVARCHAR2', 'NCHAR', 'NCLOB','ROWID', 'UROWID') THEN
+                srec.eavs   := 4; --DBMS_STATS_INTERNAL.DSC_EAVS
                 dbms_stats.prepare_column_values(srec,nrec.chvals);
+            /*ELSIF dtype IN ('NUMBER', 'INTEGER', 'FLOAT','BINARY_FLOAT','BINARY_DOUBLE') THEN
+                dbms_stats.prepare_column_values(srec,nrec.novals);*/
             ELSE
-                srec.novals := nrec.novals;
+                dbms_stats.prepare_column_values(srec,nrec.novals);
+                srec.eavs   := nrec.eavs;
+                $IF dbms_db_version.version > 11 $THEN
+                    srec.eavals := nrec.eavals;
+                $END
                 srec.minval := conr(1);
                 srec.maxval := conr(srec.epc);
+                --srec.eavs   := null;
             END IF;
             --set stats for restoration
             restoret := 'TO_TIMESTAMP_TZ('''||TO_CHAR(systimestamp-numtodsinterval(1,'second'),tstampfmt||' TZH:TZM')||''','''||tstampfmt||' TZH:TZM'')';
@@ -445,13 +453,9 @@ BEGIN
                                         tabname       => tab,
                                         partname      => part,
                                         colname       => col,
-                                        distcnt       => distcnt,
-                                        density       => density,
-                                        nullcnt       => nullcnt,
                                         srec          => srec,
-                                        avgclen       => avgclen,
-                                        no_invalidate => FALSE,
-                                        force         => TRUE);
+                                        no_invalidate => false,
+                                        force         => true);
             DBMS_STATS.GET_COLUMN_STATS(ownname  => oname,
                                         tabname  => tab,
                                         partname => part,
@@ -464,7 +468,45 @@ BEGIN
         END IF;
     END IF;
 
-    numbcks := srec.bkvals(srec.epc);
+    numbcks  := srec.bkvals(srec.epc);
+    samples  := NULLIF(samples, 0);
+    numbcks  := NULLIF(numbcks, 0);
+    cnt      := 0;
+    dlen     := 16;
+    IF srec.chvals IS NULL THEN 
+        srec.chvals := dbms_stats.chararray();
+    END IF;
+    srec.chvals.extend(srec.epc-srec.chvals.count);
+
+    $IF dbms_db_version.version>11 $THEN
+        IF srec.rpcnts is null THEN
+            srec.rpcnts := dbms_stats.numarray();
+        END IF;
+        srec.rpcnts.extend(srec.epc-srec.rpcnts.count);
+    $END
+
+    case histogram
+        when 'HYBRID' then pop_based := (samples - nullcnt) / numbcks;
+        when 'HEIGHT BALANCED' then pop_based := 1;
+        else  pop_based := null; 
+    end case;
+    
+    FOR i IN 1 .. srec.epc LOOP
+        buckets := srec.bkvals(i) - prevb;
+        srec.chvals(i) :=  rtrim(conv(i));
+        dlen := greatest(dlen,lengthb(srec.chvals(i)));
+        $IF dbms_db_version.version>11 $THEN
+            buckets := nvl(nullif(srec.rpcnts(i),0),buckets);
+        $END
+        IF buckets > pop_based THEN
+            cnt  := cnt + 1;
+            pops := pops + buckets;
+        END IF;
+        prevb := srec.bkvals(i);
+    END LOOP;
+
+    densityn := coalesce((numbcks-pops)/numbcks/nullif(distcnt-cnt,0), density);
+
     pr(RPAD('=', 120, '='));
     pr(utl_lms.format_message('Histogram: "%s"   Low-Value: "%s"   High-Value: "%s"',histogram,TRIM(getv(srec.minval)),TRIM(getv(srec.maxval))));
     pr(
@@ -480,32 +522,9 @@ BEGIN
 
        to_header('Rows/Block',ROUND(numrows / NULLIF(numblks, 0), 2),chr(10))||
        to_header('Density',round(density * 100, 3) || '%')||
-       to_header('New-Density',round(distcnt/nullif(numrows - nullcnt,1) * 100, 3) || '%')||
-       to_header('Cardinality',getNum(ROUND((numrows - nullcnt) / GREATEST(1, distcnt), 2))));
+       to_header('New-Density',round(densityn * 100, 3) || '%')||
+       to_header('Cardinality',getNum(ROUND((numrows - nullcnt) * densityn, 2))));
     pr(RPAD('=', 120, '='));
-    samples := NULLIF(samples, 0);
-    numbcks := NULLIF(numbcks, 0);
-    cnt     := 0;
-    dlen    := 16;
-    IF srec.chvals IS NULL THEN 
-        srec.chvals := dbms_stats.chararray();
-    END IF;
-
-    FOR i IN 1 .. srec.epc LOOP
-        buckets := srec.bkvals(i) - prevb;
-        IF NOT srec.chvals.exists(i) THEN 
-            srec.chvals.extend;
-        END IF;
-        srec.chvals(i) :=  rtrim(conv(i));
-        dlen := greatest(dlen,lengthb(srec.chvals(i)));
-        IF buckets > 1 THEN
-            cnt  := cnt + 1;
-            pops := pops + buckets;
-        END IF;
-        prevb := srec.bkvals(i);
-    END LOOP;
-
-    densityn := NVL((1 - pops / numbcks) / NULLIF(distcnt - cnt, 0), density);
 
     pr(RPAD(' ', 74));
     pr('    #', 'Bucket#',RPAD('Prev EP Value', dlen), RPAD('Current EP Value', dlen), 'Buckets', LPAD('Card', 8), LPAD(CASE WHEN is_test=2 THEN 'Real' ELSE 'RealCard' END, 8));
@@ -516,9 +535,13 @@ BEGIN
     FOR i IN 1 .. srec.epc LOOP
         buckets := greatest(srec.bkvals(i) - prevb,1);
         IF histogram = 'HEIGHT BALANCED' THEN
-            IF buckets > 1 THEN
-                rpcnt := (numrows - nullcnt) * buckets / numbcks;
-            ELSE
+            IF buckets > 1 THEN  --popular value
+                IF i != srec.epc THEN
+                    rpcnt := (numrows - nullcnt) * buckets / numbcks;
+                ELSE
+                    rpcnt := (numrows - nullcnt) * (buckets - 0.5) / numbcks; 
+                END IF;
+            ELSE --un-popular value
                 /*
                 NewDensity with the “half the least popular” rule active
                 NewDensity is set to
@@ -529,14 +552,19 @@ BEGIN
                 rpcnt := (numrows - nullcnt) * densityn;
             END IF;
         ELSIF histogram = 'NONE' THEN
-            rpcnt := (numrows - nullcnt) / GREATEST(1, distcnt) * buckets;
+            rpcnt := densityn * buckets;
         ELSE
             rpcnt := buckets * (numrows - nullcnt) / samples;
         END IF;
     
         $IF dbms_db_version.version>11 $THEN
-        rpcnt := nvl(nullif(srec.rpcnts(i), 0), rpcnt);
+            pop_based := nullif(srec.rpcnts(i), 0)*numrows/nullif(samples,0);
+            IF srec.rpcnts(i) = 1 THEN
+                pop_based := greatest(pop_based,(numrows - nullcnt) * densityn);
+            END IF;
+            rpcnt := nvl(pop_based, rpcnt);
         $END
+
         cep := srec.chvals(i);
         pr(lpad(i, 5),lpad(srec.bkvals(i), 7), rpad(pep,dlen),rpad(cep,dlen),lpad(buckets, 7),LPAD(NVL('' || getNum(rpcnt), ' '), 8),LPAD(case when is_test > 0  then getNum(get_card(cep)) end,8));
         pep   := cep;

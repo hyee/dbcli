@@ -1,3 +1,5 @@
+2018-08-13: + oracle: enhancement on 'ora histogram' to support adjusting column stats
+2018-08-11: + oracle: enhancement on 'ora histogram' to support testing the plan/real cardinality
 2018-08-10: + oracle: new setting 'set dbid' 
             + oracle: new PTF functions print_table/print_cursor under oracle/sqlplus/ptf
             + oracle: new commands 'ora tabusage/flush_table/awrlist'
