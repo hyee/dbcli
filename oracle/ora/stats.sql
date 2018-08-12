@@ -8,10 +8,10 @@ set feed off serveroutput on printsize 10000
 pro Preferences
 pro ***********
 DECLARE
-    owner       varchar2(30):=:object_owner;
+    owner       varchar2(30)  := :object_owner;
     object_name varchar2(128) := :object_name;
     partname    varchar2(128) := :object_subname;
-    typ         varchar2(100):=:object_type;
+    typ         varchar2(100) := :object_type;
     st          date;
     et          date;
     status      varchar2(100);
@@ -127,19 +127,12 @@ and table_name = :object_name;
 
 SELECT COLUMN_NAME,
        decode(t.DATA_TYPE,
-              'NUMBER',
-              t.DATA_TYPE || '(' ||
-              decode(t.DATA_PRECISION, NULL, t.DATA_LENGTH || ')', t.DATA_PRECISION || ',' || t.DATA_SCALE || ')'),
-              'DATE',
-              t.DATA_TYPE,
-              'LONG',
-              t.DATA_TYPE,
-              'LONG RAW',
-              t.DATA_TYPE,
-              'ROWID',
-              t.DATA_TYPE,
-              'MLSLABEL',
-              t.DATA_TYPE,
+              'NUMBER',t.DATA_TYPE || '(' || decode(t.DATA_PRECISION, NULL, t.DATA_LENGTH || ')', t.DATA_PRECISION || ',' || t.DATA_SCALE || ')'),
+              'DATE',t.DATA_TYPE,
+              'LONG',t.DATA_TYPE,
+              'LONG RAW',t.DATA_TYPE,
+              'ROWID',t.DATA_TYPE,
+              'MLSLABEL',t.DATA_TYPE,
               t.DATA_TYPE || '(' || t.DATA_LENGTH || ')') || ' ' ||
        decode(t.nullable, 'N', 'NOT NULL', 'n', 'NOT NULL', NULL) col,
        HISTOGRAM,
