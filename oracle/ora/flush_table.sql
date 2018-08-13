@@ -22,9 +22,6 @@ BEGIN
                                 nullcnt => nullcnt,
                                 srec    => srec,
                                 avgclen => avgclen);
-    $IF dbms_db_version.version >11 $THEN
-    srec.rpcnts := NULL;
-    $END
     DBMS_STATS.SET_COLUMN_STATS(ownname       => :OBJECT_OWNER,
                                 tabname       => :OBJECT_NAME,
                                 colname       => colname,
@@ -42,7 +39,7 @@ EXCEPTION
                       FROM   &check_access_dba
                       WHERE  owner = :OBJECT_OWNER
                       AND    table_name = :OBJECT_NAME
-                      AND    NUDISTINCT > 0) LOOP
+                      AND    NUM_DISTINCT > 0) LOOP
                 DBMS_STATS.GET_COLUMN_STATS(ownname => :OBJECT_OWNER,
                                             tabname => :OBJECT_NAME,
                                             colname => r.column_name,
@@ -51,9 +48,6 @@ EXCEPTION
                                             nullcnt => nullcnt,
                                             srec    => srec,
                                             avgclen => avgclen);
-                $IF dbms_db_version.version >11 $THEN
-                srec.rpcnts := NULL;
-                $END
                 DBMS_STATS.SET_COLUMN_STATS(ownname       => :OBJECT_OWNER,
                                             tabname       => :OBJECT_NAME,
                                             colname       => r.column_name,
