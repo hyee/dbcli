@@ -34,7 +34,7 @@ BEGIN
                                 force         => TRUE);
 EXCEPTION
     WHEN OTHERS THEN
-        IF SQLCODE = -6532 THEN
+        IF SQLCODE in (-6532,-6533) THEN
             FOR r IN (SELECT *
                       FROM   &check_access_dba
                       WHERE  owner = :OBJECT_OWNER

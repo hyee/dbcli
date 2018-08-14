@@ -308,7 +308,14 @@ function env.get_command_by_source(list)
         while type(v)=="string" do v=_CMDS.___ABBR___[v] end
         for _,name in ipairs(list) do
             name=name=="default" and env.callee():match("([^\\/]+)#") or name
-            if v.FILE:lower():match('[\\/]'..name:lower()..'#') then cmdlist[k]=1 end
+            if v.FILE:lower():match('[\\/]'..name:lower()..'#') then
+                local sub=1
+                if name=='alias' then
+                    sub = env.alias.cmdlist[k]
+                    sub = sub and sub.desc or 1
+                end
+                cmdlist[k]=sub 
+            end
         end
     end
     return cmdlist
@@ -350,9 +357,11 @@ function env.format_error(src,errmsg,...)
         errmsg=errmsg:strip_ansi()
     end
     env.log_debug("ERROR",errmsg)
-    errmsg,count=errmsg:gsub('^.-(%u%u%u%-%d%d%d%d%d)','%1') 
-    if count==0 then
-        errmsg=errmsg:gsub('^.*%s([^%: ]+Exception%:%s*)','%1'):gsub(".*[IS][OQL]+Exception:%s*","")
+    if errmsg:find('Exception%:') or errmsg:find(':%d+: (%u%u%u%-%d%d%d%d%d)') then
+        errmsg,count=errmsg:gsub('^.-(%u%u%u%-%d%d%d%d%d)','%1') 
+        if count==0 then
+            errmsg=errmsg:gsub('^.*%s([^%: ]+Exception%:%s*)','%1'):gsub(".*[IS][OQL]+Exception:%s*","")
+        end
     end
     errmsg=errmsg:gsub("\n%s+at%s+.*$","")
     errmsg=errmsg:gsub("^.*000%-00000%:%s*",""):gsub("%s+$","")

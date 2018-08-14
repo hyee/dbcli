@@ -196,13 +196,16 @@ function snapper:run_sql(sql,main_args,cmds,files)
     end
 
     local begin_flag
-    
     if interval then
         interval=interval:upper()
         if interval=="END" then
-            if self.start_time then self:next_exec() end
-            return 
+            if self.start_time then 
+                self.start_time=nil
+                self:next_exec() 
+            end
+            return
         elseif interval=="BEGIN" then
+            self.start_time=os.clock()
             begin_flag=true
         end
     end

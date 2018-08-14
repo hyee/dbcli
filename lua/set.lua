@@ -282,8 +282,8 @@ function cfg.capture_before_cmd(command)
     if #env.RUNNING_THREADS>1 then return end
     env.log_debug("set","taking full backup",command[1])
     local cmd=env._CMDS[command[1]]
-
-    if not cfg.cmdlist or not cfg.cmdlist[command[1]] then
+    cfg._backup=cfg.backup()
+    if not cfg.cmdlist or not tostring(cfg.cmdlist[command[1]]):upper():find('^SET') then
         cfg._backup=cfg.backup()
     else
         cfg._backup=nil
