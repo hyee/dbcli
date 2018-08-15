@@ -1,7 +1,10 @@
-/*[[ Get preferences and stats of the target object. Usage: @@NAME [[owner.]<object_name>[.partition_name]]
-   --[[
+/*[[Get preferences and stats of the target object. Usage: @@NAME [[owner.]<object_name>[.partition_name]] [-advise]
+    
+    -advise: execute SQL Statistics Advisor on the target table
+    --[[
        @check_access_dba: dba_tables={dba_} default={all_}
-   --]]
+       &advise          : default={0} advise={1}
+    --]]
 ]]*/
 ora _find_object "&V1" 1
 set feed off serveroutput on printsize 10000
@@ -319,3 +322,50 @@ AND    i.table_owner = :object_owner
 AND    i.owner = t.index_owner
 AND    i.index_name = t.index_name
 AND    t.subpartition_name =nvl(:object_subname,t.subpartition_name);
+
+DECLARE
+    oname  VARCHAR2(128) := :object_owner;
+    tab    VARCHAR2(129) := :object_name;
+    tname  VARCHAR2(128) := upper('stats_adv_' || oname || '_' || tab);
+    tid    PLS_INTEGER;
+    output CLOB;
+BEGIN
+    NULL;
+    $IF &advise=1 $THEN
+    BEGIN
+        dbms_stats.drop_advisor_task(tname);
+    EXCEPTION
+        WHEN OTHERS THEN
+            NULL;
+    END;
+    output := dbms_stats.create_advisor_task(tname);
+    --defines rules that listed in v$stats_advisor_rules
+    output := DBMS_STATS.CONFIGURE_ADVISOR_OBJ_FILTER(task_name          => tname,
+                                                      stats_adv_opr_type => 'EXECUTE',
+                                                      rule_name          => NULL,
+                                                      ownname            => NULL,
+                                                      tabname            => NULL,
+                                                      action             => 'DISABLE');
+
+    output := DBMS_STATS.CONFIGURE_ADVISOR_OBJ_FILTER(task_name          => tname,
+                                                      stats_adv_opr_type => 'EXECUTE',
+                                                      rule_name          => NULL,
+                                                      ownname            => oname,
+                                                      tabname            => tab,
+                                                      action             => 'ENABLE');
+    output := DBMS_STATS.CONFIGURE_ADVISOR_RULE_FILTER(task_name          => tname,
+                                                      stats_adv_opr_type => 'EXECUTE',
+                                                      rule_name          => 'UseConcurrent',
+                                                      action             => 'DISABLE');
+    output := DBMS_STATS.CONFIGURE_ADVISOR_RULE_FILTER(task_name          => tname,
+                                                       stats_adv_opr_type => 'EXECUTE',
+                                                       rule_name          => 'UseGatherSchemaStats',
+                                                       action             => 'DISABLE');
+    output := DBMS_STATS.EXECUTE_ADVISOR_TASK(tname);
+    select task_id into tid from dba_advisor_tasks where task_name=tname;
+    dbms_output.put_line('Statistics Advisor is running, please use "ora addm '||tid||'" to show the result afterwards.');
+    dbms_output.put_line('Or may run following command to see the recommended script:');
+    dbms_output.put_line('    select dbms_stats.script_advisor_task('''||tname||''') from dual;');
+    $END
+END;
+/

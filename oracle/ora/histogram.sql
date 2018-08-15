@@ -3,7 +3,7 @@
     Options:
         *  -test: use "EXPLAIN PLAN" to test the cardinality of each EP value. In case of setting histograms, this option will skip the changes
         *  -real: use "SELECT COUNT(1)" to test the real count of each EP value
-        *  -tab : use stage table as the data source/target
+        *  -tab : use stats table as the data source/target
 
     Examples:
         *  List the histogram: @@NAME SYS.OBJ$ NAME
@@ -29,7 +29,8 @@
 ]]*/
 SET FEED OFF SERVEROUTPUT ON VERIFY OFF
 var stats_owner varchar2
-var stats_tab varchar2
+var stats_tab   varchar2
+var script_text CLOB; --The variable to store the SQL*Plus script
 ora _find_object "&tab" 1
 BEGIN
     IF :tab IS NOT NULL AND :object_name IS NULL THEN
@@ -75,9 +76,9 @@ DECLARE
     restoret  VARCHAR2(128);
     rawinput  RAW(128);
     rawval    RAW(2000);
-    srec      DBMS_STATS.STATREC;
-    nrec      DBMS_STATS.STATREC;
-    orec      DBMS_STATS.STATREC;
+    srec      dbms_stats.StatRec;
+    nrec      dbms_stats.StatRec;
+    orec      dbms_stats.StatRec;
     distcnt   NUMBER;
     density   NUMBER;
     densityn  NUMBER;
@@ -114,6 +115,8 @@ DECLARE
     pops      PLS_INTEGER   := 0;
     pop_based NUMBER        := 0;
 
+    --convert all_tab_histograms.enpoint_value as varchar2
+    --refer to https://mwidlake.wordpress.com/2009/08/11/decrypting-histogram-data/
     FUNCTION hist_numtochar(p_num NUMBER, p_trunc VARCHAR2 := 'Y') RETURN VARCHAR2 IS
         m_vc   VARCHAR2(15);
         m_n1   NUMBER;
@@ -122,7 +125,6 @@ DECLARE
     BEGIN
         m_n := p_num;
         IF length(to_char(m_n)) < 36 THEN
-            --dbms_output.put_line ('input too short');
             m_vc := 'num format err';
         ELSE
             IF p_trunc != 'Y' THEN
@@ -139,6 +141,7 @@ DECLARE
         RETURN m_vc;
     END;
 
+    --onvert all_tab_histograms.enpoint_value that defined in srec as varchar2
     FUNCTION conv(idx PLS_INTEGER, num NUMBER := NULL) RETURN VARCHAR2 IS
         rtn NUMBER := nvl(NUM, CASE WHEN idx IS NOT NULL THEN srec.novals(idx) END);
         eva RAW(128);
@@ -176,6 +179,7 @@ DECLARE
         END CASE;
     END;
 
+    --convert the value in srec into raw value
     FUNCTION conr(idx PLS_INTEGER, num NUMBER := NULL) RETURN RAW IS
         rtn VARCHAR2(128) := conv(idx, num);
         d   TIMESTAMP;
@@ -230,6 +234,7 @@ DECLARE
         END IF;
     END;
 
+    --convert low_value/high_value in dba_tab_cols into varchar2
     FUNCTION getv(val RAW) RETURN VARCHAR2 IS
         n  NUMBER;
         c  VARCHAR2(128);
@@ -266,6 +271,7 @@ DECLARE
         END CASE;
     END;
 
+    --convert the value into endpoint_value
     FUNCTION toNum(input VARCHAR2) RETURN NUMBER IS
     BEGIN
         CASE
@@ -288,6 +294,7 @@ DECLARE
             raise_application_error(-20001, 'Conversion error from value "' || input || '" to the "' || dtype || '" data type!');
     END;
 
+    --get the cardinality of a specific predicate
     FUNCTION get_card(val VARCHAR2) RETURN VARCHAR2 IS
         val1     VARCHAR2(128) := rtrim(val);
         str      VARCHAR2(128) := CASE WHEN val1 LIKE ':%' THEN val1 ELSE '''' || val1 || '''' END;
@@ -416,6 +423,7 @@ DECLARE
         RETURN sep || rpad(title, 11) || ': ' || rpad(VALUE, 10);
     END;
 
+    --compute the NewDensity
     PROCEDURE calc_density IS
     BEGIN
         /*  EP         = EndPoint
@@ -463,13 +471,40 @@ DECLARE
         densityn := coalesce((1 - pops / numbcks) / nullif(distcnt - cnt, 0), density);
     END;
 
+    PROCEDURE reset_Rec(rec IN OUT NOCOPY DBMS_STATS.STATREC) IS
+    BEGIN
+        IF rec.chvals IS NULL THEN
+            rec.chvals := dbms_stats.chararray();
+        END IF;
+        rec.chvals.extend(rec.epc - rec.chvals.count);
+    
+        $IF dbms_db_version.version > 11 $THEN
+            IF rec.eavals IS NULL THEN
+                rec.eavals := dbms_stats.rawarray();
+            END IF;
+            IF rec.rpcnts IS NULL THEN
+                rec.rpcnts := dbms_stats.numarray();
+            END IF;
+            rec.eavals.extend(rec.epc - rec.eavals.count);
+            rec.rpcnts.extend(rec.epc - rec.rpcnts.count);
+        $END
+    END;
+
+    --load table and column statistics
     PROCEDURE load_stats(rec IN OUT NOCOPY DBMS_STATS.STATREC) IS
         msg VARCHAR2(2000);
         cnt PLS_INTEGER;
     BEGIN
         BEGIN
-            SELECT a.*, b.data_type
-            INTO   histogram, samples, analyzed, gstats, ustats, dtypefull
+            SELECT column_name,data_type 
+            INTO   col,dtypefull
+            FROM   &CHECK_ACCESS_DBA.tab_cols b
+            WHERE  b.owner = oname
+            AND    b.table_name = tab
+            AND    upper(b.column_name) = col;
+
+            SELECT a.*
+            INTO   histogram, samples, analyzed, gstats, ustats
             FROM   (SELECT histogram,
                            nvl2(num_buckets, nvl(sample_size, 0), NULL) samples,
                            last_analyzed,
@@ -480,6 +515,7 @@ DECLARE
                     AND    b.table_name = tab
                     AND    b.column_name = col
                     AND    b.partition_name = part
+                    AND    ttype='TABLE PARTITION'
                     UNION ALL
                     SELECT histogram,
                            nvl2(num_buckets, nvl(sample_size, 0), NULL) samples,
@@ -491,6 +527,7 @@ DECLARE
                     AND    b.table_name = tab
                     AND    b.column_name = col
                     AND    b.subpartition_name = part
+                    AND    ttype='TABLE SUBPARTITION'
                     UNION ALL
                     SELECT histogram,
                            nvl2(num_buckets, nvl(sample_size, 0), NULL) samples,
@@ -501,16 +538,12 @@ DECLARE
                     WHERE  b.owner = oname
                     AND    b.table_name = tab
                     AND    b.column_name = col
-                    AND    part IS NULL) a,
-                   &CHECK_ACCESS_DBA.tab_cols b
-            WHERE  b.owner = oname
-            AND    b.table_name = tab
-            AND    b.column_name = col;
+                    AND    ttype='TABLE') a;
             
             dtype := regexp_substr(dtypefull, '^\w+');
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
-                raise_application_error(-20001, 'No such column: ' || col);
+                raise_application_error(-20001, 'No such column or column is not analyzed: ' || col);
         END;
         
         IF stattab IS NOT NULL THEN
@@ -520,7 +553,7 @@ DECLARE
                     INTO analyzed, samples, cnt
                     USING oname, tab, col, part, part;
                 IF cnt = 0 THEN
-                    dbms_stats.export_table_stats(oname,tab,part,statown=>statown,stattab=>stattab);
+                    dbms_stats.export_column_stats(oname,tab,col,part,statown=>statown,stattab=>stattab);
                     load_stats(rec);
                     return;
                 END IF;
@@ -565,30 +598,94 @@ DECLARE
                                         statown  => statown,
                                         stattab  => stattab);
             notnulls := numrows - nullcnt;
+
+            IF flags > 0 AND bitand(srec.eavs,flags) = 0 THEN
+                srec.eavs := srec.eavs + flags;
+            END IF;
         EXCEPTION
             WHEN OTHERS THEN
                 msg := TRIM('Unable to get table/column stats due to ' || SQLERRM);
                 raise_application_error(-20001, msg);
         END;
         
-        IF rec.chvals IS NULL THEN
-            rec.chvals := dbms_stats.chararray();
-        END IF;
-        rec.chvals.extend(rec.epc - rec.chvals.count);
-    
-        $IF dbms_db_version.version > 11 $THEN
-            IF rec.eavals IS NULL THEN
-                rec.eavals := dbms_stats.rawarray();
-            END IF;
-            IF rec.rpcnts IS NULL THEN
-                rec.rpcnts := dbms_stats.numarray();
-            END IF;
-            rec.eavals.extend(rec.epc - rec.eavals.count);
-            rec.rpcnts.extend(rec.epc - rec.rpcnts.count);
-        $END
+        reset_Rec(rec);
     END;
 
-    
+    --generate the sql*plus script to update the histogram
+    PROCEDURE to_script(rec in out nocopy dbms_stats.StatRec) IS
+        buff VARCHAR2(32767);
+        c    CLOB;
+        PROCEDURE append(idx PLS_INTEGER, name VARCHAR2, val VARCHAR2) IS
+            elem VARCHAR2(2000) := CASE WHEN NAME IN('chvals','eavals','minval','maxval') THEN ''''||val||'''' ELSE val END;
+        BEGIN
+            IF val IS NULL THEN
+                RETURN; 
+            END IF;
+            buff := buff || chr(10) || lpad(' ',4)||utl_lms.format_message('srec.%s%s := %s;',name,nullif('('||idx||')','()'),elem);
+            IF lengthb(buff)>28000 THEN
+                dbms_lob.writeAppend(c,length(buff),buff);
+                buff := '';
+            END IF;
+        END;
+    BEGIN
+        buff := replace(replace(q'[
+            DECLARE
+                srec dbms_stats.StatRec;
+            BEGIN
+                srec.epc    := :epc;
+                srec.bkvals := dbms_stats.numarray();
+                srec.novals := dbms_stats.numarray();
+                srec.chvals := dbms_stats.chararray();
+                srec.bkvals.extend(srec.epc);
+                srec.novals.extend(srec.epc);
+                srec.chvals.extend(srec.epc);
+                $IF dbms_db_version.version > 11 $THEN
+                    srec.eavals := dbms_stats.rawarray();
+                    srec.rpcnts := dbms_stats.numarray();
+                    srec.eavals.extend(srec.epc);
+                    srec.rpcnts.extend(srec.epc);
+                $END]',':epc',rec.epc),lpad(' ',12));
+        dbms_lob.createTemporary(c,true);
+        reset_Rec(rec);
+
+        buff := buff||chr(10);
+        append(null,'eavs',rec.eavs);
+        append(null,'minval',rec.minval);
+        append(null,'maxval',rec.maxval);
+
+        FOR i in 1..rec.epc LOOP
+            buff := buff||chr(10);
+            append(i,'novals',to_char(rec.novals(i),'tm'));
+            append(i,'bkvals',rec.bkvals(i));
+            append(i,'chvals',rec.chvals(i));
+            $IF dbms_db_version.version > 11 $THEN
+                append(i,'eavals',rec.eavals(i));
+                append(i,'rpcnts',rec.rpcnts(i));
+            $END
+        END LOOP;
+
+        buff := buff||chr(10)||regexp_replace(
+            utl_lms.format_message(q'[
+                dbms_stats.set_column_stats(srec          => srec,
+                                            ownname       => '%s',
+                                            tabname       => '%s',
+                                            partname      => '%s',
+                                            colname       => '%s',
+                                            distcnt       => %s,
+                                            density       => %s,
+                                            nullcnt       => %s,
+                                            avgclen       => %s,
+                                            no_invalidate => false,
+                                            force         => true);
+            END;
+            /]',oname,tab,part,col,''||distcnt,to_char(densityn,'tm'),''||nullcnt,''||avgclen),
+            '('||chr(10)||chr(13)||'?) {12}','\1');
+
+        dbms_lob.writeAppend(c,length(buff),buff);
+        :script_text := c;
+    END;
+
+    --compare pre-change and post-change
     PROCEDURE diff IS
         counter PLS_INTEGER := 0;
         fmt     VARCHAR2(100) := '%s  %s  %s  %s';
@@ -758,7 +855,6 @@ BEGIN
             ELSE
                 dbms_stats.prepare_column_values(srec, nrec.novals);
             
-                srec.eavs := 4;
                 $IF dbms_db_version.version > 11 $THEN
                     srec.eavals := nrec.eavals;
                 $END
@@ -767,23 +863,26 @@ BEGIN
                 --srec.eavs   := null;
             END IF;
             
+            calc_density;
             diff;
             IF is_test =1 THEN
+                to_script(srec);
                 RETURN;
             END IF;
-            srec.eavs := 4 + flags;
+
+            srec.eavs := nrec.eavs;
             
             --set stats for restoration
             restoret := TO_CHAR(systimestamp - numtodsinterval(1, 'second'), tztampfmt);
 
             --calc the density of "HEIGHT BALANCED" since newDensity(10053) is not used after setting
-            calc_density;
+            
             DBMS_STATS.SET_COLUMN_STATS(ownname       => oname,
                                         tabname       => tab,
                                         partname      => part,
                                         colname       => col,
                                         srec          => srec,
-                                        density       => CASE WHEN histogram = 'HEIGHT BALANCED' THEN densityn ELSE density END, 
+                                        density       => densityn, 
                                         no_invalidate => FALSE,
                                         force         => TRUE,
                                         statown       => statown,
@@ -807,7 +906,7 @@ BEGIN
        to_header('Nulls', getNum(nullcnt)) || to_header('Distincts', getNum(distcnt)) ||
        
        to_header('Blocks', getNum(numblks), chr(10)) || to_header('Buckets', getNum(numbcks)) ||
-       to_header('Row Len', avgrlen) || to_header('Col Len', avgclen) ||
+       to_header('Avg Row Len', avgrlen) || to_header('Avg Col Len', avgclen) ||
        
        to_header('Rows/Block', ROUND(numrows / NULLIF(numblks, 0), 2), chr(10)) ||
        to_header('Density', to_char(density * 100, 'fm99990.09999') || '%') ||
@@ -820,6 +919,7 @@ BEGIN
     pr('-----',rpad('-', 7, '-'),rpad('-', dlen, '-'),rpad('-', dlen, '-'),rpad('-', 10, '-'),rpad('-', 8, '-'),rpad('-', 8, '-'));
 
     prevb := 0;
+    --compute estimated cardinality
     FOR i IN 1 .. srec.epc LOOP
         buckets := greatest(srec.bkvals(i) - prevb, 1);
         max_v   := '';
@@ -848,8 +948,8 @@ BEGIN
                 $END
             WHEN 'NONE' THEN
                 rpcnt := densityn * notnulls;
-            ELSE
-                /*
+            WHEN 'FREQUENCY' THEN
+                 /*
                     NewDensity with the "half the least popular" rule active
                     NewDensity is set to
                     NewDensity = 0.5 * bkt(least_popular_value) / num_rows
@@ -861,6 +961,8 @@ BEGIN
                 ELSE
                     rpcnt := (buckets - 0.5) * notnulls / samples;
                 END IF;
+            ELSE
+                rpcnt := buckets * notnulls / samples;
         END CASE;
     
         cep := srec.chvals(i);
@@ -876,6 +978,7 @@ BEGIN
     END LOOP;
     pr(chr(10));
 
+    to_script(srec);
 
     IF stattab IS NOT NULL THEN
         pr('  * Note:  The values of field "Card" are based on the statistics of the input stats table.');
@@ -900,11 +1003,18 @@ BEGIN
             pr('               BEGIN');
             pr(utl_lms.format_message(q'[                   dbms_stats.restore_table_stats('%s','%s',to_timestamp_tz(t,f),force=>true,no_invalidate=>false);]',oname,tab));
             pr('               END;');
-            pr(utl_lms.format_message(q'[           Or consider locking the statistics by: exec dbms_stats.lock_table_stats('%s','%s');]',oname, tab));
+            IF ttype='TABLE' THEN
+                pr(utl_lms.format_message(q'[           Or consider locking the statistics by: exec dbms_stats.lock_table_stats('%s','%s');]',oname, tab));
+            ELSE
+                pr(utl_lms.format_message(q'[           Or consider locking the statistics by: exec dbms_stats.lock_partition_stats('%s','%s','%s');]',oname, tab,part));
+            END IF;
         ELSE
             pr('  * Note:  The statistics have been updated into "'||statown||'"."'||stattab||'", can take affect into the target table by:');
-            pr(utl_lms.format_message(q'[               exec dbms_stats.import_table_stats('%s','%s','%s',statown=>'%s',stattab=>'%s');]',oname,tab,part,statown,stattab));
+            pr(utl_lms.format_message(q'[               exec dbms_stats.import_column_stats('%s','%s','%s','%s',statown=>'%s',stattab=>'%s');]',oname,tab,col,part,statown,stattab));
         END IF;
     END IF;
 END;
 /
+
+pro 
+save script_text &V1..&V2..sql

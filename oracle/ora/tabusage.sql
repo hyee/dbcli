@@ -1,5 +1,5 @@
-/*[[Report table usages. Usage: @@NAME [owner.]<table_name>
-    Parameters that impacts column tracking: _column_tracking_level,_dml_monitoring_enabled
+/*[[Report table usages. Usage: @@NAME [owner.]<table_name> 
+    Parameters that impacts column tracking and SPD tracking: _column_tracking_level,_dml_monitoring_enabled
     Parameters that impacts index usage tracking: _iut_enable,_iut_max_entries,_iut_stat_collection_type,
 	--[[
 		@check_access_usage: SYS.COL_USAGE$/SYS.COL_GROUP_USAGE$={2} SYS.COL_USAGE$={1} default={0}
@@ -112,32 +112,25 @@ BEGIN
 			        AND    c.table_name = '&object_name'
 			        AND    INSTR(',' || cu.cols || ',', ',' || c.INTERNAL_COLUMN_ID || ',') > 0) cols_and_cards,
 			       CASE
-			           WHEN BITAND(CU.FLAGS, 1) = 1 THEN
-			            'FILTER '
+			           WHEN BITAND(CU.FLAGS, 1) = 1 THEN 'FILTER '
 			       END || --
 			       CASE
-			           WHEN BITAND(CU.FLAGS, 2) = 2 THEN
-			            'JOIN '
+			           WHEN BITAND(CU.FLAGS, 2) = 2 THEN 'JOIN '
 			       END || --
 			       CASE
-			           WHEN BITAND(CU.FLAGS, 4) = 4 THEN
-			            'GROUP_BY '
+			           WHEN BITAND(CU.FLAGS, 4) = 4 THEN 'GROUP_BY '
 			       END || --
 			       CASE
-			           WHEN BITAND(CU.FLAGS, 8) = 8 THEN
-			            'EXT_STATS_CREATED '
+			           WHEN BITAND(CU.FLAGS, 8) = 8 THEN 'EXT_STATS_CREATED '
 			       END || --
 			       CASE
-			           WHEN BITAND(CU.FLAGS, 16) = 16 THEN
-			            'SRC_DIR '
+			           WHEN BITAND(CU.FLAGS, 16) = 16 THEN 'SPD '
 			       END || --
 			       CASE
-			           WHEN BITAND(CU.FLAGS, 16) = 16 THEN
-			            'COL_SEED '
+			           WHEN BITAND(CU.FLAGS, 16) = 16 THEN 'COL_SEED '
 			       END || --
 			       CASE
-			           WHEN BITAND(CU.FLAGS, 64) = 64 THEN
-			            'DROPPED '
+			           WHEN BITAND(CU.FLAGS, 64) = 64 THEN 'DROPPED '
 			       END USAGES,
 			       CU.FLAGS USAGEFLG
 			FROM   SYS.COL_GROUP_USAGE$ CU
