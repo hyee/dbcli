@@ -357,7 +357,7 @@ function env.format_error(src,errmsg,...)
         errmsg=errmsg:strip_ansi()
     end
     env.log_debug("ERROR",errmsg)
-    if errmsg:find('Exception%:') or errmsg:find(':%d+: (%u%u%u%-%d%d%d%d%d)') then
+    if errmsg:find('Exception%:') or errmsg:find(':%d+: (%u%u%u%-%d%d%d%d%d)') or errmsg:find('Error Msg =') then
         errmsg,count=errmsg:gsub('^.-(%u%u%u%-%d%d%d%d%d)','%1') 
         if count==0 then
             errmsg=errmsg:gsub('^.*%s([^%: ]+Exception%:%s*)','%1'):gsub(".*[IS][OQL]+Exception:%s*","")

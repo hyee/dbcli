@@ -280,10 +280,10 @@ end
 
 function cfg.capture_before_cmd(command)
     if #env.RUNNING_THREADS>1 then return end
-    env.log_debug("set","taking full backup",command[1])
     local cmd=env._CMDS[command[1]]
     cfg._backup=cfg.backup()
-    if not cfg.cmdlist or not tostring(cfg.cmdlist[command[1]]):upper():find('^SET') then
+    if command[1]~='SET' and (not cfg.cmdlist or not tostring(cfg.cmdlist[command[1]]):upper():find('^SET')) then
+        env.log_debug("set","taking full backup",command[1])
         cfg._backup=cfg.backup()
     else
         cfg._backup=nil
@@ -292,8 +292,11 @@ end
 
 function cfg.capture_after_cmd(cmd,args)
     if #env.RUNNING_THREADS>1 then return end
-    env.log_debug("set","taking full reset")
-    if cfg._backup then cfg.restore(cfg._backup) end
+    
+    if cfg._backup then
+        env.log_debug("set","taking full reset")
+        cfg.restore(cfg._backup) 
+    end
     cfg._backup=nil
 end
 

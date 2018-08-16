@@ -1,5 +1,5 @@
 /*[[
-    Show active sessions. Usage: @@NAME [sid|wt|ev|sql|<col>] [-s|-p|-b|-o|-m] {[-f"<filter>"|-u|-i] [-f2"<filter>"|-u2|-i2]}
+    Show active sessions for 10g. Usage: @@NAME [sid|wt|ev|sql|<col>] [-s|-p|-b|-o|-m] {[-f"<filter>"|-u|-i] [-f2"<filter>"|-u2|-i2]}
     
     Options(options within same group cannot combine, i.e. "@@NAME -u -i" is illegal, use "@@NAME -u -i2" instead):
         Filter options#1:
@@ -36,8 +36,7 @@
         &V1 :   sid={''||sid},wt={wait_secs desc},ev={event},sql={sql_text},o={logon_time}
         &SQLM:  {default={},
                  m={LEFT JOIN (
-                        SELECT --+ no_merge
-                               sid, sql_id, count(distinct sql_exec_id) execs,
+                        SELECT sid, inst_id, sql_id, count(distinct sql_exec_id) execs,
                                round(SUM(ELAPSED_TIME)*1e-6/60,2) ela, round(SUM(QUEUING_TIME)*1e-6,2) QUEUE, 
                                round(SUM(CPU_TIME)*1e-6/60,2) CPU, round(SUM(APPLICATION_WAIT_TIME)*1e-6/60,2) app,
                                round(SUM(CONCURRENCY_WAIT_TIME)*1e-6/60,2) cc, 
@@ -45,10 +44,10 @@
                                round(SUM(PLSQL_EXEC_TIME)*1e-6/60,2) plsql, 
                                round(SUM(JAVA_EXEC_TIME)*1e-6/60,2) JAVA, round(SUM(USER_IO_WAIT_TIME)*1e-6/60,2) io,
                                round(SUM(PHYSICAL_READ_BYTES)/1024/1024,2) read_mb, round(SUM(PHYSICAL_WRITE_BYTES)/1024/1024,2) write_mb
-                        FROM   v$sql_monitor
+                        FROM   gv$sql_monitor
                         WHERE  status = 'EXECUTING'
-                        GROUP BY sid, sql_id) m
-                    USING (sid, sql_id)}
+                        GROUP BY sid, inst_id, sql_id)
+                    USING (sid, inst_id, sql_id)}
                 } 
         &Filter: {default={ROOT_SID =1 OR (wait_class!='Idle' and event not like '%PX%') or sql_text is not null}, 
                   f={},
@@ -63,12 +62,16 @@
         &smen : default={0}, m={&CHECK_ACCESS_M}
         @COST : 11.0={1440*(sysdate-sql_exec_start)},10.0={sql_secs/60}
         @CHECK_ACCESS_OBJ: dba_objects={dba_objects},all_objects={all_objects}
+        @CHECK_ACCESS_SES: gv$session={gv$session}, v$session={(select /*+merge*/ userenv('instance') inst_id,a.* from v$session a)}
+        @CHECK_ACCESS_SQL: gv$sql={gv$sql}, v$sql={(select /*+merge*/ userenv('instance') inst_id,a.* from v$sql a)}
         @CHECK_ACCESS_PX: {
-            v$px_session={v$px_session},
+            gv$px_session={gv$px_session},
+            v$px_session={(select /*+merge*/ userenv('instance') inst_id,a.* from v$px_session a)},
             default={(select null inst_id,null sid,null qcinst_id,null qcsid from dual where 1=2)}
         }
         @CHECK_ACCESS_PRO: {
-            v$process={v$process},
+            gv$process={gv$process},
+            v$process={(select /*+merge*/ userenv('instance') inst_id,a.* from v$process a)},
             default={(select null inst_id,null addr,null spid from dual where 1=2)}
         }
         @CHECK_ACCESS_M: gv$sql_workarea_active/gv$sessmetric={1},default={0}
@@ -84,52 +87,60 @@ ALTER /*INTERNAL_DBCLI_CMD*/ SESSION SET PLSQL_CCFlags = "CHECK_ACCESS_M:&smen";
 DECLARE
     time_model sys_refcursor;
 BEGIN
-    OPEN :actives FOR q'{
-        WITH sess AS
-         (SELECT (select object_name from &CHECK_ACCESS_OBJ o where o.object_id=s.program_id) program_name,
-                 s.*
-          FROM   TABLE(gv$(CURSOR(
-               SELECT (SELECT spid FROM &CHECK_ACCESS_PRO d WHERE d.addr = s.paddr)|| regexp_substr(s.program, '\(.*\)') spid,
-                      CASE WHEN s.seconds_in_wait > 1.3E9 THEN 0 ELSE round(seconds_in_wait-WAIT_TIME/100) END wait_secs,
-                      CASE WHEN s.SID = s.qcsid THEN 1 ELSE 0 END ROOT_SID,
-                      regexp_substr(sql_info,'[^'||chr(1)||']+',1,1)+0 program_id,
-                      regexp_substr(sql_info,'[^'||chr(1)||']+',1,2)+0 program_line#,
-                      regexp_substr(sql_info,'[^'||chr(1)||']+',1,3)+0 plan_hash_value,
-                      regexp_substr(sql_info,'[^'||chr(1)||']+',1,4)   sql_text,
-                      regexp_substr(sql_info,'[^'||chr(1)||']+',1,5)   sql_secs,
-                      s.*
-                FROM  (SELECT /*+order use_hash(m)*/ * FROM 
-                        (SELECT (SELECT qcsid FROM &CHECK_ACCESS_PX p WHERE  s.sid = p.sid) qcsid,
-                                (SELECT /*+index(b.GV$SQL.X$KGLCURSOR_CHILD)*/ b.program_id||chr(1)
-                                     || b.program_line#||chr(1)
-                                     || b.plan_hash_value||chr(1)
-                                     || substr(TRIM(regexp_replace(replace(b.sql_text,chr(0)), '[' || chr(1) || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 200)||chr(1)
-                                     || round(decode(b.child_number,0,b.elapsed_time * 1e-6 / (1 + b.executions), 86400 * (SYSDATE - to_date(b.last_load_time, 'yyyy-mm-dd/hh24:mi:ss'))))
-                                 FROM   v$sql b 
-                                 WHERE  s.sql_id = b.sql_id 
-                                 and b.child_number=nvl(s.sql_child_number,0)) sql_info,
-                                 userenv('instance') inst_id, 
-                                 s.*
-                         FROM    v$session s
-                         WHERE   s.event NOT LIKE 'Streams%') s &SQLM) s
-                ))) s
-          WHERE sid||'@'||inst_id!=userenv('sid')||'@'||userenv('instance')),
+    OPEN :actives FOR
+        WITH s1 AS(
+          SELECT /*+no_merge*/*
+          FROM   &CHECK_ACCESS_SES &SQLM
+          WHERE  not (sid = USERENV('SID') and inst_id = userenv('instance'))
+          AND   (event not like 'Streams%')),
+        s3  AS(SELECT /*+no_merge no_merge(s2)*/ s1.*,qcinst_id,qcsid FROM s1,&CHECK_ACCESS_PX s2 where s1.inst_id=s2.inst_id(+) and s1.SID=s2.sid(+)),
+        sq1 AS(
+          SELECT /*+materialize ordered use_nl(a b)*/ a.*,
+                extractvalue(b.column_value,'/ROW/A1')              program_name,
+                extractvalue(b.column_value,'/ROW/A2')              program_line#,
+                extractvalue(b.column_value,'/ROW/A3')              sql_text,
+                extractvalue(b.column_value,'/ROW/A4')              plan_hash_value,
+                nvl(extractvalue(b.column_value,'/ROW/A5')+0,0)     sql_secs
+          FROM (select distinct inst_id,sql_id,nvl(sql_child_number,0) child from s1 where sql_id is not null) A,
+                TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'[
+                    SELECT /*+opt_param('_optim_peek_user_binds','false') opt_param('cursor_sharing','force')*/
+                          (select c.owner  ||'.' || c.object_name from &CHECK_ACCESS_OBJ c where c.object_id=program_id and rownum<2) A1,
+                           program_line# A2,
+                           substr(trim(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' ')),1,200) A3,
+                           plan_hash_value A4,
+                           round(decode(child_number,0,elapsed_time*1e-6/(1+executions),86400*(sysdate-to_date(last_load_time,'yyyy-mm-dd/hh24:mi:ss')))) A5
+                    FROM  &CHECK_ACCESS_SQL
+                    WHERE ROWNUM<2 AND sql_id=']'||a.sql_id||''' AND inst_id='||a.inst_id||' and child_number='||a.child)
+                ,'/ROWSET/ROW'))) B),
         s4 AS(
-          SELECT /*+no_merge(s3)*/
+          SELECT /*+materialize no_merge(s3)*/
                  DECODE(LEVEL, 1, '', '  ') || SID NEW_SID,
                  decode(LEVEL, 1, sql_id) new_sql_id,
                  rownum r,
                  s3.*
-          FROM   sess s3
+          FROM   (SELECT s3.*,
+                         CASE WHEN seconds_in_wait > 1.3E9 THEN 0 ELSE round(seconds_in_wait-WAIT_TIME/100) END wait_secs,
+                         CASE WHEN S3.SID = S3.qcsid AND S3.inst_id = NVL(s3.qcinst_id,s3.inst_id) THEN 1 ELSE 0 END ROOT_SID,
+                         plan_hash_value,
+                         program_name,
+                         program_line#,
+                         sql_text,
+                         sql_secs
+                  FROM   s3, sq1
+                  WHERE  s3.inst_id=sq1.inst_id(+) and s3.sql_id=sq1.sql_id(+) and nvl(s3.sql_child_number,0)=sq1.child(+)) s3
           START  WITH (qcsid IS NULL OR ROOT_SID=1)
           CONNECT BY qcsid = PRIOR SID
+              AND    qcinst_id = PRIOR inst_id
               AND    ROOT_SID=0
               AND    LEVEL < 3
           ORDER SIBLINGS BY &V1)
         SELECT /*+cardinality(a 1)*/
                rownum "#",
                a.NEW_SID || ',' || a.serial# || ',@' || a.inst_id session#,
-               a.spid,
+               (SELECT spid
+                FROM   &CHECK_ACCESS_PRO d
+                WHERE  d.inst_id = a.inst_id
+                AND    d.addr = a.paddr) || regexp_substr(program, '\(.*\)') spid,
                a.sql_id,
                plan_hash_value plan_hash,
                sql_child_number child,
@@ -138,7 +149,7 @@ BEGIN
                &fields,sql_text
         FROM   s4 a
         WHERE  (&filter) AND (&Filter2)
-        ORDER  BY r}';
+        ORDER  BY r;
         
     $IF $$CHECK_ACCESS_M=1 $THEN
         OPEN time_model FOR

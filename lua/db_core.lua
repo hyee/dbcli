@@ -198,7 +198,7 @@ function ResultSet:fetch(rs,conn)
     local maxsiz=cfg.get("COLSIZE")
     for i=1,size,1 do
         local value=self:get(i,cols[i].data_type,rs,conn)
-        value=type(value)=="string" and size>1 and value:sub(1,maxsiz) or value
+        value=type(value)=="string" and value:sub(1,maxsiz) or value
         result[i]=value or ""
     end
 

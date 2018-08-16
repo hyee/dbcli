@@ -11,6 +11,7 @@ local instance,container,usr,dbid,starttime,endtime
 local function rep_instance(prefix,full,obj,suffix)
     obj=obj:upper()
     local flag,str=0
+
     if extvars.dict[obj] then
         for k,v in ipairs{
             {instance>0,extvars.dict[obj].inst_col,instance},
@@ -31,9 +32,9 @@ local function rep_instance(prefix,full,obj,suffix)
     if flag==0 then
         str=prefix..full..suffix
     else
-        str=str:gsub(' :others:','') 
+        str=str:gsub(' :others:','')
+        env.log_debug('extvars',str)
     end
-    env.log_debug('extvars',str)
     return str
 end
 
@@ -59,7 +60,9 @@ function extvars.on_before_db_exec(item)
 
     if not extvars.dict then return item end
     local db,sql,args,params=table.unpack(item)
-    if sql then
+
+    if sql and not item.__is_extvars then
+        item.__is_extvars=true
         item[2]=re.gsub(sql..' ',extvars.P,rep_instance):sub(1,-2)
     end
     return item
@@ -101,7 +104,7 @@ function extvars.set_instance(name,value)
                     WHERE  c.kqfcotab = t.indx
                     AND    c.inst_id = t.inst_id)
             SELECT table_name,
-                   MAX(CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') AND TABLE_NAME NOT LIKE 'X$%' THEN col END) INST_COL,
+                   MAX(CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') THEN col END) INST_COL,
                    MAX(CASE WHEN col IN ('CON_ID') THEN col END) CON_COL,
                    MAX(CASE WHEN col IN ('DBID') THEN col END) DBID_COL,
                    MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND regexp_like(col,'(OWNER|SCHEMA|KGLOBTS4|USER.*NAME)') THEN col END)
@@ -128,12 +131,13 @@ function extvars.set_instance(name,value)
         local rows=db.resultset:rows(rs,-1)
         local cnt1=#rows
         for i=2,cnt1 do
+            local exists=dict[rows[i][1]]
             dict[rows[i][1]]={
-                inst_col=(rows[i][2] or "")~="" and rows[i][2] or dict[rows[i][1]].inst_col,
-                cdb_col=(rows[i][3] or "")~=""  and rows[i][3] or dict[rows[i][1]].cdb_col,
-                dbid_col=(rows[i][4] or "")~="" and rows[i][4] or dict[rows[i][1]].dbid_col,
-                usr_col=(rows[i][5] or "")~=""  and rows[i][5] or dict[rows[i][1]].usr_col,
-                owner=(rows[i][6] or "")~=""    and rows[i][6] or dict[rows[i][1]].owner
+                inst_col=(rows[i][2] or "")~="" and rows[i][2] or (exists and dict[rows[i][1]].inst_col),
+                cdb_col=(rows[i][3] or "")~=""  and rows[i][3] or (exists and dict[rows[i][1]].cdb_col),
+                dbid_col=(rows[i][4] or "")~="" and rows[i][4] or (exists and dict[rows[i][1]].dbid_col),
+                usr_col=(rows[i][5] or "")~=""  and rows[i][5] or (exists and dict[rows[i][1]].usr_col),
+                owner=(rows[i][6] or "")~=""    and rows[i][6] or (exists and dict[rows[i][1]].owner)
             }
             local prefix,suffix=rows[i][1]:match('(.-$)(.*)')
             if prefix=='GV_$' or prefix=='V_$' then

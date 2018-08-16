@@ -70,7 +70,7 @@ qry AS
 ash as(SELECT /*+no_expand materialize ordered use_nl(b)*/ 
               b.*,CEIL(SUM(AAS) OVER(PARTITION BY SQL_PLAN_LINE_ID,&OBJ)) tenv
        FROM (select b.*,
-                    row_number() over(partition by SQL_PLAN_LINE_ID,sql_exec_id,sql_exec_start,sample_time+0 order by delta_time desc) r,
+                    row_number() over(partition by SQL_PLAN_LINE_ID,sql_exec_id,sql_exec_start,sample_time+0 order by TM_DELTA_DB_TIME desc) r,
                     count(1) over(partition by SQL_PLAN_LINE_ID,sql_exec_id,sql_exec_start,sample_time+0) aas
              FROM   qry a
              JOIN   &V9 b
@@ -81,7 +81,7 @@ ash_base AS(
    SELECT /*+materialize no_expand*/ 
            nvl(SQL_PLAN_LINE_ID,0) ID,
            sum(aas) px_hits,
-           CEIL(SUM(Delta_time)*1e-6) secs,
+           CEIL(SUM(TM_DELTA_DB_TIME)*1e-6) secs,
            COUNT(DISTINCT sql_exec_id||to_char(sql_exec_start,'yyyymmddhh24miss')) exes,
            ROUND(COUNT(DECODE(wait_class, NULL, 1)) * NVL2(max(sample_id),100,0) / COUNT(1), 1) "CPU",
            ROUND(COUNT(CASE WHEN wait_class IN ('User I/O','System I/O') THEN 1 END) * 100 / COUNT(1), 1) "IO",
@@ -105,12 +105,12 @@ ash_agg AS
                  MAX(execs) execs,
                  AAS,
                  aas1,
-                 SUM(Delta_time * 1e-6) secs,
+                 SUM(TM_DELTA_DB_TIME * 1e-6) secs,
                  row_number() OVER(PARTITION BY OBJ, ID ORDER BY 1) c0,
                  row_number() OVER(PARTITION BY OBJ, OBJ1 ORDER BY 1) c1,
                  dense_Rank() OVER(PARTITION BY OBJ ORDER BY aas DESC,ID) r,
                  dense_Rank() OVER(PARTITION BY OBJ ORDER BY aas1 DESC,OBJ1 DESC) r1
-          FROM   (SELECT Delta_time,
+          FROM   (SELECT TM_DELTA_DB_TIME,
                          SQL_PLAN_LINE_ID ID,
                          &OBJ obj,
                          &OBJ1 obj1,
@@ -230,7 +230,7 @@ UNION ALL
 SELECT  '|'||rpad('-',c1,'-')||'+'||rpad('-',c2,'-')||'+'||rpad('-',c3,'-')||'+'||rpad('-',c4,'-')||'+'||rpad('-',c5,'-')||'+'||rpad('-',c6,'-')||'|'
 FROM    ash_width WHERE cnt>0
 UNION ALL
-SELECT  '|'||rpad(top_item,c1,' ')||'|'||rpad(execs,c2,' ')||'|'||rpad(secs,c3,' ')||'|'||rpad(aas,c4,' ')||'|'||rpad(Plan_lines,c5,' ')||'|'||rpad(wait_objects,c6,' ')||'|'
+SELECT  '|'||rpad(top_item,c1,' ')||'|'||rpad(execs,c2,' ')||'|'||rpad(nvl(''||secs,' '),c3,' ')||'|'||rpad(aas,c4,' ')||'|'||rpad(Plan_lines,c5,' ')||'|'||rpad(wait_objects,c6,' ')||'|'
 FROM    ash_width,ash_agg WHERE cnt>0
 UNION ALL
 SELECT  '+'||rpad('-',c1,'-')||'+'||rpad('-',c2,'-')||'+'||rpad('-',c3,'-')||'+'||rpad('-',c4,'-')||'+'||rpad('-',c5,'-')||'+'||rpad('-',c6,'-')||'+'

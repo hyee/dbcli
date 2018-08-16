@@ -23,7 +23,8 @@
         }
       &more_filter: default={1=1},f={}
       @counter: 11.2={, count(distinct sql_exec_id||to_char(sql_exec_start,'yyyymmddhh24miss')) "Execs"},default={}
-      @UNIT   : 11.2={delta_time*1e-6}, default={&BASE}
+      @UNIT   : 11.2={TM_DELTA_DB_TIME *1e-6}, default={&BASE}
+      @CPU    : 11.2={TM_DELTA_CPU_TIME *1e-6}, default={0}
       @IOS    : 11.2={,SUM(DELTA_READ_IO_BYTES) reads,SUM(DELTA_Write_IO_BYTES) writes},default={}
     ]]--
   Options:
@@ -59,34 +60,34 @@ col reads format KMG
 col writes format kMG
 SELECT * FROM (
     SELECT /*+ LEADING(a) USE_HASH(u) no_expand*/
-        round(SUM(c))                                                   Secs
+        round(SUM(c),2)                                                   Secs
       , ROUND(SUM(c) / (1+(max(sample_time+0) - min(sample_time+0)) * 86400), 1) AAS
       , LPAD(ROUND(RATIO_TO_REPORT(sum(c)) OVER () * 100)||'%',5,' ')||' |' "%This"
       &counter
       , nvl2(qc_session_id,'PARALLEL','SERIAL') "Parallel?"
       , nvl(a.program#,u.username) program#, event_name event
       , &fields &IOS
-      , round(SUM(CASE WHEN wait_class IS NULL           THEN c ELSE 0 END)) "CPU"
-      , round(SUM(CASE WHEN wait_class ='User I/O'       THEN c ELSE 0 END)) "User I/O"
-      , round(SUM(CASE WHEN wait_class ='Application'    THEN c ELSE 0 END)) "Application"
-      , round(SUM(CASE WHEN wait_class ='Concurrency'    THEN c ELSE 0 END)) "Concurrency"
-      , round(SUM(CASE WHEN wait_class ='Commit'         THEN c ELSE 0 END)) "Commit"
-      , round(SUM(CASE WHEN wait_class ='Configuration'  THEN c ELSE 0 END)) "Configuration"
-      , round(SUM(CASE WHEN wait_class ='Cluster'        THEN c ELSE 0 END)) "Cluster"
-      , round(SUM(CASE WHEN wait_class ='Idle'           THEN c ELSE 0 END)) "Idle"
-      , round(SUM(CASE WHEN wait_class ='Network'        THEN c ELSE 0 END)) "Network"
-      , round(SUM(CASE WHEN wait_class ='System I/O'     THEN c ELSE 0 END)) "System I/O"
-      , round(SUM(CASE WHEN wait_class ='Scheduler'      THEN c ELSE 0 END)) "Scheduler"
-      , round(SUM(CASE WHEN wait_class ='Administrative' THEN c ELSE 0 END)) "Administrative"
-      , round(SUM(CASE WHEN wait_class ='Queueing'       THEN c ELSE 0 END)) "Queueing"
-      , round(SUM(CASE WHEN wait_class ='Other'          THEN c ELSE 0 END)) "Other"
+      , round(SUM(CASE WHEN wait_class IS NULL AND CPU=0 THEN c ELSE 0 END+CPU),2) "CPU"
+      , round(SUM(CASE WHEN wait_class ='User I/O'       THEN c ELSE 0 END),2) "User I/O"
+      , round(SUM(CASE WHEN wait_class ='Application'    THEN c ELSE 0 END),2) "Application"
+      , round(SUM(CASE WHEN wait_class ='Concurrency'    THEN c ELSE 0 END),2) "Concurrency"
+      , round(SUM(CASE WHEN wait_class ='Commit'         THEN c ELSE 0 END),2) "Commit"
+      , round(SUM(CASE WHEN wait_class ='Configuration'  THEN c ELSE 0 END),2) "Configuration"
+      , round(SUM(CASE WHEN wait_class ='Cluster'        THEN c ELSE 0 END),2) "Cluster"
+      , round(SUM(CASE WHEN wait_class ='Idle'           THEN c ELSE 0 END),2) "Idle"
+      , round(SUM(CASE WHEN wait_class ='Network'        THEN c ELSE 0 END),2) "Network"
+      , round(SUM(CASE WHEN wait_class ='System I/O'     THEN c ELSE 0 END),2) "System I/O"
+      , round(SUM(CASE WHEN wait_class ='Scheduler'      THEN c ELSE 0 END),2) "Scheduler"
+      , round(SUM(CASE WHEN wait_class ='Administrative' THEN c ELSE 0 END),2) "Administrative"
+      , round(SUM(CASE WHEN wait_class ='Queueing'       THEN c ELSE 0 END),2) "Queueing"
+      , round(SUM(CASE WHEN wait_class ='Other'          THEN c ELSE 0 END),2) "Other"
       , TO_CHAR(MIN(sample_time), 'YYYY-MM-DD HH24:MI:SS') first_seen
       , TO_CHAR(MAX(sample_time), 'YYYY-MM-DD HH24:MI:SS') last_seen
     FROM
         (SELECT a.*,sql_plan_hash_value plan_hash,current_obj# obj,nvl2(CURRENT_FILE#,CURRENT_FILE#||','||current_block#,'') block,
             CASE WHEN a.session_type = 'BACKGROUND' OR REGEXP_LIKE(a.program, '.*\([PJ]\d+\)') THEN
               REGEXP_REPLACE(SUBSTR(a.program,INSTR(a.program,'(')), '\d', 'n')
-            END program#,&unit c
+            END program#,&unit c,&CPU CPU
            , TO_CHAR(p1, '0XXXXXXXXXXXXXXX') p1raw
            , TO_CHAR(p2, '0XXXXXXXXXXXXXXX') p2raw
            , TO_CHAR(p3, '0XXXXXXXXXXXXXXX') p3raw

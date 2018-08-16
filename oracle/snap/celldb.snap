@@ -1,7 +1,7 @@
 /*[[
-  Generate delta values based on Exadata cell stats. Usage: @@NAME [options] [-pred|-fcc|-db] [-cell] [-diskio] 
+  Generate delta values based on Exadata cell stats. Usage: @@NAME [options] [-pred|-cc|-db] [-cell] [-diskio] 
   -pred: show offload predicate info instead of db wait events
-  -fcc : show columnar flash cache detail
+  -cc  : show columnar flash cache stats
   -cell: detail to cell level
   -diskio: show disk IO stats instead of ASM stats
   --[[
@@ -79,7 +79,7 @@
                 GROUP  BY wait_class, event},
             
             
-            fcc={/*grid={topic="Flash Columnar Cache ", max_rows=20}*/
+            cc={/*grid={topic="Columnar Cache", max_rows=20}*/
                 SELECT NAME &cell,SUM(VALUE) VALUE
                 FROM   (SELECT &cellname,c.*
                         FROM   v$cell_state b,
@@ -129,12 +129,13 @@
                 GROUP  BY ROLLUP(inst_id))
         USING  (inst)]],
     '-',[[&diskio]],
-    '-',[[/*grid={topic="Cell Throughput(FD=FlashDisk  FL=FlashLog  LIO=LargeIO FC=FlashCache CC=ColumnarFlashCache)",fixed_title=true,order_by='cell'}*/
+    '-',[[/*grid={topic="Cell Throughput(FD=FlashDisk  FL=FlashLog  LIO=LargeIO FC=FlashCache CC=FlashColumnarCache)",fixed_title=true,order_by='cell'}*/
         SELECT  nvl(c.name,'--TOTAL--') cell,
                 flashCacheMode "flashMode",
                 round(avg(temperatureReading),2) "ºC",
                 round(avg(cpu),2) "CPU(%)",
                 GREATEST(SUM(largeio + smallio),SUM(ALLIO)) "AllIO",
+                SUM(rem) "REM(%)",
                 SUM(fd) "FD(%)",
                 SUM(largeio) "LIO(%)",
                 sum(readio) "Read(%)",
@@ -161,10 +162,11 @@
                         SUM(DECODE(n, 'Flash log redo bytes written to flash', v)) fd_redo,
                         SUM(DECODE(n, 'Network bytes transmitted', v, 'Network bytes received', v)) bandwidth,
                         --SUM(DECODE(n, 'Smart IO issued bytes total', v)) smartio,
+                        SUM(DECODE(n, 'RAM cache read bytes', v, 'RAM cache write bytes - population writes', v)) rem,
                         SUM(DECODE(n, 'Large read bytes', v, 'Large write bytes', v)) largeio,
                         SUM(DECODE(n, 'Small read bytes', v, 'Small write bytes', v)) smallio,
                         SUM(DECODE(n, 'Small read bytes', v, 'Large read bytes', v)) readio,
-                        --SUM(DECODE(n, 'Flash cache write bytes - populate columnar', v, 'Flash cache read bytes - columnar', v)) ccio,
+                        SUM(DECODE(n, 'Flash cache write bytes - populate columnar', v, 'Flash cache columnar read bytes eligible', v)) ccio,
                         --SUM(DECODE(n, 'Smart IO bytes read from flash cache', v)) fcio,
                         --SUM(DECODE(n, 'Smart IO filtered bytes sent back to database', v)) ofl_out,
                         --SUM(DECODE(n, 'Storage Index saved bytes', v)) SIsave,
@@ -186,7 +188,7 @@
                         nvl(MAX(DECODE(n, 'current_cell_cpu_utilization', v)), 0) CPU,
                         MAX(DECODE(n, 'total_filter_completed_io_size', v)) smartio,
                         MAX(DECODE(n, 'total_filter_output_size', v)) ofl_out,
-                        SUM(DECODE(n, 'columnar_cache_read_bytes', v, 'columnar_cache_write_bytes', v)) ccio,
+                        --SUM(DECODE(n, 'columnar_cache_read_bytes', v, 'columnar_cache_write_bytes', v)) ccio,
                         MAX(DECODE(n, 'columnar_cache_saved_bytes', v)) ccsave,
                         MAX(DECODE(n, 'filter_cpu_passthru_output_size', v)) passthru,
                         MAX(DECODE(n, 'total_bytes_saved_by_storage_index', v)) sisave,
@@ -239,7 +241,7 @@
             GROUP  BY reason_name &cell]],
             '+',[[&last]]}},
     }},
-    delta_by="UTIL,R,W,SR,SW,LR,LW,SR_B,SW_B,LR_B,LW_B,SR_MS,SW_MS,LR_MS,LW_MS,IOPs,OflEff,Resp(ms),Calls,CPU,BandWidth,PhyRead,OptR(%),dxr(%),PhyWrite,OptW(%),dxw(%),Redo,Offload,SmartIO,FcHit,Hit(%),SiSave,CC,CCSave,waits,ms,Net,AllIO,Smart(%),FD(%),LIO(%),Redo,FL(%),SmartIO,Offload,CC,FC(%),Read(%),OflOut,Passthru,total_io,io_errs,writes,READS,hot_bytes,bytes,read,write,fd_bytes,fd_read,fd_write,timeouts,rw_ms,read_ms,write_ms,METRIC_VALUE,value,bytes,fd_bytes,ios,fd_io,lios,fd_lio,avg_ms,hd_ms,fd_ms",
+    delta_by="UTIL,R,W,SR,SW,LR,LW,SR_B,SW_B,LR_B,LW_B,SR_MS,SW_MS,LR_MS,LW_MS,IOPs,OflEff,Resp(ms),Calls,CPU,BandWidth,PhyRead,OptR(%),dxr(%),PhyWrite,OptW(%),dxw(%),Redo,Offload,SmartIO,FcHit,Hit(%),SiSave,CC,CCSave,waits,ms,Net,AllIO,Smart(%),REM(%),FD(%),LIO(%),Redo,FL(%),SmartIO,Offload,CC,FC(%),Read(%),OflOut,Passthru,total_io,io_errs,writes,READS,hot_bytes,bytes,read,write,fd_bytes,fd_read,fd_write,timeouts,rw_ms,read_ms,write_ms,METRIC_VALUE,value,bytes,fd_bytes,ios,fd_io,lios,fd_lio,avg_ms,hd_ms,fd_ms",
     calc_rules={["Flash(%)"]='[fd_bytes]*100/[bytes]',
                  avg='[ms]/[waits]',
                  avg_ms='[avg_ms]/[ios]',
@@ -254,6 +256,7 @@
                  W_b='[SW_B]+[LW_B]',
                  ["LIO(%)"]='[LIO(%)]*100/[AllIO]',
                  ["Smart(%)"]='[Smart(%)]*100/[AllIO]',
+                 ["REM(%)"]='[REM(%)]*100/[AllIO]',
                  ["FD(%)"]='[FD(%)]*100/[AllIO]',
                  ["FL(%)"]='[FL(%)]*100/[Redo]',
                  ["FC(%)"]='[FC(%)]*100/[SmartIO]',

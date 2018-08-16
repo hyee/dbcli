@@ -854,7 +854,6 @@ BEGIN
                 dbms_stats.prepare_column_values(srec, nrec.chvals);
             ELSE
                 dbms_stats.prepare_column_values(srec, nrec.novals);
-            
                 $IF dbms_db_version.version > 11 $THEN
                     srec.eavals := nrec.eavals;
                 $END

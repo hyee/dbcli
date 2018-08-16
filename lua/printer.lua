@@ -146,7 +146,7 @@ function printer.set_grep(keyword)
         keyword,printer.grep_dir=keyword:sub(2),true
     end
     --printer.grep_text=keyword:escape():case_insensitive_pattern()
-    printer.grep_text='('..keyword:escape():case_insensitive_pattern()..')'
+    printer.grep_text='('..keyword:case_insensitive_pattern()..')'
 end
 
 function printer.grep(keyword,stmt)
