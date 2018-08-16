@@ -70,7 +70,7 @@
         &V1: default={%}
         &V2: default={sess#,name,hmode,func,object} func={sid,name,func}
         &V3: default={%}
-        &v4: default={100000}
+        &v4: default={200000}
     --]]
 ]]*/
 

@@ -1,7 +1,7 @@
 /*[[get latch info: latchprof {<sid|sql_id> [event] [n of "10^n"]} [-f]
      --[[
         &fields: f={inst_id,sid,name,laddr,sql_id,obj}
-        &V3    : default={5}
+        &V3    : default={5.3}
      --]]
 ]]*/
 --------------------------------------------------------------------------------

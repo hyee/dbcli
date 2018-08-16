@@ -1,7 +1,7 @@
 /*[[Library cache lock/pin holders/waiters. Usage: @@NAME [sid|object_name] ]]*/
 WITH ho AS
  (SELECT *
-  FROM   TABLE(gv$(CURSOR (SELECT /*+leading(h h1 ho) use_hash*/ DISTINCT hl.*,
+  FROM   TABLE(gv$(CURSOR(SELECT /*+leading(h h1 ho) use_hash*/ DISTINCT hl.*,
                                     ho.kglnaown || '.' || ho.kglnaobj object_name,
                                     h.sid || ',' || h.serial# || ',@' || ho.inst_id holder,
                                     h.sql_id holder_sql_id,
@@ -19,7 +19,7 @@ WITH ho AS
                     AND    NVL(ho.kglnaown, 'SYS') != 'SYS')))),
 wo AS
  (SELECT *
-  FROM   TABLE(gv$(CURSOR (SELECT /*+leading(w) use_hash(wo)*/ 
+  FROM   TABLE(gv$(CURSOR(SELECT /*+leading(w) use_hash(wo)*/ 
                                     distinct wo.kglnaown || '.' || wo.kglnaobj object_name,
                                     nvl2(w.sid, w.sid || ',' || w.serial# || ',@' || wo.inst_id, NULL) waiter,
                                     w.sql_id waiter_sql_id,
