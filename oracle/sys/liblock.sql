@@ -1,33 +1,45 @@
-/*[[Library cache lock/pin holders/waiters. Usage: @@NAME [sid|object_name] ]]*/
+/*[[Library cache lock/pin holders/waiters. Usage: @@NAME [sid|object_name] 
+    --[[
+        @ver: 11.1={}
+    --]]
+]]*/
 WITH ho AS
- (SELECT *
-  FROM   TABLE(gv$(CURSOR(SELECT /*+leading(h h1 ho) use_hash*/ DISTINCT hl.*,
-                                    ho.kglnaown || '.' || ho.kglnaobj object_name,
-                                    h.sid || ',' || h.serial# || ',@' || ho.inst_id holder,
-                                    h.sql_id holder_sql_id,
-                                    h.event holder_event
-                    FROM   (SELECT kgllkuse, kgllkhdl, kgllkmod, kgllkreq, 'Lock' kgllktype
-                            FROM   x$kgllk
-                            UNION ALL
-                            SELECT kglpnuse, kglpnhdl, kglpnmod, kglpnreq, 'Pin' kgllktype
-                            FROM   x$kglpn) hl,
-                           x$kglob ho,
-                           v$session h
-                    WHERE  hl.KGLLKMOD > 1
-                    AND    hl.KGLLKHDL = ho.kglhdadr
-                    AND    hl.KGLLKUSE = h.saddr
-                    AND    NVL(ho.kglnaown, 'SYS') != 'SYS')))),
-wo AS
- (SELECT *
-  FROM   TABLE(gv$(CURSOR(SELECT /*+leading(w) use_hash(wo)*/ 
-                                    distinct wo.kglnaown || '.' || wo.kglnaobj object_name,
-                                    nvl2(w.sid, w.sid || ',' || w.serial# || ',@' || wo.inst_id, NULL) waiter,
-                                    w.sql_id waiter_sql_id,
-                                    w.event waiter_event
-                    FROM   x$kglob wo, v$session w
-                    WHERE  wo.kglhdadr = w.p1raw
-                    AND    w.event LIKE '%library%'))))
-SELECT /*+no_expand use_hash(ho wo)*/ distinct * 
-FROM   ho LEFT JOIN wo USING (object_name)
-WHERE  (:V1 IS NULL AND wo.waiter IS NOT NULL) 
-OR     (:V1 IS NOT NULL AND (upper(object_name) like UPPER('%'||:V1||'%') OR regexp_substr(holder,'\d+')=:V1 OR  regexp_substr(waiter,'\d+')=:V1))
+ (
+    SELECT * FROM TABLE(gv$(CURSOR(
+        SELECT /*+ordered use_hash(hl ho) no_merge(h)*/ DISTINCT 
+                hl.*,
+                ho.kglnaown ||nullif('.' || ho.kglnaobj,'.') object_name,
+                h.sid || ',' || h.serial# || ',@' || ho.inst_id holder,
+                h.sql_id sql_id,
+                ho.inst_id,
+                DECODE(GREATEST(MODE_REQ, MODE_HELD), 1, 'NULL', 2, 'SHARED', 3, 'EXCLUSIVE', 'NONE')||'('||GREATEST(MODE_REQ, MODE_HELD)||')' lock_mode,
+                h.event  event
+        FROM    v$session h,
+               (SELECT kgllkuse saddr, kgllkhdl object_handle, kgllkmod mode_held, kgllkreq mode_req, 'Lock' TYPE
+                FROM   x$kgllk
+                UNION ALL
+                SELECT kglpnuse, kglpnhdl, kglpnmod, kglpnreq, 'Pin'
+                FROM   x$kglpn) hl,
+               x$kglob ho
+        WHERE  greatest(hl.mode_held,hl.mode_req) > 1
+        AND    nvl(upper(:V1),'_') in('_',upper(ho.kglnaobj),upper(ho.kglnaown ||nullif('.' || ho.kglnaobj,'.')),''||h.sid)
+        AND    hl.object_handle = ho.kglhdadr
+        AND    hl.saddr = h.saddr))))
+SELECT /*+no_expand use_hash(ho wo)*/ distinct 
+       h.type,
+       h.object_handle,
+       h.object_name,
+       h.holder,
+       h.lock_mode mode_held,
+       h.sql_id holder_sql_id,
+       h.event holder_event,
+       w.holder waiter,
+       w.lock_mode mode_req,
+       w.sql_id waiter_sql_id,
+       w.event waiter_event
+FROM   ho h LEFT JOIN ho w 
+ON     (h.type=w.type AND w.mode_req>1 and h.holder!= w.holder and
+       ((h.inst_id = w.inst_id and h.object_handle  = w.object_handle) or
+        (h.inst_id!= w.inst_id and h.object_name    = w.object_name)))
+WHERE  h.mode_held > 1
+AND    COALESCE(:V1,w.holder) IS NOT NULL
