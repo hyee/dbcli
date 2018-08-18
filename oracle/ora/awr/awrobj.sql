@@ -3,8 +3,7 @@
 
 WITH qry AS
  (SELECT /*+materialize*/*
-  FROM   (SELECT OBJ# OBJECT_ID,
-                 nvl(lower(:V2),'op') sorttype,
+  FROM   (SELECT nvl(lower(:V2),'op') sorttype,
                  to_timestamp(coalesce(:V3,:starttime, to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
                  to_timestamp(coalesce(:V4,:endtime, to_char(SYSDATE, 'YYMMDDHH24MI')), 'YYMMDDHH24MI') ed
           FROM   dba_hist_Seg_stat_obj
@@ -21,9 +20,7 @@ SELECT a.sql_id,
        obj OBJECT,
        COUNT(DISTINCT plan_hash) Childs,
        --to_char(wmsys.wm_concat(DISTINCT decode(sign(r - 3), -1, plan_hash))) plan_hash,
-       substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),
-                             '[' || chr(10) || chr(13) || chr(9) || ' ]+',' '),
-              1,20) text
+       substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'[' || chr(10) || chr(13) || chr(9) || ' ]+',' '),1,20) text
 FROM   (SELECT sql_id,
                st,
                ed,

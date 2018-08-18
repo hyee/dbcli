@@ -81,7 +81,7 @@ ash_base AS(
    SELECT /*+materialize no_expand*/ 
            nvl(SQL_PLAN_LINE_ID,0) ID,
            sum(aas) px_hits,
-           CEIL(SUM(TM_DELTA_DB_TIME)*1e-6) secs,
+           CEIL(SUM(least(nvl(tm_delta_db_time,0),DELTA_TIME))*1e-6) secs,
            COUNT(DISTINCT sql_exec_id||to_char(sql_exec_start,'yyyymmddhh24miss')) exes,
            ROUND(COUNT(DECODE(wait_class, NULL, 1)) * NVL2(max(sample_id),100,0) / COUNT(1), 1) "CPU",
            ROUND(COUNT(CASE WHEN wait_class IN ('User I/O','System I/O') THEN 1 END) * 100 / COUNT(1), 1) "IO",
@@ -105,12 +105,12 @@ ash_agg AS
                  MAX(execs) execs,
                  AAS,
                  aas1,
-                 SUM(TM_DELTA_DB_TIME * 1e-6) secs,
+                 SUM(secs) secs,
                  row_number() OVER(PARTITION BY OBJ, ID ORDER BY 1) c0,
                  row_number() OVER(PARTITION BY OBJ, OBJ1 ORDER BY 1) c1,
                  dense_Rank() OVER(PARTITION BY OBJ ORDER BY aas DESC,ID) r,
                  dense_Rank() OVER(PARTITION BY OBJ ORDER BY aas1 DESC,OBJ1 DESC) r1
-          FROM   (SELECT TM_DELTA_DB_TIME,
+          FROM   (SELECT least(nvl(tm_delta_db_time,0),DELTA_TIME) * 1e-6 secs,
                          SQL_PLAN_LINE_ID ID,
                          &OBJ obj,
                          &OBJ1 obj1,
