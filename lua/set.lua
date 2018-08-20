@@ -116,7 +116,7 @@ function cfg.init(name,defaultvalue,validate,class,desc,range,instance)
 end
 
 function cfg.inject_cfg(name,callback,obj)
-    cfg.init(name,"unkown",callback,env.callee(),"#hidden",'*',obj)
+    cfg.init(name,"unknown",callback,env.callee(),"#hidden",'*',obj)
 end
 
 function cfg.remove(name)

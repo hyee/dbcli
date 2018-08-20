@@ -36,7 +36,7 @@ function printer.more(output)
     reader:printColumns(list)
     reader:setPaginationEnabled(false)
     --]]
-    local width=terminal:getWidth()
+    local width=console:getScreenWidth()
     if console:getBufferWidth() > width and env.grid then
         local tab={}
         local cut=env.grid.cut

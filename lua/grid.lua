@@ -352,15 +352,14 @@ function grid:add(row)
                 v=table.concat(v1,'\n')
             end
             local grp={}
-            v=v:convert_ansi()
-            v=v:gsub('\192\128',''):gsub('%z','')
+            v=v:convert_ansi():gsub('\192\128',''):gsub('%z','')
             if headind>0 then v=v:gsub("[%s ]+$",""):gsub("[ \t]+[\n\r]","\n"):gsub("\t",'    ') end
 
             --if the column value has multiple lines, then split lines into table
             for p in v:gmatch('([^\n\r]+)') do
                 grp[#grp+1]=p
                 --deal with unicode chars
-                local l, len = p:strip_ansi(p):ulen()
+                local l, len = p:ulen()
                 if l~=len then self.use_jwriter=true end
                 if csize < len then csize=len end
             end

@@ -2,20 +2,22 @@
     --[[
     @FIELD :{
                 11.0={,SUM(total_Waits_fg * flag) fg_counts, SUM(total_timeouts_fg * flag) fg_timeouts,
-                  round(SUM(time_waited_micro * 1e-6 / 60 * flag), 2) fg_waited_mins},
+                  round(SUM(time_waited_micro * 1e-6 * flag), 2) fg_waited},
                 10.0={}
             }
     --]]
 ]]*/
 
-col waited format smhd2
-set feed off
+col waited,fg_waited format smhd2
+set feed off sep4k on
 
 SELECT *
-FROM   (SELECT  inst,nvl(event_name,'* '||nvl(wait_class,'All Waits')) event, wait_class, SUM(total_Waits * flag) counts,
+FROM   (SELECT  inst,nvl(event_name,'- '||nvl(wait_class,'* All Events *')) event, 
+                wait_class,
+                SUM(total_Waits * flag) counts,
                 SUM(total_timeouts * flag) timeouts,
                 round(SUM(time_waited_micro * 1e-6  * flag), 2) waited,
-                round(SUM(time_waited_micro * flag) / nullif(SUM(total_Waits * flag), 0) * 1e-3, 2) avg_milli
+                round(SUM(time_waited_micro * flag) / nullif(SUM(total_Waits * flag), 0) * 1e-3, 2) avg_wait_ms
                 &FIELD
          FROM   (SELECT DECODE(snap_id, max_id, 1, -1) flag, a.*
                   FROM   (SELECT  hs1.*, 

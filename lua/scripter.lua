@@ -90,7 +90,7 @@ function scripter:rehash(script_dir,ext_name,extend_dirs)
     
     local additions={
         {'-R','Rebuild the help info and available commands'},
-        {'-P','Verify the paramters/templates of the target script, instead of running it. Usage: @@NAME <command> [<args>]'},
+        {'-P','Verify the parameters/templates of the target script, instead of running it. Usage: @@NAME <command> [<args>]'},
         {'-H','Show the help detail of the target command. Usage: @@NAME <command>'},
         {'-G','Print the content of the specific command. Usage: @@NAME <command>'},
         {'-L','Link this command to an extended directory'..(self.extend_dirs and ('(current is '..self.extend_dirs..')') or '')..". Usage: @@NAME <directory>"},
@@ -237,7 +237,7 @@ function scripter:parse_args(sql,args,print_args,extend_dirs)
     end
 
     if print_args then
-        local rows={{"Variable","Option","Default?","Choosen?","Value"}}
+        local rows={{"Variable","Option","Default?","Chosen?","Value"}}
         local rows1={{"Variable","Origin","Mapping","Final"}}
         local keys={}
         for k,v in pairs(args) do

@@ -9,7 +9,7 @@ DECLARE
     oname     VARCHAR2(128) := :object_owner;
     tab       VARCHAR2(128) := :object_name;
     part      VARCHAR2(128) := :object_subname;
-    ttype     VARCHAR2(60)  := :object_type;
+    ttype     VARCHAR2(128) := :object_type;
     col       VARCHAR2(128) := upper(:V2);
     histogram VARCHAR2(128);
     dtype     VARCHAR2(128);

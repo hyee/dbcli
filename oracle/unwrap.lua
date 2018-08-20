@@ -79,8 +79,8 @@ function unwrap.unwrap(obj,ext)
         return;
     end
 
-    obj=db:check_obj(obj)
-    env.checkerr(obj,"Cannot find target object!")
+    local info=db:check_obj(obj)
+    env.checkerr(info,'Cannot find target object "'..obj..'"!')
     local qry=[[
         SELECT TEXT,
                MAX(CASE WHEN LINE = 1 AND TEXT LIKE '% wrapped%' || CHR(10) || '%' THEN 1 ELSE 0 END) OVER(PARTITION BY TYPE) FLAG,
@@ -93,7 +93,7 @@ function unwrap.unwrap(obj,ext)
     if db.props.db_version>'12' then
         qry=qry:gsub(':name',':name and origin_con_id=(select origin_con_id from all_source where rownum<2 and OWNER = :owner and NAME  = :name)')
     end
-    local rs=db:dba_query(db.exec,qry,{owner=obj.owner,name=obj.object_name})
+    local rs=db:dba_query(db.exec,qry,{owner=info.owner,name=info.object_name})
     local cache={}
     local result=""
     local txt=""

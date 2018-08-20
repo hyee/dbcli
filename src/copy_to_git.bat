@@ -3,7 +3,7 @@ cd ..
 set GIT_HOME=d:\green\github
 setlocal enabledelayedexpansion
 del /F/S/Q ".\src\java"
-XCOPY /S /Y "d:\JavaProjects\dbcli\src\*" .\src\java
+XCOPY /S /Y "d:\JavaProjects\dbcli\dbcli_1\src\*" .\src\java
 XCOPY /S /Y "d:\JavaProjects\dbcli\opencsv\src\*" "%GIT_HOME%\opencsv\src"
 XCOPY /S /Y "d:\JavaProjects\dbcli\nuprocess\src\*" "%GIT_HOME%\nuprocess\src"
 XCOPY  /S /Y ".\lib\opencsv.jar" "%GIT_HOME%\opencsv\release"

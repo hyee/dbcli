@@ -251,6 +251,10 @@ function oracle:parse(sql,params)
         self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     end
 
+    for k,v in pairs(params) do
+        if type(k)=="string" then params[k:upper()]=v end
+    end
+
     org_sql,sql=sql,sql:gsub('%f[%w_%$:]:([%w_%$]+)',function(s)
         local k,s=s:upper(),':'..s
         local v=params[k]
@@ -291,6 +295,7 @@ function oracle:parse(sql,params)
             cfg.set("pipequery",'on')
         end
     end
+
     if sql_type=='EXPLAIN' or #p2>0 and (sql_type=="DECLARE" or sql_type=="BEGIN" or sql_type=="CALL") then
         local s0,s1,s2,index,typ,siz={},{},{},1,nil,#p2
         params={}
@@ -354,15 +359,24 @@ function oracle:parse(sql,params)
             prep[v[method].."AtName"](prep,k,v[value])
         end
     end
+
     return prep,org_sql,params
 end
 
 function oracle:exec(sql,...)
     local bypass=self:is_internal_call(sql)
-    local args=type(select(1,...) or "")=="table" and ... or {...}
-    sql=event("BEFORE_ORACLE_EXEC",{self,sql,args}) [2]
-    local result=self.super.exec(self,sql,args)
-    if not bypass then 
+    local args,prep_params=nil,{}
+    local is_not_prep=type(sql)~="userdata"
+    if type(select(1,...) or "")=="table" then
+        args=select(1,...)
+        if type(select(2,...) or "")=="table" then prep_params=select(2,...) end
+    else
+        args={...}
+    end
+    
+    if is_not_prep then sql=event("BEFORE_ORACLE_EXEC",{self,sql,args}) [2] end
+    local result=self.super.exec(self,sql,args,prep_params)
+    if is_not_prep and not bypass then 
         event("AFTER_ORACLE_EXEC",self,sql,args,result)
         self.print_feed(sql,result)
     end

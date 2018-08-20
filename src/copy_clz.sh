@@ -5,7 +5,7 @@ if [ "$FOLDER"="" ]; then
 fi
 
 TARGET=${FOLDER}1
-SOURCE=/d/jdk_linux
+SOURCE=/media/sf_D_DRIVE/jdk_linux
 JAR="$SOURCE/bin/jar"
 
 

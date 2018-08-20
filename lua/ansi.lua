@@ -66,7 +66,7 @@ local base_color={
     --Additional ansi Esc codes added to ansi.h by Gothic  april 23,1993
     --Note, these are Esc codes for VT100 terminals, and emmulators
     --and they may not all work within the mud
-    BOLD    ={"\27[1m","Turn on bold mode",0},
+    BOLD    ={"\27[1m","Turn on bold mode",0},  --{"\27[1m","Turn on bold mode",0},
     CLR     ={"\27C\27[3J","Clear the screen",1},
     HOME    ={"\27[H","Send cursor to home position",1},
     REF     ={"\27[2J;H" , "Clear screen and home cursor",1},
@@ -200,6 +200,7 @@ end
 
 function ansi.clear_screen()
     os.execute(env.PLATFORM=='windows' and "cls" or "clear")
+    reader:clearScreen();
 end
 
 function ansi.define_color(name,value,module,description)

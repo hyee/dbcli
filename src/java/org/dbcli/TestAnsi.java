@@ -1,5 +1,3 @@
-package org.dbcli;
-
 import org.jline.reader.LineReaderBuilder;
 import org.jline.reader.impl.LineReaderImpl;
 import org.jline.terminal.Terminal;
@@ -25,7 +23,7 @@ public class TestAnsi {
             AttributedStringBuilder sb = new AttributedStringBuilder();
             sb.appendAnsi(HIC);
             sb.append(buffer);
-            //sb.append(NOR);
+            //asb.append(NOR);
             return sb.toAttributedString();
         });
 

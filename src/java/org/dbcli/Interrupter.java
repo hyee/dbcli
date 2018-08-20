@@ -7,10 +7,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class Interrupter implements Terminal.SignalHandler {
-    static HashMap<Object, EventCallback> map = new HashMap<>();
-
     public static Terminal.SignalHandler handler;
-
+    static HashMap<Object, EventCallback> map = new HashMap<>();
 
     public static void listen(Object name, EventCallback c) {
         //System.out.println(name.toString()+(c==null?"null":c.toString()));

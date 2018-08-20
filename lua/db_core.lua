@@ -31,7 +31,7 @@ function db_Types:get(position,typeName,res,conn)
     if value == nil or res:wasNull() then return nil end
     if not self[typeName].handler then return value end
     return self[typeName].handler(value,'get',conn,res)
- end
+end
 
 local number_types={
         INT      = 1,
@@ -339,6 +339,27 @@ db_core.feed_list={
     USE     ="Database changed"
 }
 
+db_core.readonly_list={
+    SELECT=true,
+    WITH=true,
+    FETCH=true,
+    DECLARE=true,
+    BEGIN=true,
+    ALTER={SESSION=true},
+    EXECUTE=true,
+    CALL=true,
+    EXEC=true,
+    DO=true,
+    START=true,
+    HELP=true,
+    USE=true,
+    DESCRIBE=true,
+    DESC=true,
+    EXPLAIN=true,
+    SHOW=true,
+    SET=true
+}
+
 local excluded_keywords={
     OR=1,
     REPLACE=1,
@@ -414,6 +435,25 @@ end
 ]]
 
 function db_core:call_sql_method(event_name,sql,method,...)
+    if cfg.get("READONLY")=="on" then
+        local root_cmd,sub_cmd=self.get_command_type(sql)
+        local enabled=self.readonly_list[root_cmd]
+        if not enabled then
+            enabled=type(self.readonly_list[cfg.get("platform")])=="table" and self.readonly_list[cfg.get("platform")][root_cmd]
+        end
+
+        if sub_cmd then
+            if type(enabled)=="table" then enabled=enabled[sub_cmd] end
+            sub_cmd=" "..sub_cmd
+        else
+            sub_cmd=""
+        end
+
+        if enabled ~=true then
+            env.raise('Command "'..root_cmd..sub_cmd..'" is disallowed in read-only mode!')
+        end
+    end
+
     local res,obj=pcall(method,...)
     if res==false then
         local info,internal={db=self,sql=sql,error=tostring(obj):gsub('%s+$','')}
@@ -462,6 +502,11 @@ end
 
 function db_core:parse(sql,params,prefix,prep)
     local p1,counter={},0
+
+    for k,v in pairs(params) do
+        if type(k)=="string" then params[k:upper()]=v end
+    end
+
     prefix=(prefix or ':')
     sql=sql:gsub('%f[%w_%$'..prefix..']'..prefix..'([%w_%$]+)',function(s)
             local k,s = s:upper(),prefix..s
@@ -517,8 +562,10 @@ function db_core:abort_statement()
     end
 end
 
-function db_core:exec(sql,args)
-    if not self:is_internal_call(sql) then
+function db_core:exec(sql,args,prep_params)
+    local is_not_prep=type(sql)~="userdata"
+
+    if is_not_prep and not self:is_internal_call(sql) then
         db_core.__start_clock=os.timer()
     end
     if #env.RUNNING_THREADS<=2 then
@@ -526,11 +573,9 @@ function db_core:exec(sql,args)
         java.system:gc()
         java.system:runFinalization();
     end
-    local params={}
+    local params,prep={}
     args=type(args)=="table" and args or {args}
-    local prep;
-    env.checkerr(type(args) == "table", "Expected parameter as a table for SQL: \n"..sql)
-    for k,v in pairs(args or {}) do
+    for k,v in pairs(args) do
         if type(k)=="string" then
             params[k:upper()]=v
         else
@@ -547,24 +592,25 @@ function db_core:exec(sql,args)
         self.autocommit=autocommit
     end
 
-    sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
-
-    if type(sql)~="string" then
-        return sql
+    if is_not_prep then
+        sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
+        if type(sql)~="string" then
+            return sql
+        end
+        prep,sql,params=self:parse(sql,params)
+        prep:setEscapeProcessing(false)
+        self.__stmts[#self.__stmts+1]=prep
+        prep:setFetchSize(1)
+        prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
+        self.current_stmt=prep
+        env.log_debug("db","SQL:",sql)
+        env.log_debug("db","Parameters:",params)
+    else
+        prep,sql,params=sql,"PreparedStatement",prep_params or {}
     end
-
-    prep,sql,params=self:parse(sql,params)
-    prep:setEscapeProcessing(false)
-    self.__stmts[#self.__stmts+1]=prep
-    prep:setFetchSize(1)
-    prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
-    self.current_stmt=prep
-    env.log_debug("db","SQL:",sql)
-    env.log_debug("db","Parameters:",params)
 
     local is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
     self.current_stmt=nil
-    --is_query=prep:execute()
     local is_output,index,typename=1,2,3
     for k,v in pairs(params) do
         if type(v) == "table" and v[is_output] == "#"  then
@@ -602,7 +648,7 @@ function db_core:exec(sql,args)
     end
 
     self:clearStatements()
-    if event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
+    if is_not_prep and event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
     
     for k,v in pairs(outputs) do
         if args[k]==db_core.NOT_ASSIGNED then args[k]=nil end
@@ -623,10 +669,10 @@ function db_core:assert_connect()
     env.checkerr(self:is_connect(),2,"%s database is not connected!",env.set.get("database"):initcap())
 end
 
-function db_core:internal_call(sql,args)
+function db_core:internal_call(sql,args,prep_params)
     self.internal_exec=true
     --local exec=self.super.exec or self.exec
-    local succ,result=pcall(self.exec,self,sql,args)
+    local succ,result=pcall(self.exec,self,sql,args,prep_params)
     self.internal_exec=false
     if not succ then error(result) end
     return result
@@ -634,6 +680,7 @@ end
 
 function db_core:is_internal_call(sql)
     if self.internal_exec then return true end
+    if type(sql)=="userdata" or sql=='PreparedStatement' then return true end
     return sql and sql:find("INTERNAL_DBCLI_CMD",1,true) and true or false
 end
 
@@ -709,6 +756,8 @@ function db_core:connect(attrs,data_source)
             env.log_debug("db","Connection properties:\n",self.properties)
         end
     end
+
+    pcall(self.conn.setReadOnly,self.conn,cfg.get("READONLY")=="on")
     self.last_login_account=attrs
     return self.conn,attrs
 end
@@ -729,8 +778,8 @@ function db_core:clearStatements(is_force)
 end
 
 --
-function db_core:query(sql,args)
-    local result = self:exec(sql,args)
+function db_core:query(sql,args,prep_params)
+    local result = self:exec(sql,args,prep_params)
     if result and type(result)~="number" then
         if type(result)=="table" then
             for _,rs in ipairs(result) do
@@ -851,7 +900,6 @@ function db_core:rollback()
     end
 end
 
-
 local exp=java.require("com.opencsv.ResultSetHelperService")
 local csv=java.require("com.opencsv.CSVWriter")
 local cparse=java.require("com.opencsv.CSVParser")
@@ -860,6 +908,19 @@ local sqlw=java.require("com.opencsv.SQLWriter")
 local function set_param(name,value)
     if name=="FEED" or name=="AUTOCOMMIT" then
         return value:lower()
+    elseif name=="READONLY" then
+        value=value:lower()
+        if env.getdb():is_connect() then
+            env.getdb().conn:setReadOnly(value=="on")
+        end
+
+        if value=='on' then
+            env.set_title("ReadOnly: "..value)
+        else
+            env.set_title("")
+        end
+
+        return value
     elseif name=="ASYNCEXP" then
         return value and value:lower()=="true" and true or false
     elseif name=="CSVSEP" then
@@ -1100,6 +1161,7 @@ function db_core:__onload()
             env.warn("Please download and copy it from %s which should be compatible with JRE %s",self.JDBC_ADDRESS,java.system:getProperty('java.vm.specification.version'))
         end
     end
+
     local txt="\n   Refer to 'set expPrefetch' to define the fetch size of the statement which impacts the export performance."
     txt=txt..'\n   -e: format is "-e<column1>[,...]"'
     txt=txt..'\n   -r: format is "-r<column1=<expression>>[,...]"'
@@ -1124,6 +1186,7 @@ function db_core:__onload()
     cfg.init("SQLERRLINE",'off',nil,"db.core","Also print the line number when error SQL is printed",'on,off')
     cfg.init("NULL","",nil,"db.core","Define the display value for NULL value")
     cfg.init("CSVSEP",",",set_param,"db.core","Define the default separator between CSV fields.")
+    cfg.init("READONLY",'off',set_param,"db.core","When set to on, makes the database connection read-only.",'on,off')
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
     env.event.snoop('TRIGGER_LOGIN',self.login,self)
     env.set_command(self,{"reconnect","reconn"}, "Re-connect to database with the last login account.",self.reconnnect,false,2)

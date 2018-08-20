@@ -934,7 +934,7 @@ define topn_sqlid = "5"
 /* Since it is derived information it can be wrong and misleading, therefore this switch can be set to anything != YES to hide this info */
 define show_px_sets = "YES"
 
-/* By default supress output of internal queries */
+/* By default suppress output of internal queries */
 /* Set this to "" for seeing the output */
 define debug_internalp = "no"
 
@@ -2667,7 +2667,7 @@ from
                                     , qc_instance_id
                                     , qc_session_id
 &_IF_ORA11_OR_HIGHER                                      , qc_session_serial#
-                                    /* There seem to be sometimes inconsistencies in the ASH data (spurious serial#) therefore with 11g versions the "most occuring" session data will be used */
+                                    /* There seem to be sometimes inconsistencies in the ASH data (spurious serial#) therefore with 11g versions the "most occurring" session data will be used */
                                     , count(*) over (partition by
                                                      case when qc_instance_id is not null
                                                      then qc_instance_id || ',' || qc_session_id

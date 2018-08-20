@@ -11,11 +11,11 @@ ora _find_object "&V1" 1
 set verify off feed off
 var text CLOB;
 DECLARE
-    v_stgtab VARCHAR2(30) := 'DBCLI_STATS_TABLE';
-    v_sqlid  VARCHAR2(30) := :V1;
+    v_stgtab VARCHAR2(128) := 'DBCLI_STATS_TABLE';
+    v_sqlid  VARCHAR2(30)  := :V1;
     TYPE t_tab IS RECORD(
-        owner VARCHAR2(30),
-        tname VARCHAR2(30));
+        owner VARCHAR2(128),
+        tname VARCHAR2(128));
     TYPE t_tabs IS TABLE OF t_tab INDEX BY PLS_INTEGER;
     v_tabs t_tabs;
     v_text CLOB;

@@ -211,7 +211,7 @@ public final class ProcessCompletions implements Runnable {
         }
     }
 
-    private void queueRead(final WindowsProcess process, final PipeBundle pipe, final int stdX) {
+    private void queueRead(final WindowsProcess process, final WindowsProcess.PipeBundle pipe, final int stdX) {
         // The caller must call position() on the buffer to indicate how many bytes
         // were read from stdout / stderr.
         if (!pipe.buffer.hasRemaining()) {

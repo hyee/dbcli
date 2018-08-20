@@ -271,7 +271,9 @@ function var.capture_before_cmd(cmd,args)
     local sub=tostring(var.cmdlist and var.cmdlist[cmd] or nil):upper():match('^%w+')
     if sub~=var.cmd1 and sub~=var.cmd2 and sub~=var.cmd3 and sub~=var.cmd4 then
         env.log_debug("var","Backup variables")
-        var._backup,var._inputs_backup,var._outputs_backup,var._columns_backup=var.backup_context()
+        if not var._prevent_restore then
+            var._backup,var._inputs_backup,var._outputs_backup,var._columns_backup=var.backup_context()
+        end
     else
         var._backup,var._inputs_backup,var._outputs_backup,var._columns_backup=nil,nil,nil,nil
     end
@@ -279,7 +281,7 @@ end
 
 function var.capture_after_cmd(cmd)
     if #env.RUNNING_THREADS>1 then return end
-    if var._backup then
+    if var._backup and not var._prevent_restore then
         env.log_debug("var","Reset variables")
         var.import_context(var._backup,var._inputs_backup,var._outputs_backup,var._columns_backup)
         var._backup,var._inputs_backup,var._outputs_backup,var._columns_backup=nil,nil,nil,nil

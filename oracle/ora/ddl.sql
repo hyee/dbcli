@@ -13,11 +13,11 @@ ora _find_object &V1
 
 DECLARE
     v_default     NUMBER := DBMS_METADATA.SESSION_TRANSFORM;
-    schem         VARCHAR2(30):= :object_owner;
-    part1         VARCHAR2(30):= :object_name;
-    obj_type      VARCHAR2(30):= :object_type;
+    schem         VARCHAR2(128):= :object_owner;
+    part1         VARCHAR2(128):= :object_name;
+    obj_type      VARCHAR2(128):= :object_type;
     txt           CLOB;
-    vw            VARCHAR2(60);
+    vw            VARCHAR2(256);
 BEGIN
     IF obj_type in('VIEW','SYNONYM') THEN
         BEGIN

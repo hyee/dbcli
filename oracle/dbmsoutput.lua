@@ -4,11 +4,17 @@ local flag = 1
 
 local output={}
 local prev_transaction
+local changed,enabled=false,'on'
+local default_args={enable=enabled,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB",con_name="#VARCHAR",con_id="#NUMBER"}
 
 function output.setOutput(db)
     local flag=cfg.get("ServerOutput")
     local stmt="begin dbms_output."..(flag=="on" and "enable(null)" or "disable()")..";end;"
     pcall(function() (db or env.getdb()):internal_call(stmt) end)
+    if db then
+        local prep,sql_,params=db:parse(output.stmt,table.clone(default_args))
+        db.__dbmsoutput_prep,db.__dbmsoutput_parms=prep,params
+    end
 end
 
 local marker='/*GetDBMSOutput*/'
@@ -51,20 +57,35 @@ output.stmt=marker..[[/*INTERNAL_DBCLI_CMD*/
         END;]]
 
 function output.getOutput(db,sql)
-    local isOutput=cfg.get("ServerOutput")
+    local prep,params=db.__dbmsoutput_prep,db.__dbmsoutput_parms
+    if not prep then return end
+
     local typ=db.get_command_type(sql)
-    if typ=='SELECT' or typ=='WITH' then return end
+    if (typ=='SELECT' or typ=='WITH') and #env.RUNNING_THREADS>2 then return end
+
     if not ((output.prev_sql or ""):find(marker,1,true)) and not sql:find(marker,1,true) and not db:is_internal_call(sql) then
-        local args={enable=isOutput,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB",con_name="#VARCHAR",con_id="#NUMBER"}
-        if not pcall(db.internal_call,db,output.stmt,args) then return end
+
+        local args=table.clone(default_args)
+        if changed then
+            prep:setString(1,enabled)
+            changed=false
+        end
+
+        if not pcall(db.internal_call,db,prep,args,table.clone(params)) then return end
+
         local result=args.lob or args.buff
-        if isOutput == "on" and result and result:match("[^\n%s]+") then
+        if enabled == "on" and result and result:match("[^\n%s]+") then
             result=result:gsub("\r\n","\n"):gsub("%s+$","")
             if result~="" then print(result) end
         end
+
         db.props.container=args.cont
         db.props.container_id=args.con_id
         local title={args.con_name and ("Container: "..args.con_name..'('..args.con_id..')')}
+        if args.txn and cfg.get("READONLY")=="on" then
+            db:rollback()
+            env.raise("DML in read-only mode is disallowed, transaction is rollbacked.")
+        end
         title[#title+1]=args.txn and ("TXN_ID: "..args.txn)
         title=table.concat(title,"   ")
         if prev_transaction~=title then
@@ -85,15 +106,24 @@ function output.get_error_output(info)
     return info
 end
 
+function output.clear_output(db)
+    local prep=db.__dbmsoutput_prep
+    if prep then pcall(prep.close,prep) end
+    db.__dbmsoutput_prep,db.__dbmsoutput_parms=nil,nil
+end
+
 function output.onload()
     snoop("ON_SQL_ERROR",output.get_error_output,nil,40)
+    snoop("BEFORE_ORACLE_CONNECT",output.clear_output)
     snoop("AFTER_ORACLE_CONNECT",output.setOutput)
     snoop("AFTER_ORACLE_EXEC",output.getOutput,nil,50)
 
     cfg.init({"ServerOutput",'SERVEROUT'},
         "on",
         function(name,value)
+            changed=value~=enabled
             output.setOutput(nil)
+            enabled=value
             return value
         end,
         "oracle",

@@ -32,8 +32,10 @@ SELECT /*+ordered*/
          c.machine
 FROM   b d,
        gv$session c,
-       XMLTABLE('/ROWSET/ROW' passing(dbms_xmlgen.getxmltype('select owner,object_name,subobject_name from &CHECK_ACCESS where object_id=' || d.id1)) columns owner VARCHAR2(30),
-                object_name VARCHAR2(30), subobject_name VARCHAR2(30)) b
+       XMLTABLE('/ROWSET/ROW' passing(dbms_xmlgen.getxmltype('select owner,object_name,subobject_name from &CHECK_ACCESS where object_id=' || d.id1)) columns 
+                owner VARCHAR2(128),
+                object_name VARCHAR2(128), 
+                subobject_name VARCHAR2(128)) b
 WHERE  d.inst_id = c.inst_id
 AND    d.sid = c.sid
 ORDER  BY owner, table_name,sub_name,1,2;

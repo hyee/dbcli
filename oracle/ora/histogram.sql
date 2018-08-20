@@ -59,9 +59,9 @@ DECLARE
     oname     VARCHAR2(128) := :object_owner;
     tab       VARCHAR2(128) := :object_name;
     part      VARCHAR2(128) := :object_subname;
-    ttype     VARCHAR2(60)  := :object_type;
-    statown   VARCHAR2(30)  := :stats_owner;
-    stattab   VARCHAR2(30)  := :stats_tab;
+    ttype     VARCHAR2(128) := :object_type;
+    statown   VARCHAR2(128) := :stats_owner;
+    stattab   VARCHAR2(128) := :stats_tab;
     col       VARCHAR2(128) := upper(:V2);
     input     VARCHAR2(128) := :V3;
     max_v     VARCHAR2(128) := :V4;

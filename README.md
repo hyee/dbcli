@@ -40,10 +40,10 @@ For Windows OS, to avoid the word wrap in the terminal window which affects the 
 * In the `Font` tab, change the font size as smaller value.
 
 ### Linux: Pre-Requisitions
-Linux must be the `64-bit` version, and make sure `glibc >= v2.4`(use `ldd --version` to verify) are installed. Since Linux terminal doesn't have horizontal scrollbar, smaller font is preferred. It's recommended [Jessies Terminator](https://github.com/software-jessies-org/jessies/wiki/Downloads) which supports horizontal scrolling to launch dbcli in desktop enviroment.
+Linux must be the `64-bit` version, and make sure `glibc >= v2.4`(use `ldd --version` to verify) are installed. Since Linux terminal doesn't have horizontal scrollbar, smaller font is preferred. It's recommended [Jessies Terminator](https://github.com/software-jessies-org/jessies/wiki/Downloads) which supports horizontal scrolling to launch dbcli in desktop environment.
 
 ### OSX: Pre-Requisitions
-Only tested on OSX 10.12, lower version should be fine. Java 1.8 is required. It's recommended [Jessies Terminator](https://github.com/software-jessies-org/jessies/wiki/Downloads) which supports horizontal scrolling to launch dbcli in desktop enviroment, and add entry `<hostname>.local` into `/etc/hosts` to speed up the JVM performance.
+Only tested on OSX 10.12, lower version should be fine. Java 1.8 is required. It's recommended [Jessies Terminator](https://github.com/software-jessies-org/jessies/wiki/Downloads) which supports horizontal scrolling to launch dbcli in desktop environment, and add entry `<hostname>.local` into `/etc/hosts` to speed up the JVM performance.
 For Example:
 ```
 127.0.0.1  localhost mac-pc.local
@@ -90,7 +90,7 @@ Command Overview
     * `ansi` :Show the usage of console color solution
     * `hotkeys` :Show the available hotkeys in console|
   * _Core_
-    * `set` :A command set, show or change all kinds of preferences of console enviroment or other commands. The changed settings can be either permanent or temporary.
+    * `set` :A command set, show or change all kinds of preferences of console environment or other commands. The changed settings can be either permanent or temporary.
     * `alias` :A command set, similar to the Unix `alias` command, mainly used to define the shortcut of other command line, the definition is automatially stored in folder `aliases` for permanent reused|
     * `history/his` :Check or run historical commands, and the historial commands are only kept in memory and available within the current window
     * `r` or `/` :Rerun previous command

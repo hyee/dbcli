@@ -80,6 +80,7 @@ interface Kernel32 extends StdCallLibrary {
     // UINT WINAPI GetConsoleOutputCP(void)
     int GetConsoleOutputCP();
 
+    int WaitForSingleObject(Pointer in_hHandle, int in_dwMilliseconds);
 
     // BOOL WINAPI FillConsoleOutputCharacter(
     // _In_ HANDLE hConsoleOutput,
@@ -287,6 +288,10 @@ interface Kernel32 extends StdCallLibrary {
     //   WORD  Attributes;
     // } CHAR_INFO, *PCHAR_INFO;
     class CHAR_INFO extends Structure {
+        private static String[] fieldOrder = {"uChar", "Attributes"};
+        public UnionChar uChar;
+        public short Attributes;
+
         public CHAR_INFO() {
         }
 
@@ -300,14 +305,9 @@ interface Kernel32 extends StdCallLibrary {
             Attributes = attr;
         }
 
-        public UnionChar uChar;
-        public short Attributes;
-
         public static CHAR_INFO[] createArray(int size) {
             return (CHAR_INFO[]) new CHAR_INFO().toArray(size);
         }
-
-        private static String[] fieldOrder = {"uChar", "Attributes"};
 
         @Override
         protected java.util.List<String> getFieldOrder() {
@@ -320,18 +320,17 @@ interface Kernel32 extends StdCallLibrary {
     //   BOOL  bVisible;
     // } CONSOLE_CURSOR_INFO, *PCONSOLE_CURSOR_INFO;
     class CONSOLE_CURSOR_INFO extends Structure {
+        private static String[] fieldOrder = {"dwSize", "bVisible"};
         public int dwSize;
         public boolean bVisible;
-
-        public static class ByReference extends CONSOLE_CURSOR_INFO implements
-                Structure.ByReference {
-        }
-
-        private static String[] fieldOrder = {"dwSize", "bVisible"};
 
         @Override
         protected java.util.List<String> getFieldOrder() {
             return java.util.Arrays.asList(fieldOrder);
+        }
+
+        public static class ByReference extends CONSOLE_CURSOR_INFO implements
+                Structure.ByReference {
         }
     }
 
@@ -343,13 +342,12 @@ interface Kernel32 extends StdCallLibrary {
     //   COORD      dwMaximumWindowSize;
     // } CONSOLE_SCREEN_BUFFER_INFO;
     class CONSOLE_SCREEN_BUFFER_INFO extends Structure {
+        private static String[] fieldOrder = {"dwSize", "dwCursorPosition", "wAttributes", "srWindow", "dwMaximumWindowSize"};
         public COORD dwSize;
         public COORD dwCursorPosition;
         public short wAttributes;
         public SMALL_RECT srWindow;
         public COORD dwMaximumWindowSize;
-
-        private static String[] fieldOrder = {"dwSize", "dwCursorPosition", "wAttributes", "srWindow", "dwMaximumWindowSize"};
 
         @Override
         protected java.util.List<String> getFieldOrder() {
@@ -370,6 +368,10 @@ interface Kernel32 extends StdCallLibrary {
     //    SHORT Y;
     //  } COORD, *PCOORD;
     class COORD extends Structure implements Structure.ByValue {
+        private static String[] fieldOrder = {"X", "Y"};
+        public short X;
+        public short Y;
+
         public COORD() {
         }
 
@@ -377,11 +379,6 @@ interface Kernel32 extends StdCallLibrary {
             this.X = X;
             this.Y = Y;
         }
-
-        public short X;
-        public short Y;
-
-        private static String[] fieldOrder = {"X", "Y"};
 
         @Override
         protected java.util.List<String> getFieldOrder() {
@@ -405,17 +402,9 @@ interface Kernel32 extends StdCallLibrary {
         public static final short WINDOW_BUFFER_SIZE_EVENT = 0x0004;
         public static final short MENU_EVENT = 0x0008;
         public static final short FOCUS_EVENT = 0x0010;
-
+        private static String[] fieldOrder = {"EventType", "Event"};
         public short EventType;
         public EventUnion Event;
-
-        public static class EventUnion extends Union {
-            public KEY_EVENT_RECORD KeyEvent;
-            public MOUSE_EVENT_RECORD MouseEvent;
-            public WINDOW_BUFFER_SIZE_RECORD WindowBufferSizeEvent;
-            // MENU_EVENT_RECORD MenuEvent;
-            // FOCUS_EVENT_RECORD FocusEvent;
-        }
 
         @Override
         public void read() {
@@ -434,11 +423,17 @@ interface Kernel32 extends StdCallLibrary {
             super.read();
         }
 
-        private static String[] fieldOrder = {"EventType", "Event"};
-
         @Override
         protected java.util.List<String> getFieldOrder() {
             return java.util.Arrays.asList(fieldOrder);
+        }
+
+        public static class EventUnion extends Union {
+            public KEY_EVENT_RECORD KeyEvent;
+            public MOUSE_EVENT_RECORD MouseEvent;
+            public WINDOW_BUFFER_SIZE_RECORD WindowBufferSizeEvent;
+            // MENU_EVENT_RECORD MenuEvent;
+            // FOCUS_EVENT_RECORD FocusEvent;
         }
     }
 
@@ -454,14 +449,13 @@ interface Kernel32 extends StdCallLibrary {
     //   DWORD dwControlKeyState;
     // } KEY_EVENT_RECORD;
     class KEY_EVENT_RECORD extends Structure {
+        private static String[] fieldOrder = {"bKeyDown", "wRepeatCount", "wVirtualKeyCode", "wVirtualScanCode", "uChar", "dwControlKeyState"};
         public boolean bKeyDown;
         public short wRepeatCount;
         public short wVirtualKeyCode;
         public short wVirtualScanCode;
         public UnionChar uChar;
         public int dwControlKeyState;
-
-        private static String[] fieldOrder = {"bKeyDown", "wRepeatCount", "wVirtualKeyCode", "wVirtualScanCode", "uChar", "dwControlKeyState"};
 
         @Override
         protected java.util.List<String> getFieldOrder() {
@@ -476,12 +470,11 @@ interface Kernel32 extends StdCallLibrary {
     //   DWORD dwEventFlags;
     // } MOUSE_EVENT_RECORD;
     class MOUSE_EVENT_RECORD extends Structure {
+        private static String[] fieldOrder = {"dwMousePosition", "dwButtonState", "dwControlKeyState", "dwEventFlags"};
         public COORD dwMousePosition;
         public int dwButtonState;
         public int dwControlKeyState;
         public int dwEventFlags;
-
-        private static String[] fieldOrder = {"dwMousePosition", "dwButtonState", "dwControlKeyState", "dwEventFlags"};
 
         @Override
         protected java.util.List<String> getFieldOrder() {
@@ -493,9 +486,8 @@ interface Kernel32 extends StdCallLibrary {
     //   COORD dwSize;
     // } WINDOW_BUFFER_SIZE_RECORD;
     class WINDOW_BUFFER_SIZE_RECORD extends Structure {
-        public COORD dwSize;
-
         private static String[] fieldOrder = {"dwSize"};
+        public COORD dwSize;
 
         @Override
         protected java.util.List<String> getFieldOrder() {
@@ -510,6 +502,12 @@ interface Kernel32 extends StdCallLibrary {
     //    SHORT Bottom;
     //  } SMALL_RECT;
     class SMALL_RECT extends Structure {
+        private static String[] fieldOrder = {"Left", "Top", "Right", "Bottom"};
+        public short Left;
+        public short Top;
+        public short Right;
+        public short Bottom;
+
         public SMALL_RECT() {
         }
 
@@ -523,13 +521,6 @@ interface Kernel32 extends StdCallLibrary {
             this.Bottom = Bottom;
             this.Right = Right;
         }
-
-        public short Left;
-        public short Top;
-        public short Right;
-        public short Bottom;
-
-        private static String[] fieldOrder = {"Left", "Top", "Right", "Bottom"};
 
         @Override
         protected java.util.List<String> getFieldOrder() {
@@ -547,6 +538,9 @@ interface Kernel32 extends StdCallLibrary {
     }
 
     class UnionChar extends Union {
+        public char UnicodeChar;
+        public byte AsciiChar;
+
         public UnionChar() {
         }
 
@@ -569,8 +563,5 @@ interface Kernel32 extends StdCallLibrary {
             setType(byte.class);
             AsciiChar = c;
         }
-
-        public char UnicodeChar;
-        public byte AsciiChar;
     }
 }

@@ -20,7 +20,7 @@ WITH ash1 AS
                         4,
                         NVL(regexp_substr(program, '\(.*\)'), program))) NAME,
                  sample_id,
-                 least(nvl(tm_delta_db_time,0),delta_time) v
+                 least(nvl(tm_delta_db_time,delta_time),delta_time) v
           FROM   (SELECT /*+no_expand*/ ROWNUM rs, a.* FROM  &ash a 
                   WHERE :V2<100000 AND sample_time+0> SYSDATE-:V2/86400 OR 
                         nvl(:V2,'100000')>=100000 AND  sample_time+0 BETWEEN nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-1) AND nvl(to_date(:V3,'YYMMDDHH24MI'),SYSDATE)) ash, 

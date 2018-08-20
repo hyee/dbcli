@@ -25,6 +25,8 @@ public class SubSystem {
     volatile Boolean isPrint = false;
     volatile String lastPrompt = "";
     volatile String prevPrompt;
+    //return null means the process is terminated
+    CountDownLatch lock = new CountDownLatch(1);
 
     public SubSystem() {
     }
@@ -118,9 +120,6 @@ public class SubSystem {
         }
         //process.setConsoleMode(process.GetConsoleMode() & NuKernel32.ENABLE_ECHO_INPUT);
     }
-
-    //return null means the process is terminated
-    CountDownLatch lock = new CountDownLatch(1);
 
     public String execute(String command, Boolean isPrint, Boolean isBlockInput) throws Exception {
         try {

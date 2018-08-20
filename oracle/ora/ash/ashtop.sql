@@ -23,8 +23,8 @@
         }
       &more_filter: default={1=1},f={}
       @counter: 11.2={, count(distinct sql_exec_id||to_char(sql_exec_start,'yyyymmddhh24miss')) "Execs"},default={}
-      @UNIT   : 11.2={least(nvl(tm_delta_db_time,0),DELTA_TIME)*1e-6}, default={&BASE}
-      @CPU    : 11.2={least(nvl(tm_delta_cpu_time,0),DELTA_TIME)*1e-6}, default={0}
+      @UNIT   : 11.2={least(nvl(tm_delta_db_time,delta_time),DELTA_TIME)*1e-6}, default={&BASE}
+      @CPU    : 11.2={least(nvl(tm_delta_cpu_time,delta_time),DELTA_TIME)*1e-6}, default={0}
       @IOS    : 11.2={,SUM(DELTA_READ_IO_BYTES) reads,SUM(DELTA_Write_IO_BYTES) writes},default={}
     ]]--
   Options:

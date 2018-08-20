@@ -8,7 +8,7 @@ DECLARE
     PVALUE     INT;
     i          int;
     TYPE t IS RECORD(
-        NAME        VARCHAR2(30),
+        NAME        VARCHAR2(128),
         DESCRIPTION VARCHAR2(1000));
     TYPE t0 IS TABLE OF t;
     t1 t0;

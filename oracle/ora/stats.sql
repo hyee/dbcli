@@ -11,7 +11,7 @@ set feed off serveroutput on printsize 10000
 pro Preferences
 pro ***********
 DECLARE
-    owner       varchar2(30)  := :object_owner;
+    owner       varchar2(128)  := :object_owner;
     object_name varchar2(128) := :object_name;
     partname    varchar2(128) := :object_subname;
     typ         varchar2(100) := :object_type;

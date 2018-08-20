@@ -90,7 +90,7 @@ STATE      NUMBER
                KCBBHFREE         0       buffer free
                KCBBHEXLCUR       1       buffer current (and if DFS locked X)
                KCBBHSHRCUR       2       buffer current (and if DFS locked S)
-               KCBBHCR           3       buffer consistant read
+               KCBBHCR           3       buffer consistent read
                KCBBHREADING      4       Being read
                KCBBHMRECOVERY    5       media recovery (current & special)
                KCBBHIRECOVERY    6       Instance recovery (somewhat special)

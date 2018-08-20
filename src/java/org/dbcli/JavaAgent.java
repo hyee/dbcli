@@ -26,6 +26,7 @@ public class JavaAgent implements ClassFileTransformer {
     static String separator = File.separator;
     static Field classFinder = null;
     static String libPath = null;
+    private static Pattern re1 = Pattern.compile("^\\[+L(.+);?$");
 
     static {
         try {
@@ -61,8 +62,6 @@ public class JavaAgent implements ClassFileTransformer {
     public static void agentmain(String agentArgs, Instrumentation inst) {
         premain(agentArgs, inst);
     }
-
-    private static Pattern re1 = Pattern.compile("^\\[+L(.+);?$");
 
     private static String getCandidate(String className) {
         if (className.charAt(0) == '[') {
