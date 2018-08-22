@@ -1,4 +1,4 @@
-/*[[Generate delta values based on gv$sesstat. Usage: @@NAME [options] {[0|<sid>] [<inst_id>] [<key>]}
+/*[[Generate delta values based on gv$sesstat. Usage: @@NAME <options> {[0|<sid>] [<inst_id>] [<key>]}
 ]]*/
 {
     sql=[[

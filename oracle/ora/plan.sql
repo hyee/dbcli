@@ -1,16 +1,18 @@
 /*[[
-Show execution plan. Usage: @@NAME {<sql_id> [<plan_hash_value>|<child_number>] [format1..n]} [-a|-b|-d|-s|-ol|-adv] 
+Show execution plan. Usage: @@NAME {<sql_id> [<plan_hash_value>|<child_number>] [format1..n]} [-all|-last|-b|-d|-s|-ol|-adv] 
 Option:
     -ol   : show outline information
     -b    : show binding variables
     -d    : only show the plan from AWR views
     -s    : the plan with the simplest 'basic' format
     -adv  : the plan with the 'advanced' format
-    -a    : the plan with the 'all' format
+    -all  : the plan with the 'ALLSTATS ALL' format
+    -last : the plan with the 'ALLSTATS LAST' format
 --[[
-    &STAT: default={&DF &adaptive &binds &V3 &V4 &V5 &V6 &V7 &V8 &V9}
+    &STAT: default={&DF &LAST &adaptive &binds &V3 &V4 &V5 &V6 &V7 &V8 &V9}
     &V3: none={} ol={outline alias}
-    &DF: default={ALL -PROJECTION -ALIAS ALLSTATS LAST}, basic={BASIC}, adv={advanced}, a={all}
+    &LAST: default={ALL} last={LAST}
+    &DF: default={ALL -PROJECTION -ALIAS ALLSTATS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL}
     &SRC: {
             default={0}, # Both
             d={2}        # Dictionary only

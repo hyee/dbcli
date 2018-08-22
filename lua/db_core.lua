@@ -476,20 +476,20 @@ function db_core:call_sql_method(event_name,sql,method,...)
     return obj
 end
 
-function db_core:check_params(sql,prep,p1,params)
+function db_core:check_params(sql,prep,bind_info,params)
     local meta=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,prep.getParameterMetaData,prep)
     local param_count=meta:getParameterCount()
-    if param_count~=#p1 then
+    if param_count~=#bind_info then
         local errmsg="Parameters are unexpected, below are the detail:\nSQL:"..string.rep('-',80).."\n"..sql
         local hdl=env.grid.new()
         hdl:add({"Param Sequence","Param Name","Param Type","Param Value","Description"})
-        for i=1,math.max(param_count,#p1) do
-            local v=p1[i] or {}
+        for i=1,math.max(param_count,#bind_info) do
+            local v=bind_info[i] or {}
             local res,typ=pcall(meta.getParameterTypeName,meta,i)
             typ=res and typ or v[4]
             local param_value=v[3] and params[v[3]]
             hdl:add{i,v[3],typ,type(param_value)=="table" and "OUT" or param_value,
-             (#p1<i and "Miss Binding") or (param_count<i and "Extra Binding") or "Matched"}
+             (#bind_info<i and "Miss Binding") or (param_count<i and "Extra Binding") or "Matched"}
 
         end
         errmsg=errmsg..'\n'..hdl:tostring()
@@ -501,10 +501,16 @@ function db_core:check_params(sql,prep,p1,params)
 end
 
 function db_core:parse(sql,params,prefix,prep)
-    local p1,counter={},0
+    local bind_info,binds,counter={},{},0
 
+    local temp={}
     for k,v in pairs(params) do
-        if type(k)=="string" then params[k:upper()]=v end
+        temp[type(k)=="string" and k:upper() or k]={k,v}
+    end
+
+    for k,v in pairs(temp) do
+        params[v[1]]=nil
+        params[k]=v[2]
     end
 
     prefix=(prefix or ':')
@@ -527,6 +533,7 @@ function db_core:parse(sql,params,prefix,prep)
             elseif v:sub(1,1)=="#" then
                 typ=v:upper():sub(2)
                 params[k]={'#',{counter},typ}
+                binds[k]={'#',{counter},typ}
                 if not db_Types[typ] then
                     env.raise("Cannot find '"..typ.."' in java.sql.Types!")
                 end
@@ -536,20 +543,28 @@ function db_core:parse(sql,params,prefix,prep)
                 args={db_Types:set(typ,v)}
             end
             args[#args+1],args[#args+2]=k,typ
-            p1[#p1+1]=args
+            bind_info[#bind_info+1]=args
             return '?'
         end)
 
     if not prep then prep=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007) end
 
-    self:check_params(sql,prep,p1,params)
+    self:check_params(sql,prep,bind_info,params)
 
-    if #p1==0 then return prep,sql,params end
+    if #bind_info==0 then return prep,sql,params end
+    local binds={}
     local method,typeid,value,varname,typename=1,2,2,3,4
-    for k,v in ipairs(p1) do
+    for k,v in ipairs(bind_info) do
         prep[v[method]](prep,k,v[value])
+        local inout=type(params[bind_info[varname]])=='table' and params[bind_info[varname]]=='#' and '#' or '$'
+        if binds[varname] then
+            table.insert(binds[varname][2],k)
+        else
+            binds[varname]={inout,inout=='$' and k or {k},v[typename],v[method],v[value]}
+        end
     end
-    return prep,sql,params
+    env.log_debug("parse","Standard-Params:",table.dump(binds))
+    return prep,sql,binds
 end
 
 local current_stmt
@@ -562,8 +577,56 @@ function db_core:abort_statement()
     end
 end
 
+function db_core:exec_cache(sql,args,description)
+    if not self.__preparedCaches then
+        self.__preparedCaches={}
+    end
+
+    local cache=self.__preparedCaches[sql]
+    local prep,org,params,_sql
+    if not cache then
+        org=table.clone(args)
+        prep,_sql,params=self:parse(sql,org)
+        cache={prep,org,params}
+        self.__preparedCaches[sql]=cache
+    else
+        prep,org,params=table.unpack(cache)
+        for k,n in pairs(args) do
+            k=type(k)=="string" and k:upper() or k
+            local o,typ=org[k]
+            if params[k] and o ~= n and tostring(n):sub(1,1)~='#' and tostring(o):sub(1,1)~='#' then
+                local idx=params[k][6] or params[k][2]
+                local method=params[k][4]
+                org[k]=n
+                if method:find('setNull',1,true) and n~=nil and n~='' then
+                    if type(v)=='boolean' then
+                        typ='setBoolean'
+                    elseif type(v)=="number" then
+                        typ='setDouble'
+                    elseif type(v)=='string' and #v>32000 then
+                        typ='setStringForClob'
+                    else
+                        typ='setString'
+                    end
+                    method=method:gsub('setNull',typ)
+                elseif not method:find('setNull',1,true) and (n==nil or n=='') then
+                    typ,n=self.db_types:set("VARCHAR",nil)
+                    method=typ..(method:match('AtName') or '')
+                end
+                prep[method](prep,idx,n)
+            end
+        end
+    end
+    args._description=description and ('('..description..')') or ''
+    return self:exec(prep,args,table.clone(params)),cache
+end
+
 function db_core:exec(sql,args,prep_params)
     local is_not_prep=type(sql)~="userdata"
+
+    if is_not_prep and sql:find('/*DBCLI_EXEC_CACHE*/',1,true) then
+        return self:exec_cache(sql,args,prep_params)
+    end
 
     if is_not_prep and not self:is_internal_call(sql) then
         db_core.__start_clock=os.timer()
@@ -606,7 +669,9 @@ function db_core:exec(sql,args,prep_params)
         env.log_debug("db","SQL:",sql)
         env.log_debug("db","Parameters:",params)
     else
-        prep,sql,params=sql,"PreparedStatement",prep_params or {}
+        local desc ="PreparedStatement"..args._description
+        env.log_debug("db","SQL Cache:",desc)
+        prep,sql,params=sql,desc,prep_params or {}
     end
 
     local is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
@@ -660,6 +725,7 @@ end
 function db_core:is_connect()
     if type(self.conn)~='userdata' or not self.conn.isClosed or self.conn:isClosed() then
         self.__stmts={}
+        self.__preparedCaches={}
         return false
     end
     return true
@@ -746,6 +812,7 @@ function db_core:connect(attrs,data_source)
         event("AFTER_DB_CONNECT",self,attrs.jdbc_alias or url,attrs)
     end
     self.__stmts = {}
+    self.__preparedCaches={}
     self.properties={}
     for k in java.methods(self.conn) do
         if k=='getProperties' then

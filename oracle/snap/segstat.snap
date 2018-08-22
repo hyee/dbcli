@@ -1,4 +1,4 @@
-/*[[Generate delta values based on gv$segstat,gv$sql_plan. Usage: @@NAME [options] <sql_id>
+/*[[Generate delta values based on gv$segstat,gv$sql_plan. Usage: @@NAME <options> <sql_id>
    --[[
       &V1: df={1}
    --]]

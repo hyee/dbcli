@@ -57,13 +57,23 @@ function grid.format_title(v)
 end
 
 local linesize
-function grid.cut(row,format_func,format_str)
+function grid.cut(row,format_func,format_str,is_head)
     if type(row)=="table" then
         local colbase=grid.col_auto_size
         local cs=grid.colsize
-        if colbase~='auto' then
-            for i,var in ipairs(cs) do
-                row[i]=tostring(row[i]):sub(1,cs[i][1])
+        if cs then
+            if colbase~='auto' then
+                for i,var in ipairs(cs) do
+                    row[i]=tostring(row[i]):sub(1,cs[i][1])
+                end
+            end
+            if is_head then
+                local nor=env.ansi.get_color("NOR")
+                for i,var in ipairs(cs) do
+                    if type(row[i])=="string" and row[i]:trim()=="" then
+                        row[i]=nor..row[i]
+                    end
+                end
             end
         end
         row=format_func(format_str,table.unpack(row))
@@ -295,6 +305,7 @@ function grid:add(row)
     local title_style=grid.title_style
     local colbase=grid.col_auto_size
     local rownum=grid.row_num
+    grid.colsize=self.colsize
     for k,v in pairs(row) do rs[k]=v end
     if self.headind==-1 then
         self.headind=1
@@ -352,15 +363,14 @@ function grid:add(row)
                 v=table.concat(v1,'\n')
             end
             local grp={}
-            v=v:convert_ansi():gsub('\192\128',''):gsub('%z','')
+            v=v:convert_ansi():gsub('\192\128',''):gsub('%z+','')
             if headind>0 then v=v:gsub("[%s ]+$",""):gsub("[ \t]+[\n\r]","\n"):gsub("\t",'    ') end
 
             --if the column value has multiple lines, then split lines into table
             for p in v:gmatch('([^\n\r]+)') do
                 grp[#grp+1]=p
                 --deal with unicode chars
-                local l, len = p:ulen()
-                if l~=len then self.use_jwriter=true end
+                local l, len = p:strip_ansi():ulen()
                 if csize < len then csize=len end
             end
             if #grp > 1 then v=grp end
@@ -388,11 +398,23 @@ function grid:add(row)
     else
         for i=1,lines,1 do
             local r=table.new(#rs,2)
-            r[0]=rs[0]
-            r._org=rs._org
+            r[0],r._org=rs[0],rs._org
             for k=1,cols do
                 local v=rs[k]
-                r[k]= (type(v) == "table" and (v[i] or "")) or (i==1 and v or "")
+                if type(v) ~="table" then
+                    rs[k]=table.new(lines,0)
+                    rs[k][1]=v
+                    v=rs[k]
+                end
+                local siz=lines-#v
+                for j=1,siz do 
+                    if headind==0 then 
+                        table.insert(v,1,"")
+                    else
+                        v[#v+1]=""
+                    end
+                end
+                r[k]=v[i]==nil and "" or v[i]
             end
             result[#result+1]=r
         end
@@ -432,6 +454,7 @@ function grid:wellform(col_del,row_del)
     fmt=col_del:gsub("^%s+","")
     row_dels=fmt
     local format_func=grid.fmt
+    grid.colsize=self.colsize
 
     if type(self.ratio_cols)=="table" and grid.pivot==0 then
         local keys={}
@@ -483,7 +506,18 @@ function grid:wellform(col_del,row_del)
             fmt=fmt.."%"..(siz*v[2]).."s"..del
             head_fmt=head_fmt..hor.."%"..(siz*v[2]).."s"..nor..del
         end
-        table.insert(title_dels, string.rep(result[1][k]~="" and grid.title_del or " ",siz))
+
+        local is_empty=true
+        for i=1,#result do
+            if result[i][0]==0 and type(result[i][k])=="string" and result[i][k]:trim()~="" then
+                is_empty=false
+            end
+
+            if (result[i][0] or 1) > 0 then
+                break
+            end
+        end
+        table.insert(title_dels, string.rep(not is_empty and grid.title_del or " ",siz))
 
         if row_del~="" then
             row_dels=row_dels..row_del:rep(siz)..del
@@ -518,7 +552,7 @@ function grid:wellform(col_del,row_del)
                 end
             end
         end
-        local row=cut(v,format_func,v[0]==0 and head_fmt or fmt)
+        local row=cut(v,format_func,v[0]==0 and head_fmt or fmt,v[0]==0)
 
         if v[0]==0 then
             row=row..nor

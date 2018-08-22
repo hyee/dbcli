@@ -139,11 +139,14 @@ WA_NXT      RAW(4)
 WA_PRV      RAW(4)
 ACC         RAW(4)
 MOD         RAW(4)
-*/
+  --[[
+    @GV: 11.1={TABLE(GV$(CURSOR(} default={(((}
+  --]]
+]]*/
 
 
 SELECT /*+leading(a) use_hash(b)*/ b.owner,b.object_name,B.subobject_name,a.* 
-FROM TABLE(gv$(CURSOR (
+FROM &GV
     SELECT /*+ordered use_hash(s b)*/
         b.obj objd,b.inst_id, s.sid, s.serial#, s.event, FILE#, b.DBABLK BLOCK#, 
         (SELECT CLASS FROM (SELECT ROWNUM r,a.* FROM V$WAITSTAT a) WHERE r=b.class) CLASS,
@@ -157,6 +160,7 @@ FROM TABLE(gv$(CURSOR (
     FROM   v$session s, x$bh b
     WHERE  HLADDR = p1raw
     AND    p1raw!='00'
+    AND    userenv('instance')=nvl(:instance,userenv('instance'))
 ))) a, dba_objects b 
 WHERE a.objd=b.data_object_id
 ORDER BY 1,2,3,5;

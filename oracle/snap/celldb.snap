@@ -1,5 +1,5 @@
 /*[[
-  Generate delta values based on Exadata cell stats. Usage: @@NAME [options] [-pred|-cc|-db] [-cell] [-diskio] 
+  Generate delta values based on Exadata cell stats. Usage: @@NAME <options> [-pred|-cc|-db] [-cell] [-diskio] 
   -pred: show offload predicate info instead of db wait events
   -cc  : show columnar flash cache stats
   -cell: detail to cell level

@@ -48,13 +48,12 @@ if not defined ANSICON if defined ANSICON_CMD (
    SET ANSICON_EXC=nvd3d9wrap.dll;nvd3d9wrapx.dll
    SET ANSICON_DEF=ansicon
    if "!bit!"=="x86" set "ANSICON_CMD=.\lib\x86\ConEmuHk.dll"
-   if not exist "!ANSICON_CMD!" (
-       set "ANSICON_DEF=jline"
-   ) else (
-       set "ConEmuANSI=ON"
-   )
-   set "ANSICON_CMD="
 )
+
+if not exist "!ANSICON_CMD!" set "ANSICON_DEF=jline"
+if defined ConEmuPID set "ANSICON_DEF=conemu"
+if defined MSYSTEM set "ANSICON_DEF=msys"
+set "ANSICON_CMD="
 
 rem For win10, don't used both JLINE/Ansicon to escape the ANSI codes
 rem ver|findstr -r "[1-9][0-9]\.[0-9]*\.[0-9]">NUL && (SET "ANSICON_CMD=" && set "ANSICON_DEF=native")

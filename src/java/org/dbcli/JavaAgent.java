@@ -27,7 +27,6 @@ public class JavaAgent implements ClassFileTransformer {
     static Field classFinder = null;
     static String libPath = null;
     private static Pattern re1 = Pattern.compile("^\\[+L(.+);?$");
-
     static {
         try {
             re = Pattern.compile("(.*?)/([^/]+?)\\.(jar|zip)");

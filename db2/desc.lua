@@ -218,7 +218,8 @@ function desc.desc(name,option)
     local obj=db:check_obj(name)
     env.checkerr(obj,'Cannot find target object!')
     if obj.object_type=='SYNONYM' then
-        local new_obj=db:dba_query(db.get_value,[[WITH r AS
+        local new_obj=db:dba_query(db.get_value,[[
+        WITH r AS
          (SELECT /*+materialize cardinality(p 1)*/REFERENCED_OBJECT_ID OBJ, rownum lv
           FROM   PUBLIC_DEPENDENCY p
           START  WITH OBJECT_ID = :1
@@ -228,10 +229,9 @@ function desc.desc(name,option)
                        regexp_substr(obj,'[^/]+', 1, 2) owner,
                        regexp_substr(obj,'[^/]+', 1, 3) object_name,
                        regexp_substr(obj,'[^/]+', 1, 4) object_type
-                 FROM   (SELECT (SELECT o.object_id || '/' || o.owner || '/' || o.object_name || '/' ||
-                                           o.object_type
-                                   FROM   ALL_OBJECTS o
-                                   WHERE  OBJECT_ID = obj) OBJ, lv
+                 FROM   (SELECT (SELECT o.object_id || '/' || o.owner || '/' || o.object_name || '/' || o.object_type
+                                 FROM   ALL_OBJECTS o
+                                 WHERE  OBJECT_ID = obj) OBJ, lv
                           FROM   r)
                  ORDER  BY lv)
         WHERE  object_type != 'SYNONYM'

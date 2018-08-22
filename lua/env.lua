@@ -995,6 +995,7 @@ function env.onload(...)
         env.set.init("Debug",'off',set_debug,"core","Indicates the option to print debug info, 'all' for always, 'off' for disable, others for specific modules.")
         env.set.init("OnErrExit",'on',nil,"core","Indicates whether to continue the remaining statements if error encountered.","on,off")
         env.set.init("TEMPPATH",'cache',set_cache_path,"core","Define the dir to store the temp files.","*")
+        env.set.init("Status","on",env.set_title,"core","Display the status bar","on,off")
         print_debug=print
     end
     if  env.ansi and env.ansi.define_color then
@@ -1131,10 +1132,20 @@ end
 
 local title_list,CURRENT_TITLE={}
 
-function env.set_title(title)
+function env.set_title(title,value)
+    local enabled
+    if title and title:upper()=="STATUS" and value then
+        enabled=value:lower()
+        if enabled=='off' then
+            console:setStatus("","")
+            return enabled
+        end
+        title=""
+    end
+
     local callee=env.callee():gsub("#%d+$","")
     title_list[callee]=title
-    local titles=""
+    local titles,status,sep="",{},"    "
     if not env.module_list then return end
     for _,k in ipairs(env.module_list) do
         if (title_list[k] or "")~="" then
@@ -1142,7 +1153,17 @@ function env.set_title(title)
             titles=titles..title_list[k]
         end
     end
-    if not titles or titles=="" then titles="DBCLI - Disconnected" end
+
+    if not titles or titles=="" then 
+        titles="DBCLI - Disconnected"
+    end
+
+    if (CURRENT_TITLE~=titles and env.set.get("STATUS")=="on") or enabled then
+        status=titles:split('   +')
+        local color=env.ansi.get_color
+        console:setStatus(' '..table.concat(status,' '..color("HIB")..'|'..color("NOR")..' '),color("HIB")) 
+    end
+
     if CURRENT_TITLE~=titles then
         CURRENT_TITLE=titles
         env.uv.set_process_title(titles)
@@ -1151,6 +1172,8 @@ function env.set_title(title)
             printer.write("\27]2;"..titles.."\7\27[1K\27[1G")
         end
     end
+    
+    return enabled
 end
 
 function env.reset_title()

@@ -25,6 +25,7 @@ import java.io.*;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.security.Permission;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -39,6 +40,7 @@ import java.util.stream.Collectors;
 
 import static org.jline.reader.LineReader.DISABLE_HISTORY;
 import static org.jline.reader.LineReader.SECONDARY_PROMPT_PATTERN;
+import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS;
 
 public class Console {
     public final static Pattern ansiPattern = Pattern.compile("^\33\\[[\\d\\;]*[mK]$");
@@ -67,9 +69,10 @@ public class Console {
     private volatile boolean pause = false;
     private DefaultHistory history = new DefaultHistory();
     private Status status;
+    private String colorPlan;
 
     public Console(String historyLog) throws Exception {
-        String colorPlan = "dbcli";
+        colorPlan = "dbcli";
         /*
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM)) {
             colorPlan = System.getenv("ANSICON_DEF");
@@ -87,8 +90,9 @@ public class Console {
         this.reader.setCompleter(completer);
         this.reader.setHistory(history);
         //this.reader.setOpt(LineReader.Option.DISABLE_HIGHLIGHTER);
+        this.reader.unsetOpt(LineReader.Option.MOUSE);
         this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE);
-        //this.reader.setOpt(LineReader.Option.MOUSE);
+        this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE_SEARCH);
         this.reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
         this.reader.setOpt(LineReader.Option.BRACKETED_PASTE);
         this.reader.setVariable(DISABLE_HISTORY, false);
@@ -104,16 +108,14 @@ public class Console {
         setKeyCode("forward-word", "^[[1;3C");
 
         input = terminal.reader();
-
         writer = terminal.writer();
 
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM)) {
             colorPlan = System.getenv("ANSICON_DEF");
-            if (colorPlan == null) colorPlan = "jline";
-            String ansicon = System.getenv("ANSICON");
-            if (ansicon != null && ansicon.split("\\d+").length >= 3) colorPlan = "native";
-            if (colorPlan.equals("ansicon")) writer = new PrintWriter(new ConEmuOutputStream());
-        }
+            if (("ansicon").equals(colorPlan) && System.getenv("ConEmuPID") == null)
+                writer = new PrintWriter(new ConEmuOutputStream());
+            else colorPlan = terminal.getType();
+        } else colorPlan = terminal.getType();
 
         threadID = Thread.currentThread().getId();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
@@ -152,6 +154,7 @@ public class Console {
         return s.length() + ":" + display.wcwidth(s);
     }
 
+
     public void addCompleters(Map<String, ?> keys, boolean isCommand) {
         Candidate c = isCommand ? candidate("", null) : null;
         for (Map.Entry<String, ?> entry : keys.entrySet()) {
@@ -187,6 +190,27 @@ public class Console {
         return "linux";
     }
 
+    ArrayList<AttributedString> titles = new ArrayList<>();
+
+    public void setStatus(String status, String color) {
+        if (colorPlan.equals("ansicon") || colorPlan.equals(TYPE_WINDOWS)) return;
+        if ("flush".equals(status)) this.status.redraw();
+        else {
+            titles.clear();
+            titles.add(AttributedString.fromAnsi(new String(new char[getScreenWidth() - 1]).replace('\0', ' ')));
+            titles.add(titles.get(0));
+            this.status.update(titles);
+            titles.clear();
+            if (status != null && !status.equals("")) {
+                titles.add(AttributedString.fromAnsi(color + new String(new char[getScreenWidth() - 1]).replace('\0', '\u2500')));
+                AttributedStringBuilder asb = new AttributedStringBuilder();
+                asb.ansiAppend(status);
+                titles.add(asb.toAttributedString());
+            }
+            this.status.update(titles);
+        }
+    }
+
     public int getBufferWidth() {
         if ("terminator".equals(System.getenv("TERM"))) return 2000;
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM)) {
@@ -215,7 +239,7 @@ public class Console {
             Kernel32.INSTANCE.GetConsoleScreenBufferInfo(consoleOut, info);
             return info.windowHeight();
         }
-        return terminal.getHeight();
+        return terminal.getHeight() - titles.size();
     }
 
     public void setKeywords(Map<String, ?> keywords) {
@@ -420,9 +444,9 @@ public class Console {
     }
 
     public interface CLibrary extends Library {
-        Console.CLibrary INSTANCE = (Console.CLibrary)
+        CLibrary INSTANCE = (CLibrary)
                 Native.loadLibrary((Platform.isWindows() ? "kernel32" : "c"),
-                        Console.CLibrary.class);
+                        CLibrary.class);
 
         boolean SetConsoleTitleA(String title);
     }
@@ -477,7 +501,7 @@ public class Console {
         }
     }
 
-    class MyParser extends DefaultParser implements org.jline.reader.Highlighter {
+    class MyParser extends DefaultParser implements Highlighter {
         public static final String DEFAULT_HIGHLIGHTER_COLORS = "rs=1:st=2:nu=3:co=4:va=5:vn=6:fu=7:bf=8:re=9";
         public final Pattern numPattern = Pattern.compile("([0-9]+)");
         public String buffer = null;
@@ -530,7 +554,7 @@ public class Console {
             if (parserCallback == null) {
                 lua.load("return {call=env.parse_line}", "proxy");
                 lua.call(0, 1);
-                parserCallback = lua.getProxy(-1, Console.ParserCallback.class);
+                parserCallback = lua.getProxy(-1, ParserCallback.class);
                 lua.pop(1);
             }
 
@@ -593,7 +617,7 @@ public class Console {
             else
                 for (int i = 0, n = buffer.length(); i < n; i++) {
                     c = buffer.charAt(i);
-                    found = c == '(' || c == ')' || c == '{' || c == '}'||c==',';
+                    found = c == '(' || c == ')' || c == '{' || c == '}' || c == ',';
                     if (found) asb.ansiAppend(NOR);
                     asb.append(c);
                     if (found) asb.ansiAppend(ansi);
@@ -625,6 +649,8 @@ public class Console {
                     if (Console.this.isSubSystem || lines != 0) {
                         asb.ansiAppend(ansi);
                         processQuoter(buffer);
+                        prev = buffer;
+                        sub = prev.length();
                     } else {
                         Matcher m = p1.matcher(buffer);
                         if (m.find()) {

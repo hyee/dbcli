@@ -1,11 +1,11 @@
 /*[[Library cache lock/pin holders/waiters. Usage: @@NAME [sid|object_name] 
     --[[
-        @ver: 11.1={}
+        @GV: 11.1={TABLE(GV$(CURSOR(} default={(((}
     --]]
 ]]*/
 WITH ho AS
  (
-    SELECT * FROM TABLE(gv$(CURSOR(
+    SELECT * FROM &GV
         SELECT /*+ordered use_hash(hl ho) no_merge(h)*/ DISTINCT 
                 hl.*,
                 ho.kglnaown ||nullif('.' || ho.kglnaobj,'.') object_name,
@@ -22,7 +22,8 @@ WITH ho AS
                 FROM   x$kglpn) hl,
                x$kglob ho
         WHERE  greatest(hl.mode_held,hl.mode_req) > 1
-        AND    nvl(upper(:V1),'_') in('_',upper(ho.kglnaobj),upper(ho.kglnaown ||nullif('.' || ho.kglnaobj,'.')),''||h.sid)
+        AND    userenv('instance')=nvl(:instance,userenv('instance'))
+        AND    nvl(upper(:V1),'_') in('_',upper(ho.kglnaobj),upper(trim('.' from ho.kglnaown ||'.' || ho.kglnaobj)),''||h.sid)
         AND    hl.object_handle = ho.kglhdadr
         AND    hl.saddr = h.saddr))))
 SELECT /*+no_expand use_hash(ho wo)*/ distinct 

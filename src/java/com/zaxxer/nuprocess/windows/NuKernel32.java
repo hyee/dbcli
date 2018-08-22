@@ -71,10 +71,10 @@ public class NuKernel32 {
     public static native boolean GetExitCodeProcess(HANDLE hProcess, IntByReference exitCode);
 
     public static native int ReadFile(HANDLE hFile, ByteBuffer lpBuffer, int nNumberOfBytesToRead, IntByReference lpNumberOfBytesRead,
-                                      NuKernel32.OVERLAPPED lpOverlapped);
+                                      OVERLAPPED lpOverlapped);
 
     public static native int WriteFile(HANDLE hFile, ByteBuffer lpBuffer, int nNumberOfBytesToWrite, IntByReference lpNumberOfBytesWritten,
-                                       NuKernel32.OVERLAPPED lpOverlapped);
+                                       OVERLAPPED lpOverlapped);
 
     /**
      * The OVERLAPPED structure contains information used in

@@ -4,21 +4,17 @@ local flag = 1
 
 local output={}
 local prev_transaction
-local changed,enabled=false,'on'
+local enabled='on'
 local default_args={enable=enabled,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB",con_name="#VARCHAR",con_id="#NUMBER"}
 
 function output.setOutput(db)
     local flag=cfg.get("ServerOutput")
     local stmt="begin dbms_output."..(flag=="on" and "enable(null)" or "disable()")..";end;"
     pcall(function() (db or env.getdb()):internal_call(stmt) end)
-    if db then
-        local prep,sql_,params=db:parse(output.stmt,table.clone(default_args))
-        db.__dbmsoutput_prep,db.__dbmsoutput_parms=prep,params
-    end
 end
 
 local marker='/*GetDBMSOutput*/'
-output.stmt=marker..[[/*INTERNAL_DBCLI_CMD*/
+output.stmt=marker..[[/*DBCLI_EXEC_CACHE*/
         DECLARE
             l_line   VARCHAR2(32767);
             l_done   PLS_INTEGER := 32767;
@@ -50,28 +46,19 @@ output.stmt=marker..[[/*INTERNAL_DBCLI_CMD*/
             $END
             :buff    := l_buffer;
             :txn     := dbms_transaction.local_transaction_id;
-            :con_name:= l_cont;
+            :con_name := l_cont;
             :con_id  := l_cid;
             :lob     := l_lob;
         EXCEPTION WHEN OTHERS THEN NULL;
         END;]]
 
 function output.getOutput(db,sql)
-    local prep,params=db.__dbmsoutput_prep,db.__dbmsoutput_parms
-    if not prep then return end
-
     local typ=db.get_command_type(sql)
     if (typ=='SELECT' or typ=='WITH') and #env.RUNNING_THREADS>2 then return end
 
     if not ((output.prev_sql or ""):find(marker,1,true)) and not sql:find(marker,1,true) and not db:is_internal_call(sql) then
-
         local args=table.clone(default_args)
-        if changed then
-            prep:setString(1,enabled)
-            changed=false
-        end
-
-        if not pcall(db.internal_call,db,prep,args,table.clone(params)) then return end
+        if not pcall(db.exec_cache,db,output.stmt,args,'GetDBMSOutput') then return end
 
         local result=args.lob or args.buff
         if enabled == "on" and result and result:match("[^\n%s]+") then
@@ -106,23 +93,14 @@ function output.get_error_output(info)
     return info
 end
 
-function output.clear_output(db)
-    local prep=db.__dbmsoutput_prep
-    if prep then pcall(prep.close,prep) end
-    db.__dbmsoutput_prep,db.__dbmsoutput_parms=nil,nil
-end
-
 function output.onload()
     snoop("ON_SQL_ERROR",output.get_error_output,nil,40)
-    snoop("BEFORE_ORACLE_CONNECT",output.clear_output)
     snoop("AFTER_ORACLE_CONNECT",output.setOutput)
     snoop("AFTER_ORACLE_EXEC",output.getOutput,nil,50)
 
     cfg.init({"ServerOutput",'SERVEROUT'},
         "on",
         function(name,value)
-            changed=value~=enabled
-            output.setOutput(nil)
             enabled=value
             return value
         end,

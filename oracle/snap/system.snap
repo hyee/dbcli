@@ -1,4 +1,4 @@
-/*[[Show System statistics summary. Usage: @@NAME [options] [<inst_id>]  [-sql|-latch]
+/*[[Show System statistics summary. Usage: @@NAME <options> [<inst_id>]  [-sql|-latch]
     inst_id: Specify the instance number, default to aggregrate all instances' stats. When '0' means don't aggregrate across all instances
     -sql   : Show active sessions(default)
     -latch : Show latch stats

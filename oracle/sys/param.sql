@@ -4,6 +4,7 @@
       @ctn: 12={decode(bitand(ksppiflg, 4), 4, 'FALSE', decode(bitand(ksppiflg / 65536, 3), 0, 'FALSE', 'TRUE')) ISPDB_MDF,}, default={}
       @def: 12={} default={--}
       @g11: 11={} default={--}
+      @GV: 11.1={TABLE(GV$(CURSOR(} default={(((}
       &df: {
         default={KSPPSTDFL default_value}
         v={(select listagg(decode(ISDEFAULT_KSPVLD_VALUES,'TRUE','*',' ')||VALUE_KSPVLD_VALUES,','||chr(10)) within group(order by ISDEFAULT_KSPVLD_VALUES desc) from X$KSPVLD_VALUES o
@@ -12,7 +13,7 @@
    --]]
 ]]*/
 
-&g11 SELECT * FROM TABLE(GV$(CURSOR(
+&g11 SELECT * FROM &GV
         SELECT x.inst_id,ksppinm NAME, ksppity TYPE, substr(ksppstdvl,1,200) DISPLAY_VALUE, 
                &def &df,
                &def decode(upper(KSPPSTVL),upper(KSPPSTDFL),'TRUE','FALSE') ISDEFAULT,

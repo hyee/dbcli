@@ -1,7 +1,16 @@
 /*[[
- Perform high-frequency sampling on V$LATCHHOLDER and present a profile of latches held by sessions including extended statistics about in which kernel function the latch held was taken
- Usage:       @@NAME [<sid>] [<what>] [<latch name>] [<#samples>]
+  Perform high-frequency sampling on V$LATCHHOLDER and present a profile of latches held by sessions including extended statistics about in which kernel function the latch held was taken
+  Usage:       @@NAME [<sid>] [<what>] [<latch name>] [<seconds>] [-func|-block]
+    --[[
+        &V1: default={%}
+        &V2: default={sess#,name,hmode,wait_obj#,sql_id} func={sess#,name,sql_id,object,func} block={sess#,name,sql_id,wait_obj#,block#}
+        &V3: default={%}
+        &v4: default={5}
+        @GV: 11.1={TABLE(GV$(CURSOR(} default={(((}
+    --]]
+]]*/
 
+/* 
  File name:   latchprofx.sql ( Latch Holder Profiler eXtended )
  Author:      Tanel Poder
  Copyright:   (c) http://www.tanelpoder.com  
@@ -66,19 +75,12 @@
 
               Then you can use la.sql (V$LATCH_PARENT/V$LATCH_CHILDREN) to
               map the latch address back to latch child#
-    --[[
-        &V1: default={%}
-        &V2: default={sess#,name,hmode,func,object} func={sid,name,func}
-        &V3: default={%}
-        &v4: default={200000}
-    --]]
-]]*/
+*/
 
 -- what includes what columns to display and aggregate and also options like latch name filtering
 DEF _lhp_what="&V2"
 DEF _lhp_sid="&V1"
 DEF _lhp_name="&V3"
-DEF _lhp_samples="&V4"
 
 PROMPT
 PROMPT -- LatchProfX 2.02 by Tanel Poder ( http://www.tanelpoder.com )
@@ -86,43 +88,51 @@ PROMPT -- LatchProfX 2.02 by Tanel Poder ( http://www.tanelpoder.com )
 WITH t1 AS
  (SELECT KSUTMTIM hsecs FROM x$ksutm),
 samples AS
- (SELECT * FROM TABLE(GV$(CURSOR(
-      SELECT  /*+ ORDERED USE_NL(l.x$ksuprlat) USE_NL(s.x$ksuse) NO_TRANSFORM_DISTINCT_AGG */
-              &_lhp_what, COUNT(DISTINCT gets) dist_samples, COUNT(*) total_samples, COUNT(*) / &_lhp_samples total_samples_pct
-      FROM   (SELECT /*+ NO_MERGE */1
+ (SELECT * FROM &GV
+      SELECT  /*+ opt_param('_optimizer_mjc_enabled','true') ORDERED ORDERED_PREDICATES USE_NL(s2 l) NO_TRANSFORM_DISTINCT_AGG */
+              &_lhp_what, COUNT(DISTINCT gets) dist_samples, COUNT(*) total_samples, 
+              COUNT(*) / max(max(r)) over() total_samples_pct,max(max(r)) over() r
+      FROM   (SELECT /*+no_merge*/KSUTMTIM+:v4*100 target, rownum r 
               FROM   x$ksutm
-              CONNECT BY LEVEL <= &_lhp_samples) s1,
-             (SELECT ksuprpid PID,
-                     ksuprsid SID,
-                     inst_id,
-                     ksuprsid||'@'||inst_id sess#,
-                     ksuprlnm NAME,
-                     ksuprlat LADDR,
-                     ksulawhr,
-                     TO_CHAR(ksulawhy, 'XXXXXXXXXXXXXXXX') OBJECT,
-                     ksulagts GETS,
-                     lower(ksuprlmd) HMODE
-              FROM   x$ksuprlat) l,
-             (SELECT inst_id,indx, ksusesqh sqlhash, ksusesql sqladdr, ksusesph planhash, ksusesch sqlchild, ksusesqi sqlid FROM x$ksuse) s,
-             (SELECT inst_id,indx, ksllwnam func, ksllwnam, ksllwlbl objtype, ksllwlbl FROM x$ksllw) w
-      WHERE  l.sid like '&_lhp_sid'
-      AND    l.ksulawhr = w.indx(+)
-      AND    l.inst_id=w.inst_id(+)
-      AND    l.sid = s.indx
-      AND    l.inst_id=s.inst_id
-      AND    (LOWER(l.name) LIKE LOWER('%&_lhp_name%') OR LOWER(RAWTOHEX(l.laddr)) LIKE LOWER('%&_lhp_name%'))
+              WHERE  userenv('instance')=nvl(:instance,userenv('instance')) 
+              CONNECT BY LEVEL <= &v4*7e4) s1,
+             (SELECT /*+no_merge*/KSUTMTIM hsecs FROM x$ksutm) s2,
+             (SELECT /*+order use_nl(l s w) no_expand no_merge*/
+                     l.ksuprpid PID,
+                     l.ksuprsid SID,
+                     l.inst_id,
+                     l.ksuprsid || '@' || l.inst_id sess#,
+                     l.ksuprlnm NAME,
+                     l.ksuprlat LADDR,
+                     TO_CHAR(l.ksulawhy, 'XXXXXXXXXXXXXXXX') OBJECT,
+                     l.ksulagts GETS,
+                     lower(l.ksuprlmd) HMODE,
+                     s.ksusesqh sqlhash,
+                     s.ksusesql sqladdr,
+                     s.ksusesph planhash,
+                     s.ksusesch sqlchild,
+                     s.ksusesqi sql_id,
+                     s.ksuseobj wait_obj#,
+                     nvl2(nullif(s.ksusefil,0),s.ksusefil||','||s.ksuseblk,'') block#,
+                     w.ksllwlbl objtype
+             FROM    x$ksuprlat l, x$ksuse s, x$ksllw w
+             WHERE   l.ksuprsid = s.indx
+             AND     l.ksulawhr = w.indx(+)
+             AND     l.ksuprsid LIKE '&_lhp_sid'
+             AND    (LOWER(l.ksuprlnm) LIKE LOWER('%&_lhp_name%') OR LOWER(RAWTOHEX(l.ksuprlat)) LIKE LOWER('%&_lhp_name%'))) l
+      WHERE  s2.hsecs<s1.target
       GROUP  BY &_lhp_what
       )))
     ORDER  BY total_samples DESC),
 t2 AS
  (SELECT KSUTMTIM hsecs FROM x$ksutm)
  
-SELECT /*+ ORDERED */
+SELECT /*+ ORDERED*/
      &_lhp_what,
      s.total_samples,
      s.dist_samples,
-     s.total_samples / &_lhp_samples * 100 latchprof_pct_total_samples,
-     (t2.hsecs - t1.hsecs) * 10 * s.total_samples / &_lhp_samples latchprof_total_ms,
-     ROUND((t2.hsecs - t1.hsecs) * 10 * s.total_samples / dist_samples / &_lhp_samples,4) latchprof_avg_ms
+     round(s.total_samples / r * 100,4) "Held %",
+     round((t2.hsecs - t1.hsecs) * 10 * s.total_samples / r,4)  "Held ms" ,
+     ROUND((t2.hsecs - t1.hsecs) * 10 * s.total_samples / dist_samples / r,4) "Avg hold ms"
 FROM   t1, samples s, t2
 WHERE  ROWNUM <= 50;

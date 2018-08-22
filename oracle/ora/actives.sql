@@ -126,7 +126,8 @@ BEGIN
                                      userenv('instance') inst_id, 
                                      s.*
                              FROM    v$session s
-                             WHERE   s.event NOT LIKE 'Streams%') s &SQLM) s
+                             WHERE   s.event NOT LIKE 'Streams%'
+                             AND     userenv('instance')=nvl('&instance',userenv('instance'))) s &SQLM) s
                     ))) s
               WHERE sid||'@'||inst_id!=userenv('sid')||'@'||userenv('instance')),
             s4 AS(
