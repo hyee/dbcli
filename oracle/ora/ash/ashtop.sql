@@ -23,7 +23,8 @@
         }
       &more_filter: default={1=1},f={}
       @counter: 11.2={, count(distinct sql_exec_id||to_char(sql_exec_start,'yyyymmddhh24miss')) "Execs"},default={}
-      @UNIT   : 11.2={delta_time*1e-6}, default={&BASE}
+      @UNIT   : 11.2={least(nvl(tm_delta_db_time,delta_time),DELTA_TIME)*1e-6}, default={&BASE}
+      @CPU    : 11.2={least(nvl(tm_delta_cpu_time,delta_time),DELTA_TIME)*1e-6}, default={0}
       @IOS    : 11.2={,SUM(DELTA_READ_IO_BYTES) reads,SUM(DELTA_Write_IO_BYTES) writes},default={}
     ]]--
   Options:
@@ -60,13 +61,13 @@ col writes format kMG
 SELECT * FROM (
     SELECT /*+ LEADING(a) USE_HASH(u) no_expand*/
         round(SUM(c))                                                   Secs
-      , ROUND(SUM(c) / (1+(max(sample_time+0) - min(sample_time+0)) * 86400), 1) AAS
+      , ROUND(sum(&base)) AAS
       , LPAD(ROUND(RATIO_TO_REPORT(sum(c)) OVER () * 100)||'%',5,' ')||' |' "%This"
       &counter
       , nvl2(qc_session_id,'PARALLEL','SERIAL') "Parallel?"
       , nvl(a.program#,u.username) program#, event_name event
       , &fields &IOS
-      , round(SUM(CASE WHEN wait_class IS NULL           THEN c ELSE 0 END)) "CPU"
+      , round(SUM(CASE WHEN wait_class IS NULL AND CPU=0 THEN c ELSE 0 END+CPU)) "CPU"
       , round(SUM(CASE WHEN wait_class ='User I/O'       THEN c ELSE 0 END)) "User I/O"
       , round(SUM(CASE WHEN wait_class ='Application'    THEN c ELSE 0 END)) "Application"
       , round(SUM(CASE WHEN wait_class ='Concurrency'    THEN c ELSE 0 END)) "Concurrency"
@@ -86,7 +87,7 @@ SELECT * FROM (
         (SELECT a.*,sql_plan_hash_value plan_hash,current_obj# obj,nvl2(CURRENT_FILE#,CURRENT_FILE#||','||current_block#,'') block,
             CASE WHEN a.session_type = 'BACKGROUND' OR REGEXP_LIKE(a.program, '.*\([PJ]\d+\)') THEN
               REGEXP_REPLACE(SUBSTR(a.program,INSTR(a.program,'(')), '\d', 'n')
-            END program#,&unit c
+            END program#,&unit c,&CPU CPU
            , TO_CHAR(p1, '0XXXXXXXXXXXXXXX') p1raw
            , TO_CHAR(p2, '0XXXXXXXXXXXXXXX') p2raw
            , TO_CHAR(p3, '0XXXXXXXXXXXXXXX') p3raw
@@ -96,6 +97,6 @@ SELECT * FROM (
     WHERE a.user_id = u.user_id (+)
     AND   &filter and (&more_filter)
     GROUP BY nvl2(qc_session_id,'PARALLEL','SERIAL'),nvl(a.program#,u.username),event_name,&fields
-    ORDER BY Secs DESC nulls last,&fields
+    ORDER BY secs DESC nulls last,&fields
 )
 WHERE ROWNUM <= 50;

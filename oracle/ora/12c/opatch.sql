@@ -33,7 +33,7 @@ FROM   (SELECT patchset_id,
        WHERE :V1 IS NULL or patch_id=:V1 or patch_uid=:V1 or bug_id=:V1)
 GROUP  BY patchset_id, patch_id, patch_uid, apply_date, patch_desc, grp;
 
-SELECT patch_id,patch_uid,ACTION,ACTION_TIME,STATUS,VERSION,BUNDLE_SERIES SERIES,BUNDLE_ID
+SELECT patch_id,patch_uid,ACTION,ACTION_TIME,STATUS,VERSION
 FROM dba_registry_sqlpatch a
 order by ACTION_TIME;
 

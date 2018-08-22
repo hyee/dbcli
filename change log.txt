@@ -1,3 +1,19 @@
+2018-08-22: + public: support status bar and relative option "set status on/off", unsupported in ConEmu and Legacy Windows Console
+            + oracle: add Tanel Poder's script "ora waitprof"
+2018-08-21: * oracle: performance optimization on some frequent commands(getDbmsOutput/findObject/checkAccess) 
+2018-08-20: + public: new option "set readonly on/off" to support read-only db connection
+            * public: performance improvement of paste, and special colors on the input of "(" , ")" and ","
+            + oracle: new command "sys icstats" to view RAC interconnect stats
+2018-08-19: * public: upgrade Jline to v3.9
+            * oracle: enhancements on "ora ashplan/ashchain/liblock/actives/search/latchprof/stats"
+2018-08-13: + oracle: enhancements on 'ora histogram' to support adjusting column stats
+2018-08-11: + oracle: enhancements on 'ora histogram' to support testing the plan/real cardinality
+2018-08-10: + oracle: new option 'set dbid' to auto-limit all SQLs' relative dbid
+            + oracle: new PTF functions print_table/print_cursor under oracle/sqlplus/ptf
+            + oracle: new commands 'ora tabusage/flush_table/awrlist'
+            * oracle: some fixes/enhancements on existing commands
+2018-08-01: * public: bug fixes and small enhancements will not be listed in the update
+=======================begin v1.5================================================
 2017-11-15: + oracle: new command 'ora stats'
 2017-11-10: * oracle: enhancement on 'ora sql/ashplan' and 'desc'
 2017-10-20: + oracle: new command 'exa diskio'

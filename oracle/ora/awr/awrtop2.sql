@@ -9,7 +9,7 @@
 
 ORA _sqlstat
 
-col ela,iowait,cpu,clwait,apwait,plsql format smhd2
+col ela,iowait,cpu,clwait,apwait,plsql,ccwait format smhd2
 col reads,writes,mem,cellio,oflin,oflout,buff format kmg
 col execs,FETCHES,loads,parses,rows,PX format tmb
 
@@ -27,7 +27,7 @@ SELECT &grp,
        FETCHES,
        parses,
        seens,
-       ela,iowait,cpu,clwait,apwait,plsql,
+       ela,iowait,cpu,ccwait,clwait,apwait,plsql,
        &ver cellio,oflin,oflout,
        reads,writes,buff,
        RWS "ROWS",

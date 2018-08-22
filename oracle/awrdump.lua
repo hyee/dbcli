@@ -273,7 +273,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
         END;
     BEGIN
         extract_awr(:1, :2, :3,@diff);
-        base64encode(rs);
+        --base64encode(rs);
         :4 := filename;
         :5 := rs;
         :6 := cur;

@@ -161,7 +161,7 @@
                      '|' "*",
                      SUM(DECODE(n, 'IM scan rows', v,0)) "Rows",
                      SUM(DECODE(n, 'IM scan rows projected', v,0)) "Proj",
-                     SUM(DECODE(n, 'IM scan rows pcode aggregated',v)) "pcode"
+                     SUM(DECODE(n, 'IM scan rows pcode aggregated',v)) "pcode",
                      SUM(DECODE(n, 'table scan disk non-IMC rows gotten', v,0)) "Disk",
                      SUM(DECODE(n, 'IM scan rows valid', v,0)) "Valid(%)",
                      SUM(DECODE(n, 'IM scan rows cache', v,0)) "Cache",

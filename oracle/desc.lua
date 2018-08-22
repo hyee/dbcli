@@ -311,7 +311,6 @@ local desc_sql={
                                     lpad(TO_NUMBER(SUBSTR(low_value, 13, 2), 'XX')-1,2,0)|| '.' ||
                                     nvl(substr(TO_NUMBER(SUBSTR(low_value, 15, 8), 'XXXXXXXX'),1,6),'0')
                   ,'TIMESTAMP WITH TIME ZONE',
-                        to_char(To_timestamp_tz( 
                                     lpad(TO_NUMBER(SUBSTR(low_value, 1, 2), 'XX')-100,2,0)||
                                     lpad(TO_NUMBER(SUBSTR(low_value, 3, 2), 'XX')-100,2,0)|| '-' ||
                                     lpad(TO_NUMBER(SUBSTR(low_value, 5, 2), 'XX'),2,0)|| '-' ||
@@ -320,9 +319,8 @@ local desc_sql={
                                     lpad(TO_NUMBER(SUBSTR(low_value, 11, 2), 'XX')-1,2,0)|| ':' ||
                                     lpad(TO_NUMBER(SUBSTR(low_value, 13, 2), 'XX')-1,2,0)|| '.' ||
                                     nvl(substr(TO_NUMBER(SUBSTR(low_value, 15, 8), 'XXXXXXXX'),1,6),'0')||' '||
-                                    nvl(TO_NUMBER(SUBSTR(low_value, 23,2),'XX')-20,0)||':'||nvl(TO_NUMBER(SUBSTR(low_value, 25, 2), 'XX')-60,0),'YYYY-MM-DD HH24:MI:SSxff TZH:TZM')
-                          +to_dsinterval(regexp_replace(nvl(TO_NUMBER(SUBSTR(low_value, 23,2),'XX')-20,0)||':'||nvl(TO_NUMBER(SUBSTR(low_value, 25, 2), 'XX')-60,0),'^(-?)(.*)','\10 \2:0')))
-
+                                    nvl(TO_NUMBER(SUBSTR(low_value, 23,2),'XX')-20,0)||':'||
+                                    nvl(TO_NUMBER(SUBSTR(low_value, 25, 2), 'XX')-60,0)
                   ,'DATE',lpad(TO_NUMBER(SUBSTR(low_value, 1, 2), 'XX')-100,2,0)||
                           lpad(TO_NUMBER(SUBSTR(low_value, 3, 2), 'XX')-100,2,0)|| '-' ||
                           lpad(TO_NUMBER(SUBSTR(low_value, 5, 2), 'XX') ,2,0)|| '-' ||
@@ -338,7 +336,7 @@ local desc_sql={
                       ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(high_value))
                       ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(high_value))
                       ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(high_value))
-                      ,'TIMESTAMP'   , lpad(TO_NUMBER(SUBSTR(low_value, 1, 2), 'XX')-100,2,0)||
+                      ,'TIMESTAMP'   , lpad(TO_NUMBER(SUBSTR(high_value, 1, 2), 'XX')-100,2,0)||
                                     lpad(TO_NUMBER(SUBSTR(high_value, 3, 2), 'XX')-100,2,0)|| '-' ||
                                     lpad(TO_NUMBER(SUBSTR(high_value, 5, 2), 'XX') ,2,0)|| '-' ||
                                     lpad(TO_NUMBER(SUBSTR(high_value, 7, 2), 'XX') ,2,0)|| ' ' ||
@@ -347,8 +345,7 @@ local desc_sql={
                                     lpad(TO_NUMBER(SUBSTR(high_value, 13, 2), 'XX')-1,2,0)|| '.' ||
                                     nvl(substr(TO_NUMBER(SUBSTR(high_value, 15, 8), 'XXXXXXXX'),1,6),'0')
                         ,'TIMESTAMP WITH TIME ZONE',
-                            to_char(To_timestamp_tz( 
-                                    lpad(TO_NUMBER(SUBSTR(low_value, 1, 2), 'XX')-100,2,0)||
+                                    lpad(TO_NUMBER(SUBSTR(high_value, 1, 2), 'XX')-100,2,0)||
                                     lpad(TO_NUMBER(SUBSTR(high_value, 3, 2), 'XX')-100,2,0)|| '-' ||
                                     lpad(TO_NUMBER(SUBSTR(high_value, 5, 2), 'XX'),2,0)|| '-' ||
                                     lpad(TO_NUMBER(SUBSTR(high_value, 7, 2), 'XX'),2,0)|| ' ' ||
@@ -356,10 +353,9 @@ local desc_sql={
                                     lpad(TO_NUMBER(SUBSTR(high_value, 11, 2), 'XX')-1,2,0)|| ':' ||
                                     lpad(TO_NUMBER(SUBSTR(high_value, 13, 2), 'XX')-1,2,0)|| '.' ||
                                     nvl(substr(TO_NUMBER(SUBSTR(high_value, 15, 8), 'XXXXXXXX'),1,6),'0')||' '||
-                                    nvl(TO_NUMBER(SUBSTR(high_value, 23,2),'XX')-20,0)||':'||nvl(TO_NUMBER(SUBSTR(high_value, 25, 2), 'XX')-60,0),'YYYY-MM-DD HH24:MI:SSxff TZH:TZM')
-                            +to_dsinterval(regexp_replace(nvl(TO_NUMBER(SUBSTR(high_value, 23,2),'XX')-20,0)||':'||nvl(TO_NUMBER(SUBSTR(high_value, 25, 2), 'XX')-60,0),'^(-?)(.*)','\10 \2:0')))
-
-                        ,'DATE',lpad(TO_NUMBER(SUBSTR(low_value, 1, 2), 'XX')-100,2,0)||
+                                    nvl(TO_NUMBER(SUBSTR(high_value, 23,2),'XX')-20,0)||':'||
+                                    nvl(TO_NUMBER(SUBSTR(high_value, 25, 2), 'XX')-60,0)
+                        ,'DATE',lpad(TO_NUMBER(SUBSTR(high_value, 1, 2), 'XX')-100,2,0)||
                                 lpad(TO_NUMBER(SUBSTR(high_value, 3, 2), 'XX')-100,2,0)|| '-' ||
                                 lpad(TO_NUMBER(SUBSTR(high_value, 5, 2), 'XX') ,2,0)|| '-' ||
                                 lpad(TO_NUMBER(SUBSTR(high_value, 7, 2), 'XX') ,2,0)|| ' ' ||
@@ -399,8 +395,12 @@ local desc_sql={
            --DECODE(C.COLUMN_POSITION, 1, (SELECT NVL(MAX('YES'),'NO') FROM ALL_Constraints AC WHERE AC.INDEX_OWNER = I.OWNER AND AC.INDEX_NAME = I.INDEX_NAME), '') "IS_PK",
              DECODE(C.COLUMN_POSITION, 1, decode(I.STATUS,'N/A',(SELECT MIN(STATUS) FROM All_Ind_Partitions p WHERE p.INDEX_OWNER = I.OWNER AND p.INDEX_NAME = I.INDEX_NAME),I.STATUS), '') STATUS,
              DECODE(C.COLUMN_POSITION, 1, i.BLEVEL) BLEVEL,
+             DECODE(C.COLUMN_POSITION, 1, round(100*i.CLUSTERING_FACTOR/greatest(i.num_rows,1),2)) "CF/ROW(%)",
              DECODE(C.COLUMN_POSITION, 1, i.LEAF_BLOCKS) LEAF_BLOCKS,
-             DECODE(C.COLUMN_POSITION, 1, i.DISTINCT_KEYS) DISTINCT_KEYS,
+             DECODE(C.COLUMN_POSITION, 1, i.DISTINCT_KEYS) DISTINCTS,
+             DECODE(C.COLUMN_POSITION, 1, AVG_LEAF_BLOCKS_PER_KEY) "LB/KEY",
+             DECODE(C.COLUMN_POSITION, 1, AVG_DATA_BLOCKS_PER_KEY) "DB/KEY",
+             DECODE(C.COLUMN_POSITION, 1, ceil(i.num_rows/greatest(i.DISTINCT_KEYS,1))) CARD,
              DECODE(C.COLUMN_POSITION, 1, i.LAST_ANALYZED) LAST_ANALYZED,
              C.COLUMN_POSITION NO#,
              C.COLUMN_NAME,
@@ -520,7 +520,6 @@ local desc_sql={
                                     lpad(TO_NUMBER(SUBSTR(a.low_value, 13, 2), 'XX')-1,2,0)|| '.' ||
                                     nvl(substr(TO_NUMBER(SUBSTR(a.low_value, 15, 8), 'XXXXXXXX'),1,6),'0')
                   ,'TIMESTAMP WITH TIME ZONE',
-                        to_char(To_timestamp_tz( 
                                     lpad(TO_NUMBER(SUBSTR(a.low_value, 1, 2), 'XX')-100,2,0)||
                                     lpad(TO_NUMBER(SUBSTR(a.low_value, 3, 2), 'XX')-100,2,0)|| '-' ||
                                     lpad(TO_NUMBER(SUBSTR(a.low_value, 5, 2), 'XX'),2,0)|| '-' ||
@@ -529,8 +528,7 @@ local desc_sql={
                                     lpad(TO_NUMBER(SUBSTR(a.low_value, 11, 2), 'XX')-1,2,0)|| ':' ||
                                     lpad(TO_NUMBER(SUBSTR(a.low_value, 13, 2), 'XX')-1,2,0)|| '.' ||
                                     nvl(substr(TO_NUMBER(SUBSTR(a.low_value, 15, 8), 'XXXXXXXX'),1,6),'0')||' '||
-                                    nvl(TO_NUMBER(SUBSTR(a.low_value, 23,2),'XX')-20,0)||':'||nvl(TO_NUMBER(SUBSTR(a.low_value, 25, 2), 'XX')-60,0),'YYYY-MM-DD HH24:MI:SSxff TZH:TZM')
-                          +to_dsinterval(regexp_replace(nvl(TO_NUMBER(SUBSTR(a.low_value, 23,2),'XX')-20,0)||':'||nvl(TO_NUMBER(SUBSTR(a.low_value, 25, 2), 'XX')-60,0),'^(-?)(.*)','\10 \2:0')))
+                                    nvl(TO_NUMBER(SUBSTR(a.low_value, 23,2),'XX')-20,0)||':'||nvl(TO_NUMBER(SUBSTR(a.low_value, 25, 2), 'XX')-60,0)
                   ,'DATE',lpad(TO_NUMBER(SUBSTR(a.low_value, 1, 2), 'XX')-100,2,0)||
                           lpad(TO_NUMBER(SUBSTR(a.low_value, 3, 2), 'XX')-100,2,0)|| '-' ||
                           lpad(TO_NUMBER(SUBSTR(a.low_value, 5, 2), 'XX') ,2,0)|| '-' ||
@@ -546,17 +544,16 @@ local desc_sql={
                       ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(a.high_value))
                       ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(a.high_value))
                       ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(a.high_value))
-                      ,'TIMESTAMP'   , lpad(TO_NUMBER(SUBSTR(a.low_value, 1, 2), 'XX')-100,2,0)||
-                                    lpad(TO_NUMBER(SUBSTR(a.high_value, 3, 2), 'XX')-100,2,0)|| '-' ||
-                                    lpad(TO_NUMBER(SUBSTR(a.high_value, 5, 2), 'XX') ,2,0)|| '-' ||
-                                    lpad(TO_NUMBER(SUBSTR(a.high_value, 7, 2), 'XX') ,2,0)|| ' ' ||
-                                    lpad(TO_NUMBER(SUBSTR(a.high_value, 9, 2), 'XX')-1,2,0)|| ':' ||
-                                    lpad(TO_NUMBER(SUBSTR(a.high_value, 11, 2), 'XX')-1,2,0)|| ':' ||
-                                    lpad(TO_NUMBER(SUBSTR(a.high_value, 13, 2), 'XX')-1,2,0)|| '.' ||
-                                    nvl(substr(TO_NUMBER(SUBSTR(a.high_value, 15, 8), 'XXXXXXXX'),1,6),'0')
-                        ,'TIMESTAMP WITH TIME ZONE',
-                            to_char(To_timestamp_tz( 
-                                    lpad(TO_NUMBER(SUBSTR(a.low_value, 1, 2), 'XX')-100,2,0)||
+                      ,'TIMESTAMP'    ,lpad(TO_NUMBER(SUBSTR(a.high_value, 1, 2), 'XX')-100,2,0)||
+                                       lpad(TO_NUMBER(SUBSTR(a.high_value, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                       lpad(TO_NUMBER(SUBSTR(a.high_value, 5, 2), 'XX') ,2,0)|| '-' ||
+                                       lpad(TO_NUMBER(SUBSTR(a.high_value, 7, 2), 'XX') ,2,0)|| ' ' ||
+                                       lpad(TO_NUMBER(SUBSTR(a.high_value, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                       lpad(TO_NUMBER(SUBSTR(a.high_value, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                       lpad(TO_NUMBER(SUBSTR(a.high_value, 13, 2), 'XX')-1,2,0)|| '.' ||
+                                       nvl(substr(TO_NUMBER(SUBSTR(a.high_value, 15, 8), 'XXXXXXXX'),1,6),'0')
+                      ,'TIMESTAMP WITH TIME ZONE',
+                                    lpad(TO_NUMBER(SUBSTR(a.high_value, 1, 2), 'XX')-100,2,0)||
                                     lpad(TO_NUMBER(SUBSTR(a.high_value, 3, 2), 'XX')-100,2,0)|| '-' ||
                                     lpad(TO_NUMBER(SUBSTR(a.high_value, 5, 2), 'XX'),2,0)|| '-' ||
                                     lpad(TO_NUMBER(SUBSTR(a.high_value, 7, 2), 'XX'),2,0)|| ' ' ||
@@ -564,10 +561,8 @@ local desc_sql={
                                     lpad(TO_NUMBER(SUBSTR(a.high_value, 11, 2), 'XX')-1,2,0)|| ':' ||
                                     lpad(TO_NUMBER(SUBSTR(a.high_value, 13, 2), 'XX')-1,2,0)|| '.' ||
                                     nvl(substr(TO_NUMBER(SUBSTR(a.high_value, 15, 8), 'XXXXXXXX'),1,6),'0')||' '||
-                                    nvl(TO_NUMBER(SUBSTR(a.high_value, 23,2),'XX')-20,0)||':'||nvl(TO_NUMBER(SUBSTR(a.high_value, 25, 2), 'XX')-60,0),'YYYY-MM-DD HH24:MI:SSxff TZH:TZM')
-                            +to_dsinterval(regexp_replace(nvl(TO_NUMBER(SUBSTR(a.high_value, 23,2),'XX')-20,0)||':'||nvl(TO_NUMBER(SUBSTR(a.high_value, 25, 2), 'XX')-60,0),'^(-?)(.*)','\10 \2:0')))
-
-                        ,'DATE',lpad(TO_NUMBER(SUBSTR(a.low_value, 1, 2), 'XX')-100,2,0)||
+                                    nvl(TO_NUMBER(SUBSTR(a.high_value, 23,2),'XX')-20,0)||':'||nvl(TO_NUMBER(SUBSTR(a.high_value, 25, 2), 'XX')-60,0)
+                     ,'DATE',lpad(TO_NUMBER(SUBSTR(a.high_value, 1, 2), 'XX')-100,2,0)||
                                 lpad(TO_NUMBER(SUBSTR(a.high_value, 3, 2), 'XX')-100,2,0)|| '-' ||
                                 lpad(TO_NUMBER(SUBSTR(a.high_value, 5, 2), 'XX') ,2,0)|| '-' ||
                                 lpad(TO_NUMBER(SUBSTR(a.high_value, 7, 2), 'XX') ,2,0)|| ' ' ||

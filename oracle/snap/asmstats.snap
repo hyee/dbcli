@@ -1,5 +1,5 @@
 /*[[
-  Generate ASM stats. Usage: @@NAME [options] } 
+  Generate ASM stats. Usage: @@NAME <options> } 
 
 ]]*/
 {

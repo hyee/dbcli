@@ -41,7 +41,7 @@ var rs CLOB;
 var filename varchar2;
 var plan_hash number;
 col dur,avg_ela,ela,parse,queue,cpu,app,cc,cl,plsql,java,io,time format smhd2
-col read,write,iosize,mem,temp,cellio,buffget,offload,offlrtn,calc_kmg format kmg
+col read,write,iosize,mem,temp,cellio,buffget,offload,offlrtn,calc_kmg,ofl format kmg
 col est_cost,est_rows,act_rows,ioreq,execs,outputs,FETCHES,dxwrite,calc_tmb format TMB
 
 ALTER SESSION SET PLSQL_CCFLAGS = 'hub:&check_access_hub,sqlm:&check_access_sqlm';
@@ -124,7 +124,7 @@ BEGIN
         OPEN :c FOR
             SELECT DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => '&format-SQL_FULLTEXT-SQL_TEXT', TYPE => 'TEXT', sql_id => sq_id, SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst) AS report FROM   dual;
         BEGIN
-            content  := DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => 'ALL', TYPE => 'ACTIVE', sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
+            content  := DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => 'ALL', TYPE => 'EM', sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
             filename := 'sqlm_' || sq_id || '.html';
         EXCEPTION WHEN OTHERS THEN NULL;
         END;
@@ -215,10 +215,10 @@ BEGIN
             FROM   (SELECT   a.sql_id &OPTION,
                              &option1 to_char(MIN(sql_exec_start), 'MMDD HH24:MI:SS') first_seen,
                              to_char(MAX(last_refresh_time), 'MMDD HH24:MI:SS') last_seen,
-                             MAX(sid || ',@' || inst_id) keep(dense_rank LAST ORDER BY nvl2(px_qcsid,to_date(null),last_refresh_time) nulls first) last_sid,
+                             MAX(sid || ',@' || inst_id) keep(dense_rank LAST ORDER BY last_refresh_time) last_sid,
                              MAX(status) keep(dense_rank LAST ORDER BY last_refresh_time, sid) last_status,
-                             round(sum((last_refresh_time - sql_exec_start)*nvl2(px_qcsid,0,1))/&avg * 86400, 2) dur,
-                             round(sum(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME))/&avg * 1e-6, 2) ela,
+                             round(sum(last_refresh_time - sql_exec_start)/&avg * 86400, 2) dur,
+                             round(sum(ela)/&avg * 1e-6, 2) ela,
                              round(sum(QUEUING_TIME)/&avg * 1e-6, 2) QUEUE,
                              round(sum(CPU_TIME)/&avg * 1e-6, 2) CPU,
                              round(sum(APPLICATION_WAIT_TIME)/&avg * 1e-6, 2) app,
@@ -229,14 +229,34 @@ BEGIN
                              round(sum(USER_IO_WAIT_TIME)/&avg * 1e-6, 2) io,
                              round(sum(PHYSICAL_READ_BYTES)/&avg, 2) READ,
                              round(sum(PHYSICAL_WRITE_BYTES)/&avg, 2) WRITE,
+                             &ver round(sum(IO_CELL_OFFLOAD_ELIGIBLE_BYTES)/&avg,2) OFL,
                              substr(regexp_replace(regexp_replace(MAX(sql_text), '^\s+'), '\s+', ' '), 1, 200) sql_text
-                    FROM   (SELECT /*+no_expand*/a.*, SQL_PLAN_HASH_VALUE plan_hash
-                            FROM   gv$sql_monitor a
-                            WHERE  (&SNAP=1 OR NOT regexp_like(a.process_name, '^[pP]\d+$'))
-                            AND    (&SNAP=1 OR (plan_hash IS NULL AND :V2 IS NOT NULL OR NOT regexp_like(upper(TRIM(SQL_TEXT)), '^(BEGIN|DECLARE|CALL)')))
-                            AND    (&SNAP=1 OR (keyw IS NULL OR a.sql_id ||'_'|| sql_plan_hash_value||'_'|| sql_exec_id || lower(sql_text) LIKE '%' || lower(keyw) || '%'))
-                            AND    (&filter)
-                            AND    PX_SERVER# IS NULL) a
+                    FROM   (select sql_id,sql_exec_start,sql_exec_id,
+                                     max(NVL2(PX_QCSID,null,SQL_PLAN_HASH_VALUE)) plan_hash,
+                                     max(NVL2(PX_QCSID,null,SQL_PLAN_HASH_VALUE)) SQL_PLAN_HASH_VALUE,
+                                     max(NVL2(PX_QCSID,null,sid)) sid,
+                                     max(NVL2(PX_QCSID,null,inst_id)) inst_id,
+                                     max(NVL2(PX_QCSID,null,sql_text)) sql_text,
+                                     max(NVL2(PX_QCSID,null,status)) status,
+                                     max(last_refresh_time) last_refresh_time,
+                                     sum(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME)) ela,
+                                     sum(ELAPSED_TIME) ELAPSED_TIME,
+                                     sum(CPU_TIME) cpu_time,
+                                     sum(QUEUING_TIME) QUEUING_TIME,
+                                     sum(APPLICATION_WAIT_TIME) APPLICATION_WAIT_TIME,
+                                     SUM(CONCURRENCY_WAIT_TIME) CONCURRENCY_WAIT_TIME,
+                                     SUM(CLUSTER_WAIT_TIME) CLUSTER_WAIT_TIME,
+                                     SUM(PLSQL_EXEC_TIME) PLSQL_EXEC_TIME,
+                                     SUM(JAVA_EXEC_TIME) JAVA_EXEC_TIME,
+                                     SUM(USER_IO_WAIT_TIME) USER_IO_WAIT_TIME,
+                                     SUM(PHYSICAL_WRITE_BYTES) PHYSICAL_WRITE_BYTES,
+                                     SUM(PHYSICAL_READ_BYTES) PHYSICAL_READ_BYTES
+                                     &ver ,SUM(IO_CELL_OFFLOAD_ELIGIBLE_BYTES) IO_CELL_OFFLOAD_ELIGIBLE_BYTES
+                              FROM  gv$sql_monitor a
+                              WHERE (&filter)
+                              GROUP BY sql_id,sql_exec_start,sql_exec_id) a
+                    WHERE  (&SNAP=1 OR (plan_hash IS NULL AND :V2 IS NOT NULL OR NOT regexp_like(upper(TRIM(SQL_TEXT)), '^(BEGIN|DECLARE|CALL)')))
+                    AND    (&SNAP=1 OR (keyw IS NULL OR a.sql_id ||'_'|| sql_plan_hash_value||'_'|| sql_exec_id || lower(sql_text) LIKE '%' || lower(keyw) || '%'))
                     GROUP  BY sql_id &OPTION
                     ORDER  BY last_seen DESC)
             WHERE  ROWNUM <= 100

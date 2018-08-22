@@ -18,6 +18,7 @@
                    to_char(end_interval_time, 'YYYY-MM-DD HH24:MI') snap_time,
                    snap_id,
                    flag,
+                   part_key,
                    nullif('['||&obj||']','[]')||reason_name reason,
                    SUM(bytes)/sum(Slot_size) bytes,
                    SUM(requests)/sum(Slot_size) request
@@ -31,7 +32,7 @@
           JOIN   DBA_HIST_CELL_IOREASON c USING(dbid, snap_id,cell_hash)
           WHERE  r = 1 AND (&filter) 
           AND   (:V3 IS NULL OR lower(nullif('['||&obj||']','[]')||reason_name) like lower('%&V3%'))
-          GROUP  BY snap_id,snap_id, flag,to_char(end_interval_time, 'YYYY-MM-DD HH24:MI'),reason_name,&obj
+          GROUP  BY snap_id,snap_id,part_key, flag,to_char(end_interval_time, 'YYYY-MM-DD HH24:MI'),reason_name,&obj
           ORDER BY 1,2)
     SELECT snap_time,reason,
            round(bytes-nvl(lag(bytes) OVER(PARTITION BY part_key,reason ORDER BY snap_time),0),2) bytes,

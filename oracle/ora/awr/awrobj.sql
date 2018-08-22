@@ -1,18 +1,14 @@
 /*[[Search for the SQLs in AWR snapshots that reference the specific object. Usage: @@NAME {<[owner.]object_name> [ela|exe|id|text|op] [yymmddhhmi] [yymmddhhmi]} ]]*/
-ora _find_object "&V1"
+
 
 WITH qry AS
  (SELECT /*+materialize*/*
-  FROM   (SELECT OBJECT_ID,
-                 nvl(lower(:V2),'op') sorttype,
+  FROM   (SELECT nvl(lower(:V2),'op') sorttype,
                  to_timestamp(coalesce(:V3,:starttime, to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
                  to_timestamp(coalesce(:V4,:endtime, to_char(SYSDATE, 'YYMMDDHH24MI')), 'YYMMDDHH24MI') ed
-          FROM   DBA_OBJECTS
-          WHERE  UPPER(OWNER || '.' || OBJECT_NAME || chr(10) || OBJECT_ID || chr(10) ||
-                       SUBOBJECT_NAME || chr(10) || DATA_OBJECT_ID || chr(10) ||
-                       TO_CHAR(CREATED, 'YYYY-MM-DD HH24:MI:SS') || chr(10) ||
-                       TO_CHAR(CREATED, 'YYYY-MM-DD HH24:MI:SS') || chr(10) ||
-                       TO_CHAR(LAST_DDL_TIME, 'YYYY-MM-DD HH24:MI:SS') || chr(10) || STATUS) LIKE
+          FROM   dba_hist_Seg_stat_obj
+          WHERE  UPPER(OWNER || '.' || OBJECT_NAME || chr(10) || OBJ# || chr(10) ||
+                       SUBOBJECT_NAME || chr(10) || DATAOBJ# || chr(10) ) LIKE
                  '%' || NVL(UPPER(:V1), 'x') || '%'
           ORDER  BY 1)
   WHERE  ROWNUM < 100)
@@ -24,10 +20,7 @@ SELECT a.sql_id,
        obj OBJECT,
        COUNT(DISTINCT plan_hash) Childs,
        --to_char(wmsys.wm_concat(DISTINCT decode(sign(r - 3), -1, plan_hash))) plan_hash,
-       substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),
-                             '[' || chr(10) || chr(13) || chr(9) || ' ]+',' '),
-              1,
-              120) text
+       substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'[' || chr(10) || chr(13) || chr(9) || ' ]+',' '),1,20) text
 FROM   (SELECT sql_id,
                st,
                ed,

@@ -4,6 +4,7 @@ local set_command,exec_command=env.set_command,env.exec_command
 local oracle=env.class(env.db_core)
 oracle.module_list={
     "ora",
+    "findobj",
     "dbmsoutput",
     "sqlplus",
     "xplan",
@@ -229,8 +230,8 @@ function oracle:connect(conn_str)
         loader:mkdir(env._CACHE_PATH)
         prompt=('%s%s'):format(prompt:upper(),self.props.db_role or '')
         env.set_prompt(nil,prompt,nil,2)
-        self.session_title=('%s - Instance: %s   User: %s   SID: %s   Version: Oracle(%s)')
-            :format(prompt,self.props.instance,self.props.db_user,self.props.sid,self.props.db_version)
+        self.session_title=('%s@%s   Instance: %s   User: %s   SID: %s   Version: Oracle(%s)')
+            :format(self.props.db_user,prompt,self.props.instance,self.props.db_user,self.props.sid,self.props.db_version)
         env.set_title(self.session_title)
         env.uv.os.setenv("NLS_LANG",self.props.nls_lang)
     end
@@ -245,10 +246,20 @@ function oracle:connect(conn_str)
 end
 
 function oracle:parse(sql,params)
-    local p1,p2,counter,index,org_sql={},{},0,0
+    local bind_info,binds,counter,index,org_sql={},{},0,0
 
     if cfg.get('SQLCACHESIZE') ~= self.MAX_CACHE_SIZE then
         self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
+    end
+
+    local temp={}
+    for k,v in pairs(params) do
+        temp[type(k)=="string" and k:upper() or k]={k,v}
+    end
+
+    for k,v in pairs(temp) do
+        params[v[1]]=nil
+        params[k]=v[2]
     end
 
     org_sql,sql=sql,sql:gsub('%f[%w_%$:]:([%w_%$]+)',function(s)
@@ -256,7 +267,7 @@ function oracle:parse(sql,params)
         local v=params[k]
         local typ
         if v==nil then return s end
-        if p1[k] then return s:upper() end
+        if bind_info[k] then return s:upper() end
         if type(v) =="table" then
             return s
         elseif type(v)=="number" then
@@ -280,43 +291,44 @@ function oracle:parse(sql,params)
 
         local typename,typeid=typ,self.db_types[typ].id
         typ,v=self.db_types:set(typ,v)
-        p1[k],p2[#p2+1]={typ,v,typeid,typename,nil,nil,s},k
+        bind_info[k],binds[#binds+1]={typ,v,typeid,typename,nil,nil,s},k
         return s:upper()
     end)
 
     local sql_type=self.get_command_type(sql)
-    local method,value,typeid,typename,inIdx,outIdx,vname=1,2,3,4,5,6,7
+    local func,value,typeid,typename,inIdx,outIdx,vname=1,2,3,4,5,6,7
     if sql_type=="SELECT" or sql_type=="WITH" then 
         if sql:lower():find('%Wtable%s*%(') and not sql:lower():find('xplan') then 
             cfg.set("pipequery",'on')
         end
     end
-    if sql_type=='EXPLAIN' or #p2>0 and (sql_type=="DECLARE" or sql_type=="BEGIN" or sql_type=="CALL") then
-        local s0,s1,s2,index,typ,siz={},{},{},1,nil,#p2
+
+    if sql_type=='EXPLAIN' or #binds>0 and (sql_type=="DECLARE" or sql_type=="BEGIN" or sql_type=="CALL") then
+        local s0,s1,s2,index,typ,siz={},{},{},1,nil,#binds
         params={}
 
         if sql_type=='EXPLAIN' then
-            p1,p2={},{}
+            bind_info,binds={},{}
         end
 
-        for idx=1,#p2 do
-            typ=p1[p2[idx]][typename]
+        for idx=1,#binds do
+            typ=bind_info[binds[idx]][typename]
             if typ=="CURSOR" then
-                p1[p2[idx]][inIdx]=0
+                bind_info[binds[idx]][inIdx]=0
                 typ="SYS_REFCURSOR"
-                s1[idx]="V"..(idx+1)..' '..typ..';/* :'..p2[idx]..'*/'
+                s1[idx]="V"..(idx+1)..' '..typ..';/* :'..binds[idx]..'*/'
             else
                 index=index+1;
-                p1[p2[idx]][inIdx]=index
+                bind_info[binds[idx]][inIdx]=index
                 typ=(typ=="VARCHAR" and "VARCHAR2(32767)") or typ
-                s1[idx]="V"..(idx+1)..' '..typ..':=:'..index..';/* :'..p2[idx]..'*/'
+                s1[idx]="V"..(idx+1)..' '..typ..':=:'..index..';/* :'..binds[idx]..'*/'
             end
             s0[idx]=(idx==1 and 'USING ' or '') ..'IN OUT V'..(idx+1)    
         end
 
-        for idx=1,#p2 do
+        for idx=1,#binds do
             index=index+1;
-            p1[p2[idx]][outIdx]=index
+            bind_info[binds[idx]][outIdx]=index
             s2[idx]=":"..index.." := V"..(idx+1)..';' 
         end
 
@@ -327,17 +339,17 @@ function oracle:parse(sql,params)
         env.log_debug("parse","SQL:",sql)
         local prep=java.cast(self.conn:prepareCall(sql,1003,1007),"oracle.jdbc.OracleCallableStatement")
         prep[method](prep,1,org_sql)
-        for k,v in ipairs(p2) do
-            local p=p1[v]
+        for k,v in ipairs(binds) do
+            local p=bind_info[v]
             if p[inIdx]~=0 then
                 env.log_debug("parse","Param In#"..k..'('..p[vname]..')',':'..p[inIdx]..'='..p[value])
-                prep[p[1]](prep,p[inIdx],p[value])
+                prep[p[func]](prep,p[inIdx],p[value])
             end
-            params[v]={'#',p[outIdx],p[typename]}
+            params[v]={'#',p[outIdx],p[typename],p[func],p[value],p[inIdx]~=0 and p[inIdx] or nil}
             env.log_debug("parse","Param Out#"..k..'('..p[vname]..')',':'..p[outIdx]..'='..self.db_types:getTyeName(typeid))
             prep['registerOutParameter'](prep,p[outIdx],p[typeid])
         end
-        env.log_debug("parse","Params-before:",table.dump(params))
+        env.log_debug("parse","Block-Params:",table.dump(params))
         return prep,org_sql,params
     elseif counter>1 then
         return self.super.parse(self,org_sql,params,':')
@@ -345,24 +357,36 @@ function oracle:parse(sql,params)
         org_sql=sql
     end
 
+    params={}
     local prep=java.cast(self.conn:prepareCall(sql,1003,1007),"oracle.jdbc.OracleCallableStatement")
-    for k,v in pairs(p1) do
-        if v[mehod]=='#' then
+    for k,v in pairs(bind_info) do
+        if v[func]=='#' then
             prep['registerOutParameter'](prep,k,v[typeid])
-            params[k]={'#',k,v[typename]}
+            params[k]={'#',k,v[typename],'registerOutParameter',v[typeid]}
         else
-            prep[v[method].."AtName"](prep,k,v[value])
+            prep[v[func].."AtName"](prep,k,v[value])
+            params[k]={'$',k,v[typename],v[func].."AtName",v[value]}
         end
     end
+    env.log_debug("parse","Query Params:",table.dump(params))
+
     return prep,org_sql,params
 end
 
 function oracle:exec(sql,...)
     local bypass=self:is_internal_call(sql)
-    local args=type(select(1,...) or "")=="table" and ... or {...}
-    sql=event("BEFORE_ORACLE_EXEC",{self,sql,args}) [2]
-    local result=self.super.exec(self,sql,args)
-    if not bypass then 
+    local args,prep_params=nil,{}
+    local is_not_prep=type(sql)~="userdata"
+    if type(select(1,...) or "")=="table" then
+        args=select(1,...)
+        if type(select(2,...) or "")=="table" then prep_params=select(2,...) end
+    else
+        args={...}
+    end
+    
+    if is_not_prep then sql=event("BEFORE_ORACLE_EXEC",{self,sql,args}) [2] end
+    local result=self.super.exec(self,sql,args,prep_params)
+    if is_not_prep and not bypass then 
         event("AFTER_ORACLE_EXEC",self,sql,args,result)
         self.print_feed(sql,result)
     end
@@ -399,14 +423,14 @@ function oracle:disconnect(...)
 end
 
 local is_executing=false
-function oracle:dba_query(cmd,sql,args)
+function oracle:dba_query(func,sql,args)
     local sql1,count,success,res=sql:gsub('([Aa][Ll][Ll]%_)','dba_')
     if count>0 then
         is_executing=true
-        success,res=pcall(cmd,self,sql1,args)
+        success,res=pcall(func,self,sql1,args)
         is_executing=false
     end
-    if not success then res=cmd(self,sql,args) end
+    if not success then res=func(self,sql,args) end
     return res,args
 end
 
@@ -424,10 +448,14 @@ function oracle:handle_error(info)
         info.sql=nil
         return
     end
-    local ora_code,msg=info.error:match('ORA%-(20%d+): *(.+)')
-    if ora_code and tonumber(ora_code)>=20001 and tonumber(ora_code)<20999 then
-        info.sql=nil
-        info.error=msg:gsub('%s*ORA%-%d+.*$',''):gsub('%s+$','')
+    local prefix,ora_code,msg=info.error:match('(%u%u%u+)%-(%d%d%d+): *(.+)')
+    if ora_code then
+        if prefix=='ORA' and tonumber(ora_code)>=20001 and tonumber(ora_code)<20999 then
+            info.sql=nil
+            info.error=msg:gsub('[\n\r]%s*ORA%-%d+.*$',''):gsub('%s+$','')
+        else
+            info.error=prefix..'-'..ora_code..': '..msg
+        end
         return info
     end
 

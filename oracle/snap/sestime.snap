@@ -1,5 +1,5 @@
 /*[[
-  Generate delta values based on gv$session_event,gv$sess_time_model. Usage: @@NAME [options] [-e|-t] {{<0|sid> [<inst_id>] [keyword]}|["<commands>"]} 
+  Generate delta values based on gv$session_event,gv$sess_time_model. Usage: @@NAME <options> [-e|-t] {{<0|sid> [<inst_id>] [keyword]}|["<commands>"]} 
   -e: only show info of gv$session_event
   -t: only show info of gv$sess_time_model
   --[[

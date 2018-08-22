@@ -1,4 +1,4 @@
-/*[[Generate delta values based on gv$sys_time_model. Usage: @@NAME [options] {[<inst_id>]  [keyword]}
+/*[[Generate delta values based on gv$sys_time_model. Usage: @@NAME <options> {[<inst_id>]  [keyword]}
 ]]*/
 {
     sql=[[

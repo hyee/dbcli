@@ -11,12 +11,12 @@
         3. order_by: The columns that used to sort the final result, "-<column_name>" means desc ordering. 
         4. top_by  : Optional, if not specified then it equals to 'group_by', it is the subset of 'group_by' columns
         5. per_second: 'on' or 'off'(default), controls if to devide the delta stats by elapsed seconds
-        6. bypassemptyrs: 'on' or 'off'(default),when a 'sql' is an array, and one of which returns no rows, then controls wether to show this sql
-        7. top_mode: 'on' or 'off'(default), controls wether to clear the screen before print the result
+        6. bypassemptyrs: 'on' or 'off'(default),when a 'sql' is an array, and one of which returns no rows, then controls whether to show this sql
+        7. top_mode: 'on' or 'off'(default), controls whether to clear the screen before print the result
         8. calc_rules: the additional formula on a specific column after the 'delta_by' columns is calculated
-        9.fixed_title: true or false(default), controls wether not to change the 'delta_by' column titles
-        10.include_zero:  true or false(default), controls wether not to show the row in case of its 'delta_by' columns are all 0
-        11.set_ratio: true or false(default), controls wether not to add a percentage column on each 'delta_by' columns
+        9.fixed_title: true or false(default), controls whether not to change the 'delta_by' column titles
+        10.include_zero:  true or false(default), controls whether not to show the row in case of its 'delta_by' columns are all 0
+        11.set_ratio: true or false(default), controls whether not to add a percentage column on each 'delta_by' columns
         12.before_sql: the statements that executed before the 1st snapshot
         13.after_sql: the statements that executed after the 2nd snapshot
 
@@ -26,7 +26,7 @@
 --]]
 local env,pairs,ipairs,table,tonumber,pcall,type=env,pairs,ipairs,table,tonumber,pcall,type
 local sleep,math,cfg=env.sleep,env.math,env.set
-local terminal,getHeight=terminal,terminal.getHeight
+local console,getHeight=console,console.getScreenHeight
 
 local snapper=env.class(env.scripter)
 function snapper:ctor()
@@ -196,13 +196,16 @@ function snapper:run_sql(sql,main_args,cmds,files)
     end
 
     local begin_flag
-    
     if interval then
         interval=interval:upper()
         if interval=="END" then
-            if self.start_time then self:next_exec() end
-            return 
+            if self.start_time then 
+                self.start_time=nil
+                self:next_exec() 
+            end
+            return
         elseif interval=="BEGIN" then
+            self.start_time=os.clock()
             begin_flag=true
         end
     end
@@ -479,7 +482,7 @@ function snapper:next_exec()
             if #cmd.rs2.rsidx==1 then
                 (cmd.rs2.rsidx[1]):print(nil,nil,nil,cmd.max_rows and cmd.max_rows+2 or cfg.get(self.command.."rows"))
             else
-                if top_mode then cmd.rs2.max_rows=getHeight(terminal)-3 end
+                if top_mode then cmd.rs2.max_rows=getHeight(console)-3 end
                 env.grid.merge(cmd.rs2,true)
             end
             env.printer.top_mode=false

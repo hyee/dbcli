@@ -31,7 +31,7 @@ DECLARE
     v_founds  t;
     v_result  CLOB;
     v_objid   INT;
-    v_owner   VARCHAR2(30);
+    v_owner   VARCHAR2(128);
     v_counter PLS_INTEGER := 0;
     v_curobj  INT:=-1;
     v_level   PLS_INTEGER := nvl(to_number(:V2),5);

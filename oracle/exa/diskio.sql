@@ -14,7 +14,7 @@ FROM   (SELECT /*+use_hash(b a) leading(b) no_expand*/
                disk_name,
                NAME,
                round(CASE
-                   WHEN NAME LIKE 'Average%' THEN
+                   WHEN NAME LIKE 'Avg%' THEN
                     AVG(VALUE)
                    ELSE
                     SUM(VALUE)
@@ -37,11 +37,11 @@ FROM   (SELECT /*+use_hash(b a) leading(b) no_expand*/
         GROUP  BY NAME, GROUPING SETS((cell, disk_type, disk_name),(cell),(disk_type),()))
 PIVOT(MAX(VALUE)
 FOR    NAME IN('Utilization' AS "Util(%)", 'Reads per second' AS "R/s", 'Writes per second' AS "W/s",
-               'Read Bytes per second' AS "R Bytes/s", 'Write Bytes per second' AS "W Bytes/s",
+               'Read Bytes per second' AS "R MB/s", 'Write Bytes per second' AS "W MB/s",
                'Average Wait Time' AS "Avg Wait us", 'Small reads/s' AS "S R/s",
                'Small writes/s' AS "S W/s", 'Large reads/s' AS "L R/s", 'Large writes/s' AS "L W/s",
-               'Small read bytes/s' AS "S R bytes/s", 'Small write bytes/s' AS "S W bytes/s",
-               'Large read bytes/s' AS "L R bytes/s", 'Large write bytes/s' AS "L W bytes/s",
+               'Small read bytes/s' AS "S R MB/s", 'Small write bytes/s' AS "S W MB/s",
+               'Large read bytes/s' AS "L R MB/s", 'Large write bytes/s' AS "L W MB/s",
                'Average Small read latency' AS "Avg S R us", 'Average Small write latency' AS "Avg S W us",
                'Average Large read latency' AS "Avg L R us", 'Average Large write latency' AS "Avg R W us"))
 ORDER  BY 1, cell, disk_name;

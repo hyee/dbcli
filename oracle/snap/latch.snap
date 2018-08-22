@@ -1,4 +1,4 @@
-/*[[Generate delta values based on gv$latch. Usage: @@NAME [options] {[keyword] [<inst_id>]}]]*/
+/*[[Generate delta values based on gv$latch. Usage: @@NAME <options> {[keyword] [<inst_id>]}]]*/
 {
     sql=[[
         SELECT inst_id,

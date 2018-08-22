@@ -194,6 +194,20 @@ function math.round(exact, quantum)
     return quantum * (quant + (frac > 0.5 and 1 or 0))
 end
 
+function table.clone (t) -- deep-copy a table
+    if type(t) ~= "table" then return t end
+    local meta = getmetatable(t)
+    local target = {}
+    for k, v in pairs(t) do
+        if type(v) == "table" then
+            target[k] = table.clone(v)
+        else
+            target[k] = v
+        end
+    end
+    setmetatable(target, meta)
+    return target
+end
 
 function table.dump(tbl,indent,maxdep,tabs)
     maxdep=tonumber(maxdep) or 9
@@ -268,10 +282,11 @@ local ulen=console.ulen
 function string.ulen(s)
     if s=="" then return 0,0 end
     if not s then return nil end
+
     local len1,len2
     if s:find('[%z\1-\127\194-\244][\128-\191]*') then
-        len1,len2= ulen(s):match("(%d+):(%d+)")
-        return tonumber(len1),tonumber(len2)
+        len1,len2= ulen(console,s):match("(%d+):(%d+)")
+        return tonumber(len1) or 0,tonumber(len2) or 0
     else
         len1=#s
         return len1,len1

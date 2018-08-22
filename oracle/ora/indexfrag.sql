@@ -11,11 +11,11 @@ ora _find_object "&V1" 1
 
 DECLARE
     v_obj INT;
-    v_owner VARCHAR2(30);
-    v_tab   VARCHAR2(30);
-    v_ind   VARCHAR2(30);
-    v_part  VARCHAR2(30):=UPPER(:V2);
-    v_typ   VARCHAR2(30);
+    v_owner VARCHAR2(128);
+    v_tab   VARCHAR2(128);
+    v_ind   VARCHAR2(128);
+    v_part  VARCHAR2(128):=UPPER(:V2);
+    v_typ   VARCHAR2(128);
     v_sql VARCHAR2(32767):=q'[
         SELECT MAX(DECODE(MOD(r, 7), 1, p)) "ROWS/BLOCK", MAX(DECODE(MOD(r, 7), 1, b)) blocks,'|' "*",
                MAX(DECODE(MOD(r, 7), 2, p)) "ROWS/BLOCK", MAX(DECODE(MOD(r, 7), 2, b)) blocks,'|' "*",

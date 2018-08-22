@@ -4,7 +4,7 @@ BEGIN
     dbms_output.put_line('$HIY$Run following statement with SYSDBA:'||chr(10)||rpad('=',36,'=')||'$NOR$');
     dbms_output.put_line(replace(q'[
         DECLARE
-            target_user VARCHAR2(30) := 'SELECT_CATALOG_ROLE'; --Change target grantee here
+            target_user VARCHAR2(128) := 'SELECT_CATALOG_ROLE'; --Change target grantee here
         BEGIN
             dbms_output.enable(NULL);
             FOR r IN (SELECT * FROM v$fixed_table WHERE NAME LIKE 'X$%' AND TYPE = 'TABLE') LOOP

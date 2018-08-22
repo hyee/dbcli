@@ -4,11 +4,11 @@
         @CHECK_ACCESSS_COL: sys.col_usage$={1},default={0}
     --]]
 ]]*/
-SET FEED OFF
+SET FEED OFF VERIFY ON
 ora _find_object &V1
 VAR Text clob
 VAR cur1 REFCURSOR;
-VAR cur2 REFCURSOR;
+VAR cur2 REFCURSOR "E=equality_predicates_only | C=simple_column_predicates_only | J=index_access_by_join_predicates | F=filter_on_joining_object";
 DECLARE
     c1 sys_refcursor;
     c2 sys_refcursor;
@@ -51,25 +51,52 @@ BEGIN
     $END
     $IF &CHECK_ACCESSS_OBJ=1 $THEN
         OPEN c2 for
-            SELECT /*+leading(o d) use_nl(d) merge(d)*/
-                     TO_CHAR(d.directive_id) dir_id,
-                     owner,object_name,
+            WITH o AS
+             (SELECT /*+no_expand materialize ORDERED_PREDICATES*/
+              DISTINCT directive_id dir_id, owner, object_name
+              FROM   dba_sql_plan_dir_objects o
+              WHERE  object_name = '&object_name'
+              AND    object_type IN ('COLUMN', 'TABLE')),
+            o1 AS
+             (SELECT /*+parallel(4)*/*
+              FROM   o,
+                     lateral((SELECT OWNER || '.' || OBJECT_NAME obj,
+                                    SUBOBJECT_NAME,
+                                    DECODE(EXTRACTVALUE(NOTES, '/obj_note/equality_predicates_only'), 'YES', 'E') ALLEQ,
+                                    DECODE(EXTRACTVALUE(NOTES, '/obj_note/simple_column_predicates_only'), 'YES', 'C') ALLCOLS,
+                                    DECODE(EXTRACTVALUE(NOTES, '/obj_note/index_access_by_join_predicates'), 'YES', 'J') NLJNIX,
+                                    DECODE(EXTRACTVALUE(NOTES, '/obj_note/filter_on_joining_object'), 'YES', 'F') FILTER
+                             FROM   SYS.DBA_SQL_PLAN_DIR_OBJECTS
+                             WHERE  DIRECTIVE_ID = o.dir_id)) o1
+              WHERE  o.owner = '&object_owner'),
+            o2 AS
+             (SELECT dir_id,
+                     OWNER,
+                     OBJECT_NAME,
+                     listagg(op || '(' || obj  || nvl2(cols, '[' || cols || ']', '')|| ')', ' / ') WITHIN GROUP(ORDER BY obj) notes
+              FROM   (SELECT dir_id,
+                             OWNER,
+                             OBJECT_NAME,
+                             obj,
+                             listagg(ALLEQ||ALLCOLS||NLJNIX||FILTER,'') within group(order by 1) op,
+                             listagg(SUBOBJECT_NAME, ',') within GROUP(ORDER BY SUBOBJECT_NAME) COLS
+                      FROM   o1
+                      GROUP  BY dir_id, OWNER, OBJECT_NAME, obj)
+              GROUP  BY dir_id, OWNER, OBJECT_NAME)
+            SELECT /*+leading(o2 d) use_nl(d) merge(d)*/
+                     TO_CHAR(d.directive_id) directive_id,
+                     o2.owner,
+                     o2.object_name,
                      d.ENABLED,
                      d.state,
-                     extract(d.notes, '/spd_note/internal_state/text()') i_state,
                      d.AUTO_DROP,
                      d.reason,
-                     extract(d.notes, '/spd_note/spd_text/text()') AS spd_text,
-                     nvl(LAST_MODIFIED, CREATED) LAST_MDF,
-                     LAST_USED
-            FROM   (SELECT /*+no_expand*/ DISTINCT directive_id,owner,object_name
-                    FROM   dba_sql_plan_dir_objects o
-                    WHERE  o.owner = '&object_owner'
-                    AND    o.object_name = '&object_name'
-                    AND    object_type in('COLUMN','TABLE')) o,
-                   dba_sql_plan_directives d
-            WHERE  d.directive_id = o.directive_id
-            ORDER  BY reason;
+                     o2.notes,
+                     nvl(d.LAST_MODIFIED, d.CREATED) LAST_MDF,
+                     d.LAST_USED
+            FROM   o2, dba_sql_plan_directives d
+            WHERE  d.directive_id = o2.dir_id
+            ORDER  BY d.reason;
     $END
     :cur1 := c1;
     :cur2 := c2;

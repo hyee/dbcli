@@ -91,10 +91,10 @@ DECLARE
         v_expired_bytes      int;
         v_unexpired_blocks   int;
         v_unexpired_bytes    int;
-        v_parentseg          VARCHAR2(61);
+        v_parentseg          VARCHAR2(256);
         v_segname            VARCHAR2(200) := p_segname;
-        v_owner              VARCHAR2(30) := p_owner;
-        v_partition          VARCHAR2(30) := p_partition;
+        v_owner              VARCHAR2(128) := p_owner;
+        v_partition          VARCHAR2(128) := p_partition;
         v_Level              NUMBER(1);
         v_result             l_grp;
         v_group              l_CursorSet;
@@ -134,7 +134,7 @@ DECLARE
         END IF;
         --define root object
         st('@target', parseName(v_owner, v_segname, v_partition), '@all');
-        st('@type', 'UNKOWN', '@all');
+        st('@type', 'UNKNOWN', '@all');
         st('@level', 0, '@all');
         --read segment list
         OPEN l_CursorSegs(p_owner, p_segname, p_partition);
@@ -407,7 +407,7 @@ DECLARE
         v_list  l_grp := analyze_list(p_list, p_ignoreCase);
         v_items l_grp;
         v_segs  l_CursorSet;
-        v_task  VARCHAR2(30) := 'PKG_SPACE_SEGMENT_ADVISE';
+        v_task  VARCHAR2(128) := 'PKG_SPACE_SEGMENT_ADVISE';
         v_node  VARCHAR2(200);
         v_top   VARCHAR2(200);
         v_xml   xmltype := xmltype('<ROOT/>');

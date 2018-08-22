@@ -308,7 +308,14 @@ function env.get_command_by_source(list)
         while type(v)=="string" do v=_CMDS.___ABBR___[v] end
         for _,name in ipairs(list) do
             name=name=="default" and env.callee():match("([^\\/]+)#") or name
-            if v.FILE:lower():match('[\\/]'..name:lower()..'#') then cmdlist[k]=1 end
+            if v.FILE:lower():match('[\\/]'..name:lower()..'#') then
+                local sub=1
+                if name=='alias' then
+                    sub = env.alias.cmdlist[k]
+                    sub = sub and sub.desc or 1
+                end
+                cmdlist[k]=sub 
+            end
         end
     end
     return cmdlist
@@ -350,9 +357,11 @@ function env.format_error(src,errmsg,...)
         errmsg=errmsg:strip_ansi()
     end
     env.log_debug("ERROR",errmsg)
-    errmsg,count=errmsg:gsub('^.-(%u%u%u%-%d%d%d%d%d)','%1') 
-    if count==0 then
-        errmsg=errmsg:gsub('^.*%s([^%: ]+Exception%:%s*)','%1'):gsub(".*[IS][OQL]+Exception:%s*","")
+    if errmsg:find('Exception%:') or errmsg:find(':%d+: (%u%u%u%-%d%d%d%d%d)') or errmsg:find('Error Msg =') then
+        errmsg,count=errmsg:gsub('^.-(%u%u%u%-%d%d%d%d%d)','%1') 
+        if count==0 then
+            errmsg=errmsg:gsub('^.*%s([^%: ]+Exception%:%s*)','%1'):gsub(".*[IS][OQL]+Exception:%s*","")
+        end
     end
     errmsg=errmsg:gsub("\n%s+at%s+.*$","")
     errmsg=errmsg:gsub("^.*000%-00000%:%s*",""):gsub("%s+$","")
@@ -798,13 +807,20 @@ local function _eval_line(line,exec,is_internal,not_skip)
     end
 end
 
-local _cmd,_args,_errs
+local _cmd,_args,_errs,_line_stacks=nil,nil,nil,{}
 function env.parse_line(line)
-    multi_cmd,curr_stmt=nil,nil
-    env.CURRENT_PROMPT=env.PRI_PROMPT
-    _cmd,_args,_errs=eval_line(line,false)
+    if(#_line_stacks==0) then
+        multi_cmd,curr_stmt=nil,nil
+        env.CURRENT_PROMPT=env.PRI_PROMPT 
+    end
+    _line_stacks[#_line_stacks+1]=line
+    _cmd,_args,_errs=_eval_line(line,false)
+    local is_not_end=env.CURRENT_PROMPT==env.MTL_PROMPT
+    if not is_not_end then
+        _line_stacks={}
+    end
     local is_block=env._CMDS[_cmd] and env._CMDS[_cmd].ISBLOCKNEWLINE or false
-    return env.CURRENT_PROMPT==env.MTL_PROMPT,env.CURRENT_PROMPT,is_block
+    return is_not_end,env.CURRENT_PROMPT,is_block
 end
 
 function env.execute_line()
@@ -934,6 +950,12 @@ local function set_cache_path(name,path)
     return path
 end
 
+function env.run_luajit()
+    terminal:pause()
+    pcall(os.execute,env.join_path(env.LIB_PATH,'luajit'))
+    terminal:resume()
+end
+
 function env.onload(...)
     env.__ARGS__={...}
     env.IS_ENV_LOADED=false
@@ -959,7 +981,7 @@ function env.onload(...)
     os.setlocale('',"all")
     env.set_command(nil,"EXIT","#Exit environment, including variables, modules, etc",env.exit,false,1)
     env.set_command(nil,"RELOAD","Reload environment, including variables, modules, etc",env.reload,false,1)
-    env.set_command(nil,"LUAJIT","#Switch to luajit interpreter, press Ctrl+Z to exit.",function() os.execute(env.join_path(env.LIB_PATH,'luajit')) end,false,1)
+    env.set_command(nil,"LUAJIT","#Switch to luajit interpreter, press Ctrl+Z to exit.",env.run_luajit,false,1)
     env.set_command(nil,"-P","#Test parameters. Usage: -p <command> [<args>]",env.testcmd,'__SMART_PARSE__',2)
 
     env.init.onload(env)
@@ -973,6 +995,7 @@ function env.onload(...)
         env.set.init("Debug",'off',set_debug,"core","Indicates the option to print debug info, 'all' for always, 'off' for disable, others for specific modules.")
         env.set.init("OnErrExit",'on',nil,"core","Indicates whether to continue the remaining statements if error encountered.","on,off")
         env.set.init("TEMPPATH",'cache',set_cache_path,"core","Define the dir to store the temp files.","*")
+        env.set.init("Status","on",env.set_title,"core","Display the status bar","on,off")
         print_debug=print
     end
     if  env.ansi and env.ansi.define_color then
@@ -1109,10 +1132,20 @@ end
 
 local title_list,CURRENT_TITLE={}
 
-function env.set_title(title)
+function env.set_title(title,value)
+    local enabled
+    if title and title:upper()=="STATUS" and value then
+        enabled=value:lower()
+        if enabled=='off' then
+            console:setStatus("","")
+            return enabled
+        end
+        title=""
+    end
+
     local callee=env.callee():gsub("#%d+$","")
     title_list[callee]=title
-    local titles=""
+    local titles,status,sep="",{},"    "
     if not env.module_list then return end
     for _,k in ipairs(env.module_list) do
         if (title_list[k] or "")~="" then
@@ -1120,7 +1153,17 @@ function env.set_title(title)
             titles=titles..title_list[k]
         end
     end
-    if not titles or titles=="" then titles="DBCLI - Disconnected" end
+
+    if not titles or titles=="" then 
+        titles="DBCLI - Disconnected"
+    end
+
+    if (CURRENT_TITLE~=titles and env.set.get("STATUS")=="on") or enabled then
+        status=titles:split('   +')
+        local color=env.ansi.get_color
+        console:setStatus(' '..table.concat(status,' '..color("HIB")..'|'..color("NOR")..' '),color("HIB")) 
+    end
+
     if CURRENT_TITLE~=titles then
         CURRENT_TITLE=titles
         env.uv.set_process_title(titles)
@@ -1129,6 +1172,8 @@ function env.set_title(title)
             printer.write("\27]2;"..titles.."\7\27[1K\27[1G")
         end
     end
+    
+    return enabled
 end
 
 function env.reset_title()

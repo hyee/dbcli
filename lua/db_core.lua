@@ -31,7 +31,7 @@ function db_Types:get(position,typeName,res,conn)
     if value == nil or res:wasNull() then return nil end
     if not self[typeName].handler then return value end
     return self[typeName].handler(value,'get',conn,res)
- end
+end
 
 local number_types={
         INT      = 1,
@@ -339,6 +339,27 @@ db_core.feed_list={
     USE     ="Database changed"
 }
 
+db_core.readonly_list={
+    SELECT=true,
+    WITH=true,
+    FETCH=true,
+    DECLARE=true,
+    BEGIN=true,
+    ALTER={SESSION=true},
+    EXECUTE=true,
+    CALL=true,
+    EXEC=true,
+    DO=true,
+    START=true,
+    HELP=true,
+    USE=true,
+    DESCRIBE=true,
+    DESC=true,
+    EXPLAIN=true,
+    SHOW=true,
+    SET=true
+}
+
 local excluded_keywords={
     OR=1,
     REPLACE=1,
@@ -414,6 +435,25 @@ end
 ]]
 
 function db_core:call_sql_method(event_name,sql,method,...)
+    if cfg.get("READONLY")=="on" then
+        local root_cmd,sub_cmd=self.get_command_type(sql)
+        local enabled=self.readonly_list[root_cmd]
+        if not enabled then
+            enabled=type(self.readonly_list[cfg.get("platform")])=="table" and self.readonly_list[cfg.get("platform")][root_cmd]
+        end
+
+        if sub_cmd then
+            if type(enabled)=="table" then enabled=enabled[sub_cmd] end
+            sub_cmd=" "..sub_cmd
+        else
+            sub_cmd=""
+        end
+
+        if enabled ~=true then
+            env.raise('Command "'..root_cmd..sub_cmd..'" is disallowed in read-only mode!')
+        end
+    end
+
     local res,obj=pcall(method,...)
     if res==false then
         local info,internal={db=self,sql=sql,error=tostring(obj):gsub('%s+$','')}
@@ -436,20 +476,20 @@ function db_core:call_sql_method(event_name,sql,method,...)
     return obj
 end
 
-function db_core:check_params(sql,prep,p1,params)
+function db_core:check_params(sql,prep,bind_info,params)
     local meta=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,prep.getParameterMetaData,prep)
     local param_count=meta:getParameterCount()
-    if param_count~=#p1 then
+    if param_count~=#bind_info then
         local errmsg="Parameters are unexpected, below are the detail:\nSQL:"..string.rep('-',80).."\n"..sql
         local hdl=env.grid.new()
         hdl:add({"Param Sequence","Param Name","Param Type","Param Value","Description"})
-        for i=1,math.max(param_count,#p1) do
-            local v=p1[i] or {}
+        for i=1,math.max(param_count,#bind_info) do
+            local v=bind_info[i] or {}
             local res,typ=pcall(meta.getParameterTypeName,meta,i)
             typ=res and typ or v[4]
             local param_value=v[3] and params[v[3]]
             hdl:add{i,v[3],typ,type(param_value)=="table" and "OUT" or param_value,
-             (#p1<i and "Miss Binding") or (param_count<i and "Extra Binding") or "Matched"}
+             (#bind_info<i and "Miss Binding") or (param_count<i and "Extra Binding") or "Matched"}
 
         end
         errmsg=errmsg..'\n'..hdl:tostring()
@@ -461,7 +501,18 @@ function db_core:check_params(sql,prep,p1,params)
 end
 
 function db_core:parse(sql,params,prefix,prep)
-    local p1,counter={},0
+    local bind_info,binds,counter={},{},0
+
+    local temp={}
+    for k,v in pairs(params) do
+        temp[type(k)=="string" and k:upper() or k]={k,v}
+    end
+
+    for k,v in pairs(temp) do
+        params[v[1]]=nil
+        params[k]=v[2]
+    end
+
     prefix=(prefix or ':')
     sql=sql:gsub('%f[%w_%$'..prefix..']'..prefix..'([%w_%$]+)',function(s)
             local k,s = s:upper(),prefix..s
@@ -482,6 +533,7 @@ function db_core:parse(sql,params,prefix,prep)
             elseif v:sub(1,1)=="#" then
                 typ=v:upper():sub(2)
                 params[k]={'#',{counter},typ}
+                binds[k]={'#',{counter},typ}
                 if not db_Types[typ] then
                     env.raise("Cannot find '"..typ.."' in java.sql.Types!")
                 end
@@ -491,20 +543,28 @@ function db_core:parse(sql,params,prefix,prep)
                 args={db_Types:set(typ,v)}
             end
             args[#args+1],args[#args+2]=k,typ
-            p1[#p1+1]=args
+            bind_info[#bind_info+1]=args
             return '?'
         end)
 
     if not prep then prep=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007) end
 
-    self:check_params(sql,prep,p1,params)
+    self:check_params(sql,prep,bind_info,params)
 
-    if #p1==0 then return prep,sql,params end
+    if #bind_info==0 then return prep,sql,params end
+    local binds={}
     local method,typeid,value,varname,typename=1,2,2,3,4
-    for k,v in ipairs(p1) do
+    for k,v in ipairs(bind_info) do
         prep[v[method]](prep,k,v[value])
+        local inout=type(params[bind_info[varname]])=='table' and params[bind_info[varname]]=='#' and '#' or '$'
+        if binds[varname] then
+            table.insert(binds[varname][2],k)
+        else
+            binds[varname]={inout,inout=='$' and k or {k},v[typename],v[method],v[value]}
+        end
     end
-    return prep,sql,params
+    env.log_debug("parse","Standard-Params:",table.dump(binds))
+    return prep,sql,binds
 end
 
 local current_stmt
@@ -517,8 +577,58 @@ function db_core:abort_statement()
     end
 end
 
-function db_core:exec(sql,args)
-    if not self:is_internal_call(sql) then
+function db_core:exec_cache(sql,args,description)
+    if not self.__preparedCaches then
+        self.__preparedCaches={}
+    end
+
+    local cache=self.__preparedCaches[sql]
+    local prep,org,params,_sql
+    if not cache then
+        org=table.clone(args)
+        prep,_sql,params=self:parse(sql,org)
+        cache={prep,org,params}
+        self.__preparedCaches[sql]=cache
+    else
+        prep,org,params=table.unpack(cache)
+        for k,n in pairs(args) do
+            k=type(k)=="string" and k:upper() or k
+            local o,typ=org[k]
+            if params[k] and o ~= n and tostring(n):sub(1,1)~='#' and tostring(o):sub(1,1)~='#' then
+                local idx=params[k][6] or params[k][2]
+                local method=params[k][4]
+                org[k]=n
+                if method:find('setNull',1,true) and n~=nil and n~='' then
+                    if type(v)=='boolean' then
+                        typ='setBoolean'
+                    elseif type(v)=="number" then
+                        typ='setDouble'
+                    elseif type(v)=='string' and #v>32000 then
+                        typ='setStringForClob'
+                    else
+                        typ='setString'
+                    end
+                    method=method:gsub('setNull',typ)
+                elseif not method:find('setNull',1,true) and (n==nil or n=='') then
+                    typ,n=self.db_types:set("VARCHAR",nil)
+                    method=typ..(method:match('AtName') or '')
+                end
+                prep[method](prep,idx,n)
+            end
+        end
+    end
+    args._description=description and ('('..description..')') or ''
+    return self:exec(prep,args,table.clone(params)),cache
+end
+
+function db_core:exec(sql,args,prep_params)
+    local is_not_prep=type(sql)~="userdata"
+
+    if is_not_prep and sql:find('/*DBCLI_EXEC_CACHE*/',1,true) then
+        return self:exec_cache(sql,args,prep_params)
+    end
+
+    if is_not_prep and not self:is_internal_call(sql) then
         db_core.__start_clock=os.timer()
     end
     if #env.RUNNING_THREADS<=2 then
@@ -526,11 +636,9 @@ function db_core:exec(sql,args)
         java.system:gc()
         java.system:runFinalization();
     end
-    local params={}
+    local params,prep={}
     args=type(args)=="table" and args or {args}
-    local prep;
-    env.checkerr(type(args) == "table", "Expected parameter as a table for SQL: \n"..sql)
-    for k,v in pairs(args or {}) do
+    for k,v in pairs(args) do
         if type(k)=="string" then
             params[k:upper()]=v
         else
@@ -547,24 +655,27 @@ function db_core:exec(sql,args)
         self.autocommit=autocommit
     end
 
-    sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
-
-    if type(sql)~="string" then
-        return sql
+    if is_not_prep then
+        sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
+        if type(sql)~="string" then
+            return sql
+        end
+        prep,sql,params=self:parse(sql,params)
+        prep:setEscapeProcessing(false)
+        self.__stmts[#self.__stmts+1]=prep
+        prep:setFetchSize(1)
+        prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
+        self.current_stmt=prep
+        env.log_debug("db","SQL:",sql)
+        env.log_debug("db","Parameters:",params)
+    else
+        local desc ="PreparedStatement"..args._description
+        env.log_debug("db","SQL Cache:",desc)
+        prep,sql,params=sql,desc,prep_params or {}
     end
-
-    prep,sql,params=self:parse(sql,params)
-    prep:setEscapeProcessing(false)
-    self.__stmts[#self.__stmts+1]=prep
-    prep:setFetchSize(1)
-    prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
-    self.current_stmt=prep
-    env.log_debug("db","SQL:",sql)
-    env.log_debug("db","Parameters:",params)
 
     local is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
     self.current_stmt=nil
-    --is_query=prep:execute()
     local is_output,index,typename=1,2,3
     for k,v in pairs(params) do
         if type(v) == "table" and v[is_output] == "#"  then
@@ -602,7 +713,7 @@ function db_core:exec(sql,args)
     end
 
     self:clearStatements()
-    if event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
+    if is_not_prep and event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
     
     for k,v in pairs(outputs) do
         if args[k]==db_core.NOT_ASSIGNED then args[k]=nil end
@@ -614,6 +725,7 @@ end
 function db_core:is_connect()
     if type(self.conn)~='userdata' or not self.conn.isClosed or self.conn:isClosed() then
         self.__stmts={}
+        self.__preparedCaches={}
         return false
     end
     return true
@@ -623,10 +735,10 @@ function db_core:assert_connect()
     env.checkerr(self:is_connect(),2,"%s database is not connected!",env.set.get("database"):initcap())
 end
 
-function db_core:internal_call(sql,args)
+function db_core:internal_call(sql,args,prep_params)
     self.internal_exec=true
     --local exec=self.super.exec or self.exec
-    local succ,result=pcall(self.exec,self,sql,args)
+    local succ,result=pcall(self.exec,self,sql,args,prep_params)
     self.internal_exec=false
     if not succ then error(result) end
     return result
@@ -634,6 +746,7 @@ end
 
 function db_core:is_internal_call(sql)
     if self.internal_exec then return true end
+    if type(sql)=="userdata" or sql=='PreparedStatement' then return true end
     return sql and sql:find("INTERNAL_DBCLI_CMD",1,true) and true or false
 end
 
@@ -699,6 +812,7 @@ function db_core:connect(attrs,data_source)
         event("AFTER_DB_CONNECT",self,attrs.jdbc_alias or url,attrs)
     end
     self.__stmts = {}
+    self.__preparedCaches={}
     self.properties={}
     for k in java.methods(self.conn) do
         if k=='getProperties' then
@@ -709,6 +823,8 @@ function db_core:connect(attrs,data_source)
             env.log_debug("db","Connection properties:\n",self.properties)
         end
     end
+
+    pcall(self.conn.setReadOnly,self.conn,cfg.get("READONLY")=="on")
     self.last_login_account=attrs
     return self.conn,attrs
 end
@@ -729,8 +845,8 @@ function db_core:clearStatements(is_force)
 end
 
 --
-function db_core:query(sql,args)
-    local result = self:exec(sql,args)
+function db_core:query(sql,args,prep_params)
+    local result = self:exec(sql,args,prep_params)
     if result and type(result)~="number" then
         if type(result)=="table" then
             for _,rs in ipairs(result) do
@@ -851,7 +967,6 @@ function db_core:rollback()
     end
 end
 
-
 local exp=java.require("com.opencsv.ResultSetHelperService")
 local csv=java.require("com.opencsv.CSVWriter")
 local cparse=java.require("com.opencsv.CSVParser")
@@ -860,6 +975,19 @@ local sqlw=java.require("com.opencsv.SQLWriter")
 local function set_param(name,value)
     if name=="FEED" or name=="AUTOCOMMIT" then
         return value:lower()
+    elseif name=="READONLY" then
+        value=value:lower()
+        if env.getdb():is_connect() then
+            env.getdb().conn:setReadOnly(value=="on")
+        end
+
+        if value=='on' then
+            env.set_title("ReadOnly: "..value)
+        else
+            env.set_title("")
+        end
+
+        return value
     elseif name=="ASYNCEXP" then
         return value and value:lower()=="true" and true or false
     elseif name=="CSVSEP" then
@@ -1100,6 +1228,7 @@ function db_core:__onload()
             env.warn("Please download and copy it from %s which should be compatible with JRE %s",self.JDBC_ADDRESS,java.system:getProperty('java.vm.specification.version'))
         end
     end
+
     local txt="\n   Refer to 'set expPrefetch' to define the fetch size of the statement which impacts the export performance."
     txt=txt..'\n   -e: format is "-e<column1>[,...]"'
     txt=txt..'\n   -r: format is "-r<column1=<expression>>[,...]"'
@@ -1124,6 +1253,7 @@ function db_core:__onload()
     cfg.init("SQLERRLINE",'off',nil,"db.core","Also print the line number when error SQL is printed",'on,off')
     cfg.init("NULL","",nil,"db.core","Define the display value for NULL value")
     cfg.init("CSVSEP",",",set_param,"db.core","Define the default separator between CSV fields.")
+    cfg.init("READONLY",'off',set_param,"db.core","When set to on, makes the database connection read-only.",'on,off')
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
     env.event.snoop('TRIGGER_LOGIN',self.login,self)
     env.set_command(self,{"reconnect","reconn"}, "Re-connect to database with the last login account.",self.reconnnect,false,2)

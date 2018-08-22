@@ -143,9 +143,9 @@ with q as (select /*+materialize*/*
                and trim(OTHER_XML) is not null),
      mb as (select /*+inline*/m.sid,m.session_serial#,sql_id,b.name,b.data_type,b.value
             from V$SQL_MONITOR m, xmltable('/binds/bind' passing xmltype(m.BINDS_XML)
-                                           columns name varchar2(30) path '/bind/@name', 
-                                                   data_type varchar2(30) path '/bind/@dtystr', 
-                                                   value varchar2(4000) path '/bind') b
+                                           columns name varchar2(128) path '/bind/@name', 
+                                           data_type varchar2(128) path '/bind/@dtystr', 
+                                           alue varchar2(4000) path '/bind') b
            where m.sql_id = :sqlid
              and exists (select 1 from V$SQL_MONITOR m1 
                           where m1.sid=m.sid and m1.session_serial#=m.session_serial# and m1.sql_id=m.sql_id

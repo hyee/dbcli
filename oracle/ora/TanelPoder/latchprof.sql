@@ -1,7 +1,8 @@
-/*[[get latch info: latchprof {<sid|sql_id> [event] [n of "10^n"]} [-f]
+/*[[get latch info: latchprof {<sid|sql_id> [event] [seconds} [-addr|-block]
      --[[
-        &fields: f={inst_id,sid,name,laddr,sql_id,obj}
-        &V3    : default={5.21}
+        &fields: default={inst_id,sid,name,sql_id,obj} f={inst_id,sid,name,laddr,sql_id,obj} block={inst_id,sid,name,sql_id,obj,block#}
+        &V3    : default={5}
+        @GV    : 11.1={TABLE(GV$(CURSOR(} default={(((}
      --]]
 ]]*/
 --------------------------------------------------------------------------------
@@ -53,38 +54,47 @@
 --              map the latch address back to latch child# if needed
 --
 --------------------------------------------------------------------------------
+PRO Sampling, it could take around &V3 seconds ...
 
 WITH
     t1 AS (SELECT hsecs FROM v$timer),
     sam AS (
-        SELECT /*+ ORDERED USE_NL(l) USE_NL(s) USE_NL(l.gv$latchholder.x$ksuprlat) NO_TRANSFORM_DISTINCT_AGG  no_expand*/
+      SELECT * FROM &GV
+        SELECT /*+ opt_param('_optimizer_mjc_enabled','false') ORDERED ORDERED_PREDICATES USE_NL(s2 s) USE_NL(l l.gv$latchholder.x$ksuprlat) NO_TRANSFORM_DISTINCT_AGG  no_expand*/
             &fields
           , COUNT(DISTINCT gets)           dist_samples
           , COUNT(*)                       total_samples
-          , COUNT(*)/floor(power(10,&V3))  sample_rate
+          , COUNT(*)/max(max(r)) over()    sample_rate
         FROM
-            (SELECT /*+ NO_MERGE */ 1 FROM DUAL CONNECT BY LEVEL <= power(10,&V3)) s,
-            gv$latchholder l,
-            (SELECT inst_id inst
+            (SELECT hsecs+&v3*100 target,rownum r 
+             FROM v$timer
+             WHERE  userenv('instance')=nvl(:instance,userenv('instance'))
+             CONNECT BY LEVEL <= &v3*5e4) s1,
+            (select hsecs from v$timer) s2,
+            v$latchholder l,
+            (SELECT /*+MERGE MERGE(s)*/ userenv('instance') inst_id
                   , sid  indx
                   , ROW_WAIT_OBJ# obj
-                  , nvl2(ROW_WAIT_FILE#,ROW_WAIT_FILE#||','||ROW_WAIT_BLOCK#,'') block
+                  , nvl2(nullif(ROW_WAIT_FILE#,0),ROW_WAIT_FILE#||','||ROW_WAIT_BLOCK#,'') block#
                   , sql_id
-             FROM gv$session) s
-        WHERE ('&V1' is null or '&V1' in(sql_id,''||sid))
+             FROM v$session s
+             WHERE  ('&V1' is null or '&V1' in(sql_id,''||sid))) s
+        WHERE s2.hsecs<s1.target
         AND  (LOWER(l.name) LIKE LOWER('%&V2%') OR LOWER(RAWTOHEX(l.laddr)) LIKE LOWER('%&V2%'))
-        AND l.sid = s.indx and l.inst_id=s.inst
+        AND  l.sid = s.indx
+        AND  inst_id=nvl(:instance,inst_id)
         GROUP BY &fields
-        ORDER BY total_samples DESC
-    ),
+    )))
+    ORDER BY total_samples DESC),
     t2 AS (SELECT hsecs FROM v$timer)
-SELECT /*+ ORDERED */
-    &fields
-  , s.total_samples "Held"
-  , s.dist_samples "Gets"
-  , round(s.total_samples/nullif(sum(s.total_samples) over(),0) * 100,2)  "Held %"
-  , round((t2.hsecs - t1.hsecs) * 10 * sample_rate,3) "Held ms"
-  , round((t2.hsecs - t1.hsecs) * 10 * sample_rate / dist_samples,3) "Avg hold ms"
-  FROM t1,sam s,t2
-  WHERE ROWNUM <= 50;
+SELECT /*+ ORDERED monitor*/
+       &fields,
+       s.total_samples "Held",
+       s.dist_samples "Gets",
+       round(s.total_samples/nullif(sum(s.total_samples) over(),0) * 100,2)  "Held %",
+       round((t2.hsecs - t1.hsecs) * 10 * sample_rate,3) "Held ms",
+       round((t2.hsecs - t1.hsecs) * 10 * sample_rate / dist_samples,3) "Avg hold ms",
+       round(sample_rate*100,3) "Seen %"
+FROM t1,sam s,t2
+WHERE ROWNUM <= 50;
 
