@@ -8,61 +8,56 @@
  */
 package org.jline.terminal.impl.jansi.win;
 
-import java.io.*;
-import java.nio.charset.Charset;
-import java.util.function.IntConsumer;
-
 import org.fusesource.jansi.internal.Kernel32;
-import org.fusesource.jansi.internal.Kernel32.CONSOLE_SCREEN_BUFFER_INFO;
-import org.fusesource.jansi.internal.Kernel32.INPUT_RECORD;
-import org.fusesource.jansi.internal.Kernel32.KEY_EVENT_RECORD;
+import org.fusesource.jansi.internal.Kernel32.*;
 import org.fusesource.jansi.internal.WindowsSupport;
 import org.jline.terminal.Cursor;
 import org.jline.terminal.Size;
 import org.jline.terminal.impl.AbstractWindowsTerminal;
 import org.jline.utils.InfoCmp;
-
-import static org.fusesource.jansi.internal.Kernel32.GetConsoleScreenBufferInfo;
-import static org.fusesource.jansi.internal.Kernel32.GetStdHandle;
-import static org.fusesource.jansi.internal.Kernel32.STD_OUTPUT_HANDLE;
-
 import org.jline.utils.OSUtils;
+
+import java.io.BufferedWriter;
+import java.io.IOError;
+import java.io.IOException;
+import java.io.Writer;
+import java.nio.charset.Charset;
+import java.util.function.IntConsumer;
+
+import static org.fusesource.jansi.internal.Kernel32.*;
 
 public class JansiWinSysTerminal extends AbstractWindowsTerminal {
     public static JansiWinSysTerminal createTerminal(String name, String type, boolean ansiPassThrough, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler, boolean paused) throws IOException {
         Writer writer;
-        if("ansicon".equals(name)) {
-            type = TYPE_WINDOWS_256_COLOR;
-            writer=new ConEmuWriter();
+        if (ansiPassThrough) {
+            if (type == null) {
+                type = OSUtils.IS_CONEMU ? TYPE_WINDOWS_256_COLOR : TYPE_WINDOWS;
+            }
+            writer = new JansiWinConsoleWriter();
         } else {
-            if (ansiPassThrough) {
-                if (type == null) {
-                    type = OSUtils.IS_CONEMU ? TYPE_WINDOWS_256_COLOR : TYPE_WINDOWS;
-                }
-                writer = new JansiWinConsoleWriter();
-            } else {
-                long console = GetStdHandle(STD_OUTPUT_HANDLE);
-                int[] mode = new int[1];
-                if (Kernel32.GetConsoleMode(console, mode) == 0) {
-                    throw new IOException("Failed to get console mode: " + WindowsSupport.getLastErrorMessage());
-                }
-                if (Kernel32.SetConsoleMode(console, mode[0] | AbstractWindowsTerminal.ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0) {
+            long console = GetStdHandle(STD_OUTPUT_HANDLE);
+            int[] mode = new int[1];
+            if (Kernel32.GetConsoleMode(console, mode) == 0) {
+                throw new IOException("Failed to get console mode: " + WindowsSupport.getLastErrorMessage());
+            }
+                /*if (Kernel32.SetConsoleMode(console, mode[0] | AbstractWindowsTerminal.ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0) {
                     if (type == null) {
                         type = TYPE_WINDOWS_VTP;
                     }
                     writer = new JansiWinConsoleWriter();
-                } else if (OSUtils.IS_CONEMU) {
-                    if (type == null) {
-                        type = TYPE_WINDOWS_256_COLOR;
-                    }
-                    writer = new JansiWinConsoleWriter();
-                } else {
-                    if (type == null) {
-                        type = TYPE_WINDOWS;
-                    }
-                    writer = new WindowsAnsiWriter(new BufferedWriter(new JansiWinConsoleWriter()));
+                } else */
+            if (OSUtils.IS_CONEMU) {
+                if (type == null) {
+                    type = TYPE_WINDOWS_256_COLOR;
                 }
+                writer = new JansiWinConsoleWriter();
+            } else {
+                if (type == null) {
+                    type = TYPE_WINDOWS;
+                }
+                writer = new WindowsAnsiWriter(new BufferedWriter(new JansiWinConsoleWriter()));
             }
+
         }
         JansiWinSysTerminal terminal = new JansiWinSysTerminal(writer, name, type, encoding, codepage, nativeSignals, signalHandler);
         // Start input pump thread
@@ -128,7 +123,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         for (INPUT_RECORD event : events) {
             if (event.eventType == INPUT_RECORD.KEY_EVENT) {
                 KEY_EVENT_RECORD keyEvent = event.keyEvent;
-                processKeyEvent(keyEvent.keyDown , keyEvent.keyCode, keyEvent.uchar, keyEvent.controlKeyState);
+                processKeyEvent(keyEvent.keyDown, keyEvent.keyCode, keyEvent.uchar, keyEvent.controlKeyState);
                 flush = true;
             } else if (event.eventType == INPUT_RECORD.WINDOW_BUFFER_SIZE_EVENT) {
                 raise(Signal.WINCH);
@@ -143,7 +138,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         return flush;
     }
 
-    private char[] focus = new char[] { '\033', '[', ' ' };
+    private char[] focus = new char[]{'\033', '[', ' '};
 
     private void processFocusEvent(boolean hasFocus) throws IOException {
         if (focusTracking) {
@@ -152,7 +147,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         }
     }
 
-    private char[] mouse = new char[] { '\033', '[', 'M', ' ', ' ', ' ' };
+    private char[] mouse = new char[]{'\033', '[', 'M', ' ', ' ', ' '};
 
     private void processMouseEvent(Kernel32.MOUSE_EVENT_RECORD mouseEvent) throws IOException {
         int dwEventFlags = mouseEvent.eventFlags;
@@ -163,7 +158,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
             return;
         }
         int cb = 0;
-        dwEventFlags &= ~ Kernel32.MOUSE_EVENT_RECORD.DOUBLE_CLICK; // Treat double-clicks as normal
+        dwEventFlags &= ~Kernel32.MOUSE_EVENT_RECORD.DOUBLE_CLICK; // Treat double-clicks as normal
         if (dwEventFlags == Kernel32.MOUSE_EVENT_RECORD.MOUSE_WHEELED) {
             cb |= 64;
             if ((dwButtonState >> 16) < 0) {

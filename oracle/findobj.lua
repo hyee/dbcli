@@ -148,7 +148,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
     local obj=obj_name:upper()
     if not loaded then
     	local clock=os.clock()
-        env.printer.write("    Loading object dictionary...")
+        --env.printer.write("    Loading object dictionary...")
         local args={"#CLOB"}
         db:dba_query(db.internal_call,[[
 	        DECLARE
@@ -194,7 +194,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
             item.alias_list={item.target,n}
             cache_obj[item.target],cache_obj[n]=item,item
         end
-        printer.write("done in "..string.format("%.3f",os.clock()-clock).." secs.\n")
+        --printer.write("done in "..string.format("%.3f",os.clock()-clock).." secs.\n")
     end
 
     local args
@@ -202,8 +202,8 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
     	args=table.clone(cache_obj[obj])
     else
     	args=table.clone(default_args)
-	    args.target,args.ignore=obj_name,bypass_error
-	    db:exec_cache(stmt,args,'GetDBMSOutput')
+	    args.target,args.ignore=obj_name,bypass_error or ""
+	    db:exec_cache(stmt,args,'FindObject')
 	    args.owner=args.object_owner
 	end
 
@@ -270,6 +270,12 @@ end
 
 function findobj.onload()
 	env.set_command(db,"FINDOBJ",nil,db.check_obj,false,4)
+	env.event.snoop("AFTER_ORACLE_CONNECT",findobj.onreset)
 end
+
+function findobj.onreset()
+    cache_obj,loaded={}
+end
+
 
 return findobj

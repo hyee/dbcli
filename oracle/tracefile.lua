@@ -180,8 +180,8 @@ function trace.get_trace(filename,mb,from_mb)
         :3   := text;
     END;]]
     local target_view
-    target_view=db:check_obj("GV$DIAG_TRACE_FILE")
-    if not target_view then target_view=db:check_obj("V$DIAG_TRACE_FILE") end
+    target_view=db:check_obj("GV$DIAG_TRACE_FILE",1)
+    if not target_view then target_view=db:check_obj("V$DIAG_TRACE_FILE",1) end
     if not filename then
         if target_view then 
             target_view=target_view.object_name
@@ -239,7 +239,7 @@ function trace.get_trace(filename,mb,from_mb)
 
     local alert_view
     if filename:find('alert.*.log') then
-        alert_view=db:check_obj("V$DIAG_ALERT_EXT")
+        alert_view=db:check_obj("V$DIAG_ALERT_EXT",1)
     end
     
     local args={filename,"#VARCHAR","#CLOB","#VARCHAR",target_view and target_view.object_name or '',alert_view and alert_view.object_name or '',mb=mb or 2,from_mb=from_mb or '',res='#VARCHAR'}

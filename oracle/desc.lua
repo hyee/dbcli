@@ -593,7 +593,6 @@ function desc.desc(name,option)
     set.set("BYPASSEMPTYRS","on")
     local rs,success,err
     local obj=db:check_obj(name)
-    env.checkerr(obj,'Cannot find target object!')
     if obj.object_type=='SYNONYM' then
         local new_obj=db:dba_query(db.get_value,[[WITH r AS
          (SELECT /*+materialize cardinality(p 1)*/REFERENCED_OBJECT_ID OBJ, rownum lv

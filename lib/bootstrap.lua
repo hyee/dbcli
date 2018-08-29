@@ -89,7 +89,7 @@ uv.os_setenv("PATH",table.concat(path,psep))
 local charset=os.getenv("DBCLI_ENCODING") or "UTF-8"
 local options ={'-noverify' ,
 			    '-Xmx384M',
-			    '-Xss10M',
+			    --'-Xrs',
 			    '-XX:+UseStringDeduplication','-XX:+UseParallelGC','-XX:+UseCompressedOops',
 			    '-Dfile.encoding='..charset,
 			    '-Duser.language=en','-Duser.region=US','-Duser.country=US',

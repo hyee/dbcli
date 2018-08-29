@@ -57,12 +57,4 @@ function ora:validate_accessable(name,options,values)
     return default
 end
 
-function ora.onreset()
-    cache_obj,loaded={}
-end
-
-function ora.onload()
-    env.event.snoop("AFTER_ORACLE_CONNECT",ora.onreset)
-end
-
 return ora.new()

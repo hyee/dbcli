@@ -41,7 +41,6 @@ public class Loader {
     KeyMap keyMap;
     KeyListner q;
     Future sleeper;
-    Pattern pbase = Pattern.compile("(\\S{64,64}[\n\r])%1+");
     private volatile CallableStatement stmt = null;
     private Sleeper runner = new Sleeper();
     private volatile ResultSet rs;
@@ -389,7 +388,7 @@ public class Loader {
         }
     }
 
-    public synchronized boolean setStatement(CallableStatement p) throws Exception {
+    public synchronized boolean setStatement(final CallableStatement p) throws Exception {
         try (Closeable clo = console::setEvents) {
             this.stmt = p;
             console.setEvents(p == null ? null : q, new char[]{'q', 'Q'});
@@ -464,6 +463,7 @@ public class Loader {
                 }
                 if (console.isRunning() && stmt != null && !stmt.isClosed()) {
                     stmt.cancel();
+                    stmt=null;
                 }
                 if (rs != null && !rs.isClosed()) rs.close();
             } catch (Exception err) {

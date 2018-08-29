@@ -265,11 +265,11 @@ end
 
 function var.capture_before_cmd(cmd,args)
     if #env.RUNNING_THREADS>1 then return end
-    if cmd==var.cmd1 or cmd==var.cmd2 or cmd==var.cmd3 or cmd==var.cmd4 then
+    if env._CMDS[cmd] and env._CMDS[cmd].FILE:find('var') then
         return
     end
     local sub=tostring(var.cmdlist and var.cmdlist[cmd] or nil):upper():match('^%w+')
-    if sub~=var.cmd1 and sub~=var.cmd2 and sub~=var.cmd3 and sub~=var.cmd4 then
+    if sub~=var.cmd1 and sub~=var.cmd2 and sub~=var.cmd3 and sub~=var.cmd4 and sub~='COL' and sub~='COLUMN' then
         env.log_debug("var","Backup variables")
         if not var._prevent_restore then
             var._backup,var._inputs_backup,var._outputs_backup,var._columns_backup=var.backup_context()

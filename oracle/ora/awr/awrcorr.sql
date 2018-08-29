@@ -54,7 +54,7 @@ SET FEED OFF
 WITH snap AS
  (SELECT /*+materialize*/'A' inst, dbid, instance_number, -8640000 * (startup_time + 0 - SYSDATE) + instance_number part_key, snap_id,to_char(end_interval_time,'YYYY-MM-DD HH24:MI') snap_time
   FROM   DBA_hist_snapshot
-  WHERE  end_interval_time BETWEEN nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-1) AND  nvl(to_date(:V3,'YYMMDDHH24MI'),SYSDATE)
+  WHERE  end_interval_time+0 BETWEEN nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MI'),sysdate-1) AND  nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MI'),SYSDATE)
   AND   (nvl(:V4,'0') IN ('0','A','a') OR instance_number=:V4)),
 STATS AS
  (SELECT /*+materialize no_expand*/source_table, inst, snap_id,snap_time,unit, NAME, SUM(VALUE) VALUE

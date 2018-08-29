@@ -41,6 +41,7 @@ import java.util.stream.Collectors;
 import static org.jline.reader.LineReader.DISABLE_HISTORY;
 import static org.jline.reader.LineReader.SECONDARY_PROMPT_PATTERN;
 import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS;
+import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS_VTP;
 
 public class Console {
     public final static Pattern ansiPattern = Pattern.compile("^\33\\[[\\d\\;]*[mK]$");
@@ -73,13 +74,7 @@ public class Console {
 
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
-        /*
-        if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM)) {
-            colorPlan = System.getenv("ANSICON_DEF");
-            if (colorPlan == null) colorPlan = "jline";
-            String ansicon = System.getenv("ANSICON");
-            if (ansicon != null && ansicon.split("\\d+").length >= 3) colorPlan = "native";
-         }*/
+
         this.terminal = (AbstractTerminal) TerminalBuilder.builder().name(colorPlan).system(true).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).nativeSignals(true).build();
         this.status = this.terminal.getStatus();
         this.display = new Display(terminal, false);
@@ -89,12 +84,12 @@ public class Console {
         this.reader.setHighlighter(parser);
         this.reader.setCompleter(completer);
         this.reader.setHistory(history);
-        //this.reader.setOpt(LineReader.Option.DISABLE_HIGHLIGHTER);
         this.reader.unsetOpt(LineReader.Option.MOUSE);
+        //this.reader.unsetOpt(LineReader.Option.BRACKETED_PASTE);
+        this.reader.setOpt(LineReader.Option.DISABLE_EVENT_EXPANSION);
         this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE);
         this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE_SEARCH);
         this.reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
-        this.reader.setOpt(LineReader.Option.BRACKETED_PASTE);
         this.reader.setVariable(DISABLE_HISTORY, false);
         this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
         this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);
@@ -112,7 +107,7 @@ public class Console {
 
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM)) {
             colorPlan = System.getenv("ANSICON_DEF");
-            if (("ansicon").equals(colorPlan) && System.getenv("ConEmuPID") == null)
+            if (("ansicon").equals(colorPlan) && System.getenv("ConEmuPID") == null/*&&!terminal.getType().equals(TYPE_WINDOWS_VTP)*/)
                 writer = new PrintWriter(new ConEmuOutputStream());
             else colorPlan = terminal.getType();
         } else colorPlan = terminal.getType();
@@ -130,6 +125,13 @@ public class Console {
                     if (c[1] instanceof ActionEvent) event.actionPerformed((ActionEvent) c[0]);
                     else event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, "\3"));
                 }
+                new Thread(() -> {
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                    }
+                    setStatus("flush", null);
+                }).start();
             }
         };
         Interrupter.listen(this, callback);
@@ -190,19 +192,21 @@ public class Console {
         return "linux";
     }
 
-    ArrayList<AttributedString> titles = new ArrayList<>();
-
+    ArrayList<AttributedString> titles = new ArrayList<>(2);
+    ArrayList<AttributedString> tmpTitles = new ArrayList<>(2);
     public void setStatus(String status, String color) {
         if (colorPlan.equals("ansicon") || colorPlan.equals(TYPE_WINDOWS)) return;
-        if ("flush".equals(status)) this.status.redraw();
+        if(tmpTitles.size()==0) {
+            tmpTitles.add(AttributedString.fromAnsi(new String(new char[getScreenWidth() - 1]).replace('\0', ' ')));
+            tmpTitles.add(tmpTitles.get(0));
+        }
+        this.status.update(tmpTitles);
+        if ("flush".equals(status)) this.status.update(titles);
         else {
-            titles.clear();
-            titles.add(AttributedString.fromAnsi(new String(new char[getScreenWidth() - 1]).replace('\0', ' ')));
-            titles.add(titles.get(0));
-            this.status.update(titles);
+            AttributedString sep=titles.size()!=0?titles.get(0):AttributedString.fromAnsi(color + new String(new char[getScreenWidth() - 1]).replace('\0', '-'));
             titles.clear();
             if (status != null && !status.equals("")) {
-                titles.add(AttributedString.fromAnsi(color + new String(new char[getScreenWidth() - 1]).replace('\0', '\u2500')));
+                titles.add(sep);
                 AttributedStringBuilder asb = new AttributedStringBuilder();
                 asb.ansiAppend(status);
                 titles.add(asb.toAttributedString());
@@ -360,7 +364,7 @@ public class Console {
                 parser.setAnsi(buffer);
                 buffer = null;
             } else {
-                reader.setOpt(LineReader.Option.DISABLE_EVENT_EXPANSION);
+
                 reader.setVariable(DISABLE_HISTORY, true);
             }
             pause = false;
@@ -375,10 +379,10 @@ public class Console {
         } catch (Exception e) {
             //e.printStackTrace();
             terminal.raise(Terminal.Signal.INT);
+            status.redraw();
             return "";
         } finally {
             if (!isPrompt) {
-                reader.unsetOpt(LineReader.Option.DISABLE_EVENT_EXPANSION);
                 reader.setVariable(DISABLE_HISTORY, false);
             }
         }
