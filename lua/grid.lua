@@ -271,9 +271,9 @@ function grid:ctor(include_head)
 end
 
 local max_integer = math.pow(2, 63)
-function grid.format_column(include_head, colinfo, value, rownum)
+function grid.format_column(include_head, colinfo, value, rownum,instance)
     if include_head then
-        value = event.callback("ON_COLUMN_VALUE", {colinfo.column_name, value, rownum})[2]
+        value = event.callback("ON_COLUMN_VALUE", {colinfo.column_name, value, rownum,instance})[2]
     end
     if value == nil then return false, '' end
     if rownum > 0 and (type(value) == "number" or include_head and colinfo.is_number) then
@@ -331,7 +331,7 @@ function grid:add(row)
         if k > grid.maxcol then break end
         local csize, v1, is_number = 0, v
         if not colsize[k] then colsize[k] = {0, 1} end
-        is_number, v1 = grid.format_column(self.include_head, self.colinfo and self.colinfo[k] and self.colinfo[k] or {column_name = #result > 0 and result[1]._org[k] or v}, v, #result)
+        is_number, v1 = grid.format_column(self.include_head, self.colinfo and self.colinfo[k] and self.colinfo[k] or {column_name = #result > 0 and result[1]._org[k] or v}, v, #result,self)
         if tostring(v) ~= tostring(v1) then v = v1 end
         if is_number then
             csize = #tostring(v)
@@ -427,7 +427,7 @@ function grid:add(row)
     return result
 end
 
-function grid:add_calc_ratio(column, adjust)
+function grid:add_calc_ratio(column, adjust, name,scale)
     adjust = tonumber(adjust) or 1
     if not self.ratio_cols then self.ratio_cols = {} end
     if type(column) == "string" then
@@ -436,7 +436,7 @@ function grid:add_calc_ratio(column, adjust)
         if not head then return end
         for k, v in pairs(head) do
             if tostring(v):upper() == column:upper() then
-                self.ratio_cols[k] = adjust
+                self.ratio_cols[k] = {adjust,name or "<-Ratio",scale or 2}
             end
         end
     elseif type(column) == "number" then
@@ -470,17 +470,18 @@ function grid:wellform(col_del, row_del)
         
         for c = #keys, 1, -1 do
             local sum, idx = 0, keys[c]
+            local adj,name,scale=table.unpack(self.ratio_cols[idx])
             for _, row in ipairs(rows) do
                 sum = sum + (toNum(row._org[idx]) or 0)
             end
             for i, row in ipairs(rows) do
                 local n = " "
                 if row[0] == 0 and i == 1 then
-                    n = "<-Ratio"
+                    n = name
                 elseif sum > 0 then
                     n = toNum(row._org[idx])
                     if n ~= nil then
-                        n = string.format("%5.2f%%", 100 * n / sum * self.ratio_cols[idx])
+                        n = string.format("%."..scale.."f%%", math.round(100 * n / sum * adj ,scale))
                     else
                         n = " "
                     end

@@ -331,7 +331,9 @@ function var.define_column(col,...)
     local obj=var.columns[col]
     local valid=false
     for i=1,#args do
-        args[i],arg=args[i]:upper(),args[i+1]
+        args[i],arg=args[i]:upper(),args[i+1] or ""
+        local f,f1,scale=arg:upper(),arg:upper():match('(.-)(%d*)$')
+        scale=tonumber(scale) or 2
         if args[i]=='NEW_VALUE' or args[i]=='NEW_V' then
             env.checkerr(arg,'Format:  COL[UMN] <column> NEW_V[ALUE] <variable> [PRINT|PRI|NOPRINT|NOPRI].')
             arg=arg:upper()
@@ -340,8 +342,6 @@ function var.define_column(col,...)
             i=i+1
             valid=true
         elseif args[i]=='FORMAT' or args[i]=='FOR' then
-            local f,f1,scale=arg:upper(),arg:upper():match('(.-)(%d*)$')
-            scale=tonumber(scale) or 2
             local num_fmt="%."..scale.."f"
             env.checkerr(arg,'Format:  COL[UMN] <column> FOR[MAT] [KMB|TMB|ITV|SMHD|<format>] JUS[TIFY] [LEFT|L|RIGHT|R].')
             if f:find('^A') then
@@ -410,15 +410,19 @@ function var.define_column(col,...)
                 end
             elseif (f:find("%",1,true) or 999)<#f then
                 local fmt,String=arg,String
-                obj.format=function(v)
+                local format_func=function(v)
                     local v1= tonumber(v)
                     if not v1 then return v end
                     local done,res=pcall(String.format,String,fmt,java.cast(tonumber(v),'double'))
                     if not done then
-                        env.raise("Cannot cannot format double number '"..v..'" with "'..fmt..'" on field "'..col..'"!')
+                        env.raise('Cannot format double number "'..v..'" with "'..fmt..'" on field "'..col..'"!')
                     end
                     return res
                 end
+
+                local res,msg=pcall(format_func,999.99)
+                env.checkerr(res,"Unsupported format %s on field %s",arg,col)
+                obj.format=format_func
             elseif not var.define_column(col,f) then
                 local fmt=java.new("java.text.DecimalFormat")
                 arg=arg:gsub('9','#')
@@ -428,14 +432,18 @@ function var.define_column(col,...)
                     if not tonumber(v) then return s end
                     local done,res=pcall(obj.format_dir.format,obj.format_dir,fmt:format(java.cast(tonumber(v),'double')))
                     if not done then
-                        env.raise("Cannot cannot format double number '"..v..'" with "'..arg..'" on field "'..col..'"!')
+                        env.raise('Cannot format double number "'..v..'" with "'..arg..'" on field "'..col..'"!')
                     end
                     return res
                 end
                 local res,msg=pcall(format_func,999.99)
-                env.checkerr(res,"Unsupported format %s: %s",arg,tostring(msg))
+                env.checkerr(res,"Unsupported format %s on field %s",arg,col)
                 obj.format=format_func
             end
+            i=i+1
+            valid=true
+        elseif args[i]=="ADDRATIO" then
+            obj.add_ratio={1,f1,scale}
             i=i+1
             valid=true
         elseif args[i]=='PRINT' or args[i]=='PRI' then
@@ -444,6 +452,7 @@ function var.define_column(col,...)
         elseif args[i]=='NOPRINT' or args[i]=='NOPRI' then
             obj.print=false
             valid=true
+        elseif "ADD" then
         elseif args[i]=='HEADING' or args[i]=='HEAD'  or args[i]=='HEA' then
             local arg=args[i+1]
             env.checkerr(arg,'Format:  COL[UMN] <column> HEAD[ING] <new name>.')
@@ -472,11 +481,12 @@ end
 
 
 function var.trigger_column(field)
-    local col,value,rownum,index=table.unpack(field)
+    local col,value,rownum,grid,index=table.unpack(field)
     if type(col)~="string" then return end
     col=col:upper()
     if not var.columns[col] then return end
     local obj=var.columns[col]
+
     if rownum==0 then
         index=obj.heading
         if index then
@@ -484,6 +494,13 @@ function var.trigger_column(field)
         end
         if obj.print==false then field[2]='' end
         return
+    elseif rownum>0 and grid and not grid.__var_parsed then
+        grid.__var_parsed=true
+        for col,config in pairs(var.columns) do
+            if config.add_ratio then
+                grid:add_calc_ratio(col,table.unpack(config.add_ratio))
+            end
+        end
     end
     if not value then return end
 
@@ -509,7 +526,7 @@ function var.onload()
     snoop("AFTER_COMMAND",var.capture_after_cmd)
     snoop("ON_COLUMN_VALUE",var.trigger_column)
     local fmt_help=[[
-    Specifies display attributes for a given column. Usage: @@NAME <column> [NEW_VALUE|FORMAT|HEAD] <value> [<options>]
+    Specifies display attributes for a given column. Usage: @@NAME <column> [NEW_VALUE|FORMAT|HEAD|ADDRATIO] <value> [<options>]
     Refer to SQL*Plus manual for the detail, below are the supported features:
         1) @@NAME <column> NEW_V[ALUE] <var>    [PRINT|NOPRINT]
         2) @@NAME <column> HEAD[ING]   <title>
@@ -517,13 +534,32 @@ function var.onload()
         4) @@NAME <column> CLE[AR]
 
     Other addtional features:
-        1) @@NAME <column> FOR[MAT] KMG :  Cast number as KB/MB/GB/etc format
-        2) @@NAME <column> FOR[MAT] TMB :  Cast number as thousand/million/billion/etc format
-        3) @@NAME <column> FOR[MAT] SMHD:  Cast number as 'xxD xxH xxM xxS' format
-        4) @@NAME <column> FOR[MAT] smhd:  Cast number as 'xxd xxh xxm xxs' format
-        4) @@NAME <column> FOR[MAT] smhd2: Cast number as 'x.xx[s|m|h|d]' format
-        5) @@NAME <column> FOR[MAT] ITV  : Cast number as 'dd hh:mm:ss' format
-        6) @@NAME <column> FOR[MAT] %,.2f: Use Java 'String.format()' to format the number 
+        1) @@NAME <column> ADDRATIO <name>[scale]: Add an additional field to show the report_to_ratio value
+        2) @@NAME <column> FOR[MAT] KMG[scale]   : Cast number as KB/MB/GB/etc format
+        3) @@NAME <column> FOR[MAT] TMB[scale]   : Cast number as thousand/million/billion/etc format
+        4) @@NAME <column> FOR[MAT]  smhd<scale> : Cast number as '<number>[s|m|h|d]' format
+        4) @@NAME <column> FOR[MAT] msmhd<scale> : Cast number as '<number>[ms|s|m|h|d]' format
+        4) @@NAME <column> FOR[MAT] usmhd<scale> : Cast number as '<number>[us|ms|s|m|h|d]' format
+        5) @@NAME <column> FOR[MAT] SMHD         : Cast number as 'xxD xxH xxM xxS' format
+        6) @@NAME <column> FOR[MAT] smhd         : Cast number as 'xxd xxh xxm xxs' format
+        7) @@NAME <column> FOR[MAT] ITV          : Cast number as 'dd hh:mm:ss' format
+        8) @@NAME <column> FOR[MAT] <formatter>  : Use Java 'String.format()' to format the number
+
+    type 'help -e var.columns' to show the existing settings
+
+    Examples:
+        @@NAME size for kmg1  :    111111 => 108.5 KB
+        @@NAME size for tmb3  :    111111 => 111.111 K
+        @@NAME size for usmhd2:    111111 => 111.11ms
+        @@NAME size for smhd1 :    111111 => 1.3d
+        @@NAME size for SMHD  :    111111 => 0D 30H 51M 51S
+        @@NAME size for ITV   :    111111 => 30:51:51
+        @@NAME size for %.2f%%:    11.111 => 11.11%
+        @@NAME size for smhd1 addration pct2:    
+            SIZE   PTC
+            ---- -----
+            1.3d 26.12%
+            1.2d 25.30%  
     ]]
     cfg.init({"VERIFY","PrintVar",'VER'},'on',nil,"db.core","Max size of historical commands",'on,off')
     cfg.init({var.cmd1,var.cmd2},'on',nil,"db.core","Defines the substitution character(&) and turns substitution on and off.",'on,off')

@@ -274,7 +274,7 @@
                 FROM   (SELECT  &inst1  inst, NAME n, VALUE v, (SELECT VALUE FROM v$parameter WHERE NAME = 'db_block_size') bs FROM gv$sysstat WHERE &inst_filter) a
                 GROUP  BY inst]],
             '-',
-            [[WITH ASH as(/*grid={topic='System Events',height=100,order_by="-cost"}*/
+            [[WITH ASH as(/*grid={topic='System Events',fixed_title=true,height=100,order_by="-cost"}*/
                 SELECT /*+materialize*/ inst,event,SUM(cost) aas, MAX(w) max_ms, 
                        MAX(sql_id) keep(dense_rank LAST ORDER BY cnt) top_sql,
                        count(distinct sql_id) sqls
@@ -330,8 +330,9 @@
     column_formatter={KMG1='MBPS,SISave,IM-LIO,Unzip,zip,pops,re-pops,phyMem,freeMem,Swap,BuffGet,PhyRead,PhyWrite,Redo,Temp,SQL*Net,OptRead,OptWrite,CellIM,CCSave,offload,BandWidth,bytes,traffic,cr,cu,cr_rec,cu_rec,cr_flush,cu_flush,cr_fl_avg,cu_fl_avg,lost,dbwr,lgwr',
                      TMB1='IOPS,call,exec,TPS,parse,hparse,cchit,FcHit,popr,re-popr,rows,proj,Disk,Cache,pcode,missCU,fail',
                      noprint='calls,ela,time',
-                     USMHD1='cr_rec_avg,cu_rec_avg,cr_fl_avg,cu_fl_avg,IO Wait,resp,cost,max,avg,enqs',
+                     USMHD1='cr_rec_avg,cu_rec_avg,cr_fl_avg,cu_fl_avg,IO Wait,resp,max,avg,enqs',
                      ['%.1f%%']='Pct,dxr,dxw,OflIn,OflOut,valid,Skip,Exclude,OflEff,FLASH,SMALL',
                      ['HEADING #']='INST',
+                     ['ADDRATIO PCT1']="cost",
                      ['#,##0']='value'}
 }

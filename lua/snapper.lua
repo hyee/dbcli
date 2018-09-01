@@ -266,12 +266,17 @@ function snapper:next_exec()
     for name,cmd in pairs(cmds) do
         if cmd.rs1 and cmd.rs2 then
             local calc_clock,formatter=os.timer(),cmd.column_formatter or {}
-            local defined_formatter={}
+            local defined_formatter,k1={}
             for k,v in pairs(formatter) do
-                define_column(v,'format',k)
+                if k:find('%s') then
+                    k1=env.parse_args(99,k)
+                else 
+                    k1={'format',k}
+                end
+                define_column(v,table.unpack(k1))
                 local cols=v:split('%s*,%s*')
                 for _,col in ipairs(cols) do
-                    defined_formatter[col:upper()]=k
+                    defined_formatter[col:upper()]=k1
                 end
             end
 
@@ -320,7 +325,7 @@ function snapper:next_exec()
                         end
                         agg_idx[i],title[i]=idx,props.fixed_title  and k  or elapsed~=1 and not props.topic and (k..'/s') or ('*'..k)
                         local fmt = defined_formatter[title[i]] or defined_formatter[tit]
-                        if fmt then define_column(title[i],'format', fmt) end
+                        if fmt then define_column(title[i],table.unpack(fmt)) end
                         if type(order_by)=="string" then
                             if order_by:find(',-'..tit..',',1,true) then
                                 order_by=order_by:replace(',-'..tit..',',',-'..title[i]..',',true)
