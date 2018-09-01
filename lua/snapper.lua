@@ -274,7 +274,7 @@ function snapper:next_exec()
                     k1={'format',k}
                 end
                 define_column(v,table.unpack(k1))
-                local cols=v:split('%s*,%s*')
+                local cols=v:split("%s*,+%s*")
                 for _,col in ipairs(cols) do
                     defined_formatter[col:upper()]=k1
                 end
@@ -298,11 +298,11 @@ function snapper:next_exec()
                 props.group_by=props.group_by or props.grp_cols
                 props.top_by=props.top_by or props.top_grp_cols
                 props.delta_by=props.delta_by or props.agg_cols
-                props.group_by=props.group_by and (','..props.group_by:upper()..',') or nil
-                props.top_by=props.top_by and (','..props.top_by:upper()..',')
-                props.delta_by=','..(props.delta_by and props.delta_by:upper() or '')..','
+                props.group_by=props.group_by and (','..table.concat(props.group_by:upper():split("%s*,+%s*"),',')..',') or nil
+                props.top_by=props.top_by and (','..table.concat(props.top_by:upper():split("%s*,+%s*"),',')..',')
+                props.delta_by=','..table.concat((props.delta_by and props.delta_by:upper() or ''):split("%s*,+%s*"),',')..','
 
-                if type(order_by)=="string" then order_by=(','..order_by:upper()..','):gsub('%s*,[%s,]*',',') end
+                if type(order_by)=="string" then order_by=(','..table.concat(order_by:upper():split("%s*,+%s*"),',')..','):gsub('%s*,[%s,]*',',') end
 
                 for k,v in pairs(calc_rules) do
                     if type(k)=="string" then calc_rules[k:upper()]=v end

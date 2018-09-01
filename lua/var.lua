@@ -452,7 +452,6 @@ function var.define_column(col,...)
         elseif args[i]=='NOPRINT' or args[i]=='NOPRI' then
             obj.print=false
             valid=true
-        elseif "ADD" then
         elseif args[i]=='HEADING' or args[i]=='HEAD'  or args[i]=='HEA' then
             local arg=args[i+1]
             env.checkerr(arg,'Format:  COL[UMN] <column> HEAD[ING] <new name>.')
@@ -526,24 +525,24 @@ function var.onload()
     snoop("AFTER_COMMAND",var.capture_after_cmd)
     snoop("ON_COLUMN_VALUE",var.trigger_column)
     local fmt_help=[[
-    Specifies display attributes for a given column. Usage: @@NAME <column> [NEW_VALUE|FORMAT|HEAD|ADDRATIO] <value> [<options>]
+    Specifies display attributes for a given column. Usage: @@NAME <columns> [NEW_VALUE|FORMAT|HEAD|ADDRATIO] <value> [<options>]
     Refer to SQL*Plus manual for the detail, below are the supported features:
-        1) @@NAME <column> NEW_V[ALUE] <var>    [PRINT|NOPRINT]
-        2) @@NAME <column> HEAD[ING]   <title>
-        3) @@NAME <column> FOR[MAT]    <format> [JUS[TIFY] LEFT|L|RIGHT|R]
-        4) @@NAME <column> CLE[AR]
+        1) @@NAME <columns> NEW_V[ALUE] <var>    [PRINT|NOPRINT]
+        2) @@NAME <columns> HEAD[ING]   <title>
+        3) @@NAME <columns> FOR[MAT]    <format> [JUS[TIFY] LEFT|L|RIGHT|R]
+        4) @@NAME <columns> CLE[AR]
 
     Other addtional features:
-        1) @@NAME <column> ADDRATIO <name>[scale]: Add an additional field to show the report_to_ratio value
-        2) @@NAME <column> FOR[MAT] KMG[scale]   : Cast number as KB/MB/GB/etc format
-        3) @@NAME <column> FOR[MAT] TMB[scale]   : Cast number as thousand/million/billion/etc format
-        4) @@NAME <column> FOR[MAT]  smhd<scale> : Cast number as '<number>[s|m|h|d]' format
-        4) @@NAME <column> FOR[MAT] msmhd<scale> : Cast number as '<number>[ms|s|m|h|d]' format
-        4) @@NAME <column> FOR[MAT] usmhd<scale> : Cast number as '<number>[us|ms|s|m|h|d]' format
-        5) @@NAME <column> FOR[MAT] SMHD         : Cast number as 'xxD xxH xxM xxS' format
-        6) @@NAME <column> FOR[MAT] smhd         : Cast number as 'xxd xxh xxm xxs' format
-        7) @@NAME <column> FOR[MAT] ITV          : Cast number as 'dd hh:mm:ss' format
-        8) @@NAME <column> FOR[MAT] <formatter>  : Use Java 'String.format()' to format the number
+        1) @@NAME <columns> ADDRATIO <name>[scale]: Create an additional field to show the report_to_ratio value
+        2) @@NAME <columns> FOR[MAT] KMG[scale]   : Cast number as KB/MB/GB/etc format
+        3) @@NAME <columns> FOR[MAT] TMB[scale]   : Cast number as thousand/million/billion/etc format
+        4) @@NAME <columns> FOR[MAT]  smhd<scale> : Cast number as '<number>[s|m|h|d]' format
+        4) @@NAME <columns> FOR[MAT] msmhd<scale> : Cast number as '<number>[ms|s|m|h|d]' format
+        4) @@NAME <columns> FOR[MAT] usmhd<scale> : Cast number as '<number>[us|ms|s|m|h|d]' format
+        5) @@NAME <columns> FOR[MAT] SMHD         : Cast number as 'xxD xxH xxM xxS' format
+        6) @@NAME <columns> FOR[MAT] smhd         : Cast number as 'xxd xxh xxm xxs' format
+        7) @@NAME <columns> FOR[MAT] ITV          : Cast number as 'dd hh:mm:ss' format
+        8) @@NAME <columns> FOR[MAT] <formatter>  : Use Java 'String.format()' to format the number
 
     type 'help -e var.columns' to show the existing settings
 
@@ -555,6 +554,7 @@ function var.onload()
         @@NAME size for SMHD  :    111111 => 0D 30H 51M 51S
         @@NAME size for ITV   :    111111 => 30:51:51
         @@NAME size for %.2f%%:    11.111 => 11.11%
+        @@NAME size1,size2 for %.2f%% :  11.111, 22.222 => 11.11%, 22.22%
         @@NAME size for smhd1 addration pct2:    
             SIZE   PTC
             ---- -----

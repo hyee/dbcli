@@ -88,7 +88,7 @@ function pgsql:exec(sql,...)
     end
     
     if is_not_prep then sql=event("BEFORE_PGSQL_EXEC",{self,sql,args}) [2] end
-    local result=self.super.exec(self,sql,args,prep_params)
+    local result=self.super.exec(self,sql,...)
     if is_not_prep and not bypass then 
         event("AFTER_PGSQL_EXEC",self,sql,args,result)
         self.print_feed(sql,result)
