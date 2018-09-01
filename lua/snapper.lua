@@ -95,7 +95,7 @@ function snapper:build_data(sqls,args)
     local rs,rsidx=nil,{}
 
     if type(sqls)=="string" then
-        rs=self.db:exec(sqls,args)
+        rs=self.db:exec_cache(sqls,args,"snapper")
         if type(rs)=="userdata" then
             rs={self.db.resultset:rows(rs,-1)}
             rs[1]._is_result=true
@@ -108,7 +108,7 @@ function snapper:build_data(sqls,args)
             rs=nil
         end
     else
-        rs=self.db:grid_call(sqls,-1,args)
+        rs=self.db:grid_call(sqls,-1,args,"snapper")
     end
 
     local function scanrs(rs)

@@ -3,7 +3,7 @@ local _G = _ENV or _G
 
 local reader,coroutine,os,string,table,math,io,select,xpcall,pcall=reader,coroutine,os,string,table,math,io,select,xpcall,pcall
 
-local getinfo, error, rawset, rawget,math = debug.getinfo, error, rawset, rawget,math
+local getinfo, error, rawset, rawget = debug.getinfo, error, rawset, rawget
 
 local pairs,ipairs=pairs,ipairs
 
@@ -476,14 +476,10 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     local this,isMain,index=env.register_thread()
     is_internal,arg_text=is_internal or false,arg_text or ""
     env.CURRENT_CMD=name
-    arg_text=cmd.." "..arg_text
+    
     if event then
         if isMain then
-            if writer then
-                env.ROOT_CMD=name
-                --writer:print(env.ansi.mask("NOR",""))
-                --writer:flush()
-            end
+            if writer then env.ROOT_CMD=name end
             env.log_debug("CMD",name,params)
         end
         
@@ -807,7 +803,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
     end
 end
 
-local _cmd,_args,_errs,_line_stacks=nil,nil,nil,{}
+local _cmd,_args,_errs,_line_stacks,_full_text=nil,nil,nil,{}
 function env.parse_line(line)
     if(#_line_stacks==0) then
         multi_cmd,curr_stmt=nil,nil
@@ -817,6 +813,7 @@ function env.parse_line(line)
     _cmd,_args,_errs=_eval_line(line,false)
     local is_not_end=env.CURRENT_PROMPT==env.MTL_PROMPT
     if not is_not_end then
+        full_text=table.concat(_line_stacks,'\n')
         _line_stacks={}
     end
     local is_block=env._CMDS[_cmd] and env._CMDS[_cmd].ISBLOCKNEWLINE or false
@@ -827,7 +824,7 @@ function env.execute_line()
     local cmd,args
     cmd,args,_cmd,_args=_cmd,_args
     if cmd then
-        env.exec_command(cmd,args)
+        env.exec_command(cmd,args,false,full_text)
     elseif _errs then
         env.warn(_errs)
         _errs=nil

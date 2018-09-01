@@ -2,7 +2,7 @@
 local db,grid=env.getdb(),env.grid
 local findobj,cache_obj,loaded={},{}
 local stmt=[[
-	DECLARE /*DBCLI_EXEC_CACHE*/
+	DECLARE /*INTERNAL_DBCLI_CMD*/
 	    schem         VARCHAR2(128);
 	    part1         VARCHAR2(128);
 	    part2         VARCHAR2(128);
@@ -203,7 +203,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
     else
     	args=table.clone(default_args)
 	    args.target,args.ignore=obj_name,bypass_error or ""
-	    db:exec_cache(stmt,args,'FindObject')
+	    db:exec_cache(stmt,args,'Internal_FindObject')
 	    args.owner=args.object_owner
 	end
 
@@ -231,7 +231,7 @@ function db:check_access(obj_name,bypass_error,is_set_env)
     if cache_obj[o] and cache_obj[o].accessible then return cache_obj[o].accessible==1 and true or false end
     obj.count='#NUMBER'
     self:exec_cache([[
-        DECLARE
+        DECLARE /*INTERNAL_DBCLI_CMD*/
             x   PLS_INTEGER := 0;
             e   VARCHAR2(500);
             obj VARCHAR2(61) := :owner||'.'||:object_name;
@@ -259,7 +259,7 @@ function db:check_access(obj_name,bypass_error,is_set_env)
             END IF;
             :count := x;
         END;
-    ]],obj,'CheckAccessRight')
+    ]],obj,'Internal_CheckAccessRight')
 
     if cache_obj[o] then
         local value=obj.count==1 and 1 or 0

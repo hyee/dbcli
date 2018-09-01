@@ -1,3 +1,5 @@
+2018-09-01: * oracle: enhancement on "snap system" and "var"
+2018-08-28: * oracle: enhancement on "ora ashchain"
 2018-08-22: + public: support status bar and relative option "set status on/off", unsupported in ConEmu and Legacy Windows Console
             + oracle: add Tanel Poder's script "ora waitprof"
 2018-08-21: * oracle: performance optimization on some frequent commands(getDbmsOutput/findObject/checkAccess) 

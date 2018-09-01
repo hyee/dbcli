@@ -153,7 +153,7 @@
                 SUM(passthru) "Passthru"
                 --,SUM(bandwidth) "Net"
         FROM   (SELECT cell_name,
-                       sum(decode(metric_name,'Per Db Bytes of IO',METRIC_VALUE)) allio,
+                       sum(decode(metric_name,'Per Db Bytes of IO',METRIC_VALUE,'Per Db Bytes of IO for Flash',METRIC_VALUE)) allio,
                        sum(decode(metric_name,'Per Db Bytes of IO for Flash',METRIC_VALUE)) fd
                 FROM   V$CELL_DB b
                 GROUP  BY cell_name) a,

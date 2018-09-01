@@ -160,7 +160,7 @@ function oracle:connect(conn_str)
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     self.props={instance="#NUMBER",sid="#NUMBER"}
-    for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container'} do self.props[v]="#VARCHAR" end
+    for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container','israc'} do self.props[v]="#VARCHAR" end
     local succ,err=pcall(self.exec,self,[[
         DECLARE
             vs  PLS_INTEGER  := dbms_db_version.version;
@@ -198,8 +198,9 @@ function oracle:connect(conn_str)
             $END   
                    sys_context('userenv', 'isdba') isdba,
                    nvl(sv,sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.')) service_name,
-                   decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY',' ','PHYSICAL STANDBY',' (Standby)>')) END
-            INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :container, :isdba, :service_name,:db_role
+                   decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY',' ','PHYSICAL STANDBY',' (Standby)>')) END,
+                   decode((select count(distinct inst_id) from gv$version),1,'FALSE','TRUE')
+            INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :container, :isdba, :service_name,:db_role, :israc
             FROM   nls_Database_Parameters
             WHERE  parameter = 'NLS_CHARACTERSET';
             
@@ -213,6 +214,7 @@ function oracle:connect(conn_str)
             EXCEPTION WHEN OTHERS THEN NULL;END;
         END;]],self.props)
     self.props.isdba=self.props.isdba=='TRUE' and true or false
+    self.props.israc=self.props.israc=='TRUE' and true or false
     if not succ then
         self.props.instance=1
         self.props.db_version='9.1'
@@ -385,7 +387,7 @@ function oracle:exec(sql,...)
     end
     
     if is_not_prep then sql=event("BEFORE_ORACLE_EXEC",{self,sql,args}) [2] end
-    local result=self.super.exec(self,sql,args,prep_params)
+    local result=self.super.exec(self,sql,...)
     if is_not_prep and not bypass then 
         event("AFTER_ORACLE_EXEC",self,sql,args,result)
         self.print_feed(sql,result)
@@ -559,14 +561,15 @@ function oracle:get_library()
     return nil
 end
 
-function oracle:grid_db_call(sqls,args)
+function oracle:grid_db_call(sqls,args,is_cache)
     local stmt={[[BEGIN]]}
     local clock=os.timer()
     --stmt[#stmt+1]='BEGIN set transaction isolation level serializable;EXCEPTION WHEN OTHERS THEN NULL;END;'
     args=args or {}
     for idx,sql in ipairs(sqls) do
         local typ=self.get_command_type(sql.sql)
-        if typ=='SELECT' or typ=='WITH' then
+
+        if typ:find('SELECT') or typ:find('WITH') then
             local cursor='GRID_CURSOR_'..idx
             args[cursor]='#CURSOR'
             stmt[#stmt+1]='  OPEN :'..cursor..' FOR \n        '..sql.sql..';'
@@ -575,7 +578,12 @@ function oracle:grid_db_call(sqls,args)
         end
     end
     stmt[#stmt+1]='END;'
-    local results=self.super.exec(self,table.concat(stmt,'\n'),args)
+    local results;
+    if not is_cache then 
+        result=self.super.exec(self,table.concat(stmt,'\n'),args)
+    else
+        result=self.super.exec_cache(self,table.concat(stmt,'\n'),args,is_cache)
+    end
     self.grid_cost=os.timer()-clock
     if type(results)~="table" and type(results)~="userdata" then results=nil end
     for idx,sql in ipairs(sqls) do

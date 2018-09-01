@@ -102,7 +102,6 @@ function alias.set(name, cmd, write)
         if type(text.text) == "function" then
             return print("Error: Command has been encrypted: " .. cmd)
         end
-        local du = 1
         alias.set(cmd, packer.unpack_str(text.text))
     elseif not cmd then
         if not alias.cmdlist[name] then return end
@@ -119,15 +118,10 @@ function alias.set(name, cmd, write)
             return print("Alias '" .. name .. "' is invalid. ")
         end
         cmd = env.COMMAND_SEPS.match(cmd)
-        local target_dir = alias.db_dir
-        if not cmd or cmd:trim()=="" then return end
+        if not cmd or cmd:trim() == "" then return end
         local sub_cmd = env.parse_args(2, cmd)[1]:upper()
-        if env._CMDS[sub_cmd] then
-            local file = env._CMDS[sub_cmd].FILE or ""
-            file = file:match('[\\/]([^#]+)')
-            if file ~= env.CURRENT_DB then target_dir = alias.command_dir end
-        end
 
+        
         if write ~= false then
             os.remove(alias.command_dir .. name:lower() .. ".alias")
             os.remove(alias.db_dir .. name:lower() .. ".alias")

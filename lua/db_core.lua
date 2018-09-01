@@ -578,8 +578,8 @@ function db_core:abort_statement()
 end
 
 function db_core:exec_cache(sql,args,description)
-    if not self.__preparedCaches then
-        self.__preparedCaches={}
+    if not self.__preparedCaches or not self.__preparedCaches.__list then
+        self.__preparedCaches={__list={}}
     end
 
     local cache=self.__preparedCaches[sql]
@@ -589,6 +589,19 @@ function db_core:exec_cache(sql,args,description)
         prep,_sql,params=self:parse(sql,org)
         cache={prep,org,params}
         self.__preparedCaches[sql]=cache
+        if type(description)=="string" and description~='' then
+            local prep1=self.__preparedCaches.__list[description]
+            if prep1 then
+                pcall(prep1[1].close,prep1[1])
+                for k,v in pairs(self.__preparedCaches) do
+                    if prep1==v then
+                        self.__preparedCaches[k]=nil
+                        break
+                    end
+                end
+            end
+            self.__preparedCaches.__list[description]=cache
+        end
     else
         prep,org,params=table.unpack(cache)
         for k,n in pairs(args) do
@@ -618,10 +631,10 @@ function db_core:exec_cache(sql,args,description)
         end
     end
     args._description=description and ('('..description..')') or ''
-    return self:exec(prep,args,table.clone(params)),cache
+    return self:exec(prep,args,table.clone(params),sql),cache
 end
 
-function db_core:exec(sql,args,prep_params)
+function db_core:exec(sql,args,prep_params,src_sql)
     local is_not_prep=type(sql)~="userdata"
 
     if is_not_prep and sql:find('/*DBCLI_EXEC_CACHE*/',1,true) then
@@ -669,9 +682,9 @@ function db_core:exec(sql,args,prep_params)
         env.log_debug("db","SQL:",sql)
         env.log_debug("db","Parameters:",params)
     else
-        local desc ="PreparedStatement"..args._description
+        local desc ="PreparedStatement"..(args._description or "")
         env.log_debug("db","SQL Cache:",desc)
-        prep,sql,params=sql,desc,prep_params or {}
+        prep,sql,params=sql,src_sql or desc,prep_params or {}
     end
 
     local is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
@@ -713,7 +726,7 @@ function db_core:exec(sql,args,prep_params)
     end
 
     self:clearStatements()
-    if is_not_prep and event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
+    if event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
     
     for k,v in pairs(outputs) do
         if args[k]==db_core.NOT_ASSIGNED then args[k]=nil end
@@ -746,7 +759,7 @@ end
 
 function db_core:is_internal_call(sql)
     if self.internal_exec then return true end
-    if type(sql)=="userdata" or sql=='PreparedStatement' then return true end
+    if type(sql)=="userdata" then return true end
     return sql and sql:find("INTERNAL_DBCLI_CMD",1,true) and true or false
 end
 
@@ -876,7 +889,7 @@ function db_core:get_value(sql,args)
     return rtn and #rtn==1 and rtn[1] or rtn
 end
 
-function db_core:grid_call(tabs,rows_limit,args)
+function db_core:grid_call(tabs,rows_limit,args,is_cache)
     local db_call=self.grid_db_call
     local rs_idx={}
     local function parse_sqls(tabs)
@@ -929,7 +942,7 @@ function db_core:grid_call(tabs,rows_limit,args)
 
     local result=parse_sqls(tabs)
     if type(db_call)=='function' then
-        db_call(self,rs_idx,args)
+        db_call(self,rs_idx,args,is_cache)
     else
         local clock=os.timer()
         for idx,info in ipairs(rs_idx) do

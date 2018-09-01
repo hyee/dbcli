@@ -340,41 +340,54 @@ function var.define_column(col,...)
             i=i+1
             valid=true
         elseif args[i]=='FORMAT' or args[i]=='FOR' then
-            local f=arg:upper()
+            local f,f1,scale=arg:upper(),arg:upper():match('(.-)(%d*)$')
+            scale=tonumber(scale) or 2
+            local num_fmt="%."..scale.."f"
             env.checkerr(arg,'Format:  COL[UMN] <column> FOR[MAT] [KMB|TMB|ITV|SMHD|<format>] JUS[TIFY] [LEFT|L|RIGHT|R].')
             if f:find('^A') then
                 local siz=tonumber(arg:match("%d+"))
                 obj.format_dir='%-'..siz..'s'
                 obj.format=function(v) return tostring(v) and obj.format_dir:format(tostring(v):sub(1,siz)) or v end
-            elseif f=="KMG" or f=="TMB" then --KMGTP
-                local units=f=="KMG" and {'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} or {'  ',' K',' M',' B',' T',' Q'}
-                local div=f=="KMG" and 1024 or 1000
+            elseif f:find("^HEADING") then
+                f = arg:match('^%w+%s+(.+)')
+                if f then
+                    return var.define_column(col,'HEADING',f)
+                end
+            elseif f1=="KMG" or f1=="TMB" then --KMGTP
+                local units=f1=="KMG" and {'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} or {'  ',' K',' M',' B',' T',' Q'}
+                local div=f1=="KMG" and 1024 or 1000
                 obj.format=function(v)
                     local s=tonumber(v)
                     if not s then return v end
                     local prefix=s<0 and '-' or ''
                     s=math.abs(s)
                     for i=1,#units do
-                        v,s=math.round(s,2),s/div
+                        v,s=math.round(s,scale),s/div
                         if v==0 then prefix='' end
-                        if s<1 then return string.format(i>1 and "%s%.2f%s" or "%s%d%s",prefix,v,units[i]) end
+                        if s<1 then return string.format(i>1 and "%s"..num_fmt.."%s" or "%s%d%s",prefix,v,units[i]) end
                     end
-                    return string.format("%s%.2f%s",v==0 and '' or prefix,v,units[#units])
+                    return string.format("%s"..num_fmt.."%s",v==0 and '' or prefix,v,units[#units])
                 end
-            elseif f=="SMHD2" then
-                local units={'s','m','h','d'}
-                local div={60,60,24}
+            elseif f:find("SMHD%d") then
+                local div,units=f:match('%d$')
+                if f:sub(1,1)=='U' then
+                    units,div={'us','ms','s','m','h','d'},{1000,1000,60,60,24}
+                elseif f:sub(1,1)=='M' then
+                    units,div={'us','ms','s','m','h','d'},{1000,60,60,24}
+                else
+                    units,div={'s','m','h','d'},{60,60,24}
+                end
                 obj.format=function(v)
                     local s=tonumber(v)
                     if not s then return v end
                     local prefix=s<0 and '-' or ''
                     s=math.abs(s)
                     for i=1,#units-1 do
-                        v,s=math.round(s,2),s/div[i]
+                        v,s=math.round(s,scale),s/div[i]
                         if v==0 then prefix='' end
-                        if s<1 then return string.format("%s%.2f%s",prefix,v,units[i]) end
+                        if s<1 then return string.format("%s"..num_fmt.."%s",prefix,v,units[i]) end
                     end
-                    return string.format("%s%.2f%s",prefix,s,units[#units])
+                    return string.format("%s"..num_fmt.."%s",prefix,s,units[#units])
                 end
             elseif f=="SMHD" or f=="ITV" then
                 local fmt=arg=='SMHD' and '%dD %02dH %02dM %02dS' or
@@ -390,6 +403,22 @@ function var.define_column(col,...)
                     u[#u+1]=math.floor(s/24)
                     return prefix..fmt:format(u[4],u[3],u[2],u[1]):gsub("^0 ",'')
                 end
+            elseif f=="%" or f=="PCT" or f=="PERCENTAGE" or f=="PERCENT" then
+                obj.format=function(v)
+                    if not tonumber(v) then return v end
+                    return string.format(num_fmt.."%%",tonumber(v)*100)
+                end
+            elseif (f:find("%",1,true) or 999)<#f then
+                local fmt,String=arg,String
+                obj.format=function(v)
+                    local v1= tonumber(v)
+                    if not v1 then return v end
+                    local done,res=pcall(String.format,String,fmt,java.cast(tonumber(v),'double'))
+                    if not done then
+                        env.raise("Cannot cannot format double number '"..v..'" with "'..fmt..'" on field "'..col..'"!')
+                    end
+                    return res
+                end
             elseif not var.define_column(col,f) then
                 local fmt=java.new("java.text.DecimalFormat")
                 arg=arg:gsub('9','#')
@@ -397,7 +426,11 @@ function var.define_column(col,...)
                 obj.format_dir='%'..#arg..'s'
                 local format_func=function(v)
                     if not tonumber(v) then return s end
-                    return obj.format_dir:format(fmt:format(java.cast(v,'double')))
+                    local done,res=pcall(obj.format_dir.format,obj.format_dir,fmt:format(java.cast(tonumber(v),'double')))
+                    if not done then
+                        env.raise("Cannot cannot format double number '"..v..'" with "'..arg..'" on field "'..col..'"!')
+                    end
+                    return res
                 end
                 local res,msg=pcall(format_func,999.99)
                 env.checkerr(res,"Unsupported format %s: %s",arg,tostring(msg))
@@ -489,7 +522,8 @@ function var.onload()
         3) @@NAME <column> FOR[MAT] SMHD:  Cast number as 'xxD xxH xxM xxS' format
         4) @@NAME <column> FOR[MAT] smhd:  Cast number as 'xxd xxh xxm xxs' format
         4) @@NAME <column> FOR[MAT] smhd2: Cast number as 'x.xx[s|m|h|d]' format
-        5) @@NAME <column> FOR[MAT] ITV :  Cast number as 'dd hh:mm:ss' format
+        5) @@NAME <column> FOR[MAT] ITV  : Cast number as 'dd hh:mm:ss' format
+        6) @@NAME <column> FOR[MAT] %,.2f: Use Java 'String.format()' to format the number 
     ]]
     cfg.init({"VERIFY","PrintVar",'VER'},'on',nil,"db.core","Max size of historical commands",'on,off')
     cfg.init({var.cmd1,var.cmd2},'on',nil,"db.core","Defines the substitution character(&) and turns substitution on and off.",'on,off')
