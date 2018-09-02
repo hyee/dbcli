@@ -58,7 +58,7 @@ end
 
 function interval.onload()
     env.set_command(nil,{"REPEAT",interval.cmd},[[
-        Run a command with specific interval, type 'help @@NAME' for detail. Usage: @@NAME <START [seconds] [remark]|END|seconds times command>
+        Run a command with specific interval, type 'help @@NAME' for detail. Usage: @@NAME <START [seconds] [remark]>|END|<seconds> times command>
         Example:
             1)  @@NAME 5 5 ora actives
             2)  refer to 'show itvtest

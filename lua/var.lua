@@ -373,7 +373,7 @@ function var.define_column(col,...)
                 if f:sub(1,1)=='U' then
                     units,div={'us','ms','s','m','h','d'},{1000,1000,60,60,24}
                 elseif f:sub(1,1)=='M' then
-                    units,div={'us','ms','s','m','h','d'},{1000,60,60,24}
+                    units,div={'ms','s','m','h','d'},{1000,60,60,24}
                 else
                     units,div={'s','m','h','d'},{60,60,24}
                 end

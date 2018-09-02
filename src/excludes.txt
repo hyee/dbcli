@@ -30,6 +30,7 @@ ansicon.exe
 .cfg
 .zip
 .7z
+.pptx
 jnlua.c
 Makefile
 mysql-connector.jar

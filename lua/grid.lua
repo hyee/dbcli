@@ -440,7 +440,7 @@ function grid:add_calc_ratio(column, adjust, name,scale)
             end
         end
     elseif type(column) == "number" then
-        self.ratio_cols[column] = adjust
+        self.ratio_cols[column] = {adjust,name or "<-Ratio",scale or 2}
     end
 end
 
