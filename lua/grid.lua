@@ -17,10 +17,10 @@ local params = {
     MAXCOLS = {name = "maxcol", default = 1024, desc = "Define the max columns to be displayed in the grid", range = "4-1024"},
     DIGITS = {name = "digits", default = 38, desc = "Define the digits for a number", range = "0 - 38"},
     SEP4K = {name = "sep4k", default = "off", desc = "Define whether to show number with thousands separator", range = "on,off"},
-    HEADING = {name = "heading", default = "on", desc = "Controls printing of column headings in reports", range = "on,off"},
-    LINESIZE = {name = "linesize", default = 0, desc = "Define the max chars in one line, other overflow parts would be cutted.", range = '0-32767'},
+    [{"HEADING","HEAD"}] = {name = "heading", default = "on", desc = "Controls printing of column headings in reports", range = "on,off"},
+    [{"LINESIZE","LINES"}]= {name = "linesize", default = 0, desc = "Define the max chars in one line, other overflow parts would be cutted.", range = '0-32767'},
     BYPASSEMPTYRS = {name = "bypassemptyrs", default = "off", desc = "Controls whether to print an empty resultset", range = "on,off"},
-    PIPEQUERY = {name = "pipequery", default = "off", desc = "Controls whether to print an empty resultset", range = "on,off"},
+    PIPEQUERY = {name = "pipequery", default = "off", desc = "Controls whether to print each row one-by-one of a resultset", range = "on,off"},
 --NULL={name="null_value",default="",desc="Define display value for NULL."}
 }
 

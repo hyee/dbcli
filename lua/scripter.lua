@@ -131,7 +131,7 @@ function scripter:parse_args(sql,args,print_args,extend_dirs)
     local orgs,templates={},{}
 
     local sub_pattern=('w_.$#/'):gsub('(.)',function(s) return '%'..s end)
-    sub_pattern='(['..sub_pattern..']+)%s*=%s*(%b{})'
+    sub_pattern='(["\']?)(['..sub_pattern..' ]-)%1%s*=%s*(%b{})'
 
     local function setvalue(param,value,mapping)
         if not orgs[param] then orgs[param]={args[param] or ""} end
@@ -146,8 +146,8 @@ function scripter:parse_args(sql,args,print_args,extend_dirs)
                 if not templates[k] then--same variable should not define twice
                     templates[k]={}
                     local keys,default={}
-                    for option,text in v:gmatch(sub_pattern) do
-                        option,text=option:upper(),text:sub(2,-2)
+                    for _,option,text in v:gmatch(sub_pattern) do
+                        option,text=option:trim():upper(),text:sub(2,-2)
                         default=default or option
                         if prefix~="@" then
                             if not options[option] then options[option]={} end

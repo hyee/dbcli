@@ -714,7 +714,6 @@ function db_core:exec(sql,args,prep_params,src_sql)
         end
     end
     --close statments
-
     local params1=nil
     local result={is_query and prep:getResultSet() or prep:getUpdateCount()}
     local i=0;

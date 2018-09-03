@@ -160,18 +160,28 @@ function oracle:connect(conn_str)
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     self.props={instance="#NUMBER",sid="#NUMBER"}
-    for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container','israc'} do self.props[v]="#VARCHAR" end
+    for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container','israc','privs'} do 
+        self.props[v]="#VARCHAR" 
+    end
     local succ,err=pcall(self.exec,self,[[
         DECLARE
             vs  PLS_INTEGER  := dbms_db_version.version;
             ver PLS_INTEGER  := sign(vs-9);
             re  PLS_INTEGER  := dbms_db_version.release;
             sv  VARCHAR2(200):= sys_context('userenv','service_name');
+            pv  VARCHAR2(32767) :=''; 
         BEGIN
             EXECUTE IMMEDIATE 'alter session set nls_date_format=''yyyy-mm-dd hh24:mi:ss''';
             EXECUTE IMMEDIATE 'alter session set nls_timestamp_format=''yyyy-mm-dd hh24:mi:ssxff''';
             EXECUTE IMMEDIATE 'alter session set nls_timestamp_tz_format=''yyyy-mm-dd hh24:mi:ssxff TZH:TZM''';
             EXECUTE IMMEDIATE 'alter session set statistics_level=all';
+
+            FOR r in(SELECT role p FROM SESSION_ROLES UNION ALL SELECT * FROM SESSION_PRIVS) LOOP
+                pv := pv||'/'||r.p;
+                exit when length(pv)>32000;
+            END LOOP;
+
+            :privs := pv;
 
             IF sv like 'SYS$%' THEN
                 sv := NULL;
@@ -220,6 +230,13 @@ function oracle:connect(conn_str)
         self.props.db_version='9.1'
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
     else
+        local privs={}
+        for _,priv in pairs(self.props.privs:split("/")) do
+            if priv~="" then privs[priv]=true end
+        end
+        privs[self.props.db_user]=true
+        self.props.privs=privs
+
         if prompt=="" or not prompt or prompt:find('[:/%(%)]') then prompt=self.props.service_name end
         prompt=prompt:match('([^%.]+)')
         self.conn_str=self.conn_str:gsub('(:%d+)([:/]+)([%w%.$#]+)',function(port,sep,sid)

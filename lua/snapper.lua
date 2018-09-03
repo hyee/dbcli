@@ -19,6 +19,7 @@
         11.set_ratio: true or false(default), controls whether not to add a percentage column on each 'delta_by' columns
         12.before_sql: the statements that executed before the 1st snapshot
         13.after_sql: the statements that executed after the 2nd snapshot
+        14: column_formatter: the column format of some fields. refer to command 'col'
 
     The belowing variables can be referenced by the SQLs in 'snapper':
     1. :snap_cmd      :  The command that included by EOF
@@ -95,18 +96,7 @@ function snapper:build_data(sqls,args)
     local rs,rsidx=nil,{}
 
     if type(sqls)=="string" then
-        rs=self.db:exec_cache(sqls,args,"snapper")
-        if type(rs)=="userdata" then
-            rs={self.db.resultset:rows(rs,-1)}
-            rs[1]._is_result=true
-        elseif type(rs)=="table" then
-            for k,v in ipairs(rs) do 
-                rs[k]=db.resultset:rows(v,-1)
-                rs[k]._is_result=true
-            end
-        else
-            rs=nil
-        end
+        rs=self.db:grid_call({sqls},-1,args,"snapper")
     else
         rs=self.db:grid_call(sqls,-1,args,"snapper")
     end
