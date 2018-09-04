@@ -207,7 +207,7 @@ end
 
 function ResultSet:close(rs)
     if rs then
-        if not rs:isClosed() then rs:close() end
+        if rs.isClosed and not rs:isClosed() then rs:close() end
         if self[rs] then self[rs]=nil end
     end
     local clock=os.timer()
@@ -227,7 +227,7 @@ function ResultSet:close(rs)
 end
 
 function ResultSet:rows(rs,count,limit,null_value)
-    if not rs.isClosed or rs:isClosed() then return end
+    if type(rs)~="userdata" or (rs.isClosed and rs:isClosed()) then return end
     count=tonumber(count) or -1
     local titles=self:getHeads(rs,limit)
     local head=titles.__titles
@@ -238,6 +238,7 @@ function ResultSet:rows(rs,count,limit,null_value)
     null_value=null_value or ""
     if count~=0 then
         rows=loader:fetchResult(rs,count)
+
         local maxsiz=cfg.get("COLSIZE")
         for i=1,#rows do
             for j=1,cols do
@@ -266,7 +267,7 @@ end
 
 function ResultSet:print(res,conn,prefix)
     local result,hdl={},nil
-    if not res.isClosed or res:isClosed() then return end
+    if type(res)~="userdata" or (res.isClosed and res:isClosed()) then return end
     local cols=self:getHeads(res,limit)
     if #cols==1 then
         if cfg.get("pipequery")=="on" then
@@ -457,7 +458,6 @@ function db_core:call_sql_method(event_name,sql,method,...)
     local res,obj=pcall(method,...)
     if res==false then
         local info,internal={db=self,sql=sql,error=tostring(obj):gsub('%s+$','')}
-        info.error=info.error:gsub('.*Exception:?%s*','')
         event(event_name,info)
         if info and info.error and info.error~="" then
             if not self:is_internal_call(sql) and info.sql and env.ROOT_CMD~=self.get_command_type(sql) then
@@ -554,10 +554,11 @@ function db_core:parse(sql,params,prefix,prep)
     if #bind_info==0 then return prep,sql,params end
     local binds={}
     local method,typeid,value,varname,typename=1,2,2,3,4
+
     for k,v in ipairs(bind_info) do
         prep[v[method]](prep,k,v[value])
         local inout=type(params[bind_info[varname]])=='table' and params[bind_info[varname]]=='#' and '#' or '$'
-        if binds[varname] then
+        if binds[varname] and type(binds[varname][2])=="table" then
             table.insert(binds[varname][2],k)
         else
             binds[varname]={inout,inout=='$' and k or {k},v[typename],v[method],v[value]}
