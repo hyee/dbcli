@@ -607,7 +607,7 @@ function db_core:exec_cache(sql,args,description)
         for k,n in pairs(args) do
             k=type(k)=="string" and k:upper() or k
             local o,typ=org[k]
-            if params[k] and o ~= n and tostring(n):sub(1,1)~='#' and tostring(o):sub(1,1)~='#' then
+            if params[k] and o ~= n and tostring(n):sub(1,1)~='#' then
                 local idx=params[k][6] or params[k][2]
                 local method=params[k][4]
                 org[k]=n
@@ -905,7 +905,7 @@ function db_core:grid_call(tabs,rows_limit,args,is_cache)
                 tab,grid_cfg=env.grid.get_config(tab)
                 grid_cfg._is_result=true
                 result[i]={grid_cfg=grid_cfg,sql=tab,index=i}
-                rs_idx[#rs_idx+1]=result[i]
+                table.insert(rs_idx,1,result[i])
             end
         end
         return result

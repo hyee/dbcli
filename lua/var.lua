@@ -119,9 +119,9 @@ function var.accept_input(name,desc)
             return
         end
     end
-    desc=desc:match("^[%s']*(.-)[%s':]*$")..': '
-    env.printer.write(desc)
-    var.inputs[uname]=io.read()
+    desc=desc:match("^[%s']*(.-)[%s':]*$")
+    
+    var.inputs[uname]=env.ask(desc)
     var.outputs[uname]=nil
 end
 

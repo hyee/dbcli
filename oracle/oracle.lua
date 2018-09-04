@@ -585,13 +585,12 @@ function oracle:grid_db_call(sqls,args,is_cache)
     args=args or {}
     for idx,sql in ipairs(sqls) do
         local typ=self.get_command_type(sql.sql)
-
         if typ:find('SELECT') or typ:find('WITH') then
             local cursor='GRID_CURSOR_'..idx
             args[cursor]='#CURSOR'
             stmt[#stmt+1]='  OPEN :'..cursor..' FOR \n        '..sql.sql..';'
         else
-            stmt[#stmt+1]=sql.sql..';'
+            stmt[#stmt+1]=sql.sql:gsub('[;%s]+$','')..';'
         end
     end
     stmt[#stmt+1]='END;'

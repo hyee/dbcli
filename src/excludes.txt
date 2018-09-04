@@ -18,6 +18,7 @@
 \jre_mac\
 \temp\
 \ext\
+\emviewers\
 xmlparserv2.jar
 .sublime-project
 .sublime-workspace

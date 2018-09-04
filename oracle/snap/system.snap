@@ -130,14 +130,17 @@
         SELECT * 
         FROM(
             SELECT ''||inst_id "#", 
-                MAX(DECODE(stat_name, 'BUSY_TIME', v)) "Busy",
-                MAX(DECODE(stat_name, 'USER_TIME', v)) "User",
-                MAX(DECODE(stat_name, 'SYS_TIME', v)) "Sys",
+                MAX(DECODE(stat_name, 'BUSY_TIME', v/cpus)) "Busy",
+                MAX(db/cpus/1e4) "DB",
+                MAX(DECODE(stat_name, 'USER_TIME', v/cpus)) "User",
+                MAX(DECODE(stat_name, 'SYS_TIME', v/cpus)) "Sys",
                 '|' "|",
                 MAX(DECODE(stat_name, 'FREE_MEMORY_BYTES', value)) "FreeMem",
                 SUM(DECODE(stat_name, 'VM_IN_BYTES', value,'VM_OUT_BYTES',value)) "Swap"
             FROM  (SELECT inst_id,stat_name,VALUE,
-                          round(VALUE / (SELECT min(VALUE) FROM gv$osstat a WHERE a.inst_id = b.inst_id AND a.STAT_NAME in ('NUM_CPUS')),2) v
+                          (SELECT min(VALUE) FROM gv$osstat a WHERE a.inst_id = b.inst_id AND a.STAT_NAME in ('NUM_CPUS')) CPUS,
+                          (select sum(value) FROM gv$sys_time_model a WHERE a.inst_id = b.inst_id and a.stat_name in('DB CPU','background cpu time')) db,
+                          VALUE v
                    FROM   gv$osstat b
                    WHERE  &inst_filter) a 
             GROUP  BY inst_id)
@@ -344,7 +347,7 @@
     delta_by=[[IOPS,MBPS,SMALL,IO Wait,Calls,Resp,OflEff,OflIn,IM-LIO,LIO(%),dxr,dxw,dbwr,lgwr,temp,offload,BandWidth,
                SISave,OflOut,OptRead,OptWrite,CellIM,CCSave,FcHit,Fc(%),Unzip,zip,ela,missCU,bytes,rows,Valid,skip,
                exclude,pcode,proj,pops,re-pops,popr,re-popr,Disk,Pct,Swap,Logon,Call,Exec,TPS,Parse,Hard,CcHit,Buffer,
-               PhyRead,PhyWrite,Redo,SQL*Net,value,cost,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,time,Busy,User,
+               PhyRead,PhyWrite,Redo,SQL*Net,value,cost,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,time,Busy,db,User,
                Sys,I/O,Nice,traffic,flash,cr,cu,cr_rec,cu_rec,cr_rec_avg,cu_rec_avg,cr_flush,cu_flush,cr_fl_avg,
                cu_fl_avg,lost,fail,enqs,read,write,s_r,l_r,s_w,l_w,F_IOPS,s_iops,l_iops]],
     group_by="inst,sql_id,name,LOCATION,addr,#,func,file",

@@ -19,7 +19,8 @@
         11.set_ratio: true or false(default), controls whether not to add a percentage column on each 'delta_by' columns
         12.before_sql: the statements that executed before the 1st snapshot
         13.after_sql: the statements that executed after the 2nd snapshot
-        14: column_formatter: the column format of some fields. refer to command 'col'
+        14:column_formatter: the column format of some fields. refer to command 'col'
+        15:variables: a map that describe the additional variables, refer to commands 'var' and 'def'
 
     The belowing variables can be referenced by the SQLs in 'snapper':
     1. :snap_cmd      :  The command that included by EOF
@@ -91,15 +92,26 @@ function snapper:get_time()
     return self:trigger('get_db_time') or "unknown"
 end
 
-function snapper:build_data(sqls,args)
-    local clock,time=os.timer(),os.date('%Y-%m-%d %H:%M:%S')
+function snapper:build_data(sqls,args,variables)
+    local clock,time = os.timer(),os.date('%Y-%m-%d %H:%M:%S')
     local rs,rsidx=nil,{}
+
+    if type(variables)=="table" then
+        for name,val in pairs(variables) do
+            if val=='#REFCURSOR' or val=='#CURSOR' or not args[name] then
+                args[name]=val
+            end
+        end
+    end
 
     if type(sqls)=="string" then
         rs=self.db:grid_call({sqls},-1,args,"snapper")
     else
         rs=self.db:grid_call(sqls,-1,args,"snapper")
     end
+
+    local grid_cost=self.db.grid_cost or (os.timer-clock)/2
+    clock=clock+grid_cost
 
     local function scanrs(rs)
         for k,v in ipairs(rs) do
@@ -109,6 +121,14 @@ function snapper:build_data(sqls,args)
                 else
                     rsidx[#rsidx+1]=v
                 end
+            end
+        end
+    end
+
+    if type(variables)=="table" then
+        for name,val in pairs(variables) do
+            if (val=='#REFCURSOR' or val=='#CURSOR') and type(args[name])=="userdata" then
+                rsidx[#rsidx+1]=self.db.resultset:rows(args[name],-1)
             end
         end
     end
@@ -217,7 +237,8 @@ function snapper:run_sql(sql,main_args,cmds,files)
         if cmd.before_sql then
             env.eval_line(cmd.before_sql,true,true) 
         end
-        cmd.rs2,cmd.clock,cmd.starttime,cmd.fetch_time2=self:build_data(cmd.sql,arg)
+        cmd.begin_time=os.clock()
+        cmd.rs2,cmd.clock,cmd.starttime,cmd.fetch_time2=self:build_data(cmd.sql,arg,cmd.variables)
     end
     self.db:commit()
     if snap_cmd then
@@ -235,17 +256,13 @@ function snapper:next_exec()
     --self:trigger('before_exec_action')
     for name,cmd in pairs(cmds) do
         self.db.grid_cost=nil
-        local rs,clock,starttime,fetch_time1=self:build_data(cmd.sql,args[name])
-        if self.db.grid_cost then 
-            args[name].snap_interval=clock - cmd.clock + self.db.grid_cost
-        else
-            local timer2=os.timer()
-            args[name].snap_interval=timer2-cmd.clock-(timer2-clock)/2
-        end
+        args[name].snap_interval=os.timer() - cmd.begin_time
+        local rs,clock1,starttime,fetch_time1=self:build_data(cmd.sql,args[name],cmd.variables)
+        cmd.begin_time=clock
         if type(cmd.rs2)=="table" and type(rs)=="table" then
-            cmd.rs1,cmd.clock,cmd.endtime,cmd.elapsed,cmd.fetch_time1=rs,clock,starttime,clock-cmd.clock,fetch_time1
+            cmd.rs1,cmd.clock,cmd.endtime,cmd.elapsed,cmd.fetch_time1=rs,clock1,starttime,clock1-cmd.clock,fetch_time1
         end
-        if cmd.after_sql then
+        if not self.is_repeat and cmd.after_sql then
             env.eval_line(cmd.after_sql,true,true) 
         end
     end
@@ -475,7 +492,7 @@ function snapper:next_exec()
             end
             print(title)
             if #cmd.rs2.rsidx==1 then
-                (cmd.rs2.rsidx[1]):print(nil,nil,nil,cmd.max_rows and cmd.max_rows+2 or cfg.get(self.command.."rows"))
+                env.grid.print(cmd.rs2.rsidx[1],nil,nil,nil,cmd.max_rows and cmd.max_rows+2 or cfg.get(self.command.."rows"))
             else
                 if top_mode then cmd.rs2.max_rows=getHeight(console)-3 end
                 env.grid.merge(cmd.rs2,true)

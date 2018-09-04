@@ -696,7 +696,11 @@ function env.force_end_input(exec,is_internal)
 end
 
 local function _eval_line(line,exec,is_internal,not_skip)
-    if type(line)~='string' or line:gsub('%s+','')=='' then return end
+    if type(line)~='string' or line:gsub('%s+','')=='' then
+        if is_internal and multi_cmd then return env.force_end_input(exec,is_internal) end
+        return 
+    end
+
     local subsystem_prefix=""
     --Remove BOM header
     if not env.pending_command() then
@@ -1182,7 +1186,7 @@ function env.ask(question,range,default)
     local isValid,desc,value=true,question
     --env.printer.write(desc..': ')
     env.IS_ASKING=question
-    value,env.IS_ASKING=console:readLine(env.space..desc..": ",ansi.get_color('HEADCOLOR')..default),nil
+    value,env.IS_ASKING=console:readLine(env.space..desc..": ",default and (ansi.get_color('HEADCOLOR')..default)),nil
     value=value and ansi.strip_ansi(value:trim()) or ""
 
     value=value:gsub('\\([0-9]+)',function(x) return string.char(tonumber(x)) end)

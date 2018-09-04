@@ -236,27 +236,23 @@ function db:check_access(obj_name,bypass_error,is_set_env)
             e   VARCHAR2(500);
             obj VARCHAR2(61) := :owner||'.'||:object_name;
         BEGIN
-            IF instr(obj,'PUBLIC.')=1 THEN
-                obj := :object_name;
-            END IF;
-            BEGIN
-                EXECUTE IMMEDIATE 'select count(1) from ' || obj || ' where rownum<1';
-                x := 1;
-            EXCEPTION WHEN OTHERS THEN NULL;
-            END;
+        	select count(1) into x
+            from   table_privileges
+            where  owner=case when regexp_like(:object_name,'^(G?V)\$') then 'SYS' else :owner end
+            AND    table_name=regexp_replace(:object_name,'^(G?V)\$','\1_$')
+            AND    rownum<2;
 
-            IF x = 0 THEN
-                BEGIN
-                    EXECUTE IMMEDIATE 'begin ' || obj || '."_test_access"; end;';
-                    x := 1;
-                EXCEPTION
-                    WHEN OTHERS THEN
-                        e := SQLERRM;
-                        IF INSTR(e,'PLS-00225')>0 OR INSTR(e,'PLS-00302')>0 THEN
-                            x := 1;
-                        END IF;
-                END;
-            END IF;
+            IF x=0 THEN
+	            IF instr(obj,'PUBLIC.')=1 THEN
+	                obj := :object_name;
+	            END IF;
+	            BEGIN
+	                EXECUTE IMMEDIATE 'select count(1) from ' || obj || ' where rownum<1';
+	                x := 1;
+	            EXCEPTION WHEN OTHERS THEN NULL;
+	            END;
+	        END IF;
+	        
             :count := x;
         END;
     ]],obj,'Internal_CheckAccessRight')

@@ -658,6 +658,7 @@ public class Console {
                     } else {
                         Matcher m = p1.matcher(buffer);
                         if (m.find()) {
+                            asb.ansiAppend(NOR);
                             if (!commands.containsKey(m.group(2).toUpperCase())) {
                                 asb.ansiAppend(m.group(1)).ansiAppend(errorAnsi).append(m.group(2)).ansiAppend(ansi);
                                 processQuoter(m.group(3));

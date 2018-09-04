@@ -399,6 +399,7 @@ public class Loader {
         } catch (Exception e) {
             throw e;
         } finally {
+            console.setEvents(null,null);
             this.stmt = null;
         }
     }
