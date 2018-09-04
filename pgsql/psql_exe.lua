@@ -8,7 +8,7 @@ function psql_exe:ctor()
     self.command={'file','-f'}
     self.support_redirect=false
     self.name="psql"
-    self.executable="psql.exe"
+    self.executable="psql"
     self.description="Switch to psql.exe with same login, the default working folder is 'psql/psql'. Usage: @@NAME [-n|-d<work_path>] [other args]"
     self.help_title='Run psql script under the "psql" directory. '
     self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."psql",nil
