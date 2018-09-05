@@ -581,6 +581,12 @@ end
 function oracle:grid_db_call(sqls,args,is_cache)
     local stmt={[[BEGIN]]}
     local clock=os.timer()
+    if sqls.declare then
+        table.insert(stmt,1,'DECLARE ')
+        for k,v in ipairs(type(sqls.declare)=="table" and sqls.declare or {sqls.declare}) do
+            table.insert(stmt,2,v:trim(';')..';')
+        end
+    end
     --stmt[#stmt+1]='BEGIN set transaction isolation level serializable;EXCEPTION WHEN OTHERS THEN NULL;END;'
     args=args or {}
     for idx,sql in ipairs(sqls) do
@@ -590,7 +596,7 @@ function oracle:grid_db_call(sqls,args,is_cache)
             args[cursor]='#CURSOR'
             stmt[#stmt+1]='  OPEN :'..cursor..' FOR \n        '..sql.sql..';'
         else
-            stmt[#stmt+1]=sql.sql:gsub('[;%s]+$','')..';'
+            stmt[#stmt+1]=sql.sql:trim(';')..';'
         end
     end
     stmt[#stmt+1]='END;'

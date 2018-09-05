@@ -237,7 +237,7 @@ function snapper:run_sql(sql,main_args,cmds,files)
         if cmd.before_sql then
             env.eval_line(cmd.before_sql,true,true) 
         end
-        cmd.begin_time=os.clock()
+        cmd.begin_time=os.timer()
         cmd.rs2,cmd.clock,cmd.starttime,cmd.fetch_time2=self:build_data(cmd.sql,arg,cmd.variables)
     end
     self.db:commit()
@@ -256,7 +256,7 @@ function snapper:next_exec()
     --self:trigger('before_exec_action')
     for name,cmd in pairs(cmds) do
         self.db.grid_cost=nil
-        args[name].snap_interval=os.timer() - cmd.begin_time
+        args[name].snap_interval=clock - cmd.begin_time
         local rs,clock1,starttime,fetch_time1=self:build_data(cmd.sql,args[name],cmd.variables)
         cmd.begin_time=clock
         if type(cmd.rs2)=="table" and type(rs)=="table" then

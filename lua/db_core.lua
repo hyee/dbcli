@@ -891,7 +891,7 @@ end
 
 function db_core:grid_call(tabs,rows_limit,args,is_cache)
     local db_call=self.grid_db_call
-    local rs_idx={}
+    local rs_idx={declare=tabs.declare}
     local function parse_sqls(tabs)
         local result={}
         for k,v in ipairs(tabs) do result[k]=v end
