@@ -138,7 +138,10 @@ function login.search(id,filter,url_filter)
         return
     elseif prt and counter==1 then
         local u=list[account]
-        print(string.format('Conn %s/%s@%s%s',u.user,env.packer.unpack_str(u.password),u.url:match('[^@]+$'),u.internal_logon and (' as '..u.internal_logon) or ''))
+        print(string.format('Conn %s/%s@%s%s',
+                u.user,env.packer.unpack_str(u.password),
+                u.url:gsub('^.-[@/]+',''),
+                u.internal_logon and (' as '..u.internal_logon) or ''))
         return
     end
 

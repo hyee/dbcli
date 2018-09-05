@@ -87,7 +87,8 @@ function string.case_insensitive_pattern(pattern)
 end
 
 function string.trim(s,sep)
-    return s:match('^[%s%z]*(.-)[%s%z]*$')
+    sep='[%s%z'..(sep or '')..']'
+    return s:match('^'..sep..'*(.-)'..sep..'*$')
 end
 
 String=java.require("java.lang.String")

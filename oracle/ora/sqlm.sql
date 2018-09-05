@@ -20,7 +20,7 @@
       @ver: 12.2={} 11.2={--}
       &uniq:    default={count(DISTINCT sql_exec_id||','||to_char(sql_exec_start,'YYYYMMDDHH24MISS'))}
       &option : default={}, l={,sql_exec_id,plan_hash,sql_exec_start}
-      &option1: default={&uniq execs,round(sum(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME))/&uniq*1e-6,2) avg_ela,}, l={}
+      &option1: default={&uniq execs,round(sum(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME))/&uniq,2) avg_ela,}, l={}
       &filter: default={1=1},f={},l={sql_id=sq_id},snap={DBOP_EXEC_ID=dopeid and dbop_name=dopename},u={username=nvl('&0',sys_context('userenv','current_schema'))}
       &format: default={BASIC+PLAN+BINDS},s={ALL-SESSIONS}, a={ALL}
       &tot : default={1} avg={0}
@@ -40,7 +40,7 @@ var c2 refcursor;
 var rs CLOB;
 var filename varchar2;
 var plan_hash number;
-col dur,avg_ela,ela,parse,queue,cpu,app,cc,cl,plsql,java,io,time format smhd2
+col dur,avg_ela,ela,parse,queue,cpu,app,cc,cl,plsql,java,io,time format usmhd2
 col read,write,iosize,mem,temp,cellio,buffget,offload,offlrtn,calc_kmg,ofl format kmg
 col est_cost,est_rows,act_rows,ioreq,execs,outputs,FETCHES,dxwrite,calc_tmb format TMB
 
@@ -217,16 +217,16 @@ BEGIN
                              to_char(MAX(last_refresh_time), 'MMDD HH24:MI:SS') last_seen,
                              MAX(sid || ',@' || inst_id) keep(dense_rank LAST ORDER BY last_refresh_time) last_sid,
                              MAX(status) keep(dense_rank LAST ORDER BY last_refresh_time, sid) last_status,
-                             round(sum(last_refresh_time - sql_exec_start)/&avg * 86400, 2) dur,
-                             round(sum(ela)/&avg * 1e-6, 2) ela,
-                             round(sum(QUEUING_TIME)/&avg * 1e-6, 2) QUEUE,
-                             round(sum(CPU_TIME)/&avg * 1e-6, 2) CPU,
-                             round(sum(APPLICATION_WAIT_TIME)/&avg * 1e-6, 2) app,
-                             round(sum(CONCURRENCY_WAIT_TIME)/&avg * 1e-6, 2) cc,
-                             round(sum(CLUSTER_WAIT_TIME)/&avg * 1e-6, 2) cl,
-                             round(sum(PLSQL_EXEC_TIME)/&avg * 1e-6, 2) plsql,
-                             round(sum(JAVA_EXEC_TIME)/&avg * 1e-6, 2) JAVA,
-                             round(sum(USER_IO_WAIT_TIME)/&avg * 1e-6, 2) io,
+                             round(sum(last_refresh_time - sql_exec_start)/&avg * 86400*1e6, 2) dur,
+                             round(sum(ela)/&avg , 2) ela,
+                             round(sum(QUEUING_TIME)/&avg , 2) QUEUE,
+                             round(sum(CPU_TIME)/&avg , 2) CPU,
+                             round(sum(APPLICATION_WAIT_TIME)/&avg , 2) app,
+                             round(sum(CONCURRENCY_WAIT_TIME)/&avg , 2) cc,
+                             round(sum(CLUSTER_WAIT_TIME)/&avg , 2) cl,
+                             round(sum(PLSQL_EXEC_TIME)/&avg , 2) plsql,
+                             round(sum(JAVA_EXEC_TIME)/&avg , 2) JAVA,
+                             round(sum(USER_IO_WAIT_TIME)/&avg , 2) io,
                              round(sum(PHYSICAL_READ_BYTES)/&avg, 2) READ,
                              round(sum(PHYSICAL_WRITE_BYTES)/&avg, 2) WRITE,
                              &ver round(sum(IO_CELL_OFFLOAD_ELIGIBLE_BYTES)/&avg,2) OFL,
@@ -299,15 +299,15 @@ BEGIN
                            to_char(MIN(sql_exec_start), 'MMDD HH24:MI:SS') first_seen,
                            to_char(MAX(last_refresh_time), 'MMDD HH24:MI:SS') last_seen,
                            round(SUM(dur*nvl2(px_qcsid,0,1))/&avg, 2) dur,
-                           round(SUM(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME)) * 1e-6 /&avg, 2) ela,
-                           round(SUM(QUEUING_TIME) * 1e-6 /&avg, 2) QUEUE,
-                           round(SUM(CPU_TIME) * 1e-6 /&avg, 2) CPU,
-                           round(SUM(APPLICATION_WAIT_TIME) * 1e-6 /&avg, 2) app,
-                           round(SUM(CONCURRENCY_WAIT_TIME) * 1e-6 /&avg, 2) cc,
-                           round(SUM(CLUSTER_WAIT_TIME) * 1e-6 /&avg, 2) cl,
-                           round(SUM(PLSQL_EXEC_TIME) * 1e-6 /&avg, 2) plsql,
-                           round(SUM(JAVA_EXEC_TIME) * 1e-6 /&avg, 2) JAVA,
-                           round(SUM(USER_IO_WAIT_TIME) * 1e-6 /&avg, 2) io,
+                           round(SUM(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME))  /&avg, 2) ela,
+                           round(SUM(QUEUING_TIME)  /&avg, 2) QUEUE,
+                           round(SUM(CPU_TIME)  /&avg, 2) CPU,
+                           round(SUM(APPLICATION_WAIT_TIME)  /&avg, 2) app,
+                           round(SUM(CONCURRENCY_WAIT_TIME)  /&avg, 2) cc,
+                           round(SUM(CLUSTER_WAIT_TIME)  /&avg, 2) cl,
+                           round(SUM(PLSQL_EXEC_TIME)  /&avg, 2) plsql,
+                           round(SUM(JAVA_EXEC_TIME)  /&avg, 2) JAVA,
+                           round(SUM(USER_IO_WAIT_TIME)  /&avg, 2) io,
                            round(SUM(io_interconnect_bytes) /&avg, 2) cellio,
                            round(SUM(PHYSICAL_READ_BYTES) /&avg, 2) READ,
                            round(SUM(PHYSICAL_WRITE_BYTES) /&avg, 2) WRITE,
@@ -319,7 +319,7 @@ BEGIN
                            MAX(DOPS) SIDS,
                            regexp_replace(MAX(ERROR_MESSAGE) keep(dense_rank LAST ORDER BY nvl2(ERROR_MESSAGE, last_refresh_time, NULL) NULLS FIRST),'\s+', ' ') last_error
                     FROM   (SELECT a.*,sql_plan_hash_value phv,
-                                   max(greatest((last_refresh_time-sql_exec_start)*86400,ELAPSED_TIME*1e-6,(CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME)*1e-6))  over(partition by sql_exec_id,sql_exec_start) dur,
+                                   max(greatest((last_refresh_time-sql_exec_start)*86400,ELAPSED_TIME,(CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME)))  over(partition by sql_exec_id,sql_exec_start) dur,
                                    count(distinct inst_id||','||sid) over(partition by sql_exec_id,sql_exec_start) dops 
                             FROM gv$sql_monitor a WHERE sql_id = sq_id) b
                     GROUP  BY phv

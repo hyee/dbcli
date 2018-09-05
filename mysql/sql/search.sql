@@ -36,10 +36,6 @@ FROM   (SELECT table_schema `Schema`,
         FROM   information_schema.triggers
         WHERE  upper(concat(trigger_schema, '.', trigger_name)) LIKE @target
         UNION
-        SELECT DB, NAME, NULL, TYPE, created, modified, upper(concat(db, '.', NAME))
-        FROM   mysql.proc
-        WHERE  upper(concat(db, '.', NAME)) LIKE @target
-        UNION
         SELECT DISTINCT index_schema, table_name, index_name, 'INDEX', NULL, NULL, upper(concat(index_schema, '.', index_name))
         FROM   information_schema.statistics
         WHERE  upper(concat(index_schema, '.', index_name)) LIKE @target) AS M

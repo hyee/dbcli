@@ -225,9 +225,9 @@
                 (select to_char(nvl(max(current_time),sysdate),'HH24:MI:SS') 
                  from time b
                  where b.inst_id=c.inst_id) "OS Time",
-                MAX(DECODE(stat_name, 'NUM_CPUS', VALUE)) --
-                || nullif('/' || MAX(DECODE(stat_name, 'NUM_CPU_CORES', VALUE)), '/') --
-                || nullif('/' || MAX(DECODE(stat_name, 'NUM_CPU_SOCKETS', VALUE)), '/')
+                nullif(MAX(DECODE(stat_name, 'NUM_CPU_SOCKETS', VALUE))||'/', '/')
+                || nullif(MAX(DECODE(stat_name, 'NUM_CPU_CORES', VALUE))||'/', '/') --
+                || MAX(DECODE(stat_name, 'NUM_CPUS', VALUE)) --
                 || '|'||MAX(DECODE(stat_name, 'LOAD', round(VALUE,1))) "CPU & Load",
                 MAX(DECODE(stat_name, 'PHYSICAL_MEMORY_BYTES', value)) "PhyMem"
         FROM   gv$osstat c
@@ -376,7 +376,7 @@
             [[WITH ASH as(/*grid={topic='System Events',fixed_title=true,height=40,order_by="-cost"}*/
                 SELECT inst,event,round(SUM(cost)/:snap_interval,2) aas, MAX(w) max_ms, 
                        MAX(sql_id) keep(dense_rank LAST ORDER BY cnt) top_sql,
-                       count(distinct sql_id) sqls
+                       round(count(distinct sql_id)/:snap_interval,1) sqls
                 FROM   (SELECT &inst1 inst, SQL_ID, SQL_PLAN_HASH_VALUE, EVENT, time_waited w,
                                &ash_cost cost,
                                SUM(&ash_cost) OVER(PARTITION BY inst_id, event) cnt

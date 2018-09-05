@@ -333,7 +333,10 @@ function grid:add(row)
         if not colsize[k] then colsize[k] = {0, 1} end
         is_number, v1 = grid.format_column(self.include_head, self.colinfo and self.colinfo[k] and self.colinfo[k] or {column_name = #result > 0 and result[1]._org[k] or v}, v, #result,self)
         if tostring(v) ~= tostring(v1) then v = v1 end
-        if is_number then
+        if colsize[k][3] then
+            v,v1=colsize[k][3],colsize[k][3]
+            csize=#colsize[k][3]
+        elseif is_number then
             csize = #tostring(v)
         elseif type(v) ~= "string" or v == "" then
             v = tostring(v) or ""
@@ -351,8 +354,6 @@ function grid:add(row)
                 if v=='|' then 
                     colsize[k][3]='|'
                 end
-            elseif colsize[k][3] then
-                v='|'
             end
             
             local col_wrap = grid.col_wrap

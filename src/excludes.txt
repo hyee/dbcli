@@ -34,8 +34,6 @@ ansicon.exe
 .pptx
 jnlua.c
 Makefile
-mysql-connector.jar
-postgresql-jdbc.jar
 dbcli_F0.bat
 dbcli_nojre.bat
 dbcli_agent.bat

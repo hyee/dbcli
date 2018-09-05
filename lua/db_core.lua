@@ -520,7 +520,7 @@ function db_core:parse(sql,params,prefix,prep)
             if not v then return s end
             counter=counter+1;
             local args,typ={}
-            if type(v) =="table" then
+            if type(v) =="table" and type(params[k][2])=='table' then
                 table.insert(params[k][2],counter)
                 typ=v[3]
                 args={'registerOutParameter',db_Types[v[3]].id}
@@ -585,7 +585,7 @@ function db_core:exec_cache(sql,args,description)
 
     local cache=self.__preparedCaches[sql]
     local prep,org,params,_sql
-    if not cache then
+    if not cache or cache[1]:isClosed() then
         org=table.clone(args)
         prep,_sql,params=self:parse(sql,org)
         cache={prep,org,params}
@@ -597,6 +597,13 @@ function db_core:exec_cache(sql,args,description)
                 for k,v in pairs(self.__preparedCaches) do
                     if prep1==v then
                         self.__preparedCaches[k]=nil
+                        break
+                    end
+                end
+
+                for k,v in pairs(self.__preparedCaches.__list) do
+                    if prep1==v then
+                        self.__preparedCaches.__list[k]=nil
                         break
                     end
                 end

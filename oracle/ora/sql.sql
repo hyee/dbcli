@@ -4,7 +4,7 @@
     --]]
 ]]*/
 set colwrap 150 feed off 
-COL ELA,ALL_ELA,CPU,IO,CC,CL,AP,PL_JAVA FORMAT SMHD2
+COL ELA,ALL_ELA,CPU,IO,CC,CL,AP,PL_JAVA FORMAT USMHD2
 COL CELLIO,READ,WRITE,CELLIO,OFLIN,OFLOUT FORMAT KMG
 SET BYPASSEMPTYRS ON
 
@@ -33,15 +33,15 @@ SELECT PLAN_HASH_VALUE PHV,
        parsing_schema_name user#,
        SUM(EXEC) AS EXEC,
        SUM(PARSE_CALLS) parse,
-       round(SUM(elapsed_time)*1e-6,3) all_ela,
+       round(SUM(elapsed_time),3) all_ela,
        '|' "|",
-       round(SUM(elapsed_time)*1e-6/SUM(EXEC),3) ela,
-       round(SUM(cpu_time)*1e-6/SUM(EXEC),3) CPU,
-       round(SUM(USER_IO_WAIT_TIME)*1e-6/SUM(EXEC),3) io,
-       round(SUM(CONCURRENCY_WAIT_TIME)*1e-6/SUM(EXEC),3) cc,
-       round(SUM(CLUSTER_WAIT_TIME)*1e-6/SUM(EXEC),3) cl,
-       round(SUM(APPLICATION_WAIT_TIME)*1e-6/SUM(EXEC),3) ap,
-       round(SUM(PLSQL_EXEC_TIME + JAVA_EXEC_TIME)*1e-6/SUM(EXEC),3) pl_java,
+       round(SUM(elapsed_time)/SUM(EXEC),3) ela,
+       round(SUM(cpu_time)/SUM(EXEC),3) CPU,
+       round(SUM(USER_IO_WAIT_TIME)/SUM(EXEC),3) io,
+       round(SUM(CONCURRENCY_WAIT_TIME)/SUM(EXEC),3) cc,
+       round(SUM(CLUSTER_WAIT_TIME)/SUM(EXEC),3) cl,
+       round(SUM(APPLICATION_WAIT_TIME)/SUM(EXEC),3) ap,
+       round(SUM(PLSQL_EXEC_TIME + JAVA_EXEC_TIME)/SUM(EXEC),3) pl_java,
        round(SUM(BUFFER_GETS)/SUM(EXEC),3) AS BUFF,
        &ver round(SUM(IO_INTERCONNECT_BYTES)/SUM(EXEC),3)  cellio,
        &ver round(SUM(PHYSICAL_WRITE_BYTES)/SUM(EXEC),3)  AS WRITE,
