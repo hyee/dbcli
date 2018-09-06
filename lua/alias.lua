@@ -151,6 +151,10 @@ function alias.set(name, cmd, write)
         elseif globalcmds[name].FUNC == alias.run_command then
             alias.cmdlist[name].active = true
         end
+
+        if alias.cmdlist[name].active then
+            env._CMDS[name].ALIAS_TO=desc:match('%S+'):upper()
+        end
     end
 end
 

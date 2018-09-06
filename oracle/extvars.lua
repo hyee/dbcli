@@ -1,5 +1,5 @@
 local env=env
-local db,cfg,event,var=env.getdb(),env.set,env.event,env.var
+local db,cfg,event,var,type=env.getdb(),env.set,env.event,env.var,type
 local extvars={}
 local datapath=debug.getinfo(1, "S").source:sub(2):gsub('[%w%.]+$','dict')
 local re=env.re
@@ -11,7 +11,6 @@ local instance,container,usr,dbid,starttime,endtime
 local function rep_instance(prefix,full,obj,suffix)
     obj=obj:upper()
     local flag,str=0
-
     if extvars.dict[obj] then
         for k,v in ipairs{
             {instance>0,extvars.dict[obj].inst_col,instance},
@@ -61,8 +60,12 @@ function extvars.on_before_db_exec(item)
     if not extvars.dict then return item end
     local db,sql,args,params=table.unpack(item)
 
-    if sql and not item.__is_extvars then
-        item.__is_extvars=true
+    if sql and not item.__IS_EXTVARS and (type(args)~="table" or not args.__IS_EXTVARS) then
+        if type(args)=="table" then 
+            args.__IS_EXTVARS=true
+        else
+            item.__IS_EXTVARS=true
+        end
         item[2]=re.gsub(sql..' ',extvars.P,rep_instance):sub(1,-2)
     end
     return item
@@ -175,6 +178,7 @@ function extvars.set_schema(name,value)
     env.checkerr(id~=nil and id~="", "No such user: "..value)
     --db:internal_call("alter session set current_schema="..value)
     uid=tonumber(id)
+    if #env.RUNNING_THREADS == 1 then db:clearStatements(true) end
     return value
 end
 

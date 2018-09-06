@@ -110,7 +110,7 @@ function snapper:build_data(sqls,args,variables)
         rs=self.db:grid_call(sqls,-1,args,"snapper")
     end
 
-    local grid_cost=self.db.grid_cost or (os.timer-clock)/2
+    local grid_cost=self.db.grid_cost or (os.timer()-clock)/2
     clock=clock+grid_cost
 
     local function scanrs(rs)
@@ -506,6 +506,7 @@ function snapper:next_exec()
     if self.is_repeat then
         for name,cmd in pairs(cmds) do
             cmd.rs2,cmd.rs1,cmd.starttime,cmd.fetch_time2=cmd.rs1,nil,cmd.endtime,cmd.fetch_time1
+            --print(args[name].snap_interval)
         end
         
         if self.snap_cmd then

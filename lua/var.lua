@@ -268,7 +268,7 @@ function var.capture_before_cmd(cmd,args)
     if env._CMDS[cmd] and env._CMDS[cmd].FILE:find('var') then
         return
     end
-    local sub=tostring(var.cmdlist and var.cmdlist[cmd] or nil):upper():match('^%w+')
+    local sub=env._CMDS[cmd].ALIAS_TO or 'nil'
     if sub~=var.cmd1 and sub~=var.cmd2 and sub~=var.cmd3 and sub~=var.cmd4 and sub~='COL' and sub~='COLUMN' then
         env.log_debug("var","Backup variables")
         if not var._prevent_restore then
@@ -368,7 +368,7 @@ function var.define_column(col,...)
                     end
                     return string.format("%s"..num_fmt.."%s",v==0 and '' or prefix,v,units[#units])
                 end
-            elseif f:find("SMHD%d") then
+            elseif f:find("SMHD%d") or f:find('.SMHD$') then
                 local div,units=f:match('%d$')
                 if f:sub(1,1)=='U' then
                     units,div={'us','ms','s','m','h','d'},{1000,1000,60,60,24}
@@ -569,12 +569,6 @@ function var.onload()
     env.set_command(nil,{"COLUMN","COL"},fmt_help,var.define_column,false,30)
     env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables.Usage: @@NAME <variable|-a>',var.print,false,3)
     env.set_command(nil,"Save","Save variable value into a specific file under folder 'cache'. Usage: @@NAME <variable> <file name>",var.save,false,3);
-    env.event.snoop("ON_ENV_LOADED",var.on_env_load,nil,2)
-end
-
-
-function var.on_env_load()
-    var.cmdlist=env.get_command_by_source{"default","alias"}
 end
 
 return var

@@ -282,7 +282,7 @@ function cfg.capture_before_cmd(command)
     if #env.RUNNING_THREADS>1 then return end
     local cmd=env._CMDS[command[1]]
     cfg._backup=cfg.backup()
-    if command[1]~='SET' and (not cfg.cmdlist or not tostring(cfg.cmdlist[command[1]]):upper():find('^SET')) then
+    if command[1]~='SET' and cmd.ALIAS_TO~='SET' then
         env.log_debug("set","taking full backup",command[1])
         cfg._backup=cfg.backup()
     else
@@ -307,11 +307,6 @@ function cfg.onload()
                     help_func="Set environment parameters. Usage: set [-a] | {[-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]}",
                     call_func=cfg.doset,
                     is_multiline=false,parameters=99,color="PROMPTCOLOR"}
-    env.event.snoop("ON_ENV_LOADED",cfg.on_env_load,nil,2)
-end
-
-function cfg.on_env_load()
-    cfg.cmdlist=env.get_command_by_source{"default","alias"}
 end
 
 return cfg

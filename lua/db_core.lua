@@ -579,6 +579,16 @@ function db_core:abort_statement()
 end
 
 function db_core:exec_cache(sql,args,description)
+    local params ={}
+    for k,v in pairs(args or {}) do
+        if type(k)=="string" then params[k:upper()] = v end
+    end
+    
+    sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
+    if type(sql)~="string" then
+        return sql
+    end
+
     if not self.__preparedCaches or not self.__preparedCaches.__list then
         self.__preparedCaches={__list={}}
     end

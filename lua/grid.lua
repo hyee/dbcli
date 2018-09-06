@@ -15,7 +15,7 @@ local params = {
     PIVOT = {name = "pivot", default = 0, desc = "Pivot a grid when next print, afterward the value would be reset", range = "-30 - +30"},
     PIVOTSORT = {name = "pivotsort", default = "on", desc = "To indicate if to sort the titles when pivot option is on", range = "on,off"},
     MAXCOLS = {name = "maxcol", default = 1024, desc = "Define the max columns to be displayed in the grid", range = "4-1024"},
-    DIGITS = {name = "digits", default = 38, desc = "Define the digits for a number", range = "0 - 38"},
+    [{'SCALE','DIGITS'}] = {name = "digits", default = 38, desc = "Define the digits for a number", range = "0 - 38"},
     SEP4K = {name = "sep4k", default = "off", desc = "Define whether to show number with thousands separator", range = "on,off"},
     [{"HEADING","HEAD"}] = {name = "heading", default = "on", desc = "Controls printing of column headings in reports", range = "on,off"},
     [{"LINESIZE","LINES"}]= {name = "linesize", default = 0, desc = "Define the max chars in one line, other overflow parts would be cutted.", range = '0-32767'},
@@ -282,7 +282,9 @@ function grid.format_column(include_head, colinfo, value, rownum,instance)
             local pre, scal = math.modf(v1)
             if grid.sep4k == "on" then
                 if v1 ~= pre then
-                    v2 = string.format_number("%,.2f", v1, 'double')
+                    local scale=grid.digits<38 and grid.digits or 2
+                    v1=math.floor(v1*math.pow(10,scale))/math.pow(10,scale)
+                    v2 = string.format_number("%,."..scale.."f", v1, 'double')
                 else
                     v2 = string.format_number("%,d", v1, 'long')
                 end
