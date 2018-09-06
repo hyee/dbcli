@@ -385,7 +385,7 @@
                 FROM   (SELECT  &inst1  inst, NAME n, VALUE v FROM &sysstat WHERE &inst_filter) a
                 GROUP  BY inst]],
             '-',
-            [[WITH ASH as(/*grid={topic='System Events',fixed_title=true,height=40,order_by="-cost"}*/
+            [[WITH ASH as(/*grid={topic='System Events',fixed_title=true,max_rows=40,order_by="-cost"}*/
                 SELECT inst,event,round(SUM(cost)/:snap_interval,2) aas, MAX(w) max_ms, 
                        MAX(sql_id) keep(dense_rank LAST ORDER BY cnt) top_sql,
                        round(count(distinct sql_id)/:snap_interval,1) sqls

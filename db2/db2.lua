@@ -125,7 +125,8 @@ function db2:command_call(sql,...)
 end
 
 function db2:admin_cmd(cmd)
-    self:command_call('call sysproc.admin_cmd(:1)',cmd)
+    env.checkhelp(cmd)
+    self:command_call('call sysproc.admin_cmd(:1)',cmd or "")
 end
 
 function db2:onload()

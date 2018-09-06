@@ -263,7 +263,7 @@
                 FROM   &stats a
                 GROUP  BY sids]],
             '-',
-            [[/*grid={topic='Session Events',fixed_title=true,height=40,order_by="-cost"}*/
+            [[/*grid={topic='Session Events',fixed_title=true,max_rows=40,order_by="-cost"}*/
               WITH ASH as(
                 SELECT sids,event,round(SUM(cost),2) aas, MAX(w) max_ms, 
                        MAX(sql_id) keep(dense_rank LAST ORDER BY cnt) top_sql,

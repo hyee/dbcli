@@ -7,6 +7,7 @@ import com.sun.jna.Native;
 import com.sun.jna.Platform;
 import com.sun.jna.Pointer;
 import org.jline.builtins.Commands;
+import org.jline.builtins.Completers;
 import org.jline.builtins.Less;
 import org.jline.builtins.Source;
 import org.jline.keymap.KeyMap;
@@ -56,7 +57,7 @@ public class Console {
     Display display;
     long threadID;
     HashMap<String, Candidate[]> candidates = new HashMap<>(1024);
-    Completer completer = new Completer();
+    MyCompleter completer = new MyCompleter();
     Thread subThread = null;
     boolean isPrompt = true;
     private LuaState lua;
@@ -85,11 +86,12 @@ public class Console {
         this.reader.setCompleter(completer);
         this.reader.setHistory(history);
         this.reader.unsetOpt(LineReader.Option.MOUSE);
-        //this.reader.unsetOpt(LineReader.Option.BRACKETED_PASTE);
+        this.reader.unsetOpt(LineReader.Option.BRACKETED_PASTE);
         this.reader.setOpt(LineReader.Option.DISABLE_EVENT_EXPANSION);
         this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE);
         this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE_SEARCH);
         this.reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
+        this.reader.setOpt(LineReader.Option.INSERT_TAB);
         this.reader.setVariable(DISABLE_HISTORY, false);
         this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
         this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);
@@ -146,16 +148,16 @@ public class Console {
         parserCallback = null;
     }
 
-    private Candidate candidate(String key, String desc) {
-        if (desc != null && (desc.equals("") || desc.equals("\0"))) desc = null;
-        return new Candidate(key, key, null, null, null, null, true);
-    }
-
     public String ulen(final String s) {
         if (s == null) return "0:0";
         return s.length() + ":" + display.wcwidth(s);
     }
 
+
+    private Candidate candidate(String key, String desc) {
+        if (desc != null && (desc.equals("") || desc.equals("\0"))) desc = null;
+        return new Candidate(key, key, null, null, null, null, true);
+    }
 
     public void addCompleters(Map<String, ?> keys, boolean isCommand) {
         Candidate c = isCommand ? candidate("", null) : null;
@@ -180,8 +182,27 @@ public class Console {
                 }
             }
         }
-        completer.candidates.clear();
-        completer.candidates.putAll(candidates);
+        //completer.setCandidates(candidates);
+        //completer.candidates.clear();
+        //completer.candidates.putAll(candidates);
+    }
+
+    public void setKeywords(Map<String, ?> keywords) {
+        parser.keywords = keywords;
+        completer.setKeysWords(keywords);
+        //addCompleters(keywords, false);
+    }
+
+    public void setCommands(Map<String, Object> commands) {
+        parser.commands = commands;
+        completer.setCommands(commands);
+        //addCompleters(commands, true);
+    }
+
+    public void setSubCommands(Map<String, Object> commands) {
+        addCompleters(commands, true);
+        completer.setCommands(commands);
+        //parser.commands.putAll(commands);
     }
 
     public String getPlatform() {
@@ -246,20 +267,6 @@ public class Console {
         return terminal.getHeight() - titles.size();
     }
 
-    public void setKeywords(Map<String, ?> keywords) {
-        parser.keywords = keywords;
-        addCompleters(keywords, false);
-    }
-
-    public void setCommands(Map<String, Object> commands) {
-        parser.commands = commands;
-        addCompleters(commands, true);
-    }
-
-    public void setSubCommands(Map<String, Object> commands) {
-        addCompleters(commands, true);
-        parser.commands.putAll(commands);
-    }
 
     public int wcwidth(String str) {
         if (str == null || str.equals("")) return 0;

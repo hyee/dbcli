@@ -9,9 +9,7 @@ else
     os="linux"
 fi
 
-if [ "$TNS_ADM" = "" ] ; then
-    DBCLI_ENCODING=UTF-8
-fi
+DBCLI_ENCODING=UTF-8
 
 if [ "$TNS_ADM" = "" ] && [[ -n "$ORACLE_HOME" ]] ; then
     export TNS_ADM="$ORACLE_HOME/network/admin"

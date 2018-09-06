@@ -31,7 +31,6 @@ ansicon.exe
 .cfg
 .zip
 .7z
-.pptx
 jnlua.c
 Makefile
 dbcli_F0.bat
