@@ -231,9 +231,12 @@ function snapper:run_sql(sql,main_args,cmds,files)
     local clock=os.timer()
     for idx,text in ipairs(sql) do
         local cmd,arg=self:parse(cmds[idx],sql[idx],args[idx],files[idx])
+        local per_second=(cmd.per_second~=nil and cmd.per_second) or self.per_second
         self.cmds[cmds[idx]],self.args[cmds[idx]]=cmd,arg
         arg.snap_cmd=(snap_cmd or ''):sub(1,2000)
         arg.snap_interval=tonumber(interval) or 0
+        arg.per_second=(per_second=='on' or per_second==true) and 1 or 0
+        cmd.per_second=arg.per_second==1 and true or false
         if cmd.before_sql then
             env.eval_line(cmd.before_sql,true,true) 
         end
@@ -295,13 +298,12 @@ function snapper:next_exec()
                 local min_agg_pos,top_agg_idx,top_agg=1e4
                 local is_groupped=false
                 local calc_cols={}
-                local props={}
+                local props={per_second=cmd.per_second}
                 for k,v in pairs(cmd) do if type(k)=="string" then props[k]=v end end
                 for k,v in pairs(rs2) do if type(k)=="string" then props[k]=v end end
-                props.per_second=(props.per_second~=nil and props.per_second) or self.per_second
                 local calc_rules=props.calc_rules or {}
                 local order_by=props.order_by
-                local elapsed=(props.per_second=='on' or props.per_second==true) and props.elapsed or 1
+                local elapsed=props.per_second and props.elapsed or 1
                 props.group_by=props.group_by or props.grp_cols
                 props.top_by=props.top_by or props.top_grp_cols
                 props.delta_by=props.delta_by or props.agg_cols
@@ -335,10 +337,10 @@ function snapper:next_exec()
                         if fmt then define_column(title[i],table.unpack(fmt)) end
                         if type(order_by)=="string" then
                             if order_by:find(',-'..tit..',',1,true) then
-                                order_by=order_by:replace(',-'..tit..',',',-'..title[i]..',',true)
+                                order_by=order_by:replace(',-'..tit..',',',-'..i..',',true)
                             end
                             if order_by:find(','..tit..',',1,true) then
-                                order_by=order_by:replace(','..tit..',',','..title[i]..',',true)
+                                order_by=order_by:replace(','..tit..',',','..i..',',true)
                             end
                         end
                     else
@@ -479,8 +481,7 @@ function snapper:next_exec()
                 for k,v in pairs(grid) do rs2[k]=v end
                 setmetatable(rs2,getmetatable(grid))
             end
-            local per_second=(cmd.per_second~=nil and cmd.per_second) or self.per_second
-            per_second=(per_second==true or per_second=="on") and '(per Second)' or ''
+            local per_second=cmd.per_second and '(per Second)' or ''
             local top_mode=cmd.top_mode~=nil and cmd.top_mode or self.top_mode          
             local cost=string.format('(SQL:%.2f  Calc:%.2f)',cmd.fetch_time1+cmd.fetch_time2,os.timer()-calc_clock)
             local title=string.format('\n$REV$[%s#%s%s]: From %s to %s%s:$NOR$\n',self.command,name,per_second,cmd.starttime,cmd.endtime,

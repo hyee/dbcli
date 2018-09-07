@@ -60,12 +60,8 @@ function extvars.on_before_db_exec(item)
     if not extvars.dict then return item end
     local db,sql,args,params=table.unpack(item)
 
-    if sql and not item.__IS_EXTVARS and (type(args)~="table" or not args.__IS_EXTVARS) then
-        if type(args)=="table" then 
-            args.__IS_EXTVARS=true
-        else
-            item.__IS_EXTVARS=true
-        end
+    if sql and not item.__IS_EXTVARS then
+        item.__IS_EXTVARS=true
         item[2]=re.gsub(sql..' ',extvars.P,rep_instance):sub(1,-2)
     end
     return item

@@ -603,6 +603,7 @@ function db_core:exec_cache(sql,args,description)
         if type(description)=="string" and description~='' then
             local prep1=self.__preparedCaches.__list[description]
             if prep1 then
+                env.log_debug("DB","Recompiling "..description)
                 pcall(prep1[1].close,prep1[1])
                 for k,v in pairs(self.__preparedCaches) do
                     if prep1==v then
@@ -701,8 +702,13 @@ function db_core:exec(sql,args,prep_params,src_sql)
         env.log_debug("db","Parameters:",params)
     else
         local desc ="PreparedStatement"..(args._description or "")
-        env.log_debug("db","SQL Cache:",desc)
         prep,sql,params=sql,src_sql or desc,prep_params or {}
+        if not desc:upper():find("INTERNAL") then
+            env.log_debug("db","Cursor:",sql)
+            env.log_debug("db","Parameters:",params)
+        else
+            env.log_debug("db","Cursor:",desc)
+        end
     end
 
     local is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)

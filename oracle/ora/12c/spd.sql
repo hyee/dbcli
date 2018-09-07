@@ -1,4 +1,5 @@
 /*[[Show column usage and SQL plan directives on target table. Usage: @@NAME [<owner>.]<object_name>[.<partition>]
+    You can "exec dbms_spd.flush_sql_plan_directive" to flush the SPD
     --[[
         @CHECK_ACCESSS_OBJ: dba_sql_plan_dir_objects={1}, default={0}
         @CHECK_ACCESSS_COL: sys.col_usage$={1},default={0}

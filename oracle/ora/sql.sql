@@ -1,5 +1,6 @@
 /*[[Get SQL text. Usage: @@NAME <sql_id>
     --[[
+        @VER12: 12.1={} default={--}
         @VER: 11.2={} DEFAULT={--}
     --]]
 ]]*/
@@ -26,6 +27,7 @@ WHERE  ROWNUM <= 10;
 
 SELECT PLAN_HASH_VALUE PHV,
        program_id || NULLIF('#' || program_line#, '#0') program#,
+       &ver12 decode(is_reoptimizable,'Y','RE-OPT ')||decode(is_resolved_adaptive_plan,'Y','RAP ')||
        &ver decode(IS_BIND_SENSITIVE, 'Y', 'SENS ') || decode(IS_BIND_AWARE, 'Y', 'AWARE ') || decode(IS_SHAREABLE, 'Y', 'SHARE') ACS,
        TRIM('/' FROM SQL_PROFILE 
        &ver || '/' || SQL_PLAN_BASELINE
@@ -52,6 +54,7 @@ SELECT PLAN_HASH_VALUE PHV,
 FROM   (SELECT greatest(EXECUTIONS + users_executing, 1) exec,a.* FROM gv$SQL a WHERE SQL_ID=:V1)
 GROUP  BY SQL_ID,
           PLAN_HASH_VALUE,
+          &ver12 is_reoptimizable,is_resolved_adaptive_plan,
           &ver IS_BIND_SENSITIVE,
           &ver IS_BIND_AWARE,
           &ver IS_SHAREABLE,

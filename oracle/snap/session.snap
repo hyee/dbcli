@@ -24,7 +24,10 @@
         }
 
     &session_info: default={sid||',@'||inst_id}, a={'*'}
-
+    @ash_cost: 11={tm_delta_db_time*1e-6} default={1}
+    @declares: {12.1={sysstat CLOB;sysevent CLOB;timemodel CLOB;base VARCHAR2(4000)} 
+                default={sysstat xmltype;sysevent xmltype;timemodel xmltype;base xmltype}}
+    @to_src: 12.1={(select json_arrayagg(json_array(sids,inst_id,sid)) from ses)} default={xmltype(cursor(select sids,inst_id,sid from ses))}
     @stats: {12.1={
                json_table(sysstat,'$[*]' columns
                           sids  varchar2(20) path '$[0]',
@@ -32,10 +35,10 @@
                           v     number path '$[2]')},
 
             default={
-                xmltable('/ROWSET/ROW' passing sysstat columns
-                         sids  varchar2(20) path 'SIDS',
-                         n     varchar2(100) path 'NAME',
-                         v     number path 'VALUE' )}
+                (select extractvalue(column_value,'/ROW/SIDS') sids,
+                        extractvalue(column_value,'/ROW/NAME') n,
+                        extractvalue(column_value,'/ROW/VALUE')+0 v
+                from    TABLE(XMLSEQUENCE(EXTRACT(sysstat,'/ROWSET/ROW'))))}
     }
 
     @events: {12.1={json_table(sysevent,'$[*]' columns
@@ -44,18 +47,34 @@
                               EVENT varchar2(300) path '$[2]',
                               waits number path '$[3]',
                               micro number path '$[4]')},
-             default={xmltable('/ROWSET/ROW' passing sysevent columns
-                         sids  varchar2(20) path 'SIDS',
-                         WAIT_CLASS varchar2(30) path 'WAIT_CLASS',
-                         EVENT  path 'EVENT',
-                         waits  number path 'WAITS',
-                         micro  number path 'MICRO' )}
+             default={
+                (select extractvalue(column_value,'/ROW/SIDS') sids,
+                        extractvalue(column_value,'/ROW/WAIT_CLASS') WAIT_CLASS,
+                        extractvalue(column_value,'/ROW/EVENT') EVENT,
+                        extractvalue(column_value,'/ROW/WAITS')+0 WAITS,
+                        extractvalue(column_value,'/ROW/MICRO')+0 MICRO
+                from    TABLE(XMLSEQUENCE(EXTRACT(sysevent,'/ROWSET/ROW'))))}
        }
-    @ash_cost: 11={tm_delta_db_time*1e-6} default={1}
-    @declares: 12.1={sysstat CLOB;sysevent CLOB;base VARCHAR2(4000)} default={sysstat xmltype;sysevent xmltype;base xmltype}
-    @to_src: 12.1={(select json_arrayagg(json_array(sids,inst_id,sid)) from ses)} default={xmltype(cursor(select sids,inst_id,sid from ses))}
+
+    @timemodel:{12.1={
+               json_table(timemodel,'$[*]' columns
+                          sids  varchar2(20) path '$[0]',
+                          n     varchar2(100) path '$[1]',
+                          v     number path '$[2]')},
+
+            default={
+                (select extractvalue(column_value,'/ROW/SIDS') sids,
+                        extractvalue(column_value,'/ROW/STAT_NAME') n,
+                        extractvalue(column_value,'/ROW/VALUE')+0 v
+                from    TABLE(XMLSEQUENCE(EXTRACT(timemodel,'/ROWSET/ROW'))))}
+    }
+
     @src:  {12.1={json_table(base,'$[*]' columns sids varchar2(20) path '$[0]',inst_id number path '$[1]',sid number path '$[2]')},
-            default={xmltable('/ROWSET/ROW' passing base columns sids varchar2(20) path 'SIDS',inst_id number path 'INST_ID',sid number path 'SID')}
+            default={
+                (select extractvalue(column_value,'/ROW/SIDS') sids,
+                        extractvalue(column_value,'/ROW/INST_ID')+0 INST_ID,
+                        extractvalue(column_value,'/ROW/SID')+0 SID
+                from    TABLE(XMLSEQUENCE(EXTRACT(base,'/ROWSET/ROW'))))}
            } 
     --]]
 ]]*/
@@ -67,29 +86,56 @@
          select &to_src into base from dual;
 
         $IF DBMS_DB_VERSION.VERSION>11 $THEN
-            select (select json_arrayagg(json_array(sids,name,value) returning clob) 
-                    from  &src
-                    join  gv$sesstat using(sid,inst_id)
-                    join  v$statname using(statistic#)
-                    where value>0),
-                   (select json_arrayagg(json_array(sids,WAIT_CLASS,EVENT,TOTAL_WAITS,TIME_WAITED_MICRO) returning clob) 
-                    from &src join gv$session_event using(sid,inst_id) where TOTAL_WAITS>0)
-            into sysstat,sysevent
+            with ses as (select * from &src)
+            select (select json_arrayagg(json_array(sids,name,value) returning clob)
+                    from (
+                        select sids,name,sum(value) value
+                        from  ses
+                        join  gv$sesstat using(sid,inst_id)
+                        join  v$statname using(statistic#)
+                        where value>0
+                        group by sids,name)),
+                   (select json_arrayagg(json_array(sids,WAIT_CLASS,EVENT,waits,micro) returning clob) 
+                    from (
+                        select sids,WAIT_CLASS,EVENT,sum(TOTAL_WAITS) waits,sum(TIME_WAITED_MICRO) micro
+                        from ses 
+                        join gv$session_event using(sid,inst_id) 
+                        where TOTAL_WAITS>0
+                        group by sids,WAIT_CLASS,EVENT)),
+                  (select json_arrayagg(json_array(sids,stat_name,value) returning clob) 
+                   from (
+                        select sids,stat_name,sum(value) value
+                        from ses 
+                        join gv$sess_time_model using(sid,inst_id) 
+                        where value>0
+                        group by sids,stat_name))
+            into sysstat,sysevent,timemodel
             from dual;
         $ELSE
             with ses as(select * from &src)
-            select xmltype(cursor(select sids,name,value
+            select xmltype(cursor(
+                    select sids,name,sum(value) value
                     from  ses
                     join  gv$sesstat using(sid,inst_id)
                     join  v$statname using(statistic#)
-                    where value>0)),
-                   xmltype(cursor(select sids,WAIT_CLASS,EVENT,TOTAL_WAITS waits,TIME_WAITED_MICRO micro
-                    from ses join gv$session_event using(sid,inst_id) where TOTAL_WAITS>0))
-            into sysstat,sysevent
+                    where value>0
+                    group by sids,name)),
+                   xmltype(cursor(
+                    select sids,WAIT_CLASS,EVENT,sum(TOTAL_WAITS) waits,sum(TIME_WAITED_MICRO) micro
+                    from ses 
+                    join gv$session_event using(sid,inst_id) 
+                    where TOTAL_WAITS>0
+                    group by sids,WAIT_CLASS,EVENT)),
+                   xmltype(cursor(
+                    select sids,stat_name,sum(value) value
+                    from ses 
+                    join gv$sess_time_model using(sid,inst_id) 
+                    where value>0
+                    group by sids,stat_name))
+            into sysstat,sysevent,timemodel
             from dual;
          $END
-         select value into bs from v$parameter where name='db_block_size';
-         ]],  
+         select value into bs from v$parameter where name='db_block_size';]],  
 
       [[SELECT A.* FROM ( /*grid={topic='Session Stats',height=0}*/
             SELECT /*+no_expand*/
@@ -144,18 +190,15 @@
             ORDER BY name]],
         '|', {[[/*grid={topic='Session Time Model', fixed_title=true,max_rows=10}*/
                 SELECT sids,
-                       substr(stat_name,1,35) name,
-                       sum((select sum(value) 
-                        from   gv$sess_time_model b 
-                        where  a.inst_id=b.inst_id
-                        and    a.sid=b.sid
-                        and    b.stat_name in('background elapsed time','DB time'))) "Pct",
-                        sum(VALUE) "Time"
-                FROM   gv$sess_time_model a 
-                JOIN   &src ses on a.sid=ses.sid and a.inst_id=ses.inst_id
-                WHERE  stat_name not in('DB time','background elapsed time')
-                AND    value>0
-                group by sids,stat_name]],
+                       substr(n,1,35) name,
+                       sum((select sum(v) 
+                        from   &timemodel b 
+                        where  a.sids=b.sids
+                        and    b.n in('background elapsed time','DB time'))) "Pct",
+                        sum(v) "Time"
+                FROM   &timemodel a
+                WHERE  n not in('DB time','background elapsed time')
+                group by sids,n]],
               '|',
               [[/*grid={topic='Session Rows',fixed_title=true, include_zero=true,order_by="sids"}*/
                 SELECT sids, 
@@ -208,7 +251,7 @@
               WHERE  offl>0
               group  by sids]],
             '-',
-            [[/*grid={topic='In-Memory Stats',fixed_title=true,order_by=1,bypassemptyrs=true}*/
+            [[/*grid={topic='In-Memory Stats (LIO=Logical Reads)',fixed_title=true,order_by=1,bypassemptyrs=true}*/
             SELECT   sids,
                      SUM(DECODE(n, 'session logical reads - IM', v,0))*bs "IM-LIO",
                      SUM(DECODE(n, 'session logical reads', v,0))*bs "LIO(%)",
@@ -229,7 +272,7 @@
               FROM   &stats
               GROUP  BY sids]],
             '-',
-            [[/*grid={topic='RAC Profiles',fixed_title=true,order_by=1,bypassemptyrs=true}*/
+            [[/*grid={topic='RAC Profiles (CR=[gc cr blocks] CU=[gc current blocks]  Rec=Received enq=[global enqueue])',fixed_title=true,order_by=1,bypassemptyrs=true}*/
                 SELECT sids,
                        SUM(DECODE(n,
                                   'gc cr blocks received',bs * v,
@@ -243,38 +286,38 @@
                                   'gc status messages sent',v * 200,
                                   'gc status messages received',v * 200,
                                   'ka messages sent',v * 200,
-                                  'ka grants received',v * 200)) traffic,
-                       SUM(bs * DECODE(n, 'gc blocks lost', v)) lost,
-                       (select sum(waits) from &events b where event='gc cr failure' and b.sids=a.sids) fail,
+                                  'ka grants received',v * 200)) "Traffic",
+                       SUM(bs * DECODE(n, 'gc blocks lost', v)) "Lost",
+                       (select sum(waits) from &events b where b.sids=a.sids) "Fail",
                         '|' "|",
                        SUM(bs * DECODE(n, 'gc cr blocks served', v, 'gc cr blocks received', v)) cr,
-                       SUM(bs * DECODE(n, 'gc cr blocks received', v)) cr_rec,
-                       SUM(bs * DECODE(n, 'gc cr block receive time', v*10000)) cr_rec_avg,
-                       SUM(bs * DECODE(n, 'gc cr blocks flushed', v)) cr_flush,
-                       SUM(bs * DECODE(n, 'gc cr block flush time', v*10000)) cr_fl_avg,
+                       SUM(bs * DECODE(n, 'gc cr blocks received', v)) "CR Rec",
+                       SUM(bs * DECODE(n, 'gc cr block receive time', v*10000)) "CR Rec Avg",
+                       SUM(bs * DECODE(n, 'gc cr blocks flushed', v)) "CR Flush",
+                       SUM(bs * DECODE(n, 'gc cr block flush time', v*10000)) "CR FL Avg",
                         '|' "|",
                        SUM(bs * DECODE(n, 'gc current blocks received', v, 'gc current blocks served', v)) cu,
-                       SUM(bs * DECODE(n, 'gc current blocks received', v)) cu_rec,
-                       SUM(bs * DECODE(n, 'gc current block receive time', v*10000)) cu_rec_avg,
-                       SUM(bs * DECODE(n, 'gc current blocks flushed', v)) cu_flush,
-                       SUM(bs * DECODE(n, 'gc current block flush time', v*10000)) cu_fl_avg,
+                       SUM(bs * DECODE(n, 'gc current blocks received', v)) "CU Rec",
+                       SUM(bs * DECODE(n, 'gc current block receive time', v*10000)) "CU Rec Avg",
+                       SUM(bs * DECODE(n, 'gc current blocks flushed', v)) "CU Flush",
+                       SUM(bs * DECODE(n, 'gc current block flush time', v*10000)) "CU FL Avg",
                         '|' "|",
-                       SUM(DECODE(n, 'global enqueue get time',v*10000)) enqs
+                       SUM(DECODE(n, 'global enqueue get time',v*10000)) "enq"
                 FROM   &stats a
-                GROUP  BY sids]],
+                GROUP  BY sids;
+               ]],
             '-',
             [[/*grid={topic='Session Events',fixed_title=true,max_rows=40,order_by="-cost"}*/
               WITH ASH as(
-                SELECT sids,event,round(SUM(cost),2) aas, MAX(w) max_ms, 
+                SELECT sids,event,round(SUM(cost)/greatest(:per_second*:snap_interval,1),2) aas, MAX(w) max_ms, 
                        MAX(sql_id) keep(dense_rank LAST ORDER BY cnt) top_sql,
-                       round(count(distinct sql_id),1) sqls
-                FROM   (SELECT sids, SQL_ID, SQL_PLAN_HASH_VALUE, EVENT, time_waited w,
+                       round(count(distinct sql_id)/greatest(:per_second*:snap_interval,1),1) sqls
+                FROM   (SELECT sids, SQL_ID, SQL_PLAN_HASH_VALUE, nvl(EVENT,'ON CPU') event, time_waited w,
                                &ash_cost cost,
                                SUM(&ash_cost) OVER(PARTITION BY inst_id, event) cnt
                         FROM   (select a.*, session_id sid from gv$active_session_history a) ash 
                         join   &src src using (inst_id,sid)
-                        WHERE  sample_time >= SYSDATE - :snap_interval/86400
-                        AND    event IS NOT NULL)
+                        WHERE  sample_time >= SYSDATE - :snap_interval/86400)
                 GROUP  BY sids,event)
               SELECT sids,
                      wait_class, 
@@ -287,7 +330,11 @@
                      micro "Cost",
                      0 "AVG",
                      max_ms "Max"
-              FROM   &events
+              FROM   (select sids,wait_class,event,waits,micro from &events
+                      union all
+                      select sids,'CPU','ON CPU',count(1),sum(v) v
+                      from  &timemodel
+                      group by sids)
               LEFT   JOIN ash using(sids,event)]]
             }
     },
@@ -296,8 +343,8 @@
                SISave,OflOut,OptRead,OptWrite,CellIM,CCSave,FcHit,Fc(%),Unzip,zip,ela,missCU,bytes,rows,Valid,skip,
                exclude,pcode,proj,pops,re-pops,popr,re-popr,Disk,Pct,Swap,Logon,Call,Exec,TPS,Parse,Hard,CcHit,Buffer,
                PhyRead,PhyWrite,Redo,Undo,SQL*Net,value,cost,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,time,Busy,idle,db,
-               User,Sys,I/O,Nice,traffic,flash,cr,cu,cr_rec,cu_rec,cr_rec_avg,cu_rec_avg,cr_flush,cu_flush,cr_fl_avg,
-               cu_fl_avg,lost,fail,enqs,read,write,s_r,l_r,s_w,l_w,F_IOPS,s_iops,l_iops,reads,avg_wait,total_waits]],
+               User,Sys,I/O,Nice,traffic,flash,cr,cu,CR Rec,Cu Rec,CR Flush,CU Flush,CR FL Avg,CU FL Avg,
+               lost,fail,enq,read,write,s_r,l_r,s_w,l_w,F_IOPS,s_iops,l_iops,reads,avg_wait,total_waits]],
     calc_rules={['IM(%)']='[IM(%)]*100/[scan]',
                 ['HCC(%)']='[HCC(%)]*100/[scan]',
                 avg='[Cost]/[waits]',
@@ -321,19 +368,19 @@
                 user='[user]*100/[idle]',
                 sys='[sys]*100/[idle]',
                 db='[db]*100/[idle]',
-                cr_rec_avg='[cr_rec_avg]/[cr_rec]',
-                cu_rec_avg='[cu_rec_avg]/[cu_rec]',
-                cr_fl_avg='[cr_fl_avg]/[cr_flush]',
-                cu_fl_avg='[cu_fl_avg]/[cu_flush]',
+                ['CR Rec Avg']='[CR Rec Avg]/[CR Rec]',
+                ['Cu Rec Avg']='[Cu Rec Avg]/[Cu Rec]',
+                ['CR FL Avg']='[CR FL Avg]/[CR Flush]',
+                ['CU FL Avg']='[CU FL Avg]/[CU Flush]',
                 avg_wait='[avg_wait]/[iops]',
                 reads='[reads]*100/[iops]'},
     column_formatter={KMG1=[[MBPS,SISave,IM-LIO,Unzip,zip,pops,re-pops,phyMem,freeMem,Swap,Buffer,PhyRead,
                             PhyWrite,Redo,Undo,Temp,SQL*Net,OptRead,OptWrite,CellIM,CCSave,offload,BandWidth,bytes,
-                            traffic,cr,cu,cr_rec,cu_rec,cr_flush,cu_flush,cr_fl_avg,cu_fl_avg,lost,dbwr,lgwr,
+                            traffic,cr,cu,CR Rec,Cu Rec,CR Flush,CU Flush,CR FL Avg,CU FL Avg,lost,dbwr,lgwr,
                             read,write,s_r,l_r,s_w,l_w]],
-                     TMB1='rCall,undos,sorts,fetch,scan,rcall,waits,IOPS,call,exec,TPS,parse,cchit,FcHit,popr,re-popr,rows,proj,Disk,Cache,pcode,missCU,fail,,F_IOPS,s_iops,l_iops',
+                     TMB1='rCall,undos,sorts,fetch,scan,rcall,waits,IOPS,call,exec,TPS,parse,cchit,FcHit,popr,re-popr,rows,proj,Disk,Cache,pcode,missCU,fail,F_IOPS,s_iops,l_iops',
                      noprint='calls,ela,time,idle,total_waits',
-                     USMHD1='cr_rec_avg,cu_rec_avg,cr_fl_avg,cu_fl_avg,IO Wait,resp,cost,max,avg,enqs,avg_wait',
+                     USMHD1='CR Rec Avg,Cu Rec Avg,CR FL Avg,CU FL Avg,IO Wait,resp,cost,max,avg,enq,avg_wait',
                      ['%.1f%%']='reads,Hard,Pct,dxr,dxw,OflIn,OflOut,valid,Skip,Exclude,OflEff,FLASH,SMALL',
                      ['HEADING #']='INST',
                      ['ADDRATIO PCT1']="cost",

@@ -7,7 +7,6 @@ import com.sun.jna.Native;
 import com.sun.jna.Platform;
 import com.sun.jna.Pointer;
 import org.jline.builtins.Commands;
-import org.jline.builtins.Completers;
 import org.jline.builtins.Less;
 import org.jline.builtins.Source;
 import org.jline.keymap.KeyMap;
@@ -42,7 +41,6 @@ import java.util.stream.Collectors;
 import static org.jline.reader.LineReader.DISABLE_HISTORY;
 import static org.jline.reader.LineReader.SECONDARY_PROMPT_PATTERN;
 import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS;
-import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS_VTP;
 
 public class Console {
     public final static Pattern ansiPattern = Pattern.compile("^\33\\[[\\d\\;]*[mK]$");
@@ -60,6 +58,8 @@ public class Console {
     MyCompleter completer = new MyCompleter();
     Thread subThread = null;
     boolean isPrompt = true;
+    ArrayList<AttributedString> titles = new ArrayList<>(2);
+    ArrayList<AttributedString> tmpTitles = new ArrayList<>(2);
     private LuaState lua;
     volatile private ScheduledFuture task;
     private EventReader monitor = new EventReader();
@@ -153,7 +153,6 @@ public class Console {
         return s.length() + ":" + display.wcwidth(s);
     }
 
-
     private Candidate candidate(String key, String desc) {
         if (desc != null && (desc.equals("") || desc.equals("\0"))) desc = null;
         return new Candidate(key, key, null, null, null, null, true);
@@ -213,18 +212,16 @@ public class Console {
         return "linux";
     }
 
-    ArrayList<AttributedString> titles = new ArrayList<>(2);
-    ArrayList<AttributedString> tmpTitles = new ArrayList<>(2);
     public void setStatus(String status, String color) {
         if (colorPlan.equals("ansicon") || colorPlan.equals(TYPE_WINDOWS)) return;
-        if(tmpTitles.size()==0) {
+        if (tmpTitles.size() == 0) {
             tmpTitles.add(AttributedString.fromAnsi(new String(new char[getScreenWidth() - 1]).replace('\0', ' ')));
             tmpTitles.add(tmpTitles.get(0));
         }
         this.status.update(tmpTitles);
         if ("flush".equals(status)) this.status.update(titles);
         else {
-            AttributedString sep=titles.size()!=0?titles.get(0):AttributedString.fromAnsi(color + new String(new char[getScreenWidth() - 1]).replace('\0', '-'));
+            AttributedString sep = titles.size() != 0 ? titles.get(0) : AttributedString.fromAnsi(color + new String(new char[getScreenWidth() - 1]).replace('\0', '-'));
             titles.clear();
             if (status != null && !status.equals("")) {
                 titles.add(sep);
@@ -515,6 +512,7 @@ public class Console {
     class MyParser extends DefaultParser implements Highlighter {
         public static final String DEFAULT_HIGHLIGHTER_COLORS = "rs=1:st=2:nu=3:co=4:va=5:vn=6:fu=7:bf=8:re=9";
         public final Pattern numPattern = Pattern.compile("([0-9]+)");
+        final String NOR = "\033[0m";
         public String buffer = null;
         public Map<String, String> colors = Arrays.stream(DEFAULT_HIGHLIGHTER_COLORS.split(":"))
                 .collect(Collectors.toMap(s -> s.substring(0, s.indexOf('=')),
@@ -530,10 +528,8 @@ public class Console {
         Pattern p1 = Pattern.compile("^(\\s*)([^\\s\\|;/]+)(.*)$");
         AttributedStringBuilder asb = new AttributedStringBuilder();
         final AttributedString empty = asb.toAttributedString();
-
         String prev = null;
         int sub = 0;
-        final String NOR = "\033[0m";
 
 
         public MyParser() {

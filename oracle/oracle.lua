@@ -594,9 +594,9 @@ function oracle:grid_db_call(sqls,args,is_cache)
         if typ:find('SELECT') or typ:find('WITH') then
             local cursor='GRID_CURSOR_'..idx
             args[cursor]='#CURSOR'
-            stmt[#stmt+1]='  OPEN :'..cursor..' FOR \n        '..sql.sql..';'
+            stmt[#stmt+1]='  OPEN :'..cursor..' FOR \n        '..sql.sql:trim(';')..';'
         else
-            stmt[#stmt+1]=sql.sql:trim(';')..';'
+            stmt[#stmt+1]=sql.sql:trim(';/')..';'
         end
     end
     stmt[#stmt+1]='END;'

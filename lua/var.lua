@@ -384,7 +384,7 @@ function var.define_column(col,...)
                     s=math.abs(s)
                     for i=1,#units-1 do
                         v,s=math.round(s,scale),s/div[i]
-                        if v==0 then prefix='' end
+                        if v==0 then return '0' end
                         if s<1 then return string.format("%s"..num_fmt.."%s",prefix,v,units[i]) end
                     end
                     return string.format("%s"..num_fmt.."%s",prefix,s,units[#units])

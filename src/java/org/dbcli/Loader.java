@@ -400,7 +400,7 @@ public class Loader {
             //e.printStackTrace();
             throw e;
         } finally {
-            console.setEvents(null,null);
+            console.setEvents(null, null);
             this.stmt = null;
         }
     }
@@ -465,7 +465,7 @@ public class Loader {
                 }
                 if (console.isRunning() && stmt != null && !stmt.isClosed()) {
                     stmt.cancel();
-                    stmt=null;
+                    stmt = null;
                 }
                 if (rs != null && !rs.isClosed()) rs.close();
             } catch (Exception err) {

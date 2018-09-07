@@ -355,6 +355,8 @@ function grid:add(row)
                 end)
                 if v=='|' then 
                     colsize[k][3]='|'
+                elseif v=="" then
+                    colsize[k][3]=""
                 end
             end
             
