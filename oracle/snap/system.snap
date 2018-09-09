@@ -1,10 +1,11 @@
-/*[[Show System statistics summary. Usage: @@NAME <options> {[<inst_id>] [keyword]} [-iostat|-latch] [-filestat] [-f"<event_filter>"]
+/*[[Show System statistics summary. Usage: @@NAME <options> {[<inst_id>] [<keyword>|-im]} [-iostat|-latch] [-filestat] [-f"<event_filter>"]
     <inst_id>     : Specify the instance number, default to aggregrate all instances' stats. When '0' means don't aggregrate across all instances
     <keyword>     : The keyword to filter gv$sysstat
     <event_filter>: The predicate to filter gv$system_event
     -latch        : Show latch stats instead of active sessions
     -iostat       : Show I/O stats instead of active sessions
     -filestat     : Show Tablespace and file stats instead of system global stats
+    -im           : Only list the statistics relative to In-Memory
     --[[
         @CHECK_ACCESS_ALL: gv$px_session/gv$session/gv$latch/gv$osstat/gv$sysstat/gv$sys_time_model/gv$system_event/gv$active_session_history/gv$sqlstats={true}
         @ash_cost: 11={tm_delta_db_time*1e-6} default={1}
@@ -47,7 +48,11 @@
                          SUM(decode(METRIC_NAME,'Per Db Number of small IOs',METRIC_VALUE,'Per Db Number of small IOs for Flash',METRIC_VALUE)) SMALL
                   FROM   V$CELL_DB
                 ),}, default={}}
-
+        &statfilter: {
+            default={:V2 IS NULL OR regexp_like(name,:v2,'i')},
+            im={name like '%IM%' or name like 'key vectors%' or name like 'vector%'}
+        }
+        &statfilter1: default={} im={1}
         &global_stats:{
           default={[[/*grid={topic='System Stats(Excluding Profiles)',include_zero=true,height=0}*/
               SELECT inst,name,sum(value) value 
@@ -56,9 +61,11 @@
                        substr(NAME,1,45) name, 
                        value
                 FROM   &sysstat
-                WHERE (:V2 IS NOT NULL OR value>0)
-                AND   (:V2 IS NOT NULL and regexp_like(name,:v2,'i') OR
-                      (:V2 IS NULL AND NAME not like '%SQL*Net%' AND NAME not like 'OS%' AND NAME not in (
+                WHERE &inst_filter
+                AND   (:V2 IS NOT NULL OR value>0)
+                AND   (&statfilter)
+                AND   ((:statfilter1 IS NOT NULL OR :V2 IS NOT NULL) OR 
+                       NAME not like '%SQL*Net%' AND NAME not like 'OS%' AND NAME not in (
                             'DB time',
                             'logical read bytes from cache',
                             'physical read bytes',
@@ -99,14 +106,13 @@
                             'IM repopulate (trickle incremental) total rows',
                             'IM prepopulate bytes from storage',
                             'IM scan rows pcode aggregated','session logical reads - IM',
-                            'table scan disk non-IMC rows gotten',
                             'IM scan CUs invalid or missing revert to on disk extent',
                             'temp space allocated (bytes)',
                             'cell physical IO bytes saved by columnar cache',
                             'cell physical IO bytes eligible for smart IOs',
                             'physical reads direct', 'physical writes direct','cell physical write IO bytes eligible for offload',
-                            'session uga memory','session pga memory','session uga memory max','session pga memory max')))
-                AND    &inst_filter)
+                            'session uga memory','session pga memory','session uga memory max','session pga memory max'))
+                )
               GROUP BY inst,name]]},
 
           filestat={[[/*grid={topic='File I/O Stats',height=-1,order_by='-bytes,-tablespace_or_file',fixed_title='on'}*/ 
@@ -371,22 +377,26 @@
                      SUM(DECODE(n, 'session logical reads', v,0))*bs "LIO(%)",
                      SUM(DECODE(n, 'IM scan bytes in-memory', v,0)) "Bytes",
                      SUM(DECODE(n, 'IM scan bytes uncompressed', v,0)) "Unzip",
-                     SUM(DECODE(n, 'IM populate bytes from storage', v,0)) "Pops",
-                     SUM(DECODE(n, 'IM repopulate (trickle) bytes from storage',v,'IM prepopulate bytes from storage', v,0)) "re-Pops",
+                     --SUM(DECODE(n, 'IM populate bytes from storage', v,0)) "Pops",
+                     --SUM(DECODE(n, 'IM repopulate (trickle) bytes from storage',v,'IM prepopulate bytes from storage', v,0)) "re-Pops",
                       '|' "|",
-                     SUM(DECODE(n, 'IM scan CUs predicates received', v,0)) "IMCU",
+                     SUM(DECODE(n, 'IM scan CUs current', v,0)) "IMCU",
                      SUM(DECODE(n, 'IM scan CUs predicates optimized', v,'IM scan CUs pruned',v,0)) "Prun",
                      SUM(DECODE(n, 'IM scan CUs invalid or missing revert to on disk extent', v,0)) 
                      "Miss",
                      '|' "|",
                      SUM(DECODE(n, 'IM scan rows', v,0)) "Rows",
                      SUM(DECODE(n, 'IM scan rows valid', v,0)) "Valid",
+                     SUM(DECODE(n, 'IM scan rows projected', v,0)) "Proj",
                      SUM(DECODE(n, 'IM scan rows optimized', v,0)) "Skip",
                      SUM(DECODE(n, 'IM scan rows excluded', v,0)) "Exclude",
-                     SUM(DECODE(n, 'IM scan rows projected', v,0)) "Proj",
                      SUM(DECODE(n, 'IM scan rows pcode aggregated',v)) "pcode",
                      SUM(DECODE(n, 'IM populate rows', v,0)) "Popr",
-                     SUM(DECODE(n, 'IM repopulate (trickle incremental) total rows', v,'IM repopulate rows',v,0)) "re-Popr"
+                     SUM(DECODE(n, 'IM repopulate (trickle incremental) total rows', v,'IM repopulate rows',v,0)) "re-Popr",
+                     SUM(DECODE(n, 'key vector CU codes processed', v,0)) "IMA",
+                     SUM(DECODE(n, 'IM scan (dynamic) rows', v,0)) "IMSS",
+                     SUM(DECODE(n, 'vector group by accumspace size', v,0)) "JP",
+                     SUM(DECODE(n, 'IM scan EU rows', v,0)) "IMEU"
               FROM   (SELECT &inst1 inst_id, NAME n, VALUE v FROM &sysstat WHERE &inst_filter  AND value>0)
               GROUP  BY inst_id]],
             '-',
@@ -467,7 +477,7 @@
     },
     delta_by=[[IOPS,MBPS,SMALL,IO Wait,Calls,Resp,OflEff,OflIn,IM-LIO,LIO(%),dxr,dxw,dbwr,lgwr,temp,offload,BandWidth,
                SISave,OflOut,OptRead,OptWrite,CellIM,CCSave,FcHit,Fc(%),Unzip,zip,ela,IMCU,PRUN,Miss,bytes,rows,Valid,skip,
-               exclude,pcode,proj,pops,re-pops,popr,re-popr,Disk,Pct,Swap,Logon,Call,Exec,TPS,Parse,Hard,CcHit,Buffer,
+               exclude,pcode,proj,pops,re-pops,popr,re-popr,IMSS,IMA,IMEU,JP,Disk,Pct,Swap,Logon,Call,Exec,TPS,Parse,Hard,CcHit,Buffer,
                PhyRead,PhyWrite,Redo,Undo,SQL*Net,value,cost,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,time,Busy,idle,db,
                User,Sys,I/O,Nice,traffic,flash,cr,cu,CR Rec,Cu Rec,CR Rec Avg,Cu Rec Avg,CR Flush,CU Flush,CR FL Avg,
                CU FL Avg,lost,fail,enq,read,write,s_r,l_r,s_w,l_w,F_IOPS,s_iops,l_iops,reads,avg_wait,total_waits]],
@@ -504,7 +514,7 @@
                             PhyWrite,Redo,Undo,Temp,SQL*Net,OptRead,OptWrite,CellIM,CCSave,offload,BandWidth,bytes,
                             traffic,cr,cu,CR Rec,Cu Rec,CR Flush,CU Flush,CR FL Avg,CU FL Avg,lost,dbwr,lgwr,
                             read,write,s_r,l_r,s_w,l_w]],
-                     TMB1='IMCU,waits,IOPS,call,exec,TPS,parse,cchit,FcHit,popr,re-popr,rows,proj,Disk,Cache,pcode,Miss,fail,,F_IOPS,s_iops,l_iops',
+                     TMB1='IMCU,waits,IOPS,call,exec,TPS,parse,cchit,FcHit,popr,re-popr,IMSS,IMA,IMEU,JP,rows,proj,Disk,Cache,pcode,Miss,fail,,F_IOPS,s_iops,l_iops',
                      noprint='calls,ela,time,idle,total_waits',
                      USMHD1='CR Rec Avg,Cu Rec Avg,CR FL Avg,CU FL Avg,IO Wait,resp,cost,max,avg,enq,avg_wait',
                      ['%.1f%%']='reads,Hard,Pct,dxr,dxw,OflIn,OflOut,valid,Skip,Exclude,OflEff,FLASH,SMALL,prun',

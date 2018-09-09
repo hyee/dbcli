@@ -388,13 +388,13 @@ function snapper:next_exec()
                 else
                     local sum=0
                     local function check_zero(col,num)
-                        if calc_cols[col] or sum==1 then 
-                            return 
-                        elseif props.include_zero then 
+                        if props.include_zero then 
                             sum=1
                             return
+                        elseif calc_cols[col] or sum==1 then 
+                            return
                         end
-                        sum=(num and num~=0) and 1 or 0
+                        sum=(num and math.round(num,3)~=0) and 1 or 0
                     end
 
                     grid:add(title)

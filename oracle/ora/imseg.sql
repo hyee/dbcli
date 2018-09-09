@@ -1,4 +1,6 @@
 /*[[Show inmemory info of a specific table. Usage: @@NAME [owner.]<table_name>[.partition_name] [column_name] [-d] [-f"filter"]
+   -d: details into instance level
+   
    Some parameters to control the in-memory behaviors:
    * inmemory_size
    * inmemory_query
@@ -54,7 +56,7 @@ ORA _find_object "&V1"
 
 SET FEED OFF verify off
 col allocate,cu_used,col_used format kmg
-col data_rows,blocks,invalid,scans,COL_VALS format %,.0f
+col data_rows,blocks,invalid,scans,distcnt,EVALUATION_COUNT format %,.0f
 var c1 refcursor "IMCU & IMSMU Summary";
 var c2 refcursor "IM Expressions";
 var c3 refcursor "IM Join Groups";
@@ -106,7 +108,9 @@ BEGIN
               AND    (:object_subname IS NULL OR subobject_name = :object_subname)),
             im AS
              (SELECT *
-              FROM   gv$(CURSOR (SELECT USERENV('instance') inst_id,
+              FROM   gv$(CURSOR (
+                          SELECT /*+ordered use_hash(h0 m h1)*/
+                                 USERENV('instance') inst_id,
                                  h0.IMCU_ADDR,
                                  h0.HEAD_PIECE_ADDRESS,
                                  h0.NUM_COLS,
@@ -132,11 +136,11 @@ BEGIN
                                   FROM   V$IM_HEADER h
                                   WHERE  (table_objn = OID OR objd = did)
                                   AND    IS_HEAD_PIECE > 0) h0,
-                                 lateral (SELECT DISTINCT m.*
+                                 LATERAL (SELECT DISTINCT m.*
                                           FROM   v$im_tbs_ext_map m
                                           WHERE  h0.addr = m.IMCU_ADDR
                                           AND    h0.objd = m.dataobj) m,
-                                 lateral (SELECT DISTINCT *
+                                 LATERAL (SELECT DISTINCT *
                                           FROM   V$IM_SMU_HEAD h1
                                           WHERE  m.dataobj = h1.objd
                                           AND    m.start_dba = h1.startdba) h1)))
@@ -189,9 +193,11 @@ BEGIN
               WHERE  object_name = oname
               AND    owner = own
               AND    (:object_subname IS NULL OR subobject_name = :object_subname)),
-            im AS
-             (SELECT *
-              FROM   gv$(CURSOR (SELECT USERENV('instance') inst_id,
+            ima AS
+             (SELECT /*+materialize*/ * 
+              FROM   gv$(CURSOR (
+                          SELECT /*+ordered use_hash(h0 cu m h1)*/
+                                 USERENV('instance') inst_id,
                                  h0.IMCU_ADDR,
                                  h0.HEAD_PIECE_ADDRESS,
                                  h0.NUM_COLS,
@@ -209,6 +215,14 @@ BEGIN
                                   AND    INTERNAL_COLUMN_NUMBER=cid) EXPR,*/
                                  dbms_utility.data_block_address_file(start_dba) file#,
                                  dbms_utility.data_block_address_block(start_dba) block#,
+                                 dbms_rowid.rowid_create(1,did,
+                                                         dbms_utility.data_block_address_file(start_dba),
+                                                         dbms_utility.data_block_address_block(start_dba),
+                                                         1) start_rowid,
+                                 dbms_rowid.rowid_create(1,did,
+                                                         dbms_utility.data_block_address_file(end_dba),
+                                                         dbms_utility.data_block_address_block(end_dba+1),
+                                                         1) end_rowid,
                                  cu.DICTIONARY_ENTRIES,
                                  cu.MIN_V,
                                  cu.MAX_V,
@@ -218,9 +232,10 @@ BEGIN
                                   FROM   V$IM_HEADER h
                                   WHERE  (table_objn = OID OR objd = did)
                                   AND    IS_HEAD_PIECE > 0) h0,
-                                 lateral (SELECT cu.*,
+                                 LATERAL (SELECT cu.*,
                                          decode(dtype
                                               ,'NUMBER'       ,to_char(utl_raw.cast_to_number(MINIMUM_VALUE))
+                                              ,'FLOAT'        ,to_char(utl_raw.cast_to_number(MINIMUM_VALUE))
                                               ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(MINIMUM_VALUE))
                                               ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(MINIMUM_VALUE))
                                               ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(MINIMUM_VALUE))
@@ -254,6 +269,7 @@ BEGIN
                                               ,  ''||MINIMUM_VALUE) min_v,
                                             decode(dtype
                                               ,'NUMBER'       ,to_char(utl_raw.cast_to_number(MAXIMUM_VALUE))
+                                              ,'FLOAT'        ,to_char(utl_raw.cast_to_number(MAXIMUM_VALUE))
                                               ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(MAXIMUM_VALUE))
                                               ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(MAXIMUM_VALUE))
                                               ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(MAXIMUM_VALUE))
@@ -289,14 +305,29 @@ BEGIN
                                           WHERE  h0.HEAD_PIECE_ADDRESS = CU.HEAD_PIECE_ADDRESS
                                           AND    h0.OBJD = cu.OBJD
                                           AND    cu.COLUMN_NUMBER = cid) cu,
-                                 lateral (SELECT DISTINCT m.*
+                                 LATERAL (SELECT DISTINCT m.*
                                           FROM   v$im_tbs_ext_map m
                                           WHERE  h0.addr = m.IMCU_ADDR
                                           AND    h0.objd = m.dataobj) m,
-                                 lateral (SELECT DISTINCT *
+                                 LATERAL (SELECT DISTINCT *
                                           FROM   V$IM_SMU_HEAD h1
                                           WHERE  m.dataobj = h1.objd
-                                          AND    m.start_dba = h1.startdba) h1)))
+                                          AND    m.start_dba = h1.startdba) h1))),
+            im AS(
+               SELECT a.*,
+                  (SELECT count(1)-1 
+                   FROM  ima b 
+                   WHERE a.inst_id=b.inst_id
+                   AND  (
+                      dtype in('NUMBER','FLOAT','BINARY_DOUBLE','BINARY_FLOAT','BINARY_INTEGER')
+                          AND (b.min_v+0 between a.min_v+0 and a.max_v+0 or 
+                               b.max_v+0 between a.min_v+0 and a.max_v+0)
+                      OR 
+                      dtype not in('NUMBER','FLOAT','BINARY_DOUBLE','BINARY_FLOAT','BINARY_INTEGER')
+                          AND (b.min_v between a.min_v and a.max_v or 
+                               b.max_v between a.min_v and a.max_v)
+                   )) Overlaps
+               FROM ima a)
             SELECT &inst1 inst,
                    o.objd dataobj,
                    owner,
@@ -308,18 +339,21 @@ BEGIN
                    AVG(USED_LEN) cu_used,
                    AVG(CLENGTH) col_used,
                    startdba,
+                   min(start_rowid) start_rowid,
+                   max(end_rowid) end_rowid,
                    AVG(BLOCK_CNT) blocks,
                    AVG(INVALID_BLOCKS) INVALID,
                    '|' "|",
                    AVG(TOTAL_ROWS) DATA_ROWS,
-                   AVG(DICTIONARY_ENTRIES) COL_VALS,
+                   AVG(DICTIONARY_ENTRIES) distcnt,
                    AVG(INVALID_ROWS) INVALID,
                    '|' "|",
-                   decode(MAX('' || SEGMENT_DICTIONARY_ADDRESS), '00', 'DICT', 'DICT+RLE') dict,
+                   decode(MAX('' || SEGMENT_DICTIONARY_ADDRESS), '00', 'GD', 'GD+JG') dict,
                    MIN(MIN_V) MIN_V,
-                   MAX(MAX_V) MAX_V
-            FROM   objs o, im
-            WHERE  o.objd = im.objd
+                   MAX(MAX_V) MAX_V,
+                   max(Overlaps) Overlaps
+            FROM   objs o, im a
+            WHERE  o.objd = a.objd
             AND    (&filter)
             GROUP  BY o.objd, owner, table_name, startdba, part &inst2
             ORDER  BY o.objd, startdba &inst2;

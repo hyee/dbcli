@@ -91,6 +91,7 @@ public class Console {
         this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE);
         this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE_SEARCH);
         this.reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
+        this.reader.setOpt(LineReader.Option.LIST_ROWS_FIRST);
         this.reader.setOpt(LineReader.Option.INSERT_TAB);
         this.reader.setVariable(DISABLE_HISTORY, false);
         this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
@@ -538,6 +539,13 @@ public class Console {
             super.setEofOnEscapedNewLine(true);
             reader.setVariable(SECONDARY_PROMPT_PATTERN, secondPrompt);
             reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
+            Interrupter.listen(this, new EventCallback() {
+                @Override
+                public void call(Object... c) {
+                    lines = 0;
+                    sb.setLength(0);
+                }
+            });
         }
 
         public final String getLines() {

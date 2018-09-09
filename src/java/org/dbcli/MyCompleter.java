@@ -1,20 +1,20 @@
 package org.dbcli;
 
+import org.jline.builtins.Completers;
 import org.jline.reader.Candidate;
 import org.jline.reader.LineReader;
 import org.jline.reader.ParsedLine;
 import org.jline.reader.impl.completer.StringsCompleter;
 
-import java.util.*;
-
 import static org.jline.builtins.Completers.TreeCompleter;
-import static org.jline.builtins.Completers.TreeCompleter.Node;
 import static org.jline.builtins.Completers.TreeCompleter.node;
+import static org.jline.builtins.Completers.TreeCompleter.Node;
+
+import java.util.*;
 
 public class MyCompleter implements org.jline.reader.Completer {
     StringsCompleter keysWordCompeleter = new StringsCompleter();
     TreeCompleter commandCompleter = new TreeCompleter();
-    HashMap<String, TreeCompleter> trees = new HashMap<>();
     HashMap<String, Boolean> keywords = new HashMap<>();
     HashMap<String, HashMap<String, Boolean>> commands = new HashMap<>();
 
@@ -29,7 +29,9 @@ public class MyCompleter implements org.jline.reader.Completer {
                 }
             }
         }
-        keysWordCompeleter = new StringsCompleter(this.keywords.keySet());
+        String[] ary=this.keywords.keySet().toArray(new String[0]);
+        Arrays.sort(ary);
+        keysWordCompeleter = new StringsCompleter(ary);
     }
 
     void setCommands(Map<String, ?> keywords) {
@@ -45,12 +47,15 @@ public class MyCompleter implements org.jline.reader.Completer {
             commands.put(key, map);
         }
         ArrayList<Node> nodes = new ArrayList<>(commands.size() + keywords.size());
-        for (Map.Entry<String, HashMap<String, Boolean>> e : commands.entrySet()) {
-            String key = e.getKey().toUpperCase();
-            HashMap<String, Boolean> map = e.getValue();
+        String[] list=commands.keySet().toArray(new String[0]);
+        Arrays.sort(list);
+        for (String e:list) {
+            String key =e.toUpperCase();
+            HashMap<String, Boolean> map = commands.get(e);
             if (map.size() > 0) {
                 Object[] objs = new Object[map.size() + 1];
                 String[] keys = map.keySet().toArray(new String[0]);
+                Arrays.sort(keys);
                 objs[0] = key;
                 for (int i = 0; i < keys.length; i++) objs[i + 1] = node(keys[i]);
                 nodes.add(node(objs));
@@ -70,7 +75,7 @@ public class MyCompleter implements org.jline.reader.Completer {
         if (index == 1 && commands.get(key) != null && commands.get(key).size() > 0)
             commandCompleter.complete(lineReader, parsedLine, list);
         else if (index > 0) {
-            if (words.get(index).equals("")) return;
+            if (words.get(words.size()-1).equals("")) return;
             keysWordCompeleter.complete(lineReader, parsedLine, list);
         } else
             commandCompleter.complete(lineReader, parsedLine, list);

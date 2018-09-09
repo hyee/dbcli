@@ -24,6 +24,11 @@
         }
 
     &session_info: default={sid||',@'||inst_id}, a={'*'}
+    &statfilter: {
+        default={:V3 IS NULL OR regexp_like(n,:V3,'i')},
+        im={n like '%IM%' or n like 'key vectors%' or n like 'vector%'}
+    }
+    &statfilter1: default={} im={1}
     @ash_cost: 11={tm_delta_db_time*1e-6} default={1}
     @declares: {12.1={sysstat CLOB;sysevent CLOB;timemodel CLOB;base VARCHAR2(4000)} 
                 default={sysstat xmltype;sysevent xmltype;timemodel xmltype;base xmltype}}
@@ -137,14 +142,16 @@
          $END
          select value into bs from v$parameter where name='db_block_size';]],  
 
-      [[SELECT A.* FROM ( /*grid={topic='Session Stats',height=0}*/
+      [[SELECT A.* FROM ( /*grid={topic='Session Stats',include_zero=true,height=0}*/
             SELECT /*+no_expand*/
                    sids,
                    substr(n,1,40) name,
                    sum(v) value
             FROM   &stats
-            WHERE  (:V3 IS NULL or regexp_like(n,:V3,'i'))
-            AND    (:V3 IS NOT NULL OR  n not in (
+            WHERE  (:V3 IS NOT NULL OR v>0)
+            AND    (&statfilter)
+            AND    ((:statfilter1 IS NOT NULL OR :V3 IS NOT NULL)  
+                    OR n not in (
                         'DB time',
                         'user logons cumulative',
                         'user calls',
@@ -178,7 +185,6 @@
                         'IM populate rows',
                         'IM repopulate (trickle incremental) total rows',
                         'IM scan rows pcode aggregated','session logical reads - IM',
-                        'table scan disk non-IMC rows gotten',
                         'table scan rows gotten',
                         'recursive calls',
                         'temp space allocated (bytes)','sorts (rows)','rows fetched via callback',
@@ -257,22 +263,26 @@
                      SUM(DECODE(n, 'session logical reads', v,0))*bs "LIO(%)",
                      SUM(DECODE(n, 'IM scan bytes in-memory', v,0)) "Bytes",
                      SUM(DECODE(n, 'IM scan bytes uncompressed', v,0)) "Unzip",
-                     SUM(DECODE(n, 'IM populate bytes from storage', v,0)) "Pops",
-                     SUM(DECODE(n, 'IM repopulate (trickle) bytes from storage',v,'IM prepopulate bytes from storage', v,0)) "re-Pops",
+                     --SUM(DECODE(n, 'IM populate bytes from storage', v,0)) "Pops",
+                     --SUM(DECODE(n, 'IM repopulate (trickle) bytes from storage',v,'IM prepopulate bytes from storage', v,0)) "re-Pops",
                       '|' "|",
-                     SUM(DECODE(n, 'IM scan CUs predicates received', v,0)) "IMCU",
+                     SUM(DECODE(n, 'IM scan CUs current', v,0)) "IMCU",
                      SUM(DECODE(n, 'IM scan CUs predicates optimized', v,'IM scan CUs pruned',v,0)) "Prun",
                      SUM(DECODE(n, 'IM scan CUs invalid or missing revert to on disk extent', v,0)) 
                      "Miss",
                      '|' "|",
                      SUM(DECODE(n, 'IM scan rows', v,0)) "Rows",
                      SUM(DECODE(n, 'IM scan rows valid', v,0)) "Valid",
+                     SUM(DECODE(n, 'IM scan rows projected', v,0)) "Proj",
                      SUM(DECODE(n, 'IM scan rows optimized', v,0)) "Skip",
                      SUM(DECODE(n, 'IM scan rows excluded', v,0)) "Exclude",
-                     SUM(DECODE(n, 'IM scan rows projected', v,0)) "Proj",
                      SUM(DECODE(n, 'IM scan rows pcode aggregated',v)) "pcode",
                      SUM(DECODE(n, 'IM populate rows', v,0)) "Popr",
-                     SUM(DECODE(n, 'IM repopulate (trickle incremental) total rows', v,'IM repopulate rows',v,0)) "re-Popr"
+                     SUM(DECODE(n, 'IM repopulate (trickle incremental) total rows', v,'IM repopulate rows',v,0)) "re-Popr",
+                     SUM(DECODE(n, 'key vector CU codes processed', v,0)) "IMA",
+                     SUM(DECODE(n, 'IM scan (dynamic) rows', v,0)) "IMSS",
+                     SUM(DECODE(n, 'vector group by accumspace size', v,0)) "JP",
+                     SUM(DECODE(n, 'IM scan EU rows', v,0)) "IMEU"
               FROM   &stats
               GROUP  BY sids]],
             '-',
@@ -346,7 +356,7 @@
     delta_by=[[rCall,undos,sorts,fetch,scan,IM(%),HCC(%),IOPS,MBPS,SMALL,IO Wait,Calls,Resp,OflEff,OflIn,IM-LIO,LIO(%),dxr,dxw,dbwr,lgwr,offload,BandWidth,
                SISave,OflOut,OptRead,OptWrite,CellIM,CCSave,FcHit,Fc(%),Unzip,zip,ela,
                IMCU,Prun,Miss,bytes,rows,Valid,skip,
-               exclude,pcode,proj,pops,re-pops,popr,re-popr,Disk,Pct,Swap,Logon,Call,Exec,TPS,Parse,Hard,CcHit,Buffer,
+               exclude,pcode,proj,pops,re-pops,popr,re-popr,IMSS,IMA,IMEU,JP,Disk,Pct,Swap,Logon,Call,Exec,TPS,Parse,Hard,CcHit,Buffer,
                PhyRead,PhyWrite,Redo,Undo,SQL*Net,value,cost,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,time,Busy,idle,db,
                User,Sys,I/O,Nice,traffic,flash,cr,cu,CR Rec,Cu Rec,CR Flush,CU Flush,CR FL Avg,CU FL Avg,
                lost,fail,enq,read,write,s_r,l_r,s_w,l_w,F_IOPS,s_iops,l_iops,reads,avg_wait,total_waits]],
@@ -384,7 +394,7 @@
                             PhyWrite,Redo,Undo,Temp,SQL*Net,OptRead,OptWrite,CellIM,CCSave,offload,BandWidth,bytes,
                             traffic,cr,cu,CR Rec,Cu Rec,CR Flush,CU Flush,CR FL Avg,CU FL Avg,lost,dbwr,lgwr,
                             read,write,s_r,l_r,s_w,l_w]],
-                     TMB1='rCall,undos,sorts,fetch,scan,IMCU,waits,IOPS,call,exec,TPS,parse,cchit,FcHit,popr,re-popr,rows,proj,Disk,Cache,pcode,Miss,fail,F_IOPS,s_iops,l_iops',
+                     TMB1='rCall,undos,sorts,fetch,scan,IMCU,waits,IOPS,call,exec,TPS,parse,cchit,FcHit,popr,re-popr,IMSS,IMA,IMEU,JP,rows,proj,Disk,Cache,pcode,Miss,fail,F_IOPS,s_iops,l_iops',
                      noprint='calls,ela,time,idle,total_waits',
                      USMHD1='CR Rec Avg,Cu Rec Avg,CR FL Avg,CU FL Avg,IO Wait,resp,cost,max,avg,enq,avg_wait',
                      ['%.1f%%']='prunreads,Hard,Pct,dxr,dxw,OflIn,OflOut,valid,Skip,Exclude,OflEff,FLASH,SMALL,prun',
