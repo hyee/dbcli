@@ -18,7 +18,7 @@ Option:
             d={2}        # Dictionary only
           }
     &binds: default={}, b={PEEKED_BINDS}
-    @adaptive: 12.1={+ADAPTIVE +METRICS} default={}
+    @adaptive: 12.1={+REPORT +ADAPTIVE +METRICS} default={}
 ]]--
 ]]*/
 set PRINTSIZE 9999

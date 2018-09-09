@@ -354,7 +354,7 @@ function ansi.test_text(str)
         
         rawprint(env.space.."ANSI SGR Codes, where '$E' means ascii code 27(a.k.a chr(27)): ")
         rawprint(env.space..string.rep("=",140))
-        print(env.load_data(env.join_path(env.WORK_DIR,"bin","ANSI.txt"),false))
+        print(env.load_data(env.join_path(env.WORK_DIR,"lib","ANSI.txt"),false))
         rawprint(env.space..string.rep("=",140))
         
         local bf,wf,bb,wb=base_color['BLK'][1],base_color['HIW'][1],base_color['BBLK'][1],base_color['HBWHT'][1]

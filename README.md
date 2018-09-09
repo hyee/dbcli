@@ -5,6 +5,8 @@ DBCLI : A CLI utility for DBA (Oracle/MySQL/DB2)
 ![HELP](./help.gif)
 ![sshot-13](https://cloud.githubusercontent.com/assets/761520/14856219/d23eccbe-0cc9-11e6-9256-7275e91656d8.jpg)
 
+For more detailed usage, please refer to the [PowerPoint file](./docs/dbcli.pptx) under the `docs` directory 
+
 Description
 -----------------------
 

@@ -207,7 +207,7 @@ end
 
 function ResultSet:close(rs)
     if rs then
-        if not rs:isClosed() then rs:close() end
+        if rs.isClosed and not rs:isClosed() then rs:close() end
         if self[rs] then self[rs]=nil end
     end
     local clock=os.timer()
@@ -227,7 +227,7 @@ function ResultSet:close(rs)
 end
 
 function ResultSet:rows(rs,count,limit,null_value)
-    if not rs.isClosed or rs:isClosed() then return end
+    if type(rs)~="userdata" or (rs.isClosed and rs:isClosed()) then return end
     count=tonumber(count) or -1
     local titles=self:getHeads(rs,limit)
     local head=titles.__titles
@@ -238,6 +238,7 @@ function ResultSet:rows(rs,count,limit,null_value)
     null_value=null_value or ""
     if count~=0 then
         rows=loader:fetchResult(rs,count)
+
         local maxsiz=cfg.get("COLSIZE")
         for i=1,#rows do
             for j=1,cols do
@@ -266,7 +267,7 @@ end
 
 function ResultSet:print(res,conn,prefix)
     local result,hdl={},nil
-    if not res.isClosed or res:isClosed() then return end
+    if type(res)~="userdata" or (res.isClosed and res:isClosed()) then return end
     local cols=self:getHeads(res,limit)
     if #cols==1 then
         if cfg.get("pipequery")=="on" then
@@ -457,7 +458,6 @@ function db_core:call_sql_method(event_name,sql,method,...)
     local res,obj=pcall(method,...)
     if res==false then
         local info,internal={db=self,sql=sql,error=tostring(obj):gsub('%s+$','')}
-        info.error=info.error:gsub('.*Exception:?%s*','')
         event(event_name,info)
         if info and info.error and info.error~="" then
             if not self:is_internal_call(sql) and info.sql and env.ROOT_CMD~=self.get_command_type(sql) then
@@ -520,7 +520,7 @@ function db_core:parse(sql,params,prefix,prep)
             if not v then return s end
             counter=counter+1;
             local args,typ={}
-            if type(v) =="table" then
+            if type(v) =="table" and type(params[k][2])=='table' then
                 table.insert(params[k][2],counter)
                 typ=v[3]
                 args={'registerOutParameter',db_Types[v[3]].id}
@@ -554,10 +554,11 @@ function db_core:parse(sql,params,prefix,prep)
     if #bind_info==0 then return prep,sql,params end
     local binds={}
     local method,typeid,value,varname,typename=1,2,2,3,4
+
     for k,v in ipairs(bind_info) do
         prep[v[method]](prep,k,v[value])
         local inout=type(params[bind_info[varname]])=='table' and params[bind_info[varname]]=='#' and '#' or '$'
-        if binds[varname] then
+        if binds[varname] and type(binds[varname][2])=="table" then
             table.insert(binds[varname][2],k)
         else
             binds[varname]={inout,inout=='$' and k or {k},v[typename],v[method],v[value]}
@@ -578,23 +579,54 @@ function db_core:abort_statement()
 end
 
 function db_core:exec_cache(sql,args,description)
-    if not self.__preparedCaches then
-        self.__preparedCaches={}
+    local params ={}
+    for k,v in pairs(args or {}) do
+        if type(k)=="string" then params[k:upper()] = v end
+    end
+    
+    sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
+    if type(sql)~="string" then
+        return sql
+    end
+
+    if not self.__preparedCaches or not self.__preparedCaches.__list then
+        self.__preparedCaches={__list={}}
     end
 
     local cache=self.__preparedCaches[sql]
     local prep,org,params,_sql
-    if not cache then
+    if not cache or cache[1]:isClosed() then
         org=table.clone(args)
         prep,_sql,params=self:parse(sql,org)
         cache={prep,org,params}
         self.__preparedCaches[sql]=cache
+        if type(description)=="string" and description~='' then
+            local prep1=self.__preparedCaches.__list[description]
+            if prep1 then
+                env.log_debug("DB","Recompiling "..description)
+                pcall(prep1[1].close,prep1[1])
+                for k,v in pairs(self.__preparedCaches) do
+                    if prep1==v then
+                        self.__preparedCaches[k]=nil
+                        break
+                    end
+                end
+
+                for k,v in pairs(self.__preparedCaches.__list) do
+                    if prep1==v then
+                        self.__preparedCaches.__list[k]=nil
+                        break
+                    end
+                end
+            end
+            self.__preparedCaches.__list[description]=cache
+        end
     else
         prep,org,params=table.unpack(cache)
         for k,n in pairs(args) do
             k=type(k)=="string" and k:upper() or k
             local o,typ=org[k]
-            if params[k] and o ~= n and tostring(n):sub(1,1)~='#' and tostring(o):sub(1,1)~='#' then
+            if params[k] and o ~= n and tostring(n):sub(1,1)~='#' then
                 local idx=params[k][6] or params[k][2]
                 local method=params[k][4]
                 org[k]=n
@@ -618,10 +650,10 @@ function db_core:exec_cache(sql,args,description)
         end
     end
     args._description=description and ('('..description..')') or ''
-    return self:exec(prep,args,table.clone(params)),cache
+    return self:exec(prep,args,table.clone(params),sql),cache
 end
 
-function db_core:exec(sql,args,prep_params)
+function db_core:exec(sql,args,prep_params,src_sql)
     local is_not_prep=type(sql)~="userdata"
 
     if is_not_prep and sql:find('/*DBCLI_EXEC_CACHE*/',1,true) then
@@ -669,9 +701,14 @@ function db_core:exec(sql,args,prep_params)
         env.log_debug("db","SQL:",sql)
         env.log_debug("db","Parameters:",params)
     else
-        local desc ="PreparedStatement"..args._description
-        env.log_debug("db","SQL Cache:",desc)
-        prep,sql,params=sql,desc,prep_params or {}
+        local desc ="PreparedStatement"..(args._description or "")
+        prep,sql,params=sql,src_sql or desc,prep_params or {}
+        if not desc:upper():find("INTERNAL") then
+            env.log_debug("db","Cursor:",sql)
+            env.log_debug("db","Parameters:",params)
+        else
+            env.log_debug("db","Cursor:",desc)
+        end
     end
 
     local is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
@@ -701,7 +738,6 @@ function db_core:exec(sql,args,prep_params)
         end
     end
     --close statments
-
     local params1=nil
     local result={is_query and prep:getResultSet() or prep:getUpdateCount()}
     local i=0;
@@ -713,7 +749,7 @@ function db_core:exec(sql,args,prep_params)
     end
 
     self:clearStatements()
-    if is_not_prep and event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
+    if event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
     
     for k,v in pairs(outputs) do
         if args[k]==db_core.NOT_ASSIGNED then args[k]=nil end
@@ -746,7 +782,7 @@ end
 
 function db_core:is_internal_call(sql)
     if self.internal_exec then return true end
-    if type(sql)=="userdata" or sql=='PreparedStatement' then return true end
+    if type(sql)=="userdata" then return true end
     return sql and sql:find("INTERNAL_DBCLI_CMD",1,true) and true or false
 end
 
@@ -876,9 +912,9 @@ function db_core:get_value(sql,args)
     return rtn and #rtn==1 and rtn[1] or rtn
 end
 
-function db_core:grid_call(tabs,rows_limit,args)
+function db_core:grid_call(tabs,rows_limit,args,is_cache)
     local db_call=self.grid_db_call
-    local rs_idx={}
+    local rs_idx={declare=tabs.declare}
     local function parse_sqls(tabs)
         local result={}
         for k,v in ipairs(tabs) do result[k]=v end
@@ -893,7 +929,7 @@ function db_core:grid_call(tabs,rows_limit,args)
                 tab,grid_cfg=env.grid.get_config(tab)
                 grid_cfg._is_result=true
                 result[i]={grid_cfg=grid_cfg,sql=tab,index=i}
-                rs_idx[#rs_idx+1]=result[i]
+                table.insert(rs_idx,1,result[i])
             end
         end
         return result
@@ -929,7 +965,7 @@ function db_core:grid_call(tabs,rows_limit,args)
 
     local result=parse_sqls(tabs)
     if type(db_call)=='function' then
-        db_call(self,rs_idx,args)
+        db_call(self,rs_idx,args,is_cache)
     else
         local clock=os.timer()
         for idx,info in ipairs(rs_idx) do

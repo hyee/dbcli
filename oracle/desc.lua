@@ -298,6 +298,7 @@ local desc_sql={
                case when low_value is not null then 
                decode(dtype
                   ,'NUMBER'       ,to_char(utl_raw.cast_to_number(low_value))
+                  ,'FLOAT'        ,to_char(utl_raw.cast_to_number(low_value))
                   ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(low_value))
                   ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(low_value))
                   ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(low_value))
@@ -332,6 +333,7 @@ local desc_sql={
                 case when high_value is not null then 
                 decode(dtype
                       ,'NUMBER'       ,to_char(utl_raw.cast_to_number(high_value))
+                      ,'FLOAT'        ,to_char(utl_raw.cast_to_number(high_value))
                       ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(high_value))
                       ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(high_value))
                       ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(high_value))
@@ -507,6 +509,7 @@ local desc_sql={
                 case when a.low_value is not null then 
                 decode(dtype
                   ,'NUMBER'       ,to_char(utl_raw.cast_to_number(a.low_value))
+                  ,'FLOAT'        ,to_char(utl_raw.cast_to_number(a.low_value))
                   ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(a.low_value))
                   ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(a.low_value))
                   ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(a.low_value))
@@ -540,6 +543,7 @@ local desc_sql={
                 case when a.high_value is not null then 
                 decode(dtype
                       ,'NUMBER'       ,to_char(utl_raw.cast_to_number(a.high_value))
+                      ,'FLOAT'        ,to_char(utl_raw.cast_to_number(a.high_value))
                       ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(a.high_value))
                       ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(a.high_value))
                       ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(a.high_value))
@@ -593,7 +597,6 @@ function desc.desc(name,option)
     set.set("BYPASSEMPTYRS","on")
     local rs,success,err
     local obj=db:check_obj(name)
-    env.checkerr(obj,'Cannot find target object!')
     if obj.object_type=='SYNONYM' then
         local new_obj=db:dba_query(db.get_value,[[WITH r AS
          (SELECT /*+materialize cardinality(p 1)*/REFERENCED_OBJECT_ID OBJ, rownum lv

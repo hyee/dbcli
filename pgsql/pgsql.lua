@@ -55,7 +55,7 @@ function pgsql:connect(conn_str)
     self.super.connect(self,args)
     self.conn=java.cast(self.conn,"org.postgresql.jdbc.PgConnection")
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    local info=self:get_value([[select current_database(),substring(version() from '[\d\.]+'),current_user,inet_server_addr(),inet_server_port(),pg_backend_pid()]])
+    local info=self:get_value([[select current_database(),substring(version() from '[0-9\.]+'),current_user,inet_server_addr(),inet_server_port(),pg_backend_pid()]])
     self.props.db_version,self.props.server=info[2]:match('^([%d%.]+)'),info[4]
     self.props.db_user,self.props.pid,self.props.port=info[3],info[6],info[5]
     self.props.database=info[1] or ""
@@ -88,7 +88,7 @@ function pgsql:exec(sql,...)
     end
     
     if is_not_prep then sql=event("BEFORE_PGSQL_EXEC",{self,sql,args}) [2] end
-    local result=self.super.exec(self,sql,args,prep_params)
+    local result=self.super.exec(self,sql,...)
     if is_not_prep and not bypass then 
         event("AFTER_PGSQL_EXEC",self,sql,args,result)
         self.print_feed(sql,result)

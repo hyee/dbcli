@@ -2,7 +2,7 @@
 local db,grid=env.getdb(),env.grid
 local findobj,cache_obj,loaded={},{}
 local stmt=[[
-	DECLARE /*DBCLI_EXEC_CACHE*/
+	DECLARE /*INTERNAL_DBCLI_CMD*/
 	    schem         VARCHAR2(128);
 	    part1         VARCHAR2(128);
 	    part2         VARCHAR2(128);
@@ -10,7 +10,8 @@ local stmt=[[
 	    dblink        VARCHAR2(128);
 	    part1_type    PLS_INTEGER;
 	    object_number PLS_INTEGER;
-	    cnt           PLS_INTEGER;
+	    cnt           PLS_INTEGER;  
+	    did           PLS_INTEGER;
 	    flag          BOOLEAN := TRUE;
 	    obj_type      VARCHAR2(128);
 	    objs          VARCHAR2(2000) := 'dba_objects';
@@ -100,11 +101,12 @@ local stmt=[[
 	    END IF;
 
 	    stmt:=q'[SELECT /*+no_expand*/
-	           MIN(to_char(OBJECT_TYPE))    keep(dense_rank first order by s_flag,object_id),
-	           MIN(to_char(OWNER))          keep(dense_rank first order by s_flag,object_id),
-	           MIN(to_char(OBJECT_NAME))    keep(dense_rank first order by s_flag,object_id),
-	           MIN(to_char(SUBOBJECT_NAME)) keep(dense_rank first order by s_flag,object_id),
-	           MIN(to_number(OBJECT_ID))    keep(dense_rank first order by s_flag)
+	           MIN(OBJECT_TYPE)    keep(dense_rank first order by s_flag,object_id),
+	           MIN(OWNER)          keep(dense_rank first order by s_flag,object_id),
+	           MIN(OBJECT_NAME)    keep(dense_rank first order by s_flag,object_id),
+	           MIN(SUBOBJECT_NAME) keep(dense_rank first order by s_flag,object_id),
+	           MIN(OBJECT_ID)      keep(dense_rank first order by s_flag),
+	           MIN(DATA_OBJECT_ID) keep(dense_rank first order by s_flag,object_id)
 	    FROM (
 	        SELECT /*+INDEX_SS(a) MERGE(A) no_expand*/ a.*,
 	               case when owner=:1 then 0 else 100 end +
@@ -114,7 +116,7 @@ local stmt=[[
 
 
 	    EXECUTE IMMEDIATE stmt
-	        INTO obj_type, schem, part1, part2_temp,object_number USING schem,target,schem, part1;
+	        INTO obj_type, schem, part1, part2_temp,object_number,did USING schem,target,schem, part1;
 	    
 	    IF part2 IS NULL THEN
 	        IF part2_temp IS NULL AND NOT flag THEN
@@ -128,7 +130,7 @@ local stmt=[[
 	            target  := trim(:target);
 	            isUpper := false;
 	            GOTO CHECKER;
-	        ELSIF :ignore IS NULL THEN
+	        ELSIF nvl(:ignore,'0') = '0' THEN
 	            raise_application_error(-20001,'Cannot find target object '||target||'!');
 	        END IF;
 	    END IF;
@@ -138,17 +140,22 @@ local stmt=[[
 	    :object_name    := part1;
 	    :object_subname := part2;
 	    :object_id      := object_number;
+	    :object_data_id := did;
 	END;]]
 
-local default_args={target='v1',ignore='1',object_owner="#VARCHAR",object_type="#VARCHAR",object_name="#VARCHAR",object_subname="#VARCHAR",object_id="#NUMBER"}
+local default_args={target='v1',ignore='1',object_owner="#VARCHAR",object_type="#VARCHAR",object_name="#VARCHAR",object_subname="#VARCHAR",object_id="#NUMBER",object_data_id="#NUMBER"}
 
 function db:check_obj(obj_name,bypass_error,is_set_env)
-	if not obj_name then return end
+	if not obj_name then
+		return env.checkerr((bypass_error or '0')~='0',"Please input the object name/id!");
+	end
 	obj_name=obj_name:gsub('"+','"')
-    local obj=obj_name:upper()
+    local obj=obj_name:trim():upper()
+    env.checkerr((bypass_error or '0')=='0' or obj~="","Please input the object name/id!")
+
     if not loaded then
     	local clock=os.clock()
-        env.printer.write("    Loading object dictionary...")
+        --env.printer.write("    Loading object dictionary...")
         local args={"#CLOB"}
         db:dba_query(db.internal_call,[[
 	        DECLARE
@@ -194,7 +201,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
             item.alias_list={item.target,n}
             cache_obj[item.target],cache_obj[n]=item,item
         end
-        printer.write("done in "..string.format("%.3f",os.clock()-clock).." secs.\n")
+        --printer.write("done in "..string.format("%.3f",os.clock()-clock).." secs.\n")
     end
 
     local args
@@ -202,8 +209,8 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
     	args=table.clone(cache_obj[obj])
     else
     	args=table.clone(default_args)
-	    args.target,args.ignore=obj_name,bypass_error
-	    db:exec_cache(stmt,args,'GetDBMSOutput')
+	    args.target,args.ignore=obj_name,bypass_error or "0"
+	    db:exec_cache(stmt,args,'Internal_FindObject')
 	    args.owner=args.object_owner
 	end
 
@@ -231,35 +238,31 @@ function db:check_access(obj_name,bypass_error,is_set_env)
     if cache_obj[o] and cache_obj[o].accessible then return cache_obj[o].accessible==1 and true or false end
     obj.count='#NUMBER'
     self:exec_cache([[
-        DECLARE
+        DECLARE /*INTERNAL_DBCLI_CMD*/
             x   PLS_INTEGER := 0;
             e   VARCHAR2(500);
             obj VARCHAR2(61) := :owner||'.'||:object_name;
         BEGIN
-            IF instr(obj,'PUBLIC.')=1 THEN
-                obj := :object_name;
-            END IF;
-            BEGIN
-                EXECUTE IMMEDIATE 'select count(1) from ' || obj || ' where rownum<1';
-                x := 1;
-            EXCEPTION WHEN OTHERS THEN NULL;
-            END;
+        	select count(1) into x
+            from   table_privileges
+            where  owner=case when regexp_like(:object_name,'^(G?V)\$') then 'SYS' else :owner end
+            AND    table_name=regexp_replace(:object_name,'^(G?V)\$','\1_$')
+            AND    rownum<2;
 
-            IF x = 0 THEN
-                BEGIN
-                    EXECUTE IMMEDIATE 'begin ' || obj || '."_test_access"; end;';
-                    x := 1;
-                EXCEPTION
-                    WHEN OTHERS THEN
-                        e := SQLERRM;
-                        IF INSTR(e,'PLS-00225')>0 OR INSTR(e,'PLS-00302')>0 THEN
-                            x := 1;
-                        END IF;
-                END;
-            END IF;
+            IF x=0 THEN
+	            IF instr(obj,'PUBLIC.')=1 THEN
+	                obj := :object_name;
+	            END IF;
+	            BEGIN
+	                EXECUTE IMMEDIATE 'select count(1) from ' || obj || ' where rownum<1';
+	                x := 1;
+	            EXCEPTION WHEN OTHERS THEN NULL;
+	            END;
+	        END IF;
+	        
             :count := x;
         END;
-    ]],obj,'CheckAccessRight')
+    ]],obj,'Internal_CheckAccessRight')
 
     if cache_obj[o] then
         local value=obj.count==1 and 1 or 0
@@ -270,6 +273,12 @@ end
 
 function findobj.onload()
 	env.set_command(db,"FINDOBJ",nil,db.check_obj,false,4)
+	env.event.snoop("AFTER_ORACLE_CONNECT",findobj.onreset)
 end
+
+function findobj.onreset()
+    cache_obj,loaded={}
+end
+
 
 return findobj

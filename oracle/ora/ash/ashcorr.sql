@@ -3,31 +3,40 @@
         &V2: default={&starttime}
         &V3: default={&endtime}
         &ASH: default={gv$active_Session_history} dash={dba_hist_active_sess_history}
+        @binst: 11={'@'|| BLOCKING_INST_ID} default={''}
+        &INST1 : default={inst_id}, dash={instance_number}
     --]]
 ]]*/
 
+--lag correlation in case of l=0: sum((x-avg(x)) * (y-avg(y))) / sqrt(sum(power(x-avg(x)))) / sqrt(sum(power(y-avg(y))))
 WITH ash1 AS
- (SELECT /*+materialize no_merge(ash) ordered*/  *
-  FROM   (SELECT rs,
-                 DECODE(r, 1, 'sql_id', 2, 'event', 3, 'object_id', 4, 'program') clz,
+ (SELECT /*+ no_merge(ash) ordered*/  clz,name,sample_id,sum(cost) v
+  FROM   (SELECT DECODE(r, 1, 'sql_id', 2, 'event', 3, 'object_id', 4, 'program',5,'blocker',6,'sid') clz,
                  trim(DECODE(r,
                         1,
                         sql_id,
                         2,
                         NVL(event, 'CPU => ' || TRIM(',' FROM p1text || ',' || p2text || ',' || p3text)),
                         3,
-                        CASE WHEN current_obj# > 1 THEN to_char(current_obj#) when current_obj#!=-1 then 'UNDO' END,
+                        CASE WHEN current_obj# > 1 THEN to_char(current_obj#) when current_obj# in(0,-1) then 'UNDO' else '-2' END,
                         4,
-                        NVL(regexp_substr(program, '\(.*\)'), program))) NAME,
-                 sample_id,
-                 least(nvl(tm_delta_db_time,delta_time),delta_time) v
-          FROM   (SELECT /*+no_expand*/ ROWNUM rs, a.* FROM  &ash a 
+                        nvl(regexp_replace(regexp_substr(program, '\(.+?\)'),'\d','n'),program),
+                        5,
+                        blocking_session||&binst,
+                        6,
+                        SESSION_ID||'@'||&INST1)) NAME,
+                 nvl(tm_delta_db_time,delta_time) cost,
+                 TRUNC(sample_time,'MI') sample_id
+          FROM   (SELECT /*+no_expand*/ a.* FROM  &ash a 
                   WHERE :V2<100000 AND sample_time+0> SYSDATE-:V2/86400 OR 
                         nvl(:V2,'100000')>=100000 AND  sample_time+0 BETWEEN nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-1) AND nvl(to_date(:V3,'YYMMDDHH24MI'),SYSDATE)) ash, 
-                 (SELECT ROWNUM r FROM dual CONNECT BY ROWNUM < 6) r)
-  WHERE  NAME IS NOT NULL),
-st2 AS(SELECT sample_id, v, rs FROM ash1 WHERE lower(NAME) = lower(:V1)),
-st1 AS(SELECT * FROM ash1 WHERE lower(NAME) != lower(:V1)),
+                 (SELECT ROWNUM r FROM dual CONNECT BY ROWNUM <=6) r)
+  WHERE  NAME IS NOT NULL
+  GROUP BY clz,name,sample_id),
+st2 AS(SELECT sample_id, v FROM ash1 WHERE lower(NAME) = lower(:V1)),
+st1 AS(SELECT * FROM ash1  a
+       WHERE lower(NAME) != lower(:V1) 
+       AND   exists(select * from (select min(sample_id) mn,max(sample_id) mx from st2) b where a.sample_id between mn and mx)),
 RES AS(
     SELECT a.*,CEIL(ROWNUM / 3) r1, MOD(ROWNUM, 3) R2 
     FROM (

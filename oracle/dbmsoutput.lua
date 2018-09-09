@@ -13,8 +13,7 @@ function output.setOutput(db)
     pcall(function() (db or env.getdb()):internal_call(stmt) end)
 end
 
-local marker='/*GetDBMSOutput*/'
-output.stmt=marker..[[/*DBCLI_EXEC_CACHE*/
+output.stmt=[[/*INTERNAL_DBCLI_CMD*/
         DECLARE
             l_line   VARCHAR2(32767);
             l_done   PLS_INTEGER := 32767;
@@ -52,13 +51,14 @@ output.stmt=marker..[[/*DBCLI_EXEC_CACHE*/
         EXCEPTION WHEN OTHERS THEN NULL;
         END;]]
 
-function output.getOutput(db,sql)
+function output.getOutput(item)
+    local db,sql=item[1],item[2]
+    if not db or not sql then return end
     local typ=db.get_command_type(sql)
     if (typ=='SELECT' or typ=='WITH') and #env.RUNNING_THREADS>2 then return end
-
-    if not ((output.prev_sql or ""):find(marker,1,true)) and not sql:find(marker,1,true) and not db:is_internal_call(sql) then
+    if not (sql:lower():find('internal',1,true) and not sql:find('%s')) and not db:is_internal_call(sql) then
         local args=table.clone(default_args)
-        if not pcall(db.exec_cache,db,output.stmt,args,'GetDBMSOutput') then return end
+        if not pcall(db.exec_cache,db,output.stmt,args,'Internal_GetDBMSOutput') then return end
 
         local result=args.lob or args.buff
         if enabled == "on" and result and result:match("[^\n%s]+") then
@@ -85,10 +85,8 @@ end
 
 
 function output.get_error_output(info)
-    if info.sql and info.sql:find(marker,1,true) then
-        info.sql=nil
-    elseif info.db:is_connect() then
-        output.getOutput(info.db,info.sql)
+    if info.db:is_connect() then
+        output.getOutput({info.db,info.sql})
     end
     return info
 end
@@ -96,7 +94,7 @@ end
 function output.onload()
     snoop("ON_SQL_ERROR",output.get_error_output,nil,40)
     snoop("AFTER_ORACLE_CONNECT",output.setOutput)
-    snoop("AFTER_ORACLE_EXEC",output.getOutput,nil,50)
+    snoop("AFTER_DB_EXEC",output.getOutput,nil,50)
 
     cfg.init({"ServerOutput",'SERVEROUT'},
         "on",

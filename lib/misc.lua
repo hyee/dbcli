@@ -10,7 +10,7 @@ function os.shell(cmd,args)
 end
 
 function os.find_extension(exe)
-    local err="Cannot find "..exe.." in the default path, please add it into EXT_PATH of file data/init.cfg"
+    local err='Cannot find executable "'..exe..'" in the default path, please add it into EXT_PATH of file data/'..(env.IS_WINDOWS and 'init.cfg' or 'init.conf')
     if exe:find('[\\/]') then
         local type,file=os.exists(exe)
         env.checkerr(type,err)
@@ -87,7 +87,8 @@ function string.case_insensitive_pattern(pattern)
 end
 
 function string.trim(s,sep)
-    return s:match('^[%s%z]*(.-)[%s%z]*$')
+    sep='[%s%z'..(sep or '')..']'
+    return s:match('^'..sep..'*(.-)'..sep..'*$')
 end
 
 String=java.require("java.lang.String")

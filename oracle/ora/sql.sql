@@ -1,11 +1,13 @@
 /*[[Get SQL text. Usage: @@NAME <sql_id>
     --[[
+        @VER12: 12.1={} default={--}
         @VER: 11.2={} DEFAULT={--}
     --]]
 ]]*/
 set colwrap 150 feed off 
-COL ELA,ALL_ELA,CPU,IO,CC,CL,AP,PL_JAVA FORMAT SMHD2
+COL AVG_ELA,ALL_ELA,CPU,IO,CC,CL,AP,PL_JAVA FORMAT USMHD2
 COL CELLIO,READ,WRITE,CELLIO,OFLIN,OFLOUT FORMAT KMG
+COL buff for tmb
 SET BYPASSEMPTYRS ON
 
 SELECT *
@@ -26,22 +28,23 @@ WHERE  ROWNUM <= 10;
 
 SELECT PLAN_HASH_VALUE PHV,
        program_id || NULLIF('#' || program_line#, '#0') program#,
-       &ver decode(IS_BIND_SENSITIVE, 'Y', 'SENS ') || decode(IS_BIND_AWARE, 'Y', 'AWARE ') || decode(IS_SHAREABLE, 'Y', 'SHARE') ACS,
+       &ver12 decode(is_reoptimizable,'Y','REOPTIMIZABLE'||chr(10))||decode(is_resolved_adaptive_plan,'Y','RESOLVED_ADAPTIVE_PLAN'||chr(10))||
+       &ver decode(IS_BIND_SENSITIVE, 'Y', 'IS_BIND_SENSITIVE'||chr(10)) || decode(IS_BIND_AWARE, 'Y', 'BIND_AWARE'||chr(10)) || decode(IS_SHAREABLE, 'Y', 'SHAREABLE'||chr(10)) ACS,
        TRIM('/' FROM SQL_PROFILE 
        &ver || '/' || SQL_PLAN_BASELINE
        ) OUTLINE,
        parsing_schema_name user#,
        SUM(EXEC) AS EXEC,
        SUM(PARSE_CALLS) parse,
-       round(SUM(elapsed_time)*1e-6,3) all_ela,
+       round(SUM(elapsed_time),3) all_ela,
        '|' "|",
-       round(SUM(elapsed_time)*1e-6/SUM(EXEC),3) ela,
-       round(SUM(cpu_time)*1e-6/SUM(EXEC),3) CPU,
-       round(SUM(USER_IO_WAIT_TIME)*1e-6/SUM(EXEC),3) io,
-       round(SUM(CONCURRENCY_WAIT_TIME)*1e-6/SUM(EXEC),3) cc,
-       round(SUM(CLUSTER_WAIT_TIME)*1e-6/SUM(EXEC),3) cl,
-       round(SUM(APPLICATION_WAIT_TIME)*1e-6/SUM(EXEC),3) ap,
-       round(SUM(PLSQL_EXEC_TIME + JAVA_EXEC_TIME)*1e-6/SUM(EXEC),3) pl_java,
+       round(SUM(elapsed_time)/SUM(EXEC),3) avg_ela,
+       round(SUM(cpu_time)/SUM(EXEC),3) CPU,
+       round(SUM(USER_IO_WAIT_TIME)/SUM(EXEC),3) io,
+       round(SUM(CONCURRENCY_WAIT_TIME)/SUM(EXEC),3) cc,
+       round(SUM(CLUSTER_WAIT_TIME)/SUM(EXEC),3) cl,
+       round(SUM(APPLICATION_WAIT_TIME)/SUM(EXEC),3) ap,
+       round(SUM(PLSQL_EXEC_TIME + JAVA_EXEC_TIME)/SUM(EXEC),3) pl_java,
        round(SUM(BUFFER_GETS)/SUM(EXEC),3) AS BUFF,
        &ver round(SUM(IO_INTERCONNECT_BYTES)/SUM(EXEC),3)  cellio,
        &ver round(SUM(PHYSICAL_WRITE_BYTES)/SUM(EXEC),3)  AS WRITE,
@@ -52,6 +55,7 @@ SELECT PLAN_HASH_VALUE PHV,
 FROM   (SELECT greatest(EXECUTIONS + users_executing, 1) exec,a.* FROM gv$SQL a WHERE SQL_ID=:V1)
 GROUP  BY SQL_ID,
           PLAN_HASH_VALUE,
+          &ver12 is_reoptimizable,is_resolved_adaptive_plan,
           &ver IS_BIND_SENSITIVE,
           &ver IS_BIND_AWARE,
           &ver IS_SHAREABLE,

@@ -44,7 +44,7 @@ function mysql:connect(conn_str)
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
 
     self:merge_props(
-        {driverClassName="com.mysql.jdbc.Driver",
+        {driverClassName="com.mysql.cj.jdbc.Driver",
          retrieveMessagesFromServerOnGetMessage='true',
          --clientProgramName='SQL Developer',
          useCachedCursor=self.MAX_CACHE_SIZE,
@@ -55,13 +55,15 @@ function mysql:connect(conn_str)
          callableStmtCacheSize=10,
          enableEscapeProcessing='false',
          allowMultiQueries="true",
+         useSSL='false',
+         serverTimezone='UTC',
         },args)
     
     if event then event("BEFORE_mysql_CONNECT",self,sql,args,result) end
     env.set_title("")
     for k,v in pairs(args) do args[k]=tostring(v) end
     self.super.connect(self,args)
-    self.conn=java.cast(self.conn,"com.mysql.jdbc.JDBC4MySQLConnection")
+    --self.conn=java.cast(self.conn,"com.mysql.jdbc.JDBC4MySQLConnection")
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     local info=self:get_value([[
         select database(),version(),CONNECTION_ID(),user(),@@hostname,@@sql_mode,@@port,plugin_version 
@@ -102,7 +104,7 @@ function mysql:exec(sql,...)
     end
     
     if is_not_prep then sql=event("BEFORE_MYSQL_EXEC",{self,sql,args}) [2] end
-    local result=self.super.exec(self,sql,args,prep_params)
+    local result=self.super.exec(self,sql,...)
     if is_not_prep and not bypass then 
         event("AFTER_MYSQL_EXEC",self,sql,args,result)
         self.print_feed(sql,result)

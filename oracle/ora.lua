@@ -20,7 +20,14 @@ function ora:validate_accessable(name,options,values)
         if name:find("CHECK_USER",1,true)==1 then--check user
             check_flag=3
             expect_name="user"
-            if db.props.db_user ~= option and option~="DEFAULT" then default=nil end
+            default=nil
+            for role in option:gmatch("([^/%s]+)") do
+                role=role:upper()
+                if role:upper()=="DEFAULT" or db.props.privs[role] then
+                    default=option
+                    break
+                end
+            end
             expect=option
         elseif name:find("CHECK_ACCESS",1,true)==1 then--objects are sep with the / symbol
             check_flag=2
@@ -55,14 +62,6 @@ function ora:validate_accessable(name,options,values)
     end
 
     return default
-end
-
-function ora.onreset()
-    cache_obj,loaded={}
-end
-
-function ora.onload()
-    env.event.snoop("AFTER_ORACLE_CONNECT",ora.onreset)
 end
 
 return ora.new()

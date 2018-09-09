@@ -54,6 +54,7 @@ BEGIN
                 row_number() over(order by extractvalue(b.column_value, '/ROW/C1')+0 desc) seq,
                 extractvalue(b.column_value, '/ROW/C2') + 0 extents,
                 extractvalue(b.column_value, '/ROW/C3') + 0 segments,
+                extractvalue(b.column_value, '/ROW/C7') + 0 blocks,
                 round(extractvalue(b.column_value, '/ROW/C4') / 1024) init_kb,
                 round(extractvalue(b.column_value, '/ROW/C5') / 1024) next_kb,
                 extractvalue(b.column_value, '/ROW/C6') tablespace_name
@@ -64,7 +65,8 @@ BEGIN
                                decode('&OPT3','null',a.object_type,b.segment_type) T, &OPT3 P,
                                SUM(bytes) C1, SUM(EXTENTS) C2,
                                COUNT(1) C3, AVG(initial_extent) C4, AVG(nvl(next_extent, 0)) C5,
-                               MAX(tablespace_name) KEEP(dense_rank LAST ORDER BY blocks) C6
+                               MAX(tablespace_name) KEEP(dense_rank LAST ORDER BY blocks) C6,
+                               sum(blocks) c7
                         FROM   dba_objects a, dba_segments b
                         WHERE  b.segment_type not in('ROLLBACK','TYPE2 UNDO','DEFERRED ROLLBACK','TEMPORARY','CACHE','SPACE HEADER','UNDEFINED')
                         AND    b.owner = ']' || u.name || '''
@@ -145,6 +147,7 @@ BEGIN
                         extractvalue(column_value,'//BYTES')+0 ACT_BYTES,
                         extractvalue(column_value,'//EXTENTS')+0 EXTENTS,
                         extractvalue(column_value,'//SEGMENTS')+0 SEGMENTS,
+                        extractvalue(column_value,'//BLOCKS')+0 BLOCKS,
                         extractvalue(column_value,'//INIT_KB')+0 INIT_KB,
                         extractvalue(column_value,'//NEXT_KB')+0 NEXT_KB,
                         extractvalue(column_value,'//TABLESPACE_NAME') TABLESPACE_NAME,
@@ -165,6 +168,7 @@ BEGIN
                         round(SUM(bytes) / 1024 / 1024 /1024, 3) SIZE_GB,
                         SUM(EXTENTS) EXTENTS,
                         count(1) SEGMENTS,
+                        sum(blocks) blocks,
                         ROUND(AVG(INITIAL_EXTENT)/1024) init_ext_kb,
                         ROUND(AVG(next_extent)/1024) next_ext_kb,
                     MAX(TABLESPACE_NAME) KEEP(DENSE_RANK LAST ORDER BY BYTES) TABLESPACE_NAME

@@ -49,10 +49,14 @@ function trace.get_trace(filename,mb,from_mb)
         
             flag := 0;
             IF dir IS NULL THEN
-                buff := 'create or replace directory DBCLI_DUMP_DIR as ''' || tmp || '''';
-                dir  := 'DBCLI_DUMP_DIR';
-                flag := 0;
-                EXECUTE IMMEDIATE buff;
+                IF :readonly = 'off' THEN 
+                    buff := 'create or replace directory DBCLI_DUMP_DIR as ''' || tmp || '''';
+                    dir  := 'DBCLI_DUMP_DIR';
+                    flag := 0;
+                    EXECUTE IMMEDIATE buff;
+                ELSE
+                    GOTO FILE_FROM_DICT;
+                END IF;
             END IF;
         
             flag       := 1;
@@ -107,6 +111,7 @@ function trace.get_trace(filename,mb,from_mb)
                 END IF;
         END;
 
+        <<FILE_FROM_DICT>>
         IF text IS NULL THEN
             dir  := regexp_replace(tmp,'[\\/]trace[\\/]$');
             IF al IS NOT NULL THEN
@@ -180,8 +185,8 @@ function trace.get_trace(filename,mb,from_mb)
         :3   := text;
     END;]]
     local target_view
-    target_view=db:check_obj("GV$DIAG_TRACE_FILE")
-    if not target_view then target_view=db:check_obj("V$DIAG_TRACE_FILE") end
+    target_view=db:check_obj("GV$DIAG_TRACE_FILE",1)
+    if not target_view then target_view=db:check_obj("V$DIAG_TRACE_FILE",1) end
     if not filename then
         if target_view then 
             target_view=target_view.object_name
@@ -239,10 +244,10 @@ function trace.get_trace(filename,mb,from_mb)
 
     local alert_view
     if filename:find('alert.*.log') then
-        alert_view=db:check_obj("V$DIAG_ALERT_EXT")
+        alert_view=db:check_obj("V$DIAG_ALERT_EXT",1)
     end
     
-    local args={filename,"#VARCHAR","#CLOB","#VARCHAR",target_view and target_view.object_name or '',alert_view and alert_view.object_name or '',mb=mb or 2,from_mb=from_mb or '',res='#VARCHAR'}
+    local args={filename,"#VARCHAR","#CLOB","#VARCHAR",target_view and target_view.object_name or '',alert_view and alert_view.object_name or '',mb=mb or 2,from_mb=from_mb or '',res='#VARCHAR',readonly=env.set.get("readonly")}
     db:internal_call(sql,args)
     env.checkerr(args[2],args[4])
     env.checkerr(args[3],'Target file('..filename..') does not exists!')

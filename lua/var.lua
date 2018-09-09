@@ -119,9 +119,9 @@ function var.accept_input(name,desc)
             return
         end
     end
-    desc=desc:match("^[%s']*(.-)[%s':]*$")..': '
-    env.printer.write(desc)
-    var.inputs[uname]=io.read()
+    desc=desc:match("^[%s']*(.-)[%s':]*$")
+    
+    var.inputs[uname]=env.ask(desc)
     var.outputs[uname]=nil
 end
 
@@ -265,11 +265,11 @@ end
 
 function var.capture_before_cmd(cmd,args)
     if #env.RUNNING_THREADS>1 then return end
-    if cmd==var.cmd1 or cmd==var.cmd2 or cmd==var.cmd3 or cmd==var.cmd4 then
+    if env._CMDS[cmd] and env._CMDS[cmd].FILE:find('var') then
         return
     end
-    local sub=tostring(var.cmdlist and var.cmdlist[cmd] or nil):upper():match('^%w+')
-    if sub~=var.cmd1 and sub~=var.cmd2 and sub~=var.cmd3 and sub~=var.cmd4 then
+    local sub=env._CMDS[cmd].ALIAS_TO or 'nil'
+    if sub~=var.cmd1 and sub~=var.cmd2 and sub~=var.cmd3 and sub~=var.cmd4 and sub~='COL' and sub~='COLUMN' then
         env.log_debug("var","Backup variables")
         if not var._prevent_restore then
             var._backup,var._inputs_backup,var._outputs_backup,var._columns_backup=var.backup_context()
@@ -331,7 +331,9 @@ function var.define_column(col,...)
     local obj=var.columns[col]
     local valid=false
     for i=1,#args do
-        args[i],arg=args[i]:upper(),args[i+1]
+        args[i],arg=args[i]:upper(),args[i+1] or ""
+        local f,f1,scale=arg:upper(),arg:upper():match('(.-)(%d*)$')
+        scale=tonumber(scale) or 2
         if args[i]=='NEW_VALUE' or args[i]=='NEW_V' then
             env.checkerr(arg,'Format:  COL[UMN] <column> NEW_V[ALUE] <variable> [PRINT|PRI|NOPRINT|NOPRI].')
             arg=arg:upper()
@@ -340,41 +342,52 @@ function var.define_column(col,...)
             i=i+1
             valid=true
         elseif args[i]=='FORMAT' or args[i]=='FOR' then
-            local f=arg:upper()
+            local num_fmt="%."..scale.."f"
             env.checkerr(arg,'Format:  COL[UMN] <column> FOR[MAT] [KMB|TMB|ITV|SMHD|<format>] JUS[TIFY] [LEFT|L|RIGHT|R].')
             if f:find('^A') then
                 local siz=tonumber(arg:match("%d+"))
                 obj.format_dir='%-'..siz..'s'
                 obj.format=function(v) return tostring(v) and obj.format_dir:format(tostring(v):sub(1,siz)) or v end
-            elseif f=="KMG" or f=="TMB" then --KMGTP
-                local units=f=="KMG" and {'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} or {'  ',' K',' M',' B',' T',' Q'}
-                local div=f=="KMG" and 1024 or 1000
+            elseif f:find("^HEADING") then
+                f = arg:match('^%w+%s+(.+)')
+                if f then
+                    return var.define_column(col,'HEADING',f)
+                end
+            elseif f1=="KMG" or f1=="TMB" then --KMGTP
+                local units=f1=="KMG" and {'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} or {'  ',' K',' M',' B',' T',' Q'}
+                local div=f1=="KMG" and 1024 or 1000
                 obj.format=function(v)
                     local s=tonumber(v)
                     if not s then return v end
                     local prefix=s<0 and '-' or ''
                     s=math.abs(s)
                     for i=1,#units do
-                        v,s=math.round(s,2),s/div
+                        v,s=math.round(s,scale),s/div
                         if v==0 then prefix='' end
-                        if s<1 then return string.format(i>1 and "%s%.2f%s" or "%s%d%s",prefix,v,units[i]) end
+                        if s<1 then return string.format(i>1 and "%s"..num_fmt.."%s" or "%s%d%s",prefix,v,units[i]) end
                     end
-                    return string.format("%s%.2f%s",v==0 and '' or prefix,v,units[#units])
+                    return string.format("%s"..num_fmt.."%s",v==0 and '' or prefix,v,units[#units])
                 end
-            elseif f=="SMHD2" then
-                local units={'s','m','h','d'}
-                local div={60,60,24}
+            elseif f:find("SMHD%d") or f:find('.SMHD$') then
+                local div,units=f:match('%d$')
+                if f:sub(1,1)=='U' then
+                    units,div={'us','ms','s','m','h','d'},{1000,1000,60,60,24}
+                elseif f:sub(1,1)=='M' then
+                    units,div={'ms','s','m','h','d'},{1000,60,60,24}
+                else
+                    units,div={'s','m','h','d'},{60,60,24}
+                end
                 obj.format=function(v)
                     local s=tonumber(v)
                     if not s then return v end
                     local prefix=s<0 and '-' or ''
                     s=math.abs(s)
                     for i=1,#units-1 do
-                        v,s=math.round(s,2),s/div[i]
-                        if v==0 then prefix='' end
-                        if s<1 then return string.format("%s%.2f%s",prefix,v,units[i]) end
+                        v,s=math.round(s,scale),s/div[i]
+                        if v==0 then return '0' end
+                        if s<1 then return string.format("%s"..num_fmt.."%s",prefix,v,units[i]) end
                     end
-                    return string.format("%s%.2f%s",prefix,s,units[#units])
+                    return string.format("%s"..num_fmt.."%s",prefix,s,units[#units])
                 end
             elseif f=="SMHD" or f=="ITV" then
                 local fmt=arg=='SMHD' and '%dD %02dH %02dM %02dS' or
@@ -390,6 +403,26 @@ function var.define_column(col,...)
                     u[#u+1]=math.floor(s/24)
                     return prefix..fmt:format(u[4],u[3],u[2],u[1]):gsub("^0 ",'')
                 end
+            elseif f=="%" or f=="PCT" or f=="PERCENTAGE" or f=="PERCENT" then
+                obj.format=function(v)
+                    if not tonumber(v) then return v end
+                    return string.format(num_fmt.."%%",tonumber(v)*100)
+                end
+            elseif (f:find("%",1,true) or 999)<#f then
+                local fmt,String=arg,String
+                local format_func=function(v)
+                    local v1= tonumber(v)
+                    if not v1 then return v end
+                    local done,res=pcall(String.format,String,fmt,java.cast(tonumber(v),'double'))
+                    if not done then
+                        env.raise('Cannot format double number "'..v..'" with "'..fmt..'" on field "'..col..'"!')
+                    end
+                    return res
+                end
+
+                local res,msg=pcall(format_func,999.99)
+                env.checkerr(res,"Unsupported format %s on field %s",arg,col)
+                obj.format=format_func
             elseif not var.define_column(col,f) then
                 local fmt=java.new("java.text.DecimalFormat")
                 arg=arg:gsub('9','#')
@@ -397,12 +430,20 @@ function var.define_column(col,...)
                 obj.format_dir='%'..#arg..'s'
                 local format_func=function(v)
                     if not tonumber(v) then return s end
-                    return obj.format_dir:format(fmt:format(java.cast(v,'double')))
+                    local done,res=pcall(obj.format_dir.format,obj.format_dir,fmt:format(java.cast(tonumber(v),'double')))
+                    if not done then
+                        env.raise('Cannot format double number "'..v..'" with "'..arg..'" on field "'..col..'"!')
+                    end
+                    return res
                 end
                 local res,msg=pcall(format_func,999.99)
-                env.checkerr(res,"Unsupported format %s: %s",arg,tostring(msg))
+                env.checkerr(res,"Unsupported format %s on field %s",arg,col)
                 obj.format=format_func
             end
+            i=i+1
+            valid=true
+        elseif args[i]=="ADDRATIO" then
+            obj.add_ratio={1,f1,scale}
             i=i+1
             valid=true
         elseif args[i]=='PRINT' or args[i]=='PRI' then
@@ -439,11 +480,12 @@ end
 
 
 function var.trigger_column(field)
-    local col,value,rownum,index=table.unpack(field)
+    local col,value,rownum,grid,index=table.unpack(field)
     if type(col)~="string" then return end
     col=col:upper()
     if not var.columns[col] then return end
     local obj=var.columns[col]
+
     if rownum==0 then
         index=obj.heading
         if index then
@@ -451,6 +493,13 @@ function var.trigger_column(field)
         end
         if obj.print==false then field[2]='' end
         return
+    elseif rownum>0 and grid and not grid.__var_parsed then
+        grid.__var_parsed=true
+        for col,config in pairs(var.columns) do
+            if config.add_ratio then
+                grid:add_calc_ratio(col,table.unpack(config.add_ratio))
+            end
+        end
     end
     if not value then return end
 
@@ -476,20 +525,41 @@ function var.onload()
     snoop("AFTER_COMMAND",var.capture_after_cmd)
     snoop("ON_COLUMN_VALUE",var.trigger_column)
     local fmt_help=[[
-    Specifies display attributes for a given column. Usage: @@NAME <column> [NEW_VALUE|FORMAT|HEAD] <value> [<options>]
+    Specifies display attributes for a given column. Usage: @@NAME <columns> [NEW_VALUE|FORMAT|HEAD|ADDRATIO] <value> [<options>]
     Refer to SQL*Plus manual for the detail, below are the supported features:
-        1) @@NAME <column> NEW_V[ALUE] <var>    [PRINT|NOPRINT]
-        2) @@NAME <column> HEAD[ING]   <title>
-        3) @@NAME <column> FOR[MAT]    <format> [JUS[TIFY] LEFT|L|RIGHT|R]
-        4) @@NAME <column> CLE[AR]
+        1) @@NAME <columns> NEW_V[ALUE] <var>    [PRINT|NOPRINT]
+        2) @@NAME <columns> HEAD[ING]   <title>
+        3) @@NAME <columns> FOR[MAT]    <format> [JUS[TIFY] LEFT|L|RIGHT|R]
+        4) @@NAME <columns> CLE[AR]
 
     Other addtional features:
-        1) @@NAME <column> FOR[MAT] KMG :  Cast number as KB/MB/GB/etc format
-        2) @@NAME <column> FOR[MAT] TMB :  Cast number as thousand/million/billion/etc format
-        3) @@NAME <column> FOR[MAT] SMHD:  Cast number as 'xxD xxH xxM xxS' format
-        4) @@NAME <column> FOR[MAT] smhd:  Cast number as 'xxd xxh xxm xxs' format
-        4) @@NAME <column> FOR[MAT] smhd2: Cast number as 'x.xx[s|m|h|d]' format
-        5) @@NAME <column> FOR[MAT] ITV :  Cast number as 'dd hh:mm:ss' format
+        1) @@NAME <columns> ADDRATIO <name>[scale]: Create an additional field to show the report_to_ratio value
+        2) @@NAME <columns> FOR[MAT] KMG[scale]   : Cast number as KB/MB/GB/etc format
+        3) @@NAME <columns> FOR[MAT] TMB[scale]   : Cast number as thousand/million/billion/etc format
+        4) @@NAME <columns> FOR[MAT]  smhd<scale> : Cast number as '<number>[s|m|h|d]' format
+        4) @@NAME <columns> FOR[MAT] msmhd<scale> : Cast number as '<number>[ms|s|m|h|d]' format
+        4) @@NAME <columns> FOR[MAT] usmhd<scale> : Cast number as '<number>[us|ms|s|m|h|d]' format
+        5) @@NAME <columns> FOR[MAT] SMHD         : Cast number as 'xxD xxH xxM xxS' format
+        6) @@NAME <columns> FOR[MAT] smhd         : Cast number as 'xxd xxh xxm xxs' format
+        7) @@NAME <columns> FOR[MAT] ITV          : Cast number as 'dd hh:mm:ss' format
+        8) @@NAME <columns> FOR[MAT] <formatter>  : Use Java 'String.format()' to format the number
+
+    type 'help -e var.columns' to show the existing settings
+
+    Examples:
+        @@NAME size for kmg1  :    111111 => 108.5 KB
+        @@NAME size for tmb3  :    111111 => 111.111 K
+        @@NAME size for usmhd2:    111111 => 111.11ms
+        @@NAME size for smhd1 :    111111 => 1.3d
+        @@NAME size for SMHD  :    111111 => 0D 30H 51M 51S
+        @@NAME size for ITV   :    111111 => 30:51:51
+        @@NAME size for %.2f%%:    11.111 => 11.11%
+        @@NAME size1,size2 for %.2f%% :  11.111, 22.222 => 11.11%, 22.22%
+        @@NAME size for smhd1 addration pct2:    
+            SIZE   PTC
+            ---- -----
+            1.3d 26.12%
+            1.2d 25.30%  
     ]]
     cfg.init({"VERIFY","PrintVar",'VER'},'on',nil,"db.core","Max size of historical commands",'on,off')
     cfg.init({var.cmd1,var.cmd2},'on',nil,"db.core","Defines the substitution character(&) and turns substitution on and off.",'on,off')
@@ -499,12 +569,6 @@ function var.onload()
     env.set_command(nil,{"COLUMN","COL"},fmt_help,var.define_column,false,30)
     env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables.Usage: @@NAME <variable|-a>',var.print,false,3)
     env.set_command(nil,"Save","Save variable value into a specific file under folder 'cache'. Usage: @@NAME <variable> <file name>",var.save,false,3);
-    env.event.snoop("ON_ENV_LOADED",var.on_env_load,nil,2)
-end
-
-
-function var.on_env_load()
-    var.cmdlist=env.get_command_by_source{"default","alias"}
 end
 
 return var

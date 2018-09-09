@@ -97,10 +97,18 @@ end
 
 function db2:exec(sql,...)
     local bypass=self:is_internal_call(sql)
-    local args=type(select(1,...)=="table") and ... or {...}
-    sql=event("BEFORE_DB2_EXEC",{self,sql,args}) [2]
-    local result=self.super.exec(self,sql,args)
-    if not bypass then 
+    local args,prep_params=nil,{}
+    local is_not_prep=type(sql)~="userdata"
+    if type(select(1,...) or "")=="table" then
+        args=select(1,...)
+        if type(select(2,...) or "")=="table" then prep_params=select(2,...) end
+    else
+        args={...}
+    end
+    
+    if is_not_prep then sql=event("BEFORE_DB2_EXEC",{self,sql,args}) [2] end
+    local result=self.super.exec(self,sql,...)
+    if is_not_prep and not bypass then 
         event("AFTER_DB2_EXEC",self,sql,args,result)
         self.print_feed(sql,result)
     end
@@ -117,7 +125,8 @@ function db2:command_call(sql,...)
 end
 
 function db2:admin_cmd(cmd)
-    self:command_call('call sysproc.admin_cmd(:1)',cmd)
+    env.checkhelp(cmd)
+    self:command_call('call sysproc.admin_cmd(:1)',cmd or "")
 end
 
 function db2:onload()
