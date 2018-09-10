@@ -128,13 +128,15 @@ public class Console {
                     if (c[1] instanceof ActionEvent) event.actionPerformed((ActionEvent) c[0]);
                     else event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, "\3"));
                 }
-                new Thread(() -> {
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                    }
-                    setStatus("flush", null);
-                }).start();
+                if(titles.size()>0)
+                    new Thread(() -> {
+                        try {
+                            Thread.sleep(1000);
+                        } catch (InterruptedException e) {
+                        }
+                        setStatus("flush", null);
+                        reader.redrawLine();
+                    }).start();
             }
         };
         Interrupter.listen(this, callback);
@@ -182,9 +184,6 @@ public class Console {
                 }
             }
         }
-        //completer.setCandidates(candidates);
-        //completer.candidates.clear();
-        //completer.candidates.putAll(candidates);
     }
 
     public void setKeywords(Map<String, ?> keywords) {
