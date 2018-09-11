@@ -124,7 +124,7 @@ BEGIN
         OPEN :c FOR
             SELECT DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => '&format-SQL_FULLTEXT-SQL_TEXT', TYPE => 'TEXT', sql_id => sq_id, SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst) AS report FROM   dual;
         BEGIN
-            content  := DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => 'ALL', TYPE => 'EM', sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
+            content  := DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => 'ALL', TYPE => 'ACTIVE', sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
             filename := 'sqlm_' || sq_id || '.html';
         EXCEPTION WHEN OTHERS THEN NULL;
         END;

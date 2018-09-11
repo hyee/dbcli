@@ -1,4 +1,4 @@
-/*[[Show ash cost for a specific SQL for multiple executions. usage: @@NAME {<sql_id> [plan_hash_value|sid|a] [YYMMDDHH24MI] [YYMMDDHH24MI]} [-dash] [-o]
+/*[[Show ash cost for a specific SQL for multiple executions. usage: @@NAME {<sql_id> [plan_hash_value|sid|a] [YYMMDDHH24MI] [YYMMDDHH24MI]} [-dash] [-o] -f"<format>"
 -o    : Show top object#, otherwise show top event
 -dash : Based on dba_hist_active_sess_history, otherwise based on gv$active_session_history
 --[[
@@ -8,6 +8,8 @@
     &OBJ : default={ev}, O={CURRENT_OBJ#}
     &OBJ1: default={CURRENT_OBJ#}, O={ev}
     &Title: default={Event}, O={Obj#}
+    &fmt: default={} f={} s={-rows -parallel}
+    &simple: default={1} s={0}
 --]]
 ]]*/
 set feed off printsize 3000 pipequery off
@@ -62,7 +64,7 @@ ordered_hierarchy_data AS
 qry AS
  (SELECT DISTINCT sql_id sq,
          flag flag,
-         'BASIC ROWS PARTITION PARALLEL PREDICATE NOTE &adaptive' format,
+         'BASIC ROWS PARTITION PARALLEL PREDICATE NOTE &adaptive &fmt' format,
          plan_hash_value phv,
          NVL(child_number, plan_hash_value) plan_hash,
          inst_id
@@ -253,22 +255,21 @@ plan_output AS (
     rules sequential order (
         inject[r] = case
              when plan_table_output[cv()] like '------%'
-             then rpad('-', sevent[cv()]+csize[cv()]+spx_hit[cv()]+ssec[cv()]+sexe[cv()]+31, '-')
+             then rpad('-', decode(:simple,0,0,sevent[cv()])+csize[cv()]+spx_hit[cv()]+ssec[cv()]+sexe[cv()]+31, '-')
              when id[cv()+2] = 0
              then '|'  || lpad('Ord |', csize[cv()])--
                  ||LPAD('Calls',sexe[cv()])
                  ||LPAD('AAS',spx_hit[cv()])
                  ||LPAD('Time|',ssec[cv()])
                  ||' CPU%  IO%  CL%  CC% APP% OTH%|'
-                -- ||LPAD('Top_Obj',sobj[cv()])
-                 ||RPAD(' Top &title',sevent[cv()]-1)||'|'
+                 ||decode(:simple,0,'',RPAD(' Top &title',sevent[cv()]-1)||'|')
              when id[cv()] is not null
              then '|' || lpad(oid[cv()] || ' |', csize[cv()])
                  ||LPAD(exes[cv()], sexe[cv()])
                  ||LPAD(px_hits[cv()],spx_hit[cv()])
                  ||LPAD(secs[cv()]||'|', ssec[cv()])
                  ||LPAD(CPU[cv()],5)||LPAD(IO[cv()],5)||LPAD(CL[cv()],5)||LPAD(cc[cv()],5)||LPAD(app[cv()],5)||LPAD(oth[cv()],5)||'|'
-                 ||RPAD(' '||top_event[cv()],sevent[cv()]-1)||'|'
+                 ||decode(:simple,0,'',RPAD(' '||top_event[cv()],sevent[cv()]-1)||'|')
             end,
         plan_table_output[r] = case
                 when inject[cv()] like '---%'

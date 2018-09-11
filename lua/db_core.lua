@@ -233,6 +233,7 @@ function ResultSet:rows(rs,count,limit,null_value)
     local head=titles.__titles
     local rows={}
     local cols=#head
+    --if not titles[1] then return end
     local dtype=titles[1].data_typeName
     local is_lob=cols==1 and (dtype:find("[BC]LOB") or dtype:find("XML"))
     null_value=null_value or ""

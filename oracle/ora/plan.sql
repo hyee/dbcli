@@ -1,18 +1,18 @@
 /*[[
 Show execution plan. Usage: @@NAME {<sql_id> [<plan_hash_value>|<child_number>] [format1..n]} [-all|-last|-b|-d|-s|-ol|-adv] 
 Option:
-    -ol   : show outline information
     -b    : show binding variables
     -d    : only show the plan from AWR views
     -s    : the plan with the simplest 'basic' format
+    -ol   : show outline information
     -adv  : the plan with the 'advanced' format
     -all  : the plan with the 'ALLSTATS ALL' format
     -last : the plan with the 'ALLSTATS LAST' format
 --[[
-    &STAT: default={&DF &LAST &adaptive &binds &V3 &V4 &V5 &V6 &V7 &V8 &V9}
+    &STAT: default={&DF &adaptive &binds &V3 &V4 &V5 &V6 &V7 &V8 &V9}
     &V3: none={} ol={outline alias}
     &LAST: default={ALL} last={LAST}
-    &DF: default={ALL -PROJECTION -ALIAS ALLSTATS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL}
+    &DF: default={ALLSTATS &LAST -PROJECTION -ALIAS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL}
     &SRC: {
             default={0}, # Both
             d={2}        # Dictionary only
@@ -72,6 +72,7 @@ BEGIN
     END IF;
 END;
 /
+
 WITH sql_plan_data AS
  (SELECT /*+materialize*/*
   FROM   (SELECT /*+no_merge(a)*/ a.*,

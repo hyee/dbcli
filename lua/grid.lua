@@ -418,7 +418,7 @@ function grid:add(row)
                 local siz = lines - #v
                 for j = 1, siz do
                     if headind == 0 then
-                        table.insert(v, 1, colsize[k] or '')
+                        table.insert(v, 1, colsize[k][3] or '')
                     else
                         v[#v + 1] = ""
                     end
@@ -550,6 +550,7 @@ function grid:wellform(col_del, row_del)
     for k, v in ipairs(result) do
         local filter_flag, match_flag = 1, 0
         while #v < #colsize do table.insert(v, "") end
+
         env.event.callback("ON_PRINT_GRID_ROW", v, len)
         --adjust the title style(middle)
         if v[0] == 0 then

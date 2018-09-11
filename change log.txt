@@ -1,3 +1,4 @@
+2018-09-11: + public: new command 'set spaces'
 2018-09-08: + oracle: new command 'ora gv/expand/imseg'
 2018-09-07: * public: enhanced the completer
 2018-09-06: + public: added PowerPoint doc under "docs/" 

@@ -42,14 +42,14 @@
        EXEC DBMS_INMEMORY_ADMIN.IME_OPEN_CAPTURE_WINDOW;
    
    --[[
-       @check_access_obj: dba_objects={dba_} default={all_}
+       @check_access_obj: cdb_objects={cdb_} dba_objects={dba_} default={all_}
        @check_access_exp: DBA_IM_EXPRESSIONS={DBA_IM_EXPRESSIONS} default={USER_IM_EXPRESSIONS}
        @check_access_jp:  CDB_JOINGROUPS={CDB_JOINGROUPS} DBA_JOINGROUPS={DBA_JOINGROUPS} default={USER_JOINGROUPS}
        @ver: 18={,SUM(NUMDELTA) DELTA} 12.1={}
-       &inst  : default={inst} d={inst_id}
+       &inst1 : default={listagg(inst_id,',') within group(order by inst_id)} d={inst_id}
+       &inst2 : default={} d={,inst_id}
+       &imcu  : default={} d={MAX(IMCU_ADDR) IMCU_ADDR,}
        &filter: default={1=1} f={}
-       &is_test: default={}, test={--}
-       &in_test: default={0} test={1}
    --]]
 ]]*/
 ORA _find_object "&V1"
@@ -65,11 +65,10 @@ var target VARCHAR
 var mins   VARCHAR
 var cnv    VARCHAR
 DECLARE
-    cname VARCHAR2(128) := UPPER(:V2);
     cols VARCHAR2(32767) := 'DECODE(col#';
-    cnv  VARCHAR2(32767) := 'DECODE(cid';
+    cnv  VARCHAR2(32767) := 'DECODE(col#';
     typs VARCHAR2(32767) := 'DECODE(col#';
-    mins VARCHAR2(32767) := 'COUNT(1) ACT_CNT';
+    mins VARCHAR2(32767) := '';
     cnt  PLS_INTEGER     := 0;
 BEGIN
     IF :OBJECT_TYPE not like 'TABLE%' THEN
@@ -81,12 +80,11 @@ BEGIN
               AND    table_name = :object_name
               AND    column_name in(select distinct column_name from gv$im_column_level b where a.owner=b.owner and a.table_name=b.table_name and INMEMORY_COMPRESSION!='NO INMEMORY')
               AND    HIDDEN_COLUMN = 'NO'
-              AND    (nullif(cname,'*') IS NULL OR upper(column_name) = cname)
               ORDER  BY 2) LOOP
         cols := cols || ',' || r.cid || ',"' || r.n || '"';
         typs := typs || ',' || r.cid || ',''' || r.data_type || '''';
         cnv  := cnv || ',' || r.cid || ',min'|| r.cid;
-        mins := mins || ',''''||' || 'min("' || r.n || '") min'||r.cid || ',' || '''''||max("' || r.n || '") max'||r.cid || ',' || 'APPROX_COUNT_DISTINCT("' || r.n || '") dist'||r.cid;
+        mins := mins || ',''''||' || 'min("' || r.n || '") min'||r.cid || ',' || '''''||max("' || r.n || '") max'||r.cid || ',' || 'count(distinct "' || r.n || '") dist'||r.cid;
         cnt  := cnt + 1;
     END LOOP;
     
@@ -98,18 +96,17 @@ BEGIN
     cols   := cols || ',-1,null)';
     :cols1 := cols;
     :cols2 := replace(cols,'"','''');
-    :mins  := mins;
+    :mins  := trim(',' from mins);
     :typs  := typs||')';
     :target:= :object_owner||'.'||:object_name||nullif(' PARTITION('||:object_subname||')',' PARTITION()');
 END;
 /
 
-var c1 refcursor "IMCU & IMSMU Summary of &target";
+var c1 refcursor "IMCU & IMSMU Summary";
 var c2 refcursor "IM Expressions";
 var c3 refcursor "IM Join Groups";
 var c4 refcursor "IM Expression Stats"
 DECLARE
-    c1    SYS_REFCURSOR;
     c2    SYS_REFCURSOR;
     c3    SYS_REFCURSOR;
     c4    SYS_REFCURSOR;
@@ -117,12 +114,10 @@ DECLARE
     own   VARCHAR2(128) := :object_owner;
     oname VARCHAR2(128) := :object_name;
     sub   VARCHAR2(128) := :object_subname; 
-    dids  SYS.ODCIOBJECTLIST;
-    cols  SYS.ODCICOLINFOLIST;
+    dtype VARCHAR2(300);
     oid   INT := :object_id;
+    did   INT := :object_data_id;
     cid   INT;
-    res   XMLTYPE;
-    hdl  NUMBER;
 BEGIN
     $IF dbms_db_version.version>12 OR dbms_db_version.release>1 $THEN
     OPEN c2 FOR
@@ -142,40 +137,32 @@ BEGIN
         SELECT * FROM &check_access_obj.EXPRESSION_STATISTICS
         WHERE  owner = own
         AND    table_name = oname
-        AND   (nullif(cname,'*') IS NULL OR upper(EXPRESSION_TEXT) LIKE '%"'||cname||'"%')
-        ORDER  BY LAST_MODIFIED DESC;
+        AND   (nullif(cname,'*') IS NULL OR upper(EXPRESSION_TEXT) LIKE '%"'||cname||'"%');
     $END
-
-    SELECT SYS.ODCIOBJECT(DATA_OBJECT_ID,SUBOBJECT_NAME)
-    BULK   COLLECT INTO dids
-    FROM   &check_access_obj.objects a
-    WHERE  object_name = oname
-    AND    owner = own
-    AND    DATA_OBJECT_ID IS NOT NULL
-    AND    (sub IS NULL OR subobject_name = sub);
+    
+    :c2 := c2;
+    :c3 := c3;
+    :c4 := c4;
 
     IF cname IS NULL THEN
-        OPEN c1 FOR
-            WITH im AS (
-                SELECT * FROM 
-                   (SELECT a.*, 
-                           listagg(inst_id,',') within group(order by inst_id) over(partition by objd,startdba) inst,
-                           SUM(SCANCNT)  over(partition by objd,startdba) SCANS,
-                           SUM(INVALID)  over(partition by objd,startdba) INVALIDS,
-                           row_number()  over(partition by objd,startdba order by total_rows desc,decode(inst_id,USERENV('instance'),0,inst_id)) r
-                    FROM gv$(CURSOR(
+        OPEN :c1 FOR
+            WITH objs AS
+             (SELECT object_id objn, data_object_id objd, owner, object_name table_name, subobject_name part
+              FROM   &check_access_obj.objects a
+              WHERE  object_name = oname
+              AND    owner = own
+              AND    (sub IS NULL OR subobject_name = sub)),
+            im AS
+             (SELECT *
+              FROM   gv$(CURSOR (
                           SELECT /*+ordered use_hash(h0 m h1)*/
                                  USERENV('instance') inst_id,
                                  h0.IMCU_ADDR,
-                                 h0.part,
+                                 h0.HEAD_PIECE_ADDRESS,
                                  h0.NUM_COLS,
                                  h0.ALLOCATED_LEN,
                                  h0.used_len,
-                                 h0.num_rows,
-                                 h0.num_blocks,
-                                 h0.NUM_DISK_EXTENTS num_extents,
                                  h1.*,
-                                 edba-sdba blocks,
                                  /*--BAD performance
                                  (SELECT COUNT(1) FROM v$imeu_header h2 
                                   WHERE  h2.objd=h0.objd
@@ -191,306 +178,389 @@ BEGIN
                                                          dbms_utility.data_block_address_file(edba),
                                                          dbms_utility.data_block_address_block(edba+1),
                                                          1) end_rowid                        
-                          FROM   (SELECT /*+ordered use_hash(h)*/
-                                         o.OBJECTNAME part,
-                                         h.*, to_number(IMCU_ADDR, lpad('X', 16, 'X')) addr
-                                  FROM   table(dids) o,V$IM_HEADER h
-                                  WHERE  h.objd=o.OBJECTSCHEMA+0
+                          FROM   (SELECT h.*, to_number(IMCU_ADDR, lpad('X', 16, 'X')) addr
+                                  FROM   V$IM_HEADER h
+                                  WHERE  (table_objn = OID OR objd = did)
                                   AND    IS_HEAD_PIECE > 0) h0,
-                                 (SELECT /*+ordered use_hash(m)*/
-                                         DATAOBJ,m.IMCU_ADDR,
-                                         MIN(start_dba) sdba,
-                                         MAX(end_dba) edba
-                                  FROM   table(dids) o,v$im_tbs_ext_map m
-                                  WHERE  o.OBJECTSCHEMA+0 = m.dataobj
-                                  GROUP  BY DATAOBJ,IMCU_ADDR) m,
-                                 (SELECT /*+ordered use_hash(h1)*/ 
-                                         DISTINCT *
-                                  FROM   table(dids) o,V$IM_SMU_HEAD h1
-                                  WHERE  o.OBJECTSCHEMA+0 = h1.objd) h1
-                         WHERE h0.objd=m.dataobj
-                         AND   h0.addr=m.IMCU_ADDR
-                         AND   m.dataobj=h1.objd
-                         AND   m.sdba=h1.startdba)) a
-                    WHERE  inst_id=nvl(:instance,inst_id)
-                    AND    (&filter) )
-                WHERE r=1 or :inst='inst_id')
-            SELECT /*+ordered use_hash(a)*/  
-                   &inst inst,
-                   objd dataobj,
+                                 LATERAL (SELECT DATAOBJ, 
+                                                 MIN(start_dba) sdba,
+                                                 MAX(end_dba) edba
+                                          FROM   v$im_tbs_ext_map m
+                                          WHERE  h0.addr = m.IMCU_ADDR
+                                          AND    h0.objd = m.dataobj
+                                          GROUP  BY DATAOBJ,IMCU_ADDR) m,
+                                 LATERAL (SELECT DISTINCT *
+                                          FROM   V$IM_SMU_HEAD h1
+                                          WHERE  m.dataobj = h1.objd
+                                          AND    m.sdba = h1.startdba) h1)))
+            SELECT &inst1 inst,
+                   o.objd dataobj,
                    part,
                    '|' "|",
-                   NVL(''||IMCU_ADDR,'**** TOTAL ****') IMCU_ADDR,
+                   MAX(IMCU_ADDR) IMCU_ADDR,
                    MAX(NUM_COLS) cols,
-                   SUM(ALLOCATED_LEN) allocate,
-                   SUM(USED_LEN) cu_used,
+                   AVG(ALLOCATED_LEN) allocate,
+                   AVG(USED_LEN) cu_used,
                    startdba,
-                   file# file#,
-                   block# block#,
+                   --MAX(file#) file#,
+                   --MAX(block#) block#,
                    MIN(START_ROWID) START_ROWID,
                    MAX(END_ROWID) END_ROWID,
-                   SUM(num_extents) EXTENTs,
-                   SUM(num_blocks) blocks,
-                   SUM(INVALID_BLOCKS) INVALID,
+                   AVG(EXTENT_CNT) EXTENTs,
+                   AVG(BLOCK_CNT) blocks,
+                   AVG(INVALID_BLOCKS) INVALID,
                    '|' "|",
-                   SUM(num_rows) TOTAL_ROWS,
-                   SUM(INVALID_ROWS) INVALID,
+                   AVG(TOTAL_ROWS) DATA_ROWS,
+                   AVG(INVALID_ROWS) INVALID,
                    '|' "|",
-                   SUM(SCANS) SCANS,
-                   SUM(INVALIDS) INVALID,
-                   SUM(REPOPSUB) REPOPSUB,
-                   SUM(CHUNKS) CHUNKS,
-                   SUM(FINAL) FINAL,
-                   SUM(CLONECNT) CLONES &ver
-            FROM   im
-            GROUP  BY ROLLUP((objd, startdba, part,IMCU_ADDR,file#,block#)), &inst
-            ORDER  BY dataobj nulls first, startdba,&inst;       
+                   AVG(SCANCNT) SCANS,
+                   AVG(INVALID) INVALID,
+                   AVG(REPOPSUB) REPOPSUB,
+                   AVG(CHUNKS) CHUNKS,
+                   AVG(FINAL) FINAL,
+                   AVG(CLONECNT) CLONES &ver
+            FROM   objs o, im
+            WHERE  o.objd = im.objd
+            AND    inst_id=nvl(:instance,inst_id)
+            AND    (&filter)
+            GROUP  BY o.objd, owner, table_name, startdba, part &inst2
+            ORDER  BY o.objd, startdba &inst2;
+    ELSIF cname='*' THEN
+        OPEN :c1 FOR q'{
+            WITH objs AS
+             (SELECT object_id objn, data_object_id objd, owner, object_name table_name, subobject_name part
+              FROM   &check_access_obj.objects a
+              WHERE  object_name = :oname
+              AND    owner = :own
+              AND    (:sub IS NULL OR subobject_name = :sub)),
+            ima AS
+             (SELECT /*+materialize*/ *
+              FROM   gv$(CURSOR
+                         (SELECT /*+ordered use_hash(h0 cu m h1)*/
+                           USERENV('instance') inst_id,
+                           h0.IMCU_ADDR,
+                           h0.HEAD_PIECE_ADDRESS,
+                           h0.NUM_COLS,
+                           h0.ALLOCATED_LEN,
+                           h0.used_len,
+                           h1.*,
+                           col#,
+                           dbms_utility.data_block_address_file(sdba) file#,
+                           dbms_utility.data_block_address_block(sdba) block#,
+                           dbms_rowid.rowid_create(1,h0.objd,
+                                                   dbms_utility.data_block_address_file(sdba),
+                                                   dbms_utility.data_block_address_block(sdba),
+                                                   1) start_rowid,
+                           dbms_rowid.rowid_create(1,h0.objd,
+                                                   dbms_utility.data_block_address_file(edba),
+                                                   dbms_utility.data_block_address_block(edba + 1),
+                                                   1) end_rowid,
+                           cu.DICTIONARY_ENTRIES DISTINCTS,
+                           cu.SEGMENT_DICTIONARY_ADDRESS,
+                           cu.LENGTH CLENGTH,
+                           DECODE(&typs,
+                                'NUMBER',to_char(utl_raw.cast_to_number(MINIMUM_VALUE)),
+                                'FLOAT',to_char(utl_raw.cast_to_number(MINIMUM_VALUE)),
+                                'VARCHAR2',to_char(utl_raw.cast_to_varchar2(MINIMUM_VALUE)),
+                                'NVARCHAR2',to_char(utl_raw.cast_to_nvarchar2(MINIMUM_VALUE)),
+                                'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(MINIMUM_VALUE)),
+                                'BINARY_FLOAT',to_char(utl_raw.cast_to_binary_float(MINIMUM_VALUE)),
+                                'TIMESTAMP',
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 1, 2), 'XX') - 100, 2, 0) ||
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 3, 2), 'XX') - 100, 2, 0) || '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 5, 2), 'XX'), 2, 0) || '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 7, 2), 'XX'), 2, 0) || ' ' ||
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 9, 2), 'XX') - 1, 2, 0) || ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 11, 2), 'XX') - 1, 2, 0) || ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 13, 2), 'XX') - 1, 2, 0) || '.' ||
+                                    nvl(substr(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 15, 8), 'XXXXXXXX'), 1, 6), '0'),
+                                'TIMESTAMP WITH TIME ZONE',
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 1, 2), 'XX') - 100, 2, 0) ||
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 3, 2), 'XX') - 100, 2, 0) || '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 5, 2), 'XX'), 2, 0) || '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 7, 2), 'XX'), 2, 0) || ' ' ||
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 9, 2), 'XX') - 1, 2, 0) || ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 11, 2), 'XX') - 1, 2, 0) || ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 13, 2), 'XX') - 1, 2, 0) || '.' ||
+                                    nvl(substr(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 15, 8), 'XXXXXXXX'), 1, 6), '0') || ' ' ||
+                                    nvl(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 23, 2), 'XX') - 20, 0) || ':' ||
+                                    nvl(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 25, 2), 'XX') - 60, 0),
+                                'DATE',
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 1, 2), 'XX') - 100, 2, 0) ||
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 3, 2), 'XX') - 100, 2, 0) || '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 5, 2), 'XX'), 2, 0) || '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 7, 2), 'XX'), 2, 0) || ' ' ||
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 9, 2), 'XX') - 1, 2, 0) || ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 11, 2), 'XX') - 1, 2, 0) || ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 13, 2), 'XX') - 1, 2, 0),
+                                    '' || MINIMUM_VALUE) min_v,
+                           DECODE(&typs,
+                                'NUMBER',to_char(utl_raw.cast_to_number(MAXIMUM_VALUE)),
+                                'FLOAT',to_char(utl_raw.cast_to_number(MAXIMUM_VALUE)),
+                                'VARCHAR2',to_char(utl_raw.cast_to_varchar2(MAXIMUM_VALUE)),
+                                'NVARCHAR2',to_char(utl_raw.cast_to_nvarchar2(MAXIMUM_VALUE)),
+                                'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(MAXIMUM_VALUE)),
+                                'BINARY_FLOAT',to_char(utl_raw.cast_to_binary_float(MAXIMUM_VALUE)),
+                                'TIMESTAMP',
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 1, 2), 'XX') - 100, 2, 0) ||
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 3, 2), 'XX') - 100, 2, 0) || '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 5, 2), 'XX'), 2, 0) || '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 7, 2), 'XX'), 2, 0) || ' ' ||
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 9, 2), 'XX') - 1, 2, 0) || ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 11, 2), 'XX') - 1, 2, 0) || ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 13, 2), 'XX') - 1, 2, 0) || '.' ||
+                                    nvl(substr(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 15, 8), 'XXXXXXXX'), 1, 6), '0'),
+                                'TIMESTAMP WITH TIME ZONE',
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 1, 2), 'XX') - 100, 2, 0) ||
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 3, 2), 'XX') - 100, 2, 0) || '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 5, 2), 'XX'), 2, 0) || '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 7, 2), 'XX'), 2, 0) || ' ' ||
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 9, 2), 'XX') - 1, 2, 0) || ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 11, 2), 'XX') - 1, 2, 0) || ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 13, 2), 'XX') - 1, 2, 0) || '.' ||
+                                    nvl(substr(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 15, 8), 'XXXXXXXX'), 1, 6), '0') || ' ' ||
+                                    nvl(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 23, 2), 'XX') - 20, 0) || ':' ||
+                                    nvl(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 25, 2), 'XX') - 60, 0),
+                                'DATE',
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 1, 2), 'XX') - 100, 2, 0) ||
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 3, 2), 'XX') - 100, 2, 0) || '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 5, 2), 'XX'), 2, 0) || '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 7, 2), 'XX'), 2, 0) || ' ' ||
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 9, 2), 'XX') - 1, 2, 0) || ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 11, 2), 'XX') - 1, 2, 0) || ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 13, 2), 'XX') - 1, 2, 0),
+                                    '' || MAXIMUM_VALUE) max_v
+                          FROM   (SELECT h.*, to_number(IMCU_ADDR, lpad('X', 16, 'X')) addr
+                                  FROM   V$IM_HEADER h
+                                  WHERE  (table_objn = :OID OR objd = :did)
+                                  AND    IS_HEAD_PIECE > 0) h0,
+                                 LATERAL (SELECT cu.*,cu.COLUMN_NUMBER col#
+                                          FROM   v$im_col_cu cu
+                                          WHERE  h0.HEAD_PIECE_ADDRESS = CU.HEAD_PIECE_ADDRESS
+                                          AND    h0.OBJD = cu.OBJD) cu,
+                                 LATERAL (SELECT DATAOBJ, 
+                                                 MIN(start_dba) sdba,
+                                                 MAX(end_dba) edba
+                                          FROM   v$im_tbs_ext_map m
+                                          WHERE  h0.addr = m.IMCU_ADDR
+                                          AND    h0.objd = m.dataobj
+                                          GROUP  BY DATAOBJ,IMCU_ADDR) m,
+                                 LATERAL (SELECT DISTINCT *
+                                          FROM   V$IM_SMU_HEAD h1
+                                          WHERE  m.dataobj = h1.objd
+                                          AND    m.sdba = h1.startdba) h1))),
+            dict AS
+             (SELECT a.*,
+                     (SELECT COUNT(1) - 1
+                      FROM   ima b
+                      WHERE  a.inst_id = b.inst_id
+                      AND    a.col#=b.col#
+                      AND    (&typs IN ('NUMBER', 'FLOAT', 'BINARY_DOUBLE', 'BINARY_FLOAT', 'BINARY_INTEGER') AND
+                            (b.min_v + 0 BETWEEN a.min_v + 0 AND a.max_v + 0 OR b.max_v + 0 BETWEEN a.min_v + 0 AND a.max_v + 0) OR
+                            &typs NOT IN ('NUMBER', 'FLOAT', 'BINARY_DOUBLE', 'BINARY_FLOAT', 'BINARY_INTEGER') AND
+                            (b.min_v BETWEEN a.min_v AND a.max_v OR b.max_v BETWEEN a.min_v AND a.max_v))) Overlaps
+              FROM   ima a
+              WHERE  inst_id = nvl(:inst, inst_id))
+            SELECT distinct 
+                   IMCU_ADDR,startdba,
+                   start_rowid,
+                   end_rowid,
+                   TOTAL_ROWS,
+                   col#,
+                   &cols2 COLUMN_NAME,
+                   distincts distincts,
+                   '*' "*",
+                   Overlaps,
+                   substr(min_v,1,32) min_v,
+                   substr(max_v,1,32) max_v
+            FROM   dict
+            ORDER  BY 1,2,col#}' using oname,own,sub,sub,oid,did,:instance;         
     ELSE
-        SELECT SYS.ODCICOLINFO(null,INTERNAL_COLUMN_ID,column_name, DATA_TYPE,null,null,null,null,null,null)
-        BULK   COLLECT INTO cols
-        FROM   &check_access_obj.tab_cols a
+        SELECT max(INTERNAL_COLUMN_ID), max(DATA_TYPE)
+        INTO   cid, dtype
+        FROM   &check_access_obj.tab_cols
         WHERE  owner = own
         AND    table_name = oname
-        AND    column_name in(select distinct column_name from gv$im_column_level b where a.owner=b.owner and a.table_name=b.table_name and INMEMORY_COMPRESSION!='NO INMEMORY')
-        AND    (cname ='*' OR upper(column_name) = cname);
+        AND    upper(column_name) = cname;
         
-        IF cols.count = 0 THEN
-            raise_application_error(-20001,'The table or column is not in-memory, or the data has not been populated!');
+        IF cid IS NULL THEN
+            raise_application_error(-20001,'No such column: '||:V2);
         END IF;
     
-        OPEN c1 FOR
-            WITH ima AS
-               (SELECT /*+materialize*/ * FROM
-                   (SELECT a.*,row_number() over(partition by objd,startdba,column_name 
-                             order by distcnt desc,decode(inst_id,USERENV('instance'),0,inst_id)) r
-                    FROM   gv$(CURSOR(
-                              SELECT /*+ORDERED USE_HASH(cu M H1 cs) 
-                                        swap_join_inputs(cs)
-                                        opt_param('_bloom_filter_enabled' 'false')*/
-                                     USERENV('instance') inst_id,
-                                     h0.part,
-                                     h0.IMCU_ADDR,
-                                     h0.HEAD_PIECE_ADDRESS,
-                                     h0.NUM_COLS,
-                                     h0.ALLOCATED_LEN,
-                                     h0.used_len,
-                                     h0.num_rows,
-                                     h0.num_blocks,
-                                     h0.NUM_DISK_EXTENTS num_extents,
-                                     h1.*,
-                                     edba-sdba blocks,
-                                     /*--BAD performance
-                                      (SELECT listagg(SQL_EXPRESSION,chr(10)) within group(order by SQL_EXPRESSION)
-                                      FROM   v$imeu_header h2, v$im_imecol_cu eu
-                                      WHERE  h2.objd=h0.objd
-                                      AND    h2.IS_HEAD_PIECE>0
-                                      AND    h2.IMEU_ADDR=h0.IMCU_ADDR
-                                      AND    h2.HEAD_PIECE_ADDRESS=eu.IMEU_HEAD_PIECE_ADDR
-                                      AND    eu.objd=h0.objd
-                                      AND    INTERNAL_COLUMN_NUMBER=cid) EXPR,*/
-                                     dbms_utility.data_block_address_file(sdba) file#,
-                                     dbms_utility.data_block_address_block(sdba) block#,
-                                     dbms_rowid.rowid_create(1,h0.objd,
-                                                             dbms_utility.data_block_address_file(sdba),
-                                                             dbms_utility.data_block_address_block(sdba),
-                                                             1) start_rowid,
-                                     dbms_rowid.rowid_create(1,h0.objd,
-                                                             dbms_utility.data_block_address_file(edba),
-                                                             dbms_utility.data_block_address_block(edba+1),
-                                                             1) end_rowid,
-                                     cu.COLUMN_NUMBER col#,
-                                     cu.DICTIONARY_ENTRIES distcnt,
-                                     cu.SEGMENT_DICTIONARY_ADDRESS,
-                                     cu.LENGTH CLENGTH,
-                                     cs.COLNAME column_name,
-                                     cs.coltypename dtype,
-                                     decode(cs.coltypename
-                                          ,'NUMBER'       ,to_char(utl_raw.cast_to_number(MINIMUM_VALUE))
-                                          ,'FLOAT'        ,to_char(utl_raw.cast_to_number(MINIMUM_VALUE))
-                                          ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(MINIMUM_VALUE))
-                                          ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(MINIMUM_VALUE))
-                                          ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(MINIMUM_VALUE))
-                                          ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(MINIMUM_VALUE))
-                                          ,'TIMESTAMP'    , lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 1, 2), 'XX')-100,2,0)||
-                                                            lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 3, 2), 'XX')-100,2,0)|| '-' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 5, 2), 'XX') ,2,0)|| '-' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 7, 2), 'XX') ,2,0)|| ' ' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 9, 2), 'XX')-1,2,0)|| ':' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 11, 2), 'XX')-1,2,0)|| ':' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 13, 2), 'XX')-1,2,0)|| '.' ||
-                                                            nvl(substr(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 15, 8), 'XXXXXXXX'),1,6),'0')
-                                          ,'TIMESTAMP WITH TIME ZONE',
-                                                            lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 1, 2), 'XX')-100,2,0)||
-                                                            lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 3, 2), 'XX')-100,2,0)|| '-' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 5, 2), 'XX'),2,0)|| '-' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 7, 2), 'XX'),2,0)|| ' ' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 9, 2), 'XX')-1,2,0)|| ':' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 11, 2), 'XX')-1,2,0)|| ':' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 13, 2), 'XX')-1,2,0)|| '.' ||
-                                                            nvl(substr(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 15, 8), 'XXXXXXXX'),1,6),'0')||' '||
-                                                            nvl(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 23,2),'XX')-20,0)||':'||
-                                                            nvl(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 25, 2), 'XX')-60,0)
-                                          ,'DATE',lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 1, 2), 'XX')-100,2,0)||
-                                                  lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 3, 2), 'XX')-100,2,0)|| '-' ||
-                                                  lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 5, 2), 'XX') ,2,0)|| '-' ||
-                                                  lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 7, 2), 'XX') ,2,0)|| ' ' ||
-                                                  lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 9, 2), 'XX')-1,2,0)|| ':' ||
-                                                  lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 11, 2), 'XX')-1,2,0)|| ':' ||
-                                                  lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 13, 2), 'XX')-1,2,0)
-                                          ,  ''||MINIMUM_VALUE) min_v,
-                                     decode(cs.coltypename
-                                          ,'NUMBER'       ,to_char(utl_raw.cast_to_number(MAXIMUM_VALUE))
-                                          ,'FLOAT'        ,to_char(utl_raw.cast_to_number(MAXIMUM_VALUE))
-                                          ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(MAXIMUM_VALUE))
-                                          ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(MAXIMUM_VALUE))
-                                          ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(MAXIMUM_VALUE))
-                                          ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(MAXIMUM_VALUE))
-                                          ,'TIMESTAMP'    , lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 1, 2), 'XX')-100,2,0)||
-                                                            lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 3, 2), 'XX')-100,2,0)|| '-' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 5, 2), 'XX') ,2,0)|| '-' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 7, 2), 'XX') ,2,0)|| ' ' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 9, 2), 'XX')-1,2,0)|| ':' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 11, 2), 'XX')-1,2,0)|| ':' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 13, 2), 'XX')-1,2,0)|| '.' ||
-                                                            nvl(substr(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 15, 8), 'XXXXXXXX'),1,6),'0')
-                                          ,'TIMESTAMP WITH TIME ZONE',
-                                                            lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 1, 2), 'XX')-100,2,0)||
-                                                            lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 3, 2), 'XX')-100,2,0)|| '-' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 5, 2), 'XX'),2,0)|| '-' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 7, 2), 'XX'),2,0)|| ' ' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 9, 2), 'XX')-1,2,0)|| ':' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 11, 2), 'XX')-1,2,0)|| ':' ||
-                                                            lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 13, 2), 'XX')-1,2,0)|| '.' ||
-                                                            nvl(substr(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 15, 8), 'XXXXXXXX'),1,6),'0')||' '||
-                                                            nvl(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 23,2),'XX')-20,0)||':'||
-                                                            nvl(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 25, 2), 'XX')-60,0)
-                                          ,'DATE',lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 1, 2), 'XX')-100,2,0)||
-                                                  lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 3, 2), 'XX')-100,2,0)|| '-' ||
-                                                  lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 5, 2), 'XX') ,2,0)|| '-' ||
-                                                  lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 7, 2), 'XX') ,2,0)|| ' ' ||
-                                                  lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 9, 2), 'XX')-1,2,0)|| ':' ||
-                                                  lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 11, 2), 'XX')-1,2,0)|| ':' ||
-                                                  lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 13, 2), 'XX')-1,2,0)
-                                          ,  ''||MAXIMUM_VALUE) max_v
-                              FROM   (SELECT /*+ordered use_hash(h)*/
-                                             o.OBJECTNAME part,
-                                             h.*, to_number(IMCU_ADDR, lpad('X', 16, 'X')) addr
-                                      FROM   table(dids) o,V$IM_HEADER h
-                                      WHERE  h.objd=o.OBJECTSCHEMA+0
-                                      AND    IS_HEAD_PIECE > 0) h0,
-                                     (SELECT /*+ordered use_hash(m)*/
-                                             DATAOBJ,m.IMCU_ADDR,
-                                             MIN(start_dba) sdba,
-                                             MAX(end_dba) edba
-                                      FROM   table(dids) o,v$im_tbs_ext_map m
-                                      WHERE  o.OBJECTSCHEMA+0 = m.dataobj
-                                      GROUP  BY DATAOBJ,IMCU_ADDR) m,
-                                     (SELECT /*+ordered use_hash(h1)*/ 
-                                             DISTINCT *
-                                      FROM   table(dids) o,V$IM_SMU_HEAD h1
-                                      WHERE  o.OBJECTSCHEMA+0 = h1.objd) h1,
-                                      v$im_col_cu cu,
-                                      table(cols) cs
-                             WHERE h0.objd=m.dataobj
-                             AND   h0.addr=m.IMCU_ADDR
-                             AND   m.dataobj=h1.objd
-                             AND   m.sdba=h1.startdba
-                             AND   h0.objd=cu.objd
-                             AND   h0.HEAD_PIECE_ADDRESS = CU.HEAD_PIECE_ADDRESS
-                             AND   cu.COLUMN_NUMBER=cs.TABLENAME+0)) a
-                    WHERE inst_id=nvl(:instance,inst_id)
-                    AND   (&filter))
-                WHERE r=1),
-            ov AS(
-               SELECT /*+parallel(4) ordered use_hash(b)*/ 
-                  objd,column_name,a.startdba,SUM(
-                    CASE WHEN
-                      a.dtype in('NUMBER','FLOAT','BINARY_DOUBLE','BINARY_FLOAT','BINARY_INTEGER')
+        OPEN :c1 FOR
+            WITH objs AS
+             (SELECT object_id objn, data_object_id objd, owner, object_name table_name, subobject_name part
+              FROM   &check_access_obj.objects a
+              WHERE  object_name = oname
+              AND    owner = own
+              AND    (sub IS NULL OR subobject_name = sub)),
+            ima AS
+             (SELECT /*+materialize*/ * 
+              FROM   gv$(CURSOR (
+                          SELECT /*+ordered use_hash(h0 cu m h1)*/
+                                 USERENV('instance') inst_id,
+                                 h0.IMCU_ADDR,
+                                 h0.HEAD_PIECE_ADDRESS,
+                                 h0.NUM_COLS,
+                                 h0.ALLOCATED_LEN,
+                                 h0.used_len,
+                                 h1.*,
+                                 /*--BAD performance
+                                  (SELECT listagg(SQL_EXPRESSION,chr(10)) within group(order by SQL_EXPRESSION)
+                                  FROM   v$imeu_header h2, v$im_imecol_cu eu
+                                  WHERE  h2.objd=h0.objd
+                                  AND    h2.IS_HEAD_PIECE>0
+                                  AND    h2.IMEU_ADDR=h0.IMCU_ADDR
+                                  AND    h2.HEAD_PIECE_ADDRESS=eu.IMEU_HEAD_PIECE_ADDR
+                                  AND    eu.objd=h0.objd
+                                  AND    INTERNAL_COLUMN_NUMBER=cid) EXPR,*/
+                                 dbms_utility.data_block_address_file(sdba) file#,
+                                 dbms_utility.data_block_address_block(sdba) block#,
+                                 dbms_rowid.rowid_create(1,h0.objd,
+                                                         dbms_utility.data_block_address_file(sdba),
+                                                         dbms_utility.data_block_address_block(sdba),
+                                                         1) start_rowid,
+                                 dbms_rowid.rowid_create(1,h0.objd,
+                                                         dbms_utility.data_block_address_file(edba),
+                                                         dbms_utility.data_block_address_block(edba+1),
+                                                         1) end_rowid,
+                                 cu.DICTIONARY_ENTRIES,
+                                 cu.MIN_V,
+                                 cu.MAX_V,
+                                 cu.SEGMENT_DICTIONARY_ADDRESS,
+                                 cu.LENGTH CLENGTH
+                          FROM   (SELECT h.*, to_number(IMCU_ADDR, lpad('X', 16, 'X')) addr
+                                  FROM   V$IM_HEADER h
+                                  WHERE  (table_objn = OID OR objd = did)
+                                  AND    IS_HEAD_PIECE > 0) h0,
+                                 LATERAL (SELECT cu.*,
+                                         decode(dtype
+                                              ,'NUMBER'       ,to_char(utl_raw.cast_to_number(MINIMUM_VALUE))
+                                              ,'FLOAT'        ,to_char(utl_raw.cast_to_number(MINIMUM_VALUE))
+                                              ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(MINIMUM_VALUE))
+                                              ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(MINIMUM_VALUE))
+                                              ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(MINIMUM_VALUE))
+                                              ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(MINIMUM_VALUE))
+                                              ,'TIMESTAMP'    , lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 1, 2), 'XX')-100,2,0)||
+                                                                lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 5, 2), 'XX') ,2,0)|| '-' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 7, 2), 'XX') ,2,0)|| ' ' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 13, 2), 'XX')-1,2,0)|| '.' ||
+                                                                nvl(substr(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 15, 8), 'XXXXXXXX'),1,6),'0')
+                                              ,'TIMESTAMP WITH TIME ZONE',
+                                                                lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 1, 2), 'XX')-100,2,0)||
+                                                                lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 5, 2), 'XX'),2,0)|| '-' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 7, 2), 'XX'),2,0)|| ' ' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 13, 2), 'XX')-1,2,0)|| '.' ||
+                                                                nvl(substr(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 15, 8), 'XXXXXXXX'),1,6),'0')||' '||
+                                                                nvl(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 23,2),'XX')-20,0)||':'||
+                                                                nvl(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 25, 2), 'XX')-60,0)
+                                              ,'DATE',lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 1, 2), 'XX')-100,2,0)||
+                                                      lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                                      lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 5, 2), 'XX') ,2,0)|| '-' ||
+                                                      lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 7, 2), 'XX') ,2,0)|| ' ' ||
+                                                      lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                                      lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                                      lpad(TO_NUMBER(SUBSTR(MINIMUM_VALUE, 13, 2), 'XX')-1,2,0)
+                                              ,  ''||MINIMUM_VALUE) min_v,
+                                            decode(dtype
+                                              ,'NUMBER'       ,to_char(utl_raw.cast_to_number(MAXIMUM_VALUE))
+                                              ,'FLOAT'        ,to_char(utl_raw.cast_to_number(MAXIMUM_VALUE))
+                                              ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(MAXIMUM_VALUE))
+                                              ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(MAXIMUM_VALUE))
+                                              ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(MAXIMUM_VALUE))
+                                              ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(MAXIMUM_VALUE))
+                                              ,'TIMESTAMP'    , lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 1, 2), 'XX')-100,2,0)||
+                                                                lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 5, 2), 'XX') ,2,0)|| '-' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 7, 2), 'XX') ,2,0)|| ' ' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 13, 2), 'XX')-1,2,0)|| '.' ||
+                                                                nvl(substr(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 15, 8), 'XXXXXXXX'),1,6),'0')
+                                              ,'TIMESTAMP WITH TIME ZONE',
+                                                                lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 1, 2), 'XX')-100,2,0)||
+                                                                lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 5, 2), 'XX'),2,0)|| '-' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 7, 2), 'XX'),2,0)|| ' ' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                                                lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 13, 2), 'XX')-1,2,0)|| '.' ||
+                                                                nvl(substr(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 15, 8), 'XXXXXXXX'),1,6),'0')||' '||
+                                                                nvl(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 23,2),'XX')-20,0)||':'||
+                                                                nvl(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 25, 2), 'XX')-60,0)
+                                              ,'DATE',lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 1, 2), 'XX')-100,2,0)||
+                                                      lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                                      lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 5, 2), 'XX') ,2,0)|| '-' ||
+                                                      lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 7, 2), 'XX') ,2,0)|| ' ' ||
+                                                      lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                                      lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                                      lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 13, 2), 'XX')-1,2,0)
+                                              ,  ''||MAXIMUM_VALUE) max_v
+                                          FROM   v$im_col_cu cu
+                                          WHERE  h0.HEAD_PIECE_ADDRESS = CU.HEAD_PIECE_ADDRESS
+                                          AND    h0.OBJD = cu.OBJD
+                                          AND    cu.COLUMN_NUMBER = cid) cu,
+                                 LATERAL (SELECT DATAOBJ, 
+                                                 MIN(start_dba) sdba,
+                                                 MAX(end_dba) edba
+                                          FROM   v$im_tbs_ext_map m
+                                          WHERE  h0.addr = m.IMCU_ADDR
+                                          AND    h0.objd = m.dataobj
+                                          GROUP  BY DATAOBJ,IMCU_ADDR) m,
+                                 LATERAL (SELECT DISTINCT *
+                                          FROM   V$IM_SMU_HEAD h1
+                                          WHERE  m.dataobj = h1.objd
+                                          AND    m.sdba = h1.startdba) h1))),
+            im AS(
+               SELECT a.*,
+                  (SELECT count(1)-1 
+                   FROM  ima b 
+                   WHERE a.inst_id=b.inst_id
+                   AND  (
+                      dtype in('NUMBER','FLOAT','BINARY_DOUBLE','BINARY_FLOAT','BINARY_INTEGER')
                           AND (b.min_v+0 between a.min_v+0 and a.max_v+0 or 
                                b.max_v+0 between a.min_v+0 and a.max_v+0)
-                        OR
-                      a.dtype not in('NUMBER','FLOAT','BINARY_DOUBLE','BINARY_FLOAT','BINARY_INTEGER')
+                      OR 
+                      dtype not in('NUMBER','FLOAT','BINARY_DOUBLE','BINARY_FLOAT','BINARY_INTEGER')
                           AND (b.min_v between a.min_v and a.max_v or 
                                b.max_v between a.min_v and a.max_v)
-                    THEN 1 ELSE 0 END
-                   )-1 overlaps
-               FROM  ima a join ima b using (inst_id,objd,column_name)
-               group by objd,column_name,a.startdba)
-            SELECT /*+ordered use_hash(a)*/  
-                   objd dataobj,
+                   )) Overlaps
+               FROM ima a
+               WHERE inst_id=nvl(:instance,inst_id))
+            SELECT &inst1 inst,
+                   o.objd dataobj,
                    part,
-                   &is_test '|' "|",
-                   MAX(IMCU_ADDR) IMCU_ADDR,
+                   '|' "|",
+                   &IMCU
                    AVG(ALLOCATED_LEN) allocate,
                    AVG(USED_LEN) cu_used,
                    AVG(CLENGTH) col_used,
                    startdba,
                    min(start_rowid) start_rowid,
                    max(end_rowid) end_rowid,
-                   AVG(NUM_BLOCKS) blocks,
+                   AVG(BLOCK_CNT) blocks,
                    AVG(INVALID_BLOCKS) INVALID,
-                   &is_test '|' "|",
-                   col# cid,
-                   max(column_name) column_name,
-                   AVG(NUM_ROWS) TOTAL_ROWS,
-                   AVG(distcnt) distcnt,
-                   AVG(INVALID_ROWS) stales,
-                   &is_test '|' "|",
+                   '|' "|",
+                   AVG(TOTAL_ROWS) DATA_ROWS,
+                   AVG(DICTIONARY_ENTRIES) distcnt,
+                   AVG(INVALID_ROWS) INVALID,
+                   '|' "|",
                    decode(MAX('' || SEGMENT_DICTIONARY_ADDRESS), '00', 'GD', 'GD+JG') dict,
-                   max(Overlaps) Overlaps,
-                   substr(MIN(MIN_V),1,32) MIN_V,
-                   substr(MAX(MAX_V),1,32) MAX_V
-            FROM   ima natural join ov
-            GROUP  BY objd, startdba, part,col#
-            ORDER  BY objd, startdba,col#;
-
-            $IF &in_test=1 $THEN
-                hdl := dbms_xmlgen.newcontext(c1);
-                res := dbms_xmlgen.getxmltype(hdl);
-                dbms_xmlgen.closecontext(hdl);
-                OPEN c1 FOR 
-                    WITH test AS
-                     (SELECT /*+monitor ordered parallel(8) use_nl(b) rowid(b)*/
-                       a.*, &mins
-                      FROM   (SELECT DISTINCT *
-                              FROM   xmltable('/ROWSET/ROW' passing res columns DATAOBJ NUMBER path 'DATAOBJ',
-                                              START_ROWID VARCHAR2(18) path 'START_ROWID',
-                                              END_ROWID VARCHAR2(18) path 'END_ROWID')
-                              ORDER  BY 2) a,
-                             &target b
-                      WHERE  b.rowid BETWEEN a.start_rowid AND a.end_rowid
-                      GROUP  BY dataobj, start_rowid, end_rowid)
-                    SELECT a.*, '|' "|",ACT_CNT, &cnv
-                    FROM   xmltable('/ROWSET/ROW' passing res columns DATAOBJ NUMBER path 'DATAOBJ',
-                                    PART VARCHAR2(30) path 'PART',
-                                    IMCU_ADDR VARCHAR2(16) path 'IMCU_ADDR',
-                                    ALLOCATE NUMBER path 'ALLOCATE',
-                                    CU_USED NUMBER path 'CU_USED',
-                                    COL_USED NUMBER path 'COL_USED',
-                                    STARTDBA NUMBER path 'STARTDBA',
-                                    START_ROWID VARCHAR2(18) path 'START_ROWID',
-                                    END_ROWID VARCHAR2(18) path 'END_ROWID',
-                                    BLOCKS NUMBER path 'BLOCKS',
-                                    INVALID NUMBER path 'INVALID',
-                                    CID NUMBER path 'CID',
-                                    COLUMN_NAME VARCHAR2(30) path 'COLUMN_NAME',
-                                    TOTAL_ROWS NUMBER path 'TOTAL_ROWS',
-                                    DISTCNT NUMBER path 'DISTCNT',
-                                    STALES NUMBER path 'STALES',
-                                    DICT VARCHAR2(10) path 'DICT',
-                                    OVERLAPS NUMBER path 'OVERLAPS',
-                                    MIN_V VARCHAR2(129) path 'MIN_V',
-                                    MAX_V VARCHAR2(129) path 'MAX_V') a,
-                           test b
-                    WHERE  a.dataobj = b.dataobj
-                    AND    a.start_rowid = b.start_rowid
-                    AND    a.end_rowid = b.end_rowid;
-            $END
+                   MIN(MIN_V) MIN_V,
+                   MAX(MAX_V) MAX_V,
+                   max(Overlaps) Overlaps
+            FROM   objs o, im a
+            WHERE  o.objd = a.objd
+            AND    (&filter)
+            GROUP  BY o.objd, owner, table_name, startdba, part &inst2
+            ORDER  BY o.objd, startdba &inst2;
     END IF;
-    :c1 := c1;
-    :c2 := c2;
-    :c3 := c3;
-    :c4 := c4;
 END;
 /
 

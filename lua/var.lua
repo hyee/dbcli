@@ -82,7 +82,7 @@ function var.setInput(name,desc)
         print("Current defined variables:\n====================")
         for k,v in pairs(var.inputs) do
             if type(v)~="table" then
-                print("    ",k,'=',v)
+                print(env.space,k,'=',v)
             end
         end
         return

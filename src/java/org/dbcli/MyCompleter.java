@@ -1,16 +1,15 @@
 package org.dbcli;
 
-import org.jline.builtins.Completers;
 import org.jline.reader.Candidate;
 import org.jline.reader.LineReader;
 import org.jline.reader.ParsedLine;
 import org.jline.reader.impl.completer.StringsCompleter;
 
-import static org.jline.builtins.Completers.TreeCompleter;
-import static org.jline.builtins.Completers.TreeCompleter.node;
-import static org.jline.builtins.Completers.TreeCompleter.Node;
-
 import java.util.*;
+
+import static org.jline.builtins.Completers.TreeCompleter;
+import static org.jline.builtins.Completers.TreeCompleter.Node;
+import static org.jline.builtins.Completers.TreeCompleter.node;
 
 public class MyCompleter implements org.jline.reader.Completer {
     StringsCompleter keysWordCompeleter = new StringsCompleter();
@@ -29,7 +28,7 @@ public class MyCompleter implements org.jline.reader.Completer {
                 }
             }
         }
-        String[] ary=this.keywords.keySet().toArray(new String[0]);
+        String[] ary = this.keywords.keySet().toArray(new String[0]);
         Arrays.sort(ary);
         keysWordCompeleter = new StringsCompleter(ary);
     }
@@ -47,10 +46,10 @@ public class MyCompleter implements org.jline.reader.Completer {
             commands.put(key, map);
         }
         ArrayList<Node> nodes = new ArrayList<>(commands.size() + keywords.size());
-        String[] list=commands.keySet().toArray(new String[0]);
+        String[] list = commands.keySet().toArray(new String[0]);
         Arrays.sort(list);
-        for (String e:list) {
-            String key =e.toUpperCase();
+        for (String e : list) {
+            String key = e.toUpperCase();
             HashMap<String, Boolean> map = commands.get(e);
             if (map.size() > 0) {
                 Object[] objs = new Object[map.size() + 1];
@@ -75,7 +74,7 @@ public class MyCompleter implements org.jline.reader.Completer {
         if (index == 1 && commands.get(key) != null && commands.get(key).size() > 0)
             commandCompleter.complete(lineReader, parsedLine, list);
         else if (index > 0) {
-            if (words.get(words.size()-1).equals("")) return;
+            if (words.get(words.size() - 1).equals("")) return;
             keysWordCompeleter.complete(lineReader, parsedLine, list);
         } else
             commandCompleter.complete(lineReader, parsedLine, list);

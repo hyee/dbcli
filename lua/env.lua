@@ -998,6 +998,7 @@ function env.onload(...)
         env.set.init("OnErrExit",'on',nil,"core","Indicates whether to continue the remaining statements if error encountered.","on,off")
         env.set.init("TEMPPATH",'cache',set_cache_path,"core","Define the dir to store the temp files.","*")
         env.set.init("Status","on",env.set_title,"core","Display the status bar","on,off")
+        env.set.init("SPACES",4,env.set_space,"core","Define the prefix spaces of a line","0-8")
         print_debug=print
     end
     if  env.ansi and env.ansi.define_color then
@@ -1133,6 +1134,12 @@ function env.resolve_file(filename,ext)
 end
 
 local title_list,CURRENT_TITLE={}
+function env.set_space(name,value)
+    value=tonumber(value)
+    env.checkerr(value,"The number of spaces must be a number!");
+    env.space=string.rep('',value)
+    return value
+end
 
 function env.set_title(title,value)
     local enabled

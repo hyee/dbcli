@@ -128,7 +128,7 @@ public class Console {
                     if (c[1] instanceof ActionEvent) event.actionPerformed((ActionEvent) c[0]);
                     else event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, "\3"));
                 }
-                if(titles.size()>0)
+                if (titles.size() > 0)
                     new Thread(() -> {
                         try {
                             Thread.sleep(1000);

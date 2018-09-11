@@ -57,17 +57,17 @@ function printer.rawprint(...)
 end
 
 function printer.print(...)
-    local output,found,ignore={NOR,env.space:sub(1,#env.space-2)}
+    local output,found,ignore={}
     local fmt=(env.ansi and env.ansi.get_color("GREPCOLOR") or '')..'%1'..NOR
     for i=1,select('#',...) do
         local v=select(i,...)
         if v~='__BYPASS_GREP__' then 
-            output[i+2]=tostring(v)
+            output[i]=tostring(v)
         else
             ignore=true
         end
     end
-    output=table.concat(output,' '):gsub("(\r?\n\r?)","%1"..env.space)
+    output=NOR..env.space..table.concat(output,' '):gsub("(\r?\n\r?)","%1"..env.space)
     if printer.grep_text and not ignore then
         local stack=output:split('[\n\r]+')
         output={}
