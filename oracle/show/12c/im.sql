@@ -22,7 +22,7 @@ select INST_ID,POOL,POPULATE_STATUS, ALLOC_BYTES,USED_BYTES,
 from  gv$inmemory_area
 order by 1;
 
-SELECT inst_id,
+SELECT /*+monitor no_merge(a)*/ inst_id,
        a.owner,
        a.segment_name,
        lpad(COUNT(DISTINCT nvl(b.partition_name, b.segment_name)),4)  || '|' || MAX(segs) segments,
@@ -49,20 +49,20 @@ SELECT inst_id,
                       '\1') DISTRIBUTE,
        regexp_replace(listagg(INMEMORY_DUPLICATE, '/') WITHIN GROUP(ORDER BY INMEMORY_DUPLICATE), '([^/]+)(/\1)+', '\1') DUPLICATE
        &ver
-FROM   (SELECT owner, segment_name, COUNT(1) segs,sum(blocks) blocks
-        FROM   (SELECT owner, table_name segment_name,blocks
+FROM   (SELECT owner, segment_name, COUNT(1) segs
+        FROM   (SELECT owner, table_name segment_name
                 FROM   &check_access_dba.tables
                 WHERE  inmemory = 'ENABLED'
                 UNION ALL
-                SELECT table_owner, table_name,blocks
+                SELECT table_owner, table_name
                 FROM   &check_access_dba.tab_partitions
                 WHERE  inmemory = 'ENABLED'
                 UNION ALL
-                SELECT table_owner, table_name,blocks
+                SELECT table_owner, table_name
                 FROM   &check_access_dba.tab_subpartitions
                 WHERE  inmemory = 'ENABLED')
         GROUP  BY owner, segment_name) a
-LEFT   JOIN (SELECT b.*, BLOCKSINMEM, d.extents, MEMEXTENTS, IMCUSINMEM
+LEFT   JOIN (SELECT b.*, BLOCKSINMEM, d.extents, MEMEXTENTS, IMCUSINMEM,BLOCKS
              FROM   gv$im_segments b,
                     (SELECT o.owner, o.object_name, o.subobject_name, d.*
                      FROM   &check_access_dba.objects o, gv$im_segments_detail d
@@ -73,4 +73,4 @@ LEFT   JOIN (SELECT b.*, BLOCKSINMEM, d.extents, MEMEXTENTS, IMCUSINMEM
              AND    nvl(b.partition_name, '_') = nvl(d.subobject_name, '_')) b
 ON     (a.owner = b.owner AND a.segment_name = b.segment_name)
 GROUP  BY inst_id, a.owner, a.segment_name
-ORDER  BY im_size DESC;
+ORDER  BY inst_id, a.owner, a.segment_name

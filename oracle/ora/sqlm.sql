@@ -2,7 +2,9 @@
     Get resource usage from SQL monitor. Usage: @@NAME {sql_id [<SQL_EXEC_ID>] [[plan_hash_value] -l|-a|-s]} | {. <keyword>} [-u|-f"<filter>"] [-avg]
     Related parameters for SQL monitor: 
         _sqlmon_recycle_time,_sqlmon_max_planlines,_sqlmon_max_plan,_sqlmon_threshold,control_management_pack_access,statistics_level
-    
+    A SQL can be forced to record the sql monitor report by the alter system statement:
+        ALTER SYSTEM SET EVENTS 'sql_monitor [sql: <sql_id1>|sql: <sql_id2>] force=true';
+
     Usages:
        1. @@NAME <sql_id> [<sql_exec_id>]           : Extract sql monitor report with specific sql_id, options: -s,-a,-f"<format>"
        2. @@NAME [. <keyword>]                      : List recent sql monitor reports,options: -avg,-u,-f"<filter>" 
@@ -32,7 +34,7 @@
    --]]
 ]]*/
 
-set feed off VERIFY off
+set feed off VERIFY off printsize 3000
 var c refcursor;
 var c0 refcursor;
 var c1 refcursor;
