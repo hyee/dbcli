@@ -123,6 +123,7 @@ BEGIN
             AND   PX_SERVER# IS NULL
             and   inst_id=nvl(inst,inst_id);
         END IF;
+        execute immediate 'alter session set events ''emx_control compress_xml=none''';
         OPEN :c FOR
             SELECT DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => '&format-SQL_FULLTEXT-SQL_TEXT', TYPE => 'TEXT', sql_id => sq_id, SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst) AS report FROM   dual;
         BEGIN
@@ -388,6 +389,7 @@ BEGIN
     :filename := filename;
 END;
 /
+set colsize 4194304
 print c;
 set colsep |
 col stat_value#1,stat_value#2,stat_value#3 format #,##0

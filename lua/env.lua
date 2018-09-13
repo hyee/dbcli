@@ -373,7 +373,9 @@ function env.format_error(src,errmsg,...)
             errmsg=string.format("%s-%05i: %s",name,tonumber(line),errmsg)
         end
     end
-    if select('#',...)>0 then errmsg=errmsg:format(...) end
+    if select('#',...)>0 then
+        errmsg=errmsg:format(...) 
+    end
     return errmsg=="" and errmsg or HIR..errmsg..NOR
 end
 

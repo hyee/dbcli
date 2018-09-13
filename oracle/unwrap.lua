@@ -48,37 +48,56 @@ local function decode_base64_package(base64str)
 end
 
 function unwrap.unwrap(obj,ext)
+
     env.checkhelp(obj)
-    ext='.'..(ext or 'sql')
+    
     local filename=obj
     local typ,f=os.exists(obj)
 
     if typ then
         if typ~="file" then return end
-        filename=f..ext
-       
-        local found,stack=false,{}
-        for line in io.lines(f) do
+
+        filename,org_ext=obj:match("(.*)%.(.-)$")
+        if filename then
+            if not ext then
+                filename,ext=filename..'_unwrap',org_ext
+            end
+            filename=filename.."."..ext
+        else
+            filename=obj..'.'..(ext or 'unwrap')
+        end
+
+        local f=io.open(obj)
+
+        local found,stack,org,repidx=false,{},{}
+        for line in f:lines() do
             local piece=line:match("^%s*([%w%+%/%=]+)$")
             if not found and piece and #piece>=64 then
                 found=true
+                repidx=#org+1
             end
             if found then 
                 if piece then
                     stack[#stack+1]=piece
                 else
-                    break
+                    org[#org+1]=line
                 end
+                if not piece or #piece<64 then
+                    org[repidx]=loader:Base64ZlibToText({table.concat(stack,'')})
+                    stack={}
+                    found=false
+                end
+            else
+                org[#org+1]=line    
             end
         end
-        local txt=table.concat(stack,'')
-        if not txt or txt=='' then return end
-        txt=loader:Base64ZlibToText({txt});
-        env.save_data(filename,txt)
+        if repidx == -1 then return end
+        if #stack>0 then org[#org]=loader:Base64ZlibToText({table.concat(stack,'')}) end
+        env.save_data(filename,table.concat(org,'\n'))
         print("Decoded Base64 written to file "..filename)
         return;
     end
-
+    ext='.'..(ext or 'sql')
     local info=db:check_obj(obj)
     local qry=[[
         SELECT TEXT,

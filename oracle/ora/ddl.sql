@@ -2,6 +2,7 @@
    Get DDL statement. Usage: @@NAME {[owner.]<object_name> [<file_ext>]}
    --[[
       @CHECK_ACCESS_OBJ: dba_objects={dba_views}, default={all_views}
+      @CHECK_ACCESS_COLS: dba_tab_cols={dba_tab_cols} default={all_tab_cols}
    --]]
 ]]*/
 
@@ -15,16 +16,22 @@ DECLARE
     v_default     NUMBER := DBMS_METADATA.SESSION_TRANSFORM;
     schem         VARCHAR2(128):= :object_owner;
     part1         VARCHAR2(128):= :object_name;
+    name          VARCHAR2(128); 
     obj_type      VARCHAR2(128):= :object_type;
     txt           CLOB;
     vw            VARCHAR2(256);
+    cols          VARCHAR2(32767);
 BEGIN
     IF obj_type in('VIEW','SYNONYM') THEN
         BEGIN
-            EXECUTE IMMEDIATE q'[SELECT VIEW_NAME,VIEW_DEFINITION FROM V$FIXED_VIEW_DEFINITION WHERE VIEW_NAME=regexp_replace(:1,'^G?V_','GV')]'
-                INTO vw,txt USING part1;
+            name := regexp_replace(part1,'^G?V_?','GV');
+            EXECUTE IMMEDIATE q'[SELECT VIEW_NAME,VIEW_DEFINITION FROM V$FIXED_VIEW_DEFINITION WHERE VIEW_NAME=:1]'
+                INTO vw,txt USING name;
             IF txt is not null then
-                txt:='CREATE OR REPLACE VIEW SYS.'||vw||' AS '||chr(10)||regexp_replace(txt,' from ',chr(10)||'from ',1,1);
+                for r in(select column_name from dba_tab_cols where owner='SYS' and table_name=regexp_replace(name,'GV','GV_') order by column_id) loop
+                    cols:=cols||','||r.column_name;
+                end loop;
+                txt:='CREATE OR REPLACE VIEW SYS.'||vw||'('||trim(',' from cols)||') AS '||chr(10)||regexp_replace(txt,' from ',chr(10)||'from ',1,1);
                 txt:=regexp_replace(txt,',[ ]+',',');
             END IF;
         EXCEPTION

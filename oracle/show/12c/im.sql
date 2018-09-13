@@ -3,6 +3,120 @@
         &filter: default={1=1}, u={owner=nvl('&0',sys_context('userenv','current_schema'))}
         @check_access_dba: dba_tab_partitions={dba_} default={all_}
         @VER: 12.2={,regexp_replace(listagg(INMEMORY_SERVICE,'/') WITHIN GROUP(ORDER BY INMEMORY_SERVICE),'([^/]+)(/\1)+','\1') IM_SERVICE}, 12.1={}
+        @check_access_x: {
+            x$imcsegments={SELECT INST_ID,
+                       NVL(UNAME, 'SYS') OWNER,
+                       ONAME SEGMENT_NAME,
+                       SNAME PARTITION_NAME,
+                       decode(OBJTYPE, 2, 'TABLE', 19, 'TABLE PARTITION', 34, 'TABLE SUBPARTITION') SEGMENT_TYPE,
+                       tsname TABLESPACE_NAME,
+                       membytes INMEMORY_SIZE,
+                       databytes BYTES,
+                       DATABYTES - BYTESINMEM BYTES_NOT_POPULATED,
+                       CASE
+                           WHEN (POPULATE_STATUS = 0) THEN
+                            'COMPLETED'
+                           WHEN (POPULATE_STATUS = 1) THEN
+                            'STARTED'
+                           WHEN (POPULATE_STATUS = 2) THEN
+                            'OUT OF MEMORY'
+                           ELSE
+                            NULL
+                       END POPULATE_STATUS,
+                       decode(bitand(segflag, 4294967296),
+                              4294967296,
+                              decode(bitand(segflag, 34359738368),
+                                     34359738368,
+                                     decode(bitand(segflag, 61572651155456),
+                                            8796093022208,
+                                            'LOW',
+                                            17592186044416,
+                                            'MEDIUM',
+                                            35184372088832,
+                                            'HIGH',
+                                            52776558133248,
+                                            'CRITICAL',
+                                            'NONE'),
+                                     'NONE'),
+                              NULL) INMEMORY_PRIORITY,
+                       decode(bitand(segflag, 4294967296),
+                              4294967296,
+                              decode(bitand(segflag, 8589934592),
+                                     8589934592,
+                                     decode(bitand(segflag, 206158430208),
+                                            68719476736,
+                                            'BY ROWID RANGE',
+                                            137438953472,
+                                            'BY PARTITION',
+                                            206158430208,
+                                            'BY SUBPARTITION',
+                                            0,
+                                            'AUTO'),
+                                     'UNKNOWN'),
+                              NULL) INMEMORY_DISTRIBUTE,
+                       decode(bitand(imcs.segflag, 4294967296),
+                              4294967296,
+                              decode(bitand(imcs.segflag, 6597069766656),
+                                     2199023255552,'NO DUPLICATE',
+                                     4398046511104,'DUPLICATE',
+                                     6597069766656,'DUPLICATE ALL',
+                                     'UNKNOWN'),
+                              NULL) INMEMORY_DUPLICATE,
+                       decode(bitand(imcs.segflag, 4294967296),
+                              4294967296,
+                              decode(bitand(imcs.segflag, 841813590016),
+                                     17179869184,'NO MEMCOMPRESS',
+                                     274877906944,'FOR DML',
+                                     292057776128,'FOR QUERY LOW',
+                                     549755813888,'FOR QUERY HIGH',
+                                     566935683072,'FOR CAPACITY LOW',
+                                     824633720832,'FOR CAPACITY HIGH',
+                                     'UNKNOWN'),
+                              NULL) INMEMORY_COMPRESSION,
+                       decode(bitand(imcs.segflag, 4294967296),
+                              4294967296,
+                              decode(bitand(imcs.segflag, 9007199254740992),
+                                     9007199254740992,
+                                     decode(bitand(imcs.svcflag, 7),
+                                            0,NULL,
+                                            1,'DEFAULT',
+                                            2,'NONE',
+                                            3,'ALL',
+                                            4,'USER_DEFINED',
+                                            'UNKNOWN'),
+                                     'DEFAULT'),
+                              NULL) INMEMORY_SERVICE,
+                       decode(bitand(imcs.segflag, 4294967296),
+                              4294967296,
+                              decode(bitand(imcs.svcflag, 7), 4, imcs.svcname, NULL),
+                              NULL) INMEMORY_SERVICE_NAME,
+                       CASE
+                           WHEN (IS_EXTERNAL = 0) THEN
+                            'FALSE'
+                           WHEN (IS_EXTERNAL = 1) THEN
+                            'TRUE'
+                           ELSE
+                            NULL
+                       END IS_EXTERNAL,
+                       imcs.con_id,
+                       BLOCKSINMEM,
+                       extents,
+                       MEMEXTENTS,
+                       IMCUSINMEM,
+                       BLOCKS
+                FROM   gv$(cursor(select * from x$imcsegments)) imcs
+                WHERE  imcs.segtype = 0}
+                
+            default={SELECT b.*, BLOCKSINMEM, d.extents, MEMEXTENTS, IMCUSINMEM,BLOCKS
+                     FROM   gv$im_segments b,
+                            (SELECT o.owner, o.object_name, o.subobject_name, d.*
+                             FROM   &check_access_dba.objects o, gv$im_segments_detail d
+                             WHERE  o.object_id = d.obj) d
+                     WHERE  b.owner = d.owner
+                     AND    b.segment_name = d.object_name
+                     AND    b.inst_id=d.inst_id
+                     AND    nvl(b.partition_name, '_') = nvl(d.subobject_name, '_')}
+        }
     --]]
 ]]*/
 
@@ -62,15 +176,7 @@ FROM   (SELECT owner, segment_name, COUNT(1) segs
                 FROM   &check_access_dba.tab_subpartitions
                 WHERE  inmemory = 'ENABLED')
         GROUP  BY owner, segment_name) a
-LEFT   JOIN (SELECT b.*, BLOCKSINMEM, d.extents, MEMEXTENTS, IMCUSINMEM,BLOCKS
-             FROM   gv$im_segments b,
-                    (SELECT o.owner, o.object_name, o.subobject_name, d.*
-                     FROM   &check_access_dba.objects o, gv$im_segments_detail d
-                     WHERE  o.object_id = d.obj) d
-             WHERE  b.owner = d.owner
-             AND    b.segment_name = d.object_name
-             AND    b.inst_id=d.inst_id
-             AND    nvl(b.partition_name, '_') = nvl(d.subobject_name, '_')) b
+LEFT   JOIN (&check_access_x) b
 ON     (a.owner = b.owner AND a.segment_name = b.segment_name)
 GROUP  BY inst_id, a.owner, a.segment_name
-ORDER  BY inst_id, a.owner, a.segment_name
+ORDER  BY a.owner, a.segment_name,inst_id

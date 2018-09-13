@@ -42,6 +42,7 @@ import static org.jline.reader.LineReader.DISABLE_HISTORY;
 import static org.jline.reader.LineReader.SECONDARY_PROMPT_PATTERN;
 import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS;
 
+
 public class Console {
     public final static Pattern ansiPattern = Pattern.compile("^\33\\[[\\d\\;]*[mK]$");
     public static PrintWriter writer;
@@ -207,6 +208,7 @@ public class Console {
     public String getPlatform() {
         if (OSUtils.IS_CYGWIN) return "cygwin";
         if (OSUtils.IS_MSYSTEM) return "mingw";
+        if (OSUtils.IS_CONEMU) return "conemu";
         if (OSUtils.IS_OSX) return "mac";
         if (OSUtils.IS_WINDOWS) return "windows";
         return "linux";
