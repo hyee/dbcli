@@ -149,10 +149,9 @@ local desc_sql={
                            extractvalue(column_value, '/ROW/INOUT') + 0 INOUT
                     FROM   TABLE(XMLSEQUENCE(EXTRACT(v_xml, '/ROWSET/ROW')))) b,
                     all_arguments a
-            WHERE  a.object_id(+) = :object_id
-            AND    a.owner(+) = :owner
+            WHERE  a.owner(+) = :owner
             AND    a.object_name(+) = nvl(:object_subname, :object_name)
-            AND    nvl(a.overload(+), 0) = b.overload
+            AND    nvl(a.overload(+), -1) = nvl(b.overload,-1)
             AND    a.position(+) = 0+regexp_substr(b.pos,'\d+$')
             AND    a.sequence(+)=b.seq
             AND    a.data_level(+) = b.lv
@@ -165,7 +164,7 @@ local desc_sql={
     FROM (
         SELECT /*INTERNAL_DBCLI_CMD*/ SUBPROGRAM_ID NO#,
                PROCEDURE_NAME||NVL2(OVERLOAD,' (#'||OVERLOAD||')','') ELEMENT,
-               (SELECT (CASE
+               (SELECT MAX(CASE
                            WHEN pls_type IS NOT NULL THEN
                             pls_type
                            WHEN type_subname IS NOT NULL THEN
@@ -179,13 +178,15 @@ local desc_sql={
                 WHERE  a.SUBPROGRAM_ID = b.SUBPROGRAM_ID
                 AND    NVL(a.OVERLOAD, -1) = NVL(b.OVERLOAD, -1)
                 AND    position = 0
-                AND    a.object_id = b.object_id) RETURNS,
+                AND    b.owner=a.owner
+                AND    b.object_name = a.procedure_name) RETURNS,
                (SELECT COUNT(1)
                 FROM   all_Arguments b
                 WHERE  a.SUBPROGRAM_ID = b.SUBPROGRAM_ID
                 AND    NVL(a.OVERLOAD, -1) = NVL(b.OVERLOAD, -1)
                 AND    position > 0
-                AND    a.object_id = b.object_id) ARGUMENTS,
+                AND    b.owner=a.owner
+                AND    b.object_name = a.procedure_name) ARGUMENTS,
                AGGREGATE,
                PIPELINED,
                PARALLEL,
@@ -262,7 +263,8 @@ local desc_sql={
         WHERE  owner=:owner and type_name=:object_name
         ORDER BY NO#]],
     TABLE={[[
-        SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('_optim_peek_user_binds','false') no_merge(b) no_merge(a)
+        SELECT /*INTERNAL_DBCLI_CMD*/ 
+               --+no_parallel opt_param('_optim_peek_user_binds','false') no_merge(b) no_merge(a)
                INTERNAL_COLUMN_ID NO#,
                COLUMN_NAME NAME,
                DATA_TYPE_OWNER || NVL2(DATA_TYPE_OWNER, '.', '') ||

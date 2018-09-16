@@ -90,14 +90,6 @@
                               4294967296,
                               decode(bitand(imcs.svcflag, 7), 4, imcs.svcname, NULL),
                               NULL) INMEMORY_SERVICE_NAME,
-                       CASE
-                           WHEN (IS_EXTERNAL = 0) THEN
-                            'FALSE'
-                           WHEN (IS_EXTERNAL = 1) THEN
-                            'TRUE'
-                           ELSE
-                            NULL
-                       END IS_EXTERNAL,
                        imcs.con_id,
                        BLOCKSINMEM,
                        extents,

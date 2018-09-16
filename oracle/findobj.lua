@@ -24,7 +24,6 @@ local stmt=[[
 			BEGIN
 				execute immediate 'select object_id from v$fixed_table where name=upper(:1)'
 				into xTableID using upper(target);
-				dbms_output.put_line(xTableID);
 				schem := 'SYS';
 				obj_type :='TABLE';
 				part1 := upper(upper(target));

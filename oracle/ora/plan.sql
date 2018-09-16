@@ -122,8 +122,20 @@ WITH sql_plan_data AS
                             max(plan_hash_value) keep(dense_rank last order by snap_id)
                      from dba_hist_sqlstat c where sql_id=:V1),(
                      select max(plan_hash_value) keep(dense_rank last order by timestamp) 
-                     from dba_hist_sql_plan where sql_id=:V1
-                     ))
+                     from dba_hist_sql_plan where sql_id=:V1))
+                  UNION  ALL
+                  SELECT id,
+                         min(id) over()  minid,
+                         parent_id,
+                         NULL            ha,
+                         3               flag,
+                         NULL            tm,
+                         NULL,
+                         statement_id,
+                         max(decode(id, 1, regexp_substr(to_char(other_xml), 'plan_hash_full.*?(\d+)', 1, 1, 'i', 1))) over()+0 plan_hash_value,
+                         NULL
+                  FROM   plan_table a
+                  WHERE  statement_id=upper(:V1)
                   ) a
          WHERE flag>=&src)
   WHERE  seq = 1),
@@ -158,6 +170,10 @@ xplan AS
   FROM   qry, TABLE(dbms_xplan.display_cursor(sq, plan_hash, format)) a
   WHERE  flag = 0
   UNION ALL
+  SELECT a.*
+  FROM   qry,TABLE(dbms_xplan.display('plan_table',NULL,format,'statement_id=''' || sq || '''')) a
+  WHERE  flag = 3
+  UNION  ALL
   SELECT a.*
   FROM   qry,TABLE(dbms_xplan.display('gv$sql_plan_statistics_all',NULL,format,'child_number=' || plan_hash || ' and sql_id=''' || sq ||''' and inst_id=' || inst_id)) a
   WHERE  flag = 1),
