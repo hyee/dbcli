@@ -29,6 +29,7 @@ DECLARE
     ofelist   ODCIVARCHAR2LIST := ODCIVARCHAR2LIST();
     ofedesc   ODCIVARCHAR2LIST := ODCIVARCHAR2LIST();
     to_schema VARCHAR2(128);
+    fmt       VARCHAR2(300);
     curr      VARCHAR2(128) := sys_context('userenv', 'current_schema');
     qry       VARCHAR2(4000) := q'{
         SELECT 'ofe' typ,''||bugno name,''||value value,3 vtype,DESCRIPTION
@@ -184,7 +185,16 @@ BEGIN
     EXECUTE IMMEDIATE 'alter session set current_schema=' || curr;
 
     dbms_lob.createtemporary(sql_text, TRUE);
-    wr(chr(10)||chr(10));
+    fmt :='ALL ALLSTATS OUTLINE';
+    IF dbms_db_version.version>10 THEN
+        fmt := fmt||' ADVANCED';
+    END IF;
+    
+    IF dbms_db_version.version>11 THEN
+        fmt := fmt||' +REPORT +ADAPTIVE +METRICS';
+    END IF;
+    
+    wr(chr(10));
     wr('SQL Text:');
     wr('=========');
     dbms_lob.append(sql_text, buff);
@@ -200,10 +210,10 @@ BEGIN
                   FROM   PLANS
                   GROUP  BY plan_hash, plan_hash_full
                   ORDER  BY seq) LOOP
-        qry := 'PLAN_HASH_VALUE: ' || r.plan_hash || '    PLAN_HASH_VALUE_FULL:' || r.plan_hash_full;
+        qry := 'PLAN_HASH_VALUE: ' || r.plan_hash || '    PLAN_HASH_VALUE_FULL: ' || r.plan_hash_full;
         wr(qry);
         wr(lpad('=', length(qry), '='));
-        FOR i IN (SELECT * FROM TABLE(dbms_xplan.display('plan_table', NULL, 'ALL', 'statement_id=''' || r.id || ''''))) LOOP
+        FOR i IN (SELECT * FROM TABLE(dbms_xplan.display('plan_table', NULL, fmt, 'statement_id=''' || r.id || ''''))) LOOP
             IF nvl(i.PLAN_TABLE_OUTPUT,'X') not like '%Plan hash value%' THEN
                 wr(i.PLAN_TABLE_OUTPUT);
             END IF;
@@ -225,10 +235,7 @@ BEGIN
                  MAX(bytes) bytes,
                  MAX(cardinality) keep(dense_rank FIRST ORDER BY id) card,
                  SUM(nvl2(object_owner, cardinality, 0)) total_card,
-                 MAX(CASE
-                         WHEN &filter THEN
-                          'Y'
-                     END) is_matched
+                 MAX(CASE WHEN &filter THEN 'Y' END) is_matched
           FROM   PLAN_TABLE q
           GROUP  BY STATEMENT_ID),
         finals AS
@@ -239,18 +246,18 @@ BEGIN
                   FROM   plans a)
           WHERE  id = m_id)
         SELECT /*+ordered use_hash(b)*/
-         STATEMENT_ID,
-         plan_hash,
-         plan_hash_full phv_full,
-         plan_lines     lines,
-         cnt            plans,
-         is_matched,
-         cost,
-         bytes,
-         card           "ROWS",
-         total_card,
-         b.settings,
-         description
+                 STATEMENT_ID,
+                 plan_hash,
+                 plan_hash_full phv_full,
+                 plan_lines     lines,
+                 cnt            plans,
+                 is_matched,
+                 cost,
+                 bytes,
+                 card           "ROWS",
+                 total_card,
+                 b.settings,
+                 description
         FROM   finals a
         LEFT   JOIN (SELECT rownum id, column_value settings FROM TABLE(ofelist)) b
         USING  (id)
