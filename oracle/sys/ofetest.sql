@@ -6,7 +6,7 @@
         &typ   : default={all} ofe={ofe} env={env}
         &filter: default={1=2} f={}
         &batch : default={1} batch={}
-        &sep   : default={rowsep default} batch={rowsep - colsep | CSVSEP }
+        &sep   : default={rowsep default} batch={rowsep - colsep |}
     --]]
 ]]*/
 set verify off feed off &sep

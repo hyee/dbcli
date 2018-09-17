@@ -191,7 +191,7 @@ function scripter:parse_args(sql,args,print_args,extend_dirs)
                     ary[i]=nil
                     local ary_idx=tonumber(param:match("^V(%d+)$"))
                     text,cnt=text:replace('&0',rest,true)
-                    if cnt==0 then text=text..rest end
+                    if cnt==0 and text:trim()=='' then text=text..rest end
                     if args[param] and ary_idx then
                         ary[ary_idx]=nil
                         arg1[param]=text
