@@ -25,7 +25,7 @@
            <col>: field in v$session
     --[[
         &fields : {
-               s={coalesce(nullif(program_name,'0'),'['||regexp_replace(nvl(a.module,a.program),' *\(.*\)$')||'('||osuser||')]') PROGRAM,program_line# line#},
+               s={coalesce(nullif(program_name,'0'),'['||regexp_replace(regexp_replace(nvl(a.module,a.program),' *\(.*\)$'),'.*@')||'('||osuser||')]') PROGRAM,program_line# line#},
                o={schemaname schema,osuser,logon_time,regexp_replace(machine,'(\..*|^.*\\)') machine,regexp_replace(program,' *\(.*') program},
                p={p1,p2,p2text,p3},
                b={NULLIF(BLOCKING_SESSION||',@'||BLOCKING_INSTANCE,',@') BLOCK_BY,

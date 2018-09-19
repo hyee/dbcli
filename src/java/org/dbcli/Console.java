@@ -300,7 +300,6 @@ public class Console {
         });
 
 
-        //System.setSecurityManager(new NoExitSecurityManager(subThread));
         Logger.getLogger("OracleRestJDBCDriverLogger").setLevel(Level.OFF);
         try {
             terminal.pause();
@@ -310,7 +309,6 @@ public class Console {
         } catch (Exception e1) {
             subThread.interrupt();
         } finally {
-            //System.setSecurityManager(null);
             subThread = null;
             terminal.resume();
         }
@@ -379,11 +377,10 @@ public class Console {
                 line = parser.getLines();
                 if (line == null) return readLine(parser.secondPrompt, null);
             }
+
             pause = true;
-            //writeInput(reader.BRACKETED_PASTE_END);
             return line;
-        } catch (Exception e) {
-            //e.printStackTrace();
+        } catch (UserInterruptException|EndOfFileException e) {
             terminal.raise(Terminal.Signal.INT);
             status.redraw();
             return "";

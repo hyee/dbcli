@@ -380,7 +380,6 @@ public class Loader {
             detector.handleData(buffer);
             detector.dataEnd();
             String charset = detector.getDetectedCharset();
-            //System.out.println(charset);
             if (charset != null && !charset.equals("null")) {
                 return new String(buffer, charset);
             } else
