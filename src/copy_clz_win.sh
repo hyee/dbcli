@@ -5,8 +5,8 @@ if [ "$FOLDER" = "" ]; then
 fi
 
 TARGET=${FOLDER}1
-SOURCE="/media/sf_D_DRIVE/jdk_linux"
-JAR="$SOURCE/bin/jar"
+SOURCE="/d/lib"
+JAR="jar"
 #JAR=/media/sf_D_DRIVE/jdk_linux/bin/jar
 
 if [ ! -d "$SOURCE" ]; then
@@ -44,4 +44,4 @@ echo "Building new ${FOLDER}.jar..."
 "$JAR" cnf ../${FOLDER}.jar *
 cd ..
 rm -rf $TARGET jardump
-cp ${FOLDER}.jar ../jre_linux/lib
+cp ${FOLDER}.jar ../jre/lib

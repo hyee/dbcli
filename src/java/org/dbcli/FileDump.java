@@ -3,7 +3,6 @@ package org.dbcli;
 import sun.jvm.hotspot.debugger.AddressException;
 import sun.jvm.hotspot.memory.SystemDictionary;
 import sun.jvm.hotspot.oops.InstanceKlass;
-import sun.jvm.hotspot.oops.Klass;
 import sun.jvm.hotspot.runtime.VM;
 import sun.jvm.hotspot.tools.Tool;
 import sun.jvm.hotspot.tools.jcore.ClassDump;
@@ -15,10 +14,13 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Method;
+import java.util.jar.JarOutputStream;
 
 public class FileDump extends ClassDump {
+    ClassFilter classFilter = null;
     private String outputDirectory;
     private SystemDictionary ioe;
+    private JarOutputStream jarStream = null;
 
     public static void main(String[] args) {
         ClassFilter classFilter = null;
@@ -39,7 +41,7 @@ public class FileDump extends ClassDump {
                 method = Tool.class.getDeclaredMethod("start", String[].class);
             }
             method.setAccessible(true);
-            method.invoke((Tool) cd, new Object[]{args});
+            method.invoke(cd, new Object[]{args});
         } catch (Exception e) {
             Loader.getRootCause(e).printStackTrace();
             return;
@@ -58,10 +60,8 @@ public class FileDump extends ClassDump {
     public void run() {
         try {
             ioe = VM.getVM().getSystemDictionary();
-            ioe.classesDo(new SystemDictionary.ClassVisitor() {
-                public void visit(Klass k) {
-                    if (k instanceof InstanceKlass) FileDump.this.dumpKlass((InstanceKlass) k);
-                }
+            ioe.classesDo(k -> {
+                if (k instanceof InstanceKlass) FileDump.this.dumpKlass((InstanceKlass) k);
             });
         } catch (AddressException e) {
             System.err.println("Error accessing address 0x" + Long.toHexString(e.getAddress()));
@@ -71,11 +71,11 @@ public class FileDump extends ClassDump {
 
     private void dumpKlass(InstanceKlass kls) {
         String klassName = kls.getName().asString();
+        //System.out.println("copying "+klassName);
         try {
             String jar = JavaAgent.resolveDest(null, klassName);
             if (jar == null) return;
             klassName = klassName.replace('/', File.separatorChar);
-            OutputStream os = null;
             int index = klassName.lastIndexOf(File.separatorChar);
             File dir = null;
             if (index != -1) {
@@ -88,15 +88,15 @@ public class FileDump extends ClassDump {
             File f = new File(dir, klassName.substring(index + 1) + ".class");
             f.createNewFile();
             System.out.println(f.getAbsolutePath());
-            os = new BufferedOutputStream(new FileOutputStream(f));
-            try {
+            try (OutputStream os = new BufferedOutputStream(new FileOutputStream(f))) {
                 ClassWriter cw = new ClassWriter(kls, os);
                 cw.write();
                 os.close();
-            } finally {
-                os.close();
+            } catch (Throwable e) {
+                System.out.println("Failed to dump " + klassName);
             }
         } catch (Exception e) {
+
             Loader.getRootCause(e).printStackTrace();
         }
     }

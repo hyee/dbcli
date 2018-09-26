@@ -380,7 +380,7 @@ public class Console {
 
             pause = true;
             return line;
-        } catch (UserInterruptException|EndOfFileException e) {
+        } catch (UserInterruptException | EndOfFileException e) {
             terminal.raise(Terminal.Signal.INT);
             status.redraw();
             return "";

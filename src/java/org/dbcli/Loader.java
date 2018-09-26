@@ -203,7 +203,7 @@ public class Loader {
         stack = stack.split("@")[0];
         Pattern p = Pattern.compile("[\\\\/]jre.*", Pattern.CASE_INSENSITIVE);
         String java_home = p.matcher(System.getProperty("java.home")).replaceAll("");
-        stack = String.format("java -cp \"%s%slib%s*;%s\" -Dsun.jvm.hotspot.tools.jcore.outputDir=%s %s %s", java_home, sep, sep, cp, folder, packageName, stack);
+        stack = String.format("java -cp \"%s%slib%s*%s\" -Dsun.jvm.hotspot.tools.jcore.outputDir=%s %s %s", java_home, sep, sep, cp, folder, packageName, stack);
         //System.out.println("Command: "+stack);
         return stack;
     }
