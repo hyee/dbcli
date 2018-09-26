@@ -82,7 +82,7 @@ function var.setInput(name,desc)
         print("Current defined variables:\n====================")
         for k,v in pairs(var.inputs) do
             if type(v)~="table" then
-                print("    ",k,'=',v)
+                print(env.space,k,'=',v)
             end
         end
         return
@@ -389,7 +389,7 @@ function var.define_column(col,...)
                     end
                     return string.format("%s"..num_fmt.."%s",prefix,s,units[#units])
                 end
-            elseif f=="SMHD" or f=="ITV" then
+            elseif f=="SMHD" or f=="ITV" or f=="INTERVAL" then
                 local fmt=arg=='SMHD' and '%dD %02dH %02dM %02dS' or
                           f=='SMHD' and '%dd %02dh %02dm %02ds' or '%d %02d:%02d:%02d'
                 obj.format=function(v)
@@ -397,10 +397,10 @@ function var.define_column(col,...)
                     local s,u=tonumber(v),{}
                     local prefix=s<0 and '-' or ''
                     s=math.abs(s)
-                    for i=1,3 do
+                    for i=1,2 do
                         s,u[#u+1]=math.floor(s/60),s%60
                     end
-                    u[#u+1]=math.floor(s/24)
+                    u[#u+2],u[#u+1]=math.floor(s/24),s%24
                     return prefix..fmt:format(u[4],u[3],u[2],u[1]):gsub("^0 ",'')
                 end
             elseif f=="%" or f=="PCT" or f=="PERCENTAGE" or f=="PERCENT" then
@@ -541,7 +541,7 @@ function var.onload()
         4) @@NAME <columns> FOR[MAT] usmhd<scale> : Cast number as '<number>[us|ms|s|m|h|d]' format
         5) @@NAME <columns> FOR[MAT] SMHD         : Cast number as 'xxD xxH xxM xxS' format
         6) @@NAME <columns> FOR[MAT] smhd         : Cast number as 'xxd xxh xxm xxs' format
-        7) @@NAME <columns> FOR[MAT] ITV          : Cast number as 'dd hh:mm:ss' format
+        7) @@NAME <columns> FOR[MAT] INTERVAL|ITV : Cast number as 'dd hh:mm:ss' format
         8) @@NAME <columns> FOR[MAT] <formatter>  : Use Java 'String.format()' to format the number
 
     type 'help -e var.columns' to show the existing settings

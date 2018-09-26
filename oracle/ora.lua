@@ -52,7 +52,7 @@ function ora:validate_accessable(name,options,values)
         if default~=nil then break end
     end
 
-    if not default then
+    if not default and default then
         env.raise("This command doesn't support current %s %s, expected as %s!",
             expect_name,
             check_flag==1 and (db.props.db_version or 'unknown')

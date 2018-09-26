@@ -300,9 +300,23 @@ function cfg.capture_after_cmd(cmd,args)
     cfg._backup=nil
 end
 
+function cfg.on_env_load()
+    local list,keys={},{}
+    for k,v in pairs(cfg) do
+        if type(v)=="table" and k==k:upper() and v.src and (v.desc and not v.desc:find('^#')) then
+            for _,key in ipairs(v.abbr or {k}) do
+                keys[key]=v.desc
+            end
+        end
+    end
+    list['SET']=keys
+    console:setSubCommands(list)
+end
+
 function cfg.onload()
     env.event.snoop("BEFORE_COMMAND",cfg.capture_before_cmd)
     env.event.snoop("AFTER_COMMAND",cfg.capture_after_cmd)
+    env.event.snoop("ON_ENV_LOADED",cfg.on_env_load)
     env.set_command{obj=nil,cmd=cfg.name, 
                     help_func="Set environment parameters. Usage: set [-a] | {[-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]}",
                     call_func=cfg.doset,

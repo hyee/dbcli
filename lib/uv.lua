@@ -34,6 +34,18 @@ function os.exists(file,ext)
     return attr and attr.type,attr and file
 end
 
+function os.read(file,size)
+    local fd = uv.fs.open(file, 'r', tonumber('644', 8))
+    env.checkerr(fd,'file "%s" doese not exist!',file)
+    if not size then
+        local stat = assert(uv.fs.fstat(fd))
+        size=stat.size
+    end
+    local chunk = assert(uv.fs.read(fd, size, 0))
+    uv.fs.close(fd)
+    return chunk
+end
+
 local function noop() end
 function uv.async_read(path, maxsize, callback,...)
     local fd, onStat, onRead, onChunk, pos, chunks

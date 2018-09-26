@@ -1,18 +1,18 @@
 /*[[
 Show execution plan. Usage: @@NAME {<sql_id> [<plan_hash_value>|<child_number>] [format1..n]} [-all|-last|-b|-d|-s|-ol|-adv] 
 Option:
-    -ol   : show outline information
     -b    : show binding variables
     -d    : only show the plan from AWR views
     -s    : the plan with the simplest 'basic' format
+    -ol   : show outline information
     -adv  : the plan with the 'advanced' format
     -all  : the plan with the 'ALLSTATS ALL' format
     -last : the plan with the 'ALLSTATS LAST' format
 --[[
-    &STAT: default={&DF &LAST &adaptive &binds &V3 &V4 &V5 &V6 &V7 &V8 &V9}
+    &STAT: default={&DF &adaptive &binds &V3 &V4 &V5 &V6 &V7 &V8 &V9}
     &V3: none={} ol={outline alias}
     &LAST: default={ALL} last={LAST}
-    &DF: default={ALL -PROJECTION -ALIAS ALLSTATS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL}
+    &DF: default={ALLSTATS &LAST -PROJECTION -ALIAS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL}
     &SRC: {
             default={0}, # Both
             d={2}        # Dictionary only
@@ -72,6 +72,7 @@ BEGIN
     END IF;
 END;
 /
+
 WITH sql_plan_data AS
  (SELECT /*+materialize*/*
   FROM   (SELECT /*+no_merge(a)*/ a.*,
@@ -121,8 +122,20 @@ WITH sql_plan_data AS
                             max(plan_hash_value) keep(dense_rank last order by snap_id)
                      from dba_hist_sqlstat c where sql_id=:V1),(
                      select max(plan_hash_value) keep(dense_rank last order by timestamp) 
-                     from dba_hist_sql_plan where sql_id=:V1
-                     ))
+                     from dba_hist_sql_plan where sql_id=:V1))
+                  UNION  ALL
+                  SELECT id,
+                         min(id) over()  minid,
+                         parent_id,
+                         NULL            ha,
+                         3               flag,
+                         NULL            tm,
+                         NULL,
+                         statement_id,
+                         max(decode(id, 1, regexp_substr(to_char(other_xml), 'plan_hash_full.*?(\d+)', 1, 1, 'i', 1))) over()+0 plan_hash_value,
+                         NULL
+                  FROM   plan_table a
+                  WHERE  statement_id=upper(:V1)
                   ) a
          WHERE flag>=&src)
   WHERE  seq = 1),
@@ -157,6 +170,10 @@ xplan AS
   FROM   qry, TABLE(dbms_xplan.display_cursor(sq, plan_hash, format)) a
   WHERE  flag = 0
   UNION ALL
+  SELECT a.*
+  FROM   qry,TABLE(dbms_xplan.display('plan_table',NULL,format,'statement_id=''' || sq || '''')) a
+  WHERE  flag = 3
+  UNION  ALL
   SELECT a.*
   FROM   qry,TABLE(dbms_xplan.display('gv$sql_plan_statistics_all',NULL,format,'child_number=' || plan_hash || ' and sql_id=''' || sq ||''' and inst_id=' || inst_id)) a
   WHERE  flag = 1),

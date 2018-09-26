@@ -391,7 +391,7 @@
                      SUM(DECODE(n, 'IM scan rows optimized', v,0)) "Skip",
                      SUM(DECODE(n, 'IM scan rows excluded', v,0)) "Exclude",
                      SUM(DECODE(n, 'IM scan rows pcode aggregated',v)) "pcode",
-                     SUM(DECODE(n, 'IM populate rows', v,0)) "Popr",
+                     SUM(DECODE(n, 'IM populate rows', v,'IM prepopulate rows',v,0)) "Popr",
                      SUM(DECODE(n, 'IM repopulate (trickle incremental) total rows', v,'IM repopulate rows',v,0)) "re-Popr",
                      SUM(DECODE(n, 'key vector CU codes processed', v,0)) "IMA",
                      SUM(DECODE(n, 'IM scan (dynamic) rows', v,0)) "IMSS",

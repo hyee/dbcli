@@ -1,10 +1,13 @@
+2018-09-16: + public: new option 'set termout on/off'
+            + oracle: new command 'sys ofetest'
+2018-09-11: + public: new command 'set spaces'
 2018-09-08: + oracle: new command 'ora gv/expand/imseg'
 2018-09-07: * public: enhanced the completer
 2018-09-06: + public: added PowerPoint doc under "docs/" 
 2018-09-05: * public: fixed some issues of "pgsql/mysql/db2"
-2018-09-05: * oracle: enhancement on "snap system" 
+            * oracle: enhancement on "snap system" 
 2018-09-01: + public: support "col <column> addratio <name>[scale]"
-2018-09-01: * oracle: enhancement on "snap system" and "var"
+            * oracle: enhancement on "snap system" and "var"
 2018-08-28: * oracle: enhancement on "ora ashchain"
 2018-08-22: + public: support status bar and relative option "set status on/off", unsupported in ConEmu and Legacy Windows Console
             + oracle: add Tanel Poder's script "ora waitprof"

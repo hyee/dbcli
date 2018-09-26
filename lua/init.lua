@@ -64,7 +64,7 @@ function init.init_path(env)
     lib=lib=="windows" and jit.arch or lib
     env("PATH_DEL",path_del)
     env("PLATFORM",console:getPlatform())
-    env("IS_WINDOWS",env.PLATFORM=="windows" or env.PLATFORM=="cygwin" or env.PLATFORM=="mingw")
+    env("IS_WINDOWS",env.PLATFORM=="windows" or env.PLATFORM=="cygwin" or env.PLATFORM=="mingw" or env.PLATFORM=="conemu")
     env("_CACHE_BASE",env.WORK_DIR.."cache"..path_del)
     env("_CACHE_PATH",env._CACHE_BASE)
     env("LIB_PATH",env.join_path(env.WORK_DIR,'lib/'..lib))

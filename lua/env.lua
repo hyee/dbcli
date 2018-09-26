@@ -373,7 +373,9 @@ function env.format_error(src,errmsg,...)
             errmsg=string.format("%s-%05i: %s",name,tonumber(line),errmsg)
         end
     end
-    if select('#',...)>0 then errmsg=errmsg:format(...) end
+    if select('#',...)>0 then
+        errmsg=errmsg:format(...) 
+    end
     return errmsg=="" and errmsg or HIR..errmsg..NOR
 end
 
@@ -997,7 +999,10 @@ function env.onload(...)
         env.set.init("Debug",'off',set_debug,"core","Indicates the option to print debug info, 'all' for always, 'off' for disable, others for specific modules.")
         env.set.init("OnErrExit",'on',nil,"core","Indicates whether to continue the remaining statements if error encountered.","on,off")
         env.set.init("TEMPPATH",'cache',set_cache_path,"core","Define the dir to store the temp files.","*")
-        env.set.init("Status","on",env.set_title,"core","Display the status bar","on,off")
+        local enabled=(env.PLATFORM=='windows' or env.platform=='conemu') and 'off' or 'on'
+        env.set_title('status',enabled)
+        env.set.init("Status",enabled,env.set_title,"core","Display the status bar","on,off")
+        env.set.init("SPACES",4,env.set_space,"core","Define the prefix spaces of a line","0-8")
         print_debug=print
     end
     if  env.ansi and env.ansi.define_color then
@@ -1133,6 +1138,12 @@ function env.resolve_file(filename,ext)
 end
 
 local title_list,CURRENT_TITLE={}
+function env.set_space(name,value)
+    value=tonumber(value)
+    env.checkerr(value,"The number of spaces must be a number!");
+    env.space=string.rep(' ',value)
+    return value
+end
 
 function env.set_title(title,value)
     local enabled
@@ -1140,7 +1151,6 @@ function env.set_title(title,value)
         enabled=value:lower()
         if enabled=='off' then
             console:setStatus("","")
-            return enabled
         end
         title=""
     end
@@ -1160,14 +1170,15 @@ function env.set_title(title,value)
         titles="DBCLI - Disconnected"
     end
 
-    if (CURRENT_TITLE~=titles and env.set.get("STATUS")=="on") or enabled then
+    if (CURRENT_TITLE~=titles and (enabled or env.set.get("STATUS"))=="on") or enabled=='on' then
         status=titles:split('   +')
         local color=env.ansi.get_color
         console:setStatus(' '..table.concat(status,' '..color("HIB")..'|'..color("NOR")..' '),color("HIB")) 
     end
 
-    if CURRENT_TITLE~=titles then
+    if CURRENT_TITLE~=titles or enabled then
         CURRENT_TITLE=titles
+        titles=enabled=="on" and "DBCLI" or titles
         env.uv.set_process_title(titles)
         local term=os.getenv("TERM")
         if term and printer then

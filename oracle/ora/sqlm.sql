@@ -2,7 +2,9 @@
     Get resource usage from SQL monitor. Usage: @@NAME {sql_id [<SQL_EXEC_ID>] [[plan_hash_value] -l|-a|-s]} | {. <keyword>} [-u|-f"<filter>"] [-avg]
     Related parameters for SQL monitor: 
         _sqlmon_recycle_time,_sqlmon_max_planlines,_sqlmon_max_plan,_sqlmon_threshold,control_management_pack_access,statistics_level
-    
+    A SQL can be forced to record the sql monitor report by the alter system statement:
+        ALTER SYSTEM SET EVENTS 'sql_monitor [sql: <sql_id1>|sql: <sql_id2>] force=true';
+
     Usages:
        1. @@NAME <sql_id> [<sql_exec_id>]           : Extract sql monitor report with specific sql_id, options: -s,-a,-f"<format>"
        2. @@NAME [. <keyword>]                      : List recent sql monitor reports,options: -avg,-u,-f"<filter>" 
@@ -32,7 +34,7 @@
    --]]
 ]]*/
 
-set feed off VERIFY off
+set feed off VERIFY off printsize 3000
 var c refcursor;
 var c0 refcursor;
 var c1 refcursor;
@@ -121,10 +123,13 @@ BEGIN
             AND   PX_SERVER# IS NULL
             and   inst_id=nvl(inst,inst_id);
         END IF;
+        $IF dbms_db_version.version> 11 $THEN
+            execute immediate 'alter session set events ''emx_control compress_xml=none''';
+        $END
         OPEN :c FOR
             SELECT DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => '&format-SQL_FULLTEXT-SQL_TEXT', TYPE => 'TEXT', sql_id => sq_id, SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst) AS report FROM   dual;
         BEGIN
-            content  := DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => 'ALL', TYPE => 'EM', sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
+            content  := DBMS_SQLTUNE.REPORT_SQL_MONITOR(report_level => 'ALL', TYPE => 'ACTIVE', sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
             filename := 'sqlm_' || sq_id || '.html';
         EXCEPTION WHEN OTHERS THEN NULL;
         END;
@@ -386,6 +391,7 @@ BEGIN
     :filename := filename;
 END;
 /
+set colsize 4194304
 print c;
 set colsep |
 col stat_value#1,stat_value#2,stat_value#3 format #,##0

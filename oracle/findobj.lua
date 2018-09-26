@@ -9,7 +9,7 @@ local stmt=[[
 	    part2_temp    VARCHAR2(128);
 	    dblink        VARCHAR2(128);
 	    part1_type    PLS_INTEGER;
-	    object_number PLS_INTEGER;
+	    object_number NUMBER;
 	    cnt           PLS_INTEGER;  
 	    did           PLS_INTEGER;
 	    flag          BOOLEAN := TRUE;
@@ -18,7 +18,20 @@ local stmt=[[
 	    stmt          VARCHAR2(4000);
 	    target        VARCHAR2(500) := trim(:target);
 	    isUpper       BOOLEAN := true;
+	    xTableID      NUMBER := 0;
 	BEGIN
+		IF upper(target) like 'X$%' THEN
+			BEGIN
+				execute immediate 'select object_id from v$fixed_table where name=upper(:1)'
+				into xTableID using upper(target);
+				schem := 'SYS';
+				obj_type :='TABLE';
+				part1 := upper(upper(target));
+				object_number := xTableID;
+			EXCEPTION WHEN OTHERS THEN NULL;
+			END;
+		END IF;
+
 	    BEGIN
 	        EXECUTE IMMEDIATE 'select 1 from dba_objects where rownum<1';
 	    EXCEPTION WHEN OTHERS THEN
@@ -26,115 +39,117 @@ local stmt=[[
 	    END;
 	    
 	    <<CHECKER>>
-	    IF NOT regexp_like(target,'^\d+$') THEN
-	        IF regexp_like(target,'^[^"].*" *\. *".+[^"]$') OR NOT isUpper THEN
-	            target := '"'||target||'"';
-	        END IF;
-	        
+	    IF xTableID=0 THEN
+		    IF NOT regexp_like(target,'^\d+$') THEN
+		        IF regexp_like(target,'^[^"].*" *\. *".+[^"]$') OR NOT isUpper THEN
+		            target := '"'||target||'"';
+		        END IF;
+		        
 
-	        BEGIN 
-	            sys.dbms_utility.name_tokenize(target,schem,part1,part2,dblink,part1_type);
-	        EXCEPTION WHEN OTHERS THEN
-	            IF SQLCODE=-931 THEN --ORA-00931: Missing identifier
-	                sys.dbms_utility.name_tokenize('"'||REPLACE(UPPER(target),'.','"."')||'"',schem,part1,part2,dblink,part1_type);
-	            END IF;
-	        END;
-	        target:='"'||REPLACE(trim('.' from schem||'.'||part1||'.'||part2),'.','"."')||'"';
-	        
-	        schem:=null;
-	        FOR i IN 0 .. 9 LOOP
-	            BEGIN
-	                sys.dbms_utility.name_resolve(NAME          => target,
-	                                              CONTEXT       => i,
-	                                              SCHEMA        => schem,
-	                                              part1         => part1,
-	                                              part2         => part2,
-	                                              dblink        => dblink,
-	                                              part1_type    => part1_type,
-	                                              object_number => object_number);
-	                IF part2 IS NOT NULL AND part1 IS NULL THEN
-	                    part1:=part2;
-	                    part2:=null;
-	                END IF;
-	                EXIT WHEN schem IS NOT NULL;
-	            EXCEPTION WHEN OTHERS THEN NULL;
-	            END;
-	        END LOOP;
+		        BEGIN 
+		            sys.dbms_utility.name_tokenize(target,schem,part1,part2,dblink,part1_type);
+		        EXCEPTION WHEN OTHERS THEN
+		            IF SQLCODE=-931 THEN --ORA-00931: Missing identifier
+		                sys.dbms_utility.name_tokenize('"'||REPLACE(UPPER(target),'.','"."')||'"',schem,part1,part2,dblink,part1_type);
+		            END IF;
+		        END;
+		        target:='"'||REPLACE(trim('.' from schem||'.'||part1||'.'||part2),'.','"."')||'"';
+		        
+		        schem:=null;
+		        FOR i IN 0 .. 9 LOOP
+		            BEGIN
+		                sys.dbms_utility.name_resolve(NAME          => target,
+		                                              CONTEXT       => i,
+		                                              SCHEMA        => schem,
+		                                              part1         => part1,
+		                                              part2         => part2,
+		                                              dblink        => dblink,
+		                                              part1_type    => part1_type,
+		                                              object_number => object_number);
+		                IF part2 IS NOT NULL AND part1 IS NULL THEN
+		                    part1:=part2;
+		                    part2:=null;
+		                END IF;
+		                EXIT WHEN schem IS NOT NULL;
+		            EXCEPTION WHEN OTHERS THEN NULL;
+		            END;
+		        END LOOP;
 
-	        IF schem IS NULL AND flag AND USER != sys_context('USERENV', 'CURRENT_SCHEMA') AND instr(target,'.')=0 THEN
-	            flag   := FALSE;
-	            target := sys_context('USERENV', 'CURRENT_SCHEMA') || '.' || target;
-	            GOTO CHECKER;
-	        END IF;
-	    ELSE
-	        EXECUTE IMMEDIATE 'select max(to_char(owner)),max(to_char(object_name)),max(to_char(subobject_name)),max(object_id) from '||objs||' where object_id=:1' 
-	        INTO schem,part1,part2,object_number
-	        USING 0+target;
+		        IF schem IS NULL AND flag AND USER != sys_context('USERENV', 'CURRENT_SCHEMA') AND instr(target,'.')=0 THEN
+		            flag   := FALSE;
+		            target := sys_context('USERENV', 'CURRENT_SCHEMA') || '.' || target;
+		            GOTO CHECKER;
+		        END IF;
+		    ELSE
+		        EXECUTE IMMEDIATE 'select max(to_char(owner)),max(to_char(object_name)),max(to_char(subobject_name)),max(object_id) from '||objs||' where object_id=:1' 
+		        INTO schem,part1,part2,object_number
+		        USING 0+target;
+		    END IF;
+		   
+		    IF schem IS NULL THEN
+		        flag  := FALSE;
+		        schem := regexp_substr(target, '[^\."]+', 1, 1);
+		        part1 := regexp_substr(target, '[^\."]+', 1, 2);
+		        IF part1 IS NULL THEN
+		            part1 := trim('"' from target);
+		            schem := null;
+		            stmt  := objs||' a WHERE nvl(:1,''X'')=''X'' AND object_name =:3)';
+		        ELSE
+		            part2_temp := schem;
+		            BEGIN
+		                EXECUTE IMMEDIATE 'SELECT MAX(username) FROM DBA_USERS WHERE upper(username)=:1' INTO schem using upper(schem);
+		            EXCEPTION WHEN OTHERS THEN 
+		                SELECT MAX(username) INTO schem FROM ALL_USERS WHERE upper(username)=upper(schem);
+		            END;
+
+		            IF schem IS NOT NULL THEN
+		                stmt  := objs||' a WHERE owner=:1 AND object_name =:2)';
+		            ELSE
+		                part1      := nvl(part2_temp,trim('"' from target));
+		                stmt       := objs||' a WHERE nvl(:1,''Y'')=''Y'' AND object_name=:3)';
+		            END IF;            
+		        END IF;
+		    ELSE
+		        flag  := TRUE;
+		        stmt  := objs|| ' a WHERE OWNER IN(''SYS'',''PUBLIC'',:1) AND OBJECT_NAME=:3)';
+		    END IF;
+
+		    stmt:=q'[SELECT /*+no_expand*/
+		           MIN(OBJECT_TYPE)    keep(dense_rank first order by s_flag,object_id),
+		           MIN(OWNER)          keep(dense_rank first order by s_flag,object_id),
+		           MIN(OBJECT_NAME)    keep(dense_rank first order by s_flag,object_id),
+		           MIN(SUBOBJECT_NAME) keep(dense_rank first order by s_flag,object_id),
+		           MIN(OBJECT_ID)      keep(dense_rank first order by s_flag),
+		           MIN(DATA_OBJECT_ID) keep(dense_rank first order by s_flag,object_id)
+		    FROM (
+		        SELECT /*+INDEX_SS(a) MERGE(A) no_expand*/ a.*,
+		               case when owner=:1 then 0 else 100 end +
+		               case when :2 like '%"'||OBJECT_NAME||'"'||nvl2(SUBOBJECT_NAME,'."'||SUBOBJECT_NAME||'"%','') then 0 else 10 end +
+		               case substr(object_type,1,3) when 'TAB' then 1 when 'CLU' then 2 else 3 end s_flag
+		        FROM   ]' || stmt;
+
+
+		    EXECUTE IMMEDIATE stmt
+		        INTO obj_type, schem, part1, part2_temp,object_number,did USING schem,target,schem, part1;
+		    
+		    IF part2 IS NULL THEN
+		        IF part2_temp IS NULL AND NOT flag THEN
+		            part2_temp := regexp_substr(target, '[^\."]+', 1, CASE WHEN part1=regexp_substr(target, '[^\."]+', 1, 1) THEN 2 ELSE 3 END);
+		        END IF;
+		        part2 := part2_temp;
+		    END IF;
+
+		    IF part1 IS NULL AND target IS NOT NULL THEN
+		        IF isUpper AND target=upper(target) AND :target!=UPPER(:target) THEN
+		            target  := trim(:target);
+		            isUpper := false;
+		            GOTO CHECKER;
+		        ELSIF nvl(:ignore,'0') = '0' THEN
+		            raise_application_error(-20001,'Cannot find target object '||target||'!');
+		        END IF;
+		    END IF;
 	    END IF;
-	   
-	    IF schem IS NULL THEN
-	        flag  := FALSE;
-	        schem := regexp_substr(target, '[^\."]+', 1, 1);
-	        part1 := regexp_substr(target, '[^\."]+', 1, 2);
-	        IF part1 IS NULL THEN
-	            part1 := trim('"' from target);
-	            schem := null;
-	            stmt  := objs||' a WHERE nvl(:1,''X'')=''X'' AND object_name =:3)';
-	        ELSE
-	            part2_temp := schem;
-	            BEGIN
-	                EXECUTE IMMEDIATE 'SELECT MAX(username) FROM DBA_USERS WHERE upper(username)=:1' INTO schem using upper(schem);
-	            EXCEPTION WHEN OTHERS THEN 
-	                SELECT MAX(username) INTO schem FROM ALL_USERS WHERE upper(username)=upper(schem);
-	            END;
 
-	            IF schem IS NOT NULL THEN
-	                stmt  := objs||' a WHERE owner=:1 AND object_name =:2)';
-	            ELSE
-	                part1      := nvl(part2_temp,trim('"' from target));
-	                stmt       := objs||' a WHERE nvl(:1,''Y'')=''Y'' AND object_name=:3)';
-	            END IF;            
-	        END IF;
-	    ELSE
-	        flag  := TRUE;
-	        stmt  := objs|| ' a WHERE OWNER IN(''SYS'',''PUBLIC'',:1) AND OBJECT_NAME=:3)';
-	    END IF;
-
-	    stmt:=q'[SELECT /*+no_expand*/
-	           MIN(OBJECT_TYPE)    keep(dense_rank first order by s_flag,object_id),
-	           MIN(OWNER)          keep(dense_rank first order by s_flag,object_id),
-	           MIN(OBJECT_NAME)    keep(dense_rank first order by s_flag,object_id),
-	           MIN(SUBOBJECT_NAME) keep(dense_rank first order by s_flag,object_id),
-	           MIN(OBJECT_ID)      keep(dense_rank first order by s_flag),
-	           MIN(DATA_OBJECT_ID) keep(dense_rank first order by s_flag,object_id)
-	    FROM (
-	        SELECT /*+INDEX_SS(a) MERGE(A) no_expand*/ a.*,
-	               case when owner=:1 then 0 else 100 end +
-	               case when :2 like '%"'||OBJECT_NAME||'"'||nvl2(SUBOBJECT_NAME,'."'||SUBOBJECT_NAME||'"%','') then 0 else 10 end +
-	               case substr(object_type,1,3) when 'TAB' then 1 when 'CLU' then 2 else 3 end s_flag
-	        FROM   ]' || stmt;
-
-
-	    EXECUTE IMMEDIATE stmt
-	        INTO obj_type, schem, part1, part2_temp,object_number,did USING schem,target,schem, part1;
-	    
-	    IF part2 IS NULL THEN
-	        IF part2_temp IS NULL AND NOT flag THEN
-	            part2_temp := regexp_substr(target, '[^\."]+', 1, CASE WHEN part1=regexp_substr(target, '[^\."]+', 1, 1) THEN 2 ELSE 3 END);
-	        END IF;
-	        part2 := part2_temp;
-	    END IF;
-
-	    IF part1 IS NULL AND target IS NOT NULL THEN
-	        IF isUpper AND target=upper(target) AND :target!=UPPER(:target) THEN
-	            target  := trim(:target);
-	            isUpper := false;
-	            GOTO CHECKER;
-	        ELSIF nvl(:ignore,'0') = '0' THEN
-	            raise_application_error(-20001,'Cannot find target object '||target||'!');
-	        END IF;
-	    END IF;
-	    
 	    :object_owner   := schem;
 	    :object_type    := obj_type;
 	    :object_name    := part1;
@@ -151,7 +166,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
 	end
 	obj_name=obj_name:gsub('"+','"')
     local obj=obj_name:trim():upper()
-    env.checkerr((bypass_error or '0')=='0' or obj~="","Please input the object name/id!")
+    env.checkerr((bypass_error or '0')=='1' or obj~="","Please input the object name/id!")
 
     if not loaded then
     	local clock=os.clock()
@@ -205,13 +220,15 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
     end
 
     local args
-    if obj and cache_obj[obj] then 
+    if cache_obj[obj] then 
     	args=table.clone(cache_obj[obj])
-    else
+    elseif obj~="" then
     	args=table.clone(default_args)
 	    args.target,args.ignore=obj_name,bypass_error or "0"
 	    db:exec_cache(stmt,args,'Internal_FindObject')
 	    args.owner=args.object_owner
+	else
+		args={}
 	end
 
     local found=args and args.object_id and args.object_id~='' and true
@@ -237,6 +254,7 @@ function db:check_access(obj_name,bypass_error,is_set_env)
     local o=obj.target
     if cache_obj[o] and cache_obj[o].accessible then return cache_obj[o].accessible==1 and true or false end
     obj.count='#NUMBER'
+
     self:exec_cache([[
         DECLARE /*INTERNAL_DBCLI_CMD*/
             x   PLS_INTEGER := 0;
@@ -263,7 +281,6 @@ function db:check_access(obj_name,bypass_error,is_set_env)
             :count := x;
         END;
     ]],obj,'Internal_CheckAccessRight')
-
     if cache_obj[o] then
         local value=obj.count==1 and 1 or 0
         for k,v in ipairs(cache_obj[o].alias_list) do cache_obj[v].accessible=value end
