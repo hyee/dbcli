@@ -24,15 +24,22 @@ oracle.module_list={
 }
 
 local home,tns=os.getenv("ORACLE_HOME"),os.getenv("TNS_ADMIN")
-if tns then
-    java.system:setProperty("oracle.net.tns_admin",tns)
-elseif home then
-    java.system:setProperty("oracle.net.tns_admin",env.join_path(home..'/network/admin'))
+if not home then
+    local bin=os.find_extension("sqlplus",true)
+    if bin then
+        home=bin:gsub("[%w%.]+$",''):gsub("([\\/])bin%1$","")
+    end
+end
+
+if not tns and home then
+    tns=env.join_path(home..'/network/admin')
 end
 
 function oracle:ctor(isdefault)
     self.type="oracle"
     self.home=home
+    self.tns_admin=tns
+    if tns then java.system:setProperty("oracle.net.tns_admin",tns) end
     local header = "set feed off sqlbl on define off;\n";
     header = header.."ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';\n"
     header = header.."ALTER SESSION SET NLS_TIMESTAMP_FORMAT='YYYY-MM-DD HH24:MI:SSXFF';\n"
@@ -133,6 +140,7 @@ function oracle:connect(conn_str)
          ['oracle.jdbc.useFetchSizeWithLongColumn']='true',
          ['oracle.net.networkCompression']='on',
          ['oracle.net.keepAlive']='true',
+         ['oracle.net.ssl_server_dn_match']='true',
          ['oracle.jdbc.timezoneAsRegion']='false'
         },args)
     self:load_config(url,args)

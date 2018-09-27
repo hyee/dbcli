@@ -9,11 +9,11 @@ function os.shell(cmd,args)
     io.popen(cmd..(args and (" "..args) or ""))
 end
 
-function os.find_extension(exe)
+function os.find_extension(exe,ignore_errors)
     local err='Cannot find executable "'..exe..'" in the default path, please add it into EXT_PATH of file data/'..(env.IS_WINDOWS and 'init.cfg' or 'init.conf')
     if exe:find('[\\/]') then
         local type,file=os.exists(exe)
-        env.checkerr(type,err)
+        if not ignore_errors then env.checkerr(type,err) end
         return file
     end
     exe='"'..env.join_path(exe):trim('"')..'"'
@@ -25,7 +25,7 @@ function os.find_extension(exe)
         path=file
         break
     end
-    env.checkerr(path,err)
+    if not ignore_errors then env.checkerr(path,err) end
     return path
 end
 
