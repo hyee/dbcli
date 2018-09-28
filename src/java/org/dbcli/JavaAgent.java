@@ -14,10 +14,12 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.security.CodeSource;
 import java.security.ProtectionDomain;
-import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.*;
+import java.util.jar.JarOutputStream;
+import java.util.jar.Pack200;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.zip.ZipEntry;
 
 public class JavaAgent implements ClassFileTransformer {
     static String destFolder;
@@ -186,9 +188,36 @@ public class JavaAgent implements ClassFileTransformer {
                 for (int k = 0; k < interfaces.length; k++)
                     copyFile(null, interfaces[k], null);
             }
-            //System.out.println("superClassName :"+superClassName);
         } else {
             System.out.println("Cannot load file: " + className);
+        }
+    }
+
+    public static void createJar(String[] classes,String location) throws Exception{
+        try(FileOutputStream fout = new FileOutputStream(location);
+            JarOutputStream jarOut = new JarOutputStream(fout)) {
+            HashMap<String, Boolean> map = new HashMap<>();
+            int counter=0;
+            for (String clz : classes) {
+                clz=clz.replace(".","/").replace("\\","");
+                byte[] classFileBuffer = getClassBuffer(clz, null);
+                if (classFileBuffer == null) {
+                    System.out.println("    Cannot load file: " + clz);
+                    continue;
+                }
+                String dir = clz.substring(0, clz.lastIndexOf('/')+1);
+                if (map.get(dir)==null) {
+                    jarOut.putNextEntry(new ZipEntry(dir));
+                    map.put(dir, true);
+                }
+                jarOut.putNextEntry(new ZipEntry(clz+".class"));
+                jarOut.write(classFileBuffer);
+                jarOut.flush();
+                jarOut.closeEntry();
+                ++counter;
+            }
+            jarOut.finish();
+            System.out.println(location+" is generated with "+counter+" classes.");
         }
     }
 

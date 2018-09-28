@@ -194,6 +194,10 @@ public class Loader {
         JavaAgent.copyFile(null, className.replace("\\.", "/"), null);
     }
 
+    public void createJar(String[] classes,String location) throws Exception{
+        JavaAgent.createJar(classes,location);
+    }
+
     public String dumpClass(String folder) throws Exception {
         String cp = System.getProperty("java.class.path");
         String stack = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
