@@ -82,7 +82,6 @@ function uv.async_read(path, maxsize, callback,...)
     end
     function onChunk(err, chunk)
         if err then
-            
             return res(err)
         end
         if chunk and #chunk > 0 then

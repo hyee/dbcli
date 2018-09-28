@@ -1,5 +1,8 @@
 *.dat
 data/init.cfg
+data/init.conf
+data/plugin.cfg
+data/jdbc_url.cfg
 cache/
-plugin.cfg
-jre/
+dump/
+rwp/
