@@ -1,0 +1,6 @@
+luajit
+========
+Make file: 
+    NODOTABIVER= 5.1
+    XCFLAGS+= -DLUAJIT_ENABLE_LUA52COMPAT
+    XCFLAGS+= -DLUAJIT_NUMMODE=2
