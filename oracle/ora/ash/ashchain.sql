@@ -17,7 +17,7 @@ This script references Tanel Poder's script
         &OBJ   : default={dba_objects}, dash={(select obj# object_id,object_name from dba_hist_seg_stat_obj)}
         @CHECK_ACCESS_OBJ  : dba_objects={&obj}, default={all_objects}
         @INST: 11.2={'@'|| a.BLOCKING_INST_ID}, default={'@'||a.&inst1}
-        @secs: 11.2={round(sum(least(delta_time,nvl(tm_delta_db_time,delta_time)))*1e-6,2) db_time,} default={&unit}
+        @secs: 11.2={round(sum(least(delta_time,nvl(tm_delta_db_time,delta_time)))*1e-6,2) db_time,} default={&unit,}
         @io  : 11.2={DELTA_INTERCONNECT_IO_BYTES} default={null}
         @exec_id:  11.2={CONNECT_BY_ROOT sql_id||nvl(sql_exec_id||to_char(sql_exec_start,'yymmddhh24miss'),session_id||','||&inst1||','||seq#) } default={null}
     --]]
@@ -32,7 +32,7 @@ var chose varchar2
 var filter2 number;
 
 declare
-    target varchar2(2000) := q'[select a.*,SESSION_ID||'@'||&INST1 SID,nullif(a.blocking_session|| &INST,'@') b_sid,sample_time+0 stime from ]'||:V8||' a where '||:range;
+    target varchar2(2000) := q'[select a.*,&INST1 inst,SESSION_ID||'@'||&INST1 SID,nullif(a.blocking_session|| &INST,'@') b_sid,sample_time+0 stime from ]'||:V8||' a where '||:range;
     chose varchar2(2000) := '1';
 BEGIN
     :filter2 := 1;
@@ -141,12 +141,15 @@ BEGIN
               OR     a.b_sid IS NOT NULL),
             chains AS (
                 SELECT greatest(length(sql_ids)-length(replace(sql_ids,'>')),length(p)-length(replace(p,'>'))) lvl,
-                       sum(&UNIT) over(partition by sql_ids,p,&group) grp_count,
+                       case when isleaf=1 and b_sid is not null then
+                           case when b_sid like '%@'||inst then ' > (Idle)' else ' > (Remote)' end
+                       end idle,
                        a.* 
                 FROM (
                     SELECT /*+NO_EXPAND PARALLEL(4)*/
-                           sid w_sid,
+                           sid w_sid,b_sid,
                            rownum-level r,
+                           inst,
                            case when :filter2 = 1 then 1 when &filter then 1 else 0 end is_found,
                            TRIM('>' FROM regexp_replace(SYS_CONNECT_BY_PATH(trim(decode(:grp2,'sample_id','x','sql_id',nvl(sql_id, program2),&grp2)),'>'),'(>.+?)\1+','\1(+)',2)) sql_ids,
                            TRIM('>' FROM regexp_replace(SYS_CONNECT_BY_PATH(trim(&pname || event2), '>'), '(>.+?)\1+', '\1(+)',2)) p, 
@@ -171,23 +174,28 @@ BEGIN
                          max(&group||' ('||grp_count||')') keep(dense_Rank last order by grp_count) &group,
                          root_sql,
                          sql_ids,
-                         p,
+                         trim(p)||idle p,
                          SUM(&UNIT*isleaf) delta,
                          max(sq_id) sq_id,
-                         max(env) env,
+                         max(env||idle) env,
                          COUNT(DISTINCT sql_exec) execs,
                          SUM(&UNIT) aas,
                          sum(io) io,
                          lvl
-                  FROM   chains a,
-                         (SELECT b.*, dense_rank() OVER(ORDER BY leaves DESC,paths) rnk
-                          FROM   (SELECT r, MAX(sql_ids) || MAX(p) paths,max(is_found) is_found,COUNT(1) OVER(PARTITION BY MAX(sql_ids) || MAX(p)) leaves 
-                                  FROM CHAINS c 
-                                  GROUP BY r) b
-                          WHERE is_found=1) b
-                  WHERE  a.r = b.r
-                  AND    b.rnk <= 100
-                  GROUP  BY root_sql, sql_ids, p,lvl) A)
+                  FROM (
+                      SELECT A.*,
+                             b.is_found,
+                             b.rnk,
+                             sum(&UNIT) over(partition by sql_ids,p,&group) grp_count
+                      FROM   chains a,
+                             (SELECT b.*, dense_rank() OVER(ORDER BY leaves DESC,paths) rnk
+                              FROM   (SELECT r, MAX(sql_ids) || MAX(p) paths,max(is_found) is_found,COUNT(1) OVER(PARTITION BY MAX(sql_ids) || MAX(p)) leaves 
+                                      FROM CHAINS c 
+                                      GROUP BY r) b
+                              WHERE is_found=1) b
+                      WHERE  a.r = b.r
+                      AND    b.rnk <= 100)
+                  GROUP  BY root_sql, sql_ids, p,idle,lvl) A)
                WHERE rnk_<=10)
             SELECT DECODE(LEVEL, 1, to_char(pct,'fm990.99'), '|'||to_char(least(pct,99.99),'90.00'))||'%' "Pct",
                    AAS,
