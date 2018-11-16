@@ -264,7 +264,7 @@ local desc_sql={
         ORDER BY NO#]],
     TABLE={[[
         SELECT /*INTERNAL_DBCLI_CMD*/ 
-               --+no_parallel opt_param('_optim_peek_user_binds','false') no_merge(b) no_merge(a)
+               --+no_parallel opt_param('_optim_peek_user_binds','false') no_merge(b) no_merge(a) 
                INTERNAL_COLUMN_ID NO#,
                COLUMN_NAME NAME,
                DATA_TYPE_OWNER || NVL2(DATA_TYPE_OWNER, '.', '') ||
@@ -296,7 +296,7 @@ local desc_sql={
                CASE WHEN num_rows>=num_nulls THEN round((num_rows-num_nulls)/nullif(num_distinct,0),2) END CARDINALITY,
                nullif(HISTOGRAM,'NONE') HISTOGRAM,
                NUM_BUCKETS buckets,
-               (select trim(comments) from all_col_comments where owner=a.owner and table_name=a.table_name and column_name=a.column_name) comments,
+               --(select trim(comments) from all_col_comments where owner=a.owner and table_name=a.table_name and column_name=a.column_name) comments,
                case when low_value is not null then 
                decode(dtype
                   ,'NUMBER'       ,to_char(utl_raw.cast_to_number(low_value))

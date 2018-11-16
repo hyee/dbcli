@@ -38,7 +38,8 @@ local init={
         "lua/graph",
         "lua/subsystem",
         "lua/process",
-        "lua/ilua"}
+        "lua/ilua",
+        "lua/testprocess"}
 }
 
 init.databases={oracle="oracle/oracle",mssql="mssql/mssql",db2="db2/db2",mysql="mysql/mysql",pgsql='pgsql/pgsql'}

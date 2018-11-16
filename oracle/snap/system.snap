@@ -394,7 +394,7 @@
                      SUM(DECODE(n, 'IM populate rows', v,'IM prepopulate rows',v,0)) "Popr",
                      SUM(DECODE(n, 'IM repopulate (trickle incremental) total rows', v,'IM repopulate rows',v,0)) "re-Popr",
                      SUM(DECODE(n, 'key vector CU codes processed', v,0)) "IMA",
-                     SUM(DECODE(n, 'IM scan (dynamic) rows', v,0)) "IMSS",
+                     SUM(DECODE(n, 'IM scan (dynamic) rows', v,0)) "IMDS",
                      SUM(DECODE(n, 'vector group by accumspace size', v,0)) "JP",
                      SUM(DECODE(n, 'IM scan EU rows', v,0)) "IMEU"
               FROM   (SELECT &inst1 inst_id, NAME n, VALUE v FROM &sysstat WHERE &inst_filter  AND value>0)
@@ -477,7 +477,7 @@
     },
     delta_by=[[IOPS,MBPS,SMALL,IO Wait,Calls,Resp,OflEff,OflIn,IM-LIO,LIO(%),dxr,dxw,dbwr,lgwr,temp,offload,BandWidth,
                SISave,OflOut,OptRead,OptWrite,CellIM,CCSave,FcHit,Fc(%),Unzip,zip,ela,IMCU,PRUN,Miss,bytes,rows,Valid,skip,
-               exclude,pcode,proj,pops,re-pops,popr,re-popr,IMSS,IMA,IMEU,JP,Disk,Pct,Swap,Logon,Call,Exec,TPS,Parse,Hard,CcHit,Buffer,
+               exclude,pcode,proj,pops,re-pops,popr,re-popr,IMDS,IMA,IMEU,JP,Disk,Pct,Swap,Logon,Call,Exec,TPS,Parse,Hard,CcHit,Buffer,
                PhyRead,PhyWrite,Redo,Undo,SQL*Net,value,cost,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,time,Busy,idle,db,
                User,Sys,I/O,Nice,traffic,flash,cr,cu,CR Rec,Cu Rec,CR Rec Avg,Cu Rec Avg,CR Flush,CU Flush,CR FL Avg,
                CU FL Avg,lost,fail,enq,read,write,s_r,l_r,s_w,l_w,F_IOPS,s_iops,l_iops,reads,avg_wait,total_waits]],
@@ -514,7 +514,7 @@
                             PhyWrite,Redo,Undo,Temp,SQL*Net,OptRead,OptWrite,CellIM,CCSave,offload,BandWidth,bytes,
                             traffic,cr,cu,CR Rec,Cu Rec,CR Flush,CU Flush,CR FL Avg,CU FL Avg,lost,dbwr,lgwr,
                             read,write,s_r,l_r,s_w,l_w]],
-                     TMB1='IMCU,waits,IOPS,call,exec,TPS,parse,cchit,FcHit,popr,re-popr,IMSS,IMA,IMEU,JP,rows,proj,Disk,Cache,pcode,Miss,fail,,F_IOPS,s_iops,l_iops',
+                     TMB1='IMCU,waits,IOPS,call,exec,TPS,parse,cchit,FcHit,popr,re-popr,IMDS,IMA,IMEU,JP,rows,proj,Disk,Cache,pcode,Miss,fail,,F_IOPS,s_iops,l_iops',
                      noprint='calls,ela,time,idle,total_waits',
                      USMHD1='CR Rec Avg,Cu Rec Avg,CR FL Avg,CU FL Avg,IO Wait,resp,cost,max,avg,enq,avg_wait',
                      ['%.1f%%']='reads,Hard,Pct,dxr,dxw,OflIn,OflOut,valid,Skip,Exclude,OflEff,FLASH,SMALL,prun',

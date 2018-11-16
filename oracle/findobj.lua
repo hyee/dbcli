@@ -265,6 +265,7 @@ function db:check_access(obj_name,bypass_error,is_set_env)
             from   table_privileges
             where  owner=case when regexp_like(:object_name,'^(G?V)\$') then 'SYS' else :owner end
             AND    table_name=regexp_replace(:object_name,'^(G?V)\$','\1_$')
+            AND    SELECT_PRIV!='G'
             AND    rownum<2;
 
             IF x=0 THEN

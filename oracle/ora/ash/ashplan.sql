@@ -71,7 +71,7 @@ qry AS
   FROM   sql_plan_data),
 
 ash_detail as (
-    SELECT H.*,costs*AAS SECS
+    SELECT H.*,costs SECS
     FROM (
         SELECT h.*,decode(row_number() over(partition by SQL_PLAN_LINE_ID,sql_exec,sample_time+0 order by costs desc),1,&unit,0) AAS
         FROM (
@@ -204,7 +204,7 @@ ash_data AS(
 ) ,
 xplan AS
  (SELECT a.*
-  FROM   qry, TABLE(dbms_xplan.display_awr(sq, plan_hash, inst_id, format)) a
+  FROM   qry, TABLE(dbms_xplan.display('dba_hist_sql_plan',NULL,format,'dbid='||inst_id||' and plan_hash_value=' || plan_hash || ' and sql_id=''' || sq ||'''')) a
   WHERE  flag = 2
   UNION ALL
   SELECT a.*
@@ -258,7 +258,7 @@ plan_output AS (
              then rpad('-', decode(:simple,0,0,sevent[cv()])+csize[cv()]+spx_hit[cv()]+ssec[cv()]+sexe[cv()]+31, '-')
              when id[cv()+2] = 0
              then '|'  || lpad('Ord |', csize[cv()])--
-                 ||LPAD('Calls',sexe[cv()])
+                 ||LPAD('Execs',sexe[cv()])
                  ||LPAD('AAS',spx_hit[cv()])
                  ||LPAD('Time|',ssec[cv()])
                  ||' CPU%  IO%  CL%  CC% APP% OTH%|'
@@ -296,8 +296,11 @@ UNION ALL
 SELECT  '|'||rpad('-',c1,'-')||'+'||rpad('-',c2,'-')||'+'||rpad('-',c3,'-')||'+'||rpad('-',c4,'-')||'+'||rpad('-',c7,'-')||'+'||rpad('-',c8,'-')||'+'||rpad('-',c5,'-')||'+'||rpad('-',c6,'-')||'|'
 FROM    ash_width WHERE cnt>0
 UNION ALL
+select * from (
 SELECT  '|'||rpad(top_item,c1,' ')||'|'||lpad(execs,c2,' ')||'|'||rpad(secs,c3,' ')||'|'||lpad(aas,c4,' ')||'|'||lpad(io_reqs,c7,' ')||'|'||lpad(io_bytes,c8,' ')||'|'||rpad(Plan_lines,c5,' ')||'|'||rpad(wait_objects,c6,' ')||'|'
 FROM    ash_width,ash_agg WHERE cnt>0
+ORDER BY 0+AAS DESC
+)
 UNION ALL
 SELECT  '+'||rpad('-',c1,'-')||'+'||rpad('-',c2,'-')||'+'||rpad('-',c3,'-')||'+'||rpad('-',c4,'-')||'+'||rpad('-',c7,'-')||'+'||rpad('-',c8,'-')||'+'||rpad('-',c5,'-')||'+'||rpad('-',c6,'-')||'+'
 FROM    ash_width WHERE cnt>0
@@ -315,8 +318,9 @@ UNION ALL
 SELECT  '+'||rpad('-',c1,'-')||'+'||rpad('-',c2,'-')||'+'||rpad('-',c3,'-')||'+'||rpad('-',c4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',c7,'-')||'+'||rpad('-',c8,'-')||'+'||rpad('-',c9,'-')||'+'
 FROM    plan_width WHERE cnt>0
 UNION  ALL
+SELECT * FROM (
 SELECT  '|'||rpad(decode(to_char(plan_hash),(select phv from qry),'*',' ')||plan_hash,c1,' ')||'|'||lpad(execs,c2,' ')||'|'||rpad(secs,c3,' ')||'|'||lpad(aas,c4,' ')||'|'||lpad(cpu,4,' ')||'|'||lpad(io,4,' ')||'|'||lpad(cc,4,' ')||'|'||lpad(cl,4,' ')||'|'||lpad(app,4,' ')||'|'||lpad(oth,4,' ')||'|'||lpad(io_reqs,c7,' ')||'|'||lpad(io_bytes,c8,' ')||'|'||rpad(top_event,c9,' ')||'|'
-FROM    plan_agg,plan_width WHERE cnt>0
+FROM    plan_agg,plan_width WHERE cnt>0 order by 0+aas desc)
 UNION ALL
 SELECT  '+'||rpad('-',c1,'-')||'+'||rpad('-',c2,'-')||'+'||rpad('-',c3,'-')||'+'||rpad('-',c4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',c7,'-')||'+'||rpad('-',c8,'-')||'+'||rpad('-',c9,'-')||'+'
 FROM    plan_width WHERE cnt>0

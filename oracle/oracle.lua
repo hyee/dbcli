@@ -182,7 +182,15 @@ function oracle:connect(conn_str)
             EXECUTE IMMEDIATE 'alter session set nls_date_format=''yyyy-mm-dd hh24:mi:ss''';
             EXECUTE IMMEDIATE 'alter session set nls_timestamp_format=''yyyy-mm-dd hh24:mi:ssxff''';
             EXECUTE IMMEDIATE 'alter session set nls_timestamp_tz_format=''yyyy-mm-dd hh24:mi:ssxff TZH:TZM''';
-            EXECUTE IMMEDIATE 'alter session set statistics_level=all';
+            BEGIN
+                EXECUTE IMMEDIATE 'alter session set statistics_level=all';
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+
+            BEGIN
+                EXECUTE IMMEDIATE 'alter session set optimizer_ignore_hints=false';
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
 
             FOR r in(SELECT role p FROM SESSION_ROLES UNION ALL SELECT * FROM SESSION_PRIVS) LOOP
                 pv := pv||'/'||r.p;

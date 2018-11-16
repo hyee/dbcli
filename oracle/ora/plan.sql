@@ -163,7 +163,7 @@ qry AS
   WHERE  rownum<2),
 xplan AS
  (SELECT a.*
-  FROM   qry, TABLE(dbms_xplan.display_awr(sq, plan_hash, inst_id, format)) a
+  FROM   qry, TABLE(dbms_xplan.display( 'dba_hist_sql_plan',NULL,format,'dbid='||inst_id||' and plan_hash_value=' || plan_hash || ' and sql_id=''' || sq ||'''')) a
   WHERE  flag = 2
   UNION ALL
   SELECT a.*
