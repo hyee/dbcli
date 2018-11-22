@@ -78,7 +78,7 @@ ash_detail as (
             select h.*,
                    nvl(event,'ON CPU') ev,
                    nvl(wait_class,'ON CPU') wl,
-                   least(nvl(tm_delta_db_time,DELTA_TIME),DELTA_TIME) * 1e-6 costs,
+                   least(coalesce(tm_delta_db_time,DELTA_TIME,&unit*1e6),coalesce(tm_delta_time,DELTA_TIME,&unit*1e6),&unit*2e6) * 1e-6 costs,
                    sql_plan_hash_value||','||nvl(qc_session_id,session_id)||','||sql_exec_id||to_char(nvl(sql_exec_start,sample_time+0),'yyyymmddhh24miss') sql_exec
             from   &V9 h
             WHERE  sql_id=:V1 

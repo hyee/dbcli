@@ -5,8 +5,8 @@
 ]]*/
 col tmb,ALLOC_REQUESTS format tmb
 col block_size,kmg,availables,used format kmg
-grid {[[ /*grid={topic='Flash Cache'}*/
-    SELECT NAME &cell,SUM(VALUE) KMG,SUM(VALUE) TMB
+grid {[[ /*grid={topic='Columnar Cache'}*/
+    SELECT NAME &cell,SUM(VALUE) KMG,SUM(VALUE) TMB,round(100*sum(decode(grp,'ramcache',value))/nullif(sum(value),0),2) "RAM%"
     FROM   (SELECT (SELECT extractvalue(xmltype(c.confval), '/cli-output/context/@cell')
                     FROM   v$cell_config c
                     WHERE  c.CELLNAME = a.CELL_NAME
@@ -14,6 +14,7 @@ grid {[[ /*grid={topic='Flash Cache'}*/
                    b.*
             FROM   v$cell_state a,
                    xmltable('//stats[@type="columnarcache"]/stat' passing xmltype(a.statistics_value) columns --
+                            grp VARCHAR2(50) PATH './parent::stats/parent::stats/@type',
                             NAME VARCHAR2(50) path '@name',
                             VALUE NUMBER path '.') b
             WHERE  statistics_type = 'CELL')

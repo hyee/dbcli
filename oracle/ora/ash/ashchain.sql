@@ -33,7 +33,7 @@ var chose varchar2
 var filter2 number;
 
 declare
-    target varchar2(2000) := q'[select a.*,&tmodel tmodel,&INST1 inst,SESSION_ID||'@'||&INST1 SID,nullif(a.blocking_session|| &INST,'@') b_sid,sample_time+0 stime from ]'||:V8||' a where '||:range;
+    target varchar2(2000) := q'[select a.*,nvl(&tmodel,0) tmodel,&INST1 inst,SESSION_ID||'@'||&INST1 SID,nullif(a.blocking_session|| &INST,'@') b_sid,sample_time+0 stime from ]'||:V8||' a where '||:range;
     chose varchar2(2000) := '1';
 BEGIN
     :filter2 := 1;
@@ -54,7 +54,7 @@ BEGIN
         open :cur for
             WITH bclass AS (SELECT class, ROWNUM r from v$waitstat),
             ash_base as &target,
-            ash_data AS (SELECT /*+ordered swap_join_inputs(b) use_hash(a b u) SWAP_JOIN_INPUTS(u)  no_expand*/
+ash_data AS (SELECT /*+ordered swap_join_inputs(b) swap_join_inputs(c) swap_join_inputs(u)  use_hash(a b u c)  no_expand*/
                         a.*, 
                         nvl2(b.chose,0,1) is_root,
                         u.username,
@@ -64,17 +64,21 @@ BEGIN
                         ELSE
                             '('||REGEXP_REPLACE(REGEXP_SUBSTR(a.program, '[^@]+'), '\d', 'n')||')'
                         END || ' ' program2,
-                        NVL2(a.event,a.event||CASE WHEN p3text='class#'
-                                THEN ' ['||(SELECT nvl(max(class),'class# '||a.p3) FROM bclass WHERE r = a.p3)||']' ELSE null END,
-                            'ON CPU' ||CASE WHEN p3text='class#'
-                                THEN ' ['||(SELECT nvl(max(class),'class# '||a.p3) FROM bclass WHERE r = a.p3)||']'
-                                ELSE nvl2(a.p1text,' ['||trim(p1text||' '||p2text||' '||p3text)||']','') END)
-                        || ' ' event2,
+                        CASE WHEN a.session_state = 'WAITING' THEN a.event 
+                             WHEN bitand(tmodel, power(2,18)) > 0 THEN 'CPU: IM Query'
+                             WHEN bitand(tmodel, power(2,19)) > 0 THEN 'CPU: IM Populate'
+                             WHEN bitand(tmodel, power(2,20)) > 0 THEN 'CPU: IM Prepopulate'
+                             WHEN bitand(tmodel, power(2,21)) > 0 THEN 'CPU: IM Repopulate'
+                             WHEN bitand(tmodel, power(2,22)) > 0 THEN 'CPU: IM Trickle Repop'
+                        ELSE 'ON CPU' END ||
+                        CASE WHEN c.class IS NOT NULL THEN ' ['||c.class||']'
+                             WHEN a.event IS NULL AND tmodel<power(2,18) THEN nvl2(a.p1text,' ['||trim(p1text||' '||p2text||' '||p3text)||']','')
+                        END || ' ' event2,
                         replace(nvl2(p1text,p1text||' #'||case when p1>power(2,32) then to_char(p1,'0XXXXXXXXXXXXXXX') else ''||p1 end,'')
                             ||nvl2(p2text,'/'||p2text||' #'||case when p2>power(2,32) then to_char(p2,'0XXXXXXXXXXXXXXX') else ''||p2 end,'')
                             ||nvl2(p3text,'/'||p3text||' #'
                                 || case when p3>power(2,32) then to_char(p3,'0XXXXXXXXXXXXXXX') 
-                                        when p3text='class#' then (SELECT class FROM bclass WHERE r = a.p3) 
+                                        when c.class is not null then c.class
                                         else ''||p3 end,''),'# #',' #') p123,
                         trim(decode(bitand(tmodel,power(2, 3)),0,'','in_connection_mgmt ') || 
                             decode(bitand(tmodel,power(2, 4)),0,'','in_parse ') || 
@@ -97,8 +101,10 @@ BEGIN
               LEFT   JOIN (SELECT DISTINCT b_sid, stime, 0 chose 
                            FROM ash_base WHERE b_sid IS NOT NULL) b
               ON     (a.sid = b.b_sid AND a.stime = b.stime)
-              LEFT JOIN dba_users  u
+              LEFT JOIN dba_users  u 
               ON    (a.user_id = u.user_id)
+              LEFT JOIN bclass c
+              ON    (a.p3text='class#' and a.p3=c.r)
               WHERE  b.chose IS NOT NULL
               OR     a.b_sid IS NOT NULL),
             chains AS (
@@ -143,9 +149,15 @@ BEGIN
                         ELSE
                             '('||REGEXP_REPLACE(REGEXP_SUBSTR(a.program, '[^@]+'), '\d', 'n')||')'
                         END || ' ' program2,
-                        NVL(a.event,'ON CPU') ||
+                        CASE WHEN a.session_state = 'WAITING' THEN a.event 
+                             WHEN bitand(tmodel, power(2,18)) > 0 THEN 'CPU: IM Query'
+                             WHEN bitand(tmodel, power(2,19)) > 0 THEN 'CPU: IM Populate'
+                             WHEN bitand(tmodel, power(2,20)) > 0 THEN 'CPU: IM Prepopulate'
+                             WHEN bitand(tmodel, power(2,21)) > 0 THEN 'CPU: IM Repopulate'
+                             WHEN bitand(tmodel, power(2,22)) > 0 THEN 'CPU: IM Trickle Repop'
+                        ELSE 'ON CPU' END ||
                         CASE WHEN c.class IS NOT NULL THEN ' ['||c.class||']'
-                             WHEN a.event IS NULL THEN nvl2(a.p1text,' ['||trim(p1text||' '||p2text||' '||p3text)||']','')
+                             WHEN a.event IS NULL AND tmodel<power(2,18) THEN nvl2(a.p1text,' ['||trim(p1text||' '||p2text||' '||p3text)||']','')
                         END || ' ' event2,
                         replace(nvl2(p1text,p1text||' #'||case when p1>power(2,32) then to_char(p1,'0XXXXXXXXXXXXXXX') else ''||p1 end,'')
                             ||nvl2(p2text,'/'||p2text||' #'||case when p2>power(2,32) then to_char(p2,'0XXXXXXXXXXXXXXX') else ''||p2 end,'')

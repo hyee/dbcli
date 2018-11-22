@@ -999,7 +999,7 @@ function env.onload(...)
         env.set.init("Debug",'off',set_debug,"core","Indicates the option to print debug info, 'all' for always, 'off' for disable, others for specific modules.")
         env.set.init("OnErrExit",'on',nil,"core","Indicates whether to continue the remaining statements if error encountered.","on,off")
         env.set.init("TEMPPATH",'cache',set_cache_path,"core","Define the dir to store the temp files.","*")
-        local enabled=(env.PLATFORM=='windows' or env.platform=='conemu') and 'off' or 'on'
+        local enabled='off'
         env.set_title('status',enabled)
         env.set.init("Status",enabled,env.set_title,"core","Display the status bar","on,off")
         env.set.init("SPACES",4,env.set_space,"core","Define the prefix spaces of a line","0-8")

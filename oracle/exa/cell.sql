@@ -1,5 +1,6 @@
 /*[[cellcli list cell]]*/
 set printsize 3000 feed off
+col ramCacheMaxSize,ramCacheSize for kmg
 SELECT a.cellname, b.*
 FROM   v$cell_config a,
        XMLTABLE('/cli-output/cell' PASSING xmltype(a.confval) COLUMNS
@@ -9,6 +10,10 @@ FROM   v$cell_config a,
                 "status" VARCHAR2(300) path 'status',
                 "bbuStatus" VARCHAR2(300) path 'bbuStatus',
                 "cpuCount" VARCHAR2(300) path 'cpuCount',
+                "memoryGB" VARCHAR2(300) path 'memoryGB',
+                "ramCacheMode" VARCHAR2(300) path 'ramCacheMode',
+                "ramCacheMaxSize" int path 'ramCacheMaxSize',
+                "ramCacheSize" int path 'ramCacheSize',
                 "temperatureReading" VARCHAR2(300) path 'temperatureReading',
                 "diagHistoryDays" VARCHAR2(300) path 'diagHistoryDays',
                 "fanCount" VARCHAR2(300) path 'fanCount',
@@ -26,7 +31,6 @@ FROM   v$cell_config a,
                 "kernelVersion" VARCHAR2(300) path 'kernelVersion',
                 "locatorLEDStatus" VARCHAR2(300) path 'locatorLEDStatus',
                 "makeModel" VARCHAR2(300) path 'makeModel',
-                "memoryGB" VARCHAR2(300) path 'memoryGB',
                 "metricHistoryDays" VARCHAR2(300) path 'metricHistoryDays',
                 "notificationMethod" VARCHAR2(300) path 'notificationMethod',
                 "notificationPolicy" VARCHAR2(300) path 'notificationPolicy',
