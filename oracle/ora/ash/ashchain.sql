@@ -202,6 +202,7 @@ ash_data AS (SELECT /*+ordered swap_join_inputs(b) swap_join_inputs(c) swap_join
                        TRIM('>' FROM regexp_replace(SYS_CONNECT_BY_PATH(trim(&pname || event2), '>'), '(>.+?)\1+', '\1(+)',2)) p, 
                        &exec_id sql_exec,
                        connect_by_isleaf isleaf,
+                       CONNECT_BY_ISCYCLE iscycle,
                        CONNECT_BY_ROOT decode(:grp2,'sample_id',trim(&pname || event2),'sql_id',nvl(sql_id, program2),&grp2) root_sql,
                        trim(decode(:grp2,'sample_id',' ','sql_id',nvl(sql_id, program2),&grp2))  sq_id,
                        trim(&pname || event2) env,
@@ -234,12 +235,12 @@ ash_data AS (SELECT /*+ordered swap_join_inputs(b) swap_join_inputs(c) swap_join
                              b.is_found,
                              b.rnk,
                              greatest(length(sql_ids)-length(replace(sql_ids,'>')),length(p)-length(replace(p,'>'))) lvl,
-                             case when isleaf=1 and b_sid is not null then
-                                 case when b_sid like '%@'||inst then '>(Unknown)' else '>(Remote)' end
+                             case when iscycle=0 and isleaf=1 and b_sid is not null then
+                                       case when b_sid like '%@'||inst then '>(Unknown)' else '>(Remote)' end
                              end idle,
                              case when sql_ids like '%(+)' then '(+)' end plus1,
-                             case when p like '%(+)' then '(+)' end plus2,
-                             sum(&UNIT) over(partition by sql_ids,p,&group,case when isleaf=1 and b_sid is not null then 1 else 0 end) grp_count
+                             case when p like '%(+)' then '(+)' end|| decode(iscycle,1,'(C)') plus2,
+                             sum(&UNIT) over(partition by sql_ids,p,&group,case when  iscycle=0 and isleaf=1 and b_sid is not null then 1 else 0 end) grp_count
                       FROM   chains a,
                              (SELECT b.*, dense_rank() OVER(ORDER BY leaves DESC,paths) rnk
                               FROM   (SELECT r, MAX(sql_ids) || MAX(p) paths,max(is_found) is_found,COUNT(1) OVER(PARTITION BY MAX(sql_ids) || MAX(p)) leaves 
@@ -247,7 +248,7 @@ ash_data AS (SELECT /*+ordered swap_join_inputs(b) swap_join_inputs(c) swap_join
                                       GROUP BY r) b
                               WHERE is_found=1) b
                       WHERE  a.r = b.r
-                      AND    b.rnk <= 100)
+                      AND    b.rnk <= 100) --exclude the chains whose rank >
                   GROUP  BY root_sql, sql_ids, p,idle,lvl) A)
                WHERE rnk_<=10)
             SELECT DECODE(LEVEL, 1, to_char(pct,'fm990.99'), '|'||to_char(least(pct,99.99),'90.00'))||'%' "Pct",
