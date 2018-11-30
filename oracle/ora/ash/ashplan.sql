@@ -66,7 +66,7 @@ ordered_hierarchy_data AS
 qry AS
  (SELECT DISTINCT sql_id sq,
          flag flag,
-         'BASIC ROWS PARTITION PARALLEL PREDICATE NOTE &adaptive &fmt' format,
+         'BASIC ROWS PARTITION PARALLEL PREDICATE NOTE REMOTE &adaptive &fmt' format,
          plan_hash_value phv,
          coalesce(child_number, plan_hash_value,0) plan_hash,
          inst_id
@@ -92,6 +92,7 @@ ash_detail as (
                              (select name from v$latchname where latch#=p2 and rownum<2)
                         when p3text='class#' then
                              (select class from (SELECT class, ROWNUM r from v$waitstat) where r=p3)
+                        when current_obj#=0 then 'Undo'
                         --when p1text ='idn' then 'v$db_object_cache hash#'||p1
                         --when c.class is not null then c.class
                         else ''||greatest(current_obj#,-2)
@@ -105,7 +106,7 @@ ash_detail as (
                                    AND NVL(to_date(nvl(:V4,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE)) H) H) ,
 
 ash as(SELECT b.*,
-              CEIL(SUM(AAS) OVER(PARTITION BY SQL_PLAN_LINE_ID,&OBJ)) tenv
+              ROUND(SUM(AAS) OVER(PARTITION BY SQL_PLAN_LINE_ID,&OBJ)*100/SUM(AAS) OVER(PARTITION BY SQL_PLAN_LINE_ID),1) tenv
        FROM (select /*+no_expand no_merge(b) ordered use_hash(b)*/ b.*
              FROM   qry a,ash_detail b 
              WHERE  a.phv = nvl(nullif(b.sql_plan_hash_value,0),a.phv)
@@ -124,7 +125,7 @@ ash_base AS(
            ROUND(COUNT(DECODE(wl, 'Concurrency', 1)) * 100 / COUNT(1), 1) "CC",
            ROUND(COUNT(DECODE(wl, 'Application', 1)) * 100 / COUNT(1), 1) "APP",
            ROUND(COUNT(CASE WHEN wl NOT IN ('ON CPU','User I/O','System I/O','Cluster','Concurrency','Application') THEN 1 END) * 100 / COUNT(1), 1) oth,
-           MAX(&OBJ||'('||tenv||')') KEEP(dense_rank LAST ORDER BY tenv) top_event
+           MAX(&OBJ||'('||tenv||'%)') KEEP(dense_rank LAST ORDER BY tenv) top_event
     FROM   ash
     GROUP  BY nvl(SQL_PLAN_LINE_ID,0)),
 ash_agg AS
@@ -135,8 +136,8 @@ ash_agg AS
          nvl(trim(dbms_xplan.format_number(sum(io_reqs))),' ') io_reqs,
          nvl(trim(dbms_xplan.format_size(sum(io_bytes))),' ') io_bytes,
          to_char(SUM(aas0)) aas,
-         listagg(CASE WHEN r <= 7 AND c0 = 1 THEN id || '(' || aas || ')' END, ',') within GROUP(ORDER BY aas DESC) Plan_lines,
-         listagg(CASE WHEN r1 <= 5 AND c1 = 1 THEN SUBSTR(OBJ1, 1, 32) || '(' || aas1 || ')' END, ',') within GROUP(ORDER BY aas1 DESC,OBJ1 DESC) wait_objects
+         listagg(CASE WHEN r <= 7 AND c0 = 1 THEN id || '(' || aas || '%)' END, ',') within GROUP(ORDER BY aas DESC) Plan_lines,
+         listagg(CASE WHEN r1 <= 5 AND c1 = 1 THEN SUBSTR(OBJ1, 1, 32) || '(' || aas1 || '%)' END, ',') within GROUP(ORDER BY aas1 DESC,OBJ1 DESC) wait_objects
   FROM   (SELECT OBJ top_item,
                  OBJ1,
                  nvl(ID, 0) ID,
@@ -159,8 +160,8 @@ ash_agg AS
                          DELTA_INTERCONNECT_IO_BYTES io_bytes,
                          aas aas0,
                          COUNT(DISTINCT sql_exec) over(PARTITION BY &OBJ) execs,
-                         SUM(AAS) OVER(PARTITION BY &OBJ, SQL_PLAN_LINE_ID) aas,
-                         SUM(AAS) OVER(PARTITION BY &OBJ, &OBJ1) aas1
+                         ROUND(SUM(AAS) OVER(PARTITION BY &OBJ, SQL_PLAN_LINE_ID)*100/SUM(AAS) OVER(PARTITION BY &OBJ),1) aas,
+                         ROUND(SUM(AAS) OVER(PARTITION BY &OBJ, &OBJ1)*100/SUM(AAS) OVER(PARTITION BY &OBJ),1) aas1
                   FROM   ash a)
           GROUP  BY OBJ, ID, aas, OBJ1, aas1)
   GROUP  BY top_item
@@ -176,7 +177,6 @@ ash_width AS
          greatest(MAX(LENGTH(io_bytes)),8) c8,
          count(1) cnt
   FROM ash_agg),
-
 plan_agg as(
   SELECT /*+materialize*/ 
          SQL_PLAN_HASH_VALUE PLAN_HASH,
@@ -193,12 +193,12 @@ plan_agg as(
          nvl(trim(dbms_xplan.format_size(SUM(DELTA_INTERCONNECT_IO_BYTES))),' ') io_bytes,
          listagg(CASE WHEN r <= 4 AND c0 = 1 THEN item END, ' / ') within GROUP(ORDER BY tenv DESC) top_event
   FROM  ( SELECT  s.*,
-                  obj||'('||tenv||')' item,
+                  obj||'('||tenv||'%)' item,
                   row_number() OVER(PARTITION BY SQL_PLAN_HASH_VALUE,OBJ,tenv ORDER BY 1) c0,
                   dense_Rank() OVER(PARTITION BY SQL_PLAN_HASH_VALUE ORDER BY tenv DESC) r
           FROM  (
              SELECT s.*,&OBJ obj,
-                    CEIL(SUM(AAS) OVER(PARTITION BY SQL_PLAN_HASH_VALUE,&OBJ)) tenv
+                    ROUND(100*SUM(AAS) OVER(PARTITION BY SQL_PLAN_HASH_VALUE,&OBJ)/SUM(AAS) OVER(PARTITION BY SQL_PLAN_HASH_VALUE),1) tenv
              FROM   ash_detail s) s
         ) 
   GROUP  BY SQL_PLAN_HASH_VALUE
