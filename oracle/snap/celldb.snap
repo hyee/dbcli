@@ -167,7 +167,7 @@
                         SUM(DECODE(n, 'Small read bytes', v, 'Small write bytes', v)) smallio,
                         SUM(DECODE(n, 'Small read bytes', v, 'Large read bytes', v)) readio,
                         SUM(DECODE(n, 'Flash cache write bytes - populate columnar', v, 'Flash cache columnar read bytes eligible', v)) ccio,
-                        --SUM(DECODE(n, 'Smart IO bytes read from flash cache', v)) fcio,
+                        SUM(DECODE(n, 'Smart IO bytes read from flash cache', v)) fcio,
                         --SUM(DECODE(n, 'Smart IO filtered bytes sent back to database', v)) ofl_out,
                         --SUM(DECODE(n, 'Storage Index saved bytes', v)) SIsave,
                         --SUM(DECODE(n, 'Flash cache columnar read bytes saved', v)) ccsave,
@@ -191,8 +191,8 @@
                         --SUM(DECODE(n, 'columnar_cache_read_bytes', v, 'columnar_cache_write_bytes', v)) ccio,
                         MAX(DECODE(n, 'columnar_cache_saved_bytes', v)) ccsave,
                         MAX(DECODE(n, 'filter_cpu_passthru_output_size', v)) passthru,
-                        MAX(DECODE(n, 'total_bytes_saved_by_storage_index', v)) sisave,
-                        SUM(DECODE(n, 'flash_cache_read_bytes', v, 'flash_cache_write_bytes', v)) fcio
+                        MAX(DECODE(n, 'total_bytes_saved_by_storage_index', v)) sisave
+                        --,SUM(DECODE(n, 'flash_cache_read_bytes', v, 'flash_cache_write_bytes', v)) fcio
                 FROM   v$cell_state a,
                 xmltable('/predio_stats/stats[@type=("predicateio")]/stat[. >0]' passing 
                         xmltype(a.statistics_value) columns --

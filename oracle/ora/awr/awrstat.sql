@@ -10,7 +10,7 @@
 ]]*/
 
 ORA _sqlstat
-col ela,ELA(Avg),iowait,cpuwait,clwait,apwait format smhd2
+col ela,ELA(Avg),iowait,cpuwait,ccwait,clwait,apwait format smhd2
 Col buff,read,write,cellio,oflin,oflout format kmg
 
 select time,sql_id,plan_hash,

@@ -53,12 +53,12 @@
                group_by,ROUND(avg(cnt),2) "Active Sessions",SUM(SQLS) "&VER2" &VER5,sums RNK_
         FROM(
              SELECT A.*, SUM(CNT1) OVER(partition by group_by) sums,
-                     WIDTH_BUCKET(sample_time,min(sample_time) over(),max(sample_time) over(),least(1000,count(distinct sample_time) over())) bucket_id
+                     WIDTH_BUCKET(sample_time,min(sample_time) over(),max(sample_time) over(),1000) bucket_id
              FROM(
                  SELECT /*+no_expand*/
                         trunc(sample_time, 'MI') sample_time,
                         &GROUPS AS group_by,
-                        count(1)/ COUNT(DISTINCT sample_time + 0) cnt,
+                        count(1)*&UNIT/60 cnt,
                         &VER1 SQLS &VER4,
                         COUNT(1) CNT1
                  FROM   &ASH_NAME a
@@ -70,7 +70,7 @@
                  UNION ALL
                  select trunc(sample_time, 'MI') sample_time, 
                          wait_class,
-                         SUM(value/100)/COUNT(DISTINCT sample_time),
+                         SUM(value/100),
                          NULL &VER41,
                          count(1)
                   from (select a.*,end_time sample_time,

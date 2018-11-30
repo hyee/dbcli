@@ -5,8 +5,8 @@
     @adaptive : 12.1={adaptive} 11.1={}
     &V9  : ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
     &unit: ash={1}, dash={10}
-    &OBJ : default={ev}, O={CURRENT_OBJ#}
-    &OBJ1: default={CURRENT_OBJ#}, O={ev}
+    &OBJ : default={ev}, O={CURR_OBJ#}
+    &OBJ1: default={CURR_OBJ#}, O={ev}
     &Title: default={Event}, O={Obj#}
     &fmt: default={} f={} s={-rows -parallel}
     &simple: default={1} s={0}
@@ -15,7 +15,7 @@
 set feed off printsize 3000 pipequery off
 
 WITH sql_plan_data AS
- (SELECT *
+ (SELECT /*+materialize*/ *
   FROM   (SELECT a.*,
                  dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id desc) seq
           FROM   (SELECT id,
@@ -25,8 +25,9 @@ WITH sql_plan_data AS
                          TIMESTAMP       tm,
                          child_number,
                          sql_id,
-                         plan_hash_value,
-                         inst_id
+                         nvl(plan_hash_value,0) plan_hash_value,
+                         inst_id,
+                         object#,OBJECT_NAME
                   FROM   gv$sql_plan_statistics_all a
                   WHERE  a.sql_id = :V1
                   AND    a.plan_hash_value = case when nvl(lengthb(:V2),0) >6 then :V2+0 else plan_hash_value end
@@ -38,8 +39,9 @@ WITH sql_plan_data AS
                          TIMESTAMP,
                          NULL child_number,
                          sql_id,
-                         plan_hash_value,
-                         dbid
+                         nvl(plan_hash_value,0) plan_hash_value,
+                         dbid,
+                         object#,OBJECT_NAME
                   FROM   dba_hist_sql_plan a
                   WHERE  a.sql_id = :V1
                   AND    a.plan_hash_value = case 
@@ -57,7 +59,7 @@ hierarchy_data AS
 ordered_hierarchy_data AS
  (SELECT id,
          parent_id AS pid,
-         plan_hash_value AS phv,
+         nvl(plan_hash_value,0) AS phv,
          row_number() over(PARTITION BY plan_hash_value ORDER BY rownum DESC) AS OID,
          MAX(id) over(PARTITION BY plan_hash_value) AS maxid
   FROM   hierarchy_data),
@@ -66,7 +68,7 @@ qry AS
          flag flag,
          'BASIC ROWS PARTITION PARALLEL PREDICATE NOTE &adaptive &fmt' format,
          plan_hash_value phv,
-         NVL(child_number, plan_hash_value) plan_hash,
+         coalesce(child_number, plan_hash_value,0) plan_hash,
          inst_id
   FROM   sql_plan_data),
 
@@ -77,6 +79,23 @@ ash_detail as (
         FROM (
             select h.*,
                    nvl(event,'ON CPU') ev,
+                   case 
+                        when current_obj# > 0 then 
+                             nvl((select max(object_name) from sql_plan_data where object#=current_obj#),''||current_obj#) 
+                        when p3text='100*mode+namespace' and p3>power(2,32) then 
+                             nvl((select max(object_name) from sql_plan_data where object#=trunc(p3/power(2,32))),''||trunc(p3/power(2,32))) 
+                        when p3text like '%namespace' then 
+                             'x$kglst#'||trunc(mod(p3,power(2,32))/power(2,16))
+                        when p1text like 'cache id' then 
+                             (select parameter from v$rowcache where cache#=p1 and rownum<2)
+                        when event like 'latch%' and p2text='number' then 
+                             (select name from v$latchname where latch#=p2 and rownum<2)
+                        when p3text='class#' then
+                             (select class from (SELECT class, ROWNUM r from v$waitstat) where r=p3)
+                        --when p1text ='idn' then 'v$db_object_cache hash#'||p1
+                        --when c.class is not null then c.class
+                        else ''||greatest(current_obj#,-2)
+                    end curr_obj#,
                    nvl(wait_class,'ON CPU') wl,
                    least(coalesce(tm_delta_db_time,DELTA_TIME,&unit*1e6),coalesce(tm_delta_time,DELTA_TIME,&unit*1e6),&unit*2e6) * 1e-6 costs,
                    sql_plan_hash_value||','||nvl(qc_session_id,session_id)||','||sql_exec_id||to_char(nvl(sql_exec_start,sample_time+0),'yyyymmddhh24miss') sql_exec
@@ -88,7 +107,8 @@ ash_detail as (
 ash as(SELECT b.*,
               CEIL(SUM(AAS) OVER(PARTITION BY SQL_PLAN_LINE_ID,&OBJ)) tenv
        FROM (select /*+no_expand no_merge(b) ordered use_hash(b)*/ b.*
-             FROM   qry a JOIN ash_detail b ON  a.phv = b.sql_plan_hash_value
+             FROM   qry a,ash_detail b 
+             WHERE  a.phv = nvl(nullif(b.sql_plan_hash_value,0),a.phv)
              AND    (:V2 is null or nvl(lengthb(:V2),0) >6 or not regexp_like(:V2,'^\d+$') or :V2+0 in(QC_SESSION_ID,SESSION_ID))
        ) b),
 
@@ -132,7 +152,7 @@ ash_agg AS
                  dense_Rank() OVER(PARTITION BY OBJ ORDER BY aas DESC,ID) r,
                  dense_Rank() OVER(PARTITION BY OBJ ORDER BY aas1 DESC,OBJ1 DESC) r1
           FROM   (SELECT secs,
-                         SQL_PLAN_LINE_ID ID,
+                         nvl(SQL_PLAN_LINE_ID,0) ID,
                          &OBJ obj,
                          &OBJ1 obj1,
                          DELTA_READ_IO_REQUESTS+DELTA_WRITE_IO_REQUESTS io_reqs,
@@ -234,7 +254,7 @@ xplan_data AS
   FROM   (SELECT DISTINCT phv FROM ordered_hierarchy_data) p
   CROSS  JOIN xplan x
   LEFT JOIN ash_data o
-  ON     (o.phv = p.phv AND o.id = CASE WHEN regexp_like(x.plan_table_output, '^\|[-\* ]*[0-9]+ \|') THEN to_number(regexp_substr(x.plan_table_output, '[0-9]+')) END)),
+  ON     (nvl(nullif(o.phv,0),p.phv) = p.phv AND o.id = to_number(regexp_substr(x.plan_table_output, '^\|[-\* ]*([0-9]+) \|',1,1,'i',1)))),
 plan_output AS (
     SELECT plan_table_output OUTPUT
     FROM   xplan_data --

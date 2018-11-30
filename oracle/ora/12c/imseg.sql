@@ -117,8 +117,8 @@ DECLARE
     own   VARCHAR2(128) := :object_owner;
     oname VARCHAR2(128) := :object_name;
     sub   VARCHAR2(128) := :object_subname; 
-    dids  SYS.ODCIOBJECTLIST;
-    cols  SYS.ODCICOLINFOLIST;
+    dids  SYS.ODCISECOBJTABLE;
+    cols  SYS.ODCICOLINFOLIST2;
     oid   INT := :object_id;
     cid   INT;
     res   XMLTYPE;
@@ -146,7 +146,7 @@ BEGIN
         ORDER  BY LAST_MODIFIED DESC;
     $END
 
-    SELECT SYS.ODCIOBJECT(DATA_OBJECT_ID,SUBOBJECT_NAME)
+    SELECT SYS.ODCISECOBJ(null,null,DATA_OBJECT_ID,SUBOBJECT_NAME)
     BULK   COLLECT INTO dids
     FROM   &check_access_obj.objects a
     WHERE  object_name = oname
@@ -192,22 +192,22 @@ BEGIN
                                                          dbms_utility.data_block_address_block(edba+1),
                                                          1) end_rowid                        
                           FROM   (SELECT /*+ordered use_hash(h)*/
-                                         o.OBJECTNAME part,
+                                         o.OBJNAME part,
                                          h.*, to_number(IMCU_ADDR, lpad('X', 16, 'X')) addr
                                   FROM   table(dids) o,V$IM_HEADER h
-                                  WHERE  h.objd=o.OBJECTSCHEMA+0
+                                  WHERE  h.objd=o.OBJSCHEMA+0
                                   AND    IS_HEAD_PIECE > 0) h0,
                                  (SELECT /*+ordered use_hash(m)*/
                                          DATAOBJ,m.IMCU_ADDR,
                                          MIN(start_dba) sdba,
                                          MAX(end_dba) edba
                                   FROM   table(dids) o,v$im_tbs_ext_map m
-                                  WHERE  o.OBJECTSCHEMA+0 = m.dataobj
+                                  WHERE  o.OBJSCHEMA+0 = m.dataobj
                                   GROUP  BY DATAOBJ,IMCU_ADDR) m,
                                  (SELECT /*+ordered use_hash(h1)*/ 
                                          DISTINCT *
                                   FROM   table(dids) o,V$IM_SMU_HEAD h1
-                                  WHERE  o.OBJECTSCHEMA+0 = h1.objd) h1
+                                  WHERE  o.OBJSCHEMA+0 = h1.objd) h1
                          WHERE h0.objd=m.dataobj
                          AND   h0.addr=m.IMCU_ADDR
                          AND   m.dataobj=h1.objd
@@ -252,7 +252,8 @@ BEGIN
         WHERE  owner = own
         AND    table_name = oname
         AND    column_name in(select distinct column_name from gv$im_column_level b where a.owner=b.owner and a.table_name=b.table_name and INMEMORY_COMPRESSION!='NO INMEMORY')
-        AND    (cname ='*' OR upper(column_name) = cname);
+        AND    (cname ='*' OR upper(column_name) = cname)
+        AND    rownum<=1000;
         
         IF cols.count = 0 THEN
             raise_application_error(-20001,'The table or column is not in-memory, or the data has not been populated!');
@@ -373,22 +374,22 @@ BEGIN
                                                   lpad(TO_NUMBER(SUBSTR(MAXIMUM_VALUE, 13, 2), 'XX')-1,2,0)
                                           ,  ''||MAXIMUM_VALUE) max_v
                               FROM   (SELECT /*+ordered use_hash(h)*/
-                                             o.OBJECTNAME part,
+                                             o.OBJNAME part,
                                              h.*, to_number(IMCU_ADDR, lpad('X', 16, 'X')) addr
                                       FROM   table(dids) o,V$IM_HEADER h
-                                      WHERE  h.objd=o.OBJECTSCHEMA+0
+                                      WHERE  h.objd=o.OBJSCHEMA+0
                                       AND    IS_HEAD_PIECE > 0) h0,
                                      (SELECT /*+ordered use_hash(m)*/
                                              DATAOBJ,m.IMCU_ADDR,
                                              MIN(start_dba) sdba,
                                              MAX(end_dba) edba
                                       FROM   table(dids) o,v$im_tbs_ext_map m
-                                      WHERE  o.OBJECTSCHEMA+0 = m.dataobj
+                                      WHERE  o.OBJSCHEMA+0 = m.dataobj
                                       GROUP  BY DATAOBJ,IMCU_ADDR) m,
                                      (SELECT /*+ordered use_hash(h1)*/ 
                                              DISTINCT *
                                       FROM   table(dids) o,V$IM_SMU_HEAD h1
-                                      WHERE  o.OBJECTSCHEMA+0 = h1.objd) h1,
+                                      WHERE  o.OBJSCHEMA+0 = h1.objd) h1,
                                       v$im_col_cu cu,
                                       table(cols) cs
                              WHERE h0.objd=m.dataobj

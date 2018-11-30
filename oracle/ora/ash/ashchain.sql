@@ -16,6 +16,7 @@ This script references Tanel Poder's script
         &INST1 : default={inst_id}, dash={instance_number}
         &OBJ   : default={dba_objects}, dash={(select obj# object_id,object_name from dba_hist_seg_stat_obj)}
         @tmodel: 11.2={time_model} default={to_number(null)}
+        @opname: 11.2={SQL_OPname,TOP_LEVEL_CALL_NAME} default={null}
         @CHECK_ACCESS_OBJ  : dba_objects={&obj}, default={all_objects}
         @INST: 11.2={'@'|| a.BLOCKING_INST_ID}, default={'@'||a.&inst1}
         @secs: 11.2={round(sum(least(delta_time,nvl(tm_delta_db_time,delta_time)))*1e-6,2) db_time,} default={&unit,}
@@ -54,11 +55,20 @@ BEGIN
         open :cur for
             WITH bclass AS (SELECT class, ROWNUM r from v$waitstat),
             ash_base as &target,
-ash_data AS (SELECT /*+ordered swap_join_inputs(b) swap_join_inputs(c) swap_join_inputs(u)  use_hash(a b u c)  no_expand*/
+            ash_data AS (SELECT /*+ordered swap_join_inputs(b) swap_join_inputs(c) swap_join_inputs(u)  use_hash(a b u c)  no_expand*/
                         a.*, 
                         nvl2(b.chose,0,1) is_root,
                         u.username,
-                        greatest(current_obj#,-2) curr_obj#,
+                        case 
+                            when current_obj# > 0 then ''||current_obj# 
+                            when p3text='100*mode+namespace' and p3>power(2,32) then ''||trunc(p3/power(2,32))
+                            when p3text like '%namespace' then 'x$kglst#'||trunc(mod(p3,power(2,32))/power(2,16))
+                            when p1text like 'cache id' then (select max(parameter) from v$rowcache where cache#=p1)
+                            when p1text ='idn' then 'v$db_object_cache hash#'||p1
+                            when a.event like 'latch%' and p2text='number' then (select max(name) from v$latchname where latch#=p2)
+                            when c.class is not null then c.class
+                            else ''||greatest(current_obj#,-2)
+                        end curr_obj#,
                         CASE WHEN a.session_type = 'BACKGROUND' OR REGEXP_LIKE(a.program, '.*\([PJ]\d+\)') THEN
                             regexp_replace(REGEXP_REPLACE(regexp_substr(a.program,'\([^\(]+\)'), '\d\w\w', 'nnn'),'\d','n')
                         ELSE
@@ -80,7 +90,7 @@ ash_data AS (SELECT /*+ordered swap_join_inputs(b) swap_join_inputs(c) swap_join
                                 || case when p3>power(2,32) then to_char(p3,'0XXXXXXXXXXXXXXX') 
                                         when c.class is not null then c.class
                                         else ''||p3 end,''),'# #',' #') p123,
-                        trim(decode(bitand(tmodel,power(2, 3)),0,'','in_connection_mgmt ') || 
+                        coalesce(trim(decode(bitand(tmodel,power(2, 3)),0,'','in_connection_mgmt ') || 
                             decode(bitand(tmodel,power(2, 4)),0,'','in_parse ') || 
                             decode(bitand(tmodel,power(2, 7)),0,'','in_hard_parse ') || 
                             decode(bitand(tmodel,power(2,10)),0,'','in_sql_execution ') || 
@@ -96,7 +106,7 @@ ash_data AS (SELECT /*+ordered swap_join_inputs(b) swap_join_inputs(c) swap_join
                             decode(bitand(tmodel,power(2,20)),0,'','in_inmemory_prepopulate ') || 
                             decode(bitand(tmodel,power(2,21)),0,'','in_inmemory_repopulate ') || 
                             decode(bitand(tmodel,power(2,22)),0,'','in_inmemory_trepopulate ') || 
-                            decode(bitand(tmodel,power(2,23)),0,'','in_tablespace_encryption ')) phase
+                            decode(bitand(tmodel,power(2,23)),0,'','in_tablespace_encryption ')),&opname) phase
               FROM   ash_base a
               LEFT   JOIN (SELECT DISTINCT b_sid, stime, 0 chose 
                            FROM ash_base WHERE b_sid IS NOT NULL) b
@@ -143,7 +153,16 @@ ash_data AS (SELECT /*+ordered swap_join_inputs(b) swap_join_inputs(c) swap_join
                         a.*, 
                         nvl2(b.chose,0,1) is_root,
                         u.username,
-                        greatest(current_obj#,-2) curr_obj#,
+                        case 
+                            when current_obj# > 0 then ''||current_obj# 
+                            when p3text='100*mode+namespace' and p3>power(2,32) then ''||trunc(p3/power(2,32))
+                            when p3text like '%namespace' then 'x$kglst#'||trunc(mod(p3,power(2,32))/power(2,16))
+                            when p1text like 'cache id' then (select max(parameter) from v$rowcache where cache#=p1)
+                            when p1text ='idn' then 'v$db_object_cache hash#'||p1
+                            when a.event like 'latch%' and p2text='number' then (select max(name) from v$latchname where latch#=p2)
+                            when c.class is not null then c.class
+                            else ''||greatest(current_obj#,-2)
+                        end curr_obj#,
                         CASE WHEN a.session_type = 'BACKGROUND' OR REGEXP_LIKE(a.program, '.*\([PJ]\d+\)') THEN
                             regexp_replace(REGEXP_REPLACE(regexp_substr(a.program,'\([^\(]+\)'), '\d\w\w', 'nnn'),'\d','n')
                         ELSE
@@ -165,7 +184,7 @@ ash_data AS (SELECT /*+ordered swap_join_inputs(b) swap_join_inputs(c) swap_join
                                 || case when p3>power(2,32) then to_char(p3,'0XXXXXXXXXXXXXXX') 
                                         when c.class is not null then c.class
                                         else ''||p3 end,''),'# #',' #') p123,
-                        trim(decode(bitand(tmodel,power(2, 3)),0,'','in_connection_mgmt ') || 
+                        coalesce(trim(decode(bitand(tmodel,power(2, 3)),0,'','in_connection_mgmt ') || 
                             decode(bitand(tmodel,power(2, 4)),0,'','in_parse ') || 
                             decode(bitand(tmodel,power(2, 7)),0,'','in_hard_parse ') || 
                             decode(bitand(tmodel,power(2,10)),0,'','in_sql_execution ') || 
@@ -181,7 +200,7 @@ ash_data AS (SELECT /*+ordered swap_join_inputs(b) swap_join_inputs(c) swap_join
                             decode(bitand(tmodel,power(2,20)),0,'','in_inmemory_prepopulate ') || 
                             decode(bitand(tmodel,power(2,21)),0,'','in_inmemory_repopulate ') || 
                             decode(bitand(tmodel,power(2,22)),0,'','in_inmemory_trepopulate ') || 
-                            decode(bitand(tmodel,power(2,23)),0,'','in_tablespace_encryption ')) phase
+                            decode(bitand(tmodel,power(2,23)),0,'','in_tablespace_encryption ')),&opname) phase
               FROM   ash_base a
               LEFT   JOIN (SELECT DISTINCT b_sid, stime, 0 chose 
                            FROM ash_base WHERE b_sid IS NOT NULL) b
@@ -219,7 +238,7 @@ ash_data AS (SELECT /*+ordered swap_join_inputs(b) swap_join_inputs(c) swap_join
                  FROM (
                   SELECT /*+leading(b a)*/
                          sum(count(1)) over(partition by root_sql) rnk,
-                         max(nvl2(&group,&group||' ('||grp_count||')','')) keep(dense_Rank last order by grp_count) &group,
+                         max(nvl2(&group,' ('||grp_count||') '||&group,'')) keep(dense_Rank last order by grp_count) &group,
                          root_sql,
                          sql_ids,
                          trim(p)||idle p,

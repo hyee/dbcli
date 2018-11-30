@@ -52,7 +52,7 @@ WHERE  conftype = 'CELL'
 ORDER BY 2;
 
 col "Disk Group|Total Size,total_size,Disk Group|Free Size,cached|size,Grid|Size,Disk|Size,Usable|Size,HD_SIZE,FD_SIZE,flash_cache,flash_log" format kmg
-col flashcache,flashlog,FC_ALLOC,ALLOC_OLTP,ALLOC_OLTP_KEEP,alloc_dirty_keep,ALLOC_dirty,USED,OLTP,KEEP,OLTP_KEEP,FCC,FCC_KEEP format kmg
+col unalloc,flashcache,flashlog,Alloc|RAM,RAM|OLTP,Alloc|FCache,Alloc|OLTP,Alloc|Dirty,FCache|Used,Used|OLTP,Used|FCC,FCache|Keep,Keep|OLTP,Keep|FCC format kmg
 grid {[[
     SELECT NVL(CELL,'--TOTAL--') cell,
            SUM(decode("flashCacheStatus",'normal',"FlashCache")) "FlashCache",
@@ -92,10 +92,10 @@ grid {[[
                 nvl(cellhash,0) cellhash,
                 SUM(DECODE(disktype, 'HardDisk', 1,0)) HD,
                 SUM(DECODE(disktype, 'HardDisk', 0,1))  FD,
-                SUM(siz) total_size,
-                SUM(freeSpace) free_size,
                 SUM(DECODE(disktype, 'HardDisk', siz)) HD_SIZE,
                 SUM(DECODE(disktype, 'FlashDisk', siz)) FD_SIZE,
+                SUM(siz) total_size,
+                SUM(freeSpace) unalloc,
                 '|' "|"
         FROM   (SELECT  CELLNAME,CELLHASH,
                         b.*
@@ -114,17 +114,18 @@ grid {[[
                 group by metric_name,rollup(cell_hash)
                 ) PIVOT (
                 MAX(v) FOR n IN(
-                'Flash cache bytes allocated' AS fc_alloc,
-                'Flash cache bytes allocated for OLTP data' AS alloc_oltp,
-                'Flash cache bytes allocated for OLTP keep objects' AS alloc_oltp_keep,
-                'Flash cache bytes allocated for unflushed data' AS alloc_dirty,
-                'Flash cache bytes allocated for unflushed keep objects' AS alloc_dirty_keep,
-                'Flash cache bytes used' AS used,
-                'Flash cache bytes used for OLTP data' AS oltp,
-                'Flash cache bytes used - keep objects' AS keep,
-                'Flash cache bytes allocated for OLTP keep objects' AS oltp_keep,
-                'Flash cache bytes used - columnar' AS fcc,
-                'Flash cache bytes used - columnar keep' AS fcc_keep))) b 
+                'Flash cache bytes allocated' AS "Alloc|FCache",
+                'Flash cache bytes allocated for OLTP data' AS "Alloc|OLTP",
+                'Flash cache bytes allocated for unflushed data' AS "Alloc|Dirty",
+                'Flash cache bytes used' AS "FCache|Used",
+                'Flash cache bytes used for OLTP data' AS "Used|OLTP",
+                'Flash cache bytes used - columnar' AS "Used|FCC",
+                'Flash cache bytes used - keep objects' AS "FCache|Keep",
+                'Flash cache bytes allocated for OLTP keep objects' AS  "Keep|OLTP",
+                'Flash cache bytes used - columnar keep' AS "Keep|FCC",
+                '|' as "|",
+                'RAM cache bytes allocated' as "Alloc|RAM",
+                'RAM cache bytes allocated for OLTP data' as "RAM|OLTP"))) b 
         USING(cellhash)
 ]],'-',[[
         WITH grid AS(
