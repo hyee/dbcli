@@ -157,7 +157,7 @@ function oracle:connect(conn_str)
         sqlplustr=string.format("%s/%s@%s%s",args.user,pwd,args.url:match("@(.*)$"),args.internal_logon and " as "..args.internal_logon or "")
     end
     
-    local prompt=(args.jdbc_alias or url)
+    local prompt=args.jdbc_alias or url:gsub('.*@','')
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
     env.set_title("")
     local data_source=java.new('oracle.jdbc.pool.OracleDataSource')
@@ -252,7 +252,6 @@ function oracle:connect(conn_str)
         end
         privs[self.props.db_user]=true
         self.props.privs=privs
-
         if prompt=="" or not prompt or prompt:find('[:/%(%)]') then prompt=self.props.service_name end
         prompt=prompt:match('([^%.]+)')
         self.conn_str=self.conn_str:gsub('(:%d+)([:/]+)([%w%.$#]+)',function(port,sep,sid)
