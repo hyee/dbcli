@@ -13,7 +13,7 @@ FROM   (SELECT /*+use_hash(b a) leading(b) no_expand*/
                nvl(cell, '-ALL-') cell,
                to_char(MAX(end_time),'HH24:MI:SS') timestamp,
                nvl(disk_type, '-ALL-') disk_type,
-               disk_name,
+               cast(disk_name as varchar2(30)) disk_name,
                NAME,
                round(CASE
                    WHEN NAME LIKE 'Avg%' or name like '%Average%' THEN

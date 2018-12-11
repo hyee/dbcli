@@ -1,60 +1,60 @@
 /*[[cellcli list cell]]*/
 set printsize 3000 feed off
 col ramCacheMaxSize,ramCacheSize for kmg
-SELECT a.cellname, b.*
+SELECT b.*
 FROM   v$cell_config a,
        XMLTABLE('/cli-output/cell' PASSING xmltype(a.confval) COLUMNS
-                "name" VARCHAR2(300) path 'name',
-                "upTime" VARCHAR2(300) path 'upTime',
-                "accessLevelPerm" VARCHAR2(300) path 'accessLevelPerm',
-                "status" VARCHAR2(300) path 'status',
-                "bbuStatus" VARCHAR2(300) path 'bbuStatus',
-                "cpuCount" VARCHAR2(300) path 'cpuCount',
-                "memoryGB" VARCHAR2(300) path 'memoryGB',
-                "ramCacheMode" VARCHAR2(300) path 'ramCacheMode',
-                "ramCacheMaxSize" int path 'ramCacheMaxSize',
-                "ramCacheSize" int path 'ramCacheSize',
-                "temperatureReading" VARCHAR2(300) path 'temperatureReading',
-                "diagHistoryDays" VARCHAR2(300) path 'diagHistoryDays',
-                "fanCount" VARCHAR2(300) path 'fanCount',
-                "fanStatus" VARCHAR2(300) path 'fanStatus',
-                "flashCacheMode" VARCHAR2(300) path 'flashCacheMode',
-                "flashCacheCompress" VARCHAR2(300) path 'flashCacheCompress',
-                "id" VARCHAR2(300) path 'id',
-                "cellVersion" VARCHAR2(300) path 'cellVersion',
-                "interconnectCount" VARCHAR2(300) path 'interconnectCount',
-                "interconnect1" VARCHAR2(300) path 'interconnect1',
-                "interconnect2" VARCHAR2(300) path 'interconnect2',
-                "iormBoost" VARCHAR2(300) path 'iormBoost',
-                "ipaddress1" VARCHAR2(300) path 'ipaddress1',
-                "ipaddress2" VARCHAR2(300) path 'ipaddress2',
-                "kernelVersion" VARCHAR2(300) path 'kernelVersion',
-                "locatorLEDStatus" VARCHAR2(300) path 'locatorLEDStatus',
-                "makeModel" VARCHAR2(300) path 'makeModel',
-                "metricHistoryDays" VARCHAR2(300) path 'metricHistoryDays',
-                "notificationMethod" VARCHAR2(300) path 'notificationMethod',
-                "notificationPolicy" VARCHAR2(300) path 'notificationPolicy',
-                "smtpPort" VARCHAR2(300) path 'smtpPort',
-                "smtpServer" VARCHAR2(300) path 'smtpServer',
-                "smtpToAddr" VARCHAR2(300) path 'smtpToAddr',
-                "smtpUseSSL" VARCHAR2(300) path 'smtpUseSSL',
-                "offloadGroupEvents" VARCHAR2(300) path 'offloadGroupEvents',
-                "powerCount" VARCHAR2(300) path 'powerCount',
-                "powerStatus" VARCHAR2(300) path 'powerStatus',
-                "releaseImageStatus" VARCHAR2(300) path 'releaseImageStatus',
-                "releaseVersion" VARCHAR2(300) path 'releaseVersion',
-                "rpmVersion" VARCHAR2(300) path 'rpmVersion',
-                "releaseTrackingBug" VARCHAR2(300) path 'releaseTrackingBug',
-                "rollbackVersion" VARCHAR2(300) path 'rollbackVersion',
-                "temperatureStatus" VARCHAR2(300) path 'temperatureStatus',
-                "usbStatus" VARCHAR2(300) path 'usbStatus') b
+                cell VARCHAR2(20) path 'name',
+                "upTime" VARCHAR2(15) path 'upTime',
+                "accessLevelPerm" VARCHAR2(20) path 'accessLevelPerm',
+                "status" VARCHAR2(15) path 'status',
+                "bbuStatus" VARCHAR2(15) path 'bbuStatus',
+                "cpuCount" VARCHAR2(8) path 'cpuCount',
+                "memoryGB" VARCHAR2(8) path 'memoryGB',
+                "ramCacheMode" VARCHAR2(4) path 'ramCacheMode',
+                "ramCacheMaxSize" NUMBER(15) path 'ramCacheMaxSize',
+                "ramCacheSize" NUMBER(15) path 'ramCacheSize',
+                "temperatureReading" NUMBER(3) path 'temperatureReading',
+                "diagHistoryDays" NUMBER(5) path 'diagHistoryDays',
+                "fanCount" VARCHAR2(5) path 'fanCount',
+                "fanStatus" VARCHAR2(15) path 'fanStatus',
+                "flashCacheMode" VARCHAR2(12) path 'flashCacheMode',
+                --"flashCacheCompress" VARCHAR2(300) path 'flashCacheCompress',
+                "id" VARCHAR2(15) path 'id',
+                "cellVersion" VARCHAR2(40) path 'cellVersion',
+                "interconnectCount" number(2) path 'interconnectCount',
+                "interconnect1" VARCHAR2(10) path 'interconnect1',
+                "interconnect2" VARCHAR2(10) path 'interconnect2',
+                "iormBoost" VARCHAR2(10) path 'iormBoost',
+                "ipaddress1" VARCHAR2(20) path 'ipaddress1',
+                "ipaddress2" VARCHAR2(20) path 'ipaddress2',
+                "kernelVersion" VARCHAR2(30) path 'kernelVersion',
+                "locatorLEDStatus" VARCHAR2(8) path 'locatorLEDStatus',
+                "makeModel" VARCHAR2(60) path 'makeModel',
+                "metricHistoryDays" NUMBER(5) path 'metricHistoryDays',
+                "notificationMethod" VARCHAR2(10) path 'notificationMethod',
+                "notificationPolicy" VARCHAR2(25) path 'notificationPolicy',
+                "smtpPort" NUMBER(5) path 'smtpPort',
+                "smtpServer" VARCHAR2(30) path 'smtpServer',
+                "smtpToAddr" VARCHAR2(100) path 'smtpToAddr',
+                "smtpUseSSL" VARCHAR2(5) path 'smtpUseSSL',
+                "offloadGroupEvents" VARCHAR2(20) path 'offloadGroupEvents',
+                "powerCount" VARCHAR2(9) path 'powerCount',
+                "powerStatus" VARCHAR2(15) path 'powerStatus',
+                "releaseImageStatus" VARCHAR2(15) path 'releaseImageStatus',
+                "releaseVersion" VARCHAR2(25) path 'releaseVersion',
+                "rpmVersion" VARCHAR2(50) path 'rpmVersion',
+                "releaseTrackingBug" number(15) path 'releaseTrackingBug',
+                "rollbackVersion" VARCHAR2(30) path 'rollbackVersion',
+                "temperatureStatus" VARCHAR2(15) path 'temperatureStatus',
+                "usbStatus" VARCHAR2(15) path 'usbStatus') b
 WHERE  conftype = 'CELL'
-ORDER BY 2;
+ORDER BY 1;
 
 col "Disk Group|Total Size,total_size,Disk Group|Free Size,cached|size,Grid|Size,Disk|Size,Usable|Size,HD_SIZE,FD_SIZE,flash_cache,flash_log" format kmg
 col unalloc,flashcache,flashlog,Alloc|RAM,RAM|OLTP,Alloc|FCache,Alloc|OLTP,Alloc|Dirty,FCache|Used,Used|OLTP,Used|FCC,FCache|Keep,Keep|OLTP,Keep|FCC format kmg
 grid {[[
-    SELECT NVL(CELL,'--TOTAL--') cell,
+    SELECT CAST(NVL(CELL,'--TOTAL--') AS VARCHAR2(20)) cell,
            SUM(decode("flashCacheStatus",'normal',"FlashCache")) "FlashCache",
            SUM(decode("flashCacheStatus",'normal',"FlashLog")) "FlashLog",
            SUM("CellDisks") "CellDisks",
@@ -69,8 +69,8 @@ grid {[[
            SUM("dwhFDQL") "FDdwhQL",
            SUM("oltpHDQL") "HDoltpQL",
            SUM("oltpFDQL") "FDoltpQL",
-           MAX("hardDiskType") "hardDiskType",
-           MAX("flashDiskType") "flashDiskType"
+           CAST(MAX("hardDiskType") AS VARCHAR2(10)) "hardDiskType",
+           CAST(MAX("flashDiskType") AS VARCHAR2(10)) "flashDiskType"
     FROM   (SELECT extractvalue(xmltype(a.confval), '/cli-output/context/@cell') cell, b.*
             FROM   v$cell_config_info a,
                    XMLTABLE('/cli-output/not-set' PASSING xmltype(a.confval) COLUMNS --
@@ -107,12 +107,13 @@ grid {[[
                             freeSpace INT path 'freeSpace') b
                 WHERE  conftype = 'CELLDISKS') a
         GROUP  BY rollup((cellname,CELLHASH))) 
-        RIGHT JOIN (SELECT * FROM (
+        RIGHT JOIN (
+            SELECT * FROM (
                 SELECT nvl(cell_hash,0) cellhash,metric_name n, sum(metric_value) v 
                 FROM  v$cell_global 
                 WHERE metric_name LIKE '%alloc%' OR metric_name LIKE '%use%' 
                 group by metric_name,rollup(cell_hash)
-                ) PIVOT (
+            ) PIVOT (
                 MAX(v) FOR n IN(
                 'Flash cache bytes allocated' AS "Alloc|FCache",
                 'Flash cache bytes allocated for OLTP data' AS "Alloc|OLTP",

@@ -105,7 +105,6 @@ function awr.extract_period()
                        max(st) st,max(ed) ed,
                        max((select nvl(max(end_interval_time+0),s) from Dba_Hist_Snapshot WHERE snap_id=st AND dbid=a.dbid)) stim,
                        max((select nvl(max(end_interval_time+0),e) from Dba_Hist_Snapshot WHERE snap_id=ed AND dbid=a.dbid)) etim
-                
                 FROM   (SELECT dbid,
                                nvl(MAX(decode(sign(end_interval_time-3e-4-s),1,null,snap_id)),min(snap_id)) st,
                                nvl(min(decode(sign(end_interval_time+3e-4-e),-1,null,snap_id)),max(snap_id)) ed

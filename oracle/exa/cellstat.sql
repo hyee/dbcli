@@ -48,7 +48,7 @@ SELECT * FROM(
                                    XMLTABLE('stat' PASSING c.n 
                                     COLUMNS NAME VARCHAR2(128) PATH '@name',
                                             VALUE VARCHAR2(128) PATH '.') b
-                            WHERE  statistics_type NOT IN ('SENDPORT', 'THREAD', 'LOCK', 'IOREASON', 'CAPABILITY', 'RCVPORT','DBDES')
+                            WHERE  statistics_type NOT IN ('PHASESTAT','SENDPORT', 'THREAD', 'LOCK', 'IOREASON', 'CAPABILITY', 'RCVPORT','DBDES')
                             AND    regexp_like(fvalue, '^\d*$')
                             AND    regexp_like(VALUE, '^[1-9]\d*$'))
                     WHERE  timer.stime IS NOT NULL

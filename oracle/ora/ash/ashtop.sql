@@ -17,9 +17,9 @@
       &BASE: ash={1}, dash={10}
       &Range: default={sample_time+0 between nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MISS'),sysdate)}
       &filter: {
-            id={(trim(:V1) is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id)) and &range
+            id={(trim(:V1) is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id,event)) and &range
                     &V4},
-            snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id)) &V3},
+            snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id,'event')) &V3},
             u={username=nvl('&0',sys_context('userenv','current_schema')) and &range}
         }
       &more_filter: default={1=1},f={}
