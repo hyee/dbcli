@@ -43,7 +43,7 @@ chain AS
   FROM   r
   CONNECT BY grp=prior grp
          AND seq=prior seq+1
-         AND st BETWEEN PRIOR st and et)
+         AND st BETWEEN PRIOR st and PRIOR et)
 SELECT &con dbid,
        dbname,
        &agg insts,
@@ -55,8 +55,6 @@ SELECT &con dbid,
        MAX(end_snap_id) end_snap_id,
        MAX(end_snap_id) - MIN(begin_snap_id) snapshots,
        MIN(interval_min) interval_min
-FROM   (select distinct r.*,root_seq
-        from  (SELECT * FROM chain WHERE root_seq NOT IN (SELECT seq FROM chain WHERE seq != root_seq)) c 
-        JOIN   r on(c.seq=r.seq))
+FROM   r natural join (SELECT distinct seq,root_seq FROM chain WHERE root_seq NOT IN (SELECT seq FROM chain WHERE seq != root_seq)) c 
 GROUP  BY root_seq, &con dbid, dbname
 ORDER BY  end_interval_time DESC;
