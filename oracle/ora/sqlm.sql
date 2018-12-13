@@ -1,5 +1,5 @@
 /*[[
-        Get resource usage from SQL monitor. Usage: @@NAME {sql_id [<SQL_EXEC_ID>] [[plan_hash_value] -l|-a|-s]} | {. <keyword>} [-u|-f"<filter>"] [-avg]
+        Get resource usage from SQL monitor. Usage: @@NAME {sql_id [<SQL_EXEC_ID>] [[plan_hash_value] -l|<sqlmon file>|"<query>"|-a|-s]} | {. <keyword>} [-u|-f"<filter>"] [-avg]
         Related parameters for SQL monitor: 
                 _sqlmon_recycle_time,_sqlmon_max_planlines,_sqlmon_max_plan,_sqlmon_threshold,control_management_pack_access,statistics_level
         A SQL can be forced to record the sql monitor report by the alter system statement:
@@ -10,6 +10,8 @@
              2. @@NAME [. <keyword>]                      : List recent sql monitor reports,options: -avg,-u,-f"<filter>" 
              3. @@NAME <sql_id> -l [plan_hash|sql_exec_id]: List the reports and generate perf hub report for specific SQL_ID, options: -avg,-u,-a,-f"<filter>"
              4. @@NAME -snap <sec> <sid>                  : Monitor the specific <sid> for <sec> seconds, and then list the SQL monitor result, options: -avg
+             5. @@NAME <sqlmon_file>                      : Read SQL Monitor report from target location and print
+             6. @@NAME "<Query>"                          : Read SQL Monitor report from target query(return CLOB) and print
              
         Options:
                 -u  : Only show the SQL list within current schema
@@ -46,19 +48,21 @@ var plan_hash number;
 col dur,avg_ela,ela,parse,queue,cpu,app,cc,cl,plsql,java,io,time format usmhd2
 col read,write,iosize,mem,temp,cellio,buffget,offload,offlrtn,calc_kmg,ofl format kmg
 col est_cost,est_rows,act_rows,ioreq,execs,outputs,FETCHES,dxwrite,calc_tmb format TMB
+accept sqlmon_file noprompt "@&V1"
 
 ALTER SESSION SET PLSQL_CCFLAGS = 'hub:&check_access_hub,sqlm:&check_access_sqlm';
 
-DECLARE
+DECLARE /*+no_monitor*/
     plan_hash  INT := regexp_substr(:V2, '^\d+$');
     start_time DATE;
     end_time   DATE;
-    sq_id      VARCHAR2(50):=:V1;
+    sq_id      VARCHAR2(500):=:V1;
     inst       INT := :INSTANCE;
     did        INT := :dbid;
     execs      INT;
     counter    INT := &tot;
     filename   VARCHAR2(100);
+    sqlmon     CLOB := :sqlmon_file;
     content    CLOB;
     txt        CLOB;
     lst        SYS.ODCIVARCHAR2LIST;
@@ -88,6 +92,72 @@ DECLARE
                 wr(lst(i));
             end loop;
         end if;
+    END;
+
+    --Refer to: https://technology.amis.nl/2010/03/13/utl_compress-gzip-and-zlib/ 
+    FUNCTION decompress(base64_str VARCHAR2) RETURN CLOB IS 
+        v_clob       CLOB;
+        v_blob       BLOB;
+        dest_offset  INTEGER := 1;
+        src_offset   INTEGER := 1;
+        prev         INTEGER := 1;
+        curr         INTEGER := 1;
+        lob_csid     NUMBER  := dbms_lob.default_csid;
+        lang_context INTEGER := dbms_lob.default_lang_ctx;
+        warning      INTEGER;
+        
+        procedure ap(p_line VARCHAR2) is 
+            r RAW(32767) := utl_raw.cast_to_raw(p_line);
+        begin
+            r:= utl_encode.base64_decode(r);
+            dbms_lob.writeAppend(v_blob,utl_raw.length(r),r);
+        end;
+        
+        
+        FUNCTION zlib_decompress(p_src IN BLOB) RETURN BLOB IS
+            t_out      BLOB;
+            t_tmp      BLOB;
+            t_buffer   RAW(1);
+            t_hdl      BINARY_INTEGER;
+            t_s1       PLS_INTEGER; -- s1 part of adler32 checksum
+            t_last_chr PLS_INTEGER;
+        BEGIN
+            dbms_lob.createtemporary(t_out, FALSE);
+            dbms_lob.createtemporary(t_tmp, FALSE);
+            t_tmp := hextoraw('1F8B0800000000000003'); -- gzip header
+            dbms_lob.copy(t_tmp, p_src, dbms_lob.getlength(p_src) - 2 - 4, 11, 3);
+            dbms_lob.append(t_tmp, hextoraw('0000000000000000')); -- add a fake trailer
+            t_hdl := utl_compress.lz_uncompress_open(t_tmp);
+            t_s1  := 1;
+            LOOP
+                BEGIN
+                    utl_compress.lz_uncompress_extract(t_hdl, t_buffer);
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        EXIT;
+                END;
+                dbms_lob.append(t_out, t_buffer);
+                t_s1 := MOD(t_s1 + to_number(rawtohex(t_buffer), 'xx'), 65521);
+            END LOOP;
+            t_last_chr := to_number(dbms_lob.substr(p_src, 2, dbms_lob.getlength(p_src) - 1), '0XXX') - t_s1;
+            IF t_last_chr < 0 THEN
+                t_last_chr := t_last_chr + 65521;
+            END IF;
+            dbms_lob.append(t_out, hextoraw(to_char(t_last_chr, 'fm0X')));
+            IF utl_compress.isopen(t_hdl) THEN
+                utl_compress.lz_uncompress_close(t_hdl);
+            END IF;
+            dbms_lob.freetemporary(t_tmp);
+            RETURN t_out;
+        END;
+    BEGIN
+        dbms_lob.CreateTemporary(v_blob,TRUE);
+        dbms_lob.CreateTemporary(v_clob,TRUE);
+        ap(base64_str);
+        -- v_blob := utl_compress.lz_uncompress(v_blob);
+        v_blob := zlib_decompress(v_blob);
+        dbms_lob.ConvertToCLOB(v_clob, v_blob, DBMS_LOB.LOBMAXSIZE, dest_offset, src_offset, lob_csid, lang_context, warning);
+        return v_clob;
     END;
 BEGIN
     IF &SNAP=1 THEN
@@ -135,29 +205,74 @@ BEGIN
         $END
         :C2 := C2;
     END IF;
+
+    IF sqlmon IS NULL AND upper(sq_id) LIKE 'SELECT %' THEN
+        BEGIN
+            sq_id := regexp_replace(sq_id,'[;/ '||chr(10)||chr(9)||chr(13)||']+$');
+            execute immediate 'SELECT * FROM ('||sq_id||') WHERE ROWNUM<2' into sqlmon;
+        EXCEPTION 
+            when no_data_found THEN
+                raise_application_error(-20001,'Cannot fetch report with SQL: '||sq_id);
+            when others then 
+                raise_application_error(-20001,'Error '||sqlerrm||' on fetching report with SQL: '||sq_id);
+        END;
+    END IF;
+
+    IF sqlmon IS NOT NULL THEN
+        sqlmon := regexp_substr(sqlmon,'<report .*</report>',1,1,'n');
+        IF sqlmon IS NULL THEN
+            raise_application_error(-20001,'Target file is not a valid SQL Monitor Report file!');
+        END IF;
+        xml  := xmltype(sqlmon);
+        mon := xml.extract('//report_parameters[1]');
+
+        IF mon IS NULL THEN
+            sqlmon := trim(xml.extract('/report/text()').getClobVal());
+            IF sqlmon IS NULL THEN
+                raise_application_error(-20001,'Target file is not a valid SQL Monitor Report file!');
+            END IF;
+
+            IF length(sqlmon)>32767 THEN
+                raise_application_error(-20001,'Unsupported SQL Monitor Report file whose compressed data over 32 KB!');
+            END IF;
+            sqlmon := decompress(sqlmon);
+            xml    := xml.deleteXML('*/text()').appendChildXML('/report',xmltype(sqlmon));
+            mon := xml.extract('//report_parameters[1]');
+        END IF;
+
+        sq_id:= mon.extract('//report_parameters/sql_id[1]/text()').getStringval();
+        sql_exec:= mon.extract('//report_parameters/sql_exec_id[1]/text()').getNumberVal();
+    END IF;
     
     IF sq_id IS NOT NULL AND '&option' IS NULL THEN
         --EXECUTE IMMEDIATE 'alter session set "_sqlmon_max_planlines"=3000';
-        sql_exec := :V2;
-        IF sql_exec IS NULL THEN
-            select max(sql_exec_id) keep(dense_rank last order by sql_exec_start),
-                     max(sql_exec_start)
-            into  sql_exec,sql_start
-            from  gv$sql_monitor
-            where sql_id=sq_id
-            AND   PX_SERVER# IS NULL
-            and   inst_id=nvl(inst,inst_id);
+        IF xml IS NULL THEN
+            sql_exec := :V2;
+            IF sql_exec IS NULL THEN
+                select max(sql_id) keep(dense_rank last order by sql_exec_start,sql_exec_id),
+                       max(sql_exec_id) keep(dense_rank last order by sql_exec_start),
+                       max(sql_exec_start)
+                into  sq_id,sql_exec,sql_start
+                from  gv$sql_monitor
+                where (sql_id=sq_id or lower(sq_id) in('l','last'))
+                AND   sql_plan_hash_value > 0
+                AND   sql_exec_id >0 
+                AND   PX_SERVER# IS NULL
+                and   inst_id=nvl(inst,inst_id);
+            END IF;
+
+            BEGIN
+                xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => 'ALL',  sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
+            EXCEPTION WHEN OTHERS THEN
+                xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => 'TYPICAL', sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
+            END;
         END IF;
 
         BEGIN
             execute immediate 'alter session set events ''emx_control compress_xml=none''';
         EXCEPTION WHEN OTHERS THEN NULL;
         END;
-        BEGIN
-            xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => 'ALL',  sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
-        EXCEPTION WHEN OTHERS THEN
-            xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => 'TYPICAL', sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
-        END;
+
         txt := DBMS_REPORT.FORMAT_REPORT(xml, 'text');
 
         SELECT SYS.ODCIARGDESC(id,typ,null,val,null,null,null)
@@ -262,7 +377,7 @@ BEGIN
            SELECT MAX(LENGTH(ID)) l1,MAX(LENGTH(typ)) l2,MAX(LENGTH(val)+2) l3
            FROM line_info
         )
-        SELECT decode(seq,1,LPAD(ID,l1)||' - ',LPAD(' ',l1+3))||RPAD(typ,l2)||' : '||RPAD(val,l3)
+        SELECT decode(seq,1,LPAD(ID,l1)||' - ',LPAD(' ',l1+3))||RPAD(typ,l2)||' : '||regexp_replace(replace(val,chr(10),' '),'(.{150}[^ ]+ +)','\1'||chr(10)||lpad(' ',l2+l1+6))
         BULK COLLECT INTO lst
         FROM line_info,line_len
         ORDER BY 0+ID,seq;
@@ -389,7 +504,7 @@ BEGIN
                  trim(dbms_xplan.format_size(MIN(VALUE)*nvl(MAX(factor),1))) || DECODE(ID, 1, ' / ' || MAX(cpu_count), '') minv,
                  trim(dbms_xplan.format_size(AVG(VALUE)*nvl(MAX(factor),1))) || DECODE(ID, 1, ' / ' || MAX(cpu_count), '') avgv,
                  trim(dbms_xplan.format_size(MEDIAN(VALUE)*nvl(MAX(factor),1))) || DECODE(ID, 1, ' / ' || MAX(cpu_count), '') mdv,
-                 trim(dbms_xplan.format_size(CASE WHEN ID in(1,2) THEN MAX(VALUE) ELSE SUM(VALUE*duration)*nvl(MAX(factor),1) END)) || DECODE(ID, 1, ' / ' || MAX(cpu_count), '') sums,
+                 CASE WHEN max(unit) like '%per_sec%' THEN trim(dbms_xplan.format_size(SUM(VALUE*duration)*nvl(MAX(factor),1))) ELSE ' ' END sums,
                  trim(dbms_xplan.format_time_s(SUM(duration))) dur
           FROM   XMLTABLE('//stattype//stat' PASSING xml COLUMNS ID INT PATH '@id',
                           cpu_count INT PATH './../../@cpu_cores',
@@ -403,7 +518,7 @@ BEGIN
           HAVING MAX(VALUE) IS NOT NULL
           ORDER  BY ID),
         w_len AS
-         (SELECT 3 l1, greatest(MAX(LENGTH(NAME)), 3) l2,greatest(MAX(LENGTH(sums)), 8) l3, COUNT(1) c FROM line_info)
+         (SELECT 3 l1, greatest(MAX(LENGTH(NAME)), 3) l2,greatest(MAX(NVL(LENGTH(sums),0)), 8) l3, COUNT(1) c FROM line_info)
         SELECT * BULK COLLECT INTO lst
         FROM   (SELECT '+' || LPAD('-', l1 + l2 + l3*6 + 6*3, '-') || '+'
                 FROM   w_len
