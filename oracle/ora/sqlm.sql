@@ -220,7 +220,7 @@ BEGIN
 
     IF sqlmon IS NOT NULL THEN
         sqlmon := regexp_substr(sqlmon,'<report .*</report>',1,1,'n');
-        IF sqlmon IS NULL THEN
+        IF sqlmon IS NULL or LENGTH(sqlmon)=0 THEN
             raise_application_error(-20001,'Target file is not a valid SQL Monitor Report file!');
         END IF;
         xml  := xmltype(sqlmon);

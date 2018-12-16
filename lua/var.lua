@@ -419,10 +419,11 @@ function var.define_column(col,...)
                     u[#u+2],u[#u+1]=math.floor(s/24),s%24
                     return prefix..fmt:format(u[4],u[3],u[2],u[1]):gsub("^0 ",'')
                 end
-            elseif f=="%" or f=="PCT" or f=="PERCENTAGE" or f=="PERCENT" then
+            elseif f:find("^%%") or f:find("^PCT") or f:find("^PERCENTAGE") or f:find("^PERCENT") then
+                local scal=tonumber(f:match("%d+$")) or 2
                 obj.format=function(v)
                     if not tonumber(v) then return v end
-                    return string.format(num_fmt.."%%",tonumber(v)*100)
+                    return string.format("%."..scal.."f%%",tonumber(v)*100)
                 end
             elseif (f:find("%",1,true) or 999)<#f then
                 local fmt,String=arg,String
