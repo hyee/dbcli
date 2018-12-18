@@ -30,15 +30,18 @@ BEGIN
                 SELECT task_id,
                        MAX(DECODE(parameter_name, 'START_TIME', parameter_value)) ||MAX(DECODE(parameter_name, 'START_SNAPSHOT', '(' || parameter_value || ')')) awr_start,
                        MAX(DECODE(parameter_name, 'END_TIME', parameter_value)) ||MAX(DECODE(parameter_name, 'END_SNAPSHOT', '(' || parameter_value || ')')) awr_end,
+                       MAX(DECODE(parameter_name, 'DB_ID', parameter_value)) DBID,
                        MAX(DECODE(parameter_name, 'INSTANCE', parameter_value)) INST,
                        MAX(DECODE(parameter_name, 'MODE', parameter_value)) AWR_MODE
                 FROM   DBA_ADVISOR_PARAMETERS
                 WHERE  task_id IN (SELECT TASK_ID FROM R)
                 GROUP  BY task_id)
-            SELECT TASK_ID,R.OWNER,R.TASK_NAME,R1.AWR_START,R1.AWR_END,R1.INST,R1.AWR_MODE,r.findings,r.status,r.execution_start,r.execution_end
-            FROM   R LEFT JOIN R1 USING(TASK_ID)
-            WHERE  &FILTER
-            ORDER  BY execution_start DESC NULLS LAST;
+            SELECT * FROM (
+                SELECT TASK_ID,R.OWNER,R.TASK_NAME,R1.AWR_START,R1.AWR_END,R1.DBID,R1.INST,R1.AWR_MODE,r.findings,r.status,r.execution_start,r.execution_end
+                FROM   R LEFT JOIN R1 USING(TASK_ID)
+                WHERE  &FILTER
+                ORDER  BY execution_start DESC NULLS LAST
+            ) WHERE rownum<=50;
     ELSE
         select max(ADVISOR_NAME),max(task_name),max(owner) into advtype,taskname,sq FROM DBA_ADVISOR_TASKS where task_id=regexp_substr(:V1,'\d+');
         IF taskname IS NULL THEN
@@ -70,7 +73,7 @@ BEGIN
                        a.finding_id, b.rec_id,
                        a.task_id, c.action_id, SUM(DISTINCT a.impact) OVER(PARTITION BY a.finding_id) impact,
                        REPLACE(a.message || chr(10)||a.more_info, chr(10), chr(10) || lpad(' ', 13)) findmsg,
-                       nvl2(b.rank,'Advise #' || b.rank || ': ' || b.type,'') remgroup, b.benefit,
+                       nvl2(b.rank,chr(10)||'Advise #' || b.rank || ': ' || b.type,'') remgroup, b.benefit,
                        (SELECT nullif(0+parameter_value,0)
                         FROM   Dba_Advisor_Parameters f
                         WHERE  parameter_name = 'DB_ELAPSED_TIME'
@@ -103,11 +106,11 @@ BEGIN
                   DISTINCT a.r r1, DECODE(SIGN(b.r - 1), 1, rec_id, -9) R2,
                            DECODE(SIGN(b.r - 2), 1, NVL2(rationale_msg, -1, action_cmdid), -9) r3,
                            DECODE(SIGN(b.r - 3), 1, action_cmdid, -9) r4,
-                           rpad(' ', LEAST(b.r - 1, 2) * 2) ||DECODE(b.r,
+                           trim(chr(10) from rpad(' ', LEAST(b.r - 1, 2) * 2) ||DECODE(b.r,
                                    1,case when a.r2=1 then 'Finding #' || lpad(a.r,2,'0') || ': ' || FINDMSG end,
                                    2,case when a.r1=1 then remgroup end,
                                    3,nvl(case when a.r1=1 then rationale_msg else ' ' end, action_msg),
-                                   4,action_msg) "Message",
+                                   4,action_msg)) "Message",
                            round(DECODE(b.r, 1, IMPACT, 2, benefit, 3, rationale_impact) * 1e-6 / 60, 2) "Minutes",
                            rpad(' ', LEAST(b.r - 1, 2)) ||nullif(to_char(DECODE(b.r, 1, IMPACT, 2, benefit, 3, nvl(rationale_impact,benefit)) * 100 /a.elapsed,'fm990.00')||'%','%') "Impact", 
                            CASE WHEN b.r>=3 THEN  target end "Target Obj",
@@ -117,6 +120,7 @@ BEGIN
                   FROM   a, (SELECT ROWNUM r FROM dual CONNECT BY ROWNUM <= 4) b
                   WHERE  b.r - 2 <= NVL2(a.rationale_msg, 1, 0) + NVL2(a.action_msg, 1, 0) - NVL2(a.rec_id, 0, 1)
                   ORDER  BY 1, 2, 3, 4)
+                
                 SELECT "Impact", "Target#", "Message"
                 from (
                     select r1,r2,r3,r4,is_top,"Impact", "Target#", "Message"
