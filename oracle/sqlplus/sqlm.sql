@@ -55,29 +55,41 @@ DECLARE /*+no_monitor*/
             end loop;
         end if;
     END;
-    FUNCTION decompress(base64_str VARCHAR2) RETURN CLOB IS 
+
+    FUNCTION decompress(base64_str VARCHAR2) RETURN CLOB IS
         v_clob       CLOB;
         v_blob       BLOB;
         dest_offset  INTEGER := 1;
         src_offset   INTEGER := 1;
         prev         INTEGER := 1;
         curr         INTEGER := 1;
-        lob_csid     NUMBER  := dbms_lob.default_csid;
+        lob_csid     NUMBER := dbms_lob.default_csid;
         lang_context INTEGER := dbms_lob.default_lang_ctx;
         warning      INTEGER;
-        procedure ap(p_line VARCHAR2) is 
+    
+        PROCEDURE ap(p_line VARCHAR2) IS
             r RAW(32767) := utl_raw.cast_to_raw(p_line);
-        begin
-            r:= utl_encode.base64_decode(r);
-            dbms_lob.writeAppend(v_blob,utl_raw.length(r),r);
-        end;
+        BEGIN
+            r := utl_encode.base64_decode(r);
+            dbms_lob.writeAppend(v_blob, utl_raw.length(r), r);
+        END;
+    
         FUNCTION zlib_decompress(p_src IN BLOB) RETURN BLOB IS
             t_out      BLOB;
             t_tmp      BLOB;
-            t_buffer   RAW(1);
+            t_raw      RAW(1);
+            t_buffer   RAW(32767);
             t_hdl      BINARY_INTEGER;
             t_s1       PLS_INTEGER; -- s1 part of adler32 checksum
             t_last_chr PLS_INTEGER;
+            t_size     PLS_INTEGER := length(p_src);
+            t_adj      PLS_INTEGER;
+            sq         VARCHAR2(2000) := '
+            declare x raw(?);
+            begin
+                utl_compress.lz_uncompress_extract(:t_hdl, x);
+                :buff := x;
+            end;';
         BEGIN
             dbms_lob.createtemporary(t_out, FALSE);
             dbms_lob.createtemporary(t_tmp, FALSE);
@@ -88,14 +100,27 @@ DECLARE /*+no_monitor*/
             t_s1  := 1;
             LOOP
                 BEGIN
-                    utl_compress.lz_uncompress_extract(t_hdl, t_buffer);
+                    t_adj := least(t_size * 5, 4000);
+                    IF t_adj < 128 THEN
+                        utl_compress.lz_uncompress_extract(t_hdl, t_raw);
+                        t_buffer := t_raw;
+                        t_size   := 0;
+                    ELSE
+                        EXECUTE IMMEDIATE REPLACE(sq, '?', t_adj)
+                            USING IN OUT t_hdl, IN OUT t_buffer;
+                        t_size := t_size - floor(t_adj / 5);
+                    END IF;
+                    t_adj := utl_raw.length(t_buffer);
+                    dbms_lob.append(t_out, t_buffer);
+                    FOR i IN 1 .. t_adj LOOP
+                        t_s1 := MOD(t_s1 + to_number(rawtohex(utl_raw.substr(t_buffer, i, 1)), 'xx'), 65521);
+                    END LOOP;
                 EXCEPTION
                     WHEN OTHERS THEN
                         EXIT;
                 END;
-                dbms_lob.append(t_out, t_buffer);
-                t_s1 := MOD(t_s1 + to_number(rawtohex(t_buffer), 'xx'), 65521);
             END LOOP;
+        
             t_last_chr := to_number(dbms_lob.substr(p_src, 2, dbms_lob.getlength(p_src) - 1), '0XXX') - t_s1;
             IF t_last_chr < 0 THEN
                 t_last_chr := t_last_chr + 65521;
@@ -108,12 +133,19 @@ DECLARE /*+no_monitor*/
             RETURN t_out;
         END;
     BEGIN
-        dbms_lob.CreateTemporary(v_blob,TRUE);
-        dbms_lob.CreateTemporary(v_clob,TRUE);
+        dbms_lob.CreateTemporary(v_blob, TRUE);
+        dbms_lob.CreateTemporary(v_clob, TRUE);
         ap(base64_str);
         v_blob := zlib_decompress(v_blob);
-        dbms_lob.ConvertToCLOB(v_clob, v_blob, DBMS_LOB.LOBMAXSIZE, dest_offset, src_offset, lob_csid, lang_context, warning);
-        return v_clob;
+        dbms_lob.ConvertToCLOB(v_clob,
+                               v_blob,
+                               DBMS_LOB.LOBMAXSIZE,
+                               dest_offset,
+                               src_offset,
+                               lob_csid,
+                               lang_context,
+                               warning);
+        RETURN v_clob;
     END;
 BEGIN
     IF sq_id IS NULL THEN

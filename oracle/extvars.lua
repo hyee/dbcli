@@ -276,14 +276,62 @@ db.lz_compress=[[
     END;
 
     FUNCTION zlib_decompress(p_src IN BLOB) RETURN BLOB IS
+        t_out      BLOB;
         t_tmp      BLOB;
-    BEGIN  
-        dbms_lob.createtemporary(t_tmp, TRUE);
+        t_raw      RAW(1);
+        t_buffer   RAW(32767);
+        t_hdl      BINARY_INTEGER;
+        t_s1       PLS_INTEGER; -- s1 part of adler32 checksum
+        t_last_chr PLS_INTEGER;
+        t_size     PLS_INTEGER := length(p_src);
+        t_adj      PLS_INTEGER;
+        sq         VARCHAR2(2000) := '
+        declare x raw(?);
+        begin
+            utl_compress.lz_uncompress_extract(:t_hdl, x);
+            :buff := x;
+        end;';
+    BEGIN
+        dbms_lob.createtemporary(t_out, FALSE);
+        dbms_lob.createtemporary(t_tmp, FALSE);
         t_tmp := hextoraw('1F8B0800000000000003'); -- gzip header
         dbms_lob.copy(t_tmp, p_src, dbms_lob.getlength(p_src) - 2 - 4, 11, 3);
-        --dbms_lob.append( t_tmp, hextoraw( '0000000000000000' ) ); -- add a fake trailer
-        t_tmp := utl_compress.lz_uncompress(t_tmp);
-        RETURN t_tmp;
+        dbms_lob.append(t_tmp, hextoraw('0000000000000000')); -- add a fake trailer
+        t_hdl := utl_compress.lz_uncompress_open(t_tmp);
+        t_s1  := 1;
+        LOOP
+            BEGIN
+                t_adj := least(t_size * 5, 4000);
+                IF t_adj < 128 THEN
+                    utl_compress.lz_uncompress_extract(t_hdl, t_raw);
+                    t_buffer := t_raw;
+                    t_size   := 0;
+                ELSE
+                    EXECUTE IMMEDIATE REPLACE(sq, '?', t_adj)
+                        USING IN OUT t_hdl, IN OUT t_buffer;
+                    t_size := t_size - floor(t_adj / 5);
+                END IF;
+                t_adj := utl_raw.length(t_buffer);
+                dbms_lob.append(t_out, t_buffer);
+                FOR i IN 1 .. t_adj LOOP
+                    t_s1 := MOD(t_s1 + to_number(rawtohex(utl_raw.substr(t_buffer, i, 1)), 'xx'), 65521);
+                END LOOP;
+            EXCEPTION
+                WHEN OTHERS THEN
+                    EXIT;
+            END;
+        END LOOP;
+
+        t_last_chr := to_number(dbms_lob.substr(p_src, 2, dbms_lob.getlength(p_src) - 1), '0XXX') - t_s1;
+        IF t_last_chr < 0 THEN
+            t_last_chr := t_last_chr + 65521;
+        END IF;
+        dbms_lob.append(t_out, hextoraw(to_char(t_last_chr, 'fm0X')));
+        IF utl_compress.isopen(t_hdl) THEN
+            utl_compress.lz_uncompress_close(t_hdl);
+        END IF;
+        dbms_lob.freetemporary(t_tmp);
+        RETURN t_out;
     END;
 
     PROCEDURE base64encode(p_clob IN OUT NOCOPY CLOB, p_func_name VARCHAR2 := NULL) IS
