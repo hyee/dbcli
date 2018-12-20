@@ -12,6 +12,7 @@
              4. @@NAME -snap <sec> <sid>                  : Monitor the specific <sid> for <sec> seconds, and then list the SQL monitor result, options: -avg
              5. @@NAME <sqlmon_file>                      : Read SQL Monitor report from target location and print
              6. @@NAME "<Query>"                          : Read SQL Monitor report from target query(return CLOB) and print
+             7. @@NAME <report_id>                        : Read SQL Monitor report from dba_hist_reports with specific report_id
              
         Options:
                 -u  : Only show the SQL list within current schema
@@ -245,6 +246,13 @@ BEGIN
             when others then 
                 raise_application_error(-20001,'Error '||sqlerrm||' on fetching report with SQL: '||sq_id);
         END;
+    ELSIF sqlmon IS NULL AND regexp_like(sq_id,'^\d+$') THEN
+        $IF dbms_db_version.version>11 $THEN
+            sqlmon := DBMS_AUTO_REPORT.REPORT_REPOSITORY_DETAIL(RID => 0+sq_id, TYPE => 'XML');
+        $END
+        IF sqlmon IS NULL THEN
+             raise_application_error(-20001,'SQL_ID '||sq_id||' should not be a number!');
+        END IF;
     END IF;
 
     IF sqlmon IS NOT NULL THEN
@@ -574,7 +582,7 @@ BEGIN
                     SELECT  '+' || LPAD('-', l1 + l2 + l3*6 + 6*3, '-') || '+'
                     FROM   w_len
                     WHERE  c > 0);
-            flush('System Metrics');
+            flush('Metrics');
 
             SELECT SYS.ODCIARGDESC(c.cnt,REPLACE(NVL(substr(c.event,1,30), c.w_class), 'Cpu', 'ON CPU'),
                                    b.id ||nvl2(b.id,'(' || round(b.cnt / c.cnt * 100, 1) || '%)',' '),
@@ -628,7 +636,7 @@ BEGIN
 
             WITH line_info AS
              (SELECT b.*
-              FROM   XMLTABLE('//other_xml/info[@note="y"]' PASSING xml COLUMNS --
+              FROM   XMLTABLE('//other_xml/info[@note="y" or contains(@type,"sql")]' PASSING xml COLUMNS --
                              typ VARCHAR2(50) PATH '@type',
                              val VARCHAR2(500) PATH '.') b),
             line_len AS

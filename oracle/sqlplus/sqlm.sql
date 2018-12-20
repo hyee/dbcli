@@ -3,7 +3,8 @@
         1) Generate Last SQL Monitor report for the specific SQL ID: @sqlm <sql_id> [<sql_exec_id>]
         2) Generate Last SQL Monitor report in database: @sqlm l or @sqlm last
         3) Generate SQL Monitor report via the content from a query: @sqlm "<Select statement that returns one fields whose content is SQL Monitor report>"
-   
+        4) Generate SQL Monitor from dba_hist_reports with specific report_id
+
     Examples:
         1.1) @sqlm 85f3z6f04jvyd
         1.2) @sqlm 85f3z6f04jvyd 16777216
@@ -11,6 +12,7 @@
         2.2) @sqlm last
         3.1) @sqlm "select sqlmon_clob from sqlmon_report_table"
         3.2) @sqlm "select sqlmon_clob from sqlmon_report_table where sql_id='85f3z6f04jvyd'"
+        4)   @sqlm 6423  (from dba_hist_reports.report_id)
 */
 
 COLUMN 2 NEW_VALUE 2
@@ -162,7 +164,15 @@ BEGIN
             when others then 
                 raise_application_error(-20001,'Error '||sqlerrm||' on fetching report with SQL: '||sq_id);
         END;
+    ELSIF sqlmon IS NULL AND regexp_like(sq_id,'^\d+$') THEN
+        $IF dbms_db_version.version>11 $THEN
+            sqlmon := DBMS_AUTO_REPORT.REPORT_REPOSITORY_DETAIL(RID => 0+sq_id, TYPE => 'XML');
+        $END
+        IF sqlmon IS NULL THEN
+             raise_application_error(-20001,'SQL_ID '||sq_id||' should not be a number!');
+        END IF;
     END IF;
+
     IF sqlmon IS NOT NULL THEN
         xml  := xmltype(sqlmon).EXTRACT('//report[1]');
         IF xml IS NULL THEN
@@ -484,7 +494,7 @@ BEGIN
             SELECT  '+' || LPAD('-', l1 + l2 + l3*6 + 6*3, '-') || '+'
             FROM   w_len
             WHERE  c > 0);
-    flush('System Metrics');
+    flush('Metrics');
     
     --Bypass 11g XML bugs
     SELECT SYS.ODCIARGDESC(c.cnt,REPLACE(NVL(substr(c.event,1,30), c.w_class), 'Cpu', 'ON CPU'),
@@ -533,7 +543,7 @@ BEGIN
     
     WITH line_info AS
      (SELECT b.*
-      FROM   XMLTABLE('//other_xml/info[@note="y"]' PASSING xml COLUMNS --
+      FROM   XMLTABLE('//other_xml/info[@note="y" or contains(@type,"sql")]' PASSING xml COLUMNS --
                       typ VARCHAR2(50) PATH '@type',
                       val VARCHAR2(500) PATH '.') b),
     line_len AS

@@ -34,7 +34,13 @@
                 coalesce(nullif(&phf,0),connect_by_root(&phf),0) plan_hash_full,
                 connect_by_root(decode(:V1,sql_id,1,top_level_sql_id,2,3)) pred_flag}
     }
-    &public: {default={ current_obj#,
+    &public: {default={ aas_,
+                        dbid,
+                        instance_number inst_id,
+                        nvl(qc_instance_id,instance_number) qc_inst,
+                        session_id SID,
+                        nvl(qc_session_id,session_id) qc_sid,
+                        current_obj#,
                         p1,
                         p2,
                         p3,
@@ -63,25 +69,12 @@
                              decode(bitand(time_model,power(2,21)),0,'','inmemory_repopulate ') || 
                              decode(bitand(time_model,power(2,22)),0,'','inmemory_trepopulate ') || 
                              decode(bitand(time_model,power(2,23)),0,'','tablespace_encryption ')) time_model,
-                        decode(is_sqlid_current,'N', pga_allocated) pga_,
+                        decode(is_sqlid_current,'N',pga_allocated) pga_,
                         decode(is_sqlid_current,'N',temp_space_allocated) temp_,
                         nvl(trunc(px_flags / 2097152),0) dop_}
     }
 
-    &swcba : {
-        default={
-            AND     :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
-            AND     nvl(sql_exec_id,0) = coalesce(0+:v2,sql_exec_id,0)}
-        all={
-            START  WITH :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
-            CONNECT BY PRIOR sample_time + 0 = sample_time+0
-                AND    PRIOR session_id=qc_session_id
-                AND    PRIOR inst_id=nvl(qc_instance_id,inst_id)
-                AND    NOT (session_id=qc_session_id and inst_id=nvl(qc_instance_id,inst_id))
-                AND    LEVEL <3}
-    }
-
-    &swcbd : {
+    &swcb : {
         default={
             AND     :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
             AND     nvl(sql_exec_id,0) = coalesce(0+:v2,sql_exec_id,0)
@@ -186,14 +179,14 @@ ash_raw as (
             decode(sec_seq,1,aas) cost,
             nvl(nullif(plan_hash_full,0),phv1) phf,
             decode(sec_seq,1,least(coalesce(tm_delta_db_time,delta_time,AAS*1e6),coalesce(tm_delta_time,delta_time,AAS*1e6),AAS*2e6) * 1e-6) secs,
-            case when pred_flag=2 or (qc_sid!=sid or qc_inst!=inst_id) and lv=1
+            case when pred_flag=2 or (is_px_slave=1 and lv=1)
                  then sql_exec_id||',@'||qc_inst||','||qc_sid
                  else sql_exec_id||',@'||qc_inst||','||qc_sid||','||to_char(sql_exec_start,'yyyymmddhh24miss') 
             end sql_exec,
-            max(dop_)  over(partition by dbid,phv1,sql_exec_id,pid) dop,
+            max(case when pred_flag!=2 or is_px_slave=1 then dop_ end)  over(partition by dbid,phv1,sql_exec_id,pid) dop,
             sum(case when p3text='block cnt' and nvl(event,'temp') like '%temp' then temp_ end) over(partition by dbid,phv1,sql_exec_id,pid,sample_time+0) temp,
             sum(pga_)  over(partition by dbid,phv1,sql_exec_id,pid,sample_time+0) pga
-    FROM   (SELECT /*+no_expand */ --PQ_CONCURRENT_UNION 
+    FROM   (SELECT /*+no_expand opt_param('_optimizer_connect_by_combine_sw', 'false')*/ --PQ_CONCURRENT_UNION 
                    a.*, --seq: if ASH and DASH have the same record, then use ASH as the standard
                    decode(AAS_,1,1,decode((
                         select sign(sum(elapsed_time_delta)/greatest(1,sum(greatest(parse_calls_delta,executions_delta)))-5e6) 
@@ -206,35 +199,31 @@ ash_raw as (
                    nvl(decode(pred_flag,2,0,case when sql_plan_line_id>65535 then 0 else sql_plan_line_id end),0) pid,
                    decode(pred_flag,2,0,sql_exec_id_) sql_exec_id,
                    decode(pred_flag,2,SYSDATE,sql_exec_start_) sql_exec_start,
+                   case when (qc_sid!=sid or qc_inst!=inst_id) then 1 else 0 end is_px_slave,
                    CASE WHEN 'Y' IN(decode(pred_flag,2,'Y','N'),IN_PLSQL_EXECUTION,IN_PLSQL_RPC,IN_PLSQL_COMPILATION,IN_JAVA_EXECUTION) THEN 1 END IN_PLSQL       
             FROM   (
-                SELECT  /*+QB_NAME(ASH) cardinality(@ASH 1000000) LEADING(@"SEL$46" "A"@"SEL$46"  "S"@"SEL$46") LEADING(@"SEL$47" "A"@"SEL$47"  "S"@"SEL$47") CONNECT_BY_FILTERING(@ASH) NO_CONNECT_BY_SW(@ASH)*/1 AAS_,
-                        inst_id,
-                        session_id SID,
-                        nvl(qc_instance_id,inst_id) qc_inst,
-                        nvl(qc_session_id,session_id) qc_sid,
-                        (select dbid from v$database) dbid,
+                SELECT  /*+QB_NAME(ASH) no_merge(a) CONNECT_BY_FILTERING NO_PX_JOIN_FILTER*/
                         &public,
                         &hierachy
-                FROM    gv$active_session_history a
-                WHERE   '&vw' IN('A','G')
-                AND     sample_time BETWEEN nvl(to_date(nvl(:V3,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7) 
-                                        AND nvl(to_date(nvl(:V4,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE)
-                &&swcba
+                FROM    (
+                    select a.*,(select dbid from v$database) dbid,inst_id instance_number,1 aas_
+                    from   gv$active_session_history a
+                    where  sample_time+0 BETWEEN nvl(to_date(nvl(:V3,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7) 
+                                         AND     nvl(to_date(nvl(:V4,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE)
+                    and   (:V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf) or 
+                            qc_session_id!=session_id or qc_instance_id!=inst_id or session_serial# != qc_session_serial#                            
+                           )) a
+                where  '&vw' IN('A','G')
+                &swcb
                 UNION ALL
-                SELECT  /*+QB_NAME(DASH)  CONNECT_BY_FILTERING(@DASH) NO_CONNECT_BY_SW(@DASH)*/ 10,
-                        instance_number,
-                        session_id,
-                        nvl(qc_instance_id,instance_number) qc_inst,
-                        nvl(qc_session_id,session_id) qc_sid,
-                        dbid,
+                SELECT  /*+QB_NAME(DASH) no_merge(d) CONNECT_BY_FILTERING*/
                         &public,
                         &hierachy
-                FROM    dba_hist_active_sess_history
+                FROM    (select d.*, 10 aas_ from dba_hist_active_sess_history d) d
                 WHERE   '&vw' IN('A','D')
-                AND     sample_time BETWEEN nvl(to_date(nvl(:V3,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7) 
-                                        AND nvl(to_date(nvl(:V4,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE)
-                &swcbd) a) h
+                AND     sample_time+0 BETWEEN nvl(to_date(nvl(:V3,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7) 
+                                          AND nvl(to_date(nvl(:V4,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE)
+                &swcb) a) h
     WHERE  seq = 1),
 ash_phv_agg as(
     SELECT  /*+materialize*/ a.* 

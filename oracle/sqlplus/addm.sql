@@ -347,6 +347,10 @@ BEGIN
             END IF;
         END IF;
     END IF;
+    
+    IF :dest IS NOT NULL THEN
+        dbms_output.put_line('Result is saving to '||sqlerrm);
+    END IF;
 END;
 /
 

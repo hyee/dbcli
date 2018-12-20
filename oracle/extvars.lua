@@ -180,8 +180,8 @@ end
 
 function extvars.on_after_db_conn()
     cfg.force_set('instance','default')
-    cfg.force_set('starttime','default')
-    cfg.force_set('endtime','default')
+    --cfg.force_set('starttime','default')
+    --cfg.force_set('endtime','default')
     cfg.force_set('schema','default')
     cfg.force_set('container','default')
     cfg.force_set('dbid','default')
