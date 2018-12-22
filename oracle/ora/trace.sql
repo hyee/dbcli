@@ -1,6 +1,7 @@
 /*[[Enable/disable trace. Usage: @@NAME {[<sql_id>|<SES-XXXXX>|<SYS-XXXXX>|<ORA-XXXXX>|<sid,serial#>|<event>|me|default] [trace_level]}
     Trace specific SQL ID(11g+ only):  @@NAME <sql_id[|sql_id...]> [trace_level] --i.e. @@NAME c4s58ggj09n39|2v88j3u7nuddj 1
     Trace specific process(11g+)    :  @@NAME "process:..."        [trace_level] --i.e. @@NAME process:6917|7293 / process:pid=2 / process:orapid=46|48 / process:pname=dbw0|smon
+    SQL Monitor on specific SQL ID  :  @@NAME "sqlmon:<sql_id>"    [on|off] 
     Trace specific Session          :  @@NAME <sid,serial>         [trace_level] --i.e. @@NAME 1,1
     Trace specific ORA error        :  @@NAME <ORA-XXXXX>          [trace_level] --i.e. @@NAME ora-00001 12
     Trace session-level event       :  @@NAME <SES-XXXXX>          [trace_level] --i.e. @@NAME ses-10949 (see "ora events" for more info)
@@ -128,6 +129,18 @@ BEGIN
             END IF;
             stmt := 'alter '||typ||' set events = '''||target||' trace name context off''';
         END IF;
+    ELSIF regexp_like(lower(target), '^sqlmon') THEN
+        if instr(target,':')>0 then
+            target := '[sql:'||regexp_substr(target,'[^:]+$')||']';
+        else
+            target:= null;
+        end if;
+        if lv = 0 then 
+            stmt:= 'alter system set events ''sql_monitor'||target||' off''';
+        else
+            stmt:= 'alter system set events ''sql_monitor'||target||' force=true''';
+        end if;
+        execute immediate stmt;
     ELSIF regexp_like(target, '^[0-9a-z\|]+$') and length(target)>=13 and not regexp_like(target,'^\d+$') or regexp_like(lower(target), '^process\:') THEN
         IF NOT regexp_like(lower(target), '^process:') THEN 
             target:='[SQL:'||target||']';
