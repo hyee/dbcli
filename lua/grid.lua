@@ -452,7 +452,7 @@ end
 function grid:wellform(col_del, row_del)
     local result, colsize = self.data, self.colsize
     local rownum = grid.row_num
-    local siz, rows = #result, table.new(#self.data + 1, 0)
+    local siz, rows, output = #result, table.new(#self.data + 1, 0), table.new(#self.data + 1, #self.data[1])
     if siz == 0 then return rows end
     local fmt = ""
     local title_dels, row_dels = {}, ""
@@ -543,7 +543,8 @@ function grid:wellform(col_del, row_del)
     local cut = self.cut
     if row_del ~= "" then
         row_dels = row_dels:gsub("%s", row_del)
-        table.insert(rows, cut(row_dels:gsub("[^%" .. row_del .. "]", row_del)))
+        output[#output+1]=row_dels:gsub("[^%" .. row_del .. "]", row_del)
+        table.insert(rows, cut(output[#output]))
     end
     
     local len = #result
@@ -551,7 +552,6 @@ function grid:wellform(col_del, row_del)
         local filter_flag, match_flag = 1, 0
         while #v < #colsize do table.insert(v, "") end
 
-        env.event.callback("ON_PRINT_GRID_ROW", v, len)
         --adjust the title style(middle)
         if v[0] == 0 then
             for col, value in ipairs(v) do
@@ -565,6 +565,7 @@ function grid:wellform(col_del, row_del)
                 end
             end
         end
+
         local row = cut(v, format_func, v[0] == 0 and head_fmt or fmt, v[0] == 0)
         
         if v[0] == 0 then
@@ -573,12 +574,15 @@ function grid:wellform(col_del, row_del)
             row, match_flag = row:gsub(env.printer.grep_text, hl .. "%0" .. nor)
             if (match_flag == 0 and not env.printer.grep_dir) or (match_flag > 0 and env.printer.grep_dir) then filter_flag = 0 end
         end
+        output[#output+1]=v
         if filter_flag == 1 then table.insert(rows, row) end
         if not result[k + 1] or result[k + 1][0] ~= v[0] then
             if #row_del == 1 and filter_flag == 1 and v[0] ~= 0 then
                 table.insert(rows, cut(row_dels))
+                output[#output+1]=row_dels
             elseif v[0] == 0 then
-                table.insert(rows, cut(title_dels, format_func, fmt))
+                output[#output+1]=format_func(fmt, table.unpack(title_dels))
+                table.insert(rows, cut(output[#output]))
             end
         end
     end
@@ -588,9 +592,14 @@ function grid:wellform(col_del, row_del)
         line = line:gsub(" ", grid.title_del):gsub(col_del:trim(), function(a) return ('+'):rep(#a) end)
         table.insert(rows, line)
         table.insert(rows, 1, line)
+        table.insert(output, line)
+        table.insert(output,1, line)
     end
     self = nil
-    return rows
+    output.format_func=format_func
+    output.fmt=fmt
+    output.len=len
+    return rows,output
 end
 
 function grid.format(rows, include_head, col_del, row_del)
@@ -625,11 +634,12 @@ function grid.tostring(rows, include_head, col_del, row_del, rows_limit, pivot)
             rows_limit = rows_limit and rows_limit + 2
         end
     end
-    rows = grid.format(rows, include_head, col_del, row_del)
+    local output
+    rows,output = grid.format(rows, include_head, col_del, row_del)
     rows_limit = rows_limit and math.min(rows_limit, #rows) or #rows
     env.set.force_set("pivot", 0)
     
-    return table.concat(rows, "\n", 1, rows_limit)
+    return table.concat(rows, "\n", 1, rows_limit),output
 end
 
 function grid.print(rows, include_head, col_del, row_del, rows_limit, prefix, suffix)
@@ -645,9 +655,15 @@ function grid.print(rows, include_head, col_del, row_del, rows_limit, prefix, su
         include_head = grid.new(include_head).include_head
         size = #rows + (include_head and 1 or 0)
     end
-    str = str .. grid.tostring(rows, include_head, col_del, row_del, rows_limit)
+    local data,output=grid.tostring(rows, include_head, col_del, row_del, rows_limit)
+    str = str .. data
     if grid.bypassemptyrs and grid.bypassemptyrs:lower() == 'on' and size < (include_head and 2 or 1) then return end
     if test then env.write_cache("grid_output.txt", str) end
+    if type(output)=="table" then
+        for k,v in ipairs(output) do
+            env.event.callback("ON_PRINT_GRID_ROW",v,output.len,output.format_func,output.fmt)
+        end
+    end
     print(str, '__BYPASS_GREP__')
     if suffix then print(suffix) end
 end
@@ -833,7 +849,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
         end
         
         local str = table.concat(tab, "\n")
-        print(str, '__BYPASS_GREP__')
+        print(str)
         if suffix then print(suffix) end
         return
     else

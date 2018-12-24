@@ -70,11 +70,18 @@ function history.rerun()
     end
 end
 
-function history.edit_buffer()
+function history.edit_buffer(file)
     if not lastcommand then return end
-    local editor=os.find_extension(cfg.get("editor"))
-    local file=env.join_path(env._CACHE_PATH,'afiedt.buf')
-    os.shell(editor,file)
+    local ed=cfg.get("editor")
+    local editor=os.find_extension(ed)
+    if type(file)~='string' then file=nil end
+    local file=env.join_path(env._CACHE_PATH,file or 'afiedt.buf')
+    if env.IS_WINDOWS then 
+        os.shell(editor,file)
+    else
+        if ed=='vi' or ed=='vim' then editor=editor..' -n' end
+        os.execute(editor.." + '"..file.."'")
+    end 
 end
 
 function history.set_editor(name,editor)

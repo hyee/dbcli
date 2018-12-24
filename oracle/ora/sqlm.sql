@@ -636,7 +636,7 @@ BEGIN
 
             WITH line_info AS
              (SELECT b.*
-              FROM   XMLTABLE('//other_xml/info[@note="y" or contains(@type,"sql")]' PASSING xml COLUMNS --
+              FROM   XMLTABLE('//other_xml/info[@note="y" or @type=("sql_patch","sql_profile","outline","baseline")]' PASSING xml COLUMNS --
                              typ VARCHAR2(50) PATH '@type',
                              val VARCHAR2(500) PATH '.') b),
             line_len AS
