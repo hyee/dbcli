@@ -104,7 +104,7 @@ public class Console {
         input = terminal.reader();
         writer = terminal.writer();
 
-        if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM)) {
+        if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM||OSUtils.IS_CONEMU)) {
             colorPlan = System.getenv("ANSICON_DEF");
             if (("ansicon").equals(colorPlan) && System.getenv("ConEmuPID") == null/*&&!terminal.getType().equals(TYPE_WINDOWS_VTP)*/)
                 writer = new PrintWriter(new ConEmuOutputStream());

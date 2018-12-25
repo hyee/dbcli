@@ -2,22 +2,22 @@
 <settings lang="auto" icon_size="0">
 	<console shell="" init_dir="" refresh="100" change_refresh="10" rows="200" columns="200" buffer_rows="9999" buffer_columns="1000" start_hidden="1" save_size="0">
 		<colors background_text_opacity="255">
-			<color id="0" r="0" g="0" b="0"/>
-			<color id="1" r="0" g="0" b="128"/>
-			<color id="2" r="0" g="150" b="0"/>
-			<color id="3" r="0" g="150" b="150"/>
-			<color id="4" r="170" g="25" b="25"/>
-			<color id="5" r="128" g="0" b="128"/>
-			<color id="6" r="128" g="128" b="0"/>
-			<color id="7" r="192" g="192" b="192"/>
-			<color id="8" r="128" g="128" b="128"/>
-			<color id="9" r="0" g="100" b="255"/>
-			<color id="10" r="0" g="255" b="0"/>
-			<color id="11" r="0" g="255" b="255"/>
-			<color id="12" r="255" g="50" b="50"/>
-			<color id="13" r="255" g="0" b="255"/>
-			<color id="14" r="255" g="255" b="0"/>
-			<color id="15" r="255" g="255" b="255"/>
+			<color id="0" r="12" g="12" b="12"/>
+			<color id="1" r="0" g="55" b="218"/>
+			<color id="2" r="19" g="161" b="14"/>
+			<color id="3" r="58" g="150" b="221"/>
+			<color id="4" r="197" g="15" b="31"/>
+			<color id="5" r="136" g="23" b="152"/>
+			<color id="6" r="193" g="156" b="0"/>
+			<color id="7" r="204" g="204" b="204"/>
+			<color id="8" r="118" g="118" b="118"/>
+			<color id="9" r="59" g="120" b="255"/>
+			<color id="10" r="22" g="198" b="12"/>
+			<color id="11" r="97" g="214" b="214"/>
+			<color id="12" r="231" g="72" b="86"/>
+			<color id="13" r="180" g="0" b="158"/>
+			<color id="14" r="249" g="241" b="165"/>
+			<color id="15" r="242" g="242" b="242"/>
 		</colors>
 		<cursor style="0" r="255" g="255" b="255"/>
 		<background type="0" r="0" g="0" b="0">
@@ -32,7 +32,7 @@
 			<transparency type="0" active_alpha="206" inactive_alpha="255" r="0" g="0" b="0" active="1"/></fullscreen>
 		<controls show_menu="1" show_toolbar="1" show_searchbar="1" show_statusbar="0" show_tabs="1" hide_single_tab="0" tabs_on_bottom="0" hide_tab_icons="1" hide_tab_close_button="0" hide_tab_new_button="0" show_scrollbars="1"/>
 		<styles caption="1" resizable="1" taskbar_button="1" border="1" inside_border="2" split_bar_size="1" tray_icon="1" quake_like="0" quake_animation_time="300" jumplist="1" integrated_ime="1" hide_when_inactive="0" per_monitor_dpi="0" keep_view_theme="0">
-			<selection_color r="128" g="128" b="128"/>
+			<selection_color r="181" g="137" b="0"/>
 			<highlight_color r="191" g="191" b="191"/></styles>
 		<position x="0" y="0" save_position="0" w="1000" h="700" save_size="0" z_order="0" dock="0" snap="-1" save_state="0" state="2"/>
 		<transparency type="0" active_alpha="206" inactive_alpha="255" r="0" g="0" b="0" active="0"/></appearance>
@@ -98,6 +98,7 @@
 		<hotkey ctrl="1" shift="1" alt="0" extended="0" code="69" command="splitvert"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="splitswap"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="clone"/>
+		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="moveinnewtab"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="122" command="fullscreen"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="96" command="zoom100"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="107" command="zoominc"/>
@@ -181,6 +182,28 @@
 		</actions></mouse>
 	<snippets dir=""/>
 	<tabs>
+		<tab title="dbcli(conemu)" use_default_icon="0">
+			<console shell="..\dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
+			<cursor style="4" r="255" g="255" b="255"/>
+			<colors background_text_opacity="255">
+				<color id="0" r="0" g="43" b="54"/>
+				<color id="1" r="7" g="54" b="66"/>
+				<color id="2" r="0" g="128" b="128"/>
+				<color id="3" r="49" g="130" b="164"/>
+				<color id="4" r="203" g="75" b="22"/>
+				<color id="5" r="156" g="54" b="182"/>
+				<color id="6" r="133" g="153" b="0"/>
+				<color id="7" r="238" g="232" b="213"/>
+				<color id="8" r="147" g="161" b="161"/>
+				<color id="9" r="38" g="139" b="210"/>
+				<color id="10" r="79" g="182" b="54"/>
+				<color id="11" r="42" g="161" b="152"/>
+				<color id="12" r="220" g="50" b="47"/>
+				<color id="13" r="211" g="54" b="130"/>
+				<color id="14" r="181" g="147" b="0"/>
+				<color id="15" r="253" g="246" b="227"/>
+		</colors>
+		</tab>
 		<tab title="dbcli" use_default_icon="0">
 			<console shell="..\dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
 			<cursor style="4" r="255" g="255" b="255"/>
