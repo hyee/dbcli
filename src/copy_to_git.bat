@@ -1,5 +1,6 @@
 cd "%~dp0"
 cd ..
+for /f %%i in ('dir /b/s/a:-H dump\*.jar') do (pack200 -O -S-1 -G "%%i.pack.gz" "%%i" && del "%%i")
 set GIT_HOME=d:\green\github
 setlocal enabledelayedexpansion
 echo Copying Java source into src..
@@ -18,6 +19,7 @@ echo Copying files into %target% ..
 echo =========================
 cd /d "%~dp0"
 cd ..
+set "dump=%cd%\dump"
 mkdir "%target%"
 cd /d "%target%"
 REM git pull
@@ -58,4 +60,5 @@ zip -r -9 -q ..\dbcli_all.zip dbcli   -x "dbcli\help.gif"
 zip -r -9 -q ..\dbcli_win.zip dbcli   -x "dbcli\help.gif" "dbcli\jre_linux\*"
 zip -r -9 -q ..\dbcli_linux.zip dbcli -x "dbcli\help.gif" "dbcli\jre\*" "dbcli\bin\*"
 zip -r -9 -q ..\dbcli_nojre.zip dbcli -x "dbcli\help.gif" "dbcli\jre\*" "dbcli\jre_linux\*"
+copy /Y "%dump%\*.jar.pack.gz" .\dbcli\oracle
 zip -r -9 -q ..\dbcli_oracle_lite.zip dbcli -x "dbcli\help.gif" "dbcli\jre\*" "dbcli\docs\*" "dbcli\jre_linux\*" "dbcli\mysql\*" "dbcli\pgsql\*" "dbcli\db2\*" "dbcli\bin\*"

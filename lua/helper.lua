@@ -130,6 +130,9 @@ function helper.helper(cmd,...)
                           sunmscapi='ext/',
                           ojdbc8='/dump/',
                           xmlparserv2='/dump/',
+                          oraclepki='/dump/',
+                          osdt_cert='/dump/',
+                          osdt_core='/dump/',
                           orai18n='/dump/',
                           xdb6='/dump/'} do
             local dir=env.join_path(env.WORK_DIR..'/dump/'..f)
