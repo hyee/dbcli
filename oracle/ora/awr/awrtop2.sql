@@ -9,7 +9,8 @@
 
 ORA _sqlstat
 
-col ela,iowait,cpu,clwait,apwait,plsql,ccwait format smhd2
+col ela for smhd2
+col iowait,cpu,clwait,apwait,plsql,ccwait format pct1
 col reads,writes,mem,cellio,oflin,oflout,buff format kmg
 col execs,FETCHES,loads,parses,rows,PX format tmb
 
@@ -42,12 +43,12 @@ FROM   (SELECT &grp,sq_id,dbid,
                seens,
                mem / exe1 mem,
                ela / exe1 ela,
-               CPU / exe1 CPU,
-               iowait / exe1 iowait,
-               ccwait / exe1 ccwait,
-               clwait / exe1 clwait,
-               apwait / exe1 apwait,
-               PLSQL / exe1 PLSQL,
+               CPU / ela CPU,
+               iowait / ela iowait,
+               ccwait / ela ccwait,
+               clwait / ela clwait,
+               apwait / ela apwait,
+               PLSQL / ela PLSQL,
                READ / exe1 READS,
                buff / exe1 buff,
                WRITE / exe1 WRITES,

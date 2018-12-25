@@ -10,15 +10,16 @@
             o={obj},
             plan={plan_hash,current_obj#,SQL_PLAN_LINE_ID} 
             none={1},
+            c={},
             proc={sql_id,PLSQL_ENTRY_OBJECT_ID},
         }
       &View: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
       &BASE: ash={1}, dash={10}
       &Range: default={sample_time+0 between nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MISS'),sysdate)}
       &filter: {
-            id={(trim(:V1) is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id)) and &range
+            id={(trim(:V1) is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id,event)) and &range
                     &V4},
-            snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id)) &V3},
+            snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id,'event')) &V3},
             u={username=nvl('&0',sys_context('userenv','current_schema')) and &range}
         }
       &more_filter: default={1=1},f={}
@@ -59,7 +60,7 @@
 col reads format KMG
 col writes format kMG
 SELECT * FROM (
-    SELECT /*+ LEADING(a) USE_HASH(u) no_expand*/
+    SELECT /*+ LEADING(a) USE_HASH(u) swap_join_inputs(u) no_expand*/
         round(SUM(c))                                                   Secs
       , ROUND(sum(&base)) AAS
       , LPAD(ROUND(RATIO_TO_REPORT(sum(c)) OVER () * 100)||'%',5,' ')||' |' "%This"
@@ -92,6 +93,24 @@ SELECT * FROM (
            , TO_CHAR(p2, '0XXXXXXXXXXXXXXX') p2raw
            , TO_CHAR(p3, '0XXXXXXXXXXXXXXX') p3raw
            , nvl(event,'['||p1text||nullif('|'||p2text,'|')||nullif('|'||p3text,'|')||']') event_name
+           , CASE WHEN IN_CONNECTION_MGMT      = 'Y' THEN 'CONNECTION_MGMT '          END ||
+            CASE WHEN IN_PARSE                = 'Y' THEN 'PARSE '                    END ||
+            CASE WHEN IN_HARD_PARSE           = 'Y' THEN 'HARD_PARSE '               END ||
+            CASE WHEN IN_SQL_EXECUTION        = 'Y' THEN 'SQL_EXECUTION '            END ||
+            CASE WHEN IN_PLSQL_EXECUTION      = 'Y' THEN 'PLSQL_EXECUTION '          END ||
+            CASE WHEN IN_PLSQL_RPC            = 'Y' THEN 'PLSQL_RPC '                END ||
+            CASE WHEN IN_PLSQL_COMPILATION    = 'Y' THEN 'PLSQL_COMPILATION '        END ||
+            CASE WHEN IN_JAVA_EXECUTION       = 'Y' THEN 'JAVA_EXECUTION '           END ||
+            CASE WHEN IN_BIND                 = 'Y' THEN 'BIND '                     END ||
+            CASE WHEN IN_CURSOR_CLOSE         = 'Y' THEN 'CURSOR_CLOSE '             END ||
+            CASE WHEN IN_SEQUENCE_LOAD        = 'Y' THEN 'SEQUENCE_LOAD '            END ||
+    --        CASE WHEN IN_INMEMORY_QUERY       = 'Y' THEN 'IN_INMEMORY_QUERY'         END ||
+    --        CASE WHEN IN_INMEMORY_POPULATE    = 'Y' THEN 'IN_INMEMORY_POPULATE'      END ||
+    --        CASE WHEN IN_INMEMORY_PREPOPULATE = 'Y' THEN 'IN_INMEMORY_PREPOPULATE'   END ||
+    --        CASE WHEN IN_INMEMORY_REPOPULATE  = 'Y' THEN 'IN_INMEMORY_REPOPULATE'    END ||
+    --        CASE WHEN IN_INMEMORY_TREPOPULATE = 'Y' THEN 'IN_INMEMORY_TREPOPULATE'   END ||
+    --        CASE WHEN IN_TABLESPACE_ENCRYPTION= 'Y' THEN 'IN_TABLESPACE_ENCRYPTION'  END ||
+            '' phase
         FROM &View a) a
       , all_users u
     WHERE a.user_id = u.user_id (+)

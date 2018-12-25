@@ -999,7 +999,7 @@ function env.onload(...)
         env.set.init("Debug",'off',set_debug,"core","Indicates the option to print debug info, 'all' for always, 'off' for disable, others for specific modules.")
         env.set.init("OnErrExit",'on',nil,"core","Indicates whether to continue the remaining statements if error encountered.","on,off")
         env.set.init("TEMPPATH",'cache',set_cache_path,"core","Define the dir to store the temp files.","*")
-        local enabled=(env.PLATFORM=='windows' or env.platform=='conemu') and 'off' or 'on'
+        local enabled='off'
         env.set_title('status',enabled)
         env.set.init("Status",enabled,env.set_title,"core","Display the status bar","on,off")
         env.set.init("SPACES",4,env.set_space,"core","Define the prefix spaces of a line","0-8")
@@ -1179,10 +1179,15 @@ function env.set_title(title,value)
     if CURRENT_TITLE~=titles or enabled then
         CURRENT_TITLE=titles
         titles=enabled=="on" and "DBCLI" or titles
-        env.uv.set_process_title(titles)
-        local term=os.getenv("TERM")
-        if term and printer then
-            printer.write("\27]2;"..titles.."\7\27[1K\27[1G")
+        if env.IS_WINDOWS then
+            env.uv.set_process_title(titles)
+        elseif env.PLATFORM=='mac' then
+            printer.write( "\27]0;"..titles.."\7")
+        else
+            local term=os.getenv("TERM")
+            if term and printer then
+                printer.write("\27]2;"..titles.."\7\27[1K\27[1G")
+            end
         end
     end
     

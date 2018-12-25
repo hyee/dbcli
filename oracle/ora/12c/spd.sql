@@ -91,6 +91,7 @@ BEGIN
                      d.ENABLED,
                      d.state,
                      d.AUTO_DROP,
+                     d.type,
                      d.reason,
                      o2.notes,
                      nvl(d.LAST_MODIFIED, d.CREATED) LAST_MDF,

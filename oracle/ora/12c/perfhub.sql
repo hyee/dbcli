@@ -1,4 +1,4 @@
-/*[[ Oracle Performance Hub. Usage: @@NAME [{[1|YYMMDDHH24MI] [YYMMDDHH24MI]} | {[sid] [inst_id]}] [-snap"<minutes>"]
+/*[[ Oracle Performance Hub. Usage: @@NAME [{[1|YYMMDDHH24MI] [YYMMDDHH24MI] [sql_id]} | {[sid] [inst_id] [serial#]}] [-snap"<minutes>"]
   -snap"<minutes>"        : Used only on realtime(gv$*) mode, specifying the start time as sysdate-<minutes>  
   <start> [<end>]         : Generate non-realtime(dba_hist*) Performance hub report
   1 [<end>]               : Generate realtime(gv$*) Performance hub report, start time defaults to 3 hours ago if "-snap" is not specified
@@ -26,16 +26,32 @@ BEGIN
         v_start  := coalesce(to_date(nullif(:V1,'1'), 'YYMMDDHH24MI'),v_start,SYSDATE - CASE WHEN :V1 = '1' THEN nvl(&snap,3/24) ELSE 7 END);
         v_end    := coalesce(to_date(nvl(:V2, :endtime), 'YYMMDDHH24MI'), SYSDATE);
         v_file   := 'perfhub_' || to_char(v_start, 'YYMMDDHH24MI') || '_' || to_char(v_end, 'YYMMDDHH24MI') || '.html';
-        
-        v_report := dbms_perf.report_perfhub(is_realtime => v_realtime,
+        BEGIN
+        execute immediate 'alter session set events ''emx_control compress_xml=none''';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+
+        IF :V3 IS NULL THEN
+            v_report := dbms_perf.report_perfhub(is_realtime => v_realtime,
+                                                 outer_start_time => v_start,
+                                                 outer_end_time => v_end,
+                                                 selected_start_time => v_start,
+                                                 selected_end_time => v_end,
+                                                 dbid=>:dbid,
+                                                 inst_id => v_inst,
+                                                 monitor_list_detail => 50,
+                                                 workload_sql_detail => 50,
+                                                 addm_task_detail => 20);
+        ELSE
+            v_report := dbms_perf.report_sql(sql_id => :V3,is_realtime => v_realtime,
                                              outer_start_time => v_start,
                                              outer_end_time => v_end,
                                              selected_start_time => v_start,
                                              selected_end_time => v_end,
+                                             dbid=>:dbid,
                                              inst_id => v_inst,
-                                             monitor_list_detail => 50,
-                                             workload_sql_detail => 50,
-                                             addm_task_detail => 20);
+                                             monitor_list_detail => 50);
+        END IF;
     EXCEPTION
         WHEN OTHERS THEN
             IF v_file IS NOT NULL THEN

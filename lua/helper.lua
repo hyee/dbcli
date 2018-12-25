@@ -133,7 +133,7 @@ function helper.helper(cmd,...)
                           orai18n='/dump/',
                           xdb6='/dump/'} do
             local dir=env.join_path(env.WORK_DIR..'/dump/'..f)
-            local jar=env.join_path(env.WORK_DIR..(env.IS_WINDOWS and 'jre' or (env.PLATFORM=='mac' and 'jre_max') or 'jre_linux')..'/lib/'..p..f..'.jar')
+            local jar=env.join_path(env.WORK_DIR..(env.IS_WINDOWS and 'jre' or (env.PLATFORM=='mac' and 'jre_mac') or 'jre_linux')..'/lib/'..p..f..'.jar')
             if p:sub(1,1)=='/' then jar=env.join_path(env.WORK_DIR..p..f..'.jar') end
             local list={}
             for _,f in ipairs(os.list_dir(dir,'class',999)) do

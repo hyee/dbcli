@@ -19,30 +19,33 @@
           FROM   dba_hist_snapshot
           WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
           AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) 
-        SELECT time sample_time,event,V1 "Logical read bytes/Second", V2 "Physical read bytes/Second", V3 "Physical write bytes/Second", V4 "GC CR+CU bytes/Second"
+        SELECT time sample_time,event,V1 "Logical read bytes/Second", V2 "Physical read bytes/Second", V3 "Physical write bytes/Second", V4 "GC CR+CU bytes/Second", V5 "Table Scans"
         FROM   (SELECT to_char(end_time, 'YYYY-MM-DD HH24:MI') TIME,
                        event,
                        sum(v1) v1,
                        sum(v2) v2,
                        sum(v3) v3,
-                       sum(v3) v4
+                       sum(v4) v4,
+                       sum(v5) v5
                 FROM  (SELECT /*+merge*/
                                A.*,
                                decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event,
                                lread/slot_size*block_size V1,
                                pread/slot_size*block_size V2,
                                pwrite/slot_size*block_size V3,
-                               gc/slot_size*block_size V4
+                               gc/slot_size*block_size V4,
+                               scans v5
                        FROM   (SELECT /*+merge no_expand*/
                                       inst_id,end_time,flag,Slot_size,
                                       LOGICAL_READS_DELTA lread,
                                       (select value from v$parameter where name='db_block_size') block_size,
                                       PHYSICAL_READS_DELTA+PHYSICAL_READS_DIRECT_DELTA pread,
                                       PHYSICAL_WRITES_DELTA+PHYSICAL_WRITES_DIRECT_DELTA pwrite,
-                                      GC_CR_BLOCKS_SERVED_DELTA+GC_CR_BLOCKS_RECEIVED_DELTA+GC_CU_BLOCKS_SERVED_DELTA+GC_CU_BLOCKS_RECEIVED_DELTA gc
+                                      GC_CR_BLOCKS_SERVED_DELTA+GC_CR_BLOCKS_RECEIVED_DELTA+GC_CU_BLOCKS_SERVED_DELTA+GC_CU_BLOCKS_RECEIVED_DELTA gc,
+                                      TABLE_SCANS_DELTA scans
                                FROM   SNAP NATURAL JOIN DBA_HIST_SEG_STAT_OBJ NATURAL JOIN  DBA_HIST_SEG_STAT
                                WHERE  FLAG=0
-                               AND    OWNER=sys_context('userenv','current_Schema') and OBJECT_NAME=upper(:V1)) a
+                               AND    OBJECT_NAME=upper(:V1)) a
                        )
                  GROUP  BY event,end_time) a
         ORDER  BY 1]],

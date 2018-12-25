@@ -1,11 +1,12 @@
-/*[[Search for the SQLs in AWR snapshots that reference the specific object. Usage: @@NAME {<[owner.]object_name> [ela|exe|id|text|op] [yymmddhhmi] [yymmddhhmi]} ]]*/
+/*[[Search for the SQLs in AWR snapshots that reference the specific object. Usage: @@NAME {<object_name> [ela|exe|id|text|op] [yymmddhhmi] [yymmddhhmi]} ]]*/
 
 
 WITH qry AS
  (SELECT /*+materialize*/*
-  FROM   (SELECT nvl(lower(:V2),'op') sorttype,
+  FROM   (SELECT nvl(lower(:V2),'total') sorttype,
                  to_timestamp(coalesce(:V3,:starttime, to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
-                 to_timestamp(coalesce(:V4,:endtime, to_char(SYSDATE, 'YYMMDDHH24MI')), 'YYMMDDHH24MI') ed
+                 to_timestamp(coalesce(:V4,:endtime, to_char(SYSDATE, 'YYMMDDHH24MI')), 'YYMMDDHH24MI') ed,
+                 OWNER,OBJECT_NAME
           FROM   dba_hist_Seg_stat_obj
           WHERE  UPPER(OWNER || '.' || OBJECT_NAME || chr(10) || OBJ# || chr(10) ||
                        SUBOBJECT_NAME || chr(10) || DATAOBJ# || chr(10) ) LIKE
@@ -13,14 +14,16 @@ WITH qry AS
           ORDER  BY 1)
   WHERE  ROWNUM < 100)
 SELECT a.sql_id,
-       to_char(SUM(elapsed_time_delta) * 1.67e-8 /GREATEST(SUM(nvl(executions_delta, parse_calls_delta)), 1), '999990.0') SQL_ELAP,
+       to_char(SUM(elapsed_time_delta) * 1.67e-8, '999990.0') TOTAL_ELA,
+       to_char(SUM(elapsed_time_delta) * 1.67e-8 /GREATEST(SUM(nvl(executions_delta, parse_calls_delta)), 1), '999990.0') AVG_ELA,
        to_char(SUM(nvl(executions_delta, parse_calls_delta)),'99999990') execs,
        op,
        to_char(MAX(TIME) / 60, '999990.0') Minutes,
        obj OBJECT,
+       object_name,
        COUNT(DISTINCT plan_hash) Childs,
        --to_char(wmsys.wm_concat(DISTINCT decode(sign(r - 3), -1, plan_hash))) plan_hash,
-       substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'[' || chr(10) || chr(13) || chr(9) || ' ]+',' '),1,20) text
+       substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'[' || chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200) text
 FROM   (SELECT sql_id,
                st,
                ed,
@@ -28,6 +31,7 @@ FROM   (SELECT sql_id,
                plan_hash_value plan_hash,
                dense_rank() over(PARTITION BY sql_id ORDER BY plan_hash_value) r,
                object# obj,
+               qry.object_name,
                nvl(decode(options,
                           'BY INDEX ROWID',
                           NVL((SELECT MAX(DECODE(options,
@@ -59,8 +63,9 @@ FROM   (SELECT sql_id,
                                   AND    b.operation = 'INDEX'
                                   AND    a.object# < b.object#)),
                           0) TIME
-        FROM   qry, DBA_HIST_SQL_PLAN a
-        WHERE  qry.OBJECT_ID = a.object#
+        FROM   QRY,DBA_HIST_SQL_PLAN a
+        WHERE  A.OBJECT_NAME=QRY.OBJECT_NAME
+        AND    QRY.OWNER=A.OBJECT_OWNER
         AND    options != 'SAMPLE') a,
        dba_hist_snapshot s,
        Dba_Hist_Sqlstat hs,
@@ -72,5 +77,5 @@ AND    a.sql_id = b.sql_id
 AND    a.sql_id = hs.sql_id
 AND    a.plan_hash = hs.plan_hash_value
 AND    s.begin_interval_time BETWEEN a.st AND a.ed
-GROUP  BY a.sql_id, obj, op, to_char(SUBSTR(sql_text, 1, 500)),sorttype
-ORDER  BY decode(sorttype,'id',sql_id,'ela',sql_elap,'exe',execs,'text',text,minutes) DESC NULLS LAST
+GROUP  BY a.sql_id, obj,object_name,op, to_char(SUBSTR(sql_text, 1, 500)),sorttype
+ORDER  BY decode(sorttype,'id',sql_id,'total',total_ela,'ela',avg_ela,'exe',execs,'text',text,minutes) DESC NULLS LAST

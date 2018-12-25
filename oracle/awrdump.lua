@@ -98,20 +98,22 @@ function awr.extract_period()
                 END;
             END;
 
-            SELECT max(dbid),
-                   max(st),max(ed),
-                   max((select nvl(max(end_interval_time+0),s) from Dba_Hist_Snapshot WHERE snap_id=st AND dbid=a.dbid)),
-                   max((select nvl(max(end_interval_time+0),e) from Dba_Hist_Snapshot WHERE snap_id=ed AND dbid=a.dbid))
+            SELECT dbid,least(st,ed) st,greatest(st,ed),least(stim,etim),greatest(stim,etim)
             INTO dbid,st,ed,stim,etim
-            FROM   (SELECT dbid,
-                           nvl(MAX(decode(sign(end_interval_time-3e-4-s),1,null,snap_id)),min(snap_id)) st,
-                           nvl(min(decode(sign(end_interval_time+3e-4-e),-1,null,snap_id)),max(snap_id)) ed
-                    FROM   Dba_Hist_Snapshot
-                    WHERE  begin_interval_time-3e-4 <= e and end_interval_time+3e-4>=s
-                    AND    (p_inst IS NULL OR instr(',' || p_inst || ',', instance_number) > 0)
-                    GROUP  BY DBID
-                    ORDER  BY 2 DESC) a
-            WHERE  ROWNUM < 2;
+            FROM (
+                SELECT max(dbid) dbid,
+                       max(st) st,max(ed) ed,
+                       max((select nvl(max(end_interval_time+0),s) from Dba_Hist_Snapshot WHERE snap_id=st AND dbid=a.dbid)) stim,
+                       max((select nvl(max(end_interval_time+0),e) from Dba_Hist_Snapshot WHERE snap_id=ed AND dbid=a.dbid)) etim
+                FROM   (SELECT dbid,
+                               nvl(MAX(decode(sign(end_interval_time-3e-4-s),1,null,snap_id)),min(snap_id)) st,
+                               nvl(min(decode(sign(end_interval_time+3e-4-e),-1,null,snap_id)),max(snap_id)) ed
+                        FROM   Dba_Hist_Snapshot
+                        WHERE  begin_interval_time-3e-4 <= e and end_interval_time+3e-4>=s
+                        AND    (p_inst IS NULL OR instr(',' || p_inst || ',', instance_number) > 0)
+                        GROUP  BY DBID
+                        ORDER  BY 2 DESC) a
+                WHERE  ROWNUM < 2);
 
             IF ed IS NULL THEN
                 RAISE_APPLICATION_ERROR(-20001,'Cannot find the matched AWR snapshots between '''||s||''' and '''||e||''' for instance#'||p_inst||' !' );

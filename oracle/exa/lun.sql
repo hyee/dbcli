@@ -1,5 +1,6 @@
 /*[[cellcli list lun. Usage: @@NAME [<cell>]]]*/
 set printsize 3000
+col lunsize for kmg
 select * from(
     SELECT extractvalue(xmltype(a.confval),'/cli-output/context/@cell') cell, b.*
     FROM   v$cell_config a,

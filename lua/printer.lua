@@ -8,6 +8,7 @@ local io=io
 local NOR,BOLD="",""
 local strip_ansi=function(x) return x end
 local println,write=console.println,console.write
+local buff={ }
 
 function printer.load_text(text)
     printer.print(event.callback("BEFORE_PRINT_TEXT",{text or ""})[1])
@@ -56,8 +57,14 @@ function printer.rawprint(...)
     println(console,table.concat(msg," "))
 end
 
+local function flush_buff(text)
+    while #buff > 32766 do table.remove(buff,1) end
+    buff[#buff+1]=text
+end
+
 function printer.print(...)
     local output,found,ignore={}
+    --if not env.set then return end
     local termout=env.set.get('TERMOUT')=='on'
     local fmt=(env.ansi and env.ansi.get_color("GREPCOLOR") or '')..'%1'..NOR
     for i=1,select('#',...) do
@@ -90,6 +97,8 @@ function printer.print(...)
 
         if printer.tee_hdl and printer.tee_type~='csv' and printer.tee_type~='html' then
             pcall(printer.tee_hdl.write,printer.tee_hdl,strip_ansi(output).."\n")
+        elseif not printer.tee_hdl and not ignore then
+            flush_buff(strip_ansi(output))
         end
     end
 end
@@ -193,11 +202,11 @@ end
 
 function printer.before_command(command)
     local cmd,params,is_internal,line,text=table.unpack(command)
-    if not printer.hdl or #env.RUNNING_THREADS>1 then return end
-    if is_internal then return end
+    if is_internal or #env.RUNNING_THREADS>1 then return end
     line=line:gsub('\n','\n'..env.MTL_PROMPT)
     line=env.PRI_PROMPT..line
-    pcall(printer.hdl.write,printer.hdl,line.."\n")
+    if printer.hdl then pcall(printer.hdl.write,printer.hdl,line.."\n") end
+    flush_buff(strip_ansi(line))
 end
 
 function printer.after_command()
@@ -214,8 +223,14 @@ function printer.after_command()
     printer.is_more,more_text=false,{}
 end
 
-function printer.tee_to_file(row,total_rows)
-    if not printer.tee_hdl then return end
+function printer.tee_to_file(row,total_rows, format_func, format_str)
+    if not printer.tee_hdl or type(row)~="table" then
+        if env.set and not printer.tee_hdl  then
+            local str=type(row)~="table" and row or format_func(format_str, table.unpack(row))
+            flush_buff(env.space..strip_ansi(str))
+        end
+        return 
+    end
     local hdl=printer.tee_hdl
     if printer.tee_type=="html" then
         local td='td'
@@ -257,6 +272,20 @@ function printer.tee_to_file(row,total_rows)
     end
 end
 
+function printer.view_buff(file)
+    if file and file:lower()=='clear' then
+        buff={}
+        return
+    end
+    local target=env.write_cache(file or 'output.log',table.concat(buff,'\n'))
+    if file then 
+        print("Output is written to "..target)
+    end
+    if env.history then
+        env.history.edit_buffer(file or 'output.log')
+    end
+end
+
 _G.print=printer.print
 _G.rawprint=printer.rawprint
 
@@ -284,7 +313,7 @@ function printer.onload()
     ]]
     env.set_command(nil,"grep",grep_help,{printer.grep,printer.grep_after},'__SMART_PARSE__',3,false,false,true)
     env.set_command(nil,"tee",tee_help,{printer.tee,printer.tee_after},'__SMART_PARSE__',3,false,false,true)
-    
+    env.set_command(nil,"out","Use default editor to view the recent output. Usage: @@NAME [<file>|clear]",printer.view_buff,false,2,false,false,true)
     env.set_command(nil,{"more","less"},"Similar to Linux 'more' command. Usage: @@NAME <other command>",printer.set_more,'__SMART_PARSE__',2,false,false,true)
     env.set_command(nil,{"Prompt","pro",'echo'}, "Prompt messages. Usage: @@NAME <message>",printer.load_text,false,2)
     env.set_command(nil,{"SPOOL","SPO"}, "Write the screen output into a file. Usage: @@NAME [file_name[.ext]] [CREATE] | APP[END]] | OFF]",printer.spool,false,3)

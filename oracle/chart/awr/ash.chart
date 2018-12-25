@@ -19,7 +19,8 @@
         &V1       : default={&INSTANCE}
         &V2       : default={&STARTTIME}
         &V3       : default={&ENDTIME}
-        &VIEW_NAME: default={gv$active_session_history}, d={(select instance_number inst_id,a.* from dba_hist_active_Sess_history a)}
+        &ASH_NAME: default={gv$active_session_history}, d={(select instance_number inst_id,a.* from dba_hist_active_Sess_history a)}
+        &METRIC_NAME: default={gv$sysmetric_history}, d={(select instance_number inst_id,a.* from dba_hist_sysmetric_history a)}
         &TIME_BAND: default={sample_time > sysdate - INTERVAL '3' HOUR},d={sample_time between nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-interval '3' day) and nvl(to_date(:V3,'YYMMDDHH24MI'),sysdate)}
         &Time_Filter:{
             default={&TIME_BAND},
@@ -28,7 +29,7 @@
         }    
         &Filter:default={1=1},u={username=nvl('&0',sys_context('userenv','current_schema'))},f={}
         &GROUPS:{
-            default={DECODE(session_state, 'ON CPU', DECODE(session_type, 'BACKGROUND', 'BG CPU', 'ON CPU'), wait_class)},
+            default={nvl(wait_class, 'ON CPU')},
             event={nvl(event,'['||p1text||nullif('|'||p2text,'|')||nullif('|'||p3text,'|')||']')},
             schema={username}, sql={sql_id}, g={}
         }
@@ -41,29 +42,49 @@
         @VER3       : 11.2={delta_time*1e-6}, default={&unit}
         @VER4       : 11.2={,SUM(DELTA_READ_IO_BYTES) rb,SUM(DELTA_Write_IO_BYTES) wb},default={}
         @VER5       : 11.2={,SUM(rb) "IO Read Bytes" ,SUM(wb) "IO Write Bytes" },default={}
+        @VER41      : 11.2={,NULL,NULL} default={}
     ]]--
 ]]*/
 
 {
     _attrs=[[select 'ASH Chart (Group By "&GROUP_NAME")' title from dual]],
     _sql=[[
-        SELECT to_char(MEDIAN(MEDIAN(sample_time)) over(partition by bucket_id),'YYYY-MM-DD HH24:MI') sample_time,
-               group_by,sum(cnt) "&COUNT_NAME",SUM(SQLS) "&VER2" &VER5,sums RNK_
+        SELECT to_char(MAX(MAX(sample_time)) over(partition by bucket_id),'YYYY-MM-DD HH24:MI') sample_time,
+               group_by,ROUND(avg(cnt),2) "Active Sessions",SUM(SQLS) "&VER2" &VER5,sums RNK_
         FROM(
-             SELECT /*+no_expand*/
-                    trunc(sample_time, 'MI') sample_time,
-                    &GROUPS AS group_by,
-                    &COUNTER cnt,
-                    &VER1 SQLS,
-                    sum(&counter) over(partition by &GROUPS) sums &VER4,
-                    NTILE(1000) over(partition by &GROUPS order by trunc(sample_time, 'MI')) bucket_id
-             FROM   &VIEW_NAME a, all_users b
-             WHERE  a.user_id=b.user_id
-             AND    (&Time_Filter)
-             AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR inst_id = :V1)
-             AND    (&Filter)
-             AND    (&GROUPS IS NOT NULL)
-             GROUP BY trunc(sample_time, 'MI'),&GROUPS
+             SELECT A.*, SUM(CNT1) OVER(partition by group_by) sums,
+                     WIDTH_BUCKET(sample_time,min(sample_time) over(),max(sample_time) over(),1000) bucket_id
+             FROM(
+                 SELECT /*+no_expand*/
+                        trunc(sample_time, 'MI') sample_time,
+                        &GROUPS AS group_by,
+                        count(1)*&UNIT/60 cnt,
+                        &VER1 SQLS &VER4,
+                        COUNT(1) CNT1
+                 FROM   &ASH_NAME a
+                 WHERE  (&Time_Filter)
+                 AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR inst_id = :V1)
+                 AND    (&Filter)
+                 AND    (&GROUPS IS NOT NULL)
+                 GROUP BY trunc(sample_time, 'MI'),&GROUPS
+                 UNION ALL
+                 select trunc(sample_time, 'MI') sample_time, 
+                         wait_class,
+                         SUM(value/100),
+                         NULL &VER41,
+                         count(1)
+                  from (select a.*,end_time sample_time,
+                               case when metric_name like 'Host%' then 'Host CPU'
+                                    when metric_name like '%CPU%' then 'DB CPU'
+                               else 'DB Time' end wait_class
+                         from &METRIC_NAME a 
+                         where metric_name in('Host CPU Usage Per Sec',
+                                             'Background CPU Usage Per Sec','CPU Usage Per Sec',
+                                             'Database Time Per Sec','Background Time Per Sec')
+                         and   group_id=2)
+                  where (&Time_Filter)
+                  group by wait_class,trunc(sample_time, 'MI')) A
+
         )
         group by bucket_id,group_by,sums
         order by 1,2

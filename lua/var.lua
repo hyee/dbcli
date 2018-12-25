@@ -101,19 +101,35 @@ end
 
 function var.accept_input(name,desc)
     if not name then return end
-    local uname=name:upper()
+    local uname,noprompt=name:upper()
     --if not var.inputs[uname] then return end
     if not desc then
         desc=var.desc[uname] or name
     else
         if desc:sub(1,7):lower()=="prompt " then
             desc=desc:sub(8)
-        elseif desc:sub(1,1)=='@' then
+            noprompt=false
+        elseif desc:sub(1,9):lower()=="noprompt " then
+            desc=desc:sub(10)
+            var.inputs[uname]=''
+            noprompt=true
+        end
+        desc=desc:gsub('^"(.*)"$','%1')
+        if desc:sub(1,1)=='@' then
             desc=desc:sub(2)
-            desc=env.resolve_file(desc,'sql')
-            local f=io.open(desc)
-            if not f then f=io.open(env._CACHE_PATH..desc) end
-            env.checkerr(f,"Cannot find file '"..desc.."'!")
+            local typ,file=os.exists(desc,'sql')
+            if typ~='file' then
+                typ,file=os.exists(env.join_path(env._CACHE_PATH,desc),'sql')
+            end
+            if typ~='file' then
+                if noprompt then return end
+                env.raise("Cannot find file '"..desc.."'!")
+            end
+            local f=io.open(file)
+            if not f then 
+                if noprompt then return end
+                env.raise("Cannot find file '"..desc.."'!")
+            end
             var.inputs[uname]=f:read(10485760)
             f:close()
             return
@@ -403,10 +419,11 @@ function var.define_column(col,...)
                     u[#u+2],u[#u+1]=math.floor(s/24),s%24
                     return prefix..fmt:format(u[4],u[3],u[2],u[1]):gsub("^0 ",'')
                 end
-            elseif f=="%" or f=="PCT" or f=="PERCENTAGE" or f=="PERCENT" then
+            elseif f:find("^%%") or f:find("^PCT") or f:find("^PERCENTAGE") or f:find("^PERCENT") then
+                local scal=tonumber(f:match("%d+$")) or 2
                 obj.format=function(v)
                     if not tonumber(v) then return v end
-                    return string.format(num_fmt.."%%",tonumber(v)*100)
+                    return string.format("%."..scal.."f%%",tonumber(v)*100)
                 end
             elseif (f:find("%",1,true) or 999)<#f then
                 local fmt,String=arg,String
@@ -563,7 +580,7 @@ function var.onload()
     ]]
     cfg.init({"VERIFY","PrintVar",'VER'},'on',nil,"db.core","Max size of historical commands",'on,off')
     cfg.init({var.cmd1,var.cmd2},'on',nil,"db.core","Defines the substitution character(&) and turns substitution on and off.",'on,off')
-    env.set_command(nil,{"Accept","Acc"},'Assign user-input value into a existing variable. Usage: @@NAME <var> [[prompt] <prompt_text>|@<file>]',var.accept_input,false,3)
+    env.set_command(nil,{"Accept","Acc"},'Assign user-input value into a existing variable. Usage: @@NAME <var> [[prompt] <prompt_text>|[noprompt] @<file>]',var.accept_input,false,3)
     env.set_command(nil,{var.cmd3,var.cmd4},var.helper,var.setOutput,false,4)
     env.set_command(nil,{var.cmd1,var.cmd2},"Define input variables, Usage: @@NAME <name>[=]<value> [description], or @@NAME <name> to remove definition",var.setInput,false,3)
     env.set_command(nil,{"COLUMN","COL"},fmt_help,var.define_column,false,30)

@@ -213,6 +213,23 @@ The command rules are similar to SQL*Plus:
 * Apart from the above commands, most of other commands are single line commands and will be executed after the `Enter` key is pressed.
 Type `help -a` and refer to the `Cross-lines` field for the type of each command. 
 
+Line Wrap
+-----------------------
+For the output lines that wider than the buffer width(in Posix System it's the screen width), the overflow part will be trimmed.
+To view the complete information, you can run command `out` to launch the default editor to see the historial output.
+If the default editor is `vi`, execute `:set nowrap` and use hotkey `e/b/zL/zH` to horizontally scroll the screen.
+To change the default editor, use `set [-p] editor <executable name>`. For example, `set editor code`
+
+Releases
+-----------------------
+There are 5 zip files in the `releases` page that used in different scenario, all those releases don't include the `src` directory:
+* `dbcli_all.zip`: includes everything
+* `dbcli_win.zip`: excludes the `jre_linux` directory and include `JRE 1.8` for `Windows`
+* `dbcli_linux.zip`: excludes the `jre` directory and include `JRE 1.8` for `Linux`
+* `dbcli_nojre.zip`: excludes the `jre/jre_linux` directories
+* `dbcli_oracle_lite.zip`: excludes the `jre/jre_linux/bin/docs` directories, you can remove more sub-directories under `lib` depending on your OS. 
+
+
 References
 -----------------------
 The utility depends on some binary files of open-source projects, the authors own the rights. 

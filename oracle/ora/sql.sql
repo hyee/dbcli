@@ -2,6 +2,7 @@
     --[[
         @VER12: 12.1={} default={--}
         @VER: 11.2={} DEFAULT={--}
+        @check_access_hist: dba_hist_sqltext={} default={--}
     --]]
 ]]*/
 set colwrap 150 feed off 
@@ -51,7 +52,8 @@ SELECT PLAN_HASH_VALUE PHV,
        &ver round(SUM(PHYSICAL_READ_BYTES)/SUM(EXEC),3)  AS READ,
        &ver round(SUM(IO_CELL_OFFLOAD_ELIGIBLE_BYTES)/SUM(EXEC),3)  oflin,
        &ver round(SUM(IO_CELL_OFFLOAD_RETURNED_BYTES)/SUM(EXEC),3)  oflout,
-       round(sum(ROWS_PROCESSED)/SUM(EXEC),3)  rows#
+       round(sum(ROWS_PROCESSED)/SUM(EXEC),3)  rows#,
+       round(sum(fetches)/SUM(EXEC),3)  fetches
 FROM   (SELECT greatest(EXECUTIONS + users_executing, 1) exec,a.* FROM gv$SQL a WHERE SQL_ID=:V1)
 GROUP  BY SQL_ID,
           PLAN_HASH_VALUE,
@@ -67,9 +69,8 @@ GROUP  BY SQL_ID,
           
 column sql_text new_value txt;
 SELECT * FROM(
-      select sql_text from dba_hist_sqltext where sql_id=:V1
-      union all
-      select sql_fulltext from gv$sqlarea where sql_id=:V1
+      &check_access_hist select sql_text from dba_hist_sqltext where sql_id=:V1 union all
+      select sql_fulltext sql_text from gv$sqlarea where sql_id=:V1
 ) WHERE ROWNUM<2;
 pro
 save txt last_sql_&V1..txt
