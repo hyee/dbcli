@@ -53,9 +53,11 @@ function hotkeys.call(event,_,x)
     local keys,keys1={},{}
     local matched=false
     for key,desc in maps:gmatch('("[^\n\r]+") +([^\n\r]+)[\n\r]') do
-        if desc==event then matched=true end
-        keys[key]=desc
-        if key:find('^',1,true) then keys1[#keys1+1]={key,desc} end
+        if not desc:find('LineReaderImpl',1,true) then
+            if desc==event then matched=true end
+            keys[key]=desc
+            if key:find('^',1,true) then keys1[#keys1+1]={key,desc} end
+        end
     end
     table.sort(keys1,function(a,b) return a[2]<b[2] end)
 

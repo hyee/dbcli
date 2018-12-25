@@ -194,8 +194,8 @@ public class Loader {
         JavaAgent.copyFile(null, className.replace("\\.", "/"), null);
     }
 
-    public void createJar(String[] classes,String location) throws Exception{
-        JavaAgent.createJar(classes,location);
+    public void createJar(String[] classes, String location) throws Exception {
+        JavaAgent.createJar(classes, location);
     }
 
     public String dumpClass(String folder) throws Exception {
@@ -470,7 +470,10 @@ public class Loader {
                     stmt.cancel();
                     stmt = null;
                 }
-                if (rs != null && !rs.isClosed()) rs.close();
+                if (rs != null && !rs.isClosed()) {
+                    rs.getStatement().close();
+                    rs.close();
+                }
             } catch (Exception err) {
                 //getRootCause(err).printStackTrace();
             }

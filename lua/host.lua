@@ -3,7 +3,9 @@ local host={}
 function host.run_command(cmd)
     env.checkhelp(cmd)
     io.flush()
-    os.execute(cmd)
+    terminal:pause()
+    pcall(os.execute,cmd)
+    terminal:resume()
 end
 
 function host.mkdir(path)

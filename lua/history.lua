@@ -73,14 +73,14 @@ end
 function history.edit_buffer(file)
     if not lastcommand then return end
     local ed=cfg.get("editor")
-    local editor=os.find_extension(ed)
+    local editor='"'..os.find_extension(ed)..'"'
     if type(file)~='string' then file=nil end
     local file=env.join_path(env._CACHE_PATH,file or 'afiedt.buf')
     if env.IS_WINDOWS then 
         os.shell(editor,file)
     else
-        if ed=='vi' or ed=='vim' then editor=editor..' -n' end
-        os.execute(editor.." + '"..file.."'")
+        if ed=='vi' or ed=='vim' then editor=editor..' -n + ' end
+        os.execute(editor..' "'..file..'"')
     end 
 end
 
@@ -91,7 +91,7 @@ end
 
 function history.onload()
     cfg.init("HISSIZE",50,history.set_editor,"core","Max size of historical commands",'0 - 999')
-    cfg.init({"EDITOR",'_EDITOR'},env.PLATFORM=='windows' and 'notepad' or 'vi',history.set_editor,"core","The editor to edit the buffer")
+    cfg.init({"EDITOR",'_EDITOR'},env.IS_WINDOWS and 'notepad' or 'vi',history.set_editor,"core","The editor to edit the buffer")
     event.snoop("AFTER_SUCCESS_COMMAND",history.capture,history)
     env.set_command(history,{'history','his'},"Show/run historical commands. Usage: @@NAME [index|last]",history.show,false,2)
     env.set_command(history,{'r','/'},"Rerun the previous command.",history.rerun,false,2)

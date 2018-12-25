@@ -1179,10 +1179,15 @@ function env.set_title(title,value)
     if CURRENT_TITLE~=titles or enabled then
         CURRENT_TITLE=titles
         titles=enabled=="on" and "DBCLI" or titles
-        env.uv.set_process_title(titles)
-        local term=os.getenv("TERM")
-        if term and printer then
-            printer.write("\27]2;"..titles.."\7\27[1K\27[1G")
+        if env.IS_WINDOWS then
+            env.uv.set_process_title(titles)
+        elseif env.PLATFORM=='mac' then
+            printer.write( "\27]0;"..titles.."\7")
+        else
+            local term=os.getenv("TERM")
+            if term and printer then
+                printer.write("\27]2;"..titles.."\7\27[1K\27[1G")
+            end
         end
     end
     

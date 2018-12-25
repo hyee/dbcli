@@ -34,7 +34,6 @@ if %copyflag%==2 goto :end
 set copyflag=2
 set target=%GIT_HOME%\dbcli_compat
 goto start
-
 :end
 
 

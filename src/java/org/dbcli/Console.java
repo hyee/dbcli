@@ -63,7 +63,6 @@ public class Console {
     ArrayList<AttributedString> tmpTitles = new ArrayList<>(2);
     private LuaState lua;
     volatile private ScheduledFuture task;
-    private EventReader monitor = new EventReader();
     private ActionListener event;
     private char[] keys;
     private EventCallback callback;
@@ -76,7 +75,6 @@ public class Console {
 
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
-
         this.terminal = (AbstractTerminal) TerminalBuilder.builder().name(colorPlan).system(true).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).nativeSignals(true).build();
         this.status = this.terminal.getStatus();
         this.display = new Display(terminal, false);
@@ -88,6 +86,7 @@ public class Console {
         this.reader.setHistory(history);
         this.reader.unsetOpt(LineReader.Option.MOUSE);
         this.reader.unsetOpt(LineReader.Option.BRACKETED_PASTE);
+        this.reader.unsetOpt(LineReader.Option.DELAY_LINE_WRAP);
         this.reader.setOpt(LineReader.Option.DISABLE_EVENT_EXPANSION);
         this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE);
         this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE_SEARCH);
@@ -97,10 +96,6 @@ public class Console {
         this.reader.setVariable(DISABLE_HISTORY, false);
         this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
         this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);
-        /*
-        reader.getKeyMaps().get(LineReader.EMACS).unbind("\t");
-        reader.getKeyMaps().get(LineReader.EMACS).bind(new Reference(LineReader.EXPAND_OR_COMPLETE), "\t\t");
-        */
         setKeyCode("redo", "^Y");
         setKeyCode("undo", "^Z");
         setKeyCode("backward-word", "^[[1;3D");
@@ -359,8 +354,11 @@ public class Console {
         return accessor.invoke(reader, method, o);
     }
 
+    private int readSeq = 0;
+
     public String readLine(String prompt, String buffer) {
         try {
+            if (readSeq >= 5) System.exit(0);
             setEvents(null, null);
             terminal.resume();
             isPrompt = buffer != null && ansiPattern.matcher(buffer).find();
@@ -368,7 +366,6 @@ public class Console {
                 parser.setAnsi(buffer);
                 buffer = null;
             } else {
-
                 reader.setVariable(DISABLE_HISTORY, true);
             }
             pause = false;
@@ -377,10 +374,11 @@ public class Console {
                 line = parser.getLines();
                 if (line == null) return readLine(parser.secondPrompt, null);
             }
-
+            readSeq *= 0;
             pause = true;
             return line;
         } catch (UserInterruptException | EndOfFileException e) {
+            ++readSeq;
             terminal.raise(Terminal.Signal.INT);
             status.redraw();
             return "";
@@ -411,7 +409,7 @@ public class Console {
             this.task = null;
         }
         if (this.event != null && this.keys != null) {
-            this.monitor.counter = 0;
+
             //this.task = this.threadPool.scheduleWithFixedDelay(this.monitor, 1000, 200, TimeUnit.MILLISECONDS);
         }
     }
@@ -486,28 +484,6 @@ public class Console {
         }
     }
 
-    class EventReader implements Runnable {
-        public int counter = 0;
-
-        public void run() {
-            try {
-                if (pause) {
-                    int ch = input.peek(1L);
-                    if (ch < -1) return;
-                    for (int i = 0; i < keys.length; i++) {
-                        if (ch != keys[i] && keys[i] != '*') continue;
-                        input.read(1L);
-                        event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, Character.toChars(ch).toString()));
-                        return;
-                    }
-                }
-                setEvents(null, null);
-            } catch (Exception e) {
-                //Loader.getRootCause(e).printStackTrace();
-            }
-        }
-    }
-
     class MyParser extends DefaultParser implements Highlighter {
         public static final String DEFAULT_HIGHLIGHTER_COLORS = "rs=1:st=2:nu=3:co=4:va=5:vn=6:fu=7:bf=8:re=9";
         public final Pattern numPattern = Pattern.compile("([0-9]+)");
@@ -521,14 +497,14 @@ public class Console {
         String secondPrompt = "    ";
         volatile int lines = 0;
         StringBuffer sb = new StringBuffer(32767);
-        String ansi = null;
-        String errorAnsi = null;
         boolean enabled = true;
         Pattern p1 = Pattern.compile("^(\\s*)([^\\s\\|;/]+)(.*)$");
         AttributedStringBuilder asb = new AttributedStringBuilder();
         final AttributedString empty = asb.toAttributedString();
-        String prev = null;
-        int sub = 0;
+        private String ansi = null;
+        private String errorAnsi = null;
+        private String prev = null;
+        private int sub = 0;
 
 
         public MyParser() {
@@ -551,7 +527,7 @@ public class Console {
             return lines > 0 ? null : sb.toString();
         }
 
-        public ParsedLine parse(String line, int cursor, ParseContext context) {
+        public final ParsedLine parse(final String line, final int cursor, final ParseContext context) {
             if (!isPrompt && line == null) return null;
             if (context == ParseContext.COMPLETE) return super.parse(line, cursor, context);
             if (context != ParseContext.ACCEPT_LINE) return null;
@@ -596,7 +572,7 @@ public class Console {
             return null;
         }
 
-        public void setAnsi(String ansi) {
+        public final void setAnsi(final String ansi) {
             if (ansi.equals(this.ansi)) return;
             this.ansi = ansi;
             Matcher m = numPattern.matcher(ansi);
@@ -623,33 +599,35 @@ public class Console {
             }
         }
 
-        private final AttributedStringBuilder processQuoter(String buffer) {
+        private final AttributedStringBuilder process(final String buffer, final int index) {
             char c;
             boolean found;
             if (!enabled) asb.append(buffer);
-            else
-                for (int i = 0, n = buffer.length(); i < n; i++) {
+            else {
+                for (int i = index, n = buffer.length(); i < n; i++) {
                     c = buffer.charAt(i);
                     found = c == '(' || c == ')' || c == '{' || c == '}' || c == ',';
                     if (found) asb.ansiAppend(NOR);
                     asb.append(c);
                     if (found) asb.ansiAppend(ansi);
                 }
+            }
             return asb;
         }
 
-        public AttributedString highlight(LineReader reader, String buffer) {
+        public final AttributedString highlight(final LineReader reader, final String buffer) {
             try {
                 final int len = buffer.length();
-                if (sub > 0 && len >= sub && buffer.substring(0, sub).equals(prev)) {
+                if (sub > 0 && len >= sub && buffer.startsWith(prev)) {
                     if (len > sub) {
-                        processQuoter(buffer.substring(sub));
-                        prev = buffer;
+                        process(buffer, sub);
                         sub = len;
+                        prev = buffer;
                     }
                     return asb.toAttributedString();
                 }
                 sub *= 0;
+                prev = null;
                 asb.setLength(0);
 
                 if (len == 0) {
@@ -661,25 +639,26 @@ public class Console {
                 } else {
                     if (Console.this.isSubSystem || lines != 0) {
                         asb.ansiAppend(ansi);
-                        processQuoter(buffer);
+                        process(buffer, 0);
+                        sub = len;
                         prev = buffer;
-                        sub = prev.length();
                     } else {
-                        Matcher m = p1.matcher(buffer);
+                        //Handling command name
+                        final Matcher m = p1.matcher(buffer);
                         if (m.find()) {
                             asb.ansiAppend(NOR);
                             if (!commands.containsKey(m.group(2).toUpperCase())) {
                                 asb.ansiAppend(m.group(1)).ansiAppend(errorAnsi).append(m.group(2)).ansiAppend(ansi);
-                                processQuoter(m.group(3));
+                                process(m.group(3), 0);
                             } else {
                                 asb.ansiAppend(ansi);
-                                processQuoter(buffer);
+                                process(buffer, 0);
                             }
                             if (!m.group(3).equals("")) {
                                 prev = buffer;
-                                sub = prev.length();
+                                sub = len;
                             }
-                        } else processQuoter(buffer);
+                        } else process(buffer, 0);
                     }
                 }
                 return asb.toAttributedString();

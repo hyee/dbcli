@@ -8,9 +8,11 @@
     @adaptive : 12.1={adaptive} default={}
     @phf : 12.1={sql_full_plan_hash_value} default={sql_plan_hash_value}
     @phf2: 12.1={to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1))} default={null}
+    @con : 12.1={AND prior con_id=con_id} default={}
     &V9  : ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
-    &top1 : default={ev}, O={CURR_OBJ#}
+    &top1: default={ev}, O={CURR_OBJ#}
     &top2: default={CURR_OBJ#}, O={ev}
+    
     &vw  : default={A} G={G} D={D} 
     &Title: default={Objects}, O={Events}
     &titl2: default={Events}, O={Objects}
@@ -86,6 +88,7 @@
                 AND    PRIOR session_id=qc_session_id
                 AND    PRIOR instance_number=nvl(qc_instance_id,instance_number)
                 AND    NOT (session_id=qc_session_id and instance_number=nvl(qc_instance_id,instance_number))
+                &con
                 AND    LEVEL <3}
     }
 --]]

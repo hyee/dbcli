@@ -2,6 +2,7 @@
 Show ash wait chains. Usage: @@NAME {[<sql_id>|<sid>|-f"<filter>"] [YYMMDDHH24MI] [YYMMDDHH24MI]}|{-snap [secs]} [-sid] [-dash] [-flat]
 This script references Tanel Poder's script
     --[[
+        @con : 12.1={AND prior con_id=con_id} default={}
         &tree  : default={1} flat={0}
         &V8    : ash={gv$active_session_history},dash={Dba_Hist_Active_Sess_History}
         &Filter: default={:V1 in(''||session_id,sql_id,SESSION_ID||'@'||&INST1,event,''||current_obj#)} f={}
@@ -131,7 +132,7 @@ BEGIN
                       CONNECT_BY_ISCYCLE iscycle,
                       d.*
                 FROM  ash_data d
-                CONNECT BY NOCYCLE (PRIOR d.b_sid = d.sid AND PRIOR stime = stime)
+                CONNECT BY NOCYCLE (PRIOR d.b_sid = d.sid AND PRIOR stime = stime &con)
                 START WITH is_root=1
             )
             SELECT * FROM (
@@ -228,7 +229,7 @@ BEGIN
                        &group,
                        &io io
                 FROM  ash_data d
-                CONNECT BY NOCYCLE (PRIOR d.b_sid = d.sid AND PRIOR stime = stime)
+                CONNECT BY NOCYCLE (PRIOR d.b_sid = d.sid AND PRIOR stime = stime  &con)
                 START WITH is_root=1),
             calc AS (
                SELECT /*+materialize*/ * 
