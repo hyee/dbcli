@@ -72,6 +72,7 @@ public class Console {
     private DefaultHistory history = new DefaultHistory();
     private Status status;
     private String colorPlan;
+    private int readSeq = 0;
 
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
@@ -104,7 +105,7 @@ public class Console {
         input = terminal.reader();
         writer = terminal.writer();
 
-        if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM||OSUtils.IS_CONEMU)) {
+        if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM || OSUtils.IS_CONEMU)) {
             colorPlan = System.getenv("ANSICON_DEF");
             if (("ansicon").equals(colorPlan) && System.getenv("ConEmuPID") == null/*&&!terminal.getType().equals(TYPE_WINDOWS_VTP)*/)
                 writer = new PrintWriter(new ConEmuOutputStream());
@@ -261,7 +262,6 @@ public class Console {
         return terminal.getHeight() - titles.size();
     }
 
-
     public int wcwidth(String str) {
         if (str == null || str.equals("")) return 0;
         return display.wcwidth(str);
@@ -353,8 +353,6 @@ public class Console {
     public Object invokeMethod(String method, Object... o) {
         return accessor.invoke(reader, method, o);
     }
-
-    private int readSeq = 0;
 
     public String readLine(String prompt, String buffer) {
         try {
