@@ -120,6 +120,12 @@ function helper.helper(cmd,...)
         return os.execute(cmd)
     elseif cmd=="-buildjar" then
         local uv=env.uv
+        local dels='"'..env.join_path(env.WORK_DIR..'/dump/*.jar*')..'"'
+        if env.IS_WINDOWS then
+            os.execute("del "..dels)
+        else
+            os.execute("rm -f "..dels)
+        end
         for f,p in pairs{rt='',
                           jce='',
                           jsse='',
@@ -130,14 +136,17 @@ function helper.helper(cmd,...)
                           sunmscapi='ext/',
                           ojdbc8='/dump/',
                           xmlparserv2='/dump/',
+                          oraclepki='/dump/',
+                          osdt_cert='/dump/',
+                          osdt_core='/dump/',
                           orai18n='/dump/',
                           xdb6='/dump/'} do
             local dir=env.join_path(env.WORK_DIR..'/dump/'..f)
             local jar=env.join_path(env.WORK_DIR..(env.IS_WINDOWS and 'jre' or (env.PLATFORM=='mac' and 'jre_mac') or 'jre_linux')..'/lib/'..p..f..'.jar')
             if p:sub(1,1)=='/' then jar=env.join_path(env.WORK_DIR..p..f..'.jar') end
             local list={}
-            for _,f in ipairs(os.list_dir(dir,'class',999)) do
-                list[#list+1]=f.fullname:sub(#dir+2):sub(1,-7):gsub("[\\/]","/")
+            for _,f in ipairs(os.list_dir(dir,'*',999)) do
+                list[#list+1]=f.fullname:sub(#dir+2):gsub("[\\/]","/")
             end
             loader:createJar(list,jar)
             os.execute('pack200 -r -O -G "'..jar..'" "'..jar..'"')

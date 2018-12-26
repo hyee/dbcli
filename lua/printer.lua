@@ -57,13 +57,13 @@ function printer.rawprint(...)
     println(console,table.concat(msg," "))
 end
 
-local function flush_buff(text)
-    while #buff > 32766 do table.remove(buff,1) end
-    buff[#buff+1]=text
+local function flush_buff(text,lines)
+    while #buff > 32766-(lines or 1) do table.remove(buff,1) end
+    buff[#buff+1]=strip_ansi(text)
 end
 
 function printer.print(...)
-    local output,found,ignore={}
+    local output,found,ignore,rows={}
     --if not env.set then return end
     local termout=env.set.get('TERMOUT')=='on'
     local fmt=(env.ansi and env.ansi.get_color("GREPCOLOR") or '')..'%1'..NOR
@@ -75,7 +75,10 @@ function printer.print(...)
             ignore=true
         end
     end
-    output=NOR..env.space..table.concat(output,' '):gsub("(\r?\n\r?)","%1"..env.space)
+
+    output,rows=table.concat(output,' '):gsub("\r?\n\r?","%0"..env.space)
+    output=NOR..env.space..output
+    
     if printer.grep_text and not ignore then
         local stack=output:split('[\n\r]+')
         output={}
@@ -94,11 +97,10 @@ function printer.print(...)
         if printer.hdl then
             pcall(printer.hdl.write,printer.hdl,strip_ansi(output).."\n")
         end
-
         if printer.tee_hdl and printer.tee_type~='csv' and printer.tee_type~='html' then
             pcall(printer.tee_hdl.write,printer.tee_hdl,strip_ansi(output).."\n")
         elseif not printer.tee_hdl and not ignore then
-            flush_buff(strip_ansi(output))
+            flush_buff(output,rows+1)
         end
     end
 end
@@ -201,12 +203,12 @@ function printer.tee_after()
 end
 
 function printer.before_command(command)
-    local cmd,params,is_internal,line,text=table.unpack(command)
+    local cmd,params,is_internal,line,text,lines=table.unpack(command)
     if is_internal or #env.RUNNING_THREADS>1 then return end
-    line=line:gsub('\n','\n'..env.MTL_PROMPT)
+    line,lines=line:gsub('\n','\n'..env.MTL_PROMPT)
     line=env.PRI_PROMPT..line
     if printer.hdl then pcall(printer.hdl.write,printer.hdl,line.."\n") end
-    flush_buff(strip_ansi(line))
+    flush_buff(line,lines+1)
 end
 
 function printer.after_command()
@@ -227,7 +229,7 @@ function printer.tee_to_file(row,total_rows, format_func, format_str)
     if not printer.tee_hdl or type(row)~="table" then
         if env.set and not printer.tee_hdl  then
             local str=type(row)~="table" and row or format_func(format_str, table.unpack(row))
-            flush_buff(env.space..strip_ansi(str))
+            flush_buff(env.space..str)
         end
         return 
     end

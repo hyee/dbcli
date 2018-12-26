@@ -14,8 +14,6 @@ SET JRE_HOME=
 If exist "data\init.cfg" (for /f "eol=# delims=" %%i in (data\init.cfg) do (%%i))
 
 rem search java 1.8+ executable
-
-
 SET TEMP_PATH=!PATH!
 set "PATH=.\jre\bin;!PATH!;%JAVA_HOME%\bin;%JRE_HOME%\bin;%JRE_HOME%"
 SET JAVA_HOME=
@@ -63,7 +61,7 @@ rem unpack jar files for the first use
 for /r %%i in (*.pack.gz) do (
    set "var=%%i" &set "str=!var:@=!"
    echo Unpacking %%i to jar file for the first use...
-   If not exist "jre\bin\unpack200" (
+   If exist "jre\bin\unpack200" (
        jre\bin\unpack200 -q -r "%%i" "!str:~0,-8!"
    ) else (
        "!JAVA_BIN!\unpack200" -q -r "%%i" "!str:~0,-8!"
