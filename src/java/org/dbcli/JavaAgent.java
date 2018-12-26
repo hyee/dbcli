@@ -3,16 +3,14 @@ package org.dbcli;
 import com.esotericsoftware.reflectasm.ClassAccess;
 import jdk.internal.org.objectweb.asm.ClassReader;
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
+import java.io.*;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Field;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.ByteBuffer;
 import java.security.CodeSource;
 import java.security.ProtectionDomain;
 import java.util.ArrayList;
@@ -203,26 +201,26 @@ public class JavaAgent implements ClassFileTransformer {
             String suffix;
             URLClassLoader cd = (URLClassLoader) JavaAgent.class.getClassLoader();
             for (String clz : classes) {
-                String cl = clz;
-                if (cl.endsWith(".class")) cl = cl.substring(0, cl.lastIndexOf(".class"));
+                String cl=clz;
+                if(cl.endsWith(".class")) cl=cl.substring(0,cl.lastIndexOf(".class"));
                 cl = cl.replace(".", "/").replace("\\", "");
                 byte[] classFileBuffer = getClassBuffer(cl, null);
-                suffix = ".class";
+                suffix=".class";
                 if (classFileBuffer == null) {
-                    if (clz.contains("MANIFEST.MF")) continue;
+                    if(clz.contains("MANIFEST.MF")) continue;
                     try {
-                        int idx = clz.lastIndexOf(".");
-                        if (idx == -1) suffix = "";
+                        int idx=clz.lastIndexOf(".");
+                        if(idx==-1) suffix="";
                         else {
-                            suffix = clz.substring(idx);
-                            cl = clz.substring(0, idx);
+                            suffix=clz.substring(idx);
+                            cl=clz.substring(0,idx);
                         }
-                        InputStream in = cd.findResource(clz).openStream();
+                        InputStream in =cd.findResource(clz).openStream();
                         ByteArrayOutputStream bos = new ByteArrayOutputStream();
                         byte[] buffer = new byte[16384];
                         while (in.read(buffer) > 0)
                             bos.write(buffer);
-                        classFileBuffer = bos.toByteArray();
+                        classFileBuffer=bos.toByteArray();
                         bos.close();
                     } catch (Exception e1) {
                         System.out.println("    Cannot load file: " + clz);

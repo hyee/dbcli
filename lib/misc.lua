@@ -6,7 +6,7 @@ function string.initcap(v)
 end
 
 function os.shell(cmd,args)
-    io.popen(cmd..(args and (" "..args) or ""))
+    io.popen('"'..cmd..(args and (" "..args) or "")..'"')
 end
 
 function os.find_extension(exe,ignore_errors)

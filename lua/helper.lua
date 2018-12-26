@@ -112,8 +112,6 @@ function helper.helper(cmd,...)
         return helper.env(...)
     elseif cmd=="-j" or cmd=="-J" then
         return helper.jvm(...)
-    elseif cmd=="-m" or cmd=="-M" then
-        return helper.makejar(...)
     elseif cmd=="-dump" then
         local cmd=java.loader:dumpClass(env.WORK_DIR.."dump")
         io.write("Command: "..cmd.."\n");
@@ -139,7 +137,7 @@ function helper.helper(cmd,...)
                           oraclepki='/dump/',
                           osdt_cert='/dump/',
                           osdt_core='/dump/',
-                          orai18n='/dump/',
+                          --orai18n='/dump/',
                           xdb6='/dump/'} do
             local dir=env.join_path(env.WORK_DIR..'/dump/'..f)
             local jar=env.join_path(env.WORK_DIR..(env.IS_WINDOWS and 'jre' or (env.PLATFORM=='mac' and 'jre_mac') or 'jre_linux')..'/lib/'..p..f..'.jar')
@@ -207,10 +205,14 @@ function helper.desc()
     return [[
         Type 'help' to see the available comand list. Usage: help [<command>[,<sub_command1>...]|-a|-j|-stack|-e [<obj>]|help ]
         Options:
-           -stack To print stack of historical commands
-           -a     To show all commands, including the hidden commands.
-           -j     To show current JVM information
-           -e     To show current environment infomation. Usage: help -e [<lua_table>[.<sub_table>] ]
+           -stack     To print stack of historical commands
+           -a         To show all commands, including the hidden commands.
+           -j         To show current JVM information
+           -e         To show current environment infomation. Usage: help -e [<lua_table>[.<sub_table>] ]
+           Internal:
+                -verbose [class] :  dump a class or classes from verbose.log into dir "dunmp"
+                -dump            :  dump classed of current process into dir "dunmp"
+                -buildjar        :  build jars from in dir "dunmp"
         Other commands:
             help                             To brief the available commands(excluding hiddens)
             help <command>                   To show the help detail of a specific command

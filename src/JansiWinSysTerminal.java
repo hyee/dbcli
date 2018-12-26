@@ -4,18 +4,9 @@
  * This software is distributable under the BSD license. See the terms of the
  * BSD license in the documentation provided with this software.
  *
- * http://www.opensource.org/licenses/bsd-license.php
+ * https://opensource.org/licenses/BSD-3-Clause
  */
 package org.jline.terminal.impl.jansi.win;
-
-import org.fusesource.jansi.internal.Kernel32;
-import org.fusesource.jansi.internal.Kernel32.*;
-import org.fusesource.jansi.internal.WindowsSupport;
-import org.jline.terminal.Cursor;
-import org.jline.terminal.Size;
-import org.jline.terminal.impl.AbstractWindowsTerminal;
-import org.jline.utils.InfoCmp;
-import org.jline.utils.OSUtils;
 
 import java.io.BufferedWriter;
 import java.io.IOError;
@@ -24,9 +15,24 @@ import java.io.Writer;
 import java.nio.charset.Charset;
 import java.util.function.IntConsumer;
 
-import static org.fusesource.jansi.internal.Kernel32.*;
+import org.fusesource.jansi.internal.Kernel32;
+import org.fusesource.jansi.internal.Kernel32.CONSOLE_SCREEN_BUFFER_INFO;
+import org.fusesource.jansi.internal.Kernel32.INPUT_RECORD;
+import org.fusesource.jansi.internal.Kernel32.KEY_EVENT_RECORD;
+import org.fusesource.jansi.internal.WindowsSupport;
+import org.jline.terminal.Cursor;
+import org.jline.terminal.Size;
+import org.jline.terminal.Terminal;
+import org.jline.terminal.impl.AbstractWindowsTerminal;
+import org.jline.utils.InfoCmp;
+
+import static org.fusesource.jansi.internal.Kernel32.GetConsoleScreenBufferInfo;
+import static org.fusesource.jansi.internal.Kernel32.GetStdHandle;
+import static org.fusesource.jansi.internal.Kernel32.STD_OUTPUT_HANDLE;
+import org.jline.utils.OSUtils;
 
 public class JansiWinSysTerminal extends AbstractWindowsTerminal {
+
     public static JansiWinSysTerminal createTerminal(String name, String type, boolean ansiPassThrough, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler, boolean paused) throws IOException {
         Writer writer;
         if (ansiPassThrough) {
@@ -57,7 +63,6 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
                 }
                 writer = new WindowsAnsiWriter(new BufferedWriter(new JansiWinConsoleWriter()));
             }
-
         }
         JansiWinSysTerminal terminal = new JansiWinSysTerminal(writer, name, type, encoding, codepage, nativeSignals, signalHandler);
         // Start input pump thread
@@ -86,11 +91,11 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         WindowsSupport.setConsoleMode(mode);
     }
 
+    long outputHandle = Kernel32.GetStdHandle(Kernel32.STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO info = new CONSOLE_SCREEN_BUFFER_INFO();
+    Size size = new Size();
     public Size getSize() {
-        long outputHandle = Kernel32.GetStdHandle(Kernel32.STD_OUTPUT_HANDLE);
-        CONSOLE_SCREEN_BUFFER_INFO info = new CONSOLE_SCREEN_BUFFER_INFO();
         Kernel32.GetConsoleScreenBufferInfo(outputHandle, info);
-        Size size = new Size();
         size.setColumns(info.windowWidth());
         size.setRows(info.windowHeight());
         return size;
@@ -123,7 +128,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         for (INPUT_RECORD event : events) {
             if (event.eventType == INPUT_RECORD.KEY_EVENT) {
                 KEY_EVENT_RECORD keyEvent = event.keyEvent;
-                processKeyEvent(keyEvent.keyDown, keyEvent.keyCode, keyEvent.uchar, keyEvent.controlKeyState);
+                processKeyEvent(keyEvent.keyDown , keyEvent.keyCode, keyEvent.uchar, keyEvent.controlKeyState);
                 flush = true;
             } else if (event.eventType == INPUT_RECORD.WINDOW_BUFFER_SIZE_EVENT) {
                 raise(Signal.WINCH);
@@ -138,7 +143,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         return flush;
     }
 
-    private char[] focus = new char[]{'\033', '[', ' '};
+    private char[] focus = new char[] { '\033', '[', ' ' };
 
     private void processFocusEvent(boolean hasFocus) throws IOException {
         if (focusTracking) {
@@ -147,7 +152,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         }
     }
 
-    private char[] mouse = new char[]{'\033', '[', 'M', ' ', ' ', ' '};
+    private char[] mouse = new char[] { '\033', '[', 'M', ' ', ' ', ' ' };
 
     private void processMouseEvent(Kernel32.MOUSE_EVENT_RECORD mouseEvent) throws IOException {
         int dwEventFlags = mouseEvent.eventFlags;
@@ -158,7 +163,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
             return;
         }
         int cb = 0;
-        dwEventFlags &= ~Kernel32.MOUSE_EVENT_RECORD.DOUBLE_CLICK; // Treat double-clicks as normal
+        dwEventFlags &= ~ Kernel32.MOUSE_EVENT_RECORD.DOUBLE_CLICK; // Treat double-clicks as normal
         if (dwEventFlags == Kernel32.MOUSE_EVENT_RECORD.MOUSE_WHEELED) {
             cb |= 64;
             if ((dwButtonState >> 16) < 0) {

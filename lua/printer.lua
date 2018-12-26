@@ -99,9 +99,10 @@ function printer.print(...)
         end
         if printer.tee_hdl and printer.tee_type~='csv' and printer.tee_type~='html' then
             pcall(printer.tee_hdl.write,printer.tee_hdl,strip_ansi(output).."\n")
-        elseif not printer.tee_hdl and not ignore then
-            flush_buff(output,rows+1)
         end
+    end
+    if not printer.tee_hdl and not ignore then
+        flush_buff(output,rows+1)
     end
 end
 

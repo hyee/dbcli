@@ -759,14 +759,16 @@ local function _eval_line(line,exec,is_internal,not_skip)
     
     local cmd,rest,end_mark
 
-    local rest,pipe_cmd,param = (' '..line):match('^(.*[^|])|%s*(%w+)(.*)$')
+    local rest,pipe_cmd,param = line:match('^%s*([^|]+)|%s*(%w+)(.*)$')
     if pipe_cmd and _CMDS[pipe_cmd:upper()] and _CMDS[pipe_cmd:upper()].ISPIPABLE==true then
-        param=env.COMMAND_SEPS.match(param)
-        if multi_cmd then
-            param,multi_cmd=param..' '..multi_cmd..' '..curr_stmt,nil
+        if not rest:find('^!') and not rest:upper():find('^HOS') then 
+            param=env.COMMAND_SEPS.match(param)
+            if multi_cmd then
+                param,multi_cmd=param..' '..multi_cmd..' '..curr_stmt,nil
+            end
+            pipe_cmd=pipe_cmd..' "'..param:trim()..'" '..rest
+            return eval_line(pipe_cmd,exec,true,not_skip)
         end
-        pipe_cmd=pipe_cmd..' '..param..rest
-        return eval_line(pipe_cmd,exec,true,not_skip)
     end
 
     if multi_cmd then return check_multi_cmd(line) end
@@ -1146,6 +1148,7 @@ function env.set_space(name,value)
 end
 
 function env.set_title(title,value)
+    if not org_title then org_title=uv.get_process_title() end
     local enabled
     if title and title:upper()=="STATUS" and value then
         enabled=value:lower()

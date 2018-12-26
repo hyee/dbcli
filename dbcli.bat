@@ -17,28 +17,27 @@ rem search java 1.8+ executable
 SET TEMP_PATH=!PATH!
 set "PATH=.\jre\bin;!PATH!;%JAVA_HOME%\bin;%JRE_HOME%\bin;%JRE_HOME%"
 SET JAVA_HOME=
-IF not defined JRE_HOME (
-    for /F "delims=" %%p in ('where java.exe') do (
-        for /f tokens^=2-5^ delims^=.-_^" %%j in ('"%%p" -fullversion 2^>^&1') do (
-            if 18000 LSS %%j%%k%%l%%m (
-                set "JAVA_BIN=%%~dpsp"
-                set "JAVA_EXE=%%p"
-                for %%x in ("!JAVA_BIN!") do set "JAVA_BIN=%%~sx"
-                for %%x in ("!JAVA_EXE!") do set "JAVA_EXE=%%~sx"
-            )
-        )
-    )
+
+for /F "usebackq delims=" %%p in (`where java.exe 2^>NUL ^& echo %JRE_HOME%\bin\java.exe`) do (
+  If exist "%%p" (
+      set "JAVA_EXE_=%%~sp"
+      FOR /F "tokens=1,2 delims== " %%i IN ('!JAVA_EXE_! -XshowSettings:properties -version 2^>^&1^|findstr "java\.home java.version os.arch"' ) do (
+        if "%%i" equ "java.home" set "JAVA_BIN_=%%~sj\bin"
+        if "%%i" equ "os.arch" if "%%j" equ "x86" (set bit_=x86) else (set bit_=x64)
+        if "%%i" equ "java.version" if "1.8" GTR "%%j" set "JAVA_EXE_="
+      )
+      if "!JAVA_EXE_!" neq "" if "!JAVA_BIN_!" neq "" (
+        set "JAVA_BIN=!JAVA_BIN_!" & set "JAVA_EXE=!JAVA_BIN_!\java.exe" & set "bit=!bit_!"
+      ) else ( set "JAVA_BIN_=")
+   )
 )
 
-IF not exist "!JAVA_EXE!" if exist "%JRE_HOME%\bin\java.exe" (set "JAVA_BIN=%JRE_HOME%\bin" && set "JAVA_EXE=%JRE_HOME%\bin\java.exe") else (set JAVA_BIN=.\jre\bin && set "JAVA_EXE=.\jre\bin\java.exe")
-
+IF not exist "!JAVA_EXE!" (set "JAVA_BIN=.\jre\bin" & set "JAVA_EXE=.\jre\bin\java.exe" & set "bit=x86")
 If not exist "!JAVA_EXE!" (
     echo "Cannot find Java 1.8 executable, exit."
     exit /b 1
 )
 
-SET bit=x64
-("!JAVA_EXE!" -version 2>&1 |findstr /i "64-bit" >nul) || (set bit=x86)
 SET "PATH=.\lib\!bit!;!JAVA_BIN!;!EXT_PATH!;.\bin;!TEMP_PATH!"
 
 rem check if ConEmu dll exists to determine whether use it as the ANSI renderer
