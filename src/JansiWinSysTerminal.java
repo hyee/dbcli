@@ -8,6 +8,17 @@
  */
 package org.jline.terminal.impl.jansi.win;
 
+import org.fusesource.jansi.internal.Kernel32;
+import org.fusesource.jansi.internal.Kernel32.*;
+import org.fusesource.jansi.internal.WindowsSupport;
+import org.jline.keymap.KeyMap;
+import org.jline.reader.impl.LineReaderImpl;
+import org.jline.terminal.Cursor;
+import org.jline.terminal.Size;
+import org.jline.terminal.impl.AbstractWindowsTerminal;
+import org.jline.utils.InfoCmp;
+import org.jline.utils.OSUtils;
+
 import java.io.BufferedWriter;
 import java.io.IOError;
 import java.io.IOException;
@@ -15,21 +26,7 @@ import java.io.Writer;
 import java.nio.charset.Charset;
 import java.util.function.IntConsumer;
 
-import org.fusesource.jansi.internal.Kernel32;
-import org.fusesource.jansi.internal.Kernel32.CONSOLE_SCREEN_BUFFER_INFO;
-import org.fusesource.jansi.internal.Kernel32.INPUT_RECORD;
-import org.fusesource.jansi.internal.Kernel32.KEY_EVENT_RECORD;
-import org.fusesource.jansi.internal.WindowsSupport;
-import org.jline.terminal.Cursor;
-import org.jline.terminal.Size;
-import org.jline.terminal.Terminal;
-import org.jline.terminal.impl.AbstractWindowsTerminal;
-import org.jline.utils.InfoCmp;
-
-import static org.fusesource.jansi.internal.Kernel32.GetConsoleScreenBufferInfo;
-import static org.fusesource.jansi.internal.Kernel32.GetStdHandle;
-import static org.fusesource.jansi.internal.Kernel32.STD_OUTPUT_HANDLE;
-import org.jline.utils.OSUtils;
+import static org.fusesource.jansi.internal.Kernel32.*;
 
 public class JansiWinSysTerminal extends AbstractWindowsTerminal {
 
@@ -72,8 +69,72 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         return terminal;
     }
 
+    private volatile long prev = 0;
+    private volatile int isPasting = 0;
+    final char[] bp = KeyMap.translate(LineReaderImpl.BRACKETED_PASTE_BEGIN).toCharArray();
+    final char[] ep = KeyMap.translate(LineReaderImpl.BRACKETED_PASTE_END).toCharArray();
+    final char[] ec = new char[]{ep[ep.length - 3], ep[ep.length - 2], ep[ep.length - 1]};
+    final boolean isConEmu = System.getenv("ConEmuPID") != null;
+    private volatile char c0;
+    private volatile char c1;
+    private volatile char c2;
+    Thread t = new Thread(() -> {
+        while (true) {
+            try {
+                Thread.sleep(64);
+                if (isPasting == 0 || paused()) continue;
+                if (System.currentTimeMillis() - prev >= 256 + isPasting) {
+                    if (c0 != ec[0] || c1 != ec[1] || c2 != ec[2]) {
+                        for (char a : ep) processChar(a);
+                    }
+                    isPasting = 0;
+                }
+            } catch (Exception e) {
+            }
+        }
+    });
+
+    final void processChar(char c) throws IOException {
+        super.processInputChar(c);
+    }
+
+    @Override
+    public void processInputChar(char c) throws IOException {
+        if (!isConEmu && isPasting == 0 && (c == ' ' || c == '\t' || c == '\n') && reader.available() >= 3) {
+            for (char a : bp) processChar(a);
+            prev = System.currentTimeMillis();
+            isPasting = 1;
+            if(c=='\t') processChar(' ');
+        } else if (isPasting > 0) {
+            isPasting = isPasting + 1;
+            if (isPasting > 100) {
+                prev = System.currentTimeMillis();
+                isPasting = 1;
+            }
+            c0 = c1;
+            c1 = c2;
+            c2 = c;
+        } else if (c == '\t') {
+            if (reader.available() == 0) {
+                try {
+                    Thread.sleep(50L);
+                } catch (InterruptedException e) {
+                }
+            }
+            if (reader.available() > 0)
+                for (int i = 0; i < 4; i++) processChar(' ');
+            else processChar(c);
+            return;
+        }
+        processChar(c);
+    }
+
     JansiWinSysTerminal(Writer writer, String name, String type, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler) throws IOException {
         super(writer, name, type, encoding, codepage, nativeSignals, signalHandler);
+        if (!isConEmu) {
+            t.setDaemon(true);
+            t.start();
+        }
     }
 
     @Override
@@ -94,6 +155,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
     long outputHandle = Kernel32.GetStdHandle(Kernel32.STD_OUTPUT_HANDLE);
     CONSOLE_SCREEN_BUFFER_INFO info = new CONSOLE_SCREEN_BUFFER_INFO();
     Size size = new Size();
+
     public Size getSize() {
         Kernel32.GetConsoleScreenBufferInfo(outputHandle, info);
         size.setColumns(info.windowWidth());
@@ -101,22 +163,6 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         return size;
     }
 
-
-    private volatile long prev = 0;
-
-    @Override
-    public void processInputChar(char c) throws IOException {
-        final long timer = System.currentTimeMillis();
-        if (('\t' == c && timer - prev <= 50)) {
-            super.processInputChar(' ');
-            super.processInputChar(' ');
-            super.processInputChar(' ');
-            super.processInputChar(' ');
-        } else {
-            super.processInputChar(c);
-        }
-        prev = timer;
-    }
 
     protected boolean processConsoleInput() throws IOException {
         INPUT_RECORD[] events = WindowsSupport.readConsoleInput(1, 100);
@@ -128,7 +174,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         for (INPUT_RECORD event : events) {
             if (event.eventType == INPUT_RECORD.KEY_EVENT) {
                 KEY_EVENT_RECORD keyEvent = event.keyEvent;
-                processKeyEvent(keyEvent.keyDown , keyEvent.keyCode, keyEvent.uchar, keyEvent.controlKeyState);
+                processKeyEvent(keyEvent.keyDown, keyEvent.keyCode, keyEvent.uchar, keyEvent.controlKeyState);
                 flush = true;
             } else if (event.eventType == INPUT_RECORD.WINDOW_BUFFER_SIZE_EVENT) {
                 raise(Signal.WINCH);
@@ -143,7 +189,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         return flush;
     }
 
-    private char[] focus = new char[] { '\033', '[', ' ' };
+    private char[] focus = new char[]{'\033', '[', ' '};
 
     private void processFocusEvent(boolean hasFocus) throws IOException {
         if (focusTracking) {
@@ -152,30 +198,30 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         }
     }
 
-    private char[] mouse = new char[] { '\033', '[', 'M', ' ', ' ', ' ' };
+    private char[] mouse = new char[]{'\033', '[', 'M', ' ', ' ', ' '};
 
-    private void processMouseEvent(Kernel32.MOUSE_EVENT_RECORD mouseEvent) throws IOException {
+    private void processMouseEvent(MOUSE_EVENT_RECORD mouseEvent) throws IOException {
         int dwEventFlags = mouseEvent.eventFlags;
         int dwButtonState = mouseEvent.buttonState;
         if (tracking == MouseTracking.Off
-                || tracking == MouseTracking.Normal && dwEventFlags == Kernel32.MOUSE_EVENT_RECORD.MOUSE_MOVED
-                || tracking == MouseTracking.Button && dwEventFlags == Kernel32.MOUSE_EVENT_RECORD.MOUSE_MOVED && dwButtonState == 0) {
+                || tracking == MouseTracking.Normal && dwEventFlags == MOUSE_EVENT_RECORD.MOUSE_MOVED
+                || tracking == MouseTracking.Button && dwEventFlags == MOUSE_EVENT_RECORD.MOUSE_MOVED && dwButtonState == 0) {
             return;
         }
         int cb = 0;
-        dwEventFlags &= ~ Kernel32.MOUSE_EVENT_RECORD.DOUBLE_CLICK; // Treat double-clicks as normal
-        if (dwEventFlags == Kernel32.MOUSE_EVENT_RECORD.MOUSE_WHEELED) {
+        dwEventFlags &= ~MOUSE_EVENT_RECORD.DOUBLE_CLICK; // Treat double-clicks as normal
+        if (dwEventFlags == MOUSE_EVENT_RECORD.MOUSE_WHEELED) {
             cb |= 64;
             if ((dwButtonState >> 16) < 0) {
                 cb |= 1;
             }
-        } else if (dwEventFlags == Kernel32.MOUSE_EVENT_RECORD.MOUSE_HWHEELED) {
+        } else if (dwEventFlags == MOUSE_EVENT_RECORD.MOUSE_HWHEELED) {
             return;
-        } else if ((dwButtonState & Kernel32.MOUSE_EVENT_RECORD.FROM_LEFT_1ST_BUTTON_PRESSED) != 0) {
+        } else if ((dwButtonState & MOUSE_EVENT_RECORD.FROM_LEFT_1ST_BUTTON_PRESSED) != 0) {
             cb |= 0x00;
-        } else if ((dwButtonState & Kernel32.MOUSE_EVENT_RECORD.RIGHTMOST_BUTTON_PRESSED) != 0) {
+        } else if ((dwButtonState & MOUSE_EVENT_RECORD.RIGHTMOST_BUTTON_PRESSED) != 0) {
             cb |= 0x01;
-        } else if ((dwButtonState & Kernel32.MOUSE_EVENT_RECORD.FROM_LEFT_2ND_BUTTON_PRESSED) != 0) {
+        } else if ((dwButtonState & MOUSE_EVENT_RECORD.FROM_LEFT_2ND_BUTTON_PRESSED) != 0) {
             cb |= 0x02;
         } else {
             cb |= 0x03;

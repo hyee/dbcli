@@ -88,7 +88,7 @@ elif [ ! -x "$unpack" ]; then
     exit 1
 fi
 
-for f in `find . -type f -name "*.pack.gz" 2>/dev/null`; do
+for f in `find . -type f -name "*.pack.gz" 2>/dev/null | egrep -v "cache|dump"`; do
     echo "Unpacking $f ..."
     "$unpack" -q -r  $f $(echo $f|sed 's/\.pack\.gz//g') &
 done

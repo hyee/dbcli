@@ -57,7 +57,7 @@ rem ver|findstr -r "[1-9][0-9]\.[0-9]*\.[0-9]">NUL && (SET "ANSICON_CMD=" && set
 
 IF !CONSOLE_COLOR! NEQ NA color !CONSOLE_COLOR!
 rem unpack jar files for the first use
-for /r %%i in (*.pack.gz) do (
+for /f %%i in ('dir /s/b *.pack.gz 2^>NUL ^|findstr -v "cache dump" ') do (
    set "var=%%i" &set "str=!var:@=!"
    echo Unpacking %%i to jar file for the first use...
    If exist "jre\bin\unpack200" (

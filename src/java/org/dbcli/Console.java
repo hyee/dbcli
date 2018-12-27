@@ -17,6 +17,7 @@ import org.jline.reader.impl.history.DefaultHistory;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 import org.jline.terminal.impl.AbstractTerminal;
+import org.jline.terminal.impl.jansi.win.JansiWinSysTerminal;
 import org.jline.utils.*;
 
 import java.awt.event.ActionEvent;
@@ -59,6 +60,7 @@ public class Console {
     MyCompleter completer = new MyCompleter();
     Thread subThread = null;
     boolean isPrompt = true;
+    boolean isJansiConsole = false;
     ArrayList<AttributedString> titles = new ArrayList<>(2);
     ArrayList<AttributedString> tmpTitles = new ArrayList<>(2);
     private LuaState lua;
@@ -85,7 +87,7 @@ public class Console {
         this.reader.setCompleter(completer);
         this.reader.setHistory(history);
         this.reader.unsetOpt(LineReader.Option.MOUSE);
-        this.reader.unsetOpt(LineReader.Option.BRACKETED_PASTE);
+        this.reader.setOpt(LineReader.Option.BRACKETED_PASTE);
         this.reader.unsetOpt(LineReader.Option.DELAY_LINE_WRAP);
         this.reader.setOpt(LineReader.Option.DISABLE_EVENT_EXPANSION);
         this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE);
@@ -93,9 +95,10 @@ public class Console {
         this.reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
         this.reader.setOpt(LineReader.Option.LIST_ROWS_FIRST);
         this.reader.setOpt(LineReader.Option.INSERT_TAB);
-        this.reader.setVariable(DISABLE_HISTORY, false);
+        this.reader.setVariable(DISABLE_HISTORY, true);
         this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
         this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);
+        this.isJansiConsole = this.terminal instanceof JansiWinSysTerminal;
         setKeyCode("redo", "^Y");
         setKeyCode("undo", "^Z");
         setKeyCode("backward-word", "^[[1;3D");
@@ -104,7 +107,7 @@ public class Console {
         input = terminal.reader();
         writer = terminal.writer();
 
-        if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM||OSUtils.IS_CONEMU)) {
+        if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM || OSUtils.IS_CONEMU)) {
             colorPlan = System.getenv("ANSICON_DEF");
             if (("ansicon").equals(colorPlan) && System.getenv("ConEmuPID") == null/*&&!terminal.getType().equals(TYPE_WINDOWS_VTP)*/)
                 writer = new PrintWriter(new ConEmuOutputStream());
@@ -365,8 +368,6 @@ public class Console {
             if (isPrompt) {
                 parser.setAnsi(buffer);
                 buffer = null;
-            } else {
-                reader.setVariable(DISABLE_HISTORY, true);
             }
             pause = false;
             String line = reader.readLine(prompt, null, buffer);
@@ -382,10 +383,6 @@ public class Console {
             terminal.raise(Terminal.Signal.INT);
             status.redraw();
             return "";
-        } finally {
-            if (!isPrompt) {
-                reader.setVariable(DISABLE_HISTORY, false);
-            }
         }
     }
 
@@ -498,14 +495,14 @@ public class Console {
         volatile int lines = 0;
         StringBuffer sb = new StringBuffer(32767);
         boolean enabled = true;
-        Pattern p1 = Pattern.compile("^(\\s*)([^\\s\\|;/]+)(.*)$");
+        Pattern p1 = Pattern.compile("^(\\s*)([^\\s\\|;/]+)(.*)$", Pattern.DOTALL);
         AttributedStringBuilder asb = new AttributedStringBuilder();
         final AttributedString empty = asb.toAttributedString();
         private String ansi = null;
         private String errorAnsi = null;
-        private String prev = null;
-        private int sub = 0;
-
+        private volatile String prev = null;
+        private volatile int sub = 0;
+        PrintWriter writer = null;
 
         public MyParser() {
             super();
@@ -513,12 +510,9 @@ public class Console {
             super.setEofOnEscapedNewLine(true);
             reader.setVariable(SECONDARY_PROMPT_PATTERN, secondPrompt);
             reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
-            Interrupter.listen(this, new EventCallback() {
-                @Override
-                public void call(Object... c) {
-                    lines = 0;
-                    sb.setLength(0);
-                }
+            Interrupter.listen(this, c -> {
+                lines = 0;
+                sb.setLength(0);
             });
         }
 
@@ -533,11 +527,7 @@ public class Console {
             if (context != ParseContext.ACCEPT_LINE) return null;
 
             if (lines <= 0) sb.setLength(0);
-
-            else {
-                ++lines;
-                sb.append('\n');
-            }
+            else sb.append('\n');
             sb.append(line);
 
             if (parserCallback == null) {
@@ -548,26 +538,21 @@ public class Console {
             }
 
             Object[] result = parserCallback.call(line);
-
+            lines += (int) result[3];
             if ((Boolean) result[0]) {
                 if (result.length > 1 && !secondPrompt.equals(result[1])) {
                     secondPrompt = (String) result[1];
                     reader.setVariable(SECONDARY_PROMPT_PATTERN, secondPrompt);
                 }
-                if (lines <= 0) {
-                    lines = 1;
-                    reader.setVariable(DISABLE_HISTORY, true);
-                }
                 return null;
             }
-            if (lines > 0) {
-                if (lines <= 20) {
-                    reader.setVariable(DISABLE_HISTORY, false);
-                    history.add(sb.toString());
-                    reader.setVariable(DISABLE_HISTORY, true);
-                }
-                lines = -1;
-            } else lines = 0;
+
+            if (lines <= 20) {
+                reader.setVariable(DISABLE_HISTORY, false);
+                history.add(sb.toString());
+                reader.setVariable(DISABLE_HISTORY, true);
+            }
+            lines = 0;
             if ((Boolean) result[2]) terminal.pause();
             return null;
         }
