@@ -761,7 +761,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
     if multi_cmd then return check_multi_cmd(line) end
     
     line,end_mark=env.COMMAND_SEPS.match(line)
-    cmd,rest=line:match('^%s*(/?[^%s/]+)[%s/]*(.*)')
+    cmd,rest=line:match('^%s*(/?[^%s/]*)[%s]*(.*)')
     --if #cmd>2 and (cmd:find('^/%*') or cmd:find('^%-%-')) then cmd,rest=line:sub(1,2),line:sub(3) end
     if not rest then return end
     rest=rest..(end_mark or "")
