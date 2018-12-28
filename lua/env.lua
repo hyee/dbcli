@@ -809,19 +809,21 @@ function env.parse_line(line,exec)
 
     local is_not_end,cnt=true,0
     for w in line:gsplit('\n',true) do
-        cnt=cnt+1
-        _line_stacks[#_line_stacks+1]=w
-        if is_not_end then
-            _cmd,_args,_errs=_eval_line(w,false)
-            is_not_end=env.CURRENT_PROMPT==env.MTL_PROMPT
-            if not is_not_end then
-                full_text=table.concat(_line_stacks,'\n')
-                _line_stacks={}
+        if #_line_stacks>0 or w:trim()~='' then
+            cnt=cnt+1
+            _line_stacks[#_line_stacks+1]=w
+            if is_not_end then
+                _cmd,_args,_errs=_eval_line(w,false)
+                is_not_end=env.CURRENT_PROMPT==env.MTL_PROMPT
+                if not is_not_end then
+                    full_text=table.concat(_line_stacks,'\n')
+                    _line_stacks={}
+                end
             end
         end
     end
 
-    if exec and not is_not_end then env.execute_line() end
+    if exec and not is_not_end then return env.execute_line() end
     local is_block=env._CMDS[_cmd] and env._CMDS[_cmd].ISBLOCKNEWLINE or false
     return is_not_end,env.CURRENT_PROMPT,is_block,cnt
 end
@@ -830,7 +832,7 @@ function env.execute_line()
     local cmd,args
     cmd,args,_cmd,_args=_cmd,_args
     if cmd then
-        env.exec_command(cmd,args,false,full_text)
+        pcall(env.exec_command,cmd,args,false,full_text)
         if #_line_stacks>0 then
             full_text=table.concat(_line_stacks,'\n')
             _line_stacks={}
