@@ -809,8 +809,8 @@ function env.parse_line(line,exec)
 
     local is_not_end,cnt=true,0
     for w in line:gsplit('\n',true) do
+        cnt=cnt+1
         if #_line_stacks>0 or w:trim()~='' then
-            cnt=cnt+1
             _line_stacks[#_line_stacks+1]=w
             if is_not_end then
                 _cmd,_args,_errs=_eval_line(w,false)
@@ -833,14 +833,14 @@ function env.execute_line()
     cmd,args,_cmd,_args=_cmd,_args
     if cmd then
         pcall(env.exec_command,cmd,args,false,full_text)
-        if #_line_stacks>0 then
-            full_text=table.concat(_line_stacks,'\n')
-            _line_stacks={}
-            env.parse_line(full_text,true)
-        end
     elseif _errs then
         env.warn(_errs)
         _errs=nil
+    end
+    if #_line_stacks>0 then
+        full_text=table.concat(_line_stacks,'\n')
+        _line_stacks={}
+        env.parse_line(full_text,true)
     end
 end
 

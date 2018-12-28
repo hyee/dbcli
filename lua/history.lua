@@ -29,7 +29,7 @@ end
 
 local is_changed,current_line,current_index
 
-local cmds={HIS=1,HISTORY=1,["/"]=1,R=1,EDIT=1,ED=1,L=1,LIST=1,CHANGE=1,C=1,HELP=1,SET=1,KEYMAP=1}
+local cmds={HIS=1,HISTORY=1,["/"]=1,R=1,EDIT=1,ED=1,L=1,LIST=1,CHANGE=1,C=1,HELP=1,SET=1,KEYMAP=1,OUT=1,OUTPUT=1}
 
 function history:capture(cmd,args,res,is_internal,command_text,clock)
     if #env.RUNNING_THREADS>1 or not args then return end
@@ -80,12 +80,13 @@ function history.rerun()
 end
 
 function history.edit_buffer(file)
-    if not lastcommand then return end
     local ed=cfg.get("editor")
     local editor='"'..os.find_extension(ed)..'"'
-    if type(file)~='string' then file=nil end
     if not file then
+        if not lastcommand then return end
         env.write_cache('afiedt.buf',lastcommand.text)
+    elseif type(file)~='string' then
+        file=nil
     end
     local file=env.join_path(env._CACHE_PATH,file or 'afiedt.buf')
     is_changed=true;
@@ -180,7 +181,7 @@ function history.onload()
     env.set_command(history,{'history','his'},"Show/run historical commands. Usage: @@NAME [index|last]",history.show,false,2)
     env.set_command(history,{'r','/'},"Rerun the previous command.",history.rerun,false,2)
     env.set_command(nil,{'l'},"Show the previous command. Usage: @@NAME [last|*|<num>] [last|*|<num>]",history.show_command,false,3)
-    env.set_command(nil,{'c'},"Change command. Usage: @@NAME [<text>|<old>/<new>] ",history.change_command,false,2)
+    env.set_command(nil,{'change','c'},"Edit the previous command. Usage: @@NAME [<text>|<old>/<new>] ",history.change_command,false,2)
     env.set_command({history,{'EDIT','ED'},"Use the program that defined in 'set editor' to edit the buffer in order to run with '/'.",history.edit_buffer,false,2,is_blocknewline=true})
 end
 

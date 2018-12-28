@@ -421,7 +421,7 @@ public class Console {
         return stream.toString();
     }
 
-    public String setKeyCode(String keyEvent, String keyCode) {
+    public String setKeyCode(String keyEvent, String keyCode) throws IOException {
         String keySeq;
         if (keyCode == null) {
             write("Input key code for '" + keyEvent + "'(hit Enter to complete): ");
@@ -430,9 +430,11 @@ public class Console {
             boolean isPause = terminal.paused();
             if (isPause) terminal.resume();
             while (true) {
-                c = reader.readCharacter();
-                if (c == 10 || c == 13) break;
-                sb.append(new String(Character.toChars(c)));
+                c = terminal.reader().read();
+                if (c > 0) {
+                    if (c == 10 || c == 13) break;
+                    sb.appendCodePoint(c);
+                }
             }
             if (isPause) terminal.pause();
             keySeq = sb.toString();

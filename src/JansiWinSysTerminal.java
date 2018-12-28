@@ -71,21 +71,23 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
 
     private volatile long prev = 0;
     private volatile int isPasting = 0;
+    private volatile char lastChar;
     final char[] bp = KeyMap.translate(LineReaderImpl.BRACKETED_PASTE_BEGIN).toCharArray();
     final char[] ep = KeyMap.translate(LineReaderImpl.BRACKETED_PASTE_END).toCharArray();
-    final char[] ec = new char[]{ep[ep.length - 3], ep[ep.length - 2], ep[ep.length - 1]};
-    final boolean isConEmu = System.getenv("ConEmuPID") != null;
-    private volatile char c0;
-    private volatile char c1;
-    private volatile char c2;
+    final short bpl = (short) (bp.length - 1);
+    final short epl = (short) (ep.length - 1);
+    final short START_POS = 2;
+    short beginIdx = START_POS;
+    short endIdx = START_POS;
     Thread t = new Thread(() -> {
         while (true) {
             try {
                 Thread.sleep(64);
                 if (isPasting == 0 || paused()) continue;
                 if (System.currentTimeMillis() - prev >= 256 + isPasting) {
-                    if (c0 != ec[0] || c1 != ec[1] || c2 != ec[2]) {
+                    if (endIdx != epl) {
                         for (char a : ep) processChar(a);
+                        if (lastChar == '\r' || lastChar == '\n') processChar('\n');
                     }
                     isPasting = 0;
                 }
@@ -100,20 +102,24 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
 
     @Override
     public void processInputChar(char c) throws IOException {
-        if (!isConEmu && isPasting == 0 && (c == ' ' || c == '\t' || c == '\n') && reader.available() >= 3) {
+        lastChar = c;
+        //check if the console natively supports Bracketed Paste
+        if (isPasting == 0 && c == bp[beginIdx]) beginIdx += beginIdx >= bpl ? 0 : 1;
+        else if (isPasting == 0 && beginIdx > START_POS && beginIdx < bpl) beginIdx = START_POS;
+        else if (isPasting == 1 && c == ep[endIdx]) endIdx += endIdx >= epl ? 0 : 1;
+        else if (isPasting == 1 && endIdx > START_POS && endIdx < epl) endIdx = START_POS;
+
+        if (beginIdx != bpl && isPasting == 0 && (c == ' ' || c == '\t') && reader.available() >= 3) {
             for (char a : bp) processChar(a);
             prev = System.currentTimeMillis();
             isPasting = 1;
-            if(c=='\t') processChar(' ');
+            if (c == '\t') processChar(' ');
         } else if (isPasting > 0) {
             isPasting = isPasting + 1;
             if (isPasting > 100) {
                 prev = System.currentTimeMillis();
                 isPasting = 1;
             }
-            c0 = c1;
-            c1 = c2;
-            c2 = c;
         } else if (c == '\t') {
             if (reader.available() == 0) {
                 try {
@@ -131,10 +137,8 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
 
     JansiWinSysTerminal(Writer writer, String name, String type, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler) throws IOException {
         super(writer, name, type, encoding, codepage, nativeSignals, signalHandler);
-        if (!isConEmu) {
-            t.setDaemon(true);
-            t.start();
-        }
+        t.setDaemon(true);
+        t.start();
     }
 
     @Override
