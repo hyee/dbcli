@@ -121,7 +121,7 @@ function oracle:connect(conn_str)
 
     self:merge_props(
         {driverClassName="oracle.jdbc.driver.OracleDriver",
-         defaultRowPrefetch="3000",
+         defaultRowPrefetch=tostring(cfg.get("FETCHSIZE")),
          PROXY_USER_NAME=proxy_user,
          useFetchSizeWithLongColumn='true',
          useThreadLocalBufferCache="true",

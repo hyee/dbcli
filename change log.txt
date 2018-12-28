@@ -1,3 +1,4 @@
+2018-12-29: + public: new option 'set BRACKETED_PASTE'
 2018-12-24: + public: new command 'out [<file>|clear]"
 2018-12-22: + oracle: new command 'ora ashnet'
 2018-12-21: + oracle: rename org 'ora ashplan' to 'ora ashplan2' and created new command 'ora ashplan'

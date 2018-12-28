@@ -744,7 +744,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
         return multi_cmd
     end
     
-    local cmd,rest,end_mark
+    local cmd,line_terminator
 
     local rest,pipe_cmd,param = line:match('^%s*([^|]+)|%s*(%w+)(.*)$')
     if pipe_cmd and _CMDS[pipe_cmd:upper()] and _CMDS[pipe_cmd:upper()].ISPIPABLE==true then
@@ -759,12 +759,11 @@ local function _eval_line(line,exec,is_internal,not_skip)
     end
 
     if multi_cmd then return check_multi_cmd(line) end
-    
-    line,end_mark=env.COMMAND_SEPS.match(line)
+    line,line_terminator=env.COMMAND_SEPS.match(line)
     cmd,rest=line:match('^%s*(/?[^%s/]*)[%s]*(.*)')
     --if #cmd>2 and (cmd:find('^/%*') or cmd:find('^%-%-')) then cmd,rest=line:sub(1,2),line:sub(3) end
     if not rest then return end
-    rest=rest..(end_mark or "")
+    rest=rest..(line_terminator or "")
     if not cmd or cmd=="" then return end
     cmd=cmd:upper()
     env.CURRENT_CMD=cmd
@@ -775,7 +774,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
             return nil,nil,warning
         end
         return env.warn(warning)
-    elseif not end_mark and not rest:find('\n',1,true) then 
+    elseif not line_terminator and not rest:find('\n',1,true) then 
         terminator=rest:match(terminator_patt)
         if terminator then
             terminator,multi_cmd,curr_stmt,env.CURRENT_PROMPT='\n'..terminator,cmd,{},env.MTL_PROMPT
@@ -836,6 +835,7 @@ function env.execute_line()
     elseif _errs then
         env.warn(_errs)
         _errs=nil
+        _line_stacks={}
     end
     if #_line_stacks>0 then
         full_text=table.concat(_line_stacks,'\n')
@@ -935,8 +935,8 @@ function env.set_endmark(name,value)
     return value
 end
 
-local end_marks=(";,\\n%s*/")
-env.set_endmark(nil,end_marks)
+local line_terminators=(";,\\n%s*/")
+env.set_endmark(nil,line_terminators)
 
 function env.check_comment(cmd,other_parts)
     if not other_parts:find("*/",1,true) then
@@ -994,6 +994,11 @@ function env.run_luajit()
     terminal:resume()
 end
 
+function env.set_paste(name,value)
+    console:enableBracketedPaste(value)
+    return value
+end
+
 function env.onload(...)
     env.__ARGS__={...}
     env.IS_ENV_LOADED=false
@@ -1028,7 +1033,7 @@ function env.onload(...)
     if env.set and env.set.init then
         env.set.init({"Prompt","SQLPROMPT","SQLP"},prompt_stack._base,function(n,v,d) return env.set_prompt(n,v,d,3) end,
                   "core","Define command's prompt, if value is 'timing' then will record the time cost(in second) for each execution.")
-        env.set.init({"sqlterminator","COMMAND_ENDMARKS"},end_marks,env.set_endmark,
+        env.set.init({"sqlterminator","COMMAND_ENDMARKS"},line_terminators,env.set_endmark,
                   "core","Define the symbols to indicate the end input the cross-lines command. ")
         env.set.init("Debug",'off',set_debug,"core","Indicates the option to print debug info, 'all' for always, 'off' for disable, others for specific modules.")
         env.set.init("OnErrExit",'on',nil,"core","Indicates whether to continue the remaining statements if error encountered.","on,off")
@@ -1037,6 +1042,7 @@ function env.onload(...)
         env.set_title('status',enabled)
         env.set.init("Status",enabled,env.set_title,"core","Display the status bar","on,off")
         env.set.init("SPACES",4,env.set_space,"core","Define the prefix spaces of a line","0-8")
+        env.set.init("BRACKETED_PASTE",'on',env.set_paste,"core","Define if enabled Bracketed Paste","on,off")
         print_debug=print
     end
     if  env.ansi and env.ansi.define_color then

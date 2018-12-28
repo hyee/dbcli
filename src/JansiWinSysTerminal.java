@@ -70,8 +70,9 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
     }
 
     private volatile long prev = 0;
-    private volatile int isPasting = 0;
+    private volatile int pasteCount = 0;
     private volatile char lastChar;
+    private volatile boolean enablePaste = true;
     final char[] bp = KeyMap.translate(LineReaderImpl.BRACKETED_PASTE_BEGIN).toCharArray();
     final char[] ep = KeyMap.translate(LineReaderImpl.BRACKETED_PASTE_END).toCharArray();
     final short bpl = (short) (bp.length - 1);
@@ -82,14 +83,14 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
     Thread t = new Thread(() -> {
         while (true) {
             try {
-                Thread.sleep(64);
-                if (isPasting == 0 || paused()) continue;
-                if (System.currentTimeMillis() - prev >= 256 + isPasting) {
+                Thread.sleep(32);
+                if (pasteCount == 0 || paused()) continue;
+                if (System.currentTimeMillis() - prev >= 128 + pasteCount * 0.3) {
                     if (endIdx != epl) {
                         for (char a : ep) processChar(a);
                         if (lastChar == '\r' || lastChar == '\n') processChar('\n');
                     }
-                    isPasting = 0;
+                    pasteCount = 0;
                 }
             } catch (Exception e) {
             }
@@ -100,30 +101,34 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         super.processInputChar(c);
     }
 
+    public void enablePaste(boolean enabled) {
+        enablePaste = enabled;
+    }
+
     @Override
     public void processInputChar(char c) throws IOException {
+
         lastChar = c;
         //check if the console natively supports Bracketed Paste
-        if (isPasting == 0 && c == bp[beginIdx]) beginIdx += beginIdx >= bpl ? 0 : 1;
-        else if (isPasting == 0 && beginIdx > START_POS && beginIdx < bpl) beginIdx = START_POS;
-        else if (isPasting == 1 && c == ep[endIdx]) endIdx += endIdx >= epl ? 0 : 1;
-        else if (isPasting == 1 && endIdx > START_POS && endIdx < epl) endIdx = START_POS;
-
-        if (beginIdx != bpl && isPasting == 0 && (c == ' ' || c == '\t') && reader.available() >= 3) {
+        if (pasteCount == 0 && c == bp[beginIdx]) beginIdx += beginIdx >= bpl ? 0 : 1;
+        else if (pasteCount == 0 && beginIdx > START_POS && beginIdx < bpl) beginIdx = START_POS;
+        else if (pasteCount == 1 && c == ep[endIdx]) endIdx += endIdx >= epl ? 0 : 1;
+        else if (pasteCount == 1 && endIdx > START_POS && endIdx < epl) endIdx = START_POS;
+        if (enablePaste && beginIdx != bpl && pasteCount == 0 && Character.isWhitespace(c) && reader.available() >= 3) {
             for (char a : bp) processChar(a);
             prev = System.currentTimeMillis();
-            isPasting = 1;
+            pasteCount = 1;
             if (c == '\t') processChar(' ');
-        } else if (isPasting > 0) {
-            isPasting = isPasting + 1;
-            if (isPasting > 100) {
+        } else if (pasteCount > 0) {
+            pasteCount = pasteCount + 1;
+            if (pasteCount > 100) {
                 prev = System.currentTimeMillis();
-                isPasting = 1;
+                pasteCount = 1;
             }
         } else if (c == '\t') {
             if (reader.available() == 0) {
                 try {
-                    Thread.sleep(50L);
+                    Thread.sleep(16L);
                 } catch (InterruptedException e) {
                 }
             }

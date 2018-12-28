@@ -2,9 +2,6 @@ package org.dbcli;
 
 import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
-import com.sun.jna.Library;
-import com.sun.jna.Native;
-import com.sun.jna.Platform;
 import com.sun.jna.Pointer;
 import org.jline.builtins.Commands;
 import org.jline.builtins.Less;
@@ -23,9 +20,6 @@ import org.jline.utils.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.security.Permission;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -33,8 +27,6 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -87,7 +79,6 @@ public class Console {
         this.reader.setCompleter(completer);
         this.reader.setHistory(history);
         this.reader.unsetOpt(LineReader.Option.MOUSE);
-        this.reader.setOpt(LineReader.Option.BRACKETED_PASTE);
         this.reader.unsetOpt(LineReader.Option.DELAY_LINE_WRAP);
         this.reader.setOpt(LineReader.Option.DISABLE_EVENT_EXPANSION);
         this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE);
@@ -99,6 +90,7 @@ public class Console {
         this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
         this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);
         this.isJansiConsole = this.terminal instanceof JansiWinSysTerminal;
+        enableBracketedPaste("on");
         setKeyCode("redo", "^Y");
         setKeyCode("undo", "^Z");
         setKeyCode("backward-word", "^[[1;3D");
@@ -141,9 +133,12 @@ public class Console {
         Interrupter.listen(this, callback);
     }
 
-    public void setTitle(String title) {
-        CLibrary.INSTANCE.SetConsoleTitleA(title);
+    public void enableBracketedPaste(String val) {
+        if ("off".equals(val)) reader.unsetOpt(LineReader.Option.BRACKETED_PASTE);
+        else reader.setOpt(LineReader.Option.BRACKETED_PASTE);
+        if (isJansiConsole) ((JansiWinSysTerminal) terminal).enablePaste(!"off".equals(val));
     }
+
 
     public void setLua(LuaState lua) {
         this.lua = lua;
@@ -270,48 +265,6 @@ public class Console {
         return display.wcwidth(str);
     }
 
-    public void startSqlCL(final String[] args) throws Exception {
-        if (subThread != null) throw new IOException("SQLCL instance is running!");
-        Class clz;
-
-        try {
-            clz = Class.forName("oracle.dbtools.raptor.scriptrunner.cmdline.SqlCli");
-        } catch (ClassNotFoundException e) {
-            throw new IOException("Cannot find SqlCL libraries under folder 'lib/ext'!");
-        }
-
-        Method main = clz.getDeclaredMethod("main", String[].class);
-        subThread = new Thread(() -> {
-            try {
-                SystemExitControl.forbidSystemExitCall();
-                main.invoke(null, new Object[]{args});
-            } catch (IllegalAccessException e) {
-                e.printStackTrace();
-            } catch (InvocationTargetException e) {
-                e.printStackTrace();
-            } catch (SecurityException e) {
-                System.out.println("Forbidding call to System.exit");
-            } catch (Exception e) {
-            } finally {
-                SystemExitControl.enableSystemExitCall();
-            }
-        });
-
-
-        Logger.getLogger("OracleRestJDBCDriverLogger").setLevel(Level.OFF);
-        try {
-            terminal.pause();
-            subThread.setDaemon(true);
-            subThread.start();
-            subThread.join();
-        } catch (Exception e1) {
-            subThread.interrupt();
-        } finally {
-            subThread = null;
-            terminal.resume();
-        }
-    }
-
     public void less(String output) throws Exception {
         ByteArrayOutputStream stream = new ByteArrayOutputStream();
         Source source = new Source() {
@@ -347,10 +300,6 @@ public class Console {
         if (writer == null) return;
         writer.println(msg);
         writer.flush();
-    }
-
-    public void clearScreen() {
-        reader.clearScreen();
     }
 
     public Object invokeMethod(String method, Object... o) {
@@ -447,41 +396,10 @@ public class Console {
         return keyCode;
     }
 
-    public interface CLibrary extends Library {
-        CLibrary INSTANCE = (CLibrary)
-                Native.loadLibrary((Platform.isWindows() ? "kernel32" : "c"),
-                        CLibrary.class);
-
-        boolean SetConsoleTitleA(String title);
-    }
-
     interface ParserCallback {
         Object[] call(Object... e);
     }
 
-    private static class NoExitSecurityManager extends SecurityManager {
-        Thread running;
-
-        public NoExitSecurityManager(Thread running) {
-            this.running = running;
-        }
-
-        @Override
-        public void checkPermission(Permission perm) {
-            // allow anything.
-        }
-
-        @Override
-        public void checkPermission(Permission perm, Object context) {
-            // allow anything.
-        }
-
-        @Override
-        public void checkExit(int status) {
-            super.checkExit(status);
-            if (Thread.currentThread() == running) throw new SecurityException("Exited");
-        }
-    }
 
     class MyParser extends DefaultParser implements Highlighter {
         public static final String DEFAULT_HIGHLIGHTER_COLORS = "rs=1:st=2:nu=3:co=4:va=5:vn=6:fu=7:bf=8:re=9";

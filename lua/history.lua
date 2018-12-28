@@ -29,7 +29,7 @@ end
 
 local is_changed,current_line,current_index
 
-local cmds={HIS=1,HISTORY=1,["/"]=1,R=1,EDIT=1,ED=1,L=1,LIST=1,CHANGE=1,C=1,HELP=1,SET=1,KEYMAP=1,OUT=1,OUTPUT=1}
+local cmds={HIS=1,HISTORY=1,["/"]=1,R=1,EDIT=1,ED=1,L=1,LIST=1,CHANGE=1,C=1,HELP=1,SET=1,KEYMAP=1,OUT=1,OUTPUT=1,['/*']=1,['--']=1}
 
 function history:capture(cmd,args,res,is_internal,command_text,clock)
     if #env.RUNNING_THREADS>1 or not args then return end
