@@ -89,9 +89,10 @@ public class Console {
         this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
         this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);
         this.isJansiConsole = this.terminal instanceof JansiWinSysTerminal;
+        //terminal.echo(false);
         enableBracketedPaste("on");
 
-        for(String s:new String[]{"^_","^[^H"})  setKeyCode("backward-kill-word", s);
+        for (String s : new String[]{"^_", "^[^H"}) setKeyCode("backward-kill-word", s);
         //deal with keys ctrl+arrow and alt+Arrow
         for (String s : new String[]{"^[[", "[1;3", "[1;5"}) {
             if (s != null) {

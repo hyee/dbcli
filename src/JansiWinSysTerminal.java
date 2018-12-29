@@ -42,7 +42,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
             int[] mode = new int[1];
             if (Kernel32.GetConsoleMode(console, mode) == 0) {
                 throw new IOException("Failed to get console mode: " + WindowsSupport.getLastErrorMessage());
-            }
+            }  //doesn't work well in Win10 (horizontal scrolling, status bar + vertical scrolling, etc)
                 /*if (Kernel32.SetConsoleMode(console, mode[0] | AbstractWindowsTerminal.ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0) {
                     if (type == null) {
                         type = TYPE_WINDOWS_VTP;
@@ -69,7 +69,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         return terminal;
     }
 
-    private volatile long prev = 0;
+    private volatile long prevTime = 0;
     private volatile int pasteCount = 0;
     private volatile char lastChar;
     private volatile boolean enablePaste = true;
@@ -80,22 +80,6 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
     final short START_POS = 2;
     short beginIdx = START_POS;
     short endIdx = START_POS;
-    Thread t = new Thread(() -> {
-        while (true) {
-            try {
-                Thread.sleep(32);
-                if (pasteCount == 0 || paused()) continue;
-                if (System.currentTimeMillis() - prev >= 128 + pasteCount * 0.3) {
-                    if (endIdx != epl) {
-                        for (char a : ep) processChar(a);
-                        if (lastChar == '\r' || lastChar == '\n') processChar('\n');
-                    }
-                    pasteCount = 0;
-                }
-            } catch (Exception e) {
-            }
-        }
-    });
 
     final void processChar(char c) throws IOException {
         super.processInputChar(c);
@@ -107,25 +91,29 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
 
     @Override
     public void processInputChar(char c) throws IOException {
-
         lastChar = c;
         //check if the console natively supports Bracketed Paste
         if (pasteCount == 0 && c == bp[beginIdx]) beginIdx += beginIdx >= bpl ? 0 : 1;
         else if (pasteCount == 0 && beginIdx > START_POS && beginIdx < bpl) beginIdx = START_POS;
         else if (pasteCount == 1 && c == ep[endIdx]) endIdx += endIdx >= epl ? 0 : 1;
         else if (pasteCount == 1 && endIdx > START_POS && endIdx < epl) endIdx = START_POS;
+        //Check remaining input chars and determine if enter paste mode
         if (enablePaste && beginIdx != bpl && pasteCount == 0 && Character.isWhitespace(c) && reader.available() >= 3) {
             for (char a : bp) processChar(a);
-            prev = System.currentTimeMillis();
+            prevTime = System.currentTimeMillis();
             pasteCount = 1;
+            //insert one more space to bypass the completor's detection if the first pasted char is tab
             if (c == '\t') processChar(' ');
         } else if (pasteCount > 0) {
             pasteCount = pasteCount + 1;
+            //reduce the frequency of getting timer to avoid performance issue
+            //the timer is used to determine whether to leave the paste mode
             if (pasteCount > 100) {
-                prev = System.currentTimeMillis();
+                prevTime = System.currentTimeMillis();
                 pasteCount = 1;
             }
         } else if (c == '\t') {
+            //deal with tab, if there are remaining input chars, then replace as 4 spaces to bypass the completor's detection
             if (reader.available() == 0) {
                 try {
                     Thread.sleep(16L);
@@ -139,6 +127,24 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         }
         processChar(c);
     }
+
+    Thread t = new Thread(() -> {
+        while (true) {
+            try {
+                Thread.sleep(32);
+                if (pasteCount == 0 || paused()) continue;
+                //If no more input after 128+ ms, leave the paste mode (Assume that consuming a input char costs 300us)
+                if (System.currentTimeMillis() - prevTime >= 128 + pasteCount * 0.3) {
+                    if (endIdx != epl) {
+                        for (char a : ep) processChar(a);
+                        if (lastChar == '\r' || lastChar == '\n') processChar('\n');
+                    }
+                    pasteCount = 0;
+                }
+            } catch (Exception e) {
+            }
+        }
+    });
 
     JansiWinSysTerminal(Writer writer, String name, String type, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler) throws IOException {
         super(writer, name, type, encoding, codepage, nativeSignals, signalHandler);

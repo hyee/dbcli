@@ -31,14 +31,12 @@ public class MyHistory extends DefaultHistory {
 
     public void updateLast(String line) {
         if (lastEntry == null) return;
-        boolean found = false;
         for (int i = lasIndex; i >= 0; i--) {
             if (list.get(i) == lastEntry) {
                 lasIndex = i;
-                found = true;
+                update(lasIndex, line);
                 break;
             }
         }
-        if (found) update(lasIndex, line);
     }
 }
