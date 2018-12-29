@@ -1,4 +1,4 @@
-local env,os=env,os
+local env,os,console=env,os,console
 local event,cfg,grid=env.event,env.set,env.grid
 local history={}
 local keys={}
@@ -36,6 +36,7 @@ function history:capture(cmd,args,res,is_internal,command_text,clock)
     --if(cmd==nil) then print(debug.traceback()) end
     cmd=cmd:upper()
     if cmds[cmd] then return end
+    console:setLastHistory();
     local maxsiz=cfg.get("HISSIZE")
     local text=table.concat(args," ")
     if text:find(cmd,1,true)~=1 then text=cmd..' '..text end
@@ -158,9 +159,11 @@ function history.change_command(m)
     local line=lines[current_index]
     env.checkerr(line and line:lower():find(o,1,true),'String not found.')
     local b,e=line:lower():find(o,1,true)
-    line=line:sub(1,b-1)..n..line:sub(e+1)
+    line=line:replace(o,n,true,nil,true)
     lines[current_index]=line
     lastcommand.text=table.concat(lines,'\n')
+    console:updateLastHistory(lastcommand.text)
+    
     print(fmt:format('*',current_index,line))
 end
 

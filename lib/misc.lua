@@ -30,16 +30,16 @@ function os.find_extension(exe,ignore_errors)
 end
 
 --Continus sep would return empty element
-function string.split (s, sep, plain,occurrence)
+function string.split (s, sep, plain,occurrence,case_insensitive)
     local r={}
-    for v in s:gsplit(sep,plain,occurrence) do
+    for v in s:gsplit(sep,plain,occurrence,case_insensitive) do
         r[#r+1]=v
     end
     return r
 end
 
-function string.replace(s,sep,txt,plain,occurrence)
-    local r=s:split(sep,plain,occurrence)
+function string.replace(s,sep,txt,plain,occurrence,case_insensitive)
+    local r=s:split(sep,plain,occurrence,case_insensitive)
     return table.concat(r,txt),#r-1
 end
 
@@ -49,10 +49,12 @@ function string.escape(s, mode)
     return s
 end
 
-function string.gsplit(s, sep, plain,occurrence)
+function string.gsplit(s, sep, plain,occurrence,case_insensitive)
     local start = 1
     local counter=0
     local done = false
+    local s1=case_insensitive==true and s:lower() or s
+    local sep1=case_insensitive==true and sep:lower() or sep
     local function pass(i, j)
         if i and ((not occurrence) or counter<occurrence) then
             local seg = i>1 and s:sub(start, i - 1) or ""
@@ -66,8 +68,8 @@ function string.gsplit(s, sep, plain,occurrence)
     end
     return function()
         if done then return end
-        if sep == '' then done = true return s end
-        return pass(s:find(sep, start, plain))
+        if sep1 == '' then done = true return s end
+        return pass(s1:find(sep1, start, plain))
     end
 end
 

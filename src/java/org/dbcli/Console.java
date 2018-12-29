@@ -10,7 +10,6 @@ import org.jline.keymap.KeyMap;
 import org.jline.reader.*;
 import org.jline.reader.impl.DefaultParser;
 import org.jline.reader.impl.LineReaderImpl;
-import org.jline.reader.impl.history.DefaultHistory;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 import org.jline.terminal.impl.AbstractTerminal;
@@ -50,7 +49,6 @@ public class Console {
     long threadID;
     HashMap<String, Candidate[]> candidates = new HashMap<>(1024);
     MyCompleter completer = new MyCompleter();
-    Thread subThread = null;
     boolean isPrompt = true;
     boolean isJansiConsole = false;
     ArrayList<AttributedString> titles = new ArrayList<>(2);
@@ -63,7 +61,8 @@ public class Console {
     private ParserCallback parserCallback;
     private MyParser parser;
     private volatile boolean pause = false;
-    private DefaultHistory history = new DefaultHistory();
+    private MyHistory history = new MyHistory();
+
     private Status status;
     private String colorPlan;
 
@@ -91,10 +90,20 @@ public class Console {
         this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);
         this.isJansiConsole = this.terminal instanceof JansiWinSysTerminal;
         enableBracketedPaste("on");
-        setKeyCode("redo", "^Y");
-        setKeyCode("undo", "^Z");
-        setKeyCode("backward-word", "^[[1;3D");
-        setKeyCode("forward-word", "^[[1;3C");
+
+        for(String s:new String[]{"^_","^[^H"})  setKeyCode("backward-kill-word", s);
+        //deal with keys ctrl+arrow and alt+Arrow
+        for (String s : new String[]{"^[[", "[1;3", "[1;5"}) {
+            if (s != null) {
+                setKeyCode("up-history", "^[" + s + "A");
+                setKeyCode("down-history", "^[" + s + "B");
+                setKeyCode("forward-word", "^[" + s + "C");
+                setKeyCode("backward-word", "^[" + s + "D");
+            }
+        }
+        //alt+y and alt+z
+        setKeyCode("redo", "^[y");
+        setKeyCode("undo", "^[z");
 
         input = terminal.reader();
         writer = terminal.writer();
@@ -347,6 +356,14 @@ public class Console {
         return pause;
     }
 
+    public int setLastHistory() {
+        return history.setIndex();
+    }
+
+    public void updateLastHistory(String line) {
+        history.updateLast(line);
+    }
+
     public synchronized void setEvents(ActionListener event, char[] keys) {
         this.event = event;
         this.keys = keys;
@@ -467,7 +484,7 @@ public class Console {
                 return null;
             }
 
-            if (lines <= 20) {
+            if (lines <= terminal.getHeight() - 10) {
                 reader.setVariable(DISABLE_HISTORY, false);
                 history.add(sb.toString());
                 reader.setVariable(DISABLE_HISTORY, true);
