@@ -81,14 +81,14 @@ fi
 
 # unpack jar files for the first use
 unpack="$JAVA_ROOT/bin/unpack200"
-if [[ -x ./jre_$ox/bin/unpack200 ]]; then
-    unpack=./jre_$ox/bin/unpack200
+if [[ -x ./jre_$os/bin/unpack200 ]]; then
+    unpack=./jre_$os/bin/unpack200
 elif [ ! -x "$unpack" ]; then
     echo "Cannot find unpack200 executable, exit."
     exit 1
 fi
 
-for f in `find . -type f -name "*.pack.gz" 2>/dev/null`; do
+for f in `find . -type f -name "*.pack.gz" 2>/dev/null | egrep -v "cache|dump"`; do
     echo "Unpacking $f ..."
     "$unpack" -q -r  $f $(echo $f|sed 's/\.pack\.gz//g') &
 done

@@ -167,10 +167,12 @@ function env.set_subsystem(cmd,prompt)
 end
 
 local terminator_patt,terminator='%f[<%w]<<(%S+)[ \r]*$'
-function env.check_cmd_endless(cmd,other_parts)
+function env.check_cmd_end(cmd,other_parts,stmt)
     if not _CMDS[cmd] then
         return true,other_parts
     end
+    local prev=""
+
     --print(other_parts,debug.traceback())
     if terminator then 
         if other_parts and other_parts:trim():sub(-#terminator)==terminator then
@@ -180,24 +182,40 @@ function env.check_cmd_endless(cmd,other_parts)
     elseif not _CMDS[cmd].MULTI then
         return true,other_parts and env.COMMAND_SEPS.match(other_parts)
     elseif type(_CMDS[cmd].MULTI)=="function" then
-        return _CMDS[cmd].MULTI(cmd,other_parts)
+        if type(stmt)=='table' then
+            prev=table.concat(stmt,'\n')..'\n'
+        end
+        local done,part=_CMDS[cmd].MULTI(cmd,prev..other_parts)
+        return done,part:sub(#prev+1)
     elseif _CMDS[cmd].MULTI=='__SMART_PARSE__' then
-        return env.smart_check_endless(cmd,other_parts,_CMDS[cmd].ARGS)
+        return env.smart_check_end(cmd,other_parts,_CMDS[cmd].ARGS,stmt)
     end
 
-    local match,typ,index = env.COMMAND_SEPS.match(other_parts)
+    if type(stmt)=='table' then
+        for i=#stmt,1,-1 do
+            if stmt[i]:trim()~='' then
+                prev=stmt[i]..'\n'
+                break
+            end
+        end
+    end
+    local match,typ,index = env.COMMAND_SEPS.match(prev..other_parts)
     --print(match,other_parts)
     if index==0 then
         return false,other_parts
     end
-    return true,match
+    return true,match:sub(#prev+1)
 end
 
-function env.smart_check_endless(cmd,rest,from_pos)
-    local args=env.parse_args(from_pos,rest)
+function env.smart_check_end(cmd,rest,from_pos,stmt)
+    local other_parts=rest
+    if stmt and #stmt > 0 then
+        other_parts=table.concat(stmt,'\n')..' '..other_parts
+    end
+    local args=env.parse_args(from_pos,other_parts,stmt)
     if #args==0 then return true,env.COMMAND_SEPS.match(rest) end
     for k=#args,1,-1 do
-        if not env.check_cmd_endless(args[k]:upper(),table.concat(args,' ',k+1)) then
+        if not env.check_cmd_end(args[k]:upper(),table.concat(args,' ',k+1)) then
             return false,rest
         end
     end
@@ -273,7 +291,7 @@ end
 
 function env.set_command(...)
     local tab,siz=select(1,...),select('#',...)
-    if siz==1 and type(tab)=="table" and tab.cmd then
+    if siz==1 and type(tab)=="table" and (tab.cmd or tab[2]) then
         return _new_command(tab.obj or tab[1],tab.cmd or tab[2],tab.help_func or tab[3],tab.call_func or tab[4],tab.is_multiline or tab[5],tab.parameters or tab[6],tab.is_dbcmd or tab[7],tab.allow_overriden or tab[8],tab.is_pipable or tab[9],tab.color or tab[10],tab.is_blocknewline or tab[11])
     else
         return _new_command(...)
@@ -514,7 +532,7 @@ function env.exec_command(cmd,params,is_internal,arg_text)
 end
 
 local is_in_multi_state=false
-local curr_stmt=""
+local curr_stmt
 local multi_cmd
 
 local cache_prompt,fix_prompt
@@ -549,37 +567,9 @@ function env.set_prompt(class,default,is_default,level)
 end
 
 function env.pending_command()
-    return curr_stmt and curr_stmt~=""
+    return curr_stmt and #curr_stmt>0
 end
 
-function env.modify_command(_,key_event)
-    --print(key_event.name)
-    if key_event.name=="CTRL+C" or key_event.name=="CTRL+D" then
-        if env.IS_ASKING then return end
-        if env.pending_command() then
-            multi_cmd,curr_stmt=nil,nil
-        end
-        env.CURRENT_PROMPT=env.PRI_PROMPT
-        local prompt,reset=env.PRI_PROMPT,""
-
-        if env.ansi then
-            local prompt_color="%s%s"..env.ansi.get_color("NOR").."%s"
-            prompt=prompt_color:format(env.ansi.get_color("PROMPTCOLOR"),prompt,env.ansi.get_color("COMMANDCOLOR"))
-            reset=env.ansi.get_color("KILLBL")
-            env.printer.write("\27[1A"..reset)
-        end
-        reader:redrawLine();
-    elseif key_event.name=="CTRL+BACK_SPACE" or key_event.name=="SHIFT+BACK_SPACE" then --shift+backspace
-        console:invokeMethod("backwardDeleteWord")
-        key_event.isbreak=true
-    elseif key_event.name=="CTRL+LEFT" or key_event.name=="SHIFT+LEFT" then --ctrl+arrow_left
-        console:invokeMethod("previousWord")
-        key_event.isbreak=true
-    elseif key_event.name=="CTRL+RIGHT" or key_event.name=="SHIFT+RIGHT" then --ctrl+arrow_right
-        console:invokeMethod("nextWord")
-        key_event.isbreak=true
-    end
-end
 
 function env.parse_args(cmd,rest,is_cross_line)
     --deal with the single-line commands
@@ -685,7 +675,8 @@ end
 
 function env.force_end_input(exec,is_internal)
     if curr_stmt and multi_cmd then
-        local text,stmt=curr_stmt,{multi_cmd,env.parse_args(multi_cmd,curr_stmt,true)}
+        local text=table.concat(curr_stmt,'\n')
+        local stmt={multi_cmd,env.parse_args(multi_cmd,text,true)}
         multi_cmd,curr_stmt=nil,nil
         env.CURRENT_PROMPT=env.PRI_PROMPT
         if exec~=false then
@@ -746,35 +737,37 @@ local function _eval_line(line,exec,is_internal,not_skip)
         
     end
 
-    local done
     local function check_multi_cmd(lineval)
-        curr_stmt = curr_stmt ..lineval
-        done,curr_stmt=env.check_cmd_endless(multi_cmd,curr_stmt)
+        local done
+        if not curr_stmt then curr_stmt={} end
+        done,lineval=env.check_cmd_end(multi_cmd,lineval,curr_stmt)
+        curr_stmt[#curr_stmt+1]=lineval
         if done or is_internal then
             return env.force_end_input(exec,is_internal)
         end
-        curr_stmt = curr_stmt .."\n"
         return multi_cmd
     end
     
-    local cmd,rest,end_mark
+    local cmd,line_terminator
 
-    local rest,pipe_cmd,param = (' '..line):match('^(.*[^|])|%s*(%w+)(.*)$')
+    local rest,pipe_cmd,param = line:match('^%s*([^|]+)|%s*(%w+)(.*)$')
     if pipe_cmd and _CMDS[pipe_cmd:upper()] and _CMDS[pipe_cmd:upper()].ISPIPABLE==true then
-        param=env.COMMAND_SEPS.match(param)
-        if multi_cmd then
-            param,multi_cmd=param..' '..multi_cmd..' '..curr_stmt,nil
+        if not rest:find('^!') and not rest:upper():find('^HOS') then 
+            if param~='' then param='"'..env.COMMAND_SEPS.match(param):trim()..'"' end
+            if multi_cmd then
+                param,multi_cmd=param..' '..multi_cmd..' '..table.concat(curr_stmt,'\n'),nil
+            end
+            pipe_cmd=pipe_cmd..' '..param..' '..rest
+            return eval_line(pipe_cmd,exec,true,not_skip)
         end
-        pipe_cmd=pipe_cmd..' '..param..rest
-        return eval_line(pipe_cmd,exec,true,not_skip)
     end
 
     if multi_cmd then return check_multi_cmd(line) end
-    
-    line,end_mark=env.COMMAND_SEPS.match(line)
-    cmd,rest=line:match('^%s*(%S+)%s*(.*)')
+    line,line_terminator=env.COMMAND_SEPS.match(line)
+    cmd,rest=line:match('^%s*(/?[^%s/]*)[%s]*(.*)')
+    --if #cmd>2 and (cmd:find('^/%*') or cmd:find('^%-%-')) then cmd,rest=line:sub(1,2),line:sub(3) end
     if not rest then return end
-    rest=rest..(end_mark or "")
+    rest=rest..(line_terminator or "")
     if not cmd or cmd=="" then return end
     cmd=cmd:upper()
     env.CURRENT_CMD=cmd
@@ -785,18 +778,18 @@ local function _eval_line(line,exec,is_internal,not_skip)
             return nil,nil,warning
         end
         return env.warn(warning)
-    elseif not end_mark and not rest:find('\n',1,true) then 
+    elseif not line_terminator and not rest:find('\n',1,true) then 
         terminator=rest:match(terminator_patt)
         if terminator then
-            terminator,multi_cmd,curr_stmt,env.CURRENT_PROMPT='\n'..terminator,cmd,"",env.MTL_PROMPT
+            terminator,multi_cmd,curr_stmt,env.CURRENT_PROMPT='\n'..terminator,cmd,{},env.MTL_PROMPT
             return check_multi_cmd(rest)
         end
     end
     
     if _CMDS[cmd].MULTI then --deal with the commands that cross-lines
+        curr_stmt={}
         multi_cmd=cmd
         env.CURRENT_PROMPT=env.MTL_PROMPT
-        curr_stmt = ""
         return check_multi_cmd(rest)
     end
 
@@ -811,30 +804,75 @@ local function _eval_line(line,exec,is_internal,not_skip)
 end
 
 local _cmd,_args,_errs,_line_stacks,_full_text=nil,nil,nil,{}
-function env.parse_line(line)
+function env.parse_line(line,exec)
     if(#_line_stacks==0) then
         multi_cmd,curr_stmt=nil,nil
         env.CURRENT_PROMPT=env.PRI_PROMPT 
     end
-    _line_stacks[#_line_stacks+1]=line
-    _cmd,_args,_errs=_eval_line(line,false)
-    local is_not_end=env.CURRENT_PROMPT==env.MTL_PROMPT
-    if not is_not_end then
-        full_text=table.concat(_line_stacks,'\n')
-        _line_stacks={}
+
+    local is_not_end,cnt=true,0
+    for w in line:gsplit('\n',true) do
+        cnt=cnt+1
+        if #_line_stacks>0 or w:trim()~='' then
+            _line_stacks[#_line_stacks+1]=w
+            if is_not_end then
+                _cmd,_args,_errs=_eval_line(w,false)
+                is_not_end=env.CURRENT_PROMPT==env.MTL_PROMPT
+                if not is_not_end then
+                    full_text=table.concat(_line_stacks,'\n')
+                    _line_stacks={}
+                end
+            end
+        end
     end
+
+    if exec and not is_not_end then return env.execute_line() end
     local is_block=env._CMDS[_cmd] and env._CMDS[_cmd].ISBLOCKNEWLINE or false
-    return is_not_end,env.CURRENT_PROMPT,is_block
+    return is_not_end,env.CURRENT_PROMPT,is_block,cnt
 end
 
 function env.execute_line()
     local cmd,args
     cmd,args,_cmd,_args=_cmd,_args
     if cmd then
-        env.exec_command(cmd,args,false,full_text)
+        pcall(env.exec_command,cmd,args,false,full_text)
     elseif _errs then
         env.warn(_errs)
         _errs=nil
+        _line_stacks={}
+    end
+    if #_line_stacks>0 then
+        full_text=table.concat(_line_stacks,'\n')
+        _line_stacks={}
+        env.parse_line(full_text,true)
+    end
+end
+
+
+function env.modify_command(_,key_event)
+    --print(key_event.name)
+    if key_event.name=="CTRL+C" or key_event.name=="CTRL+D" then
+        if env.IS_ASKING then return end
+        multi_cmd,curr_stmt=nil,nil
+        env.CURRENT_PROMPT=env.PRI_PROMPT
+        _line_stacks={}
+        local prompt,reset=env.PRI_PROMPT,""
+        if env.ansi then
+            local prompt_color="%s%s"..env.ansi.get_color("NOR").."%s"
+            prompt=prompt_color:format(env.ansi.get_color("PROMPTCOLOR"),prompt,env.ansi.get_color("COMMANDCOLOR"))
+            reset=env.ansi.get_color("KILLBL")
+            env.printer.write("\27[1A"..reset)
+        end
+        reader:redrawLine();
+    elseif key_event.name=="CTRL+BACK_SPACE" or key_event.name=="SHIFT+BACK_SPACE" then --shift+backspace
+        console:invokeMethod("backwardDeleteWord")
+        key_event.isbreak=true
+    elseif key_event.name=="CTRL+LEFT" or key_event.name=="SHIFT+LEFT" then --ctrl+arrow_left
+        console:invokeMethod("previousWord")
+        key_event.isbreak=true
+    elseif key_event.name=="CTRL+RIGHT" or key_event.name=="SHIFT+RIGHT" then --ctrl+arrow_right
+        console:invokeMethod("nextWord")
+        key_event.isbreak=true
     end
 end
 
@@ -901,8 +939,8 @@ function env.set_endmark(name,value)
     return value
 end
 
-local end_marks=(";,\\n%s*/")
-env.set_endmark(nil,end_marks)
+local line_terminators=(";,\\n%s*/")
+env.set_endmark(nil,line_terminators)
 
 function env.check_comment(cmd,other_parts)
     if not other_parts:find("*/",1,true) then
@@ -960,6 +998,11 @@ function env.run_luajit()
     terminal:resume()
 end
 
+function env.set_paste(name,value)
+    console:enableBracketedPaste(value)
+    return value
+end
+
 function env.onload(...)
     env.__ARGS__={...}
     env.IS_ENV_LOADED=false
@@ -994,7 +1037,7 @@ function env.onload(...)
     if env.set and env.set.init then
         env.set.init({"Prompt","SQLPROMPT","SQLP"},prompt_stack._base,function(n,v,d) return env.set_prompt(n,v,d,3) end,
                   "core","Define command's prompt, if value is 'timing' then will record the time cost(in second) for each execution.")
-        env.set.init({"sqlterminator","COMMAND_ENDMARKS"},end_marks,env.set_endmark,
+        env.set.init({"sqlterminator","COMMAND_ENDMARKS"},line_terminators,env.set_endmark,
                   "core","Define the symbols to indicate the end input the cross-lines command. ")
         env.set.init("Debug",'off',set_debug,"core","Indicates the option to print debug info, 'all' for always, 'off' for disable, others for specific modules.")
         env.set.init("OnErrExit",'on',nil,"core","Indicates whether to continue the remaining statements if error encountered.","on,off")
@@ -1003,6 +1046,7 @@ function env.onload(...)
         env.set_title('status',enabled)
         env.set.init("Status",enabled,env.set_title,"core","Display the status bar","on,off")
         env.set.init("SPACES",4,env.set_space,"core","Define the prefix spaces of a line","0-8")
+        env.set.init("BRACKETED_PASTE",'on',env.set_paste,"core","Define if enabled Bracketed Paste","on,off")
         print_debug=print
     end
     if  env.ansi and env.ansi.define_color then
@@ -1146,6 +1190,7 @@ function env.set_space(name,value)
 end
 
 function env.set_title(title,value)
+    if not org_title then org_title=uv.get_process_title() end
     local enabled
     if title and title:upper()=="STATUS" and value then
         enabled=value:lower()

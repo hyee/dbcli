@@ -119,7 +119,7 @@ BEGIN
               WHERE  b.chose IS NOT NULL
               OR     a.b_sid IS NOT NULL),
             chains AS (
-                SELECT /*+NO_EXPAND PARALLEL(4)*/
+                SELECT /*+NO_EXPAND PARALLEL(4) CONNECT_BY_FILTERING*/
                       level lvl,
                       sid w_sid,
                       SYS_CONNECT_BY_PATH(case when :filter2 = 1 then 1 when &filter then 1 else 0 end ,',') is_found,
@@ -213,7 +213,7 @@ BEGIN
               WHERE  b.chose IS NOT NULL
               OR     a.b_sid IS NOT NULL),
             chains AS (
-                SELECT /*+NO_EXPAND PARALLEL(4)*/
+                SELECT /*+NO_EXPAND PARALLEL(4) CONNECT_BY_FILTERING*/
                        sid w_sid,b_sid,
                        rownum-level r,
                        inst,

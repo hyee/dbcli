@@ -1,4 +1,17 @@
-2018-12-24: + public: new command 'out [<file>|clear]"
+2019-01-01: + oracle: new option 'set autotrace'
+2018-12-29: * public: re-arrange keymaps:
+                      forward-word      : alt-left  or ctrl-left
+                      backward-word     : alt-right or ctrl-right
+                      up-history        : alt-up    or ctrl-up
+                      down-history      : alt-down  or ctrl-down
+                      forward-kill-word : alt-d
+                      backward-kill-word: alt-backspace or ctrl-backspace or ctrl-w
+                      redo              : alt-y
+                      undo              : alt-z
+            ? oracle: the issue of 'Statement.cancle()' in Windows is gone again, I totally have no idea of the reason, kind of magic.
+            + public: new commands 'l' and 'c' that similar to sqlplus
+            + public: new option  'set BRACKETED_PASTE', import paste performance, import input performance
+2018-12-24: + public: new command 'output [<file>|clear]"
 2018-12-22: + oracle: new command 'ora ashnet'
 2018-12-21: + oracle: rename org 'ora ashplan' to 'ora ashplan2' and created new command 'ora ashplan'
 2018-12-15: + oracle: some new sqlplus scripts

@@ -121,7 +121,7 @@ function oracle:connect(conn_str)
 
     self:merge_props(
         {driverClassName="oracle.jdbc.driver.OracleDriver",
-         defaultRowPrefetch="3000",
+         defaultRowPrefetch=tostring(cfg.get("FETCHSIZE")),
          PROXY_USER_NAME=proxy_user,
          useFetchSizeWithLongColumn='true',
          useThreadLocalBufferCache="true",
@@ -482,16 +482,6 @@ function oracle:handle_error(info)
         info.sql=nil
         return
     end
-    local prefix,ora_code,msg=info.error:match('(%u%u%u+)%-(%d%d%d+): *(.+)')
-    if ora_code then
-        if prefix=='ORA' and tonumber(ora_code)>=20001 and tonumber(ora_code)<20999 then
-            info.sql=nil
-            info.error=msg:gsub('[\n\r]%s*ORA%-%d+.*$',''):gsub('%s+$','')
-        else
-            info.error=prefix..'-'..ora_code..': '..msg
-        end
-        return info
-    end
 
     for k,v in pairs(ignore_errors) do
         if info.error:lower():find(k:lower(),1,true) then
@@ -505,6 +495,17 @@ function oracle:handle_error(info)
         end
     end
 
+    local prefix,ora_code,msg=info.error:match('(%u%u%u+)%-(%d%d%d+): *(.+)')
+    if ora_code then
+        if prefix=='ORA' and tonumber(ora_code)>=20001 and tonumber(ora_code)<20999 then
+            info.sql=nil
+            info.error=msg:gsub('[\n\r]%s*ORA%-%d+.*$',''):gsub('%s+$','')
+        else
+            info.error=prefix..'-'..ora_code..': '..msg
+        end
+        return info
+    end
+        
     return info
 end
 

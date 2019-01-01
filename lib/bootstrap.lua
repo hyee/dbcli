@@ -10,7 +10,7 @@ else
     local f,err=io.popen('uname -a 2>/dev/null')
 	if f then
 		for line in f:lines() do
-			if line:lower():find("microsoft") then
+			if line:lower():find("microsoft") and not os.getenv('ConEmuPID') then
 				uv.os_setenv("TERM","terminator")
 			end
 		end
@@ -90,12 +90,12 @@ local charset=os.getenv("DBCLI_ENCODING") or "UTF-8"
 local options ={'-noverify' ,
 			    '-Xmx512M',
 			    --'-Xrs',
-			    '-XX:+UseStringDeduplication','-XX:+UseParallelGC','-XX:+UseCompressedOops',
+			    '-XX:+UseStringDeduplication','-XX:+UseParallelGC','-XX:+UseCompressedOops','-XX:+UseFastAccessorMethods','-XX:+AggressiveOpts','-XX:-BackgroundCompilation',
 			    '-Dfile.encoding='..charset,
 			    '-Duser.language=en','-Duser.region=US','-Duser.country=US',
 			    '-Djava.awt.headless=true',
 				'-Djava.library.path='..resolve("./lib/"..dlldir),
-				--'-Djava.security.egd=file:/dev/./urandom',
+				'-Djava.security.egd=file:/dev/./urandom',
 				--'-Djava.home='..java_home,
 			    '-Djava.class.path='..jars}
 for _,param in ipairs(other_options) do options[#options+1]=param end 

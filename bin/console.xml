@@ -77,14 +77,14 @@
 		<hotkey ctrl="1" shift="1" alt="0" extended="0" code="9" command="prevtab"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="movetableft"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="movetabright"/>
-		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="87" command="closetab"/>
+		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="closetab"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="82" command="renametab"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="1" code="34" command="nextview"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="1" code="33" command="prevview"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="leftview"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="rightview"/>
-		<hotkey ctrl="0" shift="0" alt="1" extended="1" code="38" command="topview"/>
-		<hotkey ctrl="0" shift="0" alt="1" extended="1" code="40" command="bottomview"/>
+		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="topview"/>
+		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="bottomview"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="dechsize"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="inchsize"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="decvsize"/>
@@ -110,7 +110,7 @@
 		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="76" command="clear"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="1" code="45" command="copy"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="65" command="selectall"/>
-		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="90" command="clear_selection"/>
+		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="90" command="clear_selection"/>
 		<hotkey ctrl="0" shift="1" alt="0" extended="1" code="45" command="paste"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="paste_selection"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="81" command="stopscroll"/>
@@ -153,7 +153,7 @@
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="wspload"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="wspsave"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="fwdmouse"/>
-		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="80" command="externalcmd1"/>
+		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="externalcmd1"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="externalcmd2"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="externalcmd3"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="externalcmd4"/>
@@ -238,8 +238,5 @@
 				<env var="CONSOLE_COLOR" value="NA" check="1"/>
 			</console>
 			<cursor style="4" r="255" g="255" b="255"/>
-		</tab>
-		<tab title="dbcli(linux)" use_default_icon="1">
-			<console shell="bash.exe -c &quot;/mnt/d/dbcli/dbcli.sh&quot;" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
 		</tab>
 	</tabs></settings>

@@ -123,6 +123,12 @@ function extvars.set_instance(name,value)
                     and    regexp_like(object_name,'^(DBMS_|UTL_)')
                     and    instr(object_type,' ')=0
                     union  all
+                    select distinct owner,object_name||'.'||procedure_name,null,'PROCEDURE'
+                    from   dba_procedures
+                    where  owner='SYS' 
+                    and    regexp_like(object_name,'^(DBMS_|UTL_)')
+                    and    procedure_name is not null
+                    union  all
                     select owner,table_name,null,null 
                     from   dba_tab_privs a
                     where  grantee in('EXECUTE_CATALOG_ROLE','SELECT_CATALOG_ROLE'))

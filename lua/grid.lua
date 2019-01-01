@@ -537,6 +537,7 @@ function grid:wellform(col_del, row_del)
     end
     
     linesize = self.linesize
+
     if linesize <= 10 then linesize = getWidth(console) end
     linesize = linesize - #env.space - 1
     

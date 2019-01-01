@@ -261,7 +261,7 @@ function ansi.enable_color(name,value)
 end
 
 function ansi.onload()
-    env.set_command(nil,{"clear","cls"},"Clear screen ",ansi.clear_screen,false,1)
+    env.set_command(nil,{"clear","cls","cl"},"Clear screen ",ansi.clear_screen,false,1)
     writer=console:getOutput()
     ansi.loaded=true
     --str_completer=java.require("jline.console.completer.StringsCompleter",true)

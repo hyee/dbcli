@@ -136,7 +136,7 @@ BEGIN
             target:= null;
         end if;
         if lv = 0 then 
-            stmt:= 'alter system set events ''sql_monitor'||target||' off''';
+            stmt:= 'alter system set events ''sql_monitor'||target||' force=off''';
         else
             stmt:= 'alter system set events ''sql_monitor'||target||' force=true''';
         end if;

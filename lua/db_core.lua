@@ -654,7 +654,7 @@ function db_core:exec_cache(sql,args,description)
     return self:exec(prep,args,table.clone(params),sql),cache
 end
 
-function db_core:exec(sql,args,prep_params,src_sql)
+function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_not_prep=type(sql)~="userdata"
 
     if is_not_prep and sql:find('/*DBCLI_EXEC_CACHE*/',1,true) then
@@ -738,15 +738,23 @@ function db_core:exec(sql,args,prep_params,src_sql)
             outputs[k]=true
         end
     end
+    local function process_result(rs)
+        if print_result then 
+            self.resultset:print(rs,self.conn)
+        end
+        return rs
+    end
+
     --close statments
     local params1=nil
-    local result={is_query and prep:getResultSet() or prep:getUpdateCount()}
+    local result={is_query and process_result(prep:getResultSet()) or prep:getUpdateCount()}
     local i=0;
+    
     while true do
         params1,is_query=pcall(prep.getMoreResults,prep,2)
         if not params1 or not is_query then break end
         if result[1]==-1 then table.remove(result,1) end
-        result[#result+1]=prep:getResultSet()
+        result[#result+1]=process_result(prep:getResultSet())
     end
 
     self:clearStatements()
@@ -883,18 +891,7 @@ end
 
 --
 function db_core:query(sql,args,prep_params)
-    local result = self:exec(sql,args,prep_params)
-    if result and type(result)~="number" then
-        if type(result)=="table" then
-            for _,rs in ipairs(result) do
-                if type(rs) ~='number' then
-                    self.resultset:print(rs,self.conn)
-                end
-            end
-        else
-            self.resultset:print(result,self.conn)
-        end
-    end
+    local result = self:exec(sql,args,prep_params,nil,true)
 end
 
 --if the result contains more than 1 columns, then return an array, otherwise return the value of the 1st column
@@ -1361,6 +1358,43 @@ end
 
 function db_core:__onunload()
     self:disconnect()
+end
+
+function db_core:compute_delta(rs2,rs1,groups,aggrs)
+    groups=groups:split('%s*,+%s*')
+    aggrs=aggrs:split('%s*,+%s*')
+    if type(rs2)=="userdata" then
+        rs2=self.resultset:rows(rs2,-1)
+    end
+    if type(rs1)=="userdata" then
+        rs1=self.resultset:rows(rs1,-1)
+    end
+    local distincts={}
+    for k,v in ipairs(rs2) do
+        local keys={}
+        for k1,v1 in ipairs(groups) do
+            keys[k1]=v[tonumber(v1)]
+        end
+        distincts[table.concat(keys,',')]=k
+    end
+    
+    for k,v in ipairs(rs1) do
+        local keys={}
+        for k1,v1 in ipairs(groups) do
+            keys[k1]=v[tonumber(v1)]
+        end
+        keys=table.concat(keys,',')
+        local row=rs2[distincts[keys]]
+        if row then
+            for k1,v1 in ipairs(aggrs) do
+                v1=tonumber(v1)
+                if tonumber(row[v1]) and tonumber(v[v1]) then
+                    row[v1]=tonumber(row[v1])-tonumber(v[v1])
+                end
+            end
+        end
+    end
+    return rs2
 end
 
 return db_core
