@@ -82,23 +82,9 @@ function history.rerun()
 end
 
 function history.edit_buffer(file)
-    local ed=cfg.get("editor")
-    local editor='"'..os.find_extension(ed)..'"'
-    print(file)
-    if not file then
-        if not lastcommand then return end
-        env.write_cache('afiedt.buf',lastcommand.text)
-    elseif type(file)~='string' then
-        file=nil
-    end
-    local file=env.join_path(env._CACHE_PATH,file or 'afiedt.buf')
+    if not lastcommand then return end
     is_changed=true;
-    if env.IS_WINDOWS then 
-        os.shell(editor,file)
-    else
-        if ed=='vi' or ed=='vim' then editor=ed..' -c ":set nowrap" -n + ' end
-        os.execute(editor..' "'..file..'"')
-    end 
+    env.printer.edit_buffer(file,'afiedt.buf',lastcommand.text)
 end
 
 local fmt='%s%-3s$PROMPTCOLOR$|$NOR$ %s'
@@ -174,14 +160,8 @@ function history.set_editor(name,editor)
     return editor
 end
 
-function history.set_editor(name,editor)
-    editor=os.find_extension(editor)
-    return editor
-end
-
 function history.onload()
     cfg.init("HISSIZE",50,history.set_editor,"core","Max size of historical commands",'0 - 999')
-    cfg.init({"EDITOR",'_EDITOR'},env.IS_WINDOWS and 'notepad' or 'vi',history.set_editor,"core","The editor to edit the buffer")
     event.snoop("AFTER_SUCCESS_COMMAND",history.capture,history)
     env.set_command(history,{'history','his'},"Show/run historical commands. Usage: @@NAME [index|last]",history.show,false,2)
     env.set_command(nil,{'r','/'},"Rerun the previous command.",history.rerun,false,2)

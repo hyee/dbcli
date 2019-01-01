@@ -13,7 +13,6 @@ import org.jline.reader.impl.LineReaderImpl;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 import org.jline.terminal.impl.AbstractTerminal;
-import org.jline.terminal.impl.jansi.win.JansiWinSysTerminal;
 import org.jline.utils.*;
 
 import java.awt.event.ActionEvent;
@@ -33,6 +32,7 @@ import java.util.stream.Collectors;
 import static org.jline.reader.LineReader.DISABLE_HISTORY;
 import static org.jline.reader.LineReader.SECONDARY_PROMPT_PATTERN;
 import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS;
+import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS_VTP;
 
 
 public class Console {
@@ -68,7 +68,10 @@ public class Console {
 
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
-        this.terminal = (AbstractTerminal) TerminalBuilder.builder().name(colorPlan).system(true).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).nativeSignals(true).build();
+        if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM))
+            this.terminal = JansiWinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU, null, 0, true, Terminal.SignalHandler.SIG_IGN, false);
+        else
+            this.terminal = (AbstractTerminal) TerminalBuilder.builder().name(colorPlan).system(true).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).nativeSignals(true).build();
         this.status = this.terminal.getStatus();
         this.display = new Display(terminal, false);
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).build();
@@ -111,8 +114,9 @@ public class Console {
 
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM || OSUtils.IS_CONEMU)) {
             colorPlan = System.getenv("ANSICON_DEF");
-            if (("ansicon").equals(colorPlan) && System.getenv("ConEmuPID") == null/*&&!terminal.getType().equals(TYPE_WINDOWS_VTP)*/)
-                writer = new PrintWriter(new ConEmuOutputStream());
+            if (("ansicon").equals(colorPlan) && System.getenv("ConEmuPID") == null&&!terminal.getType().equals(TYPE_WINDOWS_VTP)) {
+                //writer = new PrintWriter(new BufferedWriter(new ConEmuWriter()));
+            }
             else colorPlan = terminal.getType();
         } else colorPlan = terminal.getType();
 
