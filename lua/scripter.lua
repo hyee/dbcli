@@ -328,9 +328,12 @@ function scripter:run_sql(sql,args,cmds)
     
     local echo=cfg.get("echo"):lower()=="on"
     cfg.set("define","on")
+    local _args,_parms={},{}
     for line in sql:gsplit("[\n\r]+") do
         if echo_stack[current_thead] or (echo_stack[env.RUNNING_THREADS[1]] and level==2) then
-            print(line) 
+            local stack={self.db,line,_args,_parms}
+            var.before_db_exec(stack)
+            print(stack[2]) 
         end
         eval(line)
     end

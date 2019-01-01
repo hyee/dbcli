@@ -172,14 +172,7 @@ function env.check_cmd_end(cmd,other_parts,stmt)
         return true,other_parts
     end
     local prev=""
-    if type(stmt)=='table' then
-        for i=#stmt,1,-1 do
-            if stmt[i]:trim()~='' then
-                prev=stmt[i]..'\n'
-                break
-            end
-        end
-    end
+
     --print(other_parts,debug.traceback())
     if terminator then 
         if other_parts and other_parts:trim():sub(-#terminator)==terminator then
@@ -189,12 +182,23 @@ function env.check_cmd_end(cmd,other_parts,stmt)
     elseif not _CMDS[cmd].MULTI then
         return true,other_parts and env.COMMAND_SEPS.match(other_parts)
     elseif type(_CMDS[cmd].MULTI)=="function" then
+        if type(stmt)=='table' then
+            prev=table.concat(stmt,'\n')..'\n'
+        end
         local done,part=_CMDS[cmd].MULTI(cmd,prev..other_parts)
         return done,part:sub(#prev+1)
     elseif _CMDS[cmd].MULTI=='__SMART_PARSE__' then
         return env.smart_check_end(cmd,other_parts,_CMDS[cmd].ARGS,stmt)
     end
 
+    if type(stmt)=='table' then
+        for i=#stmt,1,-1 do
+            if stmt[i]:trim()~='' then
+                prev=stmt[i]..'\n'
+                break
+            end
+        end
+    end
     local match,typ,index = env.COMMAND_SEPS.match(prev..other_parts)
     --print(match,other_parts)
     if index==0 then

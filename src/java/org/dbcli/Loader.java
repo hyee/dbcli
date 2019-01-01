@@ -16,8 +16,11 @@ import java.awt.event.ActionListener;
 import java.io.*;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.math.BigInteger;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -228,6 +231,92 @@ public class Loader {
                 writer.setRemap(o[0], o.length < 2 ? null : o[1]);
             }
         }
+    }
+
+    //copy from https://www.perumal.org/computing-oracle-sql_id-and-hash_value/
+    public static String computeSQLIdFromText(String stmt) throws UnsupportedEncodingException, NoSuchAlgorithmException {
+
+        /* Example
+         *  Statement: SELECT 'Ram' ram_stmt FROM dual
+         *  MD5 Hash with null terminator: 93bc072570a58c1f330166ab2d0a88d2
+         *  Oracle SQL_ID: aqth16g98h2jd
+         *  Address: 00000000826C6060
+         *  Hash Value: 3532130861
+         *  Hash Value Hex: D2880A2D
+         *  MD5 Hash without null terminator: 93bc072570a58c1f330166ab2d0a88d2
+         *  Exact Matching Signature: 4178266890746386855
+         *  Exact Matching Signature Hex: 39FC2F9987B6D9A7
+         *  MD5 Hash without null terminator for bound statement:
+         *  Force Matching Signature: 16194980974160721469
+         *  Force Matching Signature Hex: E0C021642D0F363D
+         */
+
+        // get bytes of the string supplied
+        byte[] bytesOfStatement = stmt.trim().getBytes("UTF-8");
+        byte[] bytesOfStatementWithNull = new byte[bytesOfStatement.length + 1]; // last bucket used for Null Terminator
+        byte nullCharByte = 0x00; // get bytes of null terminator
+
+        // Null terminator is lost or has no effect (Unicode \\u0000, \\U0000 or hex 0x00 or "\0")
+        // on MD5 digest when you append to String
+        // Hence add the byte value as a last element after cloning
+        System.arraycopy(bytesOfStatement, 0, bytesOfStatementWithNull, 0, bytesOfStatement.length); // clone the array
+        bytesOfStatementWithNull[bytesOfStatement.length] = nullCharByte; // add null terminator as last element
+
+        // get the MD5 digest
+        MessageDigest md = MessageDigest.getInstance("MD5");
+        byte[] bytesFromMD5Digest = md.digest(bytesOfStatementWithNull);
+
+        // convert the byte to hex format
+        // and generate MD5 hash
+        StringBuffer sbMD5HashHex32 = new StringBuffer();
+        for (int i = 0; i < bytesFromMD5Digest.length; i++) {
+            sbMD5HashHex32.append(Integer.toString((bytesFromMD5Digest[i] & 0xff) + 0x100, 16).substring(1));
+        }
+
+        // Obtain MD5 hash, split and reverse Q3 and Q4
+        // Get 32 Hex Characters
+        String strHex32Hash = sbMD5HashHex32.toString();
+
+        // Reverse order of each of the 4 pairs of hex characters in Q3 and Q4
+        // Q3 reverse
+        String strHexQ3Reverse = strHex32Hash.substring(22, 24) + strHex32Hash.substring(20, 22)
+                + strHex32Hash.substring(18, 20) + strHex32Hash.substring(16, 18);
+        // Q4 reverse
+        String strHexQ4Reverse = strHex32Hash.substring(30, 32) + strHex32Hash.substring(28, 30)
+                + strHex32Hash.substring(26, 28) + strHex32Hash.substring(24, 26);
+        // assemble lower 16 with reversed q3 and q4
+        String strHexLower16Assembly = strHexQ3Reverse + strHexQ4Reverse;
+        // convert to 64 bits of binary data
+        String strBinary16Assembly = (new BigInteger(strHexLower16Assembly, 16).toString(2));
+
+        // Left pad with zeros, if the length is less than 64
+        StringBuffer sbBinary16mAssembly = new StringBuffer();
+        for (int toLefPad = 64 - strBinary16Assembly.length(); toLefPad > 0; toLefPad--) {
+            sbBinary16mAssembly.append('0');
+        }
+        sbBinary16mAssembly.append(strBinary16Assembly);
+        strBinary16Assembly = sbBinary16mAssembly.toString();
+
+        // Split the 64 bit string into 13 pieces
+        // First split as 4 bit and remaining as 5 bits
+        String alphabet = "0123456789abcdfghjkmnpqrstuvwxyz";
+        String strPartBindaySplit;
+        int intIndexOnAlphabet;
+        StringBuffer sbSQLId = new StringBuffer();
+
+        for (int i = 0; i < 13; i++) {
+            // Split binary string into 13 pieces
+            strPartBindaySplit = (i == 0 ? strBinary16Assembly.substring(0, 4)
+                    : (i < 12 ? strBinary16Assembly.substring((i * 5) - 1, (i * 5) + 4)
+                    : strBinary16Assembly.substring((i * 5) - 1)));
+            // Index position on Alphabet
+            intIndexOnAlphabet = Integer.parseInt(strPartBindaySplit, 2);
+            // Stick 13 characters
+            sbSQLId.append(alphabet.charAt(intIndexOnAlphabet));
+
+        }
+
+        return sbSQLId.toString();
     }
 
     public int ResultSet2CSV(final ResultSet rs, final String fileName, final String header, final boolean aync, final String excludes, final String[] remaps) throws Exception {
