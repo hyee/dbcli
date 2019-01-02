@@ -92,9 +92,8 @@ public class Console {
         this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
         this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);
         this.isJansiConsole = this.terminal instanceof JansiWinSysTerminal;
-        //terminal.echo(false);
+        terminal.echo(false); //fix paste issue of iTerm2 when past is off
         enableBracketedPaste("on");
-
         for (String s : new String[]{"^_", "^[^H"}) setKeyCode("backward-kill-word", s);
         //deal with keys ctrl+arrow and alt+Arrow
         for (String s : new String[]{"^[[", "[1;3", "[1;5"}) {
@@ -114,10 +113,9 @@ public class Console {
 
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM || OSUtils.IS_CONEMU)) {
             colorPlan = System.getenv("ANSICON_DEF");
-            if (("ansicon").equals(colorPlan) && System.getenv("ConEmuPID") == null&&!terminal.getType().equals(TYPE_WINDOWS_VTP)) {
+            if (("ansicon").equals(colorPlan) && System.getenv("ConEmuPID") == null && !terminal.getType().equals(TYPE_WINDOWS_VTP)) {
                 //writer = new PrintWriter(new BufferedWriter(new ConEmuWriter()));
-            }
-            else colorPlan = terminal.getType();
+            } else colorPlan = terminal.getType();
         } else colorPlan = terminal.getType();
 
         threadID = Thread.currentThread().getId();

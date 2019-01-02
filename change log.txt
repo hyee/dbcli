@@ -8,7 +8,7 @@
                       backward-kill-word: alt-backspace or ctrl-backspace or ctrl-w
                       redo              : alt-y
                       undo              : alt-z
-            ? oracle: the issue of 'Statement.cancle()' in Windows is gone again, I totally have no idea of the reason, kind of magic.
+            ? oracle: the issue of 'Statement.cancel()' in Windows is gone again, I totally have no idea of the reason, kind of magic.
             + public: new commands 'l' and 'c' that similar to sqlplus
             + public: new option  'set BRACKETED_PASTE', import paste performance, import input performance
 2018-12-24: + public: new command 'output [<file>|clear]"

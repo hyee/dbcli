@@ -809,7 +809,6 @@ function env.parse_line(line,exec)
         multi_cmd,curr_stmt=nil,nil
         env.CURRENT_PROMPT=env.PRI_PROMPT 
     end
-
     local is_not_end,cnt=true,0
     for w in line:gsplit('\n',true) do
         cnt=cnt+1
@@ -823,6 +822,8 @@ function env.parse_line(line,exec)
                     _line_stacks={}
                 end
             end
+        elseif not exec and cnt==1 then
+            is_not_end,_cmd,_args,_errs=false
         end
     end
 

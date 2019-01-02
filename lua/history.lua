@@ -166,7 +166,7 @@ function history.onload()
     env.set_command(history,{'history','his'},"Show/run historical commands. Usage: @@NAME [index|last]",history.show,false,2)
     env.set_command(nil,{'r','/'},"Rerun the previous command.",history.rerun,false,2)
     env.set_command(nil,{'l'},"Show the previous command. Usage: @@NAME [last|*|<num>] [last|*|<num>]",history.show_command,false,3)
-    env.set_command(nil,{'change','c'},"Edit the previous command. Usage: @@NAME [<text>|<old>/<new>] ",history.change_command,false,2)
+    env.set_command(nil,{'c'},"Edit the previous command. Usage: @@NAME [<text>|<old>/<new>] ",history.change_command,false,2)
     env.set_command({nil,{'EDIT','ED'},"Use the program that defined in 'set editor' to edit the buffer in order to run with '/'.",history.edit_buffer,false,2,is_blocknewline=true})
 end
 

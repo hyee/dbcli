@@ -132,7 +132,7 @@ WITH sql_plan_data AS
                          NULL            tm,
                          NULL,
                          statement_id,
-                         max(decode(id, 1, regexp_substr(to_char(other_xml), 'plan_hash_full.*?(\d+)', 1, 1, 'i', 1))) over()+0 plan_hash_value,
+                         max(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), 'plan_hash_full.*?(\d+)', 1, 1, 'i', 1))) over()+0 plan_hash_value,
                          NULL
                   FROM   plan_table a
                   WHERE  statement_id=upper(:V1)
