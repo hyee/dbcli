@@ -145,6 +145,11 @@ public class Console {
         Interrupter.listen(this, callback);
     }
 
+    public void enableMouse(String val) {
+        if ("off".equals(val)) reader.unsetOpt(LineReader.Option.MOUSE);
+        else reader.setOpt(LineReader.Option.MOUSE);
+    }
+
     public void enableBracketedPaste(String val) {
         if ("off".equals(val)) reader.unsetOpt(LineReader.Option.BRACKETED_PASTE);
         else reader.setOpt(LineReader.Option.BRACKETED_PASTE);

@@ -1,4 +1,5 @@
-2019-01-03: * public: update lib JNA to v4.5
+2019-01-03: * public: update libs JNA to v4.5, NuProcess to 1.2.4 and JNLua
+            + public: new option 'set mouse on/off'
 2019-01-01: + oracle: new option 'set autotrace'
 2018-12-29: * public: re-arrange keymaps:
                       forward-word      : alt-left  or ctrl-left
