@@ -21,17 +21,20 @@ import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import com.sun.jna.StringArray;
 import com.sun.jna.ptr.IntByReference;
+import com.zaxxer.nuprocess.NuProcess;
 import com.zaxxer.nuprocess.NuProcessHandler;
 import com.zaxxer.nuprocess.internal.BasePosixProcess;
 import com.zaxxer.nuprocess.internal.LibC;
 import com.zaxxer.nuprocess.internal.LibC.SyscallLibrary;
 
 import java.nio.file.Path;
+import java.util.List;
+import java.util.logging.Level;
 
 /**
  * @author Brett Wooldridge
  */
-public class OsxProcess extends BasePosixProcess {
+class OsxProcess extends BasePosixProcess {
     static {
         for (int i = 0; i < processors.length; i++) {
             processors[i] = new ProcessKqueue();
@@ -41,34 +44,76 @@ public class OsxProcess extends BasePosixProcess {
         LibC.signal(LibC.SIGUSR2, LibC.SIG_IGN);
     }
 
-    public OsxProcess(NuProcessHandler processListener) {
+    OsxProcess(NuProcessHandler processListener) {
         super(processListener);
     }
 
     @Override
-    protected short getSpawnFlags() {
-        // Start the spawned process in suspended mode
-        return LibC.POSIX_SPAWN_START_SUSPENDED | LibC.POSIX_SPAWN_CLOEXEC_DEFAULT;
+    public NuProcess start(List<String> command, String[] environment, Path cwd) {
+        callPreStart();
+
+        String[] commands = command.toArray(new String[0]);
+
+        Pointer posix_spawn_file_actions = createPosixPipes();
+        Pointer posix_spawnattr = createPosixSpawnAttributes();
+
+        try {
+            int rc = LibC.posix_spawnattr_init(posix_spawnattr);
+            checkReturnCode(rc, "Internal call to posix_spawnattr_init() failed");
+
+            LibC.posix_spawnattr_setflags(posix_spawnattr, (short) (LibC.POSIX_SPAWN_START_SUSPENDED | LibC.POSIX_SPAWN_CLOEXEC_DEFAULT));
+
+            IntByReference restrict_pid = new IntByReference();
+            StringArray commandsArray = new StringArray(commands);
+            StringArray environmentArray = new StringArray(environment);
+            if (cwd != null) {
+                rc = spawnWithCwd(restrict_pid, commands[0], posix_spawn_file_actions, posix_spawnattr, commandsArray, environmentArray, cwd);
+            } else {
+                rc = LibC.posix_spawnp(restrict_pid, commands[0], posix_spawn_file_actions, posix_spawnattr, commandsArray, environmentArray);
+            }
+
+            pid = restrict_pid.getValue();
+
+            initializeBuffers();
+
+            if (!checkLaunch()) {
+                return null;
+            }
+
+            checkReturnCode(rc, "Invocation of posix_spawn() failed");
+
+            afterStart();
+
+            registerProcess();
+
+            callStart();
+
+            singleProcessContinue();
+        } catch (RuntimeException e) {
+            // TODO remove from event processor pid map?
+            LOGGER.log(Level.WARNING, "Exception thrown from handler", e);
+            onExit(Integer.MIN_VALUE);
+            return null;
+        } finally {
+            LibC.posix_spawnattr_destroy(posix_spawnattr);
+            LibC.posix_spawn_file_actions_destroy(posix_spawn_file_actions);
+
+            // After we've spawned, close the unused ends of our pipes (that were dup'd into the child process space)
+            LibC.close(stdinWidow);
+            LibC.close(stdoutWidow);
+            LibC.close(stderrWidow);
+        }
+
+        return this;
     }
 
-    @Override
-    protected Pointer createPosixSpawnFileActions() {
-        return new Memory(Pointer.SIZE);
-    }
-
-    @Override
-    protected Pointer createPosixSpawnAttributes() {
-        return new Memory(Pointer.SIZE);
-    }
-
-    @Override
-    protected int spawnWithCwd(final IntByReference restrict_pid,
-                               final String restrict_path,
-                               final Pointer file_actions,
-                               final Pointer /*const posix_spawnattr_t*/ restrict_attrp,
-                               final StringArray /*String[]*/ argv,
-                               final Pointer /*String[]*/ envp,
-                               final Path cwd) {
+    private int spawnWithCwd(final IntByReference restrict_pid,
+                             final String restrict_path,
+                             final Pointer file_actions,
+                             final Pointer /*const posix_spawnattr_t*/ restrict_attrp,
+                             final StringArray /*String[]*/ argv,
+                             final Pointer /*String[]*/ envp,
+                             final Path cwd) {
         int cwdBufSize = 1024;
         long peer = Native.malloc(cwdBufSize);
         Pointer oldCwd = new Pointer(peer);
@@ -86,9 +131,57 @@ public class OsxProcess extends BasePosixProcess {
         }
     }
 
-    @Override
-    protected void singleProcessContinue() {
+    private void singleProcessContinue() {
         // Signal the spawned process to continue (unsuspend)
         LibC.kill(pid, LibC.SIGCONT);
+    }
+
+    private Pointer createPosixPipes() {
+        int rc;
+
+        Pointer posix_spawn_file_actions = createPosixSpawnFileActions();
+
+        try {
+            int[] fds = createPipes();
+
+            // Create spawn file actions
+            rc = LibC.posix_spawn_file_actions_init(posix_spawn_file_actions);
+            checkReturnCode(rc, "Internal call to posix_spawn_file_actions_init() failed");
+
+            // Dup the reading end of the pipe into the sub-process, and close our end
+            rc = LibC.posix_spawn_file_actions_adddup2(posix_spawn_file_actions, stdinWidow, 0);
+            checkReturnCode(rc, "Internal call to posix_spawn_file_actions_adddup2() failed");
+
+            rc = LibC.posix_spawn_file_actions_addclose(posix_spawn_file_actions, fds[0]);
+            checkReturnCode(rc, "Internal call to posix_spawn_file_actions_addclose() failed");
+
+            // Dup the writing end of the pipe into the sub-process, and close our end
+            rc = LibC.posix_spawn_file_actions_adddup2(posix_spawn_file_actions, stdoutWidow, 1);
+            checkReturnCode(rc, "Internal call to posix_spawn_file_actions_adddup2() failed");
+
+            rc = LibC.posix_spawn_file_actions_addclose(posix_spawn_file_actions, fds[1]);
+            checkReturnCode(rc, "Internal call to posix_spawn_file_actions_addclose() failed");
+
+            // Dup the writing end of the pipe into the sub-process, and close our end
+            rc = LibC.posix_spawn_file_actions_adddup2(posix_spawn_file_actions, stderrWidow, 2);
+            checkReturnCode(rc, "Internal call to posix_spawn_file_actions_adddup2() failed");
+
+            rc = LibC.posix_spawn_file_actions_addclose(posix_spawn_file_actions, fds[2]);
+            checkReturnCode(rc, "Internal call to posix_spawn_file_actions_addclose() failed");
+
+            return posix_spawn_file_actions;
+        } catch (RuntimeException e) {
+            LOGGER.log(Level.WARNING, "Exception creating posix pipe actions", e);
+            LibC.posix_spawn_file_actions_destroy(posix_spawn_file_actions);
+            throw e;
+        }
+    }
+
+    private Pointer createPosixSpawnFileActions() {
+        return new Memory(Pointer.SIZE);
+    }
+
+    private Pointer createPosixSpawnAttributes() {
+        return new Memory(Pointer.SIZE);
     }
 }

@@ -18,39 +18,25 @@ package com.zaxxer.nuprocess.internal;
 
 import com.sun.jna.*;
 import com.sun.jna.ptr.IntByReference;
+import com.zaxxer.nuprocess.internal.Constants.OperatingSystem;
 
 import java.nio.ByteBuffer;
 
+import static com.zaxxer.nuprocess.internal.Constants.OS;
+
+@SuppressWarnings("WeakerAccess")
 public class LibC {
     static {
-        Native.register(NativeLibrary.getProcess());
-
-        if (System.getProperty("os.name").toLowerCase().contains("mac") || System.getProperty("os.name").toLowerCase().contains("freebsd")) {
+        if (OS == OperatingSystem.MAC) {
             O_NONBLOCK = 0x0004; // MacOS X, Freebsd
         } else {
             O_NONBLOCK = 2048; // Linux
         }
+
+        Native.register(NativeLibrary.getProcess());
     }
 
     public static native int pipe(int[] fildes);
-
-    public static native int fcntl(int fildes, int cmd);
-
-    public static native int fcntl(int fildes, int cmd, long argO);
-
-    public static native int close(int fildes);
-
-    public static native int write(int fildes, ByteBuffer buf, int nbyte);
-
-    public static native int read(int fildes, ByteBuffer buf, int nbyte);
-
-    public static native int getpid();
-
-    public static native int kill(int pid, int sig);
-
-    public static native int waitpid(int pid, IntByReference status, int options);
-
-    public static native int waitid(int idtype_t, int id_t, Pointer siginfo_t, int options);
 
     public static native int posix_spawnattr_init(Pointer posix_spawnattr_t);
 
@@ -69,9 +55,23 @@ public class LibC {
     public static native int posix_spawnp(IntByReference restrict_pid, String restrict_path, Pointer file_actions,
                                           Pointer /*const posix_spawnattr_t*/ restrict_attrp, StringArray /*String[]*/ argv, Pointer /*String[]*/ envp);
 
-    public static native Pointer signal(int signal, Pointer func);
+    public static native int fcntl(int fildes, int cmd);
 
-    public static native int chdir(String path);
+    public static native int fcntl(int fildes, int cmd, long argO);
+
+    public static native int close(int fildes);
+
+    public static native int write(int fildes, ByteBuffer buf, int nbyte);
+
+    public static native int read(int fildes, ByteBuffer buf, int nbyte);
+
+    public static native int getpid();
+
+    public static native int kill(int pid, int sig);
+
+    public static native int waitpid(int pid, IntByReference status, int options);
+
+    public static native Pointer signal(int signal, Pointer func);
 
     public static native String getcwd(Pointer buf, int size);
 

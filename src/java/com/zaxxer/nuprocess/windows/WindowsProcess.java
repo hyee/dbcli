@@ -34,12 +34,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static com.zaxxer.nuprocess.internal.Constants.NUMBER_OF_THREADS;
+
 /**
  * @author Brett Wooldridge
  */
 public final class WindowsProcess implements NuProcess {
-    public static final int PROCESSOR_THREADS;
-
     private static final boolean IS_SOFTEXIT_DETECTION;
 
     private static final int BUFFER_SIZE = 65536;
@@ -84,17 +84,8 @@ public final class WindowsProcess implements NuProcess {
 
         IS_SOFTEXIT_DETECTION = Boolean.valueOf(System.getProperty("com.zaxxer.nuprocess.softExitDetection", "true"));
 
-        String threads = System.getProperty("com.zaxxer.nuprocess.threads", "auto");
-        if ("auto".equals(threads)) {
-            PROCESSOR_THREADS = Math.max(1, Runtime.getRuntime().availableProcessors() / 2);
-        } else if ("cores".equals(threads)) {
-            PROCESSOR_THREADS = Runtime.getRuntime().availableProcessors();
-        } else {
-            PROCESSOR_THREADS = Math.max(1, Integer.parseInt(threads));
-        }
-
-        processors = new ProcessCompletions[PROCESSOR_THREADS];
-        for (int i = 0; i < PROCESSOR_THREADS; i++) {
+        processors = new ProcessCompletions[NUMBER_OF_THREADS];
+        for (int i = 0; i < NUMBER_OF_THREADS; i++) {
             processors[i] = new ProcessCompletions();
         }
 
@@ -112,7 +103,7 @@ public final class WindowsProcess implements NuProcess {
         }
     }
 
-    public WindowsProcess(NuProcessHandler processListener) {
+    WindowsProcess(NuProcessHandler processListener) {
         this.processHandler = processListener;
 
         this.userWantsWrite = new AtomicBoolean();

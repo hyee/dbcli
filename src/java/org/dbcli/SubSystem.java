@@ -3,7 +3,6 @@ package org.dbcli;
 import com.zaxxer.nuprocess.NuAbstractProcessHandler;
 import com.zaxxer.nuprocess.NuProcess;
 import com.zaxxer.nuprocess.NuProcessBuilder;
-import com.zaxxer.nuprocess.windows.NuKernel32;
 
 import java.io.File;
 import java.nio.ByteBuffer;
@@ -11,6 +10,9 @@ import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 public class SubSystem {
@@ -56,7 +58,7 @@ public class SubSystem {
     }
 
     public static boolean setEnv(String name, String value) {
-        return NuKernel32.SetEnvironmentVariable(name, value);
+        return false;// NuKernel32.SetEnvironmentVariable(name, value);
     }
 
     public static SubSystem create(String pattern, String cwd, String[] command, Map env) {
@@ -166,12 +168,15 @@ public class SubSystem {
         process = null;
         lastPrompt = null;
         lock.countDown();
+        threadPool.shutdownNow();
     }
+
+    ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(1);
 
     class ProcessHandler extends NuAbstractProcessHandler {
         private NuProcess nuProcess;
         private char lastChar;
-        private StringBuilder sb = new StringBuilder();
+        private StringBuffer sb = new StringBuffer();
 
         @Override
         public void onStart(NuProcess nuProcess) {
@@ -185,15 +190,30 @@ public class SubSystem {
             lock.countDown();
         }
 
+        private volatile boolean flag = false;
+        Runnable checker = new Runnable() {
+            @Override
+            public void run() {
+                if (!flag) return;
+                flag = false;
+                String line = sb.toString();
+                if (p.matcher(line).find()) {
+                    sb.setLength(0);
+                    lock.countDown();
+                    isWaiting = false;
+                    lastPrompt = line;
+                }
+            }
+        };
+
         @Override
         public void onStdout(ByteBuffer buffer, boolean closed) {
+            flag = false;
             byte[] bytes = new byte[buffer.remaining()];
             buffer.get(bytes);
-
             lastChar = '\n';
             isEOF = closed;
             isWaiting = true;
-
             for (byte c : bytes) {
                 lastChar = (char) c;
                 sb.append(lastChar);
@@ -203,20 +223,17 @@ public class SubSystem {
                     sb.setLength(0);
                 }
             }
-
             if (lastChar != '\n' && !isEOF) {
                 String line = sb.toString();
-                sb.setLength(0);
-                if (p.matcher(line).find()) {
-                    lock.countDown();
-                    isWaiting = false;
-                    lastPrompt = line;
+                if (!process.hasPendingWrites() && p.matcher(line).find()) {
+                    flag = true;
+                    threadPool.schedule(checker, 50, TimeUnit.MILLISECONDS);
                 } else {
+                    sb.setLength(0);
                     print(line);
                 }
             }
         }
-
         @Override
         public void onExit(int statusCode) {
             close();

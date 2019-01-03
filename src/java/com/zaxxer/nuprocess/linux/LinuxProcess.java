@@ -16,29 +16,29 @@
 
 package com.zaxxer.nuprocess.linux;
 
-import com.sun.jna.Native;
-import com.sun.jna.Pointer;
-import com.sun.jna.StringArray;
+import com.sun.jna.JNIEnv;
 import com.sun.jna.ptr.IntByReference;
+import com.zaxxer.nuprocess.NuProcess;
 import com.zaxxer.nuprocess.NuProcessHandler;
-import com.zaxxer.nuprocess.internal.BaseEventProcessor;
 import com.zaxxer.nuprocess.internal.BasePosixProcess;
 import com.zaxxer.nuprocess.internal.LibC;
 
 import java.nio.file.Path;
-import java.util.concurrent.*;
+import java.util.List;
+import java.util.logging.Level;
 
+import static com.zaxxer.nuprocess.internal.Constants.JVM_MAJOR_VERSION;
 import static com.zaxxer.nuprocess.internal.LibC.*;
 
 /**
  * @author Brett Wooldridge
  */
 public class LinuxProcess extends BasePosixProcess {
-    private static final boolean LINUX_USE_VFORK = Boolean.parseBoolean(System.getProperty("com.zaxxer.nuprocess.linuxUseVfork", "true"));
-
-    private static ExecutorService linuxCwdExecutorService;
+    private static final boolean isAzul;
 
     static {
+        isAzul = System.getProperty("java.vm.vendor", "").contains("Azul");
+
         LibEpoll.sigignore(LibEpoll.SIGPIPE);
 
         // TODO: install signal handler for SIGCHLD, and call onExit() when received, call the default (JVM) hook if the PID is not ours
@@ -46,80 +46,101 @@ public class LinuxProcess extends BasePosixProcess {
         for (int i = 0; i < processors.length; i++) {
             processors[i] = new ProcessEpoll();
         }
-
-        ThreadPoolExecutor executor = new ThreadPoolExecutor(/* corePoolSize */ processors.length,
-                                                           /* maximumPoolSize */ processors.length,
-                                                           /* keepAliveTime */ BaseEventProcessor.LINGER_TIME_MS, TimeUnit.MILLISECONDS,
-                                                           /* workQueue */ new LinkedBlockingQueue<Runnable>(),
-                                                           /* threadFactory */ new LinuxCwdThreadFactory(),
-                                                           /* handler */ new ThreadPoolExecutor.DiscardPolicy());
-        // Allow going back down to 0 threads after LINGER_TIME_MS.
-        executor.allowCoreThreadTimeOut(true);
-        linuxCwdExecutorService = executor;
     }
 
-    public LinuxProcess(NuProcessHandler processListener) {
+    @SuppressWarnings("unused")
+    private enum LaunchMechanism {
+        // order IS important!
+        FORK,
+        POSIX_SPAWN,
+        VFORK
+    }
+
+    LinuxProcess(NuProcessHandler processListener) {
         super(processListener);
     }
 
     @Override
-    protected short getSpawnFlags() {
-        if (LINUX_USE_VFORK) {
-            return 0x40; // POSIX_SPAWN_USEVFORK
+    public NuProcess start(List<String> command, String[] environment, Path cwd) {
+        callPreStart();
+
+        String[] cmdarray = command.toArray(new String[0]);
+
+        // See https://github.com/JetBrains/jdk8u_jdk/blob/master/src/solaris/classes/java/lang/ProcessImpl.java#L71-L83
+        byte[][] args = new byte[cmdarray.length - 1][];
+        int size = args.length; // For added NUL bytes
+        for (int i = 0; i < args.length; i++) {
+            args[i] = cmdarray[i + 1].getBytes();
+            size += args[i].length;
+        }
+        byte[] argBlock = new byte[size];
+        int i = 0;
+        for (byte[] arg : args) {
+            System.arraycopy(arg, 0, argBlock, i, arg.length);
+            i += arg.length + 1;
+            // No need to write NUL bytes explicitly
         }
 
-        return 0x0;
-    }
+        // See https://github.com/JetBrains/jdk8u_jdk/blob/master/src/solaris/classes/java/lang/ProcessImpl.java#L86
+        byte[] envBlock = toEnvironmentBlock(environment);
 
-    @Override
-    protected Pointer createPosixSpawnFileActions() {
-        long peer = Native.malloc(80);
-        Pointer posix_spawn_file_actions = new Pointer(peer);
-
-        return posix_spawn_file_actions;
-    }
-
-    @Override
-    protected Pointer createPosixSpawnAttributes() {
-        long peer = Native.malloc(340);
-        return new Pointer(peer);
-    }
-
-    @Override
-    protected int spawnWithCwd(final IntByReference restrict_pid,
-                               final String restrict_path,
-                               final Pointer file_actions,
-                               final Pointer /*const posix_spawnattr_t*/ restrict_attrp,
-                               final StringArray /*String[]*/ argv,
-                               final Pointer /*String[]*/ envp,
-                               final Path cwd) {
-        Future<Integer> setCwdThenSpawnFuture = linuxCwdExecutorService.submit(new Callable<Integer>() {
-            @Override
-            public Integer call() {
-                // Set cwd in this thread, which has its cwd state disassociated from the rest of the process.
-                int rc = LibC.chdir(cwd.toAbsolutePath().toString());
-                // If this throws, it'll be wrapped in an ExecutionException and re-thrown on the thread
-                // which calls Future.get().
-                checkReturnCode(rc, "chdir() failed");
-                // posix_spawnp() will inherit the cwd of this thread.
-                //
-                // We don't bother restoring cwd, since this thread will either be destroyed or re-used
-                // later by the same executor, which will then chdir anyway.
-                return LibC.posix_spawnp(restrict_pid, restrict_path, file_actions, restrict_attrp, argv, envp);
-            }
-        });
         try {
-            return setCwdThenSpawnFuture.get();
-        } catch (ExecutionException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof RuntimeException) {
-                throw (RuntimeException) cause;
+            // See https://github.com/JetBrains/jdk8u_jdk/blob/master/src/solaris/classes/java/lang/ProcessImpl.java#L96
+            createPipes();
+            int[] child_fds = {stdinWidow, stdoutWidow, stderrWidow};
+
+            if (JVM_MAJOR_VERSION >= 10 || isAzul) {
+                pid = com.zaxxer.nuprocess.internal.LibJava10.Java_java_lang_ProcessImpl_forkAndExec(
+                        JNIEnv.CURRENT,
+                        this,
+                        LaunchMechanism.VFORK.ordinal() + 1,
+                        toCString(System.getProperty("java.home") + "/lib/jspawnhelper"), // used on Linux
+                        toCString(cmdarray[0]),
+                        argBlock, args.length,
+                        envBlock, environment.length,
+                        (cwd != null ? toCString(cwd.toString()) : null),
+                        child_fds,
+                        (byte) 0 /*redirectErrorStream*/);
             } else {
-                throw new RuntimeException(cause);
+                // See https://github.com/JetBrains/jdk8u_jdk/blob/master/src/solaris/classes/java/lang/UNIXProcess.java#L247
+                // Native source code: https://github.com/JetBrains/jdk8u_jdk/blob/master/src/solaris/native/java/lang/UNIXProcess_md.c#L566
+                pid = com.zaxxer.nuprocess.internal.LibJava8.Java_java_lang_UNIXProcess_forkAndExec(
+                        JNIEnv.CURRENT,
+                        this,
+                        LaunchMechanism.VFORK.ordinal() + 1,
+                        toCString(System.getProperty("java.home") + "/lib/jspawnhelper"), // used on Linux
+                        toCString(cmdarray[0]),
+                        argBlock, args.length,
+                        envBlock, environment.length,
+                        (cwd != null ? toCString(cwd.toString()) : null),
+                        child_fds,
+                        (byte) 0 /*redirectErrorStream*/);
             }
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
+
+            if (pid == -1) {
+                return null;
+            }
+
+            // Close the child end of the pipes in our process
+            LibC.close(stdinWidow);
+            LibC.close(stdoutWidow);
+            LibC.close(stderrWidow);
+
+            initializeBuffers();
+
+            afterStart();
+
+            registerProcess();
+
+            callStart();
+        } catch (Exception e) {
+            // TODO remove from event processor pid map?
+            LOGGER.log(Level.WARNING, "Failed to start process", e);
+            onExit(Integer.MIN_VALUE);
+            return null;
         }
+
+        return this;
     }
 
     @Override
@@ -153,9 +174,35 @@ public class LinuxProcess extends BasePosixProcess {
         return true;
     }
 
-    @Override
-    protected void deallocateStructures(Pointer posix_spawn_file_actions, Pointer posix_spawnattr) {
-        Native.free(Pointer.nativeValue(posix_spawn_file_actions));
-        Native.free(Pointer.nativeValue(posix_spawnattr));
+    private static byte[] toCString(String s) {
+        if (s == null)
+            return null;
+        byte[] bytes = s.getBytes();
+        byte[] result = new byte[bytes.length + 1];
+        System.arraycopy(bytes, 0,
+                result, 0,
+                bytes.length);
+        result[result.length - 1] = (byte) 0;
+        return result;
+    }
+
+    private static byte[] toEnvironmentBlock(String[] environment) {
+        int count = environment.length;
+        for (String entry : environment) {
+            count += entry.getBytes().length;
+        }
+
+        byte[] block = new byte[count];
+
+        int i = 0;
+        for (String entry : environment) {
+            byte[] bytes = entry.getBytes();
+            System.arraycopy(bytes, 0, block, i, bytes.length);
+            i += bytes.length + 1;
+            // No need to write NUL byte explicitly
+            //block[i++] = (byte) '\u0000';
+        }
+
+        return block;
     }
 }

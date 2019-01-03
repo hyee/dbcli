@@ -994,9 +994,8 @@ local function set_cache_path(name,path)
 end
 
 function env.run_luajit()
-    terminal:pause()
+    terminal:echo(true)
     pcall(os.execute,env.join_path(env.LIB_PATH,'luajit'))
-    terminal:resume()
 end
 
 function env.set_paste(name,value)
@@ -1029,7 +1028,7 @@ function env.onload(...)
     os.setlocale('',"all")
     env.set_command(nil,"EXIT","#Exit environment, including variables, modules, etc",env.exit,false,1)
     env.set_command(nil,"RELOAD","Reload environment, including variables, modules, etc",env.reload,false,1)
-    env.set_command(nil,"LUAJIT","#Switch to luajit interpreter, press Ctrl+Z to exit.",env.run_luajit,false,1)
+    env.set_command({nil,"LUAJIT","#Switch to luajit interpreter, press Ctrl+Z to exit.",env.run_luajit,false,1,is_blocknewline=true})
     env.set_command(nil,"-P","#Test parameters. Usage: -p <command> [<args>]",env.testcmd,'__SMART_PARSE__',2)
 
     env.init.onload(env)

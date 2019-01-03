@@ -36,12 +36,12 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
     public static JansiWinSysTerminal createTerminal(String name, String type, boolean ansiPassThrough, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler, boolean paused) throws IOException {
         Writer writer;
         if (ansiPassThrough) {
-            if (type == null) type = TYPE_WINDOWS;
+            if (type == null) type = TYPE_WINDOWS_256_COLOR;
             /*
             if (type == null) {
                 type = OSUtils.IS_CONEMU ? TYPE_WINDOWS_256_COLOR : TYPE_WINDOWS;
             }*/
-            writer = OSUtils.IS_CONEMU ? new JansiWinConsoleWriter() : new BufferedWriter(new ConEmuWriter());
+            writer = OSUtils.IS_CONEMU ? new JansiWinConsoleWriter() : new WindowsAnsiWriter(new BufferedWriter(new JansiWinConsoleWriter()));
         } else {
             long console = GetStdHandle(STD_OUTPUT_HANDLE);
             int[] mode = new int[1];

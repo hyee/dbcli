@@ -69,7 +69,7 @@ public class Console {
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM))
-            this.terminal = JansiWinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU, null, 0, true, Terminal.SignalHandler.SIG_IGN, false);
+            this.terminal = JansiWinSysTerminal.createTerminal(colorPlan, null, OSUtils.IS_CONEMU, null, 0, true, Terminal.SignalHandler.SIG_IGN, false);
         else
             this.terminal = (AbstractTerminal) TerminalBuilder.builder().name(colorPlan).system(true).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).nativeSignals(true).build();
         this.status = this.terminal.getStatus();
@@ -92,7 +92,7 @@ public class Console {
         this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
         this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);
         this.isJansiConsole = this.terminal instanceof JansiWinSysTerminal;
-        terminal.echo(false); //fix paste issue of iTerm2 when past is off
+        //terminal.echo(false); //fix paste issue of iTerm2 when past is off
         enableBracketedPaste("on");
         for (String s : new String[]{"^_", "^[^H"}) setKeyCode("backward-kill-word", s);
         //deal with keys ctrl+arrow and alt+Arrow
@@ -114,7 +114,7 @@ public class Console {
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM || OSUtils.IS_CONEMU)) {
             colorPlan = System.getenv("ANSICON_DEF");
             if (("ansicon").equals(colorPlan) && System.getenv("ConEmuPID") == null && !terminal.getType().equals(TYPE_WINDOWS_VTP)) {
-                //writer = new PrintWriter(new BufferedWriter(new ConEmuWriter()));
+                writer = new PrintWriter(new BufferedWriter(new ConEmuWriter()));
             } else colorPlan = terminal.getType();
         } else colorPlan = terminal.getType();
 
@@ -324,6 +324,7 @@ public class Console {
         try {
             if (readSeq >= 5) System.exit(0);
             setEvents(null, null);
+            terminal.echo(false);
             terminal.resume();
             isPrompt = buffer != null && ansiPattern.matcher(buffer).find();
             if (isPrompt) {
@@ -331,19 +332,25 @@ public class Console {
                 buffer = null;
             }
             pause = false;
+
             String line = reader.readLine(prompt, null, buffer);
             if (line != null) {
                 line = parser.getLines();
                 if (line == null) return readLine(parser.secondPrompt, null);
             }
             readSeq *= 0;
-            pause = true;
+            if (pause) {
+                terminal.echo(true);
+                terminal.pause();
+            } else pause = true;
             return line;
         } catch (UserInterruptException | EndOfFileException e) {
             ++readSeq;
             terminal.raise(Terminal.Signal.INT);
             status.redraw();
             return "";
+        } finally {
+
         }
     }
 
@@ -420,7 +427,6 @@ public class Console {
         Object[] call(Object... e);
     }
 
-
     class MyParser extends DefaultParser implements Highlighter {
         public static final String DEFAULT_HIGHLIGHTER_COLORS = "rs=1:st=2:nu=3:co=4:va=5:vn=6:fu=7:bf=8:re=9";
         public final Pattern numPattern = Pattern.compile("([0-9]+)");
@@ -449,7 +455,6 @@ public class Console {
             setAnsi(NOR);
             super.setEofOnEscapedNewLine(true);
             reader.setVariable(SECONDARY_PROMPT_PATTERN, secondPrompt);
-            reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
             Interrupter.listen(this, c -> {
                 lines = 0;
                 sb.setLength(0);
@@ -493,9 +498,12 @@ public class Console {
                 reader.setVariable(DISABLE_HISTORY, true);
             }
             lines = 0;
-            if ((Boolean) result[2]) terminal.pause();
+            if ((Boolean) result[2]) {
+                pause = true;
+            }
             return null;
         }
+
 
         public final void setAnsi(final String ansi) {
             if (ansi.equals(this.ansi)) return;

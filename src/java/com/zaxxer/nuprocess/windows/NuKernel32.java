@@ -32,8 +32,6 @@ public class NuKernel32 {
         Native.register(NuKernel32.class, nativeLibrary);
     }
 
-    public static native boolean SetEnvironmentVariable(String lpName, String lpValue);
-
     public static native int GetProcessId(HANDLE hObject);
 
     public static native boolean CloseHandle(HANDLE hObject);
@@ -71,10 +69,10 @@ public class NuKernel32 {
     public static native boolean GetExitCodeProcess(HANDLE hProcess, IntByReference exitCode);
 
     public static native int ReadFile(HANDLE hFile, ByteBuffer lpBuffer, int nNumberOfBytesToRead, IntByReference lpNumberOfBytesRead,
-                                      OVERLAPPED lpOverlapped);
+                                      NuKernel32.OVERLAPPED lpOverlapped);
 
     public static native int WriteFile(HANDLE hFile, ByteBuffer lpBuffer, int nNumberOfBytesToWrite, IntByReference lpNumberOfBytesWritten,
-                                       OVERLAPPED lpOverlapped);
+                                       NuKernel32.OVERLAPPED lpOverlapped);
 
     /**
      * The OVERLAPPED structure contains information used in

@@ -80,7 +80,7 @@ class WindowsCreateProcessEscape {
     /**
      * Given a string X, this function returns a string that, when passed through
      * the Windows implementation of Java's {@link Runtime#exec(String[])} or
-     * {@link ProcessBuilder}, will appear to the spawned process as X.
+     * {@link java.lang.ProcessBuilder}, will appear to the spawned process as X.
      *
      * @param arg The argument to quote.
      * @return The quote version of 'arg'.

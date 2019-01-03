@@ -137,7 +137,7 @@ function output.getOutput(item)
     if DML[typ] and #env.RUNNING_THREADS > 2 and autotrace=='off' then return end
     if not (sql:lower():find('internal',1,true) and not sql:find('%s')) and not db:is_internal_call(sql) then
         local args=table.clone(default_args)
-        args.sql_id=loader:computeSQLIdFromText(sql)
+        args.sql_id=autotrace=='off' and 'x' or loader:computeSQLIdFromText(sql)
         args.autotrace=autotrace
         local done,err=pcall(db.exec_cache,db,output.stmt,args,'Internal_GetDBMSOutput')
         if not done then 
