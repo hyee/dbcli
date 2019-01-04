@@ -4,7 +4,6 @@ import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
 import com.sun.jna.Pointer;
 import org.jline.builtins.Commands;
-import org.jline.builtins.Less;
 import org.jline.builtins.Source;
 import org.jline.keymap.KeyMap;
 import org.jline.reader.*;
@@ -65,6 +64,7 @@ public class Console {
 
     private Status status;
     private String colorPlan;
+    private KeyMap keyMap;
 
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
@@ -81,7 +81,7 @@ public class Console {
         this.reader.setCompleter(completer);
         this.reader.setHistory(history);
         this.reader.unsetOpt(LineReader.Option.MOUSE);
-        this.reader.unsetOpt(LineReader.Option.DELAY_LINE_WRAP);
+        this.reader.setOpt(LineReader.Option.DELAY_LINE_WRAP);
         this.reader.setOpt(LineReader.Option.DISABLE_EVENT_EXPANSION);
         this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE);
         this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE_SEARCH);
@@ -92,17 +92,17 @@ public class Console {
         this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
         this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);
         this.isJansiConsole = this.terminal instanceof JansiWinSysTerminal;
+
         //terminal.echo(false); //fix paste issue of iTerm2 when past is off
         enableBracketedPaste("on");
-        for (String s : new String[]{"^_", "^[^H"}) setKeyCode("backward-kill-word", s);
+        keyMap = reader.getKeyMaps().get(LineReader.MAIN);
+        for (String s : new String[]{"^_", "^[^H"}) setKeyCode(LineReader.BACKWARD_KILL_WORD, s);
         //deal with keys ctrl+arrow and alt+Arrow
-        for (String s : new String[]{"^[[", "[1;3", "[1;5"}) {
-            if (s != null) {
-                setKeyCode("up-history", "^[" + s + "A");
-                setKeyCode("down-history", "^[" + s + "B");
-                setKeyCode("forward-word", "^[" + s + "C");
-                setKeyCode("backward-word", "^[" + s + "D");
-            }
+        for (String s : new String[]{"^[[", "[1;2", "[1;3", "[1;5"}) {
+            setKeyCode(LineReader.UP_HISTORY, "^[" + s + "A");
+            setKeyCode(LineReader.DOWN_HISTORY, "^[" + s + "B");
+            setKeyCode(LineReader.FORWARD_WORD, "^[" + s + "C");
+            setKeyCode(LineReader.BACKWARD_WORD, "^[" + s + "D");
         }
         //alt+y and alt+z
         setKeyCode("redo", "^[y");
@@ -111,13 +111,14 @@ public class Console {
         input = terminal.reader();
         writer = terminal.writer();
 
-        if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM || OSUtils.IS_CONEMU)) {
+        if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM)) {
             colorPlan = System.getenv("ANSICON_DEF");
-            if (("ansicon").equals(colorPlan) && System.getenv("ConEmuPID") == null && !terminal.getType().equals(TYPE_WINDOWS_VTP)) {
-                writer = new PrintWriter(new BufferedWriter(new ConEmuWriter()));
-            } else colorPlan = terminal.getType();
+            if (("ansicon").equals(colorPlan) && !terminal.getType().equals(TYPE_WINDOWS_VTP)) {
+                writer = new PrintWriter(new BufferedWriter(OSUtils.IS_CONEMU ? new JansiWinConsoleWriter() : new ConEmuWriter()));
+            } else if (OSUtils.IS_CONEMU)
+                writer = new PrintWriter(new BufferedWriter(new JansiWinConsoleWriter()));
+            else colorPlan = terminal.getType();
         } else colorPlan = terminal.getType();
-
         threadID = Thread.currentThread().getId();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
         callback = new EventCallback() {
@@ -143,11 +144,6 @@ public class Console {
             }
         };
         Interrupter.listen(this, callback);
-    }
-
-    public void enableMouse(String val) {
-        if ("off".equals(val)) reader.unsetOpt(LineReader.Option.MOUSE);
-        else reader.setOpt(LineReader.Option.MOUSE);
     }
 
     public void enableBracketedPaste(String val) {
@@ -282,8 +278,7 @@ public class Console {
         return display.wcwidth(str);
     }
 
-    public void less(String output) throws Exception {
-        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+    public void less(String output, int titleLines, int spaces) throws Exception {
         Source source = new Source() {
             @Override
             public String getName() {
@@ -297,7 +292,9 @@ public class Console {
         };
         Less less = new Less(terminal);
         less.veryQuiet = true;
-        less.chopLongLines = false;
+        less.spaces = spaces;
+        less.setTitleLines(titleLines);
+        less.chopLongLines = true;
         less.quitIfOneScreen = true;
         less.ignoreCaseAlways = true;
         less.run(source);
@@ -347,7 +344,9 @@ public class Console {
             if (pause) {
                 terminal.echo(true);
                 terminal.pause();
-            } else pause = true;
+            } else {
+                pause = true;
+            }
             return line;
         } catch (UserInterruptException | EndOfFileException e) {
             ++readSeq;
@@ -355,7 +354,6 @@ public class Console {
             status.redraw();
             return "";
         } finally {
-
         }
     }
 
@@ -423,8 +421,8 @@ public class Console {
             write(keyCode + "\n");
         } else keySeq = KeyMap.translate(keyCode);
         if (keyCode.equals("")) return keyCode;
-        reader.getKeyMaps().get(LineReader.EMACS).unbind(keySeq);
-        reader.getKeyMaps().get(LineReader.EMACS).bind(new Reference(keyEvent), keySeq);
+        keyMap.unbind(keySeq);
+        keyMap.bind(new Reference(keyEvent), keySeq);
         return keyCode;
     }
 

@@ -9,6 +9,7 @@ local NOR,BOLD="",""
 local strip_ansi=function(x) return x end
 local println,write=console.println,console.write
 local buff={ }
+local grep_fmt="%1"
 
 function printer.load_text(text)
     printer.print(event.callback("BEFORE_PRINT_TEXT",{text or ""})[1])
@@ -18,6 +19,7 @@ local more_text
 function printer.set_more(stmt)
     env.checkerr(stmt,"Usage: more <select statement>|<other command>")
     printer.is_more=true
+    printer.is_grid=0
     more_text={}
     if stmt then pcall(env.eval_line,stmt,true,true) end
     printer.is_more=false
@@ -26,27 +28,20 @@ function printer.set_more(stmt)
 end
 
 function printer.more(output)
+    local is_chop,width=true,console:getScreenWidth()
     --[[
-    local width=(terminal:getWidth()/2+5)
-    local list = java.new("java.util.ArrayList")
-    for v in output:gsplit('\r?\n') do
-        if v:len()<width then v=v..string.rep(" ",width-v:len()) end
-        list:add(v)
-    end
-    reader:setPaginationEnabled(true)
-    reader:printColumns(list)
-    reader:setPaginationEnabled(false)
-    --]]
-    local width=console:getScreenWidth()
     if console:getBufferWidth() > width and env.grid then
+        is_chop=false
         local tab={}
         local cut=env.grid.cut
         for v in output:gsplit('\r?\n') do
             tab[#tab+1]=cut(v,width-1-#env.space)
         end
+        
         output=table.concat(tab,"\n")
     end
-    console:less(output)
+    --]]--
+    local done,err=pcall(console.less,console,output,printer.is_grid,#(env.space))
 end
 
 function printer.rawprint(...)
@@ -66,34 +61,33 @@ function printer.print(...)
     local output,found,ignore,rows={}
     --if not env.set then return end
     local termout=env.set.get('TERMOUT')=='on'
-    local fmt=(env.ansi and env.ansi.get_color("GREPCOLOR") or '')..'%1'..NOR
     for i=1,select('#',...) do
         local v=select(i,...)
-        if v~='__BYPASS_GREP__' then 
+        if v~='__BYPASS_GREP__' and v~='__BYPASS_GREP_GRID__' then 
             output[i]=tostring(v)
         else
-            ignore=true
+            ignore=v
         end
     end
 
     output,rows=table.concat(output,' '):gsub("\r?\n\r?","%0"..env.space)
     output=NOR..env.space..output
-    
+     
     if printer.grep_text and not ignore then
         local stack=output:split('[\n\r]+')
         output={}
         for k,v in ipairs(stack) do
-            v,found=v:gsub(printer.grep_text,fmt)
+            v,found=v:gsub(printer.grep_text,grep_fmt)
             if found>0 and not printer.grep_dir or printer.grep_dir and found==0 then
                 output[#output+1]=v
             end
         end
         output=table.concat(output,'\n')
     end
+
     if env.ansi then output=env.ansi.convert_ansi(output) end
-    if printer.is_more then more_text[#more_text+1]=output;return end
     if ignore or output~="" or not printer.grep_text then
-        if termout then println(console,output) end
+        if termout and not printer.is_more then println(console,output) end
         if printer.hdl then
             pcall(printer.hdl.write,printer.hdl,strip_ansi(output).."\n")
         end
@@ -101,7 +95,8 @@ function printer.print(...)
             pcall(printer.tee_hdl.write,printer.tee_hdl,strip_ansi(output).."\n")
         end
     end
-    if not printer.tee_hdl and not ignore then
+    if not printer.tee_hdl and ignore~='__BYPASS_GREP__' then
+        if printer.is_more then more_text[#more_text+1]=output end
         flush_buff(output,rows+1)
     end
 end
@@ -158,7 +153,6 @@ function printer.set_grep(keyword)
     if keyword:len()>1 and keyword:sub(1,1)=="-" then
         keyword,printer.grep_dir=keyword:sub(2),true
     end
-    --printer.grep_text=keyword:escape():case_insensitive_pattern()
     printer.grep_text='('..keyword:case_insensitive_pattern()..')'
 end
 
@@ -226,10 +220,16 @@ function printer.after_command()
     printer.is_more,more_text=false,{}
 end
 
-function printer.tee_to_file(row,total_rows, format_func, format_str)
+function printer.tee_to_file(row,total_rows, format_func, format_str,include_head)
     if not printer.tee_hdl or type(row)~="table" then
         if env.set and not printer.tee_hdl  then
             local str=type(row)~="table" and row or format_func(format_str, table.unpack(row))
+            if printer.is_more then
+                if #more_text<=3 and printer.is_grid==0 and include_head then 
+                    printer.is_grid=2+#more_text
+                end 
+                more_text[#more_text+1]=env.space..str 
+            end
             flush_buff(env.space..str)
         end
         return 
@@ -318,6 +318,7 @@ function printer.onload()
         NOR = env.ansi.string_color('NOR') 
         BOLD= env.ansi.string_color('UDL') 
         strip_ansi=env.ansi.strip_ansi
+        grep_text=env.ansi.convert_ansi("$GREPCOLOR$%1$NOR$")
     end
     event=env.event
     if env.event then
@@ -327,18 +328,36 @@ function printer.onload()
     end
     BOLD=BOLD..'%1'..NOR
     local tee_help=[[
-    Write command output to target file,'+' means append mode. Usage: @@NAME {+|.|[+]<file>|<file>+} <other command>
+    Write command output to target file,'+' means append mode. Usage: @@NAME {+|.|[+]<file>|<file>+} <other command> (support pipe(|) operation)
         or <other command>|@@NAME {+|.|[+]<file>|<file>+}
     When <other command> is a query, then the output can be same to the screen output/csv file/html file which depends on the file extension. ]]
 
     local grep_help=[[
-    Filter matched text from the output. Usage: @@NAME <keyword|-keyword> <other command>, -keyword means exclude.
-        or <other command>|@@NAME <keyword|-keyword>
+    Filter matched text from the output. Usage: @@NAME <keyword|-keyword> <other command>  (support pipe(|) operation), -keyword means exclude.
+    Example: select * from dba_objects|@@NAME sys
+    Example: select * from dba_objects|@@NAME -name
+    ]]
+
+    local more_help=[[
+    Similar to Linux 'more' command. Usage: @@NAME <other command>  (support pipe(|) operation)
+    Example: select * from dba_objects|@@NAME
+    Key Maps:
+        exit       :  q or :q or ZZ
+        scroll next  page :  <space> or f or ctrl+f or ctrl+v
+        scroll prev  page :  b or ctrl+b or alt+v
+        scroll first page :  < or alt+< or g
+        scroll last  page :  > or alt+> or G
+        scroll half right : ) or right
+        scroll half left  : ( or left
+        scroll half down  : d or ctrl+d
+        scroll half up    : u or ctrl+u
+        /<keyword>        : search
+        enable/disable line number: l or L
     ]]
     env.set_command(nil,"grep",grep_help,{printer.grep,printer.grep_after},'__SMART_PARSE__',3,false,false,true)
     env.set_command(nil,"tee",tee_help,{printer.tee,printer.tee_after},'__SMART_PARSE__',3,false,false,true)
     env.set_command({nil,{"output","out"},"Use default editor to view the recent output. Usage: @@NAME [<file>|clear]",printer.view_buff,false,2,false,false,true,is_blocknewline=true})
-    env.set_command(nil,{"more","less"},"Similar to Linux 'more' command. Usage: @@NAME <other command>",printer.set_more,'__SMART_PARSE__',2,false,false,true)
+    env.set_command(nil,{"more","less"},more_help,printer.set_more,'__SMART_PARSE__',2,false,false,true)
     env.set_command(nil,{"Prompt","pro",'echo'}, "Prompt messages. Usage: @@NAME <message>",printer.load_text,false,2)
     env.set_command(nil,{"SPOOL","SPO"}, "Write the screen output into a file. Usage: @@NAME [file_name[.ext]] [CREATE] | APP[END]] | OFF]",printer.spool,false,3)
     env.ansi.define_color("GREPCOLOR","BBLU;HIW","ansi.grid","Define highlight color for the grep command, type 'ansi' for more available options")

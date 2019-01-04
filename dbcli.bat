@@ -47,7 +47,7 @@ if not defined ANSICON if defined ANSICON_CMD (
    if "!bit!"=="x86" set "ANSICON_CMD=.\lib\x86\ConEmuHk.dll"
 )
 
-if not exist "!ANSICON_CMD!" set "ANSICON_DEF=jline"
+set "ANSICON_DEF=jline"
 if defined ConEmuPID set "ANSICON_DEF=conemu"
 if defined MSYSTEM set "ANSICON_DEF=msys"
 set "ANSICON_CMD="

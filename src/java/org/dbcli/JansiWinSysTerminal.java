@@ -36,12 +36,12 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
     public static JansiWinSysTerminal createTerminal(String name, String type, boolean ansiPassThrough, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler, boolean paused) throws IOException {
         Writer writer;
         if (ansiPassThrough) {
-            if (type == null) type = TYPE_WINDOWS_256_COLOR;
+            if (type == null) type = TYPE_WINDOWS;
             /*
             if (type == null) {
                 type = OSUtils.IS_CONEMU ? TYPE_WINDOWS_256_COLOR : TYPE_WINDOWS;
             }*/
-            writer = OSUtils.IS_CONEMU ? new JansiWinConsoleWriter() : new WindowsAnsiWriter(new BufferedWriter(new JansiWinConsoleWriter()));
+            writer = new WindowsAnsiWriter(new BufferedWriter(new JansiWinConsoleWriter()));
         } else {
             long console = GetStdHandle(STD_OUTPUT_HANDLE);
             int[] mode = new int[1];
@@ -82,7 +82,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
     final char[] ep = KeyMap.translate(LineReaderImpl.BRACKETED_PASTE_END).toCharArray();
     final short bpl = (short) (bp.length - 1);
     final short epl = (short) (ep.length - 1);
-    final short START_POS = 2;
+    final short START_POS = 1;
     short beginIdx = START_POS;
     short endIdx = START_POS;
 
@@ -100,8 +100,8 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         //check if the console natively supports Bracketed Paste
         if (pasteCount == 0 && c == bp[beginIdx]) beginIdx += beginIdx >= bpl ? 0 : 1;
         else if (pasteCount == 0 && beginIdx > START_POS && beginIdx < bpl) beginIdx = START_POS;
-        else if (pasteCount == 1 && c == ep[endIdx]) endIdx += endIdx >= epl ? 0 : 1;
-        else if (pasteCount == 1 && endIdx > START_POS && endIdx < epl) endIdx = START_POS;
+        else if (pasteCount > 0 && c == ep[endIdx]) endIdx += endIdx >= epl ? 0 : 1;
+        else if (pasteCount > 0 && endIdx > START_POS && endIdx < epl) endIdx = START_POS;
         //Check remaining input chars and determine if enter paste mode
         if (enablePaste && beginIdx != bpl && pasteCount == 0 && Character.isWhitespace(c) && reader.available() >= 3) {
             for (char a : bp) processChar(a);

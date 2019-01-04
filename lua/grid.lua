@@ -567,8 +567,10 @@ function grid:wellform(col_del, row_del)
             end
         end
 
-        local row = cut(v, format_func, v[0] == 0 and head_fmt or fmt, v[0] == 0)
-        
+        v.format_func,v.fmt=format_func,v[0] == 0 and head_fmt or fmt
+
+        local row = cut(v, v.format_func,v.fmt, v[0] == 0)
+
         if v[0] == 0 then
             row = row .. nor
         elseif env.printer.grep_text then
@@ -597,8 +599,6 @@ function grid:wellform(col_del, row_del)
         table.insert(output,1, line)
     end
     self = nil
-    output.format_func=format_func
-    output.fmt=fmt
     output.len=len
     return rows,output
 end
@@ -662,7 +662,7 @@ function grid.print(rows, include_head, col_del, row_del, rows_limit, prefix, su
     if test then env.write_cache("grid_output.txt", str) end
     if type(output)=="table" then
         for k,v in ipairs(output) do
-            env.event.callback("ON_PRINT_GRID_ROW",v,output.len,output.format_func,output.fmt)
+            env.event.callback("ON_PRINT_GRID_ROW",v,output.len,v.format_func,v.fmt,include_head)
         end
     end
     print(str, '__BYPASS_GREP__')
@@ -850,7 +850,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
         end
         
         local str = table.concat(tab, "\n")
-        print(str)
+        print(str,'__BYPASS_GREP_GRID__')
         if suffix then print(suffix) end
         return
     else

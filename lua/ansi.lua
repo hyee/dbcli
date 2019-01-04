@@ -7,6 +7,54 @@ local isAnsiSupported=true
 
 
 local enabled=isAnsiSupported
+--[[https://stackoverflow.com/questions/4842424/list-of-ansi-color-escape-sequences
+    http://ascii-table.com/ansi-escape-sequences-vt-100.php
+    https://conemu.github.io/en/AnsiEscapeCodes.html
+╔══════════╦════════════════════════════════╦═════════════════════════════════════════════════════════════════════════╗
+║  Code    ║             Effect             ║                                   Note                                  ║
+╠══════════╬════════════════════════════════╬═════════════════════════════════════════════════════════════════════════╣
+║ 0        ║  Reset / Normal                ║  all attributes off                                                     ║
+║ 1        ║  Bold or increased intensity   ║                                                                         ║
+║ 2        ║  Faint (decreased intensity)   ║  Not widely supported.                                                  ║
+║ 3        ║  Italic                        ║  Not widely supported. Sometimes treated as inverse.                    ║
+║ 4        ║  Underline                     ║                                                                         ║
+║ 5        ║  Slow Blink                    ║  less than 150 per minute                                               ║
+║ 6        ║  Rapid Blink                   ║  MS-DOS ANSI.SYS; 150+ per minute; not widely supported                 ║
+║ 7        ║  reverse video                 ║  swap foreground and background colors                                  ║
+║ 8        ║  Conceal                       ║  Not widely supported.                                                  ║
+║ 9        ║  Crossed-out                   ║  Characters legible, but marked for deletion.  Not widely supported.    ║
+║ 10       ║  Primary(default) font         ║                                                                         ║
+║ 11–19    ║  Alternate font                ║  Select alternate font `n-10`                                           ║
+║ 20       ║  Fraktur                       ║  hardly ever supported                                                  ║
+║ 21       ║  Bold off or Double Underline  ║  Bold off not widely supported; double underline hardly ever supported. ║
+║ 22       ║  Normal color or intensity     ║  Neither bold nor faint                                                 ║
+║ 23       ║  Not italic, not Fraktur       ║                                                                         ║
+║ 24       ║  Underline off                 ║  Not singly or doubly underlined                                        ║
+║ 25       ║  Blink off                     ║                                                                         ║
+║ 27       ║  Inverse off                   ║                                                                         ║
+║ 28       ║  Reveal                        ║  conceal off                                                            ║
+║ 29       ║  Not crossed out               ║                                                                         ║
+║ 30–37    ║  Set foreground color          ║  See color table below                                                  ║
+║ 38       ║  Set foreground color          ║  Next arguments are `5;n` or `2;r;g;b`, see below                       ║
+║ 39       ║  Default foreground color      ║  implementation defined (according to standard)                         ║
+║ 40–47    ║  Set background color          ║  See color table below                                                  ║
+║ 48       ║  Set background color          ║  Next arguments are `5;n` or `2;r;g;b`, see below                       ║
+║ 49       ║  Default background color      ║  implementation defined (according to standard)                         ║
+║ 51       ║  Framed                        ║                                                                         ║
+║ 52       ║  Encircled                     ║                                                                         ║
+║ 53       ║  Overlined                     ║                                                                         ║
+║ 54       ║  Not framed or encircled       ║                                                                         ║
+║ 55       ║  Not overlined                 ║                                                                         ║
+║ 60       ║  ideogram underline            ║  hardly ever supported                                                  ║
+║ 61       ║  ideogram double underline     ║  hardly ever supported                                                  ║
+║ 62       ║  ideogram overline             ║  hardly ever supported                                                  ║
+║ 63       ║  ideogram double overline      ║  hardly ever supported                                                  ║
+║ 64       ║  ideogram stress marking       ║  hardly ever supported                                                  ║
+║ 65       ║  ideogram attributes off       ║  reset the effects of all of 60-64                                      ║
+║ 90–97    ║  Set bright foreground color   ║  aixterm (not in standard)                                              ║
+║ 100–107  ║  Set bright background color   ║  aixterm (not in standard)                                              ║
+╚══════════╩════════════════════════════════╩═════════════════════════════════════════════════════════════════════════╝
+--]]--
 
 --Color definitions from MUD, not all features are support in Ansicon/Jansi library
 local base_color={
@@ -66,7 +114,10 @@ local base_color={
     --Additional ansi Esc codes added to ansi.h by Gothic  april 23,1993
     --Note, these are Esc codes for VT100 terminals, and emmulators
     --and they may not all work within the mud
-    BOLD    ={"\27[1m","Turn on bold mode",0},  --{"\27[1m","Turn on bold mode",0},
+    RESET   ={"\27[0m","Reset",0},
+    BOLD    ={"\27[1m","Turn on  Bright Or Bold",0}, 
+    UBOLD   ={"\27[2m","Turn off Bright Or Bold",0}, 
+    ITA     ={"\27[3m","Turn on  Italic Or Inverse",0}, 
     CLR     ={"\27C\27[3J","Clear the screen",1},
     HOME    ={"\27[H","Send cursor to home position",1},
     REF     ={"\27[2J;H" , "Clear screen and home cursor",1},
@@ -82,7 +133,9 @@ local base_color={
  -- FRBOT   ={"\27[1;24r","Freeze bottom line",1},
  -- UNFR    ={"\27[r","Unfreeze top and bottom lines",1},
     BLINK   ={"\27[5m","Blink on",0},
+    BLINK2  ={"\27[6m","Blink on",0},
     UBLNK   ={"\27[25m","Blink off",0},
+    UBLNK2  ={"\27[26m","Blink off",0},
     UDL     ={"\27[4m","Underline on",0},
     UUDL    ={"\27[24m","Underline off",0},
     REV     ={"\27[7m","Reverse video mode on",1},
@@ -174,7 +227,14 @@ function ansi.mask(codes,msg,continue)
         end
     end
     if str and not enabled then str="" end
-    return str and (str..(msg or "")..(continue and "" or ansi.string_color('NOR'))) or msg
+    if not continue then
+        continue=ansi.string_color('NOR')
+    elseif type(continue)=='string' then
+        continue=ansi.string_color(continue:match("([^; \t,]+)"))
+    else
+        continue=''
+    end
+    return str and (str..(msg or "")..continue) or msg
 end
 
 function ansi.addCompleter(name,args)
