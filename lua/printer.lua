@@ -19,8 +19,8 @@ local more_text
 function printer.set_more(stmt)
     env.checkerr(stmt,"Usage: more <select statement>|<other command>")
     printer.is_more=true
-    printer.is_grid=0
-    more_text={}
+    printer.grid_title_lines=0
+    more_text={lines=0}
     if stmt then pcall(env.eval_line,stmt,true,true) end
     printer.is_more=false
     printer.more(table.concat(more_text,'\n'))
@@ -41,7 +41,7 @@ function printer.more(output)
         output=table.concat(tab,"\n")
     end
     --]]--
-    local done,err=pcall(console.less,console,output,printer.is_grid,#(env.space))
+    local done,err=pcall(console.less,console,output,math.abs(printer.grid_title_lines),#(env.space))
 end
 
 function printer.rawprint(...)
@@ -96,7 +96,10 @@ function printer.print(...)
         end
     end
     if not printer.tee_hdl and ignore~='__BYPASS_GREP__' then
-        if printer.is_more then more_text[#more_text+1]=output end
+        if printer.is_more then 
+            more_text[#more_text+1]=output
+            more_text.lines=more_text.lines+rows+1
+        end
         flush_buff(output,rows+1)
     end
 end
@@ -225,10 +228,15 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
         if env.set and not printer.tee_hdl  then
             local str=type(row)~="table" and row or format_func(format_str, table.unpack(row))
             if printer.is_more then
-                if #more_text<=3 and printer.is_grid==0 and include_head then 
-                    printer.is_grid=2+#more_text
-                end 
-                more_text[#more_text+1]=env.space..str 
+                more_text[#more_text+1]=env.space..str
+                more_text.lines=more_text.lines+1
+                if more_text.lines<=10 then
+                    if printer.grid_title_lines>0 and tonumber(row[0]) and tonumber(row[0])>0 then
+                        printer.grid_title_lines=-(printer.grid_title_lines)
+                    elseif printer.grid_title_lines>=0 and include_head and (not row[0] or row[0]==0) then 
+                        printer.grid_title_lines=more_text.lines
+                    end
+                end
             end
             flush_buff(env.space..str)
         end

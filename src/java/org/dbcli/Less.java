@@ -291,8 +291,8 @@ public class Less {
                                 break;
                             case GO_TO_FIRST_LINE_OR_N:
                                 // TODO: handle number
-                                firstLineToDisplay = firstLineInMemory;
-                                offsetInLine = 0;
+                                firstLineToDisplay = firstLineInMemory +1 ;
+                                moveBackward(getStrictPositiveNumberInBuffer(1));
                                 break;
                             case GO_TO_LAST_LINE_OR_N:
                                 // TODO: handle number
@@ -487,17 +487,17 @@ public class Less {
         int height = size.getRows();
         if (titleLines > 0 && lines > titleLines) lines -= titleLines;
         while (--lines >= 0) {
+            if (firstLineToDisplay <= firstLineInMemory) break;
+            --firstLineToDisplay;
             int lastLineToDisplay = firstLineToDisplay;
             for (int l = 0; l < height - 1; l++) {
                 AttributedString line = getLine(lastLineToDisplay);
                 if (line == null) {
-                    eof();
-                    return;
+                    ++lines;
+                    break;
                 }
                 lastLineToDisplay++;
             }
-            if (firstLineToDisplay <= 0) break;
-            --firstLineToDisplay;
         }
     }
 
@@ -622,8 +622,10 @@ public class Less {
         if (oneScreen) {
             if (fitOnOneScreen && maxWidth <= width) {
                 newLines.forEach(l -> terminal.writer().println(l.toAnsi(terminal)));
+                terminal.writer().flush();
+                return true;
             }
-            return fitOnOneScreen;
+            return false;
         }
         AttributedStringBuilder msg = new AttributedStringBuilder();
         if (buffer.length() > 0) {
