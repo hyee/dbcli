@@ -41,7 +41,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
             if (type == null) {
                 type = OSUtils.IS_CONEMU ? TYPE_WINDOWS_256_COLOR : TYPE_WINDOWS;
             }*/
-            writer = new WindowsAnsiWriter(new BufferedWriter(new JansiWinConsoleWriter()));
+            writer = new BufferedWriter(new JansiWinConsoleWriter());
         } else {
             long console = GetStdHandle(STD_OUTPUT_HANDLE);
             int[] mode = new int[1];

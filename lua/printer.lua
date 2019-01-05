@@ -312,7 +312,11 @@ function printer.edit_buffer(file,default_file,text)
     if env.IS_WINDOWS then 
         os.shell(editor,f)
     else
-        if ed=='vi' or ed=='vim' then editor=ed..' -c ":set nowrap" -n + ' end
+        if ed=='vi' or ed=='vim' then 
+            editor=ed..' -c ":set nowrap" -n +' 
+        elseif ed=='less' then
+            editor='less -I -S -Q'
+        end
         os.execute(editor..' "'..f..'"')
     end 
 end

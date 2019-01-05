@@ -42,7 +42,7 @@ public class Less {
     public boolean ignoreCaseAlways;
     public boolean noKeypad;
     public boolean noInit;
-    public int spaces = 0;
+    public int padding = 0;
     public int tabs = 4;
     public int numWidth = 4;
 
@@ -81,7 +81,25 @@ public class Less {
 
     public Less(Terminal terminal) {
         this.terminal = terminal;
-        this.display = new Display(terminal, true);
+        this.display = new Display(terminal, true) {
+            boolean isStarted;
+
+            @Override
+            public void update(List<AttributedString> newLines, int targetCursorPos) {
+                if (isStarted) clear();
+                else {
+                    isStarted = true;
+                    if (OSUtils.IS_CONEMU || "terminator".equals(System.getenv())) {
+                        clear();
+                    } else {
+                        cursorPos = 0;
+                        oldLines.clear();
+                    }
+                }
+                super.update(newLines, targetCursorPos);
+
+            }
+        };
         this.bindingReader = new BindingReader(terminal.reader());
     }
 
@@ -125,8 +143,7 @@ public class Less {
             SignalHandler prevHandler = terminal.handle(Signal.WINCH, this::handle);
             Attributes attr = terminal.enterRawMode();
             try {
-                window = size.getRows() - 1;
-                halfWindow = window / 2;
+
                 keys = new KeyMap<>();
                 bindKeys(keys);
 
@@ -164,7 +181,9 @@ public class Less {
                 Operation op;
                 do {
                     checkInterrupted();
-
+                    size.copy(terminal.getSize());
+                    window = size.getRows() - 1;
+                    halfWindow = window / 2;
                     op = null;
                     //
                     // Option edition
@@ -291,8 +310,8 @@ public class Less {
                                 break;
                             case GO_TO_FIRST_LINE_OR_N:
                                 // TODO: handle number
-                                firstLineToDisplay = firstLineInMemory +1 ;
-                                moveBackward(getStrictPositiveNumberInBuffer(1));
+                                firstLineToDisplay = firstLineInMemory;
+                                offsetInLine = 0;
                                 break;
                             case GO_TO_LAST_LINE_OR_N:
                                 // TODO: handle number
@@ -533,12 +552,13 @@ public class Less {
     }
 
     int lineIndex;
+    private final static Pattern RTRIM = Pattern.compile("\\s+$");
 
     AttributedString getLine(int line) throws IOException {
         while (line >= lines.size()) {
             String str = reader.readLine();
             if (str != null) {
-                AttributedString buff = AttributedString.fromAnsi(str, tabs);
+                AttributedString buff = AttributedString.fromAnsi(RTRIM.matcher(str).replaceAll(""), tabs);
                 boolean found = false;
                 for (int i = 0; i < titleLines; i++) {
                     if (titles[i] == null) {
@@ -563,16 +583,21 @@ public class Less {
         return null;
     }
 
+    int globalLineWidth = 0;
+
     boolean display(boolean oneScreen) throws IOException {
         List<AttributedString> newLines = new ArrayList<>();
         //-1 due to "/b" issue in org.jline.utils.Display
-        int width = size.getColumns() - (printLineNumbers ? numWidth +1 : 0) - 1;
+        int width = size.getColumns() - (printLineNumbers ? numWidth + 1 : 0) - 1;
         int height = size.getRows();
         int inputLine = firstLineToDisplay;
         int maxWidth = 0;
         AttributedString curLine = null;
         Pattern compiled = getPattern();
         boolean fitOnOneScreen = false;
+        if (globalLineWidth > 0 && firstColumnToDisplay > globalLineWidth - width / 2) {
+            firstColumnToDisplay = globalLineWidth - width / 2;
+        }
         for (int terminalLine = 0; terminalLine < height - 1; terminalLine++) {
             if (curLine == null) {
                 curLine = getLine(inputLine++);
@@ -586,7 +611,7 @@ public class Less {
                 if (compiled != null) {
                     curLine = curLine.styleMatches(compiled, AttributedStyle.DEFAULT.inverse());
                 }
-                if(printLineNumbers&&spaces>0) curLine=curLine.columnSubSequence(spaces, Integer.MAX_VALUE);
+                if (printLineNumbers && padding > 0) curLine = curLine.columnSubSequence(padding, Integer.MAX_VALUE);
             }
             AttributedString toDisplay;
             if (firstColumnToDisplay > 0 || chopLongLines) {
@@ -611,7 +636,7 @@ public class Less {
             if (printLineNumbers) {
                 AttributedStringBuilder sb = new AttributedStringBuilder();
                 if (lineIndex == -1) sb.append(String.join("", Collections.nCopies(numWidth, " "))).append("|");
-                else sb.append(String.format("%"+numWidth+"d|", lineIndex));
+                else sb.append(String.format("%" + numWidth + "d|", lineIndex));
                 sb.append(toDisplay);
                 newLines.add(sb.toAttributedString());
             } else {
@@ -626,6 +651,11 @@ public class Less {
                 return true;
             }
             return false;
+        }
+
+        globalLineWidth = Math.max(maxWidth, globalLineWidth);
+        if (globalLineWidth > 0 && firstColumnToDisplay > globalLineWidth) {
+            return display(oneScreen);
         }
         AttributedStringBuilder msg = new AttributedStringBuilder();
         if (buffer.length() > 0) {

@@ -17,10 +17,7 @@ import org.jline.utils.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -73,7 +70,13 @@ public class Console {
         else
             this.terminal = (AbstractTerminal) TerminalBuilder.builder().name(colorPlan).system(true).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).nativeSignals(true).build();
         this.status = this.terminal.getStatus();
-        this.display = new Display(terminal, false);
+        this.display = new Display(terminal, false) {
+            @Override
+            public void update(List<AttributedString> newLines, int targetCursorPos) {
+                cursorPos = 0;
+                super.update(newLines, targetCursorPos);
+            }
+        };
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).build();
         this.parser = new MyParser();
         this.reader.setParser(parser);
@@ -115,8 +118,8 @@ public class Console {
             colorPlan = System.getenv("ANSICON_DEF");
             if (("ansicon").equals(colorPlan) && !terminal.getType().equals(TYPE_WINDOWS_VTP)) {
                 writer = new PrintWriter(new BufferedWriter(OSUtils.IS_CONEMU ? new JansiWinConsoleWriter() : new ConEmuWriter()));
-            } else if (OSUtils.IS_CONEMU)
-                writer = new PrintWriter(new BufferedWriter(new JansiWinConsoleWriter()));
+            }
+            //else if (OSUtils.IS_CONEMU) writer = new PrintWriter(new BufferedWriter(new JansiWinConsoleWriter()));
             else colorPlan = terminal.getType();
         } else colorPlan = terminal.getType();
         threadID = Thread.currentThread().getId();
@@ -292,7 +295,7 @@ public class Console {
         };
         Less less = new Less(terminal);
         less.veryQuiet = true;
-        less.spaces = spaces;
+        less.padding = spaces;
         less.setTitleLines(titleLines);
         less.chopLongLines = true;
         less.quitIfOneScreen = true;
