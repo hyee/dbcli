@@ -60,7 +60,7 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
                 END LOOP;
             END IF;
 
-            IF l_trace NOT IN('off','statistics') THEN
+            IF l_trace NOT IN('off','statistics','sql_id') THEN
                 BEGIN
                     SELECT * bulk collect into l_plans
                     FROM TABLE(dbms_xplan.display('v$sql_plan_statistics_all',NULL,'ALLSTATS LAST',
