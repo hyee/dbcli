@@ -28,7 +28,7 @@ import java.util.stream.Collectors;
 import static org.jline.reader.LineReader.DISABLE_HISTORY;
 import static org.jline.reader.LineReader.SECONDARY_PROMPT_PATTERN;
 import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS;
-import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS_VTP;
+import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS_256_COLOR;
 
 
 public class Console {
@@ -66,7 +66,7 @@ public class Console {
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM))
-            this.terminal = JansiWinSysTerminal.createTerminal(colorPlan, null, OSUtils.IS_CONEMU, null, 0, true, Terminal.SignalHandler.SIG_IGN, false);
+            this.terminal = JansiWinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU, null, 0, true, Terminal.SignalHandler.SIG_IGN, false);
         else
             this.terminal = (AbstractTerminal) TerminalBuilder.builder().name(colorPlan).system(true).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).nativeSignals(true).build();
         this.status = this.terminal.getStatus();
@@ -95,7 +95,6 @@ public class Console {
         this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
         this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);
         this.isJansiConsole = this.terminal instanceof JansiWinSysTerminal;
-
         //terminal.echo(false); //fix paste issue of iTerm2 when past is off
         enableBracketedPaste("on");
         keyMap = reader.getKeyMaps().get(LineReader.MAIN);
@@ -114,14 +113,7 @@ public class Console {
         input = terminal.reader();
         writer = terminal.writer();
 
-        if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM)) {
-            colorPlan = System.getenv("ANSICON_DEF");
-            if (("ansicon").equals(colorPlan) && !terminal.getType().equals(TYPE_WINDOWS_VTP)) {
-                writer = new PrintWriter(new BufferedWriter(OSUtils.IS_CONEMU ? new JansiWinConsoleWriter() : new ConEmuWriter()));
-            }
-            //else if (OSUtils.IS_CONEMU) writer = new PrintWriter(new BufferedWriter(new JansiWinConsoleWriter()));
-            else colorPlan = terminal.getType();
-        } else colorPlan = terminal.getType();
+        colorPlan = terminal.getType();
         threadID = Thread.currentThread().getId();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
         callback = new EventCallback() {
@@ -224,7 +216,7 @@ public class Console {
     }
 
     public void setStatus(String status, String color) {
-        if (colorPlan.equals("ansicon") || colorPlan.equals(TYPE_WINDOWS)) return;
+        if (colorPlan.equals(TYPE_WINDOWS_256_COLOR) || colorPlan.equals(TYPE_WINDOWS)) return;
         if (tmpTitles.size() == 0) {
             tmpTitles.add(AttributedString.fromAnsi(new String(new char[getScreenWidth() - 1]).replace('\0', ' ')));
             tmpTitles.add(tmpTitles.get(0));

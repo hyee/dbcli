@@ -296,7 +296,7 @@ function printer.edit_buffer(file,default_file,text)
         f=env.join_path(env._CACHE_PATH,file or default_file)
     end
 
-    if env.IS_WINDOWS then 
+    if env.IS_WINDOWS then
         os.shell(editor,f)
     else
         if ed=='vi' or ed=='vim' then 

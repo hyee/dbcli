@@ -83,21 +83,20 @@ public class Less {
         this.terminal = terminal;
         this.display = new Display(terminal, true) {
             boolean isStarted;
-
             @Override
             public void update(List<AttributedString> newLines, int targetCursorPos) {
                 if (isStarted) clear();
                 else {
                     isStarted = true;
-                    if (OSUtils.IS_CONEMU || "terminator".equals(System.getenv("TERM"))) {
+                    if (OSUtils.IS_CONEMU || "terminator".equals(System.getenv("TERM"))||"ansicon".equals(System.getenv("ANSICON_DEF"))) {
                         clear();
                     } else {
                         cursorPos = 0;
                         oldLines.clear();
                     }
                 }
-                super.update(newLines, targetCursorPos);
-
+                super.update(newLines, targetCursorPos,false);
+                terminal.writer().flush();
             }
         };
         this.bindingReader = new BindingReader(terminal.reader());
@@ -592,11 +591,12 @@ public class Less {
         int height = size.getRows();
         int inputLine = firstLineToDisplay;
         int maxWidth = 0;
+        AttributedStringBuilder asb = new AttributedStringBuilder();
         AttributedString curLine = null;
         Pattern compiled = getPattern();
         boolean fitOnOneScreen = false;
         if (globalLineWidth > 0 && firstColumnToDisplay > globalLineWidth - width / 2) {
-            firstColumnToDisplay = Math.max(0,globalLineWidth - width / 2);
+            firstColumnToDisplay = Math.max(0, globalLineWidth - width / 2);
         }
         for (int terminalLine = 0; terminalLine < height - 1; terminalLine++) {
             if (curLine == null) {
@@ -620,7 +620,12 @@ public class Less {
                     off = Math.max(offsetInLine, off);
                 }
                 maxWidth = Math.max(maxWidth, curLine.length());
-                toDisplay = curLine.columnSubSequence(off, off + width);
+                if(padding>0&&off>padding&&!printLineNumbers) {
+                    asb.setLength(0);
+                    asb.append(String.join("", Collections.nCopies(padding, " ")));
+                    asb.append(curLine.columnSubSequence(off,off+width-padding));
+                    toDisplay=asb.toAttributedString();
+                } else toDisplay = curLine.columnSubSequence(off, off + width);
                 curLine = null;
             } else {
                 if (terminalLine == 0 && offsetInLine > 0) {
@@ -634,11 +639,11 @@ public class Less {
             }
 
             if (printLineNumbers) {
-                AttributedStringBuilder sb = new AttributedStringBuilder();
-                if (lineIndex == -1) sb.append(String.join("", Collections.nCopies(numWidth, " "))).append("|");
-                else sb.append(String.format("%" + numWidth + "d|", lineIndex));
-                sb.append(toDisplay);
-                newLines.add(sb.toAttributedString());
+                asb.setLength(0);
+                if (lineIndex == -1) asb.append(String.join("", Collections.nCopies(numWidth, " "))).append("|");
+                else asb.append(String.format("%" + numWidth + "d|", lineIndex));
+                asb.append(toDisplay);
+                newLines.add(asb.toAttributedString());
             } else {
                 newLines.add(toDisplay);
             }

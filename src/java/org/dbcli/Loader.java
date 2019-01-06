@@ -252,7 +252,7 @@ public class Loader {
          */
 
         // get bytes of the string supplied
-        byte[] bytesOfStatement = stmt.trim().getBytes("UTF-8");
+        byte[] bytesOfStatement = stmt.getBytes("UTF-8"); //should not use trim()
         byte[] bytesOfStatementWithNull = new byte[bytesOfStatement.length + 1]; // last bucket used for Null Terminator
         byte nullCharByte = 0x00; // get bytes of null terminator
 
