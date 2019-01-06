@@ -29,5 +29,6 @@
                         ) a)
         GROUP BY event, end_time]],
     ylabel="Bytes",
+    labelsKMG2=true,
     _pivot="mixed"
 }

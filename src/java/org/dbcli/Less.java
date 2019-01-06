@@ -89,7 +89,7 @@ public class Less {
                 if (isStarted) clear();
                 else {
                     isStarted = true;
-                    if (OSUtils.IS_CONEMU || "terminator".equals(System.getenv())) {
+                    if (OSUtils.IS_CONEMU || "terminator".equals(System.getenv("TERM"))) {
                         clear();
                     } else {
                         cursorPos = 0;
@@ -596,7 +596,7 @@ public class Less {
         Pattern compiled = getPattern();
         boolean fitOnOneScreen = false;
         if (globalLineWidth > 0 && firstColumnToDisplay > globalLineWidth - width / 2) {
-            firstColumnToDisplay = globalLineWidth - width / 2;
+            firstColumnToDisplay = Math.max(0,globalLineWidth - width / 2);
         }
         for (int terminalLine = 0; terminalLine < height - 1; terminalLine++) {
             if (curLine == null) {
@@ -654,9 +654,6 @@ public class Less {
         }
 
         globalLineWidth = Math.max(maxWidth, globalLineWidth);
-        if (globalLineWidth > 0 && firstColumnToDisplay > globalLineWidth) {
-            return display(oneScreen);
-        }
         AttributedStringBuilder msg = new AttributedStringBuilder();
         if (buffer.length() > 0) {
             msg.append(" ").append(buffer);

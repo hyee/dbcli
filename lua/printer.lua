@@ -28,19 +28,6 @@ function printer.set_more(stmt)
 end
 
 function printer.more(output)
-    local is_chop,width=true,console:getScreenWidth()
-    --[[
-    if console:getBufferWidth() > width and env.grid then
-        is_chop=false
-        local tab={}
-        local cut=env.grid.cut
-        for v in output:gsplit('\r?\n') do
-            tab[#tab+1]=cut(v,width-1-#env.space)
-        end
-        
-        output=table.concat(tab,"\n")
-    end
-    --]]--
     local done,err=pcall(console.less,console,output,math.abs(printer.grid_title_lines),#(env.space))
 end
 
