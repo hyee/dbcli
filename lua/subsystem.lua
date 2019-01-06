@@ -122,6 +122,7 @@ function system:call_process(cmd,is_native)
             local line=self:make_native_command(args)
             env.log_debug("subsystem","SQL: "..line)
             terminal:echo(true)
+            os.execute(line)
             return
         end
     end
