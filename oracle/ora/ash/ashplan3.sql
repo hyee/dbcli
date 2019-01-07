@@ -37,7 +37,7 @@
                         delta_time,
                         DELTA_READ_IO_REQUESTS,DELTA_WRITE_IO_REQUESTS,DELTA_INTERCONNECT_IO_BYTES,
                         GREATEST(IN_PLSQL_EXECUTION,IN_PLSQL_RPC,IN_PLSQL_COMPILATION,IN_JAVA_EXECUTION) IN_PLSQL,
-                        sample_time,
+                        sample_time+0 sample_time,
                         sample_id,
                         px_flags,
                         trim(decode(bitand(time_model,power(2, 3)),0,'','connection_mgmt ') || 
@@ -62,7 +62,8 @@
                         nvl(sql_plan_hash_value,0) sql_plan_hash_value,
                         nvl(&phf,0) plan_hash_full,
                         &con con_id,
-                        decode('&V1',sql_id,1,top_level_sql_id,2,3) pred_flag}
+                        decode('&V1',sql_id,1,top_level_sql_id,2,3) pred_flag,
+                        blocking_session,blocking_inst_id}
     }
 --]]
 ]]*/
@@ -110,11 +111,11 @@ sql_plan_data AS
       FROM   ALL_PLANS a)
   WHERE  seq = 1),
 ash as(
-    SELECT /*+materialize*/ *
+    SELECT /*+materialize*/ a.*,rownum seq#
     FROM (
         select  1 aas_,&public 
         from table(gv$(cursor(
-            select /*+ordered use_hash(b)*/ b.*,
+            select /*+ordered no_merge(a) no_merge(b) use_hash(b)*/ b.*,
                 (select dbid from v$database) dbid,
                 userenv('instance') instance_number 
             from  (
@@ -128,15 +129,15 @@ ash as(
         ))
         WHERE dbid=nvl('&dbid'+0,dbid)
         UNION ALL
-        select /*+ordered use_nl(b)*/ 10 aas_,&public 
+        select /*+ordered no_merge(a) no_merge(b) use_hash(b)*/ 10 aas_,&public 
         from  (
             select distinct sample_id,dbid,instance_number,snap_id
             from   dba_hist_active_sess_history
             where  sample_time+0 BETWEEN nvl(to_date('&v3','YYMMDDHH24MISS'),SYSDATE-7) 
-                                     AND     nvl(to_date('&v4','YYMMDDHH24MISS'),SYSDATE)
+                                     AND nvl(to_date('&v4','YYMMDDHH24MISS'),SYSDATE)
             and   '&V1' IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
             and   nvl(sql_exec_id,0)=coalesce(regexp_substr('&V2','\d+')+0,sql_exec_id,0)
-        ) a natural join dba_hist_active_sess_history b)
+        ) a natural join (select /*+no_merge*/ * from dba_hist_active_sess_history) b) a
 ),
 ash0(   aas_,
         dbid,con_id,
@@ -165,7 +166,9 @@ ash0(   aas_,
         pga_,
         temp_,
         dop_,
-        sql_id,sql_exec_id_,sql_exec_start_,sql_plan_line_id,phv1,plan_hash_full,pred_flag,lv
+        blocking_session,blocking_inst_id,seq#,
+        sql_id,sql_exec_id_,sql_exec_start_,sql_plan_line_id,phv1,plan_hash_full,pred_flag,lv,
+        flags,chain1,chain2
     ) as(
     select aas_,
         dbid,con_id,
@@ -194,11 +197,15 @@ ash0(   aas_,
         pga_,
         temp_,
         dop_,
-        sql_id,sql_exec_id,sql_exec_start,sql_plan_line_id,sql_plan_hash_value,plan_hash_full,pred_flag,1 lv
+        blocking_session,blocking_inst_id,seq#,
+        sql_id,sql_exec_id,sql_exec_start,sql_plan_line_id,sql_plan_hash_value,plan_hash_full,pred_flag,1 lv,
+        1 flags,
+        sql_id chain1,
+        nvl(event,'ON CPU') chain2
     from ash
     where '&V1' in(''||sql_plan_hash_value,sql_id)
     union all
-    select /*+ordered use_hash(b)*/ b.aas_,
+    select /*+ordered use_hash(b) no_expand*/ b.aas_,
         b.dbid,b.con_id,
         b.inst_id,
         b.qc_inst,
@@ -225,6 +232,7 @@ ash0(   aas_,
         b.pga_,
         b.temp_,
         b.dop_,
+        b.blocking_session,b.blocking_inst_id,b.seq#,
         a.sql_id,
         a.sql_exec_id_,
         a.sql_exec_start_,
@@ -232,16 +240,37 @@ ash0(   aas_,
         coalesce(nullif(b.sql_plan_hash_value,0),a.phv1),
         coalesce(nullif(b.plan_hash_full,0),a.plan_hash_full) plan_hash_full,
         a.pred_flag,
-        a.lv+1
+        a.lv+1,
+        case when a.lv=1 
+             and  a.sid=b.qc_sid
+             and  a.inst_id=b.qc_inst
+             and  not (b.sid=b.qc_sid and b.inst_id=b.qc_inst) then 1 else 0 end 
+        + case when a.blocking_session=b.sid and  a.blocking_inst_id=b.inst_id then 2 else 0 end flags,
+        a.sql_id||' -> '||nvl(b.sql_id,'(NULL)'),
+        a.event ||' -> '||nvl(b.event,'ON CPU')
     from ash0 a,ash b
     where a.aas_=b.aas_
-    and   a.sample_time + 0 = b.sample_time+0
+    and   a.seq#!=b.seq#
+    and   a.sample_time = b.sample_time
     and   a.dbid = b.dbid
     and   a.con_id=b.con_id
-    and   a.lv=1 
-    and   a.sid=b.qc_sid
-    AND   a.inst_id=b.qc_inst
-    AND   NOT (b.sid=b.qc_sid and b.inst_id=b.qc_inst)    
+    and   a.lv<10
+    and   (
+            (a.lv=1 and
+            a.sid=b.qc_sid and
+            a.inst_id=b.qc_inst and 
+            NOT (b.sid=b.qc_sid and b.inst_id=b.qc_inst))
+          or
+            ((a.lv=1 or bitand(a.flags,2)=2) and
+             a.blocking_session=b.sid and
+             a.blocking_inst_id=b.inst_id
+            ) 
+          )
+) SEARCH DEPTH FIRST BY lv SET ord
+  CYCLE seq# SET cycle TO 1 DEFAULT 0,
+
+ash1 as(
+    select a.*, case when (lv - lead(lv) over (order by ord)) < 0 then 0 else 1 end is_leaf from ash0 a
 ),
 ash_raw as (
     select h.*,
@@ -293,9 +322,9 @@ ash_raw as (
                  then sql_exec_id||',@'||qc_inst||','||qc_sid
                  else sql_exec_id||',@'||qc_inst||','||qc_sid||','||to_char(sql_exec_start,'yyyymmddhh24miss') 
             end sql_exec,
-            max(case when pred_flag!=2 or is_px_slave=1 then dop_ end)  over(partition by dbid,phv1,sql_exec_id,pid) dop,
-            sum(case when p3text='block cnt' and nvl(event,'temp') like '%temp' then temp_ end) over(partition by dbid,phv1,sql_exec_id,pid,sample_time+0) temp,
-            sum(pga_)  over(partition by dbid,phv1,sql_exec_id,pid,sample_time+0) pga
+            max(case when pred_flag!=2 or is_px_slave=1 then dop_ end)  over(partition by bitand(flags,1),dbid,phv1,sql_exec_id,pid) dop,
+            sum(case when p3text='block cnt' and nvl(event,'temp') like '%temp' then temp_ end) over(partition by bitand(flags,1),dbid,phv1,sql_exec_id,pid,sample_time) temp,
+            sum(pga_) over(partition by bitand(flags,1),dbid,phv1,sql_exec_id,pid,sample_time) pga
     FROM   (SELECT /*+no_expand opt_param('_optimizer_connect_by_combine_sw', 'false')*/ --PQ_CONCURRENT_UNION 
                    a.*, --seq: if ASH and DASH have the same record, then use ASH as the standard
                    decode(AAS_,1,1,decode((
@@ -303,16 +332,67 @@ ash_raw as (
                         from dba_hist_sqlstat b 
                         where a.dbid=b.dbid 
                         and   a.sql_id=b.sql_id and b.plan_hash_value=a.phv1),1,10,1)) AAS,
-                   row_number() OVER(PARTITION BY dbid,sample_id,inst_id,sid ORDER BY AAS_,lv desc) seq,
+                   row_number() OVER(PARTITION BY bitand(flags,1),seq# ORDER BY AAS_,lv desc) seq,
                    --sec_seq: multiple PX processes at the same second wille be treated as on second 
-                   row_number() OVER(PARTITION BY dbid,phv1,sql_plan_line_id,sample_time+0,qc_inst,qc_sid ORDER BY AAS_,tm_delta_db_time desc) sec_seq,
+                   row_number() OVER(PARTITION BY bitand(flags,1),dbid,phv1,sql_plan_line_id,sample_time,qc_inst,qc_sid ORDER BY AAS_,tm_delta_db_time desc) sec_seq,
                    nvl(decode(pred_flag,2,0,case when sql_plan_line_id>65535 then 0 else sql_plan_line_id end),0) pid,
                    decode(pred_flag,2,0,sql_exec_id_) sql_exec_id,
                    decode(pred_flag,2,SYSDATE,sql_exec_start_) sql_exec_start,
                    case when (qc_sid!=sid or qc_inst!=inst_id) then 1 else 0 end is_px_slave,
                    CASE WHEN 'Y' IN(decode(pred_flag,2,'Y','N'),IN_PLSQL_) THEN 1 END IN_PLSQL       
-            FROM   ash0 a) h
+            FROM   ash1 a where bitand(flags,1)=1 or is_leaf=1) h
     WHERE  seq = 1),
+chain AS
+ (SELECT s.*, ROWNUM r
+  FROM   (SELECT round(100 * SUM(aas) / MAX(aass), 2) pct,
+                 SUM(aas) aas,
+                 COUNT(DISTINCT sql_exec) execs,
+                 first_value('[' || to_char(100 * SUM(aas) / MAX(aas1), '990.0') || '%] ' || curr_obj#) OVER(PARTITION BY chain1, chain2 ORDER BY NVL2(curr_obj#, 0, 1), SUM(aas) DESC) top_object,
+                 chain1||suffix chain1,
+                 chain2||suffix chain2,
+                 grouping_id(curr_obj#) grp
+          FROM   (SELECT b.*, SUM(aas) OVER() aass, 
+                         SUM(aas) over(PARTITION BY chain1, chain2) aas1,
+                         case when is_leaf=1 and blocking_inst_id!=inst_id then ' -> (Remote)'
+                              when is_leaf=1 and blocking_inst_id =inst_id then ' -> (Unknown)'
+                         end suffix
+                  FROM ash_raw b 
+                  WHERE BITAND(flags, 2) = 2)
+          GROUP  BY chain1, chain2,suffix, ROLLUP(curr_obj#)
+          ORDER  BY pct DESC) s
+  WHERE  grp = 1
+  AND    pct >= 0.5),
+chain_widths AS
+ (SELECT greatest(MAX(length(pct)), 3) spct,
+         greatest(MAX(LENGTH(aas)), 3) saas,
+         greatest(MAX(LENGTH(execs)), 5) sexec,
+         greatest(MAX(LENGTH(top_object)), 10) sobj,
+         greatest(MAX(LENGTH(chain1)), 18) schain1,
+         greatest(MAX(LENGTH(chain2)), 20) schain2,
+         COUNT(1) c
+  FROM   chain),
+final_chain AS
+ (SELECT r,
+         TRIM(TRIM('-' FROM s)) || LPAD(DECODE(r, -1, 'Pct', p), spct, p) || s --
+         || LPAD(DECODE(r, -1, 'AAS', p), saas, p) || ' ' --
+         || LPAD(DECODE(r, -1, 'Execs', p), sexec, p) || s --
+         || RPAD(DECODE(r, -1, 'Top Object', p), sobj, p) || s --
+         || RPAD(DECODE(r, -1, 'SQL Blocking Chain', p), schain1, p) || s --
+         || RPAD(DECODE(r, -1, 'Event Blocking Chain', p), schain2, p) || TRIM(TRIM('-' FROM s)) text
+  FROM   chain_widths,
+         (SELECT DECODE(ROWNUM, 1, -2, 2, -1, 3, 0, 999999) r, DECODE(ROWNUM, 2, ' ', '-') p, DECODE(ROWNUM, 2, ' | ', '-+-') s
+          FROM   dual
+          CONNECT BY ROWNUM <= 4)
+  WHERE  c > 0
+  UNION ALL
+  SELECT r,
+         '|' || LPAD(pct, spct) || ' | ' --
+         || LPAD(aas, saas) || ' ' --
+         || LPAD(execs, sexec) || ' | ' --
+         || RPAD(top_object, sobj) || ' | ' --
+         || RPAD(chain1, schain1) || ' | ' --
+         || RPAD(chain2, schain2) || '|' text
+  FROM   chain_widths, chain p),
 ash_phv_agg as(
     SELECT  /*+materialize*/ a.* 
     from (
@@ -324,7 +404,7 @@ ash_phv_agg as(
                 listagg(phv,',') WITHIN GROUP(ORDER BY cost desc,aas DESC) OVER(PARTITION BY nvl(b.phf,a.phf)) phvs,
                 count(1) over(partition by  nvl(b.phf,a.phf)) phv_cnt,
                 max(nvl2(b.phf,1,0)) over(partition by  nvl(b.phf,a.phf)) plan_exists
-        from (SELECT phv1 phv,max(phf) phf,sum(cost) cost,sum(aas) aas from ash_raw group by phv1) a 
+        from (SELECT phv1 phv,max(phf) phf,sum(cost) cost,sum(aas) aas from ash_raw where bitand(flags,1)=1 group by phv1) a 
         left join (select distinct phv,phf from sql_plan_data) b using(phv)) A
     WHERE phv_rate>=0.1),
 hierarchy_data AS
@@ -420,7 +500,7 @@ ash_agg as(
                 min(sample_time) begin_time,
                 max(sample_time) end_time
             from (select a.*, nvl(''||&top1,' ') top1,nvl(''||&top2,' ') top2
-                  FROM (select /*+ordered use_hash(b)*/ * from ash_phv_agg a natural join ash_raw b) A
+                  FROM (select /*+ordered use_hash(b)*/ * from ash_phv_agg a natural join ash_raw b where bitand(flags,1)=1) A
                  )
             group by phv,phvs,phvs,phfv,plan_exists,grouping sets((phv1,sql_id),pid,top1,(phv1,top1,sql_id),(pid,top1),(top1,top2))) A) A
     ) a WHERE g IS NOT NULL
@@ -599,4 +679,6 @@ final_output as(
                 SELECT phv,fmt from titles where id=-1 and flag='wait'
             ) b) b
     WHERE a.phv=b.phv)
-select fmt from final_output order by id,r,seq;
+select * from (select text blocking_chains_and_plan_stats from final_chain order by r)
+UNION ALL
+select * from (select fmt from final_output order by id,r,seq);

@@ -219,10 +219,10 @@ ash_raw as (
                 where  '&vw' IN('A','G')
                 &swcb
                 UNION ALL
-                SELECT  /*+QB_NAME(DASH) no_merge(d) CONNECT_BY_FILTERING*/
+                SELECT  /*+QB_NAME(DASH) CONNECT_BY_FILTERING*/
                         &public,
                         &hierachy
-                FROM    (select d.*, 10 aas_ from dba_hist_active_sess_history d) d
+                FROM    (select /*+no_merge*/ d.*, 10 aas_ from dba_hist_active_sess_history d) d
                 WHERE   '&vw' IN('A','D')
                 AND     sample_time+0 BETWEEN nvl(to_date(nvl(:V3,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7) 
                                           AND nvl(to_date(nvl(:V4,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE)

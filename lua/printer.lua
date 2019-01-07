@@ -338,7 +338,7 @@ function printer.onload()
     ]]
 
     local more_help=[[
-    Similar to Linux 'more' command. Usage: @@NAME <other command>  (support pipe(|) operation)
+    Similar to Linux 'less' command. Usage: @@NAME <other command>  (support pipe(|) operation)
     Example: select * from dba_objects|@@NAME
     Key Maps:
         exit       :  q or :q or ZZ
@@ -356,7 +356,7 @@ function printer.onload()
     env.set_command(nil,"grep",grep_help,{printer.grep,printer.grep_after},'__SMART_PARSE__',3,false,false,true)
     env.set_command(nil,"tee",tee_help,{printer.tee,printer.tee_after},'__SMART_PARSE__',3,false,false,true)
     env.set_command({nil,{"output","out"},"Use default editor to view the recent output. Usage: @@NAME [<file>|clear]",printer.view_buff,false,2,false,false,true,is_blocknewline=true})
-    env.set_command(nil,{"more","less"},more_help,printer.set_more,'__SMART_PARSE__',2,false,false,true)
+    env.set_command(nil,{"less","more"},more_help,printer.set_more,'__SMART_PARSE__',2,false,false,true)
     env.set_command(nil,{"Prompt","pro",'echo'}, "Prompt messages. Usage: @@NAME <message>",printer.load_text,false,2)
     env.set_command(nil,{"SPOOL","SPO"}, "Write the screen output into a file. Usage: @@NAME [file_name[.ext]] [CREATE] | APP[END]] | OFF]",printer.spool,false,3)
     env.ansi.define_color("GREPCOLOR","BBLU;HIW","ansi.grid","Define highlight color for the grep command, type 'ansi' for more available options")

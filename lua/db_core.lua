@@ -658,7 +658,6 @@ end
 
 function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_not_prep=type(sql)~="userdata"
-
     if is_not_prep and sql:find('/*DBCLI_EXEC_CACHE*/',1,true) then
         return self:exec_cache(sql,args,prep_params)
     end

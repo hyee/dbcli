@@ -282,6 +282,7 @@ BEGIN
     END IF;
     
     IF sq_id IS NOT NULL AND '&option' IS NULL THEN
+
         --EXECUTE IMMEDIATE 'alter session set "_sqlmon_max_planlines"=3000';
         IF xml IS NULL THEN
             sql_exec := :V2;
@@ -296,6 +297,10 @@ BEGIN
                 AND   sql_exec_id >0 
                 AND   PX_SERVER# IS NULL
                 and   inst_id=nvl(inst,inst_id);
+                
+                if sq_id is null then
+                    raise_application_error(-20001,'cannot find relative records for the specific SQL ID!');
+                end if;
             END IF;
 
             BEGIN
@@ -310,7 +315,6 @@ BEGIN
         EXCEPTION WHEN OTHERS THEN NULL;
         END;
 
-        
         content  := DBMS_REPORT.FORMAT_REPORT(xml, '&out') ;
         filename := 'sqlm_' || sq_id || '.html';
         txt := DBMS_REPORT.FORMAT_REPORT(xml.deleteXML('//sql_fulltext'), 'text');

@@ -173,9 +173,18 @@ function env.check_cmd_end(cmd,other_parts,stmt)
     end
     local prev=""
 
+    if type(stmt)=='table' then
+        for i=#stmt,1,-1 do
+            if stmt[i]:trim()~='' then
+                prev=stmt[i]..'\n'
+                break
+            end
+        end
+    end
+
     --print(other_parts,debug.traceback())
     if terminator then 
-        if other_parts and other_parts:trim():sub(-#terminator)==terminator then
+        if other_parts and (prev..other_parts):trim():sub(-#terminator)==terminator then
             return true,other_parts
         end
         return false,other_parts
@@ -191,14 +200,6 @@ function env.check_cmd_end(cmd,other_parts,stmt)
         return env.smart_check_end(cmd,other_parts,_CMDS[cmd].ARGS,stmt)
     end
 
-    if type(stmt)=='table' then
-        for i=#stmt,1,-1 do
-            if stmt[i]:trim()~='' then
-                prev=stmt[i]..'\n'
-                break
-            end
-        end
-    end
     local match,typ,index = env.COMMAND_SEPS.match(prev..other_parts)
     --print(match,other_parts)
     if index==0 then
@@ -753,8 +754,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
     local rest,pipe_cmd,param = line:match('^%s*([^|]+)|%s*(%w+)(.*)$')
     if pipe_cmd and _CMDS[pipe_cmd:upper()] and _CMDS[pipe_cmd:upper()].ISPIPABLE==true then
         if not rest:find('^!') and not rest:upper():find('^HOS') then 
-            if param~='' then param=env.COMMAND_SEPS.match(param):trim() end
-            if param~='' then param='"'..param..'"' end
+            if param~='' then param='"'..env.COMMAND_SEPS.match(param):trim()..'"' end
             if multi_cmd then
                 param,multi_cmd=param..' '..multi_cmd..' '..table.concat(curr_stmt,'\n'),nil
             end
@@ -999,8 +999,12 @@ function env.run_luajit()
     pcall(os.execute,env.join_path(env.LIB_PATH,'luajit'))
 end
 
-function env.set_paste(name,value)
-    console:enableBracketedPaste(value)
+function env.set_option(name,value)
+    if name=='MOUSE' then
+        console:enableMouse(value)
+    else
+        console:enableBracketedPaste(value)
+    end
     return value
 end
 
@@ -1047,7 +1051,8 @@ function env.onload(...)
         env.set_title('status',enabled)
         env.set.init("Status",enabled,env.set_title,"core","Display the status bar","on,off")
         env.set.init("SPACES",4,env.set_space,"core","Define the prefix spaces of a line","0-8")
-        env.set.init("BRACKETED_PASTE",'on',env.set_paste,"core","Define if enabled Bracketed Paste","on,off")
+        env.set.init("MOUSE",'off',env.set_option,"core","Enable to use mouse to navigate the cursor, and use SHIFT+Mouse to select text","on,off")
+        env.set.init("BRACKETED_PASTE",'on',env.set_option,"core","Enable Bracketed Paste","on,off")
         print_debug=print
     end
     if  env.ansi and env.ansi.define_color then

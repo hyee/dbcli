@@ -141,6 +141,11 @@ public class Console {
         Interrupter.listen(this, callback);
     }
 
+    public void enableMouse(String val) {
+        if ("off".equals(val)) reader.unsetOpt(LineReader.Option.MOUSE);
+        else reader.setOpt(LineReader.Option.MOUSE);
+    }
+
     public void enableBracketedPaste(String val) {
         if ("off".equals(val)) reader.unsetOpt(LineReader.Option.BRACKETED_PASTE);
         else reader.setOpt(LineReader.Option.BRACKETED_PASTE);
@@ -435,7 +440,7 @@ public class Console {
                         s -> s.substring(s.indexOf('=') + 1)));
         public Map<String, ?> keywords = new HashMap();
         public Map<String, Object> commands = new HashMap();
-        String secondPrompt = "    ";
+        volatile String secondPrompt = "    ";
         volatile int lines = 0;
         StringBuffer sb = new StringBuffer(32767);
         boolean enabled = true;
