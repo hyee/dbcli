@@ -46,6 +46,7 @@ function mysql:connect(conn_str)
     self:merge_props(
         {driverClassName="com.mysql.cj.jdbc.Driver",
          retrieveMessagesFromServerOnGetMessage='true',
+         allowPublicKeyRetrieval=true,
          --clientProgramName='SQL Developer',
          useCachedCursor=self.MAX_CACHE_SIZE,
          useUnicode='true',

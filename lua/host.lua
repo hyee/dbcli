@@ -3,7 +3,7 @@ local host={}
 function host.run_command(cmd)
     env.checkhelp(cmd)
     io.flush()
-    pcall(os.execute,cmd)
+    local rtn,exit,signal=os.execute(cmd)
 end
 
 function host.mkdir(path)

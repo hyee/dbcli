@@ -202,8 +202,8 @@ BEGIN
     FOR r IN (WITH plans AS
                    (SELECT STATEMENT_ID,
                           NVL(regexp_substr(STATEMENT_ID, '\d+') + 0, 0) ID,
-                          MAX(decode(id, 1, regexp_substr(to_char(other_xml), '"plan_hash">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash,
-                          MAX(decode(id, 1, regexp_substr(to_char(other_xml), '"plan_hash_full">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash_full
+                          MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash,
+                          MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash_full">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash_full
                    FROM   PLAN_TABLE q
                    GROUP  BY STATEMENT_ID)
                   SELECT MIN(STATEMENT_ID) id, MIN(ID) seq, plan_hash, plan_hash_full
@@ -229,13 +229,13 @@ BEGIN
                  CASE WHEN STATEMENT_ID LIKE '%BASELINE_LOW' THEN 0 ELSE 1 END grp,
                  NVL(regexp_substr(STATEMENT_ID, '\d+') + 0, 0) ID,
                  MAX(ID) plan_lines,
-                 MAX(decode(id, 1, regexp_substr(to_char(other_xml), '"plan_hash">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash,
-                 MAX(decode(id, 1, regexp_substr(to_char(other_xml), '"plan_hash_full">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash_full,
+                 MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash,
+                 MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash_full">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash_full,
                  MAX(q.cost) cost,
                  MAX(bytes) bytes,
                  MAX(cardinality) keep(dense_rank FIRST ORDER BY id) card,
                  SUM(nvl2(object_owner, cardinality, 0)) total_card,
-                 MAX(CASE WHEN &filter THEN 'Y' END) is_matched
+                 MAX(CASE WHEN &filter THEN 'Y' ELSE 'N' END) is_matched
           FROM   PLAN_TABLE q
           GROUP  BY STATEMENT_ID),
         finals AS

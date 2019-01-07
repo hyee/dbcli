@@ -79,7 +79,7 @@ function snapper:after_script()
         self.var_context=nil
     end
     if self.start_flag then
-        self.start_flag,self.snap_cmd,self.is_repeat=false
+        self.start_flag,self.snap_cmd,self.is_repeat,self.is_first_top=false
         self:trigger('after_exec_action')
         self.db:commit()
         cfg.set("feed","back")
@@ -487,8 +487,13 @@ function snapper:next_exec()
             local title=string.format('\n$REV$[%s#%s%s]: From %s to %s%s:$NOR$\n',self.command,name,per_second,cmd.starttime,cmd.endtime,
                 env.set.get("debug")~="SNAPPER" and '' or cost)
             if top_mode then
+                if not self.is_first_top then
+                    self.is_first_top=true
+                    reader:clearScreen()
+                else
+                    env.ansi.clear_screen()
+                end
                 title=title:trim("\n")
-                env.ansi.clear_screen()
                 env.printer.top_mode=true
             end
             print(title)

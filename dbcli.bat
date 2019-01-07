@@ -48,7 +48,7 @@ if not defined ANSICON if defined ANSICON_CMD (
 )
 
 if not exist "!ANSICON_CMD!" set "ANSICON_DEF=jline"
-if defined ConEmuPID set "ANSICON_DEF=conemu"
+rem if defined ConEmuPID set "ANSICON_DEF=conemu"
 if defined MSYSTEM set "ANSICON_DEF=msys"
 set "ANSICON_CMD="
 

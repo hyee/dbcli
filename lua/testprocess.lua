@@ -18,7 +18,6 @@ local function onread(err, chunk)
         p=false
         printer.write("select * from dual;\n")
         stdin:write("select * from dual;\n")
-        
     end
   else
     print("exit")

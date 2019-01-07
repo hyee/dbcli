@@ -9,11 +9,11 @@ local map={
     ["\9"]="TAB",
     ["^[[2~"]="INSERT",
     ["^[[3~"]="DEL",
+    ["^[[4~"]="END",
     ["^[[5~"]="PGUP",
-    ["^[[6~"]="PGON",
+    ["^[[6~"]="PGDOWN",
     ["^[[H"]="HOME",
     ["^[[1;%dH"]="HOME",
-    ["^[[4~"]="END",
     ["^[[1;%dF"]="END",
     ["^[OP"]="F1",
     ["^[[1;%dP"]="F1",
@@ -76,23 +76,27 @@ function hotkeys.call(event,_,x)
         local key,desc,found=table.unpack(keys)
         local code=key:gsub('"(.-)"',' %1 ')
         key=key:gsub('"(.-)"',function(s)
-            local s1=s
-            for k,v in pairs(map) do
-                k=k:gsub("([%^%[%]])","%%%1"):gsub("%%d","(%1)")
-                local p
-                if k:find('%d') then
-                    local idx=tonumber(s:match(k))
-                    if idx then
-                        idx=idx-1
-                        local p=" + "
-                        if bit.band(idx,4)>0 then p=p.."CTRL-" end
-                        if bit.band(idx,2)>0 then p=p.."ALT-" end
-                        if bit.band(idx,1)>0 then p=p.."SHIFT-" end
-                        p=p..v.." + "
-                        s=s:gsub(k,p)
+            if map[s] then
+                s=map[s]
+            else
+                local s1=s
+                for k,v in pairs(map) do
+                    k=k:gsub("([%^%[%]])","%%%1"):gsub("%%d","(%1)")
+                    local p
+                    if k:find('%d') then
+                        local idx=tonumber(s:match(k))
+                        if idx then
+                            idx=idx-1
+                            local p=" + "
+                            if bit.band(idx,4)>0 then p=p.."CTRL-" end
+                            if bit.band(idx,2)>0 then p=p.."ALT-" end
+                            if bit.band(idx,1)>0 then p=p.."SHIFT-" end
+                            p=p..v.." + "
+                            s=s:gsub(k,p)
+                        end
+                    else
+                        s=s:gsub(k,v)
                     end
-                else
-                    s=s:gsub(k,v)
                 end
             end
             s=s:gsub("%^%[%^(.)","+ CTRL-ALT-%1"):gsub('%^%[(.)',' + ALT-%1'):gsub('%^(.)',' + CTRL-%1'):gsub('^%s*%+ ',''):gsub(' %+%s*$','')

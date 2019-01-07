@@ -33,14 +33,15 @@
                 FROM  (SELECT /*+merge*/
                                A.*,
                                initcap(replace(stat_name,'_',' '))|| decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event,
-                               value/Slot_size/60 v
+                               value/greatest(1,flag1*Slot_size)/case when stat_name like '%TIME%' THEN 100 ELSE 1 END v
                        FROM   (SELECT /*+merge no_expand ordered_predicates*/
                                       inst_id,
                                       end_time,
                                       flag,
                                       stat_name,
                                       Slot_size,
-                                      VALUE - nvl(LAG(case when stat_id in(1,2,3,4,5,6,14,15,1009,1010) then VALUE else 0 end) OVER(PARTITION BY part_key,stat_name ORDER BY snap_id),0) value
+                                      case when stat_id in(1,2,3,4,5,6,14,1009,1010) then 1 else 0 end flag1,
+                                      VALUE - nvl(LAG(case when stat_id in(1,2,3,4,5,6,14,1009,1010) then VALUE else 0 end) OVER(PARTITION BY part_key,stat_name ORDER BY snap_id),0) value
                                FROM   dba_hist_osstat NATURAL JOIN snap
                                WHERE  (&filter) and (:V1 IS NULL OR lower(stat_name) like lower('%&V1%'))) a
                        where value>0 and flag=0)
@@ -49,6 +50,6 @@
         ORDER  BY 1]],
     _pivot=true,
     labelsSeparateLines=true,
-    labelsKMB=true,
+    labelsKMG2=true,
     height=400,
 }

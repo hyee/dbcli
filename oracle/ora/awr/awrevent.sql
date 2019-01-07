@@ -21,8 +21,10 @@ FROM   (SELECT  inst,nvl(event_name,'- '||nvl(wait_class,'* All Events *')) even
                 &FIELD
          FROM   (SELECT DECODE(snap_id, max_id, 1, -1) flag, a.*
                   FROM   (SELECT  hs1.*, 
-                                  MIN(s.snap_id) OVER(PARTITION BY s.instance_number) min_id,
-                                  MAX(s.snap_id) OVER(PARTITION BY s.instance_number) max_id,
+                                  s.STARTUP_TIME,
+                                  max(STARTUP_TIME) over(partition by s.instance_number) stime,
+                                  MIN(s.snap_id) OVER(PARTITION BY s.instance_number,s.STARTUP_TIME) min_id,
+                                  MAX(s.snap_id) OVER(PARTITION BY s.instance_number,s.STARTUP_TIME) max_id,
                                   decode(nvl(LOWER(:V1),'a'),'a','A',to_char(s.instance_number)) inst
                            FROM   dba_hist_system_event hs1, dba_hist_snapshot s
                            WHERE  s.snap_id = hs1.snap_id
@@ -34,7 +36,8 @@ FROM   (SELECT  inst,nvl(event_name,'- '||nvl(wait_class,'* All Events *')) even
                            AND    s.dbid = hs1.dbid
                            AND    s.end_interval_time BETWEEN nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MI'),SYSDATE - 7) AND nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MI'),SYSDATE)
                            AND    wait_class != 'Idle') a
-                  WHERE  snap_id IN (max_id, min_id))
+                  WHERE  snap_id IN (max_id, min_id)
+                  AND    STARTUP_TIME=stime)
          GROUP  BY inst,rollup(wait_class,event_name)
          ORDER  BY grouping_id(wait_class,event_name) desc,abs(waited) DESC)
 WHERE  ROWNUM <= 50

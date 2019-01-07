@@ -12,4 +12,4 @@ SELECT b.*
 FROM   (&CHECK_ACCESS_SEG) a, &CHECK_ACCESS_OBJ b
 WHERE  rownum < 2
 AND    file# = :V1
-AND    objd = data_object_id
+AND    objd = data_object_id;

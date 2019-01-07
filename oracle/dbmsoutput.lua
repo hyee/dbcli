@@ -15,13 +15,14 @@ function output.setOutput(db)
     pcall(function() (db or env.getdb()):internal_call(stmt) end)
 end
 
-output.trace_sql=[[select /*INTERNAL_DBCLI_CMD*/ name,value from v$mystat natural join v$statname where value>0]]
+output.trace_sql=[[select /*INTERNAL_DBCLI_CMD*/ name,value from v$mystat natural join v$statname where name not like 'session%memory%' and value>0]]
 
 output.stmt=[[/*INTERNAL_DBCLI_CMD*/
         DECLARE
             l_line   VARCHAR2(32767);
             l_done   PLS_INTEGER := 32767;
             l_max    PLS_INTEGER := 0;
+            l_child  PLS_INTEGER;
             l_buffer VARCHAR2(32767);
             l_arr    dbms_output.chararr;
             l_lob    CLOB;
@@ -33,6 +34,7 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             l_cid    PLS_INTEGER;
             l_stats  SYS_REFCURSOR;
             l_sep    varchar2(10) := chr(1)||chr(2)||chr(3)||chr(10); 
+            l_plans  sys.ODCIVARCHAR2LIST;
             procedure wr is
             begin
                 l_size   := length(l_buffer);
@@ -45,9 +47,11 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
                 END IF;
             end;
         BEGIN
-            --if l_trace not in ('sql_id','statistics','off') then
-                open l_stats for select name,value from v$mystat natural join v$statname where value>0 order by name;
-            --end if;
+            if l_trace not in ('sql_id','statistics','off') then
+                open l_stats for select name,value from v$mystat natural join v$statname where name not like 'session%memory%' and value>0;
+            else
+                open l_stats for select * from dual;
+            end if;
             dbms_output.get_lines(l_arr, l_done);
             IF l_enable = 'on' THEN
                 FOR i IN 1 .. l_done LOOP
@@ -56,21 +60,22 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
                 END LOOP;
             END IF;
 
-            IF l_trace NOT IN('off','statistics') THEN
+            IF l_trace NOT IN('off','statistics','sql_id') THEN
                 BEGIN
-                    l_done := 0;
-                    FOR r IN(SELECT * FROM TABLE(dbms_xplan.display('v$sql_plan_statistics_all',NULL,'ALLSTATS LAST','sql_id=''' || l_sql_id ||''''))) LOOP
-                        l_done := l_done + 1;
-                        if r.plan_table_output not like 'Error%' then
-                            if l_done = 1 then
+                    SELECT * bulk collect into l_plans
+                    FROM TABLE(dbms_xplan.display('v$sql_plan_statistics_all',NULL,'ALLSTATS LAST',
+                               'child_number=(select max(child_number) keep(dense_rank last order by executions,last_active_time) from v$sql where sql_id='''||l_sql_id||''') and sql_id=''' || l_sql_id ||''''));
+                    FOR i in 1..l_plans.count LOOP
+                        if l_plans(i) not like 'Error%' then
+                            if i = 1 then
                                 l_buffer := l_buffer || l_sep;
                             end if;
-                            if trim(r.plan_table_output) is not null then
-                                l_max := greatest(l_max,length(r.plan_table_output));
-                                l_buffer := l_buffer || replace(r.plan_table_output,'Plan hash value:','SQL ID: '||l_sql_id||'   Plan hash value:') || chr(10);
+                            if trim(l_plans(i)) is not null then
+                                l_max := greatest(l_max,length(l_plans(i)));
+                                l_buffer := l_buffer || replace(l_plans(i),'Plan hash value:','SQL ID: '||l_sql_id||'   Plan hash value:') || chr(10);
                                 wr;
                             end if;
-                        elsif l_done = 1 then
+                        elsif i = 1 then
                             l_buffer := l_buffer || 'SQL_ID: '||l_sql_id||chr(10);
                         end if;
                     END LOOP;
@@ -103,6 +108,27 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
         EXCEPTION WHEN OTHERS THEN NULL;
         END;]]
 
+local fixed_stats={
+    ['DB time']=1,
+    ['CPU used by this session']=2,
+    ['non-idle wait time']=3,
+    ['recursive calls']=4,
+    ['db block gets']=5,
+    ['consistent gets']=6,
+    ['physical reads']=7,
+    ['physical writes']=8,
+    ['cell physical IO interconnect bytes']=9,
+    ['logical read bytes from cache']=10,
+    ['redo size']=11,
+    ['bytes sent via SQL*Net to client']=12,
+    ['bytes received via SQL*Net from client']=13,
+    ['SQL*Net roundtrips to/from client']=14,
+    ['sorts (memory)']=15,
+    ['sorts (disk)']=16,
+    ['sorts (rows)']=17,
+    ['rows processed']=18
+}
+
 local DML={SELECT=1,WITH=1,UPDATE=1,DELETE=1,MERGE=1}
 function output.getOutput(item)
     local db,sql=item[1],item[2]
@@ -111,38 +137,52 @@ function output.getOutput(item)
     if DML[typ] and #env.RUNNING_THREADS > 2 and autotrace=='off' then return end
     if not (sql:lower():find('internal',1,true) and not sql:find('%s')) and not db:is_internal_call(sql) then
         local args=table.clone(default_args)
-        args.sql_id=output.LAST_SQL_ID
+        args.sql_id=autotrace=='off' and 'x' or loader:computeSQLIdFromText(sql)
         args.autotrace=autotrace
         local done,err=pcall(db.exec_cache,db,output.stmt,args,'Internal_GetDBMSOutput')
         if not done then 
-            return print(err) 
+            return --print(err)
         end
-        if autotrace =='traceonly' or autotrace=='on' or autotrace=='statistics' then
-            local stats=db:compute_delta(args.stats,output.prev_stats,'1','2')
-            local rows=env.grid.new()
-            rows:add{"Value","Name",'|',"Value","Name"}
-            local n={}
-            local counter=0
-            for k,row in ipairs(stats) do
-                if tonumber(row[2]) and tonumber(row[2])>0 then
-                    counter=counter+1
-                    local idx=math.fmod(counter-1,2)*3
-                    if idx==3 then 
-                        n[3]='|' 
-                        rows:add(n)
-                        n={}
-                    end
-                    n[idx+1],n[idx+2]=row[2],row[1]
-                end
-            end
-            if #n>0 then rows:add(n) end
-            rows:print()
-        end
-
+        
         local result=args.lob or args.buff
         if enabled == "on" and result and result:match("[^\n%s]+") then
             result=result:gsub("\r\n","\n"):gsub("%s+$","")
             if result~="" then print(result) end
+        end
+
+        if autotrace =='traceonly' or autotrace=='on' or autotrace=='statistics' then
+            local stats=db:compute_delta(args.stats,output.prev_stats,'1','2')
+            local n={}
+            local idx,c=-1,0
+            grid.sort(stats,1)
+            for k,v in pairs(fixed_stats) do
+                n[v]={0,k,env.ansi.mask('HEADCOLOR','/')}
+            end
+            for k,row in ipairs(stats) do
+                if tonumber(row[2]) and tonumber(row[2])>0 then
+                    if fixed_stats[row[1]] then
+                        n[fixed_stats[row[1]]][1]=row[2]
+                    else
+                        idx=math.fmod(idx+1,2)*3
+                        if idx==0 then
+                            c=c+1
+                            if #n<c then n[c]={'','',env.ansi.mask('HEADCOLOR','/')} end
+                        end
+                        n[c][idx+4],n[c][idx+5]=row[2],row[1]
+                        if idx==3 then n[c][6]='|' end
+                    end
+                end
+            end
+
+            local rows=env.grid.new()
+            rows:add{"Value","Name",'/',"Value","Name",'|',"Value","Name"}
+            env.set.set('sep4k','on')
+            for k,row in ipairs(n) do rows:add(row) end
+            print("")
+            rows:print()
+            env.set.set('sep4k','back')
+        elseif type(args.stats)=='userdata' then
+            pcall(args.stats.close,args.stats)
         end
 
         db.props.container=args.cont
@@ -163,10 +203,10 @@ function output.getOutput(item)
     output.prev_sql=sql
 end
 
-function output.getSQLID(info)
+function output.capture_stats(info)
     local db,sql=info[1],info[2]
     if sql and not (sql:lower():find('internal',1,true) and not sql:find('%s')) and not db:is_internal_call(sql) then
-        output.LAST_SQL_ID=loader:computeSQLIdFromText(sql)
+        
         if autotrace =='traceonly' or autotrace=='on' or autotrace=='statistics' then
             local done,result=pcall(db.exec_cache,db,output.trace_sql,{},'Internal_GetSQLSTATS')
             if done then 
@@ -186,7 +226,7 @@ end
 function output.onload()
     snoop("ON_SQL_ERROR",output.get_error_output,nil,40)
     snoop("AFTER_ORACLE_CONNECT",output.setOutput)
-    snoop("BEFORE_DB_EXEC",output.getSQLID,nil,50)
+    snoop("BEFORE_DB_EXEC",output.capture_stats,nil,50)
     snoop("AFTER_DB_EXEC",output.getOutput,nil,50)
     cfg.init('AUTOTRACE','off',function(name,value)
         autotrace=value

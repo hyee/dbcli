@@ -262,6 +262,7 @@ function ResultSet:rows(rs,count,limit,null_value)
             end
         end
     end
+
     table.insert(rows,1,head)
     return rows
 end
@@ -649,6 +650,7 @@ function db_core:exec_cache(sql,args,description)
                 prep[method](prep,idx,n)
             end
         end
+        --print(table.dump(params),table.dump(args))
     end
     args._description=description and ('('..description..')') or ''
     return self:exec(prep,args,table.clone(params),sql),cache
@@ -656,7 +658,6 @@ end
 
 function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_not_prep=type(sql)~="userdata"
-
     if is_not_prep and sql:find('/*DBCLI_EXEC_CACHE*/',1,true) then
         return self:exec_cache(sql,args,prep_params)
     end
@@ -715,6 +716,24 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
     self.current_stmt=nil
     local is_output,index,typename=1,2,3
+
+    local rscount=0
+
+    local function process_result(rs,is_print)
+        if print_result and is_print~=false then 
+            self.resultset:print(rs,self.conn)
+            pcall(rs.close,rs)
+        else
+            rscount=rscount+1
+        end
+        self.__result_sets[#self.__result_sets+1]=rs
+        while #self.__result_sets>cfg.get('SQLCACHESIZE')*2 do
+            pcall(self.__result_sets[1].close,self.__result_sets[1])
+            table.remove(self.__result_sets,1)
+        end
+        return rs
+    end
+
     for k,v in pairs(params) do
         if type(v) == "table" and v[is_output] == "#"  then
             if type(v[index]) == "table" then
@@ -727,6 +746,9 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
             else
                 params[k]=db_Types:get(v[index],v[typename],prep,self.conn) or db_core.NOT_ASSIGNED
             end
+            if type(params[k])=="userdata" and params[k].close then
+                process_result(params[k],false)
+            end
         end
     end
 
@@ -737,12 +759,6 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
             args[k]=params[tostring(k):upper()]
             outputs[k]=true
         end
-    end
-    local function process_result(rs)
-        if print_result then 
-            self.resultset:print(rs,self.conn)
-        end
-        return rs
     end
 
     --close statments
@@ -757,8 +773,12 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         result[#result+1]=process_result(prep:getResultSet())
     end
 
-    self:clearStatements()
     if event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
+
+    if rscount==0 and is_not_prep then
+        pcall(prep.close,close)
+    end
+    self:clearStatements()
     
     for k,v in pairs(outputs) do
         if args[k]==db_core.NOT_ASSIGNED then args[k]=nil end
@@ -771,6 +791,7 @@ function db_core:is_connect()
     if type(self.conn)~='userdata' or not self.conn.isClosed or self.conn:isClosed() then
         self.__stmts={}
         self.__preparedCaches={}
+        self.__result_sets={}
         return false
     end
     return true
@@ -857,6 +878,7 @@ function db_core:connect(attrs,data_source)
         event("AFTER_DB_CONNECT",self,attrs.jdbc_alias or url,attrs)
     end
     self.__stmts = {}
+    self.__result_sets = {}
     self.__preparedCaches={}
     self.properties={}
     for k in java.methods(self.conn) do
@@ -1278,7 +1300,7 @@ function db_core:__onload()
     txt=txt..'\n           sql2csv user_objects x;'
     cfg.init("PRINTSIZE",1000,set_param,"db.query","Max rows to be printed for a select statement",'1-10000')
     cfg.init("FETCHSIZE",3000,set_param,"db.query","Rows to be prefetched from the resultset, 0 means auto.",'0-32767')
-    cfg.init("COLSIZE",32767,set_param,"db.query","Max column size of a result set",'5-1073741824')
+    cfg.init("COLSIZE",1073741824,set_param,"db.query","Max column size of a result set",'5-1073741824')
     cfg.init("SQLTIMEOUT",1200,set_param,"db.core","The max wait time(in second) for a single db execution",'10-86400')
     cfg.init({"FEED","FEEDBACK"},'on',set_param,"db.core","Detemine if need to print the feedback after db execution",'on,off')
     cfg.init("AUTOCOMMIT",'off',set_param,"db.core","Detemine if auto-commit every db execution",'on,off')

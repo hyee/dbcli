@@ -110,7 +110,7 @@
 		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="76" command="clear"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="1" code="45" command="copy"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="65" command="selectall"/>
-		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="90" command="clear_selection"/>
+		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="clear_selection"/>
 		<hotkey ctrl="0" shift="1" alt="0" extended="1" code="45" command="paste"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="paste_selection"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="81" command="stopscroll"/>
@@ -182,6 +182,10 @@
 		</actions></mouse>
 	<snippets dir=""/>
 	<tabs>
+		<tab title="dbcli" use_default_icon="0">
+			<console shell="..\dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
+			<cursor style="4" r="255" g="255" b="255"/>
+		</tab>
 		<tab title="dbcli(conemu)" use_default_icon="0">
 			<console shell="..\dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
 			<cursor style="4" r="255" g="255" b="255"/>
@@ -203,10 +207,6 @@
 				<color id="14" r="181" g="147" b="0"/>
 				<color id="15" r="253" g="246" b="227"/>
 		</colors>
-		</tab>
-		<tab title="dbcli" use_default_icon="0">
-			<console shell="..\dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
-			<cursor style="4" r="255" g="255" b="255"/>
 		</tab>
 		<tab title="dbcli(blue)" use_default_icon="0">
 			<console shell="..\dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0">
