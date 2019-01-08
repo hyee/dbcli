@@ -31,9 +31,9 @@ import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS;
 import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS_256_COLOR;
 
 
-public class Console {
+public final class Console {
     public final static Pattern ansiPattern = Pattern.compile("^\33\\[[\\d\\;]*[mK]$");
-    public static PrintWriter writer;
+    public static Output writer;
     public static NonBlockingReader input;
     public static String charset = System.getProperty("sun.stdout.encoding");
     public static ClassAccess<LineReaderImpl> accessor = ClassAccess.access(LineReaderImpl.class);
@@ -111,7 +111,7 @@ public class Console {
         setKeyCode("undo", "^[z");
 
         input = terminal.reader();
-        writer = terminal.writer();
+        writer = new Output(terminal.writer());
 
         colorPlan = terminal.getType();
         threadID = Thread.currentThread().getId();
@@ -313,7 +313,6 @@ public class Console {
     public void println(String msg) {
         if (writer == null) return;
         writer.println(msg);
-        writer.flush();
     }
 
     public Object invokeMethod(String method, Object... o) {
@@ -444,7 +443,7 @@ public class Console {
         volatile int lines = 0;
         StringBuffer sb = new StringBuffer(32767);
         boolean enabled = true;
-        Pattern p1 = Pattern.compile("^(\\s*)([^\\s\\|;/]+)(.*)$", Pattern.DOTALL);
+        Pattern p1 = Pattern.compile("^(\\s*\\.?)([^\\s\\|;/]+)(.*)$", Pattern.DOTALL);
         AttributedStringBuilder asb = new AttributedStringBuilder();
         final AttributedString empty = asb.toAttributedString();
         private String ansi = null;

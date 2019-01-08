@@ -83,19 +83,20 @@ public class Less {
         this.terminal = terminal;
         this.display = new Display(terminal, true) {
             boolean isStarted;
+
             @Override
             public void update(List<AttributedString> newLines, int targetCursorPos) {
                 if (isStarted) clear();
                 else {
                     isStarted = true;
-                    if (OSUtils.IS_CONEMU || "terminator".equals(System.getenv("TERM"))||"ansicon".equals(System.getenv("ANSICON_DEF"))) {
+                    if (OSUtils.IS_CONEMU || "terminator".equals(System.getenv("TERM")) || "ansicon".equals(System.getenv("ANSICON_DEF"))) {
                         clear();
                     } else {
                         cursorPos = 0;
                         oldLines.clear();
                     }
                 }
-                super.update(newLines, targetCursorPos,false);
+                super.update(newLines, targetCursorPos, false);
                 terminal.writer().flush();
             }
         };
@@ -620,11 +621,11 @@ public class Less {
                     off = Math.max(offsetInLine, off);
                 }
                 maxWidth = Math.max(maxWidth, curLine.length());
-                if(padding>0&&off>padding&&!printLineNumbers) {
+                if (padding > 0 && off > padding && !printLineNumbers) {
                     asb.setLength(0);
                     asb.append(String.join("", Collections.nCopies(padding, " ")));
-                    asb.append(curLine.columnSubSequence(off,off+width-padding));
-                    toDisplay=asb.toAttributedString();
+                    asb.append(curLine.columnSubSequence(off, off + width - padding));
+                    toDisplay = asb.toAttributedString();
                 } else toDisplay = curLine.columnSubSequence(off, off + width);
                 curLine = null;
             } else {

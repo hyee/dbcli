@@ -10,21 +10,30 @@ local strip_ansi=function(x) return x end
 local println,write=console.println,console.write
 local buff={ }
 local grep_fmt="%1"
+local more_text={lines=0}
 
 function printer.load_text(text)
     printer.print(event.callback("BEFORE_PRINT_TEXT",{text or ""})[1])
 end
 
-local more_text
 function printer.set_more(stmt)
     env.checkerr(stmt,"Usage: more <select statement>|<other command>")
     printer.is_more=true
+    out.isMore=true
     printer.grid_title_lines=0
-    more_text={lines=0}
-    if stmt then pcall(env.eval_line,stmt,true,true) end
+    if stmt:upper()~='LAST' then
+        more_text={lines=0}
+        out:clear()
+        printer.grid_title_lines=0
+        pcall(env.eval_line,stmt,true,true)
+    end
     printer.is_more=false
+    local lines=writer:lines()
+    for i=1,#lines do
+        more_text[#more_text+1]=lines[i]
+    end
+    more_text.lines=more_text.lines+#lines
     printer.more(table.concat(more_text,'\n'))
-    more_text={}
 end
 
 function printer.more(output)
@@ -82,12 +91,10 @@ function printer.print(...)
             pcall(printer.tee_hdl.write,printer.tee_hdl,strip_ansi(output).."\n")
         end
     end
-    if not printer.tee_hdl and ignore~='__BYPASS_GREP__' then
-        if printer.is_more then 
-            more_text[#more_text+1]=output
-            more_text.lines=more_text.lines+rows+1
-        end
-        flush_buff(output,rows+1)
+
+    if ignore~='__BYPASS_GREP__' then
+        more_text[#more_text+1]=output
+        more_text.lines=more_text.lines+rows+1
     end
 end
 
@@ -190,6 +197,11 @@ end
 function printer.before_command(command)
     local cmd,params,is_internal,line,text,lines=table.unpack(command)
     if is_internal or #env.RUNNING_THREADS>1 then return end
+    if cmd and cmd~='MORE' and cmd~='LESS' and cmd~='OUT' and cmd~='OUTPUT' then
+        more_text={lines=0}
+        out:clear()
+        printer.grid_title_lines=0
+    end
     line,lines=line:gsub('\n','\n'..env.MTL_PROMPT)
     line=env.PRI_PROMPT..line
     if printer.hdl then pcall(printer.hdl.write,printer.hdl,line.."\n") end
@@ -198,37 +210,32 @@ end
 
 function printer.after_command()
     if #env.RUNNING_THREADS>1  then return end
-    if more_text and #more_text>0 then
-       printer.more(table.concat(more_text,'\n')) 
-    end
     if printer.grep_text then 
         printer.grep_after()
     end
     if printer.tee_hdl then 
         printer.tee_after()
     end
-    printer.is_more,more_text=false,{}
+    if more_text.lines>0 then
+        flush_buff(table.concat(more_text,'\n'), more_text.lines)
+    end
+    printer.is_more=false
 end
 
 function printer.tee_to_file(row,total_rows, format_func, format_str,include_head)
-    if not printer.tee_hdl or type(row)~="table" then
-        if env.set and not printer.tee_hdl  then
-            local str=type(row)~="table" and row or format_func(format_str, table.unpack(row))
-            if printer.is_more then
-                more_text[#more_text+1]=env.space..str
-                more_text.lines=more_text.lines+1
-                if more_text.lines<=10 then
-                    if printer.grid_title_lines>0 and tonumber(row[0]) and tonumber(row[0])>0 then
-                        printer.grid_title_lines=-(printer.grid_title_lines)
-                    elseif printer.grid_title_lines>=0 and include_head and (not row[0] or row[0]==0) then 
-                        printer.grid_title_lines=more_text.lines
-                    end
-                end
-            end
-            flush_buff(env.space..str)
+    local str=type(row)~="table" and row or format_func(format_str, table.unpack(row))
+    more_text[#more_text+1]=env.space..str
+    more_text.lines=more_text.lines+1
+    if more_text.lines<=10 then
+        if printer.grid_title_lines>0 and tonumber(row[0]) and tonumber(row[0])>0 then
+            printer.grid_title_lines=-(printer.grid_title_lines)
+        elseif printer.grid_title_lines>=0 and include_head and (not row[0] or row[0]==0) then 
+            printer.grid_title_lines=more_text.lines
         end
-        return 
     end
+
+    if type(row)~="table" or not not printer.tee_hdl then return end
+
     local hdl=printer.tee_hdl
     if printer.tee_type=="html" then
         local td='td'
@@ -338,7 +345,7 @@ function printer.onload()
     ]]
 
     local more_help=[[
-    Similar to Linux 'less' command. Usage: @@NAME <other command>  (support pipe(|) operation)
+    Similar to Linux 'less' command. Usage: @@NAME <other command>|last  (support pipe(|) operation)
     Example: select * from dba_objects|@@NAME
     Key Maps:
         exit       :  q or :q or ZZ

@@ -69,7 +69,6 @@ function sqlplus:make_sqlpath()
         if c1~=c2 then return c1<c2 end
         return a<b
     end)
-    
     self.env['SQLPATH']=table.concat(path,env.IS_WINDOWS and ';' or ':')
     self.env['ORACLE_PATH']=self.env['SQLPATH']
     self.env['TNS_ADMIN']=self.db.tns_admin
