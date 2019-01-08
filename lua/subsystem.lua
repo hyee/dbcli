@@ -85,10 +85,10 @@ function system:call_process(cmd,is_native)
             if k:sub(1,1)~='-' then break end
             if k=="-N" then 
                 is_native=true 
-                table.remove(args,i)
+                table.remove(args,1)
             elseif k:find("^%-D") then
                 self.work_dir=args[1]:sub(3):gsub('"','')
-                table.remove(args,i)
+                table.remove(args,1)
             end
         end
 
