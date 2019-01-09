@@ -219,7 +219,7 @@ For the output lines that wider than the buffer width(in Posix System it's the s
 To view the complete information:
 * use `<command> | less` to enter Linux-style `less` mode, and press `arrow` keys to scroll the screen
 * use `less last` to view the last output in `less` mode
-* run command `out` to launch the default editor to see the historial output. If the default editor is `vi`, execute `:set nowrap` and use hotkey `e/b/zL/zH` to horizontally scroll the screen.
+* run command `out` to launch the default editor to see the historical output. If the default editor is `vi`, execute `:set nowrap` and use hotkey `e/b/zL/zH` to horizontally scroll the screen.
 To change the default editor, use `set [-p] editor <executable name>`. For example, `set editor code`
 
 Releases

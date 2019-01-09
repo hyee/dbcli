@@ -24,29 +24,40 @@ col IO_REQs,LIO_req format tmb
 col IO_MB,MEM_MIN format kmg
 col CPU_TIME,CPU_WAIT,QUEUED_TM,ACT_TM for usmhd1
 col px_sess,max_ut for %.0f%%
+col comments for a70
 
-PRO DBA_RSRC_PLANS
-PRO ===============
-select * from dba_rsrc_plans;
+grid {
+    [[/*grid={topic="dba_rsrc_plans"}*/ select a.* from dba_rsrc_plans a, (select name from v$rsrc_plan) b where a.plan=b.name(+) order by nvl2(b.name,'_',a.plan)]],
+    '-',
+    {
+        [[/*grid={topic="dba_rsrc_group_mappings"}*/ select * from dba_rsrc_group_mappings]],
+        '|',
+        [[/*grid={topic="dba_rsrc_consumer_group_privs"}*/ select * from dba_rsrc_consumer_group_privs]],
+        '|',
+        [[/*grid={topic="dba_rsrc_manager_system_privs"}*/ select * from dba_rsrc_manager_system_privs]]
+    },
+    '-',
+    [[/*grid={topic="dba_rsrc_plan_directives"}*/ 
+      select nvl2(a.name,'$GREPCOLOR$','')||PLAN plan,
+             GROUP_OR_SUBPLAN,TYPE,&ver1.p1 p1,&ver1.p2 p2,&ver1.p3 p3,&ver1.p4 p4,&ver1.p5 p5,&ver1.p6 p6,&ver1.p7 p7,&ver1.p8 p8,
+             '|' "|",ACTIVE_SESS_POOL_P1 sess,QUEUEING_P1 timeout,
+             '|' "|",&ver2 max_px,PARALLEL_DEGREE_LIMIT_P1 max_dop,PARALLEL_QUEUE_TIMEOUT TIMEOUT,
+             &ver4 PARALLEL_STMT_CRITICAL critical,
+             '|' "|",MAX_EST_EXEC_TIME max_ela,undo_pool undo,MAX_IDLE_TIME max_idle,MAX_IDLE_BLOCKER_TIME max_blkr,
+             &ver4 '|' "|",UTILIZATION_LIMIT MAX_UT,
+             '|' "|",SWITCH_GROUP SWITCH_TO, SWITCH_FOR_CALL FOR_CALL,SWITCH_TIME CALL_TIME,
+             &ver4 SWITCH_ELAPSED_TIME ALL_TIME,
+             SWITCH_IO_MEGABYTES*1024*1024 IO_MB, 
+             SWITCH_IO_REQS IO_REQs
+             &ver4 ,SWITCH_IO_LOGICAL LIO_req
+             ,b.status
+      FROM   (select name from v$rsrc_plan) a,dba_rsrc_plan_directives b
+      where  b.plan=a.name(+)
+      ORDER  by nvl2(a.name,1,2),1,2]]
+};
 
-PRO DBA_RSRC_PLAN_DIRECTIVES
-PRO ========================
-select nvl2(a.name,'$GREPCOLOR$','')||PLAN plan,
-       GROUP_OR_SUBPLAN,TYPE,&ver1.p1 p1,&ver1.p2 p2,&ver1.p3 p3,&ver1.p4 p4,&ver1.p5 p5,&ver1.p6 p6,&ver1.p7 p7,&ver1.p8 p8,
-       '|' "|",ACTIVE_SESS_POOL_P1 sess,QUEUEING_P1 timeout,
-       '|' "|",&ver2 max_px,PARALLEL_DEGREE_LIMIT_P1 max_dop,PARALLEL_QUEUE_TIMEOUT TIMEOUT,
-       &ver4 PARALLEL_STMT_CRITICAL critical,
-       '|' "|",MAX_EST_EXEC_TIME max_ela,undo_pool undo,MAX_IDLE_TIME max_idle,MAX_IDLE_BLOCKER_TIME max_blkr,
-       &ver4 '|' "|",UTILIZATION_LIMIT MAX_UT,
-       '|' "|",SWITCH_GROUP SWITCH_TO, SWITCH_FOR_CALL FOR_CALL,SWITCH_TIME CALL_TIME,
-       &ver4 SWITCH_ELAPSED_TIME ALL_TIME,
-       SWITCH_IO_MEGABYTES*1024*1024 IO_MB, 
-       SWITCH_IO_REQS IO_REQs
-       &ver4 ,SWITCH_IO_LOGICAL LIO_req
-FROM   (select name from v$rsrc_plan) a,dba_rsrc_plan_directives b
-where  b.plan=a.name(+)
-ORDER  by nvl2(a.name,1,2),1,2;
 
+PRO
 PRO GV$RSRC_PLANS
 PRO ===============
 select &ver5 from gv$rsrc_plan
@@ -100,6 +111,7 @@ DECLARE
             WHERE  a.PLAN IN (SELECT PLAN FROM plans UNION SELECT group_or_subplan FROM plans)
             AND    NVL(A.STATUS, ' ') != 'PENDING'
             AND    NVL(B.STATUS, ' ') != 'PENDING'
+            AND    NVL(C.STATUS, ' ') != 'PENDING'
             ORDER  BY 1;
     
         CURSOR c_cons_grp_map(V_CONS_GRP IN VARCHAR2) IS
@@ -109,12 +121,7 @@ DECLARE
             AND    NVL(STATUS, ' ') != 'PENDING';
         CURSOR c_cons_grp_privs(V_CONS_GRP IN VARCHAR2) IS
             SELECT grantee,
-                   CASE
-                       WHEN grant_option = 'YES' THEN
-                        'TRUE'
-                       ELSE
-                        'FALSE'
-                   END grant_option
+                   CASE WHEN grant_option = 'YES' THEN 'TRUE' ELSE 'FALSE' END grant_option
             FROM   DBA_RSRC_CONSUMER_GROUP_PRIVS
             WHERE  granted_group = V_CONS_GRP;
     
