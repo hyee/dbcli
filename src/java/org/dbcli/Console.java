@@ -44,7 +44,7 @@ public final class Console {
     Display display;
     long threadID;
     HashMap<String, Candidate[]> candidates = new HashMap<>(1024);
-    MyCompleter completer = new MyCompleter();
+    MyCompleter completer = new MyCompleter(this);
     boolean isPrompt = true;
     boolean isJansiConsole = false;
     ArrayList<AttributedString> titles = new ArrayList<>(2);
@@ -55,7 +55,7 @@ public final class Console {
     private char[] keys;
     private EventCallback callback;
     private ParserCallback parserCallback;
-    private MyParser parser;
+    MyParser parser;
     private volatile boolean pause = false;
     private MyHistory history = new MyHistory();
 

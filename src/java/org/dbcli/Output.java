@@ -1,5 +1,7 @@
 package org.dbcli;
 
+import com.naef.jnlua.LuaTable;
+
 import java.io.PrintWriter;
 import java.io.Writer;
 import java.util.regex.Pattern;
@@ -23,7 +25,7 @@ public final class Output extends PrintWriter {
     }
 
     public void addln(final String str) {
-        buff.append(str + "\n");
+        append(str + "\n");
         flush();
     }
 
@@ -33,10 +35,13 @@ public final class Output extends PrintWriter {
         flush();
     }
 
-    public String[] lines() {
+    private LuaTable table= new LuaTable(new String[0]);
+    public LuaTable lines() {
         isMore = false;
-        if (buff.length() == 0) return new String[0];
-        String[] array = p.split(buff.toString());
-        return array;
+        if (buff.length() == 0) table.setTable(new String[0]);
+        else {
+            table.setTable(p.split(buff.toString()));
+        }
+        return table;
     }
 }

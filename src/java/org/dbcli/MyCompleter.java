@@ -12,10 +12,16 @@ import static org.jline.builtins.Completers.TreeCompleter.Node;
 import static org.jline.builtins.Completers.TreeCompleter.node;
 
 public class MyCompleter implements org.jline.reader.Completer {
+
     StringsCompleter keysWordCompeleter = new StringsCompleter();
     TreeCompleter commandCompleter = new TreeCompleter();
     HashMap<String, Boolean> keywords = new HashMap<>();
     HashMap<String, HashMap<String, Boolean>> commands = new HashMap<>();
+    Console console;
+
+    public MyCompleter(Console console) {
+        this.console = console;
+    }
 
     void setKeysWords(Map<String, ?> keywords) {
         Set<String> keys = keywords.keySet();
@@ -67,10 +73,11 @@ public class MyCompleter implements org.jline.reader.Completer {
 
     @Override
     public void complete(LineReader lineReader, ParsedLine parsedLine, List<Candidate> list) {
-        final int index = parsedLine.wordIndex();
+        int index = parsedLine.wordIndex();
         final int prev = Math.max(0, index - 1);
         final List<String> words = parsedLine.words().subList(prev, index + 1);
         final String key = words.get(0).toUpperCase();
+        index += console.parser.lines * 10;
         if (index == 1 && commands.get(key) != null && commands.get(key).size() > 0)
             commandCompleter.complete(lineReader, parsedLine, list);
         else if (index > 0) {

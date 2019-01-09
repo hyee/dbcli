@@ -239,7 +239,6 @@ function ResultSet:rows(rs,count,limit,null_value)
     null_value=null_value or ""
     if count~=0 then
         rows=loader:fetchResult(rs,count)
-
         local maxsiz=cfg.get("COLSIZE")
         for i=1,#rows do
             for j=1,cols do

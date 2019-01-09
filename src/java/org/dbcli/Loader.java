@@ -411,13 +411,10 @@ public class Loader {
     public LuaTable fetchResult(final ResultSet rs, final int rows) throws Exception {
         if (rs.getStatement().isClosed() || rs.isClosed()) throw CancelError;
         setCurrentResultSet(rs);
-        return new LuaTable((Object[]) asyncCall(new Callable() {
-            @Override
-            public Object[] call() throws Exception {
-                try (ResultSetHelperService helper = new ResultSetHelperService(rs)) {
-                    helper.IS_TRIM = false;
-                    return (rows >= 0 && rows <= 10000) ? helper.fetchRows(rows) : helper.fetchRowsAsync(rows);
-                }
+        return new LuaTable((Object[]) asyncCall(() -> {
+            try (ResultSetHelperService helper = new ResultSetHelperService(rs)) {
+                helper.IS_TRIM = false;
+                return (rows >= 0 && rows <= 10000) ? helper.fetchRows(rows) : helper.fetchRowsAsync(rows);
             }
         }));
     }

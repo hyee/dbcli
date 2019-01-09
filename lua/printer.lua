@@ -37,6 +37,7 @@ function printer.set_more(stmt)
 end
 
 function printer.more(output)
+    if printer.grid_title_lines < -10 then printer.grid_title_lines=0 end
     local done,err=pcall(console.less,console,output,math.abs(printer.grid_title_lines),#(env.space))
 end
 
@@ -59,7 +60,7 @@ function printer.print(...)
     local termout=env.set.get('TERMOUT')=='on'
     for i=1,select('#',...) do
         local v=select(i,...)
-        if v~='__BYPASS_GREP__' and v~='__BYPASS_GREP_GRID__' then 
+        if type(v)~="string" or not v:find('__BYPASS_',1,true) then 
             output[i]=tostring(v)
         else
             ignore=v
@@ -227,7 +228,9 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
     more_text[#more_text+1]=env.space..str
     more_text.lines=more_text.lines+1
     if more_text.lines<=10 then
-        if printer.grid_title_lines>0 and tonumber(row[0]) and tonumber(row[0])>0 then
+        if printer.grid_title_lines <0 and tonumber(row[0]) and tonumber(row[0])==0 then
+            printer.grid_title_lines=-99
+        elseif printer.grid_title_lines>0 and tonumber(row[0]) and tonumber(row[0])>0 then
             printer.grid_title_lines=-(printer.grid_title_lines)
         elseif printer.grid_title_lines>=0 and include_head and (not row[0] or row[0]==0) then 
             printer.grid_title_lines=more_text.lines

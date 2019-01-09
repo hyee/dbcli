@@ -400,7 +400,7 @@ end
 
 function env.warn(...)
     local str,count=env.format_error(nil,...)
-    if str and str~='' then print(str,'__BYPASS_GREP__') end
+    if str and str~='' then print(str,'__BYPASS_ERROR__') end
 end
 
 function env.raise_error(...)
