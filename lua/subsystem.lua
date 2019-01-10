@@ -78,6 +78,7 @@ function system:make_native_command(arg)
 end
 
 function system:call_process(cmd,is_native)
+    if cmd=='\1' then cmd='' end
     if not self.process or is_native==true then
         local args=env.parse_args(99,cmd or "") or {}
         for i=1,#args do
@@ -163,7 +164,11 @@ function system:call_process(cmd,is_native)
     elseif command=='EXIT' then
         return self:terminate()
     end
+
+   
+    self.enter_flag=true 
     self:run_command(cmd,true)
+
 end
 
 function system:__onload()

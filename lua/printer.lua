@@ -22,6 +22,15 @@ function printer.load_text(text)
     printer.print(event.callback("BEFORE_PRINT_TEXT",{text or ""})[1])
 end
 
+local function read_output_from_java()
+    local lines=writer:lines()
+    local space=env.space
+    for i=1,#lines do
+        more_text[#more_text+1]=space..lines[i]
+    end
+    more_text.lines=more_text.lines+#lines
+end
+
 function printer.set_more(stmt)
     env.checkerr(stmt,"Usage: more <select statement>|<other command>")
     printer.is_more=true
@@ -32,13 +41,7 @@ function printer.set_more(stmt)
         printer.grid_title_lines=0
         pcall(env.eval_line,stmt,true,true)
     end
-    printer.is_more=false
-    local lines=writer:lines()
-    local space=env.space
-    for i=1,#lines do
-        more_text[#more_text+1]=space..lines[i]
-    end
-    more_text.lines=more_text.lines+#lines
+    read_output_from_java()
     printer.more()
 end
 
@@ -222,6 +225,11 @@ function printer.after_command()
     if printer.tee_hdl then 
         printer.tee_after()
     end
+
+    if more_text.lines==0 and not printer.is_more then
+        read_output_from_java()
+    end
+
     if more_text.lines>0 then
         flush_buff(table.concat(more_text,'\n'), more_text.lines)
     end
@@ -322,7 +330,6 @@ function printer.edit_buffer(file,default_file,text)
         os.execute(editor..' "'..f..'"')
     end 
 end
-
 
 _G.print=printer.print
 _G.rawprint=printer.rawprint

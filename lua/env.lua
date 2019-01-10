@@ -692,10 +692,13 @@ end
 
 local function _eval_line(line,exec,is_internal,not_skip)
     if type(line)~='string' or line:gsub('%s+','')=='' then
-        if is_internal and multi_cmd then return env.force_end_input(exec,is_internal) end
-        return 
+        if env._SUBSYSTEM then
+            line='\1'
+        else
+            if is_internal and multi_cmd then return env.force_end_input(exec,is_internal) end
+            return 
+        end
     end
-
     local subsystem_prefix=""
     --Remove BOM header
     if not env.pending_command() then
@@ -735,7 +738,6 @@ local function _eval_line(line,exec,is_internal,not_skip)
                 end
             end
         end
-        
     end
 
     local function check_multi_cmd(lineval)
@@ -813,18 +815,14 @@ function env.parse_line(line,exec)
     local is_not_end,cnt=true,0
     for w in line:gsplit('\n',true) do
         cnt=cnt+1
-        if #_line_stacks>0 or w:trim()~='' then
-            _line_stacks[#_line_stacks+1]=w
-            if is_not_end then
-                _cmd,_args,_errs=_eval_line(w,false)
-                is_not_end=env.CURRENT_PROMPT==env.MTL_PROMPT
-                if not is_not_end then
-                    full_text=table.concat(_line_stacks,'\n')
-                    _line_stacks={}
-                end
+        _line_stacks[#_line_stacks+1]=w
+        if is_not_end then
+            _cmd,_args,_errs=_eval_line(w,false)
+            is_not_end=env.CURRENT_PROMPT==env.MTL_PROMPT
+            if not is_not_end then
+                full_text=table.concat(_line_stacks,'\n')
+                _line_stacks={}
             end
-        elseif not exec and cnt==1 then
-            is_not_end,_cmd,_args,_errs=false
         end
     end
 

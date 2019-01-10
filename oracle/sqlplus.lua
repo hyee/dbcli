@@ -146,7 +146,7 @@ function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
         content=content:format(self.work_path,file_dir,self.script_dir,context,file,param):gsub('[\n\r]+%s+','\n')..'\n'
         f:write(content)
         f:close()
-        self:call_process('@"'..tmpfile..'"')
+        self:call_process('@"'..tmpfile..'"',true,true)
     end
 end
 

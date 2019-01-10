@@ -200,11 +200,13 @@ public class SubSystem {
                 if (!flag) return;
                 flag = false;
                 String line = sb.toString();
+                sb.setLength(0);
                 if (p.matcher(line).find()) {
-                    sb.setLength(0);
                     lock.countDown();
                     isWaiting = false;
                     lastPrompt = line;
+                } else {
+                    print(line);
                 }
             }
         };
