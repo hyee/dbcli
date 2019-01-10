@@ -692,7 +692,7 @@ end
 
 local function _eval_line(line,exec,is_internal,not_skip)
     if type(line)~='string' or line:gsub('%s+','')=='' then
-        if env._SUBSYSTEM then
+        if env._SUBSYSTEM and not dbcli_current_item.skip_subsystem and line:gsub('%s+','')=='' then
             line='\1'
         else
             if is_internal and multi_cmd then return env.force_end_input(exec,is_internal) end

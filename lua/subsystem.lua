@@ -132,7 +132,9 @@ function system:call_process(cmd,is_native)
             local line=self:make_native_command(args)
             env.log_debug("subsystem","SQL: "..line)
             terminal:echo(true)
-            os.execute(line)
+            terminal:pause()
+            pcall(os.execute,line)
+            terminal:resume()
             return
         end
     end
@@ -178,7 +180,7 @@ function system:__onload()
                     help_func=self.description,
                     call_func=self.call_process,
                     is_multiline=false,parameters=2,color="PROMPTSUBCOLOR",
-                    is_blocknewline=self.block_input and true or false}
+                    is_blocknewline=false}
     env.event.snoop("BEFORE_COMMAND",self.kill_reader,self,1)
 end
 

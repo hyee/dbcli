@@ -4,6 +4,7 @@ import com.zaxxer.nuprocess.NuAbstractProcessHandler;
 import com.zaxxer.nuprocess.NuProcess;
 import com.zaxxer.nuprocess.NuProcessBuilder;
 
+import java.io.Closeable;
 import java.io.File;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -13,7 +14,7 @@ import java.util.TreeMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 
 public class SubSystem {
@@ -164,6 +165,7 @@ public class SubSystem {
 
     public void close() {
         Interrupter.listen(this, null);
+        isEOF = true;
         isWaiting = false;
         isBreak = false;
         if (process == null) return;
@@ -177,13 +179,52 @@ public class SubSystem {
     ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(1);
 
     class ProcessHandler extends NuAbstractProcessHandler {
-        private NuProcess nuProcess;
-        private char lastChar;
+        private ReentrantLock writeLock = new ReentrantLock();
+        private Closeable clo = writeLock::unlock;
+        private volatile char lastChar;
         private StringBuffer sb = new StringBuffer();
+        private volatile int counter = 0;
+        Runnable checker = new Runnable() {
+            @Override
+            public void run() {
+                String line;
+                boolean isPrompt;
+                while (!isEOF) try {
+                    Thread.sleep(16L);
+                    if (lastChar != '\n' && sb.length() > 0) {
+                        if (!writeLock.tryLock()) continue;
+                        line = sb.toString();
+                        isPrompt = !process.hasPendingWrites() && p.matcher(line).find();
+                        if (counter > 0) {
+                            if (isPrompt) {
+                                counter = counter + 1;
+                                if (counter >= 5) {
+                                    sb.setLength(0);
+                                    lock.countDown();
+                                    lastPrompt = line;
+                                    isWaiting = false;
+                                    counter = 0;
+                                }
+                            } else counter = 0;
+                        } else if (isPrompt) {
+                            counter = 1;
+                        } else {
+                            sb.setLength(0);
+                            print(line);
+                        }
+                        writeLock.unlock();
+                    }
+                } catch (InterruptedException e2) {
+                    break;
+                }
+            }
+        };
+        Thread t = new Thread(checker);
 
         @Override
         public void onStart(NuProcess nuProcess) {
-            this.nuProcess = nuProcess;
+            t.setDaemon(true);
+            t.start();
         }
 
         @Override
@@ -193,32 +234,15 @@ public class SubSystem {
             lock.countDown();
         }
 
-        private volatile boolean flag = false;
-        Runnable checker = new Runnable() {
-            @Override
-            public void run() {
-                if (!flag) return;
-                flag = false;
-                String line = sb.toString();
-                sb.setLength(0);
-                if (p.matcher(line).find()) {
-                    lock.countDown();
-                    isWaiting = false;
-                    lastPrompt = line;
-                } else {
-                    print(line);
-                }
-            }
-        };
 
         @Override
         public void onStdout(ByteBuffer buffer, boolean closed) {
-            flag = false;
             byte[] bytes = new byte[buffer.remaining()];
             buffer.get(bytes);
-            lastChar = '\n';
             isEOF = closed;
             isWaiting = true;
+            writeLock.lock();
+            counter = 0;
             for (byte c : bytes) {
                 lastChar = (char) c;
                 sb.append(lastChar);
@@ -228,21 +252,18 @@ public class SubSystem {
                     sb.setLength(0);
                 }
             }
-            if (lastChar != '\n' && !isEOF) {
+            if (closed && sb.length() > 0) {
                 String line = sb.toString();
-                if (!process.hasPendingWrites() && p.matcher(line).find()) {
-                    flag = true;
-                    threadPool.schedule(checker, 50, TimeUnit.MILLISECONDS);
-                } else {
-                    sb.setLength(0);
-                    print(line);
-                }
+                sb.setLength(0);
+                print(line);
             }
+            writeLock.unlock();
         }
 
         @Override
         public void onExit(int statusCode) {
             close();
+            t = null;
         }
     }
 }
