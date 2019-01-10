@@ -278,7 +278,7 @@ public final class Console {
         return display.wcwidth(str);
     }
 
-    public void less(String output, int titleLines, int spaces) throws Exception {
+    public void less(String output, int titleLines, int spaces, int lines) throws Exception {
         Source source = new Source() {
             @Override
             public String getName() {
@@ -293,6 +293,7 @@ public final class Console {
         Less less = new Less(terminal);
         less.veryQuiet = true;
         less.padding = spaces;
+        less.numWidth = (int) Math.max(3, Math.ceil(Math.log10(lines < 10 ? 10 : lines)));
         less.setTitleLines(titleLines);
         less.chopLongLines = true;
         less.quitIfOneScreen = true;

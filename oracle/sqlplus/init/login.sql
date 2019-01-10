@@ -1,5 +1,5 @@
-SET ECHO OFF VERIFY OFF SERVEROUTPUT ON SIZE 1000000 TRIMSPOOL ON LONG 80000 LINESIZE 3000 PAGESIZE 9999 ARRAYSIZE 300
-set trimout on trimspool on flagger off tab off arraysize 100 sqlbl on
+SET ECHO OFF VERIFY OFF SERVEROUTPUT ON SIZE 1000000 TRIMSPOOL ON LONG 80000 LINESIZE 4000 PAGESIZE 9999 ARRAYSIZE 512
+set trimout on trimspool on flagger off tab off sqlbl on
 set describe depth all
 set termout off
 set lobprefetch 2000

@@ -20,7 +20,6 @@ function printer.set_more(stmt)
     env.checkerr(stmt,"Usage: more <select statement>|<other command>")
     printer.is_more=true
     out.isMore=true
-    printer.grid_title_lines=0
     if stmt:upper()~='LAST' then
         more_text={lines=0}
         out:clear()
@@ -29,16 +28,17 @@ function printer.set_more(stmt)
     end
     printer.is_more=false
     local lines=writer:lines()
+    local space=env.space
     for i=1,#lines do
-        more_text[#more_text+1]=lines[i]
+        more_text[#more_text+1]=space..lines[i]
     end
     more_text.lines=more_text.lines+#lines
-    printer.more(table.concat(more_text,'\n'))
+    printer.more()
 end
 
 function printer.more(output)
     if printer.grid_title_lines < -10 then printer.grid_title_lines=0 end
-    local done,err=pcall(console.less,console,output,math.abs(printer.grid_title_lines),#(env.space))
+    local done,err=pcall(console.less,console,table.concat(more_text,'\n'),math.abs(printer.grid_title_lines),#(env.space),more_text.lines)
 end
 
 function printer.rawprint(...)
@@ -352,15 +352,17 @@ function printer.onload()
     Example: select * from dba_objects|@@NAME
     Key Maps:
         exit       :  q or :q or ZZ
-        scroll next  page :  <space> or f or ctrl+f or ctrl+v
-        scroll prev  page :  b or ctrl+b or alt+v
-        scroll first page :  < or alt+< or g
-        scroll last  page :  > or alt+> or G
-        scroll half right : ) or right
-        scroll half left  : ( or left
-        scroll half down  : d or ctrl+d
-        scroll half up    : u or ctrl+u
-        /<keyword>        : search
+        down  page :  <space> or f or ctrl+f or ctrl+v
+        up    page :  b or ctrl+b or alt+v
+        first page :  < or alt+< or g
+        last  page :  > or alt+> or G
+        left  page :  [ or home
+        right page :  ] or end 
+        right half page:  ) or right
+        left  half page:  ( or left
+        down  half page:  d or ctrl+d
+        up    half page:  u or ctrl+u
+        /<keyword> :  search
         enable/disable line number: l or L
     ]]
     env.set_command(nil,"grep",grep_help,{printer.grep,printer.grep_after},'__SMART_PARSE__',3,false,false,true)

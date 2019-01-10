@@ -323,6 +323,12 @@ public class Less {
                             case RIGHT_ONE_HALF_SCREEN:
                                 firstColumnToDisplay += size.getColumns() / 2;
                                 break;
+                            case RIGHT_FRIST_COLUMN:
+                                firstColumnToDisplay += Integer.MAX_VALUE;
+                                break;
+                            case LEFT_FRIST_COLUMN:
+                                firstColumnToDisplay = 0;
+                                break;
                             case REPEAT_SEARCH_BACKWARD:
                             case REPEAT_SEARCH_BACKWARD_SPAN_FILES:
                                 moveToPreviousMatch();
@@ -411,6 +417,7 @@ public class Less {
                 terminal.writer().flush();
             }
         } finally {
+            lines = null;
             reader.close();
         }
     }
@@ -716,6 +723,8 @@ public class Less {
         map.bind(Operation.BACKWARD_HALF_WINDOW_AND_SET, "u", ctrl('U'));
         map.bind(Operation.RIGHT_ONE_HALF_SCREEN, alt(')'), key(terminal, Capability.key_right));
         map.bind(Operation.LEFT_ONE_HALF_SCREEN, alt('('), key(terminal, Capability.key_left));
+        map.bind(Operation.RIGHT_FRIST_COLUMN, key(terminal, Capability.key_end), "]");
+        map.bind(Operation.LEFT_FRIST_COLUMN, key(terminal, Capability.key_home), "[");
         map.bind(Operation.FORWARD_FOREVER, "F");
         map.bind(Operation.REPEAT_SEARCH_FORWARD, "n", "N");
         map.bind(Operation.REPEAT_SEARCH_FORWARD_SPAN_FILES, alt('n'), alt('N'));
@@ -746,6 +755,8 @@ public class Less {
         BACKWARD_HALF_WINDOW_AND_SET,
         LEFT_ONE_HALF_SCREEN,
         RIGHT_ONE_HALF_SCREEN,
+        LEFT_FRIST_COLUMN,
+        RIGHT_FRIST_COLUMN,
         FORWARD_FOREVER,
         REPAINT,
         REPAINT_AND_DISCARD,
