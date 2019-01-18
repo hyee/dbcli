@@ -84,7 +84,11 @@ grid {[[
             WHERE  conftype = 'AWRXML')
     GROUP  BY ROLLUP(CELL)
 ]],'-',[[
-        SELECT * FROM (
+    WITH gstats as(
+        SELECT nvl(cell_hash,0) cellhash,metric_name n, sum(metric_value) v
+        FROM  v$cell_global
+        group by metric_name,rollup(cell_hash))
+    SELECT * FROM (
         SELECT  NVL((SELECT extractvalue(xmltype(c.confval), '/cli-output/context/@cell')
                         FROM   v$cell_config c
                         WHERE  c.CELLNAME = a.CELLNAME
@@ -106,112 +110,115 @@ grid {[[
                             siz INT path 'size',
                             freeSpace INT path 'freeSpace') b
                 WHERE  conftype = 'CELLDISKS') a
-        GROUP  BY rollup((cellname,CELLHASH))) 
-        RIGHT JOIN (
-            SELECT * FROM (
-                SELECT nvl(cell_hash,0) cellhash,metric_name n, sum(metric_value) v 
-                FROM  v$cell_global 
-                WHERE metric_name LIKE '%alloc%' OR metric_name LIKE '%use%' 
-                group by metric_name,rollup(cell_hash)
-            ) PIVOT (
-                MAX(v) FOR n IN(
-                'Flash cache bytes allocated' AS "Alloc|FCache",
-                'Flash cache bytes allocated for OLTP data' AS "Alloc|OLTP",
-                'Flash cache bytes allocated for unflushed data' AS "Alloc|Dirty",
-                'Flash cache bytes used' AS "FCache|Used",
-                'Flash cache bytes used for OLTP data' AS "Used|OLTP",
-                'Flash cache bytes used - columnar' AS "Used|FCC",
-                'Flash cache bytes used - keep objects' AS "FCache|Keep",
-                'Flash cache bytes allocated for OLTP keep objects' AS  "Keep|OLTP",
-                'Flash cache bytes used - columnar keep' AS "Keep|FCC",
-                '|' as "|",
-                'RAM cache bytes allocated' as "Alloc|RAM",
-                'RAM cache bytes allocated for OLTP data' as "RAM|OLTP"))) b 
-        USING(cellhash)
+        GROUP  BY rollup((cellname,CELLHASH)))
+    RIGHT JOIN (
+        select cellhash,
+               round(sum(decode(n,'RAM cache read requests hit',v))/nullif(sum(decode(n,'RAM cache read requests hit',v,'RAM cache read misses',v)),0)*100,2) "RAM|HIT",
+               round(sum(decode(n,'Flash cache read requests hit',v))/nullif(sum(decode(n,'Flash cache read requests hit',v,'Flash cache misses and partial hits',v)),0)*100,2) "FC|HIT",
+               round(sum(decode(n,'Flash cache read requests - columnar',v))/nullif(sum(decode(n,'Flash cache columnar read requests eligible',v)),0)*100,2) "FCC|HIT",
+               '|' "|"
+        from gstats
+        group by cellhash) USING(cellhash)
+    RIGHT JOIN (
+        SELECT * FROM gstats PIVOT (
+            MAX(v) FOR n IN(
+            'Flash cache bytes allocated' AS "Alloc|FCache",
+            'Flash cache bytes allocated for OLTP data' AS "Alloc|OLTP",
+            'Flash cache bytes allocated for unflushed data' AS "Alloc|Dirty",
+            'Flash cache bytes used' AS "FCache|Used",
+            'Flash cache bytes used for OLTP data' AS "Used|OLTP",
+            'Flash cache bytes used - columnar' AS "Used|FCC",
+            'Flash cache bytes used - keep objects' AS "FCache|Keep",
+            'Flash cache bytes allocated for OLTP keep objects' AS  "Keep|OLTP",
+            'Flash cache bytes used - columnar keep' AS "Keep|FCC",
+            '|' as "|",
+            'RAM cache bytes allocated' as "Alloc|RAM",
+            'RAM cache bytes allocated for OLTP data' as "RAM|OLTP"))) b 
+    USING(cellhash)
 ]],'-',[[
-        WITH grid AS(
-                SELECT cellDisk,
-                       DISKGROUP,
-                       SUM(decode(diskType, 'HardDisk', 1, 0)) hd,
-                       SUM(decode(diskType, 'HardDisk', 0, 1)) fd,
-                       sum(errors) errors,
-                       sum(decode(status,'active',0,decode(trim(asmDiskName),'',0,1))) offlines,
-                       sum(siz) siz,
-                       sum(decode(trim(asmDiskName),'',siz,0)) usize,
-                       max(decode(trim(trim('"' from cachedBy)),'','N','Y')) fc
-                FROM   v$cell_config a,
-                        XMLTABLE('/cli-output/griddisk' PASSING xmltype(a.confval) COLUMNS --
-                                cellDisk VARCHAR2(300) path 'cellDisk', "name" VARCHAR2(300) path 'name', diskType VARCHAR2(300) path 'diskType',
-                                errors VARCHAR2(300) path 'errorCount',
-                                siz INT path 'size',
-                                status varchar2(30) path 'status',
-                                DISKGROUP VARCHAR2(300) path 'asmDiskGroupName', asmDiskName VARCHAR2(300) path 'asmDiskName',
-                                FAILGROUP VARCHAR2(300) path 'asmFailGroupName', "availableTo" VARCHAR2(300) path 'availableTo',
-                                cachedBy VARCHAR2(300) path 'cachedBy', "cachingPolicy" VARCHAR2(300) path 'cachingPolicy',
-                                "creationTime" VARCHAR2(300) path 'creationTime', "id" VARCHAR2(300) path 'id') b
-                WHERE  conftype = 'GRIDDISKS'
-                group  by DISKGROUP,celldisk),
-             cell as(
-                SELECT extractvalue(xmltype(a.confval),'/cli-output/context/@cell') cell, b.*
-                FROM   v$cell_config a,
-                       XMLTABLE('//celldisk' PASSING xmltype(a.confval) COLUMNS --
-                                cellDisk VARCHAR2(300) path 'name',
-                                siz INT path 'size',
-                                diskType VARCHAR2(300) path 'diskType',
-                                errors int path 'errorCount',
-                                freeSpace INT path 'freeSpace') b
-                WHERE  conftype = 'CELLDISKS'),
-             storage as(
-                  select nvl(DISKGROUP,'(Free)') DISKGROUP,
-                         sum(nvl(hd,decode(diskType, 'HardDisk', 1, 0))) hd,
-                         sum(nvl(fd,decode(diskType, 'HardDisk', 0, 1))) fd,
-                         sum(nvl(offlines,1)) offlines,
-                         sum(nvl(g.errors,0)) errors,
-                         sum(nvl(g.siz,c.siz)) gsize,
-                         sum(c.siz-c.freeSpace-nvl(g.siz,0)) csize, 
-                         sum(c.freeSpace+nvl(g.usize,0)) usize,
-                         max(fc) fc
-                  from   cell c left join grid g using(cellDisk)
-                  group  by diskgroup
-                )
-        SELECT  /*+no_merge(c) no_merge(a) use_hash(c a)*/
-                DISTINCT a.*, listagg(decode(mod(r,8),0,chr(10),'')||tbs,',') WITHIN GROUP(ORDER BY tbs) OVER(PARTITION BY DISKGROUP) tablespaces
-        FROM   (SELECT  /*+no_merge(c) no_merge(b) use_hash(c b a)*/
-                        nvl(diskgroup,'--TOTAL--') diskgroup,
-                        a.type type,
-                        a.DATABASE_COMPATIBILITY "DB_COMP",
-                        SUM(hd)  "Hard|Disks",
-                        SUM(fd) "Flash|Disks",
-                        sum(greatest(nvl(a.OFFLINE_DISKS,0),b.offlines)) "Offline|Disks",
-                        sum(b.errors) errs,
-                        MAX(fc) "Flash|Cache",
-                        sum(gsize) "Disk|Size",
-                        SUM(a.TOTAL_MB) * 1024 * 1024 "Disk Group|Total Size",
-                        SUM(a.FREE_MB) * 1024 * 1024 "Disk Group|Free Size",
-                        sum(a.USABLE_FILE_MB) * 1024 * 1024 "Usable|Size"
-                        --,regexp_replace(listagg(b.FAILGROUP, '/') WITHIN GROUP(ORDER BY b.failgroup), '([^/]+)(/\1)+', '\1') failgroups
-                FROM    storage b,
-                        v$asm_diskgroup a
-                WHERE  a.name(+) = b.DISKGROUP
-                GROUP  BY rollup((DISKGROUP,type,DATABASE_COMPATIBILITY))) a,
-        (SELECT c.*,row_number() over(PARTITION by dg order by tbs) r
-         FROM
-            (SELECT DISTINCT tbs, regexp_substr(FILE_NAME, '[^\+\\\/]+') dg
-                    FROM   (SELECT TABLESPACE_NAME tbs, file_name
-                            FROM   dba_data_files
-                            UNION ALL
-                            SELECT TABLESPACE_NAME tbs, file_name
-                            FROM   dba_temp_files
-                            UNION ALL
-                            SELECT '(Redo)' tbs, MEMBER
-                            FROM   gv$logfile
-                            UNION ALL
-                            SELECT '(FlashBack)', NAME
-                            FROM   V$FLASHBACK_DATABASE_LOGFILE
-                            WHERE  ROWNUM <= 30
-                            UNION ALL
-                            SELECT '(ArchivedLog)', NAME
-                            FROM   V$ARCHIVED_LOG
-                            WHERE  ROWNUM <= 30)) c) c
-            WHERE  a.DISKGROUP = c.dg(+)
-        ORDER  BY 1]]}
+    WITH grid AS(
+            SELECT cellDisk,
+                   DISKGROUP,
+                   SUM(decode(diskType, 'HardDisk', 1, 0)) hd,
+                   SUM(decode(diskType, 'HardDisk', 0, 1)) fd,
+                   sum(errors) errors,
+                   sum(decode(status,'active',0,decode(trim(asmDiskName),'',0,1))) offlines,
+                   sum(siz) siz,
+                   sum(decode(trim(asmDiskName),'',siz,0)) usize,
+                   max(decode(trim(trim('"' from cachedBy)),'','N','Y')) fc
+            FROM   v$cell_config a,
+                    XMLTABLE('/cli-output/griddisk' PASSING xmltype(a.confval) COLUMNS --
+                            cellDisk VARCHAR2(300) path 'cellDisk', "name" VARCHAR2(300) path 'name', diskType VARCHAR2(300) path 'diskType',
+                            errors VARCHAR2(300) path 'errorCount',
+                            siz INT path 'size',
+                            status varchar2(30) path 'status',
+                            DISKGROUP VARCHAR2(300) path 'asmDiskGroupName', asmDiskName VARCHAR2(300) path 'asmDiskName',
+                            FAILGROUP VARCHAR2(300) path 'asmFailGroupName', "availableTo" VARCHAR2(300) path 'availableTo',
+                            cachedBy VARCHAR2(300) path 'cachedBy', "cachingPolicy" VARCHAR2(300) path 'cachingPolicy',
+                            "creationTime" VARCHAR2(300) path 'creationTime', "id" VARCHAR2(300) path 'id') b
+            WHERE  conftype = 'GRIDDISKS'
+            group  by DISKGROUP,celldisk),
+         cell as(
+            SELECT extractvalue(xmltype(a.confval),'/cli-output/context/@cell') cell, b.*
+            FROM   v$cell_config a,
+                   XMLTABLE('//celldisk' PASSING xmltype(a.confval) COLUMNS --
+                            cellDisk VARCHAR2(300) path 'name',
+                            siz INT path 'size',
+                            diskType VARCHAR2(300) path 'diskType',
+                            errors int path 'errorCount',
+                            freeSpace INT path 'freeSpace') b
+            WHERE  conftype = 'CELLDISKS'),
+         storage as(
+              select nvl(DISKGROUP,'(Free)') DISKGROUP,
+                     sum(nvl(hd,decode(diskType, 'HardDisk', 1, 0))) hd,
+                     sum(nvl(fd,decode(diskType, 'HardDisk', 0, 1))) fd,
+                     sum(nvl(offlines,1)) offlines,
+                     sum(nvl(g.errors,0)) errors,
+                     sum(nvl(g.siz,c.siz)) gsize,
+                     sum(c.siz-c.freeSpace-nvl(g.siz,0)) csize, 
+                     sum(c.freeSpace+nvl(g.usize,0)) usize,
+                     max(fc) fc
+              from   cell c left join grid g using(cellDisk)
+              group  by diskgroup
+            )
+    SELECT  /*+no_merge(c) no_merge(a) use_hash(c a)*/
+            DISTINCT a.*, listagg(decode(mod(r,8),0,chr(10),'')||tbs,',') WITHIN GROUP(ORDER BY tbs) OVER(PARTITION BY DISKGROUP) tablespaces
+    FROM   (SELECT  /*+no_merge(c) no_merge(b) use_hash(c b a)*/
+                    nvl(diskgroup,'--TOTAL--') diskgroup,
+                    a.type type,
+                    a.DATABASE_COMPATIBILITY "DB_COMP",
+                    SUM(hd)  "Hard|Disks",
+                    SUM(fd) "Flash|Disks",
+                    sum(greatest(nvl(a.OFFLINE_DISKS,0),b.offlines)) "Offline|Disks",
+                    sum(b.errors) errs,
+                    MAX(fc) "Flash|Cache",
+                    sum(gsize) "Disk|Size",
+                    SUM(a.TOTAL_MB) * 1024 * 1024 "Disk Group|Total Size",
+                    SUM(a.FREE_MB) * 1024 * 1024 "Disk Group|Free Size",
+                    sum(a.USABLE_FILE_MB) * 1024 * 1024 "Usable|Size"
+                    --,regexp_replace(listagg(b.FAILGROUP, '/') WITHIN GROUP(ORDER BY b.failgroup), '([^/]+)(/\1)+', '\1') failgroups
+            FROM    storage b,
+                    v$asm_diskgroup a
+            WHERE  a.name(+) = b.DISKGROUP
+            GROUP  BY rollup((DISKGROUP,type,DATABASE_COMPATIBILITY))) a,
+    (SELECT c.*,row_number() over(PARTITION by dg order by tbs) r
+     FROM
+        (SELECT DISTINCT tbs, regexp_substr(FILE_NAME, '[^\+\\\/]+') dg
+                FROM   (SELECT TABLESPACE_NAME tbs, file_name
+                        FROM   dba_data_files
+                        UNION ALL
+                        SELECT TABLESPACE_NAME tbs, file_name
+                        FROM   dba_temp_files
+                        UNION ALL
+                        SELECT '(Redo)' tbs, MEMBER
+                        FROM   gv$logfile
+                        UNION ALL
+                        SELECT '(FlashBack)', NAME
+                        FROM   V$FLASHBACK_DATABASE_LOGFILE
+                        WHERE  ROWNUM <= 30
+                        UNION ALL
+                        SELECT '(ArchivedLog)', NAME
+                        FROM   V$ARCHIVED_LOG
+                        WHERE  ROWNUM <= 30)) c) c
+        WHERE  a.DISKGROUP = c.dg(+)
+    ORDER  BY 1]]}

@@ -376,7 +376,7 @@ function grid:add(row)
             if headind > 0 then v = v:gsub("[%s ]+$", ""):gsub("[ \t]+[\n\r]", "\n"):gsub("\t", '    ') end
             
             --if the column value has multiple lines, then split lines into table
-            for p in v:gmatch('([^\n\r]+)') do
+            for p in v:gsplit('\r?\n\r?') do
                 grp[#grp + 1] = p
                 --deal with unicode chars
                 local l, len = p:strip_ansi():ulen()

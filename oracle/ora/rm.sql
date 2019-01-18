@@ -23,7 +23,7 @@ col timeout,max_ela,max_idle,max_blkr,CALL_TIME,ALL_TIME for smhd1
 col IO_REQs,LIO_req format tmb
 col IO_MB,MEM_MIN format kmg
 col CPU_TIME,CPU_WAIT,QUEUED_TM,ACT_TM for usmhd1
-col px_sess,max_ut for %.0f%%
+col px_sess,max_ut for pct1
 col comments for a70
 
 grid {
@@ -44,7 +44,7 @@ grid {
              '|' "|",&ver2 max_px,PARALLEL_DEGREE_LIMIT_P1 max_dop,PARALLEL_QUEUE_TIMEOUT TIMEOUT,
              &ver4 PARALLEL_STMT_CRITICAL critical,
              '|' "|",MAX_EST_EXEC_TIME max_ela,undo_pool undo,MAX_IDLE_TIME max_idle,MAX_IDLE_BLOCKER_TIME max_blkr,
-             &ver4 '|' "|",UTILIZATION_LIMIT MAX_UT,
+             &ver4 '|' "|",UTILIZATION_LIMIT/100 MAX_UT,
              '|' "|",SWITCH_GROUP SWITCH_TO, SWITCH_FOR_CALL FOR_CALL,SWITCH_TIME CALL_TIME,
              &ver4 SWITCH_ELAPSED_TIME ALL_TIME,
              SWITCH_IO_MEGABYTES*1024*1024 IO_MB, 
@@ -163,9 +163,12 @@ DECLARE
                 END IF;
             END LOOP;
         END LOOP;
+        IF cons_grp_list.count=0 THEN
+            raise_application_error(-20001,'No such Resource Manager Plan: '||A_PLAN_NAME);
+        END IF;
 
         wr('declare', '');
-        wr('v_plan varchar2(30);');
+        wr('v_plan varchar2(128);');
         wr('begin', '');
         wr('--clear pending area, if trigger ORA-29370 then query gv$lock.type=''KM'' and then kill relative sessions');
         wr('dbms_resource_manager.clear_pending_area;');

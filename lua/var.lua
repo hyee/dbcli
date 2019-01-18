@@ -422,7 +422,7 @@ function var.define_column(col,...)
                     u[#u+2],u[#u+1]=math.floor(s/24),s%24
                     return prefix..fmt:format(u[4],u[3],u[2],u[1]):gsub("^0 ",'')
                 end
-            elseif f:find("^%%") or f:find("^PCT") or f:find("^PERCENTAGE") or f:find("^PERCENT") then
+            elseif f:find("^PCT") or f:find("^PERCENTAGE") or f:find("^PERCENT") then
                 local scal=tonumber(f:match("%d+$")) or 2
                 obj.format=function(v)
                     if not tonumber(v) then return v end
