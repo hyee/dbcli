@@ -158,13 +158,16 @@ function var.update_text(item,pos,params)
     local count=1
     local function repl(s,s2,s3)
         local v,s=s2:upper(),s..s2..s3
-        v=params[v] or var.inputs[v] or var.global_context[v] or s
-        if v~=s then
-            if v=='NEXT_ACTION' then print(env.callee(4)) end
-            if v==db_core.NOT_ASSIGNED then v='' end
-            count=count+1 
-            env.log_debug("var",s,'==>',v==nil and "<nil>" or v=="" and '<empty>' or tostring(v))
+        v=params[v] or var.inputs[v] or var.global_context[v]
+        if v==nil and tonumber(s2) then
+            v="V"..s2
+            v=params[v] or var.inputs[v] or var.global_context[v]
         end
+        if v==nil then return s end
+        if v=='NEXT_ACTION' then print(env.callee(4)) end
+        if v==db_core.NOT_ASSIGNED then v='' end
+        count=count+1 
+        env.log_debug("var",s,'==>',v==nil and "<nil>" or v=="" and '<empty>' or tostring(v))
         return v
     end
 
@@ -178,7 +181,7 @@ function var.update_text(item,pos,params)
     count=1
     while count>0 do
         count=0
-        item[pos]=item[pos]:gsub('%f[\\&](&+)([%w%_%$]+)(%.?)',repl)
+        item[pos]=item[pos]:gsub('%f[\\&](&&?)([%w%_%$]+)(%.?)',repl)
     end
 
     if org_txt then return item[1] end
@@ -419,7 +422,7 @@ function var.define_column(col,...)
                     u[#u+2],u[#u+1]=math.floor(s/24),s%24
                     return prefix..fmt:format(u[4],u[3],u[2],u[1]):gsub("^0 ",'')
                 end
-            elseif f:find("^%%") or f:find("^PCT") or f:find("^PERCENTAGE") or f:find("^PERCENT") then
+            elseif f:find("^PCT") or f:find("^PERCENTAGE") or f:find("^PERCENT") then
                 local scal=tonumber(f:match("%d+$")) or 2
                 obj.format=function(v)
                     if not tonumber(v) then return v end

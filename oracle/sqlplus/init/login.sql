@@ -1,7 +1,8 @@
-SET ECHO OFF VERIFY OFF SERVEROUTPUT ON SIZE 1000000 TRIMSPOOL ON LONG 80000 LINESIZE 3000 PAGESIZE 9999 ARRAYSIZE 300  lobprefetch 2000
-set trimout on trimspool on flagger off tab off arraysize 100 sqlbl on
+SET ECHO OFF VERIFY OFF SERVEROUTPUT ON TRIMSPOOL ON LONG 10000000 LINESIZE 4000 PAGESIZE 9999 ARRAYSIZE 512 longchunksize 32767
+set trimout on trimspool on flagger off tab off sqlbl on
 set describe depth all
 set termout off
+set lobprefetch 2000
 define prompt_name=SQL
 define prompt_sql="SELECT initcap(USER)||'@'||case when sys_context('userenv','service_name')!='SYS$USERS' then regexp_substr(sys_context('userenv','service_name'),'[^\-\.]+') else sys_context('userenv','db_name') end service_name FROM dual"
 column service_name format a50 new_value prompt_name

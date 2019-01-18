@@ -10,25 +10,44 @@ local strip_ansi=function(x) return x end
 local println,write=console.println,console.write
 local buff={ }
 local grep_fmt="%1"
+local more_text={lines=0}
+local termout='on'
+
+local function set_termout(name,value)
+    termout=value
+    return value
+end
 
 function printer.load_text(text)
     printer.print(event.callback("BEFORE_PRINT_TEXT",{text or ""})[1])
 end
 
-local more_text
+local function read_output_from_java()
+    local lines=writer:lines()
+    local space=env.space
+    for i=1,#lines do
+        more_text[#more_text+1]=space..lines[i]
+    end
+    more_text.lines=more_text.lines+#lines
+end
+
 function printer.set_more(stmt)
     env.checkerr(stmt,"Usage: more <select statement>|<other command>")
     printer.is_more=true
-    printer.grid_title_lines=0
-    more_text={lines=0}
-    if stmt then pcall(env.eval_line,stmt,true,true) end
-    printer.is_more=false
-    printer.more(table.concat(more_text,'\n'))
-    more_text={}
+    out.isMore=true
+    if stmt:upper()~='LAST' then
+        more_text={lines=0}
+        out:clear()
+        printer.grid_title_lines=0
+        pcall(env.eval_line,stmt,true,true)
+    end
+    read_output_from_java()
+    printer.more()
 end
 
 function printer.more(output)
-    local done,err=pcall(console.less,console,output,math.abs(printer.grid_title_lines),#(env.space))
+    if printer.grid_title_lines < -10 then printer.grid_title_lines=0 end
+    local done,err=pcall(console.less,console,table.concat(more_text,'\n'),math.abs(printer.grid_title_lines),#(env.space),more_text.lines)
 end
 
 function printer.rawprint(...)
@@ -47,10 +66,9 @@ end
 function printer.print(...)
     local output,found,ignore,rows={}
     --if not env.set then return end
-    local termout=env.set.get('TERMOUT')=='on'
     for i=1,select('#',...) do
         local v=select(i,...)
-        if v~='__BYPASS_GREP__' and v~='__BYPASS_GREP_GRID__' then 
+        if type(v)~="string" or not v:find('__BYPASS_',1,true) then 
             output[i]=tostring(v)
         else
             ignore=v
@@ -82,12 +100,10 @@ function printer.print(...)
             pcall(printer.tee_hdl.write,printer.tee_hdl,strip_ansi(output).."\n")
         end
     end
-    if not printer.tee_hdl and ignore~='__BYPASS_GREP__' then
-        if printer.is_more then 
-            more_text[#more_text+1]=output
-            more_text.lines=more_text.lines+rows+1
-        end
-        flush_buff(output,rows+1)
+
+    if ignore~='__BYPASS_GREP__' then
+        more_text[#more_text+1]=output
+        more_text.lines=more_text.lines+rows+1
     end
 end
 
@@ -190,6 +206,11 @@ end
 function printer.before_command(command)
     local cmd,params,is_internal,line,text,lines=table.unpack(command)
     if is_internal or #env.RUNNING_THREADS>1 then return end
+    if cmd and cmd~='MORE' and cmd~='LESS' and cmd~='OUT' and cmd~='OUTPUT' then
+        more_text={lines=0}
+        out:clear()
+        printer.grid_title_lines=0
+    end
     line,lines=line:gsub('\n','\n'..env.MTL_PROMPT)
     line=env.PRI_PROMPT..line
     if printer.hdl then pcall(printer.hdl.write,printer.hdl,line.."\n") end
@@ -198,37 +219,39 @@ end
 
 function printer.after_command()
     if #env.RUNNING_THREADS>1  then return end
-    if more_text and #more_text>0 then
-       printer.more(table.concat(more_text,'\n')) 
-    end
     if printer.grep_text then 
         printer.grep_after()
     end
     if printer.tee_hdl then 
         printer.tee_after()
     end
-    printer.is_more,more_text=false,{}
+
+    if more_text.lines==0 and not printer.is_more then
+        read_output_from_java()
+    end
+
+    if more_text.lines>0 then
+        flush_buff(table.concat(more_text,'\n'), more_text.lines)
+    end
+    printer.is_more=false
 end
 
 function printer.tee_to_file(row,total_rows, format_func, format_str,include_head)
-    if not printer.tee_hdl or type(row)~="table" then
-        if env.set and not printer.tee_hdl  then
-            local str=type(row)~="table" and row or format_func(format_str, table.unpack(row))
-            if printer.is_more then
-                more_text[#more_text+1]=env.space..str
-                more_text.lines=more_text.lines+1
-                if more_text.lines<=10 then
-                    if printer.grid_title_lines>0 and tonumber(row[0]) and tonumber(row[0])>0 then
-                        printer.grid_title_lines=-(printer.grid_title_lines)
-                    elseif printer.grid_title_lines>=0 and include_head and (not row[0] or row[0]==0) then 
-                        printer.grid_title_lines=more_text.lines
-                    end
-                end
-            end
-            flush_buff(env.space..str)
+    local str=type(row)~="table" and row or format_func(format_str, table.unpack(row))
+    more_text[#more_text+1]=env.space..str
+    more_text.lines=more_text.lines+1
+    if more_text.lines<=10 then
+        if printer.grid_title_lines <0 and tonumber(row[0]) and tonumber(row[0])==0 then
+            printer.grid_title_lines=-99
+        elseif printer.grid_title_lines>0 and tonumber(row[0]) and tonumber(row[0])>0 then
+            printer.grid_title_lines=-(printer.grid_title_lines)
+        elseif printer.grid_title_lines>=0 and include_head and (not row[0] or row[0]==0) then 
+            printer.grid_title_lines=more_text.lines
         end
-        return 
     end
+
+    if type(row)~="table" or not not printer.tee_hdl then return end
+
     local hdl=printer.tee_hdl
     if printer.tee_type=="html" then
         local td='td'
@@ -308,7 +331,6 @@ function printer.edit_buffer(file,default_file,text)
     end 
 end
 
-
 _G.print=printer.print
 _G.rawprint=printer.rawprint
 
@@ -338,19 +360,21 @@ function printer.onload()
     ]]
 
     local more_help=[[
-    Similar to Linux 'less' command. Usage: @@NAME <other command>  (support pipe(|) operation)
+    Similar to Linux 'less' command. Usage: @@NAME <other command>|last  (support pipe(|) operation)
     Example: select * from dba_objects|@@NAME
     Key Maps:
         exit       :  q or :q or ZZ
-        scroll next  page :  <space> or f or ctrl+f or ctrl+v
-        scroll prev  page :  b or ctrl+b or alt+v
-        scroll first page :  < or alt+< or g
-        scroll last  page :  > or alt+> or G
-        scroll half right : ) or right
-        scroll half left  : ( or left
-        scroll half down  : d or ctrl+d
-        scroll half up    : u or ctrl+u
-        /<keyword>        : search
+        down  page :  <space> or f or ctrl+f or ctrl+v
+        up    page :  b or ctrl+b or alt+v
+        first page :  < or alt+< or g
+        last  page :  > or alt+> or G
+        left  page :  [ or home
+        right page :  ] or end 
+        right half page:  ) or right
+        left  half page:  ( or left
+        down  half page:  d or ctrl+d
+        up    half page:  u or ctrl+u
+        /<keyword> :  search
         enable/disable line number: l or L
     ]]
     env.set_command(nil,"grep",grep_help,{printer.grep,printer.grep_after},'__SMART_PARSE__',3,false,false,true)
@@ -360,7 +384,7 @@ function printer.onload()
     env.set_command(nil,{"Prompt","pro",'echo'}, "Prompt messages. Usage: @@NAME <message>",printer.load_text,false,2)
     env.set_command(nil,{"SPOOL","SPO"}, "Write the screen output into a file. Usage: @@NAME [file_name[.ext]] [CREATE] | APP[END]] | OFF]",printer.spool,false,3)
     env.ansi.define_color("GREPCOLOR","BBLU;HIW","ansi.grid","Define highlight color for the grep command, type 'ansi' for more available options")
-    env.set.init("TERMOUT",'on',nil,"core","Controls the display of output generated by commands executed from a script","on,off")
+    env.set.init("TERMOUT",termout,set_termout,"core","Controls the display of output generated by commands executed from a script","on,off")
     env.set.init({"EDITOR",'_EDITOR'},env.IS_WINDOWS and 'notepad' or 'vi',printer.set_editor,"core","The editor to edit the buffer")
 end
 return printer

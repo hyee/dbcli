@@ -73,7 +73,7 @@ if [[ -r "$JAVA_ROOT/jre" ]]; then
 fi
 
 export LUA_CPATH="./lib/$os/?.so;./lib/$os/?.dylib"
-export LD_LIBRARY_PATH="./lib/$os:$JAVA_ROOT/bin:$JAVA_ROOT/lib:$JAVA_ROOT/lib/jli:$JAVA_ROOT/lib/server:$JAVA_ROOT/lib/amd64:$JAVA_ROOT/lib/amd64/server"
+export LD_LIBRARY_PATH="./lib/$os:$JAVA_ROOT/bin:$JAVA_ROOT/lib:$JAVA_ROOT/lib/jli:$JAVA_ROOT/lib/server:$JAVA_ROOT/lib/amd64:$JAVA_ROOT/lib/amd64/server:$LD_LIBRARY_PATH"
 
 #used for JNA
 if [[ -f "$JAVA_ROOT/lib/amd64/libjsig.so" ]]; then

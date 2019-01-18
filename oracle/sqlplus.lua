@@ -69,7 +69,6 @@ function sqlplus:make_sqlpath()
         if c1~=c2 then return c1<c2 end
         return a<b
     end)
-    
     self.env['SQLPATH']=table.concat(path,env.IS_WINDOWS and ';' or ':')
     self.env['ORACLE_PATH']=self.env['SQLPATH']
     self.env['TNS_ADMIN']=self.db.tns_admin
@@ -147,7 +146,7 @@ function sqlplus:run_sql(g_sql,g_args,g_cmd,g_file)
         content=content:format(self.work_path,file_dir,self.script_dir,context,file,param):gsub('[\n\r]+%s+','\n')..'\n'
         f:write(content)
         f:close()
-        self:call_process('@"'..tmpfile..'"')
+        self:call_process('@"'..tmpfile..'"',true,true)
     end
 end
 

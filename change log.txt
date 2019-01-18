@@ -1,3 +1,5 @@
+2019-01-08: + public: new 'last' option of command 'less/more'(also support subsystem)
+            + oracle: new command 'show events' and 'sys idn'
 2019-01-05: + public: enhancement on command "less/more" to support horizontal scrolling
 2019-01-03: * public: update libs JNA to v4.5, NuProcess to 1.2.4 and JNLua
             + public: new option 'set mouse on/off'

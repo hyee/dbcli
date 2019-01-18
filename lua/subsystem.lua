@@ -78,6 +78,7 @@ function system:make_native_command(arg)
 end
 
 function system:call_process(cmd,is_native)
+    if cmd=='\1' then cmd='' end
     if not self.process or is_native==true then
         local args=env.parse_args(99,cmd or "") or {}
         for i=1,#args do
@@ -91,28 +92,37 @@ function system:call_process(cmd,is_native)
                 table.remove(args,1)
             end
         end
-        
-        
-        self.env={PATH=os.getenv("PATH")}
+
+        for i=#args,1,-1 do
+            if args[i]:trim() =='' then table.remove(args,i) end
+        end
+
+        self.env={}
         if not self.work_dir then self.work_dir=self.extend_dirs or self.script_dir or env._CACHE_PATH end
-        local do_redirect
-        self.startup_cmd,do_redirect=self:get_startup_cmd(args,is_native)
-        if not self.startup_cmd then return end
-        table.insert(self.startup_cmd,1,self.boot_cmd or os.find_extension(self.executable or self.name))
-        self:set_work_dir(self.work_dir,true)
-        env.log_debug("subsystem","Command : " ..table.concat(self.startup_cmd," "))
-        env.log_debug("subsystem","Work dir: "..self.work_dir)
-        env.log_debug("subsystem","Environment: \n"..table.dump(self.env))
+        local do_redirect=false
+
+        if not self.process or not is_native then
+            self.startup_cmd,do_redirect=self:get_startup_cmd(args,is_native)
+            if #args>0 then is_native = true end
+            if not self.startup_cmd then return end
+            table.insert(self.startup_cmd,1,self.boot_cmd or os.find_extension(self.executable or self.name))
+            self:set_work_dir(self.work_dir,true)
+            env.log_debug("subsystem","Command : " ..table.concat(self.startup_cmd," "))
+            env.log_debug("subsystem","Work dir: "..self.work_dir)
+            env.log_debug("subsystem","Environment: \n"..table.dump(self.env))
+        end
 
         if (do_redirect or not is_native) and self.support_redirect or (is_native and not self.support_redirect) then
-            io.write("Connecting to "..self.name.."...")
             --print(table.concat(self.startup_cmd," "))
-            self.process=self.proc:create(self.prompt_pattern,self.work_dir,self.startup_cmd,self.env)
-            self.msg_stack={}
-            self:run_command(nil,false)
-            env.printer.write("$DELLINE$")
-            if not self.process then return end
-            if self.after_process_created then self:after_process_created() end
+            if not self.process then
+                env.printer.write("Connecting to "..self.name.."...")
+                self.process=self.proc:create(self.prompt_pattern,self.work_dir,self.startup_cmd,self.env)
+                self.msg_stack={}
+                self:run_command(nil,false)
+                env.printer.write("$DELLINE$")
+                if not self.process then return end
+                if self.after_process_created then self:after_process_created() end
+            end
             if #args==0 then
                 cmd=nil
             else
@@ -122,7 +132,9 @@ function system:call_process(cmd,is_native)
             local line=self:make_native_command(args)
             env.log_debug("subsystem","SQL: "..line)
             terminal:echo(true)
-            os.execute(line)
+            terminal:pause()
+            pcall(os.execute,line)
+            terminal:resume()
             return
         end
     end
@@ -154,15 +166,21 @@ function system:call_process(cmd,is_native)
     elseif command=='EXIT' then
         return self:terminate()
     end
+
+   
+    self.enter_flag=true 
     self:run_command(cmd,true)
+
 end
 
 function system:__onload()
     self.sleep=env.sleep
     write=env.printer.write
     env.set_command{obj=self,cmd=self.name, 
-                    help_func=self.description,call_func=self.call_process,
-                    is_multiline=false,parameters=2,color="PROMPTSUBCOLOR",is_blocknewline=true}
+                    help_func=self.description,
+                    call_func=self.call_process,
+                    is_multiline=false,parameters=2,color="PROMPTSUBCOLOR",
+                    is_blocknewline=false}
     env.event.snoop("BEFORE_COMMAND",self.kill_reader,self,1)
 end
 
