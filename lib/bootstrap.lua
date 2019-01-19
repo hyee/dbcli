@@ -10,7 +10,7 @@ else
     local f,err=io.popen('uname -a 2>/dev/null')
 	if f then
 		for line in f:lines() do
-			if line:lower():find("microsoft") and not os.getenv('ConEmuPID') then
+			if line:lower():find("microsoft") and not os.getenv('ConEmuPID') and os.getenv('TERM')=='xterm-256color' then
 				uv.os_setenv("TERM","terminator")
 			end
 		end

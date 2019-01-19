@@ -48,13 +48,14 @@ public class SubSystem {
             writer = ByteBuffer.allocateDirect(32767);
             writer.order(ByteOrder.nativeOrder());
             //Respond to the ctrl+c event
+            /*
             Interrupter.listen(this, new EventCallback() {
                 @Override
                 public void call(Object... o) {
                     isBreak = true;
                     if (lock != null) lock.countDown();
                 }
-            });
+            });*/
         } catch (Exception e) {
             Loader.getRootCause(e).printStackTrace();
             throw e;

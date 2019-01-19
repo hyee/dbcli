@@ -16,6 +16,10 @@ public class Interrupter implements Terminal.SignalHandler {
         if (c != null) map.put(name, c);
     }
 
+    public static void reset(){
+        map.clear();
+    }
+
     @Override
     public void handle(Terminal.Signal signal) {
         if (!map.isEmpty()) {

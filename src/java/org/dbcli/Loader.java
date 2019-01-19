@@ -42,7 +42,9 @@ public class Loader {
     static Console console;
     private static Loader loader = null;
     KeyMap keyMap;
-    KeyListner q;
+    KeyListner q = new KeyListner('q');
+    EventCallback event = e -> q.actionPerformed((ActionEvent) e[0]);
+
     Future sleeper;
     private volatile CallableStatement stmt = null;
     private Sleeper runner = new Sleeper();
@@ -71,20 +73,12 @@ public class Loader {
             e.printStackTrace();
             System.exit(0);
         }
-
         console = new Console(root + File.separator + "cache" + File.separator + "history.log");
         lua = LuaState.getMainLuaState();
         if (lua != null) console.setLua(lua);
         //Ctrl+D
         keyMap = console.reader.getKeys();
-        //keyMap.bind(String.valueOf(KeyMap.CTRL_D), new KeyListner(KeyMap.CTRL_D));
-        q = new KeyListner('q');
-        Interrupter.listen("loader", new EventCallback() {
-            @Override
-            public void call(Object... e) {
-                q.actionPerformed((ActionEvent) e[0]);
-            }
-        });
+        //Interrupter.listen(this, event);
     }
 
     public static Loader get() throws Exception {
@@ -540,11 +534,9 @@ public class Loader {
     */
     private class KeyListner implements ActionListener {
         int key;
-
         public KeyListner(int k) {
             this.key = k;
         }
-
         @Override
         public void actionPerformed(ActionEvent e) {
             try {

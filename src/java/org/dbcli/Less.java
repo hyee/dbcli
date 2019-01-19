@@ -19,8 +19,8 @@ import org.jline.terminal.Terminal.SignalHandler;
 import org.jline.utils.*;
 import org.jline.utils.InfoCmp.Capability;
 
-import java.io.*;
 import java.io.InputStreamReader;
+import java.io.*;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;

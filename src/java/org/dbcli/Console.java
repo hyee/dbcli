@@ -115,10 +115,12 @@ public final class Console {
 
         colorPlan = terminal.getType();
         threadID = Thread.currentThread().getId();
+        Interrupter.reset();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
         callback = new EventCallback() {
             @Override
             public void call(Object... c) {
+                final Long current = System.currentTimeMillis();
                 if (!pause && lua != null && threadID == Thread.currentThread().getId()) {
                     lua.getGlobal("TRIGGER_EVENT");
                     Integer r = (Integer) (lua.call(c)[0]);
@@ -385,7 +387,6 @@ public final class Console {
             this.task = null;
         }
         if (this.event != null && this.keys != null) {
-
             //this.task = this.threadPool.scheduleWithFixedDelay(this.monitor, 1000, 200, TimeUnit.MILLISECONDS);
         }
     }
