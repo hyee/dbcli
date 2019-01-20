@@ -1,3 +1,4 @@
+2019-01-20: + oracle: new command 'ora scn' 
 2019-01-08: + public: new 'last' option of command 'less/more'(also support subsystem)
             + oracle: new command 'show events' and 'sys idn'
 2019-01-05: + public: enhancement on command "less/more" to support horizontal scrolling
