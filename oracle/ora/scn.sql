@@ -8,7 +8,7 @@ set feed off verify on
 var c1 refcursor;
 var c2 refcursor;
 col DURATION for smhd2
-
+col "SCN/Sec|(kcmgas),SCN/Sec|( Min ),SCN/Sec|( Max ),SCN/Sec|( Avg )" for k0
 declare
     inst varchar2(30):=upper(coalesce(:V1,:instance,'A'));
     num  int         :=nullif(regexp_substr(inst,'\d+'),'0');
@@ -24,18 +24,29 @@ begin
                 FROM   gv$log_history a,
                         (SELECT inst_id, NULLIF(VALUE, '0') val FROM gv$parameter WHERE NAME = 'thread') b
                 WHERE  a.thread# = nvl(b.val, a.thread#)
-                AND    a.inst_id = b.inst_id)
-            SELECT inst,
-                MIN(first_time) begin_time,
-                MAX(next_time) end_time,
-                86400*(MAX(next_time)-MIN(first_time)) duration,
-                COUNT(1) logs,
-                MIN(FIRST_CHANGE#) first_scn,
-                MAX(NEXT_CHANGE#) last_scn,
-                MIN(scn_per_sec) "SCN/Sec|( Min )",
-                MAX(scn_per_sec) "SCN/Sec|( Max )",
-                ROUND((MAX(NEXT_CHANGE#) - MIN(FIRST_CHANGE#)) / ((MAX(NEXT_TIME) - MIN(FIRST_TIME)) * 86400)) "SCN/Sec|( Avg )",
-                MAX(room) KEEP(dense_rank LAST ORDER BY first_time) "Head Room|Left days"
+                AND    a.inst_id = b.inst_id),
+            stat as(
+                select /*+materialize*/ 
+                      trunc((sysdate-(end_interval_time+0))*8) grp,
+                      case when inst='A' then 'A' else ''||instance_number end inst,
+                      value-nvl(lag(value) over(partition by dbid,instance_number,startup_time order by snap_id),0) val,
+                      86400*(end_interval_time+0-(nvl(lag(end_interval_time) over(partition by dbid,instance_number,startup_time order by snap_id),begin_interval_time)+0)) dur
+                from  dba_hist_sysstat join dba_hist_snapshot using(snap_id,dbid,instance_number) 
+                where stat_name ='calls to kcmgas'
+                AND   instance_number=nvl(num,instance_number)
+            )
+            SELECT  inst,
+                    MIN(first_time) begin_time,
+                    MAX(next_time) end_time,
+                    86400*(MAX(next_time)-MIN(first_time)) duration,
+                    COUNT(1) logs,
+                    MIN(FIRST_CHANGE#) first_scn,
+                    MAX(NEXT_CHANGE#) last_scn,
+                    (select round(sum(val)/sum(dur)) from stat b where b.inst=a.inst and b.grp=a.grp) "SCN/Sec|(kcmgas)",
+                    MIN(scn_per_sec) "SCN/Sec|( Min )",
+                    MAX(scn_per_sec) "SCN/Sec|( Max )",
+                    ROUND((MAX(NEXT_CHANGE#) - MIN(FIRST_CHANGE#)) / ((MAX(NEXT_TIME) - MIN(FIRST_TIME)) * 86400)) "SCN/Sec|( Avg )",
+                    MAX(room) KEEP(dense_rank LAST ORDER BY first_time) "Head Room|Left days"
             FROM   (SELECT case when inst='A' then 'A' else ''||inst_id end inst,
                            TRUNC((SYSDATE - next_time) * 8) grp,
                            a.*,
@@ -43,7 +54,7 @@ begin
                            round(months_between(next_time, DATE '1988-1-1') * 31 - next_change# / 86400 / 16 / 1024, 1) room
                     FROM   a
                     WHERE  next_time > first_time
-                    AND    a.inst_id=nvl(num,inst_id))
+                    AND    a.inst_id=nvl(num,inst_id)) a
             GROUP  BY grp, inst
             ORDER  BY begin_time DESC, inst, end_time;
 

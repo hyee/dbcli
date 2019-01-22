@@ -1,5 +1,5 @@
-local u=require "luv"
-luv=u
+local ver=os.getenv("OSVERSION")
+local u=luv
 local table,math,type,tonumber,os,pcall=table,math,type,tonumber,os,pcall
 local uv,env={},env
 local index,pos,found

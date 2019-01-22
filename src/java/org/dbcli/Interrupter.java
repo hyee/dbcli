@@ -13,10 +13,10 @@ public class Interrupter implements Terminal.SignalHandler {
     public static void listen(Object name, EventCallback c) {
         //System.out.println(name.toString()+(c==null?"null":c.toString()));
         if (map.containsKey(name)) map.remove(name);
-        if (c != null) map.put(name, c);
+        if (c != null && !map.values().contains(c)) map.put(name, c);
     }
 
-    public static void reset(){
+    public static void reset() {
         map.clear();
     }
 
@@ -28,7 +28,7 @@ public class Interrupter implements Terminal.SignalHandler {
                 try {
                     entry.getValue().call(e, "CTRL+C");
                 } catch (StackOverflowError e1) {
-                    return;
+                    continue;
                 } catch (Exception ex) {
                     ex.printStackTrace();
                 }

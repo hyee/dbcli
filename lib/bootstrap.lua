@@ -1,6 +1,16 @@
 local _G=_ENV or _G
 local _os=jit.os:lower()
-local uv=require("luv")
+local ver=os.getenv("OSVERSION")
+
+if ver then
+	ver=ver:match('%d+%.%d+')
+	if ver then 
+		ver=ver+0
+		if ver<6 then luv=package.loadlib("luv_winxp.dll","luaopen_luv")() end 
+	end
+end
+if not luv then luv=require("luv") end
+
 _os=_os=='osx' and 'mac' or _os
 local psep,fsep,dll,which,dlldir
 if _os=="windows" then 
@@ -11,7 +21,7 @@ else
 	if f then
 		for line in f:lines() do
 			if line:lower():find("microsoft") and not os.getenv('ConEmuPID') and os.getenv('TERM')=='xterm-256color' then
-				uv.os_setenv("TERM","terminator")
+				luv.os_setenv("TERM","terminator")
 			end
 		end
 		f:close()
@@ -20,19 +30,19 @@ end
 
 local function resolve(path) return (path:gsub("[\\/]+",fsep)) end
 
-uv.set_process_title("DBCli - Initializing")
+luv.set_process_title("DBCli - Initializing")
 local files={}
 local function scan(dir,ext)
-	local req = uv.fs_scandir(dir)
+	local req = luv.fs_scandir(dir)
 	local pattern='%.'..ext..'$'
 	local function iter()
-		return uv.fs_scandir_next(req)
+		return luv.fs_scandir_next(req)
 	end
 	local subdirs={}
 	for name, ftype in iter do
 		name=resolve(dir..'/'..name)
 		if ftype==nil then
-			local attr=uv.fs_stat(name)
+			local attr=luv.fs_stat(name)
 			ftype=attr and attr.type or "file"
 		end
 		if ftype=="directory" then
@@ -58,21 +68,21 @@ local jars=table.concat(files,psep)
 
 local java_bin,java_home
 java_bin=arg[1]
-if not java_bin or not uv.fs_stat(resolve(java_bin)) then
+if not java_bin or not luv.fs_stat(resolve(java_bin)) then
 	print("Cannot find java executable, exit.")
 	os.exit(1)
 end
 
 java_bin=java_bin:gsub("[\\/][^\\/]+$","")
 java_home=java_bin:gsub("[\\/][^\\/]+$","")
-if uv.fs_stat(resolve(java_home..'/jre')) then
+if luv.fs_stat(resolve(java_home..'/jre')) then
 	java_bin=resolve(java_home..'/jre/bin')
 	java_home=java_bin:gsub("[\\/][^\\/]+$","")
 end
 
 local path={java_bin}
-local jvmpath=uv.fs_stat(resolve(java_bin..'/server')) and resolve(java_bin..'/server')
-if not jvmpath then jvmpath=uv.fs_stat(resolve(java_bin..'/client')) and resolve(java_bin..'/client') end
+local jvmpath=luv.fs_stat(resolve(java_bin..'/server')) and resolve(java_bin..'/server')
+if not jvmpath then jvmpath=luv.fs_stat(resolve(java_bin..'/client')) and resolve(java_bin..'/client') end
 if not jvmpath then jvmpath=resolve(java_home..'/lib/amd64/server') end
 
 path[#path+1]=jvmpath
@@ -80,11 +90,11 @@ path[#path+1]=resolve(java_home..'/lib')
 
 local libpath=os.getenv("LD_LIBRARY_PATH")
 if libpath then path[#path+1]=libpath end
---uv.os_setenv("LD_LIBRARY_PATH",table.concat(path,psep))
+--luv.os_setenv("LD_LIBRARY_PATH",table.concat(path,psep))
 
 
 path[#path+1]=os.getenv("PATH")
-uv.os_setenv("PATH",table.concat(path,psep))
+luv.os_setenv("PATH",table.concat(path,psep))
 
 local charset=os.getenv("DBCLI_ENCODING") or "UTF-8"
 local options ={'-noverify' ,

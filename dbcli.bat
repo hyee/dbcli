@@ -1,5 +1,6 @@
 @echo off
 Setlocal EnableDelayedExpansion EnableExtensions
+for /f "delims=" %%i in ('ver') do set "OSVERSION=%%i"
 cd /d "%~dp0"
 SET CLASSPATH=
 SET JAVA=
@@ -35,6 +36,7 @@ for /F "usebackq delims=" %%p in (`where java.exe 2^>NUL ^& echo %JRE_HOME%\bin\
 IF not exist "!JAVA_EXE!" (set "JAVA_BIN=.\jre\bin" & set "JAVA_EXE=.\jre\bin\java.exe" & set "bit=x86")
 If not exist "!JAVA_EXE!" (
     echo "Cannot find Java 1.8 executable, exit."
+    pause
     exit /b 1
 )
 
@@ -47,8 +49,8 @@ if not defined ANSICON if defined ANSICON_CMD (
    if "!bit!"=="x86" set "ANSICON_CMD=.\lib\x86\ConEmuHk.dll"
 )
 
-set "ANSICON_DEF=jline"
-if defined ConEmuPID set "ANSICON_DEF=conemu"
+if not exist "!ANSICON_CMD!" set "ANSICON_DEF=jline"
+rem if defined ConEmuPID set "ANSICON_DEF=conemu"
 if defined MSYSTEM set "ANSICON_DEF=msys"
 set "ANSICON_CMD="
 

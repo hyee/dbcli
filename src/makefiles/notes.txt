@@ -4,3 +4,10 @@ Make file:
     NODOTABIVER= 5.1
     XCFLAGS+= -DLUAJIT_ENABLE_LUA52COMPAT
     XCFLAGS+= -DLUAJIT_NUMMODE=2
+    
+libuv
+=====
+1) Linux:unsupport linux 5 since v1.23.1, refer to below link to rollback the changes by comparing to v1.25.0:
+    * https://github.com/libuv/libuv/compare/c0c672e1a0117b88a2b43a4472cfc50dcb33db45...f43c66343316878da09949daf49b515249f71bdf
+    * fs.c: function uv__fs_futime and uv__fs_utime
+2) Windows: unsupport XP/2003 since v1.60
