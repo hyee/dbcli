@@ -87,8 +87,7 @@ BUILDMODE= dynamic
 ##############################################################################
 # Enable/disable these features as needed, but make sure you force a full
 # recompile with "make clean", followed by "make".
-# for Linux 5.9: XCFLAGS="-std=gnu99"
-XCFLAGS=
+XCFLAGS="-std=gnu99"
 #
 # Permanently disable the FFI extension to reduce the size of the LuaJIT
 # executable. But please consider that the FFI library is compiled-in,
@@ -108,8 +107,8 @@ XCFLAGS+= -DLUAJIT_ENABLE_LUA52COMPAT
 # Some architectures (e.g. PPC) can use either single-number (1) or
 # dual-number (2) mode. Uncomment one of these lines to override the
 # default mode. Please see LJ_ARCH_NUMMODE in lj_arch.h for details.
+XCFLAGS+= -DLUAJIT_NUMMODE=1
 #XCFLAGS+= -DLUAJIT_NUMMODE=1
-XCFLAGS+= -DLUAJIT_NUMMODE=2
 #
 # Enable GC64 mode for x64.
 # XCFLAGS+= -DLUAJIT_ENABLE_GC64
