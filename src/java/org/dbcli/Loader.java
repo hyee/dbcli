@@ -534,9 +534,11 @@ public class Loader {
     */
     private class KeyListner implements ActionListener {
         int key;
+
         public KeyListner(int k) {
             this.key = k;
         }
+
         @Override
         public void actionPerformed(ActionEvent e) {
             try {

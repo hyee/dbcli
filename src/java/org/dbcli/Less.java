@@ -78,6 +78,7 @@ public class Less {
 
     private int titleLines = 0;
     private AttributedString[] titles = new AttributedString[titleLines];
+    private boolean fullRefresh = false;
 
     public Less(Terminal terminal) {
         this.terminal = terminal;
@@ -92,8 +93,10 @@ public class Less {
                     if (OSUtils.IS_CONEMU || "terminator".equals(System.getenv("TERM")) || "ansicon".equals(System.getenv("ANSICON_DEF"))) {
                         clear();
                     } else {
+
                         cursorPos = 0;
                         oldLines.clear();
+
                     }
                 }
                 super.update(newLines, targetCursorPos, false);
@@ -253,6 +256,8 @@ public class Less {
                                 terminal.reader().read();
                                 message = null;
                             }
+                        } else if (c == '\b') {
+                            if (buffer.length() > 0) buffer.setLength(buffer.length() - 1);
                         } else {
                             buffer.append((char) c);
                         }
@@ -275,6 +280,7 @@ public class Less {
                     }
                     if (op != null) {
                         message = null;
+
                         switch (op) {
                             case FORWARD_ONE_LINE:
                                 moveForward(getStrictPositiveNumberInBuffer(1));
@@ -387,6 +393,8 @@ public class Less {
                                     message = "No previous file";
                                 }
                                 break;
+                            default:
+                                continue;
                         }
                         buffer.setLength(0);
                     }
@@ -593,6 +601,7 @@ public class Less {
     int globalLineWidth = 0;
 
     boolean display(boolean oneScreen) throws IOException {
+        if (terminal.reader().available() > 0) return false;
         List<AttributedString> newLines = new ArrayList<>();
         //-1 due to "/b" issue in org.jline.utils.Display
         int width = size.getColumns() - (printLineNumbers ? numWidth + 1 : 0) - 1;

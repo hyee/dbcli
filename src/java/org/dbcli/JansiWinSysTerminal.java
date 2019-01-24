@@ -17,7 +17,6 @@ import org.jline.keymap.KeyMap;
 import org.jline.reader.impl.LineReaderImpl;
 import org.jline.terminal.Cursor;
 import org.jline.terminal.Size;
-import org.jline.terminal.impl.AbstractWindowsConsoleWriter;
 import org.jline.terminal.impl.AbstractWindowsTerminal;
 import org.jline.terminal.impl.jansi.win.WindowsAnsiWriter;
 import org.jline.utils.InfoCmp;
@@ -267,18 +266,4 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         strings.remove(InfoCmp.Capability.delete_line);
         strings.remove(InfoCmp.Capability.parm_delete_line);
     }
-}
-
-class JansiWinConsoleWriter extends AbstractWindowsConsoleWriter {
-
-    private static final long console = GetStdHandle(STD_OUTPUT_HANDLE);
-    private final int[] writtenChars = new int[1];
-
-    @Override
-    protected void writeConsole(char[] text, int len) throws IOException {
-        if (WriteConsoleW(console, text, len, writtenChars, 0) == 0) {
-            throw new IOException("Failed to write to console: " + WindowsSupport.getLastErrorMessage());
-        }
-    }
-
 }
