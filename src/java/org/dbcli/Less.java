@@ -93,12 +93,11 @@ public class Less {
                     if (OSUtils.IS_CONEMU || "terminator".equals(System.getenv("TERM")) || "ansicon".equals(System.getenv("ANSICON_DEF"))) {
                         clear();
                     } else {
-
                         cursorPos = 0;
                         oldLines.clear();
-
                     }
                 }
+                display.resize(size.getRows(), size.getColumns());
                 super.update(newLines, targetCursorPos, false);
                 terminal.writer().flush();
             }
@@ -280,7 +279,6 @@ public class Less {
                     }
                     if (op != null) {
                         message = null;
-
                         switch (op) {
                             case FORWARD_ONE_LINE:
                                 moveForward(getStrictPositiveNumberInBuffer(1));
@@ -393,7 +391,7 @@ public class Less {
                                     message = "No previous file";
                                 }
                                 break;
-                            default:
+                            case EXIT:
                                 continue;
                         }
                         buffer.setLength(0);
@@ -404,6 +402,7 @@ public class Less {
                             openSource();
                         } else {
                             op = Operation.EXIT;
+                            continue;
                         }
                     }
                     display(false);
@@ -601,7 +600,15 @@ public class Less {
     int globalLineWidth = 0;
 
     boolean display(boolean oneScreen) throws IOException {
+        if(terminal.reader().available() <= 0) {
+            try {
+                Thread.sleep(128L);
+            } catch (InterruptedException e) {
+
+            }
+        }
         if (terminal.reader().available() > 0) return false;
+
         List<AttributedString> newLines = new ArrayList<>();
         //-1 due to "/b" issue in org.jline.utils.Display
         int width = size.getColumns() - (printLineNumbers ? numWidth + 1 : 0) - 1;
@@ -691,7 +698,7 @@ public class Less {
         }
         newLines.add(msg.toAttributedString());
         //display.setDelayLineWrap(false);
-        display.resize(size.getRows(), size.getColumns());
+
         display.update(newLines, -1);
         return false;
     }
