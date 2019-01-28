@@ -1,5 +1,9 @@
 #!/bin/bash
-# Java executable is required
+
+if [ ! "$BASH" ] ; then
+    echo "    Please do not use 'sh' to run this script, just execute with 'bash'." 1>&2
+    exit 1
+fi
 
 cd "$(dirname "$0")"
 os=$(uname)
