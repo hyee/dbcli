@@ -56,10 +56,12 @@ rmdir /S /Q dbcli_all
 mkdir dbcli_all\dbcli
 xcopy /E /Y "%target%" dbcli_all\dbcli /exclude:%~dp0\excludes_zip.txt
 cd dbcli_all
-zip -r -9 -q ..\dbcli_all.zip dbcli   -x "dbcli\help.gif"
-zip -r -9 -q ..\dbcli_win.zip dbcli   -x "dbcli\help.gif" "dbcli\jre_linux\*"
-zip -r -9 -q ..\dbcli_linux.zip dbcli -x "dbcli\help.gif" "dbcli\jre\*" "dbcli\bin\*"
-zip -r -9 -q ..\dbcli_nojre.zip dbcli -x "dbcli\help.gif" "dbcli\jre\*" "dbcli\jre_linux\*"
+del /F /Q dbcli\help.gif
+zip -r -9 -q ..\dbcli_all.zip dbcli   
+zip -r -9 -q ..\dbcli_win.zip dbcli   -x "dbcli\jre_linux\*"
+zip -r -9 -q ..\dbcli_linux.zip dbcli -x "dbcli\jre\*" "dbcli\bin\*"
+zip -r -9 -q ..\dbcli_nojre.zip dbcli -x "dbcli\jre\*" "dbcli\jre_linux\*"
 del /F /Q .\dbcli\oracle\orai18n.*
+del /F /Q .\dbcli\lib\x86\luv_winxp.dll
 copy /Y "%dump%\*.jar.pack.gz" .\dbcli\oracle
 zip -r -9 -q ..\dbcli_oracle_lite.zip dbcli -x "dbcli\help.gif" "dbcli\jre\*" "dbcli\docs\*" "dbcli\jre_linux\*" "dbcli\mysql\*" "dbcli\pgsql\*" "dbcli\db2\*" "dbcli\bin\*"

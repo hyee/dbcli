@@ -1,7 +1,7 @@
 local env=env
 local db,cfg,event,var,type=env.getdb(),env.set,env.event,env.var,type
 local extvars={}
-local datapath=debug.getinfo(1, "S").source:sub(2):gsub('[%w%.]+$','dict')
+local datapath=env.join_path(env.WORK_DIR,'oracle//dict.pack')
 local re=env.re
 local uid=nil
 

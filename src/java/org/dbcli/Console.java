@@ -68,7 +68,8 @@ public final class Console {
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM))
             this.terminal = JansiWinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU, null, 0, true, Terminal.SignalHandler.SIG_IGN, false);
         else
-            this.terminal = (AbstractTerminal) TerminalBuilder.builder().name(colorPlan).system(true).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).nativeSignals(true).build();
+            this.terminal = (AbstractTerminal) TerminalBuilder.builder().system(true).name(colorPlan).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).nativeSignals(true).build();
+
         this.status = this.terminal.getStatus();
         this.display = new Display(terminal, false) {
             @Override
@@ -112,7 +113,6 @@ public final class Console {
 
         input = terminal.reader();
         writer = new Output(terminal.writer());
-
         colorPlan = terminal.getType();
         threadID = Thread.currentThread().getId();
         Interrupter.reset();
@@ -223,7 +223,7 @@ public final class Console {
     }
 
     public void setStatus(String status, String color) {
-        if (colorPlan.equals(TYPE_WINDOWS_256_COLOR) || colorPlan.equals(TYPE_WINDOWS)) return;
+        if (colorPlan.equals(TYPE_WINDOWS_256_COLOR) || colorPlan.equals(TYPE_WINDOWS) || getScreenWidth() <= 0) return;
         if (tmpTitles.size() == 0) {
             tmpTitles.add(AttributedString.fromAnsi(new String(new char[getScreenWidth() - 1]).replace('\0', ' ')));
             tmpTitles.add(tmpTitles.get(0));
@@ -293,6 +293,7 @@ public final class Console {
             }
         };
         Less less = new Less(terminal);
+        less.noInit = true;
         less.veryQuiet = true;
         less.padding = spaces;
         less.numWidth = (int) Math.max(3, Math.ceil(Math.log10(lines < 10 ? 10 : lines)));

@@ -600,15 +600,20 @@ public class Less {
     int globalLineWidth = 0;
 
     boolean display(boolean oneScreen) throws IOException {
-        if(terminal.reader().available() <= 0) {
-            try {
-                Thread.sleep(128L);
-            } catch (InterruptedException e) {
+        if (!oneScreen) {
+            if (System.getenv("IS_WSL") == null) {
+                if (terminal.reader().peek(128L) != NonBlockingReader.READ_EXPIRED) return false;
+            } else {
+                if (terminal.reader().available() <= 0) {
+                    try {
+                        Thread.sleep(128L);
+                    } catch (InterruptedException e) {
 
+                    }
+                }
+                if (terminal.reader().available() > 0) return false;
             }
         }
-        if (terminal.reader().available() > 0) return false;
-
         List<AttributedString> newLines = new ArrayList<>();
         //-1 due to "/b" issue in org.jline.utils.Display
         int width = size.getColumns() - (printLineNumbers ? numWidth + 1 : 0) - 1;
@@ -636,6 +641,7 @@ public class Less {
                     curLine = curLine.styleMatches(compiled, AttributedStyle.DEFAULT.inverse());
                 }
                 if (printLineNumbers && padding > 0) curLine = curLine.columnSubSequence(padding, Integer.MAX_VALUE);
+                maxWidth = Math.max(maxWidth, curLine.length());
             }
             AttributedString toDisplay;
             if (firstColumnToDisplay > 0 || chopLongLines) {
@@ -643,7 +649,6 @@ public class Less {
                 if (terminalLine == 0 && offsetInLine > 0) {
                     off = Math.max(offsetInLine, off);
                 }
-                maxWidth = Math.max(maxWidth, curLine.length());
                 if (padding > 0 && off > padding && !printLineNumbers) {
                     asb.setLength(0);
                     asb.append(String.join("", Collections.nCopies(padding, " ")));
@@ -686,8 +691,7 @@ public class Less {
         AttributedStringBuilder msg = new AttributedStringBuilder();
         if (buffer.length() > 0) {
             msg.append(" ").append(buffer);
-        } else if (bindingReader.getCurrentBuffer().length() > 0
-                && terminal.reader().peek(1) == NonBlockingReader.READ_EXPIRED) {
+        } else if (bindingReader.getCurrentBuffer().length() > 0 && terminal.reader().available() == 0) {
             msg.append(" ").append(printable(bindingReader.getCurrentBuffer()));
         } else if (message != null) {
             msg.style(AttributedStyle.INVERSE);
