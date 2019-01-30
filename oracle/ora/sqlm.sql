@@ -8,12 +8,13 @@
         Usages:
              1. @@NAME <sql_id> [<sql_exec_id>]           : Extract sql monitor report with specific sql_id, options: -s,-a,-f"<format>"
              2. @@NAME [. <keyword>]                      : List recent sql monitor reports,options: -avg,-u,-f"<filter>" 
-             3. @@NAME <sql_id> -l [plan_hash|sql_exec_id]: List the reports and generate perf hub report for specific SQL_ID, options: -avg,-u,-a,-f"<filter>"
-             4. @@NAME -snap <sec> <sid>                  : Monitor the specific <sid> for <sec> seconds, and then list the SQL monitor result, options: -avg
-             5. @@NAME <sqlmon_file>                      : Read SQL Monitor report from target location and print
-             6. @@NAME "<Query>"                          : Read SQL Monitor report from target query(return CLOB) and print
-             7. @@NAME <report_id>                        : Read SQL Monitor report from dba_hist_reports with specific report_id
-             8. @@NAME <sql_id> [<plan_hash> [YYYYMMDDHH24MI]] -d          : Report SQL detail
+             3. @@NAME -snap <sec> <sid>                  : Monitor the specific <sid> for <sec> seconds, and then list the SQL monitor result, options: -avg
+             4. @@NAME <sqlmon_file>                      : Read SQL Monitor report from target location and print
+             5. @@NAME "<Query>"                          : Read SQL Monitor report from target query(return CLOB) and print
+             6. @@NAME <report_id>                        : Read SQL Monitor report from dba_hist_reports with specific report_id
+             7. @@NAME <sql_id> -l [-a] [plan_hash|sql_exec_id]     : List the reports and generate perf hub report for specific SQL_ID, options: -avg,-u,-a,-f"<filter>"
+             8. @@NAME <sql_id> -d [<plan_hash> [YYYYMMDDHH24MI]] : Report SQL detail
+
         Options:
                 -u  : Only show the SQL list within current schema
                 -f  : List the records that match the predicates, i.e.: -f"MODULE='DBMS_SCHEDULER'"
@@ -336,9 +337,11 @@ BEGIN
 
         IF &rpt=0 THEN
             txt := DBMS_REPORT.FORMAT_REPORT(xml.deleteXML('//sql_fulltext'), 'text');
+        ELSE
+            dbms_lob.createtemporary(txt,true);
         END IF;
-        
-        IF &rpt=0 AND &detail =1 THEN
+
+        IF &rpt=2 OR &detail =1 THEN
             SELECT SYS.ODCIARGDESC(id,typ,null,val,null,null,null)
             BULK   COLLECT INTO descs
             FROM   XMLTABLE('//operation[qblock]' PASSING xml COLUMNS --

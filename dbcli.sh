@@ -105,7 +105,7 @@ for f in `find . -type f -name "*.pack.gz" 2>/dev/null | egrep -v "cache|dump"`;
 done
 wait
 
-trap '' 20 &>/dev/null
+trap '' TSTP &>/dev/null
 
 chmod  777 ./lib/$os/luajit &>/dev/null
 ./lib/$os/luajit ./lib/bootstrap.lua "$_java" $*
