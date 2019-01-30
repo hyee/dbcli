@@ -316,7 +316,6 @@ BEGIN
                 EXCEPTION WHEN OTHERS THEN
                     xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => 'TYPICAL', sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
                 END;
-                txt := DBMS_REPORT.FORMAT_REPORT(xml.deleteXML('//sql_fulltext'), 'text');
                 filename := 'sqlm_' || sq_id || '.html';
             ELSE
                 sql_start := nvl(to_char(nvl(:V3,:starttime),'yymmddhh24mi'),sysdate-7);
@@ -332,9 +331,10 @@ BEGIN
                 filename := 'sqld_' || sq_id || '.html';
             END IF;
         END IF;
-
+        
         content  := DBMS_REPORT.FORMAT_REPORT(xml, '&out') ;
         IF &detail =1 THEN
+            txt := DBMS_REPORT.FORMAT_REPORT(xml.deleteXML('//sql_fulltext'), 'text');
             SELECT SYS.ODCIARGDESC(id,typ,null,val,null,null,null)
             BULK   COLLECT INTO descs
             FROM   XMLTABLE('//operation[qblock]' PASSING xml COLUMNS --
