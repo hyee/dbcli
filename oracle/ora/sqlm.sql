@@ -13,7 +13,7 @@
              5. @@NAME <sqlmon_file>                      : Read SQL Monitor report from target location and print
              6. @@NAME "<Query>"                          : Read SQL Monitor report from target query(return CLOB) and print
              7. @@NAME <report_id>                        : Read SQL Monitor report from dba_hist_reports with specific report_id
-             
+             8. @@NAME <sql_id> [<plan_hash> [YYYYMMDDHH24MI]] -d          : Report SQL detail
         Options:
                 -u  : Only show the SQL list within current schema
                 -f  : List the records that match the predicates, i.e.: -f"MODULE='DBMS_SCHEDULER'"
@@ -35,6 +35,7 @@
             &snap: default={0} snap={1}
             &showhub: default={0} a={1}
             &detail: default={0} detail={1}
+            &rpt   : default={0} d={1}
             @check_access_hub : SYS.DBMS_PERF={&showhub} default={0}
             @check_access_sqlm: SYS.DBMS_SQL_MONITOR/SYS.DBMS_LOCK={1} default={0}
      --]]
@@ -285,39 +286,54 @@ BEGIN
 
         --EXECUTE IMMEDIATE 'alter session set "_sqlmon_max_planlines"=3000';
         IF xml IS NULL THEN
-            sql_exec := :V2;
-            IF sql_exec IS NULL THEN
-                select max(sql_id) keep(dense_rank last order by sql_exec_start,sql_exec_id),
-                       max(sql_exec_id) keep(dense_rank last order by sql_exec_start),
-                       max(sql_exec_start)
-                into  sq_id,sql_exec,sql_start
-                from  gv$sql_monitor
-                where (sql_id=sq_id or lower(sq_id) in('l','last'))
-                AND   sql_plan_hash_value > 0
-                AND   sql_exec_id >0 
-                AND   PX_SERVER# IS NULL
-                and   inst_id=nvl(inst,inst_id);
-                
-                if sq_id is null then
-                    raise_application_error(-20001,'cannot find relative records for the specific SQL ID!');
-                end if;
-            END IF;
-
             BEGIN
-                xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => 'ALL',  sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
-            EXCEPTION WHEN OTHERS THEN
-                xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => 'TYPICAL', sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
+                execute immediate 'alter session set events ''emx_control compress_xml=none''';
+            EXCEPTION WHEN OTHERS THEN NULL;
             END;
+            
+            sql_exec := :V2;
+
+            IF &rpt=0 THEN
+                IF sql_exec IS NULL THEN
+                    select max(sql_id) keep(dense_rank last order by sql_exec_start,sql_exec_id),
+                           max(sql_exec_id) keep(dense_rank last order by sql_exec_start),
+                           max(sql_exec_start)
+                    into  sq_id,sql_exec,sql_start
+                    from  gv$sql_monitor
+                    where (sql_id=sq_id or lower(sq_id) in('l','last'))
+                    AND   sql_plan_hash_value > 0
+                    AND   sql_exec_id >0 
+                    AND   PX_SERVER# IS NULL
+                    and   inst_id=nvl(inst,inst_id);
+                    
+                    if sq_id is null then
+                        raise_application_error(-20001,'cannot find relative records for the specific SQL ID!');
+                    end if;
+                END IF;
+
+                BEGIN
+                    xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => 'ALL',  sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
+                EXCEPTION WHEN OTHERS THEN
+                    xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => 'TYPICAL', sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
+                END;
+                txt := DBMS_REPORT.FORMAT_REPORT(xml.deleteXML('//sql_fulltext'), 'text');
+                filename := 'sqlm_' || sq_id || '.html';
+            ELSE
+                sql_start := nvl(to_char(nvl(:V3,:starttime),'yymmddhh24mi'),sysdate-7);
+                xml := xmltype(DBMS_SQLTUNE.REPORT_SQL_DETAIL(report_level => 'ALL',
+                                                      sql_id => sq_id,
+                                                      sql_plan_hash_value=>sql_exec,
+                                                      start_time=>sql_start,
+                                                      duration=> 86400*(sysdate-sql_start), 
+                                                      inst_id => inst, 
+                                                      dbid=>did,
+                                                      top_n=>50,
+                                                      type=>'XML'));
+                filename := 'sqld_' || sq_id || '.html';
+            END IF;
         END IF;
 
-        BEGIN
-            execute immediate 'alter session set events ''emx_control compress_xml=none''';
-        EXCEPTION WHEN OTHERS THEN NULL;
-        END;
-
         content  := DBMS_REPORT.FORMAT_REPORT(xml, '&out') ;
-        filename := 'sqlm_' || sq_id || '.html';
-        txt := DBMS_REPORT.FORMAT_REPORT(xml.deleteXML('//sql_fulltext'), 'text');
         IF &detail =1 THEN
             SELECT SYS.ODCIARGDESC(id,typ,null,val,null,null,null)
             BULK   COLLECT INTO descs

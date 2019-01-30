@@ -1,6 +1,7 @@
 local env,string,java,math,table,tonumber=env,string,java,math,table,tonumber
 local grid,snoop,callback,cfg,db_core=env.grid,env.event.snoop,env.event.callback,env.set,env.db_core
 local var=env.class()
+local cast=java.cast
 var.inputs,var.outputs,var.desc,var.global_context,var.columns={},{},{},{},{}
 var.cmd1,var.cmd2,var.cmd3,var.cmd4='DEFINE','DEF','VARIABLE','VAR'
 var.types={
@@ -428,33 +429,35 @@ function var.define_column(col,...)
                     if not tonumber(v) then return v end
                     return string.format("%."..scal.."f%%",tonumber(v)*100)
                 end
-            elseif (f:find("%",1,true) or 999)<#f then
+            elseif (f:find("%",1,true) or 999)<#f or f1=='K' then
                 local fmt,String=arg,String
+                local format=String.format
+                if f1=='K' then fmt='%,.'..scale..'f' end
                 local format_func=function(v)
                     local v1= tonumber(v)
                     if not v1 then return v end
-                    local done,res=pcall(String.format,String,fmt,java.cast(tonumber(v),'double'))
+                    local done,res=pcall(format,String,fmt,cast(v,'java.math.BigDecimal'))
                     if not done then
                         env.raise('Cannot format double number "'..v..'" with "'..fmt..'" on field "'..col..'"!')
                     end
                     return res
                 end
-
                 local res,msg=pcall(format_func,999.99)
                 env.checkerr(res,"Unsupported format %s on field %s",arg,col)
                 obj.format=format_func
             elseif not var.define_column(col,f) then
                 local fmt=java.new("java.text.DecimalFormat")
-                arg=arg:gsub('9','#')
+                local format=fmt.format
+                arg=arg:gsub('9','#'):gsub("^[fF][mM]","")
                 local res,msg=pcall(fmt.applyPattern,fmt,arg)
                 obj.format_dir='%'..#arg..'s'
                 local format_func=function(v)
                     if not tonumber(v) then return s end
-                    local done,res=pcall(obj.format_dir.format,obj.format_dir,fmt:format(java.cast(tonumber(v),'double')))
+                    local done,res=pcall(obj.format_dir.format,obj.format_dir,format(fmt,cast(v,'java.math.BigDecimal')))
                     if not done then
                         env.raise('Cannot format double number "'..v..'" with "'..arg..'" on field "'..col..'"!')
                     end
-                    return res
+                    return res:trim()
                 end
                 local res,msg=pcall(format_func,999.99)
                 env.checkerr(res,"Unsupported format %s on field %s",arg,col)
@@ -563,6 +566,7 @@ function var.onload()
         6) @@NAME <columns> FOR[MAT] smhd         : Cast number as 'xxd xxh xxm xxs' format
         7) @@NAME <columns> FOR[MAT] INTERVAL|ITV : Cast number as 'dd hh:mm:ss' format
         8) @@NAME <columns> FOR[MAT] <formatter>  : Use Java 'String.format()' to format the number
+        9) @@NAME <columns> FOR[MAT] K<scale>     : Cast number in thousand seperated
 
     type 'help -e var.columns' to show the existing settings
 
@@ -574,6 +578,7 @@ function var.onload()
         @@NAME size for SMHD  :    111111 => 0D 30H 51M 51S
         @@NAME size for ITV   :    111111 => 30:51:51
         @@NAME size for %.2f%%:    11.111 => 11.11%
+        @@NAME size for K1    :    1111.11=> 1,111.1
         @@NAME size1,size2 for %.2f%% :  11.111, 22.222 => 11.11%, 22.22%
         @@NAME size for smhd1 addration pct2:    
             SIZE   PTC

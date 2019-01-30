@@ -205,11 +205,12 @@ ash_raw as (
                    case when (qc_sid!=sid or qc_inst!=inst_id) then 1 else 0 end is_px_slave,
                    CASE WHEN 'Y' IN(decode(pred_flag,2,'Y','N'),IN_PLSQL_EXECUTION,IN_PLSQL_RPC,IN_PLSQL_COMPILATION,IN_JAVA_EXECUTION) THEN 1 END IN_PLSQL       
             FROM   (
-                SELECT  /*+QB_NAME(ASH) no_merge(a) CONNECT_BY_FILTERING NO_PX_JOIN_FILTER*/
+                SELECT  /*+QB_NAME(ASH) CONNECT_BY_FILTERING NO_PX_JOIN_FILTER*/
                         &public,
                         &hierachy
                 FROM    (
-                    select a.*,(select dbid from v$database) dbid,inst_id instance_number,1 aas_
+                    select /*+no_merge cardinality(30000000)*/ 
+                           a.*,(select dbid from v$database) dbid,inst_id instance_number,1 aas_
                     from   gv$active_session_history a
                     where  sample_time+0 BETWEEN nvl(to_date(nvl(:V3,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7) 
                                          AND     nvl(to_date(nvl(:V4,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE)
@@ -222,7 +223,7 @@ ash_raw as (
                 SELECT  /*+QB_NAME(DASH) CONNECT_BY_FILTERING*/
                         &public,
                         &hierachy
-                FROM    (select /*+no_merge*/ d.*, 10 aas_ from dba_hist_active_sess_history d) d
+                FROM    (select /*+ NO_MERGE cardinality(30000000)*/ d.*, 10 aas_ from dba_hist_active_sess_history d) d
                 WHERE   '&vw' IN('A','D')
                 AND     sample_time+0 BETWEEN nvl(to_date(nvl(:V3,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7) 
                                           AND nvl(to_date(nvl(:V4,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE)

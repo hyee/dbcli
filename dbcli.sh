@@ -1,5 +1,9 @@
 #!/bin/bash
-# Java executable is required
+
+if [ ! "$BASH" ] ; then
+    echo "  Please do not use 'sh' to run this script, just execute with 'bash'." 1>&2
+    exit 1
+fi
 
 cd "$(dirname "$0")"
 os=$(uname)
@@ -100,6 +104,8 @@ for f in `find . -type f -name "*.pack.gz" 2>/dev/null | egrep -v "cache|dump"`;
     "$unpack" -q -r  $f $(echo $f|sed 's/\.pack\.gz//g') &
 done
 wait
+
+trap '' 20 &>/dev/null
 
 chmod  777 ./lib/$os/luajit &>/dev/null
 ./lib/$os/luajit ./lib/bootstrap.lua "$_java" $*

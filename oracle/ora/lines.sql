@@ -11,7 +11,7 @@
     --]]
 ]]*/
 
-ora _find_object &V1
+ora _find_object "&V1" 1
 set printsize 10000
 select name,type,line,text
 from &CHECK_ACCESS_OBJ
