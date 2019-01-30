@@ -20,8 +20,8 @@ public class MyHistory extends DefaultHistory {
 
     public int setIndex() {
         lasIndex = list.size() - 1;
-        lastEntry = list.get(lasIndex);
-        return lasIndex;
+        if (lasIndex >= 0) lastEntry = list.get(lasIndex);
+        return lasIndex >= 0 ? lasIndex : 0;
     }
 
     public void update(int index, String line) {

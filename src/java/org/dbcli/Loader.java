@@ -71,7 +71,7 @@ public class Loader {
             System.setProperty("jna.library.path", libPath);
         } catch (Exception e) {
             e.printStackTrace();
-            System.exit(0);
+            System.exit(1);
         }
         console = new Console(root + File.separator + "cache" + File.separator + "history.log");
         lua = LuaState.getMainLuaState();
@@ -79,6 +79,15 @@ public class Loader {
         //Ctrl+D
         keyMap = console.reader.getKeys();
         //Interrupter.listen(this, event);
+    }
+
+    public String getRootPath() {
+        return root;
+    }
+
+    public String getInputPath() {
+        String separator = File.separator;
+        return root + separator + "lua" + separator + "input.lua";
     }
 
     public static Loader get() throws Exception {
@@ -97,15 +106,15 @@ public class Loader {
         lua.pushGlobal("loader", loader);
         console.isSubSystem = false;
         console.setLua(lua);
-
+        String separator = File.separator;
+        String input = root + separator + "lua" + separator + "input.lua";
         if (console.writer != null) {
             lua.pushGlobal("reader", console.reader);
             lua.pushGlobal("writer", console.writer);
             lua.pushGlobal("terminal", console.terminal);
             lua.pushGlobal("console", console);
+            lua.pushGlobal("WORK_DIR", root + separator);
         }
-        String separator = File.separator;
-        String input = root + separator + "lua" + separator + "input.lua";
         StringBuilder sb = new StringBuilder();
         String readline = "";
         BufferedReader br = new BufferedReader(new FileReader(new File(input)));

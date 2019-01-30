@@ -124,8 +124,15 @@ local m,_env,_loaded=_ENV or _G,{},{}
 for k,v in pairs(m) do _env[k]=v end
 if m.loaded then for k,v in pairs(m.loaded) do _loaded[k]=v end end
 
+local input=loader:getInputPath()
+
+if input:find('[\127-\254]') then
+	print('DBCLI cannot be launched from a Unicode path!')
+	os.exit(1)
+end
+
 while true do
-	local input,err=loadfile(resolve(loader.root.."/lua/input.lua"),'bt',_env)
+	local input,err=loadfile(resolve(input),'bt',_env)
 	if not input then error(err) end
 	loader:resetLua()
 	input(table.unpack(arg))

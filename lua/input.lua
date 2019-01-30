@@ -1,5 +1,5 @@
 local string,io,table=string,io,table
-local mypath=debug.getinfo(1, "S").source:sub(2)
+local mypath=loader:getInputPath()
 local _G=_ENV or _G
 package.path=mypath:gsub('[%w%.]+$','?.lua')
 local console=console

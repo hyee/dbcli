@@ -60,7 +60,7 @@
 col reads format KMG
 col writes format kMG
 SELECT * FROM (
-    SELECT /*+ LEADING(a) USE_HASH(u) swap_join_inputs(u) no_expand*/
+    SELECT /*+ LEADING(a) USE_HASH(u) swap_join_inputs(u) no_expand opt_param('_sqlexec_hash_based_distagg_enabled' true)*/
         round(SUM(c))                                                   Secs
       , ROUND(sum(&base)) AAS
       , LPAD(ROUND(RATIO_TO_REPORT(sum(c)) OVER () * 100)||'%',5,' ')||' |' "%This"
