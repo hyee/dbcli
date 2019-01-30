@@ -331,10 +331,14 @@ BEGIN
                 filename := 'sqld_' || sq_id || '.html';
             END IF;
         END IF;
-        
+
         content  := DBMS_REPORT.FORMAT_REPORT(xml, '&out') ;
-        IF &detail =1 THEN
+
+        IF &rpt=0 THEN
             txt := DBMS_REPORT.FORMAT_REPORT(xml.deleteXML('//sql_fulltext'), 'text');
+        END IF;
+        
+        IF &rpt=0 AND &detail =1 THEN
             SELECT SYS.ODCIARGDESC(id,typ,null,val,null,null,null)
             BULK   COLLECT INTO descs
             FROM   XMLTABLE('//operation[qblock]' PASSING xml COLUMNS --
