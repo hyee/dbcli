@@ -361,7 +361,7 @@ function grid:add(row)
             end
             
             local col_wrap = grid.col_wrap
-            if linesize and cols == 1 then col_wrap = math.min(col_wrap > 0 and col_wrap or linesize, linesize) end
+           --if linesize and cols == 1 then col_wrap = math.min(col_wrap > 0 and col_wrap or linesize, linesize) end
             
             if col_wrap > 0 and not v:find("\n") and #v > col_wrap then
                 local v1 = {}

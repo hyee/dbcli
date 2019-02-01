@@ -282,8 +282,11 @@ function ResultSet:print(res,conn,prefix)
     if pivot~=0 then maxrows=math.abs(pivot) end
     local result=self:rows(res,maxrows,true,cfg.get("null"))
     if not result then return end
-    if pivot==0 then 
+    if pivot==0 then
         hdl=grid.new()
+        if #cols==1 and #result==2 then
+            cfg.set('colwrap',console:getScreenWidth())
+        end
         for idx,row in ipairs(result) do 
             hdl:add(row)
         end

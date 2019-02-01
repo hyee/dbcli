@@ -111,11 +111,11 @@ sql_plan_data AS
       FROM   ALL_PLANS a)
   WHERE  seq = 1),
 ash as(
-    SELECT /*+materialize*/ a.*,rownum seq#
+    SELECT /*+materialize  opt_param('_optimizer_filter_pushdown', 'false')*/ a.*,rownum seq#
     FROM (
         select  1 aas_,&public 
         from table(gv$(cursor(
-            select /*+ordered no_merge(a) no_merge(b) use_hash(b)*/ b.*,
+            select /*+ordered no_merge(a) cardinality(30000000) no_merge(b) use_hash(b)*/ b.*,
                 (select dbid from v$database) dbid,
                 userenv('instance') instance_number 
             from  (
@@ -129,7 +129,7 @@ ash as(
         ))
         WHERE dbid=nvl('&dbid'+0,dbid)
         UNION ALL
-        select /*+ordered no_merge(a) no_merge(b) use_hash(b)*/ 10 aas_,&public 
+        select /*+ordered no_merge(a) cardinality(30000000) no_merge(b) use_hash(b)*/ 10 aas_,&public 
         from  (
             select distinct sample_id,dbid,instance_number,snap_id
             from   dba_hist_active_sess_history
