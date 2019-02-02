@@ -6,7 +6,7 @@
    --]]
 ]]*/
 set verify off feed off termout off printsize 3000 sep4k on
-col cells new_value cells;
+col cells new_value cells noprint;
 SELECT listagg(''''||a.cellname||''' as "'|| b.name||'"',',') WITHIN GROUP(ORDER BY b.name) cells
 FROM   v$cell_config a,
        XMLTABLE('/cli-output/cell' PASSING xmltype(a.confval) COLUMNS
