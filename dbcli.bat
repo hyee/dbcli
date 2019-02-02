@@ -16,11 +16,11 @@ If exist "data\init.cfg" (for /f "eol=# delims=" %%i in (data\init.cfg) do (%%i)
 
 rem search java 1.8+ executable
 SET TEMP_PATH=!PATH!
-set "PATH=.\jre\bin;!PATH!;%JAVA_HOME%\bin;%JRE_HOME%\bin;%JRE_HOME%"
+set "PATH=%JRE_HOME%\bin;%JRE_HOME%;%JAVA_HOME%\bin;!PATH!;.\jre\bin"
 SET JAVA_HOME=
 
-for /F "usebackq delims=" %%p in (`where java.exe 2^>NUL ^& echo %JRE_HOME%\bin\java.exe`) do (
-  If exist "%%p" (
+for /F "usebackq delims=" %%p in (`where java.exe 2^>NUL`) do (
+  If exist %%~sp (
       set "JAVA_EXE_=%%~sp"
       FOR /F "tokens=1,2 delims== " %%i IN ('!JAVA_EXE_! -XshowSettings:properties -version 2^>^&1^|findstr "java\.home java.version os.arch"' ) do (
         if "%%i" equ "java.home" set "JAVA_BIN_=%%~sj\bin"
@@ -29,13 +29,14 @@ for /F "usebackq delims=" %%p in (`where java.exe 2^>NUL ^& echo %JRE_HOME%\bin\
       )
       if "!JAVA_EXE_!" neq "" if "!JAVA_BIN_!" neq "" (
         set "JAVA_BIN=!JAVA_BIN_!" & set "JAVA_EXE=!JAVA_BIN_!\java.exe" & set "bit=!bit_!"
+        goto next
       ) else ( set "JAVA_BIN_=")
    )
 )
 
-IF not exist "!JAVA_EXE!" (set "JAVA_BIN=.\jre\bin" & set "JAVA_EXE=.\jre\bin\java.exe" & set "bit=x86")
+:next
 If not exist "!JAVA_EXE!" (
-    echo "Cannot find Java 1.8 executable, exit."
+    echo Cannot find Java 1.8 executable, exit.
     pause
     exit /b 1
 )

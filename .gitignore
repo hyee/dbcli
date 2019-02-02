@@ -1,4 +1,5 @@
 *.dat
+*.db
 data/init.cfg
 data/init.conf
 data/plugin.cfg
