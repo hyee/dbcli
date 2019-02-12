@@ -40,6 +40,11 @@
                         sample_time+0 sample_time,
                         sample_id,
                         px_flags,
+                        CASE WHEN session_type = 'BACKGROUND' OR REGEXP_LIKE(program, '.*\([PJ]\d+\)') THEN
+                            regexp_replace(REGEXP_REPLACE(regexp_substr(program,'\([^\(]+\)'), '\d\w\w', 'nnn'),'\d','n')
+                        ELSE
+                            '('||REGEXP_REPLACE(REGEXP_SUBSTR(program, '[^@]+'), '\d', 'n')||')'
+                        END program,
                         trim(decode(bitand(time_model,power(2, 3)),0,'','connection_mgmt ') || 
                              decode(bitand(time_model,power(2, 4)),0,'','parse ') || 
                              decode(bitand(time_model,power(2, 7)),0,'','hard_parse ') || 
@@ -146,6 +151,7 @@ ash0(   aas_,
         SID,
         qc_sid,
         current_obj#,
+        program,
         p1,
         p2,
         p3,
@@ -177,6 +183,7 @@ ash0(   aas_,
         SID,
         qc_sid,
         current_obj#,
+        program,
         p1,
         p2,
         p3,
@@ -212,6 +219,7 @@ ash0(   aas_,
         b.SID,
         b.qc_sid,
         b.current_obj#,
+        b.program,
         b.p1,
         b.p2,
         b.p3,
@@ -246,8 +254,8 @@ ash0(   aas_,
              and  a.inst_id=b.qc_inst
              and  not (b.sid=b.qc_sid and b.inst_id=b.qc_inst) then 1 else 0 end 
         + case when a.blocking_session=b.sid and  a.blocking_inst_id=b.inst_id then 2 else 0 end flags,
-        a.sql_id||' -> '||nvl(b.sql_id,'(NULL)'),
-        a.event ||' -> '||nvl(b.event,'ON CPU')
+        a.chain1||' -> '||coalesce(b.sql_id,b.program,'(NULL)'),
+        a.chain2 ||' -> '||nvl(b.event,'ON CPU')
     from ash0 a,ash b
     where a.aas_=b.aas_
     and   a.seq#!=b.seq#
@@ -341,7 +349,7 @@ ash_raw as (
                    case when (qc_sid!=sid or qc_inst!=inst_id) then 1 else 0 end is_px_slave,
                    CASE WHEN 'Y' IN(decode(pred_flag,2,'Y','N'),IN_PLSQL_) THEN 1 END IN_PLSQL       
             FROM   ash1 a where bitand(flags,1)=1 or is_leaf=1) h
-    WHERE  seq = 1),
+    WHERE  seq = 1 or bitand(flags,2)=2),
 chain AS
  (SELECT s.*, ROWNUM r
   FROM   (SELECT round(100 * SUM(aas) / MAX(aass), 2) pct,
@@ -357,11 +365,11 @@ chain AS
                               when is_leaf=1 and blocking_inst_id =inst_id then ' -> (Unknown)'
                          end suffix
                   FROM ash_raw b 
-                  WHERE BITAND(flags, 2) = 2)
+                  WHERE bitand(flags, 2) = 2 and is_leaf=1)
           GROUP  BY chain1, chain2,suffix, ROLLUP(curr_obj#)
           ORDER  BY pct DESC) s
   WHERE  grp = 1
-  AND    pct >= 0.5),
+  AND    pct >= 0.01),
 chain_widths AS
  (SELECT greatest(MAX(length(pct)), 3) spct,
          greatest(MAX(LENGTH(aas)), 3) saas,

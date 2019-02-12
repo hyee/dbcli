@@ -1,5 +1,13 @@
 /*[[
 Show ash wait chains. Usage: @@NAME {[<sql_id>|<sid>|-f"<filter>"] [YYMMDDHH24MI] [YYMMDDHH24MI]}|{-snap [secs]} [-sid] [-dash] [-flat]
+    options:
+        -dash: source from dba_hist_active_session_history instead of gv$active_session_history
+        -snap <secs> : show wait chain within recent n secs
+        -sid:  grouping by sid instead of sql_id
+        -phase: show top phase instead of top object
+        -op   : show top op name instead of top object
+        -p    : show progam + event + p1/2/3 instead of event + top object
+        -flat : show ashchain in flat style instead of tree style
 This script references Tanel Poder's script
     --[[
         @con : 12.1={AND prior con_id=con_id} default={}
@@ -10,7 +18,7 @@ This script references Tanel Poder's script
         &range : default={sample_time BETWEEN NVL(TO_DATE(NVL(:V2,:STARTTIME),'YYMMDDHH24MI'),SYSDATE-7) AND NVL(TO_DATE(NVL(:V3,:ENDTIME),'YYMMDDHH24MI'),SYSDATE)}, snap={sample_time>=sysdate - nvl(:V1,60)/86400}, f1={}
         &snap:   default={--} snap={}
         &pname : default={decode(session_type,'BACKGROUND',program2)} p={program2}
-        &group : default={curr_obj#}, p={p123}, phase={phase}
+        &group : default={curr_obj#}, p={p123}, phase={phase} , op={sql_opname}
         &grp1  : default={sql_ids}, sid={sids}
         &grp2  : default={sql_id}, sid={sid}, none={sample_id}
         &unit  : default={1}, dash={10}
@@ -119,7 +127,7 @@ BEGIN
               WHERE  b.chose IS NOT NULL
               OR     a.b_sid IS NOT NULL),
             chains AS (
-                SELECT /*+NO_EXPAND PARALLEL(4) CONNECT_BY_FILTERING*/
+                SELECT /*+NO_EXPAND PARALLEL(4)*/
                       level lvl,
                       sid w_sid,
                       SYS_CONNECT_BY_PATH(case when :filter2 = 1 then 1 when &filter then 1 else 0 end ,',') is_found,
@@ -213,7 +221,7 @@ BEGIN
               WHERE  b.chose IS NOT NULL
               OR     a.b_sid IS NOT NULL),
             chains AS (
-                SELECT /*+NO_EXPAND PARALLEL(4) CONNECT_BY_FILTERING*/
+                SELECT /*+NO_EXPAND PARALLEL(4)*/
                        sid w_sid,b_sid,
                        rownum-level r,
                        inst,

@@ -79,6 +79,7 @@ FROM(
                a.fetches
          from &awr$sqlstat  a
         WHERE a.&BASE=:V1)
-    group by snap_id,sql_id,plan_hash)
+    group by snap_id,sql_id,plan_hash
+    having sum(ela)>0)
  group by time,sql_id,plan_hash
  order by 1 desc

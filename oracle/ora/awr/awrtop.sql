@@ -11,7 +11,7 @@ ORA _sqlstat
 WITH qry as (SELECT coalesce(upper(:V1),''||:instance,'A') inst,
                     lower(nvl(:V2,'ela')) typ,
                     to_timestamp(coalesce(:V3,:starttime,to_char(sysdate-7,'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
-                    to_timestamp(coalesce(:V4,:endtime,''||(:V3+1),to_char(sysdate,'YYMMDDHH24MI')),'YYMMDDHH24MI')  ed from dual)
+                    to_timestamp(coalesce(:V4,:endtime,to_char(sysdate,'YYMMDDHH24MI')),'YYMMDDHH24MI')  ed from dual)
 SELECT /*+ordered use_nl(a b)*/
      r "#",
      a.sql_id,
@@ -51,7 +51,7 @@ FROM (SELECT rownum r,a.* from(
             GROUP  BY &base,qry.typ
             ORDER  BY decode(qry.typ,'exec',execs,'parse',parse,val) desc nulls last)a) a,
            Dba_Hist_Sqltext b
-WHERE  a.sqlid = b.sql_id
+WHERE  a.sqlid = b.sql_id(+)
 AND    r<=50
 
 order  by 1
