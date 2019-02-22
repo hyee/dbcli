@@ -4,9 +4,10 @@ local extvars={}
 local datapath=env.join_path(env.WORK_DIR,'oracle/dict.pack')
 local re=env.re
 local uid=nil
-
+local cache={}
 
 local fmt='%s(select /*+merge*/ * from %s where %s=%s :others:)%s'
+local fmt1='%s(select /*+merge*/  %d inst_id,a.* from %s a where 1=1 :others:)%s'
 local instance,container,usr,dbid,starttime,endtime
 local function rep_instance(prefix,full,obj,suffix)
     obj=obj:upper()
@@ -19,7 +20,9 @@ local function rep_instance(prefix,full,obj,suffix)
             {usr and usr~="",extvars.dict[obj].usr_col,"(select /*+no_merge*/ username from all_users where user_id="..usr..")"},
         } do
             if v[1] and v[2] and v[3] then
-                if flag==0 then
+                if k==1 and obj:find('^GV_?%$') and v[3]==tonumber(db.props.instance) then
+                    str=fmt1:format(prefix,instance,full:gsub("[gG]([vV]_?%$)","%1"),suffix)
+                elseif flag==0 then
                     str=fmt:format(prefix,full,v[2],''..v[3],suffix)
                 else
                     str=str:gsub(':others:','and '..v[2]..'='..v[3]..' :others:')
@@ -31,7 +34,7 @@ local function rep_instance(prefix,full,obj,suffix)
     if flag==0 then
         str=prefix..full..suffix
     else
-        str=str:gsub(' :others:','')
+        str=str:gsub('where 1=1 and','where'):gsub(' where 1=1 :others:',''):gsub(' :others:','')
         env.log_debug('extvars',str)
     end
     return str
@@ -60,11 +63,15 @@ function extvars.on_before_db_exec(item)
     if not extvars.dict then return item end
     local db,sql,args,params=table.unpack(item)
 
-    if sql and not item.__IS_EXTVARS then
-        item.__IS_EXTVARS=true
+    if sql and not cache[sql] then
         item[2]=re.gsub(sql..' ',extvars.P,rep_instance):sub(1,-2)
+        cache[item[2]]=1
     end
     return item
+end
+
+function extvars.on_after_db_exec()
+    table.clear(cache)
 end
 
 function extvars.set_title(name,value,orig)
@@ -214,6 +221,7 @@ end
 function extvars.onload()
     env.set_command(nil,"TEST_GRID",nil,test_grid,false,1)
     event.snoop('BEFORE_DB_EXEC',extvars.on_before_db_exec,nil,60)
+    event.snoop('AFTER_DB_EXEC',extvars.on_after_db_exec)
     event.snoop('ON_SUBSTITUTION',extvars.on_before_db_exec,nil,60)
     event.snoop('AFTER_ORACLE_CONNECT',extvars.on_after_db_conn)
     event.snoop('ON_SETTING_CHANGED',extvars.set_title)

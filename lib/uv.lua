@@ -63,27 +63,13 @@ function uv.async_read(path, maxsize, callback,...)
     if (maxsize or 0)<=0 then
         maxsize=1024*1024*1024
     end
-    u.fs_open(path, "r", 438 --[[ 0666 ]], function (err, result)
-        if err then return res(err) end
-        fd = result
-        u.fs_fstat(fd, onStat)
-    end)
-    function onStat(err, stat)
-        if err then return onRead(err) end
-        if stat.size > 0 then
-            u.fs_read(fd, math.min(maxsize,stat.size), 0, onRead)
-        else
-          -- the kernel lies about many files.
-          -- Go ahead and try to read some bytes.
-            pos = 0
-            chunks = {}
-            u.fs_read(fd, math.min(maxsize,8192), 0, onChunk)
-        end
-    end
-    function onRead(err, chunk)
+    
+
+    local function onRead(err, chunk)
         return res(err, chunk)
     end
-    function onChunk(err, chunk)
+
+    local function onChunk(err, chunk)
         if err then
             return res(err)
         end
@@ -96,6 +82,25 @@ function uv.async_read(path, maxsize, callback,...)
         end
         return res(nil, table.concat(chunks))
     end
+
+    local function onStat(err, stat)
+        if err then return onRead(err) end
+        if stat.size > 0 then
+            u.fs_read(fd, math.min(maxsize,stat.size), 0, onRead)
+        else
+          -- the kernel lies about many files.
+          -- Go ahead and try to read some bytes.
+            pos = 0
+            chunks = {}
+            u.fs_read(fd, math.min(maxsize,8192), 0, onChunk)
+        end
+    end
+    
+    u.fs_open(path, "r", 438 --[[ 0666 ]], function (err, result)
+        if err then return res(err) end
+        fd = result
+        u.fs_fstat(fd, onStat)
+    end)
 end
 
 local binaries={class=1,jar=1,exe=1,dll=1,so=1,gif=1,html=1,zip=1,['7z']=1,chm=1,mnk=1}

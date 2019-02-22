@@ -5,13 +5,13 @@
       &fields: {
             sql={sql_id},
             e={null}, 
-            p={p1,p2,p3,p3text},
-            pr={p1raw,p2raw,p3raw}, 
-            o={obj},
-            plan={plan_hash,current_obj#,SQL_PLAN_LINE_ID} 
+            p={p1,p2,p3,p3text &0},
+            pr={p1raw,p2raw,p3raw &0}, 
+            o={obj &0},
+            plan={plan_hash,current_obj#,SQL_PLAN_LINE_ID &0} 
             none={1},
             c={},
-            proc={sql_id,PLSQL_ENTRY_OBJECT_ID},
+            proc={sql_id,PLSQL_ENTRY_OBJECT_ID &0},
         }
       &View: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
       &BASE: ash={1}, dash={10}
@@ -41,7 +41,7 @@
         -ash : source table is gv$active_session_history(default)
         -dash: source table is dba_hist_active_sess_history
       Filters   :
-        -id  : show data for specific sql_id/sid. Usage: [-id] [sql_i|sid]  [starttime] [endtime]
+        -id  : show data for specific sql_id/sid. Usage: [-id] [sql_id|sid]  [starttime] [endtime]
         -u   : only show the data related to current schema. Usage: -u <seconds> [starttime] [endtime]
         -snap: only show the data within specific seconds. Usage: -snap <seconds> [sql_id|sid]
       Addition filter:

@@ -531,9 +531,10 @@ BEGIN
                      bind,
                      rtrim(decode(dty,
                                   2,to_char(utl_raw.cast_to_number(peek)),
-                                  1,to_char(utl_raw.cast_to_varchar2(peek)),
-                                  9,to_char(utl_raw.cast_to_varchar2(peek)),
-                                  96,to_char(utl_raw.cast_to_varchar2(peek)),
+                                  1,to_char(decode(frm, 2, utl_raw.cast_to_nvarchar2(peek),utl_raw.cast_to_varchar2(peek))),
+                                  9,to_char(decode(frm, 2, utl_raw.cast_to_nvarchar2(peek),utl_raw.cast_to_varchar2(peek))),
+                                  96,to_char(decode(frm, 2, utl_raw.cast_to_nvarchar2(peek),utl_raw.cast_to_varchar2(peek))),
+                                  112,to_char(decode(frm, 2, utl_raw.cast_to_nvarchar2(peek),utl_raw.cast_to_varchar2(peek))),
                                   100,to_char(utl_raw.cast_to_binary_double(peek)),
                                   101,to_char(utl_raw.cast_to_binary_float(peek)),
                                   180,lpad(TO_NUMBER(SUBSTR(peek, 1, 2), 'XX') - 100, 2, 0) || lpad(TO_NUMBER(SUBSTR(peek, 3, 2), 'XX') - 100, 2, 0) || '-' ||

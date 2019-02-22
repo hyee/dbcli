@@ -303,6 +303,8 @@ local desc_sql={
                   ,'FLOAT'        ,to_char(utl_raw.cast_to_number(low_value))
                   ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(low_value))
                   ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(low_value))
+                  ,'CHAR'         ,to_char(utl_raw.cast_to_varchar2(low_value))
+                  ,'NCHAR'        ,to_char(utl_raw.cast_to_nvarchar2(low_value))
                   ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(low_value))
                   ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(low_value))
                   ,'TIMESTAMP'    , lpad(TO_NUMBER(SUBSTR(low_value, 1, 2), 'XX')-100,2,0)||
@@ -338,6 +340,8 @@ local desc_sql={
                       ,'FLOAT'        ,to_char(utl_raw.cast_to_number(high_value))
                       ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(high_value))
                       ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(high_value))
+                      ,'CHAR'         ,to_char(utl_raw.cast_to_varchar2(high_value))
+                      ,'NCHAR'        ,to_char(utl_raw.cast_to_nvarchar2(high_value))
                       ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(high_value))
                       ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(high_value))
                       ,'TIMESTAMP'   , lpad(TO_NUMBER(SUBSTR(high_value, 1, 2), 'XX')-100,2,0)||
