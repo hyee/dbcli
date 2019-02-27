@@ -497,7 +497,7 @@
                 SMALL='[SMALL]*100/[IOPS]',
                 ['OflIn']='[offload]*100/[OflIn]',
                 ['OflOut']='[OflOut]*100/[BandWidth]',
-                ['OflEff']='100-[OflEff]*100/([Unzip]+[SISave])',
+                ['OflEff']='100-[OflEff]*100/([Unzip]+[SISave]+[CCSave])',
                 ['Resp']='[Resp]/[Calls]',
                 ['IO Wait']='[IO Wait]/[total_waits]',
                 busy='[busy]*100/[idle]',

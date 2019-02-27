@@ -184,10 +184,10 @@ xplan_data AS
            o.pid,
            o.oid,
            o.maxid,
-           rownum r,
+           r,
            max(o.minid) over() as minid,
            COUNT(*) over() AS rc
-  FROM   xplan x
+  FROM   (select rownum r, x.* from xplan x) x
   LEFT   OUTER JOIN ordered_hierarchy_data o
   ON     (o.id = CASE WHEN regexp_like(x.plan_table_output, '^\|[-\* ]*[0-9]+ \|') THEN to_number(regexp_substr(x.plan_table_output, '[0-9]+')) END))
 SELECT plan_table_output

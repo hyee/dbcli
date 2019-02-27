@@ -13,7 +13,7 @@ This script references Tanel Poder's script
         @con : 12.1={AND prior con_id=con_id} default={}
         &tree  : default={1} flat={0}
         &V8    : ash={gv$active_session_history},dash={Dba_Hist_Active_Sess_History}
-        &Filter: default={:V1 in(''||session_id,sql_id,SESSION_ID||'@'||&INST1,event,''||current_obj#)} f={}
+        &Filter: default={:V1 in(''||session_id,sql_id,top_level_sql_id,SESSION_ID||'@'||&INST1,event,''||current_obj#)} f={}
         &filter1: default={0} f={1}
         &range : default={sample_time BETWEEN NVL(TO_DATE(NVL(:V2,:STARTTIME),'YYMMDDHH24MI'),SYSDATE-7) AND NVL(TO_DATE(NVL(:V3,:ENDTIME),'YYMMDDHH24MI'),SYSDATE)}, snap={sample_time>=sysdate - nvl(:V1,60)/86400}, f1={}
         &snap:   default={--} snap={}
@@ -131,7 +131,7 @@ BEGIN
                       level lvl,
                       sid w_sid,
                       SYS_CONNECT_BY_PATH(case when :filter2 = 1 then 1 when &filter then 1 else 0 end ,',') is_found,
-                      REPLACE(trim('>' from regexp_replace(SYS_CONNECT_BY_PATH(nvl(sql_id,program2), '>')||decode(connect_by_isleaf,1,nvl2(b_sid,'>(Idle)','')),'(>.+?)\1+','\1 +',2)), '>', ' > ') sql_ids,
+                      REPLACE(trim('>' from regexp_replace(SYS_CONNECT_BY_PATH(coalesce(sql_id,top_level_sql_id,program2), '>')||decode(connect_by_isleaf,1,nvl2(b_sid,'>(Idle)','')),'(>.+?)\1+','\1 +',2)), '>', ' > ') sql_ids,
                       REPLACE(trim('>' from regexp_replace(SYS_CONNECT_BY_PATH(&pname ||event2, '>')||decode(connect_by_isleaf,1,nvl2(b_sid,'>(Idle)','')),'(>.+?)\1+','\1 +',2)), '>', ' > ') path, -- there's a reason why I'm doing this (ORA-30004 :)
                       REPLACE(trim('>' from regexp_replace(SYS_CONNECT_BY_PATH(sid,'>')||decode(connect_by_isleaf,1,nullif('>'||b_sid,'>')),'(>.+?)\1+','\1 +')), '>', ' > ') sids,
                       &exec_id sql_exec,

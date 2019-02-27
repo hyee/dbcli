@@ -14,9 +14,9 @@ local function rep_instance(prefix,full,obj,suffix)
     local flag,str=0
     if extvars.dict[obj] then
         for k,v in ipairs{
-            {instance>0,extvars.dict[obj].inst_col,instance},
-            {container>=0,extvars.dict[obj].cdb_col,container},
-            {dbid>0,extvars.dict[obj].dbid_col,dbid},
+            {instance and instance>0,extvars.dict[obj].inst_col,instance},
+            {container and container>=0,extvars.dict[obj].cdb_col,container},
+            {dbid and dbid>0,extvars.dict[obj].dbid_col,dbid},
             {usr and usr~="",extvars.dict[obj].usr_col,"(select /*+no_merge*/ username from all_users where user_id="..usr..")"},
         } do
             if v[1] and v[2] and v[3] then
@@ -50,14 +50,14 @@ function extvars.on_before_db_exec(item)
     instance,container,usr,dbid,starttime,endtime=tonumber(cfg.get("instance")),tonumber(cfg.get("container")),cfg.get("schema"),cfg.get("dbid"),cfg.get("STARTTIME"),cfg.get("ENDTIME")
     if instance==0 then instance=tonumber(db.props.instance) end
     for k,v in ipairs{
-        {'INSTANCE',instance>0 and instance or instance<0 and ""},
-        {'DBID',dbid>0 and dbid or ""},
-        {'CON_ID',container>=0 and container or ""},
+        {'INSTANCE',instance and instance>0 and instance or ""},
+        {'DBID',dbid and dbid>0 and dbid or ""},
+        {'CON_ID',container and container>=0 and container  or ""},
         {'STARTTIME',starttime},
         {'ENDTIME',endtime},
         {'SCHEMA',usr}
     } do
-        if not var.outputs[v[1]] then var.setInputs(v[1],''..v[2]) end
+        if var.outputs[v[1]]==nil then var.setInputs(v[1],''..v[2]) end
     end
 
     if not extvars.dict then return item end
