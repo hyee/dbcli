@@ -1,3 +1,4 @@
+2019-03-01: + oracle: new command 'show metric' and 'exa phase'
 2019-01-23: * public: update libs luv(libuv1.25) and luajit
 2019-01-20: + oracle: new command 'ora scn' 
 2019-01-08: + public: new 'last' option of command 'less/more'(also support subsystem)

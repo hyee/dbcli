@@ -516,36 +516,30 @@ BEGIN
     WHERE c.cnt>0;
     
     WITH waits AS
-        (SELECT clz, to_char(cnt) cnt,round(100*ratio_to_report(cnt) over(),2)||'%' pct, listagg(pct, ',') WITHIN GROUP(ORDER BY seq) ids
-        FROM   (
-            SELECT ArgType as cnt,TableName as clz,TableSchema as pct,Cardinality as seq
-            FROM   TABLE(descs))
-        WHERE  seq <= 5
-        GROUP  BY clz, cnt),
+     (SELECT clz, to_char(cnt) cnt, listagg(pct, ',') WITHIN GROUP(ORDER BY seq) ids
+      FROM   (SELECT ArgType AS cnt, TableName AS clz, TableSchema AS pct, Cardinality AS seq FROM TABLE(descs))
+      WHERE  seq <= 5
+      GROUP  BY clz, cnt),
     w_len AS
-        (SELECT greatest(MAX(length(clz)), 10) l1, greatest(MAX(LENGTH(''||cnt)), 3) l2, greatest(MAX(LENGTH(ids)), 16) l3, COUNT(1) c FROM waits)
-    SELECT * BULK COLLECT INTO lst
-    FROM (
-        SELECT '+' || LPAD('-', l1 + l2 + l3 + 8 + 8, '-') || '+'
-        FROM   w_len
-        WHERE  c > 0
-        UNION ALL
-        SELECT '| ' || RPAD('Wait Class', l1) || ' | ' || LPAD('AAS', l2) || ' | ' || LPAD('Pct', 5) ||  ' | ' || RPAD('Top Lines of AAS', l3) || ' |'
-        FROM   w_len
-        WHERE  c > 0
-        UNION ALL
-        SELECT '+' || LPAD('-', l1 + l2 + l3 + 8 + 8, '-') || '+'
-        FROM   w_len
-        WHERE  c > 0
-        UNION ALL
-        SELECT *
-        FROM   (
-            SELECT '| ' || RPAD(clz, l1) || ' | ' || LPAD(cnt, l2)  || ' | ' || LPAD(pct, l2) || ' | ' || RPAD(ids, l3) || ' |' 
-            FROM waits, w_len 
-            WHERE c > 0 
-            ORDER BY 0 + cnt DESC,clz)
-        UNION ALL
-        SELECT '+' || LPAD('-', l1 + l2 + l3 + 8 + 8 , '-') || '+' FROM w_len WHERE c > 0);
+     (SELECT greatest(MAX(length(clz)), 10) l1, greatest(MAX(LENGTH('' || cnt)), 3) l2, greatest(MAX(LENGTH(ids)), 10) l3, COUNT(1) c FROM waits)
+    SELECT *
+    BULK   COLLECT
+    INTO   lst
+    FROM   (SELECT '+' || LPAD('-', l1 + l2 + l3 + 8, '-') || '+' FROM w_len WHERE  c > 0
+            UNION ALL
+            SELECT '| ' || RPAD('Wait Class', l1) || ' | ' || LPAD('AAS', l2) || ' | ' || RPAD('Top Lines', l3) || ' |'
+            FROM   w_len
+            WHERE  c > 0
+            UNION ALL
+            SELECT '+' || LPAD('-', l1 + l2 + l3 + 8, '-') || '+' FROM w_len WHERE  c > 0
+            UNION ALL
+            SELECT *
+            FROM   (SELECT '| ' || RPAD(clz, l1) || ' | ' || LPAD(cnt, l2) || ' | ' || RPAD(ids, l3) || ' |'
+                    FROM   waits, w_len
+                    WHERE  c > 0
+                    ORDER  BY 0 + cnt DESC, clz)
+            UNION ALL
+            SELECT '+' || LPAD('-', l1 + l2 + l3 + 8, '-') || '+' FROM w_len WHERE  c > 0);
     flush('Wait Event Summary');
     
     WITH line_info AS

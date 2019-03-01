@@ -52,7 +52,7 @@ function extvars.on_before_db_exec(item)
     for k,v in ipairs{
         {'INSTANCE',instance and instance>0 and instance or ""},
         {'DBID',dbid and dbid>0 and dbid or ""},
-        {'CON_ID',container and container>=0 and container  or ""},
+        {'CON_ID',container and container>=0 and dbid  or ""},
         {'STARTTIME',starttime},
         {'ENDTIME',endtime},
         {'SCHEMA',usr}
