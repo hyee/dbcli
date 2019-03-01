@@ -76,15 +76,15 @@ function xplan.explain(fmt,sql)
                  MAX(id) over() AS maxid
             FROM   hierarchy_data),
         xplan_data AS
-         (SELECT /*+ ordered use_nl(o) */
-                 rownum AS r,
+         (SELECT /*+materialize ordered use_nl(o) */
+                 x.r,
                  x.plan_table_output AS plan_table_output,
                  o.id,
                  o.pid,
                  o.oid,
                  o.maxid,
                  COUNT(*) over() AS rc
-            FROM   (SELECT * FROM qry,TABLE(dbms_xplan.display('PLAN_TABLE', NULL, '@fmt@', 'plan_id=' || qry.plan_id))) x
+            FROM   (select rownum r,x.* from (SELECT * FROM qry,TABLE(dbms_xplan.display('PLAN_TABLE', NULL, '@fmt@', 'plan_id=' || qry.plan_id))) x) x
             LEFT   OUTER JOIN ordered_hierarchy_data o
             ON     (o.id = CASE WHEN regexp_like(x.plan_table_output, '^\|[-\* ]*[0-9]+ \|') THEN to_number(regexp_substr(x.plan_table_output, '[0-9]+')) END))
         select plan_table_output
