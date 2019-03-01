@@ -7,26 +7,43 @@ col bytes,f_bytes format kmg
 col ios,f_ios,lios,f_lios format tmb
 col service,f_service,queues,f_queues,Avg|Time,Avg|Queue,Avg|Service format usmhd2
 set feed off
-WITH dbs AS
- (SELECT db, NAME, listagg(VALUE, ',') within GROUP(ORDER BY VALUE) VALUE
-  FROM   (SELECT DISTINCT b.*
-          FROM   v$cell_state a,
-                 xmltable('//stats//stat' passing xmltype(a.statistics_value) columns --
-                          DB VARCHAR2(50) path './../stat[@name="db name"]',
-                          NAME VARCHAR2(50) path '@name',
-                          VALUE VARCHAR2(128) path '.') b
-          WHERE  statistics_type = 'DBDES')
-  WHERE  NAME != 'db name'
-  GROUP  BY db, NAME)
 SELECT db,
-       MAX(decode(NAME, 'db id', VALUE)) "db id",
-       MAX(decode(NAME, 'root id', VALUE)) "root id",
-       MAX(decode(NAME, 'ocl_group_id', VALUE)) "ocl_group_id",
-       MAX(decode(NAME, 'offload_group_name', VALUE)) "offload_group_name"，
-       MAX(decode(NAME, 'group_oflgrp_open_disabled', VALUE)) "oflgrp_open_disabled"
-FROM   dbs
+       regexp_replace(listagg(dbid, ',') within GROUP(ORDER BY dbid), '([^,]+)(,\1)+', '\1') dbid,
+       regexp_replace(listagg(root, ',') within GROUP(ORDER BY root), '([^,]+)(,\1)+', '\1') root_id,
+       regexp_replace(listagg(ocl_group_id, ',') within GROUP(ORDER BY ocl_group_id), '([^,]+)(,\1)+', '\1') ocl_group_id,
+       regexp_replace(listagg(oflgrp_name, ',') within GROUP(ORDER BY oflgrp_name), '([^,]+)(,\1)+', '\1') oflgrp_name,
+       regexp_replace(listagg(PACKAGE, ',') within GROUP(ORDER BY PACKAGE), '([^,]+)(,\1)+', '\1') PACKAGE,
+       regexp_replace(listagg(oflgrp_disabled, ',') within GROUP(ORDER BY oflgrp_disabled), '([^,]+)(,\1)+', '\1') oflgrp_disabled
+FROM   (
+    SELECT /*+ordered use_hash(a b c) no_merge(a) no_merge(b) no_merge(c)*/
+            DISTINCT db,dbid, root, ocl_group_id, nvl(a.ofl_name, oflgrp_name) oflgrp_name, PACKAGE, oflgrp_disabled
+    FROM   (SELECT DISTINCT cell_name, b.*, decode(instr(grp_name, ' '), 0, grp_name) ofl_name
+            FROM   v$cell_state a,
+                    xmltable('//stats[@type="databasedes"]' passing xmltype(a.statistics_value) columns --
+                            db VARCHAR2(128) path 'stat[@name="db name"]',
+                            dbid INT path 'stat[@name="db id"]',
+                            root INT path 'stat[@name="root id"]',
+                            grp_name VARCHAR2(50) path 'stat[@name="offload_group_name"]', --
+                            ocl_group_id INT path 'stat[@name="ocl_group_id"]',
+                            oflgrp_name_len INT path 'stat[@name="offload_group_name_len"]',
+                            oflgrp_disabled INT path 'stat[@name="group_oflgrp_open_disabled"]') b
+            WHERE  statistics_type = 'DBDES') a --
+    LEFT JOIN (SELECT DISTINCT cell_name, b.*
+                FROM   v$cell_state a,
+                       xmltable('//stats[@type="offloadgroupdes"]' passing xmltype(a.statistics_value) columns --
+                                oflgrp_name VARCHAR2(50) path 'stat[@name="offload_group"]', --
+                                ocl_group_id VARCHAR2(50) path 'stat[@name="ocl_group_id"]') b
+                WHERE  statistics_type = 'OFLGRPDES') b --
+    USING  (cell_name, ocl_group_id) --
+    LEFT JOIN (SELECT DISTINCT cellname cell_name, b.*
+                FROM   v$cell_config_info a,
+                       XMLTABLE('/cli-output/offloadgroup' PASSING xmltype(a.confval) COLUMNS --
+                                oflgrp_name VARCHAR2(300) path 'name',
+                                PACKAGE VARCHAR2(300) path 'package') b
+                WHERE  conftype = 'OFFLOAD') c --
+    USING  (cell_name, oflgrp_name))
 GROUP  BY db
-ORDER  BY 1;
+ORDER BY upper(db);
 
 SELECT a.*,
        round((queues+f_queues+service+f_service)/nullif(ios+f_ios,0),2) "Avg|Time",
