@@ -3,20 +3,26 @@ set printsize 3000
 COL cellsrv_input,cellsrv_output,cellsrv_passthru,ofl_input,ofl_output,ofl_passthru,cpu_passthru,storage_idx_saved format kmg
 col mesgs,replies,alloc_failures,send_failures,oal_errors,ocl_errors format tmb
 grid {[[/*grid={topic='Offload Package'}*/
+    with threads as(
+           SELECT /*+materialize*/ cell_name cellname, group_name oflgrp_name, process_id pid, COUNT(nullif(DATABASE_ID, 0)) aas
+           FROM   v$cell_ofl_thread_history
+           GROUP  BY cell_name, group_name, process_id)
     SELECT /*+ordered use_hash(a b c)*/
-           cell, oflgrp_name,ocl_group_id, PACKAGE
+           cell, oflgrp_name, pid, ocl_group_id, PACKAGE, aas
     FROM   (SELECT CELLNAME, extractvalue(xmltype(a.confval), '/cli-output/context/@cell') cell, b.*
             FROM   v$cell_config_info a,
                    XMLTABLE('/cli-output/offloadgroup' PASSING xmltype(a.confval) COLUMNS --
                             oflgrp_name VARCHAR2(300) path 'name',
                             PACKAGE VARCHAR2(300) path 'package') b
             WHERE  conftype = 'OFFLOAD') a
-    LEFT   JOIN (SELECT a.cell_name cellname, b.*
+    JOIN (SELECT a.cell_name cellname, b.*
                  FROM   v$cell_state a,
                         xmltable('//stats[@type="offloadgroupdes"]' passing xmltype(a.statistics_value) columns --
                                  oflgrp_name VARCHAR2(50) path 'stat[@name="offload_group"]', --
                                  ocl_group_id NUMBER path 'stat[@name="ocl_group_id"]') b
                  WHERE  statistics_type = 'OFLGRPDES') b
+    USING  (cellname, oflgrp_name)
+    JOIN   threads c
     USING  (cellname, oflgrp_name)
     WHERE  lower(cell) LIKE lower('%' || :V1 || '%')
     ORDER  BY 1, 2, 3]],
