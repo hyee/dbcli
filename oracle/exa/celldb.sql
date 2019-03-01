@@ -6,7 +6,8 @@
 col bytes,f_bytes format kmg
 col ios,f_ios,lios,f_lios format tmb
 col service,f_service,queues,f_queues,Avg|Time,Avg|Queue,Avg|Service format usmhd2
-set feed off
+set feed off sep4k on
+
 SELECT db,
        regexp_replace(listagg(dbid, ',') within GROUP(ORDER BY dbid), '([^,]+)(,\1)+', '\1') dbid,
        regexp_replace(listagg(root, ',') within GROUP(ORDER BY root), '([^,]+)(,\1)+', '\1') root_id,
@@ -97,28 +98,29 @@ FROM (
     GROUP  BY cell) A
 order by 1,2,3;
 
-SELECT metric_name,
-       MAX(end_time) last_time,
-       COUNT(DISTINCT cell) cells,
-       case when METRIC_TYPE like '%/s%' or metric_name like '% second' then SUM(metric_value) else round(AVG(metric_value), 2) end agg_value,
-       MIN(metric_value) min_value,
-       median(metric_value) med_value,
-       MAX(metric_value) max_value,
-       METRIC_TYPE
-FROM   (SELECT (SELECT extractvalue(xmltype(c.confval), '/cli-output/context/@cell')
-                FROM   v$cell_config c
-                WHERE  c.CELLNAME = a.CELL_NAME
-                AND    rownum < 2) cell,
-               MAX(begin_time) OVER(PARTITION BY CELL_NAME,METRIC_NAME) max_time,
-               begin_time,
-               end_time,
-               METRIC_NAME,
-               METRIC_VALUE,
-               METRIC_TYPE
-        FROM   v$cell_global_history a)
-WHERE  max_time = begin_time
-AND    lower(cell) like lower('%'||:V1||'%') 
-GROUP  BY metric_name, METRIC_TYPE
-ORDER  BY 1;
+SELECT  min(begin_time) begin_time,
+        max(END_TIME) END_TIME,
+        METRIC_NAME,
+        round(CASE
+                    WHEN TRIM(METRIC_TYPE) IN ('%', 'us') THEN
+                    AVG(NULLIF(METRIC_VALUE, 0))
+                    ELSE
+                    SUM(METRIC_VALUE/div/c)
+                END,
+                2) VALUE,
+        regexp_replace(METRIC_TYPE, 'bytes?', 'MB') unit,
+        count(distinct cell_hash) cells,
+        round(median(METRIC_VALUE/div),2) CELL_MED,
+        round(min(METRIC_VALUE/div),2) CELL_MIN,
+        round(max(METRIC_VALUE/div),2) CELL_MAX,
+        count(1) snaps
+FROM   (select a.*,
+                case when METRIC_TYPE LIKE '%byte%' then 1024*1024 else 1 end div,
+                count(distinct begin_time) over(partition by cell_hash,metric_name) c
+        from v$cell_global_history a
+        where METRIC_VALUE>0)
+WHERE  END_TIME >= SYSDATE - 1/24
+GROUP  BY metric_name, metric_type
+ORDER  BY metric_type, VALUE DESC;
 
 

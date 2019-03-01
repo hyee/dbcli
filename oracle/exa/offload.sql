@@ -3,27 +3,23 @@ set printsize 3000
 COL cellsrv_input,cellsrv_output,cellsrv_passthru,ofl_input,ofl_output,ofl_passthru,cpu_passthru,storage_idx_saved format kmg
 col mesgs,replies,alloc_failures,send_failures,oal_errors,ocl_errors format tmb
 grid {[[/*grid={topic='Offload Package'}*/
-    select cell,oflgrp_name,ocl_group_id,package 
-    from(
-        SELECT CELLNAME,
-               extractvalue(xmltype(a.confval), '/cli-output/context/@cell') cell,
-               b.*
-        FROM   v$cell_config_info a,
-               XMLTABLE('/cli-output/offloadgroup' PASSING xmltype(a.confval) COLUMNS --
-                        oflgrp_name VARCHAR2(300) path 'name',
-                        package VARCHAR2(300) path 'package'
-                        ) b
-        WHERE  conftype = 'OFFLOAD') left join (
-            select a.cell_name cellname,   
-                   b.*
-            FROM   v$cell_state a,
-                   xmltable('//stats[@type="offloadgroupdes"]' passing xmltype(a.statistics_value) columns --
-                            oflgrp_name VARCHAR2(50) path 'stat[@name="offload_group"]', --
-                            ocl_group_id NUMBER path 'stat[@name="ocl_group_id"]') b
-            WHERE  statistics_type = 'OFLGRPDES'
-        ) using(cellname,oflgrp_name)
-    WHERE lower(cell) like lower('%'||:V1||'%')
-    ORDER BY 1,2,3]],
+    SELECT /*+ordered use_hash(a b c)*/
+           cell, oflgrp_name,ocl_group_id, PACKAGE
+    FROM   (SELECT CELLNAME, extractvalue(xmltype(a.confval), '/cli-output/context/@cell') cell, b.*
+            FROM   v$cell_config_info a,
+                   XMLTABLE('/cli-output/offloadgroup' PASSING xmltype(a.confval) COLUMNS --
+                            oflgrp_name VARCHAR2(300) path 'name',
+                            PACKAGE VARCHAR2(300) path 'package') b
+            WHERE  conftype = 'OFFLOAD') a
+    LEFT   JOIN (SELECT a.cell_name cellname, b.*
+                 FROM   v$cell_state a,
+                        xmltable('//stats[@type="offloadgroupdes"]' passing xmltype(a.statistics_value) columns --
+                                 oflgrp_name VARCHAR2(50) path 'stat[@name="offload_group"]', --
+                                 ocl_group_id NUMBER path 'stat[@name="ocl_group_id"]') b
+                 WHERE  statistics_type = 'OFLGRPDES') b
+    USING  (cellname, oflgrp_name)
+    WHERE  lower(cell) LIKE lower('%' || :V1 || '%')
+    ORDER  BY 1, 2, 3]],
     '|',[[/*grid={topic='Offload Messages'}*/
     SELECT nvl(mesg_type,'--TOTAL--') mesg_type,sum(mesgs) mesgs,sum(replies) replies,sum(alloc_failures) alloc_failures,sum(send_failures) send_failures,sum(oal_errors) oal_errors,sum(ocl_errors) ocl_errors
     FROM ( SELECT (SELECT extractvalue(xmltype(c.confval), '/cli-output/context/@cell')
