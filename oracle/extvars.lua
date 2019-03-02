@@ -52,7 +52,7 @@ function extvars.on_before_db_exec(item)
     for k,v in ipairs{
         {'INSTANCE',instance and instance>0 and instance or ""},
         {'DBID',dbid and dbid>0 and dbid or ""},
-        {'CON_ID',container and container>=0 and dbid  or ""},
+        {'CON_ID',container and container>=0 and container  or ""},
         {'STARTTIME',starttime},
         {'ENDTIME',endtime},
         {'SCHEMA',usr}
@@ -74,6 +74,14 @@ function extvars.on_after_db_exec()
     table.clear(cache)
 end
 
+local noparallel='off'
+function extvars.set_noparallel(name,value)
+    if noparallel==value then return end
+    db:internal_call("begin execute immediate 'alter session set events ''10384 trace name context "..(value=="off" and "off" or "forever , level 16384").."''';end;");
+    noparallel=value
+    return value
+end
+
 function extvars.set_title(name,value,orig)
     local get=env.set.get
     local title=table.concat({tonumber(get("INSTANCE"))>-1   and "Inst="..get("INSTANCE") or "",
@@ -81,7 +89,8 @@ function extvars.set_title(name,value,orig)
                               tonumber(get("CONTAINER"))>-1   and "Con_id="..get("CONTAINER") or "",
                               get("SCHEMA")~=""   and "Schema="..get("SCHEMA") or "",
                               get("STARTTIME")~='' and "Start="..get("STARTTIME") or "",
-                              get("ENDTIME")~=''   and "End="..get("ENDTIME") or ""},"  ")
+                              get("ENDTIME")~=''   and "End="..get("ENDTIME") or "",
+                              noparallel~='off' and "PX=off" or ""},"  ")
     title=title:trim()
     env.set_title(title~='' and "Filter: ["..title.."]" or nil)
 end
@@ -198,6 +207,8 @@ function extvars.on_after_db_conn()
     cfg.force_set('schema','default')
     cfg.force_set('container','default')
     cfg.force_set('dbid','default')
+    noparallel='off'
+    cfg.force_set('noparallel','off')
 end
 
 function test_grid()
@@ -231,6 +242,7 @@ function extvars.onload()
     cfg.init("dbid",0,extvars.set_container,"oracle","Specify the dbid for AWR analysis")
     cfg.init("starttime","",extvars.check_time,"oracle","Specify the start time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
     cfg.init("endtime","",extvars.check_time,"oracle","Specify the end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
+    cfg.init("noparallel","off",extvars.set_noparallel,"oracle","Controls executing SQL statements in no parallel mode. refer to MOS 1114405.1","on,off");
     extvars.P=re.compile([[
         pattern <- {pt} {owner* obj} {suffix}
         suffix  <- [%s,;)]

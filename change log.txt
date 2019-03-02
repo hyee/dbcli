@@ -1,4 +1,6 @@
-2019-03-01: + oracle: new command 'show metric', 'exa phase' and 'exa threads'
+2019-03-02: + oracle: new command 'set noparallel [on|off]' (MOS 1114405.1)
+2019-03-01: + oracle: new command 'show metric'and 'exa threads'
+2019-02-21: + oracle: new command 'exa phase' 
 2019-01-23: * public: update libs luv(libuv1.25) and luajit
 2019-01-20: + oracle: new command 'ora scn' 
 2019-01-08: + public: new 'last' option of command 'less/more'(also support subsystem)
