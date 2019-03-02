@@ -75,7 +75,7 @@ END;
 
 WITH sql_plan_data AS
  (SELECT /*+materialize*/*
-  FROM   (SELECT /*+no_merge(a)*/ a.*,
+  FROM   (SELECT /*+no_merge(a) NO_PQ_CONCURRENT_UNION*/ a.*,
                  dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id) seq
           FROM   (SELECT id,
                          min(id) over() minid,

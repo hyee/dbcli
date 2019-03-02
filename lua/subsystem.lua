@@ -97,7 +97,7 @@ function system:call_process(cmd,is_native)
             if args[i]:trim() =='' then table.remove(args,i) end
         end
 
-        self.env={}
+        self.env={PATH=os.getenv("PATH")}
         if not self.work_dir then self.work_dir=self.extend_dirs or self.script_dir or env._CACHE_PATH end
         local do_redirect=false
 
