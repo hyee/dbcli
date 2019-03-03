@@ -1,119 +1,107 @@
-/*[[cellcli list offload. Usage: @@NAME [<cell>]]]*/
-set printsize 3000
-COL CELLSRV|INPUT,CELLSRV|OUTPUT,CELLSRV|PASSTHRU,OFFLOAD|INPUT,OFFLOAD|OUTPUT,OFFLOAD|PASSTHRU,CPU|PASSTHRU,STORAGE_IDX|SAVED format kmg
-col mesgs,replies,alloc_failures,send_failures,oal_errors,ocl_errors,OPEN|ATTEMPTS,OPEN|FAILURES,DISKS|TOTAL,CC|PCODE,CC|GBY,DISKS|HWM,IM|HITS,IM|POPS,IM|BYPASS,HCC|HITS,IM_HITS|NONHCC format tmb
-grid {[[/*grid={topic='Offload Package'}*/
-    with threads as(
-           SELECT /*+materialize no_expand*/ cell_name cellname, group_name oflgrp_name, process_id pid, COUNT(nullif(DATABASE_ID, 0)) aas
-           FROM   v$cell_ofl_thread_history
-           WHERE  (TRIM(SQL_ID) IS NOT NULL OR lower(WAIT_STATE) LIKE 'working%')
-           GROUP  BY cell_name, group_name, process_id)
-    SELECT /*+ordered use_hash(a b c)*/
-           cell, oflgrp_name, pid, ocl_group_id, PACKAGE, aas
-    FROM   (SELECT CELLNAME, extractvalue(xmltype(a.confval), '/cli-output/context/@cell') cell, b.*
-            FROM   v$cell_config_info a,
-                   XMLTABLE('/cli-output/offloadgroup' PASSING xmltype(a.confval) COLUMNS --
-                            oflgrp_name VARCHAR2(300) path 'name',
-                            PACKAGE VARCHAR2(300) path 'package') b
-            WHERE  conftype = 'OFFLOAD') a
-    LEFT JOIN (SELECT a.cell_name cellname, b.*
-                 FROM   v$cell_state a,
-                        xmltable('//stats[@type="offloadgroupdes"]' passing xmltype(a.statistics_value) columns --
-                                 oflgrp_name VARCHAR2(50) path 'stat[@name="offload_group"]', --
-                                 ocl_group_id NUMBER path 'stat[@name="ocl_group_id"]') b
-                 WHERE  statistics_type = 'OFLGRPDES') b
-    USING  (cellname, oflgrp_name)
-    LEFT JOIN   threads c
-    USING  (cellname, oflgrp_name)
-    WHERE  lower(cell) LIKE lower('%' || :V1 || '%')
-    ORDER  BY 1, 2, 3]],
-    '|',[[/*grid={topic='Offload Messages'}*/
-    SELECT nvl(mesg_type,'--TOTAL--') mesg_type,sum(mesgs) mesgs,sum(replies) replies,sum(alloc_failures) alloc_failures,sum(send_failures) send_failures,sum(oal_errors) oal_errors,sum(ocl_errors) ocl_errors
-    FROM ( SELECT (SELECT extractvalue(xmltype(c.confval), '/cli-output/context/@cell')
+/*[[Show offload predicate io and storage index info,type 'help @@NAME' for more information. Usage: @@NAME [<cell>]|[-d]
+
+How to setup Columnar Cache 
+===========================
+    Using DDL to enable certain CC format on a given table (12.2): 
+        alter table table_1 no cellmemory; --- CC1 mode 
+        alter table table_1 cellmemory memcompress for capacity; --- CC2 capacity mode 
+        alter table table_1 cellmemory memcompress for query; --- CC2 query mode 
+
+    Note: to make sure DDL works correctly, the paramter "_enable_columnar_cache" should be set to 1 which is the default value and the db inmemory size should be non-zero. We can only have CC for EHCC tables. 
+    We can now also selectively disable CC2 non-EHCC and keep EHCC enabled. this can be done the following way:
+        alter session set "_enable_columnar_cache"=16481 --(0x4061, Capacity for EHCC) 
+        alter session set "_enable_columnar_cache"=16449 --(0x4041, Query for EHCC) 
+    Likewise we can selectively disable CC2 for EHCC and keep it enabled for non EHCC:
+        alter session set "_enable_columnar_cache"=32865 --(0x8061, Capacity for non-EHCC) 
+        alter session set "_enable_columnar_cache"=32833 --(0x8041, Query for non-EHCC) 
+    
+How to check query performance
+==============================
+    Stats to look for: 
+        'cell physical IO bytes saved by columnar cache', --> bytes saved by columnar cache 
+        'cell physical IO bytes eligible for predicate offload', --> bytes eligible for offload processing 
+        'cell physical IO bytes eligible for smart IOs', --> bytes eligible for smart IOs 
+        'cell num bytes in passthru during predicate offload', --> passthru mode, no offload processing, need to check traces and v$cell_state for passthru reason 
+    Example: Suppose table size is 10G, doing a count(*), if we are using CC1, "cell physical IO bytes eligible for smart IOs" will be 10G; 
+             if we are using CC2, and we end up caching 20GB for the table, then this stat will be 20GB. 
+             But for "cell physical IO bytes eligible for predicate offload", it will be 10G for both CC1 and CC2 as this reflects the physical size of the table which is independent of CC. 
+
+    System/Session stats to check for CC2 hits：
+        'cellmemory IM scan CUs processed for query', 
+        'cellmemory IM scan CUs processed for capacity', 
+        'cellmemory IM scan CUs processed no memcompress', 
+
+Columnar Cache Debugging Tracing
+================================
+    For tracing OSS code: 
+        alter session set "_enable_columnar_cache" = 9
+            * 0 : disable CC
+            * 33: CC1
+            * 65: CC2 compressed for query
+            * 97: CC2 compressed for capacity 
+    For tracing sage_cache/sage_txn/sage_data code: 
+        cellcli -e 'alter cell offloadgroupEvents = "trace[FPLIB.SAGE_DATA] memory highest, disk highest"'; 
+    For tracing compression code: 
+        cellcli -e 'alter cell offloadgroupEvents = "trace[advcmp.advcmp_comp.*] disk=highest"' 
+    For tracing decompression code: 
+        cellcli -e 'alter cell offloadgroupEvents = "trace[advcmp.advcmp_decomp.*] disk=highest"' 
+    For tracing in kcfis layer 
+        alter session set events="trace[KCFIS] memory highest, disk highest“ 
+    For tracing in kcbl layer: 
+        alter session set events '10357 trace name context forever, level 8' 
+    For tracing in kds layer 
+        alter session set events= 'trace[KDSFTS.*] memory highest, disk highest'; 
+    For tracing in kdz* layer 
+        alter session set events 'trace[advcmp.advcmp_decomp] memory highest, disk highest'; 
+        alter session set events 'trace[advcmp.advcmp_comp] memory highest, disk highest'; 
+    Fine tuning of different features have interaction with CC: 
+        alter session set "_key_vector_offload" = 'none'; -- Disable VGBY 
+        alter session set "_kcfis_storageidx_set_membership_disabled" = TRUE; -- Disable SI Dense Bloom/Set membership 
+        alter session set "_kcfis_storageidx_disabled" = TRUE; -- Disable SI in general 
+        alter session set "_kcfis_cell_passthru_fromcpu_enabled" = FALSE; -- Disable MPP 
+        alter session set "_bloom_filter_enabled"=FALSE; 
+        alter session set "_bloom_predicate_offload" = FALSE; 
+        alter session set "_bloom_predicate_pushdown_to_storage" = FALSE; 
+    --[[
+        &cell: default={}, d={,cell}
+    --]]
+]]*/
+col tmb format tmb
+col kmg format kmg
+grid {[[ /*grid={topic='Predicate I/O'}*/
+    SELECT NAME &cell,
+           decode(name,'outstanding_imcpop_requests','outstanding CC2 population requests',
+                       'columnar_cache_hcc_hits','CC1 hits',
+                       'columnar_cache_im_query_hits','CC2 hits',
+                       'columnar_cache_im_capacity_hits','CC2 hits') comments,
+           SUM(VALUE) KMG,SUM(VALUE) TMB
+    FROM   (SELECT (SELECT extractvalue(xmltype(c.confval), '/cli-output/context/@cell')
+                    FROM   v$cell_config c
+                    WHERE  c.CELLNAME = a.CELL_NAME
+                    AND    rownum < 2) cell,
+                   
+                   b.*
+            FROM   v$cell_state a,
+                   xmltable('//stats[@type="predicateio"]/stat' passing xmltype(a.statistics_value) columns --
+                            NAME VARCHAR2(50) path '@name',
+                            VALUE NUMBER path '.') b
+            WHERE  statistics_type = 'OFLGROUP')
+    WHERE lower(cell) like lower('%'||:V1||'%') AND VALUE>0
+    GROUP BY NAME &cell
+    ORDER BY NAME,2]],
+    '|',[[ /*grid={topic='Storage Index Stats'}*/
+    SELECT NAME &cell,SUM(VALUE) KMG,SUM(VALUE) TMB
+    FROM   (SELECT (SELECT extractvalue(xmltype(c.confval), '/cli-output/context/@cell')
                     FROM   v$cell_config c
                     WHERE  c.CELLNAME = a.CELL_NAME
                     AND    rownum < 2) cell,
                    b.*
             FROM   v$cell_state a,
-                   xmltable('//stats[@type="offload_mesg_stats"]/stats' passing xmltype(a.statistics_value) columns --
-                            mesg_type VARCHAR2(50) path 'stat[@name="mesg_type"]', --
-                            mesgs NUMBER path 'stat[@name="num_mesgs"]', --
-                            replies NUMBER path 'stat[@name="num_replies"]', --
-                            alloc_failures NUMBER path 'stat[@name="num_alloc_failures"]', --
-                            send_failures NUMBER path 'stat[@name="num_send_failures"]', --
-                            oal_errors NUMBER path 'stat[@name="num_oal_error_replies"]', --
-                            ocl_errors NUMBER path 'stat[@name="num_ocl_error_replies"]') b
-            WHERE  statistics_type = 'OFLGRPDES') 
-    WHERE lower(cell) like lower('%'||:V1||'%')
-    GROUP BY rollup(mesg_type)
-    ORDER BY 1,2]],
-    '-',[[/*grid={topic='Throughput'}*/
-    WITH names as  (
-       SELECT DISTINCT cellname cell_name, b.*
-       FROM   v$cell_config_info a,
-              XMLTABLE('/cli-output/offloadgroup' PASSING xmltype(a.confval) COLUMNS --
-                     offload_group VARCHAR2(300) path 'name',
-                     PACKAGE VARCHAR2(300) path 'package') b
-       WHERE  conftype = 'OFFLOAD'),
-    cc AS (
-       SELECT cell_name,
-              b.*
-       FROM   v$cell_state a,
-              xmltable('/' passing xmltype(a.statistics_value) columns --
-                     offload_group  VARCHAR2(50) path '//stat[@name="offload_group"]',
-                     imcap NUMBER path '//stat[@name="columnar_cache_im_capacity_hits"]',--
-                     imquery NUMBER path '//stat[@name="columnar_cache_im_query_hits"]',--
-                     imncap NUMBER path '//stat[@name="columnar_cache_im_capacity_hits_nonehcc"]',--
-                     imnquery NUMBER path '//stat[@name="columnar_cache_im_query_hits_nonehcc"]',--
-                     hcc NUMBER path '//stat[@name="columnar_cache_hcc_hits"]',--
-                     disks NUMBER path '//stat[@name="total_offload_disks"]',
-                     imvgby NUMBER path '//stat[@name="columnar_cache_im_hit_vgbyapplied"]',
-                     imbypass NUMBER path '//stat[@name="total_times_cc2_not_used_due_to_config"]',
-                     imddl NUMBER path '//stat[@name="total_times_cc2_not_used_due_to_ddl"]',
-                     impcode NUMBER path '//stat[@name="columnar_cache_im_hit_pcodeapplied"]',
-                     hccpcode NUMBER path '//stat[@name="columnar_cache_hcc_hit_pcodeapplied"]',
-                     hccvgby NUMBER path '//stat[@name="columnar_cache_hcc_hit_vgbyapplied"]',
-                     disk_hwm NUMBER path '//stat[@name="hwm_offload_disks"]'
-                     ) b
-       WHERE  statistics_type = 'OFLGROUP'    
-    )
-    SELECT /*+ordered use_hash(a b c) swap_join_inputs(b)*/
-           nvl(offload_group,'--TOTAL--') offload_group,PACKAGE, 
-           SUM(ofl_input) "OFFLOAD|INPUT",SUM(ofl_output) "OFFLOAD|OUTPUT",SUM(ofl_passthru) "OFFLOAD|PASSTHRU",
-           SUM(cpu_passthru) "CPU|PASSTHRU",SUM(storage_idx_saved) "STORAGE_IDX|SAVED",
-           '|' "|",
-           sum(disks) "DISKS|TOTAL",
-           sum(disk_hwm) "DISKS|HWM",
-           sum(hcc)  "HCC|HITS",
-           sum(imcap)+sum(imquery) "IM|HITS",
-           sum(imncap)+sum(imnquery) "IM_HITS|NONHCC",
-           SUM(imc_population) "IM|POPS",
-           sum(imbypass)+sum(imddl) "IM|BYPASS",
-           nvl(SUM(impcode),0)+nvl(sum(hccpcode),0) "CC|PCODE",
-           nvl(SUM(imvgby),0)+nvl(sum(hccvgby),0) "CC|GBY",
-           '|' "|",
-           SUM(attempts) "OPEN|ATTEMPTS",SUM(failures) "OPEN|FAILURES"
-           --,SUM(cellsrv_input) "CELLSRV|INPUT",SUM(cellsrv_output) "CELLSRV|OUTPUT",SUM(cellsrv_passthru) "CELLSRV|PASSTHRU"
-    FROM ( SELECT   cell_name,
-                    b.*
-            FROM   v$cell_state a,
-                   xmltable('/' passing xmltype(a.statistics_value) columns --
-                            offload_group  VARCHAR2(50) path 'stat[@name="offload_group"]',
-                            attempts NUMBER path '//stat[@name="num_oflgrp_open_attempts"]',--
-                            failures NUMBER path '//stat[@name="num_oflgrp_open_failures"]',--
-                            cellsrv_input NUMBER path '//stat[@name="cellsrv_total_input_bytes"]',--
-                            cellsrv_output NUMBER path '//stat[@name="cellsrv_total_output_bytes"]',--
-                            cellsrv_passthru NUMBER path '//stat[@name="cellsrv_passthru_output_bytes"]',--
-                            ofl_input NUMBER path '//stat[@name="celloflsrv_total_input_bytes"]',--
-                            ofl_output NUMBER path '//stat[@name="celloflsrv_total_output_bytes"]',--
-                            ofl_passthru NUMBER path '//stat[@name="celloflsrv_passthru_output_bytes"]',--
-                            cpu_passthru NUMBER path '//stat[@name="cpu_passthru_output_bytes"]',--
-                            storage_idx_saved NUMBER path '//stat[@name="storage_idx_saved_bytes"]',--
-                            imc_population NUMBER path '//stats[stat="imc_population"]/stat[@name="num_mesgs"]') b
-            WHERE  statistics_type = 'OFLGRPDES') a
-    JOIN  names b USING (cell_name,offload_group)
-    JOIN cc USING (cell_name,offload_group)
-    WHERE lower(cell_name) like lower('%'||:V1||'%')
-    GROUP BY rollup((offload_group,PACKAGE))
-    ORDER BY 1,2]]
+                   xmltable('//stats[@type="storidx_global_stats"]//stat' passing xmltype(a.statistics_value) columns --
+                            NAME VARCHAR2(50) path '@name',
+                            VALUE NUMBER path '.') b
+            WHERE  statistics_type = 'OFLGROUP')
+    WHERE lower(cell) like lower('%'||:V1||'%') AND VALUE>0
+    GROUP BY NAME &cell
+    ORDER BY NAME,2]]
 }
