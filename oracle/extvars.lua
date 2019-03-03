@@ -9,6 +9,7 @@ local cache={}
 local fmt='%s(select /*+merge*/ * from %s where %s=%s :others:)%s'
 local fmt1='%s(select /*+merge*/  %d inst_id,a.* from %s a where 1=1 :others:)%s'
 local instance,container,usr,dbid,starttime,endtime
+local noparallel='off'
 local function rep_instance(prefix,full,obj,suffix)
     obj=obj:upper()
     local flag,str=0
@@ -74,9 +75,9 @@ function extvars.on_after_db_exec()
     table.clear(cache)
 end
 
-local noparallel='off'
+
 function extvars.set_noparallel(name,value)
-    if noparallel==value then return end
+    if noparallel==value then return value end
     db:internal_call("begin execute immediate 'alter session set events ''10384 trace name context "..(value=="off" and "off" or "forever , level 16384").."''';end;");
     noparallel=value
     return value

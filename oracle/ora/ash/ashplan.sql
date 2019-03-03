@@ -188,7 +188,8 @@ ash_raw as (
             end sql_exec,
             max(case when pred_flag!=2 or is_px_slave=1 then dop_ end)  over(partition by dbid,phv1,sql_exec_id,pid) dop,
             sum(case when p3text='block cnt' and nvl(event,'temp') like '%temp' then temp_ end) over(partition by dbid,phv1,sql_exec_id,pid,sample_time+0) temp,
-            sum(pga_)  over(partition by dbid,phv1,sql_exec_id,pid,sample_time+0) pga
+            sum(pga_)  over(partition by dbid,phv1,sql_exec_id,pid,sample_time+0) pga,
+            sum(tm_delta_db_time) over(partition by dbid,phv1,sql_exec_id,pid,sid,inst_id) dbtime
     FROM   (SELECT /*+no_expand opt_param('_optimizer_connect_by_combine_sw', 'false') opt_param('_optimizer_filter_pushdown', 'false')*/ --PQ_CONCURRENT_UNION 
                    a.*, --seq: if ASH and DASH have the same record, then use ASH as the standard
                    decode(AAS_,1,1,decode((
@@ -205,7 +206,7 @@ ash_raw as (
                    case when (qc_sid!=sid or qc_inst!=inst_id) then 1 else 0 end is_px_slave,
                    CASE WHEN 'Y' IN(decode(pred_flag,2,'Y','N'),IN_PLSQL_EXECUTION,IN_PLSQL_RPC,IN_PLSQL_COMPILATION,IN_JAVA_EXECUTION) THEN 1 END IN_PLSQL       
             FROM   (
-                SELECT  /*+QB_NAME(ASH) CONNECT_BY_FILTERING NO_PX_JOIN_FILTER*/
+                SELECT  /*+QB_NAME(ASH) NO_PX_JOIN_FILTER*/
                         &public,
                         &hierachy
                 FROM    (
@@ -220,7 +221,7 @@ ash_raw as (
                 where  '&vw' IN('A','G')
                 &swcb
                 UNION ALL
-                SELECT  /*+QB_NAME(DASH) CONNECT_BY_FILTERING*/
+                SELECT  /*+QB_NAME(DASH)*/
                         &public,
                         &hierachy
                 FROM    (select /*+ NO_MERGE cardinality(30000000)*/ d.*, 10 aas_ from dba_hist_active_sess_history d) d
@@ -313,7 +314,7 @@ ash_agg as(
                 DECODE(grouping_id(phv1, pid,top2),3,'E',5,'P','O') subtype,
                 phv,phv1,phvs,phfv,plan_exists, top1, top2,pid id,sql_id,
                 max(phf_rate) phf_rate,max(phv_rate) phv_rate,max(pred_flag) pred_flag,
-                max(dop) max_dop,min(nullif(dop,0)) min_dop,
+                max(dop) max_dop,min(nullif(dop,0)) min_dop,max(skew) skew,
                 COUNT(DISTINCT SQL_EXEC) EXECS,
                 SUM(secs) secs_,
                 SUM(AAS) AAS,
@@ -335,7 +336,8 @@ ash_agg as(
                 max(temp) temp_,
                 min(sample_time) begin_time,
                 max(sample_time) end_time
-            from (select a.*, nvl(''||&top1,' ') top1,nvl(''||&top2,' ') top2
+            from (select a.*, nvl(''||&top1,' ') top1,nvl(''||&top2,' ') top2,
+                         nullif(round(100*stddev(dbtime) over(partition by dbid,phv1,sql_exec_id,pid)/greatest(median(dbtime) over(partition by dbid,phv1,sql_exec_id,pid),5e6),2),0) skew
                   FROM (select /*+ordered use_hash(b)*/ * from ash_phv_agg a natural join ash_raw b) A
                  )
             group by phv,phvs,phvs,phfv,plan_exists,grouping sets((phv1,sql_id),pid,top1,(phv1,top1,sql_id),(pid,top1),(top1,top2))) A) A
@@ -368,7 +370,7 @@ plan_line_xplan AS
        o.pid,o.oid,o.maxid,
        cpu,io,cc,cl,app,oth,adm,cfg,sch,net,plsql,costs,aas_text,execs,
        nvl(cost_rate,' ') cost_rate,
-       secs,o.min_dop,o.max_dop,o.io_reqs,o.io_bytes,o.pga,o.temp,
+       secs,o.min_dop,o.max_dop,o.skew,o.io_reqs,o.io_bytes,o.pga,o.temp,
        nvl(top_grp,' ') top_grp,
        '| Plan Hash Value(Full): '||max(phfv) over(partition by x.phv)
        ||decode(min(min_dop) over(partition by x.phv),
@@ -386,26 +388,26 @@ plan_line_xplan AS
 
 agg_data as(
   select 'line' flag,phv,r,id,''||oid oid,'' full_hash,
-         ''||secs secs,''||cost_rate cost_rate,aas_text aas,''||costs costs,''||execs execs,decode(min_dop,null,'',max_dop,''||max_dop,min_dop||'-'||max_dop) dop,
+         ''||secs secs,''||cost_rate cost_rate,aas_text aas,''||costs costs,''||execs execs,decode(min_dop,null,'',max_dop,''||max_dop,min_dop||'-'||max_dop) dop,skew,
          ''||cpu cpu,''||io io,''||cl cl,''||cc cc,''||app app,''||adm adm,''||cfg cfg,''||sch sch,''||net net,''||oth oth,''||plsql  plsql,io_reqs ioreqs,io_bytes iobytes,pga,temp,
          decode(&simple,1,top_grp) top_list,'' top_list2
   FROM plan_line_xplan
   UNION ALL
   select 'phv' flag,-1,r,rid,''||phv2 oid,decode(pred_flag,3,sql_id,''||phfv),
-         ''||secs secs,''|| cost_rate,aas_text aas,''||costs costs,''||execs execs,decode(min_dop,null,'',max_dop,''||max_dop,min_dop||'-'||max_dop) dop,
+         ''||secs secs,''|| cost_rate,aas_text aas,''||costs costs,''||execs execs,decode(min_dop,null,'',max_dop,''||max_dop,min_dop||'-'||max_dop) dop,skew,
          ''||cpu cpu,''||io io,''||cl cl,''||cc cc,''||app app,''||adm adm,''||cfg cfg,''||sch sch,''||net net,''||oth oth,''||plsql  plsql,io_reqs,io_bytes,pga,temp,
          ''||top_list,''
   FROM  plan_agg a,(select rownum-3 rid from dual connect by rownum<=3)
   UNION ALL
   select 'wait' flag,phv,r,rid,''||top1 oid,'' phfv,
-         ''||secs secs,''|| cost_rate,aas_text aas,''||costs costs,''||execs execs,decode(min_dop,null,'',max_dop,''||max_dop,min_dop||'-'||max_dop) dop,
+         ''||secs secs,''|| cost_rate,aas_text aas,''||costs costs,''||execs execs,decode(min_dop,null,'',max_dop,''||max_dop,min_dop||'-'||max_dop) dop,skew,
          '' cpu,'' io,'' cl,'' cc,'' app,'' adm,'' cfg,'' sch,'' net,'' oth,''  plsql,io_reqs,io_bytes,pga,temp,
          ''||top_list,''||top_lines
   FROM  plan_wait_agg a,(select rownum-3 rid from dual connect by rownum<=3)
 ),
 
 plan_line_widths AS(
-    SELECT a.*,swait+swait2+sdop+ csize + rate_size + ssec + sexe + saas + scpu + sio + scl + scc + sapp + ssch +scfg + sadm + snet + soth + splsql + sioreqs + siobytes +spga +stemp + 5 widths
+    SELECT a.*,swait+swait2+sdop + sskew + csize + rate_size + ssec + sexe + saas + scpu + sio + scl + scc + sapp + ssch +scfg + sadm + snet + soth + splsql + sioreqs + siobytes +spga +stemp + 6 widths
     FROM( 
        SELECT  flag,phv,
                nvl(greatest(max(length(oid)) + 1, 6),0) as csize,
@@ -415,6 +417,7 @@ plan_line_widths AS(
                nvl(greatest(max(length(nullif(aas,costs)))+1,7),0) as saas,
                nvl(greatest(max(length(nullif(execs,'0'))) + 1, 5),0) as sexe,
                nvl(greatest(max(length(nullif(dop,'0'))) + 2, 5),0) as sdop,
+               nvl(greatest(max(length(nullif(skew,0))) + 2, 6),0) as sskew,
                nvl(greatest(max(length(nullif(CPU,'0'))) + 1, 5),0) as scpu,
                nvl(greatest(max(length(nullif(io,'0'))) + 1, 5),0) as sio,
                nvl(greatest(max(length(nullif(cl,'0'))) + 1, 5),0) as scl,
@@ -438,19 +441,19 @@ format_info as (
     SELECT flag,phv,r,widths,id,
        decode(id,
             -2,decode(flag,'line',lpad('Ord', csize),'phv','|'||lpad('Plan Hash',csize),'|'||rpad('&titl2',csize)) || lpad('Full Hash', shash) || ' |'
-                || lpad('DoP  ', sdop)|| lpad('Execs', sexe) || lpad('Secs', rate_size) || lpad('AAS', saas) || lpad('DB-Time', ssec) 
+                || lpad('DoP  ', sdop)|| lpad('Skew  ', sskew)|| lpad('Execs', sexe) || lpad('Secs', rate_size) || lpad('AAS', saas) || lpad('DB-Time', ssec) 
                 || nullif('|'||lpad('CPU%', scpu)  || lpad('IO%', sio) || lpad('CL%', scl) || lpad('CC%', scc) || lpad('APP%', sapp)
                              ||lpad('Sch%', ssch)  || lpad('Cfg%', scfg) || lpad('Adm%', sadm)|| lpad('Net%', snet)
                              ||lpad('OTH%', soth)  || lpad('PLSQL', splsql),'|')
                 || nullif('|'||lpad('IO-Reqs',sioreqs)||lpad('IO-Bytes',siobytes)||lpad('PGA',spga)||lpad(' Temp',stemp),'|')
                 || nullif('|'||rpad(' Top Lines', swait2),'|') || nullif('|'||rpad(' Top '||decode(flag,'wait','&Title','&titl2'), swait),'|')||'|',
             -1, '+'||lpad('-',csize+shash+1,'-')||'+'
-                ||lpad('-',sdop+sexe+rate_size+saas+ssec,'-')
+                ||lpad('-',sdop+sskew+sexe+rate_size+saas+ssec,'-')
                 ||nullif('+'||lpad('-',scpu+sio+scl+scc+sapp+ssch+scfg+sadm+snet+soth+splsql,'-'),'+')
                 ||nullif('+'||lpad('-',sioreqs+siobytes+spga+stemp,'-'),'+')
                 ||nullif('+'||rpad('-', swait2,'-'),'+') ||nullif('+'||lpad('-',swait,'-'),'+')||'+', 
            decode(flag,'line',lpad(oid, csize),'|'||rpad(oid,csize)) || lpad(nvl(full_hash,' '), shash) || ' |'
-                ||lpad(dop||'  ', sdop)||lpad(nvl(execs,' '), sexe) || lpad(nvl(cost_rate,' '), rate_size) || lpad(nvl(aas,' '), saas) || lpad(nvl(secs,' '), ssec) 
+                ||lpad(dop||'  ', sdop)||lpad(skew||nvl2(nullif(skew,0),'%','')||' ', sskew)||lpad(nvl(execs,' '), sexe) || lpad(nvl(cost_rate,' '), rate_size) || lpad(nvl(aas,' '), saas) || lpad(nvl(secs,' '), ssec) 
                 ||nullif('|'||lpad(nvl(CPU,' '), scpu) || lpad(nvl(io,' '), sio) || lpad(nvl(cl,' '), scl) || lpad(nvl(cc,' '), scc) || lpad(nvl(app,' '), sapp)
                             ||lpad(nvl(sch,' '), ssch) || lpad(nvl(cfg,' '), scfg) || lpad(nvl(adm,' '), sadm)|| lpad(nvl(net,' '), snet)
                             ||lpad(nvl(oth,' '), soth)  || lpad(nvl(plsql,' '), splsql),'|')

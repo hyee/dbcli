@@ -1,6 +1,6 @@
 col bytes format kmg
 col waits,num_rows,timeouts for k0
-set feed off
+set feed off printsize 1024
 select * from v$pq_sesstat;
 
 SELECT t.*, '|' "|",

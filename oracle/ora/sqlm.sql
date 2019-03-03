@@ -762,8 +762,8 @@ BEGIN
         OPEN :c FOR
             SELECT *
             FROM   (SELECT   a.sql_id &OPTION,
-                             &option1 to_char(MIN(sql_exec_start), 'MMDD HH24:MI:SS') first_seen,
-                             to_char(MAX(last_refresh_time), 'MMDD HH24:MI:SS') last_seen,
+                             &option1 to_char(MIN(sql_exec_start), 'YYMMDD HH24:MI:SS') first_seen,
+                             to_char(MAX(last_refresh_time), 'YYMMDD HH24:MI:SS') last_seen,
                              MAX(sid || ',@' || inst_id) keep(dense_rank LAST ORDER BY last_refresh_time) last_sid,
                              MAX(status) keep(dense_rank LAST ORDER BY last_refresh_time, sid) last_status,
                              round(sum(last_refresh_time - sql_exec_start)/&avg * 86400*1e6, 2) dur,
@@ -845,8 +845,8 @@ BEGIN
                              &uniq execs,
                              SUM(nvl2(ERROR_MESSAGE, 1, 0)) errs,
                              round(SUM(FETCHES), 2) FETCHES,
-                             to_char(MIN(sql_exec_start), 'MMDD HH24:MI:SS') first_seen,
-                             to_char(MAX(last_refresh_time), 'MMDD HH24:MI:SS') last_seen,
+                             to_char(MIN(sql_exec_start), 'YYMMDD HH24:MI:SS') first_seen,
+                             to_char(MAX(last_refresh_time), 'YYMMDD HH24:MI:SS') last_seen,
                              round(SUM(dur*nvl2(px_qcsid,0,1))/&avg, 2) dur,
                              round(SUM(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME))  /&avg, 2) ela,
                              round(SUM(QUEUING_TIME)  /&avg, 2) QUEUE,
