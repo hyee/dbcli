@@ -18,7 +18,7 @@ function search.do_search(filter)
 
     rows:add{"File",'Line#','Text'}
     local function scan(event,file)
-        if count>=10000 then return end
+        if count>=10000 or file.data and file.data:sub(1,64):find('[\1-\8]') then return end
         if event=='ON_SCAN' then
             for _,subdir in ipairs(excludes) do
                 if file.fullname:lower():find(subdir,1,true) then return end

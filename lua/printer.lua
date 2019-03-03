@@ -92,7 +92,7 @@ function printer.print(...)
 
     if env.ansi then output=env.ansi.convert_ansi(output) end
     if ignore or output~="" or not printer.grep_text then
-        if termout and not printer.is_more then println(console,output) end
+        if termout=='on' and not printer.is_more then println(console,output) end
         if printer.hdl then
             pcall(printer.hdl.write,printer.hdl,strip_ansi(output).."\n")
         end

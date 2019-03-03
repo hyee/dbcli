@@ -75,7 +75,7 @@ END;
 
 WITH sql_plan_data AS
  (SELECT /*+materialize*/*
-  FROM   (SELECT /*+no_merge(a)*/ a.*,
+  FROM   (SELECT /*+no_merge(a) NO_PQ_CONCURRENT_UNION*/ a.*,
                  dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id) seq
           FROM   (SELECT id,
                          min(id) over() minid,
@@ -124,7 +124,8 @@ WITH sql_plan_data AS
                      select max(plan_hash_value) keep(dense_rank last order by timestamp) 
                      from dba_hist_sql_plan where sql_id=:V1))
                   UNION  ALL
-                  SELECT id,
+                  SELECT /*+noparallel*/
+                         id,
                          min(id) over()  minid,
                          parent_id,
                          NULL            ha,
@@ -135,7 +136,7 @@ WITH sql_plan_data AS
                          max(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), 'plan_hash_full.*?(\d+)', 1, 1, 'i', 1))) over()+0 plan_hash_value,
                          NULL
                   FROM   plan_table a
-                  WHERE  statement_id=upper(:V1)
+                  WHERE  nvl(upper(:V1),'x') in(statement_id,''||plan_id,'x')
                   ) a
          WHERE flag>=&src)
   WHERE  seq = 1),
@@ -184,10 +185,10 @@ xplan_data AS
            o.pid,
            o.oid,
            o.maxid,
-           rownum r,
+           r,
            max(o.minid) over() as minid,
            COUNT(*) over() AS rc
-  FROM   xplan x
+  FROM   (select rownum r, x.* from xplan x) x
   LEFT   OUTER JOIN ordered_hierarchy_data o
   ON     (o.id = CASE WHEN regexp_like(x.plan_table_output, '^\|[-\* ]*[0-9]+ \|') THEN to_number(regexp_substr(x.plan_table_output, '[0-9]+')) END))
 SELECT plan_table_output

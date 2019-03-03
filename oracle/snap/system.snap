@@ -111,6 +111,7 @@
                             'cell physical IO bytes saved by columnar cache',
                             'cell physical IO bytes eligible for smart IOs',
                             'physical reads direct', 'physical writes direct','cell physical write IO bytes eligible for offload',
+                            'cell physical IO bytes processed for IM capacity','cell physical IO bytes processed for IM query',
                             'session uga memory','session pga memory','session uga memory max','session pga memory max'))
                 )
               GROUP BY inst,name]]},
@@ -342,11 +343,11 @@
                    SUM(DECODE(n, 'physical write total bytes', v)) "PhyWrite",
                    SUM(DECODE(n, 'physical reads direct', v))*bs "dxr",
                    SUM(DECODE(n, 'physical writes direct', v))*bs "dxw",
-                   SUM(DECODE(n, 'redo size', v)) "Redo",
+                   SUM(DECODE(n, 'redo size', v,'flashback log write bytes',v)) "Redo",
                    SUM(decode(n,'DBWR undo block writes',v))*bs "Undo",
             &ver   (select sum(w)*1024*1024 from (select &inst1 inst,SMALL_READ_MEGABYTES+SMALL_WRITE_MEGABYTES+LARGE_READ_MEGABYTES+LARGE_WRITE_MEGABYTES w from GV$IOSTAT_FUNCTION WHERE FUNCTION_NAME='DBWR' and &inst_filter) b where b.inst=a.inst) dbwr,
             &ver   (select sum(w)*1024*1024 from (select &inst1 inst,SMALL_READ_MEGABYTES+SMALL_WRITE_MEGABYTES+LARGE_READ_MEGABYTES+LARGE_WRITE_MEGABYTES w from GV$IOSTAT_FUNCTION WHERE FUNCTION_NAME='LGWR' and &inst_filter) b where b.inst=a.inst) lgwr,
-                   (select sum(w) from (select &inst1 inst,PHYBLKRD+PHYBLKWRT w from GV$TEMPSTAT WHERE &inst_filter) b where b.inst=a.inst)*bs"Temp",
+                   SUM(DECODE(n,'physical reads direct temporary tablespace',v,'physical writes direct temporary tablespace',v))*bs "Temp",
                    SUM(case when n like 'byte%SQL*Net%' then v end) "SQL*Net"
             FROM   (SELECT &inst1 inst, NAME n, VALUE v FROM &sysstat WHERE &inst_filter AND value>0) a
             GROUP  BY inst]],
@@ -361,10 +362,11 @@
                          SUM(DECODE(n, 'HCC scan cell bytes compressed', v,'HCC scan rdbms bytes compressed',v)) "zip",
                          SUM(DECODE(n, 'physical read total bytes optimized', v)) "OptRead",
                          SUM(DECODE(n, 'physical write total bytes optimized', v)) "OptWrite",
-                         SUM(DECODE(n, 'cell physical IO bytes processed for IM capacity', v)) "CellIM",
+                         SUM(DECODE(n, 'cell physical IO bytes processed for IM capacity', v,'cell physical IO bytes processed for IM query',v)) "CellIM",
                          SUM(DECODE(n, 'cell physical IO bytes saved by storage index', v)) "SISave",
                          SUM(DECODE(n, 'cell physical IO bytes saved by columnar cache',v)) "CCSave",
-                         SUM(DECODE(n, 'cell flash cache read hits', v)) "FcHit"
+                         SUM(DECODE(n, 'cell flash cache read hits',v,'cell ram cache read hits',v)) "FcHit",
+                         SUM(DECODE(n, 'physical read total IO requests',v)) phyio
                   FROM   (SELECT &inst1 inst_id, NAME n, VALUE v,
                                   count(case when NAME like '%bytes optimized%' then 1 end) over() offl
                           FROM &sysstat WHERE &inst_filter  AND value>0)
@@ -476,7 +478,7 @@
         }
     },
     delta_by=[[IOPS,MBPS,SMALL,IO Wait,Calls,Resp,OflEff,OflIn,IM-LIO,LIO(%),dxr,dxw,dbwr,lgwr,temp,offload,BandWidth,
-               SISave,OflOut,OptRead,OptWrite,CellIM,CCSave,FcHit,Fc(%),Unzip,zip,ela,IMCU,PRUN,Miss,bytes,rows,Valid,skip,
+               SISave,OflOut,OptRead,OptWrite,CellIM,CCSave,FcHit,phyio,Unzip,zip,ela,IMCU,PRUN,Miss,bytes,rows,Valid,skip,
                exclude,pcode,proj,pops,re-pops,popr,re-popr,IMDS,IMA,IMEU,JP,Disk,Pct,Swap,Logon,Call,Exec,TPS,Parse,Hard,CcHit,Buffer,
                PhyRead,PhyWrite,Redo,Undo,SQL*Net,value,cost,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,time,Busy,idle,db,
                User,Sys,I/O,Nice,traffic,flash,cr,cu,CR Rec,Cu Rec,CR Rec Avg,Cu Rec Avg,CR Flush,CU Flush,CR FL Avg,
@@ -491,13 +493,13 @@
                 ['hard']='[hard]*100/[parse]',
                 ['dxr']='[dxr]*100/[PhyRead]',
                 ['dxw']='[dxw]*100/[PhyWrite]',
-                ['Fc(%)']='[FcHit]*100/[Fc(%)]',
+                ['FcHit']='[FcHit]*100/[phyio]',
                 prun='[prun]*100/[IMCU]',
                 FLASH='[FLASH]*100/[IOPS]',
                 SMALL='[SMALL]*100/[IOPS]',
                 ['OflIn']='[offload]*100/[OflIn]',
                 ['OflOut']='[OflOut]*100/[BandWidth]',
-                ['OflEff']='100-[OflEff]*100/([Unzip]+[SISave])',
+                ['OflEff']='100-[OflEff]*100/([Unzip]+[SISave]+[CCSave])',
                 ['Resp']='[Resp]/[Calls]',
                 ['IO Wait']='[IO Wait]/[total_waits]',
                 busy='[busy]*100/[idle]',
@@ -514,10 +516,10 @@
                             PhyWrite,Redo,Undo,Temp,SQL*Net,OptRead,OptWrite,CellIM,CCSave,offload,BandWidth,bytes,
                             traffic,cr,cu,CR Rec,Cu Rec,CR Flush,CU Flush,CR FL Avg,CU FL Avg,lost,dbwr,lgwr,
                             read,write,s_r,l_r,s_w,l_w]],
-                     TMB1='IMCU,waits,IOPS,call,exec,TPS,parse,cchit,FcHit,popr,re-popr,IMDS,IMA,IMEU,JP,rows,proj,Disk,Cache,pcode,Miss,fail,,F_IOPS,s_iops,l_iops',
-                     noprint='calls,ela,time,idle,total_waits',
+                     TMB1='IMCU,waits,IOPS,call,exec,TPS,parse,cchit,popr,re-popr,IMDS,IMA,IMEU,JP,rows,proj,Disk,Cache,pcode,Miss,fail,,F_IOPS,s_iops,l_iops',
+                     noprint='calls,ela,time,idle,total_waits,phyio',
                      USMHD1='CR Rec Avg,Cu Rec Avg,CR FL Avg,CU FL Avg,IO Wait,resp,cost,max,avg,enq,avg_wait',
-                     ['%.1f%%']='reads,Hard,Pct,dxr,dxw,OflIn,OflOut,valid,Skip,Exclude,OflEff,FLASH,SMALL,prun',
+                     ['%.1f%%']='reads,Hard,Pct,dxr,dxw,OflIn,OflOut,valid,Skip,Exclude,OflEff,FLASH,SMALL,prun,FcHit',
                      ['HEADING #']='INST',
                      ['ADDRATIO PCT1']="cost",
                      ['#,##0']='value'}

@@ -1,10 +1,14 @@
 /*[[Show temp tablespace usage.]]*/
+set feed off
+col BYTES_CACHED,BYTES_USED,bytes for kmg
+select * from gv$temp_extent_pool order by 2,3,1;
+
 SELECT /*+ ordered */
      B.SID||','||B.SERIAL#||',@'||B.INST_ID sid,
      P.SPID,
      B.USERNAME,
      TABLESPACE,
-     round(A.BLOCKS*(select value/1024/1024 from v$parameter where name='db_block_size'), 2) MB,
+     round(A.BLOCKS*(select value from v$parameter where name='db_block_size'), 2) bytes,
      A.SEGTYPE,
      b.event,
      a.SQL_ID,

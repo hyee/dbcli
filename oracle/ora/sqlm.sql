@@ -8,12 +8,13 @@
         Usages:
              1. @@NAME <sql_id> [<sql_exec_id>]           : Extract sql monitor report with specific sql_id, options: -s,-a,-f"<format>"
              2. @@NAME [. <keyword>]                      : List recent sql monitor reports,options: -avg,-u,-f"<filter>" 
-             3. @@NAME <sql_id> -l [plan_hash|sql_exec_id]: List the reports and generate perf hub report for specific SQL_ID, options: -avg,-u,-a,-f"<filter>"
-             4. @@NAME -snap <sec> <sid>                  : Monitor the specific <sid> for <sec> seconds, and then list the SQL monitor result, options: -avg
-             5. @@NAME <sqlmon_file>                      : Read SQL Monitor report from target location and print
-             6. @@NAME "<Query>"                          : Read SQL Monitor report from target query(return CLOB) and print
-             7. @@NAME <report_id>                        : Read SQL Monitor report from dba_hist_reports with specific report_id
-             8. @@NAME <sql_id> [<plan_hash> [YYYYMMDDHH24MI]] -d          : Report SQL detail
+             3. @@NAME -snap <sec> <sid>                  : Monitor the specific <sid> for <sec> seconds, and then list the SQL monitor result, options: -avg
+             4. @@NAME <sqlmon_file>                      : Read SQL Monitor report from target location and print
+             5. @@NAME "<Query>"                          : Read SQL Monitor report from target query(return CLOB) and print
+             6. @@NAME <report_id>                        : Read SQL Monitor report from dba_hist_reports with specific report_id
+             7. @@NAME <sql_id> -l [-a] [plan_hash|sql_exec_id]     : List the reports and generate perf hub report for specific SQL_ID, options: -avg,-u,-a,-f"<filter>"
+             8. @@NAME <sql_id> -d [<plan_hash> [YYYYMMDDHH24MI]] : Report SQL detail
+
         Options:
                 -u  : Only show the SQL list within current schema
                 -f  : List the records that match the predicates, i.e.: -f"MODULE='DBMS_SCHEDULER'"
@@ -88,7 +89,7 @@ DECLARE /*+no_monitor*/
     PROCEDURE flush(section VARCHAR2) IS
     BEGIN
         IF lst.count > 0 then
-            wr('.');
+            wr(' '||chr(10));
             wr(lpad('=',66,'='));
             wr('|  '||rpad(section,60)||'  |');
             wr(lpad('-',66,'-'));
@@ -316,7 +317,6 @@ BEGIN
                 EXCEPTION WHEN OTHERS THEN
                     xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => 'TYPICAL', sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
                 END;
-                txt := DBMS_REPORT.FORMAT_REPORT(xml.deleteXML('//sql_fulltext'), 'text');
                 filename := 'sqlm_' || sq_id || '.html';
             ELSE
                 sql_start := nvl(to_char(nvl(:V3,:starttime),'yymmddhh24mi'),sysdate-7);
@@ -334,7 +334,14 @@ BEGIN
         END IF;
 
         content  := DBMS_REPORT.FORMAT_REPORT(xml, '&out') ;
-        IF &detail =1 THEN
+
+        IF &rpt=0 THEN
+            txt := DBMS_REPORT.FORMAT_REPORT(xml.deleteXML('//sql_fulltext'), 'text');
+        ELSE
+            dbms_lob.createtemporary(txt,true);
+        END IF;
+
+        IF &rpt=2 OR &detail =1 THEN
             SELECT SYS.ODCIARGDESC(id,typ,null,val,null,null,null)
             BULK   COLLECT INTO descs
             FROM   XMLTABLE('//operation[qblock]' PASSING xml COLUMNS --
@@ -524,9 +531,10 @@ BEGIN
                      bind,
                      rtrim(decode(dty,
                                   2,to_char(utl_raw.cast_to_number(peek)),
-                                  1,to_char(utl_raw.cast_to_varchar2(peek)),
-                                  9,to_char(utl_raw.cast_to_varchar2(peek)),
-                                  96,to_char(utl_raw.cast_to_varchar2(peek)),
+                                  1,to_char(decode(frm, 2, utl_raw.cast_to_nvarchar2(peek),utl_raw.cast_to_varchar2(peek))),
+                                  9,to_char(decode(frm, 2, utl_raw.cast_to_nvarchar2(peek),utl_raw.cast_to_varchar2(peek))),
+                                  96,to_char(decode(frm, 2, utl_raw.cast_to_nvarchar2(peek),utl_raw.cast_to_varchar2(peek))),
+                                  112,to_char(decode(frm, 2, utl_raw.cast_to_nvarchar2(peek),utl_raw.cast_to_varchar2(peek))),
                                   100,to_char(utl_raw.cast_to_binary_double(peek)),
                                   101,to_char(utl_raw.cast_to_binary_float(peek)),
                                   180,lpad(TO_NUMBER(SUBSTR(peek, 1, 2), 'XX') - 100, 2, 0) || lpad(TO_NUMBER(SUBSTR(peek, 3, 2), 'XX') - 100, 2, 0) || '-' ||
@@ -622,36 +630,36 @@ BEGIN
             WHERE c.cnt>0;
 
             WITH waits AS
-             (SELECT clz, to_char(cnt) cnt, listagg(pct, ',') WITHIN GROUP(ORDER BY seq) ids
+             (SELECT clz, to_char(cnt) cnt,round(100*ratio_to_report(cnt) over(),2)||'%' pct, listagg(pct, ',') WITHIN GROUP(ORDER BY seq) ids
               FROM   (
                     SELECT ArgType as cnt,TableName as clz,TableSchema as pct,Cardinality as seq
                     FROM   TABLE(descs))
               WHERE  seq <= 5
               GROUP  BY clz, cnt),
             w_len AS
-             (SELECT greatest(MAX(length(clz)), 10) l1, greatest(MAX(LENGTH(''||cnt)), 3) l2, greatest(MAX(LENGTH(ids)), 10) l3, COUNT(1) c FROM waits)
+             (SELECT greatest(MAX(length(clz)), 10) l1, greatest(MAX(LENGTH(''||cnt)), 3) l2, greatest(MAX(LENGTH(ids)), 16) l3, COUNT(1) c FROM waits)
             SELECT * BULK COLLECT INTO lst
             FROM (
-                SELECT '+' || LPAD('-', l1 + l2 + l3 + 8, '-') || '+'
+                SELECT '+' || LPAD('-', l1 + l2 + l3 + 8 + 8, '-') || '+'
                 FROM   w_len
                 WHERE  c > 0
                 UNION ALL
-                SELECT '| ' || RPAD('Wait Class', l1) || ' | ' || LPAD('AAS', l2) || ' | ' || RPAD('Top Lines', l3) || ' |'
+                SELECT '| ' || RPAD('Wait Class', l1) || ' | ' || LPAD('AAS', l2) || ' | ' || LPAD('Pct', 5) ||  ' | ' || RPAD('Top Lines of AAS', l3) || ' |'
                 FROM   w_len
                 WHERE  c > 0
                 UNION ALL
-                SELECT '+' || LPAD('-', l1 + l2 + l3 + 8, '-') || '+'
+                SELECT '+' || LPAD('-', l1 + l2 + l3 + 8 + 8, '-') || '+'
                 FROM   w_len
                 WHERE  c > 0
                 UNION ALL
                 SELECT *
                 FROM   (
-                    SELECT '| ' || RPAD(clz, l1) || ' | ' || LPAD(cnt, l2) || ' | ' || RPAD(ids, l3) || ' |' 
+                    SELECT '| ' || RPAD(clz, l1) || ' | ' || LPAD(cnt, l2)  || ' | ' || LPAD(pct, l2) || ' | ' || RPAD(ids, l3) || ' |' 
                     FROM waits, w_len 
                     WHERE c > 0 
                     ORDER BY 0 + cnt DESC,clz)
                 UNION ALL
-                SELECT '+' || LPAD('-', l1 + l2 + l3 + 8, '-') || '+' FROM w_len WHERE c > 0);
+                SELECT '+' || LPAD('-', l1 + l2 + l3 + 8 + 8 , '-') || '+' FROM w_len WHERE c > 0);
             flush('Wait Event Summary');
 
             WITH line_info AS
@@ -754,8 +762,8 @@ BEGIN
         OPEN :c FOR
             SELECT *
             FROM   (SELECT   a.sql_id &OPTION,
-                             &option1 to_char(MIN(sql_exec_start), 'MMDD HH24:MI:SS') first_seen,
-                             to_char(MAX(last_refresh_time), 'MMDD HH24:MI:SS') last_seen,
+                             &option1 to_char(MIN(sql_exec_start), 'YYMMDD HH24:MI:SS') first_seen,
+                             to_char(MAX(last_refresh_time), 'YYMMDD HH24:MI:SS') last_seen,
                              MAX(sid || ',@' || inst_id) keep(dense_rank LAST ORDER BY last_refresh_time) last_sid,
                              MAX(status) keep(dense_rank LAST ORDER BY last_refresh_time, sid) last_status,
                              round(sum(last_refresh_time - sql_exec_start)/&avg * 86400*1e6, 2) dur,
@@ -837,8 +845,8 @@ BEGIN
                              &uniq execs,
                              SUM(nvl2(ERROR_MESSAGE, 1, 0)) errs,
                              round(SUM(FETCHES), 2) FETCHES,
-                             to_char(MIN(sql_exec_start), 'MMDD HH24:MI:SS') first_seen,
-                             to_char(MAX(last_refresh_time), 'MMDD HH24:MI:SS') last_seen,
+                             to_char(MIN(sql_exec_start), 'YYMMDD HH24:MI:SS') first_seen,
+                             to_char(MAX(last_refresh_time), 'YYMMDD HH24:MI:SS') last_seen,
                              round(SUM(dur*nvl2(px_qcsid,0,1))/&avg, 2) dur,
                              round(SUM(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME))  /&avg, 2) ela,
                              round(SUM(QUEUING_TIME)  /&avg, 2) QUEUE,

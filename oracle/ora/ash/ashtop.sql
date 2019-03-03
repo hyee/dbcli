@@ -5,19 +5,19 @@
       &fields: {
             sql={sql_id},
             e={null}, 
-            p={p1,p2,p3,p3text},
-            pr={p1raw,p2raw,p3raw}, 
-            o={obj},
-            plan={plan_hash,current_obj#,SQL_PLAN_LINE_ID} 
+            p={p1,p2,p3,p3text &0},
+            pr={p1raw,p2raw,p3raw &0}, 
+            o={obj &0},
+            plan={plan_hash,current_obj#,SQL_PLAN_LINE_ID &0} 
             none={1},
             c={},
-            proc={sql_id,PLSQL_ENTRY_OBJECT_ID},
+            proc={sql_id,PLSQL_ENTRY_OBJECT_ID &0},
         }
       &View: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
       &BASE: ash={1}, dash={10}
       &Range: default={sample_time+0 between nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MISS'),sysdate)}
       &filter: {
-            id={(trim('&1') is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id,event)) and &range
+            id={(trim('&1') is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id,event,top_level_sql_id)) and &range
                     &V4},
             snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id,'event')) &V3},
             u={username=nvl('&0',sys_context('userenv','current_schema')) and &range}
@@ -41,7 +41,7 @@
         -ash : source table is gv$active_session_history(default)
         -dash: source table is dba_hist_active_sess_history
       Filters   :
-        -id  : show data for specific sql_id/sid. Usage: [-id] [sql_i|sid]  [starttime] [endtime]
+        -id  : show data for specific sql_id/sid. Usage: [-id] [sql_id|sid]  [starttime] [endtime]
         -u   : only show the data related to current schema. Usage: -u <seconds> [starttime] [endtime]
         -snap: only show the data within specific seconds. Usage: -snap <seconds> [sql_id|sid]
       Addition filter:

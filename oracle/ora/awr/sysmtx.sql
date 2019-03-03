@@ -1,4 +1,8 @@
-/*[[Show system metric based on AWR data. Usage: @@NAME {[yymmddhh24mi] [yymmddhh24mi] [inst_id]} ]]*/
+/*[[Show system metric based on AWR data. Usage: @@NAME {[yymmddhh24mi] [yymmddhh24mi] [inst_id]} 
+    --[[
+        @ALIAS: sysmetric
+    ]]--
+]]*/
 set digits 3
 
 SELECT COALESCE(:V3,:INSTANCE,'A') INST_ID,CATEGORY,metric_name,

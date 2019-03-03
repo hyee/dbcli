@@ -4,22 +4,26 @@ local extvars={}
 local datapath=env.join_path(env.WORK_DIR,'oracle/dict.pack')
 local re=env.re
 local uid=nil
-
+local cache={}
 
 local fmt='%s(select /*+merge*/ * from %s where %s=%s :others:)%s'
+local fmt1='%s(select /*+merge*/  %d inst_id,a.* from %s a where 1=1 :others:)%s'
 local instance,container,usr,dbid,starttime,endtime
+local noparallel='off'
 local function rep_instance(prefix,full,obj,suffix)
     obj=obj:upper()
     local flag,str=0
     if extvars.dict[obj] then
         for k,v in ipairs{
-            {instance>0,extvars.dict[obj].inst_col,instance},
-            {container>=0,extvars.dict[obj].cdb_col,container},
-            {dbid>0,extvars.dict[obj].dbid_col,dbid},
+            {instance and instance>0,extvars.dict[obj].inst_col,instance},
+            {container and container>=0,extvars.dict[obj].cdb_col,container},
+            {dbid and dbid>0,extvars.dict[obj].dbid_col,dbid},
             {usr and usr~="",extvars.dict[obj].usr_col,"(select /*+no_merge*/ username from all_users where user_id="..usr..")"},
         } do
             if v[1] and v[2] and v[3] then
-                if flag==0 then
+                if k==1 and obj:find('^GV_?%$') and v[3]==tonumber(db.props.instance) then
+                    str=fmt1:format(prefix,instance,full:gsub("[gG]([vV]_?%$)","%1"),suffix)
+                elseif flag==0 then
                     str=fmt:format(prefix,full,v[2],''..v[3],suffix)
                 else
                     str=str:gsub(':others:','and '..v[2]..'='..v[3]..' :others:')
@@ -31,7 +35,7 @@ local function rep_instance(prefix,full,obj,suffix)
     if flag==0 then
         str=prefix..full..suffix
     else
-        str=str:gsub(' :others:','')
+        str=str:gsub('where 1=1 and','where'):gsub(' where 1=1 :others:',''):gsub(' :others:','')
         env.log_debug('extvars',str)
     end
     return str
@@ -47,24 +51,36 @@ function extvars.on_before_db_exec(item)
     instance,container,usr,dbid,starttime,endtime=tonumber(cfg.get("instance")),tonumber(cfg.get("container")),cfg.get("schema"),cfg.get("dbid"),cfg.get("STARTTIME"),cfg.get("ENDTIME")
     if instance==0 then instance=tonumber(db.props.instance) end
     for k,v in ipairs{
-        {'INSTANCE',instance>0 and instance or instance<0 and ""},
-        {'DBID',dbid>0 and dbid or ""},
-        {'CON_ID',container>=0 and container or ""},
+        {'INSTANCE',instance and instance>0 and instance or ""},
+        {'DBID',dbid and dbid>0 and dbid or ""},
+        {'CON_ID',container and container>=0 and container  or ""},
         {'STARTTIME',starttime},
         {'ENDTIME',endtime},
         {'SCHEMA',usr}
     } do
-        if not var.outputs[v[1]] then var.setInputs(v[1],''..v[2]) end
+        if var.outputs[v[1]]==nil then var.setInputs(v[1],''..v[2]) end
     end
 
     if not extvars.dict then return item end
     local db,sql,args,params=table.unpack(item)
 
-    if sql and not item.__IS_EXTVARS then
-        item.__IS_EXTVARS=true
+    if sql and not cache[sql] then
         item[2]=re.gsub(sql..' ',extvars.P,rep_instance):sub(1,-2)
+        cache[item[2]]=1
     end
     return item
+end
+
+function extvars.on_after_db_exec()
+    table.clear(cache)
+end
+
+
+function extvars.set_noparallel(name,value)
+    if noparallel==value then return value end
+    db:internal_call("begin execute immediate 'alter session set events ''10384 trace name context "..(value=="off" and "off" or "forever , level 16384").."''';end;");
+    noparallel=value
+    return value
 end
 
 function extvars.set_title(name,value,orig)
@@ -74,7 +90,8 @@ function extvars.set_title(name,value,orig)
                               tonumber(get("CONTAINER"))>-1   and "Con_id="..get("CONTAINER") or "",
                               get("SCHEMA")~=""   and "Schema="..get("SCHEMA") or "",
                               get("STARTTIME")~='' and "Start="..get("STARTTIME") or "",
-                              get("ENDTIME")~=''   and "End="..get("ENDTIME") or ""},"  ")
+                              get("ENDTIME")~=''   and "End="..get("ENDTIME") or "",
+                              noparallel~='off' and "PX=off" or ""},"  ")
     title=title:trim()
     env.set_title(title~='' and "Filter: ["..title.."]" or nil)
 end
@@ -191,6 +208,8 @@ function extvars.on_after_db_conn()
     cfg.force_set('schema','default')
     cfg.force_set('container','default')
     cfg.force_set('dbid','default')
+    noparallel='off'
+    cfg.force_set('noparallel','off')
 end
 
 function test_grid()
@@ -214,6 +233,7 @@ end
 function extvars.onload()
     env.set_command(nil,"TEST_GRID",nil,test_grid,false,1)
     event.snoop('BEFORE_DB_EXEC',extvars.on_before_db_exec,nil,60)
+    event.snoop('AFTER_DB_EXEC',extvars.on_after_db_exec)
     event.snoop('ON_SUBSTITUTION',extvars.on_before_db_exec,nil,60)
     event.snoop('AFTER_ORACLE_CONNECT',extvars.on_after_db_conn)
     event.snoop('ON_SETTING_CHANGED',extvars.set_title)
@@ -223,6 +243,7 @@ function extvars.onload()
     cfg.init("dbid",0,extvars.set_container,"oracle","Specify the dbid for AWR analysis")
     cfg.init("starttime","",extvars.check_time,"oracle","Specify the start time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
     cfg.init("endtime","",extvars.check_time,"oracle","Specify the end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
+    cfg.init("noparallel","off",extvars.set_noparallel,"oracle","Controls executing SQL statements in no parallel mode. refer to MOS 1114405.1","on,off");
     extvars.P=re.compile([[
         pattern <- {pt} {owner* obj} {suffix}
         suffix  <- [%s,;)]

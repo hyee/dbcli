@@ -157,8 +157,8 @@ ash_agg AS
                          DELTA_INTERCONNECT_IO_BYTES io_bytes,
                          aas aas0,
                          COUNT(DISTINCT sql_exec) over(PARTITION BY &OBJ) execs,
-                         ROUND(SUM(AAS) OVER(PARTITION BY &OBJ, SQL_PLAN_LINE_ID)*100/SUM(AAS) OVER(PARTITION BY &OBJ),1) aas,
-                         ROUND(SUM(AAS) OVER(PARTITION BY &OBJ, &OBJ1)*100/SUM(AAS) OVER(PARTITION BY &OBJ),1) aas1
+                         ROUND(SUM(AAS) OVER(PARTITION BY &OBJ, SQL_PLAN_LINE_ID)*100/nullif(SUM(AAS) OVER(PARTITION BY &OBJ),0),1) aas,
+                         ROUND(SUM(AAS) OVER(PARTITION BY &OBJ, &OBJ1)*100/nullif(SUM(AAS) OVER(PARTITION BY &OBJ),0),1) aas1
                   FROM   ash a)
           GROUP  BY OBJ, ID, aas, OBJ1, aas1)
   GROUP  BY top_item
