@@ -7,28 +7,33 @@
         @cell: {
             12={'-',
                 [[grid={topic="V$CELL_GLOBAL_HISTORY"}
-                    SELECT METRIC_NAME,
-                           round(CASE
-                                     WHEN TRIM(METRIC_TYPE) IN ('%', 'us') THEN
-                                      AVG(NULLIF(METRIC_VALUE, 0))
-                                     ELSE
-                                      SUM(METRIC_VALUE/div/c)
-                                 END,
-                                 2) VALUE,
-                           regexp_replace(METRIC_TYPE, 'bytes?', 'MB') unit,
-                           count(distinct cell_hash) cells,
-                           median(METRIC_VALUE/div) CELL_MED,
-                           min(METRIC_VALUE/div) CELL_MIN,
-                           max(METRIC_VALUE/div) CELL_MAX,
-                           count(1) snaps
-                    FROM   (select a.*,
-                                   case when METRIC_TYPE LIKE '%byte%' then 1024*1024 else 1 end div,
-                                   count(distinct begin_time) over(partition by cell_hash,metric_name) c
-                            from v$cell_global_history a
-                            where METRIC_VALUE>0)
-                    WHERE  END_TIME >= SYSDATE - &mins
-                    GROUP  BY metric_name, metric_type
-                    ORDER  BY metric_type, VALUE DESC
+                SELECT METRIC_NAME,
+                       round(CASE
+                                 WHEN TRIM(METRIC_TYPE) IN ('%', 'us') THEN
+                                  SUM(METRIC_VALUE / div)/count(1)
+                                 ELSE
+                                  SUM(METRIC_VALUE / div / c)
+                             END,
+                             2) VALUE,
+                       regexp_replace(METRIC_TYPE, 'bytes?', 'MB') unit,
+                       COUNT(DISTINCT cell_hash) cells,
+                       median(METRIC_VALUE / div) CELL_MED,
+                       MIN(METRIC_VALUE / div) CELL_MIN,
+                       MAX(METRIC_VALUE / div) CELL_MAX,
+                       COUNT(1) snaps
+                FROM   (SELECT a.*,
+                               CASE
+                                   WHEN METRIC_TYPE LIKE '%byte%' THEN
+                                    1024 * 1024
+                                   ELSE
+                                    1
+                               END div,
+                               COUNT(DISTINCT begin_time) over(PARTITION BY cell_hash, metric_name) c
+                        FROM   v$cell_global_history a
+                        WHERE  METRIC_VALUE > 0
+                        AND    END_TIME >= SYSDATE - &mins)
+                GROUP  BY metric_name, metric_type
+                ORDER  BY metric_type, VALUE DESC
                 ]],
             } 
             default={}
@@ -182,17 +187,22 @@ grid {
             SELECT * FROM (
                 SELECT  METRIC_NAME,
                         ROUND(
-                            case when instr(METRIC_UNIT,'%')>0 then AVG(nullif(VALUE,0))
-                                 when upper(trim(METRIC_UNIT)) like 'BYTE%' then SUM(VALUE/c)/1024/1024
-                                 else SUM(VALUE/c) 
+                            case when instr(METRIC_UNIT,'%')>0 then 
+                                 AVG(value/div)
+                            else sum(value/c/div)
                             end
                         ,3) VALUE,
-                        replace(INITCAP(regexp_substr(TRIM(METRIC_UNIT),'^\S+')),'Bytes','Megabtyes') UNIT
-                FROM (SELECT a.*, INTSIZE_CSEC / 60 secs,count(distinct begin_time) over(partition by inst_id) c 
+                        replace(INITCAP(regexp_substr(TRIM(METRIC_UNIT),'^\S+')),'Bytes','Megabtyes') UNIT,
+                        round(median(value/div),3) "Med",
+                        round(min(value/div),3) "Min",
+                        round(max(value/div),3) "Max"
+                FROM (SELECT a.*, 
+                             INTSIZE_CSEC / 60 secs,count(distinct begin_time) over(partition by inst_id,METRIC_NAME) c,
+                             case when upper(trim(METRIC_UNIT)) like 'BYTE%' then 1024*1024 else 1 end div
                       FROM   gv$sysmetric&opt A 
-                      WHERE group_id=2)
+                      WHERE  group_id=2
+                      AND    value >0 )
                 GROUP BY METRIC_NAME,METRIC_UNIT)
-            WHERE VALUE>0 
             ORDER BY UNIT,value desc]]
     }
 }

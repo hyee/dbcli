@@ -11,33 +11,48 @@
     --]]
 ]]*/
 {
-    title="Exadata Cell IO Reason Chart(per Second)",
+    title="Exadata Cell IO Reason Chart",
     _sql=[[
-    WITH SNAP AS(
-          SELECT /*+no_expand ordered use_hash(a b) no_merge(a) no_merge(b) no_merge(c) no_merge(d)*/
+        WITH SNAP AS
+         (SELECT /*+no_expand ordered use_hash(a b) no_merge(a) no_merge(b) no_merge(c) no_merge(d)*/
                    to_char(end_interval_time, 'YYYY-MM-DD HH24:MI') snap_time,
                    snap_id,
                    flag,
                    part_key,
-                   nullif('['||&obj||']','[]')||reason_name reason,
-                   SUM(bytes) bytes, SUM(requests) request,
-                   sum(Slot_size) secs
-          FROM   (SELECT a.*, row_number() OVER(PARTITION BY snap_id, dbid ORDER BY instance_number) r,
+                   nullif('[' || &obj || ']', '[]') || reason_name reason,
+                   bytes - lag(bytes) over(PARTITION BY cell_name, dbid,reason_name ORDER BY snap_id) bytes,
+                   requests - lag(requests) over(PARTITION BY cell_name, dbid,reason_name ORDER BY snap_id) requests,
+                   Slot_size
+          FROM   (SELECT a.*,
+                         row_number() OVER(PARTITION BY snap_id, dbid ORDER BY instance_number) r,
                          -8640000 * (startup_time + 0 - SYSDATE) + instance_number part_key,
-                          ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY dbid,instance_number,startup_time ORDER BY snap_id desc)) * 86400 Slot_size,
-                         CASE WHEN end_interval_time+0 between NVL(to_date(:V1,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V2,'yymmddhh24miss'),sysdate) THEN 0 END flag
+                         ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY dbid, instance_number, startup_time ORDER BY snap_id DESC)) *
+                         86400 Slot_size,
+                         CASE
+                             WHEN end_interval_time + 0 BETWEEN NVL(to_date(:V1, 'yymmddhh24miss'), SYSDATE - 7) AND
+                                  NVL(to_date(:V2, 'yymmddhh24miss'), SYSDATE) THEN
+                              0
+                         END flag
                   FROM   Dba_Hist_Snapshot a
-                  WHERE  end_interval_time+0 between NVL(to_date(:V1,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V2,'yymmddhh24miss'),sysdate)) a
-          JOIN   DBA_HIST_CELL_NAME b USING(dbid, snap_id)
-          JOIN   DBA_HIST_CELL_IOREASON c USING(dbid, snap_id,cell_hash)
-          WHERE  r = 1 AND (&filter) 
-          AND   (:V3 IS NULL OR lower(nullif('['||&obj||']','[]')||reason_name) like lower('%&V3%'))
-          GROUP  BY snap_id,snap_id,part_key, flag,to_char(end_interval_time, 'YYYY-MM-DD HH24:MI'),reason_name,&obj
-          ORDER BY 1,2)
-    SELECT snap_time,reason,
-           round((bytes-nvl(lag(bytes) OVER(PARTITION BY part_key,reason ORDER BY snap_time),0))/secs,2) bytes,
-           round((request-nvl(lag(request) OVER(PARTITION BY part_key,reason ORDER BY snap_time),0))/secs,2) request
-    FROM   snap where flag=0]],
+                  WHERE  end_interval_time + 0 BETWEEN NVL(to_date(:V1, 'yymmddhh24miss'), SYSDATE - 7) - 1.2 / 24 AND
+                         NVL(to_date(:V2, 'yymmddhh24miss'), SYSDATE)) a
+          JOIN   DBA_HIST_CELL_NAME b
+          USING  (dbid, snap_id)
+          JOIN   DBA_HIST_CELL_IOREASON c
+          USING  (dbid, snap_id, cell_hash)
+          WHERE  r = 1
+          AND    (&filter)
+          AND    (:V3 IS NULL OR lower(nullif('[' || &obj || ']', '[]') || reason_name) LIKE lower('%&V3%'))
+          ORDER  BY 1, 2)
+        SELECT snap_time, nvl(reason,'Total IO') reason, 
+               round(SUM(bytes / Slot_size), 2) "IO Bytes/Sec", 
+               round(SUM(requests / Slot_size), 2) "IO Reqs/Sec",
+               SUM(bytes)/NULLIF(SUM(requests),0) "Bytes/IO Req"
+        FROM   snap
+        WHERE  flag = 0
+        GROUP  BY snap_time, rollup(reason)
+        HAVING ROUND(SUM(bytes / Slot_size))>0
+    ]],
     _pivot=true,
     labelsKMG2=true,
     _sorter=2,

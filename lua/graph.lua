@@ -66,7 +66,7 @@ local template,cr
                                        |   : To be developed
                                        none-alphanumeric: If the column name is all none-alphanumeric chars or is "", then will not include into the chart report. for example, '*','&%'
         _pivot=true|false|"mixed": indicate if pivot the >2nd numberic fields, refer to above
-        _ylabels={"<label1>",...}: Customize the ylabel for each chart, not not define then use the names from "_sql"
+        _ylabels={"<label1>",...}: Customize the ylabel for each chart, if not define then use the names from "_sql"
         _range="<Time range>"    : Used in sub-title, if not specified then auto-caculate the range
         _sorter=<number>         : Choose the top <ChartSeries> based on the nth field of the summary, default as deviation%(12)
         deviation=true|false     : False for org value, and true to display the data based on deviation%(value*100/average)
@@ -416,6 +416,10 @@ function graph:run_sql(sql,args,cmd,file)
     for i=1,self.dataindex do
         replaces['@GRAPH_INDEX']=i
         default_attrs.ylabel=ylabels[i] or default_ylabel or charts[i]
+        if default_attrs.ylabel and default_attrs.ylabel:lower():find('byte') then
+            default_attrs.labelsKMB=nil
+            default_attrs.labelsKMG2=true
+        end
         default_attrs._avgs=self.data[i][2]
         default_attrs.title=title
         if default_attrs.ylabel then

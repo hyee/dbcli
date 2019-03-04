@@ -20,7 +20,7 @@ BEGIN
                 (SELECT /*+ordered use_hash(a b) no_expand*/
                         DATABASE_ID DBID,
                         CON_ID,
-                        db,
+                        nvl(db,' ') db,
                         grouping_id(TRIM(SQL_ID), JOB_TYPE) gid,
                         TRIM(SQL_ID) SQL_ID,
                         JOB_TYPE,
