@@ -307,7 +307,6 @@ function printer.set_editor(name,editor)
 end
 
 function printer.edit_buffer(file,default_file,text)
-    if not file or default_file then return end
     local ed=env.set.get("editor")
     local editor='"'..os.find_extension(ed)..'"'
     local f
