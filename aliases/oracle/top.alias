@@ -1,1 +1,1 @@
-snap system $1[10]+ -top -sec $*
+snap system $1[20]+ -top -sec $*

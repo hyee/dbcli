@@ -1,17 +1,10 @@
 /*[[
     Show chart for DBA_HIST_CELL_DB. Usage: @@NAME {[yymmddhh24mi] [yymmddhh24mi]} 
     Impacted by settings: starttime,endtime,instance
-    -c : detail to cell name
-    -dn: detail to disk name
-    -dt: detail to disk type
-    -fd: Only show flash disk info
-    -hd: Only show hard disk info
     --[[
         @VERSION: 12.1={}
         &V1     : default={&STARTTIME}
         &V2     : default={&ENDTIME}
-        &filter : default={1=1} f={} fd={disk='FlashDisk'} hd={disk='HardDisk'}
-        &obj    : default={null}, c={cell_name} dn={disk_name}, dt={disk} 
     --]]
 ]]*/
 {

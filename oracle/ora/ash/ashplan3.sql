@@ -333,7 +333,7 @@ ash_raw as (
             max(case when pred_flag!=2 or is_px_slave=1 then dop_ end)  over(partition by bitand(flags,1),dbid,phv1,sql_exec_id,pid) dop,
             sum(case when p3text='block cnt' and nvl(event,'temp') like '%temp' then temp_ end) over(partition by bitand(flags,1),dbid,phv1,sql_exec_id,pid,sample_time) temp,
             sum(pga_) over(partition by bitand(flags,1),dbid,phv1,sql_exec_id,pid,sample_time) pga,
-            sum(tm_delta_db_time) over(partition by bitand(flags,1),dbid,phv1,sql_exec_id,pid,sid,inst_id) dbtime
+            sum(decode(is_px_slave,1,tm_delta_db_time)) over(partition by bitand(flags,1),dbid,phv1,sql_exec_id,pid,sid,inst_id) dbtime
     FROM   (SELECT /*+no_expand opt_param('_optimizer_connect_by_combine_sw', 'false')*/ --PQ_CONCURRENT_UNION 
                    a.*, --seq: if ASH and DASH have the same record, then use ASH as the standard
                    decode(AAS_,1,1,decode((
