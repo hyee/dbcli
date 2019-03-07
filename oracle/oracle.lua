@@ -23,7 +23,7 @@ oracle.module_list={
     "sqlcl"
 }
 
-local home,tns=os.getenv("ORACLE_HOME"),os.getenv("TNS_ADMIN")
+local home,tns=os.getenv("ORACLE_HOME"),os.getenv("TNS_ADM") or os.getenv("TNS_ADMIN")
 if not home then
     local bin=os.find_extension("sqlplus",true)
     if bin then

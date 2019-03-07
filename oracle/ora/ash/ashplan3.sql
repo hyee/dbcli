@@ -57,8 +57,8 @@
                              decode(bitand(time_model,power(2,21)),0,'','inmemory_repopulate ') || 
                              decode(bitand(time_model,power(2,22)),0,'','inmemory_trepopulate ') || 
                              decode(bitand(time_model,power(2,23)),0,'','tablespace_encryption ')) time_model,
-                        decode(is_sqlid_current,'N',pga_allocated) pga_,
-                        decode(is_sqlid_current,'N',temp_space_allocated) temp_,
+                        decode(is_sqlid_current,'Y',pga_allocated) pga_,
+                        decode(is_sqlid_current,'Y',temp_space_allocated) temp_,
                         nvl(trunc(px_flags / 2097152),0) dop_,
                         decode('&V1',top_level_sql_id,top_level_sql_id,nvl(sql_id,top_level_sql_id)) sql_id,
                         sql_exec_id,
@@ -118,31 +118,34 @@ sql_plan_data AS
 ash as(
     SELECT /*+materialize  opt_param('_optimizer_filter_pushdown', 'false')*/ a.*,rownum seq#
     FROM (
-        select  1 aas_,&public 
-        from table(gv$(cursor(
-            select /*+ordered no_merge(a) cardinality(30000000) no_merge(b) use_hash(b)*/ b.*,
-                (select dbid from v$database) dbid,
-                userenv('instance') instance_number 
+        select a.*,row_number() OVER(PARTITION BY dbid,sample_id,inst_id,sid ORDER BY AAS_) seq
+        from (
+            select  1 aas_,&public 
+            from table(gv$(cursor(
+                select /*+ordered no_merge(a) cardinality(30000000) no_merge(b) use_hash(b)*/ b.*,
+                    (select dbid from v$database) dbid,
+                    userenv('instance') instance_number 
+                from  (
+                    select distinct sample_id
+                    from   v$active_session_history
+                    where  sample_time+0 BETWEEN nvl(to_date('&v3','YYMMDDHH24MISS'),SYSDATE-7) 
+                                        AND     nvl(to_date('&v4','YYMMDDHH24MISS'),SYSDATE)
+                    and   '&V1' IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf) 
+                    and   nvl(sql_exec_id,0)=coalesce(regexp_substr('&V2','\d+')+0,sql_exec_id,0)
+                ) a join v$active_session_history b on(a.sample_id=b.sample_id))
+            ))
+            WHERE dbid=nvl('&dbid'+0,dbid)
+            UNION ALL
+            select /*+ordered no_merge(a) cardinality(30000000) no_merge(b) use_hash(b)*/ 10 aas_,&public 
             from  (
-                select distinct sample_id
-                from   v$active_session_history
+                select distinct sample_id,dbid,instance_number,snap_id
+                from   dba_hist_active_sess_history
                 where  sample_time+0 BETWEEN nvl(to_date('&v3','YYMMDDHH24MISS'),SYSDATE-7) 
-                                     AND     nvl(to_date('&v4','YYMMDDHH24MISS'),SYSDATE)
-                and   '&V1' IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf) 
+                                        AND nvl(to_date('&v4','YYMMDDHH24MISS'),SYSDATE)
+                and   '&V1' IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
                 and   nvl(sql_exec_id,0)=coalesce(regexp_substr('&V2','\d+')+0,sql_exec_id,0)
-            ) a join v$active_session_history b on(a.sample_id=b.sample_id))
-        ))
-        WHERE dbid=nvl('&dbid'+0,dbid)
-        UNION ALL
-        select /*+ordered no_merge(a) cardinality(30000000) no_merge(b) use_hash(b)*/ 10 aas_,&public 
-        from  (
-            select distinct sample_id,dbid,instance_number,snap_id
-            from   dba_hist_active_sess_history
-            where  sample_time+0 BETWEEN nvl(to_date('&v3','YYMMDDHH24MISS'),SYSDATE-7) 
-                                     AND nvl(to_date('&v4','YYMMDDHH24MISS'),SYSDATE)
-            and   '&V1' IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
-            and   nvl(sql_exec_id,0)=coalesce(regexp_substr('&V2','\d+')+0,sql_exec_id,0)
-        ) a natural join (select /*+no_merge*/ * from dba_hist_active_sess_history) b) a
+            ) a natural join (select /*+no_merge*/ * from dba_hist_active_sess_history) b) a) a
+    WHERE seq=1
 ),
 ash0(   aas_,
         dbid,con_id,
@@ -326,14 +329,10 @@ ash_raw as (
             decode(sec_seq,1,aas) cost,
             nvl(nullif(plan_hash_full,0),phv1) phf,
             decode(sec_seq,1,least(coalesce(tm_delta_db_time,delta_time,AAS*1e6),coalesce(tm_delta_time,delta_time,AAS*1e6),AAS*2e6) * 1e-6) secs,
-            case when pred_flag=2 or (is_px_slave=1 and lv=1)
-                 then sql_exec_id||',@'||qc_inst||','||qc_sid
-                 else sql_exec_id||',@'||qc_inst||','||qc_sid||','||to_char(sql_exec_start,'yyyymmddhh24miss') 
-            end sql_exec,
-            max(case when pred_flag!=2 or is_px_slave=1 then dop_ end)  over(partition by bitand(flags,1),dbid,phv1,sql_exec_id,pid) dop,
-            sum(case when p3text='block cnt' and nvl(event,'temp') like '%temp' then temp_ end) over(partition by bitand(flags,1),dbid,phv1,sql_exec_id,pid,sample_time) temp,
-            sum(pga_) over(partition by bitand(flags,1),dbid,phv1,sql_exec_id,pid,sample_time) pga,
-            sum(decode(is_px_slave,1,tm_delta_db_time)) over(partition by bitand(flags,1),dbid,phv1,sql_exec_id,pid,sid,inst_id) dbtime
+            max(case when pred_flag!=2 or is_px_slave=1 then dop_ end)  over(partition by bitand(flags,1),dbid,phv1,sql_exec,pid) dop,
+            sum(case when p3text='block cnt' and nvl(event,'temp') like '%temp' then temp_ end) over(partition by bitand(flags,1),dbid,phv1,sql_exec,pid,sample_time) temp,
+            sum(pga_) over(partition by bitand(flags,1),dbid,phv1,sql_exec,pid,sample_time) pga,
+            sum(case when is_px_slave=1 and px_flags>65536 then tm_delta_db_time end) over(partition by px_flags,bitand(flags,1),dbid,phv1,sql_exec,pid,sid,inst_id) dbtime
     FROM   (SELECT /*+no_expand opt_param('_optimizer_connect_by_combine_sw', 'false')*/ --PQ_CONCURRENT_UNION 
                    a.*, --seq: if ASH and DASH have the same record, then use ASH as the standard
                    decode(AAS_,1,1,decode((
@@ -345,8 +344,11 @@ ash_raw as (
                    --sec_seq: multiple PX processes at the same second wille be treated as on second 
                    row_number() OVER(PARTITION BY bitand(flags,1),dbid,phv1,sql_plan_line_id,sample_time,qc_inst,qc_sid ORDER BY AAS_,tm_delta_db_time desc) sec_seq,
                    nvl(decode(pred_flag,2,0,case when sql_plan_line_id>65535 then 0 else sql_plan_line_id end),0) pid,
-                   decode(pred_flag,2,0,sql_exec_id_) sql_exec_id,
-                   decode(pred_flag,2,SYSDATE,sql_exec_start_) sql_exec_start,
+                   case when pred_flag = 2  then
+                        sql_exec_id_||',@'||qc_inst||','||qc_sid
+                   else
+                        sql_exec_id_||',@'||qc_inst||','||qc_sid||','||to_char(sql_exec_start_,'yyyymmddhh24miss') 
+                   end sql_exec,
                    case when (qc_sid!=sid or qc_inst!=inst_id) then 1 else 0 end is_px_slave,
                    CASE WHEN 'Y' IN(decode(pred_flag,2,'Y','N'),IN_PLSQL_) THEN 1 END IN_PLSQL       
             FROM   ash1 a where bitand(flags,1)=1 or is_leaf=1) h
@@ -486,7 +488,7 @@ ash_agg as(
                 DECODE(grouping_id(phv1, pid,top2),3,'E',5,'P','O') subtype,
                 phv,phv1,phvs,phfv,plan_exists, top1, top2,pid id,sql_id,
                 max(phf_rate) phf_rate,max(phv_rate) phv_rate,max(pred_flag) pred_flag,
-                max(dop) max_dop,min(nullif(dop,0)) min_dop,max(skew) skew,
+                max(dop) max_dop,min(nullif(dop,0)) min_dop,decode(sign(max(dop)),1,max(skew)) skew,
                 COUNT(DISTINCT SQL_EXEC) EXECS,
                 SUM(secs) secs_,
                 SUM(AAS) AAS,
@@ -509,7 +511,7 @@ ash_agg as(
                 min(sample_time) begin_time,
                 max(sample_time) end_time
             from (select a.*, nvl(''||&top1,' ') top1,nvl(''||&top2,' ') top2,
-                         nullif(round(100*stddev(dbtime) over(partition by dbid,phv1,sql_exec_id,pid)/greatest(median(dbtime) over(partition by dbid,phv1,sql_exec_id,pid),5e6),2),0) skew
+                         nullif(round(100*stddev(dbtime) over(partition by px_flags,dbid,phv1,sql_exec,pid)/greatest(median(dbtime) over(partition by px_flags,dbid,phv1,sql_exec,pid),5e6),2),0) skew
                   FROM (select /*+ordered use_hash(b)*/ * from ash_phv_agg a natural join ash_raw b where bitand(flags,1)=1) A
                  )
             group by phv,phvs,phvs,phfv,plan_exists,grouping sets((phv1,sql_id),pid,top1,(phv1,top1,sql_id),(pid,top1),(top1,top2))) A) A
