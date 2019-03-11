@@ -8,7 +8,7 @@ SET JAVA_TOOL_OPTIONS=
 if not defined CONSOLE_COLOR SET CONSOLE_COLOR=0A
 if not defined ANSICON_CMD SET "ANSICON_CMD=.\lib\x64\ConEmuHk64.dll"
 if !ANSICOLOR!==off set ANSICON_CMD=
-If not exist "%TNS_ADM%\tnsnames.ora" if defined ORACLE_HOME (set "TNS_ADM=%ORACLE_HOME%\network\admin" )
+If not exist "%TNS_ADMIN%\tnsnames.ora" if defined ORACLE_HOME (set "TNS_ADMIN=%ORACLE_HOME%\network\admin" )
 
 rem read config file
 SET JRE_HOME=

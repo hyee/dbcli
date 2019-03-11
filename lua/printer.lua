@@ -96,7 +96,7 @@ function printer.print(...)
         if printer.hdl then
             pcall(printer.hdl.write,printer.hdl,strip_ansi(output).."\n")
         end
-        if printer.tee_hdl and printer.tee_type~='csv' and printer.tee_type~='html' then
+        if ignore~='__BYPASS_GREP__' and (printer.tee_hdl and printer.tee_type~='csv' and printer.tee_type~='html') then
             pcall(printer.tee_hdl.write,printer.tee_hdl,strip_ansi(output).."\n")
         end
     end
@@ -250,10 +250,10 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
         end
     end
 
-    if type(row)~="table" or not not printer.tee_hdl then return end
+    if not printer.tee_hdl then return end
 
     local hdl=printer.tee_hdl
-    if printer.tee_type=="html" then
+    if type(row)=="table" and printer.tee_type=="html" then
         local td='td'
         if(row[0]==0) then
             hdl:write("<table>\n")
@@ -278,7 +278,7 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
             hdl:write("</table>\n")
             printer.tee_colinfo=nil
         end
-    elseif printer.tee_type=="csv" then
+    elseif type(row)=="table" and printer.tee_type=="csv" then
         for idx,cell in ipairs(row) do
             if idx>1 then hdl:write(",") end
             if type(cell)=="string" then
@@ -290,6 +290,8 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
             end
         end
         hdl:write("\n")
+    elseif type(str)=="string" then
+        pcall(hdl.write,hdl,env.space..strip_ansi(str).."\n")
     end
 end
 

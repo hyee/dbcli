@@ -153,7 +153,7 @@ grid {
                 ROUND(SUM(WAIT_COUNT/c/secs), 2) WAITS,
                 ROUND(SUM(WAIT_COUNT_FG)/NULLIF(SUM(WAIT_COUNT),0),4) FG,
                 '|' "|",
-                ROUND(1E4 * SUM(TIME_WAITED) / NULLIF(SUM(WAIT_COUNT), 0)) AVG_WAIT,
+                ROUND(1E4 * SUM(TIME_WAITED) / NULLIF(SUM(WAIT_COUNT), 0),2) AVG_WAIT,
                 SUM(AVERAGE_WAITER_COUNT/c) WAITERS
             FROM   (SELECT a.*, INTSIZE_CSEC / 60 secs,count(distinct begin_time) over(partition by inst_id) c FROM gv$waitclassmetric&opt a)
             JOIN   (SELECT DISTINCT WAIT_CLASS#, WAIT_CLASS FROM v$event_name)
@@ -169,7 +169,7 @@ grid {
                         event,
                         ROUND(SUM(DBTIME_IN_WAIT * TIME_WAITED) / NULLIF(SUM(total_Wait), 0)/100, 4) DBTIME,
                         round(SUM(TIME_WAITED) / nullif(SUM(WAIT_COUNT), 0) * 1e4, 2) avg_Wait,
-                        round(SUM(TIME_WAITED / INTSIZE_CSEC) * 1E6) WAITED,
+                        round(SUM(TIME_WAITED / INTSIZE_CSEC) * 1E6,2) WAITED,
                         round(SUM(WAIT_COUNT / INTSIZE_CSEC) * 100, 2) WAITS,
                         round(SUM(NUM_SESS_WAITING), 2) SESS
                     FROM   gv$eventmetric

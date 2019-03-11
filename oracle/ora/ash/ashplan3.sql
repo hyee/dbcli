@@ -86,6 +86,7 @@ WITH ALL_PLANS AS
             inst_id,
             object#,
             object_name,
+            object_node tq,
             &phf2+0 plan_hash_full
     FROM    gv$sql_plan a
     WHERE   '&vw' IN('A','G')
@@ -102,6 +103,7 @@ WITH ALL_PLANS AS
             dbid,
             object#,
             object_name,
+            object_node tq,
             &phf2+0 plan_hash_full
     FROM    dba_hist_sql_plan a
     WHERE   '&vw' IN('A','D')
@@ -581,7 +583,7 @@ agg_data as(
 ),
 
 plan_line_widths AS(
-    SELECT a.*,swait+swait2+sdop+sskew+ csize + rate_size + ssec + sexe + saas + scpu + sio + scl + scc + sapp + ssch +scfg + sadm + snet + soth + splsql + sioreqs + siobytes +spga +stemp + 6 widths
+    SELECT a.*,swait+swait2+sdop + sskew + csize + rate_size + ssec + sexe + saas + scpu + sio + scl + scc + sapp + ssch +scfg + sadm + snet + soth + splsql + sioreqs + siobytes +spga +stemp + 6 widths
     FROM( 
        SELECT  flag,phv,
                nvl(greatest(max(length(oid)) + 1, 6),0) as csize,

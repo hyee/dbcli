@@ -107,10 +107,11 @@ WITH ALL_PLANS AS
             inst_id,
             object#,
             object_name,
+            object_node tq,
             &phf2+0 plan_hash_full
     FROM    gv$sql_plan a
     WHERE   '&vw' IN('A','G')
-    AND     :V1 in(''||a.plan_hash_value,sql_id)
+    AND     '&V1' in(''||a.plan_hash_value,sql_id)
     UNION ALL
     SELECT  id,
             parent_id,
@@ -123,10 +124,11 @@ WITH ALL_PLANS AS
             dbid,
             object#,
             object_name,
+            object_node tq,
             &phf2+0 plan_hash_full
     FROM    dba_hist_sql_plan a
     WHERE   '&vw' IN('A','D')
-    AND     :V1 in(''||a.plan_hash_value,sql_id)),
+    AND     '&V1' in(''||a.plan_hash_value,sql_id)),
 plan_objs AS
  (SELECT DISTINCT OBJECT#,OBJECT_NAME FROM ALL_PLANS),
 sql_plan_data AS
@@ -203,7 +205,7 @@ ash_raw as (
                         sql_exec_id_||',@'||qc_inst||','||qc_sid||','||to_char(sql_exec_start_,'yyyymmddhh24miss') 
                    end sql_exec,
                    case when (qc_sid!=sid or qc_inst!=inst_id) then 1 else 0 end is_px_slave,
-                   CASE WHEN 'Y' IN(decode(pred_flag,2,'Y','N'),IN_PLSQL_EXECUTION,IN_PLSQL_RPC,IN_PLSQL_COMPILATION,IN_JAVA_EXECUTION) THEN 1 END IN_PLSQL       
+                   CASE WHEN 'Y' IN(decode(pred_flag,2,'Y','N'),IS_NOT_CURRENT,IN_PLSQL_EXECUTION,IN_PLSQL_RPC,IN_PLSQL_COMPILATION,IN_JAVA_EXECUTION) THEN 1 END IN_PLSQL       
             FROM   (
                 SELECT  /*+QB_NAME(ASH)*/
                         &public,
