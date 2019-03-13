@@ -70,7 +70,7 @@ grid {
         &ver    round(SUM(AVG_ACTIVE_PARALLEL_SERVERS/c), 2) "PX_PROC|ACTIVE",
         &ver    round(SUM(AVG_QUEUED_PARALLEL_SERVERS/c), 2) "PX_PROC|QUEUED",
         &ver    round(SUM(PARALLEL_SERVERS_LIMIT/c)) "PX_PROC|LIMIT"
-        FROM   (SELECT a.*, INTSIZE_CSEC / 60 secs,count(distinct begin_time) over(partition by inst_id) c FROM gv$rsrcmgrmetric&opt a)
+        FROM   (SELECT a.*, INTSIZE_CSEC / 100 secs,count(distinct begin_time) over(partition by inst_id) c FROM gv$rsrcmgrmetric&opt a)
         GROUP  BY CONSUMER_GROUP_NAME
         HAVING GREATEST(SUM(CPU_CONSUMED_TIME),SUM(IO_REQUESTS))>0
         ORDER  BY "CPU|TIME" desc,IOPS desc
@@ -85,7 +85,7 @@ grid {
                 ROUND(SUM(DBTIMEPERSEC * CALLSPERSEC) / SUM(CALLSPERSEC), 2) "DBTIME/CALL",
                 ROUND(SUM(ELAPSEDPERCALL * CALLSPERSEC) / SUM(CALLSPERSEC), 2) "ELA/CALL",
                 ROUND(SUM(CPUPERCALL * CALLSPERSEC) / SUM(CALLSPERSEC), 2) "CPU/CALL"
-            FROM   (SELECT a.*, INTSIZE_CSEC / 60 secs,count(distinct begin_time) over(partition by inst_id) c FROM GV$SERVICEMETRIC&opt a WHERE GROUP_ID=6) a
+            FROM   (SELECT a.*, INTSIZE_CSEC / 100 secs,count(distinct begin_time) over(partition by inst_id) c FROM GV$SERVICEMETRIC&opt a WHERE GROUP_ID=6) a
             WHERE  CALLSPERSEC > 0
             GROUP  BY SERVICE_NAME
             ORDER  BY DBTIM DESC
@@ -109,7 +109,7 @@ grid {
                         SUM((PHYSICAL_WRITES) /c/secs) writes,
                         SUM(PHYSICAL_READS * AVERAGE_READ_TIME/c/secs) rt,
                         SUM(PHYSICAL_WRITES * AVERAGE_WRITE_TIME/c/secs) wt
-                    FROM   (SELECT a.*, INTSIZE_CSEC / 60 secs,count(distinct begin_time) over(partition by inst_id) c FROM gv$filemetric&opt A)
+                    FROM   (SELECT a.*, INTSIZE_CSEC / 100 secs,count(distinct begin_time) over(partition by inst_id) c FROM gv$filemetric&opt A)
                     JOIN   dba_Data_files
                     USING  (file_id)
                     GROUP  BY TABLESPACE_NAME)
@@ -136,7 +136,7 @@ grid {
                         SUM((LARGE_READ_IOPS + LARGE_WRITE_IOPS)/c) LARGES,
                         SUM((SMALL_READ_IOPS + LARGE_READ_IOPS)/c) READS,
                         SUM((SMALL_WRITE_IOPS + LARGE_WRITE_IOPS)/c) WRITES
-                    FROM   (SELECT a.*, INTSIZE_CSEC / 60 secs,count(distinct begin_time) over(partition by inst_id) c FROM gv$iofuncmetric&opt a)
+                    FROM   (SELECT a.*, INTSIZE_CSEC / 100 secs,count(distinct begin_time) over(partition by inst_id) c FROM gv$iofuncmetric&opt a)
                     GROUP  BY FUNCTION_NAME)
             WHERE GREATEST(MBPS,IOPS) >0 
             ORDER  BY IOPS DESC
@@ -155,7 +155,7 @@ grid {
                 '|' "|",
                 ROUND(1E4 * SUM(TIME_WAITED) / NULLIF(SUM(WAIT_COUNT), 0),2) AVG_WAIT,
                 SUM(AVERAGE_WAITER_COUNT/c) WAITERS
-            FROM   (SELECT a.*, INTSIZE_CSEC / 60 secs,count(distinct begin_time) over(partition by inst_id) c FROM gv$waitclassmetric&opt a)
+            FROM   (SELECT a.*, INTSIZE_CSEC / 100 secs,count(distinct begin_time) over(partition by inst_id) c FROM gv$waitclassmetric&opt a)
             JOIN   (SELECT DISTINCT WAIT_CLASS#, WAIT_CLASS FROM v$event_name)
             USING  (WAIT_CLASS#)
             GROUP  BY WAIT_CLASS
@@ -197,7 +197,7 @@ grid {
                         round(min(value/div),3) "Min",
                         round(max(value/div),3) "Max"
                 FROM (SELECT a.*, 
-                             INTSIZE_CSEC / 60 secs,count(distinct begin_time) over(partition by inst_id,METRIC_NAME) c,
+                             INTSIZE_CSEC / 100 secs,count(distinct begin_time) over(partition by inst_id,METRIC_NAME) c,
                              case when upper(trim(METRIC_UNIT)) like 'BYTE%' then 1024*1024 else 1 end div
                       FROM   gv$sysmetric&opt A 
                       WHERE  group_id=2

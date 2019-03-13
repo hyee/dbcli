@@ -72,6 +72,7 @@ function sqlplus:make_sqlpath()
     self.env['SQLPATH']=table.concat(path,env.IS_WINDOWS and ';' or ':')
     self.env['ORACLE_PATH']=self.env['SQLPATH']
     self.env['TNS_ADMIN']=self.db.tns_admin
+    self.env['NLS_LANG']=self.db.props and self.db.props.nls_lang or nil
     env.uv.os.setenv("SQLPATH",self.env['SQLPATH'])
     env.uv.os.setenv("ORACLE_PATH",self.env['ORACLE_PATH'])
 end
@@ -79,7 +80,6 @@ end
 function sqlplus:get_startup_cmd(args,is_native)
     local tnsadm=tostring(java.system:getProperty("oracle.net.tns_admin"))
     local props={}
-    --self.env['ORACLE_HOME']="d:\\Soft\\InstanceClient\\bin"
     self:make_sqlpath()
     self.work_path,self.work_dir=self.work_dir,env._CACHE_PATH
     while #args>0 do
