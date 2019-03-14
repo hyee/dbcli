@@ -22,12 +22,16 @@ setmetatable(_G,global_meta)
 --]]
 
 local cache_path,is_fixed=nil,false
-local function set_value(self, key, value, fixed) 
+local function set_env(self, key, value, fixed) 
     if key=='_CACHE_PATH' then
-        if not fixed and is_fixed then return end
+        --if not fixed and is_fixed then return end
+        local prev=cache_path
         cache_path,is_fixed=value,fixed
         if value and self.uv and self.uv.chdir then
-            pcall(self.uv.chdir,value)
+            local done=pcall(self.uv.chdir,value)
+            if done and prev~=cache_path then
+                print('Working directory changed to '..cache_path)
+            end
         end
     else
         rawset(self,key,value)
@@ -35,9 +39,9 @@ local function set_value(self, key, value, fixed)
 end
 
 local env=setmetatable({},{
-    __call =set_value,
+    __call =set_env,
     __index=function(self,key) return key=='_CACHE_PATH' and cache_path or _G[key] end,
-    __newindex=set_value
+    __newindex=set_env
 })
 
 local mt={}
@@ -1000,7 +1004,7 @@ end
 local function set_cache_path(name,path)
     path=env.join_path(path,"")
     env.checkerr(os.exists(path)=='directory',"No such path: "..path)
-    set_value(env,"_CACHE_PATH",path,true)
+    set_env(env,"_CACHE_PATH",path,true)
     env['_CACHE_BASE']=path
     return path
 end

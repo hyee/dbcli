@@ -43,8 +43,6 @@ public class Loader {
     private static Loader loader = null;
     KeyMap keyMap;
     KeyListner q = new KeyListner('q');
-    EventCallback event = e -> q.actionPerformed((ActionEvent) e[0]);
-
     Future sleeper;
     private volatile CallableStatement stmt = null;
     private Sleeper runner = new Sleeper();

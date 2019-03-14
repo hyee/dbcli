@@ -6,7 +6,7 @@ setlocal enabledelayedexpansion
 echo Copying Java source into src..
 echo =========================
 del /F/S/Q ".\src\java"
-XCOPY /E /Y "d:\JavaProjects\dbcli\dbcli_1\src\*" .\src\java
+XCOPY /E /Y "d:\JavaProjects\dbcli\dbcli\src\*" .\src\java
 XCOPY /E /Y "d:\JavaProjects\dbcli\opencsv\src\*" "%GIT_HOME%\opencsv\src"
 XCOPY /E /Y "d:\JavaProjects\dbcli\nuprocess\src\*" "%GIT_HOME%\nuprocess\src"
 XCOPY /E /Y ".\lib\opencsv.jar" "%GIT_HOME%\opencsv\release"

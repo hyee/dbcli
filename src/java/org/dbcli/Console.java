@@ -293,7 +293,7 @@ public final class Console {
             }
         };
         Less less = new Less(terminal);
-        less.noInit = true;
+        //less.noInit = true;
         less.veryQuiet = true;
         less.padding = spaces;
         less.numWidth = (int) Math.max(3, Math.ceil(Math.log10(lines < 10 ? 10 : lines)));

@@ -10,16 +10,18 @@
         @cell: {
             12={
 				'-',
-				[[grid={topic="DBA_HIST_CELL_GLOBAL (Per Second)",max_rows=50}
-				SELECT NAME, round(metric_value / decode(NAME, metric_name, 1, 1024 * 1024) / (0 + '&dur'), 2) VALUE
-				FROM   (SELECT metric_name,
-							SUM(metric_value * decode(snap_id, 0+'&bs', -1, 1)) metric_value,
-							REPLACE(metric_name, 'bytes', 'megabytes') NAME
-						FROM   dba_hist_cell_global a
-						WHERE  snap_id IN ('&bs', '&es')
-						AND    metric_value > 0
-						GROUP  BY metric_name)
-				WHERE  round(metric_value / decode(NAME, metric_name, 1, 1024 * 1024) / (0 + '&dur'), 2) > 0
+				[[grid={topic="DBA_HIST_CELL_GLOBAL (Per Second)",max_rows=50,bypassemptyrs='on'}
+				SELECT NAME, round(metric_value / decode(NAME, metric_name, 1, 1024 * 1024) , 2) VALUE
+				FROM   (SELECT metric_name, NAME, SUM(metric_value/secs) metric_value
+				        FROM   (SELECT metric_name,
+				                       metric_value v,
+				                       secs,
+				                       metric_value - lag(metric_value) over(PARTITION BY a.dbid, cell_hash, INCARNATION_NUM, metric_name ORDER BY a.snap_id) metric_value,
+				                       REPLACE(metric_name, 'bytes', 'megabytes') NAME
+				                FROM  (select * from (&snaps) where instance_number=1) , dba_hist_cell_global a
+				                WHERE  a.snap_id between minid and maxid)
+				        GROUP  BY metric_name, NAME)
+				WHERE  round(metric_value / decode(NAME, metric_name, 1, 1024 * 1024) , 2) > 0
 				ORDER  BY VALUE DESC
 				]],
 			} 
@@ -27,65 +29,68 @@
         }
     --]]
 ]]*/
-set sep4k on feed off
+set sep4k on feed off verify off
 
-col bs1 new_value bs1
-col bs new_value bs
-col es new_value es
-col dur new_value dur
-col bt new_value bt
-col st new_value st
-
-set termout off
-select a.* from (
-	select min(snap_id) bs1,
-	       min(case when s.end_interval_time >= nvl(to_date(:v1,'YYMMDDHH24MI'),SYSDATE - 7) then snap_id end) bs,
-	       max(snap_id) es,
-		   to_char(min(case when s.end_interval_time >= nvl(to_date(:v1,'YYMMDDHH24MI'),SYSDATE - 7) then end_interval_time end),'YYYY-MM-DD HH24:MI:SS') bt,
-		   to_char(max(end_interval_time),'YYYY-MM-DD HH24:MI:SS') st,
-	       nullif(round(86400*(max(end_interval_time+0)-min(case when s.end_interval_time >= nvl(to_date(:v1,'YYMMDDHH24MI'),SYSDATE - 7) then end_interval_time+0 end))),0) dur
-	from  dba_hist_snapshot s
-	where (:v3 is null or instr(',&v3,',','||instance_number||',')>0) 
-	and   s.end_interval_time BETWEEN nvl(to_date(:v1,'YYMMDDHH24MI')-1.1/24,SYSDATE - 7) AND nvl(to_date(:V2,'YYMMDDHH24MI'),SYSDATE)
-	group by startup_time
-	order by es desc,bs desc) a
-where rownum<2;
-set termout on
-
+var snaps varchar2(4000);
+BEGIN
+	:snaps := q'[
+	    SELECT a.*,decode(snap_id,minid,-1,1) flag
+		FROM   (SELECT dbid,
+		               instance_number,
+		               startup_time,
+		               snap_id,
+		               MIN(snap_id) over(PARTITION BY dbid, instance_number, startup_time) minid,
+		               MAX(snap_id) over(PARTITION BY dbid, instance_number, startup_time) maxid,
+		               round(86400 * (MAX(end_interval_time + 0)
+		                      over(PARTITION BY dbid, instance_number, startup_time) - MIN(end_interval_time + 0)
+		                      over(PARTITION BY dbid, instance_number, startup_time))) secs
+		        FROM   dba_hist_snapshot s
+		        WHERE  ('&3' IS NULL OR instr(',&v3,', ',' || instance_number || ',') > 0)
+		        AND    s.end_interval_time BETWEEN nvl(to_date('&1', 'YYMMDDHH24MI') - 1.1 / 24, SYSDATE - 7) AND
+		               nvl(to_date('&2', 'YYMMDDHH24MI'), SYSDATE)) a
+		WHERE  minid < maxid
+		AND    snap_id IN (minid, maxid)]';
+END;
+/
 
 COL WAITED,AVG_WAIT,CPU|TIME,CPU|QUEUE,DBTIM,ELA/CALL,CPU/CALL,DBTIME/CALL,read,write for usmhd2
 col dbtime,SMALLS,READS,LARGES,WRITES,PCT,%,FG,CPU|UT,CPU|LIMIT for pct2
 COL MBPS,phyrds,phywrs,redo FOR KMG
 COL CALLS,EXEC,COMMITS,ROLLBACKS,IOS_WAIT,IOPS,WAITS,GOODNESS,AAS,OPTIMAL,MULTIPASS,ONEPASS FOR TMB
 col sql,io,cpu,parse,cc,cl,app,gccu,gccr for pct2
-PRO Time Range: &BT ~~~ &ST
-PRO =======================================================
+
 grid {
     [[ grid={topic="DBA_HIST_SERVICE_STAT (Per Second)"}
-        SELECT *
+		SELECT *
 		FROM   (SELECT service_name,
 		               stat_name,
 		               CASE
-		                   WHEN stat_name LIKE '%time%' AND stat_name != 'DB time' OR stat_name='DB CPU' THEN
-		                        ROUND(VALUE / NULLIF(MAX(DECODE(stat_name, 'DB time', VALUE)) OVER(PARTITION BY service_name), 0), 4)
+		                   WHEN stat_name LIKE '%time%' AND stat_name != 'DB time' OR stat_name = 'DB CPU' THEN
+		                    ROUND(VALUE / NULLIF(MAX(DECODE(stat_name, 'DB time', VALUE)) OVER(PARTITION BY service_name), 0), 4)
 		                   ELSE
-		                        VALUE
+		                    VALUE
 		               END val
-		        FROM   (SELECT nvl(service_name,'--TOTAL--') service_name, stat_name, 
-				               round(SUM(DECODE(snap_id, 0+'&bs', -1, 1) * VALUE *
-							   case when stat_name LIKE 'physical%' THEN  
-							      (select 0+value from dba_hist_parameter b where a.dbid=b.dbid and b.parameter_name='db_block_size' and rownum<2) ELSE 1 END
-							   ) / '&dur', 2) VALUE
-		                FROM   DBA_HIST_SERVICE_STAT a
-		                WHERE  snap_id IN ('&bs', '&es')
-		                AND    ('&v3' is null or  instr(',&v3,',','||instance_number||',')>0) 
-		                GROUP  BY stat_name,rollup(service_name)
-		                HAVING round(SUM(DECODE(snap_id, 0+'&bs', -1, 1) * VALUE) / '&dur', 2) > 0) a)
+		        FROM   (SELECT nvl(service_name, '--TOTAL--') service_name,
+		                       stat_name,
+		                       round(SUM(flag * VALUE / secs * CASE
+		                                     WHEN stat_name LIKE 'physical%' THEN
+		                                      (SELECT 0 + VALUE
+		                                       FROM   dba_hist_parameter b
+		                                       WHERE  a.dbid = b.dbid
+		                                       AND    b.parameter_name = 'db_block_size'
+		                                       AND    rownum < 2)
+		                                     ELSE
+		                                      1
+		                                 END),
+		                             2) VALUE
+		                FROM   (SELECT * FROM DBA_HIST_SERVICE_STAT NATURAL JOIN(&snaps)) a
+		                GROUP  BY stat_name, ROLLUP(service_name)
+		                HAVING round(SUM(flag * VALUE / secs), 2) > 0) a)
 		PIVOT(MAX(val)
 		FOR    stat_name IN('logons cumulative' logons,
 		                    'physical reads' phyrds,
 		                    'physical writes' phywrs,
-							'redo size' redo,
+		                    'redo size' redo,
 		                    'DB time' DBTIM,
 		                    'sql execute elapsed time' SQL,
 		                    'user I/O wait time' io,
@@ -103,7 +108,7 @@ grid {
 		                    'workarea executions - optimal' OPTIMAL,
 		                    'workarea executions - multipass' multipass,
 		                    'workarea executions - onepass' onepass))
-		ORDER BY DBTIM DESC
+		ORDER  BY DBTIM DESC
     ]],
     '-', 
     {   
@@ -127,27 +132,21 @@ grid {
 							SUM((LARGE_READ_REQS + LARGE_WRITE_REQS) * flag / secs) LARGES,
 							SUM((SMALL_READ_REQS + LARGE_READ_REQS) * flag / secs) READS,
 							SUM((SMALL_WRITE_REQS + LARGE_WRITE_REQS) * flag / secs) WRITES
-					FROM   (SELECT a.*, DECODE(snap_id, 0 + '&es', 1, -1) flag, 0 + '&dur' secs 
-					        FROM dba_hist_iostat_function a
-							WHERE  snap_id IN ('&bs', '&es')
-			                AND    ('&v3' IS NULL OR instr(',&v3,', ',' || instance_number || ',') > 0))
+					FROM    (SELECT * FROM dba_hist_iostat_function NATURAL JOIN(&snaps)) a
 					GROUP  BY ROLLUP(FUNCTION_NAME))
 			WHERE  GREATEST(MBPS, IOPS) > 0
 			ORDER  BY IOPS DESC
         ]],
-       
         '-',
         [[grid={topic="DBA_HIST_SYSTEM_EVENT (Per Second)"}
 			WITH time_model AS
-			 (SELECT hs1.*, DECODE(hs1.snap_id, 0 + '&es', 1, -1) flag, 0 + '&dur' secs, SUM(p.value) over(PARTITION BY hs1.dbid, hs1.snap_id) cpu_count
-			  FROM   dba_hist_sys_time_model hs1, dba_hist_parameter p
+			 (SELECT hs1.*, SUM(p.value) over(PARTITION BY hs1.dbid, hs1.snap_id) cpu_count
+			  FROM   (select * from dba_hist_sys_time_model NATURAL JOIN(&snaps)) hs1, dba_hist_parameter p
 			  WHERE  hs1.snap_id = p.snap_id(+)
 			  AND    hs1.instance_number = p.instance_number(+)
 			  AND    hs1.dbid = p.dbid(+)
 			  AND    p.parameter_name(+) = 'cpu_count'
-			  AND    ('&v3' IS NULL OR instr(',&v3,', ',' || hs1.instance_number || ',') > 0)
-			  AND    hs1.stat_name IN ('DB time', 'DB CPU', 'background cpu time')
-			  AND    hs1.snap_id IN ('&bs', '&es')),
+			  AND    hs1.stat_name IN ('DB time', 'DB CPU', 'background cpu time')),
 			db_time AS
 			 (SELECT /*+materialize*/
 			          SUM(VALUE * flag) db_time
@@ -157,25 +156,23 @@ grid {
 			       NULL wait_class,
 			       MAX(cpu_count) counts,
 			       NULL timeouts,
-			       SUM(VALUE * flag) / MAX(secs) waited,
+			       SUM(VALUE * flag/secs)  waited,
 			       round(SUM(VALUE * flag) / max(db_time)*100,2) "% DB",
-			       round(SUM(VALUE * flag) / MAX(secs) / MAX(cpu_count), 2) avg_wait
+			       round(SUM(VALUE * flag/secs) / MAX(cpu_count), 2) avg_wait
 			FROM   time_model a,db_time
 			WHERE  stat_name != 'DB time'
 			UNION ALL
 			SELECT *
 			FROM   (SELECT nvl(event_name, '- Wait Class: ' || nvl(wait_class, 'All')) event,
 			               nvl2(event_name, wait_class, ''),
-			               SUM(total_Waits * flag) / MAX(secs) counts,
+			               SUM(total_Waits * flag/secs) counts,
 			               SUM(total_timeouts * flag) / nullif(SUM(total_Waits * flag), 0) timeouts,
-			               round(SUM(time_waited_micro * flag), 2) / MAX(secs) waited,
+			               round(SUM(time_waited_micro * flag/secs), 2)  waited,
 			               round(SUM(time_waited_micro * flag) / (SELECT db_time FROM db_time b)*100,2) db_time,
 			               round(SUM(time_waited_micro * flag) / nullif(SUM(total_Waits * flag), 0), 2) avg_wait
-			        FROM   (SELECT hs1.*, DECODE(hs1.snap_id, 0 + '&es', 1, -1) flag, 0 + '&dur' secs
-			                FROM   dba_hist_system_event hs1
-			                WHERE  snap_id IN ('&bs', '&es')
-			                AND    ('&v3' IS NULL OR instr(',&v3,', ',' || hs1.instance_number || ',') > 0)
-			                AND    wait_class != 'Idle') a
+			        FROM   (SELECT *
+			                FROM   dba_hist_system_event NATURAL JOIN(&snaps)
+			                WHERE  wait_class != 'Idle') a
 			        GROUP  BY ROLLUP(wait_class, event_name)
 			        HAVING SUM(time_waited_micro * flag) > 0
 			        ORDER  BY grouping_id(wait_class, event_name) DESC, abs(waited) DESC)
@@ -218,8 +215,10 @@ grid {
 												(SELECT MAX(NAME) FROM v$latchname WHERE latch# = p2)
 										END curr_obj#
 									FROM   dba_hist_Active_Sess_history a
-									WHERE  snap_id between '&bs'+0 and '&es'+0
-			                        AND    ('&v3' IS NULL OR instr(',&v3,', ',' || instance_number || ',') > 0))
+									JOIN   (&snaps)  b
+									ON     a.snap_id between minid and maxid
+									AND    a.dbid=b.dbid
+									AND    a.instance_number=b.instance_number)
 							GROUP  BY program, event, sql_id, ROLLUP(curr_obj#)
 							ORDER  BY pct DESC) a)
 			WHERE  gid = 1
@@ -240,13 +239,15 @@ grid {
                         ,2) VALUE,
                         replace(INITCAP(regexp_substr(TRIM(METRIC_UNIT),'^\S+')),'Bytes','Megabtyes') UNIT
                 FROM (SELECT a.*, 
-                             INTSIZE / 100 secs,count(distinct begin_time) over(partition by instance_number,METRIC_NAME) c,
+                             INTSIZE / 100 secs,count(distinct begin_time) over(partition by a.instance_number,METRIC_NAME) c,
                              case when upper(trim(METRIC_UNIT)) like 'BYTE%' then 1024*1024 else 1 end div
                       FROM   dba_hist_sysmetric_summary A 
+                      JOIN   (&snaps)  b
+					  ON     a.snap_id between minid and maxid
+					  AND    a.dbid=b.dbid
+					  AND    a.instance_number=b.instance_number
                       WHERE  group_id=2
-                      AND    AVERAGE >0
-                      AND    ('&v3' is null or  instr(',&v3,',','||instance_number||',')>0) 
-                      AND    snap_id between  '&bs'+0 and '&es'+0)
+                      AND    AVERAGE >0)
                 GROUP BY METRIC_NAME,METRIC_UNIT)
 			WHERE VALUE>0
             ORDER BY UNIT,value desc]]

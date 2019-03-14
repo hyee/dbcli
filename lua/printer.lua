@@ -35,7 +35,7 @@ function printer.set_more(stmt)
     env.checkerr(stmt,"Usage: more <select statement>|<other command>")
     printer.is_more=true
     out.isMore=true
-    if stmt:upper()~='LAST' then
+    if stmt:upper()~='LAST' and stmt:upper()~='L' then
         more_text={lines=0}
         out:clear()
         printer.grid_title_lines=0
@@ -362,7 +362,7 @@ function printer.onload()
     ]]
 
     local more_help=[[
-    Similar to Linux 'less' command. Usage: @@NAME <other command>|last  (support pipe(|) operation)
+    Similar to Linux 'less' command. Usage: @@NAME <other command>|last|l  (support pipe(|) operation)
     Example: select * from dba_objects|@@NAME
     Key Maps:
         exit       :  q or :q or ZZ

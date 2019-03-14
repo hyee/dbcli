@@ -20,8 +20,8 @@
                    flag,
                    part_key,
                    nullif('[' || &obj || ']', '[]') || reason_name reason,
-                   bytes - lag(bytes) over(PARTITION BY cell_name, dbid,reason_name ORDER BY snap_id) bytes,
-                   requests - lag(requests) over(PARTITION BY cell_name, dbid,reason_name ORDER BY snap_id) requests,
+                   bytes - lag(bytes) over(PARTITION BY cell_name, dbid,reason_name,INCARNATION_NUM ORDER BY snap_id) bytes,
+                   requests - lag(requests) over(PARTITION BY cell_name, dbid,reason_name,INCARNATION_NUM ORDER BY snap_id) requests,
                    Slot_size
           FROM   (SELECT a.*,
                          row_number() OVER(PARTITION BY snap_id, dbid ORDER BY instance_number) r,
