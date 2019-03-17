@@ -64,6 +64,7 @@
                         sql_exec_id,
                         sql_exec_start,
                         nvl(sql_plan_line_id,0) sql_plan_line_id,
+                        sql_plan_operation||' '||sql_plan_options operation,
                         nvl(sql_plan_hash_value,0) sql_plan_hash_value,
                         nvl(&phf,0) plan_hash_full,
                         &con con_id,
@@ -83,10 +84,11 @@ WITH ALL_PLANS AS
             child_number,
             sql_id,
             nvl(plan_hash_value,0) phv,
+            0 dbid,
             inst_id,
             object#,
             object_name,
-            object_node tq,
+            object_node tq,operation||' '||options operation,
             &phf2+0 plan_hash_full
     FROM    gv$sql_plan a
     WHERE   '&vw' IN('A','G')
@@ -101,9 +103,10 @@ WITH ALL_PLANS AS
             sql_id,
             nvl(plan_hash_value,0),
             dbid,
+            null,
             object#,
             object_name,
-            object_node tq,
+            object_node tq,operation||' '||options,
             &phf2+0 plan_hash_full
     FROM    dba_hist_sql_plan a
     WHERE   '&vw' IN('A','D')
@@ -114,7 +117,7 @@ sql_plan_data AS
  (SELECT * FROM
      (SELECT a.*,
              nvl(max(plan_hash_full) over(PARTITION by phv),phv) phf,
-             dense_rank() OVER(PARTITION BY phv ORDER BY flag, tm DESC, child_number DESC NULLS FIRST, inst_id desc) seq
+             dense_rank() OVER(PARTITION BY dbid,phv ORDER BY flag, tm DESC, child_number DESC NULLS FIRST, inst_id desc) seq
       FROM   ALL_PLANS a)
   WHERE  seq = 1),
 ash as(
@@ -178,7 +181,7 @@ ash0(   aas_,
         temp_,
         dop_,
         blocking_session,blocking_inst_id,seq#,
-        sql_id,sql_exec_id_,sql_exec_start_,sql_plan_line_id,phv1,plan_hash_full,pred_flag,lv,
+        sql_id,sql_exec_id_,sql_exec_start_,sql_plan_line_id,operation,phv1,plan_hash_full,pred_flag,lv,
         flags,chain1,chain2
     ) as(
     select aas_,
@@ -210,7 +213,7 @@ ash0(   aas_,
         temp_,
         dop_,
         blocking_session,blocking_inst_id,seq#,
-        sql_id,sql_exec_id,sql_exec_start,sql_plan_line_id,sql_plan_hash_value,plan_hash_full,pred_flag,1 lv,
+        sql_id,sql_exec_id,sql_exec_start,sql_plan_line_id,operation,sql_plan_hash_value,plan_hash_full,pred_flag,1 lv,
         1 flags,
         sql_id chain1,
         nvl(event,'ON CPU') chain2
@@ -250,6 +253,7 @@ ash0(   aas_,
         a.sql_exec_id_,
         a.sql_exec_start_,
         coalesce(nullif(case when b.sql_plan_line_id>65535 then 0 else b.sql_plan_line_id end,0),a.sql_plan_line_id,0) sql_plan_line_id,
+        coalesce(case when b.sql_plan_line_id>65535 then null else b.operation end,a.operation) operation,
         coalesce(nullif(b.sql_plan_hash_value,0),a.phv1),
         coalesce(nullif(b.plan_hash_full,0),a.plan_hash_full) plan_hash_full,
         a.pred_flag,
@@ -299,12 +303,12 @@ ash_raw as (
                         (select parameter from v$rowcache where cache#=p1 and rownum<2)
                     when event like 'latch%' and p2text='number' then 
                         (select name from v$latchname where latch#=p2 and rownum<2)
+                    when p3text='class#' then
+                        (select class from (SELECT class, ROWNUM r from v$waitstat) where r=p3 and rownum<2)
                     when p1text ='file#' and p2text='block#' then 
                         'file#'||p1||' block#'||p2
                     when p3text in('block#','block') then 
-                        'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)  
-                    when p3text='class#' then
-                        (select class from (SELECT class, ROWNUM r from v$waitstat) where r=p3 and rownum<2)
+                        'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)    
                     when px_flags > 65536 then
                         decode(trunc(mod(px_flags/65536, 32)),
                                1,'[PX]Executing-Parent-DFO',     
@@ -348,7 +352,7 @@ ash_raw as (
                         and   a.sql_id=b.sql_id and b.plan_hash_value=a.phv1),1,10,1)) AAS,
                    row_number() OVER(PARTITION BY bitand(flags,1),seq# ORDER BY AAS_,lv desc) seq,
                    --sec_seq: multiple PX processes at the same second wille be treated as on second 
-                   row_number() OVER(PARTITION BY bitand(flags,1),dbid,phv1,sql_plan_line_id,sample_time,qc_inst,qc_sid ORDER BY AAS_,tm_delta_db_time desc) sec_seq,
+                   row_number() OVER(PARTITION BY bitand(flags,1),dbid,phv1,sql_plan_line_id,operation,sample_time,qc_inst,qc_sid ORDER BY AAS_,tm_delta_db_time desc) sec_seq,
                    nvl(decode(pred_flag,2,0,case when sql_plan_line_id>65535 then 0 else sql_plan_line_id end),0) pid,
                    case when pred_flag = 2  then
                         sql_exec_id_||',@'||qc_inst||','||qc_sid
@@ -421,11 +425,11 @@ ash_phv_agg as(
                 listagg(phv,',') WITHIN GROUP(ORDER BY cost desc,aas DESC) OVER(PARTITION BY nvl(b.phf,a.phf)) phvs,
                 count(1) over(partition by  nvl(b.phf,a.phf)) phv_cnt,
                 max(nvl2(b.phf,1,0)) over(partition by  nvl(b.phf,a.phf)) plan_exists
-        from (SELECT phv1 phv,max(phf) phf,sum(cost) cost,sum(aas) aas from ash_raw where bitand(flags,1)=1 group by phv1) a 
+        from (SELECT phv1 phv,max(phf) phf,sum(cost) cost,sum(aas) aas from ash_raw group by phv1) a 
         left join (select distinct phv,phf from sql_plan_data) b using(phv)) A
     WHERE phv_rate>=0.1),
 hierarchy_data AS
- (SELECT id, parent_id, phv
+ (SELECT id, parent_id, phv,operation
   FROM   (select * from sql_plan_data where phv in(select phv from ash_phv_agg where plan_exists=1))
   START  WITH id = 0
   CONNECT BY PRIOR id = parent_id AND phv=PRIOR phv 
@@ -434,21 +438,23 @@ ordered_hierarchy_data AS
  (SELECT id,
          parent_id AS pid,
          phv AS phv,
+         operation,
          row_number() over(PARTITION BY phv ORDER BY rownum DESC) AS OID,
          MAX(id) over(PARTITION BY phv) AS maxid
   FROM   hierarchy_data),
 qry AS
  ( SELECT DISTINCT sql_id sq,
          flag flag,
-         'BASIC ROWS PARTITION PARALLEL PREDICATE NOTE REMOTE &fmt IOSTATS' format,
+         'BASIC ROWS PARTITION PARALLEL PREDICATE NOTE REMOTE &adaptive &fmt IOSTATS' format,
          phv phv,
          coalesce(child_number, 0) child_number,
-         inst_id
+         inst_id,
+         dbid
   FROM   sql_plan_data
   WHERE  phv in(select phv from ash_phv_agg where plan_exists=1)),
 xplan AS
  (  SELECT phv,rownum r,a.*
-    FROM   qry, TABLE(dbms_xplan.display('dba_hist_sql_plan',NULL,format,'dbid='||inst_id||' and plan_hash_value=' || phv || ' and sql_id=''' || sq ||'''')) a
+    FROM   qry, TABLE(dbms_xplan.display('dba_hist_sql_plan',NULL,format,'dbid='||dbid||' and plan_hash_value=' || phv || ' and sql_id=''' || sq ||'''')) a
     WHERE  flag = 2
     UNION ALL
     SELECT phv,rownum,a.*
@@ -479,20 +485,20 @@ ash_agg as(
                 row_number() OVER(PARTITION BY phv,gid,grp,subtype order by aas desc,sub) seq
             FROM(
                 select --+ NO_EXPAND_GSET_TO_UNION NO_USE_DAGG_UNION_ALL_GSETS
-                grouping_id(phv1,pid,top2) gid,
+                grouping_id(phv1,id,top2) gid,
                 CASE
                     WHEN grouping_id(phv1,top1) =1 THEN 8
-                    WHEN grouping_id(pid,top1) =1 THEN 4
-                    WHEN grouping_id(top1,pid) =1 THEN 2   
+                    WHEN grouping_id(id,top1) =1 THEN 4
+                    WHEN grouping_id(top1,id) =1 THEN 2   
                     WHEN grouping_id(top1,top2) =1 THEN 1
                 END g,
                 grouping_id(phv1,top1) g1,
-                grouping_id(pid,top1) g2,
+                grouping_id(id,top1) g2,
                 grouping_id(top1,top2) g3,
-                decode(grouping_id(phv1, pid,top2),3,''||phv1,5,top1,top1) grp,
-                decode(grouping_id(phv1, pid,top2),3,top1,5,''||pid,top2) sub,
-                DECODE(grouping_id(phv1, pid,top2),3,'E',5,'P','O') subtype,
-                phv,phv1,phvs,phfv,plan_exists, top1, top2,pid id,sql_id,
+                decode(grouping_id(phv1, id,top2),3,''||phv1,5,top1,top1) grp,
+                decode(grouping_id(phv1, id,top2),3,top1,5,''||id,top2) sub,
+                DECODE(grouping_id(phv1, id,top2),3,'E',5,'P','O') subtype,
+                phv,phv1,phvs,phfv,plan_exists, top1, top2,id,sql_id,
                 max(phf_rate) phf_rate,max(phv_rate) phv_rate,max(pred_flag) pred_flag,
                 max(dop) max_dop,min(nullif(dop,0)) min_dop,decode(sign(max(dop)),1,max(skew)) skew,
                 COUNT(DISTINCT SQL_EXEC) EXECS,
@@ -517,10 +523,11 @@ ash_agg as(
                 min(sample_time) begin_time,
                 max(sample_time) end_time
             from (select a.*, nvl(''||&top1,' ') top1,nvl(''||&top2,' ') top2,
+                         nvl((select max(id) from ordered_hierarchy_data b where a.phv=b.phv and b.id>=a.pid and a.operation=b.operation),a.pid) id,
                          nullif(round(100*stddev(dbtime) over(partition by px_flags,dbid,phv1,sql_exec,pid)/greatest(median(dbtime) over(partition by px_flags,dbid,phv1,sql_exec,pid),5e6),2),0) skew
                   FROM (select /*+ordered use_hash(b)*/ * from ash_phv_agg a natural join ash_raw b where bitand(flags,1)=1) A
                  )
-            group by phv,phvs,phvs,phfv,plan_exists,grouping sets((phv1,sql_id),pid,top1,(phv1,top1,sql_id),(pid,top1),(top1,top2))) A) A
+            group by phv,phvs,phvs,phfv,plan_exists,grouping sets((phv1,sql_id),id,top1,(phv1,top1,sql_id),(id,top1),(top1,top2))) A) A
     ) a WHERE g IS NOT NULL
 ),
 plan_agg as(
@@ -540,14 +547,14 @@ plan_line_agg AS(
     SELECT /*+materialize no_expand no_merge(a) no_merge(b)*/*
     FROM   ordered_hierarchy_data a
     LEFT   JOIN (select a.* from ash_agg a where g=4 and plan_exists=1) b
-    USING  (PHV,ID)),
+    USING(phv,id)),
 plan_line_xplan AS
  (SELECT /*+no_merge(x) use_hash(x o)*/
        r,
        x.phv phv,
        x.plan_table_output AS plan_output,
        x.id,x.prefix,
-       o.pid,o.oid,o.maxid,
+       nvl(''||o.pid,' ') pid,nvl(''||o.oid,' ') oid,o.maxid,
        cpu,io,cc,cl,app,oth,adm,cfg,sch,net,plsql,costs,aas_text,execs,
        nvl(cost_rate,' ') cost_rate,
        secs,o.min_dop,o.max_dop,o.skew,o.io_reqs,o.io_bytes,o.pga,o.temp,
