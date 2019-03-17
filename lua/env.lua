@@ -21,11 +21,27 @@ debug.setmetatable(env,global_meta)
 setmetatable(_G,global_meta)
 --]]
 
+local cache_path,is_fixed=nil,false
+local function set_env(self, key, value, fixed) 
+    if key=='_CACHE_PATH' then
+        --if not fixed and is_fixed then return end
+        local prev=cache_path
+        cache_path,is_fixed=value,fixed
+        if value and self.uv and self.uv.chdir then
+            local done=pcall(self.uv.chdir,value)
+            if done and prev~=cache_path then
+                print('Working directory changed to '..cache_path)
+            end
+        end
+    else
+        rawset(self,key,value)
+    end 
+end
 
 local env=setmetatable({},{
-    __call =function(self, key, value) rawset(self,key,value) end,
-    __index=function(self,key) return _G[key] end,
-    __newindex=function(self,key,value) rawset(self,key,value) end
+    __call =set_env,
+    __index=function(self,key) return key=='_CACHE_PATH' and cache_path or _G[key] end,
+    __newindex=set_env
 })
 
 local mt={}
@@ -988,7 +1004,8 @@ end
 local function set_cache_path(name,path)
     path=env.join_path(path,"")
     env.checkerr(os.exists(path)=='directory',"No such path: "..path)
-    env['_CACHE_BASE'],env["_CACHE_PATH"]=path,path
+    set_env(env,"_CACHE_PATH",path,true)
+    env['_CACHE_BASE']=path
     return path
 end
 
@@ -1035,6 +1052,7 @@ function env.onload(...)
     env.set_command(nil,"-P","#Test parameters. Usage: -p <command> [<args>]",env.testcmd,'__SMART_PARSE__',2)
 
     env.init.onload(env)
+    if env.uv and env.uv.chdir then env.uv.chdir(env._CACHE_PATH) end
     
     env.set_prompt(nil,prompt_stack._base,nil,0)
     if env.set and env.set.init then

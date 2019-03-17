@@ -58,6 +58,7 @@ accept sqlmon_file noprompt "@&V1"
 ALTER SESSION SET PLSQL_CCFLAGS = 'hub:&check_access_hub,sqlm:&check_access_sqlm';
 
 DECLARE /*+no_monitor*/
+    detail     INT := &detail; 
     plan_hash  INT := regexp_substr(:V2, '^\d+$');
     start_time DATE;
     end_time   DATE;
@@ -80,6 +81,7 @@ DECLARE /*+no_monitor*/
     serial     INT;
     xml        xmltype;
     mon        xmltype;
+    elem       xmltype;
     descs      SYS.ODCIARGDESCLIST;
     PROCEDURE wr(msg VARCHAR2) IS
     BEGIN
@@ -262,8 +264,9 @@ BEGIN
         IF sqlmon IS NULL or LENGTH(sqlmon)=0 THEN
             raise_application_error(-20001,'Target file is not a valid SQL Monitor Report file!');
         END IF;
-        xml  := xmltype(sqlmon);
-        mon := xml.extract('//report_parameters[1]');
+        xml    := xmltype(sqlmon);
+        mon    := xml.extract('//report_parameters[1]');
+        detail := 1;
 
         IF mon IS NULL THEN
             sqlmon := trim(xml.extract('/report/text()').getClobVal());
@@ -280,7 +283,15 @@ BEGIN
         END IF;
 
         sq_id:= mon.extract('//report_parameters/sql_id[1]/text()').getStringval();
-        sql_exec:= mon.extract('//report_parameters/sql_exec_id[1]/text()').getNumberVal();
+        elem := mon.extract('//report_parameters/sql_exec_id[1]/text()');
+        IF elem IS NOT NULL THEN
+            sql_exec:= elem.getNumberVal();
+        ELSE
+            elem := mon.extract('//report_parameters/*[@sql_exec_id][1]/@sql_exec_id');
+            IF elem IS NOT NULL THEN
+                sql_exec:= elem.getNumberVal();
+            END IF;
+        END IF;
     END IF;
     
     IF sq_id IS NOT NULL AND '&option' IS NULL THEN
@@ -341,7 +352,7 @@ BEGIN
             dbms_lob.createtemporary(txt,true);
         END IF;
 
-        IF &rpt=2 OR &detail =1 THEN
+        IF &rpt=2 OR detail =1 THEN
             SELECT SYS.ODCIARGDESC(id,typ,null,val,null,null,null)
             BULK   COLLECT INTO descs
             FROM   XMLTABLE('//operation[qblock]' PASSING xml COLUMNS --
@@ -640,26 +651,26 @@ BEGIN
              (SELECT greatest(MAX(length(clz)), 10) l1, greatest(MAX(LENGTH(''||cnt)), 3) l2, greatest(MAX(LENGTH(ids)), 16) l3, COUNT(1) c FROM waits)
             SELECT * BULK COLLECT INTO lst
             FROM (
-                SELECT '+' || LPAD('-', l1 + l2 + l3 + 8 + 8, '-') || '+'
+                SELECT '+' || LPAD('-', l1 + l2 + l3 + 8 + 9, '-') || '+'
                 FROM   w_len
                 WHERE  c > 0
                 UNION ALL
-                SELECT '| ' || RPAD('Wait Class', l1) || ' | ' || LPAD('AAS', l2) || ' | ' || LPAD('Pct', 5) ||  ' | ' || RPAD('Top Lines of AAS', l3) || ' |'
+                SELECT '| ' || RPAD('Wait Class', l1) || ' | ' || LPAD('AAS', l2) || ' | ' || LPAD('Pct', 6) ||  ' | ' || RPAD('Top Lines of AAS', l3) || ' |'
                 FROM   w_len
                 WHERE  c > 0
                 UNION ALL
-                SELECT '+' || LPAD('-', l1 + l2 + l3 + 8 + 8, '-') || '+'
+                SELECT '+' || LPAD('-', l1 + l2 + l3 + 8 + 9, '-') || '+'
                 FROM   w_len
                 WHERE  c > 0
                 UNION ALL
                 SELECT *
                 FROM   (
-                    SELECT '| ' || RPAD(clz, l1) || ' | ' || LPAD(cnt, l2)  || ' | ' || LPAD(pct, l2) || ' | ' || RPAD(ids, l3) || ' |' 
+                    SELECT '| ' || RPAD(clz, l1) || ' | ' || LPAD(cnt, l2)  || ' | ' || LPAD(pct, 6) || ' | ' || RPAD(ids, l3) || ' |' 
                     FROM waits, w_len 
                     WHERE c > 0 
                     ORDER BY 0 + cnt DESC,clz)
                 UNION ALL
-                SELECT '+' || LPAD('-', l1 + l2 + l3 + 8 + 8 , '-') || '+' FROM w_len WHERE c > 0);
+                SELECT '+' || LPAD('-', l1 + l2 + l3 + 8 + 9 , '-') || '+' FROM w_len WHERE c > 0);
             flush('Wait Event Summary');
 
             WITH line_info AS

@@ -1,3 +1,5 @@
+2019-03-13: + oracle: new command 'ora awrmetric'
+2019-03-02: + oracle: new command 'chart celldb'
 2019-03-02: + oracle: new command 'set noparallel [on|off]' (MOS 1114405.1)
 2019-03-01: + oracle: new command 'show metric'and 'exa threads'
 2019-02-21: + oracle: new command 'exa phase' 

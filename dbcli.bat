@@ -8,7 +8,7 @@ SET JAVA_TOOL_OPTIONS=
 if not defined CONSOLE_COLOR SET CONSOLE_COLOR=0A
 if not defined ANSICON_CMD SET "ANSICON_CMD=.\lib\x64\ConEmuHk64.dll"
 if !ANSICOLOR!==off set ANSICON_CMD=
-If not exist "%TNS_ADM%\tnsnames.ora" if defined ORACLE_HOME (set "TNS_ADM=%ORACLE_HOME%\network\admin" )
+If not exist "%TNS_ADMIN%\tnsnames.ora" if defined ORACLE_HOME (set "TNS_ADMIN=%ORACLE_HOME%\network\admin" )
 
 rem read config file
 SET JRE_HOME=
@@ -16,7 +16,7 @@ If exist "data\init.cfg" (for /f "eol=# delims=" %%i in (data\init.cfg) do (%%i)
 
 rem search java 1.8+ executable
 SET TEMP_PATH=!PATH!
-set "PATH=%JRE_HOME%\bin;%JRE_HOME%;%JAVA_HOME%\bin;!PATH!;.\jre\bin"
+set "PATH=%JRE_HOME%\bin;%JRE_HOME%;%JAVA_HOME%\bin;!PATH!"
 SET JAVA_HOME=
 
 for /F "usebackq delims=" %%p in (`where java.exe 2^>NUL`) do (
@@ -36,9 +36,15 @@ for /F "usebackq delims=" %%p in (`where java.exe 2^>NUL`) do (
 
 :next
 If not exist "!JAVA_EXE!" (
-    echo Cannot find Java 1.8 executable, exit.
-    pause
-    exit /b 1
+    if not exist "jre\bin\java.exe" (
+        echo Cannot find Java 1.8 executable, exit.
+        pause
+        exit /b 1
+    ) else (
+        set "JAVA_BIN=jre\bin"
+        set "JAVA_EXE=jre\bin\java.exe"
+        set "bit=x86"
+    )
 )
 
 SET "PATH=.\lib\!bit!;!JAVA_BIN!;!EXT_PATH!;.\bin;!TEMP_PATH!"
@@ -63,10 +69,10 @@ rem unpack jar files for the first use
 for /f %%i in ('dir /s/b *.pack.gz 2^>NUL ^|findstr -v "cache dump" ') do (
    set "var=%%i" &set "str=!var:@=!"
    echo Unpacking %%i to jar file for the first use...
-   If exist "jre\bin\unpack200" (
-       jre\bin\unpack200 -q -r "%%i" "!str:~0,-8!"
+   If exist "jre\bin\unpack200.exe" (
+       jre\bin\unpack200.exe -q -r "%%i" "!str:~0,-8!"
    ) else (
-       "!JAVA_BIN!\unpack200" -q -r "%%i" "!str:~0,-8!"
+       "!JAVA_BIN!\unpack200.exe" -q -r "%%i" "!str:~0,-8!"
    )
 )
 

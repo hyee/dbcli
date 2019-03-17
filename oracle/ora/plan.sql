@@ -11,7 +11,7 @@ Option:
 --[[
     &STAT: default={&DF &adaptive &binds &V3 &V4 &V5 &V6 &V7 &V8 &V9}
     &V3: none={} ol={outline alias}
-    &LAST: default={ALL} last={LAST}
+    &LAST: last={LAST} all={ALL} 
     &DF: default={ALLSTATS &LAST -PROJECTION -ALIAS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL}
     &SRC: {
             default={0}, # Both

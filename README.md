@@ -248,7 +248,7 @@ Below is the list:
     dygraphs    : (MIT)    https://github.com/danvk/dygraphs
     JsonForLua  : (MIT)    https://github.com/craigmj/json4lua 
     PSCP        : (MIT)    http://www.putty.org/ 
-    LPeg        : (MIT)    http://www.inf.puc-rio.br/~roberto/lpeg/lpeg.html
+    LPeg        : (MIT)    http://www.inf.puc-rio.br/~roberto/lpeg
     JNA         : (LGPL)   https://github.com/java-native-access/jna
     NuProcess   : (Apache) https://github.com/brettwooldridge/NuProcess
     Luv(libuv)  : (Apache) https://github.com/luvit/luv

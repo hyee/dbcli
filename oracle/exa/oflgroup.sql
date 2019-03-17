@@ -4,9 +4,9 @@ COL CELLSRV|INPUT,CELLSRV|OUTPUT,CELLSRV|PASSTHRU,OFFLOAD|INPUT,OFFLOAD|OUTPUT,O
 col mesgs,replies,alloc_failures,send_failures,oal_errors,ocl_errors,OPEN|ATTEMPTS,OPEN|FAILURES,DISKS|TOTAL,CC|PCODE,CC|GBY,DISKS|HWM,IM|HITS,IM|POPS,IM|BYPASS,HCC|HITS,IM_HITS|NONHCC format tmb
 grid {[[/*grid={topic='Offload Package'}*/
     with threads as(
-           SELECT /*+materialize no_expand*/ cell_name cellname, group_name oflgrp_name, process_id pid, COUNT(nullif(DATABASE_ID, 0)) aas
+           SELECT /*+materialize no_expand*/ cell_name cellname, group_name oflgrp_name, process_id pid, 
+                  COUNT(case when (TRIM(SQL_ID) IS NOT NULL OR lower(WAIT_STATE) LIKE 'working%') then 1 end) aas
            FROM   v$cell_ofl_thread_history
-           WHERE  (TRIM(SQL_ID) IS NOT NULL OR lower(WAIT_STATE) LIKE 'working%')
            GROUP  BY cell_name, group_name, process_id)
     SELECT /*+ordered use_hash(a b c)*/
            cell, oflgrp_name, pid, ocl_group_id, PACKAGE, aas
@@ -26,7 +26,7 @@ grid {[[/*grid={topic='Offload Package'}*/
     LEFT JOIN   threads c
     USING  (cellname, oflgrp_name)
     WHERE  lower(cell) LIKE lower('%' || :V1 || '%')
-    ORDER  BY 1, 2, 3]],
+    ORDER  BY 1, package]],
     '|',[[/*grid={topic='Offload Messages'}*/
     SELECT nvl(mesg_type,'--TOTAL--') mesg_type,sum(mesgs) mesgs,sum(replies) replies,sum(alloc_failures) alloc_failures,sum(send_failures) send_failures,sum(oal_errors) oal_errors,sum(ocl_errors) ocl_errors
     FROM ( SELECT (SELECT extractvalue(xmltype(c.confval), '/cli-output/context/@cell')
@@ -93,7 +93,7 @@ grid {[[/*grid={topic='Offload Package'}*/
            nvl(SUM(imvgby),0)+nvl(sum(hccvgby),0) "CC|GBY",
            '|' "|",
            SUM(attempts) "OPEN|ATTEMPTS",SUM(failures) "OPEN|FAILURES"
-           --,SUM(cellsrv_input) "CELLSRV|INPUT",SUM(cellsrv_output) "CELLSRV|OUTPUT",SUM(cellsrv_passthru) "CELLSRV|PASSTHRU"
+           ,SUM(cellsrv_input) "CELLSRV|INPUT",SUM(cellsrv_output) "CELLSRV|OUTPUT",SUM(cellsrv_passthru) "CELLSRV|PASSTHRU"
     FROM ( SELECT   cell_name,
                     b.*
             FROM   v$cell_state a,

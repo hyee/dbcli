@@ -1323,6 +1323,14 @@ function db_core:__onload()
         Print merge grid based on inputed queries: Usage: @@NAME {"<SQL1>",<sep>,["<SQL2>"| {...} ]}
         The input parameter must start with '{' and end with '}', as a LUA or JSON table format, support nested LUA/JSON tables
         
+        Allows customizing the grid style by defining 'grid={attr1=<value1>[,...]}' of each SQL, including:
+        topic="<title>"   :  block title
+        width=<cols>      :  fixed width, if the output wider than the size, then the overflow part will be chopped. When -1 then align to its siblings
+        height=<rows>     :  fixed height including titles, if the output longer than the size, then the overflow part will be chopped. When -1 then align to its siblings
+        max_rows=<rows>   :  max print records
+        pivot=<rows>      :  controls whether to pivot the records
+        bypassemptyrs='on':  controls whether to display the block in case of no record
+
         Elements:
             sep     : Can be 3 values:
                         '+': merge query1 and query2 as single grid

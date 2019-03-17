@@ -15,8 +15,8 @@ fi
 
 DBCLI_ENCODING=UTF-8
 
-if [ "$TNS_ADM" = "" ] && [[ -n "$ORACLE_HOME" ]] ; then
-    export TNS_ADM="$ORACLE_HOME/network/admin"
+if [ "$TNS_ADMIN" = "" ] && [[ -n "$ORACLE_HOME" ]] ; then
+    export TNS_ADMIN="$ORACLE_HOME/network/admin"
 fi
 
 if [[ -r ./data/init.conf ]]; then

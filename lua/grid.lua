@@ -673,7 +673,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
     local strip = env.ansi.strip_len
     local function redraw(tab, cols, rows)
         local newtab = {_is_drawed = true, topic = tab.topic}
-        local function push(line)newtab[#newtab + 1] = line end
+        local function push(line) newtab[#newtab + 1] = line end
         local actcols = strip(tab[#tab])
         local hspace = '|' .. space.rep(' ', cols - 2) .. '|'
         local max_rows = (tab.max_rows and tab.max_rows + 2 or rows) + 2
@@ -704,7 +704,9 @@ function grid.merge(tabs, is_print, prefix, suffix)
             if (tab.topic or "") ~= "" then
                 local topic = tab.topic
                 push(fmt:format(topic:strip_ansi():cpad(cols - 2, '-',
-                    function(left, str, right) return env.ansi.convert_ansi(string.format("%s$PROMPTCOLOR$%s$NOR$%s", left, (grid.cut(topic, cols - 2)), right)) end)))
+                    function(left, str, right) 
+                        return env.ansi.convert_ansi(string.format("%s$PROMPTCOLOR$%s$NOR$%s", left, (grid.cut(topic, cols - 2)), right)) 
+                    end)))
             else
                 push(head)
             end
@@ -821,7 +823,11 @@ function grid.merge(tabs, is_print, prefix, suffix)
                     else
                         local topic, width, height, max_rows = tab.topic, tab.width, tab.height, tab.max_rows
                         local is_bypass = tab.bypassemptyrs
-                        tab = grid.tostring(tab, true, " ", "", nil, tab.pivot):split("\n")
+                        local _,output=grid.tostring(tab, true, " ", "", nil, tab.pivot)
+                        tab={}
+                        for k,row in ipairs(output) do
+                            tab[k]=type(row)~="table" and row or row.format_func(row.fmt, table.unpack(row))
+                        end
                         tab.topic, tab.width, tab.height, tab.max_rows = topic, width, height, max_rows
                         if is_bypass ~= 'on' and is_bypass ~= true or #tab > 2 then
                             result[#result + 1] = tab
@@ -843,6 +849,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
         if prefix then tab[1] = prefix .. "\n" end
         for rowidx, row in ipairs(result) do
             tab[#tab + 1] = grid.cut(row, linesize)
+            env.event.callback("ON_PRINT_GRID_ROW",row,#result)
             if #tab >= height - 1 then
                 if rowidx < #result then tab[#tab + 1] = grid.cut(result[#result], linesize) end
                 break
@@ -850,7 +857,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
         end
         
         local str = table.concat(tab, "\n")
-        print(str,'__BYPASS_GREP_GRID__')
+        print(str,'__BYPASS_GREP__')
         if suffix then print(suffix) end
         return
     else

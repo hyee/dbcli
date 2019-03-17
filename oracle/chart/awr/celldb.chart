@@ -1,0 +1,104 @@
+/*[[
+    Show chart for DBA_HIST_CELL_DB. Usage: @@NAME {[yymmddhh24mi] [yymmddhh24mi]} 
+    Impacted by settings: starttime,endtime,instance
+    --[[
+        @VERSION: 12.1={}
+        &V1     : default={&STARTTIME}
+        &V2     : default={&ENDTIME}
+    --]]
+]]*/
+{
+    title="Exadata Cell DB Chart",
+    _sql=[[
+        WITH STATS AS
+         (SELECT /*+materialize*/
+           *
+          FROM   (SELECT src_dbname,
+                         cell_hash,
+                         to_char(end_interval_time, 'YYYY-MM-DD HH24:MI') end_time,
+                         secs,
+                         DISK_REQUESTS - lag(DISK_REQUESTS) OVER(PARTITION BY p ORDER BY snap_id) disk_requests,
+                         DISK_BYTES - lag(DISK_BYTES) OVER(PARTITION BY p ORDER BY snap_id) DISK_BYTES,
+                         FLASH_REQUESTS - lag(FLASH_REQUESTS) OVER(PARTITION BY p ORDER BY snap_id) FLASH_REQUESTS,
+                         FLASH_BYTES - lag(FLASH_BYTES) OVER(PARTITION BY p ORDER BY snap_id) FLASH_BYTES,
+                         DISK_SMALL_IO_REQS - lag(DISK_SMALL_IO_REQS) OVER(PARTITION BY p ORDER BY snap_id) DISK_SMALL_IO_REQS,
+                         DISK_LARGE_IO_REQS - lag(DISK_LARGE_IO_REQS) OVER(PARTITION BY p ORDER BY snap_id) DISK_LARGE_IO_REQS,
+                         FLASH_SMALL_IO_REQS - lag(FLASH_SMALL_IO_REQS) OVER(PARTITION BY p ORDER BY snap_id) FLASH_SMALL_IO_REQS,
+                         FLASH_LARGE_IO_REQS - lag(FLASH_LARGE_IO_REQS) OVER(PARTITION BY p ORDER BY snap_id) FLASH_LARGE_IO_REQS,
+                         DISK_SMALL_IO_SERVICE_TIME - lag(DISK_SMALL_IO_SERVICE_TIME) OVER(PARTITION BY p ORDER BY snap_id) DISK_SMALL_IO_SERVICE_TIME,
+                         DISK_SMALL_IO_QUEUE_TIME - lag(DISK_SMALL_IO_QUEUE_TIME) OVER(PARTITION BY p ORDER BY snap_id) DISK_SMALL_IO_QUEUE_TIME,
+                         DISK_LARGE_IO_SERVICE_TIME - lag(DISK_LARGE_IO_SERVICE_TIME) OVER(PARTITION BY p ORDER BY snap_id) DISK_LARGE_IO_SERVICE_TIME,
+                         DISK_LARGE_IO_QUEUE_TIME - lag(DISK_LARGE_IO_QUEUE_TIME) OVER(PARTITION BY p ORDER BY snap_id) DISK_LARGE_IO_QUEUE_TIME,
+                         FLASH_SMALL_IO_SERVICE_TIME - lag(FLASH_SMALL_IO_SERVICE_TIME) OVER(PARTITION BY p ORDER BY snap_id) FLASH_SMALL_IO_SERVICE_TIME,
+                         FLASH_SMALL_IO_QUEUE_TIME - lag(FLASH_SMALL_IO_QUEUE_TIME) OVER(PARTITION BY p ORDER BY snap_id) FLASH_SMALL_IO_QUEUE_TIME,
+                         FLASH_LARGE_IO_SERVICE_TIME - lag(FLASH_LARGE_IO_SERVICE_TIME) OVER(PARTITION BY p ORDER BY snap_id) FLASH_LARGE_IO_SERVICE_TIME,
+                         FLASH_LARGE_IO_QUEUE_TIME - lag(FLASH_LARGE_IO_QUEUE_TIME) OVER(PARTITION BY p ORDER BY snap_id) FLASH_LARGE_IO_QUEUE_TIME
+                  FROM   (select /*+no_merge*/ a.*,src_dbname||','||INCARNATION_NUM||','||cell_hash||','||dbid p from dba_hist_cell_db a) a
+                  JOIN   (SELECT a.*,
+                                86400 * ((end_interval_time + 0) - (begin_interval_time + 0)) secs,
+                                row_number() OVER(PARTITION BY dbid, snap_id ORDER BY 1) r
+                         FROM   dba_hist_snapshot a
+                         WHERE  end_interval_time+0 between NVL(to_date(:V1,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V2,'yymmddhh24miss'),sysdate))
+                  USING  (snap_id, dbid)
+                  WHERE  r = 1)
+          WHERE  nvl(FLASH_REQUESTS, -1) >= 0 and nvl(FLASH_LARGE_IO_SERVICE_TIME,-1)>=0)
+        SELECT end_time snap_time,
+               'Total' item,
+               round(SUM(DISK_BYTES + FLASH_BYTES) / secs) "IO Bytes/sec",
+               round(SUM(DISK_REQUESTS + FLASH_REQUESTS) / secs) "IO Reqs / Sec",
+               round(SUM(DISK_SMALL_IO_SERVICE_TIME + DISK_SMALL_IO_QUEUE_TIME + DISK_LARGE_IO_SERVICE_TIME + DISK_LARGE_IO_QUEUE_TIME +
+                         FLASH_SMALL_IO_SERVICE_TIME + FLASH_SMALL_IO_QUEUE_TIME + FLASH_LARGE_IO_SERVICE_TIME + FLASH_LARGE_IO_QUEUE_TIME) /
+                     nullif(SUM(DISK_REQUESTS + FLASH_REQUESTS), 0)/1000,3) "IO Latency (ms)",
+               round(SUM(DISK_SMALL_IO_QUEUE_TIME + DISK_LARGE_IO_QUEUE_TIME + FLASH_SMALL_IO_QUEUE_TIME + FLASH_LARGE_IO_QUEUE_TIME) /
+                     nullif(SUM(DISK_REQUESTS + FLASH_REQUESTS), 0)/1000,3) "IO Queue Latency (ms)",
+               round(SUM(DISK_SMALL_IO_SERVICE_TIME + DISK_LARGE_IO_SERVICE_TIME + FLASH_SMALL_IO_SERVICE_TIME + FLASH_LARGE_IO_SERVICE_TIME) /
+                     nullif(SUM(DISK_REQUESTS + FLASH_REQUESTS), 0)/1000,3) "IO Service Latency (ms)"
+        FROM   STATS
+        GROUP  BY end_time, secs
+        UNION ALL
+        SELECT end_time snap_time,
+               'Disk IO' item,
+               round(SUM(DISK_BYTES) / secs) "IO Bytes/sec",
+               round(SUM(DISK_REQUESTS) / secs) "IO Reqs / Sec",
+               round(SUM(DISK_SMALL_IO_SERVICE_TIME + DISK_SMALL_IO_QUEUE_TIME + DISK_LARGE_IO_SERVICE_TIME + DISK_LARGE_IO_QUEUE_TIME) /
+                     nullif(SUM(DISK_REQUESTS), 0)/1000,3) "IO Latency (ms)",
+               round(SUM(DISK_SMALL_IO_QUEUE_TIME + DISK_LARGE_IO_QUEUE_TIME) / nullif(SUM(DISK_REQUESTS), 0)/1000,3) "IO Queue Latency (ms)",
+               round(SUM(DISK_SMALL_IO_SERVICE_TIME + DISK_LARGE_IO_SERVICE_TIME) / nullif(SUM(DISK_REQUESTS), 0)/1000,3) "IO Service Latency (ms)"
+        FROM   STATS
+        GROUP  BY end_time, secs
+        UNION ALL
+        SELECT end_time snap_time,
+               'Flash IO' item,
+               round(SUM(FLASH_BYTES) / secs) "IO Bytes/sec",
+               round(SUM(FLASH_REQUESTS) / secs) "IO Reqs / Sec",
+               round(SUM(FLASH_SMALL_IO_SERVICE_TIME + FLASH_SMALL_IO_QUEUE_TIME + FLASH_LARGE_IO_SERVICE_TIME + FLASH_LARGE_IO_QUEUE_TIME) /
+                     nullif(SUM(FLASH_REQUESTS), 0)/1000,3) "IO Latency (ms)",
+               round(SUM(FLASH_SMALL_IO_QUEUE_TIME + FLASH_LARGE_IO_QUEUE_TIME) / nullif(SUM(FLASH_REQUESTS), 0)/1000,3) "IO Queue Latency (ms)",
+               round(SUM(FLASH_SMALL_IO_SERVICE_TIME + FLASH_LARGE_IO_SERVICE_TIME) / nullif(SUM(FLASH_REQUESTS), 0)/1000,3) "IO Service Latency (ms)"
+        FROM   STATS
+        GROUP  BY end_time, secs
+        UNION ALL
+        SELECT end_time snap_time,
+               'Small IO' item,
+               NULL "IO Bytes/sec",
+               round(SUM(DISK_SMALL_IO_REQS + FLASH_SMALL_IO_REQS) / secs) "IO Reqs / Sec",
+               round(SUM(DISK_SMALL_IO_SERVICE_TIME + DISK_SMALL_IO_QUEUE_TIME + FLASH_SMALL_IO_SERVICE_TIME + FLASH_SMALL_IO_QUEUE_TIME) /
+                     nullif(SUM(DISK_SMALL_IO_REQS + FLASH_SMALL_IO_REQS), 0)/1000,3) "IO Latency (ms)",
+               round(SUM(DISK_SMALL_IO_QUEUE_TIME + FLASH_SMALL_IO_QUEUE_TIME) / nullif(SUM(DISK_SMALL_IO_REQS + FLASH_SMALL_IO_REQS), 0)/1000,3) "IO Queue Latency (ms)",
+               round(SUM(DISK_SMALL_IO_SERVICE_TIME + FLASH_SMALL_IO_SERVICE_TIME) / nullif(SUM(DISK_SMALL_IO_REQS + FLASH_SMALL_IO_REQS), 0)/1000,3) "IO Service Latency (ms)"
+        FROM   STATS
+        GROUP  BY end_time, secs
+        UNION ALL
+        SELECT end_time snap_time,
+               'Large IO' item,
+               NULL "IO Bytes/sec",
+               round(SUM(DISK_LARGE_IO_REQS + FLASH_LARGE_IO_REQS) / secs) "IO Reqs / Sec",
+               round(SUM(DISK_LARGE_IO_SERVICE_TIME + DISK_LARGE_IO_QUEUE_TIME + FLASH_LARGE_IO_SERVICE_TIME + FLASH_LARGE_IO_QUEUE_TIME) /
+                     nullif(SUM(DISK_LARGE_IO_REQS + FLASH_LARGE_IO_REQS), 0)/1000,3) "IO Latency (ms)",
+               round(SUM(DISK_LARGE_IO_QUEUE_TIME + FLASH_LARGE_IO_QUEUE_TIME) / nullif(SUM(DISK_LARGE_IO_REQS + FLASH_LARGE_IO_REQS), 0)/1000,3) "IO Queue Latency (ms)",
+               round(SUM(DISK_LARGE_IO_SERVICE_TIME + FLASH_LARGE_IO_SERVICE_TIME) / nullif(SUM(DISK_LARGE_IO_REQS + FLASH_LARGE_IO_REQS), 0)/1000,3) "IO Service Latency (ms)"
+        FROM   STATS
+        GROUP  BY end_time, secs
+        ]],  
+    height=400,
+}

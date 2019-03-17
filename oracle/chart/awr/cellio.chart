@@ -81,6 +81,5 @@
                large_write_ms ms,null
         FROM   snap
         ORDER  BY 1,2]],  
-    labelsKMG2=true,
     height=400,
 }

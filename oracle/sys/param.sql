@@ -10,6 +10,8 @@
         v={(select listagg(decode(ISDEFAULT_KSPVLD_VALUES,'TRUE','*',' ')||VALUE_KSPVLD_VALUES,','||chr(10)) within group(order by ISDEFAULT_KSPVLD_VALUES desc) from X$KSPVLD_VALUES o
            where NAME_KSPVLD_VALUES=ksppinm and o.inst_id=y.inst_id) avail_values}
       }
+      &f1: default={ksppstdf='FALSE'} f={1=1}
+      &f2: default={1=1} f={}
    --]]
 ]]*/
 
@@ -29,7 +31,8 @@
                 :V3 is not null and lower(ksppinm||' '||ksppdesc) LIKE LOWER('%'||:V3||'%') or
                 :V4 is not null and lower(ksppinm||' '||ksppdesc) LIKE LOWER('%'||:V4||'%') or
                 :V5 is not null and lower(ksppinm||' '||ksppdesc) LIKE LOWER('%'||:V5||'%'))
-            OR (:V1 is null and ksppstdf='FALSE') 
-           &def and  decode(upper(KSPPSTVL),upper(KSPPSTDFL),'TRUE','FALSE')='FALSE'
-          )
-&g11 ))) where inst_id=nvl('&instance',userenv('instance')) ORDER BY 1,NAME;
+            OR (:V1 is null and (&f1)))
+&g11 ))) 
+where inst_id=nvl('&instance',userenv('instance'))
+and   (&f2)
+ORDER BY 1,NAME;

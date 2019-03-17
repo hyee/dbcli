@@ -35,7 +35,7 @@ function printer.set_more(stmt)
     env.checkerr(stmt,"Usage: more <select statement>|<other command>")
     printer.is_more=true
     out.isMore=true
-    if stmt:upper()~='LAST' then
+    if stmt:upper()~='LAST' and stmt:upper()~='L' then
         more_text={lines=0}
         out:clear()
         printer.grid_title_lines=0
@@ -96,7 +96,7 @@ function printer.print(...)
         if printer.hdl then
             pcall(printer.hdl.write,printer.hdl,strip_ansi(output).."\n")
         end
-        if printer.tee_hdl and printer.tee_type~='csv' and printer.tee_type~='html' then
+        if ignore~='__BYPASS_GREP__' and (printer.tee_hdl and printer.tee_type~='csv' and printer.tee_type~='html') then
             pcall(printer.tee_hdl.write,printer.tee_hdl,strip_ansi(output).."\n")
         end
     end
@@ -250,10 +250,10 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
         end
     end
 
-    if type(row)~="table" or not not printer.tee_hdl then return end
+    if not printer.tee_hdl then return end
 
     local hdl=printer.tee_hdl
-    if printer.tee_type=="html" then
+    if type(row)=="table" and printer.tee_type=="html" then
         local td='td'
         if(row[0]==0) then
             hdl:write("<table>\n")
@@ -278,7 +278,7 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
             hdl:write("</table>\n")
             printer.tee_colinfo=nil
         end
-    elseif printer.tee_type=="csv" then
+    elseif type(row)=="table" and printer.tee_type=="csv" then
         for idx,cell in ipairs(row) do
             if idx>1 then hdl:write(",") end
             if type(cell)=="string" then
@@ -290,6 +290,8 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
             end
         end
         hdl:write("\n")
+    elseif type(str)=="string" then
+        pcall(hdl.write,hdl,env.space..strip_ansi(str).."\n")
     end
 end
 
@@ -360,7 +362,7 @@ function printer.onload()
     ]]
 
     local more_help=[[
-    Similar to Linux 'less' command. Usage: @@NAME <other command>|last  (support pipe(|) operation)
+    Similar to Linux 'less' command. Usage: @@NAME <other command>|last|l  (support pipe(|) operation)
     Example: select * from dba_objects|@@NAME
     Key Maps:
         exit       :  q or :q or ZZ
@@ -379,7 +381,7 @@ function printer.onload()
     ]]
     env.set_command(nil,"grep",grep_help,{printer.grep,printer.grep_after},'__SMART_PARSE__',3,false,false,true)
     env.set_command(nil,"tee",tee_help,{printer.tee,printer.tee_after},'__SMART_PARSE__',3,false,false,true)
-    env.set_command({nil,{"output","out"},"Use default editor to view the recent output. Usage: @@NAME [<file>|clear]",printer.view_buff,false,2,false,false,true,is_blocknewline=true})
+    env.set_command({nil,{"output","out"},"Use default editor to view the recent output. Usage: @@NAME [<file>|clear]",printer.view_buff,false,2,false,false,false,is_blocknewline=true})
     env.set_command(nil,{"less","more"},more_help,printer.set_more,'__SMART_PARSE__',2,false,false,true)
     env.set_command(nil,{"Prompt","pro",'echo'}, "Prompt messages. Usage: @@NAME <message>",printer.load_text,false,2)
     env.set_command(nil,{"SPOOL","SPO"}, "Write the screen output into a file. Usage: @@NAME [file_name[.ext]] [CREATE] | APP[END]] | OFF]",printer.spool,false,3)

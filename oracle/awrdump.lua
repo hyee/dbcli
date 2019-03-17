@@ -387,7 +387,10 @@ function awr.extract_ash(starttime,endtime,instances,container)
                                                                                 service_name,
                                                                                 module,
                                                                                 action,
-                                                                                client_id))) LOOP
+                                                                                client_id
+
+
+                                                                                ))) LOOP
                     IF r.output IS NOT NULL THEN
                         dbms_lob.writeappend(rs, LENGTH(r.output), r.output);
                     END IF;
