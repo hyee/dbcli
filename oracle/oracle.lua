@@ -140,6 +140,7 @@ function oracle:connect(conn_str)
          ['oracle.jdbc.useFetchSizeWithLongColumn']='true',
          ['oracle.net.networkCompression']='on',
          ['oracle.net.keepAlive']='true',
+         ['oracle.jdbc.convertNcharLiterals']='true',
          ['oracle.net.ssl_server_dn_match']='true',
          ['oracle.jdbc.timezoneAsRegion']='false'
         },args)
@@ -557,7 +558,7 @@ function oracle:onload()
 
     add_single_line_stmt('commit','rollback','savepoint')
     add_default_sql_stmt('update','delete','insert','merge','truncate','drop','flashback')
-    add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge','audit','noaudit')
+    add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge','audit','noaudit','comment')
     set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
     set_command(self,"select",   default_desc,        self.query     ,true,1,true)
     set_command(self,"with",   default_desc,        self.query     ,self.check_completion,1,true)

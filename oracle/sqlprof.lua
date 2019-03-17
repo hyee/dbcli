@@ -42,7 +42,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             
             PROCEDURE get_sql(p_sqlid VARCHAR2) IS
             BEGIN
-                SELECT REPLACE(sql_text, chr(0), ' '), src
+                SELECT sql_text, src
                 INTO   v_sql, v_source
                 FROM   (
                         --awr and sqlset

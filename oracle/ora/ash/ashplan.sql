@@ -154,6 +154,10 @@ ash_raw as (
                         (select name from v$latchname where latch#=p2 and rownum<2)
                     when p3text='class#' then
                         (select class from (SELECT class, ROWNUM r from v$waitstat) where r=p3 and rownum<2)
+                    when p1text ='file#' and p2text='block#' then 
+                        'file#'||p1||' block#'||p2
+                    when p3text in('block#','block') then 
+                        'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)    
                     when px_flags > 65536 then
                         decode(trunc(mod(px_flags/65536, 32)),
                                1,'[PX]Executing-Parent-DFO',     
@@ -261,7 +265,7 @@ ordered_hierarchy_data AS
 qry AS
  ( SELECT DISTINCT sql_id sq,
          flag flag,
-         'BASIC ROWS PARTITION PARALLEL PREDICATE NOTE REMOTE &adaptive &fmt' format,
+         'BASIC ROWS PARTITION PARALLEL PREDICATE NOTE REMOTE &adaptive &fmt IOSTATS' format,
          phv phv,
          coalesce(child_number, 0) child_number,
          inst_id
@@ -274,7 +278,7 @@ xplan AS
     UNION ALL
     SELECT phv,rownum,a.*
     FROM   qry,
-            TABLE(dbms_xplan.display('gv$sql_plan',NULL,format,'inst_id='|| inst_id||' and plan_hash_value=' || phv || ' and sql_id=''' || sq ||''' and child_number='||child_number)) a
+            TABLE(dbms_xplan.display('gv$sql_plan_statistics_all',NULL,format,'inst_id='|| inst_id||' and plan_hash_value=' || phv || ' and sql_id=''' || sq ||''' and child_number='||child_number)) a
     WHERE  flag = 1),
 ash_agg as(
     SELECT /*+materialize*/ 

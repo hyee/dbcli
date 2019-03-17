@@ -13,7 +13,6 @@ from  &ash
 where p2text='#bytes' and wait_class='Network'
 and   upper(machine) like upper('%&V1%')
 and   time_waited>0
-and   sample_time BETWEEN &snap
-                      AND NVL(to_date(nvl(:V3,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE)
+and   sample_time BETWEEN &snap AND NVL(to_date(nvl(:V3,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE)
 group by machine,event
 order by sum(time_waited) desc;

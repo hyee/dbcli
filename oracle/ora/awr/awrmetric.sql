@@ -19,7 +19,7 @@
 				                       metric_value - lag(metric_value) over(PARTITION BY a.dbid, cell_hash, INCARNATION_NUM, metric_name ORDER BY a.snap_id) metric_value,
 				                       REPLACE(metric_name, 'bytes', 'megabytes') NAME
 				                FROM  (select * from (&snaps) where instance_number=1) , dba_hist_cell_global a
-				                WHERE  a.snap_id between minid and maxid)
+				                WHERE  a.snap_id between minid+1 and maxid)
 				        GROUP  BY metric_name, NAME)
 				WHERE  round(metric_value / decode(NAME, metric_name, 1, 1024 * 1024) , 2) > 0
 				ORDER  BY VALUE DESC
@@ -216,7 +216,7 @@ grid {
 										END curr_obj#
 									FROM   dba_hist_Active_Sess_history a
 									JOIN   (&snaps)  b
-									ON     a.snap_id between minid and maxid
+									ON     a.snap_id between minid+1 and maxid
 									AND    a.dbid=b.dbid
 									AND    a.instance_number=b.instance_number)
 							GROUP  BY program, event, sql_id, ROLLUP(curr_obj#)
@@ -243,7 +243,7 @@ grid {
                              case when upper(trim(METRIC_UNIT)) like 'BYTE%' then 1024*1024 else 1 end div
                       FROM   dba_hist_sysmetric_summary A 
                       JOIN   (&snaps)  b
-					  ON     a.snap_id between minid and maxid
+					  ON     a.snap_id between minid+1 and maxid
 					  AND    a.dbid=b.dbid
 					  AND    a.instance_number=b.instance_number
                       WHERE  group_id=2
