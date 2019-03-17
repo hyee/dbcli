@@ -63,7 +63,7 @@ ordered_hierarchy_data AS
 qry AS
  (SELECT DISTINCT sql_id sq,
          flag flag,
-         'BASIC ROWS PARTITION PARALLEL PREDICATE NOTE REMOTE &adaptive &fmt' format,
+         'BASIC ROWS PARTITION PARALLEL PREDICATE NOTE REMOTE &fmt' format,
          plan_hash_value phv,
          coalesce(child_number, plan_hash_value,0) plan_hash,
          inst_id
