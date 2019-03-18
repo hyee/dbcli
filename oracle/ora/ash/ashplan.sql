@@ -8,6 +8,7 @@
     @adaptive : 12.1={adaptive} default={}
     @phf : 12.1={sql_full_plan_hash_value} default={sql_plan_hash_value}
     @phf2: 12.1={to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1))} default={null}
+    @adp : 12.1={case when instr(other_xml, 'adaptive_plan') > 0 then 'Y' else 'N' end} default={'N'}
     @con : 12.1={AND prior con_id=con_id} default={}
     &V9  : ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
     &top1: default={ev}, O={CURR_OBJ#}
@@ -111,7 +112,8 @@ WITH ALL_PLANS AS
             object#,
             object_name,
             object_node tq,operation||' '||options operation,
-            &phf2+0 plan_hash_full
+            &phf2+0 plan_hash_full,
+            &adp is_adaptive_
     FROM    gv$sql_plan a
     WHERE   '&vw' IN('A','G')
     AND     '&V1' in(''||a.plan_hash_value,sql_id)
@@ -129,7 +131,8 @@ WITH ALL_PLANS AS
             object#,
             object_name,
             object_node tq,operation||' '||options,
-            &phf2+0 plan_hash_full
+            &phf2+0 plan_hash_full,
+            &adp is_adaptive_
     FROM    dba_hist_sql_plan a
     WHERE   '&vw' IN('A','D')
     AND     '&V1' in(''||a.plan_hash_value,sql_id)),
@@ -139,6 +142,7 @@ sql_plan_data AS
  (SELECT * FROM
      (SELECT a.*,
              nvl(max(plan_hash_full) over(PARTITION by phv),phv) phf,
+             max(is_adaptive_) over(PARTITION by phv) is_adaptive,
              dense_rank() OVER(PARTITION BY dbid,phv ORDER BY flag, tm DESC, child_number DESC NULLS FIRST, inst_id desc) seq
       FROM   ALL_PLANS a)
   WHERE  seq = 1),
@@ -270,7 +274,7 @@ ordered_hierarchy_data AS
 qry AS
  ( SELECT DISTINCT sql_id sq,
          flag flag,
-         'BASIC ROWS PARTITION PARALLEL PREDICATE NOTE REMOTE &adaptive &fmt IOSTATS' format,
+         'BASIC PEEKED_BINDS ROWS PARTITION PARALLEL PREDICATE NOTE REMOTE &adaptive &fmt IOSTATS' format,
          phv phv,
          coalesce(child_number, 0) child_number,
          inst_id,
@@ -348,7 +352,7 @@ ash_agg as(
                 min(sample_time) begin_time,
                 max(sample_time) end_time
             from (select a.*, nvl(''||&top1,' ') top1,nvl(''||&top2,' ') top2,
-                         nvl((select max(id) from ordered_hierarchy_data b where a.phv=b.phv and b.id>=a.pid and a.operation=b.operation),a.pid) id,
+                         nvl((select min(id) from ordered_hierarchy_data b where a.phv=b.phv and b.id>=a.pid and a.operation=b.operation),a.pid) id,
                          nullif(round(100*stddev(dbtime) over(partition by px_flags,dbid,phv1,sql_exec,pid)/greatest(median(dbtime) over(partition by px_flags,dbid,phv1,sql_exec,pid),5e6),2),0) skew
                   FROM (select /*+ordered use_hash(b)*/ * from ash_phv_agg a natural join ash_raw b) A
                  )

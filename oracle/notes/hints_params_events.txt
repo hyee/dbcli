@@ -5,6 +5,14 @@ Parameters
     _sqlexec_hash_based_distagg_enabled: improve multiple count(distinct) performance
     _plsql_nvl_optimize: improve nvl performance by not evaluating the second expression if the first is not null
     _gc_fast_index_split_wait: 0 to disable 'gc index operation' events (bug#28023081)
-
+    _index_prefetch_factor – defaults to 100, but when changed smaller, the optimizer will favor index prefetching. (NLJ prefetching)
+    _disable_index_block_prefetching: defaults to false, controls index prefetching (NLJ prefetching)
+    _db_file_noncontig_mblock_read_count – defaults to 11, maximum number of blocks(i.e. db file parallel read) to be prefetched in one batch. If set to 1, prefetching should be disabled. (NLJ prefetching)
+    _table_lookup_prefetch_thresh:  defaults as 2 and lower value makes Oracle use multiblock reads much more aggressively  (NLJ prefetching)
+    _table_lookup_prefetch_size: defaults as 40 and higher value makes Oracle use multiblock reads much more aggressively (NLJ prefetching)
+    _nlj_batching_enabled: defaults as 1, and 0 to turn off NLJ batching
+    _sort_elimination_cost_ratio:  defaults as 0, mainly used in first_rows. If est_cost(index_scan+order_by)*ratio>est_cost(index_full_scan) then use index_range_scan+order_by. 
+    _optimizer_skip_scan_enabled or hint NO_INDEX_SS: disable index skip scan
+    
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'

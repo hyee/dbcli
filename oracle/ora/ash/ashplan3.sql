@@ -445,7 +445,7 @@ ordered_hierarchy_data AS
 qry AS
  ( SELECT DISTINCT sql_id sq,
          flag flag,
-         'BASIC ROWS PARTITION PARALLEL PREDICATE NOTE REMOTE &adaptive &fmt IOSTATS' format,
+         'BASIC PEEKED_BINDS ROWS PARTITION PARALLEL PREDICATE NOTE REMOTE &adaptive &fmt IOSTATS' format,
          phv phv,
          coalesce(child_number, 0) child_number,
          inst_id,
@@ -523,7 +523,7 @@ ash_agg as(
                 min(sample_time) begin_time,
                 max(sample_time) end_time
             from (select a.*, nvl(''||&top1,' ') top1,nvl(''||&top2,' ') top2,
-                         nvl((select max(id) from ordered_hierarchy_data b where a.phv=b.phv and b.id>=a.pid and a.operation=b.operation),a.pid) id,
+                         nvl((select min(id) from ordered_hierarchy_data b where a.phv=b.phv and b.id>=a.pid and a.operation=b.operation),a.pid) id,
                          nullif(round(100*stddev(dbtime) over(partition by px_flags,dbid,phv1,sql_exec,pid)/greatest(median(dbtime) over(partition by px_flags,dbid,phv1,sql_exec,pid),5e6),2),0) skew
                   FROM (select /*+ordered use_hash(b)*/ * from ash_phv_agg a natural join ash_raw b where bitand(flags,1)=1) A
                  )

@@ -195,15 +195,15 @@ function trace.get_trace(filename,mb,from_mb)
         env.checkhelp(filename)
     end 
     if not db.props.db_version then env.raise_error('Database is not connected!') end;
-    db:internal_call("alter session set events '10046 trace name context off'")
-    db:internal_call("alter session set tracefile_identifier=CLEANUP")
-    db:internal_call("alter session set tracefile_identifier=''")
+    pcall(db.internal_call(db,"alter session set events '10046 trace name context off'"))
+    pcall(db.internal_call(db,"alter session set tracefile_identifier=CLEANUP"))
+    pcall(db.internal_call(db,"alter session set tracefile_identifier=''"))
     filename=filename:lower()
     local lv=nil
     if filename:find("^%d+$") then lv=tonumber(filename) end
     if filename=="default" or lv then
         if lv then
-            db:internal_call("alter session set tracefile_identifier='dbcli_"..math.random(1e6).."'");
+            pcall(db.internal_call(db,"alter session set tracefile_identifier='dbcli_"..math.random(1e6).."'"));
             tracefile=nil
         end
         if not tracefile  then
@@ -226,7 +226,7 @@ function trace.get_trace(filename,mb,from_mb)
         if lv then
             if lv > 0 then
                 print("Trace on: "..filename)
-                db:internal_call("alter session set events '10046 trace name context forever, level "..lv.."'")
+                pcall(db.internal_call(db,"alter session set events '10046 trace name context forever, level "..lv.."'"))
             else
                 print("Trace off: "..filename)
             end
