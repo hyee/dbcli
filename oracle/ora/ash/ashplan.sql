@@ -19,25 +19,27 @@
     &titl2: default={Events}, O={Objects}
     &fmt: default={} f={} s={-rows -parallel}
     &simple: default={1} s={0}
+    &V3:   default={&starttime}
+    &V4:   default={&endtime}
     &hierachy: {
         default={1 lv,
-                decode(:V1,top_level_sql_id,top_level_sql_id,sql_id) sql_id,
+                decode('&V1',top_level_sql_id,top_level_sql_id,sql_id) sql_id,
                 sql_exec_id sql_exec_id_,
                 sql_exec_start sql_exec_start_,
                 nvl(sql_plan_hash_value,0) phv1,
                 sql_plan_line_id,
                 sql_plan_operation||' '||sql_plan_options operation,
                 &phf plan_hash_full,
-                decode(:V1,sql_id,1,top_level_sql_id,2,3) pred_flag} 
+                decode('&V1',sql_id,1,top_level_sql_id,2,3) pred_flag} 
            all={level lv,
-                connect_by_root(decode(:V1,top_level_sql_id,top_level_sql_id,sql_id)) sql_id,
+                connect_by_root(decode('&V1',top_level_sql_id,top_level_sql_id,sql_id)) sql_id,
                 connect_by_root(sql_exec_id) sql_exec_id_,
                 connect_by_root(sql_exec_start) sql_exec_start_,
                 coalesce(nullif(sql_plan_hash_value,0),connect_by_root(sql_plan_hash_value),0) phv1,
                 coalesce(nullif(case when sql_plan_line_id>65535 then 0 else sql_plan_line_id end,0),connect_by_root(sql_plan_line_id),0) sql_plan_line_id,
                 coalesce(case when sql_plan_line_id>65535 then null else sql_plan_operation||' '||sql_plan_options end,connect_by_root( sql_plan_operation||' '||sql_plan_options)) operation,
                 coalesce(nullif(&phf,0),connect_by_root(&phf),0) plan_hash_full,
-                connect_by_root(decode(:V1,sql_id,1,top_level_sql_id,2,3)) pred_flag}
+                connect_by_root(decode('&V1',sql_id,1,top_level_sql_id,2,3)) pred_flag}
     }
     &public: {default={ aas_,
                         dbid,
@@ -81,11 +83,12 @@
 
     &swcb : {
         default={
-            AND     :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
-            AND     nvl(sql_exec_id,0) = coalesce(0+:v2,sql_exec_id,0)
+            AND     '&V1' IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
+            AND     nvl(sql_exec_id,0) = coalesce(0+'&V2',sql_exec_id,0)
         }
         all={
-            START  WITH :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
+            START  WITH '&V1' IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
+                   AND  nvl(sql_exec_id,0) = coalesce(0+'&V2',sql_exec_id,0)
             CONNECT BY PRIOR sample_time + 0 = sample_time+0
                 AND    PRIOR dbid = dbid
                 AND    PRIOR session_id=qc_session_id
@@ -97,7 +100,6 @@
 --]]
 ]]*/
 set feed off printsize 10000 pipequery off
-
 WITH ALL_PLANS AS 
  (SELECT    id,
             parent_id,
@@ -112,8 +114,7 @@ WITH ALL_PLANS AS
             object#,
             object_name,
             object_node tq,operation||' '||options operation,
-            &phf2+0 plan_hash_full,
-            &adp is_adaptive_
+            &phf2+0 plan_hash_full
     FROM    gv$sql_plan a
     WHERE   '&vw' IN('A','G')
     AND     '&V1' in(''||a.plan_hash_value,sql_id)
@@ -131,8 +132,7 @@ WITH ALL_PLANS AS
             object#,
             object_name,
             object_node tq,operation||' '||options,
-            &phf2+0 plan_hash_full,
-            &adp is_adaptive_
+            &phf2+0 plan_hash_full
     FROM    dba_hist_sql_plan a
     WHERE   '&vw' IN('A','D')
     AND     '&V1' in(''||a.plan_hash_value,sql_id)),
@@ -142,8 +142,7 @@ sql_plan_data AS
  (SELECT * FROM
      (SELECT a.*,
              nvl(max(plan_hash_full) over(PARTITION by phv),phv) phf,
-             max(is_adaptive_) over(PARTITION by phv) is_adaptive,
-             dense_rank() OVER(PARTITION BY dbid,phv ORDER BY flag, tm DESC, child_number DESC NULLS FIRST, inst_id desc) seq
+             dense_rank() OVER(PARTITION BY dbid,phv ORDER BY flag, tm DESC, child_number DESC NULLS FIRST, inst_id desc,sql_id) seq
       FROM   ALL_PLANS a)
   WHERE  seq = 1),
 ash_raw as (
@@ -226,9 +225,9 @@ ash_raw as (
                     select /*+no_merge cardinality(30000000)*/ 
                            a.*,(select dbid from v$database) dbid,inst_id instance_number,1 aas_
                     from   gv$active_session_history a
-                    where  sample_time+0 BETWEEN nvl(to_date(nvl(:V3,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7) 
-                                         AND     nvl(to_date(nvl(:V4,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE)
-                    and   (:V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf) or 
+                    where  sample_time+0 BETWEEN nvl(to_date('&V3','YYMMDDHH24MISS'),SYSDATE-7) 
+                                         AND     nvl(to_date('&V4','YYMMDDHH24MISS'),SYSDATE)
+                    and   ('&V1' IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf) or 
                             qc_session_id!=session_id or qc_instance_id!=inst_id or session_serial# != qc_session_serial#                            
                            )) a
                 where  '&vw' IN('A','G')
@@ -237,10 +236,12 @@ ash_raw as (
                 SELECT  /*+QB_NAME(DASH)*/
                         &public,
                         &hierachy
-                FROM    (select /*+ NO_MERGE cardinality(30000000)*/ d.*, 10 aas_ from dba_hist_active_sess_history d) d
-                WHERE   '&vw' IN('A','D')
-                AND     sample_time+0 BETWEEN nvl(to_date(nvl(:V3,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7) 
-                                          AND nvl(to_date(nvl(:V4,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE)
+                FROM    (select /*+ NO_MERGE cardinality(30000000)*/ d.*, 10 aas_ 
+                         from   dba_hist_active_sess_history d
+                         WHERE   '&vw' IN('A','D')
+                         AND     sample_time+0 BETWEEN nvl(to_date('&V3','YYMMDDHH24MISS'),SYSDATE-7) 
+                                                   AND nvl(to_date('&V4','YYMMDDHH24MISS'),SYSDATE)) d
+                WHERE 1=1
                 &swcb) a) h
     WHERE  seq = 1),
 ash_phv_agg as(
@@ -324,7 +325,7 @@ ash_agg as(
                 grouping_id(phv1,top1) g1,
                 grouping_id(id,top1) g2,
                 grouping_id(top1,top2) g3,
-                decode(grouping_id(phv1, id,top2),3,''||phv1,5,top1,top1) grp,
+                decode(grouping_id(phv1, id,top2),3,sql_id||','||phv1,5,top1,top1) grp,
                 decode(grouping_id(phv1, id,top2),3,top1,5,''||id,top2) sub,
                 DECODE(grouping_id(phv1, id,top2),3,'E',5,'P','O') subtype,
                 phv,phv1,phvs,phfv,plan_exists, top1, top2,id,sql_id,
@@ -356,12 +357,13 @@ ash_agg as(
                          nullif(round(100*stddev(dbtime) over(partition by px_flags,dbid,phv1,sql_exec,pid)/greatest(median(dbtime) over(partition by px_flags,dbid,phv1,sql_exec,pid),5e6),2),0) skew
                   FROM (select /*+ordered use_hash(b)*/ * from ash_phv_agg a natural join ash_raw b) A
                  )
-            group by phv,phvs,phvs,phfv,plan_exists,grouping sets((phv1,sql_id),id,top1,(phv1,top1,sql_id),(id,top1),(top1,top2))) A) A
+            group by phv,phvs,phvs,phfv,plan_exists,grouping sets((phv1,sql_id),(phv1,sql_id,top1),id,(id,top1),top1,(top1,top2))) A) A
     ) a WHERE g IS NOT NULL
 ),
 plan_agg as(
     SELECT decode(plan_exists,1,'*',' ')||phv1 phv2,
            row_number() over(order by phf_rate desc,costs desc,aas desc) r,
+           row_number() over(partition by phv1 order by phf_rate desc,costs desc,aas desc) r1,
            a.* 
     FROM ash_agg a WHERE g=8
 ),
@@ -513,7 +515,7 @@ final_output as(
     SELECT 4,-1,fmt,0,0 from titles where id=-1 and flag='phv'
     UNION ALL
     SELECT 5,b.phv,b.plan_output,r,seq
-    FROM   (select r,phv1 phv from plan_agg) a,
+    FROM   (select r,phv1 phv from plan_agg where r1=1) a,
         (SELECT b.*,rownum seq 
             FROM (
                 SELECT phv,null plan_output FROM plan_output group by phv
@@ -521,7 +523,6 @@ final_output as(
                 SELECT phv,rpad('=',max(length(rtrim(plan_line))),'=') FROM plan_output group by phv
                 UNION ALL
                 SELECT phv,rtrim(plan_line) FROM plan_output
-
                 UNION ALL
                 SELECT phv,fmt from titles where id=-1 and flag='wait'
                 union all

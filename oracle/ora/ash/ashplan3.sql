@@ -117,7 +117,7 @@ sql_plan_data AS
  (SELECT * FROM
      (SELECT a.*,
              nvl(max(plan_hash_full) over(PARTITION by phv),phv) phf,
-             dense_rank() OVER(PARTITION BY dbid,phv ORDER BY flag, tm DESC, child_number DESC NULLS FIRST, inst_id desc) seq
+             dense_rank() OVER(PARTITION BY dbid,phv ORDER BY flag, tm DESC, child_number DESC NULLS FIRST, inst_id desc,sql_id) seq
       FROM   ALL_PLANS a)
   WHERE  seq = 1),
 ash as(
@@ -495,7 +495,7 @@ ash_agg as(
                 grouping_id(phv1,top1) g1,
                 grouping_id(id,top1) g2,
                 grouping_id(top1,top2) g3,
-                decode(grouping_id(phv1, id,top2),3,''||phv1,5,top1,top1) grp,
+                decode(grouping_id(phv1, id,top2),3,sql_id||','||phv1,5,top1,top1) grp,
                 decode(grouping_id(phv1, id,top2),3,top1,5,''||id,top2) sub,
                 DECODE(grouping_id(phv1, id,top2),3,'E',5,'P','O') subtype,
                 phv,phv1,phvs,phfv,plan_exists, top1, top2,id,sql_id,
@@ -527,12 +527,13 @@ ash_agg as(
                          nullif(round(100*stddev(dbtime) over(partition by px_flags,dbid,phv1,sql_exec,pid)/greatest(median(dbtime) over(partition by px_flags,dbid,phv1,sql_exec,pid),5e6),2),0) skew
                   FROM (select /*+ordered use_hash(b)*/ * from ash_phv_agg a natural join ash_raw b where bitand(flags,1)=1) A
                  )
-            group by phv,phvs,phvs,phfv,plan_exists,grouping sets((phv1,sql_id),id,top1,(phv1,top1,sql_id),(id,top1),(top1,top2))) A) A
+            group by phv,phvs,phvs,phfv,plan_exists,grouping sets((phv1,sql_id),(phv1,sql_id,top1),id,(id,top1),top1,(top1,top2))) A) A
     ) a WHERE g IS NOT NULL
 ),
 plan_agg as(
     SELECT decode(plan_exists,1,'*',' ')||phv1 phv2,
            row_number() over(order by phf_rate desc,costs desc,aas desc) r,
+           row_number() over(partition by phv1 order by phf_rate desc,costs desc,aas desc) r1,
            a.* 
     FROM ash_agg a WHERE g=8
 ),
@@ -684,7 +685,7 @@ final_output as(
     SELECT 4,-1,fmt,0,0 from titles where id=-1 and flag='phv'
     UNION ALL
     SELECT 5,b.phv,b.plan_output,r,seq
-    FROM   (select r,phv1 phv from plan_agg) a,
+    FROM   (select r,phv1 phv from plan_agg where r1=1) a,
         (SELECT b.*,rownum seq 
             FROM (
                 SELECT phv,null plan_output FROM plan_output group by phv
@@ -692,7 +693,6 @@ final_output as(
                 SELECT phv,rpad('=',max(length(rtrim(plan_line))),'=') FROM plan_output group by phv
                 UNION ALL
                 SELECT phv,rtrim(plan_line) FROM plan_output
-
                 UNION ALL
                 SELECT phv,fmt from titles where id=-1 and flag='wait'
                 union all
