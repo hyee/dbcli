@@ -9,6 +9,7 @@
     @phf2: 12.1={to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1))} default={null}
     @con : 12.1={con_dbid} default={dbid}
     @mem : 12.1={DELTA_READ_MEM_BYTES} default={null}
+    @did : 12.1={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     &V3  : default={&starttime}
     &V4  : default={&endtime}  
     &V9  : ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
@@ -118,7 +119,7 @@ sql_plan_data AS
  (SELECT * FROM
      (SELECT a.*,
              nvl(max(plan_hash_full) over(PARTITION by phv),phv) phf,
-             dense_rank() OVER(PARTITION BY dbid,phv ORDER BY flag, tm DESC, child_number DESC NULLS FIRST, inst_id desc,sql_id) seq
+             dense_rank() OVER(PARTITION BY phv ORDER BY flag, tm DESC, child_number DESC NULLS FIRST, inst_id desc,dbid,sql_id) seq
       FROM   ALL_PLANS a)
   WHERE  seq = 1),
 ash as(
@@ -129,7 +130,7 @@ ash as(
             select  1 aas_,&mem mem,&public 
             from table(gv$(cursor(
                 select /*+ordered no_merge(a) cardinality(30000000) no_merge(b) use_hash(b)*/ b.*,
-                    (select dbid from v$database) dbid,
+                    &did dbid,
                     userenv('instance') instance_number 
                 from  (
                     select distinct sample_id
@@ -346,7 +347,7 @@ ash_raw as (
             sum(case when p3text='block cnt' and nvl(event,'temp') like '%temp' then temp_ end) over(partition by bitand(flags,1),dbid,phv1,sql_exec,pid,sample_time) temp,
             sum(pga_) over(partition by bitand(flags,1),dbid,phv1,sql_exec,pid,sample_time) pga,
             sum(case when is_px_slave=1 and px_flags>65536 then tm_delta_db_time end) over(partition by px_flags,bitand(flags,1),dbid,phv1,sql_exec,pid,sid,inst_id) dbtime
-    FROM   (SELECT /*+no_expand opt_param('_optimizer_connect_by_combine_sw', 'false')*/ --PQ_CONCURRENT_UNION 
+    FROM   (SELECT /*+no_expand*/ --PQ_CONCURRENT_UNION 
                    a.*, --seq: if ASH and DASH have the same record, then use ASH as the standard
                    decode(AAS_,1,1,decode((
                         select sign(sum(elapsed_time_delta)/greatest(1,sum(greatest(parse_calls_delta,executions_delta)))-5e6) 
@@ -711,7 +712,6 @@ final_output as(
                 SELECT phv,fmt from titles where id=-1 and flag='wait'
             ) b) b
     WHERE a.phv=b.phv)
---select * from (select text blocking_chains_and_plan_stats from final_chain order by r)
---UNION ALL
---select * from (select fmt from final_output order by id,r,seq);
-select * from ash
+select * from (select text blocking_chains_and_plan_stats from final_chain order by r)
+UNION ALL
+select * from (select fmt from final_output order by id,r,seq);

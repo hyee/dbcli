@@ -11,6 +11,7 @@
     @adp : 12.1={case when instr(other_xml, 'adaptive_plan') > 0 then 'Y' else 'N' end} default={'N'}
     @con : 12.1={AND prior con_id=con_id} default={}
     @mem : 12.1={DELTA_READ_MEM_BYTES} default={null}
+    @did : 12.1={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     &V9  : ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
     &top1: default={ev}, O={CURR_OBJ#}
     &top2: default={CURR_OBJ#}, O={ev}
@@ -99,6 +100,7 @@
                 &con
                 AND    LEVEL <3}
     }
+    &merge: default={merge(a)} all={no_merge(a)}
 --]]
 ]]*/
 set feed off printsize 10000 pipequery off
@@ -144,7 +146,7 @@ sql_plan_data AS
  (SELECT * FROM
      (SELECT a.*,
              nvl(max(plan_hash_full) over(PARTITION by phv),phv) phf,
-             dense_rank() OVER(PARTITION BY dbid,phv ORDER BY flag, tm DESC, child_number DESC NULLS FIRST, inst_id desc,sql_id) seq
+             dense_rank() OVER(PARTITION BY phv ORDER BY flag, tm DESC, child_number DESC NULLS FIRST, inst_id desc,dbid,sql_id) seq
       FROM   ALL_PLANS a)
   WHERE  seq = 1),
 ash_raw as (
@@ -201,7 +203,7 @@ ash_raw as (
             sum(case when p3text='block cnt' and nvl(event,'temp') like '%temp' then temp_ end) over(partition by dbid,phv1,sql_exec,pid,sample_time+0) temp,
             sum(pga_)  over(partition by dbid,phv1,sql_exec,pid,sample_time+0) pga,
             sum(case when is_px_slave=1 and px_flags>65536 then tm_delta_db_time end) over(partition by px_flags,dbid,phv1,sql_exec,pid,sid,inst_id) dbtime
-    FROM   (SELECT /*+no_expand opt_param('_optimizer_connect_by_combine_sw', 'false') opt_param('_optimizer_filter_pushdown', 'false')*/ --PQ_CONCURRENT_UNION 
+    FROM   (SELECT /*+no_expand opt_param('_optimizer_filter_pushdown', 'false')*/ --PQ_CONCURRENT_UNION 
                    a.*, --seq: if ASH and DASH have the same record, then use ASH as the standard
                    decode(AAS_,1,1,decode((
                         select sign(sum(elapsed_time_delta)/greatest(1,sum(greatest(parse_calls_delta,executions_delta)))-5e6) 
@@ -220,12 +222,12 @@ ash_raw as (
                    case when (qc_sid!=sid or qc_inst!=inst_id) then 1 else 0 end is_px_slave,
                    CASE WHEN 'Y' IN(decode(pred_flag,2,'Y','N'),IS_NOT_CURRENT,IN_PLSQL_EXECUTION,IN_PLSQL_RPC,IN_PLSQL_COMPILATION,IN_JAVA_EXECUTION) THEN 1 END IN_PLSQL       
             FROM   (
-                SELECT  /*+QB_NAME(ASH)*/
+                SELECT  /*+QB_NAME(ASH) &merge*/
                         &public,
                         &hierachy
                 FROM    (
-                    select /*+no_merge cardinality(30000000)*/ 
-                           a.*,(select dbid from v$database) dbid,inst_id instance_number,1 aas_,&mem mem
+                    select /*+ cardinality(30000000)*/ 
+                           a.*,&did dbid,inst_id instance_number,1 aas_,&mem mem
                     from   gv$active_session_history a
                     where  '&vw' IN('A','G')
                     and    sample_time+0 BETWEEN nvl(to_date('&V3','YYMMDDHH24MISS'),SYSDATE-7) 
@@ -236,14 +238,14 @@ ash_raw as (
                 where  dbid=nvl('&dbid',dbid)
                 &swcb
                 UNION ALL
-                SELECT  /*+QB_NAME(DASH)*/
+                SELECT  /*+QB_NAME(DASH) &merge*/
                         &public,
                         &hierachy
-                FROM    (select /*+ NO_MERGE cardinality(30000000)*/ d.*, 10 aas_,null mem
+                FROM    (select /*+  cardinality(30000000)*/ d.*, 10 aas_,null mem
                          from   dba_hist_active_sess_history d
                          WHERE   '&vw' IN('A','D')
-                         AND     sample_time+0 BETWEEN nvl(to_date('&V3','YYMMDDHH24MISS'),SYSDATE-7) 
-                                                   AND nvl(to_date('&V4','YYMMDDHH24MISS'),SYSDATE)) d
+                         AND     sample_time BETWEEN nvl(to_date('&V3','YYMMDDHH24MISS'),SYSDATE-7) 
+                                                   AND nvl(to_date('&V4','YYMMDDHH24MISS'),SYSDATE)) a
                 WHERE 1=1
                 &swcb) a) h
     WHERE  seq = 1),
@@ -408,7 +410,6 @@ plan_line_xplan AS
          FROM   (select x.*,regexp_substr(x.plan_table_output, '^\|[-\* ]*([0-9]+|Id) +\|') prefix from xplan x) x) x
   LEFT OUTER JOIN plan_line_agg o
   ON   x.phv = o.phv AND x.id = o.id),
-
 agg_data as(
   select 'line' flag,phv,r,id,''||oid oid,'' full_hash,
          ''||secs secs,''||cost_rate cost_rate,aas_text aas,''||costs costs,''||execs execs,decode(min_dop,null,'',max_dop,''||max_dop,min_dop||'-'||max_dop) dop,skew,
