@@ -8,6 +8,7 @@
     @phf : 12.1={sql_full_plan_hash_value} default={sql_plan_hash_value}
     @phf2: 12.1={to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1))} default={null}
     @con : 12.1={con_dbid} default={dbid}
+    @mem : 12.1={DELTA_READ_MEM_BYTES} default={null}
     &V3  : default={&starttime}
     &V4  : default={&endtime}  
     &V9  : ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
@@ -125,7 +126,7 @@ ash as(
     FROM (
         select a.*,row_number() OVER(PARTITION BY dbid,sample_id,inst_id,sid ORDER BY AAS_) seq
         from (
-            select  1 aas_,&public 
+            select  1 aas_,&mem mem,&public 
             from table(gv$(cursor(
                 select /*+ordered no_merge(a) cardinality(30000000) no_merge(b) use_hash(b)*/ b.*,
                     (select dbid from v$database) dbid,
@@ -137,11 +138,12 @@ ash as(
                                         AND     nvl(to_date('&v4','YYMMDDHH24MISS'),SYSDATE)
                     and   '&V1' IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf) 
                     and   nvl(sql_exec_id,0)=coalesce(regexp_substr('&V2','\d+')+0,sql_exec_id,0)
+                    and   '&vw' IN('A','G')
                 ) a join v$active_session_history b on(a.sample_id=b.sample_id))
             ))
             WHERE dbid=nvl('&dbid'+0,dbid)
             UNION ALL
-            select /*+ordered no_merge(a) cardinality(30000000) no_merge(b) use_hash(b)*/ 10 aas_,&public 
+            select /*+ordered no_merge(a) cardinality(30000000) no_merge(b) use_hash(b)*/ 10 aas_,null mem,&public 
             from  (
                 select distinct sample_id,dbid,instance_number,snap_id
                 from   dba_hist_active_sess_history
@@ -149,6 +151,7 @@ ash as(
                                         AND nvl(to_date('&v4','YYMMDDHH24MISS'),SYSDATE)
                 and   '&V1' IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
                 and   nvl(sql_exec_id,0)=coalesce(regexp_substr('&V2','\d+')+0,sql_exec_id,0)
+                and   '&vw' IN('A','D')
             ) a natural join (select /*+no_merge*/ * from dba_hist_active_sess_history) b) a) a
     WHERE seq=1
 ),
@@ -171,7 +174,7 @@ ash0(   aas_,
         tm_delta_time,
         tm_delta_db_time,
         delta_time,
-        DELTA_READ_IO_REQUESTS,DELTA_WRITE_IO_REQUESTS,DELTA_INTERCONNECT_IO_BYTES,
+        mem,DELTA_READ_IO_REQUESTS,DELTA_WRITE_IO_REQUESTS,DELTA_INTERCONNECT_IO_BYTES,
         IN_PLSQL_,
         sample_time,
         sample_id,
@@ -203,7 +206,7 @@ ash0(   aas_,
         tm_delta_time,
         tm_delta_db_time,
         delta_time,
-        DELTA_READ_IO_REQUESTS,DELTA_WRITE_IO_REQUESTS,DELTA_INTERCONNECT_IO_BYTES,
+        mem,DELTA_READ_IO_REQUESTS,DELTA_WRITE_IO_REQUESTS,DELTA_INTERCONNECT_IO_BYTES,
         IN_PLSQL,
         sample_time,
         sample_id,
@@ -239,7 +242,7 @@ ash0(   aas_,
         b.tm_delta_time,
         b.tm_delta_db_time,
         b.delta_time,
-        b.DELTA_READ_IO_REQUESTS,b.DELTA_WRITE_IO_REQUESTS,b.DELTA_INTERCONNECT_IO_BYTES,
+        b.mem,b.DELTA_READ_IO_REQUESTS,b.DELTA_WRITE_IO_REQUESTS,b.DELTA_INTERCONNECT_IO_BYTES,
         b.IN_PLSQL,
         b.sample_time,
         b.sample_id,
@@ -468,6 +471,7 @@ ash_agg as(
            trim(dbms_xplan.format_number(aas)) aas_text,
            trim(dbms_xplan.format_number(io_reqs_/execs)) io_reqs,
            trim(dbms_xplan.format_size(io_bytes_/execs)) io_bytes,
+           trim(dbms_xplan.format_size(buf_/execs)) buf,
            trim(dbms_xplan.format_size(pga_)) pga,
            trim(dbms_xplan.format_size(temp_)) temp,
            decode(nvl(secs_,0),0,' ',regexp_replace(trim(dbms_xplan.format_time_s(secs_)),'^00:')) secs
@@ -518,6 +522,7 @@ ash_agg as(
                 round(SUM(IN_PLSQL*AAS)* 100 / SUM(AAS), 1) PLSQL,
                 SUM(DELTA_READ_IO_REQUESTS+DELTA_WRITE_IO_REQUESTS) io_reqs_,
                 SUM(DELTA_INTERCONNECT_IO_BYTES) io_bytes_,
+                SUM(mem) buf_,
                 max(pga) pga_,
                 max(temp) temp_,
                 min(sample_time) begin_time,
@@ -558,7 +563,7 @@ plan_line_xplan AS
        nvl(''||o.pid,' ') pid,nvl(''||o.oid,' ') oid,o.maxid,
        cpu,io,cc,cl,app,oth,adm,cfg,sch,net,plsql,costs,aas_text,execs,
        nvl(cost_rate,' ') cost_rate,
-       secs,o.min_dop,o.max_dop,o.skew,o.io_reqs,o.io_bytes,o.pga,o.temp,
+       secs,o.min_dop,o.max_dop,o.skew,o.buf,o.io_reqs,o.io_bytes,o.pga,o.temp,
        nvl(top_grp,' ') top_grp,
        '| Plan Hash Value(Full): '||max(phfv) over(partition by x.phv)
        ||decode(min(min_dop) over(partition by x.phv),
@@ -577,25 +582,25 @@ plan_line_xplan AS
 agg_data as(
   select 'line' flag,phv,r,id,''||oid oid,'' full_hash,
          ''||secs secs,''||cost_rate cost_rate,aas_text aas,''||costs costs,''||execs execs,decode(min_dop,null,'',max_dop,''||max_dop,min_dop||'-'||max_dop) dop,skew,
-         ''||cpu cpu,''||io io,''||cl cl,''||cc cc,''||app app,''||adm adm,''||cfg cfg,''||sch sch,''||net net,''||oth oth,''||plsql  plsql,io_reqs ioreqs,io_bytes iobytes,pga,temp,
+         ''||cpu cpu,''||io io,''||cl cl,''||cc cc,''||app app,''||adm adm,''||cfg cfg,''||sch sch,''||net net,''||oth oth,''||plsql  plsql,buf,io_reqs ioreqs,io_bytes iobytes,pga,temp,
          decode(&simple,1,top_grp) top_list,'' top_list2
   FROM plan_line_xplan
   UNION ALL
   select 'phv' flag,-1,r,rid,''||phv2 oid,decode(pred_flag,3,sql_id,''||phfv),
          ''||secs secs,''|| cost_rate,aas_text aas,''||costs costs,''||execs execs,decode(min_dop,null,'',max_dop,''||max_dop,min_dop||'-'||max_dop) dop,skew,
-         ''||cpu cpu,''||io io,''||cl cl,''||cc cc,''||app app,''||adm adm,''||cfg cfg,''||sch sch,''||net net,''||oth oth,''||plsql  plsql,io_reqs,io_bytes,pga,temp,
+         ''||cpu cpu,''||io io,''||cl cl,''||cc cc,''||app app,''||adm adm,''||cfg cfg,''||sch sch,''||net net,''||oth oth,''||plsql  plsql,buf,io_reqs,io_bytes,pga,temp,
          ''||top_list,''
   FROM  plan_agg a,(select rownum-3 rid from dual connect by rownum<=3)
   UNION ALL
   select 'wait' flag,phv,r,rid,''||top1 oid,'' phfv,
          ''||secs secs,''|| cost_rate,aas_text aas,''||costs costs,''||execs execs,decode(min_dop,null,'',max_dop,''||max_dop,min_dop||'-'||max_dop) dop,skew,
-         '' cpu,'' io,'' cl,'' cc,'' app,'' adm,'' cfg,'' sch,'' net,'' oth,''  plsql,io_reqs,io_bytes,pga,temp,
+         '' cpu,'' io,'' cl,'' cc,'' app,'' adm,'' cfg,'' sch,'' net,'' oth,''  plsql,buf,io_reqs,io_bytes,pga,temp,
          ''||top_list,''||top_lines
   FROM  plan_wait_agg a,(select rownum-3 rid from dual connect by rownum<=3)
 ),
 
 plan_line_widths AS(
-    SELECT a.*,swait+swait2+sdop + sskew + csize + rate_size + ssec + sexe + saas + scpu + sio + scl + scc + sapp + ssch +scfg + sadm + snet + soth + splsql + sioreqs + siobytes +spga +stemp + 6 widths
+    SELECT a.*,swait+swait2+sdop + sskew + csize + rate_size + ssec + sexe + saas + scpu + sio + scl + scc + sapp + ssch +scfg + sadm + snet + soth + splsql + sbuf + sioreqs + siobytes +spga +stemp + 6 widths
     FROM( 
        SELECT  flag,phv,
                nvl(greatest(max(length(oid)) + 1, 6),0) as csize,
@@ -617,6 +622,7 @@ plan_line_widths AS(
                nvl(greatest(max(length(nullif(net,'0'))) + 1, 5),0) as snet,
                nvl(greatest(max(length(nullif(oth,'0'))) + 1, 5),0) as soth,
                nvl(greatest(max(length(nullif(plsql,'0'))) + 2, 6),0) as splsql,
+               nvl(greatest(max(length(nullif(buf,'0'))) + 1, 7),0)*&simple as sbuf,
                nvl(greatest(max(length(nullif(ioreqs,'0'))) + 1, 8),0)*&simple as sioreqs,
                nvl(greatest(max(length(nullif(iobytes,'0'))) + 1, 9),0)*&simple as siobytes,
                nvl(greatest(max(length(nullif(pga,'0'))) + 1, 5),0)*&simple as spga,
@@ -633,19 +639,19 @@ format_info as (
                 || nullif('|'||lpad('CPU%', scpu)  || lpad('IO%', sio) || lpad('CL%', scl) || lpad('CC%', scc) || lpad('APP%', sapp)
                              ||lpad('Sch%', ssch)  || lpad('Cfg%', scfg) || lpad('Adm%', sadm)|| lpad('Net%', snet)
                              ||lpad('OTH%', soth)  || lpad('PLSQL', splsql),'|')
-                || nullif('|'||lpad('IO-Reqs',sioreqs)||lpad('IO-Bytes',siobytes)||lpad('PGA',spga)||lpad(' Temp',stemp),'|')
+                || nullif('|'||lpad('Buffer',sbuf)||lpad('IO-Reqs',sioreqs)||lpad('IO-Bytes',siobytes)||lpad('PGA',spga)||lpad(' Temp',stemp),'|')
                 || nullif('|'||rpad(' Top Lines', swait2),'|') || nullif('|'||rpad(' Top '||decode(flag,'wait','&Title','&titl2'), swait),'|')||'|',
             -1, '+'||lpad('-',csize+shash+1,'-')||'+'
                 ||lpad('-',sdop+sskew+sexe+rate_size+saas+ssec,'-')
                 ||nullif('+'||lpad('-',scpu+sio+scl+scc+sapp+ssch+scfg+sadm+snet+soth+splsql,'-'),'+')
-                ||nullif('+'||lpad('-',sioreqs+siobytes+spga+stemp,'-'),'+')
+                ||nullif('+'||lpad('-',sbuf+sioreqs+siobytes+spga+stemp,'-'),'+')
                 ||nullif('+'||rpad('-', swait2,'-'),'+') ||nullif('+'||lpad('-',swait,'-'),'+')||'+', 
            decode(flag,'line',lpad(oid, csize),'|'||rpad(oid,csize)) || lpad(nvl(full_hash,' '), shash) || ' |'
                 ||lpad(dop||'  ', sdop)||lpad(skew||nvl2(nullif(skew,0),'%','')||' ', sskew)||lpad(nvl(execs,' '), sexe) || lpad(nvl(cost_rate,' '), rate_size) || lpad(nvl(aas,' '), saas) || lpad(nvl(secs,' '), ssec) 
                 ||nullif('|'||lpad(nvl(CPU,' '), scpu) || lpad(nvl(io,' '), sio) || lpad(nvl(cl,' '), scl) || lpad(nvl(cc,' '), scc) || lpad(nvl(app,' '), sapp)
                             ||lpad(nvl(sch,' '), ssch) || lpad(nvl(cfg,' '), scfg) || lpad(nvl(adm,' '), sadm)|| lpad(nvl(net,' '), snet)
                             ||lpad(nvl(oth,' '), soth)  || lpad(nvl(plsql,' '), splsql),'|')
-                ||nullif('|'||lpad(ioreqs||' ',sioreqs)||lpad(iobytes||' ',siobytes)||lpad(nvl(pga,' '),spga)||lpad(nvl(temp,' '),stemp),'|')
+                ||nullif('|'||lpad(buf||' ',sbuf)||lpad(ioreqs||' ',sioreqs)||lpad(iobytes||' ',siobytes)||lpad(nvl(pga,' '),spga)||lpad(nvl(temp,' '),stemp),'|')
                 ||nullif('|'||rpad(' '||top_list2, swait2),'|')||nullif('|'||rpad(' ' || top_list, swait),'|')||'|'
             ) fmt
     FROM   plan_line_widths JOIN agg_data USING (flag,phv)
@@ -705,6 +711,7 @@ final_output as(
                 SELECT phv,fmt from titles where id=-1 and flag='wait'
             ) b) b
     WHERE a.phv=b.phv)
-select * from (select text blocking_chains_and_plan_stats from final_chain order by r)
-UNION ALL
-select * from (select fmt from final_output order by id,r,seq);
+--select * from (select text blocking_chains_and_plan_stats from final_chain order by r)
+--UNION ALL
+--select * from (select fmt from final_output order by id,r,seq);
+select * from ash
