@@ -5,11 +5,11 @@
 -all : Use hierachy clause to grab the possible missing PX slave records
 
 --[[
-    @adaptive : 12.1={adaptive} default={}
+    @adaptive : 12.1={+ADAPTIVE +REPORT} default={}
     @phf : 12.1={sql_full_plan_hash_value} default={sql_plan_hash_value}
     @phf2: 12.1={to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1))} default={null}
     @adp : 12.1={case when instr(other_xml, 'adaptive_plan') > 0 then 'Y' else 'N' end} default={'N'}
-    @con : 12.1={AND prior con_id=con_id} default={}
+    @con : 12.1={AND prior to_char(con_id)=to_char(con_id)} default={}
     @mem : 12.1={DELTA_READ_MEM_BYTES} default={null}
     @did : 12.1={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     &V9  : ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
@@ -23,6 +23,8 @@
     &simple: default={1} s={0}
     &V3:   default={&starttime}
     &V4:   default={&endtime}
+    &q1:   default={} D={/*}
+    &q2:   default={} D={*/}
     &hierachy: {
         default={1 lv,
                 decode('&V1',top_level_sql_id,top_level_sql_id,sql_id) sql_id,
@@ -94,8 +96,8 @@
                    AND  nvl(sql_exec_id,0) = coalesce(0+'&V2',sql_exec_id,0)
             CONNECT BY PRIOR sample_time + 0 = sample_time+0
                 AND    PRIOR dbid = dbid
-                AND    PRIOR session_id=qc_session_id
-                AND    PRIOR instance_number=nvl(qc_instance_id,instance_number)
+                AND    PRIOR to_char(session_id)=to_char(qc_session_id)
+                AND    PRIOR to_char(instance_number)=to_char(nvl(qc_instance_id,instance_number))
                 AND    NOT (session_id=qc_session_id and instance_number=nvl(qc_instance_id,instance_number))
                 &con
                 AND    LEVEL <3}
@@ -105,41 +107,43 @@
 ]]*/
 set feed off printsize 10000 pipequery off
 WITH ALL_PLANS AS 
- (SELECT    id,
-            parent_id,
-            child_number    ha,
-            1               flag,
-            TIMESTAMP       tm,
-            child_number,
-            sql_id,
-            nvl(plan_hash_value,0) phv,
-            0 dbid,
-            inst_id,
-            object#,
-            object_name,
-            object_node tq,operation||' '||options operation,
-            &phf2+0 plan_hash_full
-    FROM    gv$sql_plan a
-    WHERE   '&vw' IN('A','G')
-    AND     '&V1' in(''||a.plan_hash_value,sql_id)
-    UNION ALL
-    SELECT  id,
-            parent_id,
-            plan_hash_value,
-            2,
-            TIMESTAMP,
-            NULL child_number,
-            sql_id,
-            nvl(plan_hash_value,0),
-            dbid,
-            null,
-            object#,
-            object_name,
-            object_node tq,operation||' '||options,
-            &phf2+0 plan_hash_full
-    FROM    dba_hist_sql_plan a
-    WHERE   '&vw' IN('A','D')
-    AND     '&V1' in(''||a.plan_hash_value,sql_id)),
+ (SELECT * FROM 
+    (SELECT    id,
+                parent_id,
+                child_number    ha,
+                1               flag,
+                TIMESTAMP       tm,
+                child_number,
+                sql_id,
+                nvl(plan_hash_value,0) phv,
+                &did dbid,
+                inst_id,
+                object#,
+                object_name,
+                object_node tq,operation||' '||options operation,
+                &phf2+0 plan_hash_full
+        FROM    gv$sql_plan a
+        WHERE   '&vw' IN('A','G')
+        AND     '&V1' in(''||a.plan_hash_value,sql_id)
+        UNION ALL
+        SELECT  id,
+                parent_id,
+                plan_hash_value,
+                2,
+                TIMESTAMP,
+                NULL child_number,
+                sql_id,
+                nvl(plan_hash_value,0),
+                dbid,
+                null,
+                object#,
+                object_name,
+                object_node tq,operation||' '||options,
+                &phf2+0 plan_hash_full
+        FROM    dba_hist_sql_plan a
+        WHERE   '&vw' IN('A','D')
+        AND     '&V1' in(''||a.plan_hash_value,sql_id))
+  WHERE dbid=nvl(0+'&dbid',&did)),
 plan_objs AS
  (SELECT DISTINCT OBJECT#,OBJECT_NAME FROM ALL_PLANS),
 sql_plan_data AS
@@ -203,7 +207,7 @@ ash_raw as (
             sum(case when p3text='block cnt' and nvl(event,'temp') like '%temp' then temp_ end) over(partition by dbid,phv1,sql_exec,pid,sample_time+0) temp,
             sum(pga_)  over(partition by dbid,phv1,sql_exec,pid,sample_time+0) pga,
             sum(case when is_px_slave=1 and px_flags>65536 then tm_delta_db_time end) over(partition by px_flags,dbid,phv1,sql_exec,pid,sid,inst_id) dbtime
-    FROM   (SELECT /*+no_expand opt_param('_optimizer_filter_pushdown', 'false')*/ --PQ_CONCURRENT_UNION 
+    FROM   (SELECT /*+NO_PQ_CONCURRENT_UNION no_expand opt_param('_bloom_filter_enabled', 'false')  opt_param('_optimizer_connect_by_combine_sw', 'false') opt_param('_optimizer_filter_pushdown', 'false')*/ --PQ_CONCURRENT_UNION 
                    a.*, --seq: if ASH and DASH have the same record, then use ASH as the standard
                    decode(AAS_,1,1,decode((
                         select sign(sum(elapsed_time_delta)/greatest(1,sum(greatest(parse_calls_delta,executions_delta)))-5e6) 
@@ -222,11 +226,12 @@ ash_raw as (
                    case when (qc_sid!=sid or qc_inst!=inst_id) then 1 else 0 end is_px_slave,
                    CASE WHEN 'Y' IN(decode(pred_flag,2,'Y','N'),IS_NOT_CURRENT,IN_PLSQL_EXECUTION,IN_PLSQL_RPC,IN_PLSQL_COMPILATION,IN_JAVA_EXECUTION) THEN 1 END IN_PLSQL       
             FROM   (
-                SELECT  /*+QB_NAME(ASH) &merge*/
+                &q1
+                SELECT  --+ QB_NAME(ASH) no_parallel(a)  CONNECT_BY_FILTERING  &merge
                         &public,
                         &hierachy
                 FROM    (
-                    select /*+ cardinality(30000000)*/ 
+                    select --+ cardinality(30000000)
                            a.*,&did dbid,inst_id instance_number,1 aas_,&mem mem
                     from   gv$active_session_history a
                     where  '&vw' IN('A','G')
@@ -238,16 +243,19 @@ ash_raw as (
                 where  dbid=nvl('&dbid',dbid)
                 &swcb
                 UNION ALL
-                SELECT  /*+QB_NAME(DASH) &merge*/
+                &q2
+                SELECT  /*+QB_NAME(DASH) CONNECT_BY_FILTERING DYNAMIC_SAMPLING(a,4)*/
                         &public,
                         &hierachy
-                FROM    (select /*+  cardinality(30000000)*/ d.*, 10 aas_,null mem
+                FROM    (select /*+cardinality(30000000)*/ d.*, 10 aas_,null mem
                          from   dba_hist_active_sess_history d
                          WHERE   '&vw' IN('A','D')
+                         AND     dbid=nvl(0+'&dbid',&did)
                          AND     sample_time BETWEEN nvl(to_date('&V3','YYMMDDHH24MISS'),SYSDATE-7) 
                                                    AND nvl(to_date('&V4','YYMMDDHH24MISS'),SYSDATE)) a
                 WHERE 1=1
-                &swcb) a) h
+                &swcb
+                ) a ) h
     WHERE  seq = 1),
 ash_phv_agg as(
     SELECT  /*+materialize*/ a.* 
@@ -280,7 +288,7 @@ ordered_hierarchy_data AS
 qry AS
  ( SELECT DISTINCT sql_id sq,
          flag flag,
-         'BASIC PEEKED_BINDS ROWS PARTITION PARALLEL PREDICATE NOTE REMOTE &adaptive &fmt IOSTATS' format,
+         'ADVANCED  ROWSTATS IOSTATS +METRICS -PEEKED_BINDS -cost -bytes -alias -OUTLINE -projection &adaptive &fmt' format,
          phv phv,
          coalesce(child_number, 0) child_number,
          inst_id,

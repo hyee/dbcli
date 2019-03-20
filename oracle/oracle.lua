@@ -185,6 +185,7 @@ function oracle:connect(conn_str)
             EXECUTE IMMEDIATE 'alter session set nls_timestamp_tz_format=''yyyy-mm-dd hh24:mi:ssxff TZH:TZM''';
             BEGIN
                 EXECUTE IMMEDIATE 'alter session set statistics_level=all';
+                EXECUTE IMMEDIATE 'alter session set "_query_execution_cache_max_size"=8388608';
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
 

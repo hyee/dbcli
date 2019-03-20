@@ -78,41 +78,43 @@
 set feed off printsize 10000 pipequery off
 
 WITH ALL_PLANS AS 
- (SELECT    id,
-            parent_id,
-            child_number    ha,
-            1               flag,
-            TIMESTAMP       tm,
-            child_number,
-            sql_id,
-            nvl(plan_hash_value,0) phv,
-            0 dbid,
-            inst_id,
-            object#,
-            object_name,
-            object_node tq,operation||' '||options operation,
-            &phf2+0 plan_hash_full
-    FROM    gv$sql_plan a
-    WHERE   '&vw' IN('A','G')
-    AND     '&V1' in(''||a.plan_hash_value,sql_id)
-    UNION ALL
-    SELECT  id,
-            parent_id,
-            plan_hash_value,
-            2,
-            TIMESTAMP,
-            NULL child_number,
-            sql_id,
-            nvl(plan_hash_value,0),
-            dbid,
-            null,
-            object#,
-            object_name,
-            object_node tq,operation||' '||options,
-            &phf2+0 plan_hash_full
-    FROM    dba_hist_sql_plan a
-    WHERE   '&vw' IN('A','D')
-    AND     '&V1' in(''||a.plan_hash_value,sql_id)),
+ (SELECT * FROM 
+    (SELECT    id,
+                parent_id,
+                child_number    ha,
+                1               flag,
+                TIMESTAMP       tm,
+                child_number,
+                sql_id,
+                nvl(plan_hash_value,0) phv,
+                &did dbid,
+                inst_id,
+                object#,
+                object_name,
+                object_node tq,operation||' '||options operation,
+                &phf2+0 plan_hash_full
+        FROM    gv$sql_plan a
+        WHERE   '&vw' IN('A','G')
+        AND     '&V1' in(''||a.plan_hash_value,sql_id)
+        UNION ALL
+        SELECT  id,
+                parent_id,
+                plan_hash_value,
+                2,
+                TIMESTAMP,
+                NULL child_number,
+                sql_id,
+                nvl(plan_hash_value,0),
+                dbid,
+                null,
+                object#,
+                object_name,
+                object_node tq,operation||' '||options,
+                &phf2+0 plan_hash_full
+        FROM    dba_hist_sql_plan a
+        WHERE   '&vw' IN('A','D')
+        AND     '&V1' in(''||a.plan_hash_value,sql_id))
+  WHERE dbid=nvl(0+'&dbid',&did)),
 plan_objs AS
  (SELECT DISTINCT OBJECT#,OBJECT_NAME FROM ALL_PLANS),
 sql_plan_data AS
@@ -151,11 +153,11 @@ ash as(
                 where  sample_time+0 BETWEEN nvl(to_date('&v3','YYMMDDHH24MISS'),SYSDATE-7) 
                                         AND nvl(to_date('&v4','YYMMDDHH24MISS'),SYSDATE)
                 and   '&V1' IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
+                AND   dbid=nvl(0+'&dbid',&did)
                 and   nvl(sql_exec_id,0)=coalesce(regexp_substr('&V2','\d+')+0,sql_exec_id,0)
                 and   '&vw' IN('A','D')
             ) a natural join (select /*+no_merge*/ * from dba_hist_active_sess_history) b) a) a
-    WHERE seq=1
-),
+    WHERE seq=1),
 ash0(   aas_,
         dbid,con_id,
         inst_id,
@@ -449,7 +451,7 @@ ordered_hierarchy_data AS
 qry AS
  ( SELECT DISTINCT sql_id sq,
          flag flag,
-         'BASIC PEEKED_BINDS ROWS PARTITION PARALLEL PREDICATE NOTE REMOTE &adaptive &fmt IOSTATS' format,
+         'ADVANCED  ROWSTATS IOSTATS +METRICS -PEEKED_BINDS -cost -bytes -alias -OUTLINE -projection &adaptive &fmt' format,
          phv phv,
          coalesce(child_number, 0) child_number,
          inst_id,
