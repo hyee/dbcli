@@ -1,5 +1,5 @@
 /*[[
-Show ash wait chains. Usage: @@NAME {[<sql_id>|<sid>|-f"<filter>"] [YYMMDDHH24MI] [YYMMDDHH24MI]}|{-snap [secs]} [-sid] [-dash] [-flat]
+Show ash wait chains. Usage: @@NAME {[<sql_id>|<sid>|<plan_hash_value>|-f"<filter>"] [YYMMDDHH24MI] [YYMMDDHH24MI]}|{-snap [secs]} [-sid] [-dash] [-flat]
     options:
         -dash: source from dba_hist_active_session_history instead of gv$active_session_history
         -snap <secs> : show wait chain within recent n secs
@@ -13,7 +13,7 @@ This script references Tanel Poder's script
         @con : 12.1={AND prior con_id=con_id} default={}
         &tree  : default={1} flat={0}
         &V8    : ash={gv$active_session_history},dash={Dba_Hist_Active_Sess_History}
-        &Filter: default={:V1 in(''||session_id,sql_id,top_level_sql_id,SESSION_ID||'@'||&INST1,event,''||current_obj#)} f={}
+        &Filter: default={:V1 in(''||session_id,''||sql_plan_hash_value,sql_id,top_level_sql_id,SESSION_ID||'@'||&INST1,event,''||current_obj#)} f={}
         &filter1: default={0} f={1}
         &range : default={sample_time BETWEEN NVL(TO_DATE(NVL(:V2,:STARTTIME),'YYMMDDHH24MI'),SYSDATE-7) AND NVL(TO_DATE(NVL(:V3,:ENDTIME),'YYMMDDHH24MI'),SYSDATE)}, snap={sample_time>=sysdate - nvl(:V1,60)/86400}, f1={}
         &snap:   default={--} snap={}

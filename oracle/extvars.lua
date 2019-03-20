@@ -182,7 +182,9 @@ end
 
 function extvars.set_container(name,value)
     env.checkerr(db.props.db_version and tonumber(db.props.db_version:match('%d+')),'Unsupported version!')
-    return tonumber(value)
+    value=tonumber(value)
+    env.checkerr(value and value>=-1 and value==math.floor(value),'Input value must be an integer!');
+    return value
 end
 
 
@@ -239,7 +241,7 @@ function extvars.onload()
     event.snoop('ON_SETTING_CHANGED',extvars.set_title)
     cfg.init("instance",-1,extvars.set_instance,"oracle","Auto-limit the inst_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-2 - 99")
     cfg.init("schema","",extvars.set_schema,"oracle","Auto-limit the schema of impacted tables. ","*")
-    cfg.init({"container","con","con_id"},-1,extvars.set_container,"oracle","Auto-limit the con_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-1 - 99")
+    cfg.init({"container","con","con_id"},-1,extvars.set_container,"oracle","Auto-limit the con_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-1 - 1024")
     cfg.init("dbid",0,extvars.set_container,"oracle","Specify the dbid for AWR analysis")
     cfg.init("starttime","",extvars.check_time,"oracle","Specify the start time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
     cfg.init("endtime","",extvars.check_time,"oracle","Specify the end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")

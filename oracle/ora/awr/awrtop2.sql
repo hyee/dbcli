@@ -1,5 +1,7 @@
 /*[[
     Show AWR Top SQLs for a specific period. Usage: @@NAME {[0|<inst>] [a|<sql_id>] [total|avg] [yymmddhhmi] [yymmddhhmi] [exec|ela|cpu|io|cc|buff|fetch|rows|load|parse|read|write|mem|offload|cell]} [-m|-p] 
+    -m: group by signature instead of SQL Id
+    -p: group by plan hash value instead of SQL Id
     --[[
         &grp: s={sql_id}, m={signature}, p={null}
         &sqls: s={}, m={sqls,}, p={sqls,}

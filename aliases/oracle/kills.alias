@@ -1,0 +1,1 @@
+alter system cancel sql '$1'
