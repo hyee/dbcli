@@ -27,6 +27,7 @@ DECLARE
     im_imcu_count  INT;
     im_block_count INT;
     type t is table of varchar2(100);
+    LST    SYS.ODCIOBJECTLIST := SYS.ODCIOBJECTLIST();
     --SOURCE:  SYS.OPTSTAT_HIST_CONTROL$/SYS.OPTSTAT_USER_PREFS$
     prefs t:= t('ANDV_ALGO_INTERNAL_OBSERVE',
                 'APPROXIMATE_NDV',
@@ -68,6 +69,7 @@ DECLARE
                 'TRACE',
                 'WAIT_TIME_TO_UPDATE_STATS');
 BEGIN
+    dbms_output.enable(null);
     IF typ IS NOT NULL and typ NOT like 'TABLE%' THEN
         RAISE_APPLICATION_ERROR(-20001,'Only table is supported!');
     END IF;
@@ -75,36 +77,93 @@ BEGIN
     $IF DBMS_DB_VERSION.VERSION<11 $THEN
         for i in 1..prefs.count loop
             begin
-                dbms_output.put_line(rpad('Param - '||prefs(i),40)||': '||dbms_stats.get_param(prefs(i)));
+                dbms_output.put_line(rpad('Param - '||prefs(i),45)||': '||dbms_stats.get_param(prefs(i)));
             exception when others then null;
             end;
         end loop;    
     $ELSE
         for i in 1..prefs.count loop
             begin
-                dbms_output.put_line(rpad(initcap(nvl(typ,'system')||' ')||'Prefs - '||prefs(i),40)||': '||dbms_stats.get_prefs(prefs(i),owner,object_name));
+                dbms_output.put_line(rpad(initcap(nvl(typ,'system')||' ')||'Prefs - '||prefs(i),45)||': '||dbms_stats.get_prefs(prefs(i),owner,object_name));
             exception when others then null;
             end;
         end loop;
     $END
     
-    prefs := t('iotfrspeed',
-               'ioseektim',
-                'seadtim',
-                'mreadtim',
-                'cpuspeed ',
-                'cpuspeednw',
-                'mbrc',
-                'maxthr',
-                'slavethr');
+    prefs := t('iotfrspeed', 'ioseektim', 'sreadtim', 'mreadtim', 'cpuspeed', 'cpuspeednw', 'mbrc', 'maxthr', 'slavethr');
     for i in 1..prefs.count loop
+        LST.EXTEND();
+        LST(LST.COUNT) := SYS.ODCIOBJECT(upper(prefs(i)),null);
         begin
+            --source table: sys.aux_stats$
             DBMS_STATS.GET_SYSTEM_STATS(status,st,et,prefs(i),val);
-            dbms_output.put_line(rpad('System Stats - '||prefs(i),40)||': '||round(val,3));
+            LST(LST.COUNT).objectname:=val;
         exception when others then null;
         end;
     end loop;
-    dbms_output.put_line(rpad('Statistics History Retention',40) ||': '||dbms_stats.GET_STATS_HISTORY_RETENTION||' days(Avail: '||to_char(dbms_stats.GET_STATS_HISTORY_AVAILABILITY,'yyyy-mm-dd hh24:mi:ssxff3 TZH:TZM')||')');
+
+    dbms_output.put_line(rpad('-',120,'-'));
+    --refer to https://github.com/FranckPachot/scripts/blob/master/statistic-gathering/display-system-statistics.txt
+    FOR C IN(
+        SELECT r,pname, rpad(nvl(''||round(nvl(calc,pval1),4),' '),10)||nullif(' ('||formula||')',' ()') value
+        FROM   (SELECT rownum r,objectschema pname,objectname+0 pval1 FROM TABLE(lst))
+        MODEL 
+        REFERENCE sga ON 
+             (SELECT NAME, VALUE FROM v$sga) DIMENSION BY(NAME) MEASURES(VALUE) 
+        REFERENCE parameter ON
+             (SELECT NAME, decode(TYPE, 3, to_number(VALUE)) VALUE
+                    FROM   v$parameter
+                    WHERE  NAME = 'db_file_multiblock_read_count'
+                    AND    ismodified != 'FALSE'
+                    UNION ALL
+                    SELECT NAME, decode(TYPE, 3, to_number(VALUE)) VALUE
+                    FROM   v$parameter
+                    WHERE  NAME = 'sessions'
+                    UNION ALL
+                    SELECT NAME, decode(TYPE, 3, to_number(VALUE)) VALUE
+                    FROM   v$parameter
+                    WHERE  NAME = 'db_block_size') DIMENSION BY(NAME) MEASURES(VALUE) 
+        DIMENSION BY(pname)
+        MEASURES(pval1,r, CAST(NULL AS NUMBER) AS calc, CAST(NULL AS VARCHAR2(120)) AS formula)
+        RULES(
+             calc ['MBRC'] = coalesce(pval1 ['MBRC'], parameter.value ['db_file_multiblock_read_count'], parameter.value ['_db_file_optimizer_read_count'], 8),
+             calc ['MREADTIM'] = coalesce(pval1 ['MREADTIM'],pval1 ['IOSEEKTIM'] + (parameter.value ['db_block_size'] * calc ['MBRC']) / pval1 ['IOTFRSPEED']),
+             calc ['SREADTIM'] = coalesce(pval1 ['SREADTIM'], pval1 ['IOSEEKTIM'] + parameter.value ['db_block_size'] / pval1 ['IOTFRSPEED']),
+             calc ['   multi  cost / block'] = round(1 / calc ['MBRC'] * calc ['MREADTIM'] / calc ['SREADTIM'], 4),
+             calc ['   single cost / block'] = 1,
+             calc ['   maximum mbrc'] = sga.value ['Database Buffers'] / (parameter.value ['db_block_size'] * parameter.value ['sessions']),
+             calc ['IOTFRSPEED'] = pval1 ['IOTFRSPEED']/1024,
+             calc ['CPUSPEED'] = pval1 ['CPUSPEED']/1000,
+             calc ['CPUSPEEDNW'] = pval1 ['CPUSPEEDNW']/1000,
+             r['   maximum mbrc']=98,
+             r['   single cost / block']=99,
+             r['   multi  cost / block']=100,
+             formula ['MBRC'] = CASE
+                 WHEN pval1 ['MBRC'] IS NOT NULL THEN
+                  'MBRC = Multi-Block Read Count'
+                 WHEN parameter.value ['db_file_multiblock_read_count'] IS NOT NULL THEN
+                  'db_file_multiblock_read_count'
+                 WHEN parameter.value ['_db_file_optimizer_read_count'] IS NOT NULL THEN
+                  '_db_file_optimizer_read_count'
+                 ELSE
+                  '_db_file_optimizer_read_count'
+             END,
+             formula ['MREADTIM'] = 'time to read n blocks in ms = IOSEEKTIM + db_block_size * MBRC / IOTFRSPEED',
+             formula ['SREADTIM'] = 'time to read 1 block  in ms = IOSEEKTIM + db_block_size / IOTFRSPEED',
+             formula ['IOSEEKTIM'] = 'latency  in ms',
+             formula ['IOTFRSPEED'] = 'transfer in KB/ms',
+             formula ['   multi  cost / block'] = '1/MBRC * MREADTIM/SREADTIM',
+             formula ['   single cost / block'] = 'by definition',
+             formula ['   maximum mbrc'] = 'buffer cache size in blocks / sessions',
+             formula ['CPUSPEED'] = 'workload CPU speed in GHZ',
+             formula ['CPUSPEEDNW'] = 'noworkload CPU speed in GHZ',
+             formula ['MAXTHR'] = 'maximum throughput that the I/O subsystem can deliver',
+             formula ['SLAVETHR'] = 'average parallel slave I/O throughput'
+        ) ORDER BY r) LOOP
+        dbms_output.put_line(rpad('System Stats - '||c.pname,45)||': '||c.value);
+    END LOOP;
+    dbms_output.put_line(rpad('-',120,'-'));
+    dbms_output.put_line(rpad('Statistics History Retention',45) ||': '||rpad(dbms_stats.GET_STATS_HISTORY_RETENTION||' days',10)||' (Avail: '||to_char(dbms_stats.GET_STATS_HISTORY_AVAILABILITY,'yyyy-mm-dd hh24:mi:ssxff3 TZH:TZM')||')');
 END;
 /
 set BYPASSEMPTYRS on
