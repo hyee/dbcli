@@ -62,7 +62,7 @@ grid {[[
            SUM("HardDisks") "HardDisks",
            SUM("FlashDisks") "FlashDisks",
            ROUND(sum(nvl("maxHDIOPS"*"HardDisks",0)+nvl("maxFDIOPS"*"FlashDisks",0))/3) ESTIOPS,
-           sum(nvl("maxHDMBPS"*"HardDisks",0)+nvl("maxFDMBPS"*"FlashDisks",0))*0.8 ESTMBPS,
+           sum(nvl("maxHDMBPS"*"HardDisks",0)+nvl("maxFDMBPS"*"FlashDisks",0))*0.7 ESTMBPS,
            '|' "|",
            max("maxHDIOPS") "HDMaxIOPS",
            max("maxFDIOPS") "FDMaxIOPS",
