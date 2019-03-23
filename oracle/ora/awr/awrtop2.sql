@@ -103,8 +103,7 @@ FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
                            SUM(PX_SERVERS_EXECS) PX,
                            decode(max(qry.calctype),
                                   'avg',
-                                  SUM(NVL(NULLIF(executions, 0),
-                                          NULLIF(PARSE_CALLS, 0))),
+                                  nullif(decode(SUM(executions),0,floor(sum(PARSE_CALLS)/greatest(sum(px_servers_execs),1)),sum(executions)),0),
                                   1) exe1
                     FROM   qry,&&awr$sqlstat s
                     WHERE  (qry.sqid = &grp or qry.sqid is null)

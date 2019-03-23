@@ -32,18 +32,18 @@
         SELECT end_time sample_time, event,
                case when '&COL' in ('A','M') then round(AVG(AVG_500B),2)  end "Ms/Req(500B)",
                case when '&COL' in ('A','B') then round(sum(CNT_500B),2)  end "Bytes(500B)/Sec",
-               case when '&COL' in ('A','S') then round(sum(WAIT_500B),2) end "Seconds(500B)/Sec",
+               case when '&COL' in ('A','S') then round(sum(WAIT_500B),2) end "Ms(500B)/Sec",
                case when '&COL' in ('A','B') then round(sum(CNT_8K),2)    end "Bytes(8K)/Sec",
-               case when '&COL' in ('A','S') then round(sum(WAIT_8K),2)   end "Seconds(8K)/Sec",
+               case when '&COL' in ('A','S') then round(sum(WAIT_8K),2)   end "Ms(8K)/Sec",
                case when '&COL' in ('A','M') then round(AVG(AVG_8K),2)    end "Ms/Req(8K)"
         FROM  (SELECT /*+merge*/
                        end_time,
                        event || decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event,
                        CNT_500B/Slot_size*500 CNT_500B,
-                       WAIT_500B/Slot_size*1E-6 WAIT_500B,
+                       WAIT_500B/Slot_size*1E-3 WAIT_500B,
                        WAIT_500B/CNT_500B*1E-3 AVG_500B,
                        CNT_8K/Slot_size*8192 CNT_8K,
-                       WAIT_8K/Slot_size*1E-6 WAIT_8K,
+                       WAIT_8K/Slot_size*1E-3 WAIT_8K,
                        WAIT_8K/CNT_8K*1E-3 AVG_8K
                FROM   (SELECT /*+merge no_expand ordered_predicates*/
                               inst_id,end_time,flag,Slot_size,

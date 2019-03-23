@@ -377,6 +377,7 @@ function grid:add(row)
             
             --if the column value has multiple lines, then split lines into table
             for p in v:gsplit('\r?\n\r?') do
+                --if headind == 0 and #p>50 then p=p:sub(1,50) end
                 grp[#grp + 1] = p
                 --deal with unicode chars
                 local l, len = p:strip_ansi():ulen()
