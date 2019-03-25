@@ -950,13 +950,13 @@ BEGIN
 		    SELECT EXTRACTVALUE(COLUMN_VALUE,'/R/N') NAME,
 		           EXTRACTVALUE(COLUMN_VALUE,'/R/V') V
 		    FROM TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(c),'/ROWSET/R')))),
-       db as (SELECT MIN(object_name) v
-			  FROM   DBA_OBJECTS
-			  WHERE  OBJECT_TYPE IN ('VIEW', 'SYNONYM')
-			  AND    owner IN ('PUBLIC', 'SYS')
-			  AND    regexp_like(object_name, '^G?V\$')
-              AND   (arg IS NULL OR object_name like arg)
-			  GROUP  BY regexp_replace(OBJECT_NAME, '^G')),
+       db as ( SELECT MIN(object_name) v
+			FROM   DBA_OBJECTS
+			WHERE  OBJECT_TYPE IN ('VIEW', 'SYNONYM')
+			AND    owner IN ('PUBLIC', 'SYS')
+			AND    regexp_like(object_name, '^G?V\$')
+               AND   (arg IS NULL OR object_name like arg)
+			GROUP  BY regexp_replace(OBJECT_NAME, '^G')),
        diff as (select v,rownum r from (select v from db minus select v from src order by 1))
        SELECT max(decode(mod(r-1,4),0,v)) V1,
               max(decode(mod(r-1,4),1,v)) V2,

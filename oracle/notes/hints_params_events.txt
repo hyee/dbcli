@@ -14,6 +14,8 @@ Parameters
     _sort_elimination_cost_ratio:  defaults as 0, mainly used in first_rows. If est_cost(index_scan+order_by)*ratio>est_cost(index_full_scan) then use index_range_scan+order_by. 
     _optimizer_skip_scan_enabled or hint NO_INDEX_SS: disable index skip scan
     _with_subquery: OPTIMIZER/MATERIALIZE/INLINE, impacts the default behaviour of with subquery
+    _smm_auto_max_io_size: defaults to 256. used to reduce the direct path read/write temp overhead for hash join/sort
+    _lm_drm_disable: defaults to 0.  1(_gc_affinity_locking): disable affinity locking,   2(_gc_undo_affinity):disable undo drm  4(_gc_read_mostly_locking): disable readmostly drm. Refer to MOS 1619155.1 for other gc parameters
     
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'

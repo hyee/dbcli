@@ -254,7 +254,7 @@ function extvars.onload()
         obj     <- full/name
         full    <- '"' name '"'
         name    <- {prefix %a%a [%w$#__]+}
-        prefix  <- "GV_$"/"GV$"/"V_$"/"V$"/"DBA_"/"ALL_"/"CDB_"/"X$"/"XV$"
+        prefix  <- "GV_$"/"GV$"/"V_$"/"V$"/"DBA_"/"AWR_"/"ALL_"/"CDB_"/"X$"/"XV$"
     ]],nil,true)
     env.load_data(datapath,true,function(data)
         extvars.dict=data.dict

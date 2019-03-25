@@ -17,6 +17,7 @@ oracle.module_list={
     "sys",
     "show",
     "exa",
+    "rac",
     "chart",
     "ssh",
     "extvars",

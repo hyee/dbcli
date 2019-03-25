@@ -85,7 +85,8 @@ SELECT * FROM (
       , TO_CHAR(MIN(sample_time), 'YYYY-MM-DD HH24:MI:SS') first_seen
       , TO_CHAR(MAX(sample_time), 'YYYY-MM-DD HH24:MI:SS') last_seen
     FROM
-        (SELECT /*full(a.a) leading(a.a) use_hash(a.a a.s) swap_join_inputs(a.s)
+        (SELECT /*+
+                  full(a.a) leading(a.a) use_hash(a.a a.s) swap_join_inputs(a.s)
                   FULL(A.GV$ACTIVE_SESSION_HISTORY.A)  leading(A.GV$ACTIVE_SESSION_HISTORY.A)
                   use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S)
                   swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)

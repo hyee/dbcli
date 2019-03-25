@@ -105,8 +105,8 @@
                    AND  PRIOR session_serial# = qc_session_serial#
                    AND  PRIOR nvl(sql_exec_id,0)=coalesce(sql_exec_id,prior sql_exec_id,0)
                    AND  PRIOR nvl(sql_id,' ') in (coalesce(sql_id,prior sql_id,' '),top_level_sql_id)
-                   AND  nvl(sql_exec_start,sysdate) between  nvl(prior sql_exec_start,sysdate)-numtodsinterval(15,'second') and nvl(prior sql_exec_start,sysdate)+numtodsinterval(15,'second')
-                   AND  sample_time+0 between nvl(prior sql_exec_start,prior sample_time+0)-numtodsinterval(15,'second') and (prior sample_time+0)+numtodsinterval(1,'hour')
+                   AND  coalesce(sql_exec_start,prior sql_exec_start,sysdate) =  nvl(prior sql_exec_start,sysdate)
+                   AND  sample_time+0 between nvl(prior sql_exec_start,prior sample_time+0)-numtodsinterval(1,'minute') and (prior sample_time+0)+numtodsinterval(1,'hour')
                    &con
                    AND  LEVEL <3}
     }
@@ -257,12 +257,12 @@ ash_raw as (
                    --sec_seq: multiple PX processes at the same second wille be treated as on second 
                    row_number() OVER(PARTITION BY dbid,phv1,sql_plan_line_id,operation,sample_time+0,qc_inst,qc_sid ORDER BY AAS_,lv desc,tm_delta_db_time desc) sec_seq,
                    nvl(decode(pred_flag,2,0,case when sql_plan_line_id>65535 then 0 else sql_plan_line_id end),0) pid,
-                   sql_exec_id_||',@'||qc_inst||','||qc_sid||','||to_char(sql_exec_start_,'yyyymmddhh24miss') sql_exec,
+                   nvl(''||sql_exec_id_,'@'||qc_inst||','||qc_sid||','||qc_session_serial#)||','||to_char(sql_exec_start_,'yyyymmddhh24miss') sql_exec,
                    case when (qc_sid!=sid or qc_inst!=inst_id) then 1 else 0 end is_px_slave,
                    CASE WHEN 'Y' IN(decode(pred_flag,2,'Y','N'),IS_NOT_CURRENT,IN_PLSQL_EXECUTION,IN_PLSQL_RPC,IN_PLSQL_COMPILATION,IN_JAVA_EXECUTION) THEN 1 END IN_PLSQL       
             FROM   (
                 &q1
-                SELECT  --+ QB_NAME(ASH) no_parallel(a)  CONNECT_BY_FILTERING ORDERED
+                SELECT  --+ QB_NAME(ASH)  CONNECT_BY_FILTERING ORDERED
                         &public,
                         &hierachy
                 FROM    (
@@ -371,7 +371,7 @@ ash_agg as(
                 MAX(aas) OVER(PARTITION BY phv,sub,subtype) aas1,
                 row_number() OVER(PARTITION BY phv,gid,grp,subtype order by aas desc,sub) seq
             FROM(
-                select --+ NO_EXPAND_GSET_TO_UNION NO_USE_DAGG_UNION_ALL_GSETS
+                select --+PARALLEL(4) NO_EXPAND_GSET_TO_UNION NO_USE_DAGG_UNION_ALL_GSETS
                     grouping_id(phv1,id,top2) gid,
                     CASE
                         WHEN grouping_id(phv1,top1) =1 THEN 8
@@ -590,23 +590,23 @@ final_output as(
     UNION ALL
     SELECT 5,b.phv,b.plan_output,r,seq
     FROM   (select r,phv1 phv from plan_agg where r1=1) a,
-        (SELECT b.*,rownum seq 
+        (SELECT /*+NO_PQ_CONCURRENT_UNION*/ b.*,r_*1e8+seq_ seq 
             FROM (
-                SELECT phv,null plan_output FROM plan_output group by phv
+                SELECT 1 r_,rownum seq_,phv,null plan_output from (select distinct phv FROM plan_output)
                 UNION ALL
-                SELECT phv,rpad('=',max(length(rtrim(plan_line))),'=') FROM plan_output group by phv
+                SELECT 2,rownum seq,phv,plan_output from (select phv,rpad('=',max(length(rtrim(plan_line))),'=') plan_output FROM plan_output group by phv)
                 UNION ALL
-                SELECT phv,rtrim(plan_line) FROM plan_output
+                SELECT 3,r seq,phv,rtrim(plan_line) FROM plan_output
                 UNION ALL
-                SELECT phv,fmt from titles where id=-1 and flag='wait'
+                SELECT 4,rownum seq,phv,fmt from titles where id=-1 and flag='wait'
                 union all
-                SELECT phv,fmt from titles where id=-2 and flag='wait'
+                SELECT 5,rownum seq,phv,fmt from titles where id=-2 and flag='wait'
                 union all
-                SELECT phv,fmt from titles where id=-1 and flag='wait'
+                SELECT 6,rownum seq,phv,fmt from titles where id=-1 and flag='wait'
                 UNION ALL
-                SELECT * FROM (SELECT phv,fmt from format_info WHERE flag='wait' and id=0 ORDER BY r)
+                SELECT 7,r,phv,fmt FROM format_info WHERE flag='wait' and id=0
                 UNION ALL
-                SELECT phv,fmt from titles where id=-1 and flag='wait'
+                SELECT 8,rownum seq,phv,fmt from titles where id=-1 and flag='wait'
             ) b) b
     WHERE a.phv=b.phv)
-select fmt from final_output order by id,r,seq;
+select fmt ASH_PLAN_OUTPUT from final_output order by id,r,seq;

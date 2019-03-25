@@ -11,5 +11,5 @@ SELECT hi.name, hi.version,fh.description,REGEXP_REPLACE(fh.path, '^ -> ', '') h
 FROM   v$sql_hint hi, feature_hierarchy fh
 WHERE  hi.sql_feature = fh.sql_feature
       --    hi.sql_feature = REGEXP_REPLACE(fh.sql_feature, '_[[:digit:]]+$')
-AND    UPPER(hi.name) LIKE UPPER('%&V1%')
+AND    UPPER(hi.name||' '||fh.path) LIKE UPPER('%&V1%')
 ORDER  BY 1
