@@ -1,4 +1,4 @@
-/*[[Library cache lock/pin holders/waiters. Usage: @@NAME [sid|object_name] 
+/*[[Library cache lock/pin holders/waiters. Usage: @@NAME [all|sid|object_name] 
     --[[
         @GV: 11.1={TABLE(GV$(CURSOR(} default={(((}
     --]]
@@ -6,7 +6,7 @@
 WITH ho AS
  (
     SELECT * FROM &GV
-        SELECT /*+ordered use_hash(hl ho) no_merge(h)*/ DISTINCT 
+        SELECT /*+ordered use_hash(hl ho) use_nl(hv) no_merge(h)*/ DISTINCT 
                 hl.*,
                 ho.kglnaown ||nullif('.' || ho.kglnaobj,'.') object_name,
                 h.sid || ',' || h.serial# || ',@' || ho.inst_id holder,
@@ -20,11 +20,12 @@ WITH ho AS
                 UNION ALL
                 SELECT kglpnuse, kglpnhdl, kglpnmod, kglpnreq, 'Pin'
                 FROM   x$kglpn) hl,
-               x$kglob ho
+               x$kglob ho--,X$KGLCURSOR_CHILD_SQLIDPH hv
         WHERE  greatest(hl.mode_held,hl.mode_req) > 1
         AND    userenv('instance')=nvl(:instance,userenv('instance'))
-        AND    nvl(upper(:V1),'_') in('_',upper(ho.kglnaobj),upper(trim('.' from ho.kglnaown ||'.' || ho.kglnaobj)),''||h.sid)
+        AND    nvl(upper(:V1),'_') in('ALL','_',upper(ho.kglnaobj),upper(trim('.' from ho.kglnaown ||'.' || ho.kglnaobj)),''||h.sid)
         AND    hl.object_handle = ho.kglhdadr
+        --AND    ho.kglnahsh=hv.kglnahsh(+)
         AND    hl.saddr = h.saddr))))
 SELECT /*+no_expand use_hash(ho wo)*/ distinct 
        h.type,

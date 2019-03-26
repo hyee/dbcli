@@ -59,6 +59,7 @@
         GROUP  BY event, end_time
         ORDER  BY 1]],
     _pivot="mixed",
+    _sorter=2,
     labelsSeparateLines=true,
     deviation=true,
     labelsKMG2=true,

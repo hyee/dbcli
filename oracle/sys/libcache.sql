@@ -1,4 +1,4 @@
-/*[[This script needs SYS access to find out who are pinning the target object. Usage: @@NAME <PIN|KEPT|object_name>]]*/
+/*[[This script needs SYS access to find out who are pinning the target object. Usage: @@NAME <ALL|LOCK|PIN|KEPT|object_name>]]*/
 SELECT *
 FROM   (SELECT kglnaown owner,
                kglnaobj object_name,
@@ -84,7 +84,9 @@ FROM   (SELECT kglnaown owner,
         AND    A.KGLPNHDL = C.KGLHDADR)
 WHERE  CASE nvl(upper(:V1), 'x')
            WHEN 'x'    THEN 1
+           WHEN 'ALL'  THEN 1
            WHEN 'PIN'  THEN sign(pins)
+           WHEN 'LOCK' THEN sign(locks)
            WHEN 'KEPT' THEN decode(kept,'YES',1)
            ELSE  sign(instr(upper(owner ||'.' || object_name || CHR(1) || object_type||CHR(1) ||osuser), upper(:V1)))
         END = 1

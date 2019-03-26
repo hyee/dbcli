@@ -2,7 +2,7 @@
 
  -h: target views are gv$xxxmetric_history
     --[[
-        @ver: 12={} 11={--}
+        @ver: 11={} 10={--}
         &opt:  default={} h={_HISTORY}
         &mins: default={1/144} h={84/1440}
         &v1: default={&starttime}
@@ -63,6 +63,7 @@ grid {
     [[ grid={topic="DBA_HIST_SERVICE_STAT (Per Second)"}
 		SELECT *
 		FROM   (SELECT service_name,
+		               &ver insts,
 		               stat_name,
 		               CASE
 		                   WHEN stat_name LIKE '%time%' AND stat_name != 'DB time' OR stat_name = 'DB CPU' THEN
@@ -71,6 +72,7 @@ grid {
 		                    VALUE
 		               END val
 		        FROM   (SELECT nvl(service_name, '--TOTAL--') service_name,
+							   &ver nvl2(service_name,sys.stragg(DISTINCT instance_number||','),'') insts,
 		                       stat_name,
 		                       round(SUM(flag * VALUE / secs * CASE
 		                                     WHEN stat_name LIKE 'physical%' THEN
@@ -79,11 +81,13 @@ grid {
 		                                       WHERE  a.dbid = b.dbid
 		                                       AND    b.parameter_name = 'db_block_size'
 		                                       AND    rownum < 2)
+											 WHEN stat_name like 'gc %time' THEN
+											   10000
 		                                     ELSE
-		                                      1
+		                                       1
 		                                 END),
 		                             2) VALUE
-		                FROM   (SELECT * FROM DBA_HIST_SERVICE_STAT NATURAL JOIN(&snaps)) a
+		                FROM    (SELECT * FROM DBA_HIST_SERVICE_STAT NATURAL JOIN(&snaps)) a
 		                GROUP  BY stat_name, ROLLUP(service_name)
 		                HAVING round(SUM(flag * VALUE / secs), 2) > 0) a)
 		PIVOT(MAX(val)
@@ -178,54 +182,7 @@ grid {
 			        ORDER  BY grouping_id(wait_class, event_name) DESC, abs(waited) DESC)
 			WHERE  ROWNUM <= 30
         ]],
-		'-',
-		[[  grid={topic="DBA_HIST_ACTIVE_SESS_HISTORY"}
-			SELECT aas, pct, program, event, sql_id, top_wait_obj
-			FROM   (SELECT a.*,
-						   first_value(nvl2(curr_obj#, curr_obj# || ' (' || aas || ')', '')) over(PARTITION BY program, event, sql_id ORDER BY nvl2(curr_obj#, 0, 1), aas DESC) top_wait_obj
-					FROM   (SELECT  SUM(1) aas,
-								    round(ratio_to_report(SUM(1)) over(), 4) pct,
-									program,
-									event,
-									sql_id,
-									curr_obj#,
-									grouping_id(curr_obj#) gid
-							FROM   (SELECT CASE
-											WHEN a.session_type = 'BACKGROUND' OR REGEXP_LIKE(a.program, '.*\([PJ]\d+\)') THEN
-												REGEXP_REPLACE(SUBSTR(a.program, INSTR(a.program, '(')), '\d', 'n')
-										END program,
-										nvl(event,
-											nvl2(NULLIF(TRIM(p1text),'p1'),
-													'[' || TRIM(p1text) || nullif('|' || TRIM(p2text), '|') ||
-													nullif('|' || TRIM(p3text), '|') || ']',
-													'ON CPU')) event,
-										nvl(sql_id, top_level_sql_id) sql_id,
-										CASE
-											WHEN current_obj# > 0 THEN
-												'' || current_obj#
-											WHEN p3text = '100*mode+namespace' AND p3 > power(2, 32) THEN
-												'' || trunc(p3 / power(2, 32))
-											WHEN p3text LIKE '%namespace' THEN
-												'x$kglst#' || trunc(MOD(p3, power(2, 32)) / power(2, 16))
-											WHEN p1text LIKE 'cache id' THEN
-												(SELECT MAX(parameter) FROM v$rowcache WHERE cache# = p1)
-											WHEN p1text = 'idn' THEN
-												'v$db_object_cache hash#' || p1
-											WHEN a.event LIKE 'latch%' AND p2text = 'number' THEN
-												(SELECT MAX(NAME) FROM v$latchname WHERE latch# = p2)
-										END curr_obj#
-									FROM   dba_hist_Active_Sess_history a
-									JOIN   (&snaps)  b
-									ON     a.snap_id between minid+1 and maxid
-									AND    a.dbid=b.dbid
-									AND    a.instance_number=b.instance_number)
-							GROUP  BY program, event, sql_id, ROLLUP(curr_obj#)
-							ORDER  BY pct DESC) a)
-			WHERE  gid = 1
-			AND    rownum <= 30
-			AND    pct > 0
-			ORDER  BY pct DESC
-		]],
+		
 		 &cell
         '|',
         [[grid={topic="DBA_HIST_SYSMETRIC_SUMMARY"}

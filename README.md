@@ -42,7 +42,7 @@ For Windows OS, to avoid the word wrap in the terminal window which affects the 
 * In the `Font` tab, change the font size as smaller value.
 
 ### Linux: Pre-Requisitions
-Linux must be the `64-bit` version, and make sure `glibc >= v2.4`(use `ldd --version` to verify) are installed. Since Linux terminal doesn't have horizontal scrollbar, smaller font is preferred. 
+Linux must be the `64-bit` version, and make sure `glibc >= v2.4`(use `ldd --version` to verify) are installed. You can use command `<command> | more` to vertically/horizontally scroll the command output, or `more last` or scroll the last command output. 
 
 ### OSX: Pre-Requisitions
 Only tested on OSX 10.12, lower version should be fine. Java 1.8 is required. It's recommended to add entry `<hostname>.local` into `/etc/hosts` to speed up the JVM performance.
