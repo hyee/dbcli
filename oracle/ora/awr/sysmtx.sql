@@ -6,8 +6,8 @@
 set digits 3
 
 SELECT COALESCE(:V3,:INSTANCE,'A') INST_ID,CATEGORY,metric_name,
-       case when unit like '%\% %' escape '\' then avg(current_) else sum(current_) end current_,
-       case when unit like '%\% %' escape '\' then avg(awr_avg)  else sum(awr_avg)  end awr_avg,
+       case when unit like '%\% %' escape '\' or metric_name like '%Average%' then avg(current_) else sum(current_) end current_,
+       case when unit like '%\% %' escape '\' or metric_name like '%Average%' then avg(awr_avg)  else sum(awr_avg)  end awr_avg,
        sum(current_)*100/nullif(sum(awr_avg),0) "Ratio(%)",unit
 FROM (
     SELECT /*+no_merge*/ INSTANCE_NUMBER INST_ID,metric_name, AVG(average) awr_avg, '| '||metric_unit unit

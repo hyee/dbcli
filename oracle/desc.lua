@@ -4,7 +4,8 @@ local desc={}
 
 local desc_sql={
     PROCEDURE=[[
-    DECLARE /*INTERNAL_DBCLI_CMD*/ 
+    DECLARE /*INTERNAL_DBCLI_CMD*/
+        cur     SYS_REFCURSOR;
         over    dbms_describe.number_table;
         posn    dbms_describe.number_table;
         levl    dbms_describe.number_table;
@@ -23,33 +24,89 @@ local desc_sql={
         v_seq   PLS_INTEGER:=-1;
         v_type  VARCHAR2(300);
         v_pos   VARCHAR2(30);
+        oname   VARCHAR2(128):= nvl(:object_subname, :object_name);
+        own     VARCHAR2(128):= :owner;
+        oid     INT          := :object_id;
         v_target VARCHAR2(100):=:owner || NULLIF('.' || :object_name, '.') || NULLIF('.' || :object_subname, '.');
         type t_idx IS TABLE OF PLS_INTEGER INDEX BY PLS_INTEGER;
         v_idx    t_idx;
     BEGIN
-        BEGIN 
-            EXECUTE IMMEDIATE '
-                SELECT /*+index(a) opt_param(''_optim_peek_user_binds'',''false'') no_expand*/ 
-                       ARGUMENT,
-                       OVERLOAD#,
-                       POSITION# POSITION,
-                       TYPE# TYPE,
-                       NVL(DEFAULT#, 0) DEFAULT#,
-                       NVL(IN_OUT, 0) IN_OUT,
-                       NVL(LEVEL#, 0) LEVEL#,
-                       NVL(LENGTH, 0) LENGTH,
-                       NVL(PRECISION#, 0) PRECISION,
-                       DECODE(TYPE#, 1, 0, 96, 0, NVL(SCALE, 0)) SCALE
-                FROM   SYS.ARGUMENT$ A
-                WHERE  OBJ# = 0+:id
-                AND   (PROCEDURE$ IS NULL OR PROCEDURE$=:name)
-                ORDER BY OVERLOAD#,SEQUENCE#'
-            BULK COLLECT INTO arg,over,posn,dtyp,defv,inout,levl,len,prec,scal USING :object_id,nvl(:object_subname, :object_name);
-        
-        EXCEPTION WHEN OTHERS THEN
-            v_target:='"'||replace(v_target,'.','"."')||'"';
-            dbms_describe.describe_procedure(v_target, NULL, NULL, over, posn, levl,arg, dtyp, defv, inout, len, prec, scal, n, n,true);
-        END;
+        select nvl(max(object_id),oid) into oid from all_procedures where owner=own and object_name=:object_name and rownum<2;
+
+        $IF DBMS_DB_VERSION.VERSION > 10 $THEN
+        OPEN cur for
+            SELECT decode(p,'-',' ',TRIM('.' FROM overload || replace(p,' '))) no#, 
+                   Argument, 
+                   data_type, 
+                   IN_OUT, 
+                   defaulted "Default?",
+                   CHARSET
+            FROM   (SELECT overload,
+                           SEQUENCE s,
+                           DATA_LEVEL l,
+                           POSITION p,
+                           lpad(' ', DATA_LEVEL * 2) || decode(0 + POSITION, 0, '(RETURNS)', Nvl(argument_name, '<Collection>')) Argument,
+                           CASE
+                               WHEN pls_type IS NOT NULL AND pls_type != data_type THEN
+                                pls_type
+                               WHEN type_subname IS NOT NULL THEN
+                                type_name || '.' || type_subname || '(' || DATA_TYPE || ')'
+                               WHEN type_name IS NOT NULL THEN
+                                type_name || '(' || data_type || ')'
+                               WHEN data_type = 'NUMBER' AND NVL(t.data_precision, -1) = -1 AND nvl(data_scale, 0) = 0 THEN
+                                'INTEGER'
+                               WHEN data_type IN ('FLOAT',
+                                                  'INTEGER',
+                                                  'INT',
+                                                  'BINARY_INTEGER',
+                                                  'BINARY_FLOAT',
+                                                  'BINARY_DOUBLE',
+                                                  'PL/SQL BOOLEAN',
+                                                  'PL/SQL RECORD') THEN
+                                data_type
+                               WHEN (t.data_type LIKE 'TIMESTAMP%' OR t.data_type LIKE 'INTERVAL DAY%' OR
+                                    t.data_type LIKE 'INTERVAL YEAR%' OR t.data_type = 'DATE' OR
+                                    (t.data_type = 'NUMBER' AND ((t.data_precision = 0) OR NVL(t.data_precision, -1) = -1) AND
+                                    nvl(t.data_scale, -1) = -1)) THEN
+                                data_type
+                               ELSE
+                                data_type || --
+                                NULLIF('(' || TRIM(CASE
+                                                       WHEN t.data_type IN ('VARCHAR', 'VARCHAR2', 'RAW', 'CHAR') THEN
+                                                        DECODE((SELECT VALUE FROM nls_session_parameters WHERE PARAMETER = 'NLS_LENGTH_SEMANTICS'),
+                                                               'BYTE',
+                                                               DECODE(char_used, 'B', t.data_length || '', t.char_length || ' CHAR'),
+                                                               DECODE(char_used, 'B', t.data_length || ' BYTE', t.char_length || ' CHAR'))
+                                                       WHEN t.data_type IN ('NVARCHAR2', 'NCHAR') AND nvl(t.data_length, -1) != -1 THEN
+                                                        t.data_length / 2 || ''
+                                                       WHEN ((t.data_type = 'NUMBER' AND NVL(t.data_precision, -1) = -1) AND (nvl(t.data_scale, -1) != -1)) THEN
+                                                        '38,' || t.data_scale
+                                                       WHEN (t.data_scale = 0 OR nvl(t.data_scale, -1) = -1) THEN
+                                                        t.data_precision || ''
+                                                       WHEN (t.data_precision != 0 AND t.data_scale != 0) THEN
+                                                        t.data_precision || ',' || t.data_scale
+                                                   END) || ')',
+                                       '()')
+                           END data_type,
+                           IN_OUT,
+                           decode(t.defaulted, 'Y', 'Yes', 'No') defaulted,
+                           CHARACTER_SET_NAME charset
+                    FROM   all_arguments t
+                    WHERE  owner = own
+                    AND    object_id = oid
+                    AND    object_name = oname) 
+            MODEL PARTITION BY(overload) DIMENSION BY(s, l) 
+            MEASURES(CAST(p AS VARCHAR2(30)) p, Argument, data_type, IN_OUT, defaulted, CHARSET) 
+            RULES SEQUENTIAL ORDER(
+                p [ANY,ANY] ORDER BY s = MAX(p) [ s < CV(s), CV() - 1 ] || '.' || lpad(p [ CV(), CV() ],2),
+                p [99,0]='-',
+                CHARSET[99,0]=rpad(' ',8)||'$NOR$'
+            )
+            ORDER  BY overload, s;
+        $ELSE
+
+        v_target:='"'||replace(v_target,'.','"."')||'"';
+        dbms_describe.describe_procedure(v_target, NULL, NULL, over, posn, levl,arg, dtyp, defv, inout, len, prec, scal, n, n,true);
 
         FOR i IN 1 .. over.COUNT LOOP
             IF over(i) != v_ov THEN
@@ -118,7 +175,7 @@ local desc_sql={
             v_xml   := v_xml.AppendChildXML('//ROWSET', XMLTYPE(v_stack));
         END LOOP;
 
-        OPEN :v_cur FOR
+        OPEN cur FOR
             SELECT /*+no_merge(a) no_merge(b) use_nl(b a) push_pred(a) ordered*/
                      decode(b.pos,'-1','---',decode(b.overload,0,'', b.overload||'.') || b.pos) NO#,
                      lpad(' ',b.lv*2)||decode(0+regexp_substr(b.pos,'\d+$'), 0, '(RETURNS)', Nvl(b.argument_name, '<Collection>')) Argument,
@@ -149,13 +206,16 @@ local desc_sql={
                            extractvalue(column_value, '/ROW/INOUT') + 0 INOUT
                     FROM   TABLE(XMLSEQUENCE(EXTRACT(v_xml, '/ROWSET/ROW')))) b,
                     all_arguments a
-            WHERE  a.owner(+) = :owner
-            AND    a.object_name(+) = nvl(:object_subname, :object_name)
+            WHERE  a.owner(+) = own
+            AND    a.object_id(+) = oid
+            AND    a.object_name(+) = oname
             AND    nvl(a.overload(+), -1) = nvl(b.overload,-1)
             AND    a.position(+) = 0+regexp_substr(b.pos,'\d+$')
             AND    a.sequence(+)=b.seq
             AND    a.data_level(+) = b.lv
             ORDER  BY b.overload, b.seq ,b.pos;
+        $END
+        :v_cur := cur;
     END;]],
 
     PACKAGE=[[
@@ -179,6 +239,7 @@ local desc_sql={
                 AND    NVL(a.OVERLOAD, -1) = NVL(b.OVERLOAD, -1)
                 AND    position = 0
                 AND    b.owner=a.owner
+                AND    b.object_id=a.object_id
                 AND    b.object_name = a.procedure_name) RETURNS,
                (SELECT COUNT(1)
                 FROM   all_Arguments b
@@ -186,6 +247,7 @@ local desc_sql={
                 AND    NVL(a.OVERLOAD, -1) = NVL(b.OVERLOAD, -1)
                 AND    position > 0
                 AND    b.owner=a.owner
+                AND    b.object_id=a.object_id
                 AND    b.object_name = a.procedure_name) ARGUMENTS,
                AGGREGATE,
                PIPELINED,
@@ -194,7 +256,7 @@ local desc_sql={
                DETERMINISTIC,
                AUTHID
         FROM   ALL_PROCEDURES a
-        WHERE  owner=:owner and object_id =:object_id and object_name=:object_name
+        WHERE  owner=:owner and object_name=:object_name
         AND    SUBPROGRAM_ID > 0
     ) ORDER  BY NO#]],
 
@@ -393,7 +455,7 @@ local desc_sql={
                     AND    C.INDEX_NAME(+) = I.INDEX_NAME
                     AND    I.TABLE_OWNER = :owner
                     AND    I.TABLE_NAME = :object_name)
-        SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('_optim_peek_user_binds','false')
+        SELECT /*INTERNAL_DBCLI_CMD*/ --+ordered opt_param('_optim_peek_user_binds','false')
              DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
              DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
              DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
@@ -414,7 +476,7 @@ local desc_sql={
              C.COLUMN_NAME,
              E.COLUMN_EXPRESSION COLUMN_EXPR,
              C.DESCEND
-        FROM   ALL_IND_COLUMNS C,  I, all_ind_expressions e
+        FROM   I,  ALL_IND_COLUMNS C,  all_ind_expressions e
         WHERE  C.INDEX_OWNER = I.OWNER
         AND    C.INDEX_NAME = I.INDEX_NAME
         AND    C.INDEX_NAME = e.INDEX_NAME(+)
@@ -424,7 +486,7 @@ local desc_sql={
         AND    c.table_name =e.table_name(+)
         ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION]],
     [[
-        SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('_optim_peek_user_binds','false')
+        SELECT /*INTERNAL_DBCLI_CMD*/ --+ordered opt_param('_optim_peek_user_binds','false')
                DECODE(R, 1, CONSTRAINT_NAME) CONSTRAINT_NAME,
                DECODE(R, 1, CONSTRAINT_TYPE) CTYPE,
                DECODE(R, 1, R_TABLE) R_TABLE,
@@ -615,9 +677,9 @@ function desc.desc(name,option)
                        regexp_substr(obj,'[^/]+', 1, 3) object_name,
                        regexp_substr(obj,'[^/]+', 1, 4) object_type
                  FROM   (SELECT (SELECT o.object_id || '/' || o.owner || '/' || o.object_name || '/' ||
-                                           o.object_type
-                                   FROM   ALL_OBJECTS o
-                                   WHERE  OBJECT_ID = obj) OBJ, lv
+                                        o.object_type
+                                 FROM   ALL_OBJECTS o
+                                 WHERE  OBJECT_ID = obj) OBJ, lv
                           FROM   r)
                  ORDER  BY lv)
         WHERE  object_type != 'SYNONYM'
@@ -627,8 +689,6 @@ function desc.desc(name,option)
         if type(new_obj)=="table" and new_obj[1] then
             obj.object_id,obj.owner,obj.object_name,obj.object_type=table.unpack(new_obj)
         end
-    elseif obj.object_type=='PACKAGE' or obj.object_type=='PROCEDURE' or obj.object_type=='FUNCTION' then
-        obj.object_id=db:dba_query(db.get_value,'select object_id from all_procedures where owner=:1 and object_name=:2 and rownum<2',{obj.owner,obj.object_name})
     end
 
     rs={obj.owner,obj.object_name,obj.object_subname or "",

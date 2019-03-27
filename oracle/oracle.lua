@@ -64,7 +64,7 @@ function oracle:helper(cmd)
 end
 
 function oracle:connect(conn_str)
-    local args,usr,pwd,conn_desc,url,isdba,server,server_sep,proxy_user
+    local args,usr,pwd,conn_desc,url,isdba,server,server_sep,proxy_user,params
     local sqlplustr
     local driver="thin"
     if type(conn_str)=="table" then --from 'login' command
@@ -72,10 +72,16 @@ function oracle:connect(conn_str)
         server,proxy_user,sqlplustr=args.server,args.PROXY_USER_NAME,packer.unpack_str(args.oci_connection)
         usr,pwd,url,isdba=conn_str.user,packer.unpack_str(conn_str.password),conn_str.url,conn_str.internal_logon
         args.password=pwd
+        if url and url:find("?",1,true) then
+            url,params=url:match('(.*)(%?.*)')
+        end
     else
         conn_str=conn_str or ""
         usr,pwd,conn_desc = conn_str:match("(.*)/(.*)@(.+)")
         url, isdba=(conn_desc or conn_str):match('^(.*) as (%w+)$')
+        if conn_desc and conn_desc:find("?",1,true) then
+            conn_desc,params=conn_desc:match('(.*)(%?.*)')
+        end
         if conn_desc == nil then
             if conn_str:find("/",1,true) and not conn_str:find("@",1,true) then
                 if not conn_str:find('/ ',1,true)==1 and os.getenv("TWO_TASK") then
@@ -118,8 +124,7 @@ function oracle:connect(conn_str)
             end
         end
     end
-    args=args or {user=usr,password=pwd,url="jdbc:oracle:"..driver..":@"..url,internal_logon=isdba}
-
+    args=args or {user=usr,password=pwd,url="jdbc:oracle:"..driver..":@"..url..(params or ''),internal_logon=isdba}
     self:merge_props(
         {driverClassName="oracle.jdbc.driver.OracleDriver",
          defaultRowPrefetch=tostring(cfg.get("FETCHSIZE")),

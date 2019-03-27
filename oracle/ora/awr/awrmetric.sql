@@ -27,37 +27,34 @@
 			} 
             default={}
         }
+
+		&snaps: {default={
+			SELECT a.*,decode(snap_id,minid,-1,1) flag
+			FROM   (SELECT dbid,
+						instance_number,
+						startup_time,
+						snap_id,
+						MIN(snap_id) over(PARTITION BY dbid, instance_number, startup_time) minid,
+						MAX(snap_id) over(PARTITION BY dbid, instance_number, startup_time) maxid,
+						round(86400 * (MAX(end_interval_time + 0)
+								over(PARTITION BY dbid, instance_number, startup_time) - MIN(end_interval_time + 0)
+								over(PARTITION BY dbid, instance_number, startup_time))) secs
+					FROM   dba_hist_snapshot s
+					WHERE  ('&3' IS NULL OR instr(',&v3,', ',' || instance_number || ',') > 0)
+					AND    s.end_interval_time BETWEEN nvl(to_date('&1', 'YYMMDDHH24MI') - 1.1 / 24, SYSDATE - 7) AND
+						nvl(to_date('&2', 'YYMMDDHH24MI'), SYSDATE)) a
+			WHERE  minid < maxid
+			AND    snap_id IN (minid, maxid)			
+		}}
     --]]
 ]]*/
 set sep4k on feed off verify off
 
-var snaps varchar2(4000);
-BEGIN
-	:snaps := q'[
-	    SELECT a.*,decode(snap_id,minid,-1,1) flag
-		FROM   (SELECT dbid,
-		               instance_number,
-		               startup_time,
-		               snap_id,
-		               MIN(snap_id) over(PARTITION BY dbid, instance_number, startup_time) minid,
-		               MAX(snap_id) over(PARTITION BY dbid, instance_number, startup_time) maxid,
-		               round(86400 * (MAX(end_interval_time + 0)
-		                      over(PARTITION BY dbid, instance_number, startup_time) - MIN(end_interval_time + 0)
-		                      over(PARTITION BY dbid, instance_number, startup_time))) secs
-		        FROM   dba_hist_snapshot s
-		        WHERE  ('&3' IS NULL OR instr(',&v3,', ',' || instance_number || ',') > 0)
-		        AND    s.end_interval_time BETWEEN nvl(to_date('&1', 'YYMMDDHH24MI') - 1.1 / 24, SYSDATE - 7) AND
-		               nvl(to_date('&2', 'YYMMDDHH24MI'), SYSDATE)) a
-		WHERE  minid < maxid
-		AND    snap_id IN (minid, maxid)]';
-END;
-/
-
-COL WAITED,AVG_WAIT,CPU|TIME,CPU|QUEUE,DBTIM,ELA/CALL,CPU/CALL,DBTIME/CALL,read,write for usmhd2
+COL WAITED,AVG_WAIT,CPU|TIME,CPU|QUEUE,DBTIM,ELA/CALL,CPU/CALL,DBTIME/CALL,read,write,gccu,gccr for usmhd2
 col dbtime,SMALLS,READS,LARGES,WRITES,PCT,%,FG,CPU|UT,CPU|LIMIT for pct2
 COL MBPS,phyrds,phywrs,redo FOR KMG
 COL CALLS,EXEC,COMMITS,ROLLBACKS,IOS_WAIT,IOPS,WAITS,GOODNESS,AAS,OPTIMAL,MULTIPASS,ONEPASS FOR TMB
-col sql,io,cpu,parse,cc,cl,app,gccu,gccr for pct2
+col sql,io,cpu,parse,cc,cl,app for pct2
 
 grid {
     [[ grid={topic="DBA_HIST_SERVICE_STAT (Per Second)"}
@@ -66,10 +63,14 @@ grid {
 		               &ver insts,
 		               stat_name,
 		               CASE
+					       WHEN stat_name = 'gc cr block receive time' THEN
+						       ROUND(VALUE / NULLIF(MAX(DECODE(stat_name, 'gc cr blocks received', VALUE)) OVER(PARTITION BY service_name), 0), 2)
+						   	WHEN stat_name = 'gc current block receive time' THEN
+						       ROUND(VALUE / NULLIF(MAX(DECODE(stat_name, 'gc current blocks received', VALUE)) OVER(PARTITION BY service_name), 0), 2)
 		                   WHEN stat_name LIKE '%time%' AND stat_name != 'DB time' OR stat_name = 'DB CPU' THEN
-		                    ROUND(VALUE / NULLIF(MAX(DECODE(stat_name, 'DB time', VALUE)) OVER(PARTITION BY service_name), 0), 4)
+		                       ROUND(VALUE / NULLIF(MAX(DECODE(stat_name, 'DB time', VALUE)) OVER(PARTITION BY service_name), 0), 4)
 		                   ELSE
-		                    VALUE
+		                       VALUE
 		               END val
 		        FROM   (SELECT nvl(service_name, '--TOTAL--') service_name,
 							   &ver nvl2(service_name,sys.stragg(DISTINCT instance_number||','),'') insts,
@@ -189,22 +190,22 @@ grid {
             SELECT * FROM (
                 SELECT  METRIC_NAME,
                         ROUND(
-                            case when instr(METRIC_UNIT,'%')>0 then 
+                            case when instr(METRIC_UNIT,'%')>0 or metric_name like '%Average%' then 
                                  AVG(AVERAGE/div)
                             else sum(AVERAGE/c/div)
                             end
                         ,2) VALUE,
                         replace(INITCAP(regexp_substr(TRIM(METRIC_UNIT),'^\S+')),'Bytes','Megabtyes') UNIT
                 FROM (SELECT a.*, 
-                             INTSIZE / 100 secs,count(distinct begin_time) over(partition by a.instance_number,METRIC_NAME) c,
+                             count(distinct begin_time) over(partition by a.instance_number) c,
                              case when upper(trim(METRIC_UNIT)) like 'BYTE%' then 1024*1024 else 1 end div
                       FROM   dba_hist_sysmetric_summary A 
                       JOIN   (&snaps)  b
 					  ON     a.snap_id between minid+1 and maxid
 					  AND    a.dbid=b.dbid
 					  AND    a.instance_number=b.instance_number
-                      WHERE  group_id=2
-                      AND    AVERAGE >0)
+					  AND    a.metric_name not like '% Per Txn'
+                      WHERE  group_id=2)
                 GROUP BY METRIC_NAME,METRIC_UNIT)
 			WHERE VALUE>0
             ORDER BY UNIT,value desc]]
