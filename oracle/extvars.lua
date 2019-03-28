@@ -43,8 +43,8 @@ end
 
 function extvars.on_before_db_exec(item)
     for i=1,2 do
-        if item and type(item[i])=="string" and item[i]:find('&lz_compress',1,true) then
-            item[i]=item[i]:gsub("&lz_compress",db.lz_compress);
+        if item and type(item[i])=="string" and item[i]:find('@lz_compress@',1,true) then
+            item[i]=item[i]:gsub("@lz_compress@",db.lz_compress);
         end
     end
 
@@ -383,7 +383,7 @@ db.lz_compress=[[
         IF p_clob IS NULL OR dbms_lob.getLength(p_clob) IS NULL THEN
             RETURN;
         END IF;
-        IF NOT v_impmode THEN
+        IF NOT v_impmode AND dbms_db_version.version not in(18,19) THEN --bug# 28649388
             BEGIN
                 EXECUTE IMMEDIATE 'begin :lob := sys.dbms_report.ZLIB2BASE64_CLOB(:lob);end;'
                     USING IN OUT p_clob;

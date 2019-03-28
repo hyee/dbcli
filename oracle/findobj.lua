@@ -166,29 +166,41 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
 	end
 	obj_name=obj_name:gsub('"+','"')
     local obj=obj_name:trim():upper()
-    env.checkerr((bypass_error or '0')=='1' or obj~="","Please input the object name/id!")
+    env.checkerr(bypass_error=='1' or obj~="","Please input the object name/id!")
 
     if not loaded then
     	local clock=os.clock()
         --env.printer.write("    Loading object dictionary...")
         local args={"#CLOB"}
-        db:dba_query(db.internal_call,[[
+        local sql=[[
 	        DECLARE
-	            TYPE t IS TABLE OF VARCHAR2(120);
+	            TYPE t IS TABLE OF VARCHAR2(300);
 	            t1 t;
 	            c  CLOB;
-	            c1 VARCHAR2(32767);
+				c1 VARCHAR2(32767);
+				@lz_compress@
 	        BEGIN
-	            SELECT /*+ordered_predicates*/ 
-	                   max(owner || '/' || object_name || '/' || object_type || '/' || object_id || ',')
-	            BULK   COLLECT
-	            INTO   t1
-	            FROM   all_objects
-	            WHERE  owner IN ('SYS', 'PUBLIC')
-	            AND    regexp_like(object_name, '^(G?V\_?\$|DBA|ALL|USER|CDB|DBMS|UTL)')
-	            AND    subobject_name IS NULL
-	            AND    object_type not like '% BODY'
-	            GROUP  BY object_name;
+	        	SELECT /*+ordered_predicates use_hash(o d) swap_join_inputs(d)*/
+				       MAX(owner || '/' || object_name || '/' || object_type || '/' || object_id || '/' || nullif(n1,object_name)|| ',' ) 
+				       keep(dense_rank FIRST ORDER BY decode(object_type, 'SYNONYM', 'ZZZZ', object_type)) n
+				BULK   COLLECT INTO t1
+				FROM   all_objects o
+				LEFT   JOIN (SELECT /*+use_hash(o p) no_merge*/
+				                    object_name n1, referenced_object_id object_id
+				             FROM   all_objects o
+				             JOIN   PUBLIC_DEPENDENCY p
+				             ON     (p.object_id = o.object_id)
+				             WHERE  o.owner IN ('SYS', 'PUBLIC')
+				             AND    o.object_type = 'SYNONYM'
+				             AND    p.object_id != referenced_object_id) d
+				USING  (object_id)
+				WHERE  (owner IN ('SYS', 'PUBLIC') OR owner LIKE 'C##')
+				AND    object_type != 'SYNONYM'
+				AND    regexp_like(object_name, '^(G?V\_?\$|DBA|ALL|USER|CDB|DBMS|UTL|AWR_)')
+				AND    subobject_name IS NULL
+				AND    object_type NOT LIKE '% BODY'
+				GROUP  BY object_name;
+
 	            dbms_lob.createtemporary(c, TRUE);
 	            FOR i IN 1 .. t1.count LOOP
 	                c1 := c1 || t1(i);
@@ -199,11 +211,15 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
 	            END LOOP;
 	            IF c1 IS NOT NULL THEN
 	                dbms_lob.writeappend(c, LENGTH(c1), c1);
-	            END IF;
+				END IF;
+				base64encode(c);
 	            :1 := c;
-	        END;]],args)
-        loaded=0
-        for o,n,t,i in args[1]:gmatch("(.-)/(.-)/(.-)/(.-),") do
+			END;]]
+		local success,res=pcall(db.internal_call,self,sql:gsub('all_objects','dba_objects'),args)
+		if not success then res=self:internal_call(sql,args) end
+		loaded=0
+		args[1]=loader:Base64ZlibToText(args[1]:split('\n'));
+		for o,n,t,i,s in args[1]:gmatch("(.-)/(.-)/(.-)/(.-)/(.-),") do
             loaded=loaded+1
             local item={
                 target=o.."."..n,
@@ -215,16 +231,17 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
                 object_id=i}
             item.alias_list={item.target,n}
             cache_obj[item.target],cache_obj[n]=item,item
+            if s and s~='' then cache_obj[s],cache_obj['PUBLIC.'..s]=item,item end
         end
         --printer.write("done in "..string.format("%.3f",os.clock()-clock).." secs.\n")
     end
 
     local args
-    if cache_obj[obj] then 
+    if cache_obj[obj] then
     	args=table.clone(cache_obj[obj])
     elseif obj~="" then
     	args=table.clone(default_args)
-	    args.target,args.ignore=obj_name,bypass_error or "0"
+	    args.target,args.ignore=obj_name,bypass_error and (''..bypass_error) or "0"
 	    db:exec_cache(stmt,args,'Internal_FindObject')
 	    args.owner=args.object_owner
 	else
@@ -239,7 +256,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
     	end
     end
     
-    if args.owner=='SYS' then
+    if args.owner and (args.owner=='SYS' or args.owner:find('^C##')) then
         local full_name=table.concat({args.owner,args.object_name,args.object_subname},'.')
         local name=args.object_name..(args.object_subname and ('.'..args.object_subname) or '')
         cache_obj[obj],cache_obj[name],cache_obj[full_name]=args,args,args
@@ -248,11 +265,26 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
     return found and args
 end
 
-function db:check_access(obj_name,bypass_error,is_set_env)
-    local obj=self:check_obj(obj_name,bypass_error,is_set_env)
-    if not obj or not obj.object_id then return false end
+local privs={}
+function db:check_access(obj_name,bypass_error,is_set_env,is_cache)
+	local obj=cache_obj[obj_name] or privs[obj_name]
+	if obj~=nil then 
+		if type(obj)=="table" and obj.accessible then 
+			return obj.accessible==1
+		elseif type(obj)=="number" then
+			return obj==1
+		end
+	end
+
+	obj=self:check_obj(obj_name,bypass_error,is_set_env)
+	
+	if not obj or not obj.object_id then
+		if is_cache==true then privs[obj_name]=0 end
+		return false 
+	end
+
     local o=obj.target
-    if cache_obj[o] and cache_obj[o].accessible then return cache_obj[o].accessible==1 and true or false end
+    if cache_obj[o] and cache_obj[o].accessible then return cache_obj[o].accessible==1 end
     obj.count='#NUMBER'
 
     self:exec_cache([[
@@ -281,12 +313,48 @@ function db:check_access(obj_name,bypass_error,is_set_env)
 	        
             :count := x;
         END;
-    ]],obj,'Internal_CheckAccessRight')
-    if cache_obj[o] then
-        local value=obj.count==1 and 1 or 0
-        for k,v in ipairs(cache_obj[o].alias_list) do cache_obj[v].accessible=value end
+	]],obj,'Internal_CheckAccessRight')
+	local value=obj.count==1 and 1 or 0
+	if cache_obj[o] then
+		for k,v in ipairs(cache_obj[o].alias_list) do cache_obj[v].accessible=value end
+	elseif is_cache==true then
+		privs[obj_name]=value
     end
-    return obj.count==1 and true or false;
+    return value==1 and true or false;
+end
+
+local re=env.re
+local P=re.compile([[
+        pattern <- {pt} {owner* obj} {suffix}
+        suffix  <- [%s,;)]
+        pt      <- [%s,(]
+        owner   <- ('SYS.'/ 'PUBLIC.'/'"SYS".'/'"PUBLIC".')
+        obj     <- full/name
+        full    <- '"' name '"'
+        name    <- {prefix %a%a [%w$#__]+}
+        prefix  <- "DBA_"/"ALL_"/"CDB_"
+    ]],nil,true)
+
+local function rep(prefix,full,obj,suffix)
+	local o=obj:upper()
+	local p,s=o:sub(1,3),o:sub(4)
+	local t=full:replace(obj,(p=='ALL' and 'DBA' or p)..s)
+	if db:check_access(t,'1',nil,true) then
+		return prefix..t..suffix
+	else
+		if p=='CDB' then
+			t=full:replace(obj,'DBA'..s)
+			if db:check_access(t,'1',nil,true) then return prefix..t..suffix end
+		end
+		if p=='ALL' then return prefix..full..suffix end
+		return prefix..full:replace(obj,'ALL'..s)..suffix
+	end
+end
+
+function oracle:dba_query(func,sql,args)
+	sql=re.gsub(sql..' ',P,rep)
+    local res=func(self,sql,args)
+    return res,args
 end
 
 function findobj.onload()
@@ -295,7 +363,7 @@ function findobj.onload()
 end
 
 function findobj.onreset()
-    cache_obj,loaded={}
+    cache_obj,privs,loaded={},{}
 end
 
 

@@ -34,7 +34,7 @@ function trace.get_trace(filename,mb,from_mb)
             WHEN OTHERS THEN
                 NULL;
         END;
-    ]]..env.oracle.lz_compress..[[    
+        @lz_compress@
     BEGIN
         dir := regexp_substr(f, '.*[\\/]');
         f   := substr(f, length(dir) + 1);
@@ -89,7 +89,7 @@ function trace.get_trace(filename,mb,from_mb)
 
             tmp := 'File Size: ' || round(fsize/1024/1024, 3) || ' MB        Extract Size: ' || round(length(text)/1024/1024, 3) ||
                     ' MB        Start Extract Position: ' || round(from_MB/1024/1024, 3) || ' MB';
-            --base64encode(text);
+            base64encode(text);
         EXCEPTION
             WHEN OTHERS THEN
                 text := null;
@@ -177,7 +177,7 @@ function trace.get_trace(filename,mb,from_mb)
                 tmp := 'File Size: > ' || round(fsize/1024/1024, 3) || ' MB        Extract Size: ' 
                         || round(length(text)/1024/1024, 3) ||' MB        Start Extract Position: ' 
                         || round(from_MB/1024/1024, 3) || ' MB';
-                --base64encode(text);
+                base64encode(text);
             END IF;
         END IF;
         :res := tmp;
@@ -252,7 +252,7 @@ function trace.get_trace(filename,mb,from_mb)
     env.checkerr(args[2],args[4])
     env.checkerr(args[3],'Target file('..filename..') does not exists!')
     print(args.res);
-    --args[3]=loader:Base64ZlibToText(args[3]:split('\n'));
+    args[3]=loader:Base64ZlibToText(args[3]:split('\n'));
     print("Result written to file "..env.write_cache(args[2],args[3]))
 end
 

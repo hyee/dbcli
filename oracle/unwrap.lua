@@ -47,16 +47,24 @@ local function decode_base64_package(base64str)
     --return zlib.uncompress(table.concat(decoded,''))
 end
 
-function unwrap.unwrap(obj,ext)
+function unwrap.unwrap_schema(obj,ext)
+    local list=db:dba_query(db.get_rows,[[select owner||'.'||object_name o from all_objects where owner=:1 and object_type in('TRIGGER','TYPE','PACKAGE','FUNCTION','PROCEDUR') ORDER BY 1]],{obj:upper()})
+    if type(list) ~='table' or #list<2 then return false end
+    for i=2,#list do
+        local n=list[i][1]
+        local done,err=pcall(unwrap.unwrap,n,ext)
+        if not done then env.warn(err) end
+    end
+    return true
+end
 
+function unwrap.unwrap(obj,ext,prefix)
     env.checkhelp(obj)
-    
     local filename=obj
     local typ,f=os.exists(obj)
-
+    prefix=prefix or ''
     if typ then
         if typ~="file" then return end
-
         filename,org_ext=obj:match("(.*)%.(.-)$")
         if filename then
             if not ext then
@@ -97,8 +105,11 @@ function unwrap.unwrap(obj,ext)
         print("Decoded Base64 written to file "..filename)
         return;
     end
-    ext='.'..(ext or 'sql')
-    local info=db:check_obj(obj)
+    local info=db:check_obj(obj,1)
+    if type(info) ~='table' then
+        local rtn=unwrap.unwrap_schema(obj,ext)
+        return env.checkerr(rtn,'No such object: '..obj);
+    end
     local qry=[[
         SELECT TEXT,
                MAX(CASE WHEN LINE = 1 AND TEXT LIKE '% wrapped%' || CHR(10) || '%' THEN 1 ELSE 0 END) OVER(PARTITION BY TYPE) FLAG,
@@ -131,12 +142,12 @@ function unwrap.unwrap(obj,ext)
         end
     end
     db.resultset:close(rs)
-    env.checkerr(result~="",'Cannot find targt object!')
-    print("Result written to file "..env.write_cache(filename..ext,result))
+    env.checkerr(result~="",'Cannot find targt object: '..obj)
+    print("Result written to file "..env.write_cache(prefix..filename..'.'..(ext or 'sql'),result))
 end
 
 function unwrap.onload()
-    env.set_command(nil,"unwrap",'Extract and unwrap(if wrapped) the source code of the specific object(procedure/package/function/trigger/type). Usage: @@NAME {[<owner>.]<object_name> [<file_ext>]}',unwrap.unwrap,false,3)
+    env.set_command(nil,"unwrap",'Extract and unwrap(if wrapped) the source code of the specific object(procedure/package/function/trigger/type). Usage: @@NAME [<owner>.]<object_name> [<file_ext>] [prefix]',unwrap.unwrap,false,4)
 end
 
 return unwrap

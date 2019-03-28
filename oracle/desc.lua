@@ -35,7 +35,7 @@ local desc_sql={
 
         $IF DBMS_DB_VERSION.VERSION > 10 $THEN
         OPEN cur for
-            SELECT decode(p,'-',' ',TRIM('.' FROM overload || replace(p,' '))) no#, 
+            SELECT decode(p,'-','$UDL$ ',TRIM('.' FROM o || replace(p,' '))) no#, 
                    Argument, 
                    data_type, 
                    IN_OUT, 
@@ -95,18 +95,39 @@ local desc_sql={
                     WHERE  owner = own
                     AND    object_id = oid
                     AND    object_name = oname) 
-            MODEL PARTITION BY(overload) DIMENSION BY(s, l) 
+            MODEL PARTITION BY(0+overload o) DIMENSION BY(s, l) 
             MEASURES(CAST(p AS VARCHAR2(30)) p, Argument, data_type, IN_OUT, defaulted, CHARSET) 
             RULES SEQUENTIAL ORDER(
-                p [ANY,ANY] ORDER BY s = MAX(p) [ s < CV(s), CV() - 1 ] || '.' || lpad(p [ CV(), CV() ],2),
-                p [99,0]='-',
-                CHARSET[99,0]=rpad(' ',8)||'$NOR$'
+                p [ANY,ANY] ORDER BY s = max(p) [ s < cv(s), CV(l) - 1 ] || '.' || lpad(p [ CV(), CV() ],4),
+                p [9999,0]='-',
+                CHARSET[9999,0]=rpad(' ',8)||'$NOR$'
             )
-            ORDER  BY overload, s;
+            ORDER  BY o, s;
         $ELSE
 
-        v_target:='"'||replace(v_target,'.','"."')||'"';
-        dbms_describe.describe_procedure(v_target, NULL, NULL, over, posn, levl,arg, dtyp, defv, inout, len, prec, scal, n, n,true);
+        BEGIN 
+            EXECUTE IMMEDIATE '
+                SELECT /*+index(a) opt_param(''_optim_peek_user_binds'',''false'') no_expand*/ 
+                       ARGUMENT,
+                       OVERLOAD#,
+                       POSITION# POSITION,
+                       TYPE# TYPE,
+                       NVL(DEFAULT#, 0) DEFAULT#,
+                       NVL(IN_OUT, 0) IN_OUT,
+                       NVL(LEVEL#, 0) LEVEL#,
+                       NVL(LENGTH, 0) LENGTH,
+                       NVL(PRECISION#, 0) PRECISION,
+                       DECODE(TYPE#, 1, 0, 96, 0, NVL(SCALE, 0)) SCALE
+                FROM   SYS.ARGUMENT$ A
+                WHERE  OBJ# = 0+:id
+                AND   (PROCEDURE$ IS NULL OR PROCEDURE$=:name)
+                ORDER BY OVERLOAD#,SEQUENCE#'
+            BULK COLLECT INTO arg,over,posn,dtyp,defv,inout,levl,len,prec,scal USING oid,oname;
+        
+        EXCEPTION WHEN OTHERS THEN
+            v_target:='"'||replace(v_target,'.','"."')||'"';
+            dbms_describe.describe_procedure(v_target, NULL, NULL, over, posn, levl,arg, dtyp, defv, inout, len, prec, scal, n, n,true);
+        END;
 
         FOR i IN 1 .. over.COUNT LOOP
             IF over(i) != v_ov THEN

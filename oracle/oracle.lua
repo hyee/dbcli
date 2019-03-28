@@ -197,6 +197,7 @@ function oracle:connect(conn_str)
 
             BEGIN
                 EXECUTE IMMEDIATE 'alter session set optimizer_ignore_hints=false';
+                EXECUTE IMMEDIATE 'alter session set optimizer_ignore_parallel_hints=false';
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
 
@@ -465,16 +466,6 @@ function oracle:disconnect(...)
 end
 
 local is_executing=false
-function oracle:dba_query(func,sql,args)
-    local sql1,count,success,res=sql:gsub('([Aa][Ll][Ll]%_)','dba_')
-    if count>0 then
-        is_executing=true
-        success,res=pcall(func,self,sql1,args)
-        is_executing=false
-    end
-    if not success then res=func(self,sql,args) end
-    return res,args
-end
 
 local ignore_errors={
     ['ORA-00028']='Connection is lost, please login again.',
