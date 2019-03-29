@@ -347,7 +347,7 @@ xplan AS
             TABLE(dbms_xplan.display('gv$sql_plan_statistics_all',NULL,format,'inst_id='|| inst_id||' and plan_hash_value=' || phv || ' and sql_id=''' || sq ||''' and child_number='||child_number)) a
     WHERE  flag = 1),
 ash_agg as(
-    SELECT /*+materialize*/ 
+    SELECT /*+materialize parallel(4)*/ 
            a.*, 
            nvl2(costs,trim(dbms_xplan.format_number(costs))||'('||to_char(ratio,case when ratio=10 then '990' else 'fm990.0' end)||'%)','') cost_rate,
            trim(dbms_xplan.format_number(costs)) cost_text,
@@ -371,7 +371,7 @@ ash_agg as(
                 MAX(aas) OVER(PARTITION BY phv,sub,subtype) aas1,
                 row_number() OVER(PARTITION BY phv,gid,grp,subtype order by aas desc,sub) seq
             FROM(
-                select --+PARALLEL(4) NO_EXPAND_GSET_TO_UNION NO_USE_DAGG_UNION_ALL_GSETS
+                select --+NO_EXPAND_GSET_TO_UNION NO_USE_DAGG_UNION_ALL_GSETS
                     grouping_id(phv1,id,top2) gid,
                     CASE
                         WHEN grouping_id(phv1,top1) =1 THEN 8

@@ -476,27 +476,27 @@ local desc_sql={
                     AND    C.INDEX_NAME(+) = I.INDEX_NAME
                     AND    I.TABLE_OWNER = :owner
                     AND    I.TABLE_NAME = :object_name)
-        SELECT /*INTERNAL_DBCLI_CMD*/ --+ordered opt_param('_optim_peek_user_binds','false')
-             DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
-             DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
-             DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
-             DECODE(C.COLUMN_POSITION, 1, DECODE(I.UNIQUENESS,'UNIQUE','YES','NO'), '') "UNIQUE",
-             DECODE(C.COLUMN_POSITION, 1, NVL(PARTITIONED_BY||NULLIF(','||SUBPART_BY,','),'NO'), '') "PARTITIONED",
-             DECODE(C.COLUMN_POSITION, 1, LOCALITY, '') "LOCALITY",
-           --DECODE(C.COLUMN_POSITION, 1, (SELECT NVL(MAX('YES'),'NO') FROM ALL_Constraints AC WHERE AC.INDEX_OWNER = I.OWNER AND AC.INDEX_NAME = I.INDEX_NAME), '') "IS_PK",
-             DECODE(C.COLUMN_POSITION, 1, decode(I.STATUS,'N/A',(SELECT MIN(STATUS) FROM All_Ind_Partitions p WHERE p.INDEX_OWNER = I.OWNER AND p.INDEX_NAME = I.INDEX_NAME),I.STATUS), '') STATUS,
-             DECODE(C.COLUMN_POSITION, 1, i.BLEVEL) BLEVEL,
-             DECODE(C.COLUMN_POSITION, 1, round(100*i.CLUSTERING_FACTOR/greatest(i.num_rows,1),2)) "CF/ROW(%)",
-             DECODE(C.COLUMN_POSITION, 1, i.LEAF_BLOCKS) LEAF_BLOCKS,
-             DECODE(C.COLUMN_POSITION, 1, i.DISTINCT_KEYS) DISTINCTS,
-             DECODE(C.COLUMN_POSITION, 1, AVG_LEAF_BLOCKS_PER_KEY) "LB/KEY",
-             DECODE(C.COLUMN_POSITION, 1, AVG_DATA_BLOCKS_PER_KEY) "DB/KEY",
-             DECODE(C.COLUMN_POSITION, 1, ceil(i.num_rows/greatest(i.DISTINCT_KEYS,1))) CARD,
-             DECODE(C.COLUMN_POSITION, 1, i.LAST_ANALYZED) LAST_ANALYZED,
-             C.COLUMN_POSITION NO#,
-             C.COLUMN_NAME,
-             E.COLUMN_EXPRESSION COLUMN_EXPR,
-             C.DESCEND
+        SELECT /*+no_parallel leading(i c e) opt_param('_optim_peek_user_binds','false') opt_param('_sort_elimination_cost_ratio',5)*/
+                DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
+                DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
+                DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
+                DECODE(C.COLUMN_POSITION, 1, DECODE(I.UNIQUENESS,'UNIQUE','YES','NO'), '') "UNIQUE",
+                DECODE(C.COLUMN_POSITION, 1, NVL(PARTITIONED_BY||NULLIF(','||SUBPART_BY,','),'NO'), '') "PARTITIONED",
+                DECODE(C.COLUMN_POSITION, 1, LOCALITY, '') "LOCALITY",
+                --DECODE(C.COLUMN_POSITION, 1, (SELECT NVL(MAX('YES'),'NO') FROM ALL_Constraints AC WHERE AC.INDEX_OWNER = I.OWNER AND AC.INDEX_NAME = I.INDEX_NAME), '') "IS_PK",
+                DECODE(C.COLUMN_POSITION, 1, decode(I.STATUS,'N/A',(SELECT MIN(STATUS) FROM All_Ind_Partitions p WHERE p.INDEX_OWNER = I.OWNER AND p.INDEX_NAME = I.INDEX_NAME),I.STATUS), '') STATUS,
+                DECODE(C.COLUMN_POSITION, 1, i.BLEVEL) BLEVEL,
+                DECODE(C.COLUMN_POSITION, 1, round(100*i.CLUSTERING_FACTOR/greatest(i.num_rows,1),2)) "CF/ROW(%)",
+                DECODE(C.COLUMN_POSITION, 1, i.LEAF_BLOCKS) LEAF_BLOCKS,
+                DECODE(C.COLUMN_POSITION, 1, i.DISTINCT_KEYS) DISTINCTS,
+                DECODE(C.COLUMN_POSITION, 1, AVG_LEAF_BLOCKS_PER_KEY) "LB/KEY",
+                DECODE(C.COLUMN_POSITION, 1, AVG_DATA_BLOCKS_PER_KEY) "DB/KEY",
+                DECODE(C.COLUMN_POSITION, 1, ceil(i.num_rows/greatest(i.DISTINCT_KEYS,1))) CARD,
+                DECODE(C.COLUMN_POSITION, 1, i.LAST_ANALYZED) LAST_ANALYZED,
+                C.COLUMN_POSITION NO#,
+                C.COLUMN_NAME,
+                E.COLUMN_EXPRESSION COLUMN_EXPR,
+                C.DESCEND
         FROM   I,  ALL_IND_COLUMNS C,  all_ind_expressions e
         WHERE  C.INDEX_OWNER = I.OWNER
         AND    C.INDEX_NAME = I.INDEX_NAME
@@ -507,7 +507,7 @@ local desc_sql={
         AND    c.table_name =e.table_name(+)
         ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION]],
     [[
-        SELECT /*INTERNAL_DBCLI_CMD*/ --+ordered opt_param('_optim_peek_user_binds','false')
+        SELECT /*INTERNAL_DBCLI_CMD*/ --+no_parallel opt_param('_optim_peek_user_binds','false')
                DECODE(R, 1, CONSTRAINT_NAME) CONSTRAINT_NAME,
                DECODE(R, 1, CONSTRAINT_TYPE) CTYPE,
                DECODE(R, 1, R_TABLE) R_TABLE,
@@ -518,7 +518,7 @@ local desc_sql={
                DECODE(R, 1, DEFERRED) DEFERRED,
                DECODE(R, 1, VALIDATED) VALIDATED,
                COLUMN_NAME
-        FROM   (SELECT --+no_merge(a) ordered use_nl(a r c)
+        FROM   (SELECT --+no_merge(a) leading(a r c) use_nl(a r c)
                        A.CONSTRAINT_NAME,
                        A.CONSTRAINT_TYPE,
                        R.TABLE_NAME R_TABLE,

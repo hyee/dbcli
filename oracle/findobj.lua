@@ -190,7 +190,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
 				             FROM   all_objects o
 				             JOIN   PUBLIC_DEPENDENCY p
 				             ON     (p.object_id = o.object_id)
-				             WHERE  o.owner IN ('SYS', 'PUBLIC')
+				             WHERE  o.owner IN ('PUBLIC')
 				             AND    o.object_type = 'SYNONYM'
 				             AND    p.object_id != referenced_object_id) d
 				USING  (object_id)
@@ -231,7 +231,10 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
                 object_id=i}
             item.alias_list={item.target,n}
             cache_obj[item.target],cache_obj[n]=item,item
-            if s and s~='' then cache_obj[s],cache_obj['PUBLIC.'..s]=item,item end
+            if s and s~='' then
+            	item.synonym=s
+            	cache_obj[s],cache_obj['PUBLIC.'..s]=item,item 
+            end
         end
         --printer.write("done in "..string.format("%.3f",os.clock()-clock).." secs.\n")
     end

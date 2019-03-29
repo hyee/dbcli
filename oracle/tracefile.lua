@@ -188,26 +188,31 @@ function trace.get_trace(filename,mb,from_mb)
     target_view=db:check_obj("GV$DIAG_TRACE_FILE",1)
     if not target_view then target_view=db:check_obj("V$DIAG_TRACE_FILE",1) end
     if not filename then
-        if target_view then 
-            target_view=target_view.object_name
-            db:query([[SELECT * FROM(select ADR_HOME||regexp_substr(ADR_HOME,'[\\/]')||'trace'||regexp_substr(ADR_HOME,'[\\/]')||TRACE_FILENAME TRACE_FILENAME,CHANGE_TIME from ]]..target_view.." order by CHANGE_TIME desc) WHERE ROWNUM<=30")
+        if target_view and db.props.version>11 then 
+            target_view=target_view.target
+            db:query([[SELECT * FROM(select ADR_HOME||regexp_substr(ADR_HOME,'[\\/]')||'trace'||regexp_substr(ADR_HOME,'[\\/]')||TRACE_FILENAME LAST_30_TRACE_FILES,CHANGE_TIME from ]]..target_view.." order by CHANGE_TIME desc) WHERE ROWNUM<=30")
         end
         env.checkhelp(filename)
     end 
-    if not db.props.db_version then env.raise_error('Database is not connected!') end;
-    pcall(db.internal_call(db,"alter session set events '10046 trace name context off'"))
-    pcall(db.internal_call(db,"alter session set tracefile_identifier=CLEANUP"))
-    pcall(db.internal_call(db,"alter session set tracefile_identifier=''"))
-    filename=filename:lower()
+
+    pcall(db.internal_call(db,[[
+    BEGIN
+        EXECUTE IMMEDIATE 'alter session set events ''10046 trace name context off''';
+        EXECUTE IMMEDIATE 'alter session set tracefile_identifier=CLEANUP';
+        EXECUTE IMMEDIATE 'alter session set tracefile_identifier=''''';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;]]))
+
+    filename=filename
     local lv=nil
     if filename:find("^%d+$") then lv=tonumber(filename) end
-    if filename=="default" or lv then
+    if filename:lower()=="default" or lv then
         if lv then
             pcall(db.internal_call(db,"alter session set tracefile_identifier='dbcli_"..math.random(1e6).."'"));
             tracefile=nil
         end
         if not tracefile  then
-            if db.props.db_version>'11' then
+            if db.props.version>10 then
                 filename=db:get_value[[select tracefile from v$process where addr=(select paddr from v$session where sid=userenv('sid'))]]
             else
                 filename=db:get_value[[SELECT u_dump.value || '/' || SYS_CONTEXT('userenv','instance_name') || '_ora_' || p.spid ||
@@ -232,25 +237,32 @@ function trace.get_trace(filename,mb,from_mb)
             end
             return
         end
-    elseif filename=="alert" then
-        if db.props.db_version<'11' then
+    elseif filename:lower()=="alert" then
+        if db.props.version<11 then
             filename=db:get_value[[SELECT u_dump.value || '/alert_' || SYS_CONTEXT('userenv', 'instance_name') || '.log' "Trace File"
                                    FROM   v$parameter u_dump
                                    WHERE  u_dump.name = 'background_dump_dest']]
         else
             filename=db:get_value[[select value|| '/alert_' || SYS_CONTEXT('userenv', 'instance_name') || '.log' from v$diag_info where name='Diag Trace']]
         end
+    elseif not filename:find('[\\/]') then
+        if db.props.version<11 then
+            filename=db:get_value([[select value from v$parameter WHERE name = 'user_dump_dest']])..'/'..filename
+        else
+            env.checkerr(target_view and target_view.synonym,'Cannot access V$DIAG_TRACE_FILE to find the file!')
+            filename=db:get_value([[select ADR_HOME||regexp_substr(ADR_HOME,'[\\/]')||'trace'||regexp_substr(ADR_HOME,'[\\/]')||TRACE_FILENAME from ]]..target_view.synonym.." WHERE TRACE_FILENAME='"..filename.."' AND ROWNUM<2")
+            env.checkerr(filename,'Cannot find target file in %s!',target_view.synonym)
+        end
     end
 
     local alert_view
-    if filename:find('alert.*.log') then
+    if filename:lower():find('alert.*.log') then
         alert_view=db:check_obj("V$DIAG_ALERT_EXT",1)
     end
-    
-    local args={filename,"#VARCHAR","#CLOB","#VARCHAR",target_view and target_view.object_name or '',alert_view and alert_view.object_name or '',mb=mb or 2,from_mb=from_mb or '',res='#VARCHAR',readonly=env.set.get("readonly")}
+    local args={filename,"#VARCHAR","#CLOB","#VARCHAR",target_view and target_view.synonym or '',alert_view and alert_view.synonym or '',mb=mb or 2,from_mb=from_mb or '',res='#VARCHAR',readonly=env.set.get("readonly")}
     db:internal_call(sql,args)
     env.checkerr(args[2],args[4])
-    env.checkerr(args[3],'Target file('..filename..') does not exists!')
+    env.checkerr(args[3] and args[3]~='','Target file %s does not exists!',filename)
     print(args.res);
     args[3]=loader:Base64ZlibToText(args[3]:split('\n'));
     print("Result written to file "..env.write_cache(args[2],args[3]))

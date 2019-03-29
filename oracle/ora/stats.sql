@@ -1,4 +1,4 @@
-/*[[Get preferences and stats of the target object. Usage: @@NAME [[owner.]<object_name>[.partition_name]] [-advise]
+/*[[Get preferences and stats of the target object. Usage: @@NAME {[owner] | [owner.]<object_name>[.partition_name]} [-advise]
     
     -advise: execute SQL Statistics Advisor on the target table
     --[[
@@ -11,7 +11,8 @@ set feed off serveroutput on printsize 10000
 pro Preferences
 pro ***********
 DECLARE
-    owner       varchar2(128)  := :object_owner;
+    input       varchar2(128) := :V1;
+    owner       varchar2(128) := :object_owner;
     object_name varchar2(128) := :object_name;
     partname    varchar2(128) := :object_subname;
     typ         varchar2(100) := :object_type;
@@ -34,8 +35,12 @@ DECLARE
                 'APPROXIMATE_NDV_ALGORITHM',
                 'AUTOSTATS_TARGET',
                 'AUTO_STAT_EXTENSIONS',
+                'AUTO_TASK_STATUS',
+                'AUTO_TASK_MAX_RUN_TIME',
+                'AUTO_TASK_INTERVAL',
                 'CASCADE',
                 'CONCURRENT',
+                'COORDINATOR_TRIGGER_SHARD',
                 'DEBUG',
                 'DEGREE',
                 'ENABLE_HYBRID_HISTOGRAMS',
@@ -51,12 +56,14 @@ DECLARE
                 'INCREMENTAL_STALENESS',
                 'JOB_OVERHEAD',
                 'JOB_OVERHEAD_PERC',
+                'MAINTAIN_STATISTICS_STATUS',
                 'METHOD_OPT',
                 'MON_MODS_ALL_UPD_TIME',
                 'NO_INVALIDATE',
                 'OPTIONS',
                 'PREFERENCE_OVERRIDES_PARAMETER',
                 'PUBLISH',
+                'ROOT_TRIGGER_PDB',
                 'SCAN_RATE',
                 'SKIP_TIME',
                 'SNAPSHOT_UPD_TIME',
@@ -82,6 +89,18 @@ BEGIN
             end;
         end loop;    
     $ELSE
+        IF owner IS NULL THEN
+            typ:='system';
+            IF input IS NOT NULL THEN
+                SELECT MAX(USERNAME) 
+                INTO   owner
+                FROM   ALL_USERS
+                WHERE  USERNAME=upper(input);
+                IF owner IS NOT NULL THEN
+                    typ:='schema';
+                END IF;
+            END IF;
+        END IF;
         for i in 1..prefs.count loop
             begin
                 dbms_output.put_line(rpad(initcap(nvl(typ,'system')||' ')||'Prefs - '||prefs(i),45)||': '||dbms_stats.get_prefs(prefs(i),owner,object_name));
@@ -383,19 +402,23 @@ AND    i.index_name = t.index_name
 AND    t.subpartition_name =nvl(:object_subname,t.subpartition_name);
 
 DECLARE
+    input  VARCHAR2(128) := :V1;
     oname  VARCHAR2(128) := :object_owner;
-    tab    VARCHAR2(129) := :object_name;
-    tname  VARCHAR2(128) := upper('stats_adv_' || oname || '_' || tab);
+    tab    VARCHAR2(128) := :object_name;
+    tname  VARCHAR2(128) := upper('stats_adv_' || oname || '_' || tab)||to_char(sysdate,'SSSSS');
     tid    PLS_INTEGER;
     output CLOB;
 BEGIN
-    NULL;
+    IF oname IS NULL AND input IS NOT NULL THEN
+        SELECT MAX(USERNAME) 
+        INTO   oname
+        FROM   ALL_USERS
+        WHERE  USERNAME=upper(input);
+    END IF;
     $IF &advise=1 $THEN
     BEGIN
         dbms_stats.drop_advisor_task(tname);
-    EXCEPTION
-        WHEN OTHERS THEN
-            NULL;
+    EXCEPTION WHEN OTHERS THEN NULL;
     END;
     output := dbms_stats.create_advisor_task(tname);
     --defines rules that listed in v$stats_advisor_rules
@@ -405,7 +428,6 @@ BEGIN
                                                       ownname            => NULL,
                                                       tabname            => NULL,
                                                       action             => 'DISABLE');
-
     output := DBMS_STATS.CONFIGURE_ADVISOR_OBJ_FILTER(task_name          => tname,
                                                       stats_adv_opr_type => 'EXECUTE',
                                                       rule_name          => NULL,
@@ -422,7 +444,7 @@ BEGIN
                                                        action             => 'DISABLE');
     output := DBMS_STATS.EXECUTE_ADVISOR_TASK(tname);
     select task_id into tid from dba_advisor_tasks where task_name=tname;
-    dbms_output.put_line('Statistics Advisor is running, please use "ora addm '||tid||'" to show the result afterwards.');
+    dbms_output.put_line('Statistics Advisor for "'||nvl(trim('.' from oname||'.'||tab),'Database')||'" is running, please use "ora addm '||tid||'" to show the result afterwards.');
     dbms_output.put_line('Or may run following command to see the recommended script:');
     dbms_output.put_line('    select dbms_stats.script_advisor_task('''||tname||''') from dual;');
     $END

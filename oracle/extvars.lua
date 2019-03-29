@@ -75,10 +75,17 @@ function extvars.on_after_db_exec()
     table.clear(cache)
 end
 
-
+local noparallel_sql=[[
+    begin 
+        execute immediate 'alter session set events ''10384 trace name context %s''';
+    exception
+        when others then
+            if sqlcode=-1031 then execute immediate 'alter session %s parallel query';end if;
+    end;
+]]
 function extvars.set_noparallel(name,value)
     if noparallel==value then return value end
-    db:internal_call("begin execute immediate 'alter session set events ''10384 trace name context "..(value=="off" and "off" or "forever , level 16384").."''';end;");
+    db:internal_call(noparallel_sql:format(value=="off" and "off" or "forever , level 16384",value=='off' and 'enable' or 'disable'))
     noparallel=value
     return value
 end
@@ -181,7 +188,7 @@ function extvars.set_instance(name,value)
 end
 
 function extvars.set_container(name,value)
-    env.checkerr(db.props.db_version and tonumber(db.props.db_version:match('%d+')),'Unsupported version!')
+    if name=='CONTAINER' and value>=0 then env.checkerr(db.props.version and db.props.version > 11,'Current db version does not support the CDB feature!') end
     value=tonumber(value)
     env.checkerr(value and value>=-1 and value==math.floor(value),'Input value must be an integer!');
     return value
@@ -380,7 +387,7 @@ db.lz_compress=[[
             dbms_output.put_line(p_line);
         END;
     BEGIN
-        IF p_clob IS NULL OR dbms_lob.getLength(p_clob) IS NULL THEN
+        IF p_clob IS NULL OR nvl(dbms_lob.getLength(p_clob),0)=0 THEN
             RETURN;
         END IF;
         IF NOT v_impmode AND dbms_db_version.version not in(18,19) THEN --bug# 28649388
@@ -394,6 +401,7 @@ db.lz_compress=[[
                     NULL;
             END;
         END IF;
+
         dbms_lob.createtemporary(v_blob, TRUE);
         dbms_lob.ConvertToBLOB(v_blob, p_clob, dbms_lob.getLength(p_clob), dest_offset, src_offset, lob_csid, lang_context, warning);
         dbms_lob.createtemporary(p_clob, TRUE);

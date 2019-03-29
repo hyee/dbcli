@@ -64,7 +64,7 @@ function oracle:helper(cmd)
 end
 
 function oracle:connect(conn_str)
-    local args,usr,pwd,conn_desc,url,isdba,server,server_sep,proxy_user,params
+    local args,usr,pwd,conn_desc,url,isdba,server,server_sep,proxy_user,params,_
     local sqlplustr
     local driver="thin"
     if type(conn_str)=="table" then --from 'login' command
@@ -77,18 +77,18 @@ function oracle:connect(conn_str)
         end
     else
         conn_str=conn_str or ""
-        usr,pwd,conn_desc = conn_str:match("(.*)/(.*)@(.+)")
+        usr,_,pwd,conn_desc = conn_str:match('(.*)/("?)(.*)%2@(.+)')
         url, isdba=(conn_desc or conn_str):match('^(.*) as (%w+)$')
         if conn_desc and conn_desc:find("?",1,true) then
             conn_desc,params=conn_desc:match('(.*)(%?.*)')
         end
         if conn_desc == nil then
-            if conn_str:find("/",1,true) and not conn_str:find("@",1,true) then
-                if not conn_str:find('/ ',1,true)==1 and os.getenv("TWO_TASK") then
-                    conn_str=(url or conn_str)..'@'..os.getenv("TWO_TASK")..(isdba and ('as '..isdba) or '')
-                    usr,pwd,conn_desc = conn_str:match("(.*)/(.*)@(.+)")
-                    url, isdba=(conn_desc or conn_str):match('^(.*) as (%w+)$')
-                elseif conn_str:find('/ ',1,true)==1 and isdba then
+            local idx,two_task=conn_str:find("/",1,true),os.getenv("TWO_TASK")
+            if idx and not conn_str:find("@",1,true) then
+                if idx~=1 and two_task then
+                    conn_str=(url or conn_str)..'@'..two_task..(isdba and (' as '..isdba) or '')
+                    return self:connect(conn_str)
+                elseif idx==1 and isdba then
                     env.checkerr(home and os.getenv("ORACLE_SID"),"Environment variable ORACLE_HOME/ORACLE_SID is not found, cannot login with oci driver!")
                     driver,usr,pwd,conn_desc,url="oci8","sys","sys","/ as sysdba",""
                 end
@@ -151,9 +151,7 @@ function oracle:connect(conn_str)
          ['oracle.jdbc.timezoneAsRegion']='false'
         },args)
     self:load_config(url,args)
-    if args.db_version and tonumber(args.db_version:match("(%d+)"))>0 then
-        args['oracle.jdbc.mapDateToTimestamp']=nil
-    end
+
     if args.jdbc_alias or not sqlplustr then
         local pwd=args.password
         if not pwd:find('^[%w_%$#]+$') and not pwd:find('^".*"$') then
@@ -174,7 +172,7 @@ function oracle:connect(conn_str)
     self.conn_str=sqlplustr
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    self.props={instance="#NUMBER",sid="#NUMBER"}
+    self.props={instance="#NUMBER",sid="#NUMBER",version="#NUMBER"}
     for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container','israc','privs'} do 
         self.props[v]="#VARCHAR" 
     end
@@ -234,8 +232,8 @@ function oracle:connect(conn_str)
                    sys_context('userenv', 'isdba') isdba,
                    nvl(sv,sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.')) service_name,
                    decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY',' ','PHYSICAL STANDBY',' (Standby)>')) END,
-                   decode((select count(distinct inst_id) from gv$version),1,'FALSE','TRUE')
-            INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :container, :isdba, :service_name,:db_role, :israc
+                   decode((select count(distinct inst_id) from gv$version),1,'FALSE','TRUE'),vs
+            INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :container, :isdba, :service_name,:db_role, :israc,:version
             FROM   nls_Database_Parameters
             WHERE  parameter = 'NLS_CHARACTERSET';
             
