@@ -284,7 +284,7 @@ BEGIN
             SELECT DECODE(LEVEL, 1, to_char(pct,'fm990.99'), '|'||to_char(least(pct,99.99),'90.00'))||'%' "Pct",
                    AAS,
                    EXECS,
-                   DELTA "Leaf|-AAS",
+                   DELTA "Leaf|AAS",
                    IO,
                    &group top_&group,
                    DECODE(LEVEL, 1, '', ' |') || LPAD(' ', (LEVEL - 1) * 2 - 1, ' ') || ' ' || SQ_ID WAIT_CHAIN,

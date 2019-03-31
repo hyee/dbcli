@@ -18,7 +18,7 @@ DECLARE
     typ         varchar2(100) := :object_type;
     st          date;
     et          date;
-    status      varchar2(100);
+    status      varchar2(300);
     val         number;
     numrows     int;
     numblks     int;
@@ -27,54 +27,54 @@ DECLARE
     cachehit    int;
     im_imcu_count  INT;
     im_block_count INT;
-    type t is table of varchar2(100);
+    type t is table of varchar2(300);
     LST    SYS.ODCIOBJECTLIST := SYS.ODCIOBJECTLIST();
     --SOURCE:  SYS.OPTSTAT_HIST_CONTROL$/SYS.OPTSTAT_USER_PREFS$
-    prefs t:= t('ANDV_ALGO_INTERNAL_OBSERVE',
-                'APPROXIMATE_NDV',
-                'APPROXIMATE_NDV_ALGORITHM',
-                'AUTOSTATS_TARGET',
-                'AUTO_STAT_EXTENSIONS',
-                'AUTO_TASK_STATUS',
-                'AUTO_TASK_MAX_RUN_TIME',
-                'AUTO_TASK_INTERVAL',
-                'CASCADE',
-                'CONCURRENT',
-                'COORDINATOR_TRIGGER_SHARD',
-                'DEBUG',
-                'DEGREE',
-                'ENABLE_HYBRID_HISTOGRAMS',
-                'ENABLE_TOP_FREQ_HISTOGRAMS',
-                'ESTIMATE_PERCENT',
-                'GATHER_AUTO',
-                'GATHER_SCAN_RATE',
-                'GLOBAL_TEMP_TABLE_STATS',
-                'GRANULARITY',
-                'INCREMENTAL',
-                'INCREMENTAL_INTERNAL_CONTROL',
-                'INCREMENTAL_LEVEL',
-                'INCREMENTAL_STALENESS',
-                'JOB_OVERHEAD',
-                'JOB_OVERHEAD_PERC',
-                'MAINTAIN_STATISTICS_STATUS',
-                'METHOD_OPT',
-                'MON_MODS_ALL_UPD_TIME',
-                'NO_INVALIDATE',
-                'OPTIONS',
-                'PREFERENCE_OVERRIDES_PARAMETER',
-                'PUBLISH',
-                'ROOT_TRIGGER_PDB',
-                'SCAN_RATE',
-                'SKIP_TIME',
-                'SNAPSHOT_UPD_TIME',
-                'SPD_RETENTION_WEEKS',
-                'STALE_PERCENT',
-                'STATS_RETENTION',
-                'STAT_CATEGORY',
-                'SYS_FLAGS',
-                'TABLE_CACHED_BLOCKS',
-                'TRACE',
-                'WAIT_TIME_TO_UPDATE_STATS');
+    prefs t:= t('ANDV_ALGO_INTERNAL_OBSERVE', 'TRUE/FALSE',
+                'APPROXIMATE_NDV','TRUE/FALSE',
+                'APPROXIMATE_NDV_ALGORITHM','REPEAT OR HYPERLOGLOG/ADAPTIVE SAMPLING/HYPERLOGLOG',
+                'AUTOSTATS_TARGET','ALL/AUTO/ORACLE/Z(DEFAULT_AUTOSTATS_TARGET)',
+                'AUTO_STAT_EXTENSIONS','ON/OFF',
+                'AUTO_TASK_STATUS','ON/OFF',
+                'AUTO_TASK_MAX_RUN_TIME','',
+                'AUTO_TASK_INTERVAL','',
+                'CASCADE','TRUE/FALSE/null(AUTO_CASCADE)',
+                'CONCURRENT','MANUAL/AUTOMATIC/ALL/OFF/FALSE/TRUE',
+                'COORDINATOR_TRIGGER_SHARD','TRUE/FALSE',
+                'DEBUG','1[AUTO_TLIST_ONLY],2[MANUAL_TLIST],4[PARALLEL_SYNOP],8[CLOB_SQL],16[FORCE_TF],32[BATCHINGSQL]',
+                'DEGREE','n/32766(DEFAULT_DEGREE_VALUE)/32767(DEFAULT_DEGREE)/32768(AUTO_DEGREE)',
+                'ENABLE_HYBRID_HISTOGRAMS','0:disable 1/2/3',
+                'ENABLE_TOP_FREQ_HISTOGRAMS','0:disable 1/2/3',
+                'ESTIMATE_PERCENT','0(AUTO_SAMPLE_SIZE)/[0.000001-100]/101(DEFAULT_ESTIMATE_PERCENT)',
+                'GATHER_AUTO','AFTER_LOAD/ALWAYS',
+                'GATHER_SCAN_RATE','HADOOP_ONLY/ON/OFF',
+                'GLOBAL_TEMP_TABLE_STATS','SHARED/SESSION',
+                'GRANULARITY','Partitioned: AUTO/ALL/DEFAULT/GLOBAL/PARTITION/SUBPARTITION/GLOBAL AND PARTITION/PART AND SUBPART/GLOBAL AND SUBPART/APPROX_GLOBAL AND PARTITION',
+                'INCREMENTAL','Partitioned: TRUE/FALSE',
+                'INCREMENTAL_INTERNAL_CONTROL','Partitioned: TRUE/FALSE',
+                'INCREMENTAL_LEVEL','Partitioned: TABLE/PARTITION synopses',
+                'INCREMENTAL_STALENESS','Partitioned: ALLOW_MIXED_FORMAT,USE_STALE_PERCENT,USE_LOCKED_STATS/NULL',
+                'JOB_OVERHEAD','',
+                'JOB_OVERHEAD_PERC','',
+                'MAINTAIN_STATISTICS_STATUS','TRUE/FALSE',
+                'METHOD_OPT','FOR ALL [INDEXED|HIDDEN] COLUMNS [SIZE {integer|REPEAT|AUTO|SKEWONLY}]/Z(DEFAULT_METHOD_OPT)',
+                'MON_MODS_ALL_UPD_TIME','',
+                'NO_INVALIDATE','TRUE/FALSE/null(AUTO_INVALIDATE)',
+                'OPTIONS','GATHER/GATHER AUTO/Z(DEFAULT_OPTIONS)(additional schema/system: GATHER STALE/GATHER EMPTY/LIST AUTO/LIST STALE/LIST EMPTY)',
+                'PREFERENCE_OVERRIDES_PARAMETER','TRUE/FALSE',
+                'PUBLISH','TRUE/FALSE',
+                'ROOT_TRIGGER_PDB','',
+                'SCAN_RATE','',
+                'SKIP_TIME','',
+                'SNAPSHOT_UPD_TIME','',
+                'SPD_RETENTION_WEEKS','',
+                'STALE_PERCENT','',
+                'STATS_RETENTION','',
+                'STAT_CATEGORY','OBJECT_STATS,SYNOPSES,REALTIME_STATS/Z(DEFAULT_STAT_CATEGORY)',
+                'SYS_FLAGS','0/1(DSC_SYS_FLAGS_DUBIOUS_DONE)',
+                'TABLE_CACHED_BLOCKS','0(AUTO_TABLE_CACHED_BLOCKS)/n',
+                'TRACE','0(disable),1(DBMS_OUTPUT_TRC),2(SESSION_TRC),4(TAB_TRC),8(IND_TRC),16(COL_TRC),32(AUTOST_TRC),...524288',
+                'WAIT_TIME_TO_UPDATE_STATS','');
 BEGIN
     dbms_output.enable(null);
     IF typ IS NOT NULL and typ NOT like 'TABLE%' THEN
@@ -82,9 +82,13 @@ BEGIN
     END IF;
 
     $IF DBMS_DB_VERSION.VERSION<11 $THEN
-        for i in 1..prefs.count loop
+        for i in 0..prefs.count/2 loop
             begin
-                dbms_output.put_line(rpad('Param - '||prefs(i),45)||': '||dbms_stats.get_param(prefs(i)));
+                status :=rpad('Param - '||prefs(i*2+1),45)||': '||rpad(dbms_stats.get_param(prefs(i*2+1)),35);
+                if prefs(i*2+2) is not null then
+                    status := status || '('||prefs(i*2+2)||')';
+                end if;
+                dbms_output.put_line(status);
             exception when others then null;
             end;
         end loop;    
@@ -101,9 +105,13 @@ BEGIN
                 END IF;
             END IF;
         END IF;
-        for i in 1..prefs.count loop
+        for i in 0..prefs.count/2 loop
             begin
-                dbms_output.put_line(rpad(initcap(nvl(typ,'system')||' ')||'Prefs - '||prefs(i),45)||': '||dbms_stats.get_prefs(prefs(i),owner,object_name));
+                status :=rpad(initcap(nvl(typ,'system')||' ')||'Prefs - '||prefs(i*2+1),45)||': '||rpad(dbms_stats.get_prefs(prefs(i*2+1),owner,object_name),35);
+                if prefs(i*2+2) is not null then
+                    status := status || '('||prefs(i*2+2)||')';
+                end if;
+                dbms_output.put_line(status);
             exception when others then null;
             end;
         end loop;
@@ -170,7 +178,7 @@ BEGIN
              formula ['MREADTIM'] = 'time to read n blocks in ms = IOSEEKTIM + db_block_size * MBRC / IOTFRSPEED',
              formula ['SREADTIM'] = 'time to read 1 block  in ms = IOSEEKTIM + db_block_size / IOTFRSPEED',
              formula ['IOSEEKTIM'] = 'latency  in ms',
-             formula ['IOTFRSPEED'] = 'transfer in KB/ms',
+             formula ['IOTFRSPEED'] = 'transfer speed in KB/ms',
              formula ['   multi  cost / block'] = '1/MBRC * MREADTIM/SREADTIM',
              formula ['   single cost / block'] = 'by definition',
              formula ['   maximum mbrc'] = 'buffer cache size in blocks / sessions',

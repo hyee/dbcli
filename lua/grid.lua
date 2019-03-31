@@ -346,11 +346,10 @@ function grid:add(row)
         else
             if headind == 0 then
                 v = v:gsub("([^|]+)|([^|]+)", function(a, b)
-                    a, b = a:trim(' '), b:trim(' ')
                     local len1, len2 = a:len(), b:len()
                     local max_len = math.max(len1, len2)
                     return ('%s%s\n%s%s'):format(
-                        string.rep(' ', math.ceil((max_len - len1) / 2)), a,
+                        string.rep(' ', math.floor((max_len - len1) / 2)), a,
                         string.rep(' ', math.ceil((max_len - len2) / 2)), b)
                 end)
                 if v=='|' then 
@@ -358,6 +357,8 @@ function grid:add(row)
                 elseif v=="" then
                     colsize[k][3]=""
                 end
+            else
+                v=v:rtrim()
             end
             
             local col_wrap = grid.col_wrap
@@ -376,7 +377,7 @@ function grid:add(row)
             if headind > 0 then v = v:gsub("[%s ]+$", ""):gsub("[ \t]+[\n\r]", "\n"):gsub("\t", '    ') end
             
             --if the column value has multiple lines, then split lines into table
-            for p in v:gsplit('\r?\n\r?') do
+            for p in v:gsplit('[ \t%z\a\r\f\b\v]*\n') do
                 --if headind == 0 and #p>50 then p=p:sub(1,50) end
                 grp[#grp + 1] = p
                 --deal with unicode chars

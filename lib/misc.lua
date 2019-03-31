@@ -93,6 +93,16 @@ function string.trim(s,sep)
     return s:match('^'..sep..'*(.-)'..sep..'*$')
 end
 
+function string.rtrim(s,sep)
+    sep='[%s%z'..(sep or '')..']'
+    return (s:gsub(sep..'*$',''))
+end
+
+function string.ltrim(s,sep)
+    sep='[%s%z'..(sep or '')..']'
+    return (s:gsub('^'..sep,''))
+end
+
 String=java.require("java.lang.String")
 local String=String
 --this function only support %s

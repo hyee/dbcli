@@ -60,7 +60,7 @@ end
 
 local function flush_buff(text,lines)
     while #buff > 32766-(lines or 1) do table.remove(buff,1) end
-    buff[#buff+1]=strip_ansi(text)
+    buff[#buff+1]=strip_ansi(text):rtrim()
 end
 
 function printer.print(...)
@@ -75,7 +75,7 @@ function printer.print(...)
         end
     end
 
-    output,rows=table.concat(output,' '):gsub("\r?\n\r?","%0"..env.space)
+    output,rows=table.concat(output,' '):gsub("\r?\n","%0"..env.space)
     output=NOR..env.space..output
      
     if printer.grep_text and not ignore then
@@ -238,7 +238,7 @@ end
 
 function printer.tee_to_file(row,total_rows, format_func, format_str,include_head)
     local str=type(row)~="table" and row or format_func(format_str, table.unpack(row))
-    more_text[#more_text+1]=env.space..str
+    more_text[#more_text+1]=env.space..str:rtrim()
     more_text.lines=more_text.lines+1
     if more_text.lines<=10 then
         if printer.grid_title_lines <0 and tonumber(row[0]) and tonumber(row[0])==0 then
@@ -291,7 +291,7 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
         end
         hdl:write("\n")
     elseif type(str)=="string" then
-        pcall(hdl.write,hdl,env.space..strip_ansi(str).."\n")
+        pcall(hdl.write,hdl,env.space..strip_ansi(str):rtrim().."\n")
     end
 end
 

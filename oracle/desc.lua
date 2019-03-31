@@ -545,17 +545,17 @@ local desc_sql={
                                 FROM   r1
                                 START  WITH column_position = 1
                                 CONNECT BY PRIOR column_position = column_position - 1) PARTITIONED_BY,
-        PARTITION_COUNT PARTS,
-        SUBPARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
-                                    FROM   R2
-                                    START  WITH column_position = 1
-                                    CONNECT BY PRIOR column_position = column_position - 1) SUBPART_BY,
-        def_subpartition_count subs,
-        DEF_TABLESPACE_NAME,
-        DEF_PCT_FREE,
-        DEF_INI_TRANS,
-        DEF_LOGGING,
-        DEF_COMPRESSION
+            PARTITION_COUNT PARTS,
+            SUBPARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
+                                        FROM   R2
+                                        START  WITH column_position = 1
+                                        CONNECT BY PRIOR column_position = column_position - 1) SUBPART_BY,
+            def_subpartition_count subs,
+            DEF_TABLESPACE_NAME,
+            DEF_PCT_FREE,
+            DEF_INI_TRANS,
+            DEF_LOGGING,
+            DEF_COMPRESSION
     FROM   all_part_tables
     WHERE  table_name = :object_name
     AND    owner = :owner]],
@@ -732,39 +732,7 @@ function desc.desc(name,option)
     cfg.set("feed","off",true)
     print(("%s : %s%s%s\n"..dels):format(rs[4],rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3]))
     
-    --[[
-    local function travel(list)
-        local grid_cfg
-        for index,sql in ipairs(list) do
-            if type(sql)=="table" then 
-                travel(sql)
-            elseif type(sql)=="string" and #sql>10 then
-                --if sql:find("/*PIVOT*/",1,true) then cfg.set("PIVOT",1) end
-                sql,grid_cfg=env.grid.get_config(sql)
-                local typ=db.get_command_type(sql)
-                local result
-                if typ=='DECLARE' or typ=='BEGIN' then
-                    rs['v_cur']='#CURSOR'
-                    db:dba_query(db.internal_call,sql,rs)
-                    result=rs.v_cur
-                else
-                    result=db:dba_query(db.internal_call,sql,rs)
-                end
-                list[index]=db.resultset:rows(result,-1)
-                list[index].bypassemptyrs=true
-                for k,v in pairs(grid_cfg) do list[index][k]=v end
-            end 
-        end
-    end
-    travel(sqls)
-    
-    if #sqls==1 then
-        env.grid.print(sqls[1])
-    else
-        env.grid.merge(sqls,true)
-    end
-    --]]
-    
+
     for i,sql in ipairs(sqls) do
         if sql:find("/*PIVOT*/",1,true) then cfg.set("PIVOT",1) end
         local typ=db.get_command_type(sql)

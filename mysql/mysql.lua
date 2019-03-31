@@ -231,9 +231,9 @@ function mysql:help_topic(...)
             env.checkerr(topic,"No such topic: "..keyword)
             topic[1]='Name:  '..topic[4].." / "..topic[1]
             local desc='$HEADCOLOR$'..topic[1].."$NOR$ \n"..('='):rep(#topic[1])
-                      ..(" \n"..topic[2]:gsub("^%s*Syntax:%s*","")):gsub("\r?\n\r?","\n  ")
+                      ..(" \n"..topic[2]:gsub("^%s*Syntax:%s*","")):gsub("\r?\n","\n  ")
             if (topic[3] or ""):trim()~="" then
-                desc=desc.."\n$HEADCOLOR$Examples: $NOR$\n========= "..(("\n"..topic[3]):gsub("\r?\n\r?","\n  "))
+                desc=desc.."\n$HEADCOLOR$Examples: $NOR$\n========= "..(("\n"..topic[3]):gsub("\r?\n","\n  "))
             end
             print(ansi.convert_ansi((desc:gsub("%s+$",""))))
         end
