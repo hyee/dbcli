@@ -18,7 +18,7 @@ Option:
             d={2}        # Dictionary only
           }
     &binds: default={}, b={PEEKED_BINDS}
-    @adaptive: 12.1={+REPORT +ADAPTIVE +METRICS} default={}
+    @adaptive: 12.1={+REPORT +ADAPTIVE } default={}
 ]]--
 ]]*/
 set PRINTSIZE 9999
@@ -147,8 +147,7 @@ hierarchy_data AS
   CONNECT BY PRIOR id = parent_id
   ORDER  SIBLINGS BY id DESC),
 ordered_hierarchy_data AS
- (SELECT /*+materialize*/
-         id,minid,
+ (SELECT id,minid,
          parent_id AS pid,
          plan_hash_value AS phv,
          row_number() over(PARTITION BY plan_hash_value ORDER BY rownum DESC) AS OID,
@@ -179,18 +178,21 @@ xplan AS
   FROM   qry,TABLE(dbms_xplan.display('gv$sql_plan_statistics_all',NULL,format,'child_number=' || plan_hash || ' and sql_id=''' || sq ||''' and inst_id=' || inst_id)) a
   WHERE  flag = 1),
 xplan_data AS
- (SELECT /*+ordered use_nl(o) materialize*/
+ (SELECT /*+ordered use_hash(o x) materialize no_merge(o)*/
            x.plan_table_output AS plan_table_output,
-           nvl(o.id,CASE WHEN regexp_like(x.plan_table_output, '^\|[-\* ]*[0-9]+ \|') THEN to_number(regexp_substr(x.plan_table_output, '[0-9]+')) END) id,
+           nvl(o.id,x.oid) id,
            o.pid,
            o.oid,
            o.maxid,
            r,
            max(o.minid) over() as minid,
            COUNT(*) over() AS rc
-  FROM   (select rownum r, x.* from xplan x) x
+  FROM   (select rownum r, 
+                 CASE WHEN regexp_like(plan_table_output, '^\|[-\* ]*[0-9]+ \|') THEN to_number(regexp_substr(plan_table_output, '[0-9]+')) END oid,
+                 x.* 
+         from   xplan x) x
   LEFT   OUTER JOIN ordered_hierarchy_data o
-  ON     (o.id = CASE WHEN regexp_like(x.plan_table_output, '^\|[-\* ]*[0-9]+ \|') THEN to_number(regexp_substr(x.plan_table_output, '[0-9]+')) END))
+  ON     (o.id = x.oid))
 SELECT plan_table_output
 FROM   xplan_data --
 model  dimension by (r)

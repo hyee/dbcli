@@ -328,7 +328,7 @@ BEGIN
                 EXCEPTION WHEN OTHERS THEN
                     xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => 'TYPICAL', sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
                 END;
-                filename := 'sqlm_' || sq_id || '.html';
+                filename := 'sqlm_' || sq_id ||nullif('_'||:v2,'_')|| '.html';
             ELSE
                 sql_start := nvl(to_char(nvl(:V3,:starttime),'yymmddhh24mi'),sysdate-7);
                 xml := xmltype(DBMS_SQLTUNE.REPORT_SQL_DETAIL(report_level => 'ALL',
@@ -340,7 +340,7 @@ BEGIN
                                                       dbid=>did,
                                                       top_n=>50,
                                                       type=>'XML'));
-                filename := 'sqld_' || sq_id || '.html';
+                filename := 'sqld_' || sq_id ||nullif('_'||:v2,'_') || '.html';
             END IF;
         END IF;
 

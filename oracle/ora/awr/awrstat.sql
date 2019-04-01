@@ -1,11 +1,12 @@
-/*[[Show the AWR performance trend for a specific SQL. Usage: @@NAME <sql_id> [-d] [-m]
+/*[[Show the AWR performance trend for a specific SQL. Usage: @@NAME <sql_id|plan_hash_value|signature> [-d|-p] [-m]
     -d: Group by day, otherwise group in detail
+    -p: Group by plan_hash_value
     -m: Group by signature, otherwise group by sql id
     --[[
         &BASE : s={sql_id}, m={signature}
         &TIM  : t={YYYYMMDD HH24:MI}, d={YYYYMMDD} p={" "}
         &avg  : default={1}, avg={nullif(SUM(GREATEST(exec,parse)),0)}
-        @ver: 11.2={} default={--}
+        @ver  : 11.2={} default={--}
     --]]
 ]]*/
 
@@ -20,7 +21,7 @@ select time,sql_id,plan_hash,
        max(vers)  vers,
        count(1)    SEENS,
        sum(ela)    ELA,
-       round(sum(ela)/nullif(SUM(GREATEST(exec,parse)),0),2) "ELA(Avg)",
+       round(sum(ela)/nullif(decode(SUM(exec),0,floor(sum(parse)/greatest(sum(px_count),1)),sum(exec)),0),2) "ELA(Avg)",
        sum(iowait)/sum(ela) iowait,
        sum(cpuwait)/sum(ela) cpuwait,
        sum(ccwait)/sum(ela) ccwait,
@@ -81,7 +82,7 @@ FROM(
                a.rows_processed rows#,
                a.fetches
          from &awr$sqlstat  a
-        WHERE a.&BASE=:V1)
+        WHERE :V1 in(sql_id,''||plan_hash_value,''||signature))
     group by snap_id,sql_id,plan_hash
     having sum(ela)>0)
  group by time,sql_id,plan_hash

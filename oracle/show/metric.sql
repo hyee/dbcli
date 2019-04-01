@@ -187,7 +187,7 @@ grid {
             SELECT * FROM (
                 SELECT  METRIC_NAME,
                         ROUND(
-                            case when instr(METRIC_UNIT,'%')>0 then 
+                            case when instr(METRIC_UNIT,'%')>0 or metric_name like '%Average%' then 
                                  AVG(value/div)
                             else sum(value/c/div)
                             end

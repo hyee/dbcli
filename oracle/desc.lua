@@ -4,7 +4,8 @@ local desc={}
 
 local desc_sql={
     PROCEDURE=[[
-    DECLARE /*INTERNAL_DBCLI_CMD*/ 
+    DECLARE /*INTERNAL_DBCLI_CMD*/
+        cur     SYS_REFCURSOR;
         over    dbms_describe.number_table;
         posn    dbms_describe.number_table;
         levl    dbms_describe.number_table;
@@ -23,10 +24,87 @@ local desc_sql={
         v_seq   PLS_INTEGER:=-1;
         v_type  VARCHAR2(300);
         v_pos   VARCHAR2(30);
+        oname   VARCHAR2(128):= nvl(:object_subname, :object_name);
+        own     VARCHAR2(128):= :owner;
+        oid     INT          := :object_id;
         v_target VARCHAR2(100):=:owner || NULLIF('.' || :object_name, '.') || NULLIF('.' || :object_subname, '.');
         type t_idx IS TABLE OF PLS_INTEGER INDEX BY PLS_INTEGER;
         v_idx    t_idx;
     BEGIN
+        select nvl(max(object_id),oid) into oid from all_procedures where owner=own and object_name=:object_name and rownum<2;
+
+        $IF DBMS_DB_VERSION.VERSION > 10 $THEN
+        OPEN cur for
+            SELECT decode(p,'-','$UDL$ ',TRIM('.' FROM o || replace(p,' '))) no#, 
+                   Argument, 
+                   data_type, 
+                   IN_OUT, 
+                   defaulted "Default?",
+                   CHARSET
+            FROM   (SELECT overload,
+                           SEQUENCE s,
+                           DATA_LEVEL l,
+                           POSITION p,
+                           lpad(' ', DATA_LEVEL * 2) || decode(0 + POSITION, 0, '(RETURNS)', Nvl(argument_name, '<Collection>')) Argument,
+                           CASE
+                               WHEN pls_type IS NOT NULL AND pls_type != data_type THEN
+                                pls_type
+                               WHEN type_subname IS NOT NULL THEN
+                                type_name || '.' || type_subname || '(' || DATA_TYPE || ')'
+                               WHEN type_name IS NOT NULL THEN
+                                type_name || '(' || data_type || ')'
+                               WHEN data_type = 'NUMBER' AND NVL(t.data_precision, -1) = -1 AND nvl(data_scale, 0) = 0 THEN
+                                'INTEGER'
+                               WHEN data_type IN ('FLOAT',
+                                                  'INTEGER',
+                                                  'INT',
+                                                  'BINARY_INTEGER',
+                                                  'BINARY_FLOAT',
+                                                  'BINARY_DOUBLE',
+                                                  'PL/SQL BOOLEAN',
+                                                  'PL/SQL RECORD') THEN
+                                data_type
+                               WHEN (t.data_type LIKE 'TIMESTAMP%' OR t.data_type LIKE 'INTERVAL DAY%' OR
+                                    t.data_type LIKE 'INTERVAL YEAR%' OR t.data_type = 'DATE' OR
+                                    (t.data_type = 'NUMBER' AND ((t.data_precision = 0) OR NVL(t.data_precision, -1) = -1) AND
+                                    nvl(t.data_scale, -1) = -1)) THEN
+                                data_type
+                               ELSE
+                                data_type || --
+                                NULLIF('(' || TRIM(CASE
+                                                       WHEN t.data_type IN ('VARCHAR', 'VARCHAR2', 'RAW', 'CHAR') THEN
+                                                        DECODE((SELECT VALUE FROM nls_session_parameters WHERE PARAMETER = 'NLS_LENGTH_SEMANTICS'),
+                                                               'BYTE',
+                                                               DECODE(char_used, 'B', t.data_length || '', t.char_length || ' CHAR'),
+                                                               DECODE(char_used, 'B', t.data_length || ' BYTE', t.char_length || ' CHAR'))
+                                                       WHEN t.data_type IN ('NVARCHAR2', 'NCHAR') AND nvl(t.data_length, -1) != -1 THEN
+                                                        t.data_length / 2 || ''
+                                                       WHEN ((t.data_type = 'NUMBER' AND NVL(t.data_precision, -1) = -1) AND (nvl(t.data_scale, -1) != -1)) THEN
+                                                        '38,' || t.data_scale
+                                                       WHEN (t.data_scale = 0 OR nvl(t.data_scale, -1) = -1) THEN
+                                                        t.data_precision || ''
+                                                       WHEN (t.data_precision != 0 AND t.data_scale != 0) THEN
+                                                        t.data_precision || ',' || t.data_scale
+                                                   END) || ')',
+                                       '()')
+                           END data_type,
+                           IN_OUT,
+                           decode(t.defaulted, 'Y', 'Yes', 'No') defaulted,
+                           CHARACTER_SET_NAME charset
+                    FROM   all_arguments t
+                    WHERE  owner = own
+                    AND    object_id = oid
+                    AND    object_name = oname) 
+            MODEL PARTITION BY(0+overload o) DIMENSION BY(s, l) 
+            MEASURES(CAST(p AS VARCHAR2(30)) p, Argument, data_type, IN_OUT, defaulted, CHARSET) 
+            RULES SEQUENTIAL ORDER(
+                p [ANY,ANY] ORDER BY s = max(p) [ s < cv(s), CV(l) - 1 ] || '.' || lpad(p [ CV(), CV() ],4),
+                p [9999,0]='-',
+                CHARSET[9999,0]=rpad(' ',8)||'$NOR$'
+            )
+            ORDER  BY o, s;
+        $ELSE
+
         BEGIN 
             EXECUTE IMMEDIATE '
                 SELECT /*+index(a) opt_param(''_optim_peek_user_binds'',''false'') no_expand*/ 
@@ -44,7 +122,7 @@ local desc_sql={
                 WHERE  OBJ# = 0+:id
                 AND   (PROCEDURE$ IS NULL OR PROCEDURE$=:name)
                 ORDER BY OVERLOAD#,SEQUENCE#'
-            BULK COLLECT INTO arg,over,posn,dtyp,defv,inout,levl,len,prec,scal USING :object_id,nvl(:object_subname, :object_name);
+            BULK COLLECT INTO arg,over,posn,dtyp,defv,inout,levl,len,prec,scal USING oid,oname;
         
         EXCEPTION WHEN OTHERS THEN
             v_target:='"'||replace(v_target,'.','"."')||'"';
@@ -118,7 +196,7 @@ local desc_sql={
             v_xml   := v_xml.AppendChildXML('//ROWSET', XMLTYPE(v_stack));
         END LOOP;
 
-        OPEN :v_cur FOR
+        OPEN cur FOR
             SELECT /*+no_merge(a) no_merge(b) use_nl(b a) push_pred(a) ordered*/
                      decode(b.pos,'-1','---',decode(b.overload,0,'', b.overload||'.') || b.pos) NO#,
                      lpad(' ',b.lv*2)||decode(0+regexp_substr(b.pos,'\d+$'), 0, '(RETURNS)', Nvl(b.argument_name, '<Collection>')) Argument,
@@ -149,13 +227,16 @@ local desc_sql={
                            extractvalue(column_value, '/ROW/INOUT') + 0 INOUT
                     FROM   TABLE(XMLSEQUENCE(EXTRACT(v_xml, '/ROWSET/ROW')))) b,
                     all_arguments a
-            WHERE  a.owner(+) = :owner
-            AND    a.object_name(+) = nvl(:object_subname, :object_name)
+            WHERE  a.owner(+) = own
+            AND    a.object_id(+) = oid
+            AND    a.object_name(+) = oname
             AND    nvl(a.overload(+), -1) = nvl(b.overload,-1)
             AND    a.position(+) = 0+regexp_substr(b.pos,'\d+$')
             AND    a.sequence(+)=b.seq
             AND    a.data_level(+) = b.lv
             ORDER  BY b.overload, b.seq ,b.pos;
+        $END
+        :v_cur := cur;
     END;]],
 
     PACKAGE=[[
@@ -179,6 +260,7 @@ local desc_sql={
                 AND    NVL(a.OVERLOAD, -1) = NVL(b.OVERLOAD, -1)
                 AND    position = 0
                 AND    b.owner=a.owner
+                AND    b.object_id=a.object_id
                 AND    b.object_name = a.procedure_name) RETURNS,
                (SELECT COUNT(1)
                 FROM   all_Arguments b
@@ -186,6 +268,7 @@ local desc_sql={
                 AND    NVL(a.OVERLOAD, -1) = NVL(b.OVERLOAD, -1)
                 AND    position > 0
                 AND    b.owner=a.owner
+                AND    b.object_id=a.object_id
                 AND    b.object_name = a.procedure_name) ARGUMENTS,
                AGGREGATE,
                PIPELINED,
@@ -194,7 +277,7 @@ local desc_sql={
                DETERMINISTIC,
                AUTHID
         FROM   ALL_PROCEDURES a
-        WHERE  owner=:owner and object_id =:object_id and object_name=:object_name
+        WHERE  owner=:owner and object_name=:object_name
         AND    SUBPROGRAM_ID > 0
     ) ORDER  BY NO#]],
 
@@ -298,7 +381,7 @@ local desc_sql={
                NUM_BUCKETS buckets,
                --(select trim(comments) from all_col_comments where owner=a.owner and table_name=a.table_name and column_name=a.column_name) comments,
                case when low_value is not null then 
-               decode(dtype
+               substrb(decode(dtype
                   ,'NUMBER'       ,to_char(utl_raw.cast_to_number(low_value))
                   ,'FLOAT'        ,to_char(utl_raw.cast_to_number(low_value))
                   ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(low_value))
@@ -333,9 +416,9 @@ local desc_sql={
                           lpad(TO_NUMBER(SUBSTR(low_value, 9, 2), 'XX')-1,2,0)|| ':' ||
                           lpad(TO_NUMBER(SUBSTR(low_value, 11, 2), 'XX')-1,2,0)|| ':' ||
                           lpad(TO_NUMBER(SUBSTR(low_value, 13, 2), 'XX')-1,2,0)
-                  ,  low_value) end low_value,
+                  ,  low_value),1,32) end low_value,
                 case when high_value is not null then 
-                decode(dtype
+                substrb(decode(dtype
                       ,'NUMBER'       ,to_char(utl_raw.cast_to_number(high_value))
                       ,'FLOAT'        ,to_char(utl_raw.cast_to_number(high_value))
                       ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(high_value))
@@ -370,7 +453,7 @@ local desc_sql={
                                 lpad(TO_NUMBER(SUBSTR(high_value, 9, 2), 'XX')-1,2,0)|| ':' ||
                                 lpad(TO_NUMBER(SUBSTR(high_value, 11, 2), 'XX')-1,2,0)|| ':' ||
                                 lpad(TO_NUMBER(SUBSTR(high_value, 13, 2), 'XX')-1,2,0)
-                        ,  high_value) end high_value
+                        ,  high_value),1,32) end high_value
         FROM   (select a.*,regexp_replace(data_type,'\(.+\)') dtype from all_tab_cols a where a.owner=:owner and a.table_name=:object_name) a,
                (select * from all_tables a where a.owner=:owner and a.table_name=:object_name) b
         WHERE  a.table_name=b.table_name(+)
@@ -393,28 +476,28 @@ local desc_sql={
                     AND    C.INDEX_NAME(+) = I.INDEX_NAME
                     AND    I.TABLE_OWNER = :owner
                     AND    I.TABLE_NAME = :object_name)
-        SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('_optim_peek_user_binds','false')
-             DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
-             DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
-             DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
-             DECODE(C.COLUMN_POSITION, 1, DECODE(I.UNIQUENESS,'UNIQUE','YES','NO'), '') "UNIQUE",
-             DECODE(C.COLUMN_POSITION, 1, NVL(PARTITIONED_BY||NULLIF(','||SUBPART_BY,','),'NO'), '') "PARTITIONED",
-             DECODE(C.COLUMN_POSITION, 1, LOCALITY, '') "LOCALITY",
-           --DECODE(C.COLUMN_POSITION, 1, (SELECT NVL(MAX('YES'),'NO') FROM ALL_Constraints AC WHERE AC.INDEX_OWNER = I.OWNER AND AC.INDEX_NAME = I.INDEX_NAME), '') "IS_PK",
-             DECODE(C.COLUMN_POSITION, 1, decode(I.STATUS,'N/A',(SELECT MIN(STATUS) FROM All_Ind_Partitions p WHERE p.INDEX_OWNER = I.OWNER AND p.INDEX_NAME = I.INDEX_NAME),I.STATUS), '') STATUS,
-             DECODE(C.COLUMN_POSITION, 1, i.BLEVEL) BLEVEL,
-             DECODE(C.COLUMN_POSITION, 1, round(100*i.CLUSTERING_FACTOR/greatest(i.num_rows,1),2)) "CF/ROW(%)",
-             DECODE(C.COLUMN_POSITION, 1, i.LEAF_BLOCKS) LEAF_BLOCKS,
-             DECODE(C.COLUMN_POSITION, 1, i.DISTINCT_KEYS) DISTINCTS,
-             DECODE(C.COLUMN_POSITION, 1, AVG_LEAF_BLOCKS_PER_KEY) "LB/KEY",
-             DECODE(C.COLUMN_POSITION, 1, AVG_DATA_BLOCKS_PER_KEY) "DB/KEY",
-             DECODE(C.COLUMN_POSITION, 1, ceil(i.num_rows/greatest(i.DISTINCT_KEYS,1))) CARD,
-             DECODE(C.COLUMN_POSITION, 1, i.LAST_ANALYZED) LAST_ANALYZED,
-             C.COLUMN_POSITION NO#,
-             C.COLUMN_NAME,
-             E.COLUMN_EXPRESSION COLUMN_EXPR,
-             C.DESCEND
-        FROM   ALL_IND_COLUMNS C,  I, all_ind_expressions e
+        SELECT /*+no_parallel leading(i c e) opt_param('_optim_peek_user_binds','false') opt_param('_sort_elimination_cost_ratio',5)*/
+                DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
+                DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
+                DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
+                DECODE(C.COLUMN_POSITION, 1, DECODE(I.UNIQUENESS,'UNIQUE','YES','NO'), '') "UNIQUE",
+                DECODE(C.COLUMN_POSITION, 1, NVL(PARTITIONED_BY||NULLIF(','||SUBPART_BY,','),'NO'), '') "PARTITIONED",
+                DECODE(C.COLUMN_POSITION, 1, LOCALITY, '') "LOCALITY",
+                --DECODE(C.COLUMN_POSITION, 1, (SELECT NVL(MAX('YES'),'NO') FROM ALL_Constraints AC WHERE AC.INDEX_OWNER = I.OWNER AND AC.INDEX_NAME = I.INDEX_NAME), '') "IS_PK",
+                DECODE(C.COLUMN_POSITION, 1, decode(I.STATUS,'N/A',(SELECT MIN(STATUS) FROM All_Ind_Partitions p WHERE p.INDEX_OWNER = I.OWNER AND p.INDEX_NAME = I.INDEX_NAME),I.STATUS), '') STATUS,
+                DECODE(C.COLUMN_POSITION, 1, i.BLEVEL) BLEVEL,
+                DECODE(C.COLUMN_POSITION, 1, round(100*i.CLUSTERING_FACTOR/greatest(i.num_rows,1),2)) "CF/ROW(%)",
+                DECODE(C.COLUMN_POSITION, 1, i.LEAF_BLOCKS) LEAF_BLOCKS,
+                DECODE(C.COLUMN_POSITION, 1, i.DISTINCT_KEYS) DISTINCTS,
+                DECODE(C.COLUMN_POSITION, 1, AVG_LEAF_BLOCKS_PER_KEY) "LB/KEY",
+                DECODE(C.COLUMN_POSITION, 1, AVG_DATA_BLOCKS_PER_KEY) "DB/KEY",
+                DECODE(C.COLUMN_POSITION, 1, ceil(i.num_rows/greatest(i.DISTINCT_KEYS,1))) CARD,
+                DECODE(C.COLUMN_POSITION, 1, i.LAST_ANALYZED) LAST_ANALYZED,
+                C.COLUMN_POSITION NO#,
+                C.COLUMN_NAME,
+                E.COLUMN_EXPRESSION COLUMN_EXPR,
+                C.DESCEND
+        FROM   I,  ALL_IND_COLUMNS C,  all_ind_expressions e
         WHERE  C.INDEX_OWNER = I.OWNER
         AND    C.INDEX_NAME = I.INDEX_NAME
         AND    C.INDEX_NAME = e.INDEX_NAME(+)
@@ -424,7 +507,7 @@ local desc_sql={
         AND    c.table_name =e.table_name(+)
         ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION]],
     [[
-        SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('_optim_peek_user_binds','false')
+        SELECT /*INTERNAL_DBCLI_CMD*/ --+no_parallel opt_param('_optim_peek_user_binds','false')
                DECODE(R, 1, CONSTRAINT_NAME) CONSTRAINT_NAME,
                DECODE(R, 1, CONSTRAINT_TYPE) CTYPE,
                DECODE(R, 1, R_TABLE) R_TABLE,
@@ -435,7 +518,7 @@ local desc_sql={
                DECODE(R, 1, DEFERRED) DEFERRED,
                DECODE(R, 1, VALIDATED) VALIDATED,
                COLUMN_NAME
-        FROM   (SELECT --+no_merge(a) ordered use_nl(a r c)
+        FROM   (SELECT --+no_merge(a) leading(a r c) use_nl(a r c)
                        A.CONSTRAINT_NAME,
                        A.CONSTRAINT_TYPE,
                        R.TABLE_NAME R_TABLE,
@@ -462,17 +545,17 @@ local desc_sql={
                                 FROM   r1
                                 START  WITH column_position = 1
                                 CONNECT BY PRIOR column_position = column_position - 1) PARTITIONED_BY,
-        PARTITION_COUNT PARTS,
-        SUBPARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
-                                    FROM   R2
-                                    START  WITH column_position = 1
-                                    CONNECT BY PRIOR column_position = column_position - 1) SUBPART_BY,
-        def_subpartition_count subs,
-        DEF_TABLESPACE_NAME,
-        DEF_PCT_FREE,
-        DEF_INI_TRANS,
-        DEF_LOGGING,
-        DEF_COMPRESSION
+            PARTITION_COUNT PARTS,
+            SUBPARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
+                                        FROM   R2
+                                        START  WITH column_position = 1
+                                        CONNECT BY PRIOR column_position = column_position - 1) SUBPART_BY,
+            def_subpartition_count subs,
+            DEF_TABLESPACE_NAME,
+            DEF_PCT_FREE,
+            DEF_INI_TRANS,
+            DEF_LOGGING,
+            DEF_COMPRESSION
     FROM   all_part_tables
     WHERE  table_name = :object_name
     AND    owner = :owner]],
@@ -513,7 +596,7 @@ local desc_sql={
                 nullif(a.HISTOGRAM,'NONE') HISTOGRAM，
                 a.NUM_BUCKETS buckets,
                 case when a.low_value is not null then 
-                decode(dtype
+                substrb(decode(dtype
                   ,'NUMBER'       ,to_char(utl_raw.cast_to_number(a.low_value))
                   ,'FLOAT'        ,to_char(utl_raw.cast_to_number(a.low_value))
                   ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(a.low_value))
@@ -545,9 +628,9 @@ local desc_sql={
                           lpad(TO_NUMBER(SUBSTR(a.low_value, 9, 2), 'XX')-1,2,0)|| ':' ||
                           lpad(TO_NUMBER(SUBSTR(a.low_value, 11, 2), 'XX')-1,2,0)|| ':' ||
                           lpad(TO_NUMBER(SUBSTR(a.low_value, 13, 2), 'XX')-1,2,0)
-                  ,  a.low_value) end a.low_value,
+                  ,  a.low_value),1,32) end a.low_value,
                 case when a.high_value is not null then 
-                decode(dtype
+                substrb(decode(dtype
                       ,'NUMBER'       ,to_char(utl_raw.cast_to_number(a.high_value))
                       ,'FLOAT'        ,to_char(utl_raw.cast_to_number(a.high_value))
                       ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(a.high_value))
@@ -579,7 +662,7 @@ local desc_sql={
                                 lpad(TO_NUMBER(SUBSTR(a.high_value, 9, 2), 'XX')-1,2,0)|| ':' ||
                                 lpad(TO_NUMBER(SUBSTR(a.high_value, 11, 2), 'XX')-1,2,0)|| ':' ||
                                 lpad(TO_NUMBER(SUBSTR(a.high_value, 13, 2), 'XX')-1,2,0)
-                        ,  a.high_value) end a.high_value
+                        ,  a.high_value),1,32) end a.high_value
          FROM   (select c.*,regexp_replace(data_type,'\(.+\)') dtype from all_tab_cols c) c,  all_Part_Col_Statistics a ,all_tab_partitions  b
          WHERE  a.owner=c.owner and a.table_name=c.table_name
          AND    a.column_name=c.column_name
@@ -615,9 +698,9 @@ function desc.desc(name,option)
                        regexp_substr(obj,'[^/]+', 1, 3) object_name,
                        regexp_substr(obj,'[^/]+', 1, 4) object_type
                  FROM   (SELECT (SELECT o.object_id || '/' || o.owner || '/' || o.object_name || '/' ||
-                                           o.object_type
-                                   FROM   ALL_OBJECTS o
-                                   WHERE  OBJECT_ID = obj) OBJ, lv
+                                        o.object_type
+                                 FROM   ALL_OBJECTS o
+                                 WHERE  OBJECT_ID = obj) OBJ, lv
                           FROM   r)
                  ORDER  BY lv)
         WHERE  object_type != 'SYNONYM'
@@ -627,8 +710,6 @@ function desc.desc(name,option)
         if type(new_obj)=="table" and new_obj[1] then
             obj.object_id,obj.owner,obj.object_name,obj.object_type=table.unpack(new_obj)
         end
-    elseif obj.object_type=='PACKAGE' or obj.object_type=='PROCEDURE' or obj.object_type=='FUNCTION' then
-        obj.object_id=db:dba_query(db.get_value,'select object_id from all_procedures where owner=:1 and object_name=:2 and rownum<2',{obj.owner,obj.object_name})
     end
 
     rs={obj.owner,obj.object_name,obj.object_subname or "",
@@ -651,39 +732,7 @@ function desc.desc(name,option)
     cfg.set("feed","off",true)
     print(("%s : %s%s%s\n"..dels):format(rs[4],rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3]))
     
-    --[[
-    local function travel(list)
-        local grid_cfg
-        for index,sql in ipairs(list) do
-            if type(sql)=="table" then 
-                travel(sql)
-            elseif type(sql)=="string" and #sql>10 then
-                --if sql:find("/*PIVOT*/",1,true) then cfg.set("PIVOT",1) end
-                sql,grid_cfg=env.grid.get_config(sql)
-                local typ=db.get_command_type(sql)
-                local result
-                if typ=='DECLARE' or typ=='BEGIN' then
-                    rs['v_cur']='#CURSOR'
-                    db:dba_query(db.internal_call,sql,rs)
-                    result=rs.v_cur
-                else
-                    result=db:dba_query(db.internal_call,sql,rs)
-                end
-                list[index]=db.resultset:rows(result,-1)
-                list[index].bypassemptyrs=true
-                for k,v in pairs(grid_cfg) do list[index][k]=v end
-            end 
-        end
-    end
-    travel(sqls)
-    
-    if #sqls==1 then
-        env.grid.print(sqls[1])
-    else
-        env.grid.merge(sqls,true)
-    end
-    --]]
-    
+
     for i,sql in ipairs(sqls) do
         if sql:find("/*PIVOT*/",1,true) then cfg.set("PIVOT",1) end
         local typ=db.get_command_type(sql)

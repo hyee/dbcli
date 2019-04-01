@@ -58,7 +58,7 @@ BEGIN
         DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'CONSTRAINTS_AS_ALTER', FALSE);
         --DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'PARTITIONING', FALSE);
         txt := dbms_metadata.get_ddl(REPLACE(obj_type, ' ', '_'), part1, SCHEM);
-        IF obj_type = 'TABLE' THEN
+        IF REGEXP_SUBSTR(obj_type,'[^ +]') in ('TABLE','ANALYTIC','HIERARCHY','ATTRIBUTE') THEN
             BEGIN
                 dbms_lob.append(txt,dbms_metadata.GET_DEPENDENT_DDL('INDEX', part1, SCHEM));
                 NULL;
@@ -69,8 +69,8 @@ BEGIN
         END IF;
         DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'DEFAULT');
         txt := regexp_replace(txt, '\(' || chr(9), '(' || chr(10) || chr(9), 1, 1);
-        IF obj_type IN ('TABLE', 'INDEX') THEN
-            txt := regexp_replace(txt, '"([A-Z0-9$#\_]+)"', '\1');
+        IF REGEXP_SUBSTR(obj_type,'[^ +]') NOT IN('TRIGGER','FUNCTION','PROCEDURE','PACKAGE') THEN
+            txt := regexp_replace(txt, '"([A-Z][A-Z0-9$#\_]+)"', '\1');
         END IF;
     END IF;
     :text := txt;

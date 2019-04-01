@@ -22,7 +22,7 @@ SELECT /*+ordered use_nl(a b)*/
      parse,
      val &v2,
      pct,
-     val/nvl(execs,nullif(parse,0)) "AVG",
+     round(val/nullif(decode(execs,0,floor(parse/greatest(px_count,1)),execs),0),2) "AVG",
      (SELECT trim(substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'['||chr(10)||chr(13)||chr(9)||' ]+',' '),1,200)) text FROM DBA_HIST_SQLTEXT WHERE SQL_ID=regexp_substr(a.sql_id,'\w+') and dbid=a.dbid and rownum<2) SQL_TEXT
 FROM (SELECT rownum r,
              ratio_to_report(val) over() pct,
@@ -51,7 +51,8 @@ FROM (SELECT rownum r,
                                     'px',PX_SERVERS_EXECS,
                                     s.elapsed_time))) val,
                    nullif(SUM(s.executions),0) execs,
-                   sum(s.PARSE_CALLS) parse
+                   sum(s.PARSE_CALLS) parse,
+                   sum(s.px_servers_execs) px_count
             FROM   qry,&&awr$sqlstat s
             WHERE  (qry.inst in('A','0') or qry.inst= ''||s.instance_number)
             AND    s.end_time BETWEEN qry.st and qry.ed

@@ -17,6 +17,7 @@ oracle.module_list={
     "sys",
     "show",
     "exa",
+    "rac",
     "chart",
     "ssh",
     "extvars",
@@ -63,7 +64,7 @@ function oracle:helper(cmd)
 end
 
 function oracle:connect(conn_str)
-    local args,usr,pwd,conn_desc,url,isdba,server,server_sep,proxy_user
+    local args,usr,pwd,conn_desc,url,isdba,server,server_sep,proxy_user,params,_
     local sqlplustr
     local driver="thin"
     if type(conn_str)=="table" then --from 'login' command
@@ -71,17 +72,23 @@ function oracle:connect(conn_str)
         server,proxy_user,sqlplustr=args.server,args.PROXY_USER_NAME,packer.unpack_str(args.oci_connection)
         usr,pwd,url,isdba=conn_str.user,packer.unpack_str(conn_str.password),conn_str.url,conn_str.internal_logon
         args.password=pwd
+        if url and url:find("?",1,true) then
+            url,params=url:match('(.*)(%?.*)')
+        end
     else
         conn_str=conn_str or ""
-        usr,pwd,conn_desc = conn_str:match("(.*)/(.*)@(.+)")
+        usr,_,pwd,conn_desc = conn_str:match('(.*)/("?)(.*)%2@(.+)')
         url, isdba=(conn_desc or conn_str):match('^(.*) as (%w+)$')
+        if conn_desc and conn_desc:find("?",1,true) then
+            conn_desc,params=conn_desc:match('(.*)(%?.*)')
+        end
         if conn_desc == nil then
-            if conn_str:find("/",1,true) and not conn_str:find("@",1,true) then
-                if not conn_str:find('/ ',1,true)==1 and os.getenv("TWO_TASK") then
-                    conn_str=(url or conn_str)..'@'..os.getenv("TWO_TASK")..(isdba and ('as '..isdba) or '')
-                    usr,pwd,conn_desc = conn_str:match("(.*)/(.*)@(.+)")
-                    url, isdba=(conn_desc or conn_str):match('^(.*) as (%w+)$')
-                elseif conn_str:find('/ ',1,true)==1 and isdba then
+            local idx,two_task=conn_str:find("/",1,true),os.getenv("TWO_TASK")
+            if idx and not conn_str:find("@",1,true) then
+                if idx~=1 and two_task then
+                    conn_str=(url or conn_str)..'@'..two_task..(isdba and (' as '..isdba) or '')
+                    return self:connect(conn_str)
+                elseif idx==1 and isdba then
                     env.checkerr(home and os.getenv("ORACLE_SID"),"Environment variable ORACLE_HOME/ORACLE_SID is not found, cannot login with oci driver!")
                     driver,usr,pwd,conn_desc,url="oci8","sys","sys","/ as sysdba",""
                 end
@@ -117,8 +124,7 @@ function oracle:connect(conn_str)
             end
         end
     end
-    args=args or {user=usr,password=pwd,url="jdbc:oracle:"..driver..":@"..url,internal_logon=isdba}
-
+    args=args or {user=usr,password=pwd,url="jdbc:oracle:"..driver..":@"..url..(params or ''),internal_logon=isdba}
     self:merge_props(
         {driverClassName="oracle.jdbc.driver.OracleDriver",
          defaultRowPrefetch=tostring(cfg.get("FETCHSIZE")),
@@ -145,9 +151,7 @@ function oracle:connect(conn_str)
          ['oracle.jdbc.timezoneAsRegion']='false'
         },args)
     self:load_config(url,args)
-    if args.db_version and tonumber(args.db_version:match("(%d+)"))>0 then
-        args['oracle.jdbc.mapDateToTimestamp']=nil
-    end
+
     if args.jdbc_alias or not sqlplustr then
         local pwd=args.password
         if not pwd:find('^[%w_%$#]+$') and not pwd:find('^".*"$') then
@@ -168,7 +172,7 @@ function oracle:connect(conn_str)
     self.conn_str=sqlplustr
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    self.props={instance="#NUMBER",sid="#NUMBER"}
+    self.props={instance="#NUMBER",sid="#NUMBER",version="#NUMBER"}
     for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container','israc','privs'} do 
         self.props[v]="#VARCHAR" 
     end
@@ -185,11 +189,13 @@ function oracle:connect(conn_str)
             EXECUTE IMMEDIATE 'alter session set nls_timestamp_tz_format=''yyyy-mm-dd hh24:mi:ssxff TZH:TZM''';
             BEGIN
                 EXECUTE IMMEDIATE 'alter session set statistics_level=all';
+                EXECUTE IMMEDIATE 'alter session set "_query_execution_cache_max_size"=8388608';
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
 
             BEGIN
                 EXECUTE IMMEDIATE 'alter session set optimizer_ignore_hints=false';
+                EXECUTE IMMEDIATE 'alter session set optimizer_ignore_parallel_hints=false';
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
 
@@ -226,8 +232,8 @@ function oracle:connect(conn_str)
                    sys_context('userenv', 'isdba') isdba,
                    nvl(sv,sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.')) service_name,
                    decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY',' ','PHYSICAL STANDBY',' (Standby)>')) END,
-                   decode((select count(distinct inst_id) from gv$version),1,'FALSE','TRUE')
-            INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :container, :isdba, :service_name,:db_role, :israc
+                   decode((select count(distinct inst_id) from gv$version),1,'FALSE','TRUE'),vs
+            INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :container, :isdba, :service_name,:db_role, :israc,:version
             FROM   nls_Database_Parameters
             WHERE  parameter = 'NLS_CHARACTERSET';
             
@@ -458,16 +464,6 @@ function oracle:disconnect(...)
 end
 
 local is_executing=false
-function oracle:dba_query(func,sql,args)
-    local sql1,count,success,res=sql:gsub('([Aa][Ll][Ll]%_)','dba_')
-    if count>0 then
-        is_executing=true
-        success,res=pcall(func,self,sql1,args)
-        is_executing=false
-    end
-    if not success then res=func(self,sql,args) end
-    return res,args
-end
 
 local ignore_errors={
     ['ORA-00028']='Connection is lost, please login again.',
@@ -557,12 +553,12 @@ function oracle:onload()
     end
 
     add_single_line_stmt('commit','rollback','savepoint')
-    add_default_sql_stmt('update','delete','insert','merge','truncate','drop','flashback')
-    add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge','audit','noaudit','comment')
+    add_default_sql_stmt('update','delete','insert','merge','truncate','drop','flashback','associate','disassociate')
+    add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge','audit','noaudit','comment','call')
     set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
     set_command(self,"select",   default_desc,        self.query     ,true,1,true)
     set_command(self,"with",   default_desc,        self.query     ,self.check_completion,1,true)
-    set_command(self,{"execute","exec","call"},default_desc,self.run_proc,false,2,true)
+    set_command(self,{"execute","exec"},default_desc,self.run_proc,false,2,true)
     set_command(self,{"declare","begin"},  default_desc,  self.query  ,self.check_completion,1,true)
     set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)
     set_command(self,"alter" ,   default_desc,        self.exec      ,true,1,true)

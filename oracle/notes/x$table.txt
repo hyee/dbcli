@@ -1,0 +1,274 @@
+ [K]ernel Layer
+   [2]-Phase Commit
+     [G]lobal [T]ransaction [E]ntry
+       X$K2GTE  - Current 2PC tx
+       X$K2GTE2 - Current 2PC tx
+   [C]ache Layer
+     [B]uffer Management
+       Buffer [H]ash
+         X$BH - Hash Table
+       Buffer LRU Statistics
+         X$KCBCBH - [C]urrent [B]uffers (buckets) - lru_statistics
+         X$KCBRBH - [R]ecent [B]uffers (buckets) - lru_extended
+       Buffer [WAIT]s
+         X$KCBWAIT  - Waits by block class
+         X$KCBFWAIT - Waits by File
+       [W]orking Sets - 7.3 or higher
+         X$KCBWDS - Set [D]escriptors
+     [C]ontrol File Management
+       [C]ontrol [F]ile List - 7.0.16 or higher
+         X$KCCCF - Control File Names & status
+       [D]atabase [I]nformation
+         X$KCCDI - Database Information
+       Data [F]iles
+         X$KCCFE - File [E]ntries ( from control file )
+         X$KCCFN - [F]ile [N]ames
+       [L]og Files
+         X$KCCLE - Log File [E]ntries
+         X$KCCLH - Log [H]istory ( archive entries )
+       Thread Information
+         X$KCCRT - [R]edo [T]hread Information
+       Tablespace Information
+         X$KCCTS - [T]able[S]pace Information
+     [F]ile Management
+       X$KCFIO - File [IO] Statistics
+     [L]ock Manager Component ( LCK )
+       [H]ash and Bucket Tables - 7.0.15 to 7.1.1, and 7.2.0 or higher
+         X$KCLFH - File [H]ash Table
+         X$KCLFI - File Bucket Table
+       X$LE - Lock [E]lements
+       X$LE_STAT - Lock Conversion [STAT]istics
+       X$KCLFX - Lock Element [F]ree list statistics - 7.3 or higher
+       X$KCLLS - Per LCK free list statistics - 7.3 or higher
+       X$KCLQN - [N]ame (hash) table statistics - 7.3 or higher
+     [R]edo Component
+       [M]edia recovery  - kcra.h - 7.3 or higher
+         X$KCRMF - [F]ile context
+         X$KCRMT - [T]hread context
+         X$KCRMX - Recovery Conte[X]t
+       [F]ile read
+         X$KCRFX - File Read Conte[X]t -  7.3 or higher
+     Reco[V]ery Component
+       [F]ile [H]eaders
+         X$KCVFH - All file headers
+         X$KCVFHMRR - Files with [M]edia [R]ecovery [R]equired
+         X$KCVFHONL - [ONL]ine File headers
+     [K]ompatibility Management - 7.1.1 or higher
+       X$KCKCE - [C]ompatibility Segment [E]ntries
+       X$KCKTY - Compatibility [TY]pes
+       X$KCKFM - Compatibility [F]or[M]ats ( index into X$KCKCE )
+   [D]ata Layer
+     Sequence [N]umber Component
+        X$KDNCE - Sequence [C]ache [E]ntries - 7.2 or lower
+       [S]equence Enqueues - common area for enqueue objects
+         X$KDNSSC - [C]ache Enqueue Objects - 7.2 or lower
+         X$KDNSSF - [F]lush Enqueue Objects - 7.2 or lower
+       X$KDNST - Cache [ST]atistics - 7.2 or lower
+     Inde[X] Block Component
+       X$KDXHS - Index [H]i[S]togram
+       X$KDXST - Index [ST]atistics
+   [G]eneric Layer
+     [H]eap Manager
+       X$KGHLU - State (summary) of [L]R[U] heap(s) - defined in ksmh.h
+     [I]nstantiation Manager
+       [C]ursor [C]ache
+         X$KGICC - Session statistics - defined in kqlf.h
+         X$KGICS - System wide statistics - defined in kqlf.h
+     [L]ibrary Cache Manager  ( defined and mapped from kqlf )
+       Bind Variables
+         X$KKSBV - Library Object [B]ind [V]ariables
+       Object Cache
+         X$KGLOB - All [OB]jects
+         X$KGLTABLE   - Filter for [TABLE]s
+         X$KGLBODY    - Filter for [BODY] ( packages )
+         X$KGLTRIGGER - Filter for [TRIGGER]s
+         X$KGLINDEX   - Filter for [INDEX]es
+         X$KGLCLUSTER - Filter for [CLUSTER]s
+         X$KGLCURSOR  - Filter for [CURSOR]s
+       Cache Dependency
+         X$KGLDP - Object [D]e[P]endency table
+         X$KGLRD - [R]ead only [D]ependency table - 7.3 or higher
+       Object Locks
+         X$KGLLK - Object [L]oc[K]s
+       Object Names
+         X$KGLNA - Object [NA]mes (sql text)
+         X$KGLNA1 - Object [NA]mes (sql text) with newlines - 7.2.0 or higher
+       Object Pins
+         X$KGLPN - Object [P]i[N]s
+       Cache Statistics
+         X$KGLST - Library cache [ST]atistics
+       Translation Table
+         X$KGLTR - Address [TR]anslation
+       Access Table
+         X$KGLXS - Object Access Table
+       Authorization Table - 7.1.5 or higher
+         X$KGLAU - Object Authorization table
+       Latch Cleanup - 7.0.15 or higher
+         X$KGLLC - [L]atch [C]leanup for Cache/Pin Latches
+   [K]ompile Layer
+     [S]hared Objects
+       X$KKSAI - Cursor [A]llocation [I]nformation - 7.3.2 or higher
+   [L]oader
+     [L]ibrary
+       X$KLLCNT - [C]o[NT]rol Statistics
+       X$KLLTAB - [TAB]le Statistics
+   [M]ulti-Threaded Layer
+     [C]ircuit component
+       X$KMCQS - Current [Q]ueue [S]tate
+       X$KMCVC - [V]irtual [C]ircuit state
+     [M]onitor Server/dispatcher
+       [D]ispatcher
+         X$KMMDI - [D]ispatcher [I]nfo (status)
+          X$KMMDP - [D]ispatcher Config ( [P]rotocol info )
+       [S]erver
+         X$KMMSI - [S]erver [I]nfo ( status )
+       X$KMMSG - [SG]a info ( global statistics)
+       X$KMMRD - [R]equest timing [D]istributions
+   s[Q]l Version and Option Layer
+     Kernel [V]ersions
+       X$VERSION - Library versions
+     Kernel [O]ptions - 7.1.3 or higher
+       X$OPTION - Server Options
+   [Q]uery Layer
+     [D]ictionary Cache Management
+       X$KQDPG - [PG]a row cache cursor statistics
+     [F]ixed Tables/views Management
+       X$KQFCO - Table [CO]lumn definitions
+       X$KQFDT - [D]erived [T]ables
+       X$KQFSZ - Kernel Data structure type [S]i[Z]es
+       X$KQFTA - Fixed [TA]bles
+       X$KQFVI - Fixed [VI]ews
+       X$KQFVT - [V]iew [T]ext definition - 7.2.0 or higher
+     [R]ow Cache Management
+       X$KQRST - Cache [ST]atistics
+       X$KQRPD - [P]arent Cache [D]efinition - 7.1.5 or higher
+       X$KQRSD - [S]ubordinate Cache [D]efinition - 7.1.5 or higher
+   [S]ervice Layer
+     [B]ackground Management
+       [D]etached Process
+         X$KSBDD - Detached Process [D]efinition (info)
+         X$KSBDP - Detached [P]rocess Descriptor (name)
+         X$MESSAGES - Background Message table
+     [I]nstance [M]anagement - 7.3 or higher
+       X$KSIMAT - Instance [AT]tributes
+       X$KSIMAV - [A]ttribute [V]alues for all instances
+       X$KSIMSI - [S]erial and [I]nstance numbers
+     [L]ock Management
+       [E]vent Waits
+         X$KSLED - Event [D]escriptors
+         X$KSLEI - [I]nstance wide statistics since startup
+         X$KSLES - Current [S]ession statistics
+       [L]atches
+         X$KSLLD - Latch [D]escriptor (name)
+         X$KSLLT - Latch statistics [ + Child latches @ 7.3 or higher ]
+         X$KSLLW - Latch context ( [W]here ) descriptors - 7.3 or higher
+         X$KSLPO - Latch [PO]st statistics - 7.3 or higher
+         X$KSLWSC- No[W]ait and [S]leep [C]ount stats by Context -7.3 or higher
+     [M]emory Management
+       [C]ontext areas
+         X$KSMCX - E[X]tended statistics on usage - 7.3.1 or lower
+       Heap Areas
+         X$KSMSP - SGA Hea[P]
+         X$KSMPP - [P]GA Hea[P] - 7.3.2 and above
+         X$KSMUP - [U]GA Hea[P] - 7.3.2 and above
+         X$KSMHP - Any [H]ea[P] - 7.3.2 and above
+         X$KSMSPR- [S]hared [P]ool [R]eserved List - 7.1.5 or higher
+       [L]east recently used shared pool chunks
+         X$KSMLRU - LR[U] flushes from the shared pool
+       [S]GA Objects
+         X$KSMSD - Size [D]efinition for Fixed/Variable summary
+         X$KSMSS - Statistics (lengths) of SGA objects
+       SGA [MEM]ory
+          X$KSMMEM - map of the entire SGA - 7.2.0 or higher
+         X$KSMFSV - Addresses of [F]ixed [S]GA [V]ariables - 7.2.1 or higher
+     [P]arameter Component
+         X$KSPPI  - [P]arameter [I]nfo ( Names )
+         X$KSPPCV - [C]urrent Session [V]alues - 7.3.2 or above
+         X$KSPPSV - [S]ystem [V]alues - 7.3.2 or above
+     En[Q]ueue Management
+       X$KSQDN - Global [D]atabase [N]ame
+       X$KSQEQ - [E]n[Q]ueue Object
+       X$KSQRS - Enqueue [R]e[S]ource
+       X$KSQST - Enqueue [S]tatistics by [T]ype
+     [U]ser Management
+       [C]ost
+         X$KSUCF - Cost [F]unction (resource limit)
+       [L]icence
+          X$KSULL - Licence [L]imits
+       [L]anguage Manager
+         X$NLS_PARAMETERS - NLS parameters
+         X$KSULV - NLS [V]alid Values - 7.1.2 or higher
+       [MY] [ST]atistics
+         X$KSUMYSTA - [MY] [ST]atisics (current session)
+       [P]rocess Info
+         X$KSUPL - Process (resource) [L]imits
+         X$KSUPRLAT - [LAT]ch Holder
+         X$KSUPR - Process object
+       [R]esource
+         X$KSURU - Resource [U]sage
+       [S]tatistics
+         X$KSUSD - [D]escriptors (statistic names)
+         X$KSUSGSTA - [G]lobal [ST]atistics
+       [SE]ssions
+         X$KSUSECST - Session status for events
+         X$KSUSESTA - Session [STA]tistics
+         X$KSUSECON - [CON]nection Authentication - 7.2.1 or higher
+         X$KSUSE - [SE]ssion Info
+         X$KSUSIO - [S]ystem [IO] statistics per session
+       [T]imer
+         X$KSUTM - Ti[M]e in 1/100th seconds
+       Instance [X]
+         X$KSUXSINST - [INST]ance state
+       [T]race management
+         X$TRACE - Current traced events
+         X$TRACES - All possible traces
+         X$KSTEX - Code [EX]ecution - 7.2.1 or higher
+     E[X]ecution Management
+       Device/Node [A]ffinity - 7.3.2 and above
+         X$KSXAFA - Current File/Node Affinity
+   [T]ransaction Layer
+     Table [A]ccess [D]efinition
+       X$KTADM - D[M]L lock
+     [C]ontrol Component
+       X$KTCXB - Transaction O[B]ject
+     [S]or[T] Segments - 7.3 or higher
+       X$KTSTSSD - [S]ort [S]egment [D]escriptor - per tablespace statistics
+     [T]ablespace
+       X$KTTVS - [V]alid [S]aveundo
+     [U]ndo
+       X$KTURD - Inuse [D]escriptors
+       X$KTUXE - Transaction [E]ntry (table) - 7.3.2 or above
+   Performance Layer [V] - 7.0.16 or higher
+      [I]nformation tables
+       X$KVII - [I]nitialisation Instance parameters
+       X$KVIS - [S]izes of structure elements
+       X$KVIT - [T]ransitory Instance parameters
+   Security Layer [Z]
+     [D]ictionary Component
+       X$KZDOS - [OS] roles
+     [S]ecurity State
+       X$KZSPR - Enabled [PR]ivileges
+       X$KZSRO - Enabled [RO]les
+     [R]emote Logins - 7.1.1 or higher
+       X$KZSRT - [R]emote Password File [T]able entries
+   E[X]ecution Layer
+     Parallel Query (Execute [F]ast) - 7.1.1 or higher
+       [P]rocess and Queue Manager
+         Statistics - 7.1.3 or higher
+           X$KXFPYS - S[YS]tem Statistics
+           X$KXFPDP - [D]etached [P]rocess (slave) statistics
+           X$KXFQSROW - Table [Q]ueue Statistics - 7.3.2 or higher
+         [C]oordinator Component
+           X$KXFPCST - Query [ST]atistics
+           X$KXFPCMS - [M]essage [S]tatistics
+           X$KXFPCDS - [D]equeue [S]tatistics
+         [S]lave Component
+           X$KXFPSST - Query [ST]atistics
+           X$KXFPSMS - [M]essage [S]tatistics
+           X$KXFPCDS - [D]equeue [S]tatistics
+     [S]hared Cursor
+       X$KXSBD - [B]ind [D]ata - 7.3.2 and above
+       X$KXSCC - SQL [C]ursor [C]ache Data - 7.3.2 and above
+ [N]etwork Layer - 7.0.15 or higher
+   Network [CO]nnections
+     X$UGANCO - Current [N]etwork [CO]nnections

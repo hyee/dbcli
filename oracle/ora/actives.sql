@@ -25,13 +25,13 @@
            <col>: field in v$session
     --[[
         &fields : {
-               s={coalesce(nullif(program_name,'0'),'['||regexp_replace(regexp_replace(nvl(a.module,a.program),' *\(.*\)$'),'.*@')||'('||osuser||')]') PROGRAM,program_line# line#},
+               s={coalesce(nullif(program_name,'0'),'['||regexp_replace(regexp_replace(nvl(a.module,a.program),' *\(.*\)$'),'.*@')||'('||osuser||')]') PROGRAM,program_line# line# },
                o={schemaname schema,osuser,logon_time,regexp_replace(machine,'(\..*|^.*\\)') machine,regexp_replace(program,' *\(.*') program &0},
                p={p1,p2,p2text,p3 &0},
                b={NULLIF(BLOCKING_SESSION||',@'||BLOCKING_INSTANCE,',@') BLOCK_BY,
                  (SELECT OBJECT_NAME FROM ALL_OBJECTS WHERE OBJECT_ID=ROW_WAIT_OBJ# AND ROWNUM<2) WAITING_OBJ,
-                 ROW_WAIT_BLOCK# WAIT_BLOCK#},
-               m={execs, ela,cpu,io,app,cc,cl,plsql,java,read_mb,write_mb}  
+                 ROW_WAIT_BLOCK# WAIT_BLOCK# &0},
+               m={execs, ela,cpu,io,app,cc,cl,plsql,java,read_mb,write_mb &0}  
             }
         &V1 :   sid={''||sid},wt={wait_secs desc},ev={event},sql={sql_text},o={logon_time}
         &SQLM:  {default={},

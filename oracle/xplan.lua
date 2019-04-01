@@ -23,7 +23,7 @@ function xplan.explain(fmt,sql)
 
     env.checkerr(db.props and db.props.db_version,"Database is not connected!")
 
-    if db.props.db_version>'12' then
+    if db.props.version>11 then
         fmt = 'adaptive '..fmt
     end
 

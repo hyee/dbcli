@@ -43,8 +43,8 @@ end
 
 function extvars.on_before_db_exec(item)
     for i=1,2 do
-        if item and type(item[i])=="string" and item[i]:find('&lz_compress',1,true) then
-            item[i]=item[i]:gsub("&lz_compress",db.lz_compress);
+        if item and type(item[i])=="string" and item[i]:find('@lz_compress@',1,true) then
+            item[i]=item[i]:gsub("@lz_compress@",db.lz_compress);
         end
     end
 
@@ -75,10 +75,17 @@ function extvars.on_after_db_exec()
     table.clear(cache)
 end
 
-
+local noparallel_sql=[[
+    begin 
+        execute immediate 'alter session set events ''10384 trace name context %s''';
+    exception
+        when others then
+            if sqlcode=-1031 then execute immediate 'alter session %s parallel query';end if;
+    end;
+]]
 function extvars.set_noparallel(name,value)
     if noparallel==value then return value end
-    db:internal_call("begin execute immediate 'alter session set events ''10384 trace name context "..(value=="off" and "off" or "forever , level 16384").."''';end;");
+    db:internal_call(noparallel_sql:format(value=="off" and "off" or "forever , level 16384",value=='off' and 'enable' or 'disable'))
     noparallel=value
     return value
 end
@@ -181,8 +188,10 @@ function extvars.set_instance(name,value)
 end
 
 function extvars.set_container(name,value)
-    env.checkerr(db.props.db_version and tonumber(db.props.db_version:match('%d+')),'Unsupported version!')
-    return tonumber(value)
+    if name=='CONTAINER' and value>=0 then env.checkerr(db.props.version and db.props.version > 11,'Current db version does not support the CDB feature!') end
+    value=tonumber(value)
+    env.checkerr(value and value>=-1 and value==math.floor(value),'Input value must be an integer!');
+    return value
 end
 
 
@@ -239,7 +248,7 @@ function extvars.onload()
     event.snoop('ON_SETTING_CHANGED',extvars.set_title)
     cfg.init("instance",-1,extvars.set_instance,"oracle","Auto-limit the inst_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-2 - 99")
     cfg.init("schema","",extvars.set_schema,"oracle","Auto-limit the schema of impacted tables. ","*")
-    cfg.init({"container","con","con_id"},-1,extvars.set_container,"oracle","Auto-limit the con_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-1 - 99")
+    cfg.init({"container","con","con_id"},-1,extvars.set_container,"oracle","Auto-limit the con_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-1 - 1024")
     cfg.init("dbid",0,extvars.set_container,"oracle","Specify the dbid for AWR analysis")
     cfg.init("starttime","",extvars.check_time,"oracle","Specify the start time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
     cfg.init("endtime","",extvars.check_time,"oracle","Specify the end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
@@ -252,7 +261,7 @@ function extvars.onload()
         obj     <- full/name
         full    <- '"' name '"'
         name    <- {prefix %a%a [%w$#__]+}
-        prefix  <- "GV_$"/"GV$"/"V_$"/"V$"/"DBA_"/"ALL_"/"CDB_"/"X$"/"XV$"
+        prefix  <- "GV_$"/"GV$"/"V_$"/"V$"/"DBA_"/"AWR_"/"ALL_"/"CDB_"/"X$"/"XV$"
     ]],nil,true)
     env.load_data(datapath,true,function(data)
         extvars.dict=data.dict
@@ -378,10 +387,10 @@ db.lz_compress=[[
             dbms_output.put_line(p_line);
         END;
     BEGIN
-        IF p_clob IS NULL OR dbms_lob.getLength(p_clob) IS NULL THEN
+        IF p_clob IS NULL OR nvl(dbms_lob.getLength(p_clob),0)=0 THEN
             RETURN;
         END IF;
-        IF NOT v_impmode THEN
+        IF NOT v_impmode AND dbms_db_version.version not in(18,19) THEN --bug# 28649388
             BEGIN
                 EXECUTE IMMEDIATE 'begin :lob := sys.dbms_report.ZLIB2BASE64_CLOB(:lob);end;'
                     USING IN OUT p_clob;
@@ -392,6 +401,7 @@ db.lz_compress=[[
                     NULL;
             END;
         END IF;
+
         dbms_lob.createtemporary(v_blob, TRUE);
         dbms_lob.ConvertToBLOB(v_blob, p_clob, dbms_lob.getLength(p_clob), dest_offset, src_offset, lob_csid, lang_context, warning);
         dbms_lob.createtemporary(p_clob, TRUE);

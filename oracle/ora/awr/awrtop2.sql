@@ -1,9 +1,13 @@
 /*[[
-    Show AWR Top SQLs for a specific period. Usage: @@NAME {[0|<inst>] [a|<sql_id>] [total|avg] [yymmddhhmi] [yymmddhhmi] [exec|ela|cpu|io|cc|buff|fetch|rows|load|parse|read|write|mem|offload|cell]} [-m] 
+    Show AWR Top SQLs for a specific period. Usage: @@NAME {[0|<inst>] [a|<sql_id>] [total|avg] [yymmddhhmi] [yymmddhhmi] [exec|ela|cpu|io|cc|buff|fetch|rows|load|parse|read|write|mem|offload|cell]} [-m|-p] 
+    -m: group by signature instead of SQL Id
+    -p: group by plan hash value instead of SQL Id
     --[[
-        &grp: s={sql_id}, m={signature}
+        &grp: s={sql_id}, m={signature}, p={null}
+        &sqls: s={}, m={sqls,}, p={sqls,}
         &filter: s={1=1},u={PARSING_SCHEMA_NAME=nvl('&0',sys_context('userenv','current_schema'))},f={}
         &v6: df={ela}
+        &v3: df={total} avg={avg}
         @ver: 11.2={} default={--}
     --]]
 ]]*/
@@ -23,8 +27,8 @@ WITH qry as (SELECT nvl(upper(NVL(:V1,:INSTANCE)),'A') inst,
                     lower(nvl(:V6,'ela')) sorttype
              FROM Dual)
 SELECT pct &v6#,
-       &grp,
-       plan_hash,
+       &grp, 
+       plan_hash, &sqls
        last_call,
        execs,
        FETCHES,
@@ -46,6 +50,7 @@ FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
                    LOADs,
                    parses,
                    seens,
+                   sqls,
                    mem / exe1 mem,
                    ela / exe1 ela,
                    CPU / ela CPU,
@@ -71,6 +76,7 @@ FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
                            &grp,
                            max(dbid) dbid,
                            max(sql_id) sq_id,
+                           count(distinct sql_id) sqls,
                            plan_hash_value plan_hash,
                            qry.sorttype,
                            count(1) SEENS,
@@ -97,8 +103,7 @@ FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
                            SUM(PX_SERVERS_EXECS) PX,
                            decode(max(qry.calctype),
                                   'avg',
-                                  SUM(NVL(NULLIF(executions, 0),
-                                          NULLIF(PARSE_CALLS, 0))),
+                                  nullif(decode(SUM(executions),0,floor(sum(PARSE_CALLS)/greatest(sum(px_servers_execs),1)),sum(executions)),0),
                                   1) exe1
                     FROM   qry,&&awr$sqlstat s
                     WHERE  (qry.sqid = &grp or qry.sqid is null)

@@ -199,7 +199,10 @@ function init.load_modules(list,tab,module_name)
         tab[n]=exec(c,err or env)
         modules[n]=tab[n]
         load_list[#load_list+1]=n
-        env.module_list[#env.module_list+1]=file:lower():gsub('%.lua$','')
+        if file:find(env.WORK_DIR,1,true)==1 then 
+            file=file:sub(#env.WORK_DIR+1)
+        end
+        env.module_list[#env.module_list+1]=file:gsub('%.lua$','')
     end
 
     for _,k in ipairs(load_list) do

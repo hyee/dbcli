@@ -53,7 +53,7 @@
                group_by,ROUND(avg(cnt),2) "Active Sessions",SUM(SQLS) "&VER2" &VER5,sums RNK_
         FROM(
              SELECT A.*, SUM(CNT1) OVER(partition by group_by) sums,
-                     WIDTH_BUCKET(sample_time,min(sample_time) over(),max(sample_time) over(),1000) bucket_id
+                     WIDTH_BUCKET(sample_time,min(sample_time) over(),max(sample_time) over(),1440) bucket_id
              FROM(
                  SELECT /*+no_expand*/
                         trunc(sample_time, 'MI') sample_time,

@@ -934,6 +934,14 @@ function db_core:get_value(sql,args)
     return rtn and #rtn==1 and rtn[1] or rtn
 end
 
+function db_core:get_rows(sql,args,count)
+    local result = self:internal_call(sql,args)
+    if not result or type(result)=="number" then
+        return result
+    end
+    return self.resultset:rows(result,count or -1)
+end
+
 function db_core:grid_call(tabs,rows_limit,args,is_cache)
     local db_call=self.grid_db_call
     local rs_idx={declare=tabs.declare}
