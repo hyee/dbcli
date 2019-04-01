@@ -381,7 +381,7 @@ local desc_sql={
                NUM_BUCKETS buckets,
                --(select trim(comments) from all_col_comments where owner=a.owner and table_name=a.table_name and column_name=a.column_name) comments,
                case when low_value is not null then 
-               decode(dtype
+               substrb(decode(dtype
                   ,'NUMBER'       ,to_char(utl_raw.cast_to_number(low_value))
                   ,'FLOAT'        ,to_char(utl_raw.cast_to_number(low_value))
                   ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(low_value))
@@ -416,9 +416,9 @@ local desc_sql={
                           lpad(TO_NUMBER(SUBSTR(low_value, 9, 2), 'XX')-1,2,0)|| ':' ||
                           lpad(TO_NUMBER(SUBSTR(low_value, 11, 2), 'XX')-1,2,0)|| ':' ||
                           lpad(TO_NUMBER(SUBSTR(low_value, 13, 2), 'XX')-1,2,0)
-                  ,  low_value) end low_value,
+                  ,  low_value),1,32) end low_value,
                 case when high_value is not null then 
-                decode(dtype
+                substrb(decode(dtype
                       ,'NUMBER'       ,to_char(utl_raw.cast_to_number(high_value))
                       ,'FLOAT'        ,to_char(utl_raw.cast_to_number(high_value))
                       ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(high_value))
@@ -453,7 +453,7 @@ local desc_sql={
                                 lpad(TO_NUMBER(SUBSTR(high_value, 9, 2), 'XX')-1,2,0)|| ':' ||
                                 lpad(TO_NUMBER(SUBSTR(high_value, 11, 2), 'XX')-1,2,0)|| ':' ||
                                 lpad(TO_NUMBER(SUBSTR(high_value, 13, 2), 'XX')-1,2,0)
-                        ,  high_value) end high_value
+                        ,  high_value),1,32) end high_value
         FROM   (select a.*,regexp_replace(data_type,'\(.+\)') dtype from all_tab_cols a where a.owner=:owner and a.table_name=:object_name) a,
                (select * from all_tables a where a.owner=:owner and a.table_name=:object_name) b
         WHERE  a.table_name=b.table_name(+)
@@ -596,7 +596,7 @@ local desc_sql={
                 nullif(a.HISTOGRAM,'NONE') HISTOGRAM，
                 a.NUM_BUCKETS buckets,
                 case when a.low_value is not null then 
-                decode(dtype
+                substrb(decode(dtype
                   ,'NUMBER'       ,to_char(utl_raw.cast_to_number(a.low_value))
                   ,'FLOAT'        ,to_char(utl_raw.cast_to_number(a.low_value))
                   ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(a.low_value))
@@ -628,9 +628,9 @@ local desc_sql={
                           lpad(TO_NUMBER(SUBSTR(a.low_value, 9, 2), 'XX')-1,2,0)|| ':' ||
                           lpad(TO_NUMBER(SUBSTR(a.low_value, 11, 2), 'XX')-1,2,0)|| ':' ||
                           lpad(TO_NUMBER(SUBSTR(a.low_value, 13, 2), 'XX')-1,2,0)
-                  ,  a.low_value) end a.low_value,
+                  ,  a.low_value),1,32) end a.low_value,
                 case when a.high_value is not null then 
-                decode(dtype
+                substrb(decode(dtype
                       ,'NUMBER'       ,to_char(utl_raw.cast_to_number(a.high_value))
                       ,'FLOAT'        ,to_char(utl_raw.cast_to_number(a.high_value))
                       ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(a.high_value))
@@ -662,7 +662,7 @@ local desc_sql={
                                 lpad(TO_NUMBER(SUBSTR(a.high_value, 9, 2), 'XX')-1,2,0)|| ':' ||
                                 lpad(TO_NUMBER(SUBSTR(a.high_value, 11, 2), 'XX')-1,2,0)|| ':' ||
                                 lpad(TO_NUMBER(SUBSTR(a.high_value, 13, 2), 'XX')-1,2,0)
-                        ,  a.high_value) end a.high_value
+                        ,  a.high_value),1,32) end a.high_value
          FROM   (select c.*,regexp_replace(data_type,'\(.+\)') dtype from all_tab_cols c) c,  all_Part_Col_Statistics a ,all_tab_partitions  b
          WHERE  a.owner=c.owner and a.table_name=c.table_name
          AND    a.column_name=c.column_name

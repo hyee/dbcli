@@ -107,12 +107,14 @@ Check the holder of library cache objects. Usage: @@NAME {[<sid>|<object_name>] 
 set feed off verify on
 
 WITH LP AS (
-    SELECT * FROM &GV
+    SELECT /*+materialize*/  * 
+    FROM &GV
         SELECT /*+ordered no_merge(h) use_hash(l d)*/DISTINCT 
                  l.type lock_type,
                  OBJECT_HANDLE handler,
-                 CASE WHEN MODE_REQUESTED > 1 THEN 'WAIT' ELSE 'HOLD' END TYPE,
-                 DECODE(GREATEST(MODE_REQUESTED, MODE_HELD), 1, 'NULL', 2, 'SHARED', 3, 'EXCLUSIVE', 'NONE') lock_mode,
+                 MODE_REQUESTED,MODE_HELD,
+                 DECODE(MODE_HELD, 1, 'NULL', 2, 'SHARED', 3, 'EXCLUSIVE', 'NONE') held_mode,
+                 DECODE(MODE_REQUESTED, 1, 'NULL', 2, 'SHARED', 3, 'EXCLUSIVE', 'NONE') req_mode,
                  nullif(d.to_owner || '.', '.') || d.to_name object_name,
                  h.sid || ',' || h.serial# || ',@' || USERENV('instance') session#,
                  d.type object_type,
@@ -129,22 +131,24 @@ WITH LP AS (
         ON     l.holding_user_session = h.saddr
         JOIN   &OBJ_CACHE d
         ON     l.object_handle = d.to_address
-        WHERE  greatest(mode_held, mode_requested) > 1
+        WHERE  (mode_held > 1 or mode_requested>1)
         AND    d.to_owner IS NOT NULL
         AND    userenv('instance')=nvl(''||:v2,userenv('instance'))
         AND    nvl(upper(:V1),'0') in(''||h.sid,'0',d.to_name,NULLIF(d.to_owner||'.','.')||d.to_name))
         )))
 SELECT /*+no_expand*/distinct
-       h.lock_type,h.handler object_handle, h.object_name,h.object_type,
-       h.session# holding_session, h.lock_mode hold_mode,  
+       nvl(h.lock_type,w.lock_type) lock_type,
+       nvl(h.handler,w.handler) object_handle, 
+       nvl(h.object_name,w.object_name) object_name,
+       nvl(h.object_type,w.object_type) object_type,
+       h.session# holding_session, h.held_mode hold_mode,  
        h.event holder_event, h.sql_id holder_sql_id,
-       w.session# waiting_session, w.lock_mode wait_mode,
+       w.session# waiting_session, w.req_mode wait_mode,
        w.event waiter_event, w.sql_id waiter_sql_id
-FROM   lp h LEFT JOIN lp w
-ON     h.lock_type = w.lock_type and h.object_type=w.object_type and w.type = 'WAIT' and
+FROM   lp h full JOIN lp w
+ON     h.lock_type = w.lock_type and h.object_type=w.object_type and  h.mode_held>1 and w.mode_requested>1 and
       ((h.inst_id  = w.inst_id and h.handler     = w.handler) or
        (h.inst_id != w.inst_id and h.object_name = w.object_name))
-WHERE  h.type='HOLD'
-AND  (&filter) AND (&FILTER2)
-AND   h.type = 'HOLD' 
+WHERE  (h.mode_held>1 or w.mode_requested>1)
+AND    (&filter) AND (&FILTER2)
 ORDER BY nvl2(waiting_session,0,1),object_name,lock_type,holding_session,waiting_session;

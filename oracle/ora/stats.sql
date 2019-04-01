@@ -417,13 +417,14 @@ DECLARE
     tid    PLS_INTEGER;
     output CLOB;
 BEGIN
+    NULL;
+    $IF &advise=1 $THEN
     IF oname IS NULL AND input IS NOT NULL THEN
         SELECT MAX(USERNAME) 
         INTO   oname
         FROM   ALL_USERS
         WHERE  USERNAME=upper(input);
     END IF;
-    $IF &advise=1 $THEN
     BEGIN
         dbms_stats.drop_advisor_task(tname);
     EXCEPTION WHEN OTHERS THEN NULL;

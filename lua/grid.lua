@@ -358,7 +358,7 @@ function grid:add(row)
                     colsize[k][3]=""
                 end
             else
-                v=v:rtrim()
+                v=v:gsub('[^%S\n\r]+$','')
             end
             
             local col_wrap = grid.col_wrap
