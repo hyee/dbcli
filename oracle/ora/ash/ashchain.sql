@@ -64,7 +64,8 @@ BEGIN
         open :cur for
             WITH bclass AS (SELECT class, ROWNUM r from v$waitstat),
             ash_base as &target,
-            ash_data AS (SELECT /*+ordered swap_join_inputs(b) swap_join_inputs(c) swap_join_inputs(u)  use_hash(a b u c)  no_expand*/
+            ash_data AS (
+                SELECT /*+ordered swap_join_inputs(b) swap_join_inputs(c) swap_join_inputs(u)  use_hash(a b u c)  no_expand*/
                         a.*, 
                         nvl2(b.chose,0,1) is_root,
                         u.username,
@@ -160,7 +161,8 @@ BEGIN
         OPEN :cur FOR
             WITH bclass AS (SELECT class, ROWNUM r from v$waitstat),
             ash_base as &target,
-            ash_data AS (SELECT /*+ordered swap_join_inputs(b) swap_join_inputs(c) swap_join_inputs(u)  use_hash(a b u c)  no_expand*/
+            ash_data AS (
+                SELECT /*+ordered swap_join_inputs(b) swap_join_inputs(c) swap_join_inputs(u)  use_hash(a b u c)  no_expand*/
                         a.*, 
                         nvl2(b.chose,0,1) is_root,
                         u.username,
