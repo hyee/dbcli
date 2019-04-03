@@ -53,7 +53,7 @@ function oracle:helper(cmd)
     return ({
         CONNECT=[[
         Connect to Oracle database.
-        Usage  : @@NAME <user>/<password>@<tns_name> [as sysdba]                                           or
+        Usage  : @@NAME <user>/<password>@<tns_name>[?TNS_ADMIN=<path>] [as sysdba]                        or
                  @@NAME <user>/<password>@[//]host[:port][/[service_name][:server][/sid] ] [as sysdba]     or
                  @@NAME <user>/<password>@[//]host[:port][:sid[:server] ] [as sysdba]                      or
                  @@NAME <user>/<password>@(DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)...))                        or
@@ -133,17 +133,16 @@ function oracle:connect(conn_str)
          defaultRowPrefetch=tostring(cfg.get("FETCHSIZE")),
          PROXY_USER_NAME=proxy_user,
          useFetchSizeWithLongColumn='true',
-         useThreadLocalBufferCache="true",
-         freeMemoryOnEnterImplicitCache="true",
          bigStringTryClob="true",
          clientEncoding=java.system:getProperty("input.encoding"),
          processEscapes='false',
+         ['oracle.jdbc.freeMemoryOnEnterImplicitCache']="true",
+         ['oracle.jdbc.useThreadLocalBufferCache']="true",
          ['v$session.program']='SQL Developer',
          ['oracle.jdbc.defaultLobPrefetchSize']="2097152",
          ['oracle.jdbc.mapDateToTimestamp']="true",
-         ['oracle.jdbc.maxCachedBufferSize']="104857600",
+         ['oracle.jdbc.maxCachedBufferSize']="33554432",
          ['oracle.jdbc.useNio']='true',
-         ['oracle.jdbc.TcpNoDelay']='true',
          ["oracle.jdbc.J2EE13Compliant"]='true',
          ['oracle.jdbc.autoCommitSpecCompliant']='false',
          ['oracle.jdbc.useFetchSizeWithLongColumn']='true',
@@ -154,6 +153,10 @@ function oracle:connect(conn_str)
          ['oracle.jdbc.timezoneAsRegion']='false'
         },args)
     self:load_config(url,args)
+
+    if tonumber(args.version) and tonumber(args.version)>10 then
+        args['oracle.jdbc.mapDateToTimestamp']=nil
+    end
 
     if args.jdbc_alias or not sqlplustr then
         local pwd=args.password
