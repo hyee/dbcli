@@ -118,7 +118,7 @@ function scripter:parse_args(sql,args,print_args,extend_dirs)
     local outputcount=0
 
     --parse template
-    local patterns,options={"(%b{})","([^\n\r]-)%s*[\n\r]"},{}
+    local patterns,options={"(%b{})","([^\n\r]-)[^%S\n\r]*\r?\n"},{}
 
     local desc
     sql=sql:gsub(self.comment,function(item)

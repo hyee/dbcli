@@ -1,5 +1,6 @@
 local ffi = require("ffi")
-local string,table,java,loadstring=string,table,java,loadstring
+local string,table,math,java,loadstring,tostring,tonumber=string,table,math,java,loadstring,tostring,tonumber
+local ipairs,pairs=ipairs,pairs
 
 function string.initcap(v)
     return (' '..v):lower():gsub("([^%w])(%w)",function(a,b) return a..b:upper() end):sub(2)
@@ -90,17 +91,17 @@ end
 
 function string.trim(s,sep)
     sep='[%s%z'..(sep or '')..']'
-    return s:match('^'..sep..'*(.-)'..sep..'*$')
+    return tostring(s):match('^'..sep..'*(.-)'..sep..'*$')
 end
 
 function string.rtrim(s,sep)
     sep='[%s%z'..(sep or '')..']'
-    return (s:gsub(sep..'*$',''))
+    return (tostring(s):gsub(sep..'*$',''))
 end
 
 function string.ltrim(s,sep)
     sep='[%s%z'..(sep or '')..']'
-    return (s:gsub('^'..sep,''))
+    return (tostring(s):gsub('^'..sep,''))
 end
 
 String=java.require("java.lang.String")

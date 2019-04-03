@@ -55,7 +55,7 @@ function hotkeys.call(event,_,x)
     local maps=console:getKeyMap("-L");
     local keys,keys1={},{}
     local matched=false
-    for key,desc in maps:gmatch('("[^\n\r]+") +([^\n\r]+)[\n\r]') do
+    for key,desc in maps:gmatch('("[^\n\r]+") +([^\n\r]+)\r?\n') do
         if not desc:find('LineReaderImpl',1,true) then
             if desc==event then matched=true end
             keys[key]=desc

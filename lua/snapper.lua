@@ -384,7 +384,7 @@ function snapper:next_exec()
                 props.max_rows=props.height==0 and 300 or props.max_rows or cfg.get(self.command.."rows")
                 if not is_groupped then
                     grid=rs1
-                    if order_by then grid.sort(grid,order_by) end
+                    if order_by and grid.sort then grid.sort(grid,order_by) end
                 else
                     local sum=0
                     local function check_zero(col,num)

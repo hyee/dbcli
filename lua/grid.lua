@@ -1,5 +1,6 @@
 local env, pairs, ipairs = env, pairs, ipairs
 local math, table, string, class, event = env.math, env.table, env.string, env.class, env.event
+local type,tostring,tonumber=type,tostring,tonumber
 local grid = class()
 local console = console
 local getWidth = console.getBufferWidth
@@ -9,7 +10,7 @@ local params = {
     [{'COLSEP', 'COLDEL'}] = {name = "col_del", default = ' ', desc = "The delimiter to split the fields when printing a grid"},
     [{'ROWSEP', 'ROWDEL'}] = {name = "row_del", default = '', desc = "The delimiter to split the rows when printing a grid"},
     COLWRAP = {name = "col_wrap", default = 0, desc = "If the column size is larger than COLDEL, then wrap the text", range = "0 - 32767"},
-    COLAUTOSIZE = {name = "col_auto_size", default = 'auto', desc = "Define the base of calculating column width", range = "head,body,auto"},
+    COLAUTOSIZE = {name = "col_auto_size", default = 'auto', desc = "Define the base of calculating column width", range = "auto,head,body,trim"},
     ROWNUM = {name = "row_num", default = "off", desc = "To indicate if need to show the row numbers", range = "on,off"},
     HEADSTYLE = {name = "title_style", default = "none", desc = "Display style of the grid title", range = "upper,lower,initcap,none"},
     PIVOT = {name = "pivot", default = 0, desc = "Pivot a grid when next print, afterward the value would be reset", range = "-30 - +30"},
@@ -233,7 +234,7 @@ function grid.show_pivot(rows, col_del)
             if r[i + 1] then
                 local k, v = '. ' .. r[i + 1][1], r[i + 1][2]
                 if type(v) == "string" then
-                    v:gsub('[%s\r\n\t]+$', ''):gsub('[\n\r]', function()k = k .. '\n.' end)
+                    v:gsub('[%s\r\n\t]+$', ''):gsub('\r?\n', function() k = k .. '\n.' end)
                 end
                 table.insert(r[i], k)
                 table.insert(r[i], v)
@@ -358,7 +359,7 @@ function grid:add(row)
                     colsize[k][3]=""
                 end
             else
-                v=v:gsub('[^%S\n\r]+$','')
+                v=v:gsub('[^%S\n\r]+$',''):gsub("\t", '    ')
             end
             
             local col_wrap = grid.col_wrap
@@ -374,7 +375,6 @@ function grid:add(row)
             end
             local grp = {}
             v = v:convert_ansi():gsub('\192\128', ''):gsub('%z+', '')
-            if headind > 0 then v = v:gsub("[%s ]+$", ""):gsub("[ \t]+[\n\r]", "\n"):gsub("\t", '    ') end
             
             --if the column value has multiple lines, then split lines into table
             for p in v:gsplit('[ \t%z\a\r\f\b\v]*\n') do
@@ -397,10 +397,11 @@ function grid:add(row)
         end
         rs[k] = v
         
-        if grid.pivot == 0 and headind == 1 and colbase == "body" and self.include_head then colsize[k][1] = 1 end
-        if (grid.pivot ~= 0 or colbase ~= "head" or not self.include_head or headind == 0)
-            and colsize[k][1] < csize
-        then
+        if grid.pivot == 0 and headind == 0 and (colbase == "body" or colbase == "trim") and self.include_head then 
+            colsize[k][1] = 0
+            colsize[k].__trimsize=(colbase == "trim" and csize) or 0
+        elseif colsize[k][1] < csize and not (self.include_head and grid.pivot == 0 and headind~=0 and colbase=='head') then
+            if colsize[k].__trimsize then csize=math.max(csize,colsize[k].__trimsize) end
             colsize[k][1] = csize
         end
     end
@@ -500,12 +501,11 @@ function grid:wellform(col_del, row_del)
         end
         self.ratio_cols = nil
     end
-    
+
     --Generate row formatter
     local color = env.ansi.get_color
     local nor, hor, hl = color("NOR"), color("HEADCOLOR"), color("GREPCOLOR")
     local head_fmt = fmt
-    
     for k, v in ipairs(colsize) do
         siz = v[1]
         local del = (v[3] or (colsize[k+1] or {})[3]) and "" or " "

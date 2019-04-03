@@ -984,7 +984,7 @@ function env.log_debug(name,...)
             args[i+1]=v
         end
     end
-    if value=="all" or value==name then print_debug(table.unpack(args)) end
+    if value=="ALL" or value==name then print_debug(table.unpack(args)) end
 end
 
 function set_debug(name,value)
