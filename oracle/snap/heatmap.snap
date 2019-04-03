@@ -7,6 +7,9 @@
     -c   : the percentages of the histogram is based on wait count, instead of wait time
     -n   : the value of the histogram is the number of waits, instead of percentage
   --[[
+      @tab: 12.1={gv$event_histogram_micro} 11.1={gv$event_histogram}
+      @micro: 12.1={wait_time_micro} 11.1={wait_time_milli*1024}
+      @flds : 12.1={} default={--}
       &u : t={log(2,slot_time*2)} c={1}
       &calc: default={[total]} n={100}
       &filter: {
@@ -57,10 +60,10 @@
                        nullif(SUM(svalue*&u), 0) pct
                 FROM   (SELECT /*+ordered use_hash(a b)*/
                                decode(lower(nvl('&v1','a')),'a',0,inst_id)  inst,
-                               event, a.total_waits, a.time_waited_micro, b.wait_time_micro slot_time, b.wait_count svalue,
+                               event, a.total_waits, a.time_waited_micro, b.&micro slot_time, b.wait_count svalue,
                                a.wait_class
                         FROM   gv$system_event a
-                        JOIN   gv$event_histogram_micro b
+                        JOIN   &tab b
                         USING  (inst_id, event)
                         WHERE  a.wait_class != 'Idle'
                         AND    lower(nvl('&v1','a')) in('a','0',to_char(inst_id))
@@ -81,16 +84,8 @@
                 HAVING (:filter!='1=1' OR SUM(total_waits)>0)
                 )
         PIVOT(MAX(pct)
-        FOR    unit IN('<1us' "<1us",
-                       '<2us' "<2us",
-                       '<4us' "<4us",
-                       '<8us' "<8us",
-                       '<16us' "<16us",
-                       '<32us' "<32us",
-                       '<64us' "<64us",
-                       '<128us' "<128us",
-                       '<256us' "<256us",
-                       '<512us' "<512us",
+        FOR    unit IN(
+                       &flds '<1us' "<1us",'<2us' "<2us",'<4us' "<4us",'<8us' "<8us",'<16us' "<16us",'<32us' "<32us",'<64us' "<64us",'<128us' "<128us",'<256us' "<256us",'<512us' "<512us",
                        '<1ms' "<1ms",
                        '<2ms' "<2ms",
                        '<4ms' "<4ms",
