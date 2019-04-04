@@ -221,7 +221,7 @@ function extvars.on_after_db_conn()
     cfg.force_set('noparallel','off')
 end
 
-function test_grid()
+function extvars.test_grid()
     local rs1=db:internal_call([[select * from (select * from v$sysstat order by 1) where rownum<=20]])
     local rs2=db:internal_call([[select * from (select rownum "#",name,hash from v$latch) where rownum<=30]])
     local rs3=db:internal_call([[select * from (select rownum "#",event,total_Waits from v$system_event) where rownum<=60]])
@@ -240,7 +240,7 @@ function test_grid()
 end
 
 function extvars.onload()
-    env.set_command(nil,"TEST_GRID",nil,test_grid,false,1)
+    env.set_command(nil,"TEST_GRID",nil,extvars.test_grid,false,1)
     event.snoop('BEFORE_DB_EXEC',extvars.on_before_db_exec,nil,60)
     event.snoop('AFTER_DB_EXEC',extvars.on_after_db_exec)
     event.snoop('ON_SUBSTITUTION',extvars.on_before_db_exec,nil,60)

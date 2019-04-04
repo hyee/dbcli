@@ -60,7 +60,7 @@ end
 local linesize
 function grid.cut(row, format_func, format_str, is_head)
     if type(row) == "table" then
-        local colbase = grid.col_auto_size
+        local colbase = row.col_auto_size or grid.col_auto_size
         local cs = grid.colsize
         if cs then
             if colbase ~= 'auto' then
@@ -305,7 +305,7 @@ function grid:add(row)
     local rs = {_org = {}}
     local result, headind, colsize = self.data, self.headind, self.colsize
     local title_style = grid.title_style
-    local colbase = grid.col_auto_size
+    local colbase = self.col_auto_size or grid.col_auto_size
     local rownum = grid.row_num
     grid.colsize = self.colsize
     for k, v in pairs(row) do rs[k] = v end
@@ -617,7 +617,7 @@ function grid.format(rows, include_head, col_del, row_del)
 end
 
 function grid.get_config(sql)
-    local all, grid_cfg = sql:match("(grid%s*=%s*(%b{}))")
+    local all, grid_cfg = sql:match("(grid%s*[=:]%s*(%b{}))")
     if grid_cfg then
         sql = sql:replace(all, '', true):gsub('/%*%s*%*/', '')
         grid_cfg = table.totable(grid_cfg)
@@ -681,12 +681,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
         local max_rows = (tab.max_rows and tab.max_rows + 2 or rows) + 2
         if tab._is_drawed then
             local cspace = cols - actcols
-            for rowidx, row in ipairs(tab) do
-                if rowidx == #tab then
-                    for i = rowidx + 1, rows do
-                        push(hspace)
-                    end
-                end
+            local do_push=function(row)
                 if cspace == 0 then
                     push(row)
                 elseif cspace > 0 then
@@ -697,6 +692,18 @@ function grid.merge(tabs, is_print, prefix, suffix)
                 else
                     push(grid.cut(row, cols))
                 end
+            end
+            for rowidx, row in ipairs(tab) do
+                if rowidx == #tab then
+                    local line=row:gsub('.',function(c) return c=='+' and '|' or c=='-' and ' ' or c end)
+                    for i = rowidx + 1, rows do
+                        do_push(line)
+                    end
+                elseif rowidx>=rows and tab.height==0 and tab.min_height<rows then
+                    do_push('+'..string.rep('-',actcols-2)..'+')
+                    break
+                end
+                do_push(row)
             end
         else
             local diff = cols - actcols - 2
@@ -726,6 +733,8 @@ function grid.merge(tabs, is_print, prefix, suffix)
         return newtab
     end
     
+    local frames={}
+    local printsize=env.cfg and env.cfg.get('PRINTSIZE') or 512
     local function _merge(tabs, is_wrap)
         local newtab = {}
         local maxwidth = 0
@@ -751,6 +760,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
                     height1, height2 = math.min(tab.max_rows and (tab.max_rows + 4) or 1e5, height1), math.min(nexttab.max_rows and (nexttab.max_rows + 4) or 1e5, height2)
                     if sep == '|' then
                         local maxlen = math.max(height1, height2)
+                        newtab.adj_height=maxle
                         tab, nexttab = redraw(tab, width1, maxlen), redraw(nexttab, width2, maxlen)
                         local fmt = '%s  %s'
                         for rowidx = 1, math.max(#tab, #nexttab) do
@@ -758,18 +768,28 @@ function grid.merge(tabs, is_print, prefix, suffix)
                         end
                     elseif sep == '+' then
                         local maxlen = math.max(height1, height2)
+                        newtab.adj_height=maxlen
                         tab, nexttab = redraw(tab, width1, maxlen), redraw(nexttab, width2, maxlen)
                         local fmt = '%s%s%s'
                         for rowidx = 1, maxlen do
                             push(fmt:format(tab[rowidx]:sub(1, -2), (rowidx == 1 or rowidx == maxlen) and '+' or '|', nexttab[rowidx]:sub(2)))
                         end
                     else --sep=='-'
+                        if (nexttab.height or 1)<=0 then
+                            newtab.height=0
+                            height2=printsize
+                        end
                         local maxlen = math.max(width1, width2)
                         tab, nexttab = redraw(tab, maxlen, height1), redraw(nexttab, maxlen, height2)
+                        if newtab.height==0 then
+                            newtab.min_height=#tab
+                        end
+                        newtab.adj_width=maxlen
                         for _, row in ipairs(tab) do push(row) end
                         --push(string.rep(' ',maxlen))
                         for _, row in ipairs(nexttab) do push(row) end
                     end
+                    newtab.calc_height,newtab.calc_width=#newtab,#newtab[1]
                     tabs[seq + 1] = newtab
                     i = seq
                 else
@@ -824,12 +844,15 @@ function grid.merge(tabs, is_print, prefix, suffix)
                         result[#result + 1] = format_tables(tab, false)
                     else
                         local topic, width, height, max_rows = tab.topic, tab.width, tab.height, tab.max_rows
-                        local is_bypass = tab.bypassemptyrs
+                        local is_bypass,autosize1,autosize2 = tab.bypassemptyrs,grid.col_auto_size,tab.autosize
+                        if autosize2 then grid.col_auto_size=autosize2 end
                         local _,output=grid.tostring(tab, true, " ", "", nil, tab.pivot)
+                        if autosize2 then grid.col_auto_size=autosize1 end
                         tab={}
                         for k,row in ipairs(output) do
                             tab[k]=type(row)~="table" and row or row.format_func(row.fmt, table.unpack(row))
                         end
+                        
                         tab.topic, tab.width, tab.height, tab.max_rows = topic, width, height, max_rows
                         if is_bypass ~= 'on' and is_bypass ~= true or #tab > 2 then
                             result[#result + 1] = tab
@@ -840,11 +863,12 @@ function grid.merge(tabs, is_print, prefix, suffix)
                 result[#result + 1] = tab
             end
         end
+
         return _merge(result, is_wrap)
     end
-    
+
     local result = format_tables(tabs, true)
-    
+
     if is_print == true then
         local tab = {}
         local height = tabs.max_rows or #result + 1

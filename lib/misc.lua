@@ -136,8 +136,8 @@ function string.cpad(str, len, char,func)
     str,char=tostring(str) or str,char or ' '
     if not str then return str end
     str=str:sub(1,len)
-    left=char:rep(math.floor((len-#str)/2))
-    right=char:rep(len-#left-#str)
+    local left=char:rep(math.floor((len-#str)/2))
+    local right=char:rep(len-#left-#str)
     return type(func)~="function" and string.format("%s%s%s",left,str,right) or func(left,str,right)
 end
 

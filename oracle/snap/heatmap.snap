@@ -36,7 +36,7 @@
 ]]*/
 {
     sql={[[
-        SELECT /*grid={topic='Event Histogram(based on wait_count*&u)'}*/ *
+        SELECT /*grid={topic='Event Histogram(based on wait_count*&u)',autosize='trim',zero2null=true}*/ *
         FROM   (SELECT /*+ordered use_nl(timer stat) no_merge(stat) no_expand*/
                        nullif(inst,0) inst,nvl(event,'- Wait Class: '||nvl(wait_class,'All')) event,
                        grouping_id(wait_class,event) g,
@@ -85,7 +85,7 @@
                 )
         PIVOT(MAX(pct)
         FOR    unit IN(
-                       &flds '<1us' "<1us",'<2us' "<2us",'<4us' "<4us",'<8us' "<8us",'<16us' "<16us",'<32us' "<32us",'<64us' "<64us",'<128us' "<128us",'<256us' "<256us",'<512us' "<512us",
+                       '<1us' "<1us",'<2us' "<2us",'<4us' "<4us",'<8us' "<8us",'<16us' "<16us",'<32us' "<32us",'<64us' "<64us",'<128us' "<128us",'<256us' "<256us",'<512us' "<512us",
                        '<1ms' "<1ms",
                        '<2ms' "<2ms",
                        '<4ms' "<4ms",
@@ -104,7 +104,7 @@
                        '<32s' "<32s",
                        '<1m' "<1m",
                        '>=1m' ">1m"))
-    ]],'-'},
+    ]]},
     delta_by="TIME,AVG_TIME,WAITS,TOTAL,<1us,<2us,<4us,<8us,<16us,<32us,<64us,<128us,<256us,<512us,<1ms,<2ms,<4ms,<8ms,<16ms,<32ms,<64ms,<128ms,<256ms,<512ms,<1s,<2s,<4s,<8s,<16s,<32s,<1m,>1m",
     group_by="inst,event,g",
     include_zero=false,

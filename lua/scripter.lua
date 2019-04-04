@@ -327,7 +327,10 @@ function scripter:run_sql(sql,args,cmds)
     var.import_context(args)
     
     local echo=cfg.get("echo"):lower()=="on"
-    cfg.set("define","on")
+    if #env.RUNNING_THREADS == 2 then
+        cfg.set("define","on")
+        cfg.set("verify","on")
+    end
     local _args,_parms={},{}
     for line in sql:gsplit("[\n\r]+") do
         if echo_stack[current_thead] or (echo_stack[env.RUNNING_THREADS[1]] and level==2) then

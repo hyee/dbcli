@@ -101,20 +101,20 @@ BEGIN
     IF dbms_db_version.version > 10 THEN
         OPEN :actives FOR q'{
             WITH sess AS
-             (SELECT (select object_name from &CHECK_ACCESS_OBJ o where o.object_id=s.program_id) program_name,
+             (SELECT (select object_name from &CHECK_ACCESS_OBJ o where s.program_id>0 and o.object_id=s.program_id) program_name,
                      s.*
               FROM   TABLE(gv$(CURSOR(
                    SELECT (SELECT spid FROM &CHECK_ACCESS_PRO11 d WHERE d.addr = s.paddr)|| regexp_substr(s.program, '\(.*\)') spid,
-                          CASE WHEN s.seconds_in_wait > 1.3E9 THEN 0 ELSE round(seconds_in_wait-WAIT_TIME/100) END wait_secs,
-                          CASE WHEN s.SID = s.qcsid THEN 1 ELSE 0 END ROOT_SID,
+                          CASE WHEN s.seconds_in_wait > 1.3E9 THEN 0 ELSE round(seconds_in_wait-wait_time/100) END wait_secs,
+                          CASE WHEN s.SID||'@'||userenv('instance') = s.qcsid THEN 1 ELSE 0 END ROOT_SID,
                           regexp_substr(sql_info,'[^'||chr(1)||']+',1,1)+0 program_id,
                           regexp_substr(sql_info,'[^'||chr(1)||']+',1,2)+0 program_line#,
                           regexp_substr(sql_info,'[^'||chr(1)||']+',1,3)+0 plan_hash_value,
                           regexp_substr(sql_info,'[^'||chr(1)||']+',1,4)   sql_text,
                           regexp_substr(sql_info,'[^'||chr(1)||']+',1,5)   sql_secs,
                           s.*
-                    FROM  (SELECT /*+order use_hash(m)*/ * FROM 
-                            (SELECT (SELECT qcsid FROM &CHECK_ACCESS_PX11 p WHERE  s.sid = p.sid) qcsid,
+                    FROM  (SELECT /*+order use_hash(m) opt_param('_optimizer_unnest_scalar_sq' 'false')*/ * FROM 
+                            (SELECT (SELECT qcsid||'@'||nvl(qcinst_id,userenv('instance')) FROM &CHECK_ACCESS_PX11 p WHERE  s.sid = p.sid) qcsid,
                                     (SELECT /*+index(b.GV$SQL.X$KGLCURSOR_CHILD)*/ b.program_id||chr(1)
                                          || b.program_line#||chr(1)
                                          || b.plan_hash_value||chr(1)
@@ -138,7 +138,7 @@ BEGIN
                      s3.*
               FROM   sess s3
               START  WITH (qcsid IS NULL OR ROOT_SID=1)
-              CONNECT BY qcsid = PRIOR SID
+              CONNECT BY qcsid =  PRIOR SID ||'@'||PRIOR inst_id
                   AND    ROOT_SID=0
                   AND    LEVEL < 3
               ORDER SIBLINGS BY &V1)

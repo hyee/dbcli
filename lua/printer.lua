@@ -341,7 +341,7 @@ function printer.onload()
         NOR = env.ansi.string_color('NOR') 
         BOLD= env.ansi.string_color('UDL') 
         strip_ansi=env.ansi.strip_ansi
-        grep_text=env.ansi.convert_ansi("$GREPCOLOR$%1$NOR$")
+        grep_fmt=env.ansi.convert_ansi("$GREPCOLOR$%1$NOR$")
     end
     event=env.event
     if env.event then

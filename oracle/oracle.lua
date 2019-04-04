@@ -52,13 +52,19 @@ end
 function oracle:helper(cmd)
     return ({
         CONNECT=[[
-        Connect to Oracle database.
-        Usage  : @@NAME <user>/<password>@<tns_name>[?TNS_ADMIN=<path>] [as sysdba]                        or
-                 @@NAME <user>/<password>@[//]host[:port][/[service_name][:server][/sid] ] [as sysdba]     or
-                 @@NAME <user>/<password>@[//]host[:port][:sid[:server] ] [as sysdba]                      or
-                 @@NAME <user>/<password>@(DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)...))                        or
-                 @@NAME <user>/<password>@ldap:[//]<LDAP server>[:<LDAP port>]/service_name,<LDAP context> or
-                 @@NAME <user>/<password>@<jdbc_url in "data/jdbc_url.cfg">
+        Connect to Oracle database. Usage: @@NAME <user>[proxy]/<password>@<connection_string> [as sysdba]
+
+        The format of <connection_string> can be:
+            *  TNS      :  <tns_name>[?TNS_ADMIN=<path>]                     i.e.: @@NAME scott/tiger@orcl
+
+            *  EZConnect:  [//]host[:port][/[service_name][:server][/sid] ]  i.e.: @@NAME scott/tiger@localhost:1521/orcl
+                           (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)...))         i.e.: @@NAME scott/tiger@(DESCRIPTION = (ADDRESS = (PROTOCOL=TCP)(HOST=localhost)(PORT=1521)) (CONNECT_DATA=(SERVER=DEDICATED)(SERVICE_NAME=orcl)))
+            
+            *  JDBC     :  [//]host[:port][:sid[:server] ]                   i.e.: @@NAME scott/tiger@localhost:1521:orcl1
+            
+            *  LDAP     :  ldap:[//]<server>[:<port>]/service_name,<context> i.e.: @@NAME scott/tiger@ldap://ldap.acme.com:7777/orcl,cn=OracleContext,dc=com
+            
+            *  JDBC_URL :  <jdbc_url in "data/jdbc_url.cfg">                 i.e.: @@NAME scott/tiger@tos
         ]],
         CONN=[[Refer to command 'connect']],
     })[cmd]
@@ -103,7 +109,7 @@ function oracle:connect(conn_str)
         local flag=true
         if database then
             if host=='ldap' or host=='ldaps' then
-                flag,server_sep,database=true,'/',database:sub(3):match('/([^%s,]+)')
+                flag,driver,server_sep,database=true,'oci8','/',database:sub(3):match('/([^%s,]+)')
             elseif database:sub(1,1)=='/' then -- //<sid>
                 flag,server_sep,database=false,':',database:sub(2)
             elseif database:match('^:(%w+)/([%w_]+)$') then -- /:<server>/<sid>
@@ -127,31 +133,9 @@ function oracle:connect(conn_str)
             end
         end
     end
+
     args=args or {user=usr,password=pwd,url="jdbc:oracle:"..driver..":@"..url..(params or ''),internal_logon=isdba}
-    self:merge_props(
-        {driverClassName="oracle.jdbc.driver.OracleDriver",
-         defaultRowPrefetch=tostring(cfg.get("FETCHSIZE")),
-         PROXY_USER_NAME=proxy_user,
-         useFetchSizeWithLongColumn='true',
-         bigStringTryClob="true",
-         clientEncoding=java.system:getProperty("input.encoding"),
-         processEscapes='false',
-         ['oracle.jdbc.freeMemoryOnEnterImplicitCache']="true",
-         ['oracle.jdbc.useThreadLocalBufferCache']="true",
-         ['v$session.program']='SQL Developer',
-         ['oracle.jdbc.defaultLobPrefetchSize']="2097152",
-         ['oracle.jdbc.mapDateToTimestamp']="true",
-         ['oracle.jdbc.maxCachedBufferSize']="33554432",
-         ['oracle.jdbc.useNio']='true',
-         ["oracle.jdbc.J2EE13Compliant"]='true',
-         ['oracle.jdbc.autoCommitSpecCompliant']='false',
-         ['oracle.jdbc.useFetchSizeWithLongColumn']='true',
-         ['oracle.net.networkCompression']='on',
-         ['oracle.net.keepAlive']='true',
-         ['oracle.jdbc.convertNcharLiterals']='true',
-         ['oracle.net.ssl_server_dn_match']='true',
-         ['oracle.jdbc.timezoneAsRegion']='false'
-        },args)
+    self:merge_props(self.public_props,args)
     self:load_config(url,args)
 
     if tonumber(args.version) and tonumber(args.version)>10 then
@@ -571,6 +555,31 @@ function oracle:onload()
     --cfg.init("dblink","",self.set_db_link,"oracle","Define the db link to run all SQLs in target db",nil,self)
     env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)
     env.set.inject_cfg({"transaction","role","constraint","constraints"},self.set_session,self)
+    self.public_props={
+         driverClassName="oracle.jdbc.driver.OracleDriver",
+         defaultRowPrefetch=tostring(cfg.get("FETCHSIZE")),
+         PROXY_USER_NAME=proxy_user,
+         useFetchSizeWithLongColumn='true',
+         bigStringTryClob="true",
+         clientEncoding=java.system:getProperty("input.encoding"),
+         processEscapes='false',
+         ['oracle.jdbc.freeMemoryOnEnterImplicitCache']="true",
+         ['oracle.jdbc.useThreadLocalBufferCache']="false",
+         ['v$session.program']='SQL Developer',
+         ['oracle.jdbc.defaultLobPrefetchSize']="2097152",
+         ['oracle.jdbc.mapDateToTimestamp']="true",
+         ['oracle.jdbc.maxCachedBufferSize']="33554432",
+         ['oracle.jdbc.useNio']='true',
+         ["oracle.jdbc.J2EE13Compliant"]='true',
+         ['oracle.jdbc.autoCommitSpecCompliant']='false',
+         ['oracle.jdbc.useFetchSizeWithLongColumn']='true',
+         ['oracle.net.networkCompression']='on',
+         ['oracle.net.keepAlive']='true',
+         ['oracle.jdbc.convertNcharLiterals']='true',
+         ['oracle.net.ssl_server_dn_match']='true',
+         ['oracle.jdbc.timezoneAsRegion']='false',
+         ['oracle.jdbc.TcpNoDelay']='false'
+        }
 end
 
 function oracle:onunload()
@@ -588,9 +597,17 @@ function oracle:get_library()
             end
         end
         if #files>0 then
-            files[#files+1]=env.join_path(env.WORK_DIR..'/oracle/xdb6.jar')
+            for _,file in pairs(os.list_dir(self.root_dir,"jar",1)) do
+                if type(file)=="table" and not file.name:find('^ojdbc') then
+                    files[#files+1]=file.fullname
+                end
+            end
             loader:addLibrary(env.join_path(home..'/lib'),false)
-            env.uv.os.setenv('LD_LIBRARY_PATH',java.system:getProperty("java.library.path"))
+            local lib=os.getenv('LD_LIBRARY_PATH') or ''
+            if lib~='' then
+                lib=env.CPATH_DEL..lib
+            end
+            env.uv.os.setenv('LD_LIBRARY_PATH',java.system:getProperty("java.library.path")..lib)
             return files
         end
     end
@@ -614,7 +631,7 @@ function oracle:grid_db_call(sqls,args,is_cache)
             local cursor='GRID_CURSOR_'..idx
             args[cursor]='#CURSOR'
             stmt[#stmt+1]='  OPEN :'..cursor..' FOR \n        '..sql.sql:trim(';')..';'
-        else
+        elseif #sql.sql>1 then
             stmt[#stmt+1]=sql.sql:trim(';/')..';'
         end
     end

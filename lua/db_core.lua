@@ -954,12 +954,23 @@ function db_core:grid_call(tabs,rows_limit,args,is_cache)
                 result[i]=parse_sqls(tab,rows_limit)
             elseif type(tab) ~= "string" then
                 env.raise("Unexpected table element, string only:"..tostring(tab))
-            elseif #tab>1 then
+            else
                 local grid_cfg
                 tab,grid_cfg=env.grid.get_config(tab)
-                grid_cfg._is_result=true
-                result[i]={grid_cfg=grid_cfg,sql=tab,index=i}
-                table.insert(rs_idx,1,result[i])
+                local key=tab:trim():upper():gsub('^[:&]','')
+                if env.var.inputs[key] then 
+                    tab=env.var.inputs[key]
+                    if type(tab)=='userdata' then 
+                        tab={rs=tab,grid_cfg=grid_cfg}
+                        env.var.inputs[key]=nil
+                    end
+                    result[i]=tab
+                end
+                if type(tab)=='string' and #tab>1 then
+                    grid_cfg._is_result=true
+                    result[i]={grid_cfg=grid_cfg,sql=tab,index=i}
+                    table.insert(rs_idx,1,result[i])
+                end
             end
         end
         return result
@@ -984,7 +995,7 @@ function db_core:grid_call(tabs,rows_limit,args,is_cache)
                     tabs[k]=tab
                 else
                     tabs[k]=self.resultset:rows(rs,rows_limit)
-                    for a,b in pairs(v.grid_cfg) do tabs[k][a]=b end
+                    for a,b in pairs(v.grid_cfg or {}) do tabs[k][a]=b end
                 end
             elseif type(v)~='string' or #v~=1 then
                 table.remove(tabs,k)
@@ -1268,7 +1279,7 @@ function db_core:__onload()
     self.root_dir=(self.__class.__className):gsub('[^\\/]+$','')
     local jars
     if type(self.get_library)=="function" then
-        libdir=self:get_library()
+        local libdir=self:get_library()
         if type(libdir)=="string" and os.exists(libdir) then
             jars=os.list_dir(libdir,"jar")
         elseif type(libdir)=="table" then
@@ -1338,6 +1349,7 @@ function db_core:__onload()
         max_rows=<rows>   :  max print records
         pivot=<rows>      :  controls whether to pivot the records
         bypassemptyrs='on':  controls whether to display the block in case of no record
+        autosize=<value>  :  controls whether to eliminate the column whose values are all null, refer to option 'SET COLAUTOSIZE'
 
         Elements:
             sep     : Can be 3 values:
@@ -1369,12 +1381,28 @@ function db_core:__onload()
 
             JSON style:
             ===========
-             grid ['select rownum "#",event,total_Waits from v$system_event where rownum<56', 
+            grid [ 'select rownum "#",event,total_Waits from v$system_event where rownum<56', 
                    '|',['select * from v$sysstat where rownum<=20',                            
                         '-', ['select rownum "#",name,hash from v$latch where rownum<=30',     
                               '+',"select /*grid={'topic':'Wait State'}*/ * from v$waitstat"]
                        ],
                     '-','select /*grid={"topic":"Metrix"}*/ * from v$sysmetric where rownum<=10']
+        
+        3. Cursor style:
+           =============
+            set verify off 
+            var c1 refcursor
+            var c2 refcursor
+            begin
+                open :c1 for select name,value from v$sysstat where rownum<=5;
+                open :c2 for select class,count from v$waitstat where rownum<=15;
+            end;
+            /
+            grid {
+                    'c1 grid={topic="I am a cursor"}',
+                '-','c2',
+                '|',"select * from v$sysstat where rownum<=20 /*grid={topic='I am a SQL Text'}*/ "
+            }
 
         Refer to 'system.snap' for more example
     ]]
