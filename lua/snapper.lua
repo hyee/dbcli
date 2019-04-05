@@ -107,9 +107,9 @@ function snapper:build_data(sqls,args,variables)
     end
 
     if type(sqls)=="string" then
-        rs=self.db:grid_call({sqls},-1,args,"snapper")
+        rs=self.db:grid_call({sqls},-1,args,"Internal_snapper")
     else
-        rs=self.db:grid_call(sqls,-1,args,"snapper")
+        rs=self.db:grid_call(sqls,-1,args,"Internal_snapper")
     end
 
     local grid_cost=self.db.grid_cost or (os.timer()-clock)/2

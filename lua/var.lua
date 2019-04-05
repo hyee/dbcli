@@ -34,6 +34,11 @@ function var.get_input(name)
 end
 
 function var.import_context(global,input,output,cols)
+    if type(output)=='table' then 
+        var.outputs=output
+    else
+        output={}
+    end
     for k,v in pairs(global) do var.global_context[k]=v end
     for k,v in pairs(input or {}) do var.inputs[k]=v end
     if input then
@@ -41,7 +46,9 @@ function var.import_context(global,input,output,cols)
             if not global[k] and not output[k] then var.global_context[k]=nil end
         end
         for k,v in pairs(var.inputs) do
-            if not input[k] and not output[k] then var.inputs[k]=nil end
+            if not input[k] and not output[k] then 
+                var.inputs[k]=nil 
+            end
         end
     end
     if cols then
@@ -160,11 +167,11 @@ function var.update_text(item,pos,params)
     local function repl(s,s2,s3)
         local v,s=s2:upper(),s..s2..s3
         v=params[v] or var.inputs[v] or var.global_context[v]
-        if v==nil and tonumber(s2) then
+        if (v==nil or type(v)=='table') and tonumber(s2) then
             v="V"..s2
             v=params[v] or var.inputs[v] or var.global_context[v]
         end
-        if v==nil then return s end
+        if v==nil or type(v)=='table' then return s end
         if v=='NEXT_ACTION' then print(env.callee(4)) end
         if v==db_core.NOT_ASSIGNED then v='' end
         count=count+1 
@@ -193,8 +200,10 @@ function var.before_db_exec(item)
     local db,sql,args,params=table.unpack(item)
     for i=1,3 do
         for name,v in pairs(i==1 and var.outputs or i==2 and var.inputs or var.global_context) do
-            if i==1 and not args[name] then args[name]=v end
-            if not params[name] then params[name]=v end
+            if type(v)~='table' then
+                if i==1 and not args[name] then args[name]=v end
+                if not params[name] then params[name]=v end
+            end
         end
     end
 
@@ -233,8 +242,10 @@ function var.print(name)
         local obj=var.inputs[name]
         env.checkerr(obj,'Target variable[%s] does not exist!',name)
         if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
-            db.resultset:print(obj,db.conn, var.desc[name] and (var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)))
+            var.inputs[name]=db.resultset:print(obj,db.conn, var.desc[name] and (var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)))
             var.outputs[name]="#CURSOR"
+        elseif type(obj)=='table' then
+            grid.print(obj,nil,nil,nil,nil,prefix,"\n")
         elseif obj~=db_core.NOT_ASSIGNED then
             print(obj)
         end
@@ -245,8 +256,8 @@ function var.print(name)
         if #keys==0 then return end
         table.sort(keys,function(a,b)
             if a[1]==b[1] then return a[2]<b[2] end
-            if a[1]=="userdata" then return false end
-            if b[1]=="userdata" then return true end
+            if a[1]=="userdata" or a[1]=="table" then return false end
+            if b[1]=="userdata" or b[1]=="table" then return true end
             return a[1]<b[1]
         end)
 
@@ -254,9 +265,11 @@ function var.print(name)
         for _,obj in ipairs(keys) do
             local name,value=obj[2],obj[3]
             if obj[1]=='userdata' and tostring(value):find('ResultSet') then
-                db.resultset:print(value,db.conn,var.desc[name] and (var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)))
-                var.inputs[name]=nil
+                var.inputs[name]=db.resultset:print(value,db.conn,var.desc[name] and (var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)))
                 var.outputs[name]="#CURSOR"
+            elseif type(value)=='table' then
+                print('Variable "'..name..'":\n===================')
+                grid.print(value,nil,nil,nil,nil,prefix,'\n')
             else
                 list[#list+1]={var.desc[name] or name,value}
             end
@@ -278,6 +291,8 @@ function var.save(name,file)
     if not obj then return end
     if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
         return print("Unsupported variable '%s'!", name);
+    elseif type(obj)=='table' then
+        obj=table.dump(obj)
     end
     file=env.write_cache(file,obj);
     print("Data saved to "..file);

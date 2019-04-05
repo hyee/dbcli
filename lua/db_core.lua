@@ -280,7 +280,7 @@ function ResultSet:print(res,conn,prefix)
     res:setFetchSize(cfg.get("FETCHSIZE"))
     local maxrows,pivot=cfg.get("printsize"),cfg.get("pivot")
     if pivot~=0 then maxrows=math.abs(pivot) end
-    local result=self:rows(res,maxrows,true,cfg.get("null"))
+    local result=self:rows(res,maxrows,cfg.get("null"),true)
     if not result then return end
     if pivot==0 then
         hdl=grid.new()
@@ -292,6 +292,7 @@ function ResultSet:print(res,conn,prefix)
         end
     end
     grid.print(hdl or result,nil,nil,nil,nil,prefix,(cfg.get("feed")=="on" and '\n'..(#result-1).." rows returned." or "").."\n")
+    return result
 end
 
 function ResultSet:print_old(res,conn)
@@ -960,10 +961,13 @@ function db_core:grid_call(tabs,rows_limit,args,is_cache)
                 local key=tab:trim():upper():gsub('^[:&]','')
                 if env.var.inputs[key] then 
                     tab=env.var.inputs[key]
-                    if type(tab)=='userdata' then 
+                    if type(tab)=='userdata' then tab=self.resultset:rows(tab,rows_limit) end
+                    if type(tab)=='table' then
+                        
                         tab={rs=tab,grid_cfg=grid_cfg}
-                        env.var.inputs[key]=nil
+                        env.var.inputs[key]=tab.rs
                     end
+                    grid_cfg._is_fetched=true
                     result[i]=tab
                 end
                 if type(tab)=='string' and #tab>1 then
@@ -986,6 +990,9 @@ function db_core:grid_call(tabs,rows_limit,args,is_cache)
                     tabs[k]=fetch_result(v)
                 elseif v.sql and type(rs)~="table" and type(rs)~="userdata" then
                     table.remove(tabs,k)
+                elseif v.grid_cfg and v.grid_cfg._is_fetched then
+                    tabs[k]=rs
+                    for a,b in pairs(v.grid_cfg or {}) do tabs[k][a]=b end
                 elseif type(rs)=="table" then
                     local tab={}
                     for x,y in ipairs(rs) do 

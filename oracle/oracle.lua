@@ -55,16 +55,16 @@ function oracle:helper(cmd)
         Connect to Oracle database. Usage: @@NAME <user>[proxy]/<password>@<connection_string> [as sysdba]
 
         The format of <connection_string> can be:
-            *  TNS      :  <tns_name>[?TNS_ADMIN=<path>]                     i.e.: @@NAME scott/tiger@orcl
+            * TNS      :  <tns_name>[?TNS_ADMIN=<path>]                     i.e.: @@NAME scott/tiger@orcl
 
-            *  EZConnect:  [//]host[:port][/[service_name][:server][/sid] ]  i.e.: @@NAME scott/tiger@localhost:1521/orcl
-                           (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)...))         i.e.: @@NAME scott/tiger@(DESCRIPTION = (ADDRESS = (PROTOCOL=TCP)(HOST=localhost)(PORT=1521)) (CONNECT_DATA=(SERVER=DEDICATED)(SERVICE_NAME=orcl)))
+            * EZConnect:  [//]host[:port][/[service_name][:server][/sid] ]  i.e.: @@NAME scott/tiger@localhost:1521/orcl
+                          (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)...))         i.e.: @@NAME scott/tiger@(DESCRIPTION = (ADDRESS = (PROTOCOL=TCP)(HOST=localhost)(PORT=1521)) (CONNECT_DATA=(SERVER=DEDICATED)(SERVICE_NAME=orcl)))
             
-            *  JDBC     :  [//]host[:port][:sid[:server] ]                   i.e.: @@NAME scott/tiger@localhost:1521:orcl1
+            * JDBC     :  [//]host[:port][:sid[:server] ]                   i.e.: @@NAME scott/tiger@localhost:1521:orcl1
             
-            *  LDAP     :  ldap:[//]<server>[:<port>]/service_name,<context> i.e.: @@NAME scott/tiger@ldap://ldap.acme.com:7777/orcl,cn=OracleContext,dc=com
+            * LDAP     :  ldap:[//]<server>[:<port>]/service_name,<context> i.e.: @@NAME scott/tiger@ldap://ldap.acme.com:7777/orcl,cn=OracleContext,dc=com
             
-            *  JDBC_URL :  <jdbc_url in "data/jdbc_url.cfg">                 i.e.: @@NAME scott/tiger@tos
+            * JDBC_URL :  <jdbc_url in "data/jdbc_url.cfg">                 i.e.: @@NAME scott/tiger@tos
         ]],
         CONN=[[Refer to command 'connect']],
     })[cmd]
@@ -638,9 +638,9 @@ function oracle:grid_db_call(sqls,args,is_cache)
     stmt[#stmt+1]='END;'
     local results;
     if not is_cache then 
-        result=self.super.exec(self,table.concat(stmt,'\n'),args)
+        results=self.super.exec(self,table.concat(stmt,'\n'),args)
     else
-        result=self.super.exec_cache(self,table.concat(stmt,'\n'),args,is_cache)
+        results=self.super.exec_cache(self,table.concat(stmt,'\n'),args,is_cache)
     end
     self.grid_cost=os.timer()-clock
     if type(results)~="table" and type(results)~="userdata" then results=nil end

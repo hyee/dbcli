@@ -52,6 +52,7 @@ for k,v in pairs{
         if not mt.__declared[n] and env.WORK_DIR then
             if debug_mode and env.IS_ENV_LOADED and n~='reset_input' and n:upper()~=n then print('Detected unexpected global var "'..n..'" with', debug.traceback()) end
             rawset(mt.__declared, n,env.callee(5))
+            --print(n,debug.traceback())
         end
         rawset(env, n, v)
     end
