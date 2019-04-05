@@ -364,24 +364,23 @@ function printer.onload()
     local more_help=[[
     Similar to Linux 'less' command. Usage: @@NAME <other command>|last|l  (support pipe(|) operation)
 
-    Key Maps:
-    =========
-    [| KeyMap               | Command   |
-     | q   :q   ZZ          | Exit      |
-     | f   ^F   Space   ^V  | Forward  window|
-     | b   ^B   Alt+V       | Backward window|
-     | g   <    Alt+<       | Top   window|
-     | G   >    Alt+>       | Last  window|
-     | [        Home        | Left  window|
-     | \]        End        | Right window|
-     | d        ^D               | Forward  half window|
-     | u        ^U               | Backward half window|   
-     | (        Left        | Left  half window|
-     | )        Right       | Right half window|
-     | l        L                | Enable/Disable line number|
-     | /pattern             | Search pattern |
-     | n        Alt+N       | Search Forward |
-     | N        ^N          | Search Backward|]
+    [|             grid:{topic='Key Maps'}
+     | Key Map              | Command                   |
+     | q   :q   ZZ          | Exit                      |
+     | f   ^F   Space   ^V  | Forward  window           |
+     | b   ^B   Alt+V       | Backward window           |
+     | g   <    Alt+<       | Top   window              |
+     | G   >    Alt+>       | Last  window              |
+     | [        Home        | Left  window              |
+     | \]        End        | Right window              |
+     | d        ^D          | Forward  half window      |
+     | u        ^U          | Backward half window      |   
+     | (        Left        | Left  half window         |
+     | )        Right       | Right half window         |
+     | l        L           | Enable/Disable line number|
+     | /pattern             | Search pattern            |
+     | n        Alt+N       | Search Forward            |
+     | N        ^N          | Search Backward           |]
 
     Example: select * from dba_objects|@@NAME
     ]]

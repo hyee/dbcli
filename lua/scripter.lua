@@ -481,10 +481,10 @@ function scripter:helper(_,cmd,search_key)
         local undoc_index=0
         for k,v in pairs(cmdlist) do
             if type(v)=="table" and v.abbr then k=k..','..v.abbr end
-            if (not search_key or k:find(search_key:upper(),1,true)) and k:sub(1,2)~='./' and k:sub(1,1)~='_' then
+            local desc=type(v)=='table' and v.short_desc and v.short_desc:gsub("^[ \t]+","") or ''
+            if (not search_key or desc:upper():find(search_key:upper(),1,true) or k:find(search_key:upper(),1,true)) and k:sub(1,2)~='./' and k:sub(1,1)~='_' then
                 if search_key or not (v.path or ""):find('[\\/]test[\\/]') then
-                    local desc=v.short_desc:gsub("^[ \t]+","")
-                    desc=desc:gsub("([Uu]sage)(%s*:%s*)(@@NAME)","$YEL$Usage:$NOR$ %3"):gsub("@@NAME","@@NAME "..k:lower().."$NOR$")
+                    desc=desc:gsub("([Uu]sage)(%s*:%s*)(@@NAME)","$USAGECOLOR$Usage:$NOR$ %3"):gsub("@@NAME","@@NAME "..k:lower().."$NOR$")
                     if desc and desc~="" then
                         table.insert(rows[1],k)
                         table.insert(rows[2],desc)
@@ -510,6 +510,7 @@ function scripter:helper(_,cmd,search_key)
             table.insert(rows[2],undocs)
         end
         env.set.set("PIVOT",-1)
+        env.checkerr(#rows[1]>0,'No result for the specific input.')
         env.set.set("HEADDEL",":")
         help=help..grid.tostring(rows)
         env.set.restore("HEADDEL")

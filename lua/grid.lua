@@ -461,7 +461,7 @@ end
 function grid:wellform(col_del, row_del)
     local result, colsize = self.data, self.colsize
     local rownum = grid.row_num
-    local siz, rows, output = #result, table.new(#self.data + 1, 0), table.new(#self.data + 1, #self.data[1])
+    local siz, rows, output = #result, table.new(#result + 1, 0), table.new(#result + 1, #result[1])
     if siz == 0 then return rows end
     local fmt = ""
     local title_dels, row_dels = {}, ""
