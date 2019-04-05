@@ -307,6 +307,7 @@ function grid:add(row)
     local title_style = grid.title_style
     local colbase = self.col_auto_size or grid.col_auto_size
     local rownum = grid.row_num
+    local null_value=env.set and env.set.NULL and env.set.NULL.value or ''
     grid.colsize = self.colsize
     for k, v in pairs(row) do rs[k] = v end
     if self.headind == -1 then
@@ -401,7 +402,13 @@ function grid:add(row)
             colsize[k][1] = 0
             colsize[k].__trimsize=(colbase == "trim" and csize) or 0
         elseif colsize[k][1] < csize and not (self.include_head and grid.pivot == 0 and headind~=0 and colbase=='head') then
-            if colsize[k].__trimsize then csize=math.max(csize,colsize[k].__trimsize) end
+            if colsize[k].__trimsize and colsize[k][1]==0  then
+                if v~=null_value then
+                    csize=math.max(csize,colsize[k].__trimsize)
+                else
+                    csize=colsize[k][1]
+                end
+            end
             colsize[k][1] = csize
         end
     end

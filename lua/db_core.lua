@@ -236,25 +236,29 @@ function ResultSet:rows(rs,count,limit,null_value,is_close)
     if not titles[1] then return end
     local dtype=titles[1].data_typeName
     local is_lob=cols==1 and (dtype:find("[BC]LOB") or dtype:find("XML"))
-    null_value=null_value or ''
+
+    null_value=null_value or cfg.get('null')
     if count~=0 then
         rows=loader:fetchResult(rs,count)
         local maxsiz=cfg.get("COLSIZE")
         for i=1,#rows do
             for j=1,cols do
+                local info=head.colinfo[j]
                 if rows[i][j]~=nil then
                     if is_lob and type(rows[i][j])=="string" and #rows[i][j]>255 then
                         print('Result written to '..env.write_cache(dtype:lower()..'_'..i..'.txt',rows[i][j]))
                     end
-                    if limit and type(rows[i][j])=="string" then rows[i][j]=rows[i][j]:sub(1,maxsiz) end
-                    if head.colinfo[j].data_typeName=="DATE" or head.colinfo[j].data_typeName=="TIMESTAMP" then
+                    if limit and not info.is_number and type(rows[i][j])=="string" then rows[i][j]=rows[i][j]:sub(1,maxsiz) end
+                    if info.data_typeName=="DATE" or info.data_typeName=="TIMESTAMP" then
                         rows[i][j]=rows[i][j]:gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
-                    elseif head.colinfo[j].data_typeName=="BLOB" then
+                    elseif info.data_typeName=="BLOB" then
                         rows[i][j]=rows[i][j]:sub(1,255)
-                    elseif head.colinfo[j].is_number and type(rows[i][j])~="number" then
+                    elseif info.is_number and type(rows[i][j])~="number" then
                         local int=tonumber(rows[i][j])
                         rows[i][j]=tostring(int)==rows[i][j] and int or rows[i][j]
                     end
+                elseif info.is_number then
+                    rows[i][j]=''
                 else
                     rows[i][j]=null_value
                 end
