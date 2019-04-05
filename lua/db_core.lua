@@ -226,7 +226,7 @@ function ResultSet:close(rs)
     end
 end
 
-function ResultSet:rows(rs,count,limit,null_value)
+function ResultSet:rows(rs,count,limit,null_value,is_close)
     if type(rs)~="userdata" or (rs.isClosed and rs:isClosed()) then return end
     count=tonumber(count) or -1
     local titles=self:getHeads(rs,limit)
@@ -236,7 +236,7 @@ function ResultSet:rows(rs,count,limit,null_value)
     if not titles[1] then return end
     local dtype=titles[1].data_typeName
     local is_lob=cols==1 and (dtype:find("[BC]LOB") or dtype:find("XML"))
-    null_value=null_value or ""
+    null_value=null_value or ''
     if count~=0 then
         rows=loader:fetchResult(rs,count)
         local maxsiz=cfg.get("COLSIZE")
@@ -261,7 +261,9 @@ function ResultSet:rows(rs,count,limit,null_value)
             end
         end
     end
-
+    if is_close==true and rs.close then
+        pcall(rs.close,rs)
+    end
     table.insert(rows,1,head)
     return rows
 end
@@ -280,7 +282,7 @@ function ResultSet:print(res,conn,prefix)
     res:setFetchSize(cfg.get("FETCHSIZE"))
     local maxrows,pivot=cfg.get("printsize"),cfg.get("pivot")
     if pivot~=0 then maxrows=math.abs(pivot) end
-    local result=self:rows(res,maxrows,cfg.get("null"),true)
+    local result=self:rows(res,maxrows,true,cfg.get('null'),true)
     if not result then return end
     if pivot==0 then
         hdl=grid.new()
@@ -940,7 +942,7 @@ function db_core:get_rows(sql,args,count)
     if not result or type(result)=="number" then
         return result
     end
-    return self.resultset:rows(result,count or -1)
+    return self.resultset:rows(result,count or -1,nil,true)
 end
 
 function db_core:grid_call(tabs,rows_limit,args,is_cache)
@@ -996,12 +998,12 @@ function db_core:grid_call(tabs,rows_limit,args,is_cache)
                 elseif type(rs)=="table" then
                     local tab={}
                     for x,y in ipairs(rs) do 
-                        tab[x]=self.resultset:rows(y,rows_limit)
+                        tab[x]=self.resultset:rows(y,rows_limit,nil,nil,true)
                         for a,b in pairs(v.grid_cfg) do tab[x][a]=b end
                     end
                     tabs[k]=tab
                 else
-                    tabs[k]=self.resultset:rows(rs,rows_limit)
+                    tabs[k]=self.resultset:rows(rs,rows_limit,nil,nil,true)
                     for a,b in pairs(v.grid_cfg or {}) do tabs[k][a]=b end
                 end
             elseif type(v)~='string' or #v~=1 then
