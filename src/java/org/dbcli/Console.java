@@ -245,22 +245,10 @@ public final class Console {
 
     public int getBufferWidth() {
         if ("terminator".equals(System.getenv("TERM"))) return 2000;
-        if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM)) {
-            final Pointer consoleOut = Kernel32.INSTANCE.GetStdHandle(Kernel32.STD_OUTPUT_HANDLE);
-            Kernel32.CONSOLE_SCREEN_BUFFER_INFO info = new Kernel32.CONSOLE_SCREEN_BUFFER_INFO();
-            Kernel32.INSTANCE.GetConsoleScreenBufferInfo(consoleOut, info);
-            return info.dwSize.X;
-        }
-        return terminal.getWidth();
+        return terminal.getBufferSize().getColumns();
     }
 
     public int getScreenWidth() {
-        if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM)) {
-            final Pointer consoleOut = Kernel32.INSTANCE.GetStdHandle(Kernel32.STD_OUTPUT_HANDLE);
-            Kernel32.CONSOLE_SCREEN_BUFFER_INFO info = new Kernel32.CONSOLE_SCREEN_BUFFER_INFO();
-            Kernel32.INSTANCE.GetConsoleScreenBufferInfo(consoleOut, info);
-            return info.windowWidth();
-        }
         return terminal.getWidth();
     }
 
@@ -396,7 +384,7 @@ public final class Console {
         setEvents(null, null);
     }
 
-    public String getKeyMap(String[] options) {
+    public String getKeyMap(String[] options) throws Exception{
         ByteArrayOutputStream stream = new ByteArrayOutputStream();
         Commands.keymap(reader, new PrintStream(stream), System.err, options);
         return stream.toString();

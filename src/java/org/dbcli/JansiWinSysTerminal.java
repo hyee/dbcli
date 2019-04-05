@@ -176,10 +176,18 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
     Size size = new Size();
 
     public Size getSize() {
-        Kernel32.GetConsoleScreenBufferInfo(console, info);
-        size.setColumns(info.windowWidth());
-        size.setRows(info.windowHeight());
-        return size;
+        long outputHandle = Kernel32.GetStdHandle(Kernel32.STD_OUTPUT_HANDLE);
+        CONSOLE_SCREEN_BUFFER_INFO info = new CONSOLE_SCREEN_BUFFER_INFO();
+        Kernel32.GetConsoleScreenBufferInfo(outputHandle, info);
+        return new Size(info.windowWidth(), info.windowHeight());
+    }
+
+    @Override
+    public Size getBufferSize() {
+        long outputHandle = Kernel32.GetStdHandle(Kernel32.STD_OUTPUT_HANDLE);
+        CONSOLE_SCREEN_BUFFER_INFO info = new CONSOLE_SCREEN_BUFFER_INFO();
+        Kernel32.GetConsoleScreenBufferInfo(outputHandle, info);
+        return new Size(info.size.x, info.size.y);
     }
 
     protected boolean processConsoleInput() throws IOException {

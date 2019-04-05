@@ -2,7 +2,7 @@
 
  -h: target views are gv$xxxmetric_history
     --[[
-        @ver: 11={} 10={--}
+        @ver: 11={}
         &opt:  default={} h={_HISTORY}
         &mins: default={1/144} h={84/1440}
         &v1: default={&starttime}
@@ -60,7 +60,7 @@ grid {
     [[ grid={topic="DBA_HIST_SERVICE_STAT (Per Second)"}
 		SELECT *
 		FROM   (SELECT service_name,
-		               &ver insts,
+		               insts,
 		               stat_name,
 		               CASE
 					       WHEN stat_name = 'gc cr block receive time' THEN
@@ -73,7 +73,7 @@ grid {
 		                       VALUE
 		               END val
 		        FROM   (SELECT nvl(service_name, '--TOTAL--') service_name,
-							   &ver nvl2(service_name,listagg(decode(r,1,instance_number),',') within group(order by instance_number),'') insts,
+							   nvl2(service_name,listagg(decode(r,1,instance_number),',') within group(order by instance_number),'') insts,
 		                       stat_name,
 		                       round(SUM(flag * VALUE / secs * CASE
 		                                     WHEN stat_name LIKE 'physical%' THEN

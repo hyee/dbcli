@@ -43,7 +43,7 @@ local function scan(dir,ext)
 	end
 	local subdirs={}
 	for name, ftype in iter do
-		name=resolve(dir..'/'..name)
+		name=resolve(dir..fsep..name)
 		if ftype==nil then
 			local attr=luv.fs_stat(name)
 			ftype=attr and attr.type or "file"
@@ -51,7 +51,7 @@ local function scan(dir,ext)
 		if ftype=="directory" then
 			subdirs[#subdirs+1]=name
 		elseif name:find(pattern) then
-			files[#files+1]='./'..name
+			files[#files+1]='.'..fsep..name
 		end
 	end
 	for _,sub in ipairs(subdirs) do scan(sub,ext) end

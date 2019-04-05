@@ -599,7 +599,7 @@ public class Less {
 
     int globalLineWidth = 0;
 
-    boolean display(boolean oneScreen) throws IOException {
+    synchronized boolean display(boolean oneScreen) throws IOException {
         if (!oneScreen) {
             if (System.getenv("IS_WSL") == null) {
                 if (terminal.reader().peek(128L) != NonBlockingReader.READ_EXPIRED) return false;
@@ -680,7 +680,7 @@ public class Less {
 
         if (oneScreen) {
             if (fitOnOneScreen && maxWidth <= width) {
-                newLines.forEach(l -> terminal.writer().println(l.toAnsi(terminal)));
+                newLines.forEach(l -> l.println(terminal));
                 terminal.writer().flush();
                 return true;
             }
