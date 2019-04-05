@@ -103,10 +103,10 @@ function helper.helper(cmd,...)
             target=cmd
         end
         if helps=="" then return end
-        helps=helps:gsub('^(%s*[^\n\r]+)[Uu]sage[: \t]+(@@NAME)','%1\n$USAGECOLOR$Usage:$NOR$ %2'):gsub('([eE]xamples?)%s*: *','$USAGECOLOR$%1:$NOR$ ')
+        helps=helps:gsub('^%s*\n',''):gsub('^(%s*[^\n\r]+)[Uu]sage[: \t]+(@@NAME)','%1\n$USAGECOLOR$Usage:$NOR$ %2'):gsub('([eE]xamples?)%s*: *','$USAGECOLOR$%1:$NOR$ ')
         local spaces=helps:match("([ \t]*)%S") or ""
-        helps=('\n'..helps):gsub("\r?\n"..spaces,"\n"):gsub("%s+$",""):gsub("@@NAME",target:lower())
-        if helps:sub(1,1)=="\n" then helps=helps:sub(2) end
+        helps='\n'..spaces..'$USAGECOLOR$'..target:upper()..':$NOR$ '..helps:sub(#spaces+1)
+        helps=helps:gsub("\r?\n"..spaces,"\n"):gsub("%s+$",""):gsub("@@NAME",target:lower())
 
         local grid=env.grid
         helps=helps:gsub('%[(%s*%|.-%|)%s*%]',function(s)
@@ -125,7 +125,7 @@ function helper.helper(cmd,...)
             for k,v in pairs(cfg) do tab[k]=v end
             return space..table.concat(grid.merge({tab}),'\n'..space)
         end)
-        return print(helps)
+        return print(helps:rtrim()..'\n')
     elseif cmd=="-e" or cmd=="-E" then
         return helper.env(...)
     elseif cmd=="-j" or cmd=="-J" then

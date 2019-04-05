@@ -112,7 +112,7 @@ Available parameters:
    Replacement:     from &V1 to &V9, used to replace the wildcards inside the SQL stmts
    Out   bindings:  :<alphanumeric>, the data type of output parameters should be defined in th comment scope
 --]]--
-function scripter:parse_args(sql,args,print_args,extend_dirs)
+function scripter:parse_args(sql,args,print_args,cmd)
 
     local outputlist={}
     local outputcount=0
@@ -158,9 +158,22 @@ function scripter:parse_args(sql,args,print_args,extend_dirs)
                         templates[k][option]=text
                     end
 
-                    if prefix=="@" and k~="ALIAS" then
-                        self.db:assert_connect()
-                        default=self:trigger('validate_accessable',k,keys,templates[k])
+                    if prefix=="@"  then
+                        if k~="ALIAS" and k~='ARGS' then
+                            self.db:assert_connect()
+                            default=self:trigger('validate_accessable',k,keys,templates[k])
+                        else
+                            k='@'..k
+                            templates[k]={['DEFAULT']=v}
+                            default=v
+                            if k=='@ARGS' and not print_args then
+                                local min=tonumber(v)
+                                if min and #args<min then
+                                    env.helper.helper(self:get_command(),cmd)
+                                    env.checkerr(false,'Please input at least '..min..' parameter(s).')
+                                end
+                            end
+                        end
                     end
 
                     templates[k]['@default']=default
@@ -417,7 +430,7 @@ function scripter:get_script(cmd,args,print_args)
     local sql=f:read(10485760)
     f:close()
     if is_get then return print(sql) end
-    args=self:parse_args(sql,args,print_args)
+    args=self:parse_args(sql,args,print_args,cmd)
     return sql,args,print_args,file,cmd
 end
 
