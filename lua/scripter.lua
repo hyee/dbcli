@@ -460,7 +460,7 @@ end
 
 function scripter:helper(_,cmd,search_key)
     local help,cmdlist=""
-    help=('%sUsage: %s %s \nAvailable commands:\n=================\n'):format(self.help_title,self:get_command(),self.usage)
+    help=('%sUsage: @@NAME %s \nAvailable commands:\n=================\n'):format(self.help_title,self.usage)
     if env.IS_ENV_LOADED and not self.cmdlist then
         self:run_script('-r')
     end
@@ -483,7 +483,8 @@ function scripter:helper(_,cmd,search_key)
             if type(v)=="table" and v.abbr then k=k..','..v.abbr end
             if (not search_key or k:find(search_key:upper(),1,true)) and k:sub(1,2)~='./' and k:sub(1,1)~='_' then
                 if search_key or not (v.path or ""):find('[\\/]test[\\/]') then
-                    local desc=v.short_desc:gsub("^[ \t]+",""):gsub("@@NAME","@@NAME "..k:lower())
+                    local desc=v.short_desc:gsub("^[ \t]+","")
+                    desc=desc:gsub("([Uu]sage)(%s*:%s*)(@@NAME)","$YEL$Usage:$NOR$ %3"):gsub("@@NAME","@@NAME "..k:lower().."$NOR$")
                     if desc and desc~="" then
                         table.insert(rows[1],k)
                         table.insert(rows[2],desc)
@@ -527,7 +528,7 @@ function scripter:__onload()
     if not cfg.exists("echo") then cfg.init("echo","off",scripter.set_echo,"core","Controls whether the START command lists each command in a script as the command is executed.","on,off") end
     if self.command and self.command~="" then
         env.set_command{obj=self,cmd=self.command, 
-                        help_func={self.help_title.." Type '@@NAME' for more detail.",self.helper},
+                        help_func={self.help_title.."Type '@@NAME' for more detail.",self.helper},
                         call_func={self.run_script,self.after_script},
                         is_multiline=false,parameters=ARGS_COUNT+1,color="HEADCOLOR"
                         }

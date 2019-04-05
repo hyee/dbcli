@@ -1362,7 +1362,7 @@ function db_core:__onload()
         max_rows=<rows>   :  max print records
         pivot=<rows>      :  controls whether to pivot the records
         bypassemptyrs='on':  controls whether to display the block in case of no record
-        autosize=<value>  :  controls whether to eliminate the column whose values are all null, refer to option 'SET COLAUTOSIZE'
+        autosize='trim'   :  controls whether to eliminate the column whose values are all null, refer to option 'SET COLAUTOSIZE'
 
         Elements:
             sep     : Can be 3 values:
@@ -1374,48 +1374,50 @@ function db_core:__onload()
                           grid={height=<rows>,width=<columns>,topic='<grid topic>',max_rows=<records>}
 
         Examples:
-        1.  grid {
-                   'select name,value from v$sysstat where rownum<=5',
-               '-','select class,count from v$waitstat where rownum<=10',
-               '+','select event,total_Waits from v$system_event where rownum<20',
-               '|','select stat_id,value from v$sys_time_model where rownum<20',
-            }
-        
-        2.  Lua style:
-            ==========
-            grid {[[select rownum "#",event,total_Waits from v$system_event where rownum<56]'], --Query#1 left to next merged grid(query#2/query#3/query#4)
-                  '|',{'select * from v$sysstat where rownum<=20',                              --Query#2 left to next merged grid(query#3/query#4))
-                       '-', {'select rownum "#",name,hash from v$latch where rownum<=30',       --Query#3 above to query#4
-                             '+',"select /*grid={topic='Wait State'}*/ * from v$waitstat"
-                            }
-                       },
-                  '-','select /*grid={topic="Metrix"}*/ * from v$sysmetric where rownum<=10'    --Query#5 under merged grid(query#1-#4)
-                  }
+            1.  Simple case
+                ===========
+                grid {
+                    'select name,value from v$sysstat where rownum<=5',
+                '-','select class,count from v$waitstat where rownum<=10',
+                '+','select event,total_Waits from v$system_event where rownum<20',
+                '|','select stat_id,value from v$sys_time_model where rownum<20',
+                }
+            
+            2.  Lua style:
+                ==========
+                grid {[[select rownum "#",event,total_Waits from v$system_event where rownum<56]'], --Query#1 left to next merged grid(query#2/query#3/query#4)
+                    '|',{'select * from v$sysstat where rownum<=20',                              --Query#2 left to next merged grid(query#3/query#4))
+                        '-', {'select rownum "#",name,hash from v$latch where rownum<=30',       --Query#3 above to query#4
+                                '+',"select /*grid={topic='Wait State'}*/ * from v$waitstat"
+                                }
+                        },
+                    '-','select /*grid={topic="Metrix"}*/ * from v$sysmetric where rownum<=10'    --Query#5 under merged grid(query#1-#4)
+                    }
 
-            JSON style:
-            ===========
-            grid [ 'select rownum "#",event,total_Waits from v$system_event where rownum<56', 
-                   '|',['select * from v$sysstat where rownum<=20',                            
-                        '-', ['select rownum "#",name,hash from v$latch where rownum<=30',     
-                              '+',"select /*grid={'topic':'Wait State'}*/ * from v$waitstat"]
-                       ],
-                    '-','select /*grid={"topic":"Metrix"}*/ * from v$sysmetric where rownum<=10']
-        
-        3. Cursor style:
-           =============
-            set verify off 
-            var c1 refcursor
-            var c2 refcursor
-            begin
-                open :c1 for select name,value from v$sysstat where rownum<=5;
-                open :c2 for select class,count from v$waitstat where rownum<=15;
-            end;
-            /
-            grid {
-                    'c1 grid={topic="I am a cursor"}',
-                '-','c2',
-                '|',"select * from v$sysstat where rownum<=20 /*grid={topic='I am a SQL Text'}*/ "
-            }
+                JSON style:
+                ===========
+                grid [ 'select rownum "#",event,total_Waits from v$system_event where rownum<56', 
+                    '|',['select * from v$sysstat where rownum<=20',                            
+                            '-', ['select rownum "#",name,hash from v$latch where rownum<=30',     
+                                '+',"select /*grid={'topic':'Wait State'}*/ * from v$waitstat"]
+                        ],
+                        '-','select /*grid={"topic":"Metrix"}*/ * from v$sysmetric where rownum<=10']
+            
+            3. Cursor style:
+            =============
+                set verify off 
+                var c1 refcursor
+                var c2 refcursor
+                begin
+                    open :c1 for select name,value from v$sysstat where rownum<=5;
+                    open :c2 for select class,count from v$waitstat where rownum<=15;
+                end;
+                /
+                grid {
+                        'c1 grid={topic="I am a cursor"}',
+                    '-','c2',
+                    '|',"select * from v$sysstat where rownum<=20 /*grid={topic='I am a SQL Text'}*/ "
+                }
 
         Refer to 'system.snap' for more example
     ]]

@@ -392,7 +392,6 @@ function grid:add(row)
             end
         end
         
-        
         if headind == 0 and title_style ~= "none" then
             v = grid.format_title(v)
         end

@@ -384,7 +384,7 @@ public final class Console {
         setEvents(null, null);
     }
 
-    public String getKeyMap(String[] options) throws Exception{
+    public String getKeyMap(String[] options) throws Exception {
         ByteArrayOutputStream stream = new ByteArrayOutputStream();
         Commands.keymap(reader, new PrintStream(stream), System.err, options);
         return stream.toString();

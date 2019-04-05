@@ -19,6 +19,7 @@ import java.lang.reflect.Method;
 import java.math.BigInteger;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.CallableStatement;
@@ -99,7 +100,7 @@ public class Loader {
         return t == null ? e : new Exception(t);
     }
 
-    public static void loadLua(Loader loader, String args[]) throws Exception {
+    public static void loadLua(Loader loader, String[] args) throws Exception {
         lua = new LuaState();
         lua.pushGlobal("loader", loader);
         console.isSubSystem = false;
@@ -156,7 +157,7 @@ public class Loader {
         }
     }
 
-    public static void main(String args[]) throws Exception {
+    public static void main(String[] args) throws Exception {
         Loader l = get();
         while (ReloadNextTime != null) loadLua(l, args);
         //console.threadPool.shutdown();
@@ -185,9 +186,9 @@ public class Loader {
         Class<URLClassLoader> clazz = URLClassLoader.class;
         URL url = new URL("file:" + file);
         // Use reflection
-        Method method = clazz.getDeclaredMethod("addURL", new Class[]{URL.class});
+        Method method = clazz.getDeclaredMethod("addURL", URL.class);
         method.setAccessible(true);
-        method.invoke(classLoader, new Object[]{url});
+        method.invoke(classLoader, url);
         TreeMap<String, Boolean> map = new TreeMap();
         for (String s : (System.getProperty("java.class.path") + File.pathSeparator + file.replace(root, ".")).split(File.pathSeparator))
             map.put(s, true);
@@ -222,7 +223,7 @@ public class Loader {
 
     private void setExclusiveAndRemap(CSVWriter writer, String excludes, String[] remaps) {
         if (excludes != null && !excludes.trim().equals("")) {
-            String ary[] = excludes.split(",");
+            String[] ary = excludes.split(",");
             for (String column : ary) writer.setExclude(column, true);
         }
         if (remaps != null) {
@@ -253,7 +254,7 @@ public class Loader {
          */
 
         // get bytes of the string supplied
-        byte[] bytesOfStatement = stmt.getBytes("UTF-8"); //should not use trim()
+        byte[] bytesOfStatement = stmt.getBytes(StandardCharsets.UTF_8); //should not use trim()
         byte[] bytesOfStatementWithNull = new byte[bytesOfStatement.length + 1]; // last bucket used for Null Terminator
         byte nullCharByte = 0x00; // get bytes of null terminator
 
@@ -414,7 +415,7 @@ public class Loader {
         setCurrentResultSet(rs);
         return new LuaTable((Object[]) asyncCall(() -> {
             try (ResultSetHelperService helper = new ResultSetHelperService(rs)) {
-                helper.IS_TRIM = false;
+                ResultSetHelperService.IS_TRIM = false;
                 return (rows >= 0 && rows <= 10000) ? helper.fetchRows(rows) : helper.fetchRowsAsync(rows);
             }
         }));
@@ -497,7 +498,7 @@ public class Loader {
 
     public Object asyncCall(Callable<Object> c) throws Exception {
         try {
-            this.sleeper = console.threadPool.submit(c);
+            this.sleeper = Console.threadPool.submit(c);
             console.setEvents(q, new char[]{'q', 'Q'});
             return sleeper.get();
         } catch (CancellationException | InterruptedException e) {
@@ -516,7 +517,7 @@ public class Loader {
 
     public synchronized Object asyncCall(final Object o, final String func, final Object... args) throws Exception {
         return asyncCall(() -> {
-            ClassAccess access = ClassAccess.access(lua.toClass(o));
+            ClassAccess access = ClassAccess.access(LuaState.toClass(o));
             return access.invoke(o, func, args);
         });
     }
@@ -524,7 +525,7 @@ public class Loader {
     public synchronized void sleep(int millSeconds) throws Exception {
         try (Closeable clo = console::setEvents) {
             runner.setSleep(millSeconds);
-            sleeper = console.threadPool.submit(runner);
+            sleeper = Console.threadPool.submit(runner);
             console.setEvents(q, new char[]{'q'});
             sleeper.get();
         } catch (Exception e) {

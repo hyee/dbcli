@@ -318,7 +318,7 @@ function cfg.onload()
     env.event.snoop("AFTER_COMMAND",cfg.capture_after_cmd)
     env.event.snoop("ON_ENV_LOADED",cfg.on_env_load)
     env.set_command{obj=nil,cmd=cfg.name, 
-                    help_func="Set environment parameters. Usage: set [-a] | {[-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]}",
+                    help_func="Set environment parameters. Usage: @@NAME [-a] | {[-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]}",
                     call_func=cfg.doset,
                     is_multiline=false,parameters=99,color="PROMPTCOLOR"}
 end

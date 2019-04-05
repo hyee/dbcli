@@ -746,8 +746,8 @@ public class Less {
         map.bind(Operation.RIGHT_FRIST_COLUMN, key(terminal, Capability.key_end), "]");
         map.bind(Operation.LEFT_FRIST_COLUMN, key(terminal, Capability.key_home), "[");
         map.bind(Operation.FORWARD_FOREVER, "F");
-        map.bind(Operation.REPEAT_SEARCH_FORWARD, "n", "N");
-        map.bind(Operation.REPEAT_SEARCH_FORWARD_SPAN_FILES, alt('n'), alt('N'));
+        map.bind(Operation.REPEAT_SEARCH_FORWARD, "n", alt('n'));
+        map.bind(Operation.REPEAT_SEARCH_BACKWARD,"N",ctrl('N'));
         map.bind(Operation.UNDO_SEARCH, alt('u'));
         map.bind(Operation.GO_TO_FIRST_LINE_OR_N, "g", "<", alt('<'));
         map.bind(Operation.GO_TO_LAST_LINE_OR_N, "G", ">", alt('>'));
