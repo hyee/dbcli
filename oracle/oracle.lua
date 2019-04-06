@@ -110,7 +110,7 @@ function oracle:connect(conn_str)
         local flag=true
         if database then
             if host=='ldap' or host=='ldaps' then
-                flag,driver,server_sep,database=true,'oci8','/',database:sub(3):match('/([^%s,]+)')
+                flag,server_sep,database=true,'/',database:sub(3):match('/([^%s,]+)')
             elseif database:sub(1,1)=='/' then -- //<sid>
                 flag,server_sep,database=false,':',database:sub(2)
             elseif database:match('^:(%w+)/([%w_]+)$') then -- /:<server>/<sid>
@@ -560,7 +560,6 @@ function oracle:onload()
          driverClassName="oracle.jdbc.driver.OracleDriver",
          defaultRowPrefetch=tostring(cfg.get("FETCHSIZE")),
          PROXY_USER_NAME=proxy_user,
-         useFetchSizeWithLongColumn='true',
          bigStringTryClob="true",
          clientEncoding=java.system:getProperty("input.encoding"),
          processEscapes='false',

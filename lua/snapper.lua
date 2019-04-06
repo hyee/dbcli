@@ -505,7 +505,7 @@ function snapper:next_exec()
                 env.printer.top_mode=true
                 if not self.is_first_top then
                     reader:clearScreen()
-                    console:initDisplay()
+                    if #cmd.rs2.rsidx~=1 then console:initDisplay() end
                     self.is_first_top=true;
                 end
             end
@@ -514,7 +514,8 @@ function snapper:next_exec()
                 if top_mode then
                     reader:clearScreen()
                 end
-                env.grid.print(cmd.rs2.rsidx[1],nil,nil,title,cmd.max_rows and cmd.max_rows+2 or cfg.get(self.command.."rows"))
+                print(title..'\n')
+                env.grid.print(cmd.rs2.rsidx[1],nil,nil,nil,cmd.max_rows and cmd.max_rows+2 or cfg.get(self.command.."rows"))
             else
                 if top_mode then cmd.rs2.max_rows=getHeight(console)-3 end
                 env.grid.merge(cmd.rs2,true,title:trim())

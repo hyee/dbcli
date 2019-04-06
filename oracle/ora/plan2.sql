@@ -1,4 +1,4 @@
-/*[[ HelloDBA's show plan
+/*[[ HelloDBA's show plan. Usage: @@NAME <sql_id> [<plan_hash_value> [format] ]
  |###############################################################################
  |
  |          name: showplan.sql v1.0

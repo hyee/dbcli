@@ -1,4 +1,4 @@
-/*[[Search SQL functions]]*/
+/*[[Search SQL functions. Usage: @@NAME <keyword>]]*/
 
 select a.*,(select listagg(datatype,',') within group(order by argnum) from  V$SQLFN_ARG_METADATA  where func_id=a.func_id) args
 from V$SQLFN_METADATA  a
