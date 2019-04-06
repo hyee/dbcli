@@ -103,11 +103,29 @@ function helper.helper(cmd,...)
             target=cmd
         end
         if helps=="" then return end
-        helps=helps:gsub('^(%s*[^\n\r]+)([Uu]sage[: \t"\']+@@NAME)','%1\n%2')
+        helps=helps:gsub('^%s*\n',''):gsub('^(%s*[^\n\r]+)[Uu]sage[: \t]+(@@NAME)','%1\n$USAGECOLOR$Usage:$NOR$ %2'):gsub('([eE]xamples?)%s*: *','$USAGECOLOR$%1:$NOR$ ')
         local spaces=helps:match("([ \t]*)%S") or ""
-        helps=('\n'..helps):gsub("[\n\r]"..spaces,"\n"):gsub("%s+$",""):gsub("@@NAME",target:lower())
-        if helps:sub(1,1)=="\n" then helps=helps:sub(2) end
-        return print(helps)
+        helps='\n'..spaces..'$USAGECOLOR$'..target:upper()..':$NOR$ '..helps:sub(#spaces+1)
+        helps=helps:gsub("\r?\n"..spaces,"\n"):gsub("%s+$",""):gsub("@@NAME",target:lower())
+
+        local grid=env.grid
+        helps=helps:gsub('%[(%s*%|.-%|)%s*%]',function(s)
+            local tab,s0=grid.new(),s..' '
+            local space=s:match('([ \t]*)|') or ''
+            local _,cfg=grid.get_config(s0)
+            s0:gsub('[^\n%S]*(|[^\r\n]+|)%s+',function(s1)
+                local row={}
+                s1:gsub('([^%|]+)',function(s2)
+                    row[#row+1]=s2:trim():gsub('\\n','\n'):gsub('\\%]',']')
+                    if #row==1 and #tab.data>1 then row[1]='$BOLD$'..row[1]..' $NOR$' end
+                end)
+                if #row >1 then tab:add(row) end
+            end)
+            if #tab.data==0 then return s end
+            for k,v in pairs(cfg) do tab[k]=v end
+            return space..table.concat(grid.merge({tab}),'\n'..space)
+        end)
+        return print(helps:rtrim()..'\n')
     elseif cmd=="-e" or cmd=="-E" then
         return helper.env(...)
     elseif cmd=="-j" or cmd=="-J" then
@@ -188,7 +206,9 @@ function helper.helper(cmd,...)
             if flag==1 then
                 table.append(rows[#rows],(type(v.MULTI)=="function" or type(v.MULTI)=="string") and "Auto" or v.MULTI and 'Yes' or 'No',v.FILE)
             end
-            table.insert(rows[#rows],v.DESC and v.DESC:gsub("^[%s#]+",""):gsub("@@NAME",k:lower()) or " ")
+            local desc=v.DESC and v.DESC:gsub("^[%s#]+","") or " "
+            desc=desc:gsub("([Uu]sage)(%s*:%s*)(@@NAME)","$USAGECOLOR$Usage:$NOR$ "..k:lower()):gsub("@@NAME","$USAGECOLOR$"..k:lower().."$NOR$")
+            table.insert(rows[#rows],desc)
             if (v.COLOR or "")~="" then
                 rows[#rows][1]=ansi.mask(v.COLOR,rows[#rows][1])
                 rows[#rows][2]=ansi.mask(v.COLOR,rows[#rows][2])
@@ -203,7 +223,7 @@ end
 
 function helper.desc()
     return [[
-        Type 'help' to see the available comand list. Usage: help [<command>[,<sub_command1>...]|-a|-j|-stack|-e [<obj>]|help ]
+        Type 'help' to see the available comand list. Usage: @@NAME [<command>[,<sub_command1>...]|-a|-j|-stack|-e [<obj>]|help ]
         Options:
            -stack     To print stack of historical commands
            -a         To show all commands, including the hidden commands.

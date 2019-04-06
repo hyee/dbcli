@@ -133,7 +133,7 @@ function unwrap.unwrap(obj,ext,prefix)
         if piece[3]==piece[4] then
             txt,cache=table.concat(cache,''),{};
             if tonumber(piece[2])==1 then
-                local cnt,lines=txt:match('[\n\r][0-9a-f]+ ([0-9a-f]+)[\n\r](.*)')
+                local cnt,lines=txt:match('\r?\n[0-9a-f]+ ([0-9a-f]+)\r?\n(.*)')
                 env.checkerr(lines,'Cannot find matched text!')
                 txt=decode_base64_package(lines:gsub('[\n\r]+',''))
             end

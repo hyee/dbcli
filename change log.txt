@@ -1,3 +1,11 @@
+2019-04-06: + public: new option 'set UsageColor'
+                      new alias 'ttop'
+            * public: update JLine to v3.9.11
+                      highlight the help info
+                      support annotation '@Args' in the scripting engine to limit the minimum number of input parameters
+                      optimize less mode and top mode
+2019-04-02: * oracle: support grid option 'autosize' to auto-eliminates the empty columns
+            + oracle: new command 'ora snap_event'
 2019-03-25: + oracle: new command 'rac enqueue/rac lms/sys dep'
 2019-03-13: + oracle: new command 'ora awrmetric'
 2019-03-02: + oracle: new command 'chart celldb'

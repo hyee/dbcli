@@ -1,4 +1,4 @@
-/*[[get latch info: latchprof {<sid|sql_id> [event] [seconds} [-addr|-block]
+/*[[get latch info. Usage: @@NAME {<sid|sql_id> [event] [seconds} [-addr|-block]
      --[[
         &fields: default={inst_id,sid,name,sql_id,obj} f={inst_id,sid,name,laddr,sql_id,obj} block={inst_id,sid,name,sql_id,obj,block#}
         &V3    : default={5}

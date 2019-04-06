@@ -175,7 +175,12 @@
                                                 first_value(substr(event,1,25)) OVER(PARTITION BY inst, sql_id ORDER BY COUNT(1) DESC) top_event,
                                                 SUM(cost) aas,
                                                 SUM(NVL2(event, 0, cost)) CPU
-                                        FROM   (SELECT &inst1 inst,&ash_cost cost, a.*
+                                        FROM   (SELECT /*+full(a.a) leading(a.a) use_hash(a.a a.s) swap_join_inputs(a.s) 
+                                                          FULL(A.GV$ACTIVE_SESSION_HISTORY.A)  
+                                                          leading(A.GV$ACTIVE_SESSION_HISTORY.A) 
+                                                          use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S) 
+                                                          swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)*/
+                                                       &inst1 inst,&ash_cost cost, a.*
                                                 FROM   gv$active_Session_history a
                                                 WHERE  sql_id IS NOT NULL AND &inst_filter
                                                 AND    sample_time > SYSDATE - :snap_interval / 86400)
@@ -418,6 +423,7 @@
                                   'ka messages sent',v * 200,
                                   'ka grants received',v * 200)) "Traffic",
                        SUM(DECODE(n, 'global enqueue get time',v*10000)) "enq",
+                       SUM(DECODE(n, 'global enqueue gets sync',v,'global enqueue gets async',v)) "enqs",
                        SUM(bs * DECODE(n, 'gc blocks lost', v*bs, 'gc blocks corrupt', v*bs)) "Lost",
                        (select sum(w) from (select &inst1 inst,TOTAL_WAITS w from &sysevent WHERE event='gc cr failure' and &inst_filter) b where b.inst=c.inst) "Fail",
                         '|' "|",
@@ -426,7 +432,7 @@
                        MAX(CR_CONGESTED*bs) "CR Traf",
                        SUM(DECODE(n, 'gc cr blocks served', v)) "CR Sv",
                        SUM(DECODE(n, 'gc cr block receive time', v*10000*bs)) "CR Avg",
-                       SUM(DECODE(n, 'gc cr block build time', v*10000)) "CR Bld",
+                       SUM(DECODE(n, 'gc cr block build time', v*10000,'gc cr multiblock grant time',v*10000)) "CR Bld",
                        SUM(DECODE(n, 'gc cr block flush time', v*10000)) "CR Fls",
                         '|' "|",
                        SUM(DECODE(n, 'gc current blocks received', v*bs)) "CU Rec",
@@ -434,8 +440,8 @@
                        MAX(CU_CONGESTED*bs) "CU Traf",
                        SUM(DECODE(n, 'gc current blocks served', v)) "CU Sv",
                        SUM(DECODE(n, 'gc current block receive time', v*10000*bs)) "CU Avg",
-                       SUM(DECODE(n, 'gc current block pin time', v*10000)) "CU Pin",
-                       SUM(DECODE(n, 'gc current blocks flush time', v*10000)) "CU Fls"
+                       SUM(DECODE(n, 'gc current block flush time', v*10000)) "CU Fls",
+                       SUM(DECODE(n, 'gc current block pin time', v*10000)) "CU Pin"
                 FROM    (SELECT inst,
                                 SUM(CR_BUSY) CR_BUSY,SUM(CR_CONGESTED) CR_CONGESTED ,
                                 SUM(CURRENT_BUSY) CU_BUSY,SUM(CURRENT_CONGESTED) CU_CONGESTED 
@@ -448,10 +454,14 @@
                 SELECT inst,event,round(SUM(cost)/greatest(:per_second*:snap_interval,1),2) aas, MAX(w) max_ms, 
                        MAX(sql_id) keep(dense_rank LAST ORDER BY cnt) top_sql,
                        round(count(distinct sql_id)/greatest(:per_second*:snap_interval,1),1) sqls
-                FROM   (SELECT &inst1 inst, SQL_ID, SQL_PLAN_HASH_VALUE, NVL(EVENT,'ON CPU') EVENT, time_waited w,
+                FROM   (SELECT /*+full(a.a) leading(a.a) use_hash(a.a a.s) swap_join_inputs(a.s) FULL(A.GV$ACTIVE_SESSION_HISTORY.A)  
+                                  leading(A.GV$ACTIVE_SESSION_HISTORY.A) 
+                                  use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S) 
+                                  swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)*/
+                               &inst1 inst, SQL_ID, SQL_PLAN_HASH_VALUE, NVL(EVENT,'ON CPU') EVENT, time_waited w,
                                &ash_cost cost,
                                SUM(&ash_cost) OVER(PARTITION BY inst_id, event) cnt
-                        FROM   gv$active_session_history
+                        FROM   gv$active_session_history a
                         WHERE  sample_time >= SYSDATE - :snap_interval/86400
                         AND    &inst_filter)
                 GROUP  BY inst,event)
@@ -489,7 +499,7 @@
                SISave,OflOut,OptRead,OptWrite,CellIM,CCSave,FcHit,phyio,Unzip,zip,ela,IMCU,PRUN,Miss,bytes,rows,Valid,skip,
                exclude,pcode,proj,pops,re-pops,popr,re-popr,IMDS,IMA,IMEU,JP,Disk,Pct,Swap,Logon,Call,Exec,TPS,Parse,Hard,CcHit,Buffer,
                PhyRead,PhyWrite,Redo,Undo,SQL*Net,value,cost,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,time,Busy,idle,db,
-               User,Sys,I/O,Nice,traffic,flash,CR Rec,CR Sv,CR Avg,CR Bld,CR Fls,CR Send,CU Rec,CU Sv,CU Avg,CU Pin,CU Fls,CU Send,CR Busy,CR Traf,CU Busy,CU Traf,lost,fail,enq,read,write,s_r,l_r,s_w,l_w,F_IOPS,s_iops,l_iops,reads,avg_wait,total_waits]],
+               User,Sys,I/O,Nice,traffic,flash,CR Rec,CR Sv,CR Avg,CR Bld,CR Fls,CR Send,CU Rec,CU Sv,CU Avg,CU Pin,CU Fls,CU Send,CR Busy,CR Traf,CU Busy,CU Traf,lost,fail,enq,enqs,read,write,s_r,l_r,s_w,l_w,F_IOPS,s_iops,l_iops,reads,avg_wait,total_waits]],
     group_by="inst,sql_id,name,LOCATION,addr,#,func,file,tablespace_or_file",
     calc_rules={avg='[Cost]/[waits]',
                 ['Pct']='[time]*100/[Pct]',
@@ -520,13 +530,14 @@
                 ['CR Bld']='[CR Bld]/[CR Sv]',
                 ['CU Pin']='[CU Pin]/[CU Sv]',
                 avg_wait='[avg_wait]/[iops]',
+                enq='[enq]/[enqs]',
                 reads='[reads]*100/[iops]'},
     column_formatter={KMG1=[[MBPS,SISave,IM-LIO,Unzip,zip,pops,re-pops,phyMem,freeMem,Swap,Buffer,PhyRead,
                             PhyWrite,Redo,Undo,Temp,SQL*Net,OptRead,OptWrite,CellIM,CCSave,offload,BandWidth,bytes,
                             traffic,lost,CR Rec,CU Rec,CR Busy,CR Traf,CU Busy,CU Traf,dbwr,lgwr,
                             read,write,s_r,l_r,s_w,l_w]],
                      TMB1='IMCU,waits,IOPS,call,exec,TPS,parse,cchit,popr,re-popr,IMDS,IMA,IMEU,JP,rows,proj,Disk,Cache,pcode,Miss,fail,F_IOPS,s_iops,l_iops',
-                     noprint='calls,ela,time,idle,total_waits,phyio,CR Sv,CU Sv',
+                     noprint='calls,ela,time,idle,total_waits,phyio,CR Sv,CU Sv,enqs',
                      USMHD1='CR Avg,CU Avg,CR Bld,CU Pin,CR Fls,CU Fls,CR Send,CU Send,IO Wait,resp,cost,max,avg,enq,avg_wait',
                      ['%.1f%%']='reads,Hard,Pct,dxr,dxw,OflIn,OflOut,valid,Skip,Exclude,OflEff,FLASH,SMALL,prun,FcHit',
                      ['HEADING #']='INST',

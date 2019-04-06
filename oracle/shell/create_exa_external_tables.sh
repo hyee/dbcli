@@ -1,4 +1,11 @@
-dir=/acfs
+#!/bin/bash
+dir=$1
+
+if [ "$1" = "" ] ; then
+    echo "Please specify the target directory where the external tables link to." 1>&2
+    exit 1
+fi
+
 cd $dir
 
 cat >get_cell_group.sql<<!

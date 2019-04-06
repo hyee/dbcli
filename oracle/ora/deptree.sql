@@ -16,6 +16,7 @@
        &CC  : T={1},L={0}
        &SRT : T={'9'},L={1}
        &DST : T={},L={DISTINCT}
+       @ARGS: 1
        @CHECK_ACCESS: sys.obj$/sys.dependency$={1}
     --]]
 ]]*/

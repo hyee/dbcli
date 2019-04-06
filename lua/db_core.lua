@@ -226,7 +226,7 @@ function ResultSet:close(rs)
     end
 end
 
-function ResultSet:rows(rs,count,limit,null_value)
+function ResultSet:rows(rs,count,limit,null_value,is_close)
     if type(rs)~="userdata" or (rs.isClosed and rs:isClosed()) then return end
     count=tonumber(count) or -1
     local titles=self:getHeads(rs,limit)
@@ -236,32 +236,38 @@ function ResultSet:rows(rs,count,limit,null_value)
     if not titles[1] then return end
     local dtype=titles[1].data_typeName
     local is_lob=cols==1 and (dtype:find("[BC]LOB") or dtype:find("XML"))
-    null_value=null_value or ""
+
+    null_value=null_value or cfg.get('null')
     if count~=0 then
         rows=loader:fetchResult(rs,count)
         local maxsiz=cfg.get("COLSIZE")
         for i=1,#rows do
             for j=1,cols do
+                local info=head.colinfo[j]
                 if rows[i][j]~=nil then
                     if is_lob and type(rows[i][j])=="string" and #rows[i][j]>255 then
                         print('Result written to '..env.write_cache(dtype:lower()..'_'..i..'.txt',rows[i][j]))
                     end
-                    if limit and type(rows[i][j])=="string" then rows[i][j]=rows[i][j]:sub(1,maxsiz) end
-                    if head.colinfo[j].data_typeName=="DATE" or head.colinfo[j].data_typeName=="TIMESTAMP" then
+                    if limit and not info.is_number and type(rows[i][j])=="string" then rows[i][j]=rows[i][j]:sub(1,maxsiz) end
+                    if info.data_typeName=="DATE" or info.data_typeName=="TIMESTAMP" then
                         rows[i][j]=rows[i][j]:gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
-                    elseif head.colinfo[j].data_typeName=="BLOB" then
+                    elseif info.data_typeName=="BLOB" then
                         rows[i][j]=rows[i][j]:sub(1,255)
-                    elseif head.colinfo[j].is_number and type(rows[i][j])~="number" then
+                    elseif info.is_number and type(rows[i][j])~="number" then
                         local int=tonumber(rows[i][j])
                         rows[i][j]=tostring(int)==rows[i][j] and int or rows[i][j]
                     end
+                elseif info.is_number then
+                    rows[i][j]=''
                 else
                     rows[i][j]=null_value
                 end
             end
         end
     end
-
+    if is_close==true and rs.close then
+        pcall(rs.close,rs)
+    end
     table.insert(rows,1,head)
     return rows
 end
@@ -280,7 +286,7 @@ function ResultSet:print(res,conn,prefix)
     res:setFetchSize(cfg.get("FETCHSIZE"))
     local maxrows,pivot=cfg.get("printsize"),cfg.get("pivot")
     if pivot~=0 then maxrows=math.abs(pivot) end
-    local result=self:rows(res,maxrows,true,cfg.get("null"))
+    local result=self:rows(res,maxrows,true,cfg.get('null'),true)
     if not result then return end
     if pivot==0 then
         hdl=grid.new()
@@ -292,6 +298,7 @@ function ResultSet:print(res,conn,prefix)
         end
     end
     grid.print(hdl or result,nil,nil,nil,nil,prefix,(cfg.get("feed")=="on" and '\n'..(#result-1).." rows returned." or "").."\n")
+    return result
 end
 
 function ResultSet:print_old(res,conn)
@@ -939,7 +946,7 @@ function db_core:get_rows(sql,args,count)
     if not result or type(result)=="number" then
         return result
     end
-    return self.resultset:rows(result,count or -1)
+    return self.resultset:rows(result,count or -1,nil,true)
 end
 
 function db_core:grid_call(tabs,rows_limit,args,is_cache)
@@ -954,12 +961,26 @@ function db_core:grid_call(tabs,rows_limit,args,is_cache)
                 result[i]=parse_sqls(tab,rows_limit)
             elseif type(tab) ~= "string" then
                 env.raise("Unexpected table element, string only:"..tostring(tab))
-            elseif #tab>1 then
+            else
                 local grid_cfg
                 tab,grid_cfg=env.grid.get_config(tab)
-                grid_cfg._is_result=true
-                result[i]={grid_cfg=grid_cfg,sql=tab,index=i}
-                table.insert(rs_idx,1,result[i])
+                local key=tab:trim():upper():gsub('^[:&]','')
+                if env.var.inputs[key] then 
+                    tab=env.var.inputs[key]
+                    if type(tab)=='userdata' then tab=self.resultset:rows(tab,rows_limit) end
+                    if type(tab)=='table' then
+                        
+                        tab={rs=tab,grid_cfg=grid_cfg}
+                        env.var.inputs[key]=tab.rs
+                    end
+                    grid_cfg._is_fetched=true
+                    result[i]=tab
+                end
+                if type(tab)=='string' and #tab>1 then
+                    grid_cfg._is_result=true
+                    result[i]={grid_cfg=grid_cfg,sql=tab,index=i}
+                    table.insert(rs_idx,1,result[i])
+                end
             end
         end
         return result
@@ -975,16 +996,19 @@ function db_core:grid_call(tabs,rows_limit,args,is_cache)
                     tabs[k]=fetch_result(v)
                 elseif v.sql and type(rs)~="table" and type(rs)~="userdata" then
                     table.remove(tabs,k)
+                elseif v.grid_cfg and v.grid_cfg._is_fetched then
+                    tabs[k]=rs
+                    for a,b in pairs(v.grid_cfg or {}) do tabs[k][a]=b end
                 elseif type(rs)=="table" then
                     local tab={}
                     for x,y in ipairs(rs) do 
-                        tab[x]=self.resultset:rows(y,rows_limit)
+                        tab[x]=self.resultset:rows(y,rows_limit,nil,nil,true)
                         for a,b in pairs(v.grid_cfg) do tab[x][a]=b end
                     end
                     tabs[k]=tab
                 else
-                    tabs[k]=self.resultset:rows(rs,rows_limit)
-                    for a,b in pairs(v.grid_cfg) do tabs[k][a]=b end
+                    tabs[k]=self.resultset:rows(rs,rows_limit,nil,nil,true)
+                    for a,b in pairs(v.grid_cfg or {}) do tabs[k][a]=b end
                 end
             elseif type(v)~='string' or #v~=1 then
                 table.remove(tabs,k)
@@ -1268,7 +1292,7 @@ function db_core:__onload()
     self.root_dir=(self.__class.__className):gsub('[^\\/]+$','')
     local jars
     if type(self.get_library)=="function" then
-        libdir=self:get_library()
+        local libdir=self:get_library()
         if type(libdir)=="string" and os.exists(libdir) then
             jars=os.list_dir(libdir,"jar")
         elseif type(libdir)=="table" then
@@ -1338,6 +1362,7 @@ function db_core:__onload()
         max_rows=<rows>   :  max print records
         pivot=<rows>      :  controls whether to pivot the records
         bypassemptyrs='on':  controls whether to display the block in case of no record
+        autosize='trim'   :  controls whether to eliminate the column whose values are all null, refer to option 'SET COLAUTOSIZE'
 
         Elements:
             sep     : Can be 3 values:
@@ -1349,32 +1374,50 @@ function db_core:__onload()
                           grid={height=<rows>,width=<columns>,topic='<grid topic>',max_rows=<records>}
 
         Examples:
-        1.  grid {
-                   'select name,value from v$sysstat where rownum<=5',
-               '-','select class,count from v$waitstat where rownum<=10',
-               '+','select event,total_Waits from v$system_event where rownum<20',
-               '|','select stat_id,value from v$sys_time_model where rownum<20',
-            }
-        
-        2.  Lua style:
-            ==========
-            grid {[[select rownum "#",event,total_Waits from v$system_event where rownum<56]'], --Query#1 left to next merged grid(query#2/query#3/query#4)
-                  '|',{'select * from v$sysstat where rownum<=20',                              --Query#2 left to next merged grid(query#3/query#4))
-                       '-', {'select rownum "#",name,hash from v$latch where rownum<=30',       --Query#3 above to query#4
-                             '+',"select /*grid={topic='Wait State'}*/ * from v$waitstat"
-                            }
-                       },
-                  '-','select /*grid={topic="Metrix"}*/ * from v$sysmetric where rownum<=10'    --Query#5 under merged grid(query#1-#4)
-                  }
+            1. Simple case:
+               ============
+                grid {
+                    'select name,value from v$sysstat where rownum<=5',
+                '-','select class,count from v$waitstat where rownum<=10',
+                '+','select event,total_Waits from v$system_event where rownum<20',
+                '|','select stat_id,value from v$sys_time_model where rownum<20',
+                }
+            
+            2. Lua style:
+               ==========
+                grid {[[select rownum "#",event,total_Waits from v$system_event where rownum<56]'], --Query#1 left to next merged grid(query#2/query#3/query#4)
+                    '|',{'select * from v$sysstat where rownum<=20',                                --Query#2 left to next merged grid(query#3/query#4))
+                        '-', {'select rownum "#",name,hash from v$latch where rownum<=30',          --Query#3 above to query#4
+                                '+',"select /*grid={topic='Wait State'}*/ * from v$waitstat"
+                                }
+                        },
+                    '-','select /*grid={topic="Metrix"}*/ * from v$sysmetric where rownum<=10'      --Query#5 under merged grid(query#1-#4)
+                    }
 
-            JSON style:
-            ===========
-             grid ['select rownum "#",event,total_Waits from v$system_event where rownum<56', 
-                   '|',['select * from v$sysstat where rownum<=20',                            
-                        '-', ['select rownum "#",name,hash from v$latch where rownum<=30',     
-                              '+',"select /*grid={'topic':'Wait State'}*/ * from v$waitstat"]
-                       ],
-                    '-','select /*grid={"topic":"Metrix"}*/ * from v$sysmetric where rownum<=10']
+               JSON style:
+               ===========
+                grid [ 'select rownum "#",event,total_Waits from v$system_event where rownum<56', 
+                    '|',['select * from v$sysstat where rownum<=20',                            
+                            '-', ['select rownum "#",name,hash from v$latch where rownum<=30',     
+                                '+',"select /*grid={'topic':'Wait State'}*/ * from v$waitstat"]
+                        ],
+                        '-','select /*grid={"topic":"Metrix"}*/ * from v$sysmetric where rownum<=10']
+            
+            3. Cursor style:
+               =============
+                set verify off 
+                var c1 refcursor
+                var c2 refcursor
+                begin
+                    open :c1 for select name,value from v$sysstat where rownum<=5;
+                    open :c2 for select class,count from v$waitstat where rownum<=15;
+                end;
+                /
+                grid {
+                        'c1 grid={topic="I am a cursor"}',
+                    '-','c2',
+                    '|',"select * from v$sysstat where rownum<=20 /*grid={topic='I am a SQL Text'}*/ "
+                }
 
         Refer to 'system.snap' for more example
     ]]

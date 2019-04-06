@@ -330,7 +330,7 @@ function ansi.onload()
     --arg_completer=java.require("jline.console.completer.ArgumentCompleter",true)
     for k,v in pairs(base_color) do color[k]=isAnsiSupported and v or '' end
     env.set.init("ansicolor",isAnsiSupported and 'on' or 'off',ansi.enable_color,"core","Enable color masking inside the intepreter.",'on,off')
-    env.set_command(nil,'ansi',"Show and test ansi colors, run 'ansi' for more details",ansi.test_text,false,2)
+    env.set_command(nil,'ansi',"Show and test ansi colors, run '@@NAME' for more details",ansi.test_text,false,2)
     ansi.color,ansi.map=color,cfg
 end
 

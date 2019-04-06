@@ -52,6 +52,7 @@ for k,v in pairs{
         if not mt.__declared[n] and env.WORK_DIR then
             if debug_mode and env.IS_ENV_LOADED and n~='reset_input' and n:upper()~=n then print('Detected unexpected global var "'..n..'" with', debug.traceback()) end
             rawset(mt.__declared, n,env.callee(5))
+            --print(n,debug.traceback())
         end
         rawset(env, n, v)
     end
@@ -627,6 +628,9 @@ function env.parse_args(cmd,rest,is_cross_line)
     if arg_count == 1 then
         args[#args+1]=cmd..(rest and #rest> 0 and (" "..rest) or "")
     elseif arg_count == 2 then
+        if type(rest)=="string" and not rest:match('".+".".+"') then
+            rest=rest:gsub('^"(.*)"$','%1')
+        end
         args[#args+1]=rest
     elseif rest then
         local piece=""
@@ -822,7 +826,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
     end
 end
 
-local _cmd,_args,_errs,_line_stacks,_full_text=nil,nil,nil,{}
+local _cmd,_args,_errs,_line_stacks,full_text=nil,nil,nil,{}
 function env.parse_line(line,exec)
     if(#_line_stacks==0) then
         multi_cmd,curr_stmt=nil,nil
@@ -984,7 +988,7 @@ function env.log_debug(name,...)
             args[i+1]=v
         end
     end
-    if value=="all" or value==name then print_debug(table.unpack(args)) end
+    if value=="ALL" or value==name then print_debug(table.unpack(args)) end
 end
 
 function set_debug(name,value)
@@ -1076,6 +1080,7 @@ function env.onload(...)
         env.ansi.define_color("ERRCOLOR","HIR","ansi.core","Define color of the error messages, type 'ansi' for more available options")
         env.ansi.define_color("PromptSubcolor","HIM","ansi.core","Define the prompt color for subsystem, type 'ansi' for more available options")
         env.ansi.define_color("commandcolor",env.IS_WINDOWS and "HIC" or "CYN","ansi.core","Define command line's color, type 'ansi' for more available options")
+        env.ansi.define_color("UsageColor",'YEL',"ansi.core","Define color of the help usage, type 'ansi' for more available options")
     end
     if env.event then
         env.event.snoop("ON_KEY_EVENT",env.modify_command)
@@ -1127,6 +1132,7 @@ end
 function env.exit()
     print("Exited.")
     env.RELOAD_SIGNAL=false
+    env.set_title(nil,'__EXIT__')
     env.unload()
     java.system.exit(0)
 end
@@ -1210,37 +1216,42 @@ function env.set_space(name,value)
     env.space=string.rep(' ',value)
     return value
 end
-
+local org_title
 function env.set_title(title,value)
+    local titles,status,sep,enabled="",{},"    "
     if not org_title then org_title=uv.get_process_title() end
-    local enabled
-    if title and title:upper()=="STATUS" and value then
-        enabled=value:lower()
-        if enabled=='off' then
-            console:setStatus("","")
+    if value~='__EXIT__' then
+        if title and title:upper()=="STATUS" and value then
+            enabled=value:lower()
+            if enabled=='off' then
+                console:setStatus("","")
+            end
+            title=""
         end
-        title=""
-    end
 
-    local callee=env.callee():gsub("#%d+$","")
-    title_list[callee]=title
-    local titles,status,sep="",{},"    "
-    if not env.module_list then return end
-    for _,k in ipairs(env.module_list) do
-        if (title_list[k] or "")~="" then
-            if titles~="" then titles=titles.."    " end
-            titles=titles..title_list[k]
+        local callee=env.callee():gsub("#%d+$","")
+        --print(callee,title)
+        title_list[callee]=title
+       
+        if not env.module_list then return end
+        for _,k in ipairs(env.module_list) do
+            if (title_list[k] or "")~="" then
+                if titles~="" then titles=titles.."    " end
+                titles=titles..title_list[k]
+            end
         end
-    end
 
-    if not titles or titles=="" then 
-        titles="DBCLI - Disconnected"
-    end
+        if not titles or titles=="" then 
+            titles="DBCLI - Disconnected"
+        end
 
-    if (CURRENT_TITLE~=titles and (enabled or env.set.get("STATUS"))=="on") or enabled=='on' then
-        status=titles:split('   +')
-        local color=env.ansi.get_color
-        console:setStatus(' '..table.concat(status,' '..color("HIB")..'|'..color("NOR")..' '),color("HIB")) 
+        if (CURRENT_TITLE~=titles and (enabled or env.set.get("STATUS"))=="on") or enabled=='on' then
+            status=titles:split('   +')
+            local color=env.ansi.get_color
+            console:setStatus(' '..table.concat(status,' '..color("HIB")..'|'..color("NOR")..' '),color("HIB")) 
+        end
+    else
+        titles=org_title
     end
 
     if CURRENT_TITLE~=titles or enabled then

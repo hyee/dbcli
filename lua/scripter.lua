@@ -112,13 +112,13 @@ Available parameters:
    Replacement:     from &V1 to &V9, used to replace the wildcards inside the SQL stmts
    Out   bindings:  :<alphanumeric>, the data type of output parameters should be defined in th comment scope
 --]]--
-function scripter:parse_args(sql,args,print_args,extend_dirs)
+function scripter:parse_args(sql,args,print_args,cmd)
 
     local outputlist={}
     local outputcount=0
 
     --parse template
-    local patterns,options={"(%b{})","([^\n\r]-)%s*[\n\r]"},{}
+    local patterns,options={"(%b{})","([^\n\r]-)[^%S\n\r]*\r?\n"},{}
 
     local desc
     sql=sql:gsub(self.comment,function(item)
@@ -158,9 +158,22 @@ function scripter:parse_args(sql,args,print_args,extend_dirs)
                         templates[k][option]=text
                     end
 
-                    if prefix=="@" and k~="ALIAS" then
-                        self.db:assert_connect()
-                        default=self:trigger('validate_accessable',k,keys,templates[k])
+                    if prefix=="@"  then
+                        if k~="ALIAS" and k~='ARGS' then
+                            self.db:assert_connect()
+                            default=self:trigger('validate_accessable',k,keys,templates[k])
+                        else
+                            k='@'..k
+                            templates[k]={['DEFAULT']=v}
+                            default=v
+                            if k=='@ARGS' and not print_args then
+                                local min=tonumber(v)
+                                if min and #args<min then
+                                    env.helper.helper(self:get_command(),cmd)
+                                    env.checkerr(false,'Please input at least '..min..' parameter(s).')
+                                end
+                            end
+                        end
                     end
 
                     templates[k]['@default']=default
@@ -327,7 +340,10 @@ function scripter:run_sql(sql,args,cmds)
     var.import_context(args)
     
     local echo=cfg.get("echo"):lower()=="on"
-    cfg.set("define","on")
+    if #env.RUNNING_THREADS == 2 then
+        cfg.set("define","on")
+        cfg.set("verify","on")
+    end
     local _args,_parms={},{}
     for line in sql:gsplit("[\n\r]+") do
         if echo_stack[current_thead] or (echo_stack[env.RUNNING_THREADS[1]] and level==2) then
@@ -414,7 +430,7 @@ function scripter:get_script(cmd,args,print_args)
     local sql=f:read(10485760)
     f:close()
     if is_get then return print(sql) end
-    args=self:parse_args(sql,args,print_args)
+    args=self:parse_args(sql,args,print_args,cmd)
     return sql,args,print_args,file,cmd
 end
 
@@ -457,7 +473,7 @@ end
 
 function scripter:helper(_,cmd,search_key)
     local help,cmdlist=""
-    help=('%sUsage: %s %s \nAvailable commands:\n=================\n'):format(self.help_title,self:get_command(),self.usage)
+    help=('%sUsage: @@NAME %s \nAvailable commands:\n=================\n'):format(self.help_title,self.usage)
     if env.IS_ENV_LOADED and not self.cmdlist then
         self:run_script('-r')
     end
@@ -478,9 +494,10 @@ function scripter:helper(_,cmd,search_key)
         local undoc_index=0
         for k,v in pairs(cmdlist) do
             if type(v)=="table" and v.abbr then k=k..','..v.abbr end
-            if (not search_key or k:find(search_key:upper(),1,true)) and k:sub(1,2)~='./' and k:sub(1,1)~='_' then
+            local desc=type(v)=='table' and v.short_desc and v.short_desc:gsub("^[ \t]+","") or ''
+            if (not search_key or desc:upper():find(search_key:upper(),1,true) or k:find(search_key:upper(),1,true)) and k:sub(1,2)~='./' and k:sub(1,1)~='_' then
                 if search_key or not (v.path or ""):find('[\\/]test[\\/]') then
-                    local desc=v.short_desc:gsub("^[ \t]+",""):gsub("@@NAME","@@NAME "..k:lower())
+                    desc=desc:gsub("([Uu]sage)(%s*:%s*)(@@NAME)","$USAGECOLOR$Usage:$NOR$ %3"):gsub("@@NAME","@@NAME "..k:lower().."$NOR$")
                     if desc and desc~="" then
                         table.insert(rows[1],k)
                         table.insert(rows[2],desc)
@@ -506,6 +523,7 @@ function scripter:helper(_,cmd,search_key)
             table.insert(rows[2],undocs)
         end
         env.set.set("PIVOT",-1)
+        env.checkerr(#rows[1]>0,'No result for the specific input.')
         env.set.set("HEADDEL",":")
         help=help..grid.tostring(rows)
         env.set.restore("HEADDEL")
@@ -524,7 +542,7 @@ function scripter:__onload()
     if not cfg.exists("echo") then cfg.init("echo","off",scripter.set_echo,"core","Controls whether the START command lists each command in a script as the command is executed.","on,off") end
     if self.command and self.command~="" then
         env.set_command{obj=self,cmd=self.command, 
-                        help_func={self.help_title.." Type '@@NAME' for more detail.",self.helper},
+                        help_func={self.help_title.."Type '@@NAME' for more detail.",self.helper},
                         call_func={self.run_script,self.after_script},
                         is_multiline=false,parameters=ARGS_COUNT+1,color="HEADCOLOR"
                         }

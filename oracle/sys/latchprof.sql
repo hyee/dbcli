@@ -89,7 +89,7 @@ WITH t1 AS
  (SELECT KSUTMTIM hsecs FROM x$ksutm),
 samples AS
  (SELECT * FROM &GV
-      SELECT  /*+ opt_param('_optimizer_mjc_enabled','true') ORDERED ORDERED_PREDICATES USE_NL(s2 l) NO_TRANSFORM_DISTINCT_AGG */
+      SELECT  /*+ opt_param('_optimizer_mjc_enabled','false') ORDERED ORDERED_PREDICATES USE_NL(s2 l) NO_TRANSFORM_DISTINCT_AGG */
               &_lhp_what, COUNT(DISTINCT gets) dist_samples, COUNT(*) total_samples, 
               COUNT(*) / max(max(r)) over() total_samples_pct,max(max(r)) over() r
       FROM   (SELECT /*+no_merge*/KSUTMTIM+:v4*100 target, rownum r 

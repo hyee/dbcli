@@ -2,7 +2,7 @@
 
  -h: target views are gv$xxxmetric_history
     --[[
-        @ver: 11={} 10={--}
+        @ver: 11={}
         &opt:  default={} h={_HISTORY}
         &mins: default={1/144} h={84/1440}
         &v1: default={&starttime}
@@ -10,7 +10,7 @@
         @cell: {
             12={
 				'-',
-				[[grid={topic="DBA_HIST_CELL_GLOBAL (Per Second)",max_rows=50,bypassemptyrs='on'}
+				[[grid={topic="DBA_HIST_CELL_GLOBAL (Per Second)",height=0,bypassemptyrs='on'}
 				SELECT NAME, round(metric_value / decode(NAME, metric_name, 1, 1024 * 1024) , 2) VALUE
 				FROM   (SELECT metric_name, NAME, SUM(metric_value/secs) metric_value
 				        FROM   (SELECT metric_name,
@@ -60,7 +60,7 @@ grid {
     [[ grid={topic="DBA_HIST_SERVICE_STAT (Per Second)"}
 		SELECT *
 		FROM   (SELECT service_name,
-		               &ver insts,
+		               insts,
 		               stat_name,
 		               CASE
 					       WHEN stat_name = 'gc cr block receive time' THEN
@@ -73,7 +73,7 @@ grid {
 		                       VALUE
 		               END val
 		        FROM   (SELECT nvl(service_name, '--TOTAL--') service_name,
-							   &ver nvl2(service_name,sys.stragg(DISTINCT instance_number||','),'') insts,
+							   nvl2(service_name,listagg(decode(r,1,instance_number),',') within group(order by instance_number),'') insts,
 		                       stat_name,
 		                       round(SUM(flag * VALUE / secs * CASE
 		                                     WHEN stat_name LIKE 'physical%' THEN
@@ -88,7 +88,8 @@ grid {
 		                                       1
 		                                 END),
 		                             2) VALUE
-		                FROM    (SELECT * FROM DBA_HIST_SERVICE_STAT NATURAL JOIN(&snaps)) a
+		                FROM    (select a.*,row_number() over(partition by stat_name,instance_number order by 1) r 
+						         from (SELECT * FROM DBA_HIST_SERVICE_STAT NATURAL JOIN(&snaps)) a) a
 		                GROUP  BY stat_name, ROLLUP(service_name)
 		                HAVING round(SUM(flag * VALUE / secs), 2) > 0) a)
 		PIVOT(MAX(val)

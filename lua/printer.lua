@@ -341,7 +341,7 @@ function printer.onload()
         NOR = env.ansi.string_color('NOR') 
         BOLD= env.ansi.string_color('UDL') 
         strip_ansi=env.ansi.strip_ansi
-        grep_text=env.ansi.convert_ansi("$GREPCOLOR$%1$NOR$")
+        grep_fmt=env.ansi.convert_ansi("$GREPCOLOR$%1$NOR$")
     end
     event=env.event
     if env.event then
@@ -363,21 +363,26 @@ function printer.onload()
 
     local more_help=[[
     Similar to Linux 'less' command. Usage: @@NAME <other command>|last|l  (support pipe(|) operation)
+
+    [|             grid:{topic='Key Maps'}
+     | Key Map              | Command                   |
+     | q   :q   ZZ          | Exit                      |
+     | f   ^F   Space   ^V  | Forward  window           |
+     | b   ^B   Alt+V       | Backward window           |
+     | g   <    Alt+<       | Top   window              |
+     | G   >    Alt+>       | Last  window              |
+     | [        Home        | Left  window              |
+     | \]        End        | Right window              |
+     | d        ^D          | Forward  half window      |
+     | u        ^U          | Backward half window      |   
+     | (        Left        | Left  half window         |
+     | )        Right       | Right half window         |
+     | l        L           | Enable/Disable line number|
+     | /pattern             | Search pattern            |
+     | n        Alt+N       | Search Forward            |
+     | N        ^N          | Search Backward           |]
+
     Example: select * from dba_objects|@@NAME
-    Key Maps:
-        exit       :  q or :q or ZZ
-        down  page :  <space> or f or ctrl+f or ctrl+v
-        up    page :  b or ctrl+b or alt+v
-        first page :  < or alt+< or g
-        last  page :  > or alt+> or G
-        left  page :  [ or home
-        right page :  ] or end 
-        right half page:  ) or right
-        left  half page:  ( or left
-        down  half page:  d or ctrl+d
-        up    half page:  u or ctrl+u
-        /<keyword> :  search
-        enable/disable line number: l or L
     ]]
     env.set_command(nil,"grep",grep_help,{printer.grep,printer.grep_after},'__SMART_PARSE__',3,false,false,true)
     env.set_command(nil,"tee",tee_help,{printer.tee,printer.tee_after},'__SMART_PARSE__',3,false,false,true)

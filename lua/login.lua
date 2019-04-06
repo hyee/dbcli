@@ -27,7 +27,9 @@ function login.generate_name(url,props)
     url=url1:match("//([^&%?]+)")
     if not url then 
         url=(('@'..url1):match("@/?([^@]+)$") or ""):match('^[^%?]+')
+        if not url then url=url1 end
     end
+    
     url=url:gsub('([%.%:])([%w%-%_]+)',function(a,b)
         if a=='.' and b:match('^(%d+)$') then
             return a..b
@@ -40,7 +42,6 @@ end
 
 function login.capture(db,url,props)
     local typ=env.set.get("database")
-
     login.load()
     url=login.generate_name(url,props)
     local d=os.date('*t',os.time())
@@ -58,6 +59,21 @@ function login.capture(db,url,props)
     return url
 end
 
+function login.reset_props(list)
+    local props=env.getdb().public_props
+    if type(props)~='table' then return end
+    local counter=0;
+    for k,v in pairs(list) do
+        for k1,v1 in pairs(props) do
+            if type(v1)=="string" and v[k1] then 
+                v[k1],counter=v1,counter+1 
+            end
+        end
+    end
+    print(counter..' enteries reset.')
+    login.save()
+end
+
 function login.search(id,filter,url_filter)
     if cfg.get("SaveLogin")=="off" then
         return print("Cannot login because the 'SaveLogin' option is 'off'!")
@@ -69,7 +85,11 @@ function login.search(id,filter,url_filter)
     local alias,alist,prt=nil,{}
 
     id=(id or ""):lower()
-    if id=="" then id= nil end
+    if id=="" then 
+        id= nil
+    elseif id=='-resetprops' then
+        return login.reset_props(list)
+    end
 
     if not list then
         return print("No available logins"..(id and (" for '"..id.."'") or "").." in group '"..typ.."'.")

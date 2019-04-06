@@ -455,6 +455,7 @@ end
 getTime = os.timer
 
 onDebugHook = function( hookType )
+    getTime = os.timer
     local tim,hooker=getTime(),ProFi.hookfunc
     if not hooker then
         hooker= debug.getinfo( 1, 'nS' )

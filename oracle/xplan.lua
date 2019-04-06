@@ -28,9 +28,9 @@ function xplan.explain(fmt,sql)
     end
 
     sql=env.COMMAND_SEPS.match(sql)
-
-    if not sql:gsub("[\n\r]",""):match('(%s)') then
-        sql=sql:gsub("[\n\r]","")
+    local sql1= sql:gsub("\r?\n","")
+    if not sql1:match('(%s)') then
+        sql=sql1
         sqltext=db:get_value([[SELECT * FROM(SELECT sql_text from dba_hist_sqltext WHERE sql_id=:1 AND ROWNUM<2
                                UNION ALL
                                SELECT sql_fulltext from gv$sqlarea WHERE sql_id=:1 AND ROWNUM<2) WHERE ROWNUM<2]],{sql})

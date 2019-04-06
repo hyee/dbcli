@@ -133,7 +133,7 @@ function ssh:run_command(command)
 end
 
 function ssh:ssh_help(_,cmd)
-    if cmd==nil or cmd=="" then return "Operations over SSH server, type 'ssh' for more detail" end
+    if cmd==nil or cmd=="" then return "Operations over SSH server, type '@@NAME' for more detail" end
 end
 
 function ssh:check_connection()
@@ -253,7 +253,7 @@ end
 
 function ssh:load_script(alias,filename,...)
     if not filename or filename=="" then
-        return print("Run local script over remote SSH sever. Usage: shell <filename> [parameters].")
+        return print("Run local script over remote SSH sever. Usage: @@NAME <filename> [parameters].")
     end
     self:check_connection()
     local txt
@@ -449,7 +449,7 @@ function ssh:__onload()
     helper:add{"ssh push_shell",'',"Upload local script into remote directory and grant the execute access. Usage: ssh push_shell <file> [/tmp|.|<remote_dir>]"}
     helper:add{"ssh download",'',pscp_download_usage}
     helper:add{"ssh upload",'',pscp_upload_usage}
-    helper:add{"ssh llcd",'',"View/change default downlod/upload FTP directory in local PC. Usage ssh llcd [.|<local_path>]"}
+    helper:add{"ssh llcd",'',"View/change default downlod/upload FTP directory in local PC. Usage: ssh llcd [.|<local_path>]"}
     local cmds=env.grid.new()
     for _,line in ipairs(helper.data) do
         local c={}

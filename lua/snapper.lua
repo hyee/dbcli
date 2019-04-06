@@ -14,19 +14,20 @@
         6. bypassemptyrs: 'on' or 'off'(default),when a 'sql' is an array, and one of which returns no rows, then controls whether to show this sql
         7. top_mode: 'on' or 'off'(default), controls whether to clear the screen before print the result
         8. calc_rules: the additional formula on a specific column after the 'delta_by' columns is calculated
-        9.fixed_title: true or false(default), controls whether not to change the 'delta_by' column titles
+        9. fixed_title: true or false(default), controls whether not to change the 'delta_by' column titles
         10.include_zero:  true or false(default), controls whether not to show the row in case of its 'delta_by' columns are all 0
         11.set_ratio: true or false(default), controls whether not to add a percentage column on each 'delta_by' columns
         12.before_sql: the statements that executed before the 1st snapshot
         13.after_sql: the statements that executed after the 2nd snapshot
         14:column_formatter: the column format of some fields. refer to command 'col'
         15:variables: a map that describe the additional variables, refer to commands 'var' and 'def'
+        16:zero2null: replace zero value as empty string
 
     The belowing variables can be referenced by the SQLs in 'snapper':
     1. :snap_cmd      :  The command that included by EOF
     2. :snap_interval :  The elapsed seconds betweens 2 snapshots
 --]]
-local env,pairs,ipairs,table,tonumber,pcall,type=env,pairs,ipairs,table,tonumber,pcall,type
+local env,pairs,ipairs,table,tonumber,pcall,type,loadstring=env,pairs,ipairs,table,tonumber,pcall,type,loadstring
 local sleep,math,cfg=env.sleep,env.math,env.set
 local console,getHeight=console,console.getScreenHeight
 
@@ -74,6 +75,11 @@ function snapper:parse(name,txt,args,file)
 end
 
 function snapper:after_script()
+    if self.top_mode==true then 
+        console:exitDisplay()
+        env.printer.top_mode=false
+    end
+    if self.autosize then grid.col_auto_size=self.autosize end
     if self.var_context then
         env.var.import_context(table.unpack(self.var_context))
         self.var_context=nil
@@ -105,9 +111,9 @@ function snapper:build_data(sqls,args,variables)
     end
 
     if type(sqls)=="string" then
-        rs=self.db:grid_call({sqls},-1,args,"snapper")
+        rs=self.db:grid_call({sqls},-1,args,"Internal_snapper")
     else
-        rs=self.db:grid_call(sqls,-1,args,"snapper")
+        rs=self.db:grid_call(sqls,-1,args,"Internal_snapper")
     end
 
     local grid_cost=self.db.grid_cost or (os.timer()-clock)/2
@@ -147,6 +153,8 @@ function snapper:run_sql(sql,main_args,cmds,files)
     cfg.set("autocommit","off")
     cfg.set("digits",2)
     cfg.set("sep4k",'on')
+    cfg.set("heading",'on')
+    self.autosize=cfg.get('colautosize','trim')
     self.var_context={env.var.backup_context()}
     
     local interval=main_args[1].V1
@@ -301,9 +309,10 @@ function snapper:next_exec()
                 local props={per_second=cmd.per_second}
                 for k,v in pairs(cmd) do if type(k)=="string" then props[k]=v end end
                 for k,v in pairs(rs2) do if type(k)=="string" then props[k]=v end end
-                local calc_rules=props.calc_rules or {}
+                local calc_rules={}
                 local order_by=props.order_by
                 local elapsed=props.per_second and props.elapsed or 1
+                local zero2null=tostring(props.zero2null)
                 props.group_by=props.group_by or props.grp_cols
                 props.top_by=props.top_by or props.top_grp_cols
                 props.delta_by=props.delta_by or props.agg_cols
@@ -313,15 +322,15 @@ function snapper:next_exec()
 
                 if type(order_by)=="string" then order_by=(','..table.concat(order_by:upper():split("%s*,+%s*"),',')..','):gsub('%s*,[%s,]*',',') end
 
-                for k,v in pairs(calc_rules) do
-                    if type(k)=="string" then calc_rules[k:upper()]=v end
+                for k,v in pairs(props.calc_rules or {}) do
+                    if type(k)=="string" then calc_rules[k:upper()]=v:gsub('%[([^%]]+)%]',function(col) return '['..col:upper()..']' end) end
                 end
 
                 for i,k in ipairs(title) do
                     local tit=k:upper()
                     local idx=props.delta_by:find(','..tit..',',1,true)
                     if calc_rules[tit] then
-                        local v=calc_rules[tit]:upper()
+                        local v=calc_rules[tit]
                         for i,x in ipairs(rs1[1]) do
                             v=v:replace('['..x:upper()..']','\1'..i..'\2',true)
                         end
@@ -362,8 +371,9 @@ function snapper:next_exec()
                 if not found_top then top_grp_idx=grp_idx end
 
                 result,groups=table.new(1,#rs1+10),{}
+                local autosize1,autosize2=props.autosize,grid.col_auto_size
+                if autosize1 then grid.col_auto_size=autosize1 end
                 local grid=grid.new(true)
-                
                 local idx,top_idx,counter={},{},0
                 local function make_index(row)
                     counter=0
@@ -384,10 +394,13 @@ function snapper:next_exec()
                 props.max_rows=props.height==0 and 300 or props.max_rows or cfg.get(self.command.."rows")
                 if not is_groupped then
                     grid=rs1
-                    if order_by then grid.sort(grid,order_by) end
+                    if order_by and grid.sort then grid.sort(grid,order_by) end
                 else
                     local sum=0
-                    local function check_zero(col,num)
+                    local function check_zero(col,num,row)
+                        if num==0 and (zero2null=='on' or zero2null=='true') then
+                            row[col]=''
+                        end
                         if props.include_zero then 
                             sum=1
                             return
@@ -412,15 +425,15 @@ function snapper:next_exec()
                             result[index],top_data[top_index][#top_data[top_index]+1]=row,row
                             for k,_ in pairs(agg_idx) do
                                 local d=tonumber(row[k])
-                                check_zero(k,d)
                                 row[k]=d and math.round(d/elapsed,2) or nil
+                                check_zero(k,d,row)
                             end
                         else
                             for k,_ in pairs(agg_idx) do
                                 r,d=tonumber(row[k]),tonumber(data[k])
                                 if r or d then 
                                     data[k]=math.round((d or 0)+(r or 0)/elapsed,2)
-                                    check_zero(k,data[k])
+                                    check_zero(k,data[k],data)
                                 end
                             end
                         end
@@ -437,7 +450,7 @@ function snapper:next_exec()
                                 r,d=tonumber(row[k]),tonumber(data[k])
                                 if r and d then
                                     data[k]=math.round(d-r/elapsed,2)
-                                    check_zero(k,data[k])
+                                    check_zero(k,data[k],data)
                                 end
                             end
                             result[index]['_non_zero_']=sum>0
@@ -461,6 +474,7 @@ function snapper:next_exec()
                                         local done,rtn=pcall(v)
                                         if done then
                                             row[k]=(rtn~=rtn or rtn==nil or rtn==1/0 or rtn==-1/0 ) and '' or type(rtn)=="number" and math.round(rtn,2) or rtn
+                                            check_zero(k,row[k],row)
                                         end
                                     end
                                 end
@@ -475,35 +489,37 @@ function snapper:next_exec()
                         grid:sort(order_by or idx,true)
                     end
                 end
+                if autosize1 then grid.col_auto_size=autosize2 end
                 setmetatable(rs2,nil)
                 table.clear(rs2)
                 for k,v in pairs(props) do rs2[k]=v end
-                for k,v in pairs(grid) do rs2[k]=v end
+                for k,v in pairs(grid)  do rs2[k]=v end
                 setmetatable(rs2,getmetatable(grid))
             end
             local per_second=cmd.per_second and '(per Second)' or ''
             local top_mode=cmd.top_mode~=nil and cmd.top_mode or self.top_mode          
             local cost=string.format('(SQL:%.2f  Calc:%.2f)',cmd.fetch_time1+cmd.fetch_time2,os.timer()-calc_clock)
-            local title=string.format('\n$REV$[%s#%s%s]: From %s to %s%s:$NOR$\n',self.command,name,per_second,cmd.starttime,cmd.endtime,
+            local title=string.format('\n$REV$[%s#%s%s]: From %s to %s%s:$NOR$',self.command,name,per_second,cmd.starttime,cmd.endtime,
                 env.set.get("debug")~="SNAPPER" and '' or cost)
             if top_mode then
-                if not self.is_first_top then
-                    self.is_first_top=true
-                    reader:clearScreen()
-                else
-                    env.ansi.clear_screen()
-                end
-                title=title:trim("\n")
                 env.printer.top_mode=true
+                if not self.is_first_top then
+                    reader:clearScreen()
+                    if #cmd.rs2.rsidx~=1 then console:initDisplay() end
+                    self.is_first_top=true;
+                end
             end
-            print(title)
+            
             if #cmd.rs2.rsidx==1 then
+                if top_mode then
+                    reader:clearScreen()
+                end
+                print(title..'\n')
                 env.grid.print(cmd.rs2.rsidx[1],nil,nil,nil,cmd.max_rows and cmd.max_rows+2 or cfg.get(self.command.."rows"))
             else
                 if top_mode then cmd.rs2.max_rows=getHeight(console)-3 end
-                env.grid.merge(cmd.rs2,true)
+                env.grid.merge(cmd.rs2,true,title:trim())
             end
-            env.printer.top_mode=false
             env.var.import_context(table.unpack(self.var_context))
         end
     end
