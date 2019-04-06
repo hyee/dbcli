@@ -64,6 +64,7 @@ function init.init_path(env)
     lib=lib=='osx' and 'mac' or lib
     lib=lib=="windows" and jit.arch or lib
     env("PATH_DEL",path_del)
+    env("CPATH_DEL",path_del=='/' and ':' or ';')
     env("PLATFORM",console:getPlatform())
     env("IS_WINDOWS",env.PLATFORM=="windows" or env.PLATFORM=="cygwin" or env.PLATFORM=="mingw" or env.PLATFORM=="conemu")
     env("_CACHE_BASE",env.WORK_DIR.."cache"..path_del)
@@ -72,7 +73,7 @@ function init.init_path(env)
     local package=package
     local cpath=java.system:getProperty('java.library.path')
     local paths={}
-    for v in cpath:gmatch("([^"..(path_del=='/' and ':' or ';').."]+)") do
+    for v in cpath:gmatch("([^"..env.CPATH_DEL.."]+)") do
         paths[#paths+1]=v..path_del.."?."..(env.IS_WINDOWS and "dll" or "so")
     end
     package.cpath=table.concat(paths,';')

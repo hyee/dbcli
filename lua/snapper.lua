@@ -75,6 +75,10 @@ function snapper:parse(name,txt,args,file)
 end
 
 function snapper:after_script()
+    if self.top_mode==true then 
+        console:exitDisplay()
+        env.printer.top_mode=false
+    end
     if self.autosize then grid.col_auto_size=self.autosize end
     if self.var_context then
         env.var.import_context(table.unpack(self.var_context))
@@ -495,26 +499,26 @@ function snapper:next_exec()
             local per_second=cmd.per_second and '(per Second)' or ''
             local top_mode=cmd.top_mode~=nil and cmd.top_mode or self.top_mode          
             local cost=string.format('(SQL:%.2f  Calc:%.2f)',cmd.fetch_time1+cmd.fetch_time2,os.timer()-calc_clock)
-            local title=string.format('\n$REV$[%s#%s%s]: From %s to %s%s:$NOR$\n',self.command,name,per_second,cmd.starttime,cmd.endtime,
+            local title=string.format('\n$REV$[%s#%s%s]: From %s to %s%s:$NOR$',self.command,name,per_second,cmd.starttime,cmd.endtime,
                 env.set.get("debug")~="SNAPPER" and '' or cost)
             if top_mode then
-                if not self.is_first_top then
-                    self.is_first_top=true
-                    reader:clearScreen()
-                else
-                    env.ansi.clear_screen()
-                end
-                title=title:trim("\n")
                 env.printer.top_mode=true
+                if not self.is_first_top then
+                    reader:clearScreen()
+                    console:initDisplay()
+                    self.is_first_top=true;
+                end
             end
-            print(title)
+            
             if #cmd.rs2.rsidx==1 then
-                env.grid.print(cmd.rs2.rsidx[1],nil,nil,nil,cmd.max_rows and cmd.max_rows+2 or cfg.get(self.command.."rows"))
+                if top_mode then
+                    reader:clearScreen()
+                end
+                env.grid.print(cmd.rs2.rsidx[1],nil,nil,title,cmd.max_rows and cmd.max_rows+2 or cfg.get(self.command.."rows"))
             else
                 if top_mode then cmd.rs2.max_rows=getHeight(console)-3 end
-                env.grid.merge(cmd.rs2,true)
+                env.grid.merge(cmd.rs2,true,title:trim())
             end
-            env.printer.top_mode=false
             env.var.import_context(table.unpack(self.var_context))
         end
     end

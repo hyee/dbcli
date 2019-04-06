@@ -17,7 +17,10 @@ import org.jline.utils.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -41,7 +44,7 @@ public final class Console {
     public AbstractTerminal terminal;
     public boolean isSubSystem = false;
     LineReaderImpl reader;
-    Display display;
+    Less.Play display;
     long threadID;
     HashMap<String, Candidate[]> candidates = new HashMap<>(1024);
     MyCompleter completer = new MyCompleter(this);
@@ -71,13 +74,7 @@ public final class Console {
             this.terminal = (AbstractTerminal) TerminalBuilder.builder().system(true).name(colorPlan).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).nativeSignals(true).build();
 
         this.status = this.terminal.getStatus();
-        this.display = new Display(terminal, false) {
-            @Override
-            public void update(List<AttributedString> newLines, int targetCursorPos) {
-                cursorPos = 0;
-                super.update(newLines, targetCursorPos);
-            }
-        };
+        this.display = new Less.Play(this.terminal);
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).build();
         this.parser = new MyParser();
         this.reader.setParser(parser);
@@ -142,6 +139,19 @@ public final class Console {
         };
         Interrupter.listen(this, callback);
     }
+
+    public void initDisplay() {
+        display.init(false);
+    }
+
+    public void exitDisplay() {
+        display.exit();
+    }
+
+    public void display(String[] args) {
+        display.updateAnsi(Arrays.asList(args), -1);
+    }
+
 
     public void enableMouse(String val) {
         if ("off".equals(val)) reader.unsetOpt(LineReader.Option.MOUSE);
@@ -281,7 +291,7 @@ public final class Console {
             }
         };
         Less less = new Less(terminal);
-        //less.noInit = true;
+        less.noInit = true;
         less.veryQuiet = true;
         less.padding = spaces;
         less.numWidth = (int) Math.max(3, Math.ceil(Math.log10(lines < 10 ? 10 : lines)));

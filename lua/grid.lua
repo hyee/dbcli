@@ -878,17 +878,23 @@ function grid.merge(tabs, is_print, prefix, suffix)
     if is_print == true then
         local tab = {}
         local height = tabs.max_rows or #result + 1
-        if prefix then tab[1] = prefix .. "\n" end
+        local space=env.printer.top_mode==true and env.space or ''
+        if prefix then tab[1] = space..prefix:convert_ansi() end
         for rowidx, row in ipairs(result) do
-            tab[#tab + 1] = grid.cut(row, linesize)
+            tab[#tab + 1] = space..grid.cut(row, linesize):convert_ansi()
             env.event.callback("ON_PRINT_GRID_ROW",row,#result)
             if #tab >= height - 1 then
                 if rowidx < #result then tab[#tab + 1] = grid.cut(result[#result], linesize) end
                 break
             end
         end
+        if env.printer.top_mode==true then
+            tab[#tab+1]=space
+            return console:display(tab)
+        end
         
         local str = table.concat(tab, "\n")
+
         print(str,'__BYPASS_GREP__')
         if suffix then print(suffix) end
         return

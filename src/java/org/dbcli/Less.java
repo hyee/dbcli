@@ -47,7 +47,7 @@ public class Less {
     public int numWidth = 4;
 
     protected final Terminal terminal;
-    protected final Display display;
+    protected final Play display;
     protected final BindingReader bindingReader;
 
     protected List<Source> sources;
@@ -82,26 +82,7 @@ public class Less {
 
     public Less(Terminal terminal) {
         this.terminal = terminal;
-        this.display = new Display(terminal, true) {
-            boolean isStarted;
-
-            @Override
-            public void update(List<AttributedString> newLines, int targetCursorPos) {
-                if (isStarted) clear();
-                else {
-                    isStarted = true;
-                    if (OSUtils.IS_CONEMU || "terminator".equals(System.getenv("TERM")) || "ansicon".equals(System.getenv("ANSICON_DEF"))) {
-                        clear();
-                    } else {
-                        cursorPos = 0;
-                        oldLines.clear();
-                    }
-                }
-                display.resize(size.getRows(), size.getColumns());
-                super.update(newLines, targetCursorPos, false);
-                terminal.writer().flush();
-            }
-        };
+        this.display = new Play(terminal);
         this.bindingReader = new BindingReader(terminal.reader());
     }
 
@@ -145,14 +126,9 @@ public class Less {
             SignalHandler prevHandler = terminal.handle(Signal.WINCH, this::handle);
             Attributes attr = terminal.enterRawMode();
             try {
-
                 keys = new KeyMap<>();
                 bindKeys(keys);
-
-                // Use alternate buffer
-                if (!noInit) {
-                    terminal.puts(Capability.enter_ca_mode);
-                }
+                display.init(!noInit);
                 if (!noKeypad) {
                     terminal.puts(Capability.keypad_xmit);
                 }
@@ -415,9 +391,7 @@ public class Less {
                     terminal.handle(Signal.WINCH, prevHandler);
                 }
                 // Use main buffer
-                if (!noInit) {
-                    terminal.puts(Capability.exit_ca_mode);
-                }
+                display.exit();
                 if (!noKeypad) {
                     terminal.puts(Capability.keypad_local);
                 }
@@ -614,6 +588,7 @@ public class Less {
                 if (terminal.reader().available() > 0) return false;
             }
         }
+
         List<AttributedString> newLines = new ArrayList<>();
         //-1 due to "/b" issue in org.jline.utils.Display
         int width = size.getColumns() - (printLineNumbers ? numWidth + 1 : 0) - 1;
@@ -747,7 +722,7 @@ public class Less {
         map.bind(Operation.LEFT_FRIST_COLUMN, key(terminal, Capability.key_home), "[");
         map.bind(Operation.FORWARD_FOREVER, "F");
         map.bind(Operation.REPEAT_SEARCH_FORWARD, "n", alt('n'));
-        map.bind(Operation.REPEAT_SEARCH_BACKWARD,"N",ctrl('N'));
+        map.bind(Operation.REPEAT_SEARCH_BACKWARD, "N", ctrl('N'));
         map.bind(Operation.UNDO_SEARCH, alt('u'));
         map.bind(Operation.GO_TO_FIRST_LINE_OR_N, "g", "<", alt('<'));
         map.bind(Operation.GO_TO_LAST_LINE_OR_N, "G", ">", alt('>'));
@@ -831,4 +806,46 @@ public class Less {
         }
     }
 
+    static class Play extends org.jline.utils.Display {
+        public Play(Terminal terminal) {
+            super(terminal, true);
+        }
+
+        boolean isStarted;
+        boolean isEnterCA;
+
+        public void init(boolean isEnterCA) {
+            reset();
+            isStarted = false;
+            this.isEnterCA = isEnterCA;
+            if (this.isEnterCA) terminal.puts(Capability.enter_ca_mode);
+        }
+
+        public void exit() {
+            if (this.isEnterCA) terminal.puts(Capability.exit_ca_mode);
+        }
+
+        @Override
+        public synchronized void update(List<AttributedString> newLines, int targetCursorPos) {
+            if (isStarted) {
+                clear();
+                if (!isEnterCA) {
+                    terminal.puts(Capability.enter_ca_mode);
+                    isEnterCA = true;
+                }
+            }  else {
+                isStarted = true;
+                if (OSUtils.IS_CONEMU || "terminator".equals(System.getenv("TERM")) || "ansicon".equals(System.getenv("ANSICON_DEF"))) {
+                    clear();
+                } else {
+                    cursorPos = 0;
+                    oldLines.clear();
+                }
+            }
+            Size size = terminal.getSize();
+            super.resize(size.getRows(), size.getColumns());
+            super.update(newLines, targetCursorPos, false);
+            terminal.writer().flush();
+        }
+    }
 }
