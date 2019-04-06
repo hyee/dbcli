@@ -89,15 +89,16 @@ function oracle:connect(conn_str)
         if conn_desc and conn_desc:find("?",1,true) then
             conn_desc,params=conn_desc:match('(.*)(%?.*)')
         end
-        if conn_desc == nil then
+        
+        if conn_desc == nil or pwd=='' and isdba then
             local idx,two_task=conn_str:find("/",1,true),os.getenv("TWO_TASK")
-            if idx and not conn_str:find("@",1,true) then
+            if idx and not conn_str:find("@",1,true) or pwd=='' then
                 if idx~=1 and two_task then
                     conn_str=(url or conn_str)..'@'..two_task..(isdba and (' as '..isdba) or '')
                     return self:connect(conn_str)
-                elseif idx==1 and isdba then
+                elseif (idx==1 or not pwd or pwd=='') and isdba then
                     env.checkerr(home and os.getenv("ORACLE_SID"),"Environment variable ORACLE_HOME/ORACLE_SID is not found, cannot login with oci driver!")
-                    driver,usr,pwd,conn_desc,url="oci8","sys","sys","/ as sysdba",""
+                    driver,usr,pwd,conn_desc,url="oci8",usr or "sys","sys","/ as sysdba",""
                 end
             end
             if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end

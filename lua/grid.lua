@@ -889,7 +889,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
             end
         end
         if env.printer.top_mode==true then
-            tab[#tab+1]=space
+            tab[#tab+1]=''
             return console:display(tab)
         end
         
