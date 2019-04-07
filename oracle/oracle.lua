@@ -394,10 +394,11 @@ function oracle:parse(sql,params)
     for k,v in pairs(bind_info) do
         if v[func]=='#' then
             prep['registerOutParameter'](prep,k,v[typeid])
-            params[k]={'#',k,v[typename],'registerOutParameter',v[typeid]}
+            params[k]={'#',k,v[typename]..'['..v[typeid]..']','registerOutParameter'}
         else
-            prep[v[func].."AtName"](prep,k,v[value])
-            params[k]={'$',k,v[typename],v[func].."AtName",v[value]}
+            v[func]=v[func].."AtName"
+            prep[v[func]](prep,k,v[value])
+            params[k]={'$',k,v[typename]..'['..v[typeid]..']',v[func],v[value]}
         end
     end
     env.log_debug("parse","Query Params:",table.dump(params))

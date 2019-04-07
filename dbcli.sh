@@ -80,7 +80,7 @@ export LUA_CPATH="./lib/$os/?.so;./lib/$os/?.dylib"
 export LD_LIBRARY_PATH="./lib/$os:$JAVA_ROOT/bin:$JAVA_ROOT/lib:$JAVA_ROOT/lib/jli:$JAVA_ROOT/lib/server:$JAVA_ROOT/lib/amd64:$JAVA_ROOT/lib/amd64/server:$LD_LIBRARY_PATH"
 
 #used for JNA
-if [[ -f "$JAVA_ROOT/lib/amd64/libjsig.so" ]]; then
+if [ -f "$JAVA_ROOT/lib/amd64/libjsig.so" ] && [ $found = 2 ]; then
     export LD_PRELOAD="$JAVA_ROOT/lib/amd64/libjsig.so:$JAVA_ROOT/lib/amd64/jli/libjli.so"
 elif [[ -f "$JAVA_ROOT/lib/libjsig.dylib" ]]; then
     export LD_PRELOAD="$JAVA_ROOT/lib/libjsig.dylib:$JAVA_ROOT/lib/jli/libjli.dylib"

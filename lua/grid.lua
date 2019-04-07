@@ -11,6 +11,7 @@ local params = {
     [{'ROWSEP', 'ROWDEL'}] = {name = "row_del", default = '', desc = "The delimiter to split the rows when printing a grid"},
     COLWRAP = {name = "col_wrap", default = 0, desc = "If the column size is larger than COLDEL, then wrap the text", range = "0 - 32767"},
     COLAUTOSIZE = {name = "col_auto_size", default = 'auto', desc = "Define the base of calculating column width", range = "auto,head,body,trim"},
+    COLSIZE = {name="col_size",default=4096,desc="Max column size of a result set",range='5-32767'},
     ROWNUM = {name = "row_num", default = "off", desc = "To indicate if need to show the row numbers", range = "on,off"},
     HEADSTYLE = {name = "title_style", default = "none", desc = "Display style of the grid title", range = "upper,lower,initcap,none"},
     PIVOT = {name = "pivot", default = 0, desc = "Pivot a grid when next print, afterward the value would be reset", range = "-30 - +30"},
@@ -59,13 +60,14 @@ end
 
 local linesize
 function grid.cut(row, format_func, format_str, is_head)
+    local l
     if type(row) == "table" then
         local colbase = row.col_auto_size or grid.col_auto_size
         local cs = grid.colsize
         if cs then
             if colbase ~= 'auto' then
                 for i, _ in ipairs(cs) do
-                    row[i] = tostring(row[i]):sub(1, cs[i][1])
+                    row[i] = tostring(row[i]):ulen(cs[i][1])
                 end
             end
             if is_head then
@@ -81,18 +83,7 @@ function grid.cut(row, format_func, format_str, is_head)
     end
     local siz = type(format_func) == "number" and format_func or linesize
     if #row > siz then
-        local tab, len, count, clen, ulen = {}, -siz, 0
-        for piece, pattern in row:gsplit("(\27%[[%d;]*[mK])") do
-            clen, ulen = piece:ulen()
-            len, count = len + ulen, count + 1
-            tab[#tab + 1] = len < 0 and piece or piece:sub(1, ulen - len)
-            if (pattern or "") ~= "" then tab[#tab + 1] = pattern end
-            if len >= 0 then
-                tab[#tab + 1] = env.ansi.get_color('NOR')
-                break
-            end
-        end
-        return table.concat(tab, '')
+        l,siz,row=row:ulen(siz)
     end
     return row .. env.ansi.get_color('NOR')
 end
@@ -308,6 +299,7 @@ function grid:add(row)
     local colbase = self.col_auto_size or grid.col_auto_size
     local rownum = grid.row_num
     local null_value=env.set and env.set.NULL and env.set.NULL.value or ''
+    local maxsize = grid.col_size
     grid.colsize = self.colsize
     for k, v in pairs(row) do rs[k] = v end
     if self.headind == -1 then
@@ -327,7 +319,7 @@ function grid:add(row)
     rs[0] = headind
     local cnt = 0
     local cols = #result > 0 and #result[1] or #rs
-    
+    local l, len
     --run statement
     for k = 1, cols do
         local v = rs[k]
@@ -382,10 +374,14 @@ function grid:add(row)
                 --if headind == 0 and #p>50 then p=p:sub(1,50) end
                 grp[#grp + 1] = p
                 --deal with unicode chars
-                local l, len = p:strip_ansi():ulen()
+                l, len, p = p:ulen(maxsize)
                 if csize < len then csize = len end
             end
-            if #grp > 1 then v = grp end
+            if #grp > 1 then 
+                v = grp 
+            else
+                l, csize, v = v:ulen(maxsize)
+            end
             if lines < #grp then lines = #grp end
             if headind > 0 then
                 colsize[k][2] = -1

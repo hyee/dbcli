@@ -75,7 +75,7 @@ public final class Console {
 
         this.status = this.terminal.getStatus();
         this.display = new Less.Play(this.terminal);
-        this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).build();
+        this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).appName("dbcli").build();
         this.parser = new MyParser();
         this.reader.setParser(parser);
         this.reader.setHighlighter(parser);
@@ -170,9 +170,16 @@ public final class Console {
         parserCallback = null;
     }
 
-    public String ulen(final String s) {
+    public String ulen(String s, int maxLength) {
         if (s == null) return "0:0";
-        return s.length() + ":" + display.wcwidth(s);
+        AttributedString buff = AttributedString.fromAnsi(s);
+        int size=buff.columnLength();
+        if (maxLength > 0 && maxLength < size) {
+            buff = buff.subSequence(0, maxLength);
+            s = buff.toAnsi(terminal);
+            size = maxLength;
+        }
+        return s.getBytes().length + ":" + size + ":" + (maxLength > 0 ? s: "");
     }
 
     private Candidate candidate(String key, String desc) {

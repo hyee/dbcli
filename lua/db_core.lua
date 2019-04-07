@@ -145,10 +145,9 @@ end
 
 local ResultSet=env.class()
 
-function ResultSet:getHeads(rs,limit)
+function ResultSet:getHeads(rs)
     if self[rs] then return self[rs] end
     loader:setCurrentResultSet(rs)
-    local maxsiz=cfg.get("COLSIZE")
     local meta=rs:getMetaData()
     local len=meta:getColumnCount()
     local colinfo={}
@@ -156,7 +155,7 @@ function ResultSet:getHeads(rs,limit)
     for i=1,len,1 do
         local cname=meta:getColumnLabel(i)
         colinfo[i]={
-            column_name=limit and cname:sub(1,maxsiz) or cname,
+            column_name=cname,
             data_typeName=meta:getColumnTypeName(i),
             data_type=meta:getColumnType(i),
             data_size=meta:getColumnDisplaySize(i),
@@ -195,10 +194,9 @@ function ResultSet:fetch(rs,conn)
 
     local size=#cols
     local result=table.new(size,2)
-    local maxsiz=cfg.get("COLSIZE")
     for i=1,size,1 do
         local value=self:get(i,cols[i].data_type,rs,conn)
-        value=type(value)=="string" and value:sub(1,maxsiz) or value
+        value=type(value)=="string" and value or value
         result[i]=value or ""
     end
 
@@ -226,10 +224,10 @@ function ResultSet:close(rs)
     end
 end
 
-function ResultSet:rows(rs,count,limit,null_value,is_close)
+function ResultSet:rows(rs,count,null_value,is_close)
     if type(rs)~="userdata" or (rs.isClosed and rs:isClosed()) then return end
     count=tonumber(count) or -1
-    local titles=self:getHeads(rs,limit)
+    local titles=self:getHeads(rs)
     local head=titles.__titles
     local rows={}
     local cols=#head
@@ -240,7 +238,6 @@ function ResultSet:rows(rs,count,limit,null_value,is_close)
     null_value=null_value or cfg.get('null')
     if count~=0 then
         rows=loader:fetchResult(rs,count)
-        local maxsiz=cfg.get("COLSIZE")
         for i=1,#rows do
             for j=1,cols do
                 local info=head.colinfo[j]
@@ -248,7 +245,6 @@ function ResultSet:rows(rs,count,limit,null_value,is_close)
                     if is_lob and type(rows[i][j])=="string" and #rows[i][j]>255 then
                         print('Result written to '..env.write_cache(dtype:lower()..'_'..i..'.txt',rows[i][j]))
                     end
-                    if limit and not info.is_number and type(rows[i][j])=="string" then rows[i][j]=rows[i][j]:sub(1,maxsiz) end
                     if info.data_typeName=="DATE" or info.data_typeName=="TIMESTAMP" then
                         rows[i][j]=rows[i][j]:gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
                     elseif info.data_typeName=="BLOB" then
@@ -275,7 +271,7 @@ end
 function ResultSet:print(res,conn,prefix)
     local result,hdl={},nil
     if type(res)~="userdata" or (res.isClosed and res:isClosed()) then return end
-    local cols=self:getHeads(res,limit)
+    local cols=self:getHeads(res)
     if #cols==1 then
         if cfg.get("pipequery")=="on" then
             res:setFetchSize(2)
@@ -286,7 +282,7 @@ function ResultSet:print(res,conn,prefix)
     res:setFetchSize(cfg.get("FETCHSIZE"))
     local maxrows,pivot=cfg.get("printsize"),cfg.get("pivot")
     if pivot~=0 then maxrows=math.abs(pivot) end
-    local result=self:rows(res,maxrows,true,cfg.get('null'),true)
+    local result=self:rows(res,maxrows,cfg.get('null'))
     if not result then return end
     if pivot==0 then
         hdl=grid.new()
@@ -657,6 +653,7 @@ function db_core:exec_cache(sql,args,description)
                     method=typ..(method:match('AtName') or '')
                 end
                 prep[method](prep,idx,n)
+                params[k][5]=n
             end
         end
         --print(table.dump(params),table.dump(args))
@@ -667,7 +664,7 @@ end
 
 function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_not_prep=type(sql)~="userdata"
-    if is_not_prep and sql:find('/*DBCLI_EXEC_CACHE*/',1,true) then
+    if is_not_prep and sql:sub(1,1024):find('/*DBCLI_EXEC_CACHE*/',1,true) then
         return self:exec_cache(sql,args,prep_params)
     end
 
@@ -710,15 +707,32 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
         self.current_stmt=prep
         env.log_debug("db","SQL:",sql)
-        env.log_debug("db","Parameters:",params)
     else
         local desc ="PreparedStatement"..(args._description or "")
         prep,sql,params=sql,src_sql or desc,prep_params or {}
         if not desc:upper():find("INTERNAL") then
             env.log_debug("db","Cursor:",sql)
-            env.log_debug("db","Parameters:",params)
         else
             env.log_debug("db","Cursor:",desc)
+        end
+    end
+
+    if cfg.get('debug')=='DB' or cfg.get('debug')=='ALL' then
+        local tab={{'Bind Index','In/Out','Name','Data Type','Bind Method','Bind Value'}}
+        for k,v in pairs(params) do
+            if type(v)=='table' then
+                tab[#tab+1]={
+                    (v[6] and v[6]..',' or  '')..v[2],
+                    v[1]=='$' and 'IN' or v[6] and 'IN,OUT' or 'OUT',
+                    k,
+                    v[3],
+                    (v[4]==nil and '' or v[4])..(v[4]:find('setNull',1,true) and ('('..v[5]..')') or ''),
+                    v[4]:find('setNull',1,true) and '' or v[5]==nil and '' or v[5]
+                }
+            end
+        end
+        if #tab>1 then
+            grid.print(tab,true,nil,nil,nil,'[DB] Parameters:','\n')
         end
     end
 
@@ -946,7 +960,7 @@ function db_core:get_rows(sql,args,count)
     if not result or type(result)=="number" then
         return result
     end
-    return self.resultset:rows(result,count or -1,nil,true)
+    return self.resultset:rows(result,count or -1)
 end
 
 function db_core:grid_call(tabs,rows_limit,args,is_cache)
@@ -1002,12 +1016,12 @@ function db_core:grid_call(tabs,rows_limit,args,is_cache)
                 elseif type(rs)=="table" then
                     local tab={}
                     for x,y in ipairs(rs) do 
-                        tab[x]=self.resultset:rows(y,rows_limit,nil,nil,true)
+                        tab[x]=self.resultset:rows(y,rows_limit,nil,true)
                         for a,b in pairs(v.grid_cfg) do tab[x][a]=b end
                     end
                     tabs[k]=tab
                 else
-                    tabs[k]=self.resultset:rows(rs,rows_limit,nil,nil,true)
+                    tabs[k]=self.resultset:rows(rs,rows_limit,nil,true)
                     for a,b in pairs(v.grid_cfg or {}) do tabs[k][a]=b end
                 end
             elseif type(v)~='string' or #v~=1 then
@@ -1334,7 +1348,6 @@ function db_core:__onload()
     txt=txt..'\n           sql2csv user_objects x;'
     cfg.init("PRINTSIZE",1000,set_param,"db.query","Max rows to be printed for a select statement",'1-10000')
     cfg.init("FETCHSIZE",3000,set_param,"db.query","Rows to be prefetched from the resultset, 0 means auto.",'0-32767')
-    cfg.init("COLSIZE",1073741824,set_param,"db.query","Max column size of a result set",'5-1073741824')
     cfg.init("SQLTIMEOUT",1200,set_param,"db.core","The max wait time(in second) for a single db execution",'10-86400')
     cfg.init({"FEED","FEEDBACK"},'on',set_param,"db.core","Detemine if need to print the feedback after db execution",'on,off')
     cfg.init("AUTOCOMMIT",'off',set_param,"db.core","Detemine if auto-commit every db execution",'on,off')

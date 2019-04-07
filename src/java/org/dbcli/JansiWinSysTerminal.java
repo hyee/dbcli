@@ -191,7 +191,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
     }
 
     protected boolean processConsoleInput() throws IOException {
-        INPUT_RECORD[] events = WindowsSupport.readConsoleInput(1, 100);
+        INPUT_RECORD[] events = WindowsSupport.readConsoleInput(1, 128);
         if (events == null) {
             return false;
         }
