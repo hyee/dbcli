@@ -103,7 +103,10 @@ function helper.helper(cmd,...)
             target=cmd
         end
         if helps=="" then return end
-        helps=helps:gsub('^%s*\n',''):gsub('^(%s*[^\n\r]+)[Uu]sage[: \t]+(@@NAME)','%1\n$USAGECOLOR$Usage:$NOR$ %2'):gsub('([eE]xamples?)%s*: *','$USAGECOLOR$%1:$NOR$ ')
+        helps=helps:gsub('^%s*\n',''):gsub('^(%s*[^\n\r]+)[Uu]sage[: \t]+(@@NAME)([^\r\n]*)',function(prefix,name,line)
+            local s=prefix..'\n$USAGECOLOR$Usage:$COMMANDCOLOR$ '..name..'$NOR$'
+            return s..line:gsub('([<>{}%[%]|]+)','$COMMANDCOLOR$%1$NOR$'):gsub('(%-%w+)','$PROMPTSUBCOLOR$%1$NOR$')
+        end):gsub('\n[ \t]*([%w ]*[eE]xamples?)%s*: *','\n$USAGECOLOR$%1:$NOR$ ')
         local spaces=helps:match("([ \t]*)%S") or ""
         helps='\n'..spaces..'$USAGECOLOR$'..target:upper()..':$NOR$ '..helps:sub(#spaces+1)
         helps=helps:gsub("\r?\n"..spaces,"\n"):gsub("%s+$",""):gsub("@@NAME",target:lower())
@@ -113,17 +116,31 @@ function helper.helper(cmd,...)
             local tab,s0=grid.new(),s..' '
             local space=s:match('([ \t]*)|') or ''
             local _,cfg=grid.get_config(s0)
+            local cols=0
             s0:gsub('[^\n%S]*(|[^\r\n]+|)%s+',function(s1)
                 local row={}
                 s1:gsub('([^%|]+)',function(s2)
                     row[#row+1]=s2:trim():gsub('\\n','\n'):gsub('\\%]',']')
                     if #row==1 and #tab.data>0 then row[1]='$BOLD$'..row[1]..' $NOR$' end
                 end)
-                if #row >1 then tab:add(row) end
+                if #row > 1 then
+                    if cols==0 then 
+                        cols=#row
+                        if cols==2 then table.insert(row,2,'') end
+                    elseif cols==2 then
+                        table.insert(row,2,':')
+                    end
+                    tab:add(row) 
+                end
             end)
             if #tab.data==0 then return s end
             for k,v in pairs(cfg) do tab[k]=v end
             return space..table.concat(grid.merge({tab}),'\n'..space)
+        end)
+        helps=helps:gsub('(\n[^%S\n\r]*)([%-<]?[ %w#%-<]+>?)( *:)',function(prefix,s,comma)
+            local s1,c=s:gsub(' +','')
+            if c>1 then return prefix..s..comma end
+            return prefix..(s:find('-',1,true)==1 and '$PROMPTSUBCOLOR$' or '$COMMANDCOLOR$')..s..'$NOR$'..comma
         end)
         return print(helps:rtrim()..'\n')
     elseif cmd=="-e" or cmd=="-E" then

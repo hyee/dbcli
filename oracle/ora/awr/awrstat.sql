@@ -1,7 +1,7 @@
 /*[[Show the AWR performance trend for a specific SQL. Usage: @@NAME <sql_id|plan_hash_value|signature> [-d|-p] [-m]
-    -d: Group by day, otherwise group in detail
-    -p: Group by plan_hash_value
-    -m: Group by signature, otherwise group by sql id
+   -d: Group by day, otherwise group in detail
+   -p: Group by plan_hash_value
+   -m: Group by signature, otherwise group by sql id
     --[[
         &BASE : s={sql_id}, m={signature}
         &TIM  : t={YYYYMMDD HH24:MI}, d={YYYYMMDD} p={" "}

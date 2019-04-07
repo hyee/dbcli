@@ -1,4 +1,5 @@
-/*[[Get preferences and stats of the target object. Usage: @@NAME {[owner] | [owner.]<object_name>[.partition_name]} [-advise]
+/*[[
+    Get preferences and stats of the target object. Usage: @@NAME {[owner] | [owner.]<object_name>[.partition_name]} [-advise]
     
     -advise: execute SQL Statistics Advisor on the target table
     --[[

@@ -1,4 +1,6 @@
-/*[[Show the coefficient of correlation against the specific stats/event/latch/etc. Usage: @@NAME "<name>" [yymmddhh24mi] [yymmddhh24mi] [inst_id] [source] [-p|-k|-s]
+/*[[
+    Show the coefficient of correlation against the specific stats/event/latch/etc. Usage: @@NAME "<name>" [yymmddhh24mi] [yymmddhh24mi] [inst_id] [source] [-p|-k|-s]
+    
     source:  filter by the source_table field
     -p    :  sort by the Pearson's rho correlation coefficient(CORR_S), this is the default.
     -s    :  sort by the Spearman's rho correlation coefficient(CORR_S) 

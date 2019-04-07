@@ -5,11 +5,11 @@
         Filter options#1:
             -u  : Only show the sessions of current_schema
             -i  : Exclude the idle events
-            -f  : Customize the filter, Usage: -f"<filter>"
+            -f  : Customize the filter, i.e.: -f"inst_id=1"
         Filter options#2:
             -u2 : Only show the sessions of current_schema
             -i2 : Exclude the idle events
-            -f2 : Customize the filter, Usage: -f2"<filter>"
+            -f2 : Customize the filter, Usage: i.e.: -f2"username='SYS'"
         Field options:  Field options can be followed by other customized fields. ie: -s,p1raw
             -s  : Show related procedures and lines(default)
             -p  : Show p1/p2/p2text/p3

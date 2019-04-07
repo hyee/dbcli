@@ -1,9 +1,9 @@
 /*[[
     Show/change column histogram. Usage: @@NAME {<table_name>[.<partition_name>] <column_name>} {<test_value> | <min_v> <max_v> | <value> <buckets> [<card>]} [-test|-real] [-tab"<stats_tab>"]
     Options:
-        *  -test: use "EXPLAIN PLAN" to test the cardinality of each EP value. In case of setting histograms, this option will skip the changes
-        *  -real: use "SELECT COUNT(1)" to test the real count of each EP value
-        *  -tab : use stats table as the data source/target
+        -test: use "EXPLAIN PLAN" to test the cardinality of each EP value. In case of setting histograms, this option will skip the changes
+        -real: use "SELECT COUNT(1)" to test the real count of each EP value
+        -tab : use stats table as the data source/target
 
     Examples:
         *  List the histogram: @@NAME SYS.OBJ$ NAME

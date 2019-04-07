@@ -16,12 +16,12 @@
              8. @@NAME <sql_id> -d [<plan_hash> [YYYYMMDDHH24MI]] : Report SQL detail
 
         Options:
-                -u  : Only show the SQL list within current schema
-                -f  : List the records that match the predicates, i.e.: -f"MODULE='DBMS_SCHEDULER'"
-                -s  : Plan format is "ALL-SESSIONS-SQL_FULLTEXT-SQL_TEXT", this is the default
-                -a  : Plan format is "ALL-SQL_FULLTEXT-SQL_TEXT", when together with "-l" option, generate SQL Hub report
-                -avg: Show avg time in case of listing the SQL monitor reports
-                -detail: Extract more detailed information when generating the SQL Monitor report
+            -u     : Only show the SQL list within current schema
+            -f     : List the records that match the predicates, i.e.: -f"MODULE='DBMS_SCHEDULER'"
+            -s     : Plan format is "ALL-SESSIONS-SQL_FULLTEXT-SQL_TEXT", this is the default
+            -a     : Plan format is "ALL-SQL_FULLTEXT-SQL_TEXT", when together with "-l" option, generate SQL Hub report
+            -avg   : Show avg time in case of listing the SQL monitor reports
+            -detail: Extract more detailed information when generating the SQL Monitor report
 
      --[[
             @ver: 12.2={} 11.2={--}

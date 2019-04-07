@@ -1,6 +1,7 @@
 /*[[
 Show execution plan. Usage: @@NAME {<sql_id> [<plan_hash_value>|<child_number>] [format1..n]} [-all|-last|-b|-d|-s|-ol|-adv] 
-Option:
+
+Options:
     -b    : show binding variables
     -d    : only show the plan from AWR views
     -s    : the plan with the simplest 'basic' format

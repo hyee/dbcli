@@ -575,7 +575,7 @@ public class Less {
 
     synchronized boolean display(boolean oneScreen) throws IOException {
         if (!oneScreen) {
-            if (System.getenv("IS_WSL") == null) {
+            if (System.getenv("IS_WSL") == null && !OSUtils.IS_MSYSTEM && !OSUtils.IS_CYGWIN) {
                 if (terminal.reader().peek(128L) != NonBlockingReader.READ_EXPIRED) return false;
             } else {
                 if (terminal.reader().available() <= 0) {

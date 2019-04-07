@@ -1,4 +1,4 @@
-/*[[Get SQL text. Usage: @@NAME <sql_id>
+/*[[Get SQL text and online stats. Usage: @@NAME <sql_id>
     --[[
         @VER12: 12.1={} default={--}
         @VER: 11.2={} DEFAULT={--}

@@ -1,8 +1,9 @@
 /*[[
     Show object size. Usage: @@NAME [-d] [[owner.]object_name[.PARTITION_NAME]|-a]
-    If not specify the parameter, then list the top 100 segments.
-    option '-d': used to detail in segment level, otherwise in name level, only shows the top 1000 segments
-    option '-a': based on all schemas, default as current schema only.
+    If not specify the segment name, then list the top 100 segments.
+    
+    -d: used to detail in segment level, otherwise in name level, only shows the top 1000 segments
+    -a: based on all schemas, default as current schema only.
     --[[
         @CHECK_ACCESS: sys.user$/sys.obj$/sys.seg$={}
         &OPT2: default={}, d={partition_name,}

@@ -356,12 +356,19 @@ function grid:add(row)
             end
             
             local col_wrap = grid.col_wrap
-           --if linesize and cols == 1 then col_wrap = math.min(col_wrap > 0 and col_wrap or linesize, linesize) end
-            
+            if cols==1 and maxsize>=1024 then
+                local linesize = self.linesize
+                if linesize <= 10 then linesize = getWidth(console) end
+                linesize = linesize - (#env.space) * 2
+                if #v>math.max(linesize,maxsize) and not v:find('\n') then
+                    col_wrap=col_wrap==0 and linesize or math.min(linesize,col_wrap)
+                end
+            end
+
             if col_wrap > 0 and not v:find("\n") and #v > col_wrap then
                 local v1 = {}
                 while v and v ~= "" do
-                    table.insert(v1, v:sub(1, col_wrap))
+                    v1[#v1+1]=v:sub(1, col_wrap)
                     v = v:sub(col_wrap + 1)
                 end
                 v = table.concat(v1, '\n')
@@ -533,7 +540,7 @@ function grid:wellform(col_del, row_del)
                 break
             end
         end
-        table.insert(title_dels, v[3] or string.rep(not is_empty and grid.title_del or " ", siz))
+        title_dels[#title_dels+1]=v[3] or string.rep(not is_empty and grid.title_del or " ", siz)
         
         if row_del ~= "" then
             row_dels = row_dels .. row_del:rep(siz) .. del
@@ -549,13 +556,13 @@ function grid:wellform(col_del, row_del)
     if row_del ~= "" then
         row_dels = row_dels:gsub("%s", row_del)
         output[#output+1]=row_dels:gsub("[^%" .. row_del .. "]", row_del)
-        table.insert(rows, cut(output[#output]))
+        rows[#rows+1]=cut(output[#output])
     end
     
     local len = #result
     for k, v in ipairs(result) do
         local filter_flag, match_flag = 1, 0
-        while #v < #colsize do table.insert(v, "") end
+        while #v < #colsize do v[#v+1]='' end
 
         --adjust the title style(middle)
         if v[0] == 0 then
@@ -582,14 +589,14 @@ function grid:wellform(col_del, row_del)
             if (match_flag == 0 and not env.printer.grep_dir) or (match_flag > 0 and env.printer.grep_dir) then filter_flag = 0 end
         end
         output[#output+1]=v
-        if filter_flag == 1 then table.insert(rows, row) end
+        if filter_flag == 1 then rows[#rows+1]=row end
         if not result[k + 1] or result[k + 1][0] ~= v[0] then
             if #row_del == 1 and filter_flag == 1 and v[0] ~= 0 then
-                table.insert(rows, cut(row_dels))
+                rows[#rows+1]=cut(row_dels)
                 output[#output+1]=row_dels
             elseif v[0] == 0 then
                 output[#output+1]=format_func(fmt, table.unpack(title_dels))
-                table.insert(rows, cut(output[#output]))
+                rows[#rows+1]=cut(output[#output])
             end
         end
     end
@@ -597,9 +604,9 @@ function grid:wellform(col_del, row_del)
     if result[#result][0] > 0 and (row_del or "") == "" and (col_del or ""):trim() ~= "" then
         local line = cut(title_dels, format_func, fmt)
         line = line:gsub(" ", grid.title_del):gsub(col_del:trim(), function(a) return ('+'):rep(#a) end)
-        table.insert(rows, line)
+        rows[#rows+1]=line
+        output[#output+1]=line
         table.insert(rows, 1, line)
-        table.insert(output, line)
         table.insert(output,1, line)
     end
     self = nil
