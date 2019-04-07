@@ -170,16 +170,16 @@ public final class Console {
         parserCallback = null;
     }
 
-    public String ulen(String s, int maxLength) {
+    public String ulen(String s, final int maxLength) {
         if (s == null) return "0:0";
         AttributedString buff = AttributedString.fromAnsi(s);
-        int size=buff.columnLength();
+        int size = buff.columnLength();
         if (maxLength > 0 && maxLength < size) {
             buff = buff.subSequence(0, maxLength);
             s = buff.toAnsi(terminal);
             size = maxLength;
         }
-        return s.getBytes().length + ":" + size + ":" + (maxLength > 0 ? s: "");
+        return s.getBytes().length + ":" + size + ":" + (maxLength > 0 ? s : "");
     }
 
     private Candidate candidate(String key, String desc) {

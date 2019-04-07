@@ -203,9 +203,11 @@ function ResultSet:fetch(rs,conn)
     return result
 end
 
+local rs_close
 function ResultSet:close(rs)
     if rs then
-        if rs.isClosed and not rs:isClosed() then rs:close() end
+        if not rs_close then rs_close=rs.close end
+        if rs_close then pcall(rs_close,rs) end
         if self[rs] then self[rs]=nil end
     end
     local clock=os.timer()
@@ -261,8 +263,8 @@ function ResultSet:rows(rs,count,null_value,is_close)
             end
         end
     end
-    if is_close==true and rs.close then
-        pcall(rs.close,rs)
+    if (is_close==true or count <0 ) and rs.close then
+        self:close(rs)
     end
     table.insert(rows,1,head)
     return rows
@@ -282,7 +284,7 @@ function ResultSet:print(res,conn,prefix)
     res:setFetchSize(cfg.get("FETCHSIZE"))
     local maxrows,pivot=cfg.get("printsize"),cfg.get("pivot")
     if pivot~=0 then maxrows=math.abs(pivot) end
-    local result=self:rows(res,maxrows,cfg.get('null'))
+    local result=self:rows(res,maxrows,cfg.get('null'),true)
     if not result then return end
     if pivot==0 then
         hdl=grid.new()
@@ -745,13 +747,12 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local function process_result(rs,is_print)
         if print_result and is_print~=false then 
             self.resultset:print(rs,self.conn)
-            pcall(rs.close,rs)
         else
             rscount=rscount+1
         end
         self.__result_sets[#self.__result_sets+1]=rs
         while #self.__result_sets>cfg.get('SQLCACHESIZE')*2 do
-            pcall(self.__result_sets[1].close,self.__result_sets[1])
+            self.resultset:close(self.__result_sets[1])
             table.remove(self.__result_sets,1)
         end
         return rs
@@ -1351,7 +1352,7 @@ function db_core:__onload()
     cfg.init("SQLTIMEOUT",1200,set_param,"db.core","The max wait time(in second) for a single db execution",'10-86400')
     cfg.init({"FEED","FEEDBACK"},'on',set_param,"db.core","Detemine if need to print the feedback after db execution",'on,off')
     cfg.init("AUTOCOMMIT",'off',set_param,"db.core","Detemine if auto-commit every db execution",'on,off')
-    cfg.init("SQLCACHESIZE",30,set_param,"db.core","Number of cached statements in JDBC",'5-500')
+    cfg.init("SQLCACHESIZE",40,set_param,"db.core","Number of cached statements in JDBC",'5-500')
     cfg.init("ASYNCEXP",true,set_param,"db.export","Detemine if use parallel process for the export(SQL2CSV and SQL2FILE)",'true,false')
     cfg.init("SQLERRLINE",'off',nil,"db.core","Also print the line number when error SQL is printed",'on,off')
     cfg.init("NULL","",nil,"db.core","Define the display value for NULL value")

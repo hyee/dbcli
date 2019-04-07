@@ -833,7 +833,7 @@ public class Less {
                     terminal.puts(Capability.enter_ca_mode);
                     isEnterCA = true;
                 }
-            }  else {
+            } else {
                 isStarted = true;
                 if (OSUtils.IS_CONEMU || "terminator".equals(System.getenv("TERM")) || "ansicon".equals(System.getenv("ANSICON_DEF"))) {
                     clear();
