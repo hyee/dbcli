@@ -46,7 +46,7 @@ end
 
 function string.escape(s, mode)
     s = s:gsub('%%','%%%%'):gsub('%z','%%z'):gsub('([%^%$%(%)%.%[%]%*%+%-%?])', '%%%1')
-    if mode == '*i' then s = s:gsub('[%a]', function(s) return s:lower():format('[%s%s]',s:upper()) end) end
+    if mode == '*i' then s = s:case_insensitive_pattern() end
     return s
 end
 

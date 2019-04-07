@@ -492,10 +492,20 @@ function scripter:helper(_,cmd,search_key)
         local rows={{},{}}
         local undocs=nil
         local undoc_index=0
+        if search_key then
+            search_key=search_key:escape('*i')
+        end
         for k,v in pairs(cmdlist) do
             if type(v)=="table" and v.abbr then k=k..','..v.abbr end
+            local found
             local desc=type(v)=='table' and v.short_desc and v.short_desc:gsub("^[ \t]+","") or ''
-            if (not search_key or desc:upper():find(search_key:upper(),1,true) or k:find(search_key:upper(),1,true)) and k:sub(1,2)~='./' and k:sub(1,1)~='_' then
+            if search_key then
+                k,found=k:gsub(search_key,'$REV$%1$UREV$')
+                if found==0 then
+                    desc,found=desc:gsub(search_key,'$REV$%1$UREV$')
+                end
+            end
+            if (not search_key or found>0) and k:sub(1,2)~='./' and k:sub(1,1)~='_' then
                 if search_key or not (v.path or ""):find('[\\/]test[\\/]') then
                     desc=desc:gsub("([Uu]sage)(%s*:%s*)(@@NAME)","$USAGECOLOR$Usage:$NOR$ %3"):gsub("@@NAME","@@NAME "..k:lower().."$NOR$")
                     if desc and desc~="" then

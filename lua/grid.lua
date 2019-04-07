@@ -203,8 +203,9 @@ function grid.show_pivot(rows, col_del)
     local maxlen = 0
     for k, v in ipairs(title) do
         keys[v] = k
-        if maxlen < v:len() then
-            maxlen = v:len()
+        local len1,len2=v:ulen()
+        if maxlen < len2 then
+            maxlen = len2
         end
     end
     
@@ -212,10 +213,13 @@ function grid.show_pivot(rows, col_del)
     local color = env.ansi.get_color
     local nor, hor = color("NOR"), color("HEADCOLOR")
     if grid.pivotsort == "on" then table.sort(title) end
+    local _, value
     for k, v in ipairs(title) do
-        table.insert(r, {("%s%-" .. maxlen .. "s %s%s "):format(hor, grid.format_title(v), nor, del)})
+        v=grid.format_title(v)
+        local len1,len2=v:ulen()
+        table.insert(r, {("%s%-" .. (maxlen+len1-len2) .. "s %s%s "):format(hor, v, nor, del)})
         for i = 2, pivot, 1 do
-            local _, value = grid.format_column(true, type(v) == "table" and v or {column_name = v}, rows[i][keys[v]], i - 1)
+            _, value = grid.format_column(true, type(v) == "table" and v or {column_name = v}, rows[i][keys[v]], i - 1)
             table.insert(r[k], tostring(value):trim())
         end
     end

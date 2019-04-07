@@ -1336,7 +1336,7 @@ function db_core:__onload()
 
     local txt="\nRefer to 'set expPrefetch' to define the fetch size of the statement which impacts the export performance."
     txt=txt..'\n   -e: format is "-e<column1>[,...]"'
-    txt=txt..'\n   -r: format is "-r<column1=<expression>>[,...]"'
+    txt=txt..'\n   -r: format is "-r<column1>=<expression>[,...]"'
     txt=txt..'\nOther examples:'
     txt=txt..'\n    1. sql2csv  user_objects.zip select * from user_objects;'
     txt=txt..'\n    2. sql2file user_objects.zip select * from user_objects;'
