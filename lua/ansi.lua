@@ -348,15 +348,18 @@ local ulen=console.ulen
 function string.ulen(s,maxlen)
     if s=="" then return 0,0,s end
     if not s then return nil end
-
-    local len1,len2,s1
-    if (maxlen and maxlen>0 and s:find('\27[',1,true)) or s:find('[%z\1-\127\194-\244][\128-\191]*') then
-        len1,len2,s1= ulen(console,s,maxlen or 0):match("(%d+):(%d+):(.*)")
-        return tonumber(len1) or 0,tonumber(len2) or 0,maxlen and s1 or s
+    if maxlen==0 then return 0,0,'' end
+    local s1,len1,len2=tostring(s)
+    if (maxlen and maxlen>0 and #s1>maxlen and s1:find('\27[',1,true)) or s1:find('[\127-\255]') then
+        len1,len2,s1=ulen(console,s1,tonumber(maxlen) or 0):match("(%d+):(%d+):(.*)")
+        len1,len2,s1=tonumber(len1) or 0,tonumber(len2) or 0,maxlen and s1 or s
     else
-        if maxlen and maxlen>0 then s=s:sub(1,maxlen) end
-        return #s,#(s:strip_ansi()),s
+        if maxlen and maxlen>0 then 
+            s1=s1:sub(1,maxlen)
+        end
+        len1,len2=#s1,#(s1:strip_ansi())
     end
+    return len1,len1>len2 and len2==0 and 1 or len2,s1
 end
 
 

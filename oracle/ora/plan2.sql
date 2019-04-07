@@ -1,4 +1,7 @@
 /*[[ HelloDBA's show plan. Usage: @@NAME <sql_id> [<plan_hash_value> [format] ]
+ --[[
+        @ARGS: 1
+ --]]
  |###############################################################################
  |
  |          name: showplan.sql v1.0

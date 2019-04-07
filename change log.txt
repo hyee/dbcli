@@ -1,3 +1,4 @@
+2019-04-07: * public: performance opt on grid and change of 'set colsize'
 2019-04-06: + public: new option 'set UsageColor'
                       new alias 'ttop'
             * public: update JLine to v3.9.11

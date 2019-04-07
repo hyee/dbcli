@@ -5,6 +5,7 @@
 -all : Use hierachy clause to grab the possible missing PX slave records
 
 --[[
+    @ARGS: 1
     @adaptive : 12.1={+ADAPTIVE +REPORT} default={}
     @phf : 12.1={decode(:V1,sql_id,''||sql_full_plan_hash_value,top_level_sql_id,sql_id,''||sql_full_plan_hash_value)} default={decode(:V1,sql_id,''||sql_plan_hash_value,top_level_sql_id,sql_id,''||sql_plan_hash_value)}
     @phf2: 12.1={to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1))} default={null}

@@ -7,6 +7,7 @@
         &TIM  : t={YYYYMMDD HH24:MI}, d={YYYYMMDD} p={" "}
         &avg  : default={1}, avg={nullif(SUM(GREATEST(exec,parse)),0)}
         @ver  : 11.2={} default={--}
+        @ARGS : 1
     --]]
 ]]*/
 

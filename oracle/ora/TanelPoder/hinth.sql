@@ -1,5 +1,5 @@
-/*[[
-Display the areas / features in Oracle kernel that a hint affects(displayed as a feature/module hierarchy). Usage: @@NAME <hint_name>
+/*[[Display the areas / features in Oracle kernel that a hint affects(displayed as a feature/module hierarchy). Usage: @@NAME <hint_name>
+  
 ]]*/
 WITH feature_hierarchy AS
  (SELECT f.sql_feature, f.description, SYS_CONNECT_BY_PATH(REPLACE(f.sql_feature, 'QKSFM_', ''), ' -> ') path

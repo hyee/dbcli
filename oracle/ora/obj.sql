@@ -1,6 +1,7 @@
 /*[[find objects with object_id/object_name. Usage: @@NAME {object_id | [owner.]<object_name>[.subname]}
     --[[
         @check_access_obj: dba_objects={dba_objects}, default={all_objects}
+        @ARGS: 1
     --]]
 ]]*/
 SET FEED OFF

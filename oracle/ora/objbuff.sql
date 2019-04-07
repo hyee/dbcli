@@ -2,6 +2,7 @@
     Get the buffer cache info for a specific object. Usage: @@NAME [owner.]<table|index>[.<partition>] [inst]
     --[[
         &obj: dba_objects={dba_objects}, default={all_objects}
+        @ARGS: 1
     --]]
 ]]*/
 

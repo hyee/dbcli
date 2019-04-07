@@ -1,5 +1,8 @@
 /*[[flush a sql from out of shared pool, you can also rebuild related index to accomplish the same purpose. Usage: @@NAME <sql_id>
---[[@version: 10.2.0.4={} ]]--
+    --[[
+        @version: 10.2.0.4={} 
+        @ARGS: 1
+    ]]--
 ]]*/
 DECLARE
     NAME    VARCHAR2(50);

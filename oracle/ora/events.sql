@@ -1,6 +1,6 @@
 /*[[List the available event number that used by 'alter session set events' statement. Usage: @@NAME [filter] 
    --[[
-   @ALIAS: err
+        @ALIAS: err
    --]]
 ]]*/
 set feed off

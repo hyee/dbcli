@@ -1,9 +1,10 @@
 /*[[Generate the script to import the stats of the input table/sql. Usage: @@NAME <sql_id>|<table_name>
---[[
-    @CHECK_ACCESS_PLAN: gv$sql_plan={g},default={}
-    @CHECK_ACCESS_AWR: dba_hist_sql_plan={UNION SELECT object_owner, object_name, object_type FROM dba_hist_sql_plan WHERE  object_type IS NOT NULL AND sql_id = v_sqlid}
-    @CHECK_ACCESS_IDXVIEW: dba_indexes={dba_indexes}, default={all_indexes}
---]]
+    --[[
+        @CHECK_ACCESS_PLAN: gv$sql_plan={g},default={}
+        @CHECK_ACCESS_AWR: dba_hist_sql_plan={UNION SELECT object_owner, object_name, object_type FROM dba_hist_sql_plan WHERE  object_type IS NOT NULL AND sql_id = v_sqlid}
+        @CHECK_ACCESS_IDXVIEW: dba_indexes={dba_indexes}, default={all_indexes}
+        @ARGS: 1
+    --]]
 ]]*/
 
 

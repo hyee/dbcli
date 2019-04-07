@@ -3,8 +3,9 @@
     Note: In RAC environment, it only supports dumping the SQL ID in local node(view v$sqlarea).
     -c: Generate SQL Compiler trace file, otherwise generate 10053 trace file
     --[[
-    @version: 11.0={}
-    &opt: default={Optimizer}, c={Compiler}
+        @version: 11.0={}
+        &opt: default={Optimizer}, c={Compiler}
+        @ARGS: 1
     --]]
 ]]*/
 set feed off

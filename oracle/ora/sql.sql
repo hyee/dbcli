@@ -3,6 +3,7 @@
         @VER12: 12.1={} default={--}
         @VER: 11.2={} DEFAULT={--}
         @check_access_hist: dba_hist_sqltext={} default={--}
+        @ARGS: 1
     --]]
 ]]*/
 set colwrap 150 feed off 

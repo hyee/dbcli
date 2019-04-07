@@ -1,4 +1,5 @@
-/*[[Gather and show system statistics. Usage: @@NAME <secs>|<query>]]*/
+/*[[Gather and show system statistics. Usage: @@NAME <secs>|<query>
+]]*/
 set feed off
 VAR CUR REFCURSOR;
 DECLARE

@@ -2,6 +2,7 @@
 Show or advice on object's space. Usage: @@NAME <[owner.]object_name[.partition_name]> [stats|advise]
     --[[
         @CHECK_ACCESS: dbms_space/dba_objects/dba_tablespaces={}
+        @ARGS: 1
     --]]
 ]]*/
 

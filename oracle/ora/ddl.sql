@@ -1,8 +1,9 @@
 /*[[
    Get DDL statement. Usage: @@NAME {[owner.]<object_name> [<file_ext>]}
    --[[
-      @CHECK_ACCESS_OBJ: dba_objects={dba_views}, default={all_views}
-      @CHECK_ACCESS_COLS: dba_tab_cols={dba_tab_cols} default={all_tab_cols}
+        @CHECK_ACCESS_OBJ: dba_objects={dba_views}, default={all_views}
+        @CHECK_ACCESS_COLS: dba_tab_cols={dba_tab_cols} default={all_tab_cols}
+        @ARGS: 1
    --]]
 ]]*/
 

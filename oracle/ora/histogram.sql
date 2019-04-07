@@ -25,6 +25,7 @@
         &test  : default={0} test={1} real={2}
         &tab   : default={} tab={&0}
         @CHECK_ACCESS_DBA: DBA_TAB_COLS/DBA_PART_COL_STATISTICS={DBA_} DEFAULT={ALL_}
+        @ARGS: 2
     --]]
 ]]*/
 SET FEED OFF SERVEROUTPUT ON VERIFY OFF

@@ -4,6 +4,7 @@
         @check_access_pro: dba_Procedures={dba_Procedures}, default={all_Procedures}
         @check_access_fn : V$SQLFN_METADATA={}, default={--}
         @check_access_ft : v$fixed_table={}, default={--}
+        @ARGS: 1
     --]]
 ]]*/
 SELECT OWNER,

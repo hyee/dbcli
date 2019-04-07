@@ -1,4 +1,8 @@
-/*[[Search for the SQLs in AWR snapshots that reference the specific object. Usage: @@NAME {<object_name> [ela|exe|id|text|op] [yymmddhhmi] [yymmddhhmi]} ]]*/
+/*[[Search for the SQLs in AWR snapshots that reference the specific object. Usage: @@NAME {<object_name> [ela|exe|id|text|op] [yymmddhhmi] [yymmddhhmi]} 
+    --[[
+        @ARGS: 1
+    ]]--
+]]*/
 
 
 WITH qry AS

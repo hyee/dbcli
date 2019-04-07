@@ -1,4 +1,4 @@
-/*[[Provides information about the user. Usage: user <username>
+/*[[Provides information about the user. Usage: @@name [<username>]
 
   --[[
       @CHECK_ACCESS_USER: dba_users={dba_users}, default={all_users}

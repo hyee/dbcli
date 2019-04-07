@@ -4,6 +4,7 @@
     --[[
         &V3: default={1000000}
         &FILTER: default={1=1} f={}
+        @ARGS: 1
     --]]
 ]]*/
 VAR O REFCURSOR Many blocks for small values of 'rows/block' means fragmentation, and rebuild/coalesce is recommended;

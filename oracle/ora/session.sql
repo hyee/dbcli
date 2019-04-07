@@ -1,4 +1,8 @@
-/*[[Show session info. Usage: @@NAME <sid> [inst_id] ]]*/
+/*[[Show session info. Usage: @@NAME <sid> [inst_id] 
+    --[[
+        @ARGS: 1
+    ]]--
+]]*/
 
 set pivot 10 feed off
 set headstyle none

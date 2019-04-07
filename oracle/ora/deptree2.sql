@@ -1,4 +1,8 @@
-/*[[Shows the accessible dependencies on the given object. Usage: @@NAME [owner.]object_name]]*/
+/*[[Shows the accessible dependencies on the given object. Usage: @@NAME [owner.]object_name
+    --[[
+        @ARGS: 1
+    ]]--
+]]*/
 
 ora _find_object &V1
 set feed off

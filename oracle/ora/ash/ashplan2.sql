@@ -1,16 +1,17 @@
 /*[[Show ash cost for a specific SQL for multiple executions. usage: @@NAME {<sql_id> [plan_hash_value|sid|a] [YYMMDDHH24MI] [YYMMDDHH24MI]} [-dash] [-o] -f"<format>"
 -o    : Show top object#, otherwise show top event
 -dash : Based on dba_hist_active_sess_history, otherwise based on gv$active_session_history
---[[
-    @adaptive : 12.1={adaptive} 11.1={}
-    &V9  : ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
-    &unit: ash={1}, dash={10}
-    &OBJ : default={ev}, O={CURR_OBJ#}
-    &OBJ1: default={CURR_OBJ#}, O={ev}
-    &Title: default={Event}, O={Obj#}
-    &fmt: default={} f={} s={-rows -parallel}
-    &simple: default={1} s={0}
---]]
+       --[[
+       @ARGS: 1
+       @adaptive : 12.1={adaptive} 11.1={}
+       &V9  : ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
+       &unit: ash={1}, dash={10}
+       &OBJ : default={ev}, O={CURR_OBJ#}
+       &OBJ1: default={CURR_OBJ#}, O={ev}
+       &Title: default={Event}, O={Obj#}
+       &fmt: default={} f={} s={-rows -parallel}
+       &simple: default={1} s={0}
+       --]]
 ]]*/
 set feed off printsize 3000 pipequery off
 

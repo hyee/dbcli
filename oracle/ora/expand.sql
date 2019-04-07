@@ -1,6 +1,7 @@
 /*[[return the result of dbms_utility.expand_sql_text. Usage: @@NAME "sql_text"|<view_name>|<sql_id>
    --[[
-      @ver: 12.1={dbms_utility} default={dbms_sql2}
+        @ver: 12.1={dbms_utility} default={dbms_sql2}
+        @ARGS: 1
    --]]
 ]]*/
 set feed off verify off

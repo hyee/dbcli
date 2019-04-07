@@ -5,6 +5,7 @@
 		@check_access_usage: SYS.COL_USAGE$/SYS.COL_GROUP_USAGE$={2} SYS.COL_USAGE$={1} default={0}
 		@check_access_index: dba_index_usage={1} default={0}
 		@check_access_mdf: sys.dba_tab_modifications={sys.dba_tab_modifications} sys.all_tab_modifications={sys.all_tab_modifications}
+        @ARGS: 1
 	--]]
 ]]*/
 SET FEED OFF VERIFY ON BYPASSEMPTYRS ON
