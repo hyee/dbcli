@@ -175,7 +175,7 @@ public final class Console {
         AttributedString buff = AttributedString.fromAnsi(s);
         int size = buff.columnLength();
         if (maxLength > 0 && maxLength < size) {
-            buff = buff.subSequence(0, maxLength);
+            buff = buff.columnSubSequence(0, maxLength);
             s = buff.toAnsi(terminal);
             size = maxLength;
         }
