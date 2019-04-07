@@ -270,7 +270,7 @@ function ansi.define_color(name,value,module,description)
         if description then
             ansi.cfg(name,value,module,description)
         end
-        return 
+        return
     end
     name,value=name:upper(),value:upper()
     value=value:gsub("%$(%u+)%$",'%1')

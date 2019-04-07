@@ -103,8 +103,9 @@ function helper.helper(cmd,...)
             target=cmd
         end
         if helps=="" then return end
+        
         helps=helps:gsub('^%s*\n',''):gsub('^(%s*[^\n\r]+)[Uu]sage[: \t]+(@@NAME)([^\r\n]*)',function(prefix,name,line)
-            local s=prefix..'\n$USAGECOLOR$Usage:$COMMANDCOLOR$ '..name..'$NOR$'
+            local s=prefix..'\n'..string.rep('=',#(prefix:trim())+#target+2)..'\n$USAGECOLOR$Usage:$COMMANDCOLOR$ '..name..'$NOR$'
             return s..line:gsub('([<>{}%[%]|]+)','$COMMANDCOLOR$%1$NOR$'):gsub('(%-%w+)','$PROMPTSUBCOLOR$%1$NOR$')
         end):gsub('\n[ \t]*([%w ]*[eE]xamples?)%s*: *','\n$USAGECOLOR$%1:$NOR$ ')
         local spaces=helps:match("([ \t]*)%S") or ""
@@ -137,7 +138,7 @@ function helper.helper(cmd,...)
             for k,v in pairs(cfg) do tab[k]=v end
             return space..table.concat(grid.merge({tab}),'\n'..space)
         end)
-        helps=helps:gsub('(\n[^%S\n\r]*)([%-<]?[ %w#%-<]+>?)( *:)',function(prefix,s,comma)
+        helps=helps:gsub('(\n[^%S\n\r]*)([%-<]?[ %w#%-<_]+>?)( *:)',function(prefix,s,comma)
             local s1,c=s:gsub(' +','')
             if c>1 then return prefix..s..comma end
             return prefix..(s:find('-',1,true)==1 and '$PROMPTSUBCOLOR$' or '$COMMANDCOLOR$')..s..'$NOR$'..comma
