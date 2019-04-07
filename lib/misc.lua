@@ -292,21 +292,6 @@ function table.dump(tbl,indent,maxdep,tabs)
     return rs..indent..'}'
 end
 
-local ulen=console.ulen
-function string.ulen(s,maxlen)
-    if s=="" then return 0,0,s end
-    if not s then return nil end
-
-    local len1,len2,s1
-    if s:find('\27[',1,true) or s:find('[%z\1-\127\194-\244][\128-\191]*') then
-        len1,len2,s1= ulen(console,s,maxlen or 0):match("(%d+):(%d+):(.*)")
-        return tonumber(len1) or 0,tonumber(len2) or 0,maxlen and s1 or s
-    else
-        if maxlen and maxlen>0 then s=s:sub(1,maxlen) end
-        len1=#s
-        return len1,len1,s
-    end
-end
 
 function try(args)
     local succ,res=pcall(args[1])

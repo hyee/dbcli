@@ -60,14 +60,14 @@ end
 
 local linesize
 function grid.cut(row, format_func, format_str, is_head)
-    local l
+    local l,siz
     if type(row) == "table" then
         local colbase = row.col_auto_size or grid.col_auto_size
         local cs = grid.colsize
         if cs then
             if colbase ~= 'auto' then
                 for i, _ in ipairs(cs) do
-                    row[i] = tostring(row[i]):ulen(cs[i][1])
+                    l,siz,row[i] = tostring(row[i]):ulen(cs[i][1])
                 end
             end
             if is_head then
@@ -81,7 +81,7 @@ function grid.cut(row, format_func, format_str, is_head)
         end
         row = format_func(format_str, table.unpack(row))
     end
-    local siz = type(format_func) == "number" and format_func or linesize
+    siz = type(format_func) == "number" and format_func or linesize
     if #row > siz then
         l,siz,row=row:ulen(siz)
     end

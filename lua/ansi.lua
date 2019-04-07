@@ -344,6 +344,22 @@ local function _strip_ansi(str)
         end)
 end
 
+local ulen=console.ulen
+function string.ulen(s,maxlen)
+    if s=="" then return 0,0,s end
+    if not s then return nil end
+
+    local len1,len2,s1
+    if (maxlen and maxlen>0 and s:find('\27[',1,true)) or s:find('[%z\1-\127\194-\244][\128-\191]*') then
+        len1,len2,s1= ulen(console,s,maxlen or 0):match("(%d+):(%d+):(.*)")
+        return tonumber(len1) or 0,tonumber(len2) or 0,maxlen and s1 or s
+    else
+        if maxlen and maxlen>0 then s=s:sub(1,maxlen) end
+        return #s,#(s:strip_ansi()),s
+    end
+end
+
+
 function ansi.strip_ansi(str)
     local e,s=pcall(_strip_ansi,str)
     if not e then
