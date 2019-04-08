@@ -503,10 +503,12 @@ public final class Console {
                 }
                 return null;
             }
-
             if (lines <= terminal.getHeight() - 10) {
                 reader.setVariable(DISABLE_HISTORY, false);
-                history.add(sb.toString());
+                try {
+                    history.add(sb.toString());
+                } catch (Exception e) {
+                }
                 reader.setVariable(DISABLE_HISTORY, true);
             }
             lines = 0;

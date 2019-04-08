@@ -44,9 +44,9 @@ end
 
 function ssh:connect(conn_str)
     self.script_stack={}
-    local usr,pwd,host,port,url,conn_desc
+    local usr,pwd,host,port,url,conn_desc,is_key_access
     if type(conn_str)=="table" then --from 'login' commands
-        usr,pwd,url,host,port=conn_str.user,packer.unpack_str(conn_str.password),conn_str.url,conn_str.host,conn_str.port
+        usr,pwd,url,host,port,is_key_access=conn_str.user,packer.unpack_str(conn_str.password),conn_str.url,conn_str.host,conn_str.port,conn_str.is_key_access
         if not host then
             usr,host,port=url:match("^SSH:(.+)@(.+):(%d+)$")
             env.checkerr(port,"Unsupported URL: "..url)
@@ -78,16 +78,16 @@ function ssh:connect(conn_str)
         end
         conn_str={}
         if pwd=='' and self.default_pkey then 
-            pwd=self.default_pkey 
+            is_key_access,pwd=true,self.default_pkey 
         elseif pwd:find('[\\/]') then
-            pwd=env.join_path(pwd)
+            is_key_access,pwd=true,env.join_path(pwd)
             env.checkerr(os.exists(pwd),'Cannot find such key file: '..pwd)
         end
     end
 
     env.checkerr(usr and host and port,"Invalid SSH connect format!")
     url='SSH:'..usr..'@'..host..':'..port
-    conn_str.user,conn_str.password,conn_str.url,conn_str.account_type=usr,pwd,url,"ssh"
+    conn_str.user,conn_str.password,conn_str.url,conn_str.account_type,conn_str.is_key_access=usr,pwd,url,"ssh",is_key_access
 
     if self.conn then self:disconnect() end
     self.ssh_host=host
@@ -429,7 +429,12 @@ function ssh:ftp_file(op,info)
         options=options..' -r'
     end
     rawprint(table.concat({op:initcap().."ing:    ",remote_display,"==>",local_display,"   Options:",options}," "))
-    local command='"'..table.concat({pscp,options or "","-pw",self.conn.password,remote_file,local_dir}," ")..'"'
+    local is_key_access=self.conn.isKeyAccess
+    local auth="-pw "..self.conn.password
+    if is_key_access==true then
+        auth='-o \\"-i '..self.conn.password..'\\"'
+    end
+    local command='"'..table.concat({pscp,options or "",auth,remote_file,local_dir}," ")..'"'
     os.execute(command)
 end
 

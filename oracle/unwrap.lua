@@ -48,7 +48,12 @@ local function decode_base64_package(base64str)
 end
 
 function unwrap.unwrap_schema(obj,ext)
-    local list=db:dba_query(db.get_rows,[[select owner||'.'||object_name o from all_objects where owner=:1 and object_type in('TRIGGER','TYPE','PACKAGE','FUNCTION','PROCEDUR') ORDER BY 1]],{obj:upper()})
+    local list=db:dba_query(db.get_rows,[[
+        select owner||'.'||object_name o 
+        from all_objects 
+        where owner=:1 and object_type in('TRIGGER','TYPE','PACKAGE','FUNCTION','PROCEDUR') 
+        and   not regexp_like(object_name,'^(SYS_YOID|SYS_PLSQL_|KU$_WORKER)')
+        ORDER BY 1]],{obj:upper()})
     if type(list) ~='table' or #list<2 then return false end
     for i=2,#list do
         local n=list[i][1]

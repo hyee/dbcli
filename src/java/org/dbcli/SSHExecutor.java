@@ -28,6 +28,7 @@ public class SSHExecutor {
     public Charset charset = StandardCharsets.UTF_8;
     public String password;
     public String prompt;
+    public Boolean isKeyAccess = false;
     public ChannelShell shell;
     PrintWriter writer;
     JSch ssh;
@@ -61,9 +62,13 @@ public class SSHExecutor {
     public void connect(String host, int port, String user, final String password, String linePrefix) throws Exception {
         try {
             ssh = new JSch();
-            if (password.indexOf(File.separator) >= 0) ssh.addIdentity(password);
+            isKeyAccess = false;
+            if (password.indexOf(File.separator) >= 0) {
+                ssh.addIdentity(password);
+                isKeyAccess = true;
+            }
             session = ssh.getSession(user, host, port);
-            if (password.indexOf(File.separator) == -1) session.setPassword(password);
+            if (!isKeyAccess) session.setPassword(password);
             session.setConfig("StrictHostKeyChecking", "no");
             session.setConfig("PreferredAuthentications", "password,publickey,keyboard-interactive");
             session.setConfig("compression.s2c", "zlib@openssh.com,zlib,none");

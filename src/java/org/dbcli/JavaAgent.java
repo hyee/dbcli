@@ -208,21 +208,17 @@ public class JavaAgent implements ClassFileTransformer {
                 suffix = ".class";
                 if (classFileBuffer == null) {
                     URL url = new URL("jar:file:" + source + "!/" + clz);
-                    try {
-                        int idx = clz.lastIndexOf(".");
-                        if (idx == -1) suffix = "";
-                        else {
-                            suffix = clz.substring(idx);
-                            cl = clz.substring(0, idx);
-                        }
-                        InputStream in = url.openStream();
-                        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                        byte[] buffer = new byte[16384];
-                        int c;
-                        while ((c = in.read(buffer)) > 0)
-                            bos.write(buffer, 0, c);
+                    int idx = clz.lastIndexOf(".");
+                    if (idx == -1) suffix = "";
+                    else {
+                        suffix = clz.substring(idx);
+                        cl = clz.substring(0, idx);
+                    }
+                    byte[] buffer = new byte[16384];
+                    int c;
+                    try (InputStream in = url.openStream(); ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+                        while ((c = in.read(buffer)) > 0) bos.write(buffer, 0, c);
                         classFileBuffer = bos.toByteArray();
-                        bos.close();
                     } catch (Exception e1) {
                         System.out.println("    Cannot load file " + clz);
                         continue;
