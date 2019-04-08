@@ -880,10 +880,7 @@ function env.modify_command(_,key_event)
         if env.ansi then
             local prompt_color="%s%s"..env.ansi.get_color("NOR").."%s"
             prompt=prompt_color:format(env.ansi.get_color("PROMPTCOLOR"),prompt,env.ansi.get_color("COMMANDCOLOR"))
-            reset=env.ansi.get_color("KILLBL")
-            env.printer.write("\27[1A"..reset)
         end
-        reader:redrawLine();
     elseif key_event.name=="CTRL+BACK_SPACE" or key_event.name=="SHIFT+BACK_SPACE" then --shift+backspace
         console:invokeMethod("backwardDeleteWord")
         key_event.isbreak=true
@@ -1323,7 +1320,13 @@ function env.join_path(base,...)
         is_trim=true
         table.remove(paths,#paths)
     end
-    local path=table.concat(paths,env.PATH_DEL):gsub('[\\/]+',env.PATH_DEL)
+    local path=table.concat(paths,env.PATH_DEL):gsub('[\\/]+',env.PATH_DEL):gsub('(%$[%w_]+)',function(p)
+        local p1=os.getenv(p:sub(2))
+        return p1 or p
+    end)
+    if env.uv then
+        path=path:gsub('^~',uv.os.homedir())
+    end
     if is_trim then
         path=path:gsub('[\\/]+$','')
     end

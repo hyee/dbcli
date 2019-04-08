@@ -72,7 +72,6 @@ public final class Console {
             this.terminal = JansiWinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU, null, 0, true, Terminal.SignalHandler.SIG_IGN, false);
         else
             this.terminal = (AbstractTerminal) TerminalBuilder.builder().system(true).name(colorPlan).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).nativeSignals(true).build();
-
         this.status = this.terminal.getStatus();
         this.display = new Less.Play(this.terminal);
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).appName("dbcli").build();
@@ -358,6 +357,9 @@ public final class Console {
             return line;
         } catch (UserInterruptException | EndOfFileException e) {
             ++readSeq;
+            terminal.puts(InfoCmp.Capability.cursor_up);
+            terminal.puts(InfoCmp.Capability.delete_line);
+            //reader.killLine();
             terminal.raise(Terminal.Signal.INT);
             status.redraw();
             return "";

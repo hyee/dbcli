@@ -125,6 +125,7 @@ function grid.sort(rows, cols, bypass_head)
     local sorts = {}
     local has_header
     if rows.__class then rows, has_header = rows.data, rows.include_head end
+    local titles=rows[1]._org or rows[1]
     for ind in tostring(cols):gsub('^,*(.-),*$', '%1'):gmatch("([^,]+)") do
         local col, l
         if tonumber(ind) then
@@ -139,7 +140,7 @@ function grid.sort(rows, cols, bypass_head)
                 col = ind
                 l = 1
             end
-            for k, v in ipairs(rows[1]) do
+            for k, v in ipairs(titles) do
                 if col:upper() == tostring(v):upper() then
                     col = k
                     break
@@ -321,9 +322,9 @@ function grid:add(row)
     
     local lines = 1
     rs[0] = headind
-    local cnt = 0
+
     local cols = #result > 0 and #result[1] or #rs
-    local l, len
+    local rsize, l, len=0
     --run statement
     for k = 1, cols do
         local v = rs[k]
@@ -333,11 +334,12 @@ function grid:add(row)
         if not colsize[k] then colsize[k] = {0, 1} end
         is_number, v1 = grid.format_column(self.include_head, self.colinfo and self.colinfo[k] and self.colinfo[k] or {column_name = #result > 0 and result[1]._org[k] or v}, v, #result,self)
         if tostring(v) ~= tostring(v1) then v = v1 end
-        if colsize[k][3] then
+        if colsize[k][3] and type(v)=='string' and (v==colsize[k][3] or v=='') then
             v,v1=colsize[k][3],colsize[k][3]
             csize=#colsize[k][3]
         elseif is_number then
             csize = #tostring(v)
+            colsize[k][3],colsize[k][4]=nil
         elseif type(v) ~= "string" or v == "" then
             v = tostring(v) or ""
             csize = #v
@@ -350,13 +352,16 @@ function grid:add(row)
                         string.rep(' ', math.floor((max_len - len1) / 2)), a,
                         string.rep(' ', math.ceil((max_len - len2) / 2)), b)
                 end)
-                if v=='|' then 
-                    colsize[k][3]='|'
+                if #v<=3 and v:find('^%W+$') then 
+                    colsize[k][3],colsize[k][4]=v,grid.title_del=='-' and v:gsub('[%*|]','+') or v
                 elseif v=="" then
-                    colsize[k][3]=""
+                    colsize[k][3],colsize[k][4]=""
                 end
             else
                 v=v:gsub('[^%S\n\r]+$',''):gsub("\t", '    ')
+                if colsize[k][3] and v~=colsize[k][3] then 
+                    colsize[k][3],colsize[k][4]=nil 
+                end
             end
             
             local col_wrap = grid.col_wrap
@@ -417,6 +422,8 @@ function grid:add(row)
             end
             colsize[k][1] = csize
         end
+
+        rsize = rsize < csize and csize or rsize
     end
     
     if lines == 1 then result[#result + 1] = rs
@@ -444,6 +451,7 @@ function grid:add(row)
             result[#result + 1] = r
         end
     end
+    result[#result].rsize=rsize
     self.headind = headind + 1
     return result
 end
@@ -518,17 +526,21 @@ function grid:wellform(col_del, row_del)
     --Generate row formatter
     local color = env.ansi.get_color
     local nor, hor, hl = color("NOR"), color("HEADCOLOR"), color("GREPCOLOR")
-    local head_fmt = fmt
+    local head_fmt,prev_del = fmt,''
     for k, v in ipairs(colsize) do
         siz = v[1]
-        local del = (v[3] or (colsize[k+1] or {})[3]) and "" or " "
+        local del = (v[3] or (colsize[k+1] or {})[3]) and "" or (colsize[k+1] or {})[1]==0 and "" or " "
+        if siz==0 and (colsize[k-1] or {})[3] then del='' end
+
         if (del~="" and pivot == 0) or (pivot ~= 0 and k ~= 1 + indx and (pivot ~= 1 or k ~= 3 + indx)) then 
             del = col_del
         end
+
         if k == #colsize then del = del:gsub("%s+$", "") end
+
         if siz == 0 then
-            fmt = fmt .. "%s"
-            head_fmt = head_fmt .. "%s"
+            fmt = fmt .. "%s".. del
+            head_fmt = head_fmt .. "%s".. del
         else
             fmt = fmt .. "%" .. (siz * v[2]) .. "s" .. del
             head_fmt = head_fmt .. (v[3] and '' or hor) .. "%" .. (siz * v[2]) .. "s" .. nor .. del
@@ -544,13 +556,14 @@ function grid:wellform(col_del, row_del)
                 break
             end
         end
-        title_dels[#title_dels+1]=v[3] or string.rep(not is_empty and grid.title_del or " ", siz)
+        title_dels[#title_dels+1]=v[4] or string.rep(not is_empty and grid.title_del or " ", siz)
         
         if row_del ~= "" then
             row_dels = row_dels .. row_del:rep(siz) .. del
         end
+        prev_del=del
     end
-    
+
     linesize = self.linesize
 
     if linesize <= 10 then linesize = getWidth(console) end
@@ -583,6 +596,12 @@ function grid:wellform(col_del, row_del)
         end
 
         v.format_func,v.fmt=format_func,v[0] == 0 and head_fmt or fmt
+        if v.rsize==1 and type(v[1])=='string' and v[1]:find('[%S%W]') then
+            local c=v[1]
+            for k1,v1 in ipairs(title_dels) do
+                v[k1]=v1:sub(1,1)==grid.title_del and v1:gsub('.',c) or v1
+            end
+        end
 
         local row = cut(v, v.format_func,v.fmt, v[0] == 0)
 
@@ -593,7 +612,9 @@ function grid:wellform(col_del, row_del)
             if (match_flag == 0 and not env.printer.grep_dir) or (match_flag > 0 and env.printer.grep_dir) then filter_flag = 0 end
         end
         output[#output+1]=v
-        if filter_flag == 1 then rows[#rows+1]=row end
+        if filter_flag == 1 then 
+            rows[#rows+1]=row 
+        end
         if not result[k + 1] or result[k + 1][0] ~= v[0] then
             if #row_del == 1 and filter_flag == 1 and v[0] ~= 0 then
                 rows[#rows+1]=cut(row_dels)
@@ -886,12 +907,18 @@ function grid.merge(tabs, is_print, prefix, suffix)
         local tab = {}
         local height = tabs.max_rows or #result + 1
         local space=env.printer.top_mode==true and env.space or ''
-        if prefix then tab[1] = space..prefix:convert_ansi() end
+        if prefix then 
+            tab[1] = space..prefix:convert_ansi()
+            env.event.callback("ON_PRINT_GRID_ROW",tab[1])
+        end
         for rowidx, row in ipairs(result) do
             tab[#tab + 1] = space..grid.cut(row, linesize):convert_ansi()
             env.event.callback("ON_PRINT_GRID_ROW",row,#result)
             if #tab >= height - 1 then
-                if rowidx < #result then tab[#tab + 1] = grid.cut(result[#result], linesize) end
+                if rowidx < #result then 
+                    tab[#tab + 1] = space..grid.cut(result[#result], linesize)
+                    env.event.callback("ON_PRINT_GRID_ROW",tab[#tab],#result)
+                end
                 break
             end
         end

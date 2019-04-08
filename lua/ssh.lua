@@ -1,4 +1,4 @@
-local env=env
+local env,uv=env,uv
 local ssh=env.class(env.scripter)
 local cfg,terminal=env.set,env.terminal
 local instance
@@ -57,13 +57,18 @@ function ssh:connect(conn_str)
         conn_str.password=pwd
     else
         if not conn_str then
-            return print("Usage: ssh conn user/password@host[:port]")
+            return print("Usage: ssh conn user/[<password>|<key_file>]@host[:port>")
         end
-        usr,pwd,conn_desc = string.match(conn_str or "","(.*)/(.*)@(.+)")
+        usr,pwd,conn_desc = string.match(conn_str or "","(.-)/(.*)@(.+)")
+        if not conn_desc then
+            usr,conn_desc = string.match(conn_str or "","(.-)@(.+)")
+            pwd=''
+        end
+
         if conn_desc == nil then
             local props=self:load_config(conn_str)
             if props then return self:connect(props) end
-            return print("Usage: ssh conn <user>/<passowrd>@host[:port]")
+            return print("Usage: ssh conn user/[<password>|<key_file>]@host[:port>")
         end
         host,port=conn_desc:match('^([^:/]+)(:?%d*)$')
         if port=="" or not port then
@@ -72,7 +77,14 @@ function ssh:connect(conn_str)
             port=tonumber(port:sub(2))
         end
         conn_str={}
+        if pwd=='' and self.default_pkey then 
+            pwd=self.default_pkey 
+        elseif pwd:find('[\\/]') then
+            pwd=env.join_path(pwd)
+            env.checkerr(os.exists(pwd),'Cannot find such key file: '..pwd)
+        end
     end
+
     env.checkerr(usr and host and port,"Invalid SSH connect format!")
     url='SSH:'..usr..'@'..host..':'..port
     conn_str.user,conn_str.password,conn_str.url,conn_str.account_type=usr,pwd,url,"ssh"
@@ -83,6 +95,7 @@ function ssh:connect(conn_str)
     self.conn=java.new("org.dbcli.SSHExecutor")
     instance=self
     self.set_config("term",env.set.get("term"))
+    
     local done,err=pcall(loader.asyncCall,loader,self.conn,'connect',host,port,usr,pwd,"")
     if not done then
         self.conn=nil
@@ -436,8 +449,8 @@ function ssh:__onload()
     end
     self.help_title='Run script under the "'..self.short_dir..'" directory in remote SSH server. '
     local helper=env.grid.new()
-    helper:add{"Command",'*',"Description"}
-    helper:add{"ssh conn",'',"Connect to SSH server. Usage: ssh conn <user>/<passowrd>@host[:port]"}
+    helper:add{"Command",'|',"Description"}
+    helper:add{"ssh conn",'',"Connect to SSH server. Usage: ssh conn <user>/[<passowrd>|<key_file>]@host[:port]"}
     helper:add{"ssh reconn",'',"Re-connect to last connection"}
     helper:add{"ssh close",'',"Disconnect current SSH connection."}
     helper:add{"ssh forward",'',"Forward/un-forward a remote port. Usage: ssh forward <local_port> [<remote_port>] [remote_host]"}
@@ -487,6 +500,8 @@ function ssh:__onload()
     env.event.snoop("TRIGGER_LOGIN",self.login,self)
     env.event.snoop("ON_KEY_EVENT",self.trigger_key,self)
     cfg.init("term",_term..",auto,auto",self.set_config,"ssh","Define termType/columns/rows in remote SSH server, the supported type depends on remote server",'*')
+    local default_pkey=env.join_path(uv.os.homedir(),'.ssh/id_rsa')
+    self.default_pkey=os.exists(default_pkey) and default_pkey or nil
 end
 
 function ssh:trigger_key(_,key_event)

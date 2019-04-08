@@ -104,18 +104,18 @@ function helper.helper(cmd,...)
         end
         if helps=="" then return end
         
-        helps=helps:gsub('^%s*\n',''):gsub('^(%s*[^\n\r]+)[Uu]sage[: \t]+(@@NAME)([^\r\n]*)',function(prefix,name,line)
+        helps=helps:gsub('^%s*\n',''):gsub('\t','    '):gsub('^(%s*[^\n\r]+)[Uu]sage[: ]+(@@NAME)([^\r\n]*)',function(prefix,name,line)
             local s=prefix..'\n'..string.rep('=',#(prefix:trim())+#target+2)..'\n$USAGECOLOR$Usage:$COMMANDCOLOR$ '..name..'$NOR$'
             return s..line:gsub('([<>{}%[%]|]+)','$COMMANDCOLOR$%1$NOR$'):gsub('(%-%w+)','$PROMPTSUBCOLOR$%1$NOR$')
-        end):gsub('\n[ \t]*([%w ]*[eE]xamples?)%s*: *','\n$USAGECOLOR$%1:$NOR$ ')
-        local spaces=helps:match("([ \t]*)%S") or ""
+        end):gsub('\n *([%w ]*[eE]xamples?)%s*: *','\n$USAGECOLOR$%1:$NOR$ ')
+        local spaces=helps:match("( *)%S") or ""
         helps='\n'..spaces..'$USAGECOLOR$'..target:upper()..':$NOR$ '..helps:sub(#spaces+1)
         helps=helps:gsub("\r?\n"..spaces,"\n"):gsub("%s+$",""):gsub("@@NAME",target:lower())
 
         local grid=env.grid
         helps=helps:gsub('%[(%s*%|.-%|)%s*%]',function(s)
             local tab,s0=grid.new(),s..' '
-            local space=s:match('([ \t]*)|') or ''
+            local space=s:match('( *)|') or ''
             local _,cfg=grid.get_config(s0)
             local cols=0
             s0:gsub('[^\n%S]*(|[^\r\n]+|)%s+',function(s1)

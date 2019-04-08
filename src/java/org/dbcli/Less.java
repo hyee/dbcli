@@ -806,7 +806,7 @@ public class Less {
         }
     }
 
-    static class Play extends org.jline.utils.Display {
+    static class Play extends Display {
         public Play(Terminal terminal) {
             super(terminal, true);
         }

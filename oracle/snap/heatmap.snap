@@ -111,7 +111,7 @@
     fixed_title=true,
     order_by="-g,-time",
     column_formatter={
-        noprint='total',
+        noprint='total,g',
         USMHD2="time,avg_time",
         k='WAITS,<1us,<2us,<4us,<8us,<16us,<32us,<64us,<128us,<256us,<512us,<1ms,<2ms,<4ms,<8ms,<16ms,<32ms,<64ms,<128ms,<256ms,<512ms,<1s,<2s,<4s,<8s,<16s,<32s,<1m,>1m'
     },

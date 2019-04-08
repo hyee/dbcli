@@ -1,18 +1,18 @@
 /*[[
-        Get resource usage from SQL monitor. Usage: @@NAME {sql_id [<SQL_EXEC_ID>] [[plan_hash_value] -l|<sqlmon file>|"<query>"|-a|-s]} | {. <keyword>} [-u|-f"<filter>"] [-avg]
+        Get resource usage from SQL monitor. Usage: @@NAME {[<sql_id> {[-l|-d|-a] [<sql_exec_id>|plan_hash_value]}}|<sqlmon file>|"<query>"]} | {. <keyword>} [-u|-f"<filter>"] [-avg]
         Related parameters for SQL monitor: 
                 _sqlmon_recycle_time,_sqlmon_max_planlines,_sqlmon_max_plan,_sqlmon_threshold,control_management_pack_access,statistics_level
         A SQL can be forced to record the sql monitor report by the alter system statement:
                 ALTER SYSTEM SET EVENTS 'sql_monitor [sql: <sql_id1>|sql: <sql_id2>] force=true';
 
         Usages:
-             1. @@NAME <sql_id> [<sql_exec_id>]           : Extract sql monitor report with specific sql_id, options: -s,-a,-f"<format>"
-             2. @@NAME [. <keyword>]                      : List recent sql monitor reports,options: -avg,-u,-f"<filter>" 
-             3. @@NAME -snap <sec> <sid>                  : Monitor the specific <sid> for <sec> seconds, and then list the SQL monitor result, options: -avg
-             4. @@NAME <sqlmon_file>                      : Read SQL Monitor report from target location and print
-             5. @@NAME "<Query>"                          : Read SQL Monitor report from target query(return CLOB) and print
-             6. @@NAME <report_id>                        : Read SQL Monitor report from dba_hist_reports with specific report_id
-             7. @@NAME <sql_id> -l [-a] [plan_hash|sql_exec_id]     : List the reports and generate perf hub report for specific SQL_ID, options: -avg,-u,-a,-f"<filter>"
+             1. @@NAME <sql_id> [<sql_exec_id>]                   : Extract sql monitor report with specific sql_id, options: -s,-a,-f"<format>"
+             2. @@NAME [. <keyword>]                              : List recent sql monitor reports,options: -avg,-u,-f"<filter>" 
+             3. @@NAME -snap <sec> <sid>                          : Monitor the specific <sid> for <sec> seconds, and then list the SQL monitor result, options: -avg
+             4. @@NAME <sqlmon_file>                              : Read SQL Monitor report from target location and print
+             5. @@NAME "<Query>"                                  : Read SQL Monitor report from target query(return CLOB) and print
+             6. @@NAME <report_id>                                : Read SQL Monitor report from dba_hist_reports with specific report_id
+             7. @@NAME <sql_id> -l [-a] [plan_hash|sql_exec_id]   : List the reports and generate perf hub report for specific sql_id, options: -avg,-u,-a,-f"<filter>"
              8. @@NAME <sql_id> -d [<plan_hash> [YYYYMMDDHH24MI]] : Report SQL detail
 
         Options:
@@ -29,7 +29,6 @@
             &option : default={}, l={,sql_exec_id,plan_hash,sql_exec_start}
             &option1: default={&uniq execs,round(sum(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME))/&uniq,2) avg_ela,}, l={}
             &filter: default={1=1},f={},l={sql_id=sq_id},snap={DBOP_EXEC_ID=dopeid and dbop_name=dopename},u={username=nvl('&0',sys_context('userenv','current_schema'))}
-            &format: default={BASIC+PLAN+BINDS},s={ALL-SESSIONS}, a={ALL}
             &tot : default={1} avg={0}
             &avg : defult={1} avg={&uniq}
             &out: default={active} html={html} em={em}
@@ -946,7 +945,7 @@ BEGIN
     :filename := filename;
 END;
 /
-set colsize 4194304
+
 print c;
 set colsep |
 col stat_value#1,stat_value#2,stat_value#3 format #,##0

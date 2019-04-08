@@ -61,8 +61,9 @@ public class SSHExecutor {
     public void connect(String host, int port, String user, final String password, String linePrefix) throws Exception {
         try {
             ssh = new JSch();
+            if(password.indexOf(File.separator)>=0) ssh.addIdentity(password);
             session = ssh.getSession(user, host, port);
-            session.setPassword(password);
+            if(password.indexOf(File.separator)==-1) session.setPassword(password);
             session.setConfig("StrictHostKeyChecking", "no");
             session.setConfig("PreferredAuthentications", "password,publickey,keyboard-interactive");
             session.setConfig("compression.s2c", "zlib@openssh.com,zlib,none");

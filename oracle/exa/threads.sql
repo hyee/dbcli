@@ -39,7 +39,7 @@ BEGIN
                                 CON_ID,
                                 db,
                                 gid,
-                                '*' "*",
+                                '||' "||",
                                 sql_id,
                                 AAS,
                                 THREADS,
@@ -55,7 +55,7 @@ BEGIN
                                 CON_ID,
                                 db,
                                 gid,
-                                '*' "*",
+                                '||' "||",
                                 job_type,
                                 AAS,
                                 THREADS,
@@ -66,7 +66,7 @@ BEGIN
                         FROM   stats a
                         WHERE  job_type IS NOT NULL)
                 WHERE  gid > 0)
-            SELECT * FROM jobs A FULL JOIN sqls B USING (dbid, CON_ID, db, r, "*") 
+            SELECT * FROM jobs A FULL JOIN sqls B USING (dbid, CON_ID, db, r, "||") 
             ORDER BY sign(dbid) DESC, GREATEST( nvl(B.AAS,0),nvl(A.AAS,0)) desc,r;
     ELSE
         open c for 
