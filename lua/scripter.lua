@@ -540,7 +540,7 @@ function scripter:helper(_,cmd,search_key)
         return help
     end
     cmd = cmd:upper()
-    return cmdlist[cmd] and cmdlist[cmd].desc or "No such command["..cmd.."] !",cmd
+    return cmdlist[cmd] and cmdlist[cmd].desc or "No such command: "..cmd,cmd
 end
 
 function scripter:__onload()

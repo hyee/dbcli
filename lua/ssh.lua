@@ -447,6 +447,7 @@ function ssh:__onload()
     if self.public_dir then
         self.short_dir=self.short_dir..'" and "lua\\shell'
     end
+    self.short_dir=env.join_path(self.short_dir)
     self.help_title='Run script under the "'..self.short_dir..'" directory in remote SSH server. '
     local helper=env.grid.new()
     helper:add{"Command",'|',"Description"}

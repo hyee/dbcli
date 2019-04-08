@@ -199,8 +199,8 @@ public class Loader {
         JavaAgent.copyFile(null, className.replace("\\.", "/"), null);
     }
 
-    public void createJar(String[] classes, String location) throws Exception {
-        JavaAgent.createJar(classes, location);
+    public void createJar(String[] classes, String location, String source) throws Exception {
+        JavaAgent.createJar(classes, location, source);
     }
 
     public String dumpClass(String folder) throws Exception {
@@ -462,7 +462,7 @@ public class Loader {
             }
         }
 
-        try (Closeable c2 = iis; ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+        try (Closeable ignored = iis; ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
             UniversalDetector detector = new UniversalDetector(null);
             byte[] buffer = new byte[16384];
             int len;

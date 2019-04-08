@@ -103,6 +103,7 @@ function helper.helper(cmd,...)
             target=cmd
         end
         if helps=="" then return end
+        if helps:find('^[Nn]o ') then return print(helps) end
         
         helps=helps:gsub('^%s*\n',''):gsub('\t','    '):gsub('^(%s*[^\n\r]+)[Uu]sage[: ]+(@@NAME)([^\r\n]*)',function(prefix,name,line)
             local s=prefix..'\n'..string.rep('=',#(prefix:trim())+#target+2)..'\n$USAGECOLOR$Usage:$COMMANDCOLOR$ '..name..'$NOR$'
@@ -160,12 +161,14 @@ function helper.helper(cmd,...)
         else
             os.execute("rm -f "..dels)
         end
-        for f,p in pairs{rt='',
+        local java_home,src=java.system:getProperty("java.home"):gsub('\\','/')
+        local target=env.WORK_DIR..(env.IS_WINDOWS and 'jre' or (env.PLATFORM=='mac' and 'jre_mac') or 'jre_linux')
+        for f,p in pairs{ rt='',
                           jce='',
                           jsse='',
                           charsets='',
                           localedata='ext/',
-                          sunjce_provider='ext/',
+                          --sunjce_provider='ext/',
                           sunec='ext/',
                           sunmscapi='ext/',
                           ojdbc8='/dump/',
@@ -176,13 +179,19 @@ function helper.helper(cmd,...)
                           --orai18n='/dump/',
                           xdb6='/dump/'} do
             local dir=env.join_path(env.WORK_DIR..'/dump/'..f)
-            local jar=env.join_path(env.WORK_DIR..(env.IS_WINDOWS and 'jre' or (env.PLATFORM=='mac' and 'jre_mac') or 'jre_linux')..'/lib/'..p..f..'.jar')
+            local jar=env.join_path(target..'/lib/'..p..f..'.jar')
             if p:sub(1,1)=='/' then jar=env.join_path(env.WORK_DIR..p..f..'.jar') end
             local list={}
             for _,f in ipairs(os.list_dir(dir,'*',999)) do
                 list[#list+1]=f.fullname:sub(#dir+2):gsub("[\\/]","/")
             end
-            loader:createJar(list,jar)
+
+            if jar:find(target,1,true)==1 then
+                src=java_home..jar:sub(#target+1):gsub('\\','/')
+            else
+                src=(env.WORK_DIR..'/oracle/'..f..'.jar'):gsub("[\\/]","/")
+            end
+            loader:createJar(list,jar,src)
             os.execute('pack200 -r -O -G "'..jar..'" "'..jar..'"')
         end
         return

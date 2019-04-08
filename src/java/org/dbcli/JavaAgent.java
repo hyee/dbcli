@@ -12,7 +12,6 @@ import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Field;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.net.URLClassLoader;
 import java.security.CodeSource;
 import java.security.ProtectionDomain;
 import java.util.ArrayList;
@@ -195,13 +194,12 @@ public class JavaAgent implements ClassFileTransformer {
         }
     }
 
-    public static void createJar(String[] classes, String location) throws Exception {
+    public static void createJar(String[] classes, String location, String source) throws Exception {
         try (FileOutputStream fout = new FileOutputStream(location);
              JarOutputStream jarOut = new JarOutputStream(fout)) {
             HashMap<String, Boolean> map = new HashMap<>();
             int counter = 0;
             String suffix;
-            URLClassLoader cd = (URLClassLoader) JavaAgent.class.getClassLoader();
             for (String clz : classes) {
                 String cl = clz;
                 if (cl.endsWith(".class")) cl = cl.substring(0, cl.lastIndexOf(".class"));
@@ -209,7 +207,7 @@ public class JavaAgent implements ClassFileTransformer {
                 byte[] classFileBuffer = getClassBuffer(cl, null);
                 suffix = ".class";
                 if (classFileBuffer == null) {
-                    if (clz.contains("MANIFEST.MF")) continue;
+                    URL url = new URL("jar:file:" + source + "!/" + clz);
                     try {
                         int idx = clz.lastIndexOf(".");
                         if (idx == -1) suffix = "";
@@ -217,15 +215,16 @@ public class JavaAgent implements ClassFileTransformer {
                             suffix = clz.substring(idx);
                             cl = clz.substring(0, idx);
                         }
-                        InputStream in = cd.findResource(clz).openStream();
+                        InputStream in = url.openStream();
                         ByteArrayOutputStream bos = new ByteArrayOutputStream();
                         byte[] buffer = new byte[16384];
-                        while (in.read(buffer) > 0)
-                            bos.write(buffer);
+                        int c;
+                        while ((c = in.read(buffer)) > 0)
+                            bos.write(buffer, 0, c);
                         classFileBuffer = bos.toByteArray();
                         bos.close();
                     } catch (Exception e1) {
-                        System.out.println("    Cannot load file: " + clz);
+                        System.out.println("    Cannot load file " + clz);
                         continue;
                     }
                 }
@@ -242,6 +241,8 @@ public class JavaAgent implements ClassFileTransformer {
             }
             jarOut.finish();
             System.out.println(location + " is generated with " + counter + " classes.");
+        } catch (Exception e) {
+            System.out.println(location + ":" + e.getMessage());
         }
     }
 

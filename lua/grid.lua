@@ -352,7 +352,7 @@ function grid:add(row)
                         string.rep(' ', math.floor((max_len - len1) / 2)), a,
                         string.rep(' ', math.ceil((max_len - len2) / 2)), b)
                 end)
-                if #v<=3 and v:find('^%W+$') then 
+                if #v<=3 and v:find('^%W+$') and v~='#' then 
                     colsize[k][3],colsize[k][4]=v,grid.title_del=='-' and v:gsub('[%*|]','+') or v
                 elseif v=="" then
                     colsize[k][3],colsize[k][4]=""
