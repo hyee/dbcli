@@ -12,7 +12,6 @@ local instance,container,usr,dbid,starttime,endtime
 local noparallel='off'
 local gv1=('(%s)table%(%s*gv%$%(%s*cursor%('):case_insensitive_pattern()
 local gv2=('(%s)gv%$%(%s*cursor%('):case_insensitive_pattern()
-
 local function rep_instance(prefix,full,obj,suffix)
     obj=obj:upper()
     local flag,str=0
@@ -24,7 +23,8 @@ local function rep_instance(prefix,full,obj,suffix)
             {usr and usr~="",extvars.dict[obj].usr_col,"(select /*+no_merge*/ username from all_users where user_id="..usr..")"},
         } do
             if v[1] and v[2] and v[3] then
-                if k==1 and obj:find('^GV_?%$') and v[3]==tonumber(db.props.instance) then
+                if k==1 and obj:find('^GV_?%$') and v[3]==tonumber(db.props.instance)
+                then
                     str=fmt1:format(prefix,instance,full:gsub("[gG]([vV]_?%$)","%1"),suffix)
                 elseif flag==0 then
                     str=fmt:format(prefix,full,v[2],''..v[3],suffix)
@@ -68,7 +68,7 @@ function extvars.on_before_db_exec(item)
     local db,sql,args,params=table.unpack(item)
 
     if sql and not cache[sql] then
-        if db.props and type(db.props.version)=='number' and (db.props.israc==false or db.props.version<11) and not sql:find('^'..env.ROOT_CMD) then
+        if db.props and type(db.props.version)=='number' and (db.props.israc==false or db.props.version<11) and not sql:find('^'..(env.ROOT_CMD:escape())) then
             sql=sql:gsub(gv1,'%1((('):gsub(gv2,"%1((")
         end
         item[2]=re.gsub(sql..' ',extvars.P,rep_instance):sub(1,-2)
@@ -217,7 +217,11 @@ function extvars.set_schema(name,value)
 end
 
 function extvars.on_after_db_conn()
-    cfg.force_set('instance','default')
+    if db.props and db.props.isadb==true then
+        cfg.force_set('instance', db.props.instance)
+    else
+        cfg.force_set('instance','default')
+    end
     --cfg.force_set('starttime','default')
     --cfg.force_set('endtime','default')
     cfg.force_set('schema','default')

@@ -63,7 +63,7 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             IF l_trace NOT IN('off','statistics','sql_id') THEN
                 BEGIN
                     SELECT * bulk collect into l_plans
-                    FROM TABLE(dbms_xplan.display('v$sql_plan_statistics_all',NULL,'ALLSTATS LAST',
+                    FROM TABLE(dbms_xplan.display('v$sql_plan_statistics_all',NULL,'TYPICAL PARTITION ALLSTATS LAST',
                                'child_number=(select max(child_number) keep(dense_rank last order by executions,last_active_time) from v$sql where sql_id='''||l_sql_id||''') and sql_id=''' || l_sql_id ||''''));
                     FOR i in 1..l_plans.count LOOP
                         if l_plans(i) not like 'Error%' then

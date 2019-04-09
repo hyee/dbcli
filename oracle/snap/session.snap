@@ -14,8 +14,8 @@
                 UNION
                 SELECT sids, s2.inst_id, s2.sid
                 FROM   s1, gv$px_session s2
-                WHERE  s1.inst_id = s2.inst_id
-                AND    s1.SID = s2.sid))}}
+                WHERE  s1.inst_id = s2.qcinst_id
+                AND    s1.SID = s2.qcsid))}}
         &filter: {
              default={(:V1 IS NULL AND SID=USERENV('SID') or :V1 IS NOT NULL and :V1 in(''||sid,sql_id)) AND 
                       (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0')}
@@ -304,7 +304,8 @@
                                   'ka messages sent',v * 200,
                                   'ka grants received',v * 200)) "Traffic",
                        SUM(bs * DECODE(n, 'gc blocks lost', v)) "Lost",
-                       (select sum(waits) from &events b where b.sids=a.sids) "Fail",
+                       (select sum(waits) from &events b where b.sids=a.sids and event='gc cr failure') "Fail",
+                       SUM(DECODE(n, 'global enqueue get time',v*10000)) "enq",
                         '|' "|",
                        SUM(bs * DECODE(n, 'gc cr blocks served', v, 'gc cr blocks received', v)) cr,
                        SUM(bs * DECODE(n, 'gc cr blocks received', v)) "CR Rec",
@@ -316,9 +317,7 @@
                        SUM(bs * DECODE(n, 'gc current blocks received', v)) "CU Rec",
                        SUM(bs * DECODE(n, 'gc current block receive time', v*10000)) "CU Rec Avg",
                        SUM(bs * DECODE(n, 'gc current blocks flushed', v)) "CU Flush",
-                       SUM(bs * DECODE(n, 'gc current block flush time', v*10000)) "CU FL Avg",
-                        '|' "|",
-                       SUM(DECODE(n, 'global enqueue get time',v*10000)) "enq"
+                       SUM(bs * DECODE(n, 'gc current block flush time', v*10000)) "CU FL Avg"
                 FROM   &stats a
                 GROUP  BY sids;
                ]],

@@ -5,7 +5,10 @@
       @check_access_param: {
             gv$system_parameter={
                (select decode(upper(a.display_value),upper(b.display_value),'<SAME>',case when length(b.display_value)>80 then regexp_replace(b.display_value,', *',','||chr(10))  else b.display_value end) 
-                from   gv$system_parameter b where a.inst_id=b.inst_id and a.name=b.name) SYS_VALUE,
+                from   gv$system_parameter b 
+                where  a.inst_id=b.inst_id 
+                and    a.name=b.name
+                and    rownum<2) SYS_VALUE,
             }
             default={}
       }
@@ -13,7 +16,10 @@
       @check_access_env: {
             gv$sys_optimizer_env={
                (select 'TRUE' 
-                from   gv$sys_optimizer_env b where a.inst_id=b.inst_id and a.name=b.name) ISOPT_ENV,
+                from   gv$sys_optimizer_env b 
+                where  a.inst_id=b.inst_id 
+                and    a.name=b.name
+                and    rownum<2) ISOPT_ENV,
             }
             default={}
       }

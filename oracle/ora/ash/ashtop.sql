@@ -60,7 +60,7 @@
 col reads format KMG
 col writes format kMG
 SELECT * FROM (
-    SELECT /*+ LEADING(a) USE_HASH(u) swap_join_inputs(u) no_expand opt_param('_sqlexec_hash_based_distagg_enabled' true)*/
+    SELECT /*+LEADING(a) USE_HASH(u) swap_join_inputs(u) no_expand opt_param('_sqlexec_hash_based_distagg_enabled' true) */
         round(SUM(c))                                                   Secs
       , ROUND(sum(&base)) AAS
       , LPAD(ROUND(RATIO_TO_REPORT(sum(c)) OVER () * 100)||'%',5,' ')||' |' "%This"
@@ -92,8 +92,10 @@ SELECT * FROM (
                   swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
                 */ 
                 a.*,sql_plan_hash_value plan_hash,current_obj# obj,nvl2(CURRENT_FILE#,CURRENT_FILE#||','||current_block#,'') block,
-                CASE WHEN a.session_type = 'BACKGROUND' OR REGEXP_LIKE(a.program, '.*\([PJ]\d+\)') THEN
-                  REGEXP_REPLACE(SUBSTR(a.program,INSTR(a.program,'(')), '\d', 'n')
+                CASE WHEN REGEXP_LIKE(a.program, '.*\([A-Z]+\d+\)') THEN
+                     REGEXP_REPLACE(regexp_substr(a.program,'\([A-Z]+\d+\)'), '\d', 'n')
+                WHEN instr(a.program,'@')>1 THEN
+                     nullif(regexp_substr(a.program,'[^@]+'),'oracle')
                 END program#,&unit c,&CPU CPU
               , TO_CHAR(p1, '0XXXXXXXXXXXXXXX') p1raw
               , TO_CHAR(p2, '0XXXXXXXXXXXXXXX') p2raw

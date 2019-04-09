@@ -165,16 +165,21 @@ function oracle:connect(conn_str)
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     self.props={instance="#NUMBER",sid="#NUMBER",version="#NUMBER"}
-    for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container','israc','privs'} do 
+    for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container','israc','privs','isadb'} do 
         self.props[v]="#VARCHAR" 
     end
+
     local succ,err=pcall(self.exec,self,[[
         DECLARE
-            vs  PLS_INTEGER  := dbms_db_version.version;
-            ver PLS_INTEGER  := sign(vs-9);
-            re  PLS_INTEGER  := dbms_db_version.release;
-            sv  VARCHAR2(200):= sys_context('userenv','service_name');
-            pv  VARCHAR2(32767) :=''; 
+            vs      PLS_INTEGER  := dbms_db_version.version;
+            ver     PLS_INTEGER  := sign(vs-9);
+            re      PLS_INTEGER  := dbms_db_version.release;
+            isADB   PLS_INTEGER  := 0;
+            rtn     PLS_INTEGER;
+            sv      VARCHAR2(200):= sys_context('userenv','service_name');
+            pv      VARCHAR2(32767) :=''; 
+            intval  NUMBER;
+            strval  VARCHAR2(300);
         BEGIN
             EXECUTE IMMEDIATE 'alter session set nls_date_format=''yyyy-mm-dd hh24:mi:ss''';
             EXECUTE IMMEDIATE 'alter session set nls_timestamp_format=''yyyy-mm-dd hh24:mi:ssxff''';
@@ -185,11 +190,19 @@ function oracle:connect(conn_str)
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
 
-            BEGIN --Used on ADW/ATP
-                EXECUTE IMMEDIATE 'alter session set optimizer_ignore_hints=false';
-                EXECUTE IMMEDIATE 'alter session set optimizer_ignore_parallel_hints=false';
-            EXCEPTION WHEN OTHERS THEN NULL;
-            END;
+            $IF dbms_db_version.version > 12 $THEN
+                BEGIN --Used on ADW/ATP
+                    EXECUTE IMMEDIATE 'alter session set optimizer_ignore_hints=false';
+                    EXECUTE IMMEDIATE 'alter session set optimizer_ignore_parallel_hints=false';
+                    IF sys_context('userenv', 'con_name') != 'CDB$ROOT' THEN
+                        SELECT COUNT(1)
+                        INTO   isADB
+                        FROM   ALL_USERS
+                        WHERE  USERNAME='C##CLOUD$SERVICE';
+                    END IF;
+                EXCEPTION WHEN OTHERS THEN NULL;
+                END;
+            $END
 
             FOR r in(SELECT role p FROM SESSION_ROLES UNION ALL SELECT * FROM SESSION_PRIVS) LOOP
                 pv := pv||'/'||r.p;
@@ -224,8 +237,8 @@ function oracle:connect(conn_str)
                    sys_context('userenv', 'isdba') isdba,
                    nvl(sv,sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.')) service_name,
                    decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY',' ','PHYSICAL STANDBY',' (Standby)>')) END,
-                   decode((select count(distinct inst_id) from gv$version),1,'FALSE','TRUE'),vs
-            INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :container, :isdba, :service_name,:db_role, :israc,:version
+                   decode((select count(distinct inst_id) from gv$version),1,'FALSE','TRUE'),vs,decode(isADB,0,'FALSE','TRUE')
+            INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :container, :isdba, :service_name,:db_role, :israc,:version,:isadb
             FROM   nls_Database_Parameters
             WHERE  parameter = 'NLS_CHARACTERSET';
             
@@ -240,6 +253,8 @@ function oracle:connect(conn_str)
         END;]],self.props)
     self.props.isdba=self.props.isdba=='TRUE' and true or false
     self.props.israc=self.props.israc=='TRUE' and true or false
+    self.props.isadb=self.props.isadb=='TRUE' and true or false
+    
     if not succ then
         self.props.instance=1
         self.props.db_version='9.1'
