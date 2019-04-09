@@ -335,7 +335,6 @@ function grid:add(row)
         is_number, v1 = grid.format_column(self.include_head, self.colinfo and self.colinfo[k] and self.colinfo[k] or {column_name = #result > 0 and result[1]._org[k] or v}, v, #result,self)
         if tostring(v) ~= tostring(v1) then v = v1 end
         if colsize[k][3] and type(v)=='string' and (v==colsize[k][3] or v=='') then
-            v,v1=colsize[k][3],colsize[k][3]
             csize=#colsize[k][3]
         elseif is_number then
             csize = #tostring(v)
@@ -352,7 +351,7 @@ function grid:add(row)
                         string.rep(' ', math.floor((max_len - len1) / 2)), a,
                         string.rep(' ', math.ceil((max_len - len2) / 2)), b)
                 end)
-                if #v<=3 and v:find('^%W+$') and v~='#' then 
+                if #v<=3 and v:find('^%W+$') and v~='#' and v~='%' then 
                     colsize[k][3],colsize[k][4]=v,grid.title_del=='-' and v:gsub('[%*|]','+') or v
                 elseif v=="" then
                     colsize[k][3],colsize[k][4]=""
@@ -529,7 +528,7 @@ function grid:wellform(col_del, row_del)
     local head_fmt,max_siz = fmt,0
     for k, v in ipairs(colsize) do
         if max_siz==0 and k>1 then v[3],v[4]=nil end
-        siz = v[1]
+        siz = v[3] and #v[3] or v[1]
         local del = (v[3] or (colsize[k+1] or {})[3]) and "" or (colsize[k+1] or {})[1]==0 and "" or " "
         if siz==0 and (colsize[k-1] or {})[3] then del='' end
 
@@ -562,6 +561,7 @@ function grid:wellform(col_del, row_del)
         if row_del ~= "" then
             row_dels = row_dels .. row_del:rep(siz) .. del
         end
+        max_siz = max_siz < siz and siz or max_siz
     end
 
     linesize = self.linesize

@@ -217,7 +217,7 @@ function extvars.set_schema(name,value)
 end
 
 function extvars.on_after_db_conn()
-    if db.props and db.props.isadb==true then
+    if db.props and db.props.isadb==true and db.props.israc==false then
         cfg.force_set('instance', db.props.instance)
     else
         cfg.force_set('instance','default')
