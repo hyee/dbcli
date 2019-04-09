@@ -365,7 +365,7 @@ function grid:add(row)
             end
             
             local col_wrap = grid.col_wrap
-            if cols==1 and maxsize>=1024 then
+            if cols==1 and maxsize>=1024 and headind<2 then
                 local linesize = self.linesize
                 if linesize <= 10 then linesize = getWidth(console) end
                 linesize = linesize - (#env.space) * 2
@@ -526,8 +526,9 @@ function grid:wellform(col_del, row_del)
     --Generate row formatter
     local color = env.ansi.get_color
     local nor, hor, hl = color("NOR"), color("HEADCOLOR"), color("GREPCOLOR")
-    local head_fmt,prev_del = fmt,''
+    local head_fmt,max_siz = fmt,0
     for k, v in ipairs(colsize) do
+        if max_siz==0 and k>1 then v[3],v[4]=nil end
         siz = v[1]
         local del = (v[3] or (colsize[k+1] or {})[3]) and "" or (colsize[k+1] or {})[1]==0 and "" or " "
         if siz==0 and (colsize[k-1] or {})[3] then del='' end
@@ -561,7 +562,6 @@ function grid:wellform(col_del, row_del)
         if row_del ~= "" then
             row_dels = row_dels .. row_del:rep(siz) .. del
         end
-        prev_del=del
     end
 
     linesize = self.linesize

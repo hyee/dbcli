@@ -21,7 +21,8 @@ oracle.module_list={
     "chart",
     "ssh",
     "extvars",
-    "sqlcl"
+    "sqlcl",
+    "adb"
 }
 
 local home,tns=os.getenv("ORACLE_HOME"),os.getenv("TNS_ADM") or os.getenv("TNS_ADMIN")
@@ -184,7 +185,7 @@ function oracle:connect(conn_str)
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
 
-            BEGIN
+            BEGIN --Used on ADW/ATP
                 EXECUTE IMMEDIATE 'alter session set optimizer_ignore_hints=false';
                 EXECUTE IMMEDIATE 'alter session set optimizer_ignore_parallel_hints=false';
             EXCEPTION WHEN OTHERS THEN NULL;
@@ -580,7 +581,8 @@ function oracle:onload()
          ['oracle.net.ssl_server_dn_match']='true',
          ['oracle.jdbc.timezoneAsRegion']='false',
          ['oracle.jdbc.TcpNoDelay']='false',
-         ["oracle.net.disableOob"]='false'
+         ["oracle.net.disableOob"]='false',
+         ["oracle.jdbc.maxCachedBufferSize"]='28'
         }
 end
 

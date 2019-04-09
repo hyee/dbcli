@@ -7,7 +7,7 @@
     -c   : the percentages of the histogram is based on wait count, instead of wait time
     -n   : the value of the histogram is the number of waits, instead of percentage
   --[[
-      @tab: 12.1={gv$event_histogram_micro} 11.1={gv$event_histogram}
+      @tab: 12.1={v$event_histogram_micro} 11.1={v$event_histogram}
       @micro: 12.1={wait_time_micro} 11.1={wait_time_milli*1024}
       @flds : 12.1={} default={--}
       &u : t={log(2,slot_time*2)} c={1}
@@ -58,16 +58,17 @@
                        MAX(SUM(total_waits)) over(PARTITION BY inst,wait_class,event) Waits,
                        SUM(SUM(svalue*&u)) OVER(partition by inst,wait_class,event) total,
                        nullif(SUM(svalue*&u), 0) pct
-                FROM   (SELECT /*+ordered use_hash(a b)*/
-                               decode(lower(nvl('&v1','a')),'a',0,inst_id)  inst,
-                               event, a.total_waits, a.time_waited_micro, b.&micro slot_time, b.wait_count svalue,
-                               a.wait_class
-                        FROM   gv$system_event a
-                        JOIN   &tab b
-                        USING  (inst_id, event)
-                        WHERE  a.wait_class != 'Idle'
-                        AND    lower(nvl('&v1','a')) in('a','0',to_char(inst_id))
-                        AND    (&filter)) stat
+                FROM   table(gv$(cursor(
+                          SELECT /*+ordered use_hash(a b)*/
+                                 decode(lower(nvl('&v1','a')),'a',0,userenv('instance'))  inst,
+                                 event, a.total_waits, a.time_waited_micro, b.&micro slot_time, b.wait_count svalue,
+                                 a.wait_class
+                          FROM   v$system_event a
+                          JOIN   &tab b
+                          USING  (event)
+                          WHERE  a.wait_class != 'Idle'
+                          AND    lower(nvl('&v1','a')) in('a','0',to_char(userenv('instance')))
+                          AND    (&filter)))) stat
                 GROUP  BY inst,rollup(wait_class,event),
                           CASE
                               WHEN slot_time <= 512 THEN

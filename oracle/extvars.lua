@@ -10,6 +10,9 @@ local fmt='%s(select /*+merge*/ * from %s where %s=%s :others:)%s'
 local fmt1='%s(select /*+merge*/  %d inst_id,a.* from %s a where 1=1 :others:)%s'
 local instance,container,usr,dbid,starttime,endtime
 local noparallel='off'
+local gv1=('(%s)table%(%s*gv%$%(%s*cursor%('):case_insensitive_pattern()
+local gv2=('(%s)gv%$%(%s*cursor%('):case_insensitive_pattern()
+
 local function rep_instance(prefix,full,obj,suffix)
     obj=obj:upper()
     local flag,str=0
@@ -65,6 +68,9 @@ function extvars.on_before_db_exec(item)
     local db,sql,args,params=table.unpack(item)
 
     if sql and not cache[sql] then
+        if db.props and type(db.props.version)=='number' and (db.props.israc==false or db.props.version<11) and not sql:find('^'..env.ROOT_CMD) then
+            sql=sql:gsub(gv1,'%1((('):gsub(gv2,"%1((")
+        end
         item[2]=re.gsub(sql..' ',extvars.P,rep_instance):sub(1,-2)
         cache[item[2]]=1
     end

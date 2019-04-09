@@ -68,10 +68,13 @@ public final class Console {
 
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
+
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM))
             this.terminal = JansiWinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU, null, 0, true, Terminal.SignalHandler.SIG_IGN, false);
         else
             this.terminal = (AbstractTerminal) TerminalBuilder.builder().system(true).name(colorPlan).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).nativeSignals(true).build();
+        Interrupter.reset();
+        Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
         this.status = this.terminal.getStatus();
         this.display = new Less.Play(this.terminal);
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).appName("dbcli").build();
@@ -111,12 +114,10 @@ public final class Console {
         writer = new Output(terminal.writer());
         colorPlan = terminal.getType();
         threadID = Thread.currentThread().getId();
-        Interrupter.reset();
-        Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
+
         callback = new EventCallback() {
             @Override
             public void call(Object... c) {
-                final Long current = System.currentTimeMillis();
                 if (!pause && lua != null && threadID == Thread.currentThread().getId()) {
                     lua.getGlobal("TRIGGER_EVENT");
                     Integer r = (Integer) (lua.call(c)[0]);
@@ -460,14 +461,13 @@ public final class Console {
         private String errorAnsi = null;
         private volatile String prev = null;
         private volatile int sub = 0;
-        PrintWriter writer = null;
 
         public MyParser() {
             super();
             setAnsi(NOR);
             super.setEofOnEscapedNewLine(true);
             reader.setVariable(SECONDARY_PROMPT_PATTERN, secondPrompt);
-            Interrupter.listen(this, c -> {
+            Interrupter.listen(MyParser.this, c -> {
                 lines = 0;
                 sb.setLength(0);
             });
@@ -480,6 +480,7 @@ public final class Console {
 
         public final ParsedLine parse(final String line, final int cursor, final ParseContext context) {
             if (!isPrompt && line == null) return null;
+            if (Thread.currentThread().isInterrupted()) return super.parse("", 0, context);
             if (context == ParseContext.COMPLETE) return super.parse(line, cursor, context);
             if (context != ParseContext.ACCEPT_LINE) return null;
 

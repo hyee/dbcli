@@ -19,7 +19,7 @@ var.types={
 
 function var.helper()
     local help=[[
-        Define output variables for db execution. Usage: "@@NAME <name> <data type> [description]", or "@@NAME <name>" to remove
+        Define output variables for db execution. Usage: @@NAME <name> [<data type> [description] ]
             Define variable: @@NAME <name> <data_type> [description]
             Remove variable: @@NAME <name>
         Available Data types:

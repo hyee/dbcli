@@ -612,7 +612,7 @@ function db_core:exec_cache(sql,args,description)
         if type(description)=="string" and description~='' then
             local prep1=self.__preparedCaches.__list[description]
             if prep1 then
-                env.log_debug("DB","Recompiling "..description)
+                env.log_debug("DB","Recompiling "..(description or 'SQL'))
                 pcall(prep1[1].close,prep1[1])
                 for k,v in pairs(self.__preparedCaches) do
                     if prep1==v then
@@ -630,6 +630,9 @@ function db_core:exec_cache(sql,args,description)
             end
             self.__preparedCaches.__list[description]=cache
         end
+        env.log_debug("DB","Caching "..(description or 'SQL')..":")
+        env.log_debug("DB",sql)
+        self.log_param(params)
     else
         prep,org,params=table.unpack(cache)
         for k,n in pairs(args) do
@@ -662,6 +665,27 @@ function db_core:exec_cache(sql,args,description)
     end
     args._description=description and ('('..description..')') or ''
     return self:exec(prep,args,table.clone(params),sql),cache
+end
+
+function db_core.log_param(params)
+    if cfg.get('debug')=='DB' or cfg.get('debug')=='ALL' then
+        local tab={{'Bind Index','In/Out','Name','Data Type','Bind Method','Bind Value'}}
+        for k,v in pairs(params) do
+            if type(v)=='table' then
+                tab[#tab+1]={
+                    (v[6] and v[6]..',' or  '')..v[2],
+                    v[1]=='$' and 'IN' or v[6] and 'IN,OUT' or 'OUT',
+                    k,
+                    v[3],
+                    (v[4]==nil and '' or v[4])..(v[4]:find('setNull',1,true) and ('('..v[5]..')') or ''),
+                    v[4]:find('setNull',1,true) and '' or v[5]==nil and '' or v[5]
+                }
+            end
+        end
+        if #tab>1 then
+            grid.print(tab,true,nil,nil,nil,'[DB] Parameters:','\n')
+        end
+    end
 end
 
 function db_core:exec(sql,args,prep_params,src_sql,print_result)
@@ -709,6 +733,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
         self.current_stmt=prep
         env.log_debug("db","SQL:",sql)
+        self.log_param(params)
     else
         local desc ="PreparedStatement"..(args._description or "")
         prep,sql,params=sql,src_sql or desc,prep_params or {}
@@ -716,25 +741,6 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
             env.log_debug("db","Cursor:",sql)
         else
             env.log_debug("db","Cursor:",desc)
-        end
-    end
-
-    if cfg.get('debug')=='DB' or cfg.get('debug')=='ALL' then
-        local tab={{'Bind Index','In/Out','Name','Data Type','Bind Method','Bind Value'}}
-        for k,v in pairs(params) do
-            if type(v)=='table' then
-                tab[#tab+1]={
-                    (v[6] and v[6]..',' or  '')..v[2],
-                    v[1]=='$' and 'IN' or v[6] and 'IN,OUT' or 'OUT',
-                    k,
-                    v[3],
-                    (v[4]==nil and '' or v[4])..(v[4]:find('setNull',1,true) and ('('..v[5]..')') or ''),
-                    v[4]:find('setNull',1,true) and '' or v[5]==nil and '' or v[5]
-                }
-            end
-        end
-        if #tab>1 then
-            grid.print(tab,true,nil,nil,nil,'[DB] Parameters:','\n')
         end
     end
 
