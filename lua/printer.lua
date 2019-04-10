@@ -159,7 +159,7 @@ function printer.set_grep(keyword)
     if keyword:len()>1 and keyword:sub(1,1)=="-" then
         keyword,printer.grep_dir=keyword:sub(2),true
     end
-    printer.grep_text='('..keyword:case_insensitive_pattern()..')'
+    printer.grep_text=keyword:escape('*i')
 end
 
 function printer.grep(keyword,stmt)

@@ -35,6 +35,7 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             l_stats  SYS_REFCURSOR;
             l_sep    varchar2(10) := chr(1)||chr(2)||chr(3)||chr(10); 
             l_plans  sys.ODCIVARCHAR2LIST;
+            l_fmt    VARCHAR2(300):='TYPICAL ALLSTATS LAST';
             procedure wr is
             begin
                 l_size   := length(l_buffer);
@@ -61,9 +62,14 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             END IF;
 
             IF l_trace NOT IN('off','statistics','sql_id') THEN
+                IF dbms_db_version.version>11 THEN
+                    l_fmt := l_fmt||' +METRICS +REPORT +ADAPTIVE';
+                ELSIF dbms_db_version.version>10 THEN
+                    l_fmt := l_fmt||' +METRICS';
+                END IF;
                 BEGIN
                     SELECT * bulk collect into l_plans
-                    FROM TABLE(dbms_xplan.display('v$sql_plan_statistics_all',NULL,'TYPICAL PARTITION ALLSTATS LAST',
+                    FROM TABLE(dbms_xplan.display('v$sql_plan_statistics_all',NULL,l_fmt,
                                'child_number=(select max(child_number) keep(dense_rank last order by executions,last_active_time) from v$sql where sql_id='''||l_sql_id||''') and sql_id=''' || l_sql_id ||''''));
                     FOR i in 1..l_plans.count LOOP
                         if l_plans(i) not like 'Error%' then

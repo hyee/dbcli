@@ -193,7 +193,7 @@ function extvars.set_dict(type)
     checkhelp(type)
     type=type:lower()
     env.checkerr(type=='public' or type=='init',"Invalid parameter!")
-    
+    db:assert_connect()
     local sql;
     local path=datapath
     if type=='init' then
@@ -201,8 +201,9 @@ function extvars.set_dict(type)
         sql=[[
             with r as(
                     SELECT /*+no_merge*/ owner,table_name, column_name col,data_type
-                    FROM   dba_tab_cols, dba_users
-                    WHERE  username = owner)
+                    FROM   dba_tab_cols
+                    WHERE  owner in('SYS','PUBLIC')
+                    @XTABLE@)
             SELECT  table_name,
                     MAX(CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') THEN col END) INST_COL,
                     MAX(CASE WHEN col IN ('CON_ID') THEN col END) CON_COL,
@@ -212,7 +213,7 @@ function extvars.set_dict(type)
                     MAX(owner)
             FROM   (select * from r
                     union  all
-                    select s.owner,s.synonym_name,r.col ,r.data_type 
+                    select s.owner,s.synonym_name,r.col,r.data_type 
                     from   dba_synonyms s,r 
                     where  r.table_name=s.table_name 
                     and    r.owner=s.table_owner
@@ -234,21 +235,15 @@ function extvars.set_dict(type)
                     FROM   dba_tab_cols, dba_users
                     WHERE  user_id IN (SELECT SCHEMA# FROM sys.registry$ UNION ALL SELECT SCHEMA# FROM sys.registry$schemas)
                     AND    username = owner
-                    AND    (owner,table_name) in(select distinct owner,TABLE_NAME from dba_tab_privs where grantee in('PUBLIC','SELECT_CATALOG_ROLE'))  
-                    UNION ALL
-                    SELECT 'SYS',t.kqftanam, c.kqfconam, decode(kqfcodty,1,'VARCHAR2',2,'NUMBER',null)
-                    FROM   (SELECT kqftanam,t.indx,t.inst_id FROM x$kqfta t
-                            UNION ALL
-                            SELECT KQFDTEQU,t.indx,t.inst_id FROM x$kqfta t,x$kqfdt where kqftanam=KQFDTNAM) t, x$kqfco c
-                    WHERE  c.kqfcotab = t.indx
-                    AND    c.inst_id = t.inst_id)
-            SELECT table_name,
-                MAX(CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') THEN col END) INST_COL,
-                MAX(CASE WHEN col IN ('CON_ID') THEN col END) CON_COL,
-                MAX(CASE WHEN col IN ('DBID') THEN col END) DBID_COL,
-                MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND regexp_like(col,'(OWNER|SCHEMA|KGLOBTS4|USER.*NAME)') THEN col END)
-                    KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN col LIKE '%OWNER' THEN 1 ELSE 2 END) USR_COL,
-                MAX(owner)
+                    AND    (owner,table_name) in(select distinct owner,TABLE_NAME from dba_tab_privs where grantee in('PUBLIC','SELECT_CATALOG_ROLE','EXECUTE_CATALOG_ROLE'))  
+                    @XTABLE@)
+            SELECT  table_name,
+                    MAX(CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') THEN col END) INST_COL,
+                    MAX(CASE WHEN col IN ('CON_ID') THEN col END) CON_COL,
+                    MAX(CASE WHEN col IN ('DBID') THEN col END) DBID_COL,
+                    MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND regexp_like(col,'(OWNER|SCHEMA|KGLOBTS4|USER.*NAME)') THEN col END)
+                        KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN col LIKE '%OWNER' THEN 1 ELSE 2 END) USR_COL,
+                    MAX(owner)
             FROM   (select * from r
                     union  all
                     select s.owner,s.synonym_name,r.col ,r.data_type 
@@ -274,7 +269,18 @@ function extvars.set_dict(type)
                     where  grantee in('EXECUTE_CATALOG_ROLE','SELECT_CATALOG_ROLE'))
             GROUP  BY TABLE_NAME]]
     end
-    print('Bulding, it could take minutes...')
+
+    sql = sql:gsub('@XTABLE@',db.props.isdba~=true and '' or [[
+            UNION ALL
+            SELECT 'SYS',t.kqftanam, c.kqfconam, decode(kqfcodty,1,'VARCHAR2',2,'NUMBER',null)
+            FROM   (SELECT kqftanam,t.indx,t.inst_id FROM x$kqfta t
+                    UNION ALL
+                    SELECT KQFDTEQU,t.indx,t.inst_id FROM x$kqfta t,x$kqfdt where kqftanam=KQFDTNAM) t, x$kqfco c
+            WHERE  c.kqfcotab = t.indx
+            AND    c.inst_id = t.inst_id
+        ]])
+
+    print('Bulding, it could take several minutes...')
     local rs=db:dba_query(db.internal_call,sql)
     local rows=db.resultset:rows(rs,-1)
     extvars.dict={}
@@ -294,12 +300,16 @@ function extvars.set_dict(type)
             dict[prefix:gsub('_','')..suffix]=dict[rows[i][1]]
         end
     end
-    local keywords={}
-    rs=db:internal_call("select KEYWORD from V$RESERVED_WORDS where length(KEYWORD)>3")
-    rows=db.resultset:rows(rs,-1)
-    local cnt2=#rows
-    for i=2,cnt2 do
-        keywords[rows[i][1]]=1
+    local keywords,done,cnt2={}
+    done,rs=pcall(db.internal_call,db,"select KEYWORD from V$RESERVED_WORDS where length(KEYWORD)>3")
+    if done then
+        rows=db.resultset:rows(rs,-1)
+        cnt2=#rows
+        for i=2,cnt2 do
+            keywords[rows[i][1]]=1
+        end
+    else
+        cnt2=2
     end
     env.save_data(path,{dict=dict,keywords=keywords})
     extvars.load_dict(path)
@@ -321,7 +331,7 @@ end
 
 function extvars.onload()
     env.set_command(nil,"TEST_GRID",nil,extvars.test_grid,false,1)
-    env.set_command(nil,'DICT',"Create offline dictionary for current database for auto completion. Usage: @@NAME init",extvars.set_dict,false,2)
+    env.set_command(nil,'DICT',"Create a separate offline dictionary of current database for auto completion. Usage: @@NAME init",extvars.set_dict,false,2)
     event.snoop('BEFORE_DB_EXEC',extvars.on_before_db_exec,nil,60)
     event.snoop('AFTER_DB_EXEC',extvars.on_after_db_exec)
     event.snoop('ON_SUBSTITUTION',extvars.on_before_db_exec,nil,60)
