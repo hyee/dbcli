@@ -116,80 +116,6 @@ function extvars.check_time(name,value)
 end
 
 function extvars.set_instance(name,value)
-    if tonumber(value)==-2 then
-        local dict=extvars.dict or {}
-        local rs=db:internal_call([[
-            with r as(
-                    SELECT /*+no_merge*/ owner,table_name, column_name col,data_type
-                    FROM   dba_tab_cols, dba_users
-                    WHERE  user_id IN (SELECT SCHEMA# FROM sys.registry$ UNION ALL SELECT SCHEMA# FROM sys.registry$schemas)
-                    AND    username = owner
-                    AND    (owner,table_name) in(select distinct owner,TABLE_NAME from dba_tab_privs where grantee in('PUBLIC','SELECT_CATALOG_ROLE'))  
-                    UNION ALL
-                    SELECT 'SYS',t.kqftanam, c.kqfconam, decode(kqfcodty,1,'VARCHAR2',2,'NUMBER',null)
-                    FROM   (SELECT kqftanam,t.indx,t.inst_id FROM x$kqfta t
-                            UNION ALL
-                            SELECT KQFDTEQU,t.indx,t.inst_id FROM x$kqfta t,x$kqfdt where kqftanam=KQFDTNAM) t, x$kqfco c
-                    WHERE  c.kqfcotab = t.indx
-                    AND    c.inst_id = t.inst_id)
-            SELECT table_name,
-                   MAX(CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') THEN col END) INST_COL,
-                   MAX(CASE WHEN col IN ('CON_ID') THEN col END) CON_COL,
-                   MAX(CASE WHEN col IN ('DBID') THEN col END) DBID_COL,
-                   MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND regexp_like(col,'(OWNER|SCHEMA|KGLOBTS4|USER.*NAME)') THEN col END)
-                       KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN col LIKE '%OWNER' THEN 1 ELSE 2 END) USR_COL,
-                   MAX(owner)
-            FROM   (select * from r
-                    union  all
-                    select s.owner,s.synonym_name,r.col ,r.data_type 
-                    from   dba_synonyms s,r 
-                    where  r.table_name=s.table_name 
-                    and    r.owner=s.table_owner
-                    and    s.synonym_name!=s.table_name
-                    union  all
-                    select owner,object_name,null,object_type
-                    from   dba_objects
-                    where  owner='SYS' 
-                    and    regexp_like(object_name,'^(DBMS_|UTL_)')
-                    and    instr(object_type,' ')=0
-                    union  all
-                    select distinct owner,object_name||'.'||procedure_name,null,'PROCEDURE'
-                    from   dba_procedures
-                    where  owner='SYS' 
-                    and    regexp_like(object_name,'^(DBMS_|UTL_)')
-                    and    procedure_name is not null
-                    union  all
-                    select owner,table_name,null,null 
-                    from   dba_tab_privs a
-                    where  grantee in('EXECUTE_CATALOG_ROLE','SELECT_CATALOG_ROLE'))
-            GROUP  BY TABLE_NAME]])
-        local rows=db.resultset:rows(rs,-1)
-        local cnt1=#rows
-        for i=2,cnt1 do
-            local exists=dict[rows[i][1]]
-            dict[rows[i][1]]={
-                inst_col=(rows[i][2] or "")~="" and rows[i][2] or (exists and dict[rows[i][1]].inst_col),
-                cdb_col=(rows[i][3] or "")~=""  and rows[i][3] or (exists and dict[rows[i][1]].cdb_col),
-                dbid_col=(rows[i][4] or "")~="" and rows[i][4] or (exists and dict[rows[i][1]].dbid_col),
-                usr_col=(rows[i][5] or "")~=""  and rows[i][5] or (exists and dict[rows[i][1]].usr_col),
-                owner=(rows[i][6] or "")~=""    and rows[i][6] or (exists and dict[rows[i][1]].owner)
-            }
-            local prefix,suffix=rows[i][1]:match('(.-$)(.*)')
-            if prefix=='GV_$' or prefix=='V_$' then
-                dict[prefix:gsub('_','')..suffix]=dict[rows[i][1]]
-            end
-        end
-        local keywords={}
-        rs=db:internal_call("select KEYWORD from V$RESERVED_WORDS where length(KEYWORD)>3")
-        rows=db.resultset:rows(rs,-1)
-        local cnt2=#rows
-        for i=2,cnt2 do
-            keywords[rows[i][1]]=1
-        end
-        env.save_data(datapath,{dict=dict,keywords=keywords})
-        extvars.dict=dict
-        print((cnt1+cnt2-2)..' records saved into '..datapath)
-    end
     return tonumber(value)
 end
 
@@ -229,6 +155,20 @@ function extvars.on_after_db_conn()
     cfg.force_set('dbid','default')
     noparallel='off'
     cfg.force_set('noparallel','off')
+    local path=env._CACHE_PATH..'dict.dat'
+    
+    if extvars.current_dict~=path and  os.exists(path) then
+        extvars.dict={}
+        extvars.load_dict(path)
+    elseif extvars.current_dict~=datapath then
+        extvars.load_dict(datapath)
+    end
+end
+
+function extvars.on_after_db_disconn()
+    if extvars.current_dict~=datapath then
+        extvars.load_dict(datapath)
+    end
 end
 
 function extvars.test_grid()
@@ -249,14 +189,146 @@ function extvars.test_grid()
     merge({rs3,'|',merge{rs1,'-',{rs2,'+',rs5}},'-',rs4},true)
 end
 
+function extvars.set_dict(type)
+    checkhelp(type)
+    type=type:lower()
+    env.checkerr(type=='public' or type=='init',"Invalid parameter!")
+    
+    local sql;
+    local path=datapath
+    if type=='init' then
+        path=env._CACHE_PATH..'dict.dat'
+        sql=[[
+            with r as(
+                    SELECT /*+no_merge*/ owner,table_name, column_name col,data_type
+                    FROM   dba_tab_cols, dba_users
+                    WHERE  username = owner)
+            SELECT  table_name,
+                    MAX(CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') THEN col END) INST_COL,
+                    MAX(CASE WHEN col IN ('CON_ID') THEN col END) CON_COL,
+                    MAX(CASE WHEN col IN ('DBID') THEN col END) DBID_COL,
+                    MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND regexp_like(col,'(OWNER|SCHEMA|KGLOBTS4|USER.*NAME)') THEN col END)
+                        KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN col LIKE '%OWNER' THEN 1 ELSE 2 END) USR_COL,
+                    MAX(owner)
+            FROM   (select * from r
+                    union  all
+                    select s.owner,s.synonym_name,r.col ,r.data_type 
+                    from   dba_synonyms s,r 
+                    where  r.table_name=s.table_name 
+                    and    r.owner=s.table_owner
+                    and    s.synonym_name!=s.table_name
+                    union  all
+                    select owner,object_name,null,object_type
+                    from   dba_objects
+                    where  instr(object_type,' ')=0
+                    union  all
+                    select distinct owner,object_name||nullif('.'||procedure_name,'.'),null,'PROCEDURE'
+                    from   dba_procedures
+                    where  procedure_name is not null)
+            GROUP  BY TABLE_NAME]]
+    else
+        extvars.load_dict(path)
+        sql=[[
+            with r as(
+                    SELECT /*+no_merge*/ owner,table_name, column_name col,data_type
+                    FROM   dba_tab_cols, dba_users
+                    WHERE  user_id IN (SELECT SCHEMA# FROM sys.registry$ UNION ALL SELECT SCHEMA# FROM sys.registry$schemas)
+                    AND    username = owner
+                    AND    (owner,table_name) in(select distinct owner,TABLE_NAME from dba_tab_privs where grantee in('PUBLIC','SELECT_CATALOG_ROLE'))  
+                    UNION ALL
+                    SELECT 'SYS',t.kqftanam, c.kqfconam, decode(kqfcodty,1,'VARCHAR2',2,'NUMBER',null)
+                    FROM   (SELECT kqftanam,t.indx,t.inst_id FROM x$kqfta t
+                            UNION ALL
+                            SELECT KQFDTEQU,t.indx,t.inst_id FROM x$kqfta t,x$kqfdt where kqftanam=KQFDTNAM) t, x$kqfco c
+                    WHERE  c.kqfcotab = t.indx
+                    AND    c.inst_id = t.inst_id)
+            SELECT table_name,
+                MAX(CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') THEN col END) INST_COL,
+                MAX(CASE WHEN col IN ('CON_ID') THEN col END) CON_COL,
+                MAX(CASE WHEN col IN ('DBID') THEN col END) DBID_COL,
+                MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND regexp_like(col,'(OWNER|SCHEMA|KGLOBTS4|USER.*NAME)') THEN col END)
+                    KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN col LIKE '%OWNER' THEN 1 ELSE 2 END) USR_COL,
+                MAX(owner)
+            FROM   (select * from r
+                    union  all
+                    select s.owner,s.synonym_name,r.col ,r.data_type 
+                    from   dba_synonyms s,r 
+                    where  r.table_name=s.table_name 
+                    and    r.owner=s.table_owner
+                    and    s.synonym_name!=s.table_name
+                    union  all
+                    select owner,object_name,null,object_type
+                    from   dba_objects
+                    where  owner='SYS' 
+                    and    regexp_like(object_name,'^(DBMS_|UTL_)')
+                    and    instr(object_type,' ')=0
+                    union  all
+                    select distinct owner,object_name||'.'||procedure_name,null,'PROCEDURE'
+                    from   dba_procedures
+                    where  owner='SYS' 
+                    and    regexp_like(object_name,'^(DBMS_|UTL_)')
+                    and    procedure_name is not null
+                    union  all
+                    select owner,table_name,null,null 
+                    from   dba_tab_privs a
+                    where  grantee in('EXECUTE_CATALOG_ROLE','SELECT_CATALOG_ROLE'))
+            GROUP  BY TABLE_NAME]]
+    end
+    print('Bulding, it could take minutes...')
+    local rs=db:dba_query(db.internal_call,sql)
+    local rows=db.resultset:rows(rs,-1)
+    extvars.dict={}
+    local dict=extvars.dict
+    local cnt1=#rows
+    for i=2,cnt1 do
+        local exists=dict[rows[i][1]]
+        dict[rows[i][1]]={
+            inst_col=(rows[i][2] or "")~="" and rows[i][2] or (exists and dict[rows[i][1]].inst_col),
+            cdb_col=(rows[i][3] or "")~=""  and rows[i][3] or (exists and dict[rows[i][1]].cdb_col),
+            dbid_col=(rows[i][4] or "")~="" and rows[i][4] or (exists and dict[rows[i][1]].dbid_col),
+            usr_col=(rows[i][5] or "")~=""  and rows[i][5] or (exists and dict[rows[i][1]].usr_col),
+            owner=(rows[i][6] or "")~=""    and rows[i][6] or (exists and dict[rows[i][1]].owner)
+        }
+        local prefix,suffix=rows[i][1]:match('(.-$)(.*)')
+        if prefix=='GV_$' or prefix=='V_$' then
+            dict[prefix:gsub('_','')..suffix]=dict[rows[i][1]]
+        end
+    end
+    local keywords={}
+    rs=db:internal_call("select KEYWORD from V$RESERVED_WORDS where length(KEYWORD)>3")
+    rows=db.resultset:rows(rs,-1)
+    local cnt2=#rows
+    for i=2,cnt2 do
+        keywords[rows[i][1]]=1
+    end
+    env.save_data(path,{dict=dict,keywords=keywords})
+    extvars.load_dict(path)
+    print((cnt1+cnt2-2)..' records saved into '..path)
+end
+
+function extvars.load_dict(path)
+    env.load_data(path,true,function(data)
+        extvars.dict=data.dict
+        --env.write_cache("1.txt",table.dump(data))
+        if data.keywords then
+            for k,v in pairs(data.dict) do data.keywords[v.owner..'.'..k]=1 end
+            console:setKeywords(data.keywords) 
+        end
+        extvars.current_dict=path
+        --print('loaded '..path)
+    end)
+end
+
 function extvars.onload()
     env.set_command(nil,"TEST_GRID",nil,extvars.test_grid,false,1)
+    env.set_command(nil,'DICT',"Create offline dictionary for current database for auto completion. Usage: @@NAME init",extvars.set_dict,false,2)
     event.snoop('BEFORE_DB_EXEC',extvars.on_before_db_exec,nil,60)
     event.snoop('AFTER_DB_EXEC',extvars.on_after_db_exec)
     event.snoop('ON_SUBSTITUTION',extvars.on_before_db_exec,nil,60)
     event.snoop('AFTER_ORACLE_CONNECT',extvars.on_after_db_conn)
+    event.snoop('ON_DB_DISCONNECTED',extvars.on_after_db_disconn)
     event.snoop('ON_SETTING_CHANGED',extvars.set_title)
-    cfg.init("instance",-1,extvars.set_instance,"oracle","Auto-limit the inst_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-2 - 99")
+    cfg.init("instance",-1,extvars.set_instance,"oracle","Auto-limit the inst_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-1 - 99")
     cfg.init("schema","",extvars.set_schema,"oracle","Auto-limit the schema of impacted tables. ","*")
     cfg.init({"container","con","con_id"},-1,extvars.set_container,"oracle","Auto-limit the con_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-1 - 1024")
     cfg.init("dbid",0,extvars.set_container,"oracle","Specify the dbid for AWR analysis")
@@ -273,14 +345,7 @@ function extvars.onload()
         name    <- {prefix %a%a [%w$#__]+}
         prefix  <- "GV_$"/"GV$"/"V_$"/"V$"/"DBA_"/"AWR_"/"ALL_"/"CDB_"/"X$"/"XV$"
     ]],nil,true)
-    env.load_data(datapath,true,function(data)
-        extvars.dict=data.dict
-        --env.write_cache("1.txt",table.dump(data))
-        if data.keywords then
-            for k,v in pairs(data.dict) do data.keywords[v.owner..'.'..k]=1 end
-            console:setKeywords(data.keywords) 
-        end
-    end)
+    extvars.load_dict(datapath)
 end
 
 db.lz_compress=[[

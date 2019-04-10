@@ -19,7 +19,8 @@ FROM (
         select machine,event,count(1) aas,median(nvl2(event,time_waited,wait_time)) latency,median(p2) avg_bytes,
                max(nvl2(event,time_waited,wait_time)) max_latency,max(p2) max_bytes,grouping_id(sql_id) gid, nvl(sql_id,top_level_sql_id) sql_id
         from  &ash
-        where (event is null and p2text='#bytes' or wait_class='Network')
+        where p2text='#bytes' 
+        and   nvl(wait_class,'Network')='Network'
         and   upper(machine) like upper('%&V1%')
         and   sample_time BETWEEN &snap AND NVL(to_date(nvl(:V3,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE)
         group by machine,event,rollup((sql_id,top_level_sql_id))) a)

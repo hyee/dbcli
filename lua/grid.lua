@@ -369,10 +369,6 @@ function grid:add(row)
                 end
             else
                 v=v:gsub('[^%S\n\r]+$',''):gsub("\t", '    '):gsub('%z+','')
-                if not self.colinfo or not self.colinfo[k].is_number then
-                    v=v:gsub('%s+([\n\r])','%1')
-                end
-
                 if colsize[k][3] and v~=colsize[k][3] then 
                     colsize[k][3],colsize[k][4]=nil 
                 end

@@ -1,3 +1,4 @@
+2019-04-10: + oracle: new command 'dict init' to allow defining separate offline db dictionary for aut-completion purpose  
 2019-04-09: * oracle: auto-set instance when taget db is ADB(ADW/ATP)
 2019-04-08: + public: update lib jsch to v0.1.55, and support key authentication of command 'ssh connect'
 2019-04-07: * public: performance opt on grid and change of 'set colsize'

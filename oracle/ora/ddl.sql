@@ -1,7 +1,7 @@
 /*[[
    Get DDL statement. Usage: @@NAME {[owner.]<object_name> [<file_ext>]}
    --[[
-        @CHECK_ACCESS_OBJ: dba_objects={dba_views}, default={all_views}
+        @CHECK_ACCESS_OBJ: dba_views={dba_views}, default={all_views}
         @CHECK_ACCESS_COLS: dba_tab_cols={dba_tab_cols} default={all_tab_cols}
         @ARGS: 1
    --]]
@@ -24,15 +24,23 @@ DECLARE
     cols          VARCHAR2(32767);
 BEGIN
     IF obj_type in('VIEW','SYNONYM') THEN
+        for r in(select column_name from &CHECK_ACCESS_COLS where owner=schem and table_name=regexp_replace(part1,'GV','GV_') order by column_id) loop
+            cols:=cols||','||r.column_name;
+        end loop;
+
+        IF cols IS NOT NULL THEN
+            cols:='CREATE OR REPLACE VIEW '||schem||'.'||regexp_replace(part1,'^G?V_?','GV')||'('||trim(',' from cols)||') AS '||chr(10);
+        END IF;
+
         BEGIN
             name := regexp_replace(part1,'^G?V_?','GV');
             EXECUTE IMMEDIATE q'[SELECT VIEW_NAME,VIEW_DEFINITION FROM V$FIXED_VIEW_DEFINITION WHERE VIEW_NAME=:1]'
                 INTO vw,txt USING name;
             IF txt is not null then
-                for r in(select column_name from dba_tab_cols where owner='SYS' and table_name=regexp_replace(name,'GV','GV_') order by column_id) loop
+                for r in(select column_name from &CHECK_ACCESS_COLS where owner='SYS' and table_name=regexp_replace(name,'GV','GV_') order by column_id) loop
                     cols:=cols||','||r.column_name;
                 end loop;
-                txt:='CREATE OR REPLACE VIEW SYS.'||vw||'('||trim(',' from cols)||') AS '||chr(10)||regexp_replace(txt,' from ',chr(10)||'from ',1,1);
+                txt:=cols||regexp_replace(txt,' from ',chr(10)||'from ',1,1) ||';';
                 txt:=regexp_replace(txt,',[ ]+',',');
             END IF;
         EXCEPTION
@@ -41,7 +49,9 @@ BEGIN
 
         IF txt IS NULL THEN
             FOR R IN(SELECT TEXT FROM &CHECK_ACCESS_OBJ WHERE OWNER=schem AND VIEW_NAME=part1) LOOP
-                txt := r.text;
+                IF r.text IS NOT NULL THEN 
+                    txt := cols || r.text ||';';
+                END IF;
             END LOOP;
         END IF;
     END IF;
@@ -58,7 +68,28 @@ BEGIN
         DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'CONSTRAINTS', FALSE);
         DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'CONSTRAINTS_AS_ALTER', FALSE);
         --DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'PARTITIONING', FALSE);
+        BEGIN
         txt := dbms_metadata.get_ddl(REPLACE(obj_type, ' ', '_'), part1, SCHEM);
+        EXCEPTION WHEN OTHERS THEN
+            IF sqlcode=-31603 AND obj_type='VIEW' AND DBMS_DB_VERSION.VERSION>11 THEN --object "%s" of type VIEW not found in schema "SYS"
+                NULL;
+                $IF DBMS_DB_VERSION.VERSION>11 $THEN
+                    SELECT MAX(TEXT_VC) 
+                    into   txt
+                    FROM   &CHECK_ACCESS_OBJ 
+                    WHERE OWNER=schem 
+                    AND VIEW_NAME=part1;
+
+                    IF trim(txt) IS NULL THEN
+                        raise;
+                    ELSE
+                        txt := cols || txt || ';';
+                    END IF;
+                $END
+            ELSE 
+                raise;
+            END IF;
+        END;
         IF REGEXP_SUBSTR(obj_type,'[^ +]') in ('TABLE','ANALYTIC','HIERARCHY','ATTRIBUTE') THEN
             BEGIN
                 dbms_lob.append(txt,dbms_metadata.GET_DEPENDENT_DDL('INDEX', part1, SCHEM));

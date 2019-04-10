@@ -17,6 +17,8 @@ public class MyCompleter implements org.jline.reader.Completer {
     TreeCompleter commandCompleter = new TreeCompleter();
     HashMap<String, Boolean> keywords = new HashMap<>();
     HashMap<String, HashMap<String, Boolean>> commands = new HashMap<>();
+    HashMap<String, StringsCompleter> commandSet = new HashMap<>();
+
     Console console;
 
     public MyCompleter(Console console) {
@@ -24,6 +26,7 @@ public class MyCompleter implements org.jline.reader.Completer {
     }
 
     void setKeysWords(Map<String, ?> keywords) {
+        this.keywords = new HashMap<>();
         Set<String> keys = keywords.keySet();
         for (String key : keys) {
             this.keywords.put(key.toLowerCase(), true);
@@ -66,6 +69,7 @@ public class MyCompleter implements org.jline.reader.Completer {
                 nodes.add(node(objs));
                 objs[0] = key.toLowerCase();
                 nodes.add(node(objs));
+                commandSet.put(key, new StringsCompleter(keys));
             } else nodes.add(node(key));
         }
         commandCompleter = new TreeCompleter(nodes.toArray(new Node[0]));
@@ -78,21 +82,16 @@ public class MyCompleter implements org.jline.reader.Completer {
         final List<String> words = parsedLine.words().subList(prev, index + 1);
         final String key = words.get(0).toUpperCase();
         index += console.parser.lines * 10;
-        if (index == 1 && commands.get(key) != null && commands.get(key).size() > 0)
-            commandCompleter.complete(lineReader, parsedLine, list);
+        StringsCompleter subs;
+        //System.out.println(key+","+words.get(words.size() - 1).toUpperCase());
+        if ((subs = commandSet.get(key)) != null)
+            subs.complete(lineReader, parsedLine, list);
         else if (index > 0) {
-            if (words.get(words.size() - 1).equals("")) return;
-            keysWordCompeleter.complete(lineReader, parsedLine, list);
+            final String key1 = words.get(words.size() - 1).toUpperCase();
+            if (key1.equals("")) return;
+            if ((subs = commandSet.get(key1)) != null) subs.complete(lineReader, parsedLine, list);
+            else keysWordCompeleter.complete(lineReader, parsedLine, list);
         } else
             commandCompleter.complete(lineReader, parsedLine, list);
-         /*
-         ArrayList<Candidate> cans=new ArrayList<>();
-         if(cans.size()<=100) {
-             Collections.copy(list,cans);
-         } else {
-
-             for(int i=0;i<=100;i++) list.add(cans.get(i));
-             list.add(new Candidate(words[words.length - 1].trim() + "|..."));
-         }*/
     }
 }

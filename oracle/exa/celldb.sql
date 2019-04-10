@@ -1,6 +1,8 @@
 /*[[list cell IO stats. Usage: @@NAME [<cell>]|[-d]
     --[[
         &cell: default={}, d={cell,}
+        @dist: 19={distinct} default={}
+        @trunc:  12.2={on overflow truncate} default={}
     --]]
 ]]*/
 col bytes,f_bytes format kmg
@@ -57,13 +59,13 @@ SELECT db,
        MAX(cellsrv_input) "CELLSRV|INPUT",
        MAX(cellsrv_output) "CELLSRV|OUTPUT",
        MAX(cellsrv_passthru) "CELLSRV|PASSTHRU" ,
-       regexp_replace(listagg(PACKAGE, ',') within GROUP(ORDER BY PACKAGE), '([^,]+)(,\1)+', '\1') PACKAGE,
+       regexp_replace(listagg(&dist PACKAGE, ',' &trunc) within GROUP(ORDER BY PACKAGE), '([^,]+)(,\1)+', '\1') PACKAGE,
        MAX(cells) cells,
-       regexp_replace(listagg(dbid, ',') within GROUP(ORDER BY 0+dbid), '([^,]{5,})(,\1)+', '\1') dbid,
-       regexp_replace(listagg(root, ',') within GROUP(ORDER BY root), '([^,]+)(,\1)+', '\1') root_id,
-       regexp_replace(listagg(ocl_group_id, ',') within GROUP(ORDER BY ocl_group_id), '([^,]+)(,\1)+', '\1') ocl_group_id,
-       regexp_replace(listagg(oflgrp_name, ',') within GROUP(ORDER BY oflgrp_name), '([^,]+)(,\1)+', '\1') oflgrp_name,
-       regexp_replace(listagg(oflgrp_disabled, ',') within GROUP(ORDER BY oflgrp_disabled), '([^,]+)(,\1)+', '\1') oflgrp_disabled
+       --regexp_replace(listagg(&dist dbid, ',' &trunc) within GROUP(ORDER BY 0+dbid), '([^,]{5,})(,\1)+', '\1') dbid,
+       regexp_replace(listagg(&dist root, ',' &trunc) within GROUP(ORDER BY root), '([^,]+)(,\1)+', '\1') root_id,
+       regexp_replace(listagg(&dist ocl_group_id, ',' &trunc) within GROUP(ORDER BY ocl_group_id), '([^,]+)(,\1)+', '\1') ocl_group_id,
+       regexp_replace(listagg(&dist oflgrp_name, ',' &trunc) within GROUP(ORDER BY oflgrp_name), '([^,]+)(,\1)+', '\1') oflgrp_name,
+       regexp_replace(listagg(&dist oflgrp_disabled, ',' &trunc) within GROUP(ORDER BY oflgrp_disabled), '([^,]+)(,\1)+', '\1') oflgrp_disabled
 FROM   (SELECT /*+ordered use_hash(a b c d) no_merge*/
         DISTINCT db,
                  COUNT(DISTINCT nvl2(PACKAGE, cell_name, NULL)) over(PARTITION BY db) cells,
