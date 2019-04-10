@@ -1,7 +1,7 @@
-/*[[Show delta event histogram relative to target event. Usage: @@NAME {<0|sample secs> [0|inst_id]} [-lgwr|-io|-gc|-w"<event|wait_class>"|-f"<filter>"] [-c|-n]
+/*[[Show delta event histogram relative to target event. Usage: @@NAME {<0|secs> [0|inst_id]} [-lgwr|-io|-gc|-w"<event|wait_class>"|-f"<filter>"] [-c|-n]
   
   Parameters:
-    sample secs: the interval to sample the stats in order to calc the delta values. When 0 then calc all stats instead of delta stats
+    secs : the interval to sample the stats in order to calc the delta values. When 0 then calc all stats instead of delta stats
     -lgwr: show only the events relative to LGWR
     -io  : show only the events belong to User/System I/O
     -gc  : show only the events belong to Cluster waits
