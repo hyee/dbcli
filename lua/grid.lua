@@ -279,7 +279,7 @@ function grid.format_column(include_head, colinfo, value, rownum,instance)
     if value == nil then return false, '' end
     if rownum > 0 and (type(value) == "number" or include_head and colinfo.is_number) then
         local v1, v2 = tonumber(value)
-        if not v1 then return false,value end
+        if not v1 then return true,value end
         if type(value) == "number" or value==tostring(v1) or value:find('[eE]') then
             local pre, scal = math.modf(v1)
             if grid.sep4k == "on" then
@@ -297,8 +297,8 @@ function grid.format_column(include_head, colinfo, value, rownum,instance)
             if tostring(value):find('e', 1, true) then return true, string.format('%99.38f', value):gsub(' ', ''):gsub('%.?0+$', '') end
             return true, value
         else
-            if grid.digits < 38 or  grid.sep4k == "on" then
-                local done,res=pcall(string_format,String,'%,'..(grid.digits)..'f',java_cast(value,'java.math.BigDecimal'))
+            if grid.digits < 38 or grid.sep4k == "on" then
+                local done,res=pcall(string_format,String,'%'..(grid.sep4k == "on" and ',.' or '.')..(grid.digits<38 and grid.digits or 2)..'f',java_cast(value,'java.math.BigDecimal'))
                 value = done and res or value
             end
             return true,value
@@ -368,7 +368,11 @@ function grid:add(row)
                     colsize[k][3],colsize[k][4]=""
                 end
             else
-                v=v:gsub('[^%S\n\r]+$',''):gsub("\t", '    ')
+                v=v:gsub('[^%S\n\r]+$',''):gsub("\t", '    '):gsub('%z+','')
+                if not self.colinfo or not self.colinfo[k].is_number then
+                    v=v:gsub('%s+([\n\r])','%1')
+                end
+
                 if colsize[k][3] and v~=colsize[k][3] then 
                     colsize[k][3],colsize[k][4]=nil 
                 end
@@ -396,7 +400,7 @@ function grid:add(row)
             v = v:convert_ansi():gsub('\192\128', ''):gsub('%z+', '')
             
             --if the column value has multiple lines, then split lines into table
-            for p in v:gsplit('[ \t%z\a\r\f\b\v]*\n') do
+            for p in v:gsplit('[ \a\r\f\b\v]*\n') do
                 --if headind == 0 and #p>50 then p=p:sub(1,50) end
                 grp[#grp + 1] = p
                 --deal with unicode chars
@@ -409,7 +413,10 @@ function grid:add(row)
                 l, csize, v = v:ulen(maxsize)
             end
             if lines < #grp then lines = #grp end
-            if headind > 0 then
+            
+            if self.colinfo and self.colinfo[k].is_number then
+                colsize[k][2] = 1
+            elseif headind > 0 then
                 colsize[k][2] = -1
             end
         end
@@ -526,7 +533,6 @@ function grid:wellform(col_del, row_del)
                     end
                 end
                 table.insert(row, idx + 1, n)
-            --print(table.dump(row))
             end
             table.insert(colsize, idx + 1, {7, 1})
         end
@@ -574,7 +580,7 @@ function grid:wellform(col_del, row_del)
         end
         max_siz = max_siz < siz and siz or max_siz
     end
-
+    
     linesize = self.linesize
 
     if linesize <= 10 then linesize = getWidth(console) end
@@ -604,18 +610,15 @@ function grid:wellform(col_del, row_del)
                     end
                 end
             end
-        end
-
-        v.format_func,v.fmt=format_func,v[0] == 0 and head_fmt or fmt
-        if v.rsize==1 and type(v[1])=='string' and v[1]:find('[%S%W]') then
+        elseif v.rsize==1 and type(v[1])=='string' and v[1]:find('^%W$') then
             local c=v[1]
             for k1,v1 in ipairs(title_dels) do
                 v[k1]=v1:sub(1,1)==grid.title_del and v1:gsub('.',c) or v1
             end
         end
 
+        v.format_func,v.fmt=format_func,v[0] == 0 and head_fmt or fmt
         local row = cut(v, v.format_func,v.fmt, v[0] == 0)
-
         if v[0] == 0 then
             row = row .. nor
         elseif env.printer.grep_text then
