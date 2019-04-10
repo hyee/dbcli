@@ -267,7 +267,11 @@ function grid:ctor(include_head)
     self.data = table.new(1000, 0)
 end
 
-local max_integer = math.pow(2, 63)
+local max_integer = math.pow(2, 46)
+local java_cast=java.cast
+local String=String
+local string_format=String.format
+
 function grid.format_column(include_head, colinfo, value, rownum,instance)
     if include_head then
         value = event.callback("ON_COLUMN_VALUE", {colinfo.column_name, value, rownum,instance})[2]
@@ -275,7 +279,8 @@ function grid.format_column(include_head, colinfo, value, rownum,instance)
     if value == nil then return false, '' end
     if rownum > 0 and (type(value) == "number" or include_head and colinfo.is_number) then
         local v1, v2 = tonumber(value)
-        if v1 and v1 < max_integer or type(value) == "number" then
+        if not v1 then return false,value end
+        if type(value) == "number" or value==tostring(v1) or value:find('[eE]') then
             local pre, scal = math.modf(v1)
             if grid.sep4k == "on" then
                 if v1 ~= pre then
@@ -289,9 +294,15 @@ function grid.format_column(include_head, colinfo, value, rownum,instance)
                 v2 = math.round(v1, grid.digits)
             end
             value = v2 or v1
+            if tostring(value):find('e', 1, true) then return true, string.format('%99.38f', value):gsub(' ', ''):gsub('%.?0+$', '') end
+            return true, value
+        else
+            if grid.digits < 38 or  grid.sep4k == "on" then
+                local done,res=pcall(string_format,String,'%,'..(grid.digits)..'f',java_cast(value,'java.math.BigDecimal'))
+                value = done and res or value
+            end
+            return true,value
         end
-        if tostring(value):find('e', 1, true) then return true, string.format('%99.38f', value):gsub(' ', ''):gsub('%.?0+$', '') end
-        return true, value
     end
     return false, value
 end

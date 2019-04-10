@@ -329,7 +329,7 @@ public final class Console {
     }
 
     private int readSeq = 0;
-
+    private String currentBuffer;
     public String readLine(String prompt, String buffer) {
         try {
             if (readSeq >= 5) System.exit(0);
@@ -342,7 +342,7 @@ public final class Console {
                 buffer = null;
             }
             pause = false;
-
+            currentBuffer=buffer;
             String line = reader.readLine(prompt, null, buffer);
             if (line != null) {
                 line = parser.getLines();
@@ -365,6 +365,7 @@ public final class Console {
             status.redraw();
             return "";
         } finally {
+
         }
     }
 
@@ -504,12 +505,9 @@ public final class Console {
                 }
                 return null;
             }
-            if (lines <= terminal.getHeight() - 10) {
+            if (lines <= terminal.getHeight() - 10&&currentBuffer==null) {
                 reader.setVariable(DISABLE_HISTORY, false);
-                try {
-                    history.add(sb.toString());
-                } catch (Exception e) {
-                }
+                history.add(sb.toString());
                 reader.setVariable(DISABLE_HISTORY, true);
             }
             lines = 0;
