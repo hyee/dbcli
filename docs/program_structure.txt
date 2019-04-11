@@ -13,6 +13,12 @@ oracle/sqlplus: sql scripts that used by sqlplus, it is also the sqlplus's workd
 
 Process logic:
 ================
+dbcli.sh / dbcli.bat
+    |
+  luajit(.exe)
+    |
+bootstrap.lua
+    |
 Loader.class(JVM to load LUA lib)
     |
   input.lua->env.lua->|-Initialize CLI environment
@@ -38,7 +44,7 @@ Loader.class(JVM to load LUA lib)
                       |                                            |-> mssql.lua
                       |                                   db2.lua<-|
                       |
-                 Load command-line parameters(dbcli.bat)
+          Invoke "on_load()" of all libraries
 
                  
 Inheritances:
@@ -52,15 +58,25 @@ lua\scripter.lua
     |->lua\ssh.lua
     |  |->db2\ssh.lua
     |  |->oracle\ssh.lua
+    |
     |->lua\snapper.lua
     |  |->db2\snap.lua
     |  |->oracle\snap.lua
+    |
     |->lua\graph.lua
     |  |->db2\chart.lua
     |  |->oracle\chart.lua
+    |
     |->oracle\ora.lua
     |  |->oracle\sys.lua
     |  |->oracle\show.lua
-    |->oracle\sqlplus.lua
-    |->db2\sql.lua
+    |  |->oracle\exa.lua
+    |  |->oracle\rac.lua
+    |  |->oracle\adb.lua
+    |
+    |->lua\subsystem.lua
+       |->oracle\sqlplus.lua
+       |->db2\sql.lua
+       |->mysql\mysqluc.lua
+       |->pgsql\psql_exe.lua
     
