@@ -122,13 +122,14 @@ function helper.helper(cmd,...)
             s0:gsub('[^\n%S]*(|[^\r\n]+|)%s+',function(s1)
                 local row={}
                 s1:gsub('([^%|]+)',function(s2)
-                    row[#row+1]=s2:trim():gsub('\\n','\n'):gsub('\\%]',']')
-                    if #row==1 and #tab.data>0 then row[1]='$BOLD$'..row[1]..' $NOR$' end
+                    row[#row+1]=s2:trim():gsub('\\n','\n '):gsub('\\%]',']')
+                    if #row==1 and #tab.data>0 then row[1]=row[1]=='-' and '-' or ('$BOLD$'..row[1]..' $NOR$') end
+                    row[#row]=row[#row]=='-' and '-' or (' '..row[#row])
                 end)
                 if #row > 1 then
                     if cols==0 then 
                         cols=#row
-                        if cols==2 then table.insert(row,2,'') end
+                        if cols==2 then table.insert(row,2,':') end
                     elseif cols==2 then
                         table.insert(row,2,':')
                     end

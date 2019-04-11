@@ -272,12 +272,15 @@ local java_cast=java.cast
 local String=String
 local string_format=String.format
 
+
 function grid.format_column(include_head, colinfo, value, rownum,instance)
     if include_head then
-        value = event.callback("ON_COLUMN_VALUE", {colinfo.column_name, value, rownum,instance})[2]
+        local result = event.callback("ON_COLUMN_VALUE", {colinfo.column_name, value, rownum,instance,is_number=colinfo.is_number})
+        value,colinfo.is_number=result[2],result.is_number
     end
-    if value == nil then return false, '' end
+    
     if rownum > 0 and (type(value) == "number" or include_head and colinfo.is_number) then
+        if value == nil then return true, '' end
         local v1, v2 = tonumber(value)
         if not v1 then return true,value end
         if type(value) == "number" or value==tostring(v1) or value:find('[eE]') then
@@ -304,7 +307,7 @@ function grid.format_column(include_head, colinfo, value, rownum,instance)
             return true,value
         end
     end
-    return false, value
+    return false, value == nil and '' or value
 end
 
 function grid:add(row)
@@ -343,7 +346,13 @@ function grid:add(row)
         if k > grid.maxcol then break end
         local csize, v1, is_number = 0, v
         if not colsize[k] then colsize[k] = {0, 1} end
-        is_number, v1 = grid.format_column(self.include_head, self.colinfo and self.colinfo[k] and self.colinfo[k] or {column_name = #result > 0 and result[1]._org[k] or v}, v, #result,self)
+
+        if not self.colinfo then self.colinfo={} end
+        if not self.colinfo[k] then
+            self.colinfo[k]={column_name = #result > 0 and result[1]._org[k] or v}
+        end
+
+        is_number, v1 = grid.format_column(self.include_head, self.colinfo[k], v, #result,self)
         if tostring(v) ~= tostring(v1) then v = v1 end
         if colsize[k][3] and type(v)=='string' and (v==colsize[k][3] or v=='') then
             csize=#colsize[k][3]
@@ -363,7 +372,7 @@ function grid:add(row)
                         string.rep(' ', math.ceil((max_len - len2) / 2)), b)
                 end)
                 if #v<=3 and v:find('^%W+$') and v~='#' and v~='%' then 
-                    colsize[k][3],colsize[k][4]=v,grid.title_del=='-' and v:gsub('[%*|]','+') or v
+                    colsize[k][3],colsize[k][4]=v,grid.title_del=='-' and v:gsub('[%*|:]','+') or v
                 elseif v=="" then
                     colsize[k][3],colsize[k][4]=""
                 end
@@ -410,7 +419,7 @@ function grid:add(row)
             end
             if lines < #grp then lines = #grp end
             
-            if self.colinfo and self.colinfo[k].is_number then
+            if self.colinfo[k].is_number then
                 colsize[k][2] = 1
             elseif headind > 0 then
                 colsize[k][2] = -1
@@ -539,12 +548,13 @@ function grid:wellform(col_del, row_del)
     local color = env.ansi.get_color
     local nor, hor, hl = color("NOR"), color("HEADCOLOR"), color("GREPCOLOR")
     local head_fmt,max_siz = fmt,0
+    local seps={}
     for k, v in ipairs(colsize) do
         if max_siz==0 and k>1 then v[3],v[4]=nil end
         siz = v[3] and #v[3] or v[1]
         local del = (v[3] or (colsize[k+1] or {})[3]) and "" or (colsize[k+1] or {})[1]==0 and "" or " "
+        seps[k]=v[3]
         if siz==0 and (colsize[k-1] or {})[3] then del='' end
-
         if (del~="" and pivot == 0) or (pivot ~= 0 and k ~= 1 + indx and (pivot ~= 1 or k ~= 3 + indx)) then 
             del = col_del
         end
@@ -610,6 +620,10 @@ function grid:wellform(col_del, row_del)
             local c=v[1]
             for k1,v1 in ipairs(title_dels) do
                 v[k1]=v1:sub(1,1)==grid.title_del and v1:gsub('.',c) or v1
+            end
+        else
+            for k1,v1 in pairs(seps) do
+                v[k1]=v1
             end
         end
 

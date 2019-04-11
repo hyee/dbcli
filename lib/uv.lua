@@ -25,6 +25,7 @@ end
 uv.event,uv.fs_event=uv.fs_event,nil
 
 function os.exists(file,ext)
+    if not file then return end
     if type(file)=="string" then
         file=file:gsub('^"(.*)"$','%1')
     end
@@ -57,7 +58,12 @@ function uv.async_read(path, maxsize, callback,...)
     local function res(err,text)
         if fd then u.fs_close(fd, noop) end
         args[len+1],args[len+2]=err or false,text
-        return callback(table.unpack(args))
+        local done,result=pcall(callback,table.unpack(args))
+        if not done then
+            env.warn(result)
+            result=''
+        end
+        return result
     end
 
     if (maxsize or 0)<=0 then
@@ -77,10 +83,10 @@ function uv.async_read(path, maxsize, callback,...)
             chunks[#chunks + 1] = chunk
             pos = pos + #chunk
             if pos<maxsize then
-                return u.fs_read(fd, math.min(maxsize-pos,8192), pos, onChunk)
+                return u.fs_read(fd, math.min(maxsize-pos,4*1024*1024), pos, onChunk)
             end
         end
-        return res(nil, table.concat(chunks))
+        return res(nil, #chunks==1 and chunks[1] or table.concat(chunks))
     end
 
     local function onStat(err, stat)
@@ -92,7 +98,7 @@ function uv.async_read(path, maxsize, callback,...)
           -- Go ahead and try to read some bytes.
             pos = 0
             chunks = {}
-            u.fs_read(fd, math.min(maxsize,8192), 0, onChunk)
+            u.fs_read(fd, math.min(maxsize,4*1024*1024), 0, onChunk)
         end
     end
     
@@ -103,7 +109,7 @@ function uv.async_read(path, maxsize, callback,...)
     end)
 end
 
-local binaries={class=1,jar=1,exe=1,dll=1,so=1,gif=1,html=1,zip=1,['7z']=1,chm=1,mnk=1}
+local binaries={class=1,jar=1,exe=1,dll=1,so=1,gif=1,html=1,zip=1,['7z']=1,chm=1,mnk=1,dat=1,pack=1}
 
 local function comp(a,b)
     if a.depth~=b.depth then return a.depth<b.depth end
@@ -153,9 +159,9 @@ function os.list_dir(path,ext,depth,read_func,filter,is_skip_binary)
     end
 
     local function push_file(fullname,name,typ,depth)
+        local ext=name:lower():match('([^%.//\\]+)$')
         if is_skip_binary then
-            local n=name:lower():match('([^%.//\\]+)$')
-            if binaries[n] then return end
+            if binaries[ext] then return end
         end
         local file={fullname=env.join_path(fullname),name=name,type=typ,depth=depth%10000,shortname=name:gsub('(%.[^%.\\/]*)$','')}
         local is_allow,err

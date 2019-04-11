@@ -155,11 +155,11 @@ function extvars.on_after_db_conn()
     cfg.force_set('dbid','default')
     noparallel='off'
     cfg.force_set('noparallel','off')
-    local path=env._CACHE_PATH..'dict.dat'
-    
-    if extvars.current_dict~=path and  os.exists(path) then
+    extvars.db_dict_path=env._CACHE_BASE..'dict_'..(db.props.service_name or 'db'):gsub('%W+','-'):lower()..'_'..db.props.dbid..'.dat'
+    extvars.cache_obj=nil
+    if extvars.current_dict~=extvars.db_dict_path and os.exists(extvars.db_dict_path) then
         extvars.dict={}
-        extvars.load_dict(path)
+        extvars.load_dict(extvars.db_dict_path)
     elseif extvars.current_dict~=datapath then
         extvars.load_dict(datapath)
     end
@@ -169,6 +169,7 @@ function extvars.on_after_db_disconn()
     if extvars.current_dict~=datapath then
         extvars.load_dict(datapath)
     end
+    extvars.cache_obj=nil
 end
 
 function extvars.test_grid()
@@ -196,8 +197,8 @@ function extvars.set_dict(type)
     db:assert_connect()
     local sql;
     local path=datapath
-    if type=='init' then
-        path=env._CACHE_PATH..'dict.dat'
+    if type=='init' then 
+        path=extvars.db_dict_path
         sql=[[
             with r as(
                     SELECT /*+no_merge*/ owner,table_name, column_name col,data_type
@@ -283,7 +284,7 @@ function extvars.set_dict(type)
     print('Bulding, it could take several minutes...')
     local rs=db:dba_query(db.internal_call,sql)
     local rows=db.resultset:rows(rs,-1)
-    extvars.dict={}
+    if type=='init' then extvars.dict={} end
     local dict=extvars.dict
     local cnt1=#rows
     for i=2,cnt1 do
@@ -311,7 +312,7 @@ function extvars.set_dict(type)
     else
         cnt2=2
     end
-    env.save_data(path,{dict=dict,keywords=keywords})
+    env.save_data(path,{dict=dict,keywords=keywords,cache=(type=='init' and extvars.cache_obj) or nil},31*1024*1024)
     extvars.load_dict(path)
     print((cnt1+cnt2-2)..' records saved into '..path)
 end
@@ -321,11 +322,16 @@ function extvars.load_dict(path)
         extvars.dict=data.dict
         --env.write_cache("1.txt",table.dump(data))
         if data.keywords then
-            for k,v in pairs(data.dict) do data.keywords[v.owner..'.'..k]=1 end
+            for k,v in pairs(data.dict) do 
+                data.keywords[k]=v.owner or 1
+            end
             console:setKeywords(data.keywords) 
         end
         extvars.current_dict=path
-        --print('loaded '..path)
+        if data.cache then 
+            extvars.cache_obj=data.cache
+        end
+        env.log_debug('extvars','Loaded dictionry '..path)
     end)
 end
 

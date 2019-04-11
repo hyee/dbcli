@@ -168,7 +168,9 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
     local obj=obj_name:trim():upper()
     env.checkerr(bypass_error=='1' or obj~="","Please input the object name/id!")
 
-    if not loaded then
+    if cache_obj~=db.C.extvars.cache_obj then cache_obj=db.C.extvars.cache_obj end
+    if not cache_obj then
+    	cache_obj={}
     	local clock=os.clock()
         --env.printer.write("    Loading object dictionary...")
         local args={"#CLOB"}
@@ -236,6 +238,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
             	cache_obj[s],cache_obj['PUBLIC.'..s]=item,item 
             end
         end
+        db.C.extvars.cache_obj=cache_obj
         --printer.write("done in "..string.format("%.3f",os.clock()-clock).." secs.\n")
     end
 

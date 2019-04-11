@@ -123,16 +123,17 @@ local fixed_stats={
     ['consistent gets']=6,
     ['physical reads']=7,
     ['physical writes']=8,
-    ['cell physical IO interconnect bytes']=9,
+    ['session logical reads']=9,
     ['logical read bytes from cache']=10,
-    ['redo size']=11,
-    ['bytes sent via SQL*Net to client']=12,
-    ['bytes received via SQL*Net from client']=13,
-    ['SQL*Net roundtrips to/from client']=14,
-    ['sorts (memory)']=15,
-    ['sorts (disk)']=16,
-    ['sorts (rows)']=17,
-    ['rows processed']=18
+    ['cell physical IO interconnect bytes']=11,
+    ['redo size']=12,
+    ['bytes sent via SQL*Net to client']=13,
+    ['bytes received via SQL*Net from client']=14,
+    ['SQL*Net roundtrips to/from client']=15,
+    ['sorts (memory)']=16,
+    ['sorts (disk)']=17,
+    ['sorts (rows)']=18,
+    ['rows processed']=19
 }
 
 local DML={SELECT=1,WITH=1,UPDATE=1,DELETE=1,MERGE=1}
@@ -181,12 +182,17 @@ function output.getOutput(item)
             end
 
             local rows=env.grid.new()
+            local fmt=env.var.columns.VALUE
+            if fmt then env.var.columns['VALUE']=nil end
             rows:add{"Value","Name",'/',"Value","Name",'|',"Value","Name"}
             env.set.set('sep4k','on')
+            env.set.set('rownum','off')
             for k,row in ipairs(n) do rows:add(row) end
             print("")
             rows:print()
+            if fmt then env.var.columns['VALUE']=fmt end
             env.set.set('sep4k','back')
+            env.set.set('rownum','back')
         elseif type(args.stats)=='userdata' then
             pcall(args.stats.close,args.stats)
         end

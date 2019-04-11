@@ -12,7 +12,7 @@ function search.do_search(filter)
     local excludes={'dump','bin','cache','docs','data','jre'}
     for k,subdir in ipairs(excludes) do excludes[k]=env.join_path(env.WORK_DIR,subdir,''):lower() end
     excludes[#excludes+1]=env._CACHE_BASE:lower()
-    filter=filter:gsub('[\\]([adlpsuwxADLPSUWX])','%%%1'):gsub('%$','%%$'):case_insensitive_pattern()
+    filter=filter:gsub('[\\]([adlpsuwxADLPSUWX])','%%%1'):gsub('[%-%$]','%%%1'):case_insensitive_pattern()
     local fmt,count="%-99s: %s",0
     local rows=grid.new()
 

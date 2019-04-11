@@ -38,6 +38,7 @@ while true do
         break 
     end
     if ccolor=="" then ccolor="\27[0m" end
+    env.isInterrupted=false
     line=readLine(console,
         prompt_color:format(ncolor,env._SUBSYSTEM and subcolor or pcolor,prompt,ncolor,empty),ccolor)
     if line then

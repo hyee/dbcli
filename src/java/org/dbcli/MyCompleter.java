@@ -14,6 +14,7 @@ import static org.jline.builtins.Completers.TreeCompleter.node;
 public class MyCompleter implements org.jline.reader.Completer {
 
     StringsCompleter keysWordCompeleter = new StringsCompleter();
+    StringsCompleter dotCompeleter = new StringsCompleter();
     TreeCompleter commandCompleter = new TreeCompleter();
     HashMap<String, Boolean> keywords = new HashMap<>();
     HashMap<String, HashMap<String, Boolean>> commands = new HashMap<>();
@@ -27,19 +28,26 @@ public class MyCompleter implements org.jline.reader.Completer {
 
     void setKeysWords(Map<String, ?> keywords) {
         this.keywords = new HashMap<>();
+        HashMap<String, Boolean> dots = new HashMap<>();
         Set<String> keys = keywords.keySet();
         for (String key : keys) {
-            this.keywords.put(key.toLowerCase(), true);
+            Object value = keywords.get(key);
+            String owner = (value instanceof String) ? ((String) value).toLowerCase() + "." : "";
+            key = key.toLowerCase();
             if (key.contains(".")) {
-                String[] piece = key.toLowerCase().split("\\.");
-                if (piece.length > 1) {
-                    this.keywords.put(piece[1], true);
-                }
+                dots.put(key, true);
+                dots.put(owner + key, true);
+            } else {
+                this.keywords.put(key, true);
+                this.keywords.put(owner + key, true);
             }
         }
         String[] ary = this.keywords.keySet().toArray(new String[0]);
         Arrays.sort(ary);
         keysWordCompeleter = new StringsCompleter(ary);
+        ary = dots.keySet().toArray(new String[0]);
+        Arrays.sort(ary);
+        dotCompeleter = new StringsCompleter(ary);
     }
 
     void setCommands(Map<String, ?> keywords) {
@@ -90,6 +98,8 @@ public class MyCompleter implements org.jline.reader.Completer {
             final String key1 = words.get(words.size() - 1).toUpperCase();
             if (key1.equals("")) return;
             if ((subs = commandSet.get(key1)) != null) subs.complete(lineReader, parsedLine, list);
+            else if (key1.contains(".") && keywords.get(key1.toLowerCase().substring(0, key1.lastIndexOf("."))) != null)
+                dotCompeleter.complete(lineReader, parsedLine, list);
             else keysWordCompeleter.complete(lineReader, parsedLine, list);
         } else
             commandCompleter.complete(lineReader, parsedLine, list);

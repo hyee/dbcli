@@ -536,14 +536,17 @@ function var.trigger_column(field)
         for col,config in pairs(var.columns) do
             if config.add_ratio then
                 grid:add_calc_ratio(col,table.unpack(config.add_ratio))
+                field.is_number=true
             end
         end
     end
+
     if not value then return end
 
     index=obj.format
     if index then 
-        field[2]=index(value) 
+        field[2]=index(value)
+        field.is_number=true
     end
     
     index=obj.new_value

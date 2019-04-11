@@ -68,7 +68,6 @@ public final class Console {
 
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
-
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM))
             this.terminal = JansiWinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU, null, 0, true, Terminal.SignalHandler.SIG_IGN, false);
         else
@@ -118,6 +117,7 @@ public final class Console {
         callback = new EventCallback() {
             @Override
             public void call(Object... c) {
+                if(cancelSeq==0) ++cancelSeq;
                 if (!pause && lua != null && threadID == Thread.currentThread().getId()) {
                     lua.getGlobal("TRIGGER_EVENT");
                     Integer r = (Integer) (lua.call(c)[0]);
@@ -328,12 +328,12 @@ public final class Console {
         return accessor.invoke(reader, method, o);
     }
 
-    private int readSeq = 0;
+    public int cancelSeq = 0;
     private String currentBuffer;
 
     public String readLine(String prompt, String buffer) {
         try {
-            if (readSeq >= 5) System.exit(0);
+            if (cancelSeq >= 5) System.exit(0);
             setEvents(null, null);
             terminal.echo(false);
             terminal.resume();
@@ -349,7 +349,7 @@ public final class Console {
                 line = parser.getLines();
                 if (line == null) return readLine(parser.secondPrompt, null);
             }
-            readSeq *= 0;
+            cancelSeq *= 0;
             if (pause) {
                 terminal.echo(true);
                 terminal.pause();
@@ -358,10 +358,9 @@ public final class Console {
             }
             return line;
         } catch (UserInterruptException | EndOfFileException e) {
-            ++readSeq;
+            ++cancelSeq;
             terminal.puts(InfoCmp.Capability.cursor_up);
             terminal.puts(InfoCmp.Capability.delete_line);
-            //reader.killLine();
             terminal.raise(Terminal.Signal.INT);
             status.redraw();
             return "";

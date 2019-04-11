@@ -520,6 +520,9 @@ function env.exec_command(cmd,params,is_internal,arg_text)
         if isMain then
             if writer then env.ROOT_CMD=name end
             env.log_debug("CMD",name,params)
+        else
+            if not env.isInterrupted then env.isInterrupted=console.cancelSeq>0 end
+            env.checkerr(env.isInterrupted~=true,"Operation is cancelled.")
         end
         
         if event and not is_internal then
@@ -777,6 +780,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
     if pipe_cmd and _CMDS[pipe_cmd:upper()] and _CMDS[pipe_cmd:upper()].ISPIPABLE==true then
         if not rest:find('^!') and not rest:upper():find('^HOS') then 
             if param~='' then param='"'..env.COMMAND_SEPS.match(param:trim('"')):trim()..'"' end
+            if param:gsub('%s+','')=='""' then param='' end
             if multi_cmd then
                 param,multi_cmd=param..' '..multi_cmd..' '..table.concat(curr_stmt,'\n'),nil
             end
@@ -872,6 +876,7 @@ end
 function env.modify_command(_,key_event)
     --print(key_event.name)
     if key_event.name=="CTRL+C" or key_event.name=="CTRL+D" then
+        env.isInterrupted=true
         if env.IS_ASKING then return end
         multi_cmd,curr_stmt=nil,nil
         env.CURRENT_PROMPT=env.PRI_PROMPT
@@ -1135,6 +1140,7 @@ function env.exit()
 end
 
 function env.load_data(file,isUnpack,callback)
+    env.checkerr(file,'env.load_data: filename is nil!')
     if not file:find('[\\/]') then file=env.join_path(env.WORK_DIR,"data",file) end
     if type(callback)~="function" then
         local f=io.open(file,file:match('%.dat$') and "rb" or "r")
@@ -1146,23 +1152,24 @@ function env.load_data(file,isUnpack,callback)
         if not txt or txt:gsub("[\n\t%s\r]+","")=="" then return {} end
         return isUnpack==false and txt or env.MessagePack.unpack(txt)
     else
-        os.list_dir(file,nil,nil,function(event,file)
-            if event=='ON_SCAN' then return true end
-            if not file.data then return end
-            if isUnpack~=false then file.data=env.MessagePack.unpack(file.data) end
-            callback(file.data)
+        env.uv.async_read(file,32*1024*1024,function(err,result)
+            if err then return end
+            if isUnpack~=false then result=env.MessagePack.unpack(result) end
+            callback(result)
         end)
+        env.uv.run()
     end
 end
 
-function env.save_data(file,txt)
+function env.save_data(file,txt,maxsize)
     if not file:find('[\\/]') then file=env.join_path(env.WORK_DIR,"data",file) end
+    txt=env.MessagePack.pack(txt)
+    env.checkerr(not maxsize or maxsize>=#txt,"File "..file..' is too large('..#txt..' bytes), operation is cancelled!')
     local f=io.open(file,file:match('%.dat$') and "wb" or "w")
     if not f then
         env.raise("Unable to save "..file)
     end
     env.MessagePack.set_array("always_as_map")
-    txt=env.MessagePack.pack(txt)
     f:write(txt)
     f:close()
     return file
@@ -1285,6 +1292,9 @@ function env.ask(question,range,default)
     value=value:gsub('(0x[0-9a-f][0-9a-fA-F]?)',function(x) return string.char(tonumber(string.format("%d",x))) end)
    
     if value=="" then
+        if env.isInterrupted then
+            env.checkerr(false,"Operation is cancelled.")
+        end
         if default~=nil then return default end
         isValid=false
     elseif range and range ~='' then

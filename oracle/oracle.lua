@@ -164,7 +164,7 @@ function oracle:connect(conn_str)
     self.conn_str=sqlplustr
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    self.props={instance="#NUMBER",sid="#NUMBER",version="#NUMBER"}
+    self.props={instance="#NUMBER",sid="#NUMBER",version="#NUMBER",dbid="#NUMBER"}
     for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container','israc','privs','isadb'} do 
         self.props[v]="#VARCHAR" 
     end
@@ -176,6 +176,7 @@ function oracle:connect(conn_str)
             re      PLS_INTEGER  := dbms_db_version.release;
             isADB   PLS_INTEGER  := 0;
             rtn     PLS_INTEGER;
+            dbid    NUMBER;
             sv      VARCHAR2(200):= sys_context('userenv','service_name');
             pv      VARCHAR2(32767) :=''; 
             intval  NUMBER;
@@ -231,14 +232,16 @@ function oracle:connect(conn_str)
 
             $IF dbms_db_version.version > 11 $THEN
                    sys_context('userenv', 'con_name') con_name,
+                   sys_context('userenv','dbid') dbid,
             $ELSE
                    null con_name,
+                   (select dbid from v$database) dbid,
             $END   
                    sys_context('userenv', 'isdba') isdba,
                    nvl(sv,sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.')) service_name,
                    decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY',' ','PHYSICAL STANDBY',' (Standby)>')) END,
                    decode((select count(distinct inst_id) from gv$version),1,'FALSE','TRUE'),vs,decode(isADB,0,'FALSE','TRUE')
-            INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :container, :isdba, :service_name,:db_role, :israc,:version,:isadb
+            INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :container, :dbid, :isdba, :service_name,:db_role, :israc,:version,:isadb
             FROM   nls_Database_Parameters
             WHERE  parameter = 'NLS_CHARACTERSET';
             

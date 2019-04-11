@@ -1,8 +1,85 @@
-/*[[Show ash cost for a specific SQL for multiple executions. usage: @@NAME {<sql_id|plan_hash_value> [sql_exec_id] [YYMMDDHH24MI] [YYMMDDHH24MI]}  [-o] [-d|-g]
--o   : Show top object#, otherwise show top event
--d   : Only query dba_hist_active_sess_history
--g   : Only query gv$active_session_history
--all : Use hierachy clause to grab the possible missing PX slave records
+/*[[Show ash cost for a specific SQL for multiple executions. usage: @@NAME {<sql_id|plan_hash_value> [sql_exec_id] [YYMMDDHH24MI] [YYMMDDHH24MI]}  [-d|-g] [-o] [-all]
+
+Example:
+    +------------------------+------------------------+-----+-----+--------------+
+    |  Plan Hash   Full Hash |Execs       Secs DB-Time| CPU%|  PGA| Top Events   |
+    +------------------------+------------------------+-----+-----+--------------+
+    |*1656552173  2865921031 |  658 668(97.5%)   05:08|  100|  10M| ON CPU(100%) |
+    |*0           2865921031 |    4   17(2.5%)   00:09|  100|   9M| ON CPU(100%) |
+    +------------------------+------------------------+-----+-----+--------------+
+
+    ==============================================================================================================================================
+    | Plan Hash Value(Full): 2865921031    Period: [2019/04/04 01:19:57 -- 2019/04/05 20:40:54]
+    | Plan Hash Value(s)   : 1656552173,0
+    ----------------------------------------------------------------------------------------------------------------------------------------------
+    | Id  |   Ord |Execs       Secs DB-Time| CPU%|   PGA| Top Events     | Operation                    | Name               | E-Rows | E-Time   |
+    ----------------------------------------------------------------------------------------------------------------------------------------------
+    |   0 |    12 |    9   36(5.3%)   00:18|  100|   10M| [ 100%] ON CPU | SELECT STATEMENT             |                    |        |          |
+    |   1 |    11 |                        |     |      |                |  SORT AGGREGATE              |                    |      1 |          |
+    |   2 |    10 |                        |     |      |                |   NESTED LOOPS               |                    |      1 | 00:00:01 |
+    |   3 |     8 |    1    1(0.1%)   00:02|  100| 6902K| [ 100%] ON CPU |    NESTED LOOPS              |                    |      1 | 00:00:01 |
+    |   4 |     6 |                        |     |      |                |     NESTED LOOPS             |                    |      1 | 00:00:01 |
+    |   5 |     4 |                        |     |      |                |      NESTED LOOPS            |                    |      3 | 00:00:01 |
+    |*  6 |     1 |   43   43(6.3%)   00:21|  100|   10M| [ 100%] ON CPU |       FIXED TABLE FULL       | X$KSUSD            |      1 |          |
+    |*  7 |     3 |  503 503(73.4%)   03:52|  100|   10M| [ 100%] ON CPU |       FIXED TABLE FIXED INDEX| X$KSUSESTA (ind:2) |      3 |          |
+    |   8 |     2 |                        |     |      |                |        FIXED TABLE FULL      | X$KSUSGIF          |      1 |          |
+    |*  9 |     5 |  102 102(14.9%)   00:46|  100|   10M| [ 100%] ON CPU |      FIXED TABLE FIXED INDEX | X$KSUSE (ind:1)    |      1 |          |
+    ----------------------------------------------------------------------------------------------------------------------------------------------
+    +--------+-------------------------+-----+----------------------------------------------+-----------------------------+
+    |Events  |Execs        Secs DB-Time|  PGA| Top Lines                                    | Top Objects                 |
+    +--------+-------------------------+-----+----------------------------------------------+-----------------------------+
+    |ON CPU  |  658 685(100.0%)   05:18|  10M| 7(73.4%), 9(14.9%), 6(6.3%), 0(5.3%), 3(.1%) | 10679(81.2%) / 10870(18.8%) |
+    +--------+-------------------------+-----+----------------------------------------------+-----------------------------+
+
+Options:
+    -o   : Show top objects (defaults to show top events)
+    -d   : Only query dba_hist_active_sess_history (defaults to query both views)
+    -g   : Only query gv$active_session_history (defaults to query both views)
+    -all : Use hierachy clause to grab the possible missing PX slave records, mainly use for parallel execution
+
+Outputs:
+    Plan Summary :  The summary of all execution plans, grouping by <Plan Hash Value>+<SQL id>+<Plan Hash Full>
+    Plan Lines   :  The details of each execution plan, grouping by <Plan Hash Full>
+    Wait stats   :  The Wait events of each execution plan, grouping by <Plan Hash Full>
+
+[|grid:{topic='Output Fields(The fields with no value will be hidden)'}
+ |Field Name | Description                                                                                                          |
+ |Plan Hash  | SQL Plan Hash value                                                                                                  |
+ |SQL  ID    | When input parameter is SQL ID, then this field will be displayed, otherwise field "Full Hash" is displayed          |
+ |Full Hash  | The full hash value introduced since 12c. This field could be a SQL id meaning that the SQL could be a recursive SQL |
+ |-          | -                                                                                                                    |
+ |AWR-Exes   | The delta executions that retrieved from AWR dictionary                                                              |
+ |Avg-Ela    | The average elapsed time that retrieved from AWR dictionary                                                          |
+ |-          | -                                                                                                                    |
+ |DoP        | The actual DoP of the parallel execution. Can be either <number> format or <min>-<max> format                        |
+ |Skew       | The skew ratio of the parallel execution. Value = 100*stddev(<tm_delta_db_time>)/median(<tm_delta_db_time>)          |
+ |Execs      | The execution count of the SQL. Value = count(distinct <sql_id>+<sql_exec_id>+<sql_exec_start>)                      |
+ |AAS        | The count from ASH, will be hidden when equals to field "Secs"\n  Value = count(1)*decode(sign(<Avg-Ela> - 5secs),1,10,1)|
+ |Secs       | Similar to AAS, except that for parallel execution, multiple AAS at the same second will be counted as 1, not n      |
+ |DB-Time    | Value = sum(<tm_delta_db_time>)                                                                                      |
+ |-          | -                                                                                                                    |
+ |CPU%       | Value = 100 * <AAS for ON CPU> / AAS                                                                                 |
+ |IO%        | Value = 100 * <AAS for Sytem*User IO Waits> / AAS                                                                    |
+ |CL%        | Value = 100 * <AAS for Cluster Waits> / AAS                                                                          |
+ |CC%        | Value = 100 * <AAS for Concurrency Waits> / AAS                                                                      |
+ |APP%       | Value = 100 * <AAS for Application Waits> / AAS                                                                      |
+ |ADM%       | Value = 100 * <AAS for Administrative Waits> / AAS                                                                   |
+ |CFG%       | Value = 100 * <AAS for Configuration Waits> / AAS                                                                    |
+ |SCH%       | Value = 100 * <AAS for Scheduler Waits> / AAS                                                                        |
+ |NET%       | Value = 100 * <AAS for Network Waits> / AAS                                                                          |
+ |OTH%       | Value = 100 * <AAS for the Waits that none of above classes> / AAS                                                   |
+ |PLSQL      | Value = 100 * <AAS for 'x'> / AAS, of which 'x' is the waits for PL/SQL & Java & recursive calls                     | 
+ |-          | -                                                                                                                    |
+ |IO-Reqs    | value = sum(<DELTA_READ_IO_REQUESTS>+<DELTA_WRITE_IO_REQUESTS>) / <Execs>                                            |
+ |IO-Bytes   | value = sum(<DELTA_INTERCONNECT_IO_BYTES>) / <Execs>                                                                 |
+ |PGA        | value = max(<PGA_ALLOCATED>) based on each plan line when <IS_SQLID_CURRENT> = 'Y'                                   |
+ |Temp       | value = max(<TEMP_SPACE_ALLOCATED>) based on each plan line when <IS_SQLID_CURRENT> = 'Y'                            |
+ |-          | -                                                                                                                    |
+ |Top Events | The top (5) events in the group. Format: [<AAS%>]<Event> or <Event>(AAS%)                                            |
+ |Top Lines  | The top 5 plan lines of the wait.Format: <#line>(AAS%) [,...]                                                        |
+ |Top Objects| The top 5 plan lines of the wait.Format: <object>(AAS%) [/...], of which "object" can be object id/name/etc          |
+|]
+
 
 --[[
     @ARGS: 1
