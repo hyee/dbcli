@@ -50,7 +50,7 @@ grid {
     [[ grid={topic="GV$RSRCMGRMETRIC&opt (Per Second)"}
         SELECT  (SELECT NAME FROM V$RSRC_PLAN WHERE IS_TOP_PLAN='TRUE' AND ROWNUM<2) LAST_PLAN,
                 CONSUMER_GROUP_NAME,
-                round(SUM(NUM_CPUS/c)) "CPU|ALLOC"，
+                round(SUM(NUM_CPUS/c)) "CPU|ALLOC",
                 round(SUM(CPU_CONSUMED_TIME /c/ secs * 1e3)) "CPU|TIME",
                 RATIO_TO_REPORT(sum(CPU_CONSUMED_TIME)) OVER() "%",
                 round(SUM(CPU_WAIT_TIME /c/ secs * 1e3)) "CPU|QUEUE",

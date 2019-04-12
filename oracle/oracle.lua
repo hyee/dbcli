@@ -269,10 +269,10 @@ function oracle:connect(conn_str)
     
     if not succ then
         env.log_debug('DB',err)
-        self.props.instance=1
-        self.props.db_version='9.1'
+        self.props={instance=1,db_version='9.1',version=9,isdba=false,israc=false,isadb=false,dbid=32767}
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
     else
+        self.props.dbid=self.props.dbid or 0
         local privs={}
         for _,priv in pairs(self.props.privs:split("/")) do
             if priv~="" then privs[priv]=true end

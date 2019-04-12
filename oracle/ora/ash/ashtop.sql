@@ -3,7 +3,7 @@
   
    --[[
       &fields: {
-            sql={sql_id,sql_opname},
+            sql={sql_id &V11,sql_opname},
             e={null}, 
             p={p1,p2,p3,p3text &0},
             pr={p1raw,p2raw,p3raw &0}, 
@@ -17,7 +17,7 @@
       &BASE: ash={1}, dash={10}
       &Range: default={sample_time+0 between nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MISS'),sysdate)}
       &filter: {
-            id={(trim('&1') is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id,event,top_level_sql_id)) and &range
+            id={(trim('&1') is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id,event)) and &range
                     &V4},
             snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id,'event')) &V3},
             u={username=nvl('&0',sys_context('userenv','current_schema')) and &range}
@@ -27,6 +27,8 @@
       @UNIT   : 11.2={least(nvl(tm_delta_db_time,delta_time),DELTA_TIME)*1e-6}, default={&BASE}
       @CPU    : 11.2={least(nvl(tm_delta_cpu_time,delta_time),DELTA_TIME)*1e-6}, default={0}
       @IOS    : 11.2={,SUM(DELTA_READ_IO_BYTES) reads,SUM(DELTA_Write_IO_BYTES) writes},default={}
+      @V11    : 11.2={} default={--}
+      @V12    : 12.1={} default={--}
     ]]--
   Options:
       Groupings : The grouping option can be followed by other custimized field, i.e.: '@@NAME -p,p1raw ...'
@@ -101,24 +103,24 @@ SELECT * FROM (
               , TO_CHAR(p2, '0XXXXXXXXXXXXXXX') p2raw
               , TO_CHAR(p3, '0XXXXXXXXXXXXXXX') p3raw
               , nvl(event,'['||p1text||nullif('|'||p2text,'|')||nullif('|'||p3text,'|')||']') event_name
-              , CASE WHEN IN_CONNECTION_MGMT      = 'Y' THEN 'CONNECTION_MGMT '          END ||
-                CASE WHEN IN_PARSE                = 'Y' THEN 'PARSE '                    END ||
-                CASE WHEN IN_HARD_PARSE           = 'Y' THEN 'HARD_PARSE '               END ||
-                CASE WHEN IN_SQL_EXECUTION        = 'Y' THEN 'SQL_EXECUTION '            END ||
-                CASE WHEN IN_PLSQL_EXECUTION      = 'Y' THEN 'PLSQL_EXECUTION '          END ||
-                CASE WHEN IN_PLSQL_RPC            = 'Y' THEN 'PLSQL_RPC '                END ||
-                CASE WHEN IN_PLSQL_COMPILATION    = 'Y' THEN 'PLSQL_COMPILATION '        END ||
-                CASE WHEN IN_JAVA_EXECUTION       = 'Y' THEN 'JAVA_EXECUTION '           END ||
-                CASE WHEN IN_BIND                 = 'Y' THEN 'BIND '                     END ||
-                CASE WHEN IN_CURSOR_CLOSE         = 'Y' THEN 'CURSOR_CLOSE '             END ||
-                CASE WHEN IN_SEQUENCE_LOAD        = 'Y' THEN 'SEQUENCE_LOAD '            END ||
-        --        CASE WHEN IN_INMEMORY_QUERY       = 'Y' THEN 'IN_INMEMORY_QUERY'         END ||
-        --        CASE WHEN IN_INMEMORY_POPULATE    = 'Y' THEN 'IN_INMEMORY_POPULATE'      END ||
-        --        CASE WHEN IN_INMEMORY_PREPOPULATE = 'Y' THEN 'IN_INMEMORY_PREPOPULATE'   END ||
-        --        CASE WHEN IN_INMEMORY_REPOPULATE  = 'Y' THEN 'IN_INMEMORY_REPOPULATE'    END ||
-        --        CASE WHEN IN_INMEMORY_TREPOPULATE = 'Y' THEN 'IN_INMEMORY_TREPOPULATE'   END ||
-        --        CASE WHEN IN_TABLESPACE_ENCRYPTION= 'Y' THEN 'IN_TABLESPACE_ENCRYPTION'  END ||
-                '' phase
+        &V11  , CASE WHEN IN_CONNECTION_MGMT      = 'Y' THEN 'CONNECTION_MGMT '          END ||
+        &V11    CASE WHEN IN_PARSE                = 'Y' THEN 'PARSE '                    END ||
+        &V11    CASE WHEN IN_HARD_PARSE           = 'Y' THEN 'HARD_PARSE '               END ||
+        &V11    CASE WHEN IN_SQL_EXECUTION        = 'Y' THEN 'SQL_EXECUTION '            END ||
+        &V11    CASE WHEN IN_PLSQL_EXECUTION      = 'Y' THEN 'PLSQL_EXECUTION '          END ||
+        &V11    CASE WHEN IN_PLSQL_RPC            = 'Y' THEN 'PLSQL_RPC '                END ||
+        &V11    CASE WHEN IN_PLSQL_COMPILATION    = 'Y' THEN 'PLSQL_COMPILATION '        END ||
+        &V11    CASE WHEN IN_JAVA_EXECUTION       = 'Y' THEN 'JAVA_EXECUTION '           END ||
+        &V11    CASE WHEN IN_BIND                 = 'Y' THEN 'BIND '                     END ||
+        &V11    CASE WHEN IN_CURSOR_CLOSE         = 'Y' THEN 'CURSOR_CLOSE '             END ||
+        &V11    CASE WHEN IN_SEQUENCE_LOAD        = 'Y' THEN 'SEQUENCE_LOAD '            END ||
+        &V12    CASE WHEN IN_INMEMORY_QUERY       = 'Y' THEN 'IN_INMEMORY_QUERY'         END ||
+        &V12    CASE WHEN IN_INMEMORY_POPULATE    = 'Y' THEN 'IN_INMEMORY_POPULATE'      END ||
+        &V12    CASE WHEN IN_INMEMORY_PREPOPULATE = 'Y' THEN 'IN_INMEMORY_PREPOPULATE'   END ||
+        &V12    CASE WHEN IN_INMEMORY_REPOPULATE  = 'Y' THEN 'IN_INMEMORY_REPOPULATE'    END ||
+        &V12    CASE WHEN IN_INMEMORY_TREPOPULATE = 'Y' THEN 'IN_INMEMORY_TREPOPULATE'   END ||
+        &V12    CASE WHEN IN_TABLESPACE_ENCRYPTION= 'Y' THEN 'IN_TABLESPACE_ENCRYPTION'  END ||
+        &V11   '' phase
         FROM &View a) a
       , all_users u
     WHERE a.user_id = u.user_id (+)

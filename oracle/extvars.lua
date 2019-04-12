@@ -202,7 +202,7 @@ function extvars.on_after_db_conn()
     cfg.force_set('noparallel','off')
 
     if db.props then
-        extvars.db_dict_path=env._CACHE_BASE..'dict_'..(db.props.dbname or 'db'):gsub("%..*$",""):gsub('%W+','-'):lower()..'_'..db.props.dbid..'.dat'
+        extvars.db_dict_path=env._CACHE_BASE..'dict_'..(db.props.dbname or 'db'):gsub("%..*$",""):gsub('%W+','-'):lower()..'_'..(db.props.dbid or 0)..'.dat'
     else
         extvars.db_dict_path=datapath
     end

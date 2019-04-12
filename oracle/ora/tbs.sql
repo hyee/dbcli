@@ -67,7 +67,7 @@ FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param('_optimizer_filter_p
             UNION ALL
             SELECT /*+NO_EXPAND_GSET_TO_UNION no_expand no_merge(h) no_merge(p) no_merge(f) use_hash(h p f)*/
                    h.TABLESPACE_NAME,
-                   h.file_id，
+                   h.file_id,
                    SUM((h.bytes_free + h.bytes_used) - nvl(p.bytes_used, 0)) FREE_BYTES,
                    0 blocksiz,null,null,null,
                    SUM(decode(f.autoextensible, 'YES', f.maxbytes, 'NO', f.bytes))  file_size,

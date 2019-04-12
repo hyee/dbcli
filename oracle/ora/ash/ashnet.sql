@@ -1,4 +1,5 @@
-/*[[Show network latency information. Usage: @@NAME [machine_key_word] [YYMMDDHH24MISS] [YYMMDDHH24MISS] [-dash]
+/*[[
+    Show network latency information. Usage: @@NAME [machine_key_word] [YYMMDDHH24MISS] [YYMMDDHH24MISS] [-dash]
     -dash: source table is Dba_Hist_Active_Sess_History instead of gv$active_session_history
     --[[
         &ash: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
