@@ -6,7 +6,7 @@ local output={}
 local prev_transaction
 local enabled='on'
 local autotrace='off'
-local default_args={enable=enabled,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB",con_name="#VARCHAR",con_id="#NUMBER",stats='#CURSOR'}
+local default_args={enable=enabled,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB",con_name="#VARCHAR",con_id="#NUMBER",con_dbid="#NUMBER",dbid="#NUMBER",stats='#CURSOR'}
 local prev_stats
 
 function output.setOutput(db)
@@ -30,10 +30,12 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             l_trace  VARCHAR2(30) := :autotrace;
             l_sql_id VARCHAR2(15) := :sql_id;
             l_size   PLS_INTEGER;
-            l_cont   varchar2(50);
+            l_cont   VARCHAR2(50);
             l_cid    PLS_INTEGER;
+            l_cdbid  INT;
+            l_dbid   INT;
             l_stats  SYS_REFCURSOR;
-            l_sep    varchar2(10) := chr(1)||chr(2)||chr(3)||chr(10); 
+            l_sep    VARCHAR2(10) := chr(1)||chr(2)||chr(3)||chr(10); 
             l_plans  sys.ODCIVARCHAR2LIST;
             l_fmt    VARCHAR2(300):='TYPICAL ALLSTATS LAST';
             procedure wr is
@@ -102,15 +104,20 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             end if;
 
             $IF dbms_db_version.version > 11 $THEN 
-                l_cont:=sys_context('userenv', 'con_name'); 
-                l_cid :=sys_context('userenv', 'con_id'); 
+                l_cont  :=sys_context('userenv', 'con_name'); 
+                l_cid   :=sys_context('userenv', 'con_id'); 
+                l_cdbid :=sys_context('userenv', 'con_dbid'); 
+                l_dbid  :=sys_context('userenv', 'dbid'); 
             $END
-            :buff    := l_buffer;
-            :txn     := dbms_transaction.local_transaction_id;
+
+            :buff     := l_buffer;
+            :txn      := dbms_transaction.local_transaction_id;
             :con_name := l_cont;
-            :con_id  := l_cid;
-            :lob     := l_lob;
-            :stats   := l_stats;
+            :con_id   := l_cid;
+            :con_dbid := l_cdbid;
+            :dbid     := sys_context('userenv', 'dbid'); 
+            :lob      := l_lob;
+            :stats    := l_stats;
         EXCEPTION WHEN OTHERS THEN NULL;
         END;]]
 
@@ -181,12 +188,12 @@ function output.getOutput(item)
                 end
             end
 
-            local rows=env.grid.new()
             local fmt=env.var.columns.VALUE
             if fmt then env.var.columns['VALUE']=nil end
-            rows:add{"Value","Name",'/',"Value","Name",'|',"Value","Name"}
             env.set.set('sep4k','on')
             env.set.set('rownum','off')
+            local rows=env.grid.new()
+            rows:add{"Value","Name",'/',"Value","Name",'|',"Value","Name"}
             for k,row in ipairs(n) do rows:add(row) end
             print("")
             rows:print()
@@ -199,6 +206,8 @@ function output.getOutput(item)
 
         db.props.container=args.cont
         db.props.container_id=args.con_id
+        db.props.container_dbid=args.con_dbid
+        db.props.dbid=args.dbid or db.props.dbid
         local title={args.con_name and ("Container: "..args.con_name..'('..args.con_id..')')}
         if args.txn and cfg.get("READONLY")=="on" then
             db:rollback()

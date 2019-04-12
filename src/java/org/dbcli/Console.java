@@ -40,7 +40,7 @@ public final class Console {
     public static NonBlockingReader input;
     public static String charset = System.getProperty("sun.stdout.encoding");
     public static ClassAccess<LineReaderImpl> accessor = ClassAccess.access(LineReaderImpl.class);
-    protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(5);
+    protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(6);
     public AbstractTerminal terminal;
     public boolean isSubSystem = false;
     LineReaderImpl reader;

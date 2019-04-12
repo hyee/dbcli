@@ -9,31 +9,31 @@
     -c   : the percentages of the histogram is based on wait count, instead of wait time
     -n   : the value of the histogram is the number of waits, instead of percentage
 	--[[
-    @ver: 12={}
+        @ver: 12={}
 		@CHECK_ACCESS_SL: SYS.DBMS_LOCK={SYS.DBMS_LOCK} DEFAULT={DBMS_SESSION}
 		&v1: default={10}
-    &u : t={*log(2,slot_time*2)} c={}
-    &calc: default={ratio_to_report(SUM(svalue * r  &u)) OVER(PARTITION BY inst,wait_class,event) * 100} n={SUM(svalue * r  &u)}
-    &filter: {
-        all={1=1}
-        lgwr={event IN ('log file sync',
-                       'log file parallel write',
-                       'LGWR any worker group',
-                       'LGWR all worker groups',
-                       'LGWR wait for redo copy',
-                       'LGWR worker group ordering',
-                       'latch: redo allocation',
-                       'latch: redo writing',
-                       'ASM IO for non-blocking poll',
-                       'gcs log flush sync',
-                       'log file switch completion',
-                       'log file switch (checkpoint incomplete)',
-                       'log file switch (private strand flush incomplete)')},
-        io={wait_class in('System I/O','User I/O')},
-        gc={wait_class='Cluster' or event like 'gc%'},
-        w={lower('&0') in (lower(event),lower(wait_class))},
-        f={}
-    }
+        &u : t={*log(2,slot_time*2)} c={}
+        &calc: default={ratio_to_report(SUM(svalue * r  &u)) OVER(PARTITION BY inst,wait_class,event) * 100} n={SUM(svalue * r  &u)}
+        &filter: {
+            all={1=1}
+            lgwr={event IN ('log file sync',
+                        'log file parallel write',
+                        'LGWR any worker group',
+                        'LGWR all worker groups',
+                        'LGWR wait for redo copy',
+                        'LGWR worker group ordering',
+                        'latch: redo allocation',
+                        'latch: redo writing',
+                        'ASM IO for non-blocking poll',
+                        'gcs log flush sync',
+                        'log file switch completion',
+                        'log file switch (checkpoint incomplete)',
+                        'log file switch (private strand flush incomplete)')},
+            io={wait_class in('System I/O','User I/O')},
+            gc={wait_class='Cluster' or event like 'gc%'},
+            w={lower('&0') in (lower(event),lower(wait_class))},
+            f={}
+        }
 	--]]
 ]]*/
 set COLAUTOSIZE trim sep4k on

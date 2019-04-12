@@ -1,5 +1,5 @@
-/*[[
-    Show network latency information. Usage: @@NAME [machine_key_word] [YYMMDDHH24MISS] [YYMMDDHH24MISS] [-dash]
+/*[[Show network latency information. Usage: @@NAME [machine_key_word] [YYMMDDHH24MISS] [YYMMDDHH24MISS] [-dash]
+    -dash: source table is Dba_Hist_Active_Sess_History instead of gv$active_session_history
     --[[
         &ash: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
         &snap: default={NVL(to_date(nvl(:V2,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7)} snap={sysdate-numtodsinterval(&0,'second')}
@@ -24,6 +24,6 @@ FROM (
         and   upper(machine) like upper('%&V1%')
         and   sample_time BETWEEN &snap AND NVL(to_date(nvl(:V3,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE)
         group by machine,event,rollup((sql_id,top_level_sql_id))) a)
-WHERE gid=1
+WHERE gid  = 1
 AND   rnk <= 100
-order by aas desc;
+ORDER BY aas desc;

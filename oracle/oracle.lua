@@ -165,7 +165,7 @@ function oracle:connect(conn_str)
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     self.props={instance="#NUMBER",sid="#NUMBER",version="#NUMBER",dbid="#NUMBER"}
-    for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container','israc','privs','isadb'} do 
+    for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container','israc','privs','isadb','dbname'} do 
         self.props[v]="#VARCHAR" 
     end
 
@@ -176,7 +176,8 @@ function oracle:connect(conn_str)
             re      PLS_INTEGER  := dbms_db_version.release;
             isADB   PLS_INTEGER  := 0;
             rtn     PLS_INTEGER;
-            dbid    NUMBER;
+            cdbid   NUMBER;
+            did     NUMBER;
             sv      VARCHAR2(200):= sys_context('userenv','service_name');
             pv      VARCHAR2(32767) :=''; 
             intval  NUMBER;
@@ -203,6 +204,13 @@ function oracle:connect(conn_str)
                     END IF;
                 EXCEPTION WHEN OTHERS THEN NULL;
                 END;
+            $END
+
+            $IF dbms_db_version.version < 12 $THEN
+            BEGIN
+                execute immediate 'select dbid from v$database' into did;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
             $END
 
             FOR r in(SELECT role p FROM SESSION_ROLES UNION ALL SELECT * FROM SESSION_PRIVS) LOOP
@@ -235,13 +243,14 @@ function oracle:connect(conn_str)
                    sys_context('userenv','dbid') dbid,
             $ELSE
                    null con_name,
-                   (select dbid from v$database) dbid,
+                   did dbid,
             $END   
                    sys_context('userenv', 'isdba') isdba,
+                   sys_context('userenv', 'db_unique_name') dbname,
                    nvl(sv,sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.')) service_name,
                    decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY',' ','PHYSICAL STANDBY',' (Standby)>')) END,
                    decode((select count(distinct inst_id) from gv$version),1,'FALSE','TRUE'),vs,decode(isADB,0,'FALSE','TRUE')
-            INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :container, :dbid, :isdba, :service_name,:db_role, :israc,:version,:isadb
+            INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :container, :dbid, :isdba, :dbname, :service_name,:db_role, :israc,:version,:isadb
             FROM   nls_Database_Parameters
             WHERE  parameter = 'NLS_CHARACTERSET';
             
@@ -259,6 +268,7 @@ function oracle:connect(conn_str)
     self.props.isadb=self.props.isadb=='TRUE' and true or false
     
     if not succ then
+        env.log_debug('DB',err)
         self.props.instance=1
         self.props.db_version='9.1'
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")

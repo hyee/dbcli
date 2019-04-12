@@ -817,11 +817,13 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     return #result==1 and result[1] or result
 end
 
-function db_core:is_connect()
+function db_core:is_connect(recursive)
     if type(self.conn)~='userdata' or not self.conn.isClosed or self.conn:isClosed() then
         self.__stmts={}
         self.__preparedCaches={}
         self.__result_sets={}
+        self.props=nil
+        if self.conn~=nil and recursive~=true then self:disconnect(false) end
         return false
     end
     return true
@@ -988,9 +990,8 @@ function db_core:grid_call(tabs,rows_limit,args,is_cache)
                 local key=tab:trim():upper():gsub('^[:&]','')
                 if env.var.inputs[key] then 
                     tab=env.var.inputs[key]
-                    if type(tab)=='userdata' then tab=self.resultset:rows(tab,rows_limit) end
+                    if type(tab)=='userdata' then tab=self.resultset:rows(tab,rows_limit,nil,true) end
                     if type(tab)=='table' then
-                        
                         tab={rs=tab,grid_cfg=grid_cfg}
                         env.var.inputs[key]=tab.rs
                     end
@@ -1031,6 +1032,7 @@ function db_core:grid_call(tabs,rows_limit,args,is_cache)
                     tabs[k]=self.resultset:rows(rs,rows_limit,nil,true)
                     for a,b in pairs(v.grid_cfg or {}) do tabs[k][a]=b end
                 end
+                v.rs=nil
             elseif type(v)~='string' or #v~=1 then
                 table.remove(tabs,k)
             end
@@ -1300,10 +1302,11 @@ function db_core:merge_props(src,target)
 end
 
 function db_core:disconnect(feed)
-    if self:is_connect() then
+    if self:is_connect(true) then
         loader:closeWithoutWait(self.conn)
         event("ON_DB_DISCONNECTED",self)
         self.conn=nil
+        env.set_prompt(nil,nil,nil,2)
         if feed~=false then print("Database disconnected.") end
     end
 end

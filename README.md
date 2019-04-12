@@ -224,8 +224,8 @@ To change the default editor, use `set [-p] editor <executable name>`. For examp
 
 Color Solution
 -----------------------
-`dbcli` has defined some colors that used in different scenario. Those colors can be found `set color`.<br/>
-You are able to change the colors by executing `set [-p] <color name> <new code>`, of which the code can be referenced by command `ansi`, and `-p` means permanently<br/>
+`dbcli` has defined some colors that used in different scenario. Those colors can be found BY `set color`.<br/>
+You are able to change the colors by executing `set [-p] <color name> <new code>`, of which the code can be referenced by command `ansi`, and `-p` means permanently.<br/>
 It's possible to turn of colors, which is done by executing `set ansicolor off` 
 
 Releases

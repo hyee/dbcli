@@ -480,7 +480,7 @@ public class Loader {
     }
 
     public synchronized boolean setStatement(final CallableStatement p) throws Exception {
-        try (Closeable clo = console::setEvents) {
+        try (Closeable ignored = console::setEvents) {
             this.stmt = p;
             console.setEvents(p == null ? null : q, new char[]{'q', 'Q'});
             if (p == null) return false;

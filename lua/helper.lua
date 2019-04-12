@@ -114,16 +114,21 @@ function helper.helper(cmd,...)
         helps=helps:gsub("\r?\n"..spaces,"\n"):gsub("%s+$",""):gsub("@@NAME",target:lower())
 
         local grid=env.grid
-        helps=helps:gsub('%[(%s*%|.-%|)%s*%]',function(s)
+
+        helps=helps:gsub('%[(%s*|.-|)%s*%]',function(s)
             local tab,s0=grid.new(),s..' '
             local space=s:match('( *)|') or ''
             local _,cfg=grid.get_config(s0)
             local cols=0
-            s0:gsub('[^\n%S]*(|[^\r\n]+|)%s+',function(s1)
+            s0:gsub('\\|','\1'):gsub('[^\n%S]*(|[^\r\n]+|)%s+',function(s1)
                 local row={}
-                s1:gsub('([^%|]+)',function(s2)
-                    row[#row+1]=s2:trim():gsub('\\n','\n '):gsub('\\%]',']')
-                    if #row==1 and #tab.data>0 then row[1]=row[1]=='-' and '-' or ('$BOLD$'..row[1]..' $NOR$') end
+                s1:gsub('([^|]+)',function(s2)
+                    row[#row+1]=s2:trim():gsub('\\n','\n '):gsub('\\%]',']'):gsub('\1','|')
+                    if #row==1 and #tab.data>0 then 
+                        row[1]=row[1]=='-' and '-' or ('$BOLD$'..row[1]..' $NOR$') 
+                    elseif #tab.data>0 and row[1]~='-' and #row>1 then
+                        row[#row]=row[#row]:gsub('[<>%+%-%*/%[%]\'"%%]+','$USAGECOLOR$%1$NOR$')
+                    end
                     row[#row]=row[#row]=='-' and '-' or (' '..row[#row])
                 end)
                 if #row > 1 then

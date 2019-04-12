@@ -18,6 +18,11 @@ Parameters
     _lm_drm_disable: defaults to 0.  1(_gc_affinity_locking): disable affinity locking,   2(_gc_undo_affinity):disable undo drm  4(_gc_read_mostly_locking): disable readmostly drm. Refer to MOS 1619155.1 for other gc parameters
     _db_hot_block_tracking: enables to collect the hot blocks in X$KSLHOT
     _restrict_pdb_gv: false to disable cross-instance query on gv$ views
+    _parallel_load_balancing: defaults to true, 'false' to allocate PX slaves across all instances in round-robin mode without measuring the workload balance
     
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
+    
+    
+Others:
+   Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=/u01/app/oracle/product/18.0.0.0/dbhome_1/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';

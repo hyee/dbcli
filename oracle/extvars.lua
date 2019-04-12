@@ -9,6 +9,8 @@ local cache={}
 local fmt='%s(select /*+merge*/ * from %s where %s=%s :others:)%s'
 local fmt1='%s(select /*+merge*/  %d inst_id,a.* from %s a where 1=1 :others:)%s'
 local instance,container,usr,dbid,starttime,endtime
+local cdbmode='off'
+local cdbstr='^[CD][DB][BA]_HIST_'
 local noparallel='off'
 local gv1=('(%s)table%(%s*gv%$%(%s*cursor%('):case_insensitive_pattern()
 local gv2=('(%s)gv%$%(%s*cursor%('):case_insensitive_pattern()
@@ -32,6 +34,18 @@ local function rep_instance(prefix,full,obj,suffix)
                     str=str:gsub(':others:','and '..v[2]..'='..v[3]..' :others:')
                 end
                 flag = flag +1
+            end
+
+            if cdbmode~='off' and extvars.dict[obj] and obj:find(cdbstr)  then
+                local new_obj=obj:gsub('^DBA_HIST_',cdbmode=='cdb' and 'CDB_HIST_' or 'AWR_PDB_')
+                if extvars.dict[new_obj] and new_obj~=obj then
+                    if not full:find(obj) then new_obj=new_obj:lower() end
+                    if flag==0 then
+                        full=full:gsub(obj:escape('*i'),new_obj)
+                    else
+                        str=str:gsub(obj:escape('*i'),new_obj)
+                    end
+                end
             end
         end
     end
@@ -59,7 +73,8 @@ function extvars.on_before_db_exec(item)
         {'CON_ID',container and container>=0 and container  or ""},
         {'STARTTIME',starttime},
         {'ENDTIME',endtime},
-        {'SCHEMA',usr}
+        {'SCHEMA',usr},
+        {'cdbmode',cdbmode~='off' and cdbmode or ''}
     } do
         if var.outputs[v[1]]==nil then var.setInputs(v[1],''..v[2]) end
     end
@@ -98,14 +113,18 @@ end
 
 function extvars.set_title(name,value,orig)
     local get=env.set.get
-    local title=table.concat({tonumber(get("INSTANCE"))>-1   and "Inst="..get("INSTANCE") or "",
-                              tonumber(get("DBID"))>0   and "DBID="..get("DBID") or "",
-                              tonumber(get("CONTAINER"))>-1   and "Con_id="..get("CONTAINER") or "",
-                              get("SCHEMA")~=""   and "Schema="..get("SCHEMA") or "",
-                              get("STARTTIME")~='' and "Start="..get("STARTTIME") or "",
-                              get("ENDTIME")~=''   and "End="..get("ENDTIME") or "",
-                              noparallel~='off' and "PX=off" or ""},"  ")
-    title=title:trim()
+    local title={ tonumber(get("INSTANCE"))>-1   and "Inst="..get("INSTANCE") or "",
+                  tonumber(get("DBID"))>0   and "DBID="..get("DBID") or "",
+                  tonumber(get("CONTAINER"))>-1   and "Con_id="..get("CONTAINER") or "",
+                  get("SCHEMA")~=""   and "Schema="..get("SCHEMA") or "",
+                  get("STARTTIME")~='' and "Start="..get("STARTTIME") or "",
+                  get("ENDTIME")~=''   and "End="..get("ENDTIME") or "",
+                  get("CDBMODE")~='off' and (get("CDBMODE"):upper().."=on") or "",
+                  noparallel~='off' and "PX=off" or ""}
+    for i=#title,1,-1 do
+        if title[i]=='' then table.remove(title,i) end
+    end
+    title=table.concat(title,'   '):trim()
     env.set_title(title~='' and "Filter: ["..title.."]" or nil)
 end
 
@@ -142,35 +161,58 @@ function extvars.set_schema(name,value)
     return value
 end
 
+local prev_container={}
+function extvars.set_cdbmode(name,value)
+    if value~='off' then db:assert_connect() end
+    if not db.props then return end
+    if cdbmode==value then return value end
+    env.checkerr(value=='off' or db.props.version>11, "Unsupported database: v"..db.props.db_version)
+    if value=='pdb' then
+        if db.props.container_dbid and db.props.container_id>1 then
+            prev_container.dbid=cfg.get('dbid')
+            prev_container.container=cfg.get('container')
+            prev_container.new_dbid=db.props.container_dbid
+            prev_container.new_container=db.props.container_id
+            cfg.force_set('dbid',db.props.container_dbid)
+            cfg.force_set('container',db.props.container_id)
+        end
+    elseif cdbmode=='pdb' then
+        if prev_container.new_dbid==cfg.get('dbid') and prev_container.new_container==cfg.get('container') then
+            cfg.force_set('dbid','default')
+            cfg.force_set('container','default')
+        end
+    end
+    cdbmode=value
+    return value
+end
+
 function extvars.on_after_db_conn()
     if db.props and db.props.isadb==true and db.props.israc==false then
         cfg.force_set('instance', db.props.instance)
     else
         cfg.force_set('instance','default')
     end
+    prev_container={}
     --cfg.force_set('starttime','default')
-    --cfg.force_set('endtime','default')
+    cfg.force_set('cdbmode','default')
     cfg.force_set('schema','default')
     cfg.force_set('container','default')
     cfg.force_set('dbid','default')
     noparallel='off'
     cfg.force_set('noparallel','off')
-    extvars.db_dict_path=env._CACHE_BASE..'dict_'..(db.props.service_name or 'db'):gsub('%W+','-'):lower()..'_'..db.props.dbid..'.dat'
+
+    if db.props then
+        extvars.db_dict_path=env._CACHE_BASE..'dict_'..(db.props.dbname or 'db'):gsub("%..*$",""):gsub('%W+','-'):lower()..'_'..db.props.dbid..'.dat'
+    else
+        extvars.db_dict_path=datapath
+    end
+
     extvars.cache_obj=nil
-    if extvars.current_dict~=extvars.db_dict_path and os.exists(extvars.db_dict_path) then
-        extvars.dict={}
+    if extvars.current_dict.path~=extvars.db_dict_path and os.exists(extvars.db_dict_path) then
         extvars.load_dict(extvars.db_dict_path)
-    elseif extvars.current_dict~=datapath then
-        extvars.load_dict(datapath)
     end
 end
 
-function extvars.on_after_db_disconn()
-    if extvars.current_dict~=datapath then
-        extvars.load_dict(datapath)
-    end
-    extvars.cache_obj=nil
-end
 
 function extvars.test_grid()
     local rs1=db:internal_call([[select * from (select * from v$sysstat order by 1) where rownum<=20]])
@@ -191,7 +233,22 @@ function extvars.test_grid()
 end
 
 function extvars.set_dict(type)
-    checkhelp(type)
+    if not type then
+        local dict=extvars.current_dict
+        if dict.cache==0 then
+            for k,v in pairs(extvars.cache_obj or {}) do
+                dict.cache=dict.cache+1
+            end
+        end
+        local fmt='$HEADCOLOR$%-18s$NOR$ : %s'
+        print(string.rep('=',100))
+        print(fmt:format('Current Dictionary',dict.path))
+        print(fmt:format('Level#1 Keywords',dict.objects..' (Tab-completion on [<owner>.]<Keyword>)'))
+        print(fmt:format('Level#2 Keywords',dict.subobjects..' (Tab-completion on <L1 Keyword>.<L2 Keyword>)'))
+        print(fmt:format(' Cached Objects',dict.cache.." (Caches the current db's online dictionary that used for quick search(i.e.: desc/ora obj))"))
+        print(fmt:format('    VPD Objects',dict.vpd..' (Used to auto-rewrite SQL for options "SET instance/container/dbid/schema")'))
+        checkhelp(type)
+    end
     type=type:lower()
     env.checkerr(type=='public' or type=='init',"Invalid parameter!")
     db:assert_connect()
@@ -320,14 +377,23 @@ end
 function extvars.load_dict(path)
     env.load_data(path,true,function(data)
         extvars.dict=data.dict
-        --env.write_cache("1.txt",table.dump(data))
+        local dict={objects=0,subobjects=0,vpd=0,cache=0,path=path}
         if data.keywords then
             for k,v in pairs(data.dict) do 
                 data.keywords[k]=v.owner or 1
+                if k:find('.',1,2,true) then 
+                    dict.subobjects=dict.subobjects+1
+                else
+                    dict.objects=dict.objects+1
+                end
+
+                if v.inst_col or v.cdb_col or v.dbid_col or v.usr_col then
+                    dict.vpd=dict.vpd+1
+                end
             end
-            console:setKeywords(data.keywords) 
+            console:setKeywords(data.keywords)
         end
-        extvars.current_dict=path
+        extvars.current_dict=dict
         if data.cache then 
             extvars.cache_obj=data.cache
         end
@@ -337,16 +403,17 @@ end
 
 function extvars.onload()
     env.set_command(nil,"TEST_GRID",nil,extvars.test_grid,false,1)
-    env.set_command(nil,'DICT',"Create a separate offline dictionary of current database for auto completion. Usage: @@NAME init",extvars.set_dict,false,2)
+    env.set_command(nil,'DICT',"Show or create dictionary for auto completion. Usage: @@NAME [init]\n\n init: Create a separate offline dictionary that only used for current database",extvars.set_dict,false,2)
     event.snoop('BEFORE_DB_EXEC',extvars.on_before_db_exec,nil,60)
     event.snoop('AFTER_DB_EXEC',extvars.on_after_db_exec)
     event.snoop('ON_SUBSTITUTION',extvars.on_before_db_exec,nil,60)
     event.snoop('AFTER_ORACLE_CONNECT',extvars.on_after_db_conn)
-    event.snoop('ON_DB_DISCONNECTED',extvars.on_after_db_disconn)
+    event.snoop('ON_DB_DISCONNECTED',extvars.on_after_db_conn)
     event.snoop('ON_SETTING_CHANGED',extvars.set_title)
+    cfg.init("cdbmode","off",extvars.set_cdbmode,"oracle","Controls whether to auto-replace all SQL texts from 'DBA_HIST_' to 'CDB_HIST_'/'AWR_PDB_'","cdb,pdb,off")
     cfg.init("instance",-1,extvars.set_instance,"oracle","Auto-limit the inst_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-1 - 99")
     cfg.init("schema","",extvars.set_schema,"oracle","Auto-limit the schema of impacted tables. ","*")
-    cfg.init({"container","con","con_id"},-1,extvars.set_container,"oracle","Auto-limit the con_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-1 - 1024")
+    cfg.init({"container","con","con_id"},-1,extvars.set_container,"oracle","Auto-limit the con_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-1 - 32768")
     cfg.init("dbid",0,extvars.set_container,"oracle","Specify the dbid for AWR analysis")
     cfg.init("starttime","",extvars.check_time,"oracle","Specify the start time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
     cfg.init("endtime","",extvars.check_time,"oracle","Specify the end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")

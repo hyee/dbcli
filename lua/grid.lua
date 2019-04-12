@@ -4,7 +4,7 @@ local type,tostring,tonumber=type,tostring,tonumber
 local grid = class()
 local console = console
 local getWidth = console.getBufferWidth
-
+local reps=string.rep
 local params = {
     [{'HEADSEP', 'HEADDEL'}] = {name = "title_del", default = '-', desc = "The delimiter to devide header and body when printing a grid"},
     [{'COLSEP', 'COLDEL'}] = {name = "col_del", default = ' ', desc = "The delimiter to split the fields when printing a grid"},
@@ -96,22 +96,19 @@ function grid.fmt(format, ...)
         function(g, flag, siz)
             idx = idx + 1
             if siz == "" then return g end
-            siz = tonumber(siz)
-            lpad, rpad, pad = "", "", ""
             v = args[idx]
             if not v or type(v) ~= "string" then return g end
-            local v1 = v:strip_ansi()
-            local _, length = v1:ulen()
-            local strips = #v - #v1
-            siz = siz + strips + (#v1 - length)
-            if siz > 99 then
-                pad = string.rep(" ", siz - length + strips) or ""
+            siz=tonumber(siz)
+            lpad, rpad, pad = "", "", ""
+            local l1,l2=v:ulen()
+            if l1~=l2 or siz>99 then
+                pad = reps(" ", siz-l2)
                 if flag ~= "-" then
                     lpad = pad
                 else
                     rpad = pad
                 end
-                siz = ''
+                siz,flag='',''
             end
             return s_format:format(lpad, flag, tostring(siz), rpad)
         end)
@@ -357,7 +354,7 @@ function grid:add(row)
         if colsize[k][3] and type(v)=='string' and (v==colsize[k][3] or v=='') then
             csize=#colsize[k][3]
         elseif is_number then
-            csize = #tostring(v)
+            l,csize = tostring(v):ulen()
             colsize[k][3],colsize[k][4]=nil
         elseif type(v) ~= "string" or v == "" then
             v = tostring(v) or ""
@@ -368,8 +365,8 @@ function grid:add(row)
                     local len1, len2 = a:len(), b:len()
                     local max_len = math.max(len1, len2)
                     return ('%s%s\n%s%s'):format(
-                        string.rep(' ', math.floor((max_len - len1) / 2)), a,
-                        string.rep(' ', math.ceil((max_len - len2) / 2)), b)
+                        reps(' ', math.floor((max_len - len1) / 2)), a,
+                        reps(' ', math.ceil((max_len - len2) / 2)), b)
                 end)
                 if #v<=3 and v:find('^%W+$') and v~='#' and v~='%' then 
                     colsize[k][3],colsize[k][4]=v,grid.title_del=='-' and v:gsub('[%*|:]','+') or v
@@ -410,12 +407,14 @@ function grid:add(row)
                 grp[#grp + 1] = p
                 --deal with unicode chars
                 l, len, p = p:ulen(maxsize)
+                if len==0 and p~='' then len=1 end
                 if csize < len then csize = len end
             end
             if #grp > 1 then 
                 v = grp 
             else
                 l, csize, v = v:ulen(maxsize)
+                if csize==0 and csize~='' then csize=1 end
             end
             if lines < #grp then lines = #grp end
             
@@ -549,6 +548,7 @@ function grid:wellform(col_del, row_del)
     local nor, hor, hl = color("NOR"), color("HEADCOLOR"), color("GREPCOLOR")
     local head_fmt,max_siz = fmt,0
     local seps={}
+
     for k, v in ipairs(colsize) do
         if max_siz==0 and k>1 then v[3],v[4]=nil end
         siz = v[3] and #v[3] or v[1]
@@ -579,7 +579,7 @@ function grid:wellform(col_del, row_del)
                 break
             end
         end
-        title_dels[#title_dels+1]=v[4] or string.rep(not is_empty and grid.title_del or " ", siz)
+        title_dels[#title_dels+1]=v[4] or reps(not is_empty and grid.title_del or " ", siz)
         
         if row_del ~= "" then
             row_dels = row_dels .. row_del:rep(siz) .. del
@@ -730,7 +730,10 @@ function grid.print(rows, include_head, col_del, row_del, rows_limit, prefix, su
 end
 
 function grid.merge(tabs, is_print, prefix, suffix)
-    local strip = env.ansi.strip_len
+    local function strip(str)
+        local l1,l2 = str:ulen()
+        return l2
+    end
     local function redraw(tab, cols, rows)
         local newtab = {_is_drawed = true, topic = tab.topic}
         local function push(line) newtab[#newtab + 1] = line end
@@ -746,7 +749,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
                     --push(row..cspace)
                     local right = cspace
                     local last = row:sub(-1)
-                    push(row:sub(1, -2) .. string.rep(last == '+' and '-' or ' ', right) .. last)
+                    push(row:sub(1, -2) .. reps(last == '+' and '-' or ' ', right) .. last)
                 else
                     push(grid.cut(row, cols))
                 end
@@ -758,16 +761,16 @@ function grid.merge(tabs, is_print, prefix, suffix)
                         do_push(line)
                     end
                 elseif rowidx>=rows and tab.height==0 and tab.min_height<rows then
-                    do_push('+'..string.rep('-',actcols-2)..'+')
+                    do_push('+'..reps('-',actcols-2)..'+')
                     break
                 end
                 do_push(row)
             end
         else
             local diff = cols - actcols - 2
-            local cspace = string.rep(' ', diff)
+            local cspace = reps(' ', diff)
             local fmt = '+%s+'
-            local head = fmt:format(string.rep('-', cols - 2))
+            local head = fmt:format(reps('-', cols - 2))
             if (tab.topic or "") ~= "" then
                 local topic = tab.topic
                 push(fmt:format(topic:strip_ansi():cpad(cols - 2, '-',
@@ -844,7 +847,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
                         end
                         newtab.adj_width=maxlen
                         for _, row in ipairs(tab) do push(row) end
-                        --push(string.rep(' ',maxlen))
+                        --push(reps(' ',maxlen))
                         for _, row in ipairs(nexttab) do push(row) end
                     end
                     newtab.calc_height,newtab.calc_width=#newtab,#newtab[1]
@@ -868,12 +871,12 @@ function grid.merge(tabs, is_print, prefix, suffix)
         newtab = {_is_drawed = true}
         for i = 1, #result do
             if i > 1 then
-                push(string.rep(' ', maxwidth))
+                push(reps(' ', maxwidth))
             end
             if not result[i]._is_drawed then newtab._is_drawed = false end
             for _, row in ipairs(result[i]) do
                 local spaces = maxwidth - strip(row)
-                local s = spaces <= 0 and '' or string.rep(' ', spaces)
+                local s = spaces <= 0 and '' or reps(' ', spaces)
                 push(row .. s)
             end
         end
