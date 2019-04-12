@@ -1,8 +1,54 @@
-/*[[Show column usage and SQL plan directives on target table. Usage: @@NAME [<owner>.]<object_name>[.<partition>]
+/*[[
+    Show column usage and SQL plan directives on target table. Usage: @@NAME [<owner>.]<object_name>[.<partition>]
     You can "exec dbms_spd.flush_sql_plan_directive" to flush the SPD
+
+    Sample Output:
+    ==============
+    REPORT
+    -------------------------------------------------------------------------------
+    LEGEND:
+    .......
+    EQ         : Used in single table EQuality predicate
+    RANGE      : Used in single table RANGE predicate
+    LIKE       : Used in single table LIKE predicate
+    NULL       : Used in single table is (not) NULL predicate
+    EQ_JOIN    : Used in EQuality JOIN predicate
+    NONEQ_JOIN : Used in NON EQuality JOIN predicate
+    FILTER     : Used in single table FILTER predicate
+    JOIN       : Used in JOIN predicate
+    GROUP_BY   : Used in GROUP BY expression
+    ...............................................................................
+
+    ###############################################################################
+
+    COLUMN USAGE REPORT FOR SSB_EXA.LINEORDER
+    .........................................
+    1. LO_CUSTKEY                          : EQ EQ_JOIN
+    8. LO_SUPPKEY                          : EQ RANGE EQ_JOIN
+    9. LO_TAX                              : EQ
+    10. SYS_STUJ36XMDV785HVKOD$O7AT13N     : EQ
+    11. (LO_ORDERDATE)                     : GROUP_BY
+    12. (LO_PARTKEY, LO_ORDERDATE)         : GROUP_BY
+         LO_SUPPKEY, LO_ORDERDATE)         : GROUP_BY
+    ###############################################################################
+
+    E=equality_predicates_only | C=simple_column_predicates_only | J=index_access_by_join_predicates | F=filter_on_joining_object:
+    ==============================================================================================================================
+        DIRECTIVE_ID      OWNER  OBJECT_NAME ENABLED   STATE    AUTO_DROP          TYPE                        REASON              NOTES
+    -------------------- ------- ----------- ------- ---------- --------- ----------------------- -------------------------------- ----------------------------------------------------------
+    147738779520430212   SSB_EXA LINEORDER   YES     USABLE     YES       DYNAMIC_SAMPLING        GROUP BY CARDINALITY MISESTIMATE (SSB_EXA.CUSTOMER) / (SSB_EXA.DATE_DIM[D_MONTH,D_YEAR]) /
+    657765050449506494   SSB_EXA LINEORDER   YES     USABLE     YES       DYNAMIC_SAMPLING        GROUP BY CARDINALITY MISESTIMATE (SSB_EXA.DATE_DIM[D_MONTH,D_YEAR]) / (SSB_EXA.LINEORDER) /
+    12494119925691582800 SSB_EXA LINEORDER   YES     USABLE     YES       DYNAMIC_SAMPLING        GROUP BY CARDINALITY MISESTIMATE (SSB_EXA.CUSTOMER[C_NATION]) / (SSB_EXA.DATE_DIM[D_MONTH,D
+    1206655006907814904  SSB_EXA LINEORDER   YES     USABLE     YES       DYNAMIC_SAMPLING        GROUP BY CARDINALITY MISESTIMATE (SSB_EXA.CUSTOMER) / (SSB_EXA.DATE_DIM[D_MONTH,D_YEAR]) /
+    1213500342159162928  SSB_EXA LINEORDER   YES     USABLE     YES       DYNAMIC_SAMPLING        GROUP BY CARDINALITY MISESTIMATE (SSB_EXA.DATE_DIM[D_MONTH,D_YEAR]) / (SSB_EXA.LINEORDER) /
+    2138964446153603234  SSB_EXA LINEORDER   YES     USABLE     YES       DYNAMIC_SAMPLING        GROUP BY CARDINALITY MISESTIMATE (SSB_EXA.CUSTOMER[C_NATION,C_REGION]) / (SSB_EXA.DATE_DIM[
+    2649271532294943916  SSB_EXA LINEORDER   YES     USABLE     YES       DYNAMIC_SAMPLING        GROUP BY CARDINALITY MISESTIMATE (SSB_EXA.CUSTOMER) / (SSB_EXA.DATE_DIM[D_MONTH,D_YEAR]) /
+    3596048118434922344  SSB_EXA LINEORDER   YES     USABLE     YES       DYNAMIC_SAMPLING        GROUP BY CARDINALITY MISESTIMATE (SSB_EXA.CUSTOMER[C_CITY,C_NATION]) / (SSB_EXA.DATE_DIM[D_
+
     --[[
         @CHECK_ACCESSS_OBJ: dba_sql_plan_dir_objects={1}, default={0}
         @CHECK_ACCESSS_COL: sys.col_usage$={1},default={0}
+        @ARGS : 1
     --]]
 ]]*/
 SET FEED OFF VERIFY ON

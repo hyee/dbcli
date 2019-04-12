@@ -1,6 +1,32 @@
-/*[[Show AWR Top events for a specific period. Usage: @@NAME {[0|a|<inst_id>|event_name_key|wait_class] [yymmddhh24mi] [yymmddhh24mi] [-avg] [-c]}
+/*[[
+    Show AWR Top events for a specific period. Usage: @@NAME {[0|a|<inst_id>|event_name_key|wait_class] [yymmddhh24mi] [yymmddhh24mi] [-avg] [-c]}
     -avg: compute as per second, instead of total
     -c:   compute the percentage of histogram with wait_count, instead of wait_count*log(2,slot_time)
+    
+    Sample Output:
+    ==============
+    INST              EVENT                 WAIT_CLASS     COUNTS    TIMEOUTS WAITED  % DB   AVG_WAIT  <1us  <2us  <4us  <8us <16us <32us <64us <128us <256us <512us  <1ms  <2ms  <4ms
+    ---- -------------------------------- -------------- ----------- -------- ------ ------- -------- ----- ----- ----- ----- ----- ----- ----- ------ ------ ------ ----- ----- -----
+    A    - * ON CPU *                                            576           5.28d 129.43%   1.32ms                                                                                 
+    A    - Wait Class: All                               913,805,670   72.70%  1.35d  33.20% 128.07us  0.08  0.47  5.41 32.26 20.34  8.26  4.78   5.93   6.70   6.90  4.50  3.08  0.35
+    A    - Wait Class: Other                             888,573,719   74.76%  1.29d  31.68% 125.66us  0.05  0.41  5.60 33.53 20.99  8.32  4.63   5.90   6.12   5.36  4.57  3.20  0.36
+    A    - Wait Class: System I/O                         12,399,340    0.00% 44.20m   0.75% 213.90us  0.08  1.14  0.16  1.65  7.30  8.84  2.18   0.18  28.81  47.31  1.87  0.05  0.18
+    A    - Wait Class: User I/O                            4,267,451    0.01% 29.46m   0.50% 414.21us              0.09  0.69  2.00  1.55  0.60   1.25   7.65  79.68  5.40  0.28  0.31
+    A    - Wait Class: Cluster                             1,735,296    0.00%  5.84m   0.10% 201.97us              0.01  0.01  0.03  0.05  2.90  25.24  46.91  21.19  3.30  0.26  0.06
+    A    - Wait Class: Administrative                          2,263    0.00%  3.92m   0.07% 104.06ms              0.10  0.13        0.03  0.42   0.06          0.02                  
+    A    - Wait Class: Network                             2,662,119    0.00%  2.79m   0.05%  62.95us  0.31     1  1.22  0.32  0.19 14.89 50.10  31.91   0.03   0.01                  
+    A    - Wait Class: Concurrency                         4,019,062    0.74%  2.42m   0.04%  36.19us  8.91 15.40  5.48  3.69  5.88  7.55 27.13  15.33   1.27   3.92  5.03  0.27  0.02
+    A    - Wait Class: Commit                                  7,093    0.00% 24.84s   0.01%   3.50ms                          0.05  0.27  0.99   2.96   5.32  13.21 15.50 10.22  9.61
+    A    - Wait Class: Application                           134,310    0.21% 19.67s   0.01% 146.43us        0.02  8.27 18.09  0.96  1.72  8.82  42.64  12.63   5.01  1.66  0.02  0.03
+    A    - Wait Class: Configuration                           5,017   85.11%  3.41s   0.00% 680.58us              0.03  0.60  0.05  0.27  0.23   2.00  33.28  42.32    16  0.15  0.11
+    A    RMA: IPC0 completion sync        Other            2,604,551    0.00% 14.04h  14.34%  19.40ms                    0.25  0.64  0.10                0.01   0.01  0.03  0.07  0.02
+    A    latch free                       Other           24,895,059    0.00%  7.57h   7.73%   1.09ms                                             0.05   1.95   4.78 37.65 50.15  5.37
+    A    enq: PS - contention             Other           24,794,480   24.39%  2.48h   2.53% 359.47us                    0.01  0.01  0.04  0.25   3.61  28.98  46.11 20.92  0.04  0.01
+    A    PX Deq: Join ACK                 Other           33,185,978    0.00%  1.41h   1.44% 152.95us  0.03  0.99  2.56  0.77  0.31  1.27 19.78  20.45  31.41  16.19  6.15  0.08      
+    A    PX Deq: reap credit              Other          572,080,422  100.00%  1.29h   1.32%   8.11us        0.28  7.78 44.66 33.04 12.01  2.16   0.05                                
+    A    PX Deq: Slave Session Stats      Other           24,132,318    0.00% 55.26m   0.94% 137.38us  0.30  3.59  4.61  3.79  1.90  1.92  5.30  15.36  39.97  21.12  1.86  0.23  0.01
+    A    Sync ASM rebalance               Other              569,492    0.00% 35.29m   0.60%   3.72ms              0.04 15.35  5.03  3.25  1.03   2.14   2.49   9.93  2.65        9.34
+    ...
     --[[
          &avg: default={1} avg={max(secs)}
          &unit: default={log(2,slot_time*2)} c={1}

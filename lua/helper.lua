@@ -102,9 +102,10 @@ function helper.helper(cmd,...)
             helps = _CMDS[cmd].HELPER or ""
             target=cmd
         end
+
         if helps=="" then return end
         if helps:find('^[Nn]o ') then return print(helps) end
-        
+
         helps=helps:gsub('^%s*\n',''):gsub('\t','    '):gsub('^(%s*[^\n\r]+)[Uu]sage[: ]+(@@NAME)([^\r\n]*)',function(prefix,name,line)
             local s=prefix..'\n'..string.rep('=',#(prefix:trim())+#target+2)..'\n$USAGECOLOR$Usage:$COMMANDCOLOR$ '..name..'$NOR$'
             return s..line:gsub('([<>{}%[%]|]+)','$COMMANDCOLOR$%1$NOR$'):gsub('(%-%w+)','$PROMPTSUBCOLOR$%1$NOR$')
@@ -145,8 +146,9 @@ function helper.helper(cmd,...)
             for k,v in pairs(cfg) do tab[k]=v end
             return space..table.concat(grid.merge({tab}),'\n'..space)
         end)
+
         helps=helps:gsub('(\n[^%S\n\r]*)([%-<]?[ %w#%-<_]+>?)( *:)',function(prefix,s,comma)
-            local s1,c=s:gsub(' +','')
+            local s1,c=s:trim():gsub(' ','')
             if c>1 then return prefix..s..comma end
             return prefix..(s:find('-',1,true)==1 and '$PROMPTSUBCOLOR$' or '$COMMANDCOLOR$')..s..'$NOR$'..comma
         end)

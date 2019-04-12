@@ -1,6 +1,15 @@
 /*[[
     Show network latency information. Usage: @@NAME [machine_key_word] [YYMMDDHH24MISS] [YYMMDDHH24MISS] [-dash]
     -dash: source table is Dba_Hist_Active_Sess_History instead of gv$active_session_history
+
+    Sample Output:
+    ==============
+    MACHINE             EVENT              AAS LATENCY MAX_LATENCY AVG_BYTES MAX_BYTES      TOP_1_SQL          TOP_2_SQL         TOP_3_SQL
+    ------- ----------------------------- ---- ------- ----------- --------- --------- ------------------- ----------------- -----------------
+    Will    SQL*Net more data from client 1161       0       4.36m      3  B      3  B 2vchm7jzztzng(1161)
+    Will                                   188 74.00us      25.94m   7.95 KB   7.97 KB 74kh4ag109cdv(91)   gvph4rn0sv7kg(17) ahwx914ga4qag(15)
+    Will    SQL*Net more data to client     10  4.27ms    363.64ms   7.95 KB   7.96 KB 74kh4ag109cdv(10)
+    
     --[[
         &ash: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
         &snap: default={NVL(to_date(nvl(:V2,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7)} snap={sysdate-numtodsinterval(&0,'second')}

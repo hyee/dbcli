@@ -1,6 +1,52 @@
 /*[[
   Get ASH top event, type 'help @@NAME' for more info. Usage: @@NAME [-sql|-p|-none|-pr|-o|-plan|-ash|-dash|-snap|-f] {[fields] [filters]}
   
+  Options:
+  ========
+      Groupings : The grouping option can be followed by other custimized field, i.e.: '@@NAME -p,p1raw ...'
+        -e   : group by event
+        -sql : group by event+sql_id (default)
+        -p   : group by event+p1,p2,p3
+        -pr  : group by event+p1raw,p2raw,p3raw
+        -o   : group by event+object_id
+        -plan: group by sql plan line(for 11g)
+        -proc: group by procedure name
+      DataSource:
+        -ash : source table is gv$active_session_history(default)
+        -dash: source table is dba_hist_active_sess_history
+      Filters   :
+        -id  : show data for specific sql_id/sid. Usage: [-id] [sql_id|sid]  [starttime] [endtime]
+        -u   : only show the data related to current schema. Usage: -u <seconds> [starttime] [endtime]
+        -snap: only show the data within specific seconds. Usage: -snap <seconds> [sql_id|sid]
+      Addition filter:
+        -f   : additional fileter. Usage: -f"<filter>"
+        
+  Usage Examples:
+  ===============
+      1) Show top objects for the specific sql id: @@NAME -o <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
+      2) Show top sqls for the specific sid      : @@NAME <sid> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
+      3) Show top sqls within recent 60 secs     : @@NAME -snap 60 [sql_id|sid]
+      4) Show top objects from dictionary ASH    : @@NAME -dash <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
+      5) Show top objects based on execution plan: @@NAME -plan <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
+      6) Show top sqls with user defined filter  : @@NAME -f"inst_id=1 and username='ABCD'" 
+  
+  Sample Outputs:
+  ===============
+    SECS AAS  %This  Execs Parallel? PROGRAM#  EVENT                                              SQL_ID       SQL_OPNAME     READS    WRITES   CPU ...
+    ---- --- ------- ----- --------- -------- ------------------------------------------------ ------------- -------------- --------- --------- --- ...
+      35  35   29% |     1 SERIAL    SYS      [file number|first dba|block cnt]                c5rrtjvaqr9d3 SELECT          81.39 MB      0  B  35 ...
+      28 363   23% |     0 SERIAL    (PSPn)   [timeout]                                                                          0  B      0  B  57 ...
+      14  15   12% |     1 SERIAL    SYS      [driver id|#bytes]                               ahwx914ga4qag SELECT         113.00 KB      0  B  14 ...
+      11  11    9% |     1 SERIAL    SYS      [file#|block#|blocks]                            c5rrtjvaqr9d3 SELECT          33.30 MB      0  B  11 ...
+      10 153    8% |     0 SERIAL    (DIAn)   [component|where|wait time(millisec)]                                              0  B      0  B  17 ...
+       8   5    6% |     1 SERIAL    SYS      [driver id|#bytes]                               fjfh2kphmfq0h SELECT         125.70 MB      0  B   8 ...
+       4   3    3% |     3 SERIAL    SYS      [driver id|#bytes]                               gvph4rn0sv7kg SELECT         561.00 KB  24.00 KB   4 ...
+       2   4    1% |     4 SERIAL    SYS      [file number|first dba|block cnt]                032x0n8n5g5sy SELECT          14.31 MB      0  B   2 ...
+       2   1    1% |     1 SERIAL    SYS      [driver id|#bytes]                               ar59zgzwt44cb SELECT          23.40 MB      0  B   1 ...
+       1   1    1% |     1 SERIAL    SYS      [file#|block#|blocks]                            032x0n8n5g5sy SELECT           2.84 MB      0  B   1 ...
+       1   1    1% |     1 SERIAL    (Mnnn)   db file sequential read                          1uym1vta995yb INSERT           1.91 MB      0  B   1 ...
+       1   2    1% |     2 SERIAL    (Mnnn)   db file sequential read                          3s58mgk0uy2ws INSERT           2.26 MB      0  B   1 ...
+
    --[[
       &fields: {
             sql={sql_id &V11,sql_opname},
@@ -30,34 +76,6 @@
       @V11    : 11.2={} default={--}
       @V12    : 12.1={} default={--}
     ]]--
-  Options:
-      Groupings : The grouping option can be followed by other custimized field, i.e.: '@@NAME -p,p1raw ...'
-        -e   : group by event
-        -sql : group by event+sql_id (default)
-        -p   : group by event+p1,p2,p3
-        -pr  : group by event+p1raw,p2raw,p3raw
-        -o   : group by event+object_id
-        -plan: group by sql plan line(for 11g)
-        -proc: group by procedure name
-      DataSource:
-        -ash : source table is gv$active_session_history(default)
-        -dash: source table is dba_hist_active_sess_history
-      Filters   :
-        -id  : show data for specific sql_id/sid. Usage: [-id] [sql_id|sid]  [starttime] [endtime]
-        -u   : only show the data related to current schema. Usage: -u <seconds> [starttime] [endtime]
-        -snap: only show the data within specific seconds. Usage: -snap <seconds> [sql_id|sid]
-      Addition filter:
-        -f   : additional fileter. Usage: -f"<filter>"
-        
-  Usage examples:  
-      1) Show top objects for the specific sql id: @@NAME -o <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
-      2) Show top sqls for the specific sid      : @@NAME <sid> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
-      3) Show top sqls within recent 60 secs     : @@NAME -snap 60 [sql_id|sid]
-      4) Show top objects from dictionary ASH    : @@NAME -dash <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
-      5) Show top objects based on execution plan: @@NAME -plan <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
-      6) Show top sqls with user defined filter  : @@NAME -f"inst_id=1 and username='ABCD'" 
-  
-  This script references Tanel Poder's script
 ]]*/
 col reads format KMG
 col writes format kMG

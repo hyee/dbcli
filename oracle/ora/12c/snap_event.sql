@@ -1,4 +1,5 @@
-/*[[Show delta event histogram relative to target event. Usage: @@NAME {<0|secs> [0|inst_id]} [-lgwr|-io|-gc|-w"<event|wait_class>"|-f"<filter>"] [-c|-n]
+/*[[
+  Show delta event histogram relative to target event. Usage: @@NAME {<0|secs> [0|inst_id]} [-lgwr|-io|-gc|-w"<event|wait_class>"|-f"<filter>"] [-c|-n]
   
   Parameters:
     secs : the interval to sample the stats in order to calc the delta values. When 0 then calc all stats instead of delta stats
@@ -8,6 +9,28 @@
     -w   : show only the events belong to specific event/wait class
     -c   : the percentages of the histogram is based on wait count, instead of wait time
     -n   : the value of the histogram is the number of waits, instead of percentage
+
+   Example:
+    Sampling stats for 10 seconds, the values of histogram are the percentages of [wait_count*log(2,slot_time*2)]:
+    =============================================================================================================
+                  EVENT                Time/s  AVG_TIME|Waits/s  <1us  <2us  <4us   <8us    <16us  <32us <64us <128us <256us <512us  <1ms  <2ms <4ms <32ms <128ms
+     -------------------------------- -------- --------+------- ----- ----- ------ ------- ------- ----- ----- ------ ------ ------ ----- ----- ---- ----- ------
+     - Wait Class: All                160.42ms 165.95us|1,396.7  0.06  0.46   5.61   32.53   22.20  9.15  4.67   4.88   5.49   6.75  5.18  2.06 0.14  0.82
+     - Wait Class: Other              154.76ms 166.38us|1,369.2  0.05  0.43   5.75   33.44   22.70  9.22  4.54   4.92   5.17   5.42  5.29  2.12 0.11  0.84
+     - Wait Class: System I/O           2.98ms 375.67us|  15.20                       2.25    8.86  9.19  3.39         25.40     50  0.89
+     - Wait Class: User I/O             2.47ms 457.87us|   5.40                                                         3.30  87.91  4.03       4.76
+     - Wait Class: Network            198.80us  54.38us|   3.90        0.74   1.12                 11.15 57.25  29.74
+     - Wait Class: Application         15.50us  77.50us|   0.20                 25                                        75
+     - Wait Class: Concurrency          2.00us   0.76us|   2.80 22.92 58.33  18.75
+     RMA: IPC0 completion sync         76.61ms  19.15ms|   4.00                               0.80                                              2.08 97.12
+     latch free                        32.59ms   1.44ms|  33.10                                                         1.69   5.08 52.38 39.81 1.04
+     enq: PS - contention              13.35ms 392.72us|  34.00                                     0.16  0.38   2.36  23.14  47.15 26.81
+     PX Deq: Join ACK                   8.30ms 160.51us|  51.70  0.02  0.96   2.54    0.91    0.46  0.82 18.23  21.93  28.37  18.73  7.04
+     PX Deq: reap credit                7.64ms   8.41us| 909.20        0.27   7.86   42.66   33.85 12.70  2.54   0.08                0.03
+     PX Deq: Slave Session Stats        5.21ms 138.46us|  37.60  0.22  3.67   3.02    4.17    1.80  3.02  5.54  14.95  38.50  21.57  3.56
+     IMR slave acknowledgement msg      3.24ms 290.15us|  13.20               0.28            0.46 13.24 21.23  16.18   5.79  20.22 20.22       2.39
+     PX Deq: Slave Join Frag            2.68ms  71.24us|  37.60  0.95  1.70                         1.06 30.67  55.97   8.90   0.35  0.39
+     ...
 	--[[
         @ver: 12={}
 		@CHECK_ACCESS_SL: SYS.DBMS_LOCK={SYS.DBMS_LOCK} DEFAULT={DBMS_SESSION}

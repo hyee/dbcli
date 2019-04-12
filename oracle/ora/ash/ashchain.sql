@@ -1,13 +1,33 @@
 /*[[
-Show ash wait chains. Usage: @@NAME {[<sql_id>|<sid>|<plan_hash_value>|-f"<filter>"] [YYMMDDHH24MI] [YYMMDDHH24MI]}|{-snap [secs]} [-sid] [-dash] [-flat]
-    options:
-        -dash: source from dba_hist_active_session_history instead of gv$active_session_history
+    Show ash wait chains. Usage: @@NAME {[<sql_id>|<sid>|<plan_hash_value>|-f"<filter>"] [YYMMDDHH24MI] [YYMMDDHH24MI]}|{-snap [secs]} [-sid] [-dash] [-flat]
+    
+    Options:
+        -dash        : source from dba_hist_active_session_history instead of gv$active_session_history
         -snap <secs> : show wait chain within recent n secs
-        -sid:  grouping by sid instead of sql_id
-        -phase: show top phase instead of top object
-        -op   : show top op name instead of top object
-        -p    : show progam + event + p1/2/3 instead of event + top object
-        -flat : show ashchain in flat style instead of tree style
+        -sid         :  grouping by sid instead of sql_id
+        -phase       : show top phase instead of top object
+        -op          : show top op name instead of top object
+        -p           : show progam + event + p1/2/3 instead of event + top object
+        -flat        : show ashchain in flat style instead of tree style
+
+    Sample Output:
+    ==============
+                       Leaf
+      Pct    AAS EXECS  AAS    IO      TOP_CURR_OBJ#     WAIT_CHAIN      EVENT_CHAIN                              FULL_EVENT_CHAIN
+    -------- --- ----- ---- --------- --------------- ----------------- ----------------------------------------- ---------------------------------------------------------------------------------------
+    37.5%      3     1    0 408.00 KB  (3) x$kglst#2   adzjh275fvvx4     library cache load lock                  library cache load lock
+    | 12.50%   1     1    1 320.00 KB  (1) 11613       |  cvn54b7yz0s8u  |  db file sequential read               library cache load lock > db file sequential read
+    | 12.50%   1     1    1 320.00 KB  (1) 11613       |  cvn54b7yz0s8u  |  ON CPU [file# block# blocks]          library cache load lock > ON CPU [file# block# blocks]
+    | 12.50%   1     1    1 296.00 KB  (1) 11613       |  3ktacv9r56b51  |  ON CPU [file# block# blocks]          library cache load lock > ON CPU [file# block# blocks]
+    25.%       2     2    0   1.02 MB  (2) 122         0b0wj2ykgnnzg     enq: TM - contention                     enq: TM - contention
+    | 25.00%   2     2    2 108.68 MB  (1) 4           |  1b28hzmjun5t0  |  db file sequential read               enq: TM - contention > db file sequential read
+    12.5%      1     1    0      0  B  (1) 12442       (Mnnn)            (Mnnn) library cache pin                 (Mnnn) library cache pin
+    | 12.50%   1     1    0   8.00 KB  (1) 5944        |  (CJQn)         |  (CJQn) rdbms ipc reply                (Mnnn) library cache pin > (CJQn) rdbms ipc reply
+    | 12.50%   1     1    1  72.00 KB  (1) -1          |    (DBRM)       |    (DBRM) resmgr:internal state change (Mnnn) library cache pin > (CJQn) rdbms ipc reply > (DBRM) resmgr:internal state change
+    12.5%      1     1    0  96.00 KB  (1) data block  32hbap2vtmf53     read by other session [data block]       read by other session [data block]
+    | 12.50%   1     1    1 120.00 KB  (1) 162         |  32hbap2vtmf53  |  db file sequential read               read by other session [data block] > db file sequential read
+    12.5%      1     1    1 944.00 KB  (1) -1          92b382ka0qgdt     rdbms ipc reply > (Remote)               rdbms ipc reply > (Remote)
+
 This script references Tanel Poder's script
     --[[
         @con : 12.1={AND prior con_id=con_id} default={}

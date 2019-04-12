@@ -243,10 +243,11 @@ function extvars.set_dict(type)
         local fmt='$HEADCOLOR$%-18s$NOR$ : %s'
         print(string.rep('=',100))
         print(fmt:format('Current Dictionary',dict.path))
-        print(fmt:format('Level#1 Keywords',dict.objects..' (Tab-completion on [<owner>.]<Keyword>)'))
-        print(fmt:format('Level#2 Keywords',dict.subobjects..' (Tab-completion on <L1 Keyword>.<L2 Keyword>)'))
-        print(fmt:format(' Cached Objects',dict.cache.." (Caches the current db's online dictionary that used for quick search(i.e.: desc/ora obj))"))
-        print(fmt:format('    VPD Objects',dict.vpd..' (Used to auto-rewrite SQL for options "SET instance/container/dbid/schema")'))
+        fmt='$HEADCOLOR$%-18s$NOR$ : %5s %s'
+        print(fmt:format('Level#1 Keywords',dict.objects,'(Tab-completion on [<owner>.]<Keyword>)'))
+        print(fmt:format('Level#2 Keywords',dict.subobjects,'(Tab-completion on <L1 Keyword>.<L2 Keyword>)'))
+        print(fmt:format(' Cached Objects',dict.cache,"(Caches the current db's online dictionary that used for quick search(i.e.: desc/ora obj))"))
+        print(fmt:format('    VPD Objects',dict.vpd,'(Used to auto-rewrite SQL for options "SET instance/container/dbid/schema")'))
         checkhelp(type)
     end
     type=type:lower()

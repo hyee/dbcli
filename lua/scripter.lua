@@ -51,10 +51,10 @@ function scripter:rehash(script_dir,ext_name,extend_dirs)
         local function set_annotation(s) annotation=s;return ""; end
         if desc~="" then
             desc=desc:gsub("%-%-%[%[(.*)%]%]%-%-",set_annotation):gsub("%-%-%[%[(.*)%-%-%]%]",set_annotation)
-            desc=desc:gsub("([\n\r]+%s*)%-%-","%1  ")
+            desc=desc:gsub("([\n\r]+%s*)%-%-[^%-]","%1  ")
             desc=desc:gsub("([\n\r]+%s*)REM","%1   ")
             desc=desc:gsub("([\n\r]+%s*)rem","%1   ")
-            desc=desc:gsub("([\n\r]+%s*)#","%1   ")
+            desc=desc:gsub("([\n\r]+%s*)#[^#]","%1   ")
         end
         local attrs={path=file.fullname,desc=desc,short_desc=desc:match("([^\n\r]+)") or ""}
         if annotation then 
