@@ -1,4 +1,15 @@
 /*[[Show db parameters info, pls use 'set instance' to show the specific instance. Usage: @@NAME [<keyword1>[,<keyword2>...]] [instance]
+When no keyword is specified then display all non-default parameters.
+
+Sample Output:
+==============
+ORCL> ora param block%check                                                                                                                            
+    INST_ID          NAME           SESSION_VALUE SYS_VALUE ISDEFAULT ISOPT_ENV ISSESS_MDF ISSYS_MDF  DESCRIPTION                                      
+    ------- ----------------------- ------------- --------- --------- --------- ---------- --------- --------------------------------------------------
+          1 db_block_checking       FALSE         <SAME>    TRUE                FALSE      IMMEDIATE header checking and data and index block checking 
+          1 db_block_checksum       TYPICAL       <SAME>    TRUE                FALSE      IMMEDIATE store checksum in db blocks and check during reads
+          1 log_checkpoint_interval 0             <SAME>    TRUE                FALSE      IMMEDIATE # redo blocks checkpoint threshold                
+
    --[[
       @ctn: 12={ISPDB_MODIFIABLE ISPDB_MDF,}, default={}
       &V2:  default={&instance}

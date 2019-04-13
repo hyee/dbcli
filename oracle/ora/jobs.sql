@@ -18,14 +18,12 @@ ORCL> ora jobs
     SYS   BSLN_MAINTAIN_STATS_JOB             62            12 TRUE    SCHEDULED 2011-09-04          2019-04-14         
     SYS   RSE$CLEAN_RECOVERABLE_SCRIPT       185             0 TRUE    SCHEDULED 2011-08-28 22:17:04 2019-04-13         
     SYS   SM$CLEAN_AUTO_SPLIT_MERGE          185             0 TRUE    SCHEDULED 2011-08-28 22:17:04 2019-04-13         
-                                                                                                                        
-                                                                                                                        
+                                                                                                                                                                                                                                         
     Running jobs:                                                                                                       
     =================                                                                                                   
     OWNER JOB_NAME JOB_SUBNAME JOB_STYLE DETACHED SESSION_ID SLAVE_PROCESS_ID SLAVE_OS_PROCESS_ID RUNNING_INSTANCE RESOU
     ----- -------- ----------- --------- -------- ---------- ---------------- ------------------- ---------------- -----
-                                                                                                                        
-                                                                                                                        
+                                                                                                                                                                                                                                        
     Recent 50 historical jobs:                                                                                          
     ==========================                                                                                          
     LOG_ID          LOG_DATE           OWNER           JOB_NAME           JOB_SUBNAME  STATUS   ERROR#       REQ_START_D

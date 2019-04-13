@@ -1,26 +1,51 @@
 /*[[
-    Show/change column histogram. Usage: @@NAME {<table_name>[.<partition_name>] <column_name>} {<test_value> | <min_v> <max_v> | <value> <buckets> [<card>]} [-test|-real] [-tab"<stats_tab>"]
-    Options:
-        -test: use "EXPLAIN PLAN" to test the cardinality of each EP value. In case of setting histograms, this option will skip the changes
-        -real: use "SELECT COUNT(1)" to test the real count of each EP value
-        -tab : use stats table as the data source/target
+Show/change column histogram. Usage: @@NAME {<table_name>[.<partition_name>] <column_name>} {<test_value> | <min_v> <max_v> | <value> <buckets> [<card>]} [-test|-real] [-tab"<stats_tab>"]
+Options:
+    -test: use "EXPLAIN PLAN" to test the cardinality of each EP value. In case of setting histograms, this option will skip the changes
+    -real: use "SELECT COUNT(1)" to test the real count of each EP value
+    -tab : use stats table as the data source/target
 
-    Examples:
-        *  List the histogram: @@NAME SYS.OBJ$ NAME
-        *  List the histogram from the stats table: @@NAME SYS.OBJ$ NAME -tab"system.stattab"
-        *  List the histogram and test the est cardinality of scalar value : @@NAME SYS.OBJ$ NAME "obj$"
-        *  List the histogram and test the est cardinality of bind variable: @@NAME SYS.OBJ$ NAME :1
-        *  List the histogram and test the est cardinality of each EP value: @@NAME SYS.OBJ$ NAME -test
-        *  List the histogram and test the act cardinality of each EP value: @@NAME SYS.OBJ$ NAME -real
-        *  Change the low/high value of "NONE" histogram:  @@NAME sys.obj$ stime "1990-08-26 11:25:01" "2018-08-12 02:50:00"
-        *  Set number of buckets of "FREQUENCY" histogam: @@NAME sys.obj$ owner# 89 5
-        *  Remove an EP from histogam: @@NAME sys.obj$ owner# 89 0
-        *  Set number of buckets and repeats of "HYBRID" histogam: @@NAME obj object_name sun/misc/Lock 295 10
+Examples:
+    *  List the histogram: @@NAME SYS.OBJ$ NAME
+    *  List the histogram from the stats table: @@NAME SYS.OBJ$ NAME -tab"system.stattab"
+    *  List the histogram and test the est cardinality of scalar value : @@NAME SYS.OBJ$ NAME "obj$"
+    *  List the histogram and test the est cardinality of bind variable: @@NAME SYS.OBJ$ NAME :1
+    *  List the histogram and test the est cardinality of each EP value: @@NAME SYS.OBJ$ NAME -test
+    *  List the histogram and test the act cardinality of each EP value: @@NAME SYS.OBJ$ NAME -real
+    *  Change the low/high value of "NONE" histogram:  @@NAME sys.obj$ stime "1990-08-26 11:25:01" "2018-08-12 02:50:00"
+    *  Set number of buckets of "FREQUENCY" histogam: @@NAME sys.obj$ owner# 89 5
+    *  Remove an EP from histogam: @@NAME sys.obj$ owner# 89 0
+    *  Set number of buckets and repeats of "HYBRID" histogam: @@NAME obj object_name sun/misc/Lock 295 10
 
-    Notes: if input data type is not string/number/raw, the value should follow below format:
-        *  DATE                    : YYYY-MM-DD HH24:MI:SS
-        *  TIMESTAMP               : YYYY-MM-DD HH24:MI:SSxFF
-        *  TIMESTAMP WITH TIMEZONE : YYYY-MM-DD HH24:MI:SSxFF TZH:TZM
+Notes: if input data type is not string/number/raw, the value should follow below format:
+    *  DATE                    : YYYY-MM-DD HH24:MI:SS
+    *  TIMESTAMP               : YYYY-MM-DD HH24:MI:SSxFF
+    *  TIMESTAMP WITH TIMEZONE : YYYY-MM-DD HH24:MI:SSxFF TZH:TZM
+
+Sample Output:
+==============
+ORCL> ora histogram sys.obj$ OWNER#                                                                                         
+    Histogram of TABLE SYS.OBJ$[OWNER#]                                                                                     
+    ========================================================================================================================
+    Column-Name: OWNER#   Data-Type: NUMBER   Analyzed: 2015-07-20 22:05:00   Global-Stats: YES   User-Stats: NO            
+    Histogram  : "FREQUENCY"   Low-Value: "0"   High-Value: "88"                                                            
+    Rows       : 537K          Samples    : 5809          Nulls      : 0             Distincts  : 27                        
+    Blocks     : 7192          Buckets    : 5809          Avg Row Len: 91            Avg Col Len: 3                         
+    Rows/Block : 74.77         Density    : 0.00009%      New-Density: 3.7037%       Cardinality: 19916                     
+    ========================================================================================================================
+                                                                                                                            
+         #  Bucket#  Prev EP Value     Current EP Value     Buckets     Card                                                
+     -----  -------  ----------------  ----------------  ---------- --------                                                
+         1      104                    0                        104  9627.33                                                
+         2      156  0                 1                         52  4813.67                                                
+         3      160  1                 5                          4   370.28                                                
+         4      165  5                 32                         5   462.85                                                
+         5      175  32                34                        10    925.7                                                
+         6      191  34                42                        16  1481.13                                                
+      .....                                              
+                                                                                                                            
+    Data saved to D:\dbcli\cache\orcl\sys.obj$.OWNER#.sql                                                                   
+
     --[[
         &test  : default={0} test={1} real={2}
         &tab   : default={} tab={&0}

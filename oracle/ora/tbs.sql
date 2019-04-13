@@ -1,4 +1,35 @@
 /*[[Show tablspace usage, or file usage if specify the tablespace name. Usage: @@NAME [<tablespace_name>]
+
+Sample Outputs:
+===============
+ORCL> ora tbs                                                                                                                                  
+      TABLESPACE_NAME   File(s)  MAX_SIZE   FILE_SIZE  HWM_SPACE USED_SPACE FREE_SPACE TOTAL_FREE USED(%) IOPS  MBPS   LATENCY FSFI(%) LOCATION
+    ------------------- ------- ---------- ---------- ---------- ---------- ---------- ---------- ------- ---- ------- ------- ------- --------
+    TOTAL(Permanent)    13       353.95 GB    4.68 GB    2.93 GB    2.91 GB    1.77 GB  351.05 GB    0.82    0 1.22 KB   957us      36 /u01    
+      SYSAUX            1         32.00 GB    1.29 GB    1.23 GB    1.22 GB   66.64 MB   30.78 GB    3.82    0  704  B   952us    58.7 /u01    
+      SYSTEM            1         32.00 GB 1010.00 MB 1002.00 MB 1001.80 MB    8.20 MB   31.02 GB    3.06    0  122  B     1ms   82.81 /u01    
+      MITIREP_1203      1         32.00 GB  330.00 MB  292.00 MB  291.30 MB   38.70 MB   31.72 GB    0.89    0    0  B           83.27 /u01    
+      USERS             2         64.00 GB  312.00 MB  164.12 MB  164.22 MB  147.78 MB   63.84 GB    0.25    0    0  B           84.09 /u01    
+      ODIDEMO           1         32.00 GB  300.00 MB  127.00 MB  106.80 MB  193.20 MB   31.90 GB    0.33    0    0  B           38.63 /u01    
+      OGG_ODI_USER      1       1000.00 MB  200.00 MB   61.87 MB   61.92 MB  138.08 MB  938.08 MB    6.19    0    0  B             100 /u01    
+      UNDOTBS1          1         32.00 GB    1.05 GB   53.00 MB   52.23 MB    1.00 GB   31.95 GB    0.16    0  418  B   811us   84.06 /u01    
+      OGG_IAS_OPSS      1         32.00 GB   60.00 MB   38.37 MB   38.42 MB   21.58 MB   31.96 GB    0.12    0    0  B             100 /u01    
+      FERMATDATA        1         32.00 GB   10.00 MB    1.81 MB    1.86 MB    8.14 MB   32.00 GB    0.01    0    0  B             100 /u01    
+      FERMATINDEXES     1         32.00 GB   10.00 MB    1.69 MB    1.73 MB    8.27 MB   32.00 GB    0.01    0    0  B             100 /u01    
+      OGG_IAS_IAU       1         32.00 GB   60.00 MB    1.62 MB    1.67 MB   58.33 MB   32.00 GB    0.01    0    0  B             100 /u01    
+      OGG_STB           1       1000.00 MB  100.00 MB    1.25 MB    1.30 MB   98.70 MB  998.70 MB    0.13    0    0  B             100 /u01    
+    TOTAL(Temporary)    4         65.07 GB  730.00 MB  730.00 MB    2.00 MB  728.00 MB   65.07 GB       0                              /u01    
+      TEMP              1         32.00 GB  500.00 MB  500.00 MB    2.00 MB  498.00 MB   32.00 GB    0.01                              /u01    
+      OGG_ODI_TEMP      1       1000.00 MB  100.00 MB  100.00 MB       0  B  100.00 MB 1000.00 MB       0                              /u01    
+      OGG_IAS_TEMP      1        100.00 MB  100.00 MB  100.00 MB       0  B  100.00 MB  100.00 MB       0                              /u01    
+      MITIREP_1203_TEMP 1         32.00 GB   30.00 MB   30.00 MB       0  B   30.00 MB   32.00 GB       0                              /u01    
+                                                                                                                         
+ORCL> ora tbs SYSTEM                                                                                                                           
+    TABLESPACE_NAME File(s) MAX_SIZE  FILE_SIZE  HWM_SPACE USED_SPACE FREE_SPACE TOTAL_FREE USED(%) IOPS  MBPS  LATENCY FSFI(%)                
+    --------------- ------- -------- ---------- ---------- ---------- ---------- ---------- ------- ---- ------ ------- ------- ---------------
+    SYSTEM          1       32.00 GB 1010.00 MB 1002.00 MB 1001.80 MB    8.20 MB   31.02 GB    3.06    0 122  B     1ms   82.81 /u01           
+                    #1      32.00 GB 1010.00 MB 1002.00 MB 1001.80 MB    8.20 MB   31.02 GB    3.06    0 122  B     1ms   82.81 /u01/app/oracle
+
     --[[
         @CHECK_ACCESS: wmsys.wm_concat={wmsys.wm_concat(DISTINCT loc)}, default={&VERSION}
         @VERSION: 11.2={regexp_replace(listagg(loc,',') within group(order by file_name),'([^,]+)(,\1)+','\1')} default={null}
