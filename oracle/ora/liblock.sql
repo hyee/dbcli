@@ -1,6 +1,24 @@
 /*[[
-Check the holder of library cache objects. Usage: @@NAME {[<sid>|<object_name>] [inst_id]} [-u] [-w]
-    -u: only show locked/pin objects within current_schema
+    Check the holder of library cache objects. Usage: @@NAME {[<sid>|<object_name>] [inst_id]} [-u] [-w]
+        -u: only show locked/pin objects within current_schema
+        -w: only show the records that have waiters
+
+    Sample Output:
+    =============
+    LOCK_TYPE  OBJECT_HANDLE      OBJECT_NAME     OBJECT_TYPE  HOLDING_SESSION HOLD_MODE   HOLDER_EVENT    HOLDER_SQL_ID WAITING_SESSION WAIT_MODE   WAITER_EVENT    WAITER_SQL_ID
+    --------- ---------------- ------------------ ------------ --------------- --------- ----------------- ------------- --------------- --------- ----------------- -------------
+    Pin       0000002BA3ABDC58 SYSTEM.MON_DB      PACKAGE      289,55303,@1    SHARED    PL/SQL lock timer 68gsknzub3950 325,16540,@2    EXCLUSIVE library cache pin cadwyvrgwdkvz
+    Pin       0000002BA6A9B2E0 SYSTEM.MON_DB      PACKAGE      291,9375,@4     SHARED    PL/SQL lock timer ayxf7qwpa2mhj 325,16540,@2    EXCLUSIVE library cache pin cadwyvrgwdkvz
+    Pin       0000002B6F8A7910 SYSTEM.MON_DB      PACKAGE      420,25372,@3    SHARED    PL/SQL lock timer 1bvuy52rj19k1 325,16540,@2    EXCLUSIVE library cache pin cadwyvrgwdkvz
+    Pin       0000002B9339EC40 SYSTEM.MON_DB      PACKAGE      452,63939,@2    SHARED    PL/SQL lock timer d6a0tfanz9b15 325,16540,@2    EXCLUSIVE library cache pin cadwyvrgwdkvz
+    Pin       0000002B6F8A7910 SYSTEM.MON_DB      PACKAGE      514,46802,@3    SHARED    PL/SQL lock timer 2gx6530gfrus4 325,16540,@2    EXCLUSIVE library cache pin cadwyvrgwdkvz
+    Pin       0000002B7F939070 SYS.DBMS_LOCK      PACKAGE BODY 289,55303,@1    SHARED    PL/SQL lock timer 68gsknzub3950
+    Pin       0000002B8A397CC0 SYS.DBMS_LOCK      PACKAGE      289,55303,@1    SHARED    PL/SQL lock timer 68gsknzub3950
+    Pin       0000002BADFE08C0 SYS.DBMS_LOCK      PACKAGE BODY 291,9375,@4     SHARED    PL/SQL lock timer ayxf7qwpa2mhj
+    Pin       0000002B8A404F60 SYS.DBMS_LOCK      PACKAGE      291,9375,@4     SHARED    PL/SQL lock timer ayxf7qwpa2mhj
+    Pin       0000002B77A45788 SYS.DBMS_LOCK      PACKAGE BODY 420,25372,@3    SHARED    PL/SQL lock timer 1bvuy52rj19k1
+    Pin       0000002B9ACEAD98 SYS.DBMS_LOCK      PACKAGE      420,25372,@3    SHARED    PL/SQL lock timer 1bvuy52rj19k1
+
     --[[
         &FILTER:  default={1=1}, u={h.object_name||'.' like nvl('&0',sys_context('userenv','current_schema'))||'.%'}
         &FILTER2: default={1=1}, w={w.sid is not null}

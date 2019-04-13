@@ -1,7 +1,58 @@
 /*[[
-    Get preferences and stats of the target object. Usage: @@NAME {[owner] | [owner.]<object_name>[.partition_name]} [-advise]
-    
-    -advise: execute SQL Statistics Advisor on the target table
+Get preferences and stats of the target object. Usage: @@NAME {[owner] | [owner.]<object_name>[.partition_name]} [-advise]
+
+-advise: execute SQL Statistics Advisor on the target table
+
+Sameple Output:
+===============
+ORCL> ORA STATS                                                                                     
+    Preferences                                                                                     
+    ***********                                                                                     
+    System Prefs - APPROXIMATE_NDV               : TRUE                               (TRUE/FALSE)  
+    System Prefs - AUTOSTATS_TARGET              : AUTO                               (ALL/AUTO/ORAC
+    System Prefs - CASCADE                       : DBMS_STATS.AUTO_CASCADE            (TRUE/FALSE/nu
+    System Prefs - CONCURRENT                    : FALSE                              (MANUAL/AUTOMA
+    System Prefs - DEBUG                         : 0                                  (1[AUTO_TLIST_
+    System Prefs - DEGREE                        : NULL                               (n/32766(DEFAU
+    System Prefs - ESTIMATE_PERCENT              : DBMS_STATS.AUTO_SAMPLE_SIZE        (0(AUTO_SAMPLE
+    System Prefs - GRANULARITY                   : AUTO                               (Partitioned: 
+    System Prefs - INCREMENTAL                   : FALSE                              (Partitioned: 
+    System Prefs - INCREMENTAL_INTERNAL_CONTROL  : TRUE                               (Partitioned: 
+    System Prefs - METHOD_OPT                    : FOR ALL COLUMNS SIZE AUTO          (FOR ALL [INDE
+    System Prefs - NO_INVALIDATE                 : DBMS_STATS.AUTO_INVALIDATE         (TRUE/FALSE/nu
+    System Prefs - PUBLISH                       : TRUE                               (TRUE/FALSE)  
+    System Prefs - SKIP_TIME                     :                                                  
+    System Prefs - STALE_PERCENT                 : 10                                               
+    System Prefs - STATS_RETENTION               :                                                  
+    System Prefs - SYS_FLAGS                     : 1                                  (0/1(DSC_SYS_F
+    System Prefs - TABLE_CACHED_BLOCKS           : 1                                  (0(AUTO_TABLE_
+    System Prefs - TRACE                         : 0                                  (0(disable),1(
+    ------------------------------------------------------------------------------------------------
+    System Stats - IOTFRSPEED                    : 4          (transfer speed in KB/ms)             
+    System Stats - IOSEEKTIM                     : 10         (latency  in ms)                      
+    System Stats - SREADTIM                      : 12         (time to read 1 block  in ms = IOSEEKT
+    System Stats - MREADTIM                      : 26         (time to read n blocks in ms = IOSEEKT
+    System Stats - CPUSPEED                      :            (workload CPU speed in GHZ)           
+    System Stats - CPUSPEEDNW                    : .9371      (noworkload CPU speed in GHZ)         
+    System Stats - MBRC                          : 8          (_db_file_optimizer_read_count)       
+    System Stats - MAXTHR                        :            (maximum throughput that the I/O subsy
+    System Stats - SLAVETHR                      :            (average parallel slave I/O throughput
+    System Stats -    maximum mbrc               : 24.7742    (buffer cache size in blocks / session
+    System Stats -    single cost / block        : 1          (by definition)                       
+    System Stats -    multi  cost / block        : .2708      (1/MBRC * MREADTIM/SREADTIM)          
+    ------------------------------------------------------------------------------------------------
+    Statistics History Retention                 : 31 days    (Avail: 2019-03-12 22:02:19.933 -04:00
+                                                                                                    
+                                                                                                    
+    Table Level                                                                                     
+    ***********                                                                                     
+    Index Level                                                                                     
+    ***********                                                                                     
+    Partition Level                                                                                 
+    ***************                                                                                 
+    SubPartition Level                                                                              
+    ***************                                                                                 
+
     --[[
        @check_access_dba: dba_tables={dba_} default={all_}
        &advise          : default={0} advise={1}

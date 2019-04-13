@@ -1,5 +1,28 @@
-/*[[Gather and show system statistics. Usage: @@NAME <secs>|<query>
+/*[[
+    Gather and show system statistics. Usage: @@NAME <secs>|<query>
+    Be noted that this script will change the statistics.
+    
+    Parameters:
+        <secs>  : start gathering system stats, sleep <secs> then stop gathering
+        <query> : start gathering system stats, run target query and then stop gathering
+
+    Sample Output:
+    ==============
+       NAME      VALUE   DESCRIPTION
+    ---------- --------- --------------------------------------------------------------------------------------
+    status     COMPLETED 'WORKLOAD' mode from 2019-04-12 18:55:00 to 2019-04-12 18:55:00
+    iotfrspeed 204800    I/O transfer speed in bytes for each millisecond
+    ioseektim  6         seek time + latency time + operating system overhead time, in milliseconds
+    sreadtim             average time to read single block (random read), in milliseconds
+    mreadtim             average time to read an mbrc block at once (sequential read), in milliseconds
+    cpuspeed   3189      average number of CPU cycles for each second, in millions, captured for the workload
+    cpuspeednw 3082      average number of CPU cycles for each second, in millions, captured for the noworkload
+    mbrc                 average multiblock read count for sequential read, in blocks
+    maxthr               maximum I/O system throughput, in bytes/second
+    slavethr             average slave I/O throughput, in bytes/second
+
 ]]*/
+
 set feed off
 VAR CUR REFCURSOR;
 DECLARE

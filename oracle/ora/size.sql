@@ -1,9 +1,22 @@
 /*[[
     Show object size. Usage: @@NAME [-d] [[owner.]object_name[.PARTITION_NAME]|-a]
     If not specify the segment name, then list the top 100 segments.
+    This script needs the 'SELECT ANY DICTIONARY' privilege.
     
     -d: used to detail in segment level, otherwise in name level, only shows the top 1000 segments
     -a: based on all schemas, default as current schema only.
+
+    Sample Output:
+    ==============                                                                                                                                               
+    OWNER OBJECT_NAME PARTITION_NAME OBJECT_TYPE EST_BYTES ACT_BYTES EXTENTS SEGMENTS BLOCKS INIT_KB NEXT_KB TABLESPACE_NAME NUM_ROWS AVG_ROW_LEN PCT_FREE INITRANS DEGREE
+    ----- ----------- -------------- ----------- --------- --------- ------- -------- ------ ------- ------- --------------- -------- ----------- -------- -------- ------
+    SYS   OBJ$                       TABLE         9.02 MB  10.00 MB      25        1   1280      16     104 SYSTEM             72955         111       10        1      1
+    SYS   I_OBJ2                     INDEX         7.69 MB   8.00 MB      23        1   1024      16     104 SYSTEM                            65       10        2      1
+    SYS   I_OBJ5                     INDEX         7.69 MB   8.00 MB      23        1   1024      64    1024 SYSTEM                            65       10        2      1
+    SYS   I_OBJ4                     INDEX       638.51 KB   3.00 MB      18        1    384      64    1024 SYSTEM                            12       10        2      1
+    SYS   I_OBJ1                     INDEX       851.34 KB   2.00 MB      17        1    256      64    1024 SYSTEM                            15       10        2      1
+    SYS   I_OBJ3                     INDEX       141.89 KB 256.00 KB       4        1     32      64    1024 SYSTEM                             3       10        2      1
+
     --[[
         @CHECK_ACCESS: sys.user$/sys.obj$/sys.seg$={}
         &OPT2: default={}, d={partition_name,}

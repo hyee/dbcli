@@ -44,7 +44,6 @@ local stmt=[[
 		        IF regexp_like(target,'^[^"].*" *\. *".+[^"]$') OR NOT isUpper THEN
 		            target := '"'||target||'"';
 		        END IF;
-		        
 
 		        BEGIN 
 		            sys.dbms_utility.name_tokenize(target,schem,part1,part2,dblink,part1_type);

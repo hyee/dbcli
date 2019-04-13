@@ -1,4 +1,27 @@
-/*[[Get SQL text and online stats. Usage: @@NAME <sql_id>
+/*[[
+    Get SQL text and online stats. Usage: @@NAME <sql_id>
+
+    Sample Output:
+    ==============
+    ORCL> ora sql g6px76dmjv1jy                                                                                                                            
+       TOP_SQL       PHV     PLAN_LINE PROGRAM# EVENT  AAS                                                                                             
+    ------------- ---------- --------- -------- ------ ---                                                                                             
+    g6px76dmjv1jy 3702721588         2          ON CPU  49                                                                                             
+    g6px76dmjv1jy 3702721588         2     7294 ON CPU  44                                                                                             
+    g6px76dmjv1jy 3702721588         2     7292 ON CPU  26                                                                                             
+    b6usrg82hwsa3 3702721588         2    12703 ON CPU   2                                                                                                                                                                                                                                               
+                                                                                                                                                       
+       PHV     PROGRAM#    ACS    OUTLINE USER# EXEC PARSE ALL_ELA|AVG_ELA  CPU  IO CC CL AP PL_JAVA  BUFF CELLIO WRITE READ OFLIN OFLOUT ROWS# FETCHES
+    ---------- -------- --------- ------- ----- ---- ----- -------+------- ----- -- -- -- -- ------- ----- ------ ----- ---- ----- ------ ----- -------
+    3702721588 0        SHAREABLE         SYS     66    66   2.21m|  2.01s 1.96s  0  0  0  0       0 365     0  B  0  B 0  B  0  B   0  B     1       1
+                                                                  |                                                                                    
+                                                                                                                                                                                                                                                                                          
+    Result written to D:\dbcli\cache\orcl\clob_1.txt                                                                                                   
+    SQL_TEXT                                                                                                                                           
+    ---------------------------------------------------------------------------------------------------------------------------------------------------
+    select count(*) from wri$_optstat_opr o, wri$_optstat_opr_tasks t where o.id = t.op_id(+) and o.operation = 'gather_database_stats (auto)' and (not
+     '//error'),   '^<error>ORA-200[0-9][0-9]') or  not regexp_like(   extract(xmltype('<notes>' || t.notes || '</notes>'), '//error'),   '^<error>ORA-
+
     --[[
         @VER12: 12.1={} default={--}
         @VER: 11.2={} DEFAULT={--}

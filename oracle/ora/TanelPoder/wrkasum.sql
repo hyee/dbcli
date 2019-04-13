@@ -1,4 +1,6 @@
-/*[[Show top allocation for PGA and temp space. Usage: @@NAME [sql_id|sid] ]]*/
+/*[[Show top allocation for PGA and temp space. Usage: @@NAME [sql_id|sid] 
+Refer to Tanel Poder's same script
+]]*/
 set feed off
 PROMPT Top allocation reason by PGA memory usage:
 PROMPT ==========================================

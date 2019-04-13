@@ -1,6 +1,9 @@
-/*[[Show ash cost for a specific SQL for multiple executions. usage: @@NAME {<sql_id> [plan_hash_value|sid|a] [YYMMDDHH24MI] [YYMMDDHH24MI]} [-dash] [-o] -f"<format>"
--o    : Show top object#, otherwise show top event
--dash : Based on dba_hist_active_sess_history, otherwise based on gv$active_session_history
+/*[[
+       Show ash cost for a specific SQL for multiple executions. usage: @@NAME {<sql_id> [plan_hash_value|sid|a] [YYMMDDHH24MI] [YYMMDDHH24MI]} [-dash] [-o] -f"<format>"
+       -o    : Show top object#, otherwise show top event
+       -dash : Based on dba_hist_active_sess_history, otherwise based on gv$active_session_history
+
+       The output is similar to 'ora ashplan', but less accurate and faster
        --[[
        @ARGS: 1
        @adaptive : 12.1={adaptive} 11.1={}

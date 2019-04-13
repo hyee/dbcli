@@ -115,7 +115,7 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             :con_name := l_cont;
             :con_id   := l_cid;
             :con_dbid := l_cdbid;
-            :dbid     := sys_context('userenv', 'dbid'); 
+            :dbid     := l_dbid; 
             :lob      := l_lob;
             :stats    := l_stats;
         EXCEPTION WHEN OTHERS THEN NULL;

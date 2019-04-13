@@ -1,6 +1,7 @@
 /*[[
-    Show network latency information. Usage: @@NAME [machine_key_word] [YYMMDDHH24MISS] [YYMMDDHH24MISS] [-dash]
+    Show network latency information. Usage: @@NAME [machine_key_word] {[YYMMDDHH24MISS] [YYMMDDHH24MISS] | -snap"<secs>"} [-dash]
     -dash: source table is Dba_Hist_Active_Sess_History instead of gv$active_session_history
+    -snap: get the recent ASH info within <secs> seconds. i.e.: @@NAME -snap"3600"
 
     Sample Output:
     ==============

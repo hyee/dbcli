@@ -1,11 +1,15 @@
 /*[[return the result of dbms_utility.expand_sql_text. Usage: @@NAME "sql_text"|<view_name>|<sql_id>
+
+Examples:
+    @@NAME gv$active_session_history
+    @@NAME "select * from gv$active_session_history where sample_time>sysdate-21"
    --[[
         @ver: 12.1={dbms_utility} default={dbms_sql2}
         @ARGS: 1
    --]]
 ]]*/
-set feed off verify off
-var c clob;
+set feed off
+var c refcursor;
 declare
    src  CLOB:=regexp_replace(trim(:v1),'[; '||chr(10)||chr(13)||chr(9)||']+$');
    text CLOB;
@@ -34,7 +38,6 @@ begin
    end if;
    
    &ver..expand_sql_text(src,text);
-   :c := text;
+   open :c for select text from dual;
 end;
 /
-print c;

@@ -1220,7 +1220,9 @@ function env.set_space(name,value)
     env.space=string.rep(' ',value)
     return value
 end
+
 local org_title
+env.unknown_list={}
 function env.set_title(title,value)
     local titles,status,sep,enabled="",{},"    "
     if not org_title then org_title=uv.get_process_title() end
@@ -1236,9 +1238,19 @@ function env.set_title(title,value)
         local callee=env.callee():gsub("#%d+$","")
         --print(callee,title)
         title_list[callee]=title
-       
+        
         if not env.module_list then return end
+
+        if not env.module_list[callee] then env.unknown_list[callee]=title end
         for _,k in ipairs(env.module_list) do
+            if (title_list[k] or "")~="" then
+                if titles~="" then titles=titles.."    " end
+                titles=titles..title_list[k]
+                env.unknown_list[k]=nil
+            end
+        end
+
+        for k,_ in pairs(env.unknown_list) do
             if (title_list[k] or "")~="" then
                 if titles~="" then titles=titles.."    " end
                 titles=titles..title_list[k]

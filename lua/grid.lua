@@ -351,7 +351,7 @@ function grid:add(row)
 
         is_number, v1 = grid.format_column(self.include_head, self.colinfo[k], v, #result,self)
         if tostring(v) ~= tostring(v1) then v = v1 end
-        if colsize[k][3] and type(v)=='string' and (v==colsize[k][3] or v=='') then
+        if colsize[k][3] and type(v)=='string' and colsize[k][3]:find(v,1,true) then
             csize=#colsize[k][3]
         elseif is_number then
             l,csize = tostring(v):ulen()
