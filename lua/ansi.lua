@@ -219,7 +219,6 @@ end
 function ansi.mask(codes,msg,continue)
     if codes==nil then return msg end
     local str
-
     for v in codes:gmatch(codes:find('[\\]?[eE]%[') and ('[\\]?[eE][^eE\\]+') or "([^; \t,]+)") do
         local c=ansi.string_color(v:find('^[eE]%[') and '\\'..v or v)
         if not c then

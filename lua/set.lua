@@ -18,10 +18,11 @@ function cfg.show_cfg(name)
     if name and name~='-a' and name~='-A' then
         for k,v in pairs(cfg) do
             if type(v)=="table" and k==k:upper() and v.src and (k:find(name,1,true) or v.class and v.class:upper():find(name,1,true)) then
+                local mask=v.class:find('ansi') and k:find('COLOR$') and env.ansi.mask
                 table.insert(rows,{
                     k,
-                    v.class:find('ansi') and k:find('COLOR$') and env.ansi.mask(k,v.value) or string.from(v.value),
-                    v.class:find('ansi') and k:find('COLOR$') and env.ansi.mask(k,v.default) or string.from(v.default),
+                    mask and mask(k,v.value) or string.from(v.value),
+                    mask and mask(v.default,v.default) or string.from(v.default),
                     v.class,
                     v.range or '*',
                     v.desc})
@@ -33,8 +34,8 @@ function cfg.show_cfg(name)
             if type(v)=="table" and k==k:upper() and v.src and (name or (v.desc and not v.desc:find('^#'))) then
                 table.insert(rows,{
                     name and table.concat(v.abbr,', ') or k,
-                    v.class:find('ansi') and k:find('COLOR$') and env.ansi.mask(k,v.value) or #tostring(v.value)<=30 and tostring(v.value) or tostring(v.value):sub(1,27)..'...',
-                    v.class:find('ansi') and k:find('COLOR$') and env.ansi.mask(k,v.default) or #tostring(v.default)<=30 and tostring(v.default) or tostring(v.default):sub(1,27)..'...',
+                    mask and mask(k,v.value) or #tostring(v.value)<=30 and tostring(v.value) or tostring(v.value):sub(1,27)..'...',
+                    mask and mask(v.default,v.default) or #tostring(v.default)<=30 and tostring(v.default) or tostring(v.default):sub(1,27)..'...',
                     v.class,v.range or '*',
                     v.desc})
                 if name then table.insert(rows[#rows],2,cfg[k].src) end

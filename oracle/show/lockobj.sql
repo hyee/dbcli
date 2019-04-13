@@ -1,4 +1,4 @@
-/*[[Show locked objects in gv$locked_object
+/*[[Show locked objects in gv$locked_object whose lock_type.id1_tag LIKE 'object%'
    --[[
     @CHECK_ACCESS: dba_objects={dba_objects},all_objects={all_objects}
    --]]

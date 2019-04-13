@@ -9,6 +9,14 @@ Options:
     -filestat     : Show Tablespace and file stats instead of system global stats
     -im           : Only list the statistics relative to In-Memory
 
+Examples:
+     @@NAME  10           : takes 2 snapshots within 10 seconds and report the delta stats
+     @@NAME  10 . time    : takes 2 snapshots within 10 seconds and report the delta stats, as well as show the stats contain the word "time" 
+     @@NAME  10 1         : takes 2 snapshots within 10 seconds and report the delta stats in instance#1
+     @@NAME  10 1 -sec    : takes 2 snapshots within 10 seconds and report the delta stats in instance#1, of which the delta values are devided by 10
+     @@NAME  15+ -top -sec: compute and print the stats in TOP mode with 15 seconds interval, of which the delta values are devided by 15 (same to alias "top")
+     @@NAME  "select count(distinct column_name) from dba_Tab_cols" :  execute target SQL and compute the system delta stats
+
 [| grid:{topic="Output fields(When execute with '-sec' then most all values are based on per second)"}
  | Field Name       | Source View                  | Description / Delta Value                                                                                          |
  | #                | gv$*                         | 'inst_id' or '*' for all instances                                                                                 |

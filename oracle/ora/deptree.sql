@@ -33,7 +33,7 @@
        &SRT : T={'9'},L={1}
        &DST : T={},L={DISTINCT}
        @ARGS: 1
-       @CHECK_ACCESS: sys.obj$/sys.dependency$={1}
+       @CHECK_USER: "SYSDBA/SELECT ANY DICTIONARY"={}
     --]]
 ]]*/
 
@@ -69,18 +69,16 @@ DECLARE
         v_counter := v_counter + 1;
         IF NOT v_founds.exists(obj) AND obj IS NOT NULL THEN
             v_founds(obj) := 1;
-            --IF '&F2' !='p_obj#' THEN
-                SELECT /*+ordered index(dep1) use_nl(dep1 o2 o1)*/
-                       MAX(&F2) INTO v_bdy
-                FROM   sys.dependency$ dep1, sys.obj$ o2, sys.obj$ o1
-                WHERE  dep1.d_obj# = o2.obj#
-                AND    dep1.p_obj# = o1.obj#
-                AND    to_char(o2.name)  = to_char(o1.name)
-                AND    to_char(o2.owner#) = to_char(o1.owner#)
-                AND    to_char(o1.type#) IN ('9', '13')
-                AND    to_char(o2.type#) IN ('11', '14')
-                AND    dep1.&F1 = obj;
-            --END IF;
+            SELECT /*+ordered index(dep1) use_nl(dep1 o2 o1)*/
+                    MAX(&F2) INTO v_bdy
+            FROM   sys.dependency$ dep1, sys.obj$ o2, sys.obj$ o1
+            WHERE  dep1.d_obj# = o2.obj#
+            AND    dep1.p_obj# = o1.obj#
+            AND    to_char(o2.name)  = to_char(o1.name)
+            AND    to_char(o2.owner#) = to_char(o1.owner#)
+            AND    to_char(o1.type#) IN ('9', '13')
+            AND    to_char(o2.type#) IN ('11', '14')
+            AND    dep1.&F1 = obj;
 
             SELECT /*+index(dep)*/ &F1,1, to_number(null) con
             BULK   COLLECT INTO  v_list,v_lv,v_con

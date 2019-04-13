@@ -39,7 +39,7 @@ function scripter:rehash(script_dir,ext_name,extend_dirs)
     local abbrs={}
     
     local key_list=os.list_dir(dirs,ext_name or self.ext_name or "sql",nil,function(event,file)
-        if event=='ON_SCAN' then return 1024*1024 end
+        if event=='ON_SCAN' then return 128*1024 end
         if not file.data then return end
         local desc,annotation
         if type(self.comment)=="string" then

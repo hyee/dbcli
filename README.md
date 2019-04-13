@@ -222,11 +222,12 @@ To view the complete information:
 * run command `out` to launch the default editor to see the historical output. If the default editor is `vi`, execute `:set nowrap` and use hotkey `e/b/zL/zH` to horizontally scroll the screen.
 To change the default editor, use `set [-p] editor <executable name>`. For example, `set editor code`
 
-Color Solution
+Color Solutions
 -----------------------
-`dbcli` has defined some colors that used in different scenario. Those colors can be found BY `set color`.<br/>
+`dbcli` has defined some colors that used in different scenario, those colors can be found by `set color`.<br/>
 You are able to change the colors by executing `set [-p] <color name> <new code>`, of which the code can be referenced by command `ansi`, and `-p` means permanently.<br/>
-It's possible to turn of colors, which is done by executing `set ansicolor off` 
+For example, `set promptcolor BLU;BWHT;UDL` is to change the prompt color as `Blue Foreground + White Background + Underlined`, and `set promptcolor default` to change as default.<br/>
+It's possible to turn of using colors, which is done by executing `set ansicolor off` 
 
 Releases
 -----------------------
