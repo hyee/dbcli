@@ -71,10 +71,8 @@ function sqlplus:make_sqlpath()
     end)
     self.env['SQLPATH']=table.concat(path,env.IS_WINDOWS and ';' or ':')
     self.env['ORACLE_PATH']=self.env['SQLPATH']
-    self.env['TNS_ADMIN']=self.db.tns_admin
+    self.env['TNS_ADMIN']=self.db.temp_tns_admin or self.db.tns_admin
     self.env['NLS_LANG']=self.db.props and self.db.props.nls_lang or nil
-    env.uv.os.setenv("SQLPATH",self.env['SQLPATH'])
-    env.uv.os.setenv("ORACLE_PATH",self.env['ORACLE_PATH'])
 end
 
 function sqlplus:get_startup_cmd(args,is_native)

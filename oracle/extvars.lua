@@ -10,7 +10,7 @@ local fmt='%s(select /*+merge*/ * from %s where %s=%s :others:)%s'
 local fmt1='%s(select /*+merge*/  %d inst_id,a.* from %s a where 1=1 :others:)%s'
 local instance,container,usr,dbid,starttime,endtime
 local cdbmode='off'
-local cdbstr='^[CD][DB][BA]_HIST_'
+local cdbstr='^[CD][DB][BA]_'
 local noparallel='off'
 local gv1=('(%s)table%(%s*gv%$%(%s*cursor%('):case_insensitive_pattern()
 local gv2=('(%s)gv%$%(%s*cursor%('):case_insensitive_pattern()
@@ -37,7 +37,7 @@ local function rep_instance(prefix,full,obj,suffix)
             end
 
             if cdbmode~='off' and extvars.dict[obj] and obj:find(cdbstr)  then
-                local new_obj=obj:gsub('^DBA_HIST_',cdbmode=='cdb' and 'CDB_HIST_' or 'AWR_PDB_')
+                local new_obj=obj:gsub(cdbmode=='cdb' and '^DBA_' or '^DBA_HIST_',cdbmode=='cdb' and 'CDB_' or 'AWR_PDB_')
                 if extvars.dict[new_obj] and new_obj~=obj then
                     if not full:find(obj) then new_obj=new_obj:lower() end
                     if flag==0 then

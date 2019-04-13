@@ -71,10 +71,12 @@ function oracle:helper(cmd)
     })[cmd]
 end
 
+local tns_admin_param=('TNS_ADMIN=([^&]+)'):case_insensitive_pattern()
 function oracle:connect(conn_str)
     local args,usr,pwd,conn_desc,url,isdba,server,server_sep,proxy_user,params,_
     local sqlplustr
     local driver="thin"
+    local tns_admin
     if type(conn_str)=="table" then --from 'login' command
         args=conn_str
         server,proxy_user,sqlplustr=args.server,args.PROXY_USER_NAME,packer.unpack_str(args.oci_connection)
@@ -82,6 +84,7 @@ function oracle:connect(conn_str)
         args.password=pwd
         if url and url:find("?",1,true) then
             url,params=url:match('(.*)(%?.*)')
+            tns_admin=params:match(tns_admin_param)
         end
     else
         conn_str=conn_str or ""
@@ -89,6 +92,7 @@ function oracle:connect(conn_str)
         url, isdba=(conn_desc or conn_str):match('^(.*) as (%w+)$')
         if conn_desc and conn_desc:find("?",1,true) then
             conn_desc,params=conn_desc:match('(.*)(%?.*)')
+            tns_admin=params:match(tns_admin_param)
         end
         
         if conn_desc == nil or pwd=='' and isdba then
@@ -161,7 +165,7 @@ function oracle:connect(conn_str)
     self.working_db_link=nil
     self.conn,args=self.super.connect(self,args,data_source)
     self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
-    self.conn_str=sqlplustr
+    self.temp_tns_admin,self.conn_str=tns_admin,sqlplustr:gsub('%?.*','')
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     self.props={instance="#NUMBER",sid="#NUMBER",version="#NUMBER",dbid="#NUMBER"}
