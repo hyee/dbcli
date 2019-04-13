@@ -1,4 +1,32 @@
-/*[[Generate delta values based on gv$latch. Usage: @@NAME <options> {[keyword] [<inst_id>]}]]*/
+/*[[
+ Generate delta values based on gv$latch. Usage: @@NAME <options> {[keyword] [<inst_id>]}
+
+ Sample Output:
+ ==============
+ INST_ID       ADDR        NAME                                         *MS   *GETS   *MISSES *SLEEPS *IMMEDIATE_GETS *IMMEDIATE_MISSES *SPIN_GETS
+ ------- ---------------- -------------------------------------------- ----- -------- ------- ------- --------------- ----------------- ----------
+       3 0000000060058200 space background task latch                  70.22    75.00   72.00   70.00            4.00                 0       4.00
+       3 000000006005BEC0 Parent latch for dependency tracking             0     1.00       0       0               0                 0          0
+       3 000000006005BF80 sga hash table parent latch                      0     1.00       0       0               0                 0          0
+       3 0000000060043080 post/wait queue                                  0   377.00       0       0          548.00              8.00          0
+       3 000000006005BBC0 fourth Audit Vault latch                         0     1.00       0       0               0                 0          0
+       3 000000006005BA40 second Audit Vault latch                         0     1.00       0       0               0                 0          0
+       3 000000006005C640 global tx hash mapping                           0     1.00       0       0               0                 0          0
+       3 000000006005C7C0 k2q global data latch                            0     4.00       0       0               0                 0          0
+       3 000000006005C700 k2q lock allocation                              0     1.00       0       0               0                 0          0
+       3 000000006005C880 shared pool                                      0 2,000.00   12.00       0               0                 0      12.00
+       3 000000006005CA00 Token Manager                                    0     1.00       0       0               0                 0          0
+       3 000000006005A780 remote tool request latch                        0    25.00       0       0               0                 0          0
+       3 000000006005A480 KDFI Hash Elem Latch                             0     1.00       0       0               0                 0          0
+       3 0000000060059D00 KDMADO action list latch                         0     1.00       0       0               0                 0          0
+       3 0000000060059C40 KDMADO bll latch                                 0     1.00       0       0               0                 0          0
+       3 0000000060059B80 KDMADO latch                                     0     1.00       0       0               0                 0          0
+       3 00000000601047C8 row cache objects                                0     1.00       0       0               0                 0          0
+       3 0000000060059F40 KDCStatHash latch                                0     1.00       0       0               0                 0          0
+       3 000000006005A300 KDFI Buffer Latch                                0     1.00       0       0               0                 0          0
+       3 000000006005A000 Column stats entry latch                         0     1.00       0       0               0                 0          0
+
+]]*/
 {
     sql=[[
         SELECT inst_id,

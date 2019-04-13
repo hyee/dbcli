@@ -511,7 +511,6 @@ end
 
 function db_core:parse(sql,params,prefix,prep)
     local bind_info,binds,counter={},{},0
-
     local temp={}
     for k,v in pairs(params) do
         temp[type(k)=="string" and k:upper() or k]={k,v}
@@ -555,7 +554,6 @@ function db_core:parse(sql,params,prefix,prep)
             bind_info[#bind_info+1]=args
             return '?'
         end)
-
     if not prep then prep=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007) end
 
     self:check_params(sql,prep,bind_info,params)
@@ -731,6 +729,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         self.__stmts[#self.__stmts+1]=prep
         prep:setFetchSize(1)
         prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
+        pcall(prep.closeOnCompletion,prep)
         self.current_stmt=prep
         env.log_debug("db","SQL:",sql)
         self.log_param(params)

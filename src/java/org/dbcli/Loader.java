@@ -554,13 +554,16 @@ public class Loader {
                 if (sleeper != null) {
                     sleeper.cancel(true);
                 }
+
+                if (rs != null && !rs.isClosed()) {
+                    ResultSetHelperService.abort();
+                    rs.getStatement().close();
+                    rs.close();
+                }
+
                 if (console.isRunning() && stmt != null && !stmt.isClosed()) {
                     stmt.cancel();
                     stmt = null;
-                }
-                if (rs != null && !rs.isClosed()) {
-                    rs.getStatement().close();
-                    rs.close();
                 }
             } catch (Exception err) {
                 //getRootCause(err).printStackTrace();

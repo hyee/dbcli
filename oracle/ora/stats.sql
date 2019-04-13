@@ -1,7 +1,7 @@
 /*[[
 Get preferences and stats of the target object. Usage: @@NAME {[owner] | [owner.]<object_name>[.partition_name]} [-advise]
 
--advise: execute SQL Statistics Advisor on the target table
+-advise: execute SQL Statistics Advisor on the target table, refer to v$stats_advisor_rules
 
 Sameple Output:
 ===============

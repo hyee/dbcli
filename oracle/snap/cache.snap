@@ -1,0 +1,68 @@
+/*[[
+    Generate delta values based on gv$rowcache/gv$librarycache. Usage: @@NAME <options> {[keyword] [<inst_id>]}
+
+    Sample Output:
+    ==============
+    [snap#cache]: From 2019-04-13 23:43:15 to 2019-04-13 23:43:20:                                                                              
+    +-------------------------------------------------------------Library Cache--------------------------------------------------------------+  
+    |INST_ID    NAMESPACE     GETS GETMISSES  PINS PINMISSES RELOADS INVALID DLM_LOCK_REQ DLM_PIN_REQ DLM_PIN_RLS DLM_INVALID_REQ DLM_INVALID|  
+    |------- --------------- ----- --------- ----- --------- ------- ------- ------------ ----------- ----------- --------------- -----------|  
+    |      3 SQL AREA        25.00         0 60.00         0       0       0            0           0           0               0           0|  
+    |      3 TABLE/PROCEDURE     0         0 28.00         0       0       0        25.00       28.00       28.00               0           0|  
+    |      3 BODY                0         0  3.00         0       0       0            0        3.00        3.00               0           0|  
+    +----------------------------------------------------------------------------------------------------------------------------------------+  
+    +---------------------------------------------------------------Row Cache----------------------------------------------------------------+  
+    |INST_ID   PARAMETER     GETS  FASTGETS GETMISSES SCANS SCANMISSES SCANDONE COUNT USAGE MDFS FLUSHES DLM_LREQ DLM_CONFLICTS DLM_RLS      |  
+    |------- -------------- ------ -------- --------- ----- ---------- -------- ----- ----- ---- ------- -------- ------------- -------      |  
+    |      3 dc_users       105.00    14.00         0     0          0        0     0     0    0       0        0             0       0      |  
+    |      3 dc_objects      50.00        0         0     0          0        0     0     0    0       0        0             0       0      |  
+    |      3 dc_props         6.00        0         0     0          0        0     0     0    0       0        0             0       0      |  
+    |      3 dc_tablespaces      0    14.00         0     0          0        0     0     0    0       0        0             0       0      |  
+    +----------------------------------------------------------------------------------------------------------------------------------------+  
+
+]]*/
+{
+    sql={
+        [[grid:{topic="Library Cache",max_rows=10,order_by="-pins"}
+        SELECT inst_id,
+               NAMESPACE,
+               GETS,
+               GETS-GETHITS GETMISSES,
+               PINS,
+               PINS-PINHITS PINMISSES,
+               RELOADS,
+               INVALIDATIONS INVALID,
+               DLM_LOCK_REQUESTS DLM_LOCK_REQ,DLM_PIN_REQUESTS DLM_PIN_REQ,DLM_PIN_RELEASES DLM_PIN_RLS,DLM_INVALIDATION_REQUESTS DLM_INVALID_REQ,DLM_INVALIDATIONS DLM_INVALID
+        FROM   gv$librarycache
+        WHERE  (GETS+PINS+RELOADS+INVALIDATIONS+DLM_LOCK_REQUESTS>0 or :V1 is not null)
+        AND    (:V1 is null or lower(NAMESPACE) like lower('%&V1%'))
+        AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0') 
+        ]],
+        '-',
+        [[grid:{topic="Row Cache",order_by="-gets"}
+        SELECT inst_id,
+               PARAMETER||nvl2(SUBORDINATE#,'(S#'||SUBORDINATE#||')','') PARAMETER,
+               GETS,
+               FASTGETS,
+               GETMISSES,
+               SCANS,
+               SCANMISSES,
+               SCANCOMPLETES SCANDONE,
+               COUNT,
+               USAGE,
+               MODIFICATIONS MDFS,
+               FLUSHES,
+               DLM_REQUESTS DLM_LREQ,DLM_CONFLICTS,DLM_RELEASES DLM_RLS
+        FROM   gv$rowcache
+        WHERE  (GETS+SCANS+COUNT+FLUSHES+DLM_REQUESTS>0 or :V1 is not null)
+        AND    (:V1 is null or lower(PARAMETER) like lower('%&V1%'))
+        AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0') 
+        ]]
+    },
+    delta_by="GETS,FASTGETS,GETMISSES,PINS,PINMISSES,RELOADS,INVALID,DLM_LOCK_REQ,DLM_PIN_REQ,DLM_PIN_RLS,DLM_INVALID_REQ,DLM_INVALID,SCANS,SCANMISSES,SCANDONE,COUNT,USAGE,MDFS,FLUSHES,DLM_LREQ,DLM_CONFLICTS,DLM_RLS",
+    set_ratio='off',
+    fixed_title='on',
+    bypassemptyrs=true,
+    group_by="inst_id,NAMESPACE,PARAMETER",
+    top_by="NAMESPACE,PARAMETER"
+}

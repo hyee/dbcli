@@ -1,3 +1,4 @@
+2019-04-13: + oracle: new command 'snap cache'
 2019-04-12: + oracle: new option 'set cdbmode [off|cdb|pdb]' to auto replace all SQL Texts from "DBA_HIST_" AS "CDB_HIST_"/"AWR_PDB_" 
 2019-04-10: + oracle: new command 'dict [init]' to show/create separate offline db dictionary for aut-completion purpose  
 2019-04-09: * oracle: auto-set instance when taget db is ADB(ADW/ATP)
