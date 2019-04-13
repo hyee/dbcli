@@ -499,7 +499,7 @@ local ignore_errors={
 }
 
 function oracle:handle_error(info)
-    if not self.conn:isValid(3) then env.set_title("") end
+    if not self.conn or not self.conn:isValid(3) then env.set_title("") end
     if is_executing then
         info.sql=nil
         return
@@ -512,6 +512,7 @@ function oracle:handle_error(info)
                 info.error=v
             else
                 info.error=info.error:match('^([^\n\r]+)')
+                self:disconnect(false)
             end
             return info
         end

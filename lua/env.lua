@@ -559,7 +559,6 @@ local multi_cmd
 local cache_prompt,fix_prompt
 
 local prompt_stack={_base="SQL"}
-
 function env.set_prompt(class,default,is_default,level)
     if default then
         if not env._SUBSYSTEM  then default=default:upper() end
@@ -1222,7 +1221,7 @@ function env.set_space(name,value)
 end
 
 local org_title
-env.unknown_list={}
+env.unknown_modules={}
 function env.set_title(title,value)
     local titles,status,sep,enabled="",{},"    "
     if not org_title then org_title=uv.get_process_title() end
@@ -1241,16 +1240,20 @@ function env.set_title(title,value)
         
         if not env.module_list then return end
 
-        if not env.module_list[callee] then env.unknown_list[callee]=title end
+        if not env.module_list[callee] then env.unknown_modules[callee]=title end
         for _,k in ipairs(env.module_list) do
+            if env.unknown_modules[k] then 
+                title_list[k],env.unknown_modules[k]=env.unknown_modules[k]
+            end
+
             if (title_list[k] or "")~="" then
                 if titles~="" then titles=titles.."    " end
                 titles=titles..title_list[k]
-                env.unknown_list[k]=nil
+                env.unknown_modules[k]=nil
             end
         end
 
-        for k,_ in pairs(env.unknown_list) do
+        for k,_ in pairs(env.unknown_modules) do
             if (title_list[k] or "")~="" then
                 if titles~="" then titles=titles.."    " end
                 titles=titles..title_list[k]
@@ -1268,6 +1271,7 @@ function env.set_title(title,value)
         end
     else
         titles=org_title
+        title_list={}
     end
 
     if CURRENT_TITLE~=titles or enabled then

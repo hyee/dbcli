@@ -1302,11 +1302,11 @@ function db_core:merge_props(src,target)
 end
 
 function db_core:disconnect(feed)
-    if self:is_connect(true) then
+    if self.conn then
         loader:closeWithoutWait(self.conn)
-        event("ON_DB_DISCONNECTED",self)
         self.conn=nil
         env.set_prompt(nil,nil,nil,2)
+        event("ON_DB_DISCONNECTED",self)
         if feed~=false then print("Database disconnected.") end
     end
 end
