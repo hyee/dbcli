@@ -109,7 +109,7 @@ function helper.helper(cmd,...)
         helps=helps:gsub('^%s*\n',''):gsub('\t','    '):gsub('^(%s*[^\n\r]+)[Uu]sage[: ]+(@@NAME)([^\r\n]*)',function(prefix,name,line)
             local s=prefix..'\n'..string.rep('=',#(prefix:trim())+#target+2)..'\n$USAGECOLOR$Usage:$COMMANDCOLOR$ '..name..'$NOR$'
             return s..line:gsub('([<>{}%[%]|]+)','$COMMANDCOLOR$%1$NOR$'):gsub('(%-%w+)','$PROMPTSUBCOLOR$%1$NOR$')
-        end):gsub('\n *([%w ]*[eE]xamples?)%s*: *','\n$USAGECOLOR$%1:$NOR$ ')
+        end)
         local spaces=helps:match("( *)%S") or ""
         helps='\n'..spaces..'$USAGECOLOR$'..target:upper()..':$NOR$ '..helps:sub(#spaces+1)
         helps=helps:gsub("\r?\n"..spaces,"\n"):gsub("%s+$",""):gsub("@@NAME",target:lower())
@@ -147,10 +147,21 @@ function helper.helper(cmd,...)
             return space..table.concat(grid.merge({tab}),'\n'..space)
         end)
 
+        local keys={
+            ('Example'):case_insensitive_pattern(),
+            ('Option'):case_insensitive_pattern(),
+            ('Parameter'):case_insensitive_pattern(),
+            ('Output'):case_insensitive_pattern()
+        }
+        local fmt='%s%s%s$NOR$%s'
         helps=helps:gsub('(\n[^%S\n\r]*)([%-<]?[ %w#%-<_]+>?)( *:)',function(prefix,s,comma)
             local s1,c=s:trim():gsub(' ','')
             if c>1 then return prefix..s..comma end
-            return prefix..(s:find('-',1,true)==1 and '$PROMPTSUBCOLOR$' or '$COMMANDCOLOR$')..s..'$NOR$'..comma
+            c=0
+            for _,k in ipairs(keys) do
+                if s:match('.*'..k..'[sS]?') then return fmt:format(prefix,'$USAGECOLOR$',s,comma) end
+            end
+            return fmt:format(prefix,(s:find('-',1,true)==1 and '$PROMPTSUBCOLOR$' or '$COMMANDCOLOR$'),s,comma)
         end)
         return print(helps:rtrim()..'\n')
     elseif cmd=="-e" or cmd=="-E" then

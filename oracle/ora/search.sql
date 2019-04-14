@@ -1,5 +1,7 @@
 /*[[Fuzzily search objects with object_id/keyword. Usage: @@NAME [object_id|data_object_id|keyword] 
+
 Sample Output:
+==============
 ORCL> ora search v%$%lock%view
     OWNER OBJECT_NAME                                                   SUBOBJECT_NAME OBJECT_ID DATA_OBJECT OBJECT_TYPE       CREATED            LAST_DDL       STATUS TEMPORARY
     ----- ------------------------------------------------------------- -------------- --------- ----------- ----------- ------------------- ------------------- ------ ---------

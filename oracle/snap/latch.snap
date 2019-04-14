@@ -1,5 +1,5 @@
 /*[[
- Generate delta values based on gv$latch. Usage: @@NAME <options> {[keyword] [<inst_id>]}
+ Generate delta values based on gv$latch_parent. Usage: @@NAME <options> {[keyword] [<inst_id>]}
 
  Sample Output:
  ==============
@@ -39,7 +39,7 @@
                IMMEDIATE_GETS,
                IMMEDIATE_MISSES,
                SPIN_GETS
-        FROM   gv$latch
+        FROM   gv$latch_parent
         WHERE  (GETS+IMMEDIATE_GETS+MISSES+IMMEDIATE_MISSES+SLEEPS+SPIN_GETS>0 or :V1 is not null)
         AND    (:V1 is null or lower(NAME) like lower('%&V1%'))
         AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0') 

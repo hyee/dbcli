@@ -37,8 +37,8 @@ local function rep_instance(prefix,full,obj,suffix)
             end
 
             if cdbmode~='off' and extvars.dict[obj] and obj:find(cdbstr)  then
-                local new_obj=obj:gsub(cdbmode=='cdb' and '^DBA_' or '^DBA_HIST_',cdbmode=='cdb' and 'CDB_' or 'AWR_PDB_')
-                if extvars.dict[new_obj] and new_obj~=obj then
+                local new_obj=obj:gsub(cdbmode=='cdb' and '^DBA_' or '^[CD][DB][BA]_HIST_',cdbmode=='cdb' and 'CDB_' or 'AWR_PDB_')
+                if new_obj~=obj and extvars.dict[new_obj] then
                     if not full:find(obj) then new_obj=new_obj:lower() end
                     if flag==0 then
                         full=full:gsub(obj:escape('*i'),new_obj)

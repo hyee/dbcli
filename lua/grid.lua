@@ -554,7 +554,7 @@ function grid:wellform(col_del, row_del)
         siz = v[3] and #v[3] or v[1]
         local del = (v[3] or (colsize[k+1] or {})[3]) and "" or (colsize[k+1] or {})[1]==0 and "" or " "
         seps[k]=v[3]
-        if siz==0 and (colsize[k-1] or {})[3] then del='' end
+        if siz==0 and ((colsize[k-1] or {})[3] or k==1) then del='' end
         if (del~="" and pivot == 0) or (pivot ~= 0 and k ~= 1 + indx and (pivot ~= 1 or k ~= 3 + indx)) then 
             del = col_del
         end
@@ -586,7 +586,7 @@ function grid:wellform(col_del, row_del)
         end
         max_siz = max_siz < siz and siz or max_siz
     end
-    
+
     linesize = self.linesize
 
     if linesize <= 10 then linesize = getWidth(console) end

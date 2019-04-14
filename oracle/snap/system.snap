@@ -327,7 +327,7 @@ Examples:
                                     IMMEDIATE_GETS IMGETS,
                                     IMMEDIATE_MISSES IMMISSES,
                                     SPIN_GETS SPINS
-                            FROM   gv$latch
+                            FROM   gv$latch_parent
                             WHERE  (GETS+IMMEDIATE_GETS+MISSES+IMMEDIATE_MISSES+SLEEPS+SPIN_GETS>0)
                             AND    &inst_filter
                         ) GROUP BY inst,name]]},
