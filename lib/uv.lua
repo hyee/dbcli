@@ -142,6 +142,7 @@ function os.list_dir(path,ext,depth,read_func,filter,is_skip_binary)
     else
         dirs[1]={path,1}
     end
+
     local function set_text(index,status,text)
         if status then
             io.write('Error on reading '..filenames[index].fullname..': '..status..'\n')

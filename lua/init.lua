@@ -168,6 +168,10 @@ function init.load_modules(list,tab,module_name)
     --load plugin infomation
     if type(plugins[module_name])=='table' then
         for k,v in ipairs(plugins[module_name]) do
+            if not v:match('[\\/]') then 
+                v=module_name..'/'..v 
+                plugins[module_name][k]=v
+            end
             list[#list+1]=v
         end
     end
@@ -208,6 +212,7 @@ end
 function init.onload(env)
     env.module_list={(env.join_path('lua/env'))}
     plugins={}
+    
     local file=env.join_path(env.WORK_DIR,'data','plugin.cfg')
     local f=io.open(file,"a")
     if f then f:close() end
@@ -223,6 +228,7 @@ function init.onload(env)
             plugins=config
         end
     end
+    env.plugins=plugins
 
     init.load_modules(init.module_list,env)
     init.load_database()

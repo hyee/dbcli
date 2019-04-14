@@ -75,7 +75,7 @@ local tns_admin_param=('TNS_ADMIN=([^&]+)'):case_insensitive_pattern()
 function oracle:connect(conn_str)
     local args,usr,pwd,conn_desc,url,isdba,server,server_sep,proxy_user,params,_
     local sqlplustr
-    local driver="thin"
+    local driver=env.set.get('driver')
     local tns_admin
     if type(conn_str)=="table" then --from 'login' command
         args=conn_str
@@ -141,6 +141,7 @@ function oracle:connect(conn_str)
     end
 
     args=args or {user=usr,password=pwd,url="jdbc:oracle:"..driver..":@"..url..(params or ''),internal_logon=isdba}
+    env.checkerr(not args.url:find('oci.?:@') or home,"Cannot connect with oci driver with speicifying the ORACLE_HOME environment.")
     self:merge_props(self.public_props,args)
     self:load_config(url,args)
 
@@ -553,26 +554,9 @@ function oracle:set_session(cmd,args)
     return args
 end
 
-function oracle:set_db_link(name,value)
-    if not value or value:lower()=="off" or value=="" then
-        env.set_title(self.session_title)
-        self.working_db_link=nil
-        return ""
-    else
-        value=value:upper()
-        local args={"#INTEGER"}
-        local stmt=[[
-        BEGIN
-           execute immediate 'select * from dual@link';
-           :1 := 1;
-        EXCEPTION WHEN OTHERS THEN
-           :1 := 0;
-        END;]]
-        self:internal_call(stmt:gsub("link",value),args)
-        env.checkerr(args[1]==1,'Database link does not exists',string,fmt)
-        self.working_db_link=value
-        env.set_title(self.session_title.."   DB-LINK: "..value)
-    end
+function oracle:set_driver(name,value)
+    env.checkerr(value=='thin' or home,'Cannot change JDBC driver as '..value..' without specifying the ORACLE_HOME environment.')
+    return value
 end
 
 function oracle:onload()
@@ -606,6 +590,7 @@ function oracle:onload()
     --cfg.init("dblink","",self.set_db_link,"oracle","Define the db link to run all SQLs in target db",nil,self)
     env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)
     env.set.inject_cfg({"transaction","role","constraint","constraints"},self.set_session,self)
+    env.set.init('driver','thin',self.set_driver,'oracle','Controls the default Oracle JDBC driver that used for the "connect" command','thin,oci,oci8',self)
     self.public_props={
          driverClassName="oracle.jdbc.driver.OracleDriver",
          defaultRowPrefetch=tostring(cfg.get("FETCHSIZE")),
@@ -646,6 +631,12 @@ function oracle:get_library()
             if os.exists(jar) then 
                 files[#files+1]=jar
                 break
+            else 
+                jar=env.join_path(home..'/ojdbc'..i..'.jar')
+                if os.exists(jar) then
+                    files[#files+1]=jar
+                    break
+                end
             end
         end
         if #files>0 then
