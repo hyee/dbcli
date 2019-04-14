@@ -14,6 +14,7 @@
 \ConsoleTest\
 \emviewers\
 \RWP\
+rwp.lua
 \jre_linux\
 \jre_mac\
 \temp\

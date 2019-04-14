@@ -267,9 +267,11 @@ function oracle:connect(conn_str)
     props.isdba=props.isdba=='TRUE' and true or false
     props.israc=props.israc=='TRUE' and true or false
     props.isadb=props.isadb=='TRUE' and true or false
+    
     if not succ then
-        --env.log_debug('DB',err)
-        self.props={db_version='9.1',version=9,privs={},db_user=self.conn:getUserName()}
+        env.log_debug('DB',err)
+        self.props={db_version=self.conn:getDatabaseProductVersion():match('%d+%.%d+%.[%d%.]+'),
+                    version=self.conn:getVersionNumber(),privs={},db_user=self.conn:getUserName()}
         if self.properties['AUTH_DBNAME'] then
             props.service_name=self.properties['AUTH_DBNAME']
             if (self.properties['AUTH_SC_DB_DOMAIN'] or '')~='' then
@@ -277,11 +279,6 @@ function oracle:connect(conn_str)
             end
         end
 
-        if self.properties['AUTH_VERSION_SQL'] then
-            props.version=tonumber(self.properties['AUTH_VERSION_SQL'])/2
-            props.db_version=(tonumber(self.properties['AUTH_VERSION_SQL'])/2)..'.1'
-        end
-        
         for k,v in pairs(props) do
             if type(v)~='string' or not v:find('^#') then
                 self.props[k]=v

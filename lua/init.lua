@@ -41,7 +41,7 @@ local init={
         "lua/ilua",
         "lua/testprocess"}
 }
-
+local plugins={}
 init.databases={oracle="oracle/oracle",mssql="mssql/mssql",db2="db2/db2",mysql="mysql/mysql",pgsql='pgsql/pgsql'}
 local default_database=env.CURRENT_DB or 'oracle'
 
@@ -148,13 +148,14 @@ function init.load_database()
     env[name].ROOT_PATH,env[name].SHORT_PATH=dir,short_dir
     env.getdb=function() return env[name] end
     if env[name].module_list then
+        local pattern='^'..name..'[\\/]'
         local list={}
         for k,v in ipairs(env[name].module_list) do
-            list[k]=v:find('^'..env.join_path(short_dir)) and v or (short_dir..v)
+            list[k]=v:find(pattern) and v or (short_dir..v)
             --init.module_list[#init.module_list+1]=list[k]
         end
         env[name].C={}
-        init.load_modules(list,env[name].C)
+        init.load_modules(list,env[name].C,name)
     end
 end
 
@@ -165,23 +166,14 @@ function init.load_modules(list,tab,module_name)
     if not module_name then module_name=env.callee():match("([^\\/]+)") end
 
     --load plugin infomation
-    local file=env.join_path(env.WORK_DIR,'data','plugin.cfg')
-    local f=io.open(file,"a")
-    if f then f:close() end
-    local config,err=env.loadfile(file)
-    if not config then
-        io.write('Error on reading data/plugin.cfg: '..err..'\n')
-    else
-        err,config=pcall(config)
-        if not err then io.write('Error on reading data/plugin.cfg: '..config..'\n') end
+    if type(plugins[module_name])=='table' then
+        for k,v in ipairs(plugins[module_name]) do
+            list[#list+1]=v
+        end
     end
-    config=type(config)=="table" and config[module_name] or {}
-
-    for i=#list,1,-1 do
-        table.insert(config,1,list[i])
-    end
+   
     local load_list={}
-    for _,v in ipairs(config) do
+    for _,v in ipairs(list) do
         v=env.join_path(v)
         n=v:match("([^\\/]+)$")
         if not v:lower():match('%.lua') then
@@ -215,6 +207,23 @@ end
 
 function init.onload(env)
     env.module_list={(env.join_path('lua/env'))}
+    plugins={}
+    local file=env.join_path(env.WORK_DIR,'data','plugin.cfg')
+    local f=io.open(file,"a")
+    if f then f:close() end
+    
+    local config,err=env.loadfile(file)
+    if not config then
+        io.write('Error on reading data/plugin.cfg: '..err..'\n')
+    else
+        err,config=pcall(config)
+        if not err then 
+            io.write('Error on reading data/plugin.cfg: '..config..'\n')
+        elseif type(config)=='table' then
+            plugins=config
+        end
+    end
+
     init.load_modules(init.module_list,env)
     init.load_database()
     if env.set then env.set.init({"platform","database"},env.CURRENT_DB,init.set_database,'core','Define current database type',table.concat(init.db_list(),',')) end
