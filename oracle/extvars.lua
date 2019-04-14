@@ -80,10 +80,10 @@ function extvars.on_before_db_exec(item)
     end
 
     if not extvars.dict then return item end
-    local db,sql,args,params=table.unpack(item)
+    local _,sql,args,params=table.unpack(item)
 
     if sql and not cache[sql] then
-        if db.props and type(db.props.version)=='number' and (db.props.israc==false or db.props.version<11) and not sql:find('^'..(env.ROOT_CMD:escape())) then
+        if type(db.props.version)=='number' and (db.props.israc==false or db.props.version<11) and not sql:find('^'..(env.ROOT_CMD:escape())) then
             sql=sql:gsub(gv1,'%1((('):gsub(gv2,"%1((")
         end
         item[2]=re.gsub(sql..' ',extvars.P,rep_instance):sub(1,-2)
@@ -164,7 +164,7 @@ end
 local prev_container={}
 function extvars.set_cdbmode(name,value)
     if value~='off' then db:assert_connect() end
-    if not db.props then return end
+    if not db.props.version then return end
     if cdbmode==value then return value end
     env.checkerr(value=='off' or db.props.version>11, "Unsupported database: v"..db.props.db_version)
     if value=='pdb' then
@@ -187,7 +187,7 @@ function extvars.set_cdbmode(name,value)
 end
 
 function extvars.on_after_db_conn()
-    if db.props and db.props.isadb==true and db.props.israc==false then
+    if db.props.isadb==true and db.props.israc==false then
         cfg.force_set('instance', db.props.instance)
     else
         cfg.force_set('instance','default')
@@ -201,7 +201,7 @@ function extvars.on_after_db_conn()
     noparallel='off'
     cfg.force_set('noparallel','off')
 
-    if db.props then
+    if db.props.version then
         extvars.db_dict_path=env._CACHE_BASE..'dict_'..(db.props.dbname or 'db'):gsub("%..*$",""):gsub('%W+','-'):lower()..'_'..(db.props.dbid or 0)..'.dat'
     else
         extvars.db_dict_path=datapath

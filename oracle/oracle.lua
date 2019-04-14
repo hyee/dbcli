@@ -163,18 +163,25 @@ function oracle:connect(conn_str)
     env.set_title("")
     local data_source=java.new('oracle.jdbc.pool.OracleDataSource')
     self.working_db_link=nil
+    self.props={privs={}}
     self.conn,args=self.super.connect(self,args,data_source)
     self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
     self.temp_tns_admin,self.conn_str=tns_admin,sqlplustr:gsub('%?.*','')
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    self.props={instance="#NUMBER",sid="#NUMBER",version="#NUMBER",dbid="#NUMBER"}
-    for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container','israc','privs','isadb','dbname'} do 
-        self.props[v]="#VARCHAR" 
+    local props={host=self.properties['AUTH_SC_SERVER_HOST'],
+                 instance_name=self.properties['AUTH_INSTANCENAME'],
+                 instance=tonumber(self.properties['AUTH_INSTANCE_NO']),
+                 sid=tonumber(self.properties['AUTH_SESSION_ID']),
+                 dbname=self.properties['DATABASE_NAME'],
+                 dbid="#NUMBER",
+                 version="#NUMBER"}
+    for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container','israc','privs','isadb'} do 
+        props[v]="#VARCHAR" 
     end
 
     local succ,err=pcall(self.exec,self,[[
-        DECLARE
+        DECLARE /*INTERNAL_DBCLI_CMD*/
             vs      PLS_INTEGER  := dbms_db_version.version;
             ver     PLS_INTEGER  := sign(vs-9);
             re      PLS_INTEGER  := dbms_db_version.release;
@@ -187,9 +194,7 @@ function oracle:connect(conn_str)
             intval  NUMBER;
             strval  VARCHAR2(300);
         BEGIN
-            EXECUTE IMMEDIATE 'alter session set nls_date_format=''yyyy-mm-dd hh24:mi:ss''';
-            EXECUTE IMMEDIATE 'alter session set nls_timestamp_format=''yyyy-mm-dd hh24:mi:ssxff''';
-            EXECUTE IMMEDIATE 'alter session set nls_timestamp_tz_format=''yyyy-mm-dd hh24:mi:ssxff TZH:TZM''';
+            EXECUTE IMMEDIATE q'[alter session set nls_date_format='yyyy-mm-dd hh24:mi:ss' nls_timestamp_format='yyyy-mm-dd hh24:mi:ssxff' nls_timestamp_tz_format='yyyy-mm-dd hh24:mi:ssxff TZH:TZM']';
             BEGIN
                 EXECUTE IMMEDIATE 'alter session set statistics_level=all';
                 EXECUTE IMMEDIATE 'alter session set "_query_execution_cache_max_size"=8388608';
@@ -198,8 +203,7 @@ function oracle:connect(conn_str)
 
             $IF dbms_db_version.version > 12 $THEN
                 BEGIN --Used on ADW/ATP
-                    EXECUTE IMMEDIATE 'alter session set optimizer_ignore_hints=false';
-                    EXECUTE IMMEDIATE 'alter session set optimizer_ignore_parallel_hints=false';
+                    EXECUTE IMMEDIATE 'alter session set optimizer_ignore_hints=false optimizer_ignore_parallel_hints=false';
                     IF sys_context('userenv', 'con_name') != 'CDB$ROOT' THEN
                         SELECT COUNT(1)
                         INTO   isADB
@@ -234,14 +238,6 @@ function oracle:connect(conn_str)
                    (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_RDBMS_VERSION') version,
                    (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_LANGUAGE') || '_' ||
                    (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_TERRITORY') || '.' || value nls,
-            $IF dbms_db_version.version > 9 $THEN      
-                   userenv('sid') ssid,
-                   userenv('instance') inst,
-            $ELSE
-                   (select sid from v$mystat where rownum<2) ssid,
-                   (select instance_number from v$instance where rownum<2) inst,
-            $END
-
             $IF dbms_db_version.version > 11 $THEN
                    sys_context('userenv', 'con_name') con_name,
                    sys_context('userenv','dbid') dbid,
@@ -250,11 +246,10 @@ function oracle:connect(conn_str)
                    did dbid,
             $END   
                    sys_context('userenv', 'isdba') isdba,
-                   sys_context('userenv', 'db_unique_name') dbname,
                    nvl(sv,sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.')) service_name,
                    decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY',' ','PHYSICAL STANDBY',' (Standby)>')) END,
                    decode((select count(distinct inst_id) from gv$version),1,'FALSE','TRUE'),vs,decode(isADB,0,'FALSE','TRUE')
-            INTO   :db_user,:db_version, :nls_lang, :sid, :instance, :container, :dbid, :isdba, :dbname, :service_name,:db_role, :israc,:version,:isadb
+            INTO   :db_user,:db_version, :nls_lang, :container, :dbid, :isdba, :service_name,:db_role, :israc,:version,:isadb
             FROM   nls_Database_Parameters
             WHERE  parameter = 'NLS_CHARACTERSET';
             
@@ -266,40 +261,62 @@ function oracle:connect(conn_str)
                     :db_role := trim(:db_role);
                 END IF;
             EXCEPTION WHEN OTHERS THEN NULL;END;
-        END;]],self.props)
+        END;]],props)
     
+    props.dbid=props.dbid or tonumber(self.properties['AUTH_DB_ID']) or 0
+    props.isdba=props.isdba=='TRUE' and true or false
+    props.israc=props.israc=='TRUE' and true or false
+    props.isadb=props.isadb=='TRUE' and true or false
     if not succ then
-        env.log_debug('DB',err)
-        self.props={instance=1,db_version='9.1',version=9,isdba=false,israc=false,isadb=false,dbid=32767}
+        --env.log_debug('DB',err)
+        self.props={db_version='9.1',version=9,privs={},db_user=self.conn:getUserName()}
+        if self.properties['AUTH_DBNAME'] then
+            props.service_name=self.properties['AUTH_DBNAME']
+            if (self.properties['AUTH_SC_DB_DOMAIN'] or '')~='' then
+                props.service_name=props.service_name..'.'..self.properties['AUTH_SC_DB_DOMAIN']
+            end
+        end
+
+        if self.properties['AUTH_VERSION_SQL'] then
+            props.version=tonumber(self.properties['AUTH_VERSION_SQL'])/2
+            props.db_version=(tonumber(self.properties['AUTH_VERSION_SQL'])/2)..'.1'
+        end
+        
+        for k,v in pairs(props) do
+            if type(v)~='string' or not v:find('^#') then
+                self.props[k]=v
+            end
+        end
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
     else
-        self.props.isdba=self.props.isdba=='TRUE' and true or false
-        self.props.israc=self.props.israc=='TRUE' and true or false
-        self.props.isadb=self.props.isadb=='TRUE' and true or false
-        self.props.dbid =self.props.dbid or 0
+        self.props=props
         local privs={}
-        for _,priv in pairs(self.props.privs:split("/")) do
+        for _,priv in pairs(props.privs:split("/")) do
             if priv~="" then privs[priv]=true end
         end
         privs[self.props.db_user]=true
         self.props.privs=privs
-        if prompt=="" or not prompt or prompt:find('[:/%(%)]') then prompt=self.props.service_name end
-        prompt=prompt:match('([^%.]+)')
+        
         self.conn_str=self.conn_str:gsub('(:%d+)([:/]+)([%w%.$#]+)',function(port,sep,sid)
             if sep==':' or sep=='//' then
                 return port..'/'..self.props.service_name..'/'..sid
             end
             return port..sep..sid
         end,1)
+        
+        env.uv.os.setenv("NLS_LANG",self.props.nls_lang)
+    end
+    if self.props.service_name then
+        if prompt=="" or not prompt or prompt:find('[:/%(%)]') then prompt=self.props.service_name end
+        prompt=prompt:match('([^%.]+)')
         env._CACHE_PATH=env.join_path(env._CACHE_BASE,prompt:lower():trim(),'')
         loader:mkdir(env._CACHE_PATH)
         prompt=('%s%s'):format(prompt:upper(),self.props.db_role or '')
         env.set_prompt(nil,prompt,nil,2)
-        self.session_title=('%s@%s   Instance: %s   SID: %s   Version: Oracle(%s)')
-            :format(self.props.db_user,prompt,self.props.instance,self.props.sid,self.props.db_version)
-        env.set_title(self.session_title)
-        env.uv.os.setenv("NLS_LANG",self.props.nls_lang)
     end
+    self.session_title=('%s@%s   Instance: %s   SID: %s   Version: Oracle(%s)')
+            :format(self.props.db_user,prompt,self.props.instance,self.props.sid,self.props.db_version)
+    env.set_title(self.session_title)
     for k,v in pairs(self.props) do args[k]=v end
     args.oci_connection=packer.pack_str(self.conn_str)
     if not packer.unpack_str(args.oci_connection) then
@@ -423,6 +440,7 @@ function oracle:parse(sql,params)
     end
 
     params={}
+
     local prep=java.cast(self.conn:prepareCall(sql,1003,1007),"oracle.jdbc.OracleCallableStatement")
     for k,v in pairs(bind_info) do
         if v[func]=='#' then

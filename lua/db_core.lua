@@ -711,7 +711,6 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     end
     
     self:assert_connect()
-
     local autocommit=cfg.get("AUTOCOMMIT")
     if self.autocommit~=autocommit then
         if self.autocommit=="on" then self.conn:commit() end
@@ -821,7 +820,7 @@ function db_core:is_connect(recursive)
         self.__stmts={}
         self.__preparedCaches={}
         self.__result_sets={}
-        self.props=nil
+        self.props={privs={}}
         if self.conn~=nil and recursive~=true then self:disconnect(false) end
         return false
     end
@@ -912,13 +911,11 @@ function db_core:connect(attrs,data_source)
     self.__result_sets = {}
     self.__preparedCaches={}
     self.properties={}
-    for k in java.methods(self.conn) do
-        if k=='getProperties' then
-            for k,v in java.pairs(self.conn:getProperties()) do
-                --print(k)
-                self.properties[k]=v
-            end
-            env.log_debug("db","Connection properties:\n",self.properties)
+
+    local prop={self.conn['getProperties'],self.conn['getServerSessionInfo']}
+    for _,p in pairs(prop) do
+        for k,v in java.pairs(p(self.conn)) do
+            self.properties[k]=v
         end
     end
 
