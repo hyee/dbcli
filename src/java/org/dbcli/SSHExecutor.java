@@ -8,6 +8,7 @@ import java.nio.ByteOrder;
 import java.nio.channels.CompletionHandler;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.security.Security;
 import java.util.HashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
@@ -60,6 +61,7 @@ public class SSHExecutor {
     }
 
     public void connect(String host, int port, String user, final String password, String linePrefix) throws Exception {
+        Security.setProperty("crypto.policy", "unlimited");
         try {
             ssh = new JSch();
             isKeyAccess = false;

@@ -1,5 +1,6 @@
 package org.dbcli;
 
+import com.sun.jna.Native;
 import com.zaxxer.nuprocess.NuAbstractProcessHandler;
 import com.zaxxer.nuprocess.NuProcess;
 import com.zaxxer.nuprocess.NuProcessBuilder;
@@ -33,6 +34,7 @@ public class SubSystem {
     CountDownLatch lock = new CountDownLatch(1);
 
     public SubSystem() {
+        Native.setProtected(true);
     }
 
     public SubSystem(String promptPattern, String cwd, String[] command, Map env) {

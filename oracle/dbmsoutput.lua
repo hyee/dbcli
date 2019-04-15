@@ -11,7 +11,7 @@ local prev_stats
 
 function output.setOutput(db)
     local flag=cfg.get("ServerOutput")
-    local stmt="begin dbms_output."..(flag=="on" and "enable(null)" or "disable()")..";end;"
+    local stmt="BeGin dbms_output."..(flag=="on" and "enable(null)" or "disable()")..";end;"
     pcall(function() (db or env.getdb()):internal_call(stmt) end)
 end
 
@@ -149,7 +149,7 @@ function output.getOutput(item)
     if not db or not sql then return end
     local typ=db.get_command_type(sql)
     if DML[typ] and #env.RUNNING_THREADS > 2 and autotrace=='off' then return end
-    if not (sql:lower():find('internal',1,true) and not sql:find('%s')) and not db:is_internal_call(sql) then
+    if sql:find('^BeGin dbms_output') or (not (sql:lower():find('internal',1,true) and not sql:find('%s')) and not db:is_internal_call(sql)) then
         local args=table.clone(default_args)
         args.sql_id=autotrace=='off' and 'x' or loader:computeSQLIdFromText(sql)
         args.autotrace=autotrace

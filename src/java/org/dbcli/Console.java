@@ -2,7 +2,6 @@ package org.dbcli;
 
 import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
-import com.sun.jna.Pointer;
 import org.jline.builtins.Commands;
 import org.jline.builtins.Source;
 import org.jline.keymap.KeyMap;
@@ -271,10 +270,7 @@ public final class Console {
 
     public int getScreenHeight() {
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM)) {
-            final Pointer consoleOut = Kernel32.INSTANCE.GetStdHandle(Kernel32.STD_OUTPUT_HANDLE);
-            Kernel32.CONSOLE_SCREEN_BUFFER_INFO info = new Kernel32.CONSOLE_SCREEN_BUFFER_INFO();
-            Kernel32.INSTANCE.GetConsoleScreenBufferInfo(consoleOut, info);
-            return info.windowHeight();
+            return terminal.getHeight();
         }
         return terminal.getHeight() - titles.size();
     }

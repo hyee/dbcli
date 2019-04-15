@@ -141,7 +141,7 @@ function oracle:connect(conn_str)
     end
 
     args=args or {user=usr,password=pwd,url="jdbc:oracle:"..driver..":@"..url..(params or ''),internal_logon=isdba}
-    env.checkerr(not args.url:find('oci.?:@') or home,"Cannot connect with oci driver with speicifying the ORACLE_HOME environment.")
+    env.checkerr(not args.url:find('oci.?:@') or home,"Cannot connect with oci driver without specifying the ORACLE_HOME environment.")
     self:merge_props(self.public_props,args)
     self:load_config(url,args)
 

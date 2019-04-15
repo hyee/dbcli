@@ -1,5 +1,6 @@
 *.dat
 *.db
+.DS_Store
 data/init.cfg
 data/init.conf
 data/plugin.cfg
