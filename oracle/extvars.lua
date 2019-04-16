@@ -22,7 +22,7 @@ local function rep_instance(prefix,full,obj,suffix)
             {instance and instance>0,extvars.dict[obj].inst_col,instance},
             {container and container>=0,extvars.dict[obj].cdb_col,container},
             {dbid and dbid>0,extvars.dict[obj].dbid_col,dbid},
-            {usr and usr~="",extvars.dict[obj].usr_col,"(select /*+no_merge*/ username from all_users where user_id="..usr..")"},
+            {usr and usr~="",extvars.dict[obj].usr_col,"(select /*+no_merge*/ username from all_users where user_id="..(uid or '')..")"},
         } do
             if v[1] and v[2] and v[3] then
                 if k==1 and obj:find('^GV_?%$') and v[3]==tonumber(db.props.instance)

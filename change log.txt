@@ -1,4 +1,5 @@
-2019-04-15: + oracle: new option 'set driver thin/oci/oci8'
+2019-04-15: * public: update lib ConEmu to build 190331, update lib opencsv
+            + oracle: new option 'set driver thin/oci/oci8'
 2019-04-13: + oracle: new command 'snap cache'
 2019-04-12: + oracle: new option 'set cdbmode [off|cdb|pdb]' to auto replace all SQL Texts from "DBA_HIST_" AS "CDB_HIST_"/"AWR_PDB_" 
 2019-04-10: + oracle: new command 'dict [init]' to show/create separate offline db dictionary for aut-completion purpose  
@@ -13,6 +14,7 @@
                       optimize less mode and top mode
 2019-04-02: * oracle: support grid option 'autosize' to auto-eliminates the empty columns
             + oracle: new command 'ora snap_event'
+=======================begin v1.7================================================            
 2019-03-25: + oracle: new command 'rac enqueue/rac lms/sys dep'
 2019-03-13: + oracle: new command 'ora awrmetric'
 2019-03-02: + oracle: new command 'chart celldb'
@@ -44,6 +46,7 @@
 2018-12-21: + oracle: rename org 'ora ashplan' to 'ora ashplan2' and created new command 'ora ashplan'
 2018-12-15: + oracle: some new sqlplus scripts
 2018-12-15: + oracle: new command 'exa cellstat' 
+=======================begin v1.6================================================   
 2018-09-16: + public: new option 'set termout on/off'
             + oracle: new command 'sys ofetest'
 2018-09-11: + public: new command 'set spaces'
