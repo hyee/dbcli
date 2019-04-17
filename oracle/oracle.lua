@@ -658,6 +658,7 @@ function oracle:get_library()
 end
 
 function oracle:grid_db_call(sqls,args,is_cache)
+    if #sqls==0 then return end
     local stmt={[[BEGIN]]}
     local clock=os.timer()
     if sqls.declare then

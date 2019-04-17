@@ -51,6 +51,7 @@
                          'latch: redo writing',
                          'ASM IO for non-blocking poll',
                          'gcs log flush sync',
+                         'log switch/archive',
                          'log file switch completion',
                          'log file switch (checkpoint incomplete)',
                          'log file switch (private strand flush incomplete)')},

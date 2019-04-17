@@ -337,6 +337,7 @@ function grid:add(row)
     local cols = #result > 0 and #result[1] or #rs
     local rsize, l, len=0
     --run statement
+    local split='['..(headind == 0 and '' or ' ')..'\a\r\f\b\v]*\n'
     for k = 1, cols do
         local v = rs[k]
         rs._org[k] = v
@@ -364,9 +365,12 @@ function grid:add(row)
                 v = v:gsub("([^|]+)|([^|]+)", function(a, b)
                     local len1, len2 = a:len(), b:len()
                     local max_len = math.max(len1, len2)
-                    return ('%s%s\n%s%s'):format(
-                        reps(' ', math.floor((max_len - len1) / 2)), a,
-                        reps(' ', math.ceil((max_len - len2) / 2)), b)
+                    return ('%s%s%s\n%s%s%s'):format(
+                        reps(' ', math.floor((max_len - len1) / 2)),a,
+                        reps(' ', math.ceil((max_len - len1) / 2)),
+                        reps(' ', math.ceil((max_len - len2) / 2)), b,
+                        reps(' ', math.floor((max_len - len2) / 2))
+                    )
                 end)
                 if #v<=3 and v:find('^%W+$') and v~='#' and v~='%' then 
                     colsize[k][3],colsize[k][4]=v,grid.title_del=='-' and v:gsub('[%*|:]','+') or v
@@ -402,7 +406,7 @@ function grid:add(row)
             v = v:convert_ansi():gsub('\192\128', ''):gsub('%z+', '')
             
             --if the column value has multiple lines, then split lines into table
-            for p in v:gsplit('[ \a\r\f\b\v]*\n') do
+            for p in v:gsplit(split) do
                 --if headind == 0 and #p>50 then p=p:sub(1,50) end
                 grp[#grp + 1] = p
                 --deal with unicode chars
@@ -410,12 +414,14 @@ function grid:add(row)
                 if len==0 and p~='' then len=1 end
                 if csize < len then csize = len end
             end
+
             if #grp > 1 then 
                 v = grp 
             else
                 l, csize, v = v:ulen(maxsize)
                 if csize==0 and csize~='' then csize=1 end
             end
+
             if lines < #grp then lines = #grp end
             
             if self.colinfo[k].is_number then
@@ -496,6 +502,7 @@ end
 
 function grid:wellform(col_del, row_del)
     local result, colsize = self.data, self.colsize
+    if grid.bypassemptyrs== 'on' and result[#result][0]==0 then return {},{}  end
     local rownum = grid.row_num
     local siz, rows, output = #result, table.new(#result + 1, 0), table.new(#result + 1, #result[1])
     if siz == 0 then return rows end
@@ -699,7 +706,6 @@ function grid.tostring(rows, include_head, col_del, row_del, rows_limit, pivot)
     rows,output = grid.format(rows, include_head, col_del, row_del)
     rows_limit = rows_limit and math.min(rows_limit, #rows) or #rows
     env.set.force_set("pivot", 0)
-    
     return table.concat(rows, "\n", 1, rows_limit),output
 end
 
@@ -718,7 +724,6 @@ function grid.print(rows, include_head, col_del, row_del, rows_limit, prefix, su
     end
     local data,output=grid.tostring(rows, include_head, col_del, row_del, rows_limit)
     str = str .. data
-    if grid.bypassemptyrs and grid.bypassemptyrs:lower() == 'on' and size < (include_head and 2 or 1) then return end
     if test then env.write_cache("grid_output.txt", str) end
     if type(output)=="table" then
         for k,v in ipairs(output) do
@@ -905,17 +910,20 @@ function grid.merge(tabs, is_print, prefix, suffix)
                         result[#result + 1] = format_tables(tab, false)
                     else
                         local topic, width, height, max_rows = tab.topic, tab.width, tab.height, tab.max_rows
-                        local is_bypass,autosize1,autosize2 = tab.bypassemptyrs,grid.col_auto_size,tab.autosize
+                        local is_bypass1,is_bypass2,autosize1,autosize2 = grid.bypassemptyrs,tab.bypassemptyrs,grid.col_auto_size,tab.autosize
                         if autosize2 then grid.col_auto_size=autosize2 end
+                        is_bypass2=is_bypass2==true and 'on' or is_bypass2=='on' and 'on' or 'off' 
+                        grid.bypassemptyrs=is_bypass2
                         local _,output=grid.tostring(tab, true, " ", "", nil, tab.pivot)
                         if autosize2 then grid.col_auto_size=autosize1 end
+                        grid.bypassemptyrs=is_bypass1
                         tab={}
                         for k,row in ipairs(output) do
                             tab[k]=type(row)~="table" and row or row.format_func(row.fmt, table.unpack(row))
                         end
                         
                         tab.topic, tab.width, tab.height, tab.max_rows = topic, width, height, max_rows
-                        if is_bypass ~= 'on' and is_bypass ~= true or #tab > 2 then
+                        if #tab > 0 then
                             result[#result + 1] = tab
                         end
                     end
