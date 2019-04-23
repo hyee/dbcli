@@ -41,7 +41,7 @@ public class SubSystem {
         try {
             Map e = new TreeMap(System.getenv());
             e.putAll(env);
-            if (e.get("PATH") == null && e.get("Path") != null) e.put("PATH", e.get("Path"));
+            //if (e.get("PATH") == null && e.get("Path") != null) e.put("PATH", e.get("Path"));
             pb = new NuProcessBuilder(Arrays.asList(command), e);
             pb.setCwd(new File(cwd).toPath());
             p = Pattern.compile(promptPattern, Pattern.CASE_INSENSITIVE + Pattern.DOTALL);

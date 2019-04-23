@@ -23,6 +23,7 @@ function login.save()
 end
 
 function login.generate_name(url,props)
+    if url:find('@$') then return props.user end
     local url1=url
     url=url1:match("//([^&%?]+)")
     if not url then 

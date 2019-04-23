@@ -82,6 +82,8 @@ DECLARE /*+no_monitor*/
     mon        xmltype;
     elem       xmltype;
     descs      SYS.ODCIARGDESCLIST;
+    type t_fmt IS TABLE OF VARCHAR2(50);
+    fmt        t_fmt;
     PROCEDURE wr(msg VARCHAR2) IS
     BEGIN
         dbms_lob.writeappend(txt,nvl(length(msg),1)+1,chr(10)||nvl(msg,'.'));
@@ -321,12 +323,18 @@ BEGIN
                         raise_application_error(-20001,'cannot find relative records for the specific SQL ID!');
                     end if;
                 END IF;
-
-                BEGIN
-                    xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => 'ALL',  sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
-                EXCEPTION WHEN OTHERS THEN
-                    xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => 'TYPICAL', sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
-                END;
+                fmt := t_fmt('ALL','ALL-BINDS','ALL-SQL_TEXT','ALL-SQL_TEXT-BINDS','TYPICAL');
+                FOR i in 1..fmt.count LOOP
+                    BEGIN
+                        xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => fmt(i),  sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
+                        dbms_output.put_line('Extracted report level is: '||fmt(i));
+                        exit;
+                    EXCEPTION WHEN OTHERS THEN
+                        IF i=fmt.count THEN
+                            RAISE;
+                        END IF;
+                    END;
+                END LOOP;
                 filename := 'sqlm_' || sq_id ||nullif('_'||:v2,'_')|| '.html';
             ELSE
                 sql_start := nvl(to_char(nvl(:V3,:starttime),'yymmddhh24mi'),sysdate-7);

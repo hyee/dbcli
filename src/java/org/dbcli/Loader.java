@@ -557,7 +557,6 @@ public class Loader {
 
                 if (rs != null && !rs.isClosed()) {
                     ResultSetHelperService.abort();
-                    rs.getStatement().close();
                     rs.close();
                 }
 

@@ -65,7 +65,7 @@ function grid.cut(row, format_func, format_str, is_head)
         local colbase = row.col_auto_size or grid.col_auto_size
         local cs = grid.colsize
         if cs then
-            if colbase ~= 'auto' then
+            if colbase ~= 'auto' and colbase ~= 'trim' then
                 for i, _ in ipairs(cs) do
                     l,siz,row[i] = tostring(row[i]):ulen(cs[i][1])
                 end
@@ -109,8 +109,9 @@ function grid.fmt(format, ...)
                     rpad = pad
                 end
                 siz,flag='',''
+                return s_format:format(lpad, flag, tostring(siz), rpad)
             end
-            return s_format:format(lpad, flag, tostring(siz), rpad)
+            return g
         end)
     --print(fmt,...)
     return fmt:format(...)
@@ -557,10 +558,12 @@ function grid:wellform(col_del, row_del)
     local seps={}
 
     for k, v in ipairs(colsize) do
-        if max_siz==0 and k>1 then v[3],v[4]=nil end
+        if max_siz==0 and k>1 then v[3],v[4]=nil,nil end
         siz = v[3] and #v[3] or v[1]
-        local del = (v[3] or (colsize[k+1] or {})[3]) and "" or (colsize[k+1] or {})[1]==0 and "" or " "
+        v[1] = siz
+        local del = (v[3] or (colsize[k+1] or {})[3] or (colsize[k+1] or {})[1]==0) and ""  or " "
         seps[k]=v[3]
+
         if siz==0 and ((colsize[k-1] or {})[3] or k==1) then del='' end
         if (del~="" and pivot == 0) or (pivot ~= 0 and k ~= 1 + indx and (pivot ~= 1 or k ~= 3 + indx)) then 
             del = col_del
@@ -571,6 +574,7 @@ function grid:wellform(col_del, row_del)
         if siz == 0 then
             fmt = fmt .. "%s".. del
             head_fmt = head_fmt .. "%s".. del
+            seps[k] = ''
         else
             fmt = fmt .. "%" .. (siz * v[2]) .. "s" .. del
             head_fmt = head_fmt .. (v[3] and '' or hor) .. "%" .. (siz * v[2]) .. "s" .. nor .. del
@@ -612,6 +616,10 @@ function grid:wellform(col_del, row_del)
         while #v < #colsize do v[#v+1]='' end
 
         --adjust the title style(middle)
+        for k1,v1 in pairs(seps) do
+            v[k1]=v1
+        end
+
         if v[0] == 0 then
             for col, value in ipairs(v) do
                 local pad = colsize[col][1] - #value
@@ -628,24 +636,23 @@ function grid:wellform(col_del, row_del)
             for k1,v1 in ipairs(title_dels) do
                 v[k1]=v1:sub(1,1)==grid.title_del and v1:gsub('.',c) or v1
             end
-        else
-            for k1,v1 in pairs(seps) do
-                v[k1]=v1
-            end
         end
 
         v.format_func,v.fmt=format_func,v[0] == 0 and head_fmt or fmt
         local row = cut(v, v.format_func,v.fmt, v[0] == 0)
+
         if v[0] == 0 then
             row = row .. nor
         elseif env.printer.grep_text then
             row, match_flag = row:gsub(env.printer.grep_text, hl .. "%0" .. nor)
             if (match_flag == 0 and not env.printer.grep_dir) or (match_flag > 0 and env.printer.grep_dir) then filter_flag = 0 end
         end
+
         output[#output+1]=v
         if filter_flag == 1 then 
             rows[#rows+1]=row 
         end
+        
         if not result[k + 1] or result[k + 1][0] ~= v[0] then
             if #row_del == 1 and filter_flag == 1 and v[0] ~= 0 then
                 rows[#rows+1]=cut(row_dels)

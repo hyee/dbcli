@@ -14,7 +14,9 @@ VAR c_space  refcursor;
 VAR c_reads  refcursor;
 VAR c_writes refcursor;
 VAR c_ram    refcursor;
-col hd_size,fd_size,total_size,unalloc,flashcache,flashlog,Alloc|RAM,RAM|OLTP,Alloc|FCache,Alloc|OLTP,ALLOC|SCAN,Large|Writes,OLTP|Dirty,FCache|Used,Used|OLTP,Used|Columnar,FCache|Keep,Keep|OLTP,Keep|Columnar format kmg
+VAR v_start  VARCHAR2(30);
+VAR v_end    VARCHAR2(30);
+col HD|SIZE,FD|Size,total|size,un-|alloc,flashcache,flashlog,Alloc|RAM,RAM|OLTP,Alloc|FCache,Alloc|OLTP,ALLOC|SCAN,Large|Writes,OLTP|Dirty,FCache|Used,Used|OLTP,Used|Columnar,FCache|Keep,Keep|OLTP,Keep|Columnar format kmg
 col "Hit|&io,Hit|Miss,OLTP|&io,SCAN|&io,COLUMNAR|&io,KEEP|&io,Keep|Miss" FOR &unit
 col "Hit|&mb,2nd|Hits,2nd|Miss,OLTP|&mb,SCAN|&mb,SCAN|Reqs,COLUMNAR|&mb,COLUMNAR|ELIG,COLUMNAR|SAVED,KEEP|&mb" FOR kmg;
 col "Total|&io,FirstWrite|&io,OverWrite|&io,Populate|Miss-&io,LargeWrite|&io,TempSpill|&io,DataTemp|&io,WriteOnly|&io" FOR &unit
@@ -98,10 +100,16 @@ DECLARE
                           </stats>]';
     v_xml xmltype;
 BEGIN
-    SELECT max(dbid),max(bid),max(eid),max(&dur)
-    INTO   did,bid,eid,duration
+    SELECT max(dbid),max(bid),max(eid),max(&dur),max(stime),max(etime)
+    INTO   did,bid,eid,duration,:v_start,:v_end
     FROM   (
-        SELECT (MAX(end_interval_time+0)-MIN(end_interval_time+0))*86400 dur,dbid,MAX(snap_id) eid,MIN(snap_id) bid,incarnation_num
+        SELECT (MAX(end_interval_time+0)-MIN(end_interval_time+0))*86400 dur,
+                dbid,
+                MAX(snap_id) eid,
+                MIN(snap_id) bid,
+                max(end_interval_time)+0 etime,
+                min(end_interval_time)+0 stime,
+                incarnation_num
         FROM   dba_hist_snapshot a JOIN dba_hist_cell_global b USING(snap_id,dbid)
         WHERE  dbid=NVL(:dbid+0,sys_context('userenv','dbid'))
         AND    end_interval_time+0 between nvl(to_date(nvl(:V1,:starttime),'YYMMDDHH24MI'),SYSDATE - 7) AND nvl(to_date(nvl(:V2,:endtime),'YYMMDDHH24MI'),SYSDATE)
@@ -129,12 +137,12 @@ BEGIN
         SELECT *
         FROM   (SELECT nvl(cell, '--TOTAL--') cell,
                     nvl(cellhash, 0) cellhash,
-                    SUM(DECODE(disktype, 'HardDisk', 1, 0)) HD,
-                    SUM(DECODE(disktype, 'HardDisk', 0, 1)) FD,
-                    SUM(DECODE(disktype, 'HardDisk', siz)) HD_SIZE,
-                    SUM(DECODE(disktype, 'FlashDisk', siz)) FD_SIZE,
-                    SUM(siz) total_size,
-                    SUM(freeSpace) unalloc,
+                    SUM(DECODE(disktype, 'HardDisk', 1, 0)) "Hard|Disks",
+                    SUM(DECODE(disktype, 'HardDisk', 0, 1)) "Flash|Disks",
+                    SUM(DECODE(disktype, 'HardDisk', siz)) "HD|Size",
+                    SUM(DECODE(disktype, 'FlashDisk', siz)) "FD|Size",
+                    SUM(siz) "Total|Size",
+                    SUM(freeSpace) "Un-|Alloc",
                     '|' "|"
                 FROM   (SELECT cellname, cell, CELLHASH, b.*
                         FROM   dba_hist_cell_config a,
@@ -742,11 +750,11 @@ END;
 /
 
 grid {
-    [[c_space grid={topic='Flash Cache Space'}]],
+    [[c_space grid={topic='Flash Cache Space (at &v_end)',autosize='trim'}]],
     '-',
-    [[c_reads grid={topic='Flash Cache User Reads'}]],
+    [[c_reads grid={topic='Flash Cache User Reads (&v_start -- &v_end)'}]],
     '-',
-    [[c_writes grid={topic='Flash Cache User Writes',bypassemptyrs='on'}]],
+    [[c_writes grid={topic='Flash Cache User Writes (&v_start -- &v_end)',bypassemptyrs='on'}]],
     '-',
-    [[c_ram grid={topic='Population , Flash Cache Scan Writes , Memory Cache Reads & Writes',bypassemptyrs='on'}]]
+    [[c_ram grid={topic='Population || Flash Cache Scan Writes || Memory Cache Reads & Writes',bypassemptyrs='on'}]]
 }

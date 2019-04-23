@@ -244,6 +244,7 @@ public final class WindowsProcess implements NuProcess {
 
             DWORD dwCreationFlags = new DWORD(NuWinNT.CREATE_NO_WINDOW | NuWinNT.CREATE_UNICODE_ENVIRONMENT | NuWinNT.CREATE_SUSPENDED);
             char[] cwdChars = (cwd != null) ? Native.toCharArray(cwd.toAbsolutePath().toString()) : null;
+
             if (!NuKernel32.CreateProcessW(null, getCommandLine(commands), null /*lpProcessAttributes*/, null /*lpThreadAttributes*/, true /*bInheritHandles*/,
                     dwCreationFlags, env, cwdChars, startupInfo, processInfo)) {
                 int lastError = Native.getLastError();
