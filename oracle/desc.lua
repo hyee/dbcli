@@ -35,7 +35,8 @@ local desc_sql={
 
         $IF DBMS_DB_VERSION.VERSION > 10 $THEN
         OPEN cur for
-            SELECT decode(p,'-','$UDL$ ',TRIM('.' FROM o || replace(p,' '))) no#, 
+            SELECT decode(p,'-','-',TRIM('.' FROM o || replace(p,' '))) no#, 
+                   '|' "|",
                    Argument, 
                    data_type, 
                    IN_OUT, 
@@ -99,8 +100,7 @@ local desc_sql={
             MEASURES(CAST(p AS VARCHAR2(30)) p, Argument, data_type, IN_OUT, defaulted, CHARSET) 
             RULES SEQUENTIAL ORDER(
                 p [ANY,ANY] ORDER BY s = max(p) [ s < cv(s), CV(l) - 1 ] || '.' || lpad(p [ CV(), CV() ],4),
-                p [9999,0]='-',
-                CHARSET[9999,0]=rpad(' ',8)||'$NOR$'
+                p [9999,0]='-'
             )
             ORDER  BY o, s;
         $ELSE

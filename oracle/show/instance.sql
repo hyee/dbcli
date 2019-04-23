@@ -1,5 +1,4 @@
-/*[[
-Show all database instances
+/*[[Show all database instances
 --[[
     @blocked: 11.2={blocked,},10.2={SHUTDOWN_PENDING,}
 --]]

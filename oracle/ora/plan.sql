@@ -1,6 +1,7 @@
 /*[[
 Show execution plan. Usage: @@NAME {<sql_id> [<plan_hash_value>|<child_number>] [format1..n]} [-all|-last|-b|-d|-s|-ol|-adv] 
-Option:
+
+Options:
     -b    : show binding variables
     -d    : only show the plan from AWR views
     -s    : the plan with the simplest 'basic' format
@@ -133,7 +134,7 @@ WITH sql_plan_data AS
                          NULL            tm,
                          NULL,
                          statement_id,
-                         max(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), 'plan_hash_full.*?(\d+)', 1, 1, 'i', 1))) over()+0 plan_hash_value,
+                         max(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), 'plan_hash_full.*?(\d+)', 1, 1, 'i'))) over()+0 plan_hash_value,
                          NULL
                   FROM   plan_table a
                   WHERE  nvl(upper(:V1),'x') in(statement_id,''||plan_id,'x')

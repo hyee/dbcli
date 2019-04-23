@@ -1,27 +1,27 @@
 /*[[
-        Get resource usage from SQL monitor. Usage: @@NAME {sql_id [<SQL_EXEC_ID>] [[plan_hash_value] -l|<sqlmon file>|"<query>"|-a|-s]} | {. <keyword>} [-u|-f"<filter>"] [-avg]
+        Get resource usage from SQL monitor. Usage: @@NAME {[<sql_id> {[-l|-d|-a] [<sql_exec_id>|plan_hash_value]}}|<sqlmon file>|"<query>"]} | {. <keyword>} [-u|-f"<filter>"] [-avg]
         Related parameters for SQL monitor: 
                 _sqlmon_recycle_time,_sqlmon_max_planlines,_sqlmon_max_plan,_sqlmon_threshold,control_management_pack_access,statistics_level
         A SQL can be forced to record the sql monitor report by the alter system statement:
                 ALTER SYSTEM SET EVENTS 'sql_monitor [sql: <sql_id1>|sql: <sql_id2>] force=true';
 
         Usages:
-             1. @@NAME <sql_id> [<sql_exec_id>]           : Extract sql monitor report with specific sql_id, options: -s,-a,-f"<format>"
-             2. @@NAME [. <keyword>]                      : List recent sql monitor reports,options: -avg,-u,-f"<filter>" 
-             3. @@NAME -snap <sec> <sid>                  : Monitor the specific <sid> for <sec> seconds, and then list the SQL monitor result, options: -avg
-             4. @@NAME <sqlmon_file>                      : Read SQL Monitor report from target location and print
-             5. @@NAME "<Query>"                          : Read SQL Monitor report from target query(return CLOB) and print
-             6. @@NAME <report_id>                        : Read SQL Monitor report from dba_hist_reports with specific report_id
-             7. @@NAME <sql_id> -l [-a] [plan_hash|sql_exec_id]     : List the reports and generate perf hub report for specific SQL_ID, options: -avg,-u,-a,-f"<filter>"
+             1. @@NAME <sql_id> [<sql_exec_id>]                   : Extract sql monitor report with specific sql_id, options: -s,-a,-f"<format>"
+             2. @@NAME [. <keyword>]                              : List recent sql monitor reports,options: -avg,-u,-f"<filter>" 
+             3. @@NAME -snap <sec> <sid>                          : Monitor the specific <sid> for <sec> seconds, and then list the SQL monitor result, options: -avg
+             4. @@NAME <sqlmon_file>                              : Read SQL Monitor report from target location and print
+             5. @@NAME "<Query>"                                  : Read SQL Monitor report from target query(return CLOB) and print
+             6. @@NAME <report_id>                                : Read SQL Monitor report from dba_hist_reports with specific report_id
+             7. @@NAME <sql_id> -l [-a] [plan_hash|sql_exec_id]   : List the reports and generate perf hub report for specific sql_id, options: -avg,-u,-a,-f"<filter>"
              8. @@NAME <sql_id> -d [<plan_hash> [YYYYMMDDHH24MI]] : Report SQL detail
 
         Options:
-                -u  : Only show the SQL list within current schema
-                -f  : List the records that match the predicates, i.e.: -f"MODULE='DBMS_SCHEDULER'"
-                -s  : Plan format is "ALL-SESSIONS-SQL_FULLTEXT-SQL_TEXT", this is the default
-                -a  : Plan format is "ALL-SQL_FULLTEXT-SQL_TEXT", when together with "-l" option, generate SQL Hub report
-                -avg: Show avg time in case of listing the SQL monitor reports
-                -detail: Extract more detailed information when generating the SQL Monitor report
+            -u     : Only show the SQL list within current schema
+            -f     : List the records that match the predicates, i.e.: -f"MODULE='DBMS_SCHEDULER'"
+            -s     : Plan format is "ALL-SESSIONS-SQL_FULLTEXT-SQL_TEXT", this is the default
+            -a     : Plan format is "ALL-SQL_FULLTEXT-SQL_TEXT", when together with "-l" option, generate SQL Hub report
+            -avg   : Show avg time in case of listing the SQL monitor reports
+            -detail: Extract more detailed information when generating the SQL Monitor report
 
      --[[
             @ver: 12.2={} 11.2={--}
@@ -29,7 +29,6 @@
             &option : default={}, l={,sql_exec_id,plan_hash,sql_exec_start}
             &option1: default={&uniq execs,round(sum(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME))/&uniq,2) avg_ela,}, l={}
             &filter: default={1=1},f={},l={sql_id=sq_id},snap={DBOP_EXEC_ID=dopeid and dbop_name=dopename},u={username=nvl('&0',sys_context('userenv','current_schema'))}
-            &format: default={BASIC+PLAN+BINDS},s={ALL-SESSIONS}, a={ALL}
             &tot : default={1} avg={0}
             &avg : defult={1} avg={&uniq}
             &out: default={active} html={html} em={em}
@@ -83,6 +82,8 @@ DECLARE /*+no_monitor*/
     mon        xmltype;
     elem       xmltype;
     descs      SYS.ODCIARGDESCLIST;
+    type t_fmt IS TABLE OF VARCHAR2(50);
+    fmt        t_fmt;
     PROCEDURE wr(msg VARCHAR2) IS
     BEGIN
         dbms_lob.writeappend(txt,nvl(length(msg),1)+1,chr(10)||nvl(msg,'.'));
@@ -322,12 +323,18 @@ BEGIN
                         raise_application_error(-20001,'cannot find relative records for the specific SQL ID!');
                     end if;
                 END IF;
-
-                BEGIN
-                    xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => 'ALL',  sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
-                EXCEPTION WHEN OTHERS THEN
-                    xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => 'TYPICAL', sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
-                END;
+                fmt := t_fmt('ALL','ALL-BINDS','ALL-SQL_TEXT','ALL-SQL_TEXT-BINDS','TYPICAL');
+                FOR i in 1..fmt.count LOOP
+                    BEGIN
+                        xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => fmt(i),  sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
+                        dbms_output.put_line('Extracted report level is: '||fmt(i));
+                        exit;
+                    EXCEPTION WHEN OTHERS THEN
+                        IF i=fmt.count THEN
+                            RAISE;
+                        END IF;
+                    END;
+                END LOOP;
                 filename := 'sqlm_' || sq_id ||nullif('_'||:v2,'_')|| '.html';
             ELSE
                 sql_start := nvl(to_char(nvl(:V3,:starttime),'yymmddhh24mi'),sysdate-7);
@@ -946,7 +953,7 @@ BEGIN
     :filename := filename;
 END;
 /
-set colsize 4194304
+
 print c;
 set colsep |
 col stat_value#1,stat_value#2,stat_value#3 format #,##0

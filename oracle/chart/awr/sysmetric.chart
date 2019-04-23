@@ -16,7 +16,7 @@
       &CAT  : {
             default={1=1},
             iops={METRIC_NAME in ('User Transaction Per Sec','Physical Read Total IO Requests Per Sec',
-                                 'Physical Write Total IO Requests Per Sec')}，
+                                 'Physical Write Total IO Requests Per Sec')},
             time={metric_unit='CentiSeconds Per Second'},
             ratio={METRIC_NAME like '%Ratio' and METRIC_NAME not like '% Miss %'},
             eff={METRIC_NAME in ('Host CPU Utilization (%)','Database CPU Time Ratio',

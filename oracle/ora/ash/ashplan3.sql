@@ -1,7 +1,10 @@
-/*[[Show ash cost for a specific SQL for multiple executions. usage: @@NAME {<sql_id|plan_hash_value> [sql_exec_id] [YYMMDDHH24MI] [YYMMDDHH24MI]}  [-o] [-d|-g]
--o   : Show top object#, otherwise show top event
--d   : Only query dba_hist_active_sess_history
--g   : Only query gv$active_session_history
+/*[[
+    Show ash cost for a specific SQL for multiple executions. usage: @@NAME {<sql_id|plan_hash_value> [sql_exec_id] [YYMMDDHH24MI] [YYMMDDHH24MI]}  [-o] [-d|-g]
+    -o   : Show top object#, otherwise show top event
+    -d   : Only query dba_hist_active_sess_history
+    -g   : Only query gv$active_session_history
+
+    The output is similar to 'ora ashplan', but includes addtional waitchains and slower
 
 --[[
     @adaptive : 12.1={adaptive} default={}

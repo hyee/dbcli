@@ -1,51 +1,53 @@
-/*[[Show inmemory info of a specific table. Usage: @@NAME [owner.]<table_name>[.partition_name] [column_name|*] [-d] [-f"filter"]
+/*[[Details the inmemory info of a specific table. Usage: @@NAME [owner.]<table_name>[.partition_name] [column_name|*] [-d] [-f"<filter>"]
    -d: details into instance level
    
-   Some parameters to control the in-memory behaviors:
-   * inmemory_size
-   * inmemory_query
-   * inmemory_force
-   * IMSS: _inmemory_dynamic_scans(AUTO/DISABLE/FORCE)
-   * IMA: _always_vector_transformation(default false)
-   * IMA: _key_vector_predicate_enabled
-   * IMA: _optimizer_vector_transformation
-   * IME: inmemory_expressions_usage
-   * IME: inmemory_virtual_columns
-   * POP: inmemory_trickle_repopulate_servers_percent
-   * POP: inmemory_max_populate_servers
-   * GD : _globaldict_enable(0:disable,1: JoinGroups Only, 2:ALL)
-   * NUMBER for QUERY LOW: inmemory_optimized_arithmetic
-   * PushDownAgg: _kdz_pcode_flags
-          0x001 : No PCODE
-          0x002 : No range pred eval
-          0x004 : No reorder preds
-          0x008 : No selective eval
-          0x010 : No LIKE push-down
-          0x020 : No agg/gby push-down
-          0x040 : No constant fold opt
-          0x080 : No popcnt use for eval
-          0x100 : No complex eva push-down
-          0x200 : No proj rowset push-down
-          0x400 : No IME pcode support
-          0x800 : Dict engine for proj
-         0x1000 : Atomized proj exprs
-         0x2000 : No lob pred push-down
-         0x4000 : Don't save in cursor
-         0x8000 : Enable pcode compilation for HCC / CC1 tables.
-        0x10000 : No selective dict eval
-        0x20000 : No deferred constants 
-   IME Operations:
-       EXEC DBMS_INMEMORY_ADMIN.IME_OPEN_CAPTURE_WINDOW;
-       EXEC DBMS_INMEMORY_ADMIN.IME_CLOSE_CAPTURE_WINDOW;
-       EXEC DBMS_INMEMORY_ADMIN.IME_POPULATE_EXPRESSIONS;
-       EXEC DBMS_INMEMORY_ADMIN.IME_CAPTURE_EXPRESSIONS('WINDOW/CUMULATIVE/CURRENT');
-       EXEC DBMS_INMEMORY_ADMIN.IME_OPEN_CAPTURE_WINDOW;
+Some parameters to control the in-memory behaviors:
+    * inmemory_size
+    * inmemory_query
+    * inmemory_force
+    * IMSS: _inmemory_dynamic_scans(AUTO/DISABLE/FORCE)
+    * IMA: _always_vector_transformation(default false)
+    * IMA: _key_vector_predicate_enabled
+    * IMA: _optimizer_vector_transformation
+    * IME: inmemory_expressions_usage
+    * IME: inmemory_virtual_columns
+    * POP: inmemory_trickle_repopulate_servers_percent
+    * POP: inmemory_max_populate_servers
+    * GD : _globaldict_enable(0:disable,1: JoinGroups Only, 2:ALL)
+    * NUMBER for QUERY LOW: inmemory_optimized_arithmetic
+    * PushDownAgg: _kdz_pcode_flags
+            0x001 : No PCODE
+            0x002 : No range pred eval
+            0x004 : No reorder preds
+            0x008 : No selective eval
+            0x010 : No LIKE push-down
+            0x020 : No agg/gby push-down
+            0x040 : No constant fold opt
+            0x080 : No popcnt use for eval
+            0x100 : No complex eva push-down
+            0x200 : No proj rowset push-down
+            0x400 : No IME pcode support
+            0x800 : Dict engine for proj
+            0x1000 : Atomized proj exprs
+            0x2000 : No lob pred push-down
+            0x4000 : Don't save in cursor
+            0x8000 : Enable pcode compilation for HCC / CC1 tables.
+            0x10000 : No selective dict eval
+            0x20000 : No deferred constants
+
+IME Operations:
+    EXEC DBMS_INMEMORY_ADMIN.IME_OPEN_CAPTURE_WINDOW;
+    EXEC DBMS_INMEMORY_ADMIN.IME_CLOSE_CAPTURE_WINDOW;
+    EXEC DBMS_INMEMORY_ADMIN.IME_POPULATE_EXPRESSIONS;
+    EXEC DBMS_INMEMORY_ADMIN.IME_CAPTURE_EXPRESSIONS('WINDOW/CUMULATIVE/CURRENT');
+    EXEC DBMS_INMEMORY_ADMIN.IME_OPEN_CAPTURE_WINDOW;
    
    --[[
        @check_access_obj: dba_objects={dba_} default={all_}
        @check_access_exp: DBA_IM_EXPRESSIONS={DBA_IM_EXPRESSIONS} default={USER_IM_EXPRESSIONS}
        @check_access_jp:  CDB_JOINGROUPS={CDB_JOINGROUPS} DBA_JOINGROUPS={DBA_JOINGROUPS} default={USER_JOINGROUPS}
        @ver: 18={,SUM(NUMDELTA) DELTA} 12.1={}
+       @ARGS: 1
        &inst  : default={inst} d={inst_id}
        &filter: default={1=1} f={}
        &is_test: default={}, test={--}
@@ -65,7 +67,7 @@ var target VARCHAR
 var mins   VARCHAR
 var cnv    VARCHAR
 DECLARE
-    cname VARCHAR2(128) := UPPER(:V2);
+    cname VARCHAR2(128)  := UPPER(:V2);
     cols VARCHAR2(32767) := 'DECODE(col#';
     cnv  VARCHAR2(32767) := 'DECODE(cid';
     typs VARCHAR2(32767) := 'DECODE(col#';

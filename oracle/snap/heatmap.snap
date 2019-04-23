@@ -1,11 +1,38 @@
-/*[[Generate delta values based on gv$event_histogram. Usage: @@NAME <options> [0|inst_id] [-lgwr|-io|-gc|-w"<event|wait_class>"|-f"<filter>"] [-c|-n]
+/*[[
+    Generate delta values based on gv$event_histogram. Usage: @@NAME <options> [0|inst_id] [-lgwr|-io|-gc|-w"<event|wait_class>"|-f"<filter>"] [-c|-n]
+    
+    inst_id : The instance id,when 0 then the result will be grouped by instance. Defaults to sum all instances. 
+    -lgwr   : show only the events relative to LGWR
+    -io     : show only the events belong to User/System I/O
+    -gc     : show only the events belong to Cluster waits
+    -w      : show only the events belong to specific event/wait class
+    -c      : the percentages of the histogram is based on wait count, instead of wait time
+    -n      : the value of the histogram is the number of waits, instead of percentage
 
-    -lgwr: show only the events relative to LGWR
-    -io  : show only the events belong to User/System I/O
-    -gc  : show only the events belong to Cluster waits
-    -w   : show only the events belong to specific event/wait class
-    -c   : the percentages of the histogram is based on wait count, instead of wait time
-    -n   : the value of the histogram is the number of waits, instead of percentage
+                  EVENT                 TIME    WAITS   AVG_TIME| <1us  <2us  <4us  <8us   <16us <32us  <64us <128us <256us <512us  <1ms   <2ms <4ms <16ms <32ms <64ms
+     -------------------------------- -------- -------- --------+----- ----- ----- ------ ------ ----- ------ ------ ------ ------ ------ ----- ---- ----- ----- -----
+     - Wait Class: All                173.04ms 1,363.79 126.88us| 0.05  0.47  5.27  32.33  22.55  9.44   4.51   4.63   5.34   6.70   4.63  3.13 0.04  0.01  0.83  0.03
+     - Wait Class: Other              168.05ms 1,334.77 125.90us| 0.04  0.42  5.38  33.26  23.12  9.44   4.41   4.61   5.12   5.30   4.72  3.23 0.04  0.01  0.86  0.03
+     - Wait Class: System I/O           2.84ms    14.28 198.53us|                    1.17   8.25 12.22   3.06         21.39  52.87   1.06
+     - Wait Class: User I/O             1.94ms     5.20 373.20us|                                        2.24          1.94  89.93   5.90
+     - Wait Class: Application          6.57us     0.12  54.75us|            27.48                             72.52
+     - Wait Class: Network                         4.42         | 0.38  0.76  3.39               19.34  39.76  36.33
+     - Wait Class: Concurrency                     5.01         | 5.61 31.78 21.93  36.09   2.16  2.59
+     RMA: IPC0 completion sync         68.42ms     3.52  19.44ms|                           1.43                                                           98.55
+     latch free                        46.68ms    37.51   1.24ms|                                               0.45   2.77   7.69  37.04 51.32 0.73
+     enq: PS - contention              15.03ms    39.30 382.44us|                                               1.63  27.72  45.58  25.07
+     PX Deq: Join ACK                   7.76ms    50.59 153.44us| 0.02  1.01  2.70   0.67   0.46  1.83  19.02  20.64  32.01  14.04   7.05  0.55
+     PX Deq: reap credit                7.45ms   881.44   8.45us|       0.31  7.00  42.73  34.42 12.90   2.58   0.06
+     PX Deq: Slave Session Stats        5.27ms    36.80 143.10us| 0.26  3.38  4.43   3.94   1.76  1.41   5.25  14.44  37.56  24.38   2.06  1.12
+     Sync ASM rebalance                 4.53ms     0.42  10.79ms|                   12.57   7.59                      13.87  15.71                   23.56       26.44
+     ASM file metadata operation        3.03ms     3.94 769.35us|                                        8.61  67.51  17.42   3.53                                2.97
+     IMR slave acknowledgement msg      2.66ms    12.36 214.84us|             0.63          0.27 16.82  13.70  19.47   6.19  19.05  23.86
+     PX Deq: Slave Join Frag            2.43ms    36.79  65.92us| 0.95  1.65  0.07                1.42  34.06  56.87   4.46          0.52
+     reliable message                   2.33ms     4.60 506.73us|                                                            60.00  38.51  1.51
+     control file sequential read       2.33ms    13.08 177.96us|                    1.30   9.15 13.56   3.39         23.71  48.92
+     Disk file Mirror Read              1.93ms     5.01 384.59us|                                                      1.96  92.00   6.03
+     IPC send completion sync         545.66us    86.36   6.32us|             7.89  70.91  13.32  7.64   0.23
+     control file parallel write      507.26us     1.19 426.27us|                                                            89.06  10.94
   --[[
       @tab: 12.1={gv$event_histogram_micro} 11.1={gv$event_histogram}
       @micro: 12.1={wait_time_micro} 11.1={wait_time_milli*1024}
@@ -24,6 +51,7 @@
                          'latch: redo writing',
                          'ASM IO for non-blocking poll',
                          'gcs log flush sync',
+                         'log switch/archive',
                          'log file switch completion',
                          'log file switch (checkpoint incomplete)',
                          'log file switch (private strand flush incomplete)')},
@@ -32,10 +60,12 @@
           w={lower('&0') in (lower(event),lower(wait_class))},
           f={}
       }
+      &showzero: default={false},lgwr={true},io={true},gc={true},w={true},f={true}
+      }
   --]]
 ]]*/
 {
-    sql={[[
+    sql=[[
         SELECT /*grid={topic='Event Histogram(based on wait_count*&u)',autosize='trim',zero2null=true}*/ *
         FROM   (SELECT /*+ordered use_nl(timer stat) no_merge(stat) no_expand*/
                        nullif(inst,0) inst,nvl(event,'- Wait Class: '||nvl(wait_class,'All')) event,
@@ -53,21 +83,22 @@
                             '>=1m'
                        END unit,
                        MAX(SUM(TIME_WAITED_MICRO)) over(PARTITION BY inst,wait_class,event) Time,
+                       MAX(SUM(total_waits)) over(PARTITION BY inst,wait_class,event) Waits,
                        0 avg_time,
                        '|' "|",
-                       MAX(SUM(total_waits)) over(PARTITION BY inst,wait_class,event) Waits,
                        SUM(SUM(svalue*&u)) OVER(partition by inst,wait_class,event) total,
                        nullif(SUM(svalue*&u), 0) pct
-                FROM   (SELECT /*+ordered use_hash(a b)*/
-                               decode(lower(nvl('&v1','a')),'a',0,inst_id)  inst,
-                               event, a.total_waits, a.time_waited_micro, b.&micro slot_time, b.wait_count svalue,
-                               a.wait_class
-                        FROM   gv$system_event a
-                        JOIN   &tab b
-                        USING  (inst_id, event)
-                        WHERE  a.wait_class != 'Idle'
-                        AND    lower(nvl('&v1','a')) in('a','0',to_char(inst_id))
-                        AND    (&filter)) stat
+                FROM   (
+                          SELECT /*+ordered use_hash(a b)*/
+                                 decode(lower(nvl('&v1','a')),'a',0,inst_id)  inst,
+                                 event, a.total_waits, a.time_waited_micro, b.&micro slot_time, b.wait_count svalue,
+                                 a.wait_class
+                          FROM   gv$system_event a
+                          JOIN   &tab b
+                          USING  (inst_id,event)
+                          WHERE  a.wait_class != 'Idle'
+                          AND    lower(nvl('&v1','a')) in('a','0',to_char(inst_id))
+                          AND    (&filter)) stat
                 GROUP  BY inst,rollup(wait_class,event),
                           CASE
                               WHEN slot_time <= 512 THEN
@@ -104,14 +135,14 @@
                        '<32s' "<32s",
                        '<1m' "<1m",
                        '>=1m' ">1m"))
-    ]]},
+    ]],
     delta_by="TIME,AVG_TIME,WAITS,TOTAL,<1us,<2us,<4us,<8us,<16us,<32us,<64us,<128us,<256us,<512us,<1ms,<2ms,<4ms,<8ms,<16ms,<32ms,<64ms,<128ms,<256ms,<512ms,<1s,<2s,<4s,<8s,<16s,<32s,<1m,>1m",
     group_by="inst,event,g",
-    include_zero=false,
+    include_zero=&showzero,
     fixed_title=true,
     order_by="-g,-time",
     column_formatter={
-        noprint='total',
+        noprint='total,g',
         USMHD2="time,avg_time",
         k='WAITS,<1us,<2us,<4us,<8us,<16us,<32us,<64us,<128us,<256us,<512us,<1ms,<2ms,<4ms,<8ms,<16ms,<32ms,<64ms,<128ms,<256ms,<512ms,<1s,<2s,<4s,<8s,<16s,<32s,<1m,>1m'
     },

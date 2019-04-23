@@ -145,10 +145,9 @@ end
 
 local ResultSet=env.class()
 
-function ResultSet:getHeads(rs,limit)
+function ResultSet:getHeads(rs)
     if self[rs] then return self[rs] end
     loader:setCurrentResultSet(rs)
-    local maxsiz=cfg.get("COLSIZE")
     local meta=rs:getMetaData()
     local len=meta:getColumnCount()
     local colinfo={}
@@ -156,7 +155,7 @@ function ResultSet:getHeads(rs,limit)
     for i=1,len,1 do
         local cname=meta:getColumnLabel(i)
         colinfo[i]={
-            column_name=limit and cname:sub(1,maxsiz) or cname,
+            column_name=cname,
             data_typeName=meta:getColumnTypeName(i),
             data_type=meta:getColumnType(i),
             data_size=meta:getColumnDisplaySize(i),
@@ -195,19 +194,20 @@ function ResultSet:fetch(rs,conn)
 
     local size=#cols
     local result=table.new(size,2)
-    local maxsiz=cfg.get("COLSIZE")
     for i=1,size,1 do
         local value=self:get(i,cols[i].data_type,rs,conn)
-        value=type(value)=="string" and value:sub(1,maxsiz) or value
+        value=type(value)=="string" and value or value
         result[i]=value or ""
     end
 
     return result
 end
 
+local rs_close
 function ResultSet:close(rs)
     if rs then
-        if rs.isClosed and not rs:isClosed() then rs:close() end
+        if not rs_close then rs_close=rs.close end
+        if rs_close then pcall(rs_close,rs) end
         if self[rs] then self[rs]=nil end
     end
     local clock=os.timer()
@@ -226,10 +226,10 @@ function ResultSet:close(rs)
     end
 end
 
-function ResultSet:rows(rs,count,limit,null_value,is_close)
+function ResultSet:rows(rs,count,null_value,is_close)
     if type(rs)~="userdata" or (rs.isClosed and rs:isClosed()) then return end
     count=tonumber(count) or -1
-    local titles=self:getHeads(rs,limit)
+    local titles=self:getHeads(rs)
     local head=titles.__titles
     local rows={}
     local cols=#head
@@ -240,7 +240,6 @@ function ResultSet:rows(rs,count,limit,null_value,is_close)
     null_value=null_value or cfg.get('null')
     if count~=0 then
         rows=loader:fetchResult(rs,count)
-        local maxsiz=cfg.get("COLSIZE")
         for i=1,#rows do
             for j=1,cols do
                 local info=head.colinfo[j]
@@ -248,7 +247,6 @@ function ResultSet:rows(rs,count,limit,null_value,is_close)
                     if is_lob and type(rows[i][j])=="string" and #rows[i][j]>255 then
                         print('Result written to '..env.write_cache(dtype:lower()..'_'..i..'.txt',rows[i][j]))
                     end
-                    if limit and not info.is_number and type(rows[i][j])=="string" then rows[i][j]=rows[i][j]:sub(1,maxsiz) end
                     if info.data_typeName=="DATE" or info.data_typeName=="TIMESTAMP" then
                         rows[i][j]=rows[i][j]:gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
                     elseif info.data_typeName=="BLOB" then
@@ -265,8 +263,8 @@ function ResultSet:rows(rs,count,limit,null_value,is_close)
             end
         end
     end
-    if is_close==true and rs.close then
-        pcall(rs.close,rs)
+    if (is_close==true or count <0 ) and rs.close then
+        self:close(rs)
     end
     table.insert(rows,1,head)
     return rows
@@ -275,7 +273,7 @@ end
 function ResultSet:print(res,conn,prefix)
     local result,hdl={},nil
     if type(res)~="userdata" or (res.isClosed and res:isClosed()) then return end
-    local cols=self:getHeads(res,limit)
+    local cols=self:getHeads(res)
     if #cols==1 then
         if cfg.get("pipequery")=="on" then
             res:setFetchSize(2)
@@ -286,7 +284,7 @@ function ResultSet:print(res,conn,prefix)
     res:setFetchSize(cfg.get("FETCHSIZE"))
     local maxrows,pivot=cfg.get("printsize"),cfg.get("pivot")
     if pivot~=0 then maxrows=math.abs(pivot) end
-    local result=self:rows(res,maxrows,true,cfg.get('null'),true)
+    local result=self:rows(res,maxrows,cfg.get('null'),true)
     if not result then return end
     if pivot==0 then
         hdl=grid.new()
@@ -513,7 +511,6 @@ end
 
 function db_core:parse(sql,params,prefix,prep)
     local bind_info,binds,counter={},{},0
-
     local temp={}
     for k,v in pairs(params) do
         temp[type(k)=="string" and k:upper() or k]={k,v}
@@ -557,7 +554,6 @@ function db_core:parse(sql,params,prefix,prep)
             bind_info[#bind_info+1]=args
             return '?'
         end)
-
     if not prep then prep=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007) end
 
     self:check_params(sql,prep,bind_info,params)
@@ -614,7 +610,7 @@ function db_core:exec_cache(sql,args,description)
         if type(description)=="string" and description~='' then
             local prep1=self.__preparedCaches.__list[description]
             if prep1 then
-                env.log_debug("DB","Recompiling "..description)
+                env.log_debug("DB","Recompiling "..(description or 'SQL'))
                 pcall(prep1[1].close,prep1[1])
                 for k,v in pairs(self.__preparedCaches) do
                     if prep1==v then
@@ -632,6 +628,9 @@ function db_core:exec_cache(sql,args,description)
             end
             self.__preparedCaches.__list[description]=cache
         end
+        env.log_debug("DB","Caching "..(description or 'SQL')..":")
+        env.log_debug("DB",sql)
+        self.log_param(params)
     else
         prep,org,params=table.unpack(cache)
         for k,n in pairs(args) do
@@ -657,6 +656,7 @@ function db_core:exec_cache(sql,args,description)
                     method=typ..(method:match('AtName') or '')
                 end
                 prep[method](prep,idx,n)
+                params[k][5]=n
             end
         end
         --print(table.dump(params),table.dump(args))
@@ -665,9 +665,30 @@ function db_core:exec_cache(sql,args,description)
     return self:exec(prep,args,table.clone(params),sql),cache
 end
 
+function db_core.log_param(params)
+    if cfg.get('debug')=='DB' or cfg.get('debug')=='ALL' then
+        local tab={{'Bind Index','In/Out','Name','Data Type','Bind Method','Bind Value'}}
+        for k,v in pairs(params) do
+            if type(v)=='table' then
+                tab[#tab+1]={
+                    (v[6] and v[6]..',' or  '')..v[2],
+                    v[1]=='$' and 'IN' or v[6] and 'IN,OUT' or 'OUT',
+                    k,
+                    v[3],
+                    (v[4]==nil and '' or v[4])..(v[4]:find('setNull',1,true) and ('('..v[5]..')') or ''),
+                    v[4]:find('setNull',1,true) and '' or v[5]==nil and '' or v[5]
+                }
+            end
+        end
+        if #tab>1 then
+            grid.print(tab,true,nil,nil,nil,'[DB] Parameters:','\n')
+        end
+    end
+end
+
 function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_not_prep=type(sql)~="userdata"
-    if is_not_prep and sql:find('/*DBCLI_EXEC_CACHE*/',1,true) then
+    if is_not_prep and sql:sub(1,1024):find('/*DBCLI_EXEC_CACHE*/',1,true) then
         return self:exec_cache(sql,args,prep_params)
     end
 
@@ -690,7 +711,6 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     end
     
     self:assert_connect()
-
     local autocommit=cfg.get("AUTOCOMMIT")
     if self.autocommit~=autocommit then
         if self.autocommit=="on" then self.conn:commit() end
@@ -708,15 +728,15 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         self.__stmts[#self.__stmts+1]=prep
         prep:setFetchSize(1)
         prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
+        pcall(prep.closeOnCompletion,prep)
         self.current_stmt=prep
         env.log_debug("db","SQL:",sql)
-        env.log_debug("db","Parameters:",params)
+        self.log_param(params)
     else
         local desc ="PreparedStatement"..(args._description or "")
         prep,sql,params=sql,src_sql or desc,prep_params or {}
         if not desc:upper():find("INTERNAL") then
             env.log_debug("db","Cursor:",sql)
-            env.log_debug("db","Parameters:",params)
         else
             env.log_debug("db","Cursor:",desc)
         end
@@ -731,13 +751,12 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local function process_result(rs,is_print)
         if print_result and is_print~=false then 
             self.resultset:print(rs,self.conn)
-            pcall(rs.close,rs)
         else
             rscount=rscount+1
         end
         self.__result_sets[#self.__result_sets+1]=rs
         while #self.__result_sets>cfg.get('SQLCACHESIZE')*2 do
-            pcall(self.__result_sets[1].close,self.__result_sets[1])
+            self.resultset:close(self.__result_sets[1])
             table.remove(self.__result_sets,1)
         end
         return rs
@@ -796,11 +815,13 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     return #result==1 and result[1] or result
 end
 
-function db_core:is_connect()
+function db_core:is_connect(recursive)
     if type(self.conn)~='userdata' or not self.conn.isClosed or self.conn:isClosed() then
         self.__stmts={}
         self.__preparedCaches={}
         self.__result_sets={}
+        self.props={privs={}}
+        if self.conn~=nil and recursive~=true then self:disconnect(false) end
         return false
     end
     return true
@@ -890,13 +911,11 @@ function db_core:connect(attrs,data_source)
     self.__result_sets = {}
     self.__preparedCaches={}
     self.properties={}
-    for k in java.methods(self.conn) do
-        if k=='getProperties' then
-            for k,v in java.pairs(self.conn:getProperties()) do
-                --print(k)
-                self.properties[k]=v
-            end
-            env.log_debug("db","Connection properties:\n",self.properties)
+
+    local prop={self.conn['getProperties'],self.conn['getServerSessionInfo']}
+    for _,p in pairs(prop) do
+        for k,v in java.pairs(p(self.conn)) do
+            self.properties[k]=v
         end
     end
 
@@ -946,7 +965,7 @@ function db_core:get_rows(sql,args,count)
     if not result or type(result)=="number" then
         return result
     end
-    return self.resultset:rows(result,count or -1,nil,true)
+    return self.resultset:rows(result,count or -1)
 end
 
 function db_core:grid_call(tabs,rows_limit,args,is_cache)
@@ -967,9 +986,8 @@ function db_core:grid_call(tabs,rows_limit,args,is_cache)
                 local key=tab:trim():upper():gsub('^[:&]','')
                 if env.var.inputs[key] then 
                     tab=env.var.inputs[key]
-                    if type(tab)=='userdata' then tab=self.resultset:rows(tab,rows_limit) end
+                    if type(tab)=='userdata' then tab=self.resultset:rows(tab,rows_limit,nil,true) end
                     if type(tab)=='table' then
-                        
                         tab={rs=tab,grid_cfg=grid_cfg}
                         env.var.inputs[key]=tab.rs
                     end
@@ -1002,14 +1020,15 @@ function db_core:grid_call(tabs,rows_limit,args,is_cache)
                 elseif type(rs)=="table" then
                     local tab={}
                     for x,y in ipairs(rs) do 
-                        tab[x]=self.resultset:rows(y,rows_limit,nil,nil,true)
+                        tab[x]=self.resultset:rows(y,rows_limit,nil,true)
                         for a,b in pairs(v.grid_cfg) do tab[x][a]=b end
                     end
                     tabs[k]=tab
                 else
-                    tabs[k]=self.resultset:rows(rs,rows_limit,nil,nil,true)
+                    tabs[k]=self.resultset:rows(rs,rows_limit,nil,true)
                     for a,b in pairs(v.grid_cfg or {}) do tabs[k][a]=b end
                 end
+                v.rs=nil
             elseif type(v)~='string' or #v~=1 then
                 table.remove(tabs,k)
             end
@@ -1279,10 +1298,11 @@ function db_core:merge_props(src,target)
 end
 
 function db_core:disconnect(feed)
-    if self:is_connect() then
+    if self.conn then
         loader:closeWithoutWait(self.conn)
-        event("ON_DB_DISCONNECTED",self)
         self.conn=nil
+        env.set_prompt(nil,nil,nil,2)
+        event("ON_DB_DISCONNECTED",self)
         if feed~=false then print("Database disconnected.") end
     end
 end
@@ -1319,26 +1339,25 @@ function db_core:__onload()
         end
     end
 
-    local txt="\n   Refer to 'set expPrefetch' to define the fetch size of the statement which impacts the export performance."
+    local txt="\nRefer to 'set expPrefetch' to define the fetch size of the statement which impacts the export performance."
     txt=txt..'\n   -e: format is "-e<column1>[,...]"'
-    txt=txt..'\n   -r: format is "-r<column1=<expression>>[,...]"'
-    txt=txt..'\n    Other examples:'
-    txt=txt..'\n        1. sql2csv  user_objects.zip select * from user_objects;'
-    txt=txt..'\n        2. sql2file user_objects.zip select * from user_objects;'
-    txt=txt..'\n        3. csv2sql  user_objects.zip c:\\user_objects.csv'
-    txt=txt..'\n        4. sql2csv  user_objects -e"object_id,object_type" select * from user_objects where rownum<10'
-    txt=txt..'\n        5. sql2file user_objects -r"object_id=seq_obj.nextval,timestamp=sysdate" select * from user_objects where rownum<10'
-    txt=txt..'\n        6. set verify off;'
-    txt=txt..'\n           var x refcursor;'
-    txt=txt..'\n           exec open :x for select * from user_objects where rownum<10;'
-    txt=txt..'\n           sql2csv user_objects x;'
+    txt=txt..'\n   -r: format is "-r<column1>=<expression>[,...]"'
+    txt=txt..'\nOther examples:'
+    txt=txt..'\n    1. sql2csv  user_objects.zip select * from user_objects;'
+    txt=txt..'\n    2. sql2file user_objects.zip select * from user_objects;'
+    txt=txt..'\n    3. csv2sql  user_objects.zip c:\\user_objects.csv'
+    txt=txt..'\n    4. sql2csv  user_objects -e"object_id,object_type" select * from user_objects where rownum<10'
+    txt=txt..'\n    5. sql2file user_objects -r"object_id=seq_obj.nextval,timestamp=sysdate" select * from user_objects where rownum<10'
+    txt=txt..'\n    6. set verify off;'
+    txt=txt..'\n       var x refcursor;'
+    txt=txt..'\n       exec open :x for select * from user_objects where rownum<10;'
+    txt=txt..'\n       sql2csv user_objects x;'
     cfg.init("PRINTSIZE",1000,set_param,"db.query","Max rows to be printed for a select statement",'1-10000')
     cfg.init("FETCHSIZE",3000,set_param,"db.query","Rows to be prefetched from the resultset, 0 means auto.",'0-32767')
-    cfg.init("COLSIZE",1073741824,set_param,"db.query","Max column size of a result set",'5-1073741824')
     cfg.init("SQLTIMEOUT",1200,set_param,"db.core","The max wait time(in second) for a single db execution",'10-86400')
     cfg.init({"FEED","FEEDBACK"},'on',set_param,"db.core","Detemine if need to print the feedback after db execution",'on,off')
     cfg.init("AUTOCOMMIT",'off',set_param,"db.core","Detemine if auto-commit every db execution",'on,off')
-    cfg.init("SQLCACHESIZE",30,set_param,"db.core","Number of cached statements in JDBC",'5-500')
+    cfg.init("SQLCACHESIZE",40,set_param,"db.core","Number of cached statements in JDBC",'5-500')
     cfg.init("ASYNCEXP",true,set_param,"db.export","Detemine if use parallel process for the export(SQL2CSV and SQL2FILE)",'true,false')
     cfg.init("SQLERRLINE",'off',nil,"db.core","Also print the line number when error SQL is printed",'on,off')
     cfg.init("NULL","",nil,"db.core","Define the display value for NULL value")
@@ -1356,13 +1375,13 @@ function db_core:__onload()
         The input parameter must start with '{' and end with '}', as a LUA or JSON table format, support nested LUA/JSON tables
         
         Allows customizing the grid style by defining 'grid={attr1=<value1>[,...]}' of each SQL, including:
-        topic="<title>"   :  block title
-        width=<cols>      :  fixed width, if the output wider than the size, then the overflow part will be chopped. When -1 then align to its siblings
-        height=<rows>     :  fixed height including titles, if the output longer than the size, then the overflow part will be chopped. When -1 then align to its siblings
-        max_rows=<rows>   :  max print records
-        pivot=<rows>      :  controls whether to pivot the records
-        bypassemptyrs='on':  controls whether to display the block in case of no record
-        autosize='trim'   :  controls whether to eliminate the column whose values are all null, refer to option 'SET COLAUTOSIZE'
+            topic="<title>"   :  block title
+            width=<cols>      :  fixed width, if the output wider than the size, then the overflow part will be chopped. When -1 then align to its siblings
+            height=<rows>     :  fixed height including titles, if the output longer than the size, then the overflow part will be chopped. When -1 then align to its siblings
+            max_rows=<rows>   :  max print records
+            pivot=<rows>      :  controls whether to pivot the records
+            bypassemptyrs='on':  controls whether to display the block in case of no record
+            autosize='trim'   :  controls whether to eliminate the column whose values are all null, refer to option 'SET COLAUTOSIZE'
 
         Elements:
             sep     : Can be 3 values:
@@ -1374,50 +1393,50 @@ function db_core:__onload()
                           grid={height=<rows>,width=<columns>,topic='<grid topic>',max_rows=<records>}
 
         Examples:
-            1. Simple case:
-               ============
-                grid {
-                    'select name,value from v$sysstat where rownum<=5',
-                '-','select class,count from v$waitstat where rownum<=10',
-                '+','select event,total_Waits from v$system_event where rownum<20',
-                '|','select stat_id,value from v$sys_time_model where rownum<20',
+            Simple case:
+            ============
+            grid {
+                'select name,value from v$sysstat where rownum<=5',
+            '-','select class,count from v$waitstat where rownum<=10',
+            '+','select event,total_Waits from v$system_event where rownum<20',
+            '|','select stat_id,value from v$sys_time_model where rownum<20',
+            }
+        
+            Lua style:
+            ==========
+            grid {[[select rownum "#",event,total_Waits from v$system_event where rownum<56]'], --Query#1 left to next merged grid(query#2/query#3/query#4)
+                '|',{'select * from v$sysstat where rownum<=20',                                --Query#2 left to next merged grid(query#3/query#4))
+                    '-', {'select rownum "#",name,hash from v$latch where rownum<=30',          --Query#3 above to query#4
+                            '+',"select /*grid={topic='Wait State'}*/ * from v$waitstat"
+                            }
+                    },
+                '-','select /*grid={topic="Metrix"}*/ * from v$sysmetric where rownum<=10'      --Query#5 under merged grid(query#1-#4)
                 }
-            
-            2. Lua style:
-               ==========
-                grid {[[select rownum "#",event,total_Waits from v$system_event where rownum<56]'], --Query#1 left to next merged grid(query#2/query#3/query#4)
-                    '|',{'select * from v$sysstat where rownum<=20',                                --Query#2 left to next merged grid(query#3/query#4))
-                        '-', {'select rownum "#",name,hash from v$latch where rownum<=30',          --Query#3 above to query#4
-                                '+',"select /*grid={topic='Wait State'}*/ * from v$waitstat"
-                                }
-                        },
-                    '-','select /*grid={topic="Metrix"}*/ * from v$sysmetric where rownum<=10'      --Query#5 under merged grid(query#1-#4)
-                    }
 
-               JSON style:
-               ===========
-                grid [ 'select rownum "#",event,total_Waits from v$system_event where rownum<56', 
-                    '|',['select * from v$sysstat where rownum<=20',                            
-                            '-', ['select rownum "#",name,hash from v$latch where rownum<=30',     
-                                '+',"select /*grid={'topic':'Wait State'}*/ * from v$waitstat"]
-                        ],
-                        '-','select /*grid={"topic":"Metrix"}*/ * from v$sysmetric where rownum<=10']
-            
-            3. Cursor style:
-               =============
-                set verify off 
-                var c1 refcursor
-                var c2 refcursor
-                begin
-                    open :c1 for select name,value from v$sysstat where rownum<=5;
-                    open :c2 for select class,count from v$waitstat where rownum<=15;
-                end;
-                /
-                grid {
-                        'c1 grid={topic="I am a cursor"}',
-                    '-','c2',
-                    '|',"select * from v$sysstat where rownum<=20 /*grid={topic='I am a SQL Text'}*/ "
-                }
+            JSON style:
+            ===========
+            grid [ 'select rownum "#",event,total_Waits from v$system_event where rownum<56', 
+                '|',['select * from v$sysstat where rownum<=20',                            
+                        '-', ['select rownum "#",name,hash from v$latch where rownum<=30',     
+                            '+',"select /*grid={'topic':'Wait State'}*/ * from v$waitstat"]
+                    ],
+                    '-','select /*grid={"topic":"Metrix"}*/ * from v$sysmetric where rownum<=10']
+        
+            Cursor style:
+            =============
+            set verify off 
+            var c1 refcursor
+            var c2 refcursor
+            begin
+                open :c1 for select name,value from v$sysstat where rownum<=5;
+                open :c2 for select class,count from v$waitstat where rownum<=15;
+            end;
+            /
+            grid {
+                    'c1 grid={topic="I am a cursor"}',
+                '-','c2',
+                '|',"select * from v$sysstat where rownum<=20 /*grid={topic='I am a SQL Text'}*/ "
+            }
 
         Refer to 'system.snap' for more example
     ]]

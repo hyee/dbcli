@@ -1,7 +1,36 @@
 /*[[
-Show or advice on object's space. Usage: @@NAME <[owner.]object_name[.partition_name]> [stats|advise]
+Show or advice on object's space. Usage: @@NAME <[owner.]object_name[.partition_name]> [advise]
+Parameter 'advise': run segment space adviser and print the result
+
+Sample Output:
+================
+ORCL> ora space sys.obj$                                                                 
+              ITEM           Total THIS-OBJ DEP-OBJS * I_OBJ1 I_OBJ2 I_OBJ3 I_OBJ4 I_OBJ5
+    ------------------------ ----- -------- -------- - ------ ------ ------ ------ ------
+    ABOVE HWM: Unused Blocks   413       68      345 |     48    113      3     68    113
+    ABOVE HWM: Unused MBytes  3.22     0.53     2.69 |   0.38   0.88   0.02   0.53   0.88
+    HWM: Free MBytes(Est)      0.2     0.04     0.16 |   0.02   0.03   0.03   0.04   0.04
+    HWM: Total Blocks         3587     1212     2375 |    208    911     29    316    911
+    HWM: Total MBytes        28.04     9.47    18.57 |   1.63   7.12   0.23   2.47   7.12
+    Total: Blocks             4000     1280     2720 |    256   1024     32    384   1024
+    Total: KBytes            32000    10240    21760 |   2048   8192    256   3072   8192
+    Total: MBytes            31.25       10    21.25 |      2      8   0.25      3      8
+    Total: Segments              6        1        5 |      1      1      1      1      1
+
+ORCL> ora space sys.obj$ advise                                                                                                       
+          NAM        OBJECT_TYPE OWNER SEGMENT_NAME PARTITION_NAME ALLOCATED_KBYTES USED_KBYTES RECLAIMABLE_KBYTES COMMAND ATTR1 ATTR2
+    ---------------- ----------- ----- ------------ -------------- ---------------- ----------- ------------------ ------- ----- -----
+    Object: SYS.OBJ$ --total--   SYS   OBJ$                                   32000       23896               8104                    
+        SYS.OBJ$     TABLE       SYS   OBJ$                                   10240        9623                617                    
+        SYS.I_OBJ1   INDEX       SYS   I_OBJ1                                  2048        1530                518                    
+        SYS.I_OBJ3   INDEX       SYS   I_OBJ3                                   256         151                105                    
+        SYS.I_OBJ2   INDEX       SYS   I_OBJ2                                  8192        5490               2702                    
+        SYS.I_OBJ5   INDEX       SYS   I_OBJ5                                  8192        5491               2701                    
+        SYS.I_OBJ4   INDEX       SYS   I_OBJ4                                  3072        1612               1460                    
+
     --[[
         @CHECK_ACCESS: dbms_space/dba_objects/dba_tablespaces={}
+        @ARGS: 1
     --]]
 ]]*/
 

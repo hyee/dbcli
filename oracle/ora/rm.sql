@@ -1,5 +1,8 @@
 /*[[Show resource manager plan and generate the relative SQL scripts. Usage: @@NAME [plan_name|schema_name] [-u]
    -u: When generate the SQL script, use UPDATE_xxxx instead of create_xxxx
+
+   Sample Output:
+   ==============
    --[[
        @ALIAS: rsrc
        @ver1: 11.2={MGMT_} default={CPU}

@@ -1,5 +1,6 @@
 /*[[
    Sample V$SESSION_WAIT at high frequency and show resulting session wait event and parameter profile by session.  Usage: @@NAME {<sid> [<seconds>] [<inst_id>]} [-p|-sql|-block]
+   Refer to Tanel Poder's same script
     --[[
         &V1    : default={1}
         &v2    : default={5}

@@ -6,12 +6,12 @@ local output={}
 local prev_transaction
 local enabled='on'
 local autotrace='off'
-local default_args={enable=enabled,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB",con_name="#VARCHAR",con_id="#NUMBER",stats='#CURSOR'}
+local default_args={enable=enabled,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB",con_name="#VARCHAR",con_id="#NUMBER",con_dbid="#NUMBER",dbid="#NUMBER",stats='#CURSOR'}
 local prev_stats
 
 function output.setOutput(db)
     local flag=cfg.get("ServerOutput")
-    local stmt="begin dbms_output."..(flag=="on" and "enable(null)" or "disable()")..";end;"
+    local stmt="BeGin dbms_output."..(flag=="on" and "enable(null)" or "disable()")..";end;"
     pcall(function() (db or env.getdb()):internal_call(stmt) end)
 end
 
@@ -30,11 +30,14 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             l_trace  VARCHAR2(30) := :autotrace;
             l_sql_id VARCHAR2(15) := :sql_id;
             l_size   PLS_INTEGER;
-            l_cont   varchar2(50);
+            l_cont   VARCHAR2(50);
             l_cid    PLS_INTEGER;
+            l_cdbid  INT;
+            l_dbid   INT;
             l_stats  SYS_REFCURSOR;
-            l_sep    varchar2(10) := chr(1)||chr(2)||chr(3)||chr(10); 
+            l_sep    VARCHAR2(10) := chr(1)||chr(2)||chr(3)||chr(10); 
             l_plans  sys.ODCIVARCHAR2LIST;
+            l_fmt    VARCHAR2(300):='TYPICAL ALLSTATS LAST';
             procedure wr is
             begin
                 l_size   := length(l_buffer);
@@ -61,9 +64,14 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             END IF;
 
             IF l_trace NOT IN('off','statistics','sql_id') THEN
+                IF dbms_db_version.version>11 THEN
+                    l_fmt := l_fmt||' +METRICS +REPORT +ADAPTIVE';
+                ELSIF dbms_db_version.version>10 THEN
+                    l_fmt := l_fmt||' +METRICS';
+                END IF;
                 BEGIN
                     SELECT * bulk collect into l_plans
-                    FROM TABLE(dbms_xplan.display('v$sql_plan_statistics_all',NULL,'ALLSTATS LAST',
+                    FROM TABLE(dbms_xplan.display('v$sql_plan_statistics_all',NULL,l_fmt,
                                'child_number=(select max(child_number) keep(dense_rank last order by executions,last_active_time) from v$sql where sql_id='''||l_sql_id||''') and sql_id=''' || l_sql_id ||''''));
                     FOR i in 1..l_plans.count LOOP
                         if l_plans(i) not like 'Error%' then
@@ -96,15 +104,20 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             end if;
 
             $IF dbms_db_version.version > 11 $THEN 
-                l_cont:=sys_context('userenv', 'con_name'); 
-                l_cid :=sys_context('userenv', 'con_id'); 
+                l_cont  :=sys_context('userenv', 'con_name'); 
+                l_cid   :=sys_context('userenv', 'con_id'); 
+                l_cdbid :=sys_context('userenv', 'con_dbid'); 
+                l_dbid  :=sys_context('userenv', 'dbid'); 
             $END
-            :buff    := l_buffer;
-            :txn     := dbms_transaction.local_transaction_id;
+
+            :buff     := l_buffer;
+            :txn      := dbms_transaction.local_transaction_id;
             :con_name := l_cont;
-            :con_id  := l_cid;
-            :lob     := l_lob;
-            :stats   := l_stats;
+            :con_id   := l_cid;
+            :con_dbid := l_cdbid;
+            :dbid     := l_dbid; 
+            :lob      := l_lob;
+            :stats    := l_stats;
         EXCEPTION WHEN OTHERS THEN NULL;
         END;]]
 
@@ -117,16 +130,17 @@ local fixed_stats={
     ['consistent gets']=6,
     ['physical reads']=7,
     ['physical writes']=8,
-    ['cell physical IO interconnect bytes']=9,
+    ['session logical reads']=9,
     ['logical read bytes from cache']=10,
-    ['redo size']=11,
-    ['bytes sent via SQL*Net to client']=12,
-    ['bytes received via SQL*Net from client']=13,
-    ['SQL*Net roundtrips to/from client']=14,
-    ['sorts (memory)']=15,
-    ['sorts (disk)']=16,
-    ['sorts (rows)']=17,
-    ['rows processed']=18
+    ['cell physical IO interconnect bytes']=11,
+    ['redo size']=12,
+    ['bytes sent via SQL*Net to client']=13,
+    ['bytes received via SQL*Net from client']=14,
+    ['SQL*Net roundtrips to/from client']=15,
+    ['sorts (memory)']=16,
+    ['sorts (disk)']=17,
+    ['sorts (rows)']=18,
+    ['rows processed']=19
 }
 
 local DML={SELECT=1,WITH=1,UPDATE=1,DELETE=1,MERGE=1}
@@ -135,7 +149,7 @@ function output.getOutput(item)
     if not db or not sql then return end
     local typ=db.get_command_type(sql)
     if DML[typ] and #env.RUNNING_THREADS > 2 and autotrace=='off' then return end
-    if not (sql:lower():find('internal',1,true) and not sql:find('%s')) and not db:is_internal_call(sql) then
+    if sql:find('^BeGin dbms_output') or (not (sql:lower():find('internal',1,true) and not sql:find('%s')) and not db:is_internal_call(sql)) then
         local args=table.clone(default_args)
         args.sql_id=autotrace=='off' and 'x' or loader:computeSQLIdFromText(sql)
         args.autotrace=autotrace
@@ -174,19 +188,26 @@ function output.getOutput(item)
                 end
             end
 
+            local fmt=env.var.columns.VALUE
+            if fmt then env.var.columns['VALUE']=nil end
+            env.set.set('sep4k','on')
+            env.set.set('rownum','off')
             local rows=env.grid.new()
             rows:add{"Value","Name",'/',"Value","Name",'|',"Value","Name"}
-            env.set.set('sep4k','on')
             for k,row in ipairs(n) do rows:add(row) end
             print("")
             rows:print()
+            if fmt then env.var.columns['VALUE']=fmt end
             env.set.set('sep4k','back')
+            env.set.set('rownum','back')
         elseif type(args.stats)=='userdata' then
             pcall(args.stats.close,args.stats)
         end
 
         db.props.container=args.cont
         db.props.container_id=args.con_id
+        db.props.container_dbid=args.con_dbid
+        db.props.dbid=args.dbid or db.props.dbid
         local title={args.con_name and ("Container: "..args.con_name..'('..args.con_id..')')}
         if args.txn and cfg.get("READONLY")=="on" then
             db:rollback()

@@ -1,7 +1,17 @@
 /*[[
-    Get the buffer cache info for a specific object. Usage: @@NAME [owner.]<table|index>[.<partition>] [inst]
+Get the buffer cache info for a specific object. Usage: @@NAME [owner.]<table|index>[.<partition>] [inst]
+
+Sample Output:
+==============
+ORCL> ora OBJBUFF seg$
+    INST STATUS  BLOCKS FORCED_READS FORCED_WRITES DIRTIES TEMPS PINGS STALES DIRECTS
+    ---- ------- ------ ------------ ------------- ------- ----- ----- ------ -------
+    A    cr           4            0             0       0     0     0      0       0
+    A    xcur       134            0             0       0     0     0      0       0
+    A    -total-    138            0             0       0     0     0      0       0
     --[[
         &obj: dba_objects={dba_objects}, default={all_objects}
+        @ARGS: 1
     --]]
 ]]*/
 

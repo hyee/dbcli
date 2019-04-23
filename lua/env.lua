@@ -520,6 +520,9 @@ function env.exec_command(cmd,params,is_internal,arg_text)
         if isMain then
             if writer then env.ROOT_CMD=name end
             env.log_debug("CMD",name,params)
+        else
+            if not env.isInterrupted then env.isInterrupted=console.cancelSeq>0 end
+            env.checkerr(env.isInterrupted~=true,"Operation is cancelled.")
         end
         
         if event and not is_internal then
@@ -556,7 +559,6 @@ local multi_cmd
 local cache_prompt,fix_prompt
 
 local prompt_stack={_base="SQL"}
-
 function env.set_prompt(class,default,is_default,level)
     if default then
         if not env._SUBSYSTEM  then default=default:upper() end
@@ -777,6 +779,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
     if pipe_cmd and _CMDS[pipe_cmd:upper()] and _CMDS[pipe_cmd:upper()].ISPIPABLE==true then
         if not rest:find('^!') and not rest:upper():find('^HOS') then 
             if param~='' then param='"'..env.COMMAND_SEPS.match(param:trim('"')):trim()..'"' end
+            if param:gsub('%s+','')=='""' then param='' end
             if multi_cmd then
                 param,multi_cmd=param..' '..multi_cmd..' '..table.concat(curr_stmt,'\n'),nil
             end
@@ -872,6 +875,7 @@ end
 function env.modify_command(_,key_event)
     --print(key_event.name)
     if key_event.name=="CTRL+C" or key_event.name=="CTRL+D" then
+        env.isInterrupted=true
         if env.IS_ASKING then return end
         multi_cmd,curr_stmt=nil,nil
         env.CURRENT_PROMPT=env.PRI_PROMPT
@@ -880,10 +884,7 @@ function env.modify_command(_,key_event)
         if env.ansi then
             local prompt_color="%s%s"..env.ansi.get_color("NOR").."%s"
             prompt=prompt_color:format(env.ansi.get_color("PROMPTCOLOR"),prompt,env.ansi.get_color("COMMANDCOLOR"))
-            reset=env.ansi.get_color("KILLBL")
-            env.printer.write("\27[1A"..reset)
         end
-        reader:redrawLine();
     elseif key_event.name=="CTRL+BACK_SPACE" or key_event.name=="SHIFT+BACK_SPACE" then --shift+backspace
         console:invokeMethod("backwardDeleteWord")
         key_event.isbreak=true
@@ -1078,7 +1079,7 @@ function env.onload(...)
     if  env.ansi and env.ansi.define_color then
         env.ansi.define_color("Promptcolor",env.IS_WINDOWS and "HIY" or "YEL","ansi.core","Define prompt's color, type 'ansi' for more available options")
         env.ansi.define_color("ERRCOLOR","HIR","ansi.core","Define color of the error messages, type 'ansi' for more available options")
-        env.ansi.define_color("PromptSubcolor","HIM","ansi.core","Define the prompt color for subsystem, type 'ansi' for more available options")
+        env.ansi.define_color("PromptSubcolor","E[38;5;213m","ansi.core","Define the prompt color for subsystem, type 'ansi' for more available options")
         env.ansi.define_color("commandcolor",env.IS_WINDOWS and "HIC" or "CYN","ansi.core","Define command line's color, type 'ansi' for more available options")
         env.ansi.define_color("UsageColor",'YEL',"ansi.core","Define color of the help usage, type 'ansi' for more available options")
     end
@@ -1138,6 +1139,7 @@ function env.exit()
 end
 
 function env.load_data(file,isUnpack,callback)
+    env.checkerr(file,'env.load_data: filename is nil!')
     if not file:find('[\\/]') then file=env.join_path(env.WORK_DIR,"data",file) end
     if type(callback)~="function" then
         local f=io.open(file,file:match('%.dat$') and "rb" or "r")
@@ -1149,23 +1151,24 @@ function env.load_data(file,isUnpack,callback)
         if not txt or txt:gsub("[\n\t%s\r]+","")=="" then return {} end
         return isUnpack==false and txt or env.MessagePack.unpack(txt)
     else
-        os.list_dir(file,nil,nil,function(event,file)
-            if event=='ON_SCAN' then return true end
-            if not file.data then return end
-            if isUnpack~=false then file.data=env.MessagePack.unpack(file.data) end
-            callback(file.data)
+        env.uv.async_read(file,32*1024*1024,function(err,result)
+            if err then return end
+            if isUnpack~=false then result=env.MessagePack.unpack(result) end
+            callback(result)
         end)
+        env.uv.run()
     end
 end
 
-function env.save_data(file,txt)
+function env.save_data(file,txt,maxsize)
     if not file:find('[\\/]') then file=env.join_path(env.WORK_DIR,"data",file) end
+    txt=env.MessagePack.pack(txt)
+    env.checkerr(not maxsize or maxsize>=#txt,"File "..file..' is too large('..#txt..' bytes), operation is cancelled!')
     local f=io.open(file,file:match('%.dat$') and "wb" or "w")
     if not f then
         env.raise("Unable to save "..file)
     end
     env.MessagePack.set_array("always_as_map")
-    txt=env.MessagePack.pack(txt)
     f:write(txt)
     f:close()
     return file
@@ -1216,7 +1219,9 @@ function env.set_space(name,value)
     env.space=string.rep(' ',value)
     return value
 end
+
 local org_title
+env.unknown_modules={}
 function env.set_title(title,value)
     local titles,status,sep,enabled="",{},"    "
     if not org_title then org_title=uv.get_process_title() end
@@ -1232,9 +1237,23 @@ function env.set_title(title,value)
         local callee=env.callee():gsub("#%d+$","")
         --print(callee,title)
         title_list[callee]=title
-       
+        
         if not env.module_list then return end
+
+        if not env.module_list[callee] then env.unknown_modules[callee]=title end
         for _,k in ipairs(env.module_list) do
+            if env.unknown_modules[k] then 
+                title_list[k],env.unknown_modules[k]=env.unknown_modules[k]
+            end
+
+            if (title_list[k] or "")~="" then
+                if titles~="" then titles=titles.."    " end
+                titles=titles..title_list[k]
+                env.unknown_modules[k]=nil
+            end
+        end
+
+        for k,_ in pairs(env.unknown_modules) do
             if (title_list[k] or "")~="" then
                 if titles~="" then titles=titles.."    " end
                 titles=titles..title_list[k]
@@ -1252,6 +1271,7 @@ function env.set_title(title,value)
         end
     else
         titles=org_title
+        title_list={}
     end
 
     if CURRENT_TITLE~=titles or enabled then
@@ -1288,6 +1308,9 @@ function env.ask(question,range,default)
     value=value:gsub('(0x[0-9a-f][0-9a-fA-F]?)',function(x) return string.char(tonumber(string.format("%d",x))) end)
    
     if value=="" then
+        if env.isInterrupted then
+            env.checkerr(false,"Operation is cancelled.")
+        end
         if default~=nil then return default end
         isValid=false
     elseif range and range ~='' then
@@ -1323,7 +1346,13 @@ function env.join_path(base,...)
         is_trim=true
         table.remove(paths,#paths)
     end
-    local path=table.concat(paths,env.PATH_DEL):gsub('[\\/]+',env.PATH_DEL)
+    local path=table.concat(paths,env.PATH_DEL):gsub('[\\/]+',env.PATH_DEL):gsub('(%$[%w_]+)',function(p)
+        local p1=os.getenv(p:sub(2))
+        return p1 or p
+    end)
+    if env.uv then
+        path=path:gsub('^~',uv.os.homedir())
+    end
     if is_trim then
         path=path:gsub('[\\/]+$','')
     end

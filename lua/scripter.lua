@@ -39,7 +39,7 @@ function scripter:rehash(script_dir,ext_name,extend_dirs)
     local abbrs={}
     
     local key_list=os.list_dir(dirs,ext_name or self.ext_name or "sql",nil,function(event,file)
-        if event=='ON_SCAN' then return 32767 end
+        if event=='ON_SCAN' then return 128*1024 end
         if not file.data then return end
         local desc,annotation
         if type(self.comment)=="string" then
@@ -51,10 +51,10 @@ function scripter:rehash(script_dir,ext_name,extend_dirs)
         local function set_annotation(s) annotation=s;return ""; end
         if desc~="" then
             desc=desc:gsub("%-%-%[%[(.*)%]%]%-%-",set_annotation):gsub("%-%-%[%[(.*)%-%-%]%]",set_annotation)
-            desc=desc:gsub("([\n\r]+%s*)%-%-","%1  ")
+            desc=desc:gsub("([\n\r]+%s*)%-%-[^%-]","%1  ")
             desc=desc:gsub("([\n\r]+%s*)REM","%1   ")
             desc=desc:gsub("([\n\r]+%s*)rem","%1   ")
-            desc=desc:gsub("([\n\r]+%s*)#","%1   ")
+            desc=desc:gsub("([\n\r]+%s*)#[^#]","%1   ")
         end
         local attrs={path=file.fullname,desc=desc,short_desc=desc:match("([^\n\r]+)") or ""}
         if annotation then 
@@ -492,10 +492,20 @@ function scripter:helper(_,cmd,search_key)
         local rows={{},{}}
         local undocs=nil
         local undoc_index=0
+        if search_key then
+            search_key=search_key:escape('*i')
+        end
         for k,v in pairs(cmdlist) do
             if type(v)=="table" and v.abbr then k=k..','..v.abbr end
+            local found
             local desc=type(v)=='table' and v.short_desc and v.short_desc:gsub("^[ \t]+","") or ''
-            if (not search_key or desc:upper():find(search_key:upper(),1,true) or k:find(search_key:upper(),1,true)) and k:sub(1,2)~='./' and k:sub(1,1)~='_' then
+            if search_key then
+                k,found=k:gsub(search_key,'$REV$%1$UREV$')
+                if found==0 then
+                    desc,found=desc:gsub(search_key,'$REV$%1$UREV$')
+                end
+            end
+            if (not search_key or found>0) and k:sub(1,2)~='./' and k:sub(1,1)~='_' then
                 if search_key or not (v.path or ""):find('[\\/]test[\\/]') then
                     desc=desc:gsub("([Uu]sage)(%s*:%s*)(@@NAME)","$USAGECOLOR$Usage:$NOR$ %3"):gsub("@@NAME","@@NAME "..k:lower().."$NOR$")
                     if desc and desc~="" then
@@ -530,7 +540,7 @@ function scripter:helper(_,cmd,search_key)
         return help
     end
     cmd = cmd:upper()
-    return cmdlist[cmd] and cmdlist[cmd].desc or "No such command["..cmd.."] !",cmd
+    return cmdlist[cmd] and cmdlist[cmd].desc or "No such command: "..cmd,cmd
 end
 
 function scripter:__onload()

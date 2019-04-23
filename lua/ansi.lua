@@ -176,6 +176,9 @@ else
 end
 
 ansi.ansi_mode=os.getenv("ANSICON_DEF") or "jline"
+ansi.escape="%f[\\]\\[eE](%[[%d;]*[mMK])"
+ansi.pattern="\27%[[%d;]*[mK]"
+
 local console_color=os.getenv("CONSOLE_COLOR")
 if isAnsiSupported and console_color and console_color~='NA' then
     ansi.ansi_default=console_color
@@ -203,7 +206,9 @@ end
 
 function ansi.string_color(code,...)
     if not code then return end
-    local c=color[code:upper()]
+    local c,count=code:gsub(ansi.escape,function(m) return '\27'..m:gsub('M','m') end)
+    if count>0 then return c end
+    c=color[code:upper()]
     if not c then return end
     if type(c)=="table" then return c[1] end
     local v1,v2=select(1,...) or '',select(2,...) or ''
@@ -214,9 +219,8 @@ end
 function ansi.mask(codes,msg,continue)
     if codes==nil then return msg end
     local str
-    for v in codes:gmatch("([^; \t,]+)") do
-        v=v:upper()
-        local c=ansi.string_color(v)
+    for v in codes:gmatch(codes:find('[\\]?[eE]%[') and ('[\\]?[eE][^eE\\]+') or "([^; \t,]+)") do
+        local c=ansi.string_color(v:find('^[eE]%[') and '\\'..v or v)
         if not c then
             v=ansi.cfg(v)
             if v then return ansi.mask(v,msg,continue) end
@@ -228,6 +232,7 @@ function ansi.mask(codes,msg,continue)
             end
         end
     end
+
     if str and not enabled then str="" end
     if not continue then
         continue=ansi.string_color('NOR')
@@ -270,17 +275,18 @@ function ansi.define_color(name,value,module,description)
         if description then
             ansi.cfg(name,value,module,description)
         end
-        return 
+        return
     end
     name,value=name:upper(),value:upper()
-    value=value:gsub("%$(%u+)%$",'%1')
+    value=value:gsub("%$(%u+)%$",'%1'):gsub('[\\%$]E%[','E[')
     env.checkerr(not color[name],"Cannot define color ["..name.."] as a name!")
     if ansi.mask(value,"")=="" then
-        env.raise("Undefined color code ["..value.."]!")
+        env.raise("Undefined color code: "..value.."!")
     end
 
     if description then
-        value=os.getenv(name:upper()) or value
+        local v=os.getenv(name:upper()) 
+        value = v and v:upper():gsub("%$(%u+)%$",'%1'):gsub('[\\%$]E%[','E[') or value
         ansi.cfg(name,ansi.cfg(name) or value,module,description)
         env.set.init(name,value,ansi.define_color,module,description)
         if value ~= ansi.cfg(name) then
@@ -296,8 +302,8 @@ function ansi.get_color(name,...)
     --io.stdout:write(name,ansi.cfg(name),enabled and 1 or 0)
     if not name or not enabled then return "" end
     name=name:upper()
-    if color[name] then return ansi.string_color(name,...) or "" end
-    return ansi.cfg(name) and ansi.mask(ansi.cfg(name),"",true) or ""
+    local c=ansi.string_color(name,...)
+    return c and c or ansi.cfg(name) and ansi.mask(ansi.cfg(name),"",true) or ""
 end
 
 function ansi.enable_color(name,value)
@@ -334,8 +340,6 @@ function ansi.onload()
     ansi.color,ansi.map=color,cfg
 end
 
-ansi.escape="%f[\\]\\[eE](%[[%d;]*[mK])"
-ansi.pattern="\27%[[%d;]*[mK]"
 
 local function _strip_ansi(str)
     if not enabled then return str end
@@ -343,6 +347,25 @@ local function _strip_ansi(str)
             return (ansi.cfg(s) or color[s]) and '' or "$"..s.."$"
         end)
 end
+
+local ulen=console.ulen
+function string.ulen(s,maxlen)
+    if s=="" then return 0,0,s end
+    if not s then return nil end
+    if maxlen==0 then return 0,0,'' end
+    local s1,len1,len2=tostring(s)
+    if (maxlen and maxlen>0 and #s1>maxlen and s1:find('\27[',1,true)) or s1:find('[\127-\255]') then
+        len1,len2,s1=ulen(console,s1,tonumber(maxlen) or 0):match("(%d+):(%d+):(.*)")
+        len1,len2,s1=tonumber(len1) or 0,tonumber(len2) or 0,maxlen and s1 or s
+    else
+        if maxlen and maxlen>0 then 
+            s1=s1:sub(1,maxlen)
+        end
+        len1,len2=#s1,#(s1:strip_ansi())
+    end
+    return len1,len2,s1
+end
+
 
 function ansi.strip_ansi(str)
     local e,s=pcall(_strip_ansi,str)

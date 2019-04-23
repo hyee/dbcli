@@ -52,7 +52,7 @@ WHERE  conftype = 'CELL'
 ORDER BY 1;
 
 col "Disk Group|Total Size,total_size,Disk Group|Free Size,cached|size,Grid|Size,Disk|Size,Usable|Size,HD_SIZE,FD_SIZE,flash_cache,flash_log" format kmg
-col unalloc,flashcache,flashlog,Alloc|RAM,RAM|OLTP,Alloc|FCache,Alloc|OLTP,Alloc|Dirty,FCache|Used,Used|OLTP,Used|FCC,FCache|Keep,Keep|OLTP,Keep|FCC format kmg
+col unalloc,flashcache,flashlog,Alloc|RAM,RAM|OLTP,Alloc|FCache,Alloc|OLTP,ALLOC|SCAN,Large|Writes,OLTP|Dirty,FCache|Used,Used|OLTP,Used|FCC,FCache|Keep,Keep|OLTP,Keep|FCC format kmg
 grid {[[
     SELECT CAST(NVL(CELL,'--TOTAL--') AS VARCHAR2(20)) cell,
            SUM(decode("flashCacheStatus",'normal',"FlashCache")) "FlashCache",
@@ -87,10 +87,26 @@ grid {[[
             WHERE  conftype = 'AWRXML')
     GROUP  BY ROLLUP(CELL)
 ]],'-',[[
-    WITH gstats as(
-        SELECT nvl(cell_hash,0) cellhash,metric_name n, sum(metric_value) v
-        FROM  v$cell_global
-        group by metric_name,rollup(cell_hash))
+    WITH gstats0 as(
+        SELECT nvl(cell_hash,0) cellhash,
+               case when metric_name like '%allocated - large writes%' then 'Large Writes' else metric_name end n, 
+               sum(metric_value) v
+        FROM   v$cell_global
+        group by case when metric_name like '%allocated - large writes%' then 'Large Writes' else metric_name end,rollup(cell_hash)),
+    gstats as(
+        select * from gstats0
+        union all
+        select cellhash,'SCAN',
+               sum(decode(n,
+                   'Flash cache bytes allocated',v,
+                   'Flash cache bytes allocated for OLTP data',-v,
+                   'Large Writes',-v,
+                   'Flash cache bytes used - columnar',-v,
+                   'Flash cache bytes used - columnar keep',v,0
+               ))
+        from  gstats0 
+        group by cellhash
+    )
     SELECT * FROM (
         SELECT  NVL((SELECT extractvalue(xmltype(c.confval), '/cli-output/context/@cell')
                         FROM   v$cell_config c
@@ -127,13 +143,15 @@ grid {[[
             MAX(v) FOR n IN(
             'Flash cache bytes allocated' AS "Alloc|FCache",
             'Flash cache bytes allocated for OLTP data' AS "Alloc|OLTP",
-            'Flash cache bytes allocated for unflushed data' AS "Alloc|Dirty",
+            'SCAN' AS "Alloc|Scan",
+            'Flash cache bytes allocated for unflushed data' AS "OLTP|Dirty",
+            'Large Writes' AS "Large|Writes",
             'Flash cache bytes used' AS "FCache|Used",
             'Flash cache bytes used for OLTP data' AS "Used|OLTP",
             'Flash cache bytes used - columnar' AS "Used|FCC",
             'Flash cache bytes used - keep objects' AS "FCache|Keep",
             'Flash cache bytes allocated for OLTP keep objects' AS  "Keep|OLTP",
-            'Flash cache bytes used - columnar keep' AS "Keep|FCC",
+            --'Flash cache bytes used - columnar keep' AS "Keep|FCC",
             '|' as "|",
             'RAM cache bytes allocated' as "Alloc|RAM",
             'RAM cache bytes allocated for OLTP data' as "RAM|OLTP"))) b 

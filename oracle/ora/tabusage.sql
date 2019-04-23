@@ -1,10 +1,42 @@
-/*[[Report table usages. Usage: @@NAME [owner.]<table_name> 
+/*[[
+	Report table usages including table modifications/segment stats/column usages. Usage: @@NAME [owner.]<table_name> 
     Parameters that impacts column tracking and SPD tracking: _column_tracking_level,_dml_monitoring_enabled
-    Parameters that impacts index usage tracking: _iut_enable,_iut_max_entries,_iut_stat_collection_type,
+    Parameters that impacts index usage tracking: _iut_enable,_iut_max_entries,_iut_stat_collection_type.
+
+
+	SAMPLE OUTPUT:
+    Table Modifications Since Last Analyzed:
+    ========================================
+    SEGMENTS INSERTS UPDATES DELETES TRUNCATES   LAST_TIMESTAMP
+    -------- ------- ------- ------- --------- -------------------
+           1    18      36      13           0 2019-04-12 22:01:29
+
+    Segment Statistics:
+    ===================
+    OWNER OBJECT_NAME SEGMENT_TYPE SEGMENTS       STATISTIC_NAME       STATS_VALUE
+    ----- ----------- ------------ -------- -------------------------- -----------
+    SYS   I_OBJ1      INDEX               1 buffer busy waits                  0
+    SYS   I_OBJ1      INDEX               1 db block changes                 304
+    SYS   I_OBJ1      INDEX               1 gc buffer busy                     0
+    ....
+
+    Column Usages:
+    ==============
+    INTCOL#  COL_NAME   EQ_PREDS EQJ_PREDS NO_EQ_PREDS RANGE_PREDS LIKE_PREDS NULL_PREDS    HISTOGRAM    BUCKETS ...
+    ------- ----------- -------- --------- ----------- ----------- ---------- ---------- --------------- ------- ...
+          1 OBJ#          1.39 K    2.02 K         0         128          0          0   NONE                  1 ...
+          2 DATAOBJ#       633        46           0           0          0         69   NONE                  1 ...
+          3 OWNER#        1.41 K    1.77 K        13           0          0        301   FREQUENCY            17 ...
+          4 NAME          1.65 K    1.11 K         4           0        673         35   HEIGHT BALANCED     254 ...
+          5 NAMESPACE     1.07 K      61           0           0          0          0   FREQUENCY             9 ...
+          6 SUBNAME        770        56           0           0          0        757   NONE                  1 ...
+          7 TYPE#         1.74 K     400           0           1          0          0   FREQUENCY            24 ...
+    ....
 	--[[
 		@check_access_usage: SYS.COL_USAGE$/SYS.COL_GROUP_USAGE$={2} SYS.COL_USAGE$={1} default={0}
 		@check_access_index: dba_index_usage={1} default={0}
 		@check_access_mdf: sys.dba_tab_modifications={sys.dba_tab_modifications} sys.all_tab_modifications={sys.all_tab_modifications}
+        @ARGS: 1
 	--]]
 ]]*/
 SET FEED OFF VERIFY ON BYPASSEMPTYRS ON

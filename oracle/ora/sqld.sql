@@ -2,6 +2,7 @@
    --[[
       @CHECK_VERSION: 11.0={1}
       &filter: default={1=1},f={}
+      @ARGS: 1
    --]]
 ]]*/
 set feed off verify off

@@ -12,6 +12,7 @@
              }
         &V10: s={}, o={(select event from gv$session where inst_id=a.inst_id and sid=a.sid) event,}
         @aggs: 11.2={regexp_replace(listagg(to_name,'','') within group(order by to_name),''([^,]+)(,\1)+'',''\1'')},default={to_char(wmsys.wm_concat(DISTINCT to_name))}
+        @ARGS: 1
     ]]--
 ]]*/
 SELECT distinct a.INST_ID,

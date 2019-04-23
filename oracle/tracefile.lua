@@ -275,7 +275,8 @@ end
 function trace.onload()
     env.set_command(nil,{"loadtrace","dumptrace"},[[
         Download Oracle trace file into local directory. Usage: @@NAME {<trace_file|default|alert|0/1/4/8/12> [MB] [begin_MB]}
-        This command requires the "create directory" privilige.
+        This command *could* requires the "create directory" privilige.
+        
         Parameters:
             trace_file: 1) The absolute path of the target trace file, or
                         2) "default" to extract current session's trace, or

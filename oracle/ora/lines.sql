@@ -13,6 +13,6 @@
 
 ora _find_object "&V1" 1
 set printsize 10000
-select name,type,line,text
+select name,type,line,trim(chr(10) from text) text
 from &CHECK_ACCESS_OBJ
 where (&F1) AND (&F2)

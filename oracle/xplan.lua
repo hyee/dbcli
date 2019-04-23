@@ -131,13 +131,13 @@ function xplan.onload()
     local help=[[
     Explain SQL execution plan. Usage: @@NAME {[-<format>|-10053|-prof] <SQL statement|SQL ID>}
     Options:
-            -<format>: Refer to the 'format' field in the document of 'dbms_xplan'.
-                                 Default is ']]..default_fmt..[['
-            -10053   : Generate the 10053 trace file after displaying the execution plan
-            -prof    : Generate the SQL profile script after displaying the execution plan
+        -<format>: Refer to the 'format' field in the document of 'dbms_xplan'.
+                       Default is ']]..default_fmt..[['
+        -10053   : Generate the 10053 trace file after displaying the execution plan
+        -prof    : Generate the SQL profile script after displaying the execution plan
     Parameters:
-            <SQL Statement>: SELECT/DELETE/UPDATE/MERGE/etc that can produce the execution plan
-            <SQL ID>       : The SQL ID that can be found in SQL area or AWR history
+        <SQL Statement>: SELECT/DELETE/UPDATE/MERGE/etc that can produce the execution plan
+        <SQL ID>       : The SQL ID that can be found in SQL area or AWR history
     ]]
     env.set_command(nil,{"XPLAIN","XPLAN"},help,xplan.explain,'__SMART_PARSE__',3,true)
 end

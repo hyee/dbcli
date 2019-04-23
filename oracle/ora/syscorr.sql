@@ -103,7 +103,7 @@ BEGIN
                          to_char(current_obj#)
                         WHEN current_obj# != -1 THEN
                          'UNDO'
-                    END) ， stats AS
+                    END) , stats AS
          (SELECT *
           FROM   snap
           UNION ALL

@@ -1,5 +1,5 @@
 --
--- lua-MessagePack : <http://fperrad.github.io/lua-MessagePack/>
+-- lua-MessagePack : <https://fperrad.frama.io/lua-MessagePack/>
 --
 
 local r, jit = pcall(require, 'jit')
@@ -60,7 +60,10 @@ local function checktype (caller, narg, arg, tname)
 end
 
 local packers = setmetatable({}, {
-    __index = function (t, k) error("pack '" .. k .. "' is unimplemented") end
+    __index = function (t, k)
+        if k == 1 then return end   -- allows ipairs
+        error("pack '" .. k .. "' is unimplemented")
+    end
 })
 m.packers = packers
 
@@ -887,9 +890,9 @@ else
 end
 set_array'without_hole'
 
-m._VERSION = '0.5.0'
+m._VERSION = '0.5.1'
 m._DESCRIPTION = "lua-MessagePack : a pure Lua implementation"
-m._COPYRIGHT = "Copyright (c) 2012-2017 Francois Perrad"
+m._COPYRIGHT = "Copyright (c) 2012-2018 Francois Perrad"
 return m
 --
 -- This library is licensed under the terms of the MIT/X11 license,

@@ -1,4 +1,28 @@
-/*[[Show AWR Top SQLs for a specific period. Usage: @@NAME {[0|<inst>] [ela|exec|cpu|io|cc|fetch|sort|px|row|load|parse|read|write|mem] [yymmddhhmi] [yymmddhhmi]} [-m] [-f"<filter>"] 
+/*[[
+    Show AWR Top SQLs for a specific period. Usage: @@NAME {[0|<inst>] [ela|exec|cpu|io|cc|fetch|sort|px|row|load|parse|read|write|mem] [yymmddhhmi] [yymmddhhmi]} [-m] [-u] [-f"<filter>"] 
+    -m: group by force_maching_signature instead of sql_id
+    -u: only show the records whose parsing_schema_name=sys_context('userenv','current_schema')
+
+    Sample Output:
+    ==============
+       SQL_ID     PHVS  TOP_PHV    EXECS  PARSE  ELA    PCT    AVG  SQL_TEXT                                     
+    ------------- ---- ---------- ------ ------ ------ ------ ----- ---------------------------------------------
+    310wr50c2fjv0    1 3971591178 120971 604862 19.01h 71.94% 0.57s SELECT A.EVENT, DATA , '$' FROM (SELECT /*+no
+    ard6ysp2ufm1n    1 881395945  120972 604863  3.98h 15.06% 0.12s SELECT '[gv$sysstat]' || NAME, SUM(VALUE), ''
+    68gsknzub3950    1 0                      0  1.45h  5.50%       BEGIN :1 := mon_db.startup(interval=>5,server
+    a8zxxqa1hcc7f    1 4063065057 120972 604863 28.02m  1.77% 0.01s SELECT JSON_ARRAYAGG(JSON_OBJECT('event' IS D
+    7v8dacmx3t3td    1 1117094054 120972 604551 22.84m  1.44% 0.01s SELECT COUNT(*) FROM GV$SESSION WHERE USERNAM
+    d3ddjhh624zy9    1 4219360880 120971 604668 21.70m  1.37% 0.01s SELECT EVENT, EVENT || '|' || LISTAGG(NVL(W, 
+    6hnhqahphpk8n    1 486334127   18413  18413 10.51m  0.66% 0.03s select free_mb from v$asm_diskgroup_stat wher
+    d49r7pkbqqpgn    1 1811226007 120972      0  6.54m  0.41%     0 SELECT JSON_ARRAYAGG(JSON_OBJECT('event' IS D
+    6uxga5vnsgugt    2 1018201100   5196   5196  4.07m  0.26% 0.05s select s.file#, s.block#, s.ts#, t.obj#, s.hw
+    1u8v867f5ys43    1 2025954503  25140  25140  3.98m  0.25% 0.01s select ts#, file#, block#, hwmincr from seg$ 
+    892d0vg7gatf5    1 1656552173 120972      0  3.08m  0.19%     0 SELECT MAX(A.VALUE), MIN(A.VALUE) FROM V$SESS
+    3kqrku32p6sfn    1 1774581179     80   1212  3.00m  0.19% 2.25s MERGE /*+ OPT_PARAM('_parallel_syspls_obey_fo
+    1q1spprb9m55h    2 2870263549    114    200  2.13m  0.13% 1.12s WITH MONITOR_DATA AS (SELECT INST_ID, KEY, NV
+    50ycjbhy30sxv    1 670558803  120970      0  1.29m  0.08%     0 SELECT EVENT, EVENT || '|' || NVL(DATA, '|'),
+    c179sut1vgpc8    1 1149183595   2002   2002  1.04m  0.07% 0.03s INSERT /*+ LEADING(@"SEL$F5BB74E1" "H"@"SEL$2
+
     --[[
         &filter: s={1=1},u={PARSING_SCHEMA_NAME=nvl('&0',sys_context('userenv','current_schema'))},f={}
         &BASE : s={sql_id}, m={signature}

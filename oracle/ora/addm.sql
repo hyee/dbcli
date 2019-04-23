@@ -1,4 +1,44 @@
 /*[[Show existing ADDM report. Usage: @@NAME [task_id] [-f"<filter>"]
+
+Sample Output:
+=============
+ORCL> @@NAME 2084                                                                                                                    
+    +---------+-------------+----------------------------------------------------------------------------------------------------------
+    | Impact  |   Target#   |Message                                                                                                   
+    |---------|-------------|----------------------------------------------------------------------------------------------------------
+    |100.00%  |             |Finding #01: SQL statements consuming significant database time were found. These statements offer a good 
+    |         |             |                                                                                                          
+    | 100.00% |             |                                                                                                          
+    |         |             |Advise #1: SQL Tuning                                                                                     
+    |  100.00%|2vchm7jzztzng|    Rationale: Database time for this SQL was divided as follows: 100% for SQL execution, 0% for parsing, 
+    |         |             |               SQL statement with SQL_ID "2vchm7jzztzng" was executed 18 times and had an average elapsed 
+    |         |             |               The SQL spent only 0% of its database time on CPU, I/O and Cluster waits. Therefore, the SQ
+    |         |             |               Waiting for event "SQL*Net more data from client" in wait class "Network" accounted for 99%
+    |         |2vchm7jzztzng|    Action: Investigate the SELECT statement with SQL_ID "2vchm7jzztzng" for possible performance improvem
+    |________ |_____________|__________________________________________________________________________________________________________
+    |98.88%   |             |Finding #02: Wait class "Network" was consuming significant database time.                                
+    |         |             |                                                                                                          
+    |________ |_____________|__________________________________________________________________________________________________________
+    |98.88%   |             |Finding #03: Wait event "SQL*Net more data from client" in wait class "Network" was consuming significant 
+    |         |             |                                                                                                          
+    | 98.88%  |             |                                                                                                          
+    |         |             |Advise #1: Application Analysis                                                                           
+    |  98.88% |             |    Action: Investigate the cause for high "SQL*Net more data from client" waits. Refer to Oracle's "Datab
+    |________ |_____________|__________________________________________________________________________________________________________
+    |0.00%    |             |Finding #04: Wait class "Application" was not consuming significant database time.                        
+    |         |             |             Wait class "Commit" was not consuming significant database time.                             
+    |         |             |             Wait class "Concurrency" was not consuming significant database time.                        
+    |         |             |             Wait class "Configuration" was not consuming significant database time.                      
+    |         |             |             CPU was not a bottleneck for the instance.                                                   
+    |         |             |             Wait class "User I/O" was not consuming significant database time.                           
+    |         |             |             Session connect and disconnect calls were not consuming significant database time.           
+    |         |             |             Hard parsing of SQL statements was not consuming significant database time.                  
+    |         |             |                                                                                                          
+    |________ |_____________|__________________________________________________________________________________________________________
+    |******** |*************|**********************************************************************************************************
+    |100.00%  |2vchm7jzztzng|SELECT * FROM (SELECT /*+ordered use_nl(timer stat) no_merge(stat) no_expand*/ nullif(inst,0) inst,nvl(eve
+    +---------+-------------+----------------------------------------------------------------------------------------------------------
+
     --[[
         @ALIAS : adv
         &filter: default={1=1}, f={}

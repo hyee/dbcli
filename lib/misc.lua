@@ -46,7 +46,7 @@ end
 
 function string.escape(s, mode)
     s = s:gsub('%%','%%%%'):gsub('%z','%%z'):gsub('([%^%$%(%)%.%[%]%*%+%-%?])', '%%%1')
-    if mode == '*i' then s = s:gsub('[%a]', function(s) return s:lower():format('[%s%s]',s:upper()) end) end
+    if mode == '*i' then s = s:case_insensitive_pattern() end
     return s
 end
 
@@ -292,20 +292,6 @@ function table.dump(tbl,indent,maxdep,tabs)
     return rs..indent..'}'
 end
 
-local ulen=console.ulen
-function string.ulen(s)
-    if s=="" then return 0,0 end
-    if not s then return nil end
-
-    local len1,len2
-    if s:find('[%z\1-\127\194-\244][\128-\191]*') then
-        len1,len2= ulen(console,s):match("(%d+):(%d+)")
-        return tonumber(len1) or 0,tonumber(len2) or 0
-    else
-        len1=#s
-        return len1,len1
-    end
-end
 
 function try(args)
     local succ,res=pcall(args[1])

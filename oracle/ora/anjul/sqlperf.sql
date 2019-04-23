@@ -1,8 +1,8 @@
 /*[[ SQL performance over time: Usage: @@NAME <sql_id> [days]   
     --[[
-    @BASE:11.2 ={}, 10.1={--}
+        @BASE:11.2 ={}, 10.1={--}
+        @ARGS: 1
     ]]--
-   
 ]]*/
 
 PROMPT

@@ -1,5 +1,5 @@
 /*[[
-  Generate ASM stats. Usage: @@NAME <options> } 
+  Generate ASM stats. Usage: @@NAME <options>
 
 ]]*/
 {
@@ -28,9 +28,7 @@
         AND    g.inst_id = ds.inst_id
         AND    g.group_number = di.group_number
         AND    di.instname NOT LIKE '+ASM%'
-        GROUP BY rollup( g.name,ds.inst_id,
-               (di.disk_number,
-               di.failgroup))]],
+        GROUP BY rollup( g.name,ds.inst_id,(di.disk_number,di.failgroup))]],
     delta_by="total_io,writes,READS,total_bytes,hot_bytes,bytes_read,bytes_written,total_time,read_time,write_time,io_errs,timeouts",
     max_rows=50,
     column_formatter={KMG='total_bytes,hot_bytes,bytes_read,bytes_written',

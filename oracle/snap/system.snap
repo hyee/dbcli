@@ -1,4 +1,6 @@
 /*[[Show System statistics summary. Usage: @@NAME <options> {[<inst_id>] [<keyword>|-im]} [-iostat|-latch] [-filestat] [-f"<event_filter>"]
+    
+Options:
     <inst_id>     : Specify the instance number, default to aggregrate all instances' stats. When '0' means don't aggregrate across all instances
     <keyword>     : The keyword to filter gv$sysstat
     <event_filter>: The predicate to filter gv$system_event
@@ -6,6 +8,123 @@
     -iostat       : Show I/O stats instead of active sessions
     -filestat     : Show Tablespace and file stats instead of system global stats
     -im           : Only list the statistics relative to In-Memory
+
+Examples:
+     @@NAME  10           : takes 2 snapshots within 10 seconds and report the delta stats
+     @@NAME  10 . time    : takes 2 snapshots within 10 seconds and report the delta stats, as well as show the stats contain the word "time" 
+     @@NAME  10 1         : takes 2 snapshots within 10 seconds and report the delta stats in instance#1
+     @@NAME  10 1 -sec    : takes 2 snapshots within 10 seconds and report the delta stats in instance#1, of which the delta values are devided by 10
+     @@NAME  15+ -top -sec: compute and print the stats in TOP mode with 15 seconds interval, of which the delta values are devided by 15 (same to alias "top")
+     @@NAME  "select count(distinct column_name) from dba_Tab_cols" :  execute target SQL and compute the system delta stats
+
+[| grid:{topic="Output fields(When execute with '-sec' then most all values are based on per second)"}
+ | Field Name       | Source View                  | Description / Delta Value                                                                                          |
+ | #                | gv$*                         | 'inst_id' or '*' for all instances                                                                                 |
+ | Name             | gv$*                         | 'name' or 'stat_name'                                                                                              |
+ | -                |-                             |-                                                                                                                   |
+ | OS Time          | gv$session                   | MAX(logon_time) of each instance                                                                                   |
+ | CPU & Load       | gv$osstat                    | NUM_CPU_SOCKETS/NUM_CPU_CORES/NUM_CPUS\|LOAD                                                                       |
+ | PhyMem           | gv$osstat                    | PHYSICAL_MEMORY_BYTES                                                                                              |
+ | -                |-                             |-                                                                                                                   |
+ | Pct(Time Model)  | gv$sys_time_model            | 100*value/value['DB time'+'background elapsed time']                                                               |
+ | -                |-                             |-                                                                                                                   |
+ | Busy             | gv$osstat                    | 100*BUSY_TIME/(BUSY_TIME+IDLE_TIME)                                                                                |
+ | User             | gv$osstat                    | 100*USER_TIME/(BUSY_TIME+IDLE_TIME)                                                                                |
+ | Sys              | gv$osstat                    | 100*SYS_TIME /(BUSY_TIME+IDLE_TIME)                                                                                |
+ | DB               | gv$osstat                    | 100*gv$sys_time_model.value['DB CPU'+'background cpu time'] / (BUSY_TIME+IDLE_TIME)                                |
+ | FreeMem          | gv$osstat                    | FREE_MEMORY_BYTES                                                                                                  |
+ | Swap             | gv$osstat                    | VM_IN_BYTES + VM_OUT_BYTES                                                                                         |
+ | FreeMem          | gv$osstat                    | FREE_MEMORY_BYTES                                                                                                  |
+ | -                |-                             |-                                                                                                                   |
+ | IO Wait          | gv$system_event              | TIME_WAITED_MICRO/TOTAL_WAITS where WAIT_CLASS in('User I/O','System I/O')                                         |
+ | IOPS             | gv$sysstat                   | Value['physical write total IO requests'+'physical read total IO requests']                                        |
+ | TPS              | gv$sysstat                   | Value['user commits'+'user rollbacks']                                                                             |
+ | Resp             | gv$sysstat                   | gv$sys_time_model.value['sql execute elapsed time'] / Value['user calls']                                          |
+ | -                |-                             |-                                                                                                                   |
+ | SQL_ID & SQL_TEXT| gv$sql                       | SQL_ID/SQL_TEXT where greatest(users_executing,users_opening) > 0 or last_active_time > :prev_snap_time            |
+ | AAS              | gv$active_session_history    | COUNT(1) where SQL_ID=<SQL_ID> and sample_time > :prev_snap_time                                                   |
+ | CPU              | gv$active_session_history    | COUNT('ON CPU') where SQL_ID=<SQL_ID> and sample_time > :prev_snap_time                                            |
+ | -                |-                             |-                                                                                                                   |
+ | Logon            | gv$sysstat                   | Value['user logons cumulative']                                                                                    |
+ | Call             | gv$sysstat                   | Value['user calls']                                                                                                |
+ | Exec             | gv$sysstat                   | Value['execute count']                                                                                             |
+ | Parse            | gv$sysstat                   | Value['parse count (total)']                                                                                       |
+ | Hard             | gv$sysstat                   | Value['parse count (hard)'] * 100 / Value['parse count (total)']                                                   |
+ | Buffer           | gv$sysstat                   | Value['session logical reads'] * db_block_size                                                                     |
+ | PhyRead          | gv$sysstat                   | Value['physical read total bytes']                                                                                 |
+ | PhyWrite         | gv$sysstat                   | Value['physical write total bytes']                                                                                |
+ | dxr              | gv$sysstat                   | 100 * Value['physical reads direct'] * db_block_size / <PhyRead>                                                   |
+ | dxw              | gv$sysstat                   | 100 * Value['physical writes direct'] * db_block_size / <PhyWrite>                                                 |
+ | Redo             | gv$sysstat                   | Value['redo size'+'flashback log write bytes']                                                                     |
+ | Undo             | gv$sysstat                   | Value['DBWR undo block writes']                                                                                    |
+ | Temp             | gv$sysstat                   | Value['physical reads direct temporary tablespace'+'physical writes direct temporary tablespace'] * db_block_size  |
+ | SQL*Net          | gv$sysstat                   | Value[stat_name like 'byte%SQL*Net%']                                                                              |
+ | DBWR             | gv$iostat_function           | DBWR[SMALL_READ_MEGABYTES+SMALL_WRITE_MEGABYTES+LARGE_READ_MEGABYTES+LARGE_WRITE_MEGABYTES]                        |
+ | LGWR             | gv$iostat_function           | LGWR[SMALL_READ_MEGABYTES+SMALL_WRITE_MEGABYTES+LARGE_READ_MEGABYTES+LARGE_WRITE_MEGABYTES]                        |
+ | -                |-                             |-                                                                                                                   |
+ | IOPS             | v$cell_db                    | METRIC_VALUE['Per Db Number of IOs'+'Per Db Number of IOs for Flash']                                              |
+ | MBPS             | v$cell_db                    | METRIC_VALUE['Per Db Bytes of IO'+'Per Db Bytes of IO for Flash']                                                  |
+ | FLASH            | v$cell_db                    | METRIC_VALUE['Per Db Number of IOs for Flash']                                                                     |
+ | SMALL            | v$cell_db                    | METRIC_VALUE['Per Db Number of small IOs'+'Per Db Number of small IOs for Flash']                                  |
+ | BandWidth        | gv$sysstat                   | Value['cell physical IO interconnect bytes']                                                                       |
+ | Offload          | gv$sysstat                   | Value['cell physical IO bytes eligible for predicate offload'+'cell physical write IO bytes eligible for offload'] |
+ | OflOut           | gv$sysstat                   | 100 * Value['cell physical IO interconnect bytes returned by smart scan'] / <BandWidth>                            |
+ | OflEff           | gv$sysstat                   | 100-100*Value['cell physical IO interconnect bytes returned by smart scan']/(<Unzip>+<SISave>+<CCSave>)            |
+ | Unzip            | gv$sysstat                   | Value['cell IO uncompressed bytes']                                                                                |
+ | zip              | gv$sysstat                   | Value['HCC scan cell bytes compressed'+'HCC scan rdbms bytes compressed']                                          |
+ | OptRead          | gv$sysstat                   | Value['physical read total bytes optimized']                                                                       |
+ | OptWrite         | gv$sysstat                   | Value['physical write total bytes optimized']                                                                      |
+ | CellIM           | gv$sysstat                   | Value['cell physical IO bytes processed for IM capacity'+'cell physical IO bytes processed for IM query']          |
+ | SISave           | gv$sysstat                   | Value['cell physical IO bytes saved by storage index']                                                             |
+ | CCSave           | gv$sysstat                   | Value['cell physical IO bytes saved by columnar cache']                                                            |
+ | FcHit            | gv$sysstat                   | 100 * Value['cell flash cache read hits'+'cell ram cache read hits'] / Value['physical read total IO requests']    |
+ | -                |-                             |-                                                                                                                   |
+ | IM-LIO           | gv$sysstat                   | Value['session logical reads - IM']                                                                                |
+ | LIO(%)           | gv$sysstat                   | 100 * Value['session logical reads - IM'] / Value['session logical reads']                                         |
+ | Bytes            | gv$sysstat                   | Value['IM scan bytes in-memory']                                                                                   |
+ | Unzip            | gv$sysstat                   | Value['IM scan bytes uncompressed']                                                                                |
+ | IMCU             | gv$sysstat                   | Value['IM scan CUs current']                                                                                       |
+ | Prun             | gv$sysstat                   | 100 * Value['IM scan CUs predicates optimized'+'IM scan CUs pruned'] / <IMCU>                                      |
+ | Miss             | gv$sysstat                   | Value['IM scan CUs invalid or missing revert to on disk extent']                                                   |
+ | Rows             | gv$sysstat                   | Value['IM scan rows']                                                                                              |
+ | Valid            | gv$sysstat                   | 100 * Value['IM scan rows valid']     / Value['IM scan rows']                                                      |
+ | Proj             | gv$sysstat                   | 100 * Value['IM scan rows projected'] / Value['IM scan rows']                                                      |
+ | Skip             | gv$sysstat                   | 100 * Value['IM scan rows optimized'] / Value['IM scan rows']                                                      |
+ | Exclude          | gv$sysstat                   | 100 * Value['IM scan rows excluded']  / Value['IM scan rows']                                                      |
+ | pcode            | gv$sysstat                   | Value['IM scan rows pcode aggregated']                                                                             |
+ | Popr             | gv$sysstat                   | Value['IM populate rows'+'IM prepopulate rows']                                                                    |
+ | re-Popr          | gv$sysstat                   | Value['IM repopulate (trickle incremental) total rows'+'IM repopulate rows']                                       |
+ | IMA              | gv$sysstat                   | Value['key vector CU codes processed']                                                                             |
+ | IMDS             | gv$sysstat                   | Value['IM scan (dynamic) rows']                                                                                    |
+ | JP               | gv$sysstat                   | Value['vector group by accumspace size']                                                                           |
+ | IMEU             | gv$sysstat                   | Value['IM scan EU rows']                                                                                           |
+ | -                |-                             |-                                                                                                                   |
+ | Traffic          | gv$sysstat                   | Cluster data transfer in bytes, similar to AWR                                                                     |
+ | enq              | gv$sysstat                   | 1E4 * Value['global enqueue get time'] / Value['global enqueue gets sync'+'global enqueue gets async']             |
+ | Lost             | gv$sysstat                   | Value['gc blocks lost'+'gc blocks corrupt'] * db_block_size                                                        |
+ | Fail             | gv$system_event              | Value['gc cr failure']                                                                                             |
+ | CR Rec           | gv$sysstat                   | Value['gc cr blocks received'] * db_block_size                                                                     |
+ | CR Busy          | gv$instance_cache_transfer   | CR_BUSY * db_block_size                                                                                            |
+ | CR Traf          | gv$instance_cache_transfer   | CR_CONGESTED * db_block_size                                                                                       |
+ | CR Avg           | gv$sysstat                   | 1E4 * Value['gc cr block receive time'] /  Value['gc cr blocks received']                                          |
+ | CR Bld           | gv$sysstat                   | 1E4 * Value['gc cr block build time'+'gc cr multiblock grant time'] / Value['gc cr blocks served']                 |
+ | CR Fls           | gv$sysstat                   | 1E4 * Value['gc cr block flush time'] / Value['gc cr blocks served']                                               |
+ | CU Rec           | gv$sysstat                   | Value['gc current blocks received']                                                                                |
+ | CU Busy          | gv$instance_cache_transfer   | CU_BUSY * db_block_size                                                                                            |
+ | CU Traf          | gv$instance_cache_transfer   | CU_CONGESTED * db_block_size                                                                                       |
+ | CU Avg           | gv$sysstat                   | 1E4 * Value['gc current block receive time'] /  Value['gc current blocks received']                                |
+ | CU Fls           | gv$sysstat                   | 1E4 * Value['gc current block build time'+'gc current multiblock grant time']/Value['current current blocks served']|
+ | CU Pin           | gv$sysstat                   | 1E4 * Value['gc current block pin time'] / Value['gc current blocks served']                                       |
+ | -                |-                             |-                                                                                                                   |
+ | WAIT_CLASS       | gv$system_event              | WAIT_CLASS                                                                                                         |
+ | TOP_SQL          | gv$active_session_history    | MAX(SQL_ID) KEEP(DENSE_RANK LAST ORDER BY <AAS> DESC) where sample_time > :prev_snap_time                          |
+ | AAS              | gv$active_session_history    | COUNT(1) where sample_time > :prev_snap_time                                                                       |
+ | Waits            | gv$system_event              | TOTAL_WAITS                                                                                                        |
+ | Cost             | gv$system_event              | WAIT_WAITED_MICRO, and 'ON CPU' is from gv$sys_time_model                                                          |
+ | PCT              | gv$system_event              | 100 * <cost> / SUM(<cost>)                                                                                         |
+ | AVG              | gv$system_event              | <Cost> / TOTAL_WAITS                                                                                               |
+ | Max              | gv$active_session_history    | MAX(TIME_WAITED)                                                                                                   |
+|]
     --[[
         @CHECK_ACCESS_ALL: gv$px_session/gv$session/gv$latch/gv$osstat/gv$sysstat/gv$sys_time_model/gv$system_event/gv$active_session_history/gv$sqlstats={true}
         @ash_cost: 11={tm_delta_db_time*1e-6} default={1}
@@ -208,7 +327,7 @@
                                     IMMEDIATE_GETS IMGETS,
                                     IMMEDIATE_MISSES IMMISSES,
                                     SPIN_GETS SPINS
-                            FROM   gv$latch
+                            FROM   gv$latch_parent
                             WHERE  (GETS+IMMEDIATE_GETS+MISSES+IMMEDIATE_MISSES+SLEEPS+SPIN_GETS>0)
                             AND    &inst_filter
                         ) GROUP BY inst,name]]},
@@ -384,13 +503,10 @@
                      SUM(DECODE(n, 'session logical reads', v,0))*bs "LIO(%)",
                      SUM(DECODE(n, 'IM scan bytes in-memory', v,0)) "Bytes",
                      SUM(DECODE(n, 'IM scan bytes uncompressed', v,0)) "Unzip",
-                     --SUM(DECODE(n, 'IM populate bytes from storage', v,0)) "Pops",
-                     --SUM(DECODE(n, 'IM repopulate (trickle) bytes from storage',v,'IM prepopulate bytes from storage', v,0)) "re-Pops",
                       '|' "|",
-                     SUM(DECODE(n, 'IM scan CUs current', v,0)) "IMCU",
+                     SUM(DECODE(n, 'IM scan CUs current',v,0)) "IMCU",
                      SUM(DECODE(n, 'IM scan CUs predicates optimized', v,'IM scan CUs pruned',v,0)) "Prun",
-                     SUM(DECODE(n, 'IM scan CUs invalid or missing revert to on disk extent', v,0)) 
-                     "Miss",
+                     SUM(DECODE(n, 'IM scan CUs invalid or missing revert to on disk extent',v,0)) "Miss",
                      '|' "|",
                      SUM(DECODE(n, 'IM scan rows', v,0)) "Rows",
                      SUM(DECODE(n, 'IM scan rows valid', v,0)) "Valid",

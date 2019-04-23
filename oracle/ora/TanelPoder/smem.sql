@@ -1,4 +1,5 @@
-/*[[Show session memory usage: @@NAME <sid|spid>
+/*[[Show session memory usage: @@NAME [<sid|spid>]
+Refer to Tanel Poder's same script
     --[[
        Templates:
            @11g : 11.1={, pm.sql_id},10.0={}

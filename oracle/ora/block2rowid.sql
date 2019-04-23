@@ -1,4 +1,8 @@
-/*[[Convert block number into ROWID, usage: @@NAME <object_id> <file#,block#|file# block#>]]*/
+/*[[Convert block number into ROWID, usage: @@NAME <object_id> <file#,block#|file# block#>
+    --[[
+        @ARGS: 2
+    ]]--
+]]*/
 SET FEED OFF
 VAR CUR1 REFCURSOR
 VAR CUR2 REFCURSOR

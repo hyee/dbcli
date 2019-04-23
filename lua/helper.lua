@@ -102,28 +102,66 @@ function helper.helper(cmd,...)
             helps = _CMDS[cmd].HELPER or ""
             target=cmd
         end
+
         if helps=="" then return end
-        helps=helps:gsub('^%s*\n',''):gsub('^(%s*[^\n\r]+)[Uu]sage[: \t]+(@@NAME)','%1\n$USAGECOLOR$Usage:$NOR$ %2'):gsub('([eE]xamples?)%s*: *','$USAGECOLOR$%1:$NOR$ ')
-        local spaces=helps:match("([ \t]*)%S") or ""
+        if helps:find('^[Nn]o ') then return print(helps) end
+
+        helps=helps:gsub('^%s*\n',''):gsub('\t','    '):gsub('^(%s*[^\n\r]+)[Uu]sage[: ]+(@@NAME)([^\r\n]*)',function(prefix,name,line)
+            local s=prefix..'\n'..string.rep('=',#(prefix:trim())+#target+2)..'\n$USAGECOLOR$Usage:$COMMANDCOLOR$ '..name..'$NOR$'
+            return s..line:gsub('([<>{}%[%]|]+)','$COMMANDCOLOR$%1$NOR$'):gsub('(%-%w+)','$PROMPTSUBCOLOR$%1$NOR$')
+        end)
+        local spaces=helps:match("( *)%S") or ""
         helps='\n'..spaces..'$USAGECOLOR$'..target:upper()..':$NOR$ '..helps:sub(#spaces+1)
         helps=helps:gsub("\r?\n"..spaces,"\n"):gsub("%s+$",""):gsub("@@NAME",target:lower())
 
         local grid=env.grid
-        helps=helps:gsub('%[(%s*%|.-%|)%s*%]',function(s)
+
+        helps=helps:gsub('%[(%s*|.-|)%s*%]',function(s)
             local tab,s0=grid.new(),s..' '
-            local space=s:match('([ \t]*)|') or ''
+            local space=s:match('( *)|') or ''
             local _,cfg=grid.get_config(s0)
-            s0:gsub('[^\n%S]*(|[^\r\n]+|)%s+',function(s1)
+            local cols=0
+            s0:gsub('\\|','\1'):gsub('[^\n%S]*(|[^\r\n]+|)%s+',function(s1)
                 local row={}
-                s1:gsub('([^%|]+)',function(s2)
-                    row[#row+1]=s2:trim():gsub('\\n','\n'):gsub('\\%]',']')
-                    if #row==1 and #tab.data>1 then row[1]='$BOLD$'..row[1]..' $NOR$' end
+                s1:gsub('([^|]+)',function(s2)
+                    row[#row+1]=s2:trim():gsub('\\n','\n '):gsub('\\%]',']'):gsub('\1','|')
+                    if #row==1 and #tab.data>0 then 
+                        row[1]=row[1]=='-' and '-' or ('$BOLD$'..row[1]..' $NOR$') 
+                    elseif #tab.data>0 and row[1]~='-' and #row>1 then
+                        row[#row]=row[#row]:gsub('[<>%+%-%*/%[%]\'"%%]+','$USAGECOLOR$%1$NOR$')
+                    end
+                    row[#row]=row[#row]=='-' and '-' or (' '..row[#row])
                 end)
-                if #row >1 then tab:add(row) end
+                if #row > 1 then
+                    if cols==0 then 
+                        cols=#row
+                        if cols==2 then table.insert(row,2,':') end
+                    elseif cols==2 then
+                        table.insert(row,2,':')
+                    end
+                    tab:add(row) 
+                end
             end)
             if #tab.data==0 then return s end
             for k,v in pairs(cfg) do tab[k]=v end
             return space..table.concat(grid.merge({tab}),'\n'..space)
+        end)
+
+        local keys={
+            ('Example'):case_insensitive_pattern(),
+            ('Option'):case_insensitive_pattern(),
+            ('Parameter'):case_insensitive_pattern(),
+            ('Output'):case_insensitive_pattern()
+        }
+        local fmt='%s%s%s$NOR$%s'
+        helps=helps:gsub('(\n[^%S\n\r]*)([%-<]?[ %w#%-<_]+>?)( *:)',function(prefix,s,comma)
+            local s1,c=s:trim():gsub(' ','')
+            if c>1 then return prefix..s..comma end
+            c=0
+            for _,k in ipairs(keys) do
+                if s:match('.*'..k..'[sS]?') then return fmt:format(prefix,'$USAGECOLOR$',s,comma) end
+            end
+            return fmt:format(prefix,(s:find('-',1,true)==1 and '$PROMPTSUBCOLOR$' or '$COMMANDCOLOR$'),s,comma)
         end)
         return print(helps:rtrim()..'\n')
     elseif cmd=="-e" or cmd=="-E" then
@@ -142,12 +180,14 @@ function helper.helper(cmd,...)
         else
             os.execute("rm -f "..dels)
         end
-        for f,p in pairs{rt='',
+        local java_home,src=java.system:getProperty("java.home"):gsub('\\','/')
+        local target=env.WORK_DIR..(env.IS_WINDOWS and 'jre' or (env.PLATFORM=='mac' and 'jre_mac') or 'jre_linux')
+        for f,p in pairs{ rt='',
                           jce='',
                           jsse='',
                           charsets='',
                           localedata='ext/',
-                          sunjce_provider='ext/',
+                          --sunjce_provider='ext/',
                           sunec='ext/',
                           sunmscapi='ext/',
                           ojdbc8='/dump/',
@@ -158,13 +198,19 @@ function helper.helper(cmd,...)
                           --orai18n='/dump/',
                           xdb6='/dump/'} do
             local dir=env.join_path(env.WORK_DIR..'/dump/'..f)
-            local jar=env.join_path(env.WORK_DIR..(env.IS_WINDOWS and 'jre' or (env.PLATFORM=='mac' and 'jre_mac') or 'jre_linux')..'/lib/'..p..f..'.jar')
+            local jar=env.join_path(target..'/lib/'..p..f..'.jar')
             if p:sub(1,1)=='/' then jar=env.join_path(env.WORK_DIR..p..f..'.jar') end
             local list={}
             for _,f in ipairs(os.list_dir(dir,'*',999)) do
                 list[#list+1]=f.fullname:sub(#dir+2):gsub("[\\/]","/")
             end
-            loader:createJar(list,jar)
+
+            if jar:find(target,1,true)==1 then
+                src=java_home..jar:sub(#target+1):gsub('\\','/')
+            else
+                src=(env.WORK_DIR..'/oracle/'..f..'.jar'):gsub("[\\/]","/")
+            end
+            loader:createJar(list,jar,src)
             os.execute('pack200 -r -O -G "'..jar..'" "'..jar..'"')
         end
         return

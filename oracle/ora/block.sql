@@ -5,6 +5,7 @@
             default={select objd,file# from gv$bh where block#=:V2}
         }    
         @CHECK_ACCESS_OBJ: dba_objects={dba_objects}, default={all_objects}
+        @ARGS: 2
     --]]
 ]]*/
 

@@ -1,3 +1,4 @@
+/*[[Show v$pq_tqstat.]]*/
 col bytes format kmg
 col waits,num_rows,timeouts for k0
 set feed off printsize 1024

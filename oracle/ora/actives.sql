@@ -5,17 +5,18 @@
         Filter options#1:
             -u  : Only show the sessions of current_schema
             -i  : Exclude the idle events
-            -f  : Customize the filter, Usage: -f"<filter>"
+            -f  : Customize the filter, i.e.: -f"inst_id=1"
         Filter options#2:
             -u2 : Only show the sessions of current_schema
             -i2 : Exclude the idle events
-            -f2 : Customize the filter, Usage: -f2"<filter>"
+            -f2 : Customize the filter, Usage: i.e.: -f2"username='SYS'"
         Field options:  Field options can be followed by other customized fields. ie: -s,p1raw
             -s  : Show related procedures and lines(default)
             -p  : Show p1/p2/p2text/p3
             -b  : Show blocking sessions and waiting objects
             -o  : Show OS user id/machine/program/etc
             -m  : Show SQL Mornitor report(gv$sql_monitor)
+            -c  : show consumer group and queue duration
         Sorting options: the '-' symbole is optional
             sid : sort by sid(default)
             wt  : sort by wait time
@@ -31,7 +32,8 @@
                b={NULLIF(BLOCKING_SESSION||',@'||BLOCKING_INSTANCE,',@') BLOCK_BY,
                  (SELECT OBJECT_NAME FROM ALL_OBJECTS WHERE OBJECT_ID=ROW_WAIT_OBJ# AND ROWNUM<2) WAITING_OBJ,
                  ROW_WAIT_BLOCK# WAIT_BLOCK# &0},
-               m={execs, ela,cpu,io,app,cc,cl,plsql,java,read_mb,write_mb &0}  
+               m={execs, ela,cpu,io,app,cc,cl,plsql,java,read_mb,write_mb &0}
+               c={USERNAME,RESOURCE_CONSUMER_GROUP RSRC_GROUP,CURRENT_QUEUE_DURATION QUEUED &0}
             }
         &V1 :   sid={''||sid},wt={wait_secs desc},ev={event},sql={sql_text},o={logon_time}
         &SQLM:  {default={},

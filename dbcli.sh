@@ -87,7 +87,7 @@ elif [[ -f "$JAVA_ROOT/lib/libjsig.dylib" ]]; then
 fi
 
 if [[ "$ORACLE_HOME" ]]; then
-    export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$ORACLE_HOME/lib"
+    export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$ORACLE_HOME/lib:$ORACLE_HOME"
 fi
 
 # unpack jar files for the first use

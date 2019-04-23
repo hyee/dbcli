@@ -1,34 +1,8 @@
 /*[[
   Get ASH top event, type 'help @@NAME' for more info. Usage: @@NAME [-sql|-p|-none|-pr|-o|-plan|-ash|-dash|-snap|-f] {[fields] [filters]}
   
-   --[[
-      &fields: {
-            sql={sql_id,sql_opname},
-            e={null}, 
-            p={p1,p2,p3,p3text &0},
-            pr={p1raw,p2raw,p3raw &0}, 
-            o={obj &0},
-            plan={plan_hash,current_obj#,SQL_PLAN_LINE_ID &0} 
-            none={1},
-            c={},
-            proc={sql_id,PLSQL_ENTRY_OBJECT_ID &0},
-        }
-      &View: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
-      &BASE: ash={1}, dash={10}
-      &Range: default={sample_time+0 between nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MISS'),sysdate)}
-      &filter: {
-            id={(trim('&1') is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id,event,top_level_sql_id)) and &range
-                    &V4},
-            snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id,'event')) &V3},
-            u={username=nvl('&0',sys_context('userenv','current_schema')) and &range}
-        }
-      &more_filter: default={1=1},f={}
-      @counter: 11.2={, count(distinct sql_exec_id||to_char(sql_exec_start,'yyyymmddhh24miss')) "Execs"},default={}
-      @UNIT   : 11.2={least(nvl(tm_delta_db_time,delta_time),DELTA_TIME)*1e-6}, default={&BASE}
-      @CPU    : 11.2={least(nvl(tm_delta_cpu_time,delta_time),DELTA_TIME)*1e-6}, default={0}
-      @IOS    : 11.2={,SUM(DELTA_READ_IO_BYTES) reads,SUM(DELTA_Write_IO_BYTES) writes},default={}
-    ]]--
   Options:
+  ========
       Groupings : The grouping option can be followed by other custimized field, i.e.: '@@NAME -p,p1raw ...'
         -e   : group by event
         -sql : group by event+sql_id (default)
@@ -47,7 +21,8 @@
       Addition filter:
         -f   : additional fileter. Usage: -f"<filter>"
         
-  Usage examples:  
+  Usage Examples:
+  ===============
       1) Show top objects for the specific sql id: @@NAME -o <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
       2) Show top sqls for the specific sid      : @@NAME <sid> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
       3) Show top sqls within recent 60 secs     : @@NAME -snap 60 [sql_id|sid]
@@ -55,12 +30,57 @@
       5) Show top objects based on execution plan: @@NAME -plan <sql_id> [YYMMDDHH24MISS] [YYMMDDHH24MISS]
       6) Show top sqls with user defined filter  : @@NAME -f"inst_id=1 and username='ABCD'" 
   
-  This script references Tanel Poder's script
+  Sample Outputs:
+  ===============
+    SECS AAS  %This  Execs Parallel? PROGRAM#  EVENT                                              SQL_ID       SQL_OPNAME     READS    WRITES   CPU ...
+    ---- --- ------- ----- --------- -------- ------------------------------------------------ ------------- -------------- --------- --------- --- ...
+      35  35   29% |     1 SERIAL    SYS      [file number|first dba|block cnt]                c5rrtjvaqr9d3 SELECT          81.39 MB      0  B  35 ...
+      28 363   23% |     0 SERIAL    (PSPn)   [timeout]                                                                          0  B      0  B  57 ...
+      14  15   12% |     1 SERIAL    SYS      [driver id|#bytes]                               ahwx914ga4qag SELECT         113.00 KB      0  B  14 ...
+      11  11    9% |     1 SERIAL    SYS      [file#|block#|blocks]                            c5rrtjvaqr9d3 SELECT          33.30 MB      0  B  11 ...
+      10 153    8% |     0 SERIAL    (DIAn)   [component|where|wait time(millisec)]                                              0  B      0  B  17 ...
+       8   5    6% |     1 SERIAL    SYS      [driver id|#bytes]                               fjfh2kphmfq0h SELECT         125.70 MB      0  B   8 ...
+       4   3    3% |     3 SERIAL    SYS      [driver id|#bytes]                               gvph4rn0sv7kg SELECT         561.00 KB  24.00 KB   4 ...
+       2   4    1% |     4 SERIAL    SYS      [file number|first dba|block cnt]                032x0n8n5g5sy SELECT          14.31 MB      0  B   2 ...
+       2   1    1% |     1 SERIAL    SYS      [driver id|#bytes]                               ar59zgzwt44cb SELECT          23.40 MB      0  B   1 ...
+       1   1    1% |     1 SERIAL    SYS      [file#|block#|blocks]                            032x0n8n5g5sy SELECT           2.84 MB      0  B   1 ...
+       1   1    1% |     1 SERIAL    (Mnnn)   db file sequential read                          1uym1vta995yb INSERT           1.91 MB      0  B   1 ...
+       1   2    1% |     2 SERIAL    (Mnnn)   db file sequential read                          3s58mgk0uy2ws INSERT           2.26 MB      0  B   1 ...
+
+   --[[
+      &fields: {
+            sql={sql_id &V11,sql_opname},
+            e={null}, 
+            p={p1,p2,p3,p3text &0},
+            pr={p1raw,p2raw,p3raw &0}, 
+            o={obj &0},
+            plan={plan_hash,current_obj#,SQL_PLAN_LINE_ID &0} 
+            none={1},
+            c={},
+            proc={sql_id,PLSQL_ENTRY_OBJECT_ID &0},
+        }
+      &View: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
+      &BASE: ash={1}, dash={10}
+      &Range: default={sample_time+0 between nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MISS'),sysdate)}
+      &filter: {
+            id={(trim('&1') is null or upper(:V1)='A' or :V1 in(sql_id,''||session_id,event)) and &range
+                    &V4},
+            snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(sql_id,''||session_id,'event')) &V3},
+            u={username=nvl('&0',sys_context('userenv','current_schema')) and &range}
+        }
+      &more_filter: default={1=1},f={}
+      @counter: 11.2={, count(distinct sql_exec_id||to_char(sql_exec_start,'yyyymmddhh24miss')) "Execs"},default={}
+      @UNIT   : 11.2={least(nvl(tm_delta_db_time,delta_time),DELTA_TIME)*1e-6}, default={&BASE}
+      @CPU    : 11.2={least(nvl(tm_delta_cpu_time,delta_time),DELTA_TIME)*1e-6}, default={0}
+      @IOS    : 11.2={,SUM(DELTA_READ_IO_BYTES) reads,SUM(DELTA_Write_IO_BYTES) writes},default={}
+      @V11    : 11.2={} default={--}
+      @V12    : 12.1={} default={--}
+    ]]--
 ]]*/
 col reads format KMG
 col writes format kMG
 SELECT * FROM (
-    SELECT /*+ LEADING(a) USE_HASH(u) swap_join_inputs(u) no_expand opt_param('_sqlexec_hash_based_distagg_enabled' true)*/
+    SELECT /*+LEADING(a) USE_HASH(u) swap_join_inputs(u) no_expand opt_param('_sqlexec_hash_based_distagg_enabled' true) */
         round(SUM(c))                                                   Secs
       , ROUND(sum(&base)) AAS
       , LPAD(ROUND(RATIO_TO_REPORT(sum(c)) OVER () * 100)||'%',5,' ')||' |' "%This"
@@ -92,31 +112,33 @@ SELECT * FROM (
                   swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
                 */ 
                 a.*,sql_plan_hash_value plan_hash,current_obj# obj,nvl2(CURRENT_FILE#,CURRENT_FILE#||','||current_block#,'') block,
-                CASE WHEN a.session_type = 'BACKGROUND' OR REGEXP_LIKE(a.program, '.*\([PJ]\d+\)') THEN
-                  REGEXP_REPLACE(SUBSTR(a.program,INSTR(a.program,'(')), '\d', 'n')
+                CASE WHEN REGEXP_LIKE(a.program, '.*\([A-Z]+\d+\)') THEN
+                     REGEXP_REPLACE(regexp_substr(a.program,'\([A-Z]+\d+\)'), '\d', 'n')
+                WHEN instr(a.program,'@')>1 THEN
+                     nullif(regexp_substr(a.program,'[^@]+'),'oracle')
                 END program#,&unit c,&CPU CPU
               , TO_CHAR(p1, '0XXXXXXXXXXXXXXX') p1raw
               , TO_CHAR(p2, '0XXXXXXXXXXXXXXX') p2raw
               , TO_CHAR(p3, '0XXXXXXXXXXXXXXX') p3raw
               , nvl(event,'['||p1text||nullif('|'||p2text,'|')||nullif('|'||p3text,'|')||']') event_name
-              , CASE WHEN IN_CONNECTION_MGMT      = 'Y' THEN 'CONNECTION_MGMT '          END ||
-                CASE WHEN IN_PARSE                = 'Y' THEN 'PARSE '                    END ||
-                CASE WHEN IN_HARD_PARSE           = 'Y' THEN 'HARD_PARSE '               END ||
-                CASE WHEN IN_SQL_EXECUTION        = 'Y' THEN 'SQL_EXECUTION '            END ||
-                CASE WHEN IN_PLSQL_EXECUTION      = 'Y' THEN 'PLSQL_EXECUTION '          END ||
-                CASE WHEN IN_PLSQL_RPC            = 'Y' THEN 'PLSQL_RPC '                END ||
-                CASE WHEN IN_PLSQL_COMPILATION    = 'Y' THEN 'PLSQL_COMPILATION '        END ||
-                CASE WHEN IN_JAVA_EXECUTION       = 'Y' THEN 'JAVA_EXECUTION '           END ||
-                CASE WHEN IN_BIND                 = 'Y' THEN 'BIND '                     END ||
-                CASE WHEN IN_CURSOR_CLOSE         = 'Y' THEN 'CURSOR_CLOSE '             END ||
-                CASE WHEN IN_SEQUENCE_LOAD        = 'Y' THEN 'SEQUENCE_LOAD '            END ||
-        --        CASE WHEN IN_INMEMORY_QUERY       = 'Y' THEN 'IN_INMEMORY_QUERY'         END ||
-        --        CASE WHEN IN_INMEMORY_POPULATE    = 'Y' THEN 'IN_INMEMORY_POPULATE'      END ||
-        --        CASE WHEN IN_INMEMORY_PREPOPULATE = 'Y' THEN 'IN_INMEMORY_PREPOPULATE'   END ||
-        --        CASE WHEN IN_INMEMORY_REPOPULATE  = 'Y' THEN 'IN_INMEMORY_REPOPULATE'    END ||
-        --        CASE WHEN IN_INMEMORY_TREPOPULATE = 'Y' THEN 'IN_INMEMORY_TREPOPULATE'   END ||
-        --        CASE WHEN IN_TABLESPACE_ENCRYPTION= 'Y' THEN 'IN_TABLESPACE_ENCRYPTION'  END ||
-                '' phase
+        &V11  , CASE WHEN IN_CONNECTION_MGMT      = 'Y' THEN 'CONNECTION_MGMT '          END ||
+        &V11    CASE WHEN IN_PARSE                = 'Y' THEN 'PARSE '                    END ||
+        &V11    CASE WHEN IN_HARD_PARSE           = 'Y' THEN 'HARD_PARSE '               END ||
+        &V11    CASE WHEN IN_SQL_EXECUTION        = 'Y' THEN 'SQL_EXECUTION '            END ||
+        &V11    CASE WHEN IN_PLSQL_EXECUTION      = 'Y' THEN 'PLSQL_EXECUTION '          END ||
+        &V11    CASE WHEN IN_PLSQL_RPC            = 'Y' THEN 'PLSQL_RPC '                END ||
+        &V11    CASE WHEN IN_PLSQL_COMPILATION    = 'Y' THEN 'PLSQL_COMPILATION '        END ||
+        &V11    CASE WHEN IN_JAVA_EXECUTION       = 'Y' THEN 'JAVA_EXECUTION '           END ||
+        &V11    CASE WHEN IN_BIND                 = 'Y' THEN 'BIND '                     END ||
+        &V11    CASE WHEN IN_CURSOR_CLOSE         = 'Y' THEN 'CURSOR_CLOSE '             END ||
+        &V11    CASE WHEN IN_SEQUENCE_LOAD        = 'Y' THEN 'SEQUENCE_LOAD '            END ||
+        &V12    CASE WHEN IN_INMEMORY_QUERY       = 'Y' THEN 'IN_INMEMORY_QUERY'         END ||
+        &V12    CASE WHEN IN_INMEMORY_POPULATE    = 'Y' THEN 'IN_INMEMORY_POPULATE'      END ||
+        &V12    CASE WHEN IN_INMEMORY_PREPOPULATE = 'Y' THEN 'IN_INMEMORY_PREPOPULATE'   END ||
+        &V12    CASE WHEN IN_INMEMORY_REPOPULATE  = 'Y' THEN 'IN_INMEMORY_REPOPULATE'    END ||
+        &V12    CASE WHEN IN_INMEMORY_TREPOPULATE = 'Y' THEN 'IN_INMEMORY_TREPOPULATE'   END ||
+        &V12    CASE WHEN IN_TABLESPACE_ENCRYPTION= 'Y' THEN 'IN_TABLESPACE_ENCRYPTION'  END ||
+        &V11   '' phase
         FROM &View a) a
       , all_users u
     WHERE a.user_id = u.user_id (+)

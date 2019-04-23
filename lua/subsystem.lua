@@ -58,10 +58,7 @@ function system:make_native_command(arg)
     local function enclose(s)
         return tostring(s):find("%s") and ('"'..s..'"') or s
     end
-    for k,v in pairs(self.env) do
-        env[#env+1]=is_win and ('(set '..enclose(k..'='..v)..' )') or ('export k="'..v..'"')
-    end
-
+    
     env[#env+1]=(is_win and 'cd /d ' or 'cd ')..enclose(self.work_dir)
 
     for i,v in ipairs(self.startup_cmd) do
@@ -97,7 +94,7 @@ function system:call_process(cmd,is_native)
             if args[i]:trim() =='' then table.remove(args,i) end
         end
 
-        self.env={PATH=os.getenv("PATH")}
+        self.env={}
         if not self.work_dir then self.work_dir=self.extend_dirs or self.script_dir or env._CACHE_PATH end
         local do_redirect=false
 
@@ -130,11 +127,23 @@ function system:call_process(cmd,is_native)
             end
         else
             local line=self:make_native_command(args)
+            local env1={}
             env.log_debug("subsystem","SQL: "..line)
+            for k,v in pairs(self.env) do
+                env1[k]=os.getenv(k) or ""
+                env.uv.os.setenv(k,v)
+            end
             terminal:echo(true)
             terminal:pause()
             pcall(os.execute,line)
             terminal:resume()
+            for k,v in pairs(env1) do
+                if v~="" then
+                    env.uv.os.setenv(k,v)
+                else
+                    env.uv.os.unsetenv(k)
+                end
+            end
             return
         end
     end

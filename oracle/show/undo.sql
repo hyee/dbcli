@@ -12,7 +12,7 @@ SELECT d.inst_id,
        g.undoblks*block_size "Max Used Size",
        SUBSTR(e.value, 1, 25) "UNDO RETENTION",
        round(undo_block_per_sec*block_size, 2) "Undo Size / Sec",
-       ROUND((to_number(e.value) * to_number(f.value) * g.undo_block_per_sec)) "Necessary Undo Size"，
+       ROUND((to_number(e.value) * to_number(f.value) * g.undo_block_per_sec)) "Necessary Undo Size",
        g.MAXTXNCOUNT,
        g.MAXQUERYLEN,
        g.MAXCONCURRENCY

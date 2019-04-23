@@ -1,11 +1,27 @@
 /*[[
-    Show object dependency, usage: @@NAME {[owner.]name [depth]} [-c|-p] [-t|-l] 
+    Show object dependency, this scripts requires 'SELECT ANY DICTIONARY' access rights. Usage: @@NAME {[owner.]name [depth]} [-c|-p] [-t|-l] 
     Options:
        p: Show target object's depending objects(default)
        c: Show the objects that depend on target object
        t: Show dependence tree(Default)
        l: Show object list, instead of tree view
 
+    Sample Output:
+    ===============
+    ORCL> @@NAME dbms_workload_repository 3
+       #     OBJECT_NAME                                                OBJECT_ID OBJECT_TYPE STATUS       CREATED            LAST_DDL
+    ------- ----------------------------------------------------------- --------- ----------- ------ ------------------- -------------------
+        1 | SYS.DBMS_WORKLOAD_REPOSITORY                                     8460 PACKAGE     VALID  2011-08-28 22:12:37 2013-12-20 15:54:50
+        2 |   SYS.STANDARD                                                   1253 PACKAGE     VALID  2011-08-28 22:11:03 2013-12-20 15:21:00
+        3 |     SYS.DUAL                                                      116 TABLE       VALID  2011-08-28 22:10:49 2011-08-28 22:10:52
+        4 |   SYS.AWRBL_DETAILS_TYPE_TABLE                                   6579 TYPE        VALID  2011-08-28 22:12:12 2013-12-20 15:25:32
+        5 |     SYS.STANDARD                                                 1253 PACKAGE     VALID  2011-08-28 22:11:03 2013-12-20 15:21:00
+        6 |     SYS.AWRBL_DETAILS_TYPE                                       6578 TYPE        VALID  2011-08-28 22:12:12 2013-12-20 15:25:32
+        7 |       SYS.STANDARD                                               1253 PACKAGE     VALID  2011-08-28 22:11:03 2013-12-20 15:21:00
+        8 |   SYS.AWRBL_METRIC_TYPE_TABLE                                    6583 TYPE        VALID  2011-08-28 22:12:12 2013-12-20 15:25:32
+        9 |     SYS.STANDARD                                                 1253 PACKAGE     VALID  2011-08-28 22:11:03 2013-12-20 15:21:00
+       10 |     SYS.AWRBL_METRIC_TYPE                                        6582 TYPE        VALID  2011-08-28 22:12:12 2013-12-20 15:25:32
+       11 |       SYS.STANDARD                                               1253 PACKAGE     VALID  2011-08-28 22:11:03 2013-12-20 15:21:00
     --[[
        &F1  : P={p_obj#},C={d_obj#}
        &F2  : P={d_obj#},C={p_obj#}
@@ -17,7 +33,7 @@
        &SRT : T={'9'},L={1}
        &DST : T={},L={DISTINCT}
        @ARGS: 1
-       @CHECK_ACCESS: sys.obj$/sys.dependency$={1}
+       @CHECK_USER: "SYSDBA/SELECT ANY DICTIONARY"={}
     --]]
 ]]*/
 
@@ -53,18 +69,16 @@ DECLARE
         v_counter := v_counter + 1;
         IF NOT v_founds.exists(obj) AND obj IS NOT NULL THEN
             v_founds(obj) := 1;
-            --IF '&F2' !='p_obj#' THEN
-                SELECT /*+ordered index(dep1) use_nl(dep1 o2 o1)*/
-                       MAX(&F2) INTO v_bdy
-                FROM   sys.dependency$ dep1, sys.obj$ o2, sys.obj$ o1
-                WHERE  dep1.d_obj# = o2.obj#
-                AND    dep1.p_obj# = o1.obj#
-                AND    to_char(o2.name)  = to_char(o1.name)
-                AND    to_char(o2.owner#) = to_char(o1.owner#)
-                AND    to_char(o1.type#) IN ('9', '13')
-                AND    to_char(o2.type#) IN ('11', '14')
-                AND    dep1.&F1 = obj;
-            --END IF;
+            SELECT /*+ordered index(dep1) use_nl(dep1 o2 o1)*/
+                    MAX(&F2) INTO v_bdy
+            FROM   sys.dependency$ dep1, sys.obj$ o2, sys.obj$ o1
+            WHERE  dep1.d_obj# = o2.obj#
+            AND    dep1.p_obj# = o1.obj#
+            AND    to_char(o2.name)  = to_char(o1.name)
+            AND    to_char(o2.owner#) = to_char(o1.owner#)
+            AND    to_char(o1.type#) IN ('9', '13')
+            AND    to_char(o2.type#) IN ('11', '14')
+            AND    dep1.&F1 = obj;
 
             SELECT /*+index(dep)*/ &F1,1, to_number(null) con
             BULK   COLLECT INTO  v_list,v_lv,v_con
