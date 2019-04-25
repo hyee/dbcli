@@ -92,6 +92,16 @@ BEGIN
               SELECT 2, sql_id, plan_hash_value, SYS.AWR_OBJECT(sql_id, dbid,con_dbid, plan_hash_value) obj
               FROM   dba_hist_sql_plan
               WHERE  plan_hash_value IN (phv1, phv2)
+              AND    id = 1
+              UNION ALL
+              SELECT 3, sql_id, plan_hash_value, SYS.SQLSET_OBJECT(sqlset_owner, sqlset_name, sql_id, plan_hash_value) obj
+              FROM   dba_sqlset_plans
+              WHERE  plan_hash_value IN (phv1, phv2)
+              AND    id = 1
+              UNION ALL
+              SELECT 4, sql_id, plan_hash_value, SYS.SQLSET_OBJECT(task_name, execution_name, sql_id, plan_id) obj
+              FROM   dba_advisor_sqlplans
+              WHERE  plan_hash_value IN (phv1, phv2)
               AND    id = 1) LOOP
         IF r.phv = phv1 AND src IS NULL THEN
             src := r.obj;

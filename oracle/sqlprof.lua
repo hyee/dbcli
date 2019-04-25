@@ -113,6 +113,11 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                                 SELECT other_xml, 'monitor', sql_id, SQL_PLAN_HASH_VALUE
                                 FROM   gv$sql_plan_monitor a
                                 $END
+                                $IF DBMS_DB_VERSION.VERSION>10 $THEN
+                                UNION ALL
+                                SELECT other_xml, 'advisor', sql_id, plan_hash_value
+                                FROM   dba_advisor_sqlplans a
+                                $END
                                 UNION ALL
                                 SELECT other_xml, 'plan table', p_sql_id sql_id, -1
                                 FROM   PLAN_TABLE a WHERE PLAN_ID=(select max(PLAN_ID) keep(dense_rank last order by timestamp) from PLAN_TABLE))
@@ -173,19 +178,23 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                     v_begin := 'q''{';
                     v_end   := '}''';
                 END IF;
-                IF v_size <= 1200 OR dbms_lob.instr(p_SQL, CHR(10)) > 0 THEN
+                IF v_size <= 1200 OR dbms_lob.instr(p_SQL, CHR(10)) > 0 OR p_name != 'sql_txt' THEN
                     pr('        '||p_name||' := '||v_begin, FALSE);
-                    dbms_lob.append(v_text, p_SQL);
+                    dbms_lob.append(v_text, replace(p_SQL,chr(0),'@chr(0)@'));
                     pr(v_end||';');
                 ELSE
                     pr('        dbms_lob.createtemporary(sql_txt, TRUE);');
                     v_pos := 0;
                     WHILE TRUE LOOP
-                        pr('        wr('||v_begin|| dbms_lob.substr('||p_name||', 1000, v_pos * 1000 + 1) || v_end||');');
+                        pr('        wr('||v_begin|| replace(dbms_lob.substr(p_SQL, 1000, v_pos * 1000 + 1),chr(0),'@chr(0)@') || v_end||');');
                         v_pos  := v_pos + 1;
                         v_size := v_size - 1000;
                         EXIT WHEN v_size < 1;
                     END LOOP;
+                END IF;
+                
+                IF p_name = 'sql_txt' THEN
+                    pr(q'[        sql_txt := replace(sql_txt,'@chr(0)@',chr(0));]');
                 END IF;
             END;
         BEGIN

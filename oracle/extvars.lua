@@ -215,7 +215,6 @@ end
 
 
 function extvars.test_grid()
-    console:ulen('ulen',10)
     local rs1=db:internal_call([[select * from (select * from v$sysstat order by 1) where rownum<=20]])
     local rs2=db:internal_call([[select * from (select rownum "#",name,hash from v$latch) where rownum<=30]])
     local rs3=db:internal_call([[select * from (select rownum "#",event,total_Waits from v$system_event) where rownum<=60]])
