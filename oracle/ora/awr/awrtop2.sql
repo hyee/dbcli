@@ -33,7 +33,7 @@
 
 ORA _sqlstat
 
-col ela for smhd2
+col ela for usmhd2
 col iowait,cpu,clwait,apwait,plsql,ccwait,&v6# format pct1
 col reads,writes,mem,cellio,oflin,oflout,buff format kmg
 col execs,FETCHES,loads,parses,rows,PX format tmb

@@ -493,11 +493,19 @@ end
 
 function env.register_thread(this,isMain)
     local threads=_THREADS
-    if not this then this,isMain=coroutine.running() end
+    local current,isRoot=coroutine.running()
+    if this==current then 
+        isMain=isRoot
+    elseif not this then 
+        this,isMain=current,isRoot
+    else
+        isMain = false
+    end
     if isMain then threads[this],threads[1]=1,this end
+
     local index,clock=threads[this],threads._clock
     if not index then
-        index=#threads+1
+        index=(isRoot and 1 or threads[current])+1
         threads[this],threads[index],clock[index]=index,this,os.timer()
     else
         for i=index+1,#threads do 
@@ -507,6 +515,9 @@ function env.register_thread(this,isMain)
     end
     co_stacks[index]=this
     return this,isMain,index
+end
+
+function env.reset_threads()
 end
 
 function env.exec_command(cmd,params,is_internal,arg_text)

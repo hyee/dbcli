@@ -166,40 +166,42 @@ function output.getOutput(item)
 
         if autotrace =='traceonly' or autotrace=='on' or autotrace=='statistics' then
             local stats=db:compute_delta(args.stats,output.prev_stats,'1','2')
-            local n={}
-            local idx,c=-1,0
-            grid.sort(stats,1)
-            for k,v in pairs(fixed_stats) do
-                n[v]={0,k,env.ansi.mask('HEADCOLOR','/')}
-            end
-            for k,row in ipairs(stats) do
-                if tonumber(row[2]) and tonumber(row[2])>0 then
-                    if fixed_stats[row[1]] then
-                        n[fixed_stats[row[1]]][1]=row[2]
-                    else
-                        idx=math.fmod(idx+1,2)*3
-                        if idx==0 then
-                            c=c+1
-                            if #n<c then n[c]={'','',env.ansi.mask('HEADCOLOR','/')} end
+            if stats and #stats>0 then 
+                local n={}
+                local idx,c=-1,0
+                grid.sort(stats,1)
+                for k,v in pairs(fixed_stats) do
+                    n[v]={0,k,env.ansi.mask('HEADCOLOR','/')}
+                end
+                for k,row in ipairs(stats) do
+                    if tonumber(row[2]) and tonumber(row[2])>0 then
+                        if fixed_stats[row[1]] then
+                            n[fixed_stats[row[1]]][1]=row[2]
+                        else
+                            idx=math.fmod(idx+1,2)*3
+                            if idx==0 then
+                                c=c+1
+                                if #n<c then n[c]={'','',env.ansi.mask('HEADCOLOR','/')} end
+                            end
+                            n[c][idx+4],n[c][idx+5]=row[2],row[1]
+                            if idx==3 then n[c][6]='|' end
                         end
-                        n[c][idx+4],n[c][idx+5]=row[2],row[1]
-                        if idx==3 then n[c][6]='|' end
                     end
                 end
-            end
 
-            local fmt=env.var.columns.VALUE
-            if fmt then env.var.columns['VALUE']=nil end
-            env.set.set('sep4k','on')
-            env.set.set('rownum','off')
-            local rows=env.grid.new()
-            rows:add{"Value","Name",'/',"Value","Name",'|',"Value","Name"}
-            for k,row in ipairs(n) do rows:add(row) end
-            print("")
-            rows:print()
-            if fmt then env.var.columns['VALUE']=fmt end
-            env.set.set('sep4k','back')
-            env.set.set('rownum','back')
+                local fmt=env.var.columns.VALUE
+                if fmt then env.var.columns['VALUE']=nil end
+                env.set.set('sep4k','on')
+                env.set.set('rownum','off')
+                local rows=env.grid.new()
+                rows:add{"Value","Name",'/',"Value","Name",'|',"Value","Name"}
+                for k,row in ipairs(n) do rows:add(row) end
+                print("")
+                rows:print()
+                if fmt then env.var.columns['VALUE']=fmt end
+                env.set.set('sep4k','back')
+                env.set.set('rownum','back')
+            end
         elseif type(args.stats)=='userdata' then
             pcall(args.stats.close,args.stats)
         end

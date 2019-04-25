@@ -29,6 +29,7 @@ DEF max_num_rows='50';
 
 PRO SQL Statements with "Elapsed Time per Execution" changing over time
 ORA _sqlstat
+COL "Median|Per Exec,Std Dev|Per Exec,Avg|Per Exec,Min|Per Exec,Max|Per Exec" for usmhd2
 WITH per_time AS (
 select /*+materialize*/ * from(
     SELECT max(sql_id) keep(dense_rank last order by snap) sql_id,&SIG
@@ -99,12 +100,12 @@ SELECT r.sql_id,&SIG
        r.change,
        TO_CHAR(r.slope, '990.000MI') slope,
        execs, round(ratio,2) "Slots|(%)",
-       plans,
-       TO_CHAR(r.med_secs_per_exec, '999,990.00') "Median Secs|Per Exec",
-       TO_CHAR(r.std_secs_per_exec, '999,990.00') "Std Dev Secs|Per Exec",
-       TO_CHAR(r.avg_secs_per_exec, '999,990.00') "Avg Secs|Per Exec",
-       TO_CHAR(r.min_secs_per_exec, '999,990.00') "Min Secs|Per Exec",
-       TO_CHAR(r.max_secs_per_exec, '999,990.00') "Max Secs|Per Exec",
+       plans "Num|Plans",
+       r.med_secs_per_exec "Median|Per Exec",
+       r.std_secs_per_exec "Std Dev|Per Exec",
+       r.avg_secs_per_exec "Avg|Per Exec",
+       r.min_secs_per_exec "Min|Per Exec",
+       r.max_secs_per_exec "Max|Per Exec",
        min_seen "First_Seen",max_seen "Last_Seen",
        REPLACE((SELECT substr(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' '),1,150) FROM dba_hist_sqltext s WHERE s.sql_id = r.sql_id and rownum<2), CHR(10)) sql_text
   FROM ranked r

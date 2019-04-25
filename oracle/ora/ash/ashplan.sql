@@ -107,7 +107,7 @@ Outputs:
     &px_count: default={} all={,(select px_count from sql_plan_px b where (b.phv=sql_plan_hash_value or b.phf=&phf) and rownum<2) px_count}
     &hierachy: {
         default={1 lv,
-                decode(pred_flag,2,top_level_sql_id,sql_id) sql_id,
+                nvl(sql_id,top_level_sql_id) sql_id,
                 sql_exec_id sql_exec_id_,
                 sql_exec_start sql_exec_start_,
                 nvl(sql_plan_hash_value,0) phv1,
@@ -116,7 +116,7 @@ Outputs:
                 &phf plan_hash_full,
                 pred_flag} 
            all={level lv,
-                connect_by_root(decode(pred_flag,2,top_level_sql_id,sql_id)) sql_id,
+                connect_by_root(nvl(sql_id,top_level_sql_id)) sql_id,
                 connect_by_root(sql_exec_id) sql_exec_id_,
                 connect_by_root(sql_exec_start) sql_exec_start_,
                 coalesce(case when pred_flag!=2 then nullif(sql_plan_hash_value,0) end,connect_by_root(sql_plan_hash_value),0) phv1,
@@ -193,7 +193,23 @@ Outputs:
 --]]
 ]]*/
 set feed off printsize 10000 pipequery off
-WITH ALL_PLANS AS 
+WITH sql_list as(
+    select /*+materialize*/ * 
+    FROM (
+        select 'D' pos,sql_id,nvl(sql_plan_hash_value,0) phv,dbid
+        from   dba_hist_active_sess_history
+        where  '&vw' IN('A','D')
+        and    sql_id is not null
+        and    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
+        UNION   ALL
+        select 'D' pos,sql_id,nvl(sql_plan_hash_value,0) phv,&did
+        from   gv$active_session_history
+        where  '&vw' IN('A','G')
+        and    sql_id is not null
+        and    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
+    ) where dbid=nvl('&dbid',dbid)
+),
+ALL_PLANS AS 
  (SELECT * FROM 
     (SELECT    id,
                 parent_id,
@@ -211,8 +227,7 @@ WITH ALL_PLANS AS
                 &phf2 plan_hash_full,
                 instr(other_xml,'adaptive_plan') is_adaptive_
         FROM    gv$sql_plan a
-        WHERE   '&vw' IN('A','G')
-        AND     :V1 in(''||a.plan_hash_value,sql_id)
+        WHERE   ('G',sql_id,plan_hash_value,&did) in(select * from sql_list)
         UNION ALL
         SELECT  id,
                 parent_id,
@@ -230,8 +245,7 @@ WITH ALL_PLANS AS
                 &phf2 plan_hash_full,
                 instr(other_xml,'adaptive_plan') is_adaptive_
         FROM    dba_hist_sql_plan a
-        WHERE   '&vw' IN('A','D')
-        AND     :V1 in(''||a.plan_hash_value,sql_id))
+        WHERE   ('D',sql_id,plan_hash_value,dbid) in(select * from sql_list))
   WHERE dbid=nvl(0+'&dbid',&did)),
 plan_objs AS
  (SELECT DISTINCT OBJECT#,OBJECT_NAME FROM ALL_PLANS),
@@ -261,8 +275,7 @@ sqlstats as(
                             SUM(executions_Delta)),
                     3) avg_
     FROM   dba_hist_sqlstat natural join dba_hist_snapshot
-    WHERE  '&vw' IN('A','D')
-    AND    :V1 in(''||plan_hash_value,sql_id)
+    WHERE  ('D',sql_id,plan_hash_value,dbid) in(select * from sql_list)
     AND    elapsed_time_Delta>0
     AND    dbid=nvl(0+'&dbid',&did)
     AND    end_interval_Time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7)
@@ -346,7 +359,7 @@ ash_raw as (
                         &hierachy
                 FROM    (
                     select --+merge(a) cardinality(30000000) full(a.a) leading(a.a) use_hash(a.a a.s) swap_join_inputs(a.s) FULL(A.GV$ACTIVE_SESSION_HISTORY.A)  leading(A.GV$ACTIVE_SESSION_HISTORY.A) use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S) swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
-                            a.*,&did dbid,inst_id instance_number,1 aas_,&mem mem,0 snap_id &px_count,decode(:V1,sql_id,1,top_level_sql_id,2,3) pred_flag
+                            a.*,&did dbid,inst_id instance_number,1 aas_,&mem mem,0 snap_id &px_count,decode(:V1,nvl(sql_id,top_level_sql_id),1,top_level_sql_id,2,3) pred_flag
                     from   gv$active_session_history a
                     where  '&vw' IN('A','G')
                     and    sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) 
@@ -558,7 +571,7 @@ agg_data as(
          decode(&simple,1,top_grp) top_list,'' top_list2,null pred_flag,null awr_exec,null awr_ela
   FROM plan_line_xplan
   UNION ALL
-  select 'phv' flag,-1,r,rid,''||phv2 oid,decode(pred_flag,3,sql_id,''||phfv),
+  select 'phv' flag,-1,r,rid,''||phv2 oid,decode(pred_flag,3,sql_id,2,sql_id,''||phfv),
          ''||secs secs,''|| cost_rate,aas_text aas,cost_text costs,''||execs execs,decode(min_dop,null,'',max_dop,''||max_dop,min_dop||'-'||max_dop) dop,skew,
          ''||cpu cpu,''||io io,''||cl cl,''||cc cc,''||app app,''||adm adm,''||cfg cfg,''||sch sch,''||net net,''||oth oth,''||plsql  plsql,buf,io_reqs,io_bytes,pga,temp,
          ''||top_list,'',pred_flag,awr_exec,awr_ela

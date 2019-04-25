@@ -17,6 +17,7 @@ Parameters
     _smm_auto_max_io_size: defaults to 256. used to reduce the direct path read/write temp overhead for hash join/sort
     _lm_drm_disable: defaults to 0.  1(_gc_affinity_locking): disable affinity locking,   2(_gc_undo_affinity):disable undo drm  4(_gc_read_mostly_locking): disable readmostly drm. Refer to MOS 1619155.1 for other gc parameters
     _db_hot_block_tracking: enables to collect the hot blocks in X$KSLHOT
+    _dlm_stats_collect: defaults to 1 since 12.2 and should be set to 0 (Doc ID 2373451.1)
     _restrict_pdb_gv: false to disable cross-instance query on gv$ views
     _parallel_load_balancing: defaults to true, 'false' to allocate PX slaves across all instances in round-robin mode without measuring the workload balance
     _lm_res_tm_hash_bucket/_lm_res_hash_bucket/_lm_share_lock_opt: d improving the values can reduce "latch: ges resource hash list" events(Bug.27528038)

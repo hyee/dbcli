@@ -22,14 +22,14 @@ BEGIN
                decode(delta_flag, 0, buffer_gets_total, buffer_gets_delta)*(select value from v$parameter where name='db_block_size') buffer_gets,
                decode(delta_flag, 0, direct_writes_total, direct_writes_delta)*(select value from v$parameter where name='db_block_size') direct_writes,
                decode(delta_flag, 0, rows_processed_total, rows_processed_delta) rows_processed,
-               decode(delta_flag, 0, elapsed_time_total, elapsed_time_delta)*1e-6 elapsed_time,
-               decode(delta_flag, 0, cpu_time_total, cpu_time_delta)*1e-6 cpu_time,
-               decode(delta_flag, 0, iowait_total, iowait_delta)*1e-6 iowait,
-               decode(delta_flag, 0, clwait_total, clwait_delta)*1e-6 clwait,
-               decode(delta_flag, 0, apwait_total, apwait_delta)*1e-6 apwait,
-               decode(delta_flag, 0, ccwait_total, ccwait_delta)*1e-6 ccwait,
-               decode(delta_flag, 0, plsexec_time_total, plsexec_time_delta)*1e-6 plsexec_time,
-               decode(delta_flag, 0, javexec_time_total, javexec_time_delta)*1e-6 javexec_time
+               decode(delta_flag, 0, elapsed_time_total, elapsed_time_delta) elapsed_time,
+               decode(delta_flag, 0, cpu_time_total, cpu_time_delta) cpu_time,
+               decode(delta_flag, 0, iowait_total, iowait_delta) iowait,
+               decode(delta_flag, 0, clwait_total, clwait_delta) clwait,
+               decode(delta_flag, 0, apwait_total, apwait_delta) apwait,
+               decode(delta_flag, 0, ccwait_total, ccwait_delta) ccwait,
+               decode(delta_flag, 0, plsexec_time_total, plsexec_time_delta) plsexec_time,
+               decode(delta_flag, 0, javexec_time_total, javexec_time_delta) javexec_time
                @11g@
         FROM   (select h.*,sign(elapsed_time_delta) delta_flag from dba_hist_sqlstat H /*where BITAND(NVL(flag, 0), 1) = 0*/) h, dba_hist_snapshot s
         WHERE  greatest(h.elapsed_time_delta, elapsed_time_total) > 0

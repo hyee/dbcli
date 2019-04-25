@@ -49,12 +49,11 @@ FROM   (SELECT &VER top_level_sql_id top_sql,
         ORDER  BY aas DESC)
 WHERE  ROWNUM <= 10;
 
-
-
 SELECT PLAN_HASH_VALUE PHV,
        program_id || NULLIF('#' || program_line#, '#0') program#,
-       &ver12 decode(is_reoptimizable,'Y','REOPTIMIZABLE'||chr(10))||decode(is_resolved_adaptive_plan,'Y','RESOLVED_ADAPTIVE_PLAN'||chr(10))||
-       &ver decode(IS_BIND_SENSITIVE, 'Y', 'IS_BIND_SENSITIVE'||chr(10)) || decode(IS_BIND_AWARE, 'Y', 'BIND_AWARE'||chr(10)) || decode(IS_SHAREABLE, 'Y', 'SHAREABLE'||chr(10)) ACS,
+       trim(chr(10) from ''||&ver12 decode(is_reoptimizable,'Y','REOPTIMIZABLE'||chr(10))||decode(is_resolved_adaptive_plan,'Y','RESOLVED_ADAPTIVE_PLAN'||chr(10))||
+       &ver decode(IS_BIND_SENSITIVE, 'Y', 'IS_BIND_SENSITIVE'||chr(10)) || decode(IS_BIND_AWARE, 'Y', 'BIND_AWARE'||chr(10)) || decode(IS_SHAREABLE, 'Y', 'SHAREABLE'||chr(10)))
+        ACS,
        TRIM('/' FROM SQL_PROFILE 
        &ver || '/' || SQL_PLAN_BASELINE
        ) OUTLINE,

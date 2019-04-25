@@ -123,6 +123,7 @@ function grid.sort(rows, cols, bypass_head)
     local sorts = {}
     local has_header
     if rows.__class then rows, has_header = rows.data, rows.include_head end
+    if not rows[1] then return rows end
     local titles=rows[1]._org or rows[1]
     for ind in tostring(cols):gsub('^,*(.-),*$', '%1'):gmatch("([^,]+)") do
         local col, l
@@ -730,6 +731,7 @@ function grid.print(rows, include_head, col_del, row_del, rows_limit, prefix, su
         size = #rows + (include_head and 1 or 0)
     end
     local data,output=grid.tostring(rows, include_head, col_del, row_del, rows_limit)
+    if not data or data=='' then return end
     str = str .. data
     if test then env.write_cache("grid_output.txt", str) end
     if type(output)=="table" then
