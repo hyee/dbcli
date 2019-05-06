@@ -130,7 +130,7 @@ Examples:
         @ash_cost: 11={tm_delta_db_time*1e-6} default={1}
         @ver     : 11={} default={--}
         @gv      : 11={TABLE(gv$(cursor(} 10={(((}
-        @sysstat : {12.1={json_table(sysstat,'$[*]' columns
+        @sysstat : {12.2={json_table(sysstat,'$[*]' columns
                               inst_id number path '$[0]',
                               name    varchar2(100) path '$[1]',
                               value number path '$[2]')} 
@@ -139,7 +139,7 @@ Examples:
                           extractvalue(column_value,'/ROW/VALUE')+0 VALUE
                   from    TABLE(XMLSEQUENCE(EXTRACT(sysstat,'/ROWSET/ROW'))))}
                   }
-        @sysevent :{12.1={json_table(sysevent,'$[*]' columns
+        @sysevent :{12.2={json_table(sysevent,'$[*]' columns
                               inst_id number path '$[0]',
                               WAIT_CLASS    varchar2(30) path '$[1]',
                               EVENT varchar2(300) path '$[2]',
@@ -151,7 +151,7 @@ Examples:
                             extractvalue(column_value,'/ROW/TOTAL_WAITS')+0 TOTAL_WAITS,
                             extractvalue(column_value,'/ROW/TIME_WAITED_MICRO')+0 TIME_WAITED_MICRO
                    from    TABLE(XMLSEQUENCE(EXTRACT(sysevent,'/ROWSET/ROW'))))}}
-        @timemodel:{12.1={json_table(timemodel,'$[*]' columns
+        @timemodel:{12.2={json_table(timemodel,'$[*]' columns
                               inst_id   number path '$[0]',
                               stat_name varchar2(100) path '$[1]',
                               value     number path '$[2]')} 
@@ -362,7 +362,7 @@ Examples:
                         ORDER  BY "Bytes" DESC
                 ]]}}
       @declare: {
-        12.1={sysstat CLOB;sysevent CLOB;timemodel CLOB},
+        12.2={sysstat CLOB;sysevent CLOB;timemodel CLOB},
         default={sysstat xmltype;sysevent xmltype;timemodel xmltype}}
     --]]
 ]]*/
@@ -370,7 +370,7 @@ Examples:
     sql={
         declare=[[&declare;bs PLS_INTEGER;]],
       [[
-         $IF DBMS_DB_VERSION.VERSION>11 $THEN
+         $IF DBMS_DB_VERSION.VERSION>12 OR DBMS_DB_VERSION.VERSION=12 AND DBMS_DB_VERSION.RELEASE>1 $THEN
             select (select json_arrayagg(json_array(inst_id,name,value) returning clob) 
                     from gv$sysstat where value>0),
                    (select json_arrayagg(json_array(inst_id,WAIT_CLASS,EVENT,TOTAL_WAITS,TIME_WAITED_MICRO) returning clob) 

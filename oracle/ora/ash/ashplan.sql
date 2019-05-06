@@ -90,7 +90,7 @@ Outputs:
     @adp : 12.1={case when instr(other_xml, 'adaptive_plan') > 0 then 'Y' else 'N' end} default={'N'}
     @con : 12.1={AND prior nvl(con_dbid,0)=nvl(con_dbid,0)} default={}
     @mem : 12.1={DELTA_READ_MEM_BYTES} default={null}
-    @did : 12.1={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
+    @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     &V9  : ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
     &top1: default={ev}, O={CURR_OBJ#}
     &top2: default={CURR_OBJ#}, O={ev}
@@ -196,7 +196,7 @@ set feed off printsize 10000 pipequery off
 WITH sql_list as(
     select /*+materialize*/ * 
     FROM (
-        select 'D' pos,sql_id,nvl(sql_plan_hash_value,0) phv,dbid
+        select 'D' pos,sql_id,nvl(sql_plan_hash_value,0) plan_hash_value,dbid
         from   dba_hist_active_sess_history
         where  '&vw' IN('A','D')
         and    sql_id is not null
@@ -211,7 +211,8 @@ WITH sql_list as(
 ),
 ALL_PLANS AS 
  (SELECT * FROM 
-    (SELECT    id,
+    (SELECT    /*+ordered use_hash(a) no_merge(a)*/    
+                id,
                 parent_id,
                 child_number    ha,
                 1               flag,
@@ -226,8 +227,9 @@ ALL_PLANS AS
                 object_node tq,operation||' '||options operation,
                 &phf2 plan_hash_full,
                 instr(other_xml,'adaptive_plan') is_adaptive_
-        FROM    gv$sql_plan a
-        WHERE   ('G',sql_id,plan_hash_value,&did) in(select * from sql_list)
+        FROM    sql_list join gv$sql_plan a using(sql_id,plan_hash_value)
+        WHERE   pos='G'
+        AND     '&vw' IN('A','G')
         UNION ALL
         SELECT  id,
                 parent_id,
@@ -244,11 +246,11 @@ ALL_PLANS AS
                 object_node tq,operation||' '||options,
                 &phf2 plan_hash_full,
                 instr(other_xml,'adaptive_plan') is_adaptive_
-        FROM    dba_hist_sql_plan a
-        WHERE   ('D',sql_id,plan_hash_value,dbid) in(select * from sql_list))
+        FROM    sql_list join dba_hist_sql_plan a using(sql_id,plan_hash_value,dbid)
+        WHERE   pos='D'
+        AND     '&vw' IN('A','D'))
   WHERE dbid=nvl(0+'&dbid',&did)),
-plan_objs AS
- (SELECT DISTINCT OBJECT#,OBJECT_NAME FROM ALL_PLANS),
+plan_objs AS (SELECT DISTINCT OBJECT#,OBJECT_NAME FROM ALL_PLANS),
 sql_plan_data AS
  (SELECT * FROM
      (SELECT a.*,
@@ -266,7 +268,7 @@ sqlstats as(
     SELECT /*+materialize*/ 
             dbid,sql_id,
             nvl(plan_hash_value,-1) phv,
-            SUM(executions_Delta) exec_,
+            SUM(executions_delta) exec_,
             round(SUM(elapsed_time_Delta) * 1e-6, 2) ela,
             round(SUM(elapsed_time_Delta) * 1e-3 /
                     decode(SUM(executions_Delta),
@@ -278,8 +280,7 @@ sqlstats as(
     WHERE  ('D',sql_id,plan_hash_value,dbid) in(select * from sql_list)
     AND    elapsed_time_Delta>0
     AND    dbid=nvl(0+'&dbid',&did)
-    AND    end_interval_Time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7)
-                               AND     nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
+    AND    end_interval_Time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
     GROUP  BY dbid,sql_id, rollup(plan_hash_value)
 ),
 ash_raw as (
@@ -362,8 +363,7 @@ ash_raw as (
                             a.*,&did dbid,inst_id instance_number,1 aas_,&mem mem,0 snap_id &px_count,decode(:V1,nvl(sql_id,top_level_sql_id),1,top_level_sql_id,2,3) pred_flag
                     from   gv$active_session_history a
                     where  '&vw' IN('A','G')
-                    and    sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) 
-                                         AND     nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
+                    and    sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
                     and   (:V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf) or 
                             qc_session_id!=session_id or qc_instance_id!=inst_id or session_serial# != qc_session_serial#                            
                            )) a
@@ -384,8 +384,7 @@ ash_raw as (
                          from   dba_hist_active_sess_history d
                          WHERE   '&vw' IN('A','D')
                          AND     dbid=nvl(0+'&dbid',&did)
-                         AND     sample_time BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) 
-                                                   AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)) a
+                         AND     sample_time BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)) a
                 WHERE 1=1
                 &swcb
                 ) a ) h

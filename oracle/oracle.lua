@@ -172,12 +172,11 @@ function oracle:connect(conn_str)
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     local props={host=self.properties['AUTH_SC_SERVER_HOST'],
                  instance_name=self.properties['AUTH_INSTANCENAME'],
-                 instance=tonumber(self.properties['AUTH_INSTANCE_NO']),
-                 sid=tonumber(self.properties['AUTH_SESSION_ID']),
-                 dbname=self.properties['DATABASE_NAME'],
+                 instance='#NUMBER',
+                 sid='#NUMBER',
                  dbid="#NUMBER",
                  version="#NUMBER"}
-    for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container','israc','privs','isadb'} do 
+    for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container','israc','privs','isadb','dbname'} do 
         props[v]="#VARCHAR" 
     end
 
@@ -215,7 +214,7 @@ function oracle:connect(conn_str)
                 END;
             $END
 
-            $IF dbms_db_version.version < 12 $THEN
+            $IF dbms_db_version.version < 18 $THEN
             BEGIN
                 execute immediate 'select dbid from v$database' into did;
             EXCEPTION WHEN OTHERS THEN NULL;
@@ -239,18 +238,26 @@ function oracle:connect(conn_str)
                    (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_RDBMS_VERSION') version,
                    (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_LANGUAGE') || '_' ||
                    (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_TERRITORY') || '.' || value nls,
+            $IF dbms_db_version.version > 9 $THEN      
+                   userenv('sid') ssid,
+                   userenv('instance') inst,
+            $ELSE
+                   (select sid from v$mystat where rownum<2) ssid,
+                   (select instance_number from v$instance where rownum<2) inst,
+            $END
+
             $IF dbms_db_version.version > 11 $THEN
                    sys_context('userenv', 'con_name') con_name,
-                   sys_context('userenv','dbid') dbid,
             $ELSE
                    null con_name,
-                   did dbid,
             $END   
+                   did dbid,
+                   sys_context('userenv', 'db_unique_name') dbname,
                    sys_context('userenv', 'isdba') isdba,
                    nvl(sv,sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.')) service_name,
                    decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY',' ','PHYSICAL STANDBY',' (Standby)>')) END,
                    decode((select count(distinct inst_id) from gv$version),1,'FALSE','TRUE'),vs,decode(isADB,0,'FALSE','TRUE')
-            INTO   :db_user,:db_version, :nls_lang, :container, :dbid, :isdba, :service_name,:db_role, :israc,:version,:isadb
+            INTO   :db_user,:db_version, :nls_lang,:sid,:instance, :container, :dbid, :dbname,:isdba, :service_name,:db_role, :israc,:version,:isadb
             FROM   nls_Database_Parameters
             WHERE  parameter = 'NLS_CHARACTERSET';
             
@@ -272,7 +279,10 @@ function oracle:connect(conn_str)
     if not succ then
         env.log_debug('DB',err)
         self.props={db_version=self.conn:getDatabaseProductVersion():match('%d+%.%d+%.[%d%.]+'),
-                    version=self.conn:getVersionNumber(),privs={},db_user=self.conn:getUserName()}
+                    version=self.conn:getVersionNumber(),privs={},db_user=self.conn:getUserName(),
+                    instance=tonumber(self.properties['AUTH_INSTANCE_NO']),
+                    sid=tonumber(self.properties['AUTH_SESSION_ID']),
+                    dbname=self.properties['DATABASE_NAME']}
         if self.properties['AUTH_DBNAME'] then
             props.service_name=self.properties['AUTH_DBNAME']
             if (self.properties['AUTH_SC_DB_DOMAIN'] or '')~='' then

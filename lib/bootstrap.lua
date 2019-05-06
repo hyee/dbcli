@@ -100,9 +100,10 @@ path[#path+1]=os.getenv("PATH")
 luv.os_setenv("PATH",table.concat(path,psep))
 
 local charset=os.getenv("DBCLI_ENCODING") or "UTF-8"
-local options ={'-noverify' ,
-			    '-Xmx512M',
-			    --'-Xrs',
+local options ={'-noverify',
+				'-XX:MaxPermSize=128m',
+				'-Xms64m',
+				'-Xmx512m',
 			    '-XX:+UseStringDeduplication','-XX:+UseParallelGC','-XX:+UseCompressedOops','-XX:+UseFastAccessorMethods','-XX:+AggressiveOpts','-XX:-BackgroundCompilation',
 			    '-Dfile.encoding='..charset,
 			    '-Duser.language=en','-Duser.region=US','-Duser.country=US',

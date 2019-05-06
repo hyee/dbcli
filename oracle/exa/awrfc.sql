@@ -103,7 +103,8 @@ BEGIN
     SELECT max(dbid),max(bid),max(eid),max(&dur),max(stime),max(etime)
     INTO   did,bid,eid,duration,:v_start,:v_end
     FROM   (
-        SELECT (MAX(end_interval_time+0)-MIN(end_interval_time+0))*86400 dur,
+        SELECT /*+ordered use_hash(b)*/ 
+               (MAX(end_interval_time+0)-MIN(end_interval_time+0))*86400 dur,
                 dbid,
                 MAX(snap_id) eid,
                 MIN(snap_id) bid,
@@ -111,7 +112,7 @@ BEGIN
                 min(end_interval_time)+0 stime,
                 incarnation_num
         FROM   dba_hist_snapshot a JOIN dba_hist_cell_global b USING(snap_id,dbid)
-        WHERE  dbid=NVL(:dbid+0,sys_context('userenv','dbid'))
+        WHERE  dbid=NVL(:dbid+0,(select dbid from v$database))
         AND    end_interval_time+0 between nvl(to_date(nvl(:V1,:starttime),'YYMMDDHH24MI'),SYSDATE - 7) AND nvl(to_date(nvl(:V2,:endtime),'YYMMDDHH24MI'),SYSDATE)
         GROUP  BY dbid,incarnation_num
         ORDER  BY incarnation_num DESC)
@@ -157,7 +158,7 @@ BEGIN
                             (SELECT dbid, cellhash, MAX(CURRENT_SNAP_ID)
                                 FROM   dba_hist_cell_config
                                 WHERE  conftype = 'CELLDISK'
-                                AND    dbid = NVL(0 + :dbid, sys_context('userenv', 'dbid'))
+                                AND    dbid = NVL(0 + :dbid, (select dbid from v$database))
                                 GROUP  BY dbid, cellhash)) a
                 GROUP  BY ROLLUP((cell, cellname, CELLHASH)))
         RIGHT  JOIN (SELECT *

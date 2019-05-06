@@ -107,9 +107,12 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
                 l_cont  :=sys_context('userenv', 'con_name'); 
                 l_cid   :=sys_context('userenv', 'con_id'); 
                 l_cdbid :=sys_context('userenv', 'con_dbid'); 
-                l_dbid  :=sys_context('userenv', 'dbid'); 
             $END
 
+            $IF dbms_db_version.version > 12 or dbms_db_version.version=12 and dbms_db_version.release>1 $THEN 
+                l_dbid  :=sys_context('userenv', 'dbid'); 
+            $END
+            
             :buff     := l_buffer;
             :txn      := dbms_transaction.local_transaction_id;
             :con_name := l_cont;
