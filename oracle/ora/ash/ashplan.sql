@@ -201,7 +201,7 @@ WITH sql_list as(
         where  '&vw' IN('A','D')
         and    sql_id is not null
         and    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
-        UNION   ALL
+        UNION
         select 'D' pos,sql_id,nvl(sql_plan_hash_value,0) phv,&did
         from   gv$active_session_history
         where  '&vw' IN('A','G')
@@ -276,7 +276,7 @@ sqlstats as(
                             nullif(floor(SUM(parse_calls_delta) / greatest(1, SUM(px_servers_execs_delta))), 0),
                             SUM(executions_Delta)),
                     3) avg_
-    FROM   dba_hist_sqlstat natural join dba_hist_snapshot
+    FROM   dba_hist_sqlstat join dba_hist_snapshot using(dbid,snap_id,instance_number)
     WHERE  ('D',sql_id,plan_hash_value,dbid) in(select * from sql_list)
     AND    elapsed_time_Delta>0
     AND    dbid=nvl(0+'&dbid',&did)
@@ -337,7 +337,14 @@ ash_raw as (
             sum(case when p3text='block cnt' and nvl(event,'temp') like '%temp' then temp_ end) over(partition by dbid,phv1,sql_exec,pid,sample_time+0) temp,
             sum(pga_)  over(partition by dbid,phv1,sql_exec,pid,sample_time+0) pga,
             sum(case when is_px_slave=1 and px_flags>65536 then least(tm_delta_db_time,AAS*2e6) end) over(partition by px_flags,dbid,phv1,sql_exec,pid,qc_sid,qc_inst,qc_session_serial#,sid,inst_id) dbtime
-    FROM   (SELECT /*+NO_BIND_AWARE NO_PQ_CONCURRENT_UNION no_expand opt_param('optimizer_index_cost_adj' 500) opt_param('_optim_peek_user_binds' 'false') opt_param('_optimizer_connect_by_combine_sw', 'false') opt_param('_optimizer_filter_pushdown', 'false')*/ --PQ_CONCURRENT_UNION 
+    FROM   (SELECT /*+NO_BIND_AWARE NO_PQ_CONCURRENT_UNION 
+                      no_expand 
+                      opt_param('optimizer_index_cost_adj' 500) 
+                      opt_param('_optim_peek_user_binds' 'false') 
+                      opt_param('_bloom_filter_enabled' 'false') 
+                      opt_param('_optimizer_connect_by_combine_sw', 'false') 
+                      opt_param('_optimizer_filter_pushdown', 'false')
+                      */ 
                    a.*, --seq: if ASH and DASH have the same record, then use ASH as the standard
                    decode(AAS_,1,1,decode((
                         select sign(max(avg_) keep(dense_rank last order by phv1)- 5e3) flag 
@@ -405,8 +412,8 @@ ash_phv_agg as(
         left join (select distinct phv,phf,is_adaptive from sql_plan_data) b using(phv)) A
     WHERE phv_rate>=0.1),
 hierarchy_data AS
- (SELECT id, parent_id, phv,operation
-  FROM   (select * from sql_plan_data where phv in(select phv from ash_phv_agg where plan_exists=1))
+ (SELECT /*+CONNECT_BY_FILTERING*/ id, parent_id, phv,operation
+  FROM   (select distinct id, parent_id, phv,operation from sql_plan_data where phv in(select phv from ash_phv_agg where plan_exists=1))
   START  WITH id = 0
   CONNECT BY PRIOR id = parent_id AND phv=PRIOR phv 
   ORDER  SIBLINGS BY id DESC),

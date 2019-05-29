@@ -83,7 +83,7 @@ function extvars.on_before_db_exec(item)
     local _,sql,args,params=table.unpack(item)
 
     if sql and not cache[sql] then
-        if type(db.props.version)=='number' and (db.props.israc==false or db.props.version<11) and not sql:find('^'..(env.ROOT_CMD:escape())) then
+        if (tonumber(db.props.instance)==instance or type(db.props.version)=='number' and (db.props.israc==false or db.props.version<11)) and not sql:find('^'..(env.ROOT_CMD:escape())) then
             sql=sql:gsub(gv1,'%1((('):gsub(gv2,"%1((")
         end
         item[2]=re.gsub(sql..' ',extvars.P,rep_instance):sub(1,-2)
@@ -187,7 +187,7 @@ function extvars.set_cdbmode(name,value)
 end
 
 function extvars.on_after_db_conn()
-    if db.props.isadb==true and db.props.israc==false then
+    if db.props.isadb==true and db.props.israc==true then
         cfg.force_set('instance', db.props.instance)
     else
         cfg.force_set('instance','default')
@@ -287,7 +287,7 @@ function extvars.set_dict(type)
                         from   dba_procedures
                         where  procedure_name is not null)
                 GROUP  BY TABLE_NAME
-                ORDER  BY decode(owner,'SYS',' ',owner),table_name)
+                ORDER  BY decode(owner,'SYS',' ','PUBLIC','  ',owner),table_name)
             WHERE ROWNUM<=65536*5]]
     else
         extvars.load_dict(path)
