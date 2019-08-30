@@ -1,3 +1,4 @@
+2019-08-30: + oracle: new commands 'oradebug'/'ora privs'/'rac traffic'
 2019-04-25: + oracle: new command 'ora plandiff'
 2019-04-22: + oracle: new command 'rac enqueue_sum/pdb apps/pdb lockdown'
 2019-04-17: + oracle: new command 'exa awrfc'

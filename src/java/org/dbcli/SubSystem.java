@@ -15,6 +15,7 @@ import java.util.TreeMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 
@@ -23,6 +24,7 @@ public class SubSystem {
     volatile NuProcess process;
     ByteBuffer writer;
     Pattern p;
+    Thread   monitorThread;
     volatile String lastLine;
     volatile Boolean isWaiting = false;
     volatile Boolean isBreak = false;
@@ -30,6 +32,7 @@ public class SubSystem {
     volatile Boolean isPrint = false;
     volatile String lastPrompt = "";
     volatile String prevPrompt;
+    volatile Boolean isCache=false;
     //return null means the process is terminated
     CountDownLatch lock = new CountDownLatch(1);
 
@@ -50,6 +53,18 @@ public class SubSystem {
             process = pb.start();
             writer = ByteBuffer.allocateDirect(32767);
             writer.order(ByteOrder.nativeOrder());
+            monitorThread=new Thread(() -> {
+                try {
+                    process.waitFor(0, TimeUnit.SECONDS);
+                } catch (InterruptedException e1) {
+
+                } finally {
+                    try {process.destroy(true);}  catch (Exception e1) {}
+                    process=null;
+                }
+            });
+            monitorThread.setDaemon(true);
+            monitorThread.start();
             //Respond to the ctrl+c event
             /*
             Interrupter.listen(this, new EventCallback() {
@@ -73,12 +88,19 @@ public class SubSystem {
         return new SubSystem(pattern, cwd, command, env);
     }
 
+    public Boolean isClosed() {
+        return process==null;
+    }
+
     public Boolean isPending() {
         return process.hasPendingWrites();
     }
 
+    StringBuffer buff=new StringBuffer(1024);
     void print(String buff) {
-        if (isPrint && !isBreak) {
+        if(isCache) {
+            this.buff.append(buff);
+        } else if (isPrint && !isBreak) {
             Console.writer.add(buff);
             Console.writer.flush();
         }
@@ -165,6 +187,17 @@ public class SubSystem {
     public String getLastLine(String command) throws Exception {
         execute(command, false);
         return lastLine == null ? null : lastLine.replaceAll("[\r\n]+$", "");
+    }
+
+    public String getLines(String command) throws Exception {
+        isCache=true;
+        try {
+            buff.delete(0,buff.length());
+            execute(command, false);
+            return buff.toString();
+        } finally {
+            isCache=false;
+        }
     }
 
     public void close() {

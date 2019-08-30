@@ -632,7 +632,8 @@ function grid:wellform(col_del, row_del)
                     end
                 end
             end
-        elseif v.rsize==1 and type(v[1])=='string' and v[1]:find('^%W$') then
+        elseif v.rsize==1 and type(v[1])=='string' and v[1]:find('^[%-%+%|%*%=%.%_%/%\\%@]$') 
+               and (v[2]=='' or v[2]==v[1] or v[2]==nil) then
             local c=v[1]
             for k1,v1 in ipairs(title_dels) do
                 v[k1]=v1:sub(1,1)==grid.title_del and v1:gsub('.',c) or v1
@@ -650,6 +651,7 @@ function grid:wellform(col_del, row_del)
         end
 
         output[#output+1]=v
+
         if filter_flag == 1 then 
             rows[#rows+1]=row 
         end
@@ -664,6 +666,7 @@ function grid:wellform(col_del, row_del)
             end
         end
     end
+
     
     if result[#result][0] > 0 and (row_del or "") == "" and (col_del or ""):trim() ~= "" then
         local line = cut(title_dels, format_func, fmt)

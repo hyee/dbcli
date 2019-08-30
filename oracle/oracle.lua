@@ -21,6 +21,7 @@ oracle.module_list={
     "chart",
     "ssh",
     "extvars",
+    "oradebug",
     "sqlcl",
     "adb"
 }

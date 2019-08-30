@@ -1153,7 +1153,7 @@ function env.load_data(file,isUnpack,callback)
     env.checkerr(file,'env.load_data: filename is nil!')
     if not file:find('[\\/]') then file=env.join_path(env.WORK_DIR,"data",file) end
     if type(callback)~="function" then
-        local f=io.open(file,file:match('%.dat$') and "rb" or "r")
+        local f=io.open(file,file:match('%.dat$') and "rb" or isUnpack and "rb" or "r")
         if not f then
             return {}
         end
@@ -1175,7 +1175,7 @@ function env.save_data(file,txt,maxsize)
     if not file:find('[\\/]') then file=env.join_path(env.WORK_DIR,"data",file) end
     txt=env.MessagePack.pack(txt)
     env.checkerr(not maxsize or maxsize>=#txt,"File "..file..' is too large('..#txt..' bytes), operation is cancelled!')
-    local f=io.open(file,file:match('%.dat$') and "wb" or "w")
+    local f=io.open(file,"wb")
     if not f then
         env.raise("Unable to save "..file)
     end
