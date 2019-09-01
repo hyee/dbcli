@@ -4,6 +4,9 @@
     Install:
         11g: @?/rdbms/admin/dbmshptab.sql
         18c: EXEC DBMS_HPROF.create_tables(force_it => TRUE);
+
+    Example:
+        @@NAME ORACLE_HOME 1.txt "dbms_lock.sleep(10);dbms_session.sleep(10)"
     --[[
         @CHECK_ACCESS: dba_source={DBA_SOURCE}, all_source={ALL_SOURCE}
         @CHECK_ACCESS2: SYS.DBMS_HPROF/DBMSHP_RUNS={}
@@ -71,13 +74,13 @@ BEGIN
             IF run_id = 0 THEN
                 raise_application_error(-20001, 'Cannot read file ' || file || ' under directory ' || dir || '.');
             END IF;
-            IF DBMS_DB_VERSION.VERSION < 12 THEN
+            /*IF DBMS_DB_VERSION.VERSION < 12 THEN
                 dbms_lob.createtemporary(output, TRUE);
                 dbms_lob.loadclobfromfile(output, trace_file, DBMS_LOB.LOBMAXSIZE, startpos, pos, csid, lang_ctx, warn);
-            END IF;
+            END IF;*/
             dbms_lob.fileclose(trace_file);
-            run_id := SYS.DBMS_HPROF.analyze(location => dir, filename => file);
 
+            run_id := SYS.DBMS_HPROF.analyze(location => dir, filename => file);
             $IF DBMS_DB_VERSION.VERSION > 11 $THEN
                 SYS.DBMS_HPROF.analyze(location => dir, filename => file, report_clob => output);
                 file := NULL;
@@ -95,7 +98,7 @@ BEGIN
               FROM  (SELECT * FROM dbmshp_function_info WHERE RUNID = run_id) u,
                     TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(
                        q'[SELECT regexp_substr(ltrim(TEXT,chr(9)||' '),'[^'||chr(10)||']+') text
-                          FROM dba_source
+                          FROM &CHECK_ACCESS
                           WHERE OWNER=']' ||owner || 
                           ''' AND line=''' || LINE# || 
                           ''' AND NAME=''' || MODULE || 
@@ -126,6 +129,7 @@ BEGIN
                    to_char(100*func_time/max_time,'990.00')||'%' "Func(%)",
                    calls,SQL_ID,'|' "|",TEXT
             FROM   (select a.*,rownum r from hier a)
+            WHERE  greatest(subtree_time,func_time)*10000/max_time>=1
             ORDER  BY r;
     END IF;
 END;

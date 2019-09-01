@@ -20,9 +20,331 @@ local function get_output(cmd)
 end
 
 local ext={
-	DUMP={},
+	HANGANALYZE={
+		{'HANGANALYZE <level>',
+		 [[Analyze System Hangs.
+			Level:
+		    1-2 Only HANGANALYZE output, no process dump at all
+		    3   Level 2 + Dump only processes thought to be in a hang (IN_HANG state)
+		    4   Level 3 + Dump leaf nodes (blockers) in wait chains (LEAF,LEAF_NW,IGN_DMP state)
+		    5   Level 4 + Dump all processes involved in wait chains (NLEAF state)
+		    10  Dump all processes (IGN state)]],
+		 [[oradebug setmypid
+		    oradebug unlimit
+		    oradebug setinst all
+		    oradebug hanganalyze 5
+		    oradebug -g def dump systemstate 10]]
+		}
+	},
+	DUMP={
+		{'ADJUST_SCN','',''},
+		{'ALRT_TEST','',''},
+		{'ARCHIVE_ERROR','',''},
+		{'ASHDUMP','',''},
+		{'ASHDUMPSECONDS','',''},
+		{'ASMDISK_ERR_OFF','',''},
+		{'ASMDISK_ERR_ON','',''},
+		{'ASMDISK_READ_ERR_ON','',''},
+		{'ATSK_TEST','',''},
+		{'AWR_DEBUG_FLUSH_TABLE_OFF','',''},
+		{'AWR_DEBUG_FLUSH_TABLE_ON','',''},
+		{'AWR_FLUSH_TABLE_OFF','',''},
+		{'AWR_FLUSH_TABLE_ON','',''},
+		{'AWR_TEST','',''},
+		{'BC_SANITY_CHECK','',''},
+		{'BGINFO','',''},
+		{'BG_MESSAGES','',''},
+		{'BLK0_FMTCHG','',''},
+		{'BUFFER','',''},
+		{'BUFFERS <level>',
+		[[Dump of buffer cache.
+		Level:
+		* 1 dump the buffer headers only
+		* 2 include the cache and transaction headers from each block
+		* 3 include a full dump of each block
+		* 4 dump the working set lists and the buffer headers and the cache header for each block
+		* 5 include the transaction header from each block
+		* 6 include a full dump of each block
+		Most levels high than 6 are equivalent to 6, except that levels 8 and 9 are the same as 4 and 5 respectively.
+		For level 1 to 3 the information is dumped in buffer header order.
+		For levels higher than 3, the buffers and blocks are dumped in hash chain order.]],''},
+		{'CALLSTACK','',''},
+		{'CBDB_ENTRIES','',''},
+		{'CGS','',''},
+		{'CHECK_ROREUSE_SANITY','',''},
+		{'CONTEXTAREA','',''},
+		{'CONTROLF <level>',
+		[[The contents of the current controlfile can be dumped in text form to a process trace file in the user_dump_dest directory using the CONTROLF dump.
+		  Level:
+		  * 1  only the file header
+		  * 2  just the file header, the database info record, and checkpoint progress records
+		  * 3  all record types, but just the earliest and latest records for circular reuse record types
+		  * 4  as above, but includes the 4 most recent records for circular reuse record types
+		  * 5+ as above, but the number of circular reuse records included doubles with each level]],'oradebug dump controlf 4'},
+		{'CROSSIC','',''},
+		{'CRS','',''},
+		{'CSS','',''},
+		{'CURSORDUMP','',''},
+		{'CURSORTRACE','',''},
+		{'CURSOR_STATS','',''},
+		{'DATA_ERR_OFF','',''},
+		{'DATA_ERR_ON','',''},
+		{'DATA_READ_ERR_ON','',''},
+		{'DBSCHEDULER','',''},
+		{'DEAD_CLEANUP_STATE','',''},
+		{'DROP_SEGMENTS','',''},
+		{'DUMPGLOBALDATA','',''},
+		{'DUMP_ADV_SNAPSHOTS','',''},
+		{'DUMP_ALL_COMP_GRANULES','',''},
+		{'DUMP_ALL_COMP_GRANULE_ADDRS','',''},
+		{'DUMP_ALL_OBJSTATS','',''},
+		{'DUMP_ALL_REQS','',''},
+		{'DUMP_PINNED_BUFFER_HISTORY','',''},
+		{'DUMP_SGA_METADATA','',''},
+		{'DUMP_TEMP','',''},
+		{'DUMP_TRANSFER_OPS','',''},
+		{'ENQUEUES','',''},
+		{'ERRORSTACK <level>',
+		[[Dump of the process call stack and other information.
+		 Level:
+		 0 dump error buffer
+		 1 level 0 + call stack
+		 2 level 1 + process state objects
+		 3 level 2 + context area]],
+		[[1. oradebug dump errorstack 3
+		  2. oradebug event immediate trace name errorstack level 3
+		  3. oradebug event 942 trace name errorstack level 3]]},
+		{'EVENT_TSM_TEST','',''},
+		{'EXCEPTION_DUMP','',''},
+		{'FAILOVER','',''},
+		{'FBHDR','',''},
+		{'FBINC','',''},
+		{'FBTAIL','',''},
+		{'FILE_HDRS <level>',
+		[[Dump datafile headers.
+		  Level:
+		    1 Record of datafiles in controlfile ( for practice compare with controlfile dump)
+			2 Level 1 + generic information
+			3 Level 2 + additional datafile header information.]],'oradebug dump file_hdrs 10'},
+		{'FLASHBACK_GEN','',''},
+		{'FLUSH_BUFFER','',''},
+		{'FLUSH_CACHE','',''},
+		{'FLUSH_JAVA_POOL','',''},
+		{'FLUSH_OBJECT','',''},
+		{'FULL_DUMPS','',''},
+		{'GC_ELEMENTS','',''},
+		{'GES_STATE','',''},
+		{'GIPC','',''},
+		{'GLOBAL_AREA','',''},
+		{'GLOBAL_BUFFER_DUMP','',''},
+		{'GWM_TEST','',''},
+		{'GWM_TRACE','',''},
+		{'HANGANALYZE','',''},
+		{'HANGANALYZE_GLOBAL','',''},
+		{'HANGANALYZE_PROC','',''},
+		{'HANGDIAG_HEADER','',''},
+		{'HEAPDUMP <level>',
+		[[Dump structure of a memory heap.
+		Level:
+		* 1  include PGA heap
+		* 2  include Shared Pool
+		* 4  include UGA heap
+		* 8  include CGA heap
+		* 16 include Top CGA
+		* 32 include Large Pool','oradebug dump heapdump 5 <--this dumps PGA and UGA heaps'},
+		{'HEAPDUMP_ADDR <level> <address>',
+		[[Dump structure of a memory heap with specific address.
+		  Level:
+		  * 1 dump structure
+		  * 2 also include contents]],'oradebug dump heapdump_addr 1 3087751692'},
+		{'HM_FDG_VERS','',''},
+		{'HM_FW_TRACE','',''},
+		{'HNGDET_MEM_USAGE_DUMP','',''},
+		{'IMDB_PINNED_BUFFER_HISTORY','',''},
+		{'INSTANTIATIONSTATE','',''},
+		{'IOERREMUL','',''},
+		{'IOERREMULRNG','',''},
+		{'IR_FW_TRACE','',''},
+		{'JAVAINFO','',''},
+		{'KBRS_TRACE','',''},
+		{'KCBI_DUMP_FREELIST','',''},
+		{'KCBO_OBJ_CHECK_DUMP','',''},
+		{'KCBS_ADV_INT_DUMP','',''},
+		{'KCB_WORKING_SET_DUMP','',''},
+		{'KDFSDMP','',''},
+		{'KDLIDMP','',''},
+		{'KRA_OPTIONS','',''},
+		{'KRBMROR_LIMIT','',''},
+		{'KRBMRSR_LIMIT','',''},
+		{'KRB_BSET_DAYS','',''},
+		{'KRB_CORRUPT_INTERVAL','',''},
+		{'KRB_CORRUPT_OFFSET','',''},
+		{'KRB_CORRUPT_REPEAT','',''},
+		{'KRB_CORRUPT_SIZE','',''},
+		{'KRB_CORRUPT_SPBAD_INTERVAL','',''},
+		{'KRB_CORRUPT_SPBAD_SIGNAL','',''},
+		{'KRB_CORRUPT_SPBITMAP_INTERVAL','',''},
+		{'KRB_CORRUPT_SPBITMAP_REPEAT','',''},
+		{'KRB_CORRUPT_SPHEADER_INTERVAL','',''},
+		{'KRB_CORRUPT_SPHEADER_REPEAT','',''},
+		{'KRB_FAIL_INPUT_FILENO','',''},
+		{'KRB_OPTIONS','',''},
+		{'KRB_OPTIONS2','',''},
+		{'KRB_OVERWRITE_ACTION','',''},
+		{'KRB_PIECE_FAIL','',''},
+		{'KRB_SET_TIME_SWITCH','',''},
+		{'KRB_SIMULATE_NODE_AFFINITY','',''},
+		{'KRB_UNUSED_OPTION','',''},
+		{'KRDRSBF','',''},
+		{'KSDTRADV_TEST','',''},
+		{'KSFQP_LIMIT','',''},
+		{'KSKDUMPTRACE','',''},
+		{'KSTDUMPALLPROCS','',''},
+		{'KSTDUMPALLPROCS_CLUSTER','',''},
+		{'KSTDUMPCURPROC','',''},
+		{'KTPR_DEBUG','',''},
+		{'KUPPLATCHTEST','',''},
+		{'KXFPBLATCHTEST','',''},
+		{'KXFPCLEARSTATS','',''},
+		{'KXFPDUMPTRACE','',''},
+		{'KXFRHASHMAP','',''},
+		{'KXFXCURSORSTATE','',''},
+		{'KXFXSLAVESTATE','',''},
+		{'LATCHES','Dump the latches for a specified process','oradebug dump LATCHES 1'},
+		{'LDAP_KERNEL_DUMP','',''},
+		{'LDAP_USER_DUMP','',''},
+		{'LIBRARY_CACHE <level>',
+		[[Dump library cache statistics.
+		  Level:
+		  * 1 dump libracy cache statistics
+		  * 2 also include a hash table
+		  * 3 level 2 + dump of the library object handles
+		  * 4 Level 3 + dump of the heap]],'oradebug dump library_cache 2'},
+		{'LIBRARY_CACHE_OBJECT','',''},
+		{'LOCKS','',''},
+		{'LOGERROR','',''},
+		{'LOGHIST','',''},
+		{'LONGF_CREATE','',''},
+		{'LREG_STATE','',''},
+		{'MGA','',''},
+		{'MMAN_ALLOC_MEMORY','',''},
+		{'MMAN_CREATE_DEF_REQUEST','',''},
+		{'MMAN_CREATE_IMM_REQUEST','',''},
+		{'MMAN_IMM_REQUEST','',''},
+		{'MMON_TEST','',''},
+		{'MODIFIED_PARAMETERS','',''},
+		{'NEXT_SCN_WRAP','',''},
+		{'OBJECT_CACHE','',''},
+		{'OCR','',''},
+		{'OLAP_DUMP','',''},
+		{'OPEN_FILES','',''},
+		{'PDBSTATS','',''},
+		{'PGA_DETAIL_CANCEL','',''},
+		{'PGA_DETAIL_DUMP','',''},
+		{'PGA_DETAIL_GET','',''},
+		{'PGA_SUMMARY','',''},
+		{'PIN_BLOCKS','',''},
+		{'PIN_RANDOM_BLOCKS','',''},
+		{'POKE_ADDRESS','',''},
+		{'POKE_LENGTH','',''},
+		{'POKE_VALUE','',''},
+		{'POKE_VALUE0','',''},
+		{'POOL_SIMULATOR','',''},
+		{'PROCESSSTATE <level>','',
+		[[oradebug setospid <process ID>
+		  oradebug unlimit
+		  oradebug dump processstate 10]]},
+		{'PXDOWNGRADE_ANALYZE','',''},
+		{'RACDUMP','',''},
+		{'REALFREEDUMP','',''},
+		{'RECORD_CALLSTACK','',''},
+		{'RECOVERY','',''},
+		{'REDOHDR <level>',
+		[[Dump redo headers.
+		Level:
+		1 Record of log file records in controlfile
+		2 Level 1 + generic information
+		3 Level 2 + additional log file header information.]],'oradebug dump redohdr 10'},
+		{'REDOLOGS','',''},
+		{'REFRESH_OS_STATS','',''},
+		{'ROW_CACHE','',''},
+		{'RULESETDUMP','',''},
+		{'RULESETDUMP_ADDR','',''},
+		{'SAVEPOINTS','',''},
+		{'SCN_AUTO_ROLLOVER_TS_OVERRIDE','',''},
+		{'SELFTESTASM','',''},
+		{'SESSION_STATS_FREELIST','',''},
+		{'SET_AFN','',''},
+		{'SET_ISTEMPFILE','',''},
+		{'SET_NBLOCKS','',''},
+		{'SET_TSN_P1','',''},
+		{'SGA_SUMMARY','',''},
+		{'SHARED_SERVER_STATE','',''},
+		{'SHORT_STACK','',''},
+		{'SIMULATE_EOV','',''},
+		{'SLOCK_DUMP','',''},
+		{'SQLNET_SERVER_TRACE','',''},
+		{'STATE_OBJECT_DELETION_TIME','',''},
+		{'STATE_OBJECT_METADATA','',''},
+		{'SYSTEMSTATE <level>',[[Dump systemstate.
+		Level:
+			2:    dump (excluding lock element)
+			10:   dump
+			11:   dump + global cache of RAC
+			256: short stack （function stack）
+			258: 256+2   -->short stack +dump(excluding lock element)
+			266: 256+10 -->short stack+ dump
+			267: 256+11 -->short stack+ dump + global cache of RAC
+		]],'oradebug dump systemstate 266'},
+		{'SYSTEMSTATE_GLOBAL','',''},
+		{'TEST_DB_ROBUSTNESS','',''},
+		{'TEST_GET_CALLER','',''},
+		{'TEST_SPACEBG','',''},
+		{'TEST_STACK_DUMP','',''},
+		{'TRACE_BUFFER_OFF','',''},
+		{'TRACE_BUFFER_ON','',''},
+		{'TREEDUMP <object_id>',
+		[[Dumps the structure of an index tree. The dump file contains one line for each block in the tree,
+		 indented to show its level, together with a count of the number of index entries in the block.]],'oradebug dump treedump 40'},
+		{'TR_CORRUPT_ONE_SIDE','',''},
+		{'TR_CRASH_AFTER_WRITE','',''},
+		{'TR_READ_ONE_SIDE','',''},
+		{'TR_RESET_NORMAL','',''},
+		{'TR_SET_ALL_BLOCKS','',''},
+		{'TR_SET_BLOCK','',''},
+		{'TR_SET_SIDE','',''},
+		{'UPDATE_BLOCK0_FORMAT','',''},
+		{'WORKAREATAB_DUMP','',''},
+		{'XS_SESSION_STATE','',''}
+	},
 	LKDEBUG={
-		hashcount={" -a hashcount","ges resource hash count"}
+		{"hashcount","ges resource hash count. Mainly used to determine _lm_res_hash_bucket/_lm_res_tm_hash_bucket","oradebug lkdebug -a hashcount"},
+		{'DLM locks','Dump RAC DLM locks',
+		[[oradebug lkdebug -a convlock
+		  oradebug lkdebug -a convres
+		  oradebug lkdebug -r <resource handle> (i.e 0x8066d338 from convres dump)]]},
+		{}
+	},
+	EVENT={
+		{'4','determine the Events Set in a System','oradebug dump events 4'},
+		{'10309','Tracing trigger actions','oradebug event 10309 trace name context forever, level 1'},
+		{'10046',
+		[[Trace a specific session.
+			Level:
+			* 1  Trace all calls
+			* 2  Trace "enabled" calls
+			* 4  Trace all exceptions
+			* 8  Trace "enabled" exceptions
+			* 16 Trace w/ circular buffer
+			* 32 Trace bind variables
+			* 17 Trace all calls, using the buffer
+			* 22 Trace enabled calls and all exceptions using the buffer
+			* 32 Trace bind variables, without using the buffer
+			* 53 Yields the maximum level of tracing, using the buffer
+			* 37 Yields the maximum level of tracing, without using the buffer]],
+		[[oradebug session_event 10046 trace name context forever,level 12
+		  oradebug session_event 10046 trace name context off]]},
+		{'crash','Kill the specific session','oradebug event immediate crash'}
 	}
 }
 function oradebug.build_dict(action)
@@ -122,6 +444,7 @@ function oradebug.build_dict(action)
 		end
 
 		sub=libs['HELP']['HELP']
+		
 		scope=get_output("oradebug help")
 		item_pattern='^(%S+)%s+(.+)'
 		curr_lib=nil
@@ -136,7 +459,15 @@ function oradebug.build_dict(action)
 				else
 					keys[key]='HELP.'..item
 				end
-				local buff=get_output("oradebug "..(item:lower()=="dumplist" and '' or 'help ')..item)
+				local buff
+				if item:lower()=="dumplist" then
+					buff=get_output("oradebug "..item)
+				elseif item:lower()=="lkdebug" or item:lower()=="nsdbx" then
+					get_output('oradebug setmypid')
+					buff=get_output("oradebug "..item.." help")
+				else
+					buff=get_output("oradebug help "..item)
+				end
 				while buff[1] and buff[1]:trim()=='' do table.remove(buff,1) end
 				local usage=table.concat(buff,'\n')
 				prefix=buff[1]:match('^%s+')
@@ -162,12 +493,32 @@ function oradebug.build_dict(action)
 	end
 	oradebug.dict=libs
 
-	local usage
+	local usage={}
 	if action and action:lower() ~= 'init' then
 		action=action:upper()
 		local key=libs['_keys'][action]
+		if ext[action] then
+			local rows={{'Item','Description','Examples'}}
+			for k,v in ipairs(ext[action]) do
+				if v[2] and v[2]~='' and v[3] then
+					v[2]=v[2]:gsub('\n\r?[ \t]+',"\n  ")
+					v[3]=v[3]:gsub('\n\r?[ \t]+',"\n")
+					rows[#rows+1]=v
+				end
+			end
+			if #rows>1 then
+				env.set.set("rowsep","-")
+				env.set.set("colsep","|")
+				grid.sort(rows,"Item",true)
+				usage[#usage+1]=grid.tostring(rows)
+				env.set.set("rowsep","back")
+				env.set.set("colsep","back")
+			end
+		end
+
 		if key=='DOC' then
-			return print(libs['HELP']['HELP']['EVENT'].usage)
+			print(libs['HELP']['HELP']['EVENT'].usage)
+			return print(table.concat(usage,'\n'))
 		end
 		local libs1={}
 		for name,lib in pairs(libs) do
@@ -179,25 +530,9 @@ function oradebug.build_dict(action)
 					elseif key~='Library' then
 						libs1[name][k]={}
 						for n,d in pairs(v) do
-							if key and (action==n:upper() or action==(k..'.'..n):upper()) then
+							if key and (action==n:upper():gsub('[%[%] ]','') or action==(k..'.'..n):upper():gsub('[%[%] ]','')) then
 								libs1[name][k][n]=d
 								if d.usage then
-									if not usage and name~='HELP' and name~='COMPONENT' then
-										print([[Formal Event Syntax: alter session set events '<event_spec>'
---------------------
-    <event_spec>   ::= '<event_id> [<event_scope>]
-                                   [<event_filter_list>]
-                                   [<event_parameters>]
-                                   [<action_list>]
-                                   [off]'
-	    <event_id>          ::= <event_name | number>[<target_parameters>]
-        <event_scope>       ::= [<scope_name>: scope_parameters]
-        <event_filter>      ::= {<filter_name>: filter_parameters}
-        <action>            ::= <action_name>(action_parameters)
-        <action_parameters> ::= <parameter_name> = [<value>|<action>][, ]
-        <*_parameters>      ::= <parameter_name> = <value>[,] ]]..'\n\n')
-									end
-									usage=d.usage
 									local target=(name..'.') 
 									if name=='COMPONENT' then
 										target=target..k..'.'
@@ -205,8 +540,8 @@ function oradebug.build_dict(action)
 										target='EVENT.'..target..k..'.'
 									end
 									target=target..n
-									print('\n'..string.rep('=',#target+2)..'\n|'..target..'|\n'..string.rep('-',#target+2))
-									print(usage..'\n')
+									usage[#usage+1]='\n'..string.rep('=',#target+2)..'\n|'..target..'|\n'..string.rep('-',#target+2)
+									usage[#usage+1]=d.usage
 								end
 							elseif (n:upper():find(action,1,true) or d.desc:upper():find(action,1,true) or (d.usage or ''):upper():find(action,1,true)) then
 								libs1[name][k][n]=d
@@ -217,7 +552,6 @@ function oradebug.build_dict(action)
 			end
 		end
 		libs=libs1
-		--if usage then return end
 	end
 
 	local rows={{'Class','Library','Item','Description'}}
@@ -232,6 +566,10 @@ function oradebug.build_dict(action)
 	end
 	grid.sort(rows,"Class,Library,Item",true)
 	grid.print(rows)
+
+	if #usage>0 then
+		print(table.concat(usage,'\n'))
+	end
 end
 
 function oradebug.onload()

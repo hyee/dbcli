@@ -5,7 +5,7 @@
     Install record tables : @?/rdbms/admin/proftab.sql
 
     Example:
-        ora prof "dbms_lock.sleep(10);dbms_session.sleep(10)"
+        @@NAME "dbms_lock.sleep(10);dbms_session.sleep(10)"
     --[[
         @ALIAS: profiler
         @CHECK_ACCESS: dba_source={DBA_SOURCE}, all_source={ALL_SOURCE}
