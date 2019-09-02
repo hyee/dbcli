@@ -83,7 +83,7 @@ function extvars.on_before_db_exec(item)
     local _,sql,args,params=table.unpack(item)
 
     if sql and not cache[sql] then
-        if type(db.props.version)=='number' and (db.props.israc==false or db.props.version<11) and not sql:find('^'..(env.ROOT_CMD:escape())) then
+        if (tonumber(db.props.instance)==instance or type(db.props.version)=='number' and (db.props.israc==false or db.props.version<11)) and not sql:find('^'..(env.ROOT_CMD:escape())) then
             sql=sql:gsub(gv1,'%1((('):gsub(gv2,"%1((")
         end
         item[2]=re.gsub(sql..' ',extvars.P,rep_instance):sub(1,-2)
@@ -187,7 +187,7 @@ function extvars.set_cdbmode(name,value)
 end
 
 function extvars.on_after_db_conn()
-    if db.props.isadb==true and db.props.israc==false then
+    if db.props.isadb==true and db.props.israc==true then
         cfg.force_set('instance', db.props.instance)
     else
         cfg.force_set('instance','default')
@@ -263,29 +263,32 @@ function extvars.set_dict(type)
                     FROM   dba_tab_cols
                     WHERE  owner in('SYS','PUBLIC')
                     @XTABLE@)
-            SELECT  table_name,
-                    MAX(CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') THEN col END) INST_COL,
-                    MAX(CASE WHEN col IN ('CON_ID') THEN col END) CON_COL,
-                    MAX(CASE WHEN col IN ('DBID') THEN col END) DBID_COL,
-                    MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND regexp_like(col,'(OWNER|SCHEMA|KGLOBTS4|USER.*NAME)') THEN col END)
-                        KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN col LIKE '%OWNER' THEN 1 ELSE 2 END) USR_COL,
-                    MAX(owner)
-            FROM   (select * from r
-                    union  all
-                    select s.owner,s.synonym_name,r.col,r.data_type 
-                    from   dba_synonyms s,r 
-                    where  r.table_name=s.table_name 
-                    and    r.owner=s.table_owner
-                    and    s.synonym_name!=s.table_name
-                    union  all
-                    select owner,object_name,null,object_type
-                    from   dba_objects
-                    where  instr(object_type,' ')=0
-                    union  all
-                    select distinct owner,object_name||nullif('.'||procedure_name,'.'),null,'PROCEDURE'
-                    from   dba_procedures
-                    where  procedure_name is not null)
-            GROUP  BY TABLE_NAME]]
+            SELECT * FROM (
+                SELECT  table_name,
+                        MAX(CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') THEN col END) INST_COL,
+                        MAX(CASE WHEN col IN ('CON_ID') THEN col END) CON_COL,
+                        MAX(CASE WHEN col IN ('DBID') THEN col END) DBID_COL,
+                        MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND regexp_like(col,'(OWNER|SCHEMA|KGLOBTS4|USER.*NAME)') THEN col END)
+                            KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN col LIKE '%OWNER' THEN 1 ELSE 2 END) USR_COL,
+                        MAX(owner) owner
+                FROM   (select * from r
+                        union  all
+                        select s.owner,s.synonym_name,r.col,r.data_type 
+                        from   dba_synonyms s,r 
+                        where  r.table_name=s.table_name 
+                        and    r.owner=s.table_owner
+                        and    s.synonym_name!=s.table_name
+                        union  all
+                        select owner,object_name,null,object_type
+                        from   dba_objects
+                        where  instr(object_type,' ')=0
+                        union  all
+                        select distinct owner,object_name||nullif('.'||procedure_name,'.'),null,'PROCEDURE'
+                        from   dba_procedures
+                        where  procedure_name is not null)
+                GROUP  BY TABLE_NAME
+                ORDER  BY decode(owner,'SYS',' ','PUBLIC','  ',owner),table_name)
+            WHERE ROWNUM<=65536*5]]
     else
         extvars.load_dict(path)
         sql=[[
@@ -339,7 +342,7 @@ function extvars.set_dict(type)
             AND    c.inst_id = t.inst_id
         ]])
 
-    print('Bulding, it could take several minutes...')
+    print('Building, it could take several minutes...')
     local rs=db:dba_query(db.internal_call,sql)
     local rows=db.resultset:rows(rs,-1)
     if type=='init' then extvars.dict={} end

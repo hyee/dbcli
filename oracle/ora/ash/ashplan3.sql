@@ -12,7 +12,7 @@
     @phf2: 12.1={to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1))} default={null}
     @con : 12.1={con_dbid} default={dbid}
     @mem : 12.1={DELTA_READ_MEM_BYTES} default={null}
-    @did : 12.1={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
+    @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     &V3  : default={&starttime}
     &V4  : default={&endtime}  
     &V9  : ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}

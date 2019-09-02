@@ -90,7 +90,7 @@ Outputs:
     @adp : 12.1={case when instr(other_xml, 'adaptive_plan') > 0 then 'Y' else 'N' end} default={'N'}
     @con : 12.1={AND prior nvl(con_dbid,0)=nvl(con_dbid,0)} default={}
     @mem : 12.1={DELTA_READ_MEM_BYTES} default={null}
-    @did : 12.1={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
+    @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     &V9  : ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
     &top1: default={ev}, O={CURR_OBJ#}
     &top2: default={CURR_OBJ#}, O={ev}
@@ -107,7 +107,7 @@ Outputs:
     &px_count: default={} all={,(select px_count from sql_plan_px b where (b.phv=sql_plan_hash_value or b.phf=&phf) and rownum<2) px_count}
     &hierachy: {
         default={1 lv,
-                decode(pred_flag,2,top_level_sql_id,sql_id) sql_id,
+                nvl(sql_id,top_level_sql_id) sql_id,
                 sql_exec_id sql_exec_id_,
                 sql_exec_start sql_exec_start_,
                 nvl(sql_plan_hash_value,0) phv1,
@@ -116,7 +116,7 @@ Outputs:
                 &phf plan_hash_full,
                 pred_flag} 
            all={level lv,
-                connect_by_root(decode(pred_flag,2,top_level_sql_id,sql_id)) sql_id,
+                connect_by_root(nvl(sql_id,top_level_sql_id)) sql_id,
                 connect_by_root(sql_exec_id) sql_exec_id_,
                 connect_by_root(sql_exec_start) sql_exec_start_,
                 coalesce(case when pred_flag!=2 then nullif(sql_plan_hash_value,0) end,connect_by_root(sql_plan_hash_value),0) phv1,
@@ -194,54 +194,70 @@ Outputs:
 ]]*/
 set feed off printsize 10000 pipequery off
 WITH ALL_PLANS AS 
- (SELECT * FROM 
-    (SELECT    id,
-                parent_id,
-                child_number    ha,
-                1               flag,
-                TIMESTAMP       tm,
-                child_number,
-                sql_id,
-                nvl(plan_hash_value,0) phv,
-                &did dbid,
-                inst_id,
-                object#,
-                object_name,
-                object_node tq,operation||' '||options operation,
-                &phf2 plan_hash_full,
-                instr(other_xml,'adaptive_plan') is_adaptive_
-        FROM    gv$sql_plan a
-        WHERE   '&vw' IN('A','G')
-        AND     :V1 in(''||a.plan_hash_value,sql_id)
+ (SELECT * FROM (
+        SELECT a.*,&did dbid 
+        FROM TABLE(GV$(CURSOR(
+            SELECT  /*+ordered use_nl(a)*/    
+                    id,
+                    parent_id,
+                    child_number    ha,
+                    1               flag,
+                    TIMESTAMP       tm,
+                    pos,
+                    child_number,
+                    sql_id,
+                    nvl(plan_hash_value,0) phv,
+                    userenv('instance') inst_id,
+                    object#,
+                    object_name,
+                    object_node tq,operation||' '||options operation,
+                    &phf2 plan_hash_full,
+                    instr(other_xml,'adaptive_plan') is_adaptive_
+            FROM    (
+                select /*+no_merge*/ distinct 'G' pos,sql_id,nvl(sql_plan_hash_value,0) plan_hash_value
+                from   v$active_session_history
+                where  '&vw' IN('A','G')
+                and    sql_id is not null
+                and    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
+                ) b left join v$sql_plan a using(sql_id,plan_hash_value)
+            WHERE  '&vw' IN('A','G')))) a
         UNION ALL
         SELECT  id,
                 parent_id,
                 plan_hash_value,
                 2,
                 TIMESTAMP,
+                pos,
                 NULL child_number,
                 sql_id,
                 nvl(plan_hash_value,0),
-                dbid,
                 null,
                 object#,
                 object_name,
                 object_node tq,operation||' '||options,
                 &phf2 plan_hash_full,
-                instr(other_xml,'adaptive_plan') is_adaptive_
-        FROM    dba_hist_sql_plan a
-        WHERE   '&vw' IN('A','D')
-        AND     :V1 in(''||a.plan_hash_value,sql_id))
+                instr(other_xml,'adaptive_plan') is_adaptive_,
+                dbid
+        FROM (
+            select /*+no_merge*/ distinct 'D' pos,sql_id,nvl(sql_plan_hash_value,0) plan_hash_value,dbid
+            from   dba_hist_active_sess_history
+            where  '&vw' IN('A','D')
+            and    sql_id is not null
+            and    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
+         ) b left join dba_hist_sql_plan a using(sql_id,plan_hash_value,dbid)
+        WHERE   pos='D'
+        AND     '&vw' IN('A','D'))
   WHERE dbid=nvl(0+'&dbid',&did)),
-plan_objs AS
- (SELECT DISTINCT OBJECT#,OBJECT_NAME FROM ALL_PLANS),
+sql_list as(select distinct pos,sql_id,phv plan_hash_value,dbid from ALL_PLANS),
+plan_objs AS (SELECT DISTINCT OBJECT#,OBJECT_NAME FROM ALL_PLANS),
 sql_plan_data AS
  (SELECT * FROM
      (SELECT a.*,
              nvl(max(plan_hash_full) over(PARTITION by phv),phv) phf,
              nvl(max(sign(is_adaptive_)) over(partition by phv),0) is_adaptive,
              dense_rank() OVER(PARTITION BY phv ORDER BY flag, tm DESC, child_number DESC NULLS FIRST, inst_id desc,dbid,sql_id) seq
-      FROM   ALL_PLANS a)
+      FROM   ALL_PLANS a
+      WHERE  id is not null)
   WHERE  seq = 1),
 sql_plan_px AS(
     select /*+materialize*/ phv,phf,count(case when operation like 'PX%' then 1 end) px_count
@@ -252,7 +268,7 @@ sqlstats as(
     SELECT /*+materialize*/ 
             dbid,sql_id,
             nvl(plan_hash_value,-1) phv,
-            SUM(executions_Delta) exec_,
+            SUM(executions_delta) exec_,
             round(SUM(elapsed_time_Delta) * 1e-6, 2) ela,
             round(SUM(elapsed_time_Delta) * 1e-3 /
                     decode(SUM(executions_Delta),
@@ -260,13 +276,11 @@ sqlstats as(
                             nullif(floor(SUM(parse_calls_delta) / greatest(1, SUM(px_servers_execs_delta))), 0),
                             SUM(executions_Delta)),
                     3) avg_
-    FROM   dba_hist_sqlstat natural join dba_hist_snapshot
-    WHERE  '&vw' IN('A','D')
-    AND    :V1 in(''||plan_hash_value,sql_id)
+    FROM   dba_hist_sqlstat join dba_hist_snapshot using(dbid,snap_id,instance_number)
+    WHERE  ('D',sql_id,plan_hash_value,dbid) in(select * from sql_list)
     AND    elapsed_time_Delta>0
     AND    dbid=nvl(0+'&dbid',&did)
-    AND    end_interval_Time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7)
-                               AND     nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
+    AND    end_interval_Time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
     GROUP  BY dbid,sql_id, rollup(plan_hash_value)
 ),
 ash_raw as (
@@ -323,7 +337,14 @@ ash_raw as (
             sum(case when p3text='block cnt' and nvl(event,'temp') like '%temp' then temp_ end) over(partition by dbid,phv1,sql_exec,pid,sample_time+0) temp,
             sum(pga_)  over(partition by dbid,phv1,sql_exec,pid,sample_time+0) pga,
             sum(case when is_px_slave=1 and px_flags>65536 then least(tm_delta_db_time,AAS*2e6) end) over(partition by px_flags,dbid,phv1,sql_exec,pid,qc_sid,qc_inst,qc_session_serial#,sid,inst_id) dbtime
-    FROM   (SELECT /*+NO_BIND_AWARE NO_PQ_CONCURRENT_UNION no_expand opt_param('optimizer_index_cost_adj' 500) opt_param('_optim_peek_user_binds' 'false') opt_param('_optimizer_connect_by_combine_sw', 'false') opt_param('_optimizer_filter_pushdown', 'false')*/ --PQ_CONCURRENT_UNION 
+    FROM   (SELECT /*+NO_BIND_AWARE 
+                      no_expand 
+                      opt_param('optimizer_index_cost_adj' 500) 
+                      opt_param('_optim_peek_user_binds' 'false') 
+                      opt_param('_bloom_filter_enabled' 'false') 
+                      opt_param('_optimizer_connect_by_combine_sw', 'false') 
+                      opt_param('_optimizer_filter_pushdown', 'false')
+                      */ 
                    a.*, --seq: if ASH and DASH have the same record, then use ASH as the standard
                    decode(AAS_,1,1,decode((
                         select sign(max(avg_) keep(dense_rank last order by phv1)- 5e3) flag 
@@ -346,11 +367,10 @@ ash_raw as (
                         &hierachy
                 FROM    (
                     select --+merge(a) cardinality(30000000) full(a.a) leading(a.a) use_hash(a.a a.s) swap_join_inputs(a.s) FULL(A.GV$ACTIVE_SESSION_HISTORY.A)  leading(A.GV$ACTIVE_SESSION_HISTORY.A) use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S) swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
-                            a.*,&did dbid,inst_id instance_number,1 aas_,&mem mem,0 snap_id &px_count,decode(:V1,sql_id,1,top_level_sql_id,2,3) pred_flag
+                            a.*,&did dbid,inst_id instance_number,1 aas_,&mem mem,0 snap_id &px_count,decode(:V1,nvl(sql_id,top_level_sql_id),1,top_level_sql_id,2,3) pred_flag
                     from   gv$active_session_history a
                     where  '&vw' IN('A','G')
-                    and    sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) 
-                                         AND     nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
+                    and    sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
                     and   (:V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf) or 
                             qc_session_id!=session_id or qc_instance_id!=inst_id or session_serial# != qc_session_serial#                            
                            )) a
@@ -371,8 +391,7 @@ ash_raw as (
                          from   dba_hist_active_sess_history d
                          WHERE   '&vw' IN('A','D')
                          AND     dbid=nvl(0+'&dbid',&did)
-                         AND     sample_time BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) 
-                                                   AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)) a
+                         AND     sample_time BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)) a
                 WHERE 1=1
                 &swcb
                 ) a ) h
@@ -393,8 +412,8 @@ ash_phv_agg as(
         left join (select distinct phv,phf,is_adaptive from sql_plan_data) b using(phv)) A
     WHERE phv_rate>=0.1),
 hierarchy_data AS
- (SELECT id, parent_id, phv,operation
-  FROM   (select * from sql_plan_data where phv in(select phv from ash_phv_agg where plan_exists=1))
+ (SELECT /*+CONNECT_BY_FILTERING*/ id, parent_id, phv,operation
+  FROM   (select distinct id, parent_id, phv,operation from sql_plan_data where phv in(select phv from ash_phv_agg where plan_exists=1))
   START  WITH id = 0
   CONNECT BY PRIOR id = parent_id AND phv=PRIOR phv 
   ORDER  SIBLINGS BY id DESC),
@@ -426,7 +445,7 @@ xplan AS
             TABLE(dbms_xplan.display('gv$sql_plan_statistics_all',NULL,format,'inst_id='|| inst_id||' and plan_hash_value=' || phv || ' and sql_id=''' || sq ||''' and child_number='||child_number)) a
     WHERE  flag = 1),
 ash_agg as(
-    SELECT /*+materialize parallel(4)*/ 
+    SELECT /*+materialize*/ 
            a.*, 
            nvl2(costs,trim(dbms_xplan.format_number(costs))||'('||to_char(ratio,case when ratio=10 then '990' else 'fm990.0' end)||'%)','') cost_rate,
            trim(dbms_xplan.format_number(costs)) cost_text,
@@ -558,7 +577,7 @@ agg_data as(
          decode(&simple,1,top_grp) top_list,'' top_list2,null pred_flag,null awr_exec,null awr_ela
   FROM plan_line_xplan
   UNION ALL
-  select 'phv' flag,-1,r,rid,''||phv2 oid,decode(pred_flag,3,sql_id,''||phfv),
+  select 'phv' flag,-1,r,rid,''||phv2 oid,decode(pred_flag,3,sql_id,2,sql_id,''||phfv),
          ''||secs secs,''|| cost_rate,aas_text aas,cost_text costs,''||execs execs,decode(min_dop,null,'',max_dop,''||max_dop,min_dop||'-'||max_dop) dop,skew,
          ''||cpu cpu,''||io io,''||cl cl,''||cc cc,''||app app,''||adm adm,''||cfg cfg,''||sch sch,''||net net,''||oth oth,''||plsql  plsql,buf,io_reqs,io_bytes,pga,temp,
          ''||top_list,'',pred_flag,awr_exec,awr_ela

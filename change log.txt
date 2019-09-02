@@ -1,3 +1,7 @@
+2019-08-31: + oracle: new commands 'oracle hprof' and 'rac diag'
+2019-08-30: + oracle: new commands 'oradebug'/'ora privs'/'rac traffic'
+2019-04-25: + oracle: new command 'ora plandiff'
+2019-04-22: + oracle: new command 'rac enqueue_sum/pdb apps/pdb lockdown'
 2019-04-17: + oracle: new command 'exa awrfc'
 2019-04-15: * public: update lib ConEmu to build 190331, update lib opencsv
             + oracle: new option 'set driver thin/oci/oci8'

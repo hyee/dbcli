@@ -118,10 +118,10 @@
     }
     &statfilter1: default={} im={1}
     @ash_cost: 11={tm_delta_db_time*1e-6} default={1}
-    @declares: {12.1={sysstat CLOB;sysevent CLOB;timemodel CLOB;base VARCHAR2(4000)} 
+    @declares: {12.2={sysstat CLOB;sysevent CLOB;timemodel CLOB;base VARCHAR2(4000)} 
                 default={sysstat xmltype;sysevent xmltype;timemodel xmltype;base xmltype}}
-    @to_src: 12.1={(select json_arrayagg(json_array(sids,inst_id,sid)) from ses)} default={xmltype(cursor(select sids,inst_id,sid from ses))}
-    @stats: {12.1={
+    @to_src: 12.2={(select json_arrayagg(json_array(sids,inst_id,sid)) from ses)} default={xmltype(cursor(select sids,inst_id,sid from ses))}
+    @stats: {12.2={
                json_table(sysstat,'$[*]' columns
                           sids  varchar2(20) path '$[0]',
                           n     varchar2(100) path '$[1]',
@@ -134,7 +134,7 @@
                 from    TABLE(XMLSEQUENCE(EXTRACT(sysstat,'/ROWSET/ROW'))))}
     }
 
-    @events: {12.1={json_table(sysevent,'$[*]' columns
+    @events: {12.2={json_table(sysevent,'$[*]' columns
                               sids varchar2(20) path '$[0]',
                               WAIT_CLASS    varchar2(30) path '$[1]',
                               EVENT varchar2(300) path '$[2]',

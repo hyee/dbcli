@@ -30,7 +30,7 @@
     --]]
 ]]*/
 set feed off
-col &v2,avg format smhd2
+col &v2,avg format usmhd2
 ORA _sqlstat
 col pct for pct2
 

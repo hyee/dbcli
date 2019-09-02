@@ -478,6 +478,12 @@ function db_core:call_sql_method(event_name,sql,method,...)
                     print(('\n'..info.sql):gsub("\n",function() lineno=lineno+1;return fmt:format(lineno) end):sub(2))
                 end
             end
+            for _,p in pairs{...} do
+                if type(p)=='userdata' and tostring(p):find('Statement',1,true) then 
+                    pcall(p.close,p)
+                    break
+                end
+            end
             env.raise_error(info.error)
         end
         env.raise("000-00000: ")
@@ -1098,7 +1104,7 @@ local function set_param(name,value)
 
         return value
     elseif name=="ASYNCEXP" then
-        return value and value:lower()=="true" and true or false
+        return value and tostring(value):lower()=="true" and true or false
     elseif name=="CSVSEP" then
         env.checkerr(#value==1,'CSV separator can only be one char!')
         cparse.DEFAULT_SEPARATOR=value:byte()
@@ -1471,6 +1477,8 @@ function db_core:compute_delta(rs2,rs1,groups,aggrs)
     if type(rs1)=="userdata" then
         rs1=self.resultset:rows(rs1,-1)
     end
+
+    if type(rs1)~="table" or type(rs2)~="table" then return {} end
     local distincts={}
     for k,v in ipairs(rs2) do
         local keys={}

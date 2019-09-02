@@ -52,15 +52,15 @@
                         GROUP BY sid, sql_id) m
                     USING (sid, sql_id)}
                 } 
-        &Filter: {default={ROOT_SID =1 OR (wait_class!='Idle' and event not like '%PX%') or sql_text is not null}, 
+        &Filter: {default={ROOT_SID =1 OR status='ACTIVE' and (wait_class!='Idle' and event not like 'SQL*Net message from client')}, 
                   f={},
                   i={wait_class!='Idle'}
-                  u={(ROOT_SID =1 OR STATUS='ACTIVE' or sql_text is not null) and schemaname=nvl('&0',sys_context('userenv','current_schema'))}
+                  u={(ROOT_SID =1 OR STATUS='ACTIVE') and schemaname=nvl('&0',sys_context('userenv','current_schema'))}
                  }
         &Filter2:{default={1=1}, 
                   f2={},
                   i2={wait_class!='Idle'}
-                  u2={(ROOT_SID =1 OR STATUS='ACTIVE' or sql_text is not null) and schemaname=sys_context('userenv','current_schema')}
+                  u2={(ROOT_SID =1 OR STATUS='ACTIVE') and schemaname=sys_context('userenv','current_schema')}
                  }
         &smen : default={0}, m={&CHECK_ACCESS_M}
         @COST : 11.0={1440*(sysdate-sql_exec_start)},10.0={sql_secs/60}

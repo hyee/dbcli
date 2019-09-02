@@ -13,13 +13,52 @@ Options:
     &STAT: default={&DF &adaptive &binds &V3 &V4 &V5 &V6 &V7 &V8 &V9}
     &V3: none={} ol={outline alias}
     &LAST: last={LAST} all={ALL} 
-    &DF: default={ALLSTATS &LAST -PROJECTION -ALIAS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL}
+    &DF: default={ALLSTATS REMOTE &LAST -PROJECTION -ALIAS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL}
     &SRC: {
             default={0}, # Both
             d={2}        # Dictionary only
           }
     &binds: default={}, b={PEEKED_BINDS}
-    @adaptive: 12.1={+REPORT +ADAPTIVE } default={}
+    @adaptive: 12.1={+REPORT +ADAPTIVE +METRICS} 11.2={+METRICS} default={}
+    @check_access_advisor: {
+           dba_advisor_sqlplans={
+                  UNION ALL
+                  SELECT id,
+                         min(id) over() minid,
+                         parent_id,
+                         plan_hash_value,
+                         4,
+                         TIMESTAMP,
+                         NULL child_number,
+                         sql_id,
+                         plan_hash_value,
+                         plan_id
+                  FROM   dba_advisor_sqlplans a
+                  WHERE  a.sql_id = :V1
+                  AND    a.plan_hash_value = coalesce(:V2+0,(select max(plan_hash_value) keep(dense_rank last order by timestamp) from dba_advisor_sqlplans where sql_id=:V1))}
+           default={}
+    }
+
+    @check_access_spm: {
+           sys.sqlobj$plan={
+                  UNION ALL
+                  SELECT id,
+                         min(id) over() minid,
+                         parent_id,
+                         null,
+                         5,
+                         TIMESTAMP,
+                         NULL child_number,
+                         st.sql_handle,
+                         st.signature,
+                         plan_id
+                  FROM   sys.sql$text st,sys.sqlobj$plan a
+                  WHERE  st.sql_handle = :V1
+                  AND    a.signature = st.signature
+                  AND    a.plan_id = coalesce(:V2+0,(select max(plan_id) keep(dense_rank last order by timestamp) from sys.sqlobj$plan b where b.signature=a.signature))
+           }
+           default={}
+    }
 ]]--
 ]]*/
 set PRINTSIZE 9999
@@ -124,21 +163,38 @@ WITH sql_plan_data AS
                      from dba_hist_sqlstat c where sql_id=:V1),(
                      select max(plan_hash_value) keep(dense_rank last order by timestamp) 
                      from dba_hist_sql_plan where sql_id=:V1))
+                  UNION ALL
+                  SELECT /*+no_expand*/ id,
+                         min(id) over() minid,
+                         parent_id,
+                         plan_hash_value,
+                         3,
+                         TIMESTAMP,
+                         NULL child_number,
+                         sql_id,
+                         plan_hash_value,
+                         plan_id
+                  FROM   all_sqlset_plans a
+                  WHERE  a.sql_id = :V1
+                  AND    a.plan_hash_value = coalesce(:V2+0,(
+                     select max(plan_hash_value) keep(dense_rank last order by timestamp) 
+                     from all_sqlset_plans where sql_id=:V1))
+                  &check_access_advisor
+                  &check_access_spm
                   UNION  ALL
                   SELECT /*+noparallel*/
                          id,
                          min(id) over()  minid,
                          parent_id,
                          NULL            ha,
-                         3               flag,
+                         9               flag,
                          NULL            tm,
                          NULL,
                          statement_id,
                          max(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), 'plan_hash_full.*?(\d+)', 1, 1, 'i'))) over()+0 plan_hash_value,
                          NULL
                   FROM   plan_table a
-                  WHERE  nvl(upper(:V1),'x') in(statement_id,''||plan_id,'x')
-                  ) a
+                  WHERE  nvl(upper(:V1),'x') in(statement_id,''||plan_id,'x')) a
          WHERE flag>=&src)
   WHERE  seq = 1),
 hierarchy_data AS
@@ -168,12 +224,24 @@ xplan AS
   WHERE  flag = 2
   UNION ALL
   SELECT a.*
+  FROM   qry, TABLE(dbms_xplan.display( 'all_sqlset_plans',NULL,format,'plan_id='||inst_id||' and plan_hash_value=' || plan_hash || ' and sql_id=''' || sq ||'''')) a
+  WHERE  flag = 3
+  UNION ALL
+  SELECT a.*
+  FROM   qry, TABLE(dbms_xplan.display( 'dba_hist_sql_plan',NULL,format,'plan_id='||inst_id||' and plan_hash_value=' || plan_hash || ' and sql_id=''' || sq ||'''')) a
+  WHERE  flag = 4
+  UNION ALL
+  SELECT a.*
+  FROM   qry, TABLE(dbms_xplan.display( 'sys.sqlobj$plan',NULL,format,'plan_id='||inst_id||' and signature=' || plan_hash)) a
+  WHERE  flag = 5
+  UNION ALL
+  SELECT a.*
   FROM   qry, TABLE(dbms_xplan.display_cursor(sq, plan_hash, format)) a
   WHERE  flag = 0
   UNION ALL
   SELECT a.*
   FROM   qry,TABLE(dbms_xplan.display('plan_table',NULL,format,'statement_id=''' || sq || '''')) a
-  WHERE  flag = 3
+  WHERE  flag = 9
   UNION  ALL
   SELECT a.*
   FROM   qry,TABLE(dbms_xplan.display('gv$sql_plan_statistics_all',NULL,format,'child_number=' || plan_hash || ' and sql_id=''' || sq ||''' and inst_id=' || inst_id)) a

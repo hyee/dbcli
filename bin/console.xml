@@ -48,7 +48,7 @@
 		<runas use_credprov="1"/>
 		<close allow_closing_last_view="0" exit_on_closing_of_last_tab="1" confirm_closing_multiple_views="1" save_workspace_on_exit="0"/></behavior>
 	<hotkeys use_scroll_lock="1">
-		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="83" command="settings"/>
+		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="settings"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="112" command="help"/>
 		<hotkey ctrl="0" shift="0" alt="1" extended="0" code="115" command="exit"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="112" command="newtab1"/>
@@ -78,7 +78,7 @@
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="movetableft"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="movetabright"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="closetab"/>
-		<hotkey ctrl="1" shift="0" alt="0" extended="0" code="82" command="renametab"/>
+		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="renametab"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="1" code="34" command="nextview"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="1" code="33" command="prevview"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="leftview"/>

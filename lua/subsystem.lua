@@ -18,15 +18,22 @@ end
 
 function system:get_last_line(cmd)
     if not self.process then return end
-    --return self.process:getLastLine(cmd)
+    return self.process:getLastLine(cmd)
+end
+
+function system:get_lines(cmd)
+    if not self.process then return end
+    return self.process:getLines(cmd)
 end
 
 function system:run_command(cmd,is_print)
     if not self.process then return end
     self.prompt=self.process:execute(cmd,is_print and true or false,self.block_input or false)
-    if not self.prompt then return self:terminate() end
+    if self.process:isClosed() then return self:terminate() end
     if self.enter_flag==true then env.set_subsystem(self.name,self.prompt) end
 end
+
+
 
 function system:terminate()
     if not self.process then return end
@@ -102,7 +109,14 @@ function system:call_process(cmd,is_native)
             self.startup_cmd,do_redirect=self:get_startup_cmd(args,is_native)
             if #args>0 then is_native = true end
             if not self.startup_cmd then return end
-            table.insert(self.startup_cmd,1,self.boot_cmd or os.find_extension(self.executable or self.name))
+            local boot_cmd=self.boot_cmd
+            if not boot_cmd then
+                boot_cmd=self.executable or self.name
+                if env.IS_WINDOWS and not boot_cmd:find('.',1,true) then boot_cmd=boot_cmd..'.exe' end 
+                boot_cmd=os.find_extension(boot_cmd)
+            end
+
+            table.insert(self.startup_cmd,1,boot_cmd)
             self:set_work_dir(self.work_dir,true)
             env.log_debug("subsystem","Command : " ..table.concat(self.startup_cmd," "))
             env.log_debug("subsystem","Work dir: "..self.work_dir)
@@ -113,6 +127,7 @@ function system:call_process(cmd,is_native)
             --print(table.concat(self.startup_cmd," "))
             if not self.process then
                 env.printer.write("Connecting to "..self.name.."...")
+                self.startup_cmd[1]=self.startup_cmd[1]:gsub('\\','\\\\')
                 self.process=self.proc:create(self.prompt_pattern,self.work_dir,self.startup_cmd,self.env)
                 self.msg_stack={}
                 self:run_command(nil,false)

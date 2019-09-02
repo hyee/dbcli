@@ -123,6 +123,7 @@ function grid.sort(rows, cols, bypass_head)
     local sorts = {}
     local has_header
     if rows.__class then rows, has_header = rows.data, rows.include_head end
+    if not rows[1] then return rows end
     local titles=rows[1]._org or rows[1]
     for ind in tostring(cols):gsub('^,*(.-),*$', '%1'):gmatch("([^,]+)") do
         local col, l
@@ -631,7 +632,8 @@ function grid:wellform(col_del, row_del)
                     end
                 end
             end
-        elseif v.rsize==1 and type(v[1])=='string' and v[1]:find('^%W$') then
+        elseif v.rsize==1 and type(v[1])=='string' and v[1]:find('^[%-%+%|%*%=%.%_%/%\\%@]$') 
+               and (v[2] and v[2]=='' or v[2]==v[1] or v[2]:find('^%W+$')) then
             local c=v[1]
             for k1,v1 in ipairs(title_dels) do
                 v[k1]=v1:sub(1,1)==grid.title_del and v1:gsub('.',c) or v1
@@ -649,6 +651,7 @@ function grid:wellform(col_del, row_del)
         end
 
         output[#output+1]=v
+
         if filter_flag == 1 then 
             rows[#rows+1]=row 
         end
@@ -663,6 +666,7 @@ function grid:wellform(col_del, row_del)
             end
         end
     end
+
     
     if result[#result][0] > 0 and (row_del or "") == "" and (col_del or ""):trim() ~= "" then
         local line = cut(title_dels, format_func, fmt)
@@ -730,6 +734,7 @@ function grid.print(rows, include_head, col_del, row_del, rows_limit, prefix, su
         size = #rows + (include_head and 1 or 0)
     end
     local data,output=grid.tostring(rows, include_head, col_del, row_del, rows_limit)
+    if not data or data=='' then return end
     str = str .. data
     if test then env.write_cache("grid_output.txt", str) end
     if type(output)=="table" then

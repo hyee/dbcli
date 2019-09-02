@@ -298,12 +298,16 @@ function db:check_access(obj_name,bypass_error,is_set_env,is_cache)
             e   VARCHAR2(500);
             obj VARCHAR2(61) := :owner||'.'||:object_name;
         BEGIN
-        	select count(1) into x
-            from   table_privileges
-            where  owner=case when regexp_like(:object_name,'^(G?V)\$') then 'SYS' else :owner end
-            AND    table_name=regexp_replace(:object_name,'^(G?V)\$','\1_$')
-            AND    SELECT_PRIV!='G'
-            AND    rownum<2;
+        	IF user=:owner THEN
+        		x:=1;
+        	ELSE
+	        	select count(1) into x
+	            from   table_privileges
+	            where  owner=case when regexp_like(:object_name,'^(G?V)\$') then 'SYS' else :owner end
+	            AND    table_name=regexp_replace(:object_name,'^(G?V)\$','\1_$')
+	            AND    SELECT_PRIV!='G'
+	            AND    rownum<2;
+			END IF;
 
             IF x=0 THEN
 	            IF instr(obj,'PUBLIC.')=1 THEN
@@ -319,13 +323,14 @@ function db:check_access(obj_name,bypass_error,is_set_env,is_cache)
             :count := x;
         END;
 	]],obj,'Internal_CheckAccessRight')
+   
 	local value=obj.count==1 and 1 or 0
 	if cache_obj[o] then
 		for k,v in ipairs(cache_obj[o].alias_list) do cache_obj[v].accessible=value end
 	elseif is_cache==true then
 		privs[obj_name]=value
     end
-    return value==1 and true or false;
+    return value==1;
 end
 
 local re=env.re

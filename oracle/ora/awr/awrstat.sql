@@ -30,7 +30,7 @@
 ]]*/
 
 ORA _sqlstat
-col ela,ELA(Avg) format smhd2
+col ela,ELA(Avg) format usmhd2
 col iowait,cpuwait,ccwait,clwait,apwait,plsql for pct1
 Col buff,read,write,cellio,oflin,oflout format kmg
 

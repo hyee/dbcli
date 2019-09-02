@@ -276,9 +276,9 @@ function helper.desc()
            -j         To show current JVM information
            -e         To show current environment infomation. Usage: help -e [<lua_table>[.<sub_table>] ]
            Internal:
-                -verbose [class] :  dump a class or classes from verbose.log into dir "dunmp"
-                -dump            :  dump classed of current process into dir "dunmp"
-                -buildjar        :  build jars from in dir "dunmp"
+                -verbose [class] :  dump a class or classes from verbose.log into dir "dump"
+                -dump            :  dump classed of current process into dir "dump"
+                -buildjar        :  build jars from in dir "dump"
         Other commands:
             help                             To brief the available commands(excluding hiddens)
             help <command>                   To show the help detail of a specific command
