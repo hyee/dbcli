@@ -193,63 +193,62 @@ Outputs:
 --]]
 ]]*/
 set feed off printsize 10000 pipequery off
-WITH sql_list as(
-    select /*+materialize*/ * 
-    FROM (
-        select 'D' pos,sql_id,nvl(sql_plan_hash_value,0) plan_hash_value,dbid
-        from   dba_hist_active_sess_history
-        where  '&vw' IN('A','D')
-        and    sql_id is not null
-        and    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
-        UNION
-        select 'D' pos,sql_id,nvl(sql_plan_hash_value,0) phv,&did
-        from   gv$active_session_history
-        where  '&vw' IN('A','G')
-        and    sql_id is not null
-        and    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
-    ) where dbid=nvl('&dbid',dbid)
-),
-ALL_PLANS AS 
- (SELECT * FROM 
-    (SELECT    /*+ordered use_hash(a) no_merge(a)*/    
-                id,
-                parent_id,
-                child_number    ha,
-                1               flag,
-                TIMESTAMP       tm,
-                child_number,
-                sql_id,
-                nvl(plan_hash_value,0) phv,
-                &did dbid,
-                inst_id,
-                object#,
-                object_name,
-                object_node tq,operation||' '||options operation,
-                &phf2 plan_hash_full,
-                instr(other_xml,'adaptive_plan') is_adaptive_
-        FROM    sql_list join gv$sql_plan a using(sql_id,plan_hash_value)
-        WHERE   pos='G'
-        AND     '&vw' IN('A','G')
+WITH ALL_PLANS AS 
+ (SELECT * FROM (
+        SELECT a.*,&did dbid 
+        FROM TABLE(GV$(CURSOR(
+            SELECT  /*+ordered use_nl(a)*/    
+                    id,
+                    parent_id,
+                    child_number    ha,
+                    1               flag,
+                    TIMESTAMP       tm,
+                    pos,
+                    child_number,
+                    sql_id,
+                    nvl(plan_hash_value,0) phv,
+                    userenv('instance') inst_id,
+                    object#,
+                    object_name,
+                    object_node tq,operation||' '||options operation,
+                    &phf2 plan_hash_full,
+                    instr(other_xml,'adaptive_plan') is_adaptive_
+            FROM    (
+                select /*+no_merge*/ distinct 'G' pos,sql_id,nvl(sql_plan_hash_value,0) plan_hash_value
+                from   v$active_session_history
+                where  '&vw' IN('A','G')
+                and    sql_id is not null
+                and    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
+                ) b left join v$sql_plan a using(sql_id,plan_hash_value)
+            WHERE  '&vw' IN('A','G')))) a
         UNION ALL
         SELECT  id,
                 parent_id,
                 plan_hash_value,
                 2,
                 TIMESTAMP,
+                pos,
                 NULL child_number,
                 sql_id,
                 nvl(plan_hash_value,0),
-                dbid,
                 null,
                 object#,
                 object_name,
                 object_node tq,operation||' '||options,
                 &phf2 plan_hash_full,
-                instr(other_xml,'adaptive_plan') is_adaptive_
-        FROM    sql_list join dba_hist_sql_plan a using(sql_id,plan_hash_value,dbid)
+                instr(other_xml,'adaptive_plan') is_adaptive_,
+                dbid
+        FROM (
+            select /*+no_merge*/ distinct 'D' pos,sql_id,nvl(sql_plan_hash_value,0) plan_hash_value,dbid
+            from   dba_hist_active_sess_history
+            where  '&vw' IN('A','D')
+            and    sql_id is not null
+            and    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
+         ) b left join dba_hist_sql_plan a using(sql_id,plan_hash_value,dbid)
         WHERE   pos='D'
         AND     '&vw' IN('A','D'))
   WHERE dbid=nvl(0+'&dbid',&did)),
+sql_list as(select distinct pos,sql_id,phv plan_hash_value,dbid from ALL_PLANS),
 plan_objs AS (SELECT DISTINCT OBJECT#,OBJECT_NAME FROM ALL_PLANS),
 sql_plan_data AS
  (SELECT * FROM
@@ -257,7 +256,8 @@ sql_plan_data AS
              nvl(max(plan_hash_full) over(PARTITION by phv),phv) phf,
              nvl(max(sign(is_adaptive_)) over(partition by phv),0) is_adaptive,
              dense_rank() OVER(PARTITION BY phv ORDER BY flag, tm DESC, child_number DESC NULLS FIRST, inst_id desc,dbid,sql_id) seq
-      FROM   ALL_PLANS a)
+      FROM   ALL_PLANS a
+      WHERE  id is not null)
   WHERE  seq = 1),
 sql_plan_px AS(
     select /*+materialize*/ phv,phf,count(case when operation like 'PX%' then 1 end) px_count
@@ -337,7 +337,7 @@ ash_raw as (
             sum(case when p3text='block cnt' and nvl(event,'temp') like '%temp' then temp_ end) over(partition by dbid,phv1,sql_exec,pid,sample_time+0) temp,
             sum(pga_)  over(partition by dbid,phv1,sql_exec,pid,sample_time+0) pga,
             sum(case when is_px_slave=1 and px_flags>65536 then least(tm_delta_db_time,AAS*2e6) end) over(partition by px_flags,dbid,phv1,sql_exec,pid,qc_sid,qc_inst,qc_session_serial#,sid,inst_id) dbtime
-    FROM   (SELECT /*+NO_BIND_AWARE NO_PQ_CONCURRENT_UNION 
+    FROM   (SELECT /*+NO_BIND_AWARE 
                       no_expand 
                       opt_param('optimizer_index_cost_adj' 500) 
                       opt_param('_optim_peek_user_binds' 'false') 
@@ -445,7 +445,7 @@ xplan AS
             TABLE(dbms_xplan.display('gv$sql_plan_statistics_all',NULL,format,'inst_id='|| inst_id||' and plan_hash_value=' || phv || ' and sql_id=''' || sq ||''' and child_number='||child_number)) a
     WHERE  flag = 1),
 ash_agg as(
-    SELECT /*+materialize parallel(4)*/ 
+    SELECT /*+materialize*/ 
            a.*, 
            nvl2(costs,trim(dbms_xplan.format_number(costs))||'('||to_char(ratio,case when ratio=10 then '990' else 'fm990.0' end)||'%)','') cost_rate,
            trim(dbms_xplan.format_number(costs)) cost_text,

@@ -8,6 +8,7 @@ local datapath=env.join_path(env.WORK_DIR,'oracle/oradebug.pack')
 local function get_output(cmd,is_comment)
 	local output,clear=printer.get_last_output,printer.clear_buffered_output
 	db:assert_connect()
+	env.checkerr(db.props and db.props.isdba,"oradebug only supports SYSDBA.")
 	if not sqlplus.process then
 		sqlplus:call_process(nil,true)
 		sqlplus:get_lines("oradebug "..oradebug._pid)
@@ -371,7 +372,13 @@ local ext={
 		[[oradebug lkdebug -a convlock
 		  oradebug lkdebug -a convres
 		  oradebug lkdebug -r <resource handle> (i.e 0x8066d338 from convres dump)]]},
-		{}
+		{'reconfig',"reconfig lkdebug and release the gc locks","oradebug lkdebug -m reconfig lkdebug"},
+		{'-O <object_id> 0 TM','Print the resource details for the object_id','oradebug lkdebug -O 11984883 0 TM'},
+		{'-O <addr1> <addr2> <type>','Print the resource defails from gv$ges_resource','oradebug -g all lkdebug -O 0xd4056fb3 0x6873eeb3 LB'},
+		{'-B <lmdid> <groupid> <bucketidx>','Identify the hot locks on hash buckets',"SELECT * FROM (select 'oradebug lkdebug -B '||lmdid||' '||groupid||' '||bucketidx,waitcnt FROM x$kjrtbcfp ORDER BY waitcnt DESC) WHERE ROWNUM<=100;"},
+		{'-A <name>','List context',
+		[[oradebug -g all lkdebug -A res
+		  oradebug -g all lkdebug -A lock]]}
 	},
 	EVENT={
 		{'4','determine the Events Set in a System','oradebug dump events 4'},
@@ -581,9 +588,13 @@ function oradebug.run(action,args)
 	if action and action:lower() == 'init' then return oradebug.build_dict() end
 	
 	if not action then action='HELP' end
-	action=action:upper():gsub('%.%*$',''):gsub('%%','.*')
+	action=action:upper()
+	if action=='HELP' and args then 
+		action,args=args:upper(),nil 
+	elseif action=='DOC' and args then
+		action,args=args:match('%S+$'):upper(),nil
+	end
 
-	if action=='HELP' and args then action,args=args:upper(),nil end
 	if args or no_args[action] then
 		local cmd=action..' '..(args or '')
 		get_output(cmd,false)
@@ -592,6 +603,8 @@ function oradebug.run(action,args)
 		end
 		return
 	end
+
+	action=action:gsub('%.%*$',''):gsub('%%','.*')
 
 	local usage={}
 
