@@ -25,7 +25,8 @@ local function rep_instance(prefix,full,obj,suffix)
             {usr and usr~="",extvars.dict[obj].usr_col,"(select /*+no_merge*/ username from all_users where user_id="..(uid or '')..")"},
         } do
             if v[1] and v[2] and v[3] then
-                if k==1 and obj:find('^GV_?%$') and v[3]==tonumber(db.props.instance)
+                if k==1 and obj:find('^GV_?%$') and v[3]==tonumber(db.props.instance) 
+                    and extvars.dict[obj:sub(2)] and extvars.dict[obj:sub(2)].inst_col~="INST_ID"
                 then
                     str=fmt1:format(prefix,instance,full:gsub("[gG]([vV]_?%$)","%1"),suffix)
                 elseif flag==0 then
@@ -208,7 +209,7 @@ function extvars.on_after_db_conn()
     end
 
     extvars.cache_obj=nil
-    if extvars.current_dict.path~=extvars.db_dict_path and os.exists(extvars.db_dict_path) then
+    if extvars.current_dict and extvars.current_dict.path~=extvars.db_dict_path and os.exists(extvars.db_dict_path) then
         extvars.load_dict(extvars.db_dict_path)
     end
 end
@@ -235,6 +236,7 @@ end
 function extvars.set_dict(type)
     if not type then
         local dict=extvars.current_dict
+        if not dict then return print('Please run "dict public" to build the global dictionary.') end
         if dict.cache==0 then
             for k,v in pairs(extvars.cache_obj or {}) do
                 dict.cache=dict.cache+1
@@ -265,7 +267,7 @@ function extvars.set_dict(type)
                     @XTABLE@)
             SELECT * FROM (
                 SELECT  table_name,
-                        MAX(CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') THEN col END) INST_COL,
+                        MAX(CASE WHEN col = 'INST_ID' and substr(table_name,1,3) NOT IN('DBA','PDB','CDB','ALL') OR col='INSTANCE_NUMBER' THEN col END) INST_COL,
                         MAX(CASE WHEN col IN ('CON_ID') THEN col END) CON_COL,
                         MAX(CASE WHEN col IN ('DBID') THEN col END) DBID_COL,
                         MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND regexp_like(col,'(OWNER|SCHEMA|KGLOBTS4|USER.*NAME)') THEN col END)
@@ -300,7 +302,7 @@ function extvars.set_dict(type)
                     AND    (owner,table_name) in(select distinct owner,TABLE_NAME from dba_tab_privs where grantee in('PUBLIC','SELECT_CATALOG_ROLE','EXECUTE_CATALOG_ROLE'))  
                     @XTABLE@)
             SELECT  table_name,
-                    MAX(CASE WHEN col IN ('INST_ID', 'INSTANCE_NUMBER') THEN col END) INST_COL,
+                    MAX(CASE WHEN col = 'INST_ID' and substr(table_name,1,3) NOT IN('DBA','PDB','CDB','ALL') OR col='INSTANCE_NUMBER' THEN col END) INST_COL,
                     MAX(CASE WHEN col IN ('CON_ID') THEN col END) CON_COL,
                     MAX(CASE WHEN col IN ('DBID') THEN col END) DBID_COL,
                     MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND regexp_like(col,'(OWNER|SCHEMA|KGLOBTS4|USER.*NAME)') THEN col END)
@@ -346,7 +348,7 @@ function extvars.set_dict(type)
     local rs=db:dba_query(db.internal_call,sql)
     local rows=db.resultset:rows(rs,-1)
     if type=='init' then extvars.dict={} end
-    local dict=extvars.dict
+    local dict=extvars.dict or {}
     local cnt1=#rows
     for i=2,cnt1 do
         local exists=dict[rows[i][1]]

@@ -199,7 +199,7 @@ WITH ALL_PLANS AS
         FROM TABLE(GV$(CURSOR(
             SELECT  /*+ordered use_nl(a)*/    
                     id,
-                    parent_id,
+                    decode(parent_id,-1,id-1,parent_id) parent_id,
                     child_number    ha,
                     1               flag,
                     TIMESTAMP       tm,
@@ -221,9 +221,10 @@ WITH ALL_PLANS AS
                 and    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
                 ) b left join v$sql_plan a using(sql_id,plan_hash_value)
             WHERE  '&vw' IN('A','G')))) a
+        WHERE '&vw'='G' or :dbid is null or &did=:dbid
         UNION ALL
         SELECT  id,
-                parent_id,
+                decode(parent_id,-1,id-1,parent_id) parent_id,
                 plan_hash_value,
                 2,
                 TIMESTAMP,
@@ -243,11 +244,11 @@ WITH ALL_PLANS AS
             from   dba_hist_active_sess_history
             where  '&vw' IN('A','D')
             and    sql_id is not null
+            and    dbid=nvl(0+'&dbid',dbid)
             and    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
          ) b left join dba_hist_sql_plan a using(sql_id,plan_hash_value,dbid)
         WHERE   pos='D'
-        AND     '&vw' IN('A','D'))
-  WHERE dbid=nvl(0+'&dbid',&did)),
+        AND     '&vw' IN('A','D'))),
 sql_list as(select distinct pos,sql_id,phv plan_hash_value,dbid from ALL_PLANS),
 plan_objs AS (SELECT DISTINCT OBJECT#,OBJECT_NAME FROM ALL_PLANS),
 sql_plan_data AS
@@ -279,7 +280,7 @@ sqlstats as(
     FROM   dba_hist_sqlstat join dba_hist_snapshot using(dbid,snap_id,instance_number)
     WHERE  ('D',sql_id,plan_hash_value,dbid) in(select * from sql_list)
     AND    elapsed_time_Delta>0
-    AND    dbid=nvl(0+'&dbid',&did)
+    AND    dbid=nvl(0+'&dbid',dbid)
     AND    end_interval_Time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
     GROUP  BY dbid,sql_id, rollup(plan_hash_value)
 ),
@@ -367,14 +368,20 @@ ash_raw as (
                         &hierachy
                 FROM    (
                     select --+merge(a) cardinality(30000000) full(a.a) leading(a.a) use_hash(a.a a.s) swap_join_inputs(a.s) FULL(A.GV$ACTIVE_SESSION_HISTORY.A)  leading(A.GV$ACTIVE_SESSION_HISTORY.A) use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S) swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
-                            a.*,&did dbid,inst_id instance_number,1 aas_,&mem mem,0 snap_id &px_count,decode(:V1,nvl(sql_id,top_level_sql_id),1,top_level_sql_id,2,3) pred_flag
-                    from   gv$active_session_history a
-                    where  '&vw' IN('A','G')
-                    and    sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
-                    and   (:V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf) or 
-                            qc_session_id!=session_id or qc_instance_id!=inst_id or session_serial# != qc_session_serial#                            
-                           )) a
-                where  dbid=nvl('&dbid',dbid)
+                            a.*,&did dbid,1 aas_,&mem mem,0 snap_id &px_count,decode(:V1,nvl(sql_id,top_level_sql_id),1,top_level_sql_id,2,3) pred_flag
+                    from  table(gv$(cursor(
+                            select a.*,userenv('instance') instance_number 
+                            from   v$active_session_history a
+                            where  sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
+                            and   (:V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf) or 
+                                    qc_session_id   != session_id or 
+                                    qc_instance_id  != userenv('instance') or 
+                                    session_serial# != qc_session_serial#                            
+                                   )
+                    ))) a
+                    where '&vw' IN('A','G')
+                    and    :dbid is null or '&vw'='G' or &did=:dbid) a
+                where 1=1 
                 &swcb
                 UNION ALL
                 &q2
@@ -390,7 +397,7 @@ ash_raw as (
                                 d.*, 10 aas_,null mem &px_count,decode(:V1,sql_id,1,top_level_sql_id,2,3) pred_flag
                          from   dba_hist_active_sess_history d
                          WHERE   '&vw' IN('A','D')
-                         AND     dbid=nvl(0+'&dbid',&did)
+                         AND     dbid=nvl(0+'&dbid',dbid)
                          AND     sample_time BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)) a
                 WHERE 1=1
                 &swcb

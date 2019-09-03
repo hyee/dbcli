@@ -8,12 +8,15 @@
        @ARGS: 1
        @adaptive : 12.1={adaptive} 11.1={}
        &V9  : ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
+       &ash : ash={(select * from table(gv$(cursor(select userenv('instance') inst_id,a.* from v$active_session_history a where :V1 in(sql_id,top_level_sql_id)))))}, dash={Dba_Hist_Active_Sess_History}
        &unit: ash={1}, dash={10}
        &OBJ : default={ev}, O={CURR_OBJ#}
        &OBJ1: default={CURR_OBJ#}, O={ev}
        &Title: default={Event}, O={Obj#}
        &fmt: default={} f={} s={-rows -parallel}
        &simple: default={1} s={0}
+       &V3: default={&starttime}
+       &V4: default={&endtime}
        --]]
 ]]*/
 set feed off printsize 3000 pipequery off
@@ -22,22 +25,24 @@ WITH sql_plan_data AS
  (SELECT /*+materialize*/ *
   FROM   (SELECT a.*,
                  dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id desc) seq
-          FROM   (SELECT id,
-                         parent_id,
-                         child_number    ha,
-                         1               flag,
-                         TIMESTAMP       tm,
-                         child_number,
-                         sql_id,
-                         nvl(plan_hash_value,0) plan_hash_value,
-                         inst_id,
-                         object#,OBJECT_NAME
-                  FROM   gv$sql_plan_statistics_all a
-                  WHERE  a.sql_id = :V1
-                  AND    a.plan_hash_value = case when nvl(lengthb(:V2),0) >6 then :V2+0 else plan_hash_value end
+          FROM   (SELECT *
+                  FROM TABLE(GV$(CURSOR(
+                      SELECT id,
+                             decode(parent_id,-1,id-1,parent_id) parent_id,
+                             child_number    ha,
+                             1               flag,
+                             TIMESTAMP       tm,
+                             child_number,
+                             sql_id,
+                             nvl(plan_hash_value,0) plan_hash_value,
+                             userenv('instance') inst_id,
+                             object#,OBJECT_NAME
+                      FROM   v$sql_plan_statistics_all a
+                      WHERE  a.sql_id = :V1
+                      AND    a.plan_hash_value = case when nvl(lengthb(:V2),0) >6 then :V2+0 else plan_hash_value end)))
                   UNION ALL
                   SELECT id,
-                         parent_id,
+                         decode(parent_id,-1,id-1,parent_id) parent_id,
                          plan_hash_value,
                          2,
                          TIMESTAMP,
@@ -79,6 +84,7 @@ ash_detail as (
         SELECT h.*,decode(row_number() over(partition by SQL_PLAN_LINE_ID,sql_exec,sample_time+0 order by costs desc),1,&unit,0) AAS
         FROM (
             select h.*,
+                   nvl(sql_id,'<Parsing>') sql_id_,
                    nvl(event,'ON CPU') ev,
                    case 
                         when current_obj# > 0 then 
@@ -101,19 +107,19 @@ ash_detail as (
                    nvl(wait_class,'ON CPU') wl,
                    least(coalesce(tm_delta_db_time,DELTA_TIME,&unit*1e6),coalesce(tm_delta_time,DELTA_TIME,&unit*1e6),&unit*2e6) * 1e-6 costs,
                    sql_plan_hash_value||','||nvl(qc_session_id,session_id)||','||sql_exec_id||to_char(nvl(sql_exec_start,sample_time+0),'yyyymmddhh24miss') sql_exec
-            from   &V9 h
-            WHERE  sql_id=:V1 
+            from   &ASH h
+            WHERE  :V1 in(sql_id,top_level_sql_id)
             AND    sample_time BETWEEN NVL(to_date(nvl(:V3,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7) 
                                    AND NVL(to_date(nvl(:V4,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE)) H) H) ,
 
 ash as(SELECT b.*,
-              ROUND(SUM(AAS) OVER(PARTITION BY SQL_PLAN_LINE_ID,&OBJ)*100/SUM(AAS) OVER(PARTITION BY SQL_PLAN_LINE_ID),1) tenv
+              ROUND(SUM(AAS) OVER(PARTITION BY SQL_ID,SQL_PLAN_LINE_ID,&OBJ)*100/SUM(AAS) OVER(PARTITION BY SQL_PLAN_LINE_ID),1) tenv
        FROM (select /*+no_expand no_merge(b) ordered use_hash(b)*/ b.*
              FROM   qry a,ash_detail b 
              WHERE  a.phv = nvl(nullif(b.sql_plan_hash_value,0),a.phv)
+             AND    a.sq=b.sql_id_
              AND    (:V2 is null or nvl(lengthb(:V2),0) >6 or not regexp_like(:V2,'^\d+$') or :V2+0 in(QC_SESSION_ID,SESSION_ID))
        ) b),
-
 ash_base AS(
    SELECT /*+materialize no_expand*/ 
            nvl(SQL_PLAN_LINE_ID,0) ID,
@@ -180,7 +186,7 @@ ash_width AS
   FROM ash_agg),
 plan_agg as(
   SELECT /*+materialize*/ 
-         SQL_PLAN_HASH_VALUE PLAN_HASH,
+         sql_id_,decode(sql_id_,:V1,''||SQL_PLAN_HASH_VALUE,'=> '||sql_id_) PLAN_HASH,
          COUNT(DISTINCT SQL_EXEC) EXECS,
          nvl(trim(dbms_xplan.format_time_s(SUM(SECS))),' ') secs,
          SUM(AAS) AAS,
@@ -199,10 +205,10 @@ plan_agg as(
                   dense_Rank() OVER(PARTITION BY SQL_PLAN_HASH_VALUE ORDER BY tenv DESC) r
           FROM  (
              SELECT s.*,&OBJ obj,
-                    ROUND(100*SUM(AAS) OVER(PARTITION BY SQL_PLAN_HASH_VALUE,&OBJ)/SUM(AAS) OVER(PARTITION BY SQL_PLAN_HASH_VALUE),1) tenv
+                    ROUND(100*SUM(AAS) OVER(PARTITION BY sql_id_,SQL_PLAN_HASH_VALUE,&OBJ)/SUM(AAS) OVER(PARTITION BY SQL_PLAN_HASH_VALUE),1) tenv
              FROM   ash_detail s) s
         ) 
-  GROUP  BY SQL_PLAN_HASH_VALUE
+  GROUP  BY sql_id_,decode(sql_id_,:V1,''||SQL_PLAN_HASH_VALUE,'=> '||sql_id_)
 ),
 
 plan_width as (
@@ -340,7 +346,7 @@ SELECT  '+'||rpad('-',c1,'-')||'+'||rpad('-',c2,'-')||'+'||rpad('-',c3,'-')||'+'
 FROM    plan_width WHERE cnt>0
 UNION  ALL
 SELECT * FROM (
-SELECT  '|'||rpad(decode(to_char(plan_hash),(select phv from qry),'*',' ')||plan_hash,c1,' ')||'|'||lpad(execs,c2,' ')||'|'||rpad(secs,c3,' ')||'|'||lpad(aas,c4,' ')||'|'||lpad(cpu,4,' ')||'|'||lpad(io,4,' ')||'|'||lpad(cc,4,' ')||'|'||lpad(cl,4,' ')||'|'||lpad(app,4,' ')||'|'||lpad(oth,4,' ')||'|'||lpad(io_reqs,c7,' ')||'|'||lpad(io_bytes,c8,' ')||'|'||rpad(top_event,c9,' ')||'|'
+SELECT  '|'||rpad(decode(''||plan_hash,(select ''||phv from qry),'*',' ')||plan_hash,c1,' ')||'|'||lpad(execs,c2,' ')||'|'||rpad(secs,c3,' ')||'|'||lpad(aas,c4,' ')||'|'||lpad(cpu,4,' ')||'|'||lpad(io,4,' ')||'|'||lpad(cc,4,' ')||'|'||lpad(cl,4,' ')||'|'||lpad(app,4,' ')||'|'||lpad(oth,4,' ')||'|'||lpad(io_reqs,c7,' ')||'|'||lpad(io_bytes,c8,' ')||'|'||rpad(top_event,c9,' ')||'|'
 FROM    plan_agg,plan_width WHERE cnt>0 order by 0+aas desc)
 UNION ALL
 SELECT  '+'||rpad('-',c1,'-')||'+'||rpad('-',c2,'-')||'+'||rpad('-',c3,'-')||'+'||rpad('-',c4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',c7,'-')||'+'||rpad('-',c8,'-')||'+'||rpad('-',c9,'-')||'+'

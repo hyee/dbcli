@@ -20,7 +20,7 @@ Parameters
     _dlm_stats_collect: defaults to 1 since 12.2 and should be set to 0 (Doc ID 2373451.1)
     _restrict_pdb_gv: false to disable cross-instance query on gv$ views
     _parallel_load_balancing: defaults to true, 'false' to allocate PX slaves across all instances in round-robin mode without measuring the workload balance
-    _lm_res_tm_hash_bucket/_lm_res_hash_bucket/_lm_share_lock_opt: d improving the values can reduce "latch: ges resource hash list" events(Bug.27528038)
+    _lm_res_tm_hash_bucket/_lm_res_hash_bucket/_lm_share_lock_opt/_ksi_clientlocks_enabled: d improving the values can reduce "latch: ges resource hash list" events(Bug.27528038/29244263)
     _enqueue_hash_chain_latches: defaults to cpu_count, improving the values can reduce "latch: enqueue hash chains" events if not pending on some object(Bug.23589928)
     
 Events:

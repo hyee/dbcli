@@ -119,7 +119,7 @@ WITH sql_plan_data AS
                  dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id) seq
           FROM   (SELECT id,
                          min(id) over() minid,
-                         parent_id,
+                         decode(parent_id,-1,id-1,parent_id) parent_id,
                          child_number    ha,
                          0               flag,
                          TIMESTAMP       tm,
@@ -133,7 +133,7 @@ WITH sql_plan_data AS
                   UNION ALL
                   SELECT id,
                          min(id) over() minid,
-                         parent_id,
+                         decode(parent_id,-1,id-1,parent_id) parent_id,
                          child_number    ha,
                          1               flag,
                          TIMESTAMP       tm,
@@ -147,7 +147,7 @@ WITH sql_plan_data AS
                   UNION ALL
                   SELECT /*+no_expand*/ id,
                          min(id) over() minid,
-                         parent_id,
+                         decode(parent_id,-1,id-1,parent_id) parent_id,
                          plan_hash_value,
                          2,
                          TIMESTAMP,
@@ -166,7 +166,7 @@ WITH sql_plan_data AS
                   UNION ALL
                   SELECT /*+no_expand*/ id,
                          min(id) over() minid,
-                         parent_id,
+                         decode(parent_id,-1,id-1,parent_id) parent_id,
                          plan_hash_value,
                          3,
                          TIMESTAMP,
@@ -190,11 +190,13 @@ WITH sql_plan_data AS
                          9               flag,
                          NULL            tm,
                          NULL,
-                         statement_id,
-                         max(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), 'plan_hash_full.*?(\d+)', 1, 1, 'i'))) over()+0 plan_hash_value,
+                         ''||plan_id,
+                         max(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), 'plan_hash_full.*?(\d+)', 1, 1, 'i',1))) over()+0 plan_hash_value,
                          NULL
                   FROM   plan_table a
-                  WHERE  nvl(upper(:V1),'x') in(statement_id,''||plan_id,'x')) a
+                  WHERE  plan_id=(select max(plan_id) keep(dense_rank last order by timestamp) 
+                                  from plan_table
+                                  where nvl(upper(:V1),'x') in(statement_id,''||plan_id,'x'))) a
          WHERE flag>=&src)
   WHERE  seq = 1),
 hierarchy_data AS
@@ -240,7 +242,7 @@ xplan AS
   WHERE  flag = 0
   UNION ALL
   SELECT a.*
-  FROM   qry,TABLE(dbms_xplan.display('plan_table',NULL,format,'statement_id=''' || sq || '''')) a
+  FROM   qry,TABLE(dbms_xplan.display('plan_table',NULL,format,'plan_id=''' || sq || '''')) a
   WHERE  flag = 9
   UNION  ALL
   SELECT a.*

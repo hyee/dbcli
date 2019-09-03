@@ -468,7 +468,10 @@ function scripter:check_ext_file(cmd)
     local exist,c=os.exists(cmd,self.ext_name)
     env.checkerr(exist=='file',"Cannot find this file: "..cmd)
     local target_dir=self:rehash(c,self.ext_name)
-    c=c:match('([^\\/]+)$'):match('[^%.%s]+'):upper()
+    c=c:match('([^\\/]+)$'):upper()
+    for k,v in pairs(target_dir) do
+        if c:find(k,1,true) then return target_dir,k end
+    end
     return target_dir,c
 end
 

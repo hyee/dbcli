@@ -1173,13 +1173,15 @@ end
 
 function env.save_data(file,txt,maxsize)
     if not file:find('[\\/]') then file=env.join_path(env.WORK_DIR,"data",file) end
-    txt=env.MessagePack.pack(txt)
+    if type(txt)=='table' then
+        env.MessagePack.set_array("always_as_map")
+        txt=env.MessagePack.pack(txt)
+    end
     env.checkerr(not maxsize or maxsize>=#txt,"File "..file..' is too large('..#txt..' bytes), operation is cancelled!')
     local f=io.open(file,"wb")
     if not f then
         env.raise("Unable to save "..file)
     end
-    env.MessagePack.set_array("always_as_map")
     f:write(txt)
     f:close()
     return file

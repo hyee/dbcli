@@ -52,20 +52,29 @@ local no_args={
 local traces={
 	SQL_TRACE={
 		'Dump SQL Trace',
-	   [[* oradebug event sql_trace[SQL: 32cqz71gd8wy3] {pgadep: exactdepth 0} plan_stat=all_executions,wait=true,bind=true
-	     * oradebug event sql_trace[SQL: 32cqz71gd8wy3] {pgadep: exactdepth 0} {callstack: fname opiexe} plan_stat=all_executions,wait=true,bind=true
-	     * oradebug event sql_trace wait=true, plan_stat=never
-	     * oradebug event sql_trace [sql: g3yc1js3g2689 | 7ujay4u33g337
-	     * oradebug event sql_trace [sql: sql_id=g3yc1js3g2689 | sql_id=7ujay4u33g337] ]]
+	   [[1 oradebug event sql_trace[SQL: 32cqz71gd8wy3] {pgadep: exactdepth 0} plan_stat=all_executions,wait=true,bind=true
+	     2 oradebug event sql_trace[SQL: 32cqz71gd8wy3] {pgadep: exactdepth 0} {callstack: fname opiexe} plan_stat=all_executions,wait=true,bind=true
+	     3 oradebug event sql_trace wait=true, plan_stat=never
+	     4 oradebug event sql_trace[sql: g3yc1js3g2689 | 7ujay4u33g337]
+	     5 oradebug event sql_trace[sql: sql_id=g3yc1js3g2689 | sql_id=7ujay4u33g337] 
+	     6 oradebug event sql_trace {process_pname=DBW} wait=true ]]
 	},
 	TRACE={'Dump trace to disk',
 		[[* oradebug event trace[RDBMS.SQL_Transform] [SQL: 32cqz71gd8wy3] disk=high RDBMS.query_block_dump(1) processstate(1) callstack(1)
 		  * oradebug event trace[sql_mon.*] memory=high,get_time=highres
+		  * trace RAC: oradebug event trace[rac_enq] disk highest
+		  * trace RAC: oradebug event trace[ksi] disk highest
+		  * Trace SQL Compiler: oradebug event trace[SQL_Compiler | PX_Granule] disk high'
 		]]
 
 	},
 	SQL_MONITOR={'Force SQL Monitor on specific SQL ID',
-	[[* oradebug event sql_monitor [sql: 5hc07qvt8v737] force=true]]}
+	[[* oradebug event sql_monitor [sql: 5hc07qvt8v737] force=true]]},
+	WAIT_EVENT={'Trace wait event',
+		[[oradebug session_event wait_event["log file sync"|"log file sequential read"] trace("shortstack: %s\n", shortstack())
+		  oradebug session_event wait_event["log file sync"] crash()
+		  oradebug session_event wait_event[all] trace(''event="%" ela=% p1=% p2=% p3=%\n'', evargs(5), evargn(1), evargn(2), evargn(3), evargn(4))]]
+	}
 }
 
 local ext={
@@ -89,10 +98,10 @@ local ext={
 		{'ADJUST_SCN','',''},
 		{'ALRT_TEST','',''},
 		{'ARCHIVE_ERROR','',''},
-		{'ASHDUMP','',''},
-		{'ASHDUMPSECONDS','',''},
-		{'ASMDISK_ERR_OFF','',''},
-		{'ASMDISK_ERR_ON','',''},
+		{'ASHDUMP <minutes>','Dump ASH table into sqlldr file','oradebug dump ashdump 5'},
+		{'ASHDUMPSECONDS <seconds>','Dump ASH table into sqlldr file','oradebug dump ashdump 5'},
+		{'ASMDISK_ERR_OFF <level>','Turn off dumping Dump ASM disk errors','oradebug ASMDISK_ERR_OFF 3221553153'},
+		{'ASMDISK_ERR_ON <level>','Dump ASM disk errors. Level: group_number*65536 + disk_number + ASMDISK_ERR_CLUSTER','oradebug ASMDISK_ERR_ON 3221553153'},
 		{'ASMDISK_READ_ERR_ON','',''},
 		{'ATSK_TEST','',''},
 		{'AWR_DEBUG_FLUSH_TABLE_OFF','',''},
@@ -101,8 +110,8 @@ local ext={
 		{'AWR_FLUSH_TABLE_ON','',''},
 		{'AWR_TEST','',''},
 		{'BC_SANITY_CHECK','',''},
-		{'BGINFO','',''},
-		{'BG_MESSAGES','',''},
+		{'BGINFO <level>','Dump background process info','oradebug dump BGINFO 15'},
+		{'BG_MESSAGES <level>','Dump background process messages','oradebug dump BG_MESSAGES 1'},
 		{'BLK0_FMTCHG','',''},
 		{'BUFFER','',''},
 		{'BUFFERS <level>',
@@ -117,7 +126,7 @@ local ext={
 		Most levels high than 6 are equivalent to 6, except that levels 8 and 9 are the same as 4 and 5 respectively.
 		For level 1 to 3 the information is dumped in buffer header order.
 		For levels higher than 3, the buffers and blocks are dumped in hash chain order.]],''},
-		{'CALLSTACK','',''},
+		{'CALLSTACK <level>','Dump callstack','oradebug dump callstack 3'},
 		{'CBDB_ENTRIES','',''},
 		{'CGS','',''},
 		{'CHECK_ROREUSE_SANITY','',''},
@@ -133,8 +142,8 @@ local ext={
 		{'CROSSIC','',''},
 		{'CRS','',''},
 		{'CSS','',''},
-		{'CURSORDUMP','',''},
-		{'CURSORTRACE','',''},
+		{'CURSORDUMP <level>','DUMP shared cursors in the sga and not the open cursors of the session','oradebug dump cursordump 16'},
+		{'CURSORTRACE <level> <addr>','Dump cursr trace','oradebug dump cursortrace 612 address 1745700775'},
 		{'CURSOR_STATS','',''},
 		{'DATA_ERR_OFF','',''},
 		{'DATA_ERR_ON','',''},
@@ -281,7 +290,7 @@ local ext={
 		{'MMAN_CREATE_IMM_REQUEST','',''},
 		{'MMAN_IMM_REQUEST','',''},
 		{'MMON_TEST','',''},
-		{'MODIFIED_PARAMETERS','',''},
+		{'MODIFIED_PARAMETERS <level>','Dump modified parameters(alter session/system)','oradebug dump MODIFIED_PARAMETERS 1'},
 		{'NEXT_SCN_WRAP','',''},
 		{'OBJECT_CACHE','',''},
 		{'OCR','',''},
@@ -367,7 +376,12 @@ local ext={
 		{'XS_SESSION_STATE','',''}
 	},
 	LKDEBUG={
-		{"hashcount","ges resource hash count. Mainly used to determine _lm_res_hash_bucket/_lm_res_tm_hash_bucket","oradebug lkdebug -a hashcount"},
+		{"hashcount",
+		[[Dump ges resource hash count(event "latch: ges resource hash list"). 
+		 Mainly used to determine _lm_res_hash_bucket/_lm_res_tm_hash_bucket]],
+		[[oradebug lkdebug -a hashcount
+		  oradebug event trace [rac_enq] disk highest
+		  oradebug event trace [ksi] disk highest]]},
 		{'DLM locks','Dump RAC DLM locks',
 		[[oradebug lkdebug -a convlock
 		  oradebug lkdebug -a convres
@@ -378,7 +392,8 @@ local ext={
 		{'-B <lmdid> <groupid> <bucketidx>','Identify the hot locks on hash buckets',"SELECT * FROM (select 'oradebug lkdebug -B '||lmdid||' '||groupid||' '||bucketidx,waitcnt FROM x$kjrtbcfp ORDER BY waitcnt DESC) WHERE ROWNUM<=100;"},
 		{'-A <name>','List context',
 		[[oradebug -g all lkdebug -A res
-		  oradebug -g all lkdebug -A lock]]}
+		  oradebug -g all lkdebug -A lock]]},
+		{'-m pkey <object_id>','relocate the master from one instance in the cluster to another','oradebug lkdebug -m pkey 492984'}
 	},
 	EVENT={
 		{'4','determine the Events Set in a System','oradebug dump events 4'},
@@ -403,7 +418,7 @@ local ext={
 		{'deadlock','Dump deadlocks',
 		[[oradebug event deadlock trace name hanganalyze_global
 		oradebug event 60 trace name hanganalyze level 4
-		oradebug event 60 trace name hanganalyze_global]]}
+		oradebug event 60 trace name hanganalyze_global]]},
 	}
 }
 
