@@ -1173,12 +1173,14 @@ end
 
 function env.save_data(file,txt,maxsize)
     if not file:find('[\\/]') then file=env.join_path(env.WORK_DIR,"data",file) end
+    local is_pack
     if type(txt)=='table' then
         env.MessagePack.set_array("always_as_map")
         txt=env.MessagePack.pack(txt)
+        is_pack=true
     end
     env.checkerr(not maxsize or maxsize>=#txt,"File "..file..' is too large('..#txt..' bytes), operation is cancelled!')
-    local f=io.open(file,"wb")
+    local f=io.open(file,(file:match('%.dat$') or is_pack) and 'wb' or 'w')
     if not f then
         env.raise("Unable to save "..file)
     end

@@ -187,10 +187,8 @@ SELECT * FROM TABLE(GV$(CURSOR(
 	--       ,KGLOBPROP                                                      as PROPERTY
 	       ,KGLNAHSV                                                       as FULL_HASH_VALUE
 	       ,ob.KGLFNOBJ    fn_obj
-	FROM   
-	        x$kglob ob
-	WHERE  
-	        ob.kglnahsh = :v1
+	FROM   x$kglob ob
+	WHERE  ob.kglnahsh = :v1
 	AND    (ob.kglhdadr = ob.kglhdpar)
 	and    rownum <=3
 )));

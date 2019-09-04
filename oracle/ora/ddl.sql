@@ -24,12 +24,15 @@ DECLARE
     cols          VARCHAR2(32767);
 BEGIN
     IF obj_type in('VIEW','SYNONYM') THEN
-        for r in(select column_name from &CHECK_ACCESS_COLS where owner=schem and table_name=regexp_replace(part1,'GV','GV_') order by column_id) loop
-            cols:=cols||','||r.column_name;
+        for r in(select column_id,column_name from &CHECK_ACCESS_COLS where owner=schem and table_name=regexp_replace(part1,'^G?V_?','GV_') order by column_id) loop
+            cols:=cols||case when r.column_id>1 then ',' end||r.column_name;
+            if mod(r.column_id,10)=0 then
+                cols:=cols||chr(10)||'        ';
+            end if;
         end loop;
 
         IF cols IS NOT NULL THEN
-            cols:='CREATE OR REPLACE VIEW '||schem||'.'||regexp_replace(part1,'^G?V_?','GV')||'('||trim(',' from cols)||') AS '||chr(10);
+            cols:='CREATE OR REPLACE VIEW '||schem||'.'||regexp_replace(part1,'^G?V_?','GV_')||'('||trim(',' from cols)||') AS '||chr(10);
         END IF;
 
         BEGIN
@@ -37,10 +40,7 @@ BEGIN
             EXECUTE IMMEDIATE q'[SELECT VIEW_NAME,VIEW_DEFINITION FROM V$FIXED_VIEW_DEFINITION WHERE VIEW_NAME=:1]'
                 INTO vw,txt USING name;
             IF txt is not null then
-                for r in(select column_name from &CHECK_ACCESS_COLS where owner='SYS' and table_name=regexp_replace(name,'GV','GV_') order by column_id) loop
-                    cols:=cols||','||r.column_name;
-                end loop;
-                txt:=cols||regexp_replace(txt,' from ',chr(10)||'from ',1,1) ||';';
+                txt:=trim(',' from cols)||regexp_replace(txt,' from ',chr(10)||'from ',1,1) ||';';
                 txt:=regexp_replace(txt,',[ ]+',',');
             END IF;
         EXCEPTION

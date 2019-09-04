@@ -112,7 +112,7 @@ samples AS
                      s.ksusesph planhash,
                      s.ksusesch sqlchild,
                      s.ksusesqi sql_id,
-                     s.ksuseobj wait_obj#,
+                     decode(s.ksuseobj,-1,''||l.KSUPRLAT,'obj#: '||s.ksuseobj) wait_obj#,
                      nvl2(nullif(s.ksusefil,0),s.ksusefil||','||s.ksuseblk,'') block#,
                      w.ksllwlbl objtype
              FROM    x$ksuprlat l, x$ksuse s, x$ksllw w

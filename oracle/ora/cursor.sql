@@ -1,38 +1,34 @@
 /*[[Show data in gv$open_cursor, usage: @@NAME {<sid> [inst] | -o <object_name>}
     --[[
-        
-        &V9: {s={SID=REGEXP_SUBSTR(:V1,'^\d+$') AND (:V2 IS NULL OR INST_ID=:V2)},
-              o={EXISTS(
-                  SELECT 1 from  gv$object_dependency b
-                  WHERE  a.inst_id=b.inst_id AND a.address = b.from_address
-                  AND    a.hash_value = b.from_hash
-                  AND    nvl(to_owner, '0') NOT IN ('0', 'SYS')
-                  AND    to_type NOT IN (0, 5, 55)
-                  AND    to_name=upper(:V1)) }
+        &V1: default={userenv('sid')}
+        &V2: default={nvl(:instance,userenv('instance'))}
+        &V9: {s={a.sid=REGEXP_SUBSTR(&V1,'^\d+$')},
+              o={b.to_name=upper(:V1)}
              }
-        &V10: s={}, o={(select event from gv$session where inst_id=a.inst_id and sid=a.sid) event,}
-        @aggs: 11.2={regexp_replace(listagg(to_name,'','') within group(order by to_name),''([^,]+)(,\1)+'',''\1'')},default={to_char(wmsys.wm_concat(DISTINCT to_name))}
-        @ARGS: 1
+        &V10: s={}, o={(select event from v$session where sid=a.sid) event,}
+        @aggs: 11.2={regexp_replace(listagg(to_name,',') within group(order by to_name),'([^,]+)(,\1)+','\1')},default={to_char(wmsys.wm_concat(DISTINCT to_name))}
     ]]--
 ]]*/
-SELECT distinct a.INST_ID,
-       SID,&V10
-       SQL_ID,
-       trim(SQL_TEXT) SQL_TEXT,
-       extractvalue(c.column_value,'/ROW/LAST_ACTIVE')  last_active,
-       extractvalue(b.column_value,'/ROW/OBJS')  OBJECTS
-FROM   gv$open_cursor a, 
-       TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype('
-           select &aggs objs
-            from  gv$object_dependency b
-            WHERE  '||a.inst_id||'=b.inst_id AND hextoraw('''||a.address||''') = b.from_address
-            AND    '||a.hash_value||' = b.from_hash
-            AND    to_type NOT IN (0, 5, 55)
-            AND    rownum<130'),'/ROWSET/ROW')))(+) b, 
-       TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype('
-           SELECT TO_CHAR(last_active_time,''yyyy-mm-dd hh24:mi:ss'') last_active
-            FROM   gv$sqlstats
-            WHERE  sql_id = '''||a.sql_id||'''
-            AND    inst_id = '||a.inst_id),'/ROWSET/ROW')))(+) c
-WHERE  a.user_name NOT IN ('SYS') and &V9
-ORDER  BY 1,2,last_active nulls last
+
+SELECT DISTINCT * 
+FROM TABLE(GV$(CURSOR(
+    SELECT /*+use_nl(c)*/
+           USERENV('instance') inst_id,
+           a.sid,
+           &V10
+           a.sql_id,
+           TRIM(a.sql_text) || CASE
+               WHEN a.sql_text LIKE 'table_%' AND regexp_like(regexp_substr(a.sql_text, '[^\_]+', 1, 4), '^[0-9A-Fa-f]+$') THEN
+                ' (obj# ' || to_number(regexp_substr(a.sql_text, '[^\_]+', 1, 4), 'xxxxxxxxxx') || ')'
+           END SQL_TEXT,
+           MAX(c.last_active_time) last_active,
+           &aggs objs
+    FROM   v$open_cursor a, v$object_dependency b, v$sqlstats c
+    WHERE  userenv('instance')=&V2
+    AND    &V9
+    AND    a.address = b.from_address(+)
+    AND    a.hash_value = b.from_hash(+)
+    AND    b.to_type(+) NOT IN (0, 5, 55)
+    AND    a.sql_id = c.sql_id(+)
+    GROUP  BY a.sid, a.sql_id, a.sql_text)))
+ORDER  BY 1,2,last_active nulls last;
