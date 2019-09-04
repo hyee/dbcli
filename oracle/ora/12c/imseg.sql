@@ -210,12 +210,12 @@ BEGIN
                                          DISTINCT *
                                   FROM   table(dids) o,V$IM_SMU_HEAD h1
                                   WHERE  o.OBJSCHEMA+0 = h1.objd) h1
-                         WHERE h0.objd=m.dataobj
+                         WHERE USERENV('instance')=nvl(:instance,USERENV('instance'))
+                         AND   h0.objd=m.dataobj
                          AND   h0.addr=m.IMCU_ADDR
                          AND   m.dataobj=h1.objd
                          AND   m.sdba=h1.startdba)) a
-                    WHERE  inst_id=nvl(:instance,inst_id)
-                    AND    (&filter) )
+                    WHERE  (&filter) )
                 WHERE r=1 or :inst='inst_id')
             SELECT /*+ordered use_hash(a)*/  
                    &inst inst,
@@ -394,15 +394,15 @@ BEGIN
                                       WHERE  o.OBJSCHEMA+0 = h1.objd) h1,
                                       v$im_col_cu cu,
                                       table(cols) cs
-                             WHERE h0.objd=m.dataobj
+                             WHERE USERENV('instance')=nvl(:instance,USERENV('instance'))
+                             AND   h0.objd=m.dataobj
                              AND   h0.addr=m.IMCU_ADDR
                              AND   m.dataobj=h1.objd
                              AND   m.sdba=h1.startdba
                              AND   h0.objd=cu.objd
                              AND   h0.HEAD_PIECE_ADDRESS = CU.HEAD_PIECE_ADDRESS
                              AND   cu.COLUMN_NUMBER=cs.TABLENAME+0)) a
-                    WHERE inst_id=nvl(:instance,inst_id)
-                    AND   (&filter))
+                    WHERE (&filter))
                 WHERE r=1),
             ov AS(
                SELECT /*+parallel(4) ordered use_hash(b)*/ 

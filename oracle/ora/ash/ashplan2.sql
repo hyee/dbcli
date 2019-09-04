@@ -8,7 +8,7 @@
        @ARGS: 1
        @adaptive : 12.1={adaptive} 11.1={}
        &V9  : ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
-       &ash : ash={(select * from table(gv$(cursor(select userenv('instance') inst_id,a.* from v$active_session_history a where :V1 in(sql_id,top_level_sql_id)))))}, dash={Dba_Hist_Active_Sess_History}
+       &ash : ash={(select * from table(gv$(cursor(select userenv('instance') inst_id,a.* from v$active_session_history a where userenv('instance')=nvl(:instance,userenv('instance')) and :V1 in(sql_id,top_level_sql_id)))))}, dash={Dba_Hist_Active_Sess_History}
        &unit: ash={1}, dash={10}
        &OBJ : default={ev}, O={CURR_OBJ#}
        &OBJ1: default={CURR_OBJ#}, O={ev}
@@ -38,7 +38,8 @@ WITH sql_plan_data AS
                              userenv('instance') inst_id,
                              object#,OBJECT_NAME
                       FROM   v$sql_plan_statistics_all a
-                      WHERE  a.sql_id = :V1
+                      WHERE  userenv('instance')=nvl(:instance,userenv('instance'))
+                      AND    a.sql_id = :V1
                       AND    a.plan_hash_value = case when nvl(lengthb(:V2),0) >6 then :V2+0 else plan_hash_value end)))
                   UNION ALL
                   SELECT id,
@@ -230,86 +231,70 @@ ash_data AS(
     USING     (ID)
 ) ,
 xplan AS
- (SELECT a.*
+ (SELECT rownum r,plan_table_output output
   FROM   qry, TABLE(dbms_xplan.display('dba_hist_sql_plan',NULL,format,'dbid='||inst_id||' and plan_hash_value=' || plan_hash || ' and sql_id=''' || sq ||'''')) a
   WHERE  flag = 2
   UNION ALL
-  SELECT a.*
+  SELECT rownum r,a.*
   FROM   qry,
          TABLE(dbms_xplan.display('gv$sql_plan_statistics_all',NULL,format,'child_number=' || plan_hash || ' and sql_id=''' || sq ||''' and inst_id=' || inst_id)) a
   WHERE  flag = 1),
 xplan_data AS
- (SELECT /*+ ordered use_nl(o) */
-       rownum AS r,
-       x.plan_table_output AS plan_table_output,
-       o.id,
-       o.pid,
-       o.oid,
-       o.maxid,
-       regexp_replace(nvl(cpu,0),'^0$',' ') CPU,
-       regexp_replace(nvl(io,0),'^0$',' ') io,
-       regexp_replace(nvl(cc,0),'^0$',' ') cc,
-       regexp_replace(nvl(cl,0),'^0$',' ') cl,
-       regexp_replace(nvl(app,0),'^0$',' ') app,
-       regexp_replace(nvl(oth,0),'^0$',' ') oth,
-       regexp_replace(nvl(px_hits,0),'^0$',' ') px_hits,
-       decode(nvl(secs,0),0,' ',regexp_replace(trim(dbms_xplan.FORMAT_TIME_S(secs)),'^00:')) secs,
-       regexp_replace(nvl(exes,0),'^0$',' ') exes,
-       nvl(top_event,' ') top_event,
-       p.phv,
-      COUNT(*) over() AS rc
-  FROM   (SELECT DISTINCT phv FROM ordered_hierarchy_data) p
-  CROSS  JOIN xplan x
-  LEFT JOIN ash_data o
-  ON     (nvl(nullif(o.phv,0),p.phv) = p.phv AND o.id = to_number(regexp_substr(x.plan_table_output, '^\|[-\* ]*([0-9]+) \|',1,1,'i',1)))),
-plan_output AS (
-    SELECT plan_table_output OUTPUT
-    FROM   xplan_data --
-    model  dimension by (rownum as r)
-    measures (plan_table_output,
-             id,
-             maxid,
-             pid,
-             oid,
-             greatest(max(LENGTHB(maxid)) over () + 3, 6) as csize,
-             greatest(max(LENGTHB(secs)) over () + 1, 5)+1 as ssec,
-             greatest(max(LENGTHB(px_hits)) over () + 1, 7) as spx_hit,
-             greatest(max(LENGTHB(exes)) over () + 1, 5) as sexe,
-             greatest(max(LENGTHB(top_event)) over () + 2, 11) as sevent,
-             cast(null as varchar2(150)) as inject,
-             cpu,io,cc,cl,app,oth,exes,secs,px_hits,top_event,
-             rc)
-    rules sequential order (
-        inject[r] = case
-             when plan_table_output[cv()] like '------%'
-             then rpad('-', decode(:simple,0,0,sevent[cv()])+csize[cv()]+spx_hit[cv()]+ssec[cv()]+sexe[cv()]+31, '-')
-             when id[cv()+2] = 0
-             then '|'  || lpad('Ord |', csize[cv()])--
-                 ||LPAD('Execs',sexe[cv()])
-                 ||LPAD('AAS',spx_hit[cv()])
-                 ||LPAD('Time|',ssec[cv()])
+ (SELECT CASE
+            WHEN output like 'Plan hash value%' THEN
+                 output ||'   from '||COALESCE(:V3,:STARTTIME,to_char(sysdate-90,'YYMMDDHH24MI'))||' to '||COALESCE(:V4,:ENDTIME,to_char(sysdate,'YYMMDDHH24MI'))
+            WHEN output like '---%' THEN
+                 output || rpad('-', decode(:simple,0,0,sevent)+csize+spx_hit+ssec+sexe+31, '-')
+            WHEN id1=-2 THEN
+                 regexp_replace(output, '\|','|'  || lpad('Ord |', csize)--
+                 ||LPAD('Execs',sexe)
+                 ||LPAD('AAS',spx_hit)
+                 ||LPAD('Time|',ssec)
                  ||' CPU%  IO%  CL%  CC% APP% OTH%|'
-                 ||decode(:simple,0,'',RPAD(' Top &title',sevent[cv()]-1)||'|')
-             when id[cv()] is not null
-             then '|' || lpad(oid[cv()] || ' |', csize[cv()])
-                 ||LPAD(exes[cv()], sexe[cv()])
-                 ||LPAD(px_hits[cv()],spx_hit[cv()])
-                 ||LPAD(secs[cv()]||'|', ssec[cv()])
-                 ||LPAD(CPU[cv()],5)||LPAD(IO[cv()],5)||LPAD(CL[cv()],5)||LPAD(cc[cv()],5)||LPAD(app[cv()],5)||LPAD(oth[cv()],5)||'|'
-                 ||decode(:simple,0,'',RPAD(' '||top_event[cv()],sevent[cv()]-1)||'|')
-            end,
-        plan_table_output[r] = case
-                when inject[cv()] like '---%'
-                then inject[cv()] || plan_table_output[cv()]
-                when plan_table_output[cv()] like 'Plan hash value%'
-                then plan_table_output[cv()]||'   Source: &V9 from '||COALESCE(:V3,:STARTTIME,to_char(sysdate-90,'YYMMDDHH24MI'))||' to '||COALESCE(:V4,:ENDTIME,to_char(sysdate,'YYMMDDHH24MI'))
-                when inject[cv()] is not null
-                then regexp_replace(plan_table_output[cv()], '\|', inject[cv()], 1, 2)
-                else plan_table_output[cv()]
-             END
-         )
-    order  by r)
-SELECT OUTPUT FROM plan_output
+                 ||decode(:simple,0,'',RPAD(' Top &title',sevent-1)||'|'),1,2)
+            WHEN id is not null THEN
+                 regexp_replace(output, '\|','|' || lpad(oid || ' |', csize)
+                 ||LPAD(exes, sexe)
+                 ||LPAD(px_hits,spx_hit)
+                 ||LPAD(secs||'|', ssec)
+                 ||LPAD(CPU,5)||LPAD(IO,5)||LPAD(CL,5)||LPAD(cc,5)||LPAD(app,5)||LPAD(oth,5)||'|'
+                 ||decode(:simple,0,'',RPAD(' '||top_event,sevent-1)||'|'),1,2)
+            ELSE
+                 output
+         END output,
+         id1,id
+  FROM (SELECT /*+ ordered use_nl(o) */
+               x.r,
+               o.id,
+               nvl2(o.id,o.id,r-min(nvl2(o.id,r,null)) over()) id1,
+               greatest(max(LENGTHB(nvl(''||maxid,' '))) over () + 3, 6) as csize,
+               greatest(max(LENGTHB(nvl(''||secs,' '))) over () + 1, 5)+1 as ssec,
+               greatest(max(LENGTHB(nvl(''||px_hits,' '))) over () + 1, 7) as spx_hit,
+               greatest(max(LENGTHB(nvl(''||exes,' '))) over () + 1, 5) as sexe,
+               greatest(max(LENGTHB(nvl(top_event,' '))) over () + 2, 11) as sevent,
+               x.output AS output,
+               o.pid,
+               o.oid,
+               o.maxid,
+               regexp_replace(nvl(cpu,0),'^0$',' ') CPU,
+               regexp_replace(nvl(io,0),'^0$',' ') io,
+               regexp_replace(nvl(cc,0),'^0$',' ') cc,
+               regexp_replace(nvl(cl,0),'^0$',' ') cl,
+               regexp_replace(nvl(app,0),'^0$',' ') app,
+               regexp_replace(nvl(oth,0),'^0$',' ') oth,
+               regexp_replace(nvl(px_hits,0),'^0$',' ') px_hits,
+               decode(nvl(secs,0),0,' ',regexp_replace(trim(dbms_xplan.FORMAT_TIME_S(secs)),'^00:')) secs,
+               regexp_replace(nvl(exes,0),'^0$',' ') exes,
+               nvl(top_event,' ') top_event,
+               p.phv,
+              COUNT(*) over() AS rc
+      FROM   (SELECT DISTINCT phv FROM ordered_hierarchy_data) p
+      CROSS  JOIN xplan x
+      LEFT JOIN ash_data o
+      ON     (nvl(nullif(o.phv,0),p.phv) = p.phv AND o.id = to_number(regexp_substr(x.output, '^\|[-\* ]*([0-9]+) \|',1,1,'i',1)))) a
+ order by r)
+SELECT output from xplan_data
+
 UNION ALL
 SELECT NULL FROM ash_width WHERE cnt>0
 UNION ALL
@@ -346,8 +331,8 @@ SELECT  '+'||rpad('-',c1,'-')||'+'||rpad('-',c2,'-')||'+'||rpad('-',c3,'-')||'+'
 FROM    plan_width WHERE cnt>0
 UNION  ALL
 SELECT * FROM (
-SELECT  '|'||rpad(decode(''||plan_hash,(select ''||phv from qry),'*',' ')||plan_hash,c1,' ')||'|'||lpad(execs,c2,' ')||'|'||rpad(secs,c3,' ')||'|'||lpad(aas,c4,' ')||'|'||lpad(cpu,4,' ')||'|'||lpad(io,4,' ')||'|'||lpad(cc,4,' ')||'|'||lpad(cl,4,' ')||'|'||lpad(app,4,' ')||'|'||lpad(oth,4,' ')||'|'||lpad(io_reqs,c7,' ')||'|'||lpad(io_bytes,c8,' ')||'|'||rpad(top_event,c9,' ')||'|'
+SELECT  '|'||rpad(decode(''||plan_hash,(select ''||phv from qry),'*',' ')||plan_hash,c1,' ')||'|'||lpad(execs,c2,' ')||'|'||rpad(secs,c3,' ')||'|'||lpad(aas,c4,' ')||'|'||lpad(cpu,4,' ')||'|'||lpad(io,4,' ')||'|'||lpad(cc,4,' ')||'|'||lpad(cl,4,' ')||'|'||lpad(app,4,' ')||'|'||lpad(oth,4,' ')||'|'||lpad(io_reqs,c7,' ')||'|'||lpad(io_bytes,c8,' ')||'|'||rpad(nvl(top_event,' '),c9,' ')||'|'
 FROM    plan_agg,plan_width WHERE cnt>0 order by 0+aas desc)
 UNION ALL
 SELECT  '+'||rpad('-',c1,'-')||'+'||rpad('-',c2,'-')||'+'||rpad('-',c3,'-')||'+'||rpad('-',c4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',c7,'-')||'+'||rpad('-',c8,'-')||'+'||rpad('-',c9,'-')||'+'
-FROM    plan_width WHERE cnt>0
+FROM    plan_width WHERE cnt>0;

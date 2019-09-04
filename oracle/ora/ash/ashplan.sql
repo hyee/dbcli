@@ -217,6 +217,7 @@ WITH ALL_PLANS AS
                 select /*+no_merge*/ distinct 'G' pos,sql_id,nvl(sql_plan_hash_value,0) plan_hash_value
                 from   v$active_session_history
                 where  '&vw' IN('A','G')
+                and    userenv('instance')=nvl(:instance,userenv('instance'))
                 and    sql_id is not null
                 and    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
                 ) b left join v$sql_plan a using(sql_id,plan_hash_value)
@@ -372,7 +373,8 @@ ash_raw as (
                     from  table(gv$(cursor(
                             select a.*,userenv('instance') instance_number 
                             from   v$active_session_history a
-                            where  sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
+                            where  userenv('instance')=nvl(:instance,userenv('instance'))
+                            and    sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
                             and   (:V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf) or 
                                     qc_session_id   != session_id or 
                                     qc_instance_id  != userenv('instance') or 
