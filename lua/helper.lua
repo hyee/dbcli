@@ -163,6 +163,7 @@ function helper.helper(cmd,...)
             end
             return fmt:format(prefix,(s:find('-',1,true)==1 and '$PROMPTSUBCOLOR$' or '$COMMANDCOLOR$'),s,comma)
         end)
+        helps=helps:gsub("(SQL>) ([^\n]+)","$PROMPTCOLOR$%1 $COMMANDCOLOR$%2$NOR$")
         return print(helps:rtrim()..'\n')
     elseif cmd=="-e" or cmd=="-E" then
         return helper.env(...)

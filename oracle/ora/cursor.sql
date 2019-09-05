@@ -12,7 +12,7 @@
 
 SELECT DISTINCT * 
 FROM TABLE(GV$(CURSOR(
-    SELECT /*+use_nl(c)*/
+    SELECT /*+use_nl(c) use_hash(a b)*/
            USERENV('instance') inst_id,
            a.sid,
            &V10

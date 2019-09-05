@@ -1,6 +1,6 @@
 /*[[
-	Show mutex sleep info. Usage: @@NAME [<recent minutes>] 
-	Refer to Doc ID 1298015.1/1298471.1/1310764.1
+  Show mutex sleep info. Usage: @@NAME [<sid>] [<inst_id>]
+  Refer to Doc ID 1298015.1/1298471.1/1310764.1
 
   Mainly used to diagnostic below events:
   =======================================
@@ -15,8 +15,8 @@
   * library cache: mutex S           
 
 
-	Example Output:
-	================
+  Example Output:
+  ================
     INST_ID        LAST_TIME           HASH    SLEEPS CNT     LOCATION      MUTEX_TYPE   OBJECT
     ------- ----------------------- ---------- ------ --- ---------------- ------------- -------------------
           2 2019-09-03 23:56:10.107 1011610568     25  25 kglhdgn2 106     Library Cache select type#,blocks
@@ -27,19 +27,23 @@
           2 2019-09-03 23:56:10.107 1736623433      2   2 kglpin1   4      Library Cache SEG$
           2 2019-09-03 23:56:10.107 1736623433      1   1 kglpnal2  91     Library Cache SEG$
           3 2019-09-03 23:27:39.394 1736623433      3   3 kglpndl1  95     Library Cache SEG$
+    --[[
+        &V2: default={&instance}
+    --]]
 ]]*/
 
 set feed off
 
-SELECT *
+SELECT DISTINCT *
 FROM   TABLE(gv$(CURSOR ( --
           SELECT /*+ordered user_nl(b)*/
                   userenv('instance') inst_id,
                   sid,
                   a.event,
+                  P1 HASH_VALUE,
                   decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)) SID_HOLDING_MUTEX,
                   a.sql_id,
-                  b.kglobt03 req_sql_id,
+                  c.location,
                   substr(TRIM(b.KGLNAOBJ), 1, 100) || CASE
                       WHEN b.KGLNAOBJ LIKE 'table_%' AND
                            regexp_like(regexp_substr(b.KGLNAOBJ, '[^\_]+', 1, 4), '^[0-9A-Fa-f]+$') THEN
@@ -51,22 +55,31 @@ FROM   TABLE(gv$(CURSOR ( --
           AND    a.p1text = 'idn'
           AND    a.p2text = 'value'
           AND    a.p3text = 'where'
-          AND    userenv('instance') = nvl(:instance, userenv('instance')))));
+          AND    userenv('instance') = nvl(:V2, userenv('instance')))));
 
-SELECT *
-FROM   TABLE(gv$(CURSOR(
-                  SELECT userenv('instance') inst_id,
-                         MAX(SLEEP_TIMESTAMP) LAST_TIME,
-                         kglnahsh HASH,
-                         SUM(sleeps) sleeps,
-                         COUNT(1) CNT,
-                         location,
-                         mutex_type,
-                         substr(kglnaobj, 1, 100) OBJECT
-                  FROM   x$kglob, v$mutex_sleep_history
-                  WHERE  kglnahsh = mutex_identifier
-                  AND    (SLEEP_TIMESTAMP + 0) >= SYSDATE - nvl(:V1, 60) / 1440
-                  AND    userenv('instance') = nvl(:instance, userenv('instance'))
-                  GROUP  BY kglnaobj, kglnahsh, location, mutex_type
-                  ORDER  BY sleeps DESC)))
+SELECT * FROM (
+    SELECT *
+    FROM   TABLE(gv$(CURSOR(
+                      SELECT  /*+ordered use_nl(b)*/
+                              DISTINCT 
+                              userenv('instance') inst_id,
+                              a.*,
+                              substr(kglnaobj, 1, 100) OBJ
+                      FROM   (
+                          SELECT mutex_identifier HASH_VALUE,
+                                 MAX(SLEEP_TIMESTAMP) LAST_TIME,
+                                 SUM(sleeps) sleeps,
+                                 COUNT(1) CNT,
+                                 SUM(gets) gets,
+                                 location_id l_id,
+                                 location,
+                                 mutex_type,
+                                 p1raw
+                          FROM   x$mutex_sleep_history
+                          WHERE  userenv('instance') = nvl(:V2, userenv('instance'))
+                          GROUP  BY mutex_identifier,location_id, location, mutex_type,p1raw
+                      ) A,x$kglob b
+                      WHERE a.HASH_VALUE=b.kglnahsh
+                     )))
+    ORDER  BY LAST_TIME DESC)
 WHERE  rownum <= 50;

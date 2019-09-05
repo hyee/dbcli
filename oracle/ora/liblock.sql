@@ -25,7 +25,7 @@
         &V2    :  default={&instance}
         @CHECK_ACCESS: gv$libcache_locks={gv$libcache_locks},Dba_Kgllock={(SELECT NULL inst_id,KGLLKTYPE TYPE,KGLLKUSE HOLDING_USER_SESSION,KGLLKHDL OBJECT_HANDLE,KGLLKMOD MODE_HELD,KGLLKREQ MODE_REQUESTED FROM Dba_Kgllock)}
         @OBJ_CACHE: {
-                  12.1={(select owner to_owner,name to_name,addr to_address,TYPE from v$db_object_cache)} 
+                  12.1={(select owner to_owner,name to_name,addr to_address,TYPE from v$db_object_cache where instr(name,' ')=0)} 
                   default={(select a.*,
                     decode(to_type,
                           -1,'NONE',
@@ -127,7 +127,7 @@ set feed off verify on
 WITH LP AS (
     SELECT /*+materialize*/  * 
     FROM &GV
-        SELECT /*+ordered no_merge(h) use_hash(l d)*/DISTINCT 
+        SELECT /*+no_merge(h) use_hash(h l d) swap_join_inputs(h)*/DISTINCT 
                  l.type lock_type,
                  OBJECT_HANDLE handler,
                  MODE_REQUESTED,MODE_HELD,
@@ -138,7 +138,9 @@ WITH LP AS (
                  d.type object_type,
                  h.event,
                  h.sql_id,
-                 h.sid,d.to_name obj, USERENV('instance') inst_id
+                 h.sid,
+                 d.to_name obj, 
+                 USERENV('instance') inst_id
         FROM    v$session h
         JOIN   (SELECT KGLLKTYPE TYPE,
                        KGLLKUSE  HOLDING_USER_SESSION,
@@ -147,10 +149,11 @@ WITH LP AS (
                        KGLLKREQ  MODE_REQUESTED
                 FROM   Dba_Kgllock) l
         ON     l.holding_user_session = h.saddr
+        AND    greatest(mode_held,mode_requested)>1
         JOIN   &OBJ_CACHE d
         ON     l.object_handle = d.to_address
-        WHERE  (mode_held > 1 or mode_requested>1)
-        AND    d.to_owner IS NOT NULL
+        WHERE  d.to_name IS NOT NULL
+        AND    nvl(d.type,'x') not like '% BODY'
         AND    userenv('instance')=nvl(''||:v2,userenv('instance'))
         AND    nvl(upper(:V1),'0') in(''||h.sid,'0',d.to_name,NULLIF(d.to_owner||'.','.')||d.to_name))
         )))
@@ -159,12 +162,12 @@ SELECT /*+no_expand*/distinct
        nvl(h.handler,w.handler) object_handle, 
        nvl(h.object_name,w.object_name) object_name,
        nvl(h.object_type,w.object_type) object_type,
-       h.session# holding_session, h.held_mode hold_mode,  
+       h.session# holding_session, nvl(h.held_mode,w.held_mode) hold_mode,  
        h.event holder_event, h.sql_id holder_sql_id,
-       w.session# waiting_session, w.req_mode wait_mode,
+       w.session# waiting_session, nvl(w.req_mode,h.req_mode) wait_mode,
        w.event waiter_event, w.sql_id waiter_sql_id
 FROM   lp h full JOIN lp w
-ON     h.lock_type = w.lock_type and h.object_type=w.object_type and  h.mode_held>1 and w.mode_requested>1 and
+ON     h.lock_type = w.lock_type and h.object_type=w.object_type and h.mode_held=w.mode_requested and
       ((h.inst_id  = w.inst_id and h.handler     = w.handler) or
        (h.inst_id != w.inst_id and h.object_name = w.object_name))
 WHERE  (h.mode_held>1 or w.mode_requested>1)
