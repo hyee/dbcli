@@ -41,7 +41,9 @@ FROM   TABLE(gv$(CURSOR ( --
                   sid,
                   a.event,
                   P1 HASH_VALUE,
-                  decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)) SID_HOLDING_MUTEX,
+                  decode(trunc(p3 / 4294967296), 0, trunc(p3 / 65536), trunc(p3 / 4294967296)) mutex_loc_id,
+                  nullif(decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)),0) holder_sid,
+                  mod(p2,64436) refs,
                   a.sql_id,
                   c.location,
                   substr(TRIM(b.KGLNAOBJ), 1, 100) || CASE
@@ -56,6 +58,8 @@ FROM   TABLE(gv$(CURSOR ( --
           AND    a.p2text = 'value'
           AND    a.p3text = 'where'
           AND    userenv('instance') = nvl(:V2, userenv('instance')))));
+
+
 
 SELECT * FROM (
     SELECT *

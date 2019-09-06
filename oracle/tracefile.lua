@@ -203,7 +203,6 @@ function trace.get_trace(filename,mb,from_mb)
     EXCEPTION WHEN OTHERS THEN NULL;
     END;]]))
 
-    filename=filename
     local lv=nil
     if filename:find("^%d+$") then lv=tonumber(filename) end
     if filename:lower()=="default" or lv then

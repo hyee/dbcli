@@ -1,5 +1,5 @@
 /*[[
-  Show mutex sleep info. Usage: @@NAME [<sid>] [<inst_id>]
+  Show mutex sleep info. Usage: @@NAME [<sid>|<sql_id>|<event>] [<inst_id>]
   Refer to Doc ID 1298015.1/1298471.1/1310764.1
 
   Mainly used to diagnostic below events:
@@ -137,8 +137,9 @@ FROM   TABLE(gv$(CURSOR ( --
                   sid,
                   a.event,
                   P1 HASH_VALUE,
-                  trunc(a.p3 / 65536) mutex_location_id,
-                  decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)) SID_HOLDING_MUTEX,
+                  decode(trunc(p3 / 4294967296), 0, trunc(p3 / 65536), trunc(p3 / 4294967296)) mutex_loc_id,
+                  nullif(decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)),0) holder_sid,
+                  mod(p2,64436) refs,
                   a.sql_id,
                   substr(TRIM(b.to_name), 1, 100) || CASE
                       WHEN b.to_name LIKE 'table_%' AND
@@ -147,11 +148,43 @@ FROM   TABLE(gv$(CURSOR ( --
                   END SQL_TEXT
           FROM   v$session a, &OBJ_CACHE b
           WHERE  a.p1 = b.from_hash(+)
-          AND    a.sid=nvl(0+:v1,a.sid)
+          AND    nvl(:v1,'x') in('x',''||a.sid,a.sql_id,a.event)
           AND    a.p1text = 'idn'
           AND    a.p2text = 'value'
           AND    a.p3text = 'where'
           AND    userenv('instance') = nvl(:V2, userenv('instance')))));
+
+SELECT *
+FROM   (SELECT *
+        FROM   TABLE(gv$(CURSOR (
+                          SELECT /*+ordered use_hash(b)*/
+                                  DISTINCT a.*, b.type, b.to_owner owner, b.to_owner name
+                          FROM   (SELECT userenv('instance') inst_id,
+                                         mutex_loc_id,
+                                         sql_id,
+                                         event,
+                                         MAX(sample_time) last_time,
+                                         p1,
+                                         COUNT(1) cnt
+                                  FROM   (SELECT session_id sid,
+                                                 sample_time,
+                                                 event,
+                                                 sql_id,
+                                                 p1,
+                                                 decode(trunc(p3 / 4294967296), 0, trunc(p3 / 65536), trunc(p3 / 4294967296)) mutex_loc_id,
+                                                 nullif(decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)),0) holder_sid
+                                          FROM   v$active_session_history
+                                          WHERE  p1text = 'idn'
+                                          AND    p2text = 'value'
+                                          AND    p3text = 'where'
+                                          AND    nvl(:v1,'x') in('x',''||session_id,sql_id,event)
+                                          AND    userenv('instance') = nvl(:V2, userenv('instance')))
+                                  GROUP  BY mutex_loc_id, p1, sql_id, event) a,
+                                  &OBJ_CACHE b
+                          WHERE  a.p1 = b.from_hash)))
+        ORDER  BY last_Time DESC)
+WHERE  rownum <= 50;
+
 
 SELECT * FROM (
     SELECT *
@@ -172,7 +205,7 @@ SELECT * FROM (
                                  p1raw
                           FROM   v$mutex_sleep_history
                           WHERE  userenv('instance') = nvl(:V2, userenv('instance'))
-                          AND   (:V1 IS NULL OR :V1 IN(requesting_session,blocking_session))
+                          AND    nvl(regexp_substr(:V1,'^\d+$')+0,-1) IN(-1,requesting_session,blocking_session)
                           GROUP  BY mutex_identifier,location, mutex_type,p1raw
                       ) A,&OBJ_CACHE b
                       WHERE a.HASH_VALUE=b.from_hash(+)

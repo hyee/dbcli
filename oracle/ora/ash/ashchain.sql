@@ -33,7 +33,7 @@ This script references Tanel Poder's script
         @con : 12.1={AND prior con_id=con_id} default={}
         &tree  : default={1} flat={0}
         &V8    : ash={gv$active_session_history},dash={Dba_Hist_Active_Sess_History}
-        &Filter: default={:V1 in(''||session_id,''||sql_plan_hash_value,sql_id,top_level_sql_id,SESSION_ID||'@'||&INST1,event,''||current_obj#)} f={}
+        &Filter: default={:V1 in(p1text,''||session_id,''||sql_plan_hash_value,sql_id,top_level_sql_id,SESSION_ID||'@'||&INST1,event,''||current_obj#)} f={}
         &filter1: default={0} f={1}
         &range : default={sample_time BETWEEN NVL(TO_DATE(NVL(:V2,:STARTTIME),'YYMMDDHH24MI'),SYSDATE-7) AND NVL(TO_DATE(NVL(:V3,:ENDTIME),'YYMMDDHH24MI'),SYSDATE)}, snap={sample_time>=sysdate - nvl(:V1,60)/86400}, f1={}
         &snap:   default={--} snap={}
@@ -63,7 +63,11 @@ var chose varchar2
 var filter2 number;
 
 declare
-    target varchar2(2000) := q'[select a.*,nvl(&tmodel,0) tmodel,&INST1 inst,SESSION_ID||'@'||&INST1 SID,nullif(a.blocking_session|| &INST,'@') b_sid,sample_time+0 stime from ]'||:V8||' a where '||:range;
+    target varchar2(2000) := q'[
+        select a.*,nvl(&tmodel,0) tmodel,&INST1 inst,SESSION_ID||'@'||&INST1 SID,
+                nullif(nvl(a.blocking_session,case when p1text='idn' then nullif(decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)), 0) end)|| &INST,'@') b_sid,
+                sample_time+0 stime 
+        from ]'||:V8||' a where '||:range;
     chose varchar2(2000) := '1';
 BEGIN
     :filter2 := 1;

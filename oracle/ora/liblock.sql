@@ -127,7 +127,7 @@ set feed off verify on
 WITH LP AS (
     SELECT /*+materialize*/  * 
     FROM &GV
-        SELECT /*+no_merge(h) use_hash(h l d) swap_join_inputs(h)*/DISTINCT 
+        SELECT /*+swap_join_inputs(h) no_merge(h) use_hash(h l d)*/DISTINCT 
                  l.type lock_type,
                  OBJECT_HANDLE handler,
                  MODE_REQUESTED,MODE_HELD,
@@ -138,9 +138,7 @@ WITH LP AS (
                  d.type object_type,
                  h.event,
                  h.sql_id,
-                 h.sid,
-                 d.to_name obj, 
-                 USERENV('instance') inst_id
+                 h.sid,d.to_name obj, USERENV('instance') inst_id
         FROM    v$session h
         JOIN   (SELECT KGLLKTYPE TYPE,
                        KGLLKUSE  HOLDING_USER_SESSION,
@@ -153,7 +151,6 @@ WITH LP AS (
         JOIN   &OBJ_CACHE d
         ON     l.object_handle = d.to_address
         WHERE  d.to_name IS NOT NULL
-        AND    nvl(d.type,'x') not like '% BODY'
         AND    userenv('instance')=nvl(''||:v2,userenv('instance'))
         AND    nvl(upper(:V1),'0') in(''||h.sid,'0',d.to_name,NULLIF(d.to_owner||'.','.')||d.to_name))
         )))
@@ -167,7 +164,7 @@ SELECT /*+no_expand*/distinct
        w.session# waiting_session, nvl(w.req_mode,h.req_mode) wait_mode,
        w.event waiter_event, w.sql_id waiter_sql_id
 FROM   lp h full JOIN lp w
-ON     h.lock_type = w.lock_type and h.object_type=w.object_type and h.mode_held=w.mode_requested and
+ON     h.lock_type = w.lock_type and h.object_type=w.object_type and  h.mode_held>1 and w.mode_requested>1 and
       ((h.inst_id  = w.inst_id and h.handler     = w.handler) or
        (h.inst_id != w.inst_id and h.object_name = w.object_name))
 WHERE  (h.mode_held>1 or w.mode_requested>1)
