@@ -592,6 +592,7 @@ function db_core:abort_statement()
 end
 
 function db_core:exec_cache(sql,args,description)
+    self:assert_connect()
     local params ={}
     for k,v in pairs(args or {}) do
         if type(k)=="string" then params[k:upper()] = v end

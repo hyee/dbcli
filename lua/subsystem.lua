@@ -26,9 +26,14 @@ function system:get_lines(cmd)
     return self.process:getLines(cmd)
 end
 
-function system:run_command(cmd,is_print)
+function system:run_command(cmd,is_print,interval,count)
     if not self.process then return end
-    self.prompt=self.process:execute(cmd,is_print and true or false,self.block_input or false)
+    interval,count=tonumber(interval),tonumber(count)
+    if interval and count then
+        self.prompt=self.process:executeInterval(cmd,interval,count,is_print and true or false,self.block_input or false)
+    else
+        self.prompt=self.process:execute(cmd,is_print and true or false,self.block_input or false)
+    end
     if self.process:isClosed() then return self:terminate() end
     if self.enter_flag==true then env.set_subsystem(self.name,self.prompt) end
 end

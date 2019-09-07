@@ -24,7 +24,7 @@ public class SubSystem {
     volatile NuProcess process;
     ByteBuffer writer;
     Pattern p;
-    Thread   monitorThread;
+    Thread monitorThread;
     volatile String lastLine;
     volatile Boolean isWaiting = false;
     volatile Boolean isBreak = false;
@@ -32,7 +32,7 @@ public class SubSystem {
     volatile Boolean isPrint = false;
     volatile String lastPrompt = "";
     volatile String prevPrompt;
-    volatile Boolean isCache=false;
+    volatile Boolean isCache = false;
     //return null means the process is terminated
     CountDownLatch lock = new CountDownLatch(1);
 
@@ -53,14 +53,17 @@ public class SubSystem {
             process = pb.start();
             writer = ByteBuffer.allocateDirect(32767);
             writer.order(ByteOrder.nativeOrder());
-            monitorThread=new Thread(() -> {
+            monitorThread = new Thread(() -> {
                 try {
                     process.waitFor(0, TimeUnit.SECONDS);
                 } catch (InterruptedException e1) {
 
                 } finally {
-                    try {process.destroy(true);}  catch (Exception e1) {}
-                    process=null;
+                    try {
+                        process.destroy(true);
+                    } catch (Exception e1) {
+                    }
+                    process = null;
                 }
             });
             monitorThread.setDaemon(true);
@@ -89,16 +92,17 @@ public class SubSystem {
     }
 
     public Boolean isClosed() {
-        return process==null;
+        return process == null;
     }
 
     public Boolean isPending() {
         return process.hasPendingWrites();
     }
 
-    StringBuffer buff=new StringBuffer(1024);
+    StringBuffer buff = new StringBuffer(1024);
+
     void print(String buff) {
-        if(isCache) {
+        if (isCache) {
             this.buff.append(buff);
         } else if (isPrint && !isBreak) {
             Console.writer.add(buff);
@@ -180,6 +184,40 @@ public class SubSystem {
         }
     }
 
+    public String executeInterval(String command, long interval, int count, Boolean isPrint, Boolean isBlockInput) throws Exception {
+        try {
+            this.isPrint = isPrint;
+            this.lastPrompt = null;
+            isWaiting = true;
+            isBreak = false;
+
+            if (isBlockInput) lock = new CountDownLatch(1);
+            if (command != null) {
+                lastLine = null;
+                final byte[] c = (command.replaceAll("[\r\n]+$", "") + "\n").getBytes();
+                for (int i = 0; i < count - 1; i++) {
+                    if(isBreak) break;
+                    write(c);
+                    Thread.sleep(interval);
+                }
+                if(!isBreak) write(c);
+            }
+            if (!isBlockInput)
+                waitCompletion();
+            else {
+                lock.await();
+                if (isBreak) close();
+            }
+            if (this.prevPrompt == null) this.prevPrompt = this.lastPrompt;
+            return lastPrompt;
+        } catch (Exception e) {
+            Loader.getRootCause(e).printStackTrace();
+            throw e;
+        } finally {
+            isWaiting = false;
+        }
+    }
+
     public String execute(String command, Boolean isPrint) throws Exception {
         return execute(command, isPrint, false);
     }
@@ -190,13 +228,13 @@ public class SubSystem {
     }
 
     public String getLines(String command) throws Exception {
-        isCache=true;
+        isCache = true;
         try {
-            buff.delete(0,buff.length());
+            buff.delete(0, buff.length());
             execute(command, false);
             return buff.toString();
         } finally {
-            isCache=false;
+            isCache = false;
         }
     }
 

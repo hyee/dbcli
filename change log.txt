@@ -1,3 +1,5 @@
+2019-09-07: + oracle: new commands 'oradebug kill <spid>'
+            * oracle: change JDBC lib to 19c
 2019-09-06: + oracle: new commands 'oradebug get_trace'
 2019-09-05: + oracle: new commands 'ora mutex/latchobj', 'show sqlver'
 2019-09-04: + oracle: new commands 'sys mutex/gesbuckets', 'ora col'

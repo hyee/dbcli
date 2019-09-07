@@ -192,12 +192,12 @@ function helper.helper(cmd,...)
                           sunec='ext/',
                           sunmscapi='ext/',
                           ojdbc8='/dump/',
-                          xmlparserv2='/dump/',
+                          --xmlparserv2='/dump/',
                           oraclepki='/dump/',
                           osdt_cert='/dump/',
                           osdt_core='/dump/',
                           --orai18n='/dump/',
-                          xdb6='/dump/'} do
+                          xdb='/dump/'} do
             local dir=env.join_path(env.WORK_DIR..'/dump/'..f)
             local jar=env.join_path(target..'/lib/'..p..f..'.jar')
             if p:sub(1,1)=='/' then jar=env.join_path(env.WORK_DIR..p..f..'.jar') end

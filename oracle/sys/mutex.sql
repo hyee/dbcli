@@ -64,7 +64,7 @@ FROM   TABLE(gv$(CURSOR ( --
 SELECT * FROM (
     SELECT *
     FROM   TABLE(gv$(CURSOR(
-                      SELECT  /*+ordered use_nl(b)*/
+                      SELECT  /*+ordered use_hash(b)*/
                               DISTINCT 
                               userenv('instance') inst_id,
                               a.*,

@@ -411,7 +411,9 @@ local function load_ext()
 
 
 	addons={
-		GET_TRACE={desc='Download current trace file. Usage: oradebug get_trace [<size in MB>] [file]',args=2,func=oradebug.get_trace}
+		GET_TRACE={desc='Download current trace file. Usage: oradebug get_trace [<size in MB>] [file]',args=2,func=oradebug.get_trace},
+		SHORT_STACK={desc='Get abridged OS stack',lib='HELP',func=oradebug.short_stack},
+		KILL={desc="Kill a specific process within the same instance(event immediate crash). Usage: oradebug kill <spid>",func=oradebug.kill}	
 	}
 
 	for k,v in pairs(traces) do
@@ -425,7 +427,9 @@ local function load_ext()
 		local help,keys=oradebug.dict.HELP,oradebug.dict._keys
 		help['ADDON']={}
 		for k,v in pairs(addons) do
-			help['ADDON'][k]=v
+			local lib=v.lib or 'ADDON'
+			if not help[lib] then help[lib]={} end
+			help[lib][k]=v
 		end
 	end
 end
@@ -443,12 +447,13 @@ local function get_output(cmd,is_comment)
 	if is_comment==nil then print('Running command: '..cmd) end
 	local out=sqlplus:get_lines(cmd)
 	if is_comment==false then 
-		if out then 
-			print(out)
-			sqlplus:call_process('bye',true)
-		end
+		if out then print(out) end
 	end
-	if not out then return get_output(cmd) end
+	if not out then 
+		return get_output(cmd) 
+	elseif is_comment~=nil then
+		sqlplus:call_process('bye',true)
+	end
 	return out:gsub('%z',''):split('\n\r?')
 end
 
@@ -630,6 +635,43 @@ local function print_ext(action)
 			env.set.set("colsep","back")
 		end
 	end
+end
+
+function oradebug.short_stack(is_capture)
+	local stack=get_output("short_stack",true)[1]
+	env.checkerr(not stack:trim():find('^%u+%-%d+:'),stack)
+	print(stack)
+	local pieces=stack:split('<-',true)
+	if is_capture then return pieces end
+	local result={}
+	local sep='  '
+	for i=#pieces,1,-1 do
+		result[#result+1]=tostring(#result+1):lpad(#(''..#pieces))..'| '..sep:rep(#result)..pieces[i]
+	end
+	print(table.concat(result,'\n'))
+end
+
+function oradebug.attach_spid(spid)
+	spid=tonumber(spid)
+	env.checkerr(spid,"Please input a valid SPID(in v$process).")
+	local result=get_output("SETOSPID "..spid,true)[1]
+	env.checkerr(not result:trim():find('^%u+%-%d+:'),result)
+	return spid
+end
+
+function oradebug.print_stack(spid,secs,interval)
+	spid=oradebug.attach_spid(spid)
+	secs=tonumber(secs) or 5
+	interval=tonumber(interval) or 0.5
+	local funcs={__c__=0}
+	local stacks={}
+	
+end
+
+function oradebug.kill(spid)
+	oradebug.attach_spid(spid)
+	result=get_output("event immediate crash",true)
+	print(table.concat(result,'\n'))
 end
 
 function oradebug.run(action,args)

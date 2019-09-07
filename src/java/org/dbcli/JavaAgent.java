@@ -197,10 +197,12 @@ public class JavaAgent implements ClassFileTransformer {
     public static void createJar(String[] classes, String location, String source) throws Exception {
         try (FileOutputStream fout = new FileOutputStream(location);
              JarOutputStream jarOut = new JarOutputStream(fout)) {
+            System.out.println("================================================================================");
             HashMap<String, Boolean> map = new HashMap<>();
             int counter = 0;
             String suffix;
             for (String clz : classes) {
+
                 String cl = clz;
                 if (cl.endsWith(".class")) cl = cl.substring(0, cl.lastIndexOf(".class"));
                 cl = cl.replace(".", "/").replace("\\", "");
@@ -220,7 +222,7 @@ public class JavaAgent implements ClassFileTransformer {
                         while ((c = in.read(buffer)) > 0) bos.write(buffer, 0, c);
                         classFileBuffer = bos.toByteArray();
                     } catch (Exception e1) {
-                        System.out.println("    Cannot load file " + clz);
+                        System.out.println("Cannot load file " + clz);
                         continue;
                     }
                 }

@@ -127,7 +127,7 @@ set feed off verify on
 WITH LP AS (
     SELECT /*+materialize*/  * 
     FROM &GV
-        SELECT /*+swap_join_inputs(h) no_merge(h) use_hash(h l d)*/DISTINCT 
+        SELECT /*+ordered no_merge(h) use_hash(h l d)*/DISTINCT 
                  l.type lock_type,
                  OBJECT_HANDLE handler,
                  MODE_REQUESTED,MODE_HELD,
