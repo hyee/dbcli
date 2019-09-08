@@ -21,16 +21,21 @@ function system:get_last_line(cmd)
     return self.process:getLastLine(cmd)
 end
 
-function system:get_lines(cmd)
+function system:get_lines(cmd,interval,count)
     if not self.process then return end
-    return self.process:getLines(cmd)
+    interval,count=tonumber(interval),tonumber(count)
+    if interval and count then
+        return self.process:getLinesInterval(cmd,math.ceil(interval),math.ceil(count))
+    else
+        return self.process:getLines(cmd)
+    end
 end
 
 function system:run_command(cmd,is_print,interval,count)
     if not self.process then return end
     interval,count=tonumber(interval),tonumber(count)
     if interval and count then
-        self.prompt=self.process:executeInterval(cmd,interval,count,is_print and true or false,self.block_input or false)
+        self.prompt=self.process:executeInterval(cmd,math.ceil(interval),math.ceil(count),is_print and true or false,self.block_input or false)
     else
         self.prompt=self.process:execute(cmd,is_print and true or false,self.block_input or false)
     end

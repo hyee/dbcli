@@ -116,7 +116,7 @@ public final class Console {
         callback = new EventCallback() {
             @Override
             public void call(Object... c) {
-                if(cancelSeq==0) ++cancelSeq;
+                if (cancelSeq == 0) ++cancelSeq;
                 if (!pause && lua != null && threadID == Thread.currentThread().getId()) {
                     lua.getGlobal("TRIGGER_EVENT");
                     Integer r = (Integer) (lua.call(c)[0]);

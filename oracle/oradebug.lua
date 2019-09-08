@@ -7,9 +7,10 @@ local datapath=env.join_path(env.WORK_DIR,'oracle/oradebug.pack')
 local init,no_args,trace,ext,addons
 
 local function load_ext()
-	if init then return end
+	if init or not oradebug.dict then return end
 	init=true
 	no_args={
+		INIT=1,
 	    CLOSE_TRACE=1,
 	    CORE=1,
 	    CURRENT_SQL=1,
@@ -28,7 +29,8 @@ local function load_ext()
 	    SHORT_STACK=1,
 	    SUSPEND=1,
 	    TRACEFILE_NAME=1,
-	    UNLIMIT=1
+	    UNLIMIT=1,
+	    GET_TRACE=1
 	}
 
 	traces={
@@ -411,8 +413,26 @@ local function load_ext()
 
 
 	addons={
-		GET_TRACE={desc='Download current trace file. Usage: oradebug get_trace [<size in MB>] [file]',args=2,func=oradebug.get_trace},
+		BUILD_DICT={desc='Rebuild the offline help doc, should be executed in RAC environment',func=oradebug.build_dict},
+		GET_TRACE={desc='Download current trace file. Usage: oradebug get_trace [file] [<size in MB>]',args=2,func=oradebug.get_trace},
 		SHORT_STACK={desc='Get abridged OS stack',lib='HELP',func=oradebug.short_stack},
+		PROFILE={desc='Sample abridged OS stack. Usage: oradebug profile {<spid> [<samples>] [<interval in sec>]} | <file>',
+				args=4,func=oradebug.profile,
+				usage=[[
+					Profile abridged OS stack. The profile efficiency heavily relies on the network latency.
+					Usage: oradebug profile {<spid> [<samples>] [<interval in sec>]} | <file>
+					
+					Parameters:
+					===========
+					  * <samples>  : Number of samples to taken, defaults as 100
+					  * <interval> : The repeat interval for taking samples in second, defaults as 0.1 sec. When 0 then rapidly sample the shortstack
+					
+					Examples:
+					========= 
+					  * oradebug profile 142308 
+					  * oradebug profile 142308 1000 0
+					  * oradebug profile D:\dbcli\cache\imtst_srv4\shortstacks_142308.log 
+				]]},
 		KILL={desc="Kill a specific process within the same instance(event immediate crash). Usage: oradebug kill <spid>",func=oradebug.kill}	
 	}
 
@@ -423,14 +443,19 @@ local function load_ext()
 		ext['RDBMS.'..k]={item}
 	end
 
-	if oradebug.dict then
-		local help,keys=oradebug.dict.HELP,oradebug.dict._keys
-		help['ADDON']={}
-		for k,v in pairs(addons) do
-			local lib=v.lib or 'ADDON'
-			if not help[lib] then help[lib]={} end
-			help[lib][k]=v
+	local help,keys=oradebug.dict.HELP,oradebug.dict._keys
+	help['ADDON']={}
+	for k,v in pairs(addons) do
+		k=k:upper()
+		local lib=v.lib or 'ADDON'
+		keys[k]='HELP.'..lib
+		if v.usage then
+			v.usage=v.usage:gsub('^%s+[\n\r]+','')
+			local prefix=v.usage:match('^%s+')
+			if prefix then v.usage=v.usage:sub(#prefix+1):gsub('[\n\r]+'..prefix,'\n') end
 		end
+		if not help[lib] then help[lib]={} end
+		help[lib][k]=v
 	end
 end
 
@@ -459,7 +484,7 @@ end
 
 oradebug.exec_command=get_output
 
-function oradebug.get_trace(size,file)
+function oradebug.get_trace(file,size)
 	size=tonumber(size) or 8
 	file=file or get_output("TRACEFILE_NAME",true)[1]
 	local dumper=db.C.tracefile
@@ -659,13 +684,122 @@ function oradebug.attach_spid(spid)
 	return spid
 end
 
-function oradebug.print_stack(spid,secs,interval)
-	spid=oradebug.attach_spid(spid)
-	secs=tonumber(secs) or 5
-	interval=tonumber(interval) or 0.5
-	local funcs={__c__=0}
+function oradebug.profile(spid,samples,interval)
+	local out,log
+	local typ,file=os.exists(spid)
+	if typ then
+		out=env.load_data(file,false)
+		file=file:gsub('.*[\\/]',''):gsub('%..-$','')
+	elseif spid and not tonumber(spid) then
+		env.raise('No such file, please input a valid file path or a spid.')
+	else
+		spid=oradebug.attach_spid(spid)
+		file=spid
+		samples=tonumber(samples) or 100
+		interval=tonumber(interval) or 0.1
+		get_output("unlimit",true)
+		out=sqlplus:get_lines("oradebug short_stack",interval*1000,samples)
+		log=env.write_cache("shortstacks_"..spid..".log",out)
+	end
+	local c,funcs,result=0,{},{}
 	local stacks={}
+	local items={}
+	local sub,item
+	local calls,trees=0,0
+	for line in out:gsub('[\n\r]+%S+>%s+','\n'):gsplit('[\n\r]+%s*') do
+		line=line:gsub('^.-%_%_sighandler%(%)','',1)
+		table.clear(items)
+		local depth=0
+		for f in line:gmatch("<%-([^%s<%(]+)") do
+			if not funcs[f] then
+				c=c+1
+				result[c],funcs[f]={func=f,subtree=0,calls=0,stacks={}},c
+			end
+			depth=depth+1
+			items[depth]=funcs[f]
+		end
+		sub=stacks
+		for i=depth,1,-1 do
+			item=items[i]
+			if not sub[item] then
+				sub[item]={f=result[item].func,subtree=1,calls=0}
+			else
+				sub[item].subtree=sub[item].subtree+1
+			end
+			trees=trees+1
+			if i==1 then
+				calls=calls+1
+				sub[item].calls=sub[item].calls+1
+				result[item].calls=result[item].calls+1
+			else
+				sub=sub[item]
+				result[item].subtree=result[item].subtree+1
+			end
+		end
+	end
+	out=nil
+
 	
+
+	local rows,index=grid.new(),0
+	rows:add{'#','Calls','Subtree','|*|','  Call Stacks'}
+	local function compare(a,b)
+		return a.subtree>b.subtree and true or
+	           a.subtree==b.subtree and a.calls>b.calls and true or false
+	end
+	local sep='  '
+	local fmt='%6s%%(%d)'
+	local cfmt='<-%s(%d)%s'
+	local function build_stack(sub,depth,prefix,chain)
+		local trees={}
+		for k,v in pairs(sub) do
+			if type(v)=='table' then
+				trees[#trees+1]=v
+				if v.calls>0 then
+					result[k].stacks[#result[k].stacks+1]=v.f..'('..v.calls..')'..chain
+				end
+			end
+		end
+
+		if #trees>0 then
+			if #trees>1 then table.sort(trees,compare) end
+			for k,v in ipairs(trees) do
+				index=index+1
+				rows:add{index,v.calls==0 and ' ' or fmt:format(math.round(100.0*v.calls/calls,2)..'',v.calls),v.subtree-v.calls,'|*|',prefix..v.f}
+				build_stack(v,depth+1,prefix..(k<#trees and '| ' or sep),cfmt:format(v.f,v.calls,chain))
+			end
+		end
+	end
+
+	build_stack(stacks,0,'  ','')
+	out=rows:tostring()
+
+	table.sort(result,function(a,b)
+		return a.calls>b.calls and true or
+	           a.calls==b.calls and a.subtree>b.subtree and true or
+	           a.calls==b.calls and a.subtree==b.subtree and a.func>b.func and true or false
+	end)
+
+	local max=math.min(30,#result)
+	rows,index=grid.new(),0
+	rows:add{'#','Function','calls','Calls%','Subtree','Call Stacks'}
+	compare=function(a,b) return tonumber(a:match('%d+'))>tonumber(b:match('%d+')) end
+	for i=1,max do
+		if result[i].calls >0 then
+			if #result[i].stacks>0 then
+				table.sort(result[i].stacks,compare)
+				result[i].stacks[#result[i].stacks]='$UDL$'..result[i].stacks[#result[i].stacks]..'$NOR$'
+			end
+			index=index+1
+			rows:add{index,result[i].func,result[i].calls,math.round(100.0*result[i].calls/calls,2),result[i].subtree,table.concat(result[i].stacks,'\n')}
+		end
+	end
+
+	out=out..'\n\n'..rows:tostring(true)
+
+	print(out..'\n')
+	if log then print("Short stacks are written to", log) end
+	print("Analyze result is saved to",env.write_cache("printstack_"..file..".log",out:strip_ansi()))
 end
 
 function oradebug.kill(spid)
@@ -675,19 +809,17 @@ function oradebug.kill(spid)
 end
 
 function oradebug.run(action,args)
-	local libs
+	local libs,is_help
 	load_ext()
-	if action and action:lower() == 'init' then return oradebug.build_dict() end
-	
 	if not action then action='HELP' end
 	action=action:upper()
 	if action=='HELP' and args then 
-		action,args=args:upper(),nil 
+		is_help,action,args=true,args:upper(),nil 
 	elseif action=='DOC' and args then
-		action,args=args:match('%S+$'):upper(),nil
+		is_help,action,args=true,args:match('%S+$'):upper(),nil
 	end
 
-	if args or no_args[action] then
+	if not is_help and (args or no_args[action]) then
 		if addons[action] then
 			local nargs=addons[action].args or 0
 			if nargs<2 then return addons[action].func(args) end
@@ -713,6 +845,7 @@ function oradebug.run(action,args)
 	end
 
 	local libs1={}
+
 	for name,lib in pairs(libs) do
 		if name~='_keys' then
 			libs1[name]={}
@@ -768,6 +901,6 @@ end
 function oradebug.onload()
 	oradebug.load_dict()
 	event.snoop('ON_DB_DISCONNECTED',function() oradebug._pid="setmypid" end)
-	env.set_command(nil,'ORADEBUG',"Show/create dictionary/execute available OraDebug commands. Usage: @@NAME [init|<keyword>|<command line>]",oradebug.run,false,3)
+	env.set_command(nil,{'ORADEBUG','ODB'},"Execute available OraDebug commands. Usage: @@NAME [<search keyword>|<command line>]",oradebug.run,false,3)
 end
 return oradebug

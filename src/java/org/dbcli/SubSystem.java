@@ -33,8 +33,10 @@ public class SubSystem {
     volatile String lastPrompt = "";
     volatile String prevPrompt;
     volatile Boolean isCache = false;
+    volatile int determinPromptCount = 12;
     //return null means the process is terminated
     CountDownLatch lock = new CountDownLatch(1);
+    CountDownLatch responseLock = null;
 
     public SubSystem() {
         Native.setProtected(true);
@@ -51,7 +53,7 @@ public class SubSystem {
             ProcessHandler handler = new ProcessHandler();
             pb.setProcessListener(handler);
             process = pb.start();
-            writer = ByteBuffer.allocateDirect(32767);
+            writer = ByteBuffer.allocateDirect(1048576);
             writer.order(ByteOrder.nativeOrder());
             monitorThread = new Thread(() -> {
                 try {
@@ -69,14 +71,16 @@ public class SubSystem {
             monitorThread.setDaemon(true);
             monitorThread.start();
             //Respond to the ctrl+c event
-            /*
+
             Interrupter.listen(this, new EventCallback() {
                 @Override
                 public void call(Object... o) {
                     isBreak = true;
                     if (lock != null) lock.countDown();
+                    if (responseLock != null) responseLock.countDown();
+                    if (lastPrompt == null) lastPrompt = prevPrompt;
                 }
-            });*/
+            });
         } catch (Exception e) {
             Loader.getRootCause(e).printStackTrace();
             throw e;
@@ -124,14 +128,7 @@ public class SubSystem {
         int prev = 0;
         //process.setConsoleMode(NuKernel32.ENABLE_ECHO_INPUT | NuKernel32.ENABLE_LINE_INPUT);
         while (isWaiting && process != null) {
-            if (isBreak) {
-                //isBreak = false;
-                //lastPrompt = prevPrompt;
-
-                //process.sendCtrlEvent(NuWinNT.HANDLER_ROUTINE.CTRL_C_EVENT);
-                close();
-                break;
-            }
+            if (isBreak) return;
             if (wait > 50) {//Waits 0.5 sec for the prompt and then enters into interactive mode
                 --wait;
                 Thread.sleep(5);
@@ -159,6 +156,7 @@ public class SubSystem {
 
     public String execute(String command, Boolean isPrint, Boolean isBlockInput) throws Exception {
         try {
+            determinPromptCount = 12;
             this.isPrint = isPrint;
             this.lastPrompt = null;
             isWaiting = true;
@@ -172,7 +170,6 @@ public class SubSystem {
                 waitCompletion();
             else {
                 lock.await();
-                if (isBreak) close();
             }
             if (this.prevPrompt == null) this.prevPrompt = this.lastPrompt;
             return lastPrompt;
@@ -184,29 +181,41 @@ public class SubSystem {
         }
     }
 
-    public String executeInterval(String command, long interval, int count, Boolean isPrint, Boolean isBlockInput) throws Exception {
+    public String executeInterval(String command, long interval, int count, Boolean isPrint) throws Exception {
         try {
             this.isPrint = isPrint;
             this.lastPrompt = null;
             isWaiting = true;
             isBreak = false;
-
-            if (isBlockInput) lock = new CountDownLatch(1);
-            if (command != null) {
+            long current;
+            final byte[] c = (command.replaceAll("[\r\n]+$", "") + "\n").getBytes();
+            if (interval <= 0) {
+                determinPromptCount = Math.min(Math.max(100, count), 1000);
                 lastLine = null;
-                final byte[] c = (command.replaceAll("[\r\n]+$", "") + "\n").getBytes();
-                for (int i = 0; i < count - 1; i++) {
-                    if(isBreak) break;
+                if (!isBreak) System.out.println("    Start to execute, please wait...");
+                for (int i = 1; i <= count; i++) {
                     write(c);
-                    Thread.sleep(interval);
+                    Thread.sleep(1);
+                    if (isBreak) break;
                 }
-                if(!isBreak) write(c);
-            }
-            if (!isBlockInput)
-                waitCompletion();
-            else {
-                lock.await();
-                if (isBreak) close();
+                if (!isBreak) {
+                    lock = new CountDownLatch(1);
+                    System.out.println("    Fetching output, please wait...");
+                    lock.await();
+                }
+            } else {
+                for (int i = 1; i <= count; i++) {
+                    current = System.currentTimeMillis() + interval;
+                    lastLine = null;
+                    if (isBreak) break;
+                    responseLock = new CountDownLatch(1);
+                    if (i % 10 == 0) System.out.println("    Executing " + command + ": round #" + i);
+                    write(c);
+                    responseLock.await();
+                    responseLock = null;
+                    current -= System.currentTimeMillis();
+                    if (current > 0 && i < count) Thread.sleep(current);
+                }
             }
             if (this.prevPrompt == null) this.prevPrompt = this.lastPrompt;
             return lastPrompt;
@@ -214,6 +223,8 @@ public class SubSystem {
             Loader.getRootCause(e).printStackTrace();
             throw e;
         } finally {
+            responseLock = null;
+            determinPromptCount = 12;
             isWaiting = false;
         }
     }
@@ -231,7 +242,18 @@ public class SubSystem {
         isCache = true;
         try {
             buff.delete(0, buff.length());
-            execute(command, false);
+            execute(command, false, true);
+            return buff.toString();
+        } finally {
+            isCache = false;
+        }
+    }
+
+    public String getLinesInterval(String command, long interval, int count) throws Exception {
+        isCache = true;
+        try {
+            buff.delete(0, buff.length());
+            executeInterval(command, interval, count, false);
             return buff.toString();
         } finally {
             isCache = false;
@@ -242,11 +264,12 @@ public class SubSystem {
         Interrupter.listen(this, null);
         isEOF = true;
         isWaiting = false;
-        isBreak = false;
+        isBreak = true;
         if (process == null) return;
         process.destroy(true);
         process = null;
         lastPrompt = null;
+        if (responseLock != null) responseLock.countDown();
         lock.countDown();
         threadPool.shutdownNow();
     }
@@ -255,39 +278,47 @@ public class SubSystem {
 
     class ProcessHandler extends NuAbstractProcessHandler {
         private ReentrantLock writeLock = new ReentrantLock();
-        private Closeable clo = writeLock::unlock;
         private volatile char lastChar;
         private StringBuffer sb = new StringBuffer();
         private volatile int counter = 0;
+        private volatile String currLine = null;
         Runnable checker = new Runnable() {
             @Override
             public void run() {
                 String line;
                 boolean isPrompt;
                 while (!isEOF) try {
-                    Thread.sleep(16L);
+                    Thread.sleep(counter == 1 ? 1L : 8L);
                     if (lastChar != '\n' && sb.length() > 0) {
                         if (!writeLock.tryLock()) continue;
-                        line = sb.toString();
-                        isPrompt = !process.hasPendingWrites() && p.matcher(line).find();
-                        if (counter > 0) {
-                            if (isPrompt) {
-                                counter = counter + 1;
-                                if (counter >= 5) {
-                                    sb.setLength(0);
-                                    lock.countDown();
-                                    lastPrompt = line;
-                                    isWaiting = false;
-                                    counter = 0;
-                                }
-                            } else counter = 0;
-                        } else if (isPrompt) {
-                            counter = 1;
-                        } else {
-                            sb.setLength(0);
-                            print(line);
+                        try (Closeable clo = writeLock::unlock) {
+                            if (currLine != null) line = currLine;
+                            else {
+                                line = sb.toString();
+                                currLine = line;
+                            }
+                            isPrompt = !process.hasPendingWrites() && p.matcher(line).find();
+                            if (counter > 0) {
+                                if (isPrompt && !process.hasPendingWrites()) {
+                                    counter = counter + 1;
+                                    if (counter >= determinPromptCount || responseLock != null) {
+                                        sb.setLength(0);
+                                        lastPrompt = line;
+                                        isWaiting = false;
+                                        counter = 0;
+                                        currLine = null;
+                                        (responseLock != null ? responseLock : lock).countDown();
+                                    }
+                                } else counter = 0;
+                            } else if (isPrompt) {
+                                counter = 1;
+                            } else {
+                                sb.setLength(0);
+                                currLine = null;
+                                print(line);
+                            }
+                        } catch (Exception e1) {
                         }
-                        writeLock.unlock();
                     }
                 } catch (InterruptedException e2) {
                     break;
@@ -314,29 +345,39 @@ public class SubSystem {
         public void onStdout(ByteBuffer buffer, boolean closed) {
             byte[] bytes = new byte[buffer.remaining()];
             buffer.get(bytes);
-            isEOF = closed;
-            isWaiting = true;
             writeLock.lock();
-            counter = 0;
-            for (byte c : bytes) {
-                lastChar = (char) c;
-                sb.append(lastChar);
-                if (lastChar == '\n') {
-                    lastLine = sb.toString();
-                    print(lastLine);
+            try (Closeable clo = writeLock::unlock) {
+                currLine = null;
+                counter = 0;
+                isEOF = closed;
+                isWaiting = true;
+
+                if (isBreak) {
                     sb.setLength(0);
+                    return;
                 }
+                for (byte c : bytes) {
+                    lastChar = (char) c;
+                    sb.append(lastChar);
+                    if (lastChar == '\n') {
+                        lastLine = sb.toString();
+                        print(lastLine);
+                        sb.setLength(0);
+                    }
+                }
+                if (closed && sb.length() > 0) {
+                    String line = sb.toString();
+                    sb.setLength(0);
+                    print(line);
+                }
+            } catch (Exception e1) {
+                e1.printStackTrace();
             }
-            if (closed && sb.length() > 0) {
-                String line = sb.toString();
-                sb.setLength(0);
-                print(line);
-            }
-            writeLock.unlock();
         }
 
         @Override
         public void onExit(int statusCode) {
+            isEOF = true;
             close();
             t = null;
         }
