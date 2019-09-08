@@ -424,8 +424,8 @@ local function load_ext()
 					
 					Parameters:
 					===========
-					  * <samples>  : Number of samples to taken, defaults as 100
-					  * <interval> : The repeat interval for taking samples in second, defaults as 0.1 sec. When 0 then rapidly sample the shortstack
+					  samples  : Number of samples to taken, defaults as 100
+					  interval : The repeat interval for taking samples in second, defaults as 0.1 sec. When 0 then rapidly sample the shortstack
 					
 					Examples:
 					========= 
@@ -866,7 +866,7 @@ function oradebug.run(action,args)
 								end
 								target=target..n
 								usage[#usage+1]='\n'..string.rep('=',#target+2)..'\n|'..target..'|\n'..string.rep('-',#target+2)
-								usage[#usage+1]=d.usage
+								usage[#usage+1]=env.helper.colorful(d.usage,target)
 							end
 						elseif (n:upper():find(action) or d.desc:upper():find(action) or (d.usage or ''):upper():find(action)) then
 							libs1[name][k][n]=d

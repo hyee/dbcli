@@ -120,10 +120,10 @@ BEGIN
                         CASE WHEN c.class IS NOT NULL THEN ' ['||c.class||']'
                              WHEN a.event IS NULL AND tmodel<power(2,18) THEN nvl2(a.p1text,' ['||trim(p1text||' '||p2text||' '||p3text)||']','')
                         END || ' ' event2,
-                        replace(nvl2(p1text,p1text||' #'||case when p1>power(2,32) then to_char(p1,'0XXXXXXXXXXXXXXX') else ''||p1 end,'')
-                            ||nvl2(p2text,'/'||p2text||' #'||case when p2>power(2,32) then to_char(p2,'0XXXXXXXXXXXXXXX') else ''||p2 end,'')
+                        replace(nvl2(p1text,p1text||' #'||case when p1>power(2,32) then to_char(p1,'fm0XXXXXXXXXXXXXXX') else ''||p1 end,'')
+                            ||nvl2(p2text,'/'||p2text||' #'||case when p2>power(2,32) then to_char(p2,'fm0XXXXXXXXXXXXXXX') else ''||p2 end,'')
                             ||nvl2(p3text,'/'||p3text||' #'
-                                || case when p3>power(2,32) then to_char(p3,'0XXXXXXXXXXXXXXX') 
+                                || case when p3>power(2,32) then to_char(p3,'fm0XXXXXXXXXXXXXXX') 
                                         when c.class is not null then c.class
                                         else ''||p3 end,''),'# #',' #') p123,
                         coalesce(trim(decode(bitand(tmodel,power(2, 3)),0,'','in_connection_mgmt ') || 

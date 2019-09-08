@@ -1,4 +1,5 @@
 2019-09-08: + oracle: new command 'oradebug profile <spid>' to sample target spid with specific interval and count
+            + oracle: new commands 'sys fcha/channel'
 2019-09-07: + oracle: new command 'oradebug kill <spid>' to crash a specific process
             * oracle: update JDBC lib to 19.3
 2019-09-06: + oracle: new commands 'oradebug get_trace'

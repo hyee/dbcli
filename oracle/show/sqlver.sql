@@ -35,22 +35,24 @@ col ela,avg_ela for usmhd2
 
 SELECT *
 FROM   (SELECT sql_id, mod(SUM(DISTINCT childs),1e6) childs,mod(SUM(DISTINCT vers),1e6) vers,
-	           sum(distinct ela) ela,sum(distinct avg_ela) avg_ela,'$HEADCOLOR$|$NOR$' "|",
-	           ' '||listagg(rpad(c,l)||'='||lpad(val,4),&sep) WITHIN GROUP(ORDER BY val desc,c) " MISMATCH_REASONS"
-        FROM   (SELECT sql_id, c, 
-        	           SUM(DISTINCT childs) childs,
-        	           sum(distinct vers) vers,
-        	           SUM(distinct ela) ela,
-        	           SUM(distinct avg_ela) avg_ela,
-        	           SUM(val) val,
-        	           max(length(c)) over() l
+	             SUM(distinct ela) ela,SUM(distinct avg_ela) avg_ela,'$HEADCOLOR$|$NOR$' "|",
+	             ' '||listagg(rpad(c,l)||'='||lpad(val,4),&sep) WITHIN GROUP(ORDER BY val desc,c) " MISMATCH_REASONS",
+               MAX(sql_text) sql_text
+        FROM   (SELECT sql_id,MAX(sql_text) sql_text, c, 
+          	           SUM(DISTINCT childs) childs,
+          	           sum(distinct vers) vers,
+          	           SUM(distinct ela) ela,
+          	           SUM(distinct avg_ela) avg_ela,
+          	           SUM(val) val,
+          	           MAX(length(c)) over() l
                 FROM   TABLE(gv$(CURSOR(
                            SELECT /*+ordered DYNAMIC_SAMPLING(4)*/ 
                                   sql_id,
                                   USERENV('instance')*1e6+COUNT(1) childs,
                                   USERENV('instance')*1e6+SUM(loaded_versions) vers,
-                                  sum(elapsed_time) ela,
-                                  round(sum(elapsed_time)/greatest(sum(executions),1),3) avg_ela,
+                                  substr(TRIM(regexp_replace(replace(MAX(b.sql_text),chr(0)), '[' || chr(1) || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 200) sql_text,
+                                  SUM(elapsed_time) ela,
+                                  round(SUM(elapsed_time)/greatest(SUM(executions),1),3) avg_ela,
                                   SUM(decode(UNBOUND_CURSOR, 'Y', 1, 0)) UNBOUND_CURSOR,
                                   SUM(decode(SQL_TYPE_MISMATCH, 'Y', 1, 0)) SQL_TYPE_MISMATCH,
                                   SUM(decode(OPTIMIZER_MISMATCH, 'Y', 1, 0)) OPTIMIZER_MISMATCH,
@@ -115,9 +117,10 @@ FROM   (SELECT sql_id, mod(SUM(DISTINCT childs),1e6) childs,mod(SUM(DISTINCT ver
                                   SUM(decode(PURGED_CURSOR, 'Y', 1, 0)) PURGED_CURSOR,
                                   SUM(decode(BIND_LENGTH_UPGRADEABLE, 'Y', 1, 0)) BIND_LENGTH_UPGRADEABLE,
                                   SUM(decode(USE_FEEDBACK_STATS, 'Y', 1, 0)) USE_FEEDBACK_STATS
-                           FROM   v$sql_shared_cursor LEFT JOIN v$sql USING(sql_id,child_number)
+                           FROM   v$sql_shared_cursor a LEFT JOIN v$sql b USING(sql_id,child_number)
                            WHERE  userenv('instance')=nvl(&inst,userenv('instance')) &sql_id
-                           GROUP  BY sql_id))) --
+                           GROUP  BY sql_id
+                           HAVING COUNT(1)>1))) --
                         UNPIVOT(val FOR c IN(UNBOUND_CURSOR,
                                              SQL_TYPE_MISMATCH,
                                              OPTIMIZER_MISMATCH,
