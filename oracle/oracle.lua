@@ -79,7 +79,7 @@ function oracle:helper(cmd)
          | JDBC Classic         |[//]host[:port][:sid[:server] ]?<properties>]                              | @@NAME scott/tiger@sales-scan:1521:orcl |
          |                      |                                                                           | @@NAME scott/tiger@sales-scan:1521:orcl:dedicated |
          |-|-|-|
-         | Client Load-Balance  |tcp:[//]<host1>[:<port>],<hostN>[:<port>]/<service_name>[?<properties>]    | @@NAME scott/tiger@tcp://salesserver1:1521,salesserver2,salesserver3:1522/sales_srv |
+         | Client Load-Balance  |tcp[s]:[//]<host1>[:<port>],<hostN>[:<port>]/<service_name>[?<properties>] | @@NAME scott/tiger@tcp://salesserver1:1521,salesserver2,salesserver3:1522/sales_srv |
          |-|-|-|
          | LDAP                 |ldap[s]:[//]<server>[:<port>]/service_name,<context>                       | @@NAME scott/tiger@ldap://ldap.acme.com:7777/orcl,cn=OracleContext,dc=com  |      
          |-|-|-|

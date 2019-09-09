@@ -7,15 +7,13 @@ import com.zaxxer.nuprocess.NuProcessBuilder;
 
 import java.io.Closeable;
 import java.io.File;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.TreeMap;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 
@@ -37,6 +35,7 @@ public class SubSystem {
     //return null means the process is terminated
     CountDownLatch lock = new CountDownLatch(1);
     CountDownLatch responseLock = null;
+    ArrayBlockingQueue<byte[]> queue = new ArrayBlockingQueue(1);
 
     public SubSystem() {
         Native.setProtected(true);
@@ -79,6 +78,7 @@ public class SubSystem {
                     if (lock != null) lock.countDown();
                     if (responseLock != null) responseLock.countDown();
                     if (lastPrompt == null) lastPrompt = prevPrompt;
+                    queue.clear();
                 }
             });
         } catch (Exception e) {
@@ -114,7 +114,8 @@ public class SubSystem {
         }
     }
 
-    synchronized void write(byte[] b) {
+    synchronized void write(byte[] b) throws IOException {
+        if (process == null) throw new IOException("The process is broken!");
         writer.clear();
         writer.put(b);
         writer.flip();
@@ -156,6 +157,7 @@ public class SubSystem {
 
     public String execute(String command, Boolean isPrint, Boolean isBlockInput) throws Exception {
         try {
+            queue.clear();
             determinPromptCount = 12;
             this.isPrint = isPrint;
             this.lastPrompt = null;
@@ -183,39 +185,59 @@ public class SubSystem {
 
     public String executeInterval(String command, long interval, int count, Boolean isPrint) throws Exception {
         try {
+            queue.clear();
             this.isPrint = isPrint;
             this.lastPrompt = null;
             isWaiting = true;
             isBreak = false;
             long current;
-            final byte[] c = (command.replaceAll("[\r\n]+$", "") + "\n").getBytes();
+            command = command.replaceAll("[\r\n]+$", "") + "\n";
+            final byte[] c;
             if (interval <= 0) {
                 determinPromptCount = Math.min(Math.max(100, count), 1000);
                 lastLine = null;
                 if (!isBreak) System.out.println("    Start to execute, please wait...");
-                for (int i = 1; i <= count; i++) {
-                    write(c);
-                    Thread.sleep(1);
-                    if (isBreak) break;
+                StringBuilder builder = new StringBuilder();
+                for (int i = 0; i < count; i++) {
+                    builder.append(command);
                 }
+                c = builder.toString().getBytes();
+                write(c);
                 if (!isBreak) {
                     lock = new CountDownLatch(1);
                     System.out.println("    Fetching output, please wait...");
                     lock.await();
                 }
             } else {
+                c = command.getBytes();
                 for (int i = 1; i <= count; i++) {
                     current = System.currentTimeMillis() + interval;
                     lastLine = null;
                     if (isBreak) break;
+
+                    if (i % 10 == 0)
+                        System.out.println("    Executing " + command.substring(0, c.length - 1) + ": round #" + i);
+                    /*
+                    while (true&&!isBreak) {
+                        if(process==null) throw new IOException("The subprocess is broken!");
+                        process.wantWrite();
+                        if(queue.offer(c,300,TimeUnit.MICROSECONDS)) break;
+                    }
+                    if (i == count&&!isBreak) {
+                        determinPromptCount = Math.min(Math.max(50, count), 500);
+                        lock = new CountDownLatch(1);
+                        System.out.println("    Fetching output, please wait...");
+                        lock.await();
+                    }*/
+
                     responseLock = new CountDownLatch(1);
-                    if (i % 10 == 0) System.out.println("    Executing " + command + ": round #" + i);
                     write(c);
                     responseLock.await();
                     responseLock = null;
                     current -= System.currentTimeMillis();
                     if (current > 0 && i < count) Thread.sleep(current);
                 }
+
             }
             if (this.prevPrompt == null) this.prevPrompt = this.lastPrompt;
             return lastPrompt;
@@ -241,7 +263,7 @@ public class SubSystem {
     public String getLines(String command) throws Exception {
         isCache = true;
         try {
-            buff.delete(0, buff.length());
+            buff.setLength(0);
             execute(command, false, true);
             return buff.toString();
         } finally {
@@ -252,7 +274,7 @@ public class SubSystem {
     public String getLinesInterval(String command, long interval, int count) throws Exception {
         isCache = true;
         try {
-            buff.delete(0, buff.length());
+            buff.setLength(0);
             executeInterval(command, interval, count, false);
             return buff.toString();
         } finally {
@@ -290,7 +312,7 @@ public class SubSystem {
                 while (!isEOF) try {
                     Thread.sleep(counter == 1 ? 1L : 8L);
                     if (lastChar != '\n' && sb.length() > 0) {
-                        if (!writeLock.tryLock()) continue;
+                        if (process.hasPendingWrites() || !writeLock.tryLock()) continue;
                         try (Closeable clo = writeLock::unlock) {
                             if (currLine != null) line = currLine;
                             else {
@@ -299,7 +321,7 @@ public class SubSystem {
                             }
                             isPrompt = !process.hasPendingWrites() && p.matcher(line).find();
                             if (counter > 0) {
-                                if (isPrompt && !process.hasPendingWrites()) {
+                                if (isPrompt) {
                                     counter = counter + 1;
                                     if (counter >= determinPromptCount || responseLock != null) {
                                         sb.setLength(0);
@@ -326,6 +348,18 @@ public class SubSystem {
             }
         };
         Thread t = new Thread(checker);
+
+        @Override
+        public boolean onStdinReady(ByteBuffer buffer) {
+            byte[] c = queue.poll();
+            if (c == null || isBreak) {
+                buffer.flip();
+                return false;
+            }
+            buffer.put(c);
+            buffer.flip();
+            return true;
+        }
 
         @Override
         public void onStart(NuProcess nuProcess) {

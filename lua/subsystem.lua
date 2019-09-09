@@ -24,9 +24,11 @@ end
 function system:get_lines(cmd,interval,count)
     if not self.process then return end
     interval,count=tonumber(interval),tonumber(count)
+    
     if interval and count then
         return self.process:getLinesInterval(cmd,math.ceil(interval),math.ceil(count))
     else
+        
         return self.process:getLines(cmd)
     end
 end

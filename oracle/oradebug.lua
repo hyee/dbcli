@@ -4,12 +4,8 @@ local sqlplus=db.C.sqlplus
 local oradebug={_pid='setmypid'}
 local writer=writer
 local datapath=env.join_path(env.WORK_DIR,'oracle/oradebug.pack')
-local init,no_args,trace,ext,addons
-
-local function load_ext()
-	if init or not oradebug.dict then return end
-	init=true
-	no_args={
+local init,no_args,trace,ext,addons,functions
+no_args={
 		INIT=1,
 	    CLOSE_TRACE=1,
 	    CORE=1,
@@ -33,6 +29,79 @@ local function load_ext()
 	    GET_TRACE=1
 	}
 
+
+function oradebug.find_func(key,is_print)
+	if not functions then
+		local funcs,err=loadstring(env.load_data(db.ROOT_PATH..env.PATH_DEL..'functions.txt',false))
+		env.checkerr(not err,err)
+		funcs=funcs()
+		functions={}
+		for k,v in pairs(funcs) do
+			local prefix=k:sub(1,2):lower()
+			if not functions[prefix] then functions[prefix]={} end
+			prefix=functions[prefix]
+			prefix[k]=v
+			if k:lower()~=k then
+				prefix[k:lower()]=v
+			end
+		end
+		oradebug.kernel_functions=functions
+	end
+	local rows
+	if is_print~=false then
+		rows=grid.new()
+		rows:add{'Function','Description'}
+	end
+	local prefix=functions[key:lower():sub(1,2)]
+	if not prefix then
+		if is_print==false then
+			return ''
+		else
+			env.raise('No function is found for the input keyword: %s', key)
+		end
+	end
+
+	local k,v=key,prefix[key]
+	if not v then k,v=key:lower(),prefix[key:lower()] end
+	if v then
+		if is_print~=false then
+			rows:add{k,v}
+		else
+			return ' ($PROMPTSUBCOLOR$'..v..'$NOR$)'
+		end
+	end
+	key=key:lower():gsub('%%','.-')
+	local candidates={}
+	for k,v in pairs(prefix) do
+		if k~=key then
+			local n,c=key:match(k),1
+			if not n then n,c=k:match(key),2 end
+			if n then 
+				candidates[#candidates+1]={k,#n,n,v}
+			end
+		end
+	end
+
+	if #candidates>0 then
+		table.sort(candidates,function(a,b) return a[2]>b[2] end)
+		for k,v in ipairs(candidates) do
+			if is_print==false and k==1 then 
+				return ' ($COMMANDCOLOR$['..v[3]..']$PROMPTSUBCOLOR$'..v[4]..'$NOR$)'
+			end
+			rows:add{v[1],v[4]}
+		end
+	elseif is_print==false then
+		return ''
+	else
+		env.raise('No function is found for the input keyword: %s', key)
+	end
+	rows:sort(1)
+	rows:print()
+end
+
+local function load_ext()
+	if init or not oradebug.dict then return end
+	init=true
 	traces={
 		SQL_TRACE={
 			'Dump SQL Trace',
@@ -412,29 +481,7 @@ local function load_ext()
 	}
 
 
-	addons={
-		BUILD_DICT={desc='Rebuild the offline help doc, should be executed in RAC environment',func=oradebug.build_dict},
-		GET_TRACE={desc='Download current trace file. Usage: oradebug get_trace [file] [<size in MB>]',args=2,func=oradebug.get_trace},
-		SHORT_STACK={desc='Get abridged OS stack',lib='HELP',func=oradebug.short_stack},
-		PROFILE={desc='Sample abridged OS stack. Usage: oradebug profile {<spid> [<samples>] [<interval in sec>]} | <file>',
-				args=4,func=oradebug.profile,
-				usage=[[
-					Profile abridged OS stack. The profile efficiency heavily relies on the network latency.
-					Usage: oradebug profile {<spid> [<samples>] [<interval in sec>]} | <file>
-					
-					Parameters:
-					===========
-					  samples  : Number of samples to taken, defaults as 100
-					  interval : The repeat interval for taking samples in second, defaults as 0.1 sec. When 0 then rapidly sample the shortstack
-					
-					Examples:
-					========= 
-					  * oradebug profile 142308 
-					  * oradebug profile 142308 1000 0
-					  * oradebug profile D:\dbcli\cache\imtst_srv4\shortstacks_142308.log 
-				]]},
-		KILL={desc="Kill a specific process within the same instance(event immediate crash). Usage: oradebug kill <spid>",func=oradebug.kill}	
-	}
+	
 
 	for k,v in pairs(traces) do
 		local item={k,v[1],v[2]}
@@ -443,20 +490,7 @@ local function load_ext()
 		ext['RDBMS.'..k]={item}
 	end
 
-	local help,keys=oradebug.dict.HELP,oradebug.dict._keys
-	help['ADDON']={}
-	for k,v in pairs(addons) do
-		k=k:upper()
-		local lib=v.lib or 'ADDON'
-		keys[k]='HELP.'..lib
-		if v.usage then
-			v.usage=v.usage:gsub('^%s+[\n\r]+','')
-			local prefix=v.usage:match('^%s+')
-			if prefix then v.usage=v.usage:sub(#prefix+1):gsub('[\n\r]+'..prefix,'\n') end
-		end
-		if not help[lib] then help[lib]={} end
-		help[lib][k]=v
-	end
+	
 end
 
 local function get_output(cmd,is_comment)
@@ -493,10 +527,127 @@ end
 
 
 function oradebug.load_dict()
+	addons={
+		BUILD_DICT={desc='Rebuild the offline help doc, should be executed in RAC environment',func=oradebug.build_dict},
+		FUNC={desc='Extract kernel function. Usage: oradebug func <keyword>',args=1,func=oradebug.find_func},
+		GET_TRACE={desc='Download current trace file. Usage: oradebug get_trace [file] [<size in MB>]',args=2,func=oradebug.get_trace},
+		SHORT_STACK={desc='Get abridged OS stack',lib='HELP',func=oradebug.short_stack},
+		PROFILE={desc='Sample abridged OS stack. Usage: oradebug profile {<spid> [<samples>] [<interval in sec>]} | <file>',
+				args=4,func=oradebug.profile,
+				usage=[[
+					Profile abridged OS stack. The profile efficiency heavily relies on the network latency.
+					Usage: oradebug profile {<spid> [<samples>] [<interval in sec>]} | <file>
+					
+					Parameters:
+					===========
+					  samples  : Number of samples to taken, defaults as 100
+					  interval : The repeat interval for taking samples in second, defaults as 0.1 sec. When 0 then rapidly sample the shortstack
+					
+					Examples:
+					========= 
+					  * oradebug profile 142308 
+					  * oradebug profile 142308 1000 0
+					  * oradebug profile D:\dbcli\cache\imtst_srv4\shortstacks_142308.log 
+				]]},
+		KILL={desc="Kill a specific process within the same instance(event immediate crash). Usage: oradebug kill <spid>",func=oradebug.kill}	
+	}
+	local undoc={
+		BUILDINFO={desc='Print the ADE label used to build the "oracle" binary'},
+		DIRECT_ACCESS={desc='{ SET | ENABLE | DISABLE | SELECT }: Execute limited SQL under the attached process',args=1,
+					   usage=[[
+						The semi-colon (;) should not be present at the end of the command
+						Only X$ tables can be selected from. Attempts to select from non-X$ tables results in an error of:
+						    ORA-15653: Fixed table ... is not supported by DIRECT_ACCESS.
+						    
+						The select statement must be very simple and there's currently no support for predicates etc (see next point).
+						The kqfd_run() function is the real driving function here and that function has header comments that gives examples of usage:
+						    NOTES:
+						    ======
+						      Statement should be one of
+						      - a simple SELECT query
+						      - a SET command
+						      - an ENABLE command
+						      - a DISABLE command
+
+						    SYNTAX:
+						    =======
+						      statement ::=
+						        { select_query | set_command | enable_command | disable_command }
+						                    
+						      select_query ::=
+						        SELECT { * | column_name [, column_name ]... } FROM table_name
+
+						      set_command ::=
+						        SET attribute = value
+						    
+						      enable_command ::=
+						        ENABLE option
+						    
+						      disable_command ::= 
+						        DISABLE option
+
+						      option ::=
+						        { REPLY | TRACE }
+
+						      attribute ::=
+						        { CONTENT_TYPE | MODE }
+
+						    EXAMPLES:
+							==========
+						      oradebug direct_access SELECT * FROM x$ksdhng_chains 
+						      oradebug direct_access SELECT blocked_sid, blocker_sid FROM x$ksdhng_chains
+						      oradebug direct_access SET CONTENT_TYPE = 'text/xml'
+						      oradebug direct_access SET CONTENT_TYPE = 'text/plain'
+						      oradebug direct_access DISABLE REPLY
+						      oradebug direct_access set reply off
+						      oradebug direct_access set trace on
+						      oradebug direct_access SET MODE = unsafe
+						      oradebug direct_access SET MODE = safe
+						      oradebug direct_access select * from x$kewam
+					   ]]},
+		EVENTDUMP={desc='{session | process | system}: List the event settings that a target process sees', args=1},
+		KSTDUMPCURPROC={desc='<Event ID>: Dumps the KST records that the current process has generated fro the specified event to the process tracefile',args=1},
+		PATCH={desc='Patch utility interface',args=1,usage='Refer to bug 9908867/13827934'},
+		PDUMP={desc='{interval=<sec> ndumps=<count> [pids|orapids|orapnames=...] <command> <args>}: Produce a periodic dump',
+			  args=3,usage=[[oradebug pdump interval=5 ndumps=3 hanganalyze 3 
+				             oradebug pdump interval=5 ndumps=3 short_stack 0
+				             oradebug pdump ndumps=5 orapids=1,2 errorstack 2
+				             oradebug pdump interval=10 ndumps=2 orapnames=dbw0,smon errorstack 2]]},
+        PGA_DETAIL_GET={desc='Produce a breakdown of PGA memory contents for a specific Oracle Pid'},
+        PLSQL_STACK={desc='Dump PLSQL stacks when a deadlock is seen'},
+        PROT={desc=' {NONE|ALL|RDONLY} address len granule_size: allows one to adjust memory protection on shared memory.',args=1},
+        RELEASE={desc='Release instance list'},
+        UNIT_TEST={desc='{list|<command>} Invoke a standalone test harness',args=1},
+        UNIT_TEST_NOLG={desc='{list|<command>} Invoke a standalone test harness',args=1},
+        UNIT_TEST_REM={desc='{list|<command>} Invoke a standalone test harness on a remote instance',args=1},
+	}
+
+
     env.load_data(datapath,true,function(data)
         oradebug.dict=data
+        local help,keys=data.HELP,data._keys
+		help['ADDON']={}
+		for k,v in pairs(addons) do
+			k=k:upper()
+			local lib=v.lib or 'ADDON'
+			keys[k]='HELP.'..lib
+			if v.usage then
+				v.usage=v.usage:gsub('^%s+[\n\r]+','')
+				local prefix=v.usage:match('^%s+')
+				if prefix then v.usage=v.usage:sub(#prefix+1):gsub('[\n\r]+'..prefix,'\n') end
+			end
+			if not help[lib] then help[lib]={} end
+			help[lib][k]=v
+		end
+		help=help.HELP
+		for k,v in pairs(undoc) do
+			k=k:upper()
+			if not v.args then no_args[k]=1 end
+			help[k]=v
+			keys[k]='HELP.HELP'
+		end
         local keywords={}
-        for k,v in pairs(data._keys) do keywords[#keywords+1]=k end
+        for k,v in pairs(keys) do keywords[#keywords+1]=k end
         console:setSubCommands({oradebug=data._keys})
         env.log_debug('extvars','Loaded dictionry '..datapath)
     end)
@@ -665,13 +816,14 @@ end
 function oradebug.short_stack(is_capture)
 	local stack=get_output("short_stack",true)[1]
 	env.checkerr(not stack:trim():find('^%u+%-%d+:'),stack)
-	print(stack)
+	print(stack..'\n')
 	local pieces=stack:split('<-',true)
 	if is_capture then return pieces end
 	local result={}
 	local sep='  '
 	for i=#pieces,1,-1 do
-		result[#result+1]=tostring(#result+1):lpad(#(''..#pieces))..'| '..sep:rep(#result)..pieces[i]
+		local func=pieces[i]:gsub('%(.*','')
+		result[#result+1]=tostring(#result+1):lpad(#(''..#pieces))..'| '..sep:rep(#result)..pieces[i]..oradebug.find_func(func,false)
 	end
 	print(table.concat(result,'\n'))
 end
@@ -739,8 +891,6 @@ function oradebug.profile(spid,samples,interval)
 	end
 	out=nil
 
-	
-
 	local rows,index=grid.new(),0
 	rows:add{'#','Calls','Subtree','|*|','  Call Stacks'}
 	local function compare(a,b)
@@ -748,16 +898,14 @@ function oradebug.profile(spid,samples,interval)
 	           a.subtree==b.subtree and a.calls>b.calls and true or false
 	end
 	local sep='  '
-	local fmt='%6s%%(%d)'
+	local fmt='%5s%%(%d)'
 	local cfmt='<-%s(%d)%s'
 	local function build_stack(sub,depth,prefix,chain)
 		local trees={}
 		for k,v in pairs(sub) do
 			if type(v)=='table' then
 				trees[#trees+1]=v
-				if v.calls>0 then
-					result[k].stacks[#result[k].stacks+1]=v.f..'('..v.calls..')'..chain
-				end
+				v.index=k
 			end
 		end
 
@@ -765,7 +913,11 @@ function oradebug.profile(spid,samples,interval)
 			if #trees>1 then table.sort(trees,compare) end
 			for k,v in ipairs(trees) do
 				index=index+1
-				rows:add{index,v.calls==0 and ' ' or fmt:format(math.round(100.0*v.calls/calls,2)..'',v.calls),v.subtree-v.calls,'|*|',prefix..v.f}
+				if v.calls>0 then
+					result[v.index].stacks[#result[v.index].stacks+1]='Line #'..(''..index):lpad(4)..': '..v.f..'('..v.calls..')'..chain
+				end
+				local func=oradebug.find_func(v.f,false)
+				rows:add{index,v.calls==0 and ' ' or fmt:format(math.round(100.0*v.calls/calls,2)..'',v.calls),v.subtree-v.calls,'|*|',prefix..v.f..func}
 				build_stack(v,depth+1,prefix..(k<#trees and '| ' or sep),cfmt:format(v.f,v.calls,chain))
 			end
 		end

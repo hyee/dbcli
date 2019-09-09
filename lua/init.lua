@@ -37,9 +37,8 @@ local init={
         "lua/tester",
         "lua/graph",
         "lua/subsystem",
-        "lua/process",
         "lua/ilua",
-        "lua/testprocess"}
+        "lua/delta"}
 }
 local plugins={}
 init.databases={oracle="oracle/oracle",mssql="mssql/mssql",db2="db2/db2",mysql="mysql/mysql",pgsql='pgsql/pgsql'}
