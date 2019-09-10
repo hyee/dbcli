@@ -91,7 +91,7 @@ function helper.colorful(helps,target)
         return s..line:gsub('([<>{}%[%]|]+)','$COMMANDCOLOR$%1$NOR$'):gsub('(%-%w+)','$PROMPTSUBCOLOR$%1$NOR$')
     end)
     local spaces=helps:match("( *)%S") or ""
-    helps='\n'..spaces..'$USAGECOLOR$'..target:upper()..':$NOR$ '..helps:sub(#spaces+1)
+    helps='\n'..spaces..(target=='' and '' or ('$USAGECOLOR$'..target:upper()..':$NOR$ '))..helps:sub(#spaces+1)
     helps=helps:gsub("\r?\n"..spaces,"\n"):gsub("%s+$",""):gsub("@@NAME",target:lower())
 
     local grid=env.grid

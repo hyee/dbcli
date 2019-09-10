@@ -196,6 +196,7 @@ SELECT * FROM (
                               substr(to_name, 1, 100) OBJ
                       FROM   (
                           SELECT mutex_identifier HASH_VALUE,
+                                 nvl2(regexp_substr(:V1,'^\d+$'),blocking_session||'/'||requesting_session,'*') "H/W",
                                  MAX(SLEEP_TIMESTAMP) LAST_TIME,
                                  SUM(sleeps) sleeps,
                                  COUNT(1) CNT,
@@ -206,7 +207,7 @@ SELECT * FROM (
                           FROM   v$mutex_sleep_history
                           WHERE  userenv('instance') = nvl(:V2, userenv('instance'))
                           AND    nvl(regexp_substr(:V1,'^\d+$')+0,-1) IN(-1,requesting_session,blocking_session)
-                          GROUP  BY mutex_identifier,location, mutex_type,p1raw
+                          GROUP  BY mutex_identifier,location, mutex_type,p1raw,nvl2(regexp_substr(:V1,'^\d+$'),blocking_session||'/'||requesting_session,'*')
                       ) A,&OBJ_CACHE b
                       WHERE a.HASH_VALUE=b.from_hash(+)
                      )))

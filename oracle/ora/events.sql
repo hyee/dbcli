@@ -51,11 +51,14 @@ DECLARE
         return regexp_replace(err_msg,strip,' ');
     END;
 BEGIN
-    t1(10015):='Trace rollback events';
+    t1(60)   :='Detect deadlock (60 trace name hanganalyze level 4)';
+    t1(10013):='Monitor transaction recovery';
+    t1(10015):='Dump undo segment headers';
     t1(10019):='Disable the data / space search cache';
     t1(10021):='Trace state object tree cleanup operations';
     t1(10027):='Alter the output produced when an Ora-60 deadlock is encountered';
     t1(10029):='Allows you to trigger an event action at session creation. This is aliased to the LOGON event';
+    t1(10032):='Dump sort statistics';
     t1(10035):='Record parse errors to the alert file';
     t1(10036):='Write SQL that will be shipped to a remote database to the trace file';
     t1(10037):='Write SQL that will be shipped to a remote database to the trace file';
@@ -101,9 +104,11 @@ BEGIN
     t1(10209):='Simulate controlfile write error';
     t1(10214):='Simulate controlfile write error';
     t1(10222):='Used to diagnose rowcache (dictionary cache) issues';
+    t1(10224):='Dump index block split/delete trace';
     t1(10226):='Trace rollback information being applied to get a CR block';
     t1(10227):='Verify row structure on insert and update';
-    t1(10235):='Used to diagnose heap corruptions';
+    t1(10231):='Skip corrupted blocks on full table scan';
+    t1(10235):='Check memory manager internal structures, used to diagnose heap corruptions';
     t1(10237):='Simulate CTRL-C interrupts';
     t1(10238):='Used to diagnose package instantiation issues';
     t1(10239):='Trace library cache operations execution across instances';

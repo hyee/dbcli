@@ -30,31 +30,38 @@ no_args={
 	}
 
 
-function oradebug.find_func(key,is_print)
-	if not functions then
-		local funcs,err=loadstring(env.load_data(db.ROOT_PATH..env.PATH_DEL..'functions.txt',false))
-		env.checkerr(not err,err)
-		funcs=funcs()
-		functions={}
-		for k,v in pairs(funcs) do
-			local prefix=k:sub(1,2):lower()
-			if not functions[prefix] then functions[prefix]={} end
-			prefix=functions[prefix]
-			prefix[k]=v
-			if k:lower()~=k then
-				prefix[k:lower()]=v
-			end
+local function load_functions()
+	if functions then return end
+	local funcs,err=loadstring(env.load_data(db.ROOT_PATH..env.PATH_DEL..'functions.txt',false))
+	env.checkerr(not err,err)
+	funcs=funcs()
+	functions={}
+	for k,v in pairs(funcs) do
+		local prefix=k:sub(1,2):lower()
+		if not functions[prefix] then functions[prefix]={} end
+		prefix=functions[prefix]
+		prefix[k]=v
+		if k:lower()~=k then
+			prefix[k:lower()]=v
 		end
-		oradebug.kernel_functions=functions
 	end
+	oradebug.kernel_functions=functions
+end
+
+local cache={}
+function oradebug.find_func(key,is_print)
+	load_functions()
 	local rows
 	if is_print~=false then
 		rows=grid.new()
 		rows:add{'Function','Description'}
+	elseif cache[key:lower()] then
+		return cache[key:lower()]
 	end
 	local prefix=functions[key:lower():sub(1,2)]
 	if not prefix then
 		if is_print==false then
+			cache[key:lower()]=''
 			return ''
 		else
 			env.raise('No function is found for the input keyword: %s', key)
@@ -67,36 +74,161 @@ function oradebug.find_func(key,is_print)
 		if is_print~=false then
 			rows:add{k,v}
 		else
-			return ' ($PROMPTSUBCOLOR$'..v..'$NOR$)'
+			cache[key:lower()]=' ($PROMPTSUBCOLOR$'..v..'$NOR$)'
+			return cache[key:lower()]
 		end
 	end
+	
 	key=key:lower():gsub('%%','.-')
+
 	local candidates={}
 	for k,v in pairs(prefix) do
 		if k~=key then
-			local n,c=key:match(k),1
-			if not n then n,c=k:match(key),2 end
+			local n,c,l=k:match(key),1
+			if not n then
+				for i=#k,#k,-1 do --for i=#k,3,-1 do
+					n,c=key:match(k:sub(1,i)),1+(#k-i)*2
+					if n and i~=k then
+						l,k=#n,n..'$HIR$'..k:sub(i+1)
+						n=k
+						break
+					end
+				end
+			end
 			if n then 
-				candidates[#candidates+1]={k,#n,n,v}
+				candidates[#candidates+1]={k,l or #n,n,v,c}
 			end
 		end
 	end
 
 	if #candidates>0 then
-		table.sort(candidates,function(a,b) return a[2]>b[2] end)
+		table.sort(candidates,function(a,b) return a[5]<b[5] or a[5]==b[5] and a[2]>b[2] end)
 		for k,v in ipairs(candidates) do
-			if is_print==false and k==1 then 
-				return ' ($COMMANDCOLOR$['..v[3]..']$PROMPTSUBCOLOR$'..v[4]..'$NOR$)'
+			if is_print==false and k==1 then
+				cache[key]=' ($COMMANDCOLOR$['..v[3]..'$COMMANDCOLOR$]$PROMPTSUBCOLOR$'..v[4]..'...$NOR$)'
+				return cache[key]
 			end
-			rows:add{v[1],v[4]}
+			rows:add{v[1]..'$NOR$',v[4]}
 		end
 	elseif is_print==false then
+		cache[key]=''
 		return ''
-	else
-		env.raise('No function is found for the input keyword: %s', key)
+	elseif #rows.data<2 then
+		env.raise('No function is found for the input keyword')
 	end
 	rows:sort(1)
 	rows:print()
+end
+
+local tmp_cache
+function oradebug.scan_func_from_plsql(dir)
+	load_functions()
+
+	local typ,path=os.exists(dir)
+	env.checkerr(typ and typ~='file','No such directory: '..dir)
+	local prefixes={'PROCEDURE','FUNCTION'}
+	for i=1,2 do
+		local v=prefixes[i]
+		prefixes[i]=(v..'%s+([^%s%(;]+)[^;]+%sNAME%s+"([^%s;"]+)"[^;]-%sLIBRARY%s+([^%s;]+)'):case_insensitive_pattern()
+		prefixes[i+2]=(v..'%s+([^%s%(;]+)[^;]+%sLIBRARY%s+([%(%)^%s;]+)[^;]-%sNAME%s+"([^%s;"]+)"'):case_insensitive_pattern()
+		prefixes[i+4]=(v..'%s+([^%s%(;]+)[^;]+;%s+PRAGMA%s+INTERFACE%s*%((C)%s*,%s*([^%s;%)]+)%)'):case_insensitive_pattern()
+	end
+	--[[
+	local f=env.load_data("E:\\19.2.plsql\\SYS.DBMS_TF.sql",false)
+
+	for i,prefix in ipairs(prefixes) do
+        for n,f,l in f:gmatch(prefix) do
+        	if i>2 then f,l=l,f end
+        	print(n,f,l)
+        end
+	end
+	--]]
+	
+	local fmt='%s%s(%s)'
+	local cnt={0,0,0,0}
+	local funcs=tmp_cache or {}
+	for _,v in pairs(functions) do
+		for n,c in pairs(v) do
+			funcs[n]=c
+		end
+	end
+	
+	local news={}
+	os.list_dir(path,"sql",nil,function(event,file)
+        if event=='ON_SCAN' then return 32*1024*1024 end
+        if not file.data then return end
+        local name=file.name:gsub('%.[^%.]+$','.')
+        local cnames={}
+        for i,prefix in ipairs(prefixes) do
+	        for n,f,l in file.data:gmatch(prefix) do
+	        	if i>2 then f,l=l,f end
+	        	cnt[2-math.fmod(i,2)]=cnt[2-math.fmod(i,2)]+1
+	        	n,f,l=n:trim('"'),f:trim('"'),l:trim('"')
+	        	if f:upper()==f then f=f:lower() end
+	        	n=fmt:format(name,n,l)
+	        	for i=1,(f:find('_',1,true) and 2 or 1) do
+	        		if i==2 then f=f:gsub('%_(.)',"%1") end
+		        	if news[f] and news[f]<5 and not funcs[f]:find(n,1,true) then
+		        		funcs[f]=(funcs[f]..'/')..n
+		        	elseif not news[f] then
+		        		funcs[f]=n
+		        	end
+		        	cnames[#cnames+1]=f:lower()
+	        		news[f]=(news[f] or 0)+1
+	        	end
+	        end
+    	end
+    	if #cnames>1 then
+    		local prefix
+    		for i=3,10 do
+    			local c=cnames[1]:sub(1,i)
+    			local m=true
+    			for j=2,#cnames do
+    				if cnames[j]:sub(1,i)~=c then m=false end
+    			end
+    			if m then 
+    				prefix=c 
+    			else
+    				break
+    			end
+    		end
+    	end
+    end)
+
+	fmt='    %s="%s",'
+	local rows={'--Oracle C Kernel function. Most data is copied from http://orafun.info/\nreturn {'}
+	local src={}
+
+	for k,v in pairs(funcs) do
+		local k1=k:lower()
+		if k~=k1 then
+			local v1=funcs[k1]
+			if v1 and news[k1] and not news[k]then
+				funcs[k]=nil
+			elseif v1 and not news[k1] then
+				funcs[k1]=nil
+			end
+		end
+	end
+
+	tmp_cache=funcs
+
+	for k,v in pairs(funcs) do
+		if v then
+			src[#src+1]={k,v:gsub('"','\\"')}
+		end
+	end
+
+	table.sort(src,function(a,b)
+		return a[1]:lower()<b[1]:lower()
+	end)
+	for k,v in ipairs(src) do
+		cnt[3]=cnt[3]+1
+		rows[#rows+1]=fmt:format(v[1],v[2])
+	end
+	rows[#rows+1]='}'
+	print(cnt[1],'procedures and',cnt[2],'functions detected and total',cnt[3],'entries generated.')
+	print("Result written to file "..env.write_cache('functions.txt',table.concat(rows,'\n')))
 end
 
 local function load_ext()
@@ -110,7 +242,8 @@ local function load_ext()
 		     3 oradebug event sql_trace wait=true, plan_stat=never
 		     4 oradebug event sql_trace[sql: g3yc1js3g2689 | 7ujay4u33g337]
 		     5 oradebug event sql_trace[sql: sql_id=g3yc1js3g2689 | sql_id=7ujay4u33g337] 
-		     6 oradebug event sql_trace {process_pname=DBW} wait=true ]]
+		     6 oradebug event sql_trace {process_pname=DBW} wait=true
+		     7 oradebug event sql_trace {process : pname = dw | pname =dm} wait=true, bind=true,plan_stat=all_executions ,level=12]]
 		},
 		TRACE={'Dump trace to disk',
 			[[* oradebug event trace[RDBMS.SQL_Transform] [SQL: 32cqz71gd8wy3] disk=high RDBMS.query_block_dump(1) processstate(1) callstack(1)
@@ -131,7 +264,8 @@ local function load_ext()
 			  oradebug session_event wait_event[all] trace(''event="%" ela=% p1=% p2=% p3=%\n'', evargs(5), evargn(1), evargn(2), evargn(3), evargn(4))
 			  oradebug event wait_event["latch: ges resource hash list"] {wait: minwait=8000} trace(''event "%", p1 %, p2 %, p3 %, wait time % Stk=%'', evargs(5), evargn(2), evargn(3),evargn(4), evargn(1), shortstack())
 			]]
-		}
+		},
+		MILLSAP={'11g+ Trace 10046 events',"oradebug event Millsap {process : pname = dw | pname =dm} wait=true, bind=true,plan_stat=all_executions ,level=12"}
 	}
 
 	ext={
@@ -470,12 +604,19 @@ local function load_ext()
 				* 37 Yields the maximum level of tracing, without using the buffer]],
 			[[oradebug session_event 10046 trace name context forever,level 12
 			  oradebug session_event 10046 trace name context off
-			  oradebug session_event 10046 trace name context level 12, lifetime 10000, after 5000 occurrences]]},
+			  oradebug session_event 10046 trace name context level 12, lifetime 10000, after 5000 occurrences
+			  oradebug event Millsap {process : pname = dw | pname =dm} wait=true, bind=true,plan_stat=all_executions ,level=12]]},
 			{'crash','Kill the specific session','oradebug event immediate crash'},
 			{'deadlock','Dump deadlocks',
 			[[oradebug event deadlock trace name hanganalyze_global
 			oradebug event 60 trace name hanganalyze level 4
-			oradebug event 60 trace name hanganalyze_global]]},
+			oradebug event 60 trace name hanganalyze_global
+			oradebug session_event 60 trace name hanganalyze_global level 4, forever; -
+			|                      name heapdump level 29, forever; -
+			|                      name systemstate level 266, lifetime 1; -
+			|                      name latches level 5 ,after 3 times; -
+			|                      name record_callstack level 1000, life 5; -
+			|                      name processstate level 2, forever]]},
 			{'10200','Trace Consistent gets','oradebug event 10200 trace name level 4'}
 		}
 	}
@@ -530,6 +671,7 @@ function oradebug.load_dict()
 	addons={
 		BUILD_DICT={desc='Rebuild the offline help doc, should be executed in RAC environment',func=oradebug.build_dict},
 		FUNC={desc='Extract kernel function. Usage: oradebug func <keyword>',args=1,func=oradebug.find_func},
+		SCAN_FUNCTION={desc='Scan offline PLSQL code and list the mapping C functions. Usage: scan_function <dir>',args=1,func=oradebug.scan_func_from_plsql},
 		GET_TRACE={desc='Download current trace file. Usage: oradebug get_trace [file] [<size in MB>]',args=2,func=oradebug.get_trace},
 		SHORT_STACK={desc='Get abridged OS stack',lib='HELP',func=oradebug.short_stack},
 		PROFILE={desc='Sample abridged OS stack. Usage: oradebug profile {<spid> [<samples>] [<interval in sec>]} | <file>',
@@ -599,7 +741,7 @@ function oradebug.load_dict()
 						      oradebug direct_access SET CONTENT_TYPE = 'text/xml'
 						      oradebug direct_access SET CONTENT_TYPE = 'text/plain'
 						      oradebug direct_access DISABLE REPLY
-						      oradebug direct_access set reply off
+						      oradebug direct_access enable reply
 						      oradebug direct_access set trace on
 						      oradebug direct_access SET MODE = unsafe
 						      oradebug direct_access SET MODE = safe
@@ -813,12 +955,14 @@ local function print_ext(action)
 	end
 end
 
-function oradebug.short_stack(is_capture)
-	local stack=get_output("short_stack",true)[1]
-	env.checkerr(not stack:trim():find('^%u+%-%d+:'),stack)
-	print(stack..'\n')
+function oradebug.short_stack(stack)
+	if not stack then
+		stack=get_output("short_stack",true)[1]
+		env.checkerr(not stack:trim():find('^%u+%-%d+:'),stack)
+		print(stack..'\n')
+	end
+	print(1,stack)
 	local pieces=stack:split('<-',true)
-	if is_capture then return pieces end
 	local result={}
 	local sep='  '
 	for i=#pieces,1,-1 do
@@ -1018,7 +1162,7 @@ function oradebug.run(action,args)
 								end
 								target=target..n
 								usage[#usage+1]='\n'..string.rep('=',#target+2)..'\n|'..target..'|\n'..string.rep('-',#target+2)
-								usage[#usage+1]=env.helper.colorful(d.usage,target)
+								usage[#usage+1]=env.helper.colorful(d.usage,'')
 							end
 						elseif (n:upper():find(action) or d.desc:upper():find(action) or (d.usage or ''):upper():find(action)) then
 							libs1[name][k][n]=d

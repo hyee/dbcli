@@ -111,9 +111,9 @@ function unwrap.unwrap(obj,ext,prefix)
         return;
     end
     local info=db:check_obj(obj,1)
-    if type(info) ~='table' then
-        local rtn=unwrap.unwrap_schema(obj,ext)
-        return env.checkerr(rtn,'No such object: '..obj);
+    if type(info) ~='table' or not info then
+        local rtn=unwrap.unwrap_schema(obj:upper(),ext)
+        return env.checkerr(rtn,'No maching objects found in schema: '..obj);
     end
     local qry=[[
         SELECT TEXT,
