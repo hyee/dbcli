@@ -10,7 +10,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.TreeMap;
@@ -370,9 +369,7 @@ public class SubSystem {
 
         @Override
         public void onStderr(ByteBuffer buffer, boolean closed) {
-            byte[] bytes = new byte[buffer.remaining()];
-            buffer.get(bytes);
-            System.out.println(new String(bytes, Charset.defaultCharset()));
+            onStdout(buffer, closed);
             isWaiting = false;
             lock.countDown();
         }

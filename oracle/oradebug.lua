@@ -121,9 +121,59 @@ function oradebug.find_func(key,is_print)
 end
 
 local tmp_cache
+function oradebug.rep_func_desc(comp,prefix,org)
+	org=org or prefix
+
+	load_functions() 
+
+	local funcs=tmp_cache or {}
+	if not tmp_cache then
+		for _,v in pairs(functions) do
+			for n,c in pairs(v) do
+				funcs[n:lower()]=c
+			end
+		end
+	end
+	prefix='['..prefix..'] '
+	for k,v in pairs(funcs) do
+		--v=v:gsub('^%[(.-)%]',function(s) return '['..s:initcap()..']' end)
+		if k:trim()~=k then 
+			funcs[k],k=nil,k:trim()
+			funcs[k]=v
+		end
+		if k:lower():trim():find(comp:lower(),1,true)==1 then
+			if k==comp then
+				v=prefix
+			else
+				if v:trim():lower():find(org:lower(),1,true)==1 then
+					v=v:trim():sub(#org+1)
+				end
+				v=prefix..v:trim()
+			end
+			funcs[k:trim()]=v:gsub('^(%[.-%]%s)+','%1')
+		end
+	end
+
+	tmp_cache=funcs
+	local fmt='    %s="%s",'
+	local rows,src={'return {'},{}
+	for k,v in pairs(funcs) do
+		if v then
+			src[#src+1]={k,v:gsub('"','\\"')}
+		end
+	end
+
+	table.sort(src,function(a,b)return a[1]:lower()<b[1]:lower() end)
+	for k,v in ipairs(src) do
+		rows[#rows+1]=fmt:format(v[1],v[2])
+	end
+	rows[#rows+1]='}'
+	print("Result written to file "..env.write_cache('functions.txt',table.concat(rows,'\n')))
+end
+
+
 function oradebug.scan_func_from_plsql(dir)
 	load_functions()
-
 	local typ,path=os.exists(dir)
 	env.checkerr(typ and typ~='file','No such directory: '..dir)
 	local prefixes={'PROCEDURE','FUNCTION'}
@@ -147,12 +197,14 @@ function oradebug.scan_func_from_plsql(dir)
 	local fmt='%s%s(%s)'
 	local cnt={0,0,0,0}
 	local funcs=tmp_cache or {}
-	for _,v in pairs(functions) do
-		for n,c in pairs(v) do
-			funcs[n]=c
+	if not tmp_cache then
+		for _,v in pairs(functions) do
+			for n,c in pairs(v) do
+				funcs[n]=c
+			end
 		end
 	end
-	
+
 	local news={}
 	os.list_dir(path,"sql",nil,function(event,file)
         if event=='ON_SCAN' then return 32*1024*1024 end
@@ -196,8 +248,8 @@ function oradebug.scan_func_from_plsql(dir)
     end)
 
 	fmt='    %s="%s",'
-	local rows={'--Oracle C Kernel function. Most data is copied from http://orafun.info/\nreturn {'}
-	local src={}
+	local rows={'return {'}
+	
 
 	for k,v in pairs(funcs) do
 		local k1=k:lower()
@@ -212,16 +264,14 @@ function oradebug.scan_func_from_plsql(dir)
 	end
 
 	tmp_cache=funcs
-
+	local rows,src={'return {'},{}
 	for k,v in pairs(funcs) do
 		if v then
 			src[#src+1]={k,v:gsub('"','\\"')}
 		end
 	end
 
-	table.sort(src,function(a,b)
-		return a[1]:lower()<b[1]:lower()
-	end)
+	table.sort(src,function(a,b)return a[1]:lower()<b[1]:lower() end)
 	for k,v in ipairs(src) do
 		cnt[3]=cnt[3]+1
 		rows[#rows+1]=fmt:format(v[1],v[2])
@@ -670,8 +720,9 @@ end
 function oradebug.load_dict()
 	addons={
 		BUILD_DICT={desc='Rebuild the offline help doc, should be executed in RAC environment',func=oradebug.build_dict},
-		FUNC={desc='Extract kernel function. Usage: oradebug func <keyword>',args=1,func=oradebug.find_func},
-		SCAN_FUNCTION={desc='Scan offline PLSQL code and list the mapping C functions. Usage: scan_function <dir>',args=1,func=oradebug.scan_func_from_plsql},
+		FUNC={desc='#Extract kernel function. Usage: oradebug func <keyword>',args=1,func=oradebug.find_func},
+		REP_DESC={desc="#rep",args=3,func=oradebug.rep_func_desc},
+		SCAN_FUNCTION={desc='#Scan offline PLSQL code and list the mapping C functions. Usage: scan_function <dir>',args=1,func=oradebug.scan_func_from_plsql},
 		GET_TRACE={desc='Download current trace file. Usage: oradebug get_trace [file] [<size in MB>]',args=2,func=oradebug.get_trace},
 		SHORT_STACK={desc='Get abridged OS stack',lib='HELP',func=oradebug.short_stack},
 		PROFILE={desc='Sample abridged OS stack. Usage: oradebug profile {<spid> [<samples>] [<interval in sec>]} | <file>',
@@ -961,7 +1012,6 @@ function oradebug.short_stack(stack)
 		env.checkerr(not stack:trim():find('^%u+%-%d+:'),stack)
 		print(stack..'\n')
 	end
-	print(1,stack)
 	local pieces=stack:split('<-',true)
 	local result={}
 	local sep='  '
@@ -1179,7 +1229,9 @@ function oradebug.run(action,args)
 		if name~='_keys' then
 			for k,v in pairs(lib) do
 				for n,d in pairs(v) do
-					rows[#rows+1]={(name=='COMPONENT' or name=='HELP') and name or ('EVENT.'..name),k,n..(d.is_parent and '.*' or ''),d.desc}
+					if d.desc and d.desc:sub(1,1)~='#' then
+						rows[#rows+1]={(name=='COMPONENT' or name=='HELP') and name or ('EVENT.'..name),k,n..(d.is_parent and '.*' or ''),d.desc}
+					end
 				end
 			end
 		end
