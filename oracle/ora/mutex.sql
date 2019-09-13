@@ -158,7 +158,7 @@ SELECT *
 FROM   (SELECT *
         FROM   TABLE(gv$(CURSOR (
                           SELECT /*+ordered use_hash(b)*/
-                                  DISTINCT a.*, b.type, b.to_owner owner, b.to_owner name
+                                  DISTINCT a.*, b.type, b.to_owner owner, b.to_name name
                           FROM   (SELECT userenv('instance') inst_id,
                                          mutex_loc_id,
                                          sql_id,
@@ -177,7 +177,7 @@ FROM   (SELECT *
                                           WHERE  p1text = 'idn'
                                           AND    p2text = 'value'
                                           AND    p3text = 'where'
-                                          AND    nvl(:v1,'x') in('x',''||session_id,sql_id,event)
+                                          AND    nvl(:v1,'x') in('x',''||session_id,sql_id,event,top_level_sql_id)
                                           AND    userenv('instance') = nvl(:V2, userenv('instance')))
                                   GROUP  BY mutex_loc_id, p1, sql_id, event) a,
                                   &OBJ_CACHE b

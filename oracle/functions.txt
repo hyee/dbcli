@@ -7820,6 +7820,7 @@ return {
     kxttclnup="[Kernel Execution] temporary table operations clean up state object",
     kxttisptt="[Kernel Execution] SYS.DBMS_STATS.IS_PRIVATE_TEMP_TABLE(DBMS_STATS_LIB)",
     kxwph="[Kernel Execution] table/tabpart/cluster segment attribute management",
+    kyw='Workload Management(DBMS_WLM)',
     kywmabtpln="SYS.DBMS_WLM.IABORT_WLMPLAN(DBMS_WLM_LIB)",
     kywmadclsfr="SYS.DBMS_WLM.IADD_WLMCLASSIFIERS(DBMS_WLM_LIB)",
     kywmchkpln="SYS.DBMS_WLM.ICHECK_WLMPLAN(DBMS_WLM_LIB)",

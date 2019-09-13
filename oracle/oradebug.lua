@@ -223,7 +223,8 @@ function oradebug.scan_func_from_plsql(dir)
 		        	if news[f] and news[f]<5 and not funcs[f]:find(n,1,true) then
 		        		funcs[f]=(funcs[f]..'/')..n
 		        	elseif not news[f] then
-		        		funcs[f]=n
+		        		local p=(funcs[f] or ''):match('^%[.-%] ?')
+		        		funcs[f]=(p or '') ..n
 		        	end
 		        	cnames[#cnames+1]=f:lower()
 	        		news[f]=(news[f] or 0)+1
@@ -1052,8 +1053,12 @@ function oradebug.profile(spid,samples,interval)
 	local items={}
 	local sub,item
 	local calls,trees=0,0
+	local cnt
 	for line in out:gsub('[\n\r]+%S+>%s+','\n'):gsplit('[\n\r]+%s*') do
-		line=line:gsub('^.-%_%_sighandler%(%)','',1)
+		line,cnt=line:gsub('^.-%_%_sighandler%(%)','',1)
+		if cnt==0 then
+			line,cnt=line:gsub('^.-sspuser%(%)','',1)
+		end
 		table.clear(items)
 		local depth=0
 		for f in line:gmatch("<%-([^%s<%(]+)") do
