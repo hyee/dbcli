@@ -631,7 +631,7 @@ local function load_ext()
 			{'reconfig',"reconfig lkdebug and release the gc locks","oradebug lkdebug -m reconfig lkdebug"},
 			{'-O <object_id> 0 TM','Print the resource details for the object_id','oradebug lkdebug -O 11984883 0 TM'},
 			{'-O <addr1> <addr2> <type>','Print the resource defails from gv$ges_resource','oradebug -g all lkdebug -O 0xd4056fb3 0x6873eeb3 LB'},
-			{'-B <lmdid> <groupid> <bucketidx>','Identify the hot locks on hash buckets',"SELECT * FROM (select 'oradebug lkdebug -B '||lmdid||' '||groupid||' '||bucketidx,waitcnt FROM x$kjrtbcfp ORDER BY waitcnt DESC) WHERE ROWNUM<=100;"},
+			{'-B [con_id] <lmdid> <groupid> <bucketidx>','Identify the hot locks on hash buckets',"SELECT * FROM (select 'oradebug lkdebug -B '||lmdid||' '||groupid||' '||bucketidx,waitcnt FROM x$kjrtbcfp ORDER BY waitcnt DESC) WHERE ROWNUM<=100;"},
 			{'-A <name>','List context',
 			[[oradebug -g all lkdebug -A res
 			  oradebug -g all lkdebug -A lock]]},

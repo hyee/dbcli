@@ -137,7 +137,7 @@ FROM   TABLE(gv$(CURSOR ( --
                   sid,
                   a.event,
                   P1 HASH_VALUE,
-                  decode(trunc(p3 / 4294967296), 0, trunc(p3 / 65536), trunc(p3 / 4294967296)) mutex_loc_id,
+                  decode(trunc(p3 / 4294967296), 0, trunc(p3 / 65536), trunc(p3 / 4294967296)) "Object#/Mutex_LOC_ID",
                   nullif(decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)),0) holder_sid,
                   mod(p2,64436) refs,
                   a.sql_id,
@@ -160,7 +160,7 @@ FROM   (SELECT *
                           SELECT /*+ordered use_hash(b)*/
                                   DISTINCT a.*, b.type, b.to_owner owner, b.to_name name
                           FROM   (SELECT userenv('instance') inst_id,
-                                         mutex_loc_id,
+                                         mutex_loc_id "Object#/Mutex_LOC_ID",
                                          sql_id,
                                          event,
                                          MAX(sample_time) last_time,

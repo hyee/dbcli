@@ -1,6 +1,8 @@
-/*[[Check related information for 'latch: row cache objects' event. Usage: @@NAME [<inst_id>]
+/*[[
+    Check related information for 'latch: row cache objects'/'row cache xxx' event. Usage: @@NAME [<sid>] [<inst_id>]
+    Refer to Doc ID 34609.1
     --[[
-        &V1: default={&instance}
+        &V2: default={&instance}
     --]]
 ]]*/
 SELECT * FROM TABLE(GV$(CURSOR(
@@ -11,9 +13,29 @@ SELECT * FROM TABLE(GV$(CURSOR(
            kqrstgmi cache_get_misses, kqrstmrq updates,l.gets latch_gets, l.misses latch_misses
     FROM   x$kqrst s, v$session ses, v$latch_children l
     WHERE  ses.p1raw = l.addr
-    --AND    ses.p1text = 'cache id'
     AND    l.child# = s.kqrstcln
-    AND    userenv('instance') = nvl(:V1, userenv('instance'))
+    AND    ses.sid = nvl(0+:v1,ses.sid)
+    AND    userenv('instance') = nvl(:V2, userenv('instance'))
 )))
 ORDER  BY sid,latch_addr, subordinate# nulls first;
 
+SELECT * FROM TABLE(GV$(CURSOR(
+    SELECT s.inst_id,
+           s.KQRFPCID cache#,
+           s.KQRFPCNM cache_name,
+           s.KQRFPII1 INST_LOCK_ID1,
+           s.KQRFPII2 INST_LOCK_ID2,
+           h.sid holder_sid,
+           h.sql_id holder_sqlid,
+           h.event holder_event,
+           w.sid waiter_sid,
+           w.sql_id waiter_sqlid,
+           w.event waiter_Event,
+           decode(w.p3,0,'NULL',3,'SHARED',5,'EXCLUSIVE','FAIL TO AQUIRE INST LOCK') req_mode
+    FROM   X$KQRFP s, v$session h, v$session w
+    WHERE  w.p1(+)=s.KQRFPCID and s.KQRFPSES=h.saddr(+)
+    AND    w.p1text='cache_id'
+    AND    greatest(KQRFPMOD, KQRFPREQ, KQRFPIRQ)>0
+    AND    nvl(0+:v1,-1) IN(-1,h.sid,w.sid)
+    AND    userenv('instance') = nvl(:V2, userenv('instance'))
+)));
