@@ -328,12 +328,19 @@ local function load_ext()
 			    3   Level 2 + Dump only processes thought to be in a hang (IN_HANG state)
 			    4   Level 3 + Dump leaf nodes (blockers) in wait chains (LEAF,LEAF_NW,IGN_DMP state)
 			    5   Level 4 + Dump all processes involved in wait chains (NLEAF state)
-			    10  Dump all processes (IGN state)]],
+			    6   Level 5 + Dump errorstacks of processes involved in wait chains
+			    10  Dump all processes (IGN state)
+			 Node State:
+			 * IGN: ignore
+			 * LEAF: A waiting leaf node
+			 * LEAF_NW: A running (using CPU?) leaf node
+			 * NLEAF: An element in a chain but not at the end (not a leaf)
+			 ]],
 			 [[oradebug setmypid
 			    oradebug unlimit
 			    oradebug setinst all
-			    oradebug hanganalyze 5
-			    oradebug -g def dump systemstate 10]]
+			    oradebug -g def hanganalyze 5
+			    oradebug -g def dump systemstate 266]]
 			}
 		},
 		DUMP={

@@ -75,7 +75,7 @@ BEGIN
     t1(10072):='Enable latch recovery area memory protection';
     t1(10076):='Adjust the CBO''s costing of cartesian products';
     t1(10079):='Produce additional SQL*Net tracing';
-    t1(10089):='Disable the CBO''s sorting of indexes';
+    t1(10089):='Disable the CBO''s sorting of indexes which could cause "latch: row cache objects"';
     t1(10095):='Trace messages executed via oradebug';
     t1(10103):='Disable hash join swapping';
     t1(10104):='Dump the internal processing of hash joins to trace';

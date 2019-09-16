@@ -4,7 +4,7 @@ Examples:
     @@NAME gv$active_session_history
     @@NAME "select * from gv$active_session_history where sample_time>sysdate-21"
    --[[
-        @ver: 12.1={dbms_utility} default={dbms_sql2}
+        @ver: 12.1={dbms_utility} default={sys.dbms_sql2}
         @ARGS: 1
    --]]
 ]]*/

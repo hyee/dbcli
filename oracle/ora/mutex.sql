@@ -4,15 +4,15 @@
 
   Mainly used to diagnostic below events:
   =======================================
-  * cursor: mutex X                  
-  * cursor: mutex S                  
-  * cursor: pin X                    
-  * cursor: pin S                    
-  * cursor: pin S wait on X          
-  * library cache: mutex X           
+  * cursor: mutex X - A cursor is being parsed and is trying to get the cursor mutex in eXclusive mode            
+  * cursor: mutex S - A cursor is being parsed and is trying to get the cursor mutex in Share mode                 
+  * cursor: pin X   - A cursor is being parsed and is trying to get the cursor pin in eXclusive mode               
+  * cursor: pin S   - A cursor is being parsed and is trying to get the cursor pin in Share mode                   
+  * cursor: pin S wait on X - A cursor is being parsed and has the cursor pin in Share but another session has it in eXclusive mode
+  * library cache: mutex X - A library cache operation is being performed and is trying to get the library cache mutex in eXclusive mode
   * library cache: bucket mutex X    
   * library cache: dependency mutex X
-  * library cache: mutex S           
+  * library cache: mutex S - A library cache operation is being performed and is trying to get the library cache mutex in Share mode         
 
 
   Example Output:
@@ -137,7 +137,7 @@ FROM   TABLE(gv$(CURSOR ( --
                   sid,
                   a.event,
                   P1 HASH_VALUE,
-                  decode(trunc(p3 / 4294967296), 0, trunc(p3 / 65536), trunc(p3 / 4294967296)) "Object#/Mutex_LOC_ID",
+                  decode(trunc(p3 / 4294967296), 0, trunc(p3 / 65536), trunc(p3 / 4294967296)) "Object#/Mutex_LOC#",
                   nullif(decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)),0) holder_sid,
                   mod(p2,64436) refs,
                   a.sql_id,
@@ -160,7 +160,7 @@ FROM   (SELECT *
                           SELECT /*+ordered use_hash(b)*/
                                   DISTINCT a.*, b.type, b.to_owner owner, b.to_name name
                           FROM   (SELECT userenv('instance') inst_id,
-                                         mutex_loc_id "Object#/Mutex_LOC_ID",
+                                         mutex_loc_id "Object#/Mutex_LOC#",
                                          sql_id,
                                          event,
                                          MAX(sample_time) last_time,
