@@ -1,6 +1,7 @@
 /*[[This script needs SYS access to find out who are pinning the target object. Usage: @@NAME <ALL|LOCK|PIN|KEPT|object_name>]]*/
 SELECT *
-FROM   (SELECT kglnaown owner,
+FROM   TABLE(GV$(CURSOR(
+        SELECT kglnaown owner,
                kglnaobj object_name,
                decode(bitand(kglobflg, 3),
                       0,'NOT LOADED',
@@ -67,7 +68,7 @@ FROM   (SELECT kglnaown owner,
                              57,'SECURITY PROFILE',
                              'INVALID TYPE')) object_type,
                B.osuser,
-               B.INST_ID,
+               A.INST_ID,
                B.SID,
                kglobhs0 + kglobhs1 + kglobhs2 + kglobhs3 + kglobhs4 + kglobhs5 + kglobhs6 sharable_mem,
                kglhdldc loads,
@@ -76,12 +77,10 @@ FROM   (SELECT kglnaown owner,
                kglobpc0 pins,
                decode(kglhdkmk, 0,'NO', 'YES') kept,
                kglhdclt child_latch
-        FROM   SYS.X$KGLPN A, GV$SESSION B, SYS.X$KGLOB C
+        FROM   SYS.X$KGLPN A, V$SESSION B, SYS.X$KGLOB C
         WHERE  A.KGLPNUSE = B.SADDR
-        AND    A.INST_ID = B.INST_ID
-        AND    A.INST_ID = C.INST_ID
         AND    kglobtyp NOT IN (0,55) --exclude cursor and xdb
-        AND    A.KGLPNHDL = C.KGLHDADR)
+        AND    A.KGLPNHDL = C.KGLHDADR)))
 WHERE  CASE nvl(upper(:V1), 'x')
            WHEN 'x'    THEN 1
            WHEN 'ALL'  THEN 1

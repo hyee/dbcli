@@ -179,6 +179,7 @@ function oracle:connect(conn_str)
     end
 
     args=args or self:merge_props({user=usr,password=pwd,url="jdbc:oracle:"..driver..":@"..url,internal_logon=isdba},attrs)
+    if tns_admin then args.url=args.url:replace(tns_admin,tns_admin:gsub('\\','/')) end
     env.checkerr(not args.url:find('oci.?:@') or home,"Cannot connect with oci driver without specifying the ORACLE_HOME environment.")
     self:merge_props(self.public_props,args)
     self:load_config(url,args)

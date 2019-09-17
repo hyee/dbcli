@@ -1,52 +1,102 @@
 /*[[
- Generate delta values based on gv$latch_parent. Usage: @@NAME <options> {[keyword] [<inst_id>]}
-
- Sample Output:
- ==============
- INST_ID       ADDR        NAME                                         *MS   *GETS   *MISSES *SLEEPS *IMMEDIATE_GETS *IMMEDIATE_MISSES *SPIN_GETS
- ------- ---------------- -------------------------------------------- ----- -------- ------- ------- --------------- ----------------- ----------
-       3 0000000060058200 space background task latch                  70.22    75.00   72.00   70.00            4.00                 0       4.00
-       3 000000006005BEC0 Parent latch for dependency tracking             0     1.00       0       0               0                 0          0
-       3 000000006005BF80 sga hash table parent latch                      0     1.00       0       0               0                 0          0
-       3 0000000060043080 post/wait queue                                  0   377.00       0       0          548.00              8.00          0
-       3 000000006005BBC0 fourth Audit Vault latch                         0     1.00       0       0               0                 0          0
-       3 000000006005BA40 second Audit Vault latch                         0     1.00       0       0               0                 0          0
-       3 000000006005C640 global tx hash mapping                           0     1.00       0       0               0                 0          0
-       3 000000006005C7C0 k2q global data latch                            0     4.00       0       0               0                 0          0
-       3 000000006005C700 k2q lock allocation                              0     1.00       0       0               0                 0          0
-       3 000000006005C880 shared pool                                      0 2,000.00   12.00       0               0                 0      12.00
-       3 000000006005CA00 Token Manager                                    0     1.00       0       0               0                 0          0
-       3 000000006005A780 remote tool request latch                        0    25.00       0       0               0                 0          0
-       3 000000006005A480 KDFI Hash Elem Latch                             0     1.00       0       0               0                 0          0
-       3 0000000060059D00 KDMADO action list latch                         0     1.00       0       0               0                 0          0
-       3 0000000060059C40 KDMADO bll latch                                 0     1.00       0       0               0                 0          0
-       3 0000000060059B80 KDMADO latch                                     0     1.00       0       0               0                 0          0
-       3 00000000601047C8 row cache objects                                0     1.00       0       0               0                 0          0
-       3 0000000060059F40 KDCStatHash latch                                0     1.00       0       0               0                 0          0
-       3 000000006005A300 KDFI Buffer Latch                                0     1.00       0       0               0                 0          0
-       3 000000006005A000 Column stats entry latch                         0     1.00       0       0               0                 0          0
+    Generate delta values of latches/mutexes/rowcache. Usage: @@NAME <options> {[keyword] [<inst_id>]}
+    --[[
+      &V2: default={&instance}
+    --]]
+    Sample Output:
+    ==============
+    +----------------------------------------GV$LATCH-----------------------------------------+  +----------------------GV$MUTEX_SLEEP-----------------------+
+    |#  NAME                                         *WAIT     *GETS    *MISSES *SLEEPS *SPINS|  |#  MUTEX_TYPE            LOCATION           *WAIT   *SLEEPS|
+    |- -------------------------------------------- -------- ---------- ------- ------- ------|  |- ------------- -------------------------- -------- -------|
+    |* space background task latch                    3.73ms      11.67    7.78    7.78   0.27|  |* Cursor Pin    kksfbc [KKSCHLFSP2]        783.06us    0.80|
+    |* KJC message pool free list                     2.57ms   3,500.67    8.11   10.20   0.34|  |* Cursor Pin    kksLockDelete [KKSCHLPIN6] 640.09us    0.61|
+    |* messages                                     398.54us  14,585.50  519.71   10.93 508.92|  |* Library Cache kglpndl1  95                 0.21us    0.07|
+    |* active checkpoint queue latch                 61.22us     355.42   66.26    2.55  63.71|  |* Library Cache kglpnal2  91                 0.21us    0.06|
+    |* post/wait queue                                     0  25,203.19   29.44       0  29.44|  +-----------------------------------------------------------+
+    |* KTU in-memory txn table latch                       0  23,541.78    0.13       0   0.14|  +------------------------GV$ROWCACHE------------------------+
+    |* gcs partitioned table hash                          0  23,407.13   23.00       0  23.00|  |#         NAME         *GETS *MISSES *MODS *FLUSHES        |
+    |* enqueue hash chains                                 0  19,601.73    3.02       0   3.02|  |- -------------------- ----- ------- ----- --------        |
+    |* ges group table                                     0  15,089.12    0.07       0   0.07|  |* dc_users             55.32       0     0        0        |
+    |* ges domain table                                    0  14,981.29    0.06       0   0.07|  |* dc_objects           33.40       0     0        0        |
+    |* ASM map operation hash table                        0  12,455.54    0.06       0   0.07|  |* dc_props              3.28       0     0        0        |
+    |* checkpoint queue latch                              0  10,368.56    0.34       0   0.33|  |* dc_rollback_segments  0.94       0     0        0        |
+    |* session allocation                                  0   8,666.25    2.68       0   2.68|  |* dc_tablespaces        0.27       0     0        0        |
+    |* ges cached resource lists                           0   7,414.76    2.15       0   2.15|  |* dc_segments           0.13       0     0        0        |
+    |* shared pool                                         0   6,893.31    0.54       0   0.54|  |* dc_awr_control        0.07       0     0        0        |
+    +-----------------------------------------------------------------------------------------+  +-----------------------------------------------------------+
+    +--------------------------------------------------------------------GV$LATCH_MISSES---------------------------------------------------------------------+
+    |#             NAME                            LOCATION                *NWFAILS *SLEEPS *WTR_SLPS *LONGHOLDS                                             |
+    |- ----------------------------- ------------------------------------- -------- ------- --------- ----------                                             |
+    |* KJC message pool free list    kjcsmpav: allocate a msg buffer              0       0     10.20          0                                             |
+    |* space background task latch   ktsj_grab_task                               0    5.56      7.45          0                                             |
+    |* messages                      ksaamb: after wakeup                         0    3.69      4.50          0                                             |
+    |* messages                      ksarcv                                       0    4.56      3.49          0                                             |
+    |* messages                      ksarcv: after wait                           0    2.68      2.95          0                                             |
+    +--------------------------------------------------------------------------------------------------------------------------------------------------------+
 
 ]]*/
 {
-    sql=[[
-        SELECT inst_id,
-               ADDR,
+    sql={[[ /*grid={topic='GV$LATCH',height=0,order_by='-wait,-gets,-sleeps'}*/
+        SELECT decode(nvl(lower(:V2),'a'),'a','*',inst_id) "#",
                NAME,
-               WAIT_TIME/1000 MS,
-               GETS,
-               MISSES,
-               SLEEPS,
-               IMMEDIATE_GETS,
-               IMMEDIATE_MISSES,
-               SPIN_GETS
-        FROM   gv$latch_parent
+               SUM(WAIT_TIME) Wait,
+               SUM(GETS) GETS,
+               SUM(MISSES) MISSES,
+               SUM(SLEEPS) SLEEPS,
+               SUM(SPIN_GETS) SPINS
+        FROM   gv$latch
         WHERE  (GETS+IMMEDIATE_GETS+MISSES+IMMEDIATE_MISSES+SLEEPS+SPIN_GETS>0 or :V1 is not null)
-        AND    (:V1 is null or lower(NAME) like lower('%&V1%'))
-        AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0') 
+        AND    (:V1 is NULL OR lower(NAME) like lower('%&V1%'))
+        AND    (:V2 IS NULL AND (:snap_cmd is null OR inst_id=userenv('instance')) or :V2 IN(''||INST_ID,'0'))
+        GROUP  BY decode(nvl(lower(:V2),'a'),'a','*',inst_id),NAME
     ]],
-    delta_by="GETS,MISSES,SLEEPS,IMMEDIATE_GETS,IMMEDIATE_MISSES,SPIN_GETS,MS",
+    '|',
+    {
+      [[  /*grid={topic='GV$MUTEX_SLEEP',height=13,order_by='-wait,-sleeps'}*/
+          SELECT decode(nvl(lower(:V2),'a'),'a','*',inst_id) "#",
+                 MUTEX_TYPE,
+                 replace(LOCATION,chr(0)) location,
+                 SUM(WAIT_TIME) Wait,
+                 SUM(SLEEPS) SLEEPS
+          FROM   gv$mutex_sleep
+          WHERE  (sleeps>0 or :V1 is not null)
+          AND    (:V1 is NULL OR lower(MUTEX_TYPE||','||LOCATION) like lower('%&V1%'))
+          AND    (:V2 IS NULL AND (:snap_cmd is null OR inst_id=userenv('instance')) or :V2 IN(''||INST_ID,'0'))
+          GROUP  BY decode(nvl(lower(:V2),'a'),'a','*',inst_id),MUTEX_TYPE,LOCATION
+      ]],
+      '-',
+      [[  /*grid={topic='GV$ROWCACHE',height=13,order_by='-gets,-misses'}*/
+          SELECT decode(nvl(lower(:V2),'a'),'a','*',inst_id) "#",
+                 PARAMETER name,
+                 SUM(GETS+SCANS) GETS,
+                 SUM(GETMISSES+SCANMISSES) MISSES,
+                 SUM(MODIFICATIONS) MODS,
+                 SUM(FLUSHES) FLUSHES
+          FROM   gv$ROWCACHE
+          WHERE  (GETS+SCANS>0 or :V1 is not null)
+          AND    (:V1 is NULL OR lower(PARAMETER) like lower('%&V1%'))
+          AND    (:V2 IS NULL AND (:snap_cmd is null OR inst_id=userenv('instance')) or :V2 IN(''||INST_ID,'0'))
+          GROUP  BY decode(nvl(lower(:V2),'a'),'a','*',inst_id),PARAMETER
+      ]]
+    },
+    '-',
+    [[ /*grid={topic='GV$LATCH_MISSES',order_by='-WTR_SLPS,-sleeps,-NWFAILS'}*/
+        SELECT decode(nvl(lower(:V2),'a'),'a','*',inst_id) "#",
+               PARENT_NAME NAME,
+               location,
+               SUM(NWFAIL_COUNT) NWFAILS,
+               SUM(SLEEP_COUNT) SLEEPS,
+               SUM(WTR_SLP_COUNT) WTR_SLPS,
+               SUM(LONGHOLD_COUNT) LONGHOLDS
+        FROM   gv$latch_misses a
+        WHERE  (NWFAIL_COUNT+SLEEP_COUNT+WTR_SLP_COUNT+LONGHOLD_COUNT>0 or :V1 is not null)
+        AND    (:V1 is NULL OR lower(PARENT_NAME||','||location) like lower('%&V1%'))
+        AND    (:V2 IS NULL AND (:snap_cmd is null OR inst_id=userenv('instance')) or :V2 IN(''||INST_ID,'0'))
+        GROUP  BY decode(nvl(lower(:V2),'a'),'a','*',inst_id),location,PARENT_NAME
+    ]],
+    },
+    delta_by="GETS,MISSES,SLEEPS,SPINS,WAIT,NWFAILS,SLEEPS,WTR_SLPS,LONGHOLDS,MODS,FLUSHES",
     set_ratio='off',
-    order_by="-ms",
-    group_by="inst_id,addr,name",
-    top_by="name"
+    group_by="#,name,mutex_type,location",
+    column_formatter={USMHD2='wait'}
 }

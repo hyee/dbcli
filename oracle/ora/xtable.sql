@@ -2,6 +2,7 @@
 	--[[
 		@ARGS: 1
 		@ver: 12.1={dbms_utility} default={sys.dbms_sql2}
+		@CHECK_ACCESS_DBA: dba_tab_cols={dba_tab_cols} default={all_tab_cols}
 	--]]
 ]]*/
 set feed off
@@ -23,7 +24,7 @@ DECLARE
     counter  PLS_INTEGER := 0;
 BEGIN
     dbms_output.enable(NULL);
-    FOR R IN (SELECT regexp_replace(view_name, '^G?V_?\$', 'V$') n
+    FOR R IN (SELECT distinct regexp_replace(view_name, '^G?V_?\$', 'V$') n
               FROM   v$fixed_view_definition
               WHERE  ( regexp_like(substr(view_definition, 1, 3999) || ' ', '\W' || REPLACE(:V1, '$', '\$') || '\W', 'i') 
               	    OR upper(:V1) IN(view_name,regexp_replace(view_name, '^G?V_?\$', 'V$')))
@@ -70,7 +71,13 @@ BEGIN
             recs(counter) := SYS.ODCICOLINFO(r.n, alia, tab, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
         END LOOP;
     END LOOP;
-    OPEN :cur FOR SELECT TableSchema VIEW_NAME,TableName COLUMN_NAME,ColName Source FROM TABLE(recs);
+    OPEN :cur FOR 
+    SELECT TableSchema VIEW_NAME,b.column_id "#",TableName COLUMN_NAME,ColName Source 
+    FROM TABLE(recs) a,&CHECK_ACCESS_DBA b
+    WHERE b.owner='SYS'
+    AND   b.table_name=regexp_replace(a.TableSchema,'^(G?V)\$','\1_$')
+    AND   b.column_name=a.TableName
+    ORDER BY b.column_id;
 END;
 /
 select * from v$fixed_view_definition
