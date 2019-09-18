@@ -1,7 +1,8 @@
 /*[[Show library cache objects over the average
     Refer to : http://www.ixora.com.au/scripts/
 ]]*/
-SELECT * FROM TABLE(GV$(CURSOR(
+SELECT * 
+FROM   TABLE(GV$(CURSOR(
     SELECT /*+ ordered */
            b.inst_id, l.child# latch#, o.kglnaobj object_name, l.sleeps
     FROM   (SELECT COUNT(*) latches, AVG(sleeps) sleeps FROM v$latch_children WHERE NAME = 'library cache') a,
