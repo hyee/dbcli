@@ -22,10 +22,26 @@ Parameters
     _parallel_load_balancing: defaults to true, 'false' to allocate PX slaves across all instances in round-robin mode without measuring the workload balance
     _lm_res_tm_hash_bucket/_lm_res_hash_bucket/_lm_share_lock_opt/_ksi_clientlocks_enabled: d improving the values can reduce "latch: ges resource hash list" events(Bug.27528038/29244263)
     _enqueue_hash_chain_latches: defaults to cpu_count, improving the values can reduce "latch: enqueue hash chains" events if not pending on some object(Bug.23589928)
+    _px_adaptive_dist_method_threshold: controls the actual distribution method of adaptive distribution, default as DOP*2
     
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
     
-    
+Hints:
+    OPT_ESTIMATE:
+        * join:  OPT_ESTIMATE([<QB>,] join, (alias1,alias2), min|max|rows|scale_rows=n)
+        * index: OPT_ESTIMATE([<QB>,] index_filter|index_scan|nlj_index_scan <table_alias>, <index_name>, min|max|rows|scale_rows=n)
+        * nlj  : OPT_ESTIMATE([<QB>,] nlj_index_scan, <table_alias>(<driving_table_alias>), <index_name>, min|max|rows|scale_rows=n)
+        * table: OPT_ESTIMATE([<QB>,] table,<table_alias>,min|max|rows|scale_rows=n)
+        * group: OPT_ESTIMATE([<QB>,] group_by, min|max|rows|scale_rows=n)
+        * having:OPT_ESTIMATE([<QB>,] having, min|max|rows|scale_rows=n)
+        * Qblock:OPT_ESTIMATE([<QB>,] query_block, min|max|rows|scale_rows=n)
+        * list:
+            SELECT hints,MAX(sql_id) keep(dense_rank last order by child_number) sample_sql_id
+            FROM   TABLE(gv$(CURSOR (SELECT sql_id, child_number,
+                                            regexp_replace(regexp_replace(regexp_replace(hint_text, '=[\.0-9]+', '=<number>'),'@\S+','[<@QB>]'),'"\S+"','<OBJ_NAME>') hints
+                                     FROM   V$sql_reoptimization_hints)))
+            GROUP BY hints;
+           
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=/u01/app/oracle/product/18.0.0.0/dbhome_1/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';

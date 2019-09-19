@@ -32,17 +32,18 @@ ora _find_object "&V1" 1
 SELECT * FROM (
 	SELECT /*+ordered use_nl(o)*/ *
 	FROM TABLE(GV$(CURSOR(
-		SELECT inst_id,object_name,regexp_substr(object_type,'\S+') object_type,
-			   sum(sql_execs) sql_execs,sum(invalids) invalids,max(kept) kept,max(MARKHOT) MARKHOT,
+		SELECT inst_id,object_name,object_type,
+		       sum(decode(SQL_SEQ,1,execs)) execs,
+			   sum(decode(SQL_SEQ,1,invalids)) invalids,
+			   max(kept) kept,max(MARKHOT) MARKHOT,
 			   count(distinct sql_id) sqls,
-			   regexp_replace(listagg(decode(sign(100-sql_seq),1,sql_id),',') within group(order by sql_id),'([^,]{13,})(,\1)+','\1') sql_ids
+			   sum(sql_execs) sql_execs,
+			   listagg(decode(seq,1,decode(sign(100-sql_seq),1,sql_id)),',') within group(order by sql_id) sql_ids
 		FROM (
 			SELECT /*+ ordered use_hash(d) use_hash(c) no_expand*/
-				   distinct
 			       o.inst_id,
 			       o.kglnaown || '.' || o.kglnaobj OBJECT_NAME,
-			       o.kglobtyp type#,
-			       decode(o.kglobtyp, 0, 'NEXT OBJECT', 1, 'INDEX', 2, 'TABLE', 3, 'CLUSTER',
+			       regexp_substr(decode(o.kglobtyp, 0, 'NEXT OBJECT', 1, 'INDEX', 2, 'TABLE', 3, 'CLUSTER',
 		                          4, 'VIEW', 5, 'SYNONYM', 6, 'SEQUENCE',
 		                          7, 'PROCEDURE', 8, 'FUNCTION', 9, 'PACKAGE',
 		                          11, 'PACKAGE BODY', 12, 'TRIGGER',
@@ -76,23 +77,32 @@ SELECT * FROM (
 		                          150, 'HIERARCHY',
 		                          151, 'ATTRIBUTE DIMENSION',
 		                          152, 'ANALYTIC VIEW',
-		                         'UNDEFINED') object_type,
-			       o.kglhdexc sql_execs,
+		                         'UNDEFINED'),'\S+') object_type,
+			       o.kglhdexc execs,
 			       o.KGLHDIVC invalids,
 			       DECODE(o.KGLHDKMK,0,'NO','YES') KEPT,
 			       o.KGLOBPROP MARKHOT,
 			       c.KGLOBT03 SQL_ID,
-			       dense_rank() over(partition by o.kglnaown,o.kglnaobj order by c.KGLOBT03 nulls last) SQL_SEQ
-			FROM   sys.x$kglob o, sys.x$kgldp d, sys.x$kglcursor c
+			       c.KGLOBT05 sql_execs,
+			       dense_rank() over(partition by o.kglnahsh,o.kglhdadr order by c.KGLOBT03 nulls last) SQL_SEQ,
+			       row_number() over(partition by o.kglnaown,o.kglnaobj,c.KGLOBT03 order by 1) SEQ
+			FROM   sys.x$kglob o, 
+			       (SELECT DISTINCT kglrfhsh,kglrfhdl,kglhdpar,kglnahsh 
+			       	FROM sys.x$kgldp k, x$kglxs a
+			       	WHERE  k.kglhdadr = a.kglhdadr
+                    AND    k.kgldepno = a.kglxsdep) d, 
+			        sys.x$kglcursor c
 			WHERE  o.kglobtyp NOT IN(0,55)
 			AND    o.kglnahsh = d.kglrfhsh(+)  
 			AND    o.kglhdadr = d.kglrfhdl(+)
 			AND    d.kglhdpar = c.kglhdpar(+)
 			AND    d.kglnahsh = c.kglnahsh(+)
 			AND    o.kglnaown IS NOT NULL
+			AND    o.kglhdexc>0
+			AND    c.kglhdnsp(+) = 0 
 			AND    (:object_name IS NULL OR o.kglnaown=:object_owner and o.kglnaobj=:object_name)
 			AND    userenv('instance') = nvl(:V2, userenv('instance'))
 		)
-	GROUP BY inst_id,object_name,regexp_substr(object_type,'\S+') ))) a
-	ORDER BY sql_execs desc,OBJECT_NAME,OBJECT_TYPE)
+	GROUP BY inst_id,object_name,object_type ))) a
+	ORDER BY execs desc,OBJECT_NAME,OBJECT_TYPE)
 WHERE ROWNUM<=50

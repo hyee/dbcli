@@ -3151,6 +3151,7 @@ return {
     kdrprqi="[Kernel Data Repair] SYS.DBMS_REPAIR.REBUILD_SHC_INDEX(DBMS_REPAIR_LIB)",
     kdrpsc="[Kernel Data Repair] SYS.DBMS_REPAIR.SKIP_CORRUPT_BLOCKS(DBMS_REPAIR_LIB)",
     kds="[Kernel Data layer Seek/Scan] ",
+    kdsirsf="[Kernel Data layer Seek/Scan] Initialize Row Source",
     kdsc="[Kernel Data layer Seek/Scan] cluster",
     kdscgr="[Kernel Data layer Seek/Scan] cluster table scan",
     kdse="[Kernel Data layer Seek/Scan] extent",
