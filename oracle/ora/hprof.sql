@@ -59,7 +59,12 @@ BEGIN
                 EXCEPTION WHEN OTHERS THEN
                     raise_application_error(-20001,'Error on executing "SYS.DBMS_HPROF.start_profiling" on directory "'||dir||'": '||sqlerrm);
                 END;
-                EXECUTE IMMEDIATE 'BEGIN ' || regexp_replace(:V3, ';\s*$') || ';END;';
+                BEGIN
+                    EXECUTE IMMEDIATE 'BEGIN ' || regexp_replace(:V3, ';\s*$') || ';END;';
+                EXCEPTION WHEN OTHERS THEN
+                    SYS.DBMS_HPROF.stop_profiling;
+                    RAISE;
+                END;
                 SYS.DBMS_HPROF.stop_profiling;
             END IF;
 

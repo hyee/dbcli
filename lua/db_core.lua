@@ -91,11 +91,14 @@ function db_Types:load_sql_types(className)
         [5]={getter='getBlob',setter='setBytesForBlob', --setBytes
              handler=function(result,action,conn)
                 if action=="get" then
+                    local israw=cfg.get("CONVERTRAW2HEX")=='on'
                     local succ,len=pcall(result.length,result)
                     if not succ then return nil end
-                    local str=result:getBytes(1,math.min(255,len))
+                    local str=result:getBytes(1,israw and len or math.min(255,len))
                     result:free()
-                    str=string.rep('%2X',#str):format(str:byte(1,#str)):gsub(' ','0')
+                    if not israw then
+                        str=string.rep('%2X',#str):format(str:byte(1,#str)):gsub(' ','0')
+                    end
                     return str
                 else
                     return java.cast(result,'java.lang.String'):getBytes()
@@ -1368,6 +1371,7 @@ function db_core:__onload()
     cfg.init("ASYNCEXP",true,set_param,"db.export","Detemine if use parallel process for the export(SQL2CSV and SQL2FILE)",'true,false')
     cfg.init("SQLERRLINE",'off',nil,"db.core","Also print the line number when error SQL is printed",'on,off')
     cfg.init("NULL","",nil,"db.core","Define the display value for NULL value")
+    cfg.init("ConvertRAW2Hex","on",nil,"db.core","Convert raw data to Hex(text) format","on,off")
     cfg.init("CSVSEP",",",set_param,"db.core","Define the default separator between CSV fields.")
     cfg.init("READONLY",'off',set_param,"db.core","When set to on, makes the database connection read-only.",'on,off')
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)

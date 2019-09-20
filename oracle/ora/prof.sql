@@ -29,8 +29,13 @@ BEGIN
         ELSE
             c      := 'DBCLI_'||round(dbms_random.value(1e5,1e6));
             run_id := SYS.DBMS_PROFILER.start_profiler(c);
-            EXECUTE IMMEDIATE 'BEGIN '||regexp_replace(:V1,';\s*$')||';END;';
-            run_id := SYS.DBMS_PROFILER.stop_profiler;
+            BEGIN
+                EXECUTE IMMEDIATE 'BEGIN '||regexp_replace(:V1,';\s*$')||';END;';
+                run_id := SYS.DBMS_PROFILER.stop_profiler;
+            EXCEPTION WHEN OTHERS THEN
+                run_id := SYS.DBMS_PROFILER.stop_profiler;
+                RAISE;
+            END;
             select max(runid) into run_id from PLSQL_PROFILER_RUNS where RUN_COMMENT=c;
             dbms_output.put_line('Runid is '||run_id);
         END IF;

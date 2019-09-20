@@ -1171,7 +1171,7 @@ function env.load_data(file,isUnpack,callback)
     end
 end
 
-function env.save_data(file,txt,maxsize)
+function env.save_data(file,txt,maxsize,is_Binary)
     if not file:find('[\\/]') then file=env.join_path(env.WORK_DIR,"data",file) end
     local is_pack
     if type(txt)=='table' then
@@ -1180,7 +1180,7 @@ function env.save_data(file,txt,maxsize)
         is_pack=true
     end
     env.checkerr(not maxsize or maxsize>=#txt,"File "..file..' is too large('..#txt..' bytes), operation is cancelled!')
-    local f=io.open(file,(file:match('%.dat$') or is_pack) and 'wb' or 'w')
+    local f=io.open(file,(file:match('%.dat$') or is_pack or is_Binary==true) and 'wb' or 'w')
     if not f then
         env.raise("Unable to save "..file)
     end
@@ -1189,10 +1189,10 @@ function env.save_data(file,txt,maxsize)
     return file
 end
 
-function env.write_cache(file,txt)
+function env.write_cache(file,txt,is_Binary)
     local dest=env._CACHE_PATH..file
     file=dest
-    local f=io.open(file,'w')
+    local f=io.open(file,'w'..(is_Binary==true and 'b' or ''))
     if not f then
         env.raise("Unable to save "..file)
     end

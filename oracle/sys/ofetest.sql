@@ -3,6 +3,7 @@
     -env  : only test the parameters
     -ofe  : only test the fix controls
     --[[
+        @ARGS  : 1
         &typ   : default={all} ofe={ofe} env={env}
         &filter: default={1=2} f={}
         &batch : default={1} batch={}
@@ -45,6 +46,7 @@ DECLARE
         AND    ksppity IN (1, 2, 3)
         AND    LENGTH(kc.PVALUE_QKSCESEROW)<=20
         AND    bitand(ksppiflg / 256, 1)=1
+        AND    substr(pi.ksppinm,1,2)!='__'
         AND    pi.ksppinm!='optimizer_features_enable'
         AND    '&typ' IN('all','env')
         ORDER  BY 1,2}';
@@ -111,6 +113,7 @@ BEGIN
                           optimizer_feature_enable DESC)
         WHERE  rownum < 2;
     END IF;
+    
     EXECUTE IMMEDIATE 'alter session set current_schema=' || to_schema;
     DELETE plan_table;
     --DBMS_OUTPUT.PUT_LINE(replace(sql_text,'@dbcli_stmt_id@','BASELINE'));

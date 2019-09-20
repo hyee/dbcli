@@ -1,5 +1,5 @@
 /*[[
-	Show object's SQL execution count. Usage: @@NAME [<object_name>] [<inst_id>]
+	Show object's SQL execution count. Usage: @@NAME [<object_name>|<sql_id>] [<inst_id>]
 	
 	Sample Output:
 	===============
@@ -91,18 +91,20 @@ SELECT * FROM (
 			       	FROM sys.x$kgldp k, x$kglxs a
 			       	WHERE  k.kglhdadr = a.kglhdadr
                     AND    k.kgldepno = a.kglxsdep) d, 
-			        sys.x$kglcursor c
+			        sys.x$kglob c
 			WHERE  o.kglobtyp NOT IN(0,55)
 			AND    o.kglnahsh = d.kglrfhsh(+)  
 			AND    o.kglhdadr = d.kglrfhdl(+)
 			AND    d.kglhdpar = c.kglhdpar(+)
 			AND    d.kglnahsh = c.kglnahsh(+)
 			AND    o.kglnaown IS NOT NULL
-			AND    o.kglhdexc>0
+			--AND    o.kglhdexc>0
 			AND    c.kglhdnsp(+) = 0 
 			AND    (:object_name IS NULL OR o.kglnaown=:object_owner and o.kglnaobj=:object_name)
+			AND    (:object_name IS NOT NULL OR :V1 IS NULL OR :v1 IN (c.KGLOBT03) )
 			AND    userenv('instance') = nvl(:V2, userenv('instance'))
 		)
-	GROUP BY inst_id,object_name,object_type ))) a
+	GROUP BY inst_id,object_name,object_type
+	HAVING sum(decode(SQL_SEQ,1,execs))>0 ))) a
 	ORDER BY execs desc,OBJECT_NAME,OBJECT_TYPE)
 WHERE ROWNUM<=50
