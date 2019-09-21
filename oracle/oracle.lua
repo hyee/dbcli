@@ -128,6 +128,7 @@ function oracle:connect(conn_str)
             if found then
                 props[#props]=tns_admin and ('TNS_ADMIN='..tns_admin) or nil
                 conn_desc=table.concat(props,'?')
+                url=conn_desc
             end
         end
         
@@ -197,6 +198,7 @@ function oracle:connect(conn_str)
         end
         sqlplustr=string.format("%s/%s@%s%s",args.user,pwd,args.url:match("@(.*)$"),args.internal_logon and " as "..args.internal_logon or "")
     end
+    sqlplustr=sqlplustr:gsub("?%S+",'')
     
     local prompt=args.jdbc_alias or url:gsub('.*@','')
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end

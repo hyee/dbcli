@@ -4,7 +4,6 @@ local read=reader
 local event=env.event and env.event.callback or nil
 local db_core=env.class()
 local db_Types={}
-
 db_core.NOT_ASSIGNED='__NO_ASSIGNMENT__'
 function db_Types:set(typeName,value,conn)
     local typ=self[typeName]
@@ -563,7 +562,7 @@ function db_core:parse(sql,params,prefix,prep)
             bind_info[#bind_info+1]=args
             return '?'
         end)
-    if not prep then prep=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007) end
+    if not prep then prep=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007,1) end
 
     self:check_params(sql,prep,bind_info,params)
 
@@ -1162,16 +1161,17 @@ function db_core:sql2file(filename,sql,method,ext,...)
     file:close()
     if cfg then cfg.set("SQLTIMEOUT",86400) end
     if type(result)=="table" then
-        for idx,rs in pairs(rs) do
-            if type(rs)=="userdata" then
+        for idx,rs1 in pairs(rs) do
+            if type(rs1)=="userdata" then
                 local file=filename..tostring(idx)
                 print("Start to extract result into "..file)
-                clock,counter=os.timer(),loader[method](loader,rs,file,...)
+                clock,counter=os.timer(),loader[method](loader,rs1,file,...)
                 print_export_result(file,clock,counter)
             end
         end
     else
         print("Start to extract result into "..filename)
+        print(result)
         clock,counter=os.timer(),loader[method](loader,result,filename,...)
         print_export_result(filename,clock,counter)
     end

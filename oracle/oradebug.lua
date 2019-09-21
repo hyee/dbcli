@@ -741,13 +741,13 @@ function oradebug.load_dict()
         REP_DESC={desc="#rep",args=3,func=oradebug.rep_func_desc},
         SCAN_FUNCTION={desc='#Scan offline PLSQL code and list the mapping C functions. Usage: scan_function <dir>',args=1,func=oradebug.scan_func_from_plsql},
         GET_TRACE={desc='Download current trace file. Usage: oradebug get_trace [file] [<size in MB>]',args=2,func=oradebug.get_trace},
-        SHORT_STACK={desc='Get abridged OS stack. Usage: oradebug short_stack [<short_stack_string>|<spid>]',lib='HELP',func=oradebug.short_stack},
+        SHORT_STACK={desc='Get abridged OS stack. Usage: oradebug short_stack [<short_stack_string>|<sid>]',lib='HELP',func=oradebug.short_stack},
         PMEM={desc="Show process memory detail. Usae: oradebug pmen <sid>",args=1,func=oradebug.pmem},
-        PROFILE={desc='Sample abridged OS stack. Usage: oradebug profile {<spid> [<samples>] [<interval in sec>]} | <file>',
+        PROFILE={desc='Sample abridged OS stack. Usage: oradebug profile {<sid> [<samples>] [<interval in sec>]} | <file>',
                 args=4,func=oradebug.profile,
                 usage=[[
                     Profile abridged OS stack. The profile efficiency heavily relies on the network latency.
-                    Usage: oradebug profile {<spid> [<samples>] [<interval in sec>]} | <file>
+                    Usage: oradebug profile {<sid> [<samples>] [<interval in sec>]} | <file>
                     
                     Parameters:
                     ===========
@@ -760,7 +760,7 @@ function oradebug.load_dict()
                       * oradebug profile 142308 1000 0
                       * oradebug profile D:\dbcli\cache\imtst_srv4\shortstacks_142308.log 
                 ]]},
-        KILL={desc="Kill a specific process within the same instance(event immediate crash). Usage: oradebug kill <spid>",func=oradebug.kill}   
+        KILL={desc="Kill a specific process within the same instance(event immediate crash). Usage: oradebug kill <sid>",func=oradebug.kill}   
     }
     local undoc={
         BUILDINFO={desc='Print the ADE label used to build the "oracle" binary'},
@@ -1027,7 +1027,7 @@ end
 function oradebug.short_stack(stack)
     if not stack or tonumber(stack) then
         if tonumber(stack) then
-            get_output("SETOSPID "..stack,true)
+            oradebug.attach_sid(stack)
         end
         stack=get_output("short_stack",true)[1]
         env.checkerr(not stack:trim():find('^%u+%-%d+:'),stack)
@@ -1043,30 +1043,34 @@ function oradebug.short_stack(stack)
     print(table.concat(result,'\n'))
 end
 
-function oradebug.attach_spid(spid)
-    spid=tonumber(spid)
-    env.checkerr(spid,"Please input a valid SPID(in v$process).")
-    local result=get_output("SETOSPID "..spid,true)[1]
-    env.checkerr(not result:trim():find('^%u+%-%d+:'),result)
-    return spid
+function oradebug.get_pid(sid)
+    sid=tonumber(sid)
+    env.checkerr(sid,"Please input the valid SID.")
+    local pid=db:get_value([[select pid from v$session a,v$process b where a.paddr=b.addr and a.sid=:1]],{sid})
+    env.checkerr(tonumber(pid),'No PID found for the specific sid.')
+    return pid
 end
 
-function oradebug.profile(spid,samples,interval)
+function oradebug.attach_sid(sid)
+    get_output("SETORAPID ".. oradebug.get_pid(sid))
+end
+
+function oradebug.profile(sid,samples,interval)
     local out,log
-    local typ,file=os.exists(spid)
+    local typ,file=os.exists(sid)
     if typ then
         out=env.load_data(file,false)
         file=file:gsub('.*[\\/]',''):gsub('%..-$','')
-    elseif spid and not tonumber(spid) then
-        env.raise('No such file, please input a valid file path or a spid.')
+    elseif sid and not tonumber(sid) then
+        env.raise('No such file, please input a valid file path or a sid.')
     else
-        spid=oradebug.attach_spid(spid)
-        file=spid
+        sid=oradebug.attach_sid(sid)
+        file=sid
         samples=tonumber(samples) or 100
         interval=tonumber(interval) or 0.1
         get_output("unlimit",true)
         out=sqlplus:get_lines("oradebug short_stack",interval*1000,samples)
-        log=env.write_cache("shortstacks_"..spid..".log",out)
+        log=env.write_cache("shortstacks_"..sid..".log",out)
     end
     local c,funcs,result=0,{},{}
     local stacks={}
@@ -1077,10 +1081,7 @@ function oradebug.profile(spid,samples,interval)
     for line in out:gsub('[\n\r]+%S+>%s+','\n'):gsplit('[\n\r]+%s*') do
         line,cnt=line:gsub('^.-%_%_sighandler%(%)','',1)
         if cnt==0 then
-            line,cnt=line:gsub('^.<-kernel%s*<-','<-',1)
-            if cnt==0 then
-                line,cnt=line:gsub('^.-sspuser%(%)','',1)
-            end
+            line,cnt=line:gsub('^.-sspuser%(%)','',1)
         end
         table.clear(items)
         local depth=0
@@ -1176,8 +1177,8 @@ function oradebug.profile(spid,samples,interval)
     print("Analyze result is saved to",env.write_cache("printstack_"..file..".log",out:strip_ansi()))
 end
 
-function oradebug.kill(spid)
-    oradebug.attach_spid(spid)
+function oradebug.kill(sid)
+    oradebug.attach_sid(sid)
     result=get_output("event immediate crash",true)
     print(table.concat(result,'\n'))
 end

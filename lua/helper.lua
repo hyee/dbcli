@@ -85,9 +85,9 @@ end
 
 function helper.colorful(helps,target)
     if helps:find('^[Nn]o ') then return helps end
-
+    target=target:gsub(',.+','')
     helps=helps:gsub('^%s*\n',''):gsub('\t','    '):gsub('^(%s*[^\n\r]+)[Uu]sage[: ]+(@@NAME)([^\r\n]*)',function(prefix,name,line)
-        local s=prefix..'\n'..string.rep('=',#(prefix:trim())+#target+2)..'\n$USAGECOLOR$Usage:$COMMANDCOLOR$ '..name..'$NOR$'
+        local s=prefix..'\n'..string.rep('=',#(prefix:trim())+#target+2)..'\n$USAGECOLOR$Usage:$COMMANDCOLOR$ '..name:gsub(',.+','')..'$NOR$'
         return s..line:gsub('([<>{}%[%]|]+)','$COMMANDCOLOR$%1$NOR$'):gsub('(%-%w+)','$PROMPTSUBCOLOR$%1$NOR$')
     end)
     local spaces=helps:match("( *)%S") or ""
@@ -259,7 +259,8 @@ function helper.helper(cmd,...)
                 table.append(rows[#rows],(type(v.MULTI)=="function" or type(v.MULTI)=="string") and "Auto" or v.MULTI and 'Yes' or 'No',v.FILE)
             end
             local desc=v.DESC and v.DESC:gsub("^[%s#]+","") or " "
-            desc=desc:gsub("([Uu]sage)(%s*:%s*)(@@NAME)","$USAGECOLOR$Usage:$NOR$ "..k:lower()):gsub("@@NAME","$USAGECOLOR$"..k:lower().."$NOR$")
+            local k1=k:gsub(',.+','')
+            desc=desc:gsub("([Uu]sage)(%s*:%s*)(@@NAME)","$USAGECOLOR$Usage:$NOR$ "..k1:lower()):gsub("@@NAME","$USAGECOLOR$"..k1:lower().."$NOR$")
             table.insert(rows[#rows],desc)
             if (v.COLOR or "")~="" then
                 rows[#rows][1]=ansi.mask(v.COLOR,rows[#rows][1])

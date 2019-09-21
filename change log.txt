@@ -1,3 +1,5 @@
+2019-09-20: + oracle: new commands 'sys execs/hwm' and 'oradebug pmem'
+            + public: new option 'set convertRaw2Hex'
 2019-09-09: + oracle: new command 'oradebug func <keyword>' to extract kernel function
 2019-09-08: + oracle: new command 'oradebug profile <spid>' to sample target spid with specific interval and count
             + oracle: new commands 'sys fcha/channel'

@@ -1,5 +1,8 @@
 /*[[Show main cursor data block heap sizes and their contents. Usage: @@NAME <sql_id>
     Author:      Tanel Poder(curheaps.sql)
+    --[[
+      @ALIAS: curheaps
+    --]]
 ]]*/
 
 SET FEED OFF

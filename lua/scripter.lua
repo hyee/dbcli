@@ -510,7 +510,8 @@ function scripter:helper(_,cmd,search_key)
             end
             if (not search_key or found>0) and k:sub(1,2)~='./' and k:sub(1,1)~='_' then
                 if search_key or not (v.path or ""):find('[\\/]test[\\/]') then
-                    desc=desc:gsub("([Uu]sage)(%s*:%s*)(@@NAME)","$USAGECOLOR$Usage:$NOR$ %3"):gsub("@@NAME","@@NAME "..k:lower().."$NOR$")
+                    local k1=k:gsub(',.+','')
+                    desc=desc:gsub("([Uu]sage)(%s*:%s*)(@@NAME)","$USAGECOLOR$Usage:$NOR$ %3"):gsub("@@NAME","@@NAME "..k1:lower().."$NOR$")
                     if desc and desc~="" then
                         table.insert(rows[1],k)
                         table.insert(rows[2],desc)
