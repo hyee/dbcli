@@ -156,7 +156,7 @@ function oradebug.rep_func_desc(comp,prefix,org)
 
     tmp_cache=funcs
     local fmt='    %s="%s",'
-    local rows,src={'return {'},{}
+    local rows,src={'--Some data is copied from http://orafun.info/\nreturn {'},{}
     for k,v in pairs(funcs) do
         if v then
             src[#src+1]={k,v:gsub('"','\\"')}
@@ -312,7 +312,7 @@ local function load_ext()
         WAIT_EVENT={'Trace wait event',
             [[oradebug session_event wait_event["log file sync"|"log file sequential read"] trace("shortstack: %s\n", shortstack())
               oradebug session_event wait_event["log file sync"] crash()
-              oradebug session_event wait_event[all] trace(''event="%" ela=% p1=% p2=% p3=%\n'', evargs(5), evargn(1), evargn(2), evargn(3), evargn(4))
+              oradebug session_event wait_event[all] trace('event="%", p1=%, p2=%, p3=%, ela=%, tstamp=%, Stk=%\n', evargs(5), evargn(2), evargn(3),evargn(4), evargn(1), evargn(7),shortstack())
               oradebug event wait_event["latch: ges resource hash list"] {wait: minwait=8000} trace(''event "%", p1 %, p2 %, p3 %, wait time % Stk=%'', evargs(5), evargn(2), evargn(3),evargn(4), evargn(1), shortstack())
             ]]
         },
@@ -820,10 +820,14 @@ function oradebug.load_dict()
         KSTDUMPCURPROC={desc='<Event ID>: Dumps the KST records that the current process has generated fro the specified event to the process tracefile',args=1},
         PATCH={desc='Patch utility interface',args=1,usage='Refer to bug 9908867/13827934'},
         PDUMP={desc='{interval=<sec> ndumps=<count> [pids|orapids|orapnames=...] <command> <args>}: Produce a periodic dump',
-              args=3,usage=[[oradebug pdump interval=5 ndumps=3 hanganalyze 3 
-                             oradebug pdump interval=5 ndumps=3 short_stack 0
-                             oradebug pdump ndumps=5 orapids=1,2 errorstack 2
-                             oradebug pdump interval=10 ndumps=2 orapnames=dbw0,smon errorstack 2]]},
+              args=3,usage=[[
+                             Usage: oradebug pdump interval=<sec> ndumps=<count> [pids|orapids|orapnames=...] <command> <args>}
+                             
+                             Examples:
+                                 oradebug pdump interval=5 ndumps=3 hanganalyze 3 
+                                 oradebug pdump interval=5 ndumps=3 short_stack 0
+                                 oradebug pdump ndumps=5 orapids=1,2 errorstack 2
+                                 oradebug pdump interval=10 ndumps=2 orapnames=dbw0,smon errorstack 2]]},
         PGA_DETAIL_GET={desc='Produce a breakdown of PGA memory contents for a specific Oracle Pid'},
         PLSQL_STACK={desc='Dump PLSQL stacks when a deadlock is seen'},
         PROT={desc=' {NONE|ALL|RDONLY} address len granule_size: allows one to adjust memory protection on shared memory.',args=1},
