@@ -5,7 +5,7 @@
     Example:
     ========
     SQL> @@NAME 0000000063778CF8
-    TABLE_NAME    COLUMN_NAME   REFERERENCES
+    TABLE_NAME    COLUMN_NAME   REFS
     ------------- ------------- ---------------------------------------------------------------------------
     X$KGLDP       KGLHDPAR      GV$ACCESS,GV$OBJECT_DEPENDENCY
     X$KGLLK       KGLHDPAR      GV$ACCESS,GV$LIBCACHE_LOCKS,GV$OPEN_CURSOR

@@ -258,13 +258,16 @@ function trace.get_trace(filename,mb,from_mb)
     if filename:lower():find('alert.*.log') then
         alert_view=db:check_obj("V$DIAG_ALERT_EXT",1)
     end
+
     local args={filename,"#VARCHAR","#CLOB","#VARCHAR",target_view and target_view.synonym or '',alert_view and alert_view.synonym or '',mb=mb or 8,from_mb=from_mb or '',res='#VARCHAR',readonly=env.set.get("readonly")}
     db:internal_call(sql,args)
     env.checkerr(args[2],args[4])
     env.checkerr(args[3] and args[3]~='','Target file %s does not exists!',filename)
     print(args.res);
     args[3]=loader:Base64ZlibToText(args[3]:split('\n'));
-    print("Result written to file "..env.write_cache(args[2],args[3]))
+    filename=env.write_cache(args[2],args[3])
+    print("Result written to file "..filename)
+    return filename,args[3]
 end
 
 function trace.reset()

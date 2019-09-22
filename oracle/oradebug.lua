@@ -312,7 +312,7 @@ local function load_ext()
         WAIT_EVENT={'Trace wait event',
             [[oradebug session_event wait_event["log file sync"|"log file sequential read"] trace("shortstack: %s\n", shortstack())
               oradebug session_event wait_event["log file sync"] crash()
-              oradebug session_event wait_event[all] trace('event="%", p1=%, p2=%, p3=%, ela=%, tstamp=%, Stk=%\n', evargs(5), evargn(2), evargn(3),evargn(4), evargn(1), evargn(7),shortstack())
+              oradebug session_event wait_event[all] trace('\nevent="%", p1=%, p2=%, p3=%, ela=%, tstamp=% shortstack=%', evargs(5), evargn(2), evargn(3),evargn(4), evargn(1), evargn(7),shortstack())
               oradebug event wait_event["latch: ges resource hash list"] {wait: minwait=8000} trace(''event "%", p1 %, p2 %, p3 %, wait time % Stk=%'', evargs(5), evargn(2), evargn(3),evargn(4), evargn(1), shortstack())
             ]]
         },
@@ -743,11 +743,11 @@ function oradebug.load_dict()
         GET_TRACE={desc='Download current trace file. Usage: oradebug get_trace [file] [<size in MB>]',args=2,func=oradebug.get_trace},
         SHORT_STACK={desc='Get abridged OS stack. Usage: oradebug short_stack [<short_stack_string>|<sid>]',lib='HELP',func=oradebug.short_stack},
         PMEM={desc="Show process memory detail. Usae: oradebug pmen <sid>",args=1,func=oradebug.pmem},
-        PROFILE={desc='Sample abridged OS stack. Usage: oradebug profile {<sid> [<samples>] [<interval in sec>]} | <file>',
+        PROFILE={desc='Sample abridged OS stack. Usage: oradebug profile {<sid> [<samples>] [<interval in sec>]} | {<sid> wait [<secs>] [<event>]} |<file>',
                 args=4,func=oradebug.profile,
                 usage=[[
                     Profile abridged OS stack. The profile efficiency heavily relies on the network latency.
-                    Usage: oradebug profile {<sid> [<samples>] [<interval in sec>]} | <file>
+                    Usage: oradebug profile {<sid> [<samples>] [<interval in sec>]} | {<sid> wait [<secs>] [<event>]} |<file>
                     
                     Parameters:
                     ===========
@@ -756,9 +756,12 @@ function oradebug.load_dict()
                     
                     Examples:
                     ========= 
-                      * oradebug profile 142308 
-                      * oradebug profile 142308 1000 0
-                      * oradebug profile D:\dbcli\cache\imtst_srv4\shortstacks_142308.log 
+                      * oradebug profile 104 
+                      * oradebug profile 104 1000 0
+                      * oradebug profile D:\dbcli\cache\imtst_srv4\shortstacks_142308.log
+                      * oradebug profile 104 wait
+                      * oradebug profile 104 wait 30
+                      * oradebug profile 104 wait 20 log file sync
                 ]]},
         KILL={desc="Kill a specific process within the same instance(event immediate crash). Usage: oradebug kill <sid>",func=oradebug.kill}   
     }
@@ -1056,10 +1059,17 @@ function oradebug.get_pid(sid)
 end
 
 function oradebug.attach_sid(sid)
-    get_output("SETORAPID ".. oradebug.get_pid(sid))
+    local pid=oradebug.get_pid(sid)
+    local result=get_output("SETORAPID ".. oradebug.get_pid(sid),true)[1]
+    env.checkerr(not result:trim():find('^%u+%-%d+:'),result)
+    return pid
 end
 
-function oradebug.profile(sid,samples,interval)
+function oradebug.tracename()
+    return get_output("TRACEFILE_NAME",true)[1]
+end
+
+function oradebug.profile(sid,samples,interval,event)
     local out,log
     local typ,file=os.exists(sid)
     if typ then
@@ -1070,23 +1080,50 @@ function oradebug.profile(sid,samples,interval)
     else
         sid=oradebug.attach_sid(sid)
         file=sid
-        samples=tonumber(samples) or 100
-        interval=tonumber(interval) or 0.1
         get_output("unlimit",true)
-        out=sqlplus:get_lines("oradebug short_stack",interval*1000,samples)
-        log=env.write_cache("shortstacks_"..sid..".log",out)
+        if samples and samples:lower()=='wait' then
+            interval=tonumber(interval) or 10
+            event=event and ('"'..event..'"') or "all"
+            get_output("SETTRACEFILEID "..os.time())
+            local tracename=oradebug.tracename():trim()
+            print('Trace file name is '..tracename)
+            local cmd='session_event wait_event['..event..[[] trace('\nevent="%",p1=%,p2=%,p3=%,ela=%,stk=%',evargs(5),evargn(2),evargn(3),evargn(4),evargn(1),shortstack())]]
+            print('Command:  oradebug '..cmd)
+            print(get_output(cmd,true)[1])
+            print('Waiting for '..interval..' secs...')
+            env.sleep(interval)
+            get_output('session_event wait_event['..event..'] off',true)
+            tracename,out=env.oracle.C.tracefile.get_trace(tracename)
+        else
+            samples=tonumber(samples) or 100
+            interval=tonumber(interval) or 0.1
+            out=sqlplus:get_lines("oradebug short_stack",interval*1000,samples)
+            log=env.write_cache("shortstacks_"..sid..".log",out)
+        end
     end
     local c,funcs,result=0,{},{}
     local stacks={}
     local items={}
     local sub,item
-    local calls,trees=0,0
-    local cnt
+    local calls,trees,events=0,0,0
+    local cnt,ela,wait,event,temp
     for line in out:gsub('[\n\r]+%S+>%s+','\n'):gsplit('[\n\r]+%s*') do
-        line,cnt=line:gsub('^.-%_%_sighandler%(%)','',1)
-        if cnt==0 then
-            line,cnt=line:gsub('^.-sspuser%(%)','',1)
+        if line:find('0x00',1,true) then goto continue end
+        ela,event=1
+        if line:find('ela=',1,true) then
+            wait,line=line:match('^(.*)=([^=]+)$')
+            event,ela=wait:match('event="([^"]+)".*ela=(%d+)')
+            if event then events=events+1 end
+            ela=ela and tonumber(ela)/1000 or 1
+            line='<-'..line
+        else
+            line,cnt=line:gsub('^.-%_%_sighandler%(%)','',1)
+            if cnt==0 then
+                line,cnt=line:gsub('^.-sspuser%(%)','',1)
+            end    
         end
+        temp,cnt=line:gsub('<%-[^%s<%(]+','')
+        if cnt<3 then goto continue end
         table.clear(items)
         local depth=0
         for f in line:gmatch("<%-([^%s<%(]+)") do
@@ -1101,25 +1138,27 @@ function oradebug.profile(sid,samples,interval)
         for i=depth,1,-1 do
             item=items[i]
             if not sub[item] then
-                sub[item]={f=result[item].func,subtree=1,calls=0}
+                sub[item]={f=result[item].func,subtree=ela,calls=0}
             else
-                sub[item].subtree=sub[item].subtree+1
+                sub[item].subtree=sub[item].subtree+ela
             end
-            trees=trees+1
+            trees=trees+ela
             if i==1 then
-                calls=calls+1
-                sub[item].calls=sub[item].calls+1
-                result[item].calls=result[item].calls+1
+                calls=calls+ela
+                sub[item].calls=sub[item].calls+ela
+                result[item].calls=result[item].calls+ela
+                sub[item].event=event or sub[item].event
             else
                 sub=sub[item]
-                result[item].subtree=result[item].subtree+1
+                result[item].subtree=result[item].subtree+ela
             end
         end
+        ::continue::
     end
     out=nil
 
     local rows,index=grid.new(),0
-    rows:add{'#','Calls','Subtree','|*|','  Call Stacks'}
+    rows:add{'#','Calls'..(events>0 and '(ms)' or ''),'Subtree'..(events>0 and '(ms)' or ''),events>0 and 'Event' or '|*|','  Call Stacks'}
     local function compare(a,b)
         return a.subtree>b.subtree and true or
                a.subtree==b.subtree and a.calls>b.calls and true or false
@@ -1144,7 +1183,10 @@ function oradebug.profile(sid,samples,interval)
                     result[v.index].stacks[#result[v.index].stacks+1]='Line #'..(''..index):lpad(4)..': '..v.f..'('..v.calls..')'..chain
                 end
                 local func=oradebug.find_func(v.f,false)
-                rows:add{index,v.calls==0 and ' ' or fmt:format(math.round(100.0*v.calls/calls,2)..'',v.calls),v.subtree-v.calls,'|*|',prefix..v.f..func}
+                rows:add{index,v.calls==0 and ' ' or fmt:format(math.round(100.0*v.calls/calls,2)..'',v.calls),
+                         (v.subtree-v.calls)==0 and '' or (v.subtree-v.calls),
+                         events>0 and (v.event or '') or '|*|',
+                         prefix..v.f..func}
                 build_stack(v,depth+1,prefix..(k<#trees and '| ' or sep),cfmt:format(v.f,v.calls,chain))
             end
         end
@@ -1161,7 +1203,7 @@ function oradebug.profile(sid,samples,interval)
 
     local max=math.min(30,#result)
     rows,index=grid.new(),0
-    rows:add{'#','Function','calls','Calls%','Subtree','Call Stacks'}
+    rows:add{'#','Function'..(events>0 and '(ms)' or ''),'calls'..(events>0 and '(ms)' or ''),'Calls%','Subtree'..(events>0 and '(ms)' or ''),'Call Stacks'}
     compare=function(a,b) return tonumber(a:match('%d+'))>tonumber(b:match('%d+')) end
     for i=1,max do
         if result[i].calls >0 then
