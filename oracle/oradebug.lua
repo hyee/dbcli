@@ -743,25 +743,29 @@ function oradebug.load_dict()
         GET_TRACE={desc='Download current trace file. Usage: oradebug get_trace [file] [<size in MB>]',args=2,func=oradebug.get_trace},
         SHORT_STACK={desc='Get abridged OS stack. Usage: oradebug short_stack [<short_stack_string>|<sid>]',lib='HELP',func=oradebug.short_stack},
         PMEM={desc="Show process memory detail. Usae: oradebug pmen <sid>",args=1,func=oradebug.pmem},
-        PROFILE={desc='Sample abridged OS stack. Usage: oradebug profile {<sid> [<samples>] [<interval in sec>]} | {<sid> wait [<secs>] [<event>]} |<file>',
+        PROFILE={desc='Sample abridged OS stack. Usage: oradebug profile {<sid> [<samples>] [<interval in sec>]} | {<sid> wait [<secs>] [<event>]} | {<file> [server]}',
                 args=4,func=oradebug.profile,
                 usage=[[
                     Profile abridged OS stack. The profile efficiency heavily relies on the network latency.
-                    Usage: oradebug profile {<sid> [<samples>] [<interval in sec>]} | {<sid> wait [<secs>] [<event>]} |<file>
                     
-                    Parameters:
-                    ===========
-                      samples  : Number of samples to taken, defaults as 100
-                      interval : The repeat interval for taking samples in second, defaults as 0.1 sec. When 0 then rapidly sample the shortstack
+                    Usage: oradebug profile {<sid> [<samples>] [<interval in sec>]} | {<sid> wait [<secs>] [<event>]} |  {<file> [server]}
+                    * Sampling+analyzing the shortstacks of target sid: oradebug profile <sid> [<samples>] [<interval in sec>]
+                          1) <samples> : Number of samples to take, defaults as 100
+                          2) <interval>: The repeat interval for taking samples in second, defaults as 0.1 sec
+                    * Taking+analyzing wait_event+shortstacks of target sid:  oradebug profile <sid> wait <secs>
+                          1) <secs>:  The wait seconds to stop tracing
+                    * Analyze relative tracefile:  oradebug <file_path> [server]
+                          1) server:  Specify when <file_path> is the path in remote db instead of local PC
                     
                     Examples:
                     ========= 
                       * oradebug profile 104 
                       * oradebug profile 104 1000 0
-                      * oradebug profile D:\dbcli\cache\imtst_srv4\shortstacks_142308.log
                       * oradebug profile 104 wait
                       * oradebug profile 104 wait 30
                       * oradebug profile 104 wait 20 log file sync
+                      * oradebug profile D:\dbcli\cache\orclcdb\shortstacks_142308.log
+                      * oradebug profile /u01/app/oracle/diag/rdbms/orclcdb/orclcdb/trace/orclcdb_ora_15873_20190923095414.trc server
                 ]]},
         KILL={desc="Kill a specific process within the same instance(event immediate crash). Usage: oradebug kill <sid>",func=oradebug.kill}   
     }
@@ -1070,11 +1074,14 @@ function oradebug.tracename()
 end
 
 function oradebug.profile(sid,samples,interval,event)
-    local out,log
+    local out,log,tracename
     local typ,file=os.exists(sid)
     if typ then
         out=env.load_data(file,false)
         file=file:gsub('.*[\\/]',''):gsub('%..-$','')
+    elseif samples and samples:lower()=="server" then
+        tracename,out=env.oracle.C.tracefile.get_trace(sid)
+        file=tracename:gsub('.*[\\/]',''):gsub('%..-$','')
     elseif sid and not tonumber(sid) then
         env.raise('No such file, please input a valid file path or a sid.')
     else
@@ -1085,7 +1092,7 @@ function oradebug.profile(sid,samples,interval,event)
             interval=tonumber(interval) or 10
             event=event and ('"'..event..'"') or "all"
             get_output("SETTRACEFILEID "..os.time())
-            local tracename=oradebug.tracename():trim()
+            tracename=oradebug.tracename():trim()
             print('Trace file name is '..tracename)
             local cmd='session_event wait_event['..event..[[] trace('\nevent="%",p1=%,p2=%,p3=%,ela=%,stk=%',evargs(5),evargn(2),evargn(3),evargn(4),evargn(1),shortstack())]]
             print('Command:  oradebug '..cmd)
@@ -1180,6 +1187,7 @@ function oradebug.profile(sid,samples,interval,event)
             for k,v in ipairs(trees) do
                 index=index+1
                 if v.calls>0 then
+                    result[v.index].event=v.event
                     result[v.index].stacks[#result[v.index].stacks+1]='Line #'..(''..index):lpad(4)..': '..v.f..'('..v.calls..')'..chain
                 end
                 local func=oradebug.find_func(v.f,false)
@@ -1203,7 +1211,7 @@ function oradebug.profile(sid,samples,interval,event)
 
     local max=math.min(30,#result)
     rows,index=grid.new(),0
-    rows:add{'#','Function'..(events>0 and '(ms)' or ''),'calls'..(events>0 and '(ms)' or ''),'Calls%','Subtree'..(events>0 and '(ms)' or ''),'Call Stacks'}
+    rows:add{'#','Function'..(events>0 and '(ms)' or ''),'calls'..(events>0 and '(ms)' or ''),'Calls%',events>0 and 'Event' or 'Subtree','Call Stacks'}
     compare=function(a,b) return tonumber(a:match('%d+'))>tonumber(b:match('%d+')) end
     for i=1,max do
         if result[i].calls >0 then
@@ -1212,7 +1220,12 @@ function oradebug.profile(sid,samples,interval,event)
                 result[i].stacks[#result[i].stacks]='$UDL$'..result[i].stacks[#result[i].stacks]..'$NOR$'
             end
             index=index+1
-            rows:add{index,result[i].func,result[i].calls,math.round(100.0*result[i].calls/calls,2),result[i].subtree,table.concat(result[i].stacks,'\n')}
+            rows:add{index,
+                     result[i].func,
+                     result[i].calls,
+                     math.round(100.0*result[i].calls/calls,2),
+                     events>0 and (result[i].event or '') or result[i].subtree,
+                     table.concat(result[i].stacks,'\n')}
         end
     end
 

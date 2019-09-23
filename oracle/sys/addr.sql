@@ -43,7 +43,8 @@ BEGIN
     	             (select listagg(view_name,',') within group(order by view_name) from v$fixed_view_definition where instr(lower(view_definition),lower(kqftanam))>0) refs
               FROM   x$kqfta t, x$kqfco c
               WHERE  c.kqfcotab = t.indx
-              AND    lower(kqftanam) NOT IN ('x$ksmsp')
+              AND    lower(kqftanam) NOT IN ('x$ksmsp','x$ktuqqry')
+              AND    substr(lower(kqftanam),1,5) NOT in ('x$dbg','x$dia')
               AND    INSTR(kqfconam, ' ') = 0
               AND    kqfcodty = 23
               AND    c.kqfcosiz IN (8)
