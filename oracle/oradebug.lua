@@ -29,7 +29,6 @@ no_args={
         GET_TRACE=1
     }
 
-
 local function load_functions()
     if functions then return end
     local funcs,err=loadstring(env.load_data(db.ROOT_PATH..env.PATH_DEL..'functions.txt',false))
@@ -679,17 +678,12 @@ local function load_ext()
         }
     }
 
-
-    
-
     for k,v in pairs(traces) do
         local item={k,v[1],v[2]}
         ext.EVENT[#ext.EVENT+1]=item
         ext[k]={item}
         ext['RDBMS.'..k]={item}
-    end
-
-    
+    end    
 end
 
 local function get_output(cmd,is_comment)
@@ -1066,6 +1060,10 @@ function oradebug.attach_sid(sid)
     local pid=oradebug.get_pid(sid)
     local result=get_output("SETORAPID ".. oradebug.get_pid(sid),true)[1]
     env.checkerr(not result:trim():find('^%u+%-%d+:'),result)
+    sqlplus:get_lines('set heading off feed off newp none')
+    local inst=tonumber(sqlplus:get_last_line([[select userenv('instance') from dual;]]):trim())
+    sqlplus:get_lines('set heading on feed on newp 1')
+    env.checkerr(not inst or inst==db.props.instance,"SQL*Plus is not connecting to the same instance with DBCLI, operation is cancelled!");
     return pid
 end
 
@@ -1074,7 +1072,7 @@ function oradebug.tracename()
 end
 
 function oradebug.profile(sid,samples,interval,event)
-    local out,log,tracename
+    local org_sid,out,log,tracename=sid
     local typ,file=os.exists(sid)
     if typ then
         out=env.load_data(file,false)
@@ -1104,23 +1102,61 @@ function oradebug.profile(sid,samples,interval,event)
         else
             samples=tonumber(samples) or 100
             interval=tonumber(interval) or 0.1
-            out=sqlplus:get_lines("oradebug short_stack",interval*1000,samples)
+            local prep=db.conn:prepareStatement([[select 'Wait',event,p1,p2,p3 from v$session_wait where sid=]]..org_sid,1003,1007)
+            out=sqlplus:get_lines("oradebug short_stack",interval*1000,samples,prep)
             log=env.write_cache("shortstacks_"..sid..".log",out)
         end
     end
     local c,funcs,result=0,{},{}
-    local stacks={}
-    local items={}
-    local sub,item
+    local stacks,prev={},{depth=0,pct=nil}
+    local last,items={},{}
+    local sub,item,is_ms
     local calls,trees,events=0,0,0
     local cnt,ela,wait,event,temp
+
+    --Handle BTL report
+    local btl_stack=' +(%d+): +(%S+.-) +([%.%d]+) *\n'
+    temp,cnt=out:gsub(btl_stack,'',10)
+    if cnt>=10 then
+        calls=out:match("Elapsed: (%d+)")
+        is_ms=true
+        for depth,f,pct in out:gmatch(btl_stack) do
+            depth,pct=tonumber(depth),math.round(tonumber(pct)/100*calls,3)
+            if pct==0 then goto continue1 end
+
+            if not funcs[f] then
+                c=c+1
+                result[c],funcs[f]={func=f,subtree=0,calls=0,stacks={}},c
+            end
+            item=funcs[f]
+
+            local data={calls=pct,subtree=pct,f=f,i=item}
+            last[depth]=data
+            result[item].calls=result[item].calls+pct
+            result[item].subtree=0
+            if depth>1 then
+                sub=last[depth-1]
+                last[depth-1].calls=math.max(0,math.round(last[depth-1].calls-pct,3))
+                result[last[depth-1].i].calls=math.max(0,math.round(result[last[depth-1].i].calls-pct,3))
+                result[last[depth-1].i].subtree=math.round(result[last[depth-1].i].subtree+pct,3)
+            else
+                sub=stacks
+            end
+
+            if not sub[item] then sub[item]=data end
+
+            ::continue1::
+        end
+        --print(table.dump(stacks))
+        goto printer
+    end
+    --Handle short stacks
     for line in out:gsub('[\n\r]+%S+>%s+','\n'):gsplit('[\n\r]+%s*') do
-        if line:find('0x00',1,true) then goto continue end
         ela,event=1
         if line:find('ela=',1,true) then
             wait,line=line:match('^(.*)=([^=]+)$')
             event,ela=wait:match('event="([^"]+)".*ela=(%d+)')
-            if event then events=events+1 end
+            if event then is_ms,events=true,events+1 end
             ela=ela and tonumber(ela)/1000 or 1
             line='<-'..line
         else
@@ -1129,8 +1165,15 @@ function oradebug.profile(sid,samples,interval,event)
                 line,cnt=line:gsub('^.-sspuser%(%)','',1)
             end    
         end
-        temp,cnt=line:gsub('<%-[^%s<%(]+','')
-        if cnt<3 then goto continue end
+        temp,cnt=line:gsub('<%-[^%s<%(]+','',4)
+        if cnt<=3 then
+            local event,p1,p2,p3=line:match("Wait/(.-)/(%d+)/(%d+)/(%d+)")
+            if event then
+                events=events+1
+                last.event=event
+            end
+            goto continue 
+        end
         table.clear(items)
         local depth=0
         for f in line:gmatch("<%-([^%s<%(]+)") do
@@ -1155,6 +1198,7 @@ function oradebug.profile(sid,samples,interval,event)
                 sub[item].calls=sub[item].calls+ela
                 result[item].calls=result[item].calls+ela
                 sub[item].event=event or sub[item].event
+                last=sub[item]
             else
                 sub=sub[item]
                 result[item].subtree=result[item].subtree+ela
@@ -1162,10 +1206,11 @@ function oradebug.profile(sid,samples,interval,event)
         end
         ::continue::
     end
+    ::printer::
     out=nil
 
     local rows,index=grid.new(),0
-    rows:add{'#','Calls'..(events>0 and '(ms)' or ''),'Subtree'..(events>0 and '(ms)' or ''),events>0 and 'Event' or '|*|','  Call Stacks'}
+    rows:add{'#','Calls'..(is_ms and '(ms)' or ''),'Subtree'..(is_ms and '(ms)' or ''),events>0 and 'Event' or '|*|','  Call Stacks'}
     local function compare(a,b)
         return a.subtree>b.subtree and true or
                a.subtree==b.subtree and a.calls>b.calls and true or false
@@ -1211,12 +1256,17 @@ function oradebug.profile(sid,samples,interval,event)
 
     local max=math.min(30,#result)
     rows,index=grid.new(),0
-    rows:add{'#','Function'..(events>0 and '(ms)' or ''),'calls'..(events>0 and '(ms)' or ''),'Calls%',events>0 and 'Event' or 'Subtree','Call Stacks'}
+    rows:add{'#','Function','calls'..(is_ms and '(ms)' or ''),'Calls%',events>0 and 'Event' or ('Subtree'..(is_ms and '(ms)' or '')),'Call Stacks'}
     compare=function(a,b) return tonumber(a:match('%d+'))>tonumber(b:match('%d+')) end
     for i=1,max do
         if result[i].calls >0 then
             if #result[i].stacks>0 then
-                table.sort(result[i].stacks,compare)
+                table.sort(result[i].stacks,
+                    function(a,b) 
+                        a=tonumber(a:match(':.-(%d[%d%.]*)')) or 0
+                        b=tonumber(b:match(':.-(%d[%d%.]*)')) or 0
+                        return a>b
+                    end)
                 result[i].stacks[#result[i].stacks]='$UDL$'..result[i].stacks[#result[i].stacks]..'$NOR$'
             end
             index=index+1

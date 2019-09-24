@@ -11,6 +11,8 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.Charset;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.TreeMap;
@@ -184,7 +186,7 @@ public class SubSystem {
         }
     }
 
-    public String executeInterval(String command, long interval, int count, Boolean isPrint) throws Exception {
+    public String executeInterval(String command, long interval, int count, Boolean isPrint, PreparedStatement prep) throws Exception {
         try {
             queue.clear();
             this.isPrint = isPrint;
@@ -211,6 +213,8 @@ public class SubSystem {
                 }
             } else {
                 c = command.getBytes();
+                int cols = 0;
+                String[] result = null;
                 for (int i = 1; i <= count; i++) {
                     current = System.currentTimeMillis() + interval;
                     lastLine = null;
@@ -218,27 +222,24 @@ public class SubSystem {
 
                     if (i % 10 == 0)
                         System.out.println("    Executing " + command.substring(0, c.length - 1) + ": round #" + i);
-                    /*
-                    while (true&&!isBreak) {
-                        if(process==null) throw new IOException("The subprocess is broken!");
-                        process.wantWrite();
-                        if(queue.offer(c,300,TimeUnit.MICROSECONDS)) break;
-                    }
-                    if (i == count&&!isBreak) {
-                        determinPromptCount = Math.min(Math.max(50, count), 500);
-                        lock = new CountDownLatch(1);
-                        System.out.println("    Fetching output, please wait...");
-                        lock.await();
-                    }*/
-
                     responseLock = new CountDownLatch(1);
                     write(c);
+                    if (prep != null) try (ResultSet rs = prep.executeQuery()) {
+                        if (rs.next()) {
+                            if (result == null) {
+                                prep.setFetchSize(1);
+                                cols = rs.getMetaData().getColumnCount();
+                                result = new String[cols];
+                            }
+                            for (int j = 1; j <= cols; j++) result[j - 1] = rs.getString(j);
+                        }
+                    }
                     responseLock.await();
+                    if (result != null) print(String.join("/", result) + '\n');
                     responseLock = null;
                     current -= System.currentTimeMillis();
                     if (current > 0 && i < count) Thread.sleep(current);
                 }
-
             }
             if (this.prevPrompt == null) this.prevPrompt = this.lastPrompt;
             return lastPrompt;
@@ -246,6 +247,7 @@ public class SubSystem {
             Loader.getRootCause(e).printStackTrace();
             throw e;
         } finally {
+            if (prep != null) prep.close();
             responseLock = null;
             determinPromptCount = 12;
             isWaiting = false;
@@ -272,11 +274,11 @@ public class SubSystem {
         }
     }
 
-    public String getLinesInterval(String command, long interval, int count) throws Exception {
+    public String getLinesInterval(String command, long interval, int count, PreparedStatement prep) throws Exception {
         isCache = true;
         try {
             buff.setLength(0);
-            executeInterval(command, interval, count, false);
+            executeInterval(command, interval, count, false, prep);
             return buff.toString();
         } finally {
             isCache = false;
@@ -370,7 +372,7 @@ public class SubSystem {
 
         @Override
         public void onStderr(ByteBuffer buffer, boolean closed) {
-            if(process!=null) onStdout(buffer, closed);
+            if (process != null) onStdout(buffer, closed);
             else {
                 byte[] bytes = new byte[buffer.remaining()];
                 buffer.get(bytes);

@@ -17,10 +17,8 @@ SET ONERREXIT OFF
 &V1
 SET ONERREXIT ON
 BEGIN
-    select value into :file
-    from   v$diag_info
-    where  name='Default Trace File';
-    execute immediate q'[alter session set events 'wait_event[all] off']';
+	execute immediate q'[alter session set events 'wait_event[all] off']';
+	execute immediate q'[select value from v$diag_info where name='Default Trace File']' into :file;
     execute immediate   'alter session set tracefile_identifier=''''';
 END;
 /

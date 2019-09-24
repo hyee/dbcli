@@ -1,4 +1,4 @@
-2019-09-23: + oracle: new commands 'ora btl/wait_event' and 'sys meminfo/addr'
+2019-09-23: + oracle: new commands 'ora btl/wait_event/xtable' and 'sys meminfo/addr'
 2019-09-20: + oracle: new commands 'sys execs/hwm' and 'oradebug pmem'
             + public: new option 'set convertRaw2Hex'
 2019-09-09: + oracle: new command 'oradebug func <keyword>' to extract kernel function

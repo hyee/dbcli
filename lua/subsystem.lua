@@ -21,31 +21,29 @@ function system:get_last_line(cmd)
     return self.process:getLastLine(cmd)
 end
 
-function system:get_lines(cmd,interval,count)
+function system:get_lines(cmd,interval,count,prep)
     if not self.process then return end
     interval,count=tonumber(interval),tonumber(count)
     
     if interval and count then
-        return self.process:getLinesInterval(cmd,math.ceil(interval),math.ceil(count))
+        return self.process:getLinesInterval(cmd,math.ceil(interval),math.ceil(count),prep)
     else
         
         return self.process:getLines(cmd)
     end
 end
 
-function system:run_command(cmd,is_print,interval,count)
+function system:run_command(cmd,is_print,interval,count,prep)
     if not self.process then return end
     interval,count=tonumber(interval),tonumber(count)
     if interval and count then
-        self.prompt=self.process:executeInterval(cmd,math.ceil(interval),math.ceil(count),is_print and true or false,self.block_input or false)
+        self.prompt=self.process:executeInterval(cmd,math.ceil(interval),math.ceil(count),is_print and true or false,prep)
     else
         self.prompt=self.process:execute(cmd,is_print and true or false,self.block_input or false)
     end
     if self.process:isClosed() then return self:terminate() end
     if self.enter_flag==true then env.set_subsystem(self.name,self.prompt) end
 end
-
-
 
 function system:terminate()
     if not self.process then return end
