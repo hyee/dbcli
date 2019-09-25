@@ -712,10 +712,10 @@ end
 oradebug.exec_command=get_output
 
 function oradebug.get_trace(file,size)
-    size=tonumber(size) or 8
+    size=tonumber(size) or 32
     file=file or get_output("TRACEFILE_NAME",true)[1]
     local dumper=db.C.tracefile
-    dumper.get_trace(file,size)
+    return dumper.get_trace(file,size)
 end
 
 function oradebug.pmem(sid)
@@ -730,6 +730,7 @@ end
 
 function oradebug.load_dict()
     addons={
+        SETSID={desc="Set Oracle sid of session to debug. Usage: oradebug setsid <sid>",args=1,func=oradebug.attach_sid},
         BUILD_DICT={desc='Rebuild the offline help doc, should be executed in RAC environment',func=oradebug.build_dict},
         FUNC={desc='#Extract kernel function. Usage: oradebug func <keyword>',args=1,func=oradebug.find_func},
         REP_DESC={desc="#rep",args=3,func=oradebug.rep_func_desc},
@@ -1078,7 +1079,7 @@ function oradebug.profile(sid,samples,interval,event)
         out=env.load_data(file,false)
         file=file:gsub('.*[\\/]',''):gsub('%..-$','')
     elseif samples and samples:lower()=="server" then
-        tracename,out=env.oracle.C.tracefile.get_trace(sid)
+        tracename,out=oradebug.get_trace(sid)
         file=tracename:gsub('.*[\\/]',''):gsub('%..-$','')
     elseif sid and not tonumber(sid) then
         env.raise('No such file, please input a valid file path or a sid.')
@@ -1098,7 +1099,7 @@ function oradebug.profile(sid,samples,interval,event)
             print('Waiting for '..interval..' secs...')
             env.sleep(interval)
             get_output('session_event wait_event['..event..'] off',true)
-            tracename,out=env.oracle.C.tracefile.get_trace(tracename)
+            tracename,out=oradebug.get_trace(tracename)
         else
             samples=tonumber(samples) or 100
             interval=tonumber(interval) or 0.1

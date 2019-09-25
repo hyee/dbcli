@@ -735,7 +735,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         prep,sql,params=self:parse(sql,params)
         prep:setEscapeProcessing(false)
         self.__stmts[#self.__stmts+1]=prep
-        prep:setFetchSize(1)
+        prep:setFetchSize(cfg.get("FETCHSIZE"))
         prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
         pcall(prep.closeOnCompletion,prep)
         self.current_stmt=prep
@@ -1363,7 +1363,7 @@ function db_core:__onload()
     txt=txt..'\n       exec open :x for select * from user_objects where rownum<10;'
     txt=txt..'\n       sql2csv user_objects x;'
     cfg.init("PRINTSIZE",1000,set_param,"db.query","Max rows to be printed for a select statement",'1-10000')
-    cfg.init("FETCHSIZE",3000,set_param,"db.query","Rows to be prefetched from the resultset, 0 means auto.",'0-32767')
+    cfg.init({"FETCHSIZE","ARRAY","ARRAYSIZE"},3000,set_param,"db.query","Rows to be prefetched from the resultset, 0 means auto.",'0-32767')
     cfg.init("SQLTIMEOUT",1200,set_param,"db.core","The max wait time(in second) for a single db execution",'10-86400')
     cfg.init({"FEED","FEEDBACK"},'on',set_param,"db.core","Detemine if need to print the feedback after db execution",'on,off')
     cfg.init("AUTOCOMMIT",'off',set_param,"db.core","Detemine if auto-commit every db execution",'on,off')

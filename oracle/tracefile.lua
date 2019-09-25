@@ -41,11 +41,19 @@ function trace.get_trace(filename,mb,from_mb)
         tmp := dir;
         BEGIN
             flag := -1;
-            SELECT MAX(directory_name)
-            INTO   dir
-            FROM   Dba_Directories
-            WHERE  lower(tmp) LIKE lower(directory_path) || '%'
-            AND    length(tmp) - length(directory_path) < 2;
+            BEGIN
+                SELECT MAX(directory_name)
+                INTO   dir
+                FROM   Dba_Directories
+                WHERE  lower(tmp) LIKE lower(directory_path) || '%'
+                AND    length(tmp) - length(directory_path) < 2;
+            EXCEPTION WHEN OTHERS THEN
+                SELECT MAX(directory_name)
+                INTO   dir
+                FROM   ALL_Directories
+                WHERE  lower(tmp) LIKE lower(directory_path) || '%'
+                AND    length(tmp) - length(directory_path) < 2;
+            END;
         
             flag := 0;
             IF dir IS NULL THEN
