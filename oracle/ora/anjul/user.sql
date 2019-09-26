@@ -1,4 +1,4 @@
-/*[[Provides information about the user. Usage: @@NAME [<username>]
+/*[[Provides information about the user. Usage: @@NAME [<username>] [<keyword of privilege>]
 
   --[[
       @CHECK_ACCESS_USER: dba_users={dba_users}, default={all_users}
@@ -12,18 +12,21 @@ SELECT user_id, username, account_status, profile,
 FROM   &CHECK_ACCESS_USER
 WHERE  username LIKE NVL2(:V1,upper('%&V1%'),SYS_CONTEXT('USERENV','CURRENT_SCHEMA'));
 
+
 grid {
     
     [[SELECT /*grid={topic='DBA_Role_Privs'}*/
              grantee username, granted_role || ' ' || decode(admin_option, 'NO', '', 'YES', 'WITH ADMIN OPTION') ROLE_NAME
       FROM   dba_role_privs join &CHECK_ACCESS_USER on(username=grantee) 
       WHERE  grantee LIKE NVL2(:V1,upper('%&V1%'),SYS_CONTEXT('USERENV','CURRENT_SCHEMA'))
+      AND    UPPER(granted_role) like upper('%&V2%')
       ORDER  BY 1,2]],
     '-',
     [[SELECT /*grid={topic='DBA_Sys_Privs'}*/
              grantee username, privilege || ' ' || decode(admin_option, 'NO', '', 'YES', 'WITH ADMIN OPTION') SYS_PRIVILEGE
       FROM   dba_sys_privs join &CHECK_ACCESS_USER on(username=grantee) 
       WHERE  grantee LIKE NVL2(:V1,upper('%&V1%'),SYS_CONTEXT('USERENV','CURRENT_SCHEMA'))
+      AND    UPPER(privilege) like upper('%&V2%')
       ORDER  BY 1,2]],
     '-',
     [[SELECT * FROM DBA_PROFILES WHERE PROFILE IN(/*grid={topic='DBA_Profiles'}*/
@@ -35,6 +38,7 @@ grid {
              decode(max_bytes, -1, 'UNLIMITED', ceil(max_bytes / 1024 / 1024) || 'M') "QUOTA"
       FROM   dba_ts_quotas 
       WHERE  username LIKE NVL2(:V1,upper('%&V1%'),SYS_CONTEXT('USERENV','CURRENT_SCHEMA'))
+      AND    UPPER(tablespace_name) like upper('%&V2%')
       ORDER  BY 1,2]],
     '|',
     [[
@@ -52,6 +56,7 @@ grid {
                  UNION
                  SELECT grantee, privilege
                  FROM   dba_sys_privs) a
+        WHERE  UPPER(granted_role) like upper('%&V2%')
         START  WITH grantee IS NULL
         CONNECT BY grantee = PRIOR granted_role]]
 }

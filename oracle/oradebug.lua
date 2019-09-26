@@ -1218,7 +1218,7 @@ function oradebug.profile(sid,samples,interval,event)
     end
     local sep='  '
     local fmt='%5s%%(%d)'
-    local cfmt='<-%s(%d)%s'
+    local cfmt='<-%s%s%s'
     local function build_stack(sub,depth,prefix,chain)
         local trees={}
         for k,v in pairs(sub) do
@@ -1241,7 +1241,7 @@ function oradebug.profile(sid,samples,interval,event)
                          (v.subtree-v.calls)==0 and '' or (v.subtree-v.calls),
                          events>0 and (v.event or '') or '|*|',
                          prefix..v.f..func}
-                build_stack(v,depth+1,prefix..(k<#trees and '| ' or sep),cfmt:format(v.f,v.calls,chain))
+                build_stack(v,depth+1,prefix..(k<#trees and '| ' or sep),cfmt:format(v.f,v.calls>0 and ('('..v.calls..')') or '',chain))
             end
         end
     end

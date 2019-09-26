@@ -30,7 +30,7 @@ Events:
 Hints:
     OPT_ESTIMATE:
         * join:  OPT_ESTIMATE([<QB>,] join, (alias1,alias2), min|max|rows|scale_rows=n)
-        * index: OPT_ESTIMATE([<QB>,] index_filter|index_scan|nlj_index_scan <table_alias>, <index_name>, min|max|rows|scale_rows=n)
+        * index: OPT_ESTIMATE([<QB>,] <index_filter|index_scan|index_skip_scan> <table_alias>, <index_name>, min|max|rows|scale_rows=n)
         * nlj  : OPT_ESTIMATE([<QB>,] nlj_index_scan, <table_alias>(<driving_table_alias>), <index_name>, min|max|rows|scale_rows=n)
         * table: OPT_ESTIMATE([<QB>,] table,<table_alias>,min|max|rows|scale_rows=n)
         * group: OPT_ESTIMATE([<QB>,] group_by, min|max|rows|scale_rows=n)
@@ -40,8 +40,12 @@ Hints:
             SELECT hints,MAX(sql_id) keep(dense_rank last order by child_number) sample_sql_id
             FROM   TABLE(gv$(CURSOR (SELECT sql_id, child_number,
                                             regexp_replace(regexp_replace(regexp_replace(hint_text, '=[\.0-9]+', '=<number>'),'@\S+','[<@QB>]'),'"\S+"','<OBJ_NAME>') hints
-                                     FROM   V$sql_reoptimization_hints)))
+                                     FROM   v$sql_reoptimization_hints)))
             GROUP BY hints;
-           
+    TABLE_STATS(<table> <DEFAULT|SET|SCALE|SAMPLE> {<BLOCKS|ROWS|ROW_LENGTH>=<value>}): 
+       * table_stats(scott.emp set rows=14 blocks=1 row_length=10)
+    INDEX_STATS(<Table> <Index> <SCALE|NULL> {<BLOCKS|INDEX_ROWS|KEYS|CLUSTERING_FACTOR|ROWS>=<value>}): 
+    COLUMN_STATS(<Table> <Column> <SCALE|NULL> {<LENGTH|DISTINCT|NULLS|MIN|MAX> ><value>}): 
+    
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=/u01/app/oracle/product/18.0.0.0/dbhome_1/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';

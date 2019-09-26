@@ -365,6 +365,7 @@ function var.define_column(col,...)
     var.columns[col]=var.columns[col] or {}
     local obj=var.columns[col]
     local valid=false
+    local formats={}
     for i=1,#args do
         args[i],arg=args[i]:upper(),args[i+1] or ""
         local f,f1,scale=arg:upper(),arg:upper():match('(.-)(%d*)$')
@@ -376,13 +377,39 @@ function var.define_column(col,...)
             obj.new_value=arg
             i=i+1
             valid=true
+        elseif args[i]=="BREAK" then
+            local isskip=nil
+            if f=='SKIP' then
+                i=i+1
+                f=(args[i+1] or ""):upper()
+                isskip=' '
+            end
+            if #f==1 then
+                isskip=tonumber(f) and ' ' or f
+                i=i+1
+            end
+            formats[#formats+1]=function(v,rownum,grid)
+                if not rownum or env.printer.grep_text then return v end
+                if type(v)=='string' and (v==' ' or v==f or v=='') then return v end
+                if grid.break_groups[col]==nil or rownum<=1 then
+                    obj._prev_value=v
+                    grid.break_groups[col]=v
+                    return v
+                elseif obj._prev_value==v then
+                    return ''
+                else
+                    grid.break_groups.__SEP__=isskip or grid.break_groups.__SEP__
+                    obj._prev_value=v
+                    return v
+                end
+            end
         elseif args[i]=='FORMAT' or args[i]=='FOR' then
             local num_fmt="%."..scale.."f"
             env.checkerr(arg,'Format:  COL[UMN] <column> FOR[MAT] [KMB|TMB|ITV|SMHD|<format>] JUS[TIFY] [LEFT|L|RIGHT|R].')
             if f:find('^A') then
                 local siz=tonumber(arg:match("%d+"))
                 obj.format_dir='%-'..siz..'s'
-                obj.format=function(v) return tostring(v) and obj.format_dir:format(tostring(v):sub(1,siz)) or v end
+                formats[#formats+1]=function(v) return tostring(v) and obj.format_dir:format(tostring(v):sub(1,siz)) or v end
             elseif f:find("^HEADING") then
                 f = arg:match('^%w+%s+(.+)')
                 if f then
@@ -391,17 +418,17 @@ function var.define_column(col,...)
             elseif f1=="KMG" or f1=="TMB" then --KMGTP
                 local units=f1=="KMG" and {'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} or {'  ',' K',' M',' B',' T',' Q'}
                 local div=f1=="KMG" and 1024 or 1000
-                obj.format=function(v)
+                formats[#formats+1]=function(v)
                     local s=tonumber(v)
-                    if not s then return v end
+                    if not s then return v,1 end
                     local prefix=s<0 and '-' or ''
                     s=math.abs(s)
                     for i=1,#units do
                         v,s=math.round(s,scale),s/div
                         if v==0 then prefix='' end
-                        if s<1 then return string.format(i>1 and "%s"..num_fmt.."%s" or "%s%d%s",prefix,v,units[i]) end
+                        if s<1 then return string.format(i>1 and "%s"..num_fmt.."%s" or "%s%d%s",prefix,v,units[i]),1 end
                     end
-                    return string.format("%s"..num_fmt.."%s",v==0 and '' or prefix,v,units[#units])
+                    return string.format("%s"..num_fmt.."%s",v==0 and '' or prefix,v,units[#units]),1
                 end
             elseif f:find("SMHD%d") or f:find('.SMHD$') then
                 local div,units=f:match('%d$')
@@ -412,23 +439,23 @@ function var.define_column(col,...)
                 else
                     units,div={'s','m','h','d'},{60,60,24}
                 end
-                obj.format=function(v)
+                formats[#formats+1]=function(v)
                     local s=tonumber(v)
-                    if not s then return v end
+                    if not s then return v,1 end
                     local prefix=s<0 and '-' or ''
                     s=math.abs(s)
                     for i=1,#units-1 do
                         v,s=math.round(s,scale),s/div[i]
                         if v==0 then return '0' end
-                        if s<1 then return string.format("%s"..num_fmt.."%s",prefix,v,units[i]) end
+                        if s<1 then return string.format("%s"..num_fmt.."%s",prefix,v,units[i]),1 end
                     end
-                    return string.format("%s"..num_fmt.."%s",prefix,s,units[#units])
+                    return string.format("%s"..num_fmt.."%s",prefix,s,units[#units]),1
                 end
             elseif f=="SMHD" or f=="ITV" or f=="INTERVAL" then
                 local fmt=arg=='SMHD' and '%dD %02dH %02dM %02dS' or
                           f=='SMHD' and '%dd %02dh %02dm %02ds' or '%d %02d:%02d:%02d'
-                obj.format=function(v)
-                    if not tonumber(v) then return v end
+                formats[#formats+1]=function(v)
+                    if not tonumber(v) then return v,1 end
                     local s,u=tonumber(v),{}
                     local prefix=s<0 and '-' or ''
                     s=math.abs(s)
@@ -436,13 +463,13 @@ function var.define_column(col,...)
                         s,u[#u+1]=math.floor(s/60),s%60
                     end
                     u[#u+2],u[#u+1]=math.floor(s/24),s%24
-                    return prefix..fmt:format(u[4],u[3],u[2],u[1]):gsub("^0 ",'')
+                    return prefix..fmt:format(u[4],u[3],u[2],u[1]):gsub("^0 ",''),1
                 end
             elseif f:find("^PCT") or f:find("^PERCENTAGE") or f:find("^PERCENT") then
                 local scal=tonumber(f:match("%d+$")) or 2
-                obj.format=function(v)
-                    if not tonumber(v) then return v end
-                    return string.format("%."..scal.."f%%",tonumber(v)*100)
+                formats[#formats+1]=function(v)
+                    if not tonumber(v) then return v,1 end
+                    return string.format("%."..scal.."f%%",tonumber(v)*100),1
                 end
             elseif (f:find("%",1,true) or 999)<#f or f1=='K' then
                 local fmt,String=arg,String
@@ -450,16 +477,16 @@ function var.define_column(col,...)
                 if f1=='K' then fmt='%,.'..scale..'f' end
                 local format_func=function(v)
                     local v1= tonumber(v)
-                    if not v1 then return v end
+                    if not v1 then return v,1 end
                     local done,res=pcall(format,String,fmt,cast(v,'java.math.BigDecimal'))
                     if not done then
                         env.raise('Cannot format double number "'..v..'" with "'..fmt..'" on field "'..col..'"!')
                     end
-                    return res
+                    return res,1
                 end
                 local res,msg=pcall(format_func,999.99)
                 env.checkerr(res,"Unsupported format %s on field %s",arg,col)
-                obj.format=format_func
+                formats[#formats+1]=format_func
             elseif not var.define_column(col,f) then
                 local fmt=java.new("java.text.DecimalFormat")
                 local format=fmt.format
@@ -467,16 +494,16 @@ function var.define_column(col,...)
                 local res,msg=pcall(fmt.applyPattern,fmt,arg)
                 obj.format_dir='%'..#arg..'s'
                 local format_func=function(v)
-                    if not tonumber(v) then return s end
+                    if not tonumber(v) then return s,1 end
                     local done,res=pcall(obj.format_dir.format,obj.format_dir,format(fmt,cast(v,'java.math.BigDecimal')))
                     if not done then
                         env.raise('Cannot format double number "'..v..'" with "'..arg..'" on field "'..col..'"!')
                     end
-                    return res:trim()
+                    return res:trim(),1
                 end
                 local res,msg=pcall(format_func,999.99)
                 env.checkerr(res,"Unsupported format %s on field %s",arg,col)
-                obj.format=format_func
+                formats[#formats+1]=format_func
             end
             i=i+1
             valid=true
@@ -496,7 +523,7 @@ function var.define_column(col,...)
             obj.heading=arg
             i=i+1
             valid=true
-        elseif args[i]=='JUSTIFY' or args[i]=='JUS' and obj.format then
+        elseif args[i]=='JUSTIFY' or args[i]=='JUS' and #formats>0 then
             local arg=arg and arg:upper()
             local dir
             if arg then
@@ -513,12 +540,23 @@ function var.define_column(col,...)
             valid=true
         end
     end
+    if #formats>0 then
+        obj.format=function(v,rownum,grid)
+            local is_number,tmp
+            for _,func in ipairs(formats) do
+                v,tmp=func(v,rownum,grid)
+                if tmp then is_number=true end
+            end
+            return v,is_number
+        end
+    end
     return valid
 end
 
 
 function var.trigger_column(field)
-    local col,value,rownum,grid,index=table.unpack(field)
+    local col,value,rownum,grid,rowind=table.unpack(field)
+    local index
     if type(col)~="string" then return end
     col=col:upper()
     if not var.columns[col] then return end
@@ -545,8 +583,7 @@ function var.trigger_column(field)
 
     index=obj.format
     if index then 
-        field[2]=index(value)
-        field.is_number=true
+        field[2],field.is_number=index(value,rowind,grid)
     end
     
     index=obj.new_value
@@ -566,7 +603,7 @@ function var.onload()
     snoop("AFTER_COMMAND",var.capture_after_cmd)
     snoop("ON_COLUMN_VALUE",var.trigger_column)
     local fmt_help=[[
-    Specifies display attributes for a given column. Usage: @@NAME <columns> [NEW_VALUE|FORMAT|HEAD|ADDRATIO] <value> [<options>]
+    Specifies display attributes for a given column. Usage: @@NAME <columns> [NEW_VALUE|FORMAT|HEAD|ADDRATIO|BREAK] <value> [<options>]
     Refer to SQL*Plus manual for the detail, below are the supported features:
         1) @@NAME <columns> NEW_V[ALUE] <var>    [PRINT|NOPRINT]
         2) @@NAME <columns> HEAD[ING]   <title>
@@ -585,6 +622,7 @@ function var.onload()
         7) @@NAME <columns> FOR[MAT] INTERVAL|ITV : Cast number as 'dd hh:mm:ss' format
         8) @@NAME <columns> FOR[MAT] <formatter>  : Use Java 'String.format()' to format the number
         9) @@NAME <columns> FOR[MAT] K<scale>     : Cast number in thousand seperated
+       10) @@NAME <columns> BREAK [SKIP] [<char>] : Similar to the SQL*Plus BREAK command
 
     type 'help -e var.columns' to show the existing settings
 

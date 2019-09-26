@@ -1,3 +1,4 @@
+2019-09-26: + public: new options 'col <columns> break [skip] [<char>]' that similar to the SQL*Plus BREAK command
 2019-09-25: + oracle: new command 'ora plsql_hit'
 2019-09-23: + oracle: new commands 'ora btl/wait_event/xtable' and 'sys meminfo/addr'
 2019-09-20: + oracle: new commands 'sys execs/hwm' and 'oradebug pmem'

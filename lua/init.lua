@@ -10,6 +10,7 @@ local init={
         "lib/class",
         "lib/re",
         "lib/uv",
+        "lib/flamegraph",
 
         --"locale",
         --CLI commands ->

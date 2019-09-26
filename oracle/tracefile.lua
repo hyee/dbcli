@@ -42,15 +42,16 @@ function trace.get_trace(filename,mb,from_mb)
         BEGIN
             flag := -1;
             BEGIN
-                SELECT MAX(directory_name)
-                INTO   dir
-                FROM   Dba_Directories
-                WHERE  lower(tmp) LIKE lower(directory_path) || '%'
-                AND    length(tmp) - length(directory_path) < 2;
+                EXECUTE IMMEDIATE replace(q'[
+                    SELECT MAX(directory_name)
+                    FROM   Dba_Directories
+                    WHERE  lower('@t') LIKE lower(directory_path) || '%'
+                    AND    length('@t') - length(directory_path) < 2]','@t',tmp)
+                INTO dir;
             EXCEPTION WHEN OTHERS THEN
                 SELECT MAX(directory_name)
                 INTO   dir
-                FROM   ALL_Directories
+                FROM   All_Directories
                 WHERE  lower(tmp) LIKE lower(directory_path) || '%'
                 AND    length(tmp) - length(directory_path) < 2;
             END;
@@ -121,7 +122,7 @@ function trace.get_trace(filename,mb,from_mb)
 
         <<FILE_FROM_DICT>>
         IF text IS NULL THEN
-            dir  := regexp_replace(tmp,'[\\/]trace[\\/]$');
+            dir  := regexp_replace(regexp_replace(tmp,'[\\/]trace[\\/]$'),'[\\/]$');
             IF al IS NOT NULL THEN
                 OPEN cur FOR 'SELECT message_text FROM table(gv$(CURSOR(SELECT * FROM V$DIAG_ALERT_EXT WHERE filename LIKE :d1)))' USING dir||'%';
             ELSIF vw IS NOT NULL THEN
