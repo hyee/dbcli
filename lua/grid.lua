@@ -502,7 +502,6 @@ function grid:add(row)
 end
 
 function grid:add_calc_ratio(column, adjust, name,scale)
-    self.break_groups=nil
     adjust = tonumber(adjust) or 1
     if not self.ratio_cols then self.ratio_cols = {} end
     if type(column) == "string" then
@@ -520,6 +519,7 @@ function grid:add_calc_ratio(column, adjust, name,scale)
 end
 
 function grid:wellform(col_del, row_del)
+    self.break_groups=nil
     local result, colsize = self.data, self.colsize
     if grid.bypassemptyrs== 'on' and result[#result][0]==0 then return {},{}  end
     local rownum = grid.row_num

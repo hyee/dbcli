@@ -465,6 +465,7 @@ end
 
 local Node,Tmp={},{}
 
+-- flow() merges two stacks, storing the merged frames and value data in %Node.
 function FlameGraph.flow(last,this,v,d)
     local len_name,len_a,len_b=1,#last,#this
     local len_name=math.min(math.min(#last,#this))
@@ -475,6 +476,9 @@ function FlameGraph.flow(last,this,v,d)
         end
     end
     local fmt='%s;%s'
+
+    -- a unique ID is constructed from "func;depth;etime";
+    -- func-depth isn't unique, it may be repeated later.
     for i=len_a,len_name,-1 do
         local k=fmt:format(last[i],i)
         local n,t=fmt:format(k,v)
@@ -492,16 +496,114 @@ function FlameGraph.flow(last,this,v,d)
     return this
 end
 
-function FlameGraph.buildSVG()
+local function reverse(arr)
+    local i, j = 1, #arr
+    while i < j do
+        arr[i], arr[j] = arr[j], arr[i]
+        i = i + 1
+        j = j - 1
+    end
+end
+
+local function split(str,pattern)
+    local arr={}
+    for e in str:gmatch(pattern) do arr[#arr+1]=e end
+    return e
+end
+
+--parse input(io.lines or string.gmatch)
+function FlameGraph.buildSVG(hdl,line_func,args)
     Node,tmp={},{}
-    local Data={}
-    local SortedData={}
+    local data={}
     local last = {};
     local time = 0;
     local delta = undef;
     local ignored = 0;
     local line;
     local maxdelta = 1;
+    local exp="^ *(.-) +([%d%.]+) *$"
+    FlameGraph.CheckOptions()
+    for option,value in pairs(options) do
+        if args[option]==nil then args[option]=value end
+    end
+    for line in line_func(hdl) do
+        local stack,samples,samples2=line:match(exp)
+        if stack then
+            -- there may be an extra samples column for differentials
+            -- XXX todo: redo these REs as one. It's repeated below.
+            if stack:find(exp) then
+                samples2=samples
+                stack,samples=stack:match(exp)
+            end
+
+            --reverse if needed
+            if args.stackreverse==1 then 
+                local stacks={}
+                for func in stack:gmatch('[^;]+') do
+                    stacks[#stacks+1]=func
+                end
+                reverse(stacks)
+                stack=table.concat(stacks,';')
+            end
+            data[#data+1]={stack,samples,samples2}
+        else
+            ignored = ignored + 1
+        end
+    end
+    if type(hdl.close)=="function" then hdl:close() end
+    --In flame chart mode, just reverse the data so time moves from left to right.
+    if args.flamechart==1 then
+        reverse(data)
+    else
+        table.sort(data,function(a,b) return a[1]<b[1] end)
+    end
+
+    --process and merge frames
+    for line in ipairs(data) do
+        local stack,samples,sample2=unpack(line)
+        delta=nil
+        if samples2 then
+            delta = samples2 - samples
+            maxdelta = math.max(delta,maxdelta)
+        end
+
+        -- for chain graphs, annotate waker frames with "_[w]", for later
+        -- coloring. This is a hack, but has a precedent ("_[k]" from perf).
+        if args.colors=='chain' then
+            local sep=";--;"
+            local parts = split(stack,sep)
+            for i,part in ipairs(parts) do
+                parts[i]=i==1 and part or (part:gsub(';','_[w];').."_[w]")
+            end
+            stack=table.concat(parts,sep)
+        end
+        --merge frames and populate %Node:
+        last = FlameGraph.flow(last,{'',unpack(split(stack,';'))},time,delta)
+        time = time + (samples2 or samples)
+    end
+
+    FlameGraph.flow(last,{},time,delta)
+
+    if ignored>0 then print(("Ignored %d lines with invalid format"):format(ignored)) end
+
+    if time==0 then
+        --emit an error message SVG, for tools automating flamegraph use
+        print("ERROR: No stack counts found")
+        local im=FlameGraph.SVG:new()
+        local imageheight = args.fontsize * 5;
+        im:header(args.imagewidth, imageheight);
+        im:stringTTF(nil, math.floor(args.imagewidth / 2), args.fontsize * 2, "ERROR: No valid input provided to flamegraph.pl.");
+        print(im.svg());
+        exit(2);
+    end
+
+    if args.timemax and args.timemax < time then
+        --only warn is significant (e.g., not rounding etc)
+        if args.timemax/time > 0.02 then print(("Specified --total %s is less than actual total %s, so ignored"):format(args.timemax,time)) end
+        args.timemax=nil;
+    end
+    args.timemax = args.timemax or time
+    
 end
 
 return FlameGraph
