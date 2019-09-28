@@ -1102,9 +1102,11 @@ function oradebug.profile(sid,samples,interval,event)
             tracename,out=oradebug.get_trace(tracename)
         else
             samples=tonumber(samples) or 100
-            interval=tonumber(interval) or 0.1
+            interval=tonumber(interval) or samples>=500 and 0.01 or 0.1
             local prep=db.conn:prepareStatement([[select 'Wait',event,p1,p2,p3 from v$session_wait where sid=]]..org_sid,1003,1007)
+            local clock=os.clock()
             out=sqlplus:get_lines("oradebug short_stack",interval*1000,samples,prep)
+            print("Sampling complete within "..(os.clock()-clock).." secs.")
             log=env.write_cache("shortstacks_"..sid..".log",out)
         end
     end
@@ -1112,7 +1114,7 @@ function oradebug.profile(sid,samples,interval,event)
     local stacks,prev={},{depth=0,pct=nil}
     local last,items={},{}
     local sub,item,is_ms
-    local calls,trees,events=0,0,0
+    local calls,trees,events,branches=0,0,0,0
     local cnt,ela,wait,event,temp
     --Handle BTL report
     local btl_stack=' +(%d+): +(%S+.-) +([%.%d]+) *\n'
@@ -1131,6 +1133,7 @@ function oradebug.profile(sid,samples,interval,event)
             item=funcs[f]
 
             local data={calls=pct,subtree=pct,f=f,i=item}
+            if last[depth] then branches=branches+1 end
             last[depth]=data
             result[item].calls=result[item].calls+pct
             result[item].subtree=0
@@ -1189,6 +1192,13 @@ function oradebug.profile(sid,samples,interval,event)
             item=items[i]
             if not sub[item] then
                 sub[item]={f=result[item].func,subtree=ela,calls=0}
+                local childs=0
+                for k,v in pairs(sub) do
+                    if type(k)=="number" then
+                        childs=childs+1
+                    end
+                end
+                branches=math.max(branches,childs)
             else
                 sub[item].subtree=sub[item].subtree+ela
             end
@@ -1197,7 +1207,7 @@ function oradebug.profile(sid,samples,interval,event)
                 calls=calls+ela
                 sub[item].calls=sub[item].calls+ela
                 result[item].calls=result[item].calls+ela
-                sub[item].event=event or sub[item].event
+                sub[item].event=sub[item].event or event
                 last=sub[item]
             else
                 sub=sub[item]
@@ -1218,9 +1228,10 @@ function oradebug.profile(sid,samples,interval,event)
     local sep='  '
     local fmt='%5s%%(%d)'
     local fmt_chain='<-%s%s%s'
-    local fmt_stack='%s;%s%s'
-    local profiles={}
-    local function build_stack(sub,depth,prefix,chain,stacks)
+    local fmt_stack='%s;%s'
+    local fmt_last="[%-30s] Line #%4s: %s(%s)%s"
+    local profiles,eventStack={}
+    local function build_stack(sub,depth,prefix,chain,stacks,parent_func)
         local trees={}
         for k,v in pairs(sub) do
             if type(v)=='table' then
@@ -1231,12 +1242,17 @@ function oradebug.profile(sid,samples,interval,event)
 
         if #trees>0 then
             if #trees>1 then table.sort(trees,compare) end
+            if not eventStack and (#trees>1 or (branches<2 and parent_func=='opimai_real')) then
+                eventStack=true
+                stacks=stacks..'@EVENT@'
+            end
             for k,v in ipairs(trees) do
                 index=index+1
                 if v.calls>0 then
-                    result[v.index].event=v.event
-                    result[v.index].profile=fmt_stack:format(stacks:gsub('@EVENT@',v.event and (';'..v.event) or ''),v.f,' '..math.round(v.calls))
-                    result[v.index].stacks[#result[v.index].stacks+1]='Line #'..(''..index):lpad(4)..': '..v.f..'('..v.calls..')'..chain
+                    local res=result[v.index]
+                    res.stacks[#res.stacks+1]=fmt_last:format(v.event or '',index,v.f,v.calls,chain):gsub('%[%s+%]','',1)
+                    if not res.profiles then res.profiles={} end
+                    res.profiles[#res.profiles+1]=fmt_stack:format(stacks:gsub('@EVENT@',v.event and (';'..v.event) or ''),v.f)..' '..math.round(v.calls)
                 end
                 local func=oradebug.find_func(v.f,false)
                 rows:add{index,v.calls==0 and ' ' or fmt:format(math.round(100.0*v.calls/calls,2)..'',v.calls),
@@ -1245,7 +1261,7 @@ function oradebug.profile(sid,samples,interval,event)
                          prefix..v.f..func}
                 build_stack(v,depth+1,prefix..(k<#trees and '| ' or sep),
                            fmt_chain:format(v.f,v.calls>0 and ('('..v.calls..')') or '',chain),
-                           stacks=='' and v.f or fmt_stack:format(stacks,v.f,v.f=='opimai_real' and '@EVENT@' or ''))
+                           stacks=='' and v.f or fmt_stack:format(stacks,v.f),v.f)
             end
         end
     end
@@ -1254,7 +1270,9 @@ function oradebug.profile(sid,samples,interval,event)
     out=rows:tostring()
 
     for k,v in ipairs(result) do
-        if v.profile then profiles[#profiles+1]=v.profile end
+        if v.profiles then
+            for _,profile in ipairs(v.profiles) do profiles[#profiles+1]=profile end
+        end
     end
 
     table.sort(result,function(a,b)
@@ -1265,25 +1283,25 @@ function oradebug.profile(sid,samples,interval,event)
 
     local max=math.min(30,#result)
     rows,index=grid.new(),0
-    rows:add{'#','Function','calls'..(is_ms and '(ms)' or ''),'Calls%',events>0 and 'Event' or ('Subtree'..(is_ms and '(ms)' or '')),'Call Stacks'}
+    rows:add{'#','Function','calls'..(is_ms and '(ms)' or ''),'Calls%','Subtree'..(is_ms and '(ms)' or ''),'Call Stacks'}
     compare=function(a,b) return tonumber(a:match('%d+'))>tonumber(b:match('%d+')) end
     for i=1,max do
         if result[i].calls >0 then
             if #result[i].stacks>0 then
                 table.sort(result[i].stacks,
                     function(a,b) 
-                        a=tonumber(a:match(':.-(%d[%d%.]*)')) or 0
-                        b=tonumber(b:match(':.-(%d[%d%.]*)')) or 0
+                        a=tonumber(a:match('#%s*%d+:.-(%d[%d%.]*)')) or 0
+                        b=tonumber(b:match('#%s*%d+:.-(%d[%d%.]*)')) or 0
                         return a>b
                     end)
-                result[i].stacks[#result[i].stacks]='$UDL$'..result[i].stacks[#result[i].stacks]..'$NOR$'
+                if #result[i].stacks>1 then result[i].stacks[#result[i].stacks]='$UDL$'..result[i].stacks[#result[i].stacks]..'$NOR$' end
             end
             index=index+1
             rows:add{index,
                      result[i].func,
                      result[i].calls,
                      math.round(100.0*result[i].calls/calls,2),
-                     events>0 and (result[i].event or '') or result[i].subtree,
+                     result[i].subtree,
                      table.concat(result[i].stacks,'\n')}
         end
     end
@@ -1293,6 +1311,7 @@ function oradebug.profile(sid,samples,interval,event)
     if log then print("Short stacks are written to", log) end
     print("Analyze result is saved to",env.write_cache("printstack_"..file..".log",out:strip_ansi()))
     print("Collapsed profile result is saved to",env.write_cache(file..".collapsedstack.txt",table.concat(profiles,'\n')))
+    print("FlameGraph is saved to",env.write_cache("flamegraph_"..file..".svg",env.flamegraph.BuildGraph(profiles)))
 end
 
 function oradebug.kill(sid)

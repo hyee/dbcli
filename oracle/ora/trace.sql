@@ -37,7 +37,8 @@
         
         Others        : workareatab_dump,shared_server_state,treedump,errorstack,events
     --[[
-        @check_ver1        : 11.2={ ,plan_stat=>''all_executions''}, default={}
+        @ARGS         : 1
+        @check_ver1   : 11.2={ ,plan_stat=>''all_executions''}, default={}
     --]]    
 ]]*/
 

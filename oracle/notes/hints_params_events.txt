@@ -23,6 +23,7 @@ Parameters
     _lm_res_tm_hash_bucket/_lm_res_hash_bucket/_lm_share_lock_opt/_ksi_clientlocks_enabled: d improving the values can reduce "latch: ges resource hash list" events(Bug.27528038/29244263)
     _enqueue_hash_chain_latches: defaults to cpu_count, improving the values can reduce "latch: enqueue hash chains" events if not pending on some object(Bug.23589928)
     _px_adaptive_dist_method_threshold: controls the actual distribution method of adaptive distribution, default as DOP*2
+	cell_offload_parameters="<OPT_ENABLED|OPT_DISABLED>={<func_id_list in v$sqlfn_metadata>} | OPT_ENABLED_ONLY=(<func_id_list in v$sqlfn_metadata>)" 
     
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'

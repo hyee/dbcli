@@ -5834,6 +5834,7 @@ return {
     kqlunac="[Kernel SQL Library manager] unauthenticate dependents of an object",
     kqlvld="[Kernel SQL Library manager] validate an object",
     kqr="[Kernel SQL Row cache management] ",
+	kqrigt="[Kernel SQL Row cache management] attempts to acquire the object latch after a cross-instance call re-queue",
     kqreqd="[Kernel SQL Row cache management] reacquires latch before removing enqueue",
     kqrfr="[Kernel SQL Row cache management] free",
     kqrfrc="[Kernel SQL Row cache management] free cache",

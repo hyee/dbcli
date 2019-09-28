@@ -84,8 +84,8 @@
   CDDL HEADER END
   
   11-Oct-2014 Adrien Mahieux  Added zoom.
-  21-Nov-2013   Shawn Sterling  Added consistent palette file option
-  17-Mar-2013   Tim Bunce       Added options and more tunables.
+  21-Nov-2013 Shawn Sterling  Added consistent palette file option
+  17-Mar-2013 Tim Bunce       Added options and more tunables.
   15-Dec-2011 Dave Pacheco    Support for frames with whitespace.
   10-Sep-2011 Brendan Gregg   Created this.
 --]]--
@@ -122,6 +122,7 @@ local options={
     searchcolor = "rgb(230,0,230)", -- color for search highlighting
     notestext = "",           -- embedded notes in SVG
     subtitletext = "",        -- second level title (optional)
+    funcdesc = {},
     help = 0
 }
 local FlameGraph={}
@@ -190,7 +191,7 @@ function FlameGraph.CheckOptions()
     end
 
     if options.titletext == "" then
-        if options.inverted ~= 0 then
+        if options.inverted then
             options.titletext = options.titledefault;
         else
             options.titletext = options.titleinverted;
@@ -247,7 +248,7 @@ function FlameGraph.CheckOptions()
 end
 
 local function rgb(r,g,b)
-    return ("rgb($r,$g,$b)"):gsub{r=math.floor(r),g=math.floor(g),b=math.floor(b)};
+    return ("rgb($r,$g,$b)"):gsub("%$(%w+)",{r=math.floor(r),g=math.floor(g),b=math.floor(b)});
 end
 
 FlameGraph.SVG={}
@@ -261,22 +262,23 @@ function FlameGraph.SVG:header(w,h)
     local enc_attr=options.encoding and (' encoding="'..options.encoding..'"') or ''
     self.svg={}
     self.svg[1]=([[
-<?xml version="1.0"$enc_attr standalone="no"?>
+<?xml version="1.0"$encattr standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
 <svg version="1.1" width="$w" height="$h" onload="init(evt)" viewBox="0 0 $w $h" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
 <!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
-<!-- NOTES: $notestext -->]]):gsub{w=w,h=h,enc_attr=enc_attr,notestext=option.notestext}
+<!-- NOTES: $notestext -->]]):gsub("%$(%w+)",{w=w,h=h,encattr=options.enc_attr or '',notestext=options.notestext})
 end
 
-function FlameGraph.SVG:include(content)
-    self.svg[#self.svg+1] = content
+function FlameGraph.SVG:include(content,depth)
+    local indent=('  '):rep(depth or 0)
+    self.svg[#self.svg+1] = indent..content:gsub('\n\r?','\n'..indent)
 end
 
 function FlameGraph.SVG:colorAllocate(r,g,b)
     return rgb(r,g,b);
 end
 
-function FlameGraph.SVG:group_start(attr)
+function FlameGraph.SVG:group_start(attr,depth)
     local tag,g_attr = 'g',{}
 
     if (attr.href) then
@@ -291,28 +293,30 @@ function FlameGraph.SVG:group_start(attr)
     end
     g_attr[#g_attr+1]=attr.g_extra
 
-    self:include(('<%s %s>\n'):format(tag,table.concat(g_attr,' ')))
-    if attr.title then self:include(('<title>%s</title>'):format(attr.title)) end
+    self:include(('<%s%s>'):format(tag,#g_attr>0 and (' '..table.concat(g_attr,' ')) or ''),depth)
+    if attr.title then self:include(('<title>%s</title>'):format(attr.title),depth+1) end
 end
 
-function FlameGraph.SVG:group_end(attr)
-    self:include(attr.href and '</a>' or '</g>')
+function FlameGraph.SVG:group_end(attr,depth)
+    self:include(attr.href and '</a>' or '</g>',depth)
 end
 
-function FlameGraph.SVG:filledRectangle(x1, y1, x2, y2, fill, extra)
+function FlameGraph.SVG:filledRectangle(x1, y1, x2, y2, fill, extra,depth)
     local fmt="%0.1f"
     local attrs={
         w =fmt:format(x2-x1),
         h =fmt:format(y2-y1),
         x1=fmt:format(x1),
         x2=fmt:format(x2),
+        y1=fmt:format(y1),
+        y2=fmt:format(y2),
         extra = extra or '',
         fill=fill
     }
-    self:include('<rect x="$x1" y="$y1" width="$w" height="$h" fill="$fill" $extra />\n',attrs)
+    self:include(('<rect x="$x1" y="$y1" width="$w" height="$h" fill="$fill" $extra />'):gsub("%$(%w+)",attrs),depth)
 end
 
-function FlameGraph.SVG:stringTTF(id,x,y,str,extra)
+function FlameGraph.SVG:stringTTF(id,x,y,str,extra,depth)
     local attrs={
         x=("%0.2f"):format(x),
         y=("%0.2f"):format(y),
@@ -320,11 +324,11 @@ function FlameGraph.SVG:stringTTF(id,x,y,str,extra)
         id=id and (('id="%s"'):format(id)) or '',
         extra=extra or ''
     }
-    self:include(('<text $id x="$x" y="$y" $extra>$str</text>\n'):format(attrs))
+    self:include(('<text $id x="$x" y="$y" $extra>$str</text>'):gsub("%$(%w+)",attrs),depth)
 end
 
-function FlameGraph.SVG:svg()
-    return table.concat(svg,'')..'</svg>\n'
+function FlameGraph.SVG:toSVG()
+    return table.concat(self.svg,'\n')..'</svg>\n'
 end
 
 function FlameGraph.namehash(name)
@@ -425,7 +429,7 @@ end
 
 function FlameGraph.color_scale(value,max)
     local r,g,b=255,255,255
-    value=options.negate==1 and -value or value
+    value=options.negate and -value or value
     g=210*(max-math.abs(value))/max
     if value>0 then
         b=g
@@ -463,16 +467,65 @@ function FlameGraph.read_palette()
     end
 end
 
+local function reverse(arr)
+    local i, j = 1, #arr
+    while i < j do
+        arr[i], arr[j] = arr[j], arr[i]
+        i = i + 1
+        j = j - 1
+    end
+end
+
+function string.gsplit(s, sep, plain,occurrence,case_insensitive)
+    local start = 1
+    local counter=0
+    local done = false
+    local s1=case_insensitive==true and s:lower() or s
+    local sep1=case_insensitive==true and sep:lower() or sep
+    local function pass(i, j)
+        if i and ((not occurrence) or counter<occurrence) then
+            local seg = i>1 and s:sub(start, i - 1) or ""
+            start = j + 1
+            counter=counter+1
+            return seg, s:sub(i,j),counter
+        else
+            done = true
+            return s:sub(start),"",counter+1
+        end
+    end
+    return function()
+        if done then return end
+        if sep1 == '' then done = true return s end
+        return pass(s1:find(sep1, start, plain))
+    end
+end
+
+
+local function split(s,sep,plain,occurrence,case_insensitive)
+    local r={}
+    for v in s:gsplit(sep,plain,occurrence,case_insensitive) do
+        r[#r+1]=v
+    end
+    return r
+end
+
+local function comma_value(amount)
+    local formatted,k = amount
+    while k~=0 do  
+        formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1,%2')
+    end
+    return formatted
+end
+
 local Node,Tmp={},{}
 
 -- flow() merges two stacks, storing the merged frames and value data in %Node.
 function FlameGraph.flow(last,this,v,d)
     local len_name,len_a,len_b=1,#last,#this
-    local len_name=math.min(math.min(#last,#this))
-
     for i=1,math.min(len_a,len_b) do
         if len_name==1 and last[i]~=this[i] then
             len_name=math.max(1,i-1)
+            break
         end
     end
     local fmt='%s;%s'
@@ -487,7 +540,7 @@ function FlameGraph.flow(last,this,v,d)
         Node[n].stime,Node[n].delta=t.stime,t.delta
     end
 
-    for i=len_same,len_b,1 do
+    for i=len_name,len_b,1 do
         local k=fmt:format(this[i],i)
         if not Tmp[k] then Tmp[k]={} end
         Tmp[k].stime=v
@@ -496,37 +549,25 @@ function FlameGraph.flow(last,this,v,d)
     return this
 end
 
-local function reverse(arr)
-    local i, j = 1, #arr
-    while i < j do
-        arr[i], arr[j] = arr[j], arr[i]
-        i = i + 1
-        j = j - 1
-    end
-end
-
-local function split(str,pattern)
-    local arr={}
-    for e in str:gmatch(pattern) do arr[#arr+1]=e end
-    return e
-end
-
 --parse input(io.lines or string.gmatch)
-function FlameGraph.buildSVG(hdl,line_func,args)
-    Node,tmp={},{}
-    local data={}
-    local last = {};
+function FlameGraph.BuildGraph(lines,args)
     local time = 0;
-    local delta = undef;
+    local delta = nil;
     local ignored = 0;
     local line;
     local maxdelta = 1;
     local exp="^ *(.-) +([%d%.]+) *$"
     FlameGraph.CheckOptions()
+    args=args or {}
     for option,value in pairs(options) do
-        if args[option]==nil then args[option]=value end
+        if args[option]==nil then 
+            args[option]=value 
+        end
+        if args[option]==0 then args[option]=nil end
     end
-    for line in line_func(hdl) do
+    local stacks={__ELEMENTS__={}}
+    if not args.depthmax then args.depthmax=0 end
+    for _,line in ipairs(lines) do
         local stack,samples,samples2=line:match(exp)
         if stack then
             -- there may be an extra samples column for differentials
@@ -536,54 +577,46 @@ function FlameGraph.buildSVG(hdl,line_func,args)
                 stack,samples=stack:match(exp)
             end
 
+            stack=split(stack,';')
             --reverse if needed
-            if args.stackreverse==1 then 
-                local stacks={}
-                for func in stack:gmatch('[^;]+') do
-                    stacks[#stacks+1]=func
+            if args.stackreverse then reverse(stack) end
+            table.insert(stack,1,'')
+            local sub,chain=stacks
+            for depth,func in ipairs(stack) do
+                -- for chain graphs, annotate waker frames with "_[w]", for later
+                -- coloring. This is a hack, but has a precedent ("_[k]" from perf).
+                if chain then func=func..'_[w]' end
+                if not sub[func] then
+                    sub[func]={__STATS__={subtree=0,delta=0,calls=0},__ELEMENTS__={}}
+                    table.insert(sub.__ELEMENTS__,func)
                 end
-                reverse(stacks)
-                stack=table.concat(stacks,';')
+                local stats=sub[func].__STATS__
+                if depth==#stack then stats.calls=stats.calls+samples end
+                stats.subtree=stats.subtree+samples
+                stats.delta=stats.delta+((samples2 or samples)-samples)
+                maxdelta = math.max(stats.delta,maxdelta)
+                sub=sub[func]
+                if args.depthmax< depth then args.depthmax = depth end
+                if not chain and func=='--' and args.colors=='chain' then
+                    chain=func
+                end
             end
-            data[#data+1]={stack,samples,samples2}
+            time=time+(samples2 or samples)
         else
             ignored = ignored + 1
         end
     end
-    if type(hdl.close)=="function" then hdl:close() end
+
     --In flame chart mode, just reverse the data so time moves from left to right.
-    if args.flamechart==1 then
+    --[[
+    if args.flamechart then
         reverse(data)
     else
         table.sort(data,function(a,b) return a[1]<b[1] end)
     end
+    --]]
 
-    --process and merge frames
-    for line in ipairs(data) do
-        local stack,samples,sample2=unpack(line)
-        delta=nil
-        if samples2 then
-            delta = samples2 - samples
-            maxdelta = math.max(delta,maxdelta)
-        end
-
-        -- for chain graphs, annotate waker frames with "_[w]", for later
-        -- coloring. This is a hack, but has a precedent ("_[k]" from perf).
-        if args.colors=='chain' then
-            local sep=";--;"
-            local parts = split(stack,sep)
-            for i,part in ipairs(parts) do
-                parts[i]=i==1 and part or (part:gsub(';','_[w];').."_[w]")
-            end
-            stack=table.concat(parts,sep)
-        end
-        --merge frames and populate %Node:
-        last = FlameGraph.flow(last,{'',unpack(split(stack,';'))},time,delta)
-        time = time + (samples2 or samples)
-    end
-
-    FlameGraph.flow(last,{},time,delta)
-
+   
     if ignored>0 then print(("Ignored %d lines with invalid format"):format(ignored)) end
 
     if time==0 then
@@ -593,8 +626,7 @@ function FlameGraph.buildSVG(hdl,line_func,args)
         local imageheight = args.fontsize * 5;
         im:header(args.imagewidth, imageheight);
         im:stringTTF(nil, math.floor(args.imagewidth / 2), args.fontsize * 2, "ERROR: No valid input provided to flamegraph.pl.");
-        print(im.svg());
-        exit(2);
+        return im.toSVG();
     end
 
     if args.timemax and args.timemax < time then
@@ -603,7 +635,446 @@ function FlameGraph.buildSVG(hdl,line_func,args)
         args.timemax=nil;
     end
     args.timemax = args.timemax or time
-    
-end
 
+    local widthpertime = (args.imagewidth - 2 * args.xpad) / args.timemax;
+    local minwidth_time = args.minwidth / widthpertime;
+    --prune blocks that are too narrow and determine max depth
+    
+    args.imageheight = ((args.depthmax + 1) * args.frameheight) + args.ypad1 + args.ypad2
+    if args.subtitletext ~= "" then args.imageheight=args.imageheight+args.ypad3 end
+    args.titlesize = args.fontsize + 5
+    local im = FlameGraph.SVG:new()
+    args.black,args.vdgrey,args.dgrey=im:colorAllocate(0, 0, 0),im:colorAllocate(160, 160, 160),im:colorAllocate(200, 200, 200)
+    args.inverted=args.inverted or 0
+    im:header(args.imagewidth,args.imageheight)
+    local inc=([[
+<defs>
+    <linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+        <stop stop-color="$bgcolor1" offset="5%" />
+        <stop stop-color="$bgcolor2" offset="95%" />
+    </linearGradient>
+</defs>
+<style type="text/css">
+    text { font-family:$fonttype; font-size:${fontsize}px; fill:$black; }
+    #search { opacity:0.1; cursor:pointer; }
+    #search:hover, #search.show { opacity:1; }
+    #subtitle { text-anchor:middle; font-color:$vdgrey; }
+    #title { text-anchor:middle; font-size:${titlesize}px}
+    #unzoom { cursor:pointer; }
+    #frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+    .hide { display:none; }
+    .parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript"><![CDATA[
+    "use strict";
+    var details, searchbtn, unzoombtn, matchedtxt, svg, searching;
+    function init(evt) {
+        details = document.getElementById("details").firstChild;
+        searchbtn = document.getElementById("search");
+        unzoombtn = document.getElementById("unzoom");
+        matchedtxt = document.getElementById("matched");
+        svg = document.getElementsByTagName("svg")[0];
+        searching = 0;
+    }
+
+    window.addEventListener("click", function(e) {
+        var target = find_group(e.target);
+        if (target) {
+            if (target.nodeName == "a") {
+                if (e.ctrlKey === false) return;
+                e.preventDefault();
+            }
+            if (target.classList.contains("parent")) unzoom();
+            zoom(target);
+        }
+        else if (e.target.id == "unzoom") unzoom();
+        else if (e.target.id == "search") search_prompt();
+    }, false)
+
+    // mouse-over for info
+    // show
+    window.addEventListener("mouseover", function(e) {
+        var target = find_group(e.target);
+        if (target) details.nodeValue = "$nametype " + g_to_text(target);
+    }, false)
+
+    // clear
+    window.addEventListener("mouseout", function(e) {
+        var target = find_group(e.target);
+        if (target) details.nodeValue = ' ';
+    }, false)
+
+    // ctrl-F for search
+    window.addEventListener("keydown",function (e) {
+        if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+            e.preventDefault();
+            search_prompt();
+        }
+    }, false)
+
+    // functions
+    function find_child(node, selector) {
+        var children = node.querySelectorAll(selector);
+        if (children.length) return children[0];
+        return;
+    }
+    function find_group(node) {
+        var parent = node.parentElement;
+        if (!parent) return;
+        if (parent.id == "frames") return node;
+        return find_group(parent);
+    }
+    function orig_save(e, attr, val) {
+        if (e.attributes["_orig_" + attr] != undefined) return;
+        if (e.attributes[attr] == undefined) return;
+        if (val == undefined) val = e.attributes[attr].value;
+        e.setAttribute("_orig_" + attr, val);
+    }
+    function orig_load(e, attr) {
+        if (e.attributes["_orig_"+attr] == undefined) return;
+        e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+        e.removeAttribute("_orig_"+attr);
+    }
+    function g_to_text(e) {
+        var text = find_child(e, "title").firstChild.nodeValue;
+        return (text)
+    }
+    function g_to_func(e) {
+        var func = g_to_text(e);
+        // if there's any manipulation we want to do to the function
+        // name before it's searched, do it here before returning.
+        return (func);
+    }
+    function update_text(e) {
+        var r = find_child(e, "rect");
+        var t = find_child(e, "text");
+        var w = parseFloat(r.attributes.width.value) -3;
+        var txt = find_child(e, "title").textContent.replace(/\\([^(]*\\)\$/,"");
+        t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+        // Smaller than this size won't fit anything
+        if (w < 2 * $fontsize * $fontwidth) {
+            t.textContent = "";
+            return;
+        }
+
+        t.textContent = txt;
+        // Fit in full text width
+        if (/^ *\$/.test(txt) || t.getSubStringLength(0, txt.length) < w)
+            return;
+
+        for (var x = txt.length - 2; x > 0; x--) {
+            if (t.getSubStringLength(0, x + 2) <= w) {
+                t.textContent = txt.substring(0, x) + "..";
+                return;
+            }
+        }
+        t.textContent = "";
+    }
+
+    // zoom
+    function zoom_reset(e) {
+        if (e.attributes != undefined) {
+            orig_load(e, "x");
+            orig_load(e, "width");
+        }
+        if (e.childNodes == undefined) return;
+        for (var i = 0, c = e.childNodes; i < c.length; i++) {
+            zoom_reset(c[i]);
+        }
+    }
+    function zoom_child(e, x, ratio) {
+        if (e.attributes != undefined) {
+            if (e.attributes.x != undefined) {
+                orig_save(e, "x");
+                e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - $xpad) * ratio + $xpad;
+                if (e.tagName == "text")
+                    e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+            }
+            if (e.attributes.width != undefined) {
+                orig_save(e, "width");
+                e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+            }
+        }
+
+        if (e.childNodes == undefined) return;
+        for (var i = 0, c = e.childNodes; i < c.length; i++) {
+            zoom_child(c[i], x - $xpad, ratio);
+        }
+    }
+    function zoom_parent(e) {
+        if (e.attributes) {
+            if (e.attributes.x != undefined) {
+                orig_save(e, "x");
+                e.attributes.x.value = $xpad;
+            }
+            if (e.attributes.width != undefined) {
+                orig_save(e, "width");
+                e.attributes.width.value = parseInt(svg.width.baseVal.value) - ($xpad * 2);
+            }
+        }
+        if (e.childNodes == undefined) return;
+        for (var i = 0, c = e.childNodes; i < c.length; i++) {
+            zoom_parent(c[i]);
+        }
+    }
+    function zoom(node) {
+        var attr = find_child(node, "rect").attributes;
+        var width = parseFloat(attr.width.value);
+        var xmin = parseFloat(attr.x.value);
+        var xmax = parseFloat(xmin + width);
+        var ymin = parseFloat(attr.y.value);
+        var ratio = (svg.width.baseVal.value - 2 * $xpad) / width;
+
+        // XXX: Workaround for JavaScript float issues (fix me)
+        var fudge = 0.0001;
+
+        unzoombtn.classList.remove("hide");
+
+        var el = document.getElementById("frames").children;
+        for (var i = 0; i < el.length; i++) {
+            var e = el[i];
+            var a = find_child(e, "rect").attributes;
+            var ex = parseFloat(a.x.value);
+            var ew = parseFloat(a.width.value);
+            var upstack;
+            // Is it an ancestor
+            if ($inverted == 0) {
+                upstack = parseFloat(a.y.value) > ymin;
+            } else {
+                upstack = parseFloat(a.y.value) < ymin;
+            }
+            if (upstack) {
+                // Direct ancestor
+                if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+                    e.classList.add("parent");
+                    zoom_parent(e);
+                    update_text(e);
+                }
+                // not in current path
+                else
+                    e.classList.add("hide");
+            }
+            // Children maybe
+            else {
+                // no common path
+                if (ex < xmin || ex + fudge >= xmax) {
+                    e.classList.add("hide");
+                }
+                else {
+                    zoom_child(e, xmin, ratio);
+                    update_text(e);
+                }
+            }
+        }
+    }
+    function unzoom() {
+        unzoombtn.classList.add("hide");
+        var el = document.getElementById("frames").children;
+        for(var i = 0; i < el.length; i++) {
+            el[i].classList.remove("parent");
+            el[i].classList.remove("hide");
+            zoom_reset(el[i]);
+            update_text(el[i]);
+        }
+    }
+
+    // search
+    function reset_search() {
+        var el = document.querySelectorAll("#frames rect");
+        for (var i = 0; i < el.length; i++) {
+            orig_load(el[i], "fill")
+        }
+    }
+    function search_prompt() {
+        if (!searching) {
+            var term = prompt("Enter a search term (regexp " +
+                "allowed, eg: ^ext4_)", "");
+            if (term != null) {
+                search(term)
+            }
+        } else {
+            reset_search();
+            searching = 0;
+            searchbtn.classList.remove("show");
+            searchbtn.firstChild.nodeValue = "Search"
+            matchedtxt.classList.add("hide");
+            matchedtxt.firstChild.nodeValue = ""
+        }
+    }
+    function search(term) {
+        var re = new RegExp(term);
+        var el = document.getElementById("frames").children;
+        var matches = new Object();
+        var maxwidth = 0;
+        for (var i = 0; i < el.length; i++) {
+            var e = el[i];
+            var func = g_to_func(e);
+            var rect = find_child(e, "rect");
+            if (func == null || rect == null)
+                continue;
+
+            // Save max width. Only works as we have a root frame
+            var w = parseFloat(rect.attributes.width.value);
+            if (w > maxwidth)
+                maxwidth = w;
+
+            if (func.match(re)) {
+                // highlight
+                var x = parseFloat(rect.attributes.x.value);
+                orig_save(rect, "fill");
+                rect.attributes.fill.value = "$searchcolor";
+
+                // remember matches
+                if (matches[x] == undefined) {
+                    matches[x] = w;
+                } else {
+                    if (w > matches[x]) {
+                        // overwrite with parent
+                        matches[x] = w;
+                    }
+                }
+                searching = 1;
+            }
+        }
+        if (!searching)
+            return;
+
+        searchbtn.classList.add("show");
+        searchbtn.firstChild.nodeValue = "Reset Search";
+
+        // calculate percent matched, excluding vertical overlap
+        var count = 0;
+        var lastx = -1;
+        var lastw = 0;
+        var keys = Array();
+        for (k in matches) {
+            if (matches.hasOwnProperty(k))
+                keys.push(k);
+        }
+        // sort the matched frames by their x location
+        // ascending, then width descending
+        keys.sort(function(a, b){
+            return a - b;
+        });
+        // Step through frames saving only the biggest bottom-up frames
+        // thanks to the sort order. This relies on the tree property
+        // where children are always smaller than their parents.
+        var fudge = 0.0001; // JavaScript floating point
+        for (var k in keys) {
+            var x = parseFloat(keys[k]);
+            var w = matches[keys[k] ];
+            if (x >= lastx + lastw - fudge) {
+                count += w;
+                lastx = x;
+                lastw = w;
+            }
+        }
+        // display matched percent
+        matchedtxt.classList.remove("hide");
+        var pct = 100 * count / maxwidth;
+        if (pct != 100) pct = pct.toFixed(1)
+        matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+    }]@]>
+</script>]]):gsub(']@]>',']]>',1):gsub("%$%{?(%w+)%}?",args)
+    im:include(inc);
+    im:filledRectangle(0, 0, args.imagewidth, args.imageheight, 'url(#background)');
+    im:stringTTF("title", math.floor(args.imagewidth / 2), args.fontsize * 2, args.titletext);
+    if args.subtitletext ~= "" then
+        im:stringTTF("subtitle", math.floor(args.imagewidth / 2), args.fontsize * 4, args.subtitletext)
+    end
+    im:stringTTF("details", args.xpad, args.imageheight - (args.ypad2 / 2), " ");
+    im:stringTTF("unzoom", args.xpad, args.fontsize * 2, "Reset Zoom", 'class="hide"');
+    im:stringTTF("search", args.imagewidth - args.xpad - 100, args.fontsize * 2, "Search");
+    im:stringTTF("matched", args.imagewidth - args.xpad - 100, args.imageheight - (args.ypad2 / 2), " ");
+    if args.palette then FlameGraph.read_palette() end
+
+    im:group_start({id = "frames"})
+    local escapes={
+        ['&']='&amp;',
+        ['<']='&lt;',
+        ['>']='&gt;',
+        ['"']='&quot;'
+    }
+    local function travel(parent,depth,x)
+        for idx,func in ipairs(parent.__ELEMENTS__) do
+            local node=parent[func]
+            local stats=node.__STATS__
+            local subtree,calls,delta=stats.subtree,stats.calls,stats.delta
+            if subtree >= minwidth_time then
+                if delta==0 then delta=nil end
+                local x1=x;
+                local x2=x + subtree * widthpertime;
+                local y1,y2
+                if args.inverted==0 then
+                    y1 = args.imageheight - args.ypad2 - (depth + 1) * args.frameheight + args.framepad;
+                    y2 = args.imageheight - args.ypad2 - depth * args.frameheight
+                else
+                    y1 = args.ypad1 + depth * args.frameheight;
+                    y2 = args.ypad1 + (depth + 1) * args.frameheight - args.framepad;
+                end
+
+                local samples = ("%.2f"):format(subtree * args.factor)
+                local sample_text=comma_value(samples+0)
+
+                local info;
+                if func == "" and depth == 0 then
+                    info = ("all (%s %s, 100%%)"):format(sample_text,args.countname)
+                else
+                    local pct=("%.2f"):format((100 * samples) / (args.timemax * args.factor))
+                    --clean up SVG breaking characters:
+                    local escaped_func = func:gsub('[&<>"]',escapes)
+                    --strip any annotation
+                    escaped_func=escaped_func:gsub('_%[[kwij]%]$','',1)
+                    if not delta then
+                        info =("%s (%s %s, %s%%)"):format(escaped_func,sample_text,args.countname,pct)
+                    else
+                        local d= args.negate and -delta or delta
+                        local deltapct = ("%.2f"):format((100 * d) / (args.timemax * args.factor))
+                        deltapct = d > 0 and ("+"..deltapct) or deltapct
+                        info = ("%s (%s %s, %s%%; %s%%)"):format(escaped_func,sample_text,countname,pct,deltapct);
+                    end
+                end
+                --shallow clone
+                local nameattr = {}
+                for k,v in pairs(args.nameattr[func] or {}) do nameattr[k]=v end
+                nameattr.title=nameattr.title or info
+                im:group_start(nameattr,depth+1);
+
+                local color;
+                if func == "--" then
+                    color = args.vdgrey;
+                elseif func == "-" then
+                    color = args.dgrey;
+                elseif delta then
+                    color = FlameGraph.color_scale(delta, maxdelta)
+                elseif args.palette then
+                    color = FlameGraph.color_map(args.colors, func)
+                else
+                    color = FlameGraph.color(args.colors, args.hash, func);
+                end
+                im:filledRectangle(x1, y1, x2, y2, color, 'rx="2" ry="2"',depth+2);
+
+                local chars = math.floor((x2 - x1) / (args.fontsize * args.fontwidth))
+                local text = "";
+                -- room for one char plus two dots
+                if  chars >= 3 then
+                    -- strip any annotation
+                    func = func:gsub('_%[[kwij]%]$','',1)
+                    text = func:sub(1,chars)
+                    if chars < #func then text=text:sub(1,-3)..'..' end
+                    text=text:gsub('[&<>"]',escapes)
+                end
+                im:stringTTF(nil, x1 + 3, 3 + (y1 + y2) / 2, text,nil,depth+2)
+                im:group_end(nameattr,depth+1)
+                travel(node,depth+1,x)
+                x=x2
+            end
+        end
+    end
+    travel(stacks,0,args.xpad)
+    im:group_end({})
+    if (args.palette) then FlameGraph.write_palette() end
+    return im:toSVG()
+end
 return FlameGraph
