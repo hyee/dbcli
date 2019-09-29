@@ -384,7 +384,7 @@ local excluded_keywords={
 
 function db_core.get_command_type(sql)
     local list={}
-    for word in sql:gsub("%s*/%*.-%*/%s*",' '):gmatch("[^%s%(%)]+") do
+    for word in sql:gsub("%s*/%*.-%*/%s*",' '):gmatch("%a[%w_%#$]+") do
         local w=word:upper()
         if not excluded_keywords[w] then
             list[#list+1]=(#list < 3 and w or word):gsub('["`]','')

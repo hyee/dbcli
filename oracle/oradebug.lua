@@ -28,7 +28,6 @@ no_args={
         UNLIMIT=1,
         GET_TRACE=1
     }
-
 local function load_functions()
     if functions then return end
     local funcs,err=loadstring(env.load_data(db.ROOT_PATH..env.PATH_DEL..'functions.txt',false))
@@ -689,7 +688,6 @@ end
 local function get_output(cmd,is_comment)
     local output,clear=printer.get_last_output,printer.clear_buffered_output
     db:assert_connect()
-    env.checkerr(db.props and db.props.isdba,"oradebug only supports SYSDBA.")
     if not sqlplus.process then
         sqlplus:call_process(nil,true)
         sqlplus:get_lines("oradebug "..oradebug._pid)
@@ -698,6 +696,7 @@ local function get_output(cmd,is_comment)
     cmd='oradebug '..cmd
     if is_comment==nil then print('Running command: '..cmd) end
     local out=sqlplus:get_lines(cmd)
+    env.checkerr(not out:find('^ORA-01031'),"Insufficient privileges for non-SYSDBA user.")
     if is_comment==false then 
         if out then print(out) end
     end
@@ -1311,7 +1310,7 @@ function oradebug.profile(sid,samples,interval,event)
     if log then print("Short stacks are written to", log) end
     print("Analyze result is saved to",env.write_cache("printstack_"..file..".log",out:strip_ansi()))
     print("Collapsed profile result is saved to",env.write_cache(file..".collapsedstack.txt",table.concat(profiles,'\n')))
-    print("FlameGraph is saved to",env.write_cache("flamegraph_"..file..".svg",env.flamegraph.BuildGraph(profiles)))
+    print("FlameGraph is saved to",env.write_cache("flamegraph_"..file..".svg",env.flamegraph.BuildGraph(profiles,{funcdesc=cache,countname=is_ms and 'ms' or 'count'})))
 end
 
 function oradebug.kill(sid)

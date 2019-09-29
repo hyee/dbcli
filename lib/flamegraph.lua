@@ -271,7 +271,7 @@ end
 
 function FlameGraph.SVG:include(content,depth)
     local indent=('  '):rep(depth or 0)
-    self.svg[#self.svg+1] = indent..content:gsub('\n\r?','\n'..indent)
+    self.svg[#self.svg+1] = indent..content
 end
 
 function FlameGraph.SVG:colorAllocate(r,g,b)
@@ -585,9 +585,10 @@ function FlameGraph.BuildGraph(lines,args)
             for depth,func in ipairs(stack) do
                 -- for chain graphs, annotate waker frames with "_[w]", for later
                 -- coloring. This is a hack, but has a precedent ("_[k]" from perf).
+                local desc=(args.funcdesc[func:lower()] or ''):gsub('\27%[[%d;]*m',''):gsub('%$[%w_]+%$',''):gsub('^%s*%((.*)%)%s*$','%1')
                 if chain then func=func..'_[w]' end
                 if not sub[func] then
-                    sub[func]={__STATS__={subtree=0,delta=0,calls=0},__ELEMENTS__={}}
+                    sub[func]={__STATS__={subtree=0,delta=0,calls=0,desc=desc},__ELEMENTS__={}}
                     table.insert(sub.__ELEMENTS__,func)
                 end
                 local stats=sub[func].__STATS__
@@ -736,7 +737,7 @@ function FlameGraph.BuildGraph(lines,args)
         e.removeAttribute("_orig_"+attr);
     }
     function g_to_text(e) {
-        var text = find_child(e, "title").firstChild.nodeValue;
+        var text = find_child(e, "title").firstChild.nodeValue.replace(/\n.*/,"");
         return (text)
     }
     function g_to_func(e) {
@@ -745,11 +746,14 @@ function FlameGraph.BuildGraph(lines,args)
         // name before it's searched, do it here before returning.
         return (func);
     }
-    function update_text(e) {
+    var texts={}
+    function update_text(e,undo) {
         var r = find_child(e, "rect");
         var t = find_child(e, "text");
         var w = parseFloat(r.attributes.width.value) -3;
         var txt = find_child(e, "title").textContent.replace(/\\([^(]*\\)\$/,"");
+        if(txt && texts[txt]===undefined) texts[txt]=t.textContent||'';
+        txt=undo===true?texts[txt]||'':txt;
         t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
 
         // Smaller than this size won't fit anything
@@ -757,10 +761,10 @@ function FlameGraph.BuildGraph(lines,args)
             t.textContent = "";
             return;
         }
-
+        
         t.textContent = txt;
         // Fit in full text width
-        if (/^ *\$/.test(txt) || t.getSubStringLength(0, txt.length) < w)
+        if (/^ *\$/.test(txt) || txt.length>0&&t.getSubStringLength(0, txt.length) < w)
             return;
 
         for (var x = txt.length - 2; x > 0; x--) {
@@ -875,7 +879,7 @@ function FlameGraph.BuildGraph(lines,args)
             el[i].classList.remove("parent");
             el[i].classList.remove("hide");
             zoom_reset(el[i]);
-            update_text(el[i]);
+            update_text(el[i],true);
         }
     }
 
@@ -1021,18 +1025,26 @@ function FlameGraph.BuildGraph(lines,args)
                 if func == "" and depth == 0 then
                     info = ("all (%s %s, 100%%)"):format(sample_text,args.countname)
                 else
-                    local pct=("%.2f"):format((100 * samples) / (args.timemax * args.factor))
+                    local pct1=("%.2f"):format((100 * samples) / (args.timemax * args.factor)):gsub('%.?0+$','')
+                    local pct2=("%.2f"):format((100 * calls) / args.timemax):gsub('%.?0+$','')
+                    local pct3=("%.2f"):format((100 * (samples-calls)) / args.timemax):gsub('%.?0+$','')
                     --clean up SVG breaking characters:
                     local escaped_func = func:gsub('[&<>"]',escapes)
                     --strip any annotation
                     escaped_func=escaped_func:gsub('_%[[kwij]%]$','',1)
                     if not delta then
-                        info =("%s (%s %s, %s%%)"):format(escaped_func,sample_text,args.countname,pct)
+                        info =("%s [Unit=%s  Samples=%s(%s%%)  Self=%s(%s%%)  Subtree=%s(%s%%)]%s"):format(
+                            escaped_func,args.countname,
+                            sample_text,pct1,
+                            comma_value(calls),pct2,
+                            comma_value(samples-calls),pct3,
+                            stats.desc~="" and ('\nDescription: '..stats.desc:gsub('[&<>"]',escapes)) or ''
+                            )
                     else
                         local d= args.negate and -delta or delta
                         local deltapct = ("%.2f"):format((100 * d) / (args.timemax * args.factor))
                         deltapct = d > 0 and ("+"..deltapct) or deltapct
-                        info = ("%s (%s %s, %s%%; %s%%)"):format(escaped_func,sample_text,countname,pct,deltapct);
+                        info = ("%s (%s %s, %s%%; %s%%)"):format(escaped_func,sample_text,countname,pct1,deltapct);
                     end
                 end
                 --shallow clone
