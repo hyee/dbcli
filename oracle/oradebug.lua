@@ -1074,6 +1074,7 @@ end
 function oradebug.profile(sid,samples,interval,event)
     local org_sid,out,log,tracename=sid
     local typ,file=os.exists(sid)
+    local title
     if typ then
         out=env.load_data(file,false)
         file=file:gsub('.*[\\/]',''):gsub('%..-$','')
@@ -1121,6 +1122,7 @@ function oradebug.profile(sid,samples,interval,event)
     if cnt>=10 then
         calls=out:match("Elapsed: (%d+)")
         is_ms=true
+        title="BTL Report"
         for depth,f,pct in out:gmatch(btl_stack) do
             depth,pct=tonumber(depth),math.round(tonumber(pct)/100*calls,3)
             if pct==0 then goto continue1 end
@@ -1156,12 +1158,14 @@ function oradebug.profile(sid,samples,interval,event)
     for line in out:gsub('[\n\r]+%S+>%s+','\n'):gsplit('[\n\r]+%s*') do
         ela,event=1
         if line:find('ela=',1,true) then
+            title="Wait Event Profiling"
             wait,line=line:match('^(.*)=([^=]+)$')
             event,ela=wait:match('event="([^"]+)".*ela=(%d+)')
             if event then is_ms,events=true,events+1 end
             ela=ela and tonumber(ela)/1000 or 1
             line='<-'..line
         else
+            title="OraDebug Short Stack Profiling"
             line,cnt=line:gsub('^.-%_%_sighandler%(%)','',1)
             if cnt==0 then
                 line,cnt=line:gsub('^.-sspuser%(%)','',1)
@@ -1206,7 +1210,7 @@ function oradebug.profile(sid,samples,interval,event)
                 calls=calls+ela
                 sub[item].calls=sub[item].calls+ela
                 result[item].calls=result[item].calls+ela
-                sub[item].event=sub[item].event or event
+                sub[item].event=event or sub[item].event
                 last=sub[item]
             else
                 sub=sub[item]
@@ -1310,7 +1314,8 @@ function oradebug.profile(sid,samples,interval,event)
     if log then print("Short stacks are written to", log) end
     print("Analyze result is saved to",env.write_cache("printstack_"..file..".log",out:strip_ansi()))
     print("Collapsed profile result is saved to",env.write_cache(file..".collapsedstack.txt",table.concat(profiles,'\n')))
-    print("FlameGraph is saved to",env.write_cache("flamegraph_"..file..".svg",env.flamegraph.BuildGraph(profiles,{funcdesc=cache,countname=is_ms and 'ms' or 'count'})))
+    print("FlameGraph is saved to",env.write_cache("flamegraph_"..file..".svg",env.flamegraph.BuildGraph(profiles,{titletext=title,funcdesc=cache,countname=is_ms and 'ms' or 'count'})))
+    print(title)
 end
 
 function oradebug.kill(sid)

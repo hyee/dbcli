@@ -290,7 +290,7 @@ Examples:
         }
         &filter: default={} f={AND (&0)}
         &inst1: default={decode(:V1,'0',''||inst_id,decode(count(distinct inst_id) over(),1,''||inst_id,'*'))}
-        &inst_filter: default={(:V1 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V1=''||INST_ID OR lower(:V1) in('0','a'))}
+        &inst_filter: default={(:V1 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V1 in(''||INST_ID,'0','a'))}
         &sql1: {sql={[[ SELECT * /*+ignore_me no_merge(sq) no_merge(ash) grid={topic='Active SQLs',height=0,include_zero=true,order_by='-aas,-ela',per_second='off'}*/
                         FROM   (SELECT inst,sql_id,ela,round(aas/greatest(:per_second*:snap_interval,1),2) aas,round(cpu/greatest(:per_second*:snap_interval,1),2) cpu,
                                        substr(TRIM(regexp_replace(REPLACE(sql_text, chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 80) sql_text
@@ -479,7 +479,7 @@ Examples:
                    SUM(DECODE(n, 'physical reads direct', v))*bs "dxr",
                    SUM(DECODE(n, 'physical writes direct', v))*bs "dxw",
 				   SUM(CASE WHEN n LIKE '%scans (direct read)%' THEN v END) "dxscan",
-				   SUM(CASE WHEN n LIKE '%scans (%' AND n NOT LIKE '%rowid%' THEN v END) "fscan",
+				   SUM(DECODE(n,'table scans (short tables)',v,'table scans (long tables)',v,'index fast full scans (full)',v)) "fscan",
                    SUM(DECODE(n, 'redo size', v,'flashback log write bytes',v)) "Redo",
                    SUM(decode(n,'DBWR undo block writes',v))*bs "Undo",
             &ver   (select sum(w)*1024*1024 from (select &inst1 inst,SMALL_READ_MEGABYTES+SMALL_WRITE_MEGABYTES+LARGE_READ_MEGABYTES+LARGE_WRITE_MEGABYTES w from GV$IOSTAT_FUNCTION WHERE FUNCTION_NAME='DBWR' and &inst_filter) b where b.inst=a.inst) dbwr,
