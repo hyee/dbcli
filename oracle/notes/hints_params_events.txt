@@ -45,8 +45,11 @@ Hints:
             GROUP BY hints;
     TABLE_STATS(<table> <DEFAULT|SET|SCALE|SAMPLE> {<BLOCKS|ROWS|ROW_LENGTH>=<value>}): 
        * table_stats(scott.emp set rows=14 blocks=1 row_length=10)
-    INDEX_STATS(<Table> <Index> <SCALE|NULL> {<BLOCKS|INDEX_ROWS|KEYS|CLUSTERING_FACTOR|ROWS>=<value>}): 
-    COLUMN_STATS(<Table> <Column> <SCALE|NULL> {<LENGTH|DISTINCT|NULLS|MIN|MAX> ><value>}): 
-    
+    INDEX_STATS(<Table> <Index> <SCALE|NULL> {<BLOCKS|INDEX_ROWS|KEYS|CLUSTERING_FACTOR|ROWS>=<value>})
+    COLUMN_STATS(<Table> <Column> <SCALE|NULL> {<LENGTH|DISTINCT|NULLS|MIN|MAX> ><value>})
+	NUM_INDEX_KEYS(<@QB>] <table> <index> <cols>): used on multi-column index for INLIST ITERATOR, specifying how many columns(keys) to be put in access part and the others in filter part
+
+Fix Controls:
+    16923858:  Display timings in Optimizer trace(10053) when over 10^<value> microsec 
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=/u01/app/oracle/product/18.0.0.0/dbhome_1/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';

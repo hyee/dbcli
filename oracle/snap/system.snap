@@ -435,7 +435,7 @@ Examples:
       [[/*grid={topic='CPU/Memory/Performance',fixed_title=true,include_zero=true,order_by=1,per_second='on'}*/
         SELECT * 
         FROM(
-            SELECT ''||inst_id "#", 
+            SELECT inst_id "#", 
                 SUM(DECODE(stat_name, 'BUSY_TIME', v/cpus)) "Busy",
                 SUM(DECODE(stat_name, 'BUSY_TIME', v/cpus, 'IDLE_TIME', v/cpus)) idle,
                 MAX(db/cpus) "DB",
@@ -451,7 +451,7 @@ Examples:
                    FROM   gv$osstat b
                    WHERE  &inst_filter) a 
             GROUP  BY inst_id)
-        JOIN (select inst_id "#", '|' "|", sum(TIME_WAITED_MICRO) "IO Wait",sum(total_waits) total_waits from &sysevent where wait_class like '%I/O%' group by inst_id)  using("#")
+        RIGHT JOIN (select inst_id "#", '|' "|", sum(TIME_WAITED_MICRO) "IO Wait",sum(total_waits) total_waits from &sysevent where wait_class like '%I/O%' group by inst_id)  using("#")
         JOIN (SELECT inst_id "#",
                      sum(CASE WHEN NAME IN('physical write total IO requests','physical read total IO requests') THEN VALUE END) IOPs,
                      SUM(DECODE(NAME, 'user commits', VALUE,'user rollbacks',VALUE)) "TPS",
@@ -575,7 +575,7 @@ Examples:
                                 SUM(CR_BUSY) CR_BUSY,SUM(CR_CONGESTED) CR_CONGESTED ,
                                 SUM(CURRENT_BUSY) CU_BUSY,SUM(CURRENT_CONGESTED) CU_CONGESTED 
                          FROM   (select a.*,&inst1 inst from gv$instance_cache_transfer a) group by inst) c
-                JOIN    (SELECT  &inst1  inst, NAME n, VALUE v FROM &sysstat WHERE &inst_filter) a
+                RIGHT JOIN  (SELECT  &inst1  inst, NAME n, VALUE v FROM &sysstat WHERE &inst_filter) a
                 ON      (a.inst=c.inst)
                 GROUP  BY c.inst]],
             '-',
