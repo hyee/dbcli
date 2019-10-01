@@ -59,7 +59,7 @@ function xplan.explain(fmt,sql)
     sql=[[
         WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
         (SELECT *
-         FROM   (SELECT id, parent_id, plan_id, dense_rank() OVER(ORDER BY plan_id DESC) seq FROM plan_table WHERE STATEMENT_ID='INTERNAL_DBCLI_CMD')
+         FROM   (SELECT id, decode(parent_id,-1,id-1,parent_id) parent_id, plan_id, dense_rank() OVER(ORDER BY plan_id DESC) seq FROM plan_table WHERE STATEMENT_ID='INTERNAL_DBCLI_CMD')
          WHERE  seq = 1
          ORDER  BY id),
         qry AS (SELECT DISTINCT PLAN_id FROM sql_plan_data),

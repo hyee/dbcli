@@ -76,7 +76,6 @@ function sqlplus:make_sqlpath()
 end
 
 function sqlplus:get_startup_cmd(args,is_native)
-    local tnsadm=tostring(java.system:getProperty("oracle.net.tns_admin"))
     local props={}
     self:make_sqlpath()
     self.work_path,self.work_dir=self.work_dir,env._CACHE_PATH

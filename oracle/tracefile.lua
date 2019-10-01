@@ -41,11 +41,20 @@ function trace.get_trace(filename,mb,from_mb)
         tmp := dir;
         BEGIN
             flag := -1;
-            SELECT MAX(directory_name)
-            INTO   dir
-            FROM   Dba_Directories
-            WHERE  lower(tmp) LIKE lower(directory_path) || '%'
-            AND    length(tmp) - length(directory_path) < 2;
+            BEGIN
+                EXECUTE IMMEDIATE replace(q'[
+                    SELECT MAX(directory_name)
+                    FROM   Dba_Directories
+                    WHERE  lower('@t') LIKE lower(directory_path) || '%'
+                    AND    length('@t') - length(directory_path) < 2]','@t',tmp)
+                INTO dir;
+            EXCEPTION WHEN OTHERS THEN
+                SELECT MAX(directory_name)
+                INTO   dir
+                FROM   All_Directories
+                WHERE  lower(tmp) LIKE lower(directory_path) || '%'
+                AND    length(tmp) - length(directory_path) < 2;
+            END;
         
             flag := 0;
             IF dir IS NULL THEN
@@ -113,7 +122,7 @@ function trace.get_trace(filename,mb,from_mb)
 
         <<FILE_FROM_DICT>>
         IF text IS NULL THEN
-            dir  := regexp_replace(tmp,'[\\/]trace[\\/]$');
+            dir  := regexp_replace(regexp_replace(tmp,'[\\/]trace[\\/]$'),'[\\/]$');
             IF al IS NOT NULL THEN
                 OPEN cur FOR 'SELECT message_text FROM table(gv$(CURSOR(SELECT * FROM V$DIAG_ALERT_EXT WHERE filename LIKE :d1)))' USING dir||'%';
             ELSIF vw IS NOT NULL THEN
@@ -203,7 +212,6 @@ function trace.get_trace(filename,mb,from_mb)
     EXCEPTION WHEN OTHERS THEN NULL;
     END;]]))
 
-    filename=filename
     local lv=nil
     if filename:find("^%d+$") then lv=tonumber(filename) end
     if filename:lower()=="default" or lv then
@@ -259,13 +267,16 @@ function trace.get_trace(filename,mb,from_mb)
     if filename:lower():find('alert.*.log') then
         alert_view=db:check_obj("V$DIAG_ALERT_EXT",1)
     end
+
     local args={filename,"#VARCHAR","#CLOB","#VARCHAR",target_view and target_view.synonym or '',alert_view and alert_view.synonym or '',mb=mb or 8,from_mb=from_mb or '',res='#VARCHAR',readonly=env.set.get("readonly")}
     db:internal_call(sql,args)
     env.checkerr(args[2],args[4])
     env.checkerr(args[3] and args[3]~='','Target file %s does not exists!',filename)
     print(args.res);
     args[3]=loader:Base64ZlibToText(args[3]:split('\n'));
-    print("Result written to file "..env.write_cache(args[2],args[3]))
+    filename=env.write_cache(args[2],args[3])
+    print("Result written to file "..filename)
+    return filename,args[3]
 end
 
 function trace.reset()

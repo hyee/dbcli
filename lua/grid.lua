@@ -272,9 +272,9 @@ local String=String
 local string_format=String.format
 
 
-function grid.format_column(include_head, colinfo, value, rownum,instance)
+function grid.format_column(include_head, colinfo, value, rownum,instance,rowind)
     if include_head then
-        local result = event.callback("ON_COLUMN_VALUE", {colinfo.column_name, value, rownum,instance,is_number=colinfo.is_number})
+        local result = event.callback("ON_COLUMN_VALUE", {colinfo.column_name, value, rownum,instance,rowind,is_number=colinfo.is_number})
         value,colinfo.is_number=result[2],result.is_number
     end
     
@@ -327,7 +327,7 @@ function grid:add(row)
     if rownum == "on" then
         table.insert(rs, 1, headind == 0 and "#" or headind)
     end
-    
+    if not self.break_groups then self.break_groups={} end
     if headind == 0 then
         if rownum == "on" and rs.colinfo then table.insert(rs.colinfo, 1, {is_number = true}) end
         self.colinfo = rs.colinfo
@@ -352,7 +352,7 @@ function grid:add(row)
             self.colinfo[k]={column_name = #result > 0 and result[1]._org[k] or v}
         end
 
-        is_number, v1 = grid.format_column(self.include_head, self.colinfo[k], v, #result,self)
+        is_number, v1 = grid.format_column(self.include_head, self.colinfo[k], v, #result,self,headind)
         if tostring(v) ~= tostring(v1) then v = v1 end
         if colsize[k][3] and type(v)=='string' and colsize[k][3]:find(v,1,true) then
             csize=#colsize[k][3]
@@ -482,6 +482,22 @@ function grid:add(row)
     end
     result[#result].rsize=rsize
     self.headind = headind + 1
+    local sep=self.break_groups.__SEP__
+    if headind>1 and sep~=nil then
+        local row={}
+        for k,v in ipairs(self.colinfo) do
+            row[k]=sep
+            if rs[k]=='' and self.break_groups[v.column_name:upper()] then
+                rs[k]=self.break_groups[v.column_name:upper()] 
+            end
+        end
+        result[#result-1].sep=sep
+        self.break_groups.__SEP__=nil
+        result=self:add(row)
+        row=table.remove(result)
+        row.sep=sep
+        table.insert(result,#result,row)
+    end
     return result
 end
 
@@ -503,6 +519,7 @@ function grid:add_calc_ratio(column, adjust, name,scale)
 end
 
 function grid:wellform(col_del, row_del)
+    self.break_groups=nil
     local result, colsize = self.data, self.colsize
     if grid.bypassemptyrs== 'on' and result[#result][0]==0 then return {},{}  end
     local rownum = grid.row_num
@@ -657,7 +674,7 @@ function grid:wellform(col_del, row_del)
         end
         
         if not result[k + 1] or result[k + 1][0] ~= v[0] then
-            if #row_del == 1 and filter_flag == 1 and v[0] ~= 0 then
+            if not v.sep and #row_del == 1 and filter_flag == 1 and v[0] ~= 0 then
                 rows[#rows+1]=cut(row_dels)
                 output[#output+1]=row_dels
             elseif v[0] == 0 then
@@ -666,7 +683,6 @@ function grid:wellform(col_del, row_del)
             end
         end
     end
-
     
     if result[#result][0] > 0 and (row_del or "") == "" and (col_del or ""):trim() ~= "" then
         local line = cut(title_dels, format_func, fmt)

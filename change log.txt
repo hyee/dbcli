@@ -1,3 +1,16 @@
+2019-09-26: + public: new options 'col <columns> break [skip] [<char>]' that similar to the SQL*Plus BREAK command
+2019-09-25: + oracle: new command 'ora plsql_hit'
+2019-09-23: + oracle: new commands 'ora btl/wait_event/xtable' and 'sys meminfo/addr'
+2019-09-20: + oracle: new commands 'sys execs/hwm' and 'oradebug pmem'
+            + public: new option 'set convertRaw2Hex'
+2019-09-09: + oracle: new command 'oradebug func <keyword>' to extract kernel function
+2019-09-08: + oracle: new command 'oradebug profile <spid>' to sample target spid with specific interval and count
+            + oracle: new commands 'sys fcha/channel'
+2019-09-07: + oracle: new command 'oradebug kill <spid>' to crash a specific process
+            * oracle: update JDBC lib to 19.3
+2019-09-06: + oracle: new commands 'oradebug get_trace'
+2019-09-05: + oracle: new commands 'ora mutex/latchobj', 'show sqlver'
+2019-09-04: + oracle: new commands 'sys mutex/gesbuckets', 'ora col'
 2019-08-31: + oracle: new commands 'oracle hprof' and 'rac diag'
 2019-08-30: + oracle: new commands 'oradebug'/'ora privs'/'rac traffic'
 2019-04-25: + oracle: new command 'ora plandiff'

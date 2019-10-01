@@ -111,44 +111,85 @@ function unwrap.unwrap(obj,ext,prefix)
         return;
     end
     local info=db:check_obj(obj,1)
-    if type(info) ~='table' then
-        local rtn=unwrap.unwrap_schema(obj,ext)
-        return env.checkerr(rtn,'No such object: '..obj);
+    if type(info) ~='table' or not info then
+        local rtn=unwrap.unwrap_schema(obj:upper(),ext)
+        return env.checkerr(rtn,'No maching objects found in schema: '..obj);
     end
-    local qry=[[
-        SELECT TEXT,
-               MAX(CASE WHEN LINE = 1 AND TEXT LIKE '% wrapped%' || CHR(10) || '%' THEN 1 ELSE 0 END) OVER(PARTITION BY TYPE) FLAG,
-               LINE,
-               MAX(line) OVER(PARTITION BY TYPE) max_line
-        FROM  ALL_SOURCE a
-        WHERE OWNER = :owner
-        AND   NAME  = :name
-        ORDER BY TYPE, LINE]]
-    if db.props.version>11 then
-        qry=qry:gsub(':name',':name and origin_con_id=(select origin_con_id from all_source where rownum<2 and OWNER = :owner and NAME  = :name)')
-    end
-    local rs=db:dba_query(db.exec,qry,{owner=info.owner,name=info.object_name})
-    local cache={}
-    local result=""
-    local txt=""
-    local rows=db.resultset:rows(rs,-1)
-    table.remove(rows,1)
-    for index,piece in ipairs(rows) do
-        cache[#cache+1]=piece[1]
-        if piece[3]==piece[4] then
-            txt,cache=table.concat(cache,''),{};
-            if tonumber(piece[2])==1 then
-                local cnt,lines=txt:match('\r?\n[0-9a-f]+ ([0-9a-f]+)\r?\n(.*)')
-                env.checkerr(lines,'Cannot find matched text!')
-                txt=decode_base64_package(lines:gsub('[\n\r]+',''))
-            end
-            txt=txt:sub(1,-100)..(txt:sub(-99):gsub('%s*;[^;]*$',';'))
-            result=result..'CREATE OR REPLACE '..txt..'\n/\n\n'
+    if not info.object_type:find('^JAVA') then
+        local qry=[[
+            SELECT TEXT,
+                   MAX(CASE WHEN LINE = 1 AND TEXT LIKE '% wrapped%' || CHR(10) || '%' THEN 1 ELSE 0 END) OVER(PARTITION BY TYPE) FLAG,
+                   LINE,
+                   MAX(line) OVER(PARTITION BY TYPE) max_line
+            FROM  ALL_SOURCE a
+            WHERE OWNER = :owner
+            AND   NAME  = :name
+            ORDER BY TYPE, LINE]]
+        if db.props.version>11 then
+            qry=qry:gsub(':name',':name and origin_con_id=(select origin_con_id from all_source where rownum<2 and OWNER = :owner and NAME  = :name)')
         end
+        local rs=db:dba_query(db.exec,qry,{owner=info.owner,name=info.object_name})
+        local cache={}
+        local result=""
+        local txt=""
+        local rows=db.resultset:rows(rs,-1)
+        table.remove(rows,1)
+        for index,piece in ipairs(rows) do
+            cache[#cache+1]=piece[1]
+            if piece[3]==piece[4] then
+                txt,cache=table.concat(cache,''),{};
+                if tonumber(piece[2])==1 then
+                    local cnt,lines=txt:match('\r?\n[0-9a-f]+ ([0-9a-f]+)\r?\n(.*)')
+                    env.checkerr(lines,'Cannot find matched text!')
+                    txt=decode_base64_package(lines:gsub('[\n\r]+',''))
+                end
+                txt=txt:sub(1,-100)..(txt:sub(-99):gsub('%s*;[^;]*$',';'))
+                result=result..'CREATE OR REPLACE '..txt..'\n/\n\n'
+            end
+        end
+        db.resultset:close(rs)
+        env.checkerr(result~="",'Cannot find targt object: '..obj)
+        print("Result written to file "..env.write_cache(prefix..filename..'.'..(ext or 'sql'),result))
+    else
+        env.set.set('CONVERTRAW2HEX','on')
+        local args={clz='#BLOB',owner=info.owner,name=info.object_name,object_type=info.object_type,suffix='#VARCHAR'}
+        db:internal_call([[
+            DECLARE
+                v_blob   BLOB;
+                v_len    INTEGER;
+                v_buffer RAW(32767);
+                v_chunk  BINARY_INTEGER := 32767;
+                v_pos    INTEGER := 1;
+                v_type   VARCHAR2(30) := :object_type;
+                v_name   VARCHAR2(800):= REPLACE(:name, '/', '.');
+            BEGIN
+                dbms_lob.createtemporary(v_blob, TRUE);
+                IF v_type='JAVA CLASS' THEN
+                    dbms_java.export_class(v_name, :owner, v_blob);
+                    v_type := 'class';
+                ELSIF v_type='JAVA SOURCE' THEN
+                    dbms_java.export_source(v_name, :owner, v_blob);
+                    v_type := 'java';
+                ELSE
+                    dbms_java.export_resource(v_name, :owner, v_blob);
+                    v_type := 'properties';
+                END IF;
+                v_len := DBMS_LOB.GETLENGTH(v_blob);
+                WHILE v_pos <= v_len LOOP
+                    IF v_pos + v_chunk - 1 > v_len THEN
+                        v_chunk := v_len - v_pos + 1;
+                    END IF;
+                    DBMS_LOB.READ(v_blob, v_chunk, v_pos, v_buffer);
+                    v_pos := v_pos + v_chunk;
+                END LOOP;
+                :suffix := v_type;
+                :clz := v_blob;
+            END;]],args)
+        local path,class=info.object_name:match('^(.-)([^\\/]+)$')
+        path=env.join_path(env._CACHE_PATH,path)
+        loader:mkdir(path)
+        print("Result written to file "..env.save_data(path..class..'.'..args.suffix,args.clz,nil,true))
     end
-    db.resultset:close(rs)
-    env.checkerr(result~="",'Cannot find targt object: '..obj)
-    print("Result written to file "..env.write_cache(prefix..filename..'.'..(ext or 'sql'),result))
 end
 
 function unwrap.onload()

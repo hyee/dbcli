@@ -55,18 +55,38 @@ function oracle:helper(cmd)
     return ({
         CONNECT=[[
         Connect to Oracle database. Usage: @@NAME <user>[proxy]/<password>@<connection_string> [as sysdba]
+        
+        connection_string Format:
+        =========================
+        [| 
+         | Item                 | Format                                                                    | Examples                            |
+         | Bequeth Connect      | '' (ORACLE_SID must be set in the database environment)                   | @@NAME / as sysdba                    |
+         |                      |                                                                           | @@NAME / as sysasm                    |
+         |                      |                                                                           | @@NAME systm/oracle                    |
+         |-|-|-|
+         | TNS                  | <tns_name>[?<properties>]                                                 | @@NAME scott/tiger@orcl            |
+         |                      |                                                                           | @@NAME scott/tiger <In case of environment value TWO_TASK=orcl> |
+         |                      |                                                                           | @@NAME scott/tiger@orcl?TNS_ADMIN=d:\oracle\tns |
+         |-|-|-|
+         | EZConnect            | [//]host[:port]{/[service_name][:server][/sid]}[?<properties>]            | @@NAME sys/oracle@localhost/orcl as sysdba |
+         |                      |                                                                           | @@NAME scott/tiger@localhost:1521/orcl |
+         |                      |                                                                           | @@NAME scott/tiger@sales-scan:1521/orcl?v$session.program=dbcli&clientEncoding=GBK |
+         |                      |                                                                           | @@NAME scott/tiger@sales-scan:1521/orclrac/orcl1 |
+         |                      |                                                                           | @@NAME scott/tiger@sales-scan:1521/orclrac:dedicated/orcl1 |
+         |                      |                                                                           | @@NAME scott/tiger@sales-scan:1521//orcl1 |
+         |                      |                                                                           | @@NAME scott/tiger@(DESCRIPTION = (ADDRESS = (PROTOCOL=TCP)(HOST=localhost)(PORT=1521)) (CONNECT_DATA=(SERVER=DEDICATED)(SERVICE_NAME=orcl))) |
+         |-|-|-|
+         | JDBC Classic         |[//]host[:port][:sid[:server] ]?<properties>]                              | @@NAME scott/tiger@sales-scan:1521:orcl |
+         |                      |                                                                           | @@NAME scott/tiger@sales-scan:1521:orcl:dedicated |
+         |-|-|-|
+         | Client Load-Balance  |tcp[s]:[//]<host1>[:<port>],<hostN>[:<port>]/<service_name>[?<properties>] | @@NAME scott/tiger@tcp://salesserver1:1521,salesserver2,salesserver3:1522/sales_srv |
+         |-|-|-|
+         | LDAP                 |ldap[s]:[//]<server>[:<port>]/service_name,<context>                       | @@NAME scott/tiger@ldap://ldap.acme.com:7777/orcl,cn=OracleContext,dc=com  |      
+         |-|-|-|
+         | JDBC_URL             |<jdbc_url in "data/jdbc_url.cfg">                                          | @@NAME scott/tiger@tos |
+        ]
 
-        The format of <connection_string> can be:
-            * TNS      :  <tns_name>[?TNS_ADMIN=<path>]                     i.e.: @@NAME scott/tiger@orcl
-
-            * EZConnect:  [//]host[:port][/[service_name][:server][/sid] ]  i.e.: @@NAME scott/tiger@localhost:1521/orcl
-                          (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)...))         i.e.: @@NAME scott/tiger@(DESCRIPTION = (ADDRESS = (PROTOCOL=TCP)(HOST=localhost)(PORT=1521)) (CONNECT_DATA=(SERVER=DEDICATED)(SERVICE_NAME=orcl)))
-            
-            * JDBC     :  [//]host[:port][:sid[:server] ]                   i.e.: @@NAME scott/tiger@localhost:1521:orcl1
-            
-            * LDAP     :  ldap:[//]<server>[:<port>]/service_name,<context> i.e.: @@NAME scott/tiger@ldap://ldap.acme.com:7777/orcl,cn=OracleContext,dc=com
-            
-            * JDBC_URL :  <jdbc_url in "data/jdbc_url.cfg">                 i.e.: @@NAME scott/tiger@tos
+        Refer to https://docs.oracle.com/en/database/oracle/oracle-database/19/netag/configuring-naming-methods.html
         ]],
         CONN=[[Refer to command 'connect']],
     })[cmd]
@@ -78,6 +98,7 @@ function oracle:connect(conn_str)
     local sqlplustr
     local driver=env.set.get('driver')
     local tns_admin
+    local attrs={}
     if type(conn_str)=="table" then --from 'login' command
         args=conn_str
         server,proxy_user,sqlplustr=args.server,args.PROXY_USER_NAME,packer.unpack_str(args.oci_connection)
@@ -92,8 +113,23 @@ function oracle:connect(conn_str)
         usr,_,pwd,conn_desc = conn_str:match('(.*)/("?)(.*)%2@(.+)')
         url, isdba=(conn_desc or conn_str):match('^(.*) as (%w+)$')
         if conn_desc and conn_desc:find("?",1,true) then
-            conn_desc,params=conn_desc:match('(.*)(%?.*)')
-            tns_admin=params:match(tns_admin_param)
+            local found=false
+            local props=conn_desc:split("?",true)
+            for k,v in props[#props]:gmatch("([^&]+)=([^&]+)") do
+                k,v=k:trim(),v:trim()
+                if k:upper()~='TNS_ADMIN' 
+                    then attrs[k]=v
+                else
+                    tns_admin=v
+                end
+                found=true
+            end
+
+            if found then
+                props[#props]=tns_admin and ('TNS_ADMIN='..tns_admin) or nil
+                conn_desc=table.concat(props,'?')
+                url=conn_desc
+            end
         end
         
         if conn_desc == nil or pwd=='' and isdba then
@@ -117,6 +153,8 @@ function oracle:connect(conn_str)
         if database then
             if host=='ldap' or host=='ldaps' then
                 flag,server_sep,database=true,'/',database:sub(3):match('/([^%s,]+)')
+            elseif host=='tcp' then
+                flag,server_sep,database=true,'/',database:sub(3):match('/([^%s,]+)')
             elseif database:sub(1,1)=='/' then -- //<sid>
                 flag,server_sep,database=false,':',database:sub(2)
             elseif database:match('^:(%w+)/([%w_]+)$') then -- /:<server>/<sid>
@@ -127,7 +165,7 @@ function oracle:connect(conn_str)
                 flag,server_sep,database,server=false,'/',database:match('^([%w_]+):(%w+)$')
             end
             if server then server=server:upper() end
-            if port=="" and host~='ldap' and host~='ldaps' then flag,port=false,':1521' end
+            if port=="" and host~='ldap' and host~='ldaps' and host~='tcp' then flag,port=false,':1521' end
             if not flag then 
                 url=host..port..server_sep..database..(server and (':'..server) or '')
                 sqlplustr=string.format('%s/%s@%s%s/%s%s',
@@ -141,7 +179,8 @@ function oracle:connect(conn_str)
         end
     end
 
-    args=args or {user=usr,password=pwd,url="jdbc:oracle:"..driver..":@"..url..(params or ''),internal_logon=isdba}
+    args=args or self:merge_props({user=usr,password=pwd,url="jdbc:oracle:"..driver..":@"..url,internal_logon=isdba},attrs)
+    if tns_admin then args.url=args.url:replace(tns_admin,tns_admin:gsub('\\','/')) end
     env.checkerr(not args.url:find('oci.?:@') or home,"Cannot connect with oci driver without specifying the ORACLE_HOME environment.")
     self:merge_props(self.public_props,args)
     self:load_config(url,args)
@@ -159,6 +198,7 @@ function oracle:connect(conn_str)
         end
         sqlplustr=string.format("%s/%s@%s%s",args.user,pwd,args.url:match("@(.*)$"),args.internal_logon and " as "..args.internal_logon or "")
     end
+    sqlplustr=sqlplustr:gsub("?%S+",'')
     
     local prompt=args.jdbc_alias or url:gsub('.*@','')
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
@@ -168,7 +208,7 @@ function oracle:connect(conn_str)
     self.props={privs={}}
     self.conn,args=self.super.connect(self,args,data_source)
     self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
-    self.temp_tns_admin,self.conn_str=tns_admin,sqlplustr:gsub('%?.*','')
+    self.temp_tns_admin,self.conn_str=tns_admin or args['oracle.net.tns_admin'],sqlplustr:gsub('%?.*','')
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     local props={host=self.properties['AUTH_SC_SERVER_HOST'],
@@ -198,7 +238,8 @@ function oracle:connect(conn_str)
             EXECUTE IMMEDIATE q'[alter session set nls_date_format='yyyy-mm-dd hh24:mi:ss' nls_timestamp_format='yyyy-mm-dd hh24:mi:ssxff' nls_timestamp_tz_format='yyyy-mm-dd hh24:mi:ssxff TZH:TZM']';
             BEGIN
                 EXECUTE IMMEDIATE 'alter session set statistics_level=all';
-                EXECUTE IMMEDIATE 'alter session set "_query_execution_cache_max_size"=8388608';
+                EXECUTE IMMEDIATE 'alter session set parallel_degree_policy=MANUAL';
+                EXECUTE IMMEDIATE 'alter session set "_query_execution_cache_max_size"=4194304';
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
 
@@ -338,7 +379,6 @@ end
 
 function oracle:parse(sql,params)
     local bind_info,binds,counter,index,org_sql={},{},0,0
-
     if cfg.get('SQLCACHESIZE') ~= self.MAX_CACHE_SIZE then
         self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     end

@@ -63,7 +63,7 @@
       &BASE: ash={1}, dash={10}
       &Range: default={sample_time+0 between nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MISS'),sysdate)}
       &filter: {
-            id={(trim('&1') is null or upper(:V1)='A' or :V1 in(&top_sql sql_id,''||session_id,event)) and &range
+            id={(trim('&1') is null or upper(:V1)='A' or :V1 in(&top_sql sql_id,''||session_id,nvl(event,'ON CPU'))) and &range
                     &V4},
             snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(&top_sql sql_id,''||session_id,'event')) &V3},
             u={username=nvl('&0',sys_context('userenv','current_schema')) and &range}
@@ -118,9 +118,9 @@ SELECT * FROM (
                 WHEN instr(a.program,'@')>1 THEN
                      nullif(regexp_substr(a.program,'[^@]+'),'oracle')
                 END program#,&unit c,&CPU CPU
-              , TO_CHAR(p1, '0XXXXXXXXXXXXXXX') p1raw
-              , TO_CHAR(p2, '0XXXXXXXXXXXXXXX') p2raw
-              , TO_CHAR(p3, '0XXXXXXXXXXXXXXX') p3raw
+              , TO_CHAR(p1, 'fm0XXXXXXXXXXXXXXX') p1raw
+              , TO_CHAR(p2, 'fm0XXXXXXXXXXXXXXX') p2raw
+              , TO_CHAR(p3, 'fm0XXXXXXXXXXXXXXX') p3raw
               , nvl(event,'['||p1text||nullif('|'||p2text,'|')||nullif('|'||p3text,'|')||']') event_name
         &V11  , CASE WHEN IN_CONNECTION_MGMT      = 'Y' THEN 'CONNECTION_MGMT '          END ||
         &V11    CASE WHEN IN_PARSE                = 'Y' THEN 'PARSE '                    END ||

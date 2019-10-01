@@ -4,7 +4,6 @@ local read=reader
 local event=env.event and env.event.callback or nil
 local db_core=env.class()
 local db_Types={}
-
 db_core.NOT_ASSIGNED='__NO_ASSIGNMENT__'
 function db_Types:set(typeName,value,conn)
     local typ=self[typeName]
@@ -91,11 +90,14 @@ function db_Types:load_sql_types(className)
         [5]={getter='getBlob',setter='setBytesForBlob', --setBytes
              handler=function(result,action,conn)
                 if action=="get" then
+                    local israw=cfg.get("CONVERTRAW2HEX")=='on'
                     local succ,len=pcall(result.length,result)
                     if not succ then return nil end
-                    local str=result:getBytes(1,math.min(255,len))
+                    local str=result:getBytes(1,israw and len or math.min(255,len))
                     result:free()
-                    str=string.rep('%2X',#str):format(str:byte(1,#str)):gsub(' ','0')
+                    if not israw then
+                        str=string.rep('%2X',#str):format(str:byte(1,#str)):gsub(' ','0')
+                    end
                     return str
                 else
                     return java.cast(result,'java.lang.String'):getBytes()
@@ -382,7 +384,7 @@ local excluded_keywords={
 
 function db_core.get_command_type(sql)
     local list={}
-    for word in sql:gsub("%s*/%*.-%*/%s*",' '):gmatch("[^%s%(%)]+") do
+    for word in sql:gsub("%s*/%*.-%*/%s*",' '):gmatch("%a[%w_%#$]+") do
         local w=word:upper()
         if not excluded_keywords[w] then
             list[#list+1]=(#list < 3 and w or word):gsub('["`]','')
@@ -560,7 +562,7 @@ function db_core:parse(sql,params,prefix,prep)
             bind_info[#bind_info+1]=args
             return '?'
         end)
-    if not prep then prep=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007) end
+    if not prep then prep=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007,1) end
 
     self:check_params(sql,prep,bind_info,params)
 
@@ -592,6 +594,7 @@ function db_core:abort_statement()
 end
 
 function db_core:exec_cache(sql,args,description)
+    self:assert_connect()
     local params ={}
     for k,v in pairs(args or {}) do
         if type(k)=="string" then params[k:upper()] = v end
@@ -732,7 +735,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         prep,sql,params=self:parse(sql,params)
         prep:setEscapeProcessing(false)
         self.__stmts[#self.__stmts+1]=prep
-        prep:setFetchSize(1)
+        prep:setFetchSize(cfg.get("FETCHSIZE"))
         prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
         pcall(prep.closeOnCompletion,prep)
         self.current_stmt=prep
@@ -1158,16 +1161,17 @@ function db_core:sql2file(filename,sql,method,ext,...)
     file:close()
     if cfg then cfg.set("SQLTIMEOUT",86400) end
     if type(result)=="table" then
-        for idx,rs in pairs(rs) do
-            if type(rs)=="userdata" then
+        for idx,rs1 in pairs(rs) do
+            if type(rs1)=="userdata" then
                 local file=filename..tostring(idx)
                 print("Start to extract result into "..file)
-                clock,counter=os.timer(),loader[method](loader,rs,file,...)
+                clock,counter=os.timer(),loader[method](loader,rs1,file,...)
                 print_export_result(file,clock,counter)
             end
         end
     else
         print("Start to extract result into "..filename)
+        print(result)
         clock,counter=os.timer(),loader[method](loader,result,filename,...)
         print_export_result(filename,clock,counter)
     end
@@ -1359,7 +1363,7 @@ function db_core:__onload()
     txt=txt..'\n       exec open :x for select * from user_objects where rownum<10;'
     txt=txt..'\n       sql2csv user_objects x;'
     cfg.init("PRINTSIZE",1000,set_param,"db.query","Max rows to be printed for a select statement",'1-10000')
-    cfg.init("FETCHSIZE",3000,set_param,"db.query","Rows to be prefetched from the resultset, 0 means auto.",'0-32767')
+    cfg.init({"FETCHSIZE","ARRAY","ARRAYSIZE"},3000,set_param,"db.query","Rows to be prefetched from the resultset, 0 means auto.",'0-32767')
     cfg.init("SQLTIMEOUT",1200,set_param,"db.core","The max wait time(in second) for a single db execution",'10-86400')
     cfg.init({"FEED","FEEDBACK"},'on',set_param,"db.core","Detemine if need to print the feedback after db execution",'on,off')
     cfg.init("AUTOCOMMIT",'off',set_param,"db.core","Detemine if auto-commit every db execution",'on,off')
@@ -1367,6 +1371,7 @@ function db_core:__onload()
     cfg.init("ASYNCEXP",true,set_param,"db.export","Detemine if use parallel process for the export(SQL2CSV and SQL2FILE)",'true,false')
     cfg.init("SQLERRLINE",'off',nil,"db.core","Also print the line number when error SQL is printed",'on,off')
     cfg.init("NULL","",nil,"db.core","Define the display value for NULL value")
+    cfg.init("ConvertRAW2Hex","on",nil,"db.core","Convert raw data to Hex(text) format","on,off")
     cfg.init("CSVSEP",",",set_param,"db.core","Define the default separator between CSV fields.")
     cfg.init("READONLY",'off',set_param,"db.core","When set to on, makes the database connection read-only.",'on,off')
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)

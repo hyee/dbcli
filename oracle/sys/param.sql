@@ -6,9 +6,8 @@
       @g11: 11={)))} default={)}
       @GV: 11.1={TABLE(GV$(CURSOR(} default={(}
       &df: {
-        default={KSPPSTDFL default_value}
-        v={(select listagg(decode(ISDEFAULT_KSPVLD_VALUES,'TRUE','*',' ')||VALUE_KSPVLD_VALUES,','||chr(10)) within group(order by ISDEFAULT_KSPVLD_VALUES desc) from X$KSPVLD_VALUES o
-           where NAME_KSPVLD_VALUES=ksppinm and o.inst_id=y.inst_id) avail_values}
+        default={&def KSPPSTDFL default_value}
+        v={(select listagg(decode(ISDEFAULT_KSPVLD_VALUES,'TRUE','*',' ')||VALUE_KSPVLD_VALUES,','||chr(10)) within group(order by ISDEFAULT_KSPVLD_VALUES desc) from X$KSPVLD_VALUES o where NAME_KSPVLD_VALUES=ksppinm and o.inst_id=y.inst_id) avail_values}
       }
       &f1: default={ksppstdf='FALSE' or nvl(upper(ksppstdvl),' ')!=nvl(upper(sysval),' ')} f={1=1}
       &f2: default={1=1} f={}
@@ -19,7 +18,7 @@ SELECT * FROM &GV
         SELECT x.inst_id,ksppinm NAME, ksppity TYPE, 
                case when length(ksppstdvl)>80 then regexp_replace(ksppstdvl,', *',','||chr(10)) else ksppstdvl end SESS_VALUE, 
                decode(upper(ksppstdvl),upper(sysval),'<SAME>',case when length(sysval)>80 then regexp_replace(sysval,', *',','||chr(10))  else sysval end) SYS_VALUE,
-               &def &df,
+               &df,
                &def decode(upper(KSPPSTVL),upper(KSPPSTDFL),'TRUE','FALSE') ISDEFAULT,
                nvl2(z.PNAME_QKSCESYROW,'TRUE','FALSE') ISOPT_ENV,
                decode(bitand(ksppiflg / 256, 1), 1, 'TRUE', 'FALSE') ISSES_Mdf,

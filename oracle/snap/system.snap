@@ -1,4 +1,4 @@
-/*[[Show System statistics summary. Usage: @@NAME <options> {[<inst_id>] [<keyword>|-im]} [-iostat|-latch] [-filestat] [-f"<event_filter>"]
+/*[[Show System statistics summary. Usage: @@NAME <options> {[<inst_id>] [<keyword>|-im]} [-iostat|-latch] [-filestat|-dlm] [-f"<event_filter>"]
     
 Options:
     <inst_id>     : Specify the instance number, default to aggregrate all instances' stats. When '0' means don't aggregrate across all instances
@@ -6,9 +6,9 @@ Options:
     <event_filter>: The predicate to filter gv$system_event
     -latch        : Show latch stats instead of active sessions
     -iostat       : Show I/O stats instead of active sessions
-    -filestat     : Show Tablespace and file stats instead of system global stats
-    -im           : Only list the statistics relative to In-Memory
-
+    -im           : Only list the system global stats relative to In-Memory
+	-filestat     : Show Tablespace and file stats instead of system global stats
+	-dlm          : Show info of gv$dlm_misc instead of system global stats
 Examples:
      @@NAME  10           : takes 2 snapshots within 10 seconds and report the delta stats
      @@NAME  10 . time    : takes 2 snapshots within 10 seconds and report the delta stats, as well as show the stats contain the word "time" 
@@ -55,6 +55,8 @@ Examples:
  | PhyWrite         | gv$sysstat                   | Value['physical write total bytes']                                                                                |
  | dxr              | gv$sysstat                   | 100 * Value['physical reads direct'] * db_block_size / <PhyRead>                                                   |
  | dxw              | gv$sysstat                   | 100 * Value['physical writes direct'] * db_block_size / <PhyWrite>                                                 |
+ | dxscan           | gv$sysstat                   | 100 * Value['%scans (direct read)'] /  [fscan]                                                                     |
+ | fscan            | gv$sysstat                   | Value['%scans (^[rowid range])' excluding rowid]                                                                   |
  | Redo             | gv$sysstat                   | Value['redo size'+'flashback log write bytes']                                                                     |
  | Undo             | gv$sysstat                   | Value['DBWR undo block writes']                                                                                    |
  | Temp             | gv$sysstat                   | Value['physical reads direct temporary tablespace'+'physical writes direct temporary tablespace'] * db_block_size  |
@@ -235,7 +237,7 @@ Examples:
                 )
               GROUP BY inst,name]]},
 
-          filestat={[[/*grid={topic='File I/O Stats',height=-1,order_by='-bytes,-tablespace_or_file',fixed_title='on'}*/ 
+            filestat={[[/*grid={topic='File I/O Stats',height=-1,order_by='-bytes,-tablespace_or_file',fixed_title='on'}*/ 
                 WITH stat AS
                      (SELECT inst,
                              TABLESPACE_NAME,
@@ -275,11 +277,20 @@ Examples:
                            SUM(avg_Wait) avg_wait
                     FROM   stat
                     GROUP  BY inst, tablespace_name, ROLLUP(file_name))  
-                WHERE UPPER(tablespace_or_file) LIKE upper(q'{%&V2%}')]]}
+                WHERE UPPER(tablespace_or_file) LIKE upper(q'{%&V2%}')]]}，
+			
+			dlm={[[/*grid={topic='DLM Stats',include_zero=true,height=0}*/
+				SELECT /*+no_expand*/ &inst1  inst, 
+                       substr(NAME,1,45) name, 
+                       value
+                FROM  gv$dlm_misc
+                WHERE &inst_filter
+                AND   (:V2 IS NOT NULL OR value>0)
+                AND   (&statfilter)]]}
         }
         &filter: default={} f={AND (&0)}
         &inst1: default={decode(:V1,'0',''||inst_id,decode(count(distinct inst_id) over(),1,''||inst_id,'*'))}
-        &inst_filter: default={(:V1 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V1=''||INST_ID OR :V1='0')}
+        &inst_filter: default={(:V1 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V1 in(''||INST_ID,'0','a'))}
         &sql1: {sql={[[ SELECT * /*+ignore_me no_merge(sq) no_merge(ash) grid={topic='Active SQLs',height=0,include_zero=true,order_by='-aas,-ela',per_second='off'}*/
                         FROM   (SELECT inst,sql_id,ela,round(aas/greatest(:per_second*:snap_interval,1),2) aas,round(cpu/greatest(:per_second*:snap_interval,1),2) cpu,
                                        substr(TRIM(regexp_replace(REPLACE(sql_text, chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 80) sql_text
@@ -424,7 +435,7 @@ Examples:
       [[/*grid={topic='CPU/Memory/Performance',fixed_title=true,include_zero=true,order_by=1,per_second='on'}*/
         SELECT * 
         FROM(
-            SELECT ''||inst_id "#", 
+            SELECT inst_id "#", 
                 SUM(DECODE(stat_name, 'BUSY_TIME', v/cpus)) "Busy",
                 SUM(DECODE(stat_name, 'BUSY_TIME', v/cpus, 'IDLE_TIME', v/cpus)) idle,
                 MAX(db/cpus) "DB",
@@ -440,7 +451,7 @@ Examples:
                    FROM   gv$osstat b
                    WHERE  &inst_filter) a 
             GROUP  BY inst_id)
-        JOIN (select inst_id "#", '|' "|", sum(TIME_WAITED_MICRO) "IO Wait",sum(total_waits) total_waits from &sysevent where wait_class like '%I/O%' group by inst_id)  using("#")
+        RIGHT JOIN (select inst_id "#", '|' "|", sum(TIME_WAITED_MICRO) "IO Wait",sum(total_waits) total_waits from &sysevent where wait_class like '%I/O%' group by inst_id)  using("#")
         JOIN (SELECT inst_id "#",
                      sum(CASE WHEN NAME IN('physical write total IO requests','physical read total IO requests') THEN VALUE END) IOPs,
                      SUM(DECODE(NAME, 'user commits', VALUE,'user rollbacks',VALUE)) "TPS",
@@ -467,6 +478,8 @@ Examples:
                    SUM(DECODE(n, 'physical write total bytes', v)) "PhyWrite",
                    SUM(DECODE(n, 'physical reads direct', v))*bs "dxr",
                    SUM(DECODE(n, 'physical writes direct', v))*bs "dxw",
+				   SUM(CASE WHEN n LIKE '%scans (direct read)%' THEN v END) "dxscan",
+				   SUM(DECODE(n,'table scans (short tables)',v,'table scans (long tables)',v,'index fast full scans (full)',v)) "fscan",
                    SUM(DECODE(n, 'redo size', v,'flashback log write bytes',v)) "Redo",
                    SUM(decode(n,'DBWR undo block writes',v))*bs "Undo",
             &ver   (select sum(w)*1024*1024 from (select &inst1 inst,SMALL_READ_MEGABYTES+SMALL_WRITE_MEGABYTES+LARGE_READ_MEGABYTES+LARGE_WRITE_MEGABYTES w from GV$IOSTAT_FUNCTION WHERE FUNCTION_NAME='DBWR' and &inst_filter) b where b.inst=a.inst) dbwr,
@@ -562,7 +575,7 @@ Examples:
                                 SUM(CR_BUSY) CR_BUSY,SUM(CR_CONGESTED) CR_CONGESTED ,
                                 SUM(CURRENT_BUSY) CU_BUSY,SUM(CURRENT_CONGESTED) CU_CONGESTED 
                          FROM   (select a.*,&inst1 inst from gv$instance_cache_transfer a) group by inst) c
-                JOIN    (SELECT  &inst1  inst, NAME n, VALUE v FROM &sysstat WHERE &inst_filter) a
+                RIGHT JOIN  (SELECT  &inst1  inst, NAME n, VALUE v FROM &sysstat WHERE &inst_filter) a
                 ON      (a.inst=c.inst)
                 GROUP  BY c.inst]],
             '-',
@@ -611,7 +624,7 @@ Examples:
             }
         }
     },
-    delta_by=[[IOPS,MBPS,SMALL,IO Wait,Calls,Resp,OflEff,OflIn,IM-LIO,LIO(%),dxr,dxw,dbwr,lgwr,temp,offload,BandWidth,
+    delta_by=[[IOPS,MBPS,SMALL,IO Wait,Calls,Resp,OflEff,OflIn,IM-LIO,LIO(%),dxr,dxw,dxscan,fscan,dbwr,lgwr,temp,offload,BandWidth,
                SISave,OflOut,OptRead,OptWrite,CellIM,CCSave,FcHit,phyio,Unzip,zip,ela,IMCU,PRUN,Miss,bytes,rows,Valid,skip,
                exclude,pcode,proj,pops,re-pops,popr,re-popr,IMDS,IMA,IMEU,JP,Disk,Pct,Swap,Logon,Call,Exec,TPS,Parse,Hard,CcHit,Buffer,
                PhyRead,PhyWrite,Redo,Undo,SQL*Net,value,cost,waits,GETS,MISSES,SLEEPS,IMGETS,IMMISSES,SPINS,time,Busy,idle,db,
@@ -626,6 +639,7 @@ Examples:
                 ['hard']='[hard]*100/[parse]',
                 ['dxr']='[dxr]*100/[PhyRead]',
                 ['dxw']='[dxw]*100/[PhyWrite]',
+				['dxscan']='[dxscan]*100/[fscan]',
                 ['FcHit']='[FcHit]*100/[phyio]',
                 prun='[prun]*100/[IMCU]',
                 FLASH='[FLASH]*100/[IOPS]',
@@ -652,10 +666,10 @@ Examples:
                             PhyWrite,Redo,Undo,Temp,SQL*Net,OptRead,OptWrite,CellIM,CCSave,offload,BandWidth,bytes,
                             traffic,lost,CR Rec,CU Rec,CR Busy,CR Traf,CU Busy,CU Traf,dbwr,lgwr,
                             read,write,s_r,l_r,s_w,l_w]],
-                     TMB1='IMCU,waits,IOPS,call,exec,TPS,parse,cchit,popr,re-popr,IMDS,IMA,IMEU,JP,rows,proj,Disk,Cache,pcode,Miss,fail,F_IOPS,s_iops,l_iops',
+                     TMB1='IMCU,waits,IOPS,call,exec,TPS,parse,cchit,popr,re-popr,IMDS,IMA,IMEU,JP,rows,proj,Disk,Cache,pcode,Miss,fail,F_IOPS,s_iops,l_iops,fscan',
                      noprint='calls,ela,time,idle,total_waits,phyio,CR Sv,CU Sv,enqs',
                      USMHD1='CR Avg,CU Avg,CR Bld,CU Pin,CR Fls,CU Fls,CR Send,CU Send,IO Wait,resp,cost,max,avg,enq,avg_wait',
-                     ['%.1f%%']='reads,Hard,Pct,dxr,dxw,OflIn,OflOut,valid,Skip,Exclude,OflEff,FLASH,SMALL,prun,FcHit',
+                     ['%.1f%%']='reads,Hard,Pct,dxr,dxw,dxscan,OflIn,OflOut,valid,Skip,Exclude,OflEff,FLASH,SMALL,prun,FcHit',
                      ['HEADING #']='INST',
                      ['ADDRATIO PCT1']="cost",
                      ['#,##0']='value'}

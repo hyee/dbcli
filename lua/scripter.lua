@@ -372,7 +372,6 @@ function scripter:get_script(cmd,args,print_args)
         for k,v in pairs(self.cmdlist) do
             keys[k]=type(v)=="table" and v.desc or nil
         end
-
         if env.IS_ENV_LOADED then console:setSubCommands(list) end
     end
 
@@ -468,7 +467,10 @@ function scripter:check_ext_file(cmd)
     local exist,c=os.exists(cmd,self.ext_name)
     env.checkerr(exist=='file',"Cannot find this file: "..cmd)
     local target_dir=self:rehash(c,self.ext_name)
-    c=c:match('([^\\/]+)$'):match('[^%.%s]+'):upper()
+    c=c:match('([^\\/]+)$'):upper()
+    for k,v in pairs(target_dir) do
+        if c:find(k,1,true) then return target_dir,k end
+    end
     return target_dir,c
 end
 
@@ -508,7 +510,8 @@ function scripter:helper(_,cmd,search_key)
             end
             if (not search_key or found>0) and k:sub(1,2)~='./' and k:sub(1,1)~='_' then
                 if search_key or not (v.path or ""):find('[\\/]test[\\/]') then
-                    desc=desc:gsub("([Uu]sage)(%s*:%s*)(@@NAME)","$USAGECOLOR$Usage:$NOR$ %3"):gsub("@@NAME","@@NAME "..k:lower().."$NOR$")
+                    local k1=k:gsub(',.+','')
+                    desc=desc:gsub("([Uu]sage)(%s*:%s*)(@@NAME)","$USAGECOLOR$Usage:$NOR$ %3"):gsub("@@NAME","@@NAME "..k1:lower().."$NOR$")
                     if desc and desc~="" then
                         table.insert(rows[1],k)
                         table.insert(rows[2],desc)
