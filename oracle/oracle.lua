@@ -477,7 +477,7 @@ function oracle:parse(sql,params)
                 prep[p[func]](prep,p[inIdx],p[value])
             end
             params[v]={'#',p[outIdx],p[typename],p[func],p[value],p[inIdx]~=0 and p[inIdx] or nil}
-            env.log_debug("parse","Param Out#"..k..'('..p[vname]..')',':'..p[outIdx]..'='..self.db_types:getTyeName(typeid))
+            env.log_debug("parse","Param Out#"..k..'('..p[vname]..')',':'..p[outIdx]..'='..self.db_types:getTyeName(p[typeid]))
             prep['registerOutParameter'](prep,p[outIdx],p[typeid])
         end
         env.log_debug("parse","Block-Params:",table.dump(params))
@@ -677,7 +677,7 @@ end
 function oracle:get_library()
     if home then
         local files={}
-        for i=10,7,-1 do
+        for i=10,6,-1 do
             local jar=env.join_path(home..'/jdbc/lib/ojdbc'..i..'.jar')
             if os.exists(jar) then 
                 files[#files+1]=jar

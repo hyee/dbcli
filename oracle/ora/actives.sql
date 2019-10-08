@@ -117,7 +117,7 @@ BEGIN
                           s.*
                     FROM  (SELECT /*+order use_hash(m) opt_param('_optimizer_unnest_scalar_sq' 'false')*/ * FROM 
                             (SELECT (SELECT qcsid||'@'||nvl(qcinst_id,userenv('instance')) FROM &CHECK_ACCESS_PX11 p WHERE  s.sid = p.sid) qcsid,
-                                    (SELECT /*+index(b.GV$SQL.X$KGLCURSOR_CHILD)*/ b.program_id||chr(1)
+                                    (SELECT /*+index(b.GV$SQL.X$KGLCURSOR_CHILD) index(b.V$SQL.X$KGLCURSOR_CHILD)*/ b.program_id||chr(1)
                                          || b.program_line#||chr(1)
                                          || b.plan_hash_value||chr(1)
                                          || substr(TRIM(regexp_replace(replace(b.sql_text,chr(0)), '[' || chr(1) || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 200)||chr(1)

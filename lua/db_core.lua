@@ -23,10 +23,9 @@ function db_Types:get(position,typeName,res,conn)
     --local value=res:getObject(position)
     --if value==nil then return nil end
     local getter=self[typeName].getter
-
     local rtn,value=pcall(res[getter],res,position)
+    if not rtn and typeName=='CURSOR' and tostring(value):find('handle',1,true) then return nil end
     env.checkerr(rtn,value)
-   
     if value == nil or res:wasNull() then return nil end
     if not self[typeName].handler then return value end
     return self[typeName].handler(value,'get',conn,res)
@@ -579,6 +578,7 @@ function db_core:parse(sql,params,prefix,prep)
             binds[varname]={inout,inout=='$' and k or {k},v[typename],v[method],v[value]}
         end
     end
+    env.log_debug("parse","SQL",sql)
     env.log_debug("parse","Standard-Params:",table.dump(binds))
     return prep,sql,binds
 end
