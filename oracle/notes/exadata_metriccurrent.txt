@@ -1,3 +1,6 @@
+METRIC_CURRENT:
+===============
+
 Refer to https://docs.oracle.com/en/engineered-systems/exadata-database-machine/sagug/exadata-storage-server-monitoring.html
 
 GD_BY_FC_DIRTY =>  [GRIDDISK] The number of megabytes cached in flash cache that are not synchronized to the grid disk.
@@ -75,48 +78,48 @@ SIO_IO_WR_RQ_FC =>  [SmartIO] The cumulative number of I/O requests for flash ca
 SIO_IO_WR_RQ_FC_SEC =>  [SmartIO] The number of I/O requests per second for flash cache population writes by smart I/O.
 SIO_IO_WR_RQ_HD =>  [SmartIO] The cumulative number of write I/O requests to hard disk by smart I/O.
 SIO_IO_WR_RQ_HD_SEC =>  [SmartIO] The number of write I/O requests per second to hard disk by smart I/O.
-CT_FC_IO_BY_SEC	IORM：	The number of megabytes of I/O per second for this category to flash cache.
-CT_FC_IO_RQ	IORM：	The number of I/O requests issued by an IORM category to flash cache.
-CT_FC_IO_RQ_LG	IORM：	The number of large I/O requests issued by an IORM category to flash cache.
-CT_FC_IO_RQ_LG_SEC	IORM：	The number of large I/O requests issued by an IORM category to flash cache per second.
-CT_FC_IO_RQ_SEC	IORM：	The number of I/O requests issued by an IORM category to flash cache per second.
-CT_FC_IO_RQ_SM	IORM：	The number of small I/O requests issued by an IORM category to flash cache.
-CT_FC_IO_RQ_SM_SEC	IORM：	The number of small I/O requests issued by an IORM category to flash cache per second.
-CT_FD_IO_BY_SEC	IORM：	The number of megabytes of I/O per second for this category to flash disks.
-CT_FD_IO_LOAD	IORM：	The average I/O load from this category for flash disks. For a description of I/O load, see "CD_IO_LOAD".
-CT_FD_IO_RQ_LG	IORM：	The number of large I/O requests issued by an IORM category to flash disks.
-CT_FD_IO_RQ_LG_SEC	IORM：	The number of large I/O requests issued by an IORM category to flash disks per second.
-CT_FD_IO_RQ_SM	IORM：	The number of small I/O requests issued by an IORM category to flash disks.
-CT_FD_IO_RQ_SM_SEC	IORM：	The number of small I/O requests issued by an IORM category to flash disks per second.
-CT_FD_IO_TM	IORM：	The cumulative latency of reading or writing blocks for this category from flash disks.
-CT_FD_IO_TM_LG	IORM：	The cumulative latency of reading or writing large blocks for this category from flash disks.
-CT_FD_IO_TM_LG_RQ	IORM：	The rate which is the average latency of reading or writing large blocks per request for this category from flash disks.
-CT_FD_IO_TM_RQ	IORM：	The rate which is the average latency of reading or writing blocks per request for this category from flash disks.
-CT_FD_IO_TM_SM	IORM：	The cumulative latency of reading or writing small blocks for this category from flash disks.
-CT_FD_IO_TM_SM_RQ	IORM：	The rate which is the average latency of reading or writing small blocks per request for this category from flash disks.
-CT_FD_IO_UTIL	IORM：	The percentage of flash resources utilized from this category.
-CT_FD_IO_UTIL_LG	IORM：	The percentage of flash resources utilized by large requests from this category.
-CT_FD_IO_UTIL_SM	IORM：	The percentage of flash resources utilized by small requests from this category.
-CT_FD_IO_WT_LG	IORM：	The IORM wait time for large I/O requests issued to flash disks by an IORM category.
-CT_FD_IO_WT_LG_RQ	IORM：	The average IORM wait time per request for large I/O requests issued to flash disks by an IORM category.
-CT_FD_IO_WT_SM	IORM：	The IORM wait time for small I/O requests issued to flash disks by an IORM category.
-CT_FD_IO_WT_SM_RQ	IORM：	The average IORM wait time per request for small I/O requests issued to flash disks by an IORM category.
-CT_IO_BY_SEC	IORM：	The number of megabytes of I/O per second for this category to hard disks.
-CT_IO_LOAD	IORM：	The average I/O load from this category for hard disks. For a description of I/O load, see "CD_IO_LOAD".
-CT_IO_RQ_LG	IORM：	The cumulative number of large I/O requests issued by the category for hard disks. A large value indicates a heavy I/O workload from this category.
-CT_IO_RQ_LG_SEC	IORM：	This metric is derived from CT_IO_RQ_LG. It specifies the rate of large I/O requests issued by the category for hard disks. Its units are number of I/O requests per second. A large value indicates a heavy I/O workload from this category in the past minute.
-CT_IO_RQ_SM	IORM：	The cumulative number of small I/O requests issued by the category for hard disks. A large value indicates a heavy I/O workload from this category.
-CT_IO_RQ_SM_SEC	IORM：	This metric is derived from CT_IO_RQ_SM. It specifies the rate of small I/O requests issued by the category for hard disks. Its units are number of I/O requests per second. A large value indicates a heavy I/O workload from this category in the past minute.
-CT_IO_TM_LG	IORM：	The cumulative latency of reading or writing large blocks for this category from hard disks.
-CT_IO_TM_LG_RQ	IORM：	The rate which is the average latency of reading or writing large blocks per request for this category from hard disks.
-CT_IO_TM_SM	IORM：	The cumulative latency of reading or writing small blocks for this category from hard disks.
-CT_IO_TM_SM_RQ	IORM：	The rate which is the average latency of reading or writing small blocks per request for this category from hard disks.
-CT_IO_UTIL_LG	IORM：	The percentage of disk resources utilized by large requests from this category.
-CT_IO_UTIL_SM	IORM：	The percentage of disk resources utilized by small requests from this category.
-CT_IO_WT_LG	IORM：	The cumulative number of milliseconds that large I/O requests issued to hard disks by the category have waited to be scheduled by IORM. A large value indicates that the I/O workload from this category is exceeding the allocation specified for it in the category plan.
-CT_IO_WT_LG_RQ	IORM：	The average IORM wait time per request for large I/O requests issued to hard disks by an IORM category.
-CT_IO_WT_SM	IORM：	The cumulative number of milliseconds that small I/O requests issued to hard disks by the category have waited to be scheduled by IORM. A large value indicates that the I/O workload from this category is exceeding the allocation specified for it in the category plan.
-CT_IO_WT_SM_RQ	IORM：	The average IORM wait time per request for small I/O requests issued to hard disks by an IORM category.
+CT_FC_IO_BY_SEC =>  [IORM] The number of megabytes of I/O per second for this category to flash cache.
+CT_FC_IO_RQ =>  [IORM] The number of I/O requests issued by an IORM category to flash cache.
+CT_FC_IO_RQ_LG =>  [IORM] The number of large I/O requests issued by an IORM category to flash cache.
+CT_FC_IO_RQ_LG_SEC =>  [IORM] The number of large I/O requests issued by an IORM category to flash cache per second.
+CT_FC_IO_RQ_SEC =>  [IORM] The number of I/O requests issued by an IORM category to flash cache per second.
+CT_FC_IO_RQ_SM =>  [IORM] The number of small I/O requests issued by an IORM category to flash cache.
+CT_FC_IO_RQ_SM_SEC =>  [IORM] The number of small I/O requests issued by an IORM category to flash cache per second.
+CT_FD_IO_BY_SEC =>  [IORM] The number of megabytes of I/O per second for this category to flash disks.
+CT_FD_IO_LOAD =>  [IORM] The average I/O load from this category for flash disks. For a description of I/O load, see "CD_IO_LOAD".
+CT_FD_IO_RQ_LG =>  [IORM] The number of large I/O requests issued by an IORM category to flash disks.
+CT_FD_IO_RQ_LG_SEC =>  [IORM] The number of large I/O requests issued by an IORM category to flash disks per second.
+CT_FD_IO_RQ_SM =>  [IORM] The number of small I/O requests issued by an IORM category to flash disks.
+CT_FD_IO_RQ_SM_SEC =>  [IORM] The number of small I/O requests issued by an IORM category to flash disks per second.
+CT_FD_IO_TM =>  [IORM] The cumulative latency of reading or writing blocks for this category from flash disks.
+CT_FD_IO_TM_LG =>  [IORM] The cumulative latency of reading or writing large blocks for this category from flash disks.
+CT_FD_IO_TM_LG_RQ =>  [IORM] The rate which is the average latency of reading or writing large blocks per request for this category from flash disks.
+CT_FD_IO_TM_RQ =>  [IORM] The rate which is the average latency of reading or writing blocks per request for this category from flash disks.
+CT_FD_IO_TM_SM =>  [IORM] The cumulative latency of reading or writing small blocks for this category from flash disks.
+CT_FD_IO_TM_SM_RQ =>  [IORM] The rate which is the average latency of reading or writing small blocks per request for this category from flash disks.
+CT_FD_IO_UTIL =>  [IORM] The percentage of flash resources utilized from this category.
+CT_FD_IO_UTIL_LG =>  [IORM] The percentage of flash resources utilized by large requests from this category.
+CT_FD_IO_UTIL_SM =>  [IORM] The percentage of flash resources utilized by small requests from this category.
+CT_FD_IO_WT_LG =>  [IORM] The IORM wait time for large I/O requests issued to flash disks by an IORM category.
+CT_FD_IO_WT_LG_RQ =>  [IORM] The average IORM wait time per request for large I/O requests issued to flash disks by an IORM category.
+CT_FD_IO_WT_SM =>  [IORM] The IORM wait time for small I/O requests issued to flash disks by an IORM category.
+CT_FD_IO_WT_SM_RQ =>  [IORM] The average IORM wait time per request for small I/O requests issued to flash disks by an IORM category.
+CT_IO_BY_SEC =>  [IORM] The number of megabytes of I/O per second for this category to hard disks.
+CT_IO_LOAD =>  [IORM] The average I/O load from this category for hard disks. For a description of I/O load, see "CD_IO_LOAD".
+CT_IO_RQ_LG =>  [IORM] The cumulative number of large I/O requests issued by the category for hard disks. A large value indicates a heavy I/O workload from this category.
+CT_IO_RQ_LG_SEC =>  [IORM] This metric is derived from CT_IO_RQ_LG. It specifies the rate of large I/O requests issued by the category for hard disks. Its units are number of I/O requests per second. A large value indicates a heavy I/O workload from this category in the past minute.
+CT_IO_RQ_SM =>  [IORM] The cumulative number of small I/O requests issued by the category for hard disks. A large value indicates a heavy I/O workload from this category.
+CT_IO_RQ_SM_SEC =>  [IORM] This metric is derived from CT_IO_RQ_SM. It specifies the rate of small I/O requests issued by the category for hard disks. Its units are number of I/O requests per second. A large value indicates a heavy I/O workload from this category in the past minute.
+CT_IO_TM_LG =>  [IORM] The cumulative latency of reading or writing large blocks for this category from hard disks.
+CT_IO_TM_LG_RQ =>  [IORM] The rate which is the average latency of reading or writing large blocks per request for this category from hard disks.
+CT_IO_TM_SM =>  [IORM] The cumulative latency of reading or writing small blocks for this category from hard disks.
+CT_IO_TM_SM_RQ =>  [IORM] The rate which is the average latency of reading or writing small blocks per request for this category from hard disks.
+CT_IO_UTIL_LG =>  [IORM] The percentage of disk resources utilized by large requests from this category.
+CT_IO_UTIL_SM =>  [IORM] The percentage of disk resources utilized by small requests from this category.
+CT_IO_WT_LG =>  [IORM] The cumulative number of milliseconds that large I/O requests issued to hard disks by the category have waited to be scheduled by IORM. A large value indicates that the I/O workload from this category is exceeding the allocation specified for it in the category plan.
+CT_IO_WT_LG_RQ =>  [IORM] The average IORM wait time per request for large I/O requests issued to hard disks by an IORM category.
+CT_IO_WT_SM =>  [IORM] The cumulative number of milliseconds that small I/O requests issued to hard disks by the category have waited to be scheduled by IORM. A large value indicates that the I/O workload from this category is exceeding the allocation specified for it in the category plan.
+CT_IO_WT_SM_RQ =>  [IORM] The average IORM wait time per request for small I/O requests issued to hard disks by an IORM category.
 PDB_FC_BY_ALLOCATED =>  [PDB-IORM] The number of megabytes allocated in flash cache for this PDB.
 PDB_FC_IO_BY_SEC =>  [PDB-IORM] The number of megabytes of I/O per second for the PDB to flash cache.
 PDB_FC_IO_RQ =>  [PDB-IORM] The number of I/O requests issued by this PDB to flash cache.
@@ -483,3 +486,8 @@ FL_SKIP_OUTLIERS =>  [FLASHLOG] The number of outliers when redo log write skips
 DB_PC_BY_ALLOCATED =>  [PMEM] Number of megabytes allocated in PMEM cache for this database.
 PC_BY_ALLOCATED =>  [PMEM] The number of megabytes allocated in PMEM cache. Tracks how many cachelines are used in the PMEM cache. If the value is close to the PMEM cache size, then the PMEM cache is fully populated.
 PDB_PC_BY_ALLOCATED =>  [PMEM] Number of megabytes allocated in PMEM cache for this pluggable database (PDB).
+
+
+PURGE FLASHCACHE:
+=================
+cellcli -e  alter cell events = "immediate cellsrv.cellsrv_flashcache(Reset,0,0,0)" ;

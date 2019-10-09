@@ -66,9 +66,10 @@
             id={(trim('&1') is null or upper(:V1)='A' or :V1 in(&top_sql sql_id,''||session_id,nvl(event,'ON CPU'))) and &range
                     &V4},
             snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(&top_sql sql_id,''||session_id,'event')) &V3},
-            u={username=nvl('&0',sys_context('userenv','current_schema')) and &range}
+            u={user_id=(select user_id from &CHECK_ACCESS_USER where username=nvl('&0',sys_context('userenv','current_schema'))) and &range}
         }
       &more_filter: default={1=1},f={}
+      @CHECK_ACCESS_USER: dba_users={dba_users} default={all_users}
       @counter: 11.2={, count(distinct sql_exec_id||to_char(sql_exec_start,'yyyymmddhh24miss')) "Execs"},default={}
       @UNIT   : 11.2={least(nvl(tm_delta_db_time,delta_time),DELTA_TIME)*1e-6}, default={&BASE}
       @CPU    : 11.2={least(nvl(tm_delta_cpu_time,delta_time),DELTA_TIME)*1e-6}, default={0}
@@ -87,7 +88,7 @@ SELECT * FROM (
       , LPAD(ROUND(RATIO_TO_REPORT(sum(c)) OVER () * 100)||'%',5,' ')||' |' "%This"
       &counter
       , nvl2(qc_session_id,'PARALLEL','SERIAL') "Parallel?"
-      , nvl(a.program#,u.username) program#, event_name event
+      , nvl(a.program#,(select username from &CHECK_ACCESS_USER where user_id=a.user_id)) program#, event_name event
       , &fields &IOS
       , round(SUM(CASE WHEN wait_class IS NULL AND CPU=0 THEN c ELSE 0 END+CPU)) "CPU"
       , round(SUM(CASE WHEN wait_class ='User I/O'       THEN c ELSE 0 END)) "User I/O"
@@ -141,10 +142,8 @@ SELECT * FROM (
         &V12    CASE WHEN IN_TABLESPACE_ENCRYPTION= 'Y' THEN 'IN_TABLESPACE_ENCRYPTION'  END ||
         &V11   '' phase
         FROM &View a) a
-      , all_users u
-    WHERE a.user_id = u.user_id (+)
-    AND   &filter and (&more_filter)
-    GROUP BY nvl2(qc_session_id,'PARALLEL','SERIAL'),nvl(a.program#,u.username),event_name,&fields
+    WHERE &filter and (&more_filter)
+    GROUP BY nvl2(qc_session_id,'PARALLEL','SERIAL'),a.program#,a.user_id,event_name,&fields
     ORDER BY secs DESC nulls last,&fields
 )
 WHERE ROWNUM <= 50;
