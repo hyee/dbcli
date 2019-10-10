@@ -304,7 +304,7 @@ ash_raw as (
                     when p1text ='file#' and p2text='block#' then 
                         'file#'||p1||' block#'||p2
                     when p3text in('block#','block') then 
-                        'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)    
+                        'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_BLOCK(p3)    
                     when px_flags > 65536 then
                         decode(trunc(mod(px_flags/65536, 32)),
                                1,'[PX]Executing-Parent-DFO',     

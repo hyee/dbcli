@@ -99,7 +99,7 @@ BEGIN
                             when p3text like '%namespace' then 'x$kglst#'||trunc(mod(p3,power(2,32))/power(2,16))
                             when p1text like 'cache id' then (select max(parameter) from v$rowcache where cache#=p1)
                             when p1text ='file#' and p2text='block#' then 'file#'||p1||' block#'||p2
-                            when p3text in('block#','block') then 'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)
+                            when p3text in('block#','block') then 'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_BLOCK(p3)
                             when p1text ='idn' then 'v$db_object_cache hash#'||p1
                             when a.event like 'latch%' and p2text='number' then (select max(name) from v$latchname where latch#=p2)
                             when c.class is not null then c.class
