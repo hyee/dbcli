@@ -40,13 +40,17 @@ sqlplus -s / as sysdba <<'EOF'
     drop TABLE EXA$METRIC_HISTORY_10D;
     col cells new_value cells;
     col degree new_value degree;
+	col locations new_value locations;
     
-    SELECT 'PARTITION BY LIST(CELLNODE) ('||listagg(replace(q'[PARTITION @ VALUES('@') LOCATION ('@')]','@',b.name),','||chr(10)) WITHIN GROUP(ORDER BY b.name)||')' cells,
+    SELECT decode(v.version,11,'','PARTITION BY LIST(CELLNODE) ('||listagg(replace(q'[PARTITION @ VALUES('@') LOCATION ('@')]','@',b.name),','||chr(10)) WITHIN GROUP(ORDER BY b.name)||')') cells,
+	       decode(v.version,11,'LOCATION ('||listagg(''''||b.name||'''',',') within group(order by b.name)||')','') locations,
            '(degree '||count(1)||')' degree
-    FROM   v$cell_config a,
+    FROM   (select regexp_substr(value,'\d+')+0 version from nls_database_parameters where parameter_name='NLS_RDBMS_VERSION') v,
+	       v$cell_config a,
            XMLTABLE('/cli-output/cell' PASSING xmltype(a.confval) COLUMNS
                     NAME VARCHAR2(300) path 'name') b
-    WHERE  conftype = 'CELL'; 
+    WHERE  conftype = 'CELL'
+	GROUP  BY v.version; 
     
     CREATE TABLE EXA$ACTIVE_REQUESTS
     (
@@ -79,10 +83,10 @@ sqlplus -s / as sysdba <<'EOF'
     ( TYPE ORACLE_LOADER
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
-      ( NOLOGFILE RECORDS DELIMITED BY NEWLINE READSIZE 4194304
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
         PREPROCESSOR 'getactiverequest.sh'
         FIELDS TERMINATED BY whitespace OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
-      )
+      ) &locations
     )
     REJECT LIMIT UNLIMITED PARALLEL &degree &cells;
     
@@ -105,10 +109,10 @@ sqlplus -s / as sysdba <<'EOF'
     ( TYPE ORACLE_LOADER
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
-      ( NOLOGFILE RECORDS DELIMITED BY NEWLINE READSIZE 4194304
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
         PREPROCESSOR 'getfcobjects.sh'
         FIELDS TERMINATED BY  whitespace ldrtrim
-      )
+      ) &locations
     )
     REJECT LIMIT UNLIMITED PARALLEL &degree &cells;
     
@@ -129,14 +133,14 @@ sqlplus -s / as sysdba <<'EOF'
     ( TYPE ORACLE_LOADER
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
-      ( NOLOGFILE RECORDS DELIMITED BY NEWLINE READSIZE 4194304
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
         PREPROCESSOR 'getmetriccurrent.sh'
         FIELDS TERMINATED BY  '|' ldrtrim MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
          collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
          metricObjectName,metricType,metricValue,Unit
          )
-      )
+      ) &locations
     )
     REJECT LIMIT UNLIMITED PARALLEL &degree &cells;
     
@@ -156,14 +160,14 @@ sqlplus -s / as sysdba <<'EOF'
     ( TYPE ORACLE_LOADER
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
-      ( NOLOGFILE RECORDS DELIMITED BY NEWLINE READSIZE 4194304
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
         PREPROCESSOR 'getmetrichistory_1h.sh'
         FIELDS TERMINATED BY  '|' ldrtrim MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
          collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
          metricObjectName,metricType,metricValue,Unit
          )
-      )
+      ) &locations
     )
     REJECT LIMIT UNLIMITED PARALLEL &degree &cells;
 
@@ -183,14 +187,14 @@ sqlplus -s / as sysdba <<'EOF'
     ( TYPE ORACLE_LOADER
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
-      ( NOLOGFILE RECORDS DELIMITED BY NEWLINE READSIZE 8388608
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 8388608
         PREPROCESSOR 'getmetrichistory_1d.sh'
         FIELDS TERMINATED BY  '|' ldrtrim MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
          collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
          metricObjectName,metricType,metricValue,Unit
          )
-      )
+      ) &locations
     )
     REJECT LIMIT UNLIMITED PARALLEL  &degree &cells;
 
@@ -210,14 +214,14 @@ sqlplus -s / as sysdba <<'EOF'
     ( TYPE ORACLE_LOADER
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
-      ( NOLOGFILE RECORDS DELIMITED BY NEWLINE READSIZE 67108864
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 67108864
         PREPROCESSOR 'getmetrichistory_10d.sh'
         FIELDS TERMINATED BY  '|' ldrtrim MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
          collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
          metricObjectName,metricType,metricValue,Unit
          )
-      )
+      ) &locations
     )
     REJECT LIMIT UNLIMITED PARALLEL &degree &cells;
     
@@ -237,14 +241,14 @@ sqlplus -s / as sysdba <<'EOF'
     ( TYPE ORACLE_LOADER
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
-      ( NOLOGFILE RECORDS DELIMITED BY NEWLINE READSIZE 134217728
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 134217728
         PREPROCESSOR 'getmetrichistory.sh'
         FIELDS TERMINATED BY  '|' ldrtrim MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
          collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
          metricObjectName,metricType,metricValue,Unit
          )
-      )
+      ) &locations
     )
     REJECT LIMIT UNLIMITED PARALLEL &degree &cells;
     
@@ -270,8 +274,8 @@ cat >cellcli.sh<<'!'
 #!/bin/bash
 ac=root
 export PATH=$PATH:/usr/local/bin:/bin:/usr/bin:/usr/local/sbin:/usr/sbin
-. /etc/profile
-. ~/.bash_profile
+. /etc/profile &> /dev/null
+. ~/.bash_profile &> /dev/null
 cd $(dirname $0)
 rm -f *.bad *.log 2>/dev/null
 cmd="cellcli -e $*"

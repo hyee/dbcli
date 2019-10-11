@@ -1270,8 +1270,8 @@ function oradebug.profile(sid,samples,interval,event)
     end
 
     build_stack(stacks,0,'  ','','',0)
-    out=rows:tostring()
-
+    env.printer.clear_buffered_output()
+    rows:print()
     for k,v in ipairs(result) do
         if v.profiles then
             for _,profile in ipairs(v.profiles) do profiles[#profiles+1]=profile end
@@ -1308,9 +1308,9 @@ function oradebug.profile(sid,samples,interval,event)
                      table.concat(result[i].stacks,'\n')}
         end
     end
-
-    out=out..'\n\n'..rows:tostring(true)
-    print(out..'\n')
+    print('\n')
+    rows:print()
+    out=table.concat(env.printer.get_last_output(),'\n')
     if log then print("Short stacks are written to", log) end
     print("Analyze result is saved to",env.write_cache("printstack_"..file..".log",out:strip_ansi()))
     print("Collapsed profile result is saved to",env.write_cache(file..".collapsedstack.txt",table.concat(profiles,'\n')))
