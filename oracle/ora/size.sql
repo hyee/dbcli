@@ -18,7 +18,7 @@
     SYS   I_OBJ3                     INDEX       141.89 KB 256.00 KB       4        1     32      64    1024 SYSTEM                             3       10        2      1
 
     --[[
-        @CHECK_USER: "SYSDBA/SELECT ANY DICTIONARY"={}
+        @CHECK_USER: DBA/SYSDBA={}
         &OPT2: default={}, d={partition_name,}
         &OPT3: default={null}, d={partition_name}
         &OPT4: default={OWNER=SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')}, a={1=1}

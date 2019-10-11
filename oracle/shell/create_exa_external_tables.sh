@@ -1,4 +1,6 @@
 #!/bin/bash
+# usage: create_exa_external_tables.sh <dir path to of the extertnal directory>
+# Please run "dbcli -g cell_group -l root -k" to setup the ssh authentication before executing this script
 dir=$1
 
 if [ "$1" = "" ] ; then
@@ -6,7 +8,10 @@ if [ "$1" = "" ] ; then
     exit 1
 fi
 
+mkdir -p $dir
+
 cd $dir
+echo "">NULL
 
 cat >get_cell_group.sql<<!
     set feed off pages 0 head off echo off TRIMSPOOL ON
@@ -42,15 +47,15 @@ sqlplus -s / as sysdba <<'EOF'
     col degree new_value degree;
 	col locations new_value locations;
     
-    SELECT decode(v.version,11,'','PARTITION BY LIST(CELLNODE) ('||listagg(replace(q'[PARTITION @ VALUES('@') LOCATION ('@')]','@',b.name),','||chr(10)) WITHIN GROUP(ORDER BY b.name)||')') cells,
-	       decode(v.version,11,'LOCATION ('||listagg(''''||b.name||'''',',') within group(order by b.name)||')','') locations,
+    SELECT case when v.ver >12.1 then 'PARTITION BY LIST(CELLNODE) ('||listagg(replace(q'[PARTITION @ VALUES('@') LOCATION ('@')]','@',b.name),','||chr(10)) WITHIN GROUP(ORDER BY b.name)||')' end cells,
+	       case when v.ver <12.2 then 'LOCATION(''NULL'')' end locations,
            '(degree '||count(1)||')' degree
-    FROM   (select regexp_substr(value,'\d+')+0 version from nls_database_parameters where parameter_name='NLS_RDBMS_VERSION') v,
+    FROM   (select regexp_substr(value,'\d+\.\d+')+0 ver from nls_database_parameters where parameter='NLS_RDBMS_VERSION') v,
 	       v$cell_config a,
            XMLTABLE('/cli-output/cell' PASSING xmltype(a.confval) COLUMNS
                     NAME VARCHAR2(300) path 'name') b
     WHERE  conftype = 'CELL'
-	GROUP  BY v.version; 
+	GROUP  BY v.ver; 
     
     CREATE TABLE EXA$ACTIVE_REQUESTS
     (
@@ -279,17 +284,18 @@ export PATH=$PATH:/usr/local/bin:/bin:/usr/bin:/usr/local/sbin:/usr/sbin
 cd $(dirname $0)
 rm -f *.bad *.log 2>/dev/null
 cmd="cellcli -e $*"
+cell=""
 if [ -f "$1" ];then cmd=`head -1 $1`;fi
 if [ -f "$2" ];then
   cell=`head -1 $2`
+fi
+if [ "$cell" = "" ]; then
+  cmd=`echo $cmd|sed "s/|.*//"`
+  cmd="dcli -g cell_group -l $ac $cmd"
+  eval $cmd | sed 's/:/    /'
+else
   cmd=`echo $cmd|sed "s/\\$cell/$cell/"`
   exec ssh $ac@$cell ${cmd}
-else
-  while IFS= read -r cell; do
-    cm=`echo $cmd|sed "s/\\$cell/$cell/"`
-    eval ssh $ac@$cell ${cmd} &
-  done <cell_group
-  wait
 fi
 !
 

@@ -21,7 +21,7 @@ function ora:validate_accessable(name,options,values)
             check_flag=3
             expect_name="user"
             default=nil
-            for role in option:gmatch("([^/%s]+)") do
+            for role in option:gmatch("([^/]+)") do
                 role=role:upper()
                 if role:upper()=="DEFAULT" or db.props.privs[role] then
                     default=option
