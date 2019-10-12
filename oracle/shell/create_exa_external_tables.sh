@@ -44,12 +44,14 @@ sqlplus -s / as sysdba <<'EOF'
     drop TABLE EXA$METRIC_HISTORY_1D;
     drop TABLE EXA$METRIC_HISTORY_10D;
     col cells new_value cells;
+	col dop   new_value dop;
     col degree new_value degree;
 	col locations new_value locations;
     
     SELECT case when v.ver >12.1 then 'PARTITION BY LIST(CELLNODE) ('||listagg(replace(q'[PARTITION @ VALUES('@') LOCATION ('@')]','@',b.name),','||chr(10)) WITHIN GROUP(ORDER BY b.name)||')' end cells,
 	       case when v.ver <12.2 then 'LOCATION(''NULL'')' end locations,
-           '(degree '||count(1)||')' degree
+           '(degree '||count(1)||')' degree,
+		   count(1) dop
     FROM   (select regexp_substr(value,'\d+\.\d+')+0 ver from nls_database_parameters where parameter='NLS_RDBMS_VERSION') v,
 	       v$cell_config a,
            XMLTABLE('/cli-output/cell' PASSING xmltype(a.confval) COLUMNS
@@ -256,7 +258,7 @@ sqlplus -s / as sysdba <<'EOF'
       ) &locations
     )
     REJECT LIMIT UNLIMITED PARALLEL &degree &cells;
-    
+	*/   
     create or replace public synonym EXA$CACHED_OBJECTS for EXA$CACHED_OBJECTS;
     create or replace public synonym EXA$ACTIVE_REQUESTS for EXA$ACTIVE_REQUESTS;
     create or replace public synonym EXA$METRIC for EXA$METRIC;
@@ -272,7 +274,21 @@ sqlplus -s / as sysdba <<'EOF'
     grant select on  EXA$METRIC_HISTORY_1H to select_catalog_role;
     grant select on  EXA$METRIC_HISTORY_1D to select_catalog_role;
     grant select on  EXA$METRIC_HISTORY_10D to select_catalog_role;
-    
+	
+	--gather and lock stats
+	exec dbms_stats.gather_table_stats(user,'EXA$CACHED_OBJECTS',degree=>&dop);
+	exec dbms_stats.gather_table_stats(user,'EXA$METRIC',degree=>&dop);
+	exec dbms_stats.gather_table_stats(user,'EXA$ACTIVE_REQUESTS',degree=>&dop);
+	
+	exec dbms_stats.lock_table_stats(user,'EXA$CACHED_OBJECTS');
+	exec dbms_stats.lock_table_stats(user,'EXA$METRIC');
+	exec dbms_stats.lock_table_stats(user,'EXA$ACTIVE_REQUESTS');
+	
+	--remove those metric history tables since they could impact the auto stats gathering
+	drop table METRIC_HISTORY_1H;
+	drop table EXA$METRIC_HISTORY_1D;
+	drop table EXA$METRIC_HISTORY_10D;
+    drop table EXA$METRIC_HISTORY;
 EOF
 
 cat >cellcli.sh<<'!'

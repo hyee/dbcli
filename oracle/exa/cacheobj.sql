@@ -22,8 +22,8 @@
     SYS   WRI$_OPTSTAT_SYNOPSIS$ SYS_SUBP6505   TABLE SUBPARTITION    117219        1022961    5     5  0      0      4.56 MB        0  B       4.56 MB       0  B         0  B
  	--[[
 		@check_access_obj: EXA$CACHED_OBJECTS={}
-		&grp1: default={COUNT(1) recs,COUNT(DISTINCT CELLNODE) cells} detail={cellnode}
-		&grp2: default={} detail={,CELLNODE}
+		&grp1: default={COUNT(1) recs,COUNT(DISTINCT CELLNODE) cells} detail={cellnode,TABLESPACENUMBER TS#}
+		&grp2: default={} detail={,CELLNODE,TABLESPACENUMBER}
 	--]]
 ]]*/
 
@@ -47,7 +47,7 @@ FROM   (SELECT objectnumber data_object_id,
        dba_objects a
 WHERE  b.data_object_id = a.data_object_id
 AND   (nvl(lower(:V1), ' ') IN (' ', 'hits', 'misses', 'cachedsize', 'cachedwrite', 'columnarcache', 'cachedkeep', 'columnarkeep') 
-	   OR upper(:V1) IN (owner, object_name,subobject_name, object_type))
+	   OR upper(:V1) IN (owner, object_name,subobject_name, object_type,''||object_id,''||a.data_object_id))
 ORDER  BY decode(nvl(lower(:V1), 'hits'),
                  'hits',hits,
                  'misses',misses,
