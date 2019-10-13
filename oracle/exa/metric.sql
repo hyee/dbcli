@@ -1,14 +1,14 @@
 /*[[
-  Show top objects in flashcache contents. Usage: @@NAME [<cellname>]
-  Refer to page https://docs.oracle.com/en/engineered-systems/exadata-database-machine/sagug/exadata-storage-server-monitoring.html#GUID-B52267F8-FAD9-4A86-9D84-81792A914C94
+    Show the summary of "cellcli metriccurrent". Usage: @@NAME [<cellname>]
+    Refer to page https://docs.oracle.com/en/engineered-systems/exadata-database-machine/sagug/exadata-storage-server-monitoring.html#GUID-B52267F8-FAD9-4A86-9D84-81792A914C94
     This script relies on external table EXA$METRIC which is created by shell script <dbcli_home>/oracle/shell/create_exa_external_tables.sh with the oracle user
     --[[
         @check_access_obj: EXA$METRIC={}
         @table: {
-            122.2={json_table(data,'$[*]' columns CELL varchar2(30) path '$[0]',NAME varchar2(30) path '$[1]',TYP varchar2(30) path '$[2]',OBJ varchar2(300) path '$[3]' ,VALUE number path '$[4]',UNIT varchar2(30) path '$[5]')}
-            default={xmltable('/ROWSET/ROW' passing data columns CELL varchar2(30) path 'CELL',NAME varchar2(30) path 'NAME',TYP varchar2(30) path 'TYP',OBJ varchar2(300) path 'OBJ' ,VALUE number path 'VALUE',UNIT varchar2(30) path 'UNIT')}
+            12.2={json_table(data,'$[*]' columns CELL varchar2(30) path '$[0]',TYP varchar2(30) path '$[1]',NAME varchar2(30) path '$[2]',OBJ varchar2(300) path '$[3]' ,VALUE number path '$[4]',UNIT varchar2(30) path '$[5]')}
+            default={xmltable('/ROWSET/ROW' passing data columns CELL varchar2(30) path 'CELL',TYP varchar2(30) path 'TYP',NAME varchar2(30) path 'NAME',OBJ varchar2(300) path 'OBJ' ,VALUE number path 'VALUE',UNIT varchar2(30) path 'UNIT')}
         }    
-        @V122_TYP: 122.2={CLOB} default={XMLTYPE}
+        @V122_TYP: 12.2={CLOB} default={XMLTYPE}
     --]]
 ]]*/
 
@@ -22,8 +22,7 @@ var smartio    refcursor
 var ibport     refcursor
 var interconn  refcursor
 var iorm_db    refcursor
-
-COL "IB_IN/s,IB_OUT/s,ETH_IN/s,ETH_OUT/s,VMEM(CS),VMEM(MS),SWAP,SWAP_IN/s,SWAP_OUT/s,FC_DIRTY,SM_R_BPS,SM_W_BPS,LG_R_BPS,LG_W_BPS,SCRUB_BPS,ALLOC" FOR KMG
+COL "IB_IN/s,IB_OUT/s,ETH_IN/s,ETH_OUT/s,VMEM(CS),VMEM(MS),SWAP,SWAP_IN/s,SWAP_OUT/s,FC_DIRTY,SM_R/s,SM_W/s,LG_R/s,LG_W/s,SCRUB/s,ALLOC" FOR KMG
 COL "ALLOC(OLTP),DIRTY,KEEP,USED,CC_USED,CC_ELIG/s,CC_SAVED/s,CC_POP/s,R/s,W/s,R_MISS/s,R_DW/s,R_SKIP/s,W_1st/s,W_DW/s,W_Pop/s,W_Skip/s,HD/s,FD/s,,CC_R,CC_ELiG,CC_SAVED,CC_POP" for kmg
 COL "CC_REQS,LG_R_IOPS,LG_W_IOPS,SM_R_IOPS,SM_W_IOPS,SCRUB_IOPS,REQS,HD_FIRST,FD_FIRST,HD_ERRS,FD_ERRS,HD_OUTLIER,FD_OUTLIER,BOTH_OUTLIER,SKIP_OUTLIER,SKIP_BUSY,SKIP_BUSY(1m),SKIP_LARGE,SKIP_DISABLED,SKIP_IORM,SKIP_PLAN,FC_IOPS,FL_IOPS" for tmb
 COL "OFL_IN,OFL_OUT,SI_SAVE,PASSTHRU,FC,HD,BOTH,OFL_IN/s,OFL_OUT/s,SI_SAVE/s,PASSTHRU/s,PASSTHRU_CPU,PASSTHRU_CPU/s,FC/s,HD/s,BOTH/s,FC_WR,HD_WR,FC_WR/s,HD_WR/s" for kmg
@@ -35,33 +34,34 @@ DECLARE
     data &V122_TYP;
     V1   VARCHAR2(128):=:V1;
 BEGIN
-    $IF DBMS_DB_VERSION.VERSION>122 $THEN
-        SELECT json_arrayagg(json_array(cellnode,
-                                        objecttype,
-                                        NAME,
-                                        nullif(metricobjectname, cellnode),
-                                        metricvalue * CASE
-                                            WHEN unit LIKE 'MB%' THEN
-                                             1024 * 1024
-                                            WHEN unit LIKE 'KB%' THEN
-                                             1024
-                                            WHEN unit = 'ms' THEN
-                                             1000
-                                            ELSE
-                                             1
-                                        END,
-                                        CASE
-                                            WHEN regexp_like(unit, '(KB|bytes|MB|us|ms)') THEN
-                                             ''
-                                            ELSE
-                                             TRIM(unit)
-                                        END NULL ON NULL) RETURNING CLOB)
+    $IF DBMS_DB_VERSION.VERSION>11 AND DBMS_DB_VERSION.RELEASE>1 OR DBMS_DB_VERSION.VERSION>12 $THEN
+        SELECT json_arrayagg(json_array(
+                nullif(cellnode,' '),
+                nullif(objecttype,' '),
+                nullif(NAME,' '),
+                nullif(metricobjectname,cellnode),
+                nullif(metricvalue * CASE
+                    WHEN unit LIKE 'MB%' THEN
+                     1024 * 1024
+                    WHEN unit LIKE 'KB%' THEN
+                     1024
+                    WHEN unit = 'ms' THEN
+                     1000
+                    ELSE
+                     1
+                END,-1),
+                nullif(CASE
+                    WHEN regexp_like(unit, '(KB|bytes|MB|us|ms)') THEN
+                     ''
+                    ELSE
+                     TRIM(unit)
+                END,' ') null on null) RETURNING CLOB)
         INTO   data
-        FROM   EXA$METRIC
+        FROM   exa$metric 
         WHERE  nvl(lower(v1),' ') in(' ',lower(cellnode));
-        select count(1) into v1 from &table;
     $ELSE
-        SELECT xmltype(CURSOR (SELECT cellnode cell,
+        SELECT xmltype(CURSOR(
+                        SELECT cellnode cell,
                                objecttype typ,
                                NAME,
                                nullif(metricobjectname,cellnode) obj,
@@ -82,28 +82,29 @@ BEGIN
         INTO   data
         FROM   dual;
     $END
+
     OPEN :cell FOR 
         SELECT * FROM (SELECT cell,name,value||unit value FROM &table WHERE typ='CELL')
         PIVOT(MAX(VALUE)
-            FOR    NAME IN('CL_TEMP' "Temp",
-                           'CL_FANS' "Fans",
-                           'CL_RUNQ' "LOADS",
-                           'CL_CPUT' "CPU",
-                           'CL_CPUT_CS' "CPU(CS)",
-                           'CL_CPUT_MS' "CPU(MS)",
-                           'CL_MEMUT' "Mem",
-                           'CL_MEMUT_CS' "Mem(CS)",
-                           'CL_MEMUT_MS' "Mem(MS)",
-                           'CL_VIRTMEM_CS' "vMem(CS)",
-                           'CL_VIRTMEM_MS' "vMem(MS)",
-                           'N_HCA_MB_RCV_SEC' "IB_IN/s",
-                           'N_HCA_MB_TRANS_SEC' "IB_OUT/s",
-                           'N_NIC_KB_RCV_SEC' "ETH_IN/s",
-                           'N_NIC_KB_TRANS_SEC' "ETH_OUT/s",
-                           'CL_SWAP_USAGE' "SWAP",
-                           'CL_SWAP_IN_BY_SEC' "SWAP_IN/s",
-                           'CL_SWAP_OUT_BY_SEC' "SWAP_OUT/s",
-                           'IORM_MODE' "IORM"))
+        FOR    NAME IN('CL_TEMP' "Temp",
+                       'CL_FANS' "Fans",
+                       'CL_RUNQ' "LOADS",
+                       'CL_CPUT' "CPU",
+                       'CL_CPUT_CS' "CPU(CS)",
+                       'CL_CPUT_MS' "CPU(MS)",
+                       'CL_MEMUT' "Mem",
+                       'CL_MEMUT_CS' "Mem(CS)",
+                       'CL_MEMUT_MS' "Mem(MS)",
+                       'CL_VIRTMEM_CS' "vMem(CS)",
+                       'CL_VIRTMEM_MS' "vMem(MS)",
+                       'N_HCA_MB_RCV_SEC' "IB_IN/s",
+                       'N_HCA_MB_TRANS_SEC' "IB_OUT/s",
+                       'N_NIC_KB_RCV_SEC' "ETH_IN/s",
+                       'N_NIC_KB_TRANS_SEC' "ETH_OUT/s",
+                       'CL_SWAP_USAGE' "SWAP",
+                       'CL_SWAP_IN_BY_SEC' "SWAP_IN/s",
+                       'CL_SWAP_OUT_BY_SEC' "SWAP_OUT/s",
+                       'IORM_MODE' "IORM"))
         ORDER  BY CELL;
 
     OPEN :celldisk FOR 
@@ -130,15 +131,15 @@ BEGIN
                        'CD_IO_ERRS_SCRUB' "ERRS(SCRUB)",
                        'CD_BY_FC_DIRTY' "FC_DIRTY",
                        'CD_IO_ST_RQ' "SM_Latency",
-                       'CD_IO_BY_R_SM_SEC' "SM_R_BPS",
-                       'CD_IO_BY_W_SM_SEC' "SM_W_BPS",
+                       'CD_IO_BY_R_SM_SEC' "SM_R/s",
+                       'CD_IO_BY_W_SM_SEC' "SM_W/s",
                        'CD_IO_RQ_R_SM_SEC' "SM_R_IOPS",
                        'CD_IO_RQ_W_SM_SEC' "SM_W_IOPS",
-                       'CD_IO_BY_R_LG_SEC' "LG_R_BPS",
-                       'CD_IO_BY_W_LG_SEC' "LG_W_BPS",
+                       'CD_IO_BY_R_LG_SEC' "LG_R/s",
+                       'CD_IO_BY_W_LG_SEC' "LG_W/s",
                        'CD_IO_RQ_R_LG_SEC' "LG_R_IOPS",
                        'CD_IO_RQ_W_LG_SEC' "LG_W_IOPS",
-                       'CD_IO_BY_R_SCRUB_SEC' "SCRUB_BPS",
+                       'CD_IO_BY_R_SCRUB_SEC' "SCRUB/s",
                        'CD_IO_RQ_R_SCRUB_SEC' "SCRUB_IOPS"))
         ORDER  BY CELL, typ nulls first;
 
@@ -164,15 +165,15 @@ BEGIN
                        'GD_IO_ERRS' "ERRS",
                        'GD_IO_ERRS_SCRUB' "ERRS(SCRUB)",
                        'GD_BY_FC_DIRTY' "FC_DIRTY",
-                       'GD_IO_BY_R_SM_SEC' "SM_R_BPS",
-                       'GD_IO_BY_W_SM_SEC' "SM_W_BPS",
+                       'GD_IO_BY_R_SM_SEC' "SM_R/s",
+                       'GD_IO_BY_W_SM_SEC' "SM_W/s",
                        'GD_IO_RQ_R_SM_SEC' "SM_R_IOPS",
                        'GD_IO_RQ_W_SM_SEC' "SM_W_IOPS",
-                       'GD_IO_BY_R_LG_SEC' "LG_R_BPS",
-                       'GD_IO_BY_W_LG_SEC' "LG_W_BPS",
+                       'GD_IO_BY_R_LG_SEC' "LG_R/s",
+                       'GD_IO_BY_W_LG_SEC' "LG_W/s",
                        'GD_IO_RQ_R_LG_SEC' "LG_R_IOPS",
                        'GD_IO_RQ_W_LG_SEC' "LG_W_IOPS",
-                       'GD_IO_BY_R_SCRUB_SEC' "SCRUB_BPS",
+                       'GD_IO_BY_R_SCRUB_SEC' "SCRUB/s",
                        'GD_IO_RQ_R_SCRUB_SEC' "SCRUB_IOPS"))
         ORDER  BY CELL, DISKGROUP nulls first,typ nulls first;
 

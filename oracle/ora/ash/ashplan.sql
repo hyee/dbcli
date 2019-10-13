@@ -91,10 +91,8 @@ Outputs:
     @con : 12.1={AND prior nvl(con_dbid,0)=nvl(con_dbid,0)} default={}
     @mem : 12.1={DELTA_READ_MEM_BYTES} default={null}
     @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
-    &V9  : ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
     &top1: default={ev}, O={CURR_OBJ#}
     &top2: default={CURR_OBJ#}, O={ev}
-    
     &vw  : default={A} G={G} D={D} 
     &Title: default={Objects}, O={Events}
     &titl2: default={Events}, O={Objects}

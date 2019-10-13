@@ -1,10 +1,9 @@
 /*[[
-    Show AWR Top SQLs for a specific period. Usage: @@NAME {[0|<inst>] [a|<sql_id>] [total|avg] [yymmddhhmi] [yymmddhhmi] [exec|ela|cpu|io|cc|buff|fetch|rows|load|parse|read|write|mem|offload|cell]} [-m|-p] [-u]
+    Show AWR Top SQLs for a specific period. Usage: @@NAME {[0|<inst>] [a|<sql_id>] [yymmddhhmi] [yymmddhhmi]} [-avg] [-<order_by_fields>] [-m|-p] [-u|-f"<filter>"]
     -m    : group by signature instead of SQL Id
     -p    : group by plan hash value instead of SQL Id
     -u    : only show the records whose parsing_schema_name=sys_context('userenv','current_schema')
-    total : display and order by total cost(depends on the 6th input)
-    avg   : display and order by average cost per execution
+    -avg  : display and order by average cost per execution
 
     Sample Output:
     ==============
@@ -25,27 +24,53 @@
         &grp: s={sql_id}, m={signature}, p={null}
         &sqls: s={}, m={sqls,}, p={sqls,}
         &filter: s={1=1},u={PARSING_SCHEMA_NAME=nvl('&0',sys_context('userenv','current_schema'))},f={}
-        &v6: df={ela}
-        &v3: df={total} avg={avg}
+        &orderby: {
+            default={ela}
+            ELA_TOTAL={ela*exe1}
+            EXECS={EXECS}
+            FETCHES={FETCHES}
+            PARSES={PARSES}
+            IOWAIT={IOWAIT}
+            CPU={CPU}
+            CCWAIT={CCWAIT}
+            CLWAIT={CLWAIT}
+            APWAIT={APWAIT}
+            PLSQL={PLSQL}
+            CELLIO={CELLIO}
+            OFLIN={OFLIN}
+            OFLOUT={OFLOUT}
+            READS={READS}
+            WRITES={WRITES}
+            BUFF={BUFF}
+            ROWS={RWS}
+            PX={PX}
+        }
+        &field: {
+            default={},
+            CPU={val CPU_TM,}
+            CCWAIT={val CC_TM,}
+            CLWAIT={val CL_TM,}
+            APWAIT={val AP_TM,}
+            PLSQL={val PLSQL_TM,}
+        }
+        &avg: df={total} avg={avg}
         @ver: 11.2={} default={--}
     --]]
 ]]*/
 
 ORA _sqlstat
 
-col ela for usmhd2
-col iowait,cpu,clwait,apwait,plsql,ccwait,&v6# format pct1
+col ela,ela_avg,ela_total,CPU_TM,CC_TM,CL_TM,AP_TM,PLSQL_TM for usmhd2
+col iowait,cpu,clwait,apwait,plsql,ccwait,pct format pct1
 col reads,writes,mem,cellio,oflin,oflout,buff format kmg
 col execs,FETCHES,loads,parses,rows,PX format tmb
 
 WITH qry as (SELECT nvl(upper(NVL(:V1,:INSTANCE)),'A') inst,
                     nullif(lower(:V2),'a') sqid,
-                    nvl(lower(:V3),'total') calctype,
-                    to_timestamp(coalesce(:V4,:starttime,to_char(sysdate-7,'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
-                    to_timestamp(coalesce(:V5,:endtime,to_char(sysdate,'YYMMDDHH24MI')),'YYMMDDHH24MI') ed,
-                    lower(nvl(:V6,'ela')) sorttype
+                    to_timestamp(coalesce(:V3,:starttime,to_char(sysdate-7,'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
+                    to_timestamp(coalesce(:V4,:endtime,to_char(sysdate,'YYMMDDHH24MI')),'YYMMDDHH24MI') ed
              FROM Dual)
-SELECT pct &v6#,
+SELECT pct,
        &grp, 
        plan_hash, &sqls
        last_call,
@@ -53,7 +78,8 @@ SELECT pct &v6#,
        FETCHES,
        parses,
        seens,
-       ela,iowait,cpu,ccwait,clwait,apwait,plsql,
+       ela_total,ela_avg,&field
+       iowait,cpu,ccwait,clwait,apwait,plsql,
        &ver cellio,oflin,oflout,
        reads,writes,buff,
        RWS "ROWS",
@@ -71,7 +97,8 @@ FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
                    seens,
                    sqls,
                    mem / exe1 mem,
-                   ela / exe1 ela,
+                   ela ela_total,
+                   ela_avg,
                    CPU / ela CPU,
                    iowait / ela iowait,
                    ccwait / ela ccwait,
@@ -87,24 +114,21 @@ FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
                    oflin/exe1 oflin,
                    oflout/exe1 oflout,
                    cellio/exe1 cellio,
-                   decode(sorttype, 'exec', execs, 'load', loads, 'parse', parses,
-                                                   'mem', mem, 'ela', ela, 'cpu', cpu, 'io', iowait, 'plsql', plsql,
-                                                   'read', read, 'write', write, 'fetch', fetch,'buff',buff,
-                                                   'rows', rws, 'px', px,'cc',ccwait,'offload',oflin,'cell',cellio)/exe1 val
+                   &orderby/exe1 val
             FROM   (SELECT --+no_expand
                            &grp,
                            max(dbid) dbid,
                            max(sql_id) sq_id,
                            count(distinct sql_id) sqls,
                            plan_hash_value plan_hash,
-                           qry.sorttype,
                            count(1) SEENS,
                            MAX(begin_interval_time) lastest,
                            SUM(executions) execs,
                            SUM(LOADS) LOADs,
                            SUM(PARSE_CALLS) parses,
                            AVG(sharable_mem/1024/ 1024) mem,
-                           SUM(elapsed_time ) ela,
+                           SUM(elapsed_time) ela,
+                           round(SUM(elapsed_time)/nullif(decode(SUM(executions),0,floor(sum(PARSE_CALLS)/greatest(sum(px_servers_execs),1)),sum(executions)),0),2) ela_avg,
                            SUM(cpu_time ) CPU,
                            SUM(iowait) iowait,
                            SUM(CCWAIT) ccwait,
@@ -120,7 +144,7 @@ FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
                            SUM(FETCHES) FETCH,
                            SUM(ROWS_PROCESSED) RWS,
                            SUM(PX_SERVERS_EXECS) PX,
-                           decode(max(qry.calctype),
+                           decode('&avg',
                                   'avg',
                                   nullif(decode(SUM(executions),0,floor(sum(PARSE_CALLS)/greatest(sum(px_servers_execs),1)),sum(executions)),0),
                                   1) exe1
@@ -129,5 +153,5 @@ FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
                     AND    (&filter)
                     AND    s.begin_interval_time between qry.st and ed
                     AND    (qry.inst in('A','0') or qry.inst= ''||s.instance_number)
-                    GROUP  BY &grp, plan_hash_value,qry.sorttype)) a)a
+                    GROUP  BY &grp, plan_hash_value)) a)a
 WHERE  r <= 50

@@ -1,5 +1,5 @@
 /*[[
-    Show top objects in flashcache contents. Usage: @@NAME [hits|misses|cachesize|<keyword>]
+  Show top objects in flashcache contents. Usage: @@NAME [hits|misses|cachesize|<keyword>]
 	This script relies on external table EXA$CACHED_OBJECTS which is created by shell script <dbcli_home>/oracle/shell/create_exa_external_tables.sh with the oracle user
 	
 	Parameters:

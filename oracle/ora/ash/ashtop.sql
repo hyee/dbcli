@@ -1,5 +1,5 @@
 /*[[
-  Get ASH top event, type 'help @@NAME' for more info. Usage: @@NAME [-sql|-p|-none|-pr|-o|-plan|-ash|-dash|-snap|-f] {[fields] [filters]}
+  Get ASH top event, type 'help @@NAME' for more info. Usage: @@NAME [-sql|-p|-none|-pr|-o|-plan|-ash|-dash|-snap|-f"<filter>"] [-t"<ash_dump_table>"] {[fields] [filters]}
   
   Options:
   ========
@@ -14,6 +14,7 @@
       DataSource:
         -ash : source table is gv$active_session_history(default)
         -dash: source table is dba_hist_active_sess_history
+		-t   : source table is <ash_dump_table>
       Filters   :
         -id  : show data for specific sql_id/sid. Usage: [-id] [sql_id|sid]  [starttime] [endtime]
         -u   : only show the data related to current schema. Usage: -u <seconds> [starttime] [endtime]
@@ -61,6 +62,7 @@
         }
       &View: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
       &BASE: ash={1}, dash={10}
+	  &ASH : default={&view} t={&0}
       &Range: default={sample_time+0 between nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MISS'),sysdate)}
       &filter: {
             id={(trim('&1') is null or upper(:V1)='A' or :V1 in(&top_sql sql_id,''||session_id,nvl(event,'ON CPU'))) and &range
@@ -141,7 +143,7 @@ SELECT * FROM (
         &V12    CASE WHEN IN_INMEMORY_TREPOPULATE = 'Y' THEN 'IN_INMEMORY_TREPOPULATE'   END ||
         &V12    CASE WHEN IN_TABLESPACE_ENCRYPTION= 'Y' THEN 'IN_TABLESPACE_ENCRYPTION'  END ||
         &V11   '' phase
-        FROM &View a) a
+        FROM &ash a) a
     WHERE &filter and (&more_filter)
     GROUP BY nvl2(qc_session_id,'PARALLEL','SERIAL'),a.program#,a.user_id,event_name,&fields
     ORDER BY secs DESC nulls last,&fields
