@@ -34,7 +34,7 @@ ORCL> ora space sys.obj$ advise
     --]]
 ]]*/
 
-
+findobj "&V1" "" 1
 set feed off SQLTIMEOUT 86400
 VAR CUR REFCURSOR;
 
@@ -48,16 +48,16 @@ DECLARE
                         p_partition VARCHAR2,
                         p_Top       PLS_INTEGER := NULL) IS
         SELECT /*+leading(x seg y) use_nl(seg) use_hash(y) no_merge(y)*/
-         distinct segment_owner || '.' || segment_name || nvl2(partition_name, '.' || segment_name, '') object_name,
-         segment_type object_type,
-         seg.*,
-         (SELECT segment_space_management
-          FROM   dba_tablespaces ts
-          WHERE  seg.tablespace_name = ts.tablespace_name) mgnt,
-         (SELECT block_size
-          FROM   dba_tablespaces ts
-          WHERE  seg.tablespace_name = ts.tablespace_name) block_size,
-         decode(p_segname, seg.segment_name, 1, 2) lv
+               distinct segment_owner || '.' || segment_name || nvl2(partition_name, '.' || segment_name, '') object_name,
+               segment_type object_type,
+               seg.*,
+               (SELECT segment_space_management
+                FROM   dba_tablespaces ts
+                WHERE  seg.tablespace_name = ts.tablespace_name) mgnt,
+               (SELECT block_size
+                FROM   dba_tablespaces ts
+                WHERE  seg.tablespace_name = ts.tablespace_name) block_size,
+               decode(p_segname, seg.segment_name, 1, 2) lv
         FROM TABLE(DBMS_SPACE.OBJECT_DEPENDENT_SEGMENTS(
                       p_owner,--objowner
                       p_segname,--objname
@@ -291,32 +291,12 @@ DECLARE
         v_ary         l_ary;
         v_uncl_array dbms_utility.uncl_array;
         v_count      PLS_INTEGER;
-        v_target     VARCHAR2(100) :=replace(replace(p_target,'.',','),' ');
     BEGIN
-        if p_ignorecase then
-            v_target := upper(v_target);
-        end if;
-        dbms_utility.comma_to_table(regexp_replace(v_target, '[''"]'), v_count, v_uncl_array);
-        for i in 1..3 loop
-            if not v_uncl_array.exists(i) or v_uncl_array(i) is null then
-                v_uncl_array(i) := ' ';
-            end if;
-            --dbms_output.put_line(i||'"'||v_uncl_array(i)||'"');
-        end loop;
-        select max(owner),max(object_name),max(subobject_name),max(object_id)
-        into v_ary('owner'),v_ary('segment'),v_ary('partition'),v_ary('object_id')
-        from (
-            select /*+no_expand*/ * from dba_objects
-            where owner in(sys_context('USERENV','CURRENT_SCHEMA'),v_uncl_array(1))
-            and   object_type!='SYNONYM'
-            and   object_name in(v_uncl_array(1),v_uncl_array(2))
-            and   nvl(subobject_name,' ') in(v_uncl_array(2),v_uncl_array(3))
-            order by decode(owner,sys_context('USERENV','CURRENT_SCHEMA'),1,2),nvl2(subobject_name,1,2)
-        ) where rownum<2;
-
-        IF v_ary('object_id') is null then
-            raise_application_error(-20001,'Cannot find target objects!');
-        end if;
+        v_ary('owner'):=:object_owner;
+        v_ary('segment'):=:object_name;
+        v_ary('partition'):=:object_subname;
+        v_ary('object_id'):=:object_id;
+        v_ary('object_type'):=:object_type;
         RETURN v_ary;
     END;
 

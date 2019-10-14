@@ -7,7 +7,7 @@ col "Avg Wait,Avg S R,Avg S W,Avg L R,Avg L W,Avg R W" for usmhd1
 set feed off sep4k on
 Pro S: Small   L: Large   R: Read   W: Write   B: Bytes
 pro ====================================================
-SELECT decode(gid,0,'  ','')||CELL CELL_NAME,TIMESTAMP,DISK_TYPE,DISK_NAME,'|' "|",
+SELECT decode(gid,0,'  ','')||CELL CELL_NAME,cnt,TIMESTAMP,DISK_TYPE,DISK_NAME,'|' "|",
        "Util(%)",
        ("S R/s"+"L R/s"+"S W/s"+"L W/s") IOPS,
        ("S R B/s"+"L R B/s"+"S W B/s"+"L W B/s") MBPS,
@@ -18,6 +18,7 @@ SELECT decode(gid,0,'  ','')||CELL CELL_NAME,TIMESTAMP,DISK_TYPE,DISK_NAME,'|' "
 FROM   (SELECT /*+use_hash(b a) leading(b) no_expand*/ 
                grouping_id(cell, disk_type) gid,
                nvl(cell, '-ALL-') cell,
+               count(1) cnt,
                to_char(MAX(end_time),'HH24:MI:SS') timestamp,
                nvl(disk_type, '-ALL-') disk_type,
                cast(disk_name as varchar2(30)) disk_name,

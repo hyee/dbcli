@@ -1,9 +1,9 @@
 /*[[
-    Show object size. Usage: @@NAME [-d] [[owner.]object_name[.PARTITION_NAME]|-a]
+    Show object space usage. Usage: @@NAME [-d] [[owner.]object_name[.PARTITION_NAME]|-a]
     If not specify the segment name, then list the top 100 segments.
     This script needs the 'SELECT ANY DICTIONARY' privilege.
     
-    -d: used to detail in segment level, otherwise in name level, only shows the top 1000 segments
+    -d: used to detail in segment level, otherwise in object name level, only shows the top 1000 segments
     -a: based on all schemas, default as current schema only.
 
     Sample Output:
@@ -117,8 +117,11 @@ BEGIN
                 v_used  := null;
                 hdl := hdl +1;
                 IF r.object_type='INDEX' THEN
-                    v_ddl := dbms_metadata.get_ddl(r.object_type,r.object_name,r.owner);
-                    dbms_space.create_index_cost(v_ddl,v_alloc,v_used);
+                    BEGIN
+                        v_ddl := dbms_metadata.get_ddl(r.object_type,r.object_name,r.owner);
+                        dbms_space.create_index_cost(v_ddl,v_alloc,v_used);
+                    EXCEPTION WHEN OTHERS THEN NULL;
+                    END;
                     SELECT SUM(a.avg_col_len+1),max(c.pct_free),max(nvl(regexp_substr(c.degree,'\d+'),'1')+0),max(c.ini_trans)
                     INTO   v_used,v_free,v_degree,v_initrans
                     FROM   dba_tab_cols a,dba_ind_columns b,dba_indexes c

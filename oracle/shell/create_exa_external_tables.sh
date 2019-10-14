@@ -1,12 +1,21 @@
 #!/bin/bash
-# usage: create_exa_external_tables.sh <dir path to of the extertnal directory>
-# Please run "dbcli -g cell_group -l root -k" to setup the ssh authentication before executing this script
+# Usage: create_exa_external_tables.sh <dir path to of the extertnal directory> [cell ssh user]
 dir=$1
-
+ssh_user=${2:-root}
 if [ "$1" = "" ] ; then
-    echo "Please specify the target directory where the external tables link to." 1>&2
+    echo "Usage: create_exa_external_tables.sh <dir path to of the extertnal directory> [cell ssh user]" 1>&2
     exit 1
 fi
+
+if [ "$ORACLE_SID" = "" ] ; then
+    echo "Environment variable \$ORACLE_SID is not found, please make sure the current OS user is correct." 1>&2
+    exit 1
+fi
+
+unset TWO_TASK
+echo "*****************************************"
+echo "* Target database is : $ORACLE_SID       "
+echo "*****************************************"
 
 mkdir -p $dir
 
@@ -15,6 +24,8 @@ echo "">EXA_NULL
 
 cat >get_cell_group.sql<<!
     set feed off pages 0 head off echo off TRIMSPOOL ON
+	PRO List of cell nodes:
+	PRO ===================
     spool cell_group
     SELECT  trim(b.name)
     FROM    v\$cell_config a,
@@ -25,6 +36,8 @@ cat >get_cell_group.sql<<!
     spool off
     create or replace directory EXA_SHELL as '`pwd`';
     GRANT READ,WRITE ON DIRECTORY EXA_SHELL to select_catalog_role;
+	PRO ===================
+	PRO 
     exit
 !
 
@@ -34,316 +47,9 @@ while IFS= read -r cell; do
     echo $cell > $cell
 done <cell_group
 
-sqlplus -s / as sysdba <<'EOF'
-    set verify off lines 150
-	begin
-		for r in(select * from user_objects where object_name like 'EXA$%' and object_type in('VIEW','TABLE')) loop
-			execute immediate 'drop '||r.object_type||' '||r.object_name;
-		end loop;
-		
-		for r in(select * from dba_synonyms where table_name like 'EXA$%' and owner='PUBLIC') loop
-			execute immediate 'drop public synonym '||r.synonym_name;
-		end loop;
-		
-	end;
-/
-    col cells new_value cells;
-    col locations new_value locations;
-    col first_cell new_value first_cell;
-    
-    SELECT case when v.ver >12.1 then 'PARTITION BY LIST(CELLNODE) ('||listagg(replace(q'[PARTITION @ VALUES('@') LOCATION ('@')]','@',b.name),','||chr(10)) WITHIN GROUP(ORDER BY b.name)||')' end cells,
-           case when v.ver <12.2 then 'LOCATION ('||listagg(''''||b.name||'''',',') within group(order by b.name)||')' end locations,
-           min(b.name) first_cell
-    FROM   (select regexp_substr(value,'\d+\.\d+')+0 ver from nls_database_parameters where parameter='NLS_RDBMS_VERSION') v,
-           v$cell_config a,
-           XMLTABLE('/cli-output/cell' PASSING xmltype(a.confval) COLUMNS
-                    NAME VARCHAR2(300) path 'name') b
-    WHERE  conftype = 'CELL'
-    GROUP  BY v.ver; 
-    
-	PRO Creating table EXA$ACTIVE_REQUESTS
-	PRO =====================================
-    CREATE TABLE EXA$ACTIVE_REQUESTS
-    (
-        CELLNODE varchar2(20),
-        ioType varchar2(30),
-        requestState varchar2(50),
-        dbID int,
-        dbName varchar2(30),
-        sqlID varchar2(15), 
-        objectNumber int,
-        sessionID  int,
-        sessionSerNumber  int,
-        tableSpaceNumber int,
-        name  int,
-        asmDiskGroupNumber  int,
-        asmFileIncarnation  int,
-        asmFileNumber int,
-        consumerGroupID  int,
-        id  int,
-        instanceNumber  int,
-        ioBytes  int,
-        ioBytesSofar  int,
-        ioOffset  int,
-        parentID  int,
-        dbRequestID  int,
-        ioReason varchar2(30),
-        ioGridDisk varchar2(50)
-    )
-    ORGANIZATION EXTERNAL
-    ( TYPE ORACLE_LOADER
-      DEFAULT DIRECTORY EXA_SHELL
-      ACCESS PARAMETERS
-      ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
-        PREPROCESSOR 'getactiverequest.sh'
-        FIELDS TERMINATED BY whitespace OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
-      ) &locations
-    )
-    REJECT LIMIT UNLIMITED PARALLEL &cells;
-
-	PRO Creating table EXA$CACHED_OBJECTS
-	PRO =====================================
-    CREATE TABLE EXA$CACHED_OBJECTS
-    (
-        CELLNODE VARCHAR2(20),
-        CACHEDKEEPSIZE NUMBER,
-        CACHEDSIZE NUMBER,
-        CACHEDWRITESIZE NUMBER,
-        COLUMNARCACHESIZE NUMBER,
-        COLUMNARKEEPSIZE NUMBER,
-        DBID NUMBER,
-        DBUNIQUENAME VARCHAR2(30),
-        HITCOUNT NUMBER,
-        MISSCOUNT NUMBER,
-        OBJECTNUMBER NUMBER,
-        TABLESPACENUMBER NUMBER
-    )
-    ORGANIZATION EXTERNAL
-    ( TYPE ORACLE_LOADER
-      DEFAULT DIRECTORY EXA_SHELL
-      ACCESS PARAMETERS
-      ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
-        PREPROCESSOR 'getfcobjects.sh'
-        FIELDS TERMINATED BY  whitespace ldrtrim
-      ) &locations
-    )
-    REJECT LIMIT UNLIMITED PARALLEL &cells;
-	
-	PRO Creating table EXA$METRIC_DESC
-	PRO =====================================
-    CREATE TABLE EXA$METRIC_DESC
-    (
-        name VARCHAR2(40),
-        objectType VARCHAR2(30),
-        metricType VARCHAR2(30),
-        Unit VARCHAR2(30),
-        Description VARCHAR2(2000)
-    )
-    ORGANIZATION EXTERNAL
-    ( TYPE ORACLE_LOADER
-      DEFAULT DIRECTORY EXA_SHELL
-      ACCESS PARAMETERS
-      ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
-        PREPROCESSOR 'getmetricdefinition.sh'
-        FIELDS TERMINATED BY  whitespace OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
-      ) LOCATION('&first_cell')
-    )
-    REJECT LIMIT UNLIMITED;
-
-	PRO Creating table EXA$METRIC
-	PRO =====================================  
-    CREATE TABLE EXA$METRIC
-    (
-        CELLNODE VARCHAR2(20),
-        objectType VARCHAR2(30),
-        name VARCHAR2(40),
-        alertState VARCHAR2(10),
-        collectionTime TIMESTAMP WITH TIME ZONE,
-        metricObjectName VARCHAR2(50),
-        metricType VARCHAR2(30),
-        metricValue NUMBER,
-        Unit VARCHAR2(30)
-    )
-    ORGANIZATION EXTERNAL
-    ( TYPE ORACLE_LOADER
-      DEFAULT DIRECTORY EXA_SHELL
-      ACCESS PARAMETERS
-      ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
-        PREPROCESSOR 'getmetriccurrent.sh'
-        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
-        (CELLNODE,objectType,name,alertState,
-         collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
-         metricObjectName,metricType,metricValue,Unit
-         )
-      ) &locations
-    )
-    REJECT LIMIT UNLIMITED PARALLEL &cells;
-	
-	PRO Creating table EXA$METRIC_HISTORY_1H
-	PRO =====================================  
-    CREATE TABLE EXA$METRIC_HISTORY_1H
-    (
-        CELLNODE VARCHAR2(20),
-        objectType VARCHAR2(30),
-        name VARCHAR2(40),
-        alertState VARCHAR2(10),
-        collectionTime TIMESTAMP WITH TIME ZONE,
-        metricObjectName VARCHAR2(50),
-        metricType VARCHAR2(30),
-        metricValue NUMBER,
-        Unit VARCHAR2(30)
-    )
-    ORGANIZATION EXTERNAL
-    ( TYPE ORACLE_LOADER
-      DEFAULT DIRECTORY EXA_SHELL
-      ACCESS PARAMETERS
-      ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
-        PREPROCESSOR 'getmetrichistory_1h.sh'
-        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
-        (CELLNODE,objectType,name,alertState,
-         collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
-         metricObjectName,metricType,metricValue,Unit
-         )
-      ) &locations
-    )
-    REJECT LIMIT UNLIMITED PARALLEL &cells;
-
-	PRO Creating table EXA$METRIC_HISTORY_1D
-	PRO =====================================  
-    CREATE TABLE EXA$METRIC_HISTORY_1D
-    (
-        CELLNODE VARCHAR2(20),
-        objectType VARCHAR2(30),
-        name VARCHAR2(40),
-        alertState VARCHAR2(10),
-        collectionTime TIMESTAMP WITH TIME ZONE,
-        metricObjectName VARCHAR2(50),
-        metricType VARCHAR2(30),
-        metricValue NUMBER,
-        Unit VARCHAR2(30)
-    )
-    ORGANIZATION EXTERNAL
-    ( TYPE ORACLE_LOADER
-      DEFAULT DIRECTORY EXA_SHELL
-      ACCESS PARAMETERS
-      ( RECORDS DELIMITED BY NEWLINE READSIZE 8388608
-        PREPROCESSOR 'getmetrichistory_1d.sh'
-        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
-        (CELLNODE,objectType,name,alertState,
-         collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
-         metricObjectName,metricType,metricValue,Unit
-         )
-      ) &locations
-    )
-    REJECT LIMIT UNLIMITED PARALLEL  &cells;
-
-	PRO Creating table EXA$METRIC_HISTORY_10D
-	PRO =====================================  
-    CREATE TABLE EXA$METRIC_HISTORY_10D
-    (
-        CELLNODE VARCHAR2(20),
-        objectType VARCHAR2(30),
-        name VARCHAR2(40),
-        alertState VARCHAR2(10),
-        collectionTime TIMESTAMP WITH TIME ZONE,
-        metricObjectName VARCHAR2(50),
-        metricType VARCHAR2(30),
-        metricValue NUMBER,
-        Unit VARCHAR2(30)
-    )
-    ORGANIZATION EXTERNAL
-    ( TYPE ORACLE_LOADER
-      DEFAULT DIRECTORY EXA_SHELL
-      ACCESS PARAMETERS
-      ( RECORDS DELIMITED BY NEWLINE READSIZE 67108864
-        PREPROCESSOR 'getmetrichistory_10d.sh'
-        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
-        (CELLNODE,objectType,name,alertState,
-         collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
-         metricObjectName,metricType,metricValue,Unit
-         )
-      ) &locations
-    )
-    REJECT LIMIT UNLIMITED PARALLEL &cells;
-	
-	PRO Creating table EXA$METRIC_HISTORY
-	PRO ===================================== 
-    CREATE TABLE EXA$METRIC_HISTORY
-    (
-        CELLNODE VARCHAR2(20),
-        objectType VARCHAR2(30),
-        name VARCHAR2(40),
-        alertState VARCHAR2(10),
-        collectionTime TIMESTAMP WITH TIME ZONE,
-        metricObjectName VARCHAR2(50),
-        metricType VARCHAR2(30),
-        metricValue NUMBER,
-        Unit VARCHAR2(30)
-    )
-    ORGANIZATION EXTERNAL
-    ( TYPE ORACLE_LOADER
-      DEFAULT DIRECTORY EXA_SHELL
-      ACCESS PARAMETERS
-      ( RECORDS DELIMITED BY NEWLINE READSIZE 134217728
-        PREPROCESSOR 'getmetrichistory.sh'
-        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
-        (CELLNODE,objectType,name,alertState,
-         collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
-         metricObjectName,metricType,metricValue,Unit
-         )
-      ) &locations
-    )
-    REJECT LIMIT UNLIMITED PARALLEL &cells;
-	CREATE OR REPLACE VIEW EXA$METRIC_VW AS 
-	SELECT /*+leading(b) use_hash(b a)*/ A.*,B.DESCRIPTION 
-	FROM EXA$METRIC A,EXA$METRIC_DESC B WHERE A.NAME=B.NAME AND A.OBJECTTYPE=B.OBJECTTYPE
-/
-
-	DECLARE
-		NAME VARCHAR2(30);
-		stmt VARCHAR2(32767);
-		cols VARCHAR2(32767);
-		DATA XMLTYPE;
-	BEGIN
-		SELECT XMLTYPE(CURSOR
-					   (SELECT NAME,
-							   objecttype typ,
-							   'Type: ' || RPAD(METRICTYPE, 15) || '  Unit: ' || RPAD(UNIT, 15) || '  Desc: ' || DESCRIPTION d
-						FROM   EXA$METRIC_DESC))
-		INTO   DATA
-		FROM   dual;
-		FOR r IN (SELECT typ, listagg(NAME, ',') WITHIN GROUP(ORDER BY NAME) cols
-				  FROM   XMLTABLE('/ROWSET/ROW' PASSING DATA COLUMNS NAME PATH 'NAME', typ PATH 'TYP')
-				  WHERE  length(regexp_replace(name,'^\w\w_'))<=30
-				  GROUP  BY typ) LOOP
-			NAME := SUBSTR('EXA$METRIC_' || r.typ, 1, 30);
-			cols := regexp_replace(regexp_replace(r.cols, '([^,]+)', q'['\1' \1]'), ''' \w\w_', ''' ');
-			stmt := 'create or replace view ' || NAME ||
-					' as select * from (select CELLNODE,name n,METRICVALUE v from EXA$METRIC where objecttype=''' || r.typ ||
-					''') pivot(sum(v) for n in(' || cols || '))';
-			EXECUTE IMMEDIATE (stmt);
-		
-			FOR r1 IN (SELECT regexp_replace(NAME, '^\w\w_') n, d
-					   FROM   XMLTABLE('/ROWSET/ROW' PASSING DATA COLUMNS NAME PATH 'NAME', typ PATH 'TYP', D PATH 'D')
-					   WHERE  typ = r.typ) LOOP
-				BEGIN
-					   EXECUTE IMMEDIATE 'comment on column '||NAME||'.'||r1.n||' is q''['||r1.d||']''';
-				EXCEPTION WHEN OTHERS THEN NULL;
-				END;
-			END LOOP;
-		END LOOP;
-	END;
-	/
-
-	begin
-		for r in(select * from user_objects where object_name like 'EXA$%' and object_type in('TABLE','VIEW')) loop
-			execute immediate 'create or replace public synonym '||r.object_name||' for '||r.object_name;
-			execute immediate 'grant select on '||r.object_name||' to select_catalog_role';
-		end loop;
-	end;
-/
-    
-EOF
+echo "Creating SSH Key-Based Authentication to $ssh_user@<cells nodes> ... "
+echo =======================================================================
+dcli -g cell_group -l root -k
 
 cat >cellcli.sh<<'!'
 #!/bin/bash
@@ -446,15 +152,504 @@ export PATH=$PATH:/usr/bin;cd $(dirname $0)
 ./cellcli.sh getactiverequest.cli $1
 !
 
-chmod +x *.sh
+cat >cellsrvstat.lua<<'!'
+#!/bin/sh
+_=[[
+    IFS=:
+    export PATH=$PATH:/usr/local/bin:/bin:/usr/bin:/usr/local/sbin:/usr/sbin
+    . /etc/profile &> /dev/null
+    . ~/.bash_profile &> /dev/null
+    for D in ${PATH}; do
+      for F in "${D}"/luajit* "${D}"/lua "${D}"/lua5*; do
+        if [ -x "${F}" ]; then
+          exec "${F}" "$0" "$@"
+        fi
+      done
+    done
+    printf "%s: no Lua interpreter found\n" "${0##*/}" >&2
+    exit 1
+]]
 
-sqlplus / as sysdba <<'!'
+if not arg[1] then
+    io.stderr:write("Please input the target cell name.\n")
+    os.exit(1)
+end
+local cell=arg[1]:match('[^/]+$')
+local oflgrp,section,sub=''
+function string.trim(s,sep)
+    sep='[%s%z'..(sep or '')..']'
+    return tostring(s):match('^'..sep..'*(.-)'..sep..'*$')
+end
+
+function string.rtrim(s,sep)
+    sep='[%s%z'..(sep or '')..']'
+    return tostring(s):match('^(.-)'..sep..'*$')
+end
+
+local fmt1='"%s" | "%s" | "%s" | "%s" | "" | %s'
+local fmt2='"%s" | "%s" | "%s" | "%s" | "%s" | %s'
+local pipe=io.popen("ssh root@"..cell.." cellsrvstat", 'r')
+if not pipe then
+    print("execute cellsrvstat on "..cell.." failed.")
+    os.exit(1)
+end
+local output = pipe:read('*all')
+pipe:close()
+for line in output:gmatch("[^\n\t]+") do
+    line=line:rtrim()
+    if line~="" 
+       and not line:find('^ *END ')
+       and not line:find('^ *Job types consuming most buffers')
+       and not line:find('[%.%d]+ +[%.%d]+ +[%.%d]+ +[%.%d]+ *$') 
+       and not line:find('^ *NetworkRead') 
+       and not line:find('^ {8,}Total')then
+        local sec=line:match('^ *==[= ]*([^=]-) *==')
+        if sec then
+            sec=sec:trim():gsub(' related stats$',''):gsub(' stats$','')
+            section,oflgrp=sec,""
+        end
+        if sec=="Current Time" then 
+            print(fmt2:format(cell,sec,"","",line:gsub('^.*= *',''):trim(),""))
+        elseif not sec then
+            local item,cur,total=line:match("^(.-) +(%-?%d[%.%d]*) +(%-?%d[%.%d]*)$")
+            if not item then 
+                item,total=line:match("^(.-) +(%-?%d[%.%d]*)$") 
+            elseif cur:find('^00') then
+                item=item..': '..cur
+            end
+            item,total=(item or line):trim():gsub('"',"''"),tonumber(total)
+            local grp=item:match('^Offload group name: *(%S+)')
+            if grp then oflgrp=grp end
+            if line:sub(1,2)~="  " then
+                sub=item
+                if total then print(fmt1:format(cell,section,sub,oflgrp,total)) end
+            elseif total then
+                print(fmt2:format(cell,section,sub,oflgrp,item,total)) 
+            end
+        end
+    else
+        oflgrp=""
+    end
+end
+!
+sed -i "s/root/$ssh_user/" cellcli.sh cellsrvstat.lua
+chmod +x get*.sh cellcli.sh cell*.lua
+
+sqlplus -s / as sysdba <<'EOF'
+    set verify off lines 150
+	PRO  
+	PRO  
+	PRO Cleaning up residual EXA$* objects before setup
+	PRO ===============================================
+	begin
+		for r in(select * from user_objects where object_name like 'EXA$%' and object_type in('VIEW','TABLE')) loop
+			execute immediate 'drop '||r.object_type||' '||r.object_name;
+		end loop;
+		
+		for r in(select * from dba_synonyms where table_name like 'EXA$%' and owner='PUBLIC') loop
+			execute immediate 'drop public synonym '||r.synonym_name;
+		end loop;
+		
+	end;
+/
+
+    col cells new_value cells noprint;
+    col locations new_value locations noprint;
+    col first_cell new_value first_cell noprint;
+	col pivots new_value pivots noprint;
+    
+    SELECT case when v.ver >12.1 then 'PARTITION BY LIST(CELLNODE) ('||listagg(replace(q'[PARTITION @ VALUES('@') LOCATION ('@')]','@',b.name),','||chr(10)) WITHIN GROUP(ORDER BY b.name)||')' end cells,
+           case when v.ver <12.2 then 'LOCATION ('||listagg(''''||b.name||'''',',') within group(order by b.name)||')' end locations,
+		   listagg(replace(q'['@' "@"]','@',b.name),',') within group(order by b.name) pivots,
+           min(b.name) first_cell
+    FROM   (select regexp_substr(value,'\d+\.\d+')+0 ver from nls_database_parameters where parameter='NLS_RDBMS_VERSION') v,
+           v$cell_config a,
+           XMLTABLE('/cli-output/cell' PASSING xmltype(a.confval) COLUMNS
+                    NAME VARCHAR2(300) path 'name') b
+    WHERE  conftype = 'CELL'
+    GROUP  BY v.ver; 
+    
+	PRO Creating table EXA$ACTIVE_REQUESTS
+	PRO ==================================
+    CREATE TABLE EXA$ACTIVE_REQUESTS
+    (
+        CELLNODE varchar2(20),
+        ioType varchar2(30),
+        requestState varchar2(50),
+        dbID int,
+        dbName varchar2(30),
+        sqlID varchar2(15), 
+        objectNumber int,
+        sessionID  int,
+        sessionSerNumber  int,
+        tableSpaceNumber int,
+        name  int,
+        asmDiskGroupNumber  int,
+        asmFileIncarnation  int,
+        asmFileNumber int,
+        consumerGroupID  int,
+        id  int,
+        instanceNumber  int,
+        ioBytes  int,
+        ioBytesSofar  int,
+        ioOffset  int,
+        parentID  int,
+        dbRequestID  int,
+        ioReason varchar2(30),
+        ioGridDisk varchar2(50)
+    )
+    ORGANIZATION EXTERNAL
+    ( TYPE ORACLE_LOADER
+      DEFAULT DIRECTORY EXA_SHELL
+      ACCESS PARAMETERS
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
+        PREPROCESSOR 'getactiverequest.sh'
+        FIELDS TERMINATED BY whitespace OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+      ) &locations
+    )
+    REJECT LIMIT UNLIMITED PARALLEL &cells;
+
+	PRO Creating table EXA$CACHED_OBJECTS
+	PRO =================================
+    CREATE TABLE EXA$CACHED_OBJECTS
+    (
+        CELLNODE VARCHAR2(20),
+        CACHEDKEEPSIZE NUMBER,
+        CACHEDSIZE NUMBER,
+        CACHEDWRITESIZE NUMBER,
+        COLUMNARCACHESIZE NUMBER,
+        COLUMNARKEEPSIZE NUMBER,
+        DBID NUMBER,
+        DBUNIQUENAME VARCHAR2(30),
+        HITCOUNT NUMBER,
+        MISSCOUNT NUMBER,
+        OBJECTNUMBER NUMBER,
+        TABLESPACENUMBER NUMBER
+    )
+    ORGANIZATION EXTERNAL
+    ( TYPE ORACLE_LOADER
+      DEFAULT DIRECTORY EXA_SHELL
+      ACCESS PARAMETERS
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
+        PREPROCESSOR 'getfcobjects.sh'
+        FIELDS TERMINATED BY  whitespace ldrtrim
+      ) &locations
+    )
+    REJECT LIMIT UNLIMITED PARALLEL &cells;
+
+	PRO Creating table SYS.EXA$CELLSRVSTAT
+	PRO ==================================	
+    CREATE TABLE SYS.EXA$CELLSRVSTAT
+       (
+        CELLNODE VARCHAR2(20),
+        CATEGORY VARCHAR2(100),
+		NAME VARCHAR2(300),
+		OFFLOAD_GROUP VARCHAR2(100),
+        Item VARCHAR2(300),
+        VALUE NUMBER
+       )
+       ORGANIZATION EXTERNAL
+        ( TYPE ORACLE_LOADER
+          DEFAULT DIRECTORY EXA_SHELL
+          ACCESS PARAMETERS
+          ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
+            PREPROCESSOR 'cellsrvstat.lua'
+            FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+          )
+        ) &locations
+    REJECT LIMIT UNLIMITED PARALLEL &cells;
+	
+	PRO Creating table EXA$METRIC_DESC
+	PRO ==============================
+    CREATE TABLE EXA$METRIC_DESC
+    (
+        name VARCHAR2(40),
+        objectType VARCHAR2(30),
+        metricType VARCHAR2(30),
+        Unit VARCHAR2(30),
+        Description VARCHAR2(2000)
+    )
+    ORGANIZATION EXTERNAL
+    ( TYPE ORACLE_LOADER
+      DEFAULT DIRECTORY EXA_SHELL
+      ACCESS PARAMETERS
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
+        PREPROCESSOR 'getmetricdefinition.sh'
+        FIELDS TERMINATED BY  whitespace OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+      ) LOCATION('&first_cell')
+    )
+    REJECT LIMIT UNLIMITED;
+
+	PRO Creating table EXA$METRIC
+	PRO =========================
+    CREATE TABLE EXA$METRIC
+    (
+        CELLNODE VARCHAR2(20),
+        objectType VARCHAR2(30),
+        name VARCHAR2(40),
+        alertState VARCHAR2(10),
+        collectionTime TIMESTAMP WITH TIME ZONE,
+        metricObjectName VARCHAR2(50),
+        metricType VARCHAR2(30),
+        metricValue NUMBER,
+        Unit VARCHAR2(30)
+    )
+    ORGANIZATION EXTERNAL
+    ( TYPE ORACLE_LOADER
+      DEFAULT DIRECTORY EXA_SHELL
+      ACCESS PARAMETERS
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
+        PREPROCESSOR 'getmetriccurrent.sh'
+        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+        (CELLNODE,objectType,name,alertState,
+         collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
+         metricObjectName,metricType,metricValue,Unit
+         )
+      ) &locations
+    )
+    REJECT LIMIT UNLIMITED PARALLEL &cells;
+	
+	PRO Creating table EXA$METRIC_HISTORY_1H
+	PRO ====================================  
+    CREATE TABLE EXA$METRIC_HISTORY_1H
+    (
+        CELLNODE VARCHAR2(20),
+        objectType VARCHAR2(30),
+        name VARCHAR2(40),
+        alertState VARCHAR2(10),
+        collectionTime TIMESTAMP WITH TIME ZONE,
+        metricObjectName VARCHAR2(50),
+        metricType VARCHAR2(30),
+        metricValue NUMBER,
+        Unit VARCHAR2(30)
+    )
+    ORGANIZATION EXTERNAL
+    ( TYPE ORACLE_LOADER
+      DEFAULT DIRECTORY EXA_SHELL
+      ACCESS PARAMETERS
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
+        PREPROCESSOR 'getmetrichistory_1h.sh'
+        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+        (CELLNODE,objectType,name,alertState,
+         collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
+         metricObjectName,metricType,metricValue,Unit
+         )
+      ) &locations
+    )
+    REJECT LIMIT UNLIMITED PARALLEL &cells;
+
+	PRO Creating table EXA$METRIC_HISTORY_1D
+	PRO ====================================  
+    CREATE TABLE EXA$METRIC_HISTORY_1D
+    (
+        CELLNODE VARCHAR2(20),
+        objectType VARCHAR2(30),
+        name VARCHAR2(40),
+        alertState VARCHAR2(10),
+        collectionTime TIMESTAMP WITH TIME ZONE,
+        metricObjectName VARCHAR2(50),
+        metricType VARCHAR2(30),
+        metricValue NUMBER,
+        Unit VARCHAR2(30)
+    )
+    ORGANIZATION EXTERNAL
+    ( TYPE ORACLE_LOADER
+      DEFAULT DIRECTORY EXA_SHELL
+      ACCESS PARAMETERS
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 8388608
+        PREPROCESSOR 'getmetrichistory_1d.sh'
+        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+        (CELLNODE,objectType,name,alertState,
+         collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
+         metricObjectName,metricType,metricValue,Unit
+         )
+      ) &locations
+    )
+    REJECT LIMIT UNLIMITED PARALLEL  &cells;
+
+	PRO Creating table EXA$METRIC_HISTORY_10D
+	PRO =====================================  
+    CREATE TABLE EXA$METRIC_HISTORY_10D
+    (
+        CELLNODE VARCHAR2(20),
+        objectType VARCHAR2(30),
+        name VARCHAR2(40),
+        alertState VARCHAR2(10),
+        collectionTime TIMESTAMP WITH TIME ZONE,
+        metricObjectName VARCHAR2(50),
+        metricType VARCHAR2(30),
+        metricValue NUMBER,
+        Unit VARCHAR2(30)
+    )
+    ORGANIZATION EXTERNAL
+    ( TYPE ORACLE_LOADER
+      DEFAULT DIRECTORY EXA_SHELL
+      ACCESS PARAMETERS
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 67108864
+        PREPROCESSOR 'getmetrichistory_10d.sh'
+        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+        (CELLNODE,objectType,name,alertState,
+         collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
+         metricObjectName,metricType,metricValue,Unit
+         )
+      ) &locations
+    )
+    REJECT LIMIT UNLIMITED PARALLEL &cells;
+	
+	PRO Creating table EXA$METRIC_HISTORY
+	PRO =================================
+    CREATE TABLE EXA$METRIC_HISTORY
+    (
+        CELLNODE VARCHAR2(20),
+        objectType VARCHAR2(30),
+        name VARCHAR2(40),
+        alertState VARCHAR2(10),
+        collectionTime TIMESTAMP WITH TIME ZONE,
+        metricObjectName VARCHAR2(50),
+        metricType VARCHAR2(30),
+        metricValue NUMBER,
+        Unit VARCHAR2(30)
+    )
+    ORGANIZATION EXTERNAL
+    ( TYPE ORACLE_LOADER
+      DEFAULT DIRECTORY EXA_SHELL
+      ACCESS PARAMETERS
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 134217728
+        PREPROCESSOR 'getmetrichistory.sh'
+        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+        (CELLNODE,objectType,name,alertState,
+         collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
+         metricObjectName,metricType,metricValue,Unit
+         )
+      ) &locations
+    )
+    REJECT LIMIT UNLIMITED PARALLEL &cells;
+
+	PRO Creating views for EXA$METRIC
+	PRO =============================
+	
+	CREATE OR REPLACE VIEW EXA$METRIC_VW AS 
+	SELECT /*+leading(b) use_hash(b a)*/ A.*,B.DESCRIPTION 
+	FROM EXA$METRIC A,EXA$METRIC_DESC B WHERE A.NAME=B.NAME AND A.OBJECTTYPE=B.OBJECTTYPE
+/
+	CREATE OR REPLACE FORCE VIEW EXA$CELLSRVSTAT_AGG AS
+	SELECT *
+	FROM   (SELECT nvl(CELLNODE, 'TOTAL') cellnode,
+				   CATEGORY,
+				   NAME,
+				   regexp_replace(ITEM,'_?'||cellnode) item,
+				   IS_AVG,
+				   ROUND(decode(IS_AVG,'YES',AVG(VALUE),SUM(VALUE)),2) VALUE
+			FROM   (SELECT A.*,
+			               CASE
+							 WHEN regexp_like(NAME, '(avg|average|percentage)', 'i') OR
+								  (LOWER(NAME) LIKE '%util%' AND lower(NAME) NOT LIKE '% rate %util%') THEN
+							  'YES'
+							 ELSE
+							  'NO'
+						   END IS_AVG
+				   FROM exa$cellsrvstat a)
+			GROUP  BY CATEGORY, NAME, regexp_replace(ITEM,'_?'||cellnode),IS_AVG,ROLLUP(cellnode))
+	PIVOT(MAX(VALUE)
+	FOR    cellnode IN('TOTAL' TOTAL, &pivots ))
+	ORDER BY 1,2,3,4
+/
+	CREATE OR REPLACE FORCE VIEW EXA$METRIC_AGG AS
+	SELECT *
+	FROM   (SELECT OBJECTTYPE,
+				   NAME,
+				   METRICOBJECT,
+				   METRICTYPE,
+				   IS_AVG,
+				   UNIT,
+				   nvl(CELLNODE, 'TOTAL') c,
+				   round(DECODE(IS_AVG, 'YES', AVG(METRICVALUE), SUM(METRICVALUE)), 2) v
+			FROM   (SELECT A.*,
+						   CASE
+							   WHEN trim(UNIT) IN ('us/request', '%', 'C') THEN
+								'YES'
+							   ELSE
+								'NO'
+						   END IS_AVG,
+						   regexp_replace(METRICOBJECTNAME,'_?'||cellnode) METRICOBJECT
+					FROM   EXA$METRIC A)
+			GROUP  BY OBJECTTYPE, NAME, METRICOBJECT, METRICTYPE, IS_AVG, UNIT, ROLLUP(CELLNODE))
+	PIVOT(MAX(v)
+	FOR    c IN('TOTAL' TOTAL, &pivots))
+	ORDER  BY 1, 2, 3, 4
+/
+	DECLARE
+		NAME VARCHAR2(30);
+		stmt VARCHAR2(32767);
+		cols VARCHAR2(32767);
+		DATA XMLTYPE;
+	BEGIN
+		SELECT XMLTYPE(CURSOR
+					   (SELECT NAME,
+							   objecttype typ,
+							   'Type: ' || RPAD(nvl(METRICTYPE,' '), 15) || '  Unit: ' || RPAD(nvl(UNIT,' '), 15) || '  Desc: ' || DESCRIPTION d
+						FROM   EXA$METRIC_DESC))
+		INTO   DATA
+		FROM   dual;
+		FOR r IN (SELECT typ, listagg(NAME, ',') WITHIN GROUP(ORDER BY NAME) cols
+				  FROM   XMLTABLE('/ROWSET/ROW' PASSING DATA COLUMNS NAME PATH 'NAME', typ PATH 'TYP')
+				  WHERE  length(regexp_replace(name,'^\w\w_'))<=30
+				  GROUP  BY typ) LOOP
+			NAME := SUBSTR('EXA$METRIC_' || r.typ, 1, 30);
+			cols := regexp_replace(regexp_replace(r.cols, '([^,]+)', q'['\1' \1]'), ''' \w\w_', ''' ');
+			stmt := 'create or replace view ' || NAME ||
+					' as select * from (select CELLNODE,METRICOBJECTNAME OBJECTNAME,name n,METRICVALUE v from EXA$METRIC where objecttype=''' || r.typ ||
+					''') pivot(sum(v) for n in(' || cols || '))';
+			EXECUTE IMMEDIATE (stmt);
+		
+			FOR r1 IN (SELECT regexp_replace(NAME, '^\w\w_') n, d
+					   FROM   XMLTABLE('/ROWSET/ROW' PASSING DATA COLUMNS NAME PATH 'NAME', typ PATH 'TYP', D PATH 'D')
+					   WHERE  typ = r.typ) LOOP
+				BEGIN
+					   EXECUTE IMMEDIATE 'comment on column '||NAME||'.'||r1.n||' is q''['||r1.d||']''';
+				EXCEPTION WHEN OTHERS THEN NULL;
+				END;
+			END LOOP;
+		END LOOP;
+	END;
+/
+	PRO Granting access rights ...
+	PRO ==========================
+	begin
+		for r in(select * from user_objects where object_name like 'EXA$%' and object_type in('TABLE','VIEW')) loop
+			execute immediate 'create or replace public synonym '||r.object_name||' for '||r.object_name;
+			execute immediate 'grant select on '||r.object_name||' to select_catalog_role';
+		end loop;
+	end;
+/
     --remove those metric history tables since they could impact the auto stats gathering
+	PRO Dropping time-consuming EXA$METRIC_HISTORY tables
+	PRO =================================================
     drop table EXA$METRIC_HISTORY_1H;
     drop table EXA$METRIC_HISTORY_1D;
     drop table EXA$METRIC_HISTORY_10D;
     drop table EXA$METRIC_HISTORY;
+	drop public synonym EXA$METRIC_HISTORY_1H;
+	drop public synonym EXA$METRIC_HISTORY_1D;
+	drop public synonym EXA$METRIC_HISTORY_10D;
+	drop public synonym EXA$METRIC_HISTORY;
+
+	PRO List of EXA$ objects:
+	PRO ====================================================
+	SET PAGESIZE 99
+	COL OWNER for a10
+	COL OBJECT_NAME FOR a30
+	COL OBJECT_TYPE FOR a11
+	SELECT OWNER,OBJECT_NAME,OBJECT_TYPE
+	FROM   DBA_OBJECTS
+	WHERE  OWNER IN('PUBLIC',USER)
+	AND    OBJECT_NAME LIKE 'EXA$%'
+	AND    OBJECT_TYPE NOT LIKE '% %'
+	ORDER  BY 2,1 DESC;
+	
     --gather and lock stats
+	PRO Gathering and locking EXA table stats ...
+	PRO =================================================
 	begin
 		for r in(select * from user_tables where table_name like 'EXA$%') loop
 		    dbms_stats.gather_table_stats(user,r.table_name,degree=>16);
@@ -463,4 +658,4 @@ sqlplus / as sysdba <<'!'
 	end;
 /
 
-!
+EOF

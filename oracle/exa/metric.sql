@@ -1,12 +1,12 @@
 /*[[
     Show the summary of "cellcli metriccurrent". Usage: @@NAME [<cellname>]
     Refer to page https://docs.oracle.com/en/engineered-systems/exadata-database-machine/sagug/exadata-storage-server-monitoring.html#GUID-B52267F8-FAD9-4A86-9D84-81792A914C94
-    This script relies on external table EXA$METRIC which is created by shell script <dbcli_home>/oracle/shell/create_exa_external_tables.sh with the oracle user
+    This script relies on external table EXA$METRIC which is created by shell script "oracle/shell/create_exa_external_tables.sh" with the oracle user
     --[[
         @check_access_obj: EXA$METRIC={}
         @table: {
-            12.2={json_table(data,'$[*]' columns CELL varchar2(30) path '$[0]',TYP varchar2(30) path '$[1]',NAME varchar2(30) path '$[2]',OBJ varchar2(300) path '$[3]' ,VALUE number path '$[4]',UNIT varchar2(30) path '$[5]')}
-            default={xmltable('/ROWSET/ROW' passing data columns CELL varchar2(30) path 'CELL',TYP varchar2(30) path 'TYP',NAME varchar2(30) path 'NAME',OBJ varchar2(300) path 'OBJ' ,VALUE number path 'VALUE',UNIT varchar2(30) path 'UNIT')}
+            12.2={json_table(data,'$[*]' columns CELL varchar2(30) path '$[0]',TYP varchar2(30) path '$[1]',NAME varchar2(30) path '$[2]',OBJ varchar2(300) path '$[3]' ,VALUE number path '$[4]',UNIT varchar2(30) path '$[5]',TSTAMP varchar2(30) path '$[6]')}
+            default={xmltable('/ROWSET/ROW' passing data columns CELL varchar2(30) path 'CELL',TYP varchar2(30) path 'TYP',NAME varchar2(30) path 'NAME',OBJ varchar2(300) path 'OBJ' ,VALUE number path 'VALUE',UNIT varchar2(30) path 'UNIT',TSTAMP varchar2(30) path 'TSTAMP')}
         }    
         @V122_TYP: 12.2={CLOB} default={XMLTYPE}
     --]]
@@ -28,6 +28,7 @@ COL "CC_REQS,LG_R_IOPS,LG_W_IOPS,SM_R_IOPS,SM_W_IOPS,SCRUB_IOPS,REQS,HD_FIRST,FD
 COL "OFL_IN,OFL_OUT,SI_SAVE,PASSTHRU,FC,HD,BOTH,OFL_IN/s,OFL_OUT/s,SI_SAVE/s,PASSTHRU/s,PASSTHRU_CPU,PASSTHRU_CPU/s,FC/s,HD/s,BOTH/s,FC_WR,HD_WR,FC_WR/s,HD_WR/s" for kmg
 COL "SM_Latency,AVG_Wait,IO_Wait,FD_TM,FD_TM_LG,FD_WT_LG,FD_TM_SM,FD_WT_SM,HD_TM_LG,HD_WT_LG,HD_TM_SM,HD_WT_SM" for usmhd
 COL "CELL_IN,CELL_OUT,CELL_DROP,RDMA_DROP,CELL_IN/s,CELL_OUT/s,CELL_DROP/s,RDMA_DROP/s,PMEM_ALLOC,PMEM_ALLOC_DB,PMEM_ALLOC_PDB,FC_ALLOC,PMEM,FC/s,FL/s,FD/s,HD/s" for KMG
+COL "Temp,LOADS,CPU,CPU(CS),CPU(MS),Mem,Mem(CS),Mem(MS),MaxDirUsage,EFF,EFF(1h),IB_UTIL_IN,IB_UTIL_OUT" for k justify right
 COL CELL BREAK
 
 DECLARE
@@ -55,7 +56,8 @@ BEGIN
                      ''
                     ELSE
                      TRIM(unit)
-                END,' ') null on null) RETURNING CLOB)
+                END,' '),
+                NULLIF(TO_CHAR(COLLECTIONTIME,'YYYY-MM-DD HH24:MI:SS'),' ') null on null) RETURNING CLOB)
         INTO   data
         FROM   exa$metric 
         WHERE  nvl(lower(v1),' ') in(' ',lower(cellnode));
@@ -76,7 +78,8 @@ BEGIN
                                    ELSE
                                      1
                                END value,
-                               CASE WHEN regexp_like(unit,'(KB|bytes|MB|us|ms)') THEN '' ELSE trim(unit) END unit
+                               CASE WHEN regexp_like(unit,'(KB|bytes|MB|us|ms)') THEN '' ELSE trim(unit) END unit,
+                               TO_CHAR(COLLECTIONTIME,'YYYY-MM-DD HH24:MI:SS') TSTAMP
                         FROM   exa$metric
                         WHERE  nvl(lower(v1),' ') in(' ',lower(cellnode))))
         INTO   data
@@ -84,7 +87,7 @@ BEGIN
     $END
 
     OPEN :cell FOR 
-        SELECT * FROM (SELECT cell,name,value||unit value FROM &table WHERE typ='CELL')
+        SELECT * FROM (SELECT cell,name,value||unit value,MAX(TSTAMP) OVER(PARTITION BY cell) COLLECT_TIME FROM &table WHERE typ IN('CELL','CELL_FILESYSTEM'))
         PIVOT(MAX(VALUE)
         FOR    NAME IN('CL_TEMP' "Temp",
                        'CL_FANS' "Fans",
@@ -97,6 +100,7 @@ BEGIN
                        'CL_MEMUT_MS' "Mem(MS)",
                        'CL_VIRTMEM_CS' "vMem(CS)",
                        'CL_VIRTMEM_MS' "vMem(MS)",
+                       'CL_FSUT' "MaxDirUsage",
                        'N_HCA_MB_RCV_SEC' "IB_IN/s",
                        'N_HCA_MB_TRANS_SEC' "IB_OUT/s",
                        'N_NIC_KB_RCV_SEC' "ETH_IN/s",
@@ -107,9 +111,38 @@ BEGIN
                        'IORM_MODE' "IORM"))
         ORDER  BY CELL;
 
+    OPEN :ibport FOR
+        SELECT *
+        FROM   (SELECT nvl(cell,'--TOTAL--') cell,
+                       NAME,
+                       MAX(MAX(TSTAMP)) OVER(PARTITION BY cell) COLLECT_TIME,
+                       MAX(COUNT(DISTINCT CASE WHEN typ='IBPORT' THEN CELL||OBJ END)) OVER(PARTITION BY cell) IB_CNT,
+                       CASE WHEN max(unit)='%' THEN ROUND(AVG(VALUE),2)||'%' ELSE SUM(VALUE)||'' END VALUE
+                FROM   &TABLE
+                WHERE  typ IN ('IBPORT','HOST_INTERCONNECT','PMEMCACHE')
+                GROUP  BY NAME,rollup(CELL))
+        PIVOT(MAX(VALUE)
+        FOR    NAME IN('N_IB_MB_RCV_SEC' "IB_IN/s",
+                       'N_IB_MB_TRANS_SEC' "IB_OUT/s",
+                       'N_MB_RECEIVED_SEC' "CELL_IN/s",
+                       'N_MB_SENT_SEC' "CELL_OUT/s",
+                       'N_MB_DROP_SEC' "CELL_DROP/s",
+                       'N_MB_RDMA_DROP_SEC' "RDMA_DROP/s",
+                       'N_IB_UTIL_RCV' "IB_UTIL_IN",
+                       'N_IB_UTIL_TRANS' "IB_UTIL_OUT",
+                       'N_MB_RECEIVED' "CELL_IN",
+                       'N_MB_SENT' "CELL_OUT",
+                       'N_MB_DROP' "CELL_DROP",
+                       'N_MB_RDMA_DROP' "RDMA_DROP",
+                       'PC_BY_ALLOCATED' "PMEM_ALLOC",
+                       'DB_PC_BY_ALLOCATED' "PMEM_ALLOC_DB",
+                       'PDB_PC_BY_ALLOCATED' "PMEM_ALLOC_PDB"
+                       ))
+        ORDER  BY CELL;
     OPEN :celldisk FOR 
         SELECT *
         FROM   (SELECT nvl(cell,'--TOTAL--') cell,
+                       MAX(MAX(TSTAMP)) OVER(PARTITION BY cell) COLLECT_TIME,
                        NAME,
                        substr(obj, 1, 2) Typ,
                        MAX(COUNT(1)) over(PARTITION BY cell, substr(obj, 1, 2)) disks,
@@ -276,43 +309,15 @@ BEGIN
                        'SIO_IO_RV_OF_SEC' "PASSTHRU_CPU/s"))
         ORDER  BY CELL;
 
-    OPEN :ibport FOR
-        SELECT *
-        FROM   (SELECT nvl(cell,'--TOTAL--') cell,
-                       NAME,
-                       MAX(COUNT(DISTINCT CASE WHEN typ='IBPORT' THEN CELL||OBJ END)) OVER(PARTITION BY cell) IB_CNT,
-                       CASE WHEN max(unit)='%' THEN ROUND(AVG(VALUE),2)||'%' ELSE SUM(VALUE)||'' END VALUE
-                FROM   &TABLE
-                WHERE  typ IN ('IBPORT','HOST_INTERCONNECT','PMEMCACHE')
-                GROUP  BY NAME,rollup(CELL))
-        PIVOT(MAX(VALUE)
-        FOR    NAME IN('N_IB_MB_RCV_SEC' "IB_IN/s",
-                       'N_IB_MB_TRANS_SEC' "IB_OUT/s",
-                       'N_IB_UTIL_RCV' "IB_UTIL_IN",
-                       'N_IB_UTIL_TRANS' "IB_UTIL_OUT",
-                       'N_MB_RECEIVED' "CELL_IN",
-                       'N_MB_SENT' "CELL_OUT",
-                       'N_MB_DROP' "CELL_DROP",
-                       'N_MB_RDMA_DROP' "RDMA_DROP",
-                       'N_MB_RECEIVED_SEC' "CELL_IN/s",
-                       'N_MB_SENT_SEC' "CELL_OUT/s",
-                       'N_MB_DROP_SEC' "CELL_DROP/s",
-                       'N_MB_RDMA_DROP_SEC' "RDMA_DROP/s",
-                       'PC_BY_ALLOCATED' "PMEM_ALLOC",
-                       'DB_PC_BY_ALLOCATED' "PMEM_ALLOC_DB",
-                       'PDB_PC_BY_ALLOCATED' "PMEM_ALLOC_PDB"
-                       ))
-        ORDER  BY CELL;
-
     OPEN :iorm_db FOR 
         SELECT *
         FROM   (SELECT nvl(cell,'--TOTAL--') cell,
                        NAME,
-                       replace(obj,'_OTHER_DATABASE_','Others') DB,
+                       NVL(replace(obj,'_OTHER_DATABASE_','Others'),'--TOTAL--') DB,
                        ROUND(CASE WHEN name like '%_RQ' or name like '%UTIL%' or name like '%LOAD%' THEN AVG(VALUE) ELSE SUM(VALUE) END,2) VALUE
                 FROM   &TABLE
                 WHERE  typ = 'IORM_DATABASE'
-                GROUP  BY NAME,rollup(replace(obj,'_OTHER_DATABASE_','Others'),CELL))
+                GROUP  BY NAME,CUBE(replace(obj,'_OTHER_DATABASE_','Others'),CELL))
         PIVOT(MAX(VALUE)
         FOR    NAME IN('DB_FC_BY_ALLOCATED' "FC_ALLOC",
                        'DB_PC_BY_ALLOCATED' "PMEM",
