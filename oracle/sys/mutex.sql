@@ -36,7 +36,7 @@ set feed off
 
 SELECT DISTINCT *
 FROM   TABLE(gv$(CURSOR ( --
-          SELECT /*+ordered user_nl(b)*/
+          SELECT /*+ordered user_hash(b)*/
                   userenv('instance') inst_id,
                   sid,
                   a.event,

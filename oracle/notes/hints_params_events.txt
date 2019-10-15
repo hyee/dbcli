@@ -24,6 +24,8 @@ Parameters
     _enqueue_hash_chain_latches: defaults to cpu_count, improving the values can reduce "latch: enqueue hash chains" events if not pending on some object(Bug.23589928)
     _px_adaptive_dist_method_threshold: controls the actual distribution method of adaptive distribution, default as DOP*2
 	cell_offload_parameters="<OPT_ENABLED|OPT_DISABLED>={<func_id_list in v$sqlfn_metadata>} | OPT_ENABLED_ONLY=(<func_id_list in v$sqlfn_metadata>)" 
+    _optimizer_transitivity_retain: defaults to true to pass the input variable to other table's equal-join column(ignored if executed by SYSDBA with opt_param hint)
+    _optimizer_generate_transitive_pred: similar to _optimizer_transitivity_retain
     
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'

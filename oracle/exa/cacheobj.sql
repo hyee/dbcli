@@ -23,8 +23,8 @@
   		&grp1: default={COUNT(1) recs,COUNT(DISTINCT CELLNODE) cells} detail={cellnode,TABLESPACENUMBER TS#} 
   		&grp2: default={} detail={,CELLNODE,TABLESPACENUMBER}
       &grp3: {
-            default={owner, object_name, subobject_name, object_type, object_id, b.*} 
-            group={owner,object_name,regexp_substr(object_type,'^\S+') object_type,
+            default={owner, nvl(object_name,'DB: '||dbuniquename) object_name, subobject_name, object_type, object_id, b.*} 
+            group={owner,nvl(object_name,'DB: '||dbuniquename) object_name,regexp_substr(object_type,'^\S+') object_type,
                    count(1)    "SEGS",
                    SUM("RECS") "RECS",
                    MAX("CELLS") "CELLS",
@@ -42,7 +42,7 @@
       }
       &grp4: {
           default={}
-          group={group by owner,object_name,regexp_substr(object_type,'^\S+') }
+          group={group by owner,nvl(object_name,'DB: '||dbuniquename),regexp_substr(object_type,'^\S+') }
       }
 	--]]
 ]]*/
@@ -53,7 +53,7 @@ col hit%,ColumnarCache% for pct
 set printsize 50
 
 SELECT &grp3
-FROM   (SELECT objectnumber data_object_id,
+FROM   (SELECT objectnumber data_object_id,dbuniquename,
                &grp1,
                SUM(hitcount+misscount) "Reqs",
                SUM(hitcount) "Hits",
@@ -66,12 +66,10 @@ FROM   (SELECT objectnumber data_object_id,
                SUM(CACHEDKEEPSIZE) "CachedKeep",
                SUM(COLUMNARKEEPSIZE) "ColumnarKeep"
         FROM   EXA$CACHED_OBJECTS
-        WHERE  upper(dbuniquename) = upper(sys_context('userenv','db_unique_name'))
-        GROUP  BY objectnumber &grp2) b,
-       dba_objects a
-WHERE  b.data_object_id = a.data_object_id
-AND   (nvl(lower(:V1), ' ') IN (' ', 'hits', 'misses', 'cachedsize', 'cachedwrite', 'columnarcache', 'cachedkeep', 'columnarkeep') 
-	   OR upper(:V1) IN (owner, object_name,subobject_name, object_type,''||object_id,''||a.data_object_id))
+        GROUP  BY objectnumber,dbuniquename &grp2) b
+LEFT JOIN dba_objects a on(b.data_object_id = a.data_object_id and upper(dbuniquename) = upper(sys_context('userenv','db_unique_name')))
+WHERE nvl(lower(:V1), ' ') IN (' ', 'hits', 'misses', 'cachedsize', 'cachedwrite', 'columnarcache', 'cachedkeep', 'columnarkeep') 
+OR    upper(:V1) IN (owner, object_name,subobject_name, object_type,''||object_id,''||a.data_object_id)
 &grp4
 ORDER  BY decode(nvl(lower(:V1), 'reqs'),
                  'reqs',"Reqs",

@@ -132,7 +132,7 @@ set feed off
 
 SELECT DISTINCT *
 FROM   TABLE(gv$(CURSOR ( --
-          SELECT /*+ordered user_nl(b)*/
+          SELECT /*+ordered use_hash(b)*/
                   userenv('instance') inst_id,
                   sid,
                   a.event,
@@ -189,7 +189,7 @@ WHERE  rownum <= 50;
 SELECT * FROM (
     SELECT *
     FROM   TABLE(gv$(CURSOR(
-                      SELECT  /*+ordered use_nl(b)*/
+                      SELECT  /*+ordered use_hash(b)*/
                               DISTINCT 
                               userenv('instance') inst_id,
                               a.*,

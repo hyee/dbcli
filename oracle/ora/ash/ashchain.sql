@@ -9,7 +9,7 @@
         -op          : show top op name instead of top object
         -p           : show progam + event + p1/2/3 instead of event + top object
         -flat        : show ashchain in flat style instead of tree style
-		-t           : source table is <ash_dump_table>
+        -t           : source table is <ash_dump_table>
 
     Sample Output:
     ==============
@@ -33,7 +33,7 @@ This script references Tanel Poder's script
     --[[
         @con : 12.1={AND prior con_id=con_id} default={}
         &tree  : default={1} flat={0}
-		&ash   : default={&8} t={&0}
+        &ash   : default={&8} t={&0}
         &V8    : ash={gv$active_session_history},dash={Dba_Hist_Active_Sess_History}
         &Filter: default={:V1 in(p1text,''||session_id,''||sql_plan_hash_value,sql_id,top_level_sql_id,SESSION_ID||'@'||&INST1,event,''||current_obj#)} f={}
         &filter1: default={0} f={1}

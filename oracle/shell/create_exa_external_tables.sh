@@ -24,8 +24,8 @@ echo "">EXA_NULL
 
 cat >get_cell_group.sql<<!
     set feed off pages 0 head off echo off TRIMSPOOL ON
-	PRO List of cell nodes:
-	PRO ===================
+    PRO List of cell nodes:
+    PRO ===================
     spool cell_group
     SELECT  trim(b.name)
     FROM    v\$cell_config a,
@@ -36,8 +36,8 @@ cat >get_cell_group.sql<<!
     spool off
     create or replace directory EXA_SHELL as '`pwd`';
     GRANT READ,WRITE ON DIRECTORY EXA_SHELL to select_catalog_role;
-	PRO ===================
-	PRO 
+    PRO ===================
+    PRO
     exit
 !
 
@@ -79,6 +79,14 @@ else
   cmd=`echo $cmd|sed "s/\\$cell/$cell/"`
   exec ssh $ac@$cell ${cmd}
 fi
+!
+
+cat >getcellparams.cli<<'!'
+cellcli -e 'alter cell events="immediate cellsrv.cellsrv_dump('cellparams',1)'|grep trc|awk '{print "cat " $NF "; rm -f " $NF}'|sh|grep -P "^\S+ ="|sed 's/(default = \(.*\))/ \1/'|awk -v c=$cell '{print c "|" $1 "|" $3 "|" $4}'
+!
+cat >getcellparams.sh<<'!'
+export PATH=$PATH:/usr/bin;cd $(dirname $0)
+./cellcli.sh getcellparams.cli $1
 !
 
 cat >getfcobjects.cli<<'!'
@@ -152,6 +160,11 @@ export PATH=$PATH:/usr/bin;cd $(dirname $0)
 ./cellcli.sh getactiverequest.cli $1
 !
 
+cat >cellsrvstat_10s.sh<<'!'
+export PATH=$PATH:/usr/bin;cd $(dirname $0)
+./cellsrvstat.lua $1 10
+!
+
 cat >cellsrvstat.lua<<'!'
 #!/bin/sh
 _=[[
@@ -174,7 +187,7 @@ if not arg[1] then
     io.stderr:write("Please input the target cell name.\n")
     os.exit(1)
 end
-local cell=arg[1]:match('[^/]+$')
+local cell,secs=arg[1]:match('[^/]+$'),tonumber(arg[2])
 local oflgrp,section,sub=''
 function string.trim(s,sep)
     sep='[%s%z'..(sep or '')..']'
@@ -188,89 +201,114 @@ end
 
 local fmt1='"%s" | "%s" | "%s" | "%s" | "" | %s'
 local fmt2='"%s" | "%s" | "%s" | "%s" | "%s" | %s'
-local pipe=io.popen("ssh root@"..cell.." cellsrvstat", 'r')
+local pipe=io.popen("ssh root@"..cell.." cellsrvstat"..(not secs and '' or (' -count=2 -interval='..secs)), 'r')
 if not pipe then
     print("execute cellsrvstat on "..cell.." failed.")
     os.exit(1)
 end
 local output = pipe:read('*all')
+local found=0
 pipe:close()
 for line in output:gmatch("[^\n\t]+") do
     line=line:rtrim()
-    if line~="" 
+    if line~=""
        and not line:find('^ *END ')
+       and not line:find('^ *OSS%- ')
        and not line:find('^ *Job types consuming most buffers')
-       and not line:find('[%.%d]+ +[%.%d]+ +[%.%d]+ +[%.%d]+ *$') 
-       and not line:find('^ *NetworkRead') 
+       and not line:find('[%.%d]+ +[%.%d]+ +[%.%d]+ +[%.%d]+ *$')
        and not line:find('^ {8,}Total')then
         local sec=line:match('^ *==[= ]*([^=]-) *==')
         if sec then
             sec=sec:trim():gsub(' related stats$',''):gsub(' stats$','')
             section,oflgrp=sec,""
         end
-        if sec=="Current Time" then 
-            print(fmt2:format(cell,sec,"","",line:gsub('^.*= *',''):trim(),""))
-        elseif not sec then
+        if sec=="Current Time" then
+            if secs then
+                found=found+1
+            else
+                found=2
+            end
+            if not secs then print(fmt2:format(cell,sec,"","",line:gsub('^.*= *',''):trim(),"")) end
+        elseif found==2 and not sec then
             local item,cur,total=line:match("^(.-) +(%-?%d[%.%d]*) +(%-?%d[%.%d]*)$")
-            if not item then 
-                item,total=line:match("^(.-) +(%-?%d[%.%d]*)$") 
+            if not item then
+                item,total=line:match("^(.-) +(%-?%d[%.%d]*)$")
             elseif cur:find('^00') then
                 item=item..': '..cur
+            elseif secs then
+                total=cur
             end
             item,total=(item or line):trim():gsub('"',"''"),tonumber(total)
             local grp=item:match('^Offload group name: *(%S+)')
             if grp then oflgrp=grp end
             if line:sub(1,2)~="  " then
                 sub=item
-                if total then print(fmt1:format(cell,section,sub,oflgrp,total)) end
-            elseif total then
-                print(fmt2:format(cell,section,sub,oflgrp,item,total)) 
+                if total and (not secs or total~=0) then print(fmt1:format(cell,section,sub,oflgrp,total)) end
+            elseif total and (not secs or total~=0) then
+                print(fmt2:format(cell,section,sub,oflgrp,item,total))
             end
         end
-    else
-        oflgrp=""
     end
 end
 !
 sed -i "s/root/$ssh_user/" cellcli.sh cellsrvstat.lua
-chmod +x get*.sh cellcli.sh cell*.lua
+chmod +x get*.sh cell*.sh cell*.lua
 
 sqlplus -s / as sysdba <<'EOF'
     set verify off lines 150
-	PRO  
-	PRO  
-	PRO Cleaning up residual EXA$* objects before setup
-	PRO ===============================================
-	begin
-		for r in(select * from user_objects where object_name like 'EXA$%' and object_type in('VIEW','TABLE')) loop
-			execute immediate 'drop '||r.object_type||' '||r.object_name;
-		end loop;
-		
-		for r in(select * from dba_synonyms where table_name like 'EXA$%' and owner='PUBLIC') loop
-			execute immediate 'drop public synonym '||r.synonym_name;
-		end loop;
-		
-	end;
+    PRO
+    PRO
+    PRO Cleaning up residual EXA$* objects before setup
+    PRO ===============================================
+    begin
+        for r in(select * from user_objects where object_name like 'EXA$%' and object_type in('VIEW','TABLE')) loop
+            execute immediate 'drop '||r.object_type||' '||r.object_name;
+        end loop;
+
+        for r in(select * from dba_synonyms where table_name like 'EXA$%' and owner='PUBLIC') loop
+            execute immediate 'drop public synonym '||r.synonym_name;
+        end loop;
+    end;
 /
 
     col cells new_value cells noprint;
     col locations new_value locations noprint;
     col first_cell new_value first_cell noprint;
-	col pivots new_value pivots noprint;
-    
+    col pivots new_value pivots noprint;
+
     SELECT case when v.ver >12.1 then 'PARTITION BY LIST(CELLNODE) ('||listagg(replace(q'[PARTITION @ VALUES('@') LOCATION ('@')]','@',b.name),','||chr(10)) WITHIN GROUP(ORDER BY b.name)||')' end cells,
            case when v.ver <12.2 then 'LOCATION ('||listagg(''''||b.name||'''',',') within group(order by b.name)||')' end locations,
-		   listagg(replace(q'['@' "@"]','@',b.name),',') within group(order by b.name) pivots,
+           listagg(replace(q'['@' "@"]','@',b.name),',') within group(order by b.name) pivots,
            min(b.name) first_cell
     FROM   (select regexp_substr(value,'\d+\.\d+')+0 ver from nls_database_parameters where parameter='NLS_RDBMS_VERSION') v,
            v$cell_config a,
-           XMLTABLE('/cli-output/cell' PASSING xmltype(a.confval) COLUMNS
-                    NAME VARCHAR2(300) path 'name') b
+           XMLTABLE('/cli-output/cell' PASSING xmltype(a.confval) COLUMNS NAME VARCHAR2(300) path 'name') b
     WHERE  conftype = 'CELL'
-    GROUP  BY v.ver; 
+    GROUP  BY v.ver;
     
-	PRO Creating table EXA$ACTIVE_REQUESTS
-	PRO ==================================
+    
+    PRO Creating table EXA$CELLPARAMS
+    PRO ==================================
+    CREATE TABLE EXA$CELLPARAMS
+       (
+        CELLNODE VARCHAR2(20),
+        NAME VARCHAR2(100),
+        VALUE VARCHAR2(100),
+        DEFAULT_VALUE VARCHAR2(100)
+       )
+       ORGANIZATION EXTERNAL
+        ( TYPE ORACLE_LOADER
+          DEFAULT DIRECTORY EXA_SHELL
+          ACCESS PARAMETERS
+          ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
+            PREPROCESSOR 'getcellparams.sh'
+            FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+          )
+        ) &locations
+    REJECT LIMIT UNLIMITED PARALLEL &cells;
+    
+    PRO Creating table EXA$ACTIVE_REQUESTS
+    PRO ==================================
     CREATE TABLE EXA$ACTIVE_REQUESTS
     (
         CELLNODE varchar2(20),
@@ -278,7 +316,7 @@ sqlplus -s / as sysdba <<'EOF'
         requestState varchar2(50),
         dbID int,
         dbName varchar2(30),
-        sqlID varchar2(15), 
+        sqlID varchar2(15),
         objectNumber int,
         sessionID  int,
         sessionSerNumber  int,
@@ -309,8 +347,8 @@ sqlplus -s / as sysdba <<'EOF'
     )
     REJECT LIMIT UNLIMITED PARALLEL &cells;
 
-	PRO Creating table EXA$CACHED_OBJECTS
-	PRO =================================
+    PRO Creating table EXA$CACHED_OBJECTS
+    PRO =================================
     CREATE TABLE EXA$CACHED_OBJECTS
     (
         CELLNODE VARCHAR2(20),
@@ -337,14 +375,14 @@ sqlplus -s / as sysdba <<'EOF'
     )
     REJECT LIMIT UNLIMITED PARALLEL &cells;
 
-	PRO Creating table SYS.EXA$CELLSRVSTAT
-	PRO ==================================	
-    CREATE TABLE SYS.EXA$CELLSRVSTAT
+    PRO Creating table EXA$CELLSRVSTAT
+    PRO ==============================
+    CREATE TABLE EXA$CELLSRVSTAT
        (
         CELLNODE VARCHAR2(20),
         CATEGORY VARCHAR2(100),
-		NAME VARCHAR2(300),
-		OFFLOAD_GROUP VARCHAR2(100),
+        NAME VARCHAR2(300),
+        OFFLOAD_GROUP VARCHAR2(100),
         Item VARCHAR2(300),
         VALUE NUMBER
        )
@@ -358,9 +396,31 @@ sqlplus -s / as sysdba <<'EOF'
           )
         ) &locations
     REJECT LIMIT UNLIMITED PARALLEL &cells;
-	
-	PRO Creating table EXA$METRIC_DESC
-	PRO ==============================
+
+    PRO Creating table EXA$CELLSRVSTAT_10S
+    PRO ==================================
+    CREATE TABLE EXA$CELLSRVSTAT_10S
+       (
+        CELLNODE VARCHAR2(20),
+        CATEGORY VARCHAR2(100),
+        NAME VARCHAR2(300),
+        OFFLOAD_GROUP VARCHAR2(100),
+        Item VARCHAR2(300),
+        VALUE NUMBER
+       )
+       ORGANIZATION EXTERNAL
+        ( TYPE ORACLE_LOADER
+          DEFAULT DIRECTORY EXA_SHELL
+          ACCESS PARAMETERS
+          ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
+            PREPROCESSOR 'cellsrvstat_10s.sh'
+            FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+          )
+        ) &locations
+    REJECT LIMIT UNLIMITED PARALLEL &cells;
+
+    PRO Creating table EXA$METRIC_DESC
+    PRO ==============================
     CREATE TABLE EXA$METRIC_DESC
     (
         name VARCHAR2(40),
@@ -380,8 +440,8 @@ sqlplus -s / as sysdba <<'EOF'
     )
     REJECT LIMIT UNLIMITED;
 
-	PRO Creating table EXA$METRIC
-	PRO =========================
+    PRO Creating table EXA$METRIC
+    PRO =========================
     CREATE TABLE EXA$METRIC
     (
         CELLNODE VARCHAR2(20),
@@ -408,9 +468,9 @@ sqlplus -s / as sysdba <<'EOF'
       ) &locations
     )
     REJECT LIMIT UNLIMITED PARALLEL &cells;
-	
-	PRO Creating table EXA$METRIC_HISTORY_1H
-	PRO ====================================  
+
+    PRO Creating table EXA$METRIC_HISTORY_1H
+    PRO ====================================
     CREATE TABLE EXA$METRIC_HISTORY_1H
     (
         CELLNODE VARCHAR2(20),
@@ -438,8 +498,8 @@ sqlplus -s / as sysdba <<'EOF'
     )
     REJECT LIMIT UNLIMITED PARALLEL &cells;
 
-	PRO Creating table EXA$METRIC_HISTORY_1D
-	PRO ====================================  
+    PRO Creating table EXA$METRIC_HISTORY_1D
+    PRO ====================================
     CREATE TABLE EXA$METRIC_HISTORY_1D
     (
         CELLNODE VARCHAR2(20),
@@ -467,8 +527,8 @@ sqlplus -s / as sysdba <<'EOF'
     )
     REJECT LIMIT UNLIMITED PARALLEL  &cells;
 
-	PRO Creating table EXA$METRIC_HISTORY_10D
-	PRO =====================================  
+    PRO Creating table EXA$METRIC_HISTORY_10D
+    PRO =====================================
     CREATE TABLE EXA$METRIC_HISTORY_10D
     (
         CELLNODE VARCHAR2(20),
@@ -495,9 +555,9 @@ sqlplus -s / as sysdba <<'EOF'
       ) &locations
     )
     REJECT LIMIT UNLIMITED PARALLEL &cells;
-	
-	PRO Creating table EXA$METRIC_HISTORY
-	PRO =================================
+
+    PRO Creating table EXA$METRIC_HISTORY
+    PRO =================================
     CREATE TABLE EXA$METRIC_HISTORY
     (
         CELLNODE VARCHAR2(20),
@@ -525,137 +585,167 @@ sqlplus -s / as sysdba <<'EOF'
     )
     REJECT LIMIT UNLIMITED PARALLEL &cells;
 
-	PRO Creating views for EXA$METRIC
-	PRO =============================
-	
-	CREATE OR REPLACE VIEW EXA$METRIC_VW AS 
-	SELECT /*+leading(b) use_hash(b a)*/ A.*,B.DESCRIPTION 
-	FROM EXA$METRIC A,EXA$METRIC_DESC B WHERE A.NAME=B.NAME AND A.OBJECTTYPE=B.OBJECTTYPE
+    PRO Creating views for EXA$ tables
+    PRO ==============================
+    CREATE OR REPLACE FORCE VIEW EXA$CELLPARAMS_AGG AS
+        SELECT *
+        FROM   (SELECT CELLNODE c,NAME,trim(VALUE) v FROM EXA$CELLPARAMS) 
+        PIVOT(MAX(v) FOR c IN(&pivots))
+        ORDER BY 1,2,3,4;
+
+    CREATE OR REPLACE VIEW EXA$METRIC_VW AS
+        SELECT /*+leading(b) use_hash(b a)*/ A.*,B.DESCRIPTION
+        FROM EXA$METRIC A,EXA$METRIC_DESC B WHERE A.NAME=B.NAME AND A.OBJECTTYPE=B.OBJECTTYPE;
+
+
+    CREATE OR REPLACE FORCE VIEW EXA$METRIC_AGG AS
+    SELECT /*+use_hash(a b)*/ A.*,B.DESCRIPTION
+    FROM (
+        SELECT *
+        FROM   (SELECT OBJECTTYPE,
+                       NAME,
+                       METRICOBJECT METRICOBJECTNAME,
+                       METRICTYPE,
+                       IS_AVG,
+                       UNIT,
+                       nvl(CELLNODE, 'TOTAL') c,
+                       round(DECODE(IS_AVG, 'YES', AVG(METRICVALUE), SUM(METRICVALUE)), 2) v
+                FROM   (SELECT A.*,
+                               CASE
+                                   WHEN trim(UNIT) IN ('us/request', '%', 'C') THEN
+                                    'YES'
+                                   ELSE
+                                    'NO'
+                               END IS_AVG,
+                               regexp_replace(METRICOBJECTNAME,'_?'||cellnode,'',1,0,'i') METRICOBJECT
+                        FROM   EXA$METRIC A)
+                GROUP  BY OBJECTTYPE, NAME, METRICOBJECT, METRICTYPE, IS_AVG, UNIT, ROLLUP(CELLNODE))
+        PIVOT(MAX(v) FOR c IN('TOTAL' TOTAL, &pivots))) A, EXA$METRIC_DESC B
+    WHERE  A.OBJECTTYPE=B.OBJECTTYPE AND A.NAME=B.NAME
+    ORDER  BY 1, 2, 3, 4;
+
+    CREATE OR REPLACE FORCE VIEW EXA$CELLSRVSTAT_AGG AS
+        SELECT *
+        FROM   (SELECT nvl(CELLNODE, 'TOTAL') cellnode,
+                       CATEGORY,
+                       NAME,
+                       regexp_replace(ITEM,'_?'||cellnode,'',1,0,'i') item,
+                       IS_AVG,
+                       ROUND(decode(IS_AVG,'YES',AVG(VALUE),SUM(VALUE)),2) VALUE
+                FROM   (SELECT A.*,
+                               CASE
+                                 WHEN regexp_like(NAME, '(avg|average|percentage)', 'i') OR
+                                      (LOWER(NAME) LIKE '%util%' AND lower(NAME) NOT LIKE '% rate %util%') THEN
+                                  'YES'
+                                 ELSE
+                                  'NO'
+                               END IS_AVG
+                       FROM exa$cellsrvstat a)
+                GROUP  BY CATEGORY, NAME, regexp_replace(ITEM,'_?'||cellnode,'',1,0,'i'),IS_AVG,ROLLUP(cellnode))
+        PIVOT(MAX(VALUE)
+        FOR    cellnode IN('TOTAL' TOTAL, &pivots ))
+        ORDER BY 1,2,3,4;
+
+    CREATE OR REPLACE FORCE VIEW EXA$CELLSRVSTAT_10s_AGG AS
+        SELECT *
+        FROM   (SELECT nvl(CELLNODE, 'TOTAL') cellnode,
+                       CATEGORY,
+                       NAME,
+                       regexp_replace(ITEM,'_?'||cellnode,'',1,0,'i') item,
+                       IS_AVG,
+                       ROUND(decode(IS_AVG,'YES',AVG(VALUE),SUM(VALUE)),2) VALUE
+                FROM   (SELECT A.*,
+                               CASE
+                                 WHEN regexp_like(NAME, '(avg|average|percentage)', 'i') OR
+                                      (LOWER(NAME) LIKE '%util%' AND lower(NAME) NOT LIKE '% rate %util%') THEN
+                                  'YES'
+                                 ELSE
+                                  'NO'
+                               END IS_AVG
+                       FROM exa$cellsrvstat_10s a)
+                GROUP  BY CATEGORY, NAME, regexp_replace(ITEM,'_?'||cellnode,'',1,0,'i'),IS_AVG,ROLLUP(cellnode))
+        PIVOT(MAX(VALUE)
+        FOR    cellnode IN('TOTAL' TOTAL, &pivots ))
+        ORDER BY 1,2,3,4;
+
+    DECLARE
+        NAME VARCHAR2(30);
+        stmt VARCHAR2(32767);
+        cols VARCHAR2(32767);
+        DATA XMLTYPE;
+    BEGIN
+        SELECT XMLTYPE(CURSOR
+                       (SELECT NAME,
+                               objecttype typ,
+                               'Type: ' || RPAD(nvl(METRICTYPE,' '), 15) || '  Unit: ' || RPAD(nvl(UNIT,' '), 15) || '  Desc: ' || DESCRIPTION d
+                        FROM   EXA$METRIC_DESC))
+        INTO   DATA
+        FROM   dual;
+        FOR r IN (SELECT typ, listagg(NAME, ',') WITHIN GROUP(ORDER BY NAME) cols
+                  FROM   XMLTABLE('/ROWSET/ROW' PASSING DATA COLUMNS NAME PATH 'NAME', typ PATH 'TYP')
+                  WHERE  length(regexp_replace(name,'^\w\w_'))<=30
+                  GROUP  BY typ) LOOP
+            NAME := SUBSTR('EXA$METRIC_' || r.typ, 1, 30);
+            cols := regexp_replace(regexp_replace(r.cols, '([^,]+)', q'['\1' \1]'), ''' \w\w_', ''' ');
+            stmt := 'create or replace view ' || NAME ||
+                    ' as select * from (select CELLNODE,METRICOBJECTNAME OBJECTNAME,name n,METRICVALUE v from EXA$METRIC where objecttype=''' || r.typ ||
+                    ''') pivot(sum(v) for n in(' || cols || '))';
+            EXECUTE IMMEDIATE (stmt);
+
+            FOR r1 IN (SELECT regexp_replace(NAME, '^\w\w_') n, d
+                       FROM   XMLTABLE('/ROWSET/ROW' PASSING DATA COLUMNS NAME PATH 'NAME', typ PATH 'TYP', D PATH 'D')
+                       WHERE  typ = r.typ) LOOP
+                BEGIN
+                       EXECUTE IMMEDIATE 'comment on column '||NAME||'.'||r1.n||' is q''['||r1.d||']''';
+                EXCEPTION WHEN OTHERS THEN NULL;
+                END;
+            END LOOP;
+        END LOOP;
+    END;
 /
-	CREATE OR REPLACE FORCE VIEW EXA$CELLSRVSTAT_AGG AS
-	SELECT *
-	FROM   (SELECT nvl(CELLNODE, 'TOTAL') cellnode,
-				   CATEGORY,
-				   NAME,
-				   regexp_replace(ITEM,'_?'||cellnode) item,
-				   IS_AVG,
-				   ROUND(decode(IS_AVG,'YES',AVG(VALUE),SUM(VALUE)),2) VALUE
-			FROM   (SELECT A.*,
-			               CASE
-							 WHEN regexp_like(NAME, '(avg|average|percentage)', 'i') OR
-								  (LOWER(NAME) LIKE '%util%' AND lower(NAME) NOT LIKE '% rate %util%') THEN
-							  'YES'
-							 ELSE
-							  'NO'
-						   END IS_AVG
-				   FROM exa$cellsrvstat a)
-			GROUP  BY CATEGORY, NAME, regexp_replace(ITEM,'_?'||cellnode),IS_AVG,ROLLUP(cellnode))
-	PIVOT(MAX(VALUE)
-	FOR    cellnode IN('TOTAL' TOTAL, &pivots ))
-	ORDER BY 1,2,3,4
-/
-	CREATE OR REPLACE FORCE VIEW EXA$METRIC_AGG AS
-	SELECT *
-	FROM   (SELECT OBJECTTYPE,
-				   NAME,
-				   METRICOBJECT,
-				   METRICTYPE,
-				   IS_AVG,
-				   UNIT,
-				   nvl(CELLNODE, 'TOTAL') c,
-				   round(DECODE(IS_AVG, 'YES', AVG(METRICVALUE), SUM(METRICVALUE)), 2) v
-			FROM   (SELECT A.*,
-						   CASE
-							   WHEN trim(UNIT) IN ('us/request', '%', 'C') THEN
-								'YES'
-							   ELSE
-								'NO'
-						   END IS_AVG,
-						   regexp_replace(METRICOBJECTNAME,'_?'||cellnode) METRICOBJECT
-					FROM   EXA$METRIC A)
-			GROUP  BY OBJECTTYPE, NAME, METRICOBJECT, METRICTYPE, IS_AVG, UNIT, ROLLUP(CELLNODE))
-	PIVOT(MAX(v)
-	FOR    c IN('TOTAL' TOTAL, &pivots))
-	ORDER  BY 1, 2, 3, 4
-/
-	DECLARE
-		NAME VARCHAR2(30);
-		stmt VARCHAR2(32767);
-		cols VARCHAR2(32767);
-		DATA XMLTYPE;
-	BEGIN
-		SELECT XMLTYPE(CURSOR
-					   (SELECT NAME,
-							   objecttype typ,
-							   'Type: ' || RPAD(nvl(METRICTYPE,' '), 15) || '  Unit: ' || RPAD(nvl(UNIT,' '), 15) || '  Desc: ' || DESCRIPTION d
-						FROM   EXA$METRIC_DESC))
-		INTO   DATA
-		FROM   dual;
-		FOR r IN (SELECT typ, listagg(NAME, ',') WITHIN GROUP(ORDER BY NAME) cols
-				  FROM   XMLTABLE('/ROWSET/ROW' PASSING DATA COLUMNS NAME PATH 'NAME', typ PATH 'TYP')
-				  WHERE  length(regexp_replace(name,'^\w\w_'))<=30
-				  GROUP  BY typ) LOOP
-			NAME := SUBSTR('EXA$METRIC_' || r.typ, 1, 30);
-			cols := regexp_replace(regexp_replace(r.cols, '([^,]+)', q'['\1' \1]'), ''' \w\w_', ''' ');
-			stmt := 'create or replace view ' || NAME ||
-					' as select * from (select CELLNODE,METRICOBJECTNAME OBJECTNAME,name n,METRICVALUE v from EXA$METRIC where objecttype=''' || r.typ ||
-					''') pivot(sum(v) for n in(' || cols || '))';
-			EXECUTE IMMEDIATE (stmt);
-		
-			FOR r1 IN (SELECT regexp_replace(NAME, '^\w\w_') n, d
-					   FROM   XMLTABLE('/ROWSET/ROW' PASSING DATA COLUMNS NAME PATH 'NAME', typ PATH 'TYP', D PATH 'D')
-					   WHERE  typ = r.typ) LOOP
-				BEGIN
-					   EXECUTE IMMEDIATE 'comment on column '||NAME||'.'||r1.n||' is q''['||r1.d||']''';
-				EXCEPTION WHEN OTHERS THEN NULL;
-				END;
-			END LOOP;
-		END LOOP;
-	END;
-/
-	PRO Granting access rights ...
-	PRO ==========================
-	begin
-		for r in(select * from user_objects where object_name like 'EXA$%' and object_type in('TABLE','VIEW')) loop
-			execute immediate 'create or replace public synonym '||r.object_name||' for '||r.object_name;
-			execute immediate 'grant select on '||r.object_name||' to select_catalog_role';
-		end loop;
-	end;
+    PRO Granting access rights ...
+    PRO ==========================
+    begin
+        for r in(select * from user_objects where object_name like 'EXA$%' and object_type in('TABLE','VIEW')) loop
+            execute immediate 'create or replace public synonym '||r.object_name||' for '||r.object_name;
+            execute immediate 'grant select on '||r.object_name||' to select_catalog_role';
+        end loop;
+    end;
 /
     --remove those metric history tables since they could impact the auto stats gathering
-	PRO Dropping time-consuming EXA$METRIC_HISTORY tables
-	PRO =================================================
+    PRO Dropping time-consuming EXA$METRIC_HISTORY tables
+    PRO =================================================
     drop table EXA$METRIC_HISTORY_1H;
     drop table EXA$METRIC_HISTORY_1D;
     drop table EXA$METRIC_HISTORY_10D;
     drop table EXA$METRIC_HISTORY;
-	drop public synonym EXA$METRIC_HISTORY_1H;
-	drop public synonym EXA$METRIC_HISTORY_1D;
-	drop public synonym EXA$METRIC_HISTORY_10D;
-	drop public synonym EXA$METRIC_HISTORY;
+    drop public synonym EXA$METRIC_HISTORY_1H;
+    drop public synonym EXA$METRIC_HISTORY_1D;
+    drop public synonym EXA$METRIC_HISTORY_10D;
+    drop public synonym EXA$METRIC_HISTORY;
 
-	PRO List of EXA$ objects:
-	PRO ====================================================
-	SET PAGESIZE 99
-	COL OWNER for a10
-	COL OBJECT_NAME FOR a30
-	COL OBJECT_TYPE FOR a11
-	SELECT OWNER,OBJECT_NAME,OBJECT_TYPE
-	FROM   DBA_OBJECTS
-	WHERE  OWNER IN('PUBLIC',USER)
-	AND    OBJECT_NAME LIKE 'EXA$%'
-	AND    OBJECT_TYPE NOT LIKE '% %'
-	ORDER  BY 2,1 DESC;
-	
+    PRO List of EXA$ objects:
+    PRO ====================================================
+    SET PAGESIZE 99
+    COL OWNER for a10
+    COL OBJECT_NAME FOR a30
+    COL OBJECT_TYPE FOR a11
+    SELECT OWNER,OBJECT_NAME,OBJECT_TYPE
+    FROM   DBA_OBJECTS
+    WHERE  OWNER IN('PUBLIC',USER)
+    AND    OBJECT_NAME LIKE 'EXA$%'
+    AND    OBJECT_TYPE NOT LIKE '% %'
+    ORDER  BY 2,1 DESC;
+
     --gather and lock stats
-	PRO Gathering and locking EXA table stats ...
-	PRO =================================================
-	begin
-		for r in(select * from user_tables where table_name like 'EXA$%') loop
-		    dbms_stats.gather_table_stats(user,r.table_name,degree=>16);
-			dbms_stats.lock_table_stats(user,r.table_name);
-		end loop;
-	end;
+    PRO Gathering and locking EXA table stats ...
+    PRO =================================================
+    begin
+        for r in(select * from user_tables where table_name like 'EXA$%') loop
+            dbms_stats.gather_table_stats(user,r.table_name,degree=>16);
+            dbms_stats.lock_table_stats(user,r.table_name);
+        end loop;
+    end;
 /
 
 EOF

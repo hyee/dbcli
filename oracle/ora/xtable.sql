@@ -28,7 +28,7 @@ BEGIN
               FROM   v$fixed_view_definition
               WHERE  ( regexp_like(substr(view_definition, 1, 3999) || ' ', '\W' || REPLACE(:V1, '$', '\$') || '\W', 'i') 
               	    OR upper(:V1) IN(view_name,regexp_replace(view_name, '^G?V_?\$', 'V$')))
-              AND    LENGTH(:V1) > 4) LOOP
+              AND    LENGTH(:V1) >= 4) LOOP
         BEGIN
         	&ver..expand_sql_text('select * from sys.' || r.n, text);
 	        IF instr(text,'"X$')=0 THEN

@@ -1,4 +1,4 @@
-/*[[Show object info for the input block in bh. Usage: @@NAME {<file#> <block#>|<data block address>}
+/*[[Show object info for the input block in bh. Usage: @@NAME {<file#> <block#>} | <data block address>
 	Sample Output:
 	==============
     SQL> @@NAME 1 241
@@ -26,8 +26,8 @@
 
     --[[
         @CHECK_ACCESS_SEG: {
-            X$BH={select * from table(gv$(cursor(select OBJ objd,file# from x$bh where file#=&file and DBABLK=&block)))}
             sys.seg$={select HWMINCR objd,file# from sys.seg$ where file#=&file and &block between block# and block#-1+blocks}
+            X$BH={select * from table(gv$(cursor(select OBJ objd,file# from x$bh where file#=&file and DBABLK=&block)))}
             default={select * from table(gv$(cursor(select objd,file# from v$bh where file#=&file and block#=&block)))}
         }    
         @CHECK_ACCESS_OBJ: dba_objects={dba_objects}, default={all_objects}
@@ -53,6 +53,11 @@ BEGIN
 		ELSE
 			raise_application_error(-20001,'Invalid data block address: '||file);
 		END IF;
+
+        IF dba < 4194305 THEN
+            raise_application_error(-20001,'Usage: ora block {<file#> <block#>} | <data block address>');
+        END IF;
+
 		file := DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(dba);
 		block:= DBMS_UTILITY.DATA_BLOCK_ADDRESS_BLOCK(dba);
 	ELSIF regexp_like(file,'^\d+$') THEN
