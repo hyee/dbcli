@@ -418,7 +418,7 @@ end
 function db_core:ctor()
     self.resultset  = ResultSet.new()
     self.db_types:load_sql_types('java.sql.Types')
-    self.__stmts = {}
+    self.__stmts = table.week('v')
     self.type="unknown"
     env.set_command(self,"commit",nil,self.commit,false,1)
     env.set_command(self,"rollback",nil,self.rollback,false,1)
@@ -704,8 +704,8 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     if is_not_prep and not self:is_internal_call(sql) then
         db_core.__start_clock=os.timer()
     end
+    collectgarbage("collect")
     if #env.RUNNING_THREADS<=2 then
-        collectgarbage("collect")
         java.system:gc()
         java.system:runFinalization();
     end
@@ -758,12 +758,13 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local rscount=0
 
     local function process_result(rs,is_print)
-        if print_result and is_print~=false then 
+        if print_result and is_print~=false then
             self.resultset:print(rs,self.conn)
         else
             rscount=rscount+1
+            self.__result_sets[#self.__result_sets+1]=rs
         end
-        self.__result_sets[#self.__result_sets+1]=rs
+        
         while #self.__result_sets>cfg.get('SQLCACHESIZE')*2 do
             self.resultset:close(self.__result_sets[1])
             table.remove(self.__result_sets,1)
@@ -802,7 +803,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local params1=nil
     local result={is_query and process_result(prep:getResultSet()) or prep:getUpdateCount()}
     local i=0;
-    
+
     while true do
         params1,is_query=pcall(prep.getMoreResults,prep,2)
         if not params1 or not is_query then break end
@@ -814,7 +815,9 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
 
     if rscount==0 and is_not_prep then
         pcall(prep.close,close)
+        self.__stmts[#self.__stmts]=nil
     end
+
     self:clearStatements()
     
     for k,v in pairs(outputs) do
@@ -826,9 +829,9 @@ end
 
 function db_core:is_connect(recursive)
     if type(self.conn)~='userdata' or not self.conn.isClosed or self.conn:isClosed() then
-        self.__stmts={}
+        self.__stmts = table.week('v')
+        self.__result_sets = table.week('v')
         self.__preparedCaches={}
-        self.__result_sets={}
         self.props={privs={}}
         if self.conn~=nil and recursive~=true then self:disconnect(false) end
         return false
@@ -916,8 +919,8 @@ function db_core:connect(attrs,data_source)
         event("TRIGGER_CONNECT",self,attrs.jdbc_alias or url,attrs)
         event("AFTER_DB_CONNECT",self,attrs.jdbc_alias or url,attrs)
     end
-    self.__stmts = {}
-    self.__result_sets = {}
+    self.__stmts = table.week('v')
+    self.__result_sets = table.week('v')
     self.__preparedCaches={}
     self.properties={}
 

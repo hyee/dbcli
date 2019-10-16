@@ -1,5 +1,5 @@
 /*[[
-  Show top objects in flashcache contents. Usage: @@NAME [hits|misses|cachesize|<keyword>] [-detail|-group]
+  Show top objects in flashcache contents based on external table EXA$CACHED_OBJECTS. Usage: @@NAME [hits|misses|cachesize|<keyword>] [-detail|-group]
 	This script relies on external table EXA$CACHED_OBJECTS which is created by shell script "oracle/shell/create_exa_external_tables.sh" with the oracle user
 	
 	Parameters:
@@ -52,7 +52,7 @@ col Reqs,hits,misses for tmb
 col hit%,ColumnarCache% for pct
 set printsize 50
 
-SELECT &grp3
+SELECT /*+opt_param('parallel_force_local' 'true')*/ &grp3
 FROM   (SELECT objectnumber data_object_id,dbuniquename,
                &grp1,
                SUM(hitcount+misscount) "Reqs",
@@ -67,7 +67,8 @@ FROM   (SELECT objectnumber data_object_id,dbuniquename,
                SUM(COLUMNARKEEPSIZE) "ColumnarKeep"
         FROM   EXA$CACHED_OBJECTS
         GROUP  BY objectnumber,dbuniquename &grp2) b
-LEFT JOIN dba_objects a on(b.data_object_id = a.data_object_id and upper(dbuniquename) = upper(sys_context('userenv','db_unique_name')))
+LEFT JOIN dba_objects a 
+ON   (b.data_object_id = a.data_object_id and regexp_replace(upper(dbuniquename),':.*')= upper(sys_context('userenv','db_unique_name')))
 WHERE nvl(lower(:V1), ' ') IN (' ', 'hits', 'misses', 'cachedsize', 'cachedwrite', 'columnarcache', 'cachedkeep', 'columnarkeep') 
 OR    upper(:V1) IN (owner, object_name,subobject_name, object_type,''||object_id,''||a.data_object_id)
 &grp4

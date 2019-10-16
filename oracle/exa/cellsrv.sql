@@ -1,5 +1,5 @@
 /*[[
-    Show the detail of "cellsrvstat". Usage: @@NAME {[<keyword>] [-agg] [-r]} | {<seconds> [-avg]}
+    Show the detail of "cellsrvstat" based on external table EXA$CELLSRVSTAT. Usage: @@NAME {[<keyword>] [-r]} {[-agg] | <seconds> [-avg]}
     This script relies on external table EXA$CELLSRVSTAT which is created by shell script "oracle/shell/create_exa_external_tables.sh" with the oracle user
     
     Parameters:
@@ -28,7 +28,7 @@ DECLARE
     v_pivot VARCHAR2(4000);
     v_stmt VARCHAR2(32767);
 BEGIN
-    IF regexp_like(:V1,'^\d+$') THEN
+    IF regexp_like(:V2,'^\d+$') THEN
         SELECT listagg(''''||b.name||''' "CELL#'||regexp_substr(b.name,'\d+$')||'"',',') within group(order by b.name) pivots
         INTO   v_pivot
         FROM   v$cell_config a,
@@ -42,28 +42,30 @@ BEGIN
                     &CHECK_ACCESS_SL..sleep(greatest(1,86400*(target-sysdate)));
                     RETURN SYSTIMESTAMP;
                 END;
-            SELECT * FROM ( 
+            SELECT /*+opt_param('parallel_force_local' 'true')*/ * FROM ( 
                 SELECT CATEGORY,NAME,ITEM,
                        nvl(CELLNODE, 'TOTAL') c,
                        DECODE(IS_AVG,1,'NO','YES') Cumulative,
                        DECODE(IS_LAST,1,'NO','YES') "DELTA",
                        round(DECODE(IS_AVG, 1, AVG(v), SUM(v)), 2) v
                 FROM (
-                    SELECT CELLNODE,CATEGORY,NAME,OFFLOAD_GROUP,ITEM,IS_LAST,
+                    SELECT CELLNODE,CATEGORY,
+                           REPLACE(NAME,'(KB)','(MB)') NAME,
+                           OFFLOAD_GROUP,ITEM,IS_LAST,
                            CASE
-                             WHEN (LOWER(NAME) LIKE '%util%' AND lower(NAME) NOT LIKE '% rate %util%') THEN
+                             WHEN regexp_like(NAME, '(avg|average|percentage)', 'i') OR (LOWER(NAME) LIKE '%util%' AND lower(NAME) NOT LIKE '% rate %util%') THEN
                               1
                              ELSE
                               0
                             END IS_AVG,
-                            DECODE(IS_LAST,0,SUM(VALUE*DECODE(r, 1, -1, 1))/&AVG, MAX(VALUE) KEEP(DENSE_RANK LAST ORDER BY r)) v
+                            DECODE(IS_LAST,0,SUM(VALUE*DECODE(r, 1, -1, 1))/&AVG,MAX(VALUE) KEEP(DENSE_RANK LAST ORDER BY r))/decode(instr(NAME,'(KB)'),0,1,1024) v
                     FROM   (SELECT /*+no_merge ordered use_nl(timer stat)*/ROWNUM r, 
-                                    sysdate+numtodsinterval(&V1,'second') mr FROM XMLTABLE('1 to 2')) dummy,
+                                    sysdate+numtodsinterval(&V2,'second') mr FROM XMLTABLE('1 to 2')) dummy,
                             LATERAL (SELECT /*+no_merge*/ do_sleep(dummy.r, dummy.mr) stime FROM dual) timer,
                             LATERAL (SELECT /*+no_merge*/ A.*,CASE WHEN REGEXP_LIKE(name,'^(Number of|# of|num|Size of|CC IOs|Total|Flash disk|Hard disk|SI|Allocations|Write-Heavy CC|CC Regions) ','i') THEN 0 ELSE 1 END IS_LAST from EXA$CELLSRVSTAT a WHERE timer.stime IS NOT NULL) stat
                     GROUP  BY CELLNODE,CATEGORY,NAME,OFFLOAD_GROUP,ITEM,IS_LAST
                 )
-                WHERE v!=0
+                WHERE V!=0 AND (&FILTER)
                 GROUP BY CATEGORY,NAME,ITEM,IS_AVG,IS_LAST,ROLLUP(CELLNODE)
             )
             PIVOT(MAX(v) FOR c IN('TOTAL' TOTAL, @pivots))
@@ -74,7 +76,7 @@ BEGIN
         OPEN :cur FOR v_stmt;
     ELSE
         OPEN :cur FOR
-            SELECT *
+            SELECT /*+opt_param('parallel_force_local' 'true')*/ *
             FROM   &vw
             WHERE  &filter
             AND    rownum <= 256;

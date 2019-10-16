@@ -26,7 +26,7 @@
 		@ARGS: 1
 		@check_user_dba: {
 			SYSDBA={
-			    UNION ALL
+			    UNION
 			    SELECT 'SYS',t.kqftanam TABLE_NAME, c.kqfconam COLUMN_NAME,
 				       decode(kqfcodty,
 				               1,'VARCHAR2',
@@ -63,7 +63,7 @@
 				FROM   x$kqfta t, x$kqfco c
 				WHERE  c.kqfcotab = t.indx
 				AND    c.inst_id = t.inst_id
-				AND    upper(c.kqfconam||',x$kqfco') like upper('%&V1%')} default={}
+				AND    upper(t.kqftanam||','||c.kqfconam||',x$kqfco') like upper('%&V1%')} default={}
 		}
 		@check_access_arg: DBA_ARGUMENTS={DBA_} default={ALL_}
 	--]]
@@ -71,10 +71,10 @@
 set printsize 1000
 SELECT a.OWNER, a.TABLE_NAME OBJECT_NAME, COLUMN_NAME, DATA_TYPE, '&check_access_arg.TAB_COLS' SOURCE
 FROM   &check_access_arg.tab_cols a
-WHERE  upper(COLUMN_NAME || ',&check_access_arg.TAB_COLS') LIKE upper('%&V1%')
-UNION ALL
+WHERE  upper(TABLE_NAME||','||COLUMN_NAME || ',&check_access_arg.TAB_COLS') LIKE upper('%&V1%')
+UNION
 SELECT a.OWNER, TRIM('.' FROM PACKAGE_NAME || '.' || a.OBJECT_NAME), ARGUMENT_NAME, DATA_TYPE, '&check_access_arg.ARGUMENTS'
 FROM   &check_access_arg.arguments a
-WHERE  upper(ARGUMENT_NAME || ',&check_access_arg.ARGUMENTS') LIKE upper('%&V1%')
+WHERE  upper(TRIM('.' FROM PACKAGE_NAME || '.' || a.OBJECT_NAME)||','||ARGUMENT_NAME || ',&check_access_arg.ARGUMENTS') LIKE upper('%&V1%')
 &check_user_dba
 ORDER BY 1 DESC,2,3;

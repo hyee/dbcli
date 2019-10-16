@@ -39,7 +39,7 @@
                                    SUM(CACHEDKEEPSIZE) cachedkeep,
                                    SUM(COLUMNARKEEPSIZE) columnarkeep
                             FROM   EXA$CACHED_OBJECTS
-                            WHERE  upper(dbuniquename) = upper(sys_context('userenv','db_unique_name'))
+                            WHERE  regexp_replace(upper(dbuniquename),':.*') = upper(sys_context('userenv','db_unique_name'))
                             GROUP  BY objectnumber) b,
                            &check_access_dba.objects a
                     WHERE  b.data_object_id = a.data_object_id)} 

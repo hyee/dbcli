@@ -488,6 +488,40 @@ PC_BY_ALLOCATED =>  [PMEM] The number of megabytes allocated in PMEM cache. Tra
 PDB_PC_BY_ALLOCATED =>  [PMEM] Number of megabytes allocated in PMEM cache for this pluggable database (PDB).
 
 
-PURGE FLASHCACHE:
-=================
-cellcli -e  alter cell events = "immediate cellsrv.cellsrv_flashcache(Reset,0,0,0)" ;
+FlashCache: cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(Reset,0,0,0)"'
+            cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(dumpStats,0,0,0)"' 
+			cellcli -e 'alter cell events="immediate cellsrv.cellsrv_flashcache(dumpheader, <addr1>, <addr2>, 1)'
+			cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(dumpGroups,0,0,0)"' 
+			cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(dumpobj,0,0,0)"' 
+			cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(dumplru,0,0,0)"'  
+			cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(dumplru,0,2,3)"' (where parameter=2 means medium-level dump' parameter=3 means for all lru lists.)
+			cellcli -e 'alter cell events = "trace[cellsrv_flash_cache_layer] disk=high,memory=high"'
+			cellcli -e 'alter cell events = "trace[cellsrv_flash_cache_layer] off"'
+Storage Indexe:   cellcli -e 'alter cell events="immediate cellsrv.cellsrv_storidx('dumpridx','all',0, 0,0)"'
+                  cellcli -e 'alter cell l offloadgroupEvents = "immediate cellsrv.cellsrv_storidx(dumpridx,all, 0, 0, 0)"'
+		          #1: dumpridx/purge/enable/disable
+				  #2: all/<griddiskname>
+				  #3: 0/<data_object_id>
+				  #4: 0/<tablespace_id>
+				  #5: 0/<unique dbid> (x$ksqdn.KSQDNGUNID)
+resetstats  ：   cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_resetstats('all')"'  
+                     or the items from  "cellsrv.cellsrv_dump(list,0)"
+cellsrv_dump：   List all: cellcli -e 'alter cell events="immediate cellsrv.cellsrv_dump(list,0)"'
+                 dump all: cellcli -e 'alter cell events="immediate cellsrv.cellsrv_dump(all,0)"'
+                 system state dump: cellcli -e 'alter cell events="immediate cellsrv.cellsrv_statedump(0|1|2,0)"'
+                 Basic iostats: cellcli -e 'alter cell events="immediate cellsrv.cellsrv_dump('devio_stats',0)"'
+                 IO latency: cellcli -e 'alter cell events="immediate cellsrv.cellsrv_dump('iolstats',0)"'
+				             cellcli -e 'alter cell events="immediate cellsrv.cellsrv_resetstats(iolstats)"'
+                 ioreasons:  cellcli -e 'alter cell events="immediate cellsrv.cellsrv_dump('ioreasons',0)"'
+				             cellcli -e 'alter cell events="immediate cellsrv.cellsrv_resetstats(ioreasons)"' 
+				 PMMstats(passthrough): cellcli -e 'alter cell events="immediate cellsrv.cellsrv_dump('mpp_stats',0)"'
+				 Memory usage summary: cellcli -e 'alter cell events="immediate cellsrv.cellsrv_dump('memsummary',0)"'
+				 SGA Memory Summary: cellcli -e 'alter cell events="immediate cellsrv.cellsrv_dump('sgaheapsummary',0)"'
+				 SGA Memory Summary: cellcli -e 'alter cell events="immediate cellsrv.cellsrv_dump('pgaheap',0)"'
+                 params : cellcli -e 'alter cell events="immediate cellsrv.cellsrv_dump('cellparams',0)"' 
+				          cellcli -e 'alter cell events="immediate cellsrv.cellsrv_setparam('_cell_io_hang_time','90')"' 
+				 Predicate I/O: cellcli -e 'alter cell events="immediate cellsrv.cellsrv_dump('predicateio',0)"' 
+				 Clear Stats: cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_resetstats()"'
+				 Trace: cellcli -e 'alter cell events='trace[cellsrv.cellsrv_events_layer] memory=highest,disk=highest''
+				        cellcli -e 'alter cell events='trace[cellsrv.cellsrv_events_layer] off''
+				 Boot Time: cellcli -e ''alter cell events="immediate cellsrv.cellsrv_dump(start_time,1)"''

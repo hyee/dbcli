@@ -1,5 +1,5 @@
 /*[[
-    Show the summary of "cellcli metriccurrent". Usage: @@NAME [<cellname>]
+    Show the summary of cell metric based on external table EXA$METRIC. Usage: @@NAME [<cellname>]
     Refer to page https://docs.oracle.com/en/engineered-systems/exadata-database-machine/sagug/exadata-storage-server-monitoring.html#GUID-B52267F8-FAD9-4A86-9D84-81792A914C94
     This script relies on external table EXA$METRIC which is created by shell script "oracle/shell/create_exa_external_tables.sh" with the oracle user
     --[[
@@ -36,7 +36,7 @@ DECLARE
     V1   VARCHAR2(128):=:V1;
 BEGIN
     $IF DBMS_DB_VERSION.VERSION>11 AND DBMS_DB_VERSION.RELEASE>1 OR DBMS_DB_VERSION.VERSION>12 $THEN
-        SELECT json_arrayagg(json_array(
+        SELECT /*+opt_param('parallel_force_local' 'true')*/ json_arrayagg(json_array(
                 nullif(cellnode,' '),
                 nullif(objecttype,' '),
                 nullif(NAME,' '),
@@ -63,7 +63,7 @@ BEGIN
         WHERE  nvl(lower(v1),' ') in(' ',lower(cellnode));
     $ELSE
         SELECT xmltype(CURSOR(
-                        SELECT cellnode cell,
+                        SELECT /*+opt_param('parallel_force_local' 'true')*/ cellnode cell,
                                objecttype typ,
                                NAME,
                                nullif(metricobjectname,cellnode) obj,

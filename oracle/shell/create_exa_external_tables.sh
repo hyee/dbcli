@@ -18,6 +18,10 @@ echo "* Target database is : $ORACLE_SID       "
 echo "*****************************************"
 
 mkdir -p $dir
+if [ ! -d "$dir" ]; then
+    echo "Failed to mkdir directory $dir, exit." 1>&2
+    exit 1
+fi
 
 cd $dir
 echo "">EXA_NULL
@@ -49,7 +53,7 @@ done <cell_group
 
 echo "Creating SSH Key-Based Authentication to $ssh_user@<cells nodes> ... "
 echo =======================================================================
-dcli -g cell_group -l root -k
+dcli -g cell_group -l $ssh_user -k
 
 cat >cellcli.sh<<'!'
 #!/bin/bash
@@ -303,8 +307,8 @@ sqlplus -s / as sysdba <<'EOF'
           ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
             PREPROCESSOR 'getcellparams.sh'
             FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
-          )
-        ) &locations
+          ) &locations
+        )
     REJECT LIMIT UNLIMITED PARALLEL &cells;
     
     PRO Creating table EXA$ACTIVE_REQUESTS
@@ -393,8 +397,8 @@ sqlplus -s / as sysdba <<'EOF'
           ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
             PREPROCESSOR 'cellsrvstat.lua'
             FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
-          )
-        ) &locations
+          ) &locations
+        )
     REJECT LIMIT UNLIMITED PARALLEL &cells;
 
     PRO Creating table EXA$CELLSRVSTAT_10S
@@ -415,8 +419,8 @@ sqlplus -s / as sysdba <<'EOF'
           ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
             PREPROCESSOR 'cellsrvstat_10s.sh'
             FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
-          )
-        ) &locations
+          ) &locations
+        )
     REJECT LIMIT UNLIMITED PARALLEL &cells;
 
     PRO Creating table EXA$METRIC_DESC
@@ -588,7 +592,7 @@ sqlplus -s / as sysdba <<'EOF'
     PRO Creating views for EXA$ tables
     PRO ==============================
     CREATE OR REPLACE FORCE VIEW EXA$CELLPARAMS_AGG AS
-        SELECT *
+        SELECT /*+opt_param('parallel_force_local' 'true')*/ *
         FROM   (SELECT CELLNODE c,NAME,trim(VALUE) v FROM EXA$CELLPARAMS) 
         PIVOT(MAX(v) FOR c IN(&pivots))
         ORDER BY 1,2,3,4;
@@ -599,7 +603,7 @@ sqlplus -s / as sysdba <<'EOF'
 
 
     CREATE OR REPLACE FORCE VIEW EXA$METRIC_AGG AS
-    SELECT /*+use_hash(a b)*/ A.*,B.DESCRIPTION
+    SELECT /*+opt_param('parallel_force_local' 'true')use_hash(a b)*/ A.*,B.DESCRIPTION
     FROM (
         SELECT *
         FROM   (SELECT OBJECTTYPE,
@@ -625,7 +629,7 @@ sqlplus -s / as sysdba <<'EOF'
     ORDER  BY 1, 2, 3, 4;
 
     CREATE OR REPLACE FORCE VIEW EXA$CELLSRVSTAT_AGG AS
-        SELECT *
+        SELECT /*+opt_param('parallel_force_local' 'true')*/ *
         FROM   (SELECT nvl(CELLNODE, 'TOTAL') cellnode,
                        CATEGORY,
                        NAME,
@@ -647,7 +651,7 @@ sqlplus -s / as sysdba <<'EOF'
         ORDER BY 1,2,3,4;
 
     CREATE OR REPLACE FORCE VIEW EXA$CELLSRVSTAT_10s_AGG AS
-        SELECT *
+        SELECT /*+opt_param('parallel_force_local' 'true')*/ *
         FROM   (SELECT nvl(CELLNODE, 'TOTAL') cellnode,
                        CATEGORY,
                        NAME,
