@@ -418,7 +418,7 @@ end
 function db_core:ctor()
     self.resultset  = ResultSet.new()
     self.db_types:load_sql_types('java.sql.Types')
-    self.__stmts = table.week('v')
+    self.__stmts = {}
     self.type="unknown"
     env.set_command(self,"commit",nil,self.commit,false,1)
     env.set_command(self,"rollback",nil,self.rollback,false,1)
@@ -829,7 +829,7 @@ end
 
 function db_core:is_connect(recursive)
     if type(self.conn)~='userdata' or not self.conn.isClosed or self.conn:isClosed() then
-        self.__stmts = table.week('v')
+        self.__stmts = {}
         self.__result_sets = table.week('v')
         self.__preparedCaches={}
         self.props={privs={}}
@@ -919,7 +919,7 @@ function db_core:connect(attrs,data_source)
         event("TRIGGER_CONNECT",self,attrs.jdbc_alias or url,attrs)
         event("AFTER_DB_CONNECT",self,attrs.jdbc_alias or url,attrs)
     end
-    self.__stmts = table.week('v')
+    self.__stmts = {}
     self.__result_sets = table.week('v')
     self.__preparedCaches={}
     self.properties={}
