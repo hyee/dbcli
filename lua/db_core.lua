@@ -695,6 +695,7 @@ function db_core.log_param(params)
     end
 end
 
+local collectgarbage,java_system,gc=collectgarbage,java.system,java.system.gc
 function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_not_prep=type(sql)~="userdata"
     if is_not_prep and sql:sub(1,1024):find('/*DBCLI_EXEC_CACHE*/',1,true) then
@@ -705,9 +706,8 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         db_core.__start_clock=os.timer()
     end
     collectgarbage("collect")
-    if #env.RUNNING_THREADS<=2 then
-        java.system:gc()
-        java.system:runFinalization();
+    if #env.RUNNING_THREADS<=2 then 
+        gc(java_system) 
     end
     local params,prep={}
     args=type(args)=="table" and args or {args}

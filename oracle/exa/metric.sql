@@ -23,12 +23,12 @@ var ibport     refcursor
 var interconn  refcursor
 var iorm_db    refcursor
 COL "IB_IN/s,IB_OUT/s,ETH_IN/s,ETH_OUT/s,VMEM(CS),VMEM(MS),SWAP,SWAP_IN/s,SWAP_OUT/s,FC_DIRTY,SM_R/s,SM_W/s,LG_R/s,LG_W/s,SCRUB/s,ALLOC" FOR KMG
-COL "ALLOC(OLTP),DIRTY,KEEP,USED,CC_USED,CC_ELIG/s,CC_SAVED/s,CC_POP/s,R/s,W/s,R_MISS/s,R_DW/s,R_SKIP/s,W_1st/s,W_DW/s,W_Pop/s,W_Skip/s,HD/s,FD/s,,CC_R,CC_ELiG,CC_SAVED,CC_POP" for kmg
-COL "CC_REQS,LG_R_IOPS,LG_W_IOPS,SM_R_IOPS,SM_W_IOPS,SCRUB_IOPS,REQS,HD_FIRST,FD_FIRST,HD_ERRS,FD_ERRS,HD_OUTLIER,FD_OUTLIER,BOTH_OUTLIER,SKIP_OUTLIER,SKIP_BUSY,SKIP_BUSY(1m),SKIP_LARGE,SKIP_DISABLED,SKIP_IORM,SKIP_PLAN,FC_IOPS,FL_IOPS" for tmb
-COL "OFL_IN,OFL_OUT,SI_SAVE,PASSTHRU,FC,HD,BOTH,OFL_IN/s,OFL_OUT/s,SI_SAVE/s,PASSTHRU/s,PASSTHRU_CPU,PASSTHRU_CPU/s,FC/s,HD/s,BOTH/s,FC_WR,HD_WR,FC_WR/s,HD_WR/s" for kmg
+COL "ALLOC(OLTP),DIRTY,KEEP,USED,CC_USED,CC_ELIG/s,CC_SAVED/s,CC_POP/s,R/s,W/s,R_MISS/s,R_DW/s,R_SKIP/s,W_1st/s,W_DW/s,W_Pop/s,W_Skip/s,HD/s,FD/s,R/IO,W/IO,R,W,R_SKIP,W_SKIP,R_MISS,CC_R,CC_ELIG,CC_SAVED,CC_W" for kmg
+COL "CC_REQS,LG_R_IOPS,LG_W_IOPS,SM_R_IOPS,SM_W_IOPS,SCRUB_IOPS,REQS,FL_REQS,HD_FIRST,FD_FIRST,HD_ERRS,FD_ERRS,HD_OUTLIER,FD_OUTLIER,BOTH_OUTLIER,SKIP_OUTLIER,SKIP_BUSY,SKIP_BUSY(1m),SKIP_LARGE,SKIP_DISABLED,SKIP_IORM,SKIP_PLAN,FC_IOPS,FL_IOPS" for tmb
+COL "OFL_IN,OFL_OUT,SI_SAVE,PASSTHRU,FC_R,HD_R,BOTH,OFL_IN/s,OFL_OUT/s,SI_SAVE/s,PASSTHRU/s,PASSTHRU_CPU,PASSTHRU_CPU/s,FC_R/s,HD_R/s,BOTH/s,FC_WR,HD_W,FC_W/s,HD_W/s" for kmg
 COL "SM_Latency,AVG_Wait,IO_Wait,FD_TM,FD_TM_LG,FD_WT_LG,FD_TM_SM,FD_WT_SM,HD_TM_LG,HD_WT_LG,HD_TM_SM,HD_WT_SM" for usmhd
 COL "CELL_IN,CELL_OUT,CELL_DROP,RDMA_DROP,CELL_IN/s,CELL_OUT/s,CELL_DROP/s,RDMA_DROP/s,PMEM_ALLOC,PMEM_ALLOC_DB,PMEM_ALLOC_PDB,FC_ALLOC,PMEM,FC/s,FL/s,FD/s,HD/s" for KMG
-COL "Temp,LOADS,CPU,CPU(CS),CPU(MS),Mem,Mem(CS),Mem(MS),MaxDirUsage,EFF,EFF(1h),IB_UTIL_IN,IB_UTIL_OUT" for k justify right
+COL "Temp,LOADS,CPU,CPU(CS),CPU(MS),Mem,Mem(CS),Mem(MS),MaxFSUsage,EFF,EFF(1h),IB_UTIL_IN,IB_UTIL_OUT" for k justify right
 COL CELL BREAK
 
 DECLARE
@@ -100,7 +100,7 @@ BEGIN
                        'CL_MEMUT_MS' "Mem(MS)",
                        'CL_VIRTMEM_CS' "vMem(CS)",
                        'CL_VIRTMEM_MS' "vMem(MS)",
-                       'CL_FSUT' "MaxDirUsage",
+                       'CL_FSUT' "MaxFSUsage",
                        'N_HCA_MB_RCV_SEC' "IB_IN/s",
                        'N_HCA_MB_TRANS_SEC' "IB_OUT/s",
                        'N_NIC_KB_RCV_SEC' "ETH_IN/s",
@@ -212,12 +212,18 @@ BEGIN
 
     OPEN :flashcache FOR 
         SELECT *
-        FROM   (SELECT nvl(cell,'--TOTAL--') cell,
-                       NAME,
-                       SUM(VALUE) VALUE
-                FROM   &TABLE
-                WHERE  typ = 'FLASHCACHE'
-                GROUP  BY NAME,rollup(CELL))
+        FROM   (SELECT * FROM (
+                    SELECT nvl(cell,'--TOTAL--') cell,
+                           NAME,
+                           SUM(VALUE) VALUE
+                    FROM   &TABLE
+                    WHERE  typ = 'FLASHCACHE'
+                    GROUP  BY NAME,rollup(CELL))
+                MODEL  PARTITION BY(CELL) DIMENSION BY (name) MEASURES(value)
+                RULES  (
+                    VALUE['FC_IO_BY_R_RQ']=round(VALUE['FC_IO_BY_R']/VALUE['FC_IO_RQ_R']),
+                    VALUE['FC_IO_BY_W_RQ']=round(VALUE['FC_IO_BY_W']/VALUE['FC_IO_RQ_W'])
+                ))
         PIVOT(MAX(VALUE)
         FOR    NAME IN('FC_BY_ALLOCATED' "ALLOC",
                        'FC_BY_ALLOCATED_OLTP' "ALLOC(OLTP)",
@@ -228,8 +234,8 @@ BEGIN
                        'FC_COL_IO_BY_R_ELIGIBLE_SEC' "CC_ELIG/s",
                        'FC_COL_IO_BY_SAVED_SEC' "CC_SAVED/s",
                        'FC_COL_IO_BY_W_POPULATE_SEC' "CC_POP/s",
-                       'FC_IO_BY_R' "R/s",
-                       'FC_IO_BY_W' "W/s",
+                       'FC_IO_BY_R_SEC' "R/s",
+                       'FC_IO_BY_W_SEC' "W/s",
                        'FC_IO_BY_R_MISS_SEC' "R_MISS/s",
                        'FC_IO_BY_R_DISK_WRITER_SEC' "R_DW/s",
                        'FC_IO_BY_R_SKIP_SEC' "R_SKIP/s",
@@ -237,12 +243,18 @@ BEGIN
                        'FC_IO_BY_W_DISK_WRITER_SEC' "W_DW/s",
                        'FC_IO_BY_W_POPULATE_SEC' "W_Pop/s",
                        'FC_IO_BY_W_SKIP_SEC' "W_Skip/s",
+                       'FC_IO_BY_R_RQ' "R/IO",
+                       'FC_IO_BY_W_RQ' "W/IO",
                        'FC_IO_ERRS' "ERRS",
-                       'FC_COL_IO_RQ_R' "CC_REQS",
+                       'FC_IO_RQ_R' "R",
+                       'FC_IO_RQ_R_SKIP' "R_SKIP",
+                       'FC_IO_RQ_R_MISS' "R_MISS",
                        'FC_COL_IO_BY_R' "CC_R",
                        'FC_COL_IO_BY_R_ELIGIBLE' "CC_ELIG",
                        'FC_COL_IO_BY_SAVED' "CC_SAVED",
-                       'FC_COL_IO_BY_W_POPULATE' "CC_POP"))
+                       'FC_IO_RQ_W' "W",
+                       'FC_IO_RQ_W_SKIP' "W_SKIP",
+                       'FC_COL_IO_BY_W_POPULATE' "CC_W"))
         ORDER  BY CELL;
 
     OPEN :flashlog FOR 
@@ -255,21 +267,22 @@ BEGIN
                 WHERE  typ = 'FLASHLOG'
                 GROUP  BY NAME,rollup(CELL))
         PIVOT(MAX(VALUE)
-        FOR    NAME IN('FL_RQ_W' "REQS",
-                       'FL_DISK_FIRST' "HD_FIRST",
-                       'FL_FLASH_FIRST' "FD_FIRST",
-                       'FL_BY_KEEP' "HD_ERRS",
-                       'FL_FLASH_IO_ERRS' "FD_ERRS",
-                       'FL_PREVENTED_OUTLIERS' "HD_OUTLIER",
-                       'FL_FLASH_ONLY_OUTLIERS' "FD_OUTLIER",
-                       'FL_ACTUAL_OUTLIERS' "BOTH_OUTLIER",
-                       'FL_SKIP_OUTLIERS' "SKIP_OUTLIER",
+        FOR    NAME IN('FL_IO_FL_BY_W_SEC' "FD/s",
+                       'FL_IO_DB_BY_W_SEC' "HD/s",
                        'FL_RQ_TM_W_RQ' "AVG_Wait",
                        'FL_IO_TM_W_RQ' "IO_Wait",
+                       'FL_RQ_W' "REQS",
+                       'FL_IO_W' "FL_REQS",
+                       'FL_FLASH_FIRST' "FD_FIRST",
+                       'FL_DISK_FIRST' "HD_FIRST",
+                       'FL_FLASH_IO_ERRS' "FD_ERRS",
+                       'FL_BY_KEEP' "HD_ERRS",
+                       'FL_FLASH_ONLY_OUTLIERS' "FD_OUTLIER",
+                       'FL_PREVENTED_OUTLIERS' "HD_OUTLIER",
+                       'FL_ACTUAL_OUTLIERS' "BOTH_OUTLIER",
+                       'FL_SKIP_OUTLIERS' "SKIP_OUTLIER",
                        'FL_EFFICIENCY_PERCENTAGE' "EFF",
                        'FL_EFFICIENCY_PERCENTAGE_HOUR' "EFF(1h)",
-                       'FL_IO_DB_BY_W_SEC' "HD/s",
-                       'FL_IO_FL_BY_W_SEC' "FD/s",
                        'FL_IO_W_SKIP_BUSY' "SKIP_BUSY",
                        'FL_IO_W_SKIP_BUSY_MIN' "SKIP_BUSY(1m)",
                        'FL_IO_W_SKIP_LARGE' "SKIP_LARGE",
@@ -287,26 +300,27 @@ BEGIN
                 WHERE  typ = 'SMARTIO'
                 GROUP  BY NAME,rollup(CELL))
         PIVOT(MAX(VALUE)
-        FOR    NAME IN('SIO_IO_EL_OF' "OFL_IN",
-                       'SIO_IO_OF_RE' "OFL_OUT",
-                       'SIO_IO_SI_SV' "SI_SAVE",
-                       'SIO_IO_RD_FC' "FC",
-                       'SIO_IO_RD_HD' "HD",
-                       'SIO_IO_RD_FC_HD' "BOTH",
-                       'SIO_IO_EL_OF_SEC' "OFL_IN/s",
+        FOR    NAME IN('SIO_IO_EL_OF_SEC' "OFL_IN/s",
                        'SIO_IO_OF_RE_SEC' "OFL_OUT/s",
                        'SIO_IO_SI_SV_SEC' "SI_SAVE/s",
-                       'SIO_IO_RD_FC_SEC' "FC/s",
-                       'SIO_IO_RD_HD_SEC' "HD/s",
+                       'SIO_IO_RD_FC_SEC' "FC_R/s",
+                       'SIO_IO_RD_HD_SEC' "HD_R/s",
                        'SIO_IO_RD_FC_HD_SEC' "BOTH/s",
-                       'SIO_IO_WR_FC' "FC_WR",
-                       'SIO_IO_WR_HD' "HD_WR",
-                       'SIO_IO_WR_FC_SEC' "FC_WR/s",
-                       'SIO_IO_WR_HD_SEC' "HD_WR/s",
-                       'SIO_IO_PA_TH' "PASSTHRU",
+                       'SIO_IO_WR_FC_SEC' "FC_W/s",
+                       'SIO_IO_WR_HD_SEC' "HD_W/s",
+                       'SIO_IO_RV_OF_SEC' "PASSTHRU_CPU/s",
                        'SIO_IO_PA_TH_SEC' "PASSTHRU/s",
+                       'SIO_IO_EL_OF' "OFL_IN",
+                       'SIO_IO_OF_RE' "OFL_OUT",
+                       'SIO_IO_SI_SV' "SI_SAVE",
+                       'SIO_IO_RD_FC' "FC_R",
+                       'SIO_IO_RD_HD' "HD_R",
+                       'SIO_IO_RD_FC_HD' "BOTH",
+                       'SIO_IO_WR_FC' "FC_W",
+                       'SIO_IO_WR_HD' "HD_W",
                        'SIO_IO_RV_OF' "PASSTHRU_CPU",
-                       'SIO_IO_RV_OF_SEC' "PASSTHRU_CPU/s"))
+                       'SIO_IO_PA_TH' "PASSTHRU"
+                       ))
         ORDER  BY CELL;
 
     OPEN :iorm_db FOR 
@@ -347,12 +361,12 @@ BEGIN
 END;
 /
 
-PRO CELL METRIC
-PRO ============
+PRO CELL METRIC (CS=CELLSRV   MS=ManagementServer   FS=FileSystem   IB=InfiniBand   ETH=Ethernet)
+PRO =============================================================================================
 print cell
 
-PRO INFINIBAND / PMEM / HOST-INTERCONNECT METRIC
-PRO ===============================================================================================
+PRO INFINIBAND / PMEM / HOST-INTERCONNECT METRIC (IB=InfiniBand   CELL=HostInterConnect)
+PRO ====================================================================================
 print ibport
 
 PRO CELLDISK METRIC (LG=LargeIO SM=SmallIO CD=HardDisk FD=FlashDisk FC=FlashCache R=Read W=write)
@@ -362,26 +376,27 @@ print celldisk
 COL CELL BREAK SKIP -
 SET COLSEP |
 PRO GRIDDISK METRIC (LG=LargeIO SM=SmallIO CD=HardDisk FD=FlashDisk FC=FlashCache R=Read W=write)
-PRO ===============================================================================================
+PRO =============================================================================================
 print griddisk
 
 COL CELL BREAK
 SET COLSEP DEFAULT
-PRO FLASHCACHE METRIC(R=Read W=Write CC=ColumnarCache DW=DiskWriter Pop=Population)
-PRO ===============================================================================================
+
+PRO SMART IO METRIC (HD=HardDisk FC=FlashCache R=Read W=Write SI=StorageIndex OFL=Offload)
+PRO ======================================================================================
+print smartio
+
+PRO FLASHCACHE METRIC (R=Read W=Write CC=ColumnarCache DW=DiskWriter Pop=Population)
+PRO ================================================================================
 print flashcache
 
-
-PRO FLASHLOG METRIC(HD=HardDisk FD=FlashDisk)
-PRO ===============================================================================================
+PRO FLASHLOG METRIC (HD=HardDisk FD=FlashDisk FL=FlashLogging)
+PRO ==========================================================
 print flashlog
 
-PRO SMART IO METRIC(HD=HardDisk FC=FlashCache WR=Write SI=StorageIndex OFL=Offload)
-PRO ===============================================================================================
-print smartio
 
 COL CELL BREAK SKIP -
 SET COLSEP |
-PRO IORM DATABASE METRIC(HD=HardDisk FC=FlashCache FL=FlashLog FD=FlashDisk TM=AvgIOLatency WT=AvgIORMLatency LG=LargeIO SM=SmallIO)
+PRO IORM DATABASE METRIC (HD=HardDisk FC=FlashCache FL=FlashLog FD=FlashDisk TM=AvgIOLatency WT=AvgIORMLatency LG=LargeIO SM=SmallIO)
 PRO ================================================================================================================================
 print iorm_db

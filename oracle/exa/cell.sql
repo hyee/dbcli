@@ -225,9 +225,10 @@ grid {[[
     (SELECT c.*,row_number() over(PARTITION by dg order by tbs) r
      FROM
         (SELECT DISTINCT tbs, regexp_substr(FILE_NAME, '[^\+\\\/]+') dg
-                FROM   (SELECT B.NAME tbs,A.NAME file_name
+                FROM   (SELECT /*+leading(b) use_hash(a)*/ 
+                              B.NAME tbs,A.NAME file_name
                         FROM  (SELECT ts#, name  FROM v$datafile UNION ALL select ts#,name from v$tempfile) A
-                        JOIN v$tablespace B USING(ts#)
+                        JOIN  v$tablespace B USING(ts#)
                         UNION ALL
                         SELECT '(Redo)' tbs, MEMBER
                         FROM   v$logfile

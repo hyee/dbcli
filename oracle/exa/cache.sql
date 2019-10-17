@@ -6,7 +6,9 @@
 col tmb,ALLOC_REQUESTS format tmb
 col block_size,kmg,availables,used format kmg
 grid {[[ /*grid={topic='Columnar Cache'}*/
-    SELECT NAME &cell,SUM(VALUE) KMG,SUM(VALUE) TMB,round(100*sum(decode(grp,'ramcache',value))/nullif(sum(value),0),2) "RAM%"
+    SELECT NAME &cell,SUM(VALUE) KMG,SUM(VALUE) TMB,
+           round(100*sum(decode(grp,'ramcache',value))/nullif(sum(value),0),2) "RAM%",
+           round(100*sum(decode(grp,'nvcache',value))/nullif(sum(value),0),2) "PMEM%"
     FROM   (SELECT (SELECT extractvalue(xmltype(c.confval), '/cli-output/context/@cell')
                     FROM   v$cell_config c
                     WHERE  c.CELLNAME = a.CELL_NAME

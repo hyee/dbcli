@@ -1,5 +1,5 @@
 /*[[
-    Flash log. Usage: @@NAME [<cell>]
+    Show FlashLogging stats. Usage: @@NAME [<cell>]
 ]]*/
 
 set sep4k on

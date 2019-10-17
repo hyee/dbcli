@@ -1,7 +1,9 @@
 #!/bin/bash
-# Usage: create_exa_external_tables.sh <dir path to of the extertnal directory> [cell ssh user]
+# Usage: ./create_exa_external_tables.sh <dir path to of the extertnal directory> [cell ssh user]
+export db_account="/ as sysdba"
 dir=$1
 ssh_user=${2:-root}
+
 if [ "$1" = "" ] ; then
     echo "Usage: create_exa_external_tables.sh <dir path to of the extertnal directory> [cell ssh user]" 1>&2
     exit 1
@@ -44,8 +46,14 @@ cat >get_cell_group.sql<<!
     PRO
     exit
 !
+rm -f cell_group.lst
+sqlplus -l "$db_account" @get_cell_group
 
-sqlplus / as sysdba @get_cell_group
+if [ ! -f "cell_group.lst" ]; then
+    echo "Failed to build cell node list, exit." 1>&2
+    exit 1
+fi
+
 mv cell_group.lst cell_group
 while IFS= read -r cell; do
     echo $cell > $cell
@@ -164,28 +172,19 @@ export PATH=$PATH:/usr/bin;cd $(dirname $0)
 ./cellcli.sh getactiverequest.cli $1
 !
 
-cat >cellsrvstat_10s.sh<<'!'
+cat >cellsrvstat.sh<<'!'
 export PATH=$PATH:/usr/bin;cd $(dirname $0)
-./cellsrvstat.lua $1 10
+lua ./cellsrvstat.lua $1
 !
 
+cat >cellsrvstat_10s.sh<<'!'
+export PATH=$PATH:/usr/bin;cd $(dirname $0)
+lua ./cellsrvstat.lua $1 10
+!
+
+
 cat >cellsrvstat.lua<<'!'
-#!/bin/sh
-_=[[
-    IFS=:
-    export PATH=$PATH:/usr/local/bin:/bin:/usr/bin:/usr/local/sbin:/usr/sbin
-    . /etc/profile &> /dev/null
-    . ~/.bash_profile &> /dev/null
-    for D in ${PATH}; do
-      for F in "${D}"/luajit* "${D}"/lua "${D}"/lua5*; do
-        if [ -x "${F}" ]; then
-          exec "${F}" "$0" "$@"
-        fi
-      done
-    done
-    printf "%s: no Lua interpreter found\n" "${0##*/}" >&2
-    exit 1
-]]
+#!/usr/bin/env lua
 
 if not arg[1] then
     io.stderr:write("Please input the target cell name.\n")
@@ -258,7 +257,7 @@ end
 sed -i "s/root/$ssh_user/" cellcli.sh cellsrvstat.lua
 chmod +x get*.sh cell*.sh cell*.lua
 
-sqlplus -s / as sysdba <<'EOF'
+sqlplus -s "$db_account" <<'EOF'
     set verify off lines 150
     PRO
     PRO
@@ -395,7 +394,7 @@ sqlplus -s / as sysdba <<'EOF'
           DEFAULT DIRECTORY EXA_SHELL
           ACCESS PARAMETERS
           ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
-            PREPROCESSOR 'cellsrvstat.lua'
+            PREPROCESSOR 'cellsrvstat.sh'
             FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
           ) &locations
         )
@@ -742,7 +741,7 @@ sqlplus -s / as sysdba <<'EOF'
     ORDER  BY 2,1 DESC;
 
     --gather and lock stats
-    PRO Gathering and locking EXA table stats ...
+    PRO LAST STEP: Gathering and locking EXA table stats ...
     PRO =================================================
     begin
         for r in(select * from user_tables where table_name like 'EXA$%') loop

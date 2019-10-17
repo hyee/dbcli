@@ -530,6 +530,7 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     if event then
         if isMain then
             if writer then env.ROOT_CMD=name end
+            --collectgarbage("collect")
             env.log_debug("CMD",name,params)
         else
             if not env.isInterrupted then env.isInterrupted=console.cancelSeq>0 end

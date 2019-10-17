@@ -137,6 +137,7 @@ public class Loader {
         lua.close();
         lua = null;
         System.gc();
+        System.runFinalization();
     }
 
     public static void addLibrary(String s, Boolean isReplace) throws Exception {

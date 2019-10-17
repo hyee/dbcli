@@ -723,6 +723,8 @@ function desc.desc(name,option)
     if type(sqls)~="table" then sqls={sqls} end
     if (rs[4]=="PROCEDURE" or rs[4]=="FUNCTION") and rs[5]~=2 then
         rs[2],rs[3]=rs[3],rs[2]
+    elseif rs[4]=='VIEW' then
+        env.var.define_column('Default,Hidden?,AVG_LEN,NDV,Nulls(%),CARDINALITY,HISTOGRAM,BUCKETS','NOPRINT')
     end
 
     for k,v in pairs{owner=rs[1],object_name=rs[2],object_subname=rs[3],object_type=rs[4],object_id=obj.object_id} do
