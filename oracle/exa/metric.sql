@@ -390,8 +390,8 @@ PRO FLASHCACHE METRIC (R=Read W=Write CC=ColumnarCache DW=DiskWriter Pop=Populat
 PRO ================================================================================
 print flashcache
 
-PRO FLASHLOG METRIC (HD=HardDisk FD=FlashDisk FL=FlashLogging)
-PRO ==========================================================
+PRO FLASHLOG METRIC (HD=HardDisk FD=FlashDisk FL=FlashLogging Outlier>0.5s)
+PRO =======================================================================
 print flashlog
 
 

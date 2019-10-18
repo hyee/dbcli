@@ -1,11 +1,11 @@
 #!/bin/bash
-# Usage: ./create_exa_external_tables.sh <dir path to of the extertnal directory> [cell ssh user]
-export db_account="/ as sysdba"
+# Usage: ./create_exa_external_tables.sh <dir path to of the extertnal directory> [cell ssh user] [sqlplus connect string]
 dir=$1
 ssh_user=${2:-root}
+db_account="${3:-/ as sysdba}"
 
 if [ "$1" = "" ] ; then
-    echo "Usage: create_exa_external_tables.sh <dir path to of the extertnal directory> [cell ssh user]" 1>&2
+    echo "Usage: create_exa_external_tables.sh <dir path to of the extertnal directory> [cell ssh user] [sqlplus connect string]" 1>&2
     exit 1
 fi
 
@@ -70,7 +70,7 @@ export PATH=$PATH:/usr/local/bin:/bin:/usr/bin:/usr/local/sbin:/usr/sbin
 . /etc/profile &> /dev/null
 . ~/.bash_profile &> /dev/null
 cd $(dirname $0)
-rm -f *.bad *.log 2>/dev/null
+rm -f EXA*.log*.bad EXA*.log 2>/dev/null
 cmd="cellcli -e $*"
 cell=""
 if [ -f "$1" ];then cmd=`head -1 $1`;fi
@@ -172,21 +172,87 @@ export PATH=$PATH:/usr/bin;cd $(dirname $0)
 ./cellcli.sh getactiverequest.cli $1
 !
 
+cat >getcelllist.sh<<'!'
+export PATH=$PATH:/usr/bin;cd $(dirname $0)
+rm -f EXA*.log*.bad EXA*.log 2>/dev/null
+lua ./celllist.lua $1
+!
+
 cat >cellsrvstat.sh<<'!'
 export PATH=$PATH:/usr/bin;cd $(dirname $0)
+rm -f EXA*.log*.bad EXA*.log 2>/dev/null
 lua ./cellsrvstat.lua $1
 !
 
 cat >cellsrvstat_10s.sh<<'!'
 export PATH=$PATH:/usr/bin;cd $(dirname $0)
+rm -f EXA*.log*.bad EXA*.log 2>/dev/null
 lua ./cellsrvstat.lua $1 10
 !
 
+cat >celllist.lua<<'!'
+#!/usr/bin/env lua
+if not arg[1] or arg[1]=="" then
+    io.stderr:write("Please input the target cell name.\n")
+    os.exit(1)
+end
+
+function string.trim(s,sep)
+    sep='[%s%z'..(sep or '')..']'
+    return tostring(s):match('^'..sep..'*(.-)'..sep..'*$')
+end
+
+local cell,object,name=arg[1]:match('[^/]+$')
+local cmd=([[ssh %s@%s 'cellcli -xml -n -x -e "list CELL detail;list CELLDISK detail;list DATABASE detail;list DISKMAP detail;list FLASHCACHE detail;list FLASHLOG detail;list GRIDDISK detail;list IBPORT detail;list LUN detail;list OFFLOADGROUP detail;list PHYSICALDISK detail;list PLUGGABLEDATABASE detail;list PMEMCACHE detail;list PMEMLOG detail;list QUARANTINE detail"']]):format('root',cell)
+local fmt='"%s" | "%s" | "%s" | "%s" | "%s" | "%s"'
+
+local escapes={
+    ['&amp;']='&',
+    ['&lt;']='<',
+    ['&gt;']='>',
+    ['&quot;']=''
+}
+
+local pipe=io.popen(cmd, 'r')
+if not pipe then
+    print("execute cellcli on "..cell.." failed.")
+    os.exit(1)
+end
+local output = pipe:read('*all')
+pipe:close()
+local kmg={
+    T=1024*1024*1024*1024,
+    G=1024*1024*1024,
+    M=1024*1024,
+    K=1024
+}
+for line in output:gmatch("[^\n\t]+") do
+    local tag=line:match('<(.-)>')
+    local node,value,typ=line:match('<(.-)>(.-)</%1>')
+    if tag and tag~=node then object=tag:upper() end
+    if tostring(node):lower()=='name' then
+        name=value
+    elseif node then
+        value=value:gsub('&%w-;',escapes):trim()
+        value=value:gsub('^(%d+)([GMTK])B?$',function(v,u) return v*kmg[u] end)
+        if value=='' then 
+            typ=''
+        elseif value and tonumber(value) and not value:find('^0[xX]') then
+            typ='NUMBER'
+        elseif value:find('^%d%d%d%d%-%d%d?%-%d%d?T') then
+            typ='TIMESTAMP'
+        else
+            typ='VARCHAR2'
+        end
+        print(fmt:format(cell,object,name,node,value,typ))
+    end
+end
+!
 
 cat >cellsrvstat.lua<<'!'
 #!/usr/bin/env lua
 
-if not arg[1] then
+if not arg[1] or arg[1]=="" then
     io.stderr:write("Please input the target cell name.\n")
     os.exit(1)
 end
@@ -254,7 +320,7 @@ for line in output:gmatch("[^\n\t]+") do
     end
 end
 !
-sed -i "s/root/$ssh_user/" cellcli.sh cellsrvstat.lua
+sed -i "s/root/$ssh_user/" cellcli.sh cellsrvstat.lua celllist.lua
 chmod +x get*.sh cell*.sh cell*.lua
 
 sqlplus -s "$db_account" <<'EOF'
@@ -305,6 +371,28 @@ sqlplus -s "$db_account" <<'EOF'
           ACCESS PARAMETERS
           ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
             PREPROCESSOR 'getcellparams.sh'
+            FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+          ) &locations
+        )
+    REJECT LIMIT UNLIMITED PARALLEL &cells;
+    
+    PRO Creating table EXA$CELLCONFIG
+    PRO ==================================
+    CREATE TABLE EXA$CELLCONFIG
+       (
+        CELLNODE VARCHAR2(20),
+        objectType VARCHAR2(30),
+        NAME VARCHAR2(100),
+        FIELDNAME VARCHAR2(100),
+        VALUE VARCHAR2(4000),
+        DATATYPE VARCHAR2(20)
+       )
+       ORGANIZATION EXTERNAL
+        ( TYPE ORACLE_LOADER
+          DEFAULT DIRECTORY EXA_SHELL
+          ACCESS PARAMETERS
+          ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
+            PREPROCESSOR 'getcelllist.sh'
             FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
           ) &locations
         )
@@ -676,6 +764,11 @@ sqlplus -s "$db_account" <<'EOF'
         stmt VARCHAR2(32767);
         cols VARCHAR2(32767);
         DATA XMLTYPE;
+        PROCEDURE pr IS
+        BEGIN
+            stmt := stmt || ' FROM EXA$CELLCONFIG WHERE OBJECTTYPE=''' || NAME || ''' GROUP BY CELLNODE,NAME ORDER BY 1,2';
+            EXECUTE IMMEDIATE stmt;
+        END;
     BEGIN
         SELECT XMLTYPE(CURSOR
                        (SELECT NAME,
@@ -691,7 +784,7 @@ sqlplus -s "$db_account" <<'EOF'
             NAME := SUBSTR('EXA$METRIC_' || r.typ, 1, 30);
             cols := regexp_replace(regexp_replace(r.cols, '([^,]+)', q'['\1' \1]'), ''' \w\w_', ''' ');
             stmt := 'create or replace view ' || NAME ||
-                    ' as select * from (select CELLNODE,METRICOBJECTNAME OBJECTNAME,name n,METRICVALUE v from EXA$METRIC where objecttype=''' || r.typ ||
+                    ' as select /*+opt_param(''parallel_force_local'' ''true'')*/ * from (select CELLNODE,METRICOBJECTNAME OBJECTNAME,name n,METRICVALUE v from EXA$METRIC where objecttype=''' || r.typ ||
                     ''') pivot(sum(v) for n in(' || cols || '))';
             EXECUTE IMMEDIATE (stmt);
 
@@ -704,6 +797,29 @@ sqlplus -s "$db_account" <<'EOF'
                 END;
             END LOOP;
         END LOOP;
+        
+        NAME := ' ';
+        FOR r IN (SELECT objecttype, FIELDNAME NAME, MIN(r) r, nvl(MAX(datatype), 'VARCHAR2') datatype,nvl(max(length(value)),0)+30 dlen
+                  FROM   (SELECT a.*, ROWNUM r FROM EXA$CELLCONFIG a)
+                  GROUP  BY objecttype, FIELDNAME
+                  ORDER  BY objecttype, r) LOOP
+            IF NAME != r.objecttype THEN
+                IF NAME != ' ' THEN
+                    pr;
+                END IF;
+                NAME := r.objecttype;
+                stmt := 'CREATE OR REPLACE FORCE VIEW EXA$' || NAME || ' AS SELECT /*+opt_param(''parallel_force_local'' ''true'')*/ CELLNODE,NAME';
+            END IF;
+            stmt := stmt || ',MAX(DECODE(FIELDNAME,''' || r.name || ''',' || CASE r.datatype
+                        WHEN 'NUMBER' THEN
+                         'VALUE+0'
+                        WHEN 'TIMESTAMP' THEN
+                         'to_timestamp_tz(value,''YYYY-MM-DD"T"HH24:MI:SSTZH:TZM'')'
+                        ELSE
+                         'CAST(VALUE AS VARCHAR2('||r.dlen||'))'
+                    END || ')) "' || substr(r.name,1,30) || '"';
+        END LOOP;
+        pr;
     END;
 /
     PRO Granting access rights ...
@@ -733,16 +849,15 @@ sqlplus -s "$db_account" <<'EOF'
     COL OWNER for a10
     COL OBJECT_NAME FOR a30
     COL OBJECT_TYPE FOR a11
-    SELECT OWNER,OBJECT_NAME,OBJECT_TYPE
-    FROM   DBA_OBJECTS
-    WHERE  OWNER IN('PUBLIC',USER)
-    AND    OBJECT_NAME LIKE 'EXA$%'
-    AND    OBJECT_TYPE NOT LIKE '% %'
-    ORDER  BY 2,1 DESC;
+    SELECT OBJECT_NAME,OBJECT_TYPE
+    FROM   USER_OBJECTS
+    WHERE  OBJECT_NAME LIKE 'EXA$%'
+    AND    SUBOBJECT_NAME IS NULL
+    ORDER  BY 1;
 
     --gather and lock stats
     PRO LAST STEP: Gathering and locking EXA table stats ...
-    PRO =================================================
+    PRO ====================================================
     begin
         for r in(select * from user_tables where table_name like 'EXA$%') loop
             dbms_stats.gather_table_stats(user,r.table_name,degree=>16);

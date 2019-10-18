@@ -1065,7 +1065,11 @@ end
 
 function db_core:grid_print(sqls)
     env.checkhelp(sqls)
+    if not sqls:find('^[%{%[]') then
+        sqls=(sqls:sub(-1)=='}' and '{' or '[')..sqls
+    end
     local grid_cfg=table.totable(sqls)
+    env.checkerr(type(grid_cfg)=="table", "Target input string is not a valid table.")
     local tabs=self:grid_call(grid_cfg,cfg.get("printsize"),{})
     env.grid.merge(tabs,true)
 end
