@@ -14,7 +14,7 @@
         @CHECK_ACCESS_SL : SYS.DBMS_LOCK={SYS.DBMS_LOCK} DEFAULT={DBMS_SESSION}
         &vw              : vw={EXA$CELLSRVSTAT} agg={EXA$CELLSRVSTAT_AGG}
         &cell            : vw={CELLNODE||','||OFFLOAD_GROUP || ',' ||} agg={}
-        &avg             : default={1} avg={&V1}
+        &avg             : default={1} avg={&V2}
         &filter          : {
             like={upper(&cell  NAME || ',' || CATEGORY || ',' || ITEM) LIKE upper('%&V1%')}
             r={regexp_like(&cell NAME || ',' || CATEGORY || ',' || ITEM,'&V1','i')}
@@ -47,7 +47,7 @@ BEGIN
                        nvl(CELLNODE, 'TOTAL') c,
                        DECODE(IS_AVG,1,'NO','YES') Cumulative,
                        DECODE(IS_LAST,1,'NO','YES') "DELTA",
-                       round(DECODE(IS_AVG, 1, AVG(v), SUM(v)), 2) v
+                       round(DECODE(IS_AVG, 1, AVG(v), SUM(v)/DECODE(IS_LAST,1,1,&AVG)), 2) v
                 FROM (
                     SELECT CELLNODE,CATEGORY,
                            REPLACE(NAME,'(KB)','(MB)') NAME,
@@ -58,7 +58,7 @@ BEGIN
                              ELSE
                               0
                             END IS_AVG,
-                            DECODE(IS_LAST,0,SUM(VALUE*DECODE(r, 1, -1, 1))/&AVG,MAX(VALUE) KEEP(DENSE_RANK LAST ORDER BY r))/decode(instr(NAME,'(KB)'),0,1,1024) v
+                            DECODE(IS_LAST,0,SUM(VALUE*DECODE(r, 1, -1, 1)),MAX(VALUE) KEEP(DENSE_RANK LAST ORDER BY r))/decode(instr(NAME,'(KB)'),0,1,1024) v
                     FROM   (SELECT /*+no_merge ordered use_nl(timer stat)*/ROWNUM r, 
                                     sysdate+numtodsinterval(&V2,'second') mr FROM XMLTABLE('1 to 2')) dummy,
                             LATERAL (SELECT /*+no_merge*/ do_sleep(dummy.r, dummy.mr) stime FROM dual) timer,

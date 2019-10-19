@@ -14,7 +14,7 @@
         @check_access_obj: EXA$METRIC_VW={}
         @CHECK_ACCESS_SL : SYS.DBMS_LOCK={SYS.DBMS_LOCK} DEFAULT={DBMS_SESSION}
         &vw              : agg={EXA$METRIC_AGG} vw={EXA$METRIC_VW}
-        &avg             : default={1} avg={&V1}
+        &avg             : default={1} avg={&V2}
         &filter          : {
             like={upper(DESCRIPTION||','||a.OBJECTTYPE || ',' || a.NAME || ',' ||  METRICTYPE ) LIKE upper('%&V1%')}
             r={regexp_like(DESCRIPTION||','||a.OBJECTTYPE || ',' || a.NAME || ',' || METRICTYPE,'&V1','i')}
@@ -48,11 +48,11 @@ BEGIN
                            NAME,
                            UNIT,
                            nvl(CELLNODE, 'TOTAL') c,
-                           round(DECODE(IS_AVG, 1, AVG(v), SUM(v)), 2) v
+                           round(DECODE(IS_AVG, 1, AVG(v), SUM(v)/DECODE(MAX(METRICTYPE),'Cumulative',&AVG,1)), 2) v
                     FROM (
                         SELECT CELLNODE,OBJECTTYPE,NAME,METRICTYPE,UNIT,METRICOBJECTNAME,
                                CASE WHEN trim(UNIT) IN ('us/request', '%', 'C') THEN 1 ELSE 0 END IS_AVG,
-                               DECODE(trim(METRICTYPE),'Cumulative', SUM(METRICVALUE*DECODE(r, 1, -1, 1))/&AVG,MAX(METRICVALUE) KEEP(DENSE_RANK LAST ORDER BY r)) v
+                               DECODE(trim(METRICTYPE),'Cumulative', SUM(METRICVALUE*DECODE(r, 1, -1, 1)),MAX(METRICVALUE) KEEP(DENSE_RANK LAST ORDER BY r)) v
                         FROM   (SELECT /*+no_merge ordered use_nl(timer stat)*/ROWNUM r, 
                                         sysdate+numtodsinterval(&V2,'second') mr FROM XMLTABLE('1 to 2')) dummy,
                                 LATERAL (SELECT /*+no_merge*/ do_sleep(dummy.r, dummy.mr) stime FROM dual) timer,

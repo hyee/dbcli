@@ -33,6 +33,8 @@ COL CELL BREAK
 
 DECLARE
     data &V122_TYP;
+    cur  SYS_REFCURSOR;
+    hdl  BINARY_INTEGER;
     V1   VARCHAR2(128):=:V1;
 BEGIN
     $IF DBMS_DB_VERSION.VERSION>11 AND DBMS_DB_VERSION.RELEASE>1 OR DBMS_DB_VERSION.VERSION>12 $THEN
@@ -62,28 +64,29 @@ BEGIN
         FROM   exa$metric 
         WHERE  nvl(lower(v1),' ') in(' ',lower(cellnode));
     $ELSE
-        SELECT xmltype(CURSOR(
-                        SELECT /*+opt_param('parallel_force_local' 'true')*/ cellnode cell,
-                               objecttype typ,
-                               NAME,
-                               nullif(metricobjectname,cellnode) obj,
-                               metricvalue * 
-                               CASE
-                                   WHEN unit LIKE 'MB%' THEN
-                                     1024 * 1024
-                                   WHEN unit LIKE 'KB%' THEN
-                                     1024
-                                   WHEN unit = 'ms' THEN
-                                     1000
-                                   ELSE
-                                     1
-                               END value,
-                               CASE WHEN regexp_like(unit,'(KB|bytes|MB|us|ms)') THEN '' ELSE trim(unit) END unit,
-                               TO_CHAR(COLLECTIONTIME,'YYYY-MM-DD HH24:MI:SS') TSTAMP
-                        FROM   exa$metric
-                        WHERE  nvl(lower(v1),' ') in(' ',lower(cellnode))))
-        INTO   data
-        FROM   dual;
+        OPEN cur FOR q'[
+            SELECT /*+opt_param('parallel_force_local' 'true')*/ cellnode cell,
+                   objecttype typ,
+                   NAME,
+                   nullif(metricobjectname,cellnode) obj,
+                   CASE
+                       WHEN unit LIKE 'MB%' THEN
+                         1024 * 1024
+                       WHEN unit LIKE 'KB%' THEN
+                         1024
+                       WHEN unit = 'ms' THEN
+                         1000
+                       ELSE
+                         1
+                   END * metricvalue value,
+                   CASE WHEN regexp_like(unit,'(KB|bytes|MB|us|ms)') THEN '' ELSE trim(unit) END unit,
+                   TO_CHAR(COLLECTIONTIME,'YYYY-MM-DD HH24:MI:SS') TSTAMP
+            FROM   exa$metric
+            WHERE  nvl(lower(:keyword),' ') in(' ',lower(cellnode))]' USING v1;
+        hdl :=dbms_xmlgen.newcontext(cur);
+        data:=dbms_xmlgen.getxmltype(hdl);
+        dbms_xmlgen.closecontext(hdl);
+        CLOSE cur;
     $END
 
     OPEN :cell FOR 

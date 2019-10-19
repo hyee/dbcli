@@ -81,7 +81,7 @@ if [ "$cell" = "" ]; then
   if [ -f "$1" ];then
     while IFS= read -r cell; do
       cm=`echo $cmd|sed "s/\\$cell/$cell/"`
-      eval ssh $ac@$cell ${cmd} &
+      exec ssh $ac@$cell ${cm} | grep --line-buffered '^' &
     done <cell_group
     wait
   else
@@ -90,6 +90,35 @@ if [ "$cell" = "" ]; then
 else
   cmd=`echo $cmd|sed "s/\\$cell/$cell/"`
   exec ssh $ac@$cell ${cmd}
+fi
+!
+
+cat >celllua.sh<<'!'
+#!/bin/bash
+ac=root
+export PATH=$PATH:/usr/local/bin:/bin:/usr/bin:/usr/local/sbin:/usr/sbin
+. /etc/profile &> /dev/null
+. ~/.bash_profile &> /dev/null
+cd $(dirname $0)
+rm -f EXA*.log*.bad EXA*.log 2>/dev/null
+
+script="$1"
+shift
+cell=""
+if [ -f "$1" ];then
+  cell=`head -1 $1`
+  shift
+fi
+
+if [ "$cell" = "" ]; then
+  while IFS= read -r cell; do
+    cmd="lua $script $cell $*"
+    exec ${cmd} | grep --line-buffered '^' & 
+  done <cell_group
+  wait
+else
+  cmd="lua $script $cell $*"
+  exec ${cmd}
 fi
 !
 
@@ -174,20 +203,17 @@ export PATH=$PATH:/usr/bin;cd $(dirname $0)
 
 cat >getcelllist.sh<<'!'
 export PATH=$PATH:/usr/bin;cd $(dirname $0)
-rm -f EXA*.log*.bad EXA*.log 2>/dev/null
-lua ./celllist.lua $1
+./celllua.sh celllist.lua $1
 !
 
 cat >cellsrvstat.sh<<'!'
 export PATH=$PATH:/usr/bin;cd $(dirname $0)
-rm -f EXA*.log*.bad EXA*.log 2>/dev/null
-lua ./cellsrvstat.lua $1
+./celllua.sh cellsrvstat.lua $1
 !
 
 cat >cellsrvstat_10s.sh<<'!'
 export PATH=$PATH:/usr/bin;cd $(dirname $0)
-rm -f EXA*.log*.bad EXA*.log 2>/dev/null
-lua ./cellsrvstat.lua $1 10
+./celllua.sh cellsrvstat.lua "$1" 10
 !
 
 cat >celllist.lua<<'!'
@@ -344,9 +370,13 @@ sqlplus -s "$db_account" <<'EOF'
     col locations new_value locations noprint;
     col first_cell new_value first_cell noprint;
     col pivots new_value pivots noprint;
+    col px new_value px noprint;
+    define ver=122.2
 
-    SELECT case when v.ver >12.1 then 'PARTITION BY LIST(CELLNODE) ('||listagg(replace(q'[PARTITION @ VALUES('@') LOCATION ('@')]','@',b.name),','||chr(10)) WITHIN GROUP(ORDER BY b.name)||')' end cells,
-           case when v.ver <12.2 then 'LOCATION ('||listagg(''''||b.name||'''',',') within group(order by b.name)||')' end locations,
+    SELECT case when v.ver >=&ver then 'PARTITION BY LIST(CELLNODE) ('||listagg(replace(q'[PARTITION @ VALUES('@') LOCATION ('@')]','@',b.name),','||chr(10)) WITHIN GROUP(ORDER BY b.name)||')' end cells,
+           case when v.ver >=&ver then 'PARALLEL' end PX,
+           case when v.ver < &ver then 'LOCATION(''EXA_NULL'')' end locations,
+         --case when v.ver < &ver then 'LOCATION ('||listagg(''''||b.name||'''',',') within group(order by b.name)||')' end locations,
            listagg(replace(q'['@' "@"]','@',b.name),',') within group(order by b.name) pivots,
            min(b.name) first_cell
     FROM   (select regexp_substr(value,'\d+\.\d+')+0 ver from nls_database_parameters where parameter='NLS_RDBMS_VERSION') v,
@@ -371,10 +401,10 @@ sqlplus -s "$db_account" <<'EOF'
           ACCESS PARAMETERS
           ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
             PREPROCESSOR 'getcellparams.sh'
-            FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+            FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
           ) &locations
         )
-    REJECT LIMIT UNLIMITED PARALLEL &cells;
+    REJECT LIMIT UNLIMITED &px &cells;
     
     PRO Creating table EXA$CELLCONFIG
     PRO ==================================
@@ -393,10 +423,10 @@ sqlplus -s "$db_account" <<'EOF'
           ACCESS PARAMETERS
           ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
             PREPROCESSOR 'getcelllist.sh'
-            FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+            FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
           ) &locations
         )
-    REJECT LIMIT UNLIMITED PARALLEL &cells;
+    REJECT LIMIT UNLIMITED &px &cells;
     
     PRO Creating table EXA$ACTIVE_REQUESTS
     PRO ==================================
@@ -433,10 +463,10 @@ sqlplus -s "$db_account" <<'EOF'
       ACCESS PARAMETERS
       ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
         PREPROCESSOR 'getactiverequest.sh'
-        FIELDS TERMINATED BY whitespace OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+        FIELDS TERMINATED BY whitespace OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
       ) &locations
     )
-    REJECT LIMIT UNLIMITED PARALLEL &cells;
+    REJECT LIMIT UNLIMITED &px &cells;
 
     PRO Creating table EXA$CACHED_OBJECTS
     PRO =================================
@@ -461,10 +491,10 @@ sqlplus -s "$db_account" <<'EOF'
       ACCESS PARAMETERS
       ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
         PREPROCESSOR 'getfcobjects.sh'
-        FIELDS TERMINATED BY  whitespace ldrtrim
+        FIELDS TERMINATED BY  whitespace LRTRIM
       ) &locations
     )
-    REJECT LIMIT UNLIMITED PARALLEL &cells;
+    REJECT LIMIT UNLIMITED &px &cells;
 
     PRO Creating table EXA$CELLSRVSTAT
     PRO ==============================
@@ -483,10 +513,10 @@ sqlplus -s "$db_account" <<'EOF'
           ACCESS PARAMETERS
           ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
             PREPROCESSOR 'cellsrvstat.sh'
-            FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+            FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
           ) &locations
         )
-    REJECT LIMIT UNLIMITED PARALLEL &cells;
+    REJECT LIMIT UNLIMITED &px &cells;
 
     PRO Creating table EXA$CELLSRVSTAT_10S
     PRO ==================================
@@ -505,10 +535,10 @@ sqlplus -s "$db_account" <<'EOF'
           ACCESS PARAMETERS
           ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
             PREPROCESSOR 'cellsrvstat_10s.sh'
-            FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+            FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
           ) &locations
         )
-    REJECT LIMIT UNLIMITED PARALLEL &cells;
+    REJECT LIMIT UNLIMITED &px &cells;
 
     PRO Creating table EXA$METRIC_DESC
     PRO ==============================
@@ -526,7 +556,7 @@ sqlplus -s "$db_account" <<'EOF'
       ACCESS PARAMETERS
       ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
         PREPROCESSOR 'getmetricdefinition.sh'
-        FIELDS TERMINATED BY  whitespace OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+        FIELDS TERMINATED BY  whitespace OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
       ) LOCATION('&first_cell')
     )
     REJECT LIMIT UNLIMITED;
@@ -551,14 +581,14 @@ sqlplus -s "$db_account" <<'EOF'
       ACCESS PARAMETERS
       ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
         PREPROCESSOR 'getmetriccurrent.sh'
-        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
          collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
          metricObjectName,metricType,metricValue,Unit
          )
       ) &locations
     )
-    REJECT LIMIT UNLIMITED PARALLEL &cells;
+    REJECT LIMIT UNLIMITED &px &cells;
 
     PRO Creating table EXA$METRIC_HISTORY_1H
     PRO ====================================
@@ -580,14 +610,14 @@ sqlplus -s "$db_account" <<'EOF'
       ACCESS PARAMETERS
       ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
         PREPROCESSOR 'getmetrichistory_1h.sh'
-        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
          collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
          metricObjectName,metricType,metricValue,Unit
          )
       ) &locations
     )
-    REJECT LIMIT UNLIMITED PARALLEL &cells;
+    REJECT LIMIT UNLIMITED &px &cells;
 
     PRO Creating table EXA$METRIC_HISTORY_1D
     PRO ====================================
@@ -609,14 +639,14 @@ sqlplus -s "$db_account" <<'EOF'
       ACCESS PARAMETERS
       ( RECORDS DELIMITED BY NEWLINE READSIZE 8388608
         PREPROCESSOR 'getmetrichistory_1d.sh'
-        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
          collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
          metricObjectName,metricType,metricValue,Unit
          )
       ) &locations
     )
-    REJECT LIMIT UNLIMITED PARALLEL  &cells;
+    REJECT LIMIT UNLIMITED &px &cells;
 
     PRO Creating table EXA$METRIC_HISTORY_10D
     PRO =====================================
@@ -638,14 +668,14 @@ sqlplus -s "$db_account" <<'EOF'
       ACCESS PARAMETERS
       ( RECORDS DELIMITED BY NEWLINE READSIZE 67108864
         PREPROCESSOR 'getmetrichistory_10d.sh'
-        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
          collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
          metricObjectName,metricType,metricValue,Unit
          )
       ) &locations
     )
-    REJECT LIMIT UNLIMITED PARALLEL &cells;
+    REJECT LIMIT UNLIMITED &px &cells;
 
     PRO Creating table EXA$METRIC_HISTORY
     PRO =================================
@@ -667,14 +697,14 @@ sqlplus -s "$db_account" <<'EOF'
       ACCESS PARAMETERS
       ( RECORDS DELIMITED BY NEWLINE READSIZE 134217728
         PREPROCESSOR 'getmetrichistory.sh'
-        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' ldrtrim MISSING FIELD VALUES ARE NULL
+        FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
          collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
          metricObjectName,metricType,metricValue,Unit
          )
       ) &locations
     )
-    REJECT LIMIT UNLIMITED PARALLEL &cells;
+    REJECT LIMIT UNLIMITED &px &cells;
 
     PRO Creating views for EXA$ tables
     PRO ==============================
