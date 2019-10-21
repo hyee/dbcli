@@ -28,7 +28,7 @@ BEGIN
                                 status VARCHAR2(300) path 'status') b
                 WHERE  conftype = 'IORM')
             WHERE lower(cell) like lower('%'||V1||'%')
-            ORDER BY 1,2,3
+            ORDER BY 1,2,3;
     $ELSE
         OPEN c FOR
             SELECT * 

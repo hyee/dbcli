@@ -498,7 +498,7 @@ FlashCache: cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcach
 			cellcli -e 'alter cell events = "trace[cellsrv_flash_cache_layer] disk=high,memory=high"'
 			cellcli -e 'alter cell events = "trace[cellsrv_flash_cache_layer] off"'
 Storage Indexe:   cellcli -e 'alter cell events="immediate cellsrv.cellsrv_storidx('dumpridx','all',0, 0,0)"'
-                  cellcli -e 'alter cell l offloadgroupEvents = "immediate cellsrv.cellsrv_storidx(dumpridx,all, 0, 0, 0)"'
+                  cellcli -e 'alter cell offloadgroupEvents = "immediate cellsrv.cellsrv_storidx(dumpridx,all, 0, 0, 0)"'
 		          #1: dumpridx/purge/enable/disable
 				  #2: all/<griddiskname>
 				  #3: 0/<data_object_id>

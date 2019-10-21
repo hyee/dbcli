@@ -284,8 +284,8 @@ SELECT COLUMN_NAME,
        GLOBAL_STATS,
        USER_STATS,
        SAMPLE_SIZE,
-       data_default "DEFAULT",
-       t.last_analyzed
+       DATA_DEFAULT "DEFAULT",
+       LAST_ANALYZED
 FROM   &check_access_dba.tab_cols t
 WHERE  table_name = :object_name
 AND    owner = :object_owner;

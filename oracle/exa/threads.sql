@@ -102,7 +102,8 @@ BEGIN
 
     $IF &check_access_exa=1 $THEN
         OPEN c1 for 
-            SELECT DBNAME,
+            SELECT /*+opt_param('parallel_force_local' 'true')*/ 
+                   DBNAME,
                    SESSIONID || ',' || SESSIONSERNUMBER || '@' || INSTANCENUMBER SID,
                    sqlid sql_id,
                    objectnumber data_obj_id,

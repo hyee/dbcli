@@ -197,6 +197,7 @@ BEGIN
     t1(22827):='(New)   Enable use of KGLR instead of DDFNET for certain operations.';
     t1(24040):='Used to help diagnose problems with AQ propagation';
     t1(25475):='Allows one to override some error messages raised by the AQ rules engine';
+    t1(27605):='Level 0x2000 will disable Exadata RamCache from db side';
     t1(28131):='Disable the check to see whether the fine grained access control feature is enabled or not';
     t1(28266):='Used to trace the use of SYS_CONTEXT';
     t1(29724):='Enable additional LMHB (heartbeat) dumps under RAC';

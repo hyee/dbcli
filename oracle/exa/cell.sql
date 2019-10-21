@@ -311,17 +311,18 @@ BEGIN
                     FROM   &table 
                     WHERE  REGEXP_LIKE(name,'CELLDISK\.(deviceName|diskType)'))
                 PIVOT (max(value) for n in('deviceName' deviceName,'diskType' diskType)))
-            SELECT /*+orderd use_hash(b) swap_join_inuts(b)*/
+            SELECT /*+orderd use_hash(b) swap_join_inuts(b) opt_param('parallel_force_local' 'true')*/
                    nvl(a.CELLNODE,'--TOTAL--') CELL,
                    Round(AVG(decode(NAME||'.'||FD,'I/O utilization per disk.1',nvl(value,0))),3) "Flash|Util",
                    Round(AVG(decode(NAME||'.'||FD,'I/O utilization per disk.0',nvl(value,0))),3) "Hard|Util",
+                   SUM(DECODE(NAME,'Number of flash cache IO errors',value,'Number of disk IO errors',value)) "IO|Errs",
                    '|' "|",
                    SUM(DECODE(NAME,'Cachesize(KB)',value*1024)) "FCache|Used",
                    SUM(DECODE(NAME,'OLTPsize(KB)',value*1024)) "Used|OLTP",
                    SUM(DECODE(NAME,'Keepsize(KB)',value*1024)) "FCache|Keep",
                    SUM(DECODE(NAME,'Columnar Cache used size (KB)',value*1024)) "Used|FCC",
                    SUM(DECODE(NAME,'Columnar Cache keep Size (KB)',value*1024)) "Keep|FCC",
-                   ROUND(SUM(DECODE(NAME,'Number of SCAN bytes read from Columnar Cache',value))/NULLIF(SUM(DECODE(NAME,'Number of SCAN bytes read from Columnar Cache',value,'Number of SCAN bytes read from cache(KB)',value)),0),4) "Scan|FCC",
+                   ROUND(SUM(DECODE(NAME,'Number of SCAN bytes read from Columnar Cache',value))/NULLIF(SUM(DECODE(NAME,'Number of SCAN bytes read from Columnar Cache',value,'Number of SCAN bytes read from cache(KB)',value)),0),4) "FCC%|Scan",
                    ROUND(SUM(DECODE(NAME,'Read on flashcache hit(KB)',value))/NULLIF(SUM(DECODE(NAME,'Read on flashcache hit(KB)',value,'Total IO size for read miss(KB)',value)),0),4) "FCache|Hit",
                    ROUND(SUM(DECODE(NAME,'Number of read hits',value))/NULLIF(SUM(DECODE(NAME,'Number of read hits',value,'Number of read misses',value)),0),4) "Read|Hit",
                    ROUND(SUM(DECODE(NAME,'Number of SCAN bytes read from cache(KB)',value))/NULLIF(SUM(DECODE(NAME,'Number of scan bytes attempted to read from cache(KB)',value)),0),4) "Scan|Hit",
@@ -432,5 +433,5 @@ END;
 /
 col "Disk Group|Total Size,total_size,Disk Group|Free Size,cached|size,Grid|Size,Disk|Size,Usable|Size,CellDisk|Size,Keep|FCC,CellDisk|UnAlloc,GridDisk|Size,HD_SIZE,FD_SIZE,flash_cache,flash_log,flash|cache" format kmg
 col SmartIO|Cached,unalloc,flashcache,flashlog,Alloc|RAM,RAM|OLTP,Alloc|FCache,RAM|Used,PMEM|Keep,PMEM|Used,Alloc|OLTP,ALLOC|SCAN,Large|Writes,OLTP|Dirty,FCache|Used,Used|OLTP,Used|FCC,FCache|Keep,Keep|OLTP,Keep|FCC format kmg
-col "Scan|FCC,Read|Hit,FCC|Hit,Scan|Hit,FCache|Hit,FCache|Write,RAM|Read,RAM|Scan,PMEM|Read,SmartIO|Flash,SmartIO|Filter,SmartIO|SiSaved,Offload|Out/In" for pct
+col "FCC%|Scan,Read|Hit,FCC|Hit,Scan|Hit,FCache|Hit,FCache|Write,RAM|Read,RAM|Scan,PMEM|Read,SmartIO|Flash,SmartIO|Filter,SmartIO|SiSaved,Offload|Out/In" for pct
 grid {'c1','-','c2','-','c3'}

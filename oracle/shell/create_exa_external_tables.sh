@@ -206,6 +206,11 @@ export PATH=$PATH:/usr/bin;cd $(dirname $0)
 ./celllua.sh celllist.lua $1
 !
 
+cat >getcellalert.sh<<'!'
+export PATH=$PATH:/usr/bin;cd $(dirname $0)
+./celllua.sh cellalert.lua $1
+!
+
 cat >cellsrvstat.sh<<'!'
 export PATH=$PATH:/usr/bin;cd $(dirname $0)
 ./celllua.sh cellsrvstat.lua $1
@@ -234,6 +239,7 @@ local fmt='"%s" | "%s" | "%s" | "%s" | "%s" | "%s"'
 
 local escapes={
     ['&amp;']='&',
+	['&apos;']="'",
     ['&lt;']='<',
     ['&gt;']='>',
     ['&quot;']=''
@@ -271,6 +277,40 @@ for line in output:gmatch("[^\n\t]+") do
             typ='VARCHAR2'
         end
         print(fmt:format(cell,object,name,node,value,typ))
+    end
+end
+!
+
+cat >cellalert.lua<<'!'
+#!/usr/bin/env lua
+if not arg[1] or arg[1]=="" then
+    io.stderr:write("Please input the target cell name.\n")
+    os.exit(1)
+end
+
+function string.rtrim(s,sep)
+    sep='[%s%z'..(sep or '')..']'
+    return tostring(s):match('^(.-)'..sep..'*$')
+end
+
+local cell,tstamp=arg[1]:match('[^/]+$')
+local cmd=([[ssh %s@%s 'tail -10000 $CELLTRACE/alert.log']]):format('root',cell)
+local fmt='%s | %s | %s'
+
+local pipe=io.popen(cmd, 'r')
+if not pipe then
+    print("execute command on "..cell.." failed.")
+    os.exit(1)
+end
+
+local output = pipe:read('*all')
+pipe:close()
+for line in output:gmatch("[^\n\t]+") do
+    line=line:rtrim()
+    if line:find('^%d%d%d%d%-%d%d?%-%d%d?T') then
+        tstamp=line
+    elseif tstamp and line~="" then
+        print(fmt:format(cell, tstamp,line:gsub('|',"l")))
     end
 end
 !
@@ -389,50 +429,71 @@ sqlplus -s "$db_account" <<'EOF'
     PRO Creating table EXA$CELLPARAMS
     PRO ==================================
     CREATE TABLE EXA$CELLPARAMS
-       (
-        CELLNODE VARCHAR2(20),
+    (
+        CELLNODE VARCHAR2(30),
         NAME VARCHAR2(100),
         VALUE VARCHAR2(100),
         DEFAULT_VALUE VARCHAR2(100)
-       )
-       ORGANIZATION EXTERNAL
-        ( TYPE ORACLE_LOADER
-          DEFAULT DIRECTORY EXA_SHELL
-          ACCESS PARAMETERS
-          ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
-            PREPROCESSOR 'getcellparams.sh'
-            FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
-          ) &locations
-        )
+    )
+    ORGANIZATION EXTERNAL
+     ( TYPE ORACLE_LOADER
+       DEFAULT DIRECTORY EXA_SHELL
+       ACCESS PARAMETERS
+       ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
+         PREPROCESSOR 'getcellparams.sh'
+         FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
+       ) &locations
+     )
     REJECT LIMIT UNLIMITED &px &cells;
     
     PRO Creating table EXA$CELLCONFIG
     PRO ==================================
     CREATE TABLE EXA$CELLCONFIG
-       (
-        CELLNODE VARCHAR2(20),
+    (
+        CELLNODE VARCHAR2(30),
         objectType VARCHAR2(30),
         NAME VARCHAR2(100),
         FIELDNAME VARCHAR2(100),
         VALUE VARCHAR2(4000),
         DATATYPE VARCHAR2(20)
-       )
-       ORGANIZATION EXTERNAL
-        ( TYPE ORACLE_LOADER
-          DEFAULT DIRECTORY EXA_SHELL
-          ACCESS PARAMETERS
-          ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
-            PREPROCESSOR 'getcelllist.sh'
-            FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
-          ) &locations
-        )
+    )
+    ORGANIZATION EXTERNAL
+     ( TYPE ORACLE_LOADER
+       DEFAULT DIRECTORY EXA_SHELL
+       ACCESS PARAMETERS
+       ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
+         PREPROCESSOR 'getcelllist.sh'
+         FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
+       ) &locations
+     )
+    REJECT LIMIT UNLIMITED &px &cells;
+    
+    PRO Creating table EXA$ALERTLOG
+    PRO ==================================
+    CREATE TABLE EXA$ALERTLOG
+    (
+        CELLNODE VARCHAR2(30),
+        tstamp TIMESTAMP WITH TIME ZONE,
+        text VARCHAR2(1024)
+    )
+    ORGANIZATION EXTERNAL
+     ( TYPE ORACLE_LOADER
+       DEFAULT DIRECTORY EXA_SHELL
+       ACCESS PARAMETERS
+       ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
+         PREPROCESSOR 'getcellalert.sh'
+         FIELDS TERMINATED BY  '|' LRTRIM MISSING FIELD VALUES ARE NULL(
+          CELLNODE,tstamp CHAR(32) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSxff6TZH:TZM',text
+         )
+       ) &locations
+     )
     REJECT LIMIT UNLIMITED &px &cells;
     
     PRO Creating table EXA$ACTIVE_REQUESTS
     PRO ==================================
     CREATE TABLE EXA$ACTIVE_REQUESTS
     (
-        CELLNODE varchar2(20),
+        CELLNODE VARCHAR2(30),
         ioType varchar2(30),
         requestState varchar2(50),
         dbID int,
@@ -461,7 +522,7 @@ sqlplus -s "$db_account" <<'EOF'
     ( TYPE ORACLE_LOADER
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
-      ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
         PREPROCESSOR 'getactiverequest.sh'
         FIELDS TERMINATED BY whitespace OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
       ) &locations
@@ -472,7 +533,7 @@ sqlplus -s "$db_account" <<'EOF'
     PRO =================================
     CREATE TABLE EXA$CACHED_OBJECTS
     (
-        CELLNODE VARCHAR2(20),
+        CELLNODE VARCHAR2(30),
         CACHEDKEEPSIZE NUMBER,
         CACHEDSIZE NUMBER,
         CACHEDWRITESIZE NUMBER,
@@ -489,7 +550,7 @@ sqlplus -s "$db_account" <<'EOF'
     ( TYPE ORACLE_LOADER
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
-      ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
         PREPROCESSOR 'getfcobjects.sh'
         FIELDS TERMINATED BY  whitespace LRTRIM
       ) &locations
@@ -499,45 +560,45 @@ sqlplus -s "$db_account" <<'EOF'
     PRO Creating table EXA$CELLSRVSTAT
     PRO ==============================
     CREATE TABLE EXA$CELLSRVSTAT
-       (
-        CELLNODE VARCHAR2(20),
+    (
+        CELLNODE VARCHAR2(30),
         CATEGORY VARCHAR2(100),
         NAME VARCHAR2(300),
         OFFLOAD_GROUP VARCHAR2(100),
         Item VARCHAR2(300),
         VALUE NUMBER
-       )
-       ORGANIZATION EXTERNAL
-        ( TYPE ORACLE_LOADER
-          DEFAULT DIRECTORY EXA_SHELL
-          ACCESS PARAMETERS
-          ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
-            PREPROCESSOR 'cellsrvstat.sh'
-            FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
-          ) &locations
-        )
+    )
+    ORGANIZATION EXTERNAL
+     ( TYPE ORACLE_LOADER
+       DEFAULT DIRECTORY EXA_SHELL
+       ACCESS PARAMETERS
+       ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
+         PREPROCESSOR 'cellsrvstat.sh'
+         FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
+       ) &locations
+     )
     REJECT LIMIT UNLIMITED &px &cells;
 
     PRO Creating table EXA$CELLSRVSTAT_10S
     PRO ==================================
     CREATE TABLE EXA$CELLSRVSTAT_10S
-       (
-        CELLNODE VARCHAR2(20),
-        CATEGORY VARCHAR2(100),
-        NAME VARCHAR2(300),
-        OFFLOAD_GROUP VARCHAR2(100),
-        Item VARCHAR2(300),
-        VALUE NUMBER
-       )
-       ORGANIZATION EXTERNAL
-        ( TYPE ORACLE_LOADER
-          DEFAULT DIRECTORY EXA_SHELL
-          ACCESS PARAMETERS
-          ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
-            PREPROCESSOR 'cellsrvstat_10s.sh'
-            FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
-          ) &locations
-        )
+    (
+     CELLNODE VARCHAR2(30),
+     CATEGORY VARCHAR2(100),
+     NAME VARCHAR2(300),
+     OFFLOAD_GROUP VARCHAR2(100),
+     Item VARCHAR2(300),
+     VALUE NUMBER
+    )
+    ORGANIZATION EXTERNAL
+     ( TYPE ORACLE_LOADER
+       DEFAULT DIRECTORY EXA_SHELL
+       ACCESS PARAMETERS
+       ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
+         PREPROCESSOR 'cellsrvstat_10s.sh'
+         FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
+       ) &locations
+     )
     REJECT LIMIT UNLIMITED &px &cells;
 
     PRO Creating table EXA$METRIC_DESC
@@ -554,7 +615,7 @@ sqlplus -s "$db_account" <<'EOF'
     ( TYPE ORACLE_LOADER
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
-      ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
         PREPROCESSOR 'getmetricdefinition.sh'
         FIELDS TERMINATED BY  whitespace OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
       ) LOCATION('&first_cell')
@@ -565,7 +626,7 @@ sqlplus -s "$db_account" <<'EOF'
     PRO =========================
     CREATE TABLE EXA$METRIC
     (
-        CELLNODE VARCHAR2(20),
+        CELLNODE VARCHAR2(30),
         objectType VARCHAR2(30),
         name VARCHAR2(40),
         alertState VARCHAR2(10),
@@ -579,7 +640,7 @@ sqlplus -s "$db_account" <<'EOF'
     ( TYPE ORACLE_LOADER
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
-      ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
         PREPROCESSOR 'getmetriccurrent.sh'
         FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
@@ -594,7 +655,7 @@ sqlplus -s "$db_account" <<'EOF'
     PRO ====================================
     CREATE TABLE EXA$METRIC_HISTORY_1H
     (
-        CELLNODE VARCHAR2(20),
+        CELLNODE VARCHAR2(30),
         objectType VARCHAR2(30),
         name VARCHAR2(40),
         alertState VARCHAR2(10),
@@ -608,7 +669,7 @@ sqlplus -s "$db_account" <<'EOF'
     ( TYPE ORACLE_LOADER
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
-      ( RECORDS DELIMITED BY NEWLINE READSIZE 4194304
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
         PREPROCESSOR 'getmetrichistory_1h.sh'
         FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
@@ -623,7 +684,7 @@ sqlplus -s "$db_account" <<'EOF'
     PRO ====================================
     CREATE TABLE EXA$METRIC_HISTORY_1D
     (
-        CELLNODE VARCHAR2(20),
+        CELLNODE VARCHAR2(30),
         objectType VARCHAR2(30),
         name VARCHAR2(40),
         alertState VARCHAR2(10),
@@ -637,7 +698,7 @@ sqlplus -s "$db_account" <<'EOF'
     ( TYPE ORACLE_LOADER
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
-      ( RECORDS DELIMITED BY NEWLINE READSIZE 8388608
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
         PREPROCESSOR 'getmetrichistory_1d.sh'
         FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
@@ -652,7 +713,7 @@ sqlplus -s "$db_account" <<'EOF'
     PRO =====================================
     CREATE TABLE EXA$METRIC_HISTORY_10D
     (
-        CELLNODE VARCHAR2(20),
+        CELLNODE VARCHAR2(30),
         objectType VARCHAR2(30),
         name VARCHAR2(40),
         alertState VARCHAR2(10),
@@ -666,7 +727,7 @@ sqlplus -s "$db_account" <<'EOF'
     ( TYPE ORACLE_LOADER
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
-      ( RECORDS DELIMITED BY NEWLINE READSIZE 67108864
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
         PREPROCESSOR 'getmetrichistory_10d.sh'
         FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
@@ -681,7 +742,7 @@ sqlplus -s "$db_account" <<'EOF'
     PRO =================================
     CREATE TABLE EXA$METRIC_HISTORY
     (
-        CELLNODE VARCHAR2(20),
+        CELLNODE VARCHAR2(30),
         objectType VARCHAR2(30),
         name VARCHAR2(40),
         alertState VARCHAR2(10),
@@ -695,7 +756,7 @@ sqlplus -s "$db_account" <<'EOF'
     ( TYPE ORACLE_LOADER
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
-      ( RECORDS DELIMITED BY NEWLINE READSIZE 134217728
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
         PREPROCESSOR 'getmetrichistory.sh'
         FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
