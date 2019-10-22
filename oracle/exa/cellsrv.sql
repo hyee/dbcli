@@ -16,13 +16,13 @@
         &cell            : vw={CELLNODE||','||OFFLOAD_GROUP || ',' ||} agg={}
         &avg             : default={1} avg={&V2}
         &filter          : {
-            like={upper(&cell  NAME || ',' || CATEGORY || ',' || ITEM) LIKE upper('%&V1%')}
-            r={regexp_like(&cell NAME || ',' || CATEGORY || ',' || ITEM,'&V1','i')}
+            like={upper(&cell  CATEGORY || ',' || NAME || ',' || ITEM) LIKE upper('%&V1%')}
+            r={regexp_like(&cell CATEGORY || ',' || NAME || ',' || ITEM,'&V1','i')}
         }
     --]]
 ]]*/
 COL VALUE FOR K2
-set verify off feed off sep4k on
+set verify off feed off sep4k on printsize 10000
 var cur refcursor
 DECLARE
     v_pivot VARCHAR2(4000);
@@ -49,7 +49,8 @@ BEGIN
                        DECODE(IS_LAST,1,'NO','YES') "DELTA",
                        round(DECODE(IS_AVG, 1, AVG(v), SUM(v)/DECODE(IS_LAST,1,1,&AVG)), 2) v
                 FROM (
-                    SELECT CELLNODE,CATEGORY,
+                    SELECT /*+ordered use_nl(timer stat)*/
+                           CELLNODE,CATEGORY,
                            REPLACE(NAME,'(KB)','(MB)') NAME,
                            OFFLOAD_GROUP,ITEM,IS_LAST,
                            CASE
@@ -79,7 +80,7 @@ BEGIN
             SELECT /*+opt_param('parallel_force_local' 'true')*/ *
             FROM   &vw
             WHERE  &filter
-            AND    rownum <= 256;
+            AND    rownum <= 1024;
     END IF;
 END;
 /

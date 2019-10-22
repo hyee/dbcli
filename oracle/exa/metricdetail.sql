@@ -16,8 +16,8 @@
         &vw              : agg={EXA$METRIC_AGG} vw={EXA$METRIC_VW}
         &avg             : default={1} avg={&V2}
         &filter          : {
-            like={upper(DESCRIPTION||','||a.OBJECTTYPE || ',' || a.NAME || ',' ||  METRICTYPE ) LIKE upper('%&V1%')}
-            r={regexp_like(DESCRIPTION||','||a.OBJECTTYPE || ',' || a.NAME || ',' || METRICTYPE,'&V1','i')}
+            like={upper(a.OBJECTTYPE || ',' || a.NAME || ',' ||  METRICTYPE|| ',' || DESCRIPTION) LIKE upper('%&V1%')}
+            r={regexp_like(a.OBJECTTYPE || ',' || a.NAME || ',' || METRICTYPE|| ',' || DESCRIPTION,'&V1','i')}
         }
     --]]
 ]]*/
@@ -44,7 +44,8 @@ BEGIN
                 END;
             SELECT /*+use_hash(a b) opt_param('parallel_force_local' 'true')*/ a.*,b.description FROM (
                 SELECT * FROM ( 
-                    SELECT OBJECTTYPE,
+                    SELECT /*+ordered use_nl(timer stat)*/
+                           OBJECTTYPE,
                            NAME,
                            UNIT,
                            nvl(CELLNODE, 'TOTAL') c,

@@ -75,6 +75,7 @@ function snapper:parse(name,txt,args,file)
 end
 
 function snapper:after_script()
+    self.cmds,self.args=nil,nil
     if self.top_mode==true then 
         console:exitDisplay()
         env.printer.top_mode=false
