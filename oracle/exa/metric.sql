@@ -22,6 +22,7 @@ var smartio    refcursor
 var ibport     refcursor
 var interconn  refcursor
 var iorm_db    refcursor
+var ccc refcursor;
 COL "IB_IN/s,IB_OUT/s,ETH_IN/s,ETH_OUT/s,VMEM(CS),VMEM(MS),SWAP,SWAP_IN/s,SWAP_OUT/s,FC_DIRTY,SM_R/s,SM_W/s,LG_R/s,LG_W/s,SCRUB/s,ALLOC" FOR KMG
 COL "ALLOC(OLTP),DIRTY,KEEP,USED,CC_USED,CC_ELIG/s,CC_SAVED/s,CC_POP/s,R/s,W/s,R_MISS/s,R_DW/s,R_SKIP/s,W_1st/s,W_DW/s,W_Pop/s,W_Skip/s,HD/s,FD/s,R/IO,W/IO,R,W,R_SKIP,W_SKIP,R_MISS,CC_R,CC_ELIG,CC_SAVED,CC_W" for kmg
 COL "CC_REQS,LG_R_IOPS,LG_W_IOPS,SM_R_IOPS,SM_W_IOPS,SCRUB_IOPS,REQS,FL_REQS,HD_FIRST,FD_FIRST,HD_ERRS,FD_ERRS,HD_OUTLIER,FD_OUTLIER,BOTH_OUTLIER,SKIP_OUTLIER,SKIP_BUSY,SKIP_BUSY(1m),SKIP_LARGE,SKIP_DISABLED,SKIP_IORM,SKIP_PLAN,FC_IOPS,FL_IOPS" for tmb
@@ -361,6 +362,7 @@ BEGIN
                        'DB_FD_IO_LOAD' "FD_LOAD",
                        'DB_IO_LOAD' "HD_LOAD"))
         ORDER  BY CELL,DB nulls first;
+    open :ccc for select * from v$open_cursor where sid=userenv('sid') and SQL_EXEC_ID is not null;
 END;
 /
 

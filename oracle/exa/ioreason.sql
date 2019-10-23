@@ -34,6 +34,7 @@ BEGIN
                 SELECT reason_name,
 				       bytes,
 				       reqs,
+				       ratio_to_report(reqs) over() "%",
 				       round(bytes / nullif(reqs,0), 2) avg_bytes,
 				       CASE WHEN bytes / nullif(reqs,0) >= 128 * 1024 THEN 'YES' ELSE 'NO' END large_io
                 FROM (
@@ -54,6 +55,7 @@ BEGIN
 			SELECT reason_name,
 			       bytes,
 			       reqs,
+			       ratio_to_report(reqs) over() "%",
 			       round(bytes / nullif(reqs,0), 2) avg_bytes,
 			       CASE WHEN bytes / nullif(reqs,0) >= 128 * 1024 THEN 'YES' ELSE 'NO' END large_io
 			FROM   (SELECT reason_name, metric_name n, SUM(metric_value) v 
@@ -65,5 +67,5 @@ BEGIN
     END IF;
 END;
 /
-
+col "%" for pct
 print cur

@@ -211,7 +211,7 @@ function ResultSet:close(rs)
         if rs_close then pcall(rs_close,rs) end
         if self[rs] then self[rs]=nil end
     end
-    local clock=os.timer()
+    local clock=os.clock()
     --release the resultsets if they have been closed(every 1 min)
     if  self.__clock then
         if clock-self.__clock > 60 then
@@ -595,46 +595,52 @@ end
 
 function db_core:exec_cache(sql,args,description)
     self:assert_connect()
-    local params ={}
+    local params,cache ={}
     for k,v in pairs(args or {}) do
         if type(k)=="string" then params[k:upper()] = v end
     end
     
-    sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
-    if type(sql)~="string" then
-        return sql
+    if sql~='close' then
+        sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
+        if type(sql)~="string" then
+            return sql
+        end
+        cache=self.__preparedCaches[sql]
     end
 
     if not self.__preparedCaches or not self.__preparedCaches.__list then
         self.__preparedCaches={__list={}}
     end
 
-    local cache=self.__preparedCaches[sql]
     local prep,org,params,_sql
     if not cache or cache[1]:isClosed() then
         org=table.clone(args)
-        prep,_sql,params=self:parse(sql,org)
-        cache={prep,org,params}
-        self.__preparedCaches[sql]=cache
         if type(description)=="string" and description~='' then
-            local prep1=self.__preparedCaches.__list[description]
-            if prep1 then
+            cache=self.__preparedCaches.__list[description]
+            if cache then
                 env.log_debug("DB","Recompiling "..(description or 'SQL'))
-                pcall(prep1[1].close,prep1[1])
+                pcall(cache[1].close,cache[1])
                 for k,v in pairs(self.__preparedCaches) do
-                    if prep1==v then
+                    if cache==v then
                         self.__preparedCaches[k]=nil
                         break
                     end
                 end
 
                 for k,v in pairs(self.__preparedCaches.__list) do
-                    if prep1==v then
+                    if cache==v then
                         self.__preparedCaches.__list[k]=nil
                         break
                     end
                 end
             end
+            self.__preparedCaches.__list[description]=nil
+            if sql=='close' then return end
+        end
+        prep,_sql,params=self:parse(sql,org)
+        cache={prep,org,params}
+        self.__preparedCaches[sql]=cache
+        if type(description)=="string" and description~='' then
             self.__preparedCaches.__list[description]=cache
         end
         env.log_debug("DB","Caching "..(description or 'SQL')..":")
@@ -672,6 +678,10 @@ function db_core:exec_cache(sql,args,description)
     end
     args._description=description and ('('..description..')') or ''
     return self:exec(prep,args,table.clone(params),sql),cache
+end
+
+function db_core:close_cache(description)
+    self:exec_cache('close',nil,description)
 end
 
 function db_core.log_param(params)
@@ -814,7 +824,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     if event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
 
     if rscount==0 and is_not_prep then
-        pcall(prep.close,close)
+        pcall(prep.close,prep)
         self.__stmts[#self.__stmts]=nil
     end
 

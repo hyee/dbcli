@@ -76,6 +76,7 @@ end
 
 function snapper:after_script()
     self.cmds,self.args=nil,nil
+    self.db:close_cache('Internal_snapper')
     if self.top_mode==true then 
         console:exitDisplay()
         env.printer.top_mode=false
