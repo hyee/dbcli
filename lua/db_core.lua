@@ -781,7 +781,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         end
         return rs
     end
-
+    if event then event("ON_DB_EXEC",{self,sql,args,result,params}) end
     for k,v in pairs(params) do
         if type(v) == "table" and v[is_output] == "#"  then
             if type(v[index]) == "table" then
@@ -1209,10 +1209,10 @@ db_core.source_objs={
 
 function db_core.check_completion(cmd,other_parts)
     --alter package xxx compile ...
-    local action,obj=db_core.get_command_type(cmd..' '..other_parts)
     local match,typ,index=env.COMMAND_SEPS.match(other_parts)
-    obj=obj or ""
     if index==0 then return false,other_parts end
+    obj=obj or ""
+    local action,obj=db_core.get_command_type(cmd..' '..other_parts)
     if index==1 and (db_core.source_objs[cmd] or db_core.source_objs[obj:upper()]) then
         typ=type(db_core.source_obj_pattern)
         local patterns={}

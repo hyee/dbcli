@@ -92,7 +92,7 @@
 ]]*/
 
 
-set feed off VERIFY on
+set feed off VERIFY off
 VAR actives refcursor "Active Sessions"
 VAR time_model refcursor "Top Session Metric"
 
@@ -103,19 +103,19 @@ BEGIN
     IF dbms_db_version.version > 10 THEN
         OPEN :actives FOR q'{
             WITH sess AS
-             (SELECT (select object_name from &CHECK_ACCESS_OBJ o where s.program_id>0 and o.object_id=s.program_id) program_name,
+             (SELECT (select /*+index(o)*/ object_name from &CHECK_ACCESS_OBJ o where s.program_id>0 and o.object_id=s.program_id and o.object_type!='DATABASE LINK') program_name,
                      s.*
               FROM   TABLE(gv$(CURSOR(
                    SELECT (SELECT spid FROM &CHECK_ACCESS_PRO11 d WHERE d.addr = s.paddr)|| regexp_substr(s.program, '\(.*\)') spid,
                           CASE WHEN s.seconds_in_wait > 1.3E9 THEN 0 ELSE round(seconds_in_wait-wait_time/100) END wait_secs,
                           CASE WHEN s.SID||'@'||userenv('instance') = s.qcsid THEN 1 ELSE 0 END ROOT_SID,
                           s.*
-                    FROM  (SELECT /*+order use_hash(m) opt_param('_optimizer_unnest_scalar_sq' 'false')*/ * FROM 
-                            (SELECT  /*+use_hash(s sq)*/
+                    FROM  (SELECT /*+ordered use_hash(m) opt_param('_optimizer_unnest_scalar_sq' 'false')*/ * FROM 
+                            (SELECT  /*+ordered use_hash(s sq) no_merge(s)*/
                                      (SELECT qcsid||'@'||nvl(qcinst_id,userenv('instance')) FROM &CHECK_ACCESS_PX11 p WHERE  s.sid = p.sid) qcsid,
                                      userenv('instance') inst_id, 
-                                     s.*,program_id,program_line#,plan_hash_value,sql_text,sql_secs
-                             FROM    v$session s,
+                                     s.*,sq.program_id,sq.program_line#,sq.plan_hash_value,sq.sql_text,sq.sql_secs
+                             FROM   v$session s,
                                     (select /*+no_merge*/ 
                                              program_line#,program_id,plan_hash_value,sql_id,child_number,
                                              substr(TRIM(regexp_replace(replace(b.sql_text,chr(0)), '[' || chr(1) || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 200) sql_text,
@@ -265,3 +265,6 @@ BEGIN
     :time_model:=time_model;
 END;
 /
+
+print actives
+print time_model

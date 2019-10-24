@@ -120,7 +120,7 @@ function oracle:connect(conn_str)
                 if k:upper()~='TNS_ADMIN' 
                     then attrs[k]=v
                 else
-                    tns_admin=v
+                    tns_admin=v:replace('\\','/')
                 end
                 found=true
             end

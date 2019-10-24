@@ -804,9 +804,8 @@ local function _eval_line(line,exec,is_internal,not_skip)
     line,line_terminator=env.COMMAND_SEPS.match(line)
     cmd,rest=line:match('^%s*(/?[^%s/]*)[%s]*(.*)')
     --if #cmd>2 and (cmd:find('^/%*') or cmd:find('^%-%-')) then cmd,rest=line:sub(1,2),line:sub(3) end
-    if not rest then return end
-    rest=rest..(line_terminator or "")
-    if not cmd or cmd=="" then return end
+    if not rest or not cmd or cmd=="" then return end
+
     cmd=cmd:upper()
     env.CURRENT_CMD=cmd
     terminator=nil
@@ -828,11 +827,10 @@ local function _eval_line(line,exec,is_internal,not_skip)
         curr_stmt={}
         multi_cmd=cmd
         env.CURRENT_PROMPT=env.MTL_PROMPT
-        return check_multi_cmd(rest)
+        return check_multi_cmd(rest..(line_terminator or ""))
     end
 
     --print('Command:',cmd,table.concat (args,','))
-    rest=env.COMMAND_SEPS.match(rest)
     local args=env.parse_args(cmd,rest)
     if exec~=false then
         env.exec_command(cmd,args,is_internal,rest)
@@ -960,10 +958,11 @@ function env.set_endmark(name,value)
 
     env.COMMAND_SEPS=p
     env.COMMAND_SEPS.match=function(s)
-        local c,r=s:match(p["p1"])
-        if c then return c,r,1 end
-        c,r=s:match(p["p2"])
-        if c then return c,r,2 end
+        local s1,s2=s:sub(1,-129),s:sub(-128)
+        local c,r=s2:match(p["p1"])
+        if c then return s1..c,r,1 end
+        c,r=s2:match(p["p2"])
+        if c then return s1..c,r,2 end
         if s:sub(-1)=='\0' then
             return s:sub(1,-2),'\0',2
         end

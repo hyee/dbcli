@@ -76,7 +76,7 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
                 END IF;
                 BEGIN
                     $IF DBMS_DB_VERSION.VERSION>10 $THEN
-                        l_sql :='SELECT /*+dbcli_ignore*/ SQL_ID,'|| CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN 'CHILD_ADDRESS' ELSE 'CAST(NULL AS RAW(8))' END ||' FROM v$open_cursor WHERE sid=userenv(''sid'') AND sql_exec_id IS NOT NULL AND instr(sql_text,''dbcli_ignore'')=0 AND instr(sql_text,''V$OPEN_CURSOR'')=0';
+                        l_sql :='SELECT /*+dbcli_ignore*/ SQL_ID,'|| CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN 'CHILD_ADDRESS' ELSE 'CAST(NULL AS RAW(8))' END ||' FROM v$open_cursor WHERE sid=userenv(''sid'') AND cursor_type like ''OPEN%'' AND sql_exec_id IS NOT NULL AND instr(sql_text,''dbcli_ignore'')=0 AND instr(sql_text,''V$OPEN_CURSOR'')=0';
                         BEGIN
                             EXECUTE IMMEDIATE l_sql BULK COLLECT INTO l_recs;
                             FOR i in 1..l_recs.count LOOP
@@ -242,6 +242,8 @@ function output.getOutput(item)
             pcall(args.stats.close,args.stats)
         end
 
+        db.resultset:close(args.stats)
+
         db.props.container=args.cont
         db.props.container_id=args.con_id
         db.props.container_dbid=args.con_dbid
@@ -265,7 +267,6 @@ end
 function output.capture_stats(info)
     local db,sql=info[1],info[2]
     if sql and not (sql:lower():find('internal',1,true) and not sql:find('%s')) and not db:is_internal_call(sql) then
-        
         if autotrace =='traceonly' or autotrace=='on' or autotrace=='statistics' then
             local done,result=pcall(db.exec_cache,db,output.trace_sql,{},'Internal_GetSQLSTATS')
             if done then 
