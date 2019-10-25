@@ -486,7 +486,7 @@ db.lz_compress=[[
         t_size     PLS_INTEGER := length(p_src);
         t_adj      PLS_INTEGER;
         sq         VARCHAR2(2000) := '
-        declare x raw(?);
+        declare x raw(@LEN@);
         begin
             utl_compress.lz_uncompress_extract(:t_hdl, x);
             :buff := x;
@@ -507,7 +507,7 @@ db.lz_compress=[[
                     t_buffer := t_raw;
                     t_size   := 0;
                 ELSE
-                    EXECUTE IMMEDIATE REPLACE(sq, '?', t_adj)
+                    EXECUTE IMMEDIATE REPLACE(sq, '@LEN@', t_adj)
                         USING IN OUT t_hdl, IN OUT t_buffer;
                     t_size := t_size - floor(t_adj / 5);
                 END IF;

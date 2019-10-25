@@ -1,15 +1,19 @@
 /*[[
-       Show ash cost for a specific SQL for multiple executions. usage: @@NAME {<sql_id> [plan_hash_value|sid|a] [YYMMDDHH24MI] [YYMMDDHH24MI]} [-dash] [-o] -f"<format>"
+       Show ash cost for a specific SQL for multiple executions. usage: @@NAME {<sql_id> [plan_hash_value|sid|a] [YYMMDDHH24MI] [YYMMDDHH24MI]} [-dash|-t"<ash_dump_table>"] [-o] -f"<format>"
        -o    : Show top object#, otherwise show top event
        -dash : Based on dba_hist_active_sess_history, otherwise based on gv$active_session_history
+       -t    : Based on the table that stores the ASH data, instead of using gv$active_session_history. i.e.: -t"ash_dump"
 
        The output is similar to 'ora ashplan', but less accurate and faster
        --[[
        @ARGS: 1
        @adaptive : 12.1={adaptive} 11.1={}
-       &V9  : ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
-       &ash : ash={(select * from table(gv$(cursor(select userenv('instance') inst_id,a.* from v$active_session_history a where userenv('instance')=nvl(:instance,userenv('instance')) and :V1 in(sql_id,top_level_sql_id)))))}, dash={Dba_Hist_Active_Sess_History}
-       &unit: ash={1}, dash={10}
+       &ash : {
+          ash={(select * from table(gv$(cursor(select userenv('instance') inst_id,a.* from v$active_session_history a where userenv('instance')=nvl(:instance,userenv('instance')) and :V1 in(sql_id,top_level_sql_id)))))}, 
+          dash={Dba_Hist_Active_Sess_History}, 
+          t={&0}
+       }    
+       &unit: default={1} ash={1}, dash={10}
        &OBJ : default={ev}, O={CURR_OBJ#}
        &OBJ1: default={CURR_OBJ#}, O={ev}
        &Title: default={Event}, O={Obj#}

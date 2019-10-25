@@ -1,3 +1,10 @@
+2019-10-25: * public: update ConsoleZ to v1.19 
+2019-10-22: + oracle: new command 'exa flashcache/ioreason'
+2019-10-16: + oracle: new command 'exa cellsrv/param'
+2019-10-15: + oracle: new command 'ora size2/search_sql'
+2019-10-14: + oracle: new command 'exa metricdetail'
+2019-10-13: + oracle: new command 'exa metric'
+2019-10-12: + oracle: new command 'exa cacheobj'
 2019-09-26: + public: new options 'col <columns> break [skip] [<char>]' that similar to the SQL*Plus BREAK command
 2019-09-25: + oracle: new command 'ora plsql_hit'
 2019-09-23: + oracle: new commands 'ora btl/wait_event/xtable' and 'sys meminfo/addr'

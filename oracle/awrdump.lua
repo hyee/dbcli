@@ -117,6 +117,8 @@ function awr.extract_period()
 
             IF ed IS NULL THEN
                 RAISE_APPLICATION_ERROR(-20001,'Cannot find the matched AWR snapshots between '''||s||''' and '''||e||''' for instance#'||p_inst||' !' );
+            ELSIF st>=ed THEN
+                RAISE_APPLICATION_ERROR(-20001,'Invalid snapshots specified. End_snap('||ed||') must be greater than begin_snap('||st||')');
             END IF;
 
             IF dbid IS NULL THEN

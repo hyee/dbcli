@@ -1,5 +1,5 @@
 local java,env,table,math,loader,pcall,os=java,env,table,math,loader,pcall,os
-local cfg,grid,bit,string=env.set,env.grid,env.bit,env.string
+local cfg,grid,bit,string,type,pairs,ipairs=env.set,env.grid,env.bit,env.string,type,pairs,ipairs
 local read=reader
 local event=env.event and env.event.callback or nil
 local db_core=env.class()
@@ -23,10 +23,9 @@ function db_Types:get(position,typeName,res,conn)
     --local value=res:getObject(position)
     --if value==nil then return nil end
     local getter=self[typeName].getter
-
     local rtn,value=pcall(res[getter],res,position)
+    if not rtn and typeName=='CURSOR' and tostring(value):find('handle',1,true) then return nil end
     env.checkerr(rtn,value)
-   
     if value == nil or res:wasNull() then return nil end
     if not self[typeName].handler then return value end
     return self[typeName].handler(value,'get',conn,res)
@@ -212,7 +211,7 @@ function ResultSet:close(rs)
         if rs_close then pcall(rs_close,rs) end
         if self[rs] then self[rs]=nil end
     end
-    local clock=os.timer()
+    local clock=os.clock()
     --release the resultsets if they have been closed(every 1 min)
     if  self.__clock then
         if clock-self.__clock > 60 then
@@ -382,9 +381,12 @@ local excluded_keywords={
     EDITIONING=1
 }
 
+local _command_pieces={}
 function db_core.get_command_type(sql)
+    local piece=sql:sub(1,256)
+    if _command_pieces[piece] then return table.unpack(_command_pieces[piece]) end
     local list={}
-    for word in sql:gsub("%s*/%*.-%*/%s*",' '):gmatch("%a[%w_%#$]+") do
+    for word in sql:sub(1,1024):gsub("%s*/%*.-%*/%s*",' '):gmatch("%a[%w_%#$]+") do
         local w=word:upper()
         if not excluded_keywords[w] then
             list[#list+1]=(#list < 3 and w or word):gsub('["`]','')
@@ -392,6 +394,9 @@ function db_core.get_command_type(sql)
         end
     end
     for i=#list+1,3 do list[i]='' end
+    if #piece>=256 then
+        _command_pieces[piece]=list
+    end
     return table.unpack(list)
 end
 
@@ -579,6 +584,7 @@ function db_core:parse(sql,params,prefix,prep)
             binds[varname]={inout,inout=='$' and k or {k},v[typename],v[method],v[value]}
         end
     end
+    env.log_debug("parse","SQL",sql)
     env.log_debug("parse","Standard-Params:",table.dump(binds))
     return prep,sql,binds
 end
@@ -595,46 +601,52 @@ end
 
 function db_core:exec_cache(sql,args,description)
     self:assert_connect()
-    local params ={}
+    local params,cache ={}
     for k,v in pairs(args or {}) do
         if type(k)=="string" then params[k:upper()] = v end
     end
     
-    sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
-    if type(sql)~="string" then
-        return sql
+    if sql~='close' then
+        sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
+        if type(sql)~="string" then
+            return sql
+        end
+        cache=self.__preparedCaches[sql]
     end
 
     if not self.__preparedCaches or not self.__preparedCaches.__list then
         self.__preparedCaches={__list={}}
     end
 
-    local cache=self.__preparedCaches[sql]
     local prep,org,params,_sql
     if not cache or cache[1]:isClosed() then
         org=table.clone(args)
-        prep,_sql,params=self:parse(sql,org)
-        cache={prep,org,params}
-        self.__preparedCaches[sql]=cache
         if type(description)=="string" and description~='' then
-            local prep1=self.__preparedCaches.__list[description]
-            if prep1 then
+            cache=self.__preparedCaches.__list[description]
+            if cache then
                 env.log_debug("DB","Recompiling "..(description or 'SQL'))
-                pcall(prep1[1].close,prep1[1])
+                pcall(cache[1].close,cache[1])
                 for k,v in pairs(self.__preparedCaches) do
-                    if prep1==v then
+                    if cache==v then
                         self.__preparedCaches[k]=nil
                         break
                     end
                 end
 
                 for k,v in pairs(self.__preparedCaches.__list) do
-                    if prep1==v then
+                    if cache==v then
                         self.__preparedCaches.__list[k]=nil
                         break
                     end
                 end
             end
+            self.__preparedCaches.__list[description]=nil
+            if sql=='close' then return end
+        end
+        prep,_sql,params=self:parse(sql,org)
+        cache={prep,org,params}
+        self.__preparedCaches[sql]=cache
+        if type(description)=="string" and description~='' then
             self.__preparedCaches.__list[description]=cache
         end
         env.log_debug("DB","Caching "..(description or 'SQL')..":")
@@ -674,6 +686,10 @@ function db_core:exec_cache(sql,args,description)
     return self:exec(prep,args,table.clone(params),sql),cache
 end
 
+function db_core:close_cache(description)
+    self:exec_cache('close',nil,description)
+end
+
 function db_core.log_param(params)
     if cfg.get('debug')=='DB' or cfg.get('debug')=='ALL' then
         local tab={{'Bind Index','In/Out','Name','Data Type','Bind Method','Bind Value'}}
@@ -695,6 +711,7 @@ function db_core.log_param(params)
     end
 end
 
+local collectgarbage,java_system,gc=collectgarbage,java.system,java.system.gc
 function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_not_prep=type(sql)~="userdata"
     if is_not_prep and sql:sub(1,1024):find('/*DBCLI_EXEC_CACHE*/',1,true) then
@@ -704,10 +721,9 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     if is_not_prep and not self:is_internal_call(sql) then
         db_core.__start_clock=os.timer()
     end
-    if #env.RUNNING_THREADS<=2 then
-        collectgarbage("collect")
-        java.system:gc()
-        java.system:runFinalization();
+    collectgarbage("collect")
+    if #env.RUNNING_THREADS<=2 then 
+        gc(java_system) 
     end
     local params,prep={}
     args=type(args)=="table" and args or {args}
@@ -758,19 +774,20 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local rscount=0
 
     local function process_result(rs,is_print)
-        if print_result and is_print~=false then 
+        if print_result and is_print~=false then
             self.resultset:print(rs,self.conn)
         else
             rscount=rscount+1
+            self.__result_sets[#self.__result_sets+1]=rs
         end
-        self.__result_sets[#self.__result_sets+1]=rs
+        
         while #self.__result_sets>cfg.get('SQLCACHESIZE')*2 do
             self.resultset:close(self.__result_sets[1])
             table.remove(self.__result_sets,1)
         end
         return rs
     end
-
+    if event then event("ON_DB_EXEC",{self,sql,args,result,params}) end
     for k,v in pairs(params) do
         if type(v) == "table" and v[is_output] == "#"  then
             if type(v[index]) == "table" then
@@ -802,7 +819,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local params1=nil
     local result={is_query and process_result(prep:getResultSet()) or prep:getUpdateCount()}
     local i=0;
-    
+
     while true do
         params1,is_query=pcall(prep.getMoreResults,prep,2)
         if not params1 or not is_query then break end
@@ -813,8 +830,10 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     if event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
 
     if rscount==0 and is_not_prep then
-        pcall(prep.close,close)
+        pcall(prep.close,prep)
+        self.__stmts[#self.__stmts]=nil
     end
+
     self:clearStatements()
     
     for k,v in pairs(outputs) do
@@ -826,9 +845,9 @@ end
 
 function db_core:is_connect(recursive)
     if type(self.conn)~='userdata' or not self.conn.isClosed or self.conn:isClosed() then
-        self.__stmts={}
+        self.__stmts = {}
+        self.__result_sets = table.week('v')
         self.__preparedCaches={}
-        self.__result_sets={}
         self.props={privs={}}
         if self.conn~=nil and recursive~=true then self:disconnect(false) end
         return false
@@ -917,7 +936,7 @@ function db_core:connect(attrs,data_source)
         event("AFTER_DB_CONNECT",self,attrs.jdbc_alias or url,attrs)
     end
     self.__stmts = {}
-    self.__result_sets = {}
+    self.__result_sets = table.week('v')
     self.__preparedCaches={}
     self.properties={}
 
@@ -1062,7 +1081,11 @@ end
 
 function db_core:grid_print(sqls)
     env.checkhelp(sqls)
+    if not sqls:find('^[%{%[]') then
+        sqls=(sqls:sub(-1)=='}' and '{' or '[')..sqls
+    end
     local grid_cfg=table.totable(sqls)
+    env.checkerr(type(grid_cfg)=="table", "Target input string is not a valid table.")
     local tabs=self:grid_call(grid_cfg,cfg.get("printsize"),{})
     env.grid.merge(tabs,true)
 end
@@ -1192,17 +1215,19 @@ db_core.source_objs={
 
 function db_core.check_completion(cmd,other_parts)
     --alter package xxx compile ...
-    local action,obj=db_core.get_command_type(cmd..' '..other_parts)
     local match,typ,index=env.COMMAND_SEPS.match(other_parts)
-    obj=obj or ""
     if index==0 then return false,other_parts end
+    obj=obj or ""
+    local action,obj=db_core.get_command_type(cmd..' '..other_parts)
     if index==1 and (db_core.source_objs[cmd] or db_core.source_objs[obj:upper()]) then
-        typ=type(db_core.source_obj_pattern)
+        local pattern=db_core.source_obj_pattern
+        if not pattern then return false,other_parts end
+        typ=type(pattern)
         local patterns={}
         if typ=='table' then 
-            patterns=db_core.source_obj_pattern
+            patterns=pattern
         elseif typ=="string" then
-            patterns[1]=db_core.source_obj_pattern
+            patterns[1]=pattern
         end
         for _,pattern in ipairs(patterns) do
             if match:match(pattern) then

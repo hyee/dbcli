@@ -73,5 +73,6 @@ grid {[[ /*grid={topic='Offload Clients'}*/
             WHERE  statistics_type = 'CLIENTDES')
     WHERE lower(cell) like lower('%'||:V1||'%') or lower(client_name) like lower('%'||:V1||'%') 
     GROUP  BY mesg_type
+    ORDER  BY 1
     ]]
 }

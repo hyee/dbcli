@@ -347,7 +347,7 @@ local desc_sql={
         ORDER BY NO#]],
     TABLE={[[
         SELECT /*INTERNAL_DBCLI_CMD*/ 
-               --+no_parallel opt_param('_optim_peek_user_binds','false') no_merge(b) no_merge(a) 
+               --+no_parallel opt_param('_optim_peek_user_binds','false') use_hash(a b c) swap_join_inputs(c)
                INTERNAL_COLUMN_ID NO#,
                COLUMN_NAME NAME,
                DATA_TYPE_OWNER || NVL2(DATA_TYPE_OWNER, '.', '') ||
@@ -379,7 +379,7 @@ local desc_sql={
                CASE WHEN num_rows>=num_nulls THEN round((num_rows-num_nulls)/nullif(num_distinct,0),2) END CARDINALITY,
                nullif(HISTOGRAM,'NONE') HISTOGRAM,
                NUM_BUCKETS buckets,
-               --(select trim(comments) from all_col_comments where owner=a.owner and table_name=a.table_name and column_name=a.column_name) comments,
+               c.comments,
                case when low_value is not null then 
                substrb(decode(dtype
                   ,'NUMBER'       ,to_char(utl_raw.cast_to_number(low_value))
@@ -454,10 +454,12 @@ local desc_sql={
                                 lpad(TO_NUMBER(SUBSTR(high_value, 11, 2), 'XX')-1,2,0)|| ':' ||
                                 lpad(TO_NUMBER(SUBSTR(high_value, 13, 2), 'XX')-1,2,0)
                         ,  high_value),1,32) end high_value
-        FROM   (select a.*,regexp_replace(data_type,'\(.+\)') dtype from all_tab_cols a where a.owner=:owner and a.table_name=:object_name) a,
-               (select * from all_tables a where a.owner=:owner and a.table_name=:object_name) b
+        FROM   (select /*+no_merge*/ a.*,regexp_replace(data_type,'\(.+\)') dtype from all_tab_cols a where a.owner=:owner and a.table_name=:object_name) a,
+               (select /*+no_merge*/ * from all_tables a where a.owner=:owner and a.table_name=:object_name) b,
+               (select /*+no_merge*/ column_name cname,substr(trim(comments),1,256) comments from all_col_comments where owner=:owner and table_name=:object_name) c
         WHERE  a.table_name=b.table_name(+)
         AND    a.owner=b.owner(+)
+        AND    a.column_name=c.cname(+)
         ORDER BY NO#]],
     [[
         WITH I AS (SELECT /*+no_merge*/ I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
@@ -486,9 +488,9 @@ local desc_sql={
                 --DECODE(C.COLUMN_POSITION, 1, (SELECT NVL(MAX('YES'),'NO') FROM ALL_Constraints AC WHERE AC.INDEX_OWNER = I.OWNER AND AC.INDEX_NAME = I.INDEX_NAME), '') "IS_PK",
                 DECODE(C.COLUMN_POSITION, 1, decode(I.STATUS,'N/A',(SELECT MIN(STATUS) FROM All_Ind_Partitions p WHERE p.INDEX_OWNER = I.OWNER AND p.INDEX_NAME = I.INDEX_NAME),I.STATUS), '') STATUS,
                 DECODE(C.COLUMN_POSITION, 1, i.BLEVEL) BLEVEL,
-                DECODE(C.COLUMN_POSITION, 1, round(100*i.CLUSTERING_FACTOR/greatest(i.num_rows,1),2)) "CF/ROW(%)",
-                DECODE(C.COLUMN_POSITION, 1, i.LEAF_BLOCKS) LEAF_BLOCKS,
+                DECODE(C.COLUMN_POSITION, 1, round(100*i.CLUSTERING_FACTOR/greatest(i.num_rows,1),2)) "CF(%)/Rows",
                 DECODE(C.COLUMN_POSITION, 1, i.DISTINCT_KEYS) DISTINCTS,
+                DECODE(C.COLUMN_POSITION, 1, i.LEAF_BLOCKS) LEAF_BLOCKS,
                 DECODE(C.COLUMN_POSITION, 1, AVG_LEAF_BLOCKS_PER_KEY) "LB/KEY",
                 DECODE(C.COLUMN_POSITION, 1, AVG_DATA_BLOCKS_PER_KEY) "DB/KEY",
                 DECODE(C.COLUMN_POSITION, 1, ceil(i.num_rows/greatest(i.DISTINCT_KEYS,1))) CARD,
@@ -721,6 +723,8 @@ function desc.desc(name,option)
     if type(sqls)~="table" then sqls={sqls} end
     if (rs[4]=="PROCEDURE" or rs[4]=="FUNCTION") and rs[5]~=2 then
         rs[2],rs[3]=rs[3],rs[2]
+    elseif rs[4]=='VIEW' then
+        env.var.define_column('Default,Hidden?,AVG_LEN,NDV,Nulls(%),CARDINALITY,HISTOGRAM,BUCKETS,LOW_VALUE,HIGH_VALUE','NOPRINT')
     end
 
     for k,v in pairs{owner=rs[1],object_name=rs[2],object_subname=rs[3],object_type=rs[4],object_id=obj.object_id} do

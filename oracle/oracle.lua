@@ -120,7 +120,7 @@ function oracle:connect(conn_str)
                 if k:upper()~='TNS_ADMIN' 
                     then attrs[k]=v
                 else
-                    tns_admin=v
+                    tns_admin=v:replace('\\','/')
                 end
                 found=true
             end
@@ -428,6 +428,7 @@ function oracle:parse(sql,params)
 
     local sql_type=self.get_command_type(sql)
     local func,value,typeid,typename,inIdx,outIdx,vname=1,2,3,4,5,6,7
+
     if sql_type=="SELECT" or sql_type=="WITH" then 
         if sql:lower():find('%Wtable%s*%(') and not sql:lower():find('xplan') then 
             cfg.set("pipequery",'on')
@@ -477,7 +478,7 @@ function oracle:parse(sql,params)
                 prep[p[func]](prep,p[inIdx],p[value])
             end
             params[v]={'#',p[outIdx],p[typename],p[func],p[value],p[inIdx]~=0 and p[inIdx] or nil}
-            env.log_debug("parse","Param Out#"..k..'('..p[vname]..')',':'..p[outIdx]..'='..self.db_types:getTyeName(typeid))
+            env.log_debug("parse","Param Out#"..k..'('..p[vname]..')',':'..p[outIdx]..'='..self.db_types:getTyeName(p[typeid]))
             prep['registerOutParameter'](prep,p[outIdx],p[typeid])
         end
         env.log_debug("parse","Block-Params:",table.dump(params))
@@ -502,7 +503,6 @@ function oracle:parse(sql,params)
         end
     end
     env.log_debug("parse","Query Params:",table.dump(params))
-
     return prep,org_sql,params
 end
 
@@ -677,7 +677,7 @@ end
 function oracle:get_library()
     if home then
         local files={}
-        for i=10,7,-1 do
+        for i=10,6,-1 do
             local jar=env.join_path(home..'/jdbc/lib/ojdbc'..i..'.jar')
             if os.exists(jar) then 
                 files[#files+1]=jar

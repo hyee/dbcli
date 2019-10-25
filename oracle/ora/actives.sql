@@ -92,7 +92,7 @@
 ]]*/
 
 
-set feed off VERIFY on
+set feed off VERIFY off
 VAR actives refcursor "Active Sessions"
 VAR time_model refcursor "Top Session Metric"
 
@@ -103,32 +103,27 @@ BEGIN
     IF dbms_db_version.version > 10 THEN
         OPEN :actives FOR q'{
             WITH sess AS
-             (SELECT (select object_name from &CHECK_ACCESS_OBJ o where s.program_id>0 and o.object_id=s.program_id) program_name,
+             (SELECT (select /*+index(o)*/ object_name from &CHECK_ACCESS_OBJ o where s.program_id>0 and o.object_id=s.program_id and o.object_type!='DATABASE LINK') program_name,
                      s.*
               FROM   TABLE(gv$(CURSOR(
                    SELECT (SELECT spid FROM &CHECK_ACCESS_PRO11 d WHERE d.addr = s.paddr)|| regexp_substr(s.program, '\(.*\)') spid,
                           CASE WHEN s.seconds_in_wait > 1.3E9 THEN 0 ELSE round(seconds_in_wait-wait_time/100) END wait_secs,
                           CASE WHEN s.SID||'@'||userenv('instance') = s.qcsid THEN 1 ELSE 0 END ROOT_SID,
-                          regexp_substr(sql_info,'[^'||chr(1)||']+',1,1)+0 program_id,
-                          regexp_substr(sql_info,'[^'||chr(1)||']+',1,2)+0 program_line#,
-                          regexp_substr(sql_info,'[^'||chr(1)||']+',1,3)+0 plan_hash_value,
-                          regexp_substr(sql_info,'[^'||chr(1)||']+',1,4)   sql_text,
-                          regexp_substr(sql_info,'[^'||chr(1)||']+',1,5)   sql_secs,
                           s.*
-                    FROM  (SELECT /*+order use_hash(m) opt_param('_optimizer_unnest_scalar_sq' 'false')*/ * FROM 
-                            (SELECT (SELECT qcsid||'@'||nvl(qcinst_id,userenv('instance')) FROM &CHECK_ACCESS_PX11 p WHERE  s.sid = p.sid) qcsid,
-                                    (SELECT /*+index(b.GV$SQL.X$KGLCURSOR_CHILD)*/ b.program_id||chr(1)
-                                         || b.program_line#||chr(1)
-                                         || b.plan_hash_value||chr(1)
-                                         || substr(TRIM(regexp_replace(replace(b.sql_text,chr(0)), '[' || chr(1) || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 200)||chr(1)
-                                         || round(decode(b.child_number,0,b.elapsed_time * 1e-6 / (1 + b.executions), 86400 * (SYSDATE - to_date(b.last_load_time, 'yyyy-mm-dd/hh24:mi:ss'))))
-                                     FROM   v$sql b 
-                                     WHERE  s.sql_id = b.sql_id 
-                                     and b.child_number=nvl(s.sql_child_number,0)) sql_info,
+                    FROM  (SELECT /*+ordered use_hash(m) opt_param('_optimizer_unnest_scalar_sq' 'false')*/ * FROM 
+                            (SELECT  /*+ordered use_hash(s sq) no_merge(s)*/
+                                     (SELECT qcsid||'@'||nvl(qcinst_id,userenv('instance')) FROM &CHECK_ACCESS_PX11 p WHERE  s.sid = p.sid) qcsid,
                                      userenv('instance') inst_id, 
-                                     s.*
-                             FROM    v$session s
-                             WHERE   s.event NOT LIKE 'Streams%'
+                                     s.*,sq.program_id,sq.program_line#,sq.plan_hash_value,sq.sql_text,sq.sql_secs
+                             FROM   v$session s,
+                                    (select /*+no_merge*/ 
+                                             program_line#,program_id,plan_hash_value,sql_id,child_number,
+                                             substr(TRIM(regexp_replace(replace(b.sql_text,chr(0)), '[' || chr(1) || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 200) sql_text,
+                                             round(decode(b.child_number,0,b.elapsed_time * 1e-6 / (1 + b.executions), 86400 * (SYSDATE - to_date(b.last_load_time, 'yyyy-mm-dd/hh24:mi:ss')))) sql_secs
+                                     from v$sql b where users_executing > 0) sq
+                             WHERE   s.sql_id=sq.sql_id(+)
+                             AND     nvl(s.sql_child_number,0)=sq.child_number(+)
+                             AND     s.event NOT LIKE 'Streams%'
                              AND     userenv('instance')=nvl('&instance',userenv('instance'))) s &SQLM) s
                     ))) s
               WHERE sid||'@'||inst_id!=userenv('sid')||'@'||userenv('instance')),
@@ -270,3 +265,6 @@ BEGIN
     :time_model:=time_model;
 END;
 /
+
+print actives
+print time_model

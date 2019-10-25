@@ -91,10 +91,8 @@ Outputs:
     @con : 12.1={AND prior nvl(con_dbid,0)=nvl(con_dbid,0)} default={}
     @mem : 12.1={DELTA_READ_MEM_BYTES} default={null}
     @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
-    &V9  : ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
     &top1: default={ev}, O={CURR_OBJ#}
     &top2: default={CURR_OBJ#}, O={ev}
-    
     &vw  : default={A} G={G} D={D} 
     &Title: default={Objects}, O={Events}
     &titl2: default={Events}, O={Objects}
@@ -304,7 +302,7 @@ ash_raw as (
                     when p1text ='file#' and p2text='block#' then 
                         'file#'||p1||' block#'||p2
                     when p3text in('block#','block') then 
-                        'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)    
+                        'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_BLOCK(p3)    
                     when px_flags > 65536 then
                         decode(trunc(mod(px_flags/65536, 32)),
                                1,'[PX]Executing-Parent-DFO',     

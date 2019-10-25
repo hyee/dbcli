@@ -38,6 +38,11 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             l_sep    VARCHAR2(10) := chr(1)||chr(2)||chr(3)||chr(10); 
             l_plans  sys.ODCIVARCHAR2LIST;
             l_fmt    VARCHAR2(300):='TYPICAL ALLSTATS LAST';
+            l_sql    VARCHAR2(500);
+            l_found  BOOLEAN := false;
+            TYPE l_rec IS RECORD(sql_id varchar2(13),child_addr raw(8));
+            TYPE t_recs IS TABLE OF l_rec;
+            l_recs t_recs := t_recs();
             procedure wr is
             begin
                 l_size   := length(l_buffer);
@@ -51,9 +56,9 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             end;
         BEGIN
             if l_trace not in ('sql_id','statistics','off') then
-                open l_stats for select name,value from v$mystat natural join v$statname where name not like 'session%memory%' and value>0;
+                open l_stats for select /*+dbcli_ignore*/ name,value from v$mystat natural join v$statname where name not like 'session%memory%' and value>0;
             else
-                open l_stats for select * from dual;
+                open l_stats for select /*+dbcli_ignore*/ * from dual;
             end if;
             dbms_output.get_lines(l_arr, l_done);
             IF l_enable = 'on' THEN
@@ -70,22 +75,50 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
                     l_fmt := l_fmt||' +METRICS';
                 END IF;
                 BEGIN
-                    SELECT * bulk collect into l_plans
-                    FROM TABLE(dbms_xplan.display('v$sql_plan_statistics_all',NULL,l_fmt,
-                               'child_number=(select max(child_number) keep(dense_rank last order by executions,last_active_time) from v$sql where sql_id='''||l_sql_id||''') and sql_id=''' || l_sql_id ||''''));
-                    FOR i in 1..l_plans.count LOOP
-                        if l_plans(i) not like 'Error%' then
-                            if i = 1 then
-                                l_buffer := l_buffer || l_sep;
+                    $IF DBMS_DB_VERSION.VERSION>10 $THEN
+                        l_sql :='SELECT /*+dbcli_ignore*/ SQL_ID,'|| CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN 'CHILD_ADDRESS' ELSE 'CAST(NULL AS RAW(8))' END ||' FROM v$open_cursor WHERE sid=userenv(''sid'') AND cursor_type like ''OPEN%'' AND sql_exec_id IS NOT NULL AND instr(sql_text,''dbcli_ignore'')=0 AND instr(sql_text,''V$OPEN_CURSOR'')=0';
+                        BEGIN
+                            EXECUTE IMMEDIATE l_sql BULK COLLECT INTO l_recs;
+                            FOR i in 1..l_recs.count LOOP
+                                IF l_recs(i).sql_id=l_sql_id THEN
+                                    l_found := true;
+                                END IF;
+                            END LOOP;
+                        EXCEPTION WHEN OTHERS THEN NULL;    
+                        END;
+                    $END
+
+                    IF NOT l_found THEN
+                        l_recs.extend;
+                        l_recs(l_recs.count).sql_id:=l_sql_id;
+                    END IF;
+
+                    FOR j in 1..l_recs.count LOOP
+                        l_sql:='sql_id='''||l_recs(j).sql_id||''' AND ';
+                        IF l_recs(j).child_addr IS NOT NULL THEN
+                            l_sql := l_sql||'child_address=hextoraw('''||l_recs(j).child_addr||''')';
+                        ELSE
+                            l_sql := l_sql||'child_number=(select max(child_number) keep(dense_rank last order by executions,last_active_time) from v$sql where sql_id='''||l_sql_id||''')';
+                        END IF;
+                        SELECT * BULK COLLECT INTO l_plans
+                        FROM TABLE(dbms_xplan.display('v$sql_plan_statistics_all',NULL,l_fmt,l_sql));
+                        IF j>1 THEN
+                            l_buffer := l_buffer || chr(10);
+                        END IF;
+                        FOR i in 1..l_plans.count LOOP
+                            IF l_plans(i) not like 'Error%' then
+                                if i = 1 then
+                                    l_buffer := l_buffer || l_sep;
+                                end if;
+                                if trim(l_plans(i)) is not null then
+                                    l_max := greatest(l_max,length(l_plans(i)));
+                                    l_buffer := l_buffer || replace(l_plans(i),'Plan hash value:','SQL ID: '||l_recs(j).sql_id||'   Plan hash value:') || chr(10);
+                                    wr;
+                                end if;
+                            elsif i=1 and l_recs(j).sql_id=l_sql_id then
+                                l_buffer := l_buffer || CASE WHEN j>1 THEN 'TOP_' END || 'SQL_ID: '||l_recs(j).sql_id||chr(10);
                             end if;
-                            if trim(l_plans(i)) is not null then
-                                l_max := greatest(l_max,length(l_plans(i)));
-                                l_buffer := l_buffer || replace(l_plans(i),'Plan hash value:','SQL ID: '||l_sql_id||'   Plan hash value:') || chr(10);
-                                wr;
-                            end if;
-                        elsif i = 1 then
-                            l_buffer := l_buffer || 'SQL_ID: '||l_sql_id||chr(10);
-                        end if;
+                        END LOOP;
                     END LOOP;
                 EXCEPTION WHEN OTHERS THEN NULL;
                 END;
@@ -209,6 +242,8 @@ function output.getOutput(item)
             pcall(args.stats.close,args.stats)
         end
 
+        db.resultset:close(args.stats)
+
         db.props.container=args.cont
         db.props.container_id=args.con_id
         db.props.container_dbid=args.con_dbid
@@ -232,7 +267,6 @@ end
 function output.capture_stats(info)
     local db,sql=info[1],info[2]
     if sql and not (sql:lower():find('internal',1,true) and not sql:find('%s')) and not db:is_internal_call(sql) then
-        
         if autotrace =='traceonly' or autotrace=='on' or autotrace=='statistics' then
             local done,result=pcall(db.exec_cache,db,output.trace_sql,{},'Internal_GetSQLSTATS')
             if done then 

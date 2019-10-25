@@ -1,14 +1,15 @@
 /*[[
-    Show ash wait chains. Usage: @@NAME {[<sql_id>|<sid>|<plan_hash_value>|-f"<filter>"] [YYMMDDHH24MI] [YYMMDDHH24MI]}|{-snap [secs]} [-sid] [-dash] [-flat]
+    Show ash wait chains. Usage: @@NAME {[<sql_id>|<sid>|<plan_hash_value>|-f"<filter>"] [YYMMDDHH24MI] [YYMMDDHH24MI]}|{-snap [secs]} [-sid] [-dash] [-flat] [-t"<ash_dump_table>"]
     
     Options:
         -dash        : source from dba_hist_active_session_history instead of gv$active_session_history
         -snap <secs> : show wait chain within recent n secs
-        -sid         :  grouping by sid instead of sql_id
+        -sid         : grouping by sid instead of sql_id
         -phase       : show top phase instead of top object
         -op          : show top op name instead of top object
         -p           : show progam + event + p1/2/3 instead of event + top object
         -flat        : show ashchain in flat style instead of tree style
+        -t           : source table is <ash_dump_table>
 
     Sample Output:
     ==============
@@ -32,6 +33,7 @@ This script references Tanel Poder's script
     --[[
         @con : 12.1={AND prior con_id=con_id} default={}
         &tree  : default={1} flat={0}
+        &ash   : default={&8} t={&0}
         &V8    : ash={gv$active_session_history},dash={Dba_Hist_Active_Sess_History}
         &Filter: default={:V1 in(p1text,''||session_id,''||sql_plan_hash_value,sql_id,top_level_sql_id,SESSION_ID||'@'||&INST1,event,''||current_obj#)} f={}
         &filter1: default={0} f={1}
@@ -67,7 +69,7 @@ declare
         select a.*,nvl(&tmodel,0) tmodel,&INST1 inst,SESSION_ID||'@'||&INST1 SID,
                 nullif(nvl(a.blocking_session,case when p1text='idn' then nullif(decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)), 0) end)|| &INST,'@') b_sid,
                 sample_time+0 stime 
-        from ]'||:V8||' a where '||:range;
+        from &ash a where ]'||:range;
     chose varchar2(2000) := '1';
 BEGIN
     :filter2 := 1;
@@ -99,7 +101,7 @@ BEGIN
                             when p3text like '%namespace' then 'x$kglst#'||trunc(mod(p3,power(2,32))/power(2,16))
                             when p1text like 'cache id' then (select max(parameter) from v$rowcache where cache#=p1)
                             when p1text ='file#' and p2text='block#' then 'file#'||p1||' block#'||p2
-                            when p3text in('block#','block') then 'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)
+                            when p3text in('block#','block') then 'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_BLOCK(p3)
                             when p1text ='idn' then 'v$db_object_cache hash#'||p1
                             when a.event like 'latch%' and p2text='number' then (select max(name) from v$latchname where latch#=p2)
                             when c.class is not null then c.class

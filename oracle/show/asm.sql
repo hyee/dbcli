@@ -57,7 +57,8 @@ col BYTES_READ,BYTES_WRITTEN for kmg
 col AVG_R_TIME,AVG_W_TIME,AVG_TIME for usmhd0
 
 select * from v$asm_diskgroup order by 1;
-SELECT GROUP_NUMBER,
+SELECT /*+no_merge(a) no_merge(b) use_hash(a b)*/
+       GROUP_NUMBER,
        NAME,
        SUM(ONLINES) ONLINES,
        SUM(OFFLINES) OFFLINES,
@@ -71,9 +72,9 @@ SELECT GROUP_NUMBER,
        SUM(BYTES_WRITTEN) BYTES_WRITTEN,
        SUM(AVG_W_TIME) AVG_W_TIME,
        SUM(AVG_TIME) AVG_TIME &fg
-FROM   (SELECT group_number, NAME FROM v$asm_diskgroup) NATURAL
-RIGHT JOIN   (SELECT GROUP_NUMBER,
-               failgroup,
+FROM   (SELECT group_number, NAME FROM v$asm_diskgroup) a 
+NATURAL RIGHT JOIN   (SELECT GROUP_NUMBER,
+                     failgroup,
                COUNT(decode(MODE_STATUS, 'ONLINE', 1)) ONLINES,
                COUNT(decode(MODE_STATUS, 'OFFLINE', 1)) OFFLINES,
                COUNT(decode(STATE, 'NORMAL', 1)) NORMALS,
@@ -87,7 +88,7 @@ RIGHT JOIN   (SELECT GROUP_NUMBER,
                round(1e4 * SUM(WRITE_TIME) / nullif(SUM(WRITES), 0)) avg_w_time,
                round(1e4 * SUM(READ_TIME+WRITE_TIME) / nullif(SUM(WRITES+READS), 0)) avg_time
         FROM   v$asm_disk
-        GROUP  BY GROUP_NUMBER, failgroup)
+        GROUP  BY GROUP_NUMBER, failgroup) b
 GROUP  BY GROUP_NUMBER, NAME
 ORDER  BY 1;
 
