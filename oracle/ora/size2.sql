@@ -105,7 +105,8 @@ WITH objs AS(SELECT /*+ordered use_hash(objs lobs parts subs)*/
             AND    objs.segment_owner = subs.table_owner(+)
             AND    objs.segment_name = subs.table_name(+)
             AND    objs.lob_column_name = subs.column_name(+)
-            AND    objs.partition_name=subs.subpartition_name(+))
+            AND    objs.partition_name=subs.subpartition_name(+)
+            AND    nvl(objs.partition_name, ' ') LIKE :object_subname || '%')
 SELECT nvl(decode(lv, null,'', 1, '', '  ') || object_name,'--TOTAL--') object_name,
        object_type,
        max(TABLESPACE) keep(dense_rank last order by bytes) TABLESPACE,
@@ -122,7 +123,7 @@ FROM   (SELECT /*+ordered use_hash(segs exa) no_merge(objs)*/
                  decode(:object_subname||:OPT2, '', '', nvl2(objs.partition_name, '.' || objs.partition_name, '')) object_name,
                  trim('%' from decode(:object_subname||:OPT2, '', regexp_substr(nvl(segs.segment_type,objs.segment_type), '^\S+'), nvl(segs.segment_type,objs.segment_type))) object_type,
                  nvl(segs.TABLESPACE_NAME,objs.TABLESPACE_NAME) TABLESPACE,
-                 segs.partition_name,
+                 nvl(segs.partition_name,objs.partition_name) partition_name,
                  BLOCKS,
                  BYTES,
                  EXTENTS,
@@ -149,7 +150,6 @@ FROM   (SELECT /*+ordered use_hash(segs exa) no_merge(objs)*/
         AND    objs.segment_name = exa.object_name(+)
         --AND    objs.segment_type = exa.object_type(+)
         AND    nvl(objs.partition_name, ' ') = nvl2(exa.owner,nvl(exa.subobject_name, ' '),nvl(objs.partition_name, ' '))
-        AND    nvl(objs.partition_name, ' ') = nvl(segs.partition_name, ' ')
-        AND    nvl(objs.partition_name, ' ') LIKE :object_subname || '%') a
+        AND    nvl(objs.partition_name, ' ') = nvl2(segs.owner,nvl(segs.partition_name, ' '),nvl(objs.partition_name, ' '))) a
 GROUP  BY rollup((object_name, object_type, lv)) 
 ORDER  BY lv nulls first,a.object_name

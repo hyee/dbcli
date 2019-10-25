@@ -79,6 +79,7 @@
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="movetabright"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="closetab"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="renametab"/>
+		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="clonetab"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="1" code="34" command="nextview"/>
 		<hotkey ctrl="1" shift="0" alt="0" extended="1" code="33" command="prevview"/>
 		<hotkey ctrl="0" shift="0" alt="0" extended="0" code="0" command="leftview"/>

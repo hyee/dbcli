@@ -428,6 +428,7 @@ function oracle:parse(sql,params)
 
     local sql_type=self.get_command_type(sql)
     local func,value,typeid,typename,inIdx,outIdx,vname=1,2,3,4,5,6,7
+
     if sql_type=="SELECT" or sql_type=="WITH" then 
         if sql:lower():find('%Wtable%s*%(') and not sql:lower():find('xplan') then 
             cfg.set("pipequery",'on')
@@ -502,7 +503,6 @@ function oracle:parse(sql,params)
         end
     end
     env.log_debug("parse","Query Params:",table.dump(params))
-
     return prep,org_sql,params
 end
 

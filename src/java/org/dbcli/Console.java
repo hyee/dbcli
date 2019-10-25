@@ -546,7 +546,12 @@ public final class Console {
             boolean found;
             if (!enabled) asb.append(buffer);
             else {
-                for (int i = index, n = buffer.length(); i < n; i++) {
+                final int n=buffer.length();
+                if (n>2048) {
+                    asb.append(buffer);
+                    return asb;
+                }
+                for (int i = index ; i < n; i++) {
                     c = buffer.charAt(i);
                     found = c == '(' || c == ')' || c == '{' || c == '}' || c == ',';
                     if (found) asb.ansiAppend(NOR);
@@ -607,6 +612,8 @@ public final class Console {
             } catch (Exception e) {
                 e.printStackTrace();
                 throw e;
+            } finally {
+
             }
         }
     }

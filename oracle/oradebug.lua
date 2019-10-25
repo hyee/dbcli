@@ -132,23 +132,45 @@ function oradebug.rep_func_desc(comp,prefix,org)
             end
         end
     end
-    prefix='['..prefix..'] '
-    for k,v in pairs(funcs) do
-        --v=v:gsub('^%[(.-)%]',function(s) return '['..s:initcap()..']' end)
-        if k:trim()~=k then 
-            funcs[k],k=nil,k:trim()
-            funcs[k]=v
-        end
-        if k:lower():trim():find(comp:lower(),1,true)==1 then
-            if k==comp then
-                v=prefix
-            else
-                if v:trim():lower():find(org:lower(),1,true)==1 then
-                    v=v:trim():sub(#org+1)
+
+    if os.exists(comp) then
+        local file=env.load_data(comp,false)
+        local c=0
+        for k,v in file:gmatch('([^%s|]+)|([^\n]+)') do
+            local k1=k:lower()
+            if not funcs[k1] then
+                prefix=nil
+                c=c+1
+                for i=#k1-1,1,-1 do
+                    local item=funcs[k1:sub(1,i)]
+                    if item then
+                        prefix=item:match('^%[.-%]')
+                        break
+                    end
                 end
-                v=prefix..v:trim()
+                funcs[k1]=(prefix and (prefix..' ') or '')..v:trim():replace('“','"'):replace('”','"')
             end
-            funcs[k:trim()]=v:gsub('^(%[.-%]%s)+','%1')
+        end
+        print(c,'new functions added.')
+    else
+        prefix='['..prefix..'] '
+        for k,v in pairs(funcs) do
+            --v=v:gsub('^%[(.-)%]',function(s) return '['..s:initcap()..']' end)
+            if k:trim()~=k then 
+                funcs[k],k=nil,k:trim()
+                funcs[k]=v
+            end
+            if k:lower():trim():find(comp:lower(),1,true)==1 then
+                if k==comp then
+                    v=prefix
+                else
+                    if v:trim():lower():find(org:lower(),1,true)==1 then
+                        v=v:trim():sub(#org+1)
+                    end
+                    v=prefix..v:trim()
+                end
+                funcs[k:trim()]=v:gsub('^(%[.-%]%s)+','%1')
+            end
         end
     end
 
@@ -168,7 +190,6 @@ function oradebug.rep_func_desc(comp,prefix,org)
     rows[#rows+1]='}'
     print("Result written to file "..env.write_cache('functions.txt',table.concat(rows,'\n')))
 end
-
 
 function oradebug.scan_func_from_plsql(dir)
     load_functions()
@@ -732,7 +753,7 @@ function oradebug.load_dict()
         SETSID={desc="Set Oracle sid of session to debug. Usage: oradebug setsid <sid>",args=1,func=oradebug.attach_sid},
         BUILD_DICT={desc='Rebuild the offline help doc, should be executed in RAC environment',func=oradebug.build_dict},
         FUNC={desc='#Extract kernel function. Usage: oradebug func <keyword>',args=1,func=oradebug.find_func},
-        REP_DESC={desc="#rep",args=3,func=oradebug.rep_func_desc},
+        REP_DESC={desc="#Usage: oradebug rep_desc {<key_prefix> <desc prefix> [<org desc prefix>]}|<path of functions.csv>",args=3,func=oradebug.rep_func_desc},
         SCAN_FUNCTION={desc='#Scan offline PLSQL code and list the mapping C functions. Usage: scan_function <dir>',args=1,func=oradebug.scan_func_from_plsql},
         GET_TRACE={desc='Download current trace file. Usage: oradebug get_trace [file] [<size in MB>]',args=2,func=oradebug.get_trace},
         SHORT_STACK={desc='Get abridged OS stack. Usage: oradebug short_stack [<short_stack_string>|<sid>]',lib='HELP',func=oradebug.short_stack},

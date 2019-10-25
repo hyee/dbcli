@@ -1,5 +1,5 @@
 local java,env,table,math,loader,pcall,os=java,env,table,math,loader,pcall,os
-local cfg,grid,bit,string=env.set,env.grid,env.bit,env.string
+local cfg,grid,bit,string,type,pairs,ipairs=env.set,env.grid,env.bit,env.string,type,pairs,ipairs
 local read=reader
 local event=env.event and env.event.callback or nil
 local db_core=env.class()
@@ -381,9 +381,12 @@ local excluded_keywords={
     EDITIONING=1
 }
 
+local _command_pieces={}
 function db_core.get_command_type(sql)
+    local piece=sql:sub(1,256)
+    if _command_pieces[piece] then return table.unpack(_command_pieces[piece]) end
     local list={}
-    for word in sql:gsub("%s*/%*.-%*/%s*",' '):gmatch("%a[%w_%#$]+") do
+    for word in sql:sub(1,1024):gsub("%s*/%*.-%*/%s*",' '):gmatch("%a[%w_%#$]+") do
         local w=word:upper()
         if not excluded_keywords[w] then
             list[#list+1]=(#list < 3 and w or word):gsub('["`]','')
@@ -391,6 +394,9 @@ function db_core.get_command_type(sql)
         end
     end
     for i=#list+1,3 do list[i]='' end
+    if #piece>=256 then
+        _command_pieces[piece]=list
+    end
     return table.unpack(list)
 end
 
@@ -1214,12 +1220,14 @@ function db_core.check_completion(cmd,other_parts)
     obj=obj or ""
     local action,obj=db_core.get_command_type(cmd..' '..other_parts)
     if index==1 and (db_core.source_objs[cmd] or db_core.source_objs[obj:upper()]) then
-        typ=type(db_core.source_obj_pattern)
+        local pattern=db_core.source_obj_pattern
+        if not pattern then return false,other_parts end
+        typ=type(pattern)
         local patterns={}
         if typ=='table' then 
-            patterns=db_core.source_obj_pattern
+            patterns=pattern
         elseif typ=="string" then
-            patterns[1]=db_core.source_obj_pattern
+            patterns[1]=pattern
         end
         for _,pattern in ipairs(patterns) do
             if match:match(pattern) then
