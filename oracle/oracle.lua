@@ -178,8 +178,14 @@ function oracle:connect(conn_str)
             end
         end
     end
-
-    args=args or self:merge_props({user=usr,password=pwd,url="jdbc:oracle:"..driver..":@"..url,internal_logon=isdba},attrs)
+    self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
+    args=args or self:merge_props({
+        user=usr,
+        password=pwd,
+        url="jdbc:oracle:"..driver..":@"..url,
+        internal_logon=isdba,
+        ["oracle.jdbc.implicitStatementCacheSize"]=tostring(math.floor(self.MAX_CACHE_SIZE/2))
+    },attrs)
     if tns_admin then args.url=args.url:replace(tns_admin,tns_admin:gsub('\\','/')) end
     env.checkerr(not args.url:find('oci.?:@') or home,"Cannot connect with oci driver without specifying the ORACLE_HOME environment.")
     self:merge_props(self.public_props,args)
@@ -210,7 +216,6 @@ function oracle:connect(conn_str)
     self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
     self.temp_tns_admin,self.conn_str=tns_admin or args['oracle.net.tns_admin'],sqlplustr:gsub('%?.*','')
 
-    self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     local props={host=self.properties['AUTH_SC_SERVER_HOST'],
                  instance_name=self.properties['AUTH_INSTANCENAME'],
                  instance='#NUMBER',
@@ -654,7 +659,6 @@ function oracle:onload()
          ['v$session.program']='SQL Developer',
          ['oracle.jdbc.defaultLobPrefetchSize']="2097152",
          ['oracle.jdbc.mapDateToTimestamp']="true",
-         ['oracle.jdbc.maxCachedBufferSize']="33554432",
          ['oracle.jdbc.useNio']='true',
          ["oracle.jdbc.J2EE13Compliant"]='true',
          ['oracle.jdbc.autoCommitSpecCompliant']='false',
@@ -666,7 +670,7 @@ function oracle:onload()
          ['oracle.jdbc.timezoneAsRegion']='false',
          ['oracle.jdbc.TcpNoDelay']='false',
          ["oracle.net.disableOob"]='false',
-         ["oracle.jdbc.maxCachedBufferSize"]='28'
+         ["oracle.jdbc.maxCachedBufferSize"]='27'
         }
 end
 
