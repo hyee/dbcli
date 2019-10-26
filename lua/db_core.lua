@@ -714,17 +714,15 @@ end
 local collectgarbage,java_system,gc=collectgarbage,java.system,java.system.gc
 function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_not_prep=type(sql)~="userdata"
+    local is_internal=self:is_internal_call(sql)
     if is_not_prep and sql:sub(1,1024):find('/*DBCLI_EXEC_CACHE*/',1,true) then
         return self:exec_cache(sql,args,prep_params)
     end
 
-    if is_not_prep and not self:is_internal_call(sql) then
+    if is_not_prep and not is_internal then
         db_core.__start_clock=os.timer()
     end
-    collectgarbage("collect")
-    if #env.RUNNING_THREADS<=2 then 
-        gc(java_system) 
-    end
+
     local params,prep={}
     args=type(args)=="table" and args or {args}
     for k,v in pairs(args) do
@@ -750,8 +748,9 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         end
         prep,sql,params=self:parse(sql,params)
         prep:setEscapeProcessing(false)
-        caches={prep}
-        self.__stmts[#self.__stmts+1]=caches
+        local str = tostring(prep)
+        caches=self.__stmts[str] or {prep}
+        caches[1],self.__stmts[str]=prep,caches
         prep:setFetchSize(cfg.get("FETCHSIZE"))
         prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
         pcall(prep.closeOnCompletion,prep)
@@ -772,14 +771,11 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     self.current_stmt=nil
     local is_output,index,typename=1,2,3
 
-    local rscount=0
-
     local function process_result(rs,is_print)
         if print_result and is_print~=false then
             self.resultset:print(rs,self.conn)
         elseif caches then
             caches[#caches+1]=rs
-            rscount=rscount+1
         end
         return rs
     end
@@ -825,12 +821,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
 
     if event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
 
-    if rscount==0 and is_not_prep then
-        pcall(prep.close,prep)
-        self.__stmts[#self.__stmts]=nil
-    end
-
-    self:clearStatements()
+    if is_not_prep then self:clearStatements() end
     
     for k,v in pairs(outputs) do
         if args[k]==db_core.NOT_ASSIGNED then args[k]=nil end
@@ -953,20 +944,28 @@ function db_core:reconnnect()
 end
 
 function db_core:clearStatements(is_force)
-    for i=#self.__stmts,1,-1 do
-        local caches=self.__stmts[i]
-        for j=#caches,2,-1 do
-            if caches[j]:isClosed() then table.remove(caches,j) end
+    local counter=0
+    if is_force~=true then
+        for prep,caches in pairs(self.__stmts) do
+            for j=#caches,2,-1 do
+                if caches[j]:isClosed() then table.remove(caches,j) end
+            end
+            if #caches<2 then
+                pcall(caches[1].close,caches[1])
+                self.__stmts[prep],counter=nil,1 
+            end
         end
-        if #caches==1 then caches[1]:close() end
-        if #caches<=1 then table.remove(self.__stmts,i) end
-    end
-    while #self.__stmts>(is_force==true and 0 or cfg.get('SQLCACHESIZE')) do
-        local prep=self.__stmts[1][1]
-        if not prep:isClosed() then
+    else
+        counter=1
+        for prep,caches in pairs(self.__stmts) do
             pcall(prep.close,prep)
         end
-        table.remove(self.__stmts,1)
+        self.__stmts={}
+    end
+
+     if counter>1 then
+        collectgarbage("collect")
+        gc(java_system) 
     end
 end
 
