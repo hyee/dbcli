@@ -742,7 +742,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         self.conn:setAutoCommit(autocommit=="on" and true or false)
         self.autocommit=autocommit
     end
-
+    local caches
     if is_not_prep then
         sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
         if type(sql)~="string" then
@@ -750,7 +750,8 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         end
         prep,sql,params=self:parse(sql,params)
         prep:setEscapeProcessing(false)
-        self.__stmts[#self.__stmts+1]=prep
+        caches={prep}
+        self.__stmts[#self.__stmts+1]=caches
         prep:setFetchSize(cfg.get("FETCHSIZE"))
         prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
         pcall(prep.closeOnCompletion,prep)
@@ -776,14 +777,9 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local function process_result(rs,is_print)
         if print_result and is_print~=false then
             self.resultset:print(rs,self.conn)
-        else
+        elseif caches then
+            caches[#caches+1]=rs
             rscount=rscount+1
-            self.__result_sets[#self.__result_sets+1]=rs
-        end
-        
-        while #self.__result_sets>cfg.get('SQLCACHESIZE')*2 do
-            self.resultset:close(self.__result_sets[1])
-            table.remove(self.__result_sets,1)
         end
         return rs
     end
@@ -846,7 +842,6 @@ end
 function db_core:is_connect(recursive)
     if type(self.conn)~='userdata' or not self.conn.isClosed or self.conn:isClosed() then
         self.__stmts = {}
-        self.__result_sets = table.week('v')
         self.__preparedCaches={}
         self.props={privs={}}
         if self.conn~=nil and recursive~=true then self:disconnect(false) end
@@ -936,7 +931,6 @@ function db_core:connect(attrs,data_source)
         event("AFTER_DB_CONNECT",self,attrs.jdbc_alias or url,attrs)
     end
     self.__stmts = {}
-    self.__result_sets = table.week('v')
     self.__preparedCaches={}
     self.properties={}
 
@@ -959,9 +953,18 @@ function db_core:reconnnect()
 end
 
 function db_core:clearStatements(is_force)
+    for i=#self.__stmts,1,-1 do
+        local caches=self.__stmts[i]
+        for j=#caches,2,-1 do
+            if caches[j]:isClosed() then table.remove(caches,j) end
+        end
+        if #caches==1 then caches[1]:close() end
+        if #caches<=1 then table.remove(self.__stmts,i) end
+    end
     while #self.__stmts>(is_force==true and 0 or cfg.get('SQLCACHESIZE')) do
-        if not self.__stmts[1]:isClosed() then
-            pcall(self.__stmts[1].close,self.__stmts[1])
+        local prep=self.__stmts[1][1]
+        if not prep:isClosed() then
+            pcall(prep.close,prep)
         end
         table.remove(self.__stmts,1)
     end
