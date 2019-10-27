@@ -26,9 +26,19 @@
 
     --[[
         @CHECK_ACCESS_SEG: {
-            sys.seg$={select HWMINCR objd,file# from sys.seg$ where file#=&file and &block between block# and block#-1+blocks}
-            X$BH={select * from table(gv$(cursor(select OBJ objd,file# from x$bh where file#=&file and DBABLK=&block)))}
-            default={select * from table(gv$(cursor(select objd,file# from v$bh where file#=&file and block#=&block)))}
+            X$BH={select file#,block#,b.*
+                  from table(gv$(cursor(select OBJ objd,DBARFIL file#,DBABLK BLOCK# from x$bh where DBARFIL=&file and DBABLK=&block))) a,
+                       dba_objects b
+                  where a.objd=b.data_object_id}
+
+            DBA_EXTENTS={select /*+opt_param('_optimizer_cartesian_enabled' 'false')*/ * from dba_extents a where FILE_ID=&file and &block between block_id and BLOCKS-1+block_id}
+            
+            V$BH={select file#,block#,b.*
+                  from table(gv$(cursor(select objd,DBARFIL file#,DBABLK BLOCK# from v$bh where file#=&file and block#=&block))) a,
+                       dba_objects b
+                  where a.objd=b.data_object_id}
+                  
+            default={select HWMINCR objd,a.* from sys.seg$ a where file#=&file and &block between block# and block#-1+blocks}}
         }    
         @CHECK_ACCESS_OBJ: dba_objects={dba_objects}, default={all_objects}
         @ARGS: 1
@@ -73,10 +83,8 @@ END;
 PRO =============================================================
 col OBJECT_ID new_value OBJECT_ID
 
-SELECT b.*
-FROM   (&CHECK_ACCESS_SEG) a, &CHECK_ACCESS_OBJ b
-WHERE  rownum < 2
-AND    objd = data_object_id;
+SELECT DISTINCT a.*
+FROM   (&CHECK_ACCESS_SEG) a;
 
 set printsize 50
 ora block2rowid "&OBJECT_ID" "&file" "&block"
