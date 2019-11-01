@@ -30,12 +30,16 @@ ORCL> ora space sys.obj$ advise
 
     --[[
         @CHECK_ACCESS: dbms_space/dba_objects/dba_tablespaces={}
+        @check_access_dba: dba_objects={dba_} default={_all}
+        @check_access_segs: dba_segments={dba_segments} default={(select user owner,a.* from user_segments)}
         @ARGS: 1
     --]]
 ]]*/
 
 findobj "&V1" "" 1
-set feed off SQLTIMEOUT 86400
+pro &object_type: &object_owner..&object_name
+pro ==================================
+set feed off sep4k on digits 0 SQLTIMEOUT 86400
 VAR CUR REFCURSOR;
 
 DECLARE
@@ -47,6 +51,48 @@ DECLARE
                         p_segname   VARCHAR2,
                         p_partition VARCHAR2,
                         p_Top       PLS_INTEGER := NULL) IS
+            WITH objs AS(SELECT /*+ordered use_hash(objs lobs parts subs)*/
+                    objs.segment_owner,
+                    coalesce(subs.lob_name,parts.lob_name,lobs.segment_name,objs.segment_name) segment_name,
+                    coalesce(subs.lob_subpartition_name,parts.lob_partition_name,objs.partition_name) partition_name,
+                    objs.segment_type segment_type,
+                    coalesce(lobs.tablespace_name,objs.tablespace_name) tablespace_name,
+                    objs.lob_column_name,
+                    lobs.index_name index_name,
+                    nvl(subs.lob_indsubpart_name,parts.lob_indpart_name) index_part
+            FROM    TABLE(DBMS_SPACE.OBJECT_DEPENDENT_SEGMENTS(p_owner, --objowner
+                                        p_segname, --objname
+                                        NULL, --partname
+                                        CASE (select regexp_substr(max(x.object_type),'[^ ]+') from dba_objects x WHERE x.owner = p_owner AND x.OBJECT_name = p_segname and subobject_name is null)
+                                            WHEN 'TABLE' THEN 1
+                                            WHEN 'TABLE PARTITION' THEN 7
+                                            WHEN 'TABLE SUBPARTITION' THEN 9
+                                            WHEN 'INDEX' THEN 3
+                                            WHEN 'INDEX PARTITION' THEN 8
+                                            WHEN 'INDEX SUBPARTITION' THEN 10
+                                            WHEN 'CLUSTER' THEN 4
+                                            WHEN 'NESTED_TABLE' THEN 2
+                                            WHEN 'MATERIALIZED VIEW' THEN 13
+                                            WHEN 'MATERIALIZED VIEW LOG' THEN 14
+                                            WHEN 'LOB' THEN 21
+                                            WHEN 'LOB PARTITION' THEN 40
+                                            WHEN 'LOB SUBPARTITION' THEN 41
+                                        END)) objs,
+                   &check_access_dba.lobs lobs,
+                   &check_access_dba.lob_partitions parts,
+                   &check_access_dba.lob_subpartitions subs
+            WHERE  objs.segment_owner = lobs.owner(+)
+            AND    objs.segment_name = lobs.table_name(+)
+            AND    objs.lob_column_name = lobs.column_name(+)
+            AND    objs.segment_owner = parts.table_owner(+)
+            AND    objs.segment_name = parts.table_name(+)
+            AND    objs.lob_column_name = parts.column_name(+)
+            AND    objs.partition_name=parts.partition_name(+)
+            AND    objs.segment_owner = subs.table_owner(+)
+            AND    objs.segment_name = subs.table_name(+)
+            AND    objs.lob_column_name = subs.column_name(+)
+            AND    objs.partition_name=subs.subpartition_name(+)
+            AND    nvl(objs.partition_name, ' ') LIKE p_partition || '%')
         SELECT /*+leading(x seg y) use_nl(seg) use_hash(y) no_merge(y)*/
                distinct segment_owner || '.' || segment_name || nvl2(partition_name, '.' || segment_name, '') object_name,
                segment_type object_type,
@@ -58,26 +104,9 @@ DECLARE
                 FROM   dba_tablespaces ts
                 WHERE  seg.tablespace_name = ts.tablespace_name) block_size,
                decode(p_segname, seg.segment_name, 1, 2) lv
-        FROM TABLE(DBMS_SPACE.OBJECT_DEPENDENT_SEGMENTS(
-                      p_owner,--objowner
-                      p_segname,--objname
-                      null,--partname
-                      CASE (select regexp_substr(max(x.object_type),'[^ ]+') from dba_objects x WHERE x.owner = p_owner AND x.OBJECT_name = p_segname and subobject_name is null)
-                          WHEN 'TABLE' THEN 1
-                          WHEN 'TABLE PARTITION' THEN 7
-                          WHEN 'TABLE SUBPARTITION' THEN 9
-                          WHEN 'INDEX' THEN 3
-                          WHEN 'INDEX PARTITION' THEN 8
-                          WHEN 'INDEX SUBPARTITION' THEN 10
-                          WHEN 'CLUSTER' THEN 4
-                          WHEN 'NESTED_TABLE' THEN 2
-                          WHEN 'MATERIALIZED VIEW' THEN 13
-                          WHEN 'MATERIALIZED VIEW LOG' THEN 14
-                          WHEN 'LOB' THEN 21
-                          WHEN 'LOB PARTITION' THEN 40
-                          WHEN 'LOB SUBPARTITION' THEN 41
-                      END)) seg--objtype
-        WHERE  nvl(seg.partition_name, ' ') LIKE p_partition||'%';
+        FROM  (SELECT segment_owner,segment_name,segment_type,partition_name,tablespace_name from objs
+               UNION  ALL
+               SELECT segment_owner,index_name,'INDEX',INDEX_PART,tablespace_name from objs where index_name is not null) seg;
 
     TYPE l_CursorSet IS TABLE OF l_CursorSegs%ROWTYPE;
 
@@ -405,7 +434,6 @@ DECLARE
         v_xml := v_xml || '</ROWSET>';
         v_sql := v_sql||' from table(xmlsequence(extract(xmltype(:1),''/ROWSET[1]/ROW'')))';
         --dbms_output.put_line(v_sql);
-        dbms_output.put_line('OBJECT: '||v_all('@target')||'    TYPE: '||v_all('@type'));
         OPEN p_cur for v_sql using v_xml;
     END;
 

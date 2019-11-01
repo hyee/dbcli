@@ -166,7 +166,7 @@ function helper.helper(cmd,...)
             helps = _CMDS[cmd].HELPER or ""
             target=cmd
         end
-
+        
         if helps=="" then return end
         
         return print(helper.colorful(helps,target))

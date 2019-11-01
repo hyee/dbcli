@@ -1,7 +1,7 @@
 /*[[Show temp tablespace usage.]]*/
 set feed off
 col BYTES_CACHED,BYTES_USED,bytes for kmg
-select * from gv$temp_extent_pool order by 2,3,1;
+select  DISTINCT * from gv$temp_extent_pool order by 2,3,1;
 
 SELECT /*+ ordered */
      B.SID||','||B.SERIAL#||',@'||B.INST_ID sid,

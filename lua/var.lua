@@ -79,6 +79,8 @@ function var.setOutput(name,datatype,desc)
         return
     end
 
+    if desc then desc=var.update_text(desc) end
+
     datatype=datatype:upper():match("(%w+)")
     env.checkerr(var.types[datatype],'Unexpected data type['..datatype..']!')
     env.checkerr(name:match("^[%w%$_]+$"),'Unexpected variable name['..name..']!')

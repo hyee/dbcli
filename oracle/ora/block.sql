@@ -1,6 +1,6 @@
 /*[[Show object info for the input block in bh. Usage: @@NAME {<file#> <block#>} | <data block address>
-	Sample Output:
-	==============
+    Sample Output:
+    ==============
     SQL> @@NAME 1 241
     DBA: 4194545(0x004000f1)    FILE#: 1    BLOCK#: 241
     =============================================================
@@ -49,35 +49,35 @@ var file number;
 var block number;
 
 DECLARE
-	file  varchar2(100):=:v1;
-	block int:=:v2;
-	dba   int;
-	SRID  ROWID;
+    file  varchar2(100):=:v1;
+    block int:=:v2;
+    dba   int;
+    SRID  ROWID;
     ERID  ROWID;
 BEGIN
-	IF block is null then
-		IF substr(lower(file),1,2)='0x' THEN
-			dba:=to_number(substr(lower(file),3),'xxxxxxxx');
-		ELSIF regexp_like(file,'^\d+$') THEN
-			dba:=file;
-		ELSE
-			raise_application_error(-20001,'Invalid data block address: '||file);
-		END IF;
+    IF block is null then
+        IF substr(lower(file),1,2)='0x' THEN
+            dba:=to_number(substr(lower(file),3),'xxxxxxxx');
+        ELSIF regexp_like(file,'^\d+$') THEN
+            dba:=file;
+        ELSE
+            raise_application_error(-20001,'Invalid data block address: '||file);
+        END IF;
 
         IF dba < 4194305 THEN
             raise_application_error(-20001,'Usage: ora block {<file#> <block#>} | <data block address>');
         END IF;
 
-		file := DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(dba);
-		block:= DBMS_UTILITY.DATA_BLOCK_ADDRESS_BLOCK(dba);
-	ELSIF regexp_like(file,'^\d+$') THEN
-		dba := DBMS_UTILITY.MAKE_DATA_BLOCK_ADDRESS(file,block);
-	ELSE
-		raise_application_error(-20001,'Invalid file#: '||file);
-	END IF;
-	dbms_output.put_line(utl_lms.format_message('DBA: %s(%s)    FILE#: %s    BLOCK#: %s',''||dba,'0x'||substr(to_char(dba,'fm0xxxxxxxx'),2),file,''||block));
-	:file := file;
-	:block:= block;
+        file := DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(dba);
+        block:= DBMS_UTILITY.DATA_BLOCK_ADDRESS_BLOCK(dba);
+    ELSIF regexp_like(file,'^\d+$') THEN
+        dba := DBMS_UTILITY.MAKE_DATA_BLOCK_ADDRESS(file,block);
+    ELSE
+        raise_application_error(-20001,'Invalid file#: '||file);
+    END IF;
+    dbms_output.put_line(utl_lms.format_message('DBA: %s(%s)    FILE#: %s    BLOCK#: %s',''||dba,'0x'||substr(to_char(dba,'fm0xxxxxxxx'),2),file,''||block));
+    :file := file;
+    :block:= block;
 END;
 /
 PRO =============================================================
