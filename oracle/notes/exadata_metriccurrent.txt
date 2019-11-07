@@ -504,6 +504,9 @@ Storage Indexe:   cellcli -e 'alter cell events="immediate cellsrv.cellsrv_stori
 				  #3: 0/<data_object_id>
 				  #4: 0/<tablespace_id>
 				  #5: 0/<unique dbid> (x$ksqdn.KSQDNGUNID)
+Ramcache: cellcli -e 'alter cell events="immediate cellsrv.cellsrv_ramcache(addstore,1,0,0)"'
+          cellcli -e 'alter cell events="immediate cellsrv.cellsrv_ramcache(dumpstats, 0,0,1)"'
+          cellcli -e 'alter cell events="immediate cellsrv.cellsrv_ramcache(dropstore,1,0,0)"'
 resetstats  ：   cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_resetstats('all')"'  
                      or the items from  "cellsrv.cellsrv_dump(list,0)"
 cellsrv_dump：   List all: cellcli -e 'alter cell events="immediate cellsrv.cellsrv_dump(list,0)"'

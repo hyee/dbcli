@@ -3126,6 +3126,8 @@ return {
     kbrs="[kernel backup] backup appliance",
     kc="[kernel cache] ",
     kcb="[Kernel Cache Buffer Management] ",
+    kcbget="[Kernel Cache Buffer Management] get pin on block in share mode",
+    kcbesc="[Kernel Cache Buffer Management] escalate the pin on block",
     kcb_sync_last_change="[Kernel Cache Buffer Management] call kcrf_commit_force to sync redo",
     kcbadoptbuffers="[Kernel Cache Buffer Management] fully populate and format a previously borrowed buffer, and inject it into buffer cache",
     kcbapl="[Kernel Cache Buffer Management] apply (changes to buffer; kcoapl executes changes)",

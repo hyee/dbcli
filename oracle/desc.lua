@@ -674,7 +674,138 @@ local desc_sql={
     [[
         SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/*
         FROM   all_tab_partitions T
-        WHERE  T.TABLE_OWNER = :1 AND T.TABLE_NAME = :2 AND partition_name=:3]]}
+        WHERE  T.TABLE_OWNER = :1 AND T.TABLE_NAME = :2 AND partition_name=:3]]},
+    FIXED_TABLE=[[
+        SELECT /*+no_merge(a) use_hash(b c)*/
+               a.*,
+               AVG_COL_LEN AVG_LEN,
+               num_distinct "NDV",
+               CASE WHEN num_rows>=num_nulls THEN round(num_nulls*100/nullif(num_rows,0),2) END "Nulls(%)",
+               CASE WHEN num_rows>=num_nulls THEN round((num_rows-num_nulls)/nullif(num_distinct,0),2) END CARDINALITY,
+               c.sample_size,
+               c.LAST_ANALYZED,
+               case when low_value is not null then 
+               substrb(decode(regexp_substr(DATA_TYPE,'[^\(]+')
+                  ,'NUMBER'       ,to_char(utl_raw.cast_to_number(low_value))
+                  ,'FLOAT'        ,to_char(utl_raw.cast_to_number(low_value))
+                  ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(low_value))
+                  ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(low_value))
+                  ,'CHAR'         ,to_char(utl_raw.cast_to_varchar2(low_value))
+                  ,'NCHAR'        ,to_char(utl_raw.cast_to_nvarchar2(low_value))
+                  ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(low_value))
+                  ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(low_value))
+                  ,'TIMESTAMP'    , lpad(TO_NUMBER(SUBSTR(low_value, 1, 2), 'XX')-100,2,0)||
+                                    lpad(TO_NUMBER(SUBSTR(low_value, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(low_value, 5, 2), 'XX') ,2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(low_value, 7, 2), 'XX') ,2,0)|| ' ' ||
+                                    lpad(TO_NUMBER(SUBSTR(low_value, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(low_value, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(low_value, 13, 2), 'XX')-1,2,0)|| '.' ||
+                                    nvl(substr(TO_NUMBER(SUBSTR(low_value, 15, 8), 'XXXXXXXX'),1,6),'0')
+                  ,'TIMESTAMP WITH TIME ZONE',
+                                    lpad(TO_NUMBER(SUBSTR(low_value, 1, 2), 'XX')-100,2,0)||
+                                    lpad(TO_NUMBER(SUBSTR(low_value, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(low_value, 5, 2), 'XX'),2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(low_value, 7, 2), 'XX'),2,0)|| ' ' ||
+                                    lpad(TO_NUMBER(SUBSTR(low_value, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(low_value, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(low_value, 13, 2), 'XX')-1,2,0)|| '.' ||
+                                    nvl(substr(TO_NUMBER(SUBSTR(low_value, 15, 8), 'XXXXXXXX'),1,6),'0')||' '||
+                                    nvl(TO_NUMBER(SUBSTR(low_value, 23,2),'XX')-20,0)||':'||
+                                    nvl(TO_NUMBER(SUBSTR(low_value, 25, 2), 'XX')-60,0)
+                  ,'DATE',lpad(TO_NUMBER(SUBSTR(low_value, 1, 2), 'XX')-100,2,0)||
+                          lpad(TO_NUMBER(SUBSTR(low_value, 3, 2), 'XX')-100,2,0)|| '-' ||
+                          lpad(TO_NUMBER(SUBSTR(low_value, 5, 2), 'XX') ,2,0)|| '-' ||
+                          lpad(TO_NUMBER(SUBSTR(low_value, 7, 2), 'XX') ,2,0)|| ' ' ||
+                          lpad(TO_NUMBER(SUBSTR(low_value, 9, 2), 'XX')-1,2,0)|| ':' ||
+                          lpad(TO_NUMBER(SUBSTR(low_value, 11, 2), 'XX')-1,2,0)|| ':' ||
+                          lpad(TO_NUMBER(SUBSTR(low_value, 13, 2), 'XX')-1,2,0)
+                  ,  low_value),1,32) end low_value,
+                case when high_value is not null then 
+                substrb(decode(regexp_substr(DATA_TYPE,'[^\(]+')
+                      ,'NUMBER'       ,to_char(utl_raw.cast_to_number(high_value))
+                      ,'FLOAT'        ,to_char(utl_raw.cast_to_number(high_value))
+                      ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(high_value))
+                      ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(high_value))
+                      ,'CHAR'         ,to_char(utl_raw.cast_to_varchar2(high_value))
+                      ,'NCHAR'        ,to_char(utl_raw.cast_to_nvarchar2(high_value))
+                      ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(high_value))
+                      ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(high_value))
+                      ,'TIMESTAMP'   , lpad(TO_NUMBER(SUBSTR(high_value, 1, 2), 'XX')-100,2,0)||
+                                    lpad(TO_NUMBER(SUBSTR(high_value, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(high_value, 5, 2), 'XX') ,2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(high_value, 7, 2), 'XX') ,2,0)|| ' ' ||
+                                    lpad(TO_NUMBER(SUBSTR(high_value, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(high_value, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(high_value, 13, 2), 'XX')-1,2,0)|| '.' ||
+                                    nvl(substr(TO_NUMBER(SUBSTR(high_value, 15, 8), 'XXXXXXXX'),1,6),'0')
+                        ,'TIMESTAMP WITH TIME ZONE',
+                                    lpad(TO_NUMBER(SUBSTR(high_value, 1, 2), 'XX')-100,2,0)||
+                                    lpad(TO_NUMBER(SUBSTR(high_value, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(high_value, 5, 2), 'XX'),2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(high_value, 7, 2), 'XX'),2,0)|| ' ' ||
+                                    lpad(TO_NUMBER(SUBSTR(high_value, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(high_value, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(high_value, 13, 2), 'XX')-1,2,0)|| '.' ||
+                                    nvl(substr(TO_NUMBER(SUBSTR(high_value, 15, 8), 'XXXXXXXX'),1,6),'0')||' '||
+                                    nvl(TO_NUMBER(SUBSTR(high_value, 23,2),'XX')-20,0)||':'||
+                                    nvl(TO_NUMBER(SUBSTR(high_value, 25, 2), 'XX')-60,0)
+                        ,'DATE',lpad(TO_NUMBER(SUBSTR(high_value, 1, 2), 'XX')-100,2,0)||
+                                lpad(TO_NUMBER(SUBSTR(high_value, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                lpad(TO_NUMBER(SUBSTR(high_value, 5, 2), 'XX') ,2,0)|| '-' ||
+                                lpad(TO_NUMBER(SUBSTR(high_value, 7, 2), 'XX') ,2,0)|| ' ' ||
+                                lpad(TO_NUMBER(SUBSTR(high_value, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                lpad(TO_NUMBER(SUBSTR(high_value, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                lpad(TO_NUMBER(SUBSTR(high_value, 13, 2), 'XX')-1,2,0)
+                        ,  high_value),1,32) end high_value
+        FROM (
+            SELECT t.kqftanam TABLE_NAME, c.KQFCOCNO COL#, c.kqfconam COLUMN_NAME,
+                   decode(kqfcodty,
+                           1,'VARCHAR2',
+                           2,'NUMBER',
+                           8,'LONG',
+                           9,'VARCHAR',
+                           12,'DATE',
+                           23,'RAW',
+                           24,'LONG RAW',
+                           58,'CUSTOM OBJ',
+                           69,'ROWID',
+                           96,'CHAR',
+                           100,'BINARY_FLOAT',
+                           101,'BINARY_DOUBLE',
+                           105,'MLSLABEL',
+                           106,'MLSLABEL',
+                           111,'REF',
+                           112,'CLOB',
+                           113,'BLOB',
+                           114,'BFILE',
+                           115,'CFILE',
+                           121,'CUSTOM OBJ',
+                           122,'CUSTOM OBJ',
+                           123,'CUSTOM OBJ',
+                           178,'TIME',
+                           179,'TIME WITH TIME ZONE',
+                           180,'TIMESTAMP',
+                           181,'TIMESTAMP WITH TIME ZONE',
+                           231,'TIMESTAMP WITH LOCAL TIME ZONE',
+                           182,'INTERVAL YEAR TO MONTH',
+                           183,'INTERVAL DAY TO SECOND',
+                           208,'UROWID',
+                           'UNKNOWN') || '(' || to_char(c.kqfcosiz) || ')' DATA_TYPE, 
+                   c.kqfcooff offset, lpad('0x' || TRIM(to_char(c.kqfcooff, 'XXXXXX')), 8) offset_hex,
+                   decode(c.kqfcoidx, 0,'','Yes('||c.kqfcoidx||')') "Indexed?"
+            FROM   x$kqfta t, x$kqfco c
+            WHERE  c.kqfcotab = t.indx
+            AND    c.inst_id = t.inst_id
+            AND   (t.kqftanam=:object_name or t.kqftanam=(SELECT KQFDTEQU FROM x$kqfdt WHERE KQFDTNAM=:object_name))) a,
+            dba_tab_statistics b,
+            dba_tab_col_statistics c
+        WHERE a.table_name=b.table_name(+)
+        AND   b.owner(+)='SYS'
+        AND   a.table_name=c.table_name(+)
+        AND   c.owner(+)='SYS'
+        AND   a.column_name=c.column_name(+)
+        ORDER  BY 1,2]]
 }
 
 desc_sql.VIEW=desc_sql.TABLE[1]
@@ -712,6 +843,9 @@ function desc.desc(name,option)
         if type(new_obj)=="table" and new_obj[1] then
             obj.object_id,obj.owner,obj.object_name,obj.object_type=table.unpack(new_obj)
         end
+    elseif obj.object_type=='TABLE' and obj.object_name:find('^X%$') and obj.owner=='SYS' and obj.object_id>=4200000000 then
+        env.checkerr(db.props.isdba,"Cannot describe the fixed table without SYSDBA account.")
+        obj.object_type="FIXED_TABLE"
     end
 
     rs={obj.owner,obj.object_name,obj.object_subname or "",
