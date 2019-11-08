@@ -133,9 +133,24 @@ function scripter:parse_args(sql,args,print_args,cmd)
     local sub_pattern=('w_.$#/'):gsub('(.)',function(s) return '%'..s end)
     sub_pattern='(["\']?)(['..sub_pattern..' ]-)%1%s*=%s*(%b{})'
 
-    local function setvalue(param,value,mapping)
+    local function repvalue(value,rest)
+        if type(value)~="string" then return value end
+        local cnt
+        value,cnt=(value..' '):gsub('(&0)(%W)',function(sub,s)
+            if not rest or rest=='' then return s end
+            return rest..s
+        end)
+        if rest and cnt==0 and value:trim()=='' then 
+            value=value..rest 
+        else
+            value=value:sub(1,-2)
+        end
+        return value
+    end
+
+    local function setvalue(param,value,mapping,rest)
         if not orgs[param] then orgs[param]={args[param] or ""} end
-        args[param],orgs[param][2]=value,mapping and (param..'['..mapping..']') or ""
+        args[param],orgs[param][2]=repvalue(value,rest),mapping and (param..'['..mapping..']') or ""
     end
 
     if desc then
@@ -203,8 +218,7 @@ function scripter:parse_args(sql,args,print_args,cmd)
                 for param,text in pairs(options[idx] or {}) do
                     ary[i]=nil
                     local ary_idx=tonumber(param:match("^V(%d+)$"))
-                    text,cnt=text:replace('&0',rest,true)
-                    if cnt==0 and text:trim()=='' then text=text..rest end
+                    text=repvalue(text,rest)
                     if args[param] and ary_idx then
                         ary[ary_idx]=nil
                         arg1[param]=text
@@ -241,7 +255,7 @@ function scripter:parse_args(sql,args,print_args,cmd)
             if idx then
                 idx,rest=idx:upper(),rest:gsub('^"(.*)"$','%1')
                 if options[idx] and options[idx][param] then
-                    setvalue(param,options[idx][param]..rest,idx)
+                    setvalue(param,options[idx][param],idx,rest)
                     template['@choose']=idx
                 end
             end

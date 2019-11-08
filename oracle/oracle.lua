@@ -179,12 +179,12 @@ function oracle:connect(conn_str)
         end
     end
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
+    
     args=args or self:merge_props({
         user=usr,
         password=pwd,
         url="jdbc:oracle:"..driver..":@"..url,
-        internal_logon=isdba,
-        ["oracle.jdbc.implicitStatementCacheSize"]=tostring(math.floor(self.MAX_CACHE_SIZE/2))
+        internal_logon=isdba
     },attrs)
     if tns_admin then args.url=args.url:replace(tns_admin,tns_admin:gsub('\\','/')) end
     env.checkerr(not args.url:find('oci.?:@') or home,"Cannot connect with oci driver without specifying the ORACLE_HOME environment.")
@@ -212,6 +212,7 @@ function oracle:connect(conn_str)
     local data_source=java.new('oracle.jdbc.pool.OracleDataSource')
     self.working_db_link=nil
     self.props={privs={}}
+    args["oracle.jdbc.implicitStatementCacheSize"]=tostring(math.floor(self.MAX_CACHE_SIZE/2))
     self.conn,args=self.super.connect(self,args,data_source)
     self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
     self.temp_tns_admin,self.conn_str=tns_admin or args['oracle.net.tns_admin'],sqlplustr:gsub('%?.*','')
@@ -670,7 +671,7 @@ function oracle:onload()
          ['oracle.jdbc.timezoneAsRegion']='false',
          ['oracle.jdbc.TcpNoDelay']='false',
          ["oracle.net.disableOob"]='false',
-         ["oracle.jdbc.maxCachedBufferSize"]='27'
+         ["oracle.jdbc.maxCachedBufferSize"]='25'
         }
 end
 

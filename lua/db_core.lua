@@ -963,8 +963,8 @@ function db_core:clearStatements(is_force)
         self.__stmts={}
     end
 
-     if counter>1 then
-        collectgarbage("collect")
+    if counter>1 then
+        --collectgarbage("collect")
         gc(java_system) 
     end
 end

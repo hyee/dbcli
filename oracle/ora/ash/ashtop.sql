@@ -50,7 +50,7 @@
 
    --[[
       &fields: {
-            sql={sql_id &V11,sql_opname},
+            sql={sql_id &V11,sql_opname &0},
             e={null}, 
             p={p1,p2,p3,p3text &0},
             pr={p1raw,p2raw,p3raw &0}, 

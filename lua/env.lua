@@ -556,6 +556,7 @@ function env.exec_command(cmd,params,is_internal,arg_text)
 
     if isMain then
         _THREADS._clock[index]=nil
+        collectgarbage("collect")
         if env.PRI_PROMPT=="TIMING> " then
             env.CURRENT_PROMPT=string.format('%06.2f',clock)..'> '
             env.MTL_PROMPT="%P "
