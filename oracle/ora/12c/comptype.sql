@@ -10,6 +10,7 @@
     --TOTAL--                               HCC_QUERY_HIGH   9,311 10,000,000       1074
 
     --[[
+        @ver   : 12.1={}
         @check_access_comp: sys.dbms_compression={}
         &filter: default={@ROWS@} f={where &0}
     --]]

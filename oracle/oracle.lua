@@ -191,10 +191,6 @@ function oracle:connect(conn_str)
     self:merge_props(self.public_props,args)
     self:load_config(url,args)
 
-    if tonumber(args.version) and tonumber(args.version)>10 then
-        args['oracle.jdbc.mapDateToTimestamp']=nil
-    end
-
     if args.jdbc_alias or not sqlplustr then
         local pwd=args.password
         if not pwd:find('^[%w_%$#]+$') and not pwd:find('^".*"$') then
@@ -213,6 +209,7 @@ function oracle:connect(conn_str)
     self.working_db_link=nil
     self.props={privs={}}
     args["oracle.jdbc.implicitStatementCacheSize"]=tostring(math.floor(self.MAX_CACHE_SIZE/2))
+
     self.conn,args=self.super.connect(self,args,data_source)
     self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
     self.temp_tns_admin,self.conn_str=tns_admin or args['oracle.net.tns_admin'],sqlplustr:gsub('%?.*','')

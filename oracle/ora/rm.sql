@@ -180,6 +180,7 @@ DECLARE
         IF method != 'UPDATE_' THEN
             for i in 1..plan_list.count loop
                 wr(case when plan_man(i)='YES' then '--' end || 'BEGIN dbms_resource_manager.delete_plan_cascade(plan => '||trans(plan_list(i))||'); EXCEPTION WHEN OTHERS THEN NULL;END;');
+                wr(case when plan_man(i)='YES' then '--' end || 'BEGIN dbms_resource_manager.delete_plan(plan => '||trans(plan_list(i))||'); EXCEPTION WHEN OTHERS THEN NULL;END;');
             end loop;
         END IF;
     
