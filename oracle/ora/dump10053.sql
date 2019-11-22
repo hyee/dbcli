@@ -2,7 +2,7 @@
     Dump the 10053 trace for the specific SQL ID. Usage: @@NAME {<sql_id> [<child_number>|<plan_hash_value>] | <sql_text>} [-c|-e"<directory>"]
     Note: In RAC environment, it only supports dumping the SQL ID in local node(view v$sqlarea).
     -c: Generate SQL Compiler trace file, otherwise generate 10053 trace file
-    -e: Export SQL test case without generating export dump file
+    -e: Export SQL test case without generating data pump file
     --[[
         @version: 11.0={}
         @ALIAS: DUMPCASE
@@ -12,8 +12,8 @@
     --]]
 ]]*/
 set feed off verify off
-var file VARCHAR2(200);
-var file1 VARCHAR2(200);
+var file VARCHAR2(500);
+var file1 VARCHAR2(500);
 var c refcursor;
 DECLARE
     sq_id     VARCHAR2(32767) := :V1;
@@ -23,8 +23,9 @@ DECLARE
     child_num INT := regexp_substr(:V2, '^\d+$');
     phv       INT;
     res       CLOB;
+    xml       XMLTYPE;
 BEGIN
-    IF instr(sq_id,' ')=0 THEN
+    IF instr(sq_id,' ')=0 AND NOT regexp_like(sq_id,'^\d+$') THEN
         SELECT /*+no_expand*/
                MAX(child_number) KEEP(dense_rank LAST ORDER BY TIMESTAMP),
                MAX(plan_hash_value) KEEP(dense_rank LAST ORDER BY TIMESTAMP)
@@ -37,7 +38,7 @@ BEGIN
             raise_application_error(-20001, 'Cannot find target SQL in v$sql_plan_statistics_all: '||sq_id);
         END IF;
     END IF;
-    IF :opt1 = 1 THEN
+    IF :opt1 = 1 OR regexp_like(sq_id,'^\d+$') or instr(sq_id,' ')>0 THEN
         IF nam IS NULL THEN
             raise_application_error(-20001, 'Please specify the target directory name');
         END IF;
@@ -50,7 +51,12 @@ BEGIN
         IF dir IS NULL THEN
             raise_application_error(-20001, 'No access to the directory or target directory does not exist: ' || nam);
         END IF;
-        IF phv IS NULL THEN
+        IF regexp_like(sq_id,'^\d+$') THEN
+            dbms_sqldiag.export_sql_testcase(directory       => nam,
+                                             incident_id     => sq_id,
+                                             exportMetadata  => false,
+                                             testcase        => res);
+        ELSIF phv IS NULL THEN
             dbms_sqldiag.export_sql_testcase(directory       => nam,
                                              sql_text        => sq_id,
                                              exportMetadata  => false,
@@ -63,14 +69,20 @@ BEGIN
                                              testcase        => res);
         END IF;
         sep := regexp_substr(dir, '[\\/]');
-        SELECT max(case when name like '%.trc' then regexp_replace(dir || sep || name, '[\\/]+', sep) end),
-               max(case when name like '%.html' then regexp_replace(dir || sep || name, '[\\/]+', sep) end)
-        INTO   :file,:file1
-        FROM   xmltable('//FILE' passing(xmltype(res)) columns TYPE path 'TYPE', goal path 'GOAL', NAME path 'NAME');
+        SELECT regexp_replace(max(adr_home||'/'||trace_filename) keep(dense_rank last ORDER BY modify_time), '[\\/]+', sep)
+        INTO   :file
+        FROM   v$diag_trace_file
+        WHERE  TRACE_FILENAME LIKE '%\_tcb\_diag.trc' ESCAPE '\';
 
+        SELECT max(case when name like '%.html' then regexp_replace(dir || sep || name, '[\\/]+', sep) end)
+        INTO   :file1
+        FROM   xmltable('//FILE' passing(xmltype(res)) columns TYPE path 'TYPE', goal path 'GOAL', NAME path 'NAME');
+        
         OPEN :c FOR
             SELECT type,goal,regexp_replace(dir || sep || NAME, '[\\/]+', sep) name
             FROM   xmltable('//FILE' passing(xmltype(res)) columns TYPE path 'TYPE', goal path 'GOAL', NAME path 'NAME')
+            UNION  ALL
+            SELECT 'DIAG','TRACE_FILE',:file FROM dual
             ORDER  BY 1,2,3;
     ELSE
         IF phv IS NULL THEN

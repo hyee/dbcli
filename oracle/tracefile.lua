@@ -24,7 +24,7 @@ function trace.get_trace(filename,mb,from_mb)
         lang_ctx   PLS_INTEGER:=0;
         csid       PLS_INTEGER:=0;
         warn       PLS_INTEGER:=0;
-        type       t is table of varchar2(4000);
+        type       t is table of varchar2(8000);
         t1         t;
         cur        sys_refcursor;
         PROCEDURE drop_dir IS
@@ -124,9 +124,9 @@ function trace.get_trace(filename,mb,from_mb)
         IF text IS NULL THEN
             dir  := regexp_replace(regexp_replace(tmp,'[\\/]trace[\\/]$'),'[\\/]$');
             IF al IS NOT NULL THEN
-                OPEN cur FOR 'SELECT message_text FROM table(gv$(CURSOR(SELECT * FROM V$DIAG_ALERT_EXT WHERE filename LIKE :d1)))' USING dir||'%';
+                OPEN cur FOR 'SELECT rtrim(message_text) FROM table(gv$(CURSOR(SELECT * FROM V$DIAG_ALERT_EXT WHERE filename LIKE :d1)))' USING dir||'%';
             ELSIF vw IS NOT NULL THEN
-                OPEN cur FOR 'select PAYLOAD from ' || vw || '_CONTENTS where ADR_HOME=:d and TRACE_FILENAME=:f' USING dir, f;
+                OPEN cur FOR 'select rtrim(payload) from ' || vw || '_CONTENTS where ADR_HOME=:d and TRACE_FILENAME=:f' USING dir, f;
             END IF;
         
             IF cur IS NOT NULL THEN
@@ -140,10 +140,10 @@ function trace.get_trace(filename,mb,from_mb)
                     pos  := 0;
                     buff := '';
                     FOR i IN 1 .. t1.count LOOP
-                        t1(i) := regexp_replace(t1(i), '[' || chr(10) || chr(13) || ']+') || chr(10);
+                        t1(i) := rtrim(regexp_replace(t1(i), '[' || chr(10) || chr(13) || ']+')) || chr(10);
                         pos := pos + length(t1(i));
                         buff:= buff||t1(i);
-                        if pos >=30000 then
+                        if pos >=25000 then
                             fsize := fsize + pos;
                             dbms_lob.writeappend(text, pos,buff);
                             pos := 0;
