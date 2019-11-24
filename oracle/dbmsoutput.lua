@@ -191,7 +191,7 @@ function output.getOutput(item)
         args.autotrace=autotrace
         local done,err=pcall(db.exec_cache,db,output.stmt,args,'Internal_GetDBMSOutput')
         if not done then 
-            return --print(err)
+            return
         end
         
         local result=args.lob or args.buff
@@ -243,7 +243,6 @@ function output.getOutput(item)
         end
 
         db.resultset:close(args.stats)
-
         db.props.container=args.cont
         db.props.container_id=args.con_id
         db.props.container_dbid=args.con_dbid

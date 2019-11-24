@@ -380,7 +380,7 @@ function grid:add(row)
                     colsize[k][3],colsize[k][4]=""
                 end
             else
-                v=v:gsub('[^%S\n\r]+$',''):gsub("\t", '    '):gsub('%z+','')
+                v=v:sub(1,1048576):gsub('[^%S\n\r]+$',''):gsub("\t", '    '):gsub('%z+','')
                 if colsize[k][3] and v~=colsize[k][3] then 
                     colsize[k][3],colsize[k][4]=nil 
                 end
@@ -479,8 +479,9 @@ function grid:add(row)
             end
             result[#result + 1] = r
         end
+        rs=result[#result]
     end
-    result[#result].rsize=rsize
+    rs.rsize=rsize
     self.headind = headind + 1
     local sep=self.break_groups.__SEP__
     if headind>1 and sep~=nil then

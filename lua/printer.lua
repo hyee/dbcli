@@ -80,8 +80,7 @@ function printer.print(...)
         end
     end
 
-    output,rows=table.concat(output,' '):gsub("\r?\n","%0"..env.space)
-    output=NOR..env.space..output
+    output,rows=table.concat(output,' '):gsub("[^\n\r]*",function(s) return s=='' and '' or (NOR..env.space..s:sub(1,8192)) end)
      
     if printer.grep_text and not ignore then
         local stack=output:split('[\n\r]+')

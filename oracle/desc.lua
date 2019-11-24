@@ -12,13 +12,13 @@ local ad=[[(SELECT  /*+no_merge opt_param('optimizer_adaptive_plans' 'false') op
                      ba.dtm_levels,
                      e.used_hiers,
                      nullif(b.owner || '.', ad.owner || '.') || b.table_name || '.' || column_name source_column,
-                     decode(ba.role, 'KEY', to_char(d.member_name_expr)) member_expr,
+                     decode(ba.role, 'KEY', regexp_substr(to_char(substr(d.member_name_expr,1,1000)),'[^'||chr(10)||']*')) member_expr,
                      d.skip_when_null skip_null,
                      aggs.level_order,
                      c.caption attr_caption,
                      c.descr attr_Desc,
-                     decode(ba.role, 'KEY', to_char(d.member_caption_expr)) level_caption,
-                     decode(ba.role, 'KEY', to_char(d.member_description_expr)) level_desc
+                     decode(ba.role, 'KEY', regexp_substr(to_char(substr(d.member_caption_expr,1,1000)),'[^'||chr(10)||']*')) level_caption,
+                     decode(ba.role, 'KEY', regexp_substr(to_char(substr(d.member_description_expr,1,1000)),'[^'||chr(10)||']*')) level_desc
               FROM   (SELECT *
                       FROM   all_attribute_dim_tables
                       WHERE  owner = ad.owner
@@ -59,8 +59,8 @@ local ad=[[(SELECT  /*+no_merge opt_param('optimizer_adaptive_plans' 'false') op
                           GROUP  BY level_name) aggs
               ON     (ba.level_name = aggs.level_name)
               LEFT   JOIN (SELECT attribute_name,
-                                 MAX(DECODE(classification, 'CAPTION', to_char(substr(value,1,1000)))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST) caption,
-                                 MAX(DECODE(classification, 'DESCRIPTION', to_char(substr(value,1,1000)))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST) descr
+                                 MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST) caption,
+                                 MAX(DECODE(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST) descr
                           FROM   all_attribute_dim_attr_class j
                           WHERE  owner = ad.owner
                           AND    dimension_name = ad.dimension_name
@@ -109,7 +109,7 @@ local ah=([[ (SELECT /*+no_merge*/
                      END data_type,
                      ahc.nullable,
                      ahc.role,
-                     coalesce(adt.source_column,to_char(substr(ahd.expression,1,1000))) source_column,
+                     coalesce(adt.source_column,regexp_substr(to_char(substr(ahd.expression,1,1000)),'[^'||chr(10)||']*')) source_column,
                      adt.member_expr,
                      adt.skip_null,
                      adt.level_order,
@@ -134,8 +134,8 @@ local ah=([[ (SELECT /*+no_merge*/
                                    g.*, i.caption, i.descr
                            FROM   all_hier_hier_attributes g,
                                   (SELECT hier_attr_name,
-                                          MAX(DECODE(classification, 'CAPTION', to_char(substr(value,1,1000)))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
-                                          MAX(DECODE(classification, 'DESCRIPTION', to_char(substr(value,1,1000)))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  descr
+                                          MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
+                                          MAX(DECODE(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  descr
                                    FROM   all_hier_hier_attr_class
                                    WHERE  owner = ah.owner
                                    AND    hier_name = ah.hier_name
@@ -968,20 +968,12 @@ local desc_sql={
              to_char(all_member_caption) all_member_caption,
              to_char(all_member_description) all_member_description
       FROM   (SELECT * FROM all_attribute_dimensions JOIN dba_attribute_dim_tables USING (origin_con_id, owner, dimension_name)) ad
-      OUTER  APPLY (SELECT MAX(DECODE(classification, 'CAPTION', to_char(substr(value,1,1000)))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
-                           MAX(DECODE(classification, 'DESCRIPTION', to_char(substr(value,1,1000)))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  description
+      OUTER  APPLY (SELECT MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
+                           MAX(DECODE(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  description
                     FROM   all_attribute_dim_class j
                     WHERE  owner = ad.owner
                     AND    dimension_name = ad.dimension_name
                     AND    origin_con_id = ad.origin_con_id)
-      OUTER APPLY  (SELECT av_lvlgrp_order cache_id,
-                         listagg(nvl2(level_name,trim('.' from dimension_alias||'.'||hier_alias||'.'||level_name),''),',') WITHIN GROUP(ORDER BY level_meas_order) cache_levels,
-                         listagg(measure_name,',')  WITHIN GROUP(ORDER BY level_meas_order) cache_measures
-                    FROM   all_analytic_view_lvlgrps 
-                    WHERE  owner = av.owner
-                    AND    analytic_view_name = av.analytic_view_name
-                    AND    origin_con_id = av.origin_con_id
-                    GROUP  BY av_lvlgrp_order) 
       WHERE  owner = :owner
       AND    dimension_name = :object_name]],
     (([[
@@ -995,8 +987,8 @@ local desc_sql={
   HIERARCHY={
     [[SELECT dimension_owner, dimension_name,dim_source_table,parent_attr,caption,description
       FROM   all_hierarchies hr
-      OUTER APPLY(SELECT MAX(DECODE(classification, 'CAPTION', to_char(substr(value,1,1000)))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
-                         MAX(DECODE(classification, 'DESCRIPTION', to_char(substr(value,1,1000)))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  description
+      OUTER APPLY(SELECT MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
+                         MAX(DECODE(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  description
                   FROM   all_hier_class j
                   WHERE  owner = hr.owner
                   AND    hier_name = hr.hier_name
@@ -1016,12 +1008,20 @@ local desc_sql={
   ['ANALYTIC VIEW']={
    [[SELECT * 
      FROM  all_analytic_views av
-     OUTER APPLY( SELECT MAX(DECODE(classification, 'CAPTION', to_char(substr(value,1,1000)))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
-                         MAX(DECODE(classification, 'DESCRIPTION', to_char(substr(value,1,1000)))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  description
+     OUTER APPLY( SELECT MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
+                         MAX(DECODE(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  description
                   FROM   all_analytic_view_class j
                   WHERE  owner = av.owner
                   AND    analytic_view_name = av.analytic_view_name
                   AND    origin_con_id = av.origin_con_id)
+     OUTER APPLY  (SELECT av_lvlgrp_order cache_id,
+                         listagg(nvl2(level_name,trim('.' from dimension_alias||'.'||hier_alias||'.'||level_name),''),',') WITHIN GROUP(ORDER BY level_meas_order) cache_levels,
+                         listagg(measure_name,',')  WITHIN GROUP(ORDER BY level_meas_order) cache_measures
+                    FROM   all_analytic_view_lvlgrps 
+                    WHERE  owner = av.owner
+                    AND    analytic_view_name = av.analytic_view_name
+                    AND    origin_con_id = av.origin_con_id
+                    GROUP  BY av_lvlgrp_order) 
      WHERE owner = :owner 
      AND   analytic_view_name = :object_name]],
    [[SELECT hier_alias,
@@ -1035,9 +1035,9 @@ local desc_sql={
            dim_keys,
            fact_joins,
            references_distinct dim_key_distinct,
-           to_char(substr(all_member_name,1,1000)) all_dim_member_name,
-           to_char(substr(all_member_caption,1,1000)) all_dim_member_caption,
-           to_char(substr(all_member_description,1,1000)) all_dim_member_desc
+           regexp_substr(to_char(substr(all_member_name,1,1000)),'[^'||chr(10)||']*') all_dim_member_name,
+           regexp_substr(to_char(substr(all_member_caption,1,1000)),'[^'||chr(10)||']*') all_dim_member_caption,
+           regexp_substr(to_char(substr(all_member_description,1,1000)),'[^'||chr(10)||']*') all_dim_member_desc
     FROM   (SELECT owner,
                    analytic_view_name,
                    origin_con_id,

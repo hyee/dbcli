@@ -687,7 +687,16 @@ function db_core:exec_cache(sql,args,description)
 end
 
 function db_core:close_cache(description)
-    self:exec_cache('close',nil,description)
+    if description=='ALL' then
+        for desc,cache in pairs(self.__preparedCaches.__list) do
+            if type(cache[1])=='userdata' then
+                pcall(cache[1].close,cache[1])
+            end
+            self.__preparedCaches={}
+        end
+    else
+        self:exec_cache('close',nil,description)
+    end
 end
 
 function db_core.log_param(params)
