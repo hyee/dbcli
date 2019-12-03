@@ -59,6 +59,7 @@ AND    s.inst_id = p.inst_id
 AND    s.sid = sw.sid
 AND    s.inst_id = sw.inst_id
 AND    s.username IS NOT NULL
+AND    sw.wait_class!='Idle'
 ORDER  BY s.status DESC, s.last_call_et DESC, P.spid;
 
 

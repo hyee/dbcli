@@ -3,11 +3,11 @@
     The idn information can also be extracted by gv$db_object_cache.hash_value since 11g
 	Reference: https://github.com/xtender/xt_scripts/blob/master/idn.sql
 	--[[
-		@ver: 12.1={,KGLOBLCT LOCKED_TOTAL,KGLOBPCT PINNED_TOTAL} default={,KGLOBT23 LOCKED_TOTAL,KGLOBT24 PINNED_TOTAL}
+		@ver: 12.2={,KGLOBLCT LOCKED_TOTAL,KGLOBPCT PINNED_TOTAL} default={,KGLOBT23 LOCKED_TOTAL,KGLOBT24 PINNED_TOTAL}
 	--]]
 ]]*/
 SELECT * FROM TABLE(GV$(CURSOR(
-	SELECT  inst_id,
+	SELECT  inst_id,ob.KGLOBT03 sql_id,
 	        ob.kglnaown    owner
 	       ,ob.KGLNAOBJ    object
 	--       ,ob.KGLFNOBJ    fn_obj

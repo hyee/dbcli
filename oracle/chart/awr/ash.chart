@@ -25,7 +25,7 @@
         &Time_Filter:{
             default={&TIME_BAND},
             t={sample_time > sysdate - :V2/1440}, 
-            r={sample_time between nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-3 and nvl(to_date(:V3,'YYMMDDHH24MI'),sysdate)}
+            r={sample_time between nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-3) and nvl(to_date(:V3,'YYMMDDHH24MI'),sysdate)}
         }    
         &Filter:default={1=1},u={username=nvl('&0',sys_context('userenv','current_schema'))},f={}
         &GROUPS:{
