@@ -762,7 +762,6 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         caches[1],self.__stmts[str]=prep,caches
         prep:setFetchSize(cfg.get("FETCHSIZE"))
         prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
-        pcall(prep.closeOnCompletion,prep)
         self.current_stmt=prep
         env.log_debug("db","SQL:",sql)
         self.log_param(params)
