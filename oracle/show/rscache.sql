@@ -27,10 +27,17 @@ BEGIN
         l_arr(i) := trim(l_arr(i));
         IF l_arr(i) IS NOT NULL THEN
             IF i>2 AND l_arr(i) LIKE '[%' THEN
+                l_arr(i) := '$PROMPTCOLOR$'||l_arr(i)||'$NOR$';
+                FOR r IN(select rownum r,name,value,max(length(name)) over() l from v$parameter where name like '%result%cache%' and name not in('result_cache_max_result','result_cache_max_size')) LOOP
+                    l_list.extend;
+                    l_list(l_list.count) := '  ... '||rpad(r.name,r.l)||' = '||r.value;
+                END LOOP;
                 l_list.extend;
                 l_list(l_list.count) := ' ';
             ELSIF l_arr(i) NOT LIKE '[%' THEN
                 l_arr(i) := '  '||l_arr(i);
+            ELSE
+                l_arr(i) := '$PROMPTCOLOR$'||l_arr(i)||'$NOR$';
             END IF;
             l_list.extend;
             l_list(l_list.count) := l_arr(i);
@@ -44,7 +51,8 @@ BEGIN
     END IF;
     
     OPEN :c1 FOR 
-        select name,
+        select min(id) id,
+               name,
                decode(name,'Block Size (Bytes)',max(value)+0,sum(value)) value
         from  gv$result_cache_statistics 
         where inst_id=nvl(:instance,inst_id)
@@ -77,11 +85,11 @@ BEGIN
                                            c.scan_count + c.pin_count scans,
                                            build_time,
                                            invalidations invalids,
-                                           NULLIF(c.object_no,0) object_no
-                                  FROM   (SELECT result_id ID, depend_id
+                                           NVL(NULLIF(a.object_no,0),NULLIF(c.object_no,0)) object_no
+                                  FROM   (SELECT result_id ID, depend_id,object_no
                                           FROM   v$result_cache_dependency
                                           UNION
-                                          SELECT result_id, result_id
+                                          SELECT result_id, result_id,null
                                           FROM   v$result_cache_dependency) a,
                                          v$result_cache_objects c
                                   WHERE  a.depend_id(+) = c.id
@@ -131,8 +139,29 @@ END;
 /
 
 grid {
-    '/*grid={topic="Result Cache Stats"}*/ c1',
-    '-',"select /*grid={topic='Result Cache Summary'}*/ type,status,count(1) keys,sum(block_count) blocks,count(distinct regexp_substr(name,'[^#]+')) items from gv$result_cache_objects group by type,status order by 1,2",
-    '|','/*grid={topic="Top 30 Based Objects"}*/ c4',
-    '|','/*grid={topic="Result Cache Memory Report"}*/ c2','-','/*grid={topic="Top 30 Scanned Results"}*/ c3'
+    '/*grid={topic="Statistics"}*/ c1',
+    '-',[[/*grid={topic='Object Summary'}*/ 
+        SELECT DECODE(r, 1, 'T-' || TYPE, 2, 'S-' || status,3, 'N-' || NVL(namespace, 'OBJECT'),'O-'||u) TYPE,
+               COUNT(1) keys,
+               SUM(blocks) blocks,
+               SUM(pins) pins,
+               SUM(scans) scans,
+               SUM(items) items
+        FROM   (SELECT TYPE,
+                       status,
+                       namespace,
+                       DECODE(creator_uid,0,'SYS','USER') u,
+                       COUNT(1) keys,
+                       SUM(block_count) blocks,
+                       SUM(pin_count) pins,
+                       SUM(scan_count) scans,
+                       COUNT(DISTINCT regexp_substr(NAME, '[^#]+')) items
+                FROM   gv$result_cache_objects
+                GROUP  BY TYPE, status, namespace,DECODE(creator_uid,0,'SYS','USER')) a,
+               (SELECT ROWNUM r FROM dual CONNECT BY ROWNUM <= 4) b
+        GROUP  BY DECODE(r, 1, 'T-' || TYPE, 2, 'S-' || status,3, 'N-' || NVL(namespace, 'OBJECT'),'O-'||u)
+        ORDER  BY 1 DESC]],
+    '+','/*grid={topic="Top 30 Based Objects"}*/ c4',
+    '+','/*grid={topic="Local Memory Report"}*/ c2',
+    '-','/*grid={topic="Top 30 Scanned Results ( Keys=Count(ID[Result]) Invalids=Invalidations Scans=Scan+Pin Bytes=Blocks*BlockSize )"}*/ c3'
 }

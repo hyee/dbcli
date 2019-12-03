@@ -240,6 +240,7 @@ function oracle:connect(conn_str)
         BEGIN
             EXECUTE IMMEDIATE q'[alter session set nls_date_format='yyyy-mm-dd hh24:mi:ss' nls_timestamp_format='yyyy-mm-dd hh24:mi:ssxff' nls_timestamp_tz_format='yyyy-mm-dd hh24:mi:ssxff TZH:TZM']';
             BEGIN
+                dbms_output.enable(null);
                 EXECUTE IMMEDIATE 'alter session set statistics_level=all';
                 EXECUTE IMMEDIATE 'alter session set parallel_degree_policy=MANUAL';
                 EXECUTE IMMEDIATE 'alter session set "_query_execution_cache_max_size"=4194304';

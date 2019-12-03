@@ -6,7 +6,7 @@ local output={}
 local prev_transaction
 local enabled='on'
 local autotrace='off'
-local default_args={enable=enabled,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB",con_name="#VARCHAR",con_id="#NUMBER",con_dbid="#NUMBER",dbid="#NUMBER",stats='#CURSOR'}
+local default_args={enable=enabled,cdbid=-1,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB",con_name="#VARCHAR",con_id="#NUMBER",con_dbid="#NUMBER",dbid="#NUMBER",stats='#CURSOR'}
 local prev_stats
 
 function output.setOutput(db)
@@ -32,7 +32,7 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             l_size   PLS_INTEGER;
             l_cont   VARCHAR2(50);
             l_cid    PLS_INTEGER;
-            l_cdbid  INT;
+            l_cdbid  INT := :cdbid;
             l_dbid   INT;
             l_stats  SYS_REFCURSOR;
             l_sep    VARCHAR2(10) := chr(1)||chr(2)||chr(3)||chr(10); 
@@ -60,12 +60,27 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             else
                 open l_stats for select /*+dbcli_ignore*/ * from dual;
             end if;
-            dbms_output.get_lines(l_arr, l_done);
+
+            $IF dbms_db_version.version > 11 $THEN
+                IF l_cdbid != sys_context('userenv', 'con_dbid') THEN
+                    dbms_output.disable;
+                    dbms_output.enable(null);
+                END IF;
+                l_cont  :=sys_context('userenv', 'con_name'); 
+                l_cid   :=sys_context('userenv', 'con_id'); 
+                l_cdbid :=sys_context('userenv', 'con_dbid'); 
+            $END
+
+            
             IF l_enable = 'on' THEN
+                dbms_output.get_lines(l_arr, l_done);
                 FOR i IN 1 .. l_done LOOP
                     l_buffer := l_buffer || l_arr(i) || chr(10);
                     wr;
                 END LOOP;
+            ELSE
+                dbms_output.disable;
+                dbms_output.enable(null);
             END IF;
 
             IF l_trace NOT IN('off','statistics','sql_id') THEN
@@ -136,12 +151,6 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
                 l_lob := replace(l_lob,l_sep,rpad('=',l_max,'=')||chr(10));
             end if;
 
-            $IF dbms_db_version.version > 11 $THEN 
-                l_cont  :=sys_context('userenv', 'con_name'); 
-                l_cid   :=sys_context('userenv', 'con_id'); 
-                l_cdbid :=sys_context('userenv', 'con_dbid'); 
-            $END
-
             $IF dbms_db_version.version > 12 or dbms_db_version.version=12 and dbms_db_version.release>1 $THEN 
                 l_dbid  :=sys_context('userenv', 'dbid'); 
             $END
@@ -189,6 +198,7 @@ function output.getOutput(item)
         local args=table.clone(default_args)
         args.sql_id=autotrace=='off' and 'x' or loader:computeSQLIdFromText(sql)
         args.autotrace=autotrace
+        args.cdbid=tonumber(db.props.container_dbid) or -1
         local done,err=pcall(db.exec_cache,db,output.stmt,args,'Internal_GetDBMSOutput')
         if not done then 
             return
