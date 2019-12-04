@@ -110,11 +110,9 @@ local options ={'-noverify',
 			    '-Djava.awt.headless=true',
 				'-Djava.library.path='..resolve("./lib/"..dlldir),
 				'-Djava.security.egd=file:/dev/./urandom',
-				--'-Djava.home='..java_home,
 			    '-Djava.class.path='..jars}
-for _,param in ipairs(other_options) do options[#options+1]=param end 
-
-javavm = require("javavm",true)
+for _,param in ipairs(other_options) do options[#options+1]=param end
+local javavm = require("javavm",true)
 javavm.create(table.unpack(options))
 local destroy=javavm.destroy
 loader = java.require("org.dbcli.Loader",true).get()

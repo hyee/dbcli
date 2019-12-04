@@ -69,6 +69,7 @@ local template,cr
         _ylabels={"<label1>",...}: Customize the ylabel for each chart, if not define then use the names from "_sql"
         _range="<Time range>"    : Used in sub-title, if not specified then auto-caculate the range
         _sorter=<number>         : Choose the top <ChartSeries> based on the nth field of the summary, default as deviation%(12)
+        _series=<number>         : Max series to be shown in the chart, default as 20
         deviation=true|false     : False for org value, and true to display the data based on deviation%(value*100/average)
 ]]--
 
@@ -195,7 +196,7 @@ function graph:run_sql(sql,args,cmd,file)
     --grid.print(rows)
     local counter,range_begin,range_end,x_name=-1
     local head,cols=table.remove(rows,1)
-    local maxaxis=cfg.get('Graph_Series')
+    local maxaxis=tonumber(default_attrs._series) or cfg.get('Graph_Series')
     table.sort(rows,function(a,b) return a[1]<b[1] end)
     --print(table.dump(rows))
     if pivot==nil then

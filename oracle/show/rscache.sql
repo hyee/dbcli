@@ -1,7 +1,10 @@
-/*[[Show result cache report]]*/
+/*[[Show result cache report
+    --[[ @dst: 19={DISTINCT} default={}
+    --]]
+]]*/
 set feed off verify off
 col value for k0
-col keys,deps,rows#,blocks,scans,invalids for tmb
+col keys,deps,rows#,blks,scans,invalids for tmb
 col build,dep_build_time for msmhd2
 col bytes,dep_bytes for kmg
 var c1 refcursor
@@ -53,10 +56,9 @@ BEGIN
     OPEN :c1 FOR 
         select min(id) id,
                name,
-               decode(name,'Block Size (Bytes)',max(value)+0,sum(value)) value
+               decode(name,'Block Size (Bytes)',round(avg(value)),'LRU Chain Scan Depth',round(avg(value)),sum(value)) value
         from  gv$result_cache_statistics 
-        where inst_id=nvl(:instance,inst_id)
-        and   name!='Hash Chain Length'
+        where regexp_like(value,'^\d+$')
         group by name
         order by 1,2;
 
@@ -67,19 +69,19 @@ BEGIN
         SELECT *
         FROM   (SELECT SUM(scans) scans,
                        SUM(DECODE(flag, 1, 1)) keys,
-                       SUM(DECODE(flag, 1, bytes)) bytes,
                        SUM(cnt) rows#,
+                       SUM(DECODE(flag, 1, bytes)) bytes,
                        SUM(build_time * 10) build,
-                       SUM(DECODE(flag, 2, bytes)) dep_bytes,
+                       --SUM(DECODE(flag, 2, bytes)) dep_bytes,
                        SUM(invalids) invalids,
                        root_name NAME,
-                       regexp_replace(listagg(object_no,',') within group(order by object_no),'(\d+)(,\1)+','\1') dep_objs
-                FROM   TABLE(GV$(CURSOR (
-                                  SELECT /*+leading(c) use_hash(b c)*/
+                       regexp_replace(listagg(&dst object_no,',') within group(order by object_no),'([^,]+)(,\1)+','\1') dep_objs
+                FROM   TABLE(GV$(CURSOR(
+                                  SELECT /*+leading(c) use_hash(a c) no_merge(a) no_expand*/
                                   DISTINCT userenv('instance') inst_id,
                                            c.type,
                                            DECODE(a.id, c.id, 1, NULL, 1, 2) flag,
-                                           MAX(regexp_substr(DECODE(a.id, c.id, c.name, NULL, c.name), '[^#]+')) OVER(PARTITION BY nvl(a.id, c.id)) root_name,
+                                           MAX(regexp_replace(DECODE(a.id, c.id, c.name, NULL, c.name),'(\W)#.*','\1')) OVER(PARTITION BY nvl(a.id, c.id)) root_name,
                                            ROW_COUNT cnt,
                                            block_count*(select value from v$result_cache_statistics where name='Block Size (Bytes)' and rownum<2) bytes,
                                            c.scan_count + c.pin_count scans,
@@ -103,19 +105,20 @@ BEGIN
     OPEN :c4 FOR q'{
         SELECT *
         FROM   (SELECT object_no obj#,
-                       MAX(root_name) NAME,
+                       MAX(decode(flag,1,root_name)) OBJECT_NAME,
+                       COUNT(DISTINCT decode(flag,2,root_name)) names,
                        COUNT(depend_id) keys,
+                       SUM(cnt) rows#,
                        SUM(DECODE(flag, 2, bytes)) bytes,
                        SUM(scans) scans,
-                       SUM(cnt) rows#,
                        SUM(build_time * 10) build,
                        SUM(invalids) invalids
-                FROM   TABLE(GV$(CURSOR (
-                                  SELECT /*+leading(c) use_hash(b c)*/
+                FROM   TABLE(GV$(CURSOR(
+                                  SELECT /*+leading(c) use_hash(a c) no_merge(a) no_expand*/
                                   DISTINCT userenv('instance') inst_id,
                                            c.type,
                                            DECODE(a.id, c.id, 1, NULL, 1, 2) flag,
-                                           MAX(regexp_substr(DECODE(a.id, c.id, c.name, NULL, c.name), '[^#]+')) OVER(PARTITION BY nvl(a.id, c.id)) root_name,
+                                           regexp_replace(c.name,'(\W)#.*','\1') root_name,
                                            ROW_COUNT cnt,
                                            block_count*(select value from v$result_cache_statistics where name='Block Size (Bytes)' and rownum<2) bytes,
                                            c.scan_count + c.pin_count scans,
@@ -141,25 +144,20 @@ END;
 grid {
     '/*grid={topic="Statistics"}*/ c1',
     '-',[[/*grid={topic='Object Summary'}*/ 
-        SELECT DECODE(r, 1, 'T-' || TYPE, 2, 'S-' || status,3, 'N-' || NVL(namespace, 'OBJECT'),'O-'||u) TYPE,
+        SELECT --+NO_EXPAND_GSET_TO_UNION
+               coalesce(t,s,n,u) type,
+               COUNT(DISTINCT regexp_replace(name,'\W#.*')) names,
                COUNT(1) keys,
-               SUM(blocks) blocks,
-               SUM(pins) pins,
-               SUM(scans) scans,
-               SUM(items) items
-        FROM   (SELECT TYPE,
-                       status,
-                       namespace,
-                       DECODE(creator_uid,0,'SYS','USER') u,
-                       COUNT(1) keys,
-                       SUM(block_count) blocks,
-                       SUM(pin_count) pins,
-                       SUM(scan_count) scans,
-                       COUNT(DISTINCT regexp_substr(NAME, '[^#]+')) items
-                FROM   gv$result_cache_objects
-                GROUP  BY TYPE, status, namespace,DECODE(creator_uid,0,'SYS','USER')) a,
-               (SELECT ROWNUM r FROM dual CONNECT BY ROWNUM <= 4) b
-        GROUP  BY DECODE(r, 1, 'T-' || TYPE, 2, 'S-' || status,3, 'N-' || NVL(namespace, 'OBJECT'),'O-'||u)
+               SUM(block_count) blks,
+               SUM(pin_count) pins,
+               SUM(scan_count) scans
+        FROM   (SELECT a.*,
+                       'T-' || type t,
+                       'S-' || status s,
+                       'N-' || NVL(namespace, 'OBJECT') n,
+                       'C-' || DECODE(creator_uid, 0, 'SYS', 'USER') u
+                FROM   gv$result_cache_objects a)
+        GROUP  BY GROUPING SETS(t, s, n, u)
         ORDER  BY 1 DESC]],
     '+','/*grid={topic="Top 30 Based Objects"}*/ c4',
     '+','/*grid={topic="Local Memory Report"}*/ c2',

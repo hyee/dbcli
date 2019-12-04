@@ -5,6 +5,36 @@ local event=env.event and env.event.callback or nil
 local db_core=env.class()
 local db_Types={}
 db_core.NOT_ASSIGNED='__NO_ASSIGNMENT__'
+local rs_close,rs_isclosed,prep_close,prep_isclosed,prep_exec
+
+local function is_rsclosed(rs)
+	if type(rs)~='userdata' then return true end
+	if not rs_isclosed then rs_isclosed=rs.isClosed end
+	if not rs_isclosed then return true end
+	return rs_isclosed(rs)
+end
+
+local function close_rs(rs)
+	if type(rs)~='userdata' then return nil end
+	if not rs_close then rs_close=rs.close end
+	if not rs_close then return nil end
+	pcall(rs_close,rs)
+end
+
+local function is_prepclosed(prep)
+	if type(prep)~='userdata' then return true end
+	if not prep_isclosed then prep_isclosed=prep.isClosed end
+	if not prep_isclosed then return true end
+	return prep_isclosed(prep)
+end
+
+local function close_prep(prep)
+	if type(prep)~='userdata' then return nil end
+	if not prep_close then prep_close=prep.close end
+	if not prep_close then return nil end
+	pcall(prep_close,prep)
+end
+
 function db_Types:set(typeName,value,conn)
     local typ=self[typeName]
     if value==nil or value==db_core.NOT_ASSIGNED then
@@ -204,11 +234,9 @@ function ResultSet:fetch(rs,conn)
     return result
 end
 
-local rs_close
 function ResultSet:close(rs)
     if rs then
-        if not rs_close then rs_close=rs.close end
-        if rs_close then pcall(rs_close,rs) end
+        close_rs(rs)
         if self[rs] then self[rs]=nil end
     end
     local clock=os.clock()
@@ -216,9 +244,7 @@ function ResultSet:close(rs)
     if  self.__clock then
         if clock-self.__clock > 60 then
             for k,v in pairs(self) do
-                if type(k)=='userdata' and k.isClosed and k:isClosed() then
-                    self[k]=nil
-                end
+                if is_rsclosed(k) then self[k]=nil end
             end
             self.__clock=clock
         end
@@ -228,7 +254,7 @@ function ResultSet:close(rs)
 end
 
 function ResultSet:rows(rs,count,null_value,is_close)
-    if type(rs)~="userdata" or (rs.isClosed and rs:isClosed()) then return end
+    if is_rsclosed(rs) then return end
     count=tonumber(count) or -1
     local titles=self:getHeads(rs)
     local head=titles.__titles
@@ -264,7 +290,7 @@ function ResultSet:rows(rs,count,null_value,is_close)
             end
         end
     end
-    if (is_close==true or count <0 ) and rs.close then
+    if (is_close==true or count <0 ) then
         self:close(rs)
     end
     table.insert(rows,1,head)
@@ -273,7 +299,7 @@ end
 
 function ResultSet:print(res,conn,prefix)
     local result,hdl={},nil
-    if type(res)~="userdata" or (res.isClosed and res:isClosed()) then return end
+    if is_rsclosed(res) then return end
     local cols=self:getHeads(res)
     if #cols==1 then
         if cfg.get("pipequery")=="on" then
@@ -302,7 +328,7 @@ end
 
 function ResultSet:print_old(res,conn)
     local result,hdl={},nil
-    if res:isClosed() then return end
+    if is_rsclosed(res) then return end
     local rows,maxrows,feedflag,pivot=0,cfg.get("printsize"),cfg.get("feed"),cfg.get("pivot")
     if pivot==0 then hdl=grid.new() end
     while true do
@@ -619,7 +645,7 @@ function db_core:exec_cache(sql,args,description)
     end
 
     local prep,org,params,_sql
-    if not cache or cache[1]:isClosed() then
+    if not cache or is_prepclosed(cache[1]) then
         org=table.clone(args)
         if type(description)=="string" and description~='' then
             cache=self.__preparedCaches.__list[description]
@@ -758,8 +784,8 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         prep,sql,params=self:parse(sql,params)
         prep:setEscapeProcessing(false)
         local str = tostring(prep)
-        caches=self.__stmts[str] or {prep}
-        caches[1],self.__stmts[str]=prep,caches
+        caches=self.__stmts[str] or {{}}
+        caches.count,caches[1][#caches[1]+1],self.__stmts[str]=0,prep,caches
         prep:setFetchSize(cfg.get("FETCHSIZE"))
         prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
         self.current_stmt=prep
@@ -956,17 +982,24 @@ function db_core:clearStatements(is_force)
     if is_force~=true then
         for prep,caches in pairs(self.__stmts) do
             for j=#caches,2,-1 do
-                if caches[j]:isClosed() then table.remove(caches,j) end
+                if is_rsclosed(caches[j]) then table.remove(caches,j) end
             end
+
             if #caches<2 then
-                pcall(caches[1].close,caches[1])
-                self.__stmts[prep],counter=nil,1 
+            	for k,p in ipairs(caches[1]) do close_prep(p) end
+                self.__stmts[prep],counter=nil,1
+            else
+            	caches.count=caches.count+1
+            	if caches.count >= cfg.get('SQLCACHESIZE') then
+            		for k,p in ipairs(caches[1]) do close_prep(p) end
+            		self.__stmts[prep],counter=nil,1
+            	end
             end
         end
     else
         counter=1
         for prep,caches in pairs(self.__stmts) do
-            pcall(prep.close,prep)
+        	for k,p in ipairs(caches[1]) do close_prep(p) end
         end
         self.__stmts={}
     end

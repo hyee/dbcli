@@ -694,14 +694,14 @@ local desc_sql={
     WITH r1 AS (SELECT /*+no_merge*/* FROM all_part_key_columns WHERE owner=:owner and NAME = :object_name),
            r2 AS (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=:owner and NAME = :object_name)
     SELECT PARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
-                                FROM   r1
-                                START  WITH column_position = 1
-                                CONNECT BY PRIOR column_position = column_position - 1) PARTITIONED_BY,
+                                 FROM   r1
+                                 START  WITH column_position = 1
+                                 CONNECT BY PRIOR column_position = column_position - 1) PARTITIONED_BY,
             PARTITION_COUNT PARTS,
             SUBPARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
-                                        FROM   R2
-                                        START  WITH column_position = 1
-                                        CONNECT BY PRIOR column_position = column_position - 1) SUBPART_BY,
+                                     FROM   R2
+                                     START  WITH column_position = 1
+                                     CONNECT BY PRIOR column_position = column_position - 1) SUBPART_BY,
             def_subpartition_count subs,
             DEF_TABLESPACE_NAME,
             DEF_PCT_FREE,
@@ -711,10 +711,10 @@ local desc_sql={
     FROM   all_part_tables
     WHERE  table_name = :object_name
     AND    owner = :owner]],
-    [[
-        SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/*
-        FROM   ALL_TABLES T
-        WHERE  T.OWNER = :owner AND T.TABLE_NAME = :object_name]]},
+    [[SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/*
+      FROM   ALL_TABLES T
+      WHERE  T.OWNER = :owner AND T.TABLE_NAME = :object_name]]},
+      
     ['TABLE PARTITION']={[[
          SELECT /*INTERNAL_DBCLI_CMD*/ COLUMN_ID NO#,
                 a.COLUMN_NAME NAME,
@@ -967,7 +967,7 @@ local desc_sql={
              to_char(all_member_name) all_member_name,
              to_char(all_member_caption) all_member_caption,
              to_char(all_member_description) all_member_description
-      FROM   (SELECT * FROM all_attribute_dimensions JOIN dba_attribute_dim_tables USING (origin_con_id, owner, dimension_name)) ad
+      FROM   (SELECT * FROM all_attribute_dimensions JOIN all_attribute_dim_tables USING (origin_con_id, owner, dimension_name)) ad
       OUTER  APPLY (SELECT MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
                            MAX(DECODE(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  description
                     FROM   all_attribute_dim_class j
