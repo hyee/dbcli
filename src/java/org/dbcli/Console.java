@@ -292,6 +292,11 @@ public final class Console {
             public InputStream read() throws IOException {
                 return new ByteArrayInputStream(output.getBytes());
             }
+
+            @Override
+            public Long lines() {
+                return null;
+            }
         };
         Less less = new Less(terminal);
         less.noInit = true;
@@ -615,6 +620,16 @@ public final class Console {
             } finally {
 
             }
+        }
+
+        @Override
+        public void setErrorPattern(Pattern errorPattern) {
+
+        }
+
+        @Override
+        public void setErrorIndex(int errorIndex) {
+
         }
     }
 }

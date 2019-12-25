@@ -77,7 +77,7 @@ public interface NuWinNT {
         }
     }
 
-    static class WORD extends IntegerType {
+    class WORD extends IntegerType {
         public static final int SIZE = 2;
 
         public WORD() {
@@ -89,7 +89,7 @@ public interface NuWinNT {
         }
     }
 
-    static class DWORD extends IntegerType {
+    class DWORD extends IntegerType {
         public static final int SIZE = 4;
 
         public DWORD() {
@@ -101,7 +101,7 @@ public interface NuWinNT {
         }
     }
 
-    static class ULONG_PTR extends IntegerType {
+    class ULONG_PTR extends IntegerType {
         public ULONG_PTR() {
             this(0);
         }
@@ -115,7 +115,7 @@ public interface NuWinNT {
         }
     }
 
-    static class ULONG_PTRByReference extends ByReference {
+    class ULONG_PTRByReference extends ByReference {
         public ULONG_PTRByReference() {
             this(new ULONG_PTR(0));
         }
@@ -146,7 +146,7 @@ public interface NuWinNT {
         @Override
         @SuppressWarnings("rawtypes")
         protected List getFieldOrder() {
-            return Arrays.asList(new String[]{"dwLength", "lpSecurityDescriptor", "bInheritHandle"});
+            return Arrays.asList("dwLength", "lpSecurityDescriptor", "bInheritHandle");
         }
     }
 
@@ -173,8 +173,8 @@ public interface NuWinNT {
         @Override
         @SuppressWarnings("rawtypes")
         protected List getFieldOrder() {
-            return Arrays.asList(new String[]{"cb", "lpReserved", "lpDesktop", "lpTitle", "dwX", "dwY", "dwXSize", "dwYSize", "dwXCountChars", "dwYCountChars",
-                    "dwFillAttribute", "dwFlags", "wShowWindow", "cbReserved2", "lpReserved2", "hStdInput", "hStdOutput", "hStdError"});
+            return Arrays.asList("cb", "lpReserved", "lpDesktop", "lpTitle", "dwX", "dwY", "dwXSize", "dwYSize", "dwXCountChars", "dwYCountChars",
+                    "dwFillAttribute", "dwFlags", "wShowWindow", "cbReserved2", "lpReserved2", "hStdInput", "hStdOutput", "hStdError");
         }
 
         public STARTUPINFO() {
@@ -191,7 +191,7 @@ public interface NuWinNT {
         @Override
         @SuppressWarnings("rawtypes")
         protected List getFieldOrder() {
-            return Arrays.asList(new String[]{"hProcess", "hThread", "dwProcessId", "dwThreadId"});
+            return Arrays.asList("hProcess", "hThread", "dwProcessId", "dwThreadId");
         }
     }
 }

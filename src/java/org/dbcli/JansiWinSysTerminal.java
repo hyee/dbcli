@@ -21,6 +21,7 @@ import org.jline.terminal.impl.AbstractWindowsTerminal;
 import org.jline.terminal.impl.jansi.win.WindowsAnsiWriter;
 import org.jline.utils.InfoCmp;
 import org.jline.utils.OSUtils;
+import org.jline.utils.Status;
 
 import java.io.BufferedWriter;
 import java.io.IOError;
@@ -158,8 +159,14 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
 
     public JansiWinSysTerminal(Writer writer, String name, String type, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler) throws IOException {
         super(writer, name, type, encoding, codepage, nativeSignals, signalHandler);
+        this.status=null;
         t.setDaemon(true);
         t.start();
+    }
+
+    @Override
+    public Status getStatus() {
+        return null;
     }
 
     @Override

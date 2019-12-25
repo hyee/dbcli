@@ -22,10 +22,10 @@ SET JAVA_HOME=
 for /F "usebackq delims=" %%p in (`where java.exe 2^>NUL`) do (
   If exist %%~sp (
       set "JAVA_EXE_=%%~sp"
-      FOR /F "tokens=1,2 delims== " %%i IN ('!JAVA_EXE_! -XshowSettings:properties -version 2^>^&1^|findstr "java\.home java.version os.arch"' ) do (
+      FOR /F "tokens=1,2 delims== " %%i IN ('!JAVA_EXE_! -XshowSettings:properties 2^>^&1^|findstr "java\.home java.version os.arch"' ) do (
         if "%%i" equ "java.home" set "JAVA_BIN_=%%~sj\bin"
         if "%%i" equ "os.arch" if "%%j" equ "x86" (set bit_=x86) else (set bit_=x64)
-        if "%%i" equ "java.version" if "1.8" GTR "%%j" set "JAVA_EXE_="
+        if "%%i" equ "java.class.version" if "52.0" GTR "%%j" set "JAVA_EXE_="
       )
       if "!JAVA_EXE_!" neq "" if "!JAVA_BIN_!" neq "" (
         set "JAVA_BIN=!JAVA_BIN_!" & set "JAVA_EXE=!JAVA_BIN_!\java.exe" & set "bit=!bit_!"

@@ -47,13 +47,13 @@ fi
 found=0
 if [[ "$_java" ]]; then
     found=2
-    version=$("$_java" -version 2>&1)
-    ver=$(echo $version | awk -F '"' '/version/ {print $2}')
-    
-    if [[ "$ver" < "1.8" ]]; then
+    info=$("$_java" -XshowSettings:properties 2>&1)
+    bit=$(echo "$info"|grep "sun.arch.data.model"|awk '{print $3}')
+    ver=$(echo "$info"|grep "java.class.version" |awk '{print $3}')
+
+    if [[ "$ver" < "52.0" ]] || [[ "$bit" != "64" ]]; then
         found=1
     fi
-    echo $version|grep "64-Bit" &>/dev/null ||  found=1
 fi
 
 chmod  777 ./jre_$os/bin/* &>/dev/null

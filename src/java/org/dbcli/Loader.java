@@ -107,9 +107,9 @@ public class Loader {
         console.setLua(lua);
         String separator = File.separator;
         String input = root + separator + "lua" + separator + "input.lua";
-        if (console.writer != null) {
+        if (Console.writer != null) {
             lua.pushGlobal("reader", console.reader);
-            lua.pushGlobal("writer", console.writer);
+            lua.pushGlobal("writer", Console.writer);
             lua.pushGlobal("terminal", console.terminal);
             lua.pushGlobal("console", console);
             lua.pushGlobal("WORK_DIR", root + separator);
