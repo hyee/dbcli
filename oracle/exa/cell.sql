@@ -81,6 +81,7 @@ BEGIN
             SELECT CAST(NVL(CELL,'--TOTAL--') AS VARCHAR2(20)) cell,
                    SUM(decode("flashCacheStatus",'normal',"FlashCache")) "FlashCache",
                    SUM(decode("flashCacheStatus",'normal',"FlashLog")) "FlashLog",
+                   SUM(numPmem*regexp_substr(pmemType,'(\d+[\d\.]*)[GT]',1,1,'i',1))||max(regexp_substr(pmemType,'(\d+[\d\.]*)([GT])',1,1,'i',2)) "PMEM",
                    SUM("CellDisks") "CellDisks",
                    SUM("GridDisks") "GridDisks",
                    SUM("HardDisks") "HardDisks",
@@ -107,7 +108,8 @@ BEGIN
                                     "maxHDMBPS" INT path 'maxPDMBPS', "maxFDMBPS" INT path 'maxFDMBPS', "dwhHDQL" INT path 'dwhPDQL', "dwhFDQL" INT path 'dwhFDQL',
                                     "oltpHDQL" INT path 'oltpPDQL', "oltpFDQL" INT path 'oltpFDQL', "hardDiskType" VARCHAR2(300) path 'hardDiskType',
                                     "flashDiskType" VARCHAR2(300) path 'flashDiskType', "flashCacheStatus" VARCHAR2(300) path 'flashCacheStatus',
-                                    "cellPkg" VARCHAR2(300) path 'cellPkg') b
+                                    "cellPkg" VARCHAR2(300) path 'cellPkg',
+                                    numPmem int path 'numPmem',pmemType varchar2(100) path 'pmemType',pmemCacheStatus varchar2(100) path 'pmemCacheStatus') b
                     WHERE  conftype = 'AWRXML')
             GROUP  BY ROLLUP(CELL);
 
@@ -139,9 +141,11 @@ BEGIN
                                 AND    rownum < 2),'--TOTAL--') cell,
                         nvl(cellhash,0) cellhash,
                         SUM(DECODE(disktype, 'HardDisk', 1,0)) HD,
-                        SUM(DECODE(disktype, 'HardDisk', 0,1))  FD,
+                        SUM(DECODE(disktype, 'FlashDisk', 1,0))  FD,
+                        SUM(DECODE(disktype, 'PMEM', 1,0))  PMEM,
                         SUM(DECODE(disktype, 'HardDisk', siz)) HD_SIZE,
                         SUM(DECODE(disktype, 'FlashDisk', siz)) FD_SIZE,
+                        SUM(DECODE(disktype, 'PMEM', siz))  PMEM_SIZE,
                         SUM(siz) total_size,
                         SUM(freeSpace) unalloc,
                         '|' "|"
@@ -157,9 +161,10 @@ BEGIN
                 GROUP  BY rollup((cellname,CELLHASH)))
             RIGHT JOIN (
                 select cellhash,
-                       round(sum(decode(n,'RAM cache read requests hit',v))/nullif(sum(decode(n,'RAM cache read requests hit',v,'RAM cache read misses',v)),0)*100,2) "RAM|HIT",
-                       round(sum(decode(n,'Flash cache read requests hit',v))/nullif(sum(decode(n,'Flash cache read requests hit',v,'Flash cache misses and partial hits',v)),0)*100,2) "FC|HIT",
-                       round(sum(decode(n,'Flash cache read requests - columnar',v))/nullif(sum(decode(n,'Flash cache columnar read requests eligible',v)),0)*100,2) "FCC|HIT",
+                       round(sum(decode(n,'RAM cache read requests hit',v))/nullif(sum(decode(n,'RAM cache read requests hit',v,'RAM cache read misses',v)),0),4) "RAM|HIT",
+                       round(sum(decode(n,'PMEM cache read requests hit',v))/nullif(sum(decode(n,'PMEM cache read requests hit',v,'PMEM cache read misses',v)),0),4) "PMEM|HIT",
+                       round(sum(decode(n,'Flash cache read requests hit',v))/nullif(sum(decode(n,'Flash cache read requests hit',v,'Flash cache misses and partial hits',v)),0),4) "FC|HIT",
+                       round(sum(decode(n,'Flash cache read requests - columnar',v))/nullif(sum(decode(n,'Flash cache columnar read requests eligible',v)),0),4) "FCC|HIT",
                        '|' "|"
                 from gstats
                 group by cellhash) USING(cellhash)
@@ -178,46 +183,55 @@ BEGIN
                         'Flash cache bytes allocated for OLTP keep objects' AS  "Keep|OLTP",
                         --'Flash cache bytes used - columnar keep' AS "Keep|FCC",
                         '|' as "|",
+                        'PMEM cache bytes allocated' as "Alloc|PMEM",
+                        'PMEM cache bytes used for OLTP data' as "PMEM|OLTP",
                         'RAM cache bytes allocated' as "Alloc|RAM",
                         'RAM cache bytes allocated for OLTP data' as "RAM|OLTP"))) b 
             USING(cellhash);
 
         OPEN c3 FOR
             WITH grid AS(
-                SELECT a.*,round(fc*max(decode(grp,'CELLDISKS',siz)) over(partition by cachedBy)/count(1) over(partition by grp,cachedBy)) fcsize
-                FROM(
-                    SELECT conftype grp,
-                           DISKGROUP,
-                           nvl(cachedBy,name) cachedBy,
-                           count(distinct diskType) over() dtypes,
-                           sum(nvl2(cachedBy,1,0)) over (partition by nvl(cachedBy,name)) caching,
-                           nvl(cellDisk,name) name,
-                           decode(diskType,'',0, 'FlashDisk', 0, 1) hd,
-                           decode(diskType,'',0, 'FlashDisk', 1, 0) fd,
-                           errors errors,
-                           decode(status,'active',0,nvl2(trim(asmDiskName),1,0)) offlines,
-                           siz siz,
-                           freeSpace freeSpace,
-                           decode(trim(asmDiskName),'',siz,0) usize,
-                           nvl2(cachedBy,1,0) fc
-                    FROM   v$cell_config a,
-                           XMLTABLE('/cli-output/*[size]' PASSING xmltype(a.confval) COLUMNS --
-                                    cellDisk VARCHAR2(300) path 'cellDisk', 
-                                    name VARCHAR2(300) path 'name', 
-                                    diskType VARCHAR2(300) path 'diskType',
-                                    errors VARCHAR2(300) path 'errorCount',
-                                    siz INT path 'size',
-                                    status varchar2(30) path 'status',
-                                    DISKGROUP VARCHAR2(300) path 'asmDiskGroupName', 
-                                    asmDiskName VARCHAR2(300) path 'asmDiskName',
-                                    cachedBy VARCHAR2(300) path 'cachedBy',
-                                    freeSpace INT path 'freeSpace') b
-                    WHERE  conftype IN ('GRIDDISKS','CELLDISKS')) a),
+                SELECT * FROM (
+                  SELECT a.*,
+                         row_number() over(partition by name,diskgroup,grp order by 1) r,
+                         round(fc*max(decode(grp,'CELLDISKS',siz)) over(partition by extractvalue(c.COLUMN_VALUE,'.'))/count(1) over(partition by grp,extractvalue(c.COLUMN_VALUE,'.'))) fcsize
+                  FROM(
+                      SELECT conftype grp,
+                             DISKGROUP,
+                             nvl(cachedBy,name) cachedBy,
+                             count(distinct diskType) over() dtypes,
+                             sum(nvl2(cachedBy,1,0)) over (partition by nvl(cachedBy,name)) caching,
+                             nvl(cellDisk,name) name,
+                             decode(diskType,'',0, 'HardDisk', 1, 0) hd,
+                             decode(diskType,'',0, 'FlashDisk', 1, 0) fd,
+                             decode(diskType,'',0, 'PMEM', 1, 0) pm,
+                             errors errors,
+                             decode(status,'active',0,nvl2(trim(asmDiskName),1,0)) offlines,
+                             siz siz,
+                             freeSpace freeSpace,
+                             decode(trim(asmDiskName),'',siz,0) usize,
+                             nvl2(cachedBy,1,0) fc
+                      FROM   v$cell_config a,
+                             XMLTABLE('/cli-output/*[size]' PASSING xmltype(a.confval) COLUMNS --
+                                      cellDisk VARCHAR2(300) path 'cellDisk', 
+                                      name VARCHAR2(300) path 'name', 
+                                      diskType VARCHAR2(300) path 'diskType',
+                                      errors VARCHAR2(300) path 'errorCount',
+                                      siz INT path 'size',
+                                      status varchar2(30) path 'status',
+                                      DISKGROUP VARCHAR2(300) path 'asmDiskGroupName', 
+                                      asmDiskName VARCHAR2(300) path 'asmDiskName',
+                                      cachedBy VARCHAR2(300) path 'cachedBy',
+                                      freeSpace INT path 'freeSpace') b
+                      WHERE  conftype IN ('GRIDDISKS','CELLDISKS')) a,
+                             XMLTABLE((('"'||replace(regexp_replace(a.cachedBy,'[" ]'),',','","')||'"'))) c)
+                  WHERE r=1),
             storage as(
                 select  nvl(G.DISKGROUP,'(Free)') DISKGROUP,
                         MAX(c.dtypes) dtypes,
                         sum(nvl(g.hd,sign(c.hd))) hd,
                         sum(nvl(g.fd,sign(c.fd))) fd,
+                        sum(nvl(g.pm,sign(c.pm))) pm,
                         sum(nvl(g.offlines,1)) offlines,
                         sum(nvl(g.errors,0)) errors,
                         sum(nvl(g.siz,c.siz)) gsize,
@@ -237,6 +251,7 @@ BEGIN
                             SUM(b.errors) errs,
                             SUM(hd)  "Hard|Disks",
                             SUM(fd) "Flash|Disks",
+                            SUM(pm) "PMEM|Disks",
                             SUM(greatest(nvl(a.OFFLINE_DISKS,0),b.offlines)) "Offline|Disks",
                             decode(dtypes,1,decode(sum(fc),0,'N','Y'),''||SUM(fc)) "Flash|Cache",
                             SUM(gsize) "Disk|Size",
@@ -432,7 +447,7 @@ BEGIN
     :c3 := c3;
 END;
 /
-col "Disk Group|Total Size,total_size,Disk Group|Free Size,cached|size,Grid|Size,Disk|Size,Usable|Size,CellDisk|Size,Keep|FCC,CellDisk|UnAlloc,GridDisk|Size,HD_SIZE,FD_SIZE,flash_cache,flash_log,flash|cache" format kmg
-col SmartIO|Cached,unalloc,flashcache,flashlog,Alloc|RAM,RAM|OLTP,Alloc|FCache,RAM|Used,PMEM|Keep,PMEM|Used,Alloc|OLTP,ALLOC|SCAN,Large|Writes,OLTP|Dirty,FCache|Used,Used|OLTP,Used|FCC,FCache|Keep,Keep|OLTP,Keep|FCC format kmg
-col "FCC%|Scan,Read|Hit,FCC|Hit,Scan|Hit,FCache|Hit,FCache|Write,RAM|Read,RAM|Scan,PMEM|Read,SmartIO|Flash,SmartIO|Filter,SmartIO|SiSaved,SmartIO|CCSaved,Offload|Out/In" for pct
+col "Disk Group|Total Size,total_size,Disk Group|Free Size,cached|size,Grid|Size,Disk|Size,Usable|Size,CellDisk|Size,Keep|FCC,CellDisk|UnAlloc,GridDisk|Size,HD_SIZE,FD_SIZE,PMEM_SIZE,flash_cache,flash_log,flash|cache" format kmg
+col SmartIO|Cached,unalloc,flashcache,flashlog,Alloc|PMEM,PMEM|OLTP,Alloc|RAM,RAM|OLTP,Alloc|FCache,RAM|Used,PMEM|Keep,PMEM|Used,Alloc|OLTP,ALLOC|SCAN,Large|Writes,OLTP|Dirty,FCache|Used,Used|OLTP,Used|FCC,FCache|Keep,Keep|OLTP,Keep|FCC format kmg
+col "FCC%|Scan,Read|Hit,RAM|Hit,PMEM|Hit,FC|Hit,FCC|Hit,Scan|Hit,FCache|Hit,FCache|Write,RAM|Read,RAM|Scan,PMEM|Read,SmartIO|Flash,SmartIO|Filter,SmartIO|SiSaved,SmartIO|CCSaved,Offload|Out/In" for pct
 grid {'c1','-','c2','-','c3'}

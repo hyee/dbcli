@@ -32,9 +32,9 @@ ORCL> ora tbs SYSTEM
 
     --[[
         @CHECK_ACCESS: wmsys.wm_concat={wmsys.wm_concat(DISTINCT loc)}, default={&VERSION}
-        @VERSION: 11.2={regexp_replace(listagg(loc,',') within group(order by file_name),'([^,]+)(,\1)+','\1')} default={null}
+        @VERSION: 11.2={regexp_replace(listagg(loc,',') within group(order by loc),'([^,]+)(,\1)+','\1')} default={null}
         &cid    : default={file_id} cdb={con_id}
-        &cid2   : default={0} cdb={con_id}
+        &cid2   : default={null} cdb={con_id}
         &cname  : default={fid} cdb={con_id}
         &con    : default={dba_} cdb={cdb_}
         &pname  : default={&cname} cdb={(select name from v$containers b where b.con_id=a.con_id) pdb}
@@ -76,53 +76,55 @@ FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param('_optimizer_filter_p
               IS_TEMP,
               decode(grouping_id(file_id),0,max(file_name),&CHECK_ACCESS) g
         FROM(
-            SELECT /*+no_merge no_expand no_merge(b) no_merge(a) no_push_pred(a) use_hash(b a) opt_param('_optimizer_sortmerge_join_enabled','false')*/
-                   TABLESPACE_NAME,FILE_ID,&cname,
-                   SUM(a.BYTES) FREE_BYTES,
-                   max(b.bytes/b.blocks) blocksiz, 
-                   max(a.blocks) m_blocks,
-                   sum(a.blocks) s_blocks,
-                   count(a.blocks) c_blocks,
-                   max(greatest(b.maxbytes, b.bytes)) siz,
-                   max(b.bytes) space,
-                   max(case when a.block_id+a.blocks-1>=b.user_blocks then a.block_id end) hwm_block,
-                   max(b.file_name) file_name,
-                   max(decode(seq,1,regexp_substr(b.file_name, '^.[^\\/]+'))) loc,
-                   'Permanent' IS_TEMP,
-                   max(IOPS) IOPS,MAX(MBPS) MBPS,MAX(latency) latency
-            FROM   &CON.FREE_SPACE a 
-            JOIN  (select /*+no_merge*/ 
-                          file_id,&cid2 &cname,
-                          SUM((PHYSICAL_READS+PHYSICAL_WRITES)*60/INTSIZE_CSEC) IOPS,
-                          SUM((PHYSICAL_BLOCK_READS+PHYSICAL_BLOCK_WRITES)*60/INTSIZE_CSEC) MBPS,
-                          SUM((PHYSICAL_READS*AVERAGE_READ_TIME+PHYSICAL_WRITES*AVERAGE_WRITE_TIME)*60/INTSIZE_CSEC)  latency
-                   FROM gv$filemetric
-                   GROUP BY file_id,&cid) c
-            USING (FILE_ID,&cid)
-            RIGHT JOIN (select b.*,row_number() over(partition by TABLESPACE_NAME,regexp_substr(b.file_name, '^.[^\\/]+') order by 1) seq from &CON.DATA_FILES b) b 
-            USING (TABLESPACE_NAME,FILE_ID,&cid)
-            WHERE  (:V1 IS NULL OR TABLESPACE_NAME=upper(:V1))
-            GROUP  BY TABLESPACE_NAME,FILE_ID,&cname
-            UNION ALL
-            SELECT /*+NO_EXPAND_GSET_TO_UNION no_expand no_merge(h) no_merge(p) no_merge(f) use_hash(h p f)*/
-                   TABLESPACE_NAME,
-                   file_id,&cid2,
-                   SUM((h.bytes_free + h.bytes_used) - nvl(p.bytes_used, 0)) FREE_BYTES,
-                   0 blocksiz,null,null,null,
-                   SUM(decode(f.autoextensible, 'YES', f.maxbytes, 'NO', f.bytes))  file_size,
-                   SUM(h.bytes_free + h.bytes_used)  space_all,
-                   null hwm_block,
-                   max(f.file_name) file_name,
-                   max(decode(seq,1,loc)) loc,
-                   'Temporary',NULL,NULL,NULL
-            FROM   v$TEMP_SPACE_HEADER h
-            LEFT   JOIN v$Temp_extent_pool p 
-            USING  (file_id,&cid,tablespace_name)
-            JOIN   (select a.*, regexp_substr(file_name, '^.[^\\/]+') loc,1 seq from &CON.temp_files a) f
-            USING  (file_id,&cid,tablespace_name)
-            WHERE  (:V1 IS NULL OR TABLESPACE_NAME=upper(:V1))
-            GROUP  BY tablespace_name,FILE_ID,&cid2
-            )
+        	SELECT a.*,row_number() over(partition by tablespace_name,loc order by 1) loc_seq
+        	FROM (
+	            SELECT /*+no_merge no_expand no_merge(b) no_merge(a) no_push_pred(a) use_hash(b a) opt_param('_optimizer_sortmerge_join_enabled','false')*/
+	                   TABLESPACE_NAME,FILE_ID,&cname,
+	                   SUM(a.BYTES) FREE_BYTES,
+	                   max(b.bytes/b.blocks) blocksiz, 
+	                   max(a.blocks) m_blocks,
+	                   sum(a.blocks) s_blocks,
+	                   count(a.blocks) c_blocks,
+	                   max(greatest(b.maxbytes, b.bytes)) siz,
+	                   max(b.bytes) space,
+	                   max(case when a.block_id+a.blocks-1>=b.user_blocks then a.block_id end) hwm_block,
+	                   max(b.file_name) file_name,
+	                   max(decode(seq,1,regexp_substr(b.file_name, '^.[^\\/]+'))) loc,
+	                   'Permanent' IS_TEMP,
+	                   max(IOPS) IOPS,MAX(MBPS) MBPS,MAX(latency) latency
+	            FROM   &CON.FREE_SPACE a 
+	            JOIN  (select /*+no_merge*/ 
+	                          file_id,&cid2 &cname,
+	                          SUM((PHYSICAL_READS+PHYSICAL_WRITES)*60/INTSIZE_CSEC) IOPS,
+	                          SUM((PHYSICAL_BLOCK_READS+PHYSICAL_BLOCK_WRITES)*60/INTSIZE_CSEC) MBPS,
+	                          SUM((PHYSICAL_READS*AVERAGE_READ_TIME+PHYSICAL_WRITES*AVERAGE_WRITE_TIME)*60/INTSIZE_CSEC)  latency
+	                   FROM gv$filemetric
+	                   GROUP BY file_id,&cid) c
+	            USING (FILE_ID,&cid)
+	            RIGHT JOIN (select b.*,row_number() over(partition by TABLESPACE_NAME,regexp_substr(b.file_name, '^.[^\\/]+') order by 1) seq from &CON.DATA_FILES b) b 
+	            USING (TABLESPACE_NAME,FILE_ID,&cid)
+	            WHERE  (:V1 IS NULL OR TABLESPACE_NAME=upper(:V1))
+	            GROUP  BY TABLESPACE_NAME,FILE_ID,&cname
+	            UNION ALL
+	            SELECT /*+NO_EXPAND_GSET_TO_UNION no_expand no_merge(h) no_merge(p) no_merge(f) use_hash(h p f)*/
+	                   TABLESPACE_NAME,
+	                   file_id,&cid2,
+	                   SUM((h.bytes_free + h.bytes_used) - nvl(p.bytes_used, 0)) FREE_BYTES,
+	                   0 blocksiz,null,null,null,
+	                   SUM(decode(f.autoextensible, 'YES', f.maxbytes, 'NO', f.bytes))  file_size,
+	                   SUM(h.bytes_free + h.bytes_used)  space_all,
+	                   null hwm_block,
+	                   max(f.file_name) file_name,
+	                   max(decode(seq,1,loc)) loc,
+	                   'Temporary',NULL,NULL,NULL
+	            FROM   v$TEMP_SPACE_HEADER h
+	            LEFT   JOIN v$Temp_extent_pool p 
+	            USING  (file_id,&cid,tablespace_name)
+	            JOIN   (select a.*, regexp_substr(file_name, '^.[^\\/]+') loc,1 seq from &CON.temp_files a) f
+	            USING  (file_id,&cid,tablespace_name)
+	            WHERE  (:V1 IS NULL OR TABLESPACE_NAME=upper(:V1))
+	            GROUP  BY tablespace_name,FILE_ID,&cid2
+            ) A)
         GROUP BY  &cname,IS_TEMP,ROLLUP(TABLESPACE_NAME,FILE_ID)
         HAVING (:V1 IS NOT NULL AND grouping_id(TABLESPACE_NAME)<1) OR (:V1 IS NULL AND FILE_ID IS NULL)) a
 ORDER  BY 1,IS_TEMP,USED_SPACE DESC,TABLESPACE_NAME DESC NULLS LAST;

@@ -35,6 +35,7 @@ Options:
                          plan_id
                   FROM   dba_advisor_sqlplans a
                   WHERE  a.sql_id = :V1
+                  AND    :V1 !='X'
                   AND    a.plan_hash_value = coalesce(:V2+0,(select max(plan_hash_value) keep(dense_rank last order by timestamp) from dba_advisor_sqlplans where sql_id=:V1))}
            default={}
     }
@@ -54,6 +55,7 @@ Options:
                          plan_id
                   FROM   sys.sql$text st,sys.sqlobj$plan a
                   WHERE  st.sql_handle = :V1
+                  AND    :V1 !='X'
                   AND    a.signature = st.signature
                   AND    a.plan_id = coalesce(:V2+0,(select max(plan_id) keep(dense_rank last order by timestamp) from sys.sqlobj$plan b where b.signature=a.signature))
            }
@@ -115,7 +117,7 @@ END;
 
 WITH sql_plan_data AS
  (SELECT /*+materialize*/*
-  FROM   (SELECT /*+no_merge(a) PQ_CONCURRENT_UNION*/ a.*,
+  FROM   (SELECT /*+no_merge(a) NO_PQ_CONCURRENT_UNION*/ a.*,
                  dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id) seq
           FROM   (SELECT id,
                          min(id) over() minid,
@@ -129,6 +131,7 @@ WITH sql_plan_data AS
                          0+USERENV('INSTANCE') inst_id
                   FROM   v$sql_plan a
                   WHERE  a.sql_id = :V1
+                  AND    :V1 !='X'
                   AND    (:V2 is null or :V2 in(plan_hash_value,child_number))
                   UNION ALL
                   SELECT id,
@@ -143,6 +146,7 @@ WITH sql_plan_data AS
                          inst_id
                   FROM   gv$sql_plan_statistics_all a
                   WHERE  a.sql_id = :V1
+                  AND    :V1 !='X'
                   AND    (:V2 is null or :V2 in(plan_hash_value,child_number))
                   UNION ALL
                   SELECT /*+no_expand*/ id,
@@ -157,6 +161,7 @@ WITH sql_plan_data AS
                          dbid
                   FROM   dba_hist_sql_plan a
                   WHERE  a.sql_id = :V1
+                  AND    :V1 !='X'
                   AND    a.plan_hash_value = coalesce(:V2+0,(
                      select --+index(c.sql(WRH$_SQLSTAT.SQL_ID)) index(c.sn)
                             max(plan_hash_value) keep(dense_rank last order by snap_id)
@@ -176,6 +181,7 @@ WITH sql_plan_data AS
                          plan_id
                   FROM   all_sqlset_plans a
                   WHERE  a.sql_id = :V1
+                  AND    :V1 !='X'
                   AND    a.plan_hash_value = coalesce(:V2+0,(
                      select max(plan_hash_value) keep(dense_rank last order by timestamp) 
                      from all_sqlset_plans where sql_id=:V1))
@@ -196,7 +202,7 @@ WITH sql_plan_data AS
                   FROM   plan_table a
                   WHERE  plan_id=(select max(plan_id) keep(dense_rank last order by timestamp) 
                                   from plan_table
-                                  where nvl(upper(:V1),'x') in(statement_id,''||plan_id,'x'))) a
+                                  where nvl(upper(:V1),'X') in(statement_id,''||plan_id,'X'))) a
          WHERE flag>=&src)
   WHERE  seq = 1),
 hierarchy_data AS
@@ -249,7 +255,7 @@ xplan AS
   FROM   qry,TABLE(dbms_xplan.display('gv$sql_plan_statistics_all',NULL,format,'child_number=' || plan_hash || ' and sql_id=''' || sq ||''' and inst_id=' || inst_id)) a
   WHERE  flag = 1),
 xplan_data AS
- (SELECT /*+ordered use_hash(o x) materialize no_merge(o)*/
+ (SELECT /*+ordered use_nl(o x) materialize no_merge(o)*/
            x.plan_table_output AS plan_table_output,
            nvl(o.id,x.oid) id,
            o.pid,

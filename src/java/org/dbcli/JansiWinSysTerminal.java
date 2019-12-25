@@ -53,6 +53,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
                     }
                     writer = new JansiWinConsoleWriter();
                 } else */
+
             if (OSUtils.IS_CONEMU) {
                 if (type == null) {
                     type = TYPE_WINDOWS_256_COLOR;
@@ -70,6 +71,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         if (!paused) {
             terminal.resume();
         }
+
         return terminal;
     }
 
@@ -82,6 +84,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
     final short bpl = (short) (bp.length - 1);
     final short epl = (short) (ep.length - 1);
     final short START_POS = 1;
+    final String tab = "    ";
     short beginIdx = START_POS;
     short endIdx = START_POS;
 
@@ -103,11 +106,14 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         else if (pasteCount > 0 && endIdx > START_POS && endIdx < epl) endIdx = START_POS;
         //Check remaining input chars and determine if enter paste mode
         if (enablePaste && beginIdx != bpl && pasteCount == 0 && Character.isWhitespace(c) && reader.available() >= 3) {
-            for (char a : bp) processChar(a);
+            this.slaveInputPipe.write(LineReaderImpl.BRACKETED_PASTE_BEGIN);
             prevTime = System.currentTimeMillis();
             pasteCount = 1;
             //insert one more space to bypass the completor's detection if the first pasted char is tab
-            if (c == '\t') processChar(' ');
+            if (c == '\t') {
+                this.slaveInputPipe.write(' ');
+                return;
+            }
         } else if (pasteCount > 0) {
             pasteCount = pasteCount + 1;
             //reduce the frequency of getting timer to avoid performance issue
@@ -124,10 +130,10 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
                 } catch (InterruptedException e) {
                 }
             }
-            if (reader.available() > 0)
-                for (int i = 0; i < 4; i++) processChar(' ');
-            else processChar(c);
-            return;
+            if (reader.available() > 0) {
+                this.slaveInputPipe.write(tab);
+                return;
+            }
         }
         processChar(c);
     }
@@ -140,7 +146,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
                 //If no more input after 128+ ms, leave the paste mode (Assume that consuming a input char costs 300us)
                 if (System.currentTimeMillis() - prevTime >= 128 + pasteCount * 0.3) {
                     if (endIdx != epl) {
-                        for (char a : ep) processChar(a);
+                        slaveInputPipe.write(LineReaderImpl.BRACKETED_PASTE_END);
                         if (lastChar == '\r' || lastChar == '\n') processChar('\n');
                     }
                     pasteCount = 0;

@@ -40,7 +40,7 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             l_fmt    VARCHAR2(300):='TYPICAL ALLSTATS LAST';
             l_sql    VARCHAR2(500);
             l_found  BOOLEAN := false;
-            TYPE l_rec IS RECORD(sql_id varchar2(13),child_addr raw(8));
+            TYPE l_rec IS RECORD(sql_id varchar2(13),child_addr raw(8),child_num int);
             TYPE t_recs IS TABLE OF l_rec;
             l_recs t_recs := t_recs();
             procedure wr is
@@ -56,6 +56,11 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             end;
         BEGIN
             if l_trace not in ('sql_id','statistics','off') then
+                begin
+                    execute immediate 'select prev_child_number from v$session where sid=userenv(''sid'') and prev_sql_id=:2'
+                    into l_child using l_sql_id;
+                exception when others then null;
+                end;
                 open l_stats for select /*+dbcli_ignore*/ name,value from v$mystat natural join v$statname where name not like 'session%memory%' and value>0;
             else
                 open l_stats for select /*+dbcli_ignore*/ * from dual;
@@ -91,7 +96,7 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
                 END IF;
                 BEGIN
                     $IF DBMS_DB_VERSION.VERSION>10 $THEN
-                        l_sql :='SELECT /*+dbcli_ignore*/ SQL_ID,'|| CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN 'CHILD_ADDRESS' ELSE 'CAST(NULL AS RAW(8))' END ||' FROM v$open_cursor WHERE sid=userenv(''sid'') AND cursor_type like ''OPEN%'' AND sql_exec_id IS NOT NULL AND instr(sql_text,''dbcli_ignore'')=0 AND instr(sql_text,''V$OPEN_CURSOR'')=0';
+                        l_sql :='SELECT /*+dbcli_ignore*/ SQL_ID,'|| CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN 'CHILD_ADDRESS' ELSE 'CAST(NULL AS RAW(8))' END ||',null FROM v$open_cursor WHERE sid=userenv(''sid'') AND cursor_type like ''OPEN%'' AND sql_exec_id IS NOT NULL AND instr(sql_text,''dbcli_ignore'')=0 AND instr(sql_text,''V$OPEN_CURSOR'')=0';
                         BEGIN
                             EXECUTE IMMEDIATE l_sql BULK COLLECT INTO l_recs;
                             FOR i in 1..l_recs.count LOOP
@@ -106,11 +111,14 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
                     IF NOT l_found THEN
                         l_recs.extend;
                         l_recs(l_recs.count).sql_id:=l_sql_id;
+                        l_recs(l_recs.count).child_num := l_child;
                     END IF;
 
                     FOR j in 1..l_recs.count LOOP
                         l_sql:='sql_id='''||l_recs(j).sql_id||''' AND ';
-                        IF l_recs(j).child_addr IS NOT NULL THEN
+                        IF l_recs(j).child_num IS NOT NULL THEN
+                        	l_sql := l_sql||'child_number='||l_recs(j).child_num;
+                        ELSIF l_recs(j).child_addr IS NOT NULL THEN
                             l_sql := l_sql||'child_address=hextoraw('''||l_recs(j).child_addr||''')';
                         ELSE
                             l_sql := l_sql||'child_number=(select max(child_number) keep(dense_rank last order by executions,last_active_time) from v$sql where sql_id='''||l_sql_id||''')';
@@ -295,8 +303,8 @@ end
 function output.onload()
     snoop("ON_SQL_ERROR",output.get_error_output,nil,40)
     snoop("AFTER_ORACLE_CONNECT",output.setOutput)
-    snoop("BEFORE_DB_EXEC",output.capture_stats,nil,50)
-    snoop("AFTER_DB_EXEC",output.getOutput,nil,50)
+    snoop("BEFORE_DB_EXEC",output.capture_stats,nil,1)
+    snoop("AFTER_DB_EXEC",output.getOutput,nil,99)
     cfg.init('AUTOTRACE','off',function(name,value)
         autotrace=value
         return value

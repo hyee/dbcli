@@ -97,7 +97,7 @@ function oracle:connect(conn_str)
     local args,usr,pwd,conn_desc,url,isdba,server,server_sep,proxy_user,params,_
     local sqlplustr
     local driver=env.set.get('driver')
-    local tns_admin
+    local tns_admin,prompt
     local attrs={}
     if type(conn_str)=="table" then --from 'login' command
         args=conn_str
@@ -107,6 +107,9 @@ function oracle:connect(conn_str)
         if url and url:find("?",1,true) then
             url,params=url:match('(.*)(%?.*)')
             tns_admin=params:match(tns_admin_param)
+            if tns_admin then
+                prompt=conn_str.url:match('([^@%? ]+) *%?')
+            end
         end
     else
         conn_str=conn_str or ""
@@ -117,10 +120,11 @@ function oracle:connect(conn_str)
             local props=conn_desc:split("?",true)
             for k,v in props[#props]:gmatch("([^&]+)=([^&]+)") do
                 k,v=k:trim(),v:trim()
-                if k:upper()~='TNS_ADMIN' 
-                    then attrs[k]=v
+                if k:upper()~='TNS_ADMIN' then 
+                    attrs[k]=v
                 else
                     tns_admin=v:replace('\\','/')
+                    prompt=conn_desc:match('([^@%? ]+) *%?')
                 end
                 found=true
             end
@@ -148,7 +152,7 @@ function oracle:connect(conn_str)
         if usr:find('%[.*%]') then usr,proxy_user=usr:match('(.*)%[(.*)%]') end
         
         sqlplustr,url=conn_str,url or conn_desc
-        local host,port,server_sep,database=url:match('^[/]*([^:/]+)(:?%d*)([:/])(.+)$')
+        local host,port,server_sep,database=url:gsub('%s*%?.*',""):match('^[/]*([^:/]+)(:?%d*)([:/])(.+)$')
         local flag=true
         if database then
             if host=='ldap' or host=='ldaps' then
@@ -165,7 +169,7 @@ function oracle:connect(conn_str)
                 flag,server_sep,database,server=false,'/',database:match('^([%w_]+):(%w+)$')
             end
             if server then server=server:upper() end
-            if port=="" and host~='ldap' and host~='ldaps' and host~='tcp' then flag,port=false,':1521' end
+            if port=="" and host~='ldap' and host~='ldaps' and host~='tcp' and not tns_admin then flag,port=false,':1521' end
             if not flag then 
                 url=host..port..server_sep..database..(server and (':'..server) or '')
                 sqlplustr=string.format('%s/%s@%s%s/%s%s',
@@ -201,8 +205,8 @@ function oracle:connect(conn_str)
         sqlplustr=string.format("%s/%s@%s%s",args.user,pwd,args.url:match("@(.*)$"),args.internal_logon and " as "..args.internal_logon or "")
     end
     sqlplustr=sqlplustr:gsub("?%S+",'')
-    
-    local prompt=args.jdbc_alias or url:gsub('.*@','')
+
+    prompt=prompt or args.jdbc_alias or url:gsub('.*@','')
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
     env.set_title("")
     local data_source=java.new('oracle.jdbc.pool.OracleDataSource')

@@ -317,6 +317,7 @@ BEGIN
                     AND   sql_plan_hash_value > 0
                     AND   sql_exec_id >0 
                     AND   PX_SERVER# IS NULL
+                    AND   sql_text IS NOT NULL
                     and   inst_id=nvl(inst,inst_id);
                     
                     if sq_id is null then

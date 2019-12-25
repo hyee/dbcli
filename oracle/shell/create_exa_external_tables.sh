@@ -25,6 +25,7 @@ if [ ! -d "$dir" ]; then
     exit 1
 fi
 
+chmod g+x $dir
 cd $dir
 echo "">EXA_NULL
 
@@ -41,7 +42,7 @@ cat >get_cell_group.sql<<!
     ORDER  BY 1;
     spool off
     create or replace directory EXA_SHELL as '`pwd`';
-    GRANT READ,WRITE ON DIRECTORY EXA_SHELL to select_catalog_role;
+    GRANT READ,EXECUTE ON DIRECTORY EXA_SHELL to select_catalog_role;
     PRO ===================
     PRO
     exit
@@ -387,7 +388,7 @@ for line in output:gmatch("[^\n\t]+") do
 end
 !
 sed -i "s/root/$ssh_user/" cellcli.sh cellsrvstat.lua celllist.lua
-chmod +x get*.sh cell*.sh cell*.lua
+chmod g+x get*.sh cell*.sh cell*.lua
 
 sqlplus -s "$db_account" <<'EOF'
     set verify off lines 150
@@ -947,7 +948,7 @@ sqlplus -s "$db_account" <<'EOF'
     ORDER  BY 1;
 
     --gather and lock stats
-    PRO LAST STEP: Gathering and locking EXA table stats ...
+    PRO LAST STEP: Gathering and locking EXA table stats, please make sure the grid user has the access to the target directory ...
     PRO ====================================================
     begin
         for r in(select * from user_tables where table_name like 'EXA$%') loop
