@@ -555,12 +555,8 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     end
 
     if isMain then
-        _THREADS._clock[index]=nil
         collectgarbage("collect")
-        if env.PRI_PROMPT=="TIMING> " then
-            env.CURRENT_PROMPT=string.format('%06.2f',clock)..'> '
-            env.MTL_PROMPT="%P "
-        end
+        env.set_prompt(nil,env.PRI_PROMPT)
     end
     return table.unpack(res,2)
 end
@@ -590,12 +586,21 @@ function env.set_prompt(class,default,is_default,level)
     end
 
     if env._SUBSYSTEM or (default and not default:match("[%w]%s*$")) then 
-        env.PRI_PROMPT=default 
+        env.PRI_PROMPT=default
     else
         env.PRI_PROMPT=(default or "").."> "
     end
 
     env.CURRENT_PROMPT,env.MTL_PROMPT=env.PRI_PROMPT,(" "):rep(#env.PRI_PROMPT)
+    if env.CURRENT_PROMPT=='TIMING> ' then
+        local current,isRoot=coroutine.running()
+        if isRoot then
+            local clock=math.floor((os.timer()-_THREADS._clock[1])*1e3)/1e3
+            env.CURRENT_PROMPT=string.format('%06.2f',clock)..'> '
+            env.MTL_PROMPT="%P "
+            _THREADS._clock[1]=os.timer()
+        end 
+    end
     return default
 end
 
@@ -714,7 +719,7 @@ function env.force_end_input(exec,is_internal)
         local text=table.concat(curr_stmt,'\n')
         local stmt={multi_cmd,env.parse_args(multi_cmd,text,true)}
         multi_cmd,curr_stmt=nil,nil
-        env.CURRENT_PROMPT=env.PRI_PROMPT
+        env.set_prompt(nil,env.PRI_PROMPT)
         if exec~=false then
             env.exec_command(stmt[1],stmt[2],is_internal,text)
         else
@@ -844,7 +849,8 @@ local _cmd,_args,_errs,_line_stacks,full_text=nil,nil,nil,{}
 function env.parse_line(line,exec)
     if(#_line_stacks==0) then
         multi_cmd,curr_stmt=nil,nil
-        env.CURRENT_PROMPT=env.PRI_PROMPT 
+        env.set_prompt(nil,env.PRI_PROMPT)
+        
     end
     local is_not_end,cnt=true,0
     for w in line:gsplit('\n',true) do
@@ -889,13 +895,9 @@ function env.modify_command(_,key_event)
         env.isInterrupted=true
         if env.IS_ASKING then return end
         multi_cmd,curr_stmt=nil,nil
-        env.CURRENT_PROMPT=env.PRI_PROMPT
+        env.set_prompt(nil,env.PRI_PROMPT)
         _line_stacks={}
-        local prompt,reset=env.PRI_PROMPT,""
-        if env.ansi then
-            local prompt_color="%s%s"..env.ansi.get_color("NOR").."%s"
-            prompt=prompt_color:format(env.ansi.get_color("PROMPTCOLOR"),prompt,env.ansi.get_color("COMMANDCOLOR"))
-        end
+        
     elseif key_event.name=="CTRL+BACK_SPACE" or key_event.name=="SHIFT+BACK_SPACE" then --shift+backspace
         console:invokeMethod("backwardDeleteWord")
         key_event.isbreak=true

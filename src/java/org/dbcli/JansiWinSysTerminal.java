@@ -143,12 +143,13 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         while (true) {
             try {
                 Thread.sleep(32);
-                if (pasteCount == 0 || paused()) continue;
+                if (prevTime == 0 || pasteCount == 0 || paused()) continue;
                 //If no more input after 128+ ms, leave the paste mode (Assume that consuming a input char costs 300us)
                 if (System.currentTimeMillis() - prevTime >= 128 + pasteCount * 0.3) {
                     if (endIdx != epl) {
                         slaveInputPipe.write(LineReaderImpl.BRACKETED_PASTE_END);
                         if (lastChar == '\r' || lastChar == '\n') processChar('\n');
+                        prevTime = 0;
                     }
                     pasteCount = 0;
                 }
@@ -159,7 +160,7 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
 
     public JansiWinSysTerminal(Writer writer, String name, String type, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler) throws IOException {
         super(writer, name, type, encoding, codepage, nativeSignals, signalHandler);
-        this.status=null;
+        this.status = null;
         t.setDaemon(true);
         t.start();
     }

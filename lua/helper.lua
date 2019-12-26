@@ -10,12 +10,45 @@ function helper.jvm()
         local siz=#rows[1]+1
         rows[1][siz],rows[2][siz]=name,value
     end
+    local keys={}
     for k,v in java.pairs(java.system:getProperties()) do
         if tostring(k)~="" then
-            add(k,type(v)=="string" and v:gsub('(['..(env.IS_WINDOWS and ';' or ':')..'])','%1\n') or tostring(v))
+            local n=1
+            if type(v)=="string" then
+                v,n=v:trim():gsub('(['..(env.IS_WINDOWS and ';' or ':')..'])','%1\n')
+            else
+                v=tostring(v)
+            end
+            keys[#keys+1]={k,v,n}
         end
     end
+    table.sort(keys,function(a,b)
+        if a[3]~=b[3] then 
+            return a[3]<b[3]
+        else
+            return a[1]<b[1]
+        end
+    end)
+
+    local cnt=0
+    for k,v in ipairs(keys) do
+        cnt=cnt+1
+        add(v[1],v[2])
+        if v[3]==1 and math.fmod(cnt,2)==1 and keys[k+1] and keys[k+1][3]>2 then
+            cnt=cnt+1
+            add("","")
+        end
+    end
+    print("JVM System Properties:\n======================")
+    set.set("PIVOTSORT","off")
     set.set("PIVOT",1)
+    grid.print(rows)
+    print("\nJVM Security Providers:\n=======================")
+    rows={{"Name","Info"}}
+    for k,v in java.pairs(console:getSecurityProviders()) do
+        rows[#rows+1]={k,v}
+    end
+    table.sort(rows,function(a,b) return a[1]:lower()<b[1]:lower() end)
     grid.print(rows)
 end
 

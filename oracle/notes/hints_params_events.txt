@@ -26,6 +26,7 @@ Parameters
 	cell_offload_parameters="<OPT_ENABLED|OPT_DISABLED>={<func_id_list in v$sqlfn_metadata>} | OPT_ENABLED_ONLY=(<func_id_list in v$sqlfn_metadata>)" 
     _optimizer_transitivity_retain: defaults to true to pass the input variable to other table's equal-join column(ignored if executed by SYSDBA with opt_param hint)
     _optimizer_generate_transitive_pred: similar to _optimizer_transitivity_retain
+    _iut_stat_collection_type: relative views: DBA_INDEX_USAGE/V$INDEX_USAGE_INFO, set to 'ALL' to get the most accurate result during the monitor period, it can cause some overhead
 	table_cached_blocks: from dbms_stats.set_xxx_prefs, defaults as 1(0 as auto), used to control how to compute the CLUSTERING_FACTOR by gather_index_stats, recommend to set as 16*<Rac nodes> by jonathan lewis
     
 Events:
@@ -53,6 +54,7 @@ Hints:
 	NUM_INDEX_KEYS(<@QB>] <table> <index> <cols>): used on multi-column index for INLIST ITERATOR, specifying how many columns(keys) to be put in access part and the others in filter part
 
 Fix Controls:
-    16923858:  Display timings in Optimizer trace(10053) when over 10^<value> microsec 
+    16923858:  Display timings in Optimizer trace(10053) when over 10^<value> microsec
+    6972291 :  CBO can use the selectivity of column groups but this option is disabled if there is a histogram defined on any of the columns of the column group
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=/u01/app/oracle/product/18.0.0.0/dbhome_1/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';

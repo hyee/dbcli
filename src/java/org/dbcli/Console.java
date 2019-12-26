@@ -16,6 +16,8 @@ import org.jline.utils.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
+import java.security.Provider;
+import java.security.Security;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -82,6 +84,7 @@ public final class Console {
         this.reader.setCompleter(completer);
         this.reader.setHistory(history);
         this.reader.unsetOpt(LineReader.Option.MOUSE);
+        this.reader.unsetOpt(LineReader.Option.HISTORY_IGNORE_SPACE);
         this.reader.setOpt(LineReader.Option.DELAY_LINE_WRAP);
         this.reader.setOpt(LineReader.Option.DISABLE_EVENT_EXPANSION);
         this.reader.setOpt(LineReader.Option.CASE_INSENSITIVE);
@@ -112,7 +115,6 @@ public final class Console {
         writer = new Output(terminal.writer());
         colorPlan = terminal.getType();
         threadID = Thread.currentThread().getId();
-
         callback = new EventCallback() {
             @Override
             public void call(Object... c) {
@@ -239,7 +241,8 @@ public final class Console {
     }
 
     public void setStatus(String status, String color) {
-        if (colorPlan.equals(TYPE_WINDOWS_256_COLOR) || colorPlan.equals(TYPE_WINDOWS) || getScreenWidth() <= 0) return;
+        if (this.status == null || colorPlan.equals(TYPE_WINDOWS_256_COLOR) || colorPlan.equals(TYPE_WINDOWS) || getScreenWidth() <= 0)
+            return;
         if (tmpTitles.size() == 0) {
             tmpTitles.add(AttributedString.fromAnsi(new String(new char[getScreenWidth() - 1]).replace('\0', ' ')));
             tmpTitles.add(tmpTitles.get(0));
@@ -257,6 +260,15 @@ public final class Console {
             }
             this.status.update(titles);
         }
+    }
+
+    public Map getSecurityProviders() {
+        Provider[] providerList = Security.getProviders();
+        Map names = new HashMap<String, String>();
+        for (Provider provider : providerList) {
+            names.put(provider.getName(), provider.getInfo());
+        }
+        return names;
     }
 
     public int getBufferWidth() {
@@ -363,7 +375,7 @@ public final class Console {
             terminal.puts(InfoCmp.Capability.cursor_up);
             terminal.puts(InfoCmp.Capability.delete_line);
             terminal.raise(Terminal.Signal.INT);
-            status.redraw();
+            if (status != null) status.redraw();
             return "";
         } finally {
 
@@ -473,6 +485,12 @@ public final class Console {
                 lines = 0;
                 sb.setLength(0);
             });
+        }
+
+        @Override
+        public boolean isDelimiterChar(CharSequence buffer, int pos) {
+            final char c = buffer.charAt(pos);
+            return Character.isWhitespace(c) || (c != '.' && c != '_' && c != '$' && c != '#' && !(c >= '0' && c <= '9') && !(c >= 'A' && c <= 'Z') && !(c >= 'a' && c <= 'z'));
         }
 
         public final String getLines() {
