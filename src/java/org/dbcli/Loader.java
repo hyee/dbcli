@@ -159,6 +159,19 @@ public class Loader {
     }
 
     public static void main(String[] args) throws Exception {
+        if (args.length == 1) {
+            Integer pid = null;
+            try {
+                pid = Integer.valueOf(args[0]);
+                FileDump.main(args);
+                return;
+            } catch (Exception e) {
+                if (pid != null) {
+                    e.printStackTrace();
+                    return;
+                }
+            }
+        }
         Loader l = get();
         while (ReloadNextTime != null) loadLua(l, args);
         //console.threadPool.shutdown();
@@ -207,7 +220,7 @@ public class Loader {
     public String dumpClass(String folder) throws Exception {
         String cp = System.getProperty("java.class.path");
         String stack = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
-        String packageName = Loader.class.getPackage().getName() + ".FileDump";
+        String packageName = Loader.class.getPackage().getName() + ".Loader";
         //packageName="sun.jvm.hotspot.tools.jcore.ClassDump";
         String sep = File.separator;
         stack = stack.split("@")[0];

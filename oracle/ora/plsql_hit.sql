@@ -64,7 +64,7 @@ DECLARE
     strval VARCHAR2(300):=replace(upper(:V2),'B');
     newv   NUMBER;
 BEGIN
-    newv := regexp_substr(strval,'^(\d+)[K|M|G]?$',1,1,'i',1);
+    newv := regexp_substr(strval,'^([\d\.]+)[K|M|G]?$',1,1,'i',1);
     IF newv IS NULL THEN
         raise_application_error(-20001,'Invalid value of _query_execution_cache_max_size: '||:V2);
     END IF;
@@ -128,13 +128,12 @@ DECLARE
     l PLS_INTEGER := &V4;
     TYPE tr IS TABLE OF VARCHAR2(2000);
     ary  tr;
-    data CLOB := '[[null,null,null,null]';
+    data CLOB := '<ROWSET>';
     procedure wr(msg VARCHAR2) IS
     BEGIN
-        dbms_lob.writeappend(data,length(msg)+2,','||chr(10)||msg);
+        dbms_lob.writeappend(data,length(msg)+1,chr(10)||msg);
     END;
 BEGIN
-    $IF DBMS_DB_VERSION.VERSION=12 AND DBMS_DB_VERSION.RELEASE>1 OR DBMS_DB_VERSION.VERSION>12 $THEN
     OPEN c FOR q'{
         WITH FUNCTION c1 (r INT,d DATE) RETURN NUMBER DETERMINISTIC IS
             PRAGMA UDF;
@@ -153,7 +152,7 @@ BEGIN
         END;
         r  AS (SELECT ROWNUM r,SYSDATE+ROWNUM d,SYSTIMESTAMP+NUMTODSINTERVAL(dbms_random.value*1e3,'day') ts FROM dual CONNECT BY ROWNUM<=&V1)
         SELECT /*+param('_query_execution_cache_max_size', &newv) ordered use_nl(b)*/ 
-              json_array(c1(r,d),(SELECT c2(r,ts) FROM dual),(SELECT c3(r,d,ts) FROM dual),r returning VARCHAR2) 
+              XMLELEMENT("ROW",XMLFOREST(c1(r,d) AS C1,(SELECT c2(r,ts) FROM dual) AS C2,(SELECT c3(r,d,ts) FROM dual) AS C3,r)).getStringval()
         FROM (SELECT * FROM r UNION ALL SELECT * FROM (SELECT * FROM r ORDER BY 1 DESC)) a,
              (select * from dual connect by rownum<=&v3) b &ran
         }';
@@ -166,19 +165,18 @@ BEGIN
     END LOOP;
     CLOSE c;
     c := null;
-    dbms_lob.writeappend(data,1,']');
+    wr('</ROWSET>');
     OPEN c FOR
         SELECT Count(1) "ROWS#",
                COUNT(DISTINCT r) "NDV",
                round(100*(count(1)-COUNT(DISTINCT c1))/ (count(1)-COUNT(DISTINCT r)),3)||'%' deterministic_hit_ratio,
                round(100*(count(1)-COUNT(DISTINCT c2))/ (count(1)-COUNT(DISTINCT r)),3)||'%' scalarquery_hit_ratio,
                round(100*(count(1)-COUNT(DISTINCT c3))/ (count(1)-COUNT(DISTINCT r)),3)||'%' combine_hit_ratio
-        FROM json_table(data,'$[*]' columns
-                            c1 number path '$[0]',
-                            c2 number path '$[1]',
-                            c3 number path '$[2]',
-                            r  number path '$[3]');
-    $END
+        FROM XMLTABLE('/ROWSET/ROW' PASSING xmltype(data) columns
+                            c1 number path 'C1',
+                            c2 number path 'C2',
+                            c3 number path 'C3',
+                            r  number path 'R');
     :c := c;
     IF :orgv IS NOT NULL THEN
         EXECUTE IMMEDIATE 'alter session set "_query_execution_cache_max_size"='||:orgv;

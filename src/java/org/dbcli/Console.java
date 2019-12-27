@@ -37,6 +37,7 @@ import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS_256_C
 
 public final class Console {
     public final static Pattern ansiPattern = Pattern.compile("^\33\\[[\\d\\;]*[mK]$");
+    public final static PrintStream stdout = System.out;
     public static Output writer;
     public static NonBlockingReader input;
     public static String charset = System.getProperty("sun.stdout.encoding");
@@ -160,8 +161,14 @@ public final class Console {
     }
 
     public void enableBracketedPaste(String val) {
-        if ("off".equals(val)) reader.unsetOpt(LineReader.Option.BRACKETED_PASTE);
-        else reader.setOpt(LineReader.Option.BRACKETED_PASTE);
+        if ("off".equals(val)) {
+            reader.unsetOpt(LineReader.Option.BRACKETED_PASTE);
+            stdout.print("\033[?2004h");
+        } else {
+            reader.setOpt(LineReader.Option.BRACKETED_PASTE);
+            stdout.print("\033[?2004l");
+        }
+        stdout.flush();
         if (isJansiConsole) ((JansiWinSysTerminal) terminal).enablePaste(!"off".equals(val));
     }
 

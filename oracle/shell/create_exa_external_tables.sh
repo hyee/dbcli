@@ -412,11 +412,13 @@ sqlplus -s "$db_account" <<'EOF'
     col first_cell new_value first_cell noprint;
     col pivots new_value pivots noprint;
     col px new_value px noprint;
+    col cl new_value cl noprint;
     define ver=122.2
 
     SELECT case when v.ver >=&ver then 'PARTITION BY LIST(CELLNODE) ('||listagg(replace(q'[PARTITION @ VALUES('@') LOCATION ('@')]','@',b.name),','||chr(10)) WITHIN GROUP(ORDER BY b.name)||')' end cells,
            case when v.ver >=&ver then 'PARALLEL' end PX,
            case when v.ver < &ver then 'LOCATION(''EXA_NULL'')' end locations,
+           case when v.ver >11    then 'NOLOGFILE DISABLE_DIRECTORY_LINK_CHECK' end cl,
          --case when v.ver < &ver then 'LOCATION ('||listagg(''''||b.name||'''',',') within group(order by b.name)||')' end locations,
            listagg(replace(q'['@' "@"]','@',b.name),',') within group(order by b.name) pivots,
            min(b.name) first_cell
@@ -441,7 +443,7 @@ sqlplus -s "$db_account" <<'EOF'
        DEFAULT DIRECTORY EXA_SHELL
        ACCESS PARAMETERS
        ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
-         PREPROCESSOR 'getcellparams.sh'
+         PREPROCESSOR 'getcellparams.sh'  &cl
          FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
        ) &locations
      )
@@ -463,7 +465,7 @@ sqlplus -s "$db_account" <<'EOF'
        DEFAULT DIRECTORY EXA_SHELL
        ACCESS PARAMETERS
        ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
-         PREPROCESSOR 'getcelllist.sh'
+         PREPROCESSOR 'getcelllist.sh'  &cl
          FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
        ) &locations
      )
@@ -482,7 +484,7 @@ sqlplus -s "$db_account" <<'EOF'
        DEFAULT DIRECTORY EXA_SHELL
        ACCESS PARAMETERS
        ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
-         PREPROCESSOR 'getcellalert.sh'
+         PREPROCESSOR 'getcellalert.sh'  &cl
          FIELDS TERMINATED BY  '|' LRTRIM MISSING FIELD VALUES ARE NULL(
           CELLNODE,tstamp CHAR(32) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSxff6TZH:TZM',text
          )
@@ -524,7 +526,7 @@ sqlplus -s "$db_account" <<'EOF'
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
       ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
-        PREPROCESSOR 'getactiverequest.sh'
+        PREPROCESSOR 'getactiverequest.sh'  &cl
         FIELDS TERMINATED BY whitespace OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
       ) &locations
     )
@@ -552,7 +554,7 @@ sqlplus -s "$db_account" <<'EOF'
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
       ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
-        PREPROCESSOR 'getfcobjects.sh'
+        PREPROCESSOR 'getfcobjects.sh'  &cl
         FIELDS TERMINATED BY  whitespace LRTRIM
       ) &locations
     )
@@ -574,7 +576,7 @@ sqlplus -s "$db_account" <<'EOF'
        DEFAULT DIRECTORY EXA_SHELL
        ACCESS PARAMETERS
        ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
-         PREPROCESSOR 'cellsrvstat.sh'
+         PREPROCESSOR 'cellsrvstat.sh'  &cl
          FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
        ) &locations
      )
@@ -596,7 +598,7 @@ sqlplus -s "$db_account" <<'EOF'
        DEFAULT DIRECTORY EXA_SHELL
        ACCESS PARAMETERS
        ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
-         PREPROCESSOR 'cellsrvstat_10s.sh'
+         PREPROCESSOR 'cellsrvstat_10s.sh'  &cl
          FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
        ) &locations
      )
@@ -617,7 +619,7 @@ sqlplus -s "$db_account" <<'EOF'
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
       ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
-        PREPROCESSOR 'getmetricdefinition.sh'
+        PREPROCESSOR 'getmetricdefinition.sh'  &cl
         FIELDS TERMINATED BY  whitespace OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
       ) LOCATION('&first_cell')
     )
@@ -642,7 +644,7 @@ sqlplus -s "$db_account" <<'EOF'
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
       ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
-        PREPROCESSOR 'getmetriccurrent.sh'
+        PREPROCESSOR 'getmetriccurrent.sh'  &cl
         FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
          collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
@@ -671,7 +673,7 @@ sqlplus -s "$db_account" <<'EOF'
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
       ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
-        PREPROCESSOR 'getmetrichistory_1h.sh'
+        PREPROCESSOR 'getmetrichistory_1h.sh' &cl
         FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
          collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
@@ -700,7 +702,7 @@ sqlplus -s "$db_account" <<'EOF'
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
       ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
-        PREPROCESSOR 'getmetrichistory_1d.sh'
+        PREPROCESSOR 'getmetrichistory_1d.sh' &cl
         FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
          collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
@@ -729,7 +731,7 @@ sqlplus -s "$db_account" <<'EOF'
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
       ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
-        PREPROCESSOR 'getmetrichistory_10d.sh'
+        PREPROCESSOR 'getmetrichistory_10d.sh' &cl
         FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
          collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',
@@ -758,7 +760,7 @@ sqlplus -s "$db_account" <<'EOF'
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
       ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
-        PREPROCESSOR 'getmetrichistory.sh'
+        PREPROCESSOR 'getmetrichistory.sh' &cl
         FIELDS TERMINATED BY  '|' OPTIONALLY ENCLOSED BY '"' LRTRIM MISSING FIELD VALUES ARE NULL
         (CELLNODE,objectType,name,alertState,
          collectionTime CHAR(25) date_format  TIMESTAMP WITH TIME ZONE MASK 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM',

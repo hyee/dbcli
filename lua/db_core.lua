@@ -750,6 +750,7 @@ local collectgarbage,java_system,gc=collectgarbage,java.system,java.system.gc
 function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_not_prep=type(sql)~="userdata"
     local is_internal=self:is_internal_call(sql)
+    local is_timing = is_not_prep and not is_internal and cfg.get("TIMING")=="on"
     if is_not_prep and sql:sub(1,1024):find('/*DBCLI_EXEC_CACHE*/',1,true) then
         return self:exec_cache(sql,args,prep_params)
     end
@@ -775,7 +776,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         self.conn:setAutoCommit(autocommit=="on" and true or false)
         self.autocommit=autocommit
     end
-    local caches
+    local caches,clock,ela,exe
     if is_not_prep then
         sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
         if type(sql)~="string" then
@@ -800,8 +801,9 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
             env.log_debug("db","Cursor:",desc)
         end
     end
-
+    if is_timing then clock=os.timer() end
     local is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
+    if is_timing then exe=os.timer()-clock end
     self.current_stmt=nil
     local is_output,index,typename=1,2,3
 
@@ -813,6 +815,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         end
         return rs
     end
+
     if event then event("ON_DB_EXEC",{self,sql,args,result,params}) end
     for k,v in pairs(params) do
         if type(v) == "table" and v[is_output] == "#"  then
@@ -860,7 +863,10 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     for k,v in pairs(outputs) do
         if args[k]==db_core.NOT_ASSIGNED then args[k]=nil end
     end
-
+    if is_timing then 
+        ela=os.timer()-clock
+        print(string.format("Elapsed: %.3f secs  Executed: %.3f secs\n",ela,exe))
+    end
     return #result==1 and result[1] or result
 end
 
@@ -1439,6 +1445,7 @@ function db_core:__onload()
     cfg.init("ASYNCEXP",true,set_param,"db.export","Detemine if use parallel process for the export(SQL2CSV and SQL2FILE)",'true,false')
     cfg.init("SQLERRLINE",'off',nil,"db.core","Also print the line number when error SQL is printed",'on,off')
     cfg.init("NULL","",nil,"db.core","Define the display value for NULL value")
+    cfg.init({"TIMING","TIMI"},"off",nill,"db.core","Controls whether or not SQL*Plus displays the elapsed time for each SQL statement.")
     cfg.init("ConvertRAW2Hex","on",nil,"db.core","Convert raw data to Hex(text) format","on,off")
     cfg.init("CSVSEP",",",set_param,"db.core","Define the default separator between CSV fields.")
     cfg.init("READONLY",'off',set_param,"db.core","When set to on, makes the database connection read-only.",'on,off')

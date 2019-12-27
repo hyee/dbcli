@@ -11,6 +11,7 @@ if [ "$os" = "Darwin" ]; then
     os="mac"
 else
     os="linux"
+    bind 'set enable-bracketed-paste on' &>/dev/null
 fi
 
 DBCLI_ENCODING=UTF-8
