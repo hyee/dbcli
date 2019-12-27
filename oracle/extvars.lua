@@ -212,6 +212,10 @@ function extvars.on_after_db_conn()
     if extvars.current_dict and extvars.current_dict.path~=extvars.db_dict_path and os.exists(extvars.db_dict_path) then
         extvars.load_dict(extvars.db_dict_path)
     end
+
+    if not db:is_connect(true) then
+        env.set_title("")
+    end
 end
 
 

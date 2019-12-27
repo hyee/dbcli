@@ -71,11 +71,6 @@ function pgsql:connect(conn_str)
     print("Database connected.")
 end
 
-function pgsql:disconnect(...)
-    self.super.disconnect(self,...)
-    env.set_title("")
-end
-
 function pgsql:exec(sql,...)
     local bypass=self:is_internal_call(sql)
     local args,prep_params=nil,{}

@@ -451,10 +451,12 @@ function db_core:ctor()
     self.resultset  = ResultSet.new()
     self.db_types:load_sql_types('java.sql.Types')
     self.__stmts = {}
+    self.test_connection_sql="SELECT 1"
     self.type="unknown"
     env.set_command(self,"commit",nil,self.commit,false,1)
     env.set_command(self,"rollback",nil,self.rollback,false,1)
 end
+
 
 function db_core:login(account,list)
     if list.account_type and list.account_type~='database' then return end
@@ -499,6 +501,7 @@ function db_core:call_sql_method(event_name,sql,method,...)
 
     local res,obj=pcall(method,...)
     if res==false then
+        self:is_connect(nil,true)
         local info,internal={db=self,sql=sql,error=tostring(obj):gsub('%s+$','')}
         event(event_name,info)
         if info and info.error and info.error~="" then
@@ -856,6 +859,8 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         result[#result+1]=process_result(prep:getResultSet())
     end
 
+    if is_timing then ela=os.timer()-clock end
+
     if event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
 
     if is_not_prep then self:clearStatements() end
@@ -870,8 +875,14 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     return #result==1 and result[1] or result
 end
 
-function db_core:is_connect(recursive)
-    if type(self.conn)~='userdata' or not self.conn.isClosed or self.conn:isClosed() then
+function db_core:is_connect(recursive,test_sql)
+    local is_conn=type(self.conn)=='userdata'
+    local is_closed=not is_conn or not self.conn.isClosed or self.conn:isClosed()
+    if not is_closed and is_conn and test_sql==true and prep_test_connection then
+        local result,err=pcall(prep_test_connection.execute,prep_test_connection)
+        if err then is_closed=true end
+    end
+    if is_closed then
         self.__stmts = {}
         self.__preparedCaches={}
         self.props={privs={}}
@@ -917,6 +928,7 @@ function db_core:print_result(rs,sql)
 end
 
 --the connection is a table that contain the connection properties
+local prep_test_connection
 function db_core:connect(attrs,data_source)
     env.log_debug("connect",table.dump(attrs))
     if not self.driver then
@@ -974,6 +986,7 @@ function db_core:connect(attrs,data_source)
 
     pcall(self.conn.setReadOnly,self.conn,cfg.get("READONLY")=="on")
     self.last_login_account=attrs
+    prep_test_connection = self.conn:prepareCall(self.test_connection_sql)
     return self.conn,attrs
 end
 
@@ -1385,7 +1398,10 @@ function db_core:disconnect(feed)
     if self.conn then
         loader:closeWithoutWait(self.conn)
         self.conn=nil
+        prep_test_connection=nil
         env.set_prompt(nil,nil,nil,2)
+        env.set_prompt(nil,"SQL")
+        env.set_title("",nil,self.__class.__className)
         event("ON_DB_DISCONNECTED",self)
         if feed~=false then print("Database disconnected.") end
     end

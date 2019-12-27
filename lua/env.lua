@@ -374,8 +374,13 @@ function env.remove_command(cmd)
 end
 
 function env.callee(idx)
-    if type(idx)~="number" then idx=3 end
-    local info=getinfo(idx)
+    if not idx then idx=3 end
+    local info
+    if type(idx)=="number" then 
+        info=getinfo(idx)
+    else
+        info={source=tostring(idx),currentline=0}
+    end
     if not info then return nil end
     local src=info.source:gsub("^@+","",1)
     if src:lower():find(env.WORK_DIR:lower(),1,true) then
@@ -1240,7 +1245,7 @@ end
 
 local org_title
 env.unknown_modules={}
-function env.set_title(title,value)
+function env.set_title(title,value,callee)
     local titles,status,sep,enabled="",{},"    "
     if not org_title then org_title=uv.get_process_title() end
     if value~='__EXIT__' then
@@ -1252,7 +1257,7 @@ function env.set_title(title,value)
             title=""
         end
 
-        local callee=env.callee():gsub("#%d+$","")
+        callee=env.callee(callee):gsub("#%d+$","")
         --print(callee,title)
         title_list[callee]=title
         

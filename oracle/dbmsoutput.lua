@@ -296,6 +296,8 @@ end
 function output.get_error_output(info)
     if info.db:is_connect() then
         output.getOutput({info.db,info.sql})
+    else
+        env.set_title("")
     end
     return info
 end

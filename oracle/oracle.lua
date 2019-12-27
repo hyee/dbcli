@@ -42,6 +42,7 @@ function oracle:ctor(isdefault)
     self.type="oracle"
     self.home=home
     self.tns_admin=tns
+    self.test_connection_sql="BEGIN NULL;END;"
     if tns then java.system:setProperty("oracle.net.tns_admin",tns) end
     local header = "set feed off sqlbl on define off;\n";
     header = header.."ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';\n"
@@ -558,11 +559,6 @@ function oracle:check_date(string,fmt)
     return args[4]
 end
 
-function oracle:disconnect(...)
-    self.super.disconnect(self,...)
-    env.set_title("")
-end
-
 local is_executing=false
 
 local ignore_errors={
@@ -574,7 +570,6 @@ local ignore_errors={
 }
 
 function oracle:handle_error(info)
-    if not self.conn or not self.conn:isValid(3) then env.set_title("") end
     if is_executing then
         info.sql=nil
         return
@@ -587,7 +582,6 @@ function oracle:handle_error(info)
                 info.error=v
             else
                 info.error=info.error:match('^([^\n\r]+)')
-                self:disconnect(false)
             end
             return info
         end
