@@ -716,14 +716,15 @@ function db_core:exec_cache(sql,args,description)
 end
 
 function db_core:close_cache(description)
+    local is_connect=self:is_connect()
     if description=='ALL' then
         for desc,cache in pairs(self.__preparedCaches.__list) do
-            if type(cache[1])=='userdata' then
+            if is_connect and type(cache[1])=='userdata' then
                 pcall(cache[1].close,cache[1])
             end
             self.__preparedCaches={}
         end
-    else
+    elseif is_connect then
         self:exec_cache('close',nil,description)
     end
 end

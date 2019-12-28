@@ -128,12 +128,13 @@ function helper.colorful(helps,target)
     helps=helps:gsub("\r?\n"..spaces,"\n"):gsub("%s+$",""):gsub("@@NAME",target:lower())
 
     local grid=env.grid
-
+    local is_table
     helps=helps:gsub('%[(%s*|.-|)%s*%]',function(s)
         local tab,s0=grid.new(),s..' '
         local space=s:match('( *)|') or ''
         local _,cfg=grid.get_config(s0)
         local cols=0
+        
         s0:gsub('\\|','\1'):gsub('[^\n%S]*(|[^\r\n]+|)%s+',function(s1)
             local row={}
             s1:gsub('([^|]+)',function(s2)
@@ -157,6 +158,7 @@ function helper.colorful(helps,target)
         end)
         if #tab.data==0 then return s end
         for k,v in pairs(cfg) do tab[k]=v end
+        is_table=true
         return space..table.concat(grid.merge({tab}),'\n'..space)
     end)
 
@@ -177,7 +179,7 @@ function helper.colorful(helps,target)
         return fmt:format(prefix,(s:find('-',1,true)==1 and '$PROMPTSUBCOLOR$' or '$COMMANDCOLOR$'),s,comma)
     end)
     helps=helps:gsub("(SQL>) ([^\n]+)","$PROMPTCOLOR$%1 $COMMANDCOLOR$%2$NOR$")
-    return helps:rtrim()..'\n'
+    return helps:rtrim()..'\n',is_table
 end
 
 function helper.helper(cmd,...)
@@ -201,8 +203,9 @@ function helper.helper(cmd,...)
         end
         
         if helps=="" then return end
-        
-        return print(helper.colorful(helps,target))
+        helps,target=helper.colorful(helps,target)
+        if not target then return print(helps) end
+        return print(helps,'__PRINT_COLUMN_')
     elseif cmd=="-e" or cmd=="-E" then
         return helper.env(...)
     elseif cmd=="-j" or cmd=="-J" then

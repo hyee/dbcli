@@ -12,6 +12,7 @@ local buff={ }
 local grep_fmt="%1"
 local more_text={lines=0}
 local termout='on'
+local getWidth = console.getBufferWidth
 
 function printer.set_termout(name,value)
     termout=value
@@ -51,8 +52,14 @@ function printer.set_more(stmt)
 end
 
 function printer.more(output)
-    if printer.grid_title_lines < -10 then printer.grid_title_lines=0 end
-    local done,err=pcall(console.less,console,table.concat(more_text,'\n'),math.abs(printer.grid_title_lines),#(env.space),more_text.lines)
+    if not output then
+        if printer.grid_title_lines < -10 then printer.grid_title_lines=0 end
+        pcall(console.less,console,table.concat(more_text,'\n'),math.abs(printer.grid_title_lines),#(env.space),more_text.lines)
+    else
+        local stack,lines=output:gsub('\n',"")
+        if env.ansi then output=env.ansi.convert_ansi(output) end
+        pcall(console.less,console,output,0,#(env.space),lines)
+    end
 end
 
 function printer.rawprint(...)
@@ -69,34 +76,45 @@ local function flush_buff(text,lines)
 end
 
 function printer.print(...)
-    local output,found,ignore,rows={}
+    local output,found,ignore,column,columns,rows={}
     --if not env.set then return end
     for i=1,select('#',...) do
         local v=select(i,...)
-        if type(v)~="string" or not v:find('__BYPASS_',1,true) then 
+        if type(v)~="string" or not (v:find('^__BYPASS_') or v:find('^__PRINT_COLUMN_')) then 
             output[i]=tostring(v)
+        elseif v:find('^__PRINT_COLUMN_') then
+            columns,column={},getWidth(console)
         else
             ignore=v
         end
     end
 
-    output,rows=table.concat(output,' '):gsub("[^\n\r]*",function(s) return s=='' and '' or (NOR..env.space..s:sub(1,8192)) end)
-     
-    if printer.grep_text and not ignore then
-        local stack=output:split('[\n\r]+')
-        output={}
-        for k,v in ipairs(stack) do
-            v,found=v:gsub(printer.grep_text,grep_fmt)
-            if found>0 and not printer.grep_dir or printer.grep_dir and found==0 then
-                output[#output+1]=v
+    output=table.concat(output,' ')
+    if env.ansi then output=env.ansi.convert_ansi(output) end
+    output,rows=output:gsub("([^\n\r]*)([\n\r]*)",function(s,sep)
+        if printer.grep_text and not ignore then
+            s,found=s:gsub(printer.grep_text,grep_fmt)
+            if not (found>0 and not printer.grep_dir or printer.grep_dir and found==0) then
+                return ''
+            elseif env.ansi then
+                s=env.ansi.convert_ansi(s)
             end
         end
-        output=table.concat(output,'\n')
-    end
+        if column then
+            _,_,columns[#columns+1]=s:ulen(column)
+            columns[#columns+1]=sep
+        end
+        return (s=='' and '' or (NOR..env.space..s:sub(1,8192)))..sep
+    end)
 
-    if env.ansi then output=env.ansi.convert_ansi(output) end
     if ignore or output~="" or not printer.grep_text then
-        if termout=='on' and not printer.is_more then println(console,output) end
+        if termout=='on' and not printer.is_more then 
+            if not column then
+                println(console,output)
+            else
+                println(console,table.concat(columns))
+            end
+        end
         if printer.hdl then
             pcall(printer.hdl.write,printer.hdl,strip_ansi(output).."\n")
         end

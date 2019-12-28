@@ -917,6 +917,9 @@ function grid.merge(tabs, is_print, prefix, suffix)
         return newtab
     end
     
+    local color = env.ansi.get_color
+    local nor, hor, hl = color("NOR"), color("HEADCOLOR"), color("GREPCOLOR")
+
     local function format_tables(tabs, is_wrap)
         local result = {}
         local max = 30
@@ -948,7 +951,18 @@ function grid.merge(tabs, is_print, prefix, suffix)
                         grid.bypassemptyrs=is_bypass1
                         tab={}
                         for k,row in ipairs(output) do
-                            tab[k]=type(row)~="table" and row or row.format_func(row.fmt, table.unpack(row))
+                            local filter_flag,match_flag=1
+                            if type(row)=="table" then
+                                local is_body=not row[0] or row[0]>0
+                                row=row.format_func(row.fmt, table.unpack(row))
+                                if is_body and env.printer.grep_text then
+                                    row, match_flag = row:gsub(env.printer.grep_text, hl .. "%0" .. nor)
+                                    if (match_flag == 0 and not env.printer.grep_dir) or (match_flag > 0 and env.printer.grep_dir) then 
+                                        filter_flag = 0
+                                    end
+                                end
+                            end
+                            if filter_flag==1 then tab[#tab+1]=row end
                         end
                         
                         tab.topic, tab.width, tab.height, tab.max_rows = topic, width, height, max_rows
