@@ -389,6 +389,7 @@ end
 !
 sed -i "s/root/$ssh_user/" cellcli.sh cellsrvstat.lua celllist.lua
 chmod g+x get*.sh cell*.sh cell*.lua
+chmod +x get*.sh cell*.sh cell*.lua
 
 sqlplus -s "$db_account" <<'EOF'
     set verify off lines 150

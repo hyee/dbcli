@@ -234,18 +234,20 @@
                     ORDER  BY 1, 3)
             GROUP  BY grouping sets((src &cell),()) ]],
         '-',{[[/*grid={topic="Cell Reason", max_rows=20}*/
-            SELECT nvl(reason_name,'--TOTAL--') reason_name &cell, SUM(metric_value) bytes
+            SELECT nvl(reason_name,'--TOTAL--') reason_name &cell, 
+                   SUM(decode(metric_type,'bytes',metric_value)) bytes,
+                   SUM(decode(metric_type,'bytes',0,metric_value)) reqs
             FROM   (SELECT &cellname,
                            reason_name,
+                           metric_type,
                            SUM(metric_value) metric_value
                     FROM   V$CELL_IOREASON b
-                    WHERE  metric_type = 'bytes'
-                    AND    Metric_value > 0
-                    GROUP  BY CELL_NAME, reason_name)
+                    WHERE  Metric_value > 0
+                    GROUP  BY CELL_NAME, reason_name,metric_type)
             GROUP  BY reason_name &cell]],
             '+',[[&last]]}},
     }},
-    delta_by="UTIL,R,W,SR,SW,LR,LW,SR_B,SW_B,LR_B,LW_B,SR_MS,SW_MS,LR_MS,LW_MS,IOPs,OflEff,Resp(ms),Calls,CPU,BandWidth,PhyRead,OptR(%),dxr(%),PhyWrite,OptW(%),dxw(%),Redo,Offload,SmartIO,FcHit,Hit(%),SiSave,CC,CCSave,waits,ms,Net,AllIO,Scan(%),PMEM,RAM,FD(%),LIO(%),Redo,FL(%),SmartIO,Offload,CC(%),FC(%),Read(%),OflOut,Passthru,total_io,io_errs,writes,READS,hot_bytes,bytes,read,write,fd_bytes,fd_read,fd_write,timeouts,rw_ms,read_ms,write_ms,METRIC_VALUE,value,bytes,fd_bytes,ios,fd_io,lios,fd_lio,avg_ms,hd_ms,fd_ms",
+    delta_by="UTIL,R,W,SR,SW,LR,LW,SR_B,SW_B,LR_B,LW_B,SR_MS,SW_MS,LR_MS,LW_MS,IOPs,OflEff,Resp(ms),Calls,CPU,BandWidth,PhyRead,OptR(%),dxr(%),PhyWrite,OptW(%),dxw(%),Redo,Offload,SmartIO,FcHit,Hit(%),SiSave,CC,CCSave,waits,ms,Net,AllIO,Scan(%),PMEM,RAM,FD(%),LIO(%),Redo,FL(%),SmartIO,Offload,CC(%),FC(%),Read(%),OflOut,Passthru,total_io,io_errs,writes,READS,hot_bytes,bytes,reqs,read,write,fd_bytes,fd_read,fd_write,timeouts,rw_ms,read_ms,write_ms,METRIC_VALUE,value,bytes,fd_bytes,ios,fd_io,lios,fd_lio,avg_ms,hd_ms,fd_ms",
     calc_rules={["Flash(%)"]='[fd_bytes]*100/[bytes]',
                  avg='[ms]/[waits]',
                  avg_ms='[avg_ms]/[ios]',
@@ -280,10 +282,9 @@
                  R_MS='([SR_MS]+[LR_MS])/([SR]+[LR])',
                  W_MS='([SW_MS]+[LW_MS])/([SW]+[LW])',},
     column_formatter={KMG='TOT_B,R_B,W_B,SR_B,SW_B,LR_B,LW_B,OflOut,BandWidth,PhyRead,PhyWrite,Redo,Offload,SmartIO,SiSave,CCSave,Net,AllIO,Redo,SmartIO,Offload,OflOut,Passthru,OS_SIZE,TOTAL_SIZE,FREE_SIZE,bytes,hot_bytes,read,write,bytes,fd_bytes,fd_read,fd_write,fd_bytes,PMEM,RAM',
-                      TMB='TOT_IO,R,W,SR,LR,SW,LW,IOPs,fchit,ios,fd_io,lios,fd_lio,total_io,writes,READS,io_errs',
+                      TMB='TOT_IO,R,W,SR,LR,SW,LW,IOPs,fchit,ios,fd_io,lios,fd_lio,total_io,writes,READS,io_errs,reqs,value',
                       smhd2='timeouts',
-                      noprint='calls',
-                     ['#,##0']='value'},
+                      noprint='calls'},
     group_by="type,inst,event,diskgroup,cell,src,reason_name,METRIC_NAME,NAME",
     per_second='on'
 }

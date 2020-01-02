@@ -1,7 +1,7 @@
 local _G=_ENV or _G
 local _os=jit.os:lower()
 local ver=os.getenv("OSVERSION")
-
+local clock=os.clock()
 if ver then
 	ver=ver:match('%d+%.%d+')
 	if ver then 
@@ -129,8 +129,10 @@ if input:find('[\127-\254]') then
 	print('DBCLI cannot be launched from a Unicode path!')
 	os.exit(1)
 end
-
+_G.__loadclock=os.clock()-clock
+local clock=os.clock()
 while true do
+	_G.__startclock=os.clock()
 	local input,err=loadfile(resolve(input),'bt',_env)
 	if not input then error(err) end
 	loader:resetLua()

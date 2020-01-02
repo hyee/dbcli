@@ -3,13 +3,13 @@
 	This script relies on external table EXA$CACHED_OBJECTS which is created by shell script "oracle/shell/create_exa_external_tables.sh" with the oracle user
 	
 	Parameters:
-		* hits|misses|cachesize: order by column, defaults as order by hits desc
+		* hits|misses|cachedsize: order by column, defaults as order by hits desc
 		* -detail: don't group the data,instead, show the details of each cell
     * -group : group the data by object name
 
 	Sample output:
 	==============
-    SQL> exa EXTCACHEOBJ SYS
+    SQL> @@NAME SYS
     OWNER      OBJECT_NAME       SUBOBJECT_NAME    OBJECT_TYPE     OBJECT_ID DATA_OBJECT_ID RECS CELLS Reqs Hits Hit% Misses CachedSize ColumnarCache ColumnarCache% CachedWrite CachedKeep ColumnarKeep
     ----- ---------------------- -------------- ------------------ --------- -------------- ---- ----- ---- ---- ---- ------ ---------- ------------- -------------- ----------- ---------- ------------
     SYS   WRI$_OPTSTAT_SYNOPSIS$ SYS_SUBP2301   TABLE SUBPARTITION    106117        1022957    3     3  0    0           0      6.44 MB       6.44 MB        100.00%        0  B       0  B         0  B

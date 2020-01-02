@@ -53,6 +53,7 @@ Hints:
     INDEX_STATS(<Table> <Index> <SCALE|NULL> {<BLOCKS|INDEX_ROWS|KEYS|CLUSTERING_FACTOR|ROWS>=<value>})
     COLUMN_STATS(<Table> <Column> <SCALE|NULL> {<LENGTH|DISTINCT|NULLS|MIN|MAX> ><value>})
 	NUM_INDEX_KEYS(<@QB>] <table> <index> <cols>): used on multi-column index for INLIST ITERATOR, specifying how many columns(keys) to be put in access part and the others in filter part
+    PQ_DISTRIBUTE_WINDOW: used on PX window function.  1: hash then window sort 2: window sort then hash 3: range then window sort
 
 Fix Controls:
     16923858:  Display timings in Optimizer trace(10053) when over 10^<value> microsec

@@ -3,7 +3,6 @@ local mypath=loader:getInputPath()
 local _G=_ENV or _G
 package.path=mypath:gsub('[%w%.]+$','?.lua')
 local console=console
-
 local readLine=console.readLine
 local env,err=loadfile((mypath:gsub('[%w%.]+$','env.lua')))
 if not env then return print(err) end
@@ -26,7 +25,6 @@ console.isSubSystem=false
 local line,eval = "",env.execute_line
 local ansi,event=env.ansi,env.event
 local color=ansi and ansi.get_color or function() return "";end
-
 local ncolor=color("NOR")
 local prompt_color="%s%s%s%s%s"
 while true do

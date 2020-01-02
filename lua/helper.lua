@@ -214,6 +214,15 @@ function helper.helper(cmd,...)
         local cmd=java.loader:dumpClass(env.WORK_DIR.."dump")
         io.write("Command: "..cmd.."\n");
         return os.execute(cmd)
+    elseif cmd=="-modules" then
+        local row=grid.new()
+        row:add{"#","Module","Total Time(ms)","Load Time(ms)","Init Time(ms)"}
+        for k,v in pairs(env._M) do
+            row:add{v.load_seq,k,math.round((v.load+v.onload)*1000),math.round(v.load*1000),math.round(v.onload*1000)}
+        end
+        row:sort(1)
+        row:add_calc_ratio(3)
+        return row:print()
     elseif cmd=="-buildjar" then
         local uv=env.uv
         local dels='"'..env.join_path(env.WORK_DIR..'/dump/*.jar*')..'"'
@@ -322,6 +331,7 @@ function helper.desc()
                 -verbose [class] :  dump a class or classes from verbose.log into dir "dump"
                 -dump            :  dump classed of current process into dir "dump"
                 -buildjar        :  build jars from in dir "dump"
+                -modules         :  show loaded modules
         Other commands:
             help                             To brief the available commands(excluding hiddens)
             help <command>                   To show the help detail of a specific command

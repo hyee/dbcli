@@ -64,7 +64,7 @@ DECLARE
     strval VARCHAR2(300):=replace(upper(:V2),'B');
     newv   NUMBER;
 BEGIN
-    newv := regexp_substr(strval,'^([\d\.]+)[K|M|G]?$',1,1,'i',1);
+    newv := regexp_substr(strval,'^([0-9\.]+)[K|M|G]?$',1,1,'i',1);
     IF newv IS NULL THEN
         raise_application_error(-20001,'Invalid value of _query_execution_cache_max_size: '||:V2);
     END IF;

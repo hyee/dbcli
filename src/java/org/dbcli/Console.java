@@ -48,7 +48,7 @@ public final class Console {
     LineReaderImpl reader;
     Less.Play display;
     long threadID;
-    HashMap<String, Candidate[]> candidates = new HashMap<>(1024);
+
     MyCompleter completer = new MyCompleter(this);
     boolean isPrompt = true;
     boolean isJansiConsole = false;
@@ -196,32 +196,8 @@ public final class Console {
         return new Candidate(key, key, null, null, null, null, true);
     }
 
-    public void addCompleters(Map<String, ?> keys, boolean isCommand) {
-        Candidate c = isCommand ? candidate("", null) : null;
-        for (Map.Entry<String, ?> entry : keys.entrySet()) {
-            String key = entry.getKey().trim().toUpperCase();
-            Object value = entry.getValue();
-            String desc = value instanceof Map ? "\0" : value instanceof String ? (String) value : "";
-            Candidate[] cs = candidates.get(key);
-            if (cs == null || isCommand && (cs[2] == null || cs[2].descr() == null)) {
-                candidates.put(key, new Candidate[]{candidate(key, desc), candidate(key.toLowerCase(), desc), c});
-                int index = key.lastIndexOf(".");
-                if (index > 0) {
-                    key = key.substring(index + 1);
-                    candidates.put(key, new Candidate[]{candidate(key, desc), candidate(key.toLowerCase(), desc), c});
-                }
-            }
-            if ("\0".equals(desc)) {
-                for (Map.Entry<String, String> e : ((Map<String, String>) entry.getValue()).entrySet()) {
-                    String k = e.getKey().trim().toUpperCase();
-                    desc = e.getValue();
-                    candidates.put(key + " " + k, new Candidate[]{candidate(k, desc), candidate(k.toLowerCase(), desc), c});
-                }
-            }
-        }
-    }
 
-    public void setKeywords(Map<String, ?> keywords) {
+    public void setKeywords(final Map<String, ?> keywords) {
         parser.keywords = keywords;
         completer.setKeysWords(keywords);
         //addCompleters(keywords, false);
@@ -234,7 +210,6 @@ public final class Console {
     }
 
     public void setSubCommands(Map<String, Object> commands) {
-        addCompleters(commands, true);
         completer.setCommands(commands);
         //parser.commands.putAll(commands);
     }
