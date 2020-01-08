@@ -57,8 +57,12 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
         BEGIN
             if l_trace not in ('sql_id','statistics','off') then
                 begin
-                    execute immediate 'select prev_child_number from v$session where sid=userenv(''sid'') and prev_sql_id=:2'
-                    into l_child using l_sql_id;
+                    execute immediate 'select prev_sql_id,prev_child_number from v$session where sid=userenv(''sid'')'
+                    into l_sql_id,l_child;
+
+                    if l_sql_id is null then
+                        l_sql_id := :sql_id;
+                    end if;
                 exception when others then null;
                 end;
                 open l_stats for select /*+dbcli_ignore*/ name,value from v$mystat natural join v$statname where name not like 'session%memory%' and value>0;
@@ -209,7 +213,7 @@ function output.getOutput(item)
         args.cdbid=tonumber(db.props.container_dbid) or -1
         local done,err=pcall(db.exec_cache,db,output.stmt,args,'Internal_GetDBMSOutput')
         if not done then 
-            return
+            return print(err)
         end
         
         local result=args.lob or args.buff

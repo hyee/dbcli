@@ -4,10 +4,10 @@
 
   Mainly used to diagnostic below events:
   =======================================
-  * cursor: mutex X - A cursor is being parsed and is trying to get the cursor mutex in eXclusive mode            
-  * cursor: mutex S - A cursor is being parsed and is trying to get the cursor mutex in Share mode                 
+  * cursor: mutex X - A cursor is being parsed and is trying to get the cursor mutex in eXclusive mode(anonymous PL/SQL block is executed concurrently at high frequency)            
+  * cursor: mutex S - A cursor is being parsed and is trying to get the cursor mutex in Share mode(several versions of same the SQL)
   * cursor: pin X   - A cursor is being parsed and is trying to get the cursor pin in eXclusive mode               
-  * cursor: pin S   - A cursor is being parsed and is trying to get the cursor pin in Share mode                   
+  * cursor: pin S   - A cursor is being parsed and is trying to get the cursor pin in Share mode(the same SQL operator is executed concurrently)
   * cursor: pin S wait on X - A cursor is being parsed and has the cursor pin in Share but another session has it in eXclusive mode
   * library cache: mutex X - A library cache operation is being performed and is trying to get the library cache mutex in eXclusive mode
   * library cache: bucket mutex X    
@@ -129,9 +129,10 @@
 ]]*/
 
 set feed off
-
+PRO Current Mutex Waits
+PRO ======================
 SELECT DISTINCT *
-FROM   TABLE(gv$(CURSOR ( --
+FROM   TABLE(gv$(CURSOR( --
           SELECT /*+ordered use_hash(b)*/
                   userenv('instance') inst_id,
                   sid,
@@ -153,7 +154,8 @@ FROM   TABLE(gv$(CURSOR ( --
           AND    a.p2text = 'value'
           AND    a.p3text = 'where'
           AND    userenv('instance') = nvl(:V2, userenv('instance')))));
-
+PRO ASH Mutex Waits
+PRO ======================
 SELECT *
 FROM   (SELECT *
         FROM   TABLE(gv$(CURSOR (
@@ -185,7 +187,8 @@ FROM   (SELECT *
         ORDER  BY last_Time DESC)
 WHERE  rownum <= 50;
 
-
+PRO Mutex Sleep History
+PRO =======================
 SELECT * FROM (
     SELECT *
     FROM   TABLE(gv$(CURSOR(
