@@ -74,7 +74,7 @@ BEGIN
                                MIN(ROWID) rid, 
                                MIN(MIN(ROWID)) OVER(PARTITION BY SUBSTR(ROWID, 1, 6)) ridp,
                                count(1) cnt
-                        FROM   &object_owner..&object_name @PART@ a 
+                        FROM   &object_owner..&object_name @PART@ a &filter
                         GROUP  BY SUBSTR(ROWID, 1, 6), SUBSTR(ROWID, 1, 15))) a,
                dba_objects b
         WHERE  b.owner = '&object_owner'

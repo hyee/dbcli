@@ -28,7 +28,8 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             l_lob    CLOB;
             l_enable VARCHAR2(3)  := :enable;
             l_trace  VARCHAR2(30) := :autotrace;
-            l_sql_id VARCHAR2(15) := :sql_id;
+            l_sql_id VARCHAR2(15);
+            l_tmp_id VARCHAR2(15) := :sql_id; 
             l_size   PLS_INTEGER;
             l_cont   VARCHAR2(50);
             l_cid    PLS_INTEGER;
@@ -40,6 +41,8 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             l_fmt    VARCHAR2(300):='TYPICAL ALLSTATS LAST';
             l_sql    VARCHAR2(500);
             l_found  BOOLEAN := false;
+            l_intval PLS_INTEGER;
+            l_strval VARCHAR2(20);
             TYPE l_rec IS RECORD(sql_id varchar2(13),child_addr raw(8),child_num int);
             TYPE t_recs IS TABLE OF l_rec;
             l_recs t_recs := t_recs();
@@ -56,16 +59,22 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             end;
         BEGIN
             if l_trace not in ('sql_id','statistics','off') then
+                open l_stats for 'select /*+dbcli_ignore*/ name,value from v$mystat natural join v$statname where name not like ''session%memory%'' and value>0';
                 begin
                     execute immediate 'select prev_sql_id,prev_child_number from v$session where sid=userenv(''sid'')'
                     into l_sql_id,l_child;
 
                     if l_sql_id is null then
-                        l_sql_id := :sql_id;
+                        l_sql_id := l_tmp_id;
+                    elsif l_sql_id != l_tmp_id then
+                        l_intval := dbms_utility.get_parameter_value('cursor_sharing',l_intval,l_strval);
+                        if lower(l_strval)!='exact' then
+                            l_sql_id := l_tmp_id;
+                            l_child  := null;
+                        end if;
                     end if;
                 exception when others then null;
                 end;
-                open l_stats for select /*+dbcli_ignore*/ name,value from v$mystat natural join v$statname where name not like 'session%memory%' and value>0;
             else
                 open l_stats for select /*+dbcli_ignore*/ * from dual;
             end if;
@@ -213,7 +222,7 @@ function output.getOutput(item)
         args.cdbid=tonumber(db.props.container_dbid) or -1
         local done,err=pcall(db.exec_cache,db,output.stmt,args,'Internal_GetDBMSOutput')
         if not done then 
-            return print(err)
+            return --print(err)
         end
         
         local result=args.lob or args.buff

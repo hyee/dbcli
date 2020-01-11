@@ -29,6 +29,10 @@ Parameters
     _iut_stat_collection_type: relative views: DBA_INDEX_USAGE/V$INDEX_USAGE_INFO, set to 'ALL' to get the most accurate result during the monitor period, it can cause some overhead
     _disable_directory_link_check: directs the access driver to bypass symbolic link check, allowing you to use files for which the parent directory may be a symbolic link
 	table_cached_blocks: from dbms_stats.set_xxx_prefs, defaults as 1(0 as auto), used to control how to compute the CLUSTERING_FACTOR by gather_index_stats, recommend to set as 16*<Rac nodes> by jonathan lewis
+    _kcfis_storageidx_disabled: enable/disable storage index
+    _rdbms_internal_fplib_enabled/cell_offload_plan_display: simulate smart scan on non-Exadata db
+    _exadata_feature_on: simulate Exadata features on non-Exadata db
+    _kcfis_cell_passthru_fromcpu_enabled: disable Exadata reverse offloading
     
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'

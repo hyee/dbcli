@@ -8,7 +8,7 @@ How to setup Columnar Cache
         alter table table_1 cellmemory memcompress for query; --- CC2 query mode 
 
     Note: to make sure DDL works correctly, the paramter "_enable_columnar_cache" should be set to 1 which is the default value and the db inmemory size should be non-zero. We can only have CC for EHCC tables. 
-    We can now also selectively disable CC2 non-EHCC and keep EHCC enabled. this can be done the following way:
+    We can now also selectively disable CC2 for non-EHCC and keep EHCC enabled. this can be done the following way:
         alter session set "_enable_columnar_cache"=16481 --(0x4061, Capacity for EHCC) 
         alter session set "_enable_columnar_cache"=16449 --(0x4041, Query for EHCC) 
     Likewise we can selectively disable CC2 for EHCC and keep it enabled for non EHCC:
