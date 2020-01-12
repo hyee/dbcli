@@ -356,10 +356,6 @@ function output.capture_stats(info)
     end
 end
 
-function output.finally()
-    output.is_exec=nil
-end
-
 function output.get_error_output(info)
     if info.db:is_connect() then
         output.getOutput({info.db,info.sql})

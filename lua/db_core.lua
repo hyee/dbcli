@@ -712,7 +712,8 @@ function db_core:exec_cache(sql,args,description)
         --print(table.dump(params),table.dump(args))
     end
     args._description=description and ('('..description..')') or ''
-    return self:exec(prep,args,table.clone(params),sql),cache
+
+    return self:internal_call(prep,args,table.clone(params),sql),cache
 end
 
 function db_core:close_cache(description)
@@ -899,10 +900,10 @@ function db_core:assert_connect()
     env.checkerr(self:is_connect(),2,"%s database is not connected!",env.set.get("database"):initcap())
 end
 
-function db_core:internal_call(sql,args,prep_params)
+function db_core:internal_call(sql,args,prep_params,print_result)
     self.internal_exec=true
     --local exec=self.super.exec or self.exec
-    local succ,result=pcall(self.exec,self,sql,args,prep_params)
+    local succ,result=pcall(self.exec,self,sql,args,prep_params,print_result)
     self.internal_exec=false
     if not succ then error(result) end
     return result
