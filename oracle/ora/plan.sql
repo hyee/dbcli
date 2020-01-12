@@ -1,5 +1,5 @@
 /*[[
-Show execution plan. Usage: @@NAME {<sql_id> [<plan_hash_value>|<child_number>] [format1..n]} [-all|-last|-b|-d|-s|-ol|-adv] 
+Show execution plan. Usage: @@NAME {<sql_id>|last [<plan_hash_value>|<child_number>] [format1..n]} [-all|-last|-b|-d|-s|-ol|-adv] 
 
 Options:
     -b    : show binding variables
@@ -20,6 +20,7 @@ Options:
           }
     &binds: default={}, b={PEEKED_BINDS}
     @adaptive: 12.1={+REPORT +ADAPTIVE +METRICS} 11.2={+METRICS} default={}
+    @proj:  11.2={nvl2(projection,1+regexp_count(regexp_replace(regexp_replace(projection,'[\[.*?\]'),'\(.*?\)'),', '),null) proj} default={cast(null as number) proj}
     @check_access_advisor: {
            dba_advisor_sqlplans={
                   UNION ALL
@@ -32,9 +33,14 @@ Options:
                          NULL child_number,
                          sql_id,
                          plan_hash_value,
-                         plan_id
+                         plan_id,
+                         qblock_name qb,
+                         replace(object_alias,'"') alias,
+                         &proj,
+                         nvl2(access_predicates,'A','')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   dba_advisor_sqlplans a
                   WHERE  a.sql_id = :V1
+                  AND    :V1 not in('X','last','LAST')
                   AND    a.plan_hash_value = coalesce(:V2+0,(select max(plan_hash_value) keep(dense_rank last order by timestamp) from dba_advisor_sqlplans where sql_id=:V1))}
            default={}
     }
@@ -51,9 +57,14 @@ Options:
                          NULL child_number,
                          st.sql_handle,
                          st.signature,
-                         plan_id
+                         plan_id,
+                         qblock_name qb,
+                         replace(object_alias,'"') alias,
+                         &proj,
+                         nvl2(access_predicates,'A','')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   sys.sql$text st,sys.sqlobj$plan a
                   WHERE  st.sql_handle = :V1
+                  AND    :V1 not in('X','last','LAST')
                   AND    a.signature = st.signature
                   AND    a.plan_id = coalesce(:V2+0,(select max(plan_id) keep(dense_rank last order by timestamp) from sys.sqlobj$plan b where b.signature=a.signature))
            }
@@ -63,9 +74,10 @@ Options:
 ]]*/
 set PRINTSIZE 9999
 set feed off pipequery off
+def last_sql=&_sql_id
 
 VAR C REFCURSOR Binding Variables
-BEGIN
+BEGIN /*INTERNAL_DBCLI_CMD*/
     IF :binds='PEEKED_BINDS' THEN
         open :c for
         WITH b1 AS
@@ -113,9 +125,9 @@ BEGIN
 END;
 /
 
-WITH sql_plan_data AS
+WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
  (SELECT /*+materialize*/*
-  FROM   (SELECT /*+no_merge(a) PQ_CONCURRENT_UNION*/ a.*,
+  FROM   (SELECT /*+no_merge(a) NO_PQ_CONCURRENT_UNION*/ a.*,
                  dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id) seq
           FROM   (SELECT id,
                          min(id) over() minid,
@@ -126,9 +138,14 @@ WITH sql_plan_data AS
                          child_number,
                          sql_id,
                          plan_hash_value,
-                         0+USERENV('INSTANCE') inst_id
+                         0+USERENV('INSTANCE') inst_id,
+                         qblock_name qb,
+                         replace(object_alias,'"') alias,
+                         &proj,
+                         nvl2(access_predicates,'A','')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   v$sql_plan a
-                  WHERE  a.sql_id = :V1
+                  WHERE  a.sql_id = replace(lower(:V1),'last',:last_sql)
+                  AND    :V1 !='X'
                   AND    (:V2 is null or :V2 in(plan_hash_value,child_number))
                   UNION ALL
                   SELECT id,
@@ -140,9 +157,14 @@ WITH sql_plan_data AS
                          child_number,
                          sql_id,
                          plan_hash_value,
-                         inst_id
+                         inst_id,
+                         qblock_name qb,
+                         replace(object_alias,'"') alias,
+                         &proj,
+                         nvl2(access_predicates,'A','')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   gv$sql_plan_statistics_all a
-                  WHERE  a.sql_id = :V1
+                  WHERE  a.sql_id = replace(lower(:V1),'last',:last_sql)
+                  AND    :V1 !='X'
                   AND    (:V2 is null or :V2 in(plan_hash_value,child_number))
                   UNION ALL
                   SELECT /*+no_expand*/ id,
@@ -154,9 +176,14 @@ WITH sql_plan_data AS
                          NULL child_number,
                          sql_id,
                          plan_hash_value,
-                         dbid
+                         dbid,
+                         qblock_name qb,
+                         replace(object_alias,'"') alias,
+                         &proj,
+                         nvl2(access_predicates,'A','')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   dba_hist_sql_plan a
                   WHERE  a.sql_id = :V1
+                  AND    :V1 not in('X','last','LAST')
                   AND    a.plan_hash_value = coalesce(:V2+0,(
                      select --+index(c.sql(WRH$_SQLSTAT.SQL_ID)) index(c.sn)
                             max(plan_hash_value) keep(dense_rank last order by snap_id)
@@ -173,9 +200,14 @@ WITH sql_plan_data AS
                          NULL child_number,
                          sql_id,
                          plan_hash_value,
-                         plan_id
+                         plan_id,
+                         qblock_name qb,
+                         replace(object_alias,'"') alias,
+                         &proj,
+                         nvl2(access_predicates,'A','')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   all_sqlset_plans a
                   WHERE  a.sql_id = :V1
+                  AND    :V1 not in('X','last','LAST')
                   AND    a.plan_hash_value = coalesce(:V2+0,(
                      select max(plan_hash_value) keep(dense_rank last order by timestamp) 
                      from all_sqlset_plans where sql_id=:V1))
@@ -191,16 +223,21 @@ WITH sql_plan_data AS
                          NULL            tm,
                          NULL,
                          ''||plan_id,
-                         max(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), 'plan_hash_full.*?(\d+)', 1, 1, 'i',1))) over()+0 plan_hash_value,
-                         NULL
+                         max(decode(id, 1, regexp_substr(regexp_substr(to_char(substr(other_xml,1,2000)), 'plan_hash_full.*?(\d+)', 1, 1, 'i'),'\d+'))) over()+0 plan_hash_value,
+                         NULL,
+                         qblock_name qb,
+                         replace(object_alias,'"') alias,
+                         &proj,
+                         nvl2(access_predicates,'A','')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   plan_table a
-                  WHERE  plan_id=(select max(plan_id) keep(dense_rank last order by timestamp) 
+                  WHERE  :V1 not in('last','LAST')
+                  AND    plan_id=(select max(plan_id) keep(dense_rank last order by timestamp) 
                                   from plan_table
-                                  where nvl(upper(:V1),'x') in(statement_id,''||plan_id,'x'))) a
+                                  where nvl(upper(:V1),'X') in(statement_id,''||plan_id,'X'))) a
          WHERE flag>=&src)
   WHERE  seq = 1),
 hierarchy_data AS
- (SELECT id, parent_id, plan_hash_value,minid
+ (SELECT id, parent_id,pred,qb,alias,proj,plan_hash_value,minid
   FROM   sql_plan_data
   START  WITH id = minid
   CONNECT BY PRIOR id = parent_id
@@ -208,6 +245,7 @@ hierarchy_data AS
 ordered_hierarchy_data AS
  (SELECT id,minid,
          parent_id AS pid,
+         pred,qb,alias,proj,
          plan_hash_value AS phv,
          row_number() over(PARTITION BY plan_hash_value ORDER BY rownum DESC) AS OID,
          MAX(id) over(PARTITION BY plan_hash_value) AS maxid
@@ -249,10 +287,11 @@ xplan AS
   FROM   qry,TABLE(dbms_xplan.display('gv$sql_plan_statistics_all',NULL,format,'child_number=' || plan_hash || ' and sql_id=''' || sq ||''' and inst_id=' || inst_id)) a
   WHERE  flag = 1),
 xplan_data AS
- (SELECT /*+ordered use_hash(o x) materialize no_merge(o)*/
+ (SELECT /*+ordered use_nl(o x) materialize no_merge(o)*/
            x.plan_table_output AS plan_table_output,
            nvl(o.id,x.oid) id,
            o.pid,
+           o.pred,o.qb,o.alias,o.proj,
            o.oid,
            o.maxid,
            r,
@@ -267,23 +306,34 @@ xplan_data AS
 SELECT plan_table_output
 FROM   xplan_data --
 model  dimension by (r)
-measures (plan_table_output,id,maxid,pid,oid,minid,
-         greatest(max(length(maxid)) over () + 3, 6) as csize,
+measures(plan_table_output,id,maxid,pred,oid,minid,qb,alias,nullif(proj,null) proj,
+         greatest(max(length(maxid)) over () + 3, 5) as csize,
+         nvl(greatest(max(length(pred)) over () + 3, 7),0) as psize,
+         nvl(greatest(max(length(qb)) over () + 3, 6),0) as qsize,
+         nvl(greatest(max(length(alias)) over () + 3, 8),0) as asize,
+         nvl(greatest(max(length(proj)) over () + 3, 7),0) as jsize,
          cast(null as varchar2(128)) as inject,
          rc)
 rules sequential order (
-    inject[r] = case
-          when plan_table_output[cv()] like '------%' then rpad('-', csize[cv()]*2, '-')
-          when id[cv()+2] = minid[cv()]
-          then '|' || lpad('Pid |', csize[cv()]) || lpad('Ord |', csize[cv()])
-          when id[cv()] is not null
-          then '|' || lpad(pid[cv()] || ' |', csize[cv()]) || lpad(oid[cv()] || ' |', csize[cv()])
-      end,
-    plan_table_output[r] = case
-         when inject[cv()] like '---%'
-         then inject[cv()] || plan_table_output[cv()]
-         when inject[cv()] is not null
-         then regexp_replace(plan_table_output[cv()], '\|', inject[cv()], 1, 2)
-         else plan_table_output[cv()]
-     END)
+        inject[r] = case
+              when plan_table_output[cv()] like '------%' then 
+                   rpad('-', csize[cv()]+psize[cv()]+jsize[cv()]+qsize[cv()]+asize[cv()]+1, '-') || '{PLAN}'  
+              when id[cv()+2] = 0 then
+                   '|' || lpad('Ord ', csize[cv()]) || '{PLAN}' 
+                       || decode(psize[cv()],0,'',rpad(' Pred', psize[cv()]-1)||'|')
+                       || lpad('Proj |', jsize[cv()]) 
+                       || decode(qsize[cv()],0,'',rpad(' Q.B', qsize[cv()]-1)||'|')
+                       || decode(asize[cv()],0,'',rpad(' Alias', asize[cv()]-1)||'|')
+              when id[cv()] is not null then
+                   '|' || lpad(oid[cv()]||' ', csize[cv()]) || '{PLAN}'  
+                       || decode(psize[cv()],0,'',rpad(' '||pred[cv()], psize[cv()]-1)||'|')
+                       || lpad(proj[cv()] || ' |', jsize[cv()]) 
+                       || decode(qsize[cv()],0,'',rpad(' '||qb[cv()], qsize[cv()]-1)||'|')
+                       || decode(asize[cv()],0,'',rpad(' '||alias[cv()] , asize[cv()]-1)||'|')
+          end,
+        plan_table_output[r] = case
+             when inject[cv()] is not null then
+                  replace(inject[cv()], '{PLAN}',plan_table_output[cv()])
+             else plan_table_output[cv()]
+         end)
 order  by r;

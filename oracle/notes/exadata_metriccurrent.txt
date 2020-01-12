@@ -488,8 +488,9 @@ PC_BY_ALLOCATED =>  [PMEM] The number of megabytes allocated in PMEM cache. Tra
 PDB_PC_BY_ALLOCATED =>  [PMEM] Number of megabytes allocated in PMEM cache for this pluggable database (PDB).
 
 
-FlashCache: cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(Reset,0,0,0)"'
-            cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(dumpStats,0,0,0)"' 
+FlashCache: cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(Reset,0,0,0)"'      -- or 0,0,1
+            cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(Resetstats,0,0,0)"' -- or 0,0,1
+            cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(dumpStats,0,0,0)"'  -- or 0,0,1
 			cellcli -e 'alter cell events="immediate cellsrv.cellsrv_flashcache(dumpheader, <addr1>, <addr2>, 1)'
 			cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(dumpGroups,0,0,0)"' 
 			cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(dumpobj,0,0,0)"' 
@@ -504,8 +505,11 @@ Storage Indexe:   cellcli -e 'alter cell events="immediate cellsrv.cellsrv_stori
 				  #3: 0/<data_object_id>
 				  #4: 0/<tablespace_id>
 				  #5: 0/<unique dbid> (x$ksqdn.KSQDNGUNID)
+Ramcache: cellcli -e 'alter cell events="immediate cellsrv.cellsrv_ramcache(addstore,1,0,0)"'
+          cellcli -e 'alter cell events="immediate cellsrv.cellsrv_ramcache(dumpstats, 0,0,1)"'
+          cellcli -e 'alter cell events="immediate cellsrv.cellsrv_ramcache(dropstore,1,0,0)"'
 resetstats  ：   cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_resetstats('all')"'  
-                     or the items from  "cellsrv.cellsrv_dump(list,0)"
+                     or the items from: cellcli -e 'alter cell events="immediate cellsrv.cellsrv_dump(list,0)"'
 cellsrv_dump：   List all: cellcli -e 'alter cell events="immediate cellsrv.cellsrv_dump(list,0)"'
                  dump all: cellcli -e 'alter cell events="immediate cellsrv.cellsrv_dump(all,0)"'
                  system state dump: cellcli -e 'alter cell events="immediate cellsrv.cellsrv_statedump(0|1|2,0)"'

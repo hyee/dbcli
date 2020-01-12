@@ -79,6 +79,8 @@ function var.setOutput(name,datatype,desc)
         return
     end
 
+    if desc then desc=var.update_text(desc) end
+
     datatype=datatype:upper():match("(%w+)")
     env.checkerr(var.types[datatype],'Unexpected data type['..datatype..']!')
     env.checkerr(name:match("^[%w%$_]+$"),'Unexpected variable name['..name..']!')
@@ -406,7 +408,7 @@ function var.define_column(col,...)
         elseif args[i]=='FORMAT' or args[i]=='FOR' then
             local num_fmt="%."..scale.."f"
             env.checkerr(arg,'Format:  COL[UMN] <column> FOR[MAT] [KMB|TMB|ITV|SMHD|<format>] JUS[TIFY] [LEFT|L|RIGHT|R].')
-            if f:find('^A') then
+            if f:find('^A%d+') then
                 local siz=tonumber(arg:match("%d+"))
                 obj.format_dir='%-'..siz..'s'
                 formats[#formats+1]=function(v) return tostring(v) and obj.format_dir:format(tostring(v):sub(1,siz)) or v end
@@ -423,6 +425,24 @@ function var.define_column(col,...)
                     if not s then return v,1 end
                     local prefix=s<0 and '-' or ''
                     s=math.abs(s)
+                    for i=1,#units do
+                        v,s=math.round(s,scale),s/div
+                        if v==0 then prefix='' end
+                        if s<1 then return string.format(i>1 and "%s"..num_fmt.."%s" or "%s%d%s",prefix,v,units[i]),1 end
+                    end
+                    return string.format("%s"..num_fmt.."%s",v==0 and '' or prefix,v,units[#units]),1
+                end
+            elseif f1=="AUTO" then
+                local u1,u2={'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} , {'  ',' Ki',' Mi',' Bi',' Tr',' Qu'}
+                local d1,d2=1024,1000
+                formats[#formats+1]=function(v,r,grid)
+                    local s=tonumber(v)
+                    if not s then return v,1 end
+                    local prefix=s<0 and '-' or ''
+                    s=math.abs(s)
+                    local val=grid.data[r][1]
+                    local units=val:find('byte',1,true) and u1 or u2
+                    local div=val:find('byte',1,true) and d1 or d2
                     for i=1,#units do
                         v,s=math.round(s,scale),s/div
                         if v==0 then prefix='' end

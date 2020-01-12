@@ -3,13 +3,13 @@
 	This script relies on external table EXA$CACHED_OBJECTS which is created by shell script "oracle/shell/create_exa_external_tables.sh" with the oracle user
 	
 	Parameters:
-		* hits|misses|cachesize: order by column, defaults as order by hits desc
+		* hits|misses|cachedsize: order by column, defaults as order by hits desc
 		* -detail: don't group the data,instead, show the details of each cell
     * -group : group the data by object name
 
 	Sample output:
 	==============
-    SQL> exa EXTCACHEOBJ SYS
+    SQL> @@NAME SYS
     OWNER      OBJECT_NAME       SUBOBJECT_NAME    OBJECT_TYPE     OBJECT_ID DATA_OBJECT_ID RECS CELLS Reqs Hits Hit% Misses CachedSize ColumnarCache ColumnarCache% CachedWrite CachedKeep ColumnarKeep
     ----- ---------------------- -------------- ------------------ --------- -------------- ---- ----- ---- ---- ---- ------ ---------- ------------- -------------- ----------- ---------- ------------
     SYS   WRI$_OPTSTAT_SYNOPSIS$ SYS_SUBP2301   TABLE SUBPARTITION    106117        1022957    3     3  0    0           0      6.44 MB       6.44 MB        100.00%        0  B       0  B         0  B
@@ -68,7 +68,7 @@ FROM   (SELECT objectnumber data_object_id,dbuniquename,
         FROM   EXA$CACHED_OBJECTS
         GROUP  BY objectnumber,dbuniquename &grp2) b
 LEFT JOIN dba_objects a 
-ON   (b.data_object_id = a.data_object_id and regexp_replace(upper(dbuniquename),':.*')= upper(sys_context('userenv','db_unique_name')))
+ON   (b.data_object_id = a.data_object_id and regexp_replace(upper(dbuniquename),'[:\.].*')= upper(sys_context('userenv','db_unique_name')))
 WHERE nvl(lower(:V1), ' ') IN (' ', 'hits', 'misses', 'cachedsize', 'cachedwrite', 'columnarcache', 'cachedkeep', 'columnarkeep') 
 OR    upper(:V1) IN (owner, object_name,subobject_name, object_type,''||object_id,''||a.data_object_id)
 &grp4

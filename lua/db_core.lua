@@ -5,6 +5,36 @@ local event=env.event and env.event.callback or nil
 local db_core=env.class()
 local db_Types={}
 db_core.NOT_ASSIGNED='__NO_ASSIGNMENT__'
+local rs_close,rs_isclosed,prep_close,prep_isclosed,prep_exec
+
+local function is_rsclosed(rs)
+	if type(rs)~='userdata' then return true end
+	if not rs_isclosed then rs_isclosed=rs.isClosed end
+	if not rs_isclosed then return true end
+	return rs_isclosed(rs)
+end
+
+local function close_rs(rs)
+	if type(rs)~='userdata' then return nil end
+	if not rs_close then rs_close=rs.close end
+	if not rs_close then return nil end
+	pcall(rs_close,rs)
+end
+
+local function is_prepclosed(prep)
+	if type(prep)~='userdata' then return true end
+	if not prep_isclosed then prep_isclosed=prep.isClosed end
+	if not prep_isclosed then return true end
+	return prep_isclosed(prep)
+end
+
+local function close_prep(prep)
+	if type(prep)~='userdata' then return nil end
+	if not prep_close then prep_close=prep.close end
+	if not prep_close then return nil end
+	pcall(prep_close,prep)
+end
+
 function db_Types:set(typeName,value,conn)
     local typ=self[typeName]
     if value==nil or value==db_core.NOT_ASSIGNED then
@@ -204,11 +234,9 @@ function ResultSet:fetch(rs,conn)
     return result
 end
 
-local rs_close
 function ResultSet:close(rs)
     if rs then
-        if not rs_close then rs_close=rs.close end
-        if rs_close then pcall(rs_close,rs) end
+        close_rs(rs)
         if self[rs] then self[rs]=nil end
     end
     local clock=os.clock()
@@ -216,9 +244,7 @@ function ResultSet:close(rs)
     if  self.__clock then
         if clock-self.__clock > 60 then
             for k,v in pairs(self) do
-                if type(k)=='userdata' and k.isClosed and k:isClosed() then
-                    self[k]=nil
-                end
+                if is_rsclosed(k) then self[k]=nil end
             end
             self.__clock=clock
         end
@@ -228,7 +254,7 @@ function ResultSet:close(rs)
 end
 
 function ResultSet:rows(rs,count,null_value,is_close)
-    if type(rs)~="userdata" or (rs.isClosed and rs:isClosed()) then return end
+    if is_rsclosed(rs) then return end
     count=tonumber(count) or -1
     local titles=self:getHeads(rs)
     local head=titles.__titles
@@ -264,7 +290,7 @@ function ResultSet:rows(rs,count,null_value,is_close)
             end
         end
     end
-    if (is_close==true or count <0 ) and rs.close then
+    if (is_close==true or count <0 ) then
         self:close(rs)
     end
     table.insert(rows,1,head)
@@ -273,7 +299,7 @@ end
 
 function ResultSet:print(res,conn,prefix)
     local result,hdl={},nil
-    if type(res)~="userdata" or (res.isClosed and res:isClosed()) then return end
+    if is_rsclosed(res) then return end
     local cols=self:getHeads(res)
     if #cols==1 then
         if cfg.get("pipequery")=="on" then
@@ -302,7 +328,7 @@ end
 
 function ResultSet:print_old(res,conn)
     local result,hdl={},nil
-    if res:isClosed() then return end
+    if is_rsclosed(res) then return end
     local rows,maxrows,feedflag,pivot=0,cfg.get("printsize"),cfg.get("feed"),cfg.get("pivot")
     if pivot==0 then hdl=grid.new() end
     while true do
@@ -425,10 +451,12 @@ function db_core:ctor()
     self.resultset  = ResultSet.new()
     self.db_types:load_sql_types('java.sql.Types')
     self.__stmts = {}
+    self.test_connection_sql="SELECT 1"
     self.type="unknown"
     env.set_command(self,"commit",nil,self.commit,false,1)
     env.set_command(self,"rollback",nil,self.rollback,false,1)
 end
+
 
 function db_core:login(account,list)
     if list.account_type and list.account_type~='database' then return end
@@ -473,6 +501,7 @@ function db_core:call_sql_method(event_name,sql,method,...)
 
     local res,obj=pcall(method,...)
     if res==false then
+        self:is_connect(nil,true)
         local info,internal={db=self,sql=sql,error=tostring(obj):gsub('%s+$','')}
         event(event_name,info)
         if info and info.error and info.error~="" then
@@ -619,7 +648,7 @@ function db_core:exec_cache(sql,args,description)
     end
 
     local prep,org,params,_sql
-    if not cache or cache[1]:isClosed() then
+    if not cache or is_prepclosed(cache[1]) then
         org=table.clone(args)
         if type(description)=="string" and description~='' then
             cache=self.__preparedCaches.__list[description]
@@ -687,7 +716,17 @@ function db_core:exec_cache(sql,args,description)
 end
 
 function db_core:close_cache(description)
-    self:exec_cache('close',nil,description)
+    local is_connect=self:is_connect()
+    if description=='ALL' then
+        for desc,cache in pairs(self.__preparedCaches.__list) do
+            if is_connect and type(cache[1])=='userdata' then
+                pcall(cache[1].close,cache[1])
+            end
+            self.__preparedCaches={}
+        end
+    elseif is_connect then
+        self:exec_cache('close',nil,description)
+    end
 end
 
 function db_core.log_param(params)
@@ -714,17 +753,16 @@ end
 local collectgarbage,java_system,gc=collectgarbage,java.system,java.system.gc
 function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_not_prep=type(sql)~="userdata"
+    local is_internal=self:is_internal_call(sql)
+    local is_timing = is_not_prep and not is_internal and cfg.get("TIMING")=="on"
     if is_not_prep and sql:sub(1,1024):find('/*DBCLI_EXEC_CACHE*/',1,true) then
         return self:exec_cache(sql,args,prep_params)
     end
 
-    if is_not_prep and not self:is_internal_call(sql) then
+    if is_not_prep and not is_internal then
         db_core.__start_clock=os.timer()
     end
-    collectgarbage("collect")
-    if #env.RUNNING_THREADS<=2 then 
-        gc(java_system) 
-    end
+
     local params,prep={}
     args=type(args)=="table" and args or {args}
     for k,v in pairs(args) do
@@ -742,7 +780,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         self.conn:setAutoCommit(autocommit=="on" and true or false)
         self.autocommit=autocommit
     end
-
+    local caches,clock,ela,exe
     if is_not_prep then
         sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
         if type(sql)~="string" then
@@ -750,10 +788,11 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         end
         prep,sql,params=self:parse(sql,params)
         prep:setEscapeProcessing(false)
-        self.__stmts[#self.__stmts+1]=prep
+        local str = tostring(prep)
+        caches=self.__stmts[str] or {{}}
+        caches.count,caches[1][#caches[1]+1],self.__stmts[str]=0,prep,caches
         prep:setFetchSize(cfg.get("FETCHSIZE"))
         prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
-        pcall(prep.closeOnCompletion,prep)
         self.current_stmt=prep
         env.log_debug("db","SQL:",sql)
         self.log_param(params)
@@ -766,27 +805,21 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
             env.log_debug("db","Cursor:",desc)
         end
     end
-
+    if is_timing then clock=os.timer() end
     local is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
+    if is_timing then exe=os.timer()-clock end
     self.current_stmt=nil
     local is_output,index,typename=1,2,3
-
-    local rscount=0
 
     local function process_result(rs,is_print)
         if print_result and is_print~=false then
             self.resultset:print(rs,self.conn)
-        else
-            rscount=rscount+1
-            self.__result_sets[#self.__result_sets+1]=rs
-        end
-        
-        while #self.__result_sets>cfg.get('SQLCACHESIZE')*2 do
-            self.resultset:close(self.__result_sets[1])
-            table.remove(self.__result_sets,1)
+        elseif caches then
+            caches[#caches+1]=rs
         end
         return rs
     end
+
     if event then event("ON_DB_EXEC",{self,sql,args,result,params}) end
     for k,v in pairs(params) do
         if type(v) == "table" and v[is_output] == "#"  then
@@ -820,33 +853,40 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local result={is_query and process_result(prep:getResultSet()) or prep:getUpdateCount()}
     local i=0;
 
-    while true do
-        params1,is_query=pcall(prep.getMoreResults,prep,2)
-        if not params1 or not is_query then break end
-        if result[1]==-1 then table.remove(result,1) end
-        result[#result+1]=process_result(prep:getResultSet())
+    if not is_query then
+        while true do
+            params1,is_query=pcall(prep.getMoreResults,prep,2)
+            if not params1 or not is_query then break end
+            if result[1]==-1 then table.remove(result,1) end
+            result[#result+1]=process_result(prep:getResultSet())
+        end
     end
+
+    if is_timing then ela=os.timer()-clock end
 
     if event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
 
-    if rscount==0 and is_not_prep then
-        pcall(prep.close,prep)
-        self.__stmts[#self.__stmts]=nil
-    end
-
-    self:clearStatements()
+    if is_not_prep then self:clearStatements() end
     
     for k,v in pairs(outputs) do
         if args[k]==db_core.NOT_ASSIGNED then args[k]=nil end
     end
-
+    if is_timing then 
+        ela=os.timer()-clock
+        print(string.format("Elapsed: %.3f secs  Executed: %.3f secs\n",ela,exe))
+    end
     return #result==1 and result[1] or result
 end
 
-function db_core:is_connect(recursive)
-    if type(self.conn)~='userdata' or not self.conn.isClosed or self.conn:isClosed() then
+function db_core:is_connect(recursive,test_sql)
+    local is_conn=type(self.conn)=='userdata'
+    local is_closed=not is_conn or not self.conn.isClosed or self.conn:isClosed()
+    if not is_closed and is_conn and test_sql==true and prep_test_connection then
+        local result,err=pcall(prep_test_connection.execute,prep_test_connection)
+        if err then is_closed=true end
+    end
+    if is_closed then
         self.__stmts = {}
-        self.__result_sets = table.week('v')
         self.__preparedCaches={}
         self.props={privs={}}
         if self.conn~=nil and recursive~=true then self:disconnect(false) end
@@ -871,7 +911,7 @@ end
 function db_core:is_internal_call(sql)
     if self.internal_exec then return true end
     if type(sql)=="userdata" then return true end
-    return sql and sql:find("INTERNAL_DBCLI_CMD",1,true) and true or false
+    return sql and sql:sub(1,256):find("INTERNAL_DBCLI_CMD",1,true) and true or false
 end
 
 function db_core:print_result(rs,sql)
@@ -891,6 +931,7 @@ function db_core:print_result(rs,sql)
 end
 
 --the connection is a table that contain the connection properties
+local prep_test_connection
 function db_core:connect(attrs,data_source)
     env.log_debug("connect",table.dump(attrs))
     if not self.driver then
@@ -936,7 +977,6 @@ function db_core:connect(attrs,data_source)
         event("AFTER_DB_CONNECT",self,attrs.jdbc_alias or url,attrs)
     end
     self.__stmts = {}
-    self.__result_sets = table.week('v')
     self.__preparedCaches={}
     self.properties={}
 
@@ -949,6 +989,7 @@ function db_core:connect(attrs,data_source)
 
     pcall(self.conn.setReadOnly,self.conn,cfg.get("READONLY")=="on")
     self.last_login_account=attrs
+    prep_test_connection = self.conn:prepareCall(self.test_connection_sql)
     return self.conn,attrs
 end
 
@@ -959,11 +1000,35 @@ function db_core:reconnnect()
 end
 
 function db_core:clearStatements(is_force)
-    while #self.__stmts>(is_force==true and 0 or cfg.get('SQLCACHESIZE')) do
-        if not self.__stmts[1]:isClosed() then
-            pcall(self.__stmts[1].close,self.__stmts[1])
+    local counter=0
+    if is_force~=true then
+        for prep,caches in pairs(self.__stmts) do
+            for j=#caches,2,-1 do
+                if is_rsclosed(caches[j]) then table.remove(caches,j) end
+            end
+
+            if #caches<2 then
+            	for k,p in ipairs(caches[1]) do close_prep(p) end
+                self.__stmts[prep],counter=nil,1
+            else
+            	caches.count=caches.count+1
+            	if caches.count >= cfg.get('SQLCACHESIZE') then
+            		for k,p in ipairs(caches[1]) do close_prep(p) end
+            		self.__stmts[prep],counter=nil,1
+            	end
+            end
         end
-        table.remove(self.__stmts,1)
+    else
+        counter=1
+        for prep,caches in pairs(self.__stmts) do
+        	for k,p in ipairs(caches[1]) do close_prep(p) end
+        end
+        self.__stmts={}
+    end
+
+    if counter>1 then
+        --collectgarbage("collect")
+        gc(java_system) 
     end
 end
 
@@ -1336,7 +1401,10 @@ function db_core:disconnect(feed)
     if self.conn then
         loader:closeWithoutWait(self.conn)
         self.conn=nil
+        prep_test_connection=nil
         env.set_prompt(nil,nil,nil,2)
+        env.set_prompt(nil,"SQL")
+        env.set_title("",nil,self.__class.__className)
         event("ON_DB_DISCONNECTED",self)
         if feed~=false then print("Database disconnected.") end
     end
@@ -1396,6 +1464,7 @@ function db_core:__onload()
     cfg.init("ASYNCEXP",true,set_param,"db.export","Detemine if use parallel process for the export(SQL2CSV and SQL2FILE)",'true,false')
     cfg.init("SQLERRLINE",'off',nil,"db.core","Also print the line number when error SQL is printed",'on,off')
     cfg.init("NULL","",nil,"db.core","Define the display value for NULL value")
+    cfg.init({"TIMING","TIMI"},"off",nill,"db.core","Controls whether or not SQL*Plus displays the elapsed time for each SQL statement.")
     cfg.init("ConvertRAW2Hex","on",nil,"db.core","Convert raw data to Hex(text) format","on,off")
     cfg.init("CSVSEP",",",set_param,"db.core","Define the default separator between CSV fields.")
     cfg.init("READONLY",'off',set_param,"db.core","When set to on, makes the database connection read-only.",'on,off')

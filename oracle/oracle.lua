@@ -42,6 +42,7 @@ function oracle:ctor(isdefault)
     self.type="oracle"
     self.home=home
     self.tns_admin=tns
+    self.test_connection_sql="BEGIN NULL;END;"
     if tns then java.system:setProperty("oracle.net.tns_admin",tns) end
     local header = "set feed off sqlbl on define off;\n";
     header = header.."ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';\n"
@@ -97,7 +98,7 @@ function oracle:connect(conn_str)
     local args,usr,pwd,conn_desc,url,isdba,server,server_sep,proxy_user,params,_
     local sqlplustr
     local driver=env.set.get('driver')
-    local tns_admin
+    local tns_admin,prompt
     local attrs={}
     if type(conn_str)=="table" then --from 'login' command
         args=conn_str
@@ -107,6 +108,9 @@ function oracle:connect(conn_str)
         if url and url:find("?",1,true) then
             url,params=url:match('(.*)(%?.*)')
             tns_admin=params:match(tns_admin_param)
+            if tns_admin then
+                prompt=conn_str.url:match('([^@%? ]+) *%?')
+            end
         end
     else
         conn_str=conn_str or ""
@@ -117,10 +121,11 @@ function oracle:connect(conn_str)
             local props=conn_desc:split("?",true)
             for k,v in props[#props]:gmatch("([^&]+)=([^&]+)") do
                 k,v=k:trim(),v:trim()
-                if k:upper()~='TNS_ADMIN' 
-                    then attrs[k]=v
+                if k:upper()~='TNS_ADMIN' then 
+                    attrs[k]=v
                 else
                     tns_admin=v:replace('\\','/')
+                    prompt=conn_desc:match('([^@%? ]+) *%?')
                 end
                 found=true
             end
@@ -148,7 +153,7 @@ function oracle:connect(conn_str)
         if usr:find('%[.*%]') then usr,proxy_user=usr:match('(.*)%[(.*)%]') end
         
         sqlplustr,url=conn_str,url or conn_desc
-        local host,port,server_sep,database=url:match('^[/]*([^:/]+)(:?%d*)([:/])(.+)$')
+        local host,port,server_sep,database=url:gsub('%s*%?.*',""):match('^[/]*([^:/]+)(:?%d*)([:/])(.+)$')
         local flag=true
         if database then
             if host=='ldap' or host=='ldaps' then
@@ -165,7 +170,7 @@ function oracle:connect(conn_str)
                 flag,server_sep,database,server=false,'/',database:match('^([%w_]+):(%w+)$')
             end
             if server then server=server:upper() end
-            if port=="" and host~='ldap' and host~='ldaps' and host~='tcp' then flag,port=false,':1521' end
+            if port=="" and host~='ldap' and host~='ldaps' and host~='tcp' and not tns_admin then flag,port=false,':1521' end
             if not flag then 
                 url=host..port..server_sep..database..(server and (':'..server) or '')
                 sqlplustr=string.format('%s/%s@%s%s/%s%s',
@@ -178,16 +183,18 @@ function oracle:connect(conn_str)
             end
         end
     end
-
-    args=args or self:merge_props({user=usr,password=pwd,url="jdbc:oracle:"..driver..":@"..url,internal_logon=isdba},attrs)
+    self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
+    
+    args=args or self:merge_props({
+        user=usr,
+        password=pwd,
+        url="jdbc:oracle:"..driver..":@"..url,
+        internal_logon=isdba
+    },attrs)
     if tns_admin then args.url=args.url:replace(tns_admin,tns_admin:gsub('\\','/')) end
     env.checkerr(not args.url:find('oci.?:@') or home,"Cannot connect with oci driver without specifying the ORACLE_HOME environment.")
     self:merge_props(self.public_props,args)
     self:load_config(url,args)
-
-    if tonumber(args.version) and tonumber(args.version)>10 then
-        args['oracle.jdbc.mapDateToTimestamp']=nil
-    end
 
     if args.jdbc_alias or not sqlplustr then
         local pwd=args.password
@@ -199,18 +206,19 @@ function oracle:connect(conn_str)
         sqlplustr=string.format("%s/%s@%s%s",args.user,pwd,args.url:match("@(.*)$"),args.internal_logon and " as "..args.internal_logon or "")
     end
     sqlplustr=sqlplustr:gsub("?%S+",'')
-    
-    local prompt=args.jdbc_alias or url:gsub('.*@','')
+
+    prompt=prompt or args.jdbc_alias or url:gsub('.*@','')
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
     env.set_title("")
     local data_source=java.new('oracle.jdbc.pool.OracleDataSource')
     self.working_db_link=nil
     self.props={privs={}}
+    args["oracle.jdbc.implicitStatementCacheSize"]=tostring(math.floor(self.MAX_CACHE_SIZE/2))
+
     self.conn,args=self.super.connect(self,args,data_source)
     self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
     self.temp_tns_admin,self.conn_str=tns_admin or args['oracle.net.tns_admin'],sqlplustr:gsub('%?.*','')
 
-    self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     local props={host=self.properties['AUTH_SC_SERVER_HOST'],
                  instance_name=self.properties['AUTH_INSTANCENAME'],
                  instance='#NUMBER',
@@ -226,6 +234,7 @@ function oracle:connect(conn_str)
             vs      PLS_INTEGER  := dbms_db_version.version;
             ver     PLS_INTEGER  := sign(vs-9);
             re      PLS_INTEGER  := dbms_db_version.release;
+            vf      VARCHAR2(30);
             isADB   PLS_INTEGER  := 0;
             rtn     PLS_INTEGER;
             cdbid   NUMBER;
@@ -237,6 +246,7 @@ function oracle:connect(conn_str)
         BEGIN
             EXECUTE IMMEDIATE q'[alter session set nls_date_format='yyyy-mm-dd hh24:mi:ss' nls_timestamp_format='yyyy-mm-dd hh24:mi:ssxff' nls_timestamp_tz_format='yyyy-mm-dd hh24:mi:ssxff TZH:TZM']';
             BEGIN
+                dbms_output.enable(null);
                 EXECUTE IMMEDIATE 'alter session set statistics_level=all';
                 EXECUTE IMMEDIATE 'alter session set parallel_degree_policy=MANUAL';
                 EXECUTE IMMEDIATE 'alter session set "_query_execution_cache_max_size"=4194304';
@@ -244,6 +254,11 @@ function oracle:connect(conn_str)
             END;
 
             $IF dbms_db_version.version > 12 $THEN
+                BEGIN
+                    EXECUTE IMMEDIATE 'SELECT VERSION_FULL FROM v$instance' INTO vf;
+                EXCEPTION WHEN OTHERS THEN NULL;
+                END;
+
                 BEGIN --Used on ADW/ATP
                     EXECUTE IMMEDIATE 'alter session set optimizer_ignore_hints=false optimizer_ignore_parallel_hints=false';
                     IF sys_context('userenv', 'con_name') != 'CDB$ROOT' THEN
@@ -277,7 +292,7 @@ function oracle:connect(conn_str)
             END IF;
 
             SELECT user,
-                   (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_RDBMS_VERSION') version,
+                   nvl(vf,(SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_RDBMS_VERSION')) version,
                    (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_LANGUAGE') || '_' ||
                    (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_TERRITORY') || '.' || value nls,
             $IF dbms_db_version.version > 9 $THEN      
@@ -298,7 +313,9 @@ function oracle:connect(conn_str)
                    sys_context('userenv', 'isdba') isdba,
                    nvl(sv,sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.')) service_name,
                    decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY',' ','PHYSICAL STANDBY',' (Standby)>')) END,
-                   decode((select count(distinct inst_id) from gv$version),1,'FALSE','TRUE'),vs,decode(isADB,0,'FALSE','TRUE')
+                   decode((select count(distinct inst_id) from gv$version),1,'FALSE','TRUE'),
+                   0+nvl(regexp_substr(vf,'^\d+\.\d+'),vs||'.'||re),
+                   decode(isADB,0,'FALSE','TRUE')
             INTO   :db_user,:db_version, :nls_lang,:sid,:instance, :container, :dbid, :dbname,:isdba, :service_name,:db_role, :israc,:version,:isadb
             FROM   nls_Database_Parameters
             WHERE  parameter = 'NLS_CHARACTERSET';
@@ -378,6 +395,7 @@ function oracle:connect(conn_str)
 end
 
 function oracle:parse(sql,params)
+    self:assert_connect()
     local bind_info,binds,counter,index,org_sql={},{},0,0
     if cfg.get('SQLCACHESIZE') ~= self.MAX_CACHE_SIZE then
         self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
@@ -550,11 +568,6 @@ function oracle:check_date(string,fmt)
     return args[4]
 end
 
-function oracle:disconnect(...)
-    self.super.disconnect(self,...)
-    env.set_title("")
-end
-
 local is_executing=false
 
 local ignore_errors={
@@ -566,7 +579,6 @@ local ignore_errors={
 }
 
 function oracle:handle_error(info)
-    if not self.conn or not self.conn:isValid(3) then env.set_title("") end
     if is_executing then
         info.sql=nil
         return
@@ -579,7 +591,6 @@ function oracle:handle_error(info)
                 info.error=v
             else
                 info.error=info.error:match('^([^\n\r]+)')
-                self:disconnect(false)
             end
             return info
         end
@@ -654,7 +665,6 @@ function oracle:onload()
          ['v$session.program']='SQL Developer',
          ['oracle.jdbc.defaultLobPrefetchSize']="2097152",
          ['oracle.jdbc.mapDateToTimestamp']="true",
-         ['oracle.jdbc.maxCachedBufferSize']="33554432",
          ['oracle.jdbc.useNio']='true',
          ["oracle.jdbc.J2EE13Compliant"]='true',
          ['oracle.jdbc.autoCommitSpecCompliant']='false',
@@ -666,7 +676,7 @@ function oracle:onload()
          ['oracle.jdbc.timezoneAsRegion']='false',
          ['oracle.jdbc.TcpNoDelay']='false',
          ["oracle.net.disableOob"]='false',
-         ["oracle.jdbc.maxCachedBufferSize"]='28'
+         ["oracle.jdbc.maxCachedBufferSize"]='25'
         }
 end
 

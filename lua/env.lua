@@ -374,8 +374,13 @@ function env.remove_command(cmd)
 end
 
 function env.callee(idx)
-    if type(idx)~="number" then idx=3 end
-    local info=getinfo(idx)
+    if not idx then idx=3 end
+    local info
+    if type(idx)=="number" then 
+        info=getinfo(idx)
+    else
+        info={source=tostring(idx),currentline=0}
+    end
     if not info then return nil end
     local src=info.source:gsub("^@+","",1)
     if src:lower():find(env.WORK_DIR:lower(),1,true) then
@@ -555,18 +560,14 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     end
 
     if isMain then
-        _THREADS._clock[index]=nil
-        if env.PRI_PROMPT=="TIMING> " then
-            env.CURRENT_PROMPT=string.format('%06.2f',clock)..'> '
-            env.MTL_PROMPT="%P "
-        end
+        collectgarbage("collect")
+        env.set_prompt(nil,env.PRI_PROMPT)
     end
     return table.unpack(res,2)
 end
 
 local is_in_multi_state=false
-local curr_stmt
-local multi_cmd
+local curr_stmt,curr_cmd,multi_cmd
 
 local cache_prompt,fix_prompt
 
@@ -589,12 +590,21 @@ function env.set_prompt(class,default,is_default,level)
     end
 
     if env._SUBSYSTEM or (default and not default:match("[%w]%s*$")) then 
-        env.PRI_PROMPT=default 
+        env.PRI_PROMPT=default
     else
         env.PRI_PROMPT=(default or "").."> "
     end
 
     env.CURRENT_PROMPT,env.MTL_PROMPT=env.PRI_PROMPT,(" "):rep(#env.PRI_PROMPT)
+    if env.CURRENT_PROMPT=='TIMING> ' then
+        local current,isRoot=coroutine.running()
+        if isRoot then
+            local clock=math.floor((os.timer()-_THREADS._clock[1])*1e3)/1e3
+            env.CURRENT_PROMPT=string.format('%06.2f',clock)..'> '
+            env.MTL_PROMPT="%P "
+            _THREADS._clock[1]=os.timer()
+        end 
+    end
     return default
 end
 
@@ -640,7 +650,8 @@ function env.parse_args(cmd,rest,is_cross_line)
     
     local args={}
     if arg_count == 1 then
-        args[#args+1]=cmd..(rest and #rest> 0 and (" "..rest) or "")
+        args[#args+1]=(curr_cmd and cmd==curr_cmd:upper() and curr_cmd or cmd)..(rest and #rest> 0 and (" "..rest) or "")
+        curr_cmd=nil
     elseif arg_count == 2 then
         if type(rest)=="string" and not rest:match('".+".".+"') then
             rest=rest:gsub('^"(.*)"$','%1')
@@ -713,7 +724,7 @@ function env.force_end_input(exec,is_internal)
         local text=table.concat(curr_stmt,'\n')
         local stmt={multi_cmd,env.parse_args(multi_cmd,text,true)}
         multi_cmd,curr_stmt=nil,nil
-        env.CURRENT_PROMPT=env.PRI_PROMPT
+        env.set_prompt(nil,env.PRI_PROMPT)
         if exec~=false then
             env.exec_command(stmt[1],stmt[2],is_internal,text)
         else
@@ -739,6 +750,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
         push_stack(line)
         subsystem_prefix=env._SUBSYSTEM and (env._SUBSYSTEM.." ") or ""
         local cmd=env.parse_args(2,line)[1]
+        curr_cmd=cmd
         if dbcli_current_item.skip_subsystem and not not_skip then
             subsystem_prefix=""
         elseif cmd:sub(1,1)=='.' and _CMDS[cmd:upper():sub(2)] then
@@ -843,7 +855,8 @@ local _cmd,_args,_errs,_line_stacks,full_text=nil,nil,nil,{}
 function env.parse_line(line,exec)
     if(#_line_stacks==0) then
         multi_cmd,curr_stmt=nil,nil
-        env.CURRENT_PROMPT=env.PRI_PROMPT 
+        env.set_prompt(nil,env.PRI_PROMPT)
+        
     end
     local is_not_end,cnt=true,0
     for w in line:gsplit('\n',true) do
@@ -888,13 +901,9 @@ function env.modify_command(_,key_event)
         env.isInterrupted=true
         if env.IS_ASKING then return end
         multi_cmd,curr_stmt=nil,nil
-        env.CURRENT_PROMPT=env.PRI_PROMPT
+        env.set_prompt(nil,env.PRI_PROMPT)
         _line_stacks={}
-        local prompt,reset=env.PRI_PROMPT,""
-        if env.ansi then
-            local prompt_color="%s%s"..env.ansi.get_color("NOR").."%s"
-            prompt=prompt_color:format(env.ansi.get_color("PROMPTCOLOR"),prompt,env.ansi.get_color("COMMANDCOLOR"))
-        end
+        
     elseif key_event.name=="CTRL+BACK_SPACE" or key_event.name=="SHIFT+BACK_SPACE" then --shift+backspace
         console:invokeMethod("backwardDeleteWord")
         key_event.isbreak=true
@@ -1237,7 +1246,7 @@ end
 
 local org_title
 env.unknown_modules={}
-function env.set_title(title,value)
+function env.set_title(title,value,callee)
     local titles,status,sep,enabled="",{},"    "
     if not org_title then org_title=uv.get_process_title() end
     if value~='__EXIT__' then
@@ -1249,7 +1258,7 @@ function env.set_title(title,value)
             title=""
         end
 
-        local callee=env.callee():gsub("#%d+$","")
+        callee=env.callee(callee):gsub("#%d+$","")
         --print(callee,title)
         title_list[callee]=title
         

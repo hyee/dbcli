@@ -1,7 +1,7 @@
 local _G=_ENV or _G
 local _os=jit.os:lower()
 local ver=os.getenv("OSVERSION")
-
+local clock=os.clock()
 if ver then
 	ver=ver:match('%d+%.%d+')
 	if ver then 
@@ -110,11 +110,9 @@ local options ={'-noverify',
 			    '-Djava.awt.headless=true',
 				'-Djava.library.path='..resolve("./lib/"..dlldir),
 				'-Djava.security.egd=file:/dev/./urandom',
-				--'-Djava.home='..java_home,
 			    '-Djava.class.path='..jars}
-for _,param in ipairs(other_options) do options[#options+1]=param end 
-
-javavm = require("javavm",true)
+for _,param in ipairs(other_options) do options[#options+1]=param end
+local javavm = require("javavm",true)
 javavm.create(table.unpack(options))
 local destroy=javavm.destroy
 loader = java.require("org.dbcli.Loader",true).get()
@@ -131,8 +129,10 @@ if input:find('[\127-\254]') then
 	print('DBCLI cannot be launched from a Unicode path!')
 	os.exit(1)
 end
-
+_G.__loadclock=os.clock()-clock
+local clock=os.clock()
 while true do
+	_G.__startclock=os.clock()
 	local input,err=loadfile(resolve(input),'bt',_env)
 	if not input then error(err) end
 	loader:resetLua()

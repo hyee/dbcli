@@ -24,7 +24,7 @@ function trace.get_trace(filename,mb,from_mb)
         lang_ctx   PLS_INTEGER:=0;
         csid       PLS_INTEGER:=0;
         warn       PLS_INTEGER:=0;
-        type       t is table of varchar2(4000);
+        type       t is table of varchar2(8000);
         t1         t;
         cur        sys_refcursor;
         PROCEDURE drop_dir IS
@@ -124,9 +124,9 @@ function trace.get_trace(filename,mb,from_mb)
         IF text IS NULL THEN
             dir  := regexp_replace(regexp_replace(tmp,'[\\/]trace[\\/]$'),'[\\/]$');
             IF al IS NOT NULL THEN
-                OPEN cur FOR 'SELECT message_text FROM table(gv$(CURSOR(SELECT * FROM V$DIAG_ALERT_EXT WHERE filename LIKE :d1)))' USING dir||'%';
+                OPEN cur FOR 'SELECT rtrim(message_text) FROM table(gv$(CURSOR(SELECT * FROM V$DIAG_ALERT_EXT WHERE filename LIKE :d1)))' USING dir||'%';
             ELSIF vw IS NOT NULL THEN
-                OPEN cur FOR 'select PAYLOAD from ' || vw || '_CONTENTS where ADR_HOME=:d and TRACE_FILENAME=:f' USING dir, f;
+                OPEN cur FOR 'select rtrim(payload) from ' || vw || '_CONTENTS where ADR_HOME=:d and TRACE_FILENAME=:f' USING dir, f;
             END IF;
         
             IF cur IS NOT NULL THEN
@@ -140,10 +140,10 @@ function trace.get_trace(filename,mb,from_mb)
                     pos  := 0;
                     buff := '';
                     FOR i IN 1 .. t1.count LOOP
-                        t1(i) := regexp_replace(t1(i), '[' || chr(10) || chr(13) || ']+') || chr(10);
+                        t1(i) := rtrim(regexp_replace(t1(i), '[' || chr(10) || chr(13) || ']+')) || chr(10);
                         pos := pos + length(t1(i));
                         buff:= buff||t1(i);
-                        if pos >=30000 then
+                        if pos >=25000 then
                             fsize := fsize + pos;
                             dbms_lob.writeappend(text, pos,buff);
                             pos := 0;
@@ -197,7 +197,7 @@ function trace.get_trace(filename,mb,from_mb)
     target_view=db:check_obj("GV$DIAG_TRACE_FILE",1)
     if not target_view then target_view=db:check_obj("V$DIAG_TRACE_FILE",1) end
     if not filename then
-        if target_view and db.props.version>11 then 
+        if target_view and db.props.version>=12 then 
             target_view=target_view.target
             db:query([[SELECT * FROM(select ADR_HOME||regexp_substr(ADR_HOME,'[\\/]')||'trace'||regexp_substr(ADR_HOME,'[\\/]')||TRACE_FILENAME LAST_30_TRACE_FILES,CHANGE_TIME from ]]..target_view.." order by CHANGE_TIME desc) WHERE ROWNUM<=30")
         end
@@ -220,7 +220,7 @@ function trace.get_trace(filename,mb,from_mb)
             tracefile=nil
         end
         if not tracefile  then
-            if db.props.version>10 then
+            if db.props.version>=11 then
                 filename=db:get_value[[select tracefile from v$process where addr=(select paddr from v$session where sid=userenv('sid'))]]
             else
                 filename=db:get_value[[SELECT u_dump.value || '/' || SYS_CONTEXT('userenv','instance_name') || '_ora_' || p.spid ||

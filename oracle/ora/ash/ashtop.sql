@@ -50,7 +50,7 @@
 
    --[[
       &fields: {
-            sql={sql_id &V11,sql_opname},
+            sql={sql_id &V11,sql_opname &0},
             e={null}, 
             p={p1,p2,p3,p3text &0},
             pr={p1raw,p2raw,p3raw &0}, 
@@ -77,7 +77,7 @@
       @CPU    : 11.2={least(nvl(tm_delta_cpu_time,delta_time),DELTA_TIME)*1e-6}, default={0}
       @IOS    : 11.2={,SUM(DELTA_READ_IO_BYTES) reads,SUM(DELTA_Write_IO_BYTES) writes},default={}
       @V11    : 11.2={} default={--}
-      @V12    : 12.1={} default={--}
+      @V12    : 12.2={} default={--}
       @top_sql: 11.1={top_level_sql_id,} default={}
     ]]--
 ]]*/

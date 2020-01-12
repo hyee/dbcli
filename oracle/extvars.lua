@@ -75,6 +75,7 @@ function extvars.on_before_db_exec(item)
         {'STARTTIME',starttime},
         {'ENDTIME',endtime},
         {'SCHEMA',usr},
+        {'_SQL_ID',db.props.last_sql_id or ''},
         {'cdbmode',cdbmode~='off' and cdbmode or ''}
     } do
         if var.outputs[v[1]]==nil then var.setInputs(v[1],''..v[2]) end
@@ -140,7 +141,7 @@ function extvars.set_instance(name,value)
 end
 
 function extvars.set_container(name,value)
-    if name=='CONTAINER' and value>=0 then env.checkerr(db.props.version and db.props.version > 11,'Current db version does not support the CDB feature!') end
+    if name=='CONTAINER' and value>=0 then env.checkerr(db.props.version and db.props.version >= 12,'Current db version does not support the CDB feature!') end
     value=tonumber(value)
     env.checkerr(value and value>=-1 and value==math.floor(value),'Input value must be an integer!');
     return value
@@ -167,7 +168,7 @@ function extvars.set_cdbmode(name,value)
     if value~='off' then db:assert_connect() end
     if not db.props.version then return end
     if cdbmode==value then return value end
-    env.checkerr(value=='off' or db.props.version>11, "Unsupported database: v"..db.props.db_version)
+    env.checkerr(value=='off' or db.props.version>=12, "Unsupported database: v"..db.props.db_version)
     if value=='pdb' then
         if db.props.container_dbid and db.props.container_id>1 then
             prev_container.dbid=cfg.get('dbid')
@@ -211,6 +212,10 @@ function extvars.on_after_db_conn()
     extvars.cache_obj=nil
     if extvars.current_dict and extvars.current_dict.path~=extvars.db_dict_path and os.exists(extvars.db_dict_path) then
         extvars.load_dict(extvars.db_dict_path)
+    end
+
+    if not db:is_connect(true) then
+        env.set_title("")
     end
 end
 

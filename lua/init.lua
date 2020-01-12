@@ -41,10 +41,11 @@ local init={
         "lua/ilua",
         "lua/delta"}
 }
-local plugins={}
+local plugins,M={},{JVM={load_seq=0,onload=os.clock()-_G.__startclock,load=_G.__loadclock}}
 init.databases={oracle="oracle/oracle",mssql="mssql/mssql",db2="db2/db2",mysql="mysql/mysql",pgsql='pgsql/pgsql'}
 local default_database=env.CURRENT_DB or 'oracle'
-
+local clock,load_seq=os.clock,0
+env._M=M
 function init.init_path(env)
     local java=java
     java.system=java.require("java.lang.System")
@@ -140,8 +141,12 @@ function init.load_database()
     if not file then return end
     local short_dir,name=file:match("^(.-)([^\\/]+)$")
     local dir=env.join_path(env.WORK_DIR,short_dir)
+    local timer,load_seq=clock(),load_seq+1
     env[name]=exec(loadfile(dir..name..'.lua'))
+    M[short_dir]={load=clock()-timer,load_seq=load_seq}
+    timer=clock()
     exec(type(env[name])=="table" and env[name].onload,env[name],name)
+    M[short_dir].onload=clock()-timer
     init.module_list[#init.module_list+1]=file
     env.module_list[#env.module_list+1]=env.join_path(file)
     if env.event then env.event.callback('ON_DB_ENV_LOADED',env.CURRENT_DB) end
@@ -152,7 +157,6 @@ function init.load_database()
         local list={}
         for k,v in ipairs(env[name].module_list) do
             list[k]=v:find(pattern) and v or (short_dir..v)
-            --init.module_list[#init.module_list+1]=list[k]
         end
         env[name].C={}
         init.load_modules(list,env[name].C,name)
@@ -161,7 +165,6 @@ end
 
 function init.load_modules(list,tab,module_name)
     local n
-    local modules={}
     local root,del,dofile=env.WORK_DIR,env.PATH_DEL,dofile
     if not module_name then module_name=env.callee():match("([^\\/]+)") end
 
@@ -176,8 +179,9 @@ function init.load_modules(list,tab,module_name)
         end
     end
    
-    local load_list={}
+    local load_list,timer={}
     for _,v in ipairs(list) do
+        local path=v
         v=env.join_path(v)
         n=v:match("([^\\/]+)$")
         if not v:lower():match('%.lua') then
@@ -185,6 +189,8 @@ function init.load_modules(list,tab,module_name)
         else
             n=n:sub(1,#n-4)
         end
+        clock=os.timer or os.clock
+        timer,load_seq=clock(),load_seq+1
         local file=io.open(v,'r')
         if not file then
             file=root..v
@@ -194,7 +200,7 @@ function init.load_modules(list,tab,module_name)
         end
         local c,err=loadfile(file,nil,nil,env)
         tab[n]=exec(c,err or env)
-        modules[n]=tab[n]
+        M[n]={load=clock()-timer,onload=tab[n],path=path,load_seq=load_seq}
         load_list[#load_list+1]=n
         if file:find(env.WORK_DIR,1,true)==1 then 
             file=file:sub(#env.WORK_DIR+1)
@@ -203,8 +209,11 @@ function init.load_modules(list,tab,module_name)
     end
 
     for _,k in ipairs(load_list) do
-        local v=modules[k]
+        local v,path=M[k].onload,M[k].path
+        timer=clock()
         exec(type(v)=="table" and v.onload,v,k)
+        M[k].onload,M[k].path=clock()-timer
+        M[path],M[k]=M[k]
     end
 
 end
@@ -229,7 +238,7 @@ function init.onload(env)
         end
     end
     env.plugins=plugins
-
+    local p=print
     init.load_modules(init.module_list,env)
     init.load_database()
     if env.set then env.set.init({"platform","database"},env.CURRENT_DB,init.set_database,'core','Define current database type',table.concat(init.db_list(),',')) end

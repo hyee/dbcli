@@ -10,12 +10,45 @@ function helper.jvm()
         local siz=#rows[1]+1
         rows[1][siz],rows[2][siz]=name,value
     end
+    local keys={}
     for k,v in java.pairs(java.system:getProperties()) do
         if tostring(k)~="" then
-            add(k,type(v)=="string" and v:gsub('(['..(env.IS_WINDOWS and ';' or ':')..'])','%1\n') or tostring(v))
+            local n=1
+            if type(v)=="string" then
+                v,n=v:trim():gsub('(['..(env.IS_WINDOWS and ';' or ':')..'])','%1\n')
+            else
+                v=tostring(v)
+            end
+            keys[#keys+1]={k,v,n}
         end
     end
+    table.sort(keys,function(a,b)
+        if a[3]~=b[3] then 
+            return a[3]<b[3]
+        else
+            return a[1]<b[1]
+        end
+    end)
+
+    local cnt=0
+    for k,v in ipairs(keys) do
+        cnt=cnt+1
+        add(v[1],v[2])
+        if v[3]==1 and math.fmod(cnt,2)==1 and keys[k+1] and keys[k+1][3]>2 then
+            cnt=cnt+1
+            add("","")
+        end
+    end
+    print("JVM System Properties:\n======================")
+    set.set("PIVOTSORT","off")
     set.set("PIVOT",1)
+    grid.print(rows)
+    print("\nJVM Security Providers:\n=======================")
+    rows={{"Name","Info"}}
+    for k,v in java.pairs(console:getSecurityProviders()) do
+        rows[#rows+1]={k,v}
+    end
+    table.sort(rows,function(a,b) return a[1]:lower()<b[1]:lower() end)
     grid.print(rows)
 end
 
@@ -95,12 +128,13 @@ function helper.colorful(helps,target)
     helps=helps:gsub("\r?\n"..spaces,"\n"):gsub("%s+$",""):gsub("@@NAME",target:lower())
 
     local grid=env.grid
-
+    local is_table
     helps=helps:gsub('%[(%s*|.-|)%s*%]',function(s)
         local tab,s0=grid.new(),s..' '
         local space=s:match('( *)|') or ''
         local _,cfg=grid.get_config(s0)
         local cols=0
+        
         s0:gsub('\\|','\1'):gsub('[^\n%S]*(|[^\r\n]+|)%s+',function(s1)
             local row={}
             s1:gsub('([^|]+)',function(s2)
@@ -124,6 +158,7 @@ function helper.colorful(helps,target)
         end)
         if #tab.data==0 then return s end
         for k,v in pairs(cfg) do tab[k]=v end
+        is_table=true
         return space..table.concat(grid.merge({tab}),'\n'..space)
     end)
 
@@ -144,7 +179,7 @@ function helper.colorful(helps,target)
         return fmt:format(prefix,(s:find('-',1,true)==1 and '$PROMPTSUBCOLOR$' or '$COMMANDCOLOR$'),s,comma)
     end)
     helps=helps:gsub("(SQL>) ([^\n]+)","$PROMPTCOLOR$%1 $COMMANDCOLOR$%2$NOR$")
-    return helps:rtrim()..'\n'
+    return helps:rtrim()..'\n',is_table
 end
 
 function helper.helper(cmd,...)
@@ -166,10 +201,11 @@ function helper.helper(cmd,...)
             helps = _CMDS[cmd].HELPER or ""
             target=cmd
         end
-
-        if helps=="" then return end
         
-        return print(helper.colorful(helps,target))
+        if helps=="" then return end
+        helps,target=helper.colorful(helps,target)
+        if not target then return print(helps) end
+        return print(helps,'__PRINT_COLUMN_')
     elseif cmd=="-e" or cmd=="-E" then
         return helper.env(...)
     elseif cmd=="-j" or cmd=="-J" then
@@ -178,6 +214,15 @@ function helper.helper(cmd,...)
         local cmd=java.loader:dumpClass(env.WORK_DIR.."dump")
         io.write("Command: "..cmd.."\n");
         return os.execute(cmd)
+    elseif cmd=="-modules" then
+        local row=grid.new()
+        row:add{"#","Module","Total Time(ms)","Load Time(ms)","Init Time(ms)"}
+        for k,v in pairs(env._M) do
+            row:add{v.load_seq,k,math.round((v.load+v.onload)*1000),math.round(v.load*1000),math.round(v.onload*1000)}
+        end
+        row:sort(1)
+        row:add_calc_ratio(3)
+        return row:print()
     elseif cmd=="-buildjar" then
         local uv=env.uv
         local dels='"'..env.join_path(env.WORK_DIR..'/dump/*.jar*')..'"'
@@ -286,6 +331,7 @@ function helper.desc()
                 -verbose [class] :  dump a class or classes from verbose.log into dir "dump"
                 -dump            :  dump classed of current process into dir "dump"
                 -buildjar        :  build jars from in dir "dump"
+                -modules         :  show loaded modules
         Other commands:
             help                             To brief the available commands(excluding hiddens)
             help <command>                   To show the help detail of a specific command

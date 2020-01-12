@@ -46,7 +46,7 @@ select inst_id,NAME,
 from (select a.*,upper(b.instance_name) sid 
        from  gv$parameter a, gv$instance b 
        where a.inst_id=b.inst_id 
-       and   a.inst_id=nvl(:V2,userenv('instance'))) a
+       and   a.inst_id=nvl(regexp_substr(:V2,'^\d+$'),userenv('instance'))) a
 WHERE ((
       :V1 is NOT NULL and lower(NAME||' '||DESCRIPTION) LIKE LOWER('%'||:V1||'%')  OR 
       :V2 IS NOT NULL and lower(NAME||' '||DESCRIPTION) LIKE LOWER('%'||:V2||'%')  OR

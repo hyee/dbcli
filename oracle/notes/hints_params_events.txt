@@ -26,7 +26,13 @@ Parameters
 	cell_offload_parameters="<OPT_ENABLED|OPT_DISABLED>={<func_id_list in v$sqlfn_metadata>} | OPT_ENABLED_ONLY=(<func_id_list in v$sqlfn_metadata>)" 
     _optimizer_transitivity_retain: defaults to true to pass the input variable to other table's equal-join column(ignored if executed by SYSDBA with opt_param hint)
     _optimizer_generate_transitive_pred: similar to _optimizer_transitivity_retain
+    _iut_stat_collection_type: relative views: DBA_INDEX_USAGE/V$INDEX_USAGE_INFO, set to 'ALL' to get the most accurate result during the monitor period, it can cause some overhead
+    _disable_directory_link_check: directs the access driver to bypass symbolic link check, allowing you to use files for which the parent directory may be a symbolic link
 	table_cached_blocks: from dbms_stats.set_xxx_prefs, defaults as 1(0 as auto), used to control how to compute the CLUSTERING_FACTOR by gather_index_stats, recommend to set as 16*<Rac nodes> by jonathan lewis
+    _kcfis_storageidx_disabled: enable/disable storage index
+    _rdbms_internal_fplib_enabled/cell_offload_plan_display: simulate smart scan on non-Exadata db
+    _exadata_feature_on: simulate Exadata features on non-Exadata db
+    _kcfis_cell_passthru_fromcpu_enabled: disable Exadata reverse offloading
     
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
@@ -51,8 +57,10 @@ Hints:
     INDEX_STATS(<Table> <Index> <SCALE|NULL> {<BLOCKS|INDEX_ROWS|KEYS|CLUSTERING_FACTOR|ROWS>=<value>})
     COLUMN_STATS(<Table> <Column> <SCALE|NULL> {<LENGTH|DISTINCT|NULLS|MIN|MAX> ><value>})
 	NUM_INDEX_KEYS(<@QB>] <table> <index> <cols>): used on multi-column index for INLIST ITERATOR, specifying how many columns(keys) to be put in access part and the others in filter part
+    PQ_DISTRIBUTE_WINDOW: used on PX window function.  1: hash then window sort 2: window sort then hash 3: range then window sort
 
 Fix Controls:
-    16923858:  Display timings in Optimizer trace(10053) when over 10^<value> microsec 
+    16923858:  Display timings in Optimizer trace(10053) when over 10^<value> microsec
+    6972291 :  CBO can use the selectivity of column groups but this option is disabled if there is a histogram defined on any of the columns of the column group
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=/u01/app/oracle/product/18.0.0.0/dbhome_1/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';

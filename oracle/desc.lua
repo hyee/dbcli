@@ -2,6 +2,156 @@ local env=env
 local db,cfg=env.getdb(),env.set
 local desc={}
 
+local ad=[[(SELECT  /*+no_merge opt_param('optimizer_adaptive_plans' 'false') opt_param('_optimizer_cartesian_enabled' 'false')*/
+                     row_number() OVER(ORDER BY ba.seq, a.order_num) seq,
+                     a.attribute_name,
+                     ba.alt,
+                     ba.role,
+                     ba.level_name,
+                     d.level_type,
+                     ba.dtm_levels,
+                     e.used_hiers,
+                     nullif(b.owner || '.', ad.owner || '.') || b.table_name || '.' || column_name source_column,
+                     decode(ba.role, 'KEY', regexp_substr(to_char(substr(d.member_name_expr,1,1000)),'[^'||chr(10)||']*')) member_expr,
+                     d.skip_when_null skip_null,
+                     aggs.level_order,
+                     c.caption attr_caption,
+                     c.descr attr_Desc,
+                     decode(ba.role, 'KEY', regexp_substr(to_char(substr(d.member_caption_expr,1,1000)),'[^'||chr(10)||']*')) level_caption,
+                     decode(ba.role, 'KEY', regexp_substr(to_char(substr(d.member_description_expr,1,1000)),'[^'||chr(10)||']*')) level_desc
+              FROM   (SELECT *
+                      FROM   all_attribute_dim_tables
+                      WHERE  owner = ad.owner
+                      AND    dimension_name = ad.dimension_name
+                      AND    origin_con_id = ad.origin_con_id) b
+              JOIN   (SELECT *
+                     FROM   all_attribute_dim_attrs
+                     WHERE  owner = ad.owner
+                     AND    dimension_name = ad.dimension_name
+                     AND    origin_con_id = ad.origin_con_id) a
+              ON     (a.table_alias = b.table_alias)
+              LEFT   JOIN (SELECT ROWNUM seq, a.*
+                          FROM   (SELECT attribute_name,
+                                         MAX(is_minimal_dtm) is_minimal_dtm,
+                                         MIN(ROLE) ROLE,
+                                         MAX(DECODE(ROLE, 'KEY', level_name)) level_name,
+                                         MAX(DECODE(ROLE, 'KEY', is_alternate)) alt,
+                                         MAX(DECODE(ROLE, 'KEY', GREATEST(attr_order_num,key_order_num))) key_ord,
+                                         listagg(DECODE(role, 'PROP', level_name), '/') WITHIN GROUP(ORDER BY order_num DESC) dtm_levels,
+                                         COUNT(DECODE(role, 'PROP', 1)) dtms,
+                                         SUM(DECODE(role, 'KEY', 0, 255) + order_num) ords
+                                  FROM   all_attribute_dim_level_attrs attr
+                                  LEFT   JOIN all_attribute_dim_keys
+                                  USING (owner,dimension_name,attribute_name,level_name)
+                                  WHERE  owner = ad.owner
+                                  AND    dimension_name = ad.dimension_name
+                                  AND    nvl(attr.origin_con_id, ad.origin_con_id) = ad.origin_con_id
+                                  GROUP  BY attribute_name
+                                  ORDER  BY is_minimal_dtm,dtms,ords,key_ord) a) ba
+              ON     (a.attribute_name = ba.attribute_name)
+              LEFT   JOIN (SELECT level_name,
+                                 listagg(agg_func || ' ' || attribute_name || NULLIF(' ' || criteria, ' ASC') || NULLIF(' NULLS ' || nulls_position, ' NULLS ' || DECODE(criteria, 'ASC', 'LAST', 'FIRST')),
+                                         ',') WITHIN GROUP(ORDER BY order_num) level_order
+                          FROM   all_attribute_dim_order_attrs
+                          WHERE  owner = ad.owner
+                          AND    dimension_name = ad.dimension_name
+                          AND    origin_con_id = ad.origin_con_id
+                          GROUP  BY level_name) aggs
+              ON     (ba.level_name = aggs.level_name)
+              LEFT   JOIN (SELECT attribute_name,
+                                 MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST) caption,
+                                 MAX(DECODE(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST) descr
+                          FROM   all_attribute_dim_attr_class j
+                          WHERE  owner = ad.owner
+                          AND    dimension_name = ad.dimension_name
+                          AND    origin_con_id = ad.origin_con_id
+                          GROUP  BY attribute_name) c
+              ON     (a.attribute_name = c.attribute_name)
+              LEFT   JOIN (SELECT *
+                          FROM   all_attribute_dim_levels
+                          WHERE  owner = ad.owner
+                          AND    dimension_name = ad.dimension_name
+                          AND    origin_con_id = ad.origin_con_id) d
+              ON     (ba.level_name = d.level_name)
+              LEFT   JOIN (SELECT level_name, listagg(hier_name, ',') WITHIN GROUP(ORDER BY hier_name) used_hiers
+                          FROM   all_hierarchies
+                          JOIN   all_hier_levels
+                          USING  (owner, hier_name, origin_con_id)
+                          WHERE  owner = ad.owner
+                          AND    dimension_name = ad.dimension_name
+                          AND    origin_con_id = ad.origin_con_id
+                          GROUP  BY level_name, dimension_owner, dimension_name) e
+              ON     (ba.level_name = e.level_name)
+              ORDER  BY 1)]]
+local ah=([[ (SELECT /*+no_merge*/
+                     row_number() OVER(ORDER BY adk.hier_seq DESC NULLS LAST, adt.seq, ahc.order_num) seq,
+                     NVL(adk.hier_level, adt.level_name) hier_level,
+                     adt.level_type,
+                     NVL(adt.attribute_name, ahc.column_name) column_name,
+                     adt.alt,
+                     adt.dtm_levels,
+                     CASE
+                         WHEN ahc.data_type IN ('CHAR', 'VARCHAR', 'VARCHAR2', 'NCHAR', 'NVARCHAR', 'NVARCHAR2', 'RAW') THEN
+                          ahc.data_type || '(' || ahc.data_length || decode(ahc.char_used, 'C', ' CHAR') || ')' --
+                         WHEN ahc.data_type = 'NUMBER' THEN
+                          CASE
+                              WHEN nvl(ahc.data_scale, ahc.data_precision) IS NULL THEN
+                               ahc.data_type
+                              WHEN data_scale > 0 THEN
+                               ahc.data_type || '(' || nvl('' || ahc.data_precision, '38') || ',' || ahc.data_scale || ')'
+                              WHEN ahc.data_precision IS NULL AND ahc.data_scale = 0 THEN
+                               'INTEGER'
+                              ELSE
+                               ahc.data_type || '(' || ahc.data_precision || ')'
+                          END
+                         ELSE
+                          ahc.data_type
+                     END data_type,
+                     ahc.nullable,
+                     ahc.role,
+                     coalesce(adt.source_column,regexp_substr(to_char(substr(ahd.expression,1,1000)),'[^'||chr(10)||']*')) source_column,
+                     adt.member_expr,
+                     adt.skip_null,
+                     adt.level_order,
+                     NVL(ahd.caption, adt.attr_caption) caption,
+                     NVL(ahd.descr, adt.attr_desc) description
+              FROM   all_attribute_dimensions ad
+              JOIN   all_hier_columns ahc
+              ON     (ah.owner = ahc.owner AND ah.hier_name = ahc.hier_name AND ah.origin_con_id = ahc.origin_con_id)
+              OUTER  APPLY(SELECT *
+                           FROM   (SELECT level_name,
+                                          attribute_name,
+                                          lpad(' ', 2 * (MAX(lv.order_num) OVER() - lv.order_num)) || level_name || '(*)' hier_level,
+                                          lv.order_num hier_seq
+                                   FROM   all_hier_levels lv
+                                   JOIN   all_hier_level_id_attrs attr
+                                   USING  (owner, hier_name, origin_con_id, level_name)
+                                   WHERE  owner = ah.owner
+                                   AND    hier_name = ah.hier_name
+                                   AND    origin_con_id = ah.origin_con_id)
+                           WHERE  attribute_name = ahc.column_name) adk
+              OUTER  APPLY(SELECT /*+no_merge(i) NO_GBY_PUSHDOWN(i)*/
+                                   g.*, i.caption, i.descr
+                           FROM   all_hier_hier_attributes g,
+                                  (SELECT hier_attr_name,
+                                          MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
+                                          MAX(DECODE(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  descr
+                                   FROM   all_hier_hier_attr_class
+                                   WHERE  owner = ah.owner
+                                   AND    hier_name = ah.hier_name
+                                   AND    origin_con_id = ah.origin_con_id
+                                   GROUP  BY hier_attr_name) i
+                           WHERE  g.hier_attr_name = i.hier_attr_name(+)
+                           AND    ahc.column_name = g.hier_attr_name
+                           AND    ah.hier_name = g.hier_name
+                           AND    ah.owner = g.owner
+                           AND    ah.origin_con_id = g.origin_con_id) ahd
+              OUTER  APPLY(SELECT *
+                           FROM   @ad@ adt
+                           WHERE  TRIM(adt.attribute_name) = ahc.column_name) adt
+              WHERE  ah.dimension_owner = ad.owner
+              AND    ah.dimension_name = ad.dimension_name
+              AND    ah.origin_con_id = ad.origin_con_id)]]):gsub('@ad@',ad)
 local desc_sql={
     PROCEDURE=[[
     DECLARE /*INTERNAL_DBCLI_CMD*/
@@ -544,14 +694,14 @@ local desc_sql={
     WITH r1 AS (SELECT /*+no_merge*/* FROM all_part_key_columns WHERE owner=:owner and NAME = :object_name),
            r2 AS (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=:owner and NAME = :object_name)
     SELECT PARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
-                                FROM   r1
-                                START  WITH column_position = 1
-                                CONNECT BY PRIOR column_position = column_position - 1) PARTITIONED_BY,
+                                 FROM   r1
+                                 START  WITH column_position = 1
+                                 CONNECT BY PRIOR column_position = column_position - 1) PARTITIONED_BY,
             PARTITION_COUNT PARTS,
             SUBPARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
-                                        FROM   R2
-                                        START  WITH column_position = 1
-                                        CONNECT BY PRIOR column_position = column_position - 1) SUBPART_BY,
+                                     FROM   R2
+                                     START  WITH column_position = 1
+                                     CONNECT BY PRIOR column_position = column_position - 1) SUBPART_BY,
             def_subpartition_count subs,
             DEF_TABLESPACE_NAME,
             DEF_PCT_FREE,
@@ -561,10 +711,10 @@ local desc_sql={
     FROM   all_part_tables
     WHERE  table_name = :object_name
     AND    owner = :owner]],
-    [[
-        SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/*
-        FROM   ALL_TABLES T
-        WHERE  T.OWNER = :owner AND T.TABLE_NAME = :object_name]]},
+    [[SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/*
+      FROM   ALL_TABLES T
+      WHERE  T.OWNER = :owner AND T.TABLE_NAME = :object_name]]},
+      
     ['TABLE PARTITION']={[[
          SELECT /*INTERNAL_DBCLI_CMD*/ COLUMN_ID NO#,
                 a.COLUMN_NAME NAME,
@@ -674,7 +824,313 @@ local desc_sql={
     [[
         SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/*
         FROM   all_tab_partitions T
-        WHERE  T.TABLE_OWNER = :1 AND T.TABLE_NAME = :2 AND partition_name=:3]]}
+        WHERE  T.TABLE_OWNER = :1 AND T.TABLE_NAME = :2 AND partition_name=:3]]},
+    FIXED_TABLE=[[
+        SELECT /*+ordered use_nl(b c)*/
+               a.*,
+               C.avgcln AVG_LEN,
+               C.DISTCNT "NDV",
+               CASE WHEN B.ROWCNT>=c.NULL_CNT THEN round(c.NULL_CNT*100/nullif(B.ROWCNT,0),2) END "Nulls(%)",
+               CASE WHEN B.ROWCNT>=c.NULL_CNT THEN round((B.ROWCNT-c.NULL_CNT)/nullif(C.DISTCNT,0),2) END CARDINALITY,
+               c.sample_size,
+               c.TIMESTAMP# LAST_ANALYZED,
+               case when LOWVAL is not null then 
+               substrb(decode(regexp_substr(DATA_TYPE,'[^\(]+')
+                  ,'NUMBER'       ,to_char(utl_raw.cast_to_number(LOWVAL))
+                  ,'FLOAT'        ,to_char(utl_raw.cast_to_number(LOWVAL))
+                  ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(LOWVAL))
+                  ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(LOWVAL))
+                  ,'CHAR'         ,to_char(utl_raw.cast_to_varchar2(LOWVAL))
+                  ,'NCHAR'        ,to_char(utl_raw.cast_to_nvarchar2(LOWVAL))
+                  ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(LOWVAL))
+                  ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(LOWVAL))
+                  ,'TIMESTAMP'    , lpad(TO_NUMBER(SUBSTR(LOWVAL, 1, 2), 'XX')-100,2,0)||
+                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 5, 2), 'XX') ,2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 7, 2), 'XX') ,2,0)|| ' ' ||
+                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 13, 2), 'XX')-1,2,0)|| '.' ||
+                                    nvl(substr(TO_NUMBER(SUBSTR(LOWVAL, 15, 8), 'XXXXXXXX'),1,6),'0')
+                  ,'TIMESTAMP WITH TIME ZONE',
+                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 1, 2), 'XX')-100,2,0)||
+                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 5, 2), 'XX'),2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 7, 2), 'XX'),2,0)|| ' ' ||
+                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 13, 2), 'XX')-1,2,0)|| '.' ||
+                                    nvl(substr(TO_NUMBER(SUBSTR(LOWVAL, 15, 8), 'XXXXXXXX'),1,6),'0')||' '||
+                                    nvl(TO_NUMBER(SUBSTR(LOWVAL, 23,2),'XX')-20,0)||':'||
+                                    nvl(TO_NUMBER(SUBSTR(LOWVAL, 25, 2), 'XX')-60,0)
+                  ,'DATE',lpad(TO_NUMBER(SUBSTR(LOWVAL, 1, 2), 'XX')-100,2,0)||
+                          lpad(TO_NUMBER(SUBSTR(LOWVAL, 3, 2), 'XX')-100,2,0)|| '-' ||
+                          lpad(TO_NUMBER(SUBSTR(LOWVAL, 5, 2), 'XX') ,2,0)|| '-' ||
+                          lpad(TO_NUMBER(SUBSTR(LOWVAL, 7, 2), 'XX') ,2,0)|| ' ' ||
+                          lpad(TO_NUMBER(SUBSTR(LOWVAL, 9, 2), 'XX')-1,2,0)|| ':' ||
+                          lpad(TO_NUMBER(SUBSTR(LOWVAL, 11, 2), 'XX')-1,2,0)|| ':' ||
+                          lpad(TO_NUMBER(SUBSTR(LOWVAL, 13, 2), 'XX')-1,2,0)
+                  ,  LOWVAL),1,32) end LOWVAL,
+                case when HIVAL is not null then 
+                substrb(decode(regexp_substr(DATA_TYPE,'[^\(]+')
+                      ,'NUMBER'       ,to_char(utl_raw.cast_to_number(HIVAL))
+                      ,'FLOAT'        ,to_char(utl_raw.cast_to_number(HIVAL))
+                      ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(HIVAL))
+                      ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(HIVAL))
+                      ,'CHAR'         ,to_char(utl_raw.cast_to_varchar2(HIVAL))
+                      ,'NCHAR'        ,to_char(utl_raw.cast_to_nvarchar2(HIVAL))
+                      ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(HIVAL))
+                      ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(HIVAL))
+                      ,'TIMESTAMP'   , lpad(TO_NUMBER(SUBSTR(HIVAL, 1, 2), 'XX')-100,2,0)||
+                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 5, 2), 'XX') ,2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 7, 2), 'XX') ,2,0)|| ' ' ||
+                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 13, 2), 'XX')-1,2,0)|| '.' ||
+                                    nvl(substr(TO_NUMBER(SUBSTR(HIVAL, 15, 8), 'XXXXXXXX'),1,6),'0')
+                        ,'TIMESTAMP WITH TIME ZONE',
+                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 1, 2), 'XX')-100,2,0)||
+                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 5, 2), 'XX'),2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 7, 2), 'XX'),2,0)|| ' ' ||
+                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 13, 2), 'XX')-1,2,0)|| '.' ||
+                                    nvl(substr(TO_NUMBER(SUBSTR(HIVAL, 15, 8), 'XXXXXXXX'),1,6),'0')||' '||
+                                    nvl(TO_NUMBER(SUBSTR(HIVAL, 23,2),'XX')-20,0)||':'||
+                                    nvl(TO_NUMBER(SUBSTR(HIVAL, 25, 2), 'XX')-60,0)
+                        ,'DATE',lpad(TO_NUMBER(SUBSTR(HIVAL, 1, 2), 'XX')-100,2,0)||
+                                lpad(TO_NUMBER(SUBSTR(HIVAL, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                lpad(TO_NUMBER(SUBSTR(HIVAL, 5, 2), 'XX') ,2,0)|| '-' ||
+                                lpad(TO_NUMBER(SUBSTR(HIVAL, 7, 2), 'XX') ,2,0)|| ' ' ||
+                                lpad(TO_NUMBER(SUBSTR(HIVAL, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                lpad(TO_NUMBER(SUBSTR(HIVAL, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                lpad(TO_NUMBER(SUBSTR(HIVAL, 13, 2), 'XX')-1,2,0)
+                        ,  HIVAL),1,32) end HIVAL
+        FROM (
+            SELECT KQFTAOBJ obj#, c.KQFCOCNO COL#, c.kqfconam COLUMN_NAME,
+                   decode(kqfcodty,
+                           1,'VARCHAR2',
+                           2,'NUMBER',
+                           8,'LONG',
+                           9,'VARCHAR',
+                           12,'DATE',
+                           23,'RAW',
+                           24,'LONG RAW',
+                           58,'CUSTOM OBJ',
+                           69,'ROWID',
+                           96,'CHAR',
+                           100,'BINARY_FLOAT',
+                           101,'BINARY_DOUBLE',
+                           105,'MLSLABEL',
+                           106,'MLSLABEL',
+                           111,'REF',
+                           112,'CLOB',
+                           113,'BLOB',
+                           114,'BFILE',
+                           115,'CFILE',
+                           121,'CUSTOM OBJ',
+                           122,'CUSTOM OBJ',
+                           123,'CUSTOM OBJ',
+                           178,'TIME',
+                           179,'TIME WITH TIME ZONE',
+                           180,'TIMESTAMP',
+                           181,'TIMESTAMP WITH TIME ZONE',
+                           231,'TIMESTAMP WITH LOCAL TIME ZONE',
+                           182,'INTERVAL YEAR TO MONTH',
+                           183,'INTERVAL DAY TO SECOND',
+                           208,'UROWID',
+                           'UNKNOWN') || '(' || to_char(c.kqfcosiz) || ')' DATA_TYPE, 
+                   c.kqfcooff offset, lpad('0x' || TRIM(to_char(c.kqfcooff, 'XXXXXX')), 8) offset_hex,
+                   decode(c.kqfcoidx, 0,'','Yes('||c.kqfcoidx||')') "Indexed?"
+            FROM   x$kqfta t, x$kqfco c
+            WHERE  c.kqfcotab = t.indx
+            AND    c.inst_id = t.inst_id
+            AND   (t.kqftanam=:object_name or t.kqftanam=(SELECT KQFDTEQU FROM x$kqfdt WHERE KQFDTNAM=:object_name))) a,
+            sys.tab_stats$ b,
+            sys.hist_head$ c
+        WHERE a.obj#=b.obj#(+)
+        AND   a.obj#=c.obj#(+)
+        AND   a.col#=c.col#(+)
+        ORDER  BY 1,2]],
+  
+  ['ATTRIBUTE DIMENSION']={
+    [[SELECT dimension_type,
+             compile_state,
+             table_owner,
+             table_name,
+             table_alias,
+             order_num,
+             caption,
+             description,
+             to_char(all_member_name) all_member_name,
+             to_char(all_member_caption) all_member_caption,
+             to_char(all_member_description) all_member_description
+      FROM   (SELECT * FROM all_attribute_dimensions JOIN all_attribute_dim_tables USING (origin_con_id, owner, dimension_name)) ad
+      OUTER  APPLY (SELECT MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
+                           MAX(DECODE(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  description
+                    FROM   all_attribute_dim_class j
+                    WHERE  owner = ad.owner
+                    AND    dimension_name = ad.dimension_name
+                    AND    origin_con_id = ad.origin_con_id)
+      WHERE  owner = :owner
+      AND    dimension_name = :object_name]],
+    (([[
+      SELECT dtl.*
+      FROM   all_attribute_dimensions ad
+      CROSS  APPLY @ad@ dtl
+      WHERE  owner=:owner 
+      AND    dimension_name=:object_name
+      ORDER  BY 1]]):gsub('@ad@',ad))},
+
+  HIERARCHY={
+    [[SELECT dimension_owner, dimension_name,dim_source_table,parent_attr,caption,description
+      FROM   all_hierarchies hr
+      OUTER APPLY(SELECT MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
+                         MAX(DECODE(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  description
+                  FROM   all_hier_class j
+                  WHERE  owner = hr.owner
+                  AND    hier_name = hr.hier_name
+                  AND    origin_con_id = hr.origin_con_id)
+     JOIN  (SELECT owner dimension_owner, dimension_name, origin_con_id, nullif(table_owner||'.',owner||'.')||table_name dim_source_table FROM all_attribute_dim_tables a) dim_tab
+     USING (origin_con_id,dimension_owner, dimension_name)
+     WHERE owner = :owner 
+     AND   hier_name = :object_name]],
+
+    (([[SELECT dtl.*
+      FROM   all_hierarchies ah
+      CROSS  APPLY @ah@ dtl
+      WHERE  ah.owner = :owner 
+      AND    ah.hier_name = :object_name
+      ORDER  BY 1]]):gsub('@ah@',ah))},
+
+  ['ANALYTIC VIEW']={
+   [[SELECT * 
+     FROM  all_analytic_views av
+     OUTER APPLY( SELECT MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
+                         MAX(DECODE(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  description
+                  FROM   all_analytic_view_class j
+                  WHERE  owner = av.owner
+                  AND    analytic_view_name = av.analytic_view_name
+                  AND    origin_con_id = av.origin_con_id)
+     OUTER APPLY  (SELECT av_lvlgrp_order cache_id,
+                         listagg(nvl2(level_name,trim('.' from dimension_alias||'.'||hier_alias||'.'||level_name),''),',') WITHIN GROUP(ORDER BY level_meas_order) cache_levels,
+                         listagg(measure_name,',')  WITHIN GROUP(ORDER BY level_meas_order) cache_measures
+                    FROM   all_analytic_view_lvlgrps 
+                    WHERE  owner = av.owner
+                    AND    analytic_view_name = av.analytic_view_name
+                    AND    origin_con_id = av.origin_con_id
+                    GROUP  BY av_lvlgrp_order) 
+     WHERE owner = :owner 
+     AND   analytic_view_name = :object_name]],
+   [[SELECT hier_alias,
+           ltrim(nullif(hier_owner, owner) || '.' || hier_name, '.') src_hier_name,
+           is_default hier_default,
+           '||' "||",
+           dimension_alias dim_alias,
+           ltrim(nullif(dimension_owner, owner) || '.' || dimension_name, '.') src_dim_name,
+           dimension_type,
+           ltrim(nullif(dim_tab.table_owner, owner) || '.' || dim_tab.table_name, '.') src_dim_table,
+           dim_keys,
+           fact_joins,
+           references_distinct dim_key_distinct,
+           regexp_substr(to_char(substr(all_member_name,1,1000)),'[^'||chr(10)||']*') all_dim_member_name,
+           regexp_substr(to_char(substr(all_member_caption,1,1000)),'[^'||chr(10)||']*') all_dim_member_caption,
+           regexp_substr(to_char(substr(all_member_description,1,1000)),'[^'||chr(10)||']*') all_dim_member_desc
+    FROM   (SELECT owner,
+                   analytic_view_name,
+                   origin_con_id,
+                   dimension_alias,
+                   listagg(av_key_column, ',') WITHIN GROUP(ORDER BY order_num) fact_joins,
+                   listagg(ref_dimension_attr, ',') WITHIN GROUP(ORDER BY order_num) dim_keys
+            FROM   all_analytic_view_keys
+            GROUP  BY owner, analytic_view_name, origin_con_id, dimension_alias)
+    JOIN   all_analytic_view_dimensions
+    USING  (owner, analytic_view_name, origin_con_id, dimension_alias)
+    JOIN   all_analytic_view_hiers
+    USING  (owner, analytic_view_name, origin_con_id, dimension_alias)
+    JOIN   (SELECT owner dimension_owner, dimension_name, origin_con_id, table_owner, table_name FROM all_attribute_dim_tables a) dim_tab
+    USING  (dimension_owner, dimension_name, origin_con_id)
+    WHERE  owner = :owner
+    AND    analytic_view_name = :object_name
+    ORDER  BY 1]],
+  (([[
+    SELECT nvl2(avh.hier_name, 'HIER: ', '') || av.hier_name CATEGORY,
+           row_number() over(partition by av.hier_name order by hier.seq,av.order_num) "#",
+           hier.hier_level,
+           hier.level_type,
+           NVL(hier.column_name, av.column_name) column_name,
+           hier.alt,
+           hier.dtm_levels,
+           CASE
+               WHEN av.data_type IN ('CHAR', 'VARCHAR', 'VARCHAR2', 'NCHAR', 'NVARCHAR', 'NVARCHAR2', 'RAW') THEN
+                av.data_type || '(' || av.data_length || decode(av.char_used, 'C', ' CHAR') || ')' --
+               WHEN av.data_type = 'NUMBER' THEN
+                CASE
+                    WHEN nvl(av.data_scale, av.data_precision) IS NULL THEN
+                     av.data_type
+                    WHEN data_scale > 0 THEN
+                     av.data_type || '(' || nvl('' || av.data_precision, '38') || ',' || av.data_scale || ')'
+                    WHEN av.data_precision IS NULL AND av.data_scale = 0 THEN
+                     'INTEGER'
+                    ELSE
+                     av.data_type || '(' || av.data_precision || ')'
+                END
+               ELSE
+                av.data_type
+           END data_type,
+           NVL(avc.cached,base.dyn_all_cache) cached,
+           av.nullable,
+           av.role,
+           nvl(RTRIM(nvl2(hier.source_column,hier.source_column || ' => ','') ||
+                 nvl2(COALESCE(ak.av_key_column, meas.measure_name),
+                      nvl2(meas.measure_name,
+                           nvl(meas.aggr_function,base.default_aggr)||'('|| base.table_name || '.' || meas.measure_name||')',
+                           base.table_name || '.' || ak.av_key_column),
+                      ''),
+                 '=> '), to_char(calc.meas_expression)) source_column,
+           hier.member_expr,
+           hier.skip_null,
+           hier.level_order,
+           hier.caption caption,
+           hier.description DESCRIPTION
+    FROM   all_analytic_views base
+    JOIN   all_analytic_view_columns av
+    ON     (av.owner = base.owner AND av.analytic_view_name = base.analytic_view_name AND av.origin_con_id = base.origin_con_id)
+    LEFT   JOIN all_analytic_view_base_meas meas
+    ON     (av.owner = meas.owner AND av.analytic_view_name = meas.analytic_view_name AND av.column_name = meas.measure_name AND av.origin_con_id = meas.origin_con_id)
+    LEFT   JOIN all_analytic_view_calc_meas calc
+    ON     (av.owner = calc.owner AND av.analytic_view_name = calc.analytic_view_name AND av.column_name = calc.measure_name AND av.origin_con_id = calc.origin_con_id)
+    LEFT   JOIN all_analytic_view_keys ak
+    ON     (av.owner = ak.owner AND av.analytic_view_name = ak.analytic_view_name AND av.column_name = ak.ref_dimension_attr AND av.origin_con_id = ak.origin_con_id)
+    LEFT   JOIN all_analytic_view_dimensions ad
+    ON     (av.owner = ad.owner AND av.analytic_view_name = ad.analytic_view_name AND av.dimension_name = ad.dimension_alias AND av.origin_con_id = ad.origin_con_id)
+    LEFT   JOIN all_analytic_view_hiers avh
+    ON     (av.owner = avh.owner AND av.analytic_view_name = avh.analytic_view_name AND av.hier_name = avh.hier_alias AND av.dimension_name = avh.dimension_alias AND av.origin_con_id = avh.origin_con_id)
+    OUTER  APPLY (SELECT dtl.*
+                  FROM   all_hierarchies ah
+                  CROSS  APPLY @ah@ dtl
+                  WHERE  av.column_name = TRIM(dtl.column_name)
+                  AND    avh.hier_owner = ah.owner
+                  AND    avh.hier_name = ah.hier_name
+                  AND    avh.origin_con_id = ah.origin_con_id) hier
+    OUTER APPLY (SELECT regexp_replace(listagg(av_lvlgrp_order,',') WITHIN GROUP(ORDER BY av_lvlgrp_order),'^0$','Y') CACHED
+                 FROM (SELECT *
+                       FROM   all_analytic_view_lvlgrps
+                       WHERE  av.owner = owner 
+                       AND    av.analytic_view_name = analytic_view_name
+                       AND    av.origin_con_id = origin_con_id)
+                 WHERE measure_name IS NULL AND
+                       av.hier_name = hier_alias AND 
+                       av.dimension_name = dimension_alias AND
+                       regexp_substr(hier.hier_level,'[^\(\) ]+')=level_name
+                    OR
+                       av.column_name=measure_name AND
+                       av.dimension_name IS NULL) avc
+    WHERE  base.owner = :owner
+    AND    base.analytic_view_name = :object_name
+    ORDER  BY av.dimension_name, av.hier_name, hier.seq, av.order_num]]):gsub('@ah@',ah))}
 }
 
 desc_sql.VIEW=desc_sql.TABLE[1]
@@ -712,6 +1168,9 @@ function desc.desc(name,option)
         if type(new_obj)=="table" and new_obj[1] then
             obj.object_id,obj.owner,obj.object_name,obj.object_type=table.unpack(new_obj)
         end
+    elseif obj.object_type=='TABLE' and obj.object_name:find('^X%$') and obj.owner=='SYS' and obj.object_id>=4200000000 then
+        env.checkerr(db.props.isdba,"Cannot describe the fixed table without SYSDBA account.")
+        obj.object_type="FIXED_TABLE"
     end
 
     rs={obj.owner,obj.object_name,obj.object_subname or "",
@@ -725,6 +1184,9 @@ function desc.desc(name,option)
         rs[2],rs[3]=rs[3],rs[2]
     elseif rs[4]=='VIEW' then
         env.var.define_column('Default,Hidden?,AVG_LEN,NDV,Nulls(%),CARDINALITY,HISTOGRAM,BUCKETS,LOW_VALUE,HIGH_VALUE','NOPRINT')
+    elseif rs[4]=='ANALYTIC VIEW' then
+        env.var.define_column('CATEGORY','BREAK','SKIP','-')
+        cfg.set("colsep",'|')
     end
 
     for k,v in pairs{owner=rs[1],object_name=rs[2],object_subname=rs[3],object_type=rs[4],object_id=obj.object_id} do

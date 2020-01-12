@@ -1,6 +1,6 @@
 /*[[Show object info for the input block in bh. Usage: @@NAME {<file#> <block#>} | <data block address>
-	Sample Output:
-	==============
+    Sample Output:
+    ==============
     SQL> @@NAME 1 241
     DBA: 4194545(0x004000f1)    FILE#: 1    BLOCK#: 241
     =============================================================
@@ -26,9 +26,19 @@
 
     --[[
         @CHECK_ACCESS_SEG: {
-            sys.seg$={select HWMINCR objd,file# from sys.seg$ where file#=&file and &block between block# and block#-1+blocks}
-            X$BH={select * from table(gv$(cursor(select OBJ objd,file# from x$bh where file#=&file and DBABLK=&block)))}
-            default={select * from table(gv$(cursor(select objd,file# from v$bh where file#=&file and block#=&block)))}
+            X$BH={select file#,block#,b.*
+                  from table(gv$(cursor(select OBJ objd,DBARFIL file#,DBABLK BLOCK# from x$bh where DBARFIL=&file and DBABLK=&block))) a,
+                       dba_objects b
+                  where a.objd=b.data_object_id}
+
+            DBA_EXTENTS={select /*+opt_param('_optimizer_cartesian_enabled' 'false')*/ * from dba_extents a where FILE_ID=&file and &block between block_id and BLOCKS-1+block_id}
+            
+            V$BH={select file#,block#,b.*
+                  from table(gv$(cursor(select objd,DBARFIL file#,DBABLK BLOCK# from v$bh where file#=&file and block#=&block))) a,
+                       dba_objects b
+                  where a.objd=b.data_object_id}
+                  
+            default={select HWMINCR objd,a.* from sys.seg$ a where file#=&file and &block between block# and block#-1+blocks}}
         }    
         @CHECK_ACCESS_OBJ: dba_objects={dba_objects}, default={all_objects}
         @ARGS: 1
@@ -39,44 +49,42 @@ var file number;
 var block number;
 
 DECLARE
-	file  varchar2(100):=:v1;
-	block int:=:v2;
-	dba   int;
-	SRID  ROWID;
+    file  varchar2(100):=:v1;
+    block int:=:v2;
+    dba   int;
+    SRID  ROWID;
     ERID  ROWID;
 BEGIN
-	IF block is null then
-		IF substr(lower(file),1,2)='0x' THEN
-			dba:=to_number(substr(lower(file),3),'xxxxxxxx');
-		ELSIF regexp_like(file,'^\d+$') THEN
-			dba:=file;
-		ELSE
-			raise_application_error(-20001,'Invalid data block address: '||file);
-		END IF;
+    IF block is null then
+        IF substr(lower(file),1,2)='0x' THEN
+            dba:=to_number(substr(lower(file),3),'xxxxxxxx');
+        ELSIF regexp_like(file,'^\d+$') THEN
+            dba:=file;
+        ELSE
+            raise_application_error(-20001,'Invalid data block address: '||file);
+        END IF;
 
         IF dba < 4194305 THEN
             raise_application_error(-20001,'Usage: ora block {<file#> <block#>} | <data block address>');
         END IF;
 
-		file := DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(dba);
-		block:= DBMS_UTILITY.DATA_BLOCK_ADDRESS_BLOCK(dba);
-	ELSIF regexp_like(file,'^\d+$') THEN
-		dba := DBMS_UTILITY.MAKE_DATA_BLOCK_ADDRESS(file,block);
-	ELSE
-		raise_application_error(-20001,'Invalid file#: '||file);
-	END IF;
-	dbms_output.put_line(utl_lms.format_message('DBA: %s(%s)    FILE#: %s    BLOCK#: %s',''||dba,'0x'||substr(to_char(dba,'fm0xxxxxxxx'),2),file,''||block));
-	:file := file;
-	:block:= block;
+        file := DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(dba);
+        block:= DBMS_UTILITY.DATA_BLOCK_ADDRESS_BLOCK(dba);
+    ELSIF regexp_like(file,'^\d+$') THEN
+        dba := DBMS_UTILITY.MAKE_DATA_BLOCK_ADDRESS(file,block);
+    ELSE
+        raise_application_error(-20001,'Invalid file#: '||file);
+    END IF;
+    dbms_output.put_line(utl_lms.format_message('DBA: %s(%s)    FILE#: %s    BLOCK#: %s',''||dba,'0x'||substr(to_char(dba,'fm0xxxxxxxx'),2),file,''||block));
+    :file := file;
+    :block:= block;
 END;
 /
 PRO =============================================================
 col OBJECT_ID new_value OBJECT_ID
 
-SELECT b.*
-FROM   (&CHECK_ACCESS_SEG) a, &CHECK_ACCESS_OBJ b
-WHERE  rownum < 2
-AND    objd = data_object_id;
+SELECT DISTINCT a.*
+FROM   (&CHECK_ACCESS_SEG) a;
 
 set printsize 50
 ora block2rowid "&OBJECT_ID" "&file" "&block"

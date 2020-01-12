@@ -1,3 +1,6 @@
+2010-01-12: + oracle: new command 'show last_sql'
+2019-12-27: * public: new option 'set timing on/off'
+2019-11-02: + oracle: new command 'ora comptype'
 2019-10-25: * public: update ConsoleZ to v1.19 
 2019-10-22: + oracle: new command 'exa flashcache/ioreason'
 2019-10-16: + oracle: new command 'exa cellsrv/param'
