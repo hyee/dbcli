@@ -234,6 +234,7 @@ function oracle:connect(conn_str)
             vs      PLS_INTEGER  := dbms_db_version.version;
             ver     PLS_INTEGER  := sign(vs-9);
             re      PLS_INTEGER  := dbms_db_version.release;
+            vf      VARCHAR2(30);
             isADB   PLS_INTEGER  := 0;
             rtn     PLS_INTEGER;
             cdbid   NUMBER;
@@ -253,6 +254,11 @@ function oracle:connect(conn_str)
             END;
 
             $IF dbms_db_version.version > 12 $THEN
+                BEGIN
+                    EXECUTE IMMEDIATE 'SELECT VERSION_FULL FROM v$instance' INTO vf;
+                EXCEPTION WHEN OTHERS THEN NULL;
+                END;
+
                 BEGIN --Used on ADW/ATP
                     EXECUTE IMMEDIATE 'alter session set optimizer_ignore_hints=false optimizer_ignore_parallel_hints=false';
                     IF sys_context('userenv', 'con_name') != 'CDB$ROOT' THEN
@@ -286,7 +292,7 @@ function oracle:connect(conn_str)
             END IF;
 
             SELECT user,
-                   (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_RDBMS_VERSION') version,
+                   nvl(vf,(SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_RDBMS_VERSION')) version,
                    (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_LANGUAGE') || '_' ||
                    (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_TERRITORY') || '.' || value nls,
             $IF dbms_db_version.version > 9 $THEN      
@@ -307,7 +313,9 @@ function oracle:connect(conn_str)
                    sys_context('userenv', 'isdba') isdba,
                    nvl(sv,sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.')) service_name,
                    decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY',' ','PHYSICAL STANDBY',' (Standby)>')) END,
-                   decode((select count(distinct inst_id) from gv$version),1,'FALSE','TRUE'),vs,decode(isADB,0,'FALSE','TRUE')
+                   decode((select count(distinct inst_id) from gv$version),1,'FALSE','TRUE'),
+                   0+nvl(regexp_substr(vf,'^\d+\.\d+'),vs||'.'||re),
+                   decode(isADB,0,'FALSE','TRUE')
             INTO   :db_user,:db_version, :nls_lang,:sid,:instance, :container, :dbid, :dbname,:isdba, :service_name,:db_role, :israc,:version,:isadb
             FROM   nls_Database_Parameters
             WHERE  parameter = 'NLS_CHARACTERSET';
@@ -387,6 +395,7 @@ function oracle:connect(conn_str)
 end
 
 function oracle:parse(sql,params)
+    self:assert_connect()
     local bind_info,binds,counter,index,org_sql={},{},0,0
     if cfg.get('SQLCACHESIZE') ~= self.MAX_CACHE_SIZE then
         self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')

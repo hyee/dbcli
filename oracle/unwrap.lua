@@ -125,7 +125,7 @@ function unwrap.unwrap(obj,ext,prefix)
             WHERE OWNER = :owner
             AND   NAME  = :name
             ORDER BY TYPE, LINE]]
-        if db.props.version>11 then
+        if db.props.version>=12 then
             qry=qry:gsub(':name',':name and origin_con_id=(select origin_con_id from all_source where rownum<2 and OWNER = :owner and NAME  = :name)')
         end
         local rs=db:dba_query(db.exec,qry,{owner=info.owner,name=info.object_name})

@@ -853,11 +853,13 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local result={is_query and process_result(prep:getResultSet()) or prep:getUpdateCount()}
     local i=0;
 
-    while true do
-        params1,is_query=pcall(prep.getMoreResults,prep,2)
-        if not params1 or not is_query then break end
-        if result[1]==-1 then table.remove(result,1) end
-        result[#result+1]=process_result(prep:getResultSet())
+    if not is_query then
+        while true do
+            params1,is_query=pcall(prep.getMoreResults,prep,2)
+            if not params1 or not is_query then break end
+            if result[1]==-1 then table.remove(result,1) end
+            result[#result+1]=process_result(prep:getResultSet())
+        end
     end
 
     if is_timing then ela=os.timer()-clock end
@@ -909,7 +911,7 @@ end
 function db_core:is_internal_call(sql)
     if self.internal_exec then return true end
     if type(sql)=="userdata" then return true end
-    return sql and sql:find("INTERNAL_DBCLI_CMD",1,true) and true or false
+    return sql and sql:sub(1,256):find("INTERNAL_DBCLI_CMD",1,true) and true or false
 end
 
 function db_core:print_result(rs,sql)

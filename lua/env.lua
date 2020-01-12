@@ -567,8 +567,7 @@ function env.exec_command(cmd,params,is_internal,arg_text)
 end
 
 local is_in_multi_state=false
-local curr_stmt
-local multi_cmd
+local curr_stmt,curr_cmd,multi_cmd
 
 local cache_prompt,fix_prompt
 
@@ -651,7 +650,8 @@ function env.parse_args(cmd,rest,is_cross_line)
     
     local args={}
     if arg_count == 1 then
-        args[#args+1]=cmd..(rest and #rest> 0 and (" "..rest) or "")
+        args[#args+1]=(curr_cmd and cmd==curr_cmd:upper() and curr_cmd or cmd)..(rest and #rest> 0 and (" "..rest) or "")
+        curr_cmd=nil
     elseif arg_count == 2 then
         if type(rest)=="string" and not rest:match('".+".".+"') then
             rest=rest:gsub('^"(.*)"$','%1')
@@ -750,6 +750,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
         push_stack(line)
         subsystem_prefix=env._SUBSYSTEM and (env._SUBSYSTEM.." ") or ""
         local cmd=env.parse_args(2,line)[1]
+        curr_cmd=cmd
         if dbcli_current_item.skip_subsystem and not not_skip then
             subsystem_prefix=""
         elseif cmd:sub(1,1)=='.' and _CMDS[cmd:upper():sub(2)] then

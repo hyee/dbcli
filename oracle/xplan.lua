@@ -23,7 +23,7 @@ function xplan.explain(fmt,sql)
 
     env.checkerr(db.props and db.props.db_version,"Database is not connected!")
 
-    if db.props.version>11 then
+    if db.props.version>=12 then
         fmt = 'adaptive '..fmt
     end
 
@@ -48,6 +48,7 @@ function xplan.explain(fmt,sql)
     if e10053 then db:internal_call("ALTER SESSION SET EVENTS='10053 trace name context forever, level 1'") end
     local args={}
     sql=sql:gsub("(:[%w_$]+)",function(s) args[s:sub(2)]=""; return s end)
+    local sql_id=loader:computeSQLIdFromText(sql)
     try{function() db:internal_call("Explain PLAN SET STATEMENT_ID='INTERNAL_DBCLI_CMD' FOR "..sql,args) end,
         function(err)
             if type(err)=="string" and err:find("ORA-00942",1,true) then
@@ -60,7 +61,7 @@ function xplan.explain(fmt,sql)
         WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
         (SELECT a.*,
                 qblock_name qb,
-                object_alias alias,
+                replace(object_alias,'"') alias,
                 @proj@ proj,
                 nvl2(access_predicates,'A','')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
          FROM   (SELECT a.*, decode(parent_id,-1,id-1,parent_id) pid, dense_rank() OVER(ORDER BY plan_id DESC) seq FROM plan_table a WHERE STATEMENT_ID='INTERNAL_DBCLI_CMD') a
@@ -93,7 +94,7 @@ function xplan.explain(fmt,sql)
         select plan_table_output
         from   xplan_data
         model
-            dimension by (rownum as r)
+            dimension by (r)
             measures (plan_table_output,id, maxid,pid,oid,rc,qb,alias,pred,proj,
                       greatest(max(length(maxid)) over () + 3, 6) as csize,
                       nvl(greatest(max(length(pred)) over () + 3, 7),0) as psize,
@@ -103,30 +104,31 @@ function xplan.explain(fmt,sql)
                       cast(null as varchar2(128)) as inject)
             rules sequential order (
                 inject[r] = case
-                      when plan_table_output[cv()] like '------%' then rpad('-', csize[cv()]+psize[cv()]+jsize[cv()]+qsize[cv()]+asize[cv()]+1, '-')
-                      when id[cv()+2] = 0
-                      then '|' || lpad('Ord ', csize[cv()]) || '{PLAN}' 
-                               || lpad('Pred |', psize[cv()]) 
+                      when plan_table_output[cv()] like '------%' then 
+                           rpad('-', csize[cv()]+psize[cv()]+jsize[cv()]+qsize[cv()]+asize[cv()]+1, '-') || '{PLAN}' 
+                      when id[cv()+2] = 0 then
+                           '|' || lpad('Ord ', csize[cv()]) || '{PLAN}' 
+                               || decode(psize[cv()],0,'',rpad(' Pred', psize[cv()]-1)||'|')
                                || lpad('Proj |', jsize[cv()]) 
-                               || lpad('Q.B |', qsize[cv()])  
-                               || lpad('Alias |', asize[cv()]) 
-                      when id[cv()] is not null
-                      then '|' || lpad(oid[cv()]||' ', csize[cv()]) || '{PLAN}'  
-                               || lpad(pred[cv()] || ' |', psize[cv()]) 
+                               || decode(qsize[cv()],0,'',rpad(' Q.B', qsize[cv()]-1)||'|')
+                               || decode(asize[cv()],0,'',rpad(' Alias', asize[cv()]-1)||'|')
+                      when id[cv()] is not null then
+                           '|' || lpad(oid[cv()]||' ', csize[cv()]) || '{PLAN}'  
+                               || decode(psize[cv()],0,'',rpad(' '||pred[cv()], psize[cv()]-1)||'|')
                                || lpad(proj[cv()] || ' |', jsize[cv()]) 
-                               || lpad(qb[cv()] || ' |', qsize[cv()])
-                               || lpad(alias[cv()] || ' |', asize[cv()]) 
+                               || decode(qsize[cv()],0,'',rpad(' '||qb[cv()], qsize[cv()]-1)||'|')
+                               || decode(asize[cv()],0,'',rpad(' '||alias[cv()] , asize[cv()]-1)||'|')
+                      when plan_table_output[cv()] like 'Plan hash value%' then
+                            'SQL Id: @sql@    {PLAN}'
                   end,
                 plan_table_output[r] = case
-                     when inject[cv()] like '---%'
-                     then inject[cv()] || plan_table_output[cv()]
-                     when inject[cv()] is not null
-                     then replace(inject[cv()], '{PLAN}',plan_table_output[cv()])
+                     when inject[cv()] is not null then
+                          replace(inject[cv()], '{PLAN}',plan_table_output[cv()])
                      else plan_table_output[cv()]
-                 END)
+                 end)
         order  by r]]
-    sql=sql:gsub('@fmt@',fmt)
-    sql=sql:gsub('@proj@',db.props.version>10 and [[nvl2(projection,1+regexp_count(regexp_replace(projection,'\[.*?\]'),', "'),null)]] or 'cast(null as number)')
+    sql=sql:gsub('@fmt@',fmt):gsub('@sql@',sql_id)
+    sql=sql:gsub('@proj@',db.props.version>11.1 and [[nvl2(projection,1+regexp_count(regexp_replace(regexp_replace(projection,'[\[.*?\]'),'\(.*?\)'),', '),null)]] or 'cast(null as number)')
     cfg.set("pipequery","off")
     --db:rollback()
     if e10053==true then

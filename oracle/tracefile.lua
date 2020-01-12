@@ -197,7 +197,7 @@ function trace.get_trace(filename,mb,from_mb)
     target_view=db:check_obj("GV$DIAG_TRACE_FILE",1)
     if not target_view then target_view=db:check_obj("V$DIAG_TRACE_FILE",1) end
     if not filename then
-        if target_view and db.props.version>11 then 
+        if target_view and db.props.version>=12 then 
             target_view=target_view.target
             db:query([[SELECT * FROM(select ADR_HOME||regexp_substr(ADR_HOME,'[\\/]')||'trace'||regexp_substr(ADR_HOME,'[\\/]')||TRACE_FILENAME LAST_30_TRACE_FILES,CHANGE_TIME from ]]..target_view.." order by CHANGE_TIME desc) WHERE ROWNUM<=30")
         end
@@ -220,7 +220,7 @@ function trace.get_trace(filename,mb,from_mb)
             tracefile=nil
         end
         if not tracefile  then
-            if db.props.version>10 then
+            if db.props.version>=11 then
                 filename=db:get_value[[select tracefile from v$process where addr=(select paddr from v$session where sid=userenv('sid'))]]
             else
                 filename=db:get_value[[SELECT u_dump.value || '/' || SYS_CONTEXT('userenv','instance_name') || '_ora_' || p.spid ||
