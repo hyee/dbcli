@@ -132,13 +132,24 @@ export PATH=$PATH:/usr/bin;cd $(dirname $0)
 !
 
 cat >getfcobjects.cli<<'!'
-cellcli -e "list FLASHCACHECONTENT attributes CACHEDKEEPSIZE,CACHEDSIZE,CACHEDWRITESIZE,COLUMNARCACHESIZE,COLUMNARKEEPSIZE,DBID,DBUNIQUENAME,HITCOUNT,MISSCOUNT,OBJECTNUMBER,TABLESPACENUMBER" | awk -v c=$cell '{print c " " $0}'
+cellcli -e "list FLASHCACHECONTENT attributes DBID,DBUNIQUENAME,OBJECTNUMBER,TABLESPACENUMBER,CACHEDKEEPSIZE,CACHEDSIZE,CACHEDWRITESIZE,COLUMNARCACHESIZE,COLUMNARKEEPSIZE,HITCOUNT,MISSCOUNT,clusterName" | awk -v c=$cell '{print c " " $0}'
 !
 
 cat >getfcobjects.sh<<'!'
 export PATH=$PATH:/usr/bin;cd $(dirname $0)
 ./cellcli.sh getfcobjects.cli $1
 !
+
+
+cat >getpmemobjects.cli<<'!'
+cellcli -e "list PMEMCACHECONTENT attributes  DBID,DBUNIQUENAME,OBJECTNUMBER,TABLESPACENUMBER,CACHEDKEEPSIZE,CACHEDSIZE,CACHEDWRITESIZE,COLUMNARCACHESIZE,COLUMNARKEEPSIZE,HITCOUNT,MISSCOUNT,clusterName" | awk -v c=$cell '{print c " " $0}'
+!
+
+cat >getpmemobjects.sh<<'!'
+export PATH=$PATH:/usr/bin;cd $(dirname $0)
+./cellcli.sh getpmemobjects.cli $1
+!
+
 
 cat >getmetricdefinition.cli<<'!'
 cellcli -e list metricdefinition attributes name,objecttype,metrictype,unit,description | sed 's/^[[:space:]]*//'
@@ -538,17 +549,17 @@ sqlplus -s "$db_account" <<'EOF'
     CREATE TABLE EXA$CACHED_OBJECTS
     (
         CELLNODE VARCHAR2(30),
+        DBID NUMBER,
+        DBUNIQUENAME VARCHAR2(128),
+        OBJECTNUMBER NUMBER,
+        TABLESPACENUMBER NUMBER,
         CACHEDKEEPSIZE NUMBER,
         CACHEDSIZE NUMBER,
         CACHEDWRITESIZE NUMBER,
         COLUMNARCACHESIZE NUMBER,
         COLUMNARKEEPSIZE NUMBER,
-        DBID NUMBER,
-        DBUNIQUENAME VARCHAR2(30),
         HITCOUNT NUMBER,
-        MISSCOUNT NUMBER,
-        OBJECTNUMBER NUMBER,
-        TABLESPACENUMBER NUMBER
+        MISSCOUNT NUMBER
     )
     ORGANIZATION EXTERNAL
     ( TYPE ORACLE_LOADER
@@ -556,6 +567,34 @@ sqlplus -s "$db_account" <<'EOF'
       ACCESS PARAMETERS
       ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
         PREPROCESSOR 'getfcobjects.sh'  &cl
+        FIELDS TERMINATED BY  whitespace LRTRIM
+      ) &locations
+    )
+    REJECT LIMIT UNLIMITED &px &cells;
+    
+    PRO Creating table EXA$PMEM_OBJECTS
+    PRO =================================
+    CREATE TABLE EXA$PMEM_OBJECTS
+    (
+        CELLNODE VARCHAR2(30),
+        DBID NUMBER,
+        DBUNIQUENAME VARCHAR2(128),
+        OBJECTNUMBER NUMBER,
+        TABLESPACENUMBER NUMBER,
+        CACHEDKEEPSIZE NUMBER,
+        CACHEDSIZE NUMBER,
+        CACHEDWRITESIZE NUMBER,
+        COLUMNARCACHESIZE NUMBER,
+        COLUMNARKEEPSIZE NUMBER,
+        HITCOUNT NUMBER,
+        MISSCOUNT NUMBER
+    )
+    ORGANIZATION EXTERNAL
+    ( TYPE ORACLE_LOADER
+      DEFAULT DIRECTORY EXA_SHELL
+      ACCESS PARAMETERS
+      ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
+        PREPROCESSOR 'getpmemobjects.sh'  &cl
         FIELDS TERMINATED BY  whitespace LRTRIM
       ) &locations
     )

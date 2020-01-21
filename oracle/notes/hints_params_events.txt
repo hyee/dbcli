@@ -15,7 +15,7 @@ Parameters
     _optimizer_skip_scan_enabled or hint NO_INDEX_SS: disable index skip scan
     _with_subquery: OPTIMIZER/MATERIALIZE/INLINE, impacts the default behaviour of with subquery
     _smm_auto_max_io_size: defaults to 256. used to reduce the direct path read/write temp overhead for hash join/sort
-    _lm_drm_disable: defaults to 0.  1(_gc_affinity_locking): disable affinity locking,   2(_gc_undo_affinity):disable undo drm  4(_gc_read_mostly_locking): disable readmostly drm. Refer to MOS 1619155.1 for other gc parameters
+    _lm_drm_disable: defaults to 0.  1(_gc_affinity_locking): disable affinity locking,   2(_gc_undo_affinity):disable undo drm  4(_gc_read_mostly_locking): disable readmostly drm, 5=1+4 7=1+2+4. Refer to MOS 1619155.1 for other gc parameters
     _db_hot_block_tracking: enables to collect the hot blocks in X$KSLHOT
     _dlm_stats_collect: defaults to 1 since 12.2 and should be set to 0 (Doc ID 2373451.1)
     _restrict_pdb_gv: false to disable cross-instance query on gv$ views
@@ -28,7 +28,6 @@ Parameters
     _optimizer_generate_transitive_pred: similar to _optimizer_transitivity_retain
     _iut_stat_collection_type: relative views: DBA_INDEX_USAGE/V$INDEX_USAGE_INFO, set to 'ALL' to get the most accurate result during the monitor period, it can cause some overhead
     _disable_directory_link_check: directs the access driver to bypass symbolic link check, allowing you to use files for which the parent directory may be a symbolic link
-	table_cached_blocks: from dbms_stats.set_xxx_prefs, defaults as 1(0 as auto), used to control how to compute the CLUSTERING_FACTOR by gather_index_stats, recommend to set as 16*<Rac nodes> by jonathan lewis
     _kcfis_storageidx_disabled: enable/disable storage index
     _rdbms_internal_fplib_enabled/cell_offload_plan_display: simulate smart scan on non-Exadata db
     _exadata_feature_on: simulate Exadata features on non-Exadata db
@@ -36,6 +35,11 @@ Parameters
     
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
+    support compression for updating compressed table(dbms_compression.INCREMENTAL_COMPRESS): alter session set events '70001 trace name context forever, level <object_id>' 
+ 
+dbms_stats.set_xxx_pref:
+    table_cached_blocks: defaults as 1(0 as auto), used to control how to compute the CLUSTERING_FACTOR by gather_index_stats, recommend to set as 16*<Rac nodes> by jonathan lewis
+    TRACE: set to 1048575 to print the debug message for dbms_stats.gather_xxx_stats with dbms_output.put_line
     
 Hints:
     OPT_ESTIMATE:

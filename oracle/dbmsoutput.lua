@@ -15,8 +15,8 @@ function output.setOutput(db)
     pcall(function() (db or env.getdb()):internal_call(stmt) end)
 end
 
-output.trace_sql=[[select /*INTERNAL_DBCLI_CMD*/ name,value from v$mystat natural join v$statname where name not like 'session%memory%' and value>0]]
-output.trace_sql_after=[[
+output.trace_sql=[[select /*INTERNAL_DBCLI_CMD dbcli_ignore*/ name,value from v$mystat natural join v$statname where name not like 'session%memory%' and value>0]]
+output.trace_sql_after=([[
     DECLARE/*INTERNAL_DBCLI_CMD*/
         l_sql_id VARCHAR2(15);
         l_tmp_id VARCHAR2(15) := :sql_id; 
@@ -24,7 +24,7 @@ output.trace_sql_after=[[
         l_intval PLS_INTEGER;
         l_strval VARCHAR2(20);
     BEGIN
-        open :stats for 'select /*+dbcli_ignore*/ name,value from v$mystat natural join v$statname where name not like ''session%memory%'' and value>0';
+        open :stats for q'[@GET_STATS@]';
 
         begin
             execute immediate q'[select prev_sql_id,prev_child_number from v$session where audsid =sys_context('userenv','sessionid')]'
@@ -43,9 +43,9 @@ output.trace_sql_after=[[
         end;
         :last_sql_id := l_sql_id;
         :last_child  := l_child; 
-    END;]]
+    END;]]):gsub('@GET_STATS@',output.trace_sql)
 
-output.stmt=[[/*INTERNAL_DBCLI_CMD*/
+output.stmt=([[/*INTERNAL_DBCLI_CMD*/
     DECLARE
         l_line   VARCHAR2(32767);
         l_done   PLS_INTEGER := 32767;
@@ -142,33 +142,35 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
                 END IF;
 
                 FOR j in 1..l_recs.count LOOP
-                    l_sql:='sql_id='''||l_recs(j).sql_id||''' AND ';
-                    IF l_recs(j).child_num IS NOT NULL THEN
-                        l_sql := l_sql||'child_number='||l_recs(j).child_num;
-                    ELSIF l_recs(j).child_addr IS NOT NULL THEN
-                        l_sql := l_sql||'child_address=hextoraw('''||l_recs(j).child_addr||''')';
-                    ELSE
-                        l_sql := l_sql||'child_number=(select max(child_number) keep(dense_rank last order by executions,last_active_time) from v$sql where sql_id='''||l_recs(j).sql_id||''')';
-                    END IF;
-                    SELECT * BULK COLLECT INTO l_plans
-                    FROM TABLE(dbms_xplan.display('v$sql_plan_statistics_all',NULL,l_fmt,l_sql));
-                    IF j>1 THEN
-                        l_buffer := l_buffer || chr(10);
-                    END IF;
-                    FOR i in 1..l_plans.count LOOP
-                        IF l_plans(i) not like 'Error%' then
-                            if i = 1 then
-                                l_buffer := l_buffer || l_sep;
+                    IF l_recs(j).sql_id!='@GET_STATS_ID@' THEN
+                        l_sql:='sql_id='''||l_recs(j).sql_id||''' AND ';
+                        IF l_recs(j).child_num IS NOT NULL THEN
+                            l_sql := l_sql||'child_number='||l_recs(j).child_num;
+                        ELSIF l_recs(j).child_addr IS NOT NULL THEN
+                            l_sql := l_sql||'child_address=hextoraw('''||l_recs(j).child_addr||''')';
+                        ELSE
+                            l_sql := l_sql||'child_number=(select max(child_number) keep(dense_rank last order by executions,last_active_time) from v$sql where sql_id='''||l_recs(j).sql_id||''')';
+                        END IF;
+                        SELECT * BULK COLLECT INTO l_plans
+                        FROM TABLE(dbms_xplan.display('v$sql_plan_statistics_all',NULL,l_fmt,l_sql));
+                        IF j>1 THEN
+                            l_buffer := l_buffer || chr(10);
+                        END IF;
+                        FOR i in 1..l_plans.count LOOP
+                            IF l_plans(i) not like 'Error%' then
+                                if i = 1 then
+                                    l_buffer := l_buffer || l_sep;
+                                end if;
+                                if trim(l_plans(i)) is not null then
+                                    l_max := greatest(l_max,length(l_plans(i)));
+                                    l_buffer := l_buffer || replace(l_plans(i),'Plan hash value:','SQL ID: '||l_recs(j).sql_id||'   Plan hash value:') || chr(10);
+                                    wr;
+                                end if;
+                            elsif i=1 and l_recs(j).sql_id=l_sql_id then
+                                l_buffer := l_buffer || CASE WHEN j>1 THEN 'TOP_' END || 'SQL_ID: '||l_recs(j).sql_id||chr(10);
                             end if;
-                            if trim(l_plans(i)) is not null then
-                                l_max := greatest(l_max,length(l_plans(i)));
-                                l_buffer := l_buffer || replace(l_plans(i),'Plan hash value:','SQL ID: '||l_recs(j).sql_id||'   Plan hash value:') || chr(10);
-                                wr;
-                            end if;
-                        elsif i=1 and l_recs(j).sql_id=l_sql_id then
-                            l_buffer := l_buffer || CASE WHEN j>1 THEN 'TOP_' END || 'SQL_ID: '||l_recs(j).sql_id||chr(10);
-                        end if;
-                    END LOOP;
+                        END LOOP;
+                    END IF;
                 END LOOP;
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
@@ -198,7 +200,7 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
         :dbid        := l_dbid; 
         :lob         := l_lob;
     EXCEPTION WHEN OTHERS THEN NULL;
-    END;]]
+    END;]]):gsub('@GET_STATS_ID@',loader:computeSQLIdFromText(output.trace_sql))
 
 local fixed_stats={
     ['DB time']=1,

@@ -42,7 +42,7 @@
       }
       &grp4: {
           default={}
-          group={group by owner,nvl(object_name,'DB: '||dbuniquename),regexp_substr(object_type,'^\S+') }
+          group={group by type,owner,nvl(object_name,'DB: '||dbuniquename),regexp_substr(object_type,'^\S+') }
       }
 	--]]
 ]]*/
@@ -52,8 +52,8 @@ col Reqs,hits,misses for tmb
 col hit%,ColumnarCache% for pct
 set printsize 50
 
-SELECT /*+opt_param('parallel_force_local' 'true')*/ &grp3
-FROM   (SELECT objectnumber data_object_id,dbuniquename,
+SELECT /*+opt_param('parallel_force_local' 'true')*/ type,&grp3
+FROM   (SELECT type,objectnumber data_object_id,dbuniquename,
                &grp1,
                SUM(hitcount+misscount) "Reqs",
                SUM(hitcount) "Hits",
@@ -65,8 +65,8 @@ FROM   (SELECT objectnumber data_object_id,dbuniquename,
                SUM(CACHEDWRITESIZE) "CachedWrite",
                SUM(CACHEDKEEPSIZE) "CachedKeep",
                SUM(COLUMNARKEEPSIZE) "ColumnarKeep"
-        FROM   EXA$CACHED_OBJECTS
-        GROUP  BY objectnumber,dbuniquename &grp2) b
+        FROM   (SELECT 'FLASHCAHE' type, a.* from EXA$CACHED_OBJECTS a union all SELECT 'PMEM' type, a.* from EXA$PMEM_OBJECTS a)
+        GROUP  BY type,objectnumber,dbuniquename &grp2) b
 LEFT JOIN dba_objects a 
 ON   (b.data_object_id = a.data_object_id and regexp_replace(upper(dbuniquename),'[:\.].*')= upper(sys_context('userenv','db_unique_name')))
 WHERE nvl(lower(:V1), ' ') IN (' ', 'hits', 'misses', 'cachedsize', 'cachedwrite', 'columnarcache', 'cachedkeep', 'columnarkeep') 
