@@ -189,7 +189,8 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD*/
         end if;
 
         $IF dbms_db_version.version > 12 or dbms_db_version.version=12 and dbms_db_version.release>1 $THEN 
-            l_dbid  :=sys_context('userenv', 'dbid'); 
+            l_dbid  := sys_context('userenv', 'dbid'); 
+            l_cid   := sys_context('userenv','con_id');
         $END
         :last_sql_id := l_sql_id;
         :buff        := l_buffer;

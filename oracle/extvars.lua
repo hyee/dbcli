@@ -170,7 +170,7 @@ function extvars.set_cdbmode(name,value)
     if cdbmode==value then return value end
     env.checkerr(value=='off' or db.props.version>=12, "Unsupported database: v"..db.props.db_version)
     if value=='pdb' then
-        if db.props.container_dbid and db.props.container_id>1 then
+        if db.props.container_id and db.props.container_id>1 then
             prev_container.dbid=cfg.get('dbid')
             prev_container.container=cfg.get('container')
             prev_container.new_dbid=db.props.container_dbid
