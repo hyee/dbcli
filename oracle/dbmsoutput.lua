@@ -104,6 +104,20 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD*/
             end;
         END IF;
 
+        $IF dbms_db_version.version > 11 $THEN
+            BEGIN
+                IF l_cdbid != sys_context('userenv', 'con_dbid') THEN
+                    dbms_output.disable;
+                    dbms_output.enable(null);
+                END IF;
+                l_cont  :=sys_context('userenv', 'con_name'); 
+                l_cid   :=sys_context('userenv', 'con_id'); 
+                l_cdbid :=sys_context('userenv', 'con_dbid'); 
+                l_dbid  :=sys_context('userenv', 'dbid'); 
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+        $END
+
         IF l_enable = 'on' THEN
             dbms_output.get_lines(l_arr, l_done);
             FOR i IN 1 .. l_done LOOP
@@ -188,10 +202,6 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD*/
             l_lob := replace(l_lob,l_sep,rpad('=',l_max,'=')||chr(10));
         end if;
 
-        $IF dbms_db_version.version > 12 or dbms_db_version.version=12 and dbms_db_version.release>1 $THEN 
-            l_dbid  := sys_context('userenv', 'dbid'); 
-            l_cid   := sys_context('userenv','con_id');
-        $END
         :last_sql_id := l_sql_id;
         :buff        := l_buffer;
         :txn         := dbms_transaction.local_transaction_id;
