@@ -16,16 +16,25 @@ If exist "data\init.cfg" (for /f "eol=# delims=" %%i in (data\init.cfg) do (%%i)
 
 rem search java 1.8+ executable
 SET TEMP_PATH=!PATH!
-set "PATH=%JRE_HOME%\bin;%JRE_HOME%;%JAVA_HOME%\bin;!PATH!"
+SET "PATH=%JRE_HOME%\bin;%JRE_HOME%;%JAVA_HOME%\bin;!PATH!"
 SET JAVA_HOME=
+SET "SEP= = "
 
 for /F "usebackq delims=" %%p in (`where java.exe 2^>NUL`) do (
   If exist %%~sp (
       set "JAVA_EXE_=%%~sp"
-      FOR /F "tokens=1,2 delims== " %%i IN ('!JAVA_EXE_! -XshowSettings:properties 2^>^&1^|findstr "java\.home java.version os.arch"' ) do (
-        if "%%i" equ "java.home" set "JAVA_BIN_=%%~sj\bin"
-        if "%%i" equ "os.arch" if "%%j" equ "x86" (set bit_=x86) else (set bit_=x64)
-        if "%%i" equ "java.class.version" if "52.0" GTR "%%j" set "JAVA_EXE_="
+      FOR /F "tokens=1,2 delims==" %%i IN ('!JAVA_EXE_! -XshowSettings:properties 2^>^&1^|findstr "java\.home java.version os.arch"' ) do (
+        for /f "tokens=* delims= " %%a in ("%%i") do set n=%%a
+        for /l %%a in (1,1,255) do if "!n:~-1!"==" " set n=!n:~0,-1!
+        for /f "tokens=* delims= " %%a in ("%%j") do set "v=%%a"
+        for /l %%a in (1,1,255) do if "!v:~-1!"==" " set "v=!v:~0,-1!"
+        
+        if "!n!" equ "java.home" (
+            for %%a in ("!v!") do set v1=%%~sa
+            set "JAVA_BIN_=!v1!\bin"
+        )
+        if "!n!" equ "os.arch" if "!v!" equ "x86" (set bit_=x86) else (set bit_=x64)
+        if "!n!" equ "java.class.version" if "52.0" GTR "!v!" set "JAVA_EXE_="
       )
       if "!JAVA_EXE_!" neq "" if "!JAVA_BIN_!" neq "" (
         set "JAVA_BIN=!JAVA_BIN_!" & set "JAVA_EXE=!JAVA_BIN_!\java.exe" & set "bit=!bit_!"
