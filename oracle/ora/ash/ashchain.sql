@@ -1,5 +1,5 @@
 /*[[
-    Show ash wait chains. Usage: @@NAME {[<sql_id>|<sid>|<plan_hash_value>|-f"<filter>"] [YYMMDDHH24MI] [YYMMDDHH24MI]}|{-snap [secs]} [-sid] [-dash] [-flat] [-t"<ash_dump_table>"]
+    Show ash wait chains. Usage: @@NAME {[<sql_id>|<sid>|<event>|<plan_hash_value>|-f"<filter>"] [YYMMDDHH24MI] [YYMMDDHH24MI]}|{-snap [secs]} [-sid] [-dash] [-flat] [-t"<ash_dump_table>"]
     
     Options:
         -dash        : source from dba_hist_active_session_history instead of gv$active_session_history
@@ -10,6 +10,8 @@
         -p           : show progam + event + p1/2/3 instead of event + top object
         -flat        : show ashchain in flat style instead of tree style
         -t           : source table is <ash_dump_table>
+    
+    The script could trigger error 'ORA-12850'(Bug 26424079) in some env, try to use 'ALTER SESSION SET "_with_subquery"=INLINE' to fix the issue.
 
     Sample Output:
     ==============
@@ -29,7 +31,7 @@
     | 12.50%   1     1    1 120.00 KB  (1) 162         |  32hbap2vtmf53  |  db file sequential read               read by other session [data block] > db file sequential read
     12.5%      1     1    1 944.00 KB  (1) -1          92b382ka0qgdt     rdbms ipc reply > (Remote)               rdbms ipc reply > (Remote)
 
-This script references Tanel Poder's script
+    This script references Tanel Poder's script
     --[[
         @con : 12.1={AND prior con_id=con_id} default={}
         &tree  : default={1} flat={0}

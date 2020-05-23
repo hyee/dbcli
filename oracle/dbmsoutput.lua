@@ -15,7 +15,7 @@ function output.setOutput(db)
     pcall(function() (db or env.getdb()):internal_call(stmt) end)
 end
 
-output.trace_sql=[[select /*INTERNAL_DBCLI_CMD dbcli_ignore*/ name,value from v$mystat natural join v$statname where name not like 'session%memory%' and value>0]]
+output.trace_sql=[[select /*INTERNAL_DBCLI_CMD dbcli_ignore*/ name,value from sys.v_$mystat natural join sys.v_$statname where name not like 'session%memory%' and value>0]]
 output.trace_sql_after=([[
     DECLARE/*INTERNAL_DBCLI_CMD*/
         l_sql_id VARCHAR2(15);
@@ -27,13 +27,13 @@ output.trace_sql_after=([[
         open :stats for q'[@GET_STATS@]';
 
         begin
-            execute immediate q'[select prev_sql_id,prev_child_number from v$session where audsid =sys_context('userenv','sessionid')]'
+            execute immediate q'[select prev_sql_id,prev_child_number from sys.v_$session where sid=sys_context('userenv','sid') and username is not null and prev_hash_value!=0]'
             into l_sql_id,l_child;
 
             if l_sql_id is null then
                 l_sql_id := l_tmp_id;
             elsif l_sql_id != l_tmp_id and l_tmp_id != 'x' then
-                l_intval := dbms_utility.get_parameter_value('cursor_sharing',l_intval,l_strval);
+                l_intval := sys.dbms_utility.get_parameter_value('cursor_sharing',l_intval,l_strval);
                 if lower(l_strval)!='exact' then
                     l_sql_id := l_tmp_id;
                     l_child  := null;
@@ -88,13 +88,13 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD*/
     BEGIN
         IF l_trace NOT IN('on','statistics','traceonly') THEN
             begin
-                execute immediate q'[select prev_sql_id,prev_child_number from v$session where audsid =sys_context('userenv','sessionid')]'
+                execute immediate q'[select prev_sql_id,prev_child_number from sys.v_$session where sid=sys_context('userenv','sid') and username is not null and prev_hash_value!=0]'
                 into l_sql_id,l_child;
 
                 if l_sql_id is null then
                     l_sql_id := l_tmp_id;
                 elsif l_sql_id != l_tmp_id and l_tmp_id != 'x' then
-                    l_intval := dbms_utility.get_parameter_value('cursor_sharing',l_intval,l_strval);
+                    l_intval := sys.dbms_utility.get_parameter_value('cursor_sharing',l_intval,l_strval);
                     if lower(l_strval)!='exact' then
                         l_sql_id := l_tmp_id;
                         l_child  := null;
@@ -137,7 +137,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD*/
             END IF;
             BEGIN
                 $IF DBMS_DB_VERSION.VERSION>10 $THEN
-                    l_sql :='SELECT /*+dbcli_ignore*/ SQL_ID,'|| CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN 'CHILD_ADDRESS' ELSE 'CAST(NULL AS RAW(8))' END ||',null FROM v$open_cursor WHERE sid=userenv(''sid'') AND cursor_type like ''OPEN%'' AND sql_exec_id IS NOT NULL AND instr(sql_text,''dbcli_ignore'')=0 AND instr(sql_text,''V$OPEN_CURSOR'')=0';
+                    l_sql :='SELECT /*+dbcli_ignore*/ SQL_ID,'|| CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN 'CHILD_ADDRESS' ELSE 'CAST(NULL AS RAW(8))' END ||',null FROM sys.V_$OPEN_CURSOR WHERE sid=userenv(''sid'') AND cursor_type like ''OPEN%'' AND sql_exec_id IS NOT NULL AND instr(sql_text,''dbcli_ignore'')=0 AND instr(sql_text,''$OPEN_CURSOR'')=0';
                     BEGIN
                         EXECUTE IMMEDIATE l_sql BULK COLLECT INTO l_recs;
                         FOR i in 1..l_recs.count LOOP
@@ -163,7 +163,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD*/
                         ELSIF l_recs(j).child_addr IS NOT NULL THEN
                             l_sql := l_sql||'child_address=hextoraw('''||l_recs(j).child_addr||''')';
                         ELSE
-                            l_sql := l_sql||'child_number=(select max(child_number) keep(dense_rank last order by executions,last_active_time) from v$sql where sql_id='''||l_recs(j).sql_id||''')';
+                            l_sql := l_sql||'child_number=(select max(child_number) keep(dense_rank last order by executions,last_active_time) from sys.v_$sql where sql_id='''||l_recs(j).sql_id||''')';
                         END IF;
                         SELECT * BULK COLLECT INTO l_plans
                         FROM TABLE(dbms_xplan.display('v$sql_plan_statistics_all',NULL,l_fmt,l_sql));
