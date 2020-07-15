@@ -2,8 +2,11 @@
     -batch: number of options to be tested for each batch
     -env  : only test the parameters
     -ofe  : only test the fix controls
+
+    Example: @@NAME g6px76dmjv1jy 10.2.0.4 12.1.0
+
     --[[
-        @ARGS  : 1
+        @ARGS  : 2
         &typ   : default={all} ofe={ofe} env={env}
         &filter: default={1=2} f={}
         &batch : default={1} batch={}
@@ -26,9 +29,10 @@ DECLARE
     ofe_cnt   PLS_INTEGER := 0;
     env_cnt   PLS_INTEGER := 0;
     org_ofes  VARCHAR2(4000);
+    old_ofe   VARCHAR2(32767);
     new_ofe   VARCHAR2(32767);
-    ofelist   ODCIVARCHAR2LIST := ODCIVARCHAR2LIST();
-    ofedesc   ODCIVARCHAR2LIST := ODCIVARCHAR2LIST();
+    ofelist   SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST();
+    ofedesc   SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST();
     to_schema VARCHAR2(128);
     fmt       VARCHAR2(300);
     curr      VARCHAR2(128) := sys_context('userenv', 'current_schema');
@@ -98,6 +102,7 @@ BEGIN
             raise_application_error(-20001, 'Cannot find the SQL text for sql_id: ' || :v1);
     END;
     sql_text := 'explain plan set statement_id=''OFE_@dbcli_stmt_id@'' for ';
+    buff := regexp_replace(buff,'^\s*explain.*?for\s*','',1,1,'i');
     dbms_lob.append(sql_text, buff);
 
     IF low_ofe IS NULL THEN
@@ -114,7 +119,7 @@ BEGIN
         WHERE  rownum < 2;
     END IF;
     
-    EXECUTE IMMEDIATE 'alter session set current_schema=' || to_schema;
+    
     DELETE plan_table;
     --DBMS_OUTPUT.PUT_LINE(replace(sql_text,'@dbcli_stmt_id@','BASELINE'));
 
@@ -123,13 +128,17 @@ BEGIN
     FROM   v$parameter
     WHERE  NAME = '_fix_control';
 
+    EXECUTE IMMEDIATE 'alter session set STATISTICS_LEVEL=ALL current_schema=SYS';
     EXECUTE IMMEDIATE 'alter session set optimizer_features_enable=''' || low_ofe || '''';
     low_env := dbms_xmlgen.getxmltype(qry);
+    EXECUTE IMMEDIATE 'alter session set current_schema=' || to_schema;
     EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', 'BASELINE_LOW');
     COMMIT;
 
+    EXECUTE IMMEDIATE 'alter session set current_schema=SYS';
     EXECUTE IMMEDIATE 'alter session set optimizer_features_enable=''' || high_ofe || '''';
     high_env := dbms_xmlgen.getxmltype(qry);
+    EXECUTE IMMEDIATE 'alter session set current_schema=' || to_schema;
     EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', 'BASELINE_HIGH');
     COMMIT;
 
@@ -141,13 +150,14 @@ BEGIN
         ofelist.extend;
         ofedesc.extend;
         new_ofe := NULL;
+        old_ofe := NULL;
         FOR i IN 1 .. changes.count LOOP
             IF changes(i).typ = 'ofe' THEN
                 IF nvl(instr(org_ofes, changes(i).name || ':'), 0) = 0 THEN
                     new_ofe := new_ofe || ',''' || changes(i).name || ':' || changes(i).value_low || '''';
+                    old_ofe := old_ofe || ',''' || changes(i).name || ':' || changes(i).value_high || '''';
                     ofe_cnt := ofe_cnt + 1;
-                    ofelist(ofelist.count) := ofelist(ofelist.count) || changes(i).name || ':' || changes(i).value_low ||
-                                              chr(10);
+                    ofelist(ofelist.count) := ofelist(ofelist.count) || changes(i).name || ':' || changes(i).value_low || chr(10);
                 END IF;
             ELSE
                 IF changes(i).vtype = 2 THEN
@@ -156,8 +166,7 @@ BEGIN
                 END IF;
                 EXECUTE IMMEDIATE 'alter session set "' || changes(i).name || '"=' || changes(i).value_low;
                 env_cnt := env_cnt + 1;
-                ofelist(ofelist.count) := ofelist(ofelist.count) || changes(i).name || ' = ' || changes(i).value_low ||
-                                          chr(10);
+                ofelist(ofelist.count) := ofelist(ofelist.count) || changes(i).name || ' = ' || changes(i).value_low || chr(10);
             END IF;
         
             IF length(ofedesc(ofedesc.count) || changes(i).description) < 3999 THEN
@@ -169,14 +178,14 @@ BEGIN
         ofedesc(ofedesc.count) := TRIM(ofedesc(ofedesc.count));
     
         IF new_ofe IS NOT NULL THEN
-            EXECUTE IMMEDIATE 'alter session set "_fix_control"=' || org_ofes || new_ofe;
+            EXECUTE IMMEDIATE 'alter session set "_fix_control"=' || trim(',' from org_ofes || new_ofe);
         END IF;
     
         EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', ofelist.count);
         COMMIT;
     
         IF new_ofe IS NOT NULL THEN
-            EXECUTE IMMEDIATE 'alter session set "_fix_control"=' || org_ofes;
+            EXECUTE IMMEDIATE 'alter session set "_fix_control"=' || trim(',' from org_ofes || old_ofe);
         END IF;
         FOR i IN 1 .. changes.count LOOP
             IF changes(i).typ != 'ofe' THEN
@@ -262,12 +271,12 @@ BEGIN
                  b.settings,
                  description
         FROM   finals a
-        LEFT   JOIN (SELECT rownum id, column_value settings FROM TABLE(ofelist)) b
+        LEFT   JOIN (SELECT rownum id, trim(chr(10) from column_value) settings FROM TABLE(ofelist)) b
         USING  (id)
-        LEFT   JOIN (SELECT rownum id, column_value description FROM TABLE(ofedesc)) c
+        LEFT   JOIN (SELECT rownum id, trim(chr(10) from column_value) description FROM TABLE(ofedesc)) c
         USING  (id)
         ORDER  BY grp, id;
-    :msg := utl_lms.format_message('* Note: Run "ora plan <statement_id>" to query the detailed plan. ' || chr(10) ||
+    :msg := utl_lms.format_message('* Note: Run "ora plan <statement_id> -all" to query the detailed plan. ' || chr(10) ||
                                    '* Note: Totally %d options are tested, including %d fix controls and %d parameters. Please reconnect to reset all options to the defaults.',
                                    ofe_cnt + env_cnt,
                                    ofe_cnt,

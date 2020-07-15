@@ -56,7 +56,7 @@ FROM   v$cell_config a,
                 "powerCount" VARCHAR2(9) path 'powerCount',
                 "releaseVersion" VARCHAR2(25) path 'releaseVersion',
                 "rpmVersion" VARCHAR2(50) path 'rpmVersion',
-                "releaseTrackingBug" number(15) path 'releaseTrackingBug',
+                "releaseTrackingBug" VARCHAR2(200) path 'releaseTrackingBug',
                 "rollbackVersion" VARCHAR2(30) path 'rollbackVersion'
                 ) b
 WHERE  conftype = 'CELL'

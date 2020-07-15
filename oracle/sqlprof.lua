@@ -141,8 +141,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                         AND    comp_data is not null
                     $ELSE
                         UNION ALL
-                        SELECT Xmlelement("outline_data", xmlagg(Xmlelement("hint", attr_val) ORDER BY attr#))
-                               .getclobval() comp_data,
+                        SELECT Xmlelement("outline_data", xmlagg(Xmlelement("hint", attr_val) ORDER BY attr#)).getclobval() comp_data,
                                'profile' src
                         FROM   sys.sqlprof$ b, sys.sqlprof$attr a
                         WHERE  b.sp_name = nvl(p_plan, p_sqlid)

@@ -296,6 +296,8 @@ function var.save(name,file)
     elseif type(obj)=='table' then
         obj=table.dump(obj)
     end
+
+    if env.ansi then obj:strip_ansi() end
     file=env.write_cache(file,obj);
     print("Data saved to "..file);
 end

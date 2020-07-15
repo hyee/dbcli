@@ -119,11 +119,13 @@ end
 function helper.colorful(helps,target)
     if helps:find('^[Nn]o ') then return helps end
     target=target:gsub(',.+','')
-    helps=helps:gsub('^%s*\n',''):gsub('\t','    '):gsub('^(%s*[^\n\r]+)[Uu]sage[: ]+(@@NAME)([^\r\n]*)',function(prefix,name,line)
+    helps=helps:gsub('^%s*\n',''):gsub('\t','    ')
+    local spaces=helps:match("\n( *)%S") or ""
+    helps=helps:gsub('^(%s*[^\n\r]+)[Uu]sage[: ]+(@@NAME)([^\r\n]*)',function(prefix,name,line)
         local s=prefix..'\n'..string.rep('=',#(prefix:trim())+#target+2)..'\n$USAGECOLOR$Usage:$COMMANDCOLOR$ '..name:gsub(',.+','')..'$NOR$'
         return s..line:gsub('([<>{}%[%]|]+)','$COMMANDCOLOR$%1$NOR$'):gsub('(%-%w+)','$PROMPTSUBCOLOR$%1$NOR$')
     end)
-    local spaces=helps:match("( *)%S") or ""
+    
     helps='\n'..spaces..(target=='' and '' or ('$USAGECOLOR$'..target:upper()..':$NOR$ '))..helps:sub(#spaces+1)
     helps=helps:gsub("\r?\n"..spaces,"\n"):gsub("%s+$",""):gsub("@@NAME",target:lower())
 

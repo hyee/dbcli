@@ -1049,7 +1049,9 @@ function env.set_option(name,value)
 end
 
 function env.onload(...)
-    env.__ARGS__={...}
+    local args={...}
+    if #args==1 and type(args[1])=='table' then args=args[1] end
+    env.__ARGS__=args
     env.IS_ENV_LOADED=false
     for _,v in ipairs({'jit','ffi','bit'}) do   
         if v=="jit" then

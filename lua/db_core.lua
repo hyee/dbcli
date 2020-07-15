@@ -1201,6 +1201,8 @@ local function set_param(name,value)
         env.checkerr(#value==1,'CSV separator can only be one char!')
         cparse.DEFAULT_SEPARATOR=value:byte()
         return value
+    elseif name=='PROMPTEXP' then
+        return value:lower()
     end
 
     return tonumber(value)
@@ -1232,17 +1234,21 @@ function db_core:sql2file(filename,sql,method,ext,...)
         end
     end
 
-    if method~='CSV2SQL' then
-        exp.RESULT_FETCH_SIZE=tonumber(env.ask("Please set fetch array size",'10-100000',exp.RESULT_FETCH_SIZE))
-    end
-    if method:find("SQL",1,true) then
-        sqlw.maxLineWidth=tonumber(env.ask("Please set line width","100-32767",sqlw.maxLineWidth))
-        sqlw.COLUMN_ENCLOSER=string.byte(env.ask("Please define the column name encloser","^%W$",'"'))
-    end
-    if method:find("CSV",1,true) then
-        local quoter=string.byte(env.ask("Please define the field encloser",'^.$','"'))
-        cparse.DEFAULT_QUOTE_CHARACTER=quoter
-        cfg.set("CSVSEP",env.ask("Please define the field separator",'^[^'..string.char(quoter)..']$',','))
+    if cfg.get('PROMPTEXP')=='on' then
+        if method~='CSV2SQL' then
+            exp.RESULT_FETCH_SIZE=tonumber(env.ask("Please set fetch array size",'10-100000',exp.RESULT_FETCH_SIZE))
+        end
+        if method:find("SQL",1,true) then
+            sqlw.maxLineWidth=tonumber(env.ask("Please set line width","100-32767",sqlw.maxLineWidth))
+            sqlw.COLUMN_ENCLOSER=string.byte(env.ask("Please define the column name encloser","^%W$",'"'))
+        end
+        if method:find("CSV",1,true) then
+            local quoter=string.byte(env.ask("Please define the field encloser",'^.$','"'))
+            cparse.DEFAULT_QUOTE_CHARACTER=quoter
+            cfg.set("CSVSEP",env.ask("Please define the field separator",'^[^'..string.char(quoter)..']$',','))
+        end
+    else
+        exp.RESULT_FETCH_SIZE=5000
     end
 
     local file=io.open(filename,"w")
@@ -1260,7 +1266,6 @@ function db_core:sql2file(filename,sql,method,ext,...)
         end
     else
         print("Start to extract result into "..filename)
-        print(result)
         clock,counter=os.timer(),loader[method](loader,result,filename,...)
         print_export_result(filename,clock,counter)
     end
@@ -1468,6 +1473,7 @@ function db_core:__onload()
     cfg.init({"TIMING","TIMI"},"off",nill,"db.core","Controls whether or not SQL*Plus displays the elapsed time for each SQL statement.")
     cfg.init("ConvertRAW2Hex","on",nil,"db.core","Convert raw data to Hex(text) format","on,off")
     cfg.init("CSVSEP",",",set_param,"db.core","Define the default separator between CSV fields.")
+    cfg.init("PROMPTEXP","on",set_param,"db.core","Controls whether to prompt input when export SQL data",'on,off')
     cfg.init("READONLY",'off',set_param,"db.core","When set to on, makes the database connection read-only.",'on,off')
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
     env.event.snoop('TRIGGER_LOGIN',self.login,self)
