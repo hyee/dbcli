@@ -25,7 +25,6 @@ output.trace_sql_after=([[
         l_strval VARCHAR2(20);
     BEGIN
         open :stats for q'[@GET_STATS@]';
-
         begin
             execute immediate q'[select prev_sql_id,prev_child_number from sys.v_$session where sid=sys_context('userenv','sid') and username is not null and prev_hash_value!=0]'
             into l_sql_id,l_child;

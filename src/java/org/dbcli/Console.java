@@ -121,6 +121,7 @@ public final class Console {
         input = terminal.reader();
         writer = new Output(terminal.writer());
         colorPlan = terminal.getType();
+
         threadID = Thread.currentThread().getId();
         callback = new EventCallback() {
             @Override
