@@ -204,13 +204,22 @@ function trace.get_trace(filename,mb,from_mb)
         env.checkhelp(filename)
     end 
 
-    pcall(db.internal_call(db,[[
+    local traceoff=[[
     BEGIN
-        EXECUTE IMMEDIATE 'alter session set events ''10046 trace name context off''';
-        EXECUTE IMMEDIATE 'alter session set tracefile_identifier=CLEANUP';
-        EXECUTE IMMEDIATE 'alter session set tracefile_identifier=''''';
+        EXECUTE IMMEDIATE 'alter session set events ''10053 trace name context off:10046 trace name context off''';
+        @ALTER_SESSION@
+        EXECUTE IMMEDIATE 'alter session set events ''sql_trace off:trace off''';
     EXCEPTION WHEN OTHERS THEN NULL;
-    END;]]))
+    END;]]
+
+    if filename:lower()~="default" then
+        traceoff=traceoff:gsub('@ALTER_SESSION@',[[
+            EXECUTE IMMEDIATE 'alter session set tracefile_identifier=CLEANUP';
+            EXECUTE IMMEDIATE 'alter session set tracefile_identifier=''''';]])
+    else
+        traceoff=traceoff:gsub('@ALTER_SESSION@','')
+    end
+    pcall(db.internal_call(db,traceoff))
 
     local lv=nil
     if filename:find("^%d+$") then lv=tonumber(filename) end
@@ -218,6 +227,7 @@ function trace.get_trace(filename,mb,from_mb)
         if lv then
             pcall(db.internal_call(db,"alter session set tracefile_identifier='dbcli_"..math.random(1e6).."'"));
             tracefile=nil
+
         end
         if not tracefile  then
             if db.props.version>=11 then
@@ -244,6 +254,13 @@ function trace.get_trace(filename,mb,from_mb)
                 print("Trace off: "..filename)
             end
             return
+        else
+            pcall(db.internal_call(db,[[
+                BEGIN
+                    EXECUTE IMMEDIATE 'alter session set tracefile_identifier=CLEANUP';
+                    EXECUTE IMMEDIATE 'alter session set tracefile_identifier=''''';
+                EXCEPTION WHEN OTHERS THEN NULL;
+                END;]]))
         end
     elseif filename:lower()=="alert" then
         if db.props.version<11 then

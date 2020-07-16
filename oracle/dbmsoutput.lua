@@ -86,11 +86,10 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD*/
             END IF;
         end;
     BEGIN
-        IF l_trace NOT IN('on','statistics','traceonly') THEN
+        IF l_trace NOT IN('on','statistics','traceonly') AND l_child IS NOT NULL THEN
             begin
                 execute immediate q'[select prev_sql_id,prev_child_number from sys.v_$session where sid=sys_context('userenv','sid') and username is not null and prev_hash_value!=0]'
                 into l_sql_id,l_child;
-
                 if l_sql_id is null then
                     l_sql_id := l_tmp_id;
                 elsif l_sql_id != l_tmp_id and l_tmp_id != 'x' then

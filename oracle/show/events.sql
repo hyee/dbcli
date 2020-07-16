@@ -1,6 +1,7 @@
-/*[[Show enabled events.
+/*[[Show system level enabled events.
     Refer to: https://github.com/xtender/xt_scripts/blob/master/events/enabled.sql
 ]]*/
+set feed off
 DECLARE
     level# INT;
 BEGIN
@@ -10,5 +11,7 @@ BEGIN
             dbms_output.put_line('Event #' || event# || ' level:' || level#);
         END IF;
     END LOOP;
+    sys.dbms_system.read_ev(10046, level#);
+    dbms_output.put_line(level#);
 END;
 /

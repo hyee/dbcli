@@ -45,7 +45,9 @@ function xplan.explain(fmt,sql)
     cfg.set("printsize",9999,true)
     --db:internal_call("alter session set statistics_level=all")
     db:rollback()
-    if e10053 then db:internal_call("ALTER SESSION SET EVENTS='10053 trace name context forever, level 1'") end
+    if e10053 then
+        db:internal_call("ALTER SESSION SET tracefile_identifier='"..math.random(1e6).."' EVENTS='10053 trace name context forever, level 1'") 
+    end
     local args={}
     sql=sql:gsub("(:[%w_$]+)",function(s) args[s:sub(2)]=""; return s end)
     local sql_id=loader:computeSQLIdFromText(sql)
@@ -63,7 +65,7 @@ function xplan.explain(fmt,sql)
                 qblock_name qb,
                 replace(object_alias,'"') alias,
                 @proj@ proj,
-                nvl2(access_predicates,'A','')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
+                nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
          FROM   (SELECT a.*, decode(parent_id,-1,id-1,parent_id) pid, dense_rank() OVER(ORDER BY plan_id DESC) seq FROM plan_table a WHERE STATEMENT_ID='INTERNAL_DBCLI_CMD') a
          WHERE  seq = 1
          ORDER  BY id),
@@ -132,9 +134,10 @@ function xplan.explain(fmt,sql)
     cfg.set("pipequery","off")
     --db:rollback()
     if e10053==true then
-        db:internal_call("ALTER SESSION SET EVENTS '10053 trace name context off'")
+        db:internal_call("ALTER SESSION SET EVENTS='10053 trace name context off'")
         db:query(sql)
         oracle.C.tracefile.get_trace('default')
+        db:internal_call("ALTER SESSION SET tracefile_identifier=''")
     elseif prof==true then
         db:query(sql)
         oracle.C.sqlprof.extract_profile(nil,'plan',sqltext)

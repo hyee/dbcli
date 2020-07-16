@@ -123,7 +123,7 @@ function printer.print(...)
         end
     end
 
-    if ignore~='__BYPASS_GREP__' then
+    if ignore~='__BYPASS_GREP__' and termout=='on' then
         more_text[#more_text+1]=output
         more_text.lines=more_text.lines+rows+1
     end

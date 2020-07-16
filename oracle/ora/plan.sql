@@ -37,7 +37,7 @@ Options:
                          qblock_name qb,
                          replace(object_alias,'"') alias,
                          &proj,
-                         nvl2(access_predicates,'A','')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
+                         nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   dba_advisor_sqlplans a
                   WHERE  a.sql_id = :V1
                   AND    :V1 not in('X','last','LAST')
@@ -61,7 +61,7 @@ Options:
                          qblock_name qb,
                          replace(object_alias,'"') alias,
                          &proj,
-                         nvl2(access_predicates,'A','')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
+                         nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   sys.sql$text st,sys.sqlobj$plan a
                   WHERE  st.sql_handle = :V1
                   AND    :V1 not in('X','last','LAST')
@@ -142,7 +142,7 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          qblock_name qb,
                          replace(object_alias,'"') alias,
                          &proj,
-                         nvl2(access_predicates,'A','')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
+                         nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   v$sql_plan a
                   WHERE  a.sql_id = replace(lower(:V1),'last',:last_sql)
                   AND    :V1 !='X'
@@ -161,7 +161,7 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          qblock_name qb,
                          replace(object_alias,'"') alias,
                          &proj,
-                         nvl2(access_predicates,'A','')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
+                         nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   gv$sql_plan_statistics_all a
                   WHERE  a.sql_id = replace(lower(:V1),'last',:last_sql)
                   AND    :V1 !='X'
@@ -180,7 +180,7 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          qblock_name qb,
                          replace(object_alias,'"') alias,
                          &proj,
-                         nvl2(access_predicates,'A','')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
+                         nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   dba_hist_sql_plan a
                   WHERE  a.sql_id = :V1
                   AND    :V1 not in('X','last','LAST')
@@ -204,7 +204,7 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          qblock_name qb,
                          replace(object_alias,'"') alias,
                          &proj,
-                         nvl2(access_predicates,'A','')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
+                         nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   all_sqlset_plans a
                   WHERE  a.sql_id = :V1
                   AND    :V1 not in('X','last','LAST')
@@ -228,7 +228,7 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          qblock_name qb,
                          replace(object_alias,'"') alias,
                          &proj,
-                         nvl2(access_predicates,'A','')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
+                         nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   plan_table a
                   WHERE  :V1 not in('last','LAST')
                   AND    plan_id=(select max(plan_id) keep(dense_rank last order by timestamp) 

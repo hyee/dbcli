@@ -1,14 +1,14 @@
-/*[[Test the execution plan changes by adjusting the new fix controls and session environments. Usage: @@NAME <sql_id> <lower_OFT> [high_OFE] [-f"<plan_filter>"] [-batch"<number>"] [-ofe|-env]
+/*[[Test the execution plan changes by adjusting the new fix controls and session environments. Usage: @@NAME <sql_id> <lower_OFT> [high_OFE] [-batch"<number>"] [-ofe|-env] [-f"<plan_filter>"|-k"<keyword>]
     -batch: number of options to be tested for each batch
     -env  : only test the parameters
     -ofe  : only test the fix controls
 
     Example: @@NAME g6px76dmjv1jy 10.2.0.4 12.1.0
-
+             @@NAME g6px76dmjv1jy 11.2.0.4 -k"PARTITION RANGE SINGLE"
     --[[
         @ARGS  : 2
         &typ   : default={all} ofe={ofe} env={env}
-        &filter: default={1=2} f={}
+        &filter: default={1=2} f={} k={operation||' '||options||' '||object_name like upper('%&0%')}
         &batch : default={1} batch={}
         &sep   : default={rowsep default} batch={rowsep - colsep |}
     --]]
@@ -68,7 +68,8 @@ DECLARE
                        extractvalue(column_value, '/ROW/VALUE') value_low
                 FROM   TABLE(XMLSEQUENCE(extract(low_env, '/ROWSET/ROW')))) b
         USING  (typ, NAME, vtype)
-        WHERE  nvl(value_high, '_') != nvl(value_low, '_');
+        WHERE  nvl(value_high, '_') != nvl(value_low, '_')
+        ORDER  BY nvl2(regexp_substr(name,'^\d+$'),1,0),decode(substr(name,1,1),'_',1,0);
     TYPE t_changes IS TABLE OF c%ROWTYPE;
     changes t_changes;
     PROCEDURE wr(msg VARCHAR2) IS
@@ -259,11 +260,11 @@ BEGIN
           WHERE  id = m_id)
         SELECT /*+ordered use_hash(b)*/
                  STATEMENT_ID,
+                 is_matched matched,
                  plan_hash,
                  plan_hash_full phv_full,
                  plan_lines     lines,
                  cnt            plans,
-                 is_matched,
                  cost,
                  bytes,
                  card           "ROWS",
