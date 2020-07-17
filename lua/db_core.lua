@@ -551,7 +551,7 @@ function db_core:check_params(sql,prep,bind_info,params)
     end
 end
 
-function db_core:parse(sql,params,prefix,prep)
+function db_core:parse(sql,params,prefix,prep,vname)
     local bind_info,binds,counter={},{},0
     local temp={}
     for k,v in pairs(params) do
@@ -564,6 +564,7 @@ function db_core:parse(sql,params,prefix,prep)
     end
 
     prefix=(prefix or ':')
+
     sql=sql:gsub('%f[%w_%$'..prefix..']'..prefix..'([%w_%$]+)',function(s)
             local k,s = s:upper(),prefix..s
             local v= params[k]
@@ -594,7 +595,11 @@ function db_core:parse(sql,params,prefix,prep)
             end
             args[#args+1],args[#args+2]=k,typ
             bind_info[#bind_info+1]=args
-            return '?'
+            if vname==':' then
+                return ':'..counter
+            else            
+                return '?'
+            end
         end)
     if not prep then prep=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007,1) end
 

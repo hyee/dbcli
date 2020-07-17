@@ -46,8 +46,12 @@ function var.import_context(global,input,output,cols)
             if not global[k] and not output[k] then var.global_context[k]=nil end
         end
         for k,v in pairs(var.inputs) do
-            if not input[k] and not output[k] then 
-                var.inputs[k]=nil 
+            if not input[k] then
+                if not output[k] then 
+                    var.inputs[k]=nil
+                else
+                    var.outputs[k]=nil
+                end
             end
         end
     end

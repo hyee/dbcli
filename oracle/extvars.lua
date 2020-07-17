@@ -21,7 +21,7 @@ local function rep_instance(prefix,full,obj,suffix)
         local new_obj = obj:gsub('^CDB_','DBA_')
         if cdbmode=='pdb' and (db.props.privs or {})["SELECT ANY DICTIONARY"] and (extvars.dict[new_obj] or {}).comm_view then
             obj=new_obj
-            new_obj='NO_COMMON_DATA(SYS.'..extvars.dict[new_obj].comm_view..')'
+            new_obj='NO_CROSS_CONTAINER(SYS.'..extvars.dict[new_obj].comm_view..')'
             full=new_obj
         else
             new_obj=obj:gsub(cdbmode=='cdb' and '^[DA][BL][AL]_' or '^[CD][DB][BA]_HIST_',cdbmode=='cdb' and 'CDB_' or 'AWR_PDB_') 
@@ -36,7 +36,7 @@ local function rep_instance(prefix,full,obj,suffix)
     if extvars.dict[obj] then
         for k,v in ipairs{
             {instance and instance>0,extvars.dict[obj].inst_col,instance},
-            {container and container>=0,extvars.dict[obj].cdb_col,container},
+            container and container>=0 and extvars.dict[obj].cdb_col and {true,'nvl('..extvars.dict[obj].cdb_col..','..container..')',container} or {},
             {dbid and dbid>0,extvars.dict[obj].dbid_col,dbid},
             {usr and usr~="",extvars.dict[obj].usr_col,"(select /*+no_merge*/ username from all_users where user_id="..(uid or '')..")"},
         } do
@@ -181,12 +181,12 @@ function extvars.set_cdbmode(name,value)
             prev_container.new_dbid=db.props.container_dbid
             prev_container.new_container=db.props.container_id
             cfg.force_set('dbid',db.props.container_dbid)
-            cfg.force_set('container',db.props.container_id)
+            --cfg.force_set('container',db.props.container_id)
         end
     elseif cdbmode=='pdb' then
         if prev_container.new_dbid==cfg.get('dbid') and prev_container.new_container==cfg.get('container') then
             cfg.force_set('dbid','default')
-            cfg.force_set('container','default')
+            --cfg.force_set('container','default')
         end
     end
     cdbmode=value
@@ -341,7 +341,7 @@ function extvars.set_dict(type)
                     union  all
                     select owner,table_name,null,null 
                     from   dba_tab_privs a
-                    where  grantee in('EXECUTE_CATALOG_ROLE','SELECT_CATALOG_ROLE')
+                    where  grantee in('EXECUTE_CATALOG_ROLE','SELECT_CATALOG_ROLE','DBA')
                     union  all
                     SELECT /*+no_merge(a) no_merge(b) use_hash(a b)*/
                            a.owner, a.name, nvl(b.referenced_name, a.referenced_name) ref_name,'REF'

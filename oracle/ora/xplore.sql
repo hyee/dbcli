@@ -1,8 +1,9 @@
 /*[[
-    Test the execution plan changes by adjusting the fix controls and session environments. Usage: @@NAME <sql_id>|<sql_text> [-ofe|-env|-s"<query>"] [-f"<plan_filter>"|-k"<keyword>]
+    Test the execution plan changes by adjusting the fix controls and session environments. Usage: @@NAME <sql_id>|"<sql_text>" [-ofe|-env|-s"<query>"] [-f"<plan_filter>"|-k"<keyword>]
     -env  : only test the parameters
     -ofe  : only test the fix controls
     -s    : customize the source. e.g.: -s"select bugno name,2 type,value,SYS.ODCIVARCHAR2LIST() avails,description from v$system_fix_control"
+    -p    : specify plan table name. e.g.: -p"SYSTEM.PLAN_TABLE"
 
     Refer to: https://github.com/mauropagano/pathfinder
 
@@ -27,6 +28,7 @@
         &filter: default={1=2} f={} k={operation||' '||options||' '||object_name like upper('%&0%')}
         &batch : default={1} batch={}
         &sep   : default={rowsep default} batch={rowsep - colsep |}
+        &ptable: default={plan_table} p={}
         @CHECK_USER_FLAG: SYSDBA={1} DEFAULT={0}
         @CHECK_USER_X : {
             SYSDBA = {
@@ -39,7 +41,7 @@
                 FROM   x$ksppi x, x$ksppcv y, (
                           SELECT /*+ no_merge */
                                  PNAME_QKSCESYROW NAME,
-                                 CAST(COLLECT(VALUE_KSPVLD_VALUES ORDER BY 0+regexp_substr(VALUE_KSPVLD_VALUES,'\d+'),VALUE_KSPVLD_VALUES) AS  SYS.ODCIVARCHAR2LIST) AS  avails
+                                 CAST(COLLECT(VALUE_KSPVLD_VALUES ORDER BY 0+regexp_substr(VALUE_KSPVLD_VALUES,'^\d+') desc,VALUE_KSPVLD_VALUES DESC) AS  SYS.ODCIVARCHAR2LIST) AS  avails
                           FROM   X$QKSCESYS a, x$kspvld_values b
                           WHERE  PNAME_QKSCESYROW = NAME_KSPVLD_VALUES(+)
                           GROUP  BY PNAME_QKSCESYROW) cbo_param
@@ -97,11 +99,12 @@
         }
     --]]
 ]]*/
-set verify off feed off &sep
+set SQLTIMEOUT 7200 verify off feed off &sep
 var cur refcursor;
 var msg varchar2
 var plans clob;
 var file varchar2
+PRO Processing, you can run 'show longops' in another session to monitor the progress.
 DECLARE
     sq_id     VARCHAR2(32767) := '&v1';
     params    SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST();
@@ -120,6 +123,9 @@ DECLARE
     sql_text  CLOB;
     counter   PLS_INTEGER := 0;
     phase     PLS_INTEGER := 0;
+    rindex    PLS_INTEGER;
+    slno      PLS_INTEGER;
+    plines    PLS_INTEGER := 0;
     changed   BOOLEAN;
     TYPE t_record IS RECORD(
         NAME        VARCHAR2(128),
@@ -148,7 +154,6 @@ DECLARE
         dbms_lob.writeappend(sql_text, nvl(length(msg), 0) + 1, msg || chr(10));
     END;
 BEGIN
-    
     IF instr(sq_id, ' ') = 0 THEN
         BEGIN
             SELECT *
@@ -177,12 +182,17 @@ BEGIN
         END;
     ELSE
         buff := sq_id;
-        EXECUTE IMMEDIATE 'BEGIN :1 := SYS.DBMS_SQLTUNE_UTIL0.SQLTEXT_TO_SQLID(:2);END;'
-            USING OUT sq_id, buff;
+        BEGIN
+            EXECUTE IMMEDIATE 'BEGIN :1 := SYS.DBMS_SQLTUNE_UTIL0.SQLTEXT_TO_SQLID(:2);END;'
+                USING OUT sq_id, buff;
+        EXCEPTION WHEN OTHERS THEN
+            sq_id := substr(buff,1,1000);
+            select ora_hash(sq_id,1e8,1000) into sq_id from dual;
+        END;
     END IF;
     buff     := regexp_replace(buff, '^\s*explain.*?for\s*', '', 1, 1, 'i');
     :file    := sq_id;
-    sql_text := 'explain plan set statement_id=''XPLORE_@dbcli_stmt_id@'' for ';
+    sql_text := 'explain plan set statement_id=''XPLORE_@dbcli_stmt_id@'' INTO &ptable for ';
     dbms_lob.append(sql_text, buff);
     phase := 1;
     IF &CHECK_USER_FLAG=1 THEN
@@ -195,9 +205,10 @@ BEGIN
         BULK COLLECT
         INTO lst;
     EXECUTE IMMEDIATE 'alter session set STATISTICS_LEVEL=ALL current_schema=' || to_schema;
-    EXECUTE IMMEDIATE 'delete plan_table';
+    DELETE &ptable;
     phase := 2;
     EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', 'BASELINE');
+    SELECT COUNT(1) INTO plines FROM &ptable;
     phase := 3;
     COMMIT;
     FOR i IN 1 .. lst.count LOOP
@@ -264,11 +275,17 @@ BEGIN
                     alter_session(NAME, avails(j), fix);
                     changed := TRUE;
                     EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', prefix || (counter + 1));
-                    counter := counter + 1;
+                    /*
+                    UPDATE &ptable
+                    SET    REMARKS=substr(stmt, 19)
+                    WHERE  STATEMENT_ID LIKE '%\_'||prefix || (counter + 1) escape '\';
+                    */
+                    COMMIT;
                     params.extend;
                     descs.extend;
+                    counter         := counter + 1;
                     params(counter) := substr(stmt, 19);
-                    descs(counter) := lst(i).description;
+                    descs(counter)  := lst(i).description;
                 EXCEPTION
                     WHEN OTHERS THEN
                         NULL; --dbms_output.put_line(SQLERRM||':'||stmt);
@@ -278,7 +295,21 @@ BEGIN
         IF changed THEN
             alter_session(NAME, VALUE, fix);
         END IF;
+        SYS.DBMS_APPLICATION_INFO.set_session_longops(rindex      => rindex, 
+                                                      slno        => slno,
+                                                      op_name     => 'XPLORE '||sq_id,
+                                                      sofar       => i, 
+                                                      totalwork   => lst.count,
+                                                      target_desc => ' ',
+                                                      units       => 'options');
     END LOOP;
+
+    UPDATE &ptable
+    SET    REMARKS=(select trim(chr(10) from v) from (SELECT rownum r,column_value v from table(params)) where r=regexp_substr(STATEMENT_ID, '\d+$'))||chr(9)||
+                   (select trim(chr(10) from v) from (SELECT rownum r,column_value v from table(descs)) where r=regexp_substr(STATEMENT_ID, '\d+$'))
+    WHERE  regexp_like(STATEMENT_ID, '\d+$')
+    AND    nvl(id,0)=0;
+    COMMIT; 
 
     fmt := 'ALL ALLSTATS OUTLINE';
     IF dbms_db_version.version > 10 THEN
@@ -297,10 +328,10 @@ BEGIN
     wr(chr(10) || chr(10));
     FOR r IN (WITH plans AS
                    (SELECT STATEMENT_ID,
-                          NVL(regexp_substr(STATEMENT_ID, '\d+') + 0, 0) ID,
+                          NVL(regexp_substr(STATEMENT_ID, '\d+$') + 0, 0) ID,
                           MAX(decode(id,1,regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash,
                           MAX(decode(id,1,regexp_substr(to_char(substr(other_xml, 1, 2000)),'"plan_hash_full">(\d+)',1,1,'i',1))) + 0 plan_hash_full
-                   FROM   PLAN_TABLE q
+                   FROM   &ptable q
                    GROUP  BY STATEMENT_ID)
                   SELECT MIN(STATEMENT_ID) id, MIN(ID) seq, plan_hash, plan_hash_full
                   FROM   PLANS
@@ -309,7 +340,7 @@ BEGIN
         qry := 'PLAN_HASH_VALUE: ' || r.plan_hash || '    PLAN_HASH_VALUE_FULL: ' || r.plan_hash_full;
         wr(qry);
         wr(lpad('=', length(qry), '='));
-        FOR i IN (SELECT * FROM TABLE(dbms_xplan.display('plan_table', NULL, fmt, 'statement_id=''' || r.id || ''''))) LOOP
+        FOR i IN (SELECT * FROM TABLE(dbms_xplan.display('&ptable', r.id, fmt))) LOOP
             IF nvl(i.PLAN_TABLE_OUTPUT, 'X') NOT LIKE '%Plan hash value%' THEN
                 wr(i.PLAN_TABLE_OUTPUT);
             END IF;
@@ -320,34 +351,41 @@ BEGIN
     :plans := sql_text;
 
     OPEN :cur FOR
-        WITH plans AS
-         (SELECT STATEMENT_ID,
-                 CASE
-                     WHEN STATEMENT_ID LIKE '%BASELINE' THEN
-                      0
-                     WHEN STATEMENT_ID LIKE '%OFE%' THEN
-                      1
-                     ELSE
-                      2
-                 END grp,
-                 NVL(regexp_substr(STATEMENT_ID, '\d+') + 0, 0) ID,
-                 MAX(ID) plan_lines,
-                 MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash,
-                 MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash_full">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash_full,
-                 MAX(q.cost) cost,
-                 MAX(bytes) bytes,
-                 MAX(cardinality) keep(dense_rank FIRST ORDER BY id) card,
-                 SUM(nvl2(object_owner, cardinality, 0)) total_card,
-                 MAX(CASE WHEN &filter THEN 'Y' ELSE 'N' END) is_matched
-          FROM   PLAN_TABLE q
-          GROUP  BY STATEMENT_ID),
+        WITH plans AS 
+         (SELECT A.*,
+                 dense_rank() over(order by grp, plan_hash, cost, bytes, total_card, card) p,
+                 regexp_substr(remarks,'[^'||CHR(9)||']+',1,1) d1,
+                 regexp_substr(remarks,'[^'||CHR(9)||']+',1,2) d2
+           FROM  (SELECT STATEMENT_ID,
+                         CASE
+                             WHEN STATEMENT_ID LIKE '%BASELINE' THEN
+                              0
+                             WHEN STATEMENT_ID LIKE '%OFE%' THEN
+                              1
+                             ELSE
+                              2
+                         END grp,
+                         MAX(remarks) remarks,
+                         NVL(regexp_substr(STATEMENT_ID, '\d+$') + 0, 0) ID,
+                         MAX(ID) plan_lines,
+                         MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash,
+                         MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash_full">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash_full,
+                         MAX(q.cost) cost,
+                         MAX(bytes) bytes,
+                         MAX(cardinality) keep(dense_rank FIRST ORDER BY id) card,
+                         SUM(nvl2(object_owner, cardinality, 0)) total_card,
+                         MAX(CASE WHEN &filter THEN 'Y' ELSE 'N' END) is_matched
+                  FROM   &ptable q
+                  GROUP  BY STATEMENT_ID) a),
         finals AS
-         (SELECT *
+         (SELECT a.*, 
+                 decode(seq,1,listagg(d1,chr(10)) within group(ORDER BY seq) over(partition by p)) settings,
+                 decode(seq,1,listagg(d2,chr(10)) within group(ORDER BY seq) over(partition by p)) description
           FROM   (SELECT a.*,
-                         COUNT(DISTINCT STATEMENT_ID) over(PARTITION BY grp, plan_hash, plan_hash_full, cost, bytes, total_card, card) cnt,
-                         MIN(id) over(PARTITION BY grp, plan_hash, cost, bytes, total_card, card) m_id
-                  FROM   plans a)
-          WHERE  id = m_id)
+                         COUNT(DISTINCT STATEMENT_ID) over(PARTITION BY P) cnt,
+                         row_number() over(PARTITION BY P ORDER BY id) seq
+                  FROM   plans a) a
+          WHERE  seq<=10)
         SELECT /*+ordered use_hash(b)*/
                  STATEMENT_ID,
                  is_matched matched,
@@ -359,14 +397,11 @@ BEGIN
                  bytes,
                  card           "ROWS",
                  total_card,
-                 b.settings,
-                 description
+                 settings "Top 10 Settings",
+                 description "Top 10 Descriptions"
         FROM   finals a
-        LEFT   JOIN (SELECT rownum id, TRIM(chr(10) FROM column_value) settings FROM TABLE(params)) b
-        USING  (id)
-        LEFT   JOIN (SELECT rownum id, TRIM(chr(10) FROM column_value) description FROM TABLE(descs)) c
-        USING  (id)
-        ORDER  BY grp, id;
+        WHERE  seq=1
+        ORDER  BY grp, matched DESC,plan_hash,plan_hash_full,cost,bytes,total_card,id;
     :msg := utl_lms.format_message('* Note: Run "ora plan <statement_id> -all" to query the detailed plan. ' || chr(10) ||
                                    '* Note: Totally %d options are tested. Please reconnect to reset all options to the defaults.',
                                    counter);

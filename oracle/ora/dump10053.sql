@@ -1,17 +1,20 @@
 /*[[
-    Dump the 10053 trace for the specific SQL ID. Usage: @@NAME {<sql_id> [<child_number>|<plan_hash_value>] | <sql_text>} [-c|-e"<directory>"]
+    Dump the 10053 trace for the specific SQL ID. Usage: @@NAME {<sql_id> [<child_number>|<plan_hash_value>] | <sql_text> | <incident_no>} [-c|-e"<directory>"]
     Note: In RAC environment, it only supports dumping the SQL ID in local node(view v$sqlarea).
     -c: Generate SQL Compiler trace file, otherwise generate 10053 trace file
     -e: Export SQL test case without generating data pump file
+    -u: Don't generate the metadata as a dump file, and don't compress the output files
     --[[
         @version: 11.0={}
-        @ALIAS: DUMPCASE
-        &opt : default={Optimizer}, c={Compiler}, e={&0}
-        &opt1: default={3} c={2} e={1}
-        @ARGS: 1
+        @ALIAS  : DUMPCASE
+        &opt    : default={Optimizer}, c={Compiler}, e={&0}
+        &opt1   : default={3} c={2} e={1}
+        &z      : default={} u={--}
+        &z1     : default={--} u={}
+        @ARGS   : 1
     --]]
 ]]*/
-set feed off verify off
+set feed off verify off sqltimeout 7200
 var file VARCHAR2(500);
 var file1 VARCHAR2(500);
 var c refcursor;
@@ -67,29 +70,34 @@ BEGIN
         IF regexp_like(sq_id,'^\d+$') THEN
             dbms_sqldiag.export_sql_testcase(directory       => nam,
                                              incident_id     => sq_id,
-                                             exportMetadata  => false,
-                                             --ctrlOptions=> '<parameters><parameter name="compress">yes</parameter></parameters>',
+                                             exportData      => false,
+                                             &z exportMetadata  => false,
+                                             &z ctrlOptions=> '<parameters><parameter name="compress">yes</parameter></parameters>',
                                              testcase        => res);
         ELSIF phv IS NULL THEN
             IF sq_id IS NOT NULL THEN
                 dbms_sqldiag.export_sql_testcase(directory       => nam,
-                                                 sql_id        => sq_id,
-                                                 exportMetadata  => false,
-                                                 --ctrlOptions=> '<parameters><parameter name="compress">yes</parameter></parameters>',
+                                                 sql_id          => sq_id,
+                                                 exportData      => false,
+                                                 &z exportMetadata  => false,
+                                                 &z ctrlOptions=> '<parameters><parameter name="compress">yes</parameter></parameters>',
                                                  testcase        => res);
             ELSE
                 dbms_sqldiag.export_sql_testcase(directory       => nam,
                                                  sql_text        => sq_text,
-                                                 exportMetadata  => false,
-                                                 --ctrlOptions=> '<parameters><parameter name="compress">yes</parameter></parameters>',
+                                                 user_name       => sys_context('userenv','current_schema'),
+                                                 exportData      => false,
+                                                 &z exportMetadata  => false,
+                                                 &z ctrlOptions=> '<parameters><parameter name="compress">yes</parameter></parameters>',
                                                  testcase        => res);
             END IF;
         ELSE
             dbms_sqldiag.export_sql_testcase(directory       => nam,
                                              sql_id          => sq_id,
                                              plan_hash_value => phv,
-                                             exportMetadata  => false,
-                                             --ctrlOptions=> '<parameters><parameter name="compress">yes</parameter></parameters>',
+                                             exportData      => false,
+                                             &z exportMetadata  => false,
+                                             &z ctrlOptions     => '<parameters><parameter name="compress">yes</parameter></parameters>',
                                              testcase        => res);
         END IF;
         sep := regexp_substr(dir, '[\\/]');
@@ -121,4 +129,4 @@ END;
 print c
 
 loadtrace &file;
-loadtrace &file1;
+&z1 loadtrace &file1;

@@ -97,33 +97,53 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                           END;
                 SELECT xmltype(other_xml), src
                 INTO   v_hints, v_plan_source
-                FROM   (
-                    SELECT /*+no_expand*/
-                         other_xml, src
-                        FROM   (SELECT other_xml, 'awr' src, sql_id, plan_hash_value
+                FROM   (SELECT /*+no_expand*/ other_xml, src
+                        FROM   (SELECT other_xml, 'memory' src, sql_id, plan_hash_value
+                                FROM   gv$sql_plan a
+                                WHERE  other_xml IS NOT NULL
+                                AND    v_plan!='-1'
+                                UNION ALL
+                                SELECT other_xml, 'memory' src, statement_id, -1
+                                FROM   plan_table a
+                                WHERE  other_xml IS NOT NULL 
+                                AND    UPPER(statement_id) = UPPER(p_sql_id)
+                                AND    v_plan!='-1'
+                                UNION ALL
+                                SELECT other_xml, 'awr' src, sql_id, plan_hash_value
                                 FROM   dba_hist_sql_plan a
+                                WHERE  other_xml IS NOT NULL
+                                AND    v_plan!='-1'
                                 UNION ALL
                                 SELECT other_xml, 'sqlset', sql_id, plan_hash_value
                                 FROM   dba_sqlset_plans a
-                                UNION ALL
-                                SELECT other_xml, 'memory', sql_id, plan_hash_value
-                                FROM   gv$sql_plan a
+                                WHERE  other_xml IS NOT NULL
+                                AND    v_plan!='-1'
                                 $IF DBMS_DB_VERSION.VERSION>11 $THEN
                                 UNION ALL
                                 SELECT other_xml, 'monitor', sql_id, SQL_PLAN_HASH_VALUE
                                 FROM   gv$sql_plan_monitor a
+                                WHERE  other_xml IS NOT NULL
+                                AND    v_plan!='-1'
                                 $END
                                 $IF DBMS_DB_VERSION.VERSION>10 $THEN
                                 UNION ALL
                                 SELECT other_xml, 'advisor', sql_id, plan_hash_value
                                 FROM   dba_advisor_sqlplans a
+                                WHERE  other_xml IS NOT NULL
+                                AND    v_plan!='-1'
                                 $END
                                 UNION ALL
                                 SELECT other_xml, 'plan table', p_sql_id sql_id, -1
-                                FROM   PLAN_TABLE a WHERE PLAN_ID=(select max(PLAN_ID) keep(dense_rank last order by timestamp) from PLAN_TABLE))
+                                FROM   PLAN_TABLE a 
+                                WHERE  other_xml IS NOT NULL
+                                AND    v_plan='-1'
+                                AND    PLAN_ID=(select max(PLAN_ID) keep(dense_rank last order by timestamp) from PLAN_TABLE)
+                        )
                         WHERE  rownum < 2
-                        AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR plan_hash_value like p_sql_id OR sql_id = p_plan OR src='plan table' and sql_id='_x_')
-                        AND    other_xml IS NOT NULL
+                        AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR 
+                                plan_hash_value like p_sql_id OR 
+                                sql_id = p_plan OR 
+                                src='plan table' and sql_id='_x_')
                     $IF DBMS_DB_VERSION.VERSION>11 $THEN
                         UNION ALL
                         SELECT other_xml, 'spm' src
@@ -293,27 +313,28 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                       FROM   TABLE(XMLSEQUENCE(EXTRACT(v_hints, '//outline_data/hint'))) d) LOOP
                 v_hint := REGEXP_REPLACE(i.hint,'^((NO\_)?INDEX)\_[A-Z\_]+SC\(','\1(');
                 IF v_hint LIKE '%IGNORE_OPTIM_EMBEDDED_HINTS%' THEN
-                    v_embed := '        q''[' || v_hint || ']'',';
-                ELSE
+                    v_embed := '        q''{' || v_hint || '}'','; 
+                ELSIF v_hint NOT LIKE '%OUTLINE_DATA' THEN
+                    --v_hint := regexp_replace(v_hint,'"([0-9A-Z$#_]+)"','\1');
                     WHILE NVL(LENGTH(v_hint), 0) > 0 LOOP
                         IF LENGTH(v_hint) <= 500 THEN
-                            pr('        q''[' || v_hint || ']'',');
+                            pr('        q''{' || v_hint || '}'',');
                             v_hint := NULL;
                         ELSE
                             v_pos := INSTR(SUBSTR(v_hint, 1, 500), ' ', -1);
-                            pr('        q''[' || SUBSTR(v_hint, 1, v_pos) || ']'',');
+                            pr('        q''{' || SUBSTR(v_hint, 1, v_pos) || '}'',');
                             v_hint := '   ' || SUBSTR(v_hint, v_pos);
                         END IF;
                     END LOOP;
                 END IF;
             END LOOP;
-
-            v_source:= substr('PROF_'||nvl(v_source,to_char(v_signature,'fm'||rpad('X',length(v_signature),'X'))),1,30);
+            
+            v_source:= substr('PROF_'||nvl(regexp_replace(v_source,'^PROF_'),to_char(v_signature,'fm'||rpad('X',length(v_signature),'X'))),1,30);
             IF v_embed IS NOT NULL THEN
                 pr(v_embed);
             END IF;
             pr('        q''[END_OUTLINE_DATA]'');');
-            pr('    signature := DBMS_SQLTUNE.SQLTEXT_TO_SIGNATURE(sql_txt);');
+            pr('    signature := DBMS_SQLTUNE.SQLTEXT_TO_SIGNATURE(sql_txt);',TRUE);
             pr('    BEGIN DBMS_SQLTUNE.DROP_SQL_PROFILE(''' ||v_source||''');EXCEPTION WHEN OTHERS THEN NULL;END;');
             pr('    DBMS_SQLTUNE.IMPORT_SQL_PROFILE (');
             pr('        sql_text    => sql_txt,');
@@ -326,6 +347,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             pr('    --To drop this profile, execute: DBMS_SQLTUNE.DROP_SQL_PROFILE('''||v_source||''')');
             pr('END;');
             pr('/');
+            pr('PRO SQL Profile created, to drop this profile, execute: DBMS_SQLTUNE.DROP_SQL_PROFILE('''||v_source||''')');
             p_buffer := v_text;
         END;
     BEGIN
@@ -345,7 +367,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
     if sql_id and sql_id:lower()=='diff' then
         return print(args[1] or 'no result.')
     end
-    print("Result written to file "..env.write_cache('prof_'..(sql_id or "prof_plan_table")..".sql",args[2]))
+    print("Result written to file "..env.write_cache('prof_'..((sql_id or ''):gsub('^PROF_','') or "plan_table")..".sql",args[2]))
 end
 
 function sqlprof.onload()
@@ -361,7 +383,7 @@ function sqlprof.onload()
         6). Generate the profile from plan table:
                 xplan select * from dual;
                 @@NAME gjm43un5cy843 plan;
-        7). Diff SQL Plans: @@NAME 0smupm8p2dhq7 2443212686 2443212367
+        7). Diff SQL Plans: @@NAME diff 2443212686 2443212367
     ]]
     env.set_command(nil,"sqlprof",help,sqlprof.extract_profile,false,3)
 end

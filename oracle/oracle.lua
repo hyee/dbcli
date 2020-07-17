@@ -502,7 +502,7 @@ function oracle:parse(sql,params)
         env.log_debug("parse","Block-Params:",table.dump(params))
         return prep,org_sql,params
     elseif counter>1 then
-        return self.super.parse(self,org_sql,params,':')
+        return self.super.parse(self,org_sql,params,':',':')
     else 
         org_sql=sql
     end

@@ -13,7 +13,7 @@
         &sep   : default={rowsep default} batch={rowsep - colsep |}
     --]]
 ]]*/
-set verify off feed off &sep
+set SQLTIMEOUT 7200 verify off feed off &sep
 var cur refcursor;
 var msg varchar2
 var plans clob;
@@ -174,27 +174,40 @@ BEGIN
                 ofedesc(ofedesc.count) := ofedesc(ofedesc.count) || changes(i).description || chr(10);
             END IF;
         END LOOP;
-    
+
         ofelist(ofelist.count) := TRIM(TRIM(',' FROM ofelist(ofelist.count)));
-        ofedesc(ofedesc.count) := TRIM(ofedesc(ofedesc.count));
+        ofedesc(ofedesc.count) := REPLACE(TRIM(ofedesc(ofedesc.count)),CHR(9));
     
-        IF new_ofe IS NOT NULL THEN
-            EXECUTE IMMEDIATE 'alter session set "_fix_control"=' || trim(',' from org_ofes || new_ofe);
-        END IF;
-    
-        EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', ofelist.count);
-        COMMIT;
-    
-        IF new_ofe IS NOT NULL THEN
-            EXECUTE IMMEDIATE 'alter session set "_fix_control"=' || trim(',' from org_ofes || old_ofe);
-        END IF;
-        FOR i IN 1 .. changes.count LOOP
-            IF changes(i).typ != 'ofe' THEN
-                EXECUTE IMMEDIATE 'alter session set "' || changes(i).name || '"=' || changes(i).value_high;
+        BEGIN
+            IF new_ofe IS NOT NULL THEN
+                EXECUTE IMMEDIATE 'alter session set "_fix_control"=' || trim(',' from org_ofes || new_ofe);
             END IF;
-        END LOOP;
+        
+            EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', ofelist.count);
+            COMMIT;
+        
+            IF old_ofe IS NOT NULL THEN
+                EXECUTE IMMEDIATE 'alter session set "_fix_control"=' || trim(',' from org_ofes || old_ofe);
+            END IF;
+            FOR i IN 1 .. changes.count LOOP
+                IF changes(i).typ != 'ofe' THEN
+                    EXECUTE IMMEDIATE 'alter session set "' || changes(i).name || '"=' || changes(i).value_high;
+                END IF;
+            END LOOP;
+        EXCEPTION WHEN OTHERS THEN
+            ofelist.trim;
+            ofedesc.trim;
+        END;
     END LOOP;
     CLOSE c;
+
+    UPDATE PLAN_TABLE
+    SET    REMARKS=(select trim(chr(10) from v) from (SELECT rownum r,column_value v from table(ofelist)) where r=regexp_substr(STATEMENT_ID, '\d+$'))||chr(9)||
+                   (select trim(chr(10) from v) from (SELECT rownum r,column_value v from table(ofedesc)) where r=regexp_substr(STATEMENT_ID, '\d+$'))
+    WHERE  regexp_like(STATEMENT_ID, '\d+$')
+    AND    nvl(id,0)=0;
+    COMMIT;
+
     EXECUTE IMMEDIATE 'alter session set current_schema=' || curr;
 
     dbms_lob.createtemporary(sql_text, TRUE);
@@ -213,20 +226,23 @@ BEGIN
     dbms_lob.append(sql_text, buff);
     wr(chr(10)||chr(10));
     FOR r IN (WITH plans AS
-                   (SELECT STATEMENT_ID,
+                  (SELECT STATEMENT_ID,
                           NVL(regexp_substr(STATEMENT_ID, '\d+') + 0, 0) ID,
                           MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash,
                           MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash_full">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash_full
                    FROM   PLAN_TABLE q
                    GROUP  BY STATEMENT_ID)
-                  SELECT MIN(STATEMENT_ID) id, MIN(ID) seq, plan_hash, plan_hash_full
-                  FROM   PLANS
-                  GROUP  BY plan_hash, plan_hash_full
-                  ORDER  BY seq) LOOP
+              SELECT MIN(STATEMENT_ID) id, 
+                     MIN(ID) seq, 
+                     plan_hash, 
+                     plan_hash_full
+              FROM   PLANS
+              GROUP  BY plan_hash, plan_hash_full
+              ORDER  BY seq) LOOP
         qry := 'PLAN_HASH_VALUE: ' || r.plan_hash || '    PLAN_HASH_VALUE_FULL: ' || r.plan_hash_full;
         wr(qry);
         wr(lpad('=', length(qry), '='));
-        FOR i IN (SELECT * FROM TABLE(dbms_xplan.display('plan_table', NULL, fmt, 'statement_id=''' || r.id || ''''))) LOOP
+        FOR i IN (SELECT * FROM TABLE(dbms_xplan.display('plan_table', r.id, fmt))) LOOP
             IF nvl(i.PLAN_TABLE_OUTPUT,'X') not like '%Plan hash value%' THEN
                 wr(i.PLAN_TABLE_OUTPUT);
             END IF;
@@ -238,26 +254,33 @@ BEGIN
 
     OPEN :cur FOR
         WITH plans AS
-         (SELECT STATEMENT_ID,
-                 CASE WHEN STATEMENT_ID LIKE '%BASELINE_LOW' THEN 0 ELSE 1 END grp,
-                 NVL(regexp_substr(STATEMENT_ID, '\d+') + 0, 0) ID,
-                 MAX(ID) plan_lines,
-                 MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash,
-                 MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash_full">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash_full,
-                 MAX(q.cost) cost,
-                 MAX(bytes) bytes,
-                 MAX(cardinality) keep(dense_rank FIRST ORDER BY id) card,
-                 SUM(nvl2(object_owner, cardinality, 0)) total_card,
-                 MAX(CASE WHEN &filter THEN 'Y' ELSE 'N' END) is_matched
-          FROM   PLAN_TABLE q
-          GROUP  BY STATEMENT_ID),
+         (SELECT A.*,
+                 dense_rank() over(order by grp, plan_hash, cost, bytes, total_card, card) p,
+                 regexp_substr(remarks,'[^'||CHR(9)||']+',1,1) d1,
+                 regexp_substr(remarks,'[^'||CHR(9)||']+',1,2) d2
+          FROM  (SELECT  STATEMENT_ID,
+                         CASE WHEN STATEMENT_ID LIKE '%BASELINE_%' THEN 0 ELSE 1 END grp,
+                         NVL(regexp_substr(STATEMENT_ID, '\d+') + 0, 0) ID,
+                         MAX(ID) plan_lines,
+                         MAX(remarks) remarks,
+                         MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash,
+                         MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash_full">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash_full,
+                         MAX(q.cost) cost,
+                         MAX(bytes) bytes,
+                         MAX(cardinality) keep(dense_rank FIRST ORDER BY id) card,
+                         SUM(nvl2(object_owner, cardinality, 0)) total_card,
+                         MAX(CASE WHEN &filter THEN 'Y' ELSE 'N' END) is_matched
+                  FROM   PLAN_TABLE q
+                  GROUP  BY STATEMENT_ID) A),
         finals AS
-         (SELECT *
+         (SELECT a.*, 
+                 decode(seq,1,listagg(d1,decode(bulks,1,chr(10),chr(10)||chr(10))) within group(ORDER BY seq) over(partition by p)) settings,
+                 decode(seq,1,listagg(d2,decode(bulks,1,chr(10),chr(10)||chr(10))) within group(ORDER BY seq) over(partition by p)) description
           FROM   (SELECT a.*,
-                         COUNT(DISTINCT STATEMENT_ID) over(PARTITION BY grp, plan_hash, plan_hash_full, cost, bytes, total_card, card) cnt,
-                         MIN(id) over(PARTITION BY grp, plan_hash, cost, bytes, total_card, card) m_id
-                  FROM   plans a)
-          WHERE  id = m_id)
+                         COUNT(DISTINCT STATEMENT_ID) over(PARTITION BY P) cnt,
+                         row_number() over(PARTITION BY P ORDER BY id) seq
+                  FROM   plans a) a
+          WHERE  seq<=10)
         SELECT /*+ordered use_hash(b)*/
                  STATEMENT_ID,
                  is_matched matched,
@@ -269,14 +292,11 @@ BEGIN
                  bytes,
                  card           "ROWS",
                  total_card,
-                 b.settings,
-                 description
+                 settings "Top 10 Settings",
+                 description "Top 10 Descriptions"
         FROM   finals a
-        LEFT   JOIN (SELECT rownum id, trim(chr(10) from column_value) settings FROM TABLE(ofelist)) b
-        USING  (id)
-        LEFT   JOIN (SELECT rownum id, trim(chr(10) from column_value) description FROM TABLE(ofedesc)) c
-        USING  (id)
-        ORDER  BY grp, id;
+        WHERE  seq=1
+        ORDER  BY grp, matched DESC,plan_hash,plan_hash_full,cost,bytes,total_card,id;
     :msg := utl_lms.format_message('* Note: Run "ora plan <statement_id> -all" to query the detailed plan. ' || chr(10) ||
                                    '* Note: Totally %d options are tested, including %d fix controls and %d parameters. Please reconnect to reset all options to the defaults.',
                                    ofe_cnt + env_cnt,
