@@ -178,7 +178,7 @@ BEGIN
             WHERE  rownum < 2;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
-                raise_application_error(-20001, 'Cannot find the SQL text for sql_id: ' || :v1);
+                raise_application_error(-20001, 'Cannot find the SQL text for sql_id: ' || sq_id);
         END;
     ELSE
         buff := sq_id;

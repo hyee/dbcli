@@ -10,8 +10,8 @@ Options:
     -all  : the plan with the 'ALLSTATS ALL' format
     -last : the plan with the 'ALLSTATS LAST' format
 --[[
-    &STAT: default={&DF &adaptive &binds &V3 &V4 &V5 &V6 &V7 &V8 &V9}
-    &V3: none={} ol={outline alias}
+    &STAT: default={&DF &adaptive &hint &binds &V3 &V4 &V5 &V6 &V7 &V8 &V9}
+    &V3: none={} ol={outline alias &hint}
     &LAST: last={LAST} all={ALL} 
     &DF: default={ALLSTATS REMOTE &LAST -PROJECTION -ALIAS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL}
     &SRC: {
@@ -20,6 +20,7 @@ Options:
           }
     &binds: default={}, b={PEEKED_BINDS}
     @adaptive: 12.1={+REPORT +ADAPTIVE +METRICS} 11.2={+METRICS} default={}
+    @hint    : 19={+HINT_REPORT} DEFAULT={}
     @proj:  11.2={nvl2(projection,1+regexp_count(regexp_replace(regexp_replace(projection,'[\[.*?\]'),'\(.*?\)'),', '),null) proj} default={cast(null as number) proj}
     @check_access_advisor: {
            dba_advisor_sqlplans={

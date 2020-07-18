@@ -103,10 +103,10 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                                 WHERE  other_xml IS NOT NULL
                                 AND    v_plan!='-1'
                                 UNION ALL
-                                SELECT other_xml, 'memory' src, statement_id, -1
+                                SELECT other_xml, 'plan table' src, statement_id, -1
                                 FROM   plan_table a
                                 WHERE  other_xml IS NOT NULL 
-                                AND    UPPER(statement_id) = UPPER(p_sql_id)
+                                AND    UPPER(statement_id) = UPPER(p_plan)
                                 AND    v_plan!='-1'
                                 UNION ALL
                                 SELECT other_xml, 'awr' src, sql_id, plan_hash_value
@@ -293,7 +293,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             get_plan(case when upper(p_plan) IN('PLAN','PLAN_TABLE') or instr(p_plan,' ')>1 then '_x_' end);
 
             v_signature := dbms_sqltune.SQLTEXT_TO_SIGNATURE(v_sql, TRUE);
-            IF p_plan IS NOT NULL AND NOT regexp_like(p_plan, '^\d+$') AND upper(p_plan) NOT IN('PLAN','PLAN_TABLE') THEN
+            IF p_plan IS NOT NULL AND NOT regexp_like(p_plan, '^\d+$') AND v_plan_source NOT IN('plan table') THEN
                 v_signature := dbms_sqltune.SQLTEXT_TO_SIGNATURE(regexp_replace(v_sql, '/\*.*?\*/'), TRUE);
                 BEGIN
                     get_sql(p_plan);
@@ -311,7 +311,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             FOR i IN (SELECT /*+ opt_param('parallel_execution_enabled', 'false') */
                              SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) hint
                       FROM   TABLE(XMLSEQUENCE(EXTRACT(v_hints, '//outline_data/hint'))) d) LOOP
-                v_hint := REGEXP_REPLACE(i.hint,'^((NO\_)?INDEX)\_[A-Z\_]+SC\(','\1(');
+                v_hint := REGEXP_REPLACE(i.hint,'^((NO_)?INDEX[A-Z_]*)_[ADE]+SC\(','\1(');
                 IF v_hint LIKE '%IGNORE_OPTIM_EMBEDDED_HINTS%' THEN
                     v_embed := '        q''{' || v_hint || '}'','; 
                 ELSIF v_hint NOT LIKE '%OUTLINE_DATA' THEN
@@ -334,7 +334,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                 pr(v_embed);
             END IF;
             pr('        q''[END_OUTLINE_DATA]'');');
-            pr('    signature := DBMS_SQLTUNE.SQLTEXT_TO_SIGNATURE(sql_txt);',TRUE);
+            pr('    signature := DBMS_SQLTUNE.SQLTEXT_TO_SIGNATURE(sql_txt,TRUE);');
             pr('    BEGIN DBMS_SQLTUNE.DROP_SQL_PROFILE(''' ||v_source||''');EXCEPTION WHEN OTHERS THEN NULL;END;');
             pr('    DBMS_SQLTUNE.IMPORT_SQL_PROFILE (');
             pr('        sql_text    => sql_txt,');
@@ -372,7 +372,7 @@ end
 
 function sqlprof.onload()
     local help=[[
-    Extract sql profile. Usage: @@NAME {<sql_id|sql_prof_name|spm_plan_name|spm_sql> [<plan_hash_value|new_sql_id|sql_prof_name|spm_plan_name> | plan]}
+    Extract sql profile. Usage: @@NAME {<sql_id|sql_prof_name|spm_plan_name|spm_sql> [<plan_hash_value|new_sql_id|sql_prof_name|spm_plan_name|statement_id>|plan]}
     The command will not make any changes on the database, but to create a SQL file that used to fix the execution plan by SQL Profile.
     Examples:
         1). Generate the profile for the last plan of target SQL ID: @@NAME gjm43un5cy843

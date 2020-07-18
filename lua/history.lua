@@ -3,7 +3,7 @@ local event,cfg,grid=env.event,env.set,env.grid
 local history={}
 local keys={}
 history.keys=keys
-local lastcommand
+local lastcommand,last_line
 
 function history:show(key)
     local index=tonumber(key)
@@ -33,14 +33,17 @@ local cmds={HIS=1,HISTORY=1,["/"]=1,R=1,EDIT=1,ED=1,L=1,LIST=1,CHANGE=1,C=1,HELP
             OUT=1,OUTPUT=1,['/*']=1,['--']=1,COL=1,COLUMN=1,PRO=1,PROMPT=1}
 
 function history:capture(cmd,args,res,is_internal,command_text,clock)
-    if #env.RUNNING_THREADS>1 or not args then return end
-    --if(cmd==nil) then print(debug.traceback()) end
+    if not args then return end
     cmd=cmd:upper()
-    if cmds[cmd] then return end
+    if cmds[cmd] or not env._CMDS[cmd] then return end
+    local text=table.concat(args," ")
+    if env._CMDS[cmd].ARGS>1 then text=cmd..' '..text end
+    last_line=text
+    if #env.RUNNING_THREADS>1 then return end
+    
     console:setLastHistory();
     local maxsiz=cfg.get("HISSIZE")
-    local text=table.concat(args," ")
-    if text:find(cmd,1,true)~=1 then text=cmd..' '..text end
+    
     local key=text:gsub("[%s%z\128\192]+"," "):sub(1,300)
     local k1=key:upper()
     if keys[k1] then
@@ -69,14 +72,20 @@ local function load_file()
             local text=f:read('*a')
             f:close()
             is_changed=false;
+            return text;
         else
             return lastcommand.text;
         end
-        return text;
     end
 end;
 
 function history.rerun()
+    if #env.RUNNING_THREADS>2 then
+        if last_line then
+            env.eval_line(last_line,true,true)
+        end
+        return
+    end
     local file=load_file()
     if file then env.eval_line(file,true,true) end
 end
