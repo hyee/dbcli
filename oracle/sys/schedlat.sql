@@ -13,8 +13,32 @@
 
 ]]*/
 COL avg_latency,max_latency,sched_delay_micro for usmhd2
+COL max_host_cpu,avg_host_cpu for pct
 COL BUCKET# BREAK SKIP -
 SET FEED OFF
+
+
+PROMPT Listing "Average Synchronous Single-Block Read Latency" during recent 5 buckets
+PROMPT ===============================================================================
+SELECT *
+FROM   TABLE(GV$(CURSOR (
+          SELECT ROW_NUMBER() OVER(ORDER BY FLOOR(1440*(SYSDATE-begin_time)/NVL(0+regexp_substr(:V1,'^\d+$'),5))) BUCKET#,
+                 userenv('instance') inst,
+                 MIN(begin_time) history_begin_time,
+                 MAX(decode(metric_name,'Average Synchronous Single-Block Read Latency',VALUE*1000)) max_latency,
+                 AVG(decode(metric_name,'Average Synchronous Single-Block Read Latency',VALUE*1000)) avg_latency,
+                 MAX(decode(metric_name,'Host CPU Utilization (%)',VALUE/100)) max_host_cpu,
+                 AVG(decode(metric_name,'Host CPU Utilization (%)',VALUE/100)) avg_host_cpu,
+                 COUNT(decode(metric_name,'Average Synchronous Single-Block Read Latency',1)) Samples
+          FROM   v$sysmetric_history 
+          WHERE  metric_name in('Host CPU Utilization (%)','Average Synchronous Single-Block Read Latency')
+          AND    group_id=2
+          GROUP  BY FLOOR(1440*(SYSDATE-begin_time)/NVL(0+regexp_substr(:V1,'^\d+$'),5))
+        )))
+WHERE BUCKET#<=5
+ORDER  BY 1,2;
+
+
 PROMPT Listing recent non-zero scheduling delays from PSP0 process
 PROMPT ===========================================================
 SELECT *

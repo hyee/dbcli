@@ -31,7 +31,7 @@ function xplan.explain(fmt,sql)
     local sql1= sql:gsub("\r?\n","")
     if not sql1:match('(%s)') then
         sql=sql1
-        sqltext=db:get_value([[SELECT * FROM(SELECT sql_text from dba_hist_sqltext WHERE sql_id=:1 AND ROWNUM<2
+        sqltext=db:get_value([[SELECT /*INTERNAL_DBCLI_CMD*/ * FROM(SELECT sql_text from dba_hist_sqltext WHERE sql_id=:1 AND ROWNUM<2
                                UNION ALL
                                SELECT sql_fulltext from gv$sqlarea WHERE sql_id=:1 AND ROWNUM<2) WHERE ROWNUM<2]],{sql})
         env.checkerr(sqltext,"Cannot find target SQL ID %s",sql)

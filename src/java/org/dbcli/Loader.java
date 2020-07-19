@@ -25,6 +25,7 @@ import java.security.NoSuchAlgorithmException;
 import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
@@ -502,7 +503,12 @@ public class Loader {
             if (p.isClosed()) throw CancelError;
             return result;
         } catch (Exception e) {
-            //e.printStackTrace();
+            if(e instanceof SQLException) {
+                SQLException e1=(SQLException) e;
+                while(e1.getNextException()!=null) e1=e1.getNextException();
+                //System.out.println(e1.getCause().toString());
+                e=e1;
+            }
             throw e;
         } finally {
             console.setEvents(null, null);

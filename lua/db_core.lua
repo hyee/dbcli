@@ -502,16 +502,75 @@ function db_core:call_sql_method(event_name,sql,method,...)
     local res,obj=pcall(method,...)
     if res==false then
         self:is_connect(nil,true)
+
         local info,internal={db=self,sql=sql,error=tostring(obj):gsub('%s+$','')}
+        if event_name=='ON_SQL_ERROR' and obj.getCause then
+            info.cause=tostring(obj:getCause():toString())
+        end
         event(event_name,info)
+
         if info and info.error and info.error~="" then
-            if not self:is_internal_call(sql) and info.sql and env.ROOT_CMD~=self.get_command_type(sql) then
-                if cfg.get("SQLERRLINE")=="off" then
-                    print('SQL: '..info.sql:gsub("\n","\n     "))
+            if not self:is_internal_call(sql) and info.sql and (info.position or env.ROOT_CMD~=self.get_command_type(sql)) then
+                if (info.position or 0) > 1 or info.col then
+                    info.row,info.col=tonumber(info.row),tonumber(info.col)
+                    local pos,sql=(info.position or 0)+1,info.sql..'\n'
+                    local curr,row,col,done=0,0
+                    sql=sql:gsub('[^\n]*\n',function(s)
+                        if info.col then
+                            row=row+1
+                            if row==info.row then
+                                if info.col > 0 then
+                                    s=s..string.rep(' ',info.col-1)..'*$NOR$\n'
+                                else
+                                    local idx=0
+                                    s=s..s:sub(1,-2):gsub('%S',function()
+                                        idx=idx+1
+                                        return idx<=60 and '~' or ' '
+                                    end)..'$NOR$\n'
+                                end
+                                --info.position=curr+info.col-1
+                            end
+                            if row>info.row then
+                                return ''
+                            end
+                            curr=curr+#s
+                            return s
+                        elseif not done then
+                            row=row+1
+                            if curr+#s>pos then
+                                col=pos-curr
+                                s=s..string.rep(' ',col-1)..'*$NOR$\n'
+                                done=true
+                            end
+                            curr=curr+#s
+                            return s
+                        else
+                            return ''
+                        end
+                    end)
+                    info.sql,info.row,info.col=sql:sub(1,curr-1),info.row or row,info.col or col
+                end
+                if cfg.get("SQLERRLINE")=="off" and not info.col then
+                    local row=0
+                    print('SQL: '..info.sql:gsub("\n",'     '))
                 else
                     local lineno=0
-                    local fmt='\n%5d|  '
-                    print(('\n'..info.sql):gsub("\n",function() lineno=lineno+1;return fmt:format(lineno) end):sub(2))
+                    if info.col then
+                        print(string.rep('-',106))
+                    end
+                    local fmt='\n'..(info.col and '|' or '')..'%s%5d|  '
+                    print(('\n'..info.sql):gsub("\n([^\n]*)",
+                        function(s) 
+                            lineno=lineno+1;
+                            if not info.col then
+                                return fmt:format('',lineno)..s
+                            elseif info.row and (info.row-lineno>10 or lineno>info.row+1) then
+                                return ''
+                            elseif info.row and lineno==info.row+1 then
+                                return fmt:format('$ERRCOLOR$',info.col)..s..'\n'..string.rep('-',106)
+                            end
+                            return fmt:format('',lineno)..s
+                        end):sub(2))
                 end
             end
             for _,p in pairs{...} do

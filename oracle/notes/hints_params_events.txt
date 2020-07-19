@@ -33,6 +33,7 @@ Parameters
     _exadata_feature_on: simulate Exadata features on non-Exadata db
     _kcfis_cell_passthru_fromcpu_enabled: disable Exadata reverse offloading
     _sql_plan_management_control: when 4 then diagnose issues with SQL plan baselines of why it fails to use
+    _optimizer_squ_bottomup: false to redunce parse time due to large PGA memory usage pending on function kkojnp(bug#22225899)
     
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
@@ -67,6 +68,7 @@ Hints:
 Fix Controls:
     16923858:  Display timings in Optimizer trace(10053) when over 10^<value> microsec
     6972291 :  CBO can use the selectivity of column groups but this option is disabled if there is a histogram defined on any of the columns of the column group
+    20355502:  number of branches 2^<value> limit for legacy OR expansion(long parse time)
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=/u01/app/oracle/product/18.0.0.0/dbhome_1/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
    NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled: Used on PDB to query dict views

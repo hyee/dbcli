@@ -91,13 +91,14 @@ function history.rerun()
 end
 
 function history.edit_buffer(file)
-    if not lastcommand then return end
+    if #env.RUNNING_THREADS>2 or not lastcommand then return end
     is_changed=true;
     env.printer.edit_buffer(file,'afiedt.buf',lastcommand.text)
 end
 
 local fmt='%s%-3s$PROMPTCOLOR$|$NOR$ %s'
 function history.show_command(m,n)
+    if #env.RUNNING_THREADS>2 then return end
     local file=load_file()
     if not file or file=='' then return end
    
@@ -144,6 +145,7 @@ function history.show_command(m,n)
 end
 
 function history.change_command(m)
+    if #env.RUNNING_THREADS>2 then return end
     env.checkerr(m,'Nothing to change.')
     if m:sub(1,1)=='/' then m=m:sub(2) end
     local file=load_file()

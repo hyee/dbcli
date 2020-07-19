@@ -2,6 +2,7 @@
 	--[[
 	@ALIAS  : SQLPATCH
 	@ARGS   : 2
+    @CHECK_ACCESS_OBJ: SYS.DBMS_SQLDIAG={1}
 	]]--
 ]]*/
 SET FEED OFF VERIFY OFF
@@ -44,14 +45,27 @@ BEGIN
         SYS.DBMS_SQLDIAG.DROP_SQL_PATCH(NAME,true);
     EXCEPTION WHEN OTHERS THEN NULL;
     END;
+    $IF DBMS_DB_VERSION.VERSION>11 $THEN
     hint_text := SYS.DBMS_SQLDIAG.CREATE_SQL_PATCH(sql_text    => sq_text,
-                                                 hint_text   => hint_text,
-                                                 NAME        => NAME,
-                                                 category    => 'DEFAULT',
-                                                 description => hint_text);
+                                                   hint_text   => hint_text,
+                                                   NAME        => NAME,
+                                                   category    => 'DEFAULT',
+                                                   description => hint_text);
+    $ELSE
+    SYS.DBMS_SQLDIAG_INTERNAL.I_CREATE_PATCH(sql_text    => sq_text,
+                                             hint_text   => hint_text,
+                                             NAME        => NAME,
+                                             category    => 'DEFAULT',
+                                             description => hint_text);
+    $END
     :name := name;
     EXECUTE IMMEDIATE 'ALTER SESSION SET CURRENT_SCHEMA='||to_schema;
-    EXECUTE IMMEDIATE 'EXPLAIN PLAN FOR '||sq_text;
+    BEGIN
+        EXECUTE IMMEDIATE 'EXPLAIN PLAN FOR '||sq_text;
+    EXCEPTION WHEN OTHERS THEN
+        EXECUTE IMMEDIATE 'ALTER SESSION SET CURRENT_SCHEMA='||curr;
+        raise_application_error(-20001,'Unable to explain target SQL: '||sqlerrm);
+    END;
     EXECUTE IMMEDIATE 'ALTER SESSION SET CURRENT_SCHEMA='||curr;
 END;
 /

@@ -1,7 +1,7 @@
 local env,loader=env,loader
 local snoop,cfg,default_db=env.event.snoop,env.set,env.db
 local flag = 1
-
+local term,sqlerror
 local output={}
 local prev_transaction
 local enabled='on'
@@ -11,6 +11,8 @@ local prev_stats
 
 function output.setOutput(db)
     local flag=cfg.get("ServerOutput")
+    cfg.set('autotrace','off')
+    sqlerror=nil
     local stmt="BeGin dbms_output."..(flag=="on" and "enable(null)" or "disable()")..";end;"
     pcall(function() (db or env.getdb()):internal_call(stmt) end)
 end
@@ -31,7 +33,7 @@ output.trace_sql_after=([[
 
             if l_sql_id is null then
                 l_sql_id := l_tmp_id;
-            elsif l_sql_id != l_tmp_id and l_tmp_id != 'x' then
+            elsif l_sql_id != l_tmp_id and l_tmp_id != 'X' then
                 l_intval := sys.dbms_utility.get_parameter_value('cursor_sharing',l_intval,l_strval);
                 if lower(l_strval)!='exact' then
                     l_sql_id := l_tmp_id;
@@ -91,7 +93,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD*/
                 into l_sql_id,l_child;
                 if l_sql_id is null then
                     l_sql_id := l_tmp_id;
-                elsif l_sql_id != l_tmp_id and l_tmp_id != 'x' then
+                elsif l_sql_id != l_tmp_id and l_tmp_id != 'X' then
                     l_intval := sys.dbms_utility.get_parameter_value('cursor_sharing',l_intval,l_strval);
                     if lower(l_strval)!='exact' then
                         l_sql_id := l_tmp_id;
@@ -236,7 +238,7 @@ local fixed_stats={
 local DML={SELECT=1,WITH=1,UPDATE=1,DELETE=1,MERGE=1}
 function output.getOutput(item)
     if output.is_exec then return end
-    
+    if term then cfg.set('TERMOUT','on') end
     local db,sql,sql_id=item[1],item[2]
     if not db or not sql then return end
     local typ=db.get_command_type(sql)
@@ -251,9 +253,10 @@ function output.getOutput(item)
     if sql:find('^BeGin dbms_output') or (not (sql:sub(1,256):lower():find('internal',1,true) and not sql:find('%s')) and not db:is_internal_call(sql)) then
         local args,stats
         output.is_exec=true
-        sql_id=sql_id or autotrace=='off' and 'x' or loader:computeSQLIdFromText(sql)
+        sql_id=sql_id or loader:computeSQLIdFromText(sql)
         if autotrace =='traceonly' or autotrace=='on' or autotrace=='statistics' then
             args={stats='#CURSOR',last_sql_id='#VARCHAR',last_child='#NUMBER',sql_id=sql_id}
+            local clock=os.timer()
             local done,err=pcall(db.exec_cache,db,output.trace_sql_after,args,'Internal_GetSQLSTATS_Next')
             if not done then
                 output.is_exec=nil
@@ -289,7 +292,7 @@ function output.getOutput(item)
             end
         end
 
-        if stats and #stats>0 then 
+        if not sqlerror and stats and #stats>0 then 
             local n={}
             local idx,c=-1,0
             grid.sort(stats,1)
@@ -335,7 +338,9 @@ function output.getOutput(item)
         db.props.container_id=args.con_id
         db.props.container_dbid=args.con_dbid
         db.props.dbid=args.dbid or db.props.dbid
-        db.props.last_sql_id=args.last_sql_id
+        if not db.props.last_sql_id or args.last_sql_id~='X' then
+            db.props.last_sql_id=args.last_sql_id
+        end
         local title={args.con_name and ("Container: "..args.con_name..'('..args.con_id..')')}
         if args.txn and cfg.get("READONLY")=="on" then
             db:rollback()
@@ -354,6 +359,8 @@ end
 
 function output.capture_stats(info)
     if output.is_exec then return end
+    sqlerror=false
+    if term then cfg.set('TERMOUT','off') end
     local db,sql=info[1],info[2]
     if sql and not (sql:lower():find('internal',1,true) and not sql:find('%s')) and not db:is_internal_call(sql) then
         if autotrace =='traceonly' or autotrace=='on' or autotrace=='statistics' then
@@ -368,9 +375,11 @@ function output.capture_stats(info)
 end
 
 function output.get_error_output(info)
+    sqlerror=true
     if info.db:is_connect() then
         output.getOutput({info.db,info.sql})
     else
+        if term then cfg.set('TERMOUT','on') end
         env.set_title("")
     end
     return info
@@ -382,10 +391,23 @@ function output.onload()
     snoop("BEFORE_DB_EXEC",output.capture_stats,nil,1)
     snoop("AFTER_DB_EXEC",output.getOutput,nil,99)
     cfg.init('AUTOTRACE','off',function(name,value)
+        if autotrace==value then return value end
+        if value=='traceonly' or value=='trace' then
+            value='traceonly'
+            term=cfg.get('TERMOUT')
+            if term~='off' then
+                cfg.set('TERMOUT','off') 
+            else
+                term=nil
+            end
+        else
+            if term then cfg.set('TERMOUT','on') end
+            term=nil
+        end
         autotrace=value
         return value
     end,'oracle','Automatically get a report on the execution path used by the SQL optimizer and the statement execution statistics',
-    'on,off,explain,statistics,traceonly,sql_id')
+    'on,off,trace,traceonly,sql_id')
 
     cfg.init({"ServerOutput",'SERVEROUT'},
         "on",

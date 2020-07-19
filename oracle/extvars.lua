@@ -14,21 +14,29 @@ local cdbstr='^[CDA][DBL][BAL]_'
 local noparallel='off'
 local gv1=('(%s)table%(%s*gv%$%(%s*cursor%('):case_insensitive_pattern()
 local gv2=('(%s)gv%$%(%s*cursor%('):case_insensitive_pattern()
+local checking_access
 local function rep_instance(prefix,full,obj,suffix)
     obj=obj:upper()
     local flag,str=0
-    if cdbmode~='off' and extvars.dict[obj] and obj:find(cdbstr) then
+    if not checking_access and cdbmode~='off' and extvars.dict[obj] and obj:find(cdbstr) then
         local new_obj = obj:gsub('^CDB_','DBA_')
-        if cdbmode=='pdb' and (db.props.privs or {})["SELECT ANY DICTIONARY"] and (extvars.dict[new_obj] or {}).comm_view then
-            obj=new_obj
-            new_obj='NO_CROSS_CONTAINER(SYS.'..extvars.dict[new_obj].comm_view..')'
-            full=new_obj
+        if cdbmode=='pdb' and (extvars.dict[new_obj] or {}).comm_view then 
+            if db.props.select_dict==nil then
+                checking_access=true
+                db.props.select_dict=db.props.isdba or db:check_access('SYS.INT$DBA_SYNONYMS',1) or false
+                checking_access=false
+            end
+            if db.props.select_dict  then
+                obj=new_obj
+                new_obj='NO_CROSS_CONTAINER(SYS.'..extvars.dict[new_obj].comm_view..')'
+                full=new_obj
+            end
         else
             new_obj=obj:gsub(cdbmode=='cdb' and '^[DA][BL][AL]_' or '^[CD][DB][BA]_HIST_',cdbmode=='cdb' and 'CDB_' or 'AWR_PDB_') 
             if new_obj~=obj and extvars.dict[new_obj] then
-                obj=new_obj
                 if not full:find(obj) then new_obj=new_obj:lower() end
                 full=full:gsub(obj:escape('*i'),new_obj)
+                obj=new_obj
             end
         end
     end
@@ -170,7 +178,9 @@ end
 
 local prev_container={}
 function extvars.set_cdbmode(name,value)
-    if value~='off' then db:assert_connect() end
+    if value~='off' then
+        if not db:is_connect() then return end
+    end
     if not db.props.version then return end
     if cdbmode==value then return value end
     env.checkerr(value=='off' or db.props.version>=12, "Unsupported database: v"..db.props.db_version)
@@ -194,14 +204,21 @@ function extvars.set_cdbmode(name,value)
 end
 
 function extvars.on_after_db_conn()
-    if db.props.isadb==true and db.props.israc==true then
-        cfg.force_set('instance', db.props.instance)
+    if db.props.isadb==true then
+        local mode=''
+        if db.props.israc==true then 
+            cfg.force_set('instance', db.props.instance)
+            mode=' and non-RAC'
+        end
+        cfg.force_set('cdbmode', 'pdb')
+        print('Switched into PDB'..mode..' mode for Oracle ADW/ATP environment, some SQLs will be auto-rewritten.');
+        print('You can run "set cdbmode default instance default" to switch back.')
     else
         cfg.force_set('instance','default')
+        cfg.force_set('cdbmode','default')
     end
     prev_container={}
     --cfg.force_set('starttime','default')
-    cfg.force_set('cdbmode','default')
     cfg.force_set('schema','default')
     cfg.force_set('container','default')
     cfg.force_set('dbid','default')

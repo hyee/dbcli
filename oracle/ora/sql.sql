@@ -92,8 +92,8 @@ GROUP  BY SQL_ID,
           
 column sql_text new_value txt;
 SELECT * FROM(
-      &check_access_hist select sql_text from dba_hist_sqltext where sql_id='&v1' union all
       select sql_fulltext sql_text from gv$sqlstats where sql_id='&v1'
+      &check_access_hist union all select sql_text from dba_hist_sqltext where sql_id='&v1'
 ) WHERE ROWNUM<2;
 pro
 save txt last_sql_&V1..txt

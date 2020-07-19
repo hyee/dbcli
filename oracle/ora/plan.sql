@@ -9,8 +9,10 @@ Options:
     -adv  : the plan with the 'advanced' format
     -all  : the plan with the 'ALLSTATS ALL' format
     -last : the plan with the 'ALLSTATS LAST' format
+
 --[[
     &STAT: default={&DF &adaptive &hint &binds &V3 &V4 &V5 &V6 &V7 &V8 &V9}
+    &V1: default={&_SQL_ID} last={X} x={X}
     &V3: none={} ol={outline alias &hint}
     &LAST: last={LAST} all={ALL} 
     &DF: default={ALLSTATS REMOTE &LAST -PROJECTION -ALIAS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL}
@@ -40,8 +42,8 @@ Options:
                          &proj,
                          nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   dba_advisor_sqlplans a
-                  WHERE  a.sql_id = :V1
-                  AND    :V1 not in('X','last','LAST')
+                  WHERE  a.sql_id = '&v1'
+                  AND    '&v1' not in('X','&_sql_id')
                   AND    a.plan_hash_value = coalesce(:V2+0,(select max(plan_hash_value) keep(dense_rank last order by timestamp) from dba_advisor_sqlplans where sql_id=:V1))}
            default={}
     }
@@ -64,8 +66,8 @@ Options:
                          &proj,
                          nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   sys.sql$text st,sys.sqlobj$plan a
-                  WHERE  st.sql_handle = :V1
-                  AND    :V1 not in('X','last','LAST')
+                  WHERE  st.sql_handle = '&v1'
+                  AND    '&v1' not in('X','&_sql_id')
                   AND    a.signature = st.signature
                   AND    a.plan_id = coalesce(:V2+0,(select max(plan_id) keep(dense_rank last order by timestamp) from sys.sqlobj$plan b where b.signature=a.signature))
            }
@@ -74,10 +76,13 @@ Options:
 ]]--
 ]]*/
 set PRINTSIZE 9999
-set feed off pipequery off
-def last_sql=&_sql_id
+set feed off pipequery off verify off
+
 
 VAR C REFCURSOR Binding Variables
+VAR msg VARCHAR2
+DECLARE
+    msg VARCHAR2(100);
 BEGIN /*INTERNAL_DBCLI_CMD*/
     IF :binds='PEEKED_BINDS' THEN
         open :c for
@@ -85,12 +90,12 @@ BEGIN /*INTERNAL_DBCLI_CMD*/
          (SELECT *
           FROM   (SELECT child_number || ':' || INST_ID r,last_captured l,0 flag,:V1 sql_id
                   FROM   gv$sql_bind_capture a
-                  WHERE  sql_id = :V1
+                  WHERE  sql_id = '&v1'
                   AND    1>&SRC
                   UNION ALL
                   SELECT snap_id || ':' || instance_number r,last_captured l,1 flag,:V1
                   FROM   dba_hist_sqlbind a
-                  WHERE  sql_id = :V1
+                  WHERE  sql_id = '&v1'
                   ORDER  BY l DESC NULLS LAST)
           WHERE  ROWNUM < 2),
         qry AS (
@@ -103,7 +108,7 @@ BEGIN /*INTERNAL_DBCLI_CMD*/
               UNION ALL
               SELECT position, NAME, datatype_string, value_string, instance_number, last_captured,0+regexp_substr(NAME,'\d+$') seq
               FROM   dba_hist_sqlbind a, b1
-              WHERE  a.sql_id = b1.sql_id and a.sql_id = :V1
+              WHERE  a.sql_id = b1.sql_id and a.sql_id = '&v1'
               AND    flag=1
               AND    snap_id || ':' || instance_number = r)),
         qry1 AS(
@@ -123,33 +128,20 @@ BEGIN /*INTERNAL_DBCLI_CMD*/
         AND    qry.name=qry1.name
         ORDER  by 1;
     END IF;
+
+    IF '&v1' = '&_SQL_ID' THEN
+        msg  := 'Displaying execution plan for last SQL: &_SQL_ID';
+        :msg := 'PRO '||msg || chr(10) || 'PRO '|| rpad('=',length(msg),'=');
+    END IF;
 END;
 /
 
+&msg
 WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
  (SELECT /*+materialize*/*
   FROM   (SELECT /*+no_merge(a) NO_PQ_CONCURRENT_UNION*/ a.*,
                  dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id) seq
-          FROM   (SELECT id,
-                         min(id) over() minid,
-                         decode(parent_id,-1,id-1,parent_id) parent_id,
-                         child_number    ha,
-                         0               flag,
-                         TIMESTAMP       tm,
-                         child_number,
-                         sql_id,
-                         plan_hash_value,
-                         0+USERENV('INSTANCE') inst_id,
-                         qblock_name qb,
-                         replace(object_alias,'"') alias,
-                         &proj,
-                         nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
-                  FROM   v$sql_plan a
-                  WHERE  a.sql_id = replace(lower(:V1),'last',:last_sql)
-                  AND    :V1 !='X'
-                  AND    (:V2 is null or :V2 in(plan_hash_value,child_number))
-                  UNION ALL
-                  SELECT id,
+          FROM   (SELECT /*+no_expand*/ id,
                          min(id) over() minid,
                          decode(parent_id,-1,id-1,parent_id) parent_id,
                          child_number    ha,
@@ -164,9 +156,10 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          &proj,
                          nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   gv$sql_plan_statistics_all a
-                  WHERE  a.sql_id = replace(lower(:V1),'last',:last_sql)
-                  AND    :V1 !='X'
-                  AND    (:V2 is null or :V2 in(plan_hash_value,child_number))
+                  WHERE  a.sql_id = '&v1'
+                  AND   ('&v1' != '&_sql_id' or inst_id=userenv('instance'))
+                  AND    '&v1' !='X'
+                  AND    nvl('&V2'+0,-1) in(plan_hash_value,child_number,-1)
                   UNION ALL
                   SELECT /*+no_expand*/ id,
                          min(id) over() minid,
@@ -183,8 +176,8 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          &proj,
                          nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   dba_hist_sql_plan a
-                  WHERE  a.sql_id = :V1
-                  AND    :V1 not in('X','last','LAST')
+                  WHERE  a.sql_id = '&v1'
+                  AND    '&v1' not in('X','&_sql_id')
                   AND    a.plan_hash_value = coalesce(:V2+0,(
                      select --+index(c.sql(WRH$_SQLSTAT.SQL_ID)) index(c.sn)
                             max(plan_hash_value) keep(dense_rank last order by snap_id)
@@ -207,8 +200,8 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          &proj,
                          nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   all_sqlset_plans a
-                  WHERE  a.sql_id = :V1
-                  AND    :V1 not in('X','last','LAST')
+                  WHERE  a.sql_id = '&v1'
+                  AND    '&v1' not in('X','&_sql_id')
                   AND    a.plan_hash_value = coalesce(:V2+0,(
                      select max(plan_hash_value) keep(dense_rank last order by timestamp) 
                      from all_sqlset_plans where sql_id=:V1))
@@ -231,7 +224,7 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          &proj,
                          nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
                   FROM   plan_table a
-                  WHERE  :V1 not in('last','LAST')
+                  WHERE  '&v1' not in('&_sql_id')
                   AND    plan_id=(select max(plan_id) keep(dense_rank last order by timestamp) 
                                   from plan_table
                                   where nvl(upper(:V1),'X') in(statement_id,''||plan_id,'X'))) a
@@ -275,10 +268,6 @@ xplan AS
   SELECT a.*
   FROM   qry, TABLE(dbms_xplan.display( 'sys.sqlobj$plan',NULL,format,'plan_id='||inst_id||' and signature=' || plan_hash)) a
   WHERE  flag = 5
-  UNION ALL
-  SELECT a.*
-  FROM   qry, TABLE(dbms_xplan.display_cursor(sq, plan_hash, format)) a
-  WHERE  flag = 0
   UNION ALL
   SELECT a.*
   FROM   qry,TABLE(dbms_xplan.display('plan_table',NULL,format,'plan_id=''' || sq || '''')) a

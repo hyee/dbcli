@@ -260,13 +260,13 @@ function oracle:connect(conn_str)
                 END;
 
                 BEGIN --Used on ADW/ATP
-                    EXECUTE IMMEDIATE 'alter session set optimizer_ignore_hints=false optimizer_ignore_parallel_hints=false';
                     IF sys_context('userenv', 'con_name') != 'CDB$ROOT' THEN
                         SELECT COUNT(1)
                         INTO   isADB
                         FROM   ALL_USERS
                         WHERE  USERNAME='C##CLOUD$SERVICE';
                     END IF;
+                    EXECUTE IMMEDIATE 'alter session set optimizer_ignore_hints=false optimizer_ignore_parallel_hints=false';
                 EXCEPTION WHEN OTHERS THEN NULL;
                 END;
             $END
@@ -276,6 +276,8 @@ function oracle:connect(conn_str)
                 execute immediate 'select dbid from v$database' into did;
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
+            $ELSE
+                did := sys_context('userenv', 'dbid');
             $END
 
             FOR r in(SELECT role p FROM SESSION_ROLES UNION ALL SELECT * FROM SESSION_PRIVS) LOOP
@@ -484,7 +486,7 @@ function oracle:parse(sql,params)
 
         typ = org_sql:len()<=30000 and 'VARCHAR2(32767)' or 'CLOB' 
         local method=self.db_types:set(typ~='CLOB' and 'VARCHAR' or typ,org_sql)
-        sql='DECLARE V1 %s:=:1;%sBEGIN EXECUTE IMMEDIATE V1 %s;%sEND;'
+        sql='DECLARE /*INTERNAL_DBCLI_CMD*/ V1 %s:=:1;%sBEGIN EXECUTE IMMEDIATE V1 %s;%sEND;'
         sql=sql:format(typ,table.concat(s1,''),table.concat(s0,','),table.concat(s2,''))
         env.log_debug("parse","SQL:",sql)
         local prep=java.cast(self.conn:prepareCall(sql,1003,1007),"oracle.jdbc.OracleCallableStatement")
@@ -603,6 +605,19 @@ function oracle:handle_error(info)
             info.error=msg:gsub('\r?\n%s*ORA%-%d+.*$',''):gsub('%s+$','')
         else
             info.error=prefix..'-'..ora_code..': '..msg
+        end
+        if info.cause then
+            info.position=tonumber(info.cause:sub(1,255):match('Position%s*:%s*(%d+)'))
+            if (info.position or 0)<1 then
+                info.row,info.col=msg:match('%S+%s+(%d+), %S+%s+(%d+):')
+                if not info.row then
+                    info.row=msg:match('%u%u%u+%-%d%d%d+: *at line (%d+)')
+                    if info.row then
+                        info.col = 0
+                        info.error = info.error:gsub('\n%s*%u%u%u+%-%d%d%d+ *: *at line 1 *(\n*)','%1') 
+                    end
+                end
+            end
         end
         return info
     end
