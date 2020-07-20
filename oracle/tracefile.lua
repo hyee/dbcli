@@ -227,7 +227,6 @@ function trace.get_trace(filename,mb,from_mb)
         if lv then
             pcall(db.internal_call(db,"alter session set tracefile_identifier='dbcli_"..math.random(1e6).."'"));
             tracefile=nil
-
         end
         if not tracefile  then
             if db.props.version>=11 then

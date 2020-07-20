@@ -510,7 +510,6 @@ function oracle:parse(sql,params)
     end
 
     params={}
-
     local prep=java.cast(self.conn:prepareCall(sql,1003,1007),"oracle.jdbc.OracleCallableStatement")
     for k,v in pairs(bind_info) do
         if v[func]=='#' then

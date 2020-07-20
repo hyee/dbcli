@@ -1,7 +1,12 @@
-2010-07-18: + oracle: new command 'sys schedlat' and 'ora sqlpch'
-2010-07-15: + oracle: new command 'ora xplore'
-2010-05-23: + oracle: new command 'rac remaster'
-2010-01-12: + oracle: new command 'show last_sql'
+2020-07-20: * public: update lib luv and luajit
+            * oracle: new option 'xplan -diag' (parameter _sql_diag_repo_retain)
+2020-07-19: * public: support displaying SQL error position
+            + oracle: impl 'set autotrace trace[only]'
+            * oracle: auto switch to pdb/no-rac mode in case of connecting to Oracle ADW/ATP(to improve some script performance)
+2020-07-18: + oracle: new command 'sys schedlat' and 'ora sqlpch'
+2020-07-15: + oracle: new command 'ora xplore'
+2020-05-23: + oracle: new command 'rac remaster'
+2020-01-12: + oracle: new command 'show last_sql'
 2019-12-27: * public: new option 'set timing on/off'
 2019-11-02: + oracle: new command 'ora comptype'
 2019-10-25: * public: update ConsoleZ to v1.19 

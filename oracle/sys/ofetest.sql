@@ -31,6 +31,7 @@ DECLARE
     org_ofes  VARCHAR2(4000);
     old_ofe   VARCHAR2(32767);
     new_ofe   VARCHAR2(32767);
+    errcount  PLS_INTEGER := 0;
     ofelist   SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST();
     ofedesc   SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST();
     to_schema VARCHAR2(128);
@@ -183,21 +184,24 @@ BEGIN
                 EXECUTE IMMEDIATE 'alter session set "_fix_control"=' || trim(',' from org_ofes || new_ofe);
             END IF;
         
-            EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', ofelist.count);
+            EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', ''||ofelist.count);
             COMMIT;
-        
-            IF old_ofe IS NOT NULL THEN
-                EXECUTE IMMEDIATE 'alter session set "_fix_control"=' || trim(',' from org_ofes || old_ofe);
-            END IF;
-            FOR i IN 1 .. changes.count LOOP
-                IF changes(i).typ != 'ofe' THEN
-                    EXECUTE IMMEDIATE 'alter session set "' || changes(i).name || '"=' || changes(i).value_high;
-                END IF;
-            END LOOP;
         EXCEPTION WHEN OTHERS THEN
+            errcount := errcount + 1;
+            IF errcount <= 100 THEN
+                dbms_output.put_line('Unable to set '||ofelist(ofelist.count)||' due to '||sqlerrm);
+            END IF;
             ofelist.trim;
             ofedesc.trim;
         END;
+        IF old_ofe IS NOT NULL THEN
+            EXECUTE IMMEDIATE 'alter session set "_fix_control"=' || trim(',' from org_ofes || old_ofe);
+        END IF;
+        FOR i IN 1 .. changes.count LOOP
+            IF changes(i).typ != 'ofe' THEN
+                EXECUTE IMMEDIATE 'alter session set "' || changes(i).name || '"=' || changes(i).value_high;
+            END IF;
+        END LOOP;
     END LOOP;
     CLOSE c;
 

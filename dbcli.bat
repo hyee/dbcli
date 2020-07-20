@@ -45,6 +45,7 @@ for /F "usebackq delims=" %%p in (`where java.exe 2^>NUL`) do (
 
 :next
 If not exist "!JAVA_EXE!" (
+    ver|findstr -r " 5.[0-9]*\.[0-9]" > NUL && (SET "BASE=!JRE_HOME!" && if not exist "!BASE!\bin\java.exe" SET "BASE=jre") || (SET "BASE=jre")
     if not exist "jre\bin\java.exe" (
         echo Cannot find Java 1.8 executable, exit.
         pause

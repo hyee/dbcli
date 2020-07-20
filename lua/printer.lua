@@ -215,7 +215,7 @@ function printer.tee(file,stmt)
     printer.tee_type=file:lower():match("%.([^%.]+)$")
     if printer.tee_type=='htm' then printer.tee_type='html' end
     env.checkerr(printer.tee_hdl,"Failed to open the target file "..file)
-    env.eval_line(stmt,true,true)
+    if stmt~='' then env.eval_line(stmt,true,true) end
 end
 
 function printer.tee_after()

@@ -502,16 +502,19 @@ function db_core:call_sql_method(event_name,sql,method,...)
     local res,obj=pcall(method,...)
     if res==false then
         self:is_connect(nil,true)
-
         local info,internal={db=self,sql=sql,error=tostring(obj):gsub('%s+$','')}
         if event_name=='ON_SQL_ERROR' and obj.getCause then
             info.cause=tostring(obj:getCause():toString())
         end
         event(event_name,info)
+        local showline,found=cfg.get("SQLERRLINE"),false
+        local sql_name=self.get_command_type(sql)
 
+        
         if info and info.error and info.error~="" then
-            if not self:is_internal_call(sql) and info.sql and (info.position or env.ROOT_CMD~=self.get_command_type(sql)) then
-                if (info.position or 0) > 1 or info.col then
+            if  info.sql and (not self:is_internal_call(info.sql)) and 
+                (env.ROOT_CMD~=sql_name or showline~="off" and info.position) then
+                if showline~='off' and ((info.position or 0) > 1 or info.col) then
                     info.row,info.col=tonumber(info.row),tonumber(info.col)
                     local pos,sql=(info.position or 0)+1,info.sql..'\n'
                     local curr,row,col,done=0,0
@@ -525,10 +528,11 @@ function db_core:call_sql_method(event_name,sql,method,...)
                                     local idx=0
                                     s=s..s:sub(1,-2):gsub('%S',function()
                                         idx=idx+1
-                                        return idx<=60 and '~' or ' '
+                                        return idx<=80 and '~' or ' '
                                     end)..'$NOR$\n'
                                 end
-                                --info.position=curr+info.col-1
+                                info.position=curr+info.col-1
+                                found=true
                             end
                             if row>info.row then
                                 return ''
@@ -541,6 +545,7 @@ function db_core:call_sql_method(event_name,sql,method,...)
                                 col=pos-curr
                                 s=s..string.rep(' ',col-1)..'*$NOR$\n'
                                 done=true
+                                found=true
                             end
                             curr=curr+#s
                             return s
@@ -550,15 +555,16 @@ function db_core:call_sql_method(event_name,sql,method,...)
                     end)
                     info.sql,info.row,info.col=sql:sub(1,curr-1),info.row or row,info.col or col
                 end
-                if cfg.get("SQLERRLINE")=="off" and not info.col then
+                if showline=="off" or showline=='auto' and not found then
                     local row=0
-                    print('SQL: '..info.sql:gsub("\n",'     '))
+                    print('SQL: '..info.sql:gsub("\n",'\n     '))
                 else
                     local lineno=0
                     if info.col then
                         print(string.rep('-',106))
                     end
                     local fmt='\n'..(info.col and '|' or '')..'%s%5d|  '
+
                     print(('\n'..info.sql):gsub("\n([^\n]*)",
                         function(s) 
                             lineno=lineno+1;
@@ -571,6 +577,7 @@ function db_core:call_sql_method(event_name,sql,method,...)
                             end
                             return fmt:format('',lineno)..s
                         end):sub(2))
+
                 end
             end
             for _,p in pairs{...} do
@@ -1352,7 +1359,6 @@ function db_core.check_completion(cmd,other_parts)
     --alter package xxx compile ...
     local match,typ,index=env.COMMAND_SEPS.match(other_parts)
     if index==0 then return false,other_parts end
-    obj=obj or ""
     local action,obj=db_core.get_command_type(cmd..' '..other_parts)
     if index==1 and (db_core.source_objs[cmd] or db_core.source_objs[obj:upper()]) then
         local pattern=db_core.source_obj_pattern
@@ -1532,7 +1538,7 @@ function db_core:__onload()
     cfg.init("AUTOCOMMIT",'off',set_param,"db.core","Detemine if auto-commit every db execution",'on,off')
     cfg.init("SQLCACHESIZE",40,set_param,"db.core","Number of cached statements in JDBC",'5-500')
     cfg.init("ASYNCEXP",true,set_param,"db.export","Detemine if use parallel process for the export(SQL2CSV and SQL2FILE)",'true,false')
-    cfg.init("SQLERRLINE",'off',nil,"db.core","Also print the line number when error SQL is printed",'on,off')
+    cfg.init("SQLERRLINE",'auto',nil,"db.core","Also print the line number when error SQL is printed",'on,off,auto')
     cfg.init("NULL","",nil,"db.core","Define the display value for NULL value")
     cfg.init({"TIMING","TIMI"},"off",nill,"db.core","Controls whether or not SQL*Plus displays the elapsed time for each SQL statement.")
     cfg.init("ConvertRAW2Hex","on",nil,"db.core","Convert raw data to Hex(text) format","on,off")

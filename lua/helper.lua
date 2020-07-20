@@ -119,15 +119,16 @@ end
 function helper.colorful(helps,target)
     if helps:find('^[Nn]o ') then return helps end
     target=target:gsub(',.+','')
-    helps=helps:gsub('^%s*\n',''):gsub('\t','    ')
-    local spaces=helps:match("\n( *)%S") or ""
+    helps='\n'..(helps:gsub('^%s*\n',''):gsub('\t','    '))
+    local spaces=helps:match("\n( +)%S") or ""
+    helps=helps:gsub("\r?\n"..spaces,"\n"):gsub("%s+$",""):sub(2)
     helps=helps:gsub('^(%s*[^\n\r]+)[Uu]sage[: ]+(@@NAME)([^\r\n]*)',function(prefix,name,line)
         local s=prefix..'\n'..string.rep('=',#(prefix:trim())+#target+2)..'\n$USAGECOLOR$Usage:$COMMANDCOLOR$ '..name:gsub(',.+','')..'$NOR$'
         return s..line:gsub('([<>{}%[%]|]+)','$COMMANDCOLOR$%1$NOR$'):gsub('(%-%w+)','$PROMPTSUBCOLOR$%1$NOR$')
     end)
     
-    helps='\n'..spaces..(target=='' and '' or ('$USAGECOLOR$'..target:upper()..':$NOR$ '))..helps:sub(#spaces+1)
-    helps=helps:gsub("\r?\n"..spaces,"\n"):gsub("%s+$",""):gsub("@@NAME",target:lower())
+    helps=(target=='' and '' or ('$USAGECOLOR$'..target:upper()..':$NOR$ '))..helps:sub(#spaces+1)
+    helps=helps:gsub("@@NAME",target:lower())
 
     local grid=env.grid
     local is_table
@@ -136,7 +137,6 @@ function helper.colorful(helps,target)
         local space=s:match('( *)|') or ''
         local _,cfg=grid.get_config(s0)
         local cols=0
-        
         s0:gsub('\\|','\1'):gsub('[^\n%S]*(|[^\r\n]+|)%s+',function(s1)
             local row={}
             s1:gsub('([^|]+)',function(s2)

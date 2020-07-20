@@ -1,12 +1,13 @@
 local db,cfg=env.getdb(),env.set
 local xplan={}
-local default_fmt,e10053,prof="ALLSTATS ALL -PROJECTION OUTLINE REMOTE"
+local default_fmt,e10053,prof,sqldiag="ALLSTATS ALL -PROJECTION OUTLINE REMOTE"
 function xplan.explain(fmt,sql)
     local ora,sqltext=db.C.ora
     local _fmt=default_fmt
-    
     env.checkhelp(fmt)
-    e10053=false
+    e10053,sqldiag=false
+
+    env.checkerr(db.props and db.props.db_version,"Database is not connected!")
     if fmt:sub(1,1)=='-' then
         if not sql then return end
         fmt=fmt:sub(2)
@@ -15,13 +16,14 @@ function xplan.explain(fmt,sql)
             fmt=_fmt
         elseif fmt:lower()=="prof" then
             prof,fmt=true,_fmt
+        elseif fmt:lower()=="diag" then
+            env.checkerr(db:check_access('sys.v$sql_diag_repository',1),"You don't have access to sys.v$sql_diag_repository, operation is cancelled.")
+            sqldiag,fmt=true,_fmt
         end
     else
         sql=fmt..(not sql and "" or " "..sql)
         fmt=_fmt
     end
-
-    env.checkerr(db.props and db.props.db_version,"Database is not connected!")
 
     if db.props.version>=12 then
         fmt = 'adaptive '..fmt
@@ -46,17 +48,68 @@ function xplan.explain(fmt,sql)
     --db:internal_call("alter session set statistics_level=all")
     db:rollback()
     if e10053 then
+        pcall(db.internal_call,db,[[alter session set "_fix_control"='16923858:5']])
         db:internal_call("ALTER SESSION SET tracefile_identifier='"..math.random(1e6).."' EVENTS='10053 trace name context forever, level 1'") 
     end
     local args={}
     sql=sql:gsub("(:[%w_$]+)",function(s) args[s:sub(2)]=""; return s end)
     local sql_id=loader:computeSQLIdFromText(sql)
-    try{function() db:internal_call("Explain PLAN SET STATEMENT_ID='INTERNAL_DBCLI_CMD' FOR "..sql,args) end,
+    local is_tee=printer.tee_hdl
+    try{function()
+            sql1="Explain PLAN SET STATEMENT_ID='INTERNAL_DBCLI_CMD' FOR "..sql
+            if sqldiag then
+                sqldiag=loader:computeSQLIdFromText(sql1)
+                pcall(db.internal_call,db,[[alter session set "_sql_diag_repo_retain" = true]])
+                if not is_tee then env.printer.tee('sql_diag_'..sql_id..'.txt','') end
+            end
+            db:internal_call(sql1,args) 
+        end,
         function(err)
             if type(err)=="string" and err:find("ORA-00942",1,true) then
                 env.raise("Unable to EXPLAIN the SQL due to the inaccessibility of its depending objects, please make sure you've switched to the correct schema.")
             else
                 env.raise_error(err)
+            end
+        end,
+        function(err)
+            if sqldiag then 
+                pcall(db.internal_call,db,[[alter session set "_sql_diag_repo_retain" = false]])
+                if not err then
+                    local msg="Explain SQL Id: "..sqldiag..'    Source SQL Id: '..sql_id
+                    print(msg..'\n'..string.rep('=',#msg))
+                    db:query([[/*INTERNAL_DBCLI_CMD*/
+                        SELECT /*+ordered use_hash(a b)*/
+                               a.child#,
+                               a.repo#,
+                               a.type,
+                               a.state,
+                               a.feature,
+                               a.reason,
+                               b.description feature_description,
+                               C,E,S
+                        FROM (
+                            SELECT /*+no_merge ordered use_hash(a b)*/
+                                   max(a.child_number) over() child#,
+                                   a.type,
+                                   a.sql_diag_repo_id repo#,
+                                   a.feature,
+                                   a.state,
+                                   b.reason,
+                                   b.compilation_origin C,
+                                   b.execution_origin E,
+                                   b.slave_origin S,
+                                   a.child_number CN
+                            FROM   v$sql_diag_repository a, v$sql_diag_repository_reason b
+                            WHERE  a.sql_id = b.sql_id
+                            AND    a.child_number = b.child_number
+                            AND    a.sql_diag_repo_id = b.sql_diag_repo_id
+                            AND    a.sql_id = :sql_id) a,v$sql_feature b
+                        WHERE cn=child#
+                        AND   a.feature=b.sql_feature(+)
+                        ORDER BY repo#]],{sql_id=sqldiag})
+                else
+                    if not is_tee then env.printer.tee_after() end
+                end
             end
         end}
     sql=[[
@@ -138,24 +191,26 @@ function xplan.explain(fmt,sql)
         db:query(sql)
         oracle.C.tracefile.get_trace('default')
         db:internal_call("ALTER SESSION SET tracefile_identifier=''")
-    elseif prof==true then
-        db:query(sql)
-        oracle.C.sqlprof.extract_profile(nil,'plan',sqltext)
     else
         db:query(sql)
+        if sqldiag then
+            if not is_tee then env.printer.tee_after() end
+        elseif prof==true then
+            oracle.C.sqlprof.extract_profile(nil,'plan',sqltext)
+        end
     end
-    
     cfg.set("feed",feed,true)
 end
 
 function xplan.onload()
     local help=[[
-    Explain SQL execution plan. Usage: @@NAME {[-<format>|-10053|-prof] "<SQL Text>"|<SQL ID>}
+    Explain SQL execution plan. Usage: @@NAME {[-<format>|-10053|-prof|diag] "<SQL Text>"|<SQL ID>}
     Options:
         -<format>: Refer to the 'format' field in the document of 'dbms_xplan'.
                        Default is ']]..default_fmt..[['
         -10053   : Generate the 10053 trace file after displaying the execution plan
         -prof    : Generate the SQL profile script after displaying the execution plan
+        -diag    : Enable _sql_diag_repo_retain and print the result, refer to https://mauro-pagano.com/2017/07/30/sql-diag-repository/
     Parameters:
         <SQL Text> : SELECT/DELETE/UPDATE/MERGE/etc that can produce the execution plan
         <SQL ID>   : The SQL ID that can be found in SQL area or AWR history

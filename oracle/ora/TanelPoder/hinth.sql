@@ -18,7 +18,7 @@ SQL> ora hinth ign
 ]]*/
 WITH feature_hierarchy AS
  (SELECT /*+no_merge*/ 
-         f.sql_feature, f.description, SYS_CONNECT_BY_PATH(REPLACE(f.sql_feature, 'QKSFM_', ''), ' -> ') path
+         f.sql_feature, f.description, SYS_CONNECT_BY_PATH(f.sql_feature, ' -> ') path
   FROM   v$sql_feature f, v$sql_feature_hierarchy fh
   WHERE  f.sql_feature = fh.sql_feature
   CONNECT BY fh.parent_id = PRIOR f.sql_Feature
@@ -30,7 +30,7 @@ SELECT /*+use_hash(hi fh)*/
                      Case when bitand(target_level,4)>0 THEN 'OBJECT/' END||
                      Case when bitand(target_level,8)>0 THEN 'JOIN' END) Support_levels,
        nvl(fh.description,hi.sql_feature) description,
-       REGEXP_REPLACE(fh.path, '^ -> ', '') hinth_path
+       REGEXP_REPLACE(replace(fh.path,'QKSFM_'), '^ -> ', '') "Hint Path (QKSFM_*)"
 FROM   v$sql_hint hi, feature_hierarchy fh
 WHERE  hi.sql_feature = fh.sql_feature(+)
       --    hi.sql_feature = REGEXP_REPLACE(fh.sql_feature, '_[[:digit:]]+$')

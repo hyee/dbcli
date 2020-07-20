@@ -397,6 +397,7 @@ function env.format_error(src,errmsg,...)
         HIR,NOR=env.ansi.get_color(env.set.get("ERRCOLOR")),env.ansi.get_color('NOR')
         errmsg=errmsg:strip_ansi()
     end
+
     env.log_debug("ERROR",errmsg)
     if errmsg:find('Exception%:') or errmsg:find(':%d+: (%u%u%u%-%d%d%d%d%d)') or errmsg:find('Error Msg =') then
 
@@ -414,10 +415,12 @@ function env.format_error(src,errmsg,...)
             errmsg=string.format("%s-%05i: %s",name,tonumber(line),errmsg)
         end
     end
+
     if select('#',...)>0 then
         errmsg=errmsg:format(...) 
     end
-    return errmsg=="" and errmsg or HIR..errmsg..NOR
+
+    return errmsg=="" and errmsg or (HIR..errmsg:gsub(' *\n',NOR..'\n'..HIR)..NOR)
 end
 
 function env.warn(...)
@@ -427,7 +430,8 @@ end
 
 function env.raise_error(...)
     local str=env.format_error(nil,...)
-    return error('000-00000:'..str)
+    if not str then print(debug.traceback()) end
+    return error('000-00000:'..(str or ''))
 end
 
 function env.raise(index,...)

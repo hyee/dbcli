@@ -21,7 +21,8 @@ var c refcursor;
 DECLARE
     sq_id     VARCHAR2(32767) := :V1;
     sq_text   CLOB;
-    nam       VARCHAR2(128):= trim(:opt); 
+    nam       VARCHAR2(128):= trim(:opt);
+    file      VARCHAR2(500); 
     dir       VARCHAR2(300);
     sep       VARCHAR2(1);
     child_num INT := regexp_substr(:V2, '^\d+$');
@@ -54,6 +55,11 @@ BEGIN
             END;
         END IF;
     END IF;
+    BEGIN
+        EXECUTE IMMEDIATE q'{alter session set "_fix_control"='16923858:5'}';
+    EXCEPTION WHEN OTHERS THEN
+        NULL;
+    END;
     IF :opt1 = 1 OR regexp_like(sq_id,'^\d+$') or sq_id IS NULL THEN
         IF nam IS NULL THEN
             raise_application_error(-20001, 'Please specify the target directory name');
@@ -80,7 +86,7 @@ BEGIN
                                                  sql_id          => sq_id,
                                                  exportData      => false,
                                                  &z exportMetadata  => false,
-                                                 &z ctrlOptions=> '<parameters><parameter name="compress">yes</parameter></parameters>',
+                                                 &z ctrlOptions  => '<parameters><parameter name="compress">yes</parameter></parameters>',
                                                  testcase        => res);
             ELSE
                 dbms_sqldiag.export_sql_testcase(directory       => nam,
@@ -88,7 +94,7 @@ BEGIN
                                                  user_name       => sys_context('userenv','current_schema'),
                                                  exportData      => false,
                                                  &z exportMetadata  => false,
-                                                 &z ctrlOptions=> '<parameters><parameter name="compress">yes</parameter></parameters>',
+                                                 &z ctrlOptions  => '<parameters><parameter name="compress">yes</parameter></parameters>',
                                                  testcase        => res);
             END IF;
         ELSE
@@ -101,11 +107,15 @@ BEGIN
                                              testcase        => res);
         END IF;
         sep := regexp_substr(dir, '[\\/]');
+
+        $IF DBMS_DB_VERSION.VERSION > 11 $THEN
         SELECT regexp_replace(max(adr_home||'/'||trace_filename) keep(dense_rank last ORDER BY modify_time), '[\\/]+', sep)
-        INTO   :file
+        INTO   file
         FROM   v$diag_trace_file
         WHERE  TRACE_FILENAME LIKE '%\_tcb\_diag.trc' ESCAPE '\';
-
+        $END
+        
+        :file := file;
         SELECT max(case when name like '%.html' then regexp_replace(dir || sep || name, '[\\/]+', sep) end)
         INTO   :file1
         FROM   xmltable('//FILE' passing(xmltype(res)) columns TYPE path 'TYPE', goal path 'GOAL', NAME path 'NAME');
@@ -120,6 +130,7 @@ BEGIN
         IF phv IS NULL THEN
             raise_application_error(-20001, 'Please specify a valid SQL ID that exists in v$sql_plan_statistics_all.');
         ELSE
+            EXECUTE IMMEDIATE 'ALTER SESSION SET tracefile_identifier='''||ROUND(DBMS_RANDOM.VALUE(1,1E6))||'''';
             dbms_sqldiag.dump_trace(sq_id, child_num, nam);
         END IF;
         :file := 'default';
@@ -128,5 +139,5 @@ END;
 /
 print c
 
-loadtrace &file;
 &z1 loadtrace &file1;
+loadtrace &file 16;

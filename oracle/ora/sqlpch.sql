@@ -2,7 +2,7 @@
 	--[[
 	@ALIAS  : SQLPATCH
 	@ARGS   : 2
-    @CHECK_ACCESS_OBJ: SYS.DBMS_SQLDIAG={1}
+    @CHECK_ACCESS_DBA: DBMS_SQLDIAG_INTERNAL={1} SYS.DBMS_SQLDIAG={0}
 	]]--
 ]]*/
 SET FEED OFF VERIFY OFF
@@ -50,14 +50,21 @@ BEGIN
                                                    hint_text   => hint_text,
                                                    NAME        => NAME,
                                                    category    => 'DEFAULT',
-                                                   description => hint_text);
+                                                   description => hint_text,
+                                                   validate    => true);
     $ELSE
-    SYS.DBMS_SQLDIAG_INTERNAL.I_CREATE_PATCH(sql_text    => sq_text,
-                                             hint_text   => hint_text,
-                                             NAME        => NAME,
-                                             category    => 'DEFAULT',
-                                             description => hint_text);
+        $IF &CHECK_ACCESS_DBA=0 $THEN
+            raise_application_error(-20001,'You must have the access to DBMS_SQLDIAG_INTERNAL.');
+        $ELSE
+            SYS.DBMS_SQLDIAG_INTERNAL.I_CREATE_PATCH(sql_text    => sq_text,
+                                                     hint_text   => hint_text,
+                                                     NAME        => NAME,
+                                                     category    => 'DEFAULT',
+                                                     description => hint_text,
+                                                     validate    => true);
+        $END
     $END
+    --SYS.DBMS_SQLDIAG.ALTER_SQL_PATCH(name,'FORCE_MATCHING','YES');
     :name := name;
     EXECUTE IMMEDIATE 'ALTER SESSION SET CURRENT_SCHEMA='||to_schema;
     BEGIN
