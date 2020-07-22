@@ -510,13 +510,12 @@ function db_core:call_sql_method(event_name,sql,method,...)
         local showline,found=cfg.get("SQLERRLINE"),false
         local sql_name=self.get_command_type(sql)
 
-        
         if info and info.error and info.error~="" then
             if  info.sql and (not self:is_internal_call(info.sql)) and 
-                (env.ROOT_CMD~=sql_name or showline~="off" and info.position) then
+                (env.ROOT_CMD~=sql_name or showline~='off' and info.position) then
                 if showline~='off' and ((info.position or 0) > 1 or info.col) then
                     info.row,info.col=tonumber(info.row),tonumber(info.col)
-                    local pos,sql=(info.position or 0)+1,info.sql..'\n'
+                    local pos,sql=math.min(#info.sql,(tonumber(info.position) or 0)+1),info.sql..'\n'
                     local curr,row,col,done=0,0
                     sql=sql:gsub('[^\n]*\n',function(s)
                         if info.col then
@@ -541,7 +540,7 @@ function db_core:call_sql_method(event_name,sql,method,...)
                             return s
                         elseif not done then
                             row=row+1
-                            if curr+#s>pos then
+                            if curr+#s>=pos then
                                 col=pos-curr
                                 s=s..string.rep(' ',col-1)..'*$NOR$\n'
                                 done=true
@@ -560,24 +559,20 @@ function db_core:call_sql_method(event_name,sql,method,...)
                     print('SQL: '..info.sql:gsub("\n",'\n     '))
                 else
                     local lineno=0
-                    if info.col then
-                        print(string.rep('-',106))
-                    end
+                    if info.col then print(string.rep('-',106)) end
                     local fmt='\n'..(info.col and '|' or '')..'%s%5d|  '
-
                     print(('\n'..info.sql):gsub("\n([^\n]*)",
                         function(s) 
                             lineno=lineno+1;
                             if not info.col then
                                 return fmt:format('',lineno)..s
-                            elseif info.row and (info.row-lineno>10 or lineno>info.row+1) then
+                            elseif info.row and (info.row-lineno>15 or lineno>info.row+1) then
                                 return ''
                             elseif info.row and lineno==info.row+1 then
                                 return fmt:format('$ERRCOLOR$',info.col)..s..'\n'..string.rep('-',106)
                             end
                             return fmt:format('',lineno)..s
                         end):sub(2))
-
                 end
             end
             for _,p in pairs{...} do

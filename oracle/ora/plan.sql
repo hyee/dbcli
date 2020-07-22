@@ -11,6 +11,7 @@ Options:
     -last : the plan with the 'ALLSTATS LAST' format
 
 --[[
+
     &STAT: default={&DF &adaptive &hint &binds &V3 &V4 &V5 &V6 &V7 &V8 &V9}
     &V1: default={&_SQL_ID} last={X} x={X}
     &V3: none={} ol={outline alias &hint}
@@ -24,6 +25,34 @@ Options:
     @adaptive: 12.1={+REPORT +ADAPTIVE +METRICS} 11.2={+METRICS} default={}
     @hint    : 19={+HINT_REPORT} DEFAULT={}
     @proj:  11.2={nvl2(projection,1+regexp_count(regexp_replace(regexp_replace(projection,'[\[.*?\]'),'\(.*?\)'),', '),null) proj} default={cast(null as number) proj}
+    @check_access_ab : dba_hist_sqlbind={1} default={0}
+    @check_access_awr: {
+           dba_hist_sql_plan={UNION ALL
+                  SELECT /*+no_expand*/ id,
+                         min(id) over() minid,
+                         decode(parent_id,-1,id-1,parent_id) parent_id,
+                         plan_hash_value,
+                         2,
+                         TIMESTAMP,
+                         NULL child_number,
+                         sql_id,
+                         plan_hash_value,
+                         dbid,
+                         qblock_name qb,
+                         replace(object_alias,'"') alias,
+                         &proj,
+                         nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
+                  FROM   dba_hist_sql_plan a
+                  WHERE  a.sql_id = '&v1'
+                  AND    '&v1' not in('X','&_sql_id')
+                  AND    a.plan_hash_value = coalesce(:V2+0,(
+                     select --+index(c.sql(WRH$_SQLSTAT.SQL_ID)) index(c.sn)
+                            max(plan_hash_value) keep(dense_rank last order by snap_id)
+                     from dba_hist_sqlstat c where sql_id=:V1),(
+                     select max(plan_hash_value) keep(dense_rank last order by timestamp) 
+                     from dba_hist_sql_plan where sql_id=:V1))} 
+           default={0}
+          }
     @check_access_advisor: {
            dba_advisor_sqlplans={
                   UNION ALL
@@ -81,62 +110,126 @@ set feed off pipequery off verify off
 
 VAR C REFCURSOR Binding Variables
 VAR msg VARCHAR2
-DECLARE
-    msg VARCHAR2(100);
-BEGIN /*INTERNAL_DBCLI_CMD*/
-    IF :binds='PEEKED_BINDS' THEN
-        open :c for
-        WITH b1 AS
-         (SELECT *
-          FROM   (SELECT child_number || ':' || INST_ID r,last_captured l,0 flag,:V1 sql_id
-                  FROM   gv$sql_bind_capture a
-                  WHERE  sql_id = '&v1'
-                  AND    1>&SRC
-                  UNION ALL
-                  SELECT snap_id || ':' || instance_number r,last_captured l,1 flag,:V1
-                  FROM   dba_hist_sqlbind a
-                  WHERE  sql_id = '&v1'
-                  ORDER  BY l DESC NULLS LAST)
-          WHERE  ROWNUM < 2),
-        qry AS (
-          SELECT /*+materialize*/ * FROM
-             (SELECT position, NAME, datatype_string, value_string, inst_id, last_captured,0+regexp_substr(NAME,'\d+$') seq
-              FROM   gv$sql_bind_capture a, b1
-              WHERE  a.sql_id = b1.sql_id and a.sql_id = :V1
-              AND    child_number || ':' || INST_ID = r
-              AND    flag=0
-              UNION ALL
-              SELECT position, NAME, datatype_string, value_string, instance_number, last_captured,0+regexp_substr(NAME,'\d+$') seq
-              FROM   dba_hist_sqlbind a, b1
-              WHERE  a.sql_id = b1.sql_id and a.sql_id = '&v1'
-              AND    flag=1
-              AND    snap_id || ':' || instance_number = r)),
-        qry1 AS(
-              SELECT distinct
-                     name,
-                     nvl(max(last_captured) over(partition by name),date'2000-1-1') last_captured 
-              FROM qry
-        )
-        SELECT DISTINCT 
-               qry.NAME,
-               datatype_string data_type,
-               nvl2(qry.last_captured,value_string,'<no capture>') VALUE,
-               inst_id,
-               qry.last_captured
-        FROM   qry,qry1 
-        WHERE  nvl(qry.last_captured,date'2000-1-1')=qry1.last_captured
-        AND    qry.name=qry1.name
-        ORDER  by 1;
+DECLARE/*INTERNAL_DBCLI_CMD*/
+    msg       VARCHAR2(100);
+    BINDS     XMLTYPE := XMLTYPE('<BINDS/>');
+    ELEM      XMLTYPE;
+    BIND_VAL  SYS.ANYDATA;
+    BIND_TYPE VARCHAR2(128);
+    DTYPE     VARCHAR2(128);
+    STR_VAL   VARCHAR2(32767);
+BEGIN
+    IF :binds = 'PEEKED_BINDS' THEN
+        FOR r IN (WITH qry AS
+                       (SELECT a.*, dense_rank() over(ORDER BY decode(:V2,c,0,1),captured, r DESC) seq
+                       FROM   (SELECT a.*, decode(MAX(was_captured) over(PARTITION BY r), 'YES', 0, 1) captured
+                               FROM   (SELECT MAX(LAST_CAPTURED) OVER(PARTITION BY child_number,inst_id) || child_number || ':' || INST_ID r,
+                                              ''||child_number c,
+                                              was_captured,
+                                              position,
+                                              NAME,
+                                              datatype,
+                                              datatype_string,
+                                              value_string,
+                                              value_anydata,
+                                              inst_id,
+                                              last_captured,
+                                              'GV$SQL_BIND_CAPTURE' SRC
+                                       FROM   gv$sql_bind_capture a
+                                       WHERE  sql_id = '&v1'
+                                       AND    1 > &SRC
+                                       $IF &check_access_ab=1 $THEN
+                                       UNION ALL
+                                       SELECT MAX(LAST_CAPTURED) OVER(PARTITION BY DBID,SNAP_ID,INSTANCE_NUMBER)||DBID||':'|| SNAP_ID || ':' || INSTANCE_NUMBER,
+                                              ''||SNAP_ID c,
+                                              was_captured,
+                                              position,
+                                              NAME,
+                                              datatype,
+                                              datatype_string,
+                                              value_string,
+                                              value_anydata,
+                                              instance_number,
+                                              last_captured,
+                                              'DBA_HIST_SQLBIND' SRC
+                                       FROM   dba_hist_sqlbind a
+                                       WHERE  sql_id = '&v1'
+                                       $END
+                                       ) a) a)
+                      SELECT inst_id inst,
+                             position pos#,
+                             qry.NAME,
+                             datatype,
+                             datatype_string,
+                             value_string,
+                             value_anydata,
+                             to_char(qry.last_captured) last_captured,
+                             src
+                      FROM   qry
+                      WHERE  seq = 1
+                      ORDER  BY position) LOOP
+            DTYPE    := r.datatype_string;
+            BIND_VAL := r.value_anydata;
+            IF BIND_VAL IS NOT NULL THEN
+                CASE ANYDATA.GETTYPENAME(BIND_VAL)
+                    WHEN ('SYS.NUMBER') THEN
+                        STR_VAL := TO_CHAR(ANYDATA.ACCESSNUMBER(BIND_VAL));
+                    WHEN ('SYS.VARCHAR2') THEN
+                        STR_VAL := ANYDATA.ACCESSVARCHAR2(BIND_VAL);
+                    WHEN ('SYS.DATE') THEN
+                        STR_VAL := TO_CHAR(ANYDATA.ACCESSDATE(BIND_VAL));
+                    WHEN ('SYS.RAW') THEN
+                        STR_VAL := RAWTOHEX((ANYDATA.ACCESSRAW(BIND_VAL)));
+                    WHEN ('SYS.CHAR') THEN
+                        STR_VAL := ANYDATA.ACCESSCHAR(BIND_VAL);
+                    WHEN ('SYS.NCHAR') THEN
+                        STR_VAL := ANYDATA.ACCESSNCHAR(BIND_VAL);
+                    WHEN ('SYS.NVARCHAR2') THEN
+                        STR_VAL := ANYDATA.ACCESSNVARCHAR2(BIND_VAL);
+                    WHEN ('SYS.UROWID') THEN
+                        STR_VAL := ANYDATA.ACCESSUROWID(BIND_VAL);
+                    WHEN ('SYS.TIMESTAMP') THEN
+                        STR_VAL := TRIM('0' FROM ANYDATA.ACCESSTIMESTAMP(BIND_VAL));
+                    ELSE
+                        STR_VAL := NVL(r.value_string,'NOT AVAILABLE');
+                END CASE;
+            ELSE
+                str_val := '<NOT CAPTURE>';
+            END IF;
+        
+            SELECT XMLELEMENT("BIND",
+                              XMLELEMENT("inst", r.inst),
+                              XMLELEMENT("pos", r.pos#),
+                              XMLELEMENT("name", r.name),
+                              XMLELEMENT("value", nvl(str_val,r.value_string)),
+                              XMLELEMENT("dtype", dtype),
+                              XMLELEMENT("last_captured", r.last_captured),
+                              XMLELEMENT("src", r.src))
+            INTO   ELEM
+            FROM   DUAL;
+            BINDS := BINDS.APPENDCHILDXML('/*', ELEM);
+        END LOOP;
+        OPEN :C FOR
+            SELECT EXTRACTVALUE(COLUMN_VALUE, '//inst') + 0 inst,
+                   EXTRACTVALUE(COLUMN_VALUE, '//pos') + 0 pos#,
+                   CAST(EXTRACTVALUE(COLUMN_VALUE, '//name') AS VARCHAR2(128)) NAME,
+                   EXTRACTVALUE(COLUMN_VALUE, '//value') VALUE,
+                   CAST(EXTRACTVALUE(COLUMN_VALUE, '//dtype') AS VARCHAR2(30)) data_type,
+                   CAST(EXTRACTVALUE(COLUMN_VALUE, '//last_captured') AS VARCHAR2(20)) last_captured,
+                   CAST(EXTRACTVALUE(COLUMN_VALUE, '//src') AS VARCHAR2(30)) SOURCE
+            FROM   TABLE(XMLSEQUENCE(EXTRACT(BINDS, '/BINDS/BIND')));
     END IF;
-
+    
     IF '&v1' = '&_SQL_ID' THEN
         msg  := 'Displaying execution plan for last SQL: &_SQL_ID';
-        :msg := 'PRO '||msg || chr(10) || 'PRO '|| rpad('=',length(msg),'=');
+        :msg := 'PRO ' || msg || chr(10) || 'PRO ' || rpad('=', length(msg), '=');
     END IF;
 END;
 /
 
 &msg
+
+print c
 WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
  (SELECT /*+materialize*/*
   FROM   (SELECT /*+no_merge(a) NO_PQ_CONCURRENT_UNION*/ a.*,
@@ -159,31 +252,8 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                   WHERE  a.sql_id = '&v1'
                   AND   ('&v1' != '&_sql_id' or inst_id=userenv('instance'))
                   AND    '&v1' !='X'
+                  AND    1 > &SRC
                   AND    nvl('&V2'+0,-1) in(plan_hash_value,child_number,-1)
-                  UNION ALL
-                  SELECT /*+no_expand*/ id,
-                         min(id) over() minid,
-                         decode(parent_id,-1,id-1,parent_id) parent_id,
-                         plan_hash_value,
-                         2,
-                         TIMESTAMP,
-                         NULL child_number,
-                         sql_id,
-                         plan_hash_value,
-                         dbid,
-                         qblock_name qb,
-                         replace(object_alias,'"') alias,
-                         &proj,
-                         nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
-                  FROM   dba_hist_sql_plan a
-                  WHERE  a.sql_id = '&v1'
-                  AND    '&v1' not in('X','&_sql_id')
-                  AND    a.plan_hash_value = coalesce(:V2+0,(
-                     select --+index(c.sql(WRH$_SQLSTAT.SQL_ID)) index(c.sn)
-                            max(plan_hash_value) keep(dense_rank last order by snap_id)
-                     from dba_hist_sqlstat c where sql_id=:V1),(
-                     select max(plan_hash_value) keep(dense_rank last order by timestamp) 
-                     from dba_hist_sql_plan where sql_id=:V1))
                   UNION ALL
                   SELECT /*+no_expand*/ id,
                          min(id) over() minid,
@@ -205,6 +275,7 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                   AND    a.plan_hash_value = coalesce(:V2+0,(
                      select max(plan_hash_value) keep(dense_rank last order by timestamp) 
                      from all_sqlset_plans where sql_id=:V1))
+                  &check_access_awr
                   &check_access_advisor
                   &check_access_spm
                   UNION  ALL
@@ -258,11 +329,11 @@ xplan AS
   WHERE  flag = 2
   UNION ALL
   SELECT a.*
-  FROM   qry, TABLE(dbms_xplan.display( 'all_sqlset_plans',NULL,format,'plan_id='||inst_id||' and plan_hash_value=' || plan_hash || ' and sql_id=''' || sq ||'''')) a
+  FROM   qry, TABLE(dbms_xplan.display( 'all_sqlset_plans',NULL,format,'plan_id=nvl('''||inst_id||''',plan_id) and plan_hash_value=' || plan_hash || ' and sql_id=''' || sq ||'''')) a
   WHERE  flag = 3
   UNION ALL
   SELECT a.*
-  FROM   qry, TABLE(dbms_xplan.display( 'dba_hist_sql_plan',NULL,format,'plan_id='||inst_id||' and plan_hash_value=' || plan_hash || ' and sql_id=''' || sq ||'''')) a
+  FROM   qry, TABLE(dbms_xplan.display( 'dba_advisor_sqlplans',NULL,format,'plan_id='||inst_id||' and plan_hash_value=' || plan_hash || ' and sql_id=''' || sq ||'''')) a
   WHERE  flag = 4
   UNION ALL
   SELECT a.*

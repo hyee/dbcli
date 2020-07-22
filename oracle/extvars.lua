@@ -17,7 +17,7 @@ local gv2=('(%s)gv%$%(%s*cursor%('):case_insensitive_pattern()
 local checking_access
 local function rep_instance(prefix,full,obj,suffix)
     obj=obj:upper()
-    local flag,str=0
+    local dict,dict1,flag,str=extvars.dict[obj],extvars.dict[obj:sub(2)],0
     if not checking_access and cdbmode~='off' and extvars.dict[obj] and obj:find(cdbstr) then
         local new_obj = obj:gsub('^CDB_','DBA_')
         if cdbmode=='pdb' and (extvars.dict[new_obj] or {}).comm_view then 
@@ -41,16 +41,16 @@ local function rep_instance(prefix,full,obj,suffix)
         end
     end
 
-    if extvars.dict[obj] then
+    if dict then
         for k,v in ipairs{
-            {instance and instance>0,extvars.dict[obj].inst_col,instance},
-            container and container>=0 and extvars.dict[obj].cdb_col and {true,'nvl('..extvars.dict[obj].cdb_col..','..container..')',container} or {},
-            {dbid and dbid>0,extvars.dict[obj].dbid_col,dbid},
-            {usr and usr~="",extvars.dict[obj].usr_col,"(select /*+no_merge*/ username from all_users where user_id="..(uid or '')..")"},
+            {instance and instance>0,dict.inst_col,instance},
+            container and container>=0 and dict.cdb_col and {true,'nvl('..dict.cdb_col..','..container..')',container} or {},
+            {dbid and dbid>0,dict.dbid_col,dbid},
+            {usr and usr~="",dict.usr_col,"(select /*+no_merge*/ username from all_users where user_id="..(uid or '')..")"},
         } do
             if v[1] and v[2] and v[3] then
                 if k==1 and obj:find('^GV_?%$') and v[3]==tonumber(db.props.instance) 
-                    and extvars.dict[obj:sub(2)] and extvars.dict[obj:sub(2)].inst_col~="INST_ID"
+                    and dict1 and dict1.inst_col~="INST_ID"
                 then
                     str=fmt1:format(prefix,instance,full:gsub("[gG]([vV]_?%$)","%1"),suffix)
                 elseif flag==0 then

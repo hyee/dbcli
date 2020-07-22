@@ -1254,7 +1254,14 @@ local org_title
 env.unknown_modules={}
 function env.set_title(title,value,callee)
     local titles,status,sep,enabled="",{},"    "
-    if not org_title then org_title=uv.get_process_title() end
+
+    if not org_title then
+        org_title=loader.originProcessTitle
+        if not org_title then
+            org_title=uv.get_process_title()
+            loader.originProcessTitle=org_title
+        end
+    end
     if value~='__EXIT__' then
         if title and title:upper()=="STATUS" and value then
             enabled=value:lower()

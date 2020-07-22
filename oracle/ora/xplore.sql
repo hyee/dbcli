@@ -330,14 +330,14 @@ BEGIN
                    (SELECT STATEMENT_ID,
                           NVL(regexp_substr(STATEMENT_ID, '\d+$') + 0, 0) ID,
                           MAX(decode(id,1,regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash,
-                          MAX(decode(id,1,regexp_substr(to_char(substr(other_xml, 1, 2000)),'"plan_hash_full">(\d+)',1,1,'i',1))) + 0 plan_hash_full
+                          MAX(decode(id,1,regexp_substr(to_char(substr(other_xml, 1, 2000)),'"plan_hash_2">(\d+)',1,1,'i',1))) + 0 plan_hash2
                    FROM   &ptable q
                    GROUP  BY STATEMENT_ID)
-                  SELECT MIN(STATEMENT_ID) id, MIN(ID) seq, plan_hash, plan_hash_full
+                  SELECT MIN(STATEMENT_ID) id, MIN(ID) seq, plan_hash, plan_hash2
                   FROM   PLANS
-                  GROUP  BY plan_hash, plan_hash_full
+                  GROUP  BY plan_hash, plan_hash2
                   ORDER  BY seq) LOOP
-        qry := 'PLAN_HASH_VALUE: ' || r.plan_hash || '    PLAN_HASH_VALUE_FULL: ' || r.plan_hash_full;
+        qry := 'PLAN_HASH_VALUE: ' || r.plan_hash || '    PLAN_HASH_VALUE_FULL: ' || r.plan_hash2;
         wr(qry);
         wr(lpad('=', length(qry), '='));
         FOR i IN (SELECT * FROM TABLE(dbms_xplan.display('&ptable', r.id, fmt))) LOOP
@@ -369,7 +369,7 @@ BEGIN
                          NVL(regexp_substr(STATEMENT_ID, '\d+$') + 0, 0) ID,
                          MAX(ID) plan_lines,
                          MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash,
-                         MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash_full">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash_full,
+                         MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash_2">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash2,
                          MAX(q.cost) cost,
                          MAX(bytes) bytes,
                          MAX(cardinality) keep(dense_rank FIRST ORDER BY id) card,
@@ -390,7 +390,7 @@ BEGIN
                  STATEMENT_ID,
                  is_matched matched,
                  plan_hash,
-                 plan_hash_full phv_full,
+                 plan_hash2,
                  plan_lines     lines,
                  cnt            plans,
                  cost,
@@ -401,7 +401,7 @@ BEGIN
                  description "Top 10 Descriptions"
         FROM   finals a
         WHERE  seq=1
-        ORDER  BY grp, matched DESC,plan_hash,plan_hash_full,cost,bytes,total_card,id;
+        ORDER  BY grp, matched DESC,plan_hash,plan_hash2,cost,bytes,total_card,id;
     :msg := utl_lms.format_message('* Note: Run "ora plan <statement_id> -all" to query the detailed plan. ' || chr(10) ||
                                    '* Note: Totally %d options are tested. Please reconnect to reset all options to the defaults.',
                                    counter);

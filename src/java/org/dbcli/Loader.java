@@ -25,7 +25,6 @@ import java.security.NoSuchAlgorithmException;
 import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
@@ -40,6 +39,7 @@ public class Loader {
     public static String ReloadNextTime = "_init_";
     public static String root = "";
     public static String libPath;
+    public static String  originProcessTitle = null;
     static LuaState lua;
     static Console console;
     private static Loader loader = null;
@@ -503,12 +503,7 @@ public class Loader {
             if (p.isClosed()) throw CancelError;
             return result;
         } catch (Exception e) {
-            if(e instanceof SQLException) {
-                SQLException e1=(SQLException) e;
-                while(e1.getNextException()!=null) e1=e1.getNextException();
-                //System.out.println(e1.getCause().toString());
-                e=e1;
-            }
+            //e.printStackTrace();
             throw e;
         } finally {
             console.setEvents(null, null);

@@ -294,7 +294,7 @@ function var.save(name,file)
     name=name:upper()
     env.checkerr(var.inputs[name],'Fail to save due to variable `%s` does not exist!',name)
     local obj=var.get_input(name)
-    if not obj then return end
+    if not obj or obj=='' then return end
     if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
         return print("Unsupported variable '%s'!", name);
     elseif type(obj)=='table' then
