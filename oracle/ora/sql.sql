@@ -81,7 +81,7 @@ DECLARE
         END IF;
         val := utl_lms.format_message(fmt,COALESCE(value,defaults,'NULL'));
         STR_VAL := val;
-        text := regexp_replace(text,'#'||name||'#',val,1,occu,'i');
+        text := regexp_replace(text,'#!'||name||'!#',val,1,occu,'i');
     END;
 BEGIN
     BEGIN
@@ -164,7 +164,7 @@ BEGIN
             last_cap := r.last_captured;
             CASE REGEXP_REPLACE(DTYPE,'\(\d+\)')
                 WHEN 'NUMBER' THEN
-                    repl('TO_NUMBER(%s)',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSNUMBER(BIND_VAL) END);
+                    repl('%s',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSNUMBER(BIND_VAL) END,'TO_NUMBER(NULL)');
                 WHEN 'BINARY_DOUBLE' THEN
                     repl('TO_BINARY_DOUBLE(%s)',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSBDOUBLE(BIND_VAL) END);
                 WHEN 'BINARY_FLOAT' THEN

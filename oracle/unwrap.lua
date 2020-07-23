@@ -67,6 +67,11 @@ function unwrap.unwrap(obj,ext,prefix)
     env.checkhelp(obj)
     local filename=obj
     local typ,f=os.exists(obj)
+    if ext=='.' then 
+        ext=nil
+    elseif ext and ext:lower()=='18c' then
+        ext,prefix=nil,'18c'
+    end
     prefix=prefix or ''
     if typ then
         if typ~="file" then return end
@@ -106,7 +111,23 @@ function unwrap.unwrap(obj,ext,prefix)
         end
         if repidx == -1 then return end
         if #stack>0 then org[#org]=loader:Base64ZlibToText({table.concat(stack,'')}) end
-        env.save_data(filename,table.concat(org,'\n'))
+        local text=table.concat(org,'\n')
+        if prefix:lower()=='18c' then
+            local ver
+            text = text:gsub('(version *= *"(%d+%.%d+%.[%d%.]+))"',function(txt,v)
+                local v1=tonumber(v:match('%d+'))
+                if v1 > 18 then
+                    ver=v1
+                    return 'version = "18.0.0.0.0"'
+                end
+                return txt
+            end)
+            if ver > 18 then
+                text = text:gsub("(https?://[^\n]+/)omx/",'%1',1)
+                text = text:gsub('emsaasui[^\n]+(/scripts/activeReportInit.js)','emviewers%1',1)
+            end
+        end
+        env.save_data(filename,text)
         print("Decoded Base64 written to file "..filename)
         return;
     end
@@ -193,7 +214,7 @@ function unwrap.unwrap(obj,ext,prefix)
 end
 
 function unwrap.onload()
-    env.set_command(nil,"unwrap",'Extract and unwrap(if wrapped) the source code of the specific object(procedure/package/function/trigger/type). Usage: @@NAME [<owner>.]<object_name> [<file_ext>] [prefix]',unwrap.unwrap,false,4)
+    env.set_command(nil,"unwrap",'Extract and unwrap(if wrapped) the source code of the specific object(procedure/package/function/trigger/type). Usage: @@NAME {[<owner>.]<object_name> [<file_ext>] [prefix]} | {<filename> [18c]}',unwrap.unwrap,false,4)
 end
 
 return unwrap
