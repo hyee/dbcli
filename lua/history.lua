@@ -27,12 +27,12 @@ function history:show(key)
     end
 end
 
-local is_changed,current_line,current_index
+local is_changed,current_index
 
 local cmds={HIS=1,HISTORY=1,["/"]=1,R=1,EDIT=1,ED=1,L=1,LIST=1,CHANGE=1,C=1,HELP=1,SET=1,KEYMAP=1,
             OUT=1,OUTPUT=1,['/*']=1,['--']=1,COL=1,COLUMN=1,PRO=1,PROMPT=1}
 
-function history:capture(cmd,args,res,is_internal,command_text,clock)
+function history:capture(cmd,args,res,is_internal,command_text,clock,success)
     if not args then return end
     cmd=cmd:upper()
     if cmds[cmd] or not env._CMDS[cmd] then return end
@@ -40,10 +40,8 @@ function history:capture(cmd,args,res,is_internal,command_text,clock)
     if env._CMDS[cmd].ARGS>1 then text=cmd..' '..text end
     last_line=text
     if #env.RUNNING_THREADS>1 then return end
-    
     console:setLastHistory();
     local maxsiz=cfg.get("HISSIZE")
-    
     local key=text:gsub("[%s%z\128\192]+"," "):sub(1,300)
     local k1=key:upper()
     if keys[k1] then
@@ -51,8 +49,10 @@ function history:capture(cmd,args,res,is_internal,command_text,clock)
         for k,v in pairs(keys) do if v>keys[k1] then keys[k]=v-1 end end
     end
     lastcommand={cmd=cmd,desc=key,args=args,tim=os.timer(),clock=clock,key=k1,text=text}
-    is_changed,current_line,current_index=false
-    if maxsiz < 1 then return end
+    is_changed=false
+    if maxsiz < 1 or not success then return end
+    current_index=nil
+    
     table.insert(self,lastcommand)
     while #self>maxsiz do
         local k=self[1].key
@@ -144,6 +144,11 @@ function history.show_command(m,n)
     print(table.concat(output,'\n'))
 end
 
+function history.set_current_line(line)
+    if #env.RUNNING_THREADS>2 then return end
+    current_index=line
+end
+
 function history.change_command(m)
     if #env.RUNNING_THREADS>2 then return end
     env.checkerr(m,'Nothing to change.')
@@ -154,7 +159,7 @@ function history.change_command(m)
     if o=='' then return end
     o,n=o:lower(),n or ''
     local lines=file:split('\n',true)
-    if not current_index then current_index=#lines end
+    if not current_index or current_index>#lines then current_index=#lines end
     local line=lines[current_index]
     env.checkerr(line and line:lower():find(o,1,true),'String not found.')
     local b,e=line:lower():find(o,1,true)
@@ -173,7 +178,7 @@ end
 
 function history.onload()
     cfg.init("HISSIZE",50,history.set_editor,"core","Max size of historical commands",'0 - 999')
-    event.snoop("AFTER_SUCCESS_COMMAND",history.capture,history)
+    event.snoop("AFTER_COMMAND",history.capture,history)
     env.set_command(history,{'history','his'},"Show/run historical commands. Usage: @@NAME [index|last]",history.show,false,2)
     env.set_command(nil,{'r','/'},"Rerun the previous command.",history.rerun,false,2)
     env.set_command(nil,{'l'},"Show the previous command. Usage: @@NAME [last|*|<num>] [last|*|<num>]",history.show_command,false,3)

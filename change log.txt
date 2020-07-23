@@ -1,4 +1,6 @@
-2020-07-22: * oracle: new options on 'ora sql' to replace sql_text with bind-variables
+2020-07-23: + oracle: new option on 'unwrap <filename> [18c]'
+            * public: fix charset issue on reading non-UTF8 file
+2020-07-22: + oracle: new options on 'ora sql' to replace sql_text with bind-variables
 2020-07-20: * public: update lib luv and luajit
             * oracle: new option 'xplan -diag' (parameter _sql_diag_repo_retain)
 2020-07-19: * public: support displaying SQL error position

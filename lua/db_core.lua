@@ -559,6 +559,7 @@ function db_core:call_sql_method(event_name,sql,method,...)
                     print('SQL: '..info.sql:gsub("\n",'\n     '))
                 else
                     local lineno=0
+                    if found and env.history then env.history.set_current_line(info.row) end
                     if info.col then print(string.rep('-',106)) end
                     local fmt='\n'..(info.col and '|' or '')..'%s%5d|  '
                     print(('\n'..info.sql):gsub("\n([^\n]*)",

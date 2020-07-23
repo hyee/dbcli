@@ -1,8 +1,20 @@
 local env,string,java,math,table,tonumber=env,string,java,math,table,tonumber
 local grid,snoop,callback,cfg,db_core=env.grid,env.event.snoop,env.event.callback,env.set,env.db_core
 local var=env.class()
-local cast=java.cast
-var.inputs,var.outputs,var.desc,var.global_context,var.columns={},{},{},{},{}
+local rawset,rawget=rawset,rawget
+local cast,ip=java.cast,{}
+var.outputs,var.desc,var.global_context,var.columns={},{},{},{}
+var.inputs=setmetatable({},{
+    __index=function(self,k)
+        return rawget(ip,k)
+    end,
+    __pairs=function(self)
+        return pairs(ip)
+    end,
+    __newindex=function(self,k,v) 
+        rawset(ip,k,v)
+    end})
+
 var.cmd1,var.cmd2,var.cmd3,var.cmd4='DEFINE','DEF','VARIABLE','VAR'
 var.types={
     REFCURSOR =  'CURSOR',
@@ -96,7 +108,7 @@ function var.setInput(name,desc)
         print("Current defined variables:\n====================")
         for k,v in pairs(var.inputs) do
             if type(v)~="table" then
-                print(env.space,k,'=',v)
+                print(k,'=',v)
             end
         end
         return

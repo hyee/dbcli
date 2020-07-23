@@ -552,16 +552,11 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     end
     local res={pcall(_exec_command,name,params,arg_text)}
     if not env then return end
+    local clock=math.floor((os.timer()-_THREADS._clock[index])*1e3)/1e3
     if event and not is_internal then 
-        event("AFTER_COMMAND",name,params,res[2],is_internal,arg_text)
+        event("AFTER_COMMAND",name,params,res[2],is_internal,arg_text,clock,res[1])
     end
     if not isMain and not res[1] and (not env.set or env.set.get("OnErrExit")=="on") then error() end
-
-    local clock=math.floor((os.timer()-_THREADS._clock[index])*1e3)/1e3
-
-    if event and not is_internal then
-        event("AFTER_SUCCESS_COMMAND",name,params,res[2],is_internal,arg_text,clock)
-    end
 
     if isMain then
         collectgarbage("collect")

@@ -138,6 +138,5 @@ BEGIN
 END;
 /
 print c
-
 &z1 loadtrace &file1;
 loadtrace &file 16;
