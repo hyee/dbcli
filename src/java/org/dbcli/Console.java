@@ -113,7 +113,7 @@ public final class Console {
         setKeyCode("redo", "^[y");
         setKeyCode("undo", "^[z");
 
-        if(!OSUtils.IS_OSX) {
+        if (!OSUtils.IS_OSX) {
             setKeyCode(LineReader.BEGINNING_OF_LINE, "^[[1~");
             setKeyCode(LineReader.END_OF_LINE, "^[[4~");
         }

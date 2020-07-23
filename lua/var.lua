@@ -114,7 +114,7 @@ function var.setInput(name,desc)
 end
 
 function var.accept_input(name,desc)
-    if not name then return end
+    env.checkhelp(name)
     local uname,noprompt=name:upper()
     --if not var.inputs[uname] then return end
     if not desc then
@@ -129,23 +129,20 @@ function var.accept_input(name,desc)
             noprompt=true
         end
         desc=desc:gsub('^"(.*)"$','%1')
-        if desc:sub(1,1)=='@' then
-            desc=desc:sub(2)
+        if desc:sub(1,1)=='@' or desc:find('[\\/]') then
+            local prefix=desc:sub(1,1)
+            desc=prefix=='@' and desc:sub(2) or desc
             local typ,file=os.exists(desc,'sql')
             if typ~='file' then
                 typ,file=os.exists(env.join_path(env._CACHE_PATH,desc),'sql')
             end
             if typ~='file' then
-                if noprompt then return end
+                if noprompt or prefix~='@' then return end
                 env.raise("Cannot find file '"..desc.."'!")
             end
-            local f=io.open(file)
-            if not f then 
-                if noprompt then return end
-                env.raise("Cannot find file '"..desc.."'!")
-            end
-            var.inputs[uname]=f:read(10485760)
-            f:close()
+            local succ,txt=pcall(loader.readFile,loader,file,10485760)
+            env.checkerr(succ,tostring(txt));
+            var.inputs[uname]=txt
             return
         end
     end

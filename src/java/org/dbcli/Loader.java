@@ -9,7 +9,6 @@ import com.opencsv.ResultSetHelperService;
 import com.opencsv.SQLWriter;
 import org.jline.keymap.KeyMap;
 import org.jline.utils.OSUtils;
-import org.mozilla.universalchardet.UniversalDetector;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -20,6 +19,7 @@ import java.math.BigInteger;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.CallableStatement;
@@ -39,7 +39,7 @@ public class Loader {
     public static String ReloadNextTime = "_init_";
     public static String root = "";
     public static String libPath;
-    public static String  originProcessTitle = null;
+    public static String originProcessTitle = null;
     static LuaState lua;
     static Console console;
     private static Loader loader = null;
@@ -332,7 +332,6 @@ public class Loader {
             sbSQLId.append(alphabet.charAt(intIndexOnAlphabet));
 
         }
-
         return sbSQLId.toString();
     }
 
@@ -464,6 +463,8 @@ public class Loader {
         return new LuaTable(list.toArray());
     }
 
+    EncodingDetect detector = new EncodingDetect();
+
     public String inflate(byte[] data) throws Exception {
         ByteArrayInputStream bis = new ByteArrayInputStream(data);
         InflaterInputStream iis;
@@ -478,20 +479,46 @@ public class Loader {
         }
 
         try (Closeable ignored = iis; ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
-            UniversalDetector detector = new UniversalDetector(null);
-            byte[] buffer = new byte[16384];
+            byte[] buffer = new byte[4096];
             int len;
             while ((len = iis.read(buffer)) > 0)
                 bos.write(buffer, 0, len);
             buffer = bos.toByteArray();
-            detector.handleData(buffer);
-            detector.dataEnd();
-            String charset = detector.getDetectedCharset();
-            if (charset != null && !charset.equals("null")) {
-                return new String(buffer, charset);
-            } else
-                return new String(buffer);
+            String result = new String(buffer);
+            String encoding = console.terminal.encoding().name();
+            try {
+                encoding = detector.getEncoding(buffer);
+            } catch (Exception e) {
+
+            }
+            return encoding.equals("OTHER") ? result : new String(buffer, encoding);
         }
+    }
+
+    public String readFile(String fileName, int size) throws Exception {
+        File file = new File(fileName);
+        byte[] buffer = new byte[4096];
+        int len;
+        int total = size;
+        try (InputStream fis = Files.newInputStream(java.nio.file.Paths.get(fileName)); ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+            while ((len = fis.read(buffer)) > 0) {
+                bos.write(buffer, 0, len > total ? total : len);
+                total -= len;
+                if (total <= 0) break;
+            }
+            buffer = bos.toByteArray();
+        }
+        String result = new String(buffer);
+        String encoding = console.terminal.encoding().name();
+        //detector.debug=true;
+        try {
+            //long clock=System.currentTimeMillis();
+            encoding = detector.getEncoding(buffer);
+            //System.out.println(System.currentTimeMillis()-clock);
+        } catch (Exception e) {
+
+        }
+        return encoding.equals("OTHER") ? result : new String(buffer, encoding);
     }
 
     public synchronized boolean setStatement(final CallableStatement p) throws Exception {

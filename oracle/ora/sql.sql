@@ -102,7 +102,7 @@ BEGIN
         dbms_lob.createtemporary(text,true);
         dbms_lob.append(text,sql_text);
         dbms_lob.writeappend(text,1,' ');
-        text   := regexp_replace(text,'^\s+/\*.*?\*/');
+        text   := regexp_replace(text,'^\s*/\*.*?\*/');
         text   := regexp_replace(text,q'{([^0-9a-zA-Z'$_#]):("?)([0-9a-zA-Z$_#]+)\2([^0-9a-zA-Z'$_#])}','\1#!:\3!#\4');
         opname := upper(REGEXP_SUBSTR(text,'\w+'));
 
