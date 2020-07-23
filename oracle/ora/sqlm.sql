@@ -200,13 +200,15 @@ BEGIN
             raise_application_error(-20001,'You dont'' have access on dbms_sql_monitor/dbms_lock, or db version < 12.2!');
         $ELSE
             dopename := 'DBCLI_SNAPPER_'||USERENV('SESSIONID');
-            select max(serial#) into serial from v$session where sid=plan_hash;
-            if serial is null then 
+            select max(serial#) into serial from v$session where sid=regexp_substr(plan_hash,'^\d+$');
+            if not regexp_like(sq_id,'^\d+$') or not regexp_like(plan_hash,'^\d+$') then
+                raise_application_error(-20001, 'Usage: ora sqlm -snap <secs> <sid>');
+            elsif serial is null then 
                 raise_application_error(-20001, 'session#'||plan_hash||' cannot be found in v$session!');
             end if;
             dopeid:= sys.dbms_sql_monitor.begin_operation (
                              dbop_name       => dopename,
-                             dbop_eid    => dopeid,
+                             dbop_eid        => dopeid,
                              forced_tracking => sys.dbms_sql_monitor.force_tracking,
                              session_id      => plan_hash,
                              session_serial  => serial);

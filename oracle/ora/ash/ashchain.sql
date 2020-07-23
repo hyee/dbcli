@@ -1,5 +1,5 @@
 /*[[
-    Show ash wait chains. Usage: @@NAME {[<sql_id>|<sid>|<plan_hash_value>|-f"<filter>"] [YYMMDDHH24MI] [YYMMDDHH24MI]}|{-snap [secs]} [-sid] [-dash] [-flat] [-t"<ash_dump_table>"]
+    Show ash wait chains. Usage: @@NAME {[<sql_id>|<sid>|<event>|<plan_hash_value>|-f"<filter>"] [YYMMDDHH24MI] [YYMMDDHH24MI]}|{-snap [secs]} [-sid] [-dash] [-flat] [-t"<ash_dump_table>"]
     
     Options:
         -dash        : source from dba_hist_active_session_history instead of gv$active_session_history
@@ -10,6 +10,8 @@
         -p           : show progam + event + p1/2/3 instead of event + top object
         -flat        : show ashchain in flat style instead of tree style
         -t           : source table is <ash_dump_table>
+    
+    The script could trigger error 'ORA-12850'(Bug 26424079) in some env, try to use 'ALTER SESSION SET "_with_subquery"=INLINE' to fix the issue.
 
     Sample Output:
     ==============
@@ -29,13 +31,13 @@
     | 12.50%   1     1    1 120.00 KB  (1) 162         |  32hbap2vtmf53  |  db file sequential read               read by other session [data block] > db file sequential read
     12.5%      1     1    1 944.00 KB  (1) -1          92b382ka0qgdt     rdbms ipc reply > (Remote)               rdbms ipc reply > (Remote)
 
-This script references Tanel Poder's script
+    This script references Tanel Poder's script
     --[[
-        @con : 12.1={AND prior con_id=con_id} default={}
+        @con : 12.1={AND prior nvl(con_id,0)=nvl(con_id,0)} default={}
         &tree  : default={1} flat={0}
         &ash   : default={&8} t={&0}
         &V8    : ash={gv$active_session_history},dash={Dba_Hist_Active_Sess_History}
-        &Filter: default={:V1 in(p1text,''||session_id,''||sql_plan_hash_value,sql_id,top_level_sql_id,SESSION_ID||'@'||&INST1,event,''||current_obj#)} f={}
+        &Filter: default={'&V1' in(p1text,''||session_id,''||sql_plan_hash_value,sql_id,top_level_sql_id,SESSION_ID||'@'||&INST1,event,''||current_obj#)} f={}
         &filter1: default={0} f={1}
         &range : default={sample_time BETWEEN NVL(TO_DATE(NVL(:V2,:STARTTIME),'YYMMDDHH24MI'),SYSDATE-7) AND NVL(TO_DATE(NVL(:V3,:ENDTIME),'YYMMDDHH24MI'),SYSDATE)}, snap={sample_time>=sysdate - nvl(:V1,60)/86400}, f1={}
         &snap:   default={--} snap={}
@@ -67,7 +69,11 @@ var filter2 number;
 declare
     target varchar2(2000) := q'[
         select a.*,nvl(&tmodel,0) tmodel,&INST1 inst,SESSION_ID||'@'||&INST1 SID,
-                nullif(nvl(a.blocking_session,case when p1text='idn' then nullif(decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)), 0) end)|| &INST,'@') b_sid,
+                nullif(nvl(a.blocking_session,
+                    case 
+                        when p1text='idn' then 
+                            nullif(decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)), 0) 
+                    end)|| &INST,'@') b_sid,
                 sample_time+0 stime 
         from &ash a where ]'||:range;
     chose varchar2(2000) := '1';
@@ -75,7 +81,7 @@ BEGIN
     :filter2 := 1;
     IF (:V1 IS NOT NULL AND :snap IS NOT NULL) OR :filter1=1 THEN
         :filter2 := 0;
-        target := replace(replace(q'[select * from (select /*+no_merge*/ distinct stime from (@target and (@filter))) a natural join (@target) b]','@filter',:filter),'@target',target);
+        target := replace(replace(q'[select /*+inline*/ * from (select /*+no_merge*/ distinct stime from (@target and (@filter))) a natural join (@target) b]','@filter',:filter),'@target',target);
         chose := 'CASE WHEN ' ||:filter|| ' THEN 1 ELSE 0 END';
     END IF;
     :target := '('||target||')';
@@ -256,13 +262,13 @@ BEGIN
                        rownum-level r,
                        inst,
                        case when :filter2 = 1 then 1 when &filter then 1 else 0 end is_found,
-                       TRIM('>' FROM regexp_replace(SYS_CONNECT_BY_PATH(trim(decode(:grp2,'sample_id','x','sql_id',nvl(sql_id, program2),&grp2)),'>'),'(>.+?)\1+','\1(+)',2)) sql_ids,
+                       TRIM('>' FROM regexp_replace(SYS_CONNECT_BY_PATH(trim(decode('&grp2','sample_id','x','sql_id',nvl(sql_id, program2),&grp2)),'>'),'(>.+?)\1+','\1(+)',2)) sql_ids,
                        TRIM('>' FROM regexp_replace(SYS_CONNECT_BY_PATH(trim(&pname || event2), '>'), '(>.+?)\1+', '\1(+)',2)) p, 
                        &exec_id sql_exec,
                        connect_by_isleaf isleaf,
                        CONNECT_BY_ISCYCLE iscycle,
-                       CONNECT_BY_ROOT decode(:grp2,'sample_id',trim(&pname || event2),'sql_id',nvl(sql_id, program2),&grp2) root_sql,
-                       trim(decode(:grp2,'sample_id',' ','sql_id',nvl(sql_id, program2),&grp2))  sq_id,
+                       CONNECT_BY_ROOT decode('&grp2','sample_id',trim(&pname || event2),'sql_id',nvl(sql_id, program2),&grp2) root_sql,
+                       trim(decode('&grp2','sample_id',' ','sql_id',nvl(sql_id, program2),&grp2))  sq_id,
                        trim(&pname || event2) env,
                        &group,
                        &io io

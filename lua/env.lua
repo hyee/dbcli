@@ -397,6 +397,7 @@ function env.format_error(src,errmsg,...)
         HIR,NOR=env.ansi.get_color(env.set.get("ERRCOLOR")),env.ansi.get_color('NOR')
         errmsg=errmsg:strip_ansi()
     end
+
     env.log_debug("ERROR",errmsg)
     if errmsg:find('Exception%:') or errmsg:find(':%d+: (%u%u%u%-%d%d%d%d%d)') or errmsg:find('Error Msg =') then
 
@@ -414,10 +415,12 @@ function env.format_error(src,errmsg,...)
             errmsg=string.format("%s-%05i: %s",name,tonumber(line),errmsg)
         end
     end
+
     if select('#',...)>0 then
         errmsg=errmsg:format(...) 
     end
-    return errmsg=="" and errmsg or HIR..errmsg..NOR
+
+    return errmsg=="" and errmsg or (HIR..errmsg:gsub(' *\n',NOR..'\n'..HIR)..NOR)
 end
 
 function env.warn(...)
@@ -427,7 +430,8 @@ end
 
 function env.raise_error(...)
     local str=env.format_error(nil,...)
-    return error('000-00000:'..str)
+    if not str then print(debug.traceback()) end
+    return error('000-00000:'..(str or ''))
 end
 
 function env.raise(index,...)
@@ -548,16 +552,11 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     end
     local res={pcall(_exec_command,name,params,arg_text)}
     if not env then return end
+    local clock=math.floor((os.timer()-_THREADS._clock[index])*1e3)/1e3
     if event and not is_internal then 
-        event("AFTER_COMMAND",name,params,res[2],is_internal,arg_text)
+        event("AFTER_COMMAND",name,params,res[2],is_internal,arg_text,clock,res[1])
     end
     if not isMain and not res[1] and (not env.set or env.set.get("OnErrExit")=="on") then error() end
-
-    local clock=math.floor((os.timer()-_THREADS._clock[index])*1e3)/1e3
-
-    if event and not is_internal then
-        event("AFTER_SUCCESS_COMMAND",name,params,res[2],is_internal,arg_text,clock)
-    end
 
     if isMain then
         collectgarbage("collect")
@@ -1049,7 +1048,9 @@ function env.set_option(name,value)
 end
 
 function env.onload(...)
-    env.__ARGS__={...}
+    local args={...}
+    if #args==1 and type(args[1])=='table' then args=args[1] end
+    env.__ARGS__=args
     env.IS_ENV_LOADED=false
     for _,v in ipairs({'jit','ffi','bit'}) do   
         if v=="jit" then
@@ -1248,7 +1249,14 @@ local org_title
 env.unknown_modules={}
 function env.set_title(title,value,callee)
     local titles,status,sep,enabled="",{},"    "
-    if not org_title then org_title=uv.get_process_title() end
+
+    if not org_title then
+        org_title=loader.originProcessTitle
+        if not org_title then
+            org_title=uv.get_process_title()
+            loader.originProcessTitle=org_title
+        end
+    end
     if value~='__EXIT__' then
         if title and title:upper()=="STATUS" and value then
             enabled=value:lower()

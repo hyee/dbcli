@@ -56,6 +56,7 @@ ORCL> ORA STATS
     --[[
        @check_access_dba: dba_tables={dba_} default={all_}
        &advise          : default={0} advise={1}
+       @notes           : 12.1={,t.notes} default={}
     --]]
 ]]*/
 ora _find_object "&V1" 1
@@ -87,9 +88,9 @@ DECLARE
                 'APPROXIMATE_NDV_ALGORITHM','REPEAT OR HYPERLOGLOG/ADAPTIVE SAMPLING/HYPERLOGLOG',
                 'AUTOSTATS_TARGET','ALL/AUTO/ORACLE/Z(DEFAULT_AUTOSTATS_TARGET)',
                 'AUTO_STAT_EXTENSIONS','ON/OFF',
-                'AUTO_TASK_STATUS','ON/OFF',
-                'AUTO_TASK_MAX_RUN_TIME','',
-                'AUTO_TASK_INTERVAL','',
+                'AUTO_TASK_STATUS','HIGH FREQUENCY STATISTICS: ON/OFF',
+                'AUTO_TASK_MAX_RUN_TIME','HIGH FREQUENCY STATISTICS: Max run secs',
+                'AUTO_TASK_INTERVAL','HIGH FREQUENCY STATISTICS: Interval in secs',
                 'CASCADE','TRUE/FALSE/null(AUTO_CASCADE)',
                 'CONCURRENT','MANUAL/AUTOMATIC/ALL/OFF/FALSE/TRUE',
                 'COORDINATOR_TRIGGER_SHARD','TRUE/FALSE',
@@ -101,11 +102,11 @@ DECLARE
                 'GATHER_AUTO','AFTER_LOAD/ALWAYS',
                 'GATHER_SCAN_RATE','HADOOP_ONLY/ON/OFF',
                 'GLOBAL_TEMP_TABLE_STATS','SHARED/SESSION',
-                'GRANULARITY','Partitioned: AUTO/ALL/DEFAULT/GLOBAL/PARTITION/SUBPARTITION/GLOBAL AND PARTITION/PART AND SUBPART/GLOBAL AND SUBPART/APPROX_GLOBAL AND PARTITION',
-                'INCREMENTAL','Partitioned: TRUE/FALSE',
-                'INCREMENTAL_INTERNAL_CONTROL','Partitioned: TRUE/FALSE',
-                'INCREMENTAL_LEVEL','Partitioned: TABLE/PARTITION synopses',
-                'INCREMENTAL_STALENESS','Partitioned: ALLOW_MIXED_FORMAT,USE_STALE_PERCENT,USE_LOCKED_STATS/NULL',
+                'GRANULARITY','Partition: AUTO/ALL/DEFAULT/GLOBAL/PARTITION/SUBPARTITION/GLOBAL AND PARTITION/PART AND SUBPART/GLOBAL AND SUBPART/APPROX_GLOBAL AND PARTITION',
+                'INCREMENTAL','Partition: TRUE/FALSE, fix controls: 13583722/16726844',
+                'INCREMENTAL_INTERNAL_CONTROL','Partition: TRUE/FALSE',
+                'INCREMENTAL_LEVEL','Partition: TABLE/PARTITION synopses',
+                'INCREMENTAL_STALENESS','Partition: ALLOW_MIXED_FORMAT,USE_STALE_PERCENT,USE_LOCKED_STATS/NULL',
                 'JOB_OVERHEAD','',
                 'JOB_OVERHEAD_PERC','',
                 'MAINTAIN_STATISTICS_STATUS','TRUE/FALSE',
@@ -266,29 +267,32 @@ from &check_access_dba.tables t
 where owner = :object_owner
 and table_name = :object_name;
 
-SELECT COLUMN_NAME,
-       decode(t.DATA_TYPE,
-              'NUMBER',t.DATA_TYPE || '(' || decode(t.DATA_PRECISION, NULL, t.DATA_LENGTH || ')', t.DATA_PRECISION || ',' || t.DATA_SCALE || ')'),
-              'DATE',t.DATA_TYPE,
-              'LONG',t.DATA_TYPE,
-              'LONG RAW',t.DATA_TYPE,
-              'ROWID',t.DATA_TYPE,
-              'MLSLABEL',t.DATA_TYPE,
-              t.DATA_TYPE || '(' || t.DATA_LENGTH || ')') || ' ' ||
-       decode(t.nullable, 'N', 'NOT NULL', 'n', 'NOT NULL', NULL) col,
-       HISTOGRAM,
-       NUM_BUCKETS BUCKETS,
-       NUM_DISTINCT,
-       NUM_NULLS,
-       ROUND(((select num_rows from &check_access_dba.tables where owner = :object_owner and table_name = :object_name)-NUM_NULLS)/GREATEST(NUM_DISTINCT, 1), 2) cardinality,
-       GLOBAL_STATS,
-       USER_STATS,
-       SAMPLE_SIZE,
-       DATA_DEFAULT "DEFAULT",
-       LAST_ANALYZED
-FROM   &check_access_dba.tab_cols t
-WHERE  table_name = :object_name
-AND    owner = :object_owner;
+SELECT t1.COLUMN_NAME,
+       decode(t1.DATA_TYPE,
+              'NUMBER',t1.DATA_TYPE || '(' || decode(t1.DATA_PRECISION, NULL, t1.DATA_LENGTH || ')', t1.DATA_PRECISION || ',' || t1.DATA_SCALE || ')'),
+              'DATE',t1.DATA_TYPE,
+              'LONG',t1.DATA_TYPE,
+              'LONG RAW',t1.DATA_TYPE,
+              'ROWID',t1.DATA_TYPE,
+              'MLSLABEL',t1.DATA_TYPE,
+              t1.DATA_TYPE || '(' || t1.DATA_LENGTH || ')') || ' ' ||
+       decode(t1.nullable, 'N', 'NOT NULL', 'n', 'NOT NULL', NULL) col,
+       t1.HISTOGRAM,
+       t1.NUM_BUCKETS BUCKETS,
+       t1.NUM_DISTINCT,
+       t1.NUM_NULLS,
+       ROUND(((select num_rows from &check_access_dba.tables where owner = :object_owner and table_name = :object_name)-t1.NUM_NULLS)/GREATEST(t1.NUM_DISTINCT, 1), 2) cardinality,
+       t1.GLOBAL_STATS,
+       t1.USER_STATS,
+       t1.SAMPLE_SIZE,
+       t1.DATA_DEFAULT "DEFAULT",
+       t1.LAST_ANALYZED &notes
+FROM   &check_access_dba.tab_cols t1,&check_access_dba.tab_col_statistics t
+WHERE  t1.table_name = :object_name
+AND    t1.owner = :object_owner
+AND    t.table_name = :object_name
+AND    t.owner = :object_owner
+AND    t1.column_name=t.column_name;
 
 prompt Index Level
 prompt ***********
@@ -370,7 +374,7 @@ SELECT PARTITION_NAME,
        GLOBAL_STATS,
        USER_STATS,
        SAMPLE_SIZE,
-       t.last_analyzed
+       t.last_analyzed  &notes
 FROM   &check_access_dba.PART_COL_STATISTICS t
 WHERE  table_name = :object_name
 AND    owner = :object_owner
@@ -431,7 +435,7 @@ SELECT p.PARTITION_NAME,
        t.GLOBAL_STATS,
        t.USER_STATS,
        t.SAMPLE_SIZE,
-       t.last_analyzed
+       t.last_analyzed &notes
 FROM   &check_access_dba.SUBPART_COL_STATISTICS t, &check_access_dba.tab_subpartitions p
 WHERE  t.table_name = :object_name
 AND    t.owner = :object_owner

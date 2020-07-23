@@ -752,12 +752,12 @@ function oradebug.load_dict()
     addons={
         SETSID={desc="Set Oracle sid of session to debug. Usage: oradebug setsid <sid>",args=1,func=oradebug.attach_sid},
         BUILD_DICT={desc='Rebuild the offline help doc, should be executed in RAC environment',func=oradebug.build_dict},
-        FUNC={desc='#Extract kernel function. Usage: oradebug func <keyword>',args=1,func=oradebug.find_func},
+        FUNC={desc='Describe kernel function. Usage: oradebug func <keyword>',args=1,func=oradebug.find_func},
         REP_DESC={desc="#Usage: oradebug rep_desc {<key_prefix> <desc prefix> [<org desc prefix>]}|<path of functions.csv>",args=3,func=oradebug.rep_func_desc},
         SCAN_FUNCTION={desc='#Scan offline PLSQL code and list the mapping C functions. Usage: scan_function <dir>',args=1,func=oradebug.scan_func_from_plsql},
         GET_TRACE={desc='Download current trace file. Usage: oradebug get_trace [file] [<size in MB>]',args=2,func=oradebug.get_trace},
         SHORT_STACK={desc='Get abridged OS stack. Usage: oradebug short_stack [<short_stack_string>|<sid>]',lib='HELP',func=oradebug.short_stack},
-        PMEM={desc="Show process memory detail. Usae: oradebug pmen <sid>",args=1,func=oradebug.pmem},
+        PMEM={desc="Show process memory detail. Usage: oradebug pmen <sid>",args=1,func=oradebug.pmem},
         PROFILE={desc='Sample abridged OS stack. Usage: oradebug profile {<sid> [<samples>] [<interval in sec>]} | {<sid> wait [<secs>] [<event>]} | {<file> [server]}',
                 args=4,func=oradebug.profile,
                 usage=[[
@@ -1186,7 +1186,7 @@ function oradebug.profile(sid,samples,interval,event)
             ela=ela and tonumber(ela)/1000 or 1
             line='<-'..line
         else
-            title="OraDebug Short Stack Profiling"
+            title="OraDebug Short Stack Profiling (Session Id:"..sid..")"
             line,cnt=line:gsub('^.-%_%_sighandler%(%)','',1)
             if cnt==0 then
                 line,cnt=line:gsub('^.-sspuser%(%)','',1)
@@ -1421,7 +1421,10 @@ function oradebug.run(action,args)
             for k,v in pairs(lib) do
                 for n,d in pairs(v) do
                     if d.desc and d.desc:sub(1,1)~='#' then
-                        rows[#rows+1]={(name=='COMPONENT' or name=='HELP') and name or ('EVENT.'..name),k,n..(d.is_parent and '.*' or ''),d.desc}
+                        rows[#rows+1]={(name=='COMPONENT' or name=='HELP') and name or ('EVENT.'..name),
+                                        k,
+                                        (addons[n:upper()] and not args and '$PROMPTCOLOR$' or ext[n:upper():match('^[^%[]+')] and '$PROMPTSUBCOLOR$' or '')..n..(d.is_parent and '.*' or '')..'$NOR$',
+                                        d.desc}
                     end
                 end
             end

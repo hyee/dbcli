@@ -21,6 +21,7 @@ function packer.pack(func)
 end
 
 function packer.unpack(str)
+    
     if not str or str:sub(1,5)~= "FUNC:" then
         return str
     end
@@ -33,7 +34,13 @@ function packer.unpack(str)
             obj[#obj+1]=rechar(str:sub(i+half,i+half),-1)
         end
     end
+    
     str=loadstring(table.concat(obj,""))
+    if str==nil then
+        local b=obj[5]:byte()
+        obj[5]=string.char(b==0 and 8 or b==8 and 0 or b)
+        str=loadstring(table.concat(obj,""))
+    end
     return str
 end
 

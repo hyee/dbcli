@@ -298,11 +298,11 @@ end
 
 
 function try(args)
-    local succ,res=pcall(args[1])
+    local succ,res,err,final=pcall(args[1])
     local catch=args.catch or args[2]
     local finally=args.finally or args[3]
-
-    if not succ and catch then
+    final,err=true,not succ
+    if err and catch then
         if(type(res)=="string" and env.ansi) then 
             res=res:match(env.ansi.pattern.."(.-)"..env.ansi.pattern)
         end
@@ -310,7 +310,8 @@ function try(args)
     end
 
     if finally then
-        succ,res=pcall(finally)
+        final,err=pcall(finally,err)
+        if not catch or not final then succ,res=final,err or res end
     end
 
     if not succ then env.raise_error(res) end

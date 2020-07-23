@@ -503,15 +503,77 @@ function db_core:call_sql_method(event_name,sql,method,...)
     if res==false then
         self:is_connect(nil,true)
         local info,internal={db=self,sql=sql,error=tostring(obj):gsub('%s+$','')}
+        if event_name=='ON_SQL_ERROR' and obj.getCause then
+            info.cause=tostring(obj:getCause():toString())
+        end
         event(event_name,info)
+        local showline,found=cfg.get("SQLERRLINE"),false
+        local sql_name=self.get_command_type(sql)
+
         if info and info.error and info.error~="" then
-            if not self:is_internal_call(sql) and info.sql and env.ROOT_CMD~=self.get_command_type(sql) then
-                if cfg.get("SQLERRLINE")=="off" then
-                    print('SQL: '..info.sql:gsub("\n","\n     "))
+            if  info.sql and (not self:is_internal_call(info.sql)) and 
+                (env.ROOT_CMD~=sql_name or showline~='off' and info.position) then
+                if showline~='off' and ((info.position or 0) > 1 or info.col) then
+                    info.row,info.col=tonumber(info.row),tonumber(info.col)
+                    local pos,sql=math.min(#info.sql,(tonumber(info.position) or 0)+1),info.sql..'\n'
+                    local curr,row,col,done=0,0
+                    sql=sql:gsub('[^\n]*\n',function(s)
+                        if info.col then
+                            row=row+1
+                            if row==info.row then
+                                if info.col > 0 then
+                                    s=s..string.rep(' ',info.col-1)..'*$NOR$\n'
+                                else
+                                    local idx=0
+                                    s=s..s:sub(1,-2):gsub('%S',function()
+                                        idx=idx+1
+                                        return idx<=80 and '~' or ' '
+                                    end)..'$NOR$\n'
+                                end
+                                info.position=curr+info.col-1
+                                found=true
+                            end
+                            if row>info.row then
+                                return ''
+                            end
+                            curr=curr+#s
+                            return s
+                        elseif not done then
+                            row=row+1
+                            if curr+#s>=pos then
+                                col=pos-curr
+                                s=s..string.rep(' ',col-1)..'*$NOR$\n'
+                                done=true
+                                found=true
+                            end
+                            curr=curr+#s
+                            return s
+                        else
+                            return ''
+                        end
+                    end)
+                    info.sql,info.row,info.col=sql:sub(1,curr-1),info.row or row,info.col or col
+                end
+                if showline=="off" or showline=='auto' and not found then
+                    local row=0
+                    print('SQL: '..info.sql:gsub("\n",'\n     '))
                 else
                     local lineno=0
-                    local fmt='\n%5d|  '
-                    print(('\n'..info.sql):gsub("\n",function() lineno=lineno+1;return fmt:format(lineno) end):sub(2))
+                    if found and env.history then env.history.set_current_line(info.row) end
+                    if info.col then print(string.rep('-',106)) end
+                    local fmt='\n'..(info.col and '|' or '')..'%s%5d|  '
+                    print(('\n'..info.sql):gsub("\n([^\n]*)",
+                        function(s) 
+                            lineno=lineno+1;
+                            if not info.col then
+                                return fmt:format('',lineno)..s
+                            elseif info.row and (info.row-lineno>15 or lineno>info.row+1) then
+                                return ''
+                            elseif info.row and lineno==info.row+1 then
+                                return fmt:format('$ERRCOLOR$',info.col)..s..'\n'..string.rep('-',106)
+                            end
+                            return fmt:format('',lineno)..s
+                        end):sub(2))
                 end
             end
             for _,p in pairs{...} do
@@ -551,7 +613,7 @@ function db_core:check_params(sql,prep,bind_info,params)
     end
 end
 
-function db_core:parse(sql,params,prefix,prep)
+function db_core:parse(sql,params,prefix,prep,vname)
     local bind_info,binds,counter={},{},0
     local temp={}
     for k,v in pairs(params) do
@@ -564,6 +626,7 @@ function db_core:parse(sql,params,prefix,prep)
     end
 
     prefix=(prefix or ':')
+
     sql=sql:gsub('%f[%w_%$'..prefix..']'..prefix..'([%w_%$]+)',function(s)
             local k,s = s:upper(),prefix..s
             local v= params[k]
@@ -594,7 +657,11 @@ function db_core:parse(sql,params,prefix,prep)
             end
             args[#args+1],args[#args+2]=k,typ
             bind_info[#bind_info+1]=args
-            return '?'
+            if vname==':' then
+                return ':'..counter
+            else            
+                return '?'
+            end
         end)
     if not prep then prep=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007,1) end
 
@@ -712,7 +779,8 @@ function db_core:exec_cache(sql,args,description)
         --print(table.dump(params),table.dump(args))
     end
     args._description=description and ('('..description..')') or ''
-    return self:exec(prep,args,table.clone(params),sql),cache
+
+    return self:internal_call(prep,args,table.clone(params),sql),cache
 end
 
 function db_core:close_cache(description)
@@ -899,10 +967,10 @@ function db_core:assert_connect()
     env.checkerr(self:is_connect(),2,"%s database is not connected!",env.set.get("database"):initcap())
 end
 
-function db_core:internal_call(sql,args,prep_params)
+function db_core:internal_call(sql,args,prep_params,print_result)
     self.internal_exec=true
     --local exec=self.super.exec or self.exec
-    local succ,result=pcall(self.exec,self,sql,args,prep_params)
+    local succ,result=pcall(self.exec,self,sql,args,prep_params,print_result)
     self.internal_exec=false
     if not succ then error(result) end
     return result
@@ -1200,6 +1268,8 @@ local function set_param(name,value)
         env.checkerr(#value==1,'CSV separator can only be one char!')
         cparse.DEFAULT_SEPARATOR=value:byte()
         return value
+    elseif name=='PROMPTEXP' then
+        return value:lower()
     end
 
     return tonumber(value)
@@ -1231,17 +1301,21 @@ function db_core:sql2file(filename,sql,method,ext,...)
         end
     end
 
-    if method~='CSV2SQL' then
-        exp.RESULT_FETCH_SIZE=tonumber(env.ask("Please set fetch array size",'10-100000',exp.RESULT_FETCH_SIZE))
-    end
-    if method:find("SQL",1,true) then
-        sqlw.maxLineWidth=tonumber(env.ask("Please set line width","100-32767",sqlw.maxLineWidth))
-        sqlw.COLUMN_ENCLOSER=string.byte(env.ask("Please define the column name encloser","^%W$",'"'))
-    end
-    if method:find("CSV",1,true) then
-        local quoter=string.byte(env.ask("Please define the field encloser",'^.$','"'))
-        cparse.DEFAULT_QUOTE_CHARACTER=quoter
-        cfg.set("CSVSEP",env.ask("Please define the field separator",'^[^'..string.char(quoter)..']$',','))
+    if cfg.get('PROMPTEXP')=='on' then
+        if method~='CSV2SQL' then
+            exp.RESULT_FETCH_SIZE=tonumber(env.ask("Please set fetch array size",'10-100000',exp.RESULT_FETCH_SIZE))
+        end
+        if method:find("SQL",1,true) then
+            sqlw.maxLineWidth=tonumber(env.ask("Please set line width","100-32767",sqlw.maxLineWidth))
+            sqlw.COLUMN_ENCLOSER=string.byte(env.ask("Please define the column name encloser","^%W$",'"'))
+        end
+        if method:find("CSV",1,true) then
+            local quoter=string.byte(env.ask("Please define the field encloser",'^.$','"'))
+            cparse.DEFAULT_QUOTE_CHARACTER=quoter
+            cfg.set("CSVSEP",env.ask("Please define the field separator",'^[^'..string.char(quoter)..']$',','))
+        end
+    else
+        exp.RESULT_FETCH_SIZE=5000
     end
 
     local file=io.open(filename,"w")
@@ -1259,7 +1333,6 @@ function db_core:sql2file(filename,sql,method,ext,...)
         end
     else
         print("Start to extract result into "..filename)
-        print(result)
         clock,counter=os.timer(),loader[method](loader,result,filename,...)
         print_export_result(filename,clock,counter)
     end
@@ -1282,7 +1355,6 @@ function db_core.check_completion(cmd,other_parts)
     --alter package xxx compile ...
     local match,typ,index=env.COMMAND_SEPS.match(other_parts)
     if index==0 then return false,other_parts end
-    obj=obj or ""
     local action,obj=db_core.get_command_type(cmd..' '..other_parts)
     if index==1 and (db_core.source_objs[cmd] or db_core.source_objs[obj:upper()]) then
         local pattern=db_core.source_obj_pattern
@@ -1462,11 +1534,12 @@ function db_core:__onload()
     cfg.init("AUTOCOMMIT",'off',set_param,"db.core","Detemine if auto-commit every db execution",'on,off')
     cfg.init("SQLCACHESIZE",40,set_param,"db.core","Number of cached statements in JDBC",'5-500')
     cfg.init("ASYNCEXP",true,set_param,"db.export","Detemine if use parallel process for the export(SQL2CSV and SQL2FILE)",'true,false')
-    cfg.init("SQLERRLINE",'off',nil,"db.core","Also print the line number when error SQL is printed",'on,off')
+    cfg.init("SQLERRLINE",'auto',nil,"db.core","Also print the line number when error SQL is printed",'on,off,auto')
     cfg.init("NULL","",nil,"db.core","Define the display value for NULL value")
     cfg.init({"TIMING","TIMI"},"off",nill,"db.core","Controls whether or not SQL*Plus displays the elapsed time for each SQL statement.")
     cfg.init("ConvertRAW2Hex","on",nil,"db.core","Convert raw data to Hex(text) format","on,off")
     cfg.init("CSVSEP",",",set_param,"db.core","Define the default separator between CSV fields.")
+    cfg.init("PROMPTEXP","on",set_param,"db.core","Controls whether to prompt input when export SQL data",'on,off')
     cfg.init("READONLY",'off',set_param,"db.core","When set to on, makes the database connection read-only.",'on,off')
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
     env.event.snoop('TRIGGER_LOGIN',self.login,self)

@@ -1,7 +1,7 @@
 local env,loader=env,loader
 local snoop,cfg,default_db=env.event.snoop,env.set,env.db
 local flag = 1
-
+local term,sqlerror
 local output={}
 local prev_transaction
 local enabled='on'
@@ -11,12 +11,14 @@ local prev_stats
 
 function output.setOutput(db)
     local flag=cfg.get("ServerOutput")
+    cfg.set('autotrace','off')
+    sqlerror=nil
     local stmt="BeGin dbms_output."..(flag=="on" and "enable(null)" or "disable()")..";end;"
     pcall(function() (db or env.getdb()):internal_call(stmt) end)
 end
 
-output.trace_sql=[[select /*INTERNAL_DBCLI_CMD*/ name,value from v$mystat natural join v$statname where name not like 'session%memory%' and value>0]]
-output.trace_sql_after=[[
+output.trace_sql=[[select /*INTERNAL_DBCLI_CMD dbcli_ignore*/ name,value from sys.v_$mystat natural join sys.v_$statname where name not like 'session%memory%' and value>0]]
+output.trace_sql_after=([[
     DECLARE/*INTERNAL_DBCLI_CMD*/
         l_sql_id VARCHAR2(15);
         l_tmp_id VARCHAR2(15) := :sql_id; 
@@ -24,16 +26,15 @@ output.trace_sql_after=[[
         l_intval PLS_INTEGER;
         l_strval VARCHAR2(20);
     BEGIN
-        open :stats for 'select /*+dbcli_ignore*/ name,value from v$mystat natural join v$statname where name not like ''session%memory%'' and value>0';
-
+        open :stats for q'[@GET_STATS@]';
         begin
-            execute immediate q'[select prev_sql_id,prev_child_number from v$session where audsid =sys_context('userenv','sessionid')]'
+            execute immediate q'[select prev_sql_id,prev_child_number from sys.v_$session where sid=sys_context('userenv','sid') and username is not null and prev_hash_value!=0]'
             into l_sql_id,l_child;
 
             if l_sql_id is null then
                 l_sql_id := l_tmp_id;
-            elsif l_sql_id != l_tmp_id and l_tmp_id != 'x' then
-                l_intval := dbms_utility.get_parameter_value('cursor_sharing',l_intval,l_strval);
+            elsif l_sql_id != l_tmp_id and l_tmp_id != 'X' then
+                l_intval := sys.dbms_utility.get_parameter_value('cursor_sharing',l_intval,l_strval);
                 if lower(l_strval)!='exact' then
                     l_sql_id := l_tmp_id;
                     l_child  := null;
@@ -43,9 +44,9 @@ output.trace_sql_after=[[
         end;
         :last_sql_id := l_sql_id;
         :last_child  := l_child; 
-    END;]]
+    END;]]):gsub('@GET_STATS@',output.trace_sql)
 
-output.stmt=[[/*INTERNAL_DBCLI_CMD*/
+output.stmt=([[/*INTERNAL_DBCLI_CMD*/
     DECLARE
         l_line   VARCHAR2(32767);
         l_done   PLS_INTEGER := 32767;
@@ -86,15 +87,14 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             END IF;
         end;
     BEGIN
-        IF l_trace NOT IN('on','statistics','traceonly') THEN
+        IF l_trace NOT IN('on','statistics','traceonly') AND l_child IS NOT NULL THEN
             begin
-                execute immediate q'[select prev_sql_id,prev_child_number from v$session where audsid =sys_context('userenv','sessionid')]'
+                execute immediate q'[select prev_sql_id,prev_child_number from sys.v_$session where sid=sys_context('userenv','sid') and username is not null and prev_hash_value!=0]'
                 into l_sql_id,l_child;
-
                 if l_sql_id is null then
                     l_sql_id := l_tmp_id;
-                elsif l_sql_id != l_tmp_id and l_tmp_id != 'x' then
-                    l_intval := dbms_utility.get_parameter_value('cursor_sharing',l_intval,l_strval);
+                elsif l_sql_id != l_tmp_id and l_tmp_id != 'X' then
+                    l_intval := sys.dbms_utility.get_parameter_value('cursor_sharing',l_intval,l_strval);
                     if lower(l_strval)!='exact' then
                         l_sql_id := l_tmp_id;
                         l_child  := null;
@@ -103,6 +103,20 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             exception when others then null;
             end;
         END IF;
+
+        $IF dbms_db_version.version > 11 $THEN
+            BEGIN
+                IF l_cdbid != sys_context('userenv', 'con_dbid') THEN
+                    dbms_output.disable;
+                    dbms_output.enable(null);
+                END IF;
+                l_cont  :=sys_context('userenv', 'con_name'); 
+                l_cid   :=sys_context('userenv', 'con_id'); 
+                l_cdbid :=sys_context('userenv', 'con_dbid'); 
+                l_dbid  :=sys_context('userenv', 'dbid'); 
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+        $END
 
         IF l_enable = 'on' THEN
             dbms_output.get_lines(l_arr, l_done);
@@ -123,7 +137,7 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             END IF;
             BEGIN
                 $IF DBMS_DB_VERSION.VERSION>10 $THEN
-                    l_sql :='SELECT /*+dbcli_ignore*/ SQL_ID,'|| CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN 'CHILD_ADDRESS' ELSE 'CAST(NULL AS RAW(8))' END ||',null FROM v$open_cursor WHERE sid=userenv(''sid'') AND cursor_type like ''OPEN%'' AND sql_exec_id IS NOT NULL AND instr(sql_text,''dbcli_ignore'')=0 AND instr(sql_text,''V$OPEN_CURSOR'')=0';
+                    l_sql :='SELECT /*+dbcli_ignore*/ SQL_ID,'|| CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN 'CHILD_ADDRESS' ELSE 'CAST(NULL AS RAW(8))' END ||',null FROM sys.V_$OPEN_CURSOR WHERE sid=userenv(''sid'') AND cursor_type like ''OPEN%'' AND sql_exec_id IS NOT NULL AND instr(sql_text,''dbcli_ignore'')=0 AND instr(sql_text,''$OPEN_CURSOR'')=0';
                     BEGIN
                         EXECUTE IMMEDIATE l_sql BULK COLLECT INTO l_recs;
                         FOR i in 1..l_recs.count LOOP
@@ -142,33 +156,35 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
                 END IF;
 
                 FOR j in 1..l_recs.count LOOP
-                    l_sql:='sql_id='''||l_recs(j).sql_id||''' AND ';
-                    IF l_recs(j).child_num IS NOT NULL THEN
-                        l_sql := l_sql||'child_number='||l_recs(j).child_num;
-                    ELSIF l_recs(j).child_addr IS NOT NULL THEN
-                        l_sql := l_sql||'child_address=hextoraw('''||l_recs(j).child_addr||''')';
-                    ELSE
-                        l_sql := l_sql||'child_number=(select max(child_number) keep(dense_rank last order by executions,last_active_time) from v$sql where sql_id='''||l_recs(j).sql_id||''')';
-                    END IF;
-                    SELECT * BULK COLLECT INTO l_plans
-                    FROM TABLE(dbms_xplan.display('v$sql_plan_statistics_all',NULL,l_fmt,l_sql));
-                    IF j>1 THEN
-                        l_buffer := l_buffer || chr(10);
-                    END IF;
-                    FOR i in 1..l_plans.count LOOP
-                        IF l_plans(i) not like 'Error%' then
-                            if i = 1 then
-                                l_buffer := l_buffer || l_sep;
+                    IF l_recs(j).sql_id!='@GET_STATS_ID@' THEN
+                        l_sql:='sql_id='''||l_recs(j).sql_id||''' AND ';
+                        IF l_recs(j).child_num IS NOT NULL THEN
+                            l_sql := l_sql||'child_number='||l_recs(j).child_num;
+                        ELSIF l_recs(j).child_addr IS NOT NULL THEN
+                            l_sql := l_sql||'child_address=hextoraw('''||l_recs(j).child_addr||''')';
+                        ELSE
+                            l_sql := l_sql||'child_number=(select max(child_number) keep(dense_rank last order by executions,last_active_time) from sys.v_$sql where sql_id='''||l_recs(j).sql_id||''')';
+                        END IF;
+                        SELECT * BULK COLLECT INTO l_plans
+                        FROM TABLE(dbms_xplan.display('v$sql_plan_statistics_all',NULL,l_fmt,l_sql));
+                        IF j>1 THEN
+                            l_buffer := l_buffer || chr(10);
+                        END IF;
+                        FOR i in 1..l_plans.count LOOP
+                            IF l_plans(i) not like 'Error%' then
+                                if i = 1 then
+                                    l_buffer := l_buffer || l_sep;
+                                end if;
+                                if trim(l_plans(i)) is not null then
+                                    l_max := greatest(l_max,length(l_plans(i)));
+                                    l_buffer := l_buffer || replace(l_plans(i),'Plan hash value:','SQL ID: '||l_recs(j).sql_id||'   Plan hash value:') || chr(10);
+                                    wr;
+                                end if;
+                            elsif i=1 and l_recs(j).sql_id=l_sql_id then
+                                l_buffer := l_buffer || CASE WHEN j>1 THEN 'TOP_' END || 'SQL_ID: '||l_recs(j).sql_id||chr(10);
                             end if;
-                            if trim(l_plans(i)) is not null then
-                                l_max := greatest(l_max,length(l_plans(i)));
-                                l_buffer := l_buffer || replace(l_plans(i),'Plan hash value:','SQL ID: '||l_recs(j).sql_id||'   Plan hash value:') || chr(10);
-                                wr;
-                            end if;
-                        elsif i=1 and l_recs(j).sql_id=l_sql_id then
-                            l_buffer := l_buffer || CASE WHEN j>1 THEN 'TOP_' END || 'SQL_ID: '||l_recs(j).sql_id||chr(10);
-                        end if;
-                    END LOOP;
+                        END LOOP;
+                    END IF;
                 END LOOP;
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
@@ -186,9 +202,6 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
             l_lob := replace(l_lob,l_sep,rpad('=',l_max,'=')||chr(10));
         end if;
 
-        $IF dbms_db_version.version > 12 or dbms_db_version.version=12 and dbms_db_version.release>1 $THEN 
-            l_dbid  :=sys_context('userenv', 'dbid'); 
-        $END
         :last_sql_id := l_sql_id;
         :buff        := l_buffer;
         :txn         := dbms_transaction.local_transaction_id;
@@ -198,7 +211,7 @@ output.stmt=[[/*INTERNAL_DBCLI_CMD*/
         :dbid        := l_dbid; 
         :lob         := l_lob;
     EXCEPTION WHEN OTHERS THEN NULL;
-    END;]]
+    END;]]):gsub('@GET_STATS_ID@',loader:computeSQLIdFromText(output.trace_sql))
 
 local fixed_stats={
     ['DB time']=1,
@@ -225,7 +238,7 @@ local fixed_stats={
 local DML={SELECT=1,WITH=1,UPDATE=1,DELETE=1,MERGE=1}
 function output.getOutput(item)
     if output.is_exec then return end
-    
+    if term then cfg.set('TERMOUT','on') end
     local db,sql,sql_id=item[1],item[2]
     if not db or not sql then return end
     local typ=db.get_command_type(sql)
@@ -240,9 +253,10 @@ function output.getOutput(item)
     if sql:find('^BeGin dbms_output') or (not (sql:sub(1,256):lower():find('internal',1,true) and not sql:find('%s')) and not db:is_internal_call(sql)) then
         local args,stats
         output.is_exec=true
-        sql_id=sql_id or autotrace=='off' and 'x' or loader:computeSQLIdFromText(sql)
+        sql_id=sql_id or loader:computeSQLIdFromText(sql)
         if autotrace =='traceonly' or autotrace=='on' or autotrace=='statistics' then
             args={stats='#CURSOR',last_sql_id='#VARCHAR',last_child='#NUMBER',sql_id=sql_id}
+            local clock=os.timer()
             local done,err=pcall(db.exec_cache,db,output.trace_sql_after,args,'Internal_GetSQLSTATS_Next')
             if not done then
                 output.is_exec=nil
@@ -278,7 +292,7 @@ function output.getOutput(item)
             end
         end
 
-        if stats and #stats>0 then 
+        if not sqlerror and stats and #stats>0 then 
             local n={}
             local idx,c=-1,0
             grid.sort(stats,1)
@@ -324,7 +338,9 @@ function output.getOutput(item)
         db.props.container_id=args.con_id
         db.props.container_dbid=args.con_dbid
         db.props.dbid=args.dbid or db.props.dbid
-        db.props.last_sql_id=args.last_sql_id
+        if not db.props.last_sql_id or args.last_sql_id~='X' then
+            db.props.last_sql_id=args.last_sql_id
+        end
         local title={args.con_name and ("Container: "..args.con_name..'('..args.con_id..')')}
         if args.txn and cfg.get("READONLY")=="on" then
             db:rollback()
@@ -343,6 +359,8 @@ end
 
 function output.capture_stats(info)
     if output.is_exec then return end
+    sqlerror=false
+    if term then cfg.set('TERMOUT','off') end
     local db,sql=info[1],info[2]
     if sql and not (sql:lower():find('internal',1,true) and not sql:find('%s')) and not db:is_internal_call(sql) then
         if autotrace =='traceonly' or autotrace=='on' or autotrace=='statistics' then
@@ -356,14 +374,12 @@ function output.capture_stats(info)
     end
 end
 
-function output.finally()
-    output.is_exec=nil
-end
-
 function output.get_error_output(info)
+    sqlerror=true
     if info.db:is_connect() then
         output.getOutput({info.db,info.sql})
     else
+        if term then cfg.set('TERMOUT','on') end
         env.set_title("")
     end
     return info
@@ -375,10 +391,23 @@ function output.onload()
     snoop("BEFORE_DB_EXEC",output.capture_stats,nil,1)
     snoop("AFTER_DB_EXEC",output.getOutput,nil,99)
     cfg.init('AUTOTRACE','off',function(name,value)
+        if autotrace==value then return value end
+        if value=='traceonly' or value=='trace' then
+            value='traceonly'
+            term=cfg.get('TERMOUT')
+            if term~='off' then
+                cfg.set('TERMOUT','off') 
+            else
+                term=nil
+            end
+        else
+            if term then cfg.set('TERMOUT','on') end
+            term=nil
+        end
         autotrace=value
         return value
     end,'oracle','Automatically get a report on the execution path used by the SQL optimizer and the statement execution statistics',
-    'on,off,explain,statistics,traceonly,sql_id')
+    'on,off,trace,traceonly,sql_id')
 
     cfg.init({"ServerOutput",'SERVEROUT'},
         "on",

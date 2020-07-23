@@ -273,8 +273,8 @@ function ssh:load_script(alias,filename,...)
     if filename:sub(1,1)~="@" then
         local file=io.open(filename,'r')
         env.checkerr(file,'Cannot open file '..filename)
-        txt=file:read(10485760)
         file:close()
+        txt=loader:readFile(file,10485760)
     else
         txt=filename:sub(2)
     end

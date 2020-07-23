@@ -10,23 +10,47 @@ local fmt='%s(select /*+merge*/ * from %s where %s=%s :others:)%s'
 local fmt1='%s(select /*+merge*/  %d inst_id,a.* from %s a where 1=1 :others:)%s'
 local instance,container,usr,dbid,starttime,endtime
 local cdbmode='off'
-local cdbstr='^[CD][DB][BA]_'
+local cdbstr='^[CDA][DBL][BAL]_'
 local noparallel='off'
 local gv1=('(%s)table%(%s*gv%$%(%s*cursor%('):case_insensitive_pattern()
 local gv2=('(%s)gv%$%(%s*cursor%('):case_insensitive_pattern()
+local checking_access
 local function rep_instance(prefix,full,obj,suffix)
     obj=obj:upper()
-    local flag,str=0
-    if extvars.dict[obj] then
+    local dict,dict1,flag,str=extvars.dict[obj],extvars.dict[obj:sub(2)],0
+    if not checking_access and cdbmode~='off' and extvars.dict[obj] and obj:find(cdbstr) then
+        local new_obj = obj:gsub('^CDB_','DBA_')
+        if cdbmode=='pdb' and (extvars.dict[new_obj] or {}).comm_view then 
+            if db.props.select_dict==nil then
+                checking_access=true
+                db.props.select_dict=db.props.isdba or db:check_access('SYS.INT$DBA_SYNONYMS',1) or false
+                checking_access=false
+            end
+            if db.props.select_dict  then
+                obj=new_obj
+                new_obj='NO_CROSS_CONTAINER(SYS.'..extvars.dict[new_obj].comm_view..')'
+                full=new_obj
+            end
+        else
+            new_obj=obj:gsub(cdbmode=='cdb' and '^[DA][BL][AL]_' or '^[CD][DB][BA]_HIST_',cdbmode=='cdb' and 'CDB_' or 'AWR_PDB_') 
+            if new_obj~=obj and extvars.dict[new_obj] then
+                if not full:find(obj) then new_obj=new_obj:lower() end
+                full=full:gsub(obj:escape('*i'),new_obj)
+                obj=new_obj
+            end
+        end
+    end
+
+    if dict then
         for k,v in ipairs{
-            {instance and instance>0,extvars.dict[obj].inst_col,instance},
-            {container and container>=0,extvars.dict[obj].cdb_col,container},
-            {dbid and dbid>0,extvars.dict[obj].dbid_col,dbid},
-            {usr and usr~="",extvars.dict[obj].usr_col,"(select /*+no_merge*/ username from all_users where user_id="..(uid or '')..")"},
+            {instance and instance>0,dict.inst_col,instance},
+            container and container>=0 and dict.cdb_col and {true,'nvl('..dict.cdb_col..','..container..')',container} or {},
+            {dbid and dbid>0,dict.dbid_col,dbid},
+            {usr and usr~="",dict.usr_col,"(select /*+no_merge*/ username from all_users where user_id="..(uid or '')..")"},
         } do
             if v[1] and v[2] and v[3] then
                 if k==1 and obj:find('^GV_?%$') and v[3]==tonumber(db.props.instance) 
-                    and extvars.dict[obj:sub(2)] and extvars.dict[obj:sub(2)].inst_col~="INST_ID"
+                    and dict1 and dict1.inst_col~="INST_ID"
                 then
                     str=fmt1:format(prefix,instance,full:gsub("[gG]([vV]_?%$)","%1"),suffix)
                 elseif flag==0 then
@@ -36,20 +60,9 @@ local function rep_instance(prefix,full,obj,suffix)
                 end
                 flag = flag +1
             end
-
-            if cdbmode~='off' and extvars.dict[obj] and obj:find(cdbstr)  then
-                local new_obj=obj:gsub(cdbmode=='cdb' and '^DBA_' or '^[CD][DB][BA]_HIST_',cdbmode=='cdb' and 'CDB_' or 'AWR_PDB_')
-                if new_obj~=obj and extvars.dict[new_obj] then
-                    if not full:find(obj) then new_obj=new_obj:lower() end
-                    if flag==0 then
-                        full=full:gsub(obj:escape('*i'),new_obj)
-                    else
-                        str=str:gsub(obj:escape('*i'),new_obj)
-                    end
-                end
-            end
         end
     end
+
     if flag==0 then
         str=prefix..full..suffix
     else
@@ -165,23 +178,25 @@ end
 
 local prev_container={}
 function extvars.set_cdbmode(name,value)
-    if value~='off' then db:assert_connect() end
+    if value~='off' then
+        if not db:is_connect() then return end
+    end
     if not db.props.version then return end
     if cdbmode==value then return value end
     env.checkerr(value=='off' or db.props.version>=12, "Unsupported database: v"..db.props.db_version)
     if value=='pdb' then
-        if db.props.container_dbid and db.props.container_id>1 then
+        if db.props.container_id and db.props.container_id>1 then
             prev_container.dbid=cfg.get('dbid')
             prev_container.container=cfg.get('container')
             prev_container.new_dbid=db.props.container_dbid
             prev_container.new_container=db.props.container_id
             cfg.force_set('dbid',db.props.container_dbid)
-            cfg.force_set('container',db.props.container_id)
+            --cfg.force_set('container',db.props.container_id)
         end
     elseif cdbmode=='pdb' then
         if prev_container.new_dbid==cfg.get('dbid') and prev_container.new_container==cfg.get('container') then
             cfg.force_set('dbid','default')
-            cfg.force_set('container','default')
+            --cfg.force_set('container','default')
         end
     end
     cdbmode=value
@@ -189,14 +204,21 @@ function extvars.set_cdbmode(name,value)
 end
 
 function extvars.on_after_db_conn()
-    if db.props.isadb==true and db.props.israc==true then
-        cfg.force_set('instance', db.props.instance)
+    if db.props.isadb==true then
+        local mode=''
+        if db.props.israc==true then 
+            cfg.force_set('instance', db.props.instance)
+            mode=' and non-RAC'
+        end
+        cfg.force_set('cdbmode', 'pdb')
+        print('Switched into PDB'..mode..' mode for Oracle ADW/ATP environment, some SQLs will be auto-rewritten.');
+        print('You can run "set cdbmode default instance default" to switch back.')
     else
         cfg.force_set('instance','default')
+        cfg.force_set('cdbmode','default')
     end
     prev_container={}
     --cfg.force_set('starttime','default')
-    cfg.force_set('cdbmode','default')
     cfg.force_set('schema','default')
     cfg.force_set('container','default')
     cfg.force_set('dbid','default')
@@ -312,7 +334,8 @@ function extvars.set_dict(type)
                     MAX(CASE WHEN col IN ('DBID') THEN col END) DBID_COL,
                     MAX(CASE WHEN DATA_TYPE='VARCHAR2' AND regexp_like(col,'(OWNER|SCHEMA|KGLOBTS4|USER.*NAME)') THEN col END)
                         KEEP(DENSE_RANK FIRST ORDER BY CASE WHEN col LIKE '%OWNER' THEN 1 ELSE 2 END) USR_COL,
-                    MAX(owner)
+                    MAX(owner),
+                    MAX(decode(owner||data_type,'SYSREF',col)) COMM_VIEW
             FROM   (select * from r
                     union  all
                     select s.owner,s.synonym_name,r.col ,r.data_type 
@@ -335,7 +358,24 @@ function extvars.set_dict(type)
                     union  all
                     select owner,table_name,null,null 
                     from   dba_tab_privs a
-                    where  grantee in('EXECUTE_CATALOG_ROLE','SELECT_CATALOG_ROLE'))
+                    where  grantee in('EXECUTE_CATALOG_ROLE','SELECT_CATALOG_ROLE','DBA')
+                    union  all
+                    SELECT /*+no_merge(a) no_merge(b) use_hash(a b)*/
+                           a.owner, a.name, nvl(b.referenced_name, a.referenced_name) ref_name,'REF'
+                    FROM   (SELECT *
+                            FROM   dba_dependencies a
+                            WHERE  OWNER = 'SYS'
+                            AND    REFERENCED_OWNER = 'SYS'
+                            AND    REFERENCED_NAME LIKE 'INT$%'
+                            AND    SUBSTR(NAME, 1, 4) IN ('ALL_', 'DBA_')) a,
+                           (SELECT *
+                            FROM   dba_dependencies a
+                            WHERE  OWNER = 'SYS'
+                            AND    REFERENCED_OWNER = 'SYS'
+                            AND    REFERENCED_NAME LIKE 'INT$%'
+                            AND    SUBSTR(NAME, 1, 4) = 'INT$') b
+                    WHERE  a.referenced_name = b.name(+)
+                )
             GROUP  BY TABLE_NAME]]
     end
 
@@ -358,11 +398,12 @@ function extvars.set_dict(type)
     for i=2,cnt1 do
         local exists=dict[rows[i][1]]
         dict[rows[i][1]]={
-            inst_col=(rows[i][2] or "")~="" and rows[i][2] or (exists and dict[rows[i][1]].inst_col),
-            cdb_col=(rows[i][3] or "")~=""  and rows[i][3] or (exists and dict[rows[i][1]].cdb_col),
-            dbid_col=(rows[i][4] or "")~="" and rows[i][4] or (exists and dict[rows[i][1]].dbid_col),
-            usr_col=(rows[i][5] or "")~=""  and rows[i][5] or (exists and dict[rows[i][1]].usr_col),
-            owner=(rows[i][6] or "")~=""    and rows[i][6] or (exists and dict[rows[i][1]].owner)
+            inst_col=(rows[i][2] or "")~=""  and rows[i][2] or (exists and dict[rows[i][1]].inst_col),
+            cdb_col=(rows[i][3] or "")~=""   and rows[i][3] or (exists and dict[rows[i][1]].cdb_col),
+            dbid_col=(rows[i][4] or "")~=""  and rows[i][4] or (exists and dict[rows[i][1]].dbid_col),
+            usr_col=(rows[i][5] or "")~=""   and rows[i][5] or (exists and dict[rows[i][1]].usr_col),
+            owner=(rows[i][6] or "")~=""     and rows[i][6] or (exists and dict[rows[i][1]].owner),
+            comm_view=(rows[i][7] or "")~="" and rows[i][7] or (exists and dict[rows[i][1]].comm_view)
         }
         local prefix,suffix=rows[i][1]:match('(.-$)(.*)')
         if prefix=='GV_$' or prefix=='V_$' then
@@ -436,8 +477,8 @@ function extvars.onload()
         owner   <- ('SYS.'/ 'PUBLIC.'/'"SYS".'/'"PUBLIC".')
         obj     <- full/name
         full    <- '"' name '"'
-        name    <- {prefix %a%a [%w$#__]+}
-        prefix  <- "GV_$"/"GV$"/"V_$"/"V$"/"DBA_"/"AWR_"/"ALL_"/"CDB_"/"X$"/"XV$"
+        name    <- {prefix %a%a [%w$#_]+}
+        prefix  <- "GV_$"/"GV$"/"V_$"/"V$"/"INT$"/"DBA_"/"AWR_"/"ALL_"/"CDB_"/"X$"/"XV$"
     ]],nil,true)
     extvars.load_dict(datapath)
 end

@@ -374,7 +374,7 @@ function scripter:run_sql(sql,args,cmds)
     env.var.import_context(ary)
 end
 
-
+local readFile=loader.readFile
 function scripter:get_script(cmd,args,print_args)
     if not self.cmdlist or cmd=="-r" or cmd=="-R" then
         self.cmdlist=self:rehash(self.script_dir,self.ext_name,self.extend_dirs)
@@ -439,10 +439,15 @@ function scripter:get_script(cmd,args,print_args)
     end
     env.checkerr(file,'Cannot find script "'..cmd..'" under folder "'..self.short_dir..'".')
 
-    local f=io.open(file)
-    env.checkerr(f,"Cannot find this script!")
-    local sql=f:read(10485760)
-    f:close()
+    --[[No idea of why this operation can trigger lua gc on var.inputs (e.g.: ora actives)]] --
+    local succ,sql=pcall(readFile,loader,file,10485760)
+    env.checkerr(succ,tostring(sql))
+    
+
+    --local f=io.open(file)
+    --env.checkerr(f,"Cannot find this script!")
+    --local sql=f:read(10485760)
+    --f:close()
     if is_get then return print(sql) end
     args=self:parse_args(sql,args,print_args,cmd)
     return sql,args,print_args,file,cmd

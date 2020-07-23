@@ -136,7 +136,7 @@ while true do
 	local input,err=loadfile(resolve(input),'bt',_env)
 	if not input then error(err) end
 	loader:resetLua()
-	input(table.unpack(arg))
+	input(arg)
 	rawset(_env,'CURRENT_DB',rawget(_G,'CURRENT_DB'))
 	if not rawget(_G,'REOAD_SIGNAL') then break end
 	m.loaded=_loaded

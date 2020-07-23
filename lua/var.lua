@@ -1,8 +1,20 @@
 local env,string,java,math,table,tonumber=env,string,java,math,table,tonumber
 local grid,snoop,callback,cfg,db_core=env.grid,env.event.snoop,env.event.callback,env.set,env.db_core
 local var=env.class()
-local cast=java.cast
-var.inputs,var.outputs,var.desc,var.global_context,var.columns={},{},{},{},{}
+local rawset,rawget=rawset,rawget
+local cast,ip=java.cast,{}
+var.outputs,var.desc,var.global_context,var.columns={},{},{},{}
+var.inputs=setmetatable({},{
+    __index=function(self,k)
+        return rawget(ip,k)
+    end,
+    __pairs=function(self)
+        return pairs(ip)
+    end,
+    __newindex=function(self,k,v) 
+        rawset(ip,k,v)
+    end})
+
 var.cmd1,var.cmd2,var.cmd3,var.cmd4='DEFINE','DEF','VARIABLE','VAR'
 var.types={
     REFCURSOR =  'CURSOR',
@@ -46,8 +58,12 @@ function var.import_context(global,input,output,cols)
             if not global[k] and not output[k] then var.global_context[k]=nil end
         end
         for k,v in pairs(var.inputs) do
-            if not input[k] and not output[k] then 
-                var.inputs[k]=nil 
+            if not input[k] then
+                if not output[k] then 
+                    var.inputs[k]=nil
+                else
+                    var.outputs[k]=nil
+                end
             end
         end
     end
@@ -92,7 +108,7 @@ function var.setInput(name,desc)
         print("Current defined variables:\n====================")
         for k,v in pairs(var.inputs) do
             if type(v)~="table" then
-                print(env.space,k,'=',v)
+                print(k,'=',v)
             end
         end
         return
@@ -110,7 +126,7 @@ function var.setInput(name,desc)
 end
 
 function var.accept_input(name,desc)
-    if not name then return end
+    env.checkhelp(name)
     local uname,noprompt=name:upper()
     --if not var.inputs[uname] then return end
     if not desc then
@@ -125,23 +141,20 @@ function var.accept_input(name,desc)
             noprompt=true
         end
         desc=desc:gsub('^"(.*)"$','%1')
-        if desc:sub(1,1)=='@' then
-            desc=desc:sub(2)
+        if desc:sub(1,1)=='@' or desc:find('[\\/]') then
+            local prefix=desc:sub(1,1)
+            desc=prefix=='@' and desc:sub(2) or desc
             local typ,file=os.exists(desc,'sql')
             if typ~='file' then
                 typ,file=os.exists(env.join_path(env._CACHE_PATH,desc),'sql')
             end
             if typ~='file' then
-                if noprompt then return end
+                if noprompt or prefix~='@' then return end
                 env.raise("Cannot find file '"..desc.."'!")
             end
-            local f=io.open(file)
-            if not f then 
-                if noprompt then return end
-                env.raise("Cannot find file '"..desc.."'!")
-            end
-            var.inputs[uname]=f:read(10485760)
-            f:close()
+            local succ,txt=pcall(loader.readFile,loader,file,10485760)
+            env.checkerr(succ,tostring(txt));
+            var.inputs[uname]=txt
             return
         end
     end
@@ -290,12 +303,14 @@ function var.save(name,file)
     name=name:upper()
     env.checkerr(var.inputs[name],'Fail to save due to variable `%s` does not exist!',name)
     local obj=var.get_input(name)
-    if not obj then return end
+    if not obj or obj=='' then return end
     if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
         return print("Unsupported variable '%s'!", name);
     elseif type(obj)=='table' then
         obj=table.dump(obj)
     end
+
+    if env.ansi then obj:strip_ansi() end
     file=env.write_cache(file,obj);
     print("Data saved to "..file);
 end

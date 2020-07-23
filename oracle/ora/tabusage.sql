@@ -2,7 +2,7 @@
 	Report table usages including table modifications/segment stats/column usages. Usage: @@NAME [owner.]<table_name> 
     Parameters that impacts column tracking and SPD tracking: _column_tracking_level,_dml_monitoring_enabled
     Parameters that impacts index usage tracking: _iut_enable,_iut_max_entries,_iut_stat_collection_type.
-
+	Use oradebug to flush index usage: oradebug call keiut_flush_all
 
 	SAMPLE OUTPUT:
     Table Modifications Since Last Analyzed:

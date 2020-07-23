@@ -1,3 +1,3 @@
 /*[[Show last SQL ID]]*/
-
-PRO Last SQL Id: &_SQL_ID  
+set feed off
+select '&_SQL_ID' "SQL Id" from dual;  
