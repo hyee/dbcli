@@ -9,6 +9,7 @@ Examples:
     *  List the histogram: @@NAME SYS.OBJ$ NAME
     *  List the histogram from the stats table: @@NAME SYS.OBJ$ NAME -tab"system.stattab"
     *  List the histogram and test the est cardinality of scalar value : @@NAME SYS.OBJ$ NAME "obj$"
+    *  List the histogram and test the est cardinality of customized filter: @@NAME SYS.OBJ$ NAME ">'obj$'"
     *  List the histogram and test the est cardinality of bind variable: @@NAME SYS.OBJ$ NAME :1
     *  List the histogram and test the est cardinality of each EP value: @@NAME SYS.OBJ$ NAME -test
     *  List the histogram and test the act cardinality of each EP value: @@NAME SYS.OBJ$ NAME -real
@@ -143,7 +144,7 @@ DECLARE
 
     --convert all_tab_histograms.enpoint_value as varchar2
     --refer to https://mwidlake.wordpress.com/2009/08/11/decrypting-histogram-data/
-    FUNCTION hist_numtochar(p_num NUMBER, p_trunc VARCHAR2 := 'Y') RETURN VARCHAR2 IS
+    FUNCTION hist_numtochar(p_num NUMBER, p_trunc VARCHAR2 := 'Y',p_len INT:=NULL) RETURN VARCHAR2 IS
         m_vc   VARCHAR2(15);
         m_n1   NUMBER;
         m_n    NUMBER := 0;
@@ -164,11 +165,14 @@ DECLARE
                 m_n := m_n - (m_n1 * power(256, 15 - i));
             END LOOP;
         END IF;
+        IF p_len IS NOT NULL THEN
+            RETURN substr(m_vc,1,p_len);
+        END IF;
         RETURN m_vc;
     END;
 
     --onvert all_tab_histograms.enpoint_value that defined in srec as varchar2
-    FUNCTION conv(idx PLS_INTEGER, num NUMBER := NULL) RETURN VARCHAR2 IS
+    FUNCTION conv(idx PLS_INTEGER, num NUMBER := NULL,p_len INT:=NULL) RETURN VARCHAR2 IS
         rtn NUMBER := nvl(NUM, CASE WHEN idx IS NOT NULL THEN srec.novals(idx) END);
         eva RAW(128);
     BEGIN
@@ -181,9 +185,9 @@ DECLARE
             WHEN idx IS NOT NULL AND srec.chvals.exists(idx) AND srec.chvals(idx) IS NOT NULL THEN
                 RETURN RTRIM(srec.chvals(idx));
             WHEN dtype IN ('VARCHAR2', 'CHAR', 'CLOB', 'ROWID', 'UROWID') THEN
-                RETURN nvl(utl_raw.cast_to_varchar2(eva), hist_numtochar(rtn));
+                RETURN nvl(utl_raw.cast_to_varchar2(eva), hist_numtochar(rtn,'Y',p_len));
             WHEN dtype IN ('NVARCHAR2', 'NCHAR', 'NCLOB') THEN
-                RETURN nvl(utl_raw.cast_to_nvarchar2(eva), hist_numtochar(rtn));
+                RETURN nvl(utl_raw.cast_to_nvarchar2(eva), hist_numtochar(rtn,'Y',p_len));
             WHEN dtype = 'BINARY_DOUBLE' THEN
                 RETURN TO_CHAR(TO_BINARY_DOUBLE(rtn), 'TM');
             WHEN dtype = 'BINARY_FLOAT' THEN
@@ -206,8 +210,8 @@ DECLARE
     END;
 
     --convert the value in srec into raw value
-    FUNCTION conr(idx PLS_INTEGER, num NUMBER := NULL) RETURN RAW IS
-        rtn VARCHAR2(128) := conv(idx, num);
+    FUNCTION conr(idx PLS_INTEGER, num NUMBER := NULL,p_len INT:=NULL) RETURN RAW IS
+        rtn VARCHAR2(128) := conv(idx, num,p_len);
         d   TIMESTAMP;
     BEGIN
         CASE
@@ -327,6 +331,7 @@ DECLARE
         target   VARCHAR2(500);
         test_val VARCHAR2(128);
         rtn      NUMBER;
+        pred     VARCHAR2(2000);
     BEGIN
         IF test_stmt IS NULL THEN
             target := '"' || oname || '"."' || tab || '"';
@@ -340,23 +345,29 @@ DECLARE
             ELSE
                 test_stmt := 'explain plan set statement_id=''' || stmt_id || ''' for select /*+no_parallel(a) cursor_sharing_exact no_index(a) full(a)*/ *';
             END IF;
-            test_stmt := test_stmt || ' from ' || target || ' a where "' || col || '"=';
+            test_stmt := test_stmt || ' from ' || target || ' a where "' || col || '"';
         END IF;
-    
-        CASE
-            WHEN dtype = 'BINARY_DOUBLE' THEN
-                test_val := 'TO_BINARY_DOUBLE(' || str || ')';
-            WHEN dtype = 'BINARY_FLOAT' THEN
-                test_val := 'TO_BINARY_FLOAT(' || str || ')';
-            WHEN dtype IN ('NUMBER', 'FLOAT', 'INTEGER') THEN
-                test_val := 'TO_NUMBER(' || str || ')';
-            WHEN dtype = 'DATE' THEN
-                test_val := 'to_date(' || str || ',''' || datefmt || ''')';
-            WHEN dtype = 'TIMESTAMP' THEN
-                test_val := 'to_timestamp(' || str || ',''' || tstampfmt || ''')';
-            ELSE
-                test_val := str;
-        END CASE;
+        
+        pred := nvl(upper(regexp_substr(val1,'^\s*(\S+)',1,1)),'x');
+        IF pred NOT IN('BETWEEN','IN','EXISTS') AND nvl(regexp_substr(pred,'^[><=]+'),'x') NOT IN('>','<','=','>=','<=') THEN
+            test_stmt := test_stmt||'=';
+            CASE
+                WHEN dtype = 'BINARY_DOUBLE' THEN
+                    test_val := 'TO_BINARY_DOUBLE(' || str || ')';
+                WHEN dtype = 'BINARY_FLOAT' THEN
+                    test_val := 'TO_BINARY_FLOAT(' || str || ')';
+                WHEN dtype IN ('NUMBER', 'FLOAT', 'INTEGER') THEN
+                    test_val := 'TO_NUMBER(' || str || ')';
+                WHEN dtype = 'DATE' THEN
+                    test_val := 'to_date(' || str || ',''' || datefmt || ''')';
+                WHEN dtype = 'TIMESTAMP' THEN
+                    test_val := 'to_timestamp(' || str || ',''' || tstampfmt || ''')';
+                ELSE
+                    test_val := str;
+            END CASE;
+        ELSE
+            test_stmt := test_stmt||val1;
+        END IF;
     
         IF is_test = 2 THEN
             EXECUTE IMMEDIATE test_stmt || test_val INTO rtn;
@@ -470,7 +481,7 @@ DECLARE
         cnt     := 0;
         pops    := 0;
         dlen    := 16;
-    
+
         CASE histogram
             WHEN 'HYBRID' THEN
                 pop_based := numbcks / srec.epc;
@@ -483,7 +494,7 @@ DECLARE
         FOR i IN 1 .. srec.epc LOOP
             buckets := srec.bkvals(i) - prevb;
             srec.chvals(i) := rtrim(conv(i));
-            dlen := greatest(dlen, lengthb(srec.chvals(i)));
+            dlen := greatest(dlen, length(srec.chvals(i)));
             $IF dbms_db_version.version>11 $THEN
                 buckets := nvl(nullif(srec.rpcnts(i), 0), buckets);
             $END
@@ -529,7 +540,7 @@ DECLARE
             AND    b.table_name = tab
             AND    upper(b.column_name) = col;
 
-            SELECT a.*
+            SELECT max(histogram),sum(samples),max(last_analyzed),max(gstats),max(ustats)
             INTO   histogram, samples, analyzed, gstats, ustats
             FROM   (SELECT histogram,
                            nvl2(num_buckets, nvl(sample_size, 0), NULL) samples,
@@ -564,7 +575,8 @@ DECLARE
                     WHERE  b.owner = oname
                     AND    b.table_name = tab
                     AND    b.column_name = col
-                    AND    ttype='TABLE') a;
+                    AND    ttype='TABLE'
+                    ORDER  BY 1 NULLS LAST) a;
             
             dtype := regexp_substr(dtypefull, '^\w+');
         EXCEPTION
@@ -624,6 +636,10 @@ DECLARE
                                         statown  => statown,
                                         stattab  => stattab);
             notnulls := numrows - nullcnt;
+
+            IF notnulls-distcnt<0 THEN
+                dbms_output.put_line('Note: The result could be incorrect due to '||lower(ttype)||'(num_rows) < column(num_null + num_distinct).');
+            END IF;
 
             IF flags > 0 AND bitand(srec.eavs,flags) = 0 THEN
                 srec.eavs := srec.eavs + flags;
@@ -973,6 +989,8 @@ BEGIN
                 $END
             WHEN 'NONE' THEN
                 rpcnt := densityn * notnulls;
+            WHEN 'TOP-FREQUENCY' THEN
+                rpcnt := buckets;
             WHEN 'FREQUENCY' THEN
                  /*
                     NewDensity with the "half the least popular" rule active
@@ -982,12 +1000,12 @@ BEGIN
                     E[card] = (0.5 * bkt(least_popular_value) / num_rows) * num_rows = 0.5 * bkt(least_popular_value)
                 */
                 IF i != srec.epc THEN
-                    rpcnt := buckets * notnulls / samples;
+                    rpcnt := buckets * notnulls / numrows;
                 ELSE
-                    rpcnt := (buckets - 0.5) * notnulls / samples;
+                    rpcnt := (buckets - 0.5) * notnulls / numrows;
                 END IF;
             ELSE
-                rpcnt := buckets * notnulls / samples;
+                rpcnt := buckets * notnulls / numrows;
         END CASE;
     
         cep := srec.chvals(i);

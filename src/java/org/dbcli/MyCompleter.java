@@ -86,7 +86,7 @@ public class MyCompleter implements org.jline.reader.Completer {
     @Override
     public void complete(LineReader lineReader, ParsedLine parsedLine, List<Candidate> list) {
         int index = parsedLine.wordIndex();
-        final int prev = Math.max(0, index - 1);
+        final int prev = Math.max(0, index - 2);
         final List<String> words = parsedLine.words().subList(prev, index + 1);
         final String key = words.get(0).toUpperCase();
         index += console.parser.lines * 10;
@@ -95,7 +95,7 @@ public class MyCompleter implements org.jline.reader.Completer {
         if ((subs = commandSet.get(key)) != null)
             subs.complete(lineReader, parsedLine, list);
         else if (index > 0) {
-            final String key1 = words.get(words.size() - 1).toUpperCase();
+            final String key1 = words.get(words.size() - (key.startsWith("-") && words.size() >1 ? 2 : 1)).toUpperCase();
             if (key1.equals("")) return;
             if ((subs = commandSet.get(key1)) != null) subs.complete(lineReader, parsedLine, list);
             else if (key1.contains(".") && keywords.get(key1.toLowerCase().substring(0, key1.lastIndexOf("."))) != null)

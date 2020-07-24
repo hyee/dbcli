@@ -526,7 +526,7 @@ local desc_sql={
                AVG_COL_LEN AVG_LEN,
                num_distinct "NDV",
                CASE WHEN num_rows>=num_nulls THEN round(num_nulls*100/nullif(num_rows,0),2) END "Nulls(%)",
-               CASE WHEN num_rows>=num_nulls THEN round((num_rows-num_nulls)/nullif(num_distinct,0),2) END CARDINALITY,
+               round(decode(histogram,'HYBRID',NULL,greatest(0,num_rows-num_nulls)/nullif(num_distinct,0)),2) CARDINALITY,
                nullif(HISTOGRAM,'NONE') HISTOGRAM,
                NUM_BUCKETS buckets,
                c.comments,
@@ -744,7 +744,7 @@ local desc_sql={
                 a.AVG_COL_LEN AVG_LEN,
                 a.num_distinct "NDV",
                 CASE WHEN b.num_rows>=a.num_nulls THEN round(a.num_nulls*100/nullif(b.num_rows,0),2) END "Nulls(%)",
-                CASE WHEN b.num_rows>=a.num_nulls THEN round((num_rows-a.num_nulls)/nullif(a.num_distinct,0),2) END CARDINALITY,
+                round(decode(a.histogram,'HYBRID',NULL,greatest(0,num_rows-a.num_nulls)/nullif(a.num_distinct,0)),2) CARDINALITY,
                 nullif(a.HISTOGRAM,'NONE') HISTOGRAM，
                 a.NUM_BUCKETS buckets,
                 case when a.low_value is not null then 
@@ -753,6 +753,8 @@ local desc_sql={
                   ,'FLOAT'        ,to_char(utl_raw.cast_to_number(a.low_value))
                   ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(a.low_value))
                   ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(a.low_value))
+                  ,'CHAR'         ,to_char(utl_raw.cast_to_varchar2(a.low_value))
+                  ,'NCHAR'        ,to_char(utl_raw.cast_to_nvarchar2(a.low_value))
                   ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(a.low_value))
                   ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(a.low_value))
                   ,'TIMESTAMP'    , lpad(TO_NUMBER(SUBSTR(a.low_value, 1, 2), 'XX')-100,2,0)||
@@ -780,13 +782,15 @@ local desc_sql={
                           lpad(TO_NUMBER(SUBSTR(a.low_value, 9, 2), 'XX')-1,2,0)|| ':' ||
                           lpad(TO_NUMBER(SUBSTR(a.low_value, 11, 2), 'XX')-1,2,0)|| ':' ||
                           lpad(TO_NUMBER(SUBSTR(a.low_value, 13, 2), 'XX')-1,2,0)
-                  ,  a.low_value),1,32) end a.low_value,
+                  ,  a.low_value),1,32) end low_value,
                 case when a.high_value is not null then 
                 substrb(decode(dtype
                       ,'NUMBER'       ,to_char(utl_raw.cast_to_number(a.high_value))
                       ,'FLOAT'        ,to_char(utl_raw.cast_to_number(a.high_value))
                       ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(a.high_value))
                       ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(a.high_value))
+                      ,'CHAR'         ,to_char(utl_raw.cast_to_varchar2(a.high_value))
+                      ,'NCHAR'        ,to_char(utl_raw.cast_to_nvarchar2(a.high_value))
                       ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(a.high_value))
                       ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(a.high_value))
                       ,'TIMESTAMP'    ,lpad(TO_NUMBER(SUBSTR(a.high_value, 1, 2), 'XX')-100,2,0)||
@@ -814,7 +818,7 @@ local desc_sql={
                                 lpad(TO_NUMBER(SUBSTR(a.high_value, 9, 2), 'XX')-1,2,0)|| ':' ||
                                 lpad(TO_NUMBER(SUBSTR(a.high_value, 11, 2), 'XX')-1,2,0)|| ':' ||
                                 lpad(TO_NUMBER(SUBSTR(a.high_value, 13, 2), 'XX')-1,2,0)
-                        ,  a.high_value),1,32) end a.high_value
+                        ,  a.high_value),1,32) end high_value
          FROM   (select c.*,regexp_replace(data_type,'\(.+\)') dtype from all_tab_cols c) c,  all_Part_Col_Statistics a ,all_tab_partitions  b
          WHERE  a.owner=c.owner and a.table_name=c.table_name
          AND    a.column_name=c.column_name

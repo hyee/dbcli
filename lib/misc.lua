@@ -227,6 +227,10 @@ function table.week(typ,gc)
     return setmetatable({},{__mode=typ or 'k'})
 end
 
+function table.strong(tab)
+    return setmetatable(tab or {},{__gc=function(...) end})
+end
+
 function table.dump(tbl,indent,maxdep,tabs)
     maxdep=tonumber(maxdep) or 9
     if maxdep<=1 then

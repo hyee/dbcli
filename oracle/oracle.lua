@@ -576,6 +576,7 @@ local ignore_errors={
     ['socket']='Connection is lost, please login again.',
     ['SQLRecoverableException']='Connection is lost, please login again.',
     ['ORA-01013']='default',
+    ['Error : 1013 ']='default',
     ['connection abort']='default'
 }
 
