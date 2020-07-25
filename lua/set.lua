@@ -1,10 +1,10 @@
 local env=env
-local cfg,grid={name='SET'},env.grid
+local cfg,grid=table.strong({name='SET'}),env.grid
 local maxvalsize=20
 local file='setting.dat'
 local root_cmd
 cfg._backup=nil
-cfg._plugins={}
+cfg._plugins=table.strong()
 
 
 function cfg.show_cfg(name)

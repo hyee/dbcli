@@ -336,9 +336,9 @@ DECLARE
         IF test_stmt IS NULL THEN
             target := '"' || oname || '"."' || tab || '"';
             IF ttype LIKE '% SUBPARTITION' THEN
-                target := target || 'SUBPARTITION(' || part || ')';
+                target := target || ' SUBPARTITION(' || part || ')';
             ELSIF ttype LIKE '% PARTITION' THEN
-                target := target || 'PARTITION(' || part || ')';
+                target := target || ' PARTITION(' || part || ')';
             END IF;
             IF is_test = 2 THEN
                 test_stmt := 'select /*+parallel(a 8)*/ count(1)';
@@ -349,8 +349,7 @@ DECLARE
         END IF;
         
         pred := nvl(upper(regexp_substr(val1,'^\s*(\S+)',1,1)),'x');
-        IF pred NOT IN('BETWEEN','IN','EXISTS') AND nvl(regexp_substr(pred,'^[><=]+'),'x') NOT IN('>','<','=','>=','<=') THEN
-            test_stmt := test_stmt||'=';
+        IF pred NOT IN('BETWEEN','IN','EXISTS','NOT') AND nvl(regexp_substr(pred,'^[!><=]+'),'x') NOT IN('>','<','=','>=','<=','!=','<>') THEN
             CASE
                 WHEN dtype = 'BINARY_DOUBLE' THEN
                     test_val := 'TO_BINARY_DOUBLE(' || str || ')';
@@ -365,6 +364,7 @@ DECLARE
                 ELSE
                     test_val := str;
             END CASE;
+            test_val := '='||str;
         ELSE
             test_stmt := test_stmt||val1;
         END IF;
@@ -494,7 +494,7 @@ DECLARE
         FOR i IN 1 .. srec.epc LOOP
             buckets := srec.bkvals(i) - prevb;
             srec.chvals(i) := rtrim(conv(i));
-            dlen := greatest(dlen, length(srec.chvals(i)));
+            dlen := greatest(dlen, lengthb(srec.chvals(i)));
             $IF dbms_db_version.version>11 $THEN
                 buckets := nvl(nullif(srec.rpcnts(i), 0), buckets);
             $END
@@ -992,6 +992,7 @@ BEGIN
             WHEN 'TOP-FREQUENCY' THEN
                 rpcnt := buckets;
             WHEN 'FREQUENCY' THEN
+
                  /*
                     NewDensity with the "half the least popular" rule active
                     NewDensity is set to
@@ -1000,10 +1001,11 @@ BEGIN
                     E[card] = (0.5 * bkt(least_popular_value) / num_rows) * num_rows = 0.5 * bkt(least_popular_value)
                 */
                 IF i != srec.epc THEN
-                    rpcnt := buckets * notnulls / numrows;
+                    rpcnt := buckets * notnulls / samples;
                 ELSE
-                    rpcnt := (buckets - 0.5) * notnulls / numrows;
+                    rpcnt := (buckets - 0.5) * notnulls / samples;
                 END IF;
+                --rpcnt := buckets;
             ELSE
                 rpcnt := buckets * notnulls / numrows;
         END CASE;

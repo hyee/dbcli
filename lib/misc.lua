@@ -228,7 +228,7 @@ function table.week(typ,gc)
 end
 
 function table.strong(tab)
-    return setmetatable(tab or {},{__gc=function(...) end})
+    return setmetatable(tab or {},{__gc=function(self) print('table is gc.') end})
 end
 
 function table.dump(tbl,indent,maxdep,tabs)

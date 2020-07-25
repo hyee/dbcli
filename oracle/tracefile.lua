@@ -228,7 +228,6 @@ function trace.get_trace(filename,mb,from_mb)
             pcall(db.internal_call(db,"alter session set tracefile_identifier='dbcli_"..math.random(1e6).."'"));
             tracefile=nil
         end
-        if not tracefile  then
             if db.props.version>=11 then
                 filename=db:get_value[[select tracefile from v$process where addr=(select paddr from v$session where sid=userenv('sid'))]]
             else
@@ -242,9 +241,6 @@ function trace.get_trace(filename,mb,from_mb)
                                         AND    s.audsid = sys_context('userenv', 'sessionid')]]
             end
             tracefile=filename
-        else
-            filename,tracefile=tracefile,nil
-        end
         if lv then
             if lv > 0 then
                 print("Trace on: "..filename)
@@ -262,7 +258,7 @@ function trace.get_trace(filename,mb,from_mb)
                 END;]]))
         end
     elseif filename:lower()=="alert" then
-        if db.props.version<11 then
+        if db.props.version<=11 then
             filename=db:get_value[[SELECT u_dump.value || '/alert_' || SYS_CONTEXT('userenv', 'instance_name') || '.log' "Trace File"
                                    FROM   v$parameter u_dump
                                    WHERE  u_dump.name = 'background_dump_dest']]
@@ -270,7 +266,7 @@ function trace.get_trace(filename,mb,from_mb)
             filename=db:get_value[[select value|| '/alert_' || SYS_CONTEXT('userenv', 'instance_name') || '.log' from v$diag_info where name='Diag Trace']]
         end
     elseif not filename:find('[\\/]') then
-        if db.props.version<11 then
+        if db.props.version<=11 then
             filename=db:get_value([[select value from v$parameter WHERE name = 'user_dump_dest']])..'/'..filename
         else
             env.checkerr(target_view and target_view.synonym,'Cannot access V$DIAG_TRACE_FILE to find the file!')
