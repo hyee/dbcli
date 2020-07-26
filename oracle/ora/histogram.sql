@@ -9,7 +9,7 @@ Examples:
     *  List the histogram: @@NAME SYS.OBJ$ NAME
     *  List the histogram from the stats table: @@NAME SYS.OBJ$ NAME -tab"system.stattab"
     *  List the histogram and test the est cardinality of scalar value : @@NAME SYS.OBJ$ NAME "obj$"
-    *  List the histogram and test the est cardinality of customized filter: @@NAME SYS.OBJ$ NAME ">'obj$'"
+    *  List the histogram and test the est cardinality of customized filter: @@NAME SYS.OBJ$ NAME "> 'obj$'" (space after the operator is requried)
     *  List the histogram and test the est cardinality of bind variable: @@NAME SYS.OBJ$ NAME :1
     *  List the histogram and test the est cardinality of each EP value: @@NAME SYS.OBJ$ NAME -test
     *  List the histogram and test the act cardinality of each EP value: @@NAME SYS.OBJ$ NAME -real
@@ -49,6 +49,7 @@ ORCL> ora histogram sys.obj$ OWNER#
 
     --[[
         &test  : default={0} test={1} real={2}
+        &name  : default={card2} test={RealCard} real={RealCount}
         &tab   : default={} tab={&0}
         @CHECK_ACCESS_DBA: DBA_TAB_COLS/DBA_PART_COL_STATISTICS={DBA_} DEFAULT={ALL_}
         @ARGS: 2
@@ -58,7 +59,10 @@ SET FEED OFF SERVEROUTPUT ON VERIFY OFF
 var stats_owner varchar2
 var stats_tab   varchar2
 var script_text CLOB; --The variable to store the SQL*Plus script
+var result      REFCURSOR
+var outs        VARCHAR2
 ora _find_object "&tab" 1
+
 BEGIN
     IF :tab IS NOT NULL AND :object_name IS NULL THEN
         raise_application_error(-20001,'Cannot access target stats table "&tab" !');
@@ -101,6 +105,7 @@ DECLARE
     rawfmt    VARCHAR2(32)  := 'fm' || lpad('x', 30, 'x');
     min_v     VARCHAR2(128);
     restoret  VARCHAR2(128);
+    outs      VARCHAR2(32767);
     rawinput  RAW(128);
     rawval    RAW(2000);
     srec      dbms_stats.StatRec;
@@ -115,9 +120,11 @@ DECLARE
     numblks   NUMBER;
     numbcks   NUMBER;
     notnulls  NUMBER;
+    adjnnull  NUMBER;
     avgrlen   NUMBER;
     samples   NUMBER;
     rpcnt     NUMBER;
+    adjcnt    NUMBER;
     numval    NUMBER;
     dateval   DATE;
     analyzed  DATE;
@@ -141,7 +148,7 @@ DECLARE
     cnt       PLS_INTEGER   := 0;
     pops      PLS_INTEGER   := 0;
     pop_based NUMBER        := 0;
-
+    result    XMLTYPE       := XMLTYPE('<RESULT/>');
     --convert all_tab_histograms.enpoint_value as varchar2
     --refer to https://mwidlake.wordpress.com/2009/08/11/decrypting-histogram-data/
     FUNCTION hist_numtochar(p_num NUMBER, p_trunc VARCHAR2 := 'Y',p_len INT:=NULL) RETURN VARCHAR2 IS
@@ -175,6 +182,7 @@ DECLARE
     FUNCTION conv(idx PLS_INTEGER, num NUMBER := NULL,p_len INT:=NULL) RETURN VARCHAR2 IS
         rtn NUMBER := nvl(NUM, CASE WHEN idx IS NOT NULL THEN srec.novals(idx) END);
         eva RAW(128);
+        res VARCHAR2(64);
     BEGIN
         $IF dbms_db_version.version > 11 $THEN
             IF idx IS NOT NULL THEN
@@ -183,30 +191,31 @@ DECLARE
         $END
         CASE
             WHEN idx IS NOT NULL AND srec.chvals.exists(idx) AND srec.chvals(idx) IS NOT NULL THEN
-                RETURN RTRIM(srec.chvals(idx));
+                res := RTRIM(srec.chvals(idx));
             WHEN dtype IN ('VARCHAR2', 'CHAR', 'CLOB', 'ROWID', 'UROWID') THEN
-                RETURN nvl(utl_raw.cast_to_varchar2(eva), hist_numtochar(rtn,'Y',p_len));
+                res := nvl(utl_raw.cast_to_varchar2(eva), hist_numtochar(rtn,'Y',p_len));
             WHEN dtype IN ('NVARCHAR2', 'NCHAR', 'NCLOB') THEN
-                RETURN nvl(utl_raw.cast_to_nvarchar2(eva), hist_numtochar(rtn,'Y',p_len));
+                res := nvl(utl_raw.cast_to_nvarchar2(eva), hist_numtochar(rtn,'Y',p_len));
             WHEN dtype = 'BINARY_DOUBLE' THEN
-                RETURN TO_CHAR(TO_BINARY_DOUBLE(rtn), 'TM');
+                res := TO_CHAR(TO_BINARY_DOUBLE(rtn), 'TM');
             WHEN dtype = 'BINARY_FLOAT' THEN
-                RETURN TO_CHAR(TO_BINARY_FLOAT(rtn), 'TM');
+                res := TO_CHAR(TO_BINARY_FLOAT(rtn), 'TM');
             WHEN dtype IN ('NUMBER', 'FLOAT', 'INTEGER') THEN
-                RETURN to_char(rtn, 'TM');
+                res := to_char(rtn, 'TM');
             WHEN dtype IN ('DATE', 'TIMESTAMP') THEN
                 tstamp := to_timestamp('' || TRUNC(rtn), 'J');
                 IF MOD(rtn, 1) = 0 THEN
                     RETURN to_char(tstamp, substr(datefmt, 1, 10));
                 END IF;
                 IF dtype = 'DATE' THEN
-                    RETURN to_char(tstamp + MOD(rtn, 1), datefmt);
+                    res := to_char(tstamp + MOD(rtn, 1), datefmt);
                 ELSE
-                    RETURN TRIM(trailing '0' FROM to_char(tstamp + NUMTODSINTERVAL(MOD(rtn, 1) * 86400, 'SECOND'), tstampfmt));
+                    res := TRIM(trailing '0' FROM to_char(tstamp + NUMTODSINTERVAL(MOD(rtn, 1) * 86400, 'SECOND'), tstampfmt));
                 END IF;
             ELSE
-                RETURN substr(to_char(rtn, rawfmt), 1, 16);
+                res := substr(to_char(rtn, rawfmt), 1, 16);
         END CASE;
+        RETURN REGEXP_REPLACE(res, '[^[:print:]]', '');
     END;
 
     --convert the value in srec into raw value
@@ -246,13 +255,33 @@ DECLARE
         dbms_output.put_line(msg);
     END;
 
-    PROCEDURE pr(v1 VARCHAR2, v2 VARCHAR2, v3 VARCHAR2, v4 VARCHAR2, v5 VARCHAR2, v6 VARCHAR2, v7 VARCHAR2) IS
-        x7 VARCHAR2(128) := v7;
+    PROCEDURE wr(msg VARCHAR2) IS
     BEGIN
+        outs := outs || msg || chr(10);
+    END;
+
+    PROCEDURE pr(v1 VARCHAR2, v2 VARCHAR2, v3 VARCHAR2, v4 VARCHAR2, v5 VARCHAR2, v6 VARCHAR2, v7 VARCHAR2, v8 VARCHAR2) IS
+        x7 VARCHAR2(128) := v7;
+        elem XMLTYPE;
+    BEGIN
+        /*
         IF is_test = 0 THEN
             x7 := '';
-        END IF;
-        pr(utl_lms.format_message(fmt, v1, v2, v3, v4, v5, v6, x7));
+        END IF;*/
+
+        SELECT XMLELEMENT("BUCKET",
+                      XMLELEMENT("seq", v1),
+                      XMLELEMENT("bno", v2),
+                      XMLELEMENT("prev", v3),
+                      XMLELEMENT("curr", v4),
+                      XMLELEMENT("buckets", v5),
+                      XMLELEMENT("card", v6),
+                      XMLELEMENT("adj", v7),
+                      XMLELEMENT("card2", v8))
+            INTO   ELEM
+            FROM   DUAL;
+
+        result := result.APPENDCHILDXML('/*', ELEM);
     END;
 
     FUNCTION getNum(val NUMBER) RETURN VARCHAR2 IS
@@ -349,7 +378,7 @@ DECLARE
         END IF;
         
         pred := nvl(upper(regexp_substr(val1,'^\s*(\S+)',1,1)),'x');
-        IF pred NOT IN('BETWEEN','IN','EXISTS','NOT') AND nvl(regexp_substr(pred,'^[!><=]+'),'x') NOT IN('>','<','=','>=','<=','!=','<>') THEN
+        IF pred NOT IN('BETWEEN','IN','EXISTS','NOT','>','<','=','>=','<=','!=','<>') THEN
             CASE
                 WHEN dtype = 'BINARY_DOUBLE' THEN
                     test_val := 'TO_BINARY_DOUBLE(' || str || ')';
@@ -540,7 +569,7 @@ DECLARE
             AND    b.table_name = tab
             AND    upper(b.column_name) = col;
 
-            SELECT max(histogram),sum(samples),max(last_analyzed),max(gstats),max(ustats)
+            SELECT max(nvl(histogram,'NONE')),sum(samples),max(last_analyzed),max(gstats),max(ustats)
             INTO   histogram, samples, analyzed, gstats, ustats
             FROM   (SELECT histogram,
                            nvl2(num_buckets, nvl(sample_size, 0), NULL) samples,
@@ -576,9 +605,11 @@ DECLARE
                     AND    b.table_name = tab
                     AND    b.column_name = col
                     AND    ttype='TABLE'
-                    ORDER  BY 1 NULLS LAST) a;
+                    ORDER  BY 1 NULLS LAST) a
+            WHERE ROWNUM<2;
             
-            dtype := regexp_substr(dtypefull, '^\w+');
+            dtype    := regexp_substr(dtypefull, '^\w+');
+            adjnnull := nvl(samples,0);
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
                 raise_application_error(-20001, 'No such column or column is not analyzed: ' || col);
@@ -639,6 +670,14 @@ DECLARE
 
             IF notnulls-distcnt<0 THEN
                 dbms_output.put_line('Note: The result could be incorrect due to '||lower(ttype)||'(num_rows) < column(num_null + num_distinct).');
+            END IF;
+
+            IF adjnnull != notnulls and adjnnull>=distcnt THEN
+                IF adjnnull < notnulls THEN
+                    adjnnull := numrows - adjnnull*numrows/(adjnnull+nullcnt);
+                END IF;
+            ELSE
+                adjnnull :=null;
             END IF;
 
             IF flags > 0 AND bitand(srec.eavs,flags) = 0 THEN
@@ -956,9 +995,7 @@ BEGIN
     pr(rpad('=', 120, '='));
 
     pr(rpad(' ', 74));
-    pr('    #','Bucket#',rpad('Prev EP Value', dlen),rpad('Current EP Value', dlen),lpad('Buckets', 10),lpad('Card', 8),lpad(CASE WHEN is_test = 2 THEN 'Real' ELSE 'RealCard' END, 8));
-    pr('-----',rpad('-', 7, '-'),rpad('-', dlen, '-'),rpad('-', dlen, '-'),rpad('-', 10, '-'),rpad('-', 8, '-'),rpad('-', 8, '-'));
-
+    
     prevb := 0;
     --compute estimated cardinality
     FOR i IN 1 .. srec.epc LOOP
@@ -977,11 +1014,19 @@ BEGIN
                     --un-popular value
                     rpcnt := notnulls * densityn;
                 END IF;
+                adjcnt := rpcnt*adjnnull/notnulls;
             WHEN 'HYBRID' THEN
                 NULL;
                 $IF dbms_db_version.version>11 $THEN
                     max_v  := nullif('(' || nullif(srec.rpcnts(i), 0) || ')', '()');
-                    bk_adj := nullif(srec.rpcnts(i), 0) * notnulls / samples; --sample_size has excluded null values
+                    
+                    bk_adj := nullif(srec.rpcnts(i), 0) * adjnnull / nullif(samples,0); --sample_size has excluded null values
+                    IF srec.rpcnts(i) < pop_based THEN
+                        bk_adj := greatest(bk_adj, adjnnull * densityn);
+                    END IF;
+                    adjcnt := nvl(bk_adj, rpcnt);
+
+                    bk_adj := nullif(srec.rpcnts(i), 0) * notnulls / nullif(samples,0); --sample_size has excluded null values
                     IF srec.rpcnts(i) < pop_based THEN
                         bk_adj := greatest(bk_adj, notnulls * densityn);
                     END IF;
@@ -989,8 +1034,7 @@ BEGIN
                 $END
             WHEN 'NONE' THEN
                 rpcnt := densityn * notnulls;
-            WHEN 'TOP-FREQUENCY' THEN
-                rpcnt := buckets;
+                adjcnt:= densityn * adjnnull;
             WHEN 'FREQUENCY' THEN
 
                  /*
@@ -1001,13 +1045,15 @@ BEGIN
                     E[card] = (0.5 * bkt(least_popular_value) / num_rows) * num_rows = 0.5 * bkt(least_popular_value)
                 */
                 IF i != srec.epc THEN
-                    rpcnt := buckets * notnulls / samples;
+                    rpcnt := buckets * notnulls / nullif(samples,0);
                 ELSE
-                    rpcnt := (buckets - 0.5) * notnulls / samples;
+                    rpcnt := (buckets - 0.5) * notnulls / nullif(samples,0);
                 END IF;
+                adjcnt := rpcnt*adjnnull/notnulls;
                 --rpcnt := buckets;
             ELSE
-                rpcnt := buckets * notnulls / numrows;
+                rpcnt := buckets * notnulls / nullif(samples,0);
+                adjcnt:= buckets * adjnnull / nullif(samples,0);
         END CASE;
     
         cep := srec.chvals(i);
@@ -1017,49 +1063,64 @@ BEGIN
            rpad(cep, dlen),
            lpad(buckets || max_v, 10),
            lpad(NVL('' || getNum(rpcnt), ' '), 8),
+           lpad(NVL('' || getNum(adjcnt), ' '), 8),
            lpad(CASE WHEN is_test > 0 THEN getNum(get_card(cep)) END, 8));
         pep   := cep;
         prevb := srec.bkvals(i);
     END LOOP;
-    pr(chr(10));
 
     to_script(srec);
 
     IF stattab IS NOT NULL THEN
-        pr('  * Note:  The values of field "Card" are based on the statistics of the input stats table.');
+        wr('  * Note:  The values of field "Card" are based on the statistics of the input stats table.');
         IF is_test = 1 THEN
-            pr('  * Note:  The values of field "RealCard" are based on the statistics of target table, not the input stats table!');
+            wr('  * Note:  The values of field "RealCard" are based on the statistics of target table, not the input stats table!');
         END IF;
     END IF;
 
     IF input IS NOT NULL THEN
-        pr('  * Note:  Cardinality of input predicate "' || input || '" is ' || get_card(input)||'.');
+        wr('  * Note:  Cardinality of input predicate "' || input || '" is ' || get_card(input)||'.');
         IF stattab IS NOT NULL THEN
-            pr('           This estimation is based on the statistics on the table, not the input stats table!');
+            wr('           This estimation is based on the statistics on the table, not the input stats table!');
         END IF;
     END IF;
 
     IF restoret IS NOT NULL THEN
         IF stattab IS NULL THEN
-            pr('  * Note:  The original statistics can be restored by:');
-            pr('               DECLARE');
-            pr('                   t VARCHAR2(64) := ''' || restoret || ''';');
-            pr('                   f VARCHAR2(64) := ''' || tztampfmt || ''';');
-            pr('               BEGIN');
-            pr(utl_lms.format_message(q'[                   dbms_stats.restore_table_stats('%s','%s',to_timestamp_tz(t,f),force=>true,no_invalidate=>false);]',oname,tab));
-            pr('               END;');
+            wr('  * Note:  The original statistics can be restored by:');
+            wr('               DECLARE');
+            wr('                   t VARCHAR2(64) := ''' || restoret || ''';');
+            wr('                   f VARCHAR2(64) := ''' || tztampfmt || ''';');
+            wr('               BEGIN');
+            wr(utl_lms.format_message(q'[                   dbms_stats.restore_table_stats('%s','%s',to_timestamp_tz(t,f),force=>true,no_invalidate=>false);]',oname,tab));
+            wr('               END;');
             IF ttype='TABLE' THEN
-                pr(utl_lms.format_message(q'[           Or consider locking the statistics by: exec dbms_stats.lock_table_stats('%s','%s');]',oname, tab));
+                wr(utl_lms.format_message(q'[           Or consider locking the statistics by: exec dbms_stats.lock_table_stats('%s','%s');]',oname, tab));
             ELSE
-                pr(utl_lms.format_message(q'[           Or consider locking the statistics by: exec dbms_stats.lock_partition_stats('%s','%s','%s');]',oname, tab,part));
+                wr(utl_lms.format_message(q'[           Or consider locking the statistics by: exec dbms_stats.lock_partition_stats('%s','%s','%s');]',oname, tab,part));
             END IF;
         ELSE
-            pr('  * Note:  The statistics have been updated into "'||statown||'"."'||stattab||'", can take affect into the target table by:');
-            pr(utl_lms.format_message(q'[               exec dbms_stats.import_column_stats('%s','%s','%s','%s',statown=>'%s',stattab=>'%s');]',oname,tab,col,part,statown,stattab));
+            wr('  * Note:  The statistics have been updated into "'||statown||'"."'||stattab||'", can take affect into the target table by:');
+            wr(utl_lms.format_message(q'[               exec dbms_stats.import_column_stats('%s','%s','%s','%s',statown=>'%s',stattab=>'%s');]',oname,tab,col,part,statown,stattab));
         END IF;
     END IF;
+
+    :outs := outs;
+    OPEN :result FOR
+        SELECT EXTRACTVALUE(COLUMN_VALUE, '//seq') + 0 "#",
+               EXTRACTVALUE(COLUMN_VALUE, '//bno') + 0 "Bucket#",
+               CAST(EXTRACTVALUE(COLUMN_VALUE, '//prev') AS VARCHAR2(128)) "Prev EP Value",
+               EXTRACTVALUE(COLUMN_VALUE, '//curr') "Curr EP Value",
+               CAST(EXTRACTVALUE(COLUMN_VALUE, '//buckets') AS VARCHAR2(30)) "Buckets",
+               CAST(EXTRACTVALUE(COLUMN_VALUE, '//card') AS VARCHAR2(20)) "Card",
+               CAST(EXTRACTVALUE(COLUMN_VALUE, '//adj') AS VARCHAR2(20)) "Adj-Card"
+        $IF &test>0 $THEN
+               ,CAST(EXTRACTVALUE(COLUMN_VALUE, '//card2') AS VARCHAR2(30)) "&name"
+        $END
+        FROM   TABLE(XMLSEQUENCE(EXTRACT(result, '/RESULT/BUCKET')));
 END;
 /
 
-pro 
+print result
+print outs
 save script_text &V1..&V2..sql

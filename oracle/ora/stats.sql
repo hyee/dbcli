@@ -253,7 +253,7 @@ var c1 REFCURSOR "&OBJECT_TYPE INFO"
 var c2 REFCURSOR "&OBJECT_TYPE COLUMN INFO"
 var c3 REFCURSOR "&OBJECT_TYPE INDEX INFO"
 var c4 REFCURSOR "&OBJECT_TYPE CHILD PARTS"
-
+col "Samples(%)" for pct
 DECLARE
     typ VARCHAR2(30):=:OBJECT_TYPE;
     c1 SYS_REFCURSOR;
@@ -266,6 +266,8 @@ BEGIN
             select 
                 TABLE_NAME,
                 NUM_ROWS,
+                SAMPLE_SIZE SAMPLES,
+                round(SAMPLE_SIZE/nullif(NUM_ROWS,0),4) "Samples(%)",
                 BLOCKS,
                 EMPTY_BLOCKS,
                 AVG_SPACE,
@@ -273,40 +275,40 @@ BEGIN
                 AVG_ROW_LEN,
                 GLOBAL_STATS,
                 USER_STATS,
-                SAMPLE_SIZE,
                 t.last_analyzed
             from &check_access_dba.tables t
             where owner = :object_owner
             and table_name = :object_name;
         OPEN c2 FOR
-        SELECT t1.COLUMN_NAME,
-               decode(t1.DATA_TYPE,
-                      'NUMBER',t1.DATA_TYPE || '(' || decode(t1.DATA_PRECISION, NULL, t1.DATA_LENGTH || ')', t1.DATA_PRECISION || ',' || t1.DATA_SCALE || ')'),
-                      'DATE',t1.DATA_TYPE,
-                      'LONG',t1.DATA_TYPE,
-                      'LONG RAW',t1.DATA_TYPE,
-                      'ROWID',t1.DATA_TYPE,
-                      'MLSLABEL',t1.DATA_TYPE,
-                      t1.DATA_TYPE || '(' || t1.DATA_LENGTH || ')') || ' ' ||
-               decode(t1.nullable, 'N', 'NOT NULL', 'n', 'NOT NULL', NULL) col,
-               t.HISTOGRAM,
-               t.NUM_BUCKETS BUCKETS,
-               t.NUM_DISTINCT,
-               t.NUM_NULLS,
-               ROUND(decode(t1.histogram,'HYBRID',NULL,greatest(0,num_rows-t.NUM_NULLS)/GREATEST(t.NUM_DISTINCT, 1)), 2) cardinality,
-               t.GLOBAL_STATS,
-               t.USER_STATS,
-               t.SAMPLE_SIZE,
-               t1.DATA_DEFAULT "DEFAULT",
-               t.LAST_ANALYZED &notes
-        FROM   &check_access_dba.tab_cols t1,&check_access_dba.tab_col_statistics t,
-               (select table_name,num_rows from &check_access_dba.tables where owner = :object_owner and table_name = :object_name) t2
-        WHERE  t2.table_name=t1.table_name
-        AND    t1.table_name = :object_name
-        AND    t1.owner = :object_owner
-        AND    t.table_name = :object_name
-        AND    t.owner = :object_owner
-        AND    t1.column_name=t.column_name;
+            SELECT t1.COLUMN_NAME,
+                   decode(t1.DATA_TYPE,
+                          'NUMBER',t1.DATA_TYPE || '(' || decode(t1.DATA_PRECISION, NULL, t1.DATA_LENGTH || ')', t1.DATA_PRECISION || ',' || t1.DATA_SCALE || ')'),
+                          'DATE',t1.DATA_TYPE,
+                          'LONG',t1.DATA_TYPE,
+                          'LONG RAW',t1.DATA_TYPE,
+                          'ROWID',t1.DATA_TYPE,
+                          'MLSLABEL',t1.DATA_TYPE,
+                          t1.DATA_TYPE || '(' || t1.DATA_LENGTH || ')') || ' ' ||
+                   decode(t1.nullable, 'N', 'NOT NULL', 'n', 'NOT NULL', NULL) col,
+                   t.HISTOGRAM,
+                   t.NUM_BUCKETS BUCKETS,
+                   t.SAMPLE_SIZE,
+                   round((nvl(t.SAMPLE_SIZE,0)+t.NUM_NULLS)/nullif(NUM_ROWS,0),4) "Samples(%)",
+                   t.NUM_DISTINCT,
+                   t.NUM_NULLS,
+                   ROUND(decode(t1.histogram,'HYBRID',NULL,greatest(0,num_rows-t.NUM_NULLS)/GREATEST(t.NUM_DISTINCT, 1)), 2) cardinality,
+                   t.GLOBAL_STATS,
+                   t.USER_STATS,
+                   t1.DATA_DEFAULT "DEFAULT",
+                   t.LAST_ANALYZED &notes
+            FROM   &check_access_dba.tab_cols t1,&check_access_dba.tab_col_statistics t,
+                   (select table_name,num_rows from &check_access_dba.tables where owner = :object_owner and table_name = :object_name) t2
+            WHERE  t2.table_name=t1.table_name
+            AND    t1.table_name = :object_name
+            AND    t1.owner = :object_owner
+            AND    t.table_name = :object_name
+            AND    t.owner = :object_owner
+            AND    t1.column_name=t.column_name;
 
         OPEN C3 FOR
             WITH I AS (SELECT /*+no_merge*/ I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
@@ -356,7 +358,9 @@ BEGIN
 
         OPEN C4 FOR
             SELECT PARTITION_NAME,
-                   NUM_ROWS,
+                   t.NUM_ROWS,
+                   t.SAMPLE_SIZE,
+                   round((nvl(t.SAMPLE_SIZE,0))/nullif(NUM_ROWS,0),4) "Samples(%)",
                    BLOCKS,
                    EMPTY_BLOCKS,
                    AVG_SPACE,
@@ -364,7 +368,6 @@ BEGIN
                    AVG_ROW_LEN,
                    GLOBAL_STATS,
                    USER_STATS,
-                   SAMPLE_SIZE,
                    t.last_analyzed
             FROM   &check_access_dba.tab_partitions t
             WHERE  table_owner = :object_owner
@@ -375,6 +378,8 @@ BEGIN
         OPEN C1 FOR
             SELECT PARTITION_NAME,
                    NUM_ROWS,
+                   t.SAMPLE_SIZE,
+                   round((nvl(t.SAMPLE_SIZE,0))/nullif(NUM_ROWS,0),4) "Samples(%)",
                    BLOCKS,
                    EMPTY_BLOCKS,
                    AVG_SPACE,
@@ -382,7 +387,6 @@ BEGIN
                    AVG_ROW_LEN,
                    GLOBAL_STATS,
                    USER_STATS,
-                   SAMPLE_SIZE,
                    t.last_analyzed
             FROM   &check_access_dba.tab_partitions t
             WHERE  table_owner = :object_owner
@@ -392,14 +396,15 @@ BEGIN
         OPEN C2 FOR
             SELECT PARTITION_NAME,
                    COLUMN_NAME,
-                   NUM_DISTINCT,
-                   ROUND(decode(histogram,'HYBRID',NULL,greatest(0,num_rows-NUM_NULLS)/GREATEST(NUM_DISTINCT, 1)), 2) cardinality,
                    HISTOGRAM,
+                   ROUND(decode(histogram,'HYBRID',NULL,greatest(0,num_rows-NUM_NULLS)/GREATEST(NUM_DISTINCT, 1)), 2) cardinality,
                    NUM_BUCKETS BUCKETS,
+                   t.SAMPLE_SIZE,
+                   round((nvl(t.SAMPLE_SIZE,0)+t.NUM_NULLS)/nullif(NUM_ROWS,0),4) "Samples(%)",
                    NUM_NULLS,
+                   NUM_DISTINCT,
                    GLOBAL_STATS,
                    USER_STATS,
-                   SAMPLE_SIZE,
                    t.last_analyzed  &notes
             FROM   &check_access_dba.PART_COL_STATISTICS t,
                    (select table_name,num_rows from &check_access_dba.tab_partitions p where p.table_owner = :object_owner and p.table_name = :object_name and p.partition_name=:object_subname) t1
@@ -414,13 +419,13 @@ BEGIN
                    t.BLEVEL BLev,
                    t.LEAF_BLOCKS,
                    t.DISTINCT_KEYS,
-                   t.NUM_ROWS,
+                   t.SAMPLE_SIZE,
+                   round((nvl(t.SAMPLE_SIZE,0))/nullif(t.NUM_ROWS,0),4) "Samples(%)",
                    t.AVG_LEAF_BLOCKS_PER_KEY LB_PER_KEY,
                    t.AVG_DATA_BLOCKS_PER_KEY DATA_PER_KEY,
                    t.CLUSTERING_FACTOR,
                    t.GLOBAL_STATS,
                    t.USER_STATS,
-                   t.SAMPLE_SIZE,
                    t.last_analyzed
             FROM   &check_access_dba.ind_partitions t, &check_access_dba.indexes i
             WHERE  i.table_name = :object_name
@@ -433,6 +438,8 @@ BEGIN
             SELECT PARTITION_NAME,
                    SUBPARTITION_NAME,
                    NUM_ROWS,
+                   SAMPLE_SIZE,
+                   round((nvl(t.SAMPLE_SIZE,0))/nullif(NUM_ROWS,0),4) "Samples(%)",
                    BLOCKS,
                    EMPTY_BLOCKS,
                    AVG_SPACE,
@@ -440,7 +447,6 @@ BEGIN
                    AVG_ROW_LEN,
                    GLOBAL_STATS,
                    USER_STATS,
-                   SAMPLE_SIZE,
                    t.last_analyzed
             FROM   &check_access_dba.tab_subpartitions t
             WHERE  table_owner = :object_owner
@@ -452,6 +458,8 @@ BEGIN
             SELECT PARTITION_NAME,
                    SUBPARTITION_NAME,
                    NUM_ROWS,
+                   SAMPLE_SIZE,
+                   round((nvl(t.SAMPLE_SIZE,0))/nullif(NUM_ROWS,0),4) "Samples(%)",
                    BLOCKS,
                    EMPTY_BLOCKS,
                    AVG_SPACE,
@@ -459,7 +467,6 @@ BEGIN
                    AVG_ROW_LEN,
                    GLOBAL_STATS,
                    USER_STATS,
-                   SAMPLE_SIZE,
                    t.last_analyzed
             FROM   &check_access_dba.tab_subpartitions t
             WHERE  table_owner = :object_owner
@@ -470,14 +477,13 @@ BEGIN
             SELECT p.PARTITION_NAME,
                    t.SUBPARTITION_NAME,
                    t.COLUMN_NAME,
-                   t.NUM_DISTINCT,
-                   t.HISTOGRAM,
-                   ROUND(decode(histogram,'HYBRID',NULL,greatest(0,num_rows-NUM_NULLS)/GREATEST(NUM_DISTINCT, 1)), 2) cardinality,
-                   t.NUM_BUCKETS BUCKETS,
-                   t.NUM_NULLS,
+                   NUM_BUCKETS BUCKETS,
+                   t.SAMPLE_SIZE,
+                   round((nvl(t.SAMPLE_SIZE,0)+t.NUM_NULLS)/nullif(NUM_ROWS,0),4) "Samples(%)",
+                   NUM_NULLS,
+                   NUM_DISTINCT,
                    t.GLOBAL_STATS,
                    t.USER_STATS,
-                   t.SAMPLE_SIZE,
                    t.last_analyzed &notes
             FROM   &check_access_dba.SUBPART_COL_STATISTICS t, &check_access_dba.tab_subpartitions p
             WHERE  t.table_name = :object_name
@@ -494,12 +500,13 @@ BEGIN
                    t.LEAF_BLOCKS,
                    t.DISTINCT_KEYS,
                    t.NUM_ROWS,
+                   t.SAMPLE_SIZE,
+                   round((nvl(t.SAMPLE_SIZE,0))/nullif(t.NUM_ROWS,0),4) "Samples(%)",
                    t.AVG_LEAF_BLOCKS_PER_KEY LB_PER_KEY,
                    t.AVG_DATA_BLOCKS_PER_KEY DATA_PER_KEY,
                    t.CLUSTERING_FACTOR,
                    t.GLOBAL_STATS,
                    t.USER_STATS,
-                   t.SAMPLE_SIZE,
                    t.last_analyzed
             FROM   &check_access_dba.ind_subpartitions t, &check_access_dba.indexes i
             WHERE  i.table_name = :object_name
