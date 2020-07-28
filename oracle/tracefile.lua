@@ -1,7 +1,6 @@
 local env=env
 local db,grid=env.getdb(),env.grid
 local trace={}
-local tracefile
 function trace.get_trace(filename,mb,from_mb)
     local sql=[[
     DECLARE
@@ -226,10 +225,9 @@ function trace.get_trace(filename,mb,from_mb)
     if filename:lower()=="default" or lv then
         if lv then
             pcall(db.internal_call(db,"alter session set tracefile_identifier='dbcli_"..math.random(1e6).."'"));
-            tracefile=nil
         end
-            if db.props.version>=11 then
-                filename=db:get_value[[select tracefile from v$process where addr=(select paddr from v$session where sid=userenv('sid'))]]
+            if db.props.version>11 then
+                filename=db:get_value[[select value from v$diag_info where name='Default Trace File']]
             else
                 filename=db:get_value[[SELECT u_dump.value || '/' || SYS_CONTEXT('userenv','instance_name') || '_ora_' || p.spid ||
                                                nvl2(p.traceid, '_' || p.traceid, NULL) || '.trc' "Trace File"
@@ -240,7 +238,6 @@ function trace.get_trace(filename,mb,from_mb)
                                         WHERE  u_dump.name = 'user_dump_dest'
                                         AND    s.audsid = sys_context('userenv', 'sessionid')]]
             end
-            tracefile=filename
         if lv then
             if lv > 0 then
                 print("Trace on: "..filename)
@@ -291,10 +288,6 @@ function trace.get_trace(filename,mb,from_mb)
     return filename,args[3]
 end
 
-function trace.reset()
-    tracefile=nil
-end
-
 function trace.onload()
     env.set_command(nil,{"loadtrace","dumptrace"},[[
         Download Oracle trace file into local directory. Usage: @@NAME {<trace_file|default|alert|0/1/4/8/12> [MB] [begin_MB]}
@@ -308,7 +301,6 @@ function trace.onload()
             MB        : MegaBytes to extract, default as 2 MB.
             begin_MB  : The start file position(in MB) to extract, default as "total_MB - <MB>"
         ]],trace.get_trace,false,4)
-    env.event.snoop("AFTER_ORACLE_CONNECT",trace.reset)
 end
 
 return trace

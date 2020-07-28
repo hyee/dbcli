@@ -131,7 +131,7 @@ function grid.sort(rows, cols, bypass_head)
             ind = tonumber(ind)
             col = math.abs(ind)
             l = ind
-        elseif type(ind) == "string" and bypass_head == true then
+        elseif type(ind) == "string" and (bypass_head == true or has_header) then
             if ind:sub(1, 1) == '-' then
                 col = ind:sub(2)
                 l = -1
@@ -154,7 +154,10 @@ function grid.sort(rows, cols, bypass_head)
         sorts[#sorts + 1] = function() return col, l end
     end
     
-    if bypass_head or has_header then head = table.remove(rows, 1) end
+    if bypass_head or has_header then
+        head={table.remove(rows, 1)}
+        while has_header and rows[1][0]==0 do head[#head+1]=table.remove(rows, 1) end
+    end
     
     table.sort(rows, function(a, b)
         for _, item in ipairs(sorts) do
@@ -185,7 +188,11 @@ function grid.sort(rows, cols, bypass_head)
         return false
     end)
     
-    if head then table.insert(rows, 1, head) end
+    if head then
+        for i=#head,1,-1 do 
+            table.insert(rows, 1, head[i])
+        end
+    end
     return rows
 end
 

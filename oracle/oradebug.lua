@@ -367,7 +367,7 @@ local function load_ext()
             {'ALRT_TEST','',''},
             {'ARCHIVE_ERROR','',''},
             {'ASHDUMP <minutes>','Dump ASH table into sqlldr file','oradebug dump ashdump 5'},
-            {'ASHDUMPSECONDS <seconds>','Dump ASH table into sqlldr file','oradebug dump ashdump 5'},
+            {'ASHDUMPSECONDS <seconds>','Dump ASH table into sqlldr file','oradebug dump ashdumpseconds 30'},
             {'ASMDISK_ERR_OFF <level>','Turn off dumping Dump ASM disk errors','oradebug ASMDISK_ERR_OFF 3221553153'},
             {'ASMDISK_ERR_ON <level>','Dump ASM disk errors. Level: group_number*65536 + disk_number + ASMDISK_ERR_CLUSTER','oradebug ASMDISK_ERR_ON 3221553153'},
             {'ASMDISK_READ_ERR_ON','',''},

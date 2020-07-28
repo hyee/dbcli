@@ -260,7 +260,7 @@ function extvars.test_grid()
     merge({rs3,'|',merge{rs1,'-',{rs2,'+',rs5}},'-',rs4},true)
 end
 
-function extvars.set_dict(type)
+function extvars.set_dict(type,scope)
     if not type then
         local dict=extvars.current_dict
         if not dict then return print('Please run "dict public" to build the global dictionary.') end
@@ -280,12 +280,87 @@ function extvars.set_dict(type)
         checkhelp(type)
     end
     type=type:lower()
-    env.checkerr(type=='public' or type=='init',"Invalid parameter!")
-    db:assert_connect()
+    env.checkerr(type=='public' or type=='init' or type=='param' or type=='obj',"Invalid parameter!")
+    env.checkerr(scope or (type=='public' or type=='init'),"Invalid parameter!")
+    scope=(scope or "all"):lower()
     local sql;
     local path=datapath
-    if type=='init' then 
+    local cnt1,cnt2,cnt3,rs,rows=0,0,0
+    local dict,keywords,params={},{},{}
+    local pattern=scope:gsub('%%','@'):escape():gsub('@','.*')
+    local keys={}
+    if type=='param' then
+        params=extvars.params
+        local is_connect=db:is_connect()
+        for k,v in pairs(params) do
+            if (k..' '..v[1]..' '..v[7]):lower():find(pattern) and (not is_connect or v[1]<=db.props.version) then
+                keys[#keys+1]=k
+                
+            end
+        end
+        env.checkerr(#keys<=2000,"Too many matched parameters.")
+        table.sort(keys)
+        local rows={{"#","Name","Type","Value","Version|Since","Optimizer|Env","Session|Modify","System|Modify","Instance|Modify","Description"}}
+        local show_value=is_connect and #keys <=50
+        if not show_value then table.remove(rows[1],4) end
+        for i,k in ipairs(keys) do
+            local v,value=params[k],''
+            if is_connect and #keys <=50 then
+                local args={name=k,value='#VARCHAR'}
+                local res=pcall(db.exec_cache,db,[[
+                    DECLARE
+                        x VARCHAR2(300);
+                        y INT;
+                        t INT;
+                    BEGIN
+                        t:=sys.dbms_utility.get_parameter_value(:name,y,x);
+                        :value := nvl(''||y,x);
+                    EXCEPTION WHEN OTHERS THEN
+                        :value := 'N/A';
+                    END;]],args,'Internal_GetDBParameter')
+                value=res and (args.value or '') or 'N/A'
+            end
+            rows[i+1]={
+                i,
+                k,
+                v[2],
+                v[2]==1 and value=='0' and 'FALSE' or v[2]==1 and value=='1' and 'TRUE' or value,
+                v[1],
+                v[3]==1 and 'TRUE' or 'FALSE',
+                v[4]==1 and 'TRUE' or 'FALSE',
+                v[5]==1 and 'IMMEDIATE' or v[5]==2 and 'DEFERRED'  or v[5]==3 and 'IMMEDIATE' or 'FALSE',
+                v[6]==1 and 'TRUE' or 'FALSE',
+                v[7]}
+            if not show_value then table.remove(rows[i+1],4) end
+        end
+        return env.grid.print(rows)
+    elseif type=='obj' then
+        dict=extvars.dict
+        for k,v in pairs(dict) do
+            if (k..' '..(v.comm_view or '')):lower():find(pattern) then
+                keys[#keys+1]=k
+            end
+        end
+        env.checkerr(#keys<=1000,"Too many matched views.")
+        table.sort(keys)
+        local rows={{"#","Object|Owner","Object|Name","Object|SubName","Instance|Column","CDB|Column","DBID|Column","User|Column","Comm|View"}}
+        for i,k in ipairs(keys) do
+            local v=dict[k]
+            rows[i+1]={
+                i,
+                v.owner or '',
+                k:match('^[^%.]+'),
+                k:match('%.(.+)') or '',
+                v.inst_col or '',
+                v.cdb_col or '',
+                v.dbid_col or '',
+                v.usr_col or '',
+                v.comm_view or ''}
+        end
+        return env.grid.print(rows)
+    elseif type=='init' then 
         path=extvars.db_dict_path
+        extvars.dict,extvars.keywords,extvars.params={},{},{}
         sql=[[
             with r as(
                     SELECT /*+no_merge*/ owner,table_name, column_name col,data_type
@@ -320,6 +395,7 @@ function extvars.set_dict(type)
             WHERE ROWNUM<=65536*5]]
     else
         extvars.load_dict(path)
+        dict,params,keywords=extvars.dict,extvars.params,extvars.keywords
         sql=[[
             with r as(
                     SELECT /*+no_merge*/ owner,table_name, column_name col,data_type
@@ -378,7 +454,7 @@ function extvars.set_dict(type)
                 )
             GROUP  BY TABLE_NAME]]
     end
-
+    db:assert_connect()
     sql = sql:gsub('@XTABLE@',db.props.isdba~=true and '' or [[
             UNION ALL
             SELECT 'SYS',t.kqftanam, c.kqfconam, decode(kqfcodty,1,'VARCHAR2',2,'NUMBER',null)
@@ -388,47 +464,75 @@ function extvars.set_dict(type)
             WHERE  c.kqfcotab = t.indx
             AND    c.inst_id = t.inst_id
         ]])
-
-    print('Building, it could take several minutes...')
-    local rs=db:dba_query(db.internal_call,sql)
-    local rows=db.resultset:rows(rs,-1)
-    if type=='init' then extvars.dict={} end
-    local dict=extvars.dict or {}
-    local cnt1=#rows
-    for i=2,cnt1 do
-        local exists=dict[rows[i][1]]
-        dict[rows[i][1]]={
-            inst_col=(rows[i][2] or "")~=""  and rows[i][2] or (exists and dict[rows[i][1]].inst_col),
-            cdb_col=(rows[i][3] or "")~=""   and rows[i][3] or (exists and dict[rows[i][1]].cdb_col),
-            dbid_col=(rows[i][4] or "")~=""  and rows[i][4] or (exists and dict[rows[i][1]].dbid_col),
-            usr_col=(rows[i][5] or "")~=""   and rows[i][5] or (exists and dict[rows[i][1]].usr_col),
-            owner=(rows[i][6] or "")~=""     and rows[i][6] or (exists and dict[rows[i][1]].owner),
-            comm_view=(rows[i][7] or "")~="" and rows[i][7] or (exists and dict[rows[i][1]].comm_view)
-        }
-        local prefix,suffix=rows[i][1]:match('(.-$)(.*)')
-        if prefix=='GV_$' or prefix=='V_$' then
-            dict[prefix:gsub('_','')..suffix]=dict[rows[i][1]]
-        end
-    end
-    local keywords,done,cnt2={}
-    done,rs=pcall(db.internal_call,db,"select KEYWORD from V$RESERVED_WORDS where length(KEYWORD)>3")
-    if done then
+    if scope=='all' or scope=='dict' then
+        print('Building, it could take several minutes...')
+        rs=db:dba_query(db.internal_call,sql)
         rows=db.resultset:rows(rs,-1)
-        cnt2=#rows
-        for i=2,cnt2 do
-            keywords[rows[i][1]]=1
+        cnt1=#rows
+        for i=2,cnt1 do
+            local exists=dict[rows[i][1]]
+            dict[rows[i][1]]={
+                inst_col=(rows[i][2] or "")~=""  and rows[i][2] or (exists and dict[rows[i][1]].inst_col),
+                cdb_col=(rows[i][3] or "")~=""   and rows[i][3] or (exists and dict[rows[i][1]].cdb_col),
+                dbid_col=(rows[i][4] or "")~=""  and rows[i][4] or (exists and dict[rows[i][1]].dbid_col),
+                usr_col=(rows[i][5] or "")~=""   and rows[i][5] or (exists and dict[rows[i][1]].usr_col),
+                owner=(rows[i][6] or "")~=""     and rows[i][6] or (exists and dict[rows[i][1]].owner),
+                comm_view=(rows[i][7] or "")~="" and rows[i][7] or (exists and dict[rows[i][1]].comm_view)
+            }
+            local prefix,suffix=rows[i][1]:match('(.-$)(.*)')
+            if prefix=='GV_$' or prefix=='V_$' then
+                dict[prefix:gsub('_','')..suffix]=dict[rows[i][1]]
+            end
         end
-    else
-        cnt2=2
+        local done={}
+        done,rs=pcall(db.internal_call,db,"select KEYWORD from V$RESERVED_WORDS where length(KEYWORD)>3")
+        if done then
+            rows=db.resultset:rows(rs,-1)
+            cnt2=#rows
+            for i=2,cnt2 do
+                keywords[rows[i][1]]=1
+            end
+        else
+            cnt2=2
+        end
     end
-    env.save_data(path,{dict=dict,keywords=keywords,cache=(type=='init' and extvars.cache_obj) or nil},31*1024*1024)
+
+    if db.props.isdba==true and (scope=='all' or scope=='param') then
+        sql=[[SELECT ksppinm   NAME,
+                     ksppity   TYPE,
+                     nvl2(z.PNAME_QKSCESYROW, 1, 0) ISOPT_ENV,
+                     bitand(ksppiflg / 256, 1) ISSES_Mdf,
+                     bitand(ksppiflg / 65536, 3) ISSYS_MDF,
+                     decode(bitand(ksppiflg, 4), 4,0, decode(bitand(ksppiflg / 65536, 3), 0, 0, 1)) ISINST_MD,
+                     ksppdesc DESCRIPTION
+            FROM     x$ksppi x, X$QKSCESYS z
+            WHERE    x.ksppinm = z.PNAME_QKSCESYROW(+)]]
+        rs=db:dba_query(db.internal_call,sql)
+        rows=db.resultset:rows(rs,-1)
+        cnt3=#rows
+        for _,v in ipairs(rows) do
+            local param=params[v[1]] or {}
+            local version=param[1] or 999
+            if version>db.props.version then 
+                param[1]=db.props.version
+            end
+            for i=2,#v do
+                if version~=999 or version<=db.props.version or not param[i] then param[i]=v[i] end
+            end
+            params[v[1]]=param
+        end
+    end
+
+    env.save_data(path,{dict=dict,params=params,keywords=keywords,cache=(type=='init' and extvars.cache_obj) or nil},31*1024*1024)
     extvars.load_dict(path)
-    print((cnt1+cnt2-2)..' records saved into '..path)
+    print((cnt1+cnt2+cnt3-2)..' records saved into '..path)
 end
 
 function extvars.load_dict(path)
     env.load_data(path,true,function(data)
         extvars.dict=data.dict
+        extvars.params=data.params or {}
+        extvars.keywords=data.keywords or {}
         local dict={objects=0,subobjects=0,vpd=0,cache=0,path=path}
         if data.keywords then
             for k,v in pairs(data.dict) do 
@@ -455,7 +559,16 @@ end
 
 function extvars.onload()
     env.set_command(nil,"TEST_GRID",nil,extvars.test_grid,false,1)
-    env.set_command(nil,'DICT',"Show or create dictionary for auto completion. Usage: @@NAME [init]\n\n init: Create a separate offline dictionary that only used for current database",extvars.set_dict,false,2)
+    env.set_command(nil,'DICT',[[
+        Show or create dictionary for auto completion. Usage: @@NAME {<init|public [all|dict|param]>} | {<obj|param> <keyword>}
+        init  : Create a separate offline dictionary that only used for current database
+        public: Create a public offline dictionary(file oracle/dict.pack), which accepts following options
+            * dict  : Only build the Oracle maintained object dictionary
+            * param : Only build the Oracle parameter dictionary
+            * all   : Build either dict and param
+        obj   : Fuzzy search the objects that stored in offline dictionary
+        param : Fuzzy search the parameters that stored in offline dictionary]],extvars.set_dict,false,3)
+
     event.snoop('BEFORE_DB_EXEC',extvars.on_before_db_exec,nil,60)
     event.snoop('AFTER_DB_EXEC',extvars.on_after_db_exec)
     event.snoop('ON_SUBSTITUTION',extvars.on_before_db_exec,nil,60)
