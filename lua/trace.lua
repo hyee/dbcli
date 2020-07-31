@@ -69,9 +69,7 @@ function tracer.enable(name,flag)
     tracer.profiler=flag
     if flag=="on" then
         tracer.prof_cache={}
-        prof.start("fi1",tracer.profile)
-    elseif flag=='gc' then
-        prof.start('')
+        prof.start("fi0.1",tracer.profile)
     else
         prof.stop()
         tracer.format_profile()
@@ -84,7 +82,7 @@ function tracer.onload()
     local cfg=env.set
     cfg.init("envtrace",tracer.status,tracer.enable,"core","Enable trace to monitor the performance.",'on,off')
     if prof then
-        cfg.init("envprofiler",tracer.profiler,tracer.enable,"core","Enable jit profiler to monitor the performance.",'on,off,gc')
+        cfg.init("envprofiler",tracer.profiler,tracer.enable,"core","Enable jit profiler to monitor the performance.",'on,off')
     end
 end
 

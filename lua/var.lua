@@ -105,6 +105,7 @@ end
 
 function var.setInput(name,desc)
     if not name or name=="" then
+        callback("ON_SHOW_INPUTS",var.inputs)
         print("Current defined variables:\n====================")
         for k,v in pairs(var.inputs) do
             if type(v)~="table" then

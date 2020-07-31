@@ -23,7 +23,8 @@ oracle.module_list={
     "extvars",
     "oradebug",
     "sqlcl",
-    "adb"
+    "adb",
+    "parse10053"
 }
 
 local home,tns=os.getenv("ORACLE_HOME"),os.getenv("TNS_ADM") or os.getenv("TNS_ADMIN")

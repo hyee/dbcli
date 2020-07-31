@@ -1,6 +1,6 @@
 local ffi = require("ffi")
 local string,table,math,java,loadstring,tostring,tonumber=string,table,math,java,loadstring,tostring,tonumber
-local ipairs,pairs=ipairs,pairs
+local ipairs,pairs,type=ipairs,pairs,type
 
 function string.initcap(v)
     return (' '..v):lower():gsub("([^%w])(%w)",function(a,b) return a..b:upper() end):sub(2)
@@ -89,20 +89,59 @@ function string.case_insensitive_pattern(pattern)
     return p
 end
 
+local spaces={}
+local s=' \t\n\v\f\r\0'
+for i=1,#s do spaces[s:sub(i,i)]=true end
+local ext_spaces={}
+local function exp_pattern(sep)
+    local ary
+    if sep then
+        if not ext_spaces[sep] then
+            ext_spaces[sep]={}
+            for i=1,#sep do ext_spaces[sep][sep:sub(i,i)]=true end
+        end
+        ary=ext_spaces[sep]
+    end
+    return ary
+end
+
+local function rtrim(s,sep)
+    local ary=exp_pattern(sep)
+    if type(s)=='string' then
+        local len=#s
+        for i=len,1,-1 do
+            local p=s:sub(i,i)
+            if not spaces[p] and not (ary and ary[p]) then
+                return i==len and s or s:sub(1,i)
+            elseif i==1 then
+                return ''
+            end
+        end
+    end
+    return s
+end
+
+local function ltrim(s,sep)
+    local ary=exp_pattern(sep)
+    if type(s)=='string' then
+        local len=#s
+        for i=1,len do
+            local p=s:sub(i,i)
+            if not spaces[p] and not (ary and ary[p]) then
+                return i==1 and s or s:sub(i)
+            elseif i==len then
+                return ''
+            end
+        end
+    end
+    return s
+end
+
+string.ltrim,string.rtrim=ltrim,rtrim
 function string.trim(s,sep)
-    sep='[%s%z'..(sep or '')..']'
-    return tostring(s):match('^'..sep..'*(.-)'..sep..'*$')
+    return rtrim(ltrim(s,sep),sep)
 end
 
-function string.rtrim(s,sep)
-    sep='[%s%z'..(sep or '')..']'
-    return (tostring(s):gsub(sep..'*$',''))
-end
-
-function string.ltrim(s,sep)
-    sep='[%s%z'..(sep or '')..']'
-    return (tostring(s):gsub('^'..sep,''))
-end
 
 String=java.require("java.lang.String")
 local String=String
@@ -269,7 +308,9 @@ function table.dump(tbl,indent,maxdep,tabs)
         local margin=(ind==0 and indent or '')..fmt
         rs=rs..fmt
         if type(v) == "table" then
-            if tabs then
+            if k=='root' then
+                rs=rs..'<<Bypass root>>'
+            elseif tabs then
                 if not tabs[v] then
                     local c=tabs.__current_key or ''
                     local c1=c..(c=='' and '' or '.')..tostring(k)

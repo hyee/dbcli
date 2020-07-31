@@ -72,6 +72,10 @@ local function rep_instance(prefix,full,obj,suffix)
     return str
 end
 
+function extvars.set_inputs(inputs)
+    extvars.on_before_db_exec({'',''})
+end
+
 function extvars.on_before_db_exec(item)
     for i=1,2 do
         if item and type(item[i])=="string" and item[i]:find('@lz_compress@',1,true) then
@@ -575,6 +579,7 @@ function extvars.onload()
     event.snoop('AFTER_ORACLE_CONNECT',extvars.on_after_db_conn)
     event.snoop('ON_DB_DISCONNECTED',extvars.on_after_db_conn)
     event.snoop('ON_SETTING_CHANGED',extvars.set_title)
+    event.snoop('ON_SHOW_INPUTS',extvars.set_inputs)
     cfg.init("cdbmode","off",extvars.set_cdbmode,"oracle","Controls whether to auto-replace all SQL texts from 'DBA_HIST_' to 'CDB_HIST_'/'AWR_PDB_'","cdb,pdb,off")
     cfg.init("instance",-1,extvars.set_instance,"oracle","Auto-limit the inst_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-1 - 99")
     cfg.init("schema","",extvars.set_schema,"oracle","Auto-limit the schema of impacted tables. ","*")
