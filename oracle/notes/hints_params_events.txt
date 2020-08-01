@@ -34,6 +34,7 @@ Parameters
     _kcfis_cell_passthru_fromcpu_enabled: disable Exadata reverse offloading
     _sql_plan_management_control: when 4 then diagnose issues with SQL plan baselines of why it fails to use
     _optimizer_squ_bottomup: false to redunce parse time due to large PGA memory usage pending on function kkojnp(bug#22225899)
+    _column_tracking_level: when 3 then similar to dbms_stats.seed_column_usage, however can be set in session level, and 0 to avoid column group creation by dbms_stats,4 to maintain expression tracking
     
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'

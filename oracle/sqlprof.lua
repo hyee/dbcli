@@ -197,7 +197,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                     v_begin := 'q''{';
                     v_end   := '}''';
                 END IF;
-                IF v_size <= 1200 OR dbms_lob.instr(p_SQL, CHR(10)) > 0 OR p_name != 'sql_txt' THEN
+                IF (v_size <= 1200 OR dbms_lob.instr(p_SQL, CHR(10)) > 0 OR p_name != 'sql_txt') AND v_size<=24000 THEN
                     pr('        '||p_name||' := '||v_begin, FALSE);
                     dbms_lob.append(v_text, replace(p_SQL,chr(0),'@chr(0)@'));
                     pr(v_end||';');

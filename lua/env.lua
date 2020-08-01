@@ -1114,6 +1114,7 @@ function env.onload(...)
     env.set_command(nil,"REM"   ,   '#Comment',        nil   ,false,2)
     env.reset_title()
     console:setCommands(env.root_cmds)
+    env.root_cmds=nil
     --load initial settings
     for _,v in ipairs(env.__ARGS__) do
         if v:sub(1,2) == "-D" then

@@ -45,7 +45,7 @@ function string.replace(s,sep,txt,plain,occurrence,case_insensitive)
 end
 
 function string.escape(s, mode)
-    s = s:gsub('%%','%%%%'):gsub('%z','%%z'):gsub('([%^%$%(%)%.%[%]%*%+%-%?])', '%%%1')
+    s = s:gsub('([%^%$%(%)%.%[%]%*%+%-%?%%])', '%%%1')
     if mode == '*i' then s = s:case_insensitive_pattern() end
     return s
 end
@@ -91,14 +91,14 @@ end
 
 local spaces={}
 local s=' \t\n\v\f\r\0'
-for i=1,#s do spaces[s:sub(i,i)]=true end
+for i=1,#s do spaces[s:byte(i)]=true end
 local ext_spaces={}
 local function exp_pattern(sep)
     local ary
     if sep then
         if not ext_spaces[sep] then
             ext_spaces[sep]={}
-            for i=1,#sep do ext_spaces[sep][sep:sub(i,i)]=true end
+            for i=1,#sep do ext_spaces[sep][sep:byte(i)]=true end
         end
         ary=ext_spaces[sep]
     end
@@ -110,7 +110,7 @@ local function rtrim(s,sep)
     if type(s)=='string' then
         local len=#s
         for i=len,1,-1 do
-            local p=s:sub(i,i)
+            local p=s:byte(i)
             if not spaces[p] and not (ary and ary[p]) then
                 return i==len and s or s:sub(1,i)
             elseif i==1 then
@@ -126,7 +126,7 @@ local function ltrim(s,sep)
     if type(s)=='string' then
         local len=#s
         for i=1,len do
-            local p=s:sub(i,i)
+            local p=s:byte(i)
             if not spaces[p] and not (ary and ary[p]) then
                 return i==1 and s or s:sub(i)
             elseif i==len then
