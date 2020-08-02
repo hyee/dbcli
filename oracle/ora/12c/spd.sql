@@ -1,5 +1,5 @@
 /*[[
-    Show column usage and SQL plan directives on target table. Usage: @@NAME [<owner>.]<object_name>[.<partition>]
+    Show column usage and SQL plan directives on target table. Usage: @@NAME {[<owner>.]<object_name>[.<partition>]} | <directive id>
     You can "exec dbms_spd.flush_sql_plan_directive" to flush the SPD
 
     Sample Output:
@@ -52,14 +52,60 @@
     --]]
 ]]*/
 SET FEED OFF VERIFY ON
-ora _find_object &V1
+ora _find_object &V1 1
 VAR Text clob
 VAR cur1 REFCURSOR;
 VAR cur2 REFCURSOR "E=equality_predicates_only | C=simple_column_predicates_only | J=index_access_by_join_predicates | F=filter_on_joining_object";
 DECLARE
-    c1 sys_refcursor;
-    c2 sys_refcursor;
+    did INT := regexp_substr(:V1,'^\d+$');
+    c1  sys_refcursor;
+    c2  sys_refcursor;
 BEGIN
+    IF did IS NULL AND :object_name IS NULL THEN
+        raise_application_error(-20001,'Cannot find targt object!');
+    ELSIF did IS NOT NULL THEN
+        open c1 FOR
+            WITH o1 AS
+             (SELECT directive_id dir_id,
+                     OWNER,OBJECT_NAME,
+                     nvl(OWNER,'SQL') || '.' || OBJECT_NAME obj,
+                     SUBOBJECT_NAME,
+                     DECODE(EXTRACTVALUE(NOTES, '/obj_note/equality_predicates_only'), 'YES', 'E') ALLEQ,
+                     DECODE(EXTRACTVALUE(NOTES, '/obj_note/simple_column_predicates_only'), 'YES', 'C') ALLCOLS,
+                     DECODE(EXTRACTVALUE(NOTES, '/obj_note/index_access_by_join_predicates'), 'YES', 'J') NLJNIX,
+                     DECODE(EXTRACTVALUE(NOTES, '/obj_note/filter_on_joining_object'), 'YES', 'F') FILTER
+             FROM    SYS.DBA_SQL_PLAN_DIR_OBJECTS
+             WHERE   DIRECTIVE_ID = did),
+            o2 AS
+             (SELECT dir_id,
+                     OWNER,
+                     OBJECT_NAME,
+                     listagg(op || '(' || obj  || nvl2(cols, '[' || cols || ']', '')|| ')', ' / ') WITHIN GROUP(ORDER BY obj) notes
+              FROM   (SELECT dir_id,
+                             OWNER,
+                             OBJECT_NAME,
+                             obj,
+                             listagg(ALLEQ||ALLCOLS||NLJNIX||FILTER,'') within group(order by 1) op,
+                             listagg(SUBOBJECT_NAME, ',') within GROUP(ORDER BY SUBOBJECT_NAME) COLS
+                      FROM   o1
+                      GROUP  BY dir_id, OWNER, OBJECT_NAME, obj)
+              GROUP  BY dir_id, OWNER, OBJECT_NAME)
+            SELECT   TO_CHAR(d.directive_id) directive_id,
+                     o2.owner,
+                     o2.object_name,
+                     d.ENABLED,
+                     d.state,
+                     d.AUTO_DROP,
+                     d.type,
+                     d.reason,
+                     o2.notes,
+                     nvl(d.LAST_MODIFIED, d.CREATED) LAST_MDF,
+                     d.LAST_USED
+            FROM   o2, dba_sql_plan_directives d
+            WHERE  d.directive_id = o2.dir_id
+            AND    d.directive_id = did
+            ORDER  BY d.reason;
+    ELSE
     $IF 1=1 $THEN 
         OPEN c1 FOR SELECT DBMS_STATS.REPORT_COL_USAGE('&object_owner','&object_name') report from dual;
     $ELSE
@@ -99,15 +145,14 @@ BEGIN
     $IF &CHECK_ACCESSS_OBJ=1 $THEN
         OPEN c2 for
             WITH o AS
-             (SELECT /*+no_expand materialize ORDERED_PREDICATES*/
-              DISTINCT directive_id dir_id, owner, object_name
+             (SELECT /*+no_expand materialize ORDERED_PREDICATES*/DISTINCT directive_id dir_id, owner, object_name
               FROM   dba_sql_plan_dir_objects o
               WHERE  object_name = '&object_name'
               AND    object_type IN ('COLUMN', 'TABLE')),
             o1 AS
              (SELECT /*+parallel(4)*/*
               FROM   o,
-                     lateral((SELECT OWNER || '.' || OBJECT_NAME obj,
+                     lateral((SELECT nvl(OWNER,'SQL') || '.' || OBJECT_NAME obj,
                                     SUBOBJECT_NAME,
                                     DECODE(EXTRACTVALUE(NOTES, '/obj_note/equality_predicates_only'), 'YES', 'E') ALLEQ,
                                     DECODE(EXTRACTVALUE(NOTES, '/obj_note/simple_column_predicates_only'), 'YES', 'C') ALLCOLS,
@@ -146,6 +191,7 @@ BEGIN
             WHERE  d.directive_id = o2.dir_id
             ORDER  BY d.reason;
     $END
+    END IF;
     :cur1 := c1;
     :cur2 := c2;
 END;
