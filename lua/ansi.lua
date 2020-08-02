@@ -388,12 +388,12 @@ function string.strip_len(str)
     return ansi.strip_len(str)
 end
 
-local function cv(all,code,x,pos1,x,pos2) 
-    return ansi.mask(code,nil,true) or '$'..all..'$'
+local function cv(all,code)
+    return ansi.mask(code,nil,true) or all
 end
 
 function ansi.convert_ansi(str)
-    return str and str:gsub("%$((%u+)(,?)(%d*)(,?)(%d*))%$",cv):gsub(ansi.escape,"\27%1")
+    return str and str:gsub("(%$(%u+)%$)",cv):gsub(ansi.escape,"\27%1")
 end
 
 function string.convert_ansi(str)

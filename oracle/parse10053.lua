@@ -43,52 +43,62 @@ local function extract_timer()
                 data.count,data.cpu,data.ela=0,0,0
             end
             local qb=self.root.current_qb
-            if qb and line:find('SQL Optimization (Overall)',1,true) and data.qbs[qb] then
-                return 
-            end
+            local ary=data.qbs[qb]
 
             data.lines[lineno]=qb or 'ROOT'
             if qb then
-                if not data.qbs[qb] then data.qbs[qb]={0,0,0} end
-                data.qbs[qb][1],data.qbs[qb][2],data.qbs[qb][3]=data.qbs[qb][1]+1,data.qbs[qb][2]+cpu,data.qbs[qb][3]+ela
+                if not ary then
+                    ary={0,0,0}
+                    data.qbs[qb]=ary
+                end
+                if (line:find('(Overall)',1,true) or line:find('(Final)',1,true)) and ary then
+                    data.cpu,data.ela=data.cpu-ary[2],data.ela-ary[3]
+                    ary[2],ary[3]=0,0
+                end
+                ary[1],ary[2],ary[3]=ary[1]+1,ary[2]+cpu,ary[3]+ela
                 data.count,data.cpu,data.ela=data.count+1,data.cpu+cpu,data.ela+ela
             end
             return false
         end,
 
         extract={
-            help="|@@NAME [-l] |Show timer (fix control # 16923858)|",
+            help="|@@NAME [-l\\|<keyword>] |Show timer (fix control # 16923858)|",
             call=function(data,option)
                 env.checkerr(data and data.count,"No data found.")
                 local root=data.root
-                if option then option=option:lower() end
-                if root.qbs and option~='-l' then
+                if root.qbs and not option then
+                    local qbs=parser.probes.qbs.extract.call(root.qbs,nil,false)
                     local rows={}
                     local stack={}
                     local idx=0
                     local prev
-                    for line in root.range(root.qbs.last_start_line,root.qbs.last_end_line) do
-                        line=line:sub(1,256):rtrim()
+                    for i=2,#qbs do
+                        local line=qbs[i][1]:strip_ansi()
                         local qb=line:match('%u+$%w+')
-                        if prev~=line and qb then
+                        if qb then
                             local timer=data.qbs[qb] or {0,0,0}
                             local lv=#(line:match('^%s*'))
                             idx=idx+1
                             stack[lv]=idx
-                            rows[#rows+1]={timer[1],timer[2],timer[3],data.ela and timer[3]/data.ela or 0,(lv==0 and '' or '|')..line:rtrim(),0}
+                            rows[#rows+1]={'|',timer[1],timer[2],timer[3],data.ela and timer[3]/data.ela or 0,(lv==0 and '' or '|')..qbs[i][1],0,lv}
                             if timer[1]>0 then
                                 for k,v in pairs(stack) do
                                     if k<=lv then
-                                        rows[v][6]=rows[v][6]+timer[1]
+                                        rows[v][7]=rows[v][7]+timer[2]
                                     end
                                 end
                                 table.clear(stack)
                             end
+                            if lv==0 and idx>1 and prev>0 and rows[#rows][2]==0 and rows[#rows-1][2]>0 then 
+                                rows[#rows-1][1]='$UDL$|'
+                                rows[#rows-1][6]=rows[#rows-1][6]:gsub('$NOR%$','$NOR$$UDL$')
+                            end
+                            prev=lv
                         end
-                        prev=line
                     end
+
                     for i=#rows,1,-1 do
-                        if rows[i][6]==0 then
+                        if rows[i][7]==0 then
                             table.remove(rows,i) 
                         else
                             for j=1,4 do
@@ -98,18 +108,22 @@ local function extract_timer()
                     end
                     env.var.define_column('cpu,elapsed','for','usmhd2')
                     env.var.define_column('ela%','for','pct3')
-                    table.insert(rows,1,{'Count','CPU','Elapsed','Ela%','Query Block Registry'})
-                    rows[#rows+1]={data.count,data.cpu,data.ela,1,'----- TOTAL -----'}
+                    table.insert(rows,1,{'|','Count','CPU','Elapsed','Ela%','Query Block Registry'})
+                    rows[#rows+1]={'=','=','=','=','=','='}
+                    rows[#rows+1]={'',data.count,data.cpu,data.ela,1,'----- TOTAL -----'}
                     env.grid.print(rows)
                     env.var.define_column('cpu,elapsed','clear')
                     return
                 end
 
+                option=option:lower()
+                if option=='-l' then  option='$' end
                 local fmt='%-12s:   %s'
                 root.print_start('timer')
                 for line,lineno in root.range(root.start_line,root.end_line) do
-                    if data.lines[lineno] then
-                        root.print(lineno,fmt:format(data.lines[lineno],line))
+                    local l=fmt:format(data.lines[lineno],line)
+                    if data.lines[lineno] and l:lower():find(option,1,true) then
+                        root.print(lineno,l)
                     end
                 end
                 root.print_end(true)
@@ -165,6 +179,7 @@ local function extract_plan()
                     self.qb_len=math.max(self.qb_len,#qb)
                     self.alias_len=math.max(self.alias_len,#alias)
                     self.qbs[id]={qb,alias}
+                    self.root.qbs[qb].in_plan=self.root.qbs[qb].in_plan or id
                     if not self.data.qbs[qb] then self.data.qbs[qb]={} end
                     if alias~='' then self.data.qbs[qb][alias]=id end
                 else
@@ -214,17 +229,64 @@ local function extract_plan()
     }
 end
 
-local qb_patterns={'Considering .+ query block (%S+$%S+)',"^Query Block +(%S+$%S+)",' qb_name=(%S+$%S+)','^Registered qb: *(%S+$%S+)'}
+local qb_patterns={'^Registered qb: *(%u+$%w+)','^%u+:.+ [qQ]uery [bB]lock +(%u+$%w+)',"^Query Block +(%u+$%w+)",' qb_name=(%u+$%w+)'}
 local any={['*']=1,['.']=1,['']=1}
 
 local function extract_qb()
     return {
         start=function(line,root,lineno,unparsed)
             local qb
-            for _,p in ipairs(qb_patterns) do
+            for i,p in ipairs(qb_patterns) do
                 qb=line:match(p)
                 if qb then
-                    root.current_qb=qb:upper()
+                    qb=qb:upper()
+                    if i~=2 or line:find('Considering',1,true) then
+                        root.current_qb=qb:upper()
+                    end
+                    if i==1 then
+                        if not root.qbs then root.qbs={seq={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,[0]=0}} end
+                        if not root.qbs[qb] then
+                            root.qbs.seq[1]=root.qbs.seq[1]+1
+                            local chain=line:match('%((.+)%)$')
+                            local fmt='%s%03X'
+                            local seq,str,parent=0,''
+                            local obj={name=qb,seq=root.qbs.seq[1],chain=chain,depth=1,lineno=lineno,childs={},ops={}}
+                            for q in chain:gmatch('%u+$%w+') do
+                                if root.qbs[q] then
+                                    local s=root.qbs[q].seq
+                                    if s>seq then
+                                        seq=s
+                                        parent=root.qbs[q]
+                                        obj.depth=parent.depth+1
+                                        str=root.qbs[q].id
+                                        fmt='%s%02X'
+                                    end
+                                    local found=false
+                                    for k,v in ipairs(root.qbs[q].childs) do
+                                        if v==qb then found=true end
+                                    end
+                                    if not found then
+                                        root.qbs[q].childs[#root.qbs[q].childs+1]=qb
+                                    end
+                                end
+                            end
+                            if obj.depth>1 then
+                                if parent.childs[#parent.childs]==qb then
+                                    parent.childs[#parent.childs]=nil
+                                end
+                                root.qbs.seq[obj.depth]=root.qbs.seq[obj.depth]+1
+                            end
+                            obj.id=fmt:format(str,root.qbs.seq[obj.depth])
+                            root.qbs.seq[0]=math.max(root.qbs.seq[0],#obj.id)
+                            root.qbs[qb]=obj 
+                        end
+                    elseif i==2 then
+                        local op=line:match('^%u+')
+                        if op and root.qbs and root.qbs[qb] then
+                            root.qbs[qb].ops[op]=1
+                        end
+                    end
+                    env.checkerr(root.qbs and root.qbs[qb],'Cannot find query block register entry: '..qb)
                     return true
                 end
             end
@@ -236,6 +298,7 @@ local function extract_qb()
             return false
         end,
         repeatable=true,
+        closeable=false,
         priority=2,
         extract={
             help='|@@NAME <qb_name>  [<abbr>\\|*] | Show query block info with the specific QB name |',
@@ -250,7 +313,7 @@ local function extract_qb()
                 end
                 local level,prev
                 local root,name=data.root,qb:upper()
-                qb='(%W)('..qb:escape()..')(%W)'
+                
                 local curr_qb,spd,prev_line
                 local function pr(l,c)
                     root.print(l,c)
@@ -259,6 +322,7 @@ local function extract_qb()
                 root.print_start('qb_'..name)
                 root.current_qb=nil
                 local fmt=env.ansi.convert_ansi('%1$UDL$%2$NOR$%3')
+                qb='(%W)('..qb:upper():escape()..')(%W)'
 
                 for line,lineno in root.range(root.start_line,root.end_line) do
                     line=line:sub(1,256):rtrim()
@@ -374,12 +438,22 @@ local function extract_tb()
                 else
                     found='DYN_SAMP'
                 end
-                if found:find('^NODIR') or found:find('^NOQBCTX') then return end
+                if found:find('^NO') then return end
                 if (self.info.spd or 'NO'):find('^NO') then 
                     self.info.spd=found 
                 end
             elseif self.type=='sta' and line:find('Best:: AccessPath: *(%S+)') then
-                self.info.best_sta=line:match('Best:: AccessPath: *(%S+)')
+                self.info.indent,self.info.best_sta=line:match('( *)Best:: AccessPath: *(%S+)')
+            elseif self.info.indent then
+                if not line:match('^'..self.info.indent) then
+                    self.info.indent=nil
+                else
+                    local cost,card=line:match('[cC]ost: *([%.%d]+).-[cC]ard: *([%.%d]+)')
+                    if cost then
+                        self.info.indent=nil
+                        self.info.cost,self.info.card=math.round(tonumber(cost),3),math.round(tonumber(card),3) 
+                    end
+                end
             elseif line:match('^ *[%*=]+$') or line:find('^Access path analysis') or line:find('^Join order') then
                 self.info[self.type].end_line=lineno-1
                 return false
@@ -408,13 +482,13 @@ local function extract_tb()
                     if any[qb] then qb=nil end
                 end
                 local root,rows=data.root,{}
-                local qbs=root.plan.qbs
                 for t,v in pairs(data) do
                     if t~='root' and type(v)=='table' then
                         for q,o in pairs(v) do
                             if type(o)=='table' then
                                 for alias,p in pairs(o) do
-                                    if (not tab or tab==alias or tab==t or tab=='') and (not qb and (not qbs or qbs[q]) or q==qb or any[qb]) then
+                                    --if t:find('VW') then print(t,not tab or tab==alias or tab==t or tab=='',not qb and (not qbs or qbs[q]) or q==qb or any[qb]) end
+                                    if (not tab or tab==alias or tab==t or tab=='') and (not qb  or q==qb or any[qb]) then
                                         local lines={}
                                         if p.bsi then lines[#lines+1]=p.bsi end
                                         if p.sta then lines[#lines+1]=p.sta end
@@ -422,11 +496,15 @@ local function extract_tb()
                                                        lines[1].start_line,lines[#lines].end_line,
                                                        p.bsi_seens or 0,p.sta_seens or 0,
                                                        p.best_sta or '',
+                                                       p.card or '',
+                                                       --p.cost or '',
                                                        p.spd or '',
                                                        p.qb_perms ,
                                                        p.best_jo or '',
                                                        p.jo or '',
+                                                       p.jo_card or '',
                                                        p.jo_spd,
+                                                       root.qbs[q].seq*1e9+lines[1].start_line,
                                                        lines}
                                     end
                                 end
@@ -436,8 +514,8 @@ local function extract_tb()
                 end
 
                 if not tab then
-                    env.grid.sort(rows,'3,1,4')
-                    table.insert(rows,1,{"Table Name",'Alias','Query Block','Start Line','End Line','BSI Seens','STA Seens','STA Best','TB SPD','JOs','Best JO#','Join','JO SPD'})
+                    table.sort(rows,function(a,b) return a[#a-1]<b[#b-1] end)
+                    table.insert(rows,1,{"Table Name",'Alias','Query|Block','Start|Line','End|Line','BSI|Scans','STA|Scans','STA|Best','STA|Card','STA|SPD','Join|Orders','Best|JO#','Join|Method',"Join|Card",'JO|SPD'})
                     env.grid.print(rows)
                     local msg='BSI: BASE STATISTICAL INFORMATION / STA: SINGLE TABLE ACCESS PATH / TB: Table / JO: Join Order'
                     print(('-'):rep(#msg)..'\n'..msg)
@@ -510,7 +588,7 @@ local function extract_jo()
                 local tables=full_line:rtrim():match(': *(%S.-%S)$'):split('%s+')
                 self.stack={}
                 self.data[self.qb].perm_count=perm
-                local jo={lines={},tables=tables,tlines={},jo=perm,start_line=lineno,cost=0}
+                local jo={lines={},tables=tables,tlines={},tcard={},jo=perm,start_line=lineno,cost=0}
                 self.curr_perm=self.data[self.qb].perms[perm] or jo
                 if not self.data[self.qb].perms[perm] then
                     self.data[self.qb].perms[perm]=jo
@@ -533,7 +611,7 @@ local function extract_jo()
                 end
                 root.current_tb,root.current_alias=self.curr_table
                 self:add(1,lineno)
-            elseif line:find('^%u+ Join$') or line:find('^ +.- %u+ cost:') then
+            elseif line:find('^%u+ Join') or line:find('^ +.- %u+ [cC]ost:') then
                 self:add(2,lineno)
                 local cost=tonumber(line:match('cost: *([%.%d]+)'))
                 if cost then self.cost=math.min(cost,self.cost==0 and cost or self.cost) end
@@ -566,27 +644,30 @@ local function extract_jo()
                     if self.curr_perm.cost==0 then
                         self.curr_perm.cost='> '..math.round(self.cost,3)
                     end
+                    self.cost,self.card=0,0
                     root.current_jo=nil
                 else
-                    local cost,card=line:match('cost: *([%.%d]+).-card: *([%.%d]+)')
+                    local seq,cost,card=line:match('Table#: *(%d+).-[cC]ost: *([%.%d]+).-[cC]ard: *([%.%d]+)')
                     if cost then 
-                        self.cost,self.card=tonumber(cost),math.round(tonumber(card),3) 
+                        self.cost,self.card=tonumber(cost),math.round(tonumber(card),3)
+                        self.curr_perm.tcard[tonumber(seq)+1]=self.card
                     end
                     self.curr_perm.cost,self.curr_perm.card='= '..math.round(self.cost,3),self.card
-                    self.cost,self.card=0,0
                     self.is_best=1
                 end
-                self.cost=0
             elseif self.is_best==1 then
                 if line:find('^ +') then
                     self:add(0,lineno)
-                    local cost,card=line:match('cost: *([%.%d]+).-card: *([%.%d]+)')
+                    local seq,cost,card=line:match('Table#: *(%d+).-[cC]ost: *([%.%d]+).-[cC]ard: *([%.%d]+)')
                     if cost then 
-                        self.cost,self.card=tonumber(cost),math.round(tonumber(card),3)
+                        seq,self.cost,self.card=tonumber(seq)+1,tonumber(cost),math.round(tonumber(card),3)
                         self.curr_perm.cost,self.curr_perm.card='= '..math.round(self.cost,3),self.card
+                        local card=self.curr_perm.tcard
+                        card[seq]=self.card
                     end
                 else
                     self.is_best=0
+                    self.cost,self.card=0,0
                     root.current_jo=nil
                 end
             elseif line:find('^%s+Best join order: *(%d+)$') then
@@ -610,10 +691,11 @@ local function extract_jo()
                             curr_tb.qb_perms=(curr_tb.qb_perms or 0)+qb.perm_count
                             curr_tb.jo,curr_tb.best_jo=method,best
                             if perm.tlines[i] then curr_tb.jo_spd=perm.tlines[i].spd end
+                            curr_tb.jo_card=perm.tcard[i]
                         end
                     end
                 end
-            elseif (self.last_indent or 0) > 0 and (line:find('^ *%S.- Cost:') or line:find('^%s+Index:')) then
+            elseif (self.last_indent or 0) > 0 and (line:find(' +Cost:') or line:find('^%s+Index:')) then
                 local lv=#(line:match('^%s*'))
                 local seq={}
                 for k,v in pairs(self.stack) do
@@ -635,7 +717,7 @@ local function extract_jo()
                 else
                     found='DYN_SAMP'
                 end
-                if found:find('^NODIR') or found:find('^NOQBCTX') then return end
+                if found:find('^NO') then return end
                 if self.curr_tab_index and (self.curr_perm.tlines[self.curr_tab_index][3] or 'NO'):find('^NO') then
                     self:add(2,lineno)
                     self.curr_perm.tlines[self.curr_tab_index].spd=found
@@ -665,7 +747,7 @@ local function extract_jo()
                         if not qb then
                             local best=v.perms[v.perm_best]
                             local spd=root.spd and root.spd.qbs[k] or {count=0}
-                            rows[#rows+1]={k,v.perm_count,v.perm_best,v.start_line,v.end_line,v.cost,v.card,spd.count>0 and 'EXISTS' or '',table.concat(best.tables,' -> ')}
+                            rows[#rows+1]={k,v.perm_count,v.perm_best,v.start_line,v.end_line,v.cost,v.card,spd.count>0 and 'EXISTS' or '',table.concat(best.tables,' -> '),root.qbs[k].seq}
                         else
                             for i,j in ipairs(v.perms) do
                                 local chain=table.concat(j.tables,' -> ')
@@ -691,8 +773,8 @@ local function extract_jo()
                 end
 
                 if not qb then
+                    table.sort(rows,function(a,b) return a[#a]<b[#b] end)
                     table.insert(rows,1,{'QB Name','JOs','Best JO#','Start Line','End Line','Cost','Card','SPD','Join Chain'})
-                    grid.sort(rows,4,true)
                     grid.print(rows)
                 else
                     local size=#rows
@@ -709,7 +791,7 @@ local function extract_jo()
                         end
                         root.print_end()
                     else
-                        root.print_start('jo_'..qb..(tonumber(jo) and ('_'..jo) or '')..(tb  and ('_'..tb) or ''))
+                        root.print_start('jo_'..qb..(tonumber(jo) and ('_'..jo) or '')..(tb  and ('_'..tb:sub(1,-2)) or ''))
                         local fmt,prev='Query Block %s    Join Order #%d'
                         local w=root.width
                         for i,j in ipairs(rows) do
@@ -851,7 +933,7 @@ function extract_spd()
             local root=self.root
             local qb=root.current_qb
             local q=self.data.qbs[qb]
-            if line:find('NODIR') or line:find('NOQBCTX') then
+            if line:find('NODIR') or line:find('NOQBCTX') or line:find('NOCTX') then
                 return false
             elseif line:find('^SPD: *BEGIN') then
                 self.data.in_spd=true
@@ -961,6 +1043,59 @@ function extract_spd()
         }
     }
 end
+
+local function extract_qbs()
+    return {
+        start=function(line,root) return root.fixctl and line:find("Query Block Registry:") end,
+        extract={
+            help="|@@NAME [<keyword>] | Show Registered Query Blocks |",
+            call=function(data,keyword,is_print)
+                local fmt,fmt1='%s%s%s%s (%s)','%s'
+                local qbs,chains={},{}
+                for k,v in pairs(data) do
+                    if type(v)=='table' and v.id then
+                        qbs[#qbs+1]=v
+                        local cbqt={}
+                        for o,n in pairs(v.ops) do cbqt[#cbqt+1]=o end
+                        table.sort(cbqt)
+                        v.cbqt=table.concat(cbqt,';')
+                    end
+                end
+                table.sort(qbs,function(a,b) return a.id<b.id end)
+                if keyword then
+                    keyword='(%W)('..keyword:upper():escape():rtrim(';')..')(%W)'
+                    fmt1='%1$COMMANDCOLOR$%2$NOR$%3'
+                    for i,q in ipairs(qbs) do
+                        if q.depth==1 then chains={} end
+                        q.child_chains=chains
+                        if not chains[1] and (';'..q.name..';'..q.chain..';'..table.concat(q.childs,';')..';'):upper():find(keyword) then
+                            chains[1]=q.depth
+                        end
+                    end
+                end
+                local rows,sep={},' '
+                for i,q in ipairs(qbs) do
+                    if not keyword or q.child_chains[1] then
+                        local chain=q.chain..(#q.childs==0 and '' or (' => '..table.concat(q.childs,';',1,math.min(5,#q.childs)))) 
+                        rows[#rows+1]={fmt:format(sep:rep(q.depth*2-2),
+                                            q.in_plan and '$HIB$' or '',
+                                            not keyword and q.name or (' '..q.name..' '):gsub(keyword,fmt1):trim(),
+                                            q.in_plan and '$NOR$' or '',
+                                            not keyword and chain or (' '..chain..' '):gsub(keyword,fmt1):trim()
+                                            ), q.in_plan or '','|',q.seq,q.lineno,q.cbqt}
+                    end
+                end
+                table.insert(rows,1,{'Query Block Registry','Plan Id','|','QB#','Reg Line#','CBQT Considerations'})
+                if is_print==false then return rows end
+                grid.print(rows)
+            end
+        },
+        parse=function(self,line,lineno)
+            if line=='' or line:find('^([%*=])%1%1$') then return false end
+        end
+    }
+end
+
 --[[--
 Probe Attriutes:
     start        : the function/string that triggers the start of the probe, if function and returns 0/true means starting the probe
@@ -980,6 +1115,7 @@ local function build_probes()
     parser.probes={
         plan=extract_plan(),
         qb=extract_qb(),
+        qbs=extract_qbs(),
         tb=extract_tb(),
         sql=extract_sql(),
         jo=extract_jo(),
@@ -1009,17 +1145,6 @@ local function build_probes()
             start=function(line,root) return root.optenv and line:find("^Bug Fix Control Environment") end,
             extract={
                 help="|@@NAME [<keyword>] | Show bug fix control environment |",
-                call=pattern_search
-            },
-            parse=function(self,line,lineno)
-                if line=='' or line:find('^([%*=])%1%1$') then return false end
-            end
-        },
-
-        qbs={
-            start=function(line,root) return root.fixctl and line:find("Query Block Registry:") end,
-            extract={
-                help="|@@NAME [<keyword>] | Show Registered Query Blocks |",
                 call=pattern_search
             },
             parse=function(self,line,lineno)
@@ -1082,7 +1207,7 @@ local function build_probes()
 
         lines=extract_lines()
     }
-    build_probes,extract_plan,extract_qb,extract_tb,extract_sql,extract_lines,extract_jo,extract_timer,extract_spd=nil
+    build_probes,extract_plan,extract_qb,extract_tb,extract_sql,extract_lines,extract_jo,extract_timer,extract_spd,extract_qbs=nil
 end
 
 local filelist={}
@@ -1159,7 +1284,7 @@ function parser.read(data,file,seq)
 
     parser.close()
     local root=parser.data
-    root.file,root.start_line,root.end_line=file,start_line,end_line
+    root.file,root.handler,root.start_line,root.end_line=file,f,start_line,end_line
     root.prefix=short_name:match('^[^%.]+')
 
     local probes,finds,priors={},{},parser.priors
