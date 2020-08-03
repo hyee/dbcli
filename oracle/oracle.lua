@@ -340,6 +340,7 @@ function oracle:connect(conn_str)
     
     if not succ then
         env.log_debug('DB',err)
+        env.checkerr(self.conn,"Database is disconnected")
         self.props={db_version=self.conn:getDatabaseProductVersion():match('%d+%.%d+%.[%d%.]+'),
                     version=self.conn:getVersionNumber(),privs={},db_user=self.conn:getUserName(),
                     instance=tonumber(self.properties['AUTH_INSTANCE_NO']),

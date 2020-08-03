@@ -33,10 +33,11 @@ Sample Ouput:
 +--------+-------------------------+-----+----------------------------------------------+-----------------------------+
 
 Options:
-    -o   : Show top objects (defaults to show top events)
-    -d   : Only query dba_hist_active_sess_history (defaults to query both views)
-    -g   : Only query gv$active_session_history (defaults to query both views)
-    -all : Use hierachy clause to grab the possible missing PX slave records, mainly use for parallel execution
+    -o      : Show top objects (defaults to show top events)
+    -d      : Only query dba_hist_active_sess_history (defaults to query both views)
+    -sqlset : Use dba_sqlset_plans as the data source instead of dba_hist_sql_plan
+    -g      : Only query gv$active_session_history (defaults to query both views)
+    -all    : Use hierachy clause to grab the possible missing PX slave records, mainly use for parallel execution
 
 Outputs:
     Plan Summary :  The summary of all execution plans, grouping by <Plan Hash Value>+<SQL id>+<Plan Hash Full>
@@ -91,9 +92,12 @@ Outputs:
     @con : 12.1={AND prior nvl(con_dbid,0)=nvl(con_dbid,0)} default={}
     @mem : 12.1={DELTA_READ_MEM_BYTES} default={null}
     @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
+    &dplan: default={dba_hist_sql_plan} sqlset={(select a.*,0+null object# from dba_sqlset_plans a)}
+    &cid  : default={dbid} sqlset={con_dbid}
+    &src1 : default={dba_hist_sql_plan} sqlset={dba_sqlset_plans}
     &top1: default={ev}, O={CURR_OBJ#}
     &top2: default={CURR_OBJ#}, O={ev}
-    &vw  : default={A} G={G} D={D} 
+    &vw  : default={A} G={G} D={D} sqlset={D}
     &Title: default={Objects}, O={Events}
     &titl2: default={Events}, O={Objects}
     &fmt: default={} f={} s={-rows -parallel}
@@ -237,15 +241,15 @@ WITH ALL_PLANS AS
                 object_node tq,operation||' '||options,
                 &phf2 plan_hash_full,
                 instr(other_xml,'adaptive_plan') is_adaptive_,
-                dbid
+                &cid dbid
         FROM (
-            select /*+no_merge*/ distinct 'D' pos,sql_id,nvl(sql_plan_hash_value,0) plan_hash_value,dbid
+            select /*+no_merge*/ distinct 'D' pos,sql_id,nvl(sql_plan_hash_value,0) plan_hash_value,&cid
             from   dba_hist_active_sess_history
             where  '&vw' IN('A','D')
             and    sql_id is not null
             and    dbid=nvl(0+'&dbid',dbid)
             and    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
-         ) b left join dba_hist_sql_plan a using(sql_id,plan_hash_value,dbid)
+         ) b left join &dplan a using(sql_id,plan_hash_value,&cid)
         WHERE   pos='D'
         AND     '&vw' IN('A','D'))),
 sql_list as(select distinct pos,sql_id,phv plan_hash_value,dbid from ALL_PLANS),
@@ -349,8 +353,7 @@ ash_raw as (
                    decode(AAS_,1,1,decode((
                         select sign(max(avg_) keep(dense_rank last order by phv1)- 5e3) flag 
                         from   sqlstats b 
-                        where  a.dbid=b.dbid 
-                        and    a.sql_id=b.sql_id 
+                        where  a.sql_id=b.sql_id 
                         and    b.phv in(a.phv1,-1)
                     ),1,10,1)) AAS,
                    row_number() OVER(PARTITION BY dbid,sample_id,inst_id,sid ORDER BY AAS_,lv desc) seq,
@@ -444,7 +447,7 @@ qry AS
   WHERE  phv in(select phv from ash_phv_agg where plan_exists=1)),
 xplan AS
  (  SELECT phv,rownum r,a.*
-    FROM   qry, TABLE(dbms_xplan.display('dba_hist_sql_plan',NULL,format,'dbid='||dbid||' and plan_hash_value=' || phv || ' and sql_id=''' || sq ||'''')) a
+    FROM   qry, TABLE(dbms_xplan.display('&src1',NULL,format,'&cid='||dbid||' and plan_hash_value=' || phv || ' and sql_id=''' || sq ||'''')) a
     WHERE  flag = 2
     UNION ALL
     SELECT phv,rownum,a.*

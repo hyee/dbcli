@@ -1,29 +1,10 @@
 local env=env
-local parser={data={open={},close={}}}
+local parser=env.class(env.lexer)
 local table,math,pairs,type,print,ipairs,io=table,math,pairs,type,print,ipairs,io
+local qb_exp='%u%u%u+$[%u%d]+'
 
-function parser.command(cmd,...)
-    env.checkhelp(cmd)
-    cmd=tostring(cmd):lower()
-    local func,data=parser.cmds[cmd],parser.data[cmd] or {root=parser.data}
-    env.checkerr(func,"No such command: %s",cmd)
-    env.checkerr(cmd=='open' or cmd=='close' or parser.data.file,"Please open an 10053 trace file firstly.")
-    func(data,...)
-end
-
-local function pattern_search(data,keyword)
-    env.checkerr(data and data.last_start_line,"No data found.")
-    local root,counter=data.root,0
-    root.print_start()
-    if keyword then
-        keyword=keyword:lower():gsub('%%','\1\2\3'):escape():gsub('\1\2\3','.-')
-    end
-    for line,lineno in root.range(data.last_start_line,data.last_end_line) do
-        if not keyword or line:sub(1,256):rtrim():lower():find(keyword) then
-            root.print(lineno,line)
-        end
-    end
-    return root.print_end(true)
+function parser:ctor()
+    self.name='10053'
 end
 
 local function extract_timer()
@@ -63,18 +44,18 @@ local function extract_timer()
 
         extract={
             help="|@@NAME [-l\\|<keyword>] |Show timer (fix control # 16923858)|",
-            call=function(data,option)
+            call=function(this,data,option)
                 env.checkerr(data and data.count,"No data found.")
                 local root=data.root
                 if root.qbs and not option then
-                    local qbs=parser.probes.qbs.extract.call(root.qbs,nil,false)
+                    local qbs=this.probes.qbs.extract.call(this,root.qbs,nil,false)
                     local rows={}
                     local stack={}
                     local idx=0
                     local prev
                     for i=2,#qbs do
                         local line=qbs[i][1]:strip_ansi()
-                        local qb=line:match('%u+$%w+')
+                        local qb=line:match(qb_exp)
                         if qb then
                             local timer=data.qbs[qb] or {0,0,0}
                             local lv=#(line:match('^%s*'))
@@ -169,6 +150,7 @@ local function extract_plan()
                 return
             elseif self.qb_start then
                 local id,qb,alias=line:match(self.qb_pattern[1])
+                local root=self.root
                 if not id then
                     id,qb=line:match(self.qb_pattern[2])
                     alias=''
@@ -179,20 +161,25 @@ local function extract_plan()
                     self.qb_len=math.max(self.qb_len,#qb)
                     self.alias_len=math.max(self.alias_len,#alias)
                     self.qbs[id]={qb,alias}
-                    self.root.qbs[qb].in_plan=self.root.qbs[qb].in_plan or id
+                    root.qbs[qb].in_plan=root.qbs[qb].in_plan or id
                     if not self.data.qbs[qb] then self.data.qbs[qb]={} end
                     if alias~='' then self.data.qbs[qb][alias]=id end
                 else
                     if self.qb_start>0 then
                         self.qb_start=false
-                        local fmt="%s %-"..self.qb_len.."s | %-"..self.alias_len.."s|"
+                        local fmt="%s %s%-"..self.qb_len.."s%s | %-"..self.alias_len.."s|"
                         local sep=self.plan[2]..('-'):rep(self.qb_len+self.alias_len+5)
                         self:add(sep)
-                        self:add(fmt:format(self.plan[1],'Q.B','Alias'))
+                        self:add(fmt:format(self.plan[1],'','Q.B','','Alias'))
                         self:add(sep)
                         for i=3,#self.plan-1 do
                             local qb=self.qbs[i-3] or {"",""}
-                            self:add(fmt:format(self.plan[i],qb[1],qb[2]))
+
+                            self:add(fmt:format(self.plan[i],
+                                                qb[1]~='' and root.qbs[qb[1]].sql and '$HIB$' or '',
+                                                qb[1],
+                                                qb[1]~='' and root.qbs[qb[1]].sql and '$NOR$' or '',
+                                                qb[2]))
                         end
                         self:add(sep)
                         self.plan=nil
@@ -221,7 +208,7 @@ local function extract_plan()
 
         extract={
             help='|@@NAME|Show execution plan|',
-            call=function(data)
+            call=function(this,data)
                 print(data.text)
                 print("Result saved to "..env.save_data(data.root.prefix..'_plan.txt',data.text))
             end
@@ -229,7 +216,8 @@ local function extract_plan()
     }
 end
 
-local qb_patterns={'^Registered qb: *(%u+$%w+)','^%u+:.+ [qQ]uery [bB]lock +(%u+$%w+)',"^Query Block +(%u+$%w+)",' qb_name=(%u+$%w+)'}
+
+local qb_patterns={'^Registered qb: *('..qb_exp..')','^%u%u+:.+ ('..qb_exp..') ','^Query Block +('..qb_exp..')',' qb_name=('..qb_exp..') '}
 local any={['*']=1,['.']=1,['']=1}
 
 local function extract_qb()
@@ -251,7 +239,7 @@ local function extract_qb()
                             local fmt='%s%03X'
                             local seq,str,parent=0,''
                             local obj={name=qb,seq=root.qbs.seq[1],chain=chain,depth=1,lineno=lineno,childs={},ops={}}
-                            for q in chain:gmatch('%u+$%w+') do
+                            for q in chain:gmatch('%u%u%u+$[%u%d]+') do
                                 if root.qbs[q] then
                                     local s=root.qbs[q].seq
                                     if s>seq then
@@ -286,14 +274,14 @@ local function extract_qb()
                             root.qbs[qb].ops[op]=1
                         end
                     end
-                    env.checkerr(root.qbs and root.qbs[qb],'Cannot find query block register entry: '..qb)
+                    --env.checkerr(root.qbs and root.qbs[qb],'Cannot find query block register entry: '..qb)
                     return true
                 end
             end
             if unparsed==false or not root.qb then return false end
-            if line:find('SQL:******* UNPARSED QUERY IS *******',1,true)==1 then
-                if not root.qb[root.current_qb] then root.qb[root.current_qb]={} end
-                root.qb[root.current_qb].sql=lineno+1
+            if line:find('****** UNPARSED QUERY IS ******',1,true) then
+                if not root.qbs[root.current_qb] then root.qbs[root.current_qb]={} end
+                root.qbs[root.current_qb].sql=lineno+1
             end
             return false
         end,
@@ -302,7 +290,7 @@ local function extract_qb()
         priority=2,
         extract={
             help='|@@NAME <qb_name>  [<abbr>\\|*] | Show query block info with the specific QB name |',
-            call=function(data,qb,abbr)
+            call=function(this,data,qb,abbr)
                 env.checkerr(qb,"Please input the query block name.")
                 if abbr then
                     if any[abbr] then
@@ -327,7 +315,7 @@ local function extract_qb()
                 for line,lineno in root.range(root.start_line,root.end_line) do
                     line=line:sub(1,256):rtrim()
                     if line~='' then
-                        parser.probes.qb.start(line,root,nil,false)
+                        this.probes.qb.start(line,root,nil,false)
                         line=' '..line..' '
                         line,found=line:gsub(qb,fmt)
                         line=line:sub(2,-2)
@@ -472,7 +460,7 @@ local function extract_tb()
 
         extract={
             help="|@@NAME [<table_name>] [<qb_name>\\|*]| Show single table stats and access paths. |",
-            call=function(data,tab,qb)
+            call=function(this,data,tab,qb)
                 if tab then 
                     tab=tab:upper()
                     if any[tab] then tab='' end
@@ -611,7 +599,7 @@ local function extract_jo()
                 end
                 root.current_tb,root.current_alias=self.curr_table
                 self:add(1,lineno)
-            elseif line:find('^%u+ Join') or line:find('^ +.- %u+ [cC]ost:') then
+            elseif line:find('^%u%u+ Join') or line:find('^ +.- %u%u+ [cC]ost:') then
                 self:add(2,lineno)
                 local cost=tonumber(line:match('cost: *([%.%d]+)'))
                 if cost then self.cost=math.min(cost,self.cost==0 and cost or self.cost) end
@@ -736,7 +724,7 @@ local function extract_jo()
 
         extract={
             help="|@@NAME [<qb_name> or *] [<JO#> or *] [<table_name>] | Show join orders, more details for more parameters |",
-            call=function(data,qb,jo,tb)
+            call=function(this,data,qb,jo,tb)
                 local rows,last={}
                 local root=data.root
                 if tb then tb=tb:upper()..'[' end
@@ -847,7 +835,7 @@ local function extract_sql()
         end,
         extract={
             help="|@@NAME [<qb_name>] | Show the source SQL text or the unparsed SQL text for the specific query block.|",
-            call=function(data,qb)
+            call=function(this,data,qb)
                 local root,text=data.root,{}
                 if not qb then
                     for line in root.range(data.last_start_line+1,data.last_end_line) do
@@ -858,7 +846,7 @@ local function extract_sql()
                     print('\n'.. string.rep('=',30)..'\nSource SQL ID: '..root.sql_id)
                     print('\nResult saved to '..env.save_data(root.prefix..'.sql',text))
                 else
-                    local q=root.qb[qb:upper()]
+                    local q=root.qbs[qb:upper()]
                     env.checkerr(q and q.sql,"Cannot find unparsed SQL text for query block: "..qb)
                     for line in root.range(q.sql,q.sql) do
                         text=line
@@ -866,53 +854,6 @@ local function extract_sql()
                     print(text)
                     print('\nResult saved to '..env.save_data(root.prefix..'_'..qb:gsub('[$@]','_')..'.sql',text))
                 end
-            end
-        }
-    }
-end
-
-local function extract_lines()
-    return {
-        start='sql_id=',
-        extract={
-            help="|@@NAME {<start_line> [<end_line>]}$COMMANDCOLOR$ \\| p \\| n \\| $NOR$<keyword> | Show matched lines with the specific line range or keyword(supports wildchar '%') |",
-            call=function(data,b,e,...)
-                env.checkerr(b,"Please input the start line number or keyword.")
-                local root,st,ed,keyword,prev=data.root,tonumber(not b:find('^0x') and b),tonumber(e)
-                local h=console:getScreenHeight()-12
-                b=b:lower()
-                if (b=='p' or b=='n' or b=='b' or b=='f') and data.b then
-                    if b=='p' or b=='b' then
-                        st,ed=data.b-h,data.b
-                    else
-                        st,ed=data.e,data.e+h
-                    end
-                end
-                if not st then
-                    b=table.concat({b,e,...},' ')
-                    env.checkerr(#b>2,'Target search string must not be less than 3 chars.')
-                    keyword='%W'..b:gsub('%%','\1\2\3'):escape():gsub('\1\2\3','.-')..'%W'
-                    b,e=root.start_line,root.end_line
-                else
-                    b,e=st,ed
-                    env.checkerr(b>0,"Please input the start line number.")
-                    env.checkerr(not e or e>=b, "<end_line> must not be smaller than <start_line>.")
-                    if not e then
-                        data.l=b
-                        b=math.max(1,math.round(b-h/2))
-                        e=b+h
-                    end
-                    data.b,data.e=b,e
-                end
-
-                root.print_start()
-                for line,lineno in root.range(b,e) do
-                    if not keyword or prev~=line and (' '..line:sub(1,256)..' '):lower():match(keyword) then
-                        root.print(lineno,lineno==data.l and ('$COMMANDCOLOR$'..line..'$NOR$') or line)
-                        if keyword then prev=line end
-                    end
-                end
-                root.print_end(true)
             end
         }
     }
@@ -936,8 +877,10 @@ function extract_spd()
             if line:find('NODIR') or line:find('NOQBCTX') or line:find('NOCTX') then
                 return false
             elseif line:find('^SPD: *BEGIN') then
-                self.data.in_spd=true
+                qb=line:find(' statement ') and 'STATEMENT' or qb
+                self.data.in_spd=qb
                 self.data.has_spd=false
+                q=self.data.qbs[qb]
                 if not q then
                     q={qb=qb,lineno-1,links={},has_spd=false,count=0}
                     self.data.qbs[qb]=q
@@ -947,20 +890,22 @@ function extract_spd()
                 end
                 return true
             elseif line:find('^SPD: *END') then
-                self.data.in_spd=false
+                q=self.data.qbs[self.data.in_spd]
                 if self.data.has_spd then
                     q[2]=lineno+1
                 elseif q.has_spd then
                     q[1]=q[3]
                 else
-                    self.data.qbs[qb][1]=nil
+                    q[1]=nil
                 end
+                self.data.in_spd=nil
                 self.data.has_spd=false
                 return false
             else
                 local dirid=line:match('dirid *= *(%d+)')
                 if self.data.in_spd then
                     if dirid then
+                        q=self.data.qbs[self.data.in_spd]
                         self.data.has_spd=true
                         q.has_spd=true
                         q[dirid]=lineno
@@ -974,14 +919,14 @@ function extract_spd()
                     q.count=lineno
                     q.links[lineno]=obj
                 end
-                return self.data.in_spd==true
+                return self.data.in_spd~=nil
             end
             return false
         end,
 
         extract={
             help=[[|@@NAME [<qb_name>]|Show SQL Plan Directive or Dynamic Sampling information|]],
-            call=function(data,qb_name)
+            call=function(this,data,qb_name)
                 env.checkerr(data.qbs,"No data found.")
                 local rows={}
                 for k,v in pairs(data.qbs) do
@@ -1001,7 +946,7 @@ function extract_spd()
                     local w,st,ed,fmt=root.width
                     local width=#qb.qb+16
                     root.print(("="):rep(w),("="):rep(width))
-                    root.print(("/"):rep(w),'|$HEADCOLOR$ Query Block '..qb.qb..' $NOR$|')
+                    root.print(("/"):rep(w),'|$HEADCOLOR$ '..(qb.qb=='STATEMENT' and ' TOP LEVEL: ' or 'Query Block ')..qb.qb..' $NOR$|')
                     root.print(("="):rep(w),("="):rep(width))
 
                     if qb[2] then
@@ -1049,7 +994,7 @@ local function extract_qbs()
         start=function(line,root) return root.fixctl and line:find("Query Block Registry:") end,
         extract={
             help="|@@NAME [<keyword>] | Show Registered Query Blocks |",
-            call=function(data,keyword,is_print)
+            call=function(this,data,keyword,is_print)
                 local fmt,fmt1='%s%s%s%s (%s)','%s'
                 local qbs,chains={},{}
                 for k,v in pairs(data) do
@@ -1096,23 +1041,9 @@ local function extract_qbs()
     }
 end
 
---[[--
-Probe Attriutes:
-    start        : the function/string that triggers the start of the probe, if function and returns 0/true means starting the probe
-    parse        : function, parse each line when the probe is started,when return false then force closing the probe(call end_parse(nil))
-                             when this attr is not defined then the probe is a single-line probe
-    end_parse    : function, triggered when close the started probe, when inut parameters are null then force closing the probe
-    repeatable   : boolean,  when not true then the probe can only be started once
-    breakable    : boolean,  when false then the started probe cannot be closed by other running probes(parallel probe)
-    closeable    : boolean,  when false then the started probe will not close other running probes
-    exclusive    : boolean,  when true then bypass the parsing of other concurrent probes in case of this probe is started
-    priority     : number,   smaller number means higher priority(default 1000)
-    extract.help : string,   the help info of the sub-command
-    extract.call : function, executed as sub-command
---]]--
 
-local function build_probes()
-    parser.probes={
+function parser:build_probes()
+    self.probes={
         plan=extract_plan(),
         qb=extract_qb(),
         qbs=extract_qbs(),
@@ -1128,7 +1059,7 @@ local function build_probes()
             end,
             extract={
                 help="|@@NAME | Show Peeked values of the binds in SQL statement |",
-                call=pattern_search
+                call=self.pattern_search
             }
         },
 
@@ -1137,7 +1068,7 @@ local function build_probes()
             parse=function(self,line,lineno) end,
             extract={
                 help="|@@NAME [<keyword>] | Show optimizer environment |",
-                call=pattern_search
+                call=self.pattern_search
             }
         },
 
@@ -1145,7 +1076,7 @@ local function build_probes()
             start=function(line,root) return root.optenv and line:find("^Bug Fix Control Environment") end,
             extract={
                 help="|@@NAME [<keyword>] | Show bug fix control environment |",
-                call=pattern_search
+                call=self.pattern_search
             },
             parse=function(self,line,lineno)
                 if line=='' or line:find('^([%*=])%1%1$') then return false end
@@ -1156,7 +1087,7 @@ local function build_probes()
             start="SYSTEM STATISTICS INFORMATION",
             extract={
                 help="|@@NAME | Show system statistics information |",
-                call=pattern_search
+                call=self.pattern_search
             },
             parse=function(self,line,lineno)
                 if line:find('^*************************') then return false end
@@ -1166,7 +1097,7 @@ local function build_probes()
             start='The following abbreviations are used by optimizer trace',
             extract={
                 help="|@@NAME [<keyword>] | Show abbreviations |",
-                call=pattern_search
+                call=self.pattern_search
             },
             parse=function(self,line,lineno)
                 if line:find('^%*%*%*') or line=='' then return false end
@@ -1176,7 +1107,7 @@ local function build_probes()
             start='PARAMETERS WITH ALTERED VALUES',
             extract={
                 help="|@@NAME [<keyword>] | Show altered parameters |",
-                call=pattern_search
+                call=self.pattern_search
             },
             parse=function(self,line,lineno)
                 if line=='' or line:find('^[%*=]+$') then return false end
@@ -1187,7 +1118,7 @@ local function build_probes()
             start='PARAMETERS WITH DEFAULT VALUES',
             extract={
                 help="|@@NAME [<keyword>] | Show default parameters |",
-                call=pattern_search
+                call=self.pattern_search
             },
             parse=function(self,line,lineno)
                 if line=='' or line:find('^[%*=]+$') then return false end
@@ -1198,25 +1129,23 @@ local function build_probes()
             start='PARAMETERS IN OPT_PARAM HINT',
             extract={
                 help="|@@NAME [<keyword>] | Show parameters changed by opt_param hint|",
-                call=pattern_search
+                call=self.pattern_search
             },
             parse=function(self,line,lineno)
                 if line=='' or line:find('^[%*=]+$')then return false end
             end
-        },
-
-        lines=extract_lines()
+        }
     }
-    build_probes,extract_plan,extract_qb,extract_tb,extract_sql,extract_lines,extract_jo,extract_timer,extract_spd,extract_qbs=nil
+    build_probes,extract_plan,extract_qb,extract_tb,extract_sql,extract_jo,extract_timer,extract_spd,extract_qbs=nil
 end
 
 local filelist={}
 
-function parser.check_file(f,path,seq)
+function parser:check_file(f,path,seq)
     local ary,lineno=filelist[path]
     local q,o,s='Registered qb: [A-Z]+$1 ','End of Optimizer State Dump','Current SQL Statement for this session'
     if not ary then
-        local st,ed,sql_id
+        local st,ed,sql_id,offset,prev
         local q1,o1,sql_id='^'..q,'^'..o
         ary={}
         filelist[path]=ary
@@ -1226,20 +1155,22 @@ function parser.check_file(f,path,seq)
             line=line:sub(1,256)
             if not (st or ed) and line:match(q1) then
                 st=lineno
+                offset=f:seek()-prev-1
             elseif st and not ed then
                 if not sql_id and line:find(s) then
                     sql_id=line:match('sql_id=(%w+)')
                 elseif sql_id and line:match(o1) then
                     ed=lineno
-                    ary[#ary+1]={st,ed,sql_id}
+                    ary[#ary+1]={st,ed,sql_id,offset}
                     st,ed,sql_id=nil
                 end
             end
+            if not st then prev=#line end
         end
     end
 
     if #ary==1 or (seq and ary[seq]) then
-        if lineno then f:seek('set',0) end
+        if lineno then f:seek('set',ary[4]) end
         local st,ed,sql_id=table.unpack(ary[seq or 1])
         if st>1 then
             lineno=1
@@ -1248,7 +1179,7 @@ function parser.check_file(f,path,seq)
                 if lineno>=st then break end
             end
         end
-        return st,ed,sql_id
+        return st,ed,'SQL Id: '..sql_id
     end
 
     f:close()
@@ -1261,10 +1192,10 @@ function parser.check_file(f,path,seq)
         return
     end
 
-    local rows={{'Seq','Start Line','End Line','SQL Id'}}
+    local rows={{'Seq','Start Line','End Line','Offset','SQL Id'}}
    
     for k,v in ipairs(ary) do
-        rows[k+1]={k,v[1],v[2],v[3]}
+        rows[k+1]={k,v[1],v[2],v[4],v[3]}
     end
     print('Mutiple SQL traces are found:')
     grid.print(rows)
@@ -1272,242 +1203,4 @@ function parser.check_file(f,path,seq)
     env.raise('Please open the file plus the specific seq among above list!')
 end
 
-function parser.read(data,file,seq)
-    local f=io.open(file,'rb')
-    env.checkerr(f,"Unable to open file: %s",file)
-    
-    local start_line,end_line,sql_id=parser.check_file(f,file,tonumber(seq))
-    local short_name=file:match('([^\\/]+)$')
-    local lines,data={}
-    local curr_probe
-    local lineno,offset,prev_offset,size,curr,sub,full_line=start_line-1,0,0
-
-    parser.close()
-    local root=parser.data
-    root.file,root.handler,root.start_line,root.end_line=file,f,start_line,end_line
-    root.prefix=short_name:match('^[^%.]+')
-
-    local probes,finds,priors={},{},parser.priors
-
-    local function end_parse(name,closer)
-        local probe=probes[name]
-        if not probe then return end
-        probe.data.last_end_line,probe.data.last_end_offset=lineno-1,prev_offset
-        probe.end_line,probe.end_offset=lineno-1,prev_offset
-        if probe.end_parse then
-            if closer then
-                probe:end_parse(nil,lineno,full_line,closer)
-            else
-                local res=probe:end_parse(curr,lineno,full_line)
-                if res==false then return res end
-            end
-        end
-        probes[name]=nil
-    end
-
-    local function parse(name)
-        local probe=probes[name]
-        if not probe then return end
-        if not probe.parse then
-            probe.data.last_end_line,probe.data.last_end_offset=probe.data.last_start_line,offset
-            probes[name]=nil
-            return
-        end
-        local res=probe:parse(curr,lineno,full_line)
-        if res==false then return end_parse(name) end
-    end
-
-    local function _exec(name,p,e,c)
-        if c and probes[name].breakable==false then return end
-        if c or p then parse(name) end
-        if c or e~=nil then end_parse(name,c) end
-    end
-
-    local function execute(p,e,c)
-        for i,h in ipairs(priors) do
-            if probes[h.name] then
-                _exec(h.name,p,e,c)
-                if h.exclusive then p=nil end
-            end
-        end
-    end
-
-    --bug on file:seek('cur')
-    print('Analyzing the trace file for SQL Id: '..sql_id)
-    for line in f:lines() do
-        offset=offset+#line+1
-        full_line,curr=line,line:sub(1,256):rtrim()
-        lineno,sub=lineno+1,curr:ltrim()
-        for i,n in ipairs(priors) do
-            local k,v=n.name,n.probe
-            local p=probes[k]
-            if p and p.exclusive then
-                break
-            elseif v.start and not finds[k] and not p then
-                local found=false
-                if type(v.start)=="string" then
-                    found=sub:find(v.start,1,true)
-                else
-                    found=v.start(sub,root,lineno,full_line)
-                end
-
-                if found==1 or found==true then
-                    if v.closeable~=false then 
-                        execute(true,false,v.parse and k) 
-                    end
-                    data=root[k] or {root=root}
-                    root[k]=data
-                    data.last_start_line,data.last_start_offset=lineno,prev_offset
-
-                    curr_probe=table.clone(v)
-                    for k1,v1 in pairs{
-                        name=k,
-                        data=data,
-                        root=root,
-                        start_line=lineno,
-                        start_offset=prev_offset
-                    } do curr_probe[k1]=v1 end
-
-                    finds[k]=not curr_probe.repeatable
-                    probes[k]=curr_probe
-
-                    if curr_probe.exclusive then break end
-                end
-            end
-        end
-        execute(true)
-        prev_offset=offset
-        if lineno>=end_line then break end
-    end
-
-    execute(false,true,'EOF')
-    f:close()
-
-    local options={}
-    for k,v in pairs(root) do
-        if parser.probes[k] and parser.probes[k].extract then
-            options[#options+1]=k
-        end
-    end
-    table.sort(options)
-    print('\n',end_line-start_line+1,'lines processed. Following commands are available: '..table.concat(options,','))
-    root.max_lines=lineno
-    root.width=math.max(5,#tostring(lineno))
-
-    local formatter='| %'..root.width..'s | %s'
-    local stack={}
-    root.print=function(l,s)
-        local text=formatter:format(tostring(l),s)
-        print(text)
-        if tonumber(l) then lineno=lineno+1 end
-        if file then stack[#stack+1]=text end
-    end
-    root.print_start=function(save_to)
-        stack,file={},save_to
-        lineno=0
-        local width=console:getScreenWidth()-10
-        local sep=('-'):rep(width)
-        print(sep)
-        if file then stack[#stack+1]=sep end
-        root.print("Line#",'Text')
-        print(sep)
-        if file then stack[#stack+1]=sep end
-    end
-
-    root.print_end=function(feed)
-        local width=console:getScreenWidth()-10
-        if lineno>0 then
-            local sep=('-'):rep(width)
-            print(sep)
-        end
-        if file then 
-            stack[#stack+1]=sep
-            file=file:gsub('[$@/\\%*%?<>]','_'):lower()
-            print("Result saved to",env.write_cache(root.prefix..'_'..file..'.txt',table.concat(stack,'\n'):strip_ansi()))
-        end
-        if feed then print(lineno,'lines matched.') end
-    end
-
-    root.seek=function(lineno)
-        local root=parser.data
-        env.checkerr(root.file,"Please open an 10053 trace file firstly.")
-        local f=root.handler
-        if io.type(f)~='file' then
-            root.handler=nil
-            f=io.open(root.file,'rb')
-            if not f then
-                root.file=nil
-                env.raise("Unable to open file: %s",root.file)
-            end
-        end
-        f:seek('set',0)
-        local curr=1
-        while curr<lineno do 
-            f:read('*l') 
-            curr=curr+1
-        end
-        root.handler=f
-        return f
-    end
-
-    root.range=function(start_line,end_line)
-        env.checkerr(start_line and end_line,'Invalid start_line and end_line')
-        start_line=math.min(root.end_line,math.max(root.start_line,start_line))
-        end_line  =math.max(root.start_line,math.min(root.end_line,end_line))
-        local lineno=math.max(0,start_line-1)
-        local f=root.seek(start_line)
-        local function next()
-            lineno=lineno+1
-            if lineno>end_line then return end
-            return f:read('*l'),lineno
-        end
-        return next
-    end    
-end
-
-function parser.close()
-    if not parser.data.file then return end
-    if io.type(parser.data.handler)=='file' then pcall(parser.data.handler.close,parser.data.handler) end
-    parser.data,parser.data.file,parser.data.handler={open={},close={}}
-end
-
-function parser.onload()
-    build_probes()
-    parser.cmds={
-        open=parser.read,
-        close=parser.close
-    }
-    local help={[[Parse 10053 trace file. type 'help @@NAME' for more detail.
-        [| grid:{topic='List of 10053 Commands'}
-         | Command | Description |
-         | open <file path> [<seq>] | Attach to an 10053 trace file, this is the pre-action of other operations|
-         | close | Dettach from the opened trace file |
-         | - | - |]]}
-    local subs,priors={},{}
-    local width=0
-    for k,v in pairs(parser.probes) do
-        priors[#priors+1]={name=k,prior=v.priority or v.exclusive and 100 or 1000,exclusive=v.exclusive,probe=v}
-        if v.extract then
-            parser.cmds[k]=v.extract.call
-            subs[#subs+1]=v.extract.help:gsub("@@NAME",k)
-            width=math.max(width,#(subs[#subs]:match('| *([^%s|]+)')))
-        end
-    end
-
-    width='\n| %-'..width..'s '
-    table.sort(priors,function(a,b) return a.prior<b.prior end)
-    table.sort(subs)
-    for k,v in ipairs(subs) do 
-        help[#help+1]=v
-    end
-    parser.priors=priors
-    help=table.concat(help,'\n'):gsub('\n%s*|%s*([^%s|]+)%s*',function(s) return width:format(s) end)..']'
-
-    env.set_command(nil,"10053",help,parser.command,false,5)
-end
-
-function parser.onunload()
-    parser.close()
-end
-
-return parser
+return parser.new()

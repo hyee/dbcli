@@ -1,8 +1,9 @@
 /*[[
        Show ash cost for a specific SQL for multiple executions. usage: @@NAME {<sql_id> [plan_hash_value|sid|a] [YYMMDDHH24MI] [YYMMDDHH24MI]} [-dash|-t"<ash_dump_table>"] [-o] -f"<format>"
-       -o    : Show top object#, otherwise show top event
-       -dash : Based on dba_hist_active_sess_history, otherwise based on gv$active_session_history
-       -t    : Based on the table that stores the ASH data, instead of using gv$active_session_history. i.e.: -t"ash_dump"
+       -o      : Show top object#, otherwise show top event
+       -dash   : Based on dba_hist_active_sess_history, otherwise based on gv$active_session_history
+       -sqlset : Use dba_hist_active_sess_history + dba_sqlset_plans as the data source
+       -t      : Based on the table that stores the ASH data, instead of using gv$active_session_history. i.e.: -t"ash_dump"
 
        The output is similar to 'ora ashplan', but less accurate and faster
        --[[
@@ -10,9 +11,13 @@
        @adaptive : 12.1={adaptive} 11.1={}
        &ash : {
           ash={(select * from table(gv$(cursor(select userenv('instance') inst_id,a.* from v$active_session_history a where userenv('instance')=nvl(:instance,userenv('instance')) and :V1 in(sql_id,top_level_sql_id)))))}, 
-          dash={Dba_Hist_Active_Sess_History}, 
+          dash={Dba_Hist_Active_Sess_History},
+          sqlset={Dba_Hist_Active_Sess_History} ,
           t={&0}
-       }    
+       }
+       &dplan: default={dba_hist_sql_plan} sqlset={(select a.*,0+null object# from dba_sqlset_plans a)}
+       &src1 : default={dba_hist_sql_plan} sqlset={dba_sqlset_plans}
+       &cid  : default={dbid} sqlset={con_dbid}
        &unit: default={1} ash={1}, dash={10}
        &OBJ : default={ev}, O={CURR_OBJ#}
        &OBJ1: default={CURR_OBJ#}, O={ev}
@@ -54,9 +59,9 @@ WITH sql_plan_data AS
                          NULL child_number,
                          sql_id,
                          nvl(plan_hash_value,0) plan_hash_value,
-                         dbid,
+                         &cid dbid,
                          object#,OBJECT_NAME
-                  FROM   dba_hist_sql_plan a
+                  FROM   &dplan a
                   WHERE  a.sql_id = :V1
                   AND    a.plan_hash_value = case when nvl(lengthb(:V2),0) >6 then :V2+0 else plan_hash_value end
                   ) a)
@@ -236,7 +241,7 @@ ash_data AS(
 ) ,
 xplan AS
  (SELECT rownum r,plan_table_output output
-  FROM   qry, TABLE(dbms_xplan.display('dba_hist_sql_plan',NULL,format,'dbid='||inst_id||' and plan_hash_value=' || plan_hash || ' and sql_id=''' || sq ||'''')) a
+  FROM   qry, TABLE(dbms_xplan.display('&src1',NULL,format,'&cid='||inst_id||' and plan_hash_value=' || plan_hash || ' and sql_id=''' || sq ||'''')) a
   WHERE  flag = 2
   UNION ALL
   SELECT rownum r,a.*
