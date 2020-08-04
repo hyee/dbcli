@@ -115,57 +115,94 @@ end
 
 local function extract_plan()
     return {
-        start=function(line) return line:find('^[%s%-]+ Explain Plan Dump[%s%-]*$') end,
-        parse=function(self,line,lineno,full_line)
-            if lineno==self.start_line then
-                self.data.text={}
-                self.plan={}
-                self.qb_pattern={'^ *(%d+) +%- +(%S+) +/ +(%S+)$','^ *(%d+) +%- +(%S+)$'}
-                self.lines=0
-                self.add=function(self,text)
-                    self.lines=self.lines+1
-                    self.data.text[self.lines]=text
-                end
-                return
-            elseif self.plan_start==nil then
-                if line:find('^| *Id *| ') then
-                    self.plan[#self.plan+1]=line
-                    self.plan_start=0
-                end
-                return
-            elseif self.plan_start then
-                self.plan[#self.plan+1]=line
-                if line:find('--------',1,true)==1 then
-                    self.plan_start=self.plan_start+1
-                    if self.plan_start==2 then
-                        self.plan_start=false
+        start=function(line) return line:find('^%-[%s%-]+ Explain Plan Dump[%s%-]*$') end,
+        set_end_line=function(self,lineno,curr,adj)
+            if not self.data.line_ranges then self.data.line_ranges={} end
+            self.data.last_block=curr
+            for k,v in pairs(self.data.line_ranges) do
+                if not v[2] then v[2]=lineno-1 end
+            end
+            if curr then self.data.line_ranges[curr]={adj or lineno} end
+        end,
+
+        parse=function(self,line,lineno)
+            if line:find('^| *Id *| ') then
+                self:set_end_line(lineno,'plan',lineno-1)
+            elseif line:find('^Query Block Name') then
+                self:set_end_line(lineno,'qb')
+            elseif line:find('^Predicate Information') then
+                self:set_end_line(lineno,'pred')
+            elseif line:find('^Content of other_xml column') then
+                self:set_end_line(lineno,'xml')
+            elseif line:find('^QUERY BLOCK REGISTRY') then
+                self:set_end_line(lineno,'qbr')
+            elseif line:find('^ * Outline Data:') then
+                self:set_end_line(lineno,'outline')
+            elseif line=='' and self.data.last_block and self.data.last_block~='plan' then
+                self.data.line_ranges[self.data.last_block][2]=lineno-1
+            end
+        end,
+
+        end_parse=function(self,line,lineno)
+            self:set_end_line(lineno)
+        end,
+
+        load=function(self,part)
+            local root=self.root
+            for line,lineno in self.root.range(self.last_start_line,self.last_end_line) do
+                line=line:rtrim()
+                if lineno==self.last_start_line then
+                    self.text={}
+                    self.plan={}
+                    self.qb_pattern={'^ *(%d+) +%- +(%S+) +/ +(%S+)$','^ *(%d+) +%- +(%S+)$'}
+                    self.lines=0
+                    self.plan_start=nil
+                    self.qb_start=nil
+                    self.add=function(self,text)
+                        self.lines=self.lines+1
+                        self.text[self.lines]=text
                     end
-                end
-                return
-            elseif self.qb_start==nil and line:find('^Query Block Name') then
-                self.qb_start=0
-                self.qbs={}
-                self.data.qbs={}
-                self.qb_len,self.alias_len=3,5
-                return
-            elseif self.qb_start then
-                local id,qb,alias=line:match(self.qb_pattern[1])
-                local root=self.root
-                if not id then
-                    id,qb=line:match(self.qb_pattern[2])
-                    alias=''
-                end
-                if id then
-                    id=tonumber(id)
-                    self.qb_start=id
-                    self.qb_len=math.max(self.qb_len,#qb)
-                    self.alias_len=math.max(self.alias_len,#alias)
-                    self.qbs[id]={qb,alias}
-                    root.qbs[qb].in_plan=root.qbs[qb].in_plan or id
-                    if not self.data.qbs[qb] then self.data.qbs[qb]={} end
-                    if alias~='' then self.data.qbs[qb][alias]=id end
-                else
-                    if self.qb_start>0 then
+                    self.print=function(self)
+                        if not self.text then return '' end
+                        local lines=table.concat(self.text,'\n')
+                        self.text,self.plan=nil
+                        if lines=='' then line='No execution plan found' end
+                        print(lines)
+                        return lines
+                    end
+                elseif self.plan_start==nil then
+                    if line:find('^| *Id *| ') then
+                        self.plan[#self.plan+1]=line
+                        self.plan_start=0
+                    end
+                elseif self.plan_start then
+                    self.plan[#self.plan+1]=line
+                    if line:find('--------',1,true)==1 then
+                        self.plan_start=self.plan_start+1
+                        if self.plan_start==2 then
+                            self.plan_start=false
+                        end
+                    end
+                elseif self.qb_start==nil and line:find('^Query Block Name') then
+                    self.qb_start=0
+                    self.qbs={}
+                    self.qb_len,self.alias_len=3,5
+                elseif self.qb_start then
+                    local id,qb,alias=line:match(self.qb_pattern[1])
+                    if not id then
+                        id,qb=line:match(self.qb_pattern[2])
+                        alias=''
+                    end
+                    if id then
+                        id=tonumber(id)
+                        self.qb_start=id
+                        self.qb_len=math.max(self.qb_len,#qb)
+                        self.alias_len=math.max(self.alias_len,#alias)
+                        self.qbs[id]={qb,alias}
+                        root.qbs[qb].in_plan=root.qbs[qb].in_plan or id
+                        if not self.qbs[qb] then self.qbs[qb]={} end
+                        if alias~='' then self.qbs[qb][alias]=id end
+                    elseif self.qb_start>0 then
                         self.qb_start=false
                         local fmt="%s %s%-"..self.qb_len.."s%s | %-"..self.alias_len.."s|"
                         local sep=self.plan[2]..('-'):rep(self.qb_len+self.alias_len+5)
@@ -174,7 +211,7 @@ local function extract_plan()
                         self:add(sep)
                         for i=3,#self.plan-1 do
                             local qb=self.qbs[i-3] or {"",""}
-
+                            self.qbs[i-3]=nil
                             self:add(fmt:format(self.plan[i],
                                                 qb[1]~='' and root.qbs[qb[1]].sql and '$HIB$' or '',
                                                 qb[1],
@@ -182,35 +219,54 @@ local function extract_plan()
                                                 qb[2]))
                         end
                         self:add(sep)
-                        self.plan=nil
-                        print(table.concat(self.data.text,'\n'))
+                        if part=='plan' then return self:print() end
                     end
+                elseif self.plan and #self.plan>1 then
+                    self:add(self.plan[2])
+                    for k,v in ipairs(self.plan) do self:add(v) end
+                    if part=='plan' then 
+                        return self:print() 
+                    else
+                        self.plan=nil
+                    end
+                elseif line:find('<qb_registry>',1,true) then
+                    line=line:gsub('<!%[CDATA%[([^%]]+)%]%]>','%1'):gsub('<q ','\n  <q '):gsub('</qb_registry>','\n<qb_registry>')
+                    self:add(line)
+                else 
+                    self:add(line)
                 end
-                return
             end
-            if self.plan and #self.plan>1 then
-                self:add(self.plan[2])
-                for k,v in ipairs(self.plan) do self:add(v) end
-                self.plan=nil
-                print(table.concat(self.data.text,'\n'))
-            end
-            if line:find('<qb_registry>',1,true) then
-                line=full_line:gsub('<!%[CDATA%[([^%]]+)%]%]>','%1'):gsub('<q ','\n  <q '):gsub('</qb_registry>','\n<qb_registry>')
-            end
-            self:add(line)
+            return self:print()
         end,
 
-        end_parse=function(self,line,lineno)
-            if type(self.data.text)~='table' then return end
-            self.data.text[self.lines]=nil
-            self.data.text=table.concat(self.data.text,'\n')
+        on_finish=function(self,data)
+            self.load(data,'plan')
         end,
 
         extract={
-            help='|@@NAME|Show execution plan|',
-            call=function(this,data)
-                print(data.text)
-                print("Result saved to "..env.save_data(data.root.prefix..'_plan.txt',data.text))
+            help='|@@NAME [plan \\| pred \\| outline \\| qb \\| qbr]|Show execution plan|',
+            call=function(this,data,option)
+                if option then option=option:lower() end
+                env.checkerr(not option or data.line_ranges[option],'Invalid option or no data: '..(option or ''))
+                if not option or option=='plan' then
+                    local text=this.probes.plan.load(data,option)
+                    return print("Result saved to "..env.save_data(data.root.prefix..'_plan.txt',text))
+                    
+                end
+                local root=data.root
+                local o=data.line_ranges[option]
+                root.print_start('plan_'..option)
+                for line,lineno in root.range(o[1],o[2]) do
+                    local ls={line}
+                    if line:find('<qb_registry>',1,true) then
+                        line=line:gsub('<!%[CDATA%[([^%]]+)%]%]>','%1'):gsub('<q ','\n  <q '):gsub('</qb_registry>','\n<qb_registry>')
+                        ls=line:split('[\n\r]+')
+                    end
+                    for i,l in ipairs(ls) do
+                        root.print(lineno,l)
+                    end
+                end
+                root.print_end()
             end
         }
     }
@@ -220,17 +276,58 @@ end
 local qb_patterns={'^Registered qb: *('..qb_exp..')','^%u%u+:.+ ('..qb_exp..') ','^Query Block +('..qb_exp..')',' qb_name=('..qb_exp..') '}
 local any={['*']=1,['.']=1,['']=1}
 
+local function check_op(line,root,qb)
+    local pt='%u%u+'
+    if not qb then 
+        qb=root.prev_qb
+        if root.prev_op then pt=root.prev_op end
+    end
+    if qb and root.qbs[qb] then
+        local op=line:match('^('..pt..') *:')
+        if op and root.qbs[qb] then
+            local ln,ops=line:lower(),root.qbs[qb].ops
+            if  ln:find(' bypass',1,true) or 
+                ln:find(' not? ') or 
+                ln:find(' fail',1,true) or
+                ln:find(' invalid',1,true) then
+                ops[op]=0
+            else
+                ops[op]=ops[op] or 1
+            end
+            root.prev_qb,root.prev_op=qb,op
+            return true
+        else
+            root.prev_qb,root.prev_op=nil
+        end
+    end
+    return false
+end
+
+
 local function extract_qb()
     return {
-        start=function(line,root,lineno,unparsed)
-            local qb
+        start=function(line,root,lineno,full_line,target_qb)
+            local qb,curr_fmt,curr_pt,ln
+
+            if target_qb then
+                ln,curr_fmt,curr_pt=(' '..line..' '),root.current_qb_formatter,root.current_search_qb
+            end
+
             for i,p in ipairs(qb_patterns) do
                 qb=line:match(p)
                 if qb then
                     qb=qb:upper()
-                    if i~=2 or line:find('Considering',1,true) then
+
+                    if i~=2 or line:find('Considering .-[Qq]uery.- [Bb]lock') then
                         root.current_qb=qb:upper()
                     end
+
+                    root.prev_qb,root.prev_op=qb
+
+                    if target_qb then
+                        return ln:gsub(curr_pt,curr_fmt)
+                    end
+                    
                     if i==1 then
                         if not root.qbs then root.qbs={seq={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,[0]=0}} end
                         if not root.qbs[qb] then
@@ -269,22 +366,38 @@ local function extract_qb()
                             root.qbs[qb]=obj 
                         end
                     elseif i==2 then
-                        local op=line:match('^%u+')
-                        if op and root.qbs and root.qbs[qb] then
-                            root.qbs[qb].ops[op]=1
-                        end
+                        check_op(line,root,qb)
                     end
-                    --env.checkerr(root.qbs and root.qbs[qb],'Cannot find query block register entry: '..qb)
+
+                    if not root.qbs or not root.qbs[qb] then
+                        if root.qbs then 
+                            if not root.qbs.missings then root.qbs.missings={} end
+                            if not root.qbs.missings[qb] then return false end
+                            root.qbs.missings[qb]=true
+                        else
+                            root.qbs={missings={[qb]=true}}
+                        end
+                        print('Cannot find query block register entry: '..qb)
+                        return false
+                    end
                     return true
                 end
             end
-            if unparsed==false or not root.qb then return false end
+            
+            local found=check_op(line,root)
+            if target_qb then
+                local l,f=ln:gsub(curr_pt,curr_fmt)
+                return l,f,target_qb==root.prev_qb and found or false
+            end
+
+            if not root.qbs then return line,0 end
+            
             if line:find('****** UNPARSED QUERY IS ******',1,true) then
-                if not root.qbs[root.current_qb] then root.qbs[root.current_qb]={} end
                 root.qbs[root.current_qb].sql=lineno+1
             end
             return false
         end,
+
         repeatable=true,
         closeable=false,
         priority=2,
@@ -299,28 +412,28 @@ local function extract_qb()
                         abbr='^'..abbr:upper()..' -:?(.+)' 
                     end
                 end
-                local level,prev
+                local level,prev,lv,spaces
                 local root,name=data.root,qb:upper()
                 
-                local curr_qb,spd,prev_line
+                local spd,prev_line
                 local function pr(l,c)
                     root.print(l,c)
                 end
                 local stack,seq,found={},{},{}
                 root.print_start('qb_'..name)
                 root.current_qb=nil
-                local fmt=env.ansi.convert_ansi('%1$UDL$%2$NOR$%3')
-                qb='(%W)('..qb:upper():escape()..')(%W)'
+                root.current_search_qb='(%W)('..qb:upper():escape()..')(%W)'
+                root.current_qb_formatter=env.ansi.convert_ansi('%1$UDL$%2$NOR$%3')
 
                 for line,lineno in root.range(root.start_line,root.end_line) do
                     line=line:sub(1,256):rtrim()
                     if line~='' then
-                        this.probes.qb.start(line,root,nil,false)
-                        line=' '..line..' '
-                        line,found=line:gsub(qb,fmt)
+                        line,found,op=this.probes.qb.start(line,root,lineno,line,name)
                         line=line:sub(2,-2)
+                        spaces=line:match('^%s+')
+                        lv=spaces==nil and 0 or #spaces
                         if abbr then
-                            if root.current_qb==name then
+                            if root.current_qb==name or found>0 then
                                 local text=line:match(abbr)
                                 if text then
                                     pr(lineno,line)
@@ -337,8 +450,6 @@ local function extract_qb()
                         elseif spd then
                             pr(lineno,line)
                         elseif line~=prev and not line:find('^([^%w ])%1%1%1%1%1') and not line:find('^TIMER:') then
-                            local spaces=line:match('^%s+')
-                            local lv,is_root=spaces==nil and 0 or #spaces,spaces==nil
                             stack[lv]={lineno,line}
                             if found>0 then 
                                 prev=line
@@ -358,6 +469,8 @@ local function extract_qb()
                                 if not level or level<lv then
                                     level=lv
                                 end
+                            elseif op then
+                                pr(lineno,line)
                             elseif line~='' and lv==0 or (level and lv<=level) then
                                 level=nil
                             elseif level and #(line:trim())>3 then
@@ -371,6 +484,63 @@ local function extract_qb()
                 root.print_end(true)
             end
         }
+    }
+end
+
+local function extract_qbs()
+    return {
+        start=function(line,root) return root.fixctl and line:find("Query Block Registry:") end,
+        extract={
+            help="|@@NAME [<keyword>] | Show Registered Query Blocks |",
+            call=function(this,data,keyword,is_print)
+                local fmt,fmt1='%s%s%s%s (%s)','%s'
+                local qbs,chains={},{}
+                for k,v in pairs(data) do
+                    if type(v)=='table' and v.id then
+                        qbs[#qbs+1]=v
+                        local cbqt={}
+                        for o,n in pairs(v.ops) do cbqt[#cbqt+1]=o end
+                        table.sort(cbqt)
+                        for i,n in ipairs(cbqt) do 
+                            if v.ops[n]==0 then
+                                cbqt[i]='$HIR$'..n..'$NOR$'
+                            end
+                        end
+                        v.cbqt=table.concat(cbqt,';')
+                    end
+                end
+                table.sort(qbs,function(a,b) return a.id<b.id end)
+                if keyword then
+                    keyword='(%W)('..keyword:upper():escape():rtrim(';')..')(%W)'
+                    fmt1='%1$COMMANDCOLOR$%2$NOR$%3'
+                    for i,q in ipairs(qbs) do
+                        if q.depth==1 then chains={} end
+                        q.child_chains=chains
+                        if not chains[1] and (';'..q.name..';'..q.chain..';'..table.concat(q.childs,';')..';'):upper():find(keyword) then
+                            chains[1]=q.depth
+                        end
+                    end
+                end
+                local rows,sep={},' '
+                for i,q in ipairs(qbs) do
+                    if not keyword or q.child_chains[1] then
+                        local chain=q.chain..(#q.childs==0 and '' or (' => '..table.concat(q.childs,';',1,math.min(5,#q.childs)))) 
+                        rows[#rows+1]={fmt:format(sep:rep(q.depth*2-2),
+                                            q.in_plan and '$HIB$' or '',
+                                            not keyword and q.name or (' '..q.name..' '):gsub(keyword,fmt1):trim(),
+                                            q.in_plan and '$NOR$' or '',
+                                            not keyword and chain or (' '..chain..' '):gsub(keyword,fmt1):trim()
+                                            ), q.in_plan or '','|',q.seq,q.lineno,q.cbqt}
+                    end
+                end
+                table.insert(rows,1,{'Query Block Registry','Plan Id','|','QB#','Reg Line#','Involved Abbr Ops'})
+                if is_print==false then return rows end
+                grid.print(rows)
+            end
+        },
+        parse=function(self,line,lineno)
+            if line=='' or line:find('^([%*=])%1%1$') then return false end
+        end
     }
 end
 
@@ -848,9 +1018,7 @@ local function extract_sql()
                 else
                     local q=root.qbs[qb:upper()]
                     env.checkerr(q and q.sql,"Cannot find unparsed SQL text for query block: "..qb)
-                    for line in root.range(q.sql,q.sql) do
-                        text=line
-                    end
+                    text=root.line(q.sql)
                     print(text)
                     print('\nResult saved to '..env.save_data(root.prefix..'_'..qb:gsub('[$@]','_')..'.sql',text))
                 end
@@ -986,58 +1154,6 @@ function extract_spd()
                 root.print_end(true)
             end
         }
-    }
-end
-
-local function extract_qbs()
-    return {
-        start=function(line,root) return root.fixctl and line:find("Query Block Registry:") end,
-        extract={
-            help="|@@NAME [<keyword>] | Show Registered Query Blocks |",
-            call=function(this,data,keyword,is_print)
-                local fmt,fmt1='%s%s%s%s (%s)','%s'
-                local qbs,chains={},{}
-                for k,v in pairs(data) do
-                    if type(v)=='table' and v.id then
-                        qbs[#qbs+1]=v
-                        local cbqt={}
-                        for o,n in pairs(v.ops) do cbqt[#cbqt+1]=o end
-                        table.sort(cbqt)
-                        v.cbqt=table.concat(cbqt,';')
-                    end
-                end
-                table.sort(qbs,function(a,b) return a.id<b.id end)
-                if keyword then
-                    keyword='(%W)('..keyword:upper():escape():rtrim(';')..')(%W)'
-                    fmt1='%1$COMMANDCOLOR$%2$NOR$%3'
-                    for i,q in ipairs(qbs) do
-                        if q.depth==1 then chains={} end
-                        q.child_chains=chains
-                        if not chains[1] and (';'..q.name..';'..q.chain..';'..table.concat(q.childs,';')..';'):upper():find(keyword) then
-                            chains[1]=q.depth
-                        end
-                    end
-                end
-                local rows,sep={},' '
-                for i,q in ipairs(qbs) do
-                    if not keyword or q.child_chains[1] then
-                        local chain=q.chain..(#q.childs==0 and '' or (' => '..table.concat(q.childs,';',1,math.min(5,#q.childs)))) 
-                        rows[#rows+1]={fmt:format(sep:rep(q.depth*2-2),
-                                            q.in_plan and '$HIB$' or '',
-                                            not keyword and q.name or (' '..q.name..' '):gsub(keyword,fmt1):trim(),
-                                            q.in_plan and '$NOR$' or '',
-                                            not keyword and chain or (' '..chain..' '):gsub(keyword,fmt1):trim()
-                                            ), q.in_plan or '','|',q.seq,q.lineno,q.cbqt}
-                    end
-                end
-                table.insert(rows,1,{'Query Block Registry','Plan Id','|','QB#','Reg Line#','CBQT Considerations'})
-                if is_print==false then return rows end
-                grid.print(rows)
-            end
-        },
-        parse=function(self,line,lineno)
-            if line=='' or line:find('^([%*=])%1%1$') then return false end
-        end
     }
 end
 

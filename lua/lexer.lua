@@ -121,7 +121,7 @@ function lexer:read(data,file,seq)
     local counter,batch_size=0,256
     local clock=os.clock()
     local fmod,floor=math.fmod,math.floor
-    print('Analyzing the trace file'..(target and ('for '..target) or '')..' ...')
+    print('Analyzing the trace file'..(target and (' for '..target) or '')..' ...')
     root.seeks[0]=f:seek()
     offset=root.seeks[0]
     for line in f:lines() do
@@ -185,8 +185,7 @@ function lexer:read(data,file,seq)
         end
     end
     table.sort(options)
-    print('\n',end_line-start_line+1,'lines processed in '..math.round(os.clock()-clock,3)..' secs. Following commands are available: '..table.concat(options,','))
-
+    
     root.width=math.max(5,#tostring(lineno))
 
     local formatter='| %'..root.width..'s | %s'
@@ -261,7 +260,21 @@ function lexer:read(data,file,seq)
             return f:read('*l'),lineno
         end
         return next
-    end    
+    end
+
+    root.line=function(lineno)
+        env.checkerr(lineno,'Invalid lineno')
+        lineno=math.min(root.end_line,math.max(root.start_line,lineno))
+        local f=root.seek(lineno)
+        return f:read('*l')
+    end
+    
+    for i,h in ipairs(priors) do
+        if h.probe.on_finish then
+            h.probe.on_finish(h.probe,root[h.name])
+        end
+    end
+    print('\n'..(end_line-start_line+1)..'lines processed in '..math.round(os.clock()-clock,3)..' secs. Following commands are available: '..table.concat(options,','))
 end
 
 function lexer:close()
@@ -316,7 +329,7 @@ function lexer:__onunload()
 end
 
 lexer.lines={
-    start=' ',
+    start='-',
     breakable=false,
     extract={
         help="|@@NAME {<start_line> [<end_line>]}$COMMANDCOLOR$ \\| p \\| n \\| $NOR$<keyword> | Show matched lines with the specific line range or keyword(supports wildchar '%') |",
@@ -335,8 +348,9 @@ lexer.lines={
             if not st then
                 b=table.concat({b,e,...},' ')
                 env.checkerr(#b>2,'Target search string must not be less than 3 chars.')
-                keyword='%W'..b:gsub('%%','\1\2\3'):escape():gsub('\1\2\3','.-')..'%W'
-                
+                local fuzzy=b:find('%',1,true) and '%W' or ''
+                keyword=fuzzy..b:gsub('%%','\1\2\3'):escape():gsub('\1\2\3','.-')..fuzzy
+
                 b,e=root.start_line,root.end_line
             else
                 b,e=st,ed
@@ -344,7 +358,7 @@ lexer.lines={
                 env.checkerr(not e or e>=b, "<end_line> must not be smaller than <start_line>.")
                 if not e then
                     data.l=b
-                    b=math.max(1,math.round(b-h/2))
+                    b=math.max(1,math.floor(b-h/2))
                     e=b+h
                 end
                 data.b,data.e=b,e
