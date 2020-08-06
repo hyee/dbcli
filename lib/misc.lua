@@ -242,6 +242,7 @@ local function compare(a,b)
 end
 
 function math.round(exact, quantum)
+    if type(exact)~='number' then return exact end
     quantum = quantum and 0.1^quantum or 1
     local quant,frac = math.modf(exact/quantum)
     return quantum * (quant + (frac > 0.5 and 1 or 0))

@@ -75,6 +75,7 @@ function lexer:read(data,file,seq)
 
     local probes,finds,priors={},{},self.priors
 
+    --call probe.end_parse
     local function end_parse(name,closer)
         local probe=probes[name]
         if not probe then return end
@@ -90,7 +91,7 @@ function lexer:read(data,file,seq)
         end
         probes[name]=nil
     end
-
+    --call probe.parse
     local function parse(name)
         local probe=probes[name]
         if not probe then return end
@@ -100,6 +101,7 @@ function lexer:read(data,file,seq)
             return
         end
         local res=probe:parse(curr,lineno,full_line)
+        --when the function return false then end the probe
         if res==false then return end_parse(name) end
     end
 
@@ -111,6 +113,7 @@ function lexer:read(data,file,seq)
 
     local function execute(p,e,c)
         for i,h in ipairs(priors) do
+            --call all active probes with the order of prorities
             if probes[h.name] then
                 _exec(h.name,p,e,c)
                 if h.exclusive then p=nil end
@@ -129,22 +132,25 @@ function lexer:read(data,file,seq)
         counter=counter+1
         full_line,curr=line,line:sub(1,256):rtrim()
         lineno,sub=lineno+1,curr:ltrim()
+        --record the offset for each batch_size lines in order to fastly seek the position
         if fmod(counter+1,batch_size)==1 then 
             root.seeks[floor(counter/batch_size)]=offset
         end
         for i,n in ipairs(priors) do
             local k,v=n.name,n.probe
             local p=probes[k]
+            --if the high prior probe is active, then skip all following probes 
             if p and p.exclusive then
                 break
             elseif v.start and not finds[k] and not p then
                 local found=false
+                --call the start function/string
                 if type(v.start)=="string" then
                     found=sub:find(v.start,1,true)
                 else
                     found=v.start(sub,root,lineno,full_line)
                 end
-
+                --if the probe's start string/function match the line, then activate the probe
                 if found==1 or found==true then
                     if v.closeable~=false then 
                         execute(true,false,v.parse and k) 
@@ -274,7 +280,7 @@ function lexer:read(data,file,seq)
             h.probe.on_finish(h.probe,root[h.name])
         end
     end
-    print('\n'..(end_line-start_line+1)..'lines processed in '..math.round(os.clock()-clock,3)..' secs. Following commands are available: '..table.concat(options,','))
+    print('\n'..(end_line-start_line+1)..' lines processed in '..math.round(os.clock()-clock,3)..' secs. Following commands are available: '..table.concat(options,','))
 end
 
 function lexer:close()
@@ -332,6 +338,13 @@ lexer.lines={
     start='-',
     breakable=false,
     extract={
+        --[[--
+            1) if only begin lineno is specified then display all nearby lines, and highlight this line
+            2) if either begin/end lineno is specified then print the line range
+            3) if begin/end lineno is not a number, then fuzzy search and display all matched lines
+                   * b or p: previous page based on 1)
+                   * f or n: next page based on 1)
+        --]]--
         help="|@@NAME {<start_line> [<end_line>]}$COMMANDCOLOR$ \\| p \\| n \\| $NOR$<keyword> | Show matched lines with the specific line range or keyword(supports wildchar '%') |",
         call=function(this,data,b,e,...)
             env.checkerr(b,"Please input the start line number or keyword.")
