@@ -176,9 +176,13 @@ local function extract_plan()
                     self.print=function(self)
                         if not self.text then return '' end
                         local lines=table.concat(self.text,'\n')
-                        self.text,self.plan=nil
+                        local rows={{'Execution Plan Dump'}}
+                        for k,v in ipairs(self.text) do
+                            rows[k+1]={v}
+                        end
+                        env.grid.print(rows)
+                        self.text,self.plan,rows=nil
                         if lines=='' then line='No execution plan found' end
-                        print(lines)
                         return lines
                     end
                 --keep parsing in this block if the plan line has not started
@@ -330,7 +334,7 @@ local function check_op(line,root,qb)
     return false
 end
 
-local qb_patterns={'^Registered qb: *('..qb_exp..')','^%u%u+:.+ ('..qb_exp..') ','^Query Block +('..qb_exp..')',' qb_name=('..qb_exp..') '}
+local qb_patterns={'^Registered qb: *('..qb_exp..')','^%u%u+:.- ('..qb_exp..') ','^Query Block +('..qb_exp..')',' qb_name=('..qb_exp..') '}
 local function extract_qb()
     return {
         --target_qb: used by the extract.call function
@@ -578,7 +582,7 @@ local function extract_qbs()
                                             ), q.in_plan or '','|',q.seq,q.lineno,q.cbqt}
                     end
                 end
-                table.insert(rows,1,{'Query Block Registry','Plan Id','|','QB#','Reg Line#','Involved Abbr Ops'})
+                table.insert(rows,1,{'Query Block Registry','Plan#','|','QB#','Line#','Involved Abbr Ops'})
                 if is_print==false then return rows end
                 grid.print(rows)
                 if found then
@@ -672,9 +676,9 @@ local function extract_tb()
             elseif line:match('^ *[%*=]+$') or line:find('^Access path analysis') or line:find('^Join order') then
                 self.info[self.type].end_line=lineno-1
                 return false
-            elseif self.type=='bsi' and line=='' then
-                self.info[self.type].end_line=lineno-1
-                return false
+            --elseif self.type=='bsi' and line=='' then
+            --    self.info[self.type].end_line=lineno-1
+            --    return false
             end
         end,
 
@@ -782,9 +786,9 @@ local function find_tb(root,qb,t)
     if tab then
         tab,alias=tab:upper(),alias:upper()
         local tb=root.tb
-        return tb and tb[tab] and tb[tab][qb] and tb[tab][qb][alias] or {}
+        return tb and tb[tab] and tb[tab][qb] and tb[tab][qb][alias] or {sta={}}
     end
-    return {}
+    return {sta={}}
 end
 
 local function extract_jo()
@@ -798,7 +802,7 @@ local function extract_jo()
         end,
 
         add=function(self,level,lineno)
-            local jo=self.curr_perm
+            local jo=self.curr_jo
             --each time a line is chosen, also record the range end line for JO/table
             jo.end_line,self.last_indent=lineno,level
             jo.lines[lineno]=level
@@ -833,24 +837,29 @@ local function extract_jo()
                 self.tree_index={}
                 local curr=self.data.tree[self.qb]
                 for k,v in ipairs(tables) do 
-                    if not curr[v] then curr[v]={jos={},level=k} end
-                    curr=curr[v]
-                    self.tree_index[k]=curr
-                    --For the driving table, read info from BSI and STA because it has no join info
-                    if k==1 then
+                    if not curr[v] then 
+                        curr[v]={jos={},level=k}
                         local tb=find_tb(root,self.qb,v)
-                        curr.card,curr.cost,curr.spd,curr.method=tb.card,tb.cost,tb.spd,tb.best_sta
-                        if tb.sta then
-                            curr.lines={tb.sta.start_line,tb.sta.end_line}
+                        if k==1 then
+                            --For the driving table, read info from BSI and STA because it has no join info
+                            curr[v].lines={card=tb.card,cost=tb.cost,method=tb.best_sta,spd=tb.spd}
+                            local sta=tb.sta or tb.bsi
+                            if sta then
+                                curr[v].lines[1],curr[v].lines[2]=sta.start_line,sta.end_line
+                            end
+                        else
+                            curr[v].lines={spd=tb.spd}
                         end
                     end
+                    curr=curr[v]
+                    self.tree_index[tonumber(v:match('#(%d+)'))]=curr
                     curr.jos[#curr.jos+1]=perm
                 end
                 --print(table.dump(self.data.tree[tables[1]]))
                 self.data[self.qb].perm_count=perm
                 --build detailed map
-                local jo={lines={},tables=tables,tlines={},tcard={},jo=perm,start_line=lineno,cost=0}
-                self.curr_perm=self.data[self.qb].perms[perm] or jo
+                local jo={lines={},tables=tables,tlines={},jo=perm,start_line=lineno,cost=0}
+                self.curr_jo=self.data[self.qb].perms[perm] or jo
                 if not self.data[self.qb].perms[perm] then
                     self.data[self.qb].perms[perm]=jo
                 end
@@ -868,16 +877,16 @@ local function extract_jo()
                 --set working tree node
                 self.curr_tree=self.data.tree[self.qb]
                 --fine sequence of the table
-                for i,t in ipairs(self.curr_perm.tables) do
-                    if not self.curr_tree[t] then self.curr_tree[t]={} end
+                for i,t in ipairs(self.curr_jo.tables) do
                     --down the tree
                     self.curr_tree=self.curr_tree[t]
                     if t==self.curr_table then
                         --build table line info
                         self.curr_tab_index=i
-                        local tline=self.curr_perm.tlines[i] or {lineno,lineno}
+                        local tline=self.curr_jo.tlines[i] or {lineno,lineno}
+                        tline.spd=self.curr_tree.lines.spd
                         tline.jo=root.current_jo
-                        self.curr_perm.tlines[i]=tline
+                        self.curr_jo.tlines[i]=tline
                         --map line info to the tree
                         self.curr_tree.lines=tline
                         break
@@ -893,9 +902,10 @@ local function extract_jo()
                 if cost then
                     cost=tonumber(cost)
                     if self.cost==0 or self.cost>cost then
-                        self.cost,self.method,self.curr_tree.method=cost,method,method..('(Abort)')
+                        self.cost,self.method=cost,method
                     end
-                    self.curr_tree.cost=self.cost
+                    self.curr_jo.tlines[self.curr_tab_index].cost=self.cost
+                    self.curr_jo.tlines[self.curr_tab_index].method=self.method..'(Aborted)'
                 end
             elseif line:find('^ *Cost of predicates:') then
                 --Show join predicates
@@ -914,8 +924,7 @@ local function extract_jo()
                 local card=tonumber(line:match('Computed: *([%d%.]+)'))
                 if card and self.curr_tab_index then
                     card=math.round(card,3)
-                    self.curr_tree.card=card
-                    self.curr_perm.tcard[self.curr_tab_index]=card
+                    self.curr_jo.tlines[self.curr_tab_index].card=card
                 end
                 self:add(3,lineno)
             elseif line:find('^Best:+') then
@@ -923,23 +932,15 @@ local function extract_jo()
                 self:add(2,lineno)
                 self:add(2,lineno+1)
                 local best=line:match('%S+$')
-                local found=false
-                for i=1,#self.curr_perm.tables do
-                    --record the best join among NL/SM/HA/etc into the tree
-                    if self.curr_perm.tables[i]==self.curr_table then
-                        self.tree_index[i].method=best
-                        found=true
-                        break
-                    end
-                end
+                self.curr_jo.tlines[self.curr_tab_index].method=best
             elseif line:find('^Join order aborted') or line:find('^Best so far') then
                 --Hanle the end of JO level join
                 self.curr_tab_index,self.curr_table,root.current_tb,root.current_alias=nil
                 self:add(0,lineno)
                 if line:find('^Join') then
                     --handle the aborted join
-                    if self.curr_perm.cost==0 then
-                        self.curr_perm.cost='> '..math.round(self.cost,3)
+                    if self.curr_jo.cost==0 then
+                        self.curr_jo.cost='> '..math.round(self.cost,3)
                     end
                     self.cost,self.card=0,0
                     root.current_jo=nil
@@ -949,12 +950,11 @@ local function extract_jo()
                     local seq,cost,card=line:match('Table#: *(%d+).-[cC]ost: *([%.%d]+).-[cC]ard: *([%.%d]+)')
                     if cost then 
                         self.cost,self.card=tonumber(cost),math.round(tonumber(card),3)
-                        self.curr_perm.tcard[tonumber(seq)+1]=self.card
-                        self.tree_index[tonumber(seq)+1].card=self.card
-                        self.tree_index[tonumber(seq)+1].cost=self.cost
+                        seq=tonumber(seq)
+                        self.tree_index[seq].lines.card,self.tree_index[seq].lines.cost=self.card,self.cost
                     end
                     --set the last cost/card as JO level cost/card
-                    self.curr_perm.cost,self.curr_perm.card='= '..math.round(self.cost,3),self.card
+                    self.curr_jo.cost,self.curr_jo.card='= '..math.round(self.cost,3),self.card
                     self.is_best=1
                 end
             elseif self.is_best==1 then
@@ -963,12 +963,9 @@ local function extract_jo()
                     self:add(0,lineno)
                     local seq,cost,card=line:match('Table#: *(%d+).-[cC]ost: *([%.%d]+).-[cC]ard: *([%.%d]+)')
                     if cost then 
-                        seq,self.cost,self.card=tonumber(seq)+1,tonumber(cost),math.round(tonumber(card),3)
-                        self.tree_index[seq].card=self.card
-                        self.tree_index[seq].cost=self.cost
-                        self.curr_perm.cost,self.curr_perm.card='= '..math.round(self.cost,3),self.card
-                        local card=self.curr_perm.tcard
-                        card[seq]=self.card
+                        seq,self.cost,self.card=tonumber(seq),tonumber(cost),math.round(tonumber(card),3)
+                        self.curr_jo.cost,self.curr_jo.card='= '..math.round(self.cost,3),self.card
+                        self.tree_index[seq].lines.card,self.tree_index[seq].lines.cost=self.card,self.cost
                     end
                 else--housekeeping
                     self.is_best=0
@@ -989,10 +986,10 @@ local function extract_jo()
                     local tab,alias=t:match('^(.-)%[(.-)%]')
                     curr=curr[t]
                     local curr_tb=find_tb(root,self.qb,t)
-                    curr_tb.qb_perms=(curr_tb.qb_perms or 0)+qb.perm_count
-                    curr_tb.jo,curr_tb.best_jo=curr.method,best
-                    if perm.tlines[i] then curr_tb.jo_spd=perm.tlines[i].spd end
-                    curr_tb.jo_card=perm.tcard[i] or curr.card
+                    curr_tb.qb_perms,curr_tb.best_jo=(curr_tb.qb_perms or 0)+qb.perm_count,best
+                    curr_tb.jo=curr.lines.method
+                    curr_tb.jo_spd=curr.lines.spd
+                    curr_tb.jo_card=curr.lines.card
                 end
             elseif (self.last_indent or 0) > 0 and (line:find(' +Cost:') or line:find('^%s+Index:')) then
                 --Show more detail in each tables join method: NL/SM/HA
@@ -1022,9 +1019,9 @@ local function extract_jo()
 
                 --Bypass the SPD that started as 'NO' (NODIR/NOCTX/NOTQBCTX)
                 if found:find('^NO') then return end
-                if self.curr_tab_index and (self.curr_perm.tlines[self.curr_tab_index][3] or 'NO'):find('^NO') then
+                if self.curr_tab_index then
                     self:add(2,lineno)
-                    self.curr_perm.tlines[self.curr_tab_index].spd=found
+                    self.curr_jo.tlines[self.curr_tab_index].spd=found
                 end
             elseif line~='' and not line:find('%*%*') and (self.last_indent or 0) > 0 then
                 --record line stack by indent
@@ -1043,37 +1040,55 @@ local function extract_jo()
             --[[--
                 when no parameters then show the list of QBs
                 when only qb is specified then show the list of join orders of that QB
-                when jo is table name, then display the specific QB in tree mode#1
+                when jo is '-tree', then display all JOs for the specific QB in tree mode#1
+                when jo is table name, then display the specific QB in tree mode#1 starts from the table
                 when jo is table name and <table_name> is not nil, then display the specific QB in tree mode#2
                 when jo is number, then display the brief join(remove some unimportant lines) info of the JO
                 when qb/jo/tb is specify then display the detail lines of the table in the JO
             --]]--
-            help="|@@NAME [<qb_name> or *] [<JO#> or * [<table_name>]] \\| [<table_name>] | Show join orders, more details for more parameters |",
+            help="|@@NAME [<qb_name> or *] [<JO#>\\|* [<table_name>]] \\| <table_name> \\| -tree| Show join orders, more details for more parameters |",
             call=function(this,data,qb,jo,tb)
                 local rows,last={}
                 local root,start_node=data.root
 
-
-                local function show_tree(qb,best,t,node,sep,is_last)
+                local is_best_displayed
+                local function show_tree(qb,best,t,node,sep,is_last,siblings,parent_best)
                     local jos,lines={},node.lines or {'',''}
+                    --check if this node belongs to the best JO
+                    local is_best
+                    local fmt1=('$PROMPTCOLOR$%s$NOR$'):convert_ansi()
+                    local fmt2='%s'
+                    for k,v in ipairs(node.jos) do
+                        if v==best then 
+                            is_best=true
+                            fmt2=fmt1
+                            break
+                        end
+                    end
+
+                    local fmt3=parent_best and not is_best_displayed and node.jos[#node.jos]<best and fmt1 or '%s'
                     --order the displayed child tables
                     for k,v in pairs(node) do
-                        if type(v)=='table' and v.level then
+                        if type(v)=='table' and v.jos then
                             jos[#jos+1]={k,v}
                         end
                     end
                     table.sort(jos,function(a,b) return a[2].jos[1]<b[2].jos[1] end)
-                    --When current node has no child then show underline to separate each JO
-                    rows[1+#rows]={qb..' '..(#jos==0 and '$UDL$' or ''),
+
+                    rows[1+#rows]={qb,
+                                   --When current node has no child then show underline to separate each JO
+                                   (#jos==0 and '$UDL$' or '')..(#jos<=1 and node.jos[1]==best and ' Y' or ''),
                                    sep~='' and node.jos[1] or '',
-                                   #jos==0 and node.jos[1]==best and 'Y' or '',
                                    lines[1],lines[2],
-                                   math.round(node.cost,3),
-                                   node.card,lines.spd or node.spd,node.method or 'Aborted',
-                                   '$NOR$ '..sep..t}
+                                   math.round(lines.cost,3),
+                                   lines.card,lines.spd,lines.method,
+                                   --highlight the best join chain
+                                   (#jos==0 and '$NOR$ ' or ' ')..sep..(siblings>0 and ((is_best and fmt1 or fmt3):format(is_last and '!' or '|') or '')..fmt2:format('-') or '')..fmt2:format(t)}
+                    if #jos==0 and is_best then is_best_displayed=true end
                     --Display all child nodes
                     for k,v in ipairs(jos) do
-                        show_tree(qb,best,v[1],v[2],sep..(is_last and '  ' or '| '),k==#jos)
+                        local sep1=sep..(is_last and ' ' or fmt3:format('|'))..(siblings>0 and '   ' or ' ')
+                        show_tree(qb,best,v[1],v[2],sep1,k==#jos,#jos-1,is_best)
                     end
                 end
 
@@ -1082,19 +1097,24 @@ local function extract_jo()
                 elseif jo and not tonumber(jo) then
                     --when the jo parameter is table then display join orders in tree mode#1 
                     jo=jo:upper()..(jo:find('[',1,true) and '' or '[')
+                    rows[1]={'Q.B','Best','Jo#','Start Line','End Line','Cost','Card','SPD','Method','Join Tree'}
+                    local tb_count={}
+                    
                     for k,v in pairs(data.tree) do
-                        if type(v)=='table' and k~='tree' and k~='root' and (not qb or qb:upper()==k or any[qb]) then
+                        if k:find('$',1,true) and qb:upper()==k then
                             for t,o in pairs(v) do
-                                if (t:upper():find(jo,1,true)==1 or jo:find(t:upper(),1,true)==1) then
-                                    rows[1]={'Query Block','Jo#','Best','Start Line','End Line','Cost','Card','SPD','Method','Join Tree'}
-                                    show_tree(k,data[k].perm_best,t,o,'',true)
-                                    grid.print(rows)
-                                    return
+                                if jo=='-TREE[' or (t:upper():find(jo,1,true)==1 or jo:find(t:upper(),1,true)==1) then
+                                    tb_count[#tb_count+1]={k,t,o.jos[1]}
                                 end
                             end
                         end
                     end
-                    env.raise('No data found.')
+                    env.checkerr(#tb_count>0,'No data found.')
+                    table.sort(tb_count,function(a,b) return a[3]<b[3] end)
+                    for k,v in ipairs(tb_count) do
+                        show_tree(v[1],data[v[1]].perm_best,v[2],data.tree[v[1]][v[2]],'',k==#tb_count,#tb_count-1,false)
+                    end
+                    return grid.print(rows)
                 end
 
                 local fmt='%s=%s'
@@ -1104,7 +1124,7 @@ local function extract_jo()
                     local chain = {}
                     for c=1,#perm.tables do
                         local t=perm.tables[c]
-                        chain[c]=t..(tree[t].method and ('('..tree[t].method..')') or '')
+                        chain[c]=t..(tree[t].lines.method and ('('..tree[t].lines.method..')') or '')
                         tree=tree[t]
                     end
                     return table.concat(chain,' -> ')
@@ -1114,12 +1134,12 @@ local function extract_jo()
                 local plan,found=root.plan and root.plan.qbs or {}
                 local extralines,eb,ee={}
                 local function build_extra(qb,tree)
+                    if not tree.lines[1] then return end
                     local pjo=qb.perms[tree.lines.jo]
-                    local pieces=pjo.lines
-                    
+                    local pieces=pjo and pjo.lines or nil
                     for p=tree.lines[1],tree.lines[2] do
-                        if pieces[p] then 
-                            extralines[p]=pieces[p]
+                        if not pieces or pieces[p] then 
+                            extralines[p]=not pieces and 0 or pieces[p]
                             eb=(not eb or eb>p) and p or eb
                             ee=(not ee or ee<p) and p or ee
                         end
@@ -1128,7 +1148,7 @@ local function extract_jo()
                 end
 
                 for k,v in pairs(data) do
-                    if type(v)=='table' and k~='tree' and k~='root' and (not qb or qb:upper()==k or any[qb]) then
+                    if k:find('$',1,true) and (not qb or qb:upper()==k or any[qb]) then
                         if not qb then
                             mode='qb'
                             local best=v.perms[v.perm_best]
@@ -1164,15 +1184,15 @@ local function extract_jo()
                                             end
                                             
                                             if treemode then
-                                                chain[c]={(' '):rep(c*2-2)..t.. ' ->'}
-                                                for k,v in pairs(tree) do
-                                                    if type(v)~='table' then
+                                                chain[c]={(' '):rep(c*2-2)..t.. ' $HIB$->$NOR$'}
+                                                for k,v in pairs(tree.lines) do
+                                                    if type(v)~='table' and type(k)~='number' and k~='jo' then
                                                         chain[c][#chain[c]+1]=fmt:format(k,tostring(v))
                                                     end
                                                 end
                                                 chain[c]=table.concat(chain[c],'  ')
                                             else
-                                                chain[c]=t..(tree.method and ('('..tree.method..')') or '')
+                                                chain[c]=t..(tree.lines.method and ('('..tree.lines.method..')') or '')
                                             end
                                         end
                                         rows[#rows+1]={k,i,v.perm_best==i and 'Y' or '',j.start_line,j.end_line,j.cost,j.card,spd,table.concat(chain,treemode and '\n' or ' -> '),j}
@@ -1324,6 +1344,7 @@ local function extract_sql()
                     local q=root.qbs[qb:upper()]
                     env.checkerr(q and q.sql,"Cannot find unparsed SQL text for query block: "..qb)
                     text=root.line(q.sql)
+                    print('At line # '..q.sql..':\n=====================')
                     print(text)
                     print('\nResult saved to '..env.save_data(root.prefix..'_'..qb:gsub('[$@]','_')..'.sql',text))
                 end
