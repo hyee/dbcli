@@ -232,13 +232,86 @@ local function extract_plan()
                         self:add(sep)
                         self:add(fmt:format(self.plan[1],'','Q.B','','Alias'))
                         self:add(sep)
-                        local found
+                        local hier,stack,found={_vws={}},{}
+                        local stack1,names={hier},{}
+                        self.hier=hier
+                        local spaces=function(len) return (' '):rep(len) end
                         for i=3,#self.plan-1 do
+                            local plan=self.plan[i]
                             local qb=self.qbs[i-3] or {"",""}
+                            if qb[1]~='' then
+                                --Build QB hierachy
+                                local plan1=plan:gsub('%([^|]+%)',function(s) return spaces(#s) end):gsub('(%u) (%u)','%1_%2')
+                                local indent,op,tb=plan1:match('|([^|]+) +([%u_]+) *|*([^|]-)|')
+                                indent=#indent
+                                for j=#stack,1,-1 do
+                                    if stack[j][2]>=indent or (names[qb[1]] and hier~=names[qb[1]]) then
+                                        table.remove(stack)
+                                        table.remove(stack1)
+                                        hier=stack1[#stack1]
+                                    else
+                                        break
+                                    end
+                                end
+                                
+                                if hier._name~=qb[1] then
+                                    hier[qb[1]]={_indent=indent,_id=i-3,_name=qb[1],_tables={}}
+                                    hier=hier[qb[1]]
+                                    stack[#stack+1]={qb[1],indent}
+                                    stack1[#stack1+1]=hier
+                                    names[qb[1]]=hier
+                                end
+
+                                tb=tb:trim()
+                                local h=stack1[#stack1-1]
+                                if tb and tb~='' then
+                                    if hier._id==i-3 then
+                                        hier._vw=tb
+                                        self.hier._vws[tb]=hier._name
+                                        if h and h._name then h._tables[tb]=i-3 end
+                                    else
+                                        hier._tables[tb]=i-3
+                                    end
+                                end
+
+                                --replace empty view name in the execution plan as internal view name
+                                if qb[2]~='' and op=='VIEW' and tb=='' and h and h._name then
+                                    local vw=hier._vw
+                                    if not vw then
+                                        local pq=h._name
+                                        local tbs=root.jo and root.jo[pq] and root.jo[pq].perms[1].tables or {}
+                                        local tb='['..qb[2]:gsub('"',''):match('^[^@]+')..']'
+                                        for j,t in ipairs(tbs) do
+                                            if t:find(tb,1,true) then
+                                                if not vw or t:upper()~=t or t:find('^VW') then
+                                                    vw=t:gsub('%[.*','')
+                                                end
+                                            end
+                                        end
+                                    end
+                                    if vw then
+                                        h._tables[vw]=i-3
+                                        local w=#vw
+                                        hier._vw=vw
+                                        self.hier._vws[vw]=hier._name
+                                        vw=('$HIC$'..vw..'$NOR$'):convert_ansi()
+                                        plan=plan:gsub('(| +VIEW)( +)| ( +)|',function(a,b,c)
+                                            local fmt=a..'%s| %s|'
+                                            if #c>=w then
+                                                return fmt:format(b,vw..spaces(#c-w))
+                                            elseif #b>w+3 then
+                                                return fmt:format(' ('..vw..')'..spaces(#b-w-3),c)
+                                            else
+                                                return a..' ('..vw..')'..spaces(#b+#c+2-w-3)..'|'
+                                            end
+                                        end)
+                                    end
+                                end
+                            end
                             self.qbs[i-3]=nil
                             if qb[1]~='' then found=true end
                             --Mark the QB that has unparsed SQL as blue
-                            self:add(fmt:format(self.plan[i],
+                            self:add(fmt:format(plan,
                                                 qb[1]~='' and root.qbs[qb[1]].sql and '$HIB$' or '',
                                                 qb[1],
                                                 qb[1]~='' and root.qbs[qb[1]].sql and '$NOR$' or '',
@@ -281,7 +354,7 @@ local function extract_plan()
                 env.checkerr(not option or data.line_ranges[option],'Invalid option or no data: '..(option or ''))
                 if not option or option=='plan' then
                     local text=this.probes.plan.load(data,option)
-                    return print("Result saved to "..env.save_data(data.root.prefix..'_plan_'..(option and option or 'all')..'.txt',text))
+                    return print("Result saved to "..env.write_cache(data.root.prefix..'_plan_'..(option and option or 'all')..'.txt',text))
                     
                 end
                 local root=data.root
@@ -426,8 +499,11 @@ local function extract_qb()
 
             if not root.qbs then return line,0 end
             --record the unparsed sql line for each qb
-            if line:find('****** UNPARSED QUERY IS ******',1,true) then
-                root.qbs[root.current_qb].sql=lineno+1
+            if line:find('****** UNPARSED QUERY IS ******',1,true) and not line:find('^Stmt') and not line:find('^Final') then
+                if not root.qbs[root.current_qb].sql then
+                    root.qbs[root.current_qb].sql={}
+                end
+                table.insert(root.qbs[root.current_qb].sql,lineno+1)
             end
             return false
         end,
@@ -536,8 +612,11 @@ local function extract_qbs()
         start=function(line,root) return root.fixctl and line:find("Query Block Registry:") end,
         extract={
             --The infomation of root.qbs is generated by extract_plan and extract_qb
-            help="|@@NAME [<keyword>] | Show Registered Query Blocks |",
+            help="|@@NAME [<keyword>] \\| [-raw [<keyword>]] | Show Registered Query Blocks |",
             call=function(this,data,keyword,is_print)
+                if keyword and keyword:lower()=='-raw' then
+                    return this:pattern_search(data,is_print)
+                end
                 local fmt,fmt1='%s%s%s%s (%s)','%s'
                 local qbs,chains={},{}
                 for k,v in pairs(data) do
@@ -588,6 +667,48 @@ local function extract_qbs()
                 if found then
                     print(('-'):rep(112))
                     print('* The $HIB$blue$NOR$ query blocks can be found in the execution plan, and the $HIR$red$NOR$ abbrs means the operations are bypassed.')
+                end
+
+                local hier=data.root.plan and data.root.plan.hier
+                local vws={}
+                local function fill_hier(h,sep,siblings,is_last)
+                    local tbs={}
+                    if h._name then
+                        local row={h._id,sep..(siblings>0 and (is_last and '!-' or '|-') or '')..h._name,''}
+                        if h._vw then 
+                            row[2]=row[2]..' ('..h._vw..')' 
+                        end
+                        for k,v in pairs(h._tables or {}) do
+                            tbs[#tbs+1]={k,v}
+                        end
+                        
+                        table.sort(tbs,function(a,b) return a[2]<b[2] end)
+                        if #tbs>0 then
+                            local strs={}
+                            for k,v in ipairs(tbs) do
+                                strs[k]=hier._vws[v[1]] or v[1]
+                            end
+                            row[3]=table.concat(strs,', ')
+                        end
+                        rows[#rows+1]=row
+                        sep=sep..(siblings>0 and (is_last and '  ' or '| ') or '')..'  '
+                        tbs={}
+                    end
+                    for k,v in pairs(h) do
+                        if type(v)=='table' and v._id then
+                            tbs[#tbs+1]={v,v._id}
+                        end
+                    end
+                    table.sort(tbs,function(a,b) return a[2]<b[2] end)
+                    for k,v in ipairs(tbs) do
+                        fill_hier(v[1],sep,#tbs-1,k==#tbs)
+                    end
+                end
+                if hier and not keyword then
+                    print('\n')
+                    rows={{'Plan#','Query Block Hierachy','Child Objects'}}
+                    fill_hier(hier,'',0,true)
+                    env.grid.print(rows)
                 end
             end
         },
@@ -1339,14 +1460,20 @@ local function extract_sql()
                     text=table.concat(text,'\n')
                     print(text)
                     print('\n'.. string.rep('=',30)..'\nSource SQL ID: '..root.sql_id)
-                    print('\nResult saved to '..env.save_data(root.prefix..'.sql',text))
+                    print('\nResult saved to '..env.write_cache(root.prefix..'.sql',text))
                 else
                     local q=root.qbs[qb:upper()]
                     env.checkerr(q and q.sql,"Cannot find unparsed SQL text for query block: "..qb)
-                    text=root.line(q.sql)
-                    print('At line # '..q.sql..':\n=====================')
-                    print(text)
-                    print('\nResult saved to '..env.save_data(root.prefix..'_'..qb:gsub('[$@]','_')..'.sql',text))
+                    local prev_sql
+                    for i,lineno in ipairs(q.sql) do
+                        text=root.line(lineno)
+                        if text~=prev_sql then
+                            prev_sql=text
+                            print('Line # '..lineno..':\n===============')
+                            print(text..'\n')
+                        end
+                    end
+                    print('Result saved to '..env.write_cache(root.prefix..'_'..qb:gsub('[$@]','_')..'.sql',text))
                 end
             end
         }
@@ -1545,10 +1672,23 @@ function parser:build_probes()
             start='The following abbreviations are used by optimizer trace',
             extract={
                 help="|@@NAME [<keyword>] | Show abbreviations |",
-                call=self.pattern_search
+                call=function(this,data,keyword) this:pattern_search(data,keyword,data.extras) end
             },
             parse=function(self,line,lineno)
                 if line:find('^%*%*%*') or line=='' then return false end
+                if not self.data.extras then
+                    self.data.extras={
+                    'EQUIV: Equivalence Check',
+                    'DCL: De-Correlated lateral view(or ansi join) into inline view',
+                    'BJ:  Bushy join',
+                    'OJE: Outer Join Elimination',
+                    'FPD: Filter Push Down',
+                    'SQT: Statistic-based Query Transformation',
+                    'GBP: Group By Placement',
+                    'CSE: Common Subexpression Elimination',
+                    'PJE: Partial Join Evaluation',
+                    'TE:  Table Expansion'}
+                end
             end
         },
         alter={

@@ -37,7 +37,7 @@ end
 function lexer:check_file(handler,file,seq)
 end
 
-function lexer.pattern_search(this,data,keyword)
+function lexer.pattern_search(this,data,keyword,extras)
     env.checkerr(data and data.last_start_line,"No data found.")
     local root,counter=data.root,0
     root.print_start()
@@ -47,6 +47,13 @@ function lexer.pattern_search(this,data,keyword)
     for line,lineno in root.range(data.last_start_line,data.last_end_line) do
         if not keyword or line:sub(1,256):rtrim():lower():find(keyword) then
             root.print(lineno,line)
+        end
+    end
+    if type(extras)=='table' then
+        for k,line in ipairs(extras) do
+            if not keyword or line:sub(1,256):rtrim():lower():find(keyword) then
+                root.print('9999',line)
+            end
         end
     end
     return root.print_end(true)
@@ -71,7 +78,7 @@ function lexer:read(data,file,seq)
     local root=self.data
     root.file,root.handler,root.start_line,root.end_line=file,f,start_line,end_line
     root.prefix=short_name:match('^[^%.]+')
-    root.seeks=table.new(4096,8)
+    root.seeks=table.new(8192,8)
 
     local probes,finds,priors={},{},self.priors
 
@@ -121,7 +128,7 @@ function lexer:read(data,file,seq)
         end
     end
 
-    local counter,batch_size=0,256
+    local counter,batch_size=0,math.max(4,math.ceil((end_line-start_line+1)/8192))
     local clock=os.clock()
     local fmod,floor=math.fmod,math.floor
     print('Analyzing the trace file'..(target and (' for '..target) or '')..' ...')
@@ -155,8 +162,8 @@ function lexer:read(data,file,seq)
                     if v.closeable~=false then 
                         execute(true,false,v.parse and k) 
                     end
-                    data=root[k] or {root=root}
-                    root[k]=data
+                    data=root[k] or {}
+                    data.root,root[k]=root,data
                     data.last_start_line,data.last_start_offset=lineno,prev_offset
 
                     curr_probe=table.clone(v)
