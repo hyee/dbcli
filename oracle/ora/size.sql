@@ -55,7 +55,7 @@ BEGIN
         ind  AS(SELECT * FROM tab UNION ALL SELECT /*+ordered use_nl(c t o)*/ lv+1, t.obj#, c.subname FROM tab c, sys.ind$ t WHERE t.bo# = c.obj#),
         lobs AS(SELECT * FROM ind UNION SELECT /*+ordered use_nl(c t o)*/lv+1, t.lobj#, c.subname FROM ind c, sys.lob$ t WHERE  t.obj# = c.obj#),
         rws  AS(SELECT /*+materialize no_expand*/ a.*,inserts-deletes rws from sys.dba_tab_modifications a where table_owner=:object_owner and table_name=:object_name and (:object_subname is null or :object_subname in(partition_name,subpartition_name)))
-        SELECT  /*+ordered use_hash(a b) use_nl(o2)*/ a.*,
+        SELECT  /*+ordered use_hash(a b) use_nl(o2) no_parallel*/ a.*,
                 CASE WHEN object_type LIKE 'TABLE%' THEN
                     nvl(coalesce((select rowcnt from sys.tab$ where obj#=o2.obj#),(select rowcnt from sys.tabpart$ where obj#=o2.obj#),(select rowcnt from sys.tabsubpart$ where obj#=o2.obj#)),0)+ nvl(b.rws,0)
                 END num_rows

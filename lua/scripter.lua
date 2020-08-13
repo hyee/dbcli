@@ -384,7 +384,9 @@ function scripter:get_script(cmd,args,print_args)
         for _,cmd in pairs(type(self.command)=="table" and self.command or {self.command}) do
             list[cmd],env.root_cmds[cmd]=keys,keys
         end
-
+        for k,v in pairs(self.cmdlist) do
+            keys[k]=type(v)=="table" and v.desc or nil
+        end
         if env.IS_ENV_LOADED then console:setSubCommands(list) end
     end
 

@@ -235,7 +235,7 @@ local fixed_stats={
     ['rows processed']=19
 }
 
-local DML={SELECT=1,WITH=1,UPDATE=1,DELETE=1,MERGE=1}
+local DML={SELECT=1,WITH=1,UPDATE=1,DELETE=1,MERGE=1,INSERT=1}
 function output.getOutput(item)
     if output.is_exec then return end
     if term then cfg.set('TERMOUT','on') end

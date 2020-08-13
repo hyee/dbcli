@@ -366,11 +366,10 @@ lexer.lines={
                 end
             end
             if not st then
-                b=table.concat({b,e,...},' ')
+                b=table.concat({b,e,...},' '):lower()
                 env.checkerr(#b>2,'Target search string must not be less than 3 chars.')
-                local fuzzy=b:find('%',1,true) and '%W' or ''
+                local fuzzy=b:find('%',1,true) and not e and '%W' or ''
                 keyword=fuzzy..b:gsub('%%','\1\2\3'):escape():gsub('\1\2\3','.-')..fuzzy
-
                 b,e=root.start_line,root.end_line
             else
                 b,e=st,ed

@@ -37,6 +37,13 @@ Parameters
     _column_tracking_level: when 3 then similar to dbms_stats.seed_column_usage, however can be set in session level, and 0 to avoid column group creation by dbms_stats,4 to maintain expression tracking
     _kks_parse_error_warning: controls whether to record the SQL in the alert log when the SQL fails to be parsed over the specific times(default as 100), in <12.2 db, can also set event 10035 level 1 to display the parse error in the alert log
     _kks_cached_parse_errors: set the value to a specific error number(i.e. 942) to skip the error
+    _small_table_threshold(STT): defaults to the 2% buffer cache, and Medium Table Threshold(MTT)=5*_small_table_threshold
+        1) OBJECT_SIZE <= STT: use buffer cache, keep object whose size < keep pool size is also considered as small
+        2) STT < OBJECT_SIZE < MTT: for serial read, if >50% blocks(or 99% of compressed table) are cached or 25% blocks are dirty, then use buffer cache, otherwise use direct path read
+            for parallel read, when >STT then dx read would be used(also controlled by _px_adaptive_offload_percentage, 0 means always)
+            flashback/version-based/scn-based/fragmented table scan will not use dx read
+        3) OBJECT_SIZE>=MTT: dx read
+        Turn on event '10358 trace name context forever, level 2:10384 trace name context forever,level 16384:trace[nsmtio] disk medium' to monitor the behaviours
     
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'

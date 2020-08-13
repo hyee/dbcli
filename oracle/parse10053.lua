@@ -91,7 +91,7 @@ local function extract_timer()
                             --remove the records who and its child nodes all have no timer record
                             table.remove(rows,i) 
                         else
-                            for j=1,4 do
+                            for j=1,5 do
                                 if rows[i][j]==0 then rows[i][j]='' end
                             end
                         end
@@ -239,10 +239,10 @@ local function extract_plan()
                         for i=3,#self.plan-1 do
                             local plan=self.plan[i]
                             local qb=self.qbs[i-3] or {"",""}
-                            if qb[1]~='' then
-                                --Build QB hierachy
-                                local plan1=plan:gsub('%([^|]+%)',function(s) return spaces(#s) end):gsub('(%u) (%u)','%1_%2')
-                                local indent,op,tb=plan1:match('|([^|]+) +([%u_]+) *|*([^|]-)|')
+                            local plan1=plan:gsub('%([^|]+%)',function(s) return spaces(#s) end):gsub('(%u) (%u)','%1_%2')
+                            local indent,op,tb=plan1:match('|([^|]+) +([%u_]+) *|*([^|]-)|')
+
+                            if indent then
                                 indent=#indent
                                 for j=#stack,1,-1 do
                                     if stack[j][2]>=indent or (names[qb[1]] and hier~=names[qb[1]]) then
@@ -253,7 +253,9 @@ local function extract_plan()
                                         break
                                     end
                                 end
-                                
+                            end
+                            if indent and qb[1]~='' then
+                                --Build QB hierachy
                                 if hier._name~=qb[1] then
                                     hier[qb[1]]={_indent=indent,_id=i-3,_name=qb[1],_tables={}}
                                     hier=hier[qb[1]]
