@@ -82,11 +82,15 @@ function helper.env(target,depth)
         local siz=#rows[1]+1
         rows[1][siz],rows[2][siz]=name,value
     end
+    local e=terminal.encoding(terminal)
+    
+    
     add("Memory.LUA(KB)",math.floor(collectgarbage("count")))
     add("Memory.JVM(KB)",math.floor((runtime:totalMemory()-runtime:freeMemory())/1024))
     if rows[2][1] and rows[2][2] then
         add("Memory.Total(KB)",rows[2][1]+rows[2][2])
     end
+    add("CodePoint",e)
     add("ENV.locale",os.setlocale())
     local prefix=env.WORK_DIR:len()+1
     for k,v in pairs(env) do

@@ -429,7 +429,14 @@ local function load_ext()
             {'DUMP_SGA_METADATA','',''},
             {'DUMP_TEMP','',''},
             {'DUMP_TRANSFER_OPS','',''},
-            {'ENQUEUES','',''},
+            {'ENQUEUES <level>',
+            [[Displays information about resources and locks. 
+              The most valuable information is displayed at level 3 (but requires a little formatting to avoid confusion). 
+              The output size is highly dependent on the current number of rows in v$lockand rarely reaches 1 MB 
+              Level:
+              1 hash table of resources in the queue 
+              2 1 + list of used resources 
+              3 2 + active locks on each resource]],''},
             {'ERRORSTACK <level>',
             [[Dump of the process call stack and other information.
              Level:
@@ -461,7 +468,7 @@ local function load_ext()
             {'GC_ELEMENTS','',''},
             {'GES_STATE','',''},
             {'GIPC','',''},
-            {'GLOBAL_AREA','',''},
+            {'GLOBAL_AREA <n>','1. PGA  2.SGA 4.UGA',''},
             {'GLOBAL_BUFFER_DUMP','',''},
             {'GWM_TEST','',''},
             {'GWM_TRACE','',''},
@@ -477,12 +484,12 @@ local function load_ext()
             * 4  include UGA heap
             * 8  include CGA heap
             * 16 include Top CGA
-            * 32 include Large Pool','oradebug dump heapdump 5 <--this dumps PGA and UGA heaps'},
+            * 32 include Large Pool]],'oradebug dump heapdump 5 <--this dumps PGA and UGA heaps'},
             {'HEAPDUMP_ADDR <level> <address>',
             [[Dump structure of a memory heap with specific address.
               Level:
               * 1 dump structure
-              * 2 also include contents]],'oradebug dump heapdump_addr 1 3087751692'},
+              * 2 also include contents]],'oradebug dump heapdump_addr 1 3087751692',''},
             {'HM_FDG_VERS','',''},
             {'HM_FW_TRACE','',''},
             {'HNGDET_MEM_USAGE_DUMP','',''},
@@ -546,7 +553,15 @@ local function load_ext()
               * 2 also include a hash table
               * 3 level 2 + dump of the library object handles
               * 4 Level 3 + dump of the heap]],'oradebug dump library_cache 2'},
-            {'LIBRARY_CACHE_OBJECT','',''},
+            {'LIBRARY_CACHE_OBJECT <level> <address>',
+            [[Displays information about a single object in the library cache. 
+              Address must be {x$kglob.kglhdadr/v$sql.child_address} or { x$kglob.kglhdpar/v$sql.address}
+              Addresses in hexadecimal notation should be prefixed with "0x" or converted to decimal. 
+              The level is used as a set of bit flags that determine what information will be displayed; 
+              the most useful, in my opinion, are the following levels: 
+              0  - simple, short dump 
+              16 - verbose dump 
+              48 - extremely verbose dump including information about child objects, if any]],''},
             {'LOCKS','',''},
             {'LOGERROR','',''},
             {'LOGHIST','',''},

@@ -3,6 +3,8 @@
    --[[
         @CHECK_ACCESS_OBJ: dba_views={dba_views}, default={all_views}
         @CHECK_ACCESS_COLS: dba_tab_cols={dba_tab_cols} default={all_tab_cols}
+        @CHECK_ACCESS_EXP : sys.dbms_sql2={1} default={0}
+        @ver: 12.1={dbms_utility} default={sys.dbms_sql2}
         @ARGS: 1
    --]]
 ]]*/
@@ -36,13 +38,19 @@ BEGIN
         END IF;
 
         BEGIN
-            name := regexp_replace(part1,'^G?V_?','GV');
-            EXECUTE IMMEDIATE q'[SELECT VIEW_NAME,VIEW_DEFINITION FROM V$FIXED_VIEW_DEFINITION WHERE VIEW_NAME=:1]'
-                INTO vw,txt USING name;
+            /*$IF DBMS_DB_VERSION.VERSION>11 OR &CHECK_ACCESS_EXP=1 $THEN
+                vw := 'SELECT * FROM '||schem||'.'||part1;
+                &ver..expand_sql_text(vw,txt);
+            $ELSE*/
+                name := regexp_replace(part1,'^G?V_?','GV');
+                EXECUTE IMMEDIATE q'[SELECT VIEW_NAME,VIEW_DEFINITION FROM V$FIXED_VIEW_DEFINITION WHERE VIEW_NAME=:1]'
+                    INTO vw,txt USING name;
+            --$END
             IF txt is not null then
-                txt:=trim(',' from cols)||regexp_replace(txt,' from ',chr(10)||'from ',1,1) ||';';
+                txt:=trim(',' from cols)||regexp_replace(txt,' from ',chr(10)||'from ',1,1,'i') ||';';
                 txt:=regexp_replace(txt,',[ ]+',',');
             END IF;
+            
         EXCEPTION
             WHEN OTHERS THEN NULL;
         END;

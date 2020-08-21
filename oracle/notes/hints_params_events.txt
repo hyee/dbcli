@@ -43,7 +43,7 @@ Parameters
             for parallel read, when >STT then dx read would be used(also controlled by _px_adaptive_offload_percentage, 0 means always)
             flashback/version-based/scn-based/fragmented table scan will not use dx read
         3) OBJECT_SIZE>=MTT: dx read
-        Turn on event '10358 trace name context forever, level 2:10384 trace name context forever,level 16384:trace[nsmtio] disk medium' to monitor the behaviours
+        Turn on event '10358 trace name context forever, level 2:10384 trace name context forever,level 16384:trace[nsmtio] disk highest' to monitor the behaviours
     
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'

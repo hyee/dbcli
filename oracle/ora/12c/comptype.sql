@@ -62,6 +62,9 @@ DECLARE
         dbms_lob.writeappend(v_xml, length(v_row), v_row);
     END;
 BEGIN
+    IF regexp_substr(:object_type,'\S+') NOT IN('TABLE','CAL_MONTH_SALES_MV') THEN
+        raise_application_error(-20001,'Invalid object type: '||:object_type);
+    END IF;
     v_stmt := q'[
         SELECT /*+leading(b a) use_hash(b a) no_merge(a) no_merge(b)*/ 
                a.rid,

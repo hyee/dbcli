@@ -221,11 +221,13 @@ local function extract_plan()
                         self.alias_len=math.max(self.alias_len,#alias)
                         self.qbs[id]={qb,alias}
                         --record the plan line id into global qbs information that used for other commands so that they know it's the final qb: qbs/jo/tb
-                        root.qbs[qb].in_plan=root.qbs[qb].in_plan or id
-                        if not self.qbs[qb] then self.qbs[qb]={} end
-                        if alias~='' then self.qbs[qb][alias]=id end
-                    --else it means reaching the end of the QB information
+                        if root.qbs[qb] then
+                            root.qbs[qb].in_plan=root.qbs[qb].in_plan or id
+                            if not self.qbs[qb] then self.qbs[qb]={} end
+                            if alias~='' then self.qbs[qb][alias]=id end
+                        end
                     elseif self.qb_start>0 then
+                        --else it means reaching the end of the QB information
                         self.qb_start=false
                         local fmt="%s %s%-"..self.qb_len.."s%s | %-"..self.alias_len.."s|"
                         local sep=self.plan[2]..('-'):rep(self.qb_len+self.alias_len+5)
@@ -277,11 +279,12 @@ local function extract_plan()
                                 end
 
                                 --replace empty view name in the execution plan as internal view name
-                                if qb[2]~='' and op=='VIEW' and tb=='' and h and h._name then
+                                if qb[2]~='' and op:find('^VIEW') and tb=='' and h and h._name then
                                     local vw=hier._vw
                                     if not vw then
                                         local pq=h._name
                                         local tbs=root.jo and root.jo[pq] and root.jo[pq].perms[1].tables or {}
+
                                         local tb='['..qb[2]:gsub('"',''):match('^[^@]+')..']'
                                         for j,t in ipairs(tbs) do
                                             if t:find(tb,1,true) then
@@ -297,7 +300,7 @@ local function extract_plan()
                                         hier._vw=vw
                                         self.hier._vws[vw]=hier._name
                                         vw=('$HIC$'..vw..'$NOR$'):convert_ansi()
-                                        plan=plan:gsub('(| +VIEW)( +)| ( +)|',function(a,b,c)
+                                        plan=plan:gsub('(| +VIEW.-)( +)| ( +)|',function(a,b,c)
                                             local fmt=a..'%s| %s|'
                                             if #c>=w then
                                                 return fmt:format(b,vw..spaces(#c-w))
@@ -314,9 +317,9 @@ local function extract_plan()
                             if qb[1]~='' then found=true end
                             --Mark the QB that has unparsed SQL as blue
                             self:add(fmt:format(plan,
-                                                qb[1]~='' and root.qbs[qb[1]].sql and '$HIB$' or '',
+                                                qb[1]~='' and root.qbs[qb[1]] and root.qbs[qb[1]].sql and '$HIB$' or '',
                                                 qb[1],
-                                                qb[1]~='' and root.qbs[qb[1]].sql and '$NOR$' or '',
+                                                qb[1]~='' and root.qbs[qb[1]] and root.qbs[qb[1]].sql and '$NOR$' or '',
                                                 qb[2]))
                         end
                         self:add(sep)
@@ -382,6 +385,7 @@ end
 local any={['*']=1,['.']=1,['']=1}
 
 local function check_op(line,root,qb)
+    --if not line:find('^%u%u+:') then return end
     local pt='%u%u+'
     if not qb then 
         qb=root.prev_qb
@@ -394,7 +398,7 @@ local function check_op(line,root,qb)
             if  ln:find(' bypass',1,true) or 
                 ln:find(' not? ') or 
                 ln:find(' fail',1,true) or
-                ln:find(' invalid',1,true) then
+                ln:find(' invalid ',1,true) then
                 --mark the op as failed that can be shown in '10053 qbs'
                 ops[op]=0
             else
@@ -409,7 +413,7 @@ local function check_op(line,root,qb)
     return false
 end
 
-local qb_patterns={'^Registered qb: *('..qb_exp..')','^%u%u+:.- ('..qb_exp..') ','^Query Block +('..qb_exp..')',' qb_name=('..qb_exp..') '}
+local qb_patterns={'^Registered qb: *(%u[%u%d$_]+)','^%w+:.- ('..qb_exp..') ','^Query Block +(%u[%u%d$_]+)',' qb_name=(%u[%u%d$_]+) '}
 local function extract_qb()
     return {
         --target_qb: used by the extract.call function
@@ -424,7 +428,7 @@ local function extract_qb()
                 if qb then
                     qb=qb:upper()
                     --Mark the line and onward as the scope of this QB, so that other working probes know the QB, until next QB is matched
-                    if i~=2 or line:find('Considering .-[Qq]uery.- [Bb]lock') then
+                    if i~=2 or line:find('Considering .-[Qq]uery.- [Bb]lock') or line:find('optimizing query block') then
                         root.current_qb=qb:upper()
                     end
 
@@ -501,7 +505,7 @@ local function extract_qb()
 
             if not root.qbs then return line,0 end
             --record the unparsed sql line for each qb
-            if line:find('****** UNPARSED QUERY IS ******',1,true) and not line:find('^Stmt') and not line:find('^Final') then
+            if line:find('^QUERY BLOCK TEXT') or line:find('****** UNPARSED QUERY IS ******',1,true) and not line:find('^Stmt') and not line:find('^Final') then
                 if not root.qbs[root.current_qb].sql then
                     root.qbs[root.current_qb].sql={}
                 end
@@ -663,7 +667,7 @@ local function extract_qbs()
                                             ), q.in_plan or '','|',q.seq,q.lineno,q.cbqt}
                     end
                 end
-                table.insert(rows,1,{'Query Block Registry','Plan#','|','QB#','Line#','Involved Abbr Ops'})
+                table.insert(rows,1,{'Query Block Registry','Plan#','|','QB#','Line#','Query Transformations'})
                 if is_print==false then return rows end
                 grid.print(rows)
                 if found then
@@ -941,16 +945,27 @@ local function extract_jo()
             if not self.cost then self.cost=0 end
             local root=self.root
             if line:match('^kkoqbc: finish optimizing query block') then
-                self.data[self.qb].end_line=lineno
+                local qb=self.data[self.qb]
+                qb.end_line=lineno
+                qb.perms_all[#qb.perms_all].end_line=lineno
                 return false
             elseif lineno==self.start_line then
                 self.qb=self.root.current_qb:upper()
-                self.data[self.qb]={start_line=lineno,perms={}}
+                if not self.data[self.qb] then 
+                    self.data[self.qb]={perms_all={},trees={}}
+                end
+                local cnt=#self.data[self.qb].perms_all+1
+                self.data[self.qb].perms_all[cnt]={start_line=lineno}
+                self.data[self.qb].trees[cnt]={}
+                self.data[self.qb].perms=self.data[self.qb].perms_all[cnt]
+                self.data[self.qb].start_line=lineno
                 local qbs=self.root.qb
                 if qbs and not qbs[self.qb] then qbs[self.qb]={} end
                 qbs[self.qb].jo=self.data[self.qb]
-                self.data.tree[self.qb]={}
-            elseif line:find('^Join order%[') then
+                self.data.tree[self.qb]=self.data[self.qb].trees[cnt]
+            end
+            
+            if line:find('^Join order%[') then
                 --search join order number
                 local perm=tonumber(line:match('^Join order%[(%d+)%]'))
                 local tables=full_line:rtrim():match(': *(%S.-%S)$'):split('%s+')
@@ -978,17 +993,21 @@ local function extract_jo()
                     self.tree_index[tonumber(v:match('#(%d+)'))]=curr
                     curr.jos[#curr.jos+1]=perm
                 end
-                --print(table.dump(self.data.tree[tables[1]]))
-                self.data[self.qb].perm_count=perm
+                
+
                 --build detailed map
                 local jo={lines={},tables=tables,tlines={},jo=perm,start_line=lineno,cost=0}
                 self.curr_jo=self.data[self.qb].perms[perm] or jo
                 if not self.data[self.qb].perms[perm] then
                     self.data[self.qb].perms[perm]=jo
                 end
+                self.data[self.qb].perm_count=perm
+                self.data[self.qb].perms.perm_count=perm
                 --globally report current working JO
                 root.current_jo=perm
                 self:add(0,lineno)
+            elseif lineno==self.start_line then
+                return
             elseif line:find('^%*%*+ *%w+') then
                 --Text start with: **** <text>
                 self:add(0,lineno)
@@ -1098,11 +1117,12 @@ local function extract_jo()
             elseif line:find('^%s+Best join order: *(%d+)$') then
                 --Handle the best JO in QB level
                 self.curr_tab_index,self.curr_table=nil
-                local best=tonumber(line:match('%d+'))
+                local best=tonumber(line:match('%d+$'))
                 local qb=self.data[self.qb]
-                qb.perm_best=best
                 local perm=qb.perms[best]
+                qb.perm_best=best
                 qb.cost,qb.card=math.round(tonumber(perm.cost:match('[%.%d]+'))),math.round(perm.card)
+                qb.perms.perm_best,qb.perms.cost,qb.perms.card=qb.perm_best,qb.cost,qb.card
                 local curr=self.data.tree[self.qb]
                 for i,t in ipairs(perm.tables) do
                     --find the matched data of table STA/BSI and set the jo/spd/card/cost
@@ -1169,12 +1189,20 @@ local function extract_jo()
                 when jo is number, then display the brief join(remove some unimportant lines) info of the JO
                 when qb/jo/tb is specify then display the detail lines of the table in the JO
             --]]--
-            help="|@@NAME [<qb_name> or *] [<JO#>\\|* [<table_name>]] \\| <table_name> \\| -tree| Show join orders, more details for more parameters |",
+            help="|@@NAME [<qb_name>[#<seq>] or *] [<JO#>\\|* [<table_name>]] \\| <table_name> \\| -tree| Show join orders, more details for more parameters |",
             call=function(this,data,qb,jo,tb)
                 local rows,last={}
                 local root,start_node=data.root
 
                 local is_best_displayed
+                local seq
+                if qb and qb:find('#%d+$') then
+                    qb,seq=qb:match('(.*)#(.*)')
+                    seq=tonumber(seq)
+                end
+
+                if qb then qb=qb:upper() end
+
                 local function show_tree(qb,best,t,node,sep,is_last,siblings,parent_best)
                     local jos,lines={},node.lines or {'',''}
                     --check if this node belongs to the best JO
@@ -1221,21 +1249,28 @@ local function extract_jo()
                     --when the jo parameter is table then display join orders in tree mode#1 
                     jo=jo:upper()..(jo:find('[',1,true) and '' or '[')
                     rows[1]={'Q.B','Best','Jo#','Start Line','End Line','Cost','Card','SPD','Method','Join Tree'}
-                    local tb_count={}
-                    
-                    for k,v in pairs(data.tree) do
-                        if k:find('$',1,true) and qb:upper()==k then
-                            for t,o in pairs(v) do
-                                if jo=='-TREE[' or (t:upper():find(jo,1,true)==1 or jo:find(t:upper(),1,true)==1) then
-                                    tb_count[#tb_count+1]={k,t,o.jos[1]}
+                    local jos=data[qb]
+                    env.checkerr(type(jos)=='table' and jos.trees,'No data found.')
+                    local cn=#jos.trees
+
+                    for i=1,cn do
+                        if i>1 and not seq then
+                            rows[#rows+1]={'=','=','','','','','','','',''}
+                        end
+
+                        if not seq or seq==i then
+                            is_best_displayed=nil
+                            local tb_count={}
+                            for t,o in pairs(jos.trees[i]) do
+                                if type(o)=='table' and o.jos and (jo=='-TREE[' or (t:upper():find(jo,1,true)==1 or jo:find(t:upper(),1,true)==1)) then
+                                    tb_count[#tb_count+1]={qb..(cn>1 and ('#'..i) or ''),t,o.jos[1],o}
                                 end
                             end
+                            table.sort(tb_count,function(a,b) return a[3]<b[3] end)
+                            for k,v in ipairs(tb_count) do
+                                show_tree(v[1],jos.perms_all[i].perm_best,v[2],v[4],'',k==#tb_count,#tb_count-1,false)
+                            end
                         end
-                    end
-                    env.checkerr(#tb_count>0,'No data found.')
-                    table.sort(tb_count,function(a,b) return a[3]<b[3] end)
-                    for k,v in ipairs(tb_count) do
-                        show_tree(v[1],data[v[1]].perm_best,v[2],data.tree[v[1]][v[2]],'',k==#tb_count,#tb_count-1,false)
                     end
                     return grid.print(rows)
                 end
@@ -1247,6 +1282,7 @@ local function extract_jo()
                     local chain = {}
                     for c=1,#perm.tables do
                         local t=perm.tables[c]
+                        if not tree[t] then return '' end
                         chain[c]=t..(tree[t].lines.method and ('('..tree[t].lines.method..')') or '')
                         tree=tree[t]
                     end
@@ -1271,77 +1307,82 @@ local function extract_jo()
                 end
 
                 for k,v in pairs(data) do
-                    if k:find('$',1,true) and (not qb or qb:upper()==k or any[qb]) then
+                    local cn=#(type(v)=='table' and v.perms_all or {})
+                    if type(v)=='table' and v.perms_all and (not qb or qb==k or any[qb]) then
                         if not qb then
                             mode='qb'
-                            local best=v.perms[v.perm_best]
-                            local spd=root.spd and root.spd.qbs[k] or {count=0}
-                            local f=plan[k:upper()]
-                            --Highlight the QB that can be found in the execution plan
-                            if f then found=f end
-                            rows[#rows+1]={(f and '$HIB$' or '')..k..(f and '$NOR$' or ''),
-                                            v.perm_count,v.perm_best,v.start_line,v.end_line,v.cost,v.card,
-                                            spd.count>0 and 'EXISTS' or '',
-                                            get_chain(data.tree[k],best),
-                                            root.qbs[k].seq}
+                            for i,j in ipairs(v.perms_all) do
+                                local best=j[j.perm_best]
+                                local spd=root.spd and root.spd.qbs[k] or {count=0}
+                                local f=plan[k:upper()]
+                                --Highlight the QB that can be found in the execution plan
+                                if f then found=f end
+                                rows[#rows+1]={(f and '$HIB$' or '')..k..(cn>1 and ('#'..i) or '')..(f and '$NOR$' or ''),
+                                                j.perm_count,j.perm_best,j.start_line,j.end_line,j.cost,j.card,
+                                                spd.count>0 and 'EXISTS' or '',
+                                                get_chain(v.trees[i],best),
+                                                root.qbs[k].seq}
+                            end
                         else
-                            for i,j in ipairs(v.perms) do
-                                local treemode=jo and (j.tables[1]:upper():find(jo,1,true)==1 or jo:find(j.tables[1]:upper(),1,true)==1)
-                                if not jo or jo==tostring(i) or any[jo] or treemode then
-                                    local chain=table.concat(j.tables,' -> ')
-                                    local tree=data.tree[k]
-                                    local spd
-                                    if not tb or treemode then --Display the list of JO, or the brief of a JO
-                                        mode=treemode and 'tree' or 'jo'
-                                        chain = {}
-                                        for c=1,#j.tables do
-                                            local t=j.tables[c]
-                                            tree=tree[t]
-                                            --fetch missing table join info from prev jo
-                                            if (not j.tlines[c] and c>1) and jo and tree.lines then
-                                                --if no table join info, then get it from the tree
-                                                local tree_spd=build_extra(data[k],tree)
-                                                if tree_spd then spd=tree_spd end
-                                            elseif j.tlines[c] and j.tlines[c].spd then
-                                                spd=j.tlines[c].spd
-                                            end
-                                            
-                                            if treemode then
-                                                chain[c]={(' '):rep(c*2-2)..t.. ' $HIB$->$NOR$'}
-                                                for k,v in pairs(tree.lines) do
-                                                    if type(v)~='table' and type(k)~='number' and k~='jo' then
-                                                        chain[c][#chain[c]+1]=fmt:format(k,tostring(v))
-                                                    end
-                                                end
-                                                chain[c]=table.concat(chain[c],'  ')
-                                            else
-                                                chain[c]=t..(tree.lines.method and ('('..tree.lines.method..')') or '')
-                                            end
-                                        end
-                                        rows[#rows+1]={k,i,v.perm_best==i and 'Y' or '',j.start_line,j.end_line,j.cost,j.card,spd,table.concat(chain,treemode and '\n' or ' -> '),j}
-                                    else --Display the specific table join information
-                                        mode='tb'
-                                        for c,t in ipairs(j.tables) do
-                                            tree=tree[t]
-                                            t=t:upper()
-                                            if (t:find(tb,1,true)==1 or tb:find(t,1,true)==1) then
-                                                local lines=j.tlines[c]
-                                                if not lines and not any[jo] then
+                            for c,piece in pairs(v.perms_all) do
+                                if not seq or seq==c then for i,j in ipairs(piece) do
+                                    local treemode=jo and (j.tables[1]:upper():find(jo,1,true)==1 or jo:find(j.tables[1]:upper(),1,true)==1)
+                                    if not jo or jo==tostring(i) or any[jo] or treemode then
+                                        local chain=table.concat(j.tables,' -> ')
+                                        local tree=v.trees[c]
+                                        local spd
+                                        if not tb or treemode then --Display the list of JO, or the brief of a JO
+                                            mode=treemode and 'tree' or 'jo'
+                                            chain = {}
+                                            for c=1,#j.tables do
+                                                local t=j.tables[c]
+                                                tree=tree[t]
+                                                --fetch missing table join info from prev jo
+                                                if (not j.tlines[c] and c>1) and jo and tree.lines then
                                                     --if no table join info, then get it from the tree
-                                                    extralines,eb,ee={}
-                                                    spd=build_extra(data[k],tree)
-                                                    lines={eb,ee}
-                                                elseif lines then
-                                                    spd=lines.spd
+                                                    local tree_spd=build_extra(data[k],tree)
+                                                    if tree_spd then spd=tree_spd end
+                                                elseif j.tlines[c] and j.tlines[c].spd then
+                                                    spd=j.tlines[c].spd
                                                 end
+                                                
+                                                if treemode then
+                                                    chain[c]={(' '):rep(c*2-2)..t.. ' $HIB$->$NOR$'}
+                                                    for k,v in pairs(tree.lines) do
+                                                        if type(v)~='table' and type(k)~='number' and k~='jo' then
+                                                            chain[c][#chain[c]+1]=fmt:format(k,tostring(v))
+                                                        end
+                                                    end
+                                                    chain[c]=table.concat(chain[c],'  ')
+                                                else
+                                                    chain[c]=t..(tree.lines.method and ('('..tree.lines.method..')') or '')
+                                                end
+                                            end
+                                            rows[#rows+1]={k..(cn>1 and ('#'..c) or ''),i,piece.perm_best==i and 'Y' or '',j.start_line,j.end_line,j.cost,j.card,spd,table.concat(chain,treemode and '\n' or ' -> '),j}
+                                        else --Display the specific table join information
+                                            mode='tb'
+                                            for c,t in ipairs(j.tables) do
+                                                tree=tree[t]
+                                                t=t:upper()
+                                                if (t:find(tb,1,true)==1 or tb:find(t,1,true)==1) then
+                                                    local lines=j.tlines[c]
+                                                    if not lines and not any[jo] then
+                                                        --if no table join info, then get it from the tree
+                                                        extralines,eb,ee={}
+                                                        spd=build_extra(data[k],tree)
+                                                        lines={eb,ee}
+                                                    elseif lines then
+                                                        spd=lines.spd
+                                                    end
 
-                                                if lines then
-                                                    rows[#rows+1]={k,i,v.perm_best==i and 'Y' or '',lines[1],lines[2],j.cost,j.card,spd or '',chain,j}
+                                                    if lines then
+                                                        rows[#rows+1]={k,i,piece.perm_best==i and 'Y' or '',lines[1],lines[2],j.cost,j.card,spd or '',chain,j}
+                                                    end
                                                 end
                                             end
                                         end
                                     end
-                                end
+                                end end
                             end
                         end
                     end
@@ -1359,7 +1400,7 @@ local function extract_jo()
 
 
                 if mode=='qb' then
-                    table.sort(rows,function(a,b) return a[#a]<b[#b] end)
+                    table.sort(rows,function(a,b) if a[#a]==b[#b] then return a[4]<b[4] else return a[#a]<b[#b] end end)
                     table.insert(rows,1,{'QB Name','JOs','Best JO#','Start Line','End Line','Cost','Card','SPD','Join Chain'})
                     grid.print(rows)
                     if found then
@@ -1467,12 +1508,29 @@ local function extract_sql()
                     local q=root.qbs[qb:upper()]
                     env.checkerr(q and q.sql,"Cannot find unparsed SQL text for query block: "..qb)
                     local prev_sql
+                    text=nil
                     for i,lineno in ipairs(q.sql) do
-                        text=root.line(lineno)
-                        if text~=prev_sql then
-                            prev_sql=text
-                            print('Line # '..lineno..':\n===============')
-                            print(text..'\n')
+                        for line,ln in root.range(lineno,root.end_line) do
+                            if ln==lineno and #line>10 and line:find('^[%*]+$') then
+                                text={}
+                            elseif ln>lineno then
+                                if type(text)~='table' then
+                                    break
+                                elseif line:find('^[%-]+$') and #line>10 then
+                                    print('Line # '..lineno..':\n===============')
+                                    text=table.concat(text,'\n')
+                                    print(text..'\n')
+                                    break
+                                else
+                                    text[#text+1]=line
+                                end
+                            elseif line~=prev_sql then
+                                text=line
+                                prev_sql=line
+                                print('Line # '..lineno..':\n===============')
+                                print(line..'\n')
+                                break
+                            end
                         end
                     end
                     print('Result saved to '..env.write_cache(root.prefix..'_'..qb:gsub('[$@]','_')..'.sql',text))

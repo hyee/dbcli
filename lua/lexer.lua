@@ -366,7 +366,7 @@ lexer.lines={
                 end
             end
             if not st then
-                b=table.concat({b,e,...},' '):lower()
+                b=table.concat({b,e,...},'%'):lower()
                 env.checkerr(#b>2,'Target search string must not be less than 3 chars.')
                 local fuzzy=b:find('%',1,true) and not e and '%W' or ''
                 keyword=fuzzy..b:gsub('%%','\1\2\3'):escape():gsub('\1\2\3','.-')..fuzzy
@@ -387,7 +387,7 @@ lexer.lines={
             for line,lineno in root.range(b,e) do
                 if not keyword or prev~=line and (' '..line:sub(1,256)..' '):lower():match(keyword) then
                     root.print(lineno,lineno==data.l and ('$COMMANDCOLOR$'..line..'$NOR$') or line)
-                    if keyword then prev=line end
+                    --if keyword then prev=line end
                 end
             end
             root.print_end(true)
