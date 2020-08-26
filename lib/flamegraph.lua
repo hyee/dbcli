@@ -627,7 +627,7 @@ function FlameGraph.BuildGraph(lines,args)
         local imageheight = args.fontsize * 5;
         im:header(args.imagewidth, imageheight);
         im:stringTTF(nil, math.floor(args.imagewidth / 2), args.fontsize * 2, "ERROR: No valid input provided to flamegraph.pl.");
-        return im.toSVG();
+        return im:toSVG();
     end
 
     if args.timemax and args.timemax < time then

@@ -166,7 +166,7 @@ FROM   (SELECT *
                                          sql_id,
                                          event,
                                          MAX(sample_time) last_time,
-                                         p1,
+                                         p1 idn,
                                          COUNT(1) cnt
                                   FROM   (SELECT session_id sid,
                                                  sample_time,

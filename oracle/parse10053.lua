@@ -7,6 +7,11 @@ function parser:ctor()
     self.name='10053'
 end
 
+local function get_dop(line,default)
+    return tonumber(line:match('[dD]egree: *(%d+)')) or default or 1
+end
+
+
 local function extract_timer()
     return {
         start="TIMER:",
@@ -797,7 +802,8 @@ local function extract_tb()
                     local cost,card=line:match('[cC]ost: *([%.%d]+).-[cC]ard: *([%.%d]+)')
                     if cost then
                         self.info.indent=nil
-                        self.info.cost,self.info.card=math.round(tonumber(cost),3),math.round(tonumber(card),3) 
+                        self.info.cost,self.info.card=math.round(tonumber(cost),3),math.round(tonumber(card),3)
+                        self.info.degree=get_dop(line,self.info.degree)
                     end
                 end
             elseif line:match('^ *[%*=]+$') or line:find('^Access path analysis') or line:find('^Join order') then
@@ -853,6 +859,7 @@ local function extract_tb()
                                                        p.bsi_seens or 0,p.sta_seens or 0,
                                                        p.best_sta or '',
                                                        p.card or '',
+                                                       p.degree or '',
                                                        p.spd or '',
                                                        p.qb_perms ,
                                                        p.best_jo or '',
@@ -871,7 +878,7 @@ local function extract_tb()
                 if not tab then
                     --order by qb sequence
                     table.sort(rows,function(a,b) return a[#a-1]<b[#b-1] end)
-                    table.insert(rows,1,{"Table Name",'Alias','Query|Block','Start|Line','End|Line','BSI|Scans','STA|Scans','STA|Best','STA|Card','STA|SPD','Join|Orders','Best|JO#','Join|Method',"Join|Card",'JO|SPD'})
+                    table.insert(rows,1,{"Table Name",'Alias','Query|Block','Start|Line','End|Line','BSI|Scans','STA|Scans','STA|Best','STA|Card','STA|DoP','STA|SPD','Join|Orders','Best|JO#','Join|Method',"Join|Card",'JO|SPD'})
                     env.grid.print(rows)
                     local msg='* BSI: BASE STATISTICAL INFORMATION / STA: SINGLE TABLE ACCESS PATH / TB: Table / JO: Join Order'
                     print(('-'):rep(#msg)..'\n'..msg)
@@ -974,19 +981,23 @@ local function extract_jo()
                 --For multiple JOs, the join information could appear only once for the same join part 
                 self.tree_index={}
                 local curr=self.data.tree[self.qb]
+                local degree
                 for k,v in ipairs(tables) do 
                     if not curr[v] then 
                         curr[v]={jos={},level=k}
                         local tb=find_tb(root,self.qb,v)
                         if k==1 then
                             --For the driving table, read info from BSI and STA because it has no join info
-                            curr[v].lines={card=tb.card,cost=tb.cost,method=tb.best_sta,spd=tb.spd}
+                            curr[v].lines={card=tb.card,cost=tb.cost,method=tb.best_sta,spd=tb.spd,degree=tb.degree}
                             local sta=tb.sta or tb.bsi
                             if sta then
                                 curr[v].lines[1],curr[v].lines[2]=sta.start_line,sta.end_line
                             end
                         else
-                            curr[v].lines={spd=tb.spd}
+                            curr[v].lines={spd=tb.spd,degree=tb.degree}
+                        end
+                        if curr[v].lines.degree then
+                            degree=math.max(degree or 1,curr[v].lines.degree)
                         end
                     end
                     curr=curr[v]
@@ -996,7 +1007,7 @@ local function extract_jo()
                 
 
                 --build detailed map
-                local jo={lines={},tables=tables,tlines={},jo=perm,start_line=lineno,cost=0}
+                local jo={lines={},tables=tables,tlines={},jo=perm,start_line=lineno,cost=0,degree=degree}
                 self.curr_jo=self.data[self.qb].perms[perm] or jo
                 if not self.data[self.qb].perms[perm] then
                     self.data[self.qb].perms[perm]=jo
@@ -1044,10 +1055,11 @@ local function extract_jo()
                 if cost then
                     cost=tonumber(cost)
                     if self.cost==0 or self.cost>cost then
-                        self.cost,self.method=cost,method
+                        self.cost,self.method,self.degree=cost,method,get_dop(line,self.degree)
                     end
-                    self.curr_jo.tlines[self.curr_tab_index].cost=self.cost
-                    self.curr_jo.tlines[self.curr_tab_index].method=self.method..'(Aborted)'
+                    local tb=self.curr_jo.tlines[self.curr_tab_index]
+                    tb.cost,tb.degree=self.cost,self.degree
+                    tb.method=self.method..'(Aborted)'
                 end
             elseif line:find('^ *Cost of predicates:') then
                 --Show join predicates
@@ -1075,6 +1087,19 @@ local function extract_jo()
                 self:add(2,lineno+1)
                 local best=line:match('%S+$')
                 self.curr_jo.tlines[self.curr_tab_index].method=best
+                self.is_best=2
+            elseif self.is_best==2 then
+                if line:find('^ +') then
+                    local cost,card=line:match('[cC]ost: *([%.%d]+).-[cC]ard: *([%.%d]+)')
+                    if cost then
+                        cost,card=tonumber(cost),math.round(tonumber(card),3)
+                        local tb=self.curr_jo.tlines[self.curr_tab_index]
+                        local degree=get_dop(line)
+                        tb.card,tb.cost,tb.degree=cost,card,degree
+                        self.curr_jo.degree=math.max(self.curr_jo.degree or 1,degree)
+                    end
+                end
+                self.is_best=nil
             elseif line:find('^Join order aborted') or line:find('^Best so far') then
                 --Hanle the end of JO level join
                 self.curr_tab_index,self.curr_table,root.current_tb,root.current_alias=nil
@@ -1084,16 +1109,17 @@ local function extract_jo()
                     if self.curr_jo.cost==0 then
                         self.curr_jo.cost='> '..math.round(self.cost,3)
                     end
-                    self.cost,self.card=0,0
+                    self.cost,self.card,self.degree=0,0
                     root.current_jo=nil
                 else
                     --handle the complete join(currently best)
                     --extract table sequence/cost/card
                     local seq,cost,card=line:match('Table#: *(%d+).-[cC]ost: *([%.%d]+).-[cC]ard: *([%.%d]+)')
-                    if cost then 
+                    if cost then
                         self.cost,self.card=tonumber(cost),math.round(tonumber(card),3)
                         seq=tonumber(seq)
-                        self.tree_index[seq].lines.card,self.tree_index[seq].lines.cost=self.card,self.cost
+                        local tb=self.tree_index[seq].lines
+                        tb.card,tb.cost=self.card,self.cost
                     end
                     --set the last cost/card as JO level cost/card
                     self.curr_jo.cost,self.curr_jo.card='= '..math.round(self.cost,3),self.card
@@ -1104,14 +1130,15 @@ local function extract_jo()
                 if line:find('^ +') then
                     self:add(0,lineno)
                     local seq,cost,card=line:match('Table#: *(%d+).-[cC]ost: *([%.%d]+).-[cC]ard: *([%.%d]+)')
-                    if cost then 
+                    if cost then
                         seq,self.cost,self.card=tonumber(seq),tonumber(cost),math.round(tonumber(card),3)
+                        local tb=self.tree_index[seq].lines
                         self.curr_jo.cost,self.curr_jo.card='= '..math.round(self.cost,3),self.card
-                        self.tree_index[seq].lines.card,self.tree_index[seq].lines.cost=self.card,self.cost
+                        tb.card,tb.cost=self.card,self.cost
                     end
                 else--housekeeping
                     self.is_best=0
-                    self.cost,self.card=0,0
+                    self.cost,self.card,self.degree=0,0
                     root.current_jo=nil
                 end
             elseif line:find('^%s+Best join order: *(%d+)$') then
@@ -1134,6 +1161,16 @@ local function extract_jo()
                     curr_tb.jo_spd=curr.lines.spd
                     curr_tb.jo_card=curr.lines.card
                 end
+                self.is_best=3
+            elseif self.is_best==3 then
+                local cost,card=line:match('[cC]ost: *([%.%d]+).-[cC]ard: *([%.%d]+)')
+                if cost then
+                    local qb=self.data[self.qb]
+                    local best=qb.perms[qb.perm_best]
+                    qb.perms.cost,qb.perms.card,qb.perms.degree=math.round(tonumber(cost),3),math.round(tonumber(card),3),get_dop(line)
+                    best.degree=qb.perms.degree or best.degree
+                end
+                self.is_best=nil
             elseif (self.last_indent or 0) > 0 and (line:find(' +Cost:') or line:find('^%s+Index:')) then
                 --Show more detail in each tables join method: NL/SM/HA
                 local lv=#(line:match('^%s*'))
@@ -1232,7 +1269,7 @@ local function extract_jo()
                                    sep~='' and node.jos[1] or '',
                                    lines[1],lines[2],
                                    math.round(lines.cost,3),
-                                   lines.card,lines.spd,lines.method,
+                                   lines.card,lines.degree or 1,lines.spd,lines.method,
                                    --highlight the best join chain
                                    (#jos==0 and '$NOR$ ' or ' ')..sep..(siblings>0 and ((is_best and fmt1 or fmt3):format(is_last and '!' or '|') or '')..fmt2:format('-') or '')..fmt2:format(t)}
                     if #jos==0 and is_best then is_best_displayed=true end
@@ -1248,14 +1285,14 @@ local function extract_jo()
                 elseif jo and not tonumber(jo) then
                     --when the jo parameter is table then display join orders in tree mode#1 
                     jo=jo:upper()..(jo:find('[',1,true) and '' or '[')
-                    rows[1]={'Q.B','Best','Jo#','Start Line','End Line','Cost','Card','SPD','Method','Join Tree'}
+                    rows[1]={'Q.B','Best','Jo#','Start Line','End Line','Cost','Card','DoP','SPD','Method','Join Tree'}
                     local jos=data[qb]
                     env.checkerr(type(jos)=='table' and jos.trees,'No data found.')
                     local cn=#jos.trees
 
                     for i=1,cn do
                         if i>1 and not seq then
-                            rows[#rows+1]={'=','=','','','','','','','',''}
+                            rows[#rows+1]={'=','=','','','','','','','','',''}
                         end
 
                         if not seq or seq==i then
@@ -1318,7 +1355,7 @@ local function extract_jo()
                                 --Highlight the QB that can be found in the execution plan
                                 if f then found=f end
                                 rows[#rows+1]={(f and '$HIB$' or '')..k..(cn>1 and ('#'..i) or '')..(f and '$NOR$' or ''),
-                                                j.perm_count,j.perm_best,j.start_line,j.end_line,j.cost,j.card,
+                                                j.perm_count,j.perm_best,j.start_line,j.end_line,j.cost,j.card,best.degree or '',
                                                 spd.count>0 and 'EXISTS' or '',
                                                 get_chain(v.trees[i],best),
                                                 root.qbs[k].seq}
@@ -1358,7 +1395,7 @@ local function extract_jo()
                                                     chain[c]=t..(tree.lines.method and ('('..tree.lines.method..')') or '')
                                                 end
                                             end
-                                            rows[#rows+1]={k..(cn>1 and ('#'..c) or ''),i,piece.perm_best==i and 'Y' or '',j.start_line,j.end_line,j.cost,j.card,spd,table.concat(chain,treemode and '\n' or ' -> '),j}
+                                            rows[#rows+1]={k..(cn>1 and ('#'..c) or ''),i,piece.perm_best==i and 'Y' or '',j.start_line,j.end_line,j.cost,j.card,j.degree or '',spd,table.concat(chain,treemode and '\n' or ' -> '),j}
                                         else --Display the specific table join information
                                             mode='tb'
                                             for c,t in ipairs(j.tables) do
@@ -1376,7 +1413,7 @@ local function extract_jo()
                                                     end
 
                                                     if lines then
-                                                        rows[#rows+1]={k,i,piece.perm_best==i and 'Y' or '',lines[1],lines[2],j.cost,j.card,spd or '',chain,j}
+                                                        rows[#rows+1]={k,i,piece.perm_best==i and 'Y' or '',lines[1],lines[2],j.cost,j.card,j.degree or '',spd or '',chain,j}
                                                     end
                                                 end
                                             end
@@ -1401,7 +1438,7 @@ local function extract_jo()
 
                 if mode=='qb' then
                     table.sort(rows,function(a,b) if a[#a]==b[#b] then return a[4]<b[4] else return a[#a]<b[#b] end end)
-                    table.insert(rows,1,{'QB Name','JOs','Best JO#','Start Line','End Line','Cost','Card','SPD','Join Chain'})
+                    table.insert(rows,1,{'QB Name','JOs','Best JO#','Start Line','End Line','Cost','Card','DoP','SPD','Join Chain'})
                     grid.print(rows)
                     if found then
                         print(('-'):rep(65))
@@ -1411,14 +1448,14 @@ local function extract_jo()
                     local size=#rows
                     env.checkerr(size>0,'Please input the valid QB name / JO# / table name.')
                     if  mode=='tree' or (mode=='jo' and size>1) then --list jo
-                        table.insert(rows,1,{'QB Name','JO#','Best','Start Line','End Line','Cost','Card','JO SPD','Join Chain'})
+                        table.insert(rows,1,{'QB Name','JO#','Best','Start Line','End Line','Cost','Card','DoP','JO SPD','Join Chain'})
                         grid.sort(rows,4,true)
                         if mode=='tree' then env.set.set('rowsep','-') end
                         grid.print(rows)
                         if mode=='tree' then env.set.set('rowsep','back') end
                     elseif qb and size==1 and not jo then --display all QB details if only has one JO and jo# is not specified
                         root.print_start('jo_'..qb)
-                        qb=data[rows[1][1]]
+                        qb=data[rows[1][1]:gsub('#%d+$','')]
                         for line,lineno in root.range(qb.start_line,qb.end_line) do
                             root.print(lineno,line)
                         end

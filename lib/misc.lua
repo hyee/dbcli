@@ -248,13 +248,13 @@ function math.round(exact, quantum)
     return quantum * (quant + (frac > 0.5 and 1 or 0))
 end
 
-function table.clone (t) -- deep-copy a table
-    if type(t) ~= "table" then return t end
+function table.clone (t,depth) -- deep-copy a table
+    if type(t) ~= "table" or (depth or 1)<=0 then return t end
     local meta = getmetatable(t)
     local target = {}
     for k, v in pairs(t) do
         if type(v) == "table" then
-            target[k] = table.clone(v)
+            target[k] = table.clone(v,(tonumber(depth) or 99)-1)
         else
             target[k] = v
         end

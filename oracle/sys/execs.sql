@@ -34,7 +34,7 @@ SELECT * FROM (
 	FROM TABLE(GV$(CURSOR(
 		SELECT inst_id,object_name,object_type,
 		       sum(decode(SQL_SEQ,1,execs)) execs,
-			   sum(decode(SQL_SEQ,1,invalids)) invalids,
+			   sum(decode(SQL_SEQ,1,invalids2,0)+nvl(invalids1,0)) invalids,
 			   max(kept) kept,max(MARKHOT) MARKHOT,
 			   count(distinct sql_id) sqls,
 			   sum(sql_execs) sql_execs,
@@ -79,7 +79,8 @@ SELECT * FROM (
 		                          152, 'ANALYTIC VIEW',
 		                         'UNDEFINED'),'\S+') object_type,
 			       o.kglhdexc execs,
-			       o.KGLHDIVC invalids,
+			       c.KGLHDIVC invalids1,
+			       o.KGLHDIVC invalids2,
 			       DECODE(o.KGLHDKMK,0,'NO','YES') KEPT,
 			       o.KGLOBPROP MARKHOT,
 			       c.KGLOBT03 SQL_ID,
@@ -88,7 +89,7 @@ SELECT * FROM (
 			       row_number() over(partition by o.kglnaown,o.kglnaobj,c.KGLOBT03 order by 1) SEQ
 			FROM   sys.x$kglob o, 
 			       (SELECT DISTINCT kglrfhsh,kglrfhdl,kglhdpar,kglnahsh 
-			       	FROM sys.x$kgldp k, x$kglxs a
+			       	FROM   sys.x$kgldp k, x$kglxs a
 			       	WHERE  k.kglhdadr = a.kglhdadr
                     AND    k.kgldepno = a.kglxsdep) d, 
 			        sys.x$kglob c

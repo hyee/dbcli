@@ -258,6 +258,7 @@ function cfg.restore(name)
         env.log_debug("set","Start restore")
         for k,v in pairs(name) do
             if v.value~=cfg.get(k) and k~="PROMPT" then
+                env.log_debug("set","Restoring",k)
                 cfg.doset(k,v.value)
                 cfg[k]=v
             end
@@ -288,7 +289,7 @@ end
 function cfg.capture_before_cmd(command)
     if #env.RUNNING_THREADS>1 then return end
     local cmd=env._CMDS[command[1]]
-    if command[1]~='SET' and cmd.ALIAS_TO~='SET' then
+    if command[1]~='SET' and cmd.ALIAS_TO~='SET' and command[1]~='HELP' then
         env.log_debug("set","taking full backup",command[1])
         cfg._backup=cfg.backup()
     else
