@@ -62,7 +62,7 @@ DECLARE
                                  no_monitoring
                                  no_expand
                                  index_ffs(t1,@indx)
-                                 noparallel_index(t1,@indx)
+                                 no_parallel_index(t1,@indx)
                                 */ COUNT(*) AS p
                           FROM   @tab t1
                           WHERE  (:1=0 or ROWNUM <= :1) AND &filter

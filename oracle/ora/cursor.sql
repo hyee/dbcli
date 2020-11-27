@@ -1,8 +1,7 @@
-/*[[Show data in gv$open_cursor, usage: @@NAME {<sid> [inst] | -o <object_name>}
+/*[[Show data in gv$open_cursor, usage: @@NAME {<sid> [inst]} | {-o <object_name>}
     --[[
-        &V1: default={userenv('sid')}
         &V2: default={nvl(:instance,userenv('instance'))}
-        &V9: {s={a.sid=REGEXP_SUBSTR(&V1,'^\d+$')},
+        &V9: {s={a.sid=nvl(REGEXP_SUBSTR(:V1,'^\d+$'),userenv('sid'))},
               o={b.to_name=upper(:V1)}
              }
         &V10: s={}, o={(select event from v$session where sid=a.sid) event,}

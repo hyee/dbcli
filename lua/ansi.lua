@@ -4,7 +4,7 @@ local cfg
 local reader,writer,str_completer,arg_completer,add=reader
 local terminal=reader:getTerminal()
 local isAnsiSupported=true
-
+local pcall,type,select,pairs,tonumber,table=pcall,type,select,pairs,tonumber,table
 
 local enabled=isAnsiSupported
 --[[https://stackoverflow.com/questions/4842424/list-of-ansi-color-escape-sequences
@@ -342,12 +342,13 @@ function ansi.onload()
     ansi.color,ansi.map=color,cfg
 end
 
+local function _strip_repl(s)
+    return (ansi.cfg(s) or color[s]) and '' or "$"..s.."$"
+end
 
 local function _strip_ansi(str)
     if not enabled then return str end
-    return str:gsub(ansi.pattern,""):gsub(ansi.escape,""):gsub("%$(.-)%$",function(s)
-            return (ansi.cfg(s) or color[s]) and '' or "$"..s.."$"
-        end)
+    return str:gsub(ansi.pattern,""):gsub(ansi.escape,""):gsub("%$(%u+)%$",_strip_repl)
 end
 
 local ulen=console.ulen
@@ -371,11 +372,6 @@ end
 
 function ansi.strip_ansi(str)
     local e,s=pcall(_strip_ansi,str)
-    if not e then
-        print(debug.traceback())
-        print(table.dump(str))
-        error(s)
-    end
     return s
 end
 
@@ -392,11 +388,12 @@ function string.strip_len(str)
     return ansi.strip_len(str)
 end
 
+local function cv(all,code)
+    return ansi.mask(code,nil,true) or all
+end
+
 function ansi.convert_ansi(str)
-    return str and str:gsub("%$((%u+)([, ]?)(%d*)([, ]?)(%d*))%$",
-        function(all,code,x,pos1,x,pos2) 
-            return ansi.mask(code,nil,true) or '$'..all..'$'
-        end):gsub(ansi.escape,"\27%1")
+    return str and str:gsub("(%$(%u+)%$)",cv):gsub(ansi.escape,"\27%1")
 end
 
 function string.convert_ansi(str)

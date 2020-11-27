@@ -69,7 +69,7 @@ function tracer.enable(name,flag)
     tracer.profiler=flag
     if flag=="on" then
         tracer.prof_cache={}
-        prof.start("fi1",tracer.profile)
+        prof.start("li0.1",tracer.profile)
     else
         prof.stop()
         tracer.format_profile()

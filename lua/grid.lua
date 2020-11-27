@@ -123,7 +123,7 @@ function grid.sort(rows, cols, bypass_head)
     local sorts = {}
     local has_header
     if rows.__class then rows, has_header = rows.data, rows.include_head end
-    if not rows[1] then return rows end
+    if type(rows[1])~='table' then return rows end
     local titles=rows[1]._org or rows[1]
     for ind in tostring(cols):gsub('^,*(.-),*$', '%1'):gmatch("([^,]+)") do
         local col, l
@@ -131,7 +131,7 @@ function grid.sort(rows, cols, bypass_head)
             ind = tonumber(ind)
             col = math.abs(ind)
             l = ind
-        elseif type(ind) == "string" and bypass_head == true then
+        elseif type(ind) == "string" and (bypass_head == true or has_header) then
             if ind:sub(1, 1) == '-' then
                 col = ind:sub(2)
                 l = -1
@@ -154,7 +154,10 @@ function grid.sort(rows, cols, bypass_head)
         sorts[#sorts + 1] = function() return col, l end
     end
     
-    if bypass_head or has_header then head = table.remove(rows, 1) end
+    if bypass_head or has_header then
+        head={table.remove(rows, 1)}
+        while has_header and type(rows[1])=='table' and rows[1][0]==0 do head[#head+1]=table.remove(rows, 1) end
+    end
     
     table.sort(rows, function(a, b)
         for _, item in ipairs(sorts) do
@@ -185,13 +188,19 @@ function grid.sort(rows, cols, bypass_head)
         return false
     end)
     
-    if head then table.insert(rows, 1, head) end
+    if head then
+        for i=#head,1,-1 do 
+            table.insert(rows, 1, head[i])
+        end
+    end
     return rows
 end
 
 function grid.show_pivot(rows, col_del)
     local title = rows[1]
     local keys = {}
+
+    --if not title then print(table.dump(rows)) end
     
     local pivot = math.abs(grid.pivot) + 1
     local del = grid.title_del

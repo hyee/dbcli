@@ -29,6 +29,7 @@ DECLARE
     phv       INT;
     res       CLOB;
     xml       XMLTYPE;
+    fixctl    PLS_INTEGER;
 BEGIN
     IF instr(sq_id,' ')>0 THEN
         sq_text := sq_id;
@@ -56,7 +57,10 @@ BEGIN
         END IF;
     END IF;
     BEGIN
-        EXECUTE IMMEDIATE q'{alter session set "_fix_control"='16923858:5'}';
+        fixctl := sys.dbms_sqldiag.get_fix_control(16923858);
+        IF fixctl=6 THEN
+            EXECUTE IMMEDIATE q'{alter session set "_fix_control"='16923858:5'}';
+        END IF;
     EXCEPTION WHEN OTHERS THEN
         NULL;
     END;
@@ -74,7 +78,7 @@ BEGIN
             raise_application_error(-20001, 'No access to the directory or target directory does not exist: ' || nam);
         END IF;
         IF regexp_like(sq_id,'^\d+$') THEN
-            dbms_sqldiag.export_sql_testcase(directory       => nam,
+            sys.dbms_sqldiag.export_sql_testcase(directory       => nam,
                                              incident_id     => sq_id,
                                              exportData      => false,
                                              &z exportMetadata  => false,
@@ -82,14 +86,14 @@ BEGIN
                                              testcase        => res);
         ELSIF phv IS NULL THEN
             IF sq_id IS NOT NULL THEN
-                dbms_sqldiag.export_sql_testcase(directory       => nam,
+                sys.dbms_sqldiag.export_sql_testcase(directory       => nam,
                                                  sql_id          => sq_id,
                                                  exportData      => false,
                                                  &z exportMetadata  => false,
                                                  &z ctrlOptions  => '<parameters><parameter name="compress">yes</parameter></parameters>',
                                                  testcase        => res);
             ELSE
-                dbms_sqldiag.export_sql_testcase(directory       => nam,
+                sys.dbms_sqldiag.export_sql_testcase(directory       => nam,
                                                  sql_text        => sq_text,
                                                  user_name       => sys_context('userenv','current_schema'),
                                                  exportData      => false,
@@ -98,7 +102,7 @@ BEGIN
                                                  testcase        => res);
             END IF;
         ELSE
-            dbms_sqldiag.export_sql_testcase(directory       => nam,
+            sys.dbms_sqldiag.export_sql_testcase(directory       => nam,
                                              sql_id          => sq_id,
                                              plan_hash_value => phv,
                                              exportData      => false,
@@ -131,7 +135,7 @@ BEGIN
             raise_application_error(-20001, 'Please specify a valid SQL ID that exists in v$sql_plan_statistics_all.');
         ELSE
             EXECUTE IMMEDIATE 'ALTER SESSION SET tracefile_identifier='''||ROUND(DBMS_RANDOM.VALUE(1,1E6))||'''';
-            dbms_sqldiag.dump_trace(sq_id, child_num, nam);
+            sys.dbms_sqldiag.dump_trace(sq_id, child_num, nam);
         END IF;
         :file := 'default';
     END IF;
@@ -139,4 +143,4 @@ END;
 /
 print c
 &z1 loadtrace &file1;
-loadtrace &file 16;
+loadtrace &file 64;

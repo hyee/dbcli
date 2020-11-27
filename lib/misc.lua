@@ -1,6 +1,6 @@
 local ffi = require("ffi")
 local string,table,math,java,loadstring,tostring,tonumber=string,table,math,java,loadstring,tostring,tonumber
-local ipairs,pairs=ipairs,pairs
+local ipairs,pairs,type=ipairs,pairs,type
 
 function string.initcap(v)
     return (' '..v):lower():gsub("([^%w])(%w)",function(a,b) return a..b:upper() end):sub(2)
@@ -45,7 +45,7 @@ function string.replace(s,sep,txt,plain,occurrence,case_insensitive)
 end
 
 function string.escape(s, mode)
-    s = s:gsub('%%','%%%%'):gsub('%z','%%z'):gsub('([%^%$%(%)%.%[%]%*%+%-%?])', '%%%1')
+    s = s:gsub('([%^%$%(%)%.%[%]%*%+%-%?%%])', '%%%1')
     if mode == '*i' then s = s:case_insensitive_pattern() end
     return s
 end
@@ -89,20 +89,59 @@ function string.case_insensitive_pattern(pattern)
     return p
 end
 
+local spaces={}
+local s=' \t\n\v\f\r\0'
+for i=1,#s do spaces[s:byte(i)]=true end
+local ext_spaces={}
+local function exp_pattern(sep)
+    local ary
+    if sep then
+        if not ext_spaces[sep] then
+            ext_spaces[sep]={}
+            for i=1,#sep do ext_spaces[sep][sep:byte(i)]=true end
+        end
+        ary=ext_spaces[sep]
+    end
+    return ary
+end
+
+local function rtrim(s,sep)
+    local ary=exp_pattern(sep)
+    if type(s)=='string' then
+        local len=#s
+        for i=len,1,-1 do
+            local p=s:byte(i)
+            if not spaces[p] and not (ary and ary[p]) then
+                return i==len and s or s:sub(1,i)
+            elseif i==1 then
+                return ''
+            end
+        end
+    end
+    return s
+end
+
+local function ltrim(s,sep)
+    local ary=exp_pattern(sep)
+    if type(s)=='string' then
+        local len=#s
+        for i=1,len do
+            local p=s:byte(i)
+            if not spaces[p] and not (ary and ary[p]) then
+                return i==1 and s or s:sub(i)
+            elseif i==len then
+                return ''
+            end
+        end
+    end
+    return s
+end
+
+string.ltrim,string.rtrim=ltrim,rtrim
 function string.trim(s,sep)
-    sep='[%s%z'..(sep or '')..']'
-    return tostring(s):match('^'..sep..'*(.-)'..sep..'*$')
+    return rtrim(ltrim(s,sep),sep)
 end
 
-function string.rtrim(s,sep)
-    sep='[%s%z'..(sep or '')..']'
-    return (tostring(s):gsub(sep..'*$',''))
-end
-
-function string.ltrim(s,sep)
-    sep='[%s%z'..(sep or '')..']'
-    return (tostring(s):gsub('^'..sep,''))
-end
 
 String=java.require("java.lang.String")
 local String=String
@@ -203,18 +242,19 @@ local function compare(a,b)
 end
 
 function math.round(exact, quantum)
+    if type(exact)~='number' then return exact end
     quantum = quantum and 0.1^quantum or 1
     local quant,frac = math.modf(exact/quantum)
     return quantum * (quant + (frac > 0.5 and 1 or 0))
 end
 
-function table.clone (t) -- deep-copy a table
-    if type(t) ~= "table" then return t end
+function table.clone (t,depth) -- deep-copy a table
+    if type(t) ~= "table" or (depth or 1)<=0 then return t end
     local meta = getmetatable(t)
     local target = {}
     for k, v in pairs(t) do
         if type(v) == "table" then
-            target[k] = table.clone(v)
+            target[k] = table.clone(v,(tonumber(depth) or 99)-1)
         else
             target[k] = v
         end
@@ -225,6 +265,10 @@ end
 
 function table.week(typ,gc)
     return setmetatable({},{__mode=typ or 'k'})
+end
+
+function table.strong(tab)
+    return setmetatable(tab or {},{__gc=function(self) print('table is gc.') end})
 end
 
 function table.dump(tbl,indent,maxdep,tabs)
@@ -265,7 +309,9 @@ function table.dump(tbl,indent,maxdep,tabs)
         local margin=(ind==0 and indent or '')..fmt
         rs=rs..fmt
         if type(v) == "table" then
-            if tabs then
+            if k=='root' then
+                rs=rs..'<<Bypass root>>'
+            elseif tabs then
                 if not tabs[v] then
                     local c=tabs.__current_key or ''
                     local c1=c..(c=='' and '' or '.')..tostring(k)
@@ -316,4 +362,89 @@ function try(args)
 
     if not succ then env.raise_error(res) end
     return res
+end
+
+--[[UTF-8 codepoint:
+     byte  1        2           3          4
+    --------------------------------------------
+     00 - 7F
+     C2 - DF      80 - BF
+     E0           A0 - BF     80 - BF
+     E1 - EC      80 - BF     80 - BF
+     ED           80 - 9F     80 - BF
+     EE - EF      80 - BF     80 - BF
+     F0           90 - BF     80 - BF    80 - BF
+     F1 - F3      80 - BF     80 - BF    80 - BF
+     F4           80 - 8F     80 - BF    80 - BF
+
+    The first hex character present the bytes of the char:
+    0-7: 1 byte, e.g.:  57
+    C-D: 2 bytes,e.g.:  ce 9a
+    E:   3 bytes,e.g.:  e6 ad a1
+    F:   4 bytes 
+--]]--
+function string.chars(s,start)
+    local i = start or 1
+    if not s or i>#s then return nil end
+    local function next()
+        local c,i1,p,is_multi = s:byte(i),i
+        if not c then return end
+        if c >= 0xC2 and c <= 0xDF then
+            local c2 = s:byte(i + 1)
+            if c2 and c2 >= 0x80 and c2 <= 0xBF then i=i+1 end
+        elseif c >= 0xE0 and c <= 0xEF then
+            local c2 = s:byte(i + 1)
+            local c3 = s:byte(i + 2)
+            local flag = c2 and c3 and true or false
+            if c == 0xE0 then
+                if flag and c2 >= 0xA0 and c2 <= 0xBF and c3 >= 0x80 and c3 <= 0xBF then i1=i+2 end
+            elseif c >= 0xE1 and c <= 0xEC then
+                if flag and c2 >= 0x80 and c2 <= 0xBF and c3 >= 0x80 and c3 <= 0xBF then i1=i+2 end
+            elseif c == 0xED then
+                if flag and c2 >= 0x80 and c2 <= 0x9F and c3 >= 0x80 and c3 <= 0xBF then i1=i+2 end
+            elseif c >= 0xEE and c <= 0xEF then
+                if flag and 
+                    not (c == 0xEF and c2 == 0xBF and (c3 == 0xBE or c3 == 0xBF)) and 
+                    c2 >= 0x80 and c2 <= 0xBF and c3 >= 0x80 and c3 <= 0xBF 
+                then i1=i+2 end
+            end
+        elseif c >= 0xF0 and c <= 0xF4 then
+            local c2 = s:byte(i + 1)
+            local c3 = s:byte(i + 2)
+            local c4 = s:byte(i + 3)
+            local flag = c2 and c3 and c4 and true or false
+            if c == 0xF0 then
+                if flag and
+                    c2 >= 0x90 and c2 <= 0xBF and
+                    c3 >= 0x80 and c3 <= 0xBF and
+                    c4 >= 0x80 and c4 <= 0xBF
+                then i1=i+3 end
+            elseif c >= 0xF1 and c <= 0xF3 then
+                if flag and
+                    c2 >= 0x80 and c2 <= 0xBF and
+                    c3 >= 0x80 and c3 <= 0xBF and
+                    c4 >= 0x80 and c4 <= 0xBF
+                then i1=i+3 end
+            elseif c == 0xF4 then
+                if flag and
+                    c2 >= 0x80 and c2 <= 0x8F and
+                    c3 >= 0x80 and c3 <= 0xBF and
+                    c4 >= 0x80 and c4 <= 0xBF
+                then i1=i+3 end
+            end
+        end
+        p,i,is_multi=s:sub(i,i1),i1+1,i1>i
+        return p,is_multi,i
+    end
+    return next
+end
+
+function string.wcwidth(s)
+    if s=="" then return 0,0 end
+    if not s then return nil end 
+    local len1,len2=0,0
+    for c,is_multi in s:chars() do
+        len1,len2=len1+1,len2+(is_multi and 2 or 1)
+    end
+    return len1,len2
 end

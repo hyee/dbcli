@@ -189,7 +189,7 @@ function xplan.explain(fmt,sql)
     if e10053==true then
         db:internal_call("ALTER SESSION SET EVENTS='10053 trace name context off'")
         db:query(sql)
-        oracle.C.tracefile.get_trace('default')
+        oracle.C.tracefile.get_trace('default','64')
         db:internal_call("ALTER SESSION SET tracefile_identifier=''")
     else
         db:query(sql)

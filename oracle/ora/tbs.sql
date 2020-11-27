@@ -117,8 +117,8 @@ FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param('_optimizer_filter_p
 	                   max(f.file_name) file_name,
 	                   max(decode(seq,1,loc)) loc,
 	                   'Temporary',NULL,NULL,NULL
-	            FROM   v$TEMP_SPACE_HEADER h
-	            LEFT   JOIN v$Temp_extent_pool p 
+	            FROM   (select distinct * from v$TEMP_SPACE_HEADER) h
+	            LEFT   JOIN (select distinct * from v$Temp_extent_pool) p 
 	            USING  (file_id,&cid,tablespace_name)
 	            JOIN   (select a.*, regexp_substr(file_name, '^.[^\\/]+') loc,1 seq from &CON.temp_files a) f
 	            USING  (file_id,&cid,tablespace_name)

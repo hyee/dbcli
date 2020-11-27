@@ -60,7 +60,7 @@ ORCL> ORA STATS
     --]]
 ]]*/
 ora _find_object "&V1" 1
-set feed off serveroutput on printsize 10000
+set feed off serveroutput on printsize 10000 verify off
 pro Preferences
 pro ***********
 DECLARE
@@ -249,221 +249,285 @@ END;
 set BYPASSEMPTYRS on
 pro 
 pro   
-prompt Table Level
-prompt ***********
-select 
-    TABLE_NAME,
-    NUM_ROWS,
-    BLOCKS,
-    EMPTY_BLOCKS,
-    AVG_SPACE,
-    CHAIN_CNT,
-    AVG_ROW_LEN,
-    GLOBAL_STATS,
-    USER_STATS,
-    SAMPLE_SIZE,
-    t.last_analyzed
-from &check_access_dba.tables t
-where owner = :object_owner
-and table_name = :object_name;
+var c1 REFCURSOR "&OBJECT_TYPE INFO"
+var c2 REFCURSOR "&OBJECT_TYPE COLUMN INFO"
+var c3 REFCURSOR "&OBJECT_TYPE INDEX INFO"
+var c4 REFCURSOR "&OBJECT_TYPE CHILD PARTS"
+col "Samples(%)" for pct
+DECLARE
+    typ VARCHAR2(30):=:OBJECT_TYPE;
+    c1 SYS_REFCURSOR;
+    c2 SYS_REFCURSOR;
+    c3 SYS_REFCURSOR;
+    c4 SYS_REFCURSOR;
+BEGIN
+    IF typ='TABLE' THEN
+        OPEN c1 FOR 
+            select 
+                TABLE_NAME,
+                NUM_ROWS,
+                SAMPLE_SIZE SAMPLES,
+                round(SAMPLE_SIZE/nullif(NUM_ROWS,0),4) "Samples(%)",
+                BLOCKS,
+                EMPTY_BLOCKS,
+                AVG_SPACE,
+                CHAIN_CNT,
+                AVG_ROW_LEN,
+                GLOBAL_STATS,
+                USER_STATS,
+                t.last_analyzed
+            from &check_access_dba.tables t
+            where owner = :object_owner
+            and table_name = :object_name;
+        OPEN c2 FOR
+            SELECT t1.COLUMN_NAME,
+                   decode(t1.DATA_TYPE,
+                          'NUMBER',t1.DATA_TYPE || '(' || decode(t1.DATA_PRECISION, NULL, t1.DATA_LENGTH || ')', t1.DATA_PRECISION || ',' || t1.DATA_SCALE || ')'),
+                          'DATE',t1.DATA_TYPE,
+                          'LONG',t1.DATA_TYPE,
+                          'LONG RAW',t1.DATA_TYPE,
+                          'ROWID',t1.DATA_TYPE,
+                          'MLSLABEL',t1.DATA_TYPE,
+                          t1.DATA_TYPE || '(' || t1.DATA_LENGTH || ')') || ' ' ||
+                   decode(t1.nullable, 'N', 'NOT NULL', 'n', 'NOT NULL', NULL) col,
+                   t.HISTOGRAM,
+                   t.NUM_BUCKETS BUCKETS,
+                   t.SAMPLE_SIZE,
+                   round((nvl(t.SAMPLE_SIZE,0)+t.NUM_NULLS)/nullif(NUM_ROWS,0),4) "Samples(%)",
+                   t.NUM_DISTINCT,
+                   t.NUM_NULLS,
+                   ROUND(decode(t1.histogram,'HYBRID',NULL,greatest(0,num_rows-t.NUM_NULLS)/GREATEST(t.NUM_DISTINCT, 1)), 2) cardinality,
+                   t.GLOBAL_STATS,
+                   t.USER_STATS,
+                   t1.DATA_DEFAULT "DEFAULT",
+                   t.LAST_ANALYZED &notes
+            FROM   &check_access_dba.tab_cols t1,&check_access_dba.tab_col_statistics t,
+                   (select table_name,num_rows from &check_access_dba.tables where owner = :object_owner and table_name = :object_name) t2
+            WHERE  t2.table_name=t1.table_name
+            AND    t1.table_name = :object_name
+            AND    t1.owner = :object_owner
+            AND    t.table_name = :object_name
+            AND    t.owner = :object_owner
+            AND    t1.column_name=t.column_name;
 
-SELECT t1.COLUMN_NAME,
-       decode(t1.DATA_TYPE,
-              'NUMBER',t1.DATA_TYPE || '(' || decode(t1.DATA_PRECISION, NULL, t1.DATA_LENGTH || ')', t1.DATA_PRECISION || ',' || t1.DATA_SCALE || ')'),
-              'DATE',t1.DATA_TYPE,
-              'LONG',t1.DATA_TYPE,
-              'LONG RAW',t1.DATA_TYPE,
-              'ROWID',t1.DATA_TYPE,
-              'MLSLABEL',t1.DATA_TYPE,
-              t1.DATA_TYPE || '(' || t1.DATA_LENGTH || ')') || ' ' ||
-       decode(t1.nullable, 'N', 'NOT NULL', 'n', 'NOT NULL', NULL) col,
-       t1.HISTOGRAM,
-       t1.NUM_BUCKETS BUCKETS,
-       t1.NUM_DISTINCT,
-       t1.NUM_NULLS,
-       ROUND(((select num_rows from &check_access_dba.tables where owner = :object_owner and table_name = :object_name)-t1.NUM_NULLS)/GREATEST(t1.NUM_DISTINCT, 1), 2) cardinality,
-       t1.GLOBAL_STATS,
-       t1.USER_STATS,
-       t1.SAMPLE_SIZE,
-       t1.DATA_DEFAULT "DEFAULT",
-       t1.LAST_ANALYZED &notes
-FROM   &check_access_dba.tab_cols t1,&check_access_dba.tab_col_statistics t
-WHERE  t1.table_name = :object_name
-AND    t1.owner = :object_owner
-AND    t.table_name = :object_name
-AND    t.owner = :object_owner
-AND    t1.column_name=t.column_name;
+        OPEN C3 FOR
+            WITH I AS (SELECT /*+no_merge*/ I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
+                       PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
+                                SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
+                                FROM   (SELECT /*+no_merge*/* FROM all_part_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
+                                START  WITH column_position = 1
+                                CONNECT BY PRIOR column_position = column_position - 1]'),'//V') PARTITIONED_BY,
+                       nullif(SUBPARTITIONING_TYPE,'NONE')||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
+                                SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
+                                FROM   (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
+                                START  WITH column_position = 1
+                                CONNECT BY PRIOR column_position = column_position - 1]'),'//V') SUBPART_BY
+                        FROM   &check_access_dba.INDEXES I,&check_access_dba.PART_INDEXES C
+                        WHERE  C.OWNER(+) = I.OWNER
+                        AND    C.INDEX_NAME(+) = I.INDEX_NAME
+                        AND    I.TABLE_OWNER = :object_owner
+                        AND    I.TABLE_NAME = :object_name)
+            SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('_optim_peek_user_binds','false')
+                 DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
+                 DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
+                 DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
+                 DECODE(C.COLUMN_POSITION, 1, DECODE(I.UNIQUENESS,'UNIQUE','YES','NO'), '') "UNIQUE",
+                 DECODE(C.COLUMN_POSITION, 1, NVL(PARTITIONED_BY||NULLIF(','||SUBPART_BY,','),'NO'), '') "PARTITIONED",
+                 DECODE(C.COLUMN_POSITION, 1, LOCALITY, '') "LOCALITY",
+               --DECODE(C.COLUMN_POSITION, 1, (SELECT NVL(MAX('YES'),'NO') FROM ALL_Constraints AC WHERE AC.INDEX_OWNER = I.OWNER AND AC.INDEX_NAME = I.INDEX_NAME), '') "IS_PK",
+                 DECODE(C.COLUMN_POSITION, 1, decode(I.STATUS,'N/A',(SELECT MIN(STATUS) FROM All_Ind_Partitions p WHERE p.INDEX_OWNER = I.OWNER AND p.INDEX_NAME = I.INDEX_NAME),I.STATUS), '') STATUS,
+                 DECODE(C.COLUMN_POSITION, 1, i.BLEVEL) BLEVEL,
+                 DECODE(C.COLUMN_POSITION, 1, i.LEAF_BLOCKS) LEAF_BLOCKS,
+                 DECODE(C.COLUMN_POSITION, 1, i.DISTINCT_KEYS) DISTINCTS,
+                 DECODE(C.COLUMN_POSITION, 1, AVG_LEAF_BLOCKS_PER_KEY) LB_PER_KEY,
+                 DECODE(C.COLUMN_POSITION, 1, AVG_DATA_BLOCKS_PER_KEY) DB_PER_KEY,
+                 DECODE(C.COLUMN_POSITION, 1, i.LAST_ANALYZED) LAST_ANALYZED,
+                 C.COLUMN_POSITION NO#,
+                 C.COLUMN_NAME,
+                 E.COLUMN_EXPRESSION COLUMN_EXPR,
+                 C.DESCEND
+            FROM   &check_access_dba.IND_COLUMNS C,  I, &check_access_dba.ind_expressions e
+            WHERE  C.INDEX_OWNER = I.OWNER
+            AND    C.INDEX_NAME = I.INDEX_NAME
+            AND    C.INDEX_NAME = e.INDEX_NAME(+)
+            AND    C.INDEX_OWNER = e.INDEX_OWNER(+)
+            AND    C.column_position = e.column_position(+)
+            AND    c.table_owner = E.table_owner(+)
+            AND    c.table_name =e.table_name(+)
+            ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION;
 
-prompt Index Level
-prompt ***********
-WITH I AS (SELECT /*+no_merge*/ I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
-           PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
-                    SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
-                    FROM   (SELECT /*+no_merge*/* FROM all_part_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
-                    START  WITH column_position = 1
-                    CONNECT BY PRIOR column_position = column_position - 1]'),'//V') PARTITIONED_BY,
-           nullif(SUBPARTITIONING_TYPE,'NONE')||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
-                    SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
-                    FROM   (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
-                    START  WITH column_position = 1
-                    CONNECT BY PRIOR column_position = column_position - 1]'),'//V') SUBPART_BY
-            FROM   &check_access_dba.INDEXES I,&check_access_dba.PART_INDEXES C
-            WHERE  C.OWNER(+) = I.OWNER
-            AND    C.INDEX_NAME(+) = I.INDEX_NAME
-            AND    I.TABLE_OWNER = :object_owner
-            AND    I.TABLE_NAME = :object_name)
-SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('_optim_peek_user_binds','false')
-     DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
-     DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
-     DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
-     DECODE(C.COLUMN_POSITION, 1, DECODE(I.UNIQUENESS,'UNIQUE','YES','NO'), '') "UNIQUE",
-     DECODE(C.COLUMN_POSITION, 1, NVL(PARTITIONED_BY||NULLIF(','||SUBPART_BY,','),'NO'), '') "PARTITIONED",
-     DECODE(C.COLUMN_POSITION, 1, LOCALITY, '') "LOCALITY",
-   --DECODE(C.COLUMN_POSITION, 1, (SELECT NVL(MAX('YES'),'NO') FROM ALL_Constraints AC WHERE AC.INDEX_OWNER = I.OWNER AND AC.INDEX_NAME = I.INDEX_NAME), '') "IS_PK",
-     DECODE(C.COLUMN_POSITION, 1, decode(I.STATUS,'N/A',(SELECT MIN(STATUS) FROM All_Ind_Partitions p WHERE p.INDEX_OWNER = I.OWNER AND p.INDEX_NAME = I.INDEX_NAME),I.STATUS), '') STATUS,
-     DECODE(C.COLUMN_POSITION, 1, i.BLEVEL) BLEVEL,
-     DECODE(C.COLUMN_POSITION, 1, i.LEAF_BLOCKS) LEAF_BLOCKS,
-     DECODE(C.COLUMN_POSITION, 1, i.DISTINCT_KEYS) DISTINCTS,
-     DECODE(C.COLUMN_POSITION, 1, AVG_LEAF_BLOCKS_PER_KEY) LB_PER_KEY,
-     DECODE(C.COLUMN_POSITION, 1, AVG_DATA_BLOCKS_PER_KEY) DB_PER_KEY,
-     DECODE(C.COLUMN_POSITION, 1, i.LAST_ANALYZED) LAST_ANALYZED,
-     C.COLUMN_POSITION NO#,
-     C.COLUMN_NAME,
-     E.COLUMN_EXPRESSION COLUMN_EXPR,
-     C.DESCEND
-FROM   &check_access_dba.IND_COLUMNS C,  I, &check_access_dba.ind_expressions e
-WHERE  C.INDEX_OWNER = I.OWNER
-AND    C.INDEX_NAME = I.INDEX_NAME
-AND    C.INDEX_NAME = e.INDEX_NAME(+)
-AND    C.INDEX_OWNER = e.INDEX_OWNER(+)
-AND    C.column_position = e.column_position(+)
-AND    c.table_owner = E.table_owner(+)
-AND    c.table_name =e.table_name(+)
-ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION;
+        OPEN C4 FOR
+            SELECT PARTITION_NAME,
+                   t.NUM_ROWS,
+                   t.SAMPLE_SIZE,
+                   round((nvl(t.SAMPLE_SIZE,0))/nullif(NUM_ROWS,0),4) "Samples(%)",
+                   BLOCKS,
+                   EMPTY_BLOCKS,
+                   AVG_SPACE,
+                   CHAIN_CNT,
+                   AVG_ROW_LEN,
+                   GLOBAL_STATS,
+                   USER_STATS,
+                   t.last_analyzed
+            FROM   &check_access_dba.tab_partitions t
+            WHERE  table_owner = :object_owner
+            AND    table_name = :object_name
+            AND    partition_name =nvl(:object_subname,partition_name)
+            ORDER  BY partition_position;
+    ELSIF typ='TABLE PARTITION' THEN
+        OPEN C1 FOR
+            SELECT PARTITION_NAME,
+                   NUM_ROWS,
+                   t.SAMPLE_SIZE,
+                   round((nvl(t.SAMPLE_SIZE,0))/nullif(NUM_ROWS,0),4) "Samples(%)",
+                   BLOCKS,
+                   EMPTY_BLOCKS,
+                   AVG_SPACE,
+                   CHAIN_CNT,
+                   AVG_ROW_LEN,
+                   GLOBAL_STATS,
+                   USER_STATS,
+                   t.last_analyzed
+            FROM   &check_access_dba.tab_partitions t
+            WHERE  table_owner = :object_owner
+            AND    table_name = :object_name
+            AND    partition_name =nvl(:object_subname,partition_name)
+            ORDER  BY partition_position;
+        OPEN C2 FOR
+            SELECT PARTITION_NAME,
+                   COLUMN_NAME,
+                   HISTOGRAM,
+                   ROUND(decode(histogram,'HYBRID',NULL,greatest(0,num_rows-NUM_NULLS)/GREATEST(NUM_DISTINCT, 1)), 2) cardinality,
+                   NUM_BUCKETS BUCKETS,
+                   t.SAMPLE_SIZE,
+                   round((nvl(t.SAMPLE_SIZE,0)+t.NUM_NULLS)/nullif(NUM_ROWS,0),4) "Samples(%)",
+                   NUM_NULLS,
+                   NUM_DISTINCT,
+                   GLOBAL_STATS,
+                   USER_STATS,
+                   t.last_analyzed  &notes
+            FROM   &check_access_dba.PART_COL_STATISTICS t,
+                   (select table_name,num_rows from &check_access_dba.tab_partitions p where p.table_owner = :object_owner and p.table_name = :object_name and p.partition_name=:object_subname) t1
+            WHERE  t.table_name = :object_name
+            AND    owner = :object_owner
+            AND    t1.table_name=t.table_name
+            AND    PARTITION_NAME =:object_subname
+            AND    partition_name =nvl(:object_subname,partition_name);
+        OPEN C3 FOR
+            SELECT t.INDEX_NAME,
+                   t.PARTITION_NAME,
+                   t.BLEVEL BLev,
+                   t.LEAF_BLOCKS,
+                   t.DISTINCT_KEYS,
+                   t.SAMPLE_SIZE,
+                   round((nvl(t.SAMPLE_SIZE,0))/nullif(t.NUM_ROWS,0),4) "Samples(%)",
+                   t.AVG_LEAF_BLOCKS_PER_KEY LB_PER_KEY,
+                   t.AVG_DATA_BLOCKS_PER_KEY DATA_PER_KEY,
+                   t.CLUSTERING_FACTOR,
+                   t.GLOBAL_STATS,
+                   t.USER_STATS,
+                   t.last_analyzed
+            FROM   &check_access_dba.ind_partitions t, &check_access_dba.indexes i
+            WHERE  i.table_name = :object_name
+            AND    i.table_owner = :object_owner
+            AND    i.owner = t.index_owner
+            AND    i.index_name = t.index_name
+            AND    t.partition_name =nvl(:object_subname,t.partition_name);
 
+        OPEN C4 FOR
+            SELECT PARTITION_NAME,
+                   SUBPARTITION_NAME,
+                   NUM_ROWS,
+                   SAMPLE_SIZE,
+                   round((nvl(t.SAMPLE_SIZE,0))/nullif(NUM_ROWS,0),4) "Samples(%)",
+                   BLOCKS,
+                   EMPTY_BLOCKS,
+                   AVG_SPACE,
+                   CHAIN_CNT,
+                   AVG_ROW_LEN,
+                   GLOBAL_STATS,
+                   USER_STATS,
+                   t.last_analyzed
+            FROM   &check_access_dba.tab_subpartitions t
+            WHERE  table_owner = :object_owner
+            AND    table_name = :object_name
+            AND    subpartition_name =nvl(:object_subname,subpartition_name)
+            ORDER  BY SUBPARTITION_POSITION;
+    ELSIF typ='TABLE PARTITION' THEN
+        OPEN C1 FOR
+            SELECT PARTITION_NAME,
+                   SUBPARTITION_NAME,
+                   NUM_ROWS,
+                   SAMPLE_SIZE,
+                   round((nvl(t.SAMPLE_SIZE,0))/nullif(NUM_ROWS,0),4) "Samples(%)",
+                   BLOCKS,
+                   EMPTY_BLOCKS,
+                   AVG_SPACE,
+                   CHAIN_CNT,
+                   AVG_ROW_LEN,
+                   GLOBAL_STATS,
+                   USER_STATS,
+                   t.last_analyzed
+            FROM   &check_access_dba.tab_subpartitions t
+            WHERE  table_owner = :object_owner
+            AND    table_name = :object_name
+            AND    subpartition_name =nvl(:object_subname,subpartition_name)
+            ORDER  BY SUBPARTITION_POSITION;
+        OPEN C2 FOR
+            SELECT p.PARTITION_NAME,
+                   t.SUBPARTITION_NAME,
+                   t.COLUMN_NAME,
+                   NUM_BUCKETS BUCKETS,
+                   t.SAMPLE_SIZE,
+                   round((nvl(t.SAMPLE_SIZE,0)+t.NUM_NULLS)/nullif(NUM_ROWS,0),4) "Samples(%)",
+                   NUM_NULLS,
+                   NUM_DISTINCT,
+                   t.GLOBAL_STATS,
+                   t.USER_STATS,
+                   t.last_analyzed &notes
+            FROM   &check_access_dba.SUBPART_COL_STATISTICS t, &check_access_dba.tab_subpartitions p
+            WHERE  t.table_name = :object_name
+            AND    t.owner = :object_owner
+            AND    t.subpartition_name = p.subpartition_name
+            AND    t.owner = p.table_owner
+            AND    t.table_name = p.table_name
+            AND    t.subpartition_name =:object_subname;
+        OPEN C3 FOR
+            SELECT t.INDEX_NAME,
+                   t.PARTITION_NAME,
+                   t.SUBPARTITION_NAME,
+                   t.BLEVEL BLev,
+                   t.LEAF_BLOCKS,
+                   t.DISTINCT_KEYS,
+                   t.NUM_ROWS,
+                   t.SAMPLE_SIZE,
+                   round((nvl(t.SAMPLE_SIZE,0))/nullif(t.NUM_ROWS,0),4) "Samples(%)",
+                   t.AVG_LEAF_BLOCKS_PER_KEY LB_PER_KEY,
+                   t.AVG_DATA_BLOCKS_PER_KEY DATA_PER_KEY,
+                   t.CLUSTERING_FACTOR,
+                   t.GLOBAL_STATS,
+                   t.USER_STATS,
+                   t.last_analyzed
+            FROM   &check_access_dba.ind_subpartitions t, &check_access_dba.indexes i
+            WHERE  i.table_name = :object_name
+            AND    i.table_owner = :object_owner
+            AND    i.owner = t.index_owner
+            AND    i.index_name = t.index_name
+            AND    t.subpartition_name =nvl(:object_subname,t.subpartition_name);
+    END IF;
 
-prompt Partition Level
-prompt ***************
+    :C1 := C1;
+    :C2 := C2;
+    :C3 := C3;
+    :C4 := C4;
+END;
+/
 
-SELECT PARTITION_NAME,
-       NUM_ROWS,
-       BLOCKS,
-       EMPTY_BLOCKS,
-       AVG_SPACE,
-       CHAIN_CNT,
-       AVG_ROW_LEN,
-       GLOBAL_STATS,
-       USER_STATS,
-       SAMPLE_SIZE,
-       t.last_analyzed
-FROM   &check_access_dba.tab_partitions t
-WHERE  table_owner = :object_owner
-AND    table_name = :object_name
-AND    partition_name =nvl(:object_subname,partition_name)
-ORDER  BY partition_position;
+PRINT C1;
+PRINT C2;
+PRINT C3;
+PRINT C4;
 
-SELECT PARTITION_NAME,
-       COLUMN_NAME,
-       NUM_DISTINCT,
-       ROUND(((select num_rows from &check_access_dba.tab_partitions p 
-               where p.table_owner = :object_owner and p.table_name = :object_name and p.partition_name=t.partition_name)-NUM_NULLS)
-       /GREATEST(NUM_DISTINCT, 1), 2) cardinality,
-       HISTOGRAM,
-       NUM_BUCKETS BUCKETS,
-       NUM_NULLS,
-       GLOBAL_STATS,
-       USER_STATS,
-       SAMPLE_SIZE,
-       t.last_analyzed  &notes
-FROM   &check_access_dba.PART_COL_STATISTICS t
-WHERE  table_name = :object_name
-AND    owner = :object_owner
-AND    PARTITION_NAME =:object_subname
-AND    partition_name =nvl(:object_subname,partition_name);
-
-SELECT t.INDEX_NAME,
-       t.PARTITION_NAME,
-       t.BLEVEL BLev,
-       t.LEAF_BLOCKS,
-       t.DISTINCT_KEYS,
-       t.NUM_ROWS,
-       t.AVG_LEAF_BLOCKS_PER_KEY LB_PER_KEY,
-       t.AVG_DATA_BLOCKS_PER_KEY DATA_PER_KEY,
-       t.CLUSTERING_FACTOR,
-       t.GLOBAL_STATS,
-       t.USER_STATS,
-       t.SAMPLE_SIZE,
-       t.last_analyzed
-FROM   &check_access_dba.ind_partitions t, &check_access_dba.indexes i
-WHERE  i.table_name = :object_name
-AND    i.table_owner = :object_owner
-AND    i.owner = t.index_owner
-AND    i.index_name = t.index_name
-AND    t.partition_name =nvl(:object_subname,t.partition_name);
-
-
-
-prompt SubPartition Level
-prompt ***************
-
-SELECT PARTITION_NAME,
-       SUBPARTITION_NAME,
-       NUM_ROWS,
-       BLOCKS,
-       EMPTY_BLOCKS,
-       AVG_SPACE,
-       CHAIN_CNT,
-       AVG_ROW_LEN,
-       GLOBAL_STATS,
-       USER_STATS,
-       SAMPLE_SIZE,
-       t.last_analyzed
-FROM   &check_access_dba.tab_subpartitions t
-WHERE  table_owner = :object_owner
-AND    table_name = :object_name
-AND    subpartition_name =nvl(:object_subname,subpartition_name)
-ORDER  BY SUBPARTITION_POSITION;
-
-SELECT p.PARTITION_NAME,
-       t.SUBPARTITION_NAME,
-       t.COLUMN_NAME,
-       t.NUM_DISTINCT,
-       ROUND(p.num_rows/GREATEST(t.NUM_DISTINCT, 1), 2) cardinality,
-       t.HISTOGRAM,
-       t.NUM_BUCKETS BUCKETS,
-       t.NUM_NULLS,
-       t.GLOBAL_STATS,
-       t.USER_STATS,
-       t.SAMPLE_SIZE,
-       t.last_analyzed &notes
-FROM   &check_access_dba.SUBPART_COL_STATISTICS t, &check_access_dba.tab_subpartitions p
-WHERE  t.table_name = :object_name
-AND    t.owner = :object_owner
-AND    t.subpartition_name = p.subpartition_name
-AND    t.owner = p.table_owner
-AND    t.table_name = p.table_name
-AND    t.subpartition_name =:object_subname;
-
-SELECT t.INDEX_NAME,
-       t.PARTITION_NAME,
-       t.SUBPARTITION_NAME,
-       t.BLEVEL BLev,
-       t.LEAF_BLOCKS,
-       t.DISTINCT_KEYS,
-       t.NUM_ROWS,
-       t.AVG_LEAF_BLOCKS_PER_KEY LB_PER_KEY,
-       t.AVG_DATA_BLOCKS_PER_KEY DATA_PER_KEY,
-       t.CLUSTERING_FACTOR,
-       t.GLOBAL_STATS,
-       t.USER_STATS,
-       t.SAMPLE_SIZE,
-       t.last_analyzed
-FROM   &check_access_dba.ind_subpartitions t, &check_access_dba.indexes i
-WHERE  i.table_name = :object_name
-AND    i.table_owner = :object_owner
-AND    i.owner = t.index_owner
-AND    i.index_name = t.index_name
-AND    t.subpartition_name =nvl(:object_subname,t.subpartition_name);
 
 DECLARE
     input  VARCHAR2(128) := :V1;

@@ -25,6 +25,7 @@
     19 *   DBSNMP.MGMT_BSLN_INTERVALS          VIEW             24599                VALID  2013-12-20 15:39:49 2013-12-20 15:39:49 2013-12-20 15:39:49 N
     --[[
         @ARGS: 1
+        @CHECK_ACCESS_OBJ: DBA_OBJECTS={DBA_OBJECTS} default={all_objects}
     ]]--
 ]]*/
 
@@ -57,7 +58,7 @@ BEGIN
         FROM   (SELECT r,object_name,regexp_substr(obj, '[^\.]+', 1, 3) object_type,
                         (SELECT OBJECT_ID || '/' || nvl(DATA_OBJECT_ID,0) || '/' || CREATED || '/' ||
                                 LAST_DDL_TIME || '/' || TIMESTAMP || '/' || STATUS || '/' || TEMPORARY
-                          FROM   all_objects
+                          FROM   &check_access_obj
                           WHERE  owner = regexp_substr(obj, '[^\.]+', 1, 1)
                           AND    object_name = regexp_substr(obj, '[^\.]+', 1, 2)
                           AND    object_type = regexp_substr(obj, '[^\.]+', 1, 3)) info

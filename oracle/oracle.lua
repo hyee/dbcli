@@ -23,7 +23,8 @@ oracle.module_list={
     "extvars",
     "oradebug",
     "sqlcl",
-    "adb"
+    "adb",
+    "parse10053"
 }
 
 local home,tns=os.getenv("ORACLE_HOME"),os.getenv("TNS_ADM") or os.getenv("TNS_ADMIN")
@@ -339,6 +340,7 @@ function oracle:connect(conn_str)
     
     if not succ then
         env.log_debug('DB',err)
+        env.checkerr(self.conn,"Database is disconnected")
         self.props={db_version=self.conn:getDatabaseProductVersion():match('%d+%.%d+%.[%d%.]+'),
                     version=self.conn:getVersionNumber(),privs={},db_user=self.conn:getUserName(),
                     instance=tonumber(self.properties['AUTH_INSTANCE_NO']),
@@ -576,6 +578,7 @@ local ignore_errors={
     ['socket']='Connection is lost, please login again.',
     ['SQLRecoverableException']='Connection is lost, please login again.',
     ['ORA-01013']='default',
+    ['Error : 1013 ']='default',
     ['connection abort']='default'
 }
 

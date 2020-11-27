@@ -43,7 +43,7 @@ VAR c REFCURSOR;
 VAR b REFCURSOR "Bind List"
 VAR src  VARCHAR2;
 VAR inst VARCHAR2;
-VAR txt  VARCHAR2;
+VAR txt  CLOB;
 SET BYPASSEMPTYRS ON VERIFY OFF
 
 DECLARE
@@ -170,11 +170,11 @@ BEGIN
                 WHEN 'BINARY_FLOAT' THEN
                     repl('TO_BINARY_FLOAT(%s)',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSNUMBER(BIND_VAL) END);
                 WHEN 'VARCHAR' THEN
-                    repl('''%s''',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSVARCHAR(BIND_VAL) END,q'['']');
+                    repl('''%s''',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSVARCHAR(BIND_VAL) END);
                 WHEN 'VARCHAR2' THEN
-                    repl('''%s''',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSVARCHAR2(BIND_VAL) END,q'['']');
+                    repl('''%s''',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSVARCHAR2(BIND_VAL) END);
                 WHEN 'CHAR' THEN
-                    repl('''%s''',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSCHAR(BIND_VAL) END,q'['']');
+                    repl('''%s''',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSCHAR(BIND_VAL) END);
                 WHEN 'NCHAR' THEN
                     repl('TO_NCHAR(''%s'')',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSNCHAR(BIND_VAL) END);
                 WHEN 'NVARCHAR2' THEN
@@ -202,7 +202,11 @@ BEGIN
                 WHEN 'INTERVAL YEAR TO' THEN
                     repl('TO_YMINTERVAL(''%s'')',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSVARCHAR2(BIND_VAL) END);
                 ELSE
-                    repl('%s','');
+                    IF DTYPE IN('CURSOR','NESTED TABLE','VARRAY') THEN
+                        repl(name||'/*%s*/',dtype);
+                    ELSE
+                        repl('NULL/*'||name||':%s*/',dtype);
+                    END IF;
             END CASE;
             SELECT XMLELEMENT("BIND",
                       XMLELEMENT("inst", r.inst),

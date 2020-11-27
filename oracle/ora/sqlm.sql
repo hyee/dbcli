@@ -53,7 +53,6 @@ col dur,avg_ela,ela,parse,queue,cpu,app,cc,cl,plsql,java,io,time format usmhd2
 col read,write,iosize,mem,temp,cellio,buffget,offload,offlrtn,calc_kmg,ofl format kmg
 col est_cost,est_rows,act_rows,ioreq,execs,outputs,FETCHES,dxwrite,calc_tmb format TMB
 accept sqlmon_file noprompt "@&V1"
-
 ALTER SESSION SET PLSQL_CCFLAGS = 'hub:&check_access_hub,sqlm:&check_access_sqlm';
 
 DECLARE /*+no_monitor*/
@@ -306,7 +305,7 @@ BEGIN
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             
-            sql_exec := :V2;
+            sql_exec := plan_hash;
 
             IF &rpt=0 THEN
                 IF sql_exec IS NULL THEN

@@ -3,7 +3,7 @@ local grid,snoop,callback,cfg,db_core=env.grid,env.event.snoop,env.event.callbac
 local var=env.class()
 local rawset,rawget=rawset,rawget
 local cast,ip=java.cast,{}
-var.outputs,var.desc,var.global_context,var.columns={},{},{},{}
+var.outputs,var.desc,var.global_context,var.columns=table.strong{},table.strong{},table.strong{},table.strong{}
 var.inputs=setmetatable({},{
     __index=function(self,k)
         return rawget(ip,k)
@@ -49,7 +49,7 @@ function var.import_context(global,input,output,cols)
     if type(output)=='table' then 
         var.outputs=output
     else
-        output={}
+        output=table.strong{}
     end
     for k,v in pairs(global) do var.global_context[k]=v end
     for k,v in pairs(input or {}) do var.inputs[k]=v end
@@ -76,7 +76,7 @@ function var.import_context(global,input,output,cols)
 end
 
 function var.backup_context()
-    local global,input,output,cols={},{},{},{}
+    local global,input,output,cols=table.strong{},table.strong{},table.strong{},table.strong{}
     for k,v in pairs(var.global_context) do global[k]=v end
     for k,v in pairs(var.inputs) do input[k]=v end
     for k,v in pairs(var.outputs) do output[k]=v end
@@ -105,6 +105,7 @@ end
 
 function var.setInput(name,desc)
     if not name or name=="" then
+        callback("ON_SHOW_INPUTS",var.inputs)
         print("Current defined variables:\n====================")
         for k,v in pairs(var.inputs) do
             if type(v)~="table" then

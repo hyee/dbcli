@@ -71,7 +71,7 @@ function printer.rawprint(...)
 end
 
 local function flush_buff(text,lines)
-    while #buff > 32766-(lines or 1) do table.remove(buff,1) end
+    while #buff > math.max(0,32766-(lines or 1)) do table.remove(buff,1) end
     buff[#buff+1]=strip_ansi(text):rtrim()
 end
 
@@ -123,9 +123,12 @@ function printer.print(...)
         end
     end
 
-    if ignore~='__BYPASS_GREP__' and termout=='on' then
+    if ignore~='__BYPASS_GREP__' and termout=='on' and more_text.lines<=32767 then
         more_text[#more_text+1]=output
         more_text.lines=more_text.lines+rows+1
+        if more_text.lines>32767 then
+            table.remove(more_text,1)
+        end
     end
 end
 

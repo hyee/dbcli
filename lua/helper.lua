@@ -82,11 +82,15 @@ function helper.env(target,depth)
         local siz=#rows[1]+1
         rows[1][siz],rows[2][siz]=name,value
     end
+    local e=terminal.encoding(terminal)
+    
+    
     add("Memory.LUA(KB)",math.floor(collectgarbage("count")))
     add("Memory.JVM(KB)",math.floor((runtime:totalMemory()-runtime:freeMemory())/1024))
     if rows[2][1] and rows[2][2] then
         add("Memory.Total(KB)",rows[2][1]+rows[2][2])
     end
+    add("CodePoint",e)
     add("ENV.locale",os.setlocale())
     local prefix=env.WORK_DIR:len()+1
     for k,v in pairs(env) do
@@ -122,12 +126,13 @@ function helper.colorful(helps,target)
     helps='\n'..(helps:gsub('^%s*\n',''):gsub('\t','    '))
     local spaces=helps:match("\n( +)%S") or ""
     helps=helps:gsub("\r?\n"..spaces,"\n"):gsub("%s+$",""):sub(2)
+
     helps=helps:gsub('^(%s*[^\n\r]+)[Uu]sage[: ]+(@@NAME)([^\r\n]*)',function(prefix,name,line)
         local s=prefix..'\n'..string.rep('=',#(prefix:trim())+#target+2)..'\n$USAGECOLOR$Usage:$COMMANDCOLOR$ '..name:gsub(',.+','')..'$NOR$'
         return s..line:gsub('([<>{}%[%]|]+)','$COMMANDCOLOR$%1$NOR$'):gsub('(%-%w+)','$PROMPTSUBCOLOR$%1$NOR$')
     end)
-    
-    helps=(target=='' and '' or ('$USAGECOLOR$'..target:upper()..':$NOR$ '))..helps:sub(#spaces+1)
+ 
+    helps=(target=='' and '' or ('$USAGECOLOR$'..target:upper()..':$NOR$ '))..helps
     helps=helps:gsub("@@NAME",target:lower())
 
     local grid=env.grid

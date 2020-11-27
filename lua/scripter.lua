@@ -29,6 +29,8 @@ function scripter:format_version(version)
     return version:gsub("(%d+)",function(s) return s:len()<3 and string.rep('0',3-s:len())..s or s end)
 end
 
+
+
 function scripter:rehash(script_dir,ext_name,extend_dirs)
     local dirs={script_dir}
     if type(extend_dirs)=="table" then
@@ -47,7 +49,7 @@ function scripter:rehash(script_dir,ext_name,extend_dirs)
         elseif type(self.comment)=="function" then
             desc=self.comment(file.data)
         end
-        desc=desc or ""
+        desc=desc or ''
         local function set_annotation(s) annotation=s;return ""; end
         if desc~="" then
             desc=desc:gsub("%-%-%[%[(.*)%]%]%-%-",set_annotation):gsub("%-%-%[%[(.*)%-%-%]%]",set_annotation)
@@ -56,7 +58,7 @@ function scripter:rehash(script_dir,ext_name,extend_dirs)
             desc=desc:gsub("([\n\r]+%s*)rem","%1   ")
             desc=desc:gsub("([\n\r]+%s*)#[^#]","%1   ")
         end
-        local attrs={path=file.fullname,desc=desc,short_desc=desc:match("([^\n\r]+)") or ""}
+        local attrs={path=file.fullname,desc='',short_desc=desc:match("([^\n\r]+)") or ""}
         if annotation then 
             local alias=("\n"..annotation):match("\n%s*@ALIAS[ \t]*:[ \t]*(%S+)")
             if alias then
@@ -382,7 +384,6 @@ function scripter:get_script(cmd,args,print_args)
         for _,cmd in pairs(type(self.command)=="table" and self.command or {self.command}) do
             list[cmd],env.root_cmds[cmd]=keys,keys
         end
-
         for k,v in pairs(self.cmdlist) do
             keys[k]=type(v)=="table" and v.desc or nil
         end
@@ -563,7 +564,24 @@ function scripter:helper(_,cmd,search_key)
         return help
     end
     cmd = cmd:upper()
-    return cmdlist[cmd] and cmdlist[cmd].desc or "No such command: "..cmd,cmd
+    local desc
+    if cmdlist[cmd] then
+        local data=env.load_data(cmdlist[cmd].path,false)
+        if type(self.comment)=='string' then
+            desc=data:match(self.comment)
+        else
+            desc=self.comment(data) or ''
+        end
+        if desc then
+            desc=desc:gsub("%-%-%[%[(.*)%]%]%-%-",''):gsub("%-%-%[%[(.*)%-%-%]%]",'')
+            desc=desc:gsub("([\n\r]+%s*)REM","%1   ")
+            desc=desc:gsub("([\n\r]+%s*)rem","%1   ")
+            desc=desc:gsub("([\n\r]+%s*)#[^#]","%1   ")
+        else
+            desc=''
+        end
+    end
+    return desc or "No such command: "..cmd,cmd
 end
 
 function scripter:__onload()

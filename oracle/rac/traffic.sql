@@ -38,8 +38,26 @@ Setting _gc_policy_minimum to 15000 or larger makes DRM to occur much less frequ
   Setting this is preferable than disabling the DRM for most databases.
 	--[[
 		@CHECK_USER_SYSDBA: SYSDBA={},default={--} 
+    @check_access_traffic: {
+          GV$GES_TRAFFIC_CONTROLLER={GV$GES_TRAFFIC_CONTROLLER}
+          SYS.x$kjitrft={
+              SELECT inst_id,
+                   kjitrftlid LOCAL_NID,
+                   kjitrftrid REMOTE_NID,
+                   kjitrftrrd REMOTE_RID,
+                   kjitrftinc REMOTE_INC,
+                   kjitrftta TCKT_AVAIL,
+                   kjitrfttl TCKT_LIMIT,
+                   kjitrfttr TCKT_RCVD,
+                   decode(kjitrfttw, 0, 'NO', 'YES') TCKT_WAIT,
+                   kjitrftss SND_SEQ_NO,
+                   kjitrftsr RCV_SEQ_NO,
+                   kjitrftst STATUS
+            FROM   table(gv$(cursor(select * from SYS.x$kjitrft)))
+          }
+      }
 	--]]
 ]]*/
 
-select * from GV$GES_TRAFFIC_CONTROLLER;
+select * from (&check_access_traffic);
 &CHECK_USER_SYSDBA sys param gcs_server_processes _lm_tickets _gc_policy_minimum _lm_sync_timeout

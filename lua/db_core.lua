@@ -939,6 +939,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     for k,v in pairs(outputs) do
         if args[k]==db_core.NOT_ASSIGNED then args[k]=nil end
     end
+
     if is_timing then 
         ela=os.timer()-clock
         print(string.format("Elapsed: %.3f secs  Executed: %.3f secs\n",ela,exe))

@@ -39,19 +39,24 @@ local init={
         "lua/graph",
         "lua/subsystem",
         "lua/ilua",
-        "lua/delta"}
+        "lua/delta",
+        "lua/lexer"}
 }
 local plugins,M={},{JVM={load_seq=0,onload=os.clock()-_G.__startclock,load=_G.__loadclock}}
 init.databases={oracle="oracle/oracle",mssql="mssql/mssql",db2="db2/db2",mysql="mysql/mysql",pgsql='pgsql/pgsql'}
 local default_database=env.CURRENT_DB or 'oracle'
 local clock,load_seq=os.clock,0
 env._M=M
+
+local curr,mems=0,{}
+
+
 function init.init_path(env)
     local java=java
     java.system=java.require("java.lang.System")
     java.loader=loader
     env('java',java)
-
+    env.mems=mems
     local path=package.path
     local path_del
     if path:sub(1,1)=="." then
@@ -125,6 +130,17 @@ function init.set_database(_,db)
     end
 end
 
+local function init_mem()
+    curr=collectgarbage('count')
+    return curr
+end
+
+local function flush_mem(target)
+    local c=collectgarbage('count')
+    mems[target],curr=math.ceil(1000*(c-curr+(mems[target] or 0)))/1000,c
+end
+
+
 function init.load_database()
     local res
     if not env.CURRENT_DB then
@@ -142,6 +158,7 @@ function init.load_database()
     local short_dir,name=file:match("^(.-)([^\\/]+)$")
     local dir=env.join_path(env.WORK_DIR,short_dir)
     local timer,load_seq=clock(),load_seq+1
+    init_mem()
     env[name]=exec(loadfile(dir..name..'.lua'))
     M[short_dir]={load=clock()-timer,load_seq=load_seq}
     timer=clock()
@@ -159,6 +176,7 @@ function init.load_database()
             list[k]=v:find(pattern) and v or (short_dir..v)
         end
         env[name].C={}
+        flush_mem(name)
         init.load_modules(list,env[name].C,name)
     end
 end
@@ -198,6 +216,7 @@ function init.load_modules(list,tab,module_name)
             file:close();
             file=v
         end
+        init_mem()
         local c,err=loadfile(file,nil,nil,env)
         tab[n]=exec(c,err or env)
         M[n]={load=clock()-timer,onload=tab[n],path=path,load_seq=load_seq}
@@ -206,16 +225,18 @@ function init.load_modules(list,tab,module_name)
             file=file:sub(#env.WORK_DIR+1)
         end
         env.module_list[#env.module_list+1]=file:gsub('%.lua$','')
+        flush_mem(n)
     end
 
     for _,k in ipairs(load_list) do
+        init_mem()
         local v,path=M[k].onload,M[k].path
         timer=clock()
         exec(type(v)=="table" and v.onload,v,k)
         M[k].onload,M[k].path=clock()-timer
         M[path],M[k]=M[k]
+        flush_mem(k)
     end
-
 end
 
 function init.onload(env)
@@ -239,8 +260,10 @@ function init.onload(env)
     end
     env.plugins=plugins
     local p=print
+    collectgarbage('stop')
     init.load_modules(init.module_list,env)
     init.load_database()
+    collectgarbage('restart')
     if env.set then env.set.init({"platform","database"},env.CURRENT_DB,init.set_database,'core','Define current database type',table.concat(init.db_list(),',')) end
 end
 

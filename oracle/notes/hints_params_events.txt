@@ -34,6 +34,16 @@ Parameters
     _kcfis_cell_passthru_fromcpu_enabled: disable Exadata reverse offloading
     _sql_plan_management_control: when 4 then diagnose issues with SQL plan baselines of why it fails to use
     _optimizer_squ_bottomup: false to redunce parse time due to large PGA memory usage pending on function kkojnp(bug#22225899)
+    _column_tracking_level: when 3 then similar to dbms_stats.seed_column_usage, however can be set in session level, and 0 to avoid column group creation by dbms_stats,4 to maintain expression tracking
+    _kks_parse_error_warning: controls whether to record the SQL in the alert log when the SQL fails to be parsed over the specific times(default as 100), in <12.2 db, can also set event 10035 level 1 to display the parse error in the alert log
+    _kks_cached_parse_errors: set the value to a specific error number(i.e. 942) to skip the error
+    _small_table_threshold(STT): defaults to the 2% buffer cache, and Medium Table Threshold(MTT)=5*_small_table_threshold
+        1) OBJECT_SIZE <= STT: use buffer cache, keep object whose size < keep pool size is also considered as small
+        2) STT < OBJECT_SIZE < MTT: for serial read, if >50% blocks(or 99% of compressed table) are cached or 25% blocks are dirty, then use buffer cache, otherwise use direct path read
+            for parallel read, when >STT then dx read would be used(also controlled by _px_adaptive_offload_percentage, 0 means always)
+            flashback/version-based/scn-based/fragmented table scan will not use dx read
+        3) OBJECT_SIZE>=MTT: dx read
+        Turn on event '10358 trace name context forever, level 2:10384 trace name context forever,level 16384:trace[nsmtio] disk highest' to monitor the behaviours
     
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
@@ -64,12 +74,16 @@ Hints:
     COLUMN_STATS(<Table> <Column> <SCALE|NULL> {<LENGTH|DISTINCT|NULLS|MIN|MAX> ><value>})
 	NUM_INDEX_KEYS(<@QB>] <table> <index> <cols>): used on multi-column index for INLIST ITERATOR, specifying how many columns(keys) to be put in access part and the others in filter part
     PQ_DISTRIBUTE_WINDOW: used on PX window function.  1: hash then window sort 2: window sort then hash 3: range then window sort
-
+    OR_EXPAND(<qb> (1) (2) ...(N)): expand N or expression to union all
+    BUSHY_JOIN([<qb>] (<alias1>,<alias2>,...)): enable bushy join
+    
 Fix Controls:
     13583722/16726844: impact the CBO behaviour for incr stats, ref: https://hourim.wordpress.com/2019/11/21/incremental-histogram-and-fix-control/
     16923858:  Display timings in Optimizer trace(10053) when over 10^<value> microsec
     6972291 :  CBO can use the selectivity of column groups but this option is disabled if there is a histogram defined on any of the columns of the column group
     20355502:  number of branches 2^<value> limit for legacy OR expansion(long parse time)
+    25167306:  Enable direct path read in SQL called from PL/SQL(scheduler job)
+    6708183 :  allow dynamic sampling on table functions    
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=/u01/app/oracle/product/18.0.0.0/dbhome_1/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
    NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled: Used on PDB to query dict views

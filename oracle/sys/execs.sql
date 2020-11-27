@@ -33,12 +33,12 @@ SELECT * FROM (
 	SELECT /*+ordered use_nl(o)*/ *
 	FROM TABLE(GV$(CURSOR(
 		SELECT inst_id,object_name,object_type,
-		       sum(decode(SQL_SEQ,1,execs)) execs,
-			   sum(decode(SQL_SEQ,1,invalids)) invalids,
+		       sum(distinct decode(SQL_SEQ,1,execs)) execs,
+			   sum(decode(SQL_SEQ,1,invalids2,0)+nvl(invalids1,0)) invalids,
 			   max(kept) kept,max(MARKHOT) MARKHOT,
 			   count(distinct sql_id) sqls,
 			   sum(sql_execs) sql_execs,
-			   listagg(decode(seq,1,decode(sign(100-sql_seq),1,sql_id)),',') within group(order by sql_id) sql_ids
+			   listagg(decode(seq,1,decode(sign(100-sql_seq),1,sql_id)),',') within group(order by sql_execs desc nulls last) sql_ids
 		FROM (
 			SELECT /*+ ordered use_hash(d) use_hash(c) no_expand*/
 			       o.inst_id,
@@ -79,16 +79,17 @@ SELECT * FROM (
 		                          152, 'ANALYTIC VIEW',
 		                         'UNDEFINED'),'\S+') object_type,
 			       o.kglhdexc execs,
-			       o.KGLHDIVC invalids,
+			       c.KGLHDIVC invalids1,
+			       o.KGLHDIVC invalids2,
 			       DECODE(o.KGLHDKMK,0,'NO','YES') KEPT,
 			       o.KGLOBPROP MARKHOT,
 			       c.KGLOBT03 SQL_ID,
 			       c.KGLOBT05 sql_execs,
-			       dense_rank() over(partition by o.kglnahsh,o.kglhdadr order by c.KGLOBT03 nulls last) SQL_SEQ,
+			       dense_rank() over(partition by o.kglnahsh,o.kglhdadr,nvl2(:V1,c.KGLOBT03,'') order by c.KGLOBT05 desc nulls last) SQL_SEQ,
 			       row_number() over(partition by o.kglnaown,o.kglnaobj,c.KGLOBT03 order by 1) SEQ
 			FROM   sys.x$kglob o, 
 			       (SELECT DISTINCT kglrfhsh,kglrfhdl,kglhdpar,kglnahsh 
-			       	FROM sys.x$kgldp k, x$kglxs a
+			       	FROM   sys.x$kgldp k, x$kglxs a
 			       	WHERE  k.kglhdadr = a.kglhdadr
                     AND    k.kgldepno = a.kglxsdep) d, 
 			        sys.x$kglob c
@@ -99,12 +100,13 @@ SELECT * FROM (
 			AND    d.kglnahsh = c.kglnahsh(+)
 			AND    o.kglnaown IS NOT NULL
 			--AND    o.kglhdexc>0
-			AND    c.kglhdnsp(+) = 0 
+			AND    c.kglhdnsp(+) = 0
+			AND    (c.KGLOBT03 IS NOT NULL OR d.kglrfhsh IS NULL)
 			AND    (:object_name IS NULL OR o.kglnaown=:object_owner and o.kglnaobj=:object_name)
 			AND    (:object_name IS NOT NULL OR :V1 IS NULL OR :v1 IN (c.KGLOBT03) )
 			AND    userenv('instance') = nvl(:V2, userenv('instance'))
 		)
-	GROUP BY inst_id,object_name,object_type
+	GROUP BY inst_id,object_name,object_type,nvl2(:V1,sql_id,'')
 	HAVING sum(decode(SQL_SEQ,1,execs))>0 ))) a
 	ORDER BY execs desc,OBJECT_NAME,OBJECT_TYPE)
 WHERE ROWNUM<=50

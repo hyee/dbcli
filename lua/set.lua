@@ -1,10 +1,10 @@
 local env=env
-local cfg,grid={name='SET'},env.grid
+local cfg,grid=table.strong({name='SET'}),env.grid
 local maxvalsize=20
 local file='setting.dat'
 local root_cmd
 cfg._backup=nil
-cfg._plugins={}
+cfg._plugins=table.strong()
 
 
 function cfg.show_cfg(name)
@@ -159,7 +159,7 @@ function cfg.set(name,value,backup,isdefault)
     --res,err=pcall(function()
     if not name then return cfg.show_cfg() end
     name=name:upper()
-    if not value then return cfg.show_cfg(name) end
+    if value==nil then return cfg.show_cfg(name) end
     local config=cfg.exists(name)
     if not config then return print("Cannot set ["..name.."], the parameter does not exist!") end
     if tostring(value):upper()=="DEFAULT" then
@@ -258,6 +258,7 @@ function cfg.restore(name)
         env.log_debug("set","Start restore")
         for k,v in pairs(name) do
             if v.value~=cfg.get(k) and k~="PROMPT" then
+                env.log_debug("set","Restoring",k)
                 cfg.doset(k,v.value)
                 cfg[k]=v
             end
@@ -288,7 +289,7 @@ end
 function cfg.capture_before_cmd(command)
     if #env.RUNNING_THREADS>1 then return end
     local cmd=env._CMDS[command[1]]
-    if command[1]~='SET' and cmd.ALIAS_TO~='SET' then
+    if command[1]~='SET' and cmd.ALIAS_TO~='SET' and command[1]~='HELP' then
         env.log_debug("set","taking full backup",command[1])
         cfg._backup=cfg.backup()
     else

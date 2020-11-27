@@ -1200,12 +1200,14 @@ function env.save_data(file,txt,maxsize,is_Binary)
 end
 
 function env.write_cache(file,txt,is_Binary)
+    if type(txt)~='string' then return end
     local dest=env._CACHE_PATH..file
     file=dest
     local f=io.open(file,'w'..(is_Binary==true and 'b' or ''))
     if not f then
         env.raise("Unable to save "..file)
     end
+    if is_Binary~=true then txt=txt:strip_ansi() end
     f:write(txt)
     f:close()
     return dest
