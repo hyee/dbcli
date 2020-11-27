@@ -270,7 +270,7 @@ function lexer:read(data,file,seq)
         local function next()
             lineno=lineno+1
             if lineno>end_line then return end
-            return f:read('*l'),lineno
+            return f:read('*l'):rtrim(),lineno
         end
         return next
     end
@@ -279,7 +279,7 @@ function lexer:read(data,file,seq)
         env.checkerr(lineno,'Invalid lineno')
         lineno=math.min(root.end_line,math.max(root.start_line,lineno))
         local f=root.seek(lineno)
-        return f:read('*l')
+        return f:read('*l'):rtrim()
     end
     
     for i,h in ipairs(priors) do

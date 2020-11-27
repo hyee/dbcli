@@ -92,6 +92,7 @@ Outputs:
     @con : 12.1={AND prior nvl(con_dbid,0)=nvl(con_dbid,0)} default={}
     @mem : 12.1={DELTA_READ_MEM_BYTES} default={null}
     @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
+    @cdb2 : 12.1={con_dbid} default={1e9}
     &dplan: default={dba_hist_sql_plan} sqlset={(select a.*,0+null object# from dba_sqlset_plans a)}
     &cid  : default={dbid} sqlset={con_dbid}
     &src1 : default={dba_hist_sql_plan} sqlset={dba_sqlset_plans}
@@ -214,7 +215,8 @@ WITH ALL_PLANS AS
                     object_name,
                     object_node tq,operation||' '||options operation,
                     &phf2 plan_hash_full,
-                    instr(other_xml,'adaptive_plan') is_adaptive_
+                    instr(other_xml,'adaptive_plan') is_adaptive_,
+                    1e9 cid
             FROM    (
                 select /*+no_merge*/ distinct 'G' pos,sql_id,nvl(sql_plan_hash_value,0) plan_hash_value
                 from   v$active_session_history
@@ -241,6 +243,7 @@ WITH ALL_PLANS AS
                 object_node tq,operation||' '||options,
                 &phf2 plan_hash_full,
                 instr(other_xml,'adaptive_plan') is_adaptive_,
+                &cdb2 cid,
                 &cid dbid
         FROM (
             select /*+no_merge*/ distinct 'D' pos,sql_id,nvl(sql_plan_hash_value,0) plan_hash_value,&cid
@@ -442,17 +445,17 @@ qry AS
          phv phv,
          coalesce(child_number, 0) child_number,
          inst_id,
-         dbid
+         dbid,
+         cid
   FROM   sql_plan_data
   WHERE  phv in(select phv from ash_phv_agg where plan_exists=1)),
 xplan AS
  (  SELECT phv,rownum r,a.*
-    FROM   qry, TABLE(dbms_xplan.display('&src1',NULL,format,'&cid='||dbid||' and plan_hash_value=' || phv || ' and sql_id=''' || sq ||'''')) a
+    FROM   qry, TABLE(dbms_xplan.display('&src1',NULL,format,'&cid='||dbid||' and &cdb2='||cid||' and plan_hash_value=' || phv || ' and sql_id=''' || sq ||'''')) a
     WHERE  flag = 2
     UNION ALL
     SELECT phv,rownum,a.*
-    FROM   qry,
-            TABLE(dbms_xplan.display('gv$sql_plan_statistics_all',NULL,format,'inst_id='|| inst_id||' and plan_hash_value=' || phv || ' and sql_id=''' || sq ||''' and child_number='||child_number)) a
+    FROM   qry, TABLE(dbms_xplan.display('gv$sql_plan_statistics_all',NULL,format,'inst_id='|| inst_id||' and plan_hash_value=' || phv || ' and sql_id=''' || sq ||''' and child_number='||child_number)) a
     WHERE  flag = 1),
 ash_agg as(
     SELECT /*+materialize*/ 

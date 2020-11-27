@@ -94,6 +94,7 @@ public final class Console {
         this.reader.setOpt(LineReader.Option.LIST_ROWS_FIRST);
         this.reader.setOpt(LineReader.Option.INSERT_TAB);
 
+
         this.reader.setVariable(DISABLE_HISTORY, true);
         this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
         this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);

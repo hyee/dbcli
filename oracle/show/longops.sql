@@ -1,4 +1,5 @@
 /*[[Show information in gv$session_longops]]*/
+set feed off
 SELECT inst_id,
        SID,
        sql_id,

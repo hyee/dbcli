@@ -1,6 +1,7 @@
 /*[[Show all database instances
 --[[
     @blocked: 11.2={blocked,},10.2={SHUTDOWN_PENDING,}
+    @ver    : 12.2={(SELECT VERSION_FULL FROM gv$instance i where i.inst_id=a.inst_id)} default={a.version}
 --]]
 ]]*/
 
@@ -12,7 +13,7 @@ declare
 begin
 $IF DBMS_DB_VERSION.VERSION>10 $THEN
 	open cur for q'[
-		SELECT decode(userenv('instance')+0,a.inst_id,'*',' ')||a.inst_id inst_id, instance_name,version,
+		SELECT decode(userenv('instance')+0,a.inst_id,'*',' ')||a.inst_id inst_id, instance_name,&ver version,
 		       host_name,user,
 		       status,archiver,&blocked
 		       to_char(startup_time,'YYYY-MM-DD HH24:MI') startup_time,

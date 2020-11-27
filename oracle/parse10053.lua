@@ -1548,7 +1548,7 @@ local function extract_sql()
                     text=nil
                     for i,lineno in ipairs(q.sql) do
                         for line,ln in root.range(lineno,root.end_line) do
-                            if ln==lineno and #line>10 and line:find('^[%*]+$') then
+                            if ln==lineno and #line>10 and line:find('^ *[%*]+ *$') then
                                 text={}
                             elseif ln>lineno then
                                 if type(text)~='table' then

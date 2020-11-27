@@ -159,7 +159,7 @@ function cfg.set(name,value,backup,isdefault)
     --res,err=pcall(function()
     if not name then return cfg.show_cfg() end
     name=name:upper()
-    if not value then return cfg.show_cfg(name) end
+    if value==nil then return cfg.show_cfg(name) end
     local config=cfg.exists(name)
     if not config then return print("Cannot set ["..name.."], the parameter does not exist!") end
     if tostring(value):upper()=="DEFAULT" then
