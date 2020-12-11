@@ -1,7 +1,7 @@
 /*[[Show all database instances
 --[[
     @blocked: 11.2={blocked,},10.2={SHUTDOWN_PENDING,}
-    @ver    : 12.2={(SELECT VERSION_FULL FROM gv$instance i where i.inst_id=a.inst_id)} default={a.version}
+    @ver    : 18.1={(SELECT VERSION_FULL FROM gv$instance i where i.inst_id=a.inst_id)} default={a.version}
 --]]
 ]]*/
 

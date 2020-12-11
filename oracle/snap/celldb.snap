@@ -166,7 +166,7 @@
                         SUM(DECODE(n, 'Flash cache scan read bytes', v)) scan,
                         SUM(DECODE(n, 'Smart IO issued bytes total', v)) smartio,
                         SUM(DECODE(n, 'RAM cache read bytes', v, 'RAM cache write bytes - population writes', v)) RAM,
-                        SUM(DECODE(n, 'PMEM cache read bytes', v, 'PMEM cache write bytes', v)) PMEM,
+                        SUM(DECODE(n, 'PMEM cache read bytes', v, 'PMEM cache write bytes - population writes',v)) PMEM,
                         SUM(DECODE(n, 'Large read bytes', v, 'Large write bytes', v)) largeio,
                         SUM(DECODE(n, 'Small read bytes', v, 'Small write bytes', v)) smallio,
                         SUM(DECODE(n, 'Small read bytes', v, 'Large read bytes', v)) readio,

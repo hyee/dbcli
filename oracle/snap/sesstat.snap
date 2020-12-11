@@ -17,6 +17,7 @@
     ORDER BY NAME]],
     delta_by="value",
     order_by="-value",
+    max_rows=200,
     group_by="inst_id,sid,NAME",
     top_by="name"
 }

@@ -164,7 +164,7 @@ function scripter:parse_args(sql,args,print_args,cmd)
                     templates[k]={}
                     local keys,default={}
                     for _,option,text in v:gmatch(sub_pattern) do
-                        option,text=option:trim():upper(),text:sub(2,-2)
+                        option,text=option:trim():upper(),text:sub(2,-2):gsub('\r','')
                         default=default or option
                         if prefix~="@" then
                             if not options[option] then options[option]={} end

@@ -1,18 +1,53 @@
-/*[[Generate delta values based on gv$sys_time_model. Usage: @@NAME <options> {[<inst_id>]  [keyword]}
+/*[[Generate delta values based on gv$sysstat/v$cell_global/v$cell_ioreason. Usage: @@NAME <options> {[<inst_id>]  [keyword]}
+  
+  --[[
+    @check_access_cell: {
+        v$cell_global={
+            ,'|',{
+            [[--grid:{topic='Cell IO Reason',bypassemptyrs=true,max_rows=15,order_by="-reqs"}
+              SELECT substr(reason_name,1,50) name,
+                     bytes,
+                     reqs,
+                     null avg_bytes
+              FROM   (SELECT reason_name, metric_name n, SUM(metric_value) v
+                      FROM   v$cell_ioreason
+                      WHERE  metric_value > 0
+                      GROUP  BY reason_name, metric_name)
+              PIVOT(MAX(v)
+              FOR    n IN('Per Reason Bytes of IO' bytes, 'Per Reason Number of IOs' reqs))
+            ]],'-',[[--grid:{topic='Cell Global Stats',bypassemptyrs=true,order_by="-value"}
+              SELECT substr(METRIC_NAME,1,60) NAME,
+                     SUM(metric_value) value
+              FROM   v$cell_global
+              WHERE (:V2 is null and metric_value>0 or lower(metric_name) like lower('%&V2%'))
+              GROUP  BY metric_name
+            ]]}
+        },
+        default={}
+    }
+  --]]
 ]]*/
 {
-    sql=[[
-        SELECT inst_id, 
-               NAME, 
+    sql={[[--grid:{topic='System Stats',order_by="-value"}
+        SELECT decode(count(inst_id),1,max(inst_id)||'','*') inst, 
+               substr(name,1,60) name, 
                decode(CLASS,1,'User',2,'Redo',4,'Enqueue',8,'Cache',16,'OS',32,'RAC',64,'SQL',128,'DEBUG') class,
-               value
+               sum(value) value
         FROM   gv$sysstat
-        WHERE  NAME != 'DB time'
+        WHERE  NAME != 'DB time' AND NAME NOT LIKE 'session%memory%'
         AND    (:V1 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V1=INST_ID OR :V1='0')
-        AND    (:V2 is null or lower(NAME) like lower('%&V2%'))
-    ]],
-    delta_by="value",
-    group_by="inst_id,NAME,class",
-    order_by="-value",
-    top_by="name"
+        AND    (:V2 is null AND value>0 or lower(NAME) like lower('%&V2%'))
+        GROUP  BY name,class
+    ]] &check_access_cell
+    },
+    delta_by="value,reqs,bytes",
+    group_by="NAME,class",
+    max_rows=100,
+    calc_rules={
+      avg_bytes='[bytes]/[reqs]'
+    },
+    column_formatter={
+      KMG1="bytes,avg_bytes",
+      TMB1="reqs"
+    }
 }

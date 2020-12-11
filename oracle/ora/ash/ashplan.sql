@@ -93,9 +93,11 @@ Outputs:
     @mem : 12.1={DELTA_READ_MEM_BYTES} default={null}
     @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     @cdb2 : 12.1={con_dbid} default={1e9}
-    &dplan: default={dba_hist_sql_plan} sqlset={(select a.*,0+null object# from dba_sqlset_plans a)}
+    @check_access_pdb: pdb/awr_pdb_snapshot={AWR_PDB_} default={DBA_HIST_}
+    @check_access_cdb: cdb={use_hash(a)} default={use_nl(a)}
+    &dplan: default={&check_access_pdb.sql_plan} sqlset={(select a.*,0+null object# from dba_sqlset_plans a)}
     &cid  : default={dbid} sqlset={con_dbid}
-    &src1 : default={dba_hist_sql_plan} sqlset={dba_sqlset_plans}
+    &src1 : default={&check_access_pdb.sql_plan} sqlset={dba_sqlset_plans}
     &top1: default={ev}, O={CURR_OBJ#}
     &top2: default={CURR_OBJ#}, O={ev}
     &vw  : default={A} G={G} D={D} sqlset={D}
@@ -218,17 +220,24 @@ WITH ALL_PLANS AS
                     instr(other_xml,'adaptive_plan') is_adaptive_,
                     1e9 cid
             FROM    (
-                select /*+no_merge*/ distinct 'G' pos,sql_id,nvl(sql_plan_hash_value,0) plan_hash_value
-                from   v$active_session_history
+                select /*+no_merge
+                          full(a.a) leading(a.a) use_hash(a.a a.s) swap_join_inputs(a.s) 
+                          FULL(A.GV$ACTIVE_SESSION_HISTORY.A) leading(A.GV$ACTIVE_SESSION_HISTORY.A) 
+                          use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S) 
+                          swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
+                       */ 
+                       distinct 'G' pos,sql_id,nvl(sql_plan_hash_value,0) plan_hash_value
+                from   v$active_session_history a
                 where  '&vw' IN('A','G')
                 and    userenv('instance')=nvl(:instance,userenv('instance'))
                 and    sql_id is not null
                 and    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
-                ) b left join v$sql_plan a using(sql_id,plan_hash_value)
+                ) b join v$sql_plan a using(sql_id,plan_hash_value)
             WHERE  '&vw' IN('A','G')))) a
         WHERE '&vw'='G' or :dbid is null or &did=:dbid
         UNION ALL
-        SELECT  id,
+        SELECT  /*+ordered &check_access_cdb*/
+                id,
                 decode(parent_id,-1,id-1,parent_id) parent_id,
                 plan_hash_value,
                 2,
@@ -246,13 +255,17 @@ WITH ALL_PLANS AS
                 &cdb2 cid,
                 &cid dbid
         FROM (
-            select /*+no_merge*/ distinct 'D' pos,sql_id,nvl(sql_plan_hash_value,0) plan_hash_value,&cid
-            from   dba_hist_active_sess_history
+            select /*+MERGE(D)
+                    FULL(D.ASH) FULL(D.EVT) swap_join_inputs(D.EVT) OPT_ESTIMATE(TABLE D.ASH ROWS=30000000)
+                    full(D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH) OPT_ESTIMATE(TABLE D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH ROWS=30000000)
+                    swap_join_inputs(D.&check_access_pdb.ACTIVE_SESS_HISTORY.EVT) full(D.&check_access_pdb.ACTIVE_SESS_HISTORY.EVT)*/ 
+                   distinct 'D' pos,sql_id,nvl(sql_plan_hash_value,0) plan_hash_value,&cid
+            from   &check_access_pdb.active_sess_history d
             where  '&vw' IN('A','D')
             and    sql_id is not null
             and    dbid=nvl(0+'&dbid',dbid)
             and    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
-         ) b left join &dplan a using(sql_id,plan_hash_value,&cid)
+         ) b join &dplan a using(sql_id,plan_hash_value,&cid)
         WHERE   pos='D'
         AND     '&vw' IN('A','D'))),
 sql_list as(select distinct pos,sql_id,phv plan_hash_value,dbid from ALL_PLANS),
@@ -283,7 +296,7 @@ sqlstats as(
                             nullif(floor(SUM(parse_calls_delta) / greatest(1, SUM(px_servers_execs_delta))), 0),
                             SUM(executions_Delta)),
                     3) avg_
-    FROM   dba_hist_sqlstat join dba_hist_snapshot using(dbid,snap_id,instance_number)
+    FROM   &check_access_pdb.sqlstat join &check_access_pdb.snapshot using(dbid,snap_id,instance_number)
     WHERE  ('D',sql_id,plan_hash_value,dbid) in(select * from sql_list)
     AND    elapsed_time_Delta>0
     AND    dbid=nvl(0+'&dbid',dbid)
@@ -341,14 +354,12 @@ ash_raw as (
             nvl(nullif(plan_hash_full,'0'),''||phv1) phf,
             decode(sec_seq,1,least(coalesce(tm_delta_db_time,delta_time,AAS*1e6),coalesce(tm_delta_time,delta_time,AAS*1e6),AAS*2e6) * 1e-6) secs,
             max(case when pred_flag!=2 or is_px_slave=1 then dop_ end)  over(partition by dbid,phv1,sql_exec,pid) dop,
-            sum(case when current_obj#<-1 or p3text='block cnt' then temp_ end) over(partition by dbid,phv1,sql_exec,pid,sample_time+0) temp,
+            sum(case when p3text='block cnt' then temp_ end) over(partition by dbid,phv1,sql_exec,pid,sample_time+0) temp,
             sum(pga_)  over(partition by dbid,phv1,sql_exec,pid,sample_time+0) pga,
             sum(case when is_px_slave=1 and px_flags>65536 then least(tm_delta_db_time,AAS*2e6) end) over(partition by px_flags,dbid,phv1,sql_exec,pid,qc_sid,qc_inst,qc_session_serial#,sid,inst_id) dbtime
     FROM   (SELECT /*+NO_BIND_AWARE 
-                      no_expand 
-                      opt_param('optimizer_index_cost_adj' 500) 
+                      no_expand no_or_expand
                       opt_param('_optim_peek_user_binds' 'false') 
-                      opt_param('_bloom_filter_enabled' 'false') 
                       opt_param('_optimizer_connect_by_combine_sw', 'false') 
                       opt_param('_optimizer_filter_pushdown', 'false')
                       */ 
@@ -372,10 +383,11 @@ ash_raw as (
                         &public,
                         &hierachy
                 FROM    (
-                    select --+merge(a) cardinality(30000000) full(a.a) leading(a.a) use_hash(a.a a.s) swap_join_inputs(a.s) FULL(A.GV$ACTIVE_SESSION_HISTORY.A)  leading(A.GV$ACTIVE_SESSION_HISTORY.A) use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S) swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
+                    select --+merge(a) cardinality(30000000) 
                             a.*,&did dbid,1 aas_,&mem mem,0 snap_id &px_count,decode(:V1,nvl(sql_id,top_level_sql_id),1,top_level_sql_id,2,3) pred_flag
                     from  table(gv$(cursor(
-                            select a.*,userenv('instance') instance_number 
+                            select --+ full(a.a) leading(a.a) use_hash(a.a a.s) swap_join_inputs(a.s) FULL(A.GV$ACTIVE_SESSION_HISTORY.A) leading(A.GV$ACTIVE_SESSION_HISTORY.A) use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S) swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
+                                   a.*,userenv('instance') instance_number 
                             from   v$active_session_history a
                             where  userenv('instance')=nvl(:instance,userenv('instance'))
                             and    sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
@@ -395,13 +407,12 @@ ash_raw as (
                         &public,
                         &hierachy
                 FROM    (select /*+MERGE(D)
-                                   cardinality(30000000)
                                    FULL(D.ASH) FULL(D.EVT) swap_join_inputs(D.EVT) OPT_ESTIMATE(TABLE D.ASH ROWS=30000000)
-                                   full(D.DBA_HIST_ACTIVE_SESS_HISTORY.ASH) OPT_ESTIMATE(TABLE D.DBA_HIST_ACTIVE_SESS_HISTORY.ASH ROWS=30000000)
-                                   swap_join_inputs(D.DBA_HIST_ACTIVE_SESS_HISTORY.EVT) full(D.DBA_HIST_ACTIVE_SESS_HISTORY.EVT)
+                                   full(D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH) OPT_ESTIMATE(TABLE D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH ROWS=30000000)
+                                   swap_join_inputs(D.&check_access_pdb.ACTIVE_SESS_HISTORY.EVT) full(D.&check_access_pdb.ACTIVE_SESS_HISTORY.EVT)
                                 */ 
                                 d.*, 10 aas_,null mem &px_count,decode(:V1,sql_id,1,top_level_sql_id,2,3) pred_flag
-                         from   dba_hist_active_sess_history d
+                         from   &check_access_pdb.active_sess_history d
                          WHERE   '&vw' IN('A','D')
                          AND     dbid=nvl(0+'&dbid',dbid)
                          AND     sample_time BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)) a
