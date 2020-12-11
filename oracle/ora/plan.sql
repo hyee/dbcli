@@ -16,7 +16,7 @@ Options:
     &V1: default={&_SQL_ID} last={X} x={X}
     &V3: none={} ol={outline alias &hint}
     &LAST: last={LAST} all={ALL} 
-    &DF: default={ALLSTATS REMOTE &LAST -PROJECTION -ALIAS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL}
+    &DF: default={ALLSTATS PARTITION REMOTE &LAST -PROJECTION -ALIAS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL}
     &SRC: {
             default={0}, # Both
             d={2}        # Dictionary only

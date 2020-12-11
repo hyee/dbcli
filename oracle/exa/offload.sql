@@ -14,6 +14,11 @@ How to setup Columnar Cache
     Likewise we can selectively disable CC2 for EHCC and keep it enabled for non EHCC:
         alter session set "_enable_columnar_cache"=32865 --(0x8061, Capacity for non-EHCC) 
         alter session set "_enable_columnar_cache"=32833 --(0x8041, Query for non-EHCC) 
+    Others:
+        33   - Force CC2
+        2048 - Disable the use of Non-1MB region for both CC population and CC reads.
+        4096 - disable CC1 but use CC2 for cache hit
+        8192 - disable CC2 but use CC1 for cache hit
     
 How to check query performance
 ==============================

@@ -130,7 +130,7 @@ BEGIN
                        8,'HCC_QUERY_LOW',
                        16,'HCC_ARCHIVE_HIGH',
                        32,'HCC_ARCHIVE_LOW',
-                       64,'BLOCK',
+                       64,'OLTP',
                        128,'LOB_HIGH',
                        256,'LOB_MEDIUM',
                        512,'LOB_LOW',

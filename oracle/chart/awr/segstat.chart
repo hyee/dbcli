@@ -49,6 +49,7 @@
                        )
                  GROUP  BY event,end_time) a
         ORDER  BY 1]],
+    _sorter=2,
     ylabel="Bytes per Minute",
     _pivot="mixed",
 }

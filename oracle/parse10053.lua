@@ -11,7 +11,6 @@ local function get_dop(line,default)
     return tonumber(line:match('[dD]egree: *(%d+)')) or default or 1
 end
 
-
 local function extract_timer()
     return {
         start="TIMER:",

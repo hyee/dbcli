@@ -1,7 +1,8 @@
-/*[[Show Cell IO Reasons. Usage: @@NAME {[<keyword>] [-r]} | {<seconds> [-avg]}
+/*[[Show Cell IO Reasons. Usage: @@NAME [<keyword>] {[-r] [-d]} | {<seconds> [-avg]}
     Parameters:
        <keyword> :  case-insensitive expression
        -r        :  the keyword is a Regular expression instead of a LIKE expression
+       -d        :  Show IO reason if dba_hist_io_reason instead of v$cell_ioreason
        <seconds> :  take 2 snapshots with the specific seconds, then print the delta stats
        -avg      :  when <seconds> is specified, devide the delta stats with <seconds> instead of the total stats
 
@@ -13,6 +14,7 @@
             like={upper(reason_name) LIKE upper('%&V1%')}
             r={regexp_like(reason_name,'&V1','i')}
         }
+        &typ             : default={g} d={d}
     --]]
 ]]*/
 col reqs for tmb
@@ -50,7 +52,7 @@ BEGIN
                 ORDER  BY reqs DESC]';
         --dbms_output.put_line(v_stmt);
         OPEN :cur FOR v_stmt USING v,v;
-    ELSE
+    ELSIF :typ='g' THEN
         OPEN :cur FOR
 			SELECT reason_name,
 			       bytes,
@@ -64,6 +66,33 @@ BEGIN
 				    GROUP BY reason_name, metric_name)
 			PIVOT(MAX(v) FOR n IN('Per Reason Bytes of IO' bytes, 'Per Reason Number of IOs' reqs))
 			ORDER  BY reqs DESC;
+    ELSE
+        OPEN :cur FOR
+            SELECT a.*,
+                   ratio_to_report(reqs) over() "%",
+                   ROUND(bytes / nullif(reqs, 0)) avg_bytes,
+                   CASE
+                       WHEN bytes / nullif(reqs, 0) >= 128 * 1024 THEN
+                        'YES'
+                       ELSE
+                        'NO'
+                   END large_io
+            FROM   (SELECT reason_name, SUM(bytes) bytes, SUM(reqs) reqs
+                    FROM   (SELECT cell_hash,
+                                   dbid,
+                                   con_dbid,
+                                   REASON_NAME,
+                                   MAX(REQUESTS) KEEP(dense_rank LAST ORDER BY SNAP_ID) - MIN(REQUESTS) KEEP(dense_rank FIRST ORDER BY SNAP_ID) reqs,
+                                   MAX(bytes) KEEP(dense_rank LAST ORDER BY SNAP_ID) - MIN(bytes) KEEP(dense_rank FIRST ORDER BY SNAP_ID) bytes
+                            FROM   dba_hist_cell_ioreason
+                            JOIN   dba_hist_snapshot
+                            USING  (dbid,snap_id)
+                            WHERE  end_interval_time+0 between nvl(to_date(:starttime,'YYMMDDHH24MI'),SYSDATE - 7) AND nvl(to_date(:endtime,'YYMMDDHH24MI'),SYSDATE)
+                            AND    dbid=NVL(:dbid+0,(select dbid from v$database))
+                            GROUP  BY cell_hash, REASON_NAME, INCARNATION_NUM, dbid, con_dbid)
+                    GROUP  BY dbid, con_dbid, reason_name) a
+            WHERE reqs>0
+            ORDER  BY reqs DESC;
     END IF;
 END;
 /

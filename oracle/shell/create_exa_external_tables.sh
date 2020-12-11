@@ -47,7 +47,7 @@ cat >get_cell_group.sql<<!
     PRO
     exit
 !
-rm -f cell_group.lst
+rm -f cell_group.lst cell_group
 sqlplus -l "$db_account" @get_cell_group
 
 if [ ! -f "cell_group.lst" ]; then
