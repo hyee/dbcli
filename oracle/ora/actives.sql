@@ -161,7 +161,7 @@ BEGIN
               AND   (event not like 'Streams%')),
             s3  AS(SELECT /*+no_merge no_merge(s2)*/ s1.*,qcinst_id,qcsid FROM s1,&CHECK_ACCESS_PX s2 where s1.inst_id=s2.inst_id(+) and s1.SID=s2.sid(+)),
             sq1 AS(
-              SELECT /*+materialize ordered use_nl(a b)*/ a.*,
+              SELECT /*+materialize ordered use_nl(a b) opt_param('cursor_sharing' 'force')*/ a.*,
                     extractvalue(b.column_value,'/ROW/A1')              program_name,
                     extractvalue(b.column_value,'/ROW/A2')              program_line#,
                     extractvalue(b.column_value,'/ROW/A3')              sql_text,

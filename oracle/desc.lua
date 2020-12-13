@@ -612,7 +612,7 @@ local desc_sql={
         AND    a.column_name=c.cname(+)
         ORDER BY NO#]],
     [[
-        WITH I AS (SELECT /*+no_merge*/ I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
+        WITH I AS (SELECT /*+no_merge opt_param('cursor_sharing' 'force')*/ I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
                    PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
                             SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
                             FROM   (SELECT /*+no_merge*/* FROM all_part_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')

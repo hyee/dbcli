@@ -98,7 +98,7 @@ BEGIN
 
         OPEN :cur FOR
             WITH SRC AS
-             (SELECT /*+MATERIALIZE no_merge(u)*/
+             (SELECT /*+MATERIALIZE no_merge(u) opt_param('cursor_sharing' 'force')*/
                     U.*, EXTRACTVALUE(b.COLUMN_VALUE,'//TEXT') text
               FROM  (SELECT * FROM dbmshp_function_info WHERE RUNID = run_id) u,
                     TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(

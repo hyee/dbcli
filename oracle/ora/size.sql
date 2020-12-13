@@ -60,7 +60,7 @@ BEGIN
                     nvl(coalesce((select rowcnt from sys.tab$ where obj#=o2.obj#),(select rowcnt from sys.tabpart$ where obj#=o2.obj#),(select rowcnt from sys.tabsubpart$ where obj#=o2.obj#)),0)+ nvl(b.rws,0)
                 END num_rows
         FROM(
-            SELECT /*+first_rows(1000) ordered use_nl(t o b o2) no_merge(t) no_merge*/
+            SELECT /*+first_rows(1000) ordered use_nl(t o b o2) no_merge(t) no_merge opt_param('cursor_sharing' 'force')*/
                 u.user# user_id,u.name owner, o.name object_name,
                 nvl(extractvalue(b.column_value, '/ROW/P'),rtrim(t.subname,'%')) PARTITION_NAME,
                 extractvalue(b.column_value, '/ROW/T') object_type,

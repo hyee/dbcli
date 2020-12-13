@@ -170,7 +170,7 @@ BEGIN
         end loop;
     $END
     
-    prefs := t('iotfrspeed', 'ioseektim', 'sreadtim', 'mreadtim', 'cpuspeed', 'cpuspeednw', 'mbrc', 'maxthr', 'slavethr');
+    prefs := t('iotfrspeed', 'ioseektim', 'mbrc','sreadtim', 'mreadtim', 'cpuspeed', 'cpuspeednw',  'maxthr', 'slavethr');
     for i in 1..prefs.count loop
         LST.EXTEND();
         LST(LST.COUNT) := SYS.ODCIOBJECT(upper(prefs(i)),null);
@@ -185,7 +185,7 @@ BEGIN
     dbms_output.put_line(rpad('-',120,'-'));
     --refer to https://github.com/FranckPachot/scripts/blob/master/statistic-gathering/display-system-statistics.txt
     FOR C IN(
-        SELECT r,pname, rpad(nvl(''||round(nvl(calc,pval1),4),' '),10)||nullif(' ('||formula||')',' ()') value
+        SELECT r,pname, to_char(nvl(round(nvl(calc,pval1),4),0),'999990.999')||nullif(' ('||formula||')',' ()') value
         FROM   (SELECT rownum r,objectschema pname,objectname+0 pval1 FROM TABLE(lst))
         MODEL 
         REFERENCE sga ON 
@@ -311,17 +311,18 @@ BEGIN
             AND    t1.column_name=t.column_name;
 
         OPEN C3 FOR
-            WITH I AS (SELECT /*+no_merge*/ I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
-                       PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
-                                SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
-                                FROM   (SELECT /*+no_merge*/* FROM all_part_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
-                                START  WITH column_position = 1
-                                CONNECT BY PRIOR column_position = column_position - 1]'),'//V') PARTITIONED_BY,
-                       nullif(SUBPARTITIONING_TYPE,'NONE')||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
-                                SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
-                                FROM   (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
-                                START  WITH column_position = 1
-                                CONNECT BY PRIOR column_position = column_position - 1]'),'//V') SUBPART_BY
+            WITH I AS (SELECT /*+no_merge opt_param('cursor_sharing' 'force')*/ 
+                               I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
+                               PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
+                                        SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
+                                        FROM   (SELECT /*+no_merge*/* FROM all_part_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
+                                        START  WITH column_position = 1
+                                        CONNECT BY PRIOR column_position = column_position - 1]'),'//V') PARTITIONED_BY,
+                               nullif(SUBPARTITIONING_TYPE,'NONE')||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
+                                        SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
+                                        FROM   (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
+                                        START  WITH column_position = 1
+                                        CONNECT BY PRIOR column_position = column_position - 1]'),'//V') SUBPART_BY
                         FROM   &check_access_dba.INDEXES I,&check_access_dba.PART_INDEXES C
                         WHERE  C.OWNER(+) = I.OWNER
                         AND    C.INDEX_NAME(+) = I.INDEX_NAME

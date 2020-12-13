@@ -101,12 +101,16 @@ function unwrap.unwrap(obj,ext,prefix)
                     org[#org+1]=line
                 end
                 if not piece or #piece<64 then
-                    org[repidx]=loader:Base64ZlibToText({table.concat(stack,'')})
+                    org[#org+1]=loader:Base64ZlibToText({table.concat(stack,'')})
                     stack={}
                     found=false
                 end
             else
-                org[#org+1]=line    
+                if line:match('encode=".-"') and line:match('compress=".-"') then
+                    org[#org+1]=line:gsub('encode=".-"',''):gsub('compress=".-"','')
+                else
+                    org[#org+1]=line
+                end
             end
         end
         if repidx == -1 then return end

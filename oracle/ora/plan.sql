@@ -12,18 +12,18 @@ Options:
 
 --[[
 
-    &STAT: default={&DF &adaptive &hint &binds &V3 &V4 &V5 &V6 &V7 &V8 &V9}
+    &STAT: default={&DF &adaptive &binds &V3 &V4 &V5 &V6 &V7 &V8 &V9}
     &V1: default={&_SQL_ID} last={X} x={X}
     &V3: none={} ol={outline alias &hint}
     &LAST: last={LAST} all={OUTLINE ALL} 
-    &DF: default={ALLSTATS PARTITION REMOTE &LAST -PROJECTION -ALIAS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL}
+    &DF: default={ALLSTATS PARTITION REMOTE &LAST -PROJECTION -ALIAS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL outline alias}
     &SRC: {
             default={0}, # Both
             d={2}        # Dictionary only
           }
     &binds: default={}, b={PEEKED_BINDS}
     @adaptive: 12.1={+REPORT +ADAPTIVE +METRICS} 11.2={+METRICS} default={}
-    @hint    : 19={+HINT_REPORT} DEFAULT={}
+    @hint    : 19={+HINT_REPORT -QBREGISTRY} DEFAULT={}
     @proj:  11.2={nvl2(projection,1+regexp_count(regexp_replace(regexp_replace(projection,'[\[.*?\]'),'\(.*?\)'),', '),null) proj} default={cast(null as number) proj}
     @check_access_ab : dba_hist_sqlbind={1} default={0}
     @check_access_awr: {

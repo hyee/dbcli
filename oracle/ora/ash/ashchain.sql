@@ -74,7 +74,7 @@ declare
                         when p1text='idn' then 
                             nullif(decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)), 0) 
                     end)|| &INST,'@') b_sid,
-                sample_time+0 stime 
+                floor(to_char(sample_time,'yymmddhh24miss')/&unit)*&unit stime 
         from &ash a where ]'||:range;
     chose varchar2(2000) := '1';
 BEGIN
