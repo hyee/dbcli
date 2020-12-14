@@ -130,45 +130,38 @@ Outputs:
     }
 
     &gash: {
-        default={gash },
+        default={(select a.*,sql_exec_id sql_exec_id_,sql_exec_start sql_exec_start_ from gash a)},
         all={
-            SELECT /*+ordered use_hash(a) no_merge(b)*/*
-            FROM   (SELECT inst_id,
-                           service_hash &con,
-                           machine,
-                           port,
-                           sql_exec_start st,
-                           MAX(sample_time) sample_time_
-                    FROM   gash
-                    GROUP  BY inst_id, sql_exec_start &con, service_hash, machine, port) b 
+            SELECT /*+ordered use_hash(a) no_merge(b) monitor*/*
+            FROM   (SELECT service_hash  &con,machine, decode(port,0,session_id*inst_id*10,port) port_,stime,
+                           MIN(sql_exec_id)    KEEP(dense_rank FIRST ORDER BY NVL2(sql_exec_id,1,2),INSTR(program,'(P')) sql_exec_id_,
+                           MIN(sql_exec_start) KEEP(dense_rank FIRST ORDER BY NVL2(sql_exec_start,1,2),INSTR(program,'(P')) sql_exec_start_
+                    FROM   gash a 
+                    GROUP  BY service_hash  &con, machine, decode(port,0,session_id*inst_id*10,port),stime) b
             JOIN (
                 SELECT /*+ merge(a) full(a.a) leading(a.a) use_hash(a.a a.s) 
-                          swap_join_inputs(a.s) 
+                          swap_join_inputs(a.s)
                           FULL(A.GV$ACTIVE_SESSION_HISTORY.A) 
                           leading(A.GV$ACTIVE_SESSION_HISTORY.A)
                           swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
                           use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S) 
                           OPT_ESTIMATE(QUERY_BLOCK ROWS=30000000)*/ *
                 FROM gv$active_session_history a) a
-            USING  (inst_id &con,service_hash,machine,port) 
-            WHERE  a.sample_time BETWEEN b.st AND b.sample_time_
-            AND    a.sql_exec_start >=b.st
+            USING  (service_hash &con,machine) 
+            WHERE  a.sample_time+0=b.stime
+            AND    decode(port,0,session_id*inst_id*10,port)=port_
             AND   '&vw' IN('A','G')
         }
     }
     &dash: {
-        default={dash},
+        default={(select a.*,sql_exec_id sql_exec_id_,sql_exec_start sql_exec_start_ from dash a)},
         all={
             SELECT /*+ordered use_hash(a) no_merge(b) PX_JOIN_FILTER(a)*/ *
-            FROM   (SELECT instance_number,
-                           dbid &con,
-                           service_hash,
-                           machine,
-                           port,
-                           sql_exec_start st,
-                           MAX(sample_time) sample_time_
-                    FROM   dash
-                    GROUP  BY instance_number, sql_exec_start, dbid &con, service_hash, machine, port) b
+            FROM   (SELECT dbid, service_hash  &con,machine, decode(port,0,session_id*instance_number*10,port) port_,stime,
+                           MIN(sql_exec_id)    KEEP(dense_rank FIRST ORDER BY NVL2(sql_exec_id,1,2),INSTR(program,'(P')) sql_exec_id_,
+                           MIN(sql_exec_start) KEEP(dense_rank FIRST ORDER BY NVL2(sql_exec_start,1,2),INSTR(program,'(P')) sql_exec_start_
+                    FROM   dash a 
+                    GROUP  BY dbid, service_hash  &con, machine, decode(port,0,session_id*instance_number*10,port),stime) b
             JOIN  (
                 SELECT /*+
                         FULL(D.ASH) FULL(D.EVT) swap_join_inputs(D.EVT) PX_JOIN_FILTER(D.ASH)
@@ -180,9 +173,9 @@ Outputs:
                         OPT_ESTIMATE(TABLE D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH ROWS=30000000)
                        */ *
                 FROM &check_access_pdb.active_sess_history d) a
-            USING  (dbid &con,instance_number,service_hash,machine,port)
-            WHERE  a.sample_time BETWEEN b.st AND b.sample_time_
-            AND    a.sql_exec_start >=b.st
+            USING  (dbid,service_hash &con,machine)
+            WHERE  to_date(floor(to_char(sample_time,'YYMMDDSSSSS')/10)*10,'YYMMDDSSSSS')=b.stime
+            AND    decode(port,0,session_id*instance_number*10,port)=b.port_
             AND   '&vw' IN('A','D')
         }
     }
@@ -213,6 +206,7 @@ Outputs:
                         stime,
                         sample_id,
                         px_flags,
+                        SQL_OPNAME,
                         trim(decode(bitand(time_model,power(2, 3)),0,'','connection_mgmt ') || 
                              decode(bitand(time_model,power(2, 4)),0,'','parse ') || 
                              decode(bitand(time_model,power(2, 7)),0,'','hard_parse ') || 
@@ -230,8 +224,8 @@ Outputs:
                         nvl(trunc(px_flags / 2097152),0) dop_,
                         1 lv,
                         nvl(sql_id,top_level_sql_id) sql_id,
-                        sql_exec_id sql_exec_id_,
-                        sql_exec_start sql_exec_start_,
+                        sql_exec_id_,
+                        sql_exec_start_,
                         nvl(sql_plan_hash_value,0) phv1,
                         sql_plan_line_id,
                         sql_plan_operation||' '||sql_plan_options operation,
@@ -250,7 +244,7 @@ WITH gash as(
               use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S) 
               OPT_ESTIMATE(QUERY_BLOCK ROWS=1000000)
             */
-            a.*
+            a.*,sample_time+0 stime
     from   gv$active_session_history a
     where  userenv('instance')=nvl(:instance,userenv('instance'))
     and    sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
@@ -268,7 +262,8 @@ dash as(
                    swap_join_inputs(D.&check_access_pdb.ACTIVE_SESS_HISTORY.EVT) 
                    full(D.&check_access_pdb.ACTIVE_SESS_HISTORY.EVT)
                 */ 
-                d.*
+                d.*,
+                to_date(floor(to_char(sample_time,'YYMMDDSSSSS')/10)*10,'YYMMDDSSSSS') stime
     from   &check_access_pdb.active_sess_history d
     WHERE  '&vw' IN('A','D')
     AND    dbid=nvl(0+'&dbid',&did)
@@ -303,15 +298,13 @@ ash_raw as (
                 FROM    (
                     select 
                             a.*,inst_id instance_number,&did dbid,1 aas_,&mem mem,
-                            0 snap_id,decode(:V1,nvl(sql_id,top_level_sql_id),1,top_level_sql_id,2,3) pred_flag,
-                            to_char(sample_time,'YYMMDDHH24MISS')+0 stime
+                            0 snap_id,decode(:V1,nvl(sql_id,top_level_sql_id),1,top_level_sql_id,2,3) pred_flag
                     from  (&gash) a
                     ) a
                 where 1=1 
                 UNION ALL
                 SELECT  &public
-                FROM    (select a.*, 10 aas_,null mem,decode(:V1,sql_id,1,top_level_sql_id,2,3) pred_flag,
-                                trunc(to_char(sample_time,'YYMMDDHH24MISS')/10)*10 stime
+                FROM    (select a.*, 10 aas_,null mem,decode(:V1,sql_id,1,top_level_sql_id,2,3) pred_flag
                          from   (&dash) a
                          ) a
                 WHERE 1=1
@@ -335,7 +328,7 @@ ALL_PLANS AS(
             EXTRACTVALUE(COLUMN_VALUE,'//PLAN_HASH_FULL') PLAN_HASH_FULL,
             EXTRACTVALUE(COLUMN_VALUE,'//IS_ADAPTIVE_')+0 IS_ADAPTIVE_,
             EXTRACTVALUE(COLUMN_VALUE,'//CID')+0 CID
-    FROM   (select dbid,sql_id,phv1,aas_ from ash_raw WHERE PLAN_SEQ=1) h,
+    FROM    ash_raw h,
             TABLE(XMLSEQUENCE(EXTRACT(DBMS_XMLGEN.GETXMLTYPE(q'!
                 SELECT /*+opt_param('cursor_sharing' 'force')*/ 
                        * FROM(SELECT A.*,DENSE_RANK() OVER(ORDER BY FLAG,inst_id) SEQ
@@ -358,7 +351,6 @@ ALL_PLANS AS(
                            &did dbid 
                     FROM   gv$sql_plan a 
                     WHERE '&vw' IN('A','G')
-                    AND    ('&dbid' is null or &did='&dbid')
                     AND    a.sql_id='!'|| h.sql_id ||'''
                     AND    a.plan_hash_value='||h.phv1||q'!
                     UNION ALL
@@ -384,7 +376,9 @@ ALL_PLANS AS(
                     AND    a.plan_hash_value='||h.phv1||'
                     AND    a.dbid='||h.dbid||') a
                 ) WHERE SEQ=1 ORDER BY ID'), '//ROW'))) B
-    ),
+    WHERE PLAN_SEQ=1
+    AND   SQL_ID IS NOT NULL
+    AND   (phv1>0 OR SQL_OPNAME='INSERT')),
 sql_list as(select distinct sql_id,phv plan_hash_value,dbid from ALL_PLANS),
 plan_objs AS (SELECT DISTINCT OBJECT#,OBJECT_NAME FROM ALL_PLANS),
 sql_plan_data AS
@@ -715,7 +709,7 @@ plan_line_widths AS(
 format_info as (
     SELECT flag,phv,r,widths,id,
        decode(id,
-            -2,decode(flag,'line',lpad('Ord', csize),'phv','|'||lpad('Plan Hash ',csize),'|'||rpad('&titl2',csize)) || lpad(decode(pred_flag,3,'SQL Id     ','Full Hash'), shash) || ' |'
+            -2,decode(flag,'line',lpad('Ord', csize),'phv','|'||lpad('Plan Hash ',csize),'|'||rpad('&titl2',csize)) || lpad('Full Hash', shash) || ' |'
                 ||decode(sawrexec+sawrela,0,'',lpad('AWR-Exes',sawrexec)||lpad('Avg-Ela',sawrela)||'|')
                 ||lpad('DoP  ', sdop)|| lpad('Skew  ', sskew)|| lpad('Execs', sexe) || lpad('Secs', rate_size) || lpad('AAS', saas) || lpad('DB-Time', ssec) 
                 ||nullif('|'||lpad('CPU%', scpu)  || lpad('IO%', sio) || lpad('CL%', scl) || lpad('CC%', scc) || lpad('APP%', sapp)

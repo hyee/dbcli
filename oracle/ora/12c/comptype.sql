@@ -43,6 +43,7 @@ DECLARE
     v_xml  CLOB := '<ROWSET>';
     v_dx   VARCHAR2(128);
     v_sm   INT;
+    v_dobj INT;
     PROCEDURE extr(c VARCHAR2) IS
     BEGIN
         v_oid := regexp_substr(c, '[^,]+', 1, 1);

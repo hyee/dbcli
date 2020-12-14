@@ -1,9 +1,12 @@
 /*[[
-    Show GES resource hash bucket info. Usage: @@NAME {[ADDR] [Bucket#]} | {<sample secs> [-avg]} 
+    Show GES resource hash bucket info. Usage: @@NAME {[RHT] [Bucket#]} | {<sample secs> [-avg]} 
     
     Mainly used to diagnostic below the "latch: ges resource hash list" events, output similar command with "oradebug lkdebug -a hashcount"
     
     Refer to bug# 29878037/29922435
+    Relative parameters: 
+      _lm_res_hash_buckets: (64k in 11g and 32k in 18c)
+      _lm_res_tm_hash_bucket: unit is percentage of resource hash bucket(_lm_res_hash_buckets) used for tm enqueue
 
     Examples:
     =========
@@ -30,7 +33,8 @@
         @VER: 12={}
     --]]
 ]]*/
-col No_Waits,Fails,Waits for tmb3
+col No_Waits,Fails,Waits,sleeps,spins for tmb3
+col wait_time for usmhd2
 set feed off verify off
 VAR cur REFCURSOR
 VAR secs NUMBER;
@@ -76,7 +80,8 @@ BEGIN
             WHERE ROWNUM<=60]';
     ELSE
         OPEN cur FOR
-            WITH stats as(SELECT A.*, to_char(100*ratio_to_Report(Waits) over(),'990.00')||'%' "Waits(%)"
+            WITH stats as(
+                    SELECT /*+inline*/ A.*, to_char(100*ratio_to_Report(Waits) over(partition by inst),'990.00')||'%' "Waits(%)"
                     FROM   TABLE(gv$(CURSOR(
                               SELECT inst_id inst,
                                      ''||RHT RHT,
@@ -86,10 +91,15 @@ BEGIN
                                      CNT        Items,
                                      MAXCNT     Max_Items,
                                      NOWAITCNT  No_Waits,
+                                     WAITCNT    Waits,
                                      FAILEDWCNT Fails,
-                                     WAITCNT    Waits
-                              FROM   X$KJRTBCFP
-                              WHERE (V1 IS NULL OR ADDR LIKE '%'||upper(V1) or RHT like '%'||upper(V1))
+                                     b.sleeps,
+                                     b.spin_gets spins,
+                                     b.wait_time
+                              FROM   X$KJRTBCFP a,v$latch_children b
+                              WHERE  b.name(+) = 'ges resource hash list'
+                              AND    b.child#(+)=a.indx+1
+                              AND   (V1 IS NULL OR RHT like '%'||upper(V1))
                               AND   (V2 IS NULL OR BUCKETIDX=V2)
                               ORDER  BY waits DESC))) A
                     ORDER  BY waits DESC)
@@ -97,12 +107,13 @@ BEGIN
             FROM   stats A
             WHERE  rownum <= 30
             UNION ALL
-            SELECT '-',null,null,null,null,null,null,null,null,null,null,null,null,null from dual
+            SELECT '-',null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null from dual
             UNION ALL
             SELECT * FROM (
               SELECT decode(grouping_id(lmdid),1,'$GREPCOLOR$'),
                      inst,'ALL Buckets',
                      nvl(lmdid,'*'),nvl(groupid,'*'),count(1),sum(Items),sum(Max_Items),sum(No_Waits),sum(Fails),sum(Waits),
+                     sum(sleeps),sum(spins),sum(wait_time),
                      to_char(100*ratio_to_Report(sum(Waits)) over(PARTITION BY grouping_id(LMDID)),'990.00')||'%' "Waits(%)",
                      '|' "|",'Avg Items|Waits ='||to_char(round(sum(Items)/count(1)),'9990')||'|'||round(sum(Waits)/count(1),2)
               FROM   stats

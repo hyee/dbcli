@@ -40,7 +40,8 @@ Parameters
     _small_table_threshold(STT): defaults to the 2% of buffer cache, and Medium Table Threshold(MTT)=10% of buffer cache
         1) OBJECT_SIZE <= STT: use buffer cache, keep object whose size < keep pool size is also considered as small
         2) STT < OBJECT_SIZE < MTT: 
-            for serial read, if >50% blocks(or 99% of compressed table) are cached or 25% blocks are dirty, then use buffer cache,    otherwise use direct path read
+            for serial read, if >50% blocks(or 99% of compressed table) are cached or 25% blocks are dirty, then use buffer cache, otherwise use direct path read
+                Parameter _parallel_cluster_cache_policy controls the behaviour for parallel read
             for parallel read, when >STT then dx read would be used(also controlled by _px_adaptive_offload_percentage, 0 means always)
         3) OBJECT_SIZE>=MTT: dx read
         4) Patch #31626438 supports any partitions larger than 100 MB will automatically use Direct Read and hence offload on Exadata

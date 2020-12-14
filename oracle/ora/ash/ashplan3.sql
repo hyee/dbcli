@@ -221,22 +221,14 @@ WITH ALL_PLANS AS
                     instr(other_xml,'adaptive_plan') is_adaptive_,
                     1e9 cid
             FROM    (
-                select /*+no_merge
-                          full(a.a) leading(a.a) use_hash(a.a a.s) swap_join_inputs(a.s)
-                          use_hash(a.V_$ACTIVE_SESSION_HISTORY.V$ACTIVE_SESSION_HISTORY.GV$ACTIVE_SESSION_HISTORY.A)
-                          FULL(A.GV$ACTIVE_SESSION_HISTORY.A) leading(A.GV$ACTIVE_SESSION_HISTORY.A) 
-                          use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S) 
-                          swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
-                          OPT_ESTIMATE(QUERY_BLOCK ROWS=30000000)
-                       */ 
+                select /*+no_merge OPT_ESTIMATE(QUERY_BLOCK ROWS=30000000)*/ 
                        distinct 'G' pos,sql_id,nvl(sql_plan_hash_value,0) plan_hash_value
                 from   v$active_session_history a
                 where  '&vw' IN('A','G')
                 and    userenv('instance')=nvl(:instance,userenv('instance'))
                 and    sql_id is not null
                 and    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf)
-                ) b join v$sql_plan a using(sql_id,plan_hash_value)
-            WHERE  '&vw' IN('A','G')))) a
+                ) b join v$sql_plan a using(sql_id,plan_hash_value)))) a
         WHERE '&vw'='G' or :dbid is null or &did=:dbid
         UNION ALL
         SELECT  /*+ordered &check_access_cdb opt_estimate(query_block rows=100000)*/
@@ -388,12 +380,12 @@ ash_raw as (
                         &public,
                         &hierachy
                 FROM    (
-                    select --+merge(a) cardinality(1000000) 
+                    select --+merge(a) no_merge
                             a.*,&did dbid,1 aas_,&mem mem,0 snap_id &px_count,inst_id instance_number,
                             decode(:V1,nvl(sql_id,top_level_sql_id),1,top_level_sql_id,2,3) pred_flag,
                             to_char(sample_time,'YYMMDDHH24MISS')+0 stime
-                    from  gv$active_session_history a
-                    where  inst_id=nvl(:instance,userenv('instance'))
+                    from   gv$active_session_history a
+                    where  inst_id=nvl(:instance,inst_id)
                     and    sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
                     and   (:V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf) or 
                             qc_session_id   != session_id or 
@@ -661,7 +653,7 @@ plan_line_widths AS(
 format_info as (
     SELECT flag,phv,r,widths,id,
        decode(id,
-            -2,decode(flag,'line',lpad('Ord', csize),'phv','|'||lpad('Plan Hash ',csize),'|'||rpad('&titl2',csize)) || lpad(decode(pred_flag,3,'SQL Id     ','Full Hash'), shash) || ' |'
+            -2,decode(flag,'line',lpad('Ord', csize),'phv','|'||lpad('Plan Hash ',csize),'|'||rpad('&titl2',csize)) || lpad('Full Hash', shash) || ' |'
                 ||decode(sawrexec+sawrela,0,'',lpad('AWR-Exes',sawrexec)||lpad('Avg-Ela',sawrela)||'|')
                 ||lpad('DoP  ', sdop)|| lpad('Skew  ', sskew)|| lpad('Execs', sexe) || lpad('Secs', rate_size) || lpad('AAS', saas) || lpad('DB-Time', ssec) 
                 ||nullif('|'||lpad('CPU%', scpu)  || lpad('IO%', sio) || lpad('CL%', scl) || lpad('CC%', scc) || lpad('APP%', sapp)
