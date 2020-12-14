@@ -29,8 +29,6 @@ function scripter:format_version(version)
     return version:gsub("(%d+)",function(s) return s:len()<3 and string.rep('0',3-s:len())..s or s end)
 end
 
-
-
 function scripter:rehash(script_dir,ext_name,extend_dirs)
     local dirs={script_dir}
     if type(extend_dirs)=="table" then

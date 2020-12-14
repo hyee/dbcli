@@ -10,61 +10,42 @@
 ]]*/
 set printsize 3000 feed off verify off
 col ramCacheMaxSize,ramCacheSize for kmg
-SELECT b.*
-FROM   v$cell_config a,
-       XMLTABLE('/cli-output/cell' PASSING xmltype(a.confval) COLUMNS
-                cell VARCHAR2(20) path 'name',
-                "status" VARCHAR2(15) path 'status',
-                "bbuStatus" VARCHAR2(15) path 'bbuStatus',
-                "temperatureStatus" VARCHAR2(15) path 'temperatureStatus',
-                "usbStatus" VARCHAR2(15) path 'usbStatus',
-                "fanStatus" VARCHAR2(15) path 'fanStatus',
-                "locatorLEDStatus" VARCHAR2(8) path 'locatorLEDStatus',
-                "powerStatus" VARCHAR2(15) path 'powerStatus',
-                "releaseImageStatus" VARCHAR2(15) path 'releaseImageStatus',
-                "cpuCount" VARCHAR2(8) path 'cpuCount',
-                "memoryGB" VARCHAR2(8) path 'memoryGB',
-                "flashCacheMode" VARCHAR2(12) path 'flashCacheMode',
-                "pmemCacheMode" VARCHAR2(12) path 'pmemCacheMode',
-                "ramCacheMode" VARCHAR2(4) path 'ramCacheMode',
-                "ramCacheMaxSize" NUMBER(15) path 'ramCacheMaxSize',
-                "ramCacheSize" NUMBER(15) path 'ramCacheSize',
-                "temperatureReading" NUMBER(3) path 'temperatureReading',
-                "diagHistoryDays" NUMBER(5) path 'diagHistoryDays',
-                "upTime" VARCHAR2(15) path 'upTime',
-                "fanCount" VARCHAR2(5) path 'fanCount',
-                "flashCacheCompress" VARCHAR2(300) path 'flashCacheCompress',
-                "accessLevelPerm" VARCHAR2(20) path 'accessLevelPerm',
-                "id" VARCHAR2(15) path 'id',
-                "cellVersion" VARCHAR2(40) path 'cellVersion',
-                "interconnectCount" number(2) path 'interconnectCount',
-                "interconnect1" VARCHAR2(10) path 'interconnect1',
-                "interconnect2" VARCHAR2(10) path 'interconnect2',
-                "iormBoost" VARCHAR2(10) path 'iormBoost',
-                "ipaddress1" VARCHAR2(20) path 'ipaddress1',
-                "ipaddress2" VARCHAR2(20) path 'ipaddress2',
-                "kernelVersion" VARCHAR2(30) path 'kernelVersion',
-                "makeModel" VARCHAR2(60) path 'makeModel',
-                "metricHistoryDays" NUMBER(5) path 'metricHistoryDays',
-                "notificationMethod" VARCHAR2(10) path 'notificationMethod',
-                "notificationPolicy" VARCHAR2(25) path 'notificationPolicy',
-                "smtpPort" NUMBER(5) path 'smtpPort',
-                "smtpServer" VARCHAR2(30) path 'smtpServer',
-                "smtpToAddr" VARCHAR2(100) path 'smtpToAddr',
-                "smtpUseSSL" VARCHAR2(5) path 'smtpUseSSL',
-                "offloadGroupEvents" VARCHAR2(20) path 'offloadGroupEvents',
-                "powerCount" VARCHAR2(9) path 'powerCount',
-                "releaseVersion" VARCHAR2(25) path 'releaseVersion',
-                "rpmVersion" VARCHAR2(50) path 'rpmVersion',
-                "releaseTrackingBug" VARCHAR2(200) path 'releaseTrackingBug',
-                "rollbackVersion" VARCHAR2(30) path 'rollbackVersion'
-                ) b
-WHERE  conftype = 'CELL'
-ORDER BY 1;
-
+var c0 REFCURSOR;
 var c1 REFCURSOR;
 var c2 REFCURSOR;
 var c3 REFCURSOR;
+
+DECLARE
+    cells VARCHAR2(4000);
+BEGIN
+    SELECT listagg(REPLACE(q'[MAX(DECODE(c,'@',v)) "@"]','@',c),',') WITHIN GROUP(ORDER BY c)
+    INTO   cells
+    FROM(
+        SELECT extractvalue(xmltype(a.confval),'//name') c
+        FROM   v$cell_config a
+        WHERE  conftype = 'CELL');
+
+    OPEN :c0 FOR REPLACE(q'{
+        SELECT tag,@cells
+        FROM (
+            SELECT extractvalue(xmltype(a.confval),'//name') c,
+                   tag,
+                   trim(replace(decode(tag,'timestamp'
+                                 ,to_char(timestamp '1970-01-01 0:0:0' + numtodsinterval(v/1000,'second'),'YYYY-MM-DD HH24:MI:SSXFF3')
+                                 ,v),'Oracle Corporation')) v
+            FROM   v$cell_config a,
+                   XMLTABLE('//*[not(*)]' PASSING xmltype(a.confval) COLUMNS
+                            tag VARCHAR2(128) PATH 'name()',
+                            v   VARCHAR2(42) PATH '.'
+                            ) b
+            WHERE  conftype = 'CELL'
+            AND    tag not in('name'))
+        GROUP BY tag
+        ORDER BY 1}','@cells',cells);
+END;
+/
+
+print c0;
 
 DECLARE
     c1   SYS_REFCURSOR;
