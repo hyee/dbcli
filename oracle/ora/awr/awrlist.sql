@@ -3,6 +3,16 @@
      @con: 12.2={con_id,} default={}
      @platform : 11.1={|| '(' || b.PLATFORM_NAME || ')'} default={}
      @agg: 11.1={trim(',' from regexp_replace(listagg(inst_id,',') within group(order by inst_id)||',','([^,]+,)\1+','\1'))} default={wmsys.wm_concat(distinct inst_id)}
+     @check_access_tab: {
+          dba_hist_table_settings={
+            LEFT JOIN (
+                select * 
+                from (select dbid,FLUSH_LEVEL_VAL f,count(1) c from dba_hist_table_settings group by dbid,FLUSH_LEVEL_VAL) 
+                pivot(max(c) for f in('ALL' "Flush Lv|All",'TYPICAL' "Flush Lv|Typical",'LITE' "Flush Lv|Lite",'BESTFIT' "Flush Lv|BESTFIT",'NOT APPLICABLE' "Flush Lv|N/A")))
+            USING(DBID)
+          }
+          default={}
+     }
   --]]
 ]]*/
 SET FEED OFF
@@ -10,7 +20,7 @@ COL DURATION FOR ITV
 
 PRO AWR Config:
 PRO ===========
-SELECT * FROM DBA_HIST_WR_CONTROL;
+SELECT * FROM DBA_HIST_WR_CONTROL &check_access_tab;
 
 PRO Instance Info:
 PRO ==============

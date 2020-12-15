@@ -1,6 +1,6 @@
 #!/bin/bash
 # Usage: ./create_exa_external_tables.sh <dir path to of the extertnal directory> [cell ssh user] [sqlplus connect string]
-dir=$1
+dir=`realpath $1`
 ssh_user=${2:-root}
 db_account="${3:-/ as sysdba}"
 

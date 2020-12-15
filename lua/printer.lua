@@ -323,6 +323,7 @@ end
 function printer.view_buff(file)
     if file and file:lower()=='clear' then
         buff={}
+        printer.clear_buffered_output()
         return
     end
     printer.edit_buffer(file,'output.log',table.concat(buff,'\n'))

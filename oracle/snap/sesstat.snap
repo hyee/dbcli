@@ -16,7 +16,7 @@
         AND    (:V3 IS NULL OR lower(name) like lower('%&V3%'))) A
     ORDER BY NAME]],
     delta_by="value",
-    order_by="-value",
+    order_by="-value,name",
     max_rows=200,
     group_by="inst_id,sid,NAME",
     top_by="name"
