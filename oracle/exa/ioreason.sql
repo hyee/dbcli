@@ -54,18 +54,26 @@ BEGIN
         OPEN :cur FOR v_stmt USING v,v;
     ELSIF :typ='g' THEN
         OPEN :cur FOR
-			SELECT reason_name,
-			       bytes,
-			       reqs,
-			       ratio_to_report(reqs) over() "%",
-			       round(bytes / nullif(reqs,0), 2) avg_bytes,
-			       CASE WHEN bytes / nullif(reqs,0) >= 128 * 1024 THEN 'YES' ELSE 'NO' END large_io
-			FROM   (SELECT reason_name, metric_name n, SUM(metric_value) v 
-				    FROM v$cell_ioreason 
-				    WHERE (v IS NULL AND metric_value > 0 OR v IS NOT NULL AND (&FILTER)) 
-				    GROUP BY reason_name, metric_name)
-			PIVOT(MAX(v) FOR n IN('Per Reason Bytes of IO' bytes, 'Per Reason Number of IOs' reqs))
-			ORDER  BY reqs DESC;
+      			SELECT reason_name,
+      			       bytes,
+      			       reqs,
+      			       ratio_to_report(reqs) over() "%",
+      			       round(bytes / nullif(reqs,0), 2) avg_bytes,
+      			       CASE WHEN bytes / nullif(reqs,0) >= 128 * 1024 THEN 'YES' ELSE 'NO' END large_io
+      			FROM   (SELECT reason_name, nvl(METRIC_TYPE,'reqs') n, SUM(metric_value) v 
+      				      FROM  (select reason_name,metric_type,metric_value 
+                           from   v$cell_ioreason
+                           union all
+                           select decode(r,1,'Scrub reads','Internal IO'),
+                                  metric_type,decode(r,1,-1)*metric_value 
+                           from   v$cell_global,
+                                  (SELECT 1 R FROM DUAL UNION ALL SELECT 2 FROM DUAL)
+                           where  metric_name in('Scrub reads','Scrub read bytes'))
+      				      WHERE (v IS NULL OR (&FILTER)) 
+      				      GROUP BY reason_name, METRIC_TYPE
+                    HAVING v IS NOT NULL OR sum(metric_value)>0)
+      			PIVOT(MAX(v) FOR n IN('bytes' bytes, 'reqs' reqs))
+      			ORDER  BY reqs DESC;
     ELSE
         OPEN :cur FOR
             SELECT a.*,
@@ -84,7 +92,25 @@ BEGIN
                                    REASON_NAME,
                                    MAX(REQUESTS) KEEP(dense_rank LAST ORDER BY SNAP_ID) - MIN(REQUESTS) KEEP(dense_rank FIRST ORDER BY SNAP_ID) reqs,
                                    MAX(bytes) KEEP(dense_rank LAST ORDER BY SNAP_ID) - MIN(bytes) KEEP(dense_rank FIRST ORDER BY SNAP_ID) bytes
-                            FROM   dba_hist_cell_ioreason
+                            FROM   (
+                                SELECT con_dbid,dbid,snap_id,cell_hash,INCARNATION_NUM,REASON_NAME,SUM(REQUESTS) REQUESTS,SUM(BYTES) BYTES
+                                FROM (
+                                   SELECT /*+leading(a.s) full(a.s) no_index(a.s)*/ 
+                                          con_dbid,dbid,snap_id,cell_hash,INCARNATION_NUM,REASON_NAME,REQUESTS,BYTES
+                                   FROM  DBA_HIST_CELL_IOREASON a
+                                   UNION ALL
+                                   SELECT con_dbid,dbid,snap_id,cell_hash,INCARNATION_NUM,
+                                          decode(r,1,'Scrub reads','Internal IO'),
+                                          decode(r,1,1,-1)*max(decode(m,'Scrub reads',v)),
+                                          decode(r,1,1,-1)*max(decode(m,'Scrub read bytes',v))
+                                   FROM(
+                                     SELECT /*+leading(a.s)*/ 
+                                           con_dbid,dbid,snap_id,cell_hash,INCARNATION_NUM,metric_name m,metric_value v
+                                     FROM  DBA_HIST_CELL_GLOBAL a
+                                     WHERE METRIC_ID IN(360,361)
+                                   ),(SELECT 1 R FROM DUAL UNION ALL SELECT 2 FROM DUAL)
+                                   GROUP BY con_dbid,dbid,snap_id,cell_hash,INCARNATION_NUM,r)
+                                GROUP BY con_dbid,dbid,snap_id,cell_hash,INCARNATION_NUM,REASON_NAME)
                             JOIN   dba_hist_snapshot
                             USING  (dbid,snap_id)
                             WHERE  end_interval_time+0 between nvl(to_date(:starttime,'YYMMDDHH24MI'),SYSDATE - 7) AND nvl(to_date(:endtime,'YYMMDDHH24MI'),SYSDATE)

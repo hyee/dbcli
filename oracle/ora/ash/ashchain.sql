@@ -68,7 +68,8 @@ var filter2 number;
 
 declare
     target varchar2(2000) := q'[
-        select a.*,nvl(&tmodel,0) tmodel,&INST1 inst,SESSION_ID||'@'||&INST1 SID,
+        select /*+materialize*/ a.*,nvl(&tmodel,0) tmodel,&INST1 inst,SESSION_ID||'@'||&INST1 SID,
+                SUBSTR(a.program,-6) PRO_,
                 nullif(nvl(a.blocking_session,
                     case 
                         when p1text='idn' then 
@@ -81,7 +82,7 @@ BEGIN
     :filter2 := 1;
     IF (:V1 IS NOT NULL AND :snap IS NOT NULL) OR :filter1=1 THEN
         :filter2 := 0;
-        target := replace(replace(q'[select /*+inline*/ * from (select /*+no_merge*/ distinct stime from (@target and (@filter))) a natural join (@target) b]','@filter',:filter),'@target',target);
+        target := replace(replace(q'[select /*+materialize*/ * from (select distinct stime from (@target and (@filter))) a natural join (@target) b]','@filter',:filter),'@target',target);
         chose := 'CASE WHEN ' ||:filter|| ' THEN 1 ELSE 0 END';
     END IF;
     :target := '('||target||')';
@@ -94,7 +95,7 @@ var cur refcursor
 BEGIN
     IF &tree=0 THEN
         open :cur for
-            WITH bclass AS (SELECT class, ROWNUM r from v$waitstat),
+            WITH bclass AS (SELECT /*+materialize*/ class, ROWNUM r from v$waitstat),
             ash_base as &target,
             ash_data AS (
                 SELECT /*+ordered swap_join_inputs(b) swap_join_inputs(c) swap_join_inputs(u)  use_hash(a b u c)  no_expand*/
@@ -102,22 +103,25 @@ BEGIN
                         nvl2(b.chose,0,1) is_root,
                         u.username,
                         case 
+                            when current_obj# < -1 then 'Temp'
                             when current_obj# > 0 then ''||current_obj# 
                             when p3text='100*mode+namespace' and p3>power(2,32) then ''||trunc(p3/power(2,32))
                             when p3text like '%namespace' then 'x$kglst#'||trunc(mod(p3,power(2,32))/power(2,16))
-                            when p1text like 'cache id' then (select max(parameter) from v$rowcache where cache#=p1)
+                            when p1text like 'cache id' then 'v$rowcache#'||p1
                             when p1text ='file#' and p2text='block#' then 'file#'||p1||' block#'||p2
                             when p3text in('block#','block') then 'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_BLOCK(p3)
                             when p1text ='idn' then 'v$db_object_cache hash#'||p1
-                            when a.event like 'latch%' and p2text='number' then (select max(name) from v$latchname where latch#=p2)
+                            when a.event like 'latch%' and p2text='number' then 'latch#'||p2
                             when c.class is not null then c.class
                             else ''||greatest(current_obj#,-2)
                         end curr_obj#,
-                        CASE WHEN a.session_type = 'BACKGROUND' OR REGEXP_LIKE(a.program, '.*\([PJ]\d+\)') THEN
-                            regexp_replace(REGEXP_REPLACE(regexp_substr(a.program,'\([^\(]+\)'), '\d\w\w', 'nnn'),'\d','n')
-                        ELSE
-                            '('||REGEXP_REPLACE(REGEXP_SUBSTR(a.program, '[^@]+'), '\d', 'n')||')'
-                        END || ' ' program2,
+                        CASE WHEN PRO_ LIKE '(%)' AND upper(substr(PRO_,2,1))=substr(PRO_,2,1) THEN
+                            CASE WHEN PRO_ LIKE '(%)' AND substr(PRO_,2,1) IN('P','W','J') THEN
+                                '('||substr(PRO_,2,1)||'nnn)'
+                            ELSE regexp_replace(PRO_,'[0-9a-z]','n') END
+                        WHEN instr(program,'@')>1 THEN
+                            nullif(substr(program,1,instr(program,'@')-1),'oracle')
+                        END program2,
                         CASE WHEN a.session_state = 'WAITING' THEN a.event 
                              WHEN bitand(tmodel, power(2,18)) > 0 THEN 'CPU: IM Query'
                              WHEN bitand(tmodel, power(2,19)) > 0 THEN 'CPU: IM Populate'
@@ -162,7 +166,7 @@ BEGIN
               WHERE  b.chose IS NOT NULL
               OR     a.b_sid IS NOT NULL),
             chains AS (
-                SELECT /*+NO_EXPAND PARALLEL(4)*/
+                SELECT /*+NO_EXPAND*/
                       level lvl,
                       sid w_sid,
                       SYS_CONNECT_BY_PATH(case when :filter2 = 1 then 1 when &filter then 1 else 0 end ,',') is_found,
@@ -191,28 +195,31 @@ BEGIN
             WHERE ROWNUM <= 50;
     ELSE
         OPEN :cur FOR
-            WITH bclass AS (SELECT class, ROWNUM r from v$waitstat),
+            WITH bclass AS (SELECT /*+materialize*/ class, ROWNUM r from v$waitstat),
             ash_base as &target,
             ash_data AS (
                 SELECT /*+ordered swap_join_inputs(b) swap_join_inputs(c) swap_join_inputs(u)  use_hash(a b u c)  no_expand*/
                         a.*, 
                         nvl2(b.chose,0,1) is_root,
                         u.username,
-                        case 
+                        case
+                            when current_obj# < -1 then 'Temp'
                             when current_obj# > 0 then ''||current_obj# 
                             when p3text='100*mode+namespace' and p3>power(2,32) then ''||trunc(p3/power(2,32))
                             when p3text like '%namespace' then 'x$kglst#'||trunc(mod(p3,power(2,32))/power(2,16))
-                            when p1text like 'cache id' then (select max(parameter) from v$rowcache where cache#=p1)
+                            when p1text like 'cache id' then 'v$rowcache#'||p1
                             when p1text ='idn' then 'v$db_object_cache hash#'||p1
-                            when a.event like 'latch%' and p2text='number' then (select max(name) from v$latchname where latch#=p2)
+                            when a.event like 'latch%' and p2text='number' then 'latch#'||p2
                             when c.class is not null then c.class
                             else ''||greatest(current_obj#,-2)
                         end curr_obj#,
-                        CASE WHEN a.session_type = 'BACKGROUND' OR REGEXP_LIKE(a.program, '.*\([PJ]\d+\)') THEN
-                            regexp_replace(REGEXP_REPLACE(regexp_substr(a.program,'\([^\(]+\)'), '\d\w\w', 'nnn'),'\d','n')
-                        ELSE
-                            '('||REGEXP_REPLACE(REGEXP_SUBSTR(a.program, '[^@]+'), '\d', 'n')||')'
-                        END || ' ' program2,
+                        CASE WHEN PRO_ LIKE '(%)' AND upper(substr(PRO_,2,1))=substr(PRO_,2,1) THEN
+                            CASE WHEN PRO_ LIKE '(%)' AND substr(PRO_,2,1) IN('P','W','J') THEN
+                                '('||substr(PRO_,2,1)||'nnn)'
+                            ELSE regexp_replace(PRO_,'[0-9a-z]','n') END
+                        WHEN instr(program,'@')>1 THEN
+                            nullif(substr(program,1,instr(program,'@')-1),'oracle')
+                        END program2,
                         CASE WHEN a.session_state = 'WAITING' THEN a.event 
                              WHEN bitand(tmodel, power(2,18)) > 0 THEN 'CPU: IM Query'
                              WHEN bitand(tmodel, power(2,19)) > 0 THEN 'CPU: IM Populate'
@@ -257,7 +264,7 @@ BEGIN
               WHERE  b.chose IS NOT NULL
               OR     a.b_sid IS NOT NULL),
             chains AS (
-                SELECT /*+NO_EXPAND PARALLEL(4)*/
+                SELECT /*+NO_EXPAND*/
                        sid w_sid,b_sid,
                        rownum-level r,
                        inst,

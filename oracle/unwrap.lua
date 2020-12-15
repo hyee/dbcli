@@ -218,7 +218,7 @@ function unwrap.unwrap(obj,ext,prefix)
 end
 
 function unwrap.onload()
-    env.set_command(nil,"unwrap",'Extract and unwrap(if wrapped) the source code of the specific object(procedure/package/function/trigger/type). Usage: @@NAME {[<owner>.]<object_name> [<file_ext>] [prefix]} | {<filename> [18c]}',unwrap.unwrap,false,4)
+    env.set_command(nil,"unwrap",'Extract the source code of the specific wrapped object(sqlmon/procedure/package/function/trigger/type). Usage: @@NAME {[<owner>.]<object_name> [<file_ext>] [prefix]} | {<sql monitor filename>}',unwrap.unwrap,false,4)
 end
 
 return unwrap

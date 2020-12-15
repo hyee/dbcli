@@ -19,7 +19,8 @@
 				                       metric_value - lag(metric_value) over(PARTITION BY a.dbid, cell_hash, INCARNATION_NUM, metric_name ORDER BY a.snap_id) metric_value,
 				                       REPLACE(metric_name, 'bytes', 'megabytes') NAME
 				                FROM  (select * from (&snaps) where instance_number=1) , dba_hist_cell_global a
-				                WHERE  a.snap_id between minid+1 and maxid)
+				                WHERE  a.snap_id between minid+1 and maxid
+				                AND    a.snap_id=b.snap_id)
 				        GROUP  BY metric_name, NAME)
 				WHERE  round(metric_value / decode(NAME, metric_name, 1, 1024 * 1024) , 2) > 0
 				ORDER  BY VALUE DESC

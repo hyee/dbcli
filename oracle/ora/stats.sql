@@ -224,9 +224,9 @@ BEGIN
                  WHEN parameter.value ['db_file_multiblock_read_count'] IS NOT NULL THEN
                   'db_file_multiblock_read_count'
                  WHEN parameter.value ['_db_file_optimizer_read_count'] IS NOT NULL THEN
-                  '_db_file_optimizer_read_count'
+                  '_db_file_optimizer_read_count (impacts the CBO estimation)'
                  ELSE
-                  '_db_file_optimizer_read_count'
+                  '_db_file_optimizer_read_count (impacts the CBO estimation)'
              END,
              formula ['MREADTIM'] = 'time to read n blocks in ms = IOSEEKTIM + db_block_size * MBRC / IOTFRSPEED',
              formula ['SREADTIM'] = 'time to read 1 block  in ms = IOSEEKTIM + db_block_size / IOTFRSPEED',

@@ -70,6 +70,7 @@ Parameters
         2097152: enable PCODE support for case statements
         1048576: disable Gby for HCC on Hadoop because HCC is non-dictionary encoded
     _memory_imm_mode_without_autosga: when 0 then stop resize of SGA component
+    _kgl_hot_object_copies: number of hot copies for the object defined by dbms_shared_pool.markhot to reduce mutex/cursor contention
 DMLs.
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
