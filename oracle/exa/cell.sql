@@ -126,9 +126,9 @@ BEGIN
                         SUM(DECODE(disktype, 'PMEM', 1,0))  PMEM,
                         SUM(DECODE(disktype, 'HardDisk', siz)) HD_SIZE,
                         SUM(DECODE(disktype, 'FlashDisk', siz)) FD_SIZE,
-                        SUM(DECODE(disktype, 'PMEM', siz))  PMEM_SIZE,
-                        SUM(siz) total_size,
-                        SUM(freeSpace) unalloc,
+                        SUM(DECODE(disktype, 'PMEM', siz))  "PMEM|SIZE",
+                        SUM(siz) "TOTAL|SIZE",
+                        SUM(freeSpace) "UN-|ALLOC",
                         '|' "|"
                 FROM   (SELECT  CELLNAME,CELLHASH,
                                 b.*
@@ -428,7 +428,7 @@ BEGIN
     :c3 := c3;
 END;
 /
-col "Disk Group|Total Size,total_size,Disk Group|Free Size,cached|size,Grid|Size,Disk|Size,Usable|Size,CellDisk|Size,Keep|FCC,CellDisk|UnAlloc,GridDisk|Size,HD_SIZE,FD_SIZE,PMEM_SIZE,flash_cache,flash_log,flash|cache" format kmg
-col SmartIO|Cached,unalloc,flashcache,flashlog,Alloc|PMEM,PMEM|OLTP,Alloc|RAM,RAM|OLTP,Alloc|FCache,RAM|Used,PMEM|Keep,PMEM|Used,Alloc|OLTP,ALLOC|SCAN,Large|Writes,OLTP|Dirty,FCache|Used,Used|OLTP,Used|FCC,FCache|Keep,Keep|OLTP,Keep|FCC format kmg
+col "Disk Group|Total Size,total|size,Disk Group|Free Size,cached|size,Grid|Size,Disk|Size,Usable|Size,CellDisk|Size,Keep|FCC,CellDisk|Un-|Alloc,GridDisk|Size,HD_SIZE,FD_SIZE,PMEM|SIZE,flash_cache,flash_log,flash|cache" format kmg
+col SmartIO|Cached,un-|alloc,flashcache,flashlog,Alloc|PMEM,PMEM|OLTP,Alloc|RAM,RAM|OLTP,Alloc|FCache,RAM|Used,PMEM|Keep,PMEM|Used,Alloc|OLTP,ALLOC|SCAN,Large|Writes,OLTP|Dirty,FCache|Used,Used|OLTP,Used|FCC,FCache|Keep,Keep|OLTP,Keep|FCC format kmg
 col "FCC%|Scan,Read|Hit,RAM|Hit,PMEM|Hit,FC|Hit,FCC|Hit,Scan|Hit,FCache|Hit,FCache|Write,RAM|Read,RAM|Scan,PMEM|Read,SmartIO|Flash,SmartIO|Filter,SmartIO|SiSaved,SmartIO|CCSaved,Offload|Out/In" for pct
 grid {'c1','-','c2','-','c3'}

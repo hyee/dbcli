@@ -1,6 +1,6 @@
 #!/bin/bash
 # Usage: ./create_exa_external_tables.sh <dir path to of the extertnal directory> [cell ssh user] [sqlplus connect string]
-dir=`realpath $1`
+
 ssh_user=${2:-root}
 db_account="${3:-/ as sysdba}"
 
@@ -8,6 +8,8 @@ if [ "$1" = "" ] ; then
     echo "Usage: create_exa_external_tables.sh <dir path to of the extertnal directory> [cell ssh user] [sqlplus connect string]" 1>&2
     exit 1
 fi
+
+
 
 if [ "$ORACLE_SID" = "" ] ; then
     echo "Environment variable \$ORACLE_SID is not found, please make sure the current OS user is correct." 1>&2
@@ -19,11 +21,13 @@ echo "*****************************************"
 echo "* Target database is : $ORACLE_SID       "
 echo "*****************************************"
 
-mkdir -p $dir
-if [ ! -d "$dir" ]; then
-    echo "Failed to mkdir directory $dir, exit." 1>&2
+mkdir -p $1
+if [ ! -d "$1" ]; then
+    echo "Failed to mkdir directory $1, exit." 1>&2
     exit 1
 fi
+
+dir=`realpath $1`
 
 chmod g+x $dir
 cd $dir
@@ -425,15 +429,17 @@ sqlplus -s "$db_account" <<'EOF'
     col pivots new_value pivots noprint;
     col px new_value px noprint;
     col cl new_value cl noprint;
+    col dop new_value dop noprint;
     define ver=122.2
 
     SELECT case when v.ver >=&ver then 'PARTITION BY LIST(CELLNODE) ('||listagg(replace(q'[PARTITION @ VALUES('@') LOCATION ('@')]','@',b.name),','||chr(10)) WITHIN GROUP(ORDER BY b.name)||')' end cells,
            case when v.ver >=&ver then 'PARALLEL' end PX,
            case when v.ver < &ver then 'LOCATION(''EXA_NULL'')' end locations,
-           case when v.ver >11    then 'NOLOGFILE DISABLE_DIRECTORY_LINK_CHECK' end cl,
+           case when v.ver >11    then 'NOLOGFILE NOBADFILE NODISCARDFILE DISABLE_DIRECTORY_LINK_CHECK' end cl,
          --case when v.ver < &ver then 'LOCATION ('||listagg(''''||b.name||'''',',') within group(order by b.name)||')' end locations,
            listagg(replace(q'['@' "@"]','@',b.name),',') within group(order by b.name) pivots,
-           min(b.name) first_cell
+           min(b.name) first_cell,
+           count(1) dop
     FROM   (select regexp_substr(value,'\d+\.\d+')+0 ver from nls_database_parameters where parameter='NLS_RDBMS_VERSION') v,
            v$cell_config a,
            XMLTABLE('/cli-output/cell' PASSING xmltype(a.confval) COLUMNS NAME VARCHAR2(300) path 'name') b
@@ -566,7 +572,7 @@ sqlplus -s "$db_account" <<'EOF'
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
       ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
-        PREPROCESSOR 'getfcobjects.sh'  &cl
+        PREPROCESSOR 'getfcobjects.sh' &cl
         FIELDS TERMINATED BY  whitespace LRTRIM
       ) &locations
     )
@@ -994,7 +1000,7 @@ sqlplus -s "$db_account" <<'EOF'
     PRO ====================================================
     begin
         for r in(select * from user_tables where table_name like 'EXA$%') loop
-            dbms_stats.gather_table_stats(user,r.table_name,degree=>16);
+            dbms_stats.gather_table_stats(user,r.table_name,degree=>&dop);
             dbms_stats.lock_table_stats(user,r.table_name);
         end loop;
     end;

@@ -124,7 +124,7 @@ local stmt=[[
 		        SELECT /*+INDEX_SS(a) MERGE(A) no_expand*/ a.*,
 		               case when owner=:1 then 0 else 100 end +
 		               case when :2 like '%"'||OBJECT_NAME||'"'||nvl2(SUBOBJECT_NAME,'."'||SUBOBJECT_NAME||'"%','') then 0 else 10 end +
-		               case substr(object_type,1,3) when 'TAB' then 1 when 'CLU' then 2 else 3 end s_flag
+		               case substr(object_type,1,3) when 'MAT' then 0 when 'TAB' then 1 when 'CLU' then 2 else 3 end s_flag
 		        FROM   ]' || stmt;
 
 

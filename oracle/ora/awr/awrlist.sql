@@ -6,9 +6,14 @@
      @check_access_tab: {
           dba_hist_table_settings={
             LEFT JOIN (
-                select * 
+                select dbid,
+                       max(decode(f,'ALL',c)) "Flush Lv|All", 
+                       max(decode(f,'TYPICAL',c)) "Flush Lv|Typical", 
+                       max(decode(f,'LITE',c)) "Flush Lv|Lite", 
+                       max(decode(f,'BESTFIT',c)) "Flush Lv|BESTFIT",
+                       max(decode(f,'NOT APPLICABLE',c)) "Flush Lv|N/A"
                 from (select dbid,FLUSH_LEVEL_VAL f,count(1) c from dba_hist_table_settings group by dbid,FLUSH_LEVEL_VAL) 
-                pivot(max(c) for f in('ALL' "Flush Lv|All",'TYPICAL' "Flush Lv|Typical",'LITE' "Flush Lv|Lite",'BESTFIT' "Flush Lv|BESTFIT",'NOT APPLICABLE' "Flush Lv|N/A")))
+                group by dbid)
             USING(DBID)
           }
           default={}

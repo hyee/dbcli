@@ -139,13 +139,7 @@ Outputs:
                     FROM   gash a 
                     GROUP  BY service_hash  &con, machine, decode(port,0,session_id*inst_id*10,port),stime) b
             JOIN (
-                SELECT /*+ merge(a) full(a.a) leading(a.a) use_hash(a.a a.s) 
-                          swap_join_inputs(a.s)
-                          FULL(A.GV$ACTIVE_SESSION_HISTORY.A) 
-                          leading(A.GV$ACTIVE_SESSION_HISTORY.A)
-                          swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
-                          use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S) 
-                          OPT_ESTIMATE(QUERY_BLOCK ROWS=30000000)*/ *
+                SELECT /*+ merge(a) OPT_ESTIMATE(QUERY_BLOCK ROWS=30000000)*/ *
                 FROM gv$active_session_history a) a
             USING  (service_hash &con,machine) 
             WHERE  a.sample_time+0=b.stime
@@ -236,13 +230,7 @@ Outputs:
 ]]*/
 set feed off printsize 10000 pipequery off
 WITH gash as(
-    select /*+inline merge(a) full(a.a) leading(a.a) use_hash(a.a a.s) 
-              swap_join_inputs(a.s) 
-              FULL(A.GV$ACTIVE_SESSION_HISTORY.A) 
-              leading(A.GV$ACTIVE_SESSION_HISTORY.A)
-              swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
-              use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S) 
-              OPT_ESTIMATE(QUERY_BLOCK ROWS=1000000)
+    select /*+inline merge(a) OPT_ESTIMATE(QUERY_BLOCK ROWS=1000000)
             */
             a.*,sample_time+0 stime
     from   gv$active_session_history a
@@ -790,4 +778,4 @@ final_output as(
             ) b) b
     WHERE a.phv=b.phv)
 select fmt ASH_PLAN_OUTPUT from final_output order by id,r,seq;
---select dbid,sql_id,phv1,aas from ash_raw WHERE PLAN_SEQ=1
+--select * from ash_raw WHERE PLAN_SEQ=1

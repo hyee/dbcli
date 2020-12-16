@@ -29,12 +29,15 @@
           WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
           AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2))    
         SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') sample_time, event,
+               Round(SUM(RMB+WMB/Slot_size*1024*1024),2)  "Bytes per Second",
+               Round(SUM(RREQ+WREQ/Slot_size),2) "Requests per Second",
+               nvl(Round(SUM((RMB+WMB)*1024*1024/nullif(RREQ+WREQ,0)),2),0) "Bytes per Request",
                Round(SUM(WAIT_TIME/slot_size*1e-3),2) "Wait Seconds per Second",
+               Round(sum(WAIT_TIME)/sum(WAITS),2) "AVG Milliseconds per Request",
                Round(SUM(RMB/Slot_size*1024*1024),2)  "Read Bytes per Second",
                Round(SUM(WMB/Slot_size*1024*1024),2)  "Write Bytes per Second",
                Round(SUM(RREQ/Slot_size),2) "Read Requests per Second",
-               Round(SUM(WREQ/Slot_size),2) "Write Requests per Second",
-               Round(sum(WAIT_TIME)/sum(WAITS),2) "AVG Milliseconds per Request"
+               Round(SUM(WREQ/Slot_size),2) "Write Requests per Second"
         FROM  (SELECT /*+merge*/
                        A.*,
                        GROUP_BY || decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event

@@ -1,6 +1,7 @@
 /*[[
     Get table's current compression type. Usage: @@NAME [<owner>.]<table_name>[.<partition_name>] [<rows>|-f"<filter>"] [-dx]
-    -dx: Use no parallel direct path read
+    -dx : Use no parallel direct path read
+    rows: Maximum number of rows to scan, default as 3 millions.
 
     Sample Output:
     ==============
@@ -15,6 +16,7 @@
         @check_access_comp: sys.dbms_compression={}
         &filter: default={@ROWS@} f={where &0}
         &dx    : default={--} dx={}
+        &v2    : default={3e6}
         &px    : default={parallel(8)} dx={no_parallel}
     --]]
 ]]*/
@@ -73,13 +75,18 @@ BEGIN
     END IF;
 
     v_stmt := q'[
+        WITH FUNCTION GET_DOBJ(rid ROWID) RETURN NUMBER IS
+        PRAGMA UDF;
+        BEGIN
+            RETURN dbms_rowid.ROWID_OBJECT(rid);
+        END;
         SELECT /*+leading(b a) use_hash(b a) no_merge(a) no_merge(b)*/ 
                a.rid,
                b.object_id||','||
                b.data_object_id||','||
                a.cnt||','||
                b.subobject_name obj
-        FROM   (SELECT (SELECT dbms_rowid.ROWID_OBJECT(ridp) FROM dual) dobj, rid,cnt
+        FROM   (SELECT get_dobj(ridp) dobj, rid,cnt
                 FROM   (SELECT /*+no_merge index_ffs(a) &px*/
                                MIN(ROWID) rid, 
                                MIN(MIN(ROWID)) OVER(PARTITION BY SUBSTR(ROWID, 1, 6)) ridp,
