@@ -35,6 +35,7 @@
 ]]*/
 col No_Waits,Fails,Waits,sleeps,spins for tmb3
 col wait_time for usmhd2
+col groupid noprint
 set feed off verify off
 VAR cur REFCURSOR
 VAR secs NUMBER;
@@ -56,28 +57,43 @@ BEGIN
                     RETURN SYSTIMESTAMP;
                 END;
             SELECT A.*,'|' "|",decode(RHT,'|',
-                  ' Avg Items|Waits ='||to_char(round(Items/BUCKET#),'9990')||'|'||round(Waits/BUCKET#,2),
+                  ' Avg Waits='||rpad(round(Waits/BUCKET#,3),6)||' Free(%)='|| ROUND(100*(BUCKET#-BUSYS)/BUCKET#,2),
                   ' oradebug lkdebug -B ' || lmdid || ' ' || groupid || ' ' || BUCKET#) memo
             FROM   (
                 SELECT decode(grouping_id(lmdid),1,'$REV$$UDL$')||lpad(inst_id,4) inst,
                        NVL(''||RHT,'|') RHT,
+                       ''||LATCH# LATCH#,
                        Nvl(''||LMDID,'*') LMDID,
                        Nvl(''||GROUPID,'*') GROUPID,
                        NVL(BUCKETIDX,COUNT(1)/2) BUCKET#,
-                       nvl2(RHT,MAX(CNT),SUM(CNT)/2) Items,
-                       nvl2(RHT,MAX(MAXCNT),SUM(MAXCNT)/2) Max_Items,
+                       decode(grouping_id(LMDID,RHT),
+                           0,SIGN(SUM(DECODE(r, 1, -1, 1)*(NOWAITCNT+FAILEDWCNT+WAITCNT))),
+                           1,SUM(SIGN(SUM(DECODE(r, 1, -1, 1)*(NOWAITCNT+FAILEDWCNT+WAITCNT)))) OVER(PARTITION BY INST_ID,LMDID ORDER BY LATCH#),
+                           3,SUM(SIGN(SUM(DECODE(r, 1, -1, 1)*(NOWAITCNT+FAILEDWCNT+WAITCNT)))) OVER(PARTITION BY INST_ID ORDER BY LMDID,LATCH#)-1) BUSYS,
+                       nvl2(RHT,MAX(CNT),ROUND(SUM(CNT)/2)) Items,
+                       nvl2(RHT,MAX(MAXCNT),ROUND(SUM(MAXCNT)/2)) Max_Items,
                        ROUND(SUM(DECODE(r, 1, -1, 1)*NOWAITCNT)/&adj,2)  No_Waits,
                        ROUND(SUM(DECODE(r, 1, -1, 1)*FAILEDWCNT)/&adj,2) Fails,
+                       ROUND(SUM(DECODE(r, 1, -1, 1)*sleeps)/&adj,2)     sleeps,
+                       ROUND(SUM(DECODE(r, 1, -1, 1)*spins)/&adj,2)      spins,
+                       ROUND(SUM(DECODE(r, 1, -1, 1)*wait_time)/&adj,2)  wait_time,
                        ROUND(SUM(DECODE(r, 1, -1, 1)*WAITCNT)/&adj,2)    Waits,
                        to_char(100*ratio_to_Report(SUM(DECODE(r, 1, -1, 1)*WAITCNT)) over(PARTITION BY grouping_id(LMDID,RHT)),'990.00')||'%' "Waits(%)"
                 FROM   (SELECT /*+no_merge ordered use_nl(timer stat)*/ROWNUM r, 
                                 sysdate+numtodsinterval(&secs,'second') mr FROM XMLTABLE('1 to 2')) dummy,
                         LATERAL (SELECT /*+no_merge*/ do_sleep(dummy.r, dummy.mr) stime FROM dual) timer,
-                        LATERAL (SELECT /*+no_merge*/ * FROM table(gv$(cursor(select * from X$KJRTBCFP))) WHERE timer.stime IS NOT NULL) stat
-                GROUP  BY inst_id,Rollup((LMDID,GROUPID),(RHT,BUCKETIDX))
+                        LATERAL (SELECT /*+no_merge*/ * 
+                                 FROM TABLE(gv$(cursor(
+                                     SELECT /*+ordered use_hash(a b)*/ 
+                                            a.*,b.addr latch#,b.sleeps,b.spin_gets spins,b.wait_time
+                                     FROM   X$KJRTBCFP a,v$latch_children b
+                                     WHERE  b.name(+) = 'ges resource hash list'
+                                     AND    b.child#(+)=a.indx+1))) 
+                                 WHERE timer.stime IS NOT NULL) stat
+                GROUP  BY inst_id,Rollup((LMDID,GROUPID),(RHT,BUCKETIDX,LATCH#))
                 ORDER  BY decode(RHT,'|',inst_id*100+nvl(regexp_substr(lmdid,'\d+'),'99'),9999),Waits desc
             ) A
-            WHERE ROWNUM<=60]';
+            WHERE BUSYS>0 AND ROWNUM<=60]';
     ELSE
         OPEN cur FOR
             WITH stats as(
@@ -85,6 +101,7 @@ BEGIN
                     FROM   TABLE(gv$(CURSOR(
                               SELECT inst_id inst,
                                      ''||RHT RHT,
+                                     ''||b.addr LATCH#,
                                      ''||LMDID LMDID,
                                      ''||GROUPID GROUPID,
                                      BUCKETIDX  BUCKET#,
@@ -107,15 +124,15 @@ BEGIN
             FROM   stats A
             WHERE  rownum <= 30
             UNION ALL
-            SELECT '-',null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null from dual
+            SELECT '-',null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null from dual
             UNION ALL
             SELECT * FROM (
               SELECT decode(grouping_id(lmdid),1,'$GREPCOLOR$'),
-                     inst,'ALL Buckets',
+                     inst,'ALL Buckets',null,
                      nvl(lmdid,'*'),nvl(groupid,'*'),count(1),sum(Items),sum(Max_Items),sum(No_Waits),sum(Fails),sum(Waits),
                      sum(sleeps),sum(spins),sum(wait_time),
                      to_char(100*ratio_to_Report(sum(Waits)) over(PARTITION BY grouping_id(LMDID)),'990.00')||'%' "Waits(%)",
-                     '|' "|",'Avg Items|Waits ='||to_char(round(sum(Items)/count(1)),'9990')||'|'||round(sum(Waits)/count(1),2)
+                     '|' "|",'Avg Items|Waits ='||to_char(round(sum(Items)/count(1)),'990.9')||'|'||round(sum(Waits)/count(1),2)
               FROM   stats
               GROUP  BY inst,rollup((lmdid,groupid))
               ORDER  BY 2,4,5);

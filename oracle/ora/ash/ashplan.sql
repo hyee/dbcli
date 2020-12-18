@@ -1,4 +1,4 @@
-/*[[Show ash cost for a specific SQL for multiple executions. usage: @@NAME {<sql_id|plan_hash_value> [sql_exec_id] [YYMMDDHH24MI] [YYMMDDHH24MI]}  [-d|-g] [-o] [-all]
+/*[[Show ash cost for a specific SQL for multiple executions. usage: @@NAME {<sql_id|plan_hash_value> [sql_exec_id|PHV] [YYMMDDHH24MI] [YYMMDDHH24MI]}  [-d|-g] [-o] [-all]
 
 Sample Ouput:
 =============
@@ -85,14 +85,19 @@ Outputs:
 
 --[[
     @ARGS: 1
+    &V1  : 0={}
+    &V2  : 0={}
+    &V3  : default={&starttime}
+    &V4  : default={&endtime}
     @adaptive : 19={+ADAPTIVE +REPORT -hint_report -QBREGISTRY} 12.1={+ADAPTIVE +REPORT} default={}
     @phf : 12.1={decode(:V1,sql_id,''||sql_full_plan_hash_value,top_level_sql_id,sql_id,''||sql_full_plan_hash_value)} default={decode(:V1,sql_id,''||sql_plan_hash_value,top_level_sql_id,sql_id,''||sql_plan_hash_value)}
-    @phf2: 12.1={to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1))} default={null}
+    @phf1: 12.1={,''||nullif(sql_full_plan_hash_value,0)} default={}
+    @phf2: 12.1={nvl2(other_xml,to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1)),'')} default={null}
     @adp : 12.1={case when instr(other_xml, 'adaptive_plan') > 0 then 'Y' else 'N' end} default={'N'}
     @con : 12.1={,con_dbid} default={}
     @mem : 12.1={DELTA_READ_MEM_BYTES} default={null}
     @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
-    @cdb2 : 12.1={con_dbid} default={1e9}
+    @cdb2: 12.1={con_dbid} default={1e9}
     @check_access_pdb: pdb/awr_pdb_snapshot={AWR_PDB_} default={DBA_HIST_}
     @check_access_cdb: cdb={use_hash(a)} default={use_nl(a)}
     &dplan: default={&check_access_pdb.sql_plan} sqlset={(select a.*,0+null object# from dba_sqlset_plans a)}
@@ -105,8 +110,6 @@ Outputs:
     &titl2: default={Events}, O={Objects}
     &fmt: default={} f={} s={-rows -parallel}
     &simple: default={1} s={0}
-    &V3:   default={&starttime}
-    &V4:   default={&endtime}
     &src_ash:  default={a} all={b}
     &hierachy: {
         default={1 lv,
@@ -230,33 +233,32 @@ Outputs:
 ]]*/
 set feed off printsize 10000 pipequery off
 WITH gash as(
-    select /*+inline merge(a) OPT_ESTIMATE(QUERY_BLOCK ROWS=1000000)
-            */
+    select /*+inline merge(a) OPT_ESTIMATE(QUERY_BLOCK ROWS=1000000)*/
             a.*,sample_time+0 stime
     from   gv$active_session_history a
     where  userenv('instance')=nvl(:instance,userenv('instance'))
-    and    sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
-    and    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf) 
-    AND    nvl(sql_exec_id,0) = coalesce(0+:V2,sql_exec_id,0)
+    AND    sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
+    AND    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value &phf1)
+    AND    nvl(0+regexp_substr(:V2,'^\d+$'),0) in(0,sql_exec_id,nullif(sql_plan_hash_value,0) &phf1)
     AND   '&vw' IN('A','G')
     AND   (:dbid is null or '&vw'='G' or &did=:dbid)),
 dash as(
     select /*+inline 
-                   MERGE(D)
-                   FULL(D.ASH) FULL(D.EVT) swap_join_inputs(D.EVT) OPT_ESTIMATE(TABLE D.ASH ROWS=30000000)
-                   OPT_ESTIMATE(TABLE D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH ROWS=30000000)
-                   full(D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH) 
-                   OPT_ESTIMATE(TABLE D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH ROWS=30000000)
-                   swap_join_inputs(D.&check_access_pdb.ACTIVE_SESS_HISTORY.EVT) 
-                   full(D.&check_access_pdb.ACTIVE_SESS_HISTORY.EVT)
-                */ 
-                d.*,
-                to_date(floor(to_char(sample_time,'YYMMDDSSSSS')/10)*10,'YYMMDDSSSSS') stime
+               MERGE(D)
+               FULL(D.ASH) FULL(D.EVT) swap_join_inputs(D.EVT) OPT_ESTIMATE(TABLE D.ASH ROWS=30000000)
+               OPT_ESTIMATE(TABLE D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH ROWS=30000000)
+               full(D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH) 
+               OPT_ESTIMATE(TABLE D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH ROWS=30000000)
+               swap_join_inputs(D.&check_access_pdb.ACTIVE_SESS_HISTORY.EVT) 
+               full(D.&check_access_pdb.ACTIVE_SESS_HISTORY.EVT)
+            */ 
+            d.*,
+            to_date(floor(to_char(sample_time,'YYMMDDSSSSS')/10)*10,'YYMMDDSSSSS') stime
     from   &check_access_pdb.active_sess_history d
     WHERE  '&vw' IN('A','D')
     AND    dbid=nvl(0+'&dbid',&did)
-    AND    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf) 
-    AND    nvl(sql_exec_id,0) = coalesce(0+:V2,sql_exec_id,0)
+    AND    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value &phf1)
+    AND    nvl(0+regexp_substr(:V2,'^\d+$'),0) in(0,sql_exec_id,nullif(sql_plan_hash_value,0) &phf1)
     AND    sample_time BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)),
 ash_raw as (
     select /*+MATERIALIZE qb_name(ash_raw) NO_DATA_SECURITY_REWRITE opt_estimate(query_block rows=3000000)*/ h.*,
@@ -540,7 +542,7 @@ ash_agg as(
                                         'Temp I/O'
                                     when current_obj# > 0 then 
                                         nvl((select max(object_name) from plan_objs where object#=current_obj#),''||current_obj#) 
-                                    when p3text='100*mode+namespace' and p3>power(2,32) then 
+                                    when p3text like '%namespace' and p3>power(2,32) then 
                                         nvl((select max(object_name) from plan_objs where object#=trunc(p3/power(2,32))),''||trunc(p3/power(2,32))) 
                                     when p3text like '%namespace' then 
                                         'X$KGLST#'||trunc(mod(p3,power(2,32))/power(2,16))

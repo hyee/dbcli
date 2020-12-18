@@ -213,8 +213,8 @@ BEGIN
              calc ['   single cost / block'] = 1,
              calc ['   maximum mbrc'] = sga.value ['Database Buffers'] / (parameter.value ['db_block_size'] * parameter.value ['sessions']),
              calc ['IOTFRSPEED'] = pval1 ['IOTFRSPEED']/1024,
-             calc ['CPUSPEED'] = pval1 ['CPUSPEED']/1000,
-             calc ['CPUSPEEDNW'] = pval1 ['CPUSPEEDNW']/1000,
+             calc ['CPUSPEED'] = pval1 ['CPUSPEED'],
+             calc ['CPUSPEEDNW'] = pval1 ['CPUSPEEDNW'],
              r['   maximum mbrc']=98,
              r['   single cost / block']=99,
              r['   multi  cost / block']=100,
@@ -235,8 +235,8 @@ BEGIN
              formula ['   multi  cost / block'] = '1/MBRC * MREADTIM/SREADTIM',
              formula ['   single cost / block'] = 'by definition',
              formula ['   maximum mbrc'] = 'buffer cache size in blocks / sessions',
-             formula ['CPUSPEED'] = 'workload CPU speed in GHZ',
-             formula ['CPUSPEEDNW'] = 'noworkload CPU speed in GHZ',
+             formula ['CPUSPEED'] = 'workload CPU speed in MHZ',
+             formula ['CPUSPEEDNW'] = 'noworkload CPU speed in MHZ',
              formula ['MAXTHR'] = 'maximum throughput that the I/O subsystem can deliver',
              formula ['SLAVETHR'] = 'average parallel slave I/O throughput'
         ) ORDER BY r) LOOP

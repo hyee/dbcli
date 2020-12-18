@@ -321,12 +321,13 @@ end
 
 local output = pipe:read('*all')
 pipe:close()
-for line in output:gmatch("[^\n\t]+") do
+for line in output:gmatch("[^\r\n\t]+") do
     line=line:rtrim()
     if line:find('^%d%d%d%d%-%d%d?%-%d%d?T') then
         tstamp=line
     elseif tstamp and line~="" then
-        print(fmt:format(cell, tstamp,line:gsub('|',"l")))
+        line=line:gsub('|',"l")
+        print(fmt:format(cell, tstamp,))
     end
 end
 !
@@ -357,6 +358,7 @@ if not pipe then
     print("execute cellsrvstat on "..cell.." failed.")
     os.exit(1)
 end
+
 local output = pipe:read('*all')
 local found=0
 pipe:close()
