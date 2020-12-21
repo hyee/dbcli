@@ -96,24 +96,51 @@ ash_detail as (
             select h.*,
                    nvl(sql_id,'<Parsing>') sql_id_,
                    nvl(event,'ON CPU') ev,
-                   case 
+                   nvl(trim(case 
+                        when current_obj# < -1 then
+                            'Temp I/O'
                         when current_obj# > 0 then 
-                             nvl((select max(object_name) from sql_plan_data where object#=current_obj#),''||current_obj#) 
-                        when p3text='100*mode+namespace' and p3>power(2,32) then 
-                             nvl((select max(object_name) from sql_plan_data where object#=trunc(p3/power(2,32))),''||trunc(p3/power(2,32))) 
+                             ''||current_obj#
+                        when p3text like '%namespace' and p3>power(16,8)*4294950912 then
+                            'Undo'
+                        when p3text like '%namespace' and p3>power(16,8) then 
+                             ''||trunc(p3/power(16,8))
                         when p3text like '%namespace' then 
-                             'x$kglst#'||trunc(mod(p3,power(2,32))/power(2,16))
+                            'X$KGLST#'||trunc(mod(p3,power(16,8))/power(16,4))
                         when p1text like 'cache id' then 
-                             (select parameter from v$rowcache where cache#=p1 and rownum<2)
+                            (select parameter from v$rowcache where cache#=p1 and rownum<2)
                         when event like 'latch%' and p2text='number' then 
-                             (select name from v$latchname where latch#=p2 and rownum<2)
+                            (select name from v$latchname where latch#=p2 and rownum<2)
                         when p3text='class#' then
-                             (select class from (SELECT class, ROWNUM r from v$waitstat) where r=p3)
-                        when current_obj#=0 then 'Undo'
+                            (select class from (SELECT class, ROWNUM r from v$waitstat) where r=p3 and rownum<2)
+                        when p1text ='file#' and p2text='block#' then 
+                            'file#'||p1||' block#'||p2
+                        when p3text in('block#','block') then 
+                            'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_BLOCK(p3)    
+                        when px_flags > 65536 then
+                            decode(trunc(mod(px_flags/65536, 32)),
+                                   1,'[PX]Executing-Parent-DFO',     
+                                   2,'[PX]Executing-Child-DFO',
+                                   3,'[PX]Sampling-Child-DFO',
+                                   4,'[PX]Joining-Group',      
+                                   5,'[QC]Scheduling-Child-DFO',
+                                   6,'[QC]Scheduling-Parent-DFO',
+                                   7,'[QC]Initializing-Objects', 
+                                   8,'[QC]Flushing-Objects',    
+                                   9,'[QC]Allocating-Slaves', 
+                                  10,'[QC]Initializing-Granules', 
+                                  11,'[PX]Parsing-Cursor',   
+                                  12,'[PX]Executing-Cursor',    
+                                  13,'[PX]Preparing-Transaction',    
+                                  14,'[PX]Joining-Transaction',  
+                                  15,'[PX]Load-Commit', 
+                                  16,'[PX]Aborting-Transaction',
+                                  17,'[QC]Executing-Child-DFO',
+                                  18,'[QC]Executing-Parent-DFO')
+                        when current_obj# = 0 then 'Undo'
                         --when p1text ='idn' then 'v$db_object_cache hash#'||p1
                         --when c.class is not null then c.class
-                        else ''||greatest(current_obj#,-2)
-                    end curr_obj#,
+                    end),''||current_obj#) curr_obj#,
                    nvl(wait_class,'ON CPU') wl,
                    least(coalesce(tm_delta_db_time,DELTA_TIME,&unit*1e6),coalesce(tm_delta_time,DELTA_TIME,&unit*1e6),&unit*2e6) * 1e-6 costs,
                    sql_plan_hash_value||','||nvl(qc_session_id,session_id)||','||sql_exec_id||to_char(nvl(sql_exec_start,sample_time+0),'yyyymmddhh24miss') sql_exec

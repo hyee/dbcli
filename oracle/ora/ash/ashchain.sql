@@ -40,7 +40,7 @@
         &v3    : default={&endtime}
         &hint  : ash={inline} dash={materialize}
         &V8    : ash={gv$active_session_history},dash={Dba_Hist_Active_Sess_History}
-        &Filter: default={:V1 in(p1text,''||session_id,''||sql_plan_hash_value,sql_id,top_level_sql_id,SESSION_ID||'@'||&INST1,event,''||current_obj#)} f={}
+        &Filter: default={:V1 in(p1text,''||session_id,''||sql_plan_hash_value,sql_id,&top_sql SESSION_ID||'@'||&INST1,event,''||current_obj#)} f={}
         &filter1: default={0} f={1}
         &range : default={sample_time BETWEEN NVL(TO_DATE(:V2,'YYMMDDHH24MI'),SYSDATE-7) AND NVL(TO_DATE(:V3,'YYMMDDHH24MI'),SYSDATE)}, snap={sample_time>=sysdate - nvl(:V1,60)/86400}, f1={}
         &snap:   default={--} snap={}
@@ -53,6 +53,7 @@
         &OBJ   : default={dba_objects}, dash={(select obj# object_id,object_name from dba_hist_seg_stat_obj)}
         @tmodel: 11.2={time_model} default={to_number(null)}
         @opname: 11.2={SQL_OPname,TOP_LEVEL_CALL_NAME} default={null}
+        @top_sql: 11.1={top_level_sql_id,} default={}
         @CHECK_ACCESS_OBJ  : dba_objects={&obj}, default={all_objects}
         @INST: 11.2={'@'|| a.BLOCKING_INST_ID}, default={'@'||a.&inst1}
         @secs: 11.2={round(sum(least(delta_time,nvl(tm_delta_db_time,delta_time)))*1e-6,2) db_time,} default={&unit,}
@@ -105,19 +106,30 @@ BEGIN
                         a.*, 
                         nvl2(b.chose,0,1) is_root,
                         u.username,
-                        case 
-                            when current_obj# < -1 then 'Temp'
-                            when current_obj# > 0 then ''||current_obj# 
-                            when p3text='100*mode+namespace' and p3>power(2,32) then ''||trunc(p3/power(2,32))
-                            when p3text like '%namespace' then 'x$kglst#'||trunc(mod(p3,power(2,32))/power(2,16))
-                            when p1text like 'cache id' then (select max(parameter) from v$rowcache where cache#=p1)
-                            when p1text ='file#' and p2text='block#' then 'file#'||p1||' block#'||p2
-                            when p3text in('block#','block') then 'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_BLOCK(p3)
-                            when p1text ='idn' then 'v$db_object_cache hash#'||p1
-                            when a.event like 'latch%' and p2text='number' then (select max(name) from v$latchname where latch#=p2)
+                        nvl(trim(case 
+                            when current_obj# < -1 then
+                                'Temp I/O'
+                            when current_obj# > 0 then 
+                                 ''||current_obj#
+                            when p3text like '%namespace' and p3>power(16,8)*4294950912 then
+                                'Undo'
+                            when p3text like '%namespace' and p3>power(16,8) then 
+                                 ''||trunc(p3/power(16,8))
+                            when p3text like '%namespace' then 
+                                'X$KGLST#'||trunc(mod(p3,power(16,8))/power(16,4))
+                            when p1text like 'cache id' then 
+                                (select parameter from v$rowcache where cache#=p1 and rownum<2)
+                            when event like 'latch%' and p2text='number' then 
+                                (select name from v$latchname where latch#=p2 and rownum<2)
                             when c.class is not null then c.class
-                            else ''||greatest(current_obj#,-2)
-                        end curr_obj#,
+                            when p1text ='file#' and p2text='block#' then 
+                                'file#'||p1||' block#'||p2
+                            when p3text in('block#','block') then 
+                                'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_BLOCK(p3)    
+                            when current_obj# = 0 then 'Undo'
+                            --when p1text ='idn' then 'v$db_object_cache hash#'||p1
+                            --when c.class is not null then c.class
+                        end),''||current_obj#) curr_obj#,
                         CASE WHEN PRO_ LIKE '(%)' AND upper(substr(PRO_,2,1))=substr(PRO_,2,1) THEN
                             CASE WHEN PRO_ LIKE '(%)' AND substr(PRO_,2,1) IN('P','W','J') THEN
                                 '('||substr(PRO_,2,1)||'nnn)'
@@ -172,7 +184,7 @@ BEGIN
                       level lvl,
                       sid w_sid,
                       SYS_CONNECT_BY_PATH(case when :filter2 = 1 then 1 when &filter then 1 else 0 end ,',') is_found,
-                      REPLACE(trim('>' from regexp_replace(SYS_CONNECT_BY_PATH(coalesce(sql_id,top_level_sql_id,program2), '>')||decode(connect_by_isleaf,1,nvl2(b_sid,'>(Idle)','')),'(>.+?)\1+','\1 +',2)), '>', ' > ') sql_ids,
+                      REPLACE(trim('>' from regexp_replace(SYS_CONNECT_BY_PATH(coalesce(sql_id,&top_sql program2), '>')||decode(connect_by_isleaf,1,nvl2(b_sid,'>(Idle)','')),'(>.+?)\1+','\1 +',2)), '>', ' > ') sql_ids,
                       REPLACE(trim('>' from regexp_replace(SYS_CONNECT_BY_PATH(&pname ||event2, '>')||decode(connect_by_isleaf,1,nvl2(b_sid,'>(Idle)','')),'(>.+?)\1+','\1 +',2)), '>', ' > ') path, -- there's a reason why I'm doing this (ORA-30004 :)
                       REPLACE(trim('>' from regexp_replace(SYS_CONNECT_BY_PATH(sid,'>')||decode(connect_by_isleaf,1,nullif('>'||b_sid,'>')),'(>.+?)\1+','\1 +')), '>', ' > ') sids,
                       &exec_id sql_exec,
@@ -197,26 +209,37 @@ BEGIN
             WHERE ROWNUM <= 50;
     ELSE
         OPEN :cur FOR
-            WITH bclass AS (SELECT /*+inline*/ class, ROWNUM r from v$waitstat),
+            WITH bclass AS (SELECT class, ROWNUM r from v$waitstat),
             ash_base as (select /*+materialize */ a.*,nullif(b_sid_,'@') b_sid from &target a),
             ash_data AS (
                 SELECT /*+&hint ordered swap_join_inputs(b) swap_join_inputs(c) swap_join_inputs(u)  use_hash(a b u c)  no_expand*/
                         a.*, 
                         nvl2(b.chose,0,1) is_root,
                         u.username,
-                        case
-                            when current_obj# < -1 then 'Temp'
-                            when current_obj# > 0 then ''||current_obj# 
-                            when p3text='100*mode+namespace' and p3>power(2,32) then ''||trunc(p3/power(2,32))
-                            when p3text like '%namespace' then 'x$kglst#'||trunc(mod(p3,power(2,32))/power(2,16))
-                            when p1text like 'cache id' then (select max(parameter) from v$rowcache where cache#=p1)
-                            when p1text ='file#' and p2text='block#' then 'file#'||p1||' block#'||p2
-                            when p3text in('block#','block') then 'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_BLOCK(p3)
-                            when p1text ='idn' then 'v$db_object_cache hash#'||p1
-                            when a.event like 'latch%' and p2text='number' then (select max(name) from v$latchname where latch#=p2)
+                        nvl(trim(case 
+                            when current_obj# < -1 then
+                                'Temp I/O'
+                            when current_obj# > 0 then 
+                                 ''||current_obj#
+                            when p3text like '%namespace' and p3>power(16,8)*4294950912 then
+                                'Undo'
+                            when p3text like '%namespace' and p3>power(16,8) then 
+                                 ''||trunc(p3/power(16,8))
+                            when p3text like '%namespace' then 
+                                'X$KGLST#'||trunc(mod(p3,power(16,8))/power(16,4))
+                            when p1text like 'cache id' then 
+                                (select parameter from v$rowcache where cache#=p1 and rownum<2)
+                            when event like 'latch%' and p2text='number' then 
+                                (select name from v$latchname where latch#=p2 and rownum<2)
                             when c.class is not null then c.class
-                            else ''||greatest(current_obj#,-2)
-                        end curr_obj#,
+                            when p1text ='file#' and p2text='block#' then 
+                                'file#'||p1||' block#'||p2
+                            when p3text in('block#','block') then 
+                                'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_BLOCK(p3)    
+                            when current_obj# = 0 then 'Undo'
+                            --when p1text ='idn' then 'v$db_object_cache hash#'||p1
+                            --when c.class is not null then c.class
+                        end),''||current_obj#) curr_obj#,
                         CASE WHEN PRO_ LIKE '(%)' AND upper(substr(PRO_,2,1))=substr(PRO_,2,1) THEN
                             CASE WHEN PRO_ LIKE '(%)' AND substr(PRO_,2,1) IN('P','W','J') THEN
                                 '('||substr(PRO_,2,1)||'nnn)'

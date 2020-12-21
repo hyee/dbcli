@@ -55,7 +55,7 @@
             p={p1,p2,p3,p3text &0},
             pr={p1raw,p2raw,p3raw &0}, 
             o={obj &0},
-            plan={plan_hash,current_obj#,SQL_PLAN_LINE_ID &0} 
+            plan={plan_hash,obj,SQL_PLAN_LINE_ID &0} 
             none={1},
             c={},
             proc={sql_id,PLSQL_ENTRY_OBJECT_ID &0},
@@ -66,7 +66,7 @@
       &ASH : default={&view} t={&0}
       &Range: default={sample_time+0 between nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MISS'),sysdate-&ela) and nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MISS'),sysdate)}
       &filter: {
-            id={(trim('&1') is null or upper(:V1)='A' or :V1 in(&top_sql sql_id,''||session_id,nvl(event,'ON CPU'))) and &range},
+            id={(trim('&1') is null or upper(:V1)='A' or :V1 in(&top_sql sql_id,''||session_id,''||sql_plan_hash_value,nvl(event,'ON CPU'))) and &range},
             snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(&top_sql sql_id,''||session_id,'event')) &V3},
             u={user_id=(select user_id from &CHECK_ACCESS_USER where username=nvl('&0',sys_context('userenv','current_schema'))) and &range}
         }
@@ -109,7 +109,33 @@ WITH ASH_V AS(
                   OPT_ESTIMATE(TABLE D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH ROWS=30000000)
                 */ 
                 a.*,
-                sql_plan_hash_value plan_hash,current_obj# obj,nvl2(CURRENT_FILE#,CURRENT_FILE#||','||current_block#,'') block,
+                sql_plan_hash_value plan_hash,
+                nvl(trim(case 
+                        when current_obj# < -1 then
+                            'Temp I/O'
+                        when current_obj# > 0 then 
+                             ''||current_obj#
+                        when p3text like '%namespace' and p3>power(16,8)*4294950912 then
+                            'Undo'
+                        when p3text like '%namespace' and p3>power(16,8) then 
+                             ''||trunc(p3/power(16,8))
+                        when p3text like '%namespace' then 
+                            'X$KGLST#'||trunc(mod(p3,power(16,8))/power(16,4))
+                        when p1text like 'cache id' then 
+                            (select parameter from v$rowcache where cache#=p1 and rownum<2)
+                        when event like 'latch%' and p2text='number' then 
+                            (select name from v$latchname where latch#=p2 and rownum<2)
+                        when p3text='class#' then
+                            (select class from (SELECT class, ROWNUM r from v$waitstat) where r=p3 and rownum<2)
+                        when p1text ='file#' and p2text='block#' then 
+                            'file#'||p1||' block#'||p2
+                        when p3text in('block#','block') then 
+                            'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_BLOCK(p3)    
+                        when current_obj# = 0 then 'Undo'
+                        --when p1text ='idn' then 'v$db_object_cache hash#'||p1
+                        --when c.class is not null then c.class
+                    end),''||current_obj#)  obj,
+                nvl2(CURRENT_FILE#,CURRENT_FILE#||','||current_block#,'') block,
                 SUBSTR(a.program,-6) PRO_,&unit c,&CPU CPU
               , TO_CHAR(p1, 'fm0XXXXXXXXXXXXXXX') p1raw
               , TO_CHAR(p2, 'fm0XXXXXXXXXXXXXXX') p2raw

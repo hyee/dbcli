@@ -313,6 +313,7 @@ ALL_PLANS AS(
             EXTRACTVALUE(COLUMN_VALUE,'//PHV')+0 PHV,
             EXTRACTVALUE(COLUMN_VALUE,'//OBJ')+0 OBJECT#,
             EXTRACTVALUE(COLUMN_VALUE,'//OBJECT_NAME') OBJECT_NAME,
+            EXTRACTVALUE(COLUMN_VALUE,'//OBJECT_ALIAS') ALIAS,
             EXTRACTVALUE(COLUMN_VALUE,'//TM') TM,
             EXTRACTVALUE(COLUMN_VALUE,'//OPERATION') OPERATION,
             EXTRACTVALUE(COLUMN_VALUE,'//PLAN_HASH_FULL') PLAN_HASH_FULL,
@@ -334,6 +335,7 @@ ALL_PLANS AS(
                            inst_id,
                            object# OBJ,
                            object_name,
+                           object_alias,
                            object_node tq,operation||' '||options operation,
                            &phf2 plan_hash_full,
                            instr(other_xml,'adaptive_plan') is_adaptive_,
@@ -341,6 +343,7 @@ ALL_PLANS AS(
                            &did dbid 
                     FROM   gv$sql_plan a 
                     WHERE '&vw' IN('A','G')
+                    AND   ('&dbid' is null or '&vw'='G' or &did='&dbid')
                     AND    a.sql_id='!'|| h.sql_id ||'''
                     AND    a.plan_hash_value='||h.phv1||q'!
                     UNION ALL
@@ -355,6 +358,7 @@ ALL_PLANS AS(
                             null,
                             object#,
                             object_name,
+                            object_alias,
                             object_node tq,operation||' '||options,
                             &phf2 plan_hash_full,
                             instr(other_xml,'adaptive_plan') is_adaptive_,
@@ -427,9 +431,13 @@ ash_phv_agg as(
         from ash_phvs a 
         left join (select distinct phv,phf,is_adaptive from sql_plan_data) b using(phv)) A
     WHERE phv_rate>=0.1),
-hr AS((select /*+MATERIALIZE qb_name(hr) opt_estimate(query_block rows=100000)*/ distinct id, parent_id pid, phv,operation,MAX(id) over(PARTITION BY phv) AS maxid from sql_plan_data where phv in(select phv from ash_phv_agg where plan_exists=1))),
+hr AS((select /*+MATERIALIZE qb_name(hr) opt_estimate(query_block rows=100000)*/ 
+              distinct id, parent_id pid, phv,operation,alias,
+              MAX(id) over(PARTITION BY phv) AS maxid 
+       from sql_plan_data 
+       where phv in(select phv from ash_phv_agg where plan_exists=1))),
 hierarchy_data AS
- (SELECT /*+CONNECT_BY_COMBINE_SW*/ id, pid, phv,operation,maxid
+ (SELECT /*+CONNECT_BY_COMBINE_SW*/ id, pid, phv,operation,maxid,alias
   FROM   hr
   START  WITH id = 0
   CONNECT BY PRIOR id = pid AND phv=PRIOR phv 
@@ -542,10 +550,12 @@ ash_agg as(
                                         'Temp I/O'
                                     when current_obj# > 0 then 
                                         nvl((select max(object_name) from plan_objs where object#=current_obj#),''||current_obj#) 
-                                    when p3text like '%namespace' and p3>power(2,32) then 
-                                        nvl((select max(object_name) from plan_objs where object#=trunc(p3/power(2,32))),''||trunc(p3/power(2,32))) 
+                                    when p3text like '%namespace' and p3>power(16,8)*4294950912 then
+                                        'Undo'
+                                    when p3text like '%namespace' and p3>power(16,8) then 
+                                        nvl((select max(object_name) from plan_objs where object#=trunc(p3/power(16,8))),''||trunc(p3/power(16,8))) 
                                     when p3text like '%namespace' then 
-                                        'X$KGLST#'||trunc(mod(p3,power(2,32))/power(2,16))
+                                        'X$KGLST#'||trunc(mod(p3,power(16,8))/power(16,4))
                                     when p1text like 'cache id' then 
                                         (select parameter from v$rowcache where cache#=p1 and rownum<2)
                                     when event like 'latch%' and p2text='number' then 
@@ -576,9 +586,9 @@ ash_agg as(
                                               16,'[PX]Aborting-Transaction',
                                               17,'[QC]Executing-Child-DFO',
                                               18,'[QC]Executing-Parent-DFO')
+                                    when current_obj#=0 then 'Undo'
                                     when time_model is not null then
                                         '['||time_model||']'
-                                    when current_obj#=0 then 'Undo'
                                     --when p1text ='idn' then 'v$db_object_cache hash#'||p1
                                     --when c.class is not null then c.class
                                 end),''||current_obj#) curr_obj#,
@@ -625,6 +635,7 @@ plan_line_xplan AS
        x.plan_table_output AS plan_output,
        x.id,x.prefix,
        nvl(''||o.pid,' ') pid,nvl(''||o.oid,' ') oid,o.maxid,
+       nvl(o.alias,' ') alias,
        cpu,io,cc,cl,app,oth,adm,cfg,sch,net,plsql,cost_text,aas_text,execs,
        nvl(cost_rate,' ') cost_rate,
        secs,o.min_dop,o.max_dop,o.skew,o.buf,o.io_reqs,o.io_bytes,o.pga,o.temp,
@@ -643,19 +654,19 @@ plan_line_xplan AS
   LEFT OUTER JOIN plan_line_agg o
   ON   x.phv = o.phv AND x.id = o.id),
 agg_data as(
-  select 'line' flag,phv,r,id,''||oid oid,'' full_hash,
+  select 'line' flag,phv,r,id,''||oid oid,alias,'' full_hash,
          ''||secs secs,''||cost_rate cost_rate,aas_text aas,cost_text costs,''||execs execs,decode(min_dop,null,'',max_dop,''||max_dop,min_dop||'-'||max_dop) dop,skew,
          ''||cpu cpu,''||io io,''||cl cl,''||cc cc,''||app app,''||adm adm,''||cfg cfg,''||sch sch,''||net net,''||oth oth,''||plsql  plsql,buf,io_reqs ioreqs,io_bytes iobytes,pga,temp,
          decode(&simple,1,top_grp) top_list,'' top_list2,null pred_flag,null awr_exec,null awr_ela
   FROM plan_line_xplan
   UNION ALL
-  select 'phv' flag,-1,r,rid,''||phv2 oid,decode(pred_flag,3,sql_id,2,sql_id,''||phfv),
+  select 'phv' flag,-1,r,rid,''||phv2 oid,'' alias,decode(pred_flag,3,sql_id,2,sql_id,''||phfv),
          ''||secs secs,''|| cost_rate,aas_text aas,cost_text costs,''||execs execs,decode(min_dop,null,'',max_dop,''||max_dop,min_dop||'-'||max_dop) dop,skew,
          ''||cpu cpu,''||io io,''||cl cl,''||cc cc,''||app app,''||adm adm,''||cfg cfg,''||sch sch,''||net net,''||oth oth,''||plsql  plsql,buf,io_reqs,io_bytes,pga,temp,
          ''||top_list,'',pred_flag,awr_exec,awr_ela
   FROM  plan_agg a,(select rownum-3 rid from dual connect by rownum<=3)
   UNION ALL
-  select 'wait' flag,phv,r,rid,''||top1 oid,'' phfv,
+  select 'wait' flag,phv,r,rid,''||top1 oid,'' alias,'' phfv,
          ''||secs secs,''|| cost_rate,aas_text aas,cost_text costs,''||execs execs,decode(min_dop,null,'',max_dop,''||max_dop,min_dop||'-'||max_dop) dop,skew,
          '' cpu,'' io,'' cl,'' cc,'' app,'' adm,'' cfg,'' sch,'' net,'' oth,''  plsql,buf,io_reqs,io_bytes,pga,temp,
          ''||top_list,''||top_lines,null pred_flag,null awr_exec,null awr_ela
@@ -663,10 +674,11 @@ agg_data as(
 ),
 
 plan_line_widths AS(
-    SELECT a.*,swait+swait2+sdop + sskew + csize + rate_size + ssec + sexe + saas + scpu + sio + scl + scc + sapp + ssch +scfg + sadm + snet + soth + splsql + sbuf + sioreqs + siobytes +spga +stemp+sawrela+sawrela + 6 widths
+    SELECT a.*,swait+swait2+sdop + sskew + csize + rate_size + ssec + sexe + saas + scpu + sio + scl + scc + sapp + ssch +scfg + sadm + snet + soth + splsql + sbuf + sioreqs + siobytes +spga +stemp+sawrela+sawrela+ 6 widths
     FROM( 
        SELECT  flag,phv,
                nvl(greatest(max(length(oid)) + 1, 6),0) as csize,
+               nvl(greatest(max(length(alias)) + 1, 6),0) as calias,
                nvl(greatest(max(length(trim(nullif(full_hash,oid)))), 11),0) as shash,
                nvl(greatest(max(length(trim(secs)))+1, 8),0)*&simple as ssec,
                nvl(greatest(max(length(trim(cost_rate))) + 1, 7),0) as rate_size,
@@ -697,7 +709,7 @@ plan_line_widths AS(
          FROM  agg_data
          GROUP BY flag,phv) a),
 format_info as (
-    SELECT flag,phv,r,widths,id,
+    SELECT flag,phv,r,widths,id,calias,
        decode(id,
             -2,decode(flag,'line',lpad('Ord', csize),'phv','|'||lpad('Plan Hash ',csize),'|'||rpad('&titl2',csize)) || lpad('Full Hash', shash) || ' |'
                 ||decode(sawrexec+sawrela,0,'',lpad('AWR-Exes',sawrexec)||lpad('Avg-Ela',sawrela)||'|')
@@ -741,7 +753,14 @@ plan_output AS (
                    phvs
                WHEN b.id = -5 THEN
                    time_range
-           END || CASE WHEN b.id not in(-4,-5) THEN substr(plan_output, nvl(LENGTH(prefix), 0) + 1) END plan_line
+           END || 
+           CASE WHEN b.id not in(-4,-5) THEN substr(plan_output, nvl(LENGTH(prefix), 0) + 1) END ||
+           CASE
+               WHEN &simple=1 AND plan_output LIKE '---------%' THEN rpad('-',calias,'-')
+               WHEN &simple=1 AND b.id = -2 THEN rpad(' Alias',calias-1)||'|'
+               WHEN &simple=1 AND b.id > -1 THEN rpad(alias,calias-1)||'|'
+           END
+           plan_line
     FROM   (select * from format_info where flag='line') a
     JOIN   plan_line_xplan b USING  (phv,r)
     WHERE  b.id>=-5 and (b.id!=-1 or b.id=-1 and trim(plan_output) is not null)
