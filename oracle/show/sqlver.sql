@@ -24,9 +24,9 @@
                                                 TOP_LEVEL_RPI_CURSOR=   5
 
 	--[[
-		&sql_id: default={} s={and sql_id='&0'}
-		&sep   : default={' | '} s={chr(10)||' '}
-    &inst  : default={userenv('instance')} i={0+'&0'}
+		&sql_id : default={} s={and sql_id='&0'}
+		&sep    : default={' | '} s={chr(10)||' '}
+    &inst1  : default={:instance} i={0+'&0'}
 	--]]
 
 ]]*/
@@ -119,7 +119,7 @@ FROM   (SELECT sql_id, mod(SUM(DISTINCT childs),1e6) childs,mod(SUM(DISTINCT ver
                                   SUM(decode(BIND_LENGTH_UPGRADEABLE, 'Y', 1, 0)) BIND_LENGTH_UPGRADEABLE,
                                   SUM(decode(USE_FEEDBACK_STATS, 'Y', 1, 0)) USE_FEEDBACK_STATS
                            FROM   v$sql_shared_cursor a LEFT JOIN v$sql b USING(sql_id,child_number)
-                           WHERE  userenv('instance')=nvl(&inst,userenv('instance')) &sql_id
+                           WHERE  userenv('instance')=nvl(&inst1,userenv('instance')) &sql_id
                            GROUP  BY sql_id
                            HAVING COUNT(1)>1))) --
                         UNPIVOT(val FOR c IN(UNBOUND_CURSOR,

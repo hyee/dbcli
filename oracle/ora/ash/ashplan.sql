@@ -100,6 +100,7 @@ Outputs:
     @cdb2: 12.1={con_dbid} default={1e9}
     @check_access_pdb: pdb/awr_pdb_snapshot={AWR_PDB_} default={DBA_HIST_}
     @check_access_cdb: cdb={use_hash(a)} default={use_nl(a)}
+    @check_access_aux: default={(26/8/12)}
     &dplan: default={&check_access_pdb.sql_plan} sqlset={(select a.*,0+null object# from dba_sqlset_plans a)}
     &cid  : default={dbid} sqlset={con_dbid}
     &src1 : default={&check_access_pdb.sql_plan} sqlset={dba_sqlset_plans}
@@ -312,6 +313,8 @@ ALL_PLANS AS(
             EXTRACTVALUE(COLUMN_VALUE,'//SQL_ID') sql_id,
             EXTRACTVALUE(COLUMN_VALUE,'//PHV')+0 PHV,
             EXTRACTVALUE(COLUMN_VALUE,'//OBJ')+0 OBJECT#,
+            EXTRACTVALUE(COLUMN_VALUE,'//POS')+0 POS,
+            EXTRACTVALUE(COLUMN_VALUE,'//IO_COST')+0 IO_COST,
             EXTRACTVALUE(COLUMN_VALUE,'//OBJECT_NAME') OBJECT_NAME,
             EXTRACTVALUE(COLUMN_VALUE,'//OBJECT_ALIAS') ALIAS,
             EXTRACTVALUE(COLUMN_VALUE,'//TM') TM,
@@ -336,9 +339,11 @@ ALL_PLANS AS(
                            object# OBJ,
                            object_name,
                            object_alias,
+                           position pos,
                            object_node tq,operation||' '||options operation,
                            &phf2 plan_hash_full,
                            instr(other_xml,'adaptive_plan') is_adaptive_,
+                           io_cost,
                            1e9 cid,
                            &did dbid 
                     FROM   gv$sql_plan a 
@@ -359,9 +364,11 @@ ALL_PLANS AS(
                             object#,
                             object_name,
                             object_alias,
+                            position pos,
                             object_node tq,operation||' '||options,
                             &phf2 plan_hash_full,
                             instr(other_xml,'adaptive_plan') is_adaptive_,
+                            io_cost,
                             &cdb2 cid,
                             &cid dbid
                     FROM    &dplan a
@@ -432,19 +439,19 @@ ash_phv_agg as(
         left join (select distinct phv,phf,is_adaptive from sql_plan_data) b using(phv)) A
     WHERE phv_rate>=0.1),
 hr AS((select /*+MATERIALIZE qb_name(hr) opt_estimate(query_block rows=100000)*/ 
-              distinct id, parent_id pid, phv,operation,alias,
+              distinct id, parent_id pid, phv,operation,alias,io_cost,pos,
               MAX(id) over(PARTITION BY phv) AS maxid 
        from sql_plan_data 
        where phv in(select phv from ash_phv_agg where plan_exists=1))),
 hierarchy_data AS
- (SELECT /*+CONNECT_BY_COMBINE_SW*/ id, pid, phv,operation,maxid,alias
+ (SELECT /*+CONNECT_BY_COMBINE_SW*/ id, pid, phv,operation,maxid,alias,io_cost,rownum rn
   FROM   hr
   START  WITH id = 0
   CONNECT BY PRIOR id = pid AND phv=PRIOR phv 
-  ORDER  SIBLINGS BY id DESC),
+  ORDER  SIBLINGS BY pos desc,id DESC),
 ordered_hierarchy_data AS
  (SELECT a.*,
-         row_number() over(PARTITION BY phv ORDER BY rownum DESC) AS OID
+         row_number() over(PARTITION BY phv ORDER BY rn DESC) AS OID
   FROM   hierarchy_data a),
 qry AS
  ( SELECT DISTINCT sql_id sq,
@@ -640,6 +647,12 @@ plan_line_xplan AS
        nvl(cost_rate,' ') cost_rate,
        secs,o.min_dop,o.max_dop,o.skew,o.buf,o.io_reqs,o.io_bytes,o.pga,o.temp,
        nvl(top_grp,' ') top_grp,
+       nvl(trim(dbms_xplan.format_number(CASE 
+               WHEN REGEXP_LIKE(x.plan_table_output,'(TABLE ACCESS .*FULL|INDEX .*FAST FULL)') THEN
+                   io_cost/&check_access_aux 
+               ELSE
+                   io_cost
+           END)),' ') blks,
        '| Plan Hash Value(Full): '||max(phfv) over(partition by x.phv)
        ||decode(min(min_dop) over(partition by x.phv),
                null,'',
@@ -654,19 +667,19 @@ plan_line_xplan AS
   LEFT OUTER JOIN plan_line_agg o
   ON   x.phv = o.phv AND x.id = o.id),
 agg_data as(
-  select 'line' flag,phv,r,id,''||oid oid,alias,'' full_hash,
+  select 'line' flag,phv,r,id,''||oid oid,alias,blks,'' full_hash,
          ''||secs secs,''||cost_rate cost_rate,aas_text aas,cost_text costs,''||execs execs,decode(min_dop,null,'',max_dop,''||max_dop,min_dop||'-'||max_dop) dop,skew,
          ''||cpu cpu,''||io io,''||cl cl,''||cc cc,''||app app,''||adm adm,''||cfg cfg,''||sch sch,''||net net,''||oth oth,''||plsql  plsql,buf,io_reqs ioreqs,io_bytes iobytes,pga,temp,
          decode(&simple,1,top_grp) top_list,'' top_list2,null pred_flag,null awr_exec,null awr_ela
   FROM plan_line_xplan
   UNION ALL
-  select 'phv' flag,-1,r,rid,''||phv2 oid,'' alias,decode(pred_flag,3,sql_id,2,sql_id,''||phfv),
+  select 'phv' flag,-1,r,rid,''||phv2 oid,'' alias,'' blks,decode(pred_flag,3,sql_id,2,sql_id,''||phfv),
          ''||secs secs,''|| cost_rate,aas_text aas,cost_text costs,''||execs execs,decode(min_dop,null,'',max_dop,''||max_dop,min_dop||'-'||max_dop) dop,skew,
          ''||cpu cpu,''||io io,''||cl cl,''||cc cc,''||app app,''||adm adm,''||cfg cfg,''||sch sch,''||net net,''||oth oth,''||plsql  plsql,buf,io_reqs,io_bytes,pga,temp,
          ''||top_list,'',pred_flag,awr_exec,awr_ela
   FROM  plan_agg a,(select rownum-3 rid from dual connect by rownum<=3)
   UNION ALL
-  select 'wait' flag,phv,r,rid,''||top1 oid,'' alias,'' phfv,
+  select 'wait' flag,phv,r,rid,''||top1 oid,'' alias,'' blks,'' phfv,
          ''||secs secs,''|| cost_rate,aas_text aas,cost_text costs,''||execs execs,decode(min_dop,null,'',max_dop,''||max_dop,min_dop||'-'||max_dop) dop,skew,
          '' cpu,'' io,'' cl,'' cc,'' app,'' adm,'' cfg,'' sch,'' net,'' oth,''  plsql,buf,io_reqs,io_bytes,pga,temp,
          ''||top_list,''||top_lines,null pred_flag,null awr_exec,null awr_ela
@@ -679,6 +692,7 @@ plan_line_widths AS(
        SELECT  flag,phv,
                nvl(greatest(max(length(oid)) + 1, 6),0) as csize,
                nvl(greatest(max(length(alias)) + 1, 6),0) as calias,
+               nvl(greatest(max(length(blks)) + 1, 6),0) as cblks,
                nvl(greatest(max(length(trim(nullif(full_hash,oid)))), 11),0) as shash,
                nvl(greatest(max(length(trim(secs)))+1, 8),0)*&simple as ssec,
                nvl(greatest(max(length(trim(cost_rate))) + 1, 7),0) as rate_size,
@@ -709,7 +723,7 @@ plan_line_widths AS(
          FROM  agg_data
          GROUP BY flag,phv) a),
 format_info as (
-    SELECT flag,phv,r,widths,id,calias,
+    SELECT flag,phv,r,widths,id,calias,cblks,
        decode(id,
             -2,decode(flag,'line',lpad('Ord', csize),'phv','|'||lpad('Plan Hash ',csize),'|'||rpad('&titl2',csize)) || lpad('Full Hash', shash) || ' |'
                 ||decode(sawrexec+sawrela,0,'',lpad('AWR-Exes',sawrexec)||lpad('Avg-Ela',sawrela)||'|')
@@ -755,11 +769,11 @@ plan_output AS (
                    time_range
            END || 
            CASE WHEN b.id not in(-4,-5) THEN substr(plan_output, nvl(LENGTH(prefix), 0) + 1) END ||
-           CASE
-               WHEN &simple=1 AND plan_output LIKE '---------%' THEN rpad('-',calias,'-')
-               WHEN &simple=1 AND b.id = -2 THEN rpad(' Alias',calias-1)||'|'
-               WHEN &simple=1 AND b.id > -1 THEN rpad(alias,calias-1)||'|'
-           END
+           CASE WHEN &simple=1 THEN CASE
+               WHEN plan_output LIKE '---------%' THEN rpad('-',calias+cblks,'-')
+               WHEN b.id = -2 THEN rpad(' Blks',cblks-1)||'|'||rpad(' Alias',calias-1)||'|'
+               WHEN b.id > -1 THEN lpad(blks,cblks-1)||'|'||rpad(alias,calias-1)||'|'
+           END END
            plan_line
     FROM   (select * from format_info where flag='line') a
     JOIN   plan_line_xplan b USING  (phv,r)

@@ -33,6 +33,7 @@
         @check_access_bind: dba_hist_sqlbind={1} default={0} 
         @ARGS: 1
         &V3  : default={} q={Q} l={L}
+        &V2  : default={:instance}
     --]]
 ]]*/
 set colwrap 150 feed off 
@@ -326,3 +327,5 @@ GROUP  BY SQL_ID,
           &ver SQL_PLAN_BASELINE,
           parsing_schema_name;
           
+
+show sqlver -s"&v1"

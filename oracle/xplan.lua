@@ -1,6 +1,39 @@
 local db,cfg=env.getdb(),env.set
 local xplan={}
 local default_fmt,e10053,prof,sqldiag="ALLSTATS ALL -PROJECTION OUTLINE REMOTE"
+local calc_mbrc=[[DECLARE
+   mreadtim PLS_INTEGER;
+   sreadtim PLS_INTEGER;
+   mbrc     PLS_INTEGER;
+   iotfrspeed PLS_INTEGER;
+   ioseektim PLS_INTEGER;
+   blks     PLS_INTEGER; 
+   st       DATE;
+   et       DATE;
+   rtn      PLS_INTEGER;
+   str      VARCHAR2(30);
+BEGIN
+    sys.dbms_stats.get_system_stats(str,st,et,'iotfrspeed',iotfrspeed);
+    sys.dbms_stats.get_system_stats(str,st,et,'ioseektim',ioseektim);
+    sys.dbms_stats.get_system_stats(str,st,et,'sreadtim',sreadtim);
+    sys.dbms_stats.get_system_stats(str,st,et,'mreadtim',mreadtim);
+    sys.dbms_stats.get_system_stats(str,st,et,'mbrc',mbrc);
+    rtn := sys.dbms_utility.get_parameter_value('db_block_size',blks,str);
+    IF mbrc IS NULL THEN
+        rtn := sys.dbms_utility.get_parameter_value('_db_file_optimizer_read_count',mbrc,str);
+        mbrc := NVL(mbrc,8);
+    END IF;
+    
+    IF sreadtim IS NULL THEN
+        sreadtim := ROUND(ioseektim+blks/iotfrspeed);
+    END IF;
+    
+    IF mreadtim IS NULL THEN
+        mreadtim := ROUND(ioseektim+blks/iotfrspeed*mbrc);
+    END IF;
+    
+    :cost := round(mreadtim/sreadtim/NVL(mbrc,8),6);
+END;]]
 function xplan.explain(fmt,sql)
     local ora,sqltext=db.C.ora
     local _fmt=default_fmt
@@ -29,6 +62,8 @@ function xplan.explain(fmt,sql)
         fmt = 'adaptive '..fmt
     end
 
+    local rtn={cost='#NUMBER'}
+    db:exec_cache(calc_mbrc,rtn,'Internal_XPLAN')
     sql=env.COMMAND_SEPS.match(sql)
     local sql1= sql:gsub("\r?\n","")
     if not sql1:match('(%s)') then
@@ -123,15 +158,15 @@ function xplan.explain(fmt,sql)
          WHERE  seq = 1
          ORDER  BY id),
         hierarchy_data AS
-         (SELECT id, pid,qb,alias,pred,proj
+         (SELECT id, pid,qb,alias,pred,proj,io_cost,rownum r
             FROM   sql_plan_data
             START  WITH id = 0
             CONNECT BY PRIOR id = pid
-            ORDER  SIBLINGS BY id DESC),
+            ORDER  SIBLINGS BY position desc,id DESC),
         ordered_hierarchy_data AS
          (SELECT id,
-                 pid,qb,alias,pred,proj,
-                 row_number() over(ORDER BY rownum DESC) AS OID,
+                 pid,qb,alias,pred,proj,io_cost,
+                 row_number() over(ORDER BY r DESC) AS OID,
                  MAX(id) over() AS maxid
             FROM   hierarchy_data),
         xplan_data AS
@@ -142,6 +177,12 @@ function xplan.explain(fmt,sql)
                  o.pid,qb,alias,pred,proj,
                  o.oid,
                  o.maxid,
+                 nvl(trim(dbms_xplan.format_number(CASE 
+                     WHEN REGEXP_LIKE(x.plan_table_output,'(TABLE ACCESS .*FULL|INDEX .*FAST FULL)') THEN
+                         io_cost/@mbrc@ 
+                     ELSE
+                         io_cost
+                 END)),' ') blks,
                  COUNT(*) over() AS rc
             FROM   (select rownum r,x.* from (SELECT * FROM TABLE(dbms_xplan.display('PLAN_TABLE', NULL, '@fmt@', 'PLAN_ID=(select max(plan_id) from plan_table WHERE STATEMENT_ID=''INTERNAL_DBCLI_CMD'')'))) x) x
             LEFT   OUTER JOIN ordered_hierarchy_data o
@@ -150,25 +191,28 @@ function xplan.explain(fmt,sql)
         from   xplan_data
         model
             dimension by (r)
-            measures (plan_table_output,id, maxid,pid,oid,rc,qb,alias,pred,proj,
+            measures (plan_table_output,id, maxid,pid,oid,rc,qb,alias,pred,proj,blks,
                       greatest(max(length(maxid)) over () + 3, 6) as csize,
                       nvl(greatest(max(length(pred)) over () + 3, 7),0) as psize,
                       nvl(greatest(max(length(qb)) over () + 3, 6),0) as qsize,
                       nvl(greatest(max(length(alias)) over () + 3, 8),0) as asize,
                       nvl(greatest(max(length(proj)) over () + 3, 7),0) as jsize,
+                      greatest(max(length(blks)) over () + 2,7) bsize,
                       cast(null as varchar2(128)) as inject)
             rules sequential order (
                 inject[r] = case
                       when plan_table_output[cv()] like '------%' then 
-                           rpad('-', csize[cv()]+psize[cv()]+jsize[cv()]+qsize[cv()]+asize[cv()]+1, '-') || '{PLAN}' 
+                           rpad('-', csize[cv()]+psize[cv()]+jsize[cv()]+qsize[cv()]+asize[cv()]+bsize[cv()]+1, '-') || '{PLAN}' 
                       when id[cv()+2] = 0 then
-                           '|' || lpad('Ord ', csize[cv()]) || '{PLAN}' 
+                           '|' || lpad('Ord ', csize[cv()]) || '{PLAN}'
+                               || rpad(' Blks',bsize[cv()]-1)||'|'
                                || decode(psize[cv()],0,'',rpad(' Pred', psize[cv()]-1)||'|')
                                || lpad('Proj |', jsize[cv()]) 
                                || decode(qsize[cv()],0,'',rpad(' Q.B', qsize[cv()]-1)||'|')
                                || decode(asize[cv()],0,'',rpad(' Alias', asize[cv()]-1)||'|')
                       when id[cv()] is not null then
-                           '|' || lpad(oid[cv()]||' ', csize[cv()]) || '{PLAN}'  
+                           '|' || lpad(oid[cv()]||' ', csize[cv()]) || '{PLAN}'
+                               || lpad(blks[cv()],bsize[cv()]-1)  ||'|'
                                || decode(psize[cv()],0,'',rpad(' '||pred[cv()], psize[cv()]-1)||'|')
                                || lpad(proj[cv()] || ' |', jsize[cv()]) 
                                || decode(qsize[cv()],0,'',rpad(' '||qb[cv()], qsize[cv()]-1)||'|')
@@ -182,7 +226,7 @@ function xplan.explain(fmt,sql)
                      else plan_table_output[cv()]
                  end)
         order  by r]]
-    sql=sql:gsub('@fmt@',fmt):gsub('@sql@',sql_id)
+    sql=sql:gsub('@fmt@',fmt):gsub('@sql@',sql_id):gsub('@mbrc@',rtn.cost)
     sql=sql:gsub('@proj@',db.props.version>11.1 and [[nvl2(projection,1+regexp_count(regexp_replace(regexp_replace(projection,'[\[.*?\]'),'\(.*?\)'),', '),null)]] or 'cast(null as number)')
     cfg.set("pipequery","off")
     --db:rollback()

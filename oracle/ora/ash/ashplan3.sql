@@ -204,7 +204,7 @@ WITH ALL_PLANS AS
         SELECT a.*,&did dbid 
         FROM TABLE(GV$(CURSOR(
             SELECT  /*+ordered use_nl(a) opt_estimate(query_block rows=100000)*/    
-                    id,
+                    id,position,
                     decode(parent_id,-1,id-1,parent_id) parent_id,
                     child_number    ha,
                     1               flag,
@@ -232,7 +232,7 @@ WITH ALL_PLANS AS
         WHERE '&vw'='G' or :dbid is null or &did=:dbid
         UNION ALL
         SELECT  /*+ordered &check_access_cdb opt_estimate(query_block rows=100000)*/
-                id,
+                id,position,
                 decode(parent_id,-1,id-1,parent_id) parent_id,
                 plan_hash_value,
                 2,
@@ -430,13 +430,13 @@ ash_phv_agg as(
         from (SELECT /*+no_merge use_hash_aggregation*/ phv1 phv,max(phf) phf,sum(cost) cost,sum(aas) aas from ash_raw group by phv1) a 
         left join (select distinct phv,phf,is_adaptive from sql_plan_data) b using(phv)) A
     WHERE phv_rate>=0.1),
-hr AS((select /*+MATERIALIZE qb_name(hr) opt_estimate(query_block rows=100000)*/ distinct id, parent_id pid, phv,operation,MAX(id) over(PARTITION BY phv) AS maxid from sql_plan_data where phv in(select phv from ash_phv_agg where plan_exists=1))),
+hr AS((select /*+MATERIALIZE qb_name(hr) opt_estimate(query_block rows=100000)*/ distinct id, parent_id pid, phv,operation,position,MAX(id) over(PARTITION BY phv) AS maxid from sql_plan_data where phv in(select phv from ash_phv_agg where plan_exists=1))),
 hierarchy_data AS
  (SELECT /*+CONNECT_BY_COMBINE_SW*/ id, pid, phv,operation,maxid
   FROM   hr
   START  WITH id = 0
   CONNECT BY PRIOR id = pid AND phv=PRIOR phv 
-  ORDER  SIBLINGS BY id DESC),
+  ORDER  SIBLINGS BY position desc,id DESC),
 ordered_hierarchy_data AS
  (SELECT a.*,
          row_number() over(PARTITION BY phv ORDER BY rownum DESC) AS OID

@@ -36,7 +36,7 @@ WITH sql_plan_data AS
                  dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id desc) seq
           FROM   (SELECT *
                   FROM TABLE(GV$(CURSOR(
-                      SELECT id,
+                      SELECT id,position pos,
                              decode(parent_id,-1,id-1,parent_id) parent_id,
                              child_number    ha,
                              1               flag,
@@ -51,7 +51,7 @@ WITH sql_plan_data AS
                       AND    a.sql_id = :V1
                       AND    a.plan_hash_value = case when nvl(lengthb(:V2),0) >6 then :V2+0 else plan_hash_value end)))
                   UNION ALL
-                  SELECT id,
+                  SELECT id,position pos,
                          decode(parent_id,-1,id-1,parent_id) parent_id,
                          plan_hash_value,
                          2,
@@ -71,7 +71,7 @@ hierarchy_data AS
   FROM   sql_plan_data
   START  WITH id = 0
   CONNECT BY PRIOR id = parent_id
-  ORDER  SIBLINGS BY id DESC),
+  ORDER  SIBLINGS BY pos desc,id DESC),
 ordered_hierarchy_data AS
  (SELECT id,
          parent_id AS pid,
