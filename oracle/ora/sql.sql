@@ -265,7 +265,9 @@ PRINT b;
 PRINT c;
 save txt last_sql_&V1..txt
 
-pro 
+pro
+pro Result of &src
+pro =======================================
 SELECT *
 FROM   (SELECT &VER top_level_sql_id top_sql,
                COUNT(1) aas,

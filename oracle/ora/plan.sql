@@ -22,7 +22,7 @@ Options:
             d={2}        # Dictionary only
           }
     &binds: default={}, b={PEEKED_BINDS}
-    @check_access_aux: default={(26/8/12)}
+    @check_access_aux: default={(26/8/12)-6}
     @adaptive: 12.1={+REPORT +ADAPTIVE +METRICS} 11.2={+METRICS} default={}
     @hint    : 19={+HINT_REPORT -QBREGISTRY} DEFAULT={}
     @proj:  11.2={nvl2(projection,1+regexp_count(regexp_replace(regexp_replace(projection,'[\[.*?\]'),'\(.*?\)'),', '),null) proj} default={cast(null as number) proj}
@@ -366,8 +366,8 @@ xplan_data AS
            max(o.minid) over() as minid,
            COUNT(*) over() AS rc,
            nvl(trim(dbms_xplan.format_number(CASE 
-               WHEN REGEXP_LIKE(x.plan_table_output,'(TABLE ACCESS .*FULL|INDEX .*FAST FULL)') THEN
-                   io_cost/&check_access_aux 
+               WHEN REGEXP_LIKE(x.plan_table_output,'(TABLE ACCESS [^|]*(FULL|SAMPLE)|INDEX .*FAST FULL)') THEN
+                   greatest(1,floor(io_cost/&check_access_aux))
                ELSE
                    io_cost
            END)),' ') blks

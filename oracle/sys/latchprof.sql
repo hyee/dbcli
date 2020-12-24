@@ -1,6 +1,8 @@
 /*[[
   Perform high-frequency sampling on V$LATCHHOLDER and present a profile of latches held by sessions including extended statistics about in which kernel function the latch held was taken
-  Usage:       @@NAME [<sid>] [<what>] [<latch name>] [<seconds>] [-func|-block]
+  Usage : @@NAME [<sid>] [<what>] [<latch name>] [<seconds>] [-func|-block]
+  -func : group by sess#,name,sql_id,object,func
+  -block: group by sess#,name,sql_id,wait_obj#,block#
     --[[
         &V1: default={%}
         &V2: default={sess#,name,hmode,wait_obj#,sql_id} func={sess#,name,sql_id,object,func} block={sess#,name,sql_id,wait_obj#,block#}
@@ -82,21 +84,18 @@ DEF _lhp_what="&V2"
 DEF _lhp_sid="&V1"
 DEF _lhp_name="&V3"
 
-PROMPT
-PROMPT -- LatchProfX 2.02 by Tanel Poder ( http://www.tanelpoder.com )
-
+PROMPT Sampling Latch Stats For &V4 Secs...
 WITH t1 AS
  (SELECT KSUTMTIM hsecs FROM x$ksutm),
 samples AS
  (SELECT * FROM &GV
-      SELECT  /*+ opt_param('_optimizer_mjc_enabled','false') ORDERED ORDERED_PREDICATES USE_NL(s2 l) NO_TRANSFORM_DISTINCT_AGG */
+      SELECT  /*+ opt_param('_optimizer_mjc_enabled','false') ORDERED ORDERED_PREDICATES USE_NL(l) NO_TRANSFORM_DISTINCT_AGG */
               &_lhp_what, COUNT(DISTINCT gets) dist_samples, COUNT(*) total_samples, 
               COUNT(*) / max(max(r)) over() total_samples_pct,max(max(r)) over() r
-      FROM   (SELECT /*+no_merge*/KSUTMTIM+:v4*100 target, rownum r 
+      FROM   (SELECT /*+no_merge*/KSUTMTIM hsec, rownum r 
               FROM   x$ksutm
               WHERE  userenv('instance')=nvl(:instance,userenv('instance')) 
-              CONNECT BY LEVEL <= &v4*7e4) s1,
-             (SELECT /*+no_merge*/KSUTMTIM hsecs FROM x$ksutm) s2,
+              CONNECT BY sys.standard.current_timestamp - current_timestamp <= numtodsinterval(&v4,'second')) s1,
              (SELECT /*+order use_nl(l s w) no_expand no_merge*/
                      l.ksuprpid PID,
                      l.ksuprsid SID,
@@ -120,7 +119,6 @@ samples AS
              AND     l.ksulawhr = w.indx(+)
              AND     l.ksuprsid LIKE '&_lhp_sid'
              AND    (LOWER(l.ksuprlnm) LIKE LOWER('%&_lhp_name%') OR LOWER(RAWTOHEX(l.ksuprlat)) LIKE LOWER('%&_lhp_name%'))) l
-      WHERE  s2.hsecs<s1.target
       GROUP  BY &_lhp_what
       )))
     ORDER  BY total_samples DESC),
@@ -129,10 +127,11 @@ t2 AS
  
 SELECT /*+ ORDERED*/
      &_lhp_what,
-     s.total_samples,
-     s.dist_samples,
+     s.total_samples samples,
+     s.dist_samples distincts,
      round(s.total_samples / r * 100,4) "Held %",
      round((t2.hsecs - t1.hsecs) * 10 * s.total_samples / r,4)  "Held ms" ,
-     ROUND((t2.hsecs - t1.hsecs) * 10 * s.total_samples / dist_samples / r,4) "Avg hold ms"
+     ROUND((t2.hsecs - t1.hsecs) * 10 * s.total_samples / dist_samples / r,4) "Avg hold ms",
+     r total_samples
 FROM   t1, samples s, t2
 WHERE  ROWNUM <= 50;

@@ -100,7 +100,7 @@ Outputs:
     @cdb2: 12.1={con_dbid} default={1e9}
     @check_access_pdb: pdb/awr_pdb_snapshot={AWR_PDB_} default={DBA_HIST_}
     @check_access_cdb: cdb={use_hash(a)} default={use_nl(a)}
-    @check_access_aux: default={(26/8/12)}
+    @check_access_aux: default={(26/8/12)-6}
     &dplan: default={&check_access_pdb.sql_plan} sqlset={(select a.*,0+null object# from dba_sqlset_plans a)}
     &cid  : default={dbid} sqlset={con_dbid}
     &src1 : default={&check_access_pdb.sql_plan} sqlset={dba_sqlset_plans}
@@ -638,6 +638,7 @@ plan_line_agg AS(
 plan_line_xplan AS
  (SELECT /*+no_merge(x) use_hash(x o)  qb_name(plan_line_xplan)*/
        r,
+       max(case when nvl(x.id,-2)<0 then regexp_instr(x.plan_table_output,'\| *E\-Time *\|') end) over(partition by x.phv) etime,
        x.phv phv,
        x.plan_table_output AS plan_output,
        x.id,x.prefix,
@@ -648,8 +649,8 @@ plan_line_xplan AS
        secs,o.min_dop,o.max_dop,o.skew,o.buf,o.io_reqs,o.io_bytes,o.pga,o.temp,
        nvl(top_grp,' ') top_grp,
        nvl(trim(dbms_xplan.format_number(CASE 
-               WHEN REGEXP_LIKE(x.plan_table_output,'(TABLE ACCESS .*FULL|INDEX .*FAST FULL)') THEN
-                   io_cost/&check_access_aux 
+               WHEN REGEXP_LIKE(x.plan_table_output,'(TABLE ACCESS [^|]*(FULL|SAMPLE)|INDEX .*FAST FULL)') THEN
+                   greatest(1,floor(io_cost/&check_access_aux))
                ELSE
                    io_cost
            END)),' ') blks,
@@ -690,7 +691,7 @@ plan_line_widths AS(
     SELECT a.*,swait+swait2+sdop + sskew + csize + rate_size + ssec + sexe + saas + scpu + sio + scl + scc + sapp + ssch +scfg + sadm + snet + soth + splsql + sbuf + sioreqs + siobytes +spga +stemp+sawrela+sawrela+ 6 widths
     FROM( 
        SELECT  flag,phv,
-               nvl(greatest(max(length(oid)) + 1, 6),0) as csize,
+               nvl(greatest(max(length(oid)) + 1, 5),0) as csize,
                nvl(greatest(max(length(alias)) + 1, 6),0) as calias,
                nvl(greatest(max(length(blks)) + 1, 6),0) as cblks,
                nvl(greatest(max(length(trim(nullif(full_hash,oid)))), 11),0) as shash,
@@ -761,20 +762,29 @@ plan_output AS (
            CASE
                WHEN plan_output LIKE '---------%' THEN
                    rpad('-', widths, '-')
-               WHEN b.id = -2 OR b.id > -1 THEN
+               WHEN b.id = -2 THEN
+                   fmt
+               WHEN b.id > -1 THEN
                    fmt
                WHEN b.id = -4 THEN
                    phvs
                WHEN b.id = -5 THEN
                    time_range
            END || 
-           CASE WHEN b.id not in(-4,-5) THEN substr(plan_output, nvl(LENGTH(prefix), 0) + 1) END ||
+           CASE WHEN b.id not in(-4,-5) THEN CASE
+               WHEN b.id =-2 and etime>0 THEN
+                   --substr(plan_output, nvl(LENGTH(prefix), 0) + 1)
+                   substr(regexp_replace(plan_output,'[^\|]+',rpad(' Blks',cblks-1),etime,1), nvl(LENGTH(prefix), 0) + 1)
+               WHEN b.id >-1 and etime>0  THEN
+                   substr(regexp_replace(plan_output,'[^\|]+',lpad(nvl(blks,' '),cblks-1),etime,1), nvl(LENGTH(prefix), 0) + 1)
+               ELSE
+                   substr(plan_output, nvl(LENGTH(prefix), 0) + 1)
+           END END ||
            CASE WHEN &simple=1 THEN CASE
-               WHEN plan_output LIKE '---------%' THEN rpad('-',calias+cblks,'-')
-               WHEN b.id = -2 THEN rpad(' Blks',cblks-1)||'|'||rpad(' Alias',calias-1)||'|'
-               WHEN b.id > -1 THEN lpad(blks,cblks-1)||'|'||rpad(alias,calias-1)||'|'
-           END END
-           plan_line
+               WHEN plan_output LIKE '---------%' THEN rpad('-',calias,'-')
+               WHEN b.id = -2 THEN rpad(' Alias',calias-1)||'|'
+               WHEN b.id > -1 THEN rpad(alias,calias-1)||'|'
+           END END plan_line
     FROM   (select * from format_info where flag='line') a
     JOIN   plan_line_xplan b USING  (phv,r)
     WHERE  b.id>=-5 and (b.id!=-1 or b.id=-1 and trim(plan_output) is not null)
@@ -813,4 +823,4 @@ final_output as(
             ) b) b
     WHERE a.phv=b.phv)
 select fmt ASH_PLAN_OUTPUT from final_output order by id,r,seq;
---select * from ash_raw WHERE PLAN_SEQ=1
+--select * from plan_line_xplan

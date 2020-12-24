@@ -61,17 +61,16 @@ WITH
     t1 AS (SELECT hsecs FROM v$timer),
     sam AS (
       SELECT * FROM &GV
-        SELECT /*+ opt_param('_optimizer_mjc_enabled','false') ORDERED ORDERED_PREDICATES USE_NL(s2 s) USE_NL(l l.gv$latchholder.x$ksuprlat) NO_TRANSFORM_DISTINCT_AGG  no_expand*/
+        SELECT /*+ opt_param('_optimizer_mjc_enabled','false') ORDERED ORDERED_PREDICATES USE_NL(s) USE_NL(l l.gv$latchholder.x$ksuprlat) NO_TRANSFORM_DISTINCT_AGG  no_expand*/
             &fields
           , COUNT(DISTINCT gets)           dist_samples
           , COUNT(*)                       total_samples
           , COUNT(*)/max(max(r)) over()    sample_rate
         FROM
-            (SELECT hsecs+&v3*100 target,rownum r 
-             FROM v$timer
+            (SELECT hsecs,rownum r 
+             FROM   v$timer
              WHERE  userenv('instance')=nvl(:instance,userenv('instance'))
-             CONNECT BY LEVEL <= &v3*5e4) s1,
-            (select hsecs from v$timer) s2,
+             CONNECT BY sys.standard.current_timestamp - current_timestamp <= numtodsinterval(&v3,'second')) s1,
             v$latchholder l,
             (SELECT /*+MERGE MERGE(s)*/ userenv('instance') inst_id
                   , sid  indx
@@ -80,8 +79,7 @@ WITH
                   , sql_id
              FROM v$session s
              WHERE  ('&V1' is null or '&V1' in(sql_id,''||sid))) s
-        WHERE s2.hsecs<s1.target
-        AND  (LOWER(l.name) LIKE LOWER('%&V2%') OR LOWER(RAWTOHEX(l.laddr)) LIKE LOWER('%&V2%'))
+        WHERE (LOWER(l.name) LIKE LOWER('%&V2%') OR LOWER(RAWTOHEX(l.laddr)) LIKE LOWER('%&V2%'))
         AND  l.sid = s.indx
         AND  inst_id=nvl(:instance,inst_id)
         GROUP BY &fields

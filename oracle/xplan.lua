@@ -1,6 +1,6 @@
 local db,cfg=env.getdb(),env.set
 local xplan={}
-local default_fmt,e10053,prof,sqldiag="ALLSTATS ALL -PROJECTION OUTLINE REMOTE"
+local default_fmt,e10053,prof,sqldiag="ALLSTATS ALL -ALIAS -PROJECTION OUTLINE REMOTE"
 local calc_mbrc=[[DECLARE
    mreadtim PLS_INTEGER;
    sreadtim PLS_INTEGER;
@@ -32,7 +32,7 @@ BEGIN
         mreadtim := ROUND(ioseektim+blks/iotfrspeed*mbrc);
     END IF;
     
-    :cost := round(mreadtim/sreadtim/NVL(mbrc,8),6);
+    :cost := utl_lms.format_message('(%d/%d/%d)-%d',mreadtim,sreadtim,mbrc,mbrc-2);
 END;]]
 function xplan.explain(fmt,sql)
     local ora,sqltext=db.C.ora
@@ -62,7 +62,7 @@ function xplan.explain(fmt,sql)
         fmt = 'adaptive '..fmt
     end
 
-    local rtn={cost='#NUMBER'}
+    local rtn={cost='#VARCHAR'}
     db:exec_cache(calc_mbrc,rtn,'Internal_XPLAN')
     sql=env.COMMAND_SEPS.match(sql)
     local sql1= sql:gsub("\r?\n","")
@@ -178,8 +178,8 @@ function xplan.explain(fmt,sql)
                  o.oid,
                  o.maxid,
                  nvl(trim(dbms_xplan.format_number(CASE 
-                     WHEN REGEXP_LIKE(x.plan_table_output,'(TABLE ACCESS .*FULL|INDEX .*FAST FULL)') THEN
-                         io_cost/@mbrc@ 
+                     WHEN REGEXP_LIKE(x.plan_table_output,'(TABLE ACCESS [^|]*(FULL|SAMPLE)|INDEX .*FAST FULL)') THEN
+                         greatest(1,floor(io_cost/@mbrc@)) 
                      ELSE
                          io_cost
                  END)),' ') blks,
