@@ -30,7 +30,7 @@ SELECT COALESCE(:V3,:INSTANCE,'A') INST_ID,CATEGORY,metric_name,
 FROM (
     SELECT /*+no_merge*/ INSTANCE_NUMBER INST_ID,metric_name, AVG(average) awr_avg, '| '||metric_unit unit
     FROM   dba_hist_sysmetric_summary
-    WHERE  BEGIN_TIME<=NVL(to_date(NVL(:V2,:ENDTIME),'yymmddhh24mi'),sysdate)
+    WHERE  BEGIN_TIME<=NVL(to_date(NVL(:V2,:ENDTIME),'yymmddhh24mi'),sysdate+1)
     AND    END_TIME>=NVL(to_date(NVL(:V1,:STARTTIME),'yymmddhh24mi'),sysdate-7)
     AND    INSTANCE_NUMBER=COALESCE(0+:V3,INSTANCE_NUMBER)
     AND    group_id=2

@@ -22,7 +22,7 @@
                JOIN   (SELECT A.*, TS# TABLESPACE_ID FROM DBA_HIST_TABLESPACE_STAT A WHERE INSTANCE_NUMBER=userenv('instance')) USING(SNAP_ID,DBID,TABLESPACE_ID)
                NATURAL JOIN dba_hist_snapshot
                JOIN   DBA_TABLESPACES on (TABLESPACE_NAME=tsname)
-               WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss')-3/144,sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate)
+               WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss')-3/144,sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
                AND    (:V1 IS NULL OR upper(TSNAME) like upper('%&V1%')))
          WHERE VALUE>0
          GROUP BY end_time,name

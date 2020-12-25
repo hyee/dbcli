@@ -72,6 +72,7 @@ Parameters
     _memory_imm_mode_without_autosga: when 0 then stop resize of SGA component
     _kgl_hot_object_copies: number of hot copies for the object defined by dbms_shared_pool.markhot to reduce mutex/cursor contention
     _kgl_time_to_wait_for_locks: defaults to 15 minutes, control the threshold of (library cache)lock timeout and thuse raise ORA-04021
+    _kcfis_fast_response_enabled: use to fix the inefficient offload performance in 11g to fetch first n rows
 DMLs.
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
@@ -100,7 +101,7 @@ Hints:
        * table_stats(scott.emp set rows=14 blocks=1 row_length=10)
     INDEX_STATS(<Table> <Index> <SCALE|NULL> {<BLOCKS|INDEX_ROWS|KEYS|CLUSTERING_FACTOR|ROWS>=<value>})
     COLUMN_STATS(<Table> <Column> <SCALE|NULL> {<LENGTH|DISTINCT|NULLS|MIN|MAX> ><value>})
-	NUM_INDEX_KEYS(<@QB>] <table> <index> <cols>): used on multi-column index for INLIST ITERATOR, specifying how many columns(keys) to be put in access part and the others in filter part
+	NUM_INDEX_KEYS(<@QB>] <table> <index> <cols>): used on multi-column index for INLIST ITERATOR, specifying how many columns(keys) to be put in access part and the others in filter part, or try "USE_CONCAT(OR_PREDICATES(32767))"
     PQ_DISTRIBUTE_WINDOW: used on PX window function.  1: hash then window sort 2: window sort then hash 3: range then window sort
     OR_EXPAND(<qb> (1) (2) ...(N)): expand N or expression to union all
     BUSHY_JOIN([<qb>] (<alias1>,<alias2>,...)): enable bushy join

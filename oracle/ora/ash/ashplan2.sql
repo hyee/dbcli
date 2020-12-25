@@ -147,7 +147,7 @@ ash_detail as (
             from   &ASH h
             WHERE  :V1 in(sql_id,top_level_sql_id)
             AND    sample_time BETWEEN NVL(to_date(nvl(:V3,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7) 
-                                   AND NVL(to_date(nvl(:V4,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE)) H) H) ,
+                                   AND NVL(to_date(nvl(:V4,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE+1)) H) H) ,
 
 ash as(SELECT b.*,
               ROUND(SUM(AAS) OVER(PARTITION BY SQL_ID,SQL_PLAN_LINE_ID,&OBJ)*100/SUM(AAS) OVER(PARTITION BY SQL_PLAN_LINE_ID),1) tenv

@@ -330,4 +330,4 @@ GROUP  BY SQL_ID,
           parsing_schema_name;
           
 
-show sqlver -s"&v1"
+--show sqlver -s"&v1"

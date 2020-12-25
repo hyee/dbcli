@@ -42,7 +42,7 @@
 					FROM   dba_hist_snapshot s
 					WHERE  ('&3' IS NULL OR instr(',&v3,', ',' || instance_number || ',') > 0)
 					AND    s.end_interval_time BETWEEN nvl(to_date('&1', 'YYMMDDHH24MI') - 1.1 / 24, SYSDATE - 7) AND
-						nvl(to_date('&2', 'YYMMDDHH24MI'), SYSDATE)) a
+						nvl(to_date('&2', 'YYMMDDHH24MI'), SYSDATE+1)) a
 			WHERE  minid < maxid
 			AND    snap_id IN (minid, maxid)			
 		}}

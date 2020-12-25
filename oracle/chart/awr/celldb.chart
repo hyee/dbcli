@@ -38,7 +38,7 @@
                                 86400 * ((end_interval_time + 0) - (begin_interval_time + 0)) secs,
                                 row_number() OVER(PARTITION BY dbid, snap_id ORDER BY 1) r
                          FROM   dba_hist_snapshot a
-                         WHERE  end_interval_time+0 between NVL(to_date(:V1,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V2,'yymmddhh24miss'),sysdate))
+                         WHERE  end_interval_time+0 between NVL(to_date(:V1,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V2,'yymmddhh24miss'),sysdate+1))
                   USING  (snap_id, dbid)
                   WHERE  r = 1)
           WHERE  nvl(FLASH_REQUESTS, -1) >= 0 and nvl(FLASH_LARGE_IO_SERVICE_TIME,-1)>=0)

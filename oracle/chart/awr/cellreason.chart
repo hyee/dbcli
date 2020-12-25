@@ -38,7 +38,7 @@
                          END flag
                   FROM   Dba_Hist_Snapshot a
                   WHERE  end_interval_time + 0 BETWEEN NVL(to_date(:V1, 'yymmddhh24miss'), SYSDATE - 7) - 1.2 / 24 AND
-                         NVL(to_date(:V2, 'yymmddhh24miss'), SYSDATE)) a
+                         NVL(to_date(:V2, 'yymmddhh24miss'), SYSDATE+1)) a
           JOIN   DBA_HIST_CELL_NAME b
           USING  (dbid, snap_id)
           JOIN  (SELECT /*+leading(a.s) full(a.s) no_index(a.s)*/ 

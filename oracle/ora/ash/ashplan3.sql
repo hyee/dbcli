@@ -295,7 +295,7 @@ sqlstats as(
     WHERE  ('D',sql_id,plan_hash_value,dbid) in(select * from sql_list)
     AND    elapsed_time_Delta>0
     AND    dbid=nvl(0+'&dbid',dbid)
-    AND    end_interval_Time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
+    AND    end_interval_Time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE+1)
     GROUP  BY dbid,sql_id, rollup(plan_hash_value)
 ),
 ash_raw as (
@@ -386,7 +386,7 @@ ash_raw as (
                             to_char(sample_time,'YYMMDDHH24MISS')+0 stime
                     from   gv$active_session_history a
                     where  inst_id=nvl(:instance,inst_id)
-                    and    sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
+                    and    sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE+1)
                     and   (:V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value,''||&phf) or 
                             qc_session_id   != session_id or 
                             qc_instance_id  != inst_id or 
@@ -410,7 +410,7 @@ ash_raw as (
                          from   &check_access_pdb.active_sess_history d
                          WHERE   '&vw' IN('A','D')
                          AND     dbid=nvl(0+'&dbid',&did)
-                         AND     sample_time BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)) a
+                         AND     sample_time BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE+1)) a
                 WHERE 1=1
                 &swcb
                 ) a ) h
@@ -653,7 +653,7 @@ plan_line_widths AS(
 format_info as (
     SELECT flag,phv,r,widths,id,
        decode(id,
-            -2,decode(flag,'line',lpad('Ord', csize),'phv','|'||lpad('Plan Hash ',csize),'|'||rpad('&titl2',csize)) || lpad('Full Hash', shash) || ' |'
+            -2,decode(flag,'line',lpad('Ord', csize),'phv','|'||lpad('Plan Hash ',csize),'|'||rpad('&titl2',csize)) || lpad(nvl2(regexp_substr(:V1,'^\d+$'),'SQL Id  ','Full Hash'), shash) || ' |'
                 ||decode(sawrexec+sawrela,0,'',lpad('AWR-Exes',sawrexec)||lpad('Avg-Ela',sawrela)||'|')
                 ||lpad('DoP  ', sdop)|| lpad('Skew  ', sskew)|| lpad('Execs', sexe) || lpad('Secs', rate_size) || lpad('AAS', saas) || lpad('DB-Time', ssec) 
                 ||nullif('|'||lpad('CPU%', scpu)  || lpad('IO%', sio) || lpad('CL%', scl) || lpad('CC%', scc) || lpad('APP%', sapp)

@@ -31,7 +31,6 @@ BEGIN
     IF mreadtim IS NULL THEN
         mreadtim := ROUND(ioseektim+blks/iotfrspeed*mbrc);
     END IF;
-    
     :cost := utl_lms.format_message('(%d/%d/%d)-%d',mreadtim,sreadtim,mbrc,mbrc-2);
 END;]]
 function xplan.explain(fmt,sql)

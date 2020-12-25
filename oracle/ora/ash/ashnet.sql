@@ -33,7 +33,7 @@ FROM (
         where p2text='#bytes' 
         and   nvl(wait_class,'Network')='Network'
         and   upper(machine) like upper('%&V1%')
-        and   sample_time BETWEEN &snap AND NVL(to_date(nvl(:V3,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE)
+        and   sample_time BETWEEN &snap AND NVL(to_date(nvl(:V3,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE+1)
         group by machine,event,rollup((sql_id,top_level_sql_id))) a)
 WHERE gid  = 1
 AND   rnk <= 100
