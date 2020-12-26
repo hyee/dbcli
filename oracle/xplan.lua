@@ -151,25 +151,40 @@ function xplan.explain(fmt,sql)
         (SELECT a.*,
                 qblock_name qb,
                 replace(object_alias,'"') alias,
-                @proj@ proj,
-                nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
+                @proj@,
+                access_predicates ap,filter_predicates fp,search_columns sc
          FROM   (SELECT a.*, decode(parent_id,-1,id-1,parent_id) pid, dense_rank() OVER(ORDER BY plan_id DESC) seq FROM plan_table a WHERE STATEMENT_ID='INTERNAL_DBCLI_CMD') a
          WHERE  seq = 1
          ORDER  BY id),
         hierarchy_data AS
-         (SELECT id, pid,qb,alias,pred,proj,io_cost,rownum r
+         (SELECT id, pid,qb,alias,io_cost,rownum r_,ap,fp,nvl(nullif(sc,0),keys) sc,nvl2(rowsets,'R'||rowsets||nvl2(proj,'/P'||proj,''),proj) proj
             FROM   sql_plan_data
             START  WITH id = 0
             CONNECT BY PRIOR id = pid
             ORDER  SIBLINGS BY position desc,id DESC),
         ordered_hierarchy_data AS
-         (SELECT id,
-                 pid,qb,alias,pred,proj,io_cost,
-                 row_number() over(ORDER BY r DESC) AS OID,
-                 MAX(id) over() AS maxid
-            FROM   hierarchy_data),
+         (SELECT A.*,
+                CASE 
+                    WHEN nvl(ap,sc) IS NOT NULL THEN 'A'
+                END||CASE 
+                    WHEN sc IS NOT NULL THEN sc
+                    WHEN ap IS NOT NULL THEN 
+                      (SELECT count(distinct regexp_substr(regexp_substr(replace(ap,al),'([^.]|^)"([a-zA-Z0-9#_$]+)([^.]|$)"',1,level),'".*"'))
+                       FROM   dual
+                       connect by regexp_substr(replace(ap,al),'([^.]|^)"([a-zA-Z0-9#_$]+)([^.]|$)"',1,level) IS NOT NULL)
+                END||CASE 
+                    WHEN fp IS NOT NULL THEN
+                    (SELECT 'F'||count(distinct regexp_substr(regexp_substr(replace(fp,al),'([^.]|^)"([a-zA-Z0-9#_$]+)([^.]|$)"',1,level),'".*"'))
+                     FROM dual
+                     connect by regexp_substr(replace(fp,al),'([^.]|^)"([a-zA-Z0-9#_$]+)([^.]|$)"',1,level) IS NOT NULL) 
+                END pred
+           FROM(SELECT A.*,
+                       '"'||regexp_substr(NVL(ALIAS,FIRST_VALUE(ALIAS IGNORE NULLs) OVER(ORDER BY r_ ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)),'[^@]+')||'".' al,
+                       row_number() over(ORDER BY r_ DESC) AS OID,
+                       MAX(id) over() AS maxid
+                FROM   hierarchy_data A) a),
         xplan_data AS
-         (SELECT /*+materialize ordered use_nl(o) */
+         (SELECT /*+inline ordered use_nl(o) no_merge*/
                  x.r,
                  x.plan_table_output AS plan_table_output,
                  o.id,
@@ -183,7 +198,7 @@ function xplan.explain(fmt,sql)
                          io_cost
                  END)),' ') blks,
                  COUNT(*) over() AS rc
-            FROM   (select rownum r,x.* from (SELECT * FROM TABLE(dbms_xplan.display('PLAN_TABLE', NULL, '@fmt@', 'PLAN_ID=(select max(plan_id) from plan_table WHERE STATEMENT_ID=''INTERNAL_DBCLI_CMD'')'))) x) x
+            FROM   (SELECT rownum r,x.* FROM TABLE(dbms_xplan.display('PLAN_TABLE', NULL, '@fmt@', 'PLAN_ID=(select max(plan_id) from plan_table WHERE STATEMENT_ID=''INTERNAL_DBCLI_CMD'')')) x) x
             LEFT   OUTER JOIN ordered_hierarchy_data o
             ON     (o.id = CASE WHEN regexp_like(x.plan_table_output, '^\|[-\* ]*[0-9]+ \|') THEN to_number(regexp_substr(x.plan_table_output, '[0-9]+')) END))
         select plan_table_output
@@ -226,7 +241,9 @@ function xplan.explain(fmt,sql)
                  end)
         order  by r]]
     sql=sql:gsub('@fmt@',fmt):gsub('@sql@',sql_id):gsub('@mbrc@',rtn.cost)
-    sql=sql:gsub('@proj@',db.props.version>11.1 and [[nvl2(projection,1+regexp_count(regexp_replace(regexp_replace(projection,'[\[.*?\]'),'\(.*?\)'),', '),null)]] or 'cast(null as number)')
+    sql=sql:gsub('@proj@',db.props.version>11.1 and 
+          [[nullif(regexp_count(projection,'\[[A-Z0-9,]+\](,|$)'),0) proj,nvl2(access_predicates,0+regexp_substr(projection,'#keys=(\d+)',1,1,'i',1),null) keys,0+regexp_substr(projection,'rowset=(\d+)',1,1,'i',1) rowsets]] 
+      or  [[(select nullif(count(1),0) from dual connect by regexp_substr(projection,'\[[A-Z0-9,]+\](,|$)',1,level) is not null) proj,nullif(0,0) keys,nullif(0,0) rowsets]])
     cfg.set("pipequery","off")
     --db:rollback()
     if e10053==true then

@@ -72,7 +72,7 @@ Outputs:
  |OTH%       | Value = 100 * <AAS for the Waits that none of above classes> / AAS                                                   |
  |PLSQL      | Value = 100 * <AAS for 'x'> / AAS, of which 'x' is the waits for PL/SQL & Java & recursive calls                     | 
  |Blks       | For table/index scans, return the est blocks; otherwise returns the IO-Cost                                          |
- |SC         | Search columns, indicating the #columns for the access predicates                                                    |
+ |Pred       | Search columns, indicating the #columns for the access/filter predicates                                             |
  |-          | -                                                                                                                    |
  |IO-Reqs    | value = sum(<DELTA_READ_IO_REQUESTS>+<DELTA_WRITE_IO_REQUESTS>) / <Execs>                                            |
  |IO-Bytes   | value = sum(<DELTA_INTERCONNECT_IO_BYTES>) / <Execs>                                                                 |
@@ -316,10 +316,12 @@ ALL_PLANS AS(
             EXTRACTVALUE(COLUMN_VALUE,'//PHV')+0 PHV,
             EXTRACTVALUE(COLUMN_VALUE,'//OBJ')+0 OBJECT#,
             EXTRACTVALUE(COLUMN_VALUE,'//POS')+0 POS,
-            NULLIF(EXTRACTVALUE(COLUMN_VALUE,'//SC'),'0')  SC,
+            NULLIF(EXTRACTVALUE(COLUMN_VALUE,'//SC'),'0')  AC,
+            EXTRACTVALUE(COLUMN_VALUE,'//AP') AP,
+            EXTRACTVALUE(COLUMN_VALUE,'//FP') FP,
             EXTRACTVALUE(COLUMN_VALUE,'//IO_COST')+0 IO_COST,
             EXTRACTVALUE(COLUMN_VALUE,'//OBJECT_NAME') OBJECT_NAME,
-            EXTRACTVALUE(COLUMN_VALUE,'//OBJECT_ALIAS') ALIAS,
+            REPLACE(EXTRACTVALUE(COLUMN_VALUE,'//OBJECT_ALIAS'),'"') ALIAS,
             EXTRACTVALUE(COLUMN_VALUE,'//TM') TM,
             EXTRACTVALUE(COLUMN_VALUE,'//OPERATION') OPERATION,
             EXTRACTVALUE(COLUMN_VALUE,'//PLAN_HASH_FULL') PLAN_HASH_FULL,
@@ -347,7 +349,7 @@ ALL_PLANS AS(
                            object_node tq,operation||' '||options operation,
                            &phf2 plan_hash_full,
                            instr(other_xml,'adaptive_plan') is_adaptive_,
-                           io_cost,search_columns sc,
+                           io_cost,access_predicates ap,filter_predicates fp,search_columns sc,
                            1e9 cid,
                            &did dbid 
                     FROM   gv$sql_plan a 
@@ -372,7 +374,7 @@ ALL_PLANS AS(
                             object_node tq,operation||' '||options,
                             &phf2 plan_hash_full,
                             instr(other_xml,'adaptive_plan') is_adaptive_,
-                            io_cost,search_columns,
+                            io_cost,access_predicates ap,filter_predicates fp,search_columns sc,
                             &cdb2 cid,
                             &cid dbid
                     FROM    &dplan a
@@ -440,20 +442,36 @@ ash_phv_agg as(
         left join (select distinct phv,phf,is_adaptive from sql_plan_data) b using(phv)) A
     WHERE phv_rate>=0.1),
 hr AS((select /*+MATERIALIZE qb_name(hr) opt_estimate(query_block rows=100000)*/ 
-              distinct id, parent_id pid, phv,operation,alias,io_cost,pos,sc,
+              distinct id, parent_id pid, phv,operation,alias,io_cost,pos,ac,ap,fp,
               MAX(id) over(PARTITION BY phv) AS maxid 
        from sql_plan_data 
        where phv in(select phv from ash_phv_agg where plan_exists=1))),
 hierarchy_data AS
- (SELECT /*+CONNECT_BY_COMBINE_SW*/ id, pid, phv,operation,maxid,alias,sc,io_cost,rownum rn
+ (SELECT /*+CONNECT_BY_COMBINE_SW*/ hr.*,rownum rn
   FROM   hr
   START  WITH id = 0
   CONNECT BY PRIOR id = pid AND phv=PRIOR phv 
   ORDER  SIBLINGS BY pos desc,id DESC),
 ordered_hierarchy_data AS
  (SELECT a.*,
-         row_number() over(PARTITION BY phv ORDER BY rn DESC) AS OID
-  FROM   hierarchy_data a),
+         CASE 
+             WHEN nvl(ap,ac) IS NOT NULL THEN 'A'
+         END||CASE 
+             WHEN ac IS NOT NULL THEN ac
+             WHEN ap IS NOT NULL THEN 
+               (SELECT ''||count(distinct regexp_substr(replace(ap,al),'([^.]|^)"([a-zA-Z0-9#_$]+)([^.]|$)"',1,level,'i',2))
+                FROM   dual
+               connect by regexp_substr(replace(ap,al),'([^.]|^)"([a-zA-Z0-9#_$]+)([^.]|$)"',1,level) IS NOT NULL)
+         END||CASE 
+             WHEN fp IS NOT NULL THEN
+             (SELECT 'F'||count(distinct regexp_substr(replace(fp,al),'([^.]|^)"([a-zA-Z0-9#_$]+)([^.]|$)"',1,level,'i',2))
+              FROM dual
+              connect by regexp_substr(replace(fp,al),'([^.]|^)"([a-zA-Z0-9#_$]+)([^.]|$)"',1,level) IS NOT NULL) 
+         END sc
+  FROM  (SELECT a.*,
+                '"'||regexp_substr(NVL(ALIAS,FIRST_VALUE(ALIAS IGNORE NULLs) OVER(PARTITION BY phv ORDER BY rn ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)),'[^@]+')||'".' al,
+                row_number() over(PARTITION BY phv ORDER BY rn DESC) AS OID
+         FROM   hierarchy_data a) a),
 qry AS
  ( SELECT DISTINCT sql_id sq,
          flag flag,
@@ -695,7 +713,7 @@ plan_line_widths AS(
        SELECT  flag,phv,
                nvl(greatest(max(length(oid)) + 1, 5),0) as csize,
                nvl(greatest(max(length(alias)) + 1, 6),0) as calias,
-               nvl(greatest(max(length(sc)) + 1, 3),0) as csc,
+               nvl(greatest(max(length(sc)) + 1, 5),0) as csc,
                nvl(greatest(max(length(blks)) + 1, 6),0) as cblks,
                nvl(greatest(max(length(trim(nullif(full_hash,oid)))), 11),0) as shash,
                nvl(greatest(max(length(trim(secs)))+1, 8),0)*&simple as ssec,
@@ -786,7 +804,7 @@ plan_output AS (
            END END ||
            CASE WHEN &simple=1 THEN CASE
                WHEN plan_output LIKE '---------%' THEN rpad('-',calias,'-')
-               WHEN b.id = -2 THEN decode(csc,0,'',lpad('SC',csc-1)||'|')||rpad(' Alias',calias-1)||'|'
+               WHEN b.id = -2 THEN decode(csc,0,'',lpad('Pred',csc-1)||'|')||rpad(' Alias',calias-1)||'|'
                WHEN b.id > -1 THEN decode(csc,0,'',lpad(nvl(sc,' '),csc-1)||'|')||rpad(alias,calias-1)||'|'
            END END plan_line
     FROM   (select * from format_info where flag='line') a
