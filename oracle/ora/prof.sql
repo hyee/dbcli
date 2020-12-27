@@ -42,7 +42,7 @@ BEGIN
 
         OPEN :cur FOR
             WITH SRC AS
-             (SELECT /*+MATERIALIZE no_merge(u)*/
+             (SELECT /*+MATERIALIZE no_merge(u) opt_param('cursor_sharing' 'force')*/
                     U.*, EXTRACTVALUE(b.COLUMN_VALUE,'//TEXT') text,EXTRACTVALUE(b.COLUMN_VALUE,'//LINE')+0 line#,EXTRACTVALUE(b.COLUMN_VALUE,'//SUB_NAME') subname
               FROM  (SELECT * FROM PLSQL_PROFILER_UNITS WHERE RUNID = run_id) u,
                      TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(

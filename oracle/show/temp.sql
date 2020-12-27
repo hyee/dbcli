@@ -3,7 +3,7 @@ set feed off
 col BYTES_CACHED,BYTES_USED,bytes for kmg
 select  DISTINCT * from gv$temp_extent_pool order by 2,3,1;
 
-SELECT /*+ ordered */
+SELECT /*+ ordered opt_param('cursor_sharing' 'force')*/
      B.SID||','||B.SERIAL#||',@'||B.INST_ID sid,
      P.SPID,
      B.USERNAME,

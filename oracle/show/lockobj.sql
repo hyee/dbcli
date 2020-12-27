@@ -10,7 +10,7 @@ WITH b AS
   FROM   v$lock_type t, gv$lock l
   WHERE  t.type = l.type
   AND    (t.id1_tag LIKE 'object%' and id1>0))
-SELECT /*+ordered*/
+SELECT /*+ordered opt_param('cursor_sharing' 'force')*/
          c.inst_id,
          c.sid,
          d.type,

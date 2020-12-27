@@ -1,6 +1,6 @@
 /*[[
     Get the buffer cache info for a specific object. Usage: @@NAME [owner.]<table|index>[.<partition>] [inst]
-   
+    Source table is x$bh, also available at X$KCBOQH where num_buf=number of scur
 ]]*/
 
 ora _find_object &V1

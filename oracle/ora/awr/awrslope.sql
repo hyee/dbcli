@@ -34,7 +34,7 @@ WITH per_time AS (
 select /*+materialize*/ * from(
     SELECT max(sql_id) keep(dense_rank last order by snap) sql_id,&SIG
            grouping_id(plan_hash_value) grp,
-           SYSDATE - max(end_time) days_ago,
+           SYSDATE+1 - max(end_time) days_ago,
            count(distinct nullif(plan_hash_value,0)) over(partition by &BASE) plans,
            min(begin_time) min_seen,
            max(end_time) max_seen,
@@ -46,7 +46,7 @@ select /*+materialize*/ * from(
                  nvl(MIN(decode(executions,0,null,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN 0 FOLLOWING AND UNBOUNDED FOLLOWING),
                  MAX(decode(parse_calls,0,null,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN UNBOUNDED PRECEDING AND 0 PRECEDING)) snap
           FROM  &awr$sqlstat s
-          WHERE end_time BETWEEN NVL(TO_DATE(nvl(:V1,:starttime),'YYMMDDHH24MI'),SYSDATE-31) AND NVL(TO_DATE(nvl(:V2,:endtime),'YYMMDDHH24MI'),SYSDATE)
+          WHERE end_time BETWEEN NVL(TO_DATE(nvl(:V1,:starttime),'YYMMDDHH24MI'),SYSDATE-31) AND NVL(TO_DATE(nvl(:V2,:endtime),'YYMMDDHH24MI'),SYSDATE+1)
           AND   (:instance is null or instance_number=:instance)
           AND   &filter)
     GROUP BY grouping sets((&BASE,snap),(&BASE,snap,plan_hash_value,snap_id,trunc(end_time)))

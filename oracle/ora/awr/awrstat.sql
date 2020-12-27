@@ -1,8 +1,9 @@
 /*[[
-    Show the AWR performance trend for a specific SQL. Usage: @@NAME <sql_id|plan_hash_value|signature> [-d|-p] [-m]
-    -d: Group by day, otherwise group in detail
-    -p: Group by plan_hash_value
-    -m: Group by signature, otherwise group by sql id
+    Show the AWR performance trend for a specific SQL. Usage: @@NAME <sql_id|plan_hash_value|signature> [-d|-p] [-avg] [-m]
+    -d  : Group by day, otherwise group in detail
+    -p  : Group by plan_hash_value
+    -m  : Group by signature, otherwise group by sql id
+    -avg: Show average stats
 
     Sample Output:
     ==============
@@ -34,7 +35,9 @@ col ela,ELA(Avg) format usmhd2
 col iowait,cpuwait,ccwait,clwait,apwait,plsql for pct1
 Col buff,read,write,cellio,oflin,oflout format kmg
 
-select time,sql_id,plan_hash,
+select time,
+       &BASE,
+       plan_hash,
        sum(exec)   exec,
        sum(parse)  parse,
        max(vers)  vers,
@@ -53,10 +56,11 @@ select time,sql_id,plan_hash,
        round(sum(write)/&avg,2)  write,
        round(sum(rows#)/&avg,2) rows#,
        round(sum(fetches)/&avg,2) fetches,
+       round(sum(invalids)/&avg,2) invalid,
        max(px_count) px
 FROM(
     select /*+no_expand*/
-           to_char(max(tim),'&TIM') time,sql_id,plan_hash,
+           to_char(max(tim),'&TIM') time,&BASE,plan_hash,
            sum(exec)   exec,
            sum(parse)  parse,
            max(vers)  vers,
@@ -76,10 +80,11 @@ FROM(
            sum(oflout) oflout,
            sum(rows#) rows#,
            sum(fetches) fetches,
-           sum(PLSQL) PLSQL
+           sum(PLSQL) PLSQL,
+           sum(invalids) invalids
     from(
         select a.end_interval_time tim,
-               a.sql_id,
+               a.&BASE,
                a.plan_hash_value plan_hash,
                a.executions EXEC,
                a.version_count vers,
@@ -99,10 +104,11 @@ FROM(
                nvl(phywrite,direct_writes) WRITE,
                buffer_gets buff,
                a.rows_processed rows#,
-               a.fetches
-         from &awr$sqlstat  a
+               a.fetches,
+               invalidations invalids
+         from &awr$sqlstat  a --/* only capture sqls with the full set of execution stats */ BITAND (NVL(flag, 0), 1) = 0
         WHERE :V1 in(sql_id,''||plan_hash_value,''||signature))
-    group by snap_id,sql_id,plan_hash
+    group by snap_id,&BASE,plan_hash
     having sum(ela)>0)
- group by time,sql_id,plan_hash
+ group by time,&BASE,plan_hash
  order by 1 desc

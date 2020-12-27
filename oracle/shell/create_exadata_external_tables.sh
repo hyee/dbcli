@@ -1,12 +1,33 @@
 #!/bin/bash
 # Usage: ./create_exa_external_tables.sh <dir path to of the extertnal directory> [cell ssh user] [sqlplus connect string]
-dir=$1
+
 ssh_user=${2:-root}
 db_account="${3:-/ as sysdba}"
 
 if [ "$1" = "" ] ; then
     echo "Usage: create_exa_external_tables.sh <dir path to of the extertnal directory> [cell ssh user] [sqlplus connect string]" 1>&2
     exit 1
+fi
+
+if [ "$1" = "remove" ] ; then
+sqlplus -s "$db_account" <<'EOF'
+    set verify off lines 150
+    PRO
+    PRO
+    PRO Cleaning up residual EXA$* objects before setup
+    PRO ===============================================
+    begin
+        for r in(select * from user_objects where object_name like 'EXA$%' and object_type in('VIEW','TABLE')) loop
+            execute immediate 'drop '||r.object_type||' '||r.object_name;
+        end loop;
+
+        for r in(select * from dba_synonyms where table_name like 'EXA$%' and owner='PUBLIC') loop
+            execute immediate 'drop public synonym '||r.synonym_name;
+        end loop;
+    end;
+/
+EOF
+exit 1
 fi
 
 if [ "$ORACLE_SID" = "" ] ; then
@@ -19,11 +40,13 @@ echo "*****************************************"
 echo "* Target database is : $ORACLE_SID       "
 echo "*****************************************"
 
-mkdir -p $dir
-if [ ! -d "$dir" ]; then
-    echo "Failed to mkdir directory $dir, exit." 1>&2
+mkdir -p $1
+if [ ! -d "$1" ]; then
+    echo "Failed to mkdir directory $1, exit." 1>&2
     exit 1
 fi
+
+dir=`realpath $1`
 
 chmod g+x $dir
 cd $dir
@@ -47,7 +70,7 @@ cat >get_cell_group.sql<<!
     PRO
     exit
 !
-rm -f cell_group.lst
+rm -f cell_group.lst cell_group
 sqlplus -l "$db_account" @get_cell_group
 
 if [ ! -f "cell_group.lst" ]; then
@@ -317,12 +340,13 @@ end
 
 local output = pipe:read('*all')
 pipe:close()
-for line in output:gmatch("[^\n\t]+") do
+for line in output:gmatch("[^\r\n\t]+") do
     line=line:rtrim()
     if line:find('^%d%d%d%d%-%d%d?%-%d%d?T') then
         tstamp=line
     elseif tstamp and line~="" then
-        print(fmt:format(cell, tstamp,line:gsub('|',"l")))
+        line=line:gsub('|',"l")
+        print(fmt:format(cell, tstamp,line))
     end
 end
 !
@@ -353,6 +377,7 @@ if not pipe then
     print("execute cellsrvstat on "..cell.." failed.")
     os.exit(1)
 end
+
 local output = pipe:read('*all')
 local found=0
 pipe:close()
@@ -425,15 +450,17 @@ sqlplus -s "$db_account" <<'EOF'
     col pivots new_value pivots noprint;
     col px new_value px noprint;
     col cl new_value cl noprint;
+    col dop new_value dop noprint;
     define ver=122.2
 
     SELECT case when v.ver >=&ver then 'PARTITION BY LIST(CELLNODE) ('||listagg(replace(q'[PARTITION @ VALUES('@') LOCATION ('@')]','@',b.name),','||chr(10)) WITHIN GROUP(ORDER BY b.name)||')' end cells,
            case when v.ver >=&ver then 'PARALLEL' end PX,
            case when v.ver < &ver then 'LOCATION(''EXA_NULL'')' end locations,
-           case when v.ver >11    then 'NOLOGFILE DISABLE_DIRECTORY_LINK_CHECK' end cl,
+           case when v.ver >11    then 'NOLOGFILE NOBADFILE NODISCARDFILE DISABLE_DIRECTORY_LINK_CHECK' end cl,
          --case when v.ver < &ver then 'LOCATION ('||listagg(''''||b.name||'''',',') within group(order by b.name)||')' end locations,
            listagg(replace(q'['@' "@"]','@',b.name),',') within group(order by b.name) pivots,
-           min(b.name) first_cell
+           min(b.name) first_cell,
+           count(1) dop
     FROM   (select regexp_substr(value,'\d+\.\d+')+0 ver from nls_database_parameters where parameter='NLS_RDBMS_VERSION') v,
            v$cell_config a,
            XMLTABLE('/cli-output/cell' PASSING xmltype(a.confval) COLUMNS NAME VARCHAR2(300) path 'name') b
@@ -566,7 +593,7 @@ sqlplus -s "$db_account" <<'EOF'
       DEFAULT DIRECTORY EXA_SHELL
       ACCESS PARAMETERS
       ( RECORDS DELIMITED BY NEWLINE READSIZE 1048576
-        PREPROCESSOR 'getfcobjects.sh'  &cl
+        PREPROCESSOR 'getfcobjects.sh' &cl
         FIELDS TERMINATED BY  whitespace LRTRIM
       ) &locations
     )
@@ -994,7 +1021,7 @@ sqlplus -s "$db_account" <<'EOF'
     PRO ====================================================
     begin
         for r in(select * from user_tables where table_name like 'EXA$%') loop
-            dbms_stats.gather_table_stats(user,r.table_name,degree=>16);
+            dbms_stats.gather_table_stats(user,r.table_name,degree=>&dop);
             dbms_stats.lock_table_stats(user,r.table_name);
         end loop;
     end;

@@ -29,7 +29,7 @@ WITH ash1 AS
                  TRUNC(sample_time,'MI') sample_id
           FROM   (SELECT /*+no_expand*/ a.* FROM  &ash a 
                   WHERE :V2<100000 AND sample_time+0> SYSDATE-:V2/86400 OR 
-                        nvl(:V2,'100000')>=100000 AND  sample_time+0 BETWEEN nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-1) AND nvl(to_date(:V3,'YYMMDDHH24MI'),SYSDATE)) ash, 
+                        nvl(:V2,'100000')>=100000 AND  sample_time+0 BETWEEN nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-1) AND nvl(to_date(:V3,'YYMMDDHH24MI'),SYSDATE+1)) ash, 
                  (SELECT ROWNUM r FROM dual CONNECT BY ROWNUM <=6) r)
   WHERE  NAME IS NOT NULL
   GROUP BY clz,name,sample_id),

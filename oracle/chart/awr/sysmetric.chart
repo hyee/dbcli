@@ -57,7 +57,7 @@
                         WHERE  (:V2 IS NULL  OR lower(:V2) IN ('0', 'a') OR inst_id = :V2)
                         AND    group_id NOT IN(3,5,10)
                         AND    (:V1 IS NULL AND &CAT OR :V1 IS NOT NULL AND (UPPER(METRIC_NAME) LIKE UPPER('%&V1%') OR upper(B.GROUP_NAME)=upper(:V1)))
-                        AND    end_time between nvl(to_date(:V3,'yymmddhh24mi'),sysdate-7) and nvl(to_date(:V4,'yymmddhh24mi'),sysdate)) A
+                        AND    end_time between nvl(to_date(:V3,'yymmddhh24mi'),sysdate-7) and nvl(to_date(:V4,'yymmddhh24mi'),sysdate+1)) A
                  GROUP  BY a.end_time, A.METRIC_NAME, a.metric_unit
                  ORDER BY STD DESC)
         ]],

@@ -101,12 +101,16 @@ function unwrap.unwrap(obj,ext,prefix)
                     org[#org+1]=line
                 end
                 if not piece or #piece<64 then
-                    org[repidx]=loader:Base64ZlibToText({table.concat(stack,'')})
+                    org[#org+1]=loader:Base64ZlibToText({table.concat(stack,'')})
                     stack={}
                     found=false
                 end
             else
-                org[#org+1]=line    
+                if line:match('encode=".-"') and line:match('compress=".-"') then
+                    org[#org+1]=line:gsub('encode=".-"',''):gsub('compress=".-"','')
+                else
+                    org[#org+1]=line
+                end
             end
         end
         if repidx == -1 then return end
@@ -214,7 +218,7 @@ function unwrap.unwrap(obj,ext,prefix)
 end
 
 function unwrap.onload()
-    env.set_command(nil,"unwrap",'Extract and unwrap(if wrapped) the source code of the specific object(procedure/package/function/trigger/type). Usage: @@NAME {[<owner>.]<object_name> [<file_ext>] [prefix]} | {<filename> [18c]}',unwrap.unwrap,false,4)
+    env.set_command(nil,"unwrap",'Extract the source code of the specific wrapped object(sqlmon/procedure/package/function/trigger/type). Usage: @@NAME {[<owner>.]<object_name> [<file_ext>] [prefix]} | {<sql monitor filename>}',unwrap.unwrap,false,4)
 end
 
 return unwrap

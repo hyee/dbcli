@@ -87,6 +87,7 @@ DECLARE
                 'APPROXIMATE_NDV','TRUE/FALSE',
                 'APPROXIMATE_NDV_ALGORITHM','REPEAT OR HYPERLOGLOG/ADAPTIVE SAMPLING/HYPERLOGLOG',
                 'AUTOSTATS_TARGET','ALL/AUTO/ORACLE/Z(DEFAULT_AUTOSTATS_TARGET)',
+                'AUTO_STATS_ADVISOR_TASK','TRUE/FALSE',
                 'AUTO_STAT_EXTENSIONS','ON/OFF',
                 'AUTO_TASK_STATUS','HIGH FREQUENCY STATISTICS: ON/OFF',
                 'AUTO_TASK_MAX_RUN_TIME','HIGH FREQUENCY STATISTICS: Max run secs',
@@ -107,8 +108,8 @@ DECLARE
                 'INCREMENTAL_INTERNAL_CONTROL','Partition: TRUE/FALSE',
                 'INCREMENTAL_LEVEL','Partition: TABLE/PARTITION synopses',
                 'INCREMENTAL_STALENESS','Partition: ALLOW_MIXED_FORMAT,USE_STALE_PERCENT,USE_LOCKED_STATS/NULL',
-                'JOB_OVERHEAD','',
-                'JOB_OVERHEAD_PERC','',
+                'JOB_OVERHEAD','-1',
+                'JOB_OVERHEAD_PERC','1',
                 'MAINTAIN_STATISTICS_STATUS','TRUE/FALSE',
                 'METHOD_OPT','FOR ALL [INDEXED|HIDDEN] COLUMNS [SIZE {integer|REPEAT|AUTO|SKEWONLY}]/Z(DEFAULT_METHOD_OPT)',
                 'MON_MODS_ALL_UPD_TIME','',
@@ -116,18 +117,22 @@ DECLARE
                 'OPTIONS','GATHER/GATHER AUTO/Z(DEFAULT_OPTIONS)(additional schema/system: GATHER STALE/GATHER EMPTY/LIST AUTO/LIST STALE/LIST EMPTY)',
                 'PREFERENCE_OVERRIDES_PARAMETER','TRUE/FALSE',
                 'PUBLISH','TRUE/FALSE',
-                'ROOT_TRIGGER_PDB','',
-                'SCAN_RATE','',
+                'REAL_TIME_STATISTICS','ON/OFF',
+                'ROOT_TRIGGER_PDB','FALSE/TRUE',
+                'SCAN_RATE','0',
                 'SKIP_TIME','',
                 'SNAPSHOT_UPD_TIME','',
-                'SPD_RETENTION_WEEKS','',
-                'STALE_PERCENT','',
+                'SPD_RETENTION_WEEKS','53',
+                'STATS_MODEL','ON/OFF',
+                'STATS_MODEL_INTERNAL_CONTROL','0',
+                'STATS_MODEL_INTERNAL_MINRSQ','0.9',
+                'STALE_PERCENT','10',
                 'STATS_RETENTION','',
                 'STAT_CATEGORY','OBJECT_STATS,SYNOPSES,REALTIME_STATS/Z(DEFAULT_STAT_CATEGORY)',
                 'SYS_FLAGS','0/1(DSC_SYS_FLAGS_DUBIOUS_DONE)',
                 'TABLE_CACHED_BLOCKS','0(AUTO_TABLE_CACHED_BLOCKS)/n',
                 'TRACE','0(disable),1(DBMS_OUTPUT_TRC),2(SESSION_TRC),4(TAB_TRC),8(IND_TRC),16(COL_TRC),32(AUTOST_TRC),...524288',
-                'WAIT_TIME_TO_UPDATE_STATS','');
+                'WAIT_TIME_TO_UPDATE_STATS','15');
 BEGIN
     dbms_output.enable(null);
     IF typ IS NOT NULL and typ NOT like 'TABLE%' THEN
@@ -170,7 +175,7 @@ BEGIN
         end loop;
     $END
     
-    prefs := t('iotfrspeed', 'ioseektim', 'sreadtim', 'mreadtim', 'cpuspeed', 'cpuspeednw', 'mbrc', 'maxthr', 'slavethr');
+    prefs := t('iotfrspeed', 'ioseektim', 'mbrc','sreadtim', 'mreadtim', 'cpuspeed', 'cpuspeednw',  'maxthr', 'slavethr');
     for i in 1..prefs.count loop
         LST.EXTEND();
         LST(LST.COUNT) := SYS.ODCIOBJECT(upper(prefs(i)),null);
@@ -185,7 +190,7 @@ BEGIN
     dbms_output.put_line(rpad('-',120,'-'));
     --refer to https://github.com/FranckPachot/scripts/blob/master/statistic-gathering/display-system-statistics.txt
     FOR C IN(
-        SELECT r,pname, rpad(nvl(''||round(nvl(calc,pval1),4),' '),10)||nullif(' ('||formula||')',' ()') value
+        SELECT r,pname, to_char(nvl(round(nvl(calc,pval1),4),0),'999990.999')||nullif(' ('||formula||')',' ()') value
         FROM   (SELECT rownum r,objectschema pname,objectname+0 pval1 FROM TABLE(lst))
         MODEL 
         REFERENCE sga ON 
@@ -213,8 +218,8 @@ BEGIN
              calc ['   single cost / block'] = 1,
              calc ['   maximum mbrc'] = sga.value ['Database Buffers'] / (parameter.value ['db_block_size'] * parameter.value ['sessions']),
              calc ['IOTFRSPEED'] = pval1 ['IOTFRSPEED']/1024,
-             calc ['CPUSPEED'] = pval1 ['CPUSPEED']/1000,
-             calc ['CPUSPEEDNW'] = pval1 ['CPUSPEEDNW']/1000,
+             calc ['CPUSPEED'] = pval1 ['CPUSPEED'],
+             calc ['CPUSPEEDNW'] = pval1 ['CPUSPEEDNW'],
              r['   maximum mbrc']=98,
              r['   single cost / block']=99,
              r['   multi  cost / block']=100,
@@ -224,9 +229,9 @@ BEGIN
                  WHEN parameter.value ['db_file_multiblock_read_count'] IS NOT NULL THEN
                   'db_file_multiblock_read_count'
                  WHEN parameter.value ['_db_file_optimizer_read_count'] IS NOT NULL THEN
-                  '_db_file_optimizer_read_count'
+                  '_db_file_optimizer_read_count (impacts the CBO estimation)'
                  ELSE
-                  '_db_file_optimizer_read_count'
+                  '_db_file_optimizer_read_count (impacts the CBO estimation)'
              END,
              formula ['MREADTIM'] = 'time to read n blocks in ms = IOSEEKTIM + db_block_size * MBRC / IOTFRSPEED',
              formula ['SREADTIM'] = 'time to read 1 block  in ms = IOSEEKTIM + db_block_size / IOTFRSPEED',
@@ -235,8 +240,8 @@ BEGIN
              formula ['   multi  cost / block'] = '1/MBRC * MREADTIM/SREADTIM',
              formula ['   single cost / block'] = 'by definition',
              formula ['   maximum mbrc'] = 'buffer cache size in blocks / sessions',
-             formula ['CPUSPEED'] = 'workload CPU speed in GHZ',
-             formula ['CPUSPEEDNW'] = 'noworkload CPU speed in GHZ',
+             formula ['CPUSPEED'] = 'workload CPU speed in MHZ',
+             formula ['CPUSPEEDNW'] = 'noworkload CPU speed in MHZ',
              formula ['MAXTHR'] = 'maximum throughput that the I/O subsystem can deliver',
              formula ['SLAVETHR'] = 'average parallel slave I/O throughput'
         ) ORDER BY r) LOOP
@@ -311,17 +316,18 @@ BEGIN
             AND    t1.column_name=t.column_name;
 
         OPEN C3 FOR
-            WITH I AS (SELECT /*+no_merge*/ I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
-                       PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
-                                SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
-                                FROM   (SELECT /*+no_merge*/* FROM all_part_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
-                                START  WITH column_position = 1
-                                CONNECT BY PRIOR column_position = column_position - 1]'),'//V') PARTITIONED_BY,
-                       nullif(SUBPARTITIONING_TYPE,'NONE')||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
-                                SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
-                                FROM   (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
-                                START  WITH column_position = 1
-                                CONNECT BY PRIOR column_position = column_position - 1]'),'//V') SUBPART_BY
+            WITH I AS (SELECT /*+no_merge opt_param('cursor_sharing' 'force')*/ 
+                               I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
+                               PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
+                                        SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
+                                        FROM   (SELECT /*+no_merge*/* FROM all_part_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
+                                        START  WITH column_position = 1
+                                        CONNECT BY PRIOR column_position = column_position - 1]'),'//V') PARTITIONED_BY,
+                               nullif(SUBPARTITIONING_TYPE,'NONE')||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
+                                        SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
+                                        FROM   (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
+                                        START  WITH column_position = 1
+                                        CONNECT BY PRIOR column_position = column_position - 1]'),'//V') SUBPART_BY
                         FROM   &check_access_dba.INDEXES I,&check_access_dba.PART_INDEXES C
                         WHERE  C.OWNER(+) = I.OWNER
                         AND    C.INDEX_NAME(+) = I.INDEX_NAME

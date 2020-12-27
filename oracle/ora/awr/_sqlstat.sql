@@ -16,7 +16,7 @@ BEGIN
                decode(delta_flag, 0, executions_total, executions_delta) executions,
                decode(delta_flag, 0, px_servers_execs_total, px_servers_execs_delta) px_servers_execs,
                decode(delta_flag, 0, loads_total, loads_delta) loads,
-               decode(delta_flag, 0, invalidations_total, invalidations_delta) invalidations,
+               decode(delta_flag, 0, invalidations_total, invalidations_delta)+@OBS invalidations,
                decode(delta_flag, 0, parse_calls_total, parse_calls_delta) parse_calls,
                decode(delta_flag, 0, disk_reads_total, disk_reads_delta)*(select value from v$parameter where name='db_block_size') disk_reads,
                decode(delta_flag, 0, buffer_gets_total, buffer_gets_delta)*(select value from v$parameter where name='db_block_size') buffer_gets,
@@ -31,7 +31,7 @@ BEGIN
                decode(delta_flag, 0, plsexec_time_total, plsexec_time_delta) plsexec_time,
                decode(delta_flag, 0, javexec_time_total, javexec_time_delta) javexec_time
                @11g@
-        FROM   (select h.*,sign(elapsed_time_delta) delta_flag from dba_hist_sqlstat H /*where BITAND(NVL(flag, 0), 1) = 0*/) h, dba_hist_snapshot s
+        FROM   (select h.*,sign(elapsed_time_delta) delta_flag from @source_sqlstat H /*where BITAND(NVL(flag, 0), 1) = 0*/) h, @source_snapshot s
         WHERE  greatest(h.elapsed_time_delta, elapsed_time_total) > 0
         AND    s.snap_id = h.snap_id
         AND    s.dbid = h.dbid
@@ -46,6 +46,18 @@ BEGIN
     ELSE
         sq := replace(sq,'@11g@',',0 phyread,null phywrite,0 oflin,0 oflout,null cellio');
     END IF;
+
+    IF dbms_db_version.version>=18 THEN
+        sq := replace(sq,'@OBS','NVL(OBSOLETE_COUNT,0)');
+    ELSE
+        sq := replace(sq,'@OBS','0');
+    END IF;
+
+    IF dbms_db_version.version>=12 AND (dbms_db_version.release>1 OR dbms_db_version.version>=18) AND sys_context('userenv','con_id')>0 THEN
+        sq := replace(sq,'@source','awr_pdb');
+    ELSE
+        sq := replace(sq,'@source','dba_hist');
+    END IF; 
     :awr$sqlstat := sq; 
 END;
 /

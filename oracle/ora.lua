@@ -30,11 +30,27 @@ function ora:validate_accessable(name,options,values)
             end
             expect=option
         elseif name:find("CHECK_ACCESS",1,true)==1 then--objects are sep with the / symbol
-            check_flag=2
-            expect_name="access"
             for obj in option:gmatch("([^/%s]+)") do
-                if obj:upper()~="DEFAULT" and not db:check_access(obj,1) then
+                if obj:upper()=='CDB' then
+                    if db.props.container_id~=0 then
+                        check_flag=4
+                        expect_name='non-CDB'
+                        expect='CDB mode'
+                        default=nil
+                        break
+                    end
+                elseif obj:upper()=='PDB' then
+                    if tonumber(db.props.container_id or 0)==0 then
+                        check_flag=4
+                        expect_name='non-PDB'
+                        expect='PDB mode'
+                        default=nil
+                        break
+                    end
+                elseif obj:upper()~="DEFAULT" and not db:check_access(obj,1) then
                     default=nil
+                    check_flag=2
+                    expect_name="access"
                     expect='the accesses to: '.. option
                     break
                 end
@@ -57,10 +73,10 @@ function ora:validate_accessable(name,options,values)
             expect_name,
             check_flag==1 and (db.props.db_version or 'unknown')
                 or check_flag==2 and "rights"
-                or check_flag==3 and (db.props.db_user or 'unknown'),
+                or check_flag==3 and (db.props.db_user or 'unknown')
+                or check_flag==4 and 'mode',
             expect)
     end
-
     return default
 end
 

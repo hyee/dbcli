@@ -19,7 +19,8 @@
     SYS   WRI$_OPTSTAT_SYNOPSIS$ SYS_SUBP6653   TABLE SUBPARTITION    117545        1022958    5     5  0    0           0      4.81 MB       4.81 MB        100.00%        0  B       0  B         0  B
     
   --[[
-      @check_access_obj: EXA$CACHED_OBJECTS={}
+      @check_access_obj : EXA$CACHED_OBJECTS={}
+      @check_access_pmem: EXA$PMEM_OBJECTS={union all SELECT 'PMEM' type, a.* from EXA$PMEM_OBJECTS a} default={}
   		&grp1: default={COUNT(1) recs,COUNT(DISTINCT CELLNODE) cells} detail={cellnode,TABLESPACENUMBER TS#} 
   		&grp2: default={} detail={,CELLNODE,TABLESPACENUMBER}
       &grp3: {
@@ -50,7 +51,7 @@
 col CACHEDSIZE,cachedwrite,cachedkeep,columnarkeep,columnarcache for kmg
 col Reqs,hits,misses for tmb
 col hit%,ColumnarCache% for pct
-set printsize 50
+set printsize 100
 
 SELECT /*+opt_param('parallel_force_local' 'true')*/ type,&grp3
 FROM   (SELECT type,objectnumber data_object_id,dbuniquename,
@@ -65,12 +66,12 @@ FROM   (SELECT type,objectnumber data_object_id,dbuniquename,
                SUM(CACHEDWRITESIZE) "CachedWrite",
                SUM(CACHEDKEEPSIZE) "CachedKeep",
                SUM(COLUMNARKEEPSIZE) "ColumnarKeep"
-        FROM   (SELECT 'FLASHCAHE' type, a.* from EXA$CACHED_OBJECTS a union all SELECT 'PMEM' type, a.* from EXA$PMEM_OBJECTS a)
+        FROM   (SELECT /*+PQ_CONCURRENT_UNION*/ 'FLASHCAHE' type, a.* from EXA$CACHED_OBJECTS a &check_access_pmem)
         GROUP  BY type,objectnumber,dbuniquename &grp2) b
 LEFT JOIN dba_objects a 
 ON   (b.data_object_id = a.data_object_id and regexp_replace(upper(dbuniquename),'[:\.].*')= upper(sys_context('userenv','db_unique_name')))
 WHERE nvl(lower(:V1), ' ') IN (' ', 'hits', 'misses', 'cachedsize', 'cachedwrite', 'columnarcache', 'cachedkeep', 'columnarkeep') 
-OR    upper(:V1) IN (owner, object_name,subobject_name, object_type,''||object_id,''||a.data_object_id)
+OR    upper(:V1) IN (owner, object_name，owner||'.'||object_name,subobject_name, object_type,''||object_id,''||a.data_object_id)
 &grp4
 ORDER  BY decode(nvl(lower(:V1), 'reqs'),
                  'reqs',"Reqs",

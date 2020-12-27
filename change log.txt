@@ -1,3 +1,4 @@
+2020-12-11: + oracle: new command 'chart sgastat'
 2020-07-31: + oracle: new command '10053' to parse 10053 trace file
 2020-07-28: + oracle: new option 'dict <param|obj> <keyword>' to search offline dictionary
 2020-07-23: + oracle: new option on 'unwrap <filename> [18c]'

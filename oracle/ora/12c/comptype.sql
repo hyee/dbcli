@@ -1,6 +1,8 @@
 /*[[
-    Get table's current compression type. Usage: @@NAME [<owner>.]<table_name>[.<partition_name>] [<rows>|-f"<filter>"]
-    
+    Get table's current compression type. Usage: @@NAME [<owner>.]<table_name>[.<partition_name>] [<rows>|-f"<filter>"] [-dx]
+    -dx : Use no parallel direct path read
+    rows: Maximum number of rows to scan, default as 3 millions.
+
     Sample Output:
     ==============
     SQL> @@NAME ssb.lineorder 10000000
@@ -12,7 +14,12 @@
     --[[
         @ver   : 12.1={}
         @check_access_comp: sys.dbms_compression={}
+        @check_access_obj: dba_objects={dba_objects} default={all_objects}
         &filter: default={@ROWS@} f={where &0}
+        &dx    : default={--} dx={}
+        &v2    : default={3e6}
+        &px    : default={parallel(a 8)} dx={no_parallel}
+
     --]]
 ]]*/
 set feed off verify off printsize 10000
@@ -38,6 +45,9 @@ DECLARE
     v_cnt2 INT := 0;
     v_ctyp INT := 0;
     v_xml  CLOB := '<ROWSET>';
+    v_dx   VARCHAR2(128);
+    v_sm   INT;
+    v_dobj INT;
     PROCEDURE extr(c VARCHAR2) IS
     BEGIN
         v_oid := regexp_substr(c, '[^,]+', 1, 1);
@@ -65,21 +75,41 @@ BEGIN
     IF regexp_substr(:object_type,'\S+') NOT IN('TABLE','CAL_MONTH_SALES_MV') THEN
         raise_application_error(-20001,'Invalid object type: '||:object_type);
     END IF;
+
     v_stmt := q'[
+        WITH FUNCTION GET_DOBJ(rid VARCHAR2) RETURN INT DETERMINISTIC IS
+        PRAGMA UDF;
+            v_id INT := 0;
+            v_p  SIMPLE_INTEGER :=0;
+            v_c  CHAR(1);
+        BEGIN
+            FOR i IN 1..6 LOOP
+                v_c :=substr(rid,i,1);
+                v_p :=CASE WHEN v_c >= 'a' THEN  71
+                           WHEN v_c >= 'A' THEN  65
+                           WHEN v_c >= '0' THEN  -4
+                           WHEN v_c  = '+' THEN  -19
+                           ELSE -18
+                      END;
+                v_id := v_id+(ascii(v_c)-v_p)*power(64,6-i);
+            END LOOP;
+            RETURN v_id;
+        END;
+        OBJS AS(SELECT * FROM &check_access_obj WHERE owner = '&object_owner' AND object_name = '&object_name')
         SELECT /*+leading(b a) use_hash(b a) no_merge(a) no_merge(b)*/ 
                a.rid,
                b.object_id||','||
                b.data_object_id||','||
                a.cnt||','||
                b.subobject_name obj
-        FROM   (SELECT (SELECT dbms_rowid.ROWID_OBJECT(ridp) FROM dual) dobj, rid,cnt
-                FROM   (SELECT /*+no_merge parallel(8) index_ffs(a)*/
+        FROM   (SELECT get_dobj(sub) dobj, rid,cnt
+                FROM   (SELECT /*+use_hash_aggregation GBY_PUSHDOWN index_ffs(a) &px*/
+                               SUBSTR(ROWID, 1, 6) sub,
                                MIN(ROWID) rid, 
-                               MIN(MIN(ROWID)) OVER(PARTITION BY SUBSTR(ROWID, 1, 6)) ridp,
                                count(1) cnt
                         FROM   &object_owner..&object_name @PART@ a &filter
                         GROUP  BY SUBSTR(ROWID, 1, 6), SUBSTR(ROWID, 1, 15))) a,
-               dba_objects b
+               OBJS b
         WHERE  b.owner = '&object_owner'
         AND    b.object_name = '&object_name'
         AND    b.data_object_id = a.dobj
@@ -96,27 +126,39 @@ BEGIN
         v_stmt := REPLACE(v_stmt, '@ROWS@');
     END IF;
 
-    OPEN v_cur FOR v_stmt;
-    LOOP
-        FETCH v_cur BULK COLLECT
-            INTO v_rids, v_recs LIMIT 4096;
-        EXIT WHEN v_rids.COUNT = 0;
-        FOR I IN 1 .. v_rids.COUNT LOOP
-            extr(v_recs(i));
-            v_ctyp := sys.dbms_compression.get_compression_type(v_own, v_nam, v_rids(i), v_sub);
-            IF v_pid != v_oid OR v_ptyp != v_ctyp THEN
-                flush_xml;
-                v_pid  := v_oid;
-                v_ptyp := v_ctyp;
-                v_cnt  := 0;
-                v_cnt2 := 0;
-            END IF;
-            v_cnt  := v_cnt + 1;
-            v_cnt2 := v_cnt2 + v_rows;
+    v_cnt := sys.dbms_utility.get_parameter_value('_small_table_threshold',v_sm,v_dx);
+    v_cnt := sys.dbms_utility.get_parameter_value('_serial_direct_read',v_cnt2,v_dx);
+    &dx EXECUTE IMMEDIATE 'alter session set "_small_table_threshold"=1  "_serial_direct_read"=always';
+    BEGIN
+        v_cnt  := 0;
+        v_cnt2 := 0;
+        OPEN v_cur FOR v_stmt;
+        LOOP
+            FETCH v_cur BULK COLLECT
+                INTO v_rids, v_recs LIMIT 8192;
+            EXIT WHEN v_rids.COUNT = 0;
+            FOR I IN 1 .. v_rids.COUNT LOOP
+                extr(v_recs(i));
+                v_ctyp := sys.dbms_compression.get_compression_type(v_own, v_nam, v_rids(i), v_sub);
+                IF v_pid != v_oid OR v_ptyp != v_ctyp THEN
+                    flush_xml;
+                    v_pid  := v_oid;
+                    v_ptyp := v_ctyp;
+                    v_cnt  := 0;
+                    v_cnt2 := 0;
+                END IF;
+                v_cnt  := v_cnt + 1;
+                v_cnt2 := v_cnt2 + v_rows;
+            END LOOP;
         END LOOP;
-    END LOOP;
-    flush_xml;
-    CLOSE v_cur;
+        flush_xml;
+        CLOSE v_cur;
+        &dx EXECUTE IMMEDIATE 'alter session set "_small_table_threshold"='||v_sm||'  "_serial_direct_read"='||v_dx;
+    EXCEPTION WHEN OTHERS THEN
+        &dx EXECUTE IMMEDIATE 'alter session set "_small_table_threshold"='||v_sm||'  "_serial_direct_read"='||v_dx;
+        RAISE;
+    END;
+
     dbms_lob.writeappend(v_xml, 9, '</ROWSET>');
 
     OPEN :cur FOR
@@ -130,7 +172,7 @@ BEGIN
                        8,'HCC_QUERY_LOW',
                        16,'HCC_ARCHIVE_HIGH',
                        32,'HCC_ARCHIVE_LOW',
-                       64,'BLOCK',
+                       64,'OLTP',
                        128,'LOB_HIGH',
                        256,'LOB_MEDIUM',
                        512,'LOB_LOW',

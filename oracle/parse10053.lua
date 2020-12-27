@@ -11,7 +11,6 @@ local function get_dop(line,default)
     return tonumber(line:match('[dD]egree: *(%d+)')) or default or 1
 end
 
-
 local function extract_timer()
     return {
         start="TIMER:",
@@ -761,14 +760,17 @@ local function extract_tb()
                     if alias:find('online') then alias=alias:gsub('online.*','') end
                 end
                 --Build a map
+                self.tmp_info,self.tmp_link,self.tmp_alias=nil
                 self.info={name=tab,qb=self.qb,alias=alias,[self.type]={start_line=self.start_line}}
                 tab,alias=tab:upper(),alias:upper()
                 --Dict tree: table => qb => alias => map
+                
                 local grp=self.data[tab] or {}
                 if not grp[self.qb] then grp[self.qb]={} end
                 if not grp[self.qb][alias] then 
                     grp[self.qb][alias]=self.info 
                 else
+                    self.tmp_info,self.tmp_link,self.tmp_alias=table.clone(grp[self.qb][alias]),grp[self.qb],alias
                     grp[self.qb][alias][self.type]=self.info[self.type]
                     self.info=grp[self.qb][alias]
                 end
@@ -804,6 +806,12 @@ local function extract_tb()
                         self.info.indent=nil
                         self.info.cost,self.info.card=math.round(tonumber(cost),3),math.round(tonumber(card),3)
                         self.info.degree=get_dop(line,self.info.degree)
+                        if self.tmp_info and self.tmp_info.cost and self.info.cost>self.tmp_info.cost then
+                            self.tmp_link[self.tmp_alias]=self.tmp_info
+                            if self.info.bsi and self.tmp_info.bsi and self.info.bsi.end_line==self.tmp_info.bsi.end_line then
+                                self.info=self.tmp_info
+                            end
+                        end
                     end
                 end
             elseif line:match('^ *[%*=]+$') or line:find('^Access path analysis') or line:find('^Join order') then
@@ -817,6 +825,7 @@ local function extract_tb()
 
         end_parse=function(self,line,lineno)
             self.root.current_tb,self.root.current_alias=nil
+            self.tmp_info,self.tmp_link,self.tmp_alias=nil
             if self.info and not self.info[self.type].end_line then
                 self.info[self.type].end_line=lineno-1
             end

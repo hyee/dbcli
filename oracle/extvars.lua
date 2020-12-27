@@ -194,7 +194,9 @@ function extvars.set_cdbmode(name,value)
             prev_container.container=cfg.get('container')
             prev_container.new_dbid=db.props.container_dbid
             prev_container.new_container=db.props.container_id
-            cfg.force_set('dbid',db.props.container_dbid)
+            if tonumber(prev_container.dbid) == nil then
+                cfg.force_set('dbid',db.props.container_dbid)
+            end
             --cfg.force_set('container',db.props.container_id)
         end
     elseif cdbmode=='pdb' then

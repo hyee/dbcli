@@ -33,6 +33,7 @@
         @check_access_bind: dba_hist_sqlbind={1} default={0} 
         @ARGS: 1
         &V3  : default={} q={Q} l={L}
+        &V2  : default={:instance}
     --]]
 ]]*/
 set colwrap 150 feed off 
@@ -264,7 +265,9 @@ PRINT b;
 PRINT c;
 save txt last_sql_&V1..txt
 
-pro 
+pro
+pro Result of &src
+pro =======================================
 SELECT *
 FROM   (SELECT &VER top_level_sql_id top_sql,
                COUNT(1) aas,
@@ -326,3 +329,5 @@ GROUP  BY SQL_ID,
           &ver SQL_PLAN_BASELINE,
           parsing_schema_name;
           
+
+--show sqlver -s"&v1"

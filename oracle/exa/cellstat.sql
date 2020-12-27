@@ -7,7 +7,9 @@
 ]]*/
 set verify off feed off termout off printsize 3000 sep4k on
 col cells new_value cells noprint;
-SELECT listagg(''''||a.cellname||''' as "'|| b.name||'"',',') WITHIN GROUP(ORDER BY b.name) cells
+col kw   new_value kw noprint;
+SELECT listagg(''''||a.cellname||''' as "'|| b.name||'"',',') WITHIN GROUP(ORDER BY b.name) cells,
+       lower(:v1) kw
 FROM   v$cell_config a,
        XMLTABLE('/cli-output/cell' PASSING xmltype(a.confval) COLUMNS
                 NAME VARCHAR2(300) path 'name') b
@@ -15,6 +17,7 @@ WHERE  conftype = 'CELL';
 
 set termout on feed off
 var cur refcursor
+var c2  refcursor
 DECLARE
     cur  SYS_REFCURSOR;
     v1   VARCHAR2(3000):=lower(:V1);
@@ -82,7 +85,7 @@ BEGIN
                                        XMLTABLE(v1
                                                 PASSING(XMLTYPE(a.statistics_value)) 
                                                 COLUMNS pname VARCHAR2(128) PATH 'name()',
-                                                        ptype VARCHAR2(128) PATH '@name | @type | @group',
+                                                        ptype VARCHAR2(128) PATH '@name[contains(lower-case(.),"&kw")] | @type[contains(lower-case(.),"&kw")] | @group[contains(lower-case(.),"&kw")]',
                                                         n XMLTYPE PATH 'node()') c,
                                        XMLTABLE('//*[not(*)]' PASSING c.n 
                                                 COLUMNS tag VARCHAR2(128) PATH 'name()',
@@ -90,7 +93,28 @@ BEGIN
                                                         VALUE VARCHAR2(128) PATH '.')(+) b) a)
                 where flag=chr(1)
                 GROUP  BY stype, name,flag, ROLLUP(CELL))
-            SELECT * FROM STAT PIVOT(MAX(VALUE) FOR cell IN('--TOTAL--' AS total,&cells)) ORDER BY 1,2;
+            SELECT * FROM STAT PIVOT(MAX(VALUE) FOR cell IN('--TOTAL--' AS total,&cells))
+            ORDER  BY 1,2;
+
+        OPEN :C2 FOR
+            WITH Stat1 AS(
+                SELECT nvl(cell_name, '--TOTAL--') cell,
+                       'CELL GLOBAL' stype,
+                       metric_name name,
+                       SUM(metric_value) value
+                FROM   v$cell_global
+                WHERE  instr(lower(metric_name),lower(:kw))>0
+                GROUP  BY metric_name,rollup(cell_name)
+                UNION ALL
+                SELECT nvl(cell_name, '--TOTAL--') cell,
+                       'CELL IOREASON' style,
+                       reason_name||nvl2(metric_type,'('||metric_type||')','') name,
+                       SUM(metric_value) value
+                FROM   v$cell_ioreason
+                WHERE  instr(lower(reason_name),lower(:kw))>0
+                GROUP  BY reason_name,metric_type,rollup(cell_name))
+            SELECT * FROM STAT1 PIVOT(MAX(VALUE) FOR cell IN('--TOTAL--' AS total,&cells)) 
+            ORDER BY 1,2;
     END IF;
 
     :cur := cur;
@@ -98,3 +122,4 @@ END;
 /
 
 print cur
+print c2

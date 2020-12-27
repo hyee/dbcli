@@ -129,7 +129,7 @@ with time_model as(
                       or to_char(s.instance_number) = :V1
                       or not regexp_like(:V1,'^\d+$'))
                AND    s.dbid = hs1.dbid
-               AND    s.end_interval_time BETWEEN nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MI'),SYSDATE - 7) AND nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MI'),SYSDATE)
+               AND    s.end_interval_time BETWEEN nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MI'),SYSDATE - 7) AND nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MI'),SYSDATE+1)
                ) a
       WHERE  snap_id IN (max_id, min_id)
       AND    max_id!=min_id

@@ -275,7 +275,7 @@ BEGIN
             IF sqlmon IS NULL THEN
                 raise_application_error(-20001,'Target file is not a valid SQL Monitor Report file!');
             END IF;
-
+            
             IF length(sqlmon)>32767 THEN
                 raise_application_error(-20001,'Unsupported SQL Monitor Report file whose compressed data over 32 KB!');
             END IF;

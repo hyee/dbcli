@@ -6,6 +6,7 @@
              }
         &V10: s={}, o={(select event from v$session where sid=a.sid) event,}
         @type: 11.2={,cursor_type} default={}
+        @dir : 11.2={instr(cursor_type,'OPEN'),} default={}
         @aggs: 11.2={regexp_replace(listagg(to_name,',') within group(order by to_name),'([^,]+)(,\1)+','\1')},default={to_char(wmsys.wm_concat(DISTINCT to_name))}
     ]]--
 ]]*/
@@ -31,4 +32,4 @@ FROM TABLE(GV$(CURSOR(
     AND    b.to_type(+) NOT IN (0, 5, 55)
     AND    a.sql_id = c.sql_id(+)
     GROUP  BY a.sid, a.sql_id, a.sql_text &type)))
-ORDER  BY 1,2,last_active nulls last;
+ORDER  BY 1,2,&dir last_active nulls last;

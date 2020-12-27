@@ -33,18 +33,51 @@ Parameters
     _exadata_feature_on: simulate Exadata features on non-Exadata db
     _kcfis_cell_passthru_fromcpu_enabled: disable Exadata reverse offloading
     _sql_plan_management_control: when 4 then diagnose issues with SQL plan baselines of why it fails to use
-    _optimizer_squ_bottomup: false to redunce parse time due to large PGA memory usage pending on function kkojnp(bug#22225899)
+    _optimizer_squ_bottomup: false to redunce parse time due to large PGA memory usage pending on function kkojnp(bug#22225899), but would change some hash join as FILTER
     _column_tracking_level: when 3 then similar to dbms_stats.seed_column_usage, however can be set in session level, and 0 to avoid column group creation by dbms_stats,4 to maintain expression tracking
     _kks_parse_error_warning: controls whether to record the SQL in the alert log when the SQL fails to be parsed over the specific times(default as 100), in <12.2 db, can also set event 10035 level 1 to display the parse error in the alert log
     _kks_cached_parse_errors: set the value to a specific error number(i.e. 942) to skip the error
-    _small_table_threshold(STT): defaults to the 2% buffer cache, and Medium Table Threshold(MTT)=5*_small_table_threshold
+    _small_table_threshold(STT): defaults to the 2% of buffer cache, and Medium Table Threshold(MTT)=10% of buffer cache
         1) OBJECT_SIZE <= STT: use buffer cache, keep object whose size < keep pool size is also considered as small
-        2) STT < OBJECT_SIZE < MTT: for serial read, if >50% blocks(or 99% of compressed table) are cached or 25% blocks are dirty, then use buffer cache, otherwise use direct path read
+        2) STT < OBJECT_SIZE < MTT: 
+            for serial read, if >50% blocks(or 99% of compressed table) are cached or 25% blocks are dirty, then use buffer cache, otherwise use direct path read
+                Parameter _parallel_cluster_cache_policy controls the behaviour for parallel read
             for parallel read, when >STT then dx read would be used(also controlled by _px_adaptive_offload_percentage, 0 means always)
-            flashback/version-based/scn-based/fragmented table scan will not use dx read
         3) OBJECT_SIZE>=MTT: dx read
-        Turn on event '10358 trace name context forever, level 2:10384 trace name context forever,level 16384:trace[nsmtio] disk highest' to monitor the behaviours
-    
+        4) Patch #31626438 supports any partitions larger than 100 MB will automatically use Direct Read and hence offload on Exadata
+        4) flashback/version-based/scn-based/fragmented table(2132004.1) scan will not use dx read
+        5) SELECT FOR UPDATE/DELETE/UPDATE/MERGE on target table  will not use dx read
+        6) limit the result with rownum will not use dx read
+        Turn on event '10358 trace name context forever, level 2:10384 trace name context forever,level 16384:trace[nsmtio] disk highest' to trace the behaviours
+    _cell_region_heuristics_read_count_threshold(cell): Number of scan times to trigger CC2 population after a 1M chunk is modified and invalidated
+    _hwm_sync_threshold: defaults to 10, setting to 100(support session level) will keep the HHWM and LHWM in sync during bulk/direct data load(Doc ID 726653.1), to fix low/high water mark not sync issue on  UNIFORM tablespace leading to smart scan not taken plan in parallel query, for existing segment, run DBMS_SPACE_ADMIN.ASSM_SEGMENT_SYNCHWM(...,check_only=1/0) to check/sync HWM.
+    _enable_columnar_cache: refer to 'help exa offload'
+    _smm_isort_cap: defaults to 100MB which limits the maximum PGA memory for sort/window sort/KEY VECTOR CREATE BUFFERED(maybe insert only), set to 0 can avoid spilling to temp I/O
+    _smm_max_size: The maximum work area size for single process, defaults to _pga_max_size/5 when sga is large
+    _smm_px_max_size: maximum total work area size per parallel query where dop>5, defaults to pga_aggregate_target/2
+    _convert_set_to_join: convert INTESECT/MINUS to (anti)semi-join, defaults to false when OFE<19.1.0.1
+    _bloom_filter_ratio: defaults to 35, meaning that if the optimizer estimates BF can reduce 65%+ rows from the probe table, then use BF  
+    _oltp_compress_dbg: controls OLTP compression. 
+        1: disable the ArrayInserts compression
+        2: Disable Compression Above-Cache 
+        32:disable OLTP Compression on HCC segments conventional DML
+    _kdz_pcode_flags: 
+        1: disable pcode(Portable code,a framework to evaluate predicates)
+        32: disable just PCODE aggregation
+        256: disable complex predicate push down for PCODE evaluation
+        4096: disable pcode aggregation above a hash join
+        262144: disable  PCODE filtering(not impact cc2 codepath)
+        2097152: enable PCODE support for case statements
+        1048576: disable Gby for HCC on Hadoop because HCC is non-dictionary encoded
+    _memory_imm_mode_without_autosga: when 0 then stop resize of SGA component
+    _kgl_hot_object_copies: number of hot copies for the object defined by dbms_shared_pool.markhot to reduce mutex/cursor contention
+    _kgl_time_to_wait_for_locks: defaults to 15 minutes, control the threshold of (library cache)lock timeout and thuse raise ORA-04021
+    _kcfis_fast_response_enabled: use to fix the inefficient offload performance in 11g to fetch first n rows
+    _controlfile_cell_flash_caching: 
+        3: (default) Control File reads will be cached in the Cell Flash Cache with a default caching policy
+        2: disable Flash Cache caching of Control File reads.
+        1: enable KEEP caching policy of CF reads (more aggressive than default) 
+DMLs.
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
     support compression for updating compressed table(dbms_compression.INCREMENTAL_COMPRESS): alter session set events '70001 trace name context forever, level <object_id>' 
@@ -72,10 +105,11 @@ Hints:
        * table_stats(scott.emp set rows=14 blocks=1 row_length=10)
     INDEX_STATS(<Table> <Index> <SCALE|NULL> {<BLOCKS|INDEX_ROWS|KEYS|CLUSTERING_FACTOR|ROWS>=<value>})
     COLUMN_STATS(<Table> <Column> <SCALE|NULL> {<LENGTH|DISTINCT|NULLS|MIN|MAX> ><value>})
-	NUM_INDEX_KEYS(<@QB>] <table> <index> <cols>): used on multi-column index for INLIST ITERATOR, specifying how many columns(keys) to be put in access part and the others in filter part
+	NUM_INDEX_KEYS(<@QB>] <table> <index> <cols>): used on multi-column index for INLIST ITERATOR, specifying how many columns(keys) to be put in access part and the others in filter part, or try "USE_CONCAT(OR_PREDICATES(32767))"
     PQ_DISTRIBUTE_WINDOW: used on PX window function.  1: hash then window sort 2: window sort then hash 3: range then window sort
     OR_EXPAND(<qb> (1) (2) ...(N)): expand N or expression to union all
     BUSHY_JOIN([<qb>] (<alias1>,<alias2>,...)): enable bushy join
+    no_transform_distinct_agg/no_place_distinct/no_place_group_by: disable aggregation transformation on inline view
     
 Fix Controls:
     13583722/16726844: impact the CBO behaviour for incr stats, ref: https://hourim.wordpress.com/2019/11/21/incremental-histogram-and-fix-control/
@@ -85,5 +119,11 @@ Fix Controls:
     25167306:  Enable direct path read in SQL called from PL/SQL(scheduler job)
     6708183 :  allow dynamic sampling on table functions    
 Others:
-   Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=/u01/app/oracle/product/18.0.0.0/dbhome_1/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
+   Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
    NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled: Used on PDB to query dict views
+   HCC compression on conventional load(insert select/bulk insert):
+       * compatible=12.2+ 
+       * ASSM tablespace(SEGMENT SPACE MANAGEMENT AUTO)
+       * HCC table on exadata storage 
+       * _force_oltp_compress=false
+       * enable_goldengate_replication=true if supplemental logging is enabled

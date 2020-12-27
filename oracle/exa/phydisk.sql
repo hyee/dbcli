@@ -8,6 +8,8 @@
 ]]*/
 set printsize 3000 feed off verify off
 col physicalSize for kmg
+col cell,cellnode break skip -
+col grp1,grp2 noprint
 var c refcursor
 DECLARE
     c SYS_REFCURSOR;
@@ -15,34 +17,60 @@ DECLARE
 BEGIN
     $IF &check_access_vw=1 AND &OPT=1 $THEN
         OPEN c FOR
-            select * from(
-                SELECT extractvalue(xmltype(a.confval),'/cli-output/context/@cell') cell, b.*
-                FROM   v$cell_config a,
-                       XMLTABLE('/cli-output/physicaldisk' PASSING xmltype(a.confval) COLUMNS --
-                                "name" VARCHAR2(20) path 'name',
-                                "deviceId" NUMBER(5) path 'deviceId',
-                                "deviceName" VARCHAR2(15) path 'deviceName',
-                                "diskType" VARCHAR2(10) path 'diskType',
-                                "enclosureDeviceId" NUMBER(5) path 'enclosureDeviceId',
-                                "physicalSize" VARCHAR2(300) path 'physicalSize',
-                                "errOtherCount" NUMBER(8) path 'errOtherCount',
-                                "luns" VARCHAR2(10) path 'luns',
-                                "makeModel" VARCHAR2(40) path 'makeModel',
-                                "physicalFirmware" VARCHAR2(15) path 'physicalFirmware',
-                                "physicalInsertTime" VARCHAR2(25) path 'physicalInsertTime',
-                                "physicalInterface" VARCHAR2(10) path 'physicalInterface',
-                                "physicalSerial" VARCHAR2(15) path 'physicalSerial',
-                                "slotNumber" VARCHAR2(25) path 'slotNumber',
-                                "status" VARCHAR2(15) path 'status') b
-                WHERE  conftype = 'PHYSICALDISKS')
-            WHERE lower(cell) like lower('%'||V1||'%')
-            ORDER  BY 1, 2, 3;
+            WITH R AS(
+                select * from(
+                    SELECT extractvalue(xmltype(a.confval),'/cli-output/context/@cell') cell, b.*
+                    FROM   v$cell_config a,
+                           XMLTABLE('/cli-output/physicaldisk' PASSING xmltype(a.confval) COLUMNS --
+                                    "name" VARCHAR2(20) path 'name',
+                                    "deviceName" VARCHAR2(15) path 'deviceName',
+                                    "diskType" VARCHAR2(10) path 'diskType',
+                                    "physicalSize" INT path 'physicalSize',
+                                    "errCount" NUMBER(8) path 'errOtherCount',
+                                    "status" VARCHAR2(15) path 'status',
+                                    "luns" VARCHAR2(10) path 'luns',
+                                    "physicalFirmware" VARCHAR2(15) path 'physicalFirmware',
+                                    "physicalInsertTime" VARCHAR2(25) path 'physicalInsertTime',
+                                    "deviceId" NUMBER(5) path 'deviceId',
+                                    "enclosureDeviceId" NUMBER(5) path 'enclosureDeviceId',
+                                    "makeModel" VARCHAR2(40) path 'makeModel',
+                                    "physicalInterface" VARCHAR2(10) path 'physicalInterface',
+                                    "physicalSerial" VARCHAR2(15) path 'physicalSerial',
+                                    "slotNumber" VARCHAR2(25) path 'slotNumber') b
+                    WHERE  conftype = 'PHYSICALDISKS')
+                WHERE lower(cell) like lower('%'||V1||'%'))
+            SELECT r.*,0 grp1,0 grp2 FROM R
+            UNION ALL
+            SELECT nvl(cell,'Total Cells: '||count(distinct cell)) cell,'--TOTAL--',
+                   'Devices: '||count(distinct "deviceName"),
+                   "diskType",
+                   sum("physicalSize"),
+                   sum("errCount"),max("status"),
+                   'Luns:'||count(distinct "luns"),'Firmwares:'||count(distinct "physicalFirmware"),
+                   null,null,null,null,null,null,null,
+                   grouping_id(cell) grp1,2 grp2
+            FROM   r
+            GROUP  BY "diskType",rollup(cell)
+            ORDER  BY grp1,1,grp2, 2, 4;
     $ELSE
         OPEN c FOR
-            SELECT CELLNODE,NAME,"status","physicalSize","deviceName","diskType","luns","makeModel","physicalFirmware","physicalInsertTime","physicalSerial","slotNumber"
-            FROM   EXA$PHYSICALDISK
-            WHERE lower(cellnode) like lower('%'||V1||'%')
-            ORDER BY 1,2,3;
+            WITH R AS(
+                SELECT CELLNODE,NAME,"deviceName","diskType","physicalSize","status","luns","physicalFirmware","makeModel","physicalInsertTime","physicalSerial","slotNumber"
+                FROM   EXA$PHYSICALDISK
+                WHERE lower(cellnode) like lower('%'||V1||'%'))
+            SELECT r.*,0 grp1,0 grp2 FROM R
+            UNION ALL
+            SELECT nvl(CELLNODE,'Total Cells: '||count(distinct CELLNODE)) cell,'--TOTAL--',
+                   'Devices: '||count(distinct "deviceName"),
+                   "diskType",
+                   sum("physicalSize"),
+                   max("status"),
+                   'Luns:'||count(distinct "luns"),'Firmwares:'||count(distinct "physicalFirmware"),
+                   null,null,null,null,
+                   grouping_id(CELLNODE) grp1,2 grp2
+            FROM   r
+            GROUP  BY "diskType",rollup(CELLNODE)
+            ORDER  BY grp1,1,grp2, 2, 4;
     $END
     :c := c;
 END;

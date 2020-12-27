@@ -15,17 +15,16 @@ WITH
    t1 AS (SELECT hsecs FROM v$timer),
    samples AS(
        SELECT * FROM &GV
-            SELECT /*+ordered use_nl(s1 w) NO_TRANSFORM_DISTINCT_AGG no_merge(w)*/
+            SELECT /*+ordered use_nl(w) NO_TRANSFORM_DISTINCT_AGG no_merge(w)*/
                    sid||',@'||USERENV('instance') sess#,event,&fields,
                    COUNT(*) samples,
                    COUNT(DISTINCT seq#) waits,
                    TRUNC(COUNT(*) / COUNT(DISTINCT seq#)) "Average|Samples",
                    MAX(max(r)) over() all_samples
-            FROM   (SELECT  hsecs+&v2*100 target, ROWNUM r 
+            FROM   (SELECT  hsecs,ROWNUM r 
                     FROM    v$timer 
                     WHERE   USERENV('instance') = coalesce(:V3,:instance, ''||USERENV('instance')) 
-                    CONNECT BY LEVEL<&v2*1e5) s,
-                   (SELECT hsecs FROM v$timer) s1, 
+                    CONNECT BY sys.standard.current_timestamp - current_timestamp <= numtodsinterval(&v2,'second')) s,
                    (SELECT sw.*,
                            nvl2(nullif(ROW_WAIT_FILE#,0),ROW_WAIT_FILE#||','||ROW_WAIT_BLOCK#,'') block#,
                            ROW_WAIT_OBJ# wait_obj#,
@@ -33,7 +32,6 @@ WITH
                            nvl2(sw.p2text,sw.p2text || '= ' || CASE WHEN (LOWER(sw.p2text) LIKE '%addr%' OR sw.p2 >= 536870912) THEN RAWTOHEX(sw.p2raw) ELSE TO_CHAR(sw.p2) END,'') sw_p2,
                            nvl2(sw.p3text,sw.p3text || '= ' || CASE WHEN (LOWER(sw.p3text) LIKE '%addr%' OR sw.p3 >= 536870912) THEN RAWTOHEX(sw.p3raw) ELSE TO_CHAR(sw.p3) END,'') sw_p3 
                     FROM   v$session sw WHERE SID = &V1) w
-            WHERE s1.hsecs<=s.target
             GROUP  BY sid,event,&fields
             ORDER  BY samples desc)))),
    t2 AS (SELECT hsecs FROM v$timer)

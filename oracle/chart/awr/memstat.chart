@@ -33,7 +33,7 @@
                                       CURRENT_SIZE value
                                FROM   DBA_HIST_MEM_DYNAMIC_COMP
                                NATURAL JOIN DBA_HIST_SNAPSHOT
-                               WHERE  end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss')-3/144,sysdate-7) AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate)
+                               WHERE  end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss')-3/144,sysdate-7) AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate+1)
                                AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V1)
                                AND    (&filter)) a
                        )

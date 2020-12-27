@@ -12,19 +12,22 @@ Options:
 
 --[[
 
-    &STAT: default={&DF &adaptive &hint &binds &V3 &V4 &V5 &V6 &V7 &V8 &V9}
+    &STAT: default={&DF &adaptive &binds &V3 &V4 &V5 &V6 &V7 &V8 &V9}
     &V1: default={&_SQL_ID} last={X} x={X}
     &V3: none={} ol={outline alias &hint}
-    &LAST: last={LAST} all={ALL} 
-    &DF: default={ALLSTATS REMOTE &LAST -PROJECTION -ALIAS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL}
+    &LAST: last={LAST} all={OUTLINE ALL} 
+    &DF: default={ALLSTATS PARTITION REMOTE &LAST -PROJECTION -ALIAS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL outline alias}
     &SRC: {
             default={0}, # Both
             d={2}        # Dictionary only
           }
     &binds: default={}, b={PEEKED_BINDS}
+    @check_access_aux: default={(26/8/12)-6}
     @adaptive: 12.1={+REPORT +ADAPTIVE +METRICS} 11.2={+METRICS} default={}
-    @hint    : 19={+HINT_REPORT} DEFAULT={}
-    @proj:  11.2={nvl2(projection,1+regexp_count(regexp_replace(regexp_replace(projection,'[\[.*?\]'),'\(.*?\)'),', '),null) proj} default={cast(null as number) proj}
+    @hint    : 19={+HINT_REPORT -QBREGISTRY} DEFAULT={}
+    @proj:  {11.2={nullif(regexp_count(projection,'\[[A-Z0-9,]+\](,|$)'),0) proj,nvl2(access_predicates,0+regexp_substr(projection,'#keys=(\d+)',1,1,'i',1),null) keys,0+regexp_substr(projection,'rowset=(\d+)',1,1,'i',1) rowsets},
+             default={(select nullif(count(1),0) from dual connect by regexp_substr(projection,'\[[A-Z0-9,]+\](,|$)',1,level) is not null) proj,nullif(0,0) keys,nullif(0,0) rowsets}
+             }
     @check_access_ab : dba_hist_sqlbind={1} default={0}
     @check_access_awr: {
            dba_hist_sql_plan={UNION ALL
@@ -40,8 +43,9 @@ Options:
                          dbid,
                          qblock_name qb,
                          replace(object_alias,'"') alias,
+                         io_cost,position,
                          &proj,
-                         nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
+                         access_predicates ap,filter_predicates fp,search_columns sc
                   FROM   dba_hist_sql_plan a
                   WHERE  a.sql_id = '&v1'
                   AND    '&v1' not in('X','&_sql_id')
@@ -68,8 +72,9 @@ Options:
                          plan_id,
                          qblock_name qb,
                          replace(object_alias,'"') alias,
+                         io_cost,position,
                          &proj,
-                         nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
+                         access_predicates ap,filter_predicates fp,search_columns sc
                   FROM   dba_advisor_sqlplans a
                   WHERE  a.sql_id = '&v1'
                   AND    '&v1' not in('X','&_sql_id')
@@ -92,8 +97,9 @@ Options:
                          plan_id,
                          qblock_name qb,
                          replace(object_alias,'"') alias,
+                         io_cost,position,
                          &proj,
-                         nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
+                         access_predicates ap,filter_predicates fp,search_columns sc
                   FROM   sys.sql$text st,sys.sqlobj$plan a
                   WHERE  st.sql_handle = '&v1'
                   AND    '&v1' not in('X','&_sql_id')
@@ -246,8 +252,9 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          inst_id,
                          qblock_name qb,
                          replace(object_alias,'"') alias,
+                         io_cost,position,
                          &proj,
-                         nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
+                         access_predicates ap,filter_predicates fp,search_columns sc
                   FROM   gv$sql_plan_statistics_all a
                   WHERE  a.sql_id = '&v1'
                   AND   ('&v1' != '&_sql_id' or inst_id=userenv('instance'))
@@ -267,8 +274,9 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          plan_id,
                          qblock_name qb,
                          replace(object_alias,'"') alias,
+                         io_cost,position,
                          &proj,
-                         nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
+                         access_predicates ap,filter_predicates fp,search_columns sc
                   FROM   all_sqlset_plans a
                   WHERE  a.sql_id = '&v1'
                   AND    '&v1' not in('X','&_sql_id')
@@ -292,8 +300,9 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          NULL,
                          qblock_name qb,
                          replace(object_alias,'"') alias,
+                         io_cost,position,
                          &proj,
-                         nvl2(access_predicates,CASE WHEN options LIKE 'STORAGE%' THEN 'S' ELSE 'A' END,'')||nvl2(filter_predicates,'F','')||NULLIF(search_columns,0) pred
+                         access_predicates ap,filter_predicates fp,search_columns sc
                   FROM   plan_table a
                   WHERE  '&v1' not in('&_sql_id')
                   AND    plan_id=(select max(plan_id) keep(dense_rank last order by timestamp) 
@@ -302,19 +311,33 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
          WHERE flag>=&src)
   WHERE  seq = 1),
 hierarchy_data AS
- (SELECT id, parent_id,pred,qb,alias,proj,plan_hash_value,minid
+ (SELECT id, parent_id pid,qb,alias,plan_hash_value phv,minid,io_cost,rownum r_,
+         ap,fp,nvl(nullif(sc,0),keys) sc,nvl2(rowsets,'R'||rowsets||nvl2(proj,'/P'||proj,''),proj) proj
   FROM   sql_plan_data
   START  WITH id = minid
   CONNECT BY PRIOR id = parent_id
-  ORDER  SIBLINGS BY id DESC),
+  ORDER  SIBLINGS BY position desc,id DESC),
 ordered_hierarchy_data AS
- (SELECT id,minid,
-         parent_id AS pid,
-         pred,qb,alias,proj,
-         plan_hash_value AS phv,
-         row_number() over(PARTITION BY plan_hash_value ORDER BY rownum DESC) AS OID,
-         MAX(id) over(PARTITION BY plan_hash_value) AS maxid
-  FROM   hierarchy_data),
+(SELECT A.*,
+        CASE 
+            WHEN nvl(ap,sc) IS NOT NULL THEN 'A'
+        END||CASE 
+            WHEN sc IS NOT NULL THEN sc
+            WHEN ap IS NOT NULL THEN 
+              (SELECT count(distinct regexp_substr(regexp_substr(replace(ap,al),'([^.]|^)"([a-zA-Z0-9#_$]+)([^.]|$)"',1,level),'".*"'))
+               FROM   dual
+               connect by regexp_substr(replace(ap,al),'([^.]|^)"([a-zA-Z0-9#_$]+)([^.]|$)"',1,level) IS NOT NULL)
+        END||CASE 
+            WHEN fp IS NOT NULL THEN
+            (SELECT 'F'||count(distinct regexp_substr(regexp_substr(replace(fp,al),'([^.]|^)"([a-zA-Z0-9#_$]+)([^.]|$)"',1,level),'".*"'))
+             FROM dual
+             connect by regexp_substr(replace(fp,al),'([^.]|^)"([a-zA-Z0-9#_$]+)([^.]|$)"',1,level) IS NOT NULL) 
+        END pred
+ FROM(SELECT a.*,
+             '"'||regexp_substr(NVL(ALIAS,FIRST_VALUE(ALIAS IGNORE NULLs) OVER(ORDER BY r_ ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)),'[^@]+')||'".' al,
+             row_number() over(PARTITION BY phv ORDER BY r_ DESC) AS OID,
+             MAX(id) over(PARTITION BY phv) AS maxid
+      FROM   hierarchy_data a) a),
 qry AS
  (SELECT DISTINCT sql_id sq,
                   flag flag,
@@ -341,14 +364,14 @@ xplan AS
   WHERE  flag = 5
   UNION ALL
   SELECT a.*
-  FROM   qry,TABLE(dbms_xplan.display('plan_table',NULL,format,'plan_id=''' || sq || '''')) a
+  FROM   qry,TABLE(dbms_xplan.display('plan_table',NULL,format,'plan_id=' || sq)) a
   WHERE  flag = 9
   UNION  ALL
   SELECT a.*
   FROM   qry,TABLE(dbms_xplan.display('gv$sql_plan_statistics_all',NULL,format,'child_number=' || plan_hash || ' and sql_id=''' || sq ||''' and inst_id=' || inst_id)) a
   WHERE  flag = 1),
 xplan_data AS
- (SELECT /*+ordered use_nl(o x) materialize no_merge(o)*/
+ (SELECT /*+ordered use_nl(o x) no_merge(o)*/
            x.plan_table_output AS plan_table_output,
            nvl(o.id,x.oid) id,
            o.pid,
@@ -357,7 +380,13 @@ xplan_data AS
            o.maxid,
            r,
            max(o.minid) over() as minid,
-           COUNT(*) over() AS rc
+           COUNT(*) over() AS rc,
+           nvl(trim(dbms_xplan.format_number(CASE 
+               WHEN REGEXP_LIKE(x.plan_table_output,'(TABLE ACCESS [^|]*(FULL|SAMPLE)|INDEX .*FAST FULL)') THEN
+                   greatest(1,floor(io_cost/&check_access_aux))
+               ELSE
+                   io_cost
+           END)),' ') blks
   FROM   (select rownum r, 
                  CASE WHEN regexp_like(plan_table_output, '^\|[-\* ]*[0-9]+ \|') THEN to_number(regexp_substr(plan_table_output, '[0-9]+')) END oid,
                  x.* 
@@ -367,26 +396,29 @@ xplan_data AS
 SELECT plan_table_output
 FROM   xplan_data --
 model  dimension by (r)
-measures(plan_table_output,id,maxid,pred,oid,minid,qb,alias,nullif(proj,null) proj,
+measures(plan_table_output,id,maxid,pred,oid,minid,qb,alias,nullif(proj,null) proj,blks,
          greatest(max(length(maxid)) over () + 3, 5) as csize,
          nvl(greatest(max(length(pred)) over () + 3, 7),0) as psize,
          nvl(greatest(max(length(qb)) over () + 3, 6),0) as qsize,
          nvl(greatest(max(length(alias)) over () + 3, 8),0) as asize,
          nvl(greatest(max(length(proj)) over () + 3, 7),0) as jsize,
+         greatest(max(length(blks)) over () + 2,7) bsize,
          cast(null as varchar2(128)) as inject,
          rc)
 rules sequential order (
         inject[r] = case
               when plan_table_output[cv()] like '------%' then 
-                   rpad('-', csize[cv()]+psize[cv()]+jsize[cv()]+qsize[cv()]+asize[cv()]+1, '-') || '{PLAN}'  
+                   rpad('-', csize[cv()]+psize[cv()]+jsize[cv()]+qsize[cv()]+asize[cv()]+bsize[cv()]+1, '-') || '{PLAN}'  
               when id[cv()+2] = 0 then
                    '|' || lpad('Ord ', csize[cv()]) || '{PLAN}' 
+                       || rpad(' Blks',bsize[cv()]-1)||'|'
                        || decode(psize[cv()],0,'',rpad(' Pred', psize[cv()]-1)||'|')
                        || lpad('Proj |', jsize[cv()]) 
                        || decode(qsize[cv()],0,'',rpad(' Q.B', qsize[cv()]-1)||'|')
                        || decode(asize[cv()],0,'',rpad(' Alias', asize[cv()]-1)||'|')
               when id[cv()] is not null then
-                   '|' || lpad(oid[cv()]||' ', csize[cv()]) || '{PLAN}'  
+                   '|' || lpad(oid[cv()]||' ', csize[cv()]) || '{PLAN}'
+                       || lpad(blks[cv()],bsize[cv()]-1)||'|'
                        || decode(psize[cv()],0,'',rpad(' '||pred[cv()], psize[cv()]-1)||'|')
                        || lpad(proj[cv()] || ' |', jsize[cv()]) 
                        || decode(qsize[cv()],0,'',rpad(' '||qb[cv()], qsize[cv()]-1)||'|')

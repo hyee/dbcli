@@ -1,5 +1,5 @@
 /*[[
-  Get ASH top event, type 'help @@NAME' for more info. Usage: @@NAME [-sql|-p|-none|-pr|-o|-plan|-ash|-dash|-snap|-f"<filter>"] [-t"<ash_dump_table>"] {[fields] [filters]}
+  Get ASH top event, type 'help @@NAME' for more info. Usage: @@NAME [-sql|-p|-none|-pr|-o|-plan|-ash|-dash|-snap|-f"<filter>"] [-t"<ash_dump_table>"] [fields]
   
   Options:
   ========
@@ -55,23 +55,24 @@
             p={p1,p2,p3,p3text &0},
             pr={p1raw,p2raw,p3raw &0}, 
             o={obj &0},
-            plan={plan_hash,current_obj#,SQL_PLAN_LINE_ID &0} 
+            plan={plan_hash,obj,SQL_PLAN_LINE_ID &0} 
             none={1},
             c={},
             proc={sql_id,PLSQL_ENTRY_OBJECT_ID &0},
         }
-      &View: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
+      &ela : ash={1} dash={7}
+      &View: ash={gv$active_session_history}, dash={&check_access_pdb.Active_Sess_History}
       &BASE: ash={1}, dash={10}
       &ASH : default={&view} t={&0}
-      &Range: default={sample_time+0 between nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MISS'),sysdate-1) and nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MISS'),sysdate)}
+      &Range: default={sample_time+0 between nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MISS'),sysdate-&ela) and nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MISS'),sysdate+1)}
       &filter: {
-            id={(trim('&1') is null or upper(:V1)='A' or :V1 in(&top_sql sql_id,''||session_id,nvl(event,'ON CPU'))) and &range
-                    &V4},
+            id={(trim('&1') is null or upper(:V1)='A' or :V1 in(&top_sql sql_id,''||session_id,''||sql_plan_hash_value,nvl(event,'ON CPU'))) and &range},
             snap={sample_time+0>=sysdate-nvl(0+:V1,30)/86400 and (:V2 is null or :V2 in(&top_sql sql_id,''||session_id,'event')) &V3},
             u={user_id=(select user_id from &CHECK_ACCESS_USER where username=nvl('&0',sys_context('userenv','current_schema'))) and &range}
         }
       &more_filter: default={1=1},f={}
       @CHECK_ACCESS_USER: dba_users={dba_users} default={all_users}
+      @check_access_pdb: pdb/awr_pdb_snapshot={AWR_PDB_} default={DBA_HIST_}
       @counter: 11.2={, count(distinct sql_exec_id||to_char(sql_exec_start,'yyyymmddhh24miss')) "Execs"},default={}
       @UNIT   : 11.2={least(nvl(tm_delta_db_time,delta_time),DELTA_TIME)*1e-6}, default={&BASE}
       @CPU    : 11.2={least(nvl(tm_delta_cpu_time,delta_time),DELTA_TIME)*1e-6}, default={0}
@@ -83,6 +84,83 @@
 ]]*/
 col reads format KMG
 col writes format kMG
+WITH ASH_V AS(
+    SELECT a.*,
+           CASE WHEN PRO_ LIKE '(%)' AND upper(substr(PRO_,2,1))=substr(PRO_,2,1) THEN
+                CASE WHEN PRO_ LIKE '(%)' AND substr(PRO_,2,1) IN('P','W','J') THEN
+                    '('||substr(PRO_,2,1)||'nnn)'
+                ELSE regexp_replace(PRO_,'[0-9a-z]','n') END
+           WHEN instr(a.program,'@')>1 THEN
+                nullif(substr(program,1,instr(program,'@')-1),'oracle')
+           END program#
+    FROM (SELECT /*+MERGE PARALLEL(4)
+                  full(a.a) leading(a.a) use_hash(a.a a.s) swap_join_inputs(a.s)
+                  use_hash(a.V_$ACTIVE_SESSION_HISTORY.V$ACTIVE_SESSION_HISTORY.GV$ACTIVE_SESSION_HISTORY.A)
+                  FULL(A.GV$ACTIVE_SESSION_HISTORY.A) leading(A.GV$ACTIVE_SESSION_HISTORY.A) 
+                  use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S) 
+                  swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
+
+                  FULL(A.ASH) FULL(A.EVT) swap_join_inputs(A.EVT) PX_JOIN_FILTER(A.ASH)
+                  OPT_ESTIMATE(TABLE A.ASH ROWS=30000000)
+                  full(A.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH)
+                  full(A.&check_access_pdb.ACTIVE_SESS_HISTORY.EVT)
+                  swap_join_inputs(A.&check_access_pdb.ACTIVE_SESS_HISTORY.EVT)
+                  PX_JOIN_FILTER(A.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH)
+                  OPT_ESTIMATE(TABLE D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH ROWS=30000000)
+                */ 
+                a.*,
+                sql_plan_hash_value plan_hash,
+                nvl(trim(case 
+                        when current_obj# < -1 then
+                            'Temp I/O'
+                        when current_obj# > 0 then 
+                             ''||current_obj#
+                        when p3text like '%namespace' and p3>power(16,8)*4294950912 then
+                            'Undo'
+                        when p3text like '%namespace' and p3>power(16,8) then 
+                             ''||trunc(p3/power(16,8))
+                        when p3text like '%namespace' then 
+                            'X$KGLST#'||trunc(mod(p3,power(16,8))/power(16,4))
+                        when p1text like 'cache id' then 
+                            (select parameter from v$rowcache where cache#=p1 and rownum<2)
+                        when event like 'latch%' and p2text='number' then 
+                            (select name from v$latchname where latch#=p2 and rownum<2)
+                        when p3text='class#' then
+                            (select class from (SELECT class, ROWNUM r from v$waitstat) where r=p3 and rownum<2)
+                        when p1text ='file#' and p2text='block#' then 
+                            'file#'||p1||' block#'||p2
+                        when p3text in('block#','block') then 
+                            'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_BLOCK(p3)    
+                        when current_obj# = 0 then 'Undo'
+                        --when p1text ='idn' then 'v$db_object_cache hash#'||p1
+                        --when c.class is not null then c.class
+                    end),''||current_obj#)  obj,
+                nvl2(CURRENT_FILE#,CURRENT_FILE#||','||current_block#,'') block,
+                SUBSTR(a.program,-6) PRO_,&unit c,&CPU CPU
+              , TO_CHAR(p1, 'fm0XXXXXXXXXXXXXXX') p1raw
+              , TO_CHAR(p2, 'fm0XXXXXXXXXXXXXXX') p2raw
+              , TO_CHAR(p3, 'fm0XXXXXXXXXXXXXXX') p3raw
+              , nvl(event,nullif('['||p1text||nullif('|'||p2text,'|')||nullif('|'||p3text,'|')||']','[]')) event_name
+        &V11  , CASE WHEN IN_CONNECTION_MGMT      = 'Y' THEN 'CONNECTION_MGMT '          END ||
+        &V11    CASE WHEN IN_PARSE                = 'Y' THEN 'PARSE '                    END ||
+        &V11    CASE WHEN IN_HARD_PARSE           = 'Y' THEN 'HARD_PARSE '               END ||
+        &V11    CASE WHEN IN_SQL_EXECUTION        = 'Y' THEN 'SQL_EXECUTION '            END ||
+        &V11    CASE WHEN IN_PLSQL_EXECUTION      = 'Y' THEN 'PLSQL_EXECUTION '          END ||
+        &V11    CASE WHEN IN_PLSQL_RPC            = 'Y' THEN 'PLSQL_RPC '                END ||
+        &V11    CASE WHEN IN_PLSQL_COMPILATION    = 'Y' THEN 'PLSQL_COMPILATION '        END ||
+        &V11    CASE WHEN IN_JAVA_EXECUTION       = 'Y' THEN 'JAVA_EXECUTION '           END ||
+        &V11    CASE WHEN IN_BIND                 = 'Y' THEN 'BIND '                     END ||
+        &V11    CASE WHEN IN_CURSOR_CLOSE         = 'Y' THEN 'CURSOR_CLOSE '             END ||
+        &V11    CASE WHEN IN_SEQUENCE_LOAD        = 'Y' THEN 'SEQUENCE_LOAD '            END ||
+        &V12    CASE WHEN IN_INMEMORY_QUERY       = 'Y' THEN 'IN_INMEMORY_QUERY'         END ||
+        &V12    CASE WHEN IN_INMEMORY_POPULATE    = 'Y' THEN 'IN_INMEMORY_POPULATE'      END ||
+        &V12    CASE WHEN IN_INMEMORY_PREPOPULATE = 'Y' THEN 'IN_INMEMORY_PREPOPULATE'   END ||
+        &V12    CASE WHEN IN_INMEMORY_REPOPULATE  = 'Y' THEN 'IN_INMEMORY_REPOPULATE'    END ||
+        &V12    CASE WHEN IN_INMEMORY_TREPOPULATE = 'Y' THEN 'IN_INMEMORY_TREPOPULATE'   END ||
+        &V12    CASE WHEN IN_TABLESPACE_ENCRYPTION= 'Y' THEN 'IN_TABLESPACE_ENCRYPTION'  END ||
+        &V11   '' phase
+        FROM &ash a) a
+    WHERE &filter and (&more_filter))
 SELECT * FROM (
     SELECT /*+LEADING(a) USE_HASH(u) swap_join_inputs(u) no_expand opt_param('_sqlexec_hash_based_distagg_enabled' true) */
         round(SUM(c))                                                   Secs
@@ -108,43 +186,7 @@ SELECT * FROM (
       , round(SUM(CASE WHEN wait_class ='Other'          THEN c ELSE 0 END)) "Other"
       , TO_CHAR(MIN(sample_time), 'YYYY-MM-DD HH24:MI:SS') first_seen
       , TO_CHAR(MAX(sample_time), 'YYYY-MM-DD HH24:MI:SS') last_seen
-    FROM
-        (SELECT /*+
-                  full(a.a) leading(a.a) use_hash(a.a a.s) swap_join_inputs(a.s)
-                  FULL(A.GV$ACTIVE_SESSION_HISTORY.A)  leading(A.GV$ACTIVE_SESSION_HISTORY.A)
-                  use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S)
-                  swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
-                */ 
-                a.*,sql_plan_hash_value plan_hash,current_obj# obj,nvl2(CURRENT_FILE#,CURRENT_FILE#||','||current_block#,'') block,
-                CASE WHEN REGEXP_LIKE(a.program, '.*\([A-Z]+\d+\)') THEN
-                     REGEXP_REPLACE(regexp_substr(a.program,'\([A-Z]+\d+\)'), '\d', 'n')
-                WHEN instr(a.program,'@')>1 THEN
-                     nullif(regexp_substr(a.program,'[^@]+'),'oracle')
-                END program#,&unit c,&CPU CPU
-              , TO_CHAR(p1, 'fm0XXXXXXXXXXXXXXX') p1raw
-              , TO_CHAR(p2, 'fm0XXXXXXXXXXXXXXX') p2raw
-              , TO_CHAR(p3, 'fm0XXXXXXXXXXXXXXX') p3raw
-              , nvl(event,'['||p1text||nullif('|'||p2text,'|')||nullif('|'||p3text,'|')||']') event_name
-        &V11  , CASE WHEN IN_CONNECTION_MGMT      = 'Y' THEN 'CONNECTION_MGMT '          END ||
-        &V11    CASE WHEN IN_PARSE                = 'Y' THEN 'PARSE '                    END ||
-        &V11    CASE WHEN IN_HARD_PARSE           = 'Y' THEN 'HARD_PARSE '               END ||
-        &V11    CASE WHEN IN_SQL_EXECUTION        = 'Y' THEN 'SQL_EXECUTION '            END ||
-        &V11    CASE WHEN IN_PLSQL_EXECUTION      = 'Y' THEN 'PLSQL_EXECUTION '          END ||
-        &V11    CASE WHEN IN_PLSQL_RPC            = 'Y' THEN 'PLSQL_RPC '                END ||
-        &V11    CASE WHEN IN_PLSQL_COMPILATION    = 'Y' THEN 'PLSQL_COMPILATION '        END ||
-        &V11    CASE WHEN IN_JAVA_EXECUTION       = 'Y' THEN 'JAVA_EXECUTION '           END ||
-        &V11    CASE WHEN IN_BIND                 = 'Y' THEN 'BIND '                     END ||
-        &V11    CASE WHEN IN_CURSOR_CLOSE         = 'Y' THEN 'CURSOR_CLOSE '             END ||
-        &V11    CASE WHEN IN_SEQUENCE_LOAD        = 'Y' THEN 'SEQUENCE_LOAD '            END ||
-        &V12    CASE WHEN IN_INMEMORY_QUERY       = 'Y' THEN 'IN_INMEMORY_QUERY'         END ||
-        &V12    CASE WHEN IN_INMEMORY_POPULATE    = 'Y' THEN 'IN_INMEMORY_POPULATE'      END ||
-        &V12    CASE WHEN IN_INMEMORY_PREPOPULATE = 'Y' THEN 'IN_INMEMORY_PREPOPULATE'   END ||
-        &V12    CASE WHEN IN_INMEMORY_REPOPULATE  = 'Y' THEN 'IN_INMEMORY_REPOPULATE'    END ||
-        &V12    CASE WHEN IN_INMEMORY_TREPOPULATE = 'Y' THEN 'IN_INMEMORY_TREPOPULATE'   END ||
-        &V12    CASE WHEN IN_TABLESPACE_ENCRYPTION= 'Y' THEN 'IN_TABLESPACE_ENCRYPTION'  END ||
-        &V11   '' phase
-        FROM &ash a) a
-    WHERE &filter and (&more_filter)
+    FROM ASH_V A
     GROUP BY nvl2(qc_session_id,'PARALLEL','SERIAL'),a.program#,a.user_id,event_name,&fields
     ORDER BY secs DESC nulls last,&fields
 )

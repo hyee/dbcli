@@ -11,6 +11,7 @@ DECLARE
     version VARCHAR2(3);
     sq_id   VARCHAR2(128) := :V1;
     sq_text CLOB;
+    cnt     PLS_INTEGER;
 BEGIN
     SELECT regexp_replace(version, '\..*') INTO version FROM v$instance;
     BEGIN
@@ -29,39 +30,47 @@ BEGIN
         EXECUTE IMMEDIATE q'[alter session set events '5614566 trace name context forever']'; -- bug fix for 10.2.0.4 backport
     END IF;
     sys.dbms_shared_pool.unkeep(name, flag => 'C');
-    sys.dbms_shared_pool.purge(name, 'C', 1);
+    sys.dbms_shared_pool.purge(name, 'C',64);
+    sys.dbms_shared_pool.purge(name, 'C');
     IF version + 0 = 10 THEN
         EXECUTE IMMEDIATE q'[alter session set events '5614566 trace name context off']';
         RETURN;
     END IF;
 
     dbms_output.put_line('Purging SQL: '||sq_id);
-    -- create fake sql patch to invalidate the cursors
-    dbms_output.put_line('Creating/dropping fake SQL Patch: '||sq_id);
-    $IF DBMS_DB_VERSION.VERSION=11 AND &CHECK_ACCESS_DIAG=1 $THEN
-        SYS.DBMS_SQLDIAG_INTERNAL.I_CREATE_PATCH (
-             sql_text => sq_text,
-             hint_text => 'NULL',
-             name => 'purge_'||sq_id,
-             description => 'PURGE CURSOR',
-             category => 'DEFAULT',
-             validate => TRUE);
-    $END
 
-    $IF DBMS_DB_VERSION.VERSION>11 $THEN
-        name:=DBMS_SQLDIAG.CREATE_SQL_PATCH (
+    SELECT COUNT(1) INTO   cnt
+    FROM   v$sql
+    WHERE  sql_id = sq_id;
+    IF cnt >0 THEN
+        NULL;
+        -- create fake sql patch to invalidate the cursors
+        dbms_output.put_line('Creating/dropping fake SQL Patch: '||sq_id);
+        $IF DBMS_DB_VERSION.VERSION=11 AND &CHECK_ACCESS_DIAG=1 $THEN
+            SYS.DBMS_SQLDIAG_INTERNAL.I_CREATE_PATCH (
                  sql_text => sq_text,
                  hint_text => 'NULL',
                  name => 'purge_'||sq_id,
                  description => 'PURGE CURSOR',
                  category => 'DEFAULT',
                  validate => TRUE);
-    $END
+        $END
 
-    $IF DBMS_DB_VERSION.VERSION>10 AND &CHECK_ACCESS_DIAG=1 $THEN
-        SYS.DBMS_SQLDIAG.DROP_SQL_PATCH (
-             name   => 'purge_'||sq_id, 
-             ignore => TRUE);
-    $END
+        $IF DBMS_DB_VERSION.VERSION>11 $THEN
+            name:=DBMS_SQLDIAG.CREATE_SQL_PATCH (
+                     sql_text => sq_text,
+                     hint_text => 'NULL',
+                     name => 'purge_'||sq_id,
+                     description => 'PURGE CURSOR',
+                     category => 'DEFAULT',
+                     validate => TRUE);
+        $END
+
+        $IF DBMS_DB_VERSION.VERSION>10 AND &CHECK_ACCESS_DIAG=1 $THEN
+            SYS.DBMS_SQLDIAG.DROP_SQL_PATCH (
+                 name   => 'purge_'||sq_id, 
+                 ignore => TRUE);
+        $END
+    END IF;
 END;
 /

@@ -283,7 +283,7 @@ DECLARE
             IF plan_man(j) = 'YES' THEN
                 wr('/* -- This is an Oracle mandatory plan directive');
             END IF;
-            FOR r IN (SELECT COLUMN_VALUE c
+            FOR r IN (SELECT /*+opt_param('cursor_sharing' 'force')*/ COLUMN_VALUE c
                       FROM   TABLE(XMLSEQUENCE(extract(dbms_xmlgen.getxmltype('select * from DBA_RSRC_PLAN_DIRECTIVES where upper(plan)=upper(''' ||
                                                                                plan_list(j) || q'[') and NVL(STATUS,' ')!='PENDING']'),
                                                        '//ROW')))) LOOP
