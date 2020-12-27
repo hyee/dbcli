@@ -9,7 +9,26 @@ if [ "$1" = "" ] ; then
     exit 1
 fi
 
+if [ "$1" = "remove" ] ; then
+sqlplus -s "$db_account" <<'EOF'
+    set verify off lines 150
+    PRO
+    PRO
+    PRO Cleaning up residual EXA$* objects before setup
+    PRO ===============================================
+    begin
+        for r in(select * from user_objects where object_name like 'EXA$%' and object_type in('VIEW','TABLE')) loop
+            execute immediate 'drop '||r.object_type||' '||r.object_name;
+        end loop;
 
+        for r in(select * from dba_synonyms where table_name like 'EXA$%' and owner='PUBLIC') loop
+            execute immediate 'drop public synonym '||r.synonym_name;
+        end loop;
+    end;
+/
+EOF
+exit 1
+fi
 
 if [ "$ORACLE_SID" = "" ] ; then
     echo "Environment variable \$ORACLE_SID is not found, please make sure the current OS user is correct." 1>&2
@@ -327,7 +346,7 @@ for line in output:gmatch("[^\r\n\t]+") do
         tstamp=line
     elseif tstamp and line~="" then
         line=line:gsub('|',"l")
-        print(fmt:format(cell, tstamp,))
+        print(fmt:format(cell, tstamp,line))
     end
 end
 !
