@@ -197,11 +197,15 @@ function extvars.set_cdbmode(name,value)
             if tonumber(prev_container.dbid) == nil then
                 cfg.force_set('dbid',db.props.container_dbid)
             end
+            pcall(db.internal_call,db,'alter session set container_data=current');
             --cfg.force_set('container',db.props.container_id)
         end
     elseif cdbmode=='pdb' then
         if prev_container.new_dbid==cfg.get('dbid') and prev_container.new_container==cfg.get('container') then
             cfg.force_set('dbid','default')
+            if db:is_connect() then
+                pcall(db.internal_call,db,'alter session set container_data=all');
+            end;
             --cfg.force_set('container','default')
         end
     end
@@ -369,7 +373,7 @@ function extvars.set_dict(type,scope)
         extvars.dict,extvars.keywords,extvars.params={},{},{}
         sql=[[
             with r as(
-                    SELECT /*+no_merge*/ owner,table_name, column_name col,data_type
+                    SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode')*/ owner,table_name, column_name col,data_type
                     FROM   dba_tab_cols
                     WHERE  owner in('SYS','PUBLIC')
                     @XTABLE@)
@@ -404,7 +408,7 @@ function extvars.set_dict(type,scope)
         dict,params,keywords=extvars.dict,extvars.params,extvars.keywords
         sql=[[
             with r as(
-                    SELECT /*+no_merge*/ owner,table_name, column_name col,data_type
+                    SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode')*/ owner,table_name, column_name col,data_type
                     FROM   dba_tab_cols, dba_users
                     WHERE  user_id IN (SELECT SCHEMA# FROM sys.registry$ UNION ALL SELECT SCHEMA# FROM sys.registry$schemas)
                     AND    username = owner

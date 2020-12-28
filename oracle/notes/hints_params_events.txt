@@ -76,7 +76,9 @@ Parameters
     _controlfile_cell_flash_caching: 
         3: (default) Control File reads will be cached in the Cell Flash Cache with a default caching policy
         2: disable Flash Cache caching of Control File reads.
-        1: enable KEEP caching policy of CF reads (more aggressive than default) 
+        1: enable KEEP caching policy of CF reads (more aggressive than default)
+    _db_writer_coalesce_area_size: defaults to 4M. the dbwr buffer(in v$sgastat) to coalesce adjacent blocks into a single large write, in ODA system it's usually set to 16M, see 'write clones%' sysstat
+    _connect_by_use_union_all: when 'OLD_PLAN_MODE' then works like hint 'CONNECT_BY_COMBINE_SW+NO_CONNECT_BY_FILTERING', mainly used to fix the unexpected plan of a view
 DMLs.
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
@@ -110,6 +112,7 @@ Hints:
     OR_EXPAND(<qb> (1) (2) ...(N)): expand N or expression to union all
     BUSHY_JOIN([<qb>] (<alias1>,<alias2>,...)): enable bushy join
     no_transform_distinct_agg/no_place_distinct/no_place_group_by: disable aggregation transformation on inline view
+    _optimizer_group_by_placement/_optimizer_distinct_placement/_optimizer_extend_jppd_view_types: used to fix some execute plan issues
     
 Fix Controls:
     13583722/16726844: impact the CBO behaviour for incr stats, ref: https://hourim.wordpress.com/2019/11/21/incremental-histogram-and-fix-control/
@@ -120,7 +123,7 @@ Fix Controls:
     6708183 :  allow dynamic sampling on table functions    
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
-   NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled: Used on PDB to query dict views
+   NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled/CONTAINER_DATA(bug30122249): Used on PDB to query dict views
    HCC compression on conventional load(insert select/bulk insert):
        * compatible=12.2+ 
        * ASSM tablespace(SEGMENT SPACE MANAGEMENT AUTO)

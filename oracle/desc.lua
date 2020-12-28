@@ -435,7 +435,7 @@ local desc_sql={
             from all_ind_columns left join all_ind_expressions using(index_owner,index_name,column_position,table_owner,table_name)
             WHERE  index_owner=:1 and index_name=:2
             ORDER BY NO#]],
-            [[WITH r1 AS (SELECT /*+no_merge*/* FROM all_part_key_columns WHERE owner=:owner and NAME = :object_name),
+            [[WITH r1 AS (SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode')*/* FROM all_part_key_columns WHERE owner=:owner and NAME = :object_name),
                     r2 AS (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=:owner and NAME = :object_name)
              SELECT LOCALITY,
                     PARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
@@ -612,7 +612,7 @@ local desc_sql={
         AND    a.column_name=c.cname(+)
         ORDER BY NO#]],
     [[
-        WITH I AS (SELECT /*+no_merge opt_param('cursor_sharing' 'force')*/ I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
+        WITH I AS (SELECT /*+no_merge opt_param('cursor_sharing' 'force') opt_param('_connect_by_use_union_all','old_plan_mode')*/ I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
                    PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
                             SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
                             FROM   (SELECT /*+no_merge*/* FROM all_part_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
@@ -691,7 +691,7 @@ local desc_sql={
                 AND    (A.constraint_type != 'C' OR A.constraint_name NOT LIKE 'SYS\_%' ESCAPE '\'))
     ]],
     [[/*grid={topic='ALL_TABLES', pivot=1}*/ 
-    WITH r1 AS (SELECT /*+no_merge*/* FROM all_part_key_columns WHERE owner=:owner and NAME = :object_name),
+    WITH r1 AS (SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode')*/* FROM all_part_key_columns WHERE owner=:owner and NAME = :object_name),
            r2 AS (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=:owner and NAME = :object_name)
     SELECT PARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
                                  FROM   r1
@@ -1150,7 +1150,7 @@ function desc.desc(name,option)
     local obj=db:check_obj(name)
     if obj.object_type=='SYNONYM' then
         local new_obj=db:dba_query(db.get_value,[[WITH r AS
-         (SELECT /*+materialize cardinality(p 1)*/REFERENCED_OBJECT_ID OBJ, rownum lv
+         (SELECT /*+materialize cardinality(p 1) opt_param('_connect_by_use_union_all','old_plan_mode')*/REFERENCED_OBJECT_ID OBJ, rownum lv
           FROM   PUBLIC_DEPENDENCY p
           START  WITH OBJECT_ID = :1
           CONNECT BY NOCYCLE PRIOR REFERENCED_OBJECT_ID = OBJECT_ID AND LEVEL<4)

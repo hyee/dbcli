@@ -11,7 +11,7 @@ local prev_stats
 
 function output.setOutput(db)
     local flag=cfg.get("ServerOutput")
-    cfg.set('autotrace','off')
+    cfg.force_set('autotrace','off')
     sqlerror=nil
     local stmt="BeGin dbms_output."..(flag=="on" and "enable(null)" or "disable()")..";end;"
     pcall(function() (db or env.getdb()):internal_call(stmt) end)

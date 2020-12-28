@@ -180,7 +180,7 @@ BEGIN
               WHERE  b.chose IS NOT NULL
               OR     a.b_sid IS NOT NULL),
             chains AS (
-                SELECT /*+NO_EXPAND*/
+                SELECT /*+NO_EXPAND opt_param('_connect_by_use_union_all','old_plan_mode')*/
                       level lvl,
                       sid w_sid,
                       SYS_CONNECT_BY_PATH(case when :filter2 = 1 then 1 when &filter then 1 else 0 end ,',') is_found,

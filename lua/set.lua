@@ -6,7 +6,6 @@ local root_cmd
 cfg._backup=nil
 cfg._plugins=table.strong()
 
-
 function cfg.show_cfg(name)
     local rows={{'Name','Value','Default','Class','Available Values','Description'}}
     print([[Usage: set      <name>                                  : Get specific parmeter value
@@ -144,7 +143,9 @@ function cfg.temp(name,value,backup)
     name=name:upper()
     local item=cfg.exists(name)
     if not item then return end
-    if (backup or item.prebackup) then
+    if backup==false then
+        item.org=value
+    elseif (backup or item.prebackup) then
         item.org=item.value
     end
     item.prebackup=backup
@@ -247,7 +248,7 @@ function cfg.doset(...)
 end
 
 function cfg.force_set(item,value)
-    cfg.doset(item,value)
+    cfg.set(item,value,false)
     if cfg._backup and cfg._backup[item:upper()] then cfg._backup[item:upper()]=cfg[item:upper()] end
 end
 
@@ -290,7 +291,9 @@ function cfg.capture_before_cmd(command)
     if #env.RUNNING_THREADS>1 then return end
     local cmd=env._CMDS[command[1]]
     if command[1]~='SET' and cmd.ALIAS_TO~='SET' and command[1]~='HELP' then
+        env.log_debug('set',cfg.AUTOTRACE.org..'  '..cfg.AUTOTRACE.value)
         env.log_debug("set","taking full backup",command[1])
+        env.log_debug('set',cfg.AUTOTRACE.org..'  '..cfg.AUTOTRACE.value)
         cfg._backup=cfg.backup()
     else
         cfg._backup=nil
@@ -300,8 +303,10 @@ end
 function cfg.capture_after_cmd(cmd,args)
     if #env.RUNNING_THREADS>1 then return end
     if cfg._backup then
+        env.log_debug('set',cfg.AUTOTRACE.org..'  '..cfg.AUTOTRACE.value)
         env.log_debug("set","taking full reset")
-        cfg.restore(cfg._backup) 
+        cfg.restore(cfg._backup)
+        env.log_debug('set',cfg.AUTOTRACE.org..'  '..cfg.AUTOTRACE.value)
     end
     cfg._backup=nil
 end

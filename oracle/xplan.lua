@@ -148,7 +148,8 @@ function xplan.explain(fmt,sql)
         end}
     sql=[[
         WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
-        (SELECT a.*,
+        (SELECT /*+materialize*/
+                a.*,
                 qblock_name qb,
                 replace(object_alias,'"') alias,
                 @proj@,
@@ -157,11 +158,12 @@ function xplan.explain(fmt,sql)
          WHERE  seq = 1
          ORDER  BY id),
         hierarchy_data AS
-         (SELECT id, pid,qb,alias,io_cost,rownum r_,ap,fp,nvl(nullif(sc,0),keys) sc,nvl2(rowsets,'R'||rowsets||nvl2(proj,'/P'||proj,''),proj) proj
-            FROM   sql_plan_data
-            START  WITH id = 0
-            CONNECT BY PRIOR id = pid
-            ORDER  SIBLINGS BY position desc,id DESC),
+         (SELECT /*+CONNECT_BY_COMBINE_SW NO_CONNECT_BY_FILTERING*/
+                 id, pid,qb,alias,io_cost,rownum r_,ap,fp,nvl(nullif(sc,0),keys) sc,nvl2(rowsets,'R'||rowsets||nvl2(proj,'/P'||proj,''),proj) proj
+          FROM   sql_plan_data
+          START  WITH id = 0
+          CONNECT BY PRIOR id = pid
+          ORDER  SIBLINGS BY position desc,id DESC),
         ordered_hierarchy_data AS
          (SELECT A.*,
                 CASE 

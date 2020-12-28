@@ -320,12 +320,12 @@ BEGIN
                                I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
                                PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
                                         SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
-                                        FROM   (SELECT /*+no_merge*/* FROM all_part_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
+                                        FROM   (SELECT /*+opt_param('_connect_by_use_union_all','old_plan_mode') no_merge*/* FROM all_part_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
                                         START  WITH column_position = 1
                                         CONNECT BY PRIOR column_position = column_position - 1]'),'//V') PARTITIONED_BY,
                                nullif(SUBPARTITIONING_TYPE,'NONE')||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
                                         SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
-                                        FROM   (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
+                                        FROM   (SELECT /*+opt_param('_connect_by_use_union_all','old_plan_mode') no_merge*/* FROM all_subpart_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
                                         START  WITH column_position = 1
                                         CONNECT BY PRIOR column_position = column_position - 1]'),'//V') SUBPART_BY
                         FROM   &check_access_dba.INDEXES I,&check_access_dba.PART_INDEXES C

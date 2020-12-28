@@ -311,7 +311,8 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
          WHERE flag>=&src)
   WHERE  seq = 1),
 hierarchy_data AS
- (SELECT id, parent_id pid,qb,alias,plan_hash_value phv,minid,io_cost,rownum r_,
+ (SELECT /*+CONNECT_BY_COMBINE_SW NO_CONNECT_BY_FILTERING*/
+         id, parent_id pid,qb,alias,plan_hash_value phv,minid,io_cost,rownum r_,
          ap,fp,nvl(nullif(sc,0),keys) sc,nvl2(rowsets,'R'||rowsets||nvl2(proj,'/P'||proj,''),proj) proj
   FROM   sql_plan_data
   START  WITH id = minid
