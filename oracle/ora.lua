@@ -32,7 +32,7 @@ function ora:validate_accessable(name,options,values)
         elseif name:find("CHECK_ACCESS",1,true)==1 then--objects are sep with the / symbol
             for obj in option:gmatch("([^/%s]+)") do
                 if obj:upper()=='CDB' then
-                    if db.props.container_id~=0 then
+                    if (db.props.container_id or 2)>1 then
                         check_flag=4
                         expect_name='non-CDB'
                         expect='CDB mode'
@@ -40,19 +40,26 @@ function ora:validate_accessable(name,options,values)
                         break
                     end
                 elseif obj:upper()=='PDB' then
-                    if tonumber(db.props.container_id or 0)==0 then
+                    if tonumber(db.props.container_id or 0)<2 then
                         check_flag=4
                         expect_name='non-PDB'
                         expect='PDB mode'
                         default=nil
                         break
                     end
-                elseif obj:upper()~="DEFAULT" and not db:check_access(obj,1) then
-                    default=nil
-                    check_flag=2
-                    expect_name="access"
-                    expect='the accesses to: '.. option
-                    break
+                elseif obj:upper()~="DEFAULT" then
+                    local is_accessed=db:check_access(obj,1)
+                    if is_accessed then
+                        local rtn,c=pcall(db.get_rows,db,'select /*INTERNAL_DBCLI_CMD*/ 1 from '..obj..' where rownum<2')
+                        is_accessed=#c>1
+                    end
+                    if not is_accessed then
+                        default=nil
+                        check_flag=2
+                        expect_name="access"
+                        expect='the accesses to: '.. option
+                        break
+                    end
                 end
             end
         else--check version

@@ -324,7 +324,7 @@ function extvars.set_dict(type,scope)
                         t INT;
                     BEGIN
                         t:=sys.dbms_utility.get_parameter_value(:name,y,x);
-                        :value := nvl(''||y,x);
+                        :value := nvl(x,''||y);
                     EXCEPTION WHEN OTHERS THEN
                         :value := 'N/A';
                     END;]],args,'Internal_GetDBParameter')

@@ -53,11 +53,7 @@ BEGIN
         sq := replace(sq,'@OBS','0');
     END IF;
 
-    IF dbms_db_version.version>=12 AND (dbms_db_version.release>1 OR dbms_db_version.version>=18) AND sys_context('userenv','con_id')>0 THEN
-        sq := replace(sq,'@source','awr_pdb');
-    ELSE
-        sq := replace(sq,'@source','dba_hist');
-    END IF; 
+    sq := replace(sq,'@source','dba_hist');
     :awr$sqlstat := sq; 
 END;
 /
