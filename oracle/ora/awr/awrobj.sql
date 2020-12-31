@@ -36,7 +36,8 @@
         @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
         @CON : 12.1={,CON_DBID} DEFAULT={}
         @phf : 12.1={nvl2(other_xml,to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1)),'')} default={null}
-        @check_access_pdb: pdb/awr_pdb_snapshot={AWR_PDB_} default={DBA_HIST_}
+        &AWR_VIEW        : default={AWR_PDB_} hist={dba_hist_}
+        @check_access_pdb: pdb/awr_pdb_snapshot={&AWR_VIEW} default={DBA_HIST_}
     ]]--
 ]]*/
 
@@ -91,7 +92,7 @@ FROM (SELECT A.*, row_number() over(PARTITION BY dbid, obj#, dataobj# ORDER BY S
           SELECT * 
           FROM objs 
           JOIN &check_access_pdb.Seg_stat USING (dbid,obj#,dataobj#)
-          JOIN (select dbid,snap_id,instance_number,begin_interval_time from dba_hist_snapshot) s USING(dbid,instance_number,snap_id)
+          JOIN (select dbid,snap_id,instance_number,begin_interval_time from &check_access_pdb.snapshot) s USING(dbid,instance_number,snap_id)
           WHERE s.begin_interval_time BETWEEN st AND ed) A)
 GROUP BY owner,object_name,rollup(SUBOBJECT_NAME)
 --HAVING(COUNT(DISTINCT SUBOBJECT_NAME)>1 OR grouping_id(SUBOBJECT_NAME)=0)

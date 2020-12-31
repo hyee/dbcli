@@ -20,7 +20,7 @@ local function rep_instance(prefix,full,obj,suffix)
     local dict,dict1,flag,str=extvars.dict[obj],extvars.dict[obj:sub(2)],0
     if not checking_access and cdbmode~='off' and extvars.dict[obj] and obj:find(cdbstr) then
         local new_obj = obj:gsub('^CDB_','DBA_')
-        if cdbmode=='pdb' and (extvars.dict[new_obj] or {}).comm_view then 
+        if cdbmode=='pdb' and (extvars.dict[new_obj] or {}).comm_view and db.props.version<21 then 
             if db.props.select_dict==nil then
                 checking_access=true
                 db.props.select_dict=db.props.isdba or db:check_access('SYS.INT$DBA_SYNONYMS',1) or false

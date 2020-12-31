@@ -1,17 +1,10 @@
-/*[[Show system level enabled events.
-    Refer to: https://github.com/xtender/xt_scripts/blob/master/events/enabled.sql
+/*[[Show system level enabled events. Usage: @@NAME [-t"<type>"]
+    type: can be session,process or system
+    --[[
+        &target: default={session} t={}
+    --]]
 ]]*/
 set feed off
-DECLARE
-    level# INT;
-BEGIN
-    FOR event# IN 1 .. 10999 LOOP
-        sys.dbms_system.read_ev(event#, level#);
-        IF level# != 0 THEN
-            dbms_output.put_line('Event #' || event# || ' level:' || level#);
-        END IF;
-    END LOOP;
-    sys.dbms_system.read_ev(10046, level#);
-    dbms_output.put_line(level#);
-END;
-/
+
+pro write events into default trace file, please run 'loadtrace default' to download to tracefile
+alter session set events 'immediate eventdump(&target)';

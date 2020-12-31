@@ -1,5 +1,5 @@
 /*[[
-  Get ASH top event, type 'help @@NAME' for more info. Usage: @@NAME [-sql|-p|-none|-pr|-o|-plan|-ash|-dash|-snap|-f"<filter>"] [-t"<ash_dump_table>"] [fields]
+  Get ASH top event, type 'help @@NAME' for more info. Usage: @@NAME [{<sql_id|sid|event|phv> [YYMMDDHH24MI] [YYMMDDHH24MI]} | {-snap <secs>} |-u] [<other options>]
   
   Options:
   ========
@@ -16,7 +16,7 @@
         -dash: source table is dba_hist_active_sess_history
         -t   : source table is <ash_dump_table>
       Filters   :
-        -id  : show data for specific sql_id/sid. Usage: [-id] [sql_id|sid]  [starttime] [endtime]
+        -id  : show data for specific sql_id/sid. Usage: [-id] [sql_id|sid] [starttime] [endtime]
         -u   : only show the data related to current schema. Usage: -u <seconds> [starttime] [endtime]
         -snap: only show the data within specific seconds. Usage: -snap <seconds> [sql_id|sid]
       Addition filter:
@@ -72,7 +72,8 @@
         }
       &more_filter: default={1=1},f={}
       @CHECK_ACCESS_USER: dba_users={dba_users} default={all_users}
-      @check_access_pdb: pdb/awr_pdb_snapshot={AWR_PDB_} default={DBA_HIST_}
+      &AWR_VIEW        : default={AWR_PDB_} hist={dba_hist_}
+      @check_access_pdb: pdb/awr_pdb_snapshot={&AWR_VIEW} default={DBA_HIST_}
       @counter: 11.2={, count(distinct sql_exec_id||to_char(sql_exec_start,'yyyymmddhh24miss')) "Execs"},default={}
       @UNIT   : 11.2={least(nvl(tm_delta_db_time,delta_time),DELTA_TIME)*1e-6}, default={&BASE}
       @CPU    : 11.2={least(nvl(tm_delta_cpu_time,delta_time),DELTA_TIME)*1e-6}, default={0}
