@@ -1,7 +1,7 @@
-/*[[Show system level enabled events. Usage: @@NAME [-t"<type>"]
+/*[[Show system level enabled events. Usage: @@NAME [-session|-system|-process]
     type: can be session,process or system
     --[[
-        &target: default={session} t={}
+        &target: session={session} system={system} process={process}
     --]]
 ]]*/
 set feed off

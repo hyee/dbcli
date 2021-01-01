@@ -765,13 +765,14 @@ end
 
 function oradebug.load_dict()
     addons={
-        SETSID={desc="Set Oracle sid of session to debug. Usage: oradebug setsid <sid>",args=1,func=oradebug.attach_sid},
+        SETSID={desc="Set Oracle sid of session to debug. Usage: oradebug setsid <sid> [<inst_id>]",args=2,func=oradebug.attach_sid},
         BUILD_DICT={desc='Rebuild the offline help doc, should be executed in RAC environment',func=oradebug.build_dict},
         FUNC={desc='Describe kernel function. Usage: oradebug func <keyword>',args=1,func=oradebug.find_func},
         REP_DESC={desc="#Usage: oradebug rep_desc {<key_prefix> <desc prefix> [<org desc prefix>]}|<path of functions.csv>",args=3,func=oradebug.rep_func_desc},
         SCAN_FUNCTION={desc='#Scan offline PLSQL code and list the mapping C functions. Usage: scan_function <dir>',args=1,func=oradebug.scan_func_from_plsql},
         GET_TRACE={desc='Download current trace file. Usage: oradebug get_trace [file] [<size in MB>]',args=2,func=oradebug.get_trace},
         SHORT_STACK={desc='Get abridged OS stack. Usage: oradebug short_stack [<short_stack_string>|<sid>]',lib='HELP',func=oradebug.short_stack},
+        SETMYPID={desc='Debug current dbcli process',lib='HELP',func=oradebug.setmypid},
         PMEM={desc="Show process memory detail. Usage: oradebug pmen <sid>",args=1,func=oradebug.pmem},
         PROFILE={desc='Sample abridged OS stack. Usage: oradebug profile {<sid> [<samples>] [<interval in sec>]} | {<sid> wait [<secs>] [<event>]} | {<file> [server]}',
                 args=4,func=oradebug.profile,
@@ -1084,23 +1085,25 @@ function oradebug.short_stack(stack)
     print(table.concat(result,'\n'))
 end
 
-function oradebug.get_pid(sid)
+function oradebug.get_pid(sid,inst)
     sid=tonumber(sid)
     env.checkerr(sid,"Please input the valid SID.")
-    local pid=db:get_value([[select pid from v$session a,v$process b where a.paddr=b.addr and a.sid=:1]],{sid})
+    local pid=db:get_value([[select pid from gv$session a,gv$process b where a.inst_id=b.inst_id and a.paddr=b.addr and a.sid=:1 and a.inst_id=:2]],{sid,inst or db.props.instance})
     env.checkerr(tonumber(pid),'No PID found for the specific sid.')
     return pid
 end
 
-function oradebug.attach_sid(sid)
+function oradebug.attach_sid(sid,inst)
+    result=get_output("SETINST ".. (inst or db.props.instance),true)[1]
+    env.checkerr(not result:trim():find('^%u+%-%d+:'),result)
     local pid=oradebug.get_pid(sid)
     local result=get_output("SETORAPID ".. oradebug.get_pid(sid),true)[1]
     env.checkerr(not result:trim():find('^%u+%-%d+:'),result)
-    sqlplus:get_lines('set heading off feed off newp none')
-    local inst=tonumber(sqlplus:get_last_line([[select userenv('instance') from dual;]]):trim())
-    sqlplus:get_lines('set heading on feed on newp 1')
-    env.checkerr(not inst or inst==db.props.instance,"SQL*Plus is not connecting to the same instance with DBCLI, operation is cancelled!");
     return pid
+end
+
+function oradebug.setmypid(sid)
+    return oradebug.attach_sid(db.props.sid,db.props.instance)
 end
 
 function oradebug.tracename()

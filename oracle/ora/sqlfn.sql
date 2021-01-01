@@ -25,8 +25,8 @@ ORCL> ora sqlfn like
    ]]--
 ]]*/
 
-select a.*,(select listagg(datatype,',') within group(order by argnum) from  V$SQLFN_ARG_METADATA  where func_id=a.func_id) args
-from V$SQLFN_METADATA  a
-where rownum<=50
-and   ((:V1 IS NULL AND OFFLOADABLE='YES')
-   or  (:V1 IS NOT NULL AND  name||','||a.descr like upper('%&V1%')));
+SELECT a.*,
+       (SELECT listagg(datatype, ',') within GROUP(ORDER BY argnum) FROM V$SQLFN_ARG_METADATA WHERE func_id = a.func_id) args
+FROM   V$SQLFN_METADATA a
+WHERE  rownum <= 50
+AND    ((:V1 IS NULL AND OFFLOADABLE = 'YES') OR (:V1 IS NOT NULL AND NAME || ',' || a.descr LIKE upper('%&V1%')));

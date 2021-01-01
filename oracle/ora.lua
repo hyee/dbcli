@@ -13,7 +13,7 @@ end
 function ora:validate_accessable(name,options,values)
     local check_flag,expect_name,default,option,expect
     local db=self.db
-
+    local check_container
     for i=1,#options do
         option=options[i]
         default=option
@@ -38,6 +38,8 @@ function ora:validate_accessable(name,options,values)
                         expect='CDB mode'
                         default=nil
                         break
+                    else
+                        check_container=true
                     end
                 elseif obj:upper()=='PDB' then
                     if tonumber(db.props.container_id or 0)<2 then
@@ -46,10 +48,12 @@ function ora:validate_accessable(name,options,values)
                         expect='PDB mode'
                         default=nil
                         break
+                    else
+                        check_container=true
                     end
                 elseif obj:upper()~="DEFAULT" then
                     local is_accessed=db:check_access(obj,1)
-                    if is_accessed and obj:find('^AWR_PDB') then
+                    if is_accessed and check_container then
                         local rtn,c=pcall(db.get_rows,db,'select /*INTERNAL_DBCLI_CMD*/ 1 from '..obj..' where rownum<2')
                         is_accessed=#c>1
                     end
