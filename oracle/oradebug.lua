@@ -270,7 +270,6 @@ function oradebug.scan_func_from_plsql(dir)
     fmt='    %s="%s",'
     local rows={'return {'}
     
-
     for k,v in pairs(funcs) do
         local k1=k:lower()
         if k~=k1 then
@@ -671,7 +670,8 @@ local function load_ext()
               oradebug lkdebug -r <resource handle> (i.e 0x8066d338 from convres dump)]]},
             {'reconfig',"reconfig lkdebug and release the gc locks","oradebug lkdebug -m reconfig lkdebug"},
             {'-O <object_id> 0 TM','Print the resource details for the object_id','oradebug lkdebug -O 11984883 0 TM'},
-            {'-O <addr1> <addr2> <type>','Print the resource defails from gv$ges_resource','oradebug -g all lkdebug -O 0xd4056fb3 0x6873eeb3 LB'},
+            {'-O <p1raw> <p2raw> <type>','Print the resource defails from gv$ges_resource/gv$ash','oradebug -g all lkdebug -O 0xd4056fb3 0x6873eeb3 LB'},
+            {'-X <p1> <p2> [<con_id> 0] <type>','Print the resource defails from gv$ash','oradebug -g all lkdebug -X 1231 1211 LB'},
             {'-B [con_id] <lmdid> <groupid> <bucketidx>','Identify the hot locks on hash buckets',"SELECT * FROM (select 'oradebug lkdebug -B '||lmdid||' '||groupid||' '||bucketidx,waitcnt FROM x$kjrtbcfp ORDER BY waitcnt DESC) WHERE ROWNUM<=100;"},
             {'-A <name>','List context',
             [[oradebug -g all lkdebug -A res
@@ -726,7 +726,11 @@ local function get_output(cmd,is_comment)
     db:assert_connect()
     if not sqlplus.process then
         sqlplus:call_process(nil,true)
-        sqlplus:get_lines("oradebug "..oradebug._pid)
+        if type(oradebug._pid)=='function' then
+            oradebug._pid()
+        else
+            sqlplus:get_lines("oradebug "..oradebug._pid)
+        end
         clear()
     end
     cmd='oradebug '..cmd
@@ -753,14 +757,13 @@ function oradebug.get_trace(file,size)
     return dumper.get_trace(file,size)
 end
 
-function oradebug.pmem(sid)
+function oradebug.pmem(sid,inst)
     sid=tonumber(sid)
-    env.checkerr(sid,'Usage: oradebug pmem <sid>')
-    local pid=db:get_value([[select pid from v$session a,v$process b where a.paddr=b.addr and a.sid=:1]],{sid})
-    env.checkerr(tonumber(pid),'No PID found for the specific sid.')
-    get_output("DUMP PGA_DETAIL_GET "..pid,true)
+    env.checkerr(sid,'Usage: oradebug pmem <sid> [<inst_id>]')
+    sid,inst=oradebug.get_pid(sid,inst)
+    get_output((db.props.israc and ("-G "..inst) or '').." DUMP PGA_DETAIL_GET "..sid,true)
     env.sleep(3)
-    db:query([[SELECT * from v$process_memory_detail where pid=:1 ORDER BY bytes DESC]],{pid})
+    db:query([[SELECT * from gv$process_memory_detail where pid=:1 and inst_id=:2 ORDER BY bytes DESC]],{sid,inst})
 end
 
 function oradebug.load_dict()
@@ -771,9 +774,9 @@ function oradebug.load_dict()
         REP_DESC={desc="#Usage: oradebug rep_desc {<key_prefix> <desc prefix> [<org desc prefix>]}|<path of functions.csv>",args=3,func=oradebug.rep_func_desc},
         SCAN_FUNCTION={desc='#Scan offline PLSQL code and list the mapping C functions. Usage: scan_function <dir>',args=1,func=oradebug.scan_func_from_plsql},
         GET_TRACE={desc='Download current trace file. Usage: oradebug get_trace [file] [<size in MB>]',args=2,func=oradebug.get_trace},
-        SHORT_STACK={desc='Get abridged OS stack. Usage: oradebug short_stack [<short_stack_string>|<sid>]',lib='HELP',func=oradebug.short_stack},
+        SHORT_STACK={desc='Get abridged OS stack. Usage: oradebug short_stack [<short_stack_string>|<sid> [<inst_id>]]',args=2,lib='HELP',func=oradebug.short_stack},
         SETMYPID={desc='Debug current dbcli process',lib='HELP',func=oradebug.setmypid},
-        PMEM={desc="Show process memory detail. Usage: oradebug pmen <sid>",args=1,func=oradebug.pmem},
+        PMEM={desc="Show process memory detail. Usage: oradebug pmen <sid> [<inst_id>]",args=2,func=oradebug.pmem},
         PROFILE={desc='Sample abridged OS stack. Usage: oradebug profile {<sid> [<samples>] [<interval in sec>]} | {<sid> wait [<secs>] [<event>]} | {<file> [server]}',
                 args=4,func=oradebug.profile,
                 usage=[[
@@ -1066,10 +1069,10 @@ local function print_ext(action)
     end
 end
 
-function oradebug.short_stack(stack)
+function oradebug.short_stack(stack,inst)
     if not stack or tonumber(stack) then
         if tonumber(stack) then
-            oradebug.attach_sid(stack)
+            oradebug.attach_sid(stack,inst)
         end
         stack=get_output("short_stack",true)[1]
         env.checkerr(not stack:trim():find('^%u+%-%d+:'),stack)
@@ -1088,18 +1091,23 @@ end
 function oradebug.get_pid(sid,inst)
     sid=tonumber(sid)
     env.checkerr(sid,"Please input the valid SID.")
-    local pid=db:get_value([[select pid from gv$session a,gv$process b where a.inst_id=b.inst_id and a.paddr=b.addr and a.sid=:1 and a.inst_id=:2]],{sid,inst or db.props.instance})
-    env.checkerr(tonumber(pid),'No PID found for the specific sid.')
-    return pid
+    local pid=db:get_value([[select pid,a.inst_id from gv$session a,gv$process b where a.inst_id=b.inst_id and a.paddr=b.addr and a.sid=:1 and a.inst_id=nvl(0+:2,a.inst_id) and rownum<2]],{sid,inst or ''})
+    env.checkerr(tonumber(pid and pid[1]),'No PID found for the specific sid.')
+    return pid[1],pid[2]
 end
 
 function oradebug.attach_sid(sid,inst)
-    result=get_output("SETINST ".. (inst or db.props.instance),true)[1]
+    local pid
+    pid,inst=oradebug.get_pid(sid,inst)
+    if not oradebug._inst then oradebug._inst=db.props.instance end
+    if inst~=oradebug._inst and db.props.israc then
+        oradebug._inst=inst
+        result=get_output("SETINST ".. inst,true)[1]
+        env.checkerr(not result:trim():find('^%u+%-%d+:'),result)
+    end
+    local result=get_output("SETORAPID ".. pid,true)[1]
     env.checkerr(not result:trim():find('^%u+%-%d+:'),result)
-    local pid=oradebug.get_pid(sid)
-    local result=get_output("SETORAPID ".. oradebug.get_pid(sid),true)[1]
-    env.checkerr(not result:trim():find('^%u+%-%d+:'),result)
-    return pid
+    return pid,inst
 end
 
 function oradebug.setmypid(sid)
@@ -1113,17 +1121,22 @@ end
 function oradebug.profile(sid,samples,interval,event)
     local org_sid,out,log,tracename=sid
     local typ,file=os.exists(sid)
-    local title
+    local title,inst
+    if sid then
+        inst=tonumber(sid:match('@(%d+)$'))
+        sid=tonumber(sid:match("^%d+"))
+    end
     if typ then
         out=env.load_data(file,false)
         file=file:gsub('.*[\\/]',''):gsub('%..-$','')
     elseif samples and samples:lower()=="server" then
         tracename,out=oradebug.get_trace(sid)
         file=tracename:gsub('.*[\\/]',''):gsub('%..-$','')
-    elseif sid and not tonumber(sid) then
+    elseif org_sid and not tonumber(sid) then
         env.raise('No such file, please input a valid file path or a sid.')
     else
-        sid=oradebug.attach_sid(sid)
+        org_sid=sid
+        sid,inst=oradebug.attach_sid(sid,inst)
         file=sid
         get_output("unlimit",true)
         if samples and samples:lower()=='wait' then
@@ -1140,13 +1153,14 @@ function oradebug.profile(sid,samples,interval,event)
             get_output('session_event wait_event['..event..'] off',true)
             tracename,out=oradebug.get_trace(tracename)
         else
+            env.checkerr(inst==db.props.instance,'Cannot profile the remote instance: '..inst)
             samples=tonumber(samples) or 100
             interval=tonumber(interval) or samples>=500 and 0.01 or 0.1
             local prep=db.conn:prepareStatement([[select 'Wait',event,p1,p2,p3 from v$session_wait where sid=]]..org_sid,1003,1007)
             local clock=os.clock()
             out=sqlplus:get_lines("oradebug short_stack",interval*1000,samples,prep)
             print("Sampling complete within "..(os.clock()-clock).." secs.")
-            log=env.write_cache("shortstacks_"..sid..".log",out)
+            log=env.write_cache("shortstacks_"..org_sid..".log",out)
         end
     end
     local c,funcs,result=0,{},{}
@@ -1373,18 +1387,22 @@ function oradebug.run(action,args)
     elseif action=='DOC' and args then
         is_help,action,args=true,args:match('%S+$'):upper(),nil
     end
-
     if not is_help and (args or no_args[action]) then
+        local cmd=action..' '..(args or '')
         if addons[action] then
             local nargs=addons[action].args or 0
             if nargs<2 then return addons[action].func(args) end
             args=env.parse_args(nargs,args)
-            return  addons[action].func(table.unpack(args))
+            addons[action].func(table.unpack(args))
+        else
+            get_output(cmd,false)
         end
-        local cmd=action..' '..(args or '')
-        get_output(cmd,false)
-        if action=='SETMYPID' or action=='SETORAPID' or action=='SETORAPID' or action=='SETOSPID' then
+        if action=='SETORAPID' or action=='SETORAPID' or action=='SETOSPID' then
             oradebug._pid=cmd
+        elseif action=='SETMYPID' then
+            oradebug._pid=oradebug.setmypid
+        elseif action=='SETSID' then
+            oradebug._pid=function() oradebug.setsid(table.unpack(args)) end
         end
         return
     end
@@ -1460,7 +1478,7 @@ end
 
 function oradebug.onload()
     oradebug.load_dict()
-    event.snoop('ON_DB_DISCONNECTED',function() oradebug._pid="setmypid" end)
+    event.snoop('ON_DB_DISCONNECTED',function() oradebug._pid,oradebug._inst=oradebug.setmypid end)
     env.set_command(nil,{'ORADEBUG','ODB'},"Execute available OraDebug commands. Usage: @@NAME [<search keyword>|<command line>]",oradebug.run,false,3)
 end
 return oradebug

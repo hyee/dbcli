@@ -53,9 +53,9 @@ function ora:validate_accessable(name,options,values)
                     end
                 elseif obj:upper()~="DEFAULT" then
                     local is_accessed=db:check_access(obj,1)
-                    if is_accessed and check_container then
+                    if is_accessed and check_container then --check whether target view has record
                         local rtn,c=pcall(db.get_rows,db,'select /*INTERNAL_DBCLI_CMD*/ 1 from '..obj..' where rownum<2')
-                        is_accessed=#c>1
+                        is_accessed=#c>1 
                     end
                     if not is_accessed then
                         default=nil

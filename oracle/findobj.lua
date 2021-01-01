@@ -314,7 +314,7 @@ function db:check_access(obj_name,bypass_error,is_set_env,is_cache)
 	                obj := :object_name;
 	            END IF;
 	            BEGIN
-	                EXECUTE IMMEDIATE 'select count(1) from ' || obj || ' where rownum<1';
+	                EXECUTE IMMEDIATE 'select 1 from ' || obj || ' where 1=2';
 	                x := 1;
 	            EXCEPTION WHEN OTHERS THEN NULL;
 	            END;
