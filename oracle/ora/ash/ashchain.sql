@@ -40,7 +40,7 @@
         &v3    : default={&endtime}
         &hint  : ash={inline} dash={materialize}
         &AWR_VIEW        : default={AWR_PDB_} hist={dba_hist_}
-        @check_access_pdb: pdb/awr_pdb_snapshot={&AWR_VIEW} default={DBA_HIST_}
+        @check_access_pdb: pdb/awr_pdb_snapshot={&AWR_VIEW.} default={DBA_HIST_}
         &V8    : ash={gv$active_session_history},dash={&check_access_pdb.Active_Sess_History}
         &Filter: default={:V1 in(p1text,''||session_id,''||sql_plan_hash_value,sql_id,&top_sql SESSION_ID||'@'||&INST1,event,''||current_obj#)} f={}
         &filter1: default={0} f={1}

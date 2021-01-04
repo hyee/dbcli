@@ -1098,7 +1098,8 @@ end
 
 function oradebug.attach_sid(sid,inst)
     local pid
-    pid,inst=oradebug.get_pid(sid,inst)
+    pid,inst=oradebug.get_pid(sid,inst or db.props.instance)
+    env.checkerr(inst==db.props.instance,'Unable to attach to the remote instance: '..inst)
     if not oradebug._inst then oradebug._inst=db.props.instance end
     if inst~=oradebug._inst and db.props.israc then
         oradebug._inst=inst

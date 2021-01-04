@@ -73,7 +73,7 @@
       &more_filter: default={1=1},f={}
       @CHECK_ACCESS_USER: dba_users={dba_users} default={all_users}
       &AWR_VIEW        : default={AWR_PDB_} hist={dba_hist_}
-      @check_access_pdb: pdb/awr_pdb_snapshot={&AWR_VIEW} default={DBA_HIST_}
+      @check_access_pdb: pdb/awr_pdb_snapshot={&AWR_VIEW.} default={DBA_HIST_}
       @counter: 11.2={, count(distinct sql_exec_id||to_char(sql_exec_start,'yyyymmddhh24miss')) "Execs"},default={}
       @UNIT   : 11.2={least(nvl(tm_delta_db_time,delta_time),DELTA_TIME)*1e-6}, default={&BASE}
       @CPU    : 11.2={least(nvl(tm_delta_cpu_time,delta_time),DELTA_TIME)*1e-6}, default={0}
