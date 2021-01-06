@@ -135,7 +135,7 @@ BEGIN
         if lv = 0 then
             execute immediate q'[alter session set events '10358 trace name context off:10384 trace name context off:trace[nsmtio] off']';
         else
-            execute immediate q'[alter session set events '10358 trace name context forever, level 2:10384 trace name context forever,level 16384:trace[nsmtio] disk highest']';
+            execute immediate q'[alter session set events '10358 trace name context forever, level 2:10384 trace name context forever,level 16384:trace[nsmtio] disk low']';
         end if;
     ELSIF regexp_like(lower(target), '^sqlmon') THEN
         if instr(target,':')>0 then

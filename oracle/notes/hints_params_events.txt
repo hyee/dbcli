@@ -119,8 +119,8 @@ Fix Controls:
     16923858:  Display timings in Optimizer trace(10053) when over 10^<value> microsec
     6972291 :  CBO can use the selectivity of column groups but this option is disabled if there is a histogram defined on any of the columns of the column group
     20355502:  number of branches 2^<value> limit for legacy OR expansion(long parse time)
-    25167306:  Enable direct path read in SQL called from PL/SQL(scheduler job)
-    6708183 :  allow dynamic sampling on table functions    
+    25167306:  Enable direct path read(Smart Scan) in SQL called from PL/SQL(scheduler job), may also need to set _serial_direct_read=always
+    6708183 :  allow dynamic sampling on table functions  
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
    NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled/CONTAINER_DATA(bug30122249): Used on PDB to query dict views
