@@ -1,3 +1,7 @@
+2021-01-09: + oracle: new command 'ora iostat'
+2021-01-08: + oracle: new command 'sys waitprof'
+2021-01-02: + oracle: rename 'sys lru' as 'sys dbwr', and new command 'rac resource_sum'
+2020-12-28: + oracle: new command 'sys ckpt' and 'ora rowcache'
 2020-12-11: + oracle: new command 'chart sgastat'
 2020-07-31: + oracle: new command '10053' to parse 10053 trace file
 2020-07-28: + oracle: new option 'dict <param|obj> <keyword>' to search offline dictionary

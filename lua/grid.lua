@@ -659,7 +659,7 @@ function grid:wellform(col_del, row_del)
                     end
                 end
             end
-        elseif v.rsize==1 and type(v[1])=='string' and v[1]:find('^[%-%+%|%*%=%.%_%/%\\%@]$') 
+        elseif v.rsize==1 and type(v[1])=='string' and v[1]:find('^[~#%$%-%+%|%*%=%.%_%/%\\%@]$') 
                and (v[2] and v[2]=='' or v[2]==v[1] or (v[2] or ''):find('^%W+$')) then
             local c=v[1]
             for k1,v1 in ipairs(title_dels) do

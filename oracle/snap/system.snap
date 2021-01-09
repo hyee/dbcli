@@ -554,7 +554,7 @@ Examples:
                        SUM(DECODE(n, 'global enqueue get time',v*10000)) "enq",
                        SUM(DECODE(n, 'global enqueue gets sync',v,'global enqueue gets async',v)) "enqs",
                        SUM(bs * DECODE(n, 'gc blocks lost', v*bs, 'gc blocks corrupt', v*bs)) "Lost",
-                       (select sum(w) from (select &inst1 inst,TOTAL_WAITS w from &sysevent WHERE event='gc cr failure' and &inst_filter) b where b.inst=c.inst) "Fail",
+                       (select sum(w) from (select &inst1 inst,TOTAL_WAITS w from &sysevent WHERE event in('gc cr failure','gc send failures') and &inst_filter) b where b.inst=c.inst) "Fail",
                         '|' "|",
                        SUM(DECODE(n, 'gc cr blocks received', v*bs)) "CR Rec",
                        MAX(CR_BUSY*bs) "CR Busy",

@@ -79,6 +79,9 @@ Parameters
         1: enable KEEP caching policy of CF reads (more aggressive than default)
     _db_writer_coalesce_area_size: defaults to 4M. the dbwr buffer(in v$sgastat) to coalesce adjacent blocks into a single large write, in ODA system it's usually set to 16M, see 'write clones%' sysstat
     _connect_by_use_union_all: when 'OLD_PLAN_MODE' then works like hint 'CONNECT_BY_COMBINE_SW+NO_CONNECT_BY_FILTERING', mainly used to fix the unexpected plan of a view
+    _gcs_cluster_flash_cache_mode: 1-Enables the cluster flash cache/2-allows a block on the non-master instance to be saved in that instance's flash cache/3-1+2
+    _gcs_flash_cache_mode: 1-allows a local instance to serve the flash block to the remote requester/2-disallow
+    _cr_grant_local_role: controls 3-way CR grants. Auto:depends on cpu load(85%), and latency of 'gc cr grant 2-way + db file sequential read' vs 'gc current block 2-way', and 'gc cr grant 2-way' vs 'gc current block 3-way'
 DMLs.
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'

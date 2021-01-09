@@ -51,7 +51,7 @@
    --[[
       &fields: {
             sql={sql_id &V11,sql_opname &0},
-            e={null}, 
+            e={wait_class}, 
             p={p1,p2,p3,p3text &0},
             pr={p1raw,p2raw,p3raw &0}, 
             o={obj &0},
@@ -77,23 +77,24 @@
       @counter: 11.2={, count(distinct sql_exec_id||to_char(sql_exec_start,'yyyymmddhh24miss')) "Execs"},default={}
       @UNIT   : 11.2={least(nvl(tm_delta_db_time,delta_time),DELTA_TIME)*1e-6}, default={&BASE}
       @CPU    : 11.2={least(nvl(tm_delta_cpu_time,delta_time),DELTA_TIME)*1e-6}, default={0}
-      @IOS    : 11.2={,SUM(DELTA_READ_IO_BYTES) reads,SUM(DELTA_Write_IO_BYTES) writes},default={}
+      @IOS    : 11.2={,SUM(DELTA_READ_IO_BYTES) reads,SUM(DELTA_Write_IO_BYTES) writes,SUM(nvl(DELTA_READ_IO_BYTES,0)+nvl(DELTA_Write_IO_BYTES,0))/nullif(SUM(nvl(DELTA_READ_IO_REQUESTS,0)+nvl(DELTA_WRITE_IO_REQUESTS,0)),0) AVG_IO},default={}
       @V11    : 11.2={} default={--}
       @V12    : 12.2={} default={--}
       @top_sql: 11.1={top_level_sql_id,} default={}
     ]]--
 ]]*/
-col reads format KMG
-col writes format kMG
+col reads,writes,AVG_IO format KMG
 WITH ASH_V AS(
     SELECT a.*,
+           decode(:fields,'wait_class',' ',
            CASE WHEN PRO_ LIKE '(%)' AND upper(substr(PRO_,2,1))=substr(PRO_,2,1) THEN
                 CASE WHEN PRO_ LIKE '(%)' AND substr(PRO_,2,1) IN('P','W','J') THEN
                     '('||substr(PRO_,2,1)||'nnn)'
                 ELSE regexp_replace(PRO_,'[0-9a-z]','n') END
            WHEN instr(a.program,'@')>1 THEN
                 nullif(substr(program,1,instr(program,'@')-1),'oracle')
-           END program#
+           END) program#,
+           decode(:fields,'wait_class',to_number(null),user_id) u_id
     FROM (SELECT /*+MERGE PARALLEL(4)
                   full(a.a) leading(a.a) use_hash(a.a a.s) swap_join_inputs(a.s)
                   use_hash(a.V_$ACTIVE_SESSION_HISTORY.V$ACTIVE_SESSION_HISTORY.GV$ACTIVE_SESSION_HISTORY.A)
@@ -169,7 +170,8 @@ SELECT * FROM (
       , LPAD(ROUND(RATIO_TO_REPORT(sum(c)) OVER () * 100)||'%',5,' ')||' |' "%This"
       &counter
       , nvl2(qc_session_id,'PARALLEL','SERIAL') "Parallel?"
-      , nvl(a.program#,(select username from &CHECK_ACCESS_USER where user_id=a.user_id)) program#, event_name event
+      , nvl(a.program#,(select username from &CHECK_ACCESS_USER where user_id=a.u_id)) program#
+      , event_name event
       , &fields &IOS
       , round(SUM(CASE WHEN wait_class IS NULL AND CPU=0 THEN c ELSE 0 END+CPU)) "CPU"
       , round(SUM(CASE WHEN wait_class ='User I/O'       THEN c ELSE 0 END)) "User I/O"
@@ -188,7 +190,7 @@ SELECT * FROM (
       , TO_CHAR(MIN(sample_time), 'YYYY-MM-DD HH24:MI:SS') first_seen
       , TO_CHAR(MAX(sample_time), 'YYYY-MM-DD HH24:MI:SS') last_seen
     FROM ASH_V A
-    GROUP BY nvl2(qc_session_id,'PARALLEL','SERIAL'),a.program#,a.user_id,event_name,&fields
+    GROUP BY nvl2(qc_session_id,'PARALLEL','SERIAL'),a.program#,a.u_id,event_name,&fields
     ORDER BY secs DESC nulls last,&fields
 )
 WHERE ROWNUM <= 50;
