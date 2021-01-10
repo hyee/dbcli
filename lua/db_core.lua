@@ -404,6 +404,7 @@ local excluded_keywords={
     EDITIONABLE=1,
     NO=1,
     FORCE=1,
+    BODY=1,
     EDITIONING=1
 }
 
@@ -412,7 +413,7 @@ function db_core.get_command_type(sql)
     local piece=sql:sub(1,256)
     if _command_pieces[piece] then return table.unpack(_command_pieces[piece]) end
     local list={}
-    for word in sql:sub(1,1024):gsub("%s*/%*.-%*/%s*",' '):gmatch("%a[%w_%#$]+") do
+    for word in sql:sub(1,1024):gsub("%s*/%*.-%*/%s*",' '):gmatch('%a[%w_%#%$%."`]+') do
         local w=word:upper()
         if not excluded_keywords[w] then
             list[#list+1]=(#list < 3 and w or word):gsub('["`]','')

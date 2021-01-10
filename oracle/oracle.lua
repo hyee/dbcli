@@ -241,7 +241,8 @@ function oracle:connect(conn_str)
             cdbid   NUMBER;
             did     NUMBER;
             sv      VARCHAR2(200):= sys_context('userenv','service_name');
-            pv      VARCHAR2(32767) :=''; 
+            pv      VARCHAR2(32767) :='';
+            isRac   VARCHAR2(3);
             intval  NUMBER;
             strval  VARCHAR2(300);
         BEGIN
@@ -316,10 +317,9 @@ function oracle:connect(conn_str)
                    sys_context('userenv', 'isdba') isdba,
                    nvl(sv,sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.')) service_name,
                    decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY',' ','PHYSICAL STANDBY',' (Standby)>')) END,
-                   decode((select count(distinct inst_id) from gv$version),1,'FALSE','TRUE'),
                    0+nvl(regexp_substr(vf,'^\d+\.\d+'),vs||'.'||re),
                    decode(isADB,0,'FALSE','TRUE')
-            INTO   :db_user,:db_version, :nls_lang,:sid,:instance, :container, :dbid, :dbname,:isdba, :service_name,:db_role, :israc,:version,:isadb
+            INTO   :db_user,:db_version, :nls_lang,:sid,:instance, :container, :dbid, :dbname,:isdba, :service_name,:db_role, :version,:isadb
             FROM   nls_Database_Parameters
             WHERE  parameter = 'NLS_CHARACTERSET';
             
@@ -331,6 +331,13 @@ function oracle:connect(conn_str)
                     :db_role := trim(:db_role);
                 END IF;
             EXCEPTION WHEN OTHERS THEN NULL;END;
+            BEGIN
+                EXECUTE IMMEDIATE q'[select decode(count(distinct inst_id),1,'FALSE','TRUE') from gv$instance]'
+                into :isRac;
+            EXCEPTION WHEN OTHERS THEN
+                rtn   := sys.dbms_utility.get_parameter_value('cluster_database_instances',intval,strval);
+                :isRac:= CASE intval WHEN 1 THEN 'FALSE' ELSE 'TRUE' END;
+            END;
         END;]],props)
     
     props.dbid=props.dbid or tonumber(self.properties['AUTH_DB_ID']) or 0
