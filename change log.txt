@@ -1,3 +1,5 @@
+2021-01-10: + oracle: new command 'sys lms'
+            * oracle: new option 'set pivotsort head'
 2021-01-09: + oracle: new command 'ora iostat'
 2021-01-08: + oracle: new command 'sys waitprof'
 2021-01-02: + oracle: rename 'sys lru' as 'sys dbwr', and new command 'rac resource_sum'

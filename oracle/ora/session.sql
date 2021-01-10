@@ -4,7 +4,7 @@
     ]]--
 ]]*/
 
-set pivot 10 feed off
+set pivot 10 pivotsort head feed off
 set headstyle none
 select * from gv$session where sid=:V1 and (:V2 is null or inst_id=:V2);
 

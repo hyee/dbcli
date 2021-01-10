@@ -15,7 +15,7 @@ local params = {
     ROWNUM = {name = "row_num", default = "off", desc = "To indicate if need to show the row numbers", range = "on,off"},
     HEADSTYLE = {name = "title_style", default = "none", desc = "Display style of the grid title", range = "upper,lower,initcap,none"},
     PIVOT = {name = "pivot", default = 0, desc = "Pivot a grid when next print, afterward the value would be reset", range = "-30 - +30"},
-    PIVOTSORT = {name = "pivotsort", default = "on", desc = "To indicate if to sort the titles when pivot option is on", range = "on,off"},
+    PIVOTSORT = {name = "pivotsort", default = "on", desc = "To indicate if to sort the titles when pivot option is on", range = "on,off,head"},
     MAXCOLS = {name = "maxcol", default = 1024, desc = "Define the max columns to be displayed in the grid", range = "4-1024"},
     [{'SCALE','DIGITS'}] = {name = "digits", default = 38, desc = "Define the digits for a number", range = "0 - 38"},
     SEP4K = {name = "sep4k", default = "off", desc = "Define whether to show number with thousands separator", range = "on,off"},
@@ -196,7 +196,7 @@ function grid.sort(rows, cols, bypass_head)
     return rows
 end
 
-function grid.show_pivot(rows, col_del)
+function grid.show_pivot(rows, col_del,pivotsort)
     local title = rows[1]
     local keys = {}
 
@@ -221,7 +221,8 @@ function grid.show_pivot(rows, col_del)
     local r = {}
     local color = env.ansi.get_color
     local nor, hor = color("NOR"), color("HEADCOLOR")
-    if grid.pivotsort == "on" then table.sort(title) end
+    pivotsort=pivotsort or grid.pivotsort
+    if pivotsort == "on" then table.sort(title) end
     local _, value
     for k, v in ipairs(title) do
         v=grid.format_title(v)
@@ -252,7 +253,7 @@ function grid.show_pivot(rows, col_del)
             if r[i] then table.remove(r, i) end
         end
         grid.pivot = 1
-    elseif grid.pivot > 0 then
+    elseif grid.pivot > 0 and pivotsort ~= "head" then
         local titles = {" "}
         for i = 2, #r[1], 1 do
             titles[i] = ' #' .. (i - 1)
@@ -729,10 +730,10 @@ function grid.get_config(sql)
     return sql, grid_cfg
 end
 
-function grid.tostring(rows, include_head, col_del, row_del, rows_limit, pivot)
+function grid.tostring(rows, include_head, col_del, row_del, rows_limit, pivot,pivotsort)
     if pivot then grid.pivot = pivot end
     if grid.pivot ~= 0 and include_head ~= false then
-        rows = grid.show_pivot(rows)
+        rows = grid.show_pivot(rows,nil,pivotsort)
         if math.abs(grid.pivot) == 1 then
             include_head = false
         else
@@ -955,7 +956,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
                         if autosize2 then grid.col_auto_size=autosize2 end
                         is_bypass2=is_bypass2==true and 'on' or is_bypass2=='on' and 'on' or 'off' 
                         grid.bypassemptyrs=is_bypass2
-                        local _,output=grid.tostring(tab, true, " ", "", nil, tab.pivot)
+                        local _,output=grid.tostring(tab, true, " ", "", nil, tab.pivot,tab.pivotsort)
                         if autosize2 then grid.col_auto_size=autosize1 end
                         grid.bypassemptyrs=is_bypass1
                         tab={}

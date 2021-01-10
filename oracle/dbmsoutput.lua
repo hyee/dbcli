@@ -6,7 +6,7 @@ local output={}
 local prev_transaction
 local enabled='on'
 local autotrace='off'
-local default_args={enable=enabled,cdbid=-1,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB",con_name="#VARCHAR",con_id="#NUMBER",con_dbid="#NUMBER",dbid="#NUMBER",last_sql_id='#VARCHAR'}
+local default_args={enable=enabled,cdbid=-1,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB",con_name="#VARCHAR",con_id="#NUMBER",con_dbid="#NUMBER",dbid="#NUMBER",last_sql_id='#VARCHAR',curr_schema='#VARCHAR'}
 local prev_stats
 
 function output.setOutput(db)
@@ -210,6 +210,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD*/
         :con_dbid    := l_cdbid;
         :dbid        := l_dbid; 
         :lob         := l_lob;
+        :curr_schema := SYS_CONTEXT('USERENV','CURRENT_SCHEMA');
     EXCEPTION WHEN OTHERS THEN NULL;
     END;]]):gsub('@GET_STATS_ID@',loader:computeSQLIdFromText(output.trace_sql))
 
@@ -361,6 +362,7 @@ function output.getOutput(item)
         end
 
         db.resultset:close(args.stats)
+        db.props.curr_schema=args.curr_schema
         db.props.container=args.cont
         db.props.container_id=args.con_id
         db.props.container_dbid=args.con_dbid
@@ -374,6 +376,7 @@ function output.getOutput(item)
             env.raise("DML in read-only mode is disallowed, transaction is rollbacked.")
         end
         title[#title+1]=args.txn and ("TXN_ID: "..args.txn)
+        if db.props.curr_schema ~= db.props.db_user then title[#title+1]='SCHEMA: '..db.props.curr_schema end
         title=table.concat(title,"   ")
         if prev_transaction~=title then
             prev_transaction=title

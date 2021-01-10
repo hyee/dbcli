@@ -1,5 +1,5 @@
 /*[[show LMS stats]]*/
-set sep4k on
+set sep4k on pivotsort head
 col program,traceid,tracefile,sosid,terminal,USERNAME,SERIAL#,BACKGROUND noprint
 col "CR Time,CUR Time,Avg CR Time,Avg CUR Time" for usmhd2
 

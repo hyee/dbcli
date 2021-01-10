@@ -336,7 +336,7 @@ function oracle:connect(conn_str)
                 into :isRac;
             EXCEPTION WHEN OTHERS THEN
                 rtn   := sys.dbms_utility.get_parameter_value('cluster_database_instances',intval,strval);
-                :isRac:= CASE intval WHEN 1 THEN 'FALSE' ELSE 'TRUE' END;
+                :isRac:= CASE WHEN intval > 1 THEN 'TRUE' ELSE 'FALSE' END;
             END;
         END;]],props)
     
