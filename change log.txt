@@ -1,3 +1,4 @@
+2021-01-11: + oracle: new command 'show audit'
 2021-01-10: + oracle: new command 'sys lms'
             * oracle: new option 'set pivotsort head'
 2021-01-09: + oracle: new command 'ora iostat'

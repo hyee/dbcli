@@ -112,9 +112,10 @@ function xplan.explain(fmt,sql)
                     local msg="Explain SQL Id: "..sqldiag..'    Source SQL Id: '..sql_id
                     print(msg..'\n'..string.rep('=',#msg))
                     db:query([[/*INTERNAL_DBCLI_CMD*/
-                        SELECT /*+ordered use_hash(a b)*/
+                        SELECT /*+ordered use_hash(a b)*/DISTINCT
                                a.child#,
-                               a.repo#,
+                               min(a.repo#) over(partition by a.type,a.state,a.feature,a.reason) repo#,
+                               count(1) over(partition by a.type,a.state,a.feature,a.reason) seens,
                                a.type,
                                a.state,
                                a.feature,
@@ -134,13 +135,13 @@ function xplan.explain(fmt,sql)
                                    b.slave_origin S,
                                    a.child_number CN
                             FROM   v$sql_diag_repository a, v$sql_diag_repository_reason b
-                            WHERE  a.sql_id = b.sql_id
-                            AND    a.child_number = b.child_number
-                            AND    a.sql_diag_repo_id = b.sql_diag_repo_id
+                            WHERE  a.sql_id = b.sql_id(+)
+                            AND    a.child_number = b.child_number(+)
+                            AND    a.sql_diag_repo_id = b.sql_diag_repo_id(+)
                             AND    a.sql_id = :sql_id) a,v$sql_feature b
                         WHERE cn=child#
                         AND   a.feature=b.sql_feature(+)
-                        ORDER BY repo#]],{sql_id=sqldiag})
+                        ORDER BY feature,repo#]],{sql_id=sqldiag})
                 else
                     if not is_tee then env.printer.tee_after() end
                 end
