@@ -1,5 +1,5 @@
 /*[[
-    Show column usage and SQL plan directives on target table. Usage: @@NAME {[<owner>.]<object_name>[.<partition>]} | <directive id>
+    Show column usage and SQL plan directives on target table. Usage: @@NAME {[<owner>.]<object_name>[.<partition>]} | <SQL Id> | <directive id>
     You can "exec dbms_spd.flush_sql_plan_directive" to flush the SPD
 
     Sample Output:
@@ -61,9 +61,7 @@ DECLARE
     c1  sys_refcursor;
     c2  sys_refcursor;
 BEGIN
-    IF did IS NULL AND :object_name IS NULL THEN
-        raise_application_error(-20001,'Cannot find targt object!');
-    ELSIF did IS NOT NULL THEN
+    IF did IS NOT NULL THEN
         open c1 FOR
             WITH o1 AS
              (SELECT directive_id dir_id,
@@ -95,6 +93,7 @@ BEGIN
                      o2.object_name,
                      d.ENABLED,
                      d.state,
+                     extract(d.notes,'/spd_note/internal_state/text()') internal_state,
                      d.AUTO_DROP,
                      d.type,
                      d.reason,
@@ -106,8 +105,10 @@ BEGIN
             AND    d.directive_id = did
             ORDER  BY d.reason;
     ELSE
-    $IF 1=1 $THEN 
-        OPEN c1 FOR SELECT DBMS_STATS.REPORT_COL_USAGE('&object_owner','&object_name') report from dual;
+    $IF 1=1 $THEN
+        IF '&object_name' IS NOT NULL THEN
+            OPEN c1 FOR SELECT DBMS_STATS.REPORT_COL_USAGE('&object_owner','&object_name') report from dual;
+        END IF;
     $ELSE
         OPEN c1 FOR 
         SELECT /*+ ordered use_nl(o c cu h) index(u i_user1) index(o i_obj1)
@@ -145,22 +146,22 @@ BEGIN
     $IF &CHECK_ACCESSS_OBJ=1 $THEN
         OPEN c2 for
             WITH o AS
-             (SELECT /*+no_expand materialize ORDERED_PREDICATES*/DISTINCT directive_id dir_id, owner, object_name
+             (SELECT /*+no_expand materialize ORDERED_PREDICATES opt_estimate(query_block rows=2)*/ DISTINCT directive_id dir_id, owner, object_name
               FROM   dba_sql_plan_dir_objects o
-              WHERE  object_name = '&object_name'
-              AND    object_type IN ('COLUMN', 'TABLE')),
+              WHERE  object_name in ('&object_name','&V1')
+              AND    nvl(owner,' ') = nvl('&object_owner',' ')
+              AND    object_type IN ('COLUMN', 'TABLE','SQL STATEMENT')),
             o1 AS
-             (SELECT /*+parallel(4)*/*
+             (SELECT /*+use_nl(o1) no_expand push_pred(o1) no_merge(o1)*/ *
               FROM   o,
-                     lateral((SELECT nvl(OWNER,'SQL') || '.' || OBJECT_NAME obj,
+                     lateral(SELECT nvl(OWNER,'SQL') || '.' || OBJECT_NAME obj,
                                     SUBOBJECT_NAME,
                                     DECODE(EXTRACTVALUE(NOTES, '/obj_note/equality_predicates_only'), 'YES', 'E') ALLEQ,
                                     DECODE(EXTRACTVALUE(NOTES, '/obj_note/simple_column_predicates_only'), 'YES', 'C') ALLCOLS,
                                     DECODE(EXTRACTVALUE(NOTES, '/obj_note/index_access_by_join_predicates'), 'YES', 'J') NLJNIX,
                                     DECODE(EXTRACTVALUE(NOTES, '/obj_note/filter_on_joining_object'), 'YES', 'F') FILTER
-                             FROM   SYS.DBA_SQL_PLAN_DIR_OBJECTS
-                             WHERE  DIRECTIVE_ID = o.dir_id)) o1
-              WHERE  o.owner = '&object_owner'),
+                             FROM   SYS.DBA_SQL_PLAN_DIR_OBJECTS o1
+                             WHERE  DIRECTIVE_ID = o.dir_id) o1),
             o2 AS
              (SELECT dir_id,
                      OWNER,
@@ -181,7 +182,8 @@ BEGIN
                      o2.object_name,
                      d.ENABLED,
                      d.state,
-                     d.AUTO_DROP,
+                     extract(d.notes,'/spd_note/internal_state/text()') "Internal|State",
+                     d.AUTO_DROP "Auto|Drop",
                      d.type,
                      d.reason,
                      o2.notes,

@@ -20,13 +20,13 @@ local stmt=[[
 	    isUpper       BOOLEAN := true;
 	    xTableID      NUMBER := 0;
 	BEGIN
-		IF upper(target) like 'X$%' THEN
+		IF upper(target) like 'X$%' OR upper(target) like 'SYS.X$%' THEN
 			BEGIN
 				execute immediate 'select object_id from v$fixed_table where name=upper(:1)'
-				into xTableID using upper(target);
+				into xTableID using upper(regexp_substr(target,'[^\.]+$'));
 				schem := 'SYS';
 				obj_type :='TABLE';
-				part1 := upper(upper(target));
+				part1 := upper(regexp_substr(target,'[^\.]+$'));
 				object_number := xTableID;
 			EXCEPTION WHEN OTHERS THEN NULL;
 			END;

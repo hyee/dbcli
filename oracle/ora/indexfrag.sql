@@ -1,5 +1,5 @@
 /*[[
-    Show index fragmentation(with sys_op_lbid). Usage: @@NAME {<index_name> [table_partition] [sample_rows]} [-f"<filter>"]
+    Show index fragmentation(with sys_op_lbid). Usage: @@NAME {<index_name> [table_partition] [0|<sample_rows>]} [-f"<filter>"]
     Refer to https://jonathanlewis.wordpress.com/index-sizing/
     
     Sample Output:
