@@ -256,6 +256,7 @@ Below is the list:
     JsonForLua  : (MIT)    https://github.com/craigmj/json4lua 
     PSCP        : (MIT)    http://www.putty.org/ 
     LPeg        : (MIT)    http://www.inf.puc-rio.br/~roberto/lpeg
+    xml2lua     : (MIT)    https://github.com/manoelcampos/xml2lua
     JNA         : (LGPL)   https://github.com/java-native-access/jna
     NuProcess   : (Apache) https://github.com/brettwooldridge/NuProcess
     Luv(libuv)  : (Apache) https://github.com/luvit/luv

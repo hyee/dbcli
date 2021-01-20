@@ -1,3 +1,6 @@
+2021-01-20: + oracle: 'unwrap <file>': analyze SQL Monitor Active report
+2021-01-19: + public: new option 'col <column> for auto <based column>'
+              public: new option 'set autohide on/off/col/all'
 2021-01-11: + oracle: new command 'show audit'
 2021-01-10: + oracle: new command 'sys lms'
             * oracle: new option 'set pivotsort head'

@@ -1182,7 +1182,11 @@ function env.load_data(file,isUnpack,callback)
 end
 
 function env.save_data(file,txt,maxsize,is_Binary)
-    if not file:find('[\\/]') then file=env.join_path(env.WORK_DIR,"data",file) end
+    if not file:find('[\\/]') then 
+        file=env.join_path(env.WORK_DIR,"data",file) 
+    else
+        file=env.join_path(file)
+    end
     local is_pack
     if type(txt)=='table' then
         env.MessagePack.set_array("always_as_map")
@@ -1214,6 +1218,7 @@ function env.write_cache(file,txt,is_Binary)
 end
 
 function env.resolve_file(filename,ext)
+    if filename:sub(1,8)=='file:///' then filename=filename:sub(9) end
     if not filename:find('[\\/]') then
         filename= env.join_path(env._CACHE_PATH,filename)
     elseif (env.IS_WINDOWS and not filename:find('^%a:')) or (not env.IS_WINDOWS and not filename:find('^/'))  then

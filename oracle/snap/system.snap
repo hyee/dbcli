@@ -490,7 +490,7 @@ Examples:
             GROUP  BY inst]],
             '-',
             [[SELECT * FROM &check_access_celldb
-                 (SELECT inst_id inst,/*grid={topic='Exadata Profiles',fixed_title=true,order_by=1,bypassemptyrs=true}*/
+                 (SELECT inst_id inst,/*grid={topic='Exadata Profiles',fixed_title=true,order_by=1,autohide=true}*/
                          SUM(DECODE(n, 'cell physical IO interconnect bytes', v)) "BandWidth",
                          SUM(DECODE(n, 'cell physical IO bytes eligible for predicate offload', v,'cell physical write IO bytes eligible for offload',v)) "Offload",
                          SUM(DECODE(n, 'cell physical IO interconnect bytes returned by smart scan', v)) "OflOut",
@@ -510,7 +510,7 @@ Examples:
                   WHERE  offl>0
                   GROUP  BY inst_id)]],
             '-',
-            [[SELECT /*grid={topic='In-Memory Stats (LIO=Logical Reads)',fixed_title=true,order_by=1,bypassemptyrs=true}*/
+            [[SELECT /*grid={topic='In-Memory Stats (LIO=Logical Reads)',fixed_title=true,order_by=1,autohide=true}*/
                      inst_id inst,
                      SUM(DECODE(n, 'session logical reads - IM', v,0))*bs "IM-LIO",
                      SUM(DECODE(n, 'session logical reads', v,0))*bs "LIO(%)",
@@ -536,7 +536,7 @@ Examples:
               FROM   (SELECT &inst1 inst_id, NAME n, VALUE v FROM &sysstat WHERE &inst_filter  AND value>0)
               GROUP  BY inst_id]],
             '-',
-            [[/*grid={topic='RAC Profiles (CR=[gc cr] CU=[gc current]  Rec=Received enq=[global enqueue] Fls=Flush Traf=Congested)',fixed_title=true,order_by=1,bypassemptyrs=true}*/
+            [[/*grid={topic='RAC Profiles (CR=[gc cr] CU=[gc current]  Rec=Received enq=[global enqueue] Fls=Flush Traf=Congested)',fixed_title=true,order_by=1,autohide=true}*/
                 SELECT c.inst,
                        SUM(DECODE(n,
                                   'gc cr blocks received',bs * v * decode(c.inst,'*',0,1),

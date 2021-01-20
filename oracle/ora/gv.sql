@@ -31,7 +31,7 @@
 
 ]]*/
 
-set feed off verify on BYPASSEMPTYRS on
+set feed off verify on autohide on
 var cur1 REFCURSOR "Offline Dictionary";
 var cur2 REFCURSOR "None-existence in Current DB";
 var cur3 REFCURSOR "None-existence in Offline Dictionary"

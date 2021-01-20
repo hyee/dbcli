@@ -1145,7 +1145,7 @@ desc_sql.TYPE={desc_sql.TYPE,desc_sql.PACKAGE}
 
 function desc.desc(name,option)
     env.checkhelp(name)
-    set.set("BYPASSEMPTYRS","on")
+    set.set("autohide","on")
     local rs,success,err
     local obj=db:check_obj(name)
     if obj.object_type=='SYNONYM' then

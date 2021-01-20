@@ -1590,7 +1590,7 @@ local function extract_sql()
 end
 
 local spd_patterns={'dirid *= *%d+','^SPD','%* *DS_SVC *%*','%* *OPT_DYN_SAMP *%*'}
-function extract_spd()
+local function extract_spd()
     return {
         start=function(line,root)
             for k,v in ipairs(spd_patterns) do

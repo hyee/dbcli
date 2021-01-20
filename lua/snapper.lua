@@ -11,7 +11,7 @@
         3. order_by: The columns that used to sort the final result, "-<column_name>" means desc ordering. 
         4. top_by  : Optional, if not specified then it equals to 'group_by', it is the subset of 'group_by' columns
         5. per_second: 'on' or 'off'(default), controls if to devide the delta stats by elapsed seconds
-        6. bypassemptyrs: 'on' or 'off'(default),when a 'sql' is an array, and one of which returns no rows, then controls whether to show this sql
+        6. autohide: 'on' or 'off'(default),when a 'sql' is an array, and one of which returns no rows, then controls whether to show this sql
         7. top_mode: 'on' or 'off'(default), controls whether to clear the screen before print the result
         8. calc_rules: the additional formula on a specific column after the 'delta_by' columns is calculated
         9. fixed_title: true or false(default), controls whether not to change the 'delta_by' column titles

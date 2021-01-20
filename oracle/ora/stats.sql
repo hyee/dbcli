@@ -251,7 +251,7 @@ BEGIN
     dbms_output.put_line(rpad('Statistics History Retention',45) ||': '||rpad(dbms_stats.GET_STATS_HISTORY_RETENTION||' days',10)||' (Avail: '||to_char(dbms_stats.GET_STATS_HISTORY_AVAILABILITY,'yyyy-mm-dd hh24:mi:ssxff3 TZH:TZM')||')');
 END;
 /
-set BYPASSEMPTYRS on
+set autohide on
 pro 
 pro   
 var c1 REFCURSOR "&OBJECT_TYPE INFO"
