@@ -3,6 +3,7 @@ local grid,snoop,callback,cfg,db_core=env.grid,env.event.snoop,env.event.callbac
 local var=env.class()
 local rawset,rawget=rawset,rawget
 local cast,ip=java.cast,{}
+local type,pairs,ipairs=type,pairs,ipairs
 var.outputs,var.desc,var.global_context,var.columns=table.strong{},table.strong{},table.strong{},table.strong{}
 var.inputs=setmetatable({},{
     __index=function(self,k)
@@ -381,9 +382,26 @@ function var.format_function(fmt,next_fmt)
         if f=='' then return end
         adj=1
         local col=f
-        local u1,u2={'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} , {'   ',' Ki',' Mi',' Bi',' Tr',' Qu'}
-        local d1,d2=1024,1000
+        local u1,u2,u3={'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} , {'   ',' Ki',' Mi',' Bi',' Tr',' Qu'},{' us',' ms',' s ',' m ',' h ',' d '}
+        local d1,d2,d3=1024,1000,{1000,1000,60,60,24,1}
         local c,p=nil
+        local p1={
+            byte={u1,1},
+            ['(kb)']={u1,1024},
+            ['(mb)']={u1,1024*1024},
+            ['(gb)']={u1,1024*1024*1024},
+            secs={u3,1e6},
+            ['(us)']={u3,1},
+            ['(ms)']={u3,1e3}
+        }
+        local p2={
+            ['%Wkb$']={u1,1024},
+            ['%Wmb$']={u1,1024*1024},
+            ['%Wgb$']={u1,1024*1024*1024},
+            ['%Ws$']={u3,1e6},
+            ['%Wms$']={u3,1e3},
+            ['%Wus$']={u3,1}
+        }
         func=function(v,r,grid)
             local rows=grid.data
             if rows[1] and rows[1].colinfo then
@@ -400,23 +418,36 @@ function var.format_function(fmt,next_fmt)
             local row=grid.__current_row
             if not c or not row then return v,1 end 
             local s=tonumber(v)
+            if s==0 then return '',1 end
             local val=row[c]
             if not s or type(val)~='string' then return v,1 end
             local prefix=s<0 and '-' or ''
             s,val=math.abs(s),val:lower()
             local units
-            if val:find('byte',1,true) then
-                units=u1
-            elseif val:find('%Wkb$') then
-                s,units=s*1024,u1
-            elseif val:find('%Wmb$') then
-                s,units=s*1024*1024,u1 
-            else
-                units=u2
+            for k,v in pairs(p1) do
+                if val:find(k,1,true) then
+                    units,s=v[1],s*v[2]
+                    break
+                end
             end
-            local div=units==u1 and d1 or d2
+            if not units then
+                for k,v in pairs(p2) do
+                    if val:find(k) then
+                        units,s=v[1],s*v[2]
+                        break
+                    end
+                end
+            end
+            if not units then
+                if val:find('time',1,true) then
+                    units,s=u3,s*1e4
+                else
+                    units=u2
+                end
+            end
+            local div=units==u1 and d1 or units==u3 and d3 or d2
             for i=1,#units do
-                v,s=math.round(s,scale),s/div
+                v,s=math.round(s,scale),s/(type(div)=='number' and div or div[i])
                 if s<1 then return to_fmt(prefix,v,units[i]),1 end
             end
             return to_fmt(prefix,v,units[#units]),1

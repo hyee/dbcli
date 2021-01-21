@@ -6,7 +6,7 @@ local reader,coroutine,os,string,table,math,io,select,xpcall,pcall=reader,corout
 local getinfo, error, rawset, rawget = debug.getinfo, error, rawset, rawget
 
 local pairs,ipairs=pairs,ipairs
-
+local clear,concat=table.clear,table.concat
 --[[
 local global_vars,global_source,env={},{},{}
 _G['env']=env
@@ -120,10 +120,10 @@ local function push_history(cmd)
 end
 
 function env.print_stack()
-    local stack=table.concat({"CURRENT_ID:",tostring(dbcli_current_item.id),"   CURRENT_LEVEL:",dbcli_current_item.level,"   CURRENT_COMMAND:",dbcli_current_item.command}," ")
+    local stack=concat({"CURRENT_ID:",tostring(dbcli_current_item.id),"   CURRENT_LEVEL:",dbcli_current_item.level,"   CURRENT_COMMAND:",dbcli_current_item.command}," ")
     stack=stack..'\n'..table.dump(dbcli_stack)
     stack=stack..'\n'.."Historical Commands:\n===================="
-    stack=stack..'\n'..table.concat(dbcli_cmd_history,'\n')
+    stack=stack..'\n'..concat(dbcli_cmd_history,'\n')
     print(stack)
 end
 
@@ -209,7 +209,7 @@ function env.check_cmd_end(cmd,other_parts,stmt)
         return true,other_parts and env.COMMAND_SEPS.match(other_parts)
     elseif type(_CMDS[cmd].MULTI)=="function" then
         if type(stmt)=='table' then
-            prev=table.concat(stmt,'\n')..'\n'
+            prev=concat(stmt,'\n')..'\n'
         end
         local done,part=_CMDS[cmd].MULTI(cmd,prev..other_parts)
         return done,part:sub(#prev+1)
@@ -228,12 +228,12 @@ end
 function env.smart_check_end(cmd,rest,from_pos,stmt)
     local other_parts=rest
     if stmt and #stmt > 0 then
-        other_parts=table.concat(stmt,'\n')..' '..other_parts
+        other_parts=concat(stmt,'\n')..' '..other_parts
     end
     local args=env.parse_args(from_pos,other_parts,stmt)
     if #args==0 then return true,env.COMMAND_SEPS.match(rest) end
     for k=#args,1,-1 do
-        if not env.check_cmd_end(args[k]:upper(),table.concat(args,' ',k+1)) then
+        if not env.check_cmd_end(args[k]:upper(),concat(args,' ',k+1)) then
             return false,rest
         end
     end
@@ -297,7 +297,7 @@ local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,
         HELPER    = help_func,    --command detail help, it is a function
         FUNC      = call_func,    --command function
         MULTI     = is_multiline or false,
-        ABBR      = table.concat(abbr,','),
+        ABBR      = concat(abbr,','),
         ARGS      = parameters,
         DBCMD     = is_dbcmd,
         COLOR     = color,
@@ -328,7 +328,7 @@ function env.rename_command(name,new_name)
         info.ABBR=""
         new_name={new_name}
     else
-        info.ABBR=table.concat(new_name,",",2):upper()
+        info.ABBR=concat(new_name,",",2):upper()
     end
     
     for k,v in ipairs(new_name) do
@@ -720,7 +720,7 @@ end
 
 function env.force_end_input(exec,is_internal)
     if curr_stmt and multi_cmd then
-        local text=table.concat(curr_stmt,'\n')
+        local text=concat(curr_stmt,'\n')
         local stmt={multi_cmd,env.parse_args(multi_cmd,text,true)}
         multi_cmd,curr_stmt=nil,nil
         env.set_prompt(nil,env.PRI_PROMPT)
@@ -804,7 +804,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
             if param~='' then param='"'..env.COMMAND_SEPS.match(param:trim('"')):trim()..'"' end
             if param:gsub('%s+','')=='""' then param='' end
             if multi_cmd then
-                param,multi_cmd=param..' '..multi_cmd..' '..table.concat(curr_stmt,'\n'),nil
+                param,multi_cmd=param..' '..multi_cmd..' '..concat(curr_stmt,'\n'),nil
             end
             pipe_cmd=pipe_cmd..' '..param..' '..rest
             return eval_line(pipe_cmd,exec,true,not_skip)
@@ -851,22 +851,24 @@ local function _eval_line(line,exec,is_internal,not_skip)
 end
 
 local _cmd,_args,_errs,_line_stacks,full_text=nil,nil,nil,{}
+local _line_size=0
 function env.parse_line(line,exec)
-    if(#_line_stacks==0) then
+    if(_line_size==0) then
         multi_cmd,curr_stmt=nil,nil
         env.set_prompt(nil,env.PRI_PROMPT)
-        
     end
     local is_not_end,cnt=true,0
     for w in line:gsplit('\n',true) do
         cnt=cnt+1
-        _line_stacks[#_line_stacks+1]=w
+        _line_size=_line_size+1
+        _line_stacks[_line_size]=w
         if is_not_end then
             _cmd,_args,_errs=_eval_line(w,false)
             is_not_end=env.CURRENT_PROMPT==env.MTL_PROMPT
             if not is_not_end then
-                full_text=table.concat(_line_stacks,'\n')
-                _line_stacks={}
+                full_text=concat(_line_stacks,'\n')
+                clear(_line_stacks)
+                _line_size=0
             end
         end
     end
@@ -884,11 +886,13 @@ function env.execute_line()
     elseif _errs then
         env.warn(_errs)
         _errs=nil
-        _line_stacks={}
+        _line_size=0
+        clear(_line_stacks)
     end
-    if #_line_stacks>0 then
-        full_text=table.concat(_line_stacks,'\n')
-        _line_stacks={}
+    if _line_size>0 then
+        full_text=concat(_line_stacks,'\n')
+        clear(_line_stacks)
+        _line_size=0
         env.parse_line(full_text,true)
     end
 end
@@ -901,8 +905,8 @@ function env.modify_command(_,key_event)
         if env.IS_ASKING then return end
         multi_cmd,curr_stmt=nil,nil
         env.set_prompt(nil,env.PRI_PROMPT)
-        _line_stacks={}
-        
+        clear(_line_stacks)
+        _line_size=0
     elseif key_event.name=="CTRL+BACK_SPACE" or key_event.name=="SHIFT+BACK_SPACE" then --shift+backspace
         console:invokeMethod("backwardDeleteWord")
         key_event.isbreak=true
@@ -1060,6 +1064,7 @@ function env.onload(...)
             env.jit.profile=require("jit.profile")
             env.jit.util=require("jit.util")
             env.jit.opt.start(3,"maxsnap=4096","maxmcode=1024")
+            clear=table.clear
         elseif v=='ffi' then
             env.ffi=require("ffi")
         end
@@ -1161,7 +1166,11 @@ end
 
 function env.load_data(file,isUnpack,callback)
     env.checkerr(file,'env.load_data: filename is nil!')
-    if not file:find('[\\/]') then file=env.join_path(env.WORK_DIR,"data",file) end
+    if not file:find('[\\/]') then 
+        file=env.join_path(env.WORK_DIR,"data",file) 
+    else
+        file=env.resolve_file(file)
+    end
     if type(callback)~="function" then
         local f=io.open(file,file:match('%.dat$') and "rb" or isUnpack and "rb" or "r")
         if not f then
@@ -1223,6 +1232,8 @@ function env.resolve_file(filename,ext)
         filename= env.join_path(env._CACHE_PATH,filename)
     elseif (env.IS_WINDOWS and not filename:find('^%a:')) or (not env.IS_WINDOWS and not filename:find('^/'))  then
         filename= env.join_path(env.WORK_DIR,filename)
+    else
+        filename= env.join_path(filename)
     end
 
     if ext and ext~="" then
@@ -1306,7 +1317,7 @@ function env.set_title(title,value,callee)
         if (CURRENT_TITLE~=titles and (enabled or env.set.get("STATUS"))=="on") or enabled=='on' then
             status=titles:split('   +')
             local color=env.ansi.get_color
-            console:setStatus(' '..table.concat(status,' '..color("HIB")..'|'..color("NOR")..' '),color("HIB")) 
+            console:setStatus(' '..concat(status,' '..color("HIB")..'|'..color("NOR")..' '),color("HIB")) 
         end
     else
         titles=org_title
@@ -1385,7 +1396,9 @@ function env.join_path(base,...)
         is_trim=true
         table.remove(paths,#paths)
     end
-    local path=table.concat(paths,env.PATH_DEL):gsub('[\\/]+',env.PATH_DEL):gsub('(%$[%w_]+)',function(p)
+    local path=concat(paths,env.PATH_DEL)
+    if path:sub(1,8)=='file:///' then path=path:sub(9) end
+    path=path:gsub('[\\/]+',env.PATH_DEL):gsub('(%$[%w_]+)',function(p)
         local p1=os.getenv(p:sub(2))
         return p1 or p
     end)

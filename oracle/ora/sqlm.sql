@@ -314,7 +314,7 @@ BEGIN
                     into  sq_id,sql_exec,sql_start
                     from  gv$sql_monitor
                     where (sql_id=sq_id or lower(sq_id) in('l','last'))
-                    AND   sql_plan_hash_value > 0
+                    --AND   sql_plan_hash_value > 0
                     AND   sql_exec_id >0 
                     AND   PX_SERVER# IS NULL
                     AND   sql_text IS NOT NULL

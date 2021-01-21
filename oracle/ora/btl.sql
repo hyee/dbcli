@@ -33,7 +33,8 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
    IF SQLCODE=-29532 THEN
        msg:='You don''t have access to the directory, please grant below access rights:'||chr(10);
-       msg:=msg||' exec dbms_java.grant_permission('''||sys_context('userenv','current_schema')||''', ''SYS:java.io.FilePermission'','''||dir||'*'', ''write'');'||chr(10);
+       msg:=msg||' grant JAVASYSPRIV to '||sys_context('userenv','current_schema')||';';
+       msg:=msg||' exec dbms_java.grant_permission('''||sys_context('userenv','current_schema')||''', ''SYS:java.io.FilePermission'','''||dir||file||''', ''write'');'||chr(10);
        msg:=msg||' exec dbms_java.grant_permission('''||sys_context('userenv','current_schema')||''', ''SYS:oracle.aurora.security.JServerPermission'',''DUMMY'', '''');';
        raise_application_error(-20001,msg);
    ELSE

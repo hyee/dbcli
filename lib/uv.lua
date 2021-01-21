@@ -28,7 +28,6 @@ function os.exists(file,ext)
     if not file then return end
     if type(file)=="string" then
         file=file:gsub('^"(.*)"$','%1')
-        if file:sub(1,8)=='file:///' then file=file:sub(9) end
     end
     file=env.resolve_file(file)
     local attr=uv.fs.stat(file)

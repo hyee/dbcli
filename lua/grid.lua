@@ -656,6 +656,7 @@ function grid:wellform(col_del, row_del)
         end
         max_siz = max_siz < siz and siz or max_siz
     end
+    if max_siz==0 then return {},{}  end
 
     linesize = self.linesize
 
