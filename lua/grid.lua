@@ -816,7 +816,7 @@ function grid.format_output(output,rows_limit)
                 output[i]=v.format_func(v.fmt,table.unpack(v))
             end
         end
-        output=table.concat(output,rows_limit)
+        output=table.concat(output,'\n',1,rows_limit)
     end
     return output
 end
