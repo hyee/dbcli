@@ -360,7 +360,7 @@ function var.format_function(fmt,next_fmt)
     local f_fmt="%s"..num_fmt.."%s"
     local d_fmt='%s%d%s'
     local function to_fmt(sign,v,unit)
-        return (v==0 and d_fmt or f_fmt):format(v==0 and '' or sign,v,unit)
+        return (v==0 and d_fmt or f_fmt):format(v==0 and '' or sign,v,unit),1
     end
     f=f:upper()
     if f=="KMG" or f=="TMB" then --KMGTP
@@ -373,9 +373,9 @@ function var.format_function(fmt,next_fmt)
             s=math.abs(s)
             for i=1,#units do
                 v,s=math.round(s,scale),s/div
-                if s<1 then return to_fmt(prefix,v,units[i]),1 end
+                if s<1 then return to_fmt(prefix,v,units[i]) end
             end
-            return to_fmt(prefix,v,units[#units]),1
+            return to_fmt(prefix,v,units[#units])
         end
     elseif f=="AUTO" then
         f=(next_fmt or ""):upper()
@@ -448,9 +448,9 @@ function var.format_function(fmt,next_fmt)
             local div=units==u1 and d1 or units==u3 and d3 or d2
             for i=1,#units do
                 v,s=math.round(s,scale),s/(type(div)=='number' and div or div[i])
-                if s<1 then return to_fmt(prefix,v,units[i]),1 end
+                if s<1 then return to_fmt(prefix,v,units[i]) end
             end
-            return to_fmt(prefix,v,units[#units]),1
+            return to_fmt(prefix,v,units[#units])
         end
     elseif f:find('^.SMHD$') or f=='SMHD' and fmt:find('%d$') then
         local div,units
@@ -468,10 +468,10 @@ function var.format_function(fmt,next_fmt)
             s=math.abs(s)
             for i=1,#units-1 do
                 v,s=math.round(s,scale),s/div[i]
-                if v==0 then return '0' end
-                if s<1 then return to_fmt(prefix,v,units[i]),1 end
+                if v==0 then return '0',1 end
+                if s<1 then return to_fmt(prefix,v,units[i]) end
             end
-            return to_fmt(prefix,v,units[#units]),1
+            return to_fmt(prefix,v,units[#units])
         end
     elseif f=="SMHD" or f=="ITV" or f=="INTERVAL" then
         fmt=fmt=='SMHD' and '%dD %02dH %02dM %02dS' or
@@ -680,7 +680,7 @@ function var.trigger_column(field)
             field[2],var.columns[index:upper()]=index,obj
         end
         if obj.print==false then field[2]='' end
-        return
+        --return
     elseif rownum>0 and grid and not grid.__var_parsed then
         grid.__var_parsed=true
         for col,config in pairs(var.columns) do
@@ -697,6 +697,7 @@ function var.trigger_column(field)
     if index then
         if grid then grid.__current_row=row end
         field[2],field.is_number=index(value,rowind,grid)
+        if grid then grid.__current_row=nil end
     end
     
     index=obj.new_value

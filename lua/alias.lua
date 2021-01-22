@@ -84,7 +84,6 @@ function alias.run_command(...)
     end
 end
 
-
 function alias.set(name, cmd, write)
     if not name and write ~= false then
         return exec_command("HELP", {"ALIAS"})

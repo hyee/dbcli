@@ -93,7 +93,7 @@ function unwrap.analyze_sqlmon(text,file)
     if not db_version then
         db_version=xml:match('db_version="([^"]+)"') or '12.2'
     end
-    local instance_id=tonumber(hd.target._attr.instance_id)
+    local instance_id,session_id=tonumber(hd.target._attr.instance_id),tonumber(hd.target._attr.session_id)
     local colors={'$COMMANDCOLOR$','$PROMPTCOLOR$','$HIB$','$PROMPTSUBCOLOR$'}
     --from x$qksxa_reason
     local reasons={
@@ -108,15 +108,15 @@ function unwrap.analyze_sqlmon(text,file)
         ["16"]="HASH"
     }
     env.var.define_column('max_io_reqs,Est|Cost,Est|Rows,Act|Rows,Skew|Rows,Read|Reqs,Write|Reqs,Start|Count,Buff|Gets,Disk|Read,Direx|Write,Fetch|Count','for','tmb1')
-    env.var.define_column('max_aas,max_cpu,max_waits,max_other_sql_count,max_imq_count,From|Start,From|End,Active|Clock,Resp|Time,ASH|AAS,CPU|AAS,Wait|AAS,IMQ|AAS,Other|SQL,resp,aas','for','smhd2')
+    env.var.define_column('max_aas,max_cpu,max_waits,max_other_sql_count,max_imq_count,From|Start,From|End,Active|Clock,Resp|Time,Ref|AAS,ASH|AAS,CPU|AAS,Wait|AAS,IMQ|AAS,Other|SQL,resp,aas','for','smhd2')
     env.var.define_column('duration,bucket_duration,Wall|Time,Elap|Time','for','usmhd2')
     env.var.define_column('max_io_bytes,max_buffer_gets,I/O|Bytes,Mem|Bytes,Max|Mem,Temp|Bytes,Max|Temp,Inter|Connc,Avg|Read,Avg|Write,Unzip|Bytes,Elig|Bytes,Return|Bytes,Read|Bytes,Write|Bytes,Avg|Read,Avg|Write','for','kmg1')
     env.var.define_column('pct','for','pct')
     env.set.set('autohide','col')
-    text,file={},file:gsub('%.[^\\/]+$','')..'.txt'
+    text,file={},file:gsub('%.[^\\/%.]+$','')
     
     local plan,stats
-    local attrs,infos={top_event={},dist_methods={}},{}
+    local attrs,infos={top_event={},dist_methods={},lines={}},{}
     local plsqls,stacks={},{}
     local events={}
     if db_version<'12.2' then
@@ -136,8 +136,11 @@ function unwrap.analyze_sqlmon(text,file)
         return ipairs(type(o)~='table' and {} or (type(o[1])=='table' or #o>1) and o or {o})
     end
 
-    local function pr(msg)
-        text[#text+1]=msg
+    local function pr(msg,shadow)
+        if type(shadow)=='table' then
+            shadow=grid.format_output(shadow)
+        end
+        text[#text+1]=type(shadow)=='string' and shadow or msg
         print(msg)
     end
 
@@ -152,7 +155,7 @@ function unwrap.analyze_sqlmon(text,file)
     end
 
     local function insid(sid,inst_id,px_set)
-        sid=sid..'@'..(tonumber(inst_id) or instance_id)
+        sid=(sid or session_id)..'@'..(tonumber(inst_id) or instance_id)
         if px_set then sid=sid..'#'..px_set end
         return sid
     end
@@ -431,21 +434,58 @@ function unwrap.analyze_sqlmon(text,file)
     load_header()
 
     local skews={ids={},sids={}}
+    local skew_list={
+        [1]={nil,'Id'},
+        [2]={nil,'Skew|Proc'},
+        [3]={'cardinality','Skew|Rows','Ref|Rows','max_card'},
+        [4]={'starts','Start|Count','Ref|Starts','max_starts','execs'},
+        [5]={'io_inter_bytes','Inter|Connc','Ref|Inter','max_io_inter_bytes','ikb',1024},
+        [6]={'read_reqs','Read|Reqs','Ref|Reads','max_read_reqs','rreqs'},
+        [7]={'read_bytes','Read|Bytes','Ref|rBytes','max_read_bytes','rkb',1024},
+        [8]={'write_reqs','Write|Reqs','Ref|Writes','max_write_reqs','wreqs'},
+        [9]={'write_bytes','Write|Bytes','Ref|wBytes','max_write_bytes','wkb',1024},
+        [10]={'max_memory','Mem|Bytes','Ref|Mem','min_max_mem','mem',1024},
+        [11]={'max_temp','Ref|Temp','max_max_temp','temp',1024},
+        [12]={'aas','ASH|AAS','Ref|AAS'},
+        [13]={nil,'Top|Event'}
+    }
+    local skew_aas_index,skew_event_index
+    local max_skews,detail_skews={},{}
+    local function add_skew_line(id,sid,inst_id,idx,value,multiplex,is_append)
+        id,sid=tonumber(id),insid(sid,inst_id)
+        if not skews.ids[id] then skews.ids[id]={} end
+        local row=skews.ids[id][sid]
+        if not row then
+            row={id,sid,[skew_event_index+1]={}}
+            skews.sids[sid],skews.ids[id][sid],skews[#skews+1]=row,row,row
+        end
+        value=tonumber(value)*(multiplex or 1)
+        if value<=0 then return end
+        if is_append then
+            row[idx]=(row[idx] or 0)+value
+        else
+            row[idx]=math.max(row[idx] or 0,value)
+        end
+    end
+
     local function load_skew()
+        skew_event_index=#skew_list
+        for k,v in pairs(skew_list) do
+            if v[1]=='aas' then skew_aas_index=k end
+            if v[4] then max_skews[v[4]]=k end
+            if v[5] then detail_skews[v[5]]={k,v[6]} end
+        end
         if hd.plan_skew_detail then
             for i,s in pair(hd.plan_skew_detail.session) do
-                local sid=insid(s._attr.sid,s._attr.iid)
-                for i,l in pair(s.line) do
-                    local att=l._attr
-                    for k,v in pairs(att) do att[k]=tonumber(v) or v end
-                    local row={att.id,sid,tonumber(l[1]),att.execs,
-                              att.ikb and att.ikb*1024 or nil,
-                              att.rreqs,att.rkb and att.rkb*1024 or nil,att.wreqs,
-                              att.wkb and att.wkb*1024 or nil,att.mem and att.mem*1024 or nil,
-                              att.temp and att.temp*1024 or nil,nil,nil,{}}
-                    if not skews.sids[sid] then skews.sids[sid]={} end
-                    if not skews.ids[att.id] then skews.ids[att.id]={} end
-                    skews.sids[sid][#skews.sids[sid]+1],skews.ids[att.id][sid],skews[#skews+1]=row,row,row
+                local sid,inst_id=s._attr.sid,s._attr.iid
+                for _,l in pair(s.line) do
+                    local id=l._attr.id
+                    add_skew_line(id,sid,inst_id,3,l[1])
+                    for n,v in pairs(l._attr) do
+                        if detail_skews[n] then
+                            add_skew_line(id,sid,inst_id,detail_skews[n][1],v,detail_skews[n][2])
+                        end
+                    end
                 end
             end
         end
@@ -487,9 +527,12 @@ function unwrap.analyze_sqlmon(text,file)
                    {'Proc','Wall|Time','From|Start','ASH|AAS','CPU|AAS','Wait|AAS','IMQ|AAS','Other|SQL','Is|Skew'},
                    {'Main',dur1 or dur2,nil,nil,nil,nil,nil,nil,#skews>0 and 'Yes' or nil}}
     local aas_idx,sql_start_idx=4,#sqlstat[1]
+
+    local px_sets={}
     local function gs_color(g,s)
         return colors[math.fmod((s-1)*2+g-1,#colors)+1]
     end
+
     local function load_sqlstats()
         local function add_aas(idx,value)
             value=tonumber(value)
@@ -497,12 +540,14 @@ function unwrap.analyze_sqlmon(text,file)
                 sqlstat[2][aas_idx+idx]=(sqlstat[2][aas_idx+idx] or 0)+value
             end
         end 
-        local function get_attr(att,name,plex,idx) 
+        local function get_attr(att,name,plex,max_stats) 
             if not att or not att[name] then return nil end
             local value=tonumber(att[name])
             if value==0 then return nil end
             value=value and value*(plex or 1) or att[name]
-            --if value and idx then add_aas(idx,value) end
+            if type(value)=='number' and value>10 and type(max_stats)=='table' and max_stats[name] and max_stats.childs>=4 and value>=max_stats[name] then
+                return '$HIR$'..value..'$NOR$'
+            end
             return value
         end
         for k,v in pair(hd.activity_sampled and hd.activity_sampled.activity or nil) do
@@ -541,26 +586,36 @@ function unwrap.analyze_sqlmon(text,file)
         end
         
         add_sqlstat(sqlstat[2],hd.stats.stat)
-        
-        if hd.parallel_info and hd.parallel_info.sessions then
+        local sessions=hd.parallel_info and hd.parallel_info.sessions
+        if sessions then
             local prev,px_set,color1,color2
-            for k,s in pair(hd.parallel_info.sessions.session) do
-                px_set,color1,color2=nil,'',''
+            local set_list,max_stats={},{}
+            
+            for k,v in pairs(sessions._attr or {}) do
+                max_stats[k:gsub('max_','')]=tonumber(v)
+            end
+            max_stats.count=max_stats.count or max_stats.activity_count
+            max_stats.childs=#(sessions.session or {})
+            for k,s in pair(sessions.session) do
+                local px_set,px_name,skew,color1,color2=nil,nil,nil,'',''
                 local att=s._attr
                 local pname=insid(att.process_name=='PX Coordinator' and 'Coord' or att.process_name,att.inst_id)
-                if att.server_set then
-                    px_set='G'..att.server_group..'S'..att.server_set..' - '
-                    color1,color2=gs_color(att.server_group,att.server_set),'$NOR$'
+                local grp,set=tonumber(att.server_group),tonumber(att.server_set)
+                local g
+                if set then
+                    px_set='G'..grp..'S'..set..' - '
+                    color1,color2=gs_color(grp,set),'$NOR$'
                     pname=px_set..pname
-                end
-                local skew=skews.sids[insid(att.session_id,att.inst_id)]
-                if skew then 
-                    for i=1,#skew do
-                        skew[i][2]=color1..pname..color2
+                    px_name=insid(att.session_id,att.inst_id)
+                    if not px_sets[px_name] then px_sets[px_name]={} end
+                    g={g=grp,s=set,name=pname,set=px_set,color=color1}
+                    px_sets[px_name][#px_sets[px_name]+1]=g
+                    if not set_list[px_set] then
+                        px_sets[#px_sets+1]=g
+                        set_list[px_set]=1
                     end
-                else
-                    skew=#skews>0 and pname:find('Coord')
                 end
+                
                 if px_set and px_set==prev then
                     pname=pname:gsub('.',' ',#px_set-2)
                 else
@@ -569,29 +624,37 @@ function unwrap.analyze_sqlmon(text,file)
                 att=s.activity_sampled and s.activity_sampled._attr or {}
                 local start_at=get_attr(att,'first_sample_time');
                 sqlstat[#sqlstat+1]={color1..pname..color2,
-                                     get_attr(att,'duration',1e6),
+                                     get_attr(att,'duration',1e6,max_stats),
                                      start_at and time2num(start_at)-start_clock or nil,
-                                     get_attr(att,'count',nil,0),
-                                     get_attr(att,'cpu_count',nil,1),
-                                     get_attr(att,'wait_count',nil,2),
-                                     get_attr(att,'imq_count',nil,3),
-                                     get_attr(att,'other_sql_count',nil,4),
+                                     get_attr(att,'count',nil,max_stats),
+                                     get_attr(att,'cpu_count',nil,max_stats),
+                                     get_attr(att,'wait_count',nil,max_stats),
+                                     get_attr(att,'imq_count',nil,max_stats),
+                                     get_attr(att,'other_sql_count',nil,max_stats),
                                      skew and 'Yes' or nil}
+                if g then g.data=sqlstat[#sqlstat] end
                 add_sqlstat(sqlstat[#sqlstat],s.stats and s.stats.stat)
             end
 
-            if hd.parallel_info.instances then
-                for k,s in pair(hd.parallel_info.instances.instance) do
+            local instances=hd.parallel_info.instances
+            if instances then
+                max_stats={}
+                for k,v in pairs(instances._attr or {}) do
+                    max_stats[k:gsub('max_','')]=tonumber(v)
+                end
+                max_stats.count=max_stats.count or max_stats.activity_count
+                max_stats.childs=#(instances.instance or {})
+                for k,s in pair(instances.instance) do
                     local att=s.activity_sampled and s.activity_sampled._attr or {}
                     local start_at=get_attr(att,'first_sample_time');
                     sqlstat[#sqlstat+1]={'Inst #'..s._attr.inst_id,
-                                         get_attr(att,'duration',1e6),
+                                         get_attr(att,'duration',nil,max_stats),
                                          start_at and time2num(start_at)-start_clock or nil,
-                                         get_attr(att,'count'),
-                                         get_attr(att,'cpu_count'),
-                                         get_attr(att,'wait_count'),
-                                         get_attr(att,'imq_count'),
-                                         get_attr(att,'other_sql_count'),}
+                                         get_attr(att,'count',nil,max_stats),
+                                         get_attr(att,'cpu_count',nil,max_stats),
+                                         get_attr(att,'wait_count',nil,max_stats),
+                                         get_attr(att,'imq_count',nil,max_stats),
+                                         get_attr(att,'other_sql_count',nil,max_stats),}
                     add_sqlstat(sqlstat[#sqlstat],s.stats and s.stats.stat)
                 end
             end
@@ -669,15 +732,13 @@ function unwrap.analyze_sqlmon(text,file)
                     e.lines[id][i]=(e.lines[id][i] or 0)+v
                 end
 
-                if skews.ids[id] and attr.skew_count then
+                if attr.skew_count then
                     local sid=insid(attr.skew_sid,attr.skew_iid)
+                    local aas=tonumber(attr.skew_count)
+                    add_skew_line(id,attr.skew_sid,attr.skew_iid,skew_aas_index,aas,nil,true)
                     local skew=skews.ids[id][sid]
-                    if skew then
-                        local aas=tonumber(attr.skew_count)
-                        skew[#skew-2]=(skew[#skew-2] or 0)+aas
-                        local event=grp[ev] or grp[cl]
-                        skew[#skew][event]=(skew[#skew][event] or 0)+aas
-                    end
+                    local event=grp[ev] or grp[cl]
+                    skew[skew_event_index+1][event]=(skew[skew_event_index+1][event] or 0)+aas
                 end
             end
 
@@ -725,7 +786,7 @@ function unwrap.analyze_sqlmon(text,file)
                 top_lines[i]=nil
             end
             top_lines.topic,top_lines.colsep,events.topic='Top Lines','|','Wait Events'
-            line_events=grid.merge({top_lines,'|',events},'plain')
+            line_events={top_lines,'|',events}
         end
     end
     load_activity_detail()
@@ -791,18 +852,6 @@ function unwrap.analyze_sqlmon(text,file)
             if keys>0 then node.proj[3]='C'..keys..',' end
         end
     end
-
-    local max_stats={
-        max_card='cardinality',
-        max_starts='starts',
-        max_io_inter_bytes='io_inter_bytes',
-        max_read_reqs='read_reqs',
-        max_read_bytes='read_bytes',
-        max_write_reqs='write_reqs',
-        max_write_bytes='write_bytes',
-        min_max_mem='max_memory',
-        max_max_temp='max_temp'
-    }
 
     local gs={list={},g=0,s=2}
     local function load_plan_monitor()
@@ -879,8 +928,13 @@ function unwrap.analyze_sqlmon(text,file)
             end
             
             for k,s in pair(p.stats.stat) do
-                local name=s._attr.name
+                local att=s._attr
+                local name=att.name
                 info[name]=s[1]
+                if max_skews[name] then
+                    --print(id,att.sid,att.iid,name,s[1])
+                    add_skew_line(id,att.sid,att.iid,max_skews[name],s[1])
+                end
             end
 
             for k,s in pairs(p.optimizer or {}) do
@@ -894,11 +948,12 @@ function unwrap.analyze_sqlmon(text,file)
                 else
                     gs.s=gs[#gs].s==1 and 2 or 1
                 end
-                local px={depth=depth,id=id,g=gs.g,s=gs.s,color=gs_color(gs.g,gs.s),dop=tonumber(p.dop)}
+                local px={depth=depth,id=id,g=gs.g,s=gs.s,color=gs_color(gs.g,gs.s)}
                 gs[#gs+1]=px
                 gs.list[#gs.list+1]=px
             end
             info.gs=gs[#gs]
+            if gs[#gs] and not gs[#gs].dop then gs[#gs].dop=info.dop end
 
             if pid then
                 pid=infos[pid.id]
@@ -906,7 +961,6 @@ function unwrap.analyze_sqlmon(text,file)
                     if not info.px_type and pid.dop then
                         info.px_type=pid.px_type
                     end
-                    info.parent_dop=pid.dop
                 end
             end
 
@@ -924,10 +978,9 @@ function unwrap.analyze_sqlmon(text,file)
         local function process_ord(node,parent)
             node.ord=curr
             curr=curr-1
-            if parent then
-                if not parent.dop and parent.gs==node.gs then
-                    parent.child_dop=node.dop
-                end
+            if parent and (parent.gs==node.gs or not parent.gs) then
+                parent.child_dop=node.dop or node.child_dop
+                node.parent_dop=parent.dop or parent.parent_dop
             end
             for i=#node._cid,1,-1 do
                 process_ord(infos[node._cid[i]],node)
@@ -1056,52 +1109,76 @@ function unwrap.analyze_sqlmon(text,file)
             local px_type=s.px_type
             if tonumber(px_type) then
                 if not px_color then
+                    g,px_type=g or 1,tonumber(px_type)
+                    for i,l in ipairs(gs.list) do
+                        if g==l.g and px_type==l.s then
+                            s.gs=l
+                            if l.id>id then l.id=id end
+                            break
+                        end
+                    end
                     px_color=gs_color(g or 1,px_type)
                 end
                 px_type='S'..px_type 
             end
-            if px_type and px_color then
-                g=s.gs and s.gs.g or 1
+            if px_type and px_color and s.gs then
+                g=s.gs.g
                 px_type=px_color..px_type..'$NOR$'
             end
             local start_at=tonumber(s.from_sql_exec_start)
             if start_at and (first_start==nil or first_start>start_at) then first_start=start_at end
+            s.aas=e[4]
             lines[#lines+1]={
                 id=id,
                 format_id(id,tonumber(s.skp) or 0,px_color,preds.ids[id]),
                 (color or child or #s._cid==0 or not s._pid) and s.ord or nil,
+                '|',
                 px_type,
                 tonumber(s.dop),
-                skews.ids[id] and 'Yes' or nil,
+                nil,
+                '|',
                 format_operation(table.concat(lvs,'',1,depth),s.name,s.options,color),
+                '|',
                 obj,
+                '|',
                 type(p.pred)=='table' and table.concat(p.pred,'') or nil,
+                '|',
                 table.concat(p.proj,''):gsub(',$',''),
+                '|',
                 attrs.dist_methods[id] or p.distrib or p.partition and (
                     p.partition._attr.start==p.partition._attr.stop and p.partition._attr.start
                     or (p.partition._attr.start..' - '..p.partition._attr.stop)
                 ) or nil,
+                '|',
                 tonumber(s.cost),
                 tonumber(s.card),
                 tonumber(s.cardinality),
+                '|',
                 tonumber(s.starts),
                 start_at,
                 tonumber(s.from_most_recent),
                 tonumber(s.duration),
+                '|',
                 tonumber(s.max_memory),
                 tonumber(s.max_temp),
+                '|',
                 get_interconn(s),
                 tonumber(s.read_reqs),
                 s.read_reqs and math.ceil(tonumber(s.read_bytes)/tonumber(s.read_reqs)) or nil,
                 tonumber(s.write_reqs),
                 s.write_reqs and math.ceil(tonumber(s.write_bytes)/tonumber(s.write_reqs)) or nil,
                 s.cell_offload_efficiency,
+                '|',
                 e[3],
-                e[4],
+                s.aas,
+                '|',
                 e[2],
+                '|',
                 strip_quote(p.object_alias),
+                '|',
                 strip_quote(qb and qb:sub(2) or nil),
             }
+            attrs.lines[id]=lines[#lines]
             if child then lvs[depth]=child==3 and ' ' or child_fmt:format(child_color,':') end
             if p.rwsstats then process_rwstat(id,p.rwsstats) end
             local xml=p.other_xml
@@ -1278,59 +1355,13 @@ function unwrap.analyze_sqlmon(text,file)
         rows.topic,rows.colsep='Binds/Peek Binds','|'
         binds=rows
     end
-    load_binds()      
+    load_binds()
 
-    local function print_report()
-        pr('\n')
-        pr(grid.merge({report_header,'|',{binds,'-',iostat}},'plain'))
-
-        if #sqlstat<3 then
-            env.var.define_column('Proc','noprint')
-        end
-
-        if sqlstat then
-            sqlstat[2][3]=first_start
-            pr(grid.merge({sqlstat},'plain'))
-            env.var.define_column('Proc','clear')
-        end
-
-        title('Execution Plan')
-        local summary=print_header('Execution Plan Summary',false)
-        if summary then
-            summary.colsep='|'
-            pr(grid.merge({summary},'plain'))
-        end
-
-        if line_events then pr(line_events) end
-
-        if lines and #lines>0 then
-            table.insert(lines,1,{'Id','Ord','PX#','DoP','Skew','Operation','Object Name','Pred','Proj',
-                                  'Distrib|Partition','Est|Cost','Est|Rows','Act|Rows',
-                                  'Start|Count','From|Start','From|End','Active|Clock','Max|Mem','Max|Temp',
-                                  'Inter|Connc','Read|Reqs','Avg|Read','Write|Reqs','Avg|Write','Offload|Effi(%)',
-                                  'Resp|Time','ASH|AAS','Top|Event','Object|Alias','Query|Block'})
-            
-            lines.colsep,lines.topic='|','Execution Plan Lines'
-            pr(grid.merge({lines},'plain'))
-            env.set.set('colsep','default')
-        end
-
+    local skew_outputs
+    local function calc_skews()
         if #skews>0 then
-            local rows={topic='Skew Info',colsep='|',{
-                  'Id','Skew|Proc','Skew|Rows','Start|Count','Inter|Connc','Read|Reqs','Read|Bytes',
-                  'Write|Reqs','Write|Bytes','Mem|Bytes','Temp|Bytes','ASH|AAS','Top|Event'}}
-            local len=#rows[1]
-            local max_skews={
-                [3]={'cardinality','Ref|Rows'},
-                [4]={'starts','Ref|Starts'},
-                [5]={'io_inter_bytes','Ref|Inter'},
-                [6]={'read_reqs','Ref|Reads'},
-                [7]={'read_bytes','Ref|rBytes'},
-                [8]={'write_reqs','Ref|Writes'},
-                [9]={'max_write_bytes','Ref|wBytes'},
-                [10]={'max_memory','Ref|Mem'},
-                [11]={'max_temp','Ref|Temp'}
-            }
+            local rows={topic='Skew Info',{}}
+            local len=#skew_list
             env.var.define_column('Ref|Inter,Ref|rBytes,Ref|wBytes,Ref|Mem,Ref|Temp','for','kmg1')
             env.var.define_column('Ref|Rows,Ref|Starts,Ref|Reads,Ref|Writes','for','tmb1')
             table.sort(skews,function(a,b)
@@ -1340,49 +1371,145 @@ function unwrap.analyze_sqlmon(text,file)
                     return a[2]<b[2]
                 end
             end)
-            for j=len,1,-1 do
-                local s=max_skews[j]
-                if s then table.insert(rows[1],j+1,s[2]) end
+            local header=rows[1]
+            for j,col in ipairs(skew_list) do
+                header[#header+1],header[#header+2]=col[2],col[3]
+                if j<len then header[#header+1]='|' end
             end
+            local gs_idx=1
             for i,c in ipairs(skews) do
-                local t,aas,e=c[#c-2],-1,''
+                local t,aas,e=c[skew_aas_index],-1,''
                 if t then
                     events={}
-                    for k,v in pairs(c[#c]) do
+                    for k,v in pairs(c[skew_event_index+1]) do
                         if v>aas then
                             e=k..' '..to_pct(v,t)
                             aas=v
                         end
                     end
                 end
-                c[#c-1]=e
-                local row={}
-                local idx=0
-                local info=infos[c[1]]
-                local dop=tonumber(info.dop or info.child_dop or info.parent_dop or info.gs and info.gs.dop or 0) or 0
-                for j=1,len do
-                    idx=idx+1
-                    row[idx]=c[j]
-                    local s=max_skews[j]
-                    if s then
-                        idx=idx+1
-                        local val
-                        if dop>1 then
-                            val=tonumber(info[s[1]])
-                            if val and c[j] then
-                                val=math.round((val-c[j])/(dop-1),4)
-                            else
-                                val=nil
-                            end
+                c[skew_event_index]=e
+                local id=c[1]
+                local row,pxstat={}
+                local info=infos[id]
+
+                while gs.list[gs_idx+1] and gs.list[gs_idx+1].id<=id do
+                    gs_idx=gs_idx+1
+                end
+                
+                if gs.list[gs_idx] then
+                    local rank,name,color=-1
+                    local function get_px_name(g,idx)
+                        local rnk=0
+                        if g.s==gs.list[gs_idx].s then
+                            rnk=rnk+2000-g.s*2
                         end
-                        row[idx]=val
+                        if g.g==gs.list[gs_idx].g then
+                            rnk=rnk+1000-g.g*2
+                        end
+                        if rnk>=rank then name,rank,color,pxstat=idx==2 and g.set or g.name,rnk,g.color,g.data end
+                    end
+                    if px_sets[c[2]] then
+                        for _,g in ipairs(px_sets[c[2]] or {}) do
+                            get_px_name(g)
+                        end
+                    else
+                        for _,g in ipairs(px_sets) do
+                            get_px_name(g,2)
+                        end
+                        name,pxstat=(name or '')..c[2]
+                    end
+                    c[2]=name
+                    c[2]=color..c[2]..'$NOR$'
+                end
+                local dop=tonumber(info.dop or info.gs and info.gs.dop or info.child_dop or info.parent_dop or 0) or 0
+                local idx,counter=0,0
+                local function add_column(value)
+                    idx=idx+1
+                    row[idx]=value
+                    if idx>2 and tonumber(value) then 
+                        counter=counter+1
                     end
                 end
-                rows[i+1]=row
+                for j=1,len do
+                    add_column(c[j])
+                    local s=skew_list[j][1]
+                    if s then
+                        local val
+                        if dop>1 and c[j] then
+                            val=tonumber(info[s])
+                            if val then
+                                val=math.round((val-c[j])/(dop-1),4)
+                                if j>2 and j<skew_aas_index then
+                                    if math.abs(c[j]-val)<100 then
+                                        row[idx],val=nil
+                                        counter=counter-1
+                                    elseif val~=0 then
+                                        local pct=c[j]/val
+                                        if pct>0.83 and pct<1.2 then
+                                            row[idx],val=nil
+                                            counter=counter-1
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        add_column(val)
+                    end
+                    add_column('|')
+                end
+                if counter>0 then 
+                    rows[#rows+1]=row
+                    attrs.lines[id][6]='Yes'
+                    if pxstat then pxstat[sql_start_idx]='Yes' end
+                end
             end
             
+            if #rows>1 then skew_outputs=rows end
+        end
+    end  
+
+    local function print_report()
+        pr('\n')
+        pr(grid.merge({report_header,'|',{binds,'-',iostat}},'plain'))
+
+        if #sqlstat<3 then
+            env.var.define_column('Proc','noprint')
+        end
+
+        calc_skews()
+        if sqlstat then
+            sqlstat[2][3]=first_start
+            pr(grid.merge({sqlstat},'plain'))
+            env.var.define_column('Proc','clear')
+        end
+
+        local summary=print_header('Execution Plan Summary',false)
+        if summary then
+            summary.colsep='|'
+            pr(grid.merge({summary},'plain'))
+        end
+
+        if line_events then 
+            pr(grid.merge(line_events,'plain')) 
+        end
+
+        if lines and #lines>0 then
+            table.insert(lines,1,{'Id','Ord','|','PX#','DoP','Skew','|','Operation','|','Object Name','|','Pred','|','Proj','|',
+                                  'Distrib|Partition','|','Est|Cost','Est|Rows','Act|Rows','|',
+                                  'Start|Count','From|Start','From|End','Active|Clock','|','Max|Mem','Max|Temp','|',
+                                  'Inter|Connc','Read|Reqs','Avg|Read','Write|Reqs','Avg|Write','Offload|Effi(%)','|',
+                                  'Resp|Time','ASH|AAS','|','Top|Event','|','Object|Alias','|','Query|Block'})
+            
+            lines.topic='Execution Plan Lines'
+            pr(grid.merge({lines},'plain'))
+            env.set.set('colsep','default')
+        end
+
+        
+        if skew_outputs then
             env.var.define_column('id','break')
-            pr(grid.tostring(rows,true,'|'))
+            pr(grid.merge({skew_outputs},'plain'))
             env.var.define_column('id','clear')
         end
 
@@ -1444,7 +1571,9 @@ function unwrap.analyze_sqlmon(text,file)
         end
     end
     print_report()
-    print("\nSQL Monitor report in text written to "..env.save_data(file,table.concat(text,'\n'):strip_ansi()))
+    text=table.concat(text,'\n')
+    print("\nSQL Monitor report in text written to "..env.save_data(file..'.txt',text:strip_ansi()))
+    print("SQL Monitor report in text written to "..env.save_data(file..'_colored.txt',text))
 end
 
 function unwrap.unwrap(obj,ext,prefix)

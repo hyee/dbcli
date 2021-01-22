@@ -284,7 +284,7 @@ local string_format=String.format
 function grid.format_column(include_head, colinfo, value, rownum,instance,rowind,row)
     if include_head then
         local result = event.callback("ON_COLUMN_VALUE", {colinfo.column_name, value, rownum,instance,rowind,row,is_number=colinfo.is_number})
-        value,colinfo.is_number=result[2],result.is_number
+        value,colinfo.is_number=result[2],colinfo.is_number or result.is_number
     end
     
     if rownum > 0 and (type(value) == "number" or include_head and colinfo.is_number) then
@@ -362,6 +362,7 @@ function grid:add(row)
         rs._org[k] = v
         if k > grid.maxcol then break end
         local csize, v1, is_number = 0, v
+        local st,ed
         if not colsize[k] then colsize[k] = {0, 1} end
 
         if not self.colinfo then self.colinfo={} end
@@ -369,13 +370,16 @@ function grid:add(row)
             local info={column_name = #result > 0 and result[1]._org[k] or tostring(v)}
             self.colinfo[k]=info
             self.colinfo[info.column_name:upper()]=k
+        elseif self.colinfo[k].is_number and type(v)=='string' then
+            v,st,ed=v:from_ansi()
         end
 
         is_number, v1 = grid.format_column(self.include_head, self.colinfo[k], v, #result,self,headind,rs)
         if tostring(v) ~= tostring(v1) then v = v1 end
+        if st or ed then v=(st or '')..v..(ed or '') end
         if colsize[k][3] and type(v)=='string' and colsize[k][3]:find(v,1,true) then
             csize=strip_len(colsize[k][3])
-        elseif is_number then
+        elseif is_number and headind>0 then
             l,csize=0,strip_len(tostring(v))
             if csize>0 then
                 l,csize = tostring(v):ulen()
@@ -455,11 +459,12 @@ function grid:add(row)
             elseif headind > 0 then
                 colsize[k][2] = -1
             end
+
+            if title_style ~= "none" then
+                v = grid.format_title(v)
+            end
         end
         
-        if headind == 0 and title_style ~= "none" then
-            v = grid.format_title(v)
-        end
         rs[k] = v
         
         if grid.pivot == 0 and headind == 0 and (colbase == "body" or colbase == "trim") and self.include_head then 
@@ -539,6 +544,7 @@ function grid:add(row)
         row.sep=sep
         table.insert(result,#result,row)
     end
+
     return result
 end
 
@@ -576,7 +582,6 @@ function grid:wellform(col_del, row_del)
     row_dels = fmt
     local format_func = grid.fmt
     grid.colsize = self.colsize
-    
     if type(self.ratio_cols) == "table" and grid.pivot == 0 then
         local keys = {}
         for k, v in pairs(self.ratio_cols) do
@@ -615,15 +620,25 @@ function grid:wellform(col_del, row_del)
     local nor, hor, hl = color("NOR"), color("HEADCOLOR"), color("GREPCOLOR")
     local head_fmt,max_siz = fmt,0
     local seps={}
-
+    local prev,next,prev_sep,prev_none_zero,del={},-1,-1
     for k, v in ipairs(colsize) do
         if max_siz==0 and k>1 then v[3],v[4]=nil,nil end
-        siz = v[3] and #v[3] or v[1]
+        siz,seps[k]=v[1],v[3]
+        if seps[k] then
+            if prev_none_zero<=prev_sep then 
+                siz=0
+                v[4]=nil
+            end
+            prev_sep=k
+        elseif siz>0 then
+            prev_none_zero=k
+        end
+        
         v[1] = siz
-        local del = (v[3] or (colsize[k+1] or {})[3] or (colsize[k+1] or {})[1]==0) and ""  or " "
-        seps[k]=v[3]
+        next=colsize[k+1] or {}
+        del = (seps[k] or next[3] or next[1]==0) and ""  or " "
 
-        if siz==0 and ((colsize[k-1] or {})[3] or k==1) then del='' end
+        if siz==0 and (prev[3] or k==1) then del='' end
         if (del~="" and pivot == 0) or (pivot ~= 0 and k ~= 1 + indx and (pivot ~= 1 or k ~= 3 + indx)) then 
             del = col_del
         end
@@ -654,7 +669,16 @@ function grid:wellform(col_del, row_del)
         if row_del ~= "" then
             row_dels = row_dels .. row_del:rep(siz) .. del
         end
+        prev=v
         max_siz = max_siz < siz and siz or max_siz
+    end
+
+    if prev_none_zero<=prev_sep then 
+        for k,v in pairs(seps) do
+            if k>=prev_none_zero and #v>0 then 
+                seps[k]=string.rep(' ',#v)
+            end
+        end
     end
     if max_siz==0 then return {},{}  end
 
@@ -781,6 +805,20 @@ function grid.tostring(rows, include_head, col_del, row_del, rows_limit, pivot,p
     rows_limit = rows_limit and math.min(rows_limit, #rows) or #rows
     env.set.force_set("pivot", 0)
     return table.concat(rows, "\n", 1, rows_limit),output
+end
+
+function grid.format_output(output,rows_limit)
+    if type(output)=="table" then
+        rows_limit=rows_limit or #output
+        for i=1,rows_limit do
+            local v=output[i]
+            if type(v)=='table' then
+                output[i]=v.format_func(v.fmt,table.unpack(v))
+            end
+        end
+        output=table.concat(output,rows_limit)
+    end
+    return output
 end
 
 function grid.print(rows, include_head, col_del, row_del, rows_limit, prefix, suffix)
@@ -1059,7 +1097,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
             if suffix then print(suffix) end
             return
         end
-        return str
+        return str,table.concat(result,'\n')
     else
         return result
     end

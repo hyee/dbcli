@@ -62,7 +62,7 @@ function string.gsplit(s, sep, plain,occurrence,case_insensitive)
             local seg = i>1 and s:sub(start, i - 1) or ""
             start = j + 1
             counter=counter+1
-            return seg, s:sub(i,j),counter
+            return seg, s:sub(i,j),counter,i,j
         else
             done = true
             return s:sub(start),"",counter+1
@@ -70,7 +70,7 @@ function string.gsplit(s, sep, plain,occurrence,case_insensitive)
     end
     return function()
         if done then return end
-        if sep1 == '' then done = true return s end
+        if sep1 == '' then done = true;return s end
         return pass(s1:find(sep1, start, plain))
     end
 end

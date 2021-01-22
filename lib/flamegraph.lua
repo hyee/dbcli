@@ -476,31 +476,6 @@ local function reverse(arr)
     end
 end
 
-function string.gsplit(s, sep, plain,occurrence,case_insensitive)
-    local start = 1
-    local counter=0
-    local done = false
-    local s1=case_insensitive==true and s:lower() or s
-    local sep1=case_insensitive==true and sep:lower() or sep
-    local function pass(i, j)
-        if i and ((not occurrence) or counter<occurrence) then
-            local seg = i>1 and s:sub(start, i - 1) or ""
-            start = j + 1
-            counter=counter+1
-            return seg, s:sub(i,j),counter
-        else
-            done = true
-            return s:sub(start),"",counter+1
-        end
-    end
-    return function()
-        if done then return end
-        if sep1 == '' then done = true return s end
-        return pass(s1:find(sep1, start, plain))
-    end
-end
-
-
 local function split(s,sep,plain,occurrence,case_insensitive)
     local r={}
     for v in s:gsplit(sep,plain,occurrence,case_insensitive) do
