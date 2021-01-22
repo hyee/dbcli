@@ -137,6 +137,7 @@ function unwrap.analyze_sqlmon(text,file)
     end
 
     local function pr(msg,shadow)
+        --store rowset instead of screen output to avoid line chopping
         if type(shadow)=='table' then
             shadow=grid.format_output(shadow)
         end
@@ -154,9 +155,9 @@ function unwrap.analyze_sqlmon(text,file)
         return str:gsub('"([%u%d_$#]+)"','%1')
     end
 
-    local function insid(sid,inst_id,px_set)
+    --build PX process name <sid>@<inst_id>
+    local function insid(sid,inst_id)
         sid=(sid or session_id)..'@'..(tonumber(inst_id) or instance_id)
-        if px_set then sid=sid..'#'..px_set end
         return sid
     end
 
@@ -330,7 +331,8 @@ function unwrap.analyze_sqlmon(text,file)
         px_in_memory='px_im',
         px_in_memory_imc='px_imc',
         derived_cpu_dop='cpu_dop',
-        derived_io_dop='io_dop'
+        derived_io_dop='io_dop',
+        cardinality_feedback='card_feedback'
     }
     local time_fmt='%d+/%d+/%d+'
     local function add_header(k,v,display)
@@ -435,19 +437,20 @@ function unwrap.analyze_sqlmon(text,file)
 
     local skews={ids={},sids={}}
     local skew_list={
-        [1]={nil,'Id'},
-        [2]={nil,'Skew|Proc'},
-        [3]={'cardinality','Skew|Rows','Ref|Rows','max_card'},
-        [4]={'starts','Start|Count','Ref|Starts','max_starts','execs'},
-        [5]={'io_inter_bytes','Inter|Connc','Ref|Inter','max_io_inter_bytes','ikb',1024},
-        [6]={'read_reqs','Read|Reqs','Ref|Reads','max_read_reqs','rreqs'},
-        [7]={'read_bytes','Read|Bytes','Ref|rBytes','max_read_bytes','rkb',1024},
-        [8]={'write_reqs','Write|Reqs','Ref|Writes','max_write_reqs','wreqs'},
-        [9]={'write_bytes','Write|Bytes','Ref|wBytes','max_write_bytes','wkb',1024},
-        [10]={'max_memory','Mem|Bytes','Ref|Mem','min_max_mem','mem',1024},
-        [11]={'max_temp','Ref|Temp','max_max_temp','temp',1024},
-        [12]={'aas','ASH|AAS','Ref|AAS'},
-        [13]={nil,'Top|Event'}
+        {nil,'Id'},
+        {nil,'Skewed|PX#'},
+        {nil,'Row|DoP'},
+        {'cardinality','Skew|Rows','Ref|Rows','max_card'},
+        {'starts','Start|Count','Ref|Starts','max_starts','execs'},
+        {'io_inter_bytes','Inter|Connc','Ref|Inter','max_io_inter_bytes','ikb',1024},
+        {'read_reqs','Read|Reqs','Ref|Reads','max_read_reqs','rreqs'},
+        {'read_bytes','Read|Bytes','Ref|rBytes','max_read_bytes','rkb',1024},
+        {'write_reqs','Write|Reqs','Ref|Writes','max_write_reqs','wreqs'},
+        {'write_bytes','Write|Bytes','Ref|wBytes','max_write_bytes','wkb',1024},
+        {'max_memory','Mem|Bytes','Ref|Mem','min_max_mem','mem',1024},
+        {'max_temp','Ref|Temp','max_max_temp','temp',1024},
+        {'aas','ASH|AAS','Ref|AAS'},
+        {nil,'Top|Event'}
     }
     local skew_aas_index,skew_event_index
     local max_skews,detail_skews={},{}
@@ -576,11 +579,16 @@ function unwrap.analyze_sqlmon(text,file)
             end
         end
 
-        local function add_sqlstat(row,stat)
+        local function add_sqlstat(row,stat,max_stats)
             for k,v in pair(stat) do
                 local att=v._attr
                 if att and att.name and statset.seqs[att.name] and v[1]~='0' then
-                    row[statset.seqs[att.name]]=tonumber(v[1])
+                    local v1=tonumber(v[1])
+                    if not v1 then return end
+                    if v1>1024*1024 and max_stats and max_stats[att.name] and max_stats[att.name]<=v1 then
+                        v1='$HIR$'..v1..'$NOR$'
+                    end
+                    row[statset.seqs[att.name]]=v1
                 end
             end
         end
@@ -633,7 +641,7 @@ function unwrap.analyze_sqlmon(text,file)
                                      get_attr(att,'other_sql_count',nil,max_stats),
                                      skew and 'Yes' or nil}
                 if g then g.data=sqlstat[#sqlstat] end
-                add_sqlstat(sqlstat[#sqlstat],s.stats and s.stats.stat)
+                add_sqlstat(sqlstat[#sqlstat],s.stats and s.stats.stat,max_stats)
             end
 
             local instances=hd.parallel_info.instances
@@ -655,7 +663,7 @@ function unwrap.analyze_sqlmon(text,file)
                                          get_attr(att,'wait_count',nil,max_stats),
                                          get_attr(att,'imq_count',nil,max_stats),
                                          get_attr(att,'other_sql_count',nil,max_stats),}
-                    add_sqlstat(sqlstat[#sqlstat],s.stats and s.stats.stat)
+                    add_sqlstat(sqlstat[#sqlstat],s.stats and s.stats.stat,max_stats)
                 end
             end
         end
@@ -664,6 +672,7 @@ function unwrap.analyze_sqlmon(text,file)
         for i=2,#sqlstat do
             local stat=sqlstat[i]
             local intercc=0
+            
             for j,idx in ipairs(io_idx) do
                 if stat[idx] and stat[idx+1] then
                     intercc=intercc+stat[idx+1]
@@ -677,9 +686,14 @@ function unwrap.analyze_sqlmon(text,file)
             if not stat[ic_idx] and intercc>0 then stat[ic_idx]=intercc end
 
             local ela=stat[sqlstat.timer_start]
+            if type(ela)=='string' then ela=tonumber(ela:strip_ansi()) end
             for j=sqlstat.timer_start+1,sqlstat.timer_end do
                 if stat[j] then
-                    stat[j]=to_pct(stat[j],ela,nil,false)
+                    local st,ed
+                    if type(stat[j])=='string' then
+                        stat[j],st,ed=stat[j]:from_ansi()
+                    end
+                    stat[j]=to_pct(stat[j],ela,nil,false):to_ansi(st,ed)
                 end
             end
         end
@@ -688,6 +702,21 @@ function unwrap.analyze_sqlmon(text,file)
 
     local line_events
     local total_aas=tonumber(sqlstat[2][aas_idx]) or 1
+    local function get_top_events(events,as,rt,top)
+        local lines,l,first={},{}
+        for id,aas in pairs(events) do
+            --aas: {rt,aas}
+            local v=type(aas)=='table' and (aas[2]==0 and aas[1] or aas[2]) or aas
+            lines[#lines+1]={id,v}
+        end
+        table.sort(lines,function(o1,o2) return o1[2]>o2[2] end)
+        for i=1,math.min(top or 1,#lines) do
+            if not first then first=lines[i][2] end
+            l[i]=lines[i][1]..to_pct(lines[i][2],as,rt)
+        end
+        return table.concat(l,', '),first
+    end
+
     local function load_activity_detail()
         stats=hd.activity_detail
         if stats then stats=stats.bucket end
@@ -698,7 +727,7 @@ function unwrap.analyze_sqlmon(text,file)
             local function process_stats(s)
                 local attr=s._attr
                 local id=tonumber(attr.line) or 0
-                if not ids[id] then ids[id]={-1,''} end
+                if not ids[id] then ids[id]={-1,nil,events={}} end
                 if attr.plsql_id and attr.plsql_name and attr.plsql_name~='Unavailable' then plsqls[attr.plsql_id]=attr.plsql_name end
                 local grp={
                     attr.class or attr.other_sql_class, --wait class
@@ -713,23 +742,25 @@ function unwrap.analyze_sqlmon(text,file)
                     lines={}
                 }
                 --group by class+event
-                local stack=(grp[ev] or '')..','..(grp[cl] or '')
+                local event=grp[ev] or grp[cl]
+                if not ids[id].events[event] then ids[id].events[event]={} end
+                local stack=(grp[ev] or '')..'\1'..(grp[cl] or '')
                 if not stacks[stack] then
                     events[#events+1]=grp
                     stacks[stack]=#events
                 end
-                local e=events[stacks[stack]]
-                e[bk]=e[bk]+1
+                grp=events[stacks[stack]]
+                grp[bk]=grp[bk]+1
                 --rt(response time) and aas
-                local values={[rt]=tonumber(attr.rt),[as]=tonumber(s[1])}
-                if not e.lines[id] then e.lines[id]={} end
-                for k,v in pairs(values) do
-                    local i=k==rt and 1 or 2
-                    e[k]=(e[k] or 0)+v
+                if not grp.lines[id] then grp.lines[id]={} end
+                for k,v in pairs{[rt]=tonumber(attr.rt),[as]=tonumber(s[1])} do
+                    grp[k]=(grp[k] or 0)+v
                     --aggregate line level events: {max,max_event,total_rt,total_aas}
+                    local i=k==rt and 1 or 2
                     ids[id][2+i]=(ids[id][2+i] or 0)+v
                     --aggregate line level events: {rt,aas}
-                    e.lines[id][i]=(e.lines[id][i] or 0)+v
+                    grp.lines[id][i]=(grp.lines[id][i] or 0)+v
+                    ids[id].events[event][i]=(ids[id].events[event][i] or 0)+v
                 end
 
                 if attr.skew_count then
@@ -737,7 +768,6 @@ function unwrap.analyze_sqlmon(text,file)
                     local aas=tonumber(attr.skew_count)
                     add_skew_line(id,attr.skew_sid,attr.skew_iid,skew_aas_index,aas,nil,true)
                     local skew=skews.ids[id][sid]
-                    local event=grp[ev] or grp[cl]
                     skew[skew_event_index+1][event]=(skew[skew_event_index+1][event] or 0)+aas
                 end
             end
@@ -752,22 +782,7 @@ function unwrap.analyze_sqlmon(text,file)
                 function(a,b)
                     for _,c in ipairs{a,b} do
                         if not c[top] then
-                            local lines,l={},{}
-                            for id,aas in pairs(c.lines) do
-                                --aas: {rt,aas}
-                                local v=aas[2]==0 and aas[1] or aas[2]
-                                lines[#lines+1]={id,v}
-                                --adjust line level max_event/aas
-                                local line=ids[id]
-                                if v and line[1]<v then
-                                    line[1],line[2]=v,(a[2] or a[1] or '')..' '..to_pct(v,line[4],line[3])
-                                end
-                            end
-                            table.sort(lines,function(o1,o2) return o1[2]>o2[2] end)
-                            for i=1,math.min(5,#lines) do
-                                l[i]=lines[i][1]..to_pct(lines[i][2],c[as],c[rt])
-                            end
-                            c[top]=table.concat(l,', ')
+                            c[top]=get_top_events(c.lines,c[as],c[rt],5)
                             if c[as] then c[pct]=math.round(c[as]/total_aas,4) end
                         end
                     end
@@ -777,12 +792,23 @@ function unwrap.analyze_sqlmon(text,file)
             table.insert(events,1,{'Class','Event','|','Resp','AAS','Pct','Top Lines','Buckets'})
 
             local top_lines={}
+            local e1=0
             for k,v in pairs(ids) do
-                top_lines[#top_lines+1]={k,v[3],v[4],math.round(v[4]/total_aas,4),v[2]}
+                e1=e1+v[4]
+                top_lines[#top_lines+1]={k,v[3],v[4],math.round(v[4]/total_aas,4),nil,events=v.events}
             end
-            table.sort(top_lines,function(o1,o2) return o1[4]>o2[4] end)
+            table.sort(top_lines,function(a,b)
+                for _,c in ipairs{a,b} do
+                    if not c[5] then
+                        c[5],ids[c[1]][1]=get_top_events(c.events,c[3],c[2])
+                        ids[c[1]][2]=c[5]
+                        if c[3] then c[4]=math.round(c[3]/total_aas,4) end
+                    end
+                end
+                return (a[4] or a[3])>(b[4] or b[3]) 
+            end)
             table.insert(top_lines,1,{'Id','Resp','AAS','Pct','Top Event'})
-            for i=#top_lines,math.max(4,#events+1),-1 do
+            for i=#top_lines,math.max(5,#events+1),-1 do
                 top_lines[i]=nil
             end
             top_lines.topic,top_lines.colsep,events.topic='Top Lines','|','Wait Events'
@@ -995,6 +1021,7 @@ function unwrap.analyze_sqlmon(text,file)
     local function load_plan()
         local op_fmt,space='%s%s%s%s%s%s',' '
         local child_fmt,child_color='%s%s$NOR$'
+        local ord_fmt='%'..(#(tostring(xid)))..'s'
         xid='%'..(#(tostring(xid)))..'d'
         local id_fmt='%s%s'..xid..'%s'
         local function format_operation(pad,operation,options,color)
@@ -1037,7 +1064,7 @@ function unwrap.analyze_sqlmon(text,file)
             s.io_inter_bytes=intercc>0 and intercc or nil
             return s.io_inter_bytes
         end
-        local g
+        local g,prev_ord=nil,'-1'
         for n,m in ipairs(stats) do
             local id=tonumber(m._attr.id)
             local s=infos[id]
@@ -1128,10 +1155,12 @@ function unwrap.analyze_sqlmon(text,file)
             local start_at=tonumber(s.from_sql_exec_start)
             if start_at and (first_start==nil or first_start>start_at) then first_start=start_at end
             s.aas=e[4]
+            local ord=ord_fmt:format((color or child or #s._cid==0 or not s._pid) and s.ord or (prev_ord:find('%d') and '^') or ':')
+            prev_ord=ord
             lines[#lines+1]={
                 id=id,
                 format_id(id,tonumber(s.skp) or 0,px_color,preds.ids[id]),
-                (color or child or #s._cid==0 or not s._pid) and s.ord or nil,
+                ord,
                 '|',
                 px_type,
                 tonumber(s.dop),
@@ -1358,9 +1387,10 @@ function unwrap.analyze_sqlmon(text,file)
     load_binds()
 
     local skew_outputs
+    local skew_threshold=0.7
     local function calc_skews()
         if #skews>0 then
-            local rows={topic='Skew Info',{}}
+            local rows={topic='Skew Info (Ref=Avg except skewed PX)',{}}
             local len=#skew_list
             env.var.define_column('Ref|Inter,Ref|rBytes,Ref|wBytes,Ref|Mem,Ref|Temp','for','kmg1')
             env.var.define_column('Ref|Rows,Ref|Starts,Ref|Reads,Ref|Writes','for','tmb1')
@@ -1378,17 +1408,10 @@ function unwrap.analyze_sqlmon(text,file)
             end
             local gs_idx=1
             for i,c in ipairs(skews) do
-                local t,aas,e=c[skew_aas_index],-1,''
+                local t=c[skew_aas_index]
                 if t then
-                    events={}
-                    for k,v in pairs(c[skew_event_index+1]) do
-                        if v>aas then
-                            e=k..' '..to_pct(v,t)
-                            aas=v
-                        end
-                    end
+                    c[skew_event_index]=get_top_events(c[skew_event_index+1],t) 
                 end
-                c[skew_event_index]=e
                 local id=c[1]
                 local row,pxstat={}
                 local info=infos[id]
@@ -1420,14 +1443,16 @@ function unwrap.analyze_sqlmon(text,file)
                         name,pxstat=(name or '')..c[2]
                     end
                     c[2]=name
-                    c[2]=color..c[2]..'$NOR$'
+                    c[2]=(color or '')..c[2]..'$NOR$'
                 end
                 local dop=tonumber(info.dop or info.gs and info.gs.dop or info.child_dop or info.parent_dop or 0) or 0
+                local dop_pos=3
+                c[dop_pos]=dop>0 and dop or nil
                 local idx,counter=0,0
                 local function add_column(value)
                     idx=idx+1
                     row[idx]=value
-                    if idx>2 and tonumber(value) then 
+                    if idx>dop_pos and tonumber(value) then 
                         counter=counter+1
                     end
                 end
@@ -1440,13 +1465,13 @@ function unwrap.analyze_sqlmon(text,file)
                             val=tonumber(info[s])
                             if val then
                                 val=math.round((val-c[j])/(dop-1),4)
-                                if j>2 and j<skew_aas_index then
+                                if j>dop_pos and j<skew_aas_index then
                                     if math.abs(c[j]-val)<100 then
                                         row[idx],val=nil
                                         counter=counter-1
                                     elseif val~=0 then
                                         local pct=c[j]/val
-                                        if pct>0.83 and pct<1.2 then
+                                        if pct>skew_threshold and pct<1/skew_threshold then
                                             row[idx],val=nil
                                             counter=counter-1
                                         end
@@ -1458,7 +1483,7 @@ function unwrap.analyze_sqlmon(text,file)
                     end
                     add_column('|')
                 end
-                if counter>0 then 
+                if counter>1 then 
                     rows[#rows+1]=row
                     attrs.lines[id][6]='Yes'
                     if pxstat then pxstat[sql_start_idx]='Yes' end
@@ -1571,7 +1596,7 @@ function unwrap.analyze_sqlmon(text,file)
         end
     end
     print_report()
-    text=table.concat(text,'\n')
+    text=table.concat(text,'\n')..'\n'
     print("\nSQL Monitor report in text written to "..env.save_data(file..'.txt',text:strip_ansi()))
     print("SQL Monitor report in text written to "..env.save_data(file..'_colored.txt',text))
 end
