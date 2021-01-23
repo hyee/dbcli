@@ -1556,6 +1556,7 @@ function db_core:__onload()
         
         Allows customizing the grid style by defining 'grid={attr1=<value1>[,...]}' of each SQL, including:
             topic="<title>"    :  block title
+            footprint="<text>" :  block footprint
             width=<cols>       :  fixed width, if the output wider than the size, then the overflow part will be chopped. When -1 then align to its siblings
             height=<rows>      :  fixed height including titles, if the output longer than the size, then the overflow part will be chopped. When -1 then align to its siblings
             max_rows=<rows>    :  max print records

@@ -853,7 +853,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
         return l2
     end
     local function redraw(tab, cols, rows)
-        local newtab = {_is_drawed = true, topic = tab.topic}
+        local newtab = {_is_drawed = true, topic = tab.topic or tab.title,footprint=tab.footprint or tab.bottom}
         local function push(line) newtab[#newtab + 1] = line end
         local actcols = strip(tab[#tab])
         local hspace = '|' .. space.rep(' ', cols - 2) .. '|'
@@ -889,11 +889,12 @@ function grid.merge(tabs, is_print, prefix, suffix)
             local cspace = reps(' ', diff)
             local fmt = '+%s+'
             local head = fmt:format(reps('-', cols - 2))
+            local conv=env.ansi.convert_ansi
             if (tab.topic or "") ~= "" then
-                local topic = tab.topic
-                push(fmt:format(topic:strip_ansi():cpad(cols - 2, '-',
+                local topic,st,ed = tab.topic:from_ansi()
+                push(fmt:format(topic:cpad(cols - 2, '-',
                     function(left, str, right) 
-                        return env.ansi.convert_ansi(string.format("%s$PROMPTCOLOR$%s$NOR$%s", left, (grid.cut(topic, cols - 2)), right)) 
+                        return conv(("%s$PROMPTCOLOR$%s$NOR$%s"):format(left, grid.cut(topic, cols - 2):to_ansi(st,ed), right)) 
                     end)))
             else
                 push(head)
@@ -906,7 +907,16 @@ function grid.merge(tabs, is_print, prefix, suffix)
             for i = #newtab + 1, rows - 1 do
                 push(hspace)
             end
-            push(head)
+            if (tab.footprint or "") ~= "" then
+                local footprint,st,ed = tab.footprint:from_ansi()
+                footprint=footprint:cpad(cols - 2, '-',
+                function(left, str, right)
+                    return conv(("%s$UDL$%s$NOR$%s"):format(left or '', (grid.cut(footprint, cols - 2)):to_ansi(st,ed), right or '')) 
+                end)
+                push('+'..footprint..'+')
+            else
+                push(head)
+            end
         end
         
         return newtab
@@ -1025,7 +1035,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
                     if found then
                         result[#result + 1] = format_tables(tab, false)
                     else
-                        local topic, width, height, max_rows = tab.topic, tab.width, tab.height, tab.max_rows
+                        local topic,footprint,width, height, max_rows = tab.topic,tab.footprint,tab.width, tab.height, tab.max_rows
                         local is_bypass1,is_bypass2,autosize1,autosize2 = grid.autohide or grid.bypassemptyrs,tab.autohide or tab.bypassemptyrs,grid.col_auto_size,tab.autosize
                         if autosize2 then grid.col_auto_size=autosize2 end
                         is_bypass2=is_bypass2==true and 'on' or is_bypass2==false and 'off' or is_bypass2 or is_bypass1
@@ -1051,7 +1061,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
                             if filter_flag==1 then tab[#tab+1]=row end
                         end
                         
-                        tab.topic, tab.width, tab.height, tab.max_rows = topic, width, height, max_rows
+                        tab.topic, tab.footprint,tab.width, tab.height, tab.max_rows = topic, footprint,width, height, max_rows
                         if #tab > 0 then
                             result[#result + 1] = tab
                         end
@@ -1073,15 +1083,15 @@ function grid.merge(tabs, is_print, prefix, suffix)
         local space=env.printer.top_mode==true and env.space or ''
         if prefix then 
             tab[1] = space..prefix:convert_ansi()
-            env.event.callback("ON_PRINT_GRID_ROW",tab[1])
+            if is_print == true then env.event.callback("ON_PRINT_GRID_ROW",tab[1]) end
         end
         for rowidx, row in ipairs(result) do
             tab[#tab + 1] = space..grid.cut(row, linesize):convert_ansi()
-            env.event.callback("ON_PRINT_GRID_ROW",row,#result)
+            if is_print == true then env.event.callback("ON_PRINT_GRID_ROW",row,#result) end
             if #tab >= height - 1 then
                 if rowidx < #result then 
                     tab[#tab + 1] = space..grid.cut(result[#result], linesize)
-                    env.event.callback("ON_PRINT_GRID_ROW",tab[#tab],#result)
+                    if is_print == true then env.event.callback("ON_PRINT_GRID_ROW",tab[#tab],#result) end
                 end
                 break
             end

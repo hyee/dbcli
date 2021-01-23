@@ -468,7 +468,7 @@ function var.format_function(fmt,next_fmt)
             s=math.abs(s)
             for i=1,#units-1 do
                 v,s=math.round(s,scale),s/div[i]
-                if v==0 then return '0',1 end
+                if v==0 then return '0 ',1 end
                 if s<1 then return to_fmt(prefix,v,units[i]) end
             end
             return to_fmt(prefix,v,units[#units])

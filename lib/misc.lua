@@ -164,21 +164,21 @@ end
 
 function string.lpad(str, len, char)
     str=tostring(str) or str
-    return (str and (str..(char or ' '):rep(len - #str)):sub(1,len)) or str
+    return (str and ((char or ' '):rep(len - #str)..str):sub(-len)) or str
 end
 
 function string.rpad(str, len, char)
     str=tostring(str) or str
-    return (str and ((char or ' '):rep(len - #str)..str):sub(-len)) or str
+    return (str and (str..(char or ' '):rep(len - #str)):sub(1,len)) or str
 end
 
 function string.cpad(str, len, char,func)
-    str,char=tostring(str) or str,char or ' '
     if not str then return str end
+    str,char=tostring(str) or str,char or ' '
     str=str:sub(1,len)
     local left=char:rep(math.floor((len-#str)/2))
     local right=char:rep(len-#left-#str)
-    return type(func)~="function" and string.format("%s%s%s",left,str,right) or func(left,str,right)
+    return type(func)~="function" and ("%s%s%s"):format(left,str,right) or func(left,str,right)
 end
 
 
