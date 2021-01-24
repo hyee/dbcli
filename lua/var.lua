@@ -3,6 +3,7 @@ local grid,snoop,callback,cfg,db_core=env.grid,env.event.snoop,env.event.callbac
 local var=env.class()
 local rawset,rawget=rawset,rawget
 local cast,ip=java.cast,{}
+local type,pairs,ipairs=type,pairs,ipairs
 var.outputs,var.desc,var.global_context,var.columns=table.strong{},table.strong{},table.strong{},table.strong{}
 var.inputs=setmetatable({},{
     __index=function(self,k)
@@ -350,6 +351,168 @@ function var.before_command(cmd)
     return args
 end
 
+function var.format_function(fmt,next_fmt)
+    local f,scale=fmt:match('^(.-)(%d*)$')
+    scale=tonumber(scale) or 2
+    local num_fmt="%."..scale.."f"
+    local func
+    local adj=0
+    local f_fmt="%s"..num_fmt.."%s"
+    local d_fmt='%s%d%s'
+    local function to_fmt(sign,v,unit)
+        return (v==0 and d_fmt or f_fmt):format(v==0 and '' or sign,v,unit),1
+    end
+    f=f:upper()
+    if f=="KMG" or f=="TMB" then --KMGTP
+        local units=f=="KMG" and {'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} or {'  ',' K',' M',' B',' T',' Q'}
+        local div=f=="KMG" and 1024 or 1000
+        func=function(v)
+            local s=tonumber(v)
+            if not s then return v,1 end
+            local prefix=s<0 and '-' or ''
+            s=math.abs(s)
+            for i=1,#units do
+                v,s=math.round(s,scale),s/div
+                if s<1 then return to_fmt(prefix,v,units[i]) end
+            end
+            return to_fmt(prefix,v,units[#units])
+        end
+    elseif f=="AUTO" then
+        f=(next_fmt or ""):upper()
+        if f=='' then return end
+        adj=1
+        local col=f
+        local u1,u2,u3={'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} , {'   ',' Ki',' Mi',' Bi',' Tr',' Qu'},{' us',' ms',' s ',' m ',' h ',' d '}
+        local d1,d2,d3=1024,1000,{1000,1000,60,60,24,1}
+        local c,p=nil
+        local p1={
+            byte={u1,1},
+            ['(kb)']={u1,1024},
+            ['(mb)']={u1,1024*1024},
+            ['(gb)']={u1,1024*1024*1024},
+            secs={u3,1e6},
+            ['(us)']={u3,1},
+            ['(ms)']={u3,1e3}
+        }
+        local p2={
+            ['%Wkb$']={u1,1024},
+            ['%Wmb$']={u1,1024*1024},
+            ['%Wgb$']={u1,1024*1024*1024},
+            ['%Ws$']={u3,1e6},
+            ['%Wms$']={u3,1e3},
+            ['%Wus$']={u3,1}
+        }
+        func=function(v,r,grid)
+            local rows=grid.data
+            if rows[1] and rows[1].colinfo then
+                c=rows[1].colinfo[col]
+            elseif rows[1] and p~=rows[1] then
+                p=rows[1]
+                for k,v in ipairs(p) do
+                    if type(v)=='string' and v:upper()==col then
+                        c=k
+                        break
+                    end
+                end
+            end
+            local row=grid.__current_row
+            if not c or not row then return v,1 end 
+            local s=tonumber(v)
+            if s==0 then return '',1 end
+            local val=row[c]
+            if not s or type(val)~='string' then return v,1 end
+            local prefix=s<0 and '-' or ''
+            s,val=math.abs(s),val:lower()
+            local units
+            for k,v in pairs(p1) do
+                if val:find(k,1,true) then
+                    units,s=v[1],s*v[2]
+                    break
+                end
+            end
+            if not units then
+                for k,v in pairs(p2) do
+                    if val:find(k) then
+                        units,s=v[1],s*v[2]
+                        break
+                    end
+                end
+            end
+            if not units then
+                if val:find('time',1,true) then
+                    units,s=u3,s*1e4
+                else
+                    units=u2
+                end
+            end
+            local div=units==u1 and d1 or units==u3 and d3 or d2
+            for i=1,#units do
+                v,s=math.round(s,scale),s/(type(div)=='number' and div or div[i])
+                if s<1 then return to_fmt(prefix,v,units[i]) end
+            end
+            return to_fmt(prefix,v,units[#units])
+        end
+    elseif f:find('^.SMHD$') or f=='SMHD' and fmt:find('%d$') then
+        local div,units
+        if f:sub(1,1)=='U' then
+            units,div={'us','ms','s','m','h','d'},{1000,1000,60,60,24}
+        elseif f:sub(1,1)=='M' then
+            units,div={'ms','s','m','h','d'},{1000,60,60,24}
+        else
+            units,div={'s','m','h','d'},{60,60,24}
+        end
+        func=function(v)
+            local s=tonumber(v)
+            if not s then return v,1 end
+            local prefix=s<0 and '-' or ''
+            s=math.abs(s)
+            for i=1,#units-1 do
+                v,s=math.round(s,scale),s/div[i]
+                if v==0 then return '0 ',1 end
+                if s<1 then return to_fmt(prefix,v,units[i]) end
+            end
+            return to_fmt(prefix,v,units[#units])
+        end
+    elseif f=="SMHD" or f=="ITV" or f=="INTERVAL" then
+        fmt=fmt=='SMHD' and '%dD %02dH %02dM %02dS' or
+              f=='SMHD' and '%dd %02dh %02dm %02ds' or '%d %02d:%02d:%02d'
+        func=function(v)
+            if not tonumber(v) then return v,1 end
+            local s,u=tonumber(v),{}
+            local prefix=s<0 and '-' or ''
+            s=math.abs(s)
+            for i=1,2 do
+                s,u[#u+1]=math.floor(s/60),s%60
+            end
+            u[#u+2],u[#u+1]=math.floor(s/24),s%24
+            return prefix..fmt:format(u[4],u[3],u[2],u[1]):gsub("^0 ",''),1
+        end
+    elseif f=='PCT' or f=='PERCENTAGE' or f=='PERCENT' then
+        local float_fmt="%."..scale.."f%%"
+        func=function(v)
+            if not tonumber(v) then return v,1 end
+            return float_fmt:format(tonumber(v)*100),1
+        end
+    elseif (f:find("%",1,true) or 999)<#f or f=='K' then
+        local f1,String=fmt,String
+        local format=String.format
+        if f=='K' then f1='%,.'..scale..'f' end
+        local format_func=function(v)
+            local v1= tonumber(v)
+            if not v1 then return v,1 end
+            local done,res=pcall(format,String,f1,cast(v,'java.math.BigDecimal'))
+            if not done then
+                env.raise('Cannot format double number "'..v..'" with "'..f1..'"!')
+            end
+            return res,1
+        end
+        local res,msg=pcall(format_func,999.99)
+        env.checkerr(res,"Unsupported format %s",fmt)
+        func=format_func
+    end
+    return func,adj
+end
+
 function var.define_column(col,...)
     env.checkhelp(col)
     if type(col)~="string" or col:trim()=="" then return end
@@ -422,114 +585,27 @@ function var.define_column(col,...)
                 end
             end
         elseif args[i]=='FORMAT' or args[i]=='FOR' then
-            local num_fmt="%."..scale.."f"
+            local func
             env.checkerr(arg,'Format:  COL[UMN] <column> FOR[MAT] [KMB|TMB|ITV|SMHD|<format>] JUS[TIFY] [LEFT|L|RIGHT|R].')
             if f:find('^A%d+') then
                 local siz=tonumber(arg:match("%d+"))
                 obj.format_dir='%-'..siz..'s'
-                formats[#formats+1]=function(v) return tostring(v) and obj.format_dir:format(tostring(v):sub(1,siz)) or v end
+                func=function(v) return tostring(v) and obj.format_dir:format(tostring(v):sub(1,siz)) or v end
             elseif f:find("^HEADING") then
                 f = arg:match('^%w+%s+(.+)')
-                if f then
-                    return var.define_column(col,'HEADING',f)
-                end
-            elseif f1=="KMG" or f1=="TMB" then --KMGTP
-                local units=f1=="KMG" and {'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} or {'  ',' K',' M',' B',' T',' Q'}
-                local div=f1=="KMG" and 1024 or 1000
-                formats[#formats+1]=function(v)
-                    local s=tonumber(v)
-                    if not s then return v,1 end
-                    local prefix=s<0 and '-' or ''
-                    s=math.abs(s)
-                    for i=1,#units do
-                        v,s=math.round(s,scale),s/div
-                        if v==0 then prefix='' end
-                        if s<1 then return string.format(i>1 and "%s"..num_fmt.."%s" or "%s%d%s",prefix,v,units[i]),1 end
-                    end
-                    return string.format("%s"..num_fmt.."%s",v==0 and '' or prefix,v,units[#units]),1
-                end
-            elseif f1=="AUTO" then
-                local u1,u2={'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} , {'  ',' Ki',' Mi',' Bi',' Tr',' Qu'}
-                local d1,d2=1024,1000
-                formats[#formats+1]=function(v,r,grid)
-                    local s=tonumber(v)
-                    if not s then return v,1 end
-                    local prefix=s<0 and '-' or ''
-                    s=math.abs(s)
-                    local val=grid.data[r][1]
-                    local units=val:find('byte',1,true) and u1 or u2
-                    local div=val:find('byte',1,true) and d1 or d2
-                    for i=1,#units do
-                        v,s=math.round(s,scale),s/div
-                        if v==0 then prefix='' end
-                        if s<1 then return string.format(i>1 and "%s"..num_fmt.."%s" or "%s%d%s",prefix,v,units[i]),1 end
-                    end
-                    return string.format("%s"..num_fmt.."%s",v==0 and '' or prefix,v,units[#units]),1
-                end
-            elseif f:find("SMHD%d") or f:find('.SMHD$') then
-                local div,units=f:match('%d$')
-                if f:sub(1,1)=='U' then
-                    units,div={'us','ms','s','m','h','d'},{1000,1000,60,60,24}
-                elseif f:sub(1,1)=='M' then
-                    units,div={'ms','s','m','h','d'},{1000,60,60,24}
-                else
-                    units,div={'s','m','h','d'},{60,60,24}
-                end
-                formats[#formats+1]=function(v)
-                    local s=tonumber(v)
-                    if not s then return v,1 end
-                    local prefix=s<0 and '-' or ''
-                    s=math.abs(s)
-                    for i=1,#units-1 do
-                        v,s=math.round(s,scale),s/div[i]
-                        if v==0 then return '0' end
-                        if s<1 then return string.format("%s"..num_fmt.."%s",prefix,v,units[i]),1 end
-                    end
-                    return string.format("%s"..num_fmt.."%s",prefix,s,units[#units]),1
-                end
-            elseif f=="SMHD" or f=="ITV" or f=="INTERVAL" then
-                local fmt=arg=='SMHD' and '%dD %02dH %02dM %02dS' or
-                          f=='SMHD' and '%dd %02dh %02dm %02ds' or '%d %02d:%02d:%02d'
-                formats[#formats+1]=function(v)
-                    if not tonumber(v) then return v,1 end
-                    local s,u=tonumber(v),{}
-                    local prefix=s<0 and '-' or ''
-                    s=math.abs(s)
-                    for i=1,2 do
-                        s,u[#u+1]=math.floor(s/60),s%60
-                    end
-                    u[#u+2],u[#u+1]=math.floor(s/24),s%24
-                    return prefix..fmt:format(u[4],u[3],u[2],u[1]):gsub("^0 ",''),1
-                end
-            elseif f:find("^PCT") or f:find("^PERCENTAGE") or f:find("^PERCENT") then
-                local scal=tonumber(f:match("%d+$")) or 2
-                formats[#formats+1]=function(v)
-                    if not tonumber(v) then return v,1 end
-                    return string.format("%."..scal.."f%%",tonumber(v)*100),1
-                end
-            elseif (f:find("%",1,true) or 999)<#f or f1=='K' then
-                local fmt,String=arg,String
-                local format=String.format
-                if f1=='K' then fmt='%,.'..scale..'f' end
-                local format_func=function(v)
-                    local v1= tonumber(v)
-                    if not v1 then return v,1 end
-                    local done,res=pcall(format,String,fmt,cast(v,'java.math.BigDecimal'))
-                    if not done then
-                        env.raise('Cannot format double number "'..v..'" with "'..fmt..'" on field "'..col..'"!')
-                    end
-                    return res,1
-                end
-                local res,msg=pcall(format_func,999.99)
-                env.checkerr(res,"Unsupported format %s on field %s",arg,col)
-                formats[#formats+1]=format_func
-            elseif not var.define_column(col,f) then
+                if f then return var.define_column(col,'HEADING',f) end
+            else
+                local incr
+                func,incr=var.format_function(arg,args[i+2])
+                if func then i=i+incr end
+            end
+            if not func and not var.define_column(col,f) then
                 local fmt=java.new("java.text.DecimalFormat")
                 local format=fmt.format
                 arg=arg:gsub('9','#'):gsub("^[fF][mM]","")
                 local res,msg=pcall(fmt.applyPattern,fmt,arg)
                 obj.format_dir='%'..#arg..'s'
-                local format_func=function(v)
+                func=function(v)
                     if not tonumber(v) then return s,1 end
                     local done,res=pcall(obj.format_dir.format,obj.format_dir,format(fmt,cast(v,'java.math.BigDecimal')))
                     if not done then
@@ -537,10 +613,10 @@ function var.define_column(col,...)
                     end
                     return res:trim(),1
                 end
-                local res,msg=pcall(format_func,999.99)
+                local res,msg=pcall(func,999.99)
                 env.checkerr(res,"Unsupported format %s on field %s",arg,col)
-                formats[#formats+1]=format_func
             end
+            formats[#formats+1]=func
             i=i+1
             valid=true
         elseif args[i]=="ADDRATIO" then
@@ -591,7 +667,7 @@ end
 
 
 function var.trigger_column(field)
-    local col,value,rownum,grid,rowind=table.unpack(field)
+    local col,value,rownum,grid,rowind,row=table.unpack(field)
     local index
     if type(col)~="string" then return end
     col=col:upper()
@@ -604,7 +680,7 @@ function var.trigger_column(field)
             field[2],var.columns[index:upper()]=index,obj
         end
         if obj.print==false then field[2]='' end
-        return
+        --return
     elseif rownum>0 and grid and not grid.__var_parsed then
         grid.__var_parsed=true
         for col,config in pairs(var.columns) do
@@ -618,8 +694,10 @@ function var.trigger_column(field)
     if not value then return end
 
     index=obj.format
-    if index then 
+    if index then
+        if grid then grid.__current_row=row end
         field[2],field.is_number=index(value,rowind,grid)
+        if grid then grid.__current_row=nil end
     end
     
     index=obj.new_value
@@ -659,6 +737,7 @@ function var.onload()
         8) @@NAME <columns> FOR[MAT] <formatter>  : Use Java 'String.format()' to format the number
         9) @@NAME <columns> FOR[MAT] K<scale>     : Cast number in thousand seperated
        10) @@NAME <columns> BREAK [SKIP] [<char>] : Similar to the SQL*Plus BREAK command
+       11) @@NAME <columns> FOR[MAT] AUTO <based> : Auto cast number as KMG/TMB based on column "<based>" of the same grid  
 
     type 'help -e var.columns' to show the existing settings
 

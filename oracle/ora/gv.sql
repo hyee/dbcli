@@ -31,7 +31,7 @@
 
 ]]*/
 
-set feed off verify on BYPASSEMPTYRS on
+set feed off verify on autohide on
 var cur1 REFCURSOR "Offline Dictionary";
 var cur2 REFCURSOR "None-existence in Current DB";
 var cur3 REFCURSOR "None-existence in Offline Dictionary"
@@ -60,7 +60,7 @@ BEGIN
     END IF;
 
     push('Advanced-Queuing',
-         t0('gv$aq',
+         t0('gv$aq','gv$aq_partition_stats','gv$aq_dequeue_sessions',
             'gv$aq_server_pool',
             'gv$aq1',
             'gv$aq_sharded_subscriber_stat',
@@ -95,6 +95,8 @@ BEGIN
             'gv$aq_remote_dequeue_affinity',
             'gv$queueing_mth','GV$AQ_IPC_ACTIVE_MSGS','GV$AQ_IPC_MSG_STATS','GV$AQ_IPC_PENDING_MSGS','GV$AQ_REMOTE_DEQUEUE_AFFINITY'));
 
+    push('Analytic Views',t0('gv$av_btt_cache','gv$mdx_cursor_dependency','gv$mdx_cursors'));
+
     push('Advisors',
          t0('gv$advisor_current_sqlplan',
             'gv$sga_target_advice',
@@ -121,9 +123,9 @@ BEGIN
             'gv$archive_dest_status',
             'v$proxy_archivelog_summary',
             'gv$archive_gap'));
-    push('ASH', t0('gv$active_session_history', 'gv$max_active_sess_target_mth', 'gv$ash_info'));
+    push('ASH', t0('gv$active_session_history', 'gv$max_active_sess_target_mth', 'gv$ash_info','gv$all_active_session_history'));
     push('ASM',
-         t0('gv$asm_acfsrepl',
+         t0('gv$asm_acfsautoresize','gv$asm_acfsrepl',
             'gv$asm_dbclone_info',
             'gv$asm_acfsrepltag','V$ASM_CACHE_EVENTS',
             'gv$asm_disk',
@@ -230,7 +232,8 @@ BEGIN
             'gv$database_incarnation',
             'gv$shadow_datafile',
             'gv$datafile_copy',
-            'v$unusable_backupfile_details'));
+            'v$unusable_backupfile_details',
+            'gv$foreign_datafile_copy'));
     push('Buffers', t0('gv$bh', 'gv$buffer_pool_statistics', 'gv$buffer_pool'));
     push('Caches(bsp = block server background process)',
          t0('gv$bsp',
@@ -256,6 +259,7 @@ BEGIN
             'gv$gcshvmaster_info',
             'gv$propagation_sender',
             'gv$gcspfmaster_info',
+            'gv$gcs_lock_state_resolution_history',
             'gv$rowcache',
             'gv$hvmaster_info',
             'gv$rowcache_parent',
@@ -284,10 +288,11 @@ BEGIN
             'gv$con_sysstat',
             'gv$proxy_pdb_targets',
             'gv$con_system_event',
-            'gv$zonemap_usage_stats'));
+            'gv$zonemap_usage_stats',
+            'gv$container_topology','gv$con_waitclassmetric','gv$con_waitclassmetric_history'));
     push('Control Files', t0('gv$controlfile', 'gv$controlfile_record_section'));
     push('Cursors and SQL Statements',
-         t0('gv$object_dependency',
+         t0('gv$object_dependency','gv$all_sql_monitor','gv$all_sql_plan','gv$all_sql_plan_monitor',
             'gv$sql_monitor_sesstat',
             'gv$open_cursor',
             'gv$sql_monitor_statname',
@@ -315,7 +320,8 @@ BEGIN
             'gv$sql_workarea_active',
             'gv$sql_join_filter',
             'gv$sql_workarea_histogram',
-            'gv$sql_monitor'));
+            'gv$sql_monitor',
+            'GV$SQL_TESTCASES'));
     push('Data Guard & Standby Databases',
          t0('gv$dataguard_config','GV$DATAGUARD_STATUS',
             'gv$logstdby',
@@ -335,13 +341,14 @@ BEGIN
             'gv$rfs_thread',
             'gv$fs_failover_stats',
             'gv$standby_log',
-            'gv$fs_observer_histogram',
-            'v$standby_event_histogram'));
+            'gv$fs_observer_histogram','gv$dg_broker_property','gv$dg_broker_property_int',
+            'v$standby_event_histogram',
+            'GV$NOLOGGING_STANDBY_TXN','V$MY_NOLOGGING_STANDBY_TXN'));
     push('Database Links & Heterogeneous Services', t0('gv$dblink', 'gv$hs_parameter', 'gv$hs_agent', 'gv$hs_session'));
 
     push('Data Pump', t0('gv$datapump_job', 'gv$datapump_session'));
     push('Diagnostics',
-         t0('v$diag_adr_control',
+         t0('v$diag_adr_control','gv$diag_user_trace_records',
             'v$diag_sess_sql_trace_records',
             'v$diag_adr_control_aux',
             'gv$diag_sql_trace_records',
@@ -367,7 +374,6 @@ BEGIN
             'v$diag_vincident_file',
             'v$diag_dde_usr_inc_type',
             'v$diag_vinc_meter_info',
-            'v$diag_dfs_purge',
             'v$diag_vips_file_copy_log',
             'v$diag_dfw_config_capture',
             'v$diag_vips_file_metadata',
@@ -443,11 +449,29 @@ BEGIN
             'gv$incmeter_summary',
             'v$diag_relmd_ext',
             'gv$plsql_debuggable_sessions',
-            'v$diag_sess_opt_trace_records'));
+            'v$diag_sess_opt_trace_records',
+            'V$DIAG_SESS_USER_TRACE_RECORDS',
+            'V$DIAG_VADR_CONTROL'));
     push('Direct Loader', t0('gv$loadistat', 'gv$loadpstat'));
     push('Direct NFS & NFS',
          t0('gv$dnfs_channels', 'gv$nfs_clients', 'gv$dnfs_files', 'gv$nfs_locks', 'gv$dnfs_servers', 'gv$nfs_open_files', 'gv$dnfs_stats'));
     push('Edition Based Redefinition', t0('gv$editionable_types'));
+    push('EQ',
+        t0( 'gv$eq_cached_partitions',
+            'gv$eq_nondur_subscriber_lwm',
+            'gv$eq_cross_instance_jobs',
+            'gv$eq_partition_stats',
+            'gv$eq_dequeue_sessions',
+            'gv$eq_remote_dequeue_affinity',
+            'gv$eq_inactive_partitions',
+            'gv$eq_subscriber_load',
+            'gv$eq_message_cache',
+            'gv$eq_subscriber_stat',
+            'gv$eq_message_cache_advice',
+            'gv$eq_subscr_registration_stats',
+            'gv$eq_message_cache_stat',
+            'gv$eq_uncached_partitions',
+            'gv$eq_nondur_subscriber'));
     push('Exadata',
          t0('gv$cell',
             'gv$cell_ioreason',
@@ -467,7 +491,14 @@ BEGIN
             'gv$cell_thread_history',
             'gv$cell_global_history'));
     push('Features and Feature Usage', t0('gv$sql_feature', 'gv$sql_feature_hierarchy', 'gv$sql_feature_dependency'));
-    push('Fixed Views', t0('gv$fixed_table', 'gv$transportable_platform', 'gv$fixed_view_definition', 'gv$version', 'gv$indexed_fixed_column'));
+    push('Fixed Views', 
+        t0( 'gv$fixed_table', 
+            'gv$transportable_platform', 
+            'gv$fixed_view_definition', 
+            'gv$version', 
+            'gv$build_info',
+            'gv$compatibility_requirement',
+            'gv$indexed_fixed_column'));
     push('Flashback Database',
          t0('gv$flashback_database_log',
             'v$flashback_txn_mods',
@@ -604,7 +635,7 @@ BEGIN
             'gv$logmnr_logfile',
             'gv$logmnr_transaction',
             'gv$logmnr_logs'));
-    push('Materialized View Refresh', t0('gv$mvrefresh'));
+    push('Materialized View Refresh', t0('gv$mvrefresh','gv$activity_mview','gv$activity_table'));
     push('Diagnostics',
          t0('gv$memory_current_resize_ops',
             'gv$sgastat','GV$MEMOPTIMIZE_WRITE_AREA',
@@ -699,7 +730,20 @@ BEGIN
             'gv$xs_session_roles',
             'gv$mapped_sql',
             'v_x$kswsastab',
-            'gv$nonlogged_block'));
+            'gv$nonlogged_block',
+            'gv$lcr_cache',
+            'gv$bcapply_stats',
+            'gv$connection_broker',
+            'gv$consensus_clients',
+            'gv$listener_health',
+            'gv$consensus_clients',
+            'gv$consensus_logs',
+            'gv$consensus_stats',
+            'gv$lreg_updstat',
+            'gv$pmem_filestore',
+            'gv$authpool_stats',
+            'gv$securefile_shrink',
+            'gv$dual','GV$QUARANTINE_SUMMARY','GV$XS_SESSION_NS_ATTRIBUTE','GV$XS_SESSION_ROLE'));
     push('OLAP', t0('gv$aw_aggregate_op', 'gv$aw_longops', 'gv$aw_allocate_op', 'gv$aw_olap', 'gv$aw_calc', 'gv$aw_session_info'));
     push('Optimizer',
          t0('gv$column_statistics',
@@ -709,6 +753,7 @@ BEGIN
             'gv$optimizer_processing_rate',
             'gv$sql_reoptimization_hints',
             'gv$rt_addm_control',
+            'gv$query_block_origin',
             'gv$sys_optimizer_env',
             'gv$ses_optimizer_env'));
     push('Oracle File System (OFS)', t0('gv$ofsmount', 'gv$ofs_stats'));
@@ -726,7 +771,10 @@ BEGIN
             'gv$pq_tqstat',
             'gv$px_sesstat',
             'gv$px_buffer_advice',
-            'gv$qpx_inventory'));
+            'gv$qpx_inventory',
+            'gv$pq_slaveinfo',
+            'V$PQ_GRANDIST',
+            'V$PQ_GRANGEN'));
     push('Parameters',
          t0('gv$nls_parameters',
             'gv$spparameter',
@@ -805,7 +853,8 @@ BEGIN
             'gv$result_cache_objects',
             'gv$result_cache_dependency',
             'gv$result_cache_statistics',
-            'gv$result_cache_memory'));
+            'gv$result_cache_memory',
+            'gv$result_subcache_statistics'));
     push('Rollback Segments / Undo Segments', t0('v$rollname', 'gv$undostat', 'gv$rollstat'));
     push('Rules', t0('gv$rule', 'gv$rule_set_aggregate_stats', 'gv$rule_set'));
     push('Security, Privileges, Data Masking/Redaction',
@@ -827,7 +876,8 @@ BEGIN
             'gv$wallet',
             'gv$globalcontext',
             'gv$xml_audit_trail',
-            'gv$ip_acl'));
+            'gv$ip_acl',
+            'gv$pkcs11_path'));
     push('Services',
          t0('gv$active_services','GV$JAVA_SERVICES',
             'gv$service_event',
@@ -866,7 +916,8 @@ BEGIN
             'gv$dispatcher_config',
             'gv$shared_server',
             'gv$dispatcher_rate',
-            'gv$shared_server_monitor'));
+            'gv$shared_server_monitor',
+            'GV$SHARED_SERVER_STAT'));
     push('Storage',
          t0('gv$datafile',
             'gv$nfs_locks',

@@ -755,7 +755,7 @@ grid {
     '-',
     [[c_reads grid={topic='Flash Cache User Reads (&v_start -- &v_end)'}]],
     '-',
-    [[c_writes grid={topic='Flash Cache User Writes (&v_start -- &v_end)',bypassemptyrs='on'}]],
+    [[c_writes grid={topic='Flash Cache User Writes (&v_start -- &v_end)',autohide='on'}]],
     '-',
-    [[c_ram grid={topic='Population || Flash Cache Scan Writes || Memory Cache Reads & Writes',bypassemptyrs='on'}]]
+    [[c_ram grid={topic='Population || Flash Cache Scan Writes || Memory Cache Reads & Writes',autohide='on'}]]
 }

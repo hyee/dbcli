@@ -89,7 +89,7 @@ DECLARE
                 'AUTOSTATS_TARGET','ALL/AUTO/ORACLE/Z(DEFAULT_AUTOSTATS_TARGET)',
                 'AUTO_STATS_ADVISOR_TASK','TRUE/FALSE',
                 'AUTO_STAT_EXTENSIONS','ON/OFF',
-                'AUTO_TASK_STATUS','HIGH FREQUENCY STATISTICS: ON/OFF',
+                'AUTO_TASK_STATUS','HIGH FREQUENCY STATISTICS: ON/OFF, see SYS.STATS_TARGET$/dba_auto_stat_executions',
                 'AUTO_TASK_MAX_RUN_TIME','HIGH FREQUENCY STATISTICS: Max run secs',
                 'AUTO_TASK_INTERVAL','HIGH FREQUENCY STATISTICS: Interval in secs',
                 'CASCADE','TRUE/FALSE/null(AUTO_CASCADE)',
@@ -113,7 +113,7 @@ DECLARE
                 'MAINTAIN_STATISTICS_STATUS','TRUE/FALSE',
                 'METHOD_OPT','FOR ALL [INDEXED|HIDDEN] COLUMNS [SIZE {integer|REPEAT|AUTO|SKEWONLY}]/Z(DEFAULT_METHOD_OPT)',
                 'MON_MODS_ALL_UPD_TIME','',
-                'NO_INVALIDATE','TRUE/FALSE/null(AUTO_INVALIDATE)',
+                'NO_INVALIDATE','TRUE/FALSE/null(AUTO_INVALIDATE(_optimizer_invalidation_period))',
                 'OPTIONS','GATHER/GATHER AUTO/Z(DEFAULT_OPTIONS)(additional schema/system: GATHER STALE/GATHER EMPTY/LIST AUTO/LIST STALE/LIST EMPTY)',
                 'PREFERENCE_OVERRIDES_PARAMETER','TRUE/FALSE',
                 'PUBLISH','TRUE/FALSE',
@@ -251,7 +251,7 @@ BEGIN
     dbms_output.put_line(rpad('Statistics History Retention',45) ||': '||rpad(dbms_stats.GET_STATS_HISTORY_RETENTION||' days',10)||' (Avail: '||to_char(dbms_stats.GET_STATS_HISTORY_AVAILABILITY,'yyyy-mm-dd hh24:mi:ssxff3 TZH:TZM')||')');
 END;
 /
-set BYPASSEMPTYRS on
+set autohide on
 pro 
 pro   
 var c1 REFCURSOR "&OBJECT_TYPE INFO"
@@ -320,12 +320,12 @@ BEGIN
                                I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
                                PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
                                         SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
-                                        FROM   (SELECT /*+no_merge*/* FROM all_part_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
+                                        FROM   (SELECT /*+opt_param('_connect_by_use_union_all','old_plan_mode') no_merge*/* FROM all_part_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
                                         START  WITH column_position = 1
                                         CONNECT BY PRIOR column_position = column_position - 1]'),'//V') PARTITIONED_BY,
                                nullif(SUBPARTITIONING_TYPE,'NONE')||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
                                         SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
-                                        FROM   (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
+                                        FROM   (SELECT /*+opt_param('_connect_by_use_union_all','old_plan_mode') no_merge*/* FROM all_subpart_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
                                         START  WITH column_position = 1
                                         CONNECT BY PRIOR column_position = column_position - 1]'),'//V') SUBPART_BY
                         FROM   &check_access_dba.INDEXES I,&check_access_dba.PART_INDEXES C

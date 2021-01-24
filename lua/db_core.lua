@@ -404,6 +404,7 @@ local excluded_keywords={
     EDITIONABLE=1,
     NO=1,
     FORCE=1,
+    BODY=1,
     EDITIONING=1
 }
 
@@ -412,7 +413,7 @@ function db_core.get_command_type(sql)
     local piece=sql:sub(1,256)
     if _command_pieces[piece] then return table.unpack(_command_pieces[piece]) end
     local list={}
-    for word in sql:sub(1,1024):gsub("%s*/%*.-%*/%s*",' '):gmatch("%a[%w_%#$]+") do
+    for word in sql:sub(1,1024):gsub("%s*/%*.-%*/%s*",' '):gmatch('%a[%w_%#%$%."`]+') do
         local w=word:upper()
         if not excluded_keywords[w] then
             list[#list+1]=(#list < 3 and w or word):gsub('["`]','')
@@ -978,7 +979,7 @@ function db_core:internal_call(sql,args,prep_params,print_result)
 end
 
 function db_core:is_internal_call(sql)
-    if self.internal_exec then return true end
+    if cfg.get('internal')=='on' or self.internal_exec then return true end
     if type(sql)=="userdata" then return true end
     return sql and sql:sub(1,256):find("INTERNAL_DBCLI_CMD",1,true) and true or false
 end
@@ -1269,7 +1270,7 @@ local function set_param(name,value)
         env.checkerr(#value==1,'CSV separator can only be one char!')
         cparse.DEFAULT_SEPARATOR=value:byte()
         return value
-    elseif name=='PROMPTEXP' then
+    elseif name=='PROMPTEXP' or name=='INTERNAL'then
         return value:lower()
     end
 
@@ -1528,10 +1529,12 @@ function db_core:__onload()
     txt=txt..'\n       var x refcursor;'
     txt=txt..'\n       exec open :x for select * from user_objects where rownum<10;'
     txt=txt..'\n       sql2csv user_objects x;'
+
     cfg.init("PRINTSIZE",1000,set_param,"db.query","Max rows to be printed for a select statement",'1-10000')
     cfg.init({"FETCHSIZE","ARRAY","ARRAYSIZE"},3000,set_param,"db.query","Rows to be prefetched from the resultset, 0 means auto.",'0-32767')
     cfg.init("SQLTIMEOUT",1200,set_param,"db.core","The max wait time(in second) for a single db execution",'10-86400')
     cfg.init({"FEED","FEEDBACK"},'on',set_param,"db.core","Detemine if need to print the feedback after db execution",'on,off')
+    cfg.init("INTERNAL",'off',set_param,"db.core","Controls whether the comming SQLs are internal SQLs",'on,off')
     cfg.init("AUTOCOMMIT",'off',set_param,"db.core","Detemine if auto-commit every db execution",'on,off')
     cfg.init("SQLCACHESIZE",40,set_param,"db.core","Number of cached statements in JDBC",'5-500')
     cfg.init("ASYNCEXP",true,set_param,"db.export","Detemine if use parallel process for the export(SQL2CSV and SQL2FILE)",'true,false')
@@ -1554,13 +1557,15 @@ function db_core:__onload()
         The input parameter must start with '{' and end with '}', as a LUA or JSON table format, support nested LUA/JSON tables
         
         Allows customizing the grid style by defining 'grid={attr1=<value1>[,...]}' of each SQL, including:
-            topic="<title>"   :  block title
-            width=<cols>      :  fixed width, if the output wider than the size, then the overflow part will be chopped. When -1 then align to its siblings
-            height=<rows>     :  fixed height including titles, if the output longer than the size, then the overflow part will be chopped. When -1 then align to its siblings
-            max_rows=<rows>   :  max print records
-            pivot=<rows>      :  controls whether to pivot the records
-            bypassemptyrs='on':  controls whether to display the block in case of no record
-            autosize='trim'   :  controls whether to eliminate the column whose values are all null, refer to option 'SET COLAUTOSIZE'
+            topic="<title>"    :  block title
+            footprint="<text>" :  block footprint
+            width=<cols>       :  fixed width, if the output wider than the size, then the overflow part will be chopped. When -1 then align to its siblings
+            height=<rows>      :  fixed height including titles, if the output longer than the size, then the overflow part will be chopped. When -1 then align to its siblings
+            max_rows=<rows>    :  max print records
+            pivot=<rows>       :  controls whether to pivot the records
+            pivotsort=on/head  :  controls pivot style
+            autohide=on/col/all:  controls whether to display the block in case of no record
+            autosize='trim'    :  controls whether to eliminate the column whose values are all null, refer to option 'SET COLAUTOSIZE'
 
         Elements:
             sep     : Can be 3 values:

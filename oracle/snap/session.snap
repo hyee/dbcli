@@ -328,7 +328,7 @@
                 FROM   &stats a
                 GROUP  BY sids]],
             '-',
-            [[/*grid={topic='Exadata Profiles',fixed_title=true,order_by=1,bypassemptyrs=true}*/
+            [[/*grid={topic='Exadata Profiles',fixed_title=true,order_by=1,autohide=true}*/
                SELECT sids,
                      SUM(DECODE(n, 'cell physical IO interconnect bytes', v)) "BandWidth",
                      SUM(DECODE(n, 'cell physical IO bytes eligible for predicate offload', v,'cell physical write IO bytes eligible for offload',v)) "Offload",
@@ -347,7 +347,7 @@
               WHERE  offl>0
               group  by sids]],
             '-',
-            [[/*grid={topic='In-Memory Stats (LIO=Logical Reads)',fixed_title=true,order_by=1,bypassemptyrs=true}*/
+            [[/*grid={topic='In-Memory Stats (LIO=Logical Reads)',fixed_title=true,order_by=1,autohide=true}*/
             SELECT   sids,
                      SUM(DECODE(n, 'session logical reads - IM', v,0))*bs "IM-LIO",
                      SUM(DECODE(n, 'session logical reads', v,0))*bs "LIO(%)",
@@ -376,7 +376,7 @@
               FROM   &stats
               GROUP  BY sids]],
             '-',
-            [[/*grid={topic='RAC Profiles (CR=[gc cr blocks] CU=[gc current blocks]  Rec=Received enq=[global enqueue])',fixed_title=true,order_by=1,bypassemptyrs=true}*/
+            [[/*grid={topic='RAC Profiles (CR=[gc cr blocks] CU=[gc current blocks]  Rec=Received enq=[global enqueue])',fixed_title=true,order_by=1,autohide=true}*/
                 SELECT sids,
                        SUM(DECODE(n,
                                   'gc cr blocks received',bs * v,

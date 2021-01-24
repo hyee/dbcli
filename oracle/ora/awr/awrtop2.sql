@@ -60,11 +60,11 @@
 
 ORA _sqlstat
 
-col ela,ela_avg,ela_total,CPU_TM,CC_TM,CL_TM,AP_TM,PLSQL_TM for usmhd2
+col ela,ela_avg,ela_total,CPU_TM,CC_TM,CL_TM,AP_TM,PLSQL_TM,Cost/IO for usmhd2
 col iowait,cpu,clwait,apwait,plsql,ccwait,pct format pct1
 col reads,writes,mem,cellio,oflin,oflout,buff format kmg
 col execs,FETCHES,loads,parses,rows,PX format tmb
-
+set autohide col
 WITH qry as (SELECT nvl(upper(NVL(:V1,:INSTANCE)),'A') inst,
                     nullif(lower(:V2),'a') sqid,
                     to_timestamp(coalesce(:V3,:starttime,to_char(sysdate-7,'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
@@ -78,7 +78,7 @@ SELECT pct,
        FETCHES,
        parses,
        seens,
-       ela_total,ela_avg,&field
+       ela_total,ela_avg,avgio "Cost/IO",&field
        iowait,cpu,ccwait,clwait,apwait,plsql,
        &ver cellio,oflin,oflout,
        reads,writes,buff,
@@ -100,6 +100,7 @@ FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
                    ela ela_total,
                    ela_avg,
                    CPU / ela CPU,
+                   iowait/nullif(ioreqs,0) avgio,
                    iowait / ela iowait,
                    ccwait / ela ccwait,
                    clwait / ela clwait,
@@ -131,6 +132,7 @@ FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
                            round(SUM(elapsed_time)/nullif(decode(SUM(executions),0,floor(sum(PARSE_CALLS)/greatest(sum(px_servers_execs),1)),sum(executions)),0),2) ela_avg,
                            SUM(cpu_time ) CPU,
                            SUM(iowait) iowait,
+                           SUM(ioreqs) ioreqs,
                            SUM(CCWAIT) ccwait,
                            SUM(CLWAIT) clwait,
                            SUM(apwait) apwait,

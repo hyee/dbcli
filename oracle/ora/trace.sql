@@ -8,7 +8,8 @@
     Trace system-level event        :  @@NAME <SYS-XXXXX>          [trace_level] --i.e. @@NAME sys-10949 (see "ora events" for more info)
     Trace this session(event 10046) :  @@NAME me                   [trace_level]
     Trace for a specific event      :  @@NAME <event_name>         [trace_level] --i.e. @@NAME buffers 1
-    
+    Trace for non-SmartScan reason  :  @@NAME nsmtio               [on|off]
+
     Parameter "trace_level"(default as 12 if not specify):
         off or 0:   turn off trace
         on  or 1:   turn on with header or without binds/waits
@@ -130,6 +131,12 @@ BEGIN
             END IF;
             stmt := 'alter '||typ||' set events = '''||target||' trace name context off''';
         END IF;
+    ELSIF upper(target)='NSMTIO' THEN
+        if lv = 0 then
+            execute immediate q'[alter session set events '10358 trace name context off:10384 trace name context off:trace[nsmtio] off']';
+        else
+            execute immediate q'[alter session set events '10358 trace name context forever, level 2:10384 trace name context forever,level 16384:trace[nsmtio] disk low']';
+        end if;
     ELSIF regexp_like(lower(target), '^sqlmon') THEN
         if instr(target,':')>0 then
             target := '[sql:'||regexp_substr(target,'[^:]+$')||']';

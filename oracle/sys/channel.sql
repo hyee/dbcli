@@ -1,6 +1,6 @@
 
 /*[[
-  Show the channel info whose p1text='channel context'(such as "reliable message"). Usage: @@NAME  [<sid>|<sql_id>|<event>] [<inst_id>]
+  Show the channel info whose p1text='channel context'(such as "reliable message"). Usage: @@NAME  [<sid>|<sql_id>|<p1>|<event>] [<inst_id>]
   Refer to Doc ID 69088.1
 
   Mainly used to diagnostic below events:
@@ -36,26 +36,63 @@
         &V2: default={&instance}
     --]]
 ]]*/
-
+PRO data from ASH
+PRO =============
 SELECT *
 FROM   (SELECT *
         FROM   TABLE(gv$(CURSOR( --
                 SELECT /*+ordered use_nl(b)*/
-                       a.inst_id inst, b.addr "Channel context", b.totpub_ksrcctx, a.name_ksrcdes, sql_id, event, aas
+                       a.inst_id inst, b.addr "Channel context",
+                       b.totpub_ksrcctx, 
+                       a.name_ksrcdes, 
+                       sql_id, event, 
+                       aas,
+                       case when bitand(h.flags_ksrchdl,1)=1 then 'PUB ' end ||  
+                       case when bitand(h.flags_ksrchdl,2)=2 then 'SUB ' end ||  
+                       case when bitand(h.flags_ksrchdl,16)=16 then 'INA ' end flags,
+                       a.id_ksrcdes,
+                       h.ctxp_ksrchdl,
+                       c.program
                 FROM   (SELECT  sql_id,
                                 event,
+                                program,
                                 TO_CHAR(p1, 'fm0XXXXXXXXXXXXXXX') p1raw,
                                 COUNT(1) aas,
                                 MAX(sample_time) last_seen
                          FROM   v$active_session_history a
                          WHERE  p1text = 'channel context'
-                         AND    nvl(:v1,'x') in('x',''||a.session_id,a.sql_id,a.event)
-                         GROUP  BY sql_id, event, p1) c,
+                         AND    nvl(:v1,'x') in('x',''||a.session_id,a.sql_id,a.event,''||p1)
+                         GROUP  BY sql_id, event,program, p1) c,
                         X$KSRCCTX b,
-                        X$KSRCDES a
+                        X$KSRCDES a,
+                        x$ksrchdl h
                 WHERE  b.name_ksrcctx = a.indx
+                AND    h.ctxp_ksrchdl = b.addr
                 AND    userenv('instance') = nvl(:V2, userenv('instance'))
                 AND    b.addr = p1raw)))
         ORDER  BY aas DESC, inst)
 WHERE  ROWNUM <= 50;
 
+
+PRO data from V$SESSION
+PRO ====================
+SELECT *
+FROM   TABLE(gv$(CURSOR( --
+    select case when bitand(c.flags_ksrchdl,1)=1 then 'PUB ' end ||  
+           case when bitand(c.flags_ksrchdl,2)=2 then 'SUB ' end ||  
+           case when bitand(c.flags_ksrchdl,16)=16 then 'INA ' end flags, 
+           s.sid||'@'||userenv('instance') sid, 
+           s.program, 
+           cd.name_ksrcdes channel_name,  
+           cd.id_ksrcdes,  
+           to_number(c.ctxp_ksrchdl,'XXXXXXXXXXXXXXXX') p1
+    from   x$ksrchdl c ,  
+           v$session s,  
+           x$ksrcctx ctx,  
+           x$ksrcdes cd 
+    WHERE nvl(:v1,'x') in('x',''||s.sid,s.sql_id,s.event,''||to_number(c.ctxp_ksrchdl,'XXXXXXXXXXXXXXXX'))
+    and s.paddr=c.owner_ksrchdl
+    and c.ctxp_ksrchdl=ctx.addr 
+    and cd.indx=ctx.name_ksrcctx)))
+WHERE p1 in(select p1 from gv$session)
+ORDER BY P1,SID; 

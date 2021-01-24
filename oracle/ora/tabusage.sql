@@ -39,7 +39,7 @@
         @ARGS: 1
 	--]]
 ]]*/
-SET FEED OFF VERIFY ON BYPASSEMPTYRS ON
+SET FEED OFF VERIFY ON autohide ON
 ora _find_object &V1
 BEGIN
 	IF nvl('&object_type','x') not like 'TABLE%' THEN

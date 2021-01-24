@@ -4,7 +4,7 @@
     @check_access_cell: {
         v$cell_global={
             ,'|',{
-            [[--grid:{topic='Cell IO Reason',bypassemptyrs=true,max_rows=15,order_by="-reqs"}
+            [[--grid:{topic='Cell IO Reason',autohide=true,max_rows=15,order_by="-reqs"}
               SELECT substr(reason_name,1,50) name,
                      bytes,
                      reqs,
@@ -15,7 +15,7 @@
                       GROUP  BY reason_name, metric_name)
               PIVOT(MAX(v)
               FOR    n IN('Per Reason Bytes of IO' bytes, 'Per Reason Number of IOs' reqs))
-            ]],'-',[[--grid:{topic='Cell Global Stats',bypassemptyrs=true,order_by="-value"}
+            ]],'-',[[--grid:{topic='Cell Global Stats',autohide=true,order_by="-value"}
               SELECT substr(METRIC_NAME,1,60) NAME,
                      SUM(metric_value) value
               FROM   v$cell_global

@@ -10,7 +10,7 @@
         @cell: {
             12={
 				'-',
-				[[grid={topic="DBA_HIST_CELL_GLOBAL (Per Second)",height=0,bypassemptyrs='on'}
+				[[grid={topic="DBA_HIST_CELL_GLOBAL (Per Second)",height=0,autohide='on'}
 				SELECT NAME, round(metric_value / decode(NAME, metric_name, 1, 1024 * 1024) , 2) VALUE
 				FROM   (SELECT metric_name, NAME, SUM(metric_value/secs) metric_value
 				        FROM   (SELECT metric_name,

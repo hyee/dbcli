@@ -18,11 +18,22 @@ ORCL> ora obj 727555
 
     --[[
         @check_access_obj: dba_objects={dba_objects}, default={all_objects}
+        @check_access_pdb: pdb/awr_pdb_seg_stat_obj={awr_pdb_seg_stat_obj} default={dba_hist_seg_stat_obj}
+        @check_access_awr: {
+          dba_hist_seg_stat_obj={
+            UNION ALL
+            SELECT obj#,dataobj#,owner,object_name,object_type,subobject_name,null,null,null,null,null,null,null,2
+            FROM   &check_access_pdb
+            WHERE  dbid=:dbid
+            AND    regexp_substr(:V1,'^\d+$')+0 in(obj#,dataobj#)
+          }
+          default={}
+        }
         @ARGS: 1
     --]]
 ]]*/
 SET FEED OFF
-ora _find_object &V1
+ora _find_object &V1 1
 VAR cur REFCURSOR Top 50 matched objects;
 BEGIN
     OPEN :cur FOR
@@ -30,13 +41,12 @@ BEGIN
             SELECT /*+no_expand*/ 
                    object_id,DATA_OBJECT_ID,owner, object_name,object_type,
                    case when :object_type IN('PACKAGE','TYPE') then :object_subname else subobject_name end subobject_name,
-                   CREATED,LAST_DDL_TIME,TIMESTAMP,STATUS,TEMPORARY,GENERATED,SECONDARY
+                   CREATED,LAST_DDL_TIME,TIMESTAMP,STATUS,TEMPORARY,GENERATED,SECONDARY,1 pos
             FROM   &check_access_obj 
             WHERE  owner=:object_owner
             AND    object_name=:object_name
-            --AND    object_type like :object_type||'%'
-            AND    (:object_type IN('PACKAGE','TYPE')  OR nvl(subobject_name,' ') like :object_subname||'%')
-            ORDER  BY OBJECT_ID)
+            AND    (:object_type IN('PACKAGE','TYPE')  OR nvl(subobject_name,' ') like :object_subname||'%') &check_access_awr
+            ORDER  BY pos,OBJECT_ID)
         WHERE ROWNUM<=50;
 END;
 /

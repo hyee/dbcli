@@ -20,7 +20,7 @@ local function rep_instance(prefix,full,obj,suffix)
     local dict,dict1,flag,str=extvars.dict[obj],extvars.dict[obj:sub(2)],0
     if not checking_access and cdbmode~='off' and extvars.dict[obj] and obj:find(cdbstr) then
         local new_obj = obj:gsub('^CDB_','DBA_')
-        if cdbmode=='pdb' and (extvars.dict[new_obj] or {}).comm_view then 
+        if cdbmode=='pdb' and (extvars.dict[new_obj] or {}).comm_view and db.props.version<21 then 
             if db.props.select_dict==nil then
                 checking_access=true
                 db.props.select_dict=db.props.isdba or db:check_access('SYS.INT$DBA_SYNONYMS',1) or false
@@ -197,11 +197,15 @@ function extvars.set_cdbmode(name,value)
             if tonumber(prev_container.dbid) == nil then
                 cfg.force_set('dbid',db.props.container_dbid)
             end
+            pcall(db.internal_call,db,'alter session set container_data=current');
             --cfg.force_set('container',db.props.container_id)
         end
     elseif cdbmode=='pdb' then
         if prev_container.new_dbid==cfg.get('dbid') and prev_container.new_container==cfg.get('container') then
             cfg.force_set('dbid','default')
+            if db:is_connect() then
+                pcall(db.internal_call,db,'alter session set container_data=all');
+            end;
             --cfg.force_set('container','default')
         end
     end
@@ -320,7 +324,7 @@ function extvars.set_dict(type,scope)
                         t INT;
                     BEGIN
                         t:=sys.dbms_utility.get_parameter_value(:name,y,x);
-                        :value := nvl(''||y,x);
+                        :value := nvl(x,''||y);
                     EXCEPTION WHEN OTHERS THEN
                         :value := 'N/A';
                     END;]],args,'Internal_GetDBParameter')
@@ -369,7 +373,7 @@ function extvars.set_dict(type,scope)
         extvars.dict,extvars.keywords,extvars.params={},{},{}
         sql=[[
             with r as(
-                    SELECT /*+no_merge*/ owner,table_name, column_name col,data_type
+                    SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode')*/ owner,table_name, column_name col,data_type
                     FROM   dba_tab_cols
                     WHERE  owner in('SYS','PUBLIC')
                     @XTABLE@)
@@ -404,7 +408,7 @@ function extvars.set_dict(type,scope)
         dict,params,keywords=extvars.dict,extvars.params,extvars.keywords
         sql=[[
             with r as(
-                    SELECT /*+no_merge*/ owner,table_name, column_name col,data_type
+                    SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode')*/ owner,table_name, column_name col,data_type
                     FROM   dba_tab_cols, dba_users
                     WHERE  user_id IN (SELECT SCHEMA# FROM sys.registry$ UNION ALL SELECT SCHEMA# FROM sys.registry$schemas)
                     AND    username = owner

@@ -1,5 +1,6 @@
 /*[[
 Get the buffer cache info for a specific object. Usage: @@NAME [owner.]<table|index>[.<partition>] [inst]
+inst: A to group across instance, or other values to query the specific instance
 
 Sample Output:
 ==============
@@ -27,9 +28,10 @@ select /*+leading(b) use_hash(a)*/
       COUNT(decode(PING,'Y',1)) PINGS,
       COUNT(decode(STALE,'Y',1)) STALES,
       COUNT(decode(DIRECT,'Y',1)) DIRECTS
-from &obj b,(select a.*,case when :V2='0' then to_char(inst_id) else 'A' end inst from gv$bh a where nullif(:V2,'0') is null or inst_id=:V2) a 
+from &obj b,(select a.*,case when :V2='A' then 'A' ELSE to_char(inst_id) end inst from gv$bh a where nullif(:V2,'0') is null or inst_id=:V2) a 
 where a.objd=b.data_object_id
 and   b.owner=:object_owner
 and   b.object_name=:object_name
-and   nvl(b.subobject_name,' ') like :object_subname||'%'
-GROUP BY GROUPING SETS((inst,a.status),inst);
+and   nvl(b.subobject_name,' ') = NVL(:object_subname,' ')
+GROUP BY GROUPING SETS((inst,a.status),inst)
+ORDER BY 1,2;

@@ -10,7 +10,7 @@ c. Set _gc_policy_minimum to 15000
     There is no need to set _gc_policy_minimum if DRM is disabled by setting _gc_policy_time = 0. 
     _gc_policy_minimum is a dynamic parameter, _gc_policy_time is a static parameter and rolling restart is not supported. 
     To disable DRM, instead of _gc_policy_time, _lm_drm_disable should be used as it's dynamic.
-    query selec OPENS+XOPENS+XFERS from table(gv$(cursor(select * from  x$object_policy_statistics)))
+    query select SOPENS+XOPENS+XFERS from table(gv$(cursor(select * from  x$object_policy_statistics)))
 
 d. Set _lm_tickets to 5000    (this recommendation is valid only for databases that are12.2 and lower)
     Default is 1000.   
@@ -59,6 +59,7 @@ Setting _gc_policy_minimum to 15000 or larger makes DRM to occur much less frequ
       }
 	--]]
 ]]*/
-
+SET FEED OFF
 select * from (&check_access_traffic);
+
 &CHECK_USER_SYSDBA sys param gcs_server_processes _lm_tickets _gc_policy_minimum _lm_sync_timeout

@@ -1,5 +1,21 @@
 /*[[Show ash cost for a specific SQL for multiple executions. usage: @@NAME {<sql_id|plan_hash_value> [sql_exec_id|PHV] [YYMMDDHH24MI] [YYMMDDHH24MI]}  [-d|-g] [-o] [-all]
 
+Options:
+    -o      : Show top objects (defaults to show top events)
+    -d      : Only query dba_hist_active_sess_history (defaults to query both views)
+    -sqlset : Use dba_sqlset_plans as the data source instead of dba_hist_sql_plan
+    -g      : Only query gv$active_session_history (defaults to query both views)
+    -all    : Use hierachy clause to grab the possible missing PX slave records, mainly use for parallel execution
+    -hist   : default to query awr_pdb_* views in PDB, when specified this option then use dba_hist_* views instead
+    Format  : defaults not to display the outlines
+        *             s : -outline -rows -parallel
+        * fmt"<format>" : user-defined formats
+
+Outputs:
+    Plan Summary :  The summary of all execution plans, grouping by <Plan Hash Value>+<SQL id>+<Plan Hash Full>
+    Plan Lines   :  The details of each execution plan, grouping by <Plan Hash Full>
+    Wait stats   :  The Wait events of each execution plan, grouping by <Plan Hash Full>
+
 Sample Ouput:
 =============
 +------------------------+------------------------+-----+-----+--------------+
@@ -32,17 +48,6 @@ Sample Ouput:
 |ON CPU  |  658 685(100.0%)   05:18|  10M| 7(73.4%), 9(14.9%), 6(6.3%), 0(5.3%), 3(.1%) | 10679(81.2%) / 10870(18.8%) |
 +--------+-------------------------+-----+----------------------------------------------+-----------------------------+
 
-Options:
-    -o      : Show top objects (defaults to show top events)
-    -d      : Only query dba_hist_active_sess_history (defaults to query both views)
-    -sqlset : Use dba_sqlset_plans as the data source instead of dba_hist_sql_plan
-    -g      : Only query gv$active_session_history (defaults to query both views)
-    -all    : Use hierachy clause to grab the possible missing PX slave records, mainly use for parallel execution
-
-Outputs:
-    Plan Summary :  The summary of all execution plans, grouping by <Plan Hash Value>+<SQL id>+<Plan Hash Full>
-    Plan Lines   :  The details of each execution plan, grouping by <Plan Hash Full>
-    Wait stats   :  The Wait events of each execution plan, grouping by <Plan Hash Full>
 
 [|grid:{topic='Output Fields(The fields with no value will be hidden)'}
  |Field Name | Description                                                                                                          |
@@ -100,7 +105,8 @@ Outputs:
     @mem : 12.1={DELTA_READ_MEM_BYTES} default={null}
     @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     @cdb2: 12.1={con_dbid} default={1e9}
-    @check_access_pdb: pdb/awr_pdb_snapshot={AWR_PDB_} default={DBA_HIST_}
+    &AWR_VIEW        : default={AWR_PDB_} hist={dba_hist_}
+    @check_access_pdb: pdb/awr_pdb_snapshot={&AWR_VIEW.} default={DBA_HIST_}
     @check_access_cdb: cdb={use_hash(a)} default={use_nl(a)}
     @check_access_aux: default={(26/8/12)-6}
     &dplan: default={&check_access_pdb.sql_plan} sqlset={(select a.*,0+null object# from dba_sqlset_plans a)}
@@ -111,7 +117,7 @@ Outputs:
     &vw  : default={A} G={G} D={D} sqlset={D}
     &Title: default={Objects}, O={Events}
     &titl2: default={Events}, O={Objects}
-    &fmt: default={} f={} s={-rows -parallel}
+    &fmt: default={-outline} fmt={} s={-outline -rows -parallel}
     &simple: default={1} s={0}
     &src_ash:  default={a} all={b}
     &hierachy: {
@@ -475,7 +481,7 @@ ordered_hierarchy_data AS
 qry AS
  ( SELECT DISTINCT sql_id sq,
          flag flag,
-         'ADVANCED IOSTATS METRICS -PEEKED_BINDS -cost -bytes -alias -OUTLINE -projection &adaptive &fmt' format,
+         'ADVANCED IOSTATS METRICS -PEEKED_BINDS -cost -bytes -alias -projection &adaptive &fmt' format,
          phv phv,
          coalesce(child_number, 0) child_number,
          inst_id,

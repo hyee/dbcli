@@ -11,7 +11,7 @@
         3. order_by: The columns that used to sort the final result, "-<column_name>" means desc ordering. 
         4. top_by  : Optional, if not specified then it equals to 'group_by', it is the subset of 'group_by' columns
         5. per_second: 'on' or 'off'(default), controls if to devide the delta stats by elapsed seconds
-        6. bypassemptyrs: 'on' or 'off'(default),when a 'sql' is an array, and one of which returns no rows, then controls whether to show this sql
+        6. autohide: 'on' or 'off'(default),when a 'sql' is an array, and one of which returns no rows, then controls whether to show this sql
         7. top_mode: 'on' or 'off'(default), controls whether to clear the screen before print the result
         8. calc_rules: the additional formula on a specific column after the 'delta_by' columns is calculated
         9. fixed_title: true or false(default), controls whether not to change the 'delta_by' column titles
@@ -90,6 +90,7 @@ function snapper:after_script()
         self.start_flag,self.snap_cmd,self.is_repeat,self.is_first_top=false
         self:trigger('after_exec_action')
         self.db:commit()
+        cfg.set("internal","back")
         cfg.set("feed","back")
         cfg.set("digits","back")
         cfg.set("sep4k",'back')
@@ -151,11 +152,6 @@ end
 
 function snapper:run_sql(sql,main_args,cmds,files)
     local db,print_args=self.db
-    cfg.set("feed","off")
-    cfg.set("autocommit","off")
-    cfg.set("digits",2)
-    cfg.set("sep4k",'on')
-    cfg.set("heading",'on')
     self.autosize=cfg.get('colautosize','trim')
     self.var_context={env.var.backup_context()}
     
@@ -230,13 +226,18 @@ function snapper:run_sql(sql,main_args,cmds,files)
         end
     end
 
-    env.checkerr(begin_flag~=nil or tonumber(interval),'Uage: '..self.command..' <names> <interval>|BEGIN|END [args] ')
+    env.checkerr(begin_flag~=nil or tonumber(interval),'Usage: '..self.command..' <names> <interval>|BEGIN|END [args] ')
     
     self.db:assert_connect()
     
     self.cmds,self.args={},{}
     self.start_flag=true
-    env.set.set("feed","off")
+    cfg.set("feed","off")
+    cfg.set("autocommit","off")
+    cfg.set("digits",2)
+    cfg.set("sep4k",'on')
+    cfg.set("heading",'on')
+    cfg.set("internal",'on')
     self:trigger('before_exec_action')
     local clock=os.timer()
     for idx,text in ipairs(sql) do

@@ -4,8 +4,9 @@
     Mainly used to diagnostic below the "latch: ges resource hash list" events, output similar command with "oradebug lkdebug -a hashcount"
     
     Refer to bug# 29878037/29922435
-    Relative parameters: 
-      _lm_res_hash_buckets: (64k in 11g and 32k in 18c)
+    Relative parameters:
+      _ges_server_processes : number of LMD processes
+      _lm_res_hash_buckets  : (64k in 11g and 32k in 18c)
       _lm_res_tm_hash_bucket: unit is percentage of resource hash bucket(_lm_res_hash_buckets) used for tm enqueue
 
     Examples:

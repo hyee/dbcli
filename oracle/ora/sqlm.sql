@@ -261,7 +261,7 @@ BEGIN
         END IF;
     END IF;
 
-    IF sqlmon IS NOT NULL THEN
+    IF sqlmon IS NOT NULL THEN 
         sqlmon := regexp_substr(sqlmon,'<report .*</report>',1,1,'n');
         IF sqlmon IS NULL or LENGTH(sqlmon)=0 THEN
             raise_application_error(-20001,'Target file is not a valid SQL Monitor Report file!');
@@ -297,7 +297,6 @@ BEGIN
     END IF;
     
     IF sq_id IS NOT NULL AND '&option' IS NULL THEN
-
         --EXECUTE IMMEDIATE 'alter session set "_sqlmon_max_planlines"=3000';
         IF xml IS NULL THEN
             BEGIN
@@ -315,7 +314,7 @@ BEGIN
                     into  sq_id,sql_exec,sql_start
                     from  gv$sql_monitor
                     where (sql_id=sq_id or lower(sq_id) in('l','last'))
-                    AND   sql_plan_hash_value > 0
+                    --AND   sql_plan_hash_value > 0
                     AND   sql_exec_id >0 
                     AND   PX_SERVER# IS NULL
                     AND   sql_text IS NOT NULL
@@ -419,11 +418,11 @@ BEGIN
 
             WITH line_info AS (
                SELECT a.*,row_number() OVER(PARTITION BY ID ORDER BY flag,typ) seq
-               FROM(
+               FROM (
                 SELECT 1 flag,id,'[PRED] '||typ typ,val
                 FROM   XMLTABLE('//operation/predicates' PASSING xml COLUMNS--
                                 id VARCHAR2(5) PATH './../@id',
-                                typ VARCHAR2(10) PATH '@type',
+                                typ VARCHAR2(20) PATH '@type',
                                 val VARCHAR2(2000) PATH '.') b
                 UNION ALL
                 SELECT 2 flag,id,'[PROJ] Projection' typ,val
@@ -442,7 +441,7 @@ BEGIN
                                 stat_grp INT PATH './../@group_id',
                                 id  VARCHAR2(5) PATH './../../@id',
                                 stat_id INT PATH '@id',
-                                VALUE INT PATH '.') c --
+                                VALUE NUMBER PATH '.') c --
                 WHERE  b.stat_grp = c.stat_grp
                 AND    b.stat_id = c.stat_id
                 UNION ALL
@@ -632,12 +631,12 @@ BEGIN
                     WHERE  c > 0);
             flush('Metrics');
 
-            SELECT SYS.ODCIARGDESC(c.cnt,REPLACE(NVL(substr(c.event,1,30), c.w_class), 'Cpu', 'ON CPU'),
+            SELECT SYS.ODCIARGDESC(c.cnt,NVL(substr(c.event,1,40), ' '),
                                    b.id ||nvl2(b.id,'(' || round(b.cnt / c.cnt * 100, 1) || '%)',' '),
-                                   NULL,NULL,NULL,
+                                   REPLACE(c.w_class, 'Cpu', 'ON CPU'),NULL,NULL,
                                    row_number() OVER(PARTITION BY NVL(c.event, c.w_class) ORDER BY b.cnt DESC, b.id)) 
             BULK COLLECT INTO descs
-            FROM   XMLTABLE('//sql_monitor_report/activity_sampled/activity' PASSING xml COLUMNS --
+            FROM   XMLTABLE('//sql_monitor_report/activity_sampled[1]/activity' PASSING xml COLUMNS --
                             w_class VARCHAR2(10) PATH '@class',
                             event VARCHAR2(2000) PATH '@event',
                             cnt INT PATH '.') C
@@ -650,36 +649,47 @@ BEGIN
             WHERE c.cnt>0;
 
             WITH waits AS
-             (SELECT clz, to_char(cnt) cnt,round(100*ratio_to_report(cnt) over(),2)||'%' pct, listagg(pct, ',') WITHIN GROUP(ORDER BY seq) ids
+             (SELECT clz,event,
+                     to_char(cnt) cnt,
+                     round(100*ratio_to_report(cnt) over(),2)||'%' pct, 
+                     listagg(pct, ',') WITHIN GROUP(ORDER BY seq) ids
               FROM   (
-                    SELECT ArgType as cnt,TableName as clz,TableSchema as pct,Cardinality as seq
+                    SELECT ArgType as cnt,
+                           TableName as event,
+                           ColName as clz,
+                           TableSchema as pct,
+                           Cardinality as seq
                     FROM   TABLE(descs))
               WHERE  seq <= 5
-              GROUP  BY clz, cnt),
+              GROUP  BY clz, event,cnt),
             w_len AS
-             (SELECT greatest(MAX(length(clz)), 10) l1, greatest(MAX(LENGTH(''||cnt)), 3) l2, greatest(MAX(LENGTH(ids)), 16) l3, COUNT(1) c FROM waits)
+             (SELECT greatest(MAX(length(clz)), 10) l1, 
+                     greatest(MAX(LENGTH(''||cnt)), 3) l2, 
+                     greatest(MAX(LENGTH(ids)), 16) l3, 
+                     greatest(MAX(LENGTH(event)), 5) l4, 
+                     COUNT(1) c FROM waits)
             SELECT * BULK COLLECT INTO lst
             FROM (
-                SELECT '+' || LPAD('-', l1 + l2 + l3 + 8 + 9, '-') || '+'
+                SELECT '+' || LPAD('-', l1 + l2 + l3 + l4 + 8 + 9 + 3, '-') || '+'
                 FROM   w_len
                 WHERE  c > 0
                 UNION ALL
-                SELECT '| ' || RPAD('Wait Class', l1) || ' | ' || LPAD('AAS', l2) || ' | ' || LPAD('Pct', 6) ||  ' | ' || RPAD('Top Lines of AAS', l3) || ' |'
+                SELECT '| ' || RPAD('Wait Class', l1) || ' | ' || RPAD('Event', l4) || ' | ' || LPAD('AAS', l2) || ' | ' || LPAD('Pct', 6) ||  ' | ' || RPAD('Top Lines of AAS', l3) || ' |'
                 FROM   w_len
                 WHERE  c > 0
                 UNION ALL
-                SELECT '+' || LPAD('-', l1 + l2 + l3 + 8 + 9, '-') || '+'
+                SELECT '+' || LPAD('-', l1 + l2 + l3 + l4 + 8 + 9+ 3, '-') || '+'
                 FROM   w_len
                 WHERE  c > 0
                 UNION ALL
                 SELECT *
                 FROM   (
-                    SELECT '| ' || RPAD(clz, l1) || ' | ' || LPAD(cnt, l2)  || ' | ' || LPAD(pct, 6) || ' | ' || RPAD(ids, l3) || ' |' 
+                    SELECT '| ' || RPAD(clz, l1) || ' | ' || RPAD(event, l4) || ' | ' || LPAD(cnt, l2)  || ' | ' || LPAD(pct, 6) || ' | ' || RPAD(ids, l3) || ' |' 
                     FROM waits, w_len 
                     WHERE c > 0 
                     ORDER BY 0 + cnt DESC,clz)
                 UNION ALL
-                SELECT '+' || LPAD('-', l1 + l2 + l3 + 8 + 9 , '-') || '+' FROM w_len WHERE c > 0);
+                SELECT '+' || LPAD('-', l1 + l2 + l3 + l4 + 8 + 9+ 3 , '-') || '+' FROM w_len WHERE c > 0);
             flush('Wait Event Summary');
 
             WITH line_info AS

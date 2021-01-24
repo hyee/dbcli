@@ -20,7 +20,15 @@ WITH ash1 AS
                         3,
                         CASE WHEN current_obj# > 1 THEN to_char(current_obj#) when current_obj# in(0,-1) then 'UNDO' else '-2' END,
                         4,
-                        nvl(regexp_replace(regexp_substr(program, '\(.+?\)'),'\d','n'),program),
+                        CASE 
+                          WHEN SUBSTR(program,-6) LIKE '(%)' AND upper(SUBSTR(program,-5,1))=SUBSTR(program,-5,1) THEN
+                              CASE WHEN SUBSTR(program,-6) LIKE '(%)' AND SUBSTR(program,-5,1) IN('P','W','J') THEN
+                                  '('||SUBSTR(program,-5,1)||'nnn)'
+                              ELSE regexp_replace(SUBSTR(program,-6),'[0-9a-z]','n') END
+                          WHEN instr(program,'@')>1 THEN
+                              nullif(substr(program,1,instr(program,'@')-1),'oracle')
+                          ELSE program
+                        END,
                         5,
                         blocking_session||&binst,
                         6,
@@ -30,7 +38,7 @@ WITH ash1 AS
           FROM   (SELECT /*+no_expand*/ a.* FROM  &ash a 
                   WHERE :V2<100000 AND sample_time+0> SYSDATE-:V2/86400 OR 
                         nvl(:V2,'100000')>=100000 AND  sample_time+0 BETWEEN nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-1) AND nvl(to_date(:V3,'YYMMDDHH24MI'),SYSDATE+1)) ash, 
-                 (SELECT ROWNUM r FROM dual CONNECT BY ROWNUM <=6) r)
+                 (SELECT ROWNUM r FROM dual CONNECT BY ROWNUM <=5) r)
   WHERE  NAME IS NOT NULL
   GROUP BY clz,name,sample_id),
 st2 AS(SELECT sample_id, v FROM ash1 WHERE lower(NAME) = lower(:V1)),
@@ -40,14 +48,14 @@ st1 AS(SELECT * FROM ash1  a
 RES AS(
     SELECT a.*,CEIL(ROWNUM / 3) r1, MOD(ROWNUM, 3) R2 
     FROM (
-        SELECT /*+use_hash(st1 st2) ordered*/ clz CLASS, NAME, CORR(st2.v, st1.v) / COUNT(st2.v) * COUNT(st1.v)*100 coe
+        SELECT /*+use_hash(st1 st2) ordered*/ clz CLASS, NAME, ROUND(CORR(st2.v, st1.v) / COUNT(st2.v) * COUNT(st1.v)*100,3) coe
         FROM   st2
         LEFT   JOIN st1
         USING  (sample_id)
         GROUP  BY clz, NAME
         HAVING CORR (st2.v, st1.v) IS NOT NULL
         ORDER  BY abs(coe) DESC NULLS LAST) a
-    WHERE rownum<=90)
+    WHERE rownum<=150 AND ABS(COE)<100)
 SELECT MAX(DECODE(R2, 1, CLASS)) CLASS,
        MAX(DECODE(R2, 1, NAME)) NAME,
        MAX(DECODE(R2, 1, coe)) "CORR(%)",

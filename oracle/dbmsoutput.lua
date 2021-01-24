@@ -6,12 +6,12 @@ local output={}
 local prev_transaction
 local enabled='on'
 local autotrace='off'
-local default_args={enable=enabled,cdbid=-1,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB",con_name="#VARCHAR",con_id="#NUMBER",con_dbid="#NUMBER",dbid="#NUMBER",last_sql_id='#VARCHAR'}
+local default_args={enable=enabled,cdbid=-1,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB",con_name="#VARCHAR",con_id="#NUMBER",con_dbid="#NUMBER",dbid="#NUMBER",last_sql_id='#VARCHAR',curr_schema='#VARCHAR'}
 local prev_stats
 
 function output.setOutput(db)
     local flag=cfg.get("ServerOutput")
-    cfg.set('autotrace','off')
+    cfg.force_set('autotrace','off')
     sqlerror=nil
     local stmt="BeGin dbms_output."..(flag=="on" and "enable(null)" or "disable()")..";end;"
     pcall(function() (db or env.getdb()):internal_call(stmt) end)
@@ -210,6 +210,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD*/
         :con_dbid    := l_cdbid;
         :dbid        := l_dbid; 
         :lob         := l_lob;
+        :curr_schema := SYS_CONTEXT('USERENV','CURRENT_SCHEMA');
     EXCEPTION WHEN OTHERS THEN NULL;
     END;]]):gsub('@GET_STATS_ID@',loader:computeSQLIdFromText(output.trace_sql))
 
@@ -236,18 +237,45 @@ local fixed_stats={
 }
 
 local DML={SELECT=1,WITH=1,UPDATE=1,DELETE=1,MERGE=1,INSERT=1}
+local DDL={CREATE=1,ALTER=1,DROP=1,GRANT=1,REVOKE=1,COMMIT=1,ROLLBACK=1}
+local CODES={PACKAGE=1,FUNCTION=1,TRIGGER=1,VIEW=1,PROCEDURE=1,TYPE=1}
 function output.getOutput(item)
     if output.is_exec then return end
     if term then cfg.set('TERMOUT','on') end
     local db,sql,sql_id=item[1],item[2]
     if not db or not sql then return end
-    local typ=db.get_command_type(sql)
+    local typ,objtype,objname=db.get_command_type(sql)
     if DML[typ] and #env.RUNNING_THREADS > 2 and autotrace=='off' then
         if not db:is_internal_call(sql) then
             db.props.last_sql_id=loader:computeSQLIdFromText(sql)
             sql_id=db.props.last_sql_id
         end
         return 
+    end
+
+    if DDL[typ]  then
+        if (typ=='CREATE' or typ=='ALTER') and CODES[objtype] and objname then
+            local orgname,owner,cnt=objname,''
+            if objname:find('.',2,true) then owner,objname=objname:match('^(.-)%.(.+)$') end
+            local inputs={owner=owner,name=objname}
+            for k,v in pairs(inputs) do
+                v,cnt=v:gsub('^"(.*)"$','%1')
+                if cnt==0 then v=v:upper() end
+                inputs[k]=v
+            end
+            local done,res=pcall(db.get_rows,db,[[SELECT Type,TO_CHAR(LINE)||'/'||TO_CHAR(POSITION) "LINE/COL", TEXT "ERROR" FROM ALL_ERRORS WHERE OWNER=Nvl(:owner,SYS_CONTEXT('USERENV','CURRENT_SCHEMA')) AND NAME=:name ORDER BY Type,LINE, POSITION, ATTRIBUTE, MESSAGE_NUMBER]],inputs)
+            if done then
+                if #res>1 then
+                    db.props.error_obj,db.props.error_owner=objname,owner
+                    env.warn('Warnning: %s %s created with compilation errors:',objtype:lower(),orgname)
+                    cfg.set('feed','off')
+                    env.grid.print(res)
+                else
+                    db.props.error_obj,db.props.error_owner=nil
+                end
+            end
+        end
+        if autotrace=='off' and objtype~='SESSION' then return end
     end
 
     if sql:find('^BeGin dbms_output') or (not (sql:sub(1,256):lower():find('internal',1,true) and not sql:find('%s')) and not db:is_internal_call(sql)) then
@@ -334,6 +362,7 @@ function output.getOutput(item)
         end
 
         db.resultset:close(args.stats)
+        db.props.curr_schema=args.curr_schema
         db.props.container=args.cont
         db.props.container_id=args.con_id
         db.props.container_dbid=args.con_dbid
@@ -347,6 +376,7 @@ function output.getOutput(item)
             env.raise("DML in read-only mode is disallowed, transaction is rollbacked.")
         end
         title[#title+1]=args.txn and ("TXN_ID: "..args.txn)
+        if db.props.curr_schema ~= db.props.db_user then title[#title+1]='SCHEMA: '..db.props.curr_schema end
         title=table.concat(title,"   ")
         if prev_transaction~=title then
             prev_transaction=title

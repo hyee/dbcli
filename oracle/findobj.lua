@@ -20,13 +20,13 @@ local stmt=[[
 	    isUpper       BOOLEAN := true;
 	    xTableID      NUMBER := 0;
 	BEGIN
-		IF upper(target) like 'X$%' THEN
+		IF upper(target) like 'X$%' OR upper(target) like 'SYS.X$%' THEN
 			BEGIN
 				execute immediate 'select object_id from v$fixed_table where name=upper(:1)'
-				into xTableID using upper(target);
+				into xTableID using upper(regexp_substr(target,'[^\.]+$'));
 				schem := 'SYS';
 				obj_type :='TABLE';
-				part1 := upper(upper(target));
+				part1 := upper(regexp_substr(target,'[^\.]+$'));
 				object_number := xTableID;
 			EXCEPTION WHEN OTHERS THEN NULL;
 			END;
@@ -79,58 +79,68 @@ local stmt=[[
 		            target := sys_context('USERENV', 'CURRENT_SCHEMA') || '.' || target;
 		            GOTO CHECKER;
 		        END IF;
+
+		        IF schem IS NULL THEN
+			        flag  := FALSE;
+			        schem := regexp_substr(target, '[^\."]+', 1, 1);
+			        part1 := regexp_substr(target, '[^\."]+', 1, 2);
+			        IF part1 IS NULL THEN
+			            part1 := trim('"' from target);
+			            schem := null;
+			            stmt  := objs||' a WHERE nvl(:1,''X'')=''X'' AND object_name =:3)';
+			        ELSE
+			            part2_temp := schem;
+			            BEGIN
+			                EXECUTE IMMEDIATE 'SELECT MAX(username) FROM DBA_USERS WHERE upper(username)=:1' INTO schem using upper(schem);
+			            EXCEPTION WHEN OTHERS THEN 
+			                SELECT MAX(username) INTO schem FROM ALL_USERS WHERE upper(username)=upper(schem);
+			            END;
+
+			            IF schem IS NOT NULL THEN
+			                stmt  := objs||' a WHERE owner=:1 AND object_name =:2)';
+			            ELSE
+			                part1      := nvl(part2_temp,trim('"' from target));
+			                stmt       := objs||' a WHERE nvl(:1,''Y'')=''Y'' AND object_name=:3)';
+			            END IF;            
+			        END IF;
+			    ELSE
+			        flag  := TRUE;
+			        stmt  := objs|| ' a WHERE OWNER IN(''SYS'',''PUBLIC'',:1) AND OBJECT_NAME=:3)';
+			    END IF;
 		    ELSE
 		        EXECUTE IMMEDIATE 'select max(to_char(owner)),max(to_char(object_name)),max(to_char(subobject_name)),max(object_id) from '||objs||' where object_id=:1' 
 		        INTO schem,part1,part2,object_number
 		        USING 0+target;
+
+		        IF schem IS NULL THEN
+		        	EXECUTE IMMEDIATE 'select max(to_char(owner)),max(to_char(object_name)),max(to_char(subobject_name)),max(object_id) from '||objs||' where data_object_id=:1' 
+		        	INTO schem,part1,part2,object_number
+		        	USING 0+target;
+		        END IF;
+
+		        flag  := TRUE;
+			    stmt  := objs|| ' a WHERE OWNER IN(''SYS'',''PUBLIC'',:1) AND OBJECT_NAME=:3)';
 		    END IF;
 		   
-		    IF schem IS NULL THEN
-		        flag  := FALSE;
-		        schem := regexp_substr(target, '[^\."]+', 1, 1);
-		        part1 := regexp_substr(target, '[^\."]+', 1, 2);
-		        IF part1 IS NULL THEN
-		            part1 := trim('"' from target);
-		            schem := null;
-		            stmt  := objs||' a WHERE nvl(:1,''X'')=''X'' AND object_name =:3)';
-		        ELSE
-		            part2_temp := schem;
-		            BEGIN
-		                EXECUTE IMMEDIATE 'SELECT MAX(username) FROM DBA_USERS WHERE upper(username)=:1' INTO schem using upper(schem);
-		            EXCEPTION WHEN OTHERS THEN 
-		                SELECT MAX(username) INTO schem FROM ALL_USERS WHERE upper(username)=upper(schem);
-		            END;
+		    IF part1 IS NOT NULL THEN
+			    stmt:=q'[SELECT /*+no_expand*/
+			           MIN(OBJECT_TYPE)    keep(dense_rank first order by s_flag,object_id),
+			           MIN(OWNER)          keep(dense_rank first order by s_flag,object_id),
+			           MIN(OBJECT_NAME)    keep(dense_rank first order by s_flag,object_id),
+			           MIN(SUBOBJECT_NAME) keep(dense_rank first order by s_flag,object_id),
+			           MIN(OBJECT_ID)      keep(dense_rank first order by s_flag),
+			           MIN(DATA_OBJECT_ID) keep(dense_rank first order by s_flag,object_id)
+			    FROM (
+			        SELECT /*+INDEX_SS(a) MERGE(A) no_expand*/ a.*,
+			               case when owner=:1 then 0 else 100 end +
+			               case when :2 like '%"'||OBJECT_NAME||'"'||nvl2(SUBOBJECT_NAME,'."'||SUBOBJECT_NAME||'"%','') then 0 else 10 end +
+			               case substr(object_type,1,3) when 'MAT' then 0 when 'TAB' then 1 when 'CLU' then 2 else 3 end s_flag
+			        FROM   ]' || stmt;
 
-		            IF schem IS NOT NULL THEN
-		                stmt  := objs||' a WHERE owner=:1 AND object_name =:2)';
-		            ELSE
-		                part1      := nvl(part2_temp,trim('"' from target));
-		                stmt       := objs||' a WHERE nvl(:1,''Y'')=''Y'' AND object_name=:3)';
-		            END IF;            
-		        END IF;
-		    ELSE
-		        flag  := TRUE;
-		        stmt  := objs|| ' a WHERE OWNER IN(''SYS'',''PUBLIC'',:1) AND OBJECT_NAME=:3)';
+			    EXECUTE IMMEDIATE stmt
+			        INTO obj_type, schem, part1, part2_temp,object_number,did USING schem,target,schem, part1;
 		    END IF;
 
-		    stmt:=q'[SELECT /*+no_expand*/
-		           MIN(OBJECT_TYPE)    keep(dense_rank first order by s_flag,object_id),
-		           MIN(OWNER)          keep(dense_rank first order by s_flag,object_id),
-		           MIN(OBJECT_NAME)    keep(dense_rank first order by s_flag,object_id),
-		           MIN(SUBOBJECT_NAME) keep(dense_rank first order by s_flag,object_id),
-		           MIN(OBJECT_ID)      keep(dense_rank first order by s_flag),
-		           MIN(DATA_OBJECT_ID) keep(dense_rank first order by s_flag,object_id)
-		    FROM (
-		        SELECT /*+INDEX_SS(a) MERGE(A) no_expand*/ a.*,
-		               case when owner=:1 then 0 else 100 end +
-		               case when :2 like '%"'||OBJECT_NAME||'"'||nvl2(SUBOBJECT_NAME,'."'||SUBOBJECT_NAME||'"%','') then 0 else 10 end +
-		               case substr(object_type,1,3) when 'MAT' then 0 when 'TAB' then 1 when 'CLU' then 2 else 3 end s_flag
-		        FROM   ]' || stmt;
-
-
-		    EXECUTE IMMEDIATE stmt
-		        INTO obj_type, schem, part1, part2_temp,object_number,did USING schem,target,schem, part1;
-		    
 		    IF part2 IS NULL THEN
 		        IF part2_temp IS NULL AND NOT flag THEN
 		            part2_temp := regexp_substr(target, '[^\."]+', 1, CASE WHEN part1=regexp_substr(target, '[^\."]+', 1, 1) THEN 2 ELSE 3 END);
@@ -314,7 +324,7 @@ function db:check_access(obj_name,bypass_error,is_set_env,is_cache)
 	                obj := :object_name;
 	            END IF;
 	            BEGIN
-	                EXECUTE IMMEDIATE 'select count(1) from ' || obj || ' where rownum<1';
+	                EXECUTE IMMEDIATE 'select 1 from ' || obj || ' where 1=2';
 	                x := 1;
 	            EXCEPTION WHEN OTHERS THEN NULL;
 	            END;

@@ -5,13 +5,14 @@
     -p    :  sort by the Pearson's rho correlation coefficient(CORR_S), this is the default.
     -s    :  sort by the Spearman's rho correlation coefficient(CORR_S) 
     -k    :  sort by the Kendall's tau-b correlation coefficient(CORR_K)
+    -a    :  sort by the sum of above options
     --[[
         @ARGS: 1
         &V4: default={&instance}
         &V2: default={&starttime}
         &V3: default={&endtime}
         &V1: default={Database CPU Time Ratio}
-        &BASE: p={cop} s={cox} k={cok}
+        &BASE: p={cop} s={cox} k={cok} a={cop+cox+cok}
         &co  : {
             default={st0 as(select * from STATS where LOWER(NAME) != LOWER(:V1) AND (:V5 is null or regexp_like(source_table||' '||lower(name),lower(:V5) ))),
                      ss as(select snap_id from st0 union select snap_id from st2),
@@ -19,14 +20,14 @@
                      res as(SELECT source_table,name, CEIL(ROWNUM / 2) r1, MOD(ROWNUM, 2) R2, cop,cox,cok
                           FROM   (SELECT --+ no_merge(st1) no_merge(st2) use_hash(st1 st2)
                                          replace(source_table,'dba_hist_') source_table, NAME, 
-                                         trunc(CORR(st1.value,st2.value) * 100,6) cop,
-                                         trunc(CORR_S(NVL(st1.value,0),nvl(st2.value,0)) * 100,6) cox,
-                                         trunc(CORR_K(NVL(st1.value,0),nvl(st2.value,0)) * 100,6) cok
+                                         trunc(CORR(st1.value,st2.value) * 100,3) cop,
+                                         trunc(CORR_S(NVL(st1.value,0),nvl(st2.value,0)) * 100,3) cox,
+                                         trunc(CORR_K(NVL(st1.value,0),nvl(st2.value,0),'COEFFICIENT') * 100,3) cok
                                   FROM   st1 
-                                  JOIN (select snap_id,nvl(value,0) value from ss left join st2 USING(snap_id)) st2 USING(snap_id)
+                                  JOIN   (select snap_id,nvl(value,0) value from ss left join st2 USING(snap_id)) st2 USING(snap_id)
                                   GROUP  BY source_table, NAME
-                                  ORDER  BY ABS(&BASE) DESC NULLS LAST,(cop+cox+cok) desc nulls last) a
-                          WHERE  ROWNUM <= 200 AND ABS(&BASE)<100)
+                                  ORDER  BY abs(&base) desc nulls last) a
+                          WHERE  ROWNUM <= 140 AND ABS(&BASE) NOT IN(100,300))
                     SELECT MAX(DECODE(R2, 1, source_table)) source_table,
                            MAX(DECODE(R2, 1, NAME)) NAME,
                            MAX(DECODE(R2, 1, cop)) "CORR(%)",
@@ -60,7 +61,7 @@ WITH snap AS
   WHERE  end_interval_time+0 BETWEEN nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MI'),sysdate-1) AND  nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MI'),SYSDATE+1)
   AND   (nvl(:V4,'0') IN ('0','A','a') OR instance_number=:V4)),
 STATS AS
- (SELECT /*+materialize no_expand*/source_table, inst, snap_id,snap_time,unit, NAME, SUM(VALUE) VALUE
+ (SELECT /*+materialize no_expand*/source_table, snap_id,snap_time,unit, NAME, SUM(VALUE) VALUE
   FROM   (SELECT 'dba_hist_sysstat' source_table,
                  inst,
                  snap_id,snap_time,
@@ -125,7 +126,7 @@ STATS AS
           SELECT 'dba_hist_mutex_sleep' source_table,
                  inst,
                  snap_id,snap_time,
-                 '['||MUTEX_TYPE || ']' || TRIM(REPLACE(LOCATION, CHR(10))),
+                 '['||MUTEX_TYPE || '] ' || TRIM(REPLACE(LOCATION, CHR(10))),
                  'us',
                  wait_time -LAG(wait_time) OVER(PARTITION BY '['||MUTEX_TYPE || '] ' || TRIM(REPLACE(LOCATION, CHR(10))), part_key ORDER BY snap_id)
           FROM   snap
@@ -133,11 +134,14 @@ STATS AS
           USING  (dbid, instance_number, snap_id)
           WHERE  wait_time > 0
           UNION ALL
-          SELECT 'dba_hist_sgastat' source_table, inst, snap_id,snap_time, nullif('['||pool || '] ', '[] ') || TRIM(REPLACE(NAME, CHR(10))), 'bytes', bytes-LAG(bytes) OVER(PARTITION BY NAME, part_key ORDER BY snap_id)
+          SELECT 'dba_hist_sgastat' source_table, 
+                 inst, 
+                 snap_id,snap_time, 
+                 nullif('['||pool || '] ', '[] ') || TRIM(REPLACE(NAME, CHR(10))), 'bytes', bytes-LAG(bytes) OVER(PARTITION BY NAME, part_key ORDER BY snap_id)
           FROM   snap
           JOIN   dba_hist_sgastat
           USING  (dbid, instance_number, snap_id))
-  GROUP  BY source_table, inst, snap_id, snap_time,unit, NAME
+  GROUP  BY source_table, snap_id, snap_time,unit, NAME
   HAVING SUM(VALUE)>0),
 st2 as (SELECT /*+no_merge no_expand*/ snap_id, snap_time, VALUE FROM STATS WHERE LOWER(NAME) =LOWER(:V1) or LOWER(NAME) like '%] '||LOWER(:V1)),
 &co 

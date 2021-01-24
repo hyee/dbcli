@@ -1061,14 +1061,17 @@ local function extract_jo()
                 --Handle NL/SM/HA Join and the cost
                 self:add(2,lineno)
                 local method,cost=line:match('(%u%u+) *[cC]ost: *([%d%.]+)')
-                if cost then
+                if cost and self.curr_tab_index then
                     cost=tonumber(cost)
                     if self.cost==0 or self.cost>cost then
                         self.cost,self.method,self.degree=cost,method,get_dop(line,self.degree)
                     end
+
                     local tb=self.curr_jo.tlines[self.curr_tab_index]
-                    tb.cost,tb.degree=self.cost,self.degree
-                    tb.method=self.method..'(Aborted)'
+                    if tb then
+                        tb.cost,tb.degree=self.cost,self.degree
+                        tb.method=self.method..'(Aborted)'
+                    end
                 end
             elseif line:find('^ *Cost of predicates:') then
                 --Show join predicates
@@ -1587,7 +1590,7 @@ local function extract_sql()
 end
 
 local spd_patterns={'dirid *= *%d+','^SPD','%* *DS_SVC *%*','%* *OPT_DYN_SAMP *%*'}
-function extract_spd()
+local function extract_spd()
     return {
         start=function(line,root)
             for k,v in ipairs(spd_patterns) do

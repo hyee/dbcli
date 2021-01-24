@@ -1,5 +1,5 @@
 /*[[
-    Show object dependency, this scripts requires 'SELECT ANY DICTIONARY' access rights. Usage: @@NAME {[owner.]name [depth]} [-c|-p] [-t|-l] 
+    Show object dependency, this script requires 'SELECT ANY DICTIONARY' access rights. Usage: @@NAME {[owner.]name [depth]} [-c|-p] [-t|-l] 
     Options:
        p: Show target object's depending objects(default)
        c: Show the objects that depend on target object

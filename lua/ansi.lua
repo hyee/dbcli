@@ -347,7 +347,7 @@ local function _strip_repl(s)
 end
 
 local function _strip_ansi(str)
-    if not enabled then return str end
+    --if not enabled then return str end
     return str:gsub(ansi.pattern,""):gsub(ansi.escape,""):gsub("%$(%u+)%$",_strip_repl)
 end
 
@@ -368,7 +368,6 @@ function string.ulen(s,maxlen)
     end
     return len1,len2,s1
 end
-
 
 function ansi.strip_ansi(str)
     local e,s=pcall(_strip_ansi,str)
@@ -398,6 +397,62 @@ end
 
 function string.convert_ansi(str)
     return ansi.convert_ansi(str)
+end
+
+local grp1,grp2,grp3,grp3=table.new(10,0),table.new(10,0),table.new(10,0),table.new(10,0)
+function string.from_ansi(str)
+    local str1=str:convert_ansi()
+    if str1==str then return str end
+    local len,first,ed,ec,grp,last,curr=#str1
+    for plain,color,cnt,start,stop in str1:gsplit(ansi.pattern) do
+        if not start then
+            if not grp then return str,first,last,str1 end
+            if type(grp)=='string' then 
+                grp={grp,plain} 
+            else
+                grp[#grp+1]=plain
+            end
+            return table.concat(grp,''),first,last,str1
+        end
+
+        if plain~='' then
+            if not grp then 
+                grp=plain 
+            elseif type(grp)=='string' then
+                grp={grp,plain}
+            else
+                grp[#grp+1]=plain
+            end
+        end
+        --print(j,len,color=='')
+        if color~='' then
+            if start==1 then
+                first=color
+                ed=stop
+            elseif ed and ed+1==start then
+                first=first..color
+                ed=stop 
+            elseif stop==len then
+                if ec and ec+1==start then
+                    last=curr..color
+                else
+                    last=color
+                end
+            else
+                if ec and ec+1==start then
+                    curr=curr..color
+                else
+                    curr=color
+                end
+                ec=stop
+            end
+        end
+    end
+end
+
+function string.to_ansi(str,st,ed)
+    if not st then return str end
+    return st..str..(ed or '')
 end
 
 function ansi.test_text(str)

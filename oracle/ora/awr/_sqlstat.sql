@@ -40,11 +40,14 @@ BEGIN
         sq := replace(sq,'@11g@','
                ,decode(delta_flag, 0, physical_read_bytes_total, physical_read_bytes_delta) phyread
                ,decode(delta_flag, 0, physical_write_bytes_total, physical_write_bytes_delta) phywrite
+               ,decode(delta_flag, 0, physical_read_requests_total, physical_read_requests_delta) readreq
+               ,decode(delta_flag, 0, physical_write_requests_total, physical_write_requests_delta) writereq
+               ,decode(delta_flag, 0, nvl(direct_writes_total,0)+nvl(physical_read_requests_total,0)+nvl(physical_write_requests_total,0), nvl(direct_writes_delta,0)+nvl(physical_read_requests_delta,0)+nvl(physical_write_requests_delta,0)) ioreqs
                ,decode(delta_flag, 0, io_offload_elig_bytes_total, io_offload_elig_bytes_delta) oflin
                ,decode(delta_flag, 0, io_offload_return_bytes_total, io_offload_return_bytes_delta) oflout
                ,decode(delta_flag, 0, io_interconnect_bytes_total, io_interconnect_bytes_delta) cellio');
     ELSE
-        sq := replace(sq,'@11g@',',0 phyread,null phywrite,0 oflin,0 oflout,null cellio');
+        sq := replace(sq,'@11g@',',0 phyread,null phywrite,null readreq,null writereq,null ioreqs,0 oflin,0 oflout,null cellio');
     END IF;
 
     IF dbms_db_version.version>=18 THEN
@@ -53,11 +56,7 @@ BEGIN
         sq := replace(sq,'@OBS','0');
     END IF;
 
-    IF dbms_db_version.version>=12 AND (dbms_db_version.release>1 OR dbms_db_version.version>=18) AND sys_context('userenv','con_id')>0 THEN
-        sq := replace(sq,'@source','awr_pdb');
-    ELSE
-        sq := replace(sq,'@source','dba_hist');
-    END IF; 
+    sq := replace(sq,'@source','dba_hist');
     :awr$sqlstat := sq; 
 END;
 /

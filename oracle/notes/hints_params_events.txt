@@ -32,7 +32,7 @@ Parameters
     _rdbms_internal_fplib_enabled/cell_offload_plan_display: simulate smart scan on non-Exadata db
     _exadata_feature_on: simulate Exadata features on non-Exadata db
     _kcfis_cell_passthru_fromcpu_enabled: disable Exadata reverse offloading
-    _sql_plan_management_control: when 4 then diagnose issues with SQL plan baselines of why it fails to use
+    _sql_plan_management_control: 4 - diagnose issues with SQL plan baselines of why it fails to use / 16 - Allow SPM on the SQLs start with "/* SQL Analyze("
     _optimizer_squ_bottomup: false to redunce parse time due to large PGA memory usage pending on function kkojnp(bug#22225899), but would change some hash join as FILTER
     _column_tracking_level: when 3 then similar to dbms_stats.seed_column_usage, however can be set in session level, and 0 to avoid column group creation by dbms_stats,4 to maintain expression tracking
     _kks_parse_error_warning: controls whether to record the SQL in the alert log when the SQL fails to be parsed over the specific times(default as 100), in <12.2 db, can also set event 10035 level 1 to display the parse error in the alert log
@@ -76,7 +76,12 @@ Parameters
     _controlfile_cell_flash_caching: 
         3: (default) Control File reads will be cached in the Cell Flash Cache with a default caching policy
         2: disable Flash Cache caching of Control File reads.
-        1: enable KEEP caching policy of CF reads (more aggressive than default) 
+        1: enable KEEP caching policy of CF reads (more aggressive than default)
+    _db_writer_coalesce_area_size: defaults to 4M. the dbwr buffer(in v$sgastat) to coalesce adjacent blocks into a single large write, in ODA system it's usually set to 16M, see 'write clones%' sysstat
+    _connect_by_use_union_all: when 'OLD_PLAN_MODE' then works like hint 'CONNECT_BY_COMBINE_SW+NO_CONNECT_BY_FILTERING', mainly used to fix the unexpected plan of a view
+    _gcs_cluster_flash_cache_mode: 1-Enables the cluster flash cache/2-allows a block on the non-master instance to be saved in that instance's flash cache/3-1+2
+    _gcs_flash_cache_mode: 1-allows a local instance to serve the flash block to the remote requester/2-disallow
+    _cr_grant_local_role: controls 3-way CR grants. Auto:depends on cpu load(85%), and latency of 'gc cr grant 2-way + db file sequential read' vs 'gc current block 2-way', and 'gc cr grant 2-way' vs 'gc current block 3-way'
 DMLs.
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
@@ -110,17 +115,18 @@ Hints:
     OR_EXPAND(<qb> (1) (2) ...(N)): expand N or expression to union all
     BUSHY_JOIN([<qb>] (<alias1>,<alias2>,...)): enable bushy join
     no_transform_distinct_agg/no_place_distinct/no_place_group_by: disable aggregation transformation on inline view
+    _optimizer_group_by_placement/_optimizer_distinct_placement/_optimizer_extend_jppd_view_types: used to fix some execute plan issues
     
 Fix Controls:
     13583722/16726844: impact the CBO behaviour for incr stats, ref: https://hourim.wordpress.com/2019/11/21/incremental-histogram-and-fix-control/
     16923858:  Display timings in Optimizer trace(10053) when over 10^<value> microsec
     6972291 :  CBO can use the selectivity of column groups but this option is disabled if there is a histogram defined on any of the columns of the column group
     20355502:  number of branches 2^<value> limit for legacy OR expansion(long parse time)
-    25167306:  Enable direct path read in SQL called from PL/SQL(scheduler job)
-    6708183 :  allow dynamic sampling on table functions    
+    25167306:  Enable direct path read(Smart Scan) in SQL called from PL/SQL(scheduler job), may also need to set _serial_direct_read=always
+    6708183 :  allow dynamic sampling on table functions  
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
-   NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled: Used on PDB to query dict views
+   NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled/CONTAINER_DATA(bug30122249): Used on PDB to query dict views
    HCC compression on conventional load(insert select/bulk insert):
        * compatible=12.2+ 
        * ASSM tablespace(SEGMENT SPACE MANAGEMENT AUTO)

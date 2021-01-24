@@ -39,7 +39,9 @@
         &v2    : default={&starttime}
         &v3    : default={&endtime}
         &hint  : ash={inline} dash={materialize}
-        &V8    : ash={gv$active_session_history},dash={Dba_Hist_Active_Sess_History}
+        &AWR_VIEW        : default={AWR_PDB_} hist={dba_hist_}
+        @check_access_pdb: pdb/awr_pdb_snapshot={&AWR_VIEW.} default={DBA_HIST_}
+        &V8    : ash={gv$active_session_history},dash={&check_access_pdb.Active_Sess_History}
         &Filter: default={:V1 in(p1text,''||session_id,''||sql_plan_hash_value,sql_id,&top_sql SESSION_ID||'@'||&INST1,event,''||current_obj#)} f={}
         &filter1: default={0} f={1}
         &range : default={sample_time BETWEEN NVL(TO_DATE(:V2,'YYMMDDHH24MI'),SYSDATE-7) AND NVL(TO_DATE(:V3,'YYMMDDHH24MI'),SYSDATE+1)}, snap={sample_time>=sysdate - nvl(:V1,60)/86400}, f1={}
@@ -50,7 +52,7 @@
         &grp2  : default={sql_id}, sid={sid}, none={sample_id}
         &unit  : default={1}, dash={10}
         &INST1 : default={inst_id}, dash={instance_number}
-        &OBJ   : default={dba_objects}, dash={(select obj# object_id,object_name from dba_hist_seg_stat_obj)}
+        &OBJ   : default={dba_objects}, dash={(select obj# object_id,object_name from &check_access_pdb.seg_stat_obj)}
         @tmodel: 11.2={time_model} default={to_number(null)}
         @opname: 11.2={SQL_OPname,TOP_LEVEL_CALL_NAME} default={null}
         @top_sql: 11.1={top_level_sql_id,} default={}
@@ -180,7 +182,7 @@ BEGIN
               WHERE  b.chose IS NOT NULL
               OR     a.b_sid IS NOT NULL),
             chains AS (
-                SELECT /*+NO_EXPAND*/
+                SELECT /*+NO_EXPAND opt_param('_connect_by_use_union_all','old_plan_mode')*/
                       level lvl,
                       sid w_sid,
                       SYS_CONNECT_BY_PATH(case when :filter2 = 1 then 1 when &filter then 1 else 0 end ,',') is_found,

@@ -93,7 +93,8 @@ Outputs:
     @mem : 12.1={DELTA_READ_MEM_BYTES} default={null}
     @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     @cdb2 : 12.1={con_dbid} default={1e9}
-    @check_access_pdb: pdb/awr_pdb_snapshot={AWR_PDB_} default={DBA_HIST_}
+    &AWR_VIEW        : default={AWR_PDB_} hist={dba_hist_}
+    @check_access_pdb: pdb/awr_pdb_snapshot={&AWR_VIEW.} default={DBA_HIST_}
     @check_access_cdb: cdb={use_hash(a)} default={use_nl(a)}
     &dplan: default={&check_access_pdb.sql_plan} sqlset={(select a.*,0+null object# from dba_sqlset_plans a)}
     &cid  : default={dbid} sqlset={con_dbid}

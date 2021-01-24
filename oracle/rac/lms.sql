@@ -1,5 +1,5 @@
 /*[[show LMS stats]]*/
-set sep4k on
+set sep4k on pivotsort head
 col program,traceid,tracefile,sosid,terminal,USERNAME,SERIAL#,BACKGROUND noprint
 col "CR Time,CUR Time,Avg CR Time,Avg CUR Time" for usmhd2
 
@@ -11,10 +11,8 @@ grid {
     [[SELECT /*grid={topic='GC CR/CUR Block time'}*/
 			B1.INST_ID INT,
 			B2.VALUE "CR Blocks",
-			B1.VALUE*1e4 "CR Time",
 			((B1.VALUE/B2.VALUE ) *1e4) "Avg CR Time",
 			B4.VALUE "CUR Blocks",
-			b3.value*1e4 "CUR Time",
 			((B3.VALUE/B4.VALUE ) *1e4) "Avg CUR Time",
 			B5.VALUE "Losts"
 		FROM GV$SYSSTAT B1,

@@ -3,7 +3,8 @@
    Refer to Tanel Poder's same script
     --[[
         &V1    : default={1}
-        &v2    : default={5}
+        &v2    : default={10}
+        &v3    : default={&instance}
         &fields: p={sw_p1,sw_p2,sw_p3,sql_id,wait_obj#}, sql={sw_p1,sw_p2,sw_p3,sql_id}, block={sql_id,wait_obj#,block#}
         @GV: 11.1={TABLE(GV$(CURSOR(} default={(((}
     --]]
@@ -31,7 +32,8 @@ WITH
                            nvl2(sw.p1text,sw.p1text || '= ' || CASE WHEN (LOWER(sw.p1text) LIKE '%addr%' OR sw.p1 >= 536870912) THEN RAWTOHEX(sw.p1raw) ELSE TO_CHAR(sw.p1) END,'') sw_p1,
                            nvl2(sw.p2text,sw.p2text || '= ' || CASE WHEN (LOWER(sw.p2text) LIKE '%addr%' OR sw.p2 >= 536870912) THEN RAWTOHEX(sw.p2raw) ELSE TO_CHAR(sw.p2) END,'') sw_p2,
                            nvl2(sw.p3text,sw.p3text || '= ' || CASE WHEN (LOWER(sw.p3text) LIKE '%addr%' OR sw.p3 >= 536870912) THEN RAWTOHEX(sw.p3raw) ELSE TO_CHAR(sw.p3) END,'') sw_p3 
-                    FROM   v$session sw WHERE SID = &V1) w
+                    FROM   v$session sw WHERE SID = :V1) w
+            WHERE USERENV('instance')=nvl(:V3,USERENV('instance'))
             GROUP  BY sid,event,&fields
             ORDER  BY samples desc)))),
    t2 AS (SELECT hsecs FROM v$timer)
