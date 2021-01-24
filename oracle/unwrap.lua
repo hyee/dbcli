@@ -358,8 +358,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
         max_elapsed_time='max_elap',
         px_in_memory='px_imq',
         px_in_memory_imc='px_imc',
-        derived_cpu_dop='cpu_dop',
-        derived_io_dop='io_dop',
+        derived_cpu_dop='auto_cpu_dop',
+        derived_io_dop='auto_io_dop',
         cardinality_feedback='card_feedback'
     }
     local time_fmt='%d+/%d+/%d+'
@@ -601,7 +601,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local value=tonumber(att[name])
             if value==0 then return nil end
             value=value and value*(plex or 1) or att[name]
-            if type(value)=='number' and value>thresholds.sqlstat_aas_min and type(max_stats)=='table' 
+            if type(value)=='number' and value>thresholds.sqlstat_aas_min/(plex or 1) and type(max_stats)=='table' 
                 and max_stats[name] and max_stats.childs>=thresholds.px_process_count and value>=max_stats[name] then
                 return '$PROMPTCOLOR$'..value..'$NOR$'
             end
@@ -737,7 +737,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 end
             end
 
-            if max_stats.childs>=thresholds.px_process_count and max_stats.max_count>thresholds.sqlstat_aas_min then
+            if max_stats.childs>=thresholds.px_process_count and max_stats.max_count>1e6*thresholds.sqlstat_aas_min then
                 sqlstat[max_stats.max_count_idx][2]=string.to_ansi(sqlstat[max_stats.max_count_idx][2],'$PROMPTCOLOR$','$NOR$')
             end
 
@@ -793,8 +793,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     local cpu=num(stat[cpu_time])
                     local rate=cpu/num(stat[elapsed_time])
                     rate=rate*(rate+(1-rate)*rate)
-                    stat[buff_avg]=math.round(cpu/buffs,2)
-                    if stat[buff_avg]<thresholds.sqlstat_aas_min then stat[buff_avg]=nil end
+                    rate=math.round(cpu*rate/buffs,2)
+                    if rate>=thresholds.sqlstat_aas_min*(1-rate) then stat[buff_avg]=rate end
                 end
             end
 
@@ -879,11 +879,9 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     nil,nil,nil,nil,0, --buckets
                     lines={}
                 }
-                if grp[ev] then
-                    if #grp[ev]>38 then grp[ev]=grp[ev]:sub(1,35)..'...' end
-                end
                 --group by class+event
                 local event=grp[ev] or grp[cl]
+                if #event>30 then event=event:sub(1,25)..'...' end
                 if not ids[id].events[event] then ids[id].events[event]={} end
                 local stack=(grp[ev] or '')..'\1'..(grp[cl] or '')
                 if not stacks[stack] then
@@ -1333,7 +1331,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     or (s.partition_start..' - '..s.partition_start)
                 ) or nil,
                 '|',
-                tonumber(s.cost),
+                tonumber(s.io_cost),
                 tonumber(s.card),
                 tonumber(s.cardinality),
                 '|',
@@ -1676,9 +1674,9 @@ function unwrap.analyze_sqlmon(text,file,seq)
         end
 
         if lines and #lines>0 then
-            table.insert(lines,1,{'Id','Ord','|','PX#','DoP','Skew','|','Resp','AAS','Pct',
+            table.insert(lines,1,{'Id','Ord','|','PX','DoP','Skew','|','Resp','AAS','Pct',
                                   '|','Top Event','|','Operation','|','Object Name','|','Pred','|','Proj','|',
-                                  'Distrib|Partition','|','Est|Cost','Est|Rows','Act|Rows','|',
+                                  'Distrib|Partition','|','Est|I/O','Est|Rows','Act|Rows','|',
                                   'Start|Count','From|Start','From|End','Active|Clock','|','Max|Mem','Max|Temp','|',
                                   'Inter|Connc','Read|Reqs','Avg|Read','Write|Reqs','Avg|Write','Offload|Effi(%)','|',
                                   'Object|Alias','|','Query|Block'})
