@@ -125,10 +125,10 @@ function unwrap.analyze_sqlmon(text,file,seq)
         ["6"]="BROADCAST",
         ["16"]="HASH"
     }
-    env.var.define_column('max_io_reqs,Est|Cost,Est|Rows,Act|Rows,Skew|Rows,Read|Reqs,Write|Reqs,Start|Count,Buff|Gets,Disk|Read,Direx|Write,Fetch|Count','for','tmb1')
+    env.var.define_column('max_io_reqs,IM|DS,Est|I/O,Est|Rows,Act|Rows,Skew|Rows,Read|Reqs,Write|Reqs,Start|Count,Buff|Gets,Disk|Read,Direx|Write,Fetch|Count','for','tmb1')
     env.var.define_column('max_aas,max_cpu,max_waits,max_other_sql_count,max_imq_count,From|Start,From|End,Active|Clock,Ref|AAS,ASH|AAS,CPU|AAS,Wait|AAS,IMQ|AAS,Other|SQL,resp,aas','for','smhd2')
     env.var.define_column('duration,bucket_duration,Wall|Time,Elap|Time,Avg|Buff,Avg|I/O','for','usmhd2')
-    env.var.define_column('max_io_bytes,max_buffer_gets,I/O|Bytes,Mem|Bytes,Max|Mem,Temp|Bytes,Max|Temp,Inter|Connc,Avg|Read,Avg|Write,Unzip|Bytes,Elig|Bytes,Return|Bytes,Read|Bytes,Write|Bytes,Avg|Read,Avg|Write','for','kmg1')
+    env.var.define_column('max_io_bytes,max_buffer_gets,I/O|Bytes,Mem|Bytes,Max|Mem,Temp|Bytes,Max|Temp,Inter|Connc,Avg|Read,Avg|Write,Unzip|Bytes,Elig|Bytes,Return|Bytes,Saved|Bytes,Slow|Meta,Read|Bytes,Write|Bytes,Avg|Read,Avg|Write','for','kmg1')
     env.var.define_column('pct','for','pct')
     env.set.set('autohide','col')
     text,file={},file:gsub('%.[^\\/%.]+$','')..(seq and ('_'..seq) or '')
@@ -260,7 +260,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         end
         if not stats then return end
         local rows={}  --name,avg,mid,min,max,total,buckets
-        local avgs={{'reads','read_kb','Avg Read Bytes'},{'writes','write_kb','Avg Write Bytes'}}
+        local avgs={{'reads','read_kb','Avg Read Bytes'},{'writes','write_kb','Avg Write Bytes'},{'reads','read_kb','Avg Read Bytes'},{'reads','interc_kb','Avg Physical Bytes'}}
         local function set_stats(bucket,name,value)
             if value>0 then
                 local r=title._seqs[name]
@@ -280,10 +280,16 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 local value=tonumber(att.value or s[1])*(name:find('_kb$') and 1024 or 1)
                 set_stats(bucket,name,value)
             end
+            local io_reqs
             for i,v in ipairs(avgs) do
                 local r,r1=title._seqs[v[1]],title._seqs[v[2]]
                 if r and r1 and rows[r] and rows[r1] then
                     local v1,v2=rows[r].values[bucket],rows[r1].values[bucket]
+                    if v[2]~='interc_kb' then
+                        if v1 then io_reqs=(io_reqs or 0)+v1 end
+                    else
+                        v1=io_reqs
+                    end
                     if v1 and v2 then
                         set_stats(bucket,v[3],math.round(v2/v1,2))
                     end
@@ -295,6 +301,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             pga_kb=1,
             tmp_kb=1,
             ['Avg Read Bytes']=1,
+            ['Avg Physical Bytes']=1,
             ['Avg Write Bytes']=1
         }
         map={
@@ -392,7 +399,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             end
         end
         k=default_titles[k] or k
-        if type(v)=='string' and #v>=30 then v=v:sub(1,25)..'...' end
+        if type(v)=='string' and #v>=30 then v=v:sub(1,25):rtrim('.')..'..' end
         titles[#titles+1]={k,v,tostring(v):find(time_fmt) and 91 or
                                k:find('^report_') and 999 or
                                k=='duration' and -10 or
@@ -859,6 +866,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         stats=hd.activity_detail
         if stats then stats=stats.bucket end
         local cl,ev,rt,as,pct,top,bk=1,2,4,5,6,7,8
+        local max_event_len=#('cell single block physical read')
         if stats then
             --process line level events:  report/sql_monitor_report/activity_detail/bucket
             local ids=attrs.top_event
@@ -881,7 +889,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 }
                 --group by class+event
                 local event=grp[ev] or grp[cl]
-                if #event>30 then event=event:sub(1,25)..'...' end
+                if #event>max_event_len+3 then event=event:sub(1,max_event_len):rtrim('.')..'..' end
                 if not ids[id].events[event] then ids[id].events[event]={} end
                 local stack=(grp[ev] or '')..'\1'..(grp[cl] or '')
                 if not stacks[stack] then
@@ -1005,6 +1013,18 @@ function unwrap.analyze_sqlmon(text,file,seq)
     end
 
     local gs={list={},g=0,s=2}
+    local runtime_stats={
+        ['Min DOP after downgrade']='dop',
+        ['DOP downgrade']='dop',
+        ['Distribution method']='distrib',
+        ['Eligible bytes']='elig_bytes',
+        ['Filtered bytes']='ret_bytes',
+        ['SI saved bytes']='saved_bytes',
+        ['Columnar cache saved bytes']='saved_bytes',
+        ['Slow metadata bytes']='slow_meta',
+        ['Dynamic Scan Tasks on Thread']='imds',
+        ['Metadata bytes']='slow_meta',
+    }
     local function load_plan_monitor()
         local rwstats={}
         local function process_rwstat(id,stat)
@@ -1017,12 +1037,25 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local function process_rw(mt)
                 if meta[mt._attr.id] then
                     local lid=mt.id or id
-                    if 'downgrade reason'==meta[mt._attr.id].name and reasons[mt[1]] then
-                        process_pred(lid,'Other',reasons[mt[1]])
-                    elseif "distribution method"==meta[mt._attr.id].name:lower() and dist_methods[mt[1]] then
-                        attrs.dist_methods[lid]=dist_methods[mt[1]]
+                    local col_name=runtime_stats[meta[mt._attr.id].name]
+                    if col_name then
+                        if col_name=='distrib' and dist_methods[mt[1]] then
+                            infos[id][col_name]=dist_methods[mt[1]]
+                        elseif col_name=='dop' then
+                            infos[id][col_name]=mt[1]
+                        elseif tonumber(mt[1]) then
+                            if tonumber(mt[1])>0 then
+                                infos[id][col_name]=(mt[col_name] or 0)+tonumber(mt[1])
+                            end
+                        else
+                            infos[id][col_name]=mt[1]
+                        end
                     else
-                        process_pred(lid,'Other',number_fmt(mt[1]):lpad(10)..' -> '..meta[mt._attr.id].desc)
+                        local num,desc=number_fmt(mt[1]),(meta[mt._attr.id].desc or meta[mt._attr.id].name)
+                        if 'downgrade reason'==meta[mt._attr.id].name and reasons[mt[1]] then
+                            num,desc=mt[1],reasons[mt[1]]
+                        end
+                        process_pred(lid,'Other',num:rpad(10)..' -> '..desc)
                     end
                     mt.id=nil
                 else
@@ -1065,6 +1098,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         for n,p in ipairs(stats) do
             local info,pid=p._attr
             local id,depth=tonumber(info.id),tonumber(info.depth)
+            infos[id]=info
             xid=xid<id and id or xid
             nid=nid>id and id or nid
             info._cid={id=id}
@@ -1101,6 +1135,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     info[k]=s
                 end
             end
+            if p.rwsstats then process_rwstat(id,p.rwsstats) end
 
             if p._attr.name=='PX SEND' then
                 if not gs[#gs] then 
@@ -1130,9 +1165,6 @@ function unwrap.analyze_sqlmon(text,file,seq)
 
             local obj=p.object or {}
             info.object,info.owner=obj.name,obj.owner
-
-            if p.rwsstats then process_rwstat(id,p.rwsstats) end
-            infos[id]=info
         end
         local curr=xid+1
         local function process_ord(node,parent)
@@ -1204,6 +1236,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local intercc=tonumber(s.io_inter_bytes)
             if not intercc or intercc==0 then
                 intercc=(tonumber(s.read_bytes) or 0) + (tonumber(s.write_bytes) or 0)
+                --if s.elig_bytes then intercc=intercc-s.elig_bytes end
+                --if s.ret_bytes  then intercc=intercc-s.ret_bytes end
             end
             s.io_inter_bytes=intercc>0 and intercc or nil
             return s.io_inter_bytes
@@ -1326,7 +1360,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 '|',
                 table.concat(p.proj,''):gsub(',$',''),
                 '|',
-                attrs.dist_methods[id] or p.distrib or s.partition_start and (
+                s.distrib or p.distrib or s.partition_start and (
                     s.partition_start==s.partition_start and s.partition_start
                     or (s.partition_start..' - '..s.partition_start)
                 ) or nil,
@@ -1343,11 +1377,17 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 tonumber(s.max_memory),
                 tonumber(s.max_temp),
                 '|',
+                s.imds,
                 get_interconn(s),
                 tonumber(s.read_reqs),
                 s.read_reqs and math.ceil(tonumber(s.read_bytes)/tonumber(s.read_reqs)) or nil,
                 tonumber(s.write_reqs),
                 s.write_reqs and math.ceil(tonumber(s.write_bytes)/tonumber(s.write_reqs)) or nil,
+                '|',
+                s.elig_bytes,
+                s.ret_bytes,
+                s.saved_bytes,
+                e.slow_meta,
                 s.cell_offload_efficiency,
                 '|',
                 strip_quote(p.object_alias),
@@ -1614,12 +1654,15 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     local s=skew_list[j][1]
                     if s then
                         local val
-                        if dop>1 and c[j] then
+                        if dop>0 and c[j] then
                             val=tonumber(info[s])
                             if val then
-                                val=math.round((val-c[j])/(dop-1),4)
+                                val=math.round((val-c[j])/math.max(1,dop-1),4)
                                 if j>dop_pos and j<skew_aas_index then
                                     if math.abs(c[j]-val)<thresholds.skew_min_diff then
+                                        row[idx],val=nil
+                                        counter=counter-1
+                                    elseif dop==1 and math.round(val)==0 then
                                         row[idx],val=nil
                                         counter=counter-1
                                     elseif val~=0 then
@@ -1678,7 +1721,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                                   '|','Top Event','|','Operation','|','Object Name','|','Pred','|','Proj','|',
                                   'Distrib|Partition','|','Est|I/O','Est|Rows','Act|Rows','|',
                                   'Start|Count','From|Start','From|End','Active|Clock','|','Max|Mem','Max|Temp','|',
-                                  'Inter|Connc','Read|Reqs','Avg|Read','Write|Reqs','Avg|Write','Offload|Effi(%)','|',
+                                  'IM|DS','Inter|Connc','Read|Reqs','Avg|Read','Write|Reqs','Avg|Write','|',
+                                  'Elig|Bytes','Return|Bytes','Saved|Bytes','Slow|Meta','Offload|Effi(%)','|',
                                   'Object|Alias','|','Query|Block'})
             
             lines.topic='Execution Plan Lines'
