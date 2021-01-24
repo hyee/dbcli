@@ -979,7 +979,7 @@ function db_core:internal_call(sql,args,prep_params,print_result)
 end
 
 function db_core:is_internal_call(sql)
-    if self.internal_exec then return true end
+    if cfg.get('internal')=='on' or self.internal_exec then return true end
     if type(sql)=="userdata" then return true end
     return sql and sql:sub(1,256):find("INTERNAL_DBCLI_CMD",1,true) and true or false
 end
@@ -1270,7 +1270,7 @@ local function set_param(name,value)
         env.checkerr(#value==1,'CSV separator can only be one char!')
         cparse.DEFAULT_SEPARATOR=value:byte()
         return value
-    elseif name=='PROMPTEXP' then
+    elseif name=='PROMPTEXP' or name=='INTERNAL'then
         return value:lower()
     end
 
@@ -1529,10 +1529,12 @@ function db_core:__onload()
     txt=txt..'\n       var x refcursor;'
     txt=txt..'\n       exec open :x for select * from user_objects where rownum<10;'
     txt=txt..'\n       sql2csv user_objects x;'
+
     cfg.init("PRINTSIZE",1000,set_param,"db.query","Max rows to be printed for a select statement",'1-10000')
     cfg.init({"FETCHSIZE","ARRAY","ARRAYSIZE"},3000,set_param,"db.query","Rows to be prefetched from the resultset, 0 means auto.",'0-32767')
     cfg.init("SQLTIMEOUT",1200,set_param,"db.core","The max wait time(in second) for a single db execution",'10-86400')
     cfg.init({"FEED","FEEDBACK"},'on',set_param,"db.core","Detemine if need to print the feedback after db execution",'on,off')
+    cfg.init("INTERNAL",'off',set_param,"db.core","Controls whether the comming SQLs are internal SQLs",'on,off')
     cfg.init("AUTOCOMMIT",'off',set_param,"db.core","Detemine if auto-commit every db execution",'on,off')
     cfg.init("SQLCACHESIZE",40,set_param,"db.core","Number of cached statements in JDBC",'5-500')
     cfg.init("ASYNCEXP",true,set_param,"db.export","Detemine if use parallel process for the export(SQL2CSV and SQL2FILE)",'true,false')

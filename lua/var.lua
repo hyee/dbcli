@@ -596,7 +596,7 @@ function var.define_column(col,...)
                 if f then return var.define_column(col,'HEADING',f) end
             else
                 local incr
-                func,incr=var.format_function(f,args[i+2])
+                func,incr=var.format_function(arg,args[i+2])
                 if func then i=i+incr end
             end
             if not func and not var.define_column(col,f) then

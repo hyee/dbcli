@@ -42,9 +42,11 @@ EXCEPTION WHEN OTHERS THEN
    END IF;
 END;
 /
+set internal on
 SET ONERREXIT OFF
 &V2
 SET ONERREXIT ON
+set internal off
 BEGIN
    sys.dbms_java.stop_btl();
    sys.dbms_java.terminate_btl();

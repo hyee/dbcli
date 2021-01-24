@@ -620,7 +620,8 @@ function grid:wellform(col_del, row_del)
     local nor, hor, hl = color("NOR"), color("HEADCOLOR"), color("GREPCOLOR")
     local head_fmt,max_siz = fmt,0
     local seps={}
-    local prev,next,prev_sep,prev_none_zero,del={},-1,-1
+    local prev,next,prev_sep,prev_none_zero,del={},nil,-1,-1
+    local cols=#colsize
     for k, v in ipairs(colsize) do
         if max_siz==0 and k>1 then v[3],v[4]=nil,nil end
         siz,seps[k]=v[1],v[3]
@@ -635,22 +636,22 @@ function grid:wellform(col_del, row_del)
         end
         
         v[1] = siz
-        next=colsize[k+1] or {}
-        del = (seps[k] or next[3] or next[1]==0) and ""  or " "
+        next = colsize[k+1] or {}
+        del  = (seps[k] or next[3] or next[1]==0) and ""  or " "
 
         if siz==0 and (prev[3] or k==1) then del='' end
         if (del~="" and pivot == 0) or (pivot ~= 0 and k ~= 1 + indx and (pivot ~= 1 or k ~= 3 + indx)) then 
             del = col_del
         end
 
-        if k == #colsize then del = del:gsub("%s+$", "") end
+        if k == cols then del = del:gsub("%s+$", "") end
 
         if siz == 0 then
-            fmt = fmt .. "%s".. del
+            fmt = fmt .. "%s".. (k==cols and nor or '').. del
             head_fmt = head_fmt .. "%s".. del
             seps[k] = ''
         else
-            fmt = fmt .. "%" .. (siz * v[2]) .. "s" .. del
+            fmt = fmt .. "%" .. (siz * v[2]) .. "s" .. (k==cols and nor or '').. del
             head_fmt = head_fmt .. (v[3] and '' or hor) .. "%" .. (siz * v[2]) .. "s" .. nor .. del
         end
         
@@ -664,7 +665,7 @@ function grid:wellform(col_del, row_del)
                 break
             end
         end
-        title_dels[#title_dels+1]=v[4] or reps(not is_empty and grid.title_del or " ", siz)
+        title_dels[k]=v[4] or reps(not is_empty and grid.title_del or " ", siz)
         
         if row_del ~= "" then
             row_dels = row_dels .. row_del:rep(siz) .. del
@@ -676,7 +677,7 @@ function grid:wellform(col_del, row_del)
     if prev_none_zero<=prev_sep then 
         for k,v in pairs(seps) do
             if k>=prev_none_zero and #v>0 then 
-                seps[k]=string.rep(' ',#v)
+                seps[k],title_dels[k]='',''
             end
         end
     end
@@ -813,7 +814,9 @@ function grid.format_output(output,rows_limit)
         for i=1,rows_limit do
             local v=output[i]
             if type(v)=='table' then
-                output[i]=v.format_func(v.fmt,table.unpack(v))
+                local s=v.format_func(v.fmt,table.unpack(v))
+                env.event.callback("ON_PRINT_GRID_ROW",v,output.len,v.format_func,v.fmt,include_head)
+                output[i]=s
             end
         end
         output=table.concat(output,'\n',1,rows_limit)
@@ -843,7 +846,7 @@ function grid.print(rows, include_head, col_del, row_del, rows_limit, prefix, su
             env.event.callback("ON_PRINT_GRID_ROW",v,output.len,v.format_func,v.fmt,include_head)
         end
     end
-    print(str, '__BYPASS_GREP__')
+    env.printer.print_grid(str)
     if suffix then print(suffix) end
 end
 
@@ -1083,15 +1086,15 @@ function grid.merge(tabs, is_print, prefix, suffix)
         local space=env.printer.top_mode==true and env.space or ''
         if prefix then 
             tab[1] = space..prefix:convert_ansi()
-            if is_print == true then env.event.callback("ON_PRINT_GRID_ROW",tab[1]) end
+            env.event.callback("ON_PRINT_GRID_ROW",tab[1])
         end
         for rowidx, row in ipairs(result) do
             tab[#tab + 1] = space..grid.cut(row, linesize):convert_ansi()
-            if is_print == true then env.event.callback("ON_PRINT_GRID_ROW",row,#result) end
+            env.event.callback("ON_PRINT_GRID_ROW",row,#result)
             if #tab >= height - 1 then
                 if rowidx < #result then 
                     tab[#tab + 1] = space..grid.cut(result[#result], linesize)
-                    if is_print == true then env.event.callback("ON_PRINT_GRID_ROW",tab[#tab],#result) end
+                    env.event.callback("ON_PRINT_GRID_ROW",tab[#tab],#result)
                 end
                 break
             end
@@ -1103,7 +1106,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
         
         local str = table.concat(tab, "\n")
         if is_print==true then
-            print(str,'__BYPASS_GREP__')
+            env.printer.print_grid(str)
             if suffix then print(suffix) end
             return
         end

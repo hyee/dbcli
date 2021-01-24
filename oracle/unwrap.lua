@@ -69,6 +69,18 @@ function unwrap.unwrap_schema(obj,ext)
     return true
 end
 
+local thresholds={
+    skew_rate=0.7,
+    skew_min_diff=100,
+    px_process_count=4,
+    sqlstat_aas_min=10,
+    sqlstat_min=1024*1024,
+    buff_gets_min=1024*1024/16,
+    user_fetch_count=1000,
+    disk_reads=1e6,
+    buffer_gets=math.pow(1024,4)/8192,
+    --buff_get_rate=0.7 --the threshold of cpu_time/elapsed_time to calc avg buffer get time
+}
 local sqlmon_pattern='<report [^%>]+>%s*<report_id><?[^<]*</report_id>%s*<sql_monitor_report .-</sql_monitor_report>%s*</report>'
 function unwrap.analyze_sqlmon(text,file,seq)
     local content=handler:new()
@@ -96,8 +108,10 @@ function unwrap.analyze_sqlmon(text,file,seq)
     if not db_version then
         db_version=xml:match('db_version="([^"]+)"') or '12.2'
     end
+    local number_fmt=env.var.format_function('tmb2')
     local instance_id,session_id=tonumber(hd.target._attr.instance_id),tonumber(hd.target._attr.session_id)
-    local sql_id,plsql=nil
+    local error_msg=hd.error and hd.error[1]:trim() or nil
+    local sql_id,status,plsql=nil
     local colors={'$COMMANDCOLOR$','$PROMPTCOLOR$','$HIB$','$PROMPTSUBCOLOR$'}
     --from x$qksxa_reason
     local reasons={
@@ -113,9 +127,9 @@ function unwrap.analyze_sqlmon(text,file,seq)
     }
     env.var.define_column('max_io_reqs,Est|Cost,Est|Rows,Act|Rows,Skew|Rows,Read|Reqs,Write|Reqs,Start|Count,Buff|Gets,Disk|Read,Direx|Write,Fetch|Count','for','tmb1')
     env.var.define_column('max_aas,max_cpu,max_waits,max_other_sql_count,max_imq_count,From|Start,From|End,Active|Clock,Resp|Time,Ref|AAS,ASH|AAS,CPU|AAS,Wait|AAS,IMQ|AAS,Other|SQL,resp,aas','for','smhd2')
-    env.var.define_column('duration,bucket_duration,Wall|Time,Elap|Time','for','usmhd2')
+    env.var.define_column('duration,bucket_duration,Wall|Time,Elap|Time,Avg|Buff,Avg|I/O','for','usmhd2')
     env.var.define_column('max_io_bytes,max_buffer_gets,I/O|Bytes,Mem|Bytes,Max|Mem,Temp|Bytes,Max|Temp,Inter|Connc,Avg|Read,Avg|Write,Unzip|Bytes,Elig|Bytes,Return|Bytes,Read|Bytes,Write|Bytes,Avg|Read,Avg|Write','for','kmg1')
-    env.var.define_column('pct','for','pct')
+    env.var.define_column('pct,(%)|AAS','for','pct')
     env.set.set('autohide','col')
     text,file={},file:gsub('%.[^\\/%.]+$','')..(seq and ('_'..seq) or '')
     
@@ -140,13 +154,22 @@ function unwrap.analyze_sqlmon(text,file,seq)
         return ipairs(type(o)~='table' and {} or (type(o[1])=='table' or #o>1) and o or {o})
     end
 
+    local print_grid=env.printer.print_grid
     local function pr(msg,shadow)
         --store rowset instead of screen output to avoid line chopping
         if type(shadow)=='table' then
             shadow=grid.format_output(shadow)
         end
+
+
         text[#text+1]=type(shadow)=='string' and shadow or msg
-        print(msg)
+        if not seq then
+            if type(shadow)=='string' then
+                print_grid(msg)
+            else
+                print(msg)
+            end
+        end
     end
 
     local function title(msg)
@@ -333,7 +356,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         max_other_sql_count='max_other_sql',
         max_buffer_gets='max_buffs',
         max_elapsed_time='max_elap',
-        px_in_memory='px_im',
+        px_in_memory='px_imq',
         px_in_memory_imc='px_imc',
         derived_cpu_dop='cpu_dop',
         derived_io_dop='io_dop',
@@ -355,11 +378,21 @@ function unwrap.analyze_sqlmon(text,file,seq)
         elseif k=='sql_exec_start' then
             start_clock=time2num(v)
         elseif (k=='plsql_entry_name' or k=='plsql_name') and v~='Unavailable' then
-            plsql=v
+            plsql=v:gsub('"','')
             return
+        elseif k=='status' then
+            if v:lower():find('error') then
+                v=v:to_ansi('$HIR$','$NOR$')
+                status='error'
+            elseif v:lower():find('executing') then
+                v=v:to_ansi('$PROMPTCOLOR$','$NOR$')
+                status='running'
+            else
+                status='done'
+            end
         end
         k=default_titles[k] or k
-        if type(v)=='string' then v=v:sub(1,25) end
+        if type(v)=='string' and #v>=30 then v=v:sub(1,25)..'...' end
         titles[#titles+1]={k,v,tostring(v):find(time_fmt) and 91 or
                                k:find('^report_') and 999 or
                                k=='duration' and -10 or
@@ -420,6 +453,9 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 if type(v)=='string' then add_header(k,v) end
             end
         end
+        for k,v in pairs(hd._attr or {}) do
+            if type(v)=='string' then add_header(k,v) end
+        end
         for k,v in pairs(hd.report_parameters or {}) do
             if type(v)=='string' then add_header(k,v) end
         end
@@ -439,7 +475,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         
         report_header=print_header("Summary"..(sql_id and (' (SQL Id: '..sql_id..')') or ''),false)
         report_header.pivot,report_header.pivotsort=1,'off'
-        report_header.footprint=plsql and ('\\PL/SQL: '..plsql..'/') or ''
+        report_header.footprint=plsql and ('[PL/SQL: '..plsql..']') or ''
         if hd.plan_monitor then
             for k,v in pairs(hd.plan_monitor._attr or {}) do
                 add_header(k,v)
@@ -521,6 +557,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
         {'plsql_exec_time','PLSQL|Time'},
         {'java_exec_time','JAVA|Time'},
         {'other_wait_time','OTH|Time'},
+        {'time_per_buffer_get','Avg|Buff'},
+        {'time_per_io_req','Avg|I/O'},
         {'|','|'},
         {'buffer_gets','Buff|Gets'},
         {'disk_reads','Disk|Read'},
@@ -539,7 +577,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         seqs={}
     }
     
-    local sqlstat={topic='SQL and Process Summary',
+    local sqlstat={topic='SQL and Process Summary',footprint=error_msg and '$HIR$\\ '..error_msg..' /' or nil,
                    {'Proc','Wall|Time','From|Start','ASH|AAS','CPU|AAS','Wait|AAS','IMQ|AAS','Other|SQL','Is|Skew'},
                    {'Main',dur1 or dur2,nil,nil,nil,nil,nil,nil,#skews>0 and 'Yes' or nil}}
     local aas_idx,sql_start_idx=4,#sqlstat[1]
@@ -551,7 +589,6 @@ function unwrap.analyze_sqlmon(text,file,seq)
 
     local slaves
     local function load_sqlstats()
-        local highlight_threshold={4,10,1024*1024} --childs,dur or aas,other value
         local function add_aas(idx,value)
             value=tonumber(value)
             if value and value>0 then
@@ -564,9 +601,9 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local value=tonumber(att[name])
             if value==0 then return nil end
             value=value and value*(plex or 1) or att[name]
-            if type(value)=='number' and value>highlight_threshold[2] and type(max_stats)=='table' 
-                and max_stats[name] and max_stats.childs>=highlight_threshold[1] and value>=max_stats[name] then
-                return '$HIR$'..value..'$NOR$'
+            if type(value)=='number' and value>thresholds.sqlstat_aas_min and type(max_stats)=='table' 
+                and max_stats[name] and max_stats.childs>=thresholds.px_process_count and value>=max_stats[name] then
+                return '$PROMPTCOLOR$'..value..'$NOR$'
             end
             return value
         end
@@ -597,20 +634,25 @@ function unwrap.analyze_sqlmon(text,file,seq)
         end
 
         local function add_sqlstat(row,stat,max_stats)
+            local stats={}
             for k,v in pair(stat) do
                 local att=v._attr
-                if att and att.name and statset.seqs[att.name] and v[1]~='0' then
+                local idx=statset.seqs[att.name]
+                if att and att.name and idx and v[1]~='0' then
                     local v1=tonumber(v[1])
                     if v1 then
-                        if v1>highlight_threshold[3]/(att.name=='buffer_gets' and 16 or 1) and max_stats 
-                            and max_stats.childs>=highlight_threshold[1]
+                        if v1>(idx==statset.seqs.buffer_gets and thresholds.buff_gets_min or thresholds.sqlstat_min) and max_stats 
+                            and max_stats.childs>=thresholds.px_process_count
                             and max_stats[att.name] and max_stats[att.name]<=v1 then
-                            v1='$HIR$'..v1..'$NOR$'
+                            v1=string.to_ansi(v1,'$PROMPTCOLOR$','$NOR$')
+                        elseif v1 > (thresholds[att.name] or 9e20) then
+                            v1=string.to_ansi(v1,'$HIR$','$NOR$')
                         end
-                        row[statset.seqs[att.name]]=v1
+                        row[idx]=v1
                     end
                 end
             end
+            
             if slaves and row.px_set then
                 for i=aas_idx,#sqlstat[1]-2 do --exclude offload efficiency
                     local v=row[i]
@@ -652,7 +694,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                         px_sets[#px_sets+1]=g
                         set_list[px_set]=1
                     end
-                    if max_stats.childs>=highlight_threshold[1]-1 and not slaves then
+                    if max_stats.childs>=thresholds.px_process_count-1 and not slaves then
                         slaves={"$UDL$PX Slaves"}
                         sqlstat[#sqlstat+1]=slaves
                     end
@@ -695,8 +737,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 end
             end
 
-            if max_stats.childs>=highlight_threshold[1] and max_stats.max_count>highlight_threshold[2] then
-                sqlstat[max_stats.max_count_idx][2]=string.to_ansi(sqlstat[max_stats.max_count_idx][2],'$HIR$','$NOR$')
+            if max_stats.childs>=thresholds.px_process_count and max_stats.max_count>thresholds.sqlstat_aas_min then
+                sqlstat[max_stats.max_count_idx][2]=string.to_ansi(sqlstat[max_stats.max_count_idx][2],'$PROMPTCOLOR$','$NOR$')
             end
 
             local instances=hd.parallel_info.instances
@@ -723,19 +765,46 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 end
             end
         end
+        local elapsed_time=statset.seqs.elapsed_time
+        local cpu_time=statset.seqs.cpu_time
+        local buffer_gets=statset.seqs.buffer_gets
+        local io_time=statset.seqs.user_io_wait_time
+        local disk_reads=statset.seqs.read_reqs
+        local disk_writes=statset.seqs.write_reqs
+        local buff_avg=statset.seqs.time_per_buffer_get
+        local io_avg=statset.seqs.time_per_io_req
         local ic_idx,elig_idx,rtn_idx=statset.seqs.io_inter_bytes,statset.seqs.elig_bytes,statset.seqs.ret_bytes
-        local io_idx={statset.seqs.read_reqs,statset.seqs.write_reqs}
+        local io_idx={disk_reads,disk_writes}
         local max_io,max_io_idx,io_cnt=0,0,0
+        local function num(val)
+            return type(val)=='string' and tonumber(val:strip_ansi()) or val or 0
+        end
         for i=2,#sqlstat do
             local stat=sqlstat[i]
             local intercc=0
             
+            if stat[io_time] and (stat[disk_reads] or stat[disk_writes]) then
+                stat[io_avg]=math.round(num(stat[io_time])/(num(stat[disk_reads])+num(stat[disk_writes])),2)
+            end
+
+            if stat[elapsed_time] and stat[cpu_time] and stat[buffer_gets] then
+                local buffs=num(stat[buffer_gets])
+                if buffs>thresholds.buff_gets_min then
+                    local cpu=num(stat[cpu_time])
+                    local rate=cpu/num(stat[elapsed_time])
+                    rate=rate*(rate+(1-rate)*rate)
+                    stat[buff_avg]=math.round(cpu/buffs,2)
+                    if stat[buff_avg]<thresholds.sqlstat_aas_min then stat[buff_avg]=nil end
+                end
+            end
+
             for j,idx in ipairs(io_idx) do
                 if stat[idx] and stat[idx+1] then
                     intercc=intercc+stat[idx+1]
                     stat[idx]=math.round(stat[idx+1]/stat[idx],1)
                 end
             end
+
             if stat[elig_idx] then 
                 intercc=intercc-stat[elig_idx]
                 if stat[rtn_idx] then intercc=intercc+stat[rtn_idx] end
@@ -763,8 +832,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 end
             end
         end
-        if io_cnt>=highlight_threshold[1] and max_io>highlight_threshold[3] then
-            sqlstat[max_io_idx][ic_idx]=string.to_ansi(sqlstat[max_io_idx][ic_idx],'$HIR$','$NOR$')
+        if io_cnt>=thresholds.px_process_count and max_io>thresholds.sqlstat_min then
+            sqlstat[max_io_idx][ic_idx]=string.to_ansi(sqlstat[max_io_idx][ic_idx],'$PROMPTCOLOR$','$NOR$')
         end
     end
     load_sqlstats()
@@ -854,11 +923,6 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 if c[as] then c[pct]=math.round(c[as]/total_aas,4) end
             end
 
-            for k,c in pairs(ids) do
-                c[2],c[1]=get_top_events(c.events,c[4],c[3])
-                if c[4] then c[5]=math.round(c[4]/total_aas,4) end
-            end
-            
             table.sort(events, function(a,b) return (a[as] or 0)>(b[as] or 0) end)
             table.insert(events,1,{'Class','Event','|','Resp','AAS','Pct','Top Lines','Buckets'})
 
@@ -866,6 +930,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local e1=0
             for k,v in pairs(ids) do
                 e1=e1+v[4]
+                v[2],v[1]=get_top_events(v.events,v[4],v[3])
+                if v[4] then v[5]=math.round(v[4]/total_aas,4) end
                 top_lines[#top_lines+1]={k,v[3],v[4],v[5],v[2]}
             end
             table.sort(top_lines,function(a,b) return (a[4] or a[3])>(b[4] or b[3]) end)
@@ -958,7 +1024,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     elseif "distribution method"==meta[mt._attr.id].name:lower() and dist_methods[mt[1]] then
                         attrs.dist_methods[lid]=dist_methods[mt[1]]
                     else
-                        process_pred(lid,'Other',mt[1]:rpad(10)..' -> '..meta[mt._attr.id].desc)
+                        process_pred(lid,'Other',number_fmt(mt[1]):lpad(10)..' -> '..meta[mt._attr.id].desc)
                     end
                     mt.id=nil
                 else
@@ -1013,7 +1079,10 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     gs[#gs]=nil
                 end
             end
-            
+            --[[first_active/first_row/last_active/duration/from_most_recent/from_sql_exec_start/percent_complete/time_left/
+                starts/max_starts/dop/cardinality/max_card/memory/max_memory/min_max_mem/temp/max_temp/spill_count/max_max_temp
+                read_reqs/max_read_reqs/read_bytes/max_read_bytes/write_reqs/max_write_reqs/write_bytes/max_write_bytes/
+                io_inter_bytes/max_io_inter_bytes/cell_offload_efficiency/rwsstats--]]
             for k,s in pair(p.stats.stat) do
                 local att=s._attr
                 local name=att.name
@@ -1027,6 +1096,12 @@ function unwrap.analyze_sqlmon(text,file,seq)
             for k,s in pairs(p.optimizer or {}) do
                 if k=='cardinality' then k='card' end
                 info[k]=s
+            end
+
+            for k,s in pairs(p) do
+                if type(s) ~='table' then 
+                    info[k]=s
+                end
             end
 
             if p._attr.name=='PX SEND' then
@@ -1092,10 +1167,20 @@ function unwrap.analyze_sqlmon(text,file,seq)
         end
         local lvs,nodes={colors={},nodes={}},{}
 
-        local function format_id(id,skp,color,pred)
+        local function format_id(id,skp,color,pred,most_recent)
             local st=color or ''
             local ed=color and '$NOR$' or ''
-            return id_fmt:format(skp>0 and '-' or pred and '*' or ' ',st,id,ed)
+            local stat
+            if most_recent==0 then 
+                if status=='error' and error_msg then 
+                    stat='$HIR$X$NOR$'
+                    lines.status=stat..': Error'
+                elseif status=='running' then
+                    stat='$PROMPTCOLOR$O$NOR$'
+                    lines.status=stat..': Running'
+                end
+            end
+            return id_fmt:format(stat or skp>0 and '-' or pred and '*' or ' ',st,id,ed)
         end
 
         local function add_hint(text)
@@ -1195,6 +1280,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             end
             local px_color=s.gs and s.gs.color or nil
             local px_type=s.px_type
+            if px_type=='QC' then px_color=nil end
             if tonumber(px_type) then
                 if not px_color then
                     g,px_type=g or 1,tonumber(px_type)
@@ -1218,9 +1304,10 @@ function unwrap.analyze_sqlmon(text,file,seq)
             s.aas=e[4]
             local ord=ord_fmt:format((color or child or #s._cid==0 or not s._pid) and s.ord or (prev_ord:find('%d') and '^') or ':')
             prev_ord=ord
+            local most_recent=tonumber(s.from_most_recent)
             lines[#lines+1]={
                 id=id,
-                format_id(id,tonumber(s.skp) or 0,px_color,preds.ids[id]),
+                format_id(id,tonumber(s.skp) or 0,px_color,preds.ids[id],most_recent),
                 ord,
                 '|',
                 px_type,
@@ -1235,9 +1322,9 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 '|',
                 table.concat(p.proj,''):gsub(',$',''),
                 '|',
-                attrs.dist_methods[id] or p.distrib or p.partition and (
-                    p.partition._attr.start==p.partition._attr.stop and p.partition._attr.start
-                    or (p.partition._attr.start..' - '..p.partition._attr.stop)
+                attrs.dist_methods[id] or p.distrib or s.partition_start and (
+                    s.partition_start==s.partition_start and s.partition_start
+                    or (s.partition_start..' - '..s.partition_start)
                 ) or nil,
                 '|',
                 tonumber(s.cost),
@@ -1246,7 +1333,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 '|',
                 tonumber(s.starts),
                 start_at,
-                tonumber(s.from_most_recent),
+                most_recent,
                 tonumber(s.duration),
                 '|',
                 tonumber(s.max_memory),
@@ -1261,6 +1348,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 '|',
                 e[3],
                 s.aas,
+                e[5],
                 '|',
                 e[2],
                 '|',
@@ -1350,11 +1438,17 @@ function unwrap.analyze_sqlmon(text,file,seq)
             [251] = 'PL/SQL TABLE',
             [252] = 'PL/SQL BOOLEAN'}
         local rows={_names={}}
+        local positions={}
         for i=1,2 do
             for j,b in pair(binds[i] and binds[i].bind or nil) do
                 local att=b._attr
                 local nam=att.nam or att.name
-                local row=rows._names[nam] or {nam}
+                local maxlen=tonumber(att.maxlen or att.mxl)
+                local row=rows._names[nam] or {nam,nil,maxlen}
+                if not positions[nam] then positions[nam]={c=0} end
+                if att.pos and not positions[nam][att.pos] then
+                    positions[nam][att.pos],positions[nam].c=1,1+positions[nam].c
+                end
                 if not row[2] or att.dtystr then
                     row[2]=att.dtystr
                     if att.format=="hexdump" or not row[2] then
@@ -1428,11 +1522,12 @@ function unwrap.analyze_sqlmon(text,file,seq)
                         row[2]=dty
                     end
                 end
-                row[3]=math.min(tonumber(att.pos) or 9999,row[3] or 9999)
+                row[4]=math.min(tonumber(att.pos) or 9999,row[4] or 9999)
+                row[5]=positions[nam].c
                 if b[1] then
-                    row[3+i]=(att.dtystr and att.format~='hexdump' and '' or '(0x)')..b[1]
+                    row[5+i]=(att.dtystr and att.format~='hexdump' and '' or '(0x)')..b[1]
                 else
-                    row[3+i]='<Unknown>'
+                    row[5+i]='<Unknown>'
                 end
                 if not rows._names[nam] then
                     rows._names[nam]=row
@@ -1440,18 +1535,17 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 end
             end
         end
-        table.sort(rows,function(a,b) return a[3]<b[3] end)
-        table.insert(rows,1,{'Name','Data Type','Position','Peek','Bind Value'})
-        rows.topic,rows.colsep='Binds/Peek Binds','|'
+        table.sort(rows,function(a,b) return a[4]<b[4] end)
+        table.insert(rows,1,{'Name','Data Type','Max Len','Position','Occurrence','Peeked Value','Binding Value'})
+        rows.topic,rows.colsep='Peeked/Binding Variables','|'
         binds=rows
     end
     load_binds()
 
     local skew_outputs
-    local skew_threshold=0.7
     local function calc_skews()
         if #skews>0 then
-            local rows={topic='Skew Info',footprint=': Ref=Avg value except skewed PX :',{}}
+            local rows={topic='Skew Info',footprint='[Ref = Avg value except skewed PX]',{}}
             local len=#skew_list
             env.var.define_column('Ref|Inter,Ref|rBytes,Ref|wBytes,Ref|Mem,Ref|Temp','for','kmg1')
             env.var.define_column('Ref|Rows,Ref|Starts,Ref|Reads,Ref|Writes','for','tmb1')
@@ -1527,12 +1621,12 @@ function unwrap.analyze_sqlmon(text,file,seq)
                             if val then
                                 val=math.round((val-c[j])/(dop-1),4)
                                 if j>dop_pos and j<skew_aas_index then
-                                    if math.abs(c[j]-val)<100 then
+                                    if math.abs(c[j]-val)<thresholds.skew_min_diff then
                                         row[idx],val=nil
                                         counter=counter-1
                                     elseif val~=0 then
                                         local pct=c[j]/val
-                                        if pct>skew_threshold and pct<1/skew_threshold then
+                                        if pct>thresholds.skew_rate and pct<1/thresholds.skew_rate then
                                             row[idx],val=nil
                                             counter=counter-1
                                         end
@@ -1548,7 +1642,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     rows[#rows+1]=row
                     attrs.lines[id][6]='Yes'
                     if pxstat then pxstat[sql_start_idx]='Yes' end
-                    if slaves then slaves[sql_start_idx]='$HIR$Yes$NOR$$UDL$' end
+                    if slaves then slaves[sql_start_idx]='$PROMPTCOLOR$Yes$NOR$$UDL$' end
                 end
             end
             
@@ -1586,14 +1680,13 @@ function unwrap.analyze_sqlmon(text,file,seq)
                                   'Distrib|Partition','|','Est|Cost','Est|Rows','Act|Rows','|',
                                   'Start|Count','From|Start','From|End','Active|Clock','|','Max|Mem','Max|Temp','|',
                                   'Inter|Connc','Read|Reqs','Avg|Read','Write|Reqs','Avg|Write','Offload|Effi(%)','|',
-                                  'Resp|Time','ASH|AAS','|','Top|Event','|','Object|Alias','|','Query|Block'})
+                                  'Resp|Time','ASH|AAS','(%)|AAS','|','Top|Event','|','Object|Alias','|','Query|Block'})
             
             lines.topic='Execution Plan Lines'
-            lines.footprint='| Pred: A=Accessed-cols/F=Filtered-cols \\|/ Proj: B=Proj-avg-bytes/C=Proj-cols/K=Keys |'
+            lines.footprint='[ '..(lines.status and (lines.status..' | ') or '')..'Pred: A=Access-cols, F=Filter-cols | Proj: B=Proj-avg-bytes, C=Proj-cols, K=Keys, R=Proj-rowsets ]'
             pr(grid.merge({lines},'plain'))
             env.set.set('colsep','default')
         end
-
         
         if skew_outputs then
             env.var.define_column('id','break')
@@ -1610,10 +1703,11 @@ function unwrap.analyze_sqlmon(text,file,seq)
             table.insert(preds,1,{'Id','Type','Content'})
             title('Predicates/Line Stats')
             pr(grid.tostring(preds))
+            env.var.define_column('id','clear')
         end
 
         if #outlines>0 then
-            title('Opt Env / Outlines')
+            title('Optimizer Environments & Outlines')
             table.sort(outlines,function(a,b)
                 for _,c in ipairs{a,b} do
                     if c[1]=='' and c[2]:find('"') then
@@ -1663,8 +1757,21 @@ function unwrap.analyze_sqlmon(text,file,seq)
     if seq and sql_id then
         file=file..'_'..sql_id
     end
-    print("\nSQL Monitor report in text written to "..env.save_data(file..'.txt',text:strip_ansi()))
-    print("SQL Monitor report in text written to "..env.save_data(file..'_colored.txt',text))
+    print("\nSQL Monitor report in text  written to "..env.save_data(file..'.txt',text:strip_ansi()))
+    print("SQL Monitor report in color written to "..env.save_data(file..'_colored.txt',text))
+    if seq then
+        if sqlstat[2] then 
+            sqlstat[2][1]=tostring(seq):lpad(3)..': '..sql_id
+            --table.insert(sqlstat[2][1],1,seq)
+        end
+        if seq==1 then
+            sqlstat[1][1]="SQL Id"
+            --table.insert(sqlstat[1][1],1,"#")
+            return {sqlstat[1],sqlstat[2]}
+        else
+            return sqlstat[2]
+        end
+    end
 end
 
 local function unwrap_plsql(obj,rows,file)
@@ -1796,20 +1903,29 @@ function unwrap.unwrap(obj,ext,prefix)
             org[#org+1]=loader:Base64ZlibToText({table.concat(stack,'')}) 
         end
         local text=table.concat(org,'\n')
-        local _,cnt=text:gsub(sqlmon_pattern,'')
+        
         local function load_report(text,obj,ext)
             local done,err=pcall(unwrap.analyze_sqlmon,text,obj,ext)
             if not done then
                 env.warn(err)
+            else
+                return err
             end
         end
+        local sql_list={}
+        local _,cnt=text:gsub(sqlmon_pattern,function(s) sql_list[#sql_list+1]=s;return '' end)
         if cnt>1 then
-            local i=0
             local prefix=obj:gsub('[^\\/%w][^\\/]+$','')
-            for sqlmon in text:gmatch(sqlmon_pattern) do
-                i=i+1
-                load_report(sqlmon,prefix,i)
+            local result
+            for i,sqlmon in ipairs(sql_list) do
+                local row=load_report(sqlmon,prefix,i)
+                if not result then 
+                    result=row
+                else
+                    result[#result+1]=row
+                end
             end
+            grid.merge({result},true)
         else
             load_report(text,obj)
         end
@@ -1886,11 +2002,13 @@ end
 function unwrap.onload()
     env.set_command(nil,"unwrap",[[
         Decrypt wrapped object or compressed Active Report, type 'help @@NAME' for more detail. Usage: @@NAME {[<owner>.]<object_name> | <sql monitor filename>}
-        @@NAME <schema_name>           :  Unwrap all functions/procedures/packages/triggers/types of a schema
-        @@NAME [<owner>.]<object_name> :  Unwrap a specific function/procedure/package/trigger/type/java_class
-        @@NAME <sql file>              :  Unwrap the file that stors the encripted PL/SQL code
-        @@NAME <SQL Monitor File>      :  Decrypt the active sql monitor report and analyze the content
-        @@NAME <Perfhub file>          :  Decrypt the Performance Hub Active Report and analyze all its active sql monitor reports
+        
+        1) @@NAME [<owner>.]<object_name> :  Unwrap a specific function/procedure/package/trigger/type/java_class
+        2) @@NAME <schema_name>           :  Unwrap all functions/procedures/packages/triggers/types of a schema
+        3) @@NAME <sql file>              :  Unwrap the file that stores the encripted PL/SQL code
+        4) @@NAME <SQL Monitor File>      :  Decrypt the active SQL Monitor Report and analyze the content
+        5) @@NAME <Perfhub file>          :  Decrypt the Performance Hub Active Report and analyze all its active SQL Monitor reports
+        6) @@NAME <file>                  :  Decrypt other kinds of file that have Based64+zlib compressed content, such as the SQL detail report.
     ]],
     unwrap.unwrap,false,4)
 end

@@ -90,6 +90,7 @@ function snapper:after_script()
         self.start_flag,self.snap_cmd,self.is_repeat,self.is_first_top=false
         self:trigger('after_exec_action')
         self.db:commit()
+        cfg.set("internal","back")
         cfg.set("feed","back")
         cfg.set("digits","back")
         cfg.set("sep4k",'back')
@@ -151,11 +152,6 @@ end
 
 function snapper:run_sql(sql,main_args,cmds,files)
     local db,print_args=self.db
-    cfg.set("feed","off")
-    cfg.set("autocommit","off")
-    cfg.set("digits",2)
-    cfg.set("sep4k",'on')
-    cfg.set("heading",'on')
     self.autosize=cfg.get('colautosize','trim')
     self.var_context={env.var.backup_context()}
     
@@ -230,13 +226,18 @@ function snapper:run_sql(sql,main_args,cmds,files)
         end
     end
 
-    env.checkerr(begin_flag~=nil or tonumber(interval),'Uage: '..self.command..' <names> <interval>|BEGIN|END [args] ')
+    env.checkerr(begin_flag~=nil or tonumber(interval),'Usage: '..self.command..' <names> <interval>|BEGIN|END [args] ')
     
     self.db:assert_connect()
     
     self.cmds,self.args={},{}
     self.start_flag=true
-    env.set.set("feed","off")
+    cfg.set("feed","off")
+    cfg.set("autocommit","off")
+    cfg.set("digits",2)
+    cfg.set("sep4k",'on')
+    cfg.set("heading",'on')
+    cfg.set("internal",'on')
     self:trigger('before_exec_action')
     local clock=os.timer()
     for idx,text in ipairs(sql) do

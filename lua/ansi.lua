@@ -399,17 +399,23 @@ function string.convert_ansi(str)
     return ansi.convert_ansi(str)
 end
 
+local grp1,grp2,grp3,grp3=table.new(10,0),table.new(10,0),table.new(10,0),table.new(10,0)
 function string.from_ansi(str)
     local str1=str:convert_ansi()
     if str1==str then return str end
     local len,first,ed,ec,grp,last,curr=#str1
     for plain,color,cnt,start,stop in str1:gsplit(ansi.pattern) do
-        if start==nil then
+        if not start then
             if not grp then return str,first,last,str1 end
-            return type(grp)=='table' and table.concat(grp,'') or grp,first,last,str1
+            if type(grp)=='string' then 
+                grp={grp,plain} 
+            else
+                grp[#grp+1]=plain
+            end
+            return table.concat(grp,''),first,last,str1
         end
 
-        if start>1 then
+        if plain~='' then
             if not grp then 
                 grp=plain 
             elseif type(grp)=='string' then

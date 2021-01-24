@@ -132,6 +132,10 @@ function printer.print(...)
     end
 end
 
+function printer.print_grid(text)
+    printer.print(text,'__BYPASS_GREP__')
+end
+
 function printer.write(output)
     if env.ansi then output=env.ansi.convert_ansi(output) end
     write(console,output)

@@ -31,10 +31,10 @@
 ]]*/
 
 ORA _sqlstat
-col ela,ELA(Avg) format usmhd2
+col ela,ELA(Avg),cost/io format usmhd2
 col iowait,cpuwait,ccwait,clwait,apwait,plsql for pct1
 Col buff,read,write,cellio,oflin,oflout format kmg
-
+set autohide col
 select time,
        &BASE,
        plan_hash,
@@ -44,20 +44,23 @@ select time,
        count(1)    SEENS,
        sum(ela)    ELA,
        round(sum(ela)/nullif(decode(SUM(exec),0,floor(sum(parse)/greatest(sum(px_count),1)),sum(exec)),0),2) "ELA(Avg)",
-       sum(iowait)/sum(ela) iowait,
-       sum(cpuwait)/sum(ela) cpuwait,
-       sum(ccwait)/sum(ela) ccwait,
-       sum(clwait)/sum(ela) clwait,
-       sum(apwait)/sum(ela)  apwait,
-       sum(plsql)/sum(ela)  plsql,
-       round(sum(buff)/&avg,2) buff,
-       &ver round(sum(cellio)/&avg,2) cellio, round(sum(oflin)/&avg,2) oflin, round(sum(oflout)/&avg,2) oflout,
-       round(sum(read)/&avg,2) read,
-       round(sum(write)/&avg,2)  write,
-       round(sum(rows#)/&avg,2) rows#,
-       round(sum(fetches)/&avg,2) fetches,
-       round(sum(invalids)/&avg,2) invalid,
-       max(px_count) px
+       sum(iowait)/nullif(sum(ioreqs),0) "Cost/IO",
+       nullif(sum(iowait)/sum(ela),0) iowait,
+       nullif(sum(cpuwait)/sum(ela),0) cpuwait,
+       nullif(sum(ccwait)/sum(ela),0) ccwait,
+       nullif(sum(clwait)/sum(ela),0) clwait,
+       nullif(sum(apwait)/sum(ela),0)  apwait,
+       nullif(sum(plsql)/sum(ela),0)  plsql,
+       nullif(round(sum(buff)/&avg,2),0) buff,
+       nullif(round(sum(cellio)/&avg,2),0) cellio, 
+       nullif(round(sum(oflin)/&avg,2),0) oflin, 
+       nullif(round(sum(oflout)/&avg,2),0) oflout,
+       nullif(round(sum(read)/&avg,2),0) read,
+       nullif(round(sum(write)/&avg,2),0)  write,
+       nullif(round(sum(rows#)/&avg,2),0) rows#,
+       nullif(round(sum(fetches)/&avg,2),0) fetches,
+       nullif(round(sum(invalids)/&avg,2),0) invalid,
+       nullif(max(px_count),0) px
 FROM(
     select /*+no_expand*/
            to_char(max(tim),'&TIM') time,&BASE,plan_hash,
@@ -67,6 +70,7 @@ FROM(
            count(1)    SEENS,
            sum(ela)    ELA,
            sum(iowait) iowait,
+           sum(ioreqs) ioreqs,
            sum(cpuwait) cpuwait,
            sum(ccwait) ccwait,
            sum(clwait) clwait,
@@ -92,11 +96,12 @@ FROM(
                nvl(MIN(decode(executions,0,null,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN 0 FOLLOWING AND UNBOUNDED FOLLOWING),
                    MAX(decode(parse_calls,0,null,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN UNBOUNDED PRECEDING AND 0 PRECEDING)) snap_id,
                round(a.elapsed_time,2) ela,
-               ROUND(a.iowait,2) iowait,
+               a.iowait,
                ROUND(a.cpu_time,2) cpuwait,
                ROUND(a.ccwait,2) ccwait,
                ROUND(a.clwait,2) clwait,
                ROUND(a.apwait,2) apwait,
+               a.ioreqs,
                a.px_servers_execs px_count,
                PLSEXEC_TIME+JAVEXEC_TIME PLSQL,
                cellio,oflin,oflout,
