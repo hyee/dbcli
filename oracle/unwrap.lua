@@ -77,7 +77,7 @@ local thresholds={
     sqlstat_min=1024*1024,
     buff_gets_min=1024*1024/16,
     user_fetch_count=1000,
-    disk_reads=1e6,
+    disk_reads=math.pow(1024,3)*256/8192,
     buffer_gets=math.pow(1024,4)/8192,
     --buff_get_rate=0.7 --the threshold of cpu_time/elapsed_time to calc avg buffer get time
 }
@@ -126,10 +126,10 @@ function unwrap.analyze_sqlmon(text,file,seq)
         ["16"]="HASH"
     }
     env.var.define_column('max_io_reqs,Est|Cost,Est|Rows,Act|Rows,Skew|Rows,Read|Reqs,Write|Reqs,Start|Count,Buff|Gets,Disk|Read,Direx|Write,Fetch|Count','for','tmb1')
-    env.var.define_column('max_aas,max_cpu,max_waits,max_other_sql_count,max_imq_count,From|Start,From|End,Active|Clock,Resp|Time,Ref|AAS,ASH|AAS,CPU|AAS,Wait|AAS,IMQ|AAS,Other|SQL,resp,aas','for','smhd2')
+    env.var.define_column('max_aas,max_cpu,max_waits,max_other_sql_count,max_imq_count,From|Start,From|End,Active|Clock,Ref|AAS,ASH|AAS,CPU|AAS,Wait|AAS,IMQ|AAS,Other|SQL,resp,aas','for','smhd2')
     env.var.define_column('duration,bucket_duration,Wall|Time,Elap|Time,Avg|Buff,Avg|I/O','for','usmhd2')
     env.var.define_column('max_io_bytes,max_buffer_gets,I/O|Bytes,Mem|Bytes,Max|Mem,Temp|Bytes,Max|Temp,Inter|Connc,Avg|Read,Avg|Write,Unzip|Bytes,Elig|Bytes,Return|Bytes,Read|Bytes,Write|Bytes,Avg|Read,Avg|Write','for','kmg1')
-    env.var.define_column('pct,(%)|AAS','for','pct')
+    env.var.define_column('pct','for','pct')
     env.set.set('autohide','col')
     text,file={},file:gsub('%.[^\\/%.]+$','')..(seq and ('_'..seq) or '')
     
@@ -850,7 +850,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         table.sort(lines,function(o1,o2) return o1[2]>o2[2] end)
         for i=1,math.min(top or 1,#lines) do
             if not first then first=lines[i][2] end
-            l[i]=lines[i][1]..to_pct(lines[i][2],as,rt)
+            l[i]=lines[i][1]..((top or 1)==1 and ' ' or '')..to_pct(lines[i][2],as,rt)
         end
         return table.concat(l,', '),first
     end
@@ -936,7 +936,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             end
             table.sort(top_lines,function(a,b) return (a[4] or a[3])>(b[4] or b[3]) end)
             table.insert(top_lines,1,{'Id','Resp','AAS','Pct','Top Event'})
-            for i=#top_lines,math.max(7,#events+1),-1 do
+            for i=#top_lines,math.max(5,#events),-1 do
                 top_lines[i]=nil
             end
             top_lines.topic,top_lines.colsep,events.topic='Top Lines','|','Wait Events'
@@ -1314,6 +1314,12 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 tonumber(s.dop),
                 nil,
                 '|',
+                e[3],
+                s.aas,
+                e[5],
+                '|',
+                e[2],
+                '|',
                 format_operation(table.concat(lvs,'',1,depth),s.name,s.options,color),
                 '|',
                 obj,
@@ -1345,12 +1351,6 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 tonumber(s.write_reqs),
                 s.write_reqs and math.ceil(tonumber(s.write_bytes)/tonumber(s.write_reqs)) or nil,
                 s.cell_offload_efficiency,
-                '|',
-                e[3],
-                s.aas,
-                e[5],
-                '|',
-                e[2],
                 '|',
                 strip_quote(p.object_alias),
                 '|',
@@ -1676,11 +1676,12 @@ function unwrap.analyze_sqlmon(text,file,seq)
         end
 
         if lines and #lines>0 then
-            table.insert(lines,1,{'Id','Ord','|','PX#','DoP','Skew','|','Operation','|','Object Name','|','Pred','|','Proj','|',
+            table.insert(lines,1,{'Id','Ord','|','PX#','DoP','Skew','|','Resp','AAS','Pct',
+                                  '|','Top Event','|','Operation','|','Object Name','|','Pred','|','Proj','|',
                                   'Distrib|Partition','|','Est|Cost','Est|Rows','Act|Rows','|',
                                   'Start|Count','From|Start','From|End','Active|Clock','|','Max|Mem','Max|Temp','|',
                                   'Inter|Connc','Read|Reqs','Avg|Read','Write|Reqs','Avg|Write','Offload|Effi(%)','|',
-                                  'Resp|Time','ASH|AAS','(%)|AAS','|','Top|Event','|','Object|Alias','|','Query|Block'})
+                                  'Object|Alias','|','Query|Block'})
             
             lines.topic='Execution Plan Lines'
             lines.footprint='[ '..(lines.status and (lines.status..' | ') or '')..'Pred: A=Access-cols, F=Filter-cols | Proj: B=Proj-avg-bytes, C=Proj-cols, K=Keys, R=Proj-rowsets ]'
@@ -2005,7 +2006,7 @@ function unwrap.onload()
         
         1) @@NAME [<owner>.]<object_name> :  Unwrap a specific function/procedure/package/trigger/type/java_class
         2) @@NAME <schema_name>           :  Unwrap all functions/procedures/packages/triggers/types of a schema
-        3) @@NAME <sql file>              :  Unwrap the file that stores the encripted PL/SQL code
+        3) @@NAME <sql file>              :  Unwrap the file that stores the encrypted PL/SQL code
         4) @@NAME <SQL Monitor File>      :  Decrypt the active SQL Monitor Report and analyze the content
         5) @@NAME <Perfhub file>          :  Decrypt the Performance Hub Active Report and analyze all its active SQL Monitor reports
         6) @@NAME <file>                  :  Decrypt other kinds of file that have Based64+zlib compressed content, such as the SQL detail report.
