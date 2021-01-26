@@ -83,6 +83,7 @@ Parameters
     _gcs_flash_cache_mode: 1-allows a local instance to serve the flash block to the remote requester/2-disallow
     _cr_grant_local_role: controls 3-way CR grants. Auto:depends on cpu load(85%), and latency of 'gc cr grant 2-way + db file sequential read' vs 'gc current block 2-way', and 'gc cr grant 2-way' vs 'gc current block 3-way'
 DMLs.
+    _lm_share_lock_opt: false to help reducing 'ges resource hash list' in some cases, also _ksi_clientlocks_enabled=false(11g value)
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
     support compression for updating compressed table(dbms_compression.INCREMENTAL_COMPRESS): alter session set events '70001 trace name context forever, level <object_id>' 
