@@ -490,8 +490,12 @@ function var.format_function(fmt,next_fmt)
     elseif f=='PCT' or f=='PERCENTAGE' or f=='PERCENT' then
         local float_fmt="%."..scale.."f%%"
         func=function(v)
-            if not tonumber(v) then return v,1 end
-            return float_fmt:format(tonumber(v)*100),1
+            local v1=tonumber(v)
+            if not v1 then return v,1 end
+            if scale>0 and math.floor(v*math.pow(10,scale))/math.pow(10,scale-2)==100 then
+                return ("%."..(scale-1).."f%%"):format(v1*100),1
+            end
+            return float_fmt:format(v1*100),1
         end
     elseif (f:find("%",1,true) or 999)<#f or f=='K' then
         local f1,String=fmt,String
