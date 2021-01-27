@@ -126,7 +126,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
     local number_fmt=env.var.format_function('tmb2')
     local instance_id,session_id=tonumber(hd.target._attr.instance_id),tonumber(hd.target._attr.session_id)
     local error_msg=hd.error and hd.error[1]:trim() or nil
-    local px_alloc,sql_id,status,plsql,interval=0
+    local default_dop,px_alloc,sql_id,status,plsql,interval=0,0
     local colors={'$COMMANDCOLOR$','$PROMPTCOLOR$','$HIB$','$PROMPTSUBCOLOR$'}
     --from x$qksxa_reason
     local reasons={
@@ -428,6 +428,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
             px_alloc=tonumber(v)
         elseif k=='bucket_interval' then
             interval=tonumber(v)
+        elseif k=='dop' then
+            default_dop=tonumber(v)
         end
         k=default_titles[k] or k
         if type(v)=='string' and #v>=30 then v=v:sub(1,25):rtrim('.')..'..' end
@@ -492,12 +494,25 @@ function unwrap.analyze_sqlmon(text,file,seq)
                              hd.report_parameters or {},
                              (hd.activity_detail or hd.activity_sampled or {})._attr or {},
                              hd.target._attr or {},
-                             hd.target or {}} do
+                             hd.target or {},
+                             hd.parallel_info and hd.parallel_info._attr or {}} do
             for k,v in pairs(attr) do
                 if type(v)=='string' and k~='sql_fulltext' then
                     add_header(k,v) 
                 elseif k=='rminfo' then
                     add_header(k,v._attr.rmcg) 
+                end
+            end
+        end
+
+        if default_dop==0 then
+            for _,o in pair(hd.plan and hd.plan.operation or {}) do
+                if o.other_xml then
+                    for _,i in pair(o.other_xml.info) do
+                        if i._attr and i._attr.type=='dop' then
+                            add_header('dop',i[1])
+                        end
+                    end
                 end
             end
         end
@@ -680,7 +695,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     local v1=tonumber(v[1])
                     if v1 then
                         if row==sqlstat[2] and idx==buff_idx and buffer_bytes then
-                            add_header('buffer_block_size','$COMMANDCOLOR$'..math.round(buffer_bytes/v1/1024)..' KB$NOR$')
+                            add_header('avg_buffer_size','$COMMANDCOLOR$'..math.round(buffer_bytes/v1/1024)..' KB$NOR$')
                         end
                         if v1>(idx==buff_idx and thresholds.buff_gets_min or thresholds.sqlstat_min) and max_stats 
                             and max_stats.childs>=thresholds.px_process_count
@@ -922,7 +937,11 @@ function unwrap.analyze_sqlmon(text,file,seq)
         end
         table.sort(lines,function(o1,o2) return o1[2]>o2[2] end)
         for i=1,math.min(top or 1,#lines) do
-            if i==1 and (top or 1)==1 then return lines[i][1],tonumber(to_pct(lines[i][2],as,rt):match('[%d%.]+')/100) end
+            if i==1 and (top or 1)==1 then
+                local pct=to_pct(lines[i][2],as,rt):match('[%d%.]+')
+                if pct then pct=tonumber(pct)/100 end
+                return lines[i][1],pct
+            end
             l[i]=lines[i][1]..' '..to_pct(lines[i][2],as,rt)
         end
         return table.concat(l,', '),first
@@ -1005,6 +1024,36 @@ function unwrap.analyze_sqlmon(text,file,seq)
         ['Dynamic Scan Tasks on Thread']='imds',
         ['Metadata bytes']='slow_meta',
     }
+    
+    local px_group={}
+    local function load_plan_px_group()
+        for _,b in pair(hd.activity_detail and hd.activity_detail.bucket) do
+            for _,a in pair(b.activity) do
+                local att=a._attr
+                if att and att.line and att.px then
+                    local line,g=tonumber(att.line),tonumber(att.px)
+                    local rt,as=tonumber(att.rt) or 0,tonumber(a[1]) or 0
+                    if not px_group[line] then px_group[line]={} end
+                    if not px_group[line][g] then px_group[line][g]={} end
+                    px_group[line][g].as=(px_group[line][g].as or 0)+as
+                    px_group[line][g].rt=(px_group[line][g].rt or 0)+rt
+                end
+            end
+        end
+
+        for line,grps in pairs(px_group) do
+            local cnt,as,rt,g=0,0,0
+            for grp,o in pairs(grps) do
+                if as<o.as or as==o.as and rt<o.rt then
+                    as,rt,g=o.as,o.rt,grp
+                end
+                if o.as>=1 then cnt=cnt+1 end
+            end
+            px_group[line].g,px_group[line].c=g,cnt
+        end
+    end
+    load_plan_px_group()
+
     local plan_stats
     local function load_plan_monitor()
         local rwstats={}
@@ -1082,6 +1131,14 @@ function unwrap.analyze_sqlmon(text,file,seq)
         table.sort(plan_stats,function(a,b) return tonumber(a._attr.id)<tonumber(b._attr.id) end)
         
         local lvs={}
+        
+        local function build_gs(g,s,id,depth,color)
+            local stat=px_stats[g..'.'..s]
+            local px={depth=depth,id=id,g=g,s=s,color=color or gs_color(g,s),loc=#gs.list+1,cnt=stat and stat.cnt or nil}
+            gs[#gs+1],gs.list[#gs.list+1]=px,px
+            return gs[#gs]
+        end
+
         for n,p in ipairs(plan_stats) do
             local info,pid=p._attr
             local id,depth=tonumber(info.id),tonumber(info.depth)
@@ -1091,7 +1148,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             info._cid={id=id}
             lvs[depth]=info._cid
             if depth>0 then
-                lvs[depth-1][#lvs[depth-1]+1]=id
+                lvs[depth-1][tonumber(info.position) or (#lvs[depth-1]+1)]=id
                 pid=lvs[depth-1]
                 info._pid=pid
             end
@@ -1121,31 +1178,44 @@ function unwrap.analyze_sqlmon(text,file,seq)
             end
             if p.rwsstats then process_rwstat(id,p.rwsstats) end
 
-            
+            local g1,s1=px_group[id] and px_group[id].g or nil,tonumber(info.px_type)
             if p._attr.name=='PX SEND' then
                 while #gs>0 and depth<=gs[#gs].depth do
                     gs[#gs]=nil
                 end
-                if not gs[#gs] then 
+
+                if not gs[#gs] then
                     gs.g,gs.s=gs.g+1,1
                 else
                     gs.s=gs[#gs].s==1 and 2 or 1
                 end
-                local stat=px_stats[gs.g..'.'..gs.s]
-                local px={depth=depth,id=id,g=gs.g,s=gs.s,color=gs_color(gs.g,gs.s),loc=#gs.list+1,cnt=stat and stat.cnt or nil}
-                gs[#gs+1]=px
-                gs.list[#gs.list+1]=px
-                info.gs=gs[#gs]
+
+                g1,s1=g1 or gs.g,s1 or gs.s
+                if g1~=gs.g then
+                    local r1,r2=px_group[id][g1],px_group[id][gs.g]
+                    if r2 and r1.as==r2.as then
+                        g1=gs.g
+                        px_group[id].g=g1
+                    end
+                end
+                info.gs=build_gs(g1 or gs.g,s1 or gs.s,id,depth)
             elseif depth>0 then
                 info.gs=infos[info._pid.id].gs
-                local px_type=tonumber(info.px_type)
-                if px_type and info.gs and px_type~=info.gs.s then
-                    for i=info.gs.loc+1,#gs.list do
-                        if gs.list[i].s==px_type then
-                            info.gs=gs.list[i]
-                            break
+                local c=px_group[id] and px_group[id].c or 1
+                if info.gs then
+                    local g1,s1=g1 or info.gs.g,s1 or info.gs.s
+                    if g1~=info.gs.g then
+                        local r1,r2=px_group[id][g1],px_group[id][info.gs.g]
+                        if r2 and r1.as==r2.as then
+                            g1=info.gs.g
+                            px_group[id].g=g1
                         end
                     end
+                    if g1~=info.gs.g or s1~=info.gs.s then
+                        info.gs=build_gs(g1,s1,id,depth)
+                    end
+                elseif g1 and s1 then
+                    info.gs=build_gs(g1,s1,id,depth)
                 end
             end
             
@@ -1246,9 +1316,16 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 nil,nil,nil,nil,0, --buckets
                 lines={}
             }
-            if grp[ev] and attr.step and not attr.step:find('[PX] Exec',1,true) and grp[ev]~=attr.step then grp[ev]=grp[ev]..' ('..attr.step..')' end
+            if attr.step then
+                if grp[ev]~=attr.step and not attr.step:find('[PX] Exec',1,true) and grp[ev]~=attr.step then 
+                    grp[ev]=grp[ev]..' ('..attr.step..')' 
+                end
+            end
             --group by class+event
             local event=grp[ev] or grp[cl] or ' '
+            if event==attr.step and grp[cl] then
+                event=grp[cl]..' - '..event
+            end
             if #event>max_event_len+3 then 
                 event=event:sub(1,max_event_len):rtrim('.')..'..' 
             elseif event:lower()=='cpu' then
@@ -1274,8 +1351,14 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 --aggregate line level events: {rt,aas}
                 grp.lines[id][i]=(grp.lines[id][i] or 0)+v
                 ids[id].events[event][i]=(ids[id].events[event][i] or 0)+v
-                if not attr.skew_count or i==1 then 
-                    clock[id][i]=(clock[id][i] or 0)+v
+                if not attr.skew_count or i==1 then
+                    if attr.dop then
+                        clock[id][4]=(clock[id][4] or 0)+v/math.max(tonumber(attr.dop),1)
+                    elseif default_dop>1 and attr.step and not infos[id].dop and not(infos[id].gs and infos[id].gs.cnt) then
+                        clock[id][4]=(clock[id][4] or 0)+v/default_dop
+                    else
+                        clock[id][i]=(clock[id][i] or 0)+v
+                    end
                 end
                 if v>0 then
                     local clz,w=grp[cl]
@@ -1308,16 +1391,16 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local itv,total=interval,0
             for id,aas in pairs(clock) do
                 local g=infos[id].gs
-                local dop=tonumber(infos[id].dop or g and g.cnt or 1)
+                local dop=tonumber(infos[id].dop or infos[id].px_type=='QC' and default_dop or g and g.cnt) or 1
                 local dop1=dop
-                if dop1 and g and dop1>g.cnt then 
+                if dop1 and g and g.cnt and dop1>g.cnt then 
                     dop1=g.cnt
                 end
 
-                for i=3,1,-1 do
+                for i=4,1,-1 do
                     local c=aas[i]
                     if c and c>0 then
-                        if dop<2 or i==3 then
+                        if dop<2 or i>2 then
                             ids[id].clock[2]=(ids[id].clock[2] or 0)+c
                             total_clock=total_clock+c 
                             itv=itv-c
@@ -1369,7 +1452,11 @@ function unwrap.analyze_sqlmon(text,file,seq)
         end
         env.var.define_column('AAS1','noprint')
         env.var.define_column('Clock','for','smhd2')
-        table.sort(top_lines,function(a,b) return (a[2] or a[10])>(b[2] or b[10]) end)
+        table.sort(top_lines,function(a,b)
+            if not a[2] then return false end
+            if not b[2] then return true end
+            return a[2] > b[2]
+        end)
         table.insert(top_lines,1,{'Id','Clock','Pct','|','Resp',clock_diffs==0 and 'AAS1' or 'AAS','|','Top Event','AAS%'})
         for i=#top_lines,math.max(7,#events+1),-1 do
             top_lines[i]=nil
@@ -1386,7 +1473,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         local child_fmt,child_color='%s%s$NOR$'
         local ord_fmt='%'..(#(tostring(xid+1)))..'s'
         xid='%'..(#(tostring(xid)))..'d'
-        local id_fmt='%s%s'..xid..'%s'
+        local id_fmt='%s%s%s'
         local function format_operation(pad,operation,options,color)
             local st=color or ''
             local ed=color and '$NOR$' or ''
@@ -1407,7 +1494,9 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     lines.status=stat..': Running'
                 end
             end
-            return id_fmt:format(stat or skp>0 and '-' or pred and '*' or ' ',st,id,ed)
+            id=xid:format(id)
+            if st~='' then id=id:gsub('%d+',function(s) return st..s end) end
+            return id_fmt:format(stat or skp>0 and '-' or pred and '*' or ' ',id,ed)
         end
 
         local function add_hint(text)
@@ -1521,9 +1610,13 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local ord=ord_fmt:format((color or child or #s._cid==0 or not s._pid) and s.ord or (prev_ord:find('%d') and '^') or ':')
             prev_ord=ord
             local most_recent=tonumber(s.from_most_recent)
+            local coord_color=s.name=='PX COORDINATOR' and '$UDL$' or nil
+            if coord_color and px_color then
+                coord_color=coord_color..'$HEADCOLOR$'
+            end
             lines[#lines+1]={
                 id=id,
-                format_id(id,tonumber(s.skp) or 0,px_color,preds.ids[id],most_recent),
+                format_id(id,tonumber(s.skp) or 0, px_group[id] and px_group[id].c>1 and ('$HEADCOLOR$'..(px_color or '')) or px_color,preds.ids[id],most_recent),
                 ord,
                 '|',
                 px_type,
@@ -1540,7 +1633,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 e[2],
                 e[1],
                 '|',
-                format_operation(table.concat(lvs,'',1,depth),s.name,s.options,color),
+                format_operation(table.concat(lvs,'',1,depth),s.name,s.options,color or coord_color),
                 '|',
                 obj,
                 '|',
@@ -1789,6 +1882,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 if j<len then header[#header+1]='|' end
             end
             local gs_idx=1
+
             for i,c in ipairs(skews) do
                 local t=c[skew_aas_index]
                 if t then
@@ -1801,6 +1895,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 while gs.list[gs_idx+1] and gs.list[gs_idx+1].id<=id do
                     gs_idx=gs_idx+1
                 end
+                --print(id,gs_idx,gs.list[gs_idx].g,gs.list[gs_idx].s,c[2],table.dump(px_sets[c[2]]))
                 
                 if gs.list[gs_idx] then
                     local rank,name,color=-1
