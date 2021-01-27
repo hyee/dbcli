@@ -1145,10 +1145,10 @@ function unwrap.analyze_sqlmon(text,file,seq)
             info.id,infos[id]=id,info
             xid=xid<id and id or xid
             nid=nid>id and id or nid
-            info._cid={id=id}
+            info._cid={id=id,position=tonumber(info.position)}
             lvs[depth]=info._cid
             if depth>0 then
-                lvs[depth-1][tonumber(info.position) or (#lvs[depth-1]+1)]=id
+                lvs[depth-1][tonumber(info.position)]=id
                 pid=lvs[depth-1]
                 info._pid=pid
             end
@@ -1166,6 +1166,14 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 end
             end
 
+            local st,ed=tonumber(info.from_sql_exec_start) or 1e9,tonumber(info.from_most_recent) or 1e9
+            info._cid.st,info._cid.ed=st,ed
+            for i=1,depth-1 do
+                local c=infos[lvs[depth-1].id]._cid
+                if c.st>st then c.st=st end
+                if c.ed>ed then c.ed=ed end
+            end
+            
             for k,s in pairs(p.optimizer or {}) do
                 if k=='cardinality' then k='card' end
                 info[k]=s
@@ -1177,9 +1185,37 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 end
             end
             if p.rwsstats then process_rwstat(id,p.rwsstats) end
+            local obj=p.object or {}
+            info.object,info.owner=obj.name,obj.owner
+        end
 
-            local g1,s1=px_group[id] and px_group[id].g or nil,tonumber(info.px_type)
-            if p._attr.name=='PX SEND' then
+        local curr=xid+1
+        local function process_ord(node,parent)
+            node.ord=curr
+            curr=curr-1
+            if parent and (parent.gs==node.gs or not parent.gs) then
+                parent.child_dop=node.dop or node.child_dop
+                node.parent_dop=parent.dop or parent.parent_dop
+            end
+
+            table.sort(node._cid,function(a,b)
+                local n1,n2=infos[a]._cid,infos[b]._cid
+                if n1.st~=n2.st then return n1.st<n2.st end
+                if n1.ed~=n2.ed then return n2.ed<n2.ed end
+                return n1.position<n2.position
+            end)
+
+            for i=#node._cid,1,-1 do
+                process_ord(infos[node._cid[i]],node)
+            end
+        end
+        process_ord(infos[nid])
+
+        local function process_gs(node,parent)
+            local id,depth=tonumber(node.id),tonumber(node.depth)
+            local g1,s1=px_group[id] and px_group[id].g or nil,tonumber(node.px_type)
+
+            if node.name=='PX SEND' then
                 while #gs>0 and depth<=gs[#gs].depth do
                     gs[#gs]=nil
                 end
@@ -1198,57 +1234,41 @@ function unwrap.analyze_sqlmon(text,file,seq)
                         px_group[id].g=g1
                     end
                 end
-                info.gs=build_gs(g1 or gs.g,s1 or gs.s,id,depth)
+                node.gs=build_gs(g1 or gs.g,s1 or gs.s,id,depth)
             elseif depth>0 then
-                info.gs=infos[info._pid.id].gs
+                node.gs=infos[node._pid.id].gs
                 local c=px_group[id] and px_group[id].c or 1
-                if info.gs then
-                    local g1,s1=g1 or info.gs.g,s1 or info.gs.s
-                    if g1~=info.gs.g then
-                        local r1,r2=px_group[id][g1],px_group[id][info.gs.g]
+                if node.gs then
+                    local g1,s1=g1 or node.gs.g,s1 or node.gs.s
+                    if g1~=node.gs.g then
+                        local r1,r2=px_group[id][g1],px_group[id][node.gs.g]
                         if r2 and r1.as==r2.as then
-                            g1=info.gs.g
+                            g1=node.gs.g
                             px_group[id].g=g1
                         end
                     end
-                    if g1~=info.gs.g or s1~=info.gs.s then
-                        info.gs=build_gs(g1,s1,id,depth)
+                    if g1~=node.gs.g or s1~=node.gs.s then
+                        node.gs=build_gs(g1,s1,id,depth)
                     end
                 elseif g1 and s1 then
-                    info.gs=build_gs(g1,s1,id,depth)
+                    node.gs=build_gs(g1,s1,id,depth)
                 end
             end
             
-            if gs[#gs] and not gs[#gs].dop then gs[#gs].dop=info.dop end
+            if gs[#gs] and not gs[#gs].dop then gs[#gs].dop=node.dop end
 
-            if pid then
-                pid=infos[pid.id]
-                if info.gs and info.gs==pid.gs then
-                    if not info.px_type and pid.dop then
-                        info.px_type=pid.px_type
+            if parent then
+                if node.gs and node.gs==parent.gs then
+                    if not node.px_type and parent.dop then
+                        node.px_type=parent.px_type
                     end
                 end
             end
 
-            if pxname and info.px_type then
-                info.pxname=pxname..'#'..info.px_type
-            end
+            for _,n in ipairs(node._cid) do process_gs(infos[n],node) end
 
-            local obj=p.object or {}
-            info.object,info.owner=obj.name,obj.owner
-        end
-        local curr=xid+1
-        local function process_ord(node,parent)
-            node.ord=curr
-            curr=curr-1
-            if parent and (parent.gs==node.gs or not parent.gs) then
-                parent.child_dop=node.dop or node.child_dop
-                node.parent_dop=parent.dop or parent.parent_dop
-            end
-            
-            local px_type,g=node.px_type
-            if tonumber(px_type) and not node.gs then
-                g,px_type=g or 1,tonumber(px_type)
+            local px_type,g=tonumber(node.px_type),px_group[id] and px_group[id].g or 1
+            if px_type and not node.gs then
                 for i,l in ipairs(gs.list) do
                     if g==l.g and px_type==l.s then
                         node.gs=l
@@ -1258,12 +1278,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     end
                 end
             end
-
-            for i=#node._cid,1,-1 do
-                process_ord(infos[node._cid[i]],node)
-            end
         end
-        process_ord(infos[nid])
+        process_gs(infos[nid])
     end
     load_plan_monitor()
 
@@ -1354,6 +1370,11 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 if not attr.skew_count or i==1 then
                     if attr.dop then
                         clock[id][4]=(clock[id][4] or 0)+v/math.max(tonumber(attr.dop),1)
+                    elseif default_dop>1 and not attr.line then
+                        clock[id][4]=(clock[id][4] or 0)+v/default_dop
+                    elseif infos[id].px_type=='QC' then
+                        local dop=infos[id].dop or default_dop
+                        clock[id][4]=(clock[id][4] or 0)+v/((attr.px) and dop or 1)
                     elseif default_dop>1 and attr.step and not infos[id].dop and not(infos[id].gs and infos[id].gs.cnt) then
                         clock[id][4]=(clock[id][4] or 0)+v/default_dop
                     else
@@ -1391,7 +1412,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local itv,total=interval,0
             for id,aas in pairs(clock) do
                 local g=infos[id].gs
-                local dop=tonumber(infos[id].dop or infos[id].px_type=='QC' and default_dop or g and g.cnt) or 1
+                local dop=tonumber(infos[id].dop or g and (g.cnt or g.dop)) or 1
                 local dop1=dop
                 if dop1 and g and g.cnt and dop1>g.cnt then 
                     dop1=g.cnt
@@ -1404,6 +1425,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                             ids[id].clock[2]=(ids[id].clock[2] or 0)+c
                             total_clock=total_clock+c 
                             itv=itv-c
+                            aas[i]=0
                         elseif i==2 then
                             list[id]=(list[id] or 0)+c
                             c=c/dop1
@@ -1608,6 +1630,9 @@ function unwrap.analyze_sqlmon(text,file,seq)
             if start_at and (first_start==nil or first_start>start_at) then first_start=start_at end
             s.aas=e[4]
             local ord=ord_fmt:format((color or child or #s._cid==0 or not s._pid) and s.ord or (prev_ord:find('%d') and '^') or ':')
+            if s.ord==1 then
+                ord=colors[2]..ord..'$NOR$'
+            end
             prev_ord=ord
             local most_recent=tonumber(s.from_most_recent)
             local coord_color=s.name=='PX COORDINATOR' and '$UDL$' or nil
