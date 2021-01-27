@@ -177,7 +177,6 @@ function unwrap.analyze_sqlmon(text,file,seq)
             shadow=grid.format_output(shadow)
         end
 
-
         text[#text+1]=type(shadow)=='string' and shadow or msg
         if not seq then
             if type(shadow)=='string' then
@@ -231,10 +230,12 @@ function unwrap.analyze_sqlmon(text,file,seq)
             sql_id=hd.report_parameters.sql_id or hd.target._attr.sql_id
             title('SQL '..sql_id)
             sql_text=type(sql_text)=='table' and sql_text[1] or sql_text
+            local is_cut
             if #sql_text>512 and not sql_text:sub(1,512):find('\n') then
                 local width=console:getScreenWidth()-50
                 local len,result,pos,pos1,c,p=#sql_text,{},1
                 local pt="[|'\"),%] =]"
+                local ln=0
                 while true do
                     result[#result+1]=sql_text:sub(pos,pos+width-1)
                     pos=pos+width
@@ -244,25 +245,22 @@ function unwrap.analyze_sqlmon(text,file,seq)
                         c=p or sql_text:sub(pos1,pos1)
                         p=sql_text:sub(pos1+1,pos1+1)
                         if c=='' or (c:find(pt) and not p:find(pt)) then
+                            ln=ln+1
                             result[#result+1]=sql_text:sub(pos,pos1)..'\n'
                             pos=pos1+1
                             break
                         end
                     end
                     if len<pos then break end
+                    if ln>32 then
+                        result[#result]='\n...... The Full SQL Text can be found in the text file ......'
+                        break
+                    end
                 end
                 sql_text=table.concat(result,'')
             end
             local text,data=grid.tostring({{sql_text}},false,'','')
-            if #text>2048 then
-                brief_text=text:split('\n')
-                local last_idx=32
-                if #brief_text>last_idx then
-                    brief_text[last_idx]=brief_text[last_idx]..'\n...... The Full SQL Text can be found in the text file ......'
-                    text=table.concat(brief_text,'\n',1,last_idx)
-                end
-            end
-            pr(text,data)
+            pr(text,hd.target.sql_fulltext)
         end
     end
     load_sql_text()
@@ -1145,13 +1143,14 @@ function unwrap.analyze_sqlmon(text,file,seq)
             info.id,infos[id]=id,info
             xid=xid<id and id or xid
             nid=nid>id and id or nid
-            info._cid={id=id,position=tonumber(info.position)}
+            info._cid={id=id,position=id}
             lvs[depth]=info._cid
             if depth>0 then
-                lvs[depth-1][tonumber(info.position)]=id
+                lvs[depth-1][1+#lvs[depth-1]]=id
                 pid=lvs[depth-1]
                 info._pid=pid
             end
+            
             --[[first_active/first_row/last_active/duration/from_most_recent/from_sql_exec_start/percent_complete/time_left/
                 starts/max_starts/dop/cardinality/max_card/memory/max_memory/min_max_mem/temp/max_temp/spill_count/max_max_temp
                 read_reqs/max_read_reqs/read_bytes/max_read_bytes/write_reqs/max_write_reqs/write_bytes/max_write_bytes/
@@ -1168,10 +1167,16 @@ function unwrap.analyze_sqlmon(text,file,seq)
 
             local st,ed=tonumber(info.from_sql_exec_start) or 1e9,tonumber(info.from_most_recent) or 1e9
             info._cid.st,info._cid.ed=st,ed
-            for i=1,depth-1 do
-                local c=infos[lvs[depth-1].id]._cid
+
+            while true do
+                if not pid then
+                    break
+                end
+                local parent=infos[pid.id]
+                local c=parent._cid
                 if c.st>st then c.st=st end
                 if c.ed>ed then c.ed=ed end
+                pid=parent._pid
             end
             
             for k,s in pairs(p.optimizer or {}) do
@@ -1197,11 +1202,11 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 parent.child_dop=node.dop or node.child_dop
                 node.parent_dop=parent.dop or parent.parent_dop
             end
-
+            
             table.sort(node._cid,function(a,b)
                 local n1,n2=infos[a]._cid,infos[b]._cid
                 if n1.st~=n2.st then return n1.st<n2.st end
-                if n1.ed~=n2.ed then return n2.ed<n2.ed end
+                if n1.ed~=n2.ed then return n1.ed>n2.ed end
                 return n1.position<n2.position
             end)
 
@@ -1629,6 +1634,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local start_at=tonumber(s.from_sql_exec_start)
             if start_at and (first_start==nil or first_start>start_at) then first_start=start_at end
             s.aas=e[4]
+            table.sort(s._cid)
             local ord=ord_fmt:format((color or child or #s._cid==0 or not s._pid) and s.ord or (prev_ord:find('%d') and '^') or ':')
             if s.ord==1 then
                 ord=colors[2]..ord..'$NOR$'
