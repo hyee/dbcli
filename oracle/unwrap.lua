@@ -145,7 +145,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
     env.var.define_column('duration,bucket_duration,Wall|Time,Elap|Time,Avg|Buff,Avg|I/O','for','usmhd2')
     env.var.define_column('max_io_bytes,max_buffer_gets,I/O|Bytes,Mem|Bytes,Max|Mem,Temp|Bytes,Max|Temp,Inter|Connc,Avg|Read,Avg|Write,Unzip|Bytes,Elig|Bytes,Return|Bytes,Saved|Bytes,Slow|Meta,Read|Bytes,Write|Bytes,Avg|Read,Avg|Write','for','kmg1')
     env.var.define_column('pct','for','pct')
-    env.var.define_column('cpu%,wait%,sql%,imq%,aas%,aas %|event','for','pct0')
+    env.var.define_column('Id<0%,cpu%,wait%,sql%,imq%,aas%,aas %|event','for','pct0')
     env.set.set('autohide','col')
     text,file={},file:gsub('%.[^\\/%.]+$','')..(seq and ('_'..seq) or '')
     
@@ -504,11 +504,18 @@ function unwrap.analyze_sqlmon(text,file,seq)
         end
 
         if default_dop==0 then
-            for _,o in pair(hd.plan and hd.plan.operation or {}) do
-                if o.other_xml then
-                    for _,i in pair(o.other_xml.info) do
-                        if i._attr and i._attr.type=='dop' then
-                            add_header('dop',i[1])
+            for _,o in pair(hd.target and hd.target.optimizer_env and hd.target.optimizer_env.param) do
+                if o._attr and o._attr.name=='parallel_degree' then
+                    add_header('dop',o[1])
+                end                
+            end
+            if default_dop==0 then
+                for _,o in pair(hd.plan and hd.plan.operation or {}) do
+                    if o.other_xml then
+                        for _,i in pair(o.other_xml.info) do
+                            if i._attr and i._attr.type=='dop' then
+                                add_header('dop',i[1])
+                            end
                         end
                     end
                 end
@@ -1139,14 +1146,19 @@ function unwrap.analyze_sqlmon(text,file,seq)
 
         for n,p in ipairs(plan_stats) do
             local info,pid=p._attr
-            local id,depth=tonumber(info.id),tonumber(info.depth)
+            local id,depth,position=tonumber(info.id),tonumber(info.depth),tonumber(info.position) or id
             info.id,infos[id]=id,info
             xid=xid<id and id or xid
             nid=nid>id and id or nid
-            info._cid={id=id,position=id}
+            info._cid={id=id,position=position}
             lvs[depth]=info._cid
             if depth>0 then
-                lvs[depth-1][1+#lvs[depth-1]]=id
+                if lvs[depth-1][position] then
+                    position=position-1
+                    position=(not lvs[depth-1][position] and position) or 1+#lvs[depth-1]
+                    info._cid.position=position
+                end
+                lvs[depth-1][position]=id
                 pid=lvs[depth-1]
                 info._pid=pid
             end
@@ -1195,6 +1207,25 @@ function unwrap.analyze_sqlmon(text,file,seq)
         end
 
         local curr=xid+1
+
+        local function sort_ord(a,b)
+            local n1,n2=infos[a]._cid,infos[b]._cid
+            if n1.st==1e9 and n1.position<n2.position then return true end
+            if n2.st==1e9 and n1.position>n2.position then return false end
+            local st1,st2=n1.st,n2.st
+            local ed1,ed2=n1.ed,n2.ed
+            if n1.position<n2.position then 
+                ed1=ed1+1+math.abs(b-a)
+                --st1=st1-1
+            else
+                ed2=ed2+1+math.abs(a-b)
+                --st2=st2-1
+            end
+            if st1~=st2 then return st1<st2 end
+            if ed1~=ed2 then return ed1>ed2 end
+            return n1.position<n2.position
+        end
+
         local function process_ord(node,parent)
             node.ord=curr
             curr=curr-1
@@ -1202,14 +1233,22 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 parent.child_dop=node.dop or node.child_dop
                 node.parent_dop=parent.dop or parent.parent_dop
             end
+            local cid={}
+            for k,v in pairs(node._cid) do
+                if type(k)=='number' then
+                    cid[#cid+1]=v
+                else
+                    cid[k]=v
+                end
+            end
+            if #cid>0 then
+                table.clear(node._cid)
+                for k,v in pairs(cid) do
+                    node._cid[k]=v
+                end
+            end
+            table.sort(node._cid,sort_ord)
             
-            table.sort(node._cid,function(a,b)
-                local n1,n2=infos[a]._cid,infos[b]._cid
-                if n1.st~=n2.st then return n1.st<n2.st end
-                if n1.ed~=n2.ed then return n1.ed>n2.ed end
-                return n1.position<n2.position
-            end)
-
             for i=#node._cid,1,-1 do
                 process_ord(infos[node._cid[i]],node)
             end
@@ -1379,7 +1418,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                         clock[id][4]=(clock[id][4] or 0)+v/default_dop
                     elseif infos[id].px_type=='QC' then
                         local dop=infos[id].dop or default_dop
-                        clock[id][4]=(clock[id][4] or 0)+v/((attr.px) and dop or 1)
+                        clock[id][4]=(clock[id][4] or 0)+v/((attr.px or (attr.step or ''):find('[PX]',1,true)) and dop or 1)
                     elseif default_dop>1 and attr.step and not infos[id].dop and not(infos[id].gs and infos[id].gs.cnt) then
                         clock[id][4]=(clock[id][4] or 0)+v/default_dop
                     else
@@ -1387,13 +1426,13 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     end
                 end
                 if v>0 then
-                    local clz,w=grp[cl]
-                    if i==2 and clz then
-                        clz=clz:lower()
-                        if clz=='cpu' then w=1;add_id_class(id,'cpu',v) end
+                    local w
+                    if i==2 then
+                        if grp[cl]=='Cpu' then w=1;add_id_class(id,'cpu',v) end
                         if grp[ev] and grp[ev]:find('SQL:',1,true) then w=1;add_id_class(id,'sql',v) end
                         if grp[ev]=='in memory' then w=1;add_id_class(id,'imq',v) end
                         if not w then add_id_class(id,'wait',v) end
+                        if not attr.line then add_id_class(id,'no_line',v) end
                     end
                 end
             end
@@ -1414,7 +1453,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             for k1,v1 in pair(v.activity) do 
                 process_stats(v1,clock)
             end
-            local itv,total=interval,0
+            local itv,total,sum=interval,0,0
             for id,aas in pairs(clock) do
                 local g=infos[id].gs
                 local dop=tonumber(infos[id].dop or g and (g.cnt or g.dop)) or 1
@@ -1433,17 +1472,19 @@ function unwrap.analyze_sqlmon(text,file,seq)
                             aas[i]=0
                         elseif i==2 then
                             list[id]=(list[id] or 0)+c
+                            sum=sum+c
                             c=c/dop1
                             aas[2],total=c,total+c
                         else
                             list[id]=(list[id] or 0)+c
+                            sum=sum+c
                             c=c/dop --for resp, devide with dop first
                             aas[2],total=(aas[2] or 0)+c,total+c
                         end
                     end
                 end
             end
-            total=math.max(0,itv/total)
+            total=math.max(0,math.min(itv,sum)/total)
             for id,c in pairs(list) do
                 local ela=math.min(c,math.round(clock[id][2]*total,5))
                 ids[id].clock[2]=(ids[id].clock[2] or 0)+ela
@@ -1659,7 +1700,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 '|',
                 e[3],
                 s.aas,
-                '|',e.class.cpu,e.class.wait,e.class.sql,e.class.imq,
+                '|',e.class.no_line,e.class.cpu,e.class.wait,e.class.sql,e.class.imq,
                 '|',
                 e[2],
                 e[1],
@@ -2038,7 +2079,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
 
         if lines and #lines>0 then
             table.insert(lines,1,{'Id','Ord','|','PX','DoP','Skew','|','Clock','Pct','|','Resp',clock_diffs==0 and 'AAS1' or 'AAS',
-                                  '|','CPU%','Wait%','SQL%','IMQ%',
+                                  '|','Id<0%','CPU%','Wait%','SQL%','IMQ%',
                                   '|','Top Event','AAS%','|','Operation','|','Object Name','|','Pred','|','Proj','|',
                                   'Distrib|Partition','|',--'Est|Cost',
                                   'Act|Rows','Est|Rows','Est|I/O','|',
@@ -2063,7 +2104,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
             env.var.define_column('id','break')
             table.sort(preds,function(a,b) 
                 if a[1]~=b[1] then return a[1]<b[1] end
-                return a[2]<b[2]
+                if a[2]~=b[2] then return a[2]<b[2] end
+                return a[3]:gsub('^.-%-> *','')<b[3]:gsub('^.-%-> *','')
             end)
             table.insert(preds,1,{'Id','Type','Content'})
             title('Predicates/Line Stats')
