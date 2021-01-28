@@ -364,7 +364,7 @@ function var.format_function(fmt,next_fmt)
     end
     f=f:upper()
     if f=="KMG" or f=="TMB" then --KMGTP
-        local units=f=="KMG" and {'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} or {'  ',' K',' M',' B',' T',' Q'}
+        local units=f=="KMG" and {'   ',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} or {'  ',' K',' M',' B',' T',' Q'}
         local div=f=="KMG" and 1024 or 1000
         func=function(v)
             local s=tonumber(v)
@@ -382,7 +382,7 @@ function var.format_function(fmt,next_fmt)
         if f=='' then return end
         adj=1
         local col=f
-        local u1,u2,u3={'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} , {'   ',' Ki',' Mi',' Bi',' Tr',' Qu'},{' us',' ms',' s ',' m ',' h ',' d '}
+        local u1,u2,u3={'   ',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} , {'   ',' Ki',' Mi',' Bi',' Tr',' Qu'},{' us',' ms',' s ',' m ',' h ',' d '}
         local d1,d2,d3=1024,1000,{1000,1000,60,60,24,1}
         local c,p=nil
         local p1={

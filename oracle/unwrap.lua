@@ -81,7 +81,7 @@ local thresholds={
         from_start={1,3},
         disk_reads=math.pow(1024,3)*256/8192,
         buffer_gets=math.pow(1024,4)/8192,
-        time_per_buffer_get=150, --100us
+        time_per_buffer_get=300, --300us
         time_per_io_req=30*1e3 --30ms
     }
     --buff_get_rate=0.7 --the threshold of cpu_time/elapsed_time to calc avg buffer get time
@@ -258,6 +258,13 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     end
                 end
                 sql_text=table.concat(result,'')
+            else
+                sql_text=sql_text:split('\n')
+                local ln=#sql_text
+                if ln>32 then
+                    sql_text[33]='\n...... The Full SQL Text can be found in the text file ......'
+                end
+                sql_text=table.concat(sql_text,'',1,math.min(33,ln))
             end
             local text,data=grid.tostring({{sql_text}},false,'','')
             pr(text,hd.target.sql_fulltext)
@@ -700,7 +707,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     local v1=tonumber(v[1])
                     if v1 then
                         if row==sqlstat[2] and idx==buff_idx and buffer_bytes then
-                            add_header('avg_buffer_size','$COMMANDCOLOR$'..math.round(buffer_bytes/v1/1024)..' KB$NOR$')
+                            add_header('avg_buffer_size','$COMMANDCOLOR$'..math.round(buffer_bytes/v1/1024,2)..' KB$NOR$')
                         end
                         if v1>(idx==buff_idx and thresholds.buff_gets_min or thresholds.sqlstat_min) and max_stats 
                             and max_stats.childs>=thresholds.px_process_count
@@ -1411,7 +1418,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 --aggregate line level events: {rt,aas}
                 grp.lines[id][i]=(grp.lines[id][i] or 0)+v
                 ids[id].events[event][i]=(ids[id].events[event][i] or 0)+v
-                if not attr.skew_count or i==1 then
+                if i>1 and not attr.skew_count or i==1 and attr.line then
                     if attr.dop then
                         clock[id][4]=(clock[id][4] or 0)+v/math.max(tonumber(attr.dop),1)
                     elseif default_dop>1 and not attr.line then
@@ -1529,7 +1536,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         for i=#top_lines,math.max(7,#events+1),-1 do
             top_lines[i]=nil
         end
-        top_lines.topic,top_lines.colsep,events.topic='Top Lines ('..sec2num(total_clock)..')','|','Wait Events ('..sec2num(total_aas)..')'
+        top_lines.topic,top_lines.colsep,events.topic='Top Lines (Clock='..sec2num(total_clock)..')','|','Wait Events (AAS='..sec2num(total_aas)..')'
         line_events={top_lines,'|',events}
     end
     load_activity_detail()
@@ -1567,7 +1574,13 @@ function unwrap.analyze_sqlmon(text,file,seq)
             return id_fmt:format(stat or skp>0 and '-' or pred and '*' or ' ',id,ed)
         end
 
+        local envs={}
         local function add_hint(text)
+            if text:find('^OPT_PARAM') then
+                local name=text:sub(10):match('(['..object_pattern.."]+)")
+                if envs[name] then return end
+                envs[name]=text
+            end
             outlines[#outlines+1]={text:find('@') and '' or "Env",text}
         end
 
@@ -1772,7 +1785,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
 
                 if xml.outline_data then
                     for k,v in pair(xml.outline_data.hint) do
-                        if not v:find('OPT_PARAM') and v~='IGNORE_OPTIM_EMBEDDED_HINTS' then
+                        if v~='IGNORE_OPTIM_EMBEDDED_HINTS' then
                             add_hint(v)
                         end
                     end
@@ -2165,7 +2178,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         file=file..'_'..sql_id
     end
     print("\nSQL Monitor report in text  written to "..env.save_data(file..'.txt',text:strip_ansi()))
-    print("SQL Monitor report in color written to "..env.save_data(file..'_colored.txt',text))
+    print("SQL Monitor report in color written to "..env.save_data(file..'.ans',text))
     if seq then
         if sqlstat[2] then 
             sqlstat[2][1]=tostring(seq):lpad(3)..': '..sql_id
