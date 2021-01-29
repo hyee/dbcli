@@ -895,7 +895,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
             local conv=env.ansi.convert_ansi
             if (tab.topic or "") ~= "" then
                 local topic,st,ed = tab.topic:from_ansi()
-                push(fmt:format(topic:cpad(cols - 2, '-',
+                push(fmt:format(topic:match('[^\n]+'):cpad(cols - 2, '-',
                     function(left, str, right) 
                         return conv(("%s$PROMPTCOLOR$%s$NOR$%s"):format(left, grid.cut(topic, cols - 2):to_ansi(st,ed), right)) 
                     end)))
@@ -912,7 +912,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
             end
             if (tab.footprint or "") ~= "" then
                 local footprint,st,ed = tab.footprint:from_ansi()
-                footprint=footprint:cpad(cols - 2, '-',
+                footprint=footprint:match('[^\n]+'):cpad(cols - 2, '-',
                 function(left, str, right)
                     return conv(("%s$UDL$%s$NOR$%s"):format(left or '', (grid.cut(footprint, cols - 2)):to_ansi(st,ed), right or '')) 
                 end)

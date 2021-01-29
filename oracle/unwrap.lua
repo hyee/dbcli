@@ -125,7 +125,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
     end
     local number_fmt=env.var.format_function('tmb2')
     local instance_id,session_id=tonumber(hd.target._attr.instance_id),tonumber(hd.target._attr.session_id)
-    local error_msg=hd.error and hd.error[1]:trim() or nil
+    local error_msg=hd.error and hd.error[1]:trim():match('[^\n]+') or nil
     local default_dop,px_alloc,sql_id,status,plsql,interval=0,0
     local colors={'$COMMANDCOLOR$','$PROMPTCOLOR$','$HIB$','$PROMPTSUBCOLOR$'}
     --from x$qksxa_reason
@@ -264,7 +264,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 if ln>32 then
                     sql_text[33]='\n...... The Full SQL Text can be found in the text file ......'
                 end
-                sql_text=table.concat(sql_text,'',1,math.min(33,ln))
+                sql_text=table.concat(sql_text,'\n',1,math.min(33,ln))
             end
             local text,data=grid.tostring({{sql_text}},false,'','')
             pr(text,hd.target.sql_fulltext)
@@ -345,7 +345,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             writes='Write Reqs',
             write_kb='Write Bytes',
             interc_kb='Interconnect Bytes',
-            cache_kb='Logical  Bytes'
+            cache_kb='Logical Bytes'
         }
         local result={{"Name","Median","Avg","Min","Max","Sum","Buckets"}}
 
@@ -1390,9 +1390,6 @@ function unwrap.analyze_sqlmon(text,file,seq)
             end
             --group by class+event
             local event=grp[ev] or grp[cl] or ' '
-            if event==attr.step and grp[cl] then
-                event=grp[cl]..' - '..event
-            end
             if #event>max_event_len+3 then 
                 event=event:sub(1,max_event_len):rtrim('.')..'..' 
             elseif event:lower()=='cpu' then
@@ -1423,7 +1420,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                         clock[id][4]=(clock[id][4] or 0)+v/math.max(tonumber(attr.dop),1)
                     elseif default_dop>1 and not attr.line then
                         clock[id][4]=(clock[id][4] or 0)+v/default_dop
-                    elseif infos[id].px_type=='QC' then
+                    elseif infos[id] and infos[id].px_type=='QC' then
                         local dop=infos[id].dop or default_dop
                         clock[id][4]=(clock[id][4] or 0)+v/((attr.px or (attr.step or ''):find('[PX]',1,true)) and dop or 1)
                     elseif default_dop>1 and attr.step and not infos[id].dop and not(infos[id].gs and infos[id].gs.cnt) then
@@ -1462,8 +1459,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
             end
             local itv,total,sum=interval,0,0
             for id,aas in pairs(clock) do
-                local g=infos[id].gs
-                local dop=tonumber(infos[id].dop or g and (g.cnt or g.dop)) or 1
+                local g=infos[id] and infos[id].gs or nil
+                local dop=tonumber(infos[id] and infos[id].dop or g and (g.cnt or g.dop)) or 1
                 local dop1=dop
                 if dop1 and g and g.cnt and dop1>g.cnt then 
                     dop1=g.cnt
@@ -1523,7 +1520,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             end
             if v.clock[2] then v[5]=math.round(v.clock[2]/total_clock,4) end
             if v.clock[2]~=v[4] then clock_diffs=clock_diffs+1 end
-            top_lines[#top_lines+1]={id,v.clock[2],v[5],'|',v[3],v[4],'|',v[2],v[1],v.clock[1]}
+            top_lines[#top_lines+1]={id,'|',v.clock[2],v[5],'|',v[3],v[4],'|',v[2],v[1],v.clock[1]}
         end
         env.var.define_column('AAS1','noprint')
         env.var.define_column('Clock','for','smhd2')
@@ -1532,11 +1529,11 @@ function unwrap.analyze_sqlmon(text,file,seq)
             if not b[2] then return true end
             return a[2] > b[2]
         end)
-        table.insert(top_lines,1,{'Id','Clock','Pct','|','Resp',clock_diffs==0 and 'AAS1' or 'AAS','|','Top Event','AAS%'})
+        table.insert(top_lines,1,{'Id','|','Clock','Pct','|','Resp',clock_diffs==0 and 'AAS1' or 'AAS','|','Top Event','AAS%'})
         for i=#top_lines,math.max(7,#events+1),-1 do
             top_lines[i]=nil
         end
-        top_lines.topic,top_lines.colsep,events.topic='Top Lines (Clock='..sec2num(total_clock)..')','|','Wait Events (AAS='..sec2num(total_aas)..')'
+        top_lines.topic,events.topic='Top Lines (Clock='..sec2num(total_clock)..')','Wait Events (AAS='..sec2num(total_aas)..')'
         line_events={top_lines,'|',events}
     end
     load_activity_detail()
