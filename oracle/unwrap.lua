@@ -126,7 +126,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
     local number_fmt=env.var.format_function('tmb2')
     local instance_id,session_id=tonumber(hd.target._attr.instance_id),tonumber(hd.target._attr.session_id)
     local error_msg=hd.error and hd.error[1]:trim():match('[^\n]+') or nil
-    local default_dop,px_alloc,sql_id,status,plsql,interval=0,0
+    local default_dop,px_alloc,sql_id,status,plsql,interval,phv=0,0
     local colors={'$COMMANDCOLOR$','$PROMPTCOLOR$','$HIB$','$PROMPTSUBCOLOR$'}
     --from x$qksxa_reason
     local reasons={
@@ -435,6 +435,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
             interval=tonumber(v)
         elseif k=='dop' then
             default_dop=tonumber(v)
+        elseif k=='plan_hash_value' or k=='sql_plan_hash' then
+            phv=tonumber(v)
         end
         k=default_titles[k] or k
         if type(v)=='string' and #v>=30 then v=v:sub(1,25):rtrim('.')..'..' end
@@ -530,6 +532,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         end
     end
     load_header()
+    if phv==0 and type(seq)=='number' and seq>1 then return end
 
     local skews={ids={},sids={}}
     local skew_list={
@@ -1324,7 +1327,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     if g==l.g and px_type==l.s then
                         node.gs=l
                         if l.id>node.id then l.id=node.id end
-                        if not node.dop and l.dop then node.dop=l.dop end
+                        --if not node.dop and l.dop then node.dop=math.min(l.dop,node.starts or l.dop)  end
                         break
                     end
                 end
@@ -1420,6 +1423,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                         clock[id][4]=(clock[id][4] or 0)+v/math.max(tonumber(attr.dop),1)
                     elseif default_dop>1 and not attr.line then
                         clock[id][4]=(clock[id][4] or 0)+v/default_dop
+                    elseif default_dop>1 and not infos[id].dop and (attr.step or ''):find('[PX]',1,true) then
+                        clock[id][4]=(clock[id][4] or 0)+v/(default_dop)
                     elseif infos[id] and infos[id].px_type=='QC' then
                         local dop=infos[id].dop or default_dop
                         clock[id][4]=(clock[id][4] or 0)+v/((attr.px or (attr.step or ''):find('[PX]',1,true)) and dop or 1)
@@ -1460,7 +1465,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local itv,total,sum=interval,0,0
             for id,aas in pairs(clock) do
                 local g=infos[id] and infos[id].gs or nil
-                local dop=tonumber(infos[id] and infos[id].dop or g and (g.cnt or g.dop)) or 1
+                local dop=tonumber(infos[id] and infos[id].dop) or 1
                 local dop1=dop
                 if dop1 and g and g.cnt and dop1>g.cnt then 
                     dop1=g.cnt
@@ -1525,9 +1530,9 @@ function unwrap.analyze_sqlmon(text,file,seq)
         env.var.define_column('AAS1','noprint')
         env.var.define_column('Clock','for','smhd2')
         table.sort(top_lines,function(a,b)
-            if not a[2] then return false end
-            if not b[2] then return true end
-            return a[2] > b[2]
+            if not a[3] then return false end
+            if not b[3] then return true end
+            return a[3] > b[3]
         end)
         table.insert(top_lines,1,{'Id','|','Clock','Pct','|','Resp',clock_diffs==0 and 'AAS1' or 'AAS','|','Top Event','AAS%'})
         for i=#top_lines,math.max(7,#events+1),-1 do

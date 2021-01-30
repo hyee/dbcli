@@ -1,3 +1,4 @@
+2021-01-30: * public: upgrade lib ConEmu to build 210128
 2021-01-24: + public: new option 'set internal on/off'
 2021-01-20: + oracle: 'unwrap <file>': analyze SQL Monitor Active report
 2021-01-19: + public: new option 'col <column> for auto <based column>'
