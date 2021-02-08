@@ -1220,16 +1220,16 @@ function unwrap.analyze_sqlmon(text,file,seq)
 
         local function sort_ord(a,b)
             local n1,n2=infos[a]._cid,infos[b]._cid
-            if n1.st==1e9 and n1.position<n2.position then return true end
-            if n2.st==1e9 and n1.position>n2.position then return false end
+            if n1.st==1e9 or n2.st==1e9 then return n1.position<n2.position end
             local st1,st2=n1.st,n2.st
             local ed1,ed2=n1.ed,n2.ed
+            local diff=1+math.ceil(math.log(math.abs(b-a),2))
             if n1.position<n2.position then 
-                ed1=ed1+1+math.abs(b-a)
-                --st1=st1-1
+                ed1=ed1+diff
+                st1=st1-diff
             else
-                ed2=ed2+1+math.abs(a-b)
-                --st2=st2-1
+                ed2=ed2+diff
+                st2=st2-diff
             end
             if st1~=st2 then return st1<st2 end
             if ed1~=ed2 then return ed1>ed2 end
@@ -1547,7 +1547,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
     local first_start
     local function load_plan()
         local op_fmt,space='%s%s%s%s%s%s',' '
-        local child_fmt,child_color='%s%s$NOR$'
+        local child_fmt,child_color,child_sep='%s%s$NOR$'
         local ord_fmt='%'..(#(tostring(xid+1)))..'s'
         xid='%'..(#(tostring(xid)))..'d'
         local id_fmt='%s%s%s'
@@ -1625,25 +1625,31 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 --if p.object:sub(1,1)==':' then nodes[p.object]=nodes[p.node] end
             end
 
+            s.skp=tonumber(s.skp) or 0
             if s._cid and #s._cid>1 then
-                color=colors[math.fmod(#lvs.colors,#colors)+1]
-                s._cid.color,lvs.colors[#lvs.colors+1]=color,color
+                if s.skp==0 then
+                    color=colors[math.fmod(#lvs.colors,#colors)+1]
+                    s._cid.nodetag,s._cid.sep,s._cid.color,lvs.colors[#lvs.colors+1]='+','|',color,color
+                else
+                    color='$GRY$'
+                    s._cid.nodetag,s._cid.sep,s._cid.color='-',':',color
+                end
             end
+
+            
             if s._pid then
                 if #s._pid<2 then 
                     lvs[depth]=' '
                 elseif s._pid[#s._pid]==id then
                     child=3
-                    lvs[depth]='+'
                 elseif s._pid[1]<id then
                     child=2
-                    lvs[depth]='+'
                 else
                     child=1
-                    lvs[depth]='+'
                 end
                 if child then
-                    child_color=s._pid.color
+                    lvs[depth]=s._pid.nodetag
+                    child_color,child_sep=s._pid.color,s._pid.sep
                     lvs[depth]=child_fmt:format(child_color,lvs[depth])
                 end
             else
@@ -1703,7 +1709,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             end
             lines[#lines+1]={
                 id=id,
-                format_id(id,tonumber(s.skp) or 0, px_group[id] and px_group[id].c>1 and ('$HEADCOLOR$'..(px_color or '')) or px_color,preds.ids[id],most_recent),
+                format_id(id,s.skp, px_group[id] and px_group[id].c>1 and ('$HEADCOLOR$'..(px_color or '')) or px_color,preds.ids[id],most_recent),
                 ord,
                 '|',
                 px_type,
@@ -1720,7 +1726,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 e[2],
                 e[1],
                 '|',
-                format_operation(table.concat(lvs,'',1,depth),s.name,s.options,color or coord_color),
+                format_operation(table.concat(lvs,'',1,depth),s.name,s.options,s.skp>0 and '$GRY$' or color or coord_color),
                 '|',
                 obj,
                 '|',
@@ -1764,7 +1770,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 strip_quote(qb and qb:sub(2) or nil),
             }
             attrs.lines[id]=lines[#lines]
-            if child then lvs[depth]=child==3 and ' ' or child_fmt:format(child_color,':') end
+            if child then lvs[depth]=child==3 and ' ' or child_fmt:format(child_color,child_sep) end
             if p.rwsstats then process_rwstat(id,p.rwsstats) end
             local xml=p.other_xml
             if xml then
