@@ -141,7 +141,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         ["16"]="HASH"
     }
     env.var.define_column('max_io_reqs,IM|DS,Est|Cost,Est|I/O,Est|Rows,Act|Rows,Skew|Rows,Read|Reqs,Write|Reqs,Start|Count,Buff|Gets,Disk|Read,Direx|Write,Fetch|Count','for','tmb1')
-    env.var.define_column('max_aas,max_cpu,max_waits,max_other_sql_count,max_imq_count,From|Start,From|End,Active|Clock,Ref|AAS,ASH|AAS,CPU|AAS,Wait|AAS,IMQ|AAS,Other|SQL,resp,aas,clock','for','smhd2')
+    env.var.define_column('max_aas,max_cpu,max_waits,max_other_sql_count,max_imq_count,1st|Row,From|Start,From|End,Active|Clock,Ref|AAS,ASH|AAS,CPU|AAS,Wait|AAS,IMQ|AAS,Other|SQL,resp,aas,clock','for','smhd2')
     env.var.define_column('duration,bucket_duration,Wall|Time,Elap|Time,Avg|Buff,Avg|I/O','for','usmhd2')
     env.var.define_column('max_io_bytes,max_buffer_gets,I/O|Bytes,Mem|Bytes,Max|Mem,Temp|Bytes,Max|Temp,Inter|Connc,Avg|Read,Avg|Write,Unzip|Bytes,Elig|Bytes,Return|Bytes,Saved|Bytes,Slow|Meta,Read|Bytes,Write|Bytes,Avg|Read,Avg|Write','for','kmg1')
     env.var.define_column('pct','for','pct')
@@ -595,6 +595,25 @@ function unwrap.analyze_sqlmon(text,file,seq)
     end
     load_skew()
     
+    local function get_top_events(events,as,rt,top)
+        local lines,l,first={},{}
+        for id,aas in pairs(events) do
+            --aas: {rt,aas}
+            local v=type(aas)=='table' and (aas[2]==0 and aas[1] or aas[2]) or aas
+            lines[#lines+1]={id,v}
+        end
+        table.sort(lines,function(o1,o2) return o1[2]>o2[2] end)
+        for i=1,math.min(top or 1,#lines) do
+            if i==1 and (top or 1)==1 then
+                local pct=to_pct(lines[i][2],as,rt):match('[%d%.]+')
+                if pct then pct=tonumber(pct)/100 end
+                return lines[i][1],pct
+            end
+            l[i]=lines[i][1]..' '..to_pct(lines[i][2],as,rt)
+        end
+        return table.concat(l,', '),first
+    end
+
     local statset={
         {'main_','Proc'},
         {'duration_','Wall|Time'},
@@ -634,6 +653,9 @@ function unwrap.analyze_sqlmon(text,file,seq)
         {'ret_bytes','Return|Bytes'},
         {'cell_offload_efficiency','Eff|Rate'},
         {'cell_offload_efficiency2','Eff2|Rate'},
+        {'|','|'},
+        {'top_event','Top Event'},
+        {'aas_rate','AAS%'},
         seqs={}
     }
     
@@ -683,6 +705,17 @@ function unwrap.analyze_sqlmon(text,file,seq)
             end
             return value
         end
+
+        local function scan_events(activities,row)
+            if not row.events then row.events={} end
+            for k,v in pair(type(activities)=='table' and activities.activity or nil) do
+                local event=v._attr.event or v._attr.class
+                if event=='Cpu' then event='ON CPU' end
+                row.events[event]=(row.events[event] or 0)+v[1]
+            end
+        end
+
+        scan_events(hd.activity_sampled and hd.activity_sampled,sqlstat[2])
         for k,v in pair(hd.activity_sampled and hd.activity_sampled.activity or nil) do
             local idx=0
             add_aas(idx,v[1])
@@ -804,6 +837,10 @@ function unwrap.analyze_sqlmon(text,file,seq)
                                      skew and 'Yes' or nil,
                                      px_set=px_set,
                                      class='PX'}
+                scan_events(s.activity_sampled,sqlstat[#sqlstat])
+                if px_set and slaves then
+                    scan_events(s.activity_sampled,slaves)
+                end
                 if g then 
                     g.data=sqlstat[#sqlstat]
                     local aas=g.data[aas_idx]
@@ -851,6 +888,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                                          get_attr(att,'imq_count',nil,max_stats),
                                          get_attr(att,'other_sql_count',nil,max_stats),
                                          class='INST'}
+                    scan_events(s.activity_sampled,sqlstat[#sqlstat])
                     add_sqlstat(sqlstat[#sqlstat],s.stats and s.stats.stat,max_stats)
                 end
             end
@@ -870,10 +908,13 @@ function unwrap.analyze_sqlmon(text,file,seq)
             return type(val)=='string' and tonumber(val:strip_ansi()) or val or 0
         end
         local threshold_idx={}
+        local event_idx=statset.seqs.top_event
         for i=2,#sqlstat do
             local stat=sqlstat[i]
             local intercc=0
             
+            stat[event_idx],stat[event_idx+1]=get_top_events(stat.events,tonumber((string.from_ansi(stat[aas_idx]))),nil,1)
+
             if stat[io_time] and (stat[disk_reads] or stat[disk_writes]) then
                 stat[io_avg]=math.round(num(stat[io_time])/(num(stat[disk_reads])+num(stat[disk_writes])),2)
             end
@@ -943,24 +984,6 @@ function unwrap.analyze_sqlmon(text,file,seq)
 
     local line_events
     local total_aas=tonumber(sqlstat[2][aas_idx]) or 1
-    local function get_top_events(events,as,rt,top)
-        local lines,l,first={},{}
-        for id,aas in pairs(events) do
-            --aas: {rt,aas}
-            local v=type(aas)=='table' and (aas[2]==0 and aas[1] or aas[2]) or aas
-            lines[#lines+1]={id,v}
-        end
-        table.sort(lines,function(o1,o2) return o1[2]>o2[2] end)
-        for i=1,math.min(top or 1,#lines) do
-            if i==1 and (top or 1)==1 then
-                local pct=to_pct(lines[i][2],as,rt):match('[%d%.]+')
-                if pct then pct=tonumber(pct)/100 end
-                return lines[i][1],pct
-            end
-            l[i]=lines[i][1]..' '..to_pct(lines[i][2],as,rt)
-        end
-        return table.concat(l,', '),first
-    end
 
     local outlines,preds={},{ids={}}
     local nid,xid=9999,0
@@ -1186,8 +1209,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     add_skew_line(id,att.sid,att.iid,max_skews[name],s[1])
                 end
             end
-
-            local st,ed=tonumber(info.from_sql_exec_start) or 1e9,tonumber(info.from_most_recent) or 1e9
+            if info.first_row and info.first_active then info.first_row=time2num(info.first_row)-start_clock end
+            local st,ed=info.first_row or tonumber(info.from_sql_exec_start) or 1e9,tonumber(info.from_most_recent) or 1e9
             info._cid.st,info._cid.ed=st,ed
 
             while true do
@@ -1739,14 +1762,14 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     or (s.partition_start..' - '..s.partition_start)
                 ) or nil,
                 '|',
-                --tonumber(s.cost),
+                tonumber(s.starts),
                 tonumber(s.cardinality),
                 tonumber(s.card),
                 tonumber(s.io_cost),
                 '|',
-                tonumber(s.starts),
                 tonumber(s.duration),
                 start_at,
+                s.first_row,
                 most_recent,
                 '|',
                 tonumber(s.max_memory),
@@ -2103,8 +2126,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                                   '|','Id<0%','CPU%','Wait%','SQL%','IMQ%',
                                   '|','Top Event','AAS%','|','Operation','|','Object Name','|','Pred','|','Proj','|',
                                   'Distrib|Partition','|',--'Est|Cost',
-                                  'Act|Rows','Est|Rows','Est|I/O','|',
-                                  'Start|Count','Active|Clock','From|Start','From|End','|','Max|Mem','Max|Temp','|',
+                                  'Start|Count','Act|Rows','Est|Rows','Est|I/O','|',
+                                  'Active|Clock','From|Start','1st|Row','From|End','|','Max|Mem','Max|Temp','|',
                                   'IM|DS','Inter|Connc','Read|Reqs','Avg|Read','Write|Reqs','Avg|Write','|',
                                   'Elig|Bytes','Return|Bytes','Saved|Bytes','Slow|Meta','Offload|Effi(%)','|',
                                   'Object|Alias','|','Query|Block'})
