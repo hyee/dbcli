@@ -651,8 +651,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         {'unc_bytes','Unzip|Bytes'},
         {'elig_bytes','Elig|Bytes'},
         {'ret_bytes','Return|Bytes'},
-        {'cell_offload_efficiency','Eff|Rate'},
-        {'cell_offload_efficiency2','Eff2|Rate'},
+        {'cell_offload_efficiency2','Eff|Rate'},
         {'|','|'},
         {'top_event','Top Event'},
         {'aas_rate','AAS%'},
@@ -756,7 +755,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             end
             
             if slaves and row.px_set then
-                for i=aas_idx,#sqlstat[1]-2 do --exclude offload efficiency
+                for i=aas_idx,statset.seqs.cell_offload_efficiency2-1 do --exclude offload efficiency
                     local v=row[i]
                     if type(v)=='string' then v=tonumber(v:strip_ansi()) end
                     if v then
@@ -992,7 +991,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
     local function process_pred(id,type,pred,node,alias)
         if type:lower()~='proj' then
             preds[#preds+1]={tonumber(id),type:initcap(),strip_quote(pred)}
-            preds.ids[id]=(preds.ids[id] or 0)+1
+            preds.ids[id]=preds.ids[id] or {}
             if node then
                 if not node.pred then node.pred={'',''} end
                 local df='__DEFAULT__'
@@ -1105,7 +1104,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local function process_rw(mt)
                 if meta[mt._attr.id] then
                     local lid=mt.id or id
-                    local col_name=runtime_stats[meta[mt._attr.id].name]
+                    local name=meta[mt._attr.id].name
+                    local col_name=runtime_stats[name]
                     if col_name then
                         if col_name=='distrib' and dist_methods[mt[1]] then
                             infos[id][col_name]=dist_methods[mt[1]]
@@ -1119,11 +1119,16 @@ function unwrap.analyze_sqlmon(text,file,seq)
                             infos[id][col_name]=mt[1]
                         end
                     else
-                        local num,desc=number_fmt(mt[1]),(meta[mt._attr.id].desc or meta[mt._attr.id].name)
-                        if 'downgrade reason'==meta[mt._attr.id].name and reasons[mt[1]] then
+                        local num,desc=number_fmt(mt[1]),(meta[mt._attr.id].desc or name)
+                        if 'downgrade reason'==name:lower() and reasons[mt[1]] then
                             num,desc=mt[1],reasons[mt[1]]
                         end
                         process_pred(lid,'Other',num:rpad(10)..' -> '..desc)
+                        if name=='Total User Rows' then
+                            preds.ids[lid].rows=tonumber(mt[1])
+                        elseif name=='Total Bloom Filtered Rows' or name=='Total Min/Max Filtered Rows' then
+                            preds.ids[lid].saved=(preds.ids[lid].saved or 0)+tonumber(mt[1])
+                        end
                     end
                     mt.id=nil
                 else
@@ -1565,7 +1570,6 @@ function unwrap.analyze_sqlmon(text,file,seq)
         line_events={top_lines,'|',events}
     end
     load_activity_detail()
-
     local binds,qbs,lines={nil,hd.binds},{__qbs={}},{}
     local first_start
     local function load_plan()
@@ -1579,6 +1583,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local ed=color and '$NOR$' or ''
             return op_fmt:format(pad,st,operation,options and (' '..options) or '','',ed)
         end
+
         local lvs,nodes={colors={},nodes={}},{}
 
         local function format_id(id,skp,color,pred,most_recent)
@@ -1628,8 +1633,6 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local intercc=tonumber(s.io_inter_bytes)
             if not intercc or intercc==0 then
                 intercc=(tonumber(s.read_bytes) or 0) + (tonumber(s.write_bytes) or 0)
-                --if s.elig_bytes then intercc=intercc-s.elig_bytes end
-                --if s.ret_bytes  then intercc=intercc-s.ret_bytes end
             end
             s.io_inter_bytes=intercc>0 and intercc or nil
             return s.io_inter_bytes
@@ -1729,7 +1732,18 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local coord_color=s.name=='PX COORDINATOR' and '$UDL$' or nil
             if coord_color and px_color then
                 coord_color=coord_color..'$HEADCOLOR$'
+            elseif s.name=='JOIN FILTER' and not preds.ids[id] then
+                obj='$HIR$'..obj..'$NOR$'
+            elseif preds.ids[id] and preds.ids[id].rows and preds.ids[id].saved then
+                local row_len=tonumber(s.bytes) or 8
+                s.elig_bytes=row_len*preds.ids[id].rows
+                s.ret_bytes=row_len*(preds.ids[id].rows-preds.ids[id].saved)
             end
+
+            if s.elig_bytes and s.ret_bytes then
+                s.cell_offload_efficiency=math.round(100*((tonumber(s.saved_bytes) or 0)+s.elig_bytes-s.ret_bytes)/s.elig_bytes,2)
+            end
+
             lines[#lines+1]={
                 id=id,
                 format_id(id,s.skp, px_group[id] and px_group[id].c>1 and ('$HEADCOLOR$'..(px_color or '')) or px_color,preds.ids[id],most_recent),
