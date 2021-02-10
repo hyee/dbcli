@@ -10,7 +10,6 @@ XCOPY /E /Y "d:\JavaProjects\dbcli\dbcli\src\*" .\src\java
 XCOPY /E /Y "d:\JavaProjects\dbcli\opencsv\src\*" "%GIT_HOME%\opencsv\src"
 XCOPY /E /Y "d:\JavaProjects\dbcli\nuprocess\src\*" "%GIT_HOME%\nuprocess\src"
 XCOPY /E /Y ".\lib\opencsv.jar" "%GIT_HOME%\opencsv\release"
-XCOPY /E /Y ".\lib\disruptor*.jar" "%GIT_HOME%\opencsv\release"
 set copyflag=1
 
 set target=%GIT_HOME%\dbcli
