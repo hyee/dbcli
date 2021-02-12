@@ -111,6 +111,13 @@ function unwrap.analyze_sqlmon(text,file,seq)
         end
     end
     xml=table.concat(raw,'\n')
+    --fix xml2lua bug in case of parsing node n
+    local qb_start,qb_end=xml:find('<qb_registry>.-</qb_registry>')
+    if qb_start then
+        local content=xml:sub(qb_start,qb_end)
+        content=content:gsub('<(/?)n>','<%1n1>')
+        xml=xml:sub(1,qb_start-1)..content..xml:sub(qb_end+1)
+    end
     parser:parse(xml)
     if content.root.report then
         content=content.root.report
@@ -123,7 +130,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
     if not db_version then
         db_version=xml:match('db_version="([^"]+)"') or '12.2'
     end
-    local number_fmt=env.var.format_function('tmb2')
+    local number_fmt=env.var.format_function('auto2','desc')
     local instance_id,session_id=tonumber(hd.target._attr.instance_id),tonumber(hd.target._attr.session_id)
     local error_msg=hd.error and hd.error[1]:trim():match('[^\n]+') or nil
     local default_dop,px_alloc,sql_id,status,plsql,interval,phv=0,0
@@ -143,7 +150,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
     env.var.define_column('max_io_reqs,IM|DS,Est|Cost,Est|I/O,Est|Rows,Act|Rows,Skew|Rows,Read|Reqs,Write|Reqs,Start|Count,Buff|Gets,Disk|Read,Direx|Write,Fetch|Count','for','tmb1')
     env.var.define_column('max_aas,max_cpu,max_waits,max_other_sql_count,max_imq_count,1st|Row,From|Start,From|End,Active|Clock,Ref|AAS,ASH|AAS,CPU|AAS,Wait|AAS,IMQ|AAS,Other|SQL,resp,aas,clock','for','smhd2')
     env.var.define_column('duration,bucket_duration,Wall|Time,Elap|Time,Avg|Buff,Avg|I/O','for','usmhd2')
-    env.var.define_column('max_io_bytes,max_buffer_gets,I/O|Bytes,Mem|Bytes,Max|Mem,Temp|Bytes,Max|Temp,Inter|Connc,Avg|Read,Avg|Write,Unzip|Bytes,Elig|Bytes,Return|Bytes,Saved|Bytes,Slow|Meta,Read|Bytes,Write|Bytes,Avg|Read,Avg|Write','for','kmg1')
+    env.var.define_column('max_io_bytes,max_buffer_gets,I/O|Bytes,Mem|Bytes,Max|Mem,Temp|Bytes,Max|Temp,Inter|Connc,Avg|Read,Avg|Write,Unzip|Bytes,Elig|Bytes,Return|Bytes,Saved|Bytes,Flash|Cache,Slow|Meta,Read|Bytes,Write|Bytes,Avg|Read,Avg|Write','for','kmg1')
     env.var.define_column('pct','for','pct')
     env.var.define_column('Id<0%,cpu%,wait%,sql%,imq%,aas%,aas %|event','for','pct0')
     env.set.set('autohide','col')
@@ -1060,6 +1067,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         ['Slow metadata bytes']='slow_meta',
         ['Dynamic Scan Tasks on Thread']='imds',
         ['Metadata bytes']='slow_meta',
+        ['Flash cache bytes']='flash_cache_bytes',
     }
     
     local px_group={}
@@ -1104,7 +1112,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local function process_rw(mt)
                 if meta[mt._attr.id] then
                     local lid=mt.id or id
-                    local name=meta[mt._attr.id].name
+                    local name=(meta[mt._attr.id].name):trim('.')
                     local col_name=runtime_stats[name]
                     if col_name then
                         if col_name=='distrib' and dist_methods[mt[1]] then
@@ -1119,7 +1127,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                             infos[id][col_name]=mt[1]
                         end
                     else
-                        local num,desc=number_fmt(mt[1]),(meta[mt._attr.id].desc or name)
+                        local desc=(meta[mt._attr.id].desc or name)
+                        local num=number_fmt(mt[1],desc)
                         if 'downgrade reason'==name:lower() and reasons[mt[1]] then
                             num,desc=mt[1],reasons[mt[1]]
                         end
@@ -1572,6 +1581,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
     load_activity_detail()
     local binds,qbs,lines={nil,hd.binds},{__qbs={}},{}
     local first_start
+    local qb_transforms={}
+    local function qb_name(qb) return '@"'..qb:gsub('["@]+','')..'"' end
     local function load_plan()
         local op_fmt,space='%s%s%s%s%s%s',' '
         local child_fmt,child_color,child_sep='%s%s$NOR$'
@@ -1662,7 +1673,6 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 end
             end
 
-            
             if s._pid then
                 if #s._pid<2 then 
                     lvs[depth]=' '
@@ -1681,7 +1691,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
             else
                 lvs[depth]=''
             end
-            p.proj={'','','',s.bytes and (tonumber(s.card) or 0)>0 and ('B'..math.round(tonumber(s.bytes)/tonumber(s.card))) or ''}
+            local avg_bytes=s.bytes and (tonumber(s.card) or 0)>0 and s.bytes/s.card or nil
+            p.proj={'','','',avg_bytes and ('B'..math.round(avg_bytes)) or ''}
             if p.project then
                 process_pred(id,'proj',p.project,p)
             end
@@ -1694,7 +1705,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             if obj and obj:sub(1,1)~=':' then obj=' '..obj end
             if p.object_alias then qbs['"'..alias:gsub('@','"@"')..'"']=id end
             if qb and qb~='' then
-                qb='@"'..qb:gsub('"','')..'"'
+                qb=qb_name(qb)
                 local range=qbs[qb] or {min=id,qb=qb}
                 range.max=id
                 qbs[qb]=range
@@ -1734,14 +1745,21 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 coord_color=coord_color..'$HEADCOLOR$'
             elseif s.name=='JOIN FILTER' and not preds.ids[id] then
                 obj='$HIR$'..obj..'$NOR$'
-            elseif preds.ids[id] and preds.ids[id].rows and preds.ids[id].saved then
-                local row_len=tonumber(s.bytes) or 8
-                s.elig_bytes=row_len*preds.ids[id].rows
-                s.ret_bytes=row_len*(preds.ids[id].rows-preds.ids[id].saved)
+            elseif preds.ids[id] and preds.ids[id].rows and preds.ids[id].saved then --calc bloom filter efficiency
+                local row_len=avg_bytes or 8
+                local target_line=infos[id+2]
+                if target_line and target_line.options and target_line.options:find('FULL') then
+                    local inter_bytes=get_interconn(target_line)
+                    if inter_bytes and inter_bytes>0 and target_line.cardinality then
+                        row_len=math.max(row_len,inter_bytes/target_line.cardinality)
+                    end
+                end
+                s.elig_bytes=math.round(row_len*preds.ids[id].rows)
+                s.ret_bytes=math.round(row_len*(preds.ids[id].rows-preds.ids[id].saved))
             end
 
             if s.elig_bytes and s.ret_bytes then
-                s.cell_offload_efficiency=math.round(100*((tonumber(s.saved_bytes) or 0)+s.elig_bytes-s.ret_bytes)/s.elig_bytes,2)
+                s.cell_offload_efficiency=math.round(100*(s.elig_bytes-s.ret_bytes)/s.elig_bytes,2)
             end
 
             lines[#lines+1]={
@@ -1799,7 +1817,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 s.elig_bytes,
                 s.ret_bytes,
                 s.saved_bytes,
-                e.slow_meta,
+                s.flash_cache_bytes,
+                s.slow_meta,
                 s.cell_offload_efficiency,
                 '|',
                 strip_quote(p.object_alias),
@@ -1824,6 +1843,14 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     for k,v in pair(xml.stats.stat) do
                         if t and v._attr.name then
                             add_header(t..'.'..v._attr.name,v[1],10)
+                        end
+                    end
+                end
+
+                if xml.qb_registry then
+                    for k,v in pair(xml.qb_registry.q) do
+                        if type(v.n1)=='string' and type(v.p)=='string' then
+                            qb_transforms[qb_name(v.p)]=qb_name(v.n1)
                         end
                     end
                 end
@@ -2143,7 +2170,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                                   'Start|Count','Act|Rows','Est|Rows','Est|I/O','|',
                                   'Active|Clock','From|Start','1st|Row','From|End','|','Max|Mem','Max|Temp','|',
                                   'IM|DS','Inter|Connc','Read|Reqs','Avg|Read','Write|Reqs','Avg|Write','|',
-                                  'Elig|Bytes','Return|Bytes','Saved|Bytes','Slow|Meta','Offload|Effi(%)','|',
+                                  'Elig|Bytes','Return|Bytes','Saved|Bytes','Flash|Cache','Slow|Meta','Offload|Effi(%)','|',
                                   'Object|Alias','|','Query|Block'})
             
             lines.topic='Execution Plan Lines'
@@ -2179,11 +2206,22 @@ function unwrap.analyze_sqlmon(text,file,seq)
                         local hint=(' '..c[2]..' '):gsub('([^'..object_pattern..'"@%.])','%1%1')
                         local list={}
                         hint:gsub('([^%."@])(@?"['..object_pattern..'"@%.]+")([^%."@])',function(p,c,s)
-                            if type(qbs[c])=='table' then
-                                list[2]=qbs[c]
-                            elseif qbs[c] then
+                            local n=c
+                            local qb=qbs[n]
+                            while not qb do
+                                n=qb_name(n)
+                                qb=qbs[n]
+                                if not qb then
+                                    n=qb_transforms[n] 
+                                    if not n then break end
+                                    qb=qbs[n]
+                                end
+                            end
+                            if type(qb)=='table' then
+                                list[2]=qb
+                            elseif qb then
                                 if not list[1] then list[1]={} end
-                                list[1][#list[1]+1]=qbs[c]
+                                list[1][#list[1]+1]=qb
                             end
                             return p..c..s
                         end)

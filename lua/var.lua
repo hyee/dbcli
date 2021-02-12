@@ -403,23 +403,27 @@ function var.format_function(fmt,next_fmt)
             ['%Wus$']={u3,1}
         }
         func=function(v,r,grid)
-            local rows=grid.data
-            if rows[1] and rows[1].colinfo then
-                c=rows[1].colinfo[col]
-            elseif rows[1] and p~=rows[1] then
-                p=rows[1]
-                for k,v in ipairs(p) do
-                    if type(v)=='string' and v:upper()==col then
-                        c=k
-                        break
+            local s,val=tonumber(v)
+            if type(r)=='string' and type(grid)~='table' then
+                val=r
+            else
+                local rows=grid.data
+                if rows[1] and rows[1].colinfo then
+                    c=rows[1].colinfo[col]
+                elseif rows[1] and p~=rows[1] then
+                    p=rows[1]
+                    for k,v in ipairs(p) do
+                        if type(v)=='string' and v:upper()==col then
+                            c=k
+                            break
+                        end
                     end
                 end
+                local row=grid.__current_row
+                if not c or not row then return v,1 end 
+                val=row[c]
             end
-            local row=grid.__current_row
-            if not c or not row then return v,1 end 
-            local s=tonumber(v)
             if s==0 then return '',1 end
-            local val=row[c]
             if not s or type(val)~='string' then return v,1 end
             local prefix=s<0 and '-' or ''
             s,val=math.abs(s),val:lower()
@@ -439,11 +443,7 @@ function var.format_function(fmt,next_fmt)
                 end
             end
             if not units then
-                if val:find('time',1,true) then
-                    units,s=u3,s*1e4
-                else
-                    units=u2
-                end
+                units=u2
             end
             local div=units==u1 and d1 or units==u3 and d3 or d2
             for i=1,#units do

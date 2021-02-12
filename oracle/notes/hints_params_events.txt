@@ -119,6 +119,7 @@ Hints:
     BUSHY_JOIN([<qb>] (<alias1>,<alias2>,...)): enable bushy join
     no_transform_distinct_agg/no_place_distinct/no_place_group_by: disable aggregation transformation on inline view
     _optimizer_group_by_placement/_optimizer_distinct_placement/_optimizer_extend_jppd_view_types: used to fix some execute plan issues
+    VECTOR_TRANSFORM([<qb>] FACT(<fact>) DIMENSION(<dim#1>) ...DIMENSION(<dim#n>)): Use key vector transformation
     
 Fix Controls:
     13583722/16726844: impact the CBO behaviour for incr stats, ref: https://hourim.wordpress.com/2019/11/21/incremental-histogram-and-fix-control/
