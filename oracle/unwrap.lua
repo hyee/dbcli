@@ -147,6 +147,18 @@ function unwrap.analyze_sqlmon(text,file,seq)
         ["6"]="BROADCAST",
         ["16"]="HASH"
     }
+    local kv_types={
+        ['1']='[NUMBER]',
+        ['2']='[BINARY_FLOAT]',
+        ['3']='[BINARY]',
+        ['4']='[PACKED_BINARY]',
+        ['5']='[PACKED_NUMBER]', 
+        ['6']='[PACKED_DATE]', 
+        ['8']='[BINARY_DOUBLE]',
+        ['9']='[PACKED_HOUR]', 
+        ['10']='[PACKED_MINUTE]', 
+        ['11']='[PACKED_SECOND]'
+    }
     env.var.define_column('max_io_reqs,IM|DS,Est|Cost,Est|I/O,Est|Rows,Act|Rows,Skew|Rows,Read|Reqs,Write|Reqs,Start|Count,Buff|Gets,Disk|Read,Direx|Write,Fetch|Count','for','tmb1')
     env.var.define_column('max_aas,max_cpu,max_waits,max_other_sql_count,max_imq_count,1st|Row,From|Start,From|End,Active|Clock,Ref|AAS,ASH|AAS,CPU|AAS,Wait|AAS,IMQ|AAS,Other|SQL,resp,aas,clock','for','smhd2')
     env.var.define_column('duration,bucket_duration,Wall|Time,Elap|Time,Avg|Buff,Avg|I/O','for','usmhd2')
@@ -1060,6 +1072,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         ['Min DOP after downgrade']='dop',
         ['DOP downgrade']='dop',
         ['Distribution method']='distrib',
+        ['Key Data Type']='kv_type',
         ['Eligible bytes']='elig_bytes',
         ['Filtered bytes']='ret_bytes',
         ['SI saved bytes']='saved_bytes',
@@ -1067,7 +1080,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         ['Slow metadata bytes']='slow_meta',
         ['Dynamic Scan Tasks on Thread']='imds',
         ['Metadata bytes']='slow_meta',
-        ['Flash cache bytes']='flash_cache_bytes',
+        ['Flash cache bytes']='flash_cache_bytes'
     }
     
     local px_group={}
@@ -1117,6 +1130,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     if col_name then
                         if col_name=='distrib' and dist_methods[mt[1]] then
                             infos[id][col_name]=dist_methods[mt[1]]
+                        elseif col_name=='kv_type' and kv_types[mt[1]] then
+                            infos[id]['distrib']=kv_types[mt[1]]
                         elseif col_name=='dop' then
                             infos[id][col_name]=mt[1]
                         elseif tonumber(mt[1]) then
@@ -1137,6 +1152,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                             preds.ids[lid].rows=tonumber(mt[1])
                         elseif name=='Total Bloom Filtered Rows' or name=='Total Min/Max Filtered Rows' then
                             preds.ids[lid].saved=(preds.ids[lid].saved or 0)+tonumber(mt[1])
+                        elseif name=='Total Number of Rowsets' then
+                            infos[id].rowsets=tonumber(mt[1])
                         end
                     end
                     mt.id=nil
@@ -1695,6 +1712,9 @@ function unwrap.analyze_sqlmon(text,file,seq)
             p.proj={'','','',avg_bytes and ('B'..math.round(avg_bytes)) or ''}
             if p.project then
                 process_pred(id,'proj',p.project,p)
+            end
+            if p.proj[2]=='' and infos[id-1] and infos[id-1].rowsets and s.cardinality then
+                p.proj[2]='R'..math.round(s.cardinality/infos[id-1].rowsets)..','
             end
 
             for k,v in pair(p.predicates) do
