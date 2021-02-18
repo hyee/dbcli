@@ -111,13 +111,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         end
     end
     xml=table.concat(raw,'\n')
-    --fix xml2lua bug in case of parsing node n
-    local qb_start,qb_end=xml:find('<qb_registry>.-</qb_registry>')
-    if qb_start then
-        local content=xml:sub(qb_start,qb_end)
-        content=content:gsub('<(/?)n>','<%1n1>')
-        xml=xml:sub(1,qb_start-1)..content..xml:sub(qb_end+1)
-    end
+    
     parser:parse(xml)
     if content.root.report then
         content=content.root.report
@@ -456,9 +450,11 @@ function unwrap.analyze_sqlmon(text,file,seq)
             default_dop=tonumber(v)
         elseif k=='plan_hash_value' or k=='sql_plan_hash' then
             phv=tonumber(v)
+        elseif type(v)=="string" then
+            v=v:gsub('[^%g%s]+','')
+            if #v>=30 then v=v:sub(1,25):rtrim('.')..'..' end
         end
         k=default_titles[k] or k
-        if type(v)=='string' and #v>=30 then v=v:sub(1,25):rtrim('.')..'..' end
         titles[#titles+1]={k,v,tostring(v):find(time_fmt) and 91 or
                                k:find('^report_') and 999 or
                                k=='duration' and -10 or
@@ -1154,6 +1150,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                             preds.ids[lid].saved=(preds.ids[lid].saved or 0)+tonumber(mt[1])
                         elseif name=='Total Number of Rowsets' then
                             infos[id].rowsets=tonumber(mt[1])
+                        elseif name=='Total Spilled Probe Rows' then
+                            infos[id].spills=tonumber(mt[1])
                         end
                     end
                     mt.id=nil
@@ -1484,6 +1482,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                         clock[id][4]=(clock[id][4] or 0)+v/((attr.px or (attr.step or ''):find('[PX]',1,true)) and dop or 1)
                     elseif default_dop>1 and attr.step and not infos[id].dop and not(infos[id].gs and infos[id].gs.cnt) then
                         clock[id][4]=(clock[id][4] or 0)+v/default_dop
+                    elseif event=='Parallel Skew' and not infos[id].dop then
+                        clock[id][4]=(clock[id][4] or 0)+v/(infos[id].gs and infos[id].gs.cnt or default_dop)
                     else
                         clock[id][i]=(clock[id][i] or 0)+v
                     end
@@ -1763,7 +1763,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local coord_color=s.name=='PX COORDINATOR' and '$UDL$' or nil
             if coord_color and px_color then
                 coord_color=coord_color..'$HEADCOLOR$'
-            elseif s.name=='JOIN FILTER' and not preds.ids[id] then
+            elseif s.name=='JOIN FILTER' and s.options=='USE' and not preds.ids[id] then
                 obj='$HIR$'..obj..'$NOR$'
             elseif preds.ids[id] and preds.ids[id].rows and preds.ids[id].saved then --calc bloom filter efficiency
                 local row_len=avg_bytes or 8
@@ -1780,6 +1780,14 @@ function unwrap.analyze_sqlmon(text,file,seq)
 
             if s.elig_bytes and s.ret_bytes then
                 s.cell_offload_efficiency=math.round(100*(s.elig_bytes-s.ret_bytes)/s.elig_bytes,2)
+            end
+
+            local options=s.options
+            if s.spills and #s._cid>0 then
+                local probe=infos[s._cid[#s._cid]]
+                if probe and probe.cardinality then
+                    options=(options and (options..' ') or '')..'[Spills='..math.round(s.spills*100/probe.cardinality,2)..'%]'
+                end
             end
 
             lines[#lines+1]={
@@ -1801,7 +1809,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 e[2],
                 e[1],
                 '|',
-                format_operation(table.concat(lvs,'',1,depth),s.name,s.options,s.skp>0 and '$GRY$' or color or coord_color),
+                format_operation(table.concat(lvs,'',1,depth),s.name,options,s.skp>0 and '$GRY$' or color or coord_color),
                 '|',
                 obj,
                 '|',
@@ -1869,8 +1877,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
 
                 if xml.qb_registry then
                     for k,v in pair(xml.qb_registry.q) do
-                        if type(v.n1)=='string' and type(v.p)=='string' then
-                            qb_transforms[qb_name(v.p)]=qb_name(v.n1)
+                        if type(v.n)=='string' and type(v.p)=='string' then
+                            qb_transforms[qb_name(v.p)]=qb_name(v.n)
                         end
                     end
                 end
@@ -2226,6 +2234,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                         local hint=(' '..c[2]..' '):gsub('([^'..object_pattern..'"@%.])','%1%1')
                         local list={}
                         hint:gsub('([^%."@])(@?"['..object_pattern..'"@%.]+")([^%."@])',function(p,c,s)
+                            local pos=c:find('@',1,true)
+                            if not pos then return p..c..s end
                             local n=c
                             local qb=qbs[n]
                             while not qb do
@@ -2242,10 +2252,24 @@ function unwrap.analyze_sqlmon(text,file,seq)
                             elseif qb then
                                 if not list[1] then list[1]={} end
                                 list[1][#list[1]+1]=qb
+                            elseif pos>1 then
+                                list.missing=(list.missing or 0)+1
+                                n,qb=c:sub(1,pos-1),c:sub(pos)
+                                while qb_transforms[qb] do
+                                    qb=qb_transforms[qb]
+                                    local n1=qbs[n..qb]
+                                    if n1 then
+                                        if not list[1] then list[1]={} end
+                                        list[1][#list[1]+1]=n1
+                                        list.missing=list.missing-1
+                                        break
+                                    end
+                                end
+                                if list.missing==0 then list.missing=nil end
                             end
                             return p..c..s
                         end)
-                        if list[1] and #list[1]==1 then 
+                        if list[1] and #list[1]==1 and (not list.missing or not list[2])  then 
                             c[1]=xid:format(list[1][1])
                         elseif list[2] then
                             if not list[1] or list[2].min==list[2].max then
@@ -2253,6 +2277,10 @@ function unwrap.analyze_sqlmon(text,file,seq)
                             else
                                 c[1]=xid:format(list[2].min)..' - '..xid:format(list[2].max)
                             end
+                        elseif list[1] and #list[1]>1 then
+                            table.sort(list[1])
+                            c[1]=xid:format(list[1][1])..' - '..xid:format(list[1][#list[1]])
+                            --TODO
                         end
                         c[2]=strip_quote(c[2])
                     end
