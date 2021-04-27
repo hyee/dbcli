@@ -82,7 +82,37 @@ Parameters
     _gcs_cluster_flash_cache_mode: 1-Enables the cluster flash cache/2-allows a block on the non-master instance to be saved in that instance's flash cache/3-1+2
     _gcs_flash_cache_mode: 1-allows a local instance to serve the flash block to the remote requester/2-disallow
     _cr_grant_local_role: controls 3-way CR grants. Auto:depends on cpu load(85%), and latency of 'gc cr grant 2-way + db file sequential read' vs 'gc current block 2-way', and 'gc cr grant 2-way' vs 'gc current block 3-way'
-DMLs.
+    sqltune_category: used to change the SQL Profile category and therfor disable the use of some existing SQL Profiles
+    Parameters for Adaptive LGWR:
+        _use_adaptive_log_file_sync
+            TRUE: Enable adaptive log file sync (default)
+            FALSE: Disable adaptive log file sync (i.e., just use post/wait)
+            POLLING_ONLY: Use polling with adaptive polling interval
+        _adaptive_log_file_sync_use_polling_threshold
+            Larger values make it harder to switch to polling
+            Default value is 110%, which means the current redo synch time must exceed the expected poll time
+            by at least 10% for the algorithm to favor polling over post/wait
+            In the pseudocode above, refer to the use_polling_threshold variable
+        _adaptive_log_file_sync_use_postwait_threshold
+            Smaller values make it harder to switch to post/wait
+            Default value is 50%, which means the current scheduling delay needs to drop to half of that when
+            polling was first used for the algorithm to favor post/wait over polling
+            In the pseudocode above, refer to the use_postwait_threshold variable
+        _adaptive_log_file_sync_poll_aggressiveness
+            Larger values result in smaller polling intervals
+            Default value is 0%, which means none of the current scheduling delay is subtracted from the polling interval
+        _adaptive_log_file_sync_sched_delay_window
+            The window over which the current scheduling delay is computed
+            Default value is 60 seconds, and it is unlikely you need to adjust this
+        _adaptive_log_file_sync_high_switch_freq_threshold
+            A warning is printed if adaptive log file sync switches frequently between post/wait and polling
+            If it is an LRG, a soft assert is also signalled
+            Default threshold is 3 switches per minute
+        _fg_sync_sleep_usecs
+            A non-zero value specified will use polling with a fixed interval and disable adaptive log file sync
+        _log_file_sync_timeout
+            How long the foreground waits for LGWR to post it when post/wait is used
+            Default value is 100 msecs
     _lm_share_lock_opt: false to help reducing 'ges resource hash list' in some cases, also _ksi_clientlocks_enabled=false(11g value)
     _in_memory_cdt: disable materilizing in-memory cdt(also including key-vector transformation)
     _px_reuse_server_groups: reuse existing px server group for CDT
@@ -93,6 +123,7 @@ Events:
 dbms_stats.set_xxx_pref:
     table_cached_blocks: defaults as 1(0 as auto), used to control how to compute the CLUSTERING_FACTOR by gather_index_stats, recommend to set as 16*<Rac nodes> by jonathan lewis
     TRACE: set to 1048575 to print the debug message for dbms_stats.gather_xxx_stats with dbms_output.put_line
+    GLOBAL_TEMP_TABLE_STATS: defaults as SESSION, meaning that GTT stats will not be shared across sessions
     
 Hints:
     OPT_ESTIMATE:
@@ -127,7 +158,9 @@ Fix Controls:
     6972291 :  CBO can use the selectivity of column groups but this option is disabled if there is a histogram defined on any of the columns of the column group
     20355502:  number of branches 2^<value> limit for legacy OR expansion(long parse time)
     25167306:  Enable direct path read(Smart Scan) in SQL called from PL/SQL(scheduler job), may also need to set _serial_direct_read=always
-    6708183 :  allow dynamic sampling on table functions  
+    6708183 :  allow dynamic sampling on table functions
+    8619631 :  Allow hash aggregation for insert select except for plsql calls
+    13905599:  enable to disable sharing execution plan for GTT across sessions which could bypass dynamic sampling on GTT and thus lead to wrong execution plan
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
    NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled/CONTAINER_DATA(bug30122249): Used on PDB to query dict views

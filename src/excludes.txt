@@ -19,6 +19,7 @@ rwp.lua
 \jre_mac\
 \temp\
 \ext\
+\bc\
 \emviewers\
 xmlparserv2.jar
 .sublime-project

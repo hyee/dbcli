@@ -56,7 +56,7 @@ BEGIN
                  validate => TRUE);
         $END
 
-        $IF DBMS_DB_VERSION.VERSION>11 $THEN
+        $IF DBMS_DB_VERSION.VERSION>12 OR DBMS_DB_VERSION.VERSION=12 AND DBMS_DB_VERSION.RELEASE>1 $THEN
             name:=DBMS_SQLDIAG.CREATE_SQL_PATCH (
                      sql_text => sq_text,
                      hint_text => 'NULL',

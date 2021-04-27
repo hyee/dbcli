@@ -341,7 +341,7 @@
                      SUM(DECODE(n, 'cell physical IO bytes processed for IM capacity',v,'cell physical IO bytes processed for IM query',v)) "CellIM",
                      SUM(DECODE(n, 'cell physical IO bytes saved by storage index', v)) "SISave",
                      SUM(DECODE(n, 'cell physical IO bytes saved by columnar cache',v)) "CCSave",
-                     SUM(DECODE(n, 'cell flash cache read hits',v,'cell ram cache read hits',v)) "FcHit",
+                     SUM(DECODE(n, 'cell flash cache read hits',v,'cell ram cache read hits',v,'cell RDMA reads',v)) "FcHit",
                      SUM(DECODE(n, 'physical read total IO requests',v)) phyio
               FROM   (SELECT a.*, count(case when n like '%bytes optimized%' then 1 end) over() offl FROM &stats a)
               WHERE  offl>0

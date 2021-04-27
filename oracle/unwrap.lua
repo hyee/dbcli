@@ -86,17 +86,12 @@ local thresholds={
     }
     --buff_get_rate=0.7 --the threshold of cpu_time/elapsed_time to calc avg buffer get time
 }
-local sqlmon_pattern='<report [^%>]+>%s*<report_id><?[^<]*</report_id>%s*<sql_monitor_report .-</sql_monitor_report>%s*</report>'
-function unwrap.analyze_sqlmon(text,file,seq)
-    local content=handler:new()
-    local parser =xml2lua.parser(content)
-    local xml,hd,db_version,start_clock
-    local xml=text:match(sqlmon_pattern)
-    if not xml then
-        xml=text:match('<sql_monitor_report .-</sql_monitor_report>')
-        if not xml then return end
-    end
-    --handle line-split of SQL fulltext
+
+local function pair(o)
+    return ipairs(type(o)~='table' and {} or (type(o[1])=='table' or #o>1) and o or {o})
+end
+
+local function load_xml(parser,xml)
     local raw=table.new(8192,0)
     local idx=0
     for line in xml:gsplit('(\r?\n\r?)') do
@@ -110,9 +105,21 @@ function unwrap.analyze_sqlmon(text,file,seq)
             raw[idx]=raw[idx]..line
         end
     end
-    xml=table.concat(raw,'\n')
-    
-    parser:parse(xml)
+    parser:parse(table.concat(raw,'\n'))
+end
+
+local sqlmon_pattern='<report [^%>]+>%s*<report_id><?[^<]*</report_id>%s*<sql_monitor_report .-</sql_monitor_report>%s*</report>'
+function unwrap.analyze_sqlmon(text,file,seq)
+    local content=handler:new()
+    local parser =xml2lua.parser(content)
+    local xml,hd,db_version,start_clock
+    local xml=text:match(sqlmon_pattern)
+    if not xml then
+        xml=text:match('<sql_monitor_report .-</sql_monitor_report>')
+        if not xml then return end
+    end
+    --handle line-split of SQL fulltext
+    load_xml(parser,xml)
     if content.root.report then
         content=content.root.report
         hd=content.sql_monitor_report
@@ -177,10 +184,6 @@ function unwrap.analyze_sqlmon(text,file,seq)
         local m,d,y,h,mi,s=d:match('(%d+)/(%d+)/%d%d(%d+) (%d+):(%d+):(%d+)')
         if not d then return end
         return (y*365+m*30+d)*86400+h*3600+mi*60+s
-    end
-
-    local function pair(o)
-        return ipairs(type(o)~='table' and {} or (type(o[1])=='table' or #o>1) and o or {o})
     end
 
     local print_grid=env.printer.print_grid
@@ -2325,6 +2328,76 @@ function unwrap.analyze_sqlmon(text,file,seq)
     end
 end
 
+local sqldetail_pattern='<sql_details>.-</sql_details>'
+function unwrap.analyze_sqldetail(text,file,seq)
+    local content=handler:new()
+    local parser =xml2lua.parser(content)
+    local xml,hd,db_version,start_clock
+    local xml=text:match(sqldetail_pattern)
+    if not xml then return end
+    --handle line-split of SQL fulltext
+    load_xml(parser,xml)
+
+    hd=content.root.sql_details
+
+    text={}
+    local print_grid=env.printer.print_grid
+    local function pr(msg,shadow)
+        --store rowset instead of screen output to avoid line chopping
+        if type(shadow)=='table' then
+            shadow=grid.format_output(shadow)
+        end
+
+        text[#text+1]=type(shadow)=='string' and shadow or msg
+        if not seq then
+            if type(shadow)=='string' then
+                print_grid(msg)
+            else
+                print(msg)
+            end
+        end
+    end
+
+    local dims={}
+    local function top_activity()
+        local dim={}
+        for i,d in pair(hd.top_activity and hd.top_activity.dim) do
+            if d._attr.id and d._attr.id~='class' and d._attr.id~='class,event' and d.top_members and d.top_members.member then
+                local row=d._attr.id:split(',')
+                local cols=#row
+                row[cols+1]='AAS'
+                local rows={row}
+                for _,m in pair(d.top_members.member) do
+                    row=m._attr.id:split(',')
+                    for j=#row+1,cols do row[j]='' end
+                    row[cols+1]=m._attr.count
+                    rows[#rows+1]=row
+                end
+                dim[#dim+1]=rows
+                --grid.print(rows)
+            end
+        end
+        if #dim>0 then
+            table.sort(dim,function(a,b) return #a<#b end)
+            local d={}
+            dims[1]=d
+            for i,row in ipairs(dim) do
+                d[#d+1]=row
+                if math.fmod(i,3)>0 then
+                    d[#d+1]='|'
+                elseif dim[i+1] then
+                    d={}
+                    dims[#dims+1],dims[#dims+2]='-',d
+                end
+            end
+            env.var.define_column('aas','for','smhd2')
+            pr(grid.merge(dims,'plain'))
+        end
+    end
+
+    top_activity()
+end
+
 local function unwrap_plsql(obj,rows,file)
     local header=table.remove(rows,1)[5]
     local txt,result,cache='','',{}
@@ -2367,7 +2440,7 @@ function unwrap.unwrap(obj,ext,prefix)
         end
 
         f=io.open(f)
-
+        env.checkerr(f,"Cannot open file "..obj)
         local found,stack,org,repidx=false,{},{}
         local is_wrap,is_plsql=false
         local line_idx,plsql_stack,typ,top_obj,start_idx=0
@@ -2455,30 +2528,34 @@ function unwrap.unwrap(obj,ext,prefix)
         end
         local text=table.concat(org,'\n')
         
-        local function load_report(text,obj,ext)
-            local done,err=pcall(unwrap.analyze_sqlmon,text,obj,ext)
+        local function load_report(func,text,obj,ext)
+            local done,err=pcall(func,text,obj,ext)
             if not done then
                 env.warn(err)
             else
                 return err
             end
         end
-        local sql_list={}
-        local _,cnt=text:gsub(sqlmon_pattern,function(s) sql_list[#sql_list+1]=s;return '' end)
-        if cnt>1 then
-            local prefix=obj:gsub('[^\\/%w][^\\/]+$','')
-            local result
-            for i,sqlmon in ipairs(sql_list) do
-                local row=load_report(sqlmon,prefix,i)
-                if not result then 
-                    result=row
-                else
-                    result[#result+1]=row
+
+        for p,func in pairs{sqlmon_pattern=unwrap.analyze_sqlmon,
+                            sqldetail_pattern=unwrap.analyze_sqldetail} do
+            local sql_list={}
+            local _,cnt=text:gsub(p,function(s) sql_list[#sql_list+1]=s;return '' end)
+            if cnt>1 then
+                local prefix=obj:gsub('[^\\/%w][^\\/]+$','')
+                local result
+                for i,sqlmon in ipairs(sql_list) do
+                    local row=load_report(func,sqlmon,prefix,i)
+                    if not result then 
+                        result=row
+                    else
+                        result[#result+1]=row
+                    end
                 end
+                grid.merge({result},true)
+            else
+                load_report(func,text,obj)
             end
-            grid.merge({result},true)
-        else
-            load_report(text,obj)
         end
 
         if is_wrap then

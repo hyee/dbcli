@@ -38,7 +38,7 @@ SELECT * FROM (
 			   max(kept) kept,max(MARKHOT) MARKHOT,
 			   count(distinct sql_id) sqls,
 			   sum(sql_execs) sql_execs,
-			   listagg(decode(seq,1,decode(sign(100-sql_seq),1,sql_id)),',') within group(order by sql_execs desc nulls last) sql_ids
+			   decode(flag,2,max(full_hash),listagg(decode(seq,1,decode(sign(100-SQL_SEQ),1,sql_id)),',') within group(order by sql_execs desc nulls last)) sql_ids
 		FROM (
 			SELECT /*+ ordered use_hash(d) use_hash(c) no_expand*/
 			       o.inst_id,
@@ -82,10 +82,12 @@ SELECT * FROM (
 			       c.KGLHDIVC invalids1,
 			       o.KGLHDIVC invalids2,
 			       DECODE(o.KGLHDKMK,0,'NO','YES') KEPT,
-			       o.KGLOBPROP MARKHOT,
+			       o.KGLOBPROP||decode(:V1,c.KGLOBT03,'/'||c.KGLOBPROP) MARKHOT,
 			       c.KGLOBT03 SQL_ID,
 			       c.KGLOBT05 sql_execs,
-			       dense_rank() over(partition by o.kglnahsh,o.kglhdadr,nvl2(:V1,c.KGLOBT03,'') order by c.KGLOBT05 desc nulls last) SQL_SEQ,
+			       decode(:V1,c.KGLOBT03,2,1) flag,
+			       decode(nvl(c.KGLOBT09,0),0,c.KGLNAHSV) full_hash,
+			       dense_rank() over(partition by o.kglnahsh,o.kglhdadr order by c.KGLOBT05 desc nulls last) SQL_SEQ,
 			       row_number() over(partition by o.kglnaown,o.kglnaobj,c.KGLOBT03 order by 1) SEQ
 			FROM   sys.x$kglob o, 
 			       (SELECT DISTINCT kglrfhsh,kglrfhdl,kglhdpar,kglnahsh 
@@ -103,10 +105,10 @@ SELECT * FROM (
 			AND    c.kglhdnsp(+) = 0
 			AND    (c.KGLOBT03 IS NOT NULL OR d.kglrfhsh IS NULL)
 			AND    (:object_name IS NULL OR o.kglnaown=:object_owner and o.kglnaobj=:object_name)
-			AND    (:object_name IS NOT NULL OR :V1 IS NULL OR :v1 IN (c.KGLOBT03) )
+			AND    (:object_name IS NOT NULL OR :V1 IS NULL OR :v1 =c.KGLOBT03)
 			AND    userenv('instance') = nvl(:V2, userenv('instance'))
 		)
-	GROUP BY inst_id,object_name,object_type,nvl2(:V1,sql_id,'')
+	GROUP BY inst_id,object_name,object_type,nvl2(:V1,sql_id,''),flag
 	HAVING sum(decode(SQL_SEQ,1,execs))>0 ))) a
 	ORDER BY execs desc,OBJECT_NAME,OBJECT_TYPE)
 WHERE ROWNUM<=50

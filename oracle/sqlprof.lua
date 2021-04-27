@@ -246,10 +246,11 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             pr('    sql_prof  SYS.SQLPROF_ATTR;');
             pr('    signature NUMBER;');
             pr('    prof_name VARCHAR2(30):=''SQLPROF'';');
+            pr('    sq_id     VARCHAR2(30):='''||p_sqlid||''';');
             pr('    procedure wr(x varchar2) is begin dbms_lob.writeappend(sql_txt, length(x), x);end;');
             pr('BEGIN');
            
-            pr('    BEGIN execute immediate ''select * from (SELECT SQL_FULLTEXT FROM gv$sqlarea WHERE SQL_ID=:1 union all SELECT SQL_TEXT FROM dba_hist_sqltext WHERE SQL_ID=:1) where rownum<2'' INTO sql_txt USING '''||p_sqlid||''','''||p_sqlid||''';');
+            pr('    BEGIN execute immediate ''select * from (SELECT SQL_FULLTEXT FROM gv$sqlarea WHERE SQL_ID=:1 union all SELECT SQL_TEXT FROM dba_hist_sqltext WHERE SQL_ID=:1) where rownum<2'' INTO sql_txt USING sq_id,sq_id;');
             pr('    EXCEPTION WHEN OTHERS THEN NULL;END;');
             pr('    IF sql_txt IS NULL THEN');
             writeSQL(v_sql,'sql_txt');
@@ -260,7 +261,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                 pr('    BEGIN');
                 writeSQL(p_plan,'sql_txt1');
                 pr('        --QUERY_REWRITE_INTEGRITY = TRUSTED');
-                pr('        --DBMS_ADVANCED_REWRITE.DECLARE_REWRITE_EQUIVALENCE('''||p_sqlid||''',sql_txt,sql_txt1,false,''GENERAL'');');
+                pr('        --DBMS_ADVANCED_REWRITE.DECLARE_REWRITE_EQUIVALENCE(sq_id,sql_txt,sql_txt1,false,''GENERAL'');');
                 pr(q'[        dbms_sql_translator.create_profile(prof_name); ]');
                 pr(q'[        execute immediate 'grant all on sql translation profile '||prof_name||' to public';]');
                 pr(q'[    EXCEPTION WHEN OTHERS THEN NULL; END;]');
@@ -329,22 +330,21 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                 END IF;
             END LOOP;
             
-            v_source:= substr('PROF_'||nvl(regexp_replace(v_source,'^PROF_'),to_char(v_signature,'fm'||rpad('X',length(v_signature),'X'))),1,30);
+            v_source := substr('PROF_'||nvl(regexp_replace(v_source,'^PROF_'),to_char(v_signature,'fm'||rpad('X',length(v_signature),'X'))),1,30);
             IF v_embed IS NOT NULL THEN
                 pr(v_embed);
             END IF;
             pr('        q''[END_OUTLINE_DATA]'');');
             pr('    signature := DBMS_SQLTUNE.SQLTEXT_TO_SIGNATURE(sql_txt,TRUE);');
-            pr('    BEGIN DBMS_SQLTUNE.DROP_SQL_PROFILE(''' ||v_source||''');EXCEPTION WHEN OTHERS THEN NULL;END;');
+            pr('    BEGIN DBMS_SQLTUNE.DROP_SQL_PROFILE(''' ||replace(v_source,p_sqlid,'''||sq_id||''')||''');EXCEPTION WHEN OTHERS THEN NULL;END;');
             pr('    DBMS_SQLTUNE.IMPORT_SQL_PROFILE (');
             pr('        sql_text    => sql_txt,');
             pr('        profile     => sql_prof,');
-            pr('        name        => ''' ||v_source||''',');
-            pr('        description => ''' || v_source || '_''||signature,');
+            pr('        name        => ''' ||replace(v_source,p_sqlid,'''||sq_id||''')||''',');
+            pr('        description => ''' || replace(v_source,p_sqlid,'''||sq_id||''') || '_''||signature,');
             pr('        category    => ''DEFAULT'',');
             pr('        replace     => TRUE,');
             pr('        force_match => ' || CASE WHEN p_forcematch THEN 'TRUE' ELSE 'FALSE' END || ');');
-            pr('    --To drop this profile, execute: DBMS_SQLTUNE.DROP_SQL_PROFILE('''||v_source||''')');
             pr('END;');
             pr('/');
             pr('PRO SQL Profile created, to drop this profile, execute: DBMS_SQLTUNE.DROP_SQL_PROFILE('''||v_source||''')');

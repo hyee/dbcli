@@ -183,7 +183,7 @@ FROM   (SELECT *
                                           AND    userenv('instance') = nvl(:V2, userenv('instance')))
                                   GROUP  BY mutex_loc_id, p1, sql_id, event) a,
                                   &OBJ_CACHE b
-                          WHERE  a.p1 = b.from_hash)))
+                          WHERE  a.idn = b.from_hash)))
         ORDER  BY last_Time DESC)
 WHERE  rownum <= 50;
 

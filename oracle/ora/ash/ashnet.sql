@@ -27,8 +27,10 @@ FROM (
         &ver ,nth_value(nvl2(sql_id,sql_id||'('||aas||')',''),2) over(partition by machine,event order by nvl2(sql_id,1,2),aas desc) top_2_sql
         &ver ,nth_value(nvl2(sql_id,sql_id||'('||aas||')',''),3) over(partition by machine,event order by nvl2(sql_id,1,2),aas desc) top_3_sql
     from (
-        select machine,event,count(1) aas,median(nvl2(event,time_waited,wait_time)) latency,median(p2) avg_bytes,
-               max(nvl2(event,time_waited,wait_time)) max_latency,max(p2) max_bytes,grouping_id(sql_id) gid, nvl(sql_id,top_level_sql_id) sql_id
+        select machine,event,count(1) aas,
+               PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY nvl2(event,time_waited,wait_time)/nvl2(event,1,2)) latency,
+               PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY p2) avg_bytes,
+               max(nvl2(event,time_waited,wait_time)/nvl2(event,1,2)) max_latency,max(p2) max_bytes,grouping_id(sql_id) gid, nvl(sql_id,top_level_sql_id) sql_id
         from  &ash
         where p2text='#bytes' 
         and   nvl(wait_class,'Network')='Network'

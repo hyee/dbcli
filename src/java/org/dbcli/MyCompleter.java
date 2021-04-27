@@ -22,6 +22,14 @@ public class MyCompleter implements org.jline.reader.Completer {
 
     Console console;
 
+    public void reset() {
+        keysWordCompeleter = new StringsCompleter();
+        dotCompeleter = new StringsCompleter();
+        commandCompleter = new TreeCompleter();
+        keywords.clear();
+        commands.clear();
+    }
+
     public MyCompleter(Console console) {
         this.console = console;
     }

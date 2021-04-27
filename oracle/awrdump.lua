@@ -111,7 +111,7 @@ function awr.extract_period()
                                nvl(min(decode(sign(end_interval_time+3e-4-e),-1,null,snap_id)),max(snap_id)) ed
                         FROM   Dba_Hist_Snapshot
                         WHERE  begin_interval_time-3e-4 <= e and end_interval_time+3e-4>=s
-                        AND    (p_inst IS NULL OR instr(',' || p_inst || ',', instance_number) > 0)
+                        AND    (p_inst IS NULL OR instr(',' || p_inst || ',', ',' || instance_number || ',') > 0)
                         GROUP  BY DBID
                         ORDER  BY 2 DESC) a
                 WHERE  ROWNUM < 2);
