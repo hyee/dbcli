@@ -34,7 +34,13 @@ Parameters
     _kcfis_cell_passthru_fromcpu_enabled: disable Exadata reverse offloading
     _sql_plan_management_control: 4 - diagnose issues with SQL plan baselines of why it fails to use / 16 - Allow SPM on the SQLs start with "/* SQL Analyze("
     _optimizer_squ_bottomup: false to redunce parse time due to large PGA memory usage pending on function kkojnp(bug#22225899), but would change some hash join as FILTER
-    _column_tracking_level: when 3 then similar to dbms_stats.seed_column_usage, however can be set in session level, and 0 to avoid column group creation by dbms_stats,4 to maintain expression tracking
+    _column_tracking_level: when 3 then similar to dbms_stats.seed_column_usage, however can be set in session level, and :
+        0  to avoid column group creation by dbms_stats
+        1  to monitor column usage
+        2  to monitor all column groups
+        4  to maintain expression tracking(DBA_EXPRESSION_STATISTICS)
+        8  to monitor column usage wait
+        16 to monitor column groups from Sql Plan Directives
     _kks_parse_error_warning: controls whether to record the SQL in the alert log when the SQL fails to be parsed over the specific times(default as 100), in <12.2 db, can also set event 10035 level 1 to display the parse error in the alert log
     _kks_cached_parse_errors: set the value to a specific error number(i.e. 942) to skip the error
     _small_table_threshold(STT): defaults to the 2% of buffer cache, and Medium Table Threshold(MTT)=10% of buffer cache
@@ -113,6 +119,22 @@ Parameters
         _log_file_sync_timeout
             How long the foreground waits for LGWR to post it when post/wait is used
             Default value is 100 msecs
+        _fg_fast_sync_spin_usecs 
+            "Fast sync" is used for log file sync by foregrounds when waiting for redo to be persisted on Exadata whose redo is located on PMEM/DAX storage. 
+            This has three phases: sleep, spin and backoff.the backoff phase relative to "redo synch fast sync all sleep count". 
+            When too low, then it is likely that the spin time is too high (parameter _fg_fast_sync_spin_usecs with default 300 us). 
+            When too high, it is likely that the spin time is too low. 
+        _fg_fast_sync_sleep_target_pct :
+            Adaptive fast sync is used for log file sync (LFS) when the redo log is located on PMEM storage - either fully, or partially (via the Exadata PMEMLog feature).
+            This attempts to adaptively determine the sleep time in the sleep phase. The algorithm attempts to maintain a percentage of undersleeps (as configured by the _fg_fast_sync_sleep_target_pct parameter). 
+            An undersleep is one whether after the sleep (in phase 1), the foregrounds redo is found not to be persisted. 
+            Two phases are executed for undersleeps - the spin phase and backoff phase, the latter being used for outliers. 
+            However, the undersleep target includes foregrounds which enter the backoff phase and should not. 
+            The undersleep target should be maintained only be for those that end their sync in the spin phase.
+            Using the default configured value of 50%, a reasonable outcome in which there are 50% undersleeps is that (for eg), 50% end  in the sleep phase, 
+            10% end in the spin phase and 40% in the backoff phase. 
+            This can only be satisfied by having a very log sleep time, 
+            the outcome of which is that log file sync is unnecessarily long.
     _lm_share_lock_opt: false to help reducing 'ges resource hash list' in some cases, also _ksi_clientlocks_enabled=false(11g value)
     _in_memory_cdt: disable materilizing in-memory cdt(also including key-vector transformation)
     _px_reuse_server_groups: reuse existing px server group for CDT
@@ -160,7 +182,7 @@ Fix Controls:
     25167306:  Enable direct path read(Smart Scan) in SQL called from PL/SQL(scheduler job), may also need to set _serial_direct_read=always
     6708183 :  allow dynamic sampling on table functions
     8619631 :  Allow hash aggregation for insert select except for plsql calls
-    13905599:  enable to disable sharing execution plan for GTT across sessions which could bypass dynamic sampling on GTT and thus lead to wrong execution plan
+    13905599:  enable(or _optimizer_use_gtt_session_stats=false) to disable sharing execution plan for GTT across sessions which could bypass dynamic sampling on GTT and thus lead to wrong execution plan
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
    NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled/CONTAINER_DATA(bug30122249): Used on PDB to query dict views

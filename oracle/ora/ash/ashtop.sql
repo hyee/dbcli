@@ -11,6 +11,7 @@
         -o   : group by event+object_id
         -plan: group by sql plan line(for 11g)
         -proc: group by procedure name
+        -op  : group by plan operation + obj
       DataSource:
         -ash : source table is gv$active_session_history(default)
         -dash: source table is dba_hist_active_sess_history
@@ -51,13 +52,14 @@
    --[[
       &fields: {
             sql={sql_id &V11,sql_opname &0},
-            e={wait_class}, 
+            e={wait_class &0}, 
             p={p1,p2,p3,p3text &0},
             pr={p1raw,p2raw,p3raw &0}, 
             o={obj &0},
             plan={plan_hash,obj,SQL_PLAN_LINE_ID &0} 
             none={1},
             c={},
+            op={operation,obj &0}
             proc={sql_id,PLSQL_ENTRY_OBJECT_ID &0},
         }
       &ela : ash={1} dash={7}
@@ -143,6 +145,7 @@ WITH ASH_V AS(
               , TO_CHAR(p2, 'fm0XXXXXXXXXXXXXXX') p2raw
               , TO_CHAR(p3, 'fm0XXXXXXXXXXXXXXX') p3raw
               , nvl(event,nullif('['||p1text||nullif('|'||p2text,'|')||nullif('|'||p3text,'|')||']','[]')) event_name
+        &v11  , SQL_PLAN_OPERATION||' '||SQL_PLAN_OPTIONS OPERATION
         &V11  , CASE WHEN IN_CONNECTION_MGMT      = 'Y' THEN 'CONNECTION_MGMT '          END ||
         &V11    CASE WHEN IN_PARSE                = 'Y' THEN 'PARSE '                    END ||
         &V11    CASE WHEN IN_HARD_PARSE           = 'Y' THEN 'HARD_PARSE '               END ||

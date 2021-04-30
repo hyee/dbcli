@@ -1,6 +1,11 @@
 /*[[
   Show mutex sleep info. Usage: @@NAME [<sid>|<sql_id>|<event>] [<inst_id>]
-  Refer to Doc ID 1298015.1/1298471.1/1310764.1
+  Refer to Doc ID 1298015.1/1298471.1/1310764.1/
+  Possible parameters that impact the event:
+    _column_tracking_level
+    _optimizer_extended_stats_usage_control
+    _optimizer_dsdir_usage_control
+    _sql_plan_directive_mgmt_control
 
   Mainly used to diagnostic below events:
   =======================================
