@@ -41,6 +41,8 @@ Parameters
         4  to maintain expression tracking(DBA_EXPRESSION_STATISTICS)
         8  to monitor column usage wait
         16 to monitor column groups from Sql Plan Directives
+    _optimizer_dsdir_usage_control: 0 to disables the optimizer usage of dynamic statistics (sampling) directives. Default value is 126
+    _sql_plan_directive_mgmt_control : disable all directive management activities. Default is 3
     _kks_parse_error_warning: controls whether to record the SQL in the alert log when the SQL fails to be parsed over the specific times(default as 100), in <12.2 db, can also set event 10035 level 1 to display the parse error in the alert log
     _kks_cached_parse_errors: set the value to a specific error number(i.e. 942) to skip the error
     _small_table_threshold(STT): defaults to the 2% of buffer cache, and Medium Table Threshold(MTT)=10% of buffer cache

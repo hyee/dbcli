@@ -19,7 +19,7 @@ var cur refcursor
 DECLARE
     qry VARCHAR2(32767):=q'!TABLE(gv$(CURSOR (SELECT event NAME, TIME_WAITED_MICRO micro, TOTAL_WAITS cnt, 'Event' typ
                                               FROM   v$system_event
-                                              WHERE  (event IN ('log file sync', 'log file parallel write') OR
+                                              WHERE  (event IN ('log file sync', 'log file parallel write','gcs log flush sync','remote log force - commit') OR
                                                      (event LIKE 'LGWR%' AND event NOT LIKE '%idle'))
                                               AND    userenv('INSTANCE') = nvl('&instance', userenv('INSTANCE'))
                                               AND    time_waited_micro>0
@@ -33,11 +33,21 @@ DECLARE
                                               SELECT TRIM(NAME), VALUE, NULL, 'Stat'
                                               FROM   v$sysstat
                                               WHERE  VALUE > 0
-                                              AND    NAME LIKE 'redo%'
+                                              AND    (NAME LIKE 'redo%'  or name like '% log %' or name like '%rdma on commit%')
                                               AND    userenv('INSTANCE') = nvl('&instance', userenv('INSTANCE')))))!';
+
     func VARCHAR2(2000);
 BEGIN
     IF '&flag'='1' THEN
+        IF dbms_db_version.version>11 THEN
+            qry:='(SELECT * FROM '||qry||q'!
+                  UNION ALL
+                  SELECT METRIC_NAME,SUM(METRIC_VALUE),NULL,'Cell'
+                  FROM   v$cell_global
+                  WHERE  lower(METRIC_NAME) like '%log %'
+                  AND    METRIC_VALUE>0
+                  GROUP  BY METRIC_NAME)!';
+        END IF;
         IF regexp_like(:V1,'^\d+$') THEN
             func :='FUNCTION do_sleep(id NUMBER,target DATE) RETURN TIMESTAMP IS
                     BEGIN
@@ -60,7 +70,10 @@ BEGIN
         END IF;
     ELSE
         func := q'!snap AS
-                 (SELECT /*+materialize*/DECODE(row_number() OVER(ORDER BY mid), 1, mid, -1) mid, XID,secs, dbid, instance_number
+                 (SELECT /*+materialize*/
+                         DECODE(row_number() OVER(ORDER BY mid), 1, mid, -1) mid, 
+                         DECODE(row_number() OVER(ORDER BY xid desc), 1, xid, -1) xxid, 
+                         XID,secs, dbid, instance_number
                   FROM   (SELECT MIN(snap_id) mid, MAX(snap_id) XID, dbid, instance_number,SUM((end_interval_time+0)-(begin_interval_time+0))*86400 secs
                           FROM   &flag.snapshot
                           WHERE  dbid = &did
@@ -77,7 +90,7 @@ BEGIN
                 WHERE  dbid = &did
                 AND    time_waited_micro > 0
                 AND    snap_id IN (mid, XID)
-                AND    (event_name IN ('log file sync', 'log file parallel write') OR (event_name LIKE 'LGWR%' AND event_name NOT LIKE '%idle'))
+                AND    (event_name IN ('log file sync', 'log file parallel write','gcs log flush sync','remote log force - commit') OR (event_name LIKE 'LGWR%' AND event_name NOT LIKE '%idle'))
                 GROUP  BY event_name
                 UNION ALL
                 SELECT 'Latch' typ,
@@ -99,8 +112,22 @@ BEGIN
                 USING  (dbid, instance_number)
                 WHERE  dbid = &did --
                  AND   snap_id IN (mid, XID) --
-                 AND   stat_name LIKE 'redo%' AND VALUE > 0
+                 AND   (stat_name LIKE 'redo%' or stat_name like '% log %' or stat_name like '%rdma on commit%')
+                 AND   VALUE > 0
                 GROUP  BY stat_name!';
+        IF dbms_db_version.version>11 THEN
+            qry:= qry||q'!
+                UNION ALL
+                SELECT 'Cell' typ, metric_name, SUM(metric_value * DECODE(snap_id, mid, -1, 1)/decode('&div','1',1,secs)) micro, NULL cnt
+                FROM   snap a
+                JOIN   &flag.cell_global b
+                USING  (dbid)
+                WHERE  dbid = &did --
+                 AND   snap_id IN (mid, xxid) --
+                 AND   lower(METRIC_NAME) like '%log %'
+                 AND   metric_value > 0
+                GROUP  BY metric_name!';
+        END IF;
     END IF;
     qry:=replace(replace(q'!
         WITH @FUNC@
@@ -118,7 +145,7 @@ BEGIN
                     cnt['redo write worker delay (usec)']=micro['redo write worker delay count'],
                     cnt['redo log space wait time']=micro['redo log space requests'],
                     micro['redo log space wait time']=micro['redo log space wait time']*1e4,
-                    cnt[NAME LIKE 'redo write % time' OR NAME='redo writes coalesced']=micro['redo writes'],
+                    cnt[NAME LIKE 'redo write % time' OR NAME in('redo writes coalesced','cell pmem log writes','flashback log writes','Redo log write requests')]=micro['redo writes'],
                     cnt[NAME LIKE 'redo synch fast sync % (usec)']=micro[REPLACE(CV(),'(usec)','count')],
                     cnt['avg_redo_synch_polls']=micro['redo synch poll writes'],
                     cnt['redo writes adaptive all']=micro['redo writes'],
@@ -132,6 +159,12 @@ BEGIN
                     micro['synch_write_ratio']=micro['redo synch writes'],
                     micro['redo synch PMEM prep time']=SUM(micro)[NAME LIKE 'redo synch fast sync % (usec)'],
                     cnt['redo synch PMEM prep time']=SUM(micro)[NAME LIKE 'redo synch fast sync % count'],
+                    micro['redo write broadcasts']=sum(micro)[name like 'redo write broadcast% count' or name='broadcast rdma on commit (actual)'],
+                    cnt['redo write broadcasts']=micro['redo writes'],
+                    cnt[name in('PMEM log write requests','Redo log write I/O latency','Redo log write request latency')]=micro['Redo log write requests'],
+                    cnt[name like 'Flash log%writ%']=micro['Flash log redo writes serviced'],
+                    micro['Flash log redo write bytes']=SUM(micro)[name like 'Flash log redo bytes%'],
+                    cnt['Flash log redo write bytes']=micro['redo size'],
                     avg_time[ANY]=round(micro[CV()]/nullif(cnt[CV()],0),2),
                     delta_time[NAME IN('redo write gather time','redo write broadcast ack time','redo synch time overhead (usec)')]=avg_time[CV()],
                     delta_time['redo write schedule time']=avg_time['redo write schedule time']-avg_time['redo write gather time'],
@@ -142,13 +175,17 @@ BEGIN
                     delta_time['redo synch time (usec)']=round((micro['redo synch time (usec)']-NVL(micro['redo synch time overhead (usec)'],0)-avg_time['expect_redo_synch_time']/2*LEAST(micro['redo synch writes'],micro['redo writes']))/micro['redo synch writes'],2),
                     micro['redo total time']=SUM(delta_time*cnt)[ANY],
                     delta_pct[ANY]=round(delta_time[CV()]*cnt[CV()]/micro['redo total time'],5),
-                    delta_pct[SUBSTR(NAME,1,3) IN('log') OR NAME IN('redo allocation','redo copy','redo writing','lgwr LWN SCN')]=round(micro[CV()]/micro['redo total time'],5),
-                    delta_pct[SUBSTR(NAME,1,3) IN('LGW')]=round(micro[CV()]/micro['log file parallel write'],5)
+                    delta_pct[SUBSTR(NAME,1,3) IN('log','gcs','rem') OR NAME IN('redo allocation','redo copy','redo writing','lgwr LWN SCN')]=round(micro[CV()]/micro['redo total time'],5),
+                    delta_pct[SUBSTR(NAME,1,3) IN('LGW')]=round(micro[CV()]/micro['log file parallel write'],5),
+                    cnt['redo write broadcast ack time']=sum(micro)[name in('redo write broadcast ack count','broadcast rdma on commit (actual)')],
+                    cnt['redo synch time overhead (usec)']=sum(micro)[name like 'redo synch time overhead count%'],
+                    avg_time[name in ('redo write broadcast ack time','redo synch time overhead (usec)')]=round(micro[CV()]/nullif(cnt[CV()],0),2)
             )
         )
         SELECT NVL(typ,'Stat') TYPE,
                decode(typ,'Event',DECODE(SUBSTR(NAME,1,3),'LGW','  '),
                           'Latch','',
+                          'Cell','',
                           nvl2(delta_pct,'  ',''))||NAME NAME,
                micro "Count or us",cnt,avg_time value,delta_time delta,delta_pct pct,
                DECODE(NAME,
@@ -162,7 +199,7 @@ BEGIN
                      'redo write issue time','submit async I/O requests',
                      'redo write finish time','I/O time (log file parallel write)',
                      'redo write time (usec)','I/O postprocessing (e.g., check I/O completion status)',
-                     'redo write broadcast ack time','broadcast on commit acknowledgement (RAC only)',
+                     'redo write broadcast ack time','broadcast on commit(including rdma) for RAC',
                      'redo write total time','post FGs',
                      'redo synch time (usec)','FGs spending waiting for LGWR to write the redo for commit',
                      'redo synch time overhead (usec)','Time between LGWR updates the on-disk SCN and FG detects that the on-disk SCN >= commit SCN. The value reveals inefficiencies in (post/wait or polling)',
@@ -177,12 +214,13 @@ BEGIN
                      'redo writes adaptive all','ratio=redo adaptives/writes',
                      'redo writes adaptive worker','ratio=redo adaptive worker/all',
                      'redo writes coalesced','redo coalesced/writes',
+                     'redo write broadcasts','ratio=(redo write broadcast+broadcast rdma on commit)*/redo writes',
                      'redo write worker delay (usec)','time between when LGWR asks the worker to start doing the write and when the worker actually starts running'
                ) memo
         FROM   STATS s
-        WHERE  cnt IS NOT NULL
-        ORDER BY DECODE(typ,'Latch',10,'Event',
-                   DECODE(NAME,'log file parallel write',1,'log file sync',3,2),5),
+        WHERE  (cnt IS NOT NULL AND micro IS NOT NULL)
+        ORDER BY DECODE(typ,'Latch',10,'Cell',11,'Event',
+                   DECODE(NAME,'log file parallel write',1,'log file sync',8,decode(substr(name,1,4),'LGWR',2,3)),9),
                  NVL2(delta_pct,0,2-SIGN(INSTR(s.NAME,'_'))),
                  DECODE(trim(NAME),'redo write gather time',1,
                              'redo write schedule time',2,
