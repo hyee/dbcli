@@ -233,11 +233,11 @@ BEGIN
                  ELSE
                   '_db_file_optimizer_read_count (impacts the CBO estimation)'
              END,
-             formula ['MREADTIM'] = 'time to read n blocks in ms = IOSEEKTIM + db_block_size * MBRC / IOTFRSPEED',
-             formula ['SREADTIM'] = 'time to read 1 block  in ms = IOSEEKTIM + db_block_size / IOTFRSPEED',
+             formula ['MREADTIM'] = 'time to read n blocks in ms = IOSEEKTIM + db_block_size * MBRC / IOTFRSPEED, default: 26 for 8K, 42 for 16K',
+             formula ['SREADTIM'] = 'time to read 1 block  in ms = IOSEEKTIM + db_block_size / IOTFRSPEED, default: 12 for 8K, 14 for 16K',
              formula ['IOSEEKTIM'] = 'latency  in ms',
              formula ['IOTFRSPEED'] = 'transfer speed in KB/ms',
-             formula ['   multi  cost / block'] = '1/MBRC * MREADTIM/SREADTIM',
+             formula ['   multi  cost / block'] = 'MREADTIM/MBRC/SREADTIM, default: 0.271 for 8K, 0.375 for 16K',
              formula ['   single cost / block'] = 'by definition',
              formula ['   maximum mbrc'] = 'buffer cache size in blocks / sessions',
              formula ['CPUSPEED'] = 'workload CPU speed in MHZ',

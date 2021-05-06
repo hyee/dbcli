@@ -1107,7 +1107,7 @@ local function extract_jo()
                         cost,card=tonumber(cost),math.round(tonumber(card),3)
                         local tb=self.curr_jo.tlines[self.curr_tab_index]
                         local degree=get_dop(line)
-                        tb.card,tb.cost,tb.degree=cost,card,degree
+                        tb.card,tb.cost,tb.degree=card,cost,degree
                         self.curr_jo.degree=math.max(self.curr_jo.degree or 1,degree)
                     end
                 end
