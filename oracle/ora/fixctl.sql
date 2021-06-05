@@ -39,4 +39,4 @@ WHERE  ((:V1 IS NULL AND (:FILTER != '1=1' OR VALUE = 0)) OR
 AND    inst_id = nvl(:V3, userenv('instance'))
 AND    session_id = nvl(:V2, userenv('sid'))
 AND    &filter
-ORDER  BY 1;
+ORDER  BY regexp_substr(OPTIMIZER_FEATURE_ENABLE,'\d+\.\d+')+0 nulls first,bugno;

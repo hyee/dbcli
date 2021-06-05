@@ -140,6 +140,11 @@ Parameters
     _lm_share_lock_opt: false to help reducing 'ges resource hash list' in some cases, also _ksi_clientlocks_enabled=false(11g value)
     _in_memory_cdt: disable materilizing in-memory cdt(also including key-vector transformation)
     _px_reuse_server_groups: reuse existing px server group for CDT
+    _dbg_scan: default as 0
+        1: Disable LOB predicate pushdown to Smart Scan
+        4096: Disable rowset function evaluation in Smart Scan
+        8192: Disable aggregation pushdown to Smart Scan
+        131072: Disable Hybrid IM scan - this is where In-Memory is interleaved with Smart Scan        
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
     support compression for updating compressed table(dbms_compression.INCREMENTAL_COMPRESS): alter session set events '70001 trace name context forever, level <object_id>' 

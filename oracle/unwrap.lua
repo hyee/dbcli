@@ -1057,7 +1057,9 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local keys,c=pred:match('#keys=([1-9]%d+)')
             if keys then node.proj[1]='K'..keys..',' end
             keys=pred:match('rowset=([1-9]%d+)')
-            if keys then node.proj[2]='R'..keys..',' end
+            if keys then
+                node.proj[2]='R'..keys..',' 
+            end
             c,keys=(pred..', '):gsub('], ','')
             if keys>0 then node.proj[3]='C'..keys..',' end
         end
@@ -1636,13 +1638,16 @@ function unwrap.analyze_sqlmon(text,file,seq)
         end
 
         local envs={}
-        local function add_hint(text)
-            if text:find('^OPT_PARAM') then
-                local name=text:sub(10):match('(['..object_pattern.."]+)")
+        local function add_hint(text,hint1)
+            if not text then text,hint1=hint1,text end
+            if text:upper():find('^OPT_PARAM') then
+                local sub=text:sub(10)
+                local name=sub:match('(['..object_pattern.."]+)")
+                text='OPT_PARAM'..sub
                 if envs[name] then return end
                 envs[name]=text
             end
-            outlines[#outlines+1]={text:find('@') and '' or "Env",text}
+            outlines[#outlines+1]={text:find('@') and '' or "Env",text,hint1}
         end
 
         local env_fmt='OPT_PARAM: %s = %s'
@@ -1719,7 +1724,9 @@ function unwrap.analyze_sqlmon(text,file,seq)
             if p.proj[2]=='' and infos[id-1] and infos[id-1].rowsets and s.cardinality then
                 p.proj[2]='R'..math.round(s.cardinality/infos[id-1].rowsets)..','
             end
-
+            if p.proj[2] and p.proj[2]:match('R[01],') then
+                p.proj[2]='$HIR$'..p.proj[2]:sub(1,2)..'$NOR$,'
+            end
             for k,v in pair(p.predicates) do
                 process_pred(id,v._attr.type,v[1],p,p.object_alias)
             end
@@ -1890,6 +1897,35 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     for k,v in pair(xml.outline_data.hint) do
                         if v~='IGNORE_OPTIM_EMBEDDED_HINTS' then
                             add_hint(v)
+                        end
+                    end
+                end
+
+                if xml.hint_usage then
+                    for k,v in pairs(xml.hint_usage) do
+                        if k=='q' then
+                            for idx,v1 in pair(v) do
+                                local qb_='@"'..v1.n..'"'
+                                local t=v1.h or v1.t and v1.t.h or nil
+                                if t and t.x and not t.x:upper():find('^OPT_PARAM') then
+                                    local hint,alias_,hint1=t.x
+                                    local pos=hint:find('(',1,true)
+                                    if t.r then hint=hint..' / '..t.r end
+                                    local alias_= v1.t and v1.t.f or nil
+                                    if pos then 
+                                        hint1=hint:sub(1,pos)..(alias_ or qb_)..' '..hint:sub(pos+1)
+                                    else
+                                        hint1=hint..'('..(alias_ or qb_)..')'
+                                    end
+                                    add_hint(hint1,hint..' (SQL Hint)')
+                                end
+                            end
+                        elseif k=='s' and v.h then
+                            for idx,h1 in pair(v.h) do
+                                local hint=h1.x
+                                if h1.r then hint=hint..' / '..h1.r end
+                                add_hint(hint..' (SQL Hint)')
+                            end
                         end
                     end
                 end
@@ -2285,7 +2321,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                             c[1]=xid:format(list[1][1])..' - '..xid:format(list[1][#list[1]])
                             --TODO
                         end
-                        c[2]=strip_quote(c[2])
+                        c[2]=c[3] or strip_quote(c[2])
                     end
                 end
                 if a[1]~=b[1] then

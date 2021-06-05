@@ -55,7 +55,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD*/
         l_arr    dbms_output.chararr;
         l_lob    CLOB;
         l_enable VARCHAR2(3)  := :enable;
-        l_trace  VARCHAR2(30) := :autotrace;
+        l_trace  VARCHAR2(30) := lower(:autotrace);
         l_sql_id VARCHAR2(15) := :sql_id; 
         l_tmp_id VARCHAR2(15) := :sql_id; 
         l_child  PLS_INTEGER  := :child;

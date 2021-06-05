@@ -15,10 +15,12 @@ How to setup Columnar Cache
         alter session set "_enable_columnar_cache"=32865 --(0x8061, Capacity for non-EHCC) 
         alter session set "_enable_columnar_cache"=32833 --(0x8041, Query for non-EHCC) 
     Others:
-        33   - Force CC2
+        33   - Force CC1
         2048 - Disable the use of Non-1MB region for both CC population and CC reads.
         4096 - disable CC1 but use CC2 for cache hit
         8192 - disable CC2 but use CC1 for cache hit
+        16385- Check whether using the columnar cache with row-major blocks is the cause of the issue
+        32769- Check whether using the columnar cache with Hybrid Columnar blocks is the cause of the issue
     
 How to check query performance
 ==============================
