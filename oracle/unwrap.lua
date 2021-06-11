@@ -128,6 +128,52 @@ local function to_pct(a,b,c,quote)
     end
 end
 
+local function load_sql_text(sql_fulltext,pr,title,sql_id)
+    local sql_text,brief_text=sql_fulltext
+    if sql_text then
+        title('$PROMPTCOLOR$SQL '..sql_id..'$NOR$')
+        sql_text=type(sql_text)=='table' and sql_text[1] or sql_text
+        local is_cut
+        if #sql_text>512 and not sql_text:sub(1,512):find('\n') then
+            local width=console:getScreenWidth()-50
+            local len,result,pos,pos1,c,p=#sql_text,{},1
+            local pt="[|'\"),%] =]"
+            local ln=0
+            while true do
+                result[#result+1]=sql_text:sub(pos,pos+width-1)
+                pos=pos+width
+                pos1=pos
+                while true do
+                    pos1=pos1+1
+                    c=p or sql_text:sub(pos1,pos1)
+                    p=sql_text:sub(pos1+1,pos1+1)
+                    if c=='' or (c:find(pt) and not p:find(pt)) then
+                        ln=ln+1
+                        result[#result+1]=sql_text:sub(pos,pos1)..'\n'
+                        pos=pos1+1
+                        break
+                    end
+                end
+                if len<pos then break end
+                if ln>32 then
+                    result[#result]='\n...... The Full SQL Text can be found in the text file ......'
+                    break
+                end
+            end
+            sql_text=table.concat(result,'')
+        else
+            sql_text=sql_text:split('\n')
+            local ln=#sql_text
+            if ln>32 then
+                sql_text[33]='\n...... The Full SQL Text can be found in the text file ......'
+            end
+            sql_text=table.concat(sql_text,'\n',1,math.min(33,ln))
+        end
+        local text,data=grid.tostring({{sql_text}},false,'','')
+        pr(text,sql_fulltext)
+    end
+end
+
 local function get_top_events(events,as,rt,top)
     local lines,l,first={},{}
     for id,aas in pairs(events) do
@@ -474,8 +520,8 @@ local function load_binds(binds)
         end
     end
     table.sort(rows,function(a,b) return a[4]<b[4] end)
-    table.insert(rows,1,{'Name','Data Type','Max Len','Position','Occurrence','Peeked Value','Binding Value'})
-    rows.topic,rows.colsep='Peeked/Binding Variables','|'
+    table.insert(rows,1,{'Name','Data Type','Max Len','Position','Occurrence','Peeked Bind','Cursor Bind'})
+    rows.topic,rows.colsep='Peeked/Cursor Binds','|'
     return rows
 end
 
@@ -674,7 +720,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
 
     local function title(msg)
         pr('\n'..msg..':')
-        pr(string.rep('=',#msg+1))
+        pr(string.rep('=',#msg:strip_ansi()+1))
     end
 
     --build PX process name <sid>@<inst_id>
@@ -682,54 +728,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
         sid=(sid or session_id)..'@'..(tonumber(inst_id) or instance_id)
         return sid
     end
-
-    local function load_sql_text()
-        local sql_text,brief_text=hd.target.sql_fulltext
-        if sql_text then
-            sql_id=hd.report_parameters.sql_id or hd.target._attr.sql_id
-            title('SQL '..sql_id)
-            sql_text=type(sql_text)=='table' and sql_text[1] or sql_text
-            local is_cut
-            if #sql_text>512 and not sql_text:sub(1,512):find('\n') then
-                local width=console:getScreenWidth()-50
-                local len,result,pos,pos1,c,p=#sql_text,{},1
-                local pt="[|'\"),%] =]"
-                local ln=0
-                while true do
-                    result[#result+1]=sql_text:sub(pos,pos+width-1)
-                    pos=pos+width
-                    pos1=pos
-                    while true do
-                        pos1=pos1+1
-                        c=p or sql_text:sub(pos1,pos1)
-                        p=sql_text:sub(pos1+1,pos1+1)
-                        if c=='' or (c:find(pt) and not p:find(pt)) then
-                            ln=ln+1
-                            result[#result+1]=sql_text:sub(pos,pos1)..'\n'
-                            pos=pos1+1
-                            break
-                        end
-                    end
-                    if len<pos then break end
-                    if ln>32 then
-                        result[#result]='\n...... The Full SQL Text can be found in the text file ......'
-                        break
-                    end
-                end
-                sql_text=table.concat(result,'')
-            else
-                sql_text=sql_text:split('\n')
-                local ln=#sql_text
-                if ln>32 then
-                    sql_text[33]='\n...... The Full SQL Text can be found in the text file ......'
-                end
-                sql_text=table.concat(sql_text,'\n',1,math.min(33,ln))
-            end
-            local text,data=grid.tostring({{sql_text}},false,'','')
-            pr(text,hd.target.sql_fulltext)
-        end
-    end
-    load_sql_text()
+    sql_id=hd.report_parameters.sql_id or hd.target._attr.sql_id
+    load_sql_text(hd.target.sql_fulltext,pr,title,sql_id)
 
     local iostat,buffer_bytes
     local function load_iostats()
@@ -2444,12 +2444,24 @@ function unwrap.analyze_sqldetail(text,file,seq)
         pr(string.rep('=',#msg:strip_ansi()+1))
     end
 
+    pr('$COMMANDCOLOR$'..string.rep("=",120)..'$NOR$')
+    if hd.sql_attributes.text and hd.sql_attributes.text[1] and hd.sql_attributes.sql_id then
+        load_sql_text(hd.sql_attributes.text[1],pr,title,hd.sql_attributes.sql_id)
+    end
+
     local function detail_report_parameters()
         local names,cnt={},0
-        for _,params in pairs{content.report_parameters,content.target and content.target._attr or nil} do
+        for _,n in ipairs{'db_version','timezone_offset','cpu_cores','hyperthread'} do
+            if content._attr and content._attr[n] then
+                add_header(n,content._attr[n])
+                cnt=cnt+1
+                names[n]=1
+            end
+        end
+        for _,params in pairs{content.report_parameters,content.target and content.target._attr or nil,hd.sql_attributes} do
             if type(params) =='table' then
                 for n,v in pairs(params) do
-                    if not names[n] then
+                    if not names[n] and type(v)~="table" then
                         names[n]=v
                         if n=='sql_id' then 
                             sql_id=v
@@ -2467,13 +2479,11 @@ function unwrap.analyze_sqldetail(text,file,seq)
             pr(grid.merge({titles},'plain'))
         end
     end
-    pr('$COMMANDCOLOR$'..string.rep("=",120)..'$NOR$')
     env.var.define_column('duration','for','smhd2')
     detail_report_parameters()
 
-    local dims={}
     local function detail_top_activity()
-        local dim={}
+        local dims,dim={},{}
         for i,d in pair(hd.top_activity and hd.top_activity.dim) do
             if d._attr.id and d._attr.id~='class' and d._attr.id~='class,event' and d.top_members and d.top_members.member then
                 local row=d._attr.id:split(',')
@@ -2491,7 +2501,9 @@ function unwrap.analyze_sqldetail(text,file,seq)
             end
         end
         if #dim>0 then
-            table.sort(dim,function(a,b) return #a<#b end)
+            table.sort(dim,function(a,b)
+                return #a<#b 
+            end)
             local d={}
             dims[1]=d
             for i,row in ipairs(dim) do
@@ -2582,28 +2594,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
             total[#total+1]=row1
             avg[#avg+1]=row2
         end
-        --[[for _,n in ipairs(names) do
-            if names[n]>0 then
-                local row1,row2={n},{n}
-                for i,stats in ipairs(rows) do
-                    if stats[n] then
-                        if n:find('_time',1,true) then
-                            stats[n]=stats[n]*1e6
-                            env.var.define_column(n,'for','usmhd2')
-                        end
-                        row1[i+1]=math.round(stats[n],2)
-                        if n~='executions' then
-                            local exec=execs[i]>0 and execs[i] or 1
-                            row2[i+1]=math.round(stats[n]/exec,2)
-                        else
-                            row2[i+1]=stats[n]
-                        end
-                    end
-                end
-                total[#total+1]=row1
-                avg[#avg+1]=row2
-            end
-        end--]]--
+
         header={'Plan Hash','SQL Exec ID','SQL Exec Start','|'}
         local sqlmons={topic='SQL Monitor List',header}
         local function set_mon_row(mon,row)
@@ -2642,7 +2633,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
         if #sqlmons>1 then
             pr(grid.merge({sqlmons},'plain'))
         end
-        pr(grid.merge({total,'|',avg},'plain'))
+        pr(grid.merge({avg,'|',total},'plain'))
     end
     detail_plan_summary()
 
@@ -2702,16 +2693,19 @@ function unwrap.analyze_sqldetail(text,file,seq)
             end
         end
 
-
         for i,p in pair(hd.sql_plans and hd.sql_plans.sql_plan) do
             local phv=p._attr.plan_hash_value
             local rows,hier,hier_idx,tier,ids={header},{},0,{},{}
-            local aas,envs,outlines,preds,qbs,qb_transforms,skps,binds={},{},{},{ids={}},{},{},{},nil
+            local aas,envs,outlines,preds,qbs,qb_transforms,skps,binds={},{},{},{ids={}},{},{},{},{}
             local aas_func
             titles={{},{}}
             
             local plan_lines=p.plan and p.plan.operation or nil
             if not plan_lines then return end
+
+            for _,cursor_binds in pair(p.cursor_binds and p.cursor_binds.binds) do
+                binds[2]=cursor_binds
+            end
 
             local sep='          EXECUTION PLAN HASH VALUE: '..phv..'          '
             pr('\n'..("="):rep(#sep:strip_ansi()+2))
@@ -2781,7 +2775,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
                 rows[#rows+1]=row
                 ids[id]=row
                 if op.other_xml then
-                    binds={op.other_xml.peeked_binds}
+                    binds[1]=op.other_xml.peeked_binds
                     parse_other_xml(op.other_xml,add_header,envs,outlines,qb_transforms,skps)
                 end
             end
@@ -2861,9 +2855,6 @@ function unwrap.analyze_sqldetail(text,file,seq)
             pr(grid.merge({rows},'plain'))
             binds=load_binds(binds)
             if binds then
-                binds.topic=nil
-                title("Peeked Binds")
-                binds[1][#binds[1]]=nil
                 pr(grid.merge({binds},'plain'))
             end
             print_suffix(preds,qbs,qb_transforms,outlines,pr,xid)          
