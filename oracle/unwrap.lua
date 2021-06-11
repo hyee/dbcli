@@ -108,6 +108,475 @@ local function load_xml(parser,xml)
     parser:parse(table.concat(raw,'\n'))
 end
 
+
+local function to_pct(a,b,c,quote)
+    if b==0 then
+        if c and c>0 then 
+            b=c
+        else
+            return ''
+        end
+    elseif a>b and c then
+        b=b+c
+    end
+    b=('%.1f%%'):format(100*a/b):gsub('%.0%%','%%')
+    if b=='0%' then return '' end
+    if quote~=false then
+        return '('..b..')'
+    else
+        return ' '..b
+    end
+end
+
+local function get_top_events(events,as,rt,top)
+    local lines,l,first={},{}
+    for id,aas in pairs(events) do
+        --aas: {rt,aas}
+        local v=type(aas)=='table' and (aas[2]==0 and aas[1] or aas[2]) or aas
+        lines[#lines+1]={id,v}
+    end
+    table.sort(lines,function(o1,o2) return o1[2]>o2[2] end)
+    for i=1,math.min(top or 1,#lines) do
+        if i==1 and (top or 1)==1 then
+            local pct=to_pct(lines[i][2],as,rt):match('[%d%.]+')
+            if pct then pct=tonumber(pct)/100 end
+            return lines[i][1],pct
+        end
+        l[i]=lines[i][1]..' '..to_pct(lines[i][2],as,rt)
+    end
+    return table.concat(l,', '),first
+end
+
+local function scan_events(activities,row,aas_idx)
+    if not row.events then row.events={} end
+    for k,v in pair(type(activities)=='table' and activities.activity or nil) do
+        local event=v._attr.event or v._attr.class
+        if event=='Cpu' then event='ON CPU' end
+        row.events[event]=(row.events[event] or 0)+tonumber(v[1])
+        if aas_idx then row[aas_idx]=(row[aas_idx] or 0)+tonumber(v[1]) end
+    end
+end
+
+local function strip_quote(str)
+    if type(str)~='string' then return str end
+    return str:gsub('"([%u%d_$#]+)"','%1')
+end
+
+local cp='"(['..object_pattern..']+)"'
+local function process_pred(preds,id,type,pred,node,alias)
+    if type:lower()~='proj' then
+        preds[#preds+1]={tonumber(id),type:initcap(),strip_quote(pred)}
+        preds.ids[id]=preds.ids[id] or {}
+        if node then
+            if not node.pred then node.pred={'',''} end
+            local df='__DEFAULT__'
+            local sets={[df]={0}}
+            pred=(' '..pred..' '):gsub('([^'..object_full_pattern..'])','%1%1')
+            if alias then 
+                alias='"'..alias:gsub('@.*',''):gsub('"',''):escape()..'"'
+                pred=pred:gsub('([^%."])'..alias..'."','%1"')
+            end
+            pred=pred:gsub('([^%."])("['..object_full_pattern..']+")([^%."])',function(p,c,s)
+                local t,o=c:match('^'..cp..'%.'..cp..'$')
+                if not t then
+                    o=c:match('^'..cp..'$')
+                    if o then t=df end
+                end
+                if t then
+                    if not sets[t] then sets[t]={0} end
+                    if not sets[t][o] then
+                        sets[t][1],sets[t][o]=sets[t][1]+1,1
+                    end
+                end
+                return p..c..s
+            end)
+            local c=0
+
+            if alias and sets[df][1]>0 then 
+                c=sets[df][1]
+            else
+                c=0
+                for k,v in pairs(sets) do
+                    c=c<v[1] and v[1] or c
+                end
+            end
+            if c>0 then
+                if type:lower()=='filter' then
+                    node.pred[2]='F'..c
+                elseif type:lower()=='access' then
+                    node.pred[1]='A'..c
+                else
+                    node.pred[1]='A'..c
+                end
+            end
+        end
+    elseif node then
+        local keys,c=pred:match('#keys=([1-9]%d+)')
+        if keys then node.proj[1]='K'..keys..',' end
+        keys=pred:match('rowset=([1-9]%d+)')
+        if keys then
+            node.proj[2]='R'..keys..',' 
+        end
+        c,keys=(pred..', '):gsub('], ','')
+        if keys>0 then node.proj[3]='C'..keys..',' end
+    end
+end
+
+local function qb_name(qb) return '@"'..qb:gsub('["@]+','')..'"' end
+local function add_hint(envs,outlines,text,hint1)
+    if not text then text,hint1=hint1,text end
+    if text:upper():find('^OPT_PARAM') then
+        local sub=text:sub(10)
+        local name=sub:match('(['..object_pattern.."]+)")
+        text='OPT_PARAM'..sub
+        if envs[name] then return end
+        envs[name]=text
+    end
+    outlines[#outlines+1]={text:find('@') and '' or "Env",text,hint1}
+end
+
+local function process_qb(qbs,qb,alias,id,depth)
+    id=tonumber(id)
+    if not qbs.__qbs then qbs.__qbs={} end
+    if (alias or '')~='' then qbs['"'..alias:gsub('"',''):gsub('@','"@"')..'"']=id end
+    if qb and qb~='' then
+        qb=qb_name(qb)
+        local range=qbs[qb] or {min=id,qb=qb}
+        range.max=id
+        qbs[qb]=range
+        qbs.__qbs[depth]=range
+        for i=#qbs.__qbs,depth+1,-1 do
+            qbs.__qbs[i]=nil
+        end
+    else
+        for i=depth-1,0,-1 do
+            if qbs.__qbs[i] then
+                qb=qbs.__qbs[i].qb
+                qbs.__qbs[i].max=id
+                break
+            end
+        end
+    end
+end
+
+local function parse_other_xml(xml,add_header,envs,outlines,qb_transforms,skp)
+    if type(xml)~='table' then return end
+    for k,v in pair(xml.info) do
+        local typ=v._attr and v._attr.type or nil
+        if typ and typ~='nodeid/pflags' and typ~='px_ext_opns' and typ~='db_version' then
+            add_header(typ,v[1],v._attr.note)
+        end
+    end
+
+    for _,op in pair(xml.display_map and xml.display_map.row) do
+        local attr=op._attr
+        skp[tonumber(attr.op)]=tonumber(attr.skp)
+    end
+
+    if xml.stats then
+        local t=xml.stats._attr.type
+        for k,v in pair(xml.stats.stat) do
+            if t and v._attr.name then
+                add_header(t..'.'..v._attr.name,v[1],10)
+            end
+        end
+    end
+
+    if xml.qb_registry then
+        for k,v in pair(xml.qb_registry.q) do
+            if type(v.n)=='string' and type(v.p)=='string' then
+                qb_transforms[qb_name(v.p)]=qb_name(v.n)
+            end
+        end
+    end
+
+    if xml.outline_data then
+        for k,v in pair(xml.outline_data.hint) do
+            if v~='IGNORE_OPTIM_EMBEDDED_HINTS' then
+                add_hint(envs,outlines,v)
+            end
+        end
+    end
+
+    if xml.hint_usage then
+        for k,v in pairs(xml.hint_usage) do
+            if k=='q' then
+                for idx,v1 in pair(v) do
+                    local qb_='@"'..v1.n..'"'
+                    local t=v1.h or v1.t and v1.t.h or nil
+                    if t and t.x and not t.x:upper():find('^OPT_PARAM') then
+                        local hint,alias_,hint1=t.x
+                        local pos=hint:find('(',1,true)
+                        if hint:find('@"',1,true) then pos=nil end
+                        if t.r then hint=hint..' / '..t.r end
+                        local alias_= v1.t and v1.t.f or nil
+                        if pos then 
+                            hint1=hint:sub(1,pos)..(alias_ or qb_)..' '..hint:sub(pos+1)
+                        else
+                            hint1=hint..'('..(alias_ or qb_)..')'
+                        end
+                        add_hint(envs,outlines,hint1,hint..' (SQL Hint)')
+                    end
+                end
+            elseif k=='s' and v.h then
+                for idx,h1 in pair(v.h) do
+                    local hint=h1.x
+                    if h1.r then hint=hint..' / '..h1.r end
+                    add_hint(envs,outlines,hint..' (SQL Hint)')
+                end
+            end
+        end
+    end
+end
+
+local function load_binds(binds)
+    if not binds[1] and not binds[2] then
+        return nil
+    end
+    local dtypes={
+          [1] = 'VARCHAR2',
+          [2] = function(attr)  
+                    return attr.scal=="-127" and 'FLOAT' or 
+                           attr.pre=='38' and (attr.scal or '0')=='0' and 'INTEGER' or 
+                           ('NUMBER('.. (attr.pre or '38')..','..(attr.scal or '*')..')')
+                end,
+          [3] = 'NATIVE INTEGER',
+          [8] = 'LONG',
+          [9] = 'VARCHAR',
+         [11] = 'ROWID',
+         [12] = 'DATE',
+         [23] = 'RAW',
+         [24] = 'LONG RAW',
+         [29] = 'BINARY_INTEGER',
+         [69] = 'ROWID',
+         [96] = 'CHAR',
+        [100] = 'BINARY_FLOAT',
+        [101] = 'BINARY_DOUBLE',
+        [102] = 'REF CURSOR',
+        [104] = 'UROWID',
+        [105] = 'MLSLABEL',
+        [106] = 'MLSLABEL',
+        [110] = 'REF',
+        [111] = 'REF',
+        [112] = 'CLOB',
+        [113] = 'BLOB', 
+        [114] = 'BFILE', 
+        [115] = 'CFILE',
+        [121] = 'OBJECT',
+        [122] = 'TABLE',
+        [123] = 'VARRAY',
+        [178] = 'TIME',
+        [179] = 'TIME WITH TIME ZONE',
+        [180] = 'TIMESTAMP',
+        [181] = 'TIMESTAMP WITH TIME ZONE',
+        [231] = 'TIMESTAMP WITH LOCAL TIME ZONE',
+        [182] = 'INTERVAL YEAR TO MONTH',
+        [183] = 'INTERVAL DAY TO SECOND',
+        [250] = 'PL/SQL RECORD',
+        [251] = 'PL/SQL TABLE',
+        [252] = 'PL/SQL BOOLEAN'}
+    local rows={_names={}}
+    local positions={}
+    for i=1,2 do
+        for j,b in pair(binds[i] and binds[i].bind or nil) do
+            local att=b._attr
+            local nam=att.nam or att.name
+            local maxlen=tonumber(att.maxlen or att.mxl)
+            local row=rows._names[nam] or {nam,nil,maxlen}
+            if not positions[nam] then positions[nam]={c=0} end
+            if att.pos and not positions[nam][att.pos] then
+                positions[nam][att.pos],positions[nam].c=1,1+positions[nam].c
+            end
+            if not row[2] or att.dtystr then
+                row[2]=att.dtystr
+                if att.format=="hexdump" or not row[2] then
+                    local dty=att.dty
+                    dty=dtypes[tonumber(dty)] or dty
+                    if type(dty)=='function' then
+                        dty=dty(att)
+                    elseif dty=='VARCHAR2' or dty=='VARCHAR' or dty=='CHAR' or dty=='RAW' then
+                        dty=dty..'('..(att.len or att.maxlen or att.mxl)..')'
+                    end
+                    if b[1] and (att.dty=='1' or att.dty=='9' or att.dty=='96') then
+                        att.dtystr=dty
+                        att.format=nil
+                        b[1]=b[1]:fromhex()
+                    elseif b[1] and (att.dty=='2' or att.dty=='3' or att.dty=='29') then
+                        att.dtystr=dty
+                        att.format=nil
+                        local sets,idx,sign,p,s={'0.'},0
+                        b[1]:gsub('..',function(s1)
+                            idx=idx+1
+                            s=tonumber(s1,16)
+                            if idx>=2 then
+                                if sign>0 then
+                                    sets[idx]=s-1
+                                else
+                                    sets[idx]=102-s-1
+                                end
+                            else
+                                if s>=128 then
+                                    sign,p=1.0,s-128-64
+                                else
+                                    sign,p=-1.0,127-s-64
+                                end
+                            end
+                            return s1
+                        end)
+                        if sign==-1 then sets[#sets]=nil end
+                        b[1]=tostring(math.round(sign*math.pow(100,p)*tonumber(table.concat(sets)),4))
+                    elseif b[1] and (att.dty=='12' or att.dty=='179' or att.dty=='180' or att.dty=='181' or att.dty=='231') then
+                        local sets,idx,s={},0
+                        b[1]:gsub('..',function(s1)
+                            s,sep=tonumber(s1,16)
+                            idx=idx+1
+                            if idx<=2 then
+                                s,sep=s-100,'/'
+                            elseif idx>=5 then
+                                s,sep=s-1,':'
+                            end
+                            sep=idx==1 and '' or idx==2 and '/' or idx==3 and '/' or idx==4 and ' ' or idx==7 and '' or ':'
+                            sets[idx*2-1],sets[idx*2]=tostring(s),sep
+                            return s1
+                        end,7)
+                        
+                        while b[1]:find('00$') do b[1]=b[1]:sub(1,-3) end
+                        if #b[1]>14 then
+                            sets[#sets]='.'
+                            sets[#sets+1]=(''..tonumber(b[1]:sub(15,22),16)):gsub('^(..-)0+$','%1')
+                        end
+                        if #b[1]>22 then
+                            sets[#sets+1]=' '
+                            sets[#sets+1]=tostring(tonumber(b[1]:sub(22,23),16)-20)
+                        end
+                        if #b[1]>23 then
+                            sets[#sets+1]=':'
+                            sets[#sets+1]=tostring(tonumber(b[1]:sub(24,25),16)-60)
+                        end
+                        b[1]=table.concat(sets,''):gsub('(%d+)/(%d+)/(%d+)',function(y,m,d) return m..'/'..d..'/'..y end)
+                        att.dtystr=dty
+                        att.format=nil
+                    end
+                    row[2]=dty
+                end
+            end
+            row[4]=math.min(tonumber(att.pos) or 9999,row[4] or 9999)
+            row[5]=positions[nam].c
+            if b[1] then
+                row[5+i]=(att.dtystr and att.format~='hexdump' and '' or '(0x)')..b[1]
+            else
+                row[5+i]='<Unknown>'
+            end
+            if not rows._names[nam] then
+                rows._names[nam]=row
+                rows[#rows+1]=row
+            end
+        end
+    end
+    table.sort(rows,function(a,b) return a[4]<b[4] end)
+    table.insert(rows,1,{'Name','Data Type','Max Len','Position','Occurrence','Peeked Value','Binding Value'})
+    rows.topic,rows.colsep='Peeked/Binding Variables','|'
+    return rows
+end
+
+local function print_suffix(preds,qbs,qb_transforms,outlines,pr,xid)
+    local function title(msg)
+        pr('\n'..msg..':')
+        pr(string.rep('=',#msg:strip_ansi()+1))
+    end
+
+    if #preds>0 then
+        env.var.define_column('id','break')
+        table.sort(preds,function(a,b) 
+            if a[1]~=b[1] then return a[1]<b[1] end
+            if a[2]~=b[2] then return a[2]<b[2] end
+            return a[3]:gsub('^.-%-> *','')<b[3]:gsub('^.-%-> *','')
+        end)
+        table.insert(preds,1,{'Id','Type','Content'})
+        title('Predicates/Line Stats')
+        pr(grid.tostring(preds))
+        env.var.define_column('id','clear')
+    end
+
+    if #outlines>0 then
+        title('Optimizer Environments & Outlines')
+        table.sort(outlines,function(a,b)
+            for _,c in ipairs{a,b} do
+                if c[1]=='' and c[2]:find('"') then
+                    local hint=(' '..c[2]..' '):gsub('([^'..object_pattern..'"@%.])','%1%1')
+                    local list={}
+                    hint:gsub('([^%."@])(@?"['..object_pattern..'"@%.]+")([^%."@])',function(p,c,s)
+                        local pos=c:find('@',1,true)
+                        if not pos then return p..c..s end
+                        local n=c
+                        local qb=qbs[n]
+                        while not qb do
+                            n=qb_name(n)
+                            qb=qbs[n]
+                            if not qb then
+                                n=qb_transforms[n] 
+                                if not n then break end
+                                qb=qbs[n]
+                            end
+                        end
+                        if type(qb)=='table' then
+                            list[2]=qb
+                        elseif qb then
+                            if not list[1] then list[1]={} end
+                            list[1][#list[1]+1]=qb
+                        elseif pos>1 then
+                            list.missing=(list.missing or 0)+1
+                            n,qb=c:sub(1,pos-1),c:sub(pos)
+                            while qb_transforms[qb] do
+                                qb=qb_transforms[qb]
+                                local n1=qbs[n..qb]
+                                if n1 then
+                                    if not list[1] then list[1]={} end
+                                    list[1][#list[1]+1]=n1
+                                    list.missing=list.missing-1
+                                    break
+                                end
+                            end
+                            if list.missing==0 then list.missing=nil end
+                        end
+                        return p..c..s
+                    end)
+                    if list[1] and #list[1]==1 and (not list.missing or not list[2])  then 
+                        c[1]=xid:format(list[1][1])
+                    elseif list[2] then
+                        if not list[1] or list[2].min==list[2].max then
+                            c[1]=xid:format(list[2].min)
+                        else
+                            c[1]=xid:format(list[2].min)..' - '..xid:format(list[2].max)
+                        end
+                    elseif list[1] and #list[1]>1 then
+                        table.sort(list[1])
+                        c[1]=xid:format(list[1][1])..' - '..xid:format(list[1][#list[1]])
+                        --TODO
+                    end
+                    c[2]=c[3] or strip_quote(c[2])
+                end
+            end
+            if a[1]~=b[1] then
+                if a[1]=='Env' then 
+                    return true;
+                elseif b[1]=='Env' then
+                    return false
+                else
+                    local l1,l2=tonumber(a[1]:match('%d+')) or 9999,tonumber(b[1]:match('%d+')) or 9999
+                    if l1~=l2 then return l1<l2 end
+                    return a[1]<b[1]
+                end
+            else
+                return a[2]<b[2]
+            end
+        end)
+        table.insert(outlines,1,{'Scope','Content'})
+        pr(grid.tostring(outlines))
+    end
+end
+
+local colors={'$COMMANDCOLOR$','$PROMPTCOLOR$','$HIB$','$PROMPTSUBCOLOR$'}
 local sqlmon_pattern='<report [^%>]+>%s*<report_id><?[^<]*</report_id>%s*<sql_monitor_report .-</sql_monitor_report>%s*</report>'
 function unwrap.analyze_sqlmon(text,file,seq)
     local content=handler:new()
@@ -135,7 +604,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
     local instance_id,session_id=tonumber(hd.target._attr.instance_id),tonumber(hd.target._attr.session_id)
     local error_msg=hd.error and hd.error[1]:trim():match('[^\n]+') or nil
     local default_dop,px_alloc,sql_id,status,plsql,interval,phv=0,0
-    local colors={'$COMMANDCOLOR$','$PROMPTCOLOR$','$HIB$','$PROMPTSUBCOLOR$'}
+    
     --from x$qksxa_reason
     local reasons={
         ['352']="DOP downgrade due to adaptive DOP",
@@ -208,36 +677,10 @@ function unwrap.analyze_sqlmon(text,file,seq)
         pr(string.rep('=',#msg+1))
     end
 
-    local function strip_quote(str)
-        if type(str)~='string' then return str end
-        return str:gsub('"([%u%d_$#]+)"','%1')
-    end
-
     --build PX process name <sid>@<inst_id>
     local function insid(sid,inst_id)
         sid=(sid or session_id)..'@'..(tonumber(inst_id) or instance_id)
         return sid
-    end
-
-    --sort the waits in desc
-    local pct_fmt='%.1f%%'
-    local function to_pct(a,b,c,quote)
-        if b==0 then
-            if c and c>0 then 
-                b=c
-            else
-                return ''
-            end
-        elseif a>b and c then
-            b=b+c
-        end
-        b=pct_fmt:format(100*a/b):gsub('%.0%%','%%')
-        if b=='0%' then return '' end
-        if quote~=false then
-            return '('..b..')'
-        else
-            return ' '..b
-        end
     end
 
     local function load_sql_text()
@@ -612,25 +1055,6 @@ function unwrap.analyze_sqlmon(text,file,seq)
         end
     end
     load_skew()
-    
-    local function get_top_events(events,as,rt,top)
-        local lines,l,first={},{}
-        for id,aas in pairs(events) do
-            --aas: {rt,aas}
-            local v=type(aas)=='table' and (aas[2]==0 and aas[1] or aas[2]) or aas
-            lines[#lines+1]={id,v}
-        end
-        table.sort(lines,function(o1,o2) return o1[2]>o2[2] end)
-        for i=1,math.min(top or 1,#lines) do
-            if i==1 and (top or 1)==1 then
-                local pct=to_pct(lines[i][2],as,rt):match('[%d%.]+')
-                if pct then pct=tonumber(pct)/100 end
-                return lines[i][1],pct
-            end
-            l[i]=lines[i][1]..' '..to_pct(lines[i][2],as,rt)
-        end
-        return table.concat(l,', '),first
-    end
 
     local statset={
         {'main_','Proc'},
@@ -721,15 +1145,6 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 return '$PROMPTCOLOR$'..value..'$NOR$'
             end
             return value
-        end
-
-        local function scan_events(activities,row)
-            if not row.events then row.events={} end
-            for k,v in pair(type(activities)=='table' and activities.activity or nil) do
-                local event=v._attr.event or v._attr.class
-                if event=='Cpu' then event='ON CPU' end
-                row.events[event]=(row.events[event] or 0)+v[1]
-            end
         end
 
         scan_events(hd.activity_sampled and hd.activity_sampled,sqlstat[2])
@@ -1005,66 +1420,6 @@ function unwrap.analyze_sqlmon(text,file,seq)
     local outlines,preds={},{ids={}}
     local nid,xid=9999,0
 
-    local cp='"(['..object_pattern..']+)"'
-    local function process_pred(id,type,pred,node,alias)
-        if type:lower()~='proj' then
-            preds[#preds+1]={tonumber(id),type:initcap(),strip_quote(pred)}
-            preds.ids[id]=preds.ids[id] or {}
-            if node then
-                if not node.pred then node.pred={'',''} end
-                local df='__DEFAULT__'
-                local sets={[df]={0}}
-                pred=(' '..pred..' '):gsub('([^'..object_full_pattern..'])','%1%1')
-                if alias then 
-                    alias='"'..alias:gsub('@.*',''):gsub('"',''):escape()..'"'
-                    pred=pred:gsub('([^%."])'..alias..'."','%1"')
-                end
-                pred=pred:gsub('([^%."])("['..object_full_pattern..']+")([^%."])',function(p,c,s)
-                    local t,o=c:match('^'..cp..'%.'..cp..'$')
-                    if not t then
-                        o=c:match('^'..cp..'$')
-                        if o then t=df end
-                    end
-                    if t then
-                        if not sets[t] then sets[t]={0} end
-                        if not sets[t][o] then
-                            sets[t][1],sets[t][o]=sets[t][1]+1,1
-                        end
-                    end
-                    return p..c..s
-                end)
-                local c=0
-
-                if alias and sets[df][1]>0 then 
-                    c=sets[df][1]
-                else
-                    c=0
-                    for k,v in pairs(sets) do
-                        c=c<v[1] and v[1] or c
-                    end
-                end
-                if c>0 then
-                    if type:lower()=='filter' then
-                        node.pred[2]='F'..c
-                    elseif type:lower()=='access' then
-                        node.pred[1]='A'..c
-                    else
-                        node.pred[1]='A'..c
-                    end
-                end
-            end
-        elseif node then
-            local keys,c=pred:match('#keys=([1-9]%d+)')
-            if keys then node.proj[1]='K'..keys..',' end
-            keys=pred:match('rowset=([1-9]%d+)')
-            if keys then
-                node.proj[2]='R'..keys..',' 
-            end
-            c,keys=(pred..', '):gsub('], ','')
-            if keys>0 then node.proj[3]='C'..keys..',' end
-        end
-    end
-
     report_header=print_header("Summary"..(sql_id and (' (SQL Id: '..sql_id..')') or ''),false)
     report_header.pivot,report_header.pivotsort=1,'off'
     report_header.footprint=plsql and ('[PL/SQL: '..plsql..']') or ''
@@ -1148,7 +1503,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                         if 'downgrade reason'==name:lower() and reasons[mt[1]] then
                             num,desc=mt[1],reasons[mt[1]]
                         end
-                        process_pred(lid,'Other',num:rpad(10)..' -> '..desc)
+                        process_pred(preds,lid,'Other',num:rpad(10)..' -> '..desc)
                         if name=='Total User Rows' then
                             preds.ids[lid].rows=tonumber(mt[1])
                         elseif name=='Total Bloom Filtered Rows' or name=='Total Min/Max Filtered Rows' then
@@ -1601,14 +1956,15 @@ function unwrap.analyze_sqlmon(text,file,seq)
         line_events={top_lines,'|',events}
     end
     load_activity_detail()
-    local binds,qbs,lines={nil,hd.binds},{__qbs={}},{}
+    local binds,qbs,lines={nil,hd.binds},{},{}
     local first_start
     local qb_transforms={}
-    local function qb_name(qb) return '@"'..qb:gsub('["@]+','')..'"' end
+    
     local function load_plan()
         local op_fmt,space='%s%s%s%s%s%s',' '
         local child_fmt,child_color,child_sep='%s%s$NOR$'
         local ord_fmt='%'..(#(tostring(xid+1)))..'s'
+        local skps={}
         xid='%'..(#(tostring(xid)))..'d'
         local id_fmt='%s%s%s'
         local function format_operation(pad,operation,options,color)
@@ -1638,22 +1994,11 @@ function unwrap.analyze_sqlmon(text,file,seq)
         end
 
         local envs={}
-        local function add_hint(text,hint1)
-            if not text then text,hint1=hint1,text end
-            if text:upper():find('^OPT_PARAM') then
-                local sub=text:sub(10)
-                local name=sub:match('(['..object_pattern.."]+)")
-                text='OPT_PARAM'..sub
-                if envs[name] then return end
-                envs[name]=text
-            end
-            outlines[#outlines+1]={text:find('@') and '' or "Env",text,hint1}
-        end
 
         local env_fmt='OPT_PARAM: %s = %s'
         if hd.target and hd.target.optimizer_env then
             for k,v in pair(hd.target.optimizer_env.param) do
-                add_hint(env_fmt:format(v._attr.name,v[1]))
+                add_hint(envs,outlines,env_fmt:format(v._attr.name,v[1]))
             end
         end
 
@@ -1687,7 +2032,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 --if p.object:sub(1,1)==':' then nodes[p.object]=nodes[p.node] end
             end
 
-            s.skp=tonumber(s.skp) or 0
+            s.skp=tonumber(s.skp) or skps[id] or 0
             if s._cid and #s._cid>1 then
                 if s.skp==0 then
                     color=colors[math.fmod(#lvs.colors,#colors)+1]
@@ -1719,39 +2064,22 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local avg_bytes=s.bytes and (tonumber(s.card) or 0)>0 and s.bytes/s.card or nil
             p.proj={'','','',avg_bytes and ('B'..math.round(avg_bytes)) or ''}
             if p.project then
-                process_pred(id,'proj',p.project,p)
+                process_pred(preds,id,'proj',p.project,p)
             end
             if p.proj[2]=='' and infos[id-1] and infos[id-1].rowsets and s.cardinality then
                 p.proj[2]='R'..math.round(s.cardinality/infos[id-1].rowsets)..','
             end
-            if p.proj[2] and p.proj[2]:match('R[01],') then
+            if p.proj[2] and p.proj[2]:match('R[0-4],') then
                 p.proj[2]='$HIR$'..p.proj[2]:sub(1,2)..'$NOR$,'
             end
             for k,v in pair(p.predicates) do
-                process_pred(id,v._attr.type,v[1],p,p.object_alias)
+                process_pred(preds,id,v._attr.type,v[1],p,p.object_alias)
             end
             local alias,qb=(p.object_alias or ''):gsub('"',''),p.qblock
             local obj=s.object or s.name:find('^VIEW') and alias~='' and ('$REV$'..alias:gsub('@.*','$NOR$')) or p.node and nodes[p.node][1] or nil
             if obj and obj:sub(1,1)~=':' then obj=' '..obj end
-            if p.object_alias then qbs['"'..alias:gsub('@','"@"')..'"']=id end
-            if qb and qb~='' then
-                qb=qb_name(qb)
-                local range=qbs[qb] or {min=id,qb=qb}
-                range.max=id
-                qbs[qb]=range
-                qbs.__qbs[depth]=range
-                for i=#qbs.__qbs,depth+1,-1 do
-                    qbs.__qbs[i]=nil
-                end
-            else
-                for i=depth-1,0,-1 do
-                    if qbs.__qbs[i] then
-                        qb=qbs.__qbs[i].qb
-                        qbs.__qbs[i].max=id
-                        break
-                    end
-                end
-            end
+            process_qb(qbs,qb,alias,id,depth)
+            
             local px_color=s.gs and s.gs.color or nil
             local px_type=s.px_type
             if px_type=='QC' then px_color=nil end
@@ -1828,8 +2156,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 table.concat(p.proj,''):gsub(',$',''),
                 '|',
                 s.distrib or p.distrib or s.partition_start and (
-                    s.partition_start==s.partition_start and s.partition_start
-                    or (s.partition_start..' - '..s.partition_start)
+                    s.partition_end==s.partition_stop and s.partition_start
+                    or (s.partition_start..' - '..s.partition_stop)
                 ) or nil,
                 '|',
                 tonumber(s.starts),
@@ -1869,222 +2197,13 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local xml=p.other_xml
             if xml then
                 binds[1]=xml.peeked_binds
-                for k,v in pair(xml.info) do
-                    local typ=v._attr and v._attr.type or nil
-                    if typ and typ~='nodeid/pflags' and typ~='px_ext_opns' and typ~='db_version' then
-                        add_header(typ,v[1],v._attr.note)
-                    end
-                end
-
-                if xml.stats then
-                    local t=xml.stats._attr.type
-                    for k,v in pair(xml.stats.stat) do
-                        if t and v._attr.name then
-                            add_header(t..'.'..v._attr.name,v[1],10)
-                        end
-                    end
-                end
-
-                if xml.qb_registry then
-                    for k,v in pair(xml.qb_registry.q) do
-                        if type(v.n)=='string' and type(v.p)=='string' then
-                            qb_transforms[qb_name(v.p)]=qb_name(v.n)
-                        end
-                    end
-                end
-
-                if xml.outline_data then
-                    for k,v in pair(xml.outline_data.hint) do
-                        if v~='IGNORE_OPTIM_EMBEDDED_HINTS' then
-                            add_hint(v)
-                        end
-                    end
-                end
-
-                if xml.hint_usage then
-                    for k,v in pairs(xml.hint_usage) do
-                        if k=='q' then
-                            for idx,v1 in pair(v) do
-                                local qb_='@"'..v1.n..'"'
-                                local t=v1.h or v1.t and v1.t.h or nil
-                                if t and t.x and not t.x:upper():find('^OPT_PARAM') then
-                                    local hint,alias_,hint1=t.x
-                                    local pos=hint:find('(',1,true)
-                                    if t.r then hint=hint..' / '..t.r end
-                                    local alias_= v1.t and v1.t.f or nil
-                                    if pos then 
-                                        hint1=hint:sub(1,pos)..(alias_ or qb_)..' '..hint:sub(pos+1)
-                                    else
-                                        hint1=hint..'('..(alias_ or qb_)..')'
-                                    end
-                                    add_hint(hint1,hint..' (SQL Hint)')
-                                end
-                            end
-                        elseif k=='s' and v.h then
-                            for idx,h1 in pair(v.h) do
-                                local hint=h1.x
-                                if h1.r then hint=hint..' / '..h1.r end
-                                add_hint(hint..' (SQL Hint)')
-                            end
-                        end
-                    end
-                end
+                parse_other_xml(xml,add_header,envs,outlines,qb_transforms,skps)
             end
         end
     end
     load_plan()
 
-    local function load_binds()
-        if not binds[1] and not binds[2] then
-            binds=nil
-            return 
-        end
-        local dtypes={
-              [1] = 'VARCHAR2',
-              [2] = function(attr)  
-                        return attr.scal=="-127" and 'FLOAT' or 
-                               attr.pre=='38' and (attr.scal or '0')=='0' and 'INTEGER' or 
-                               ('NUMBER('.. (attr.pre or '38')..','..(attr.scal or '*')..')')
-                    end,
-              [3] = 'NATIVE INTEGER',
-              [8] = 'LONG',
-              [9] = 'VARCHAR',
-             [11] = 'ROWID',
-             [12] = 'DATE',
-             [23] = 'RAW',
-             [24] = 'LONG RAW',
-             [29] = 'BINARY_INTEGER',
-             [69] = 'ROWID',
-             [96] = 'CHAR',
-            [100] = 'BINARY_FLOAT',
-            [101] = 'BINARY_DOUBLE',
-            [102] = 'REF CURSOR',
-            [104] = 'UROWID',
-            [105] = 'MLSLABEL',
-            [106] = 'MLSLABEL',
-            [110] = 'REF',
-            [111] = 'REF',
-            [112] = 'CLOB',
-            [113] = 'BLOB', 
-            [114] = 'BFILE', 
-            [115] = 'CFILE',
-            [121] = 'OBJECT',
-            [122] = 'TABLE',
-            [123] = 'VARRAY',
-            [178] = 'TIME',
-            [179] = 'TIME WITH TIME ZONE',
-            [180] = 'TIMESTAMP',
-            [181] = 'TIMESTAMP WITH TIME ZONE',
-            [231] = 'TIMESTAMP WITH LOCAL TIME ZONE',
-            [182] = 'INTERVAL YEAR TO MONTH',
-            [183] = 'INTERVAL DAY TO SECOND',
-            [250] = 'PL/SQL RECORD',
-            [251] = 'PL/SQL TABLE',
-            [252] = 'PL/SQL BOOLEAN'}
-        local rows={_names={}}
-        local positions={}
-        for i=1,2 do
-            for j,b in pair(binds[i] and binds[i].bind or nil) do
-                local att=b._attr
-                local nam=att.nam or att.name
-                local maxlen=tonumber(att.maxlen or att.mxl)
-                local row=rows._names[nam] or {nam,nil,maxlen}
-                if not positions[nam] then positions[nam]={c=0} end
-                if att.pos and not positions[nam][att.pos] then
-                    positions[nam][att.pos],positions[nam].c=1,1+positions[nam].c
-                end
-                if not row[2] or att.dtystr then
-                    row[2]=att.dtystr
-                    if att.format=="hexdump" or not row[2] then
-                        local dty=att.dty
-                        dty=dtypes[tonumber(dty)] or dty
-                        if type(dty)=='function' then
-                            dty=dty(att)
-                        elseif dty=='VARCHAR2' or dty=='VARCHAR' or dty=='CHAR' or dty=='RAW' then
-                            dty=dty..'('..(att.len or att.maxlen or att.mxl)..')'
-                        end
-                        if b[1] and (att.dty=='1' or att.dty=='9' or att.dty=='96') then
-                            att.dtystr=dty
-                            att.format=nil
-                            b[1]=b[1]:fromhex()
-                        elseif b[1] and (att.dty=='2' or att.dty=='3' or att.dty=='29') then
-                            att.dtystr=dty
-                            att.format=nil
-                            local sets,idx,sign,p,s={'0.'},0
-                            b[1]:gsub('..',function(s1)
-                                idx=idx+1
-                                s=tonumber(s1,16)
-                                if idx>=2 then
-                                    if sign>0 then
-                                        sets[idx]=s-1
-                                    else
-                                        sets[idx]=102-s-1
-                                    end
-                                else
-                                    if s>=128 then
-                                        sign,p=1.0,s-128-64
-                                    else
-                                        sign,p=-1.0,127-s-64
-                                    end
-                                end
-                                return s1
-                            end)
-                            if sign==-1 then sets[#sets]=nil end
-                            b[1]=tostring(math.round(sign*math.pow(100,p)*tonumber(table.concat(sets)),4))
-                        elseif b[1] and (att.dty=='12' or att.dty=='179' or att.dty=='180' or att.dty=='181' or att.dty=='231') then
-                            local sets,idx,s={},0
-                            b[1]:gsub('..',function(s1)
-                                s,sep=tonumber(s1,16)
-                                idx=idx+1
-                                if idx<=2 then
-                                    s,sep=s-100,'/'
-                                elseif idx>=5 then
-                                    s,sep=s-1,':'
-                                end
-                                sep=idx==1 and '' or idx==2 and '/' or idx==3 and '/' or idx==4 and ' ' or idx==7 and '' or ':'
-                                sets[idx*2-1],sets[idx*2]=tostring(s),sep
-                                return s1
-                            end,7)
-                            
-                            while b[1]:find('00$') do b[1]=b[1]:sub(1,-3) end
-                            if #b[1]>14 then
-                                sets[#sets]='.'
-                                sets[#sets+1]=(''..tonumber(b[1]:sub(15,22),16)):gsub('^(..-)0+$','%1')
-                            end
-                            if #b[1]>22 then
-                                sets[#sets+1]=' '
-                                sets[#sets+1]=tostring(tonumber(b[1]:sub(22,23),16)-20)
-                            end
-                            if #b[1]>23 then
-                                sets[#sets+1]=':'
-                                sets[#sets+1]=tostring(tonumber(b[1]:sub(24,25),16)-60)
-                            end
-                            b[1]=table.concat(sets,''):gsub('(%d+)/(%d+)/(%d+)',function(y,m,d) return m..'/'..d..'/'..y end)
-                            att.dtystr=dty
-                            att.format=nil
-                        end
-                        row[2]=dty
-                    end
-                end
-                row[4]=math.min(tonumber(att.pos) or 9999,row[4] or 9999)
-                row[5]=positions[nam].c
-                if b[1] then
-                    row[5+i]=(att.dtystr and att.format~='hexdump' and '' or '(0x)')..b[1]
-                else
-                    row[5+i]='<Unknown>'
-                end
-                if not rows._names[nam] then
-                    rows._names[nam]=row
-                    rows[#rows+1]=row
-                end
-            end
-        end
-        table.sort(rows,function(a,b) return a[4]<b[4] end)
-        table.insert(rows,1,{'Name','Data Type','Max Len','Position','Occurrence','Peeked Value','Binding Value'})
-        rows.topic,rows.colsep='Peeked/Binding Variables','|'
-        binds=rows
-    end
-    load_binds()
+    binds=load_binds(binds)
 
     local skew_outputs
     local function calc_skews()
@@ -2252,95 +2371,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             env.var.define_column('id','clear')
         end
 
-        if #preds>0 then
-            env.var.define_column('id','break')
-            table.sort(preds,function(a,b) 
-                if a[1]~=b[1] then return a[1]<b[1] end
-                if a[2]~=b[2] then return a[2]<b[2] end
-                return a[3]:gsub('^.-%-> *','')<b[3]:gsub('^.-%-> *','')
-            end)
-            table.insert(preds,1,{'Id','Type','Content'})
-            title('Predicates/Line Stats')
-            pr(grid.tostring(preds))
-            env.var.define_column('id','clear')
-        end
-
-        if #outlines>0 then
-            title('Optimizer Environments & Outlines')
-            table.sort(outlines,function(a,b)
-                for _,c in ipairs{a,b} do
-                    if c[1]=='' and c[2]:find('"') then
-                        local hint=(' '..c[2]..' '):gsub('([^'..object_pattern..'"@%.])','%1%1')
-                        local list={}
-                        hint:gsub('([^%."@])(@?"['..object_pattern..'"@%.]+")([^%."@])',function(p,c,s)
-                            local pos=c:find('@',1,true)
-                            if not pos then return p..c..s end
-                            local n=c
-                            local qb=qbs[n]
-                            while not qb do
-                                n=qb_name(n)
-                                qb=qbs[n]
-                                if not qb then
-                                    n=qb_transforms[n] 
-                                    if not n then break end
-                                    qb=qbs[n]
-                                end
-                            end
-                            if type(qb)=='table' then
-                                list[2]=qb
-                            elseif qb then
-                                if not list[1] then list[1]={} end
-                                list[1][#list[1]+1]=qb
-                            elseif pos>1 then
-                                list.missing=(list.missing or 0)+1
-                                n,qb=c:sub(1,pos-1),c:sub(pos)
-                                while qb_transforms[qb] do
-                                    qb=qb_transforms[qb]
-                                    local n1=qbs[n..qb]
-                                    if n1 then
-                                        if not list[1] then list[1]={} end
-                                        list[1][#list[1]+1]=n1
-                                        list.missing=list.missing-1
-                                        break
-                                    end
-                                end
-                                if list.missing==0 then list.missing=nil end
-                            end
-                            return p..c..s
-                        end)
-                        if list[1] and #list[1]==1 and (not list.missing or not list[2])  then 
-                            c[1]=xid:format(list[1][1])
-                        elseif list[2] then
-                            if not list[1] or list[2].min==list[2].max then
-                                c[1]=xid:format(list[2].min)
-                            else
-                                c[1]=xid:format(list[2].min)..' - '..xid:format(list[2].max)
-                            end
-                        elseif list[1] and #list[1]>1 then
-                            table.sort(list[1])
-                            c[1]=xid:format(list[1][1])..' - '..xid:format(list[1][#list[1]])
-                            --TODO
-                        end
-                        c[2]=c[3] or strip_quote(c[2])
-                    end
-                end
-                if a[1]~=b[1] then
-                    if a[1]=='Env' then 
-                        return true;
-                    elseif b[1]=='Env' then
-                        return false
-                    else
-                        local l1,l2=tonumber(a[1]:match('%d+')) or 9999,tonumber(b[1]:match('%d+')) or 9999
-                        if l1~=l2 then return l1<l2 end
-                        return a[1]<b[1]
-                    end
-                else
-                    return a[2]<b[2]
-                end
-            end)
-            table.insert(outlines,1,{'Scope','Content'})
-            pr(grid.tostring(outlines))
-        end
+        print_suffix(preds,qbs,qb_transforms,outlines,pr,xid)
     end
     print_report()
     text=table.concat(text,'\n')..'\n'
@@ -2364,19 +2395,27 @@ function unwrap.analyze_sqlmon(text,file,seq)
     end
 end
 
-local sqldetail_pattern='<sql_details>.-</sql_details>'
+local sqldetail_pattern='<report [^%>]+>%s*<report_id><?[^<]*/orarep/sql_detail[^<]*</report_id>.-</sql_details>%s*</report>'
 function unwrap.analyze_sqldetail(text,file,seq)
-    local content=handler:new()
+    local content,sql_id=handler:new()
     local parser =xml2lua.parser(content)
     local xml,hd,db_version,start_clock
     local xml=text:match(sqldetail_pattern)
-    if not xml then return end
+    if not xml then
+        xml=text:match('<sql_details .-</sql_details>')
+        if not xml then return end
+    end
     --handle line-split of SQL fulltext
     load_xml(parser,xml)
+    if content.root.report then
+        content=content.root.report
+        hd=content.sql_details
+    else
+        hd=content.root.sql_details
+        content={}
+    end
 
-    hd=content.root.sql_details
-
-    text={}
+    text,file={},file:gsub('%.[^\\/%.]+$','')..'_sqld'..(seq and ('_'..seq) or '')
     local print_grid=env.printer.print_grid
     local function pr(msg,shadow)
         --store rowset instead of screen output to avoid line chopping
@@ -2394,8 +2433,46 @@ function unwrap.analyze_sqldetail(text,file,seq)
         end
     end
 
+    local titles={{},{}}
+    local function add_header(n,v)
+        local idx=#titles[1]+1
+        titles[1][idx],titles[2][idx]=(n:gsub('"','')),tonumber(v) or v
+    end
+
+    local function title(msg)
+        pr('\n'..msg..':')
+        pr(string.rep('=',#msg:strip_ansi()+1))
+    end
+
+    local function detail_report_parameters()
+        local names,cnt={},0
+        for _,params in pairs{content.report_parameters,content.target and content.target._attr or nil} do
+            if type(params) =='table' then
+                for n,v in pairs(params) do
+                    if not names[n] then
+                        names[n]=v
+                        if n=='sql_id' then 
+                            sql_id=v
+                            file=file..'_'..sql_id
+                        end
+                        add_header(n,v)
+                        cnt=cnt+1
+                    end
+                end
+            end
+        end
+        if cnt>0 then
+            titles.topic='SQL DETAIL REPORT PARAMETERS'
+            titles.pivot,titles.pivotsort=1,'off'
+            pr(grid.merge({titles},'plain'))
+        end
+    end
+    pr('$COMMANDCOLOR$'..string.rep("=",120)..'$NOR$')
+    env.var.define_column('duration','for','smhd2')
+    detail_report_parameters()
+
     local dims={}
-    local function top_activity()
+    local function detail_top_activity()
         local dim={}
         for i,d in pair(hd.top_activity and hd.top_activity.dim) do
             if d._attr.id and d._attr.id~='class' and d._attr.id~='class,event' and d.top_members and d.top_members.member then
@@ -2426,12 +2503,385 @@ function unwrap.analyze_sqldetail(text,file,seq)
                     dims[#dims+1],dims[#dims+2]='-',d
                 end
             end
+            title("$PROMPTCOLOR$TOP ACTIVITIES$NOR$")
             env.var.define_column('aas','for','smhd2')
             pr(grid.merge(dims,'plain'))
         end
     end
 
-    top_activity()
+    detail_top_activity()
+
+    local function detail_plan_summary()
+        local names,idx={'PLAN HASH VALUE'},1
+        local header,rows,execs={'Stats'},{},{}
+        local info_head={'Plan Hash'}
+        local infos={topic='Execution Plan List',info_head}
+        for i,p in pair(hd.sql_plans and hd.sql_plans.sql_plan) do
+            local phv=p._attr.plan_hash_value
+            for _,grp in pair(p.info_group) do
+                local row={phv}
+                for _,info in pair(grp.info) do
+                    local n,v=info._attr.name,info[1]
+                    local idx=info_head[n]
+                    if not idx then
+                        idx=#info_head+1
+                        info_head[n],info_head[idx]=idx,n
+                    end
+                    row[idx]=v
+                end
+                infos[#infos+1]=row
+            end
+
+            local stats={['PLAN HASH VALUE']='PHV: '..phv}
+            for _,p1 in pairs{p,p.sql_plan_statistics_history} do
+                for _,p2 in pair(p1 and p1.stats) do
+                    local exec=0
+                    for j,s in pair(p2 and p2.stat) do
+                        local n=s._attr.name
+                        local v=tonumber(s[1])
+                        if n and v then
+                            if n:find('_time',1,true) then 
+                                v=v*1e6
+                            end
+                            if v>0 and (n=='parse_calls' and exec==0 or n=='executions') then
+                                exec=v
+                            end
+                            stats[n]=(stats[n] or 0) + v
+                            if not names[n] then
+                                idx=idx+1
+                                names[n],names[idx]=0,n
+                                if n:find('_time',1,true) then 
+                                    env.var.define_column(n,'for','usmhd2')
+                                elseif n:find('_mem',1,true) or n:find('_bytes') then
+                                    env.var.define_column(n,'for','kmg2')
+                                else
+                                    env.var.define_column(n,'for','tmb2')
+                                end
+                            end
+                            names[n]=names[n]+v
+                        end
+                    end
+                    execs[i]=(execs[i] or 0) + exec
+                end
+            end
+            rows[#rows+1]=stats
+        end
+        local total,avg={pivot=#rows,pivotsort='head',topic='Plan Stats for All Executions',names},{pivot=#rows,pivotsort='head',topic='Plan Stats for Per Execution',names}
+        for i,stats in ipairs(rows) do
+            local row1,row2={},{}
+            local exec=execs[i]>0 and execs[i] or 1
+            for idx,n in ipairs(names) do
+                local v=stats[n]
+                row1[idx]=v
+                if v and idx>1 and n~='executions' and n~='sharable_mem' then
+                    row2[idx]=math.round(v/exec,2)
+                else
+                    row2[idx]=v
+                end
+            end
+            total[#total+1]=row1
+            avg[#avg+1]=row2
+        end
+        --[[for _,n in ipairs(names) do
+            if names[n]>0 then
+                local row1,row2={n},{n}
+                for i,stats in ipairs(rows) do
+                    if stats[n] then
+                        if n:find('_time',1,true) then
+                            stats[n]=stats[n]*1e6
+                            env.var.define_column(n,'for','usmhd2')
+                        end
+                        row1[i+1]=math.round(stats[n],2)
+                        if n~='executions' then
+                            local exec=execs[i]>0 and execs[i] or 1
+                            row2[i+1]=math.round(stats[n]/exec,2)
+                        else
+                            row2[i+1]=stats[n]
+                        end
+                    end
+                end
+                total[#total+1]=row1
+                avg[#avg+1]=row2
+            end
+        end--]]--
+        header={'Plan Hash','SQL Exec ID','SQL Exec Start','|'}
+        local sqlmons={topic='SQL Monitor List',header}
+        local function set_mon_row(mon,row)
+            if type(mon)~='table' then return end
+            for n,v in pairs(mon) do
+                if type(n)=='number' then
+                    n,v=v._attr.name,v[1]
+                end
+                if n=='type' then return end
+                if type(v)=='table' then
+                    set_mon_row(v,row)
+                else
+                    local idx=header[n]
+                    local v1=tonumber(v)
+                    if not idx then
+                        idx=#header+1
+                        header[n],header[idx]=idx,n
+                    end
+                    if v1 and n:find('_time',1,true) then
+                        env.var.define_column(n,'for','usmhd2')
+                    end
+                    row[idx]=v1 or v
+                end
+            end
+        end
+        for _,mon in pair(hd.report and hd.report.sql_monitor_list_report and hd.report.sql_monitor_list_report.sql) do
+            local row={tostring(mon.plan_hash) or '',mon._attr.sql_exec_id or '',mon._attr.sql_exec_start or '','|'}
+            set_mon_row(mon.stats,row)
+            mon._attr,mon.plan_hash,mon.stats=nil
+            set_mon_row(mon,row)
+            sqlmons[#sqlmons+1]=row
+        end
+        if #infos<2 then return end
+        title("$PROMPTCOLOR$EXECUTION PLAN SUMMARY$NOR$")
+        pr(grid.merge({infos},'plain'))
+        if #sqlmons>1 then
+            pr(grid.merge({sqlmons},'plain'))
+        end
+        pr(grid.merge({total,'|',avg},'plain'))
+    end
+    detail_plan_summary()
+
+    local line_aas={}
+    local function detail_plan_activity()
+        var.define_column("pct,aas%",'for','pct2')
+        var.define_column("aas",'smhd2')
+        local sec2num=env.var.format_function("smhd2")
+        for i,act in pair(hd.plan_activities and hd.plan_activities.activities) do
+            local phv=act._attr.plan_hash_value
+            local aas=tonumber(act.plan_activity._attr.count)
+            local events={}
+            local lines={}
+            for j,op in pair(act.plan_line_activity and act.plan_line_activity.operation) do
+                local attr=op._attr
+                local cnt=tonumber(attr.count)
+                local id=tonumber(attr.id or '0')
+                if not lines[id] then
+                    lines[id]={id,(attr.name or '')..' '..(attr.options or ''),'|',0,0,'|',0,''}
+                end
+                scan_events(op,lines[id],4)
+            end
+            local top_ids={topic='Top Plan Lines (Total: '..sec2num(aas)..')',{'Id','Operation','|','AAS','Pct','|','Top Event','AAS%'}}
+            for id,line in pairs(lines) do
+                line[5]=math.round(line[4]/aas,4)
+                line[7],line[8]=get_top_events(line.events,line[4])
+                for event,cnt in pairs(line.events) do
+                    if not events[event] then 
+                        events[event]={event,'|',0,0,'|','',ids={}} 
+                    end
+                    events[event][3]=events[event][3]+cnt
+                    events[event].ids[id]=cnt
+                end
+                top_ids[#top_ids+1]=line
+            end
+            local top_events={topic='Top Events (Total: '..sec2num(aas)..')',{'Event','|','AAS','Pct','|','Top Ids'}}
+            for event,line in pairs(events) do
+                line[4]=math.round(line[3]/aas,4)
+                line[6]=get_top_events(line.ids,line[3],nil,5)
+                top_events[#top_events+1]=line
+            end
+            top_ids.max_rows=math.max(5,#top_events-1)
+            grid.sort(top_ids,'-4',true)
+            grid.sort(top_events,'-3',true)
+            line_aas[phv]={lines=lines,top_ids=top_ids,top_events=top_events}
+            
+        end
+    end
+    detail_plan_activity()
+
+    local function detail_plan_lines()
+        local header={'*','Id','Ord','|','AAS','Pct','|','Top Event','AAS%','|','Operation','|','Object','|','Distrib','|','Pred','|','Est|Card','Est|Cost','IO|Cost','Avg|Bytes','|','Query|Block','|','Alias|Name'}
+        local cols={}
+        for c,v in ipairs(header) do
+            if v:find('^%u') then
+                cols[v:lower():gsub('[ %|]+','_')]=c
+            end
+        end
+
+
+        for i,p in pair(hd.sql_plans and hd.sql_plans.sql_plan) do
+            local phv=p._attr.plan_hash_value
+            local rows,hier,hier_idx,tier,ids={header},{},0,{},{}
+            local aas,envs,outlines,preds,qbs,qb_transforms,skps,binds={},{},{},{ids={}},{},{},{},nil
+            local aas_func
+            titles={{},{}}
+            
+            local plan_lines=p.plan and p.plan.operation or nil
+            if not plan_lines then return end
+
+            local sep='          EXECUTION PLAN HASH VALUE: '..phv..'          '
+            pr('\n'..("="):rep(#sep:strip_ansi()+2))
+            pr('|$REV$'..sep..'$NOR$|')
+            pr(("="):rep(#sep:strip_ansi()+2))
+
+            if line_aas[phv] then
+                aas=line_aas[phv].lines
+                pr(grid.merge({line_aas[phv].top_ids,'|',line_aas[phv].top_events},'plain'))
+                line_aas[phv]=nil
+            end
+
+            table.sort(plan_lines,function(a,b) return tonumber(a._attr.id)<tonumber(b._attr.id) end)
+
+            for _,op in ipairs(plan_lines) do
+                local attr=op._attr
+                local id=tonumber(attr.id)
+                local row={}
+                local depth=tonumber(attr.depth) or 0
+                local pos=tonumber(attr.pos)
+                local qb,alias=op.qblock,strip_quote(op.object_alias)
+                for c,v in ipairs(header) do
+                    row[c]=v=='|' and v or ' '
+                end
+                local node={id=id,pos=pos,_cid={},depth=depth}
+                if depth==0 then
+                    hier[#hier+1]=node
+                    hier.last=id
+                else
+                    local pid=tier[depth-1]
+                    node._pid=pid.id
+                    pid._cid[1+#pid._cid]=node
+                    pid._cid.last=id
+                end
+                tier[depth],hier_idx=node,depth
+
+                local object= op.object or (alias and ('$REV$'..alias:gsub('@.*',''):gsub('"','')..'$NOR$')) or op.node or ''
+                row[cols.id]=id
+                row[cols.operation]=(attr.name or '')..' '..(attr.options or '')
+                row[cols.object]=(object:sub(1,1)==':' and '' or ' ')..object
+                row[cols.est_card]=op.card
+                row[cols.io_cost]=op.io_cost
+                row[cols.est_cost]=op.cost
+                row[cols.avg_bytes]=op.bytes and math.round(op.bytes/(op.card or 1)) or nil
+                row[cols.query_block]=qb
+                row[cols.alias_name]=alias
+                process_qb(qbs,qb,alias,id,depth)
+                if op.predicates then
+                    row[1]='*'
+                    for k,v in pair(op.predicates) do
+                        process_pred(preds,id,v._attr.type,v[1],op,op.object_alias)
+                    end
+                    row[cols.pred]=table.concat(op.pred,'')
+                end
+
+                row[cols.distrib]= p.distrib or op.partition and (
+                    op.partition._attr.start==op.partition._attr.stop and op.partition._attr.start
+                    or (op.partition._attr.start..' - '..op.partition._attr.stop)
+                ) or nil
+                
+                if aas[id] then
+                    row[cols.aas]=aas[id][4]
+                    row[cols.pct]=aas[id][5]
+                    row[cols.top_event]=aas[id][7]
+                    row[cols.top_event+1]=aas[id][8]  
+                end
+                rows[#rows+1]=row
+                ids[id]=row
+                if op.other_xml then
+                    binds={op.other_xml.peeked_binds}
+                    parse_other_xml(op.other_xml,add_header,envs,outlines,qb_transforms,skps)
+                end
+            end
+
+            local seq,ord=#rows,cols.ord
+            local xid='%'..(#(tostring(seq)))..'d'
+            local cids={}
+            local function parse_hier(childs,color_idx,indent,prefix)
+                local len=#childs
+                if len>1 then 
+                    table.sort(childs,function(a,b) 
+                        if a.pos==b.pos then return a.id<b.id end
+                        return a.pos<b.pos 
+                    end) 
+                end
+                local ind=' '..indent..(prefix:find('$') and prefix:gsub('[|:]','+') or prefix)
+                for i,node in ipairs(childs) do
+                    seq=seq-1
+                    node.seq=seq
+                    local id=node.id
+                    local row=ids[id]
+                    row[ord]=seq
+                    local cid=node._cid
+                    local skp=tonumber(skps[id]) or 0
+                    if skp>0 then 
+                        row[cols.operation]='$GRY$'..row[cols.operation]..'$NOR'
+                        row[1]='-'
+                    end
+                    cids[id]=cid
+                    if #cid>0 then
+                        local sub_color,sub_ind,sub_prefix=color_idx
+                        if childs.last~=id then
+                            sub_ind=indent..prefix
+                        else
+                            sub_ind=indent..(prefix=='' and '' or ' ')
+                        end
+                        if #cid>1 then
+                            if skp>0 then
+                                sub_prefix='$GRY:$NOR$'
+                            else
+                                sub_color=color_idx+1
+                                local color=colors[math.fmod(sub_color,#colors)+1]
+                                row[cols.operation]=ind..color..row[cols.operation]..'$NOR$'
+                                sub_prefix=color..'|$NOR$'
+                            end
+                        else
+                            row[cols.operation]=ind..row[cols.operation]
+                            sub_prefix=' '
+                        end
+                        parse_hier(cid,sub_color,sub_ind,sub_prefix)
+                    else
+                        row[cols.operation]=ind..row[cols.operation]
+                    end
+                end
+            end
+            parse_hier(hier,-1,'','')
+            local p,c,n
+            local pad=math.max(3,#tostring(#rows))
+            for i=2,#rows do
+                c=rows[i][ord]
+                n=rows[i+1] and rows[i+1][ord]
+                local id=rows[i][cols.id]
+                if p and n and n==c-1 and #cids[id]>0 then
+                    if p==c+1 then
+                        c='^'
+                    elseif type(p)=='string' then
+                        c=':'
+                    end
+                end
+                rows[i][ord]=tostring(c):lpad(pad)
+                p=c
+            end
+
+            var.define_column("Est|Card,Est|Cost,IO|Cost",'for','tmb2')
+            pr(grid.merge({titles},'plain'))
+            if aas_func then aas_func() end
+            pr(grid.merge({rows},'plain'))
+            binds=load_binds(binds)
+            if binds then
+                binds.topic=nil
+                title("Peeked Binds")
+                binds[1][#binds[1]]=nil
+                pr(grid.merge({binds},'plain'))
+            end
+            print_suffix(preds,qbs,qb_transforms,outlines,pr,xid)          
+         end
+    end
+    detail_plan_lines()
+
+    for phv,aas in pairs(line_aas) do
+        local sep='          EXECUTION PLAN HASH VALUE: '..phv..'          '
+        pr('\n'..("="):rep(#sep:strip_ansi()+2))
+        pr('|$REV$'..sep..'$NOR$|')
+        pr(("="):rep(#sep:strip_ansi()+2))
+        pr(grid.merge({aas.top_ids,'|',aas.top_events},'plain'))
+    end
+
+    text=table.concat(text,'\n')..'\n'
+    print("\nSQL Detail report in text  written to "..env.save_data(file..'.txt',text:strip_ansi()))
+    print("SQL Detail report in color written to "..env.save_data(file..'.ans',text))
 end
 
 local function unwrap_plsql(obj,rows,file)
@@ -2573,8 +3023,8 @@ function unwrap.unwrap(obj,ext,prefix)
             end
         end
 
-        for p,func in pairs{sqlmon_pattern=unwrap.analyze_sqlmon,
-                            sqldetail_pattern=unwrap.analyze_sqldetail} do
+        for p,func in pairs{[sqlmon_pattern]=unwrap.analyze_sqlmon,
+                            [sqldetail_pattern]=unwrap.analyze_sqldetail} do
             local sql_list={}
             local _,cnt=text:gsub(p,function(s) sql_list[#sql_list+1]=s;return '' end)
             if cnt>1 then

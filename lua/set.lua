@@ -115,7 +115,7 @@ function cfg.init(name,defaultvalue,validate,class,desc,range,instance)
         maxvalsize=tostring(defaultvalue):len()
     end
     
-    if not cfg_P then cfg._p=env.load_data(file) end
+    if not cfg._p then cfg._p=env.load_data(file) end
     if cfg._p[name] and cfg._p[name]~=defaultvalue then
         cfg.doset(name,cfg._p[name])
     end

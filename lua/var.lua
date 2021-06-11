@@ -255,16 +255,25 @@ function var.print(name)
     local db=var.current_db
     if not name then return end
     if type(name)=="string" and name:lower()~='-a' then
-        name=name:upper()
-        local obj=var.inputs[name]
-        env.checkerr(obj,'Target variable[%s] does not exist!',name)
-        if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
-            var.inputs[name]=db.resultset:print(obj,db.conn, var.desc[name] and (var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)))
-            var.outputs[name]="#CURSOR"
-        elseif type(obj)=='table' then
-            grid.print(obj,nil,nil,nil,nil,prefix,"\n")
-        elseif obj~=db_core.NOT_ASSIGNED then
-            print(obj)
+        local typ,f=os.exists(name)
+        if typ=='file' then
+            f=io.open(f,'r')
+            if f then
+                print(f:read("*a"))
+                f:close()
+            end
+        else 
+            name=name:upper()
+            local obj=var.inputs[name]
+            env.checkerr(obj,'Target variable[%s] does not exist!',name)
+            if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
+                var.inputs[name]=db.resultset:print(obj,db.conn, var.desc[name] and (var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)))
+                var.outputs[name]="#CURSOR"
+            elseif type(obj)=='table' then
+                grid.print(obj,nil,nil,nil,nil,prefix,"\n")
+            elseif obj~=db_core.NOT_ASSIGNED then
+                print(obj)
+            end
         end
     else
         local list=type(name)=="table" and name or var.inputs
@@ -767,7 +776,7 @@ function var.onload()
     env.set_command(nil,{var.cmd3,var.cmd4},var.helper,var.setOutput,false,4)
     env.set_command(nil,{var.cmd1,var.cmd2},"Define input variables, Usage: @@NAME <name>[=]<value> [description], or @@NAME <name> to remove definition",var.setInput,false,3)
     env.set_command(nil,{"COLUMN","COL"},fmt_help,var.define_column,false,30)
-    env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables.Usage: @@NAME <variable|-a>',var.print,false,3)
+    env.set_command(nil,{"Print","pri"},'Display the values of bind variables or file.Usage: @@NAME <variable>|<file>|-a',var.print,false,3)
     env.set_command(nil,"Save","Save variable value into a specific file under folder 'cache'. Usage: @@NAME <variable> <file name>",var.save,false,3);
 end
 

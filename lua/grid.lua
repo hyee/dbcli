@@ -808,7 +808,7 @@ function grid.tostring(rows, include_head, col_del, row_del, rows_limit, pivot,p
     return table.concat(rows, "\n", 1, rows_limit),output
 end
 
-function grid.format_output(output,rows_limit)
+function grid.format_output(output,rows_limit,include_head)
     if type(output)=="table" then
         rows_limit=rows_limit or #output
         for i=1,rows_limit do
@@ -926,7 +926,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
     end
     
     local frames={}
-    local printsize=env.cfg and env.cfg.get('PRINTSIZE') or 512
+    local printsize=env.set and env.set.get('PRINTSIZE') or 512
     local function _merge(tabs, is_wrap)
         local newtab = {}
         local maxwidth = 0
@@ -952,7 +952,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
                     height1, height2 = math.min(tab.max_rows and (tab.max_rows + 4) or 1e5, height1), math.min(nexttab.max_rows and (nexttab.max_rows + 4) or 1e5, height2)
                     if sep == '|' then
                         local maxlen = math.max(height1, height2)
-                        newtab.adj_height=maxle
+                        newtab.adj_height=maxlen
                         tab, nexttab = redraw(tab, width1, maxlen), redraw(nexttab, width2, maxlen)
                         local fmt = '%s  %s'
                         for rowidx = 1, math.max(#tab, #nexttab) do

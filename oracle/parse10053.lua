@@ -1833,7 +1833,7 @@ function parser:build_probes()
             end
         }
     }
-    build_probes,extract_plan,extract_qb,extract_tb,extract_sql,extract_jo,extract_timer,extract_spd,extract_qbs=nil
+    extract_plan,extract_qb,extract_tb,extract_sql,extract_jo,extract_timer,extract_spd,extract_qbs=nil
 end
 
 local filelist={}
