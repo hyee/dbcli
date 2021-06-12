@@ -128,39 +128,43 @@ local function to_pct(a,b,c,quote)
     end
 end
 
+local function split_text(text)
+    local width=console:getScreenWidth()-50
+    local len,result,pos,pos1,c,p=#text,{},1
+    local pt="[|),%] =]"
+    while true do
+        result[#result+1]=text:sub(pos,pos+width-1)
+        pos=pos+width
+        pos1=pos
+        local ln=0
+        while true do
+            pos1=pos1+1
+            c=p or text:sub(pos1,pos1)
+            p=text:sub(pos1+1,pos1+1)
+            if c=='' or (c:find(pt) and not p:find(pt)) then
+                ln=ln+1
+                result[#result+1]=text:sub(pos,pos1)..'\n'
+                pos=pos1+1
+                break
+            end
+        end
+        if len<pos then break end
+        if ln>32 then
+            result[#result]='\n...... The Full SQL Text can be found in the text file ......'
+            break
+        end
+    end
+    return table.concat(result,'')
+end
+
 local function load_sql_text(sql_fulltext,pr,title,sql_id)
     local sql_text,brief_text=sql_fulltext
     if sql_text then
         title('$PROMPTCOLOR$SQL '..sql_id..'$NOR$')
-        sql_text=type(sql_text)=='table' and sql_text[1] or sql_text
+        sql_text=(type(sql_text)=='table' and sql_text[1] or sql_text):trim()
         local is_cut
         if #sql_text>512 and not sql_text:sub(1,512):find('\n') then
-            local width=console:getScreenWidth()-50
-            local len,result,pos,pos1,c,p=#sql_text,{},1
-            local pt="[|'\"),%] =]"
-            local ln=0
-            while true do
-                result[#result+1]=sql_text:sub(pos,pos+width-1)
-                pos=pos+width
-                pos1=pos
-                while true do
-                    pos1=pos1+1
-                    c=p or sql_text:sub(pos1,pos1)
-                    p=sql_text:sub(pos1+1,pos1+1)
-                    if c=='' or (c:find(pt) and not p:find(pt)) then
-                        ln=ln+1
-                        result[#result+1]=sql_text:sub(pos,pos1)..'\n'
-                        pos=pos1+1
-                        break
-                    end
-                end
-                if len<pos then break end
-                if ln>32 then
-                    result[#result]='\n...... The Full SQL Text can be found in the text file ......'
-                    break
-                end
-            end
-            sql_text=table.concat(result,'')
+            sql_text=split_text(sql_text)
         else
             sql_text=sql_text:split('\n')
             local ln=#sql_text
@@ -170,7 +174,7 @@ local function load_sql_text(sql_fulltext,pr,title,sql_id)
             sql_text=table.concat(sql_text,'\n',1,math.min(33,ln))
         end
         local text,data=grid.tostring({{sql_text}},false,'','')
-        pr(text,sql_fulltext)
+        pr(text..'\n',sql_fulltext)
     end
 end
 
@@ -210,8 +214,13 @@ end
 
 local cp='"(['..object_pattern..']+)"'
 local function process_pred(preds,id,type,pred,node,alias)
+    if not pred then return end
+    pred=pred:trim()
+    if pred=='' then return end
     if type:lower()~='proj' then
-        preds[#preds+1]={tonumber(id),type:initcap(),strip_quote(pred)}
+        local pred1=strip_quote(pred)
+        if #pred1>256 then pred1=split_text(pred1):trim() end
+        preds[#preds+1]={tonumber(id),type:initcap(),pred1}
         preds.ids[id]=preds.ids[id] or {}
         if node then
             if not node.pred then node.pred={'',''} end
@@ -1835,14 +1844,14 @@ function unwrap.analyze_sqlmon(text,file,seq)
                         clock[id][4]=(clock[id][4] or 0)+v/math.max(tonumber(attr.dop),1)
                     elseif default_dop>1 and not attr.line then
                         clock[id][4]=(clock[id][4] or 0)+v/default_dop
-                    elseif default_dop>1 and not infos[id].dop and (attr.step or ''):find('[PX]',1,true) then
+                    elseif default_dop>1 and not (infos[id] and infos[id].dop) and (attr.step or ''):find('[PX]',1,true) then
                         clock[id][4]=(clock[id][4] or 0)+v/(default_dop)
                     elseif infos[id] and infos[id].px_type=='QC' then
                         local dop=infos[id].dop or default_dop
                         clock[id][4]=(clock[id][4] or 0)+v/((attr.px or (attr.step or ''):find('[PX]',1,true)) and dop or 1)
                     elseif default_dop>1 and attr.step and not infos[id].dop and not(infos[id].gs and infos[id].gs.cnt) then
                         clock[id][4]=(clock[id][4] or 0)+v/default_dop
-                    elseif event=='Parallel Skew' and not infos[id].dop then
+                    elseif event=='Parallel Skew' and infos[id] and not infos[id].dop then
                         clock[id][4]=(clock[id][4] or 0)+v/(infos[id].gs and infos[id].gs.cnt or default_dop)
                     else
                         clock[id][i]=(clock[id][i] or 0)+v
@@ -1926,7 +1935,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         for id,v in pairs(ids) do
             v[2],v[1]=get_top_events(v.events,v[4],v[3])
             for e,aas in pairs(v.events) do
-                if e:lower():find('skew') then
+                if e:lower():find('skew') and infos[id] then
                     infos[id].skew=sec2num(math.max(aas[1] or 0,aas[2] or 0))
                 end
             end
@@ -2265,7 +2274,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     c[2]=name
                     c[2]=(color or '')..c[2]..'$NOR$'
                 end
-                local dop=tonumber(info.dop or info.gs and info.gs.dop or info.child_dop or info.parent_dop or 0) or 0
+                local dop=info and tonumber(info.dop or info.gs and info.gs.dop or info.child_dop or info.parent_dop or 0) or 0
                 local dop_pos=3
                 c[dop_pos]=dop>0 and dop or nil
                 local idx,counter=0,0
@@ -2395,16 +2404,20 @@ function unwrap.analyze_sqlmon(text,file,seq)
     end
 end
 
-local sqldetail_pattern='<report [^%>]+>%s*<report_id><?[^<]*/orarep/sql_detail[^<]*</report_id>.-</sql_details>%s*</report>'
+local sqldetail_pattern='<report [^%>]+>%s*<report_id><?[^<]*/orarep/sql_detail.-</sql_details>%s*</report>'
 function unwrap.analyze_sqldetail(text,file,seq)
     local content,sql_id=handler:new()
     local parser =xml2lua.parser(content)
     local xml,hd,db_version,start_clock
     local xml=text:match(sqldetail_pattern)
+    local sec2num=env.var.format_function("smhd2")
+    env.var.define_column('aas,duration','for','smhd2')
+    env.var.define_column("pct,aas%",'for','pct2')
     if not xml then
-        xml=text:match('<sql_details .-</sql_details>')
+        xml=text:match('<sql_details>.-</sql_details>')
         if not xml then return end
     end
+
     --handle line-split of SQL fulltext
     load_xml(parser,xml)
     if content.root.report then
@@ -2479,49 +2492,146 @@ function unwrap.analyze_sqldetail(text,file,seq)
             pr(grid.merge({titles},'plain'))
         end
     end
-    env.var.define_column('duration','for','smhd2')
     detail_report_parameters()
+
+    local function detail_activity_histogram()
+        local names={}
+        local rows={}
+        local aas=0
+        for _,bucket in pair(hd.activity_histogram and hd.activity_histogram.bucket) do
+            for _,e in pair(bucket.activity) do
+                local att=e._attr
+                local key=table.concat({att.plan_hash_value or att.rpi or (att.other_activity and 'Other Activity') or '',att.event or (att.class and 'ON CPU') or ''},'\1')
+                local row=names[key]
+                if not row then 
+                    row=key:split('\1')
+                    names[key]=row
+                    rows[#rows+1]=row
+                end
+                row[3]=(row[3] or 0)+1
+                row[4]=(row[4] or 0)+tonumber(e[1])
+
+                aas=aas+tonumber(e[1])
+            end
+        end
+        if #rows>1 then
+            rows.topic="Stats ("..sec2num(aas)..')'
+            table.sort(rows,function(a,b) return a[4]>b[4] end)
+            for _,row in ipairs(rows) do
+                row[5]=math.round(row[4]/aas,4)
+            end
+            table.insert(rows,1,{'Plan Hash/Other','Event/Class','Buckets','AAS','AAS%'})
+
+            local attr=hd.activity_histogram._attr
+            local infos={{'Attribute','Value'},topic='Info'}
+            local idx=1
+            for k,v in pairs(hd.activity_histogram._attr) do
+                idx=idx+1
+                infos[idx]={k,tonumber(v) and math.round(tonumber(v),2) or v}
+            end
+            title('$PROMPTCOLOR$Activity Histogram$NOR$')
+            pr(grid.merge({rows,'|',infos},'plain'))
+        end
+    end
+    detail_activity_histogram()
 
     local function detail_top_activity()
         local dims,dim={},{}
         for i,d in pair(hd.top_activity and hd.top_activity.dim) do
-            if d._attr.id and d._attr.id~='class' and d._attr.id~='class,event' and d.top_members and d.top_members.member then
-                local row=d._attr.id:split(',')
+            local id=d._attr.id
+            if id and d.top_members and d.top_members.member then
+                local row=id:split(',')
+                if id:find('session_serial#',1,true) and #row<=3 then
+                    row={id:find('blocking',1,true) and 'Blocking_Session#' or 'Session#'}
+                end
                 local cols=#row
                 row[cols+1]='AAS'
                 local rows={row}
+                local aas=0
+
                 for _,m in pair(d.top_members.member) do
                     row=m._attr.id:split(',')
-                    for j=#row+1,cols do row[j]='' end
-                    row[cols+1]=m._attr.count
+                    if cols==1 and id:find('session_serial#',1,true) then
+                        if #row<=2 then
+                            row={m._attr.id}
+                        else
+                            row={row[2]..','..row[3]..',@'..row[1]}
+                        end
+                    end
+                    for j=1,cols do 
+                        row[j]=tonumber(row[j]) or row[j] or '' 
+                    end
+                    row[cols+1]=tonumber(m._attr.count)
                     rows[#rows+1]=row
+                    aas=aas+row[cols+1]
+                end
+                if #rows>2 then rows.footprint=sec2num(aas) end
+                if id:find('plan_hash',1,true) then
+                    rows.seq=1
+                elseif id:find('sql_id',1,true) then
+                    rows.seq=2
+                else
+                    rows.seq=10
                 end
                 dim[#dim+1]=rows
-                --grid.print(rows)
             end
         end
         if #dim>0 then
             table.sort(dim,function(a,b)
+                if a.seq~=b.seq then
+                    return a.seq<b.seq
+                end
                 return #a<#b 
             end)
-            local d={}
-            dims[1]=d
+            
+            title("$PROMPTCOLOR$TOP ACTIVITIES$NOR$")
             for i,row in ipairs(dim) do
-                d[#d+1]=row
-                if math.fmod(i,3)>0 then
-                    d[#d+1]='|'
-                elseif dim[i+1] then
-                    d={}
-                    dims[#dims+1],dims[#dims+2]='-',d
+                dims[#dims+1]=row
+                if math.fmod(i,3)==0 then
+                    pr(grid.merge(dims,'plain'))
+                    dims={}
+                else
+                    dims[#dims+1]='|'
                 end
             end
-            title("$PROMPTCOLOR$TOP ACTIVITIES$NOR$")
-            env.var.define_column('aas','for','smhd2')
-            pr(grid.merge(dims,'plain'))
+            if #dims>0 then 
+                dims[#dims]=nil
+                pr(grid.merge(dims,'plain'))
+            end
         end
     end
 
     detail_top_activity()
+
+    local function detail_spm()
+        local header={'Type','Name'}
+        local rows={header}
+
+        for _,profs in pairs{hd.sql_profiles and hd.sql_profiles.sql_profile,
+                             hd.sql_plan_baselines and hd.sql_plan_baselines.sql_plan_baseline,
+                             hd.sql_patches and hd.sql_patches.sql_patch} do
+            for _,prof in pair(profs) do
+                if prof.info_group then
+                    local row={prof.info_group._attr.name,prof._attr.name}
+                    for _,info in pair(prof.info_group.info) do
+                        local n=info._attr.name
+                        local idx=header[n]
+                        if not idx then
+                            idx=#header+1
+                            header[n],header[idx]=idx,n
+                        end
+                        row[idx]=tonumber(info[1]) or info[1]
+                    end
+                    rows[#rows+1]=row
+                end
+            end
+        end
+        if #rows>1 then
+            title("$PROMPTCOLOR$SQL Profiles/SPM/Patches$NOR$")
+            pr(grid.merge({rows},'plain'))
+        end
+    end
+    detail_spm()
 
     local function detail_plan_summary()
         local names,idx={'PLAN HASH VALUE'},1
@@ -2579,20 +2689,23 @@ function unwrap.analyze_sqldetail(text,file,seq)
             rows[#rows+1]=stats
         end
         local total,avg={pivot=#rows,pivotsort='head',topic='Plan Stats for All Executions',names},{pivot=#rows,pivotsort='head',topic='Plan Stats for Per Execution',names}
+        
         for i,stats in ipairs(rows) do
             local row1,row2={},{}
-            local exec=execs[i]>0 and execs[i] or 1
-            for idx,n in ipairs(names) do
-                local v=stats[n]
-                row1[idx]=v
-                if v and idx>1 and n~='executions' and n~='sharable_mem' then
-                    row2[idx]=math.round(v/exec,2)
-                else
-                    row2[idx]=v
+            if execs[i] then
+                local exec=execs[i]>0 and execs[i] or 1
+                for idx,n in ipairs(names) do
+                    local v=stats[n]
+                    row1[idx]=v
+                    if v and idx>1 and n~='executions' and n~='sharable_mem' then
+                        row2[idx]=math.round(v/exec,2)
+                    else
+                        row2[idx]=v
+                    end
                 end
+                total[#total+1]=row1
+                avg[#avg+1]=row2
             end
-            total[#total+1]=row1
-            avg[#avg+1]=row2
         end
 
         header={'Plan Hash','SQL Exec ID','SQL Exec Start','|'}
@@ -2601,6 +2714,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
             if type(mon)~='table' then return end
             for n,v in pairs(mon) do
                 if type(n)=='number' then
+                    if type(v)~='table' then return end
                     n,v=v._attr.name,v[1]
                 end
                 if n=='type' then return end
@@ -2639,9 +2753,6 @@ function unwrap.analyze_sqldetail(text,file,seq)
 
     local line_aas={}
     local function detail_plan_activity()
-        var.define_column("pct,aas%",'for','pct2')
-        var.define_column("aas",'smhd2')
-        local sec2num=env.var.format_function("smhd2")
         for i,act in pair(hd.plan_activities and hd.plan_activities.activities) do
             local phv=act._attr.plan_hash_value
             local aas=tonumber(act.plan_activity._attr.count)

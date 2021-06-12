@@ -855,6 +855,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
         local l1,l2 = str:ulen()
         return l2
     end
+    local footprint_pattern=env.ansi.mask('UDL','(.-)','NOR'):gsub('%[','%%[')
     local function redraw(tab, cols, rows)
         local newtab = {_is_drawed = true, topic = tab.topic or tab.title,footprint=tab.footprint or tab.bottom}
         local function push(line) newtab[#newtab + 1] = line end
@@ -877,7 +878,8 @@ function grid.merge(tabs, is_print, prefix, suffix)
             end
             for rowidx, row in ipairs(tab) do
                 if rowidx == #tab then
-                    local line=row:gsub('.',function(c) return c=='+' and '|' or c=='-' and ' ' or c end)
+                    local line=row:gsub(footprint_pattern,function(c) return reps(' ',#c) end)
+                    line=line:gsub('.',function(c) return c=='+' and '|' or c=='-' and ' ' or c end)
                     for i = rowidx + 1, rows do
                         do_push(line)
                     end
