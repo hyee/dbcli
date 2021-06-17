@@ -215,7 +215,7 @@ end
 local cp='"(['..object_pattern..']+)"'
 local function process_pred(preds,id,type,pred,node,alias)
     if not pred then return end
-    pred=pred:trim()
+    pred=pred:gsub('%s*\n%s*',' '):trim()
     if pred=='' then return end
     if type:lower()~='proj' then
         local pred1=strip_quote(pred)
@@ -338,9 +338,14 @@ local function parse_other_xml(xml,add_header,envs,outlines,qb_transforms,skp)
     end
 
     if xml.qb_registry then
-        for k,v in pair(xml.qb_registry.q) do
-            if type(v.n)=='string' and type(v.p)=='string' then
-                qb_transforms[qb_name(v.p)]=qb_name(v.n)
+        for k,q in pair(xml.qb_registry.q) do
+            if type(q.n)=='string' and type(q.p)=='string' then
+                qb_transforms[qb_name(q.p)]=qb_name(q.n)
+                for _,o in pair(q.i and q.i.o) do
+                    if o.v then
+                        qb_transforms[qb_name(o.v)]=qb_name(q.n)
+                    end
+                end
             end
         end
     end
@@ -596,7 +601,7 @@ local function print_suffix(preds,qbs,qb_transforms,outlines,pr,xid)
                         end
                         return p..c..s
                     end)
-                    if list[1] and #list[1]==1 and (not list.missing or not list[2])  then 
+                    if list[1] and #list[1]==1 and not (list.missing or list[2])  then 
                         c[1]=xid:format(list[1][1])
                     elseif list[2] then
                         if not list[1] or list[2].min==list[2].max then
@@ -2165,7 +2170,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 table.concat(p.proj,''):gsub(',$',''),
                 '|',
                 s.distrib or p.distrib or s.partition_start and (
-                    s.partition_end==s.partition_stop and s.partition_start
+                    s.partition_start==s.partition_stop and s.partition_start
                     or (s.partition_start..' - '..s.partition_stop)
                 ) or nil,
                 '|',
