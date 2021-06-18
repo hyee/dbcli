@@ -275,12 +275,12 @@ FROM   (SELECT &VER top_level_sql_id top_sql,
                sql_plan_hash_value phv,
                &VER sql_plan_line_id plan_line,
                &VER NVL(TRIM(SQL_PLAN_OPERATION||' '||SQL_PLAN_OPTIONS),TOP_LEVEL_CALL_NAME) OPERATION,
-               PLSQL_ENTRY_OBJECT_ID program#
+               PLSQL_ENTRY_OBJECT_ID program#,PLSQL_OBJECT_ID call#
         FROM   &src
         WHERE  sql_id = :V1
         AND    &inst=nvl(regexp_substr(:V2,'^\d+$')+0,&inst)
         AND    sample_time+0 BETWEEN nvl(to_date(:starttime,'YYMMDDHH24MISS'),sysdate-7) and nvl(to_date(:endtime,'YYMMDDHH24MISS'),sysdate)
-        GROUP  BY sql_plan_hash_value, PLSQL_ENTRY_OBJECT_ID, event
+        GROUP  BY sql_plan_hash_value, PLSQL_ENTRY_OBJECT_ID,PLSQL_OBJECT_ID, event
                   &VER ,sql_plan_line_id,top_level_sql_id,NVL(TRIM(SQL_PLAN_OPERATION||' '||SQL_PLAN_OPTIONS),TOP_LEVEL_CALL_NAME)
         ORDER  BY aas DESC)
 WHERE  ROWNUM <= 10;

@@ -1,6 +1,11 @@
 /*[[
   Show mutex sleep info. Usage: @@NAME [<sid>|<sql_id>|<event>] [<inst_id>]
-  Refer to Doc ID 1298015.1/1298471.1/1310764.1
+  Refer to Doc ID 1298015.1/1298471.1/1310764.1/2463140.1/31933451
+  Possible parameters that impact the event:
+    _column_tracking_level
+    _optimizer_extended_stats_usage_control
+    _optimizer_dsdir_usage_control
+    _sql_plan_directive_mgmt_control
 
   Mainly used to diagnostic below events:
   =======================================
@@ -142,7 +147,8 @@ FROM   TABLE(gv$(CURSOR( --
                   nullif(decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)),0) holder_sid,
                   mod(p2,64436) refs,
                   a.sql_id,
-                  substr(TRIM(b.to_name), 1, 100) || CASE
+                  substr(TRIM(b.to_name), 1, 100) || 
+                  CASE
                       WHEN b.to_name LIKE 'table_%' AND
                            regexp_like(regexp_substr(b.to_name, '[^\_]+', 1, 4), '^[0-9A-Fa-f]+$') THEN
                        ' (obj# ' || to_number(regexp_substr(b.to_name, '[^\_]+', 1, 4), 'xxxxxxxxxx') || ')'
@@ -183,7 +189,7 @@ FROM   (SELECT *
                                           AND    userenv('instance') = nvl(:V2, userenv('instance')))
                                   GROUP  BY mutex_loc_id, p1, sql_id, event) a,
                                   &OBJ_CACHE b
-                          WHERE  a.p1 = b.from_hash)))
+                          WHERE  a.idn = b.from_hash)))
         ORDER  BY last_Time DESC)
 WHERE  rownum <= 50;
 

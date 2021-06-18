@@ -15,7 +15,7 @@ local params = {
     ROWNUM = {name = "row_num", default = "off", desc = "To indicate if need to show the row numbers", range = "on,off"},
     HEADSTYLE = {name = "title_style", default = "none", desc = "Display style of the grid title", range = "upper,lower,initcap,none"},
     PIVOT = {name = "pivot", default = 0, desc = "Pivot a grid when next print, afterward the value would be reset", range = "-30 - +30"},
-    PIVOTSORT = {name = "pivotsort", default = "on", desc = "To indicate if to sort the titles when pivot option is on", range = "on,off,head"},
+    PIVOTSORT = {name = "pivotsort", default = "on", desc = "To indicate if to sort the titles when pivot option is on", range = "on,off,head,*"},
     MAXCOLS = {name = "maxcol", default = 1024, desc = "Define the max columns to be displayed in the grid", range = "4-1024"},
     [{'SCALE','DIGITS'}] = {name = "digits", default = 38, desc = "Define the digits for a number", range = "0 - 38"},
     SEP4K = {name = "sep4k", default = "off", desc = "Define whether to show number with thousands separator", range = "on,off"},
@@ -207,7 +207,7 @@ function grid.show_pivot(rows, col_del,pivotsort)
     del = ' ' .. del .. ' '
     --if not grid.col_del:match("^[ \t]+$") then del="" end
     if pivot > #rows then pivot = #rows end
-    
+    if pivot > 2 then del='' end
     local maxlen = 0
     for k, v in ipairs(title) do
         keys[v] = k
@@ -220,16 +220,22 @@ function grid.show_pivot(rows, col_del,pivotsort)
     local r = {}
     local color = env.ansi.get_color
     local nor, hor = color("NOR"), color("HEADCOLOR")
-    pivotsort=pivotsort or grid.pivotsort
+    pivotsort=(pivotsort or grid.pivotsort):lower()
     if pivotsort == "on" then table.sort(title) end
+    local head=pivotsort=='head' and tostring(title[1]):lower() or (pivotsort~='on' and pivotsort~='off') and pivotsort or nil
     local _, value
     for k, v in ipairs(title) do
         v=grid.format_title(v)
         local len1,len2=v:ulen()
-        table.insert(r, {("%s%-" .. (maxlen+len1-len2) .. "s %s%s "):format(hor, v, nor, del)})
+        local row={("%s%-" .. (maxlen+len1-len2) .. "s %s%s"):format(hor, v..(v:lower()==head and ' =>' or ''), nor, del)}
+        if v:lower()==head then
+            table.insert(r,1, row)
+        else    
+            table.insert(r, row)
+        end
         for i = 2, pivot, 1 do
             _, value = grid.format_column(true, type(v) == "table" and v or {column_name = v}, rows[i][keys[v]], i - 1)
-            table.insert(r[k], tostring(value):trim())
+            table.insert(row, tostring(value):trim())
         end
     end
     
@@ -252,7 +258,7 @@ function grid.show_pivot(rows, col_del,pivotsort)
             if r[i] then table.remove(r, i) end
         end
         grid.pivot = 1
-    elseif grid.pivot > 0 and pivotsort ~= "head" then
+    elseif grid.pivot > 0 and head==nil then
         local titles = {" "}
         for i = 2, #r[1], 1 do
             titles[i] = ' #' .. (i - 1)
@@ -291,29 +297,21 @@ function grid.format_column(include_head, colinfo, value, rownum,instance,rowind
         if value == nil then return true, '' end
         local v1, v2 = tonumber(value)
         if not v1 then return true,value end
-        if type(value) == "number" or value==tostring(v1) or value:find('[eE]') then
-            local pre, scal = math.modf(v1)
-            if grid.sep4k == "on" then
-                if v1 ~= pre then
-                    local scale=grid.digits<38 and grid.digits or 2
-                    v1=math.floor(v1*math.pow(10,scale))/math.pow(10,scale)
-                    v2 = string.format_number("%,."..scale.."f", v1, 'double')
-                else
-                    v2 = string.format_number("%,d", v1, 'long')
-                end
-            elseif grid.digits < 38 and scal > 0 then
-                v2 = math.round(v1, grid.digits)
+        local pre, scal = math.modf(v1)
+        if grid.sep4k == "on" then
+            if v1 ~= pre then
+                local scale=grid.digits<38 and grid.digits or 2
+                v1 = math.round(v1, scale)
+                v2 = string.format_number("%,."..scale.."f", v1, 'double')
+            else
+                v2 = string.format_number("%,d", v1, 'long')
             end
-            value = v2 or v1
-            if tostring(value):find('e', 1, true) then return true, string.format('%99.38f', value):gsub(' ', ''):gsub('%.?0+$', '') end
-            return true, value
-        else
-            if grid.digits < 38 or grid.sep4k == "on" then
-                local done,res=pcall(string_format,String,'%'..(grid.sep4k == "on" and ',.' or '.')..(grid.digits<38 and grid.digits or 2)..'f',java_cast(value,'java.math.BigDecimal'))
-                value = done and res or value
-            end
-            return true,value
+        elseif grid.digits < 38 and scal > 0 then
+            v2 = math.round(v1, grid.digits)
         end
+        value = v2 or v1
+        if tostring(value):find('e', 1, true) then return true, string.format('%99.38f', value):gsub(' ', ''):gsub('%.?0+$', '') end
+        return true, value
     end
     return false, value == nil and '' or value
 end
@@ -808,7 +806,7 @@ function grid.tostring(rows, include_head, col_del, row_del, rows_limit, pivot,p
     return table.concat(rows, "\n", 1, rows_limit),output
 end
 
-function grid.format_output(output,rows_limit)
+function grid.format_output(output,rows_limit,include_head)
     if type(output)=="table" then
         rows_limit=rows_limit or #output
         for i=1,rows_limit do
@@ -855,6 +853,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
         local l1,l2 = str:ulen()
         return l2
     end
+    local footprint_pattern=env.ansi.mask('UDL','(.-)','NOR'):gsub('%[','%%[')
     local function redraw(tab, cols, rows)
         local newtab = {_is_drawed = true, topic = tab.topic or tab.title,footprint=tab.footprint or tab.bottom}
         local function push(line) newtab[#newtab + 1] = line end
@@ -877,7 +876,8 @@ function grid.merge(tabs, is_print, prefix, suffix)
             end
             for rowidx, row in ipairs(tab) do
                 if rowidx == #tab then
-                    local line=row:gsub('.',function(c) return c=='+' and '|' or c=='-' and ' ' or c end)
+                    local line=row:gsub(footprint_pattern,function(c) return reps(' ',#c) end)
+                    line=line:gsub('.',function(c) return c=='+' and '|' or c=='-' and ' ' or c end)
                     for i = rowidx + 1, rows do
                         do_push(line)
                     end
@@ -895,7 +895,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
             local conv=env.ansi.convert_ansi
             if (tab.topic or "") ~= "" then
                 local topic,st,ed = tab.topic:from_ansi()
-                push(fmt:format(topic:cpad(cols - 2, '-',
+                push(fmt:format(topic:match('[^\n]+'):cpad(cols - 2, '-',
                     function(left, str, right) 
                         return conv(("%s$PROMPTCOLOR$%s$NOR$%s"):format(left, grid.cut(topic, cols - 2):to_ansi(st,ed), right)) 
                     end)))
@@ -912,7 +912,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
             end
             if (tab.footprint or "") ~= "" then
                 local footprint,st,ed = tab.footprint:from_ansi()
-                footprint=footprint:cpad(cols - 2, '-',
+                footprint=footprint:match('[^\n]+'):cpad(cols - 2, '-',
                 function(left, str, right)
                     return conv(("%s$UDL$%s$NOR$%s"):format(left or '', (grid.cut(footprint, cols - 2)):to_ansi(st,ed), right or '')) 
                 end)
@@ -926,7 +926,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
     end
     
     local frames={}
-    local printsize=env.cfg and env.cfg.get('PRINTSIZE') or 512
+    local printsize=env.set and env.set.get('PRINTSIZE') or 512
     local function _merge(tabs, is_wrap)
         local newtab = {}
         local maxwidth = 0
@@ -952,7 +952,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
                     height1, height2 = math.min(tab.max_rows and (tab.max_rows + 4) or 1e5, height1), math.min(nexttab.max_rows and (nexttab.max_rows + 4) or 1e5, height2)
                     if sep == '|' then
                         local maxlen = math.max(height1, height2)
-                        newtab.adj_height=maxle
+                        newtab.adj_height=maxlen
                         tab, nexttab = redraw(tab, width1, maxlen), redraw(nexttab, width2, maxlen)
                         local fmt = '%s  %s'
                         for rowidx = 1, math.max(#tab, #nexttab) do

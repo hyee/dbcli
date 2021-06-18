@@ -401,6 +401,7 @@ end
 
 local grp1,grp2,grp3,grp3=table.new(10,0),table.new(10,0),table.new(10,0),table.new(10,0)
 function string.from_ansi(str)
+    if type(str)~='string' then return str,nil,nil,str end
     local str1=str:convert_ansi()
     if str1==str then return str end
     local len,first,ed,ec,grp,last,curr=#str1

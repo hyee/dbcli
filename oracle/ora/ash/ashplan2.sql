@@ -67,7 +67,7 @@ WITH sql_plan_data AS
                   ) a)
   WHERE  seq = 1),
 hierarchy_data AS
- (SELECT opt_param('_connect_by_use_union_all','old_plan_mode')id, parent_id, plan_hash_value
+ (SELECT /*+opt_param('_connect_by_use_union_all','old_plan_mode')*/ id, parent_id, plan_hash_value
   FROM   sql_plan_data
   START  WITH id = 0
   CONNECT BY PRIOR id = parent_id

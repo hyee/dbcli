@@ -261,6 +261,11 @@ function init.onload(env)
     env.plugins=plugins
     local p=print
     collectgarbage('stop')
+    for k,v in pairs(plugins) do
+        if not init.databases[k] then 
+            init.databases[k]=type(v)=='string' and v or type(v)=='table' and v.name or (k..'/'..k)
+        end
+    end
     init.load_modules(init.module_list,env)
     init.load_database()
     collectgarbage('restart')

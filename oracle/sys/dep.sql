@@ -1,10 +1,12 @@
-/*[[Show cursors that depending on the specific object. Usage: @@NAME [owner.]<object_name> [instance]
+/*[[Show cursors that depending on the specific object. Usage: @@NAME {[owner.]<object_name>|-c <sql_id>]} [instance]
 	--[[
 		&V2: default={&instance}
+		&filter: default={g.kglnaobj = :object_name and g.kglnaown = :object_owner AND GREATEST(c.KGLHDLMD,c.KGLHDPMD)>1} c={c.KGLOBT03=:V1 AND c.kglhdnsp = 0}
+		&getobj: default={} c={--}
 	--]]
 ]]*/
 
-findobj "&V1" 0 1
+&getobj findobj "&V1" 0 1
 
 SELECT * FROM TABLE(GV$(CURSOR(
 	SELECT /*+ordered*/ userenv('instance') inst_id,
@@ -80,24 +82,21 @@ SELECT * FROM TABLE(GV$(CURSOR(
 	                     31,'JAVA JAR',
 	                     'INVALID TYPE:' || c.KGLOBTYP)) AS ftype,
 	       c.kglhdldc AS LOADS,
-	       c.kglhdexc AS EXECUT,
+	       c.kglhdexc AS EXECS,
 	       c.kglhdlkc AS LOCKS,
 	       c.kglobpc0 AS PINS,
 	       c.kglhdclt AS CHILD_LATCH,
-	       c.kglhdivc AS INVALIDATIONS,
+	       c.kglhdivc AS INVALIDS,
 	       DECODE(c.KGLHDLMD, 0, 'NONE', 1, 'NULL', 2, 'SHARED', 3, 'EXCLUSIVE', 'UNKOWN') AS LOCK_MODE,
 	       DECODE(c.KGLHDPMD, 0, 'NONE', 1, 'NULL', 2, 'SHARED', 3, 'EXCLUSIVE', 'UNKOWN') AS PIN_MODE,
 	       DECODE(c.KGLOBSTA, 1, 'VALID', 2, 'VALID_AUTH_ERROR', 3, 'VALID_COMPILE_ERROR', 4, 'VALID_UNAUTH', 5, 'INVALID_UNAUTH', 6, 'INVALID', 'UNKOWN') AS STATUS,
-	       hv.kglobt03 sql_id,
+	       c.kglobt03 sql_id,
 	       substr(TRIM(regexp_replace(REPLACE(c.kglnaobj, chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 200) sql_text
-	FROM   x$kglob g, x$kgldp k, x$kglxs a, x$kglob c, X$KGLCURSOR_CHILD_SQLIDPH hv
-	WHERE  g.kglhdadr = k.kglrfhdl
-	AND    g.kglnaobj = :object_name
-	AND    g.kglnaown = :object_owner
+	FROM   x$kglob g, x$kgldp k, x$kglxs a, x$kglob c
+	WHERE  &filter
+	AND    g.kglhdadr = k.kglrfhdl
 	AND    k.kglhdadr = a.kglhdadr /* make sure it is not a transitive */
 	AND    k.kgldepno = a.kglxsdep /* reference, but a direct one */
 	AND    k.kglhdadr = c.kglhdadr
-	AND    GREATEST(c.KGLHDLMD,c.KGLHDPMD)>1
 	AND    userenv('instance')+0 = nvl(0+:V2,userenv('instance')+0)
-	AND    c.kglnahsh = hv.kglnahsh(+)
 )))

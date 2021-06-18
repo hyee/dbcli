@@ -40,14 +40,20 @@ end
 
 local env=setmetatable({},{
     __call =set_env,
-    __index=function(self,key) return key=='_CACHE_PATH' and cache_path or _G[key] end,
+    __index=function(self,key) 
+        return key=='_CACHE_PATH' and cache_path or _G[key] 
+    end,
     __newindex=set_env
 })
 
 local mt={}
 for k,v in pairs{
     __declared = {},
-    __index    = function(t,key) return rawget(env,key) end,
+    __index    = function(t,key) 
+        local v= rawget(env,key)
+        --if v==nil and t~=env then print(key,debug.traceback()) end
+        return v 
+    end,
     __newindex = function (t, n, v)
         if not mt.__declared[n] and env.WORK_DIR then
             if debug_mode and env.IS_ENV_LOADED and n~='reset_input' and n:upper()~=n then print('Detected unexpected global var "'..n..'" with', debug.traceback()) end

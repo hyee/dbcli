@@ -255,16 +255,25 @@ function var.print(name)
     local db=var.current_db
     if not name then return end
     if type(name)=="string" and name:lower()~='-a' then
-        name=name:upper()
-        local obj=var.inputs[name]
-        env.checkerr(obj,'Target variable[%s] does not exist!',name)
-        if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
-            var.inputs[name]=db.resultset:print(obj,db.conn, var.desc[name] and (var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)))
-            var.outputs[name]="#CURSOR"
-        elseif type(obj)=='table' then
-            grid.print(obj,nil,nil,nil,nil,prefix,"\n")
-        elseif obj~=db_core.NOT_ASSIGNED then
-            print(obj)
+        local typ,f=os.exists(name)
+        if typ=='file' then
+            f=io.open(f,'r')
+            if f then
+                print(f:read("*a"))
+                f:close()
+            end
+        else 
+            name=name:upper()
+            local obj=var.inputs[name]
+            env.checkerr(obj,'Target variable[%s] does not exist!',name)
+            if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
+                var.inputs[name]=db.resultset:print(obj,db.conn, var.desc[name] and (var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)))
+                var.outputs[name]="#CURSOR"
+            elseif type(obj)=='table' then
+                grid.print(obj,nil,nil,nil,nil,prefix,"\n")
+            elseif obj~=db_core.NOT_ASSIGNED then
+                print(obj)
+            end
         end
     else
         local list=type(name)=="table" and name or var.inputs
@@ -364,7 +373,7 @@ function var.format_function(fmt,next_fmt)
     end
     f=f:upper()
     if f=="KMG" or f=="TMB" then --KMGTP
-        local units=f=="KMG" and {'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} or {'  ',' K',' M',' B',' T',' Q'}
+        local units=f=="KMG" and {'   ',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} or {'  ',' K',' M',' B',' T',' Q'}
         local div=f=="KMG" and 1024 or 1000
         func=function(v)
             local s=tonumber(v)
@@ -382,7 +391,7 @@ function var.format_function(fmt,next_fmt)
         if f=='' then return end
         adj=1
         local col=f
-        local u1,u2,u3={'  B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} , {'   ',' Ki',' Mi',' Bi',' Tr',' Qu'},{' us',' ms',' s ',' m ',' h ',' d '}
+        local u1,u2,u3={'   ',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB'} , {'   ',' Ki',' Mi',' Bi',' Tr',' Qu'},{' us',' ms',' s ',' m ',' h ',' d '}
         local d1,d2,d3=1024,1000,{1000,1000,60,60,24,1}
         local c,p=nil
         local p1={
@@ -403,23 +412,27 @@ function var.format_function(fmt,next_fmt)
             ['%Wus$']={u3,1}
         }
         func=function(v,r,grid)
-            local rows=grid.data
-            if rows[1] and rows[1].colinfo then
-                c=rows[1].colinfo[col]
-            elseif rows[1] and p~=rows[1] then
-                p=rows[1]
-                for k,v in ipairs(p) do
-                    if type(v)=='string' and v:upper()==col then
-                        c=k
-                        break
+            local s,val=tonumber(v)
+            if type(r)=='string' and type(grid)~='table' then
+                val=r
+            else
+                local rows=grid.data
+                if rows[1] and rows[1].colinfo then
+                    c=rows[1].colinfo[col]
+                elseif rows[1] and p~=rows[1] then
+                    p=rows[1]
+                    for k,v in ipairs(p) do
+                        if type(v)=='string' and v:upper()==col then
+                            c=k
+                            break
+                        end
                     end
                 end
+                local row=grid.__current_row
+                if not c or not row then return v,1 end 
+                val=row[c]
             end
-            local row=grid.__current_row
-            if not c or not row then return v,1 end 
-            local s=tonumber(v)
             if s==0 then return '',1 end
-            local val=row[c]
             if not s or type(val)~='string' then return v,1 end
             local prefix=s<0 and '-' or ''
             s,val=math.abs(s),val:lower()
@@ -439,11 +452,7 @@ function var.format_function(fmt,next_fmt)
                 end
             end
             if not units then
-                if val:find('time',1,true) then
-                    units,s=u3,s*1e4
-                else
-                    units=u2
-                end
+                units=u2
             end
             local div=units==u1 and d1 or units==u3 and d3 or d2
             for i=1,#units do
@@ -490,8 +499,12 @@ function var.format_function(fmt,next_fmt)
     elseif f=='PCT' or f=='PERCENTAGE' or f=='PERCENT' then
         local float_fmt="%."..scale.."f%%"
         func=function(v)
-            if not tonumber(v) then return v,1 end
-            return float_fmt:format(tonumber(v)*100),1
+            local v1=tonumber(v)
+            if not v1 then return v,1 end
+            if scale>0 and math.floor(v*math.pow(10,scale))/math.pow(10,scale-2)==100 then
+                return ("%."..(scale-1).."f%%"):format(v1*100),1
+            end
+            return float_fmt:format(v1*100),1
         end
     elseif (f:find("%",1,true) or 999)<#f or f=='K' then
         local f1,String=fmt,String
@@ -763,7 +776,7 @@ function var.onload()
     env.set_command(nil,{var.cmd3,var.cmd4},var.helper,var.setOutput,false,4)
     env.set_command(nil,{var.cmd1,var.cmd2},"Define input variables, Usage: @@NAME <name>[=]<value> [description], or @@NAME <name> to remove definition",var.setInput,false,3)
     env.set_command(nil,{"COLUMN","COL"},fmt_help,var.define_column,false,30)
-    env.set_command(nil,{"Print","pri"},'Displays the current values of bind variables.Usage: @@NAME <variable|-a>',var.print,false,3)
+    env.set_command(nil,{"Print","pri"},'Display the values of bind variables or file.Usage: @@NAME <variable>|<file>|-a',var.print,false,3)
     env.set_command(nil,"Save","Save variable value into a specific file under folder 'cache'. Usage: @@NAME <variable> <file name>",var.save,false,3);
 end
 

@@ -115,7 +115,7 @@ function cfg.init(name,defaultvalue,validate,class,desc,range,instance)
         maxvalsize=tostring(defaultvalue):len()
     end
     
-    if not cfg_P then cfg._p=env.load_data(file) end
+    if not cfg._p then cfg._p=env.load_data(file) end
     if cfg._p[name] and cfg._p[name]~=defaultvalue then
         cfg.doset(name,cfg._p[name])
     end
@@ -291,9 +291,7 @@ function cfg.capture_before_cmd(command)
     if #env.RUNNING_THREADS>1 then return end
     local cmd=env._CMDS[command[1]]
     if command[1]~='SET' and cmd.ALIAS_TO~='SET' and command[1]~='HELP' then
-        env.log_debug('set',cfg.AUTOTRACE.org..'  '..cfg.AUTOTRACE.value)
         env.log_debug("set","taking full backup",command[1])
-        env.log_debug('set',cfg.AUTOTRACE.org..'  '..cfg.AUTOTRACE.value)
         cfg._backup=cfg.backup()
     else
         cfg._backup=nil
@@ -303,10 +301,8 @@ end
 function cfg.capture_after_cmd(cmd,args)
     if #env.RUNNING_THREADS>1 then return end
     if cfg._backup then
-        env.log_debug('set',cfg.AUTOTRACE.org..'  '..cfg.AUTOTRACE.value)
         env.log_debug("set","taking full reset")
         cfg.restore(cfg._backup)
-        env.log_debug('set',cfg.AUTOTRACE.org..'  '..cfg.AUTOTRACE.value)
     end
     cfg._backup=nil
 end

@@ -382,21 +382,15 @@ Examples:
         declare=[[&declare;bs PLS_INTEGER;]],
       [[
          $IF DBMS_DB_VERSION.VERSION>12 OR DBMS_DB_VERSION.VERSION=12 AND DBMS_DB_VERSION.RELEASE>1 $THEN
-            select (select json_arrayagg(json_array(inst_id,name,value) returning clob) 
-                    from gv$sysstat where value>0),
-                   (select json_arrayagg(json_array(inst_id,WAIT_CLASS,EVENT,TOTAL_WAITS,TIME_WAITED_MICRO) returning clob) 
-                    from gv$system_event where TOTAL_WAITS>0),
-                   (select json_arrayagg(json_array(inst_id,STAT_NAME,value) returning clob) 
-                    from gv$sys_time_model where value>0) 
+            select (select json_arrayagg(json_array(inst_id,name,value) returning clob) from gv$sysstat where value>0),
+                   (select json_arrayagg(json_array(inst_id,WAIT_CLASS,EVENT,TOTAL_WAITS,TIME_WAITED_MICRO) returning clob) from gv$system_event where TOTAL_WAITS>0),
+                   (select json_arrayagg(json_array(inst_id,STAT_NAME,value) returning clob) from gv$sys_time_model where value>0) 
             into sysstat,sysevent,timemodel
             from dual;
          $ELSE
-            select XMLTYPE(CURSOR(select inst_id,name,value
-                    from gv$sysstat where value>0)),
-                   XMLTYPE(CURSOR(select inst_id,WAIT_CLASS,EVENT,TOTAL_WAITS,TIME_WAITED_MICRO
-                    from gv$system_event where TOTAL_WAITS>0)),
-                   XMLTYPE(CURSOR(select inst_id,STAT_NAME,value
-                    from gv$sys_time_model where value>0)) 
+            select XMLTYPE(CURSOR(select inst_id,name,value from gv$sysstat where value>0)),
+                   XMLTYPE(CURSOR(select inst_id,WAIT_CLASS,EVENT,TOTAL_WAITS,TIME_WAITED_MICRO from gv$system_event where TOTAL_WAITS>0)),
+                   XMLTYPE(CURSOR(select inst_id,STAT_NAME,value from gv$sys_time_model where value>0)) 
             into sysstat,sysevent,timemodel
             from dual;
          $END
@@ -502,7 +496,7 @@ Examples:
                          SUM(DECODE(n, 'cell physical IO bytes processed for IM capacity', v,'cell physical IO bytes processed for IM query',v)) "CellIM",
                          SUM(DECODE(n, 'cell physical IO bytes saved by storage index', v)) "SISave",
                          SUM(DECODE(n, 'cell physical IO bytes saved by columnar cache',v)) "CCSave",
-                         SUM(DECODE(n, 'cell flash cache read hits',v,'cell ram cache read hits',v)) "FcHit",
+                         SUM(DECODE(n, 'cell flash cache read hits',v,'cell ram cache read hits',v,'cell RDMA reads',v)) "FcHit",
                          SUM(DECODE(n, 'physical read total IO requests',v)) phyio
                   FROM   (SELECT &inst1 inst_id, NAME n, VALUE v,
                                   count(case when NAME like '%bytes optimized%' then 1 end) over() offl

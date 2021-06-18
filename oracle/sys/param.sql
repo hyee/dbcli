@@ -29,7 +29,7 @@ SELECT * FROM &GV
         FROM   x$ksppcv y,x$ksppi x, (select indx,ksppstdvl sysval from x$ksppsv) s,X$QKSCESYS z
         WHERE  (x.indx = y.indx and x.indx = s.indx) 
         AND    x.ksppinm=z.PNAME_QKSCESYROW(+)
-        AND   ((:V1 is not null and lower(ksppinm||' '||ksppdesc) LIKE LOWER('%'||:V1||'%') or
+        AND   ((:V1 is not null and lower(ksppinm||' '||ksppdesc) LIKE LOWER('%'||:V1||'%') escape '\' or
                 :V2 is not null and lower(ksppinm||' '||ksppdesc) LIKE LOWER('%'||:V2||'%') or
                 :V3 is not null and lower(ksppinm||' '||ksppdesc) LIKE LOWER('%'||:V3||'%') or
                 :V4 is not null and lower(ksppinm||' '||ksppdesc) LIKE LOWER('%'||:V4||'%') or

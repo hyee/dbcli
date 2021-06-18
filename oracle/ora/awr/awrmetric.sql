@@ -192,7 +192,7 @@ grid {
                 SELECT  METRIC_NAME,
                         ROUND(
                             case when instr(METRIC_UNIT,'%')>0 or metric_name like '%Average%' then 
-                                 AVG(AVERAGE/div)
+                                 median(AVERAGE/div)
                             else sum(AVERAGE/c/div)
                             end
                         ,2) VALUE,

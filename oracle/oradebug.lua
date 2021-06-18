@@ -1218,12 +1218,14 @@ function oradebug.profile(sid,samples,interval,event)
             if event then is_ms,events=true,events+1 end
             ela=ela and tonumber(ela)/1000 or 1
             line='<-'..line
-        else
+        elseif sid then
             title="OraDebug Short Stack Profiling (Session Id:"..sid..")"
             line,cnt=line:gsub('^.-%_%_sighandler%(%)','',1)
             if cnt==0 then
                 line,cnt=line:gsub('^.-sspuser%(%)','',1)
-            end    
+            end
+        else
+            goto continue
         end
         temp,cnt=line:gsub('<%-[^%s<%(]+','',4)
         if cnt<=3 then
@@ -1313,7 +1315,7 @@ function oradebug.profile(sid,samples,interval,event)
                 end
                 local func=oradebug.find_func(v.f,false)
                 rows:add{index,v.calls==0 and ' ' or fmt:format(math.round(100.0*v.calls/calls,2)..'',v.calls),
-                         (v.subtree-v.calls)==0 and '' or (v.subtree-v.calls),
+                         (v.subtree-v.calls)==0 and '' or math.round(v.subtree-v.calls,3),
                          events>0 and (v.event or '') or '|*|',
                          prefix..v.f..func}
                 build_stack(v,depth+1,prefix..(k<#trees and '| ' or sep),
@@ -1356,7 +1358,7 @@ function oradebug.profile(sid,samples,interval,event)
             index=index+1
             rows:add{index,
                      result[i].func,
-                     result[i].calls,
+                     math.round(result[i].calls,3),
                      math.round(100.0*result[i].calls/calls,2),
                      result[i].subtree,
                      table.concat(result[i].stacks,'\n')}

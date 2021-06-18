@@ -4,15 +4,15 @@
     sql=[[
     SELECT A.* FROM(
         SELECT /*+no_expand*/
-         inst_id,
-         sid,
-         NAME,VALUE
+               inst_id,
+               sid,
+               NAME,VALUE
         FROM   gv$sesstat
         JOIN   gv$statname
         USING  (inst_id, statistic#)
         WHERE  (VALUE > 0 OR :V3 IS NOT NULL)
         AND    (:V1 IS NULL AND SID=USERENV('SID') or sid=:V1 OR :V1='0') 
-        AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0') 
+        AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2+0=INST_ID OR :V2='0') 
         AND    (:V3 IS NULL OR lower(name) like lower('%&V3%'))) A
     ORDER BY NAME]],
     delta_by="value",

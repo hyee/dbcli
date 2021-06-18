@@ -9,7 +9,7 @@ SET FEED OFF VERIFY OFF
 VAR NAME VARCHAR2;
 DECLARE
     sq_id     VARCHAR2(32767) := '&v1';
-    hint_text VARCHAR2(32767) := '&v2';
+    hint_text VARCHAR2(32767) := q'!&v2!';
     sq_text   CLOB;
     NAME      VARCHAR2(128);
     to_schema VARCHAR2(128);
@@ -21,12 +21,13 @@ BEGIN
         FROM   (SELECT parsing_schema_name, sql_fulltext
                 FROM   gv$sqlarea
                 WHERE  sql_id = sq_id
+                AND    sql_fulltext IS NOT NULL
                 AND    rownum < 2
                 UNION ALL
                 SELECT parsing_schema_name, sql_text
                 FROM   dba_hist_sqlstat
                 JOIN   dba_hist_sqltext
-                USING  (sql_id)
+                USING  (sql_id,dbid)
                 WHERE  sql_id = sq_id
                 AND    rownum < 2
                 UNION ALL
@@ -34,6 +35,7 @@ BEGIN
                 FROM   gv$sql_monitor
                 WHERE  sql_id = sq_id
                 AND    IS_FULL_SQLTEXT = 'Y'
+                AND    sql_text IS NOT NULL
                 AND    rownum < 2)
         WHERE  rownum < 2;
     EXCEPTION
