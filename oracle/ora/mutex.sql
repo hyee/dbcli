@@ -147,7 +147,8 @@ FROM   TABLE(gv$(CURSOR( --
                   nullif(decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)),0) holder_sid,
                   mod(p2,64436) refs,
                   a.sql_id,
-                  substr(TRIM(b.to_name), 1, 100) || CASE
+                  substr(TRIM(b.to_name), 1, 100) || 
+                  CASE
                       WHEN b.to_name LIKE 'table_%' AND
                            regexp_like(regexp_substr(b.to_name, '[^\_]+', 1, 4), '^[0-9A-Fa-f]+$') THEN
                        ' (obj# ' || to_number(regexp_substr(b.to_name, '[^\_]+', 1, 4), 'xxxxxxxxxx') || ')'
