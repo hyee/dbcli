@@ -1,3 +1,4 @@
+2021-06-28: + oracle: new script 'show autotask'
 2021-04-30: + oracle: new script 'ora lfs' to analyze the 'log file sync' event
 2021-01-30: * public: upgrade lib ConEmu to build 210128
 2021-01-24: + public: new option 'set internal on/off'

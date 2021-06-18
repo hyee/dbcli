@@ -2659,7 +2659,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
                 infos[#infos+1]=row
             end
 
-            local stats={['PLAN HASH VALUE']='PHV: '..phv}
+            local stats={['PLAN HASH VALUE']=''..phv}
             for _,p1 in pairs{p,p.sql_plan_statistics_history} do
                 for _,p2 in pair(p1 and p1.stats) do
                     local exec=0

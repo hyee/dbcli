@@ -626,8 +626,7 @@ end
 local function extract_qbs()
     return {
         start=function(line,root,lineno,full_line)
-                if root.plan and line:find('^<qb_registry>') and full_line:sub(-128):find('</qb_registry>%s*$') then
-                    
+                if root.plan and line:find('^<qb_registry>') and full_line and full_line:sub(-128):find('</qb_registry>%s*$') then
                     local content=handler:new()
                     local parser=xml2lua.parser(content)
                     local done,err=pcall(parser.parse,parser,full_line)
