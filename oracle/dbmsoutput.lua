@@ -17,19 +17,20 @@ function output.setOutput(db)
     pcall(function() (db or env.getdb()):internal_call(stmt) end)
 end
 
-output.trace_sql=[[select /*INTERNAL_DBCLI_CMD dbcli_ignore*/ name,value from sys.v_$mystat natural join sys.v_$statname where name not like 'session%memory%' and value>0]]
+output.trace_sql=[[select /*INTERNAL_DBCLI_CMD dbcli_ignore*/ name,value from sys.v_$mystat join sys.v_$statname using(STATISTIC#) where name not like 'session%memory%' and value>0]]
 output.trace_sql_after=([[
-    DECLARE/*INTERNAL_DBCLI_CMD*/
+    DECLARE/*INTERNAL_DBCLI_CMD dbcli_ignore*/
         l_sql_id VARCHAR2(15);
         l_tmp_id VARCHAR2(15) := :sql_id; 
         l_child  PLS_INTEGER;
         l_intval PLS_INTEGER;
         l_strval VARCHAR2(20);
+        l_sid    PLS_INTEGER:=sys_context('userenv','sid');
     BEGIN
         open :stats for q'[@GET_STATS@]';
         begin
-            execute immediate q'[select prev_sql_id,prev_child_number from sys.v_$session where sid=sys_context('userenv','sid') and username is not null and prev_hash_value!=0]'
-            into l_sql_id,l_child;
+            execute immediate q'[select prev_sql_id,prev_child_number from sys.v_$session where sid=:sid and username is not null and prev_hash_value!=0]'
+            into l_sql_id,l_child using l_sid;
 
             if l_sql_id is null then
                 l_sql_id := l_tmp_id;
@@ -46,7 +47,7 @@ output.trace_sql_after=([[
         :last_child  := l_child; 
     END;]]):gsub('@GET_STATS@',output.trace_sql)
 
-output.stmt=([[/*INTERNAL_DBCLI_CMD*/
+output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
     DECLARE
         l_line   VARCHAR2(32767);
         l_done   PLS_INTEGER := 32767;
@@ -68,6 +69,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD*/
         l_sep    VARCHAR2(10) := chr(1)||chr(2)||chr(3)||chr(10); 
         l_plans  sys.ODCIVARCHAR2LIST;
         l_fmt    VARCHAR2(300):='TYPICAL ALLSTATS LAST';
+        l_sid    PLS_INTEGER:=sys_context('userenv','sid');
         l_sql    VARCHAR2(500);
         l_found  BOOLEAN := false;
         l_intval PLS_INTEGER;
@@ -89,8 +91,8 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD*/
     BEGIN
         IF l_trace NOT IN('on','statistics','traceonly') AND l_child IS NOT NULL THEN
             begin
-                execute immediate q'[select prev_sql_id,prev_child_number from sys.v_$session where sid=sys_context('userenv','sid') and username is not null and prev_hash_value!=0]'
-                into l_sql_id,l_child;
+                execute immediate q'[select prev_sql_id,prev_child_number from sys.v_$session where sid=:sid and username is not null and prev_hash_value!=0]'
+                into l_sql_id,l_child USING l_sid;
                 if l_sql_id is null then
                     l_sql_id := l_tmp_id;
                 elsif l_sql_id != l_tmp_id and l_tmp_id != 'X' then
@@ -137,9 +139,15 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD*/
             END IF;
             BEGIN
                 $IF DBMS_DB_VERSION.VERSION>10 $THEN
-                    l_sql :='SELECT /*+dbcli_ignore*/ SQL_ID,'|| CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN 'CHILD_ADDRESS' ELSE 'CAST(NULL AS RAW(8))' END ||',null FROM sys.V_$OPEN_CURSOR WHERE sid=userenv(''sid'') AND cursor_type like ''OPEN%'' AND sql_exec_id IS NOT NULL AND instr(sql_text,''dbcli_ignore'')=0 AND instr(sql_text,''$OPEN_CURSOR'')=0';
+                    l_sql := '/*dbcli_ignore*/SELECT SQL_ID,'
+                          || CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN 'CHILD_ADDRESS' ELSE 'CAST(NULL AS RAW(8))' END 
+                          || q'!,null FROM sys.V_$OPEN_CURSOR 
+                             WHERE sid=:sid 
+                             AND   cursor_type like 'OPEN%' 
+                             AND   LAST_SQL_ACTIVE_TIME>SYSDATE-1/8640 AND instr(sql_text,'dbcli_ignore')=0
+                             AND   lower(REGEXP_SUBSTR(SQL_TEXT,'\w+')) NOT IN('call','declare','begin','alter')!' ;
                     BEGIN
-                        EXECUTE IMMEDIATE l_sql BULK COLLECT INTO l_recs;
+                        EXECUTE IMMEDIATE l_sql BULK COLLECT INTO l_recs USING l_sid;
                         FOR i in 1..l_recs.count LOOP
                             IF l_recs(i).sql_id=l_sql_id THEN
                                 l_found := true;
@@ -288,7 +296,7 @@ function output.getOutput(item)
             local done,err=pcall(db.exec_cache,db,output.trace_sql_after,args,'Internal_GetSQLSTATS_Next')
             if not done then
                 output.is_exec=nil
-                return
+                return --print(err)
             end
             stats=db:compute_delta(args.stats,output.prev_stats,'1','2')
         end
