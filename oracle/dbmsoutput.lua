@@ -1,7 +1,7 @@
 local env,loader=env,loader
 local snoop,cfg,default_db=env.event.snoop,env.set,env.db
 local flag = 1
-local term,sqlerror
+local term,sqlerror,timer
 local output={}
 local prev_transaction
 local enabled='on'
@@ -12,7 +12,7 @@ local prev_stats
 function output.setOutput(db)
     local flag=cfg.get("ServerOutput")
     cfg.force_set('autotrace','off')
-    sqlerror=nil
+    sqlerror,timer=nil
     local stmt="BeGin dbms_output."..(flag=="on" and "enable(null)" or "disable()")..";end;"
     pcall(function() (db or env.getdb()):internal_call(stmt) end)
 end
@@ -29,7 +29,7 @@ output.trace_sql_after=([[
     BEGIN
         open :stats for q'[@GET_STATS@]';
         begin
-            execute immediate q'[select prev_sql_id,prev_child_number from sys.v_$session where sid=:sid and username is not null and prev_hash_value!=0]'
+            execute immediate q'[select /*+opt_param('_optimizer_generate_transitive_pred' 'false')*/ prev_sql_id,prev_child_number from sys.v_$session where sid=:sid and username is not null and prev_hash_value!=0]'
             into l_sql_id,l_child using l_sid;
 
             if l_sql_id is null then
@@ -60,6 +60,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
         l_sql_id VARCHAR2(15) := :sql_id; 
         l_tmp_id VARCHAR2(15) := :sql_id; 
         l_child  PLS_INTEGER  := :child;
+        l_secs   PLS_INTEGER  := :secs;
         l_size   PLS_INTEGER;
         l_cont   VARCHAR2(50);
         l_cid    PLS_INTEGER;
@@ -91,7 +92,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
     BEGIN
         IF l_trace NOT IN('on','statistics','traceonly') AND l_child IS NOT NULL THEN
             begin
-                execute immediate q'[select prev_sql_id,prev_child_number from sys.v_$session where sid=:sid and username is not null and prev_hash_value!=0]'
+                execute immediate q'[select /*+opt_param('_optimizer_generate_transitive_pred' 'false')*/ prev_sql_id,prev_child_number from sys.v_$session where sid=:sid and username is not null and prev_hash_value!=0]'
                 into l_sql_id,l_child USING l_sid;
                 if l_sql_id is null then
                     l_sql_id := l_tmp_id;
@@ -143,11 +144,12 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
                           || CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN 'CHILD_ADDRESS' ELSE 'CAST(NULL AS RAW(8))' END 
                           || q'!,null FROM sys.V_$OPEN_CURSOR 
                              WHERE sid=:sid 
+                             AND   last_sql_active_time>=SYSDATE-numtodsinterval(:2,'second')
                              AND   cursor_type like 'OPEN%' 
-                             AND   LAST_SQL_ACTIVE_TIME>SYSDATE-1/8640 AND instr(sql_text,'dbcli_ignore')=0
+                             AND   instr(sql_text,'dbcli_ignore')=0
                              AND   lower(REGEXP_SUBSTR(SQL_TEXT,'\w+')) NOT IN('call','declare','begin','alter')!' ;
                     BEGIN
-                        EXECUTE IMMEDIATE l_sql BULK COLLECT INTO l_recs USING l_sid;
+                        EXECUTE IMMEDIATE l_sql BULK COLLECT INTO l_recs USING l_sid,l_secs;
                         FOR i in 1..l_recs.count LOOP
                             IF l_recs(i).sql_id=l_sql_id THEN
                                 l_found := true;
@@ -247,6 +249,7 @@ local fixed_stats={
 local DML={SELECT=1,WITH=1,UPDATE=1,DELETE=1,MERGE=1,INSERT=1}
 local DDL={CREATE=1,ALTER=1,DROP=1,GRANT=1,REVOKE=1,COMMIT=1,ROLLBACK=1}
 local CODES={PACKAGE=1,FUNCTION=1,TRIGGER=1,VIEW=1,PROCEDURE=1,TYPE=1}
+
 function output.getOutput(item)
     if output.is_exec then return end
     if term then cfg.set('TERMOUT','on') end
@@ -292,7 +295,7 @@ function output.getOutput(item)
         sql_id=sql_id or loader:computeSQLIdFromText(sql)
         if autotrace =='traceonly' or autotrace=='on' or autotrace=='statistics' then
             args={stats='#CURSOR',last_sql_id='#VARCHAR',last_child='#NUMBER',sql_id=sql_id}
-            local clock=os.timer()
+            
             local done,err=pcall(db.exec_cache,db,output.trace_sql_after,args,'Internal_GetSQLSTATS_Next')
             if not done then
                 output.is_exec=nil
@@ -302,11 +305,13 @@ function output.getOutput(item)
         end
 
         local args1=args or {}
+        local clock=os.clock()
         args=table.clone(default_args)
         args.sql_id=args1.last_sql_id or sql_id
         args.child=tonumber(args1.last_child) or ''
         args.autotrace=autotrace
         args.cdbid=tonumber(db.props.container_dbid) or -1
+        args.secs,timer=timer and math.min(30,math.ceil(clock-timer)) or 10,clock
         local done,err=pcall(db.exec_cache,db,output.stmt,args,'Internal_GetDBMSOutput')
         if not done then
             output.is_exec=nil

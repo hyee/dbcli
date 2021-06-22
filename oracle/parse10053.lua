@@ -399,8 +399,9 @@ local function check_op(line,root,qb)
     end
     if qb and root.qbs[qb] then
         local op=line:match('^('..pt..') *:')
+        if not op then op=root.prev_op end
         if op and root.qbs[qb] then
-            local ln,ops=line:lower(),root.qbs[qb].ops
+            local ln,ops=' '..line:lower(),root.qbs[qb].ops
             if  ln:find(' bypass',1,true) or 
                 ln:find(' not? ') or 
                 ln:find(' fail',1,true) or
