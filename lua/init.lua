@@ -42,13 +42,15 @@ local init={
         "lua/delta",
         "lua/lexer"}
 }
-local plugins,M={},{JVM={load_seq=0,onload=os.clock()-_G.__startclock,load=_G.__loadclock}}
+local plugins={}
+local M={JVM_INIT={load_seq=0,onload=0,load=_G.__jvmclock},
+         JVM_CONSOLE_INIT={load_seq=1,onload=os.clock()-_G.__startclock,load=_G.__loadclock}}
 init.databases={oracle="oracle/oracle",mssql="mssql/mssql",db2="db2/db2",mysql="mysql/mysql",pgsql='pgsql/pgsql'}
 local default_database=env.CURRENT_DB or 'oracle'
-local clock,load_seq=os.clock,0
+local clock,load_seq=os.clock,1
 env._M=M
 
-local curr,mems=0,{}
+local curr=0
 
 
 function init.init_path(env)
@@ -56,7 +58,6 @@ function init.init_path(env)
     java.system=java.require("java.lang.System")
     java.loader=loader
     env('java',java)
-    env.mems=mems
     local path=package.path
     local path_del
     if path:sub(1,1)=="." then
@@ -137,7 +138,7 @@ end
 
 local function flush_mem(target)
     local c=collectgarbage('count')
-    mems[target],curr=math.ceil(1000*(c-curr+(mems[target] or 0)))/1000,c
+    target.memory,curr=math.ceil(1000*(c-curr+(target.memory or 0)))/1000,c
 end
 
 
@@ -160,10 +161,11 @@ function init.load_database()
     local timer,load_seq=clock(),load_seq+1
     init_mem()
     env[name]=exec(loadfile(dir..name..'.lua'))
-    M[short_dir]={load=clock()-timer,load_seq=load_seq}
+    local m={load=clock()-timer,load_seq=load_seq}
+    M[short_dir]=m
     timer=clock()
     exec(type(env[name])=="table" and env[name].onload,env[name],name)
-    M[short_dir].onload=clock()-timer
+    m.onload=clock()-timer
     init.module_list[#init.module_list+1]=file
     env.module_list[#env.module_list+1]=env.join_path(file)
     if env.event then env.event.callback('ON_DB_ENV_LOADED',env.CURRENT_DB) end
@@ -176,7 +178,7 @@ function init.load_database()
             list[k]=v:find(pattern) and v or (short_dir..v)
         end
         env[name].C={}
-        flush_mem(name)
+        flush_mem(m)
         init.load_modules(list,env[name].C,name)
     end
 end
@@ -225,7 +227,7 @@ function init.load_modules(list,tab,module_name)
             file=file:sub(#env.WORK_DIR+1)
         end
         env.module_list[#env.module_list+1]=file:gsub('%.lua$','')
-        flush_mem(n)
+        flush_mem(M[n])
     end
 
     for _,k in ipairs(load_list) do
@@ -235,7 +237,7 @@ function init.load_modules(list,tab,module_name)
         exec(type(v)=="table" and v.onload,v,k)
         M[k].onload,M[k].path=clock()-timer
         M[path],M[k]=M[k]
-        flush_mem(k)
+        flush_mem(M[path])
     end
 end
 

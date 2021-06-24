@@ -558,6 +558,7 @@ function extvars.load_dict(path)
                 end
             end
             console:setKeywords(data.keywords)
+            table.clear(data.keywords)
         end
         extvars.current_dict=dict
         if data.cache then 

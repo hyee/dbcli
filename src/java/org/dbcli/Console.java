@@ -2,6 +2,7 @@ package org.dbcli;
 
 import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
+import com.naef.jnlua.util.AbstractTableMap;
 import org.jline.builtins.Commands;
 import org.jline.builtins.Source;
 import org.jline.keymap.KeyMap;
@@ -71,9 +72,10 @@ public final class Console {
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM))
-            this.terminal = JansiWinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU, null, 0, true, Terminal.SignalHandler.SIG_IGN, false);
+            this.terminal = JansiWinSysTerminal.createTerminal(colorPlan, null, false, null, 0, true, Terminal.SignalHandler.SIG_IGN, false);
         else
             this.terminal = (AbstractTerminal) TerminalBuilder.builder().system(true).name(colorPlan).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).nativeSignals(true).build();
+
         Interrupter.reset();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
         this.status = this.terminal.getStatus();
@@ -204,20 +206,23 @@ public final class Console {
     }
 
 
-    public void setKeywords(final Map<String, ?> keywords) {
-        parser.keywords = keywords;
-        completer.setKeysWords(keywords);
+    public void setKeywords(AbstractTableMap<String, ?> keywords) {
+        HashMap<String, ?> map = (HashMap) keywords.toJavaObject();
+        completer.loadKeyWords(map, 1500);
         //addCompleters(keywords, false);
     }
 
-    public void setCommands(Map<String, Object> commands) {
-        parser.commands = commands;
-        completer.setCommands(commands);
+    public void setCommands(AbstractTableMap<String, Object> commands) {
+        HashMap<String, Object> map = (HashMap) commands.toJavaObject();
+        Object o = new Object();
+        for (String key : map.keySet()) parser.commands.put(key, o);
+        completer.setCommands(map);
         //addCompleters(commands, true);
     }
 
-    public void setSubCommands(Map<String, Object> commands) {
-        completer.setCommands(commands);
+    public void setSubCommands(AbstractTableMap<String, Object> commands) {
+        HashMap<String, Object> map = (HashMap) commands.toJavaObject();
+        completer.loadCommands(map, 700);
         //parser.commands.putAll(commands);
     }
 
@@ -284,22 +289,6 @@ public final class Console {
     }
 
     public void less(String output, int titleLines, int spaces, int lines) throws Exception {
-        Source source = new Source() {
-            @Override
-            public String getName() {
-                return "";
-            }
-
-            @Override
-            public InputStream read() throws IOException {
-                return new ByteArrayInputStream(output.getBytes());
-            }
-
-            @Override
-            public Long lines() {
-                return null;
-            }
-        };
         Less less = new Less(terminal);
         less.noInit = true;
         less.veryQuiet = true;
@@ -309,7 +298,7 @@ public final class Console {
         less.chopLongLines = true;
         less.quitIfOneScreen = true;
         less.ignoreCaseAlways = true;
-        less.run(source);
+        less.run(new Source.InputStreamSource(new ByteArrayInputStream(output.getBytes()), true, ""));
     }
 
     public PrintWriter getOutput() {
@@ -452,7 +441,6 @@ public final class Console {
         public Map<String, String> colors = Arrays.stream(DEFAULT_HIGHLIGHTER_COLORS.split(":"))
                 .collect(Collectors.toMap(s -> s.substring(0, s.indexOf('=')),
                         s -> s.substring(s.indexOf('=') + 1)));
-        public Map<String, ?> keywords = new HashMap();
         public Map<String, Object> commands = new HashMap();
         volatile String secondPrompt = "    ";
         volatile int lines = 0;

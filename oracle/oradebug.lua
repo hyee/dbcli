@@ -905,6 +905,7 @@ function oradebug.load_dict()
         local keywords={}
         for k,v in pairs(keys) do keywords[#keywords+1]=k end
         console:setSubCommands({oradebug=data._keys,odb=data._keys})
+        table.clear(keys)
         env.log_debug('extvars','Loaded dictionry '..datapath)
     end)
 

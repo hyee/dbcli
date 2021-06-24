@@ -2393,7 +2393,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         file=file..'_'..sql_id
     end
     print("\nSQL Monitor report in text  written to "..env.save_data(file..'.txt',text:strip_ansi()))
-    print("SQL Monitor report in color written to "..env.save_data(file..'.ans',text))
+    print("SQL Monitor report in color written to "..env.save_data(file..'.ans',text:convert_ansi()))
     if seq then
         if sqlstat[2] then 
             sqlstat[2][1]=tostring(seq):lpad(3)..': '..sql_id
@@ -2988,7 +2988,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
 
     text=table.concat(text,'\n')..'\n'
     print("\nSQL Detail report in text  written to "..env.save_data(file..'.txt',text:strip_ansi()))
-    print("SQL Detail report in color written to "..env.save_data(file..'.ans',text))
+    print("SQL Detail report in color written to "..env.save_data(file..'.ans',text:convert_ansi()))
 end
 
 local function unwrap_plsql(obj,rows,file)

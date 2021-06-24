@@ -385,7 +385,10 @@ function scripter:get_script(cmd,args,print_args)
         for k,v in pairs(self.cmdlist) do
             keys[k]=type(v)=="table" and v.desc or nil
         end
-        if env.IS_ENV_LOADED then console:setSubCommands(list) end
+        if env.IS_ENV_LOADED then 
+            console:setSubCommands(list)
+            table.clear(list)
+        end
     end
 
     if not cmd or cmd:match('^%s*$') then

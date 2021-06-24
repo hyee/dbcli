@@ -17,8 +17,12 @@
 package com.zaxxer.nuprocess;
 
 import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
+import java.util.TreeMap;
 
 /**
  * This class is used to create operating system processes.
@@ -38,7 +42,7 @@ import java.util.Map.Entry;
  * there are operating systems where programs are expected to tokenize command
  * line strings themselves - on such a system a Java implementation might
  * require commands to contain exactly two elements.</li>
- * <p>
+ *
  * <li>an <em>environment</em>, which is a system-dependent mapping from
  * variables to values. The initial value is a copy of the environment of the
  * current process. See {@link System#getenv()}.</li>
@@ -50,200 +54,240 @@ import java.util.Map.Entry;
  *
  * @author Brett Wooldridge
  */
-public class NuProcessBuilder {
-    private static final NuProcessFactory factory;
+public class NuProcessBuilder
+{
+   private static final NuProcessFactory factory;
 
-    private final List<String> command;
-    private final TreeMap<String, String> environment;
-    private Path cwd;
-    private NuProcessHandler processListener;
+   private final List<String> command;
+   private final TreeMap<String, String> environment;
+   private Path cwd;
+   private NuProcessHandler processListener;
 
-    static {
-        String factoryClassName = null;
-        String osname = System.getProperty("os.name").toLowerCase();
-        if (osname.contains("mac") || osname.contains("freebsd")) {
-            factoryClassName = "com.zaxxer.nuprocess.osx.OsxProcessFactory";
-        } else if (osname.contains("win")) {
-            factoryClassName = "com.zaxxer.nuprocess.windows.WinProcessFactory";
-        } else if (osname.contains("linux")) {
-            factoryClassName = "com.zaxxer.nuprocess.linux.LinProcessFactory";
-        } else if (osname.contains("sunos")) {
-            factoryClassName = "com.zaxxer.nuprocess.solaris.SolProcessFactory";
-        }
+   static {
+      String factoryClassName = null;
+      String osname = System.getProperty("os.name").toLowerCase();
+      if (osname.contains("mac") || osname.contains("freebsd")) {
+         factoryClassName = "com.zaxxer.nuprocess.osx.OsxProcessFactory";
+      }
+      else if (osname.contains("win")) {
+         factoryClassName = "com.zaxxer.nuprocess.windows.WinProcessFactory";
+      }
+      else if (osname.contains("linux")) {
+         factoryClassName = "com.zaxxer.nuprocess.linux.LinProcessFactory";
+      }
+      else if (osname.contains("sunos")) {
+         factoryClassName = "com.zaxxer.nuprocess.solaris.SolProcessFactory";
+      }
 
-        if (factoryClassName == null) {
-            throw new RuntimeException("Unsupported operating system: " + osname);
-        }
+      if (factoryClassName == null) {
+         throw new RuntimeException("Unsupported operating system: " + osname);
+      }
 
-        try {
-            Class<?> forName = Class.forName(factoryClassName);
-            factory = (NuProcessFactory) forName.newInstance();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
+      try {
+         Class<?> forName = Class.forName(factoryClassName);
+         factory = (NuProcessFactory) forName.newInstance();
+      }
+      catch (Exception e) {
+         throw new RuntimeException(e);
+      }
+   }
 
-    /**
-     * Constructs a process builder with the specified operating system program
-     * and arguments. This constructor makes a copy of the command list. Invokers
-     * of this constructor must later call
-     * {@link #setProcessListener(NuProcessHandler)} in order to set a
-     * {@link NuProcessHandler} instance.
-     *
-     * @param commands    a {@link List} of commands
-     * @param environment The environment for the process
-     */
-    public NuProcessBuilder(List<String> commands, Map<String, String> environment) {
-        if (commands == null || commands.isEmpty()) {
-            throw new IllegalArgumentException("List of commands may not be null or empty");
-        }
+   /**
+    * Constructs a process builder with the specified operating system program
+    * and arguments. This constructor makes a copy of the command list. Invokers
+    * of this constructor must later call
+    * {@link #setProcessListener(NuProcessHandler)} in order to set a
+    * {@link NuProcessHandler} instance.
+    *
+    * @param commands a {@link List} of commands
+    * @param environment The environment for the process
+    */
+   public NuProcessBuilder(List<String> commands, Map<String, String> environment)
+   {
+      if (commands == null || commands.isEmpty()) {
+         throw new IllegalArgumentException("List of commands may not be null or empty");
+      }
 
-        this.environment = new TreeMap<String, String>(environment);
-        this.command = new ArrayList<String>(commands);
-    }
+      this.environment = new TreeMap<String, String>(environment);
+      this.command = new ArrayList<String>(commands);
+   }
 
-    /**
-     * Constructs a process builder with the specified operating system program
-     * and arguments. This constructor makes a copy of the command list. Invokers
-     * of this constructor must later call
-     * {@link #setProcessListener(NuProcessHandler)} in order to set a
-     * {@link NuProcessHandler} instance.
-     *
-     * @param commands a {@link List} of commands
-     */
-    public NuProcessBuilder(List<String> commands) {
-        if (commands == null || commands.isEmpty()) {
-            throw new IllegalArgumentException("List of commands may not be null or empty");
-        }
+   /**
+    * Constructs a process builder with the specified operating system program
+    * and arguments. This constructor makes a copy of the command list. Invokers
+    * of this constructor must later call
+    * {@link #setProcessListener(NuProcessHandler)} in order to set a
+    * {@link NuProcessHandler} instance.
+    *
+    * @param commands a {@link List} of commands
+    */
+   public NuProcessBuilder(List<String> commands)
+   {
+      if (commands == null || commands.isEmpty()) {
+         throw new IllegalArgumentException("List of commands may not be null or empty");
+      }
 
-        this.environment = new TreeMap<String, String>(System.getenv());
-        this.command = new ArrayList<String>(commands);
-    }
+      this.environment = new TreeMap<String, String>(System.getenv());
+      this.command = new ArrayList<String>(commands);
+   }
 
-    /**
-     * Constructs a process builder with the specified operating system program
-     * and arguments. Invokers of this constructor must later call
-     * {@link #setProcessListener(NuProcessHandler)} in order to set a
-     * {@link NuProcessHandler} instance.
-     *
-     * @param commands a list of commands
-     */
-    public NuProcessBuilder(String... commands) {
-        if (commands == null || commands.length == 0) {
-            throw new IllegalArgumentException("List of commands may not be null or empty");
-        }
+   /**
+    * Constructs a process builder with the specified operating system program
+    * and arguments. Invokers of this constructor must later call
+    * {@link #setProcessListener(NuProcessHandler)} in order to set a
+    * {@link NuProcessHandler} instance.
+    *
+    * @param commands a list of commands
+    */
+   public NuProcessBuilder(String... commands)
+   {
+      if (commands == null || commands.length == 0) {
+         throw new IllegalArgumentException("List of commands may not be null or empty");
+      }
 
-        this.environment = new TreeMap<String, String>(System.getenv());
-        this.command = new ArrayList<String>(Arrays.asList(commands));
-    }
+      this.environment = new TreeMap<String, String>(System.getenv());
+      this.command = new ArrayList<String>(Arrays.asList(commands));
+   }
 
-    /**
-     * Constructs a process builder with the specified {@link NuProcessHandler}
-     * and operating system program and arguments.
-     *
-     * @param nuProcessHandler a {@link NuProcessHandler} instance
-     * @param commands         a list of commands
-     */
-    public NuProcessBuilder(NuProcessHandler nuProcessHandler, String... commands) {
-        this(commands);
+   /**
+    * Constructs a process builder with the specified {@link NuProcessHandler}
+    * and operating system program and arguments.
+    *
+    * @param nuProcessHandler a {@link NuProcessHandler} instance
+    * @param commands a list of commands
+    */
+   public NuProcessBuilder(NuProcessHandler nuProcessHandler, String... commands)
+   {
+      this(commands);
 
-        if (nuProcessHandler == null) {
-            throw new IllegalArgumentException("A NuProcessListener must be specified");
-        }
+      if (nuProcessHandler == null) {
+         throw new IllegalArgumentException("A NuProcessListener must be specified");
+      }
 
-        this.processListener = nuProcessHandler;
-    }
+      this.processListener = nuProcessHandler;
+   }
 
-    /**
-     * Constructs a process builder with the specified {@link NuProcessHandler}
-     * and operating system program and arguments. This constructor makes a copy
-     * of the command list.
-     *
-     * @param nuProcessHandler a {@link NuProcessHandler} instance
-     * @param commands         a {@link List} of commands
-     */
-    public NuProcessBuilder(NuProcessHandler nuProcessHandler, List<String> commands) {
-        this(commands);
+   /**
+    * Constructs a process builder with the specified {@link NuProcessHandler}
+    * and operating system program and arguments. This constructor makes a copy
+    * of the command list.
+    *
+    * @param nuProcessHandler a {@link NuProcessHandler} instance
+    * @param commands a {@link List} of commands
+    */
+   public NuProcessBuilder(NuProcessHandler nuProcessHandler, List<String> commands)
+   {
+      this(commands);
 
-        if (nuProcessHandler == null) {
-            throw new IllegalArgumentException("A NuProcessListener must be specified");
-        }
+      if (nuProcessHandler == null) {
+         throw new IllegalArgumentException("A NuProcessListener must be specified");
+      }
 
-        this.processListener = nuProcessHandler;
-    }
+      this.processListener = nuProcessHandler;
+   }
 
-    /**
-     * Get the {@link List} of commands that were used to construct this
-     * {@link NuProcessBuilder}.
-     *
-     * @return a {@link List} of commands
-     */
-    public List<String> command() {
-        return command;
-    }
+   /**
+    * Get the {@link List} of commands that were used to construct this
+    * {@link NuProcessBuilder}.
+    *
+    * @return a {@link List} of commands
+    */
+   public List<String> command()
+   {
+      return command;
+   }
 
-    /**
-     * Returns a string map view of this process builder's environment. Whenever
-     * a process builder is created, the environment is initialized to a copy of
-     * the current process environment. Subprocesses subsequently started by this
-     * object's {@link #start()} method will use this map as their environment.
-     * <p>
-     * The returned object may be modified using ordinary Map operations prior to
-     * invoking the {@link #start()} method. The returned map is typically
-     * case-sensitive on all platforms.
-     *
-     * @return This process builder's environment
-     */
-    public Map<String, String> environment() {
-        return environment;
-    }
+   /**
+    * Returns a string map view of this process builder's environment. Whenever
+    * a process builder is created, the environment is initialized to a copy of
+    * the current process environment. Subprocesses subsequently started by this
+    * object's {@link #start()} method will use this map as their environment.
+    * <p>
+    * The returned object may be modified using ordinary Map operations prior to
+    * invoking the {@link #start()} method. The returned map is typically
+    * case-sensitive on all platforms.
+    *
+    * @return This process builder's environment
+    */
+   public Map<String, String> environment()
+   {
+      return environment;
+   }
 
-    /**
-     * Set the {@link NuProcessHandler} instance that will be used for the next
-     * and subsequent launch of a {@link NuProcess} when calling the
-     * {@link #start()} method.
-     *
-     * @param listener a {@link NuProcessHandler} instance
-     */
-    public void setProcessListener(NuProcessHandler listener) {
-        if (listener == null) {
-            throw new IllegalArgumentException("A NuProcessListener must be specified");
-        }
+   /**
+    * Set the {@link NuProcessHandler} instance that will be used for the next
+    * and subsequent launch of a {@link NuProcess} when calling the
+    * {@link #start()} method.
+    *
+    * @param listener a {@link NuProcessHandler} instance
+    */
+   public void setProcessListener(NuProcessHandler listener)
+   {
+      if (listener == null) {
+         throw new IllegalArgumentException("A NuProcessListener must be specified");
+      }
 
-        this.processListener = listener;
-    }
+      this.processListener = listener;
+   }
 
-    /**
-     * Set the {@link Path} to which the current working directory (cwd) of the
-     * subsequent launch of a {@link NuProcess} will be set when calling the
-     * {@link #start()} method.
-     *
-     * @param cwd a {@link Path} to use for the process's current working
-     *            directory, or {@code null} to disable setting the cwd of
-     *            subsequently launched proceses
-     */
-    public void setCwd(Path cwd) {
-        this.cwd = cwd;
-    }
+   /**
+    * Set the {@link Path} to which the current working directory (cwd) of the
+    * subsequent launch of a {@link NuProcess} will be set when calling the
+    * {@link #start()} method.
+    *
+    * @param cwd a {@link Path} to use for the process's current working
+    *        directory, or {@code null} to disable setting the cwd of
+    *        subsequently launched proceses
+    */
+   public void setCwd(Path cwd)
+   {
+      this.cwd = cwd;
+   }
 
-    /**
-     * Spawn the child process with the configured commands, environment, and
-     * {@link NuProcessHandler}.
-     *
-     * @return a {@link NuProcess} instance or {@code null} if there is an
-     * immediately detectable launch failure
-     */
-    public NuProcess start() {
-        if (processListener == null) {
-            throw new IllegalArgumentException("NuProcessHandler not specified");
-        }
+   /**
+    * Spawn the child process with the configured commands, environment, and
+    * {@link NuProcessHandler}.
+    *
+    * @return a {@link NuProcess} instance or {@code null} if there is an
+    *         immediately detectable launch failure
+    */
+   public NuProcess start()
+   {
+      ensureListener();
+      String[] env = prepareEnvironment();
 
-        String[] env = new String[environment.size()];
-        int i = 0;
-        for (Entry<String, String> entrySet : environment.entrySet()) {
-            env[i++] = entrySet.getKey() + "=" + entrySet.getValue();
-        }
+      return factory.createProcess(command, env, processListener, cwd);
+   }
 
-        return factory.createProcess(command, env, processListener, cwd);
-    }
+   /**
+    * Spawn the child process with the configured commands, environment, and {@link NuProcessHandler}
+    * and wait for it to complete running.
+    *
+    * @since 1.3
+    */
+   public void run()
+   {
+      ensureListener();
+      String[] env = prepareEnvironment();
+
+      factory.runProcess(command, env, processListener, cwd);
+   }
+
+   private void ensureListener()
+   {
+      if (processListener == null) {
+         throw new IllegalArgumentException("NuProcessHandler not specified");
+      }
+   }
+
+   private String[] prepareEnvironment()
+   {
+      String[] env = new String[environment.size()];
+      int i = 0;
+      for (Entry<String, String> entrySet : environment.entrySet()) {
+         env[i++] = entrySet.getKey() + "=" + entrySet.getValue();
+      }
+
+      return env;
+   }
 }

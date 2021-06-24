@@ -1017,6 +1017,7 @@ function db_core:connect(attrs,data_source)
 
     self:disconnect(false)
     local props = java.new("java.util.Properties")
+
     for k,v in pairs(attrs) do
         props:put(k,v)
     end

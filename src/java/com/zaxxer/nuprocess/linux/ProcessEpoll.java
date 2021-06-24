@@ -16,298 +16,408 @@
 
 package com.zaxxer.nuprocess.linux;
 
-import com.sun.jna.Native;
-import com.sun.jna.ptr.IntByReference;
-import com.zaxxer.nuprocess.NuProcess;
-import com.zaxxer.nuprocess.internal.BaseEventProcessor;
-import com.zaxxer.nuprocess.internal.LibC;
-
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 
-import static com.zaxxer.nuprocess.internal.LibC.*;
+import com.sun.jna.Native;
+import com.sun.jna.ptr.IntByReference;
+import com.zaxxer.nuprocess.NuProcess;
+import com.zaxxer.nuprocess.internal.BaseEventProcessor;
+import com.zaxxer.nuprocess.internal.LibC;
+
+import static com.zaxxer.nuprocess.internal.LibC.WIFEXITED;
+import static com.zaxxer.nuprocess.internal.LibC.WEXITSTATUS;
+import static com.zaxxer.nuprocess.internal.LibC.WIFSIGNALED;
+import static com.zaxxer.nuprocess.internal.LibC.WTERMSIG;
 
 /**
  * @author Brett Wooldridge
  */
-class ProcessEpoll extends BaseEventProcessor<LinuxProcess> {
-    private static final int EVENT_POOL_SIZE = 64;
-    private static final BlockingQueue<EpollEvent> eventPool;
+class ProcessEpoll extends BaseEventProcessor<LinuxProcess>
+{
+   private static final int EVENT_POOL_SIZE = 64;
+   private static final BlockingQueue<EpollEvent> eventPool;
 
-    private int epoll;
-    private EpollEvent triggeredEvent;
-    private List<LinuxProcess> deadPool;
+   private int epoll;
+   private EpollEvent triggeredEvent;
+   private List<LinuxProcess> deadPool;
+   private LinuxProcess process;
 
-    static {
-        eventPool = new ArrayBlockingQueue<>(EVENT_POOL_SIZE);
-        for (int i = 0; i < EVENT_POOL_SIZE; i++) {
-            EpollEvent event = new EpollEvent();
-            eventPool.add(event);
-        }
-    }
+   static
+   {
+      eventPool = new ArrayBlockingQueue<>(EVENT_POOL_SIZE);
+      for (int i = 0; i < EVENT_POOL_SIZE; i++) {
+         EpollEvent event = new EpollEvent();
+         eventPool.add(event);
+      }
+   }
 
-    ProcessEpoll() {
-        epoll = LibEpoll.epoll_create(1024);
-        if (epoll < 0) {
-            throw new RuntimeException("Unable to create kqueue: " + Native.getLastError());
-        }
+   ProcessEpoll()
+   {
+      this(LINGER_ITERATIONS);
+   }
 
-        triggeredEvent = new EpollEvent();
+   ProcessEpoll(LinuxProcess process)
+   {
+      this(-1);
 
-        deadPool = new LinkedList<>();
-    }
+      this.process = process;
 
-    // ************************************************************************
-    //                         IEventProcessor methods
-    // ************************************************************************
+      registerProcess(process);
+      checkAndSetRunning();
+   }
 
-    @Override
-    public void registerProcess(LinuxProcess process) {
-        if (shutdown) {
-            return;
-        }
+   private ProcessEpoll(int lingerIterations)
+   {
+      super(lingerIterations);
 
-        int stdinFd = Integer.MIN_VALUE;
-        int stdoutFd = Integer.MIN_VALUE;
-        int stderrFd = Integer.MIN_VALUE;
-        try {
-            stdinFd = process.getStdin().acquire();
-            stdoutFd = process.getStdout().acquire();
-            stderrFd = process.getStderr().acquire();
+      epoll = LibEpoll.epoll_create(1024);
+      if (epoll < 0) {
+         throw new RuntimeException("Unable to create kqueue: " + Native.getLastError());
+      }
 
-            pidToProcessMap.put(process.getPid(), process);
-            fildesToProcessMap.put(stdinFd, process);
-            fildesToProcessMap.put(stdoutFd, process);
-            fildesToProcessMap.put(stderrFd, process);
+      triggeredEvent = new EpollEvent();
 
-            try {
-                EpollEvent event = eventPool.take();
-                event.setEvents(LibEpoll.EPOLLIN);
-                event.setFileDescriptor(stdoutFd);
-                int rc = LibEpoll.epoll_ctl(epoll, LibEpoll.EPOLL_CTL_ADD, stdoutFd, event.getPointer());
-                if (rc == -1) {
-                    rc = Native.getLastError();
-                    eventPool.put(event);
-                    throw new RuntimeException("Unable to register new events to epoll, errorcode: " + rc);
-                }
-                eventPool.put(event);
+      deadPool = new LinkedList<>();
+   }
 
-                event = eventPool.take();
-                event.setEvents(LibEpoll.EPOLLIN);
-                event.setFileDescriptor(stderrFd);
-                rc = LibEpoll.epoll_ctl(epoll, LibEpoll.EPOLL_CTL_ADD, stderrFd, event.getPointer());
-                if (rc == -1) {
-                    rc = Native.getLastError();
-                    eventPool.put(event);
-                    throw new RuntimeException("Unable to register new events to epoll, errorcode: " + rc);
-                }
-                eventPool.put(event);
-            } catch (InterruptedException ie) {
-                throw new RuntimeException(ie);
+   // ************************************************************************
+   //                         IEventProcessor methods
+   // ************************************************************************
+
+   @Override
+   public void registerProcess(LinuxProcess process)
+   {
+      if (shutdown) {
+         return;
+      }
+
+      int stdinFd = Integer.MIN_VALUE;
+      int stdoutFd = Integer.MIN_VALUE;
+      int stderrFd = Integer.MIN_VALUE;
+      try {
+         stdinFd = process.getStdin().acquire();
+         stdoutFd = process.getStdout().acquire();
+         stderrFd = process.getStderr().acquire();
+
+         pidToProcessMap.put(process.getPid(), process);
+         fildesToProcessMap.put(stdinFd, process);
+         fildesToProcessMap.put(stdoutFd, process);
+         fildesToProcessMap.put(stderrFd, process);
+
+         try {
+            EpollEvent event = eventPool.take();
+            event.setEvents(LibEpoll.EPOLLIN);
+            event.setFileDescriptor(stdoutFd);
+            int rc = LibEpoll.epoll_ctl(epoll, LibEpoll.EPOLL_CTL_ADD, stdoutFd, event.getPointer());
+            if (rc == -1) {
+               rc = Native.getLastError();
+               eventPool.put(event);
+               throw new RuntimeException("Unable to register new events to epoll, errorcode: " + rc);
             }
-        } finally {
+            eventPool.put(event);
+
+            event = eventPool.take();
+            event.setEvents(LibEpoll.EPOLLIN);
+            event.setFileDescriptor(stderrFd);
+            rc = LibEpoll.epoll_ctl(epoll, LibEpoll.EPOLL_CTL_ADD, stderrFd, event.getPointer());
+            if (rc == -1) {
+               rc = Native.getLastError();
+               eventPool.put(event);
+               throw new RuntimeException("Unable to register new events to epoll, errorcode: " + rc);
+            }
+            eventPool.put(event);
+         }
+         catch (InterruptedException ie) {
+            throw new RuntimeException(ie);
+         }
+      }
+      finally {
+         if (stdinFd != Integer.MIN_VALUE) {
+            process.getStdin().release();
+         }
+         if (stdoutFd != Integer.MIN_VALUE) {
+            process.getStdout().release();
+         }
+         if (stderrFd != Integer.MIN_VALUE) {
+            process.getStderr().release();
+         }
+      }
+   }
+
+   @Override
+   public void queueWrite(LinuxProcess process)
+   {
+      if (shutdown) {
+         return;
+      }
+
+      try {
+         int stdin = process.getStdin().acquire();
+         if (stdin == -1) {
+           return;
+         }
+         EpollEvent event = eventPool.take();
+         event.setEvents(LibEpoll.EPOLLOUT | LibEpoll.EPOLLONESHOT | LibEpoll.EPOLLRDHUP | LibEpoll.EPOLLHUP);
+         event.setFileDescriptor(stdin);
+         int rc = LibEpoll.epoll_ctl(epoll, LibEpoll.EPOLL_CTL_MOD, stdin, event.getPointer());
+         if (rc == -1) {
+            LibEpoll.epoll_ctl(epoll, LibEpoll.EPOLL_CTL_DEL, stdin, event.getPointer());
+            rc = LibEpoll.epoll_ctl(epoll, LibEpoll.EPOLL_CTL_ADD, stdin, event.getPointer());
+         }
+
+         eventPool.put(event);
+         if (rc == -1) {
+            throw new RuntimeException("Unable to register new event to epoll queue");
+         }
+      }
+      catch (InterruptedException ie) {
+         throw new RuntimeException(ie);
+      }
+      finally {
+         process.getStdin().release();
+      }
+   }
+
+   @Override
+   public void run()
+   {
+      super.run();
+
+      if (process != null) {
+         // For synchronous execution, wait until the deadpool is drained. This is necessary to ensure
+         // the handler's onExit is called before LinuxProcess.run returns.
+         waitForDeadPool();
+      }
+   }
+
+   @Override
+   public void closeStdin(LinuxProcess process)
+   {
+      try {
+         int stdin = process.getStdin().acquire();
+         if (stdin != -1) {
+            fildesToProcessMap.remove(stdin);
+            LibEpoll.epoll_ctl(epoll, LibEpoll.EPOLL_CTL_DEL, stdin, null);
+         }
+      } finally {
+         process.getStdin().release();
+      }
+   }
+
+   @Override
+   public boolean process()
+   {
+      int stdinFd = Integer.MIN_VALUE;
+      int stdoutFd = Integer.MIN_VALUE;
+      int stderrFd = Integer.MIN_VALUE;
+      LinuxProcess linuxProcess = null;
+      try {
+         int nev = LibEpoll.epoll_wait(epoll, triggeredEvent.getPointer(), 1, DEADPOOL_POLL_INTERVAL);
+         if (nev == -1) {
+            throw new RuntimeException("Error waiting for epoll");
+         }
+
+         if (nev == 0) {
+            return false;
+         }
+
+         EpollEvent epEvent = triggeredEvent;
+         int ident = epEvent.getFileDescriptor();
+         int events = epEvent.getEvents();
+
+         linuxProcess = fildesToProcessMap.get(ident);
+         if (linuxProcess == null) {
+            return true;
+         }
+
+         stdinFd = linuxProcess.getStdin().acquire();
+         stdoutFd = linuxProcess.getStdout().acquire();
+         stderrFd = linuxProcess.getStderr().acquire();
+
+         if ((events & LibEpoll.EPOLLIN) != 0) { // stdout/stderr data available to read
+            if (ident == stdoutFd) {
+               linuxProcess.readStdout(NuProcess.BUFFER_CAPACITY, stdoutFd);
+            }
+            else if (ident == stderrFd) {
+               linuxProcess.readStderr(NuProcess.BUFFER_CAPACITY, stderrFd);
+            }
+         }
+         else if ((events & LibEpoll.EPOLLOUT) != 0) { // Room in stdin pipe available to write
+            if (stdinFd != -1) {
+               if (linuxProcess.writeStdin(NuProcess.BUFFER_CAPACITY, stdinFd)) {
+                  epEvent.setEvents(LibEpoll.EPOLLOUT | LibEpoll.EPOLLONESHOT | LibEpoll.EPOLLRDHUP | LibEpoll.EPOLLHUP);
+                  LibEpoll.epoll_ctl(epoll, LibEpoll.EPOLL_CTL_MOD, ident, epEvent.getPointer());
+               }
+            }
+         }
+
+         if ((events & LibEpoll.EPOLLHUP) != 0 || (events & LibEpoll.EPOLLRDHUP) != 0 || (events & LibEpoll.EPOLLERR) != 0) {
+            LibEpoll.epoll_ctl(epoll, LibEpoll.EPOLL_CTL_DEL, ident, null);
+            if (ident == stdoutFd) {
+               linuxProcess.readStdout(-1, stdoutFd);
+            }
+            else if (ident == stderrFd) {
+               linuxProcess.readStderr(-1, stderrFd);
+            }
+            else if (ident == stdinFd) {
+               linuxProcess.closeStdin(true);
+            }
+         }
+
+         if (linuxProcess.isSoftExit()) {
+            cleanupProcess(linuxProcess, stdinFd, stdoutFd, stderrFd);
+         }
+
+         return true;
+      }
+      finally {
+         if (linuxProcess != null) {
             if (stdinFd != Integer.MIN_VALUE) {
-                process.getStdin().release();
+               linuxProcess.getStdin().release();
             }
             if (stdoutFd != Integer.MIN_VALUE) {
-                process.getStdout().release();
+               linuxProcess.getStdout().release();
             }
             if (stderrFd != Integer.MIN_VALUE) {
-                process.getStderr().release();
+               linuxProcess.getStderr().release();
             }
-        }
-    }
+         }
+         checkDeadPool();
+      }
+   }
 
-    @Override
-    public void queueWrite(LinuxProcess process) {
-        if (shutdown) {
-            return;
-        }
+   /**
+    * Closes the {@code eventpoll} file descriptor.
+    *
+    * @since 1.3
+    */
+   @Override
+   protected void close()
+   {
+      LibC.close(epoll);
+   }
 
-        try {
-            int stdin = process.getStdin().acquire();
-            if (stdin == -1) {
-                return;
-            }
-            EpollEvent event = eventPool.take();
-            event.setEvents(LibEpoll.EPOLLOUT | LibEpoll.EPOLLONESHOT | LibEpoll.EPOLLRDHUP | LibEpoll.EPOLLHUP);
-            event.setFileDescriptor(stdin);
-            int rc = LibEpoll.epoll_ctl(epoll, LibEpoll.EPOLL_CTL_MOD, stdin, event.getPointer());
-            if (rc == -1) {
-                LibEpoll.epoll_ctl(epoll, LibEpoll.EPOLL_CTL_DEL, stdin, event.getPointer());
-                rc = LibEpoll.epoll_ctl(epoll, LibEpoll.EPOLL_CTL_ADD, stdin, event.getPointer());
-            }
+   // ************************************************************************
+   //                             Private methods
+   // ************************************************************************
 
-            eventPool.put(event);
-            if (rc == -1) {
-                throw new RuntimeException("Unable to register new event to epoll queue");
-            }
-        } catch (InterruptedException ie) {
-            throw new RuntimeException(ie);
-        } finally {
-            process.getStdin().release();
-        }
-    }
+   private void cleanupProcess(LinuxProcess linuxProcess, int stdinFd, int stdoutFd, int stderrFd)
+   {
+      pidToProcessMap.remove(linuxProcess.getPid());
+      fildesToProcessMap.remove(stdinFd);
+      fildesToProcessMap.remove(stdoutFd);
+      fildesToProcessMap.remove(stderrFd);
 
-    @Override
-    public void closeStdin(LinuxProcess process) {
-        try {
-            int stdin = process.getStdin().acquire();
-            if (stdin != -1) {
-                fildesToProcessMap.remove(stdin);
-                LibEpoll.epoll_ctl(epoll, LibEpoll.EPOLL_CTL_DEL, stdin, null);
-            }
-        } finally {
-            process.getStdin().release();
-        }
-    }
+      //        linuxProcess.close(linuxProcess.getStdin());
+      //        linuxProcess.close(linuxProcess.getStdout());
+      //        linuxProcess.close(linuxProcess.getStderr());
 
-    @Override
-    public boolean process() {
-        int stdinFd = Integer.MIN_VALUE;
-        int stdoutFd = Integer.MIN_VALUE;
-        int stderrFd = Integer.MIN_VALUE;
-        LinuxProcess linuxProcess = null;
-        try {
-            int nev = LibEpoll.epoll_wait(epoll, triggeredEvent.getPointer(), 1, DEADPOOL_POLL_INTERVAL);
-            if (nev == -1) {
-                throw new RuntimeException("Error waiting for epoll");
-            }
+      if (linuxProcess.cleanlyExitedBeforeProcess.get()) {
+         linuxProcess.onExit(0);
+         return;
+      }
 
-            if (nev == 0) {
-                return false;
-            }
+      IntByReference ret = new IntByReference();
+      int rc = LibC.waitpid(linuxProcess.getPid(), ret, LibC.WNOHANG);
 
-            EpollEvent epEvent = triggeredEvent;
-            int ident = epEvent.getFileDescriptor();
-            int events = epEvent.getEvents();
+      if (rc == 0) {
+         deadPool.add(linuxProcess);
+      }
+      else if (rc < 0) {
+         linuxProcess.onExit((Native.getLastError() == LibC.ECHILD) ? Integer.MAX_VALUE : Integer.MIN_VALUE);
+      }
+      else {
+         handleExit(linuxProcess, ret.getValue());
+      }
+   }
 
-            linuxProcess = fildesToProcessMap.get(ident);
-            if (linuxProcess == null) {
-                return true;
-            }
+   private void checkDeadPool()
+   {
+      if (deadPool.isEmpty()) {
+         return;
+      }
 
-            stdinFd = linuxProcess.getStdin().acquire();
-            stdoutFd = linuxProcess.getStdout().acquire();
-            stderrFd = linuxProcess.getStderr().acquire();
+      IntByReference ret = new IntByReference();
+      Iterator<LinuxProcess> iterator = deadPool.iterator();
+      while (iterator.hasNext()) {
+         LinuxProcess process = iterator.next();
+         int rc = LibC.waitpid(process.getPid(), ret, LibC.WNOHANG);
+         if (rc == 0) {
+            continue;
+         }
 
-            if ((events & LibEpoll.EPOLLIN) != 0) { // stdout/stderr data available to read
-                if (ident == stdoutFd) {
-                    linuxProcess.readStdout(NuProcess.BUFFER_CAPACITY, stdoutFd);
-                } else if (ident == stderrFd) {
-                    linuxProcess.readStderr(NuProcess.BUFFER_CAPACITY, stderrFd);
-                }
-            } else if ((events & LibEpoll.EPOLLOUT) != 0) { // Room in stdin pipe available to write
-                if (stdinFd != -1) {
-                    if (linuxProcess.writeStdin(NuProcess.BUFFER_CAPACITY, stdinFd)) {
-                        epEvent.setEvents(LibEpoll.EPOLLOUT | LibEpoll.EPOLLONESHOT | LibEpoll.EPOLLRDHUP | LibEpoll.EPOLLHUP);
-                        LibEpoll.epoll_ctl(epoll, LibEpoll.EPOLL_CTL_MOD, ident, epEvent.getPointer());
-                    }
-                }
-            }
+         iterator.remove();
+         if (rc < 0) {
+            process.onExit((Native.getLastError() == LibC.ECHILD) ? Integer.MAX_VALUE : Integer.MIN_VALUE);
+            continue;
+         }
 
-            if ((events & LibEpoll.EPOLLHUP) != 0 || (events & LibEpoll.EPOLLRDHUP) != 0 || (events & LibEpoll.EPOLLERR) != 0) {
-                LibEpoll.epoll_ctl(epoll, LibEpoll.EPOLL_CTL_DEL, ident, null);
-                if (ident == stdoutFd) {
-                    linuxProcess.readStdout(-1, stdoutFd);
-                } else if (ident == stderrFd) {
-                    linuxProcess.readStderr(-1, stderrFd);
-                } else if (ident == stdinFd) {
-                    linuxProcess.closeStdin(true);
-                }
-            }
+         handleExit(process, ret.getValue());
+      }
+   }
 
-            if (linuxProcess.isSoftExit()) {
-                cleanupProcess(linuxProcess, stdinFd, stdoutFd, stderrFd);
-            }
-
-            return true;
-        } finally {
-            if (linuxProcess != null) {
-                if (stdinFd != Integer.MIN_VALUE) {
-                    linuxProcess.getStdin().release();
-                }
-                if (stdoutFd != Integer.MIN_VALUE) {
-                    linuxProcess.getStdout().release();
-                }
-                if (stderrFd != Integer.MIN_VALUE) {
-                    linuxProcess.getStderr().release();
-                }
-            }
-            checkDeadPool();
-        }
-    }
-
-    // ************************************************************************
-    //                             Private methods
-    // ************************************************************************
-
-    private void cleanupProcess(LinuxProcess linuxProcess, int stdinFd, int stdoutFd, int stderrFd) {
-        pidToProcessMap.remove(linuxProcess.getPid());
-        fildesToProcessMap.remove(stdinFd);
-        fildesToProcessMap.remove(stdoutFd);
-        fildesToProcessMap.remove(stderrFd);
-
-        //        linuxProcess.close(linuxProcess.getStdin());
-        //        linuxProcess.close(linuxProcess.getStdout());
-        //        linuxProcess.close(linuxProcess.getStderr());
-
-        if (linuxProcess.cleanlyExitedBeforeProcess.get()) {
-            linuxProcess.onExit(0);
-            return;
-        }
-
-        IntByReference ret = new IntByReference();
-        int rc = LibC.waitpid(linuxProcess.getPid(), ret, LibC.WNOHANG);
-
-        if (rc == 0) {
-            deadPool.add(linuxProcess);
-        } else if (rc < 0) {
-            linuxProcess.onExit((Native.getLastError() == LibC.ECHILD) ? Integer.MAX_VALUE : Integer.MIN_VALUE);
-        } else {
-            handleExit(linuxProcess, ret.getValue());
-        }
-    }
-
-    private void checkDeadPool() {
-        if (deadPool.isEmpty()) {
-            return;
-        }
-
-        IntByReference ret = new IntByReference();
-        Iterator<LinuxProcess> iterator = deadPool.iterator();
-        while (iterator.hasNext()) {
-            LinuxProcess process = iterator.next();
-            int rc = LibC.waitpid(process.getPid(), ret, LibC.WNOHANG);
-            if (rc == 0) {
-                continue;
-            }
-
-            iterator.remove();
-            if (rc < 0) {
-                process.onExit((Native.getLastError() == LibC.ECHILD) ? Integer.MAX_VALUE : Integer.MIN_VALUE);
-                continue;
-            }
-
-            handleExit(process, ret.getValue());
-        }
-    }
-
-    private void handleExit(final LinuxProcess process, int status) {
-        if (WIFEXITED(status)) {
-            status = WEXITSTATUS(status);
-            if (status == 127) {
-                process.onExit(Integer.MIN_VALUE);
-            } else {
-                process.onExit(status);
-            }
-        } else if (WIFSIGNALED(status)) {
-            process.onExit(WTERMSIG(status));
-        } else {
+   private void handleExit(final LinuxProcess process, int status)
+   {
+      if (WIFEXITED(status)) {
+         status = WEXITSTATUS(status);
+         if (status == 127) {
             process.onExit(Integer.MIN_VALUE);
-        }
-    }
+         }
+         else {
+            process.onExit(status);
+         }
+      }
+      else if (WIFSIGNALED(status)) {
+         process.onExit(WTERMSIG(status));
+      }
+      else {
+         process.onExit(Integer.MIN_VALUE);
+      }
+   }
+
+   /**
+    * Loops until the {@link #deadPool} is empty, using a backoff sleep to progressively increase the poll
+    * interval the longer the process takes to terminate.
+    * <p>
+    * {@code waitpid} does not offer a timeout variant. Callers have two options:
+    * <ul>
+    *     <li>Use {@code WNOHANG} and have the call return immediately, whether the process has terminated
+    *     or not, and use the return code to tell the difference</li>
+    *     <li>Don't use {@code WNOHANG} and have the call block until the process terminates</li>
+    * </ul>
+    * To avoid the possibility of a misbehaving process hanging the JVM indefinitely, this loop uses a Java-
+    * based sleep to wait between checks. The sleep interval ramps up each time the loop runs. The ramp-up
+    * is intended to minimize the penalty imposed on well-behaved processes, which will generally only loop
+    * once or twice before terminating.
+    * <p>
+    * This loop will wait up to the {@link #LINGER_TIME_MS configured linger timeout} for the process to
+    * terminate. At that point, if the process still hasn't terminated, it is abandoned.
+    */
+   private void waitForDeadPool()
+   {
+      long sleepInterval = 0L;
+      long timeout = System.currentTimeMillis() + LINGER_TIME_MS;
+      while (true) {
+         checkDeadPool();
+         if (deadPool.isEmpty() || System.currentTimeMillis() > timeout) {
+            break;
+         }
+
+         if (sleepInterval > 0L) { // This gives 2 checks in a row before the first sleep
+            try {
+               Thread.sleep(sleepInterval);
+            }
+            catch (InterruptedException e) {
+               Thread.currentThread().interrupt();
+               break;
+            }
+         }
+         // 0 -> 1 -> 3 -> 7 -> 15 -> 31 -> 63 -> 127, etc
+         sleepInterval = (sleepInterval * 2L) + 1L;
+      }
+   }
 }

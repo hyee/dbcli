@@ -55,13 +55,13 @@ public class SubSystem {
             ProcessHandler handler = new ProcessHandler();
             pb.setProcessListener(handler);
             process = pb.start();
+
             writer = ByteBuffer.allocateDirect(1048576);
             writer.order(ByteOrder.nativeOrder());
             monitorThread = new Thread(() -> {
                 try {
                     process.waitFor(0, TimeUnit.SECONDS);
                 } catch (InterruptedException e1) {
-
                 } finally {
                     try {
                         process.destroy(true);
@@ -365,7 +365,7 @@ public class SubSystem {
         }
 
         @Override
-        public void onStart(NuProcess nuProcess) {
+        public void onPreStart(NuProcess nuProcess) {
             t.setDaemon(true);
             t.start();
         }

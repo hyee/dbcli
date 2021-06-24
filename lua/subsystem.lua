@@ -18,7 +18,10 @@ end
 
 function system:get_last_line(cmd)
     if not self.process then return end
-    return self.process:getLastLine(cmd)
+    local done,msg=pcall(self.process.getLastLine,self.process,cmd)
+    if self.process:isClosed() then self:terminate() end
+    env.checkerr(done,msg or '')
+    return self.process~=nil and msg or nil
 end
 
 function system:get_lines(cmd,interval,count,prep)
@@ -36,12 +39,18 @@ end
 function system:run_command(cmd,is_print,interval,count,prep)
     if not self.process then return end
     interval,count=tonumber(interval),tonumber(count)
+    local done,msg
     if interval and count then
-        self.prompt=self.process:executeInterval(cmd,math.ceil(interval),math.ceil(count),is_print and true or false,prep)
+        done,msg=pcall(self.process.executeInterval,self.process,cmd,math.ceil(interval),math.ceil(count),is_print and true or false,prep)
     else
-        self.prompt=self.process:execute(cmd,is_print and true or false,self.block_input or false)
+        done,msg=pcall(self.process.execute,self.process,cmd,is_print and true or false,self.block_input or false)
     end
-    if self.process:isClosed() then return self:terminate() end
+     if self.process:isClosed() then 
+        self:terminate() 
+    end
+    env.checkerr(done,msg  or '')
+    if self.process==nil then return end
+    self.prompt=msg
     if self.enter_flag==true then env.set_subsystem(self.name,self.prompt) end
 end
 
@@ -161,6 +170,7 @@ function system:call_process(cmd,is_native)
             terminal:echo(true)
             terminal:pause()
             pcall(os.execute,line)
+
             terminal:resume()
             for k,v in pairs(env1) do
                 if v~="" then
@@ -172,6 +182,7 @@ function system:call_process(cmd,is_native)
             return
         end
     end
+    if not self.process then return end
 
     if not cmd then 
         env.set_subsystem(self.name,self.prompt)

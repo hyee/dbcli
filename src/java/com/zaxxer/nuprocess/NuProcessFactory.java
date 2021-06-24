@@ -25,6 +25,16 @@ import java.util.List;
  *
  * @author Brett Wooldridge
  */
-public interface NuProcessFactory {
-    NuProcess createProcess(List<String> commands, String[] env, NuProcessHandler processListener, Path cwd);
+public interface NuProcessFactory
+{
+   NuProcess createProcess(List<String> commands, String[] env, NuProcessHandler processListener, Path cwd);
+
+   /**
+    * Runs the process synchronously.
+    *
+    * Pumping is done on the calling thread, and this method will not return until the process has exited.
+    *
+    * @since 1.3
+    */
+   void runProcess(List<String> commands, String[] env, NuProcessHandler processListener, Path cwd);
 }

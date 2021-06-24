@@ -1,18 +1,8 @@
 package org.dbcli;
 
-/*
- * Copyright (c) 2002-2018, the original author or authors.
- *
- * This software is distributable under the BSD license. See the terms of the
- * BSD license in the documentation provided with this software.
- *
- * https://opensource.org/licenses/BSD-3-Clause
- */
-
 
 import org.fusesource.jansi.internal.Kernel32;
 import org.fusesource.jansi.internal.Kernel32.*;
-import org.fusesource.jansi.internal.WindowsSupport;
 import org.jline.keymap.KeyMap;
 import org.jline.reader.impl.LineReaderImpl;
 import org.jline.terminal.Cursor;
@@ -28,52 +18,111 @@ import java.io.IOError;
 import java.io.IOException;
 import java.io.Writer;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.function.IntConsumer;
 
 import static org.fusesource.jansi.internal.Kernel32.*;
 
-public class JansiWinSysTerminal extends AbstractWindowsTerminal {
+public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
+    private static final long consoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    private static final long consoleIn = GetStdHandle(STD_INPUT_HANDLE);
+
     public static JansiWinSysTerminal createTerminal(String name, String type, boolean ansiPassThrough, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler, boolean paused) throws IOException {
         Writer writer;
+        int[] mode = new int[1];
+        if (Kernel32.GetConsoleMode(consoleOut, mode) == 0) {
+            throw new IOException("Failed to get console mode: " + getLastErrorMessage());
+        }
+        if (type == null) {
+            if (Kernel32.SetConsoleMode(consoleOut, mode[0] | AbstractWindowsTerminal.ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0)
+                type = TYPE_WINDOWS_VTP;
+            else if (OSUtils.IS_CONEMU)
+                type = TYPE_WINDOWS_CONEMU;
+            else
+                type = TYPE_WINDOWS;
+        }
         if (ansiPassThrough) {
-            if (type == null) type = TYPE_WINDOWS;
-            /*
-            if (type == null) {
-                type = OSUtils.IS_CONEMU ? TYPE_WINDOWS_256_COLOR : TYPE_WINDOWS;
-            }*/
-            writer = new BufferedWriter(OSUtils.IS_CONEMU ? new JansiWinConsoleWriter() : new ConEmuWriter(), 65535);
+            if (("ansicon").equals(System.getenv("ANSICON_DEF")))
+                writer = new BufferedWriter(OSUtils.IS_CONEMU ? new JansiWinConsoleWriter() : new ConEmuWriter(), 65536);
+            else
+                writer = new JansiWinConsoleWriter();
         } else {
-            long console = GetStdHandle(STD_OUTPUT_HANDLE);
-            int[] mode = new int[1];
-            if (Kernel32.GetConsoleMode(console, mode) == 0) {
-                throw new IOException("Failed to get console mode: " + WindowsSupport.getLastErrorMessage());
-            }  //doesn't work well in Win10 (horizontal scrolling, status bar + vertical scrolling, etc)
-                /*if (Kernel32.SetConsoleMode(console, mode[0] | AbstractWindowsTerminal.ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0) {
-                    if (type == null) {
-                        type = TYPE_WINDOWS_VTP;
-                    }
-                    writer = new JansiWinConsoleWriter();
-                } else */
-
-            if (OSUtils.IS_CONEMU) {
-                if (type == null) {
-                    type = TYPE_WINDOWS_256_COLOR;
-                }
+            if (type.equals(TYPE_WINDOWS_VTP) || OSUtils.IS_CONEMU) {
                 writer = new JansiWinConsoleWriter();
             } else {
-                if (type == null) {
-                    type = TYPE_WINDOWS;
-                }
                 writer = new WindowsAnsiWriter(new BufferedWriter(new JansiWinConsoleWriter()));
             }
+        }
+        if (Kernel32.GetConsoleMode(consoleIn, mode) == 0) {
+            throw new IOException("Failed to get console mode: " + getLastErrorMessage());
         }
         JansiWinSysTerminal terminal = new JansiWinSysTerminal(writer, name, type, encoding, codepage, nativeSignals, signalHandler);
         // Start input pump thread
         if (!paused) {
             terminal.resume();
         }
-
         return terminal;
+    }
+
+    @Override
+    public Status getStatus() {
+        return null;
+    }
+
+
+    public static boolean isWindowsConsole() {
+        int[] mode = new int[1];
+        return Kernel32.GetConsoleMode(consoleOut, mode) != 0 && Kernel32.GetConsoleMode(consoleIn, mode) != 0;
+    }
+
+    public static boolean isConsoleOutput() {
+        int[] mode = new int[1];
+        return Kernel32.GetConsoleMode(consoleOut, mode) != 0;
+    }
+
+    public static boolean isConsoleInput() {
+        int[] mode = new int[1];
+        return Kernel32.GetConsoleMode(consoleIn, mode) != 0;
+    }
+
+    JansiWinSysTerminal(Writer writer, String name, String type, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler) throws IOException {
+        super(writer, name, type, encoding, codepage, nativeSignals, signalHandler);
+        this.status = null;
+        t.setDaemon(true);
+        t.start();
+    }
+
+    @Override
+    protected int getConsoleMode() {
+        int[] mode = new int[1];
+        if (Kernel32.GetConsoleMode(consoleIn, mode) == 0) {
+            return -1;
+        }
+        return mode[0];
+    }
+
+    @Override
+    protected void setConsoleMode(int mode) {
+        Kernel32.SetConsoleMode(consoleIn, mode);
+    }
+
+    final CONSOLE_SCREEN_BUFFER_INFO info = new CONSOLE_SCREEN_BUFFER_INFO();
+    final Size size = new Size();
+    final Cursor cursor = new Cursor(0, 0);
+
+    public Size getSize() {
+        Kernel32.GetConsoleScreenBufferInfo(consoleOut, info);
+        size.setColumns(info.windowWidth());
+        size.setRows(info.windowHeight());
+        return size;
+    }
+
+    @Override
+    public Size getBufferSize() {
+        Kernel32.GetConsoleScreenBufferInfo(consoleOut, info);
+        size.setColumns(info.size.x);
+        size.setRows(info.size.y);
+        return size;
     }
 
     private volatile long prevTime = 0;
@@ -158,55 +207,13 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         }
     });
 
-    public JansiWinSysTerminal(Writer writer, String name, String type, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler) throws IOException {
-        super(writer, name, type, encoding, codepage, nativeSignals, signalHandler);
-        this.status = null;
-        t.setDaemon(true);
-        t.start();
-    }
-
-    @Override
-    public Status getStatus() {
-        return null;
-    }
-
-    @Override
-    protected int getConsoleOutputCP() {
-        return Kernel32.GetConsoleOutputCP();
-    }
-
-    @Override
-    protected int getConsoleMode() {
-        return WindowsSupport.getConsoleMode();
-    }
-
-    @Override
-    protected void setConsoleMode(int mode) {
-        WindowsSupport.setConsoleMode(mode);
-    }
-
-    long console = Kernel32.GetStdHandle(Kernel32.STD_OUTPUT_HANDLE);
-    CONSOLE_SCREEN_BUFFER_INFO info = new CONSOLE_SCREEN_BUFFER_INFO();
-    Size size = new Size();
-
-    public Size getSize() {
-        Kernel32.GetConsoleScreenBufferInfo(console, info);
-        size.setColumns(info.windowWidth());
-        size.setRows(info.windowHeight());
-        return size;
-    }
-
-    @Override
-    public Size getBufferSize() {
-        Kernel32.GetConsoleScreenBufferInfo(console, info);
-        size.setColumns(info.size.x);
-        size.setRows(info.size.y);
-        return size;
-    }
 
     protected boolean processConsoleInput() throws IOException {
-        INPUT_RECORD[] events = WindowsSupport.readConsoleInput(1, 128);
-        if (events == null) {
+        INPUT_RECORD[] events;
+        if (consoleIn != INVALID_HANDLE_VALUE
+                && WaitForSingleObject(consoleIn, 100) == 0) {
+            events = readConsoleInputHelper(consoleIn, 1, false);
+        } else {
             return false;
         }
 
@@ -240,28 +247,28 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
 
     private char[] mouse = new char[]{'\033', '[', 'M', ' ', ' ', ' '};
 
-    private void processMouseEvent(MOUSE_EVENT_RECORD mouseEvent) throws IOException {
+    private void processMouseEvent(Kernel32.MOUSE_EVENT_RECORD mouseEvent) throws IOException {
         int dwEventFlags = mouseEvent.eventFlags;
         int dwButtonState = mouseEvent.buttonState;
         if (tracking == MouseTracking.Off
-                || tracking == MouseTracking.Normal && dwEventFlags == MOUSE_EVENT_RECORD.MOUSE_MOVED
-                || tracking == MouseTracking.Button && dwEventFlags == MOUSE_EVENT_RECORD.MOUSE_MOVED && dwButtonState == 0) {
+                || tracking == MouseTracking.Normal && dwEventFlags == Kernel32.MOUSE_EVENT_RECORD.MOUSE_MOVED
+                || tracking == MouseTracking.Button && dwEventFlags == Kernel32.MOUSE_EVENT_RECORD.MOUSE_MOVED && dwButtonState == 0) {
             return;
         }
         int cb = 0;
-        dwEventFlags &= ~MOUSE_EVENT_RECORD.DOUBLE_CLICK; // Treat double-clicks as normal
-        if (dwEventFlags == MOUSE_EVENT_RECORD.MOUSE_WHEELED) {
+        dwEventFlags &= ~Kernel32.MOUSE_EVENT_RECORD.DOUBLE_CLICK; // Treat double-clicks as normal
+        if (dwEventFlags == Kernel32.MOUSE_EVENT_RECORD.MOUSE_WHEELED) {
             cb |= 64;
             if ((dwButtonState >> 16) < 0) {
                 cb |= 1;
             }
-        } else if (dwEventFlags == MOUSE_EVENT_RECORD.MOUSE_HWHEELED) {
+        } else if (dwEventFlags == Kernel32.MOUSE_EVENT_RECORD.MOUSE_HWHEELED) {
             return;
-        } else if ((dwButtonState & MOUSE_EVENT_RECORD.FROM_LEFT_1ST_BUTTON_PRESSED) != 0) {
+        } else if ((dwButtonState & Kernel32.MOUSE_EVENT_RECORD.FROM_LEFT_1ST_BUTTON_PRESSED) != 0) {
             cb |= 0x00;
-        } else if ((dwButtonState & MOUSE_EVENT_RECORD.RIGHTMOST_BUTTON_PRESSED) != 0) {
+        } else if ((dwButtonState & Kernel32.MOUSE_EVENT_RECORD.RIGHTMOST_BUTTON_PRESSED) != 0) {
             cb |= 0x01;
-        } else if ((dwButtonState & MOUSE_EVENT_RECORD.FROM_LEFT_2ND_BUTTON_PRESSED) != 0) {
+        } else if ((dwButtonState & Kernel32.MOUSE_EVENT_RECORD.FROM_LEFT_2ND_BUTTON_PRESSED) != 0) {
             cb |= 0x02;
         } else {
             cb |= 0x03;
@@ -276,9 +283,10 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
 
     @Override
     public Cursor getCursorPosition(IntConsumer discarded) {
-        if (GetConsoleScreenBufferInfo(console, info) == 0) {
-            throw new IOError(new IOException("Could not get the cursor position: " + WindowsSupport.getLastErrorMessage()));
+        if (GetConsoleScreenBufferInfo(consoleOut, info) == 0) {
+            throw new IOError(new IOException("Could not get the cursor position: " + getLastErrorMessage()));
         }
+
         return new Cursor(info.cursorPosition.x, info.cursorPosition.y);
     }
 
@@ -288,4 +296,18 @@ public class JansiWinSysTerminal extends AbstractWindowsTerminal {
         strings.remove(InfoCmp.Capability.delete_line);
         strings.remove(InfoCmp.Capability.parm_delete_line);
     }
+
+    static String getLastErrorMessage() {
+        int errorCode = GetLastError();
+        return getErrorMessage(errorCode);
+    }
+
+    static String getErrorMessage(int errorCode) {
+        int bufferSize = 160;
+        byte[] data = new byte[bufferSize];
+        FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM, 0, errorCode, 0, data, bufferSize, null);
+        return new String(data, StandardCharsets.UTF_16LE).trim();
+    }
+
+
 }

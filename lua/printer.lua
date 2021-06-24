@@ -57,7 +57,7 @@ function printer.more(output)
         pcall(console.less,console,table.concat(more_text,'\n'),math.abs(printer.grid_title_lines),#(env.space),more_text.lines)
     else
         local stack,lines=output:gsub('\n',"")
-        if env.ansi then output=env.ansi.convert_ansi(output) end
+        if output.convert_ansi then output=output:convert_ansi() end
         pcall(console.less,console,output,0,#(env.space),lines)
     end
 end
@@ -90,14 +90,14 @@ function printer.print(...)
     end
 
     output=table.concat(output,' ')
-    if env.ansi then output=env.ansi.convert_ansi(output) end
+    if output.convert_ansi then output=output:convert_ansi() end
     output,rows=output:gsub("([^\n\r]*)([\n\r]*)",function(s,sep)
         if printer.grep_text and not ignore then
             s,found=s:gsub(printer.grep_text,grep_fmt)
             if not (found>0 and not printer.grep_dir or printer.grep_dir and found==0) then
                 return ''
-            elseif env.ansi then
-                s=env.ansi.convert_ansi(s)
+            elseif s.convert_ansi then
+                s=s:convert_ansi()
             end
         end
         if column then
@@ -137,7 +137,7 @@ function printer.print_grid(text)
 end
 
 function printer.write(output)
-    if env.ansi then output=env.ansi.convert_ansi(output) end
+    if output.convert_ansi then output=output:convert_ansi() end
     write(console,output)
 end
 

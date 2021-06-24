@@ -21,52 +21,55 @@ import com.sun.jna.Library;
 import com.sun.jna.Native;
 import com.sun.jna.NativeLibrary;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
 import static com.zaxxer.nuprocess.internal.Constants.OS;
 
-public class LibJava8 {
-    static {
-        Map<String, Object> options = new HashMap<>();
-        options.put(Library.OPTION_ALLOW_OBJECTS, Boolean.TRUE);
+public class LibJava8
+{
+   static {
+      Map<String, Object> options = new HashMap<>();
+      options.put(Library.OPTION_ALLOW_OBJECTS, Boolean.TRUE);
 
-        if (OS != Constants.OperatingSystem.MAC) {
-            Native.register(NativeLibrary.getInstance("java", options));
-        } else {
-            Native.register(NativeLibrary.getProcess(options));
-        }
+      if (OS != Constants.OperatingSystem.MAC) {
+         Native.register(NativeLibrary.getInstance("java", options));
+      }
+      else {
+         Native.register(NativeLibrary.getProcess(options));
+      }
 
-        Java_java_lang_UNIXProcess_init(JNIEnv.CURRENT, BasePosixProcess.class);
-    }
+      Java_java_lang_UNIXProcess_init(JNIEnv.CURRENT, BasePosixProcess.class);
+   }
 
-    public static native void Java_java_lang_UNIXProcess_init(JNIEnv jniEnv, Object clazz);
+   public static native void Java_java_lang_UNIXProcess_init(JNIEnv jniEnv, Object clazz);
 
-    /**
-     * JNIEXPORT jint JNICALL
-     * Java_java_lang_UNIXProcess_forkAndExec(JNIEnv *env,
-     * jobject process,
-     * jint mode,
-     * jbyteArray helperpath,
-     * jbyteArray prog,
-     * jbyteArray argBlock, jint argc,
-     * jbyteArray envBlock, jint envc,
-     * jbyteArray dir,
-     * jintArray std_fds,
-     * jboolean redirectErrorStream)
-     *
-     * @return the PID of the process
-     */
-    public static native int Java_java_lang_UNIXProcess_forkAndExec(
-            JNIEnv jniEnv,
-            Object process,
-            int mode,
-            Object helperpath,
-            Object prog,
-            Object argBlock, int argc,
-            Object envBlock, int envc,
-            Object dir,
-            Object fds,
-            byte redirectErrorStream
-    );
+   /**
+    * JNIEXPORT jint JNICALL
+    * Java_java_lang_UNIXProcess_forkAndExec(JNIEnv *env,
+    *                                        jobject process,
+    *                                        jint mode,
+    *                                        jbyteArray helperpath,
+    *                                        jbyteArray prog,
+    *                                        jbyteArray argBlock, jint argc,
+    *                                        jbyteArray envBlock, jint envc,
+    *                                        jbyteArray dir,
+    *                                        jintArray std_fds,
+    *                                        jboolean redirectErrorStream)
+    *
+    * @return the PID of the process
+    */
+   public static native int Java_java_lang_UNIXProcess_forkAndExec(
+           JNIEnv jniEnv,
+           Object process,
+           int mode,
+           Object helperpath,
+           Object prog,
+           Object argBlock, int argc,
+           Object envBlock, int envc,
+           Object dir,
+           Object fds,
+           byte redirectErrorStream
+   ) throws IOException;
 }

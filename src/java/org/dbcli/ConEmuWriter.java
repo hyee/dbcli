@@ -7,9 +7,7 @@ import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.win32.W32APIOptions;
 import org.jline.terminal.impl.AbstractWindowsConsoleWriter;
 
-import java.io.IOException;
-
-public class ConEmuWriter extends AbstractWindowsConsoleWriter {
+public final class ConEmuWriter extends AbstractWindowsConsoleWriter {
     static {
         NativeLibrary nativeLibrary = NativeLibrary.getInstance("ConEmuHk" + (System.getProperty("os.arch").equals("x86") ? "" : "64"), W32APIOptions.UNICODE_OPTIONS);
         Native.register(ConEmuWriter.class, nativeLibrary);
@@ -33,8 +31,7 @@ public class ConEmuWriter extends AbstractWindowsConsoleWriter {
     static final native boolean WriteProcessed3(String in_lpBuffer, int in_nLength, IntByReference out_lpNumberOfCharsWritten, Pointer in_hConsoleOutput);
 
     @Override
-    protected void writeConsole(char[] chars, int i) throws IOException {
+    protected void writeConsole(char[] chars, int i) {
         WriteProcessed3(String.valueOf(chars), i, charsWritten, console);
     }
-
 }

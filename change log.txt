@@ -1,4 +1,6 @@
-2021-06-28: + oracle: new script 'show autotask'
+2021-06-24: * public: upgrade libs: jansi => v2.3.3(jar name keeps unchanged), jna => v5.8, jline => v3.2, ConEmu => v210620
+                      compatable fixs regards to lib upgrades
+2021-06-18: + oracle: new script 'show autotask'
 2021-04-30: + oracle: new script 'ora lfs' to analyze the 'log file sync' event
 2021-01-30: * public: upgrade lib ConEmu to build 210128
 2021-01-24: + public: new option 'set internal on/off'

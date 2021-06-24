@@ -65,10 +65,12 @@ public class Loader {
             } else {
                 libPath += "linux";
             }
+
             String libs = System.getenv("LD_LIBRARY_PATH");
             addLibrary(libPath + (libs == null ? "" : File.pathSeparator + libs), true);
             System.setProperty("library.jansi.path", libPath);
             System.setProperty("jna.library.path", libPath);
+            System.setProperty("jna.boot.library.path", libPath);
         } catch (Exception e) {
             e.printStackTrace();
             System.exit(1);
