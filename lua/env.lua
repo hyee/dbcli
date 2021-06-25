@@ -1184,8 +1184,10 @@ function env.load_data(file,isUnpack,callback)
         end
         local txt=f:read("*a")
         f:close()
-        if not txt or txt:gsub("[\n\t%s\r]+","")=="" then return {} end
-        return isUnpack==false and txt or env.MessagePack.unpack(txt)
+        if not txt or txt:gsub("[\n\t%s\r]+","")=="" then 
+            return isUnpack~=false and {} or nil 
+        end
+        return isUnpack~=false and env.MessagePack.unpack(txt) or txt
     else
         env.uv.async_read(file,32*1024*1024,function(err,result)
             if err then return end

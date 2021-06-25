@@ -26,12 +26,17 @@ public final class ConEmuWriter extends AbstractWindowsConsoleWriter {
         this.console = console;
     }
 
+
     static final native boolean WriteProcessed(String in_lpBuffer, int in_nLength, IntByReference out_lpNumberOfCharsWritten);
 
     static final native boolean WriteProcessed3(String in_lpBuffer, int in_nLength, IntByReference out_lpNumberOfCharsWritten, Pointer in_hConsoleOutput);
 
     @Override
     protected void writeConsole(char[] chars, int i) {
-        WriteProcessed3(String.valueOf(chars), i, charsWritten, console);
+        try {
+            WriteProcessed3(String.valueOf(chars), i, charsWritten, console);
+        } catch (Error e) {
+
+        }
     }
 }

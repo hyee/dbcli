@@ -354,6 +354,9 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
         extract_profile(:2,:3,:4, TRUE);
     END;]]
     env.checkhelp(sql_id or sql_text)
+    if sql_plan and sql_plan:find('[^%w_%$.#"]') then
+        return sqlprof.generate_profile_from_outlines(sql_id,sql_plan)
+    end
     if not db:check_access('sys.sql$text',1) then
         stmt=stmt:gsub("%$IF.-%$END","")
     end
@@ -370,6 +373,91 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
     print("Result written to file "..env.write_cache('prof_'..((sql_id or ''):gsub('^PROF_','') or "plan_table")..".sql",args[2]))
 end
 
+local profile_template=[[Set define off sqlbl on
+DECLARE --Better for this script to have the access on gv$sqlarea
+    sql_txt   CLOB;
+    sql_prof  SYS.SQLPROF_ATTR;
+    signature NUMBER;
+    sq_id     VARCHAR2(30):='@sql_id@';
+BEGIN
+    BEGIN 
+        EXECUTE IMMEDIATE q'[select * from (
+                                     SELECT SQL_FULLTEXT FROM gv$sqlarea WHERE SQL_ID=:1 AND ROWNUM<2
+                                     union all 
+                                     SELECT SQL_TEXT FROM dba_hist_sqltext WHERE SQL_ID=:1 AND ROWNUM<2
+                                     union all 
+                                     SELECT to_clob(SQL_TEXT) FROM gv$sql_monitor 
+                                     WHERE SQL_ID=:1 AND IS_FULL_SQLTEXT='Y'
+                                     AND   SQL_TEXT IS NOT NULL AND ROWNUM<2) 
+                                   where rownum<2]' 
+        INTO sql_txt USING sq_id,sq_id,sq_id;
+    EXCEPTION WHEN OTHERS THEN NULL;END;
+    IF sql_txt IS NULL THEN
+        raise_application_error(-20001, 'Cannot find the SQL text for sql_id: ' || sq_id);
+    END IF;
+    
+    sql_prof := SYS.SQLPROF_ATTR(
+        @sql_profile
+        'IGNORE_OPTIM_EMBEDDED_HINTS'
+    );
+    signature := DBMS_SQLTUNE.SQLTEXT_TO_SIGNATURE(sql_txt,TRUE);
+    BEGIN DBMS_SQLTUNE.DROP_SQL_PROFILE('PROF_'||sq_id||'');EXCEPTION WHEN OTHERS THEN NULL;END;
+    DBMS_SQLTUNE.IMPORT_SQL_PROFILE (
+        sql_text    => sql_txt,
+        profile     => sql_prof,
+        name        => 'PROF_'||sq_id||'',
+        description => 'PROF_'||sq_id||'_'||signature,
+        category    => 'DEFAULT',
+        replace     => TRUE,
+        force_match => TRUE);
+    EXECUTE IMMEDIATE 'ALTER SESSION SET CURRENT_SCHEMA=APPS';
+END;
+/
+PRO SQL Profile created, to drop this profile, execute: DBMS_SQLTUNE.DROP_SQL_PROFILE('@sql_id@')]]
+
+function sqlprof.generate_profile_from_outlines(sql_id,outlines)
+    outlines=outlines:trim()
+    local hints={}
+    if outlines:find('<hint>',1,true) then
+        outlines:gsub('<hint>(.-)</hint>',function(s)
+            if s:find('<![CDATA',1,true) then
+                s=s:match('<!%[CDATA%[(.*)%]%]>')
+            end
+            hints[#hints+1]=s:trim() 
+        end)
+    else
+        for v in outlines:gsplit('\n') do
+            v=v:trim()
+            if v~='' then hints[#hints+1]=v end
+        end
+    end
+    
+    for i=#hints,1,-1 do
+        local hint=hints[i]
+        if hint:upper()=='IGNORE_OPTIM_EMBEDDED_HINTS' or hint:upper():find('_OUTLINE_DATA',1,true) then
+            table.remove(hints,i)
+        else
+            local q,st,ed='','',''
+            if hint:find("'",1,true) then
+                q='q'
+                if hint:find('[',1,true) then
+                    st,ed='{','}'
+                elseif hint:find('{',1,true) then
+                    st,ed='[',']'
+                else
+                    st,ed='~','~'
+                end
+            end
+            hints[i]=q.."'"..st..hint..ed.."'"
+        end
+    end
+    
+    outlines=table.concat(hints,',\n        ')
+    if #hints>0 then outlines=outlines..',' end
+    local profile=profile_template:gsub('@sql_id@',sql_id):gsub('@sql_profile',outlines)
+    print("Result written to file "..env.write_cache('prof_'..sql_id..".sql",profile))
+end
+
 function sqlprof.onload()
     local help=[[
     Extract sql profile. Usage: @@NAME {<sql_id|sql_prof_name|spm_plan_name|spm_sql> [<plan_hash_value|new_sql_id|sql_prof_name|spm_plan_name|statement_id>|plan]}
@@ -384,6 +472,7 @@ function sqlprof.onload()
                 xplan select * from dual;
                 @@NAME gjm43un5cy843 plan;
         7). Diff SQL Plans: @@NAME diff 2443212686 2443212367
+        8). Generate the profile from outlines: @NAME <sql_id> <outlines_text>|<xml>
     ]]
     env.set_command(nil,"sqlprof",help,sqlprof.extract_profile,false,3)
 end

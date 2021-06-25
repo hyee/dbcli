@@ -72,7 +72,7 @@ public final class Console {
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM))
-            this.terminal = JansiWinSysTerminal.createTerminal(colorPlan, null, false, null, 0, true, Terminal.SignalHandler.SIG_IGN, false);
+            this.terminal = JansiWinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU, null, 0, true, Terminal.SignalHandler.SIG_IGN, false);
         else
             this.terminal = (AbstractTerminal) TerminalBuilder.builder().system(true).name(colorPlan).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).nativeSignals(true).build();
 
