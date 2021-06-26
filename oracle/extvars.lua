@@ -405,7 +405,7 @@ function extvars.set_dict(type,scope)
             WHERE ROWNUM<=65536*5]]
     else
         extvars.load_dict(path)
-        dict,params,keywords=extvars.dict,extvars.params,extvars.keywords
+        dict,params,keywords=extvars.dict,extvars.params,{}
         sql=[[
             with r as(
                     SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode')*/ owner,table_name, column_name col,data_type
@@ -495,12 +495,22 @@ function extvars.set_dict(type,scope)
             end
         end
         local done={}
-        done,rs=pcall(db.internal_call,db,"select KEYWORD from V$RESERVED_WORDS where length(KEYWORD)>3")
+        sql="select KEYWORD from V$RESERVED_WORDS"
+        if db.props.version>=11.2 then
+            sql=sql..[[ union select name from v$sql_hint where length(name)>5 union select descr from v$sqlfn_metadata where length(descr)>5 and instr(descr,' ')=0]]
+        end
+        done,rs=pcall(db.internal_call,db,sql)
         if done then
             rows=db.resultset:rows(rs,-1)
             cnt2=#rows
             for i=2,cnt2 do
-                keywords[rows[i][1]]=1
+                local key=rows[i][1]
+                local exists=keywords[key]
+                if tonumber(exist) and #key<6 then 
+                    keywords[key]=nil
+                elseif not exists then
+                    keywords[key]=1
+                end
             end
         else
             cnt2=2
@@ -542,7 +552,7 @@ function extvars.load_dict(path)
     env.load_data(path,true,function(data)
         extvars.dict=data.dict
         extvars.params=data.params or {}
-        extvars.keywords=data.keywords or {}
+        extvars.keywords={}
         local dict={objects=0,subobjects=0,vpd=0,cache=0,path=path}
         if data.keywords then
             for k,v in pairs(data.dict) do 
@@ -564,6 +574,7 @@ function extvars.load_dict(path)
         if data.cache then 
             extvars.cache_obj=data.cache
         end
+        data=nil
         env.log_debug('extvars','Loaded dictionry '..path)
     end)
 end

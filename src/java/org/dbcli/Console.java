@@ -4,6 +4,7 @@ import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
 import com.naef.jnlua.util.AbstractTableMap;
 import org.jline.builtins.Commands;
+import org.jline.builtins.Less;
 import org.jline.builtins.Source;
 import org.jline.keymap.KeyMap;
 import org.jline.reader.*;
@@ -47,7 +48,7 @@ public final class Console {
     public AbstractTerminal terminal;
     public boolean isSubSystem = false;
     LineReaderImpl reader;
-    Less.Play display;
+    More.Play display;
     long threadID;
 
     MyCompleter completer = new MyCompleter(this);
@@ -79,7 +80,7 @@ public final class Console {
         Interrupter.reset();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
         this.status = this.terminal.getStatus();
-        this.display = new Less.Play(this.terminal);
+        this.display = new More.Play(this.terminal);
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).appName("dbcli").build();
         this.parser = new MyParser();
         this.reader.setParser(parser);
@@ -288,17 +289,21 @@ public final class Console {
         return display.wcwidth(str);
     }
 
-    public void less(String output, int titleLines, int spaces, int lines) throws Exception {
-        Less less = new Less(terminal);
+    public void less(String output, int titleLines, int spaces, int lines) {
+        More less = new More(terminal, null);
         less.noInit = true;
         less.veryQuiet = true;
-        less.padding = spaces;
         less.numWidth = (int) Math.max(3, Math.ceil(Math.log10(lines < 10 ? 10 : lines)));
+        less.padding = spaces;
         less.setTitleLines(titleLines);
         less.chopLongLines = true;
         less.quitIfOneScreen = true;
         less.ignoreCaseAlways = true;
-        less.run(new Source.InputStreamSource(new ByteArrayInputStream(output.getBytes()), true, ""));
+        try {
+            less.run(new Source.InputStreamSource(new ByteArrayInputStream(output.getBytes()), true, ""));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     public PrintWriter getOutput() {

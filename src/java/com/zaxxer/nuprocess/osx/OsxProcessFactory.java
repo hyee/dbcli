@@ -16,30 +16,30 @@
 
 package com.zaxxer.nuprocess.osx;
 
-import java.nio.file.Path;
-
-import java.util.List;
-
 import com.zaxxer.nuprocess.NuProcess;
 import com.zaxxer.nuprocess.NuProcessFactory;
 import com.zaxxer.nuprocess.NuProcessHandler;
 
-public class OsxProcessFactory implements NuProcessFactory
-{
-   /** {@inheritDoc} */
-   @Override
-   public NuProcess createProcess(List<String> commands, String[] env, NuProcessHandler processListener, Path cwd)
-   {
-      OsxProcess process = new OsxProcess(processListener);
-      process.start(commands, env, cwd);
-      return process;
-   }
+import java.nio.file.Path;
+import java.util.List;
 
-   /** {@inheritDoc} */
-   @Override
-   public void runProcess(List<String> commands, String[] env, NuProcessHandler processListener, Path cwd)
-   {
-      OsxProcess process = new OsxProcess(processListener);
-      process.run(commands, env, cwd);
-   }
+public class OsxProcessFactory implements NuProcessFactory {
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public NuProcess createProcess(List<String> commands, String[] env, NuProcessHandler processListener, Path cwd) {
+        OsxProcess process = new OsxProcess(processListener);
+        process.start(commands, env, cwd);
+        return process;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void runProcess(List<String> commands, String[] env, NuProcessHandler processListener, Path cwd) {
+        OsxProcess process = new OsxProcess(processListener);
+        process.run(commands, env, cwd);
+    }
 }

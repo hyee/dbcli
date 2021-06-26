@@ -44,15 +44,13 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
         if (ansiPassThrough) {
             type = TYPE_WINDOWS;
             if (("ansicon").equals(System.getenv("ANSICON_DEF")))
-                writer = new BufferedWriter(OSUtils.IS_CONEMU ? new JansiWinConsoleWriter() : new ConEmuWriter(), 65536);
+                writer = new BufferedWriter(OSUtils.IS_CONEMU ? new JansiWinConsoleWriter() : new ConEmuWriter(), 1024*1024);
             else
                 writer = new JansiWinConsoleWriter();
         } else {
-            if (type.equals(TYPE_WINDOWS_VTP) || OSUtils.IS_CONEMU) {
+            System.out.println(type);
+            if (type.equals(TYPE_WINDOWS_VTP) || type.equals(TYPE_WINDOWS_CONEMU)) {
                 writer = new JansiWinConsoleWriter();
-            } else if (("ansicon").equals(System.getenv("ANSICON_DEF"))) {
-                type = TYPE_WINDOWS;
-                writer = new BufferedWriter(OSUtils.IS_CONEMU ? new JansiWinConsoleWriter() : new ConEmuWriter(), 65536);
             } else {
                 writer = new WindowsAnsiWriter(new BufferedWriter(new JansiWinConsoleWriter()));
             }

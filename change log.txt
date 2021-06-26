@@ -4,6 +4,7 @@
                       compatible fixs regards to lib upgrades
                       add '.limit(120)' in LineReaderImpl.doList to limit the maximum output candidates
                       enhance the completer logics
+                      enhance the 'less' logics, inluding changing some some Jline3 functions as public to accomplish the enhancement
 2021-06-18: + oracle: new script 'show autotask'
 2021-04-30: + oracle: new script 'ora lfs' to analyze the 'log file sync' event
 2021-01-30: * public: upgrade lib ConEmu to build 210128

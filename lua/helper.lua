@@ -121,11 +121,12 @@ function helper.env(target,depth)
 end
 
 function helper.colorful(helps,target)
+    local is_more=target=='MORE'
     if helps:find('^[Nn]o ') then return helps end
     target=target:gsub(',.+','')
     helps='\n'..(helps:gsub('^%s*\n',''):gsub('\t','    '))
     local spaces=helps:match("\n( +)%S") or ""
-    helps=helps:gsub("\r?\n"..spaces,"\n"):gsub("%s+$",""):sub(2)
+    helps=helps:gsub("\r?\n\r?"..spaces,"\n"):rtrim():sub(2)
 
     helps=helps:gsub('^(%s*[^\n\r]+)[Uu]sage[: ]+(@@NAME)([^\r\n]*)',function(prefix,name,line)
         local s=prefix..'\n'..string.rep('=',#(prefix:trim())+#target+2)..'\n$USAGECOLOR$Usage:$COMMANDCOLOR$ '..name:gsub(',.+','')..'$NOR$'
@@ -134,12 +135,11 @@ function helper.colorful(helps,target)
  
     helps=(target=='' and '' or ('$USAGECOLOR$'..target:upper()..':$NOR$ '))..helps
     helps=helps:gsub("@@NAME",target:lower())
-
     local grid=env.grid
     local is_table
     helps=helps:gsub('%[(%s*|.-|)%s*%]',function(s)
         local tab,s0=grid.new(),s..' '
-        local space=s:match('( *)|') or ''
+        local indent=s:match('( *)|') or ''
         local _,cfg=grid.get_config(s0)
         local cols=0
         s0:gsub('\\|','\1'):gsub('[^\n%S]*(|[^\r\n]+|)%s+',function(s1)
@@ -166,7 +166,7 @@ function helper.colorful(helps,target)
         if #tab.data==0 then return s end
         for k,v in pairs(cfg) do tab[k]=v end
         is_table=true
-        return space..table.concat(grid.merge({tab}),'\n'..space)
+        return indent..table.concat(grid.merge({tab}),'\n'..indent)
     end)
 
     local keys={
@@ -212,7 +212,7 @@ function helper.helper(cmd,...)
         if helps=="" then return end
         helps,target=helper.colorful(helps,target)
         if not target then return print(helps) end
-        return print(helps,'__PRINT_COLUMN_')
+        return print(env.space..helps:gsub('\n','\n'..env.space),'__PRINT_COLUMN_')
     elseif cmd=="-e" or cmd=="-E" then
         return helper.env(...)
     elseif cmd=="-j" or cmd=="-J" then

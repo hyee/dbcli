@@ -38,15 +38,17 @@ function printer.clear_buffered_output()
 end
 
 function printer.set_more(stmt)
-    env.checkerr(stmt,"Usage: more <select statement>|l|last|<file>|<other command>")
-    printer.is_more=true
-    out.isMore=true
+    env.checkhelp(stmt)
     local typ,file=os.exists(stmt,'txt')
     if file then
-        local text=env.load_data(file)
+        local text=env.load_data(file,false)
         env.checkerr(text,"Cannot read file: "..file)
+        out.isMore=false
         return printer.more(text)
-    elseif stmt:upper()~='LAST' and stmt:upper()~='L' then
+    end
+    printer.is_more=true
+    out.isMore=true
+    if stmt:upper()~='LAST' and stmt:upper()~='L' then
         more_text={lines=0}
         out:clear()
         printer.grid_title_lines=0
@@ -423,8 +425,8 @@ function printer.onload()
      | )        Right       | Right half window         |
      |-                     |-                          |
      | /pattern             | Search pattern            |
-     | n        Alt+N       | Search Forward            |
-     | N        ^N          | Search Backward           |]
+     | n        Alt+n       | Search Forward            |
+     | N        ALT+N       | Search Backward           |]
 
     Example: select * from dba_objects|@@NAME
     ]]
