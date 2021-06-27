@@ -35,11 +35,12 @@ ansicon.exe
 .7z
 jnlua.c
 Makefile
-dbcli_F0.bat
+dbcli_*
 dbcli_nojre.bat
 dbcli_agent.bat
 dbcli_x64.bat
 dbcli_ibm.bat
+dbcli_mysql.bat
 .xplan_settings
 user.xml
 NULL

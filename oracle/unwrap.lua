@@ -3130,15 +3130,15 @@ function unwrap.unwrap(obj,ext,prefix)
             end
         end
 
-        for p,func in pairs{[sqlmon_pattern]=unwrap.analyze_sqlmon,
-                            [sqldetail_pattern]=unwrap.analyze_sqldetail} do
+        for _,func in ipairs{{sqldetail_pattern,unwrap.analyze_sqldetail},
+                             {sqlmon_pattern,unwrap.analyze_sqlmon}} do
             local sql_list={}
-            local _,cnt=text:gsub(p,function(s) sql_list[#sql_list+1]=s;return '' end)
+            local _,cnt=text:gsub(func[1],function(s) sql_list[#sql_list+1]=s;return '' end)
             if cnt>1 then
                 local prefix=obj:gsub('[^\\/%w][^\\/]+$','')
                 local result
                 for i,sqlmon in ipairs(sql_list) do
-                    local row=load_report(func,sqlmon,prefix,i)
+                    local row=load_report(func[2],sqlmon,prefix,i)
                     if not result then 
                         result=row
                     else
@@ -3147,7 +3147,7 @@ function unwrap.unwrap(obj,ext,prefix)
                 end
                 grid.merge({result},true)
             else
-                load_report(func,text,obj)
+                load_report(func[2],text,obj)
             end
         end
 

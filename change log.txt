@@ -1,4 +1,5 @@
-2021-06-18: + oracle: 'sqlprof <sql_id> <outline text>|<xml>'
+2021-06-27: + public: 'tee <file.ans>' to keep the ANSI escapes
+2021-06-25: + oracle: 'sqlprof <sql_id> <outline text>|<xml>'
             + public: 'print <file>' and 'more <file>'
 2021-06-24: * public: upgrade libs: jansi => v2.3.3(jar name keeps unchanged), jna => v5.8, jline => v3.20, ConEmu => v210620, NuProcess => v2.0.2
                       compatible fixs regards to lib upgrades

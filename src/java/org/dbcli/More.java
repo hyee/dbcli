@@ -336,31 +336,26 @@ final public class More {
             if (status != null) {
                 status.suspend();
             }
-            display.init(!noInit);
-            if (!noKeypad) {
-                terminal.puts(Capability.keypad_xmit);
-            }
             size.copy(terminal.getSize());
-
             if (quitIfOneScreen && sources.size() == 2) {
                 if (display(true)) {
                     return;
                 }
             }
 
+
             SignalHandler prevHandler = terminal.handle(Signal.WINCH, this::handle);
             Attributes attr = terminal.enterRawMode();
             try {
-                window = size.getRows() - 1;
-                halfWindow = window / 2;
                 keys = new KeyMap<>();
                 bindKeys(keys);
 
+                display.init(!noInit);
                 if (!noKeypad) {
                     terminal.puts(Capability.keypad_xmit);
                 }
-                terminal.writer().flush();
 
+                terminal.writer().flush();
                 display(false);
                 checkInterrupted();
 
@@ -907,8 +902,6 @@ final public class More {
         final char type = buffer.charAt(0);
         String currentBuffer = buffer.toString();
         LineEditor lineEditor = new LineEditor(begPos);
-
-        readchar:
         while (true) {
             checkInterrupted();
             Operation op;
@@ -927,7 +920,7 @@ final public class More {
                     break;
                 case ACCEPT:
                     try {
-                        String _pattern = buffer.substring(1);
+                        String _pattern = buffer.length() == 0 ? "" : buffer.substring(1);
                         if (type == '&') {
                             displayPattern = _pattern.length() > 0 ? _pattern : null;
                             getPattern(true);
@@ -1313,7 +1306,7 @@ final public class More {
         if (line == 0 && !toBeDisplayed(curLine, dpCompiled)) {
             curLine = null;
         }
-        return new Pair<>(line < 0 ? 0 : line, curLine);
+        return new Pair<>(line, curLine);
     }
 
     private boolean toBeDisplayed(AttributedString curLine, Pattern dpCompiled) {
@@ -1350,12 +1343,14 @@ final public class More {
     private int globalLineWidth = 0;
     private int rows = 0;
     private int cols = 0;
-
+	final AttributedString sep = new AttributedString("|", AttributedStyle.DEFAULT.foreground(AttributedStyle.YELLOW));
     synchronized boolean display(boolean oneScreen, Integer curPos) throws IOException {
-        if (!oneScreen && !waitReader(128)) return false;
-        if (curPos == null && display.getPos() > 0 && buffer.length() > 0 && rows == size.getRows() && cols == size.getColumns()) {
-            display.updateBuff(buffer.toString());
-            return false;
+        if (!oneScreen ) {
+            if (!waitReader(128)) return false;
+            if (curPos == null && display.getPos() > 0 && buffer.length() > 0 && rows == size.getRows() && cols == size.getColumns()) {
+                display.updateBuff(buffer.toString());
+                return false;
+            }
         }
         rows = size.getRows();
         cols = size.getColumns();
@@ -1379,7 +1374,7 @@ final public class More {
         int off = 0;
         final String spaces = String.join("", Collections.nCopies(padding, " "));
         AttributedStringBuilder msg = new AttributedStringBuilder(2048);
-        final AttributedString sep = new AttributedString("|", AttributedStyle.DEFAULT.foreground(AttributedStyle.YELLOW));
+    
         for (int terminalLine = 0; terminalLine < rows - 1; terminalLine++) {
             if (curLine == null) {
                 Pair<Integer, AttributedString> nextLine = nextLine2display(inputLine, dpCompiled);
@@ -1470,7 +1465,7 @@ final public class More {
             msg.append(":");
         }
         newLines.add(msg.toAttributedString());
-        display.resize(size.getRows(), size.getColumns());
+
         if (curPos == null) {
             display.update(newLines, -1);
         } else {
@@ -1743,7 +1738,8 @@ final public class More {
 
         @Override
         public synchronized void update(List<AttributedString> newLines, int targetCursorPos) {
-            clear();
+            Size size = terminal.getSize();
+            resize(size.getRows(), size.getColumns());
             if (isStarted) {
                 if (!isEnterCA) {
                     terminal.puts(Capability.enter_ca_mode);
@@ -1752,9 +1748,10 @@ final public class More {
             } else {
                 isStarted = true;
             }
+            if (cursorPos > 0 && prevBuff != null && oldLines.size() > 0) {
+                oldLines.remove(oldLines.size() - 1);
+            }
             prevBuff = null;
-            Size size = terminal.getSize();
-            super.resize(size.getRows(), size.getColumns());
             super.update(newLines, targetCursorPos, false);
             terminal.writer().flush();
         }
